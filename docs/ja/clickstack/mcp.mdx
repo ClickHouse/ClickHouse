@@ -1,0 +1,332 @@
+---
+slug: /use-cases/observability/clickstack/mcp
+title: 'ClickStack MCPサーバー'
+sidebarTitle: 'MCPサーバー'
+description: 'Model Context Protocol（MCP）サーバーを使用して、AIアシスタントをClickStackに接続します'
+doc_type: 'guide'
+keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'AI', 'オブザーバビリティ', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickStack には、AIアシスタントがオブザーバビリティデータを操作できる組み込みの [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) サーバーが含まれています。接続すると、AIアシスタントは自然言語ですべて操作でき、ログ、トレース、メトリクスのクエリ実行、ダッシュボードやアラートの管理、データソースの確認、保存済み検索の利用が可能です。
+
+これにより、[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Cursor](https://www.cursor.com/)、または任意の MCP 対応クライアントを使って、開発環境を離れることなく、インシデントの調査、ダッシュボードの作成、オブザーバビリティ環境の管理を行えます。
+
+<div id="availability">
+  ## 提供状況
+</div>
+
+MCPサーバーは、以下の ClickStack のデプロイ形態で利用できます。
+
+| Deployment                                        | Status  |
+| ------------------------------------------------- | ------- |
+| **Open Source ClickStack**                        | 利用可能    |
+| **BYOC (Bring Your Own Cloud)**                   | 利用可能    |
+| **ClickStack on ClickHouse Cloud**                | 利用可能    |
+| **HyperDX v1** ([hyperdx.io](https://hyperdx.io)) | サポート対象外 |
+
+<Info>
+  **ClickHouse Cloud と OSS/BYOC ではセットアップが異なります**
+
+  ClickStack on ClickHouse Cloud は、Open Source と BYOC のデプロイメントとは異なるエンドポイントと認証方式を使用します。Cloud 固有のセットアップについては、以下の [ClickStack on ClickHouse Cloud](#managed-clickstack) セクションを参照してください。
+</Info>
+
+<div id="managed-clickstack">
+  ## ClickStack on ClickHouse Cloud
+</div>
+
+ClickStack on ClickHouse Cloud は、Cloud MCP エンドポイント `https://mcp.clickhouse.cloud/clickstack` 経由で接続し、OAuth 2.0 で認証します。このエンドポイントでは API key 認証はサポートされていません。
+
+<div id="managed-prerequisites">
+  ### 前提条件
+</div>
+
+* [ClickStack が有効になっている](/ja/clickstack/deployment/managed)稼働中の ClickHouse Cloud サービス
+* サービスで [MCP を有効にする](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) — Cloud コンソールを開き、**Connect** をクリックして **Connect with MCP** を選択し、トグルをオンにします
+
+<div id="managed-endpoint">
+  ### エンドポイント
+</div>
+
+```text
+https://mcp.clickhouse.cloud/clickstack
+```
+
+認証には OAuth 2.0 を使用します。MCP client が初めて接続する際に、ClickHouse Cloud の認証情報でサインインするためのブラウザウィンドウが開きます。API key は必要ありません。
+
+<div id="managed-connecting-a-client">
+  ### MCP client の接続
+</div>
+
+各クライアントは、初回接続時に OAuth フローを自動的に処理します。
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http clickstack https://mcp.clickhouse.cloud/clickstack
+    ```
+
+    Claude Code を起動して `/mcp` を実行し、`clickstack` を選択して OAuth フローを完了します。
+  </Tab>
+
+  <Tab title="Cursor">
+    以下を `.cursor/mcp.json` に追加します。
+
+    ```json
+    {
+      "mcpServers": {
+        "clickstack": {
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    以下を `.vscode/mcp.json` に追加します。
+
+    ```json
+    {
+      "servers": {
+        "clickstack": {
+          "type": "http",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    以下を `opencode.json` に追加します。
+
+    ```json
+    {
+      "mcp": {
+        "clickstack": {
+          "type": "remote",
+          "url": "https://mcp.clickhouse.cloud/clickstack"
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    以下を `librechat.yaml` に追加します。
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: https://mcp.clickhouse.cloud/clickstack
+    ```
+  </Tab>
+
+  <Tab title="Other">
+    OAuth に対応した **Streamable HTTP** をサポートする任意の MCP client から接続できます。次のように設定します。
+
+    * **URL:** `https://mcp.clickhouse.cloud/clickstack`
+  </Tab>
+</Tabs>
+
+<div id="managed-service-override">
+  ### 特定のサービスを指定する
+</div>
+
+`x-service-id` ヘッダーがない場合、リクエストの送信先は、アカウントで最初にプロビジョニングされ使用されている ClickStack サービスにデフォルト設定されます。別のサービスを指定するには、MCP client の設定で `x-service-id: <YOUR_SERVICE_ID>` をヘッダーとして渡してください。
+
+<div id="oss-byoc">
+  ## Open Source と BYOC
+</div>
+
+Open Source および BYOC のデプロイメントでは、ClickStack インスタンスに組み込まれた MCP エンドポイントを Bearer トークン認証で使用します。
+
+<div id="managed-prerequisites">
+  ### 前提条件
+</div>
+
+* 稼働中の ClickStack インスタンス (セットアップ方法については [デプロイメント](/ja/clickstack/deployment/overview) を参照してください)
+* **Personal API Access Key** — HyperDX の **Team Settings → API Keys → Personal API Access Key** で確認できます
+
+<Image img="/images/clickstack/api-key-personal.webp" alt="Team Settings 内の Personal API Access Key" size="md" border />
+
+<Note>
+  Personal API Access Key は、Team Settings にある **インジェスト API key** とは異なります。インジェスト API key は、OpenTelemetry Collector に送信されるテレメトリー データの認証に使用されます。
+</Note>
+
+<div id="managed-endpoint">
+  ### エンドポイント
+</div>
+
+MCPサーバーは、ClickStack のフロントエンドURLの `/api/mcp` パスで利用できます。たとえば、デフォルトのローカルデプロイメントでは、URLは `http://localhost:8080/api/mcp` です。デフォルト設定を変更している場合は、`localhost:8080` をご利用のインスタンスのホスト名とポートに置き換えてください。
+
+<Note>
+  このページの例では、フロントエンドアプリのURL (デフォルトではポート `8080`) を使用しています。MCPサーバーには、バックエンド経由で `<BACKEND_URL>/mcp` に直接アクセスすることもできますが、すべてのデプロイメントでバックエンドが公開されているわけではないため、このドキュメントではフロントエンドのパスを使用しています。
+</Note>
+
+MCPサーバーは、**Bearer token** 認証で **Streamable HTTP** トランスポートを使用します。
+
+<div id="managed-connecting-a-client">
+  ### MCP client の接続
+</div>
+
+`<YOUR_CLICKSTACK_URL>` はインスタンス URL (例: `http://localhost:8080`) に、`<YOUR_API_KEY>` は Personal API Access Key に置き換えてください。
+
+<Tabs>
+  <Tab title="Claude Code">
+    ```shell
+    claude mcp add --transport http hyperdx <YOUR_CLICKSTACK_URL>/api/mcp \
+      --header "Authorization: Bearer <YOUR_API_KEY>"
+    ```
+  </Tab>
+
+  <Tab title="Cursor">
+    以下を `.cursor/mcp.json` に追加します。
+
+    ```json
+    {
+      "mcpServers": {
+        "hyperdx": {
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="VS Code">
+    以下を `.vscode/mcp.json` に追加します。
+
+    ```json
+    {
+      "servers": {
+        "hyperdx": {
+          "type": "http",
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="OpenCode">
+    以下を `opencode.json` に追加します。
+
+    ```json
+    {
+      "mcp": {
+        "hyperdx": {
+          "type": "remote",
+          "url": "<YOUR_CLICKSTACK_URL>/api/mcp",
+          "oauth": false,
+          "headers": {
+            "Authorization": "Bearer <YOUR_API_KEY>"
+          }
+        }
+      }
+    }
+    ```
+  </Tab>
+
+  <Tab title="LibreChat">
+    以下を `librechat.yaml` に追加します。
+
+    ```yaml
+    mcpServers:
+      clickstack:
+        type: streamable-http
+        url: <YOUR_CLICKSTACK_URL>/api/mcp
+        headers:
+          Authorization: "Bearer <YOUR_API_KEY>"
+    ```
+  </Tab>
+
+  <Tab title="その他">
+    **Streamable HTTP** をサポートする任意の MCP client で接続できます。次のように設定してください。
+
+    * **URL:** `<YOUR_CLICKSTACK_URL>/api/mcp`
+    * **ヘッダー:** `Authorization: Bearer <YOUR_API_KEY>`
+  </Tab>
+</Tabs>
+
+<div id="capabilities">
+  ## MCP でできること
+</div>
+
+接続すると、AIアシスタントは ClickStack の主要な領域にわたるさまざまなツールを利用できるようになります。具体的には次のとおりです。
+
+* **データのクエリ** — ClickStack のクエリビルダー、検索構文、または生の SQL を使用して、ログ、トレース、メトリクスを検索・集計できます。
+* **データソース** — 利用可能なデータソース、データベース接続、カラムスキーマ、属性キーを一覧表示できます。
+* **ダッシュボード** — タイルを含むダッシュボードの作成、更新、削除、確認ができます。
+* **アラート** — 評価履歴を含むアラートの作成、更新、確認ができます。
+* **保存済み検索** — 再利用可能な保存済み検索定義の作成、更新、確認ができます。
+* **Webhooks** — アラート通知に使用できる webhook の宛先を一覧表示できます。
+* **チーム** — 現在のユーザーが所属しているチームを一覧表示し、アクティブなチームを特定できます。
+
+利用できるツールの内容は、今後拡張される可能性があります。MCP client は接続時に利用可能なツールを自動的に検出します。
+
+<div id="multi-team">
+  ## 複数チームでの利用 (OSS/BYOC)
+</div>
+
+これは Open Source と BYOC のデプロイメントにのみ適用されます。ClickStack on ClickHouse Cloud については、[特定のサービスを対象にする](#managed-service-override) を参照してください。
+
+デフォルトでは、MCP リクエストはプライマリ チームのコンテキストで処理されます。複数のチームに所属している場合は、`Authorization` ヘッダーに加えて、チーム ID を設定した `x-hdx-team` ヘッダーを渡すことで、特定のチームを対象にできます。このヘッダーを省略すると、プライマリ チームが使用されます。所属していないチームを指定した場合、リクエストは `401` エラーで拒否されます。
+
+アクセス可能なチームと現在アクティブなチームを確認するには、MCP client のチーム一覧ツールを使用してください。
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="troubleshooting-managed">
+  ### ClickStack on ClickHouse Cloud
+</div>
+
+<Accordion title="OAuth フローが完了しない">
+  * 使用している MCP client が OAuth 2.0 をサポートしていることを確認してください。Bearer トークン または stdio transport のみをサポートする client は、Cloud エンドポイントでは認証できません。
+  * ブラウザーが OAuth のポップアップやリダイレクトをブロックしていないか確認してください。
+  * 使用している ClickHouse Cloud アカウントが、その組織とサービスにアクセスできることを確認してください。
+</Accordion>
+
+<Accordion title="MCP は有効だが、client が接続できない">
+  * 汎用の Cloud MCP エンドポイント (`https://mcp.clickhouse.cloud/mcp`) ではなく、ClickStack エンドポイント (`https://mcp.clickhouse.cloud/clickstack`) を使用していることを確認してください。
+  * Cloudコンソールで、そのサービスに対して [MCP が有効になっている](/ja/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server) ことを確認してください。
+</Accordion>
+
+<Accordion title="リクエストが誤ったサービスに送られる">
+  `x-service-id` ヘッダーがない場合、リクエストは、アカウントで最初にプロビジョニングされ使用された ClickStack サービスにデフォルトで送られます。特定のサービスを対象にするには、このヘッダーを指定してください。[特定のサービスを指定する](#managed-service-override) を参照してください。
+</Accordion>
+
+<div id="troubleshooting-oss">
+  ### Open Source と BYOC
+</div>
+
+<Accordion title="403 の authentication error が発生する">
+  * **Personal API Access Key** を使用していることを確認してください (インジェスト API key ではありません) 。
+  * `Authorization` ヘッダーに、`Bearer` トークンとしてキーが含まれていることを確認してください。
+  * ClickStack インスタンスが稼働中で、設定した URL でアクセス可能であることを確認してください。
+</Accordion>
+
+<Accordion title="レート制限に達している">
+  MCPサーバーでは、ユーザーごとに**1 分あたり 600 リクエスト**のレート制限が適用されます。この制限を超えると、リクエストは一時的に拒否されます。リクエスト頻度を下げるか、しばらく待ってから再試行してください。
+</Accordion>
+
+<Accordion title="x-hdx-team ヘッダーを指定すると 401 エラーが発生する">
+  チーム ID が正しいこと、およびご利用のユーザーアカウントがそのチームのメンバーであることを確認してください。
+</Accordion>
+
+<Accordion title="MCPサーバーに接続できない">
+  * 使用している MCP client が **Streamable HTTP** トランスポートをサポートしていることを確認してください。stdio トランスポートのみをサポートする古いクライアントは動作しません。
+  * ClickStack をローカルで実行している場合は、設定した URL でアプリにアクセスできることを確認してください (デフォルトは `http://localhost:8080` です) 。
+  * ロードバランサーまたはリバースプロキシの背後で BYOC デプロイメントを実行している場合は、`/api/mcp` パスがブロックまたは書き換えされていないことを確認してください。
+</Accordion>

@@ -1,0 +1,46 @@
+---
+alias: ['MD']
+description: 'Markdown 포맷 문서'
+keywords: ['Markdown']
+slug: /interfaces/formats/Markdown
+title: 'Markdown'
+doc_type: '참고'
+---
+
+| 입력 | 출력 | 별칭   |
+| -- | -- | ---- |
+| ✗  | ✔  | `MD` |
+
+<div id="description">
+  ## 설명
+</div>
+
+`.md` 파일에 바로 붙여넣을 수 있는 출력을 생성하려면 [Markdown](https://en.wikipedia.org/wiki/Markdown) 포맷으로 결과를 내보낼 수 있습니다:
+
+마크다운 표는 자동으로 생성되며 GitHub와 같은 마크다운 지원 플랫폼에서 사용할 수 있습니다. 이 포맷은 출력에만 사용됩니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+```sql
+SELECT
+    number,
+    number * 2
+FROM numbers(5)
+FORMAT Markdown
+```
+
+```results
+| number | multiply(number, 2) |
+|-:|-:|
+| 0 | 0 |
+| 1 | 2 |
+| 2 | 4 |
+| 3 | 6 |
+| 4 | 8 |
+```
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>

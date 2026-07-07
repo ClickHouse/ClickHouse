@@ -1,0 +1,234 @@
+---
+description: 'Página que detalla el perfilado de asignaciones en ClickHouse'
+sidebarTitle: 'Perfilado de asignaciones para versiones anteriores a la 25.9'
+slug: /operations/allocation-profiling-old
+title: 'Perfilado de asignaciones para versiones anteriores a la 25.9'
+doc_type: 'reference'
+---
+
+ClickHouse usa [jemalloc](https://github.com/jemalloc/jemalloc) como asignador global de memoria. Jemalloc incluye algunas herramientas para el muestreo y el perfilado de asignaciones.
+Para facilitar el perfilado de asignaciones, se proporcionan comandos `SYSTEM` junto con comandos de cuatro letras (4LW) en Keeper.
+
+<div id="sampling-allocations-and-flushing-heap-profiles">
+  ## Muestreo de asignaciones y vaciado de perfiles de heap
+</div>
+
+Si quieres realizar muestreo y perfilado de asignaciones en `jemalloc`, debes iniciar ClickHouse/Keeper con el perfilado habilitado mediante la variable de entorno `MALLOC_CONF`:
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_active:true
+```
+
+`jemalloc` muestreará las asignaciones y almacenará la información internamente.
+
+Puede indicarle a `jemalloc` que vuelque el perfil actual ejecutando:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC FLUSH PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmfp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+De forma predeterminada, el archivo de perfil de heap se generará en `/tmp/jemalloc_clickhouse._pid_._seqnum_.heap`, donde `_pid_` es el PID de ClickHouse y `_seqnum_` es el número de secuencia global del perfil de heap actual.
+Para Keeper, el archivo predeterminado es `/tmp/jemalloc_keeper._pid_._seqnum_.heap` y sigue las mismas reglas.
+
+Se puede definir una ubicación distinta añadiendo la opción `prof_prefix` a la variable de entorno `MALLOC_CONF`.
+Por ejemplo, si desea generar perfiles en la carpeta `/data`, donde el prefijo del nombre de archivo será `my_current_profile`, puede ejecutar ClickHouse/Keeper con la siguiente variable de entorno:
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_prefix:/data/my_current_profile
+```
+
+Al archivo generado se le añadirán el prefijo, el PID y el número de secuencia.
+
+<div id="analyzing-heap-profiles">
+  ## Análisis de perfiles de heap
+</div>
+
+Una vez generados los perfiles de heap, es necesario analizarlos.
+Para ello, puede utilizarse la herramienta de `jemalloc` llamada [jeprof](https://github.com/jemalloc/jemalloc/blob/dev/bin/jeprof.in). Puede instalarse de varias formas:
+
+* Usando el gestor de paquetes del sistema
+* Clonando el [repositorio de jemalloc](https://github.com/jemalloc/jemalloc) y ejecutando `autogen.sh` desde la carpeta raíz. Esto le proporcionará el script `jeprof` dentro de la carpeta `bin`
+
+<Note>
+  `jeprof` usa `addr2line` para generar trazas de pila, lo que puede resultar muy lento.
+  Si es así, se recomienda instalar una [implementación alternativa](https://github.com/gimli-rs/addr2line) de la herramienta.
+
+  ```bash
+  git clone https://github.com/gimli-rs/addr2line.git --depth=1 --branch=0.23.0
+  cd addr2line
+  cargo build --features bin --release
+  cp ./target/release/addr2line path/to/current/addr2line
+  ```
+</Note>
+
+Con `jeprof`, pueden generarse muchos formatos distintos a partir del perfil de heap.
+Se recomienda ejecutar `jeprof --help` para obtener información sobre su uso y las distintas opciones que ofrece la herramienta.
+
+En general, el comando `jeprof` se usa así:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --output_format [ > output_file]
+```
+
+Si quieres comparar qué asignaciones se produjeron entre dos perfiles, puedes definir el argumento `base`:
+
+```sh
+jeprof path/to/binary --base path/to/first/heap/profile path/to/second/heap/profile --output_format [ > output_file]
+```
+
+<div id="examples">
+  ### Ejemplos
+</div>
+
+* si quieres generar un archivo de texto con cada procedimiento en una línea:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --text > result.txt
+```
+
+* si quieres generar un archivo PDF con un grafo de llamadas:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --pdf > result.pdf
+```
+
+<div id="generating-flame-graph">
+  ### Generación de un flame graph
+</div>
+
+`jeprof` permite generar stacks colapsados para crear flame graphs.
+
+Debe usar el argumento `--collapsed`:
+
+```sh
+jeprof path/to/binary path/to/heap/profile --collapsed > result.collapsed
+```
+
+Después de eso, puedes usar muchas herramientas distintas para visualizar stacks colapsados.
+
+La más popular es [FlameGraph](https://github.com/brendangregg/FlameGraph), que incluye un script llamado `flamegraph.pl`:
+
+```sh
+cat result.collapsed | /path/to/FlameGraph/flamegraph.pl --color=mem --title="Allocation Flame Graph" --width 2400 > result.svg
+```
+
+Otra herramienta interesante es [speedscope](https://www.speedscope.app/), que permite analizar los stacks recopilados de forma más interactiva.
+
+<div id="controlling-allocation-profiler-during-runtime">
+  ## Controlar el perfilador de asignaciones en tiempo de ejecución
+</div>
+
+Si ClickHouse/Keeper se inicia con el perfilador habilitado, se admiten comandos adicionales para desactivar o activar el perfilado de asignaciones en tiempo de ejecución.
+Con estos comandos, resulta más fácil perfilar solo intervalos específicos.
+
+Para desactivar el perfilador:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC DISABLE PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmdp | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+Para activar el perfilador:
+
+<Tabs>
+  <Tab title="ClickHouse">
+    ```sql
+    SYSTEM JEMALLOC ENABLE PROFILE
+    ```
+  </Tab>
+
+  <Tab title="Keeper">
+    ```sh
+    echo jmep | nc localhost 9181
+    ```
+  </Tab>
+</Tabs>
+
+También es posible controlar el estado inicial del perfilador configurando la opción `prof_active`, que está activada de forma predeterminada.
+Por ejemplo, si no desea muestrear asignaciones durante el inicio, sino solo después, puede activar el perfilador. Puede iniciar ClickHouse/Keeper con la siguiente variable de entorno:
+
+```sh
+MALLOC_CONF=background_thread:true,prof:true,prof_active:false
+```
+
+El perfilador se puede habilitar más adelante.
+
+<div id="additional-options-for-profiler">
+  ## Opciones adicionales para el perfilador
+</div>
+
+`jemalloc` dispone de muchas opciones relacionadas con el perfilador. Se pueden controlar modificando la variable de entorno `MALLOC_CONF`.
+Por ejemplo, el intervalo entre las muestras de asignación puede controlarse con `lg_prof_sample`.
+Si desea volcar el perfil de heap cada N bytes, puede habilitarlo con `lg_prof_interval`.
+
+Se recomienda consultar la [página de referencia](https://jemalloc.net/jemalloc.3.html) de `jemalloc` para ver la lista completa de opciones.
+
+<div id="other-resources">
+  ## Otros recursos
+</div>
+
+ClickHouse/Keeper exponen métricas relacionadas con `jemalloc` de muchas maneras distintas.
+
+<Warning>
+  **Advertencia**
+
+  Es importante tener en cuenta que ninguna de estas métricas está sincronizada con las demás y que sus valores pueden desviarse.
+</Warning>
+
+<div id="system-table-asynchronous_metrics">
+  ### Tabla del sistema `asynchronous_metrics`
+</div>
+
+```sql
+SELECT *
+FROM system.asynchronous_metrics
+WHERE metric LIKE '%jemalloc%'
+FORMAT Vertical
+```
+
+[Referencia](/es/reference/system-tables/asynchronous_metrics)
+
+<div id="system-table-jemalloc_bins">
+  ### Tabla del sistema `jemalloc_bins`
+</div>
+
+Contiene información sobre las asignaciones de memoria realizadas mediante el asignador jemalloc en distintas clases de tamaño (`bins`), agregada a partir de todas las arenas.
+
+[Referencia](/es/reference/system-tables/jemalloc_bins)
+
+<div id="prometheus">
+  ### Prometheus
+</div>
+
+Todas las métricas relacionadas con `jemalloc` de `asynchronous_metrics` también se exponen a través del endpoint de Prometheus tanto en ClickHouse como en Keeper.
+
+[Referencia](/es/reference/settings/server-settings/settings#prometheus)
+
+<div id="jmst-4lw-command-in-keeper">
+  ### Comando 4LW `jmst` en Keeper
+</div>
+
+Keeper admite el comando 4LW `jmst`, que devuelve [estadísticas básicas del asignador](https://github.com/jemalloc/jemalloc/wiki/Use-Case%3A-Basic-Allocator-Statistics):
+
+```sh
+echo jmst | nc localhost 9181
+```

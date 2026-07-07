@@ -1,0 +1,146 @@
+---
+slug: /use-cases/observability/clickstack/text-to-chart
+title: 'Text-to-Chart'
+sidebarTitle: 'Text-to-Chart'
+description: 'أنشئ مخططات من موجّهات بلغة طبيعية في ClickStack باستخدام ميزة Text-to-Chart المدعومة بالذكاء الاصطناعي.'
+doc_type: 'دليل'
+keywords: ['clickstack', 'text-to-chart', 'AI', 'التصور البياني', 'Chart Explorer', 'اللغة الطبيعية', 'observability']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تتيح لك ميزة Text-to-Chart في ClickStack إنشاء تصورات مرئية من خلال وصف ما تريد رؤيته بنص عادي. وبدلًا من تحديد المقاييس وعوامل التصفية وحقول group-by يدويًا، يمكنك كتابة موجّه مثل &quot;معدلات الخطأ حسب الخدمة خلال آخر 24 ساعة&quot;، وسينشئ ClickStack المخطط المقابل تلقائيًا.
+
+تستخدم هذه الميزة نموذج لغة كبيرًا (LLM) لتحويل موجّهك النصي إلى استعلام، ثم تُنشئ التصور المرئي في [Chart Explorer](/ar/clickstack/features/dashboards/overview#navigate-chart-explorer). وهي تعمل مع أي مصدر بيانات مُعدّ.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+يتطلب Text-to-Chart [مفتاح API لـ Anthropic](https://console.anthropic.com/). عيّن متغير البيئة `ANTHROPIC_API_KEY` عند تشغيل ClickStack.
+
+في عمليات النشر مفتوحة المصدر، مرّر المفتاح كمتغير بيئة. وتختلف الطريقة باختلاف نوع النشر:
+
+<Tabs>
+  <Tab title="Docker (الكل في واحد أو الوضع المحلي)">
+    ```bash
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest
+    ```
+  </Tab>
+
+  <Tab title="Docker (HyperDX فقط)">
+    ```bash
+    docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx-local
+    ```
+  </Tab>
+
+  <Tab title="Docker Compose">
+    أضف المتغير إلى ملف `.env` أو عيّنه مباشرةً في `docker-compose.yaml`:
+
+    ```yaml
+    services:
+      app:
+        environment:
+          ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    ```
+  </Tab>
+
+  <Tab title="Helm">
+    مرّر المفتاح باستخدام `--set`:
+
+    ```bash
+    helm install my-hyperdx hyperdx/hdx-oss-v2 \
+      --set env[0].name=ANTHROPIC_API_KEY \
+      --set env[0].value=<YOUR_KEY>
+    ```
+  </Tab>
+</Tabs>
+
+<div id="using-text-to-chart">
+  ## استخدام Text-to-Chart
+</div>
+
+<Steps>
+  <Step>
+    ### الانتقال إلى Chart Explorer
+
+    اختر **Chart Explorer** من القائمة الجانبية اليسرى في HyperDX.
+  </Step>
+
+  <Step>
+    ### تحديد مصدر بيانات
+
+    اختر مصدر البيانات الذي تريد عرضه بصريًا — على سبيل المثال، **السجلات** أو **التتبعات** أو **المقاييس**.
+
+    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="مستكشف المخططات" />
+  </Step>
+
+  <Step>
+    ### إدخال موجّه نصي
+
+    في أعلى Chart Explorer، ابحث عن حقل إدخال **AI Assistant**. اكتب وصفًا بلغة طبيعية للمخطط الذي تريد إنشاءه. على سبيل المثال:
+
+    * `Show error rates by service over the last 24 hours`
+    * `Latency breakdown by endpoint`
+    * `Count of events over time grouped by severity`
+
+    يحوّل ClickStack الموجّه إلى استعلام ويعرض التصوّر تلقائيًا.
+
+    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="تحويل النص إلى مخطط" />
+  </Step>
+</Steps>
+
+<div id="demo-data">
+  ## تجربة Text-to-Chart باستخدام بيانات تجريبية
+</div>
+
+أسرع طريقة لتجربة Text-to-Chart هي استخدام صورة Docker الخاصة بـ [الوضع المحلي](/ar/clickstack/deployment/local-mode-only) و[مجموعة البيانات التجريبية البعيدة](/ar/clickstack/example-datasets/remote-demo-data):
+
+```bash
+docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-local:latest
+```
+
+انتقل إلى `localhost:8080`. للاتصال ببيانات العرض التجريبي، انتقل إلى **Team Settings** وأنشئ اتصالًا جديدًا بالتفاصيل التالية:
+
+* **اسم الاتصال**: `Demo`
+* **المضيف**: `https://sql-clickhouse.clickhouse.com`
+* **اسم المستخدم**: `otel_demo`
+* **كلمة المرور**: اتركه فارغًا
+
+<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="إنشاء اتصال" />
+
+ثم عدّل كل مصدر من المصادر — **سجل** و**تتبّع** و**مقياس** و**Sessions** — لاستخدام قاعدة البيانات `otel_v2`. للاطلاع على التفاصيل الكاملة حول تهيئة المصادر، راجع [دليل مجموعة بيانات العرض التجريبي البعيدة](/ar/clickstack/example-datasets/remote-demo-data).
+
+بعد الاتصال، افتح **Chart Explorer** وجرّب الموجّهات على السجل والتتبّع والمقياس المتاحة.
+
+<div id="example-prompts">
+  ## أمثلة على الموجّهات
+</div>
+
+توضّح الموجّهات التالية حالات استخدام شائعة عند العمل مع بيانات observability:
+
+| الموجّه                                           | مصدر البيانات | الوصف                                        |
+| ------------------------------------------------- | ------------- | -------------------------------------------- |
+| `Error count by service over time`                | السجلات       | يعرض تكرار الأخطاء عبر الخدمات مع مرور الوقت |
+| `Average request duration grouped by endpoint`    | التتبعات      | يوضّح أنماط زمن الاستجابة لكل نقطة نهاية     |
+| `P99 latency by service`                          | التتبعات      | يحدّد زمن الاستجابة للطرف الأبعد عبر الخدمات |
+| `Count of 5xx status codes over the last 6 hours` | السجلات       | يتتبّع اتجاهات أخطاء الخادم                  |
+
+يمكن أن تشير الموجّهات إلى أي عمود أو سمة متاحة في مصادر البيانات التي أعددتها. وكلما كان الموجّه أكثر تحديدًا، كان المخطط المُنشأ أكثر دقة.
+
+<div id="limitations">
+  ## القيود
+</div>
+
+* تدعم Text-to-Chart حاليًا Anthropic فقط بصفته موفّر خدمة النماذج اللغوية الكبيرة (LLM). ومن المخطط دعم موفّرين إضافيين، بما في ذلك OpenAI، في الإصدارات المستقبلية.
+* لا تُدعَم حاليًا كمصادر بيانات سوى السجلات والتتبّعات. أما مقاييس Prometheus فلا تزال غير مدعومة.
+* تعتمد دقة المخطط على وضوح الموجّه وبنية البيانات الأساسية. إذا لم يطابق المخطط المُنشأ التوقعات، فجرّب إعادة صياغة الموجّه أو تحديد أسماء الأعمدة صراحةً.
+
+<div id="further-reading">
+  ## اقرأ أيضًا
+</div>
+
+* [من النص إلى المخططات: طريقة أسرع للتصوّر باستخدام ClickStack](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — تدوينة تعرّف بهذه الميزة
+* [لوحات المعلومات والمرئيات](/ar/clickstack/features/dashboards/overview) — إنشاء المخططات يدويًا باستخدام Chart Explorer
+* [البحث](/ar/clickstack/features/search) — صياغة البحث في النص الكامل والخصائص
+* [التهيئة](/ar/clickstack/managing/config) — جميع متغيرات البيئة في ClickStack

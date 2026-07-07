@@ -1,0 +1,229 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-deployment-options-v1
+title: 'Helm deployment options (v1.x)'
+description: 'Advanced deployment configurations for the v1.x ClickStack Helm chart'
+doc_type: 'guide'
+keywords: ['ClickStack deployment options', 'external ClickHouse', 'external OTEL', 'minimal deployment', 'Helm configuration']
+---
+
+<Warning>
+**Deprecated — v1.x chart**
+
+This page documents deployment options for the **v1.x** inline-template Helm chart, which is in maintenance mode. For the v2.x chart, see [Helm deployment options](/clickstack/deployment/helm-deployment-options). To migrate, see the [Upgrade guide](/clickstack/deployment/helm-upgrade).
+</Warning>
+
+This guide covers advanced deployment options for ClickStack using Helm. For basic installation, see the [main Helm deployment guide](/clickstack/deployment/helm-v1).
+
+## Overview {#overview}
+
+ClickStack's Helm chart supports multiple deployment configurations:
+- **Full stack** (default) - All components included
+- **External ClickHouse** - Use existing ClickHouse cluster
+- **External OTEL Collector** - Use existing OTEL infrastructure
+- **Minimal deployment** - Only HyperDX, external dependencies
+
+## External ClickHouse {#external-clickhouse}
+
+If you have an existing ClickHouse cluster (including ClickHouse Cloud), you can disable the built-in ClickHouse and connect to your external instance.
+
+### Option 1: Inline configuration (development/testing) {#external-clickhouse-inline}
+
+Use this approach for quick testing or non-production environments:
+```yaml
+# values-external-clickhouse.yaml
+clickhouse:
+  enabled: false  # Disable the built-in ClickHouse
+
+otel:
+  clickhouseEndpoint: "tcp://your-clickhouse-server:9000"
+  clickhousePrometheusEndpoint: "http://your-clickhouse-server:9363"  # Optional
+
+hyperdx:
+  defaultConnections: |
+    [
+      {
+        "name": "External ClickHouse",
+        "host": "http://your-clickhouse-server:8123",
+        "port": 8123,
+        "username": "your-username",
+        "password": "your-password"
+      }
+    ]
+```
+
+Install with this configuration:
+```shell
+helm install my-clickstack clickstack/clickstack -f values-external-clickhouse.yaml
+```
+
+### Option 2: External secret (production recommended) {#external-clickhouse-secret}
+
+For production deployments where you want to keep credentials separate from your Helm configuration:
+
+#### Create your configuration files {#create-configuration}
+```bash
+# Create connections.json
+cat <<EOF > connections.json
+[
+  {
+    "name": "Production ClickHouse",
+    "host": "https://your-production-clickhouse.com",
+    "port": 8123,
+    "username": "hyperdx_user",
+    "password": "your-secure-password"
+  }
+]
+EOF
+
+# Create sources.json
+cat <<EOF > sources.json
+[
+  {
+    "from": {
+      "databaseName": "default",
+      "tableName": "otel_logs"
+    },
+    "kind": "log",
+    "name": "Logs",
+    "connection": "Production ClickHouse",
+    "timestampValueExpression": "TimestampTime",
+    "displayedTimestampValueExpression": "Timestamp",
+    "implicitColumnExpression": "Body",
+    "serviceNameExpression": "ServiceName",
+    "bodyExpression": "Body",
+    "eventAttributesExpression": "LogAttributes",
+    "resourceAttributesExpression": "ResourceAttributes",
+    "severityTextExpression": "SeverityText",
+    "traceIdExpression": "TraceId",
+    "spanIdExpression": "SpanId"
+  },
+  {
+    "from": {
+      "databaseName": "default",
+      "tableName": "otel_traces"
+    },
+    "kind": "trace",
+    "name": "Traces",
+    "connection": "Production ClickHouse",
+    "timestampValueExpression": "Timestamp",
+    "displayedTimestampValueExpression": "Timestamp",
+    "implicitColumnExpression": "SpanName",
+    "serviceNameExpression": "ServiceName",
+    "traceIdExpression": "TraceId",
+    "spanIdExpression": "SpanId",
+    "durationExpression": "Duration"
+  }
+]
+EOF
+```
+
+#### Create the Kubernetes secret {#create-kubernetes-secret}
+```bash
+kubectl create secret generic hyperdx-external-config \
+  --from-file=connections.json=connections.json \
+  --from-file=sources.json=sources.json
+
+# Clean up local files
+rm connections.json sources.json
+```
+
+#### Configure Helm to use the secret {#configure-helm-secret}
+```yaml
+# values-external-clickhouse-secret.yaml
+clickhouse:
+  enabled: false
+
+otel:
+  clickhouseEndpoint: "tcp://your-clickhouse-server:9000"
+  clickhousePrometheusEndpoint: "http://your-clickhouse-server:9363"
+
+hyperdx:
+  useExistingConfigSecret: true
+  existingConfigSecret: "hyperdx-external-config"
+  existingConfigConnectionsKey: "connections.json"
+  existingConfigSourcesKey: "sources.json"
+```
+```shell
+helm install my-clickstack clickstack/clickstack -f values-external-clickhouse-secret.yaml
+```
+
+### Using ClickHouse Cloud {#using-clickhouse-cloud}
+
+For ClickHouse Cloud specifically:
+```yaml
+# values-clickhouse-cloud.yaml
+clickhouse:
+  enabled: false
+  persistence:
+    enabled: false
+
+otel:
+  clickhouseEndpoint: "tcp://your-cloud-instance.clickhouse.cloud:9440?secure=true"
+
+hyperdx:
+  useExistingConfigSecret: true
+  existingConfigSecret: "clickhouse-cloud-config"
+  existingConfigConnectionsKey: "connections.json"
+  existingConfigSourcesKey: "sources.json"
+```
+
+## External OTEL Collector {#external-otel-collector}
+
+If you have an existing OTEL collector infrastructure:
+```yaml
+# values-external-otel.yaml
+otel:
+  enabled: false  # Disable the built-in OTEL collector
+
+hyperdx:
+  otelExporterEndpoint: "http://your-otel-collector:4318"
+```
+```shell
+helm install my-clickstack clickstack/clickstack -f values-external-otel.yaml
+```
+
+For instructions on exposing OTEL collector endpoints via ingress, see [Ingress Configuration](/clickstack/deployment/helm-configuration-v1#otel-collector-ingress).
+
+## Minimal deployment {#minimal-deployment}
+
+For organizations with existing infrastructure, deploy only HyperDX:
+```yaml
+# values-minimal.yaml
+clickhouse:
+  enabled: false
+
+otel:
+  enabled: false
+
+hyperdx:
+  otelExporterEndpoint: "http://your-otel-collector:4318"
+
+  # Option 1: Inline (for testing)
+  defaultConnections: |
+    [
+      {
+        "name": "External ClickHouse",
+        "host": "http://your-clickhouse-server:8123",
+        "port": 8123,
+        "username": "your-username",
+        "password": "your-password"
+      }
+    ]
+
+  # Option 2: External secret (production)
+  # useExistingConfigSecret: true
+  # existingConfigSecret: "my-external-config"
+  # existingConfigConnectionsKey: "connections.json"
+  # existingConfigSourcesKey: "sources.json"
+```
+```shell
+helm install my-clickstack clickstack/clickstack -f values-minimal.yaml
+```
+
+## Next steps {#next-steps}
+
+- [Configuration Guide (v1.x)](/clickstack/deployment/helm-configuration-v1) - API keys, secrets, and ingress setup
+- [Cloud Deployments (v1.x)](/clickstack/deployment/helm-cloud-v1) - GKE, EKS, and AKS specific configurations
+- [Main Helm Guide (v1.x)](/clickstack/deployment/helm-v1) - Basic installation
+- [Deployment options (v2.x)](/clickstack/deployment/helm-deployment-options) - v2.x deployment options
+- [Upgrade guide](/clickstack/deployment/helm-upgrade) - Migrating from v1.x to v2.x

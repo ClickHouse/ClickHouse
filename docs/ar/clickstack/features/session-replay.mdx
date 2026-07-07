@@ -1,0 +1,152 @@
+---
+slug: /use-cases/observability/clickstack/session-replay
+title: 'إعادة تشغيل الجلسات'
+sidebarTitle: 'إعادة تشغيل الجلسات'
+description: 'التقط جلسات المستخدمين وأعِد تشغيلها في ClickStack لتصحيح مشكلات الواجهة الأمامية، وفهم سلوك المستخدمين، وربط نشاط المتصفح بسجلات الـ backend وآثار التتبع.'
+doc_type: 'guide'
+keywords: ['clickstack', 'إعادة تشغيل الجلسات', 'Browser SDK', 'Observability للواجهة الأمامية', 'جلسات المستخدم', 'تصحيح الأخطاء']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+تلتقط ميزة إعادة تشغيل الجلسة في ClickStack تفاعلات المستخدمين في تطبيق الويب لديك وتعيد تكوينها، مما يتيح لك إعادة تشغيل ما رآه المستخدم وفعله أثناء جلسته بصريًا كما حدث تمامًا. وبدلًا من تسجيل فيديو، تسجّل حزمة SDK تغيّرات DOM، وحركات الماوس، والنقرات، والتمرير، وإدخالات لوحة المفاتيح، وسجلات وحدة التحكم، وطلبات الشبكة (XHR, Fetch, WebSocket)، واستثناءات JavaScript — ثم تعيد تكوين هذه التجربة في المتصفح.
+
+ونظرًا إلى أن عمليات إعادة تشغيل الجلسات تُخزَّن في ClickHouse إلى جانب السجلات والتتبعات والمقاييس لديك، يمكنك الانتقال من مشاهدة تجربة المستخدم إلى فحص تتبعات الواجهة الخلفية واستعلامات قاعدة البيانات التي كانت وراءها — وكل ذلك ببضع نقرات فقط. وهذا يجعل إعادة تشغيل الجلسة مفيدة في استكشاف مشكلات بيئة production وإصلاحها، وفهم سلوك المستخدمين، وتحديد نقاط الاحتكاك في تجربة المستخدم، والتأكد بصريًا من المشكلات التي أبلغ عنها فريق الدعم.
+
+<div id="instrumentation">
+  ## إضافة أدوات الرصد إلى تطبيقك
+</div>
+
+يتوافق ClickStack بالكامل مع OpenTelemetry، لذا يمكنك إرسال بيانات القياس عن بُعد للمتصفح (التتبعات والاستثناءات) باستخدام OpenTelemetry JavaScript SDK القياسي أو أيٍّ من [ClickStack language SDKs](/ar/clickstack/ingesting-data/sdks). ومع ذلك، **تتطلب ميزة إعادة تشغيل الجلسة استخدام ClickStack Browser SDK** (`@hyperdx/browser`)، إذ يوسّع OpenTelemetry SDK بإضافة تسجيل الجلسات، والتقاط مخرجات وحدة التحكّم، والتقاط طلبات الشبكة. وإذا كنت تحتاج فقط إلى التتبعات من دون إعادة تشغيل الجلسة، فستعمل أي حزمة SDK للمتصفح متوافقة مع OTel مع ClickStack.
+
+تستخدم الأمثلة أدناه ClickStack Browser SDK. ولا تتطلب إضافة إعادة تشغيل الجلسة إلى تطبيقك سوى ثلاث خطوات: تثبيت الحزمة، وتهيئة SDK، ثم تُلتقط جميع تفاعلات المستخدم تلقائيًا — من دون الحاجة إلى أي تغييرات إضافية في الشيفرة.
+
+<Tip>
+  هيّئ SDK في موضع تضمن تحميله عند بدء تشغيل تطبيقك. على سبيل المثال، في تطبيق Next.js، قد يكون هذا ملف `layout.js` الجذري. يضمن ذلك بدء تسجيل الجلسة فورًا والتقاط تجربة المستخدم بالكامل.
+</Tip>
+
+<Tabs>
+  <Tab title="NPM">
+    ```shell
+    npm install @hyperdx/browser
+    ```
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+      url: 'http://your-otel-collector:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا في Managed ClickStack
+      service: 'my-frontend-app',
+      tracePropagationTargets: [/api.myapp.domain/i],
+      consoleCapture: true,
+      advancedNetworkCapture: true,
+    });
+    ```
+  </Tab>
+
+  <Tab title="Yarn">
+    ```shell
+    yarn add @hyperdx/browser
+    ```
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    HyperDX.init({
+      url: 'http://your-otel-collector:4318',
+      apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا في Managed ClickStack
+      service: 'my-frontend-app',
+      tracePropagationTargets: [/api.myapp.domain/i],
+      consoleCapture: true,
+      advancedNetworkCapture: true,
+    });
+    ```
+  </Tab>
+
+  <Tab title="Script Tag">
+    بالنسبة إلى التطبيقات التي لا تستخدم bundler، أدرِج SDK مباشرةً عبر وسم script. يوفّر ذلك المتغير العام `HyperDX`، الذي يمكن استخدامه بالطريقة نفسها المستخدمة مع حزمة NPM.
+
+    ```html
+    <script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+    <script>
+      window.HyperDX.init({
+        url: 'http://your-otel-collector:4318',
+        apiKey: 'YOUR_INGESTION_API_KEY', // احذف هذا في Managed ClickStack
+        service: 'my-frontend-app',
+        tracePropagationTargets: [/api.myapp.domain/i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    </script>
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  يُعد الخيار `tracePropagationTargets` أساسيًا لربط إعادة تشغيل الجلسة بتتبعات backend — اضبطه على نطاق API الخاص بك لتمكين distributed tracing كامل من الواجهة الأمامية إلى الواجهة الخلفية. للاطلاع على قائمة كاملة بخيارات SDK، بما في ذلك عناصر التحكّم في الخصوصية وcustom actions وحدود أخطاء React وsource maps، راجع [مرجع Browser SDK](/ar/clickstack/ingesting-data/sdks/browser).
+</Note>
+
+يدعم Browser SDK أيضًا [إخفاء المدخلات والنصوص](/ar/clickstack/ingesting-data/sdks/browser#options) للتطبيقات الحساسة للخصوصية، و[إرفاق معلومات المستخدم](/ar/clickstack/ingesting-data/sdks/browser#attach-user-information-or-metadata) حتى تتمكن من البحث في الجلسات وتصفيتها حسب المستخدم داخل ClickStack UI.
+
+<div id="viewing-replays">
+  ## عرض إعادات تشغيل الجلسات
+</div>
+
+انتقل إلى **Client Sessions** من الشريط الجانبي الأيسر في واجهة ClickStack ‏(HyperDX). يعرض هذا القسم جميع جلسات المتصفح الملتقطة، مع مدتها وعدد الأحداث فيها.
+
+<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="عرض البحث لإعادة تشغيل الجلسة" size="lg" />
+
+انقر على زر التشغيل لأي جلسة لإعادة تشغيلها. يعرض منظور إعادة التشغيل على اليمين تجربة المستخدم كما أُعيد بناؤها، وعلى اليسار مخططًا زمنيًا لأحداث المتصفح — مثل طلبات الشبكة، وسجلات وحدة التحكم، والأخطاء.
+
+<Image img="/images/clickstack/session-replay/session-replay.webp" alt="تشغيل إعادة تشغيل الجلسة" size="lg" />
+
+بدّل بين وضعي **Highlighted** و**All Events** لضبط مستوى التفاصيل المعروض على المخطط الزمني. تُميَّز الأخطاء باللون الأحمر، ويؤدي النقر على أي حدث إلى الانتقال بإعادة التشغيل إلى تلك النقطة من الجلسة.
+
+<div id="session-to-trace">
+  ### من الجلسة إلى التتبّع
+</div>
+
+عند تحديد طلب شبكة أو خطأ في المخطط الزمني للجلسة، يمكنك النقر للانتقال إلى علامة التبويب **Trace** لتتبّع الطلب عبر خدماتك الخلفية — مع الاطلاع على السجلات ووحدات span واستعلامات قاعدة البيانات المرتبطة التي نتجت عن تفاعل المستخدم هذا.
+
+يعمل ذلك لأن إعداد `tracePropagationTargets` يربط وحدات span في المتصفح بوحدات span على الخادم عبر ترويسة `traceparent`، مما ينشئ تتبّعًا موزعًا ومترابطًا يبدأ من نقرة المستخدم ويمتد حتى قاعدة البيانات. وللاطلاع على شرح عملي مفصل لهذا الأمر، بما في ذلك إضافة OpenTelemetry إلى كلٍّ من الواجهة الأمامية والخلفية، راجع [Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack).
+
+<Frame>
+  <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="الانتقال من إعادة تشغيل الجلسة إلى تتبّعات الخدمات الخلفية في ClickStack" />
+</Frame>
+
+<div id="trace-to-session">
+  ### من التتبّع إلى الجلسة
+</div>
+
+يعمل هذا الربط في الاتجاه الآخر أيضًا. عند عرض تتبّع في واجهة **Search**، انقر عليه لفتح تفاصيله، ثم اختر علامة التبويب **إعادة تشغيل الجلسة** لترى بالضبط ما كان المستخدم يعيشه وقت ذلك التتبّع. ويكون هذا مفيدًا بشكل خاص عند التحقيق في الأخطاء أو الطلبات البطيئة — إذ يمكنك البدء من المشكلة في الـbackend ورؤية منظور المستخدم على الفور.
+
+<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="عرض التتبّع ضمن إعادة تشغيل الجلسة" size="lg" />
+
+<div id="data-storage">
+  ## كيفية تخزين بيانات الجلسة
+</div>
+
+تُخزَّن بيانات إعادة تشغيل الجلسات في جدول [`hyperdx_sessions`](/ar/clickstack/ingesting-data/schemas#sessions) مخصّص في ClickHouse، بمعزل عن السجلات والتتبعات. ويمثّل كل حدث جلسة صفًا يتضمّن الحقل `Body` الذي يحتوي على حمولة الحدث، والخريطة `LogAttributes` التي تخزّن البيانات الوصفية للحدث. ويحتفظ العمودان `Body` و`LogAttributes` معًا بتفاصيل أحداث الجلسة الفعلية المستخدمة لإعادة إنشاء إعادة التشغيل.
+
+للاطلاع على معلومات مخطط الجدول كاملةً، راجع [الجداول والمخططات المستخدمة في ClickStack](/ar/clickstack/ingesting-data/schemas).
+
+<div id="try-it-out">
+  ## جرّبه
+</div>
+
+هناك طريقتان لمشاهدة إعادة تشغيل الجلسة أثناء العمل:
+
+* **مثال مباشر** — زُر [clickpy.clickhouse.com](https://clickpy.clickhouse.com)، وتفاعل مع التطبيق، ثم اعرض إعادة تشغيل الجلسة الخاص بك على [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) ضمن المصدر **ClickPy Sessions**. ولمعرفة تفاصيل كيفية تهيئة ClickPy باستخدام OpenTelemetry، راجع تدوينة المدوّنة [تهيئة تطبيق NextJS الخاص بك باستخدام OpenTelemetry وClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack).
+* **عرض توضيحي محلي** — يشرح [العرض التوضيحي لـ إعادة تشغيل الجلسة](/ar/clickstack/example-datasets/session-replay) كيفية تهيئة تطبيق تجريبي خطوة بخطوة، بما في ذلك تشغيل ClickStack محليًا وعرض تسجيلات الجلسات الخاصة بك.
+
+<div id="learn-more">
+  ## تعرّف على المزيد
+</div>
+
+* [عرض توضيحي لإعادة تشغيل الجلسات](/ar/clickstack/example-datasets/session-replay) — تطبيق تجريبي محلي تفاعلي مع إرشادات خطوة بخطوة
+* [مرجع Browser SDK](/ar/clickstack/ingesting-data/sdks/browser) — جميع خيارات SDK، وsource maps، وcustom actions، والإعدادات المتقدمة
+* [Search](/ar/clickstack/features/search) — صيغة البحث لتصفية الجلسات والأحداث
+* [لوحات المعلومات](/ar/clickstack/features/dashboards/overview) — أنشئ تصورات مرئية ولوحات معلومات من بيانات الجلسات وبيانات التتبّع
+* [التنبيهات](/ar/clickstack/features/alerts) — أعدّ تنبيهات للأخطاء وزمن الاستجابة والإشارات الأخرى
+* [معمارية ClickStack](/ar/clickstack/architecture) — كيف تتكامل ClickHouse وHyperDX وOTel collector معًا
