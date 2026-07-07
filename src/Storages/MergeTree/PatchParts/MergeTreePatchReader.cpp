@@ -126,7 +126,7 @@ PatchReadResultPtr MergeTreePatchReaderMerge::readPatch(const MarkRange & range)
 std::vector<PatchReadResultPtr> MergeTreePatchReaderMerge::readPatches(
     MarkRanges & ranges,
     const ReadResult & main_result,
-    const Block & /*result_header*/,
+    const Block & /*main_block*/,
     const PatchReadResult * last_read_patch)
 {
     std::vector<PatchReadResultPtr> results;
@@ -158,7 +158,7 @@ bool MergeTreePatchReaderMerge::needNewPatch(const ReadResult & main_result, con
     return *main_result.max_part_offset > old_patch_result.max_part_offset;
 }
 
-bool MergeTreePatchReaderMerge::needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & /*result_header*/) const
+bool MergeTreePatchReaderMerge::needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & /*main_block*/) const
 {
     const auto & old_patch_result = typeid_cast<const PatchMergeReadResult &>(old_patch);
 
@@ -202,8 +202,8 @@ static void filterReadRanges(MarkRanges & all_ranges, const MarkRanges & read_ra
 
 std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     MarkRanges & ranges,
-    const ReadResult & main_result,
-    const Block & result_header,
+    const ReadResult & /*main_result*/,
+    const Block & main_block,
     const PatchReadResult * /*last_read_patch*/)
 {
     std::vector<PatchReadResultPtr> results;
@@ -213,7 +213,6 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
         return results;
 
     MarkRanges ranges_to_read = ranges;
-    auto result_block = result_header.cloneWithColumns(main_result.columns);
     auto patch_read_result = std::make_shared<PatchJoinReadResult>();
 
     if (!patch_join_cache)
@@ -240,8 +239,8 @@ std::vector<PatchReadResultPtr> MergeTreePatchReaderJoin::readPatches(
     if (!stats_entry->stats.empty())
     {
         PatchStats result_stats;
-        result_stats.block_number_stat = getResultBlockStat(result_block, BlockNumberColumn::name);
-        result_stats.block_offset_stat = getResultBlockStat(result_block, BlockOffsetColumn::name);
+        result_stats.block_number_stat = getResultBlockStat(main_block, BlockNumberColumn::name);
+        result_stats.block_offset_stat = getResultBlockStat(main_block, BlockOffsetColumn::name);
         ranges_to_read = filterPatchRanges(ranges_to_read, stats_entry->stats, result_stats);
     }
 
@@ -307,24 +306,18 @@ PatchReadResultPtr MergeTreePatchReaderMergeOnKey::readPatch(const MarkRange & r
 std::vector<PatchReadResultPtr> MergeTreePatchReaderMergeOnKey::readPatches(
     MarkRanges & ranges,
     const ReadResult & main_result,
-    const Block & result_header,
+    const Block & main_block,
     const PatchReadResult * last_read_patch)
 {
     std::vector<PatchReadResultPtr> results;
-
-    /// Blocks whose max sort-key is entirely below `main_min` are useless to retain, but keeping them
-    /// while this loop traverses many ranges can pin hundreds of MB of patch data per thread. Drop them
-    /// inline; keep only the most recent discarded block alive so `needNewPatch` can decide when to stop.
     PatchReadResultPtr last_discarded;
 
-    while (!ranges.empty() && (!last_read_patch || needNewPatch(main_result, *last_read_patch, result_header)))
+    while (!ranges.empty() && (!last_read_patch || needNewPatch(main_result, *last_read_patch, main_block)))
     {
         auto result = readPatch(ranges.front());
         ranges.pop_front();
 
-        /// `needOldPatch` returns false iff the block's max sort-key is strictly below `main_min`,
-        /// which is exactly the "useless to retain" case.
-        const bool keep = needOldPatch(main_result, *result, result_header);
+        const bool keep = needOldPatch(main_result, *result, main_block);
         last_read_patch = result.get();
 
         if (keep)
@@ -342,7 +335,7 @@ std::vector<PatchToApplyPtr> MergeTreePatchReaderMergeOnKey::applyPatch(const Bl
     return {applyPatchMergeOnKey(result_block, patch_data.block, *patch_part.sorting_key)};
 }
 
-static int compareMainVsPatch(
+static int compareMainAndPatchKeys(
     const Block & main_block,
     size_t main_row,
     const Block & patch_block,
@@ -363,22 +356,9 @@ static int compareMainVsPatch(
     return 0;
 }
 
-/// Build a block from `main_result` whose sorting key *result* columns are materialized via `patch.sorting_key_expression`.
-static Block buildMainBlockWithSortKey(const Block & result_header, const Columns & columns, const ExpressionActionsPtr & sorting_key_expression)
-{
-    Block block = result_header.cloneWithColumns(columns);
-
-    if (sorting_key_expression)
-        sorting_key_expression->execute(block);
-
-    return block;
-}
-
-bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const
+bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & main_block) const
 {
     /// Need a new patch block while main's max sort-key is >= the last-read patch block's max.
-    /// Reading must continue on equality: sort keys are not unique, and the equal-key run may
-    /// continue in the next patch block with rows that match the current main block.
     const auto & old = typeid_cast<const PatchMergeOnKeyReadResult &>(old_patch);
 
     /// An empty patch block contributes nothing — always read the next mark if there is one.
@@ -387,19 +367,16 @@ bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result
 
     const auto & sorting_key = *patch_part.sorting_key;
 
-    /// Degenerate sort key (`ORDER BY tuple()`): every patch row can match every main block, so the
-    /// whole patch must be resident before the first apply — read all ranges eagerly (memory mirrors
-    /// the v1 Join mode). Returning false would silently lose updates from never-read ranges.
+    /// Degenerate sort key (`ORDER BY tuple()`): every patch row can match every main block.
+    /// So the whole patch must be resident before the first apply.
     if (sorting_key.column_names.empty())
         return true;
 
     if (main_result.num_rows == 0)
         return false;
 
-    auto result_block = buildMainBlockWithSortKey(result_header, main_result.columns, sorting_key.expression);
-
-    int cmp = compareMainVsPatch(
-        result_block,
+    int cmp = compareMainAndPatchKeys(
+        main_block,
         main_result.num_rows - 1,
         old.block,
         old.block.rows() - 1,
@@ -409,7 +386,7 @@ bool MergeTreePatchReaderMergeOnKey::needNewPatch(const ReadResult & main_result
     return cmp >= 0;
 }
 
-bool MergeTreePatchReaderMergeOnKey::needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const
+bool MergeTreePatchReaderMergeOnKey::needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & main_block) const
 {
     /// Keep the old patch block if main's min sort-key is still at-or-before patch's max.
     const auto & old = typeid_cast<const PatchMergeOnKeyReadResult &>(old_patch);
@@ -425,10 +402,8 @@ bool MergeTreePatchReaderMergeOnKey::needOldPatch(const ReadResult & main_result
     if (main_result.num_rows == 0)
         return true;
 
-    auto result_block = buildMainBlockWithSortKey(result_header, main_result.columns, sorting_key.expression);
-
-    int cmp = compareMainVsPatch(
-        result_block,
+    int cmp = compareMainAndPatchKeys(
+        main_block,
         /*main_row=*/ 0,  // first row = min sort-key on main side
         old.block,
         old.block.rows() - 1,

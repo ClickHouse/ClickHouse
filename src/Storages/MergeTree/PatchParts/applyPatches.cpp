@@ -646,28 +646,29 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     if (main_rows == 0 || patch_rows == 0)
         return patch_to_apply;
 
-    /// Execute sorting key expression and materialize the sorting key columns.
-    Block main_block_copy = result_block;
+    Block result_block_copy;
+    for (const auto & name : sorting_key.column_names)
+        result_block_copy.insert(result_block.getByName(name));
+
+    result_block_copy.insert(result_block.getByName(BlockNumberColumn::name));
+    result_block_copy.insert(result_block.getByName(BlockOffsetColumn::name));
+
     Block patch_block_copy = patch_block;
 
-    for (auto & column : main_block_copy)
+    for (auto & column : result_block_copy)
         column.column = removeSpecialRepresentations(column.column);
 
     for (auto & column : patch_block_copy)
         column.column = removeSpecialRepresentations(column.column);
 
-    if (sorting_key.expression)
-        sorting_key.expression->execute(main_block_copy);
-
-    const auto & sorting_key_names = sorting_key.column_names;
     const auto & reverse_flags = sorting_key.reverse_flags;
-    const auto & main_block_number = getColumnUInt64Data(main_block_copy, BlockNumberColumn::name);
-    const auto & main_block_offset = getColumnUInt64Data(main_block_copy, BlockOffsetColumn::name);
+    const auto & result_block_number = getColumnUInt64Data(result_block_copy, BlockNumberColumn::name);
+    const auto & result_block_offset = getColumnUInt64Data(result_block_copy, BlockOffsetColumn::name);
     const auto & patch_block_number = getColumnUInt64Data(patch_block_copy, BlockNumberColumn::name);
     const auto & patch_block_offset = getColumnUInt64Data(patch_block_copy, BlockOffsetColumn::name);
 
-    const auto main_sorting_key = extractSortingKeyColumns(main_block_copy, sorting_key_names);
-    const auto patch_sorting_key = extractSortingKeyColumns(patch_block_copy, sorting_key_names);
+    const auto result_sorting_key = extractSortingKeyColumns(result_block_copy, sorting_key.column_names);
+    const auto patch_sorting_key = extractSortingKeyColumns(patch_block_copy, sorting_key.column_names);
 
     /// Degenerate sorting key (tuple of no columns): the "equal-sort-key run" is the whole block
     /// on both sides; we fall through to the hash-map branch over the full patch (like v1 Join mode).
@@ -675,19 +676,19 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
 
     /// A patch block shared across several main blocks often carries a long prefix of rows below
     /// `main[0]` that cannot match anything here; skip it in `O(log prefix)` instead of row by row.
-    size_t patch_idx = gallopingBinarySearch<true>(patch_sorting_key, 0, patch_rows, main_sorting_key, 0, reverse_flags);
+    size_t patch_idx = gallopingBinarySearch<true>(patch_sorting_key, 0, patch_rows, result_sorting_key, 0, reverse_flags);
 
     /// The patch stream is typically much smaller than the main stream, so we drive the merge
     /// from the patch side using galloping search into main. This skips over long runs of main
     /// rows below the current patch key in `O(log gap)` comparisons per patch row.
     while (main_idx < main_rows && patch_idx < patch_rows)
     {
-        main_idx = gallopingBinarySearch<true>(main_sorting_key, main_idx, main_rows, patch_sorting_key, patch_idx, reverse_flags);
+        main_idx = gallopingBinarySearch<true>(result_sorting_key, main_idx, main_rows, patch_sorting_key, patch_idx, reverse_flags);
         if (main_idx == main_rows)
             break;
 
         /// main[main_idx] > patch[patch_idx]: the current patch row has no match in main. Advance past it.
-        if (compareSortKeyRows(main_sorting_key, main_idx, patch_sorting_key, patch_idx, reverse_flags) > 0)
+        if (compareSortKeyRows(result_sorting_key, main_idx, patch_sorting_key, patch_idx, reverse_flags) > 0)
         {
             ++patch_idx;
             continue;
@@ -695,7 +696,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
 
         /// cmp == 0: equal-sort-key run on both sides. Find the run extents. Gallop on the main side.
         /// The patch side is scanned linearly because patch_rows is small.
-        size_t main_run_end = gallopingBinarySearch<false>(main_sorting_key, main_idx + 1, main_rows, patch_sorting_key, patch_idx, reverse_flags);
+        size_t main_run_end = gallopingBinarySearch<false>(result_sorting_key, main_idx + 1, main_rows, patch_sorting_key, patch_idx, reverse_flags);
         size_t patch_run_end = patch_idx + 1;
 
         while (patch_run_end < patch_rows && compareSortKeyRows(patch_sorting_key, patch_run_end, patch_sorting_key, patch_idx, reverse_flags) == 0)
@@ -706,7 +707,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
         if (main_run_end - main_idx == 1 && patch_run_end - patch_idx == 1)
         {
             /// Common case for unique sort keys: no hash map, just compare identity directly.
-            if (main_block_number[main_idx] == patch_block_number[patch_idx] && main_block_offset[main_idx] == patch_block_offset[patch_idx])
+            if (result_block_number[main_idx] == patch_block_number[patch_idx] && result_block_offset[main_idx] == patch_block_offset[patch_idx])
             {
                 patch_to_apply->result_row_indices.push_back(main_idx);
                 patch_to_apply->patch_row_indices.push_back(patch_idx);
@@ -724,7 +725,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
 
             for (size_t i = main_idx; i < main_run_end; ++i)
             {
-                auto it = local_map.find(makeBlockIdentity(main_block_number[i], main_block_offset[i]));
+                auto it = local_map.find(makeBlockIdentity(result_block_number[i], result_block_offset[i]));
 
                 if (it != local_map.end())
                 {
@@ -742,7 +743,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
     /// source columns, identity columns) and keep only the updated columns.
     auto erase_column = [&](const String & column_name)
     {
-        if (patch_block_copy.has(column_name))
+        if (result_block_copy.has(column_name))
             patch_block_copy.erase(column_name);
     };
 
@@ -757,7 +758,7 @@ PatchToApplyPtr applyPatchMergeOnKey(const Block & result_block, const Block & p
 
     erase_column(BlockNumberColumn::name);
     erase_column(BlockOffsetColumn::name);
-    patch_to_apply->patch_blocks.emplace_back(patch_block_copy);
+    patch_to_apply->patch_blocks.emplace_back(result_block_copy);
 
     return patch_to_apply;
 }

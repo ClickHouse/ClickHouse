@@ -21,16 +21,14 @@ public:
 
     virtual std::vector<PatchReadResultPtr> readPatches(MarkRanges & ranges,
         const ReadResult & main_result,
-        const Block & result_header,
+        const Block & main_block,
         const PatchReadResult * last_read_patch) = 0;
 
     virtual std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const = 0;
 
     /// Returns true if we need to keep old_patch for main_result.
     /// An old patch is not needed if main_result and all further results have data newer than covered by old_patch.
-    /// `result_header` is consulted only by `MergeOnKey` (to find sort-key columns in `main_result.columns`);
-    /// `Merge`/`Join` ignore it.
-    virtual bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const = 0;
+    virtual bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & main_block) const = 0;
 
     const PatchPartInfoForReader & getPatchPart() const { return patch_part; }
     Block getHeader() const { return range_reader.getSampleBlock(); }
@@ -52,11 +50,11 @@ public:
     std::vector<PatchReadResultPtr> readPatches(
         MarkRanges & ranges,
         const ReadResult & main_result,
-        const Block & result_header,
+        const Block & main_block,
         const PatchReadResult * last_read_patch) override;
 
     std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
-    bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const override;
+    bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & main_block) const override;
 
 private:
     PatchReadResultPtr readPatch(const MarkRange & range);
@@ -73,7 +71,7 @@ public:
     std::vector<PatchReadResultPtr> readPatches(
         MarkRanges & ranges,
         const ReadResult & main_result,
-        const Block & result_header,
+        const Block & main_block,
         const PatchReadResult * last_read_patch) override;
 
     std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
@@ -85,9 +83,7 @@ private:
     PatchJoinCache * patch_join_cache;
 };
 
-/// v2 reader. Streams the patch part mark-range by mark-range in sort-key order; `needOldPatch`
-/// compares the main result's min sort-key tuple against the cached patch block's max sort-key
-/// tuple, so patch blocks are evicted as the main cursor advances past their range.
+/// V2 reader. Streams the patch part mark-range by mark-range in sort-key order.
 class MergeTreePatchReaderMergeOnKey : public MergeTreePatchReader
 {
 public:
@@ -96,15 +92,18 @@ public:
     std::vector<PatchReadResultPtr> readPatches(
         MarkRanges & ranges,
         const ReadResult & main_result,
-        const Block & result_header,
+        const Block & main_block,
         const PatchReadResult * last_read_patch) override;
 
     std::vector<PatchToApplyPtr> applyPatch(const Block & result_block, const PatchReadResult & patch_result) const override;
-    bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const override;
+
+    /// Compares the main result's min sort-key tuple against the cached patch block's
+    /// max sort-key tuple, so patch blocks are evicted as the main cursor advances past their range.
+    bool needOldPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & main_block) const override;
 
 private:
     PatchReadResultPtr readPatch(const MarkRange & range);
-    bool needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & result_header) const;
+    bool needNewPatch(const ReadResult & main_result, const PatchReadResult & old_patch, const Block & main_block) const;
 };
 
 using MergeTreePatchReaderPtr = std::shared_ptr<MergeTreePatchReader>;

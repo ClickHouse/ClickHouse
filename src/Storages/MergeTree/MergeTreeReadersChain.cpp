@@ -6,8 +6,8 @@
 #include <Common/logger_useful.h>
 #include <Columns/ColumnConst.h>
 #include <Functions/IFunction.h>
-#include <Interpreters/ExpressionActions.h>
 
+#include <algorithm>
 #include <unordered_set>
 
 namespace DB
@@ -542,14 +542,6 @@ void MergeTreeReadersChain::addPatchVirtuals(ReadResult & result, const Block & 
         return;
 
     auto result_block = header.cloneWithColumns(result.columns);
-    /// Prewhere may project away columns that later read steps don't need but patch-apply does
-    /// (e.g. sort-key source columns of a v2 patch when the query filters on them). They live on
-    /// in `result.additional_columns`; fold them in so `addPatchVirtuals` can cache them.
-    for (const auto & col : result.additional_columns)
-    {
-        if (!result_block.has(col.name))
-            result_block.insert(col);
-    }
     addPatchVirtuals(result.columns_for_patches, result_block);
 }
 
@@ -563,15 +555,15 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
             to.insert(from.getByName(column.name));
     }
 
-    /// v2 (MergeOnKey) patches need the main table's physical source columns of the sort-key
-    /// expression at apply time (for `ORDER BY cityHash64(id)` that's `id`). The expression
-    /// itself is evaluated later, in `applyPatchMergeOnKey`.
+    /// MergeOnKey patches merge-join on the sort-key result columns at apply time.
+    /// They are materialized once per main block in `readPatches` and cached in `columns_for_patches`;
     for (const auto & patch_reader : patch_readers)
     {
         const auto & patch = patch_reader->getPatchPart();
-        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key || !patch.sorting_key->expression)
+        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key)
             continue;
-        for (const auto & name : patch.sorting_key->expression->getRequiredColumns())
+
+        for (const auto & name : patch.sorting_key->column_names)
         {
             if (!to.has(name) && from.has(name))
                 to.insert(from.getByName(name));
@@ -581,18 +573,58 @@ void MergeTreeReadersChain::addPatchVirtuals(Block & to, const Block & from) con
 
 void MergeTreeReadersChain::readPatches(const Block & result_header, std::vector<MarkRanges> & patch_ranges, ReadResult & read_result)
 {
+    if (patch_readers.empty())
+        return;
+
+    auto main_block = result_header.cloneWithColumns(read_result.columns);
+
+    /// Materialize the sort-key result columns of MergeOnKey patches on `main_block` once per main block.
+    for (const auto & patch_reader : patch_readers)
+    {
+        const auto & patch = patch_reader->getPatchPart();
+        if (patch.mode != PatchMode::MergeOnKey || !patch.sorting_key || !patch.sorting_key->expression)
+            continue;
+
+        /// A column that is present in the header but not filled yet counts as missing.
+        auto is_missing = [&](const String & name)
+        {
+            const auto * column = main_block.findByName(name);
+            return !column || !column->column;
+        };
+
+        if (patch.sorting_key->expression && std::ranges::any_of(patch.sorting_key->column_names, is_missing))
+        {
+            /// Execute on a scratch copy: `ExpressionActions::execute` drops the consumed input
+            /// columns from the block, and another patch's sorting key may still need them.
+            auto block_for_key = result_header.cloneWithColumns(read_result.columns);
+            patch.sorting_key->expression->execute(block_for_key);
+
+            for (const auto & name : patch.sorting_key->column_names)
+            {
+                if (!main_block.has(name))
+                    main_block.insert(block_for_key.getByName(name));
+            }
+        }
+
+        for (const auto & name : patch.sorting_key->column_names)
+        {
+            if (!read_result.columns_for_patches.has(name))
+                read_result.columns_for_patches.insert(main_block.getByName(name));
+        }
+    }
+
     for (size_t i = 0; i < patches_results.size(); ++i)
     {
         auto & patch_results = patches_results[i];
 
         /// Remove patches that are not needed for current block anymore.
-        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front(), result_header))
+        while (!patch_results.empty() && !patch_readers[i]->needOldPatch(read_result, *patch_results.front(), main_block))
         {
             patch_results.pop_front();
         }
 
         const auto * last_read_patch = patch_results.empty() ? nullptr : patch_results.back().get();
-        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, result_header, last_read_patch);
+        auto new_patches = patch_readers[i]->readPatches(patch_ranges[i], read_result, main_block, last_read_patch);
         patch_results.insert(patch_results.end(), new_patches.begin(), new_patches.end());
     }
 }
