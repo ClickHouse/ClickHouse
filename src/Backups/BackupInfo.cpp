@@ -215,7 +215,7 @@ namespace
             return s;
 
         size_t authority_start = scheme_pos + 3;
-        size_t authority_end = s.find('/', authority_start);
+        size_t authority_end = s.find_first_of("/?#", authority_start);
         if (authority_end == String::npos)
             authority_end = s.size();
 

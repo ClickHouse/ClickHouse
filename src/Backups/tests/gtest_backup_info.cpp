@@ -342,6 +342,16 @@ TEST(BackupInfo, NormalizedStringKeepsS3PathPlainQueryAsKey)
     EXPECT_NE(second.toNormalizedString().find("part=2"), String::npos);
 }
 
+TEST(BackupInfo, NormalizedStringDoesNotTreatS3QueryAtAsUserInfo)
+{
+    auto info = BackupInfo::fromString("S3('https://bucket.s3.amazonaws.com?versionId=@v1')");
+    String normalized = info.toNormalizedString();
+
+    EXPECT_NE(normalized.find("endpoint=https://s3.amazonaws.com"), String::npos);
+    EXPECT_NE(normalized.find("bucket=bucket"), String::npos);
+    EXPECT_NE(normalized.find("version_id=@v1"), String::npos);
+}
+
 TEST(BackupInfo, NormalizedStringCanonicalizesEquivalentS3Urls)
 {
     auto s3 = BackupInfo::fromString("S3('s3://bucket/backup')");
