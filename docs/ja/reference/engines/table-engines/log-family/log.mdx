@@ -1,0 +1,113 @@
+---
+description: 'Logに関するドキュメント'
+slug: /engines/table-engines/log-family/log
+toc_priority: 33
+toc_title: 'Log'
+title: 'Log テーブルエンジン'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+このエンジンは `Log` エンジンファミリーに属します。`Log` エンジンの共通の特性と相違点については、[`Log` エンジンファミリー](/ja/reference/engines/table-engines/log-family/index)の記事を参照してください。
+
+`Log` は、カラムファイルとともに &quot;marks&quot; の小さなファイルが存在する点で [TinyLog](/ja/reference/engines/table-engines/log-family/tinylog) と異なります。これらの marks は各データブロックごとに書き込まれ、指定した行数をスキップするためにファイルのどこから読み取りを開始すべきかを示すオフセットを含みます。これにより、テーブルデータを複数のスレッドで読み取ることが可能になります。
+同時実行のデータアクセスでは、読み取り操作は同時に実行できますが、書き込み操作は読み取り操作および他の書き込み操作をブロックします。
+`Log` エンジンは索引をサポートしていません。同様に、テーブルへの書き込みに失敗すると、そのテーブルは破損した状態となり、そこから読み取るとエラーが返されます。`Log` エンジンは、一時データ、書き込みが 1 回限りのテーブル、およびテストやデモ用途に適しています。
+
+<div id="table_engines-log-creating-a-table">
+  ## テーブルの作成
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    column1_name [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    column2_name [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = Log
+```
+
+[CREATE TABLE](/ja/reference/statements/create/table)クエリの詳しい説明を参照してください。
+
+<div id="table_engines-log-writing-the-data">
+  ## データの書き込み
+</div>
+
+`Log` エンジンは、各カラムをそれぞれ専用のファイルに書き込むことで、データを効率的に格納します。テーブルごとに、Log エンジンは指定されたストレージパスに次のファイルを書き込みます。
+
+* `<column>.bin`: 各カラム用のデータファイルで、シリアライズおよび圧縮されたデータが格納されます。
+  `__marks.mrk`: 挿入された各データブロックのオフセットと行数を格納する marks ファイルです。marks は、読み取り時にエンジンが不要なデータブロックをスキップできるようにすることで、クエリを効率的に実行できるようにします。
+
+<div id="writing-process">
+  ### 書き込みプロセス
+</div>
+
+データが `Log` テーブルに書き込まれるとき:
+
+1. データはシリアライズされ、ブロック単位で圧縮されます。
+2. 各カラムについて、圧縮されたデータが対応する `<column>.bin` ファイルに追記されます。
+3. 対応するエントリが `__marks.mrk` ファイルに追加され、新たに挿入されたデータのオフセットと行数が記録されます。
+
+<div id="table_engines-log-reading-the-data">
+  ## データの読み取り
+</div>
+
+marks ファイルにより、ClickHouse はデータの読み取りを並列化できます。つまり、`SELECT` クエリが返す行の順序は一定ではありません。行をソートするには、`ORDER BY` 句を使用してください。
+
+<div id="table_engines-log-example-of-use">
+  ## 使用例
+</div>
+
+テーブルを作成するには:
+
+```sql
+CREATE TABLE log_table
+(
+    timestamp DateTime,
+    message_type String,
+    message String
+)
+ENGINE = Log
+```
+
+データの挿入：
+
+```sql
+INSERT INTO log_table VALUES (now(),'REGULAR','The first regular message')
+INSERT INTO log_table VALUES (now(),'REGULAR','The second regular message'),(now(),'WARNING','The first warning message')
+```
+
+`INSERT` クエリを 2 つ使用して、`<column>.bin` ファイル内に 2 つのデータブロックを作成しました。
+
+ClickHouse は、データを選択する際に複数のスレッドを使用します。各スレッドは別々のデータブロックを読み取り、処理が完了すると結果の行を独立して返します。そのため、出力内の行ブロックの順序は、入力内の同じブロックの順序と一致しないことがあります。たとえば、次のようになります。
+
+```sql
+SELECT * FROM log_table
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+┌───────────timestamp─┬─message_type─┬─message───────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message │
+└─────────────────────┴──────────────┴───────────────────────────┘
+```
+
+結果をソートします (デフォルトは昇順) :
+
+```sql
+SELECT * FROM log_table ORDER BY timestamp
+```
+
+```text
+┌───────────timestamp─┬─message_type─┬─message────────────────────┐
+│ 2019-01-18 14:23:43 │ REGULAR      │ The first regular message  │
+│ 2019-01-18 14:27:32 │ REGULAR      │ The second regular message │
+│ 2019-01-18 14:34:53 │ WARNING      │ The first warning message  │
+└─────────────────────┴──────────────┴────────────────────────────┘
+```

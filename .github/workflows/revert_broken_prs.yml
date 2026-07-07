@@ -1,0 +1,386 @@
+name: Revert Broken PRs
+
+on:
+  schedule:
+    - cron: '13 * * * *'
+  workflow_dispatch:
+
+jobs:
+  revert-broken:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: ClickHouse/checkout@v1
+        with:
+          token: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+          # Full history: the 24h commit scan is paginated and can cover more than a few
+          # hundred commits, so a shallow clone may not contain every candidate merge SHA,
+          # which would make `git revert` fail and be misreported as an unrevertable conflict.
+          fetch-depth: 0
+      - name: Configure git identity
+        run: |
+          git config user.name "clickhouse-robot-gh"
+          git config user.email "clickhouse-robot-gh@users.noreply.github.com"
+      - name: Find and revert broken merges
+        env:
+          GH_TOKEN: ${{ secrets.ROBOT_CLICKHOUSE_COMMIT_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          MAX_REVERTS=3
+          revert_count=0
+          cutoff=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+
+          echo "Looking for broken merge commits on master since $cutoff..."
+          echo ""
+
+          # Refresh the remote master ref so the "already reverted" history check below sees
+          # reverts that landed since checkout. Fail loudly if this cannot be fetched rather
+          # than silently scanning a stale history.
+          git fetch --quiet origin master
+
+          # List recent merge commits on master (paginate to cover all commits in the window)
+          commits_json=$(gh api "repos/$GH_REPO/commits?sha=master&since=$cutoff&per_page=100" --paginate --jq '.[]' | jq -s '.')
+
+          # Extract merge commits (those with 2 parents) and their SHAs
+          merge_shas=$(echo "$commits_json" | jq -r '.[] | select(.parents | length == 2) | .sha')
+
+          if [ -z "$merge_shas" ]; then
+            echo "No merge commits found in the last 24 hours."
+            exit 0
+          fi
+
+          for sha in $merge_shas; do
+            if [ "$revert_count" -ge "$MAX_REVERTS" ]; then
+              echo "Reached maximum of $MAX_REVERTS reverts per run, stopping."
+              break
+            fi
+
+            message=$(echo "$commits_json" | jq -r --arg sha "$sha" '.[] | select(.sha == $sha) | .commit.message' | head -1)
+            echo "Checking merge commit $sha: $message"
+
+            # Extract PR number from "Merge pull request #XXXXX from ..."
+            pr_number=$(echo "$message" | grep -oP 'Merge pull request #\K[0-9]+' || true)
+            if [ -z "$pr_number" ]; then
+              echo "  Not a PR merge commit, skipping."
+              echo ""
+              continue
+            fi
+
+            echo "  PR #$pr_number"
+
+            # Get PR details
+            pr_json=$(gh api "repos/$GH_REPO/pulls/$pr_number" 2>/dev/null || true)
+            if [ -z "$pr_json" ]; then
+              echo "  Could not fetch PR details, skipping."
+              echo ""
+              continue
+            fi
+
+            pr_title=$(echo "$pr_json" | jq -r '.title')
+
+            # Skip if PR title starts with "Revert" to avoid revert loops
+            if [[ "$pr_title" == Revert* ]]; then
+              echo "  PR is already a revert, skipping to avoid revert loops."
+              echo ""
+              continue
+            fi
+
+            # The revert branch the bot would use for this PR. Computed early because the
+            # "already handled" guards below key off it.
+            branch_name="revert-$pr_number"
+
+            # Do not revert the same merge twice. This job runs hourly and a broken merge
+            # stays inside the 24h scan window for many runs, so without a reliable
+            # "already handled" check the bot opens a fresh revert PR every hour for the same
+            # PR. Three independent guards, from most to least immediate:
+            #
+            #   1. A revert of this exact merge is already on master. `git revert` records
+            #      "This reverts commit <sha>" in the message, so a landed revert is found by
+            #      grepping history — immune to the PR-search indexing lag that makes guard 3
+            #      miss a just-created revert.
+            #   2. The revert branch already exists on the remote. The bot pushes
+            #      `revert-<pr>` before opening the PR, so an in-flight revert (branch pushed;
+            #      PR open, or not yet created) is caught with no indexing delay.
+            #   3. A revert PR already exists (open, closed, or merged). Matched by head
+            #      branch — exact, unlike a fuzzy title search — to cover a merged revert
+            #      whose branch was auto-deleted.
+            if git log FETCH_HEAD --fixed-strings --grep="This reverts commit $sha" --format=%H | grep -q .; then
+              echo "  Merge commit $sha is already reverted on master, skipping."
+              echo ""
+              continue
+            fi
+
+            if git ls-remote --exit-code --heads origin "refs/heads/$branch_name" >/dev/null 2>&1; then
+              echo "  Revert branch $branch_name already exists on the remote, skipping."
+              echo ""
+              continue
+            fi
+
+            existing_reverts=$(gh pr list --repo "$GH_REPO" --head "$branch_name" --state all --json number --jq '.[].number')
+            if [ -n "$existing_reverts" ]; then
+              echo "  Revert PR(s) already exist for branch $branch_name: $existing_reverts, skipping."
+              echo ""
+              continue
+            fi
+
+            # Check merge commit for failures (check-runs). A failed API/jq query must not
+            # look like "no failures" — that would let a broken merge be silently skipped —
+            # so on error we log and skip only this candidate (it is retried on the next run).
+            #
+            # Reduce to the latest run per check name first. Re-runs are common: a required
+            # check can fail once and pass on re-run, and scheduled/concurrency-driven
+            # workflows leave stray `cancelled` runs attached to whatever commit happened to
+            # be master HEAD at the time. Classifying every run would misread those as a
+            # broken merge. `cancelled` and `stale` are therefore NOT treated as failures:
+            # `cancelled` is almost always a superseded/concurrency-cancelled run, and
+            # `stale` means GitHub never recorded a conclusion — neither proves the PR broke
+            # master. We emit "name<TAB>details_url" so the next step can resolve the
+            # triggering workflow event.
+            if ! merge_failed_json=$(gh api "repos/$GH_REPO/commits/$sha/check-runs?per_page=100" --paginate \
+              | jq -rs '
+              [.[].check_runs[]] |
+              group_by(.name) | map(max_by(.started_at // "")) | .[] |
+              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "action_required" or .conclusion == "startup_failure") |
+              select((.name | startswith("Performance Comparison")) | not) |
+              select((.name | startswith("libFuzzer")) | not) |
+              select((.name | startswith("Nightly")) | not) |
+              select((.name | startswith("ClickBench")) | not) |
+              select(.name != "Config Workflow" and .name != "Finish Workflow" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
+              "\(.name)\t\(.details_url // "")"
+            '); then
+              echo "  WARNING: could not query check-runs for merge commit $sha, skipping candidate."
+              echo ""
+              continue
+            fi
+
+            # Drop non-gating workflows: a check whose workflow run was triggered by
+            # `schedule` or `workflow_dispatch` never gated this PR (it runs on master on a
+            # timer, e.g. PRVersionInfo, or is this very revert-broken job), so its state
+            # must not justify a revert. Resolve the triggering event from the run id
+            # embedded in the check's details_url.
+            merge_failed_checks=""
+            skip_candidate=""
+            while IFS=$'\t' read -r check_name details_url; do
+              [ -z "$check_name" ] && continue
+              run_id=$(echo "$details_url" | grep -oP '/actions/runs/\K[0-9]+' || true)
+              if [ -n "$run_id" ]; then
+                # Fail closed: this lookup is what proves a failed check is non-gating, so a
+                # failure to resolve the event (transient error, rate limit, permissions, or
+                # an empty/missing field) must NOT fall through and treat the check as
+                # gating — that could create a wrongful revert. When the event is unknown,
+                # skip the whole candidate and let the next scheduled run retry it.
+                if ! run_event=$(gh api "repos/$GH_REPO/actions/runs/$run_id" --jq '.event') || [ -z "$run_event" ]; then
+                  echo "  WARNING: could not resolve triggering event for check \"$check_name\" (run $run_id), skipping candidate."
+                  skip_candidate=1
+                  break
+                fi
+                if [ "$run_event" = "schedule" ] || [ "$run_event" = "workflow_dispatch" ]; then
+                  echo "  Ignoring non-gating check \"$check_name\" (workflow triggered by $run_event, not by this PR)."
+                  continue
+                fi
+              fi
+              merge_failed_checks="${merge_failed_checks:+$merge_failed_checks$'\n'}$check_name"
+            done <<< "$merge_failed_json"
+
+            if [ -n "$skip_candidate" ]; then
+              echo ""
+              continue
+            fi
+
+            # Check merge commit for failures (commit statuses). Same as above: a failed query
+            # must not be mistaken for "no failures".
+            #
+            # The event-based non-gating filter used for check-runs cannot be applied here:
+            # schedule-only jobs like `PRVersionInfo` and `Hourly` are published as plain commit
+            # statuses (not check-runs), and their `target_url` is an S3 report link with no
+            # `/actions/runs/<id>` to resolve the triggering event from. Such a status never
+            # gated this PR, so exclude those contexts explicitly by name, alongside the other
+            # master-only / non-gating contexts (`MasterCI`, `SQLTest`, ...). The `Nightly*`
+            # schedule-only statuses are already dropped by the `startswith("Nightly")` filter.
+            if ! merge_failed_statuses=$(gh api "repos/$GH_REPO/commits/$sha/status" --jq '
+              .statuses[] |
+              select(.state == "failure" or .state == "error") |
+              select((.context | startswith("Performance Comparison")) | not) |
+              select((.context | startswith("libFuzzer")) | not) |
+              select((.context | startswith("Nightly")) | not) |
+              select((.context | startswith("ClickBench")) | not) |
+              select(.context != "Config Workflow" and .context != "Finish Workflow" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "PRVersionInfo" and .context != "Hourly" and .context != "SQLTest" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
+              .context
+            '); then
+              echo "  WARNING: could not query commit statuses for merge commit $sha, skipping candidate."
+              echo ""
+              continue
+            fi
+
+            merge_failures=""
+            if [ -n "$merge_failed_checks" ]; then
+              merge_failures="$merge_failed_checks"
+            fi
+            if [ -n "$merge_failed_statuses" ]; then
+              if [ -n "$merge_failures" ]; then
+                merge_failures="$merge_failures"$'\n'"$merge_failed_statuses"
+              else
+                merge_failures="$merge_failed_statuses"
+              fi
+            fi
+
+            if [ -z "$merge_failures" ]; then
+              echo "  No failures on merge commit, skipping."
+              echo ""
+              continue
+            fi
+
+            echo "  Failures on merge commit:"
+            echo "$merge_failures" | sed 's/^/    - /'
+
+            # Now check the original PR's head commit for failures or incomplete checks.
+            # Use the commit that was actually merged — the merge commit's second parent —
+            # rather than the PR object's current `.head.sha`, which can move after merge if
+            # the source branch advances, and would attribute the master failure to the wrong
+            # commit.
+            pr_head_sha=$(echo "$commits_json" | jq -r --arg sha "$sha" '.[] | select(.sha == $sha) | .parents[1].sha')
+            echo "  Checking merged head commit $pr_head_sha..."
+
+            # Check PR head for failed check-runs. A failed query must not look like a clean
+            # head (which would be misread as "master failure is flaky" and skip the revert);
+            # surface it and skip this candidate.
+            if ! pr_failed_checks=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/check-runs?per_page=100" --paginate \
+              | jq -rs '
+              [.[].check_runs[]] |
+              group_by(.name) | map(max_by(.started_at // "")) | .[] |
+              select((.name | startswith("Performance Comparison")) | not) |
+              select((.name | startswith("libFuzzer")) | not) |
+              select((.name | startswith("Nightly")) | not) |
+              select((.name | startswith("ClickBench")) | not) |
+              select(.name != "CH Inc sync" and .name != "Mergeable Check" and .name != "MasterCI" and .name != "SQLTest" and .name != "VectorSearchStress" and .name != "ClickHouse Keeper Jepsen") |
+              select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "action_required" or .conclusion == "startup_failure" or .status != "completed") |
+              (if .conclusion == "failure" then .name + " (failed)"
+               elif .conclusion == "timed_out" then .name + " (timed_out)"
+               elif .conclusion == "action_required" then .name + " (action_required)"
+               elif .conclusion == "startup_failure" then .name + " (startup_failure)"
+               elif .status != "completed" then .name + " (incomplete)"
+               else empty end)
+            '); then
+              echo "  WARNING: could not query check-runs for merged head $pr_head_sha, skipping candidate."
+              echo ""
+              continue
+            fi
+
+            # Check PR head for failed or pending commit statuses. Same as above, including the
+            # schedule-only `PRVersionInfo` / `Hourly` exclusion: were they left in, a
+            # schedule-only status failing (or staying pending) on both the merge commit and the
+            # merged head would survive the `common_failures` intersection and open a
+            # false-positive revert.
+            if ! pr_failed_statuses=$(gh api "repos/$GH_REPO/commits/$pr_head_sha/status" --jq '
+              .statuses[] |
+              select((.context | startswith("Performance Comparison")) | not) |
+              select((.context | startswith("libFuzzer")) | not) |
+              select((.context | startswith("Nightly")) | not) |
+              select((.context | startswith("ClickBench")) | not) |
+              select(.context != "CH Inc sync" and .context != "Mergeable Check" and .context != "PR" and .context != "MasterCI" and .context != "PRVersionInfo" and .context != "Hourly" and .context != "SQLTest" and .context != "VectorSearchStress" and .context != "ClickHouse Keeper Jepsen") |
+              select(.state == "failure" or .state == "error" or .state == "pending") |
+              (if .state == "failure" then .context + " (failed)"
+               elif .state == "error" then .context + " (error)"
+               elif .state == "pending" then .context + " (pending)"
+               else empty end)
+            '); then
+              echo "  WARNING: could not query commit statuses for merged head $pr_head_sha, skipping candidate."
+              echo ""
+              continue
+            fi
+
+            pr_issues=""
+            if [ -n "$pr_failed_checks" ]; then
+              pr_issues="$pr_failed_checks"
+            fi
+            if [ -n "$pr_failed_statuses" ]; then
+              if [ -n "$pr_issues" ]; then
+                pr_issues="$pr_issues"$'\n'"$pr_failed_statuses"
+              else
+                pr_issues="$pr_failed_statuses"
+              fi
+            fi
+
+            if [ -z "$pr_issues" ]; then
+              echo "  PR head checks are clean — master failure is likely flaky, skipping."
+              echo ""
+              continue
+            fi
+
+            echo "  Issues on PR head commit:"
+            echo "$pr_issues" | sed 's/^/    - /'
+
+            # Require that the same check that failed on the merge commit also failed (or
+            # never completed) on the PR head. A failure on the PR head in an unrelated
+            # check does not prove the master failure came from this PR, so without an
+            # intersection we treat the master failure as flaky and skip. The PR head names
+            # carry a " (failed)"/" (timed_out)"/" (cancelled)"/" (action_required)"/
+            # " (startup_failure)"/" (stale)"/" (error)"/" (incomplete)"/" (pending)" suffix
+            # that we strip first.
+            merge_failure_names=$(echo "$merge_failures" | sed '/^$/d' | sort -u)
+            pr_issue_names=$(echo "$pr_issues" | sed -E 's/ \((failed|timed_out|cancelled|action_required|startup_failure|stale|error|incomplete|pending)\)$//' | sed '/^$/d' | sort -u)
+            common_failures=$(comm -12 <(echo "$merge_failure_names") <(echo "$pr_issue_names"))
+
+            if [ -z "$common_failures" ]; then
+              echo "  PR head has issues, but none match the checks that failed on the merge commit — likely flaky, skipping."
+              echo ""
+              continue
+            fi
+
+            echo "  Checks failing on both the merge commit and the PR head:"
+            echo "$common_failures" | sed 's/^/    - /'
+
+            # Create the revert
+            echo "  Creating revert branch $branch_name..."
+
+            git fetch origin master
+            git checkout -B "$branch_name" origin/master
+
+            if ! git revert -m 1 --no-edit "$sha"; then
+              echo "  WARNING: Revert has conflicts, skipping this PR."
+              git revert --abort 2>/dev/null || true
+              git checkout master 2>/dev/null || true
+              echo ""
+              continue
+            fi
+
+            git push origin "$branch_name" --force-with-lease
+
+            # Format the failure lists for the PR body
+            failures_list=$(echo "$merge_failures" | sort -u | sed 's/^/- /')
+            common_failures_list=$(echo "$common_failures" | sed 's/^/- /')
+
+            pr_body=$(cat <<EOF
+          This reverts #$pr_number ($pr_title) because it was merged with failing CI checks.
+
+          **Failed checks on the merge commit ($sha):**
+          $failures_list
+
+          The same checks also failed or never completed on the original PR's head commit, confirming this is not a flaky failure:
+          $common_failures_list
+
+          ### Changelog category (leave one):
+          - CI Fix or Improvement (changelog entry is not required)
+
+          ### Changelog entry (a user-readable short description of the changes that goes into CHANGELOG.md):
+          ...
+          EOF
+          )
+
+            revert_title="Revert \"#$pr_number: $pr_title\""
+
+            pr_url=$(gh pr create \
+              --repo "$GH_REPO" \
+              --head "$branch_name" \
+              --base master \
+              --title "$revert_title" \
+              --body "$pr_body")
+
+            echo "  Created revert PR: $pr_url"
+            revert_count=$((revert_count + 1))
+            echo ""
+          done
+
+          echo "Done. Created $revert_count revert PR(s)."

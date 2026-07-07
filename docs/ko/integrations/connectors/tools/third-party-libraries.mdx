@@ -1,0 +1,162 @@
+---
+description: '여러 타사 시스템 및 도구와 ClickHouse를 통합하는 방법을 설명하는 문서'
+sidebarTitle: '타사 라이브러리'
+slug: /interfaces/third-party/integrations
+title: '타사 개발자가 만든 통합 라이브러리'
+doc_type: 'reference'
+---
+
+<Warning>
+  **면책 조항**
+
+  아래에 나열된 도구와 라이브러리는 ClickHouse, Inc.에서 유지 관리하지 않으며, 품질을 보장할 만큼 충분한 테스트를 거치지 않았습니다.
+  공식 통합은 [통합 페이지](/ko/integrations/home)를 참조하십시오.
+</Warning>
+
+<div id="infrastructure-products">
+  ## 인프라 제품
+</div>
+
+<Accordion title="관계형 데이터베이스 관리 시스템">
+  * [MySQL](https://www.mysql.com)
+    * [mysql2ch](https://github.com/long2ice/mysql2ch)
+    * [ProxySQL](https://github.com/sysown/proxysql/wiki/ClickHouse-Support)
+    * [clickhouse-mysql-data-reader](https://github.com/Altinity/clickhouse-mysql-data-reader)
+    * [horgh-replicator](https://github.com/larsnovikov/horgh-replicator)
+  * [PostgreSQL](https://www.postgresql.org)
+    * [clickhousedb&#95;fdw](https://github.com/Percona-Lab/clickhousedb_fdw)
+    * [infi.clickhouse&#95;fdw](https://github.com/Infinidat/infi.clickhouse_fdw) ([infi.clickhouse&#95;orm](https://github.com/Infinidat/infi.clickhouse_orm) 사용)
+    * [pg2ch](https://github.com/mkabilov/pg2ch)
+    * [clickhouse&#95;fdw](https://github.com/adjust/clickhouse_fdw)
+  * [MSSQL](https://en.wikipedia.org/wiki/Microsoft_SQL_Server)
+    * [ClickHouseMigrator](https://github.com/zlzforever/ClickHouseMigrator)
+</Accordion>
+
+<Accordion title="스키마 마이그레이션 도구">
+  * [clicko](https://github.com/arsura/clicko) - 클러스터를 인식하며 Go와 통합됩니다.
+</Accordion>
+
+<Accordion title="메시지 큐">
+  * [Kafka](https://kafka.apache.org)
+    * [clickhouse&#95;sinker](https://github.com/housepower/clickhouse_sinker) ([Go client](https://github.com/ClickHouse/clickhouse-go/) 사용)
+    * [stream-loader-clickhouse](https://github.com/adform/stream-loader)
+</Accordion>
+
+<Accordion title="배치 처리">
+  * [Spark](https://spark.apache.org)
+    * [spark-clickhouse-connector](https://github.com/housepower/spark-clickhouse-connector)
+</Accordion>
+
+<Accordion title="스트림 처리">
+  * [Flink](https://flink.apache.org)
+    * [flink-clickhouse-sink](https://github.com/ivi-ru/flink-clickhouse-sink)
+</Accordion>
+
+<Accordion title="객체 스토리지">
+  * [S3](https://en.wikipedia.org/wiki/Amazon_S3)
+    * [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)
+</Accordion>
+
+<Accordion title="컨테이너 오케스트레이션">
+  * [Kubernetes](https://kubernetes.io)
+    * [clickhouse-operator](https://github.com/Altinity/clickhouse-operator)
+</Accordion>
+
+<Accordion title="구성 관리">
+  * [puppet](https://puppet.com)
+    * [innogames/clickhouse](https://forge.puppet.com/innogames/clickhouse)
+    * [mfedotov/clickhouse](https://forge.puppet.com/mfedotov/clickhouse)
+</Accordion>
+
+<Accordion title="모니터링">
+  * [Graphite](https://graphiteapp.org)
+    * [graphouse](https://github.com/ClickHouse/graphouse)
+    * [carbon-clickhouse](https://github.com/lomik/carbon-clickhouse)
+    * [graphite-clickhouse](https://github.com/lomik/graphite-clickhouse)
+    * [graphite-ch-optimizer](https://github.com/innogames/graphite-ch-optimizer) - [롤업 구성](/ko/reference/engines/table-engines/mergetree-family/graphitemergetree#rollup-configuration)의 규칙을 적용할 수 있으면 [*GraphiteMergeTree](/ko/reference/engines/table-engines/mergetree-family/graphitemergetree)의 오래된 파티션을 최적화합니다
+  * [Grafana](https://grafana.com/)
+    * [clickhouse-grafana](https://github.com/Altinity/clickhouse-grafana)
+  * [Prometheus](https://prometheus.io/)
+    * [clickhouse&#95;exporter](https://github.com/f1yegor/clickhouse_exporter)
+    * [PromHouse](https://github.com/Percona-Lab/PromHouse)
+    * [clickhouse&#95;exporter](https://github.com/hot-wifi/clickhouse_exporter) ([Go client](https://github.com/kshvakov/clickhouse/) 사용)
+  * [Nagios](https://www.nagios.org/)
+    * [check&#95;clickhouse](https://github.com/exogroup/check_clickhouse/)
+    * [check&#95;clickhouse.py](https://github.com/innogames/igmonplugins/blob/master/src/check_clickhouse.py)
+  * [Zabbix](https://www.zabbix.com)
+    * [clickhouse-zabbix-template](https://github.com/Altinity/clickhouse-zabbix-template)
+  * [Sematext](https://sematext.com/)
+    * [clickhouse integration](https://github.com/sematext/sematext-agent-integrations/tree/master/clickhouse)
+</Accordion>
+
+<Accordion title="로깅">
+  * [rsyslog](https://www.rsyslog.com/)
+    * [omclickhouse](https://www.rsyslog.com/doc/master/configuration/modules/omclickhouse.html)
+  * [fluentd](https://www.fluentd.org)
+    * [loghouse](https://github.com/flant/loghouse) ([Kubernetes](https://kubernetes.io)용)
+  * [logagent](https://www.sematext.com/logagent)
+    * [logagent output-plugin-clickhouse](https://sematext.com/docs/logagent/output-plugin-clickhouse/)
+</Accordion>
+
+<Accordion title="Geo">
+  * [MaxMind](https://dev.maxmind.com/geoip/)
+    * [clickhouse-maxmind-geoip](https://github.com/AlexeyKupershtokh/clickhouse-maxmind-geoip)
+</Accordion>
+
+<Accordion title="AutoML">
+  * [MindsDB](https://mindsdb.com/)
+    * [MindsDB](https://github.com/mindsdb/mindsdb) - ClickHouse와 통합되어 ClickHouse의 데이터를 다양한 AI/ML 모델에서 활용할 수 있게 합니다.
+</Accordion>
+
+<div id="programming-language-ecosystems">
+  ## 프로그래밍 언어 생태계
+</div>
+
+<Accordion title="Python">
+  * [SQLAlchemy](https://www.sqlalchemy.org)
+    * [sqlalchemy-clickhouse](https://github.com/cloudflare/sqlalchemy-clickhouse) ([infi.clickhouse&#95;orm](https://github.com/Infinidat/infi.clickhouse_orm) 사용)
+  * [PyArrow/Pandas](https://pandas.pydata.org)
+    * [Ibis](https://github.com/ibis-project/ibis)
+</Accordion>
+
+<Accordion title="PHP">
+  * [Doctrine](https://www.doctrine-project.org/)
+    * [dbal-clickhouse](https://packagist.org/packages/friendsofdoctrine/dbal-clickhouse)
+</Accordion>
+
+<Accordion title="R">
+  * [dplyr](https://db.rstudio.com/dplyr/)
+    * [RClickHouse](https://github.com/IMSMWU/RClickHouse) ([clickhouse-cpp](https://github.com/artpaul/clickhouse-cpp) 사용)
+</Accordion>
+
+<Accordion title="Java">
+  * [Hadoop](http://hadoop.apache.org)
+    * [clickhouse-hdfs-loader](https://github.com/jaykelin/clickhouse-hdfs-loader) ([JDBC](/ko/reference/functions/table-functions/jdbc) 사용)
+</Accordion>
+
+<Accordion title="Scala">
+  * [Akka](https://akka.io)
+    * [clickhouse-scala-client](https://github.com/crobox/clickhouse-scala-client)
+</Accordion>
+
+<Accordion title="C#">
+  * [ADO.NET](https://docs.microsoft.com/en-us/dotnet/framework/data/adonet/ado-net-overview)
+    * [ClickHouse.Ado](https://github.com/killwort/ClickHouse-Net)
+    * [ClickHouse.Client](https://github.com/DarkWanderer/ClickHouse.Client)
+    * [ClickHouse.Net](https://github.com/ilyabreev/ClickHouse.Net)
+    * [ClickHouse.Net.Migrations](https://github.com/ilyabreev/ClickHouse.Net.Migrations)
+    * [Linq To DB](https://github.com/linq2db/linq2db)
+</Accordion>
+
+<Accordion title="Elixir">
+  * [Ecto](https://github.com/elixir-ecto/ecto)
+    * [clickhouse&#95;ecto](https://github.com/appodeal/clickhouse_ecto)
+</Accordion>
+
+<Accordion title="Ruby">
+  * [Ruby on Rails](https://rubyonrails.org/)
+    * [activecube](https://github.com/bitquery/activecube)
+    * [ActiveRecord](https://github.com/PNixx/clickhouse-activerecord)
+  * [GraphQL](https://github.com/graphql)
+    * [activecube-graphql](https://github.com/bitquery/activecube-graphql)
+</Accordion>

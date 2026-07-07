@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'Configuración con Docker'
+title: 'Configura la Agentic Data Stack con Docker Compose'
+description: 'Ejecuta toda la Agentic Data Stack (ClickHouse, LibreChat, el servidor MCP y Langfuse) con Docker Compose'
+doc_type: 'guide'
+keywords: ['Agentic Data Stack', 'Docker Compose', 'configuración', 'LibreChat', 'MCP', 'Langfuse']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Ejecute localmente el Agentic Data Stack completo con Docker Compose para hacer preguntas a sus datos desde que inicia sesión por primera vez. Con un solo comando `docker compose up` se ponen en marcha [LibreChat](/es/products/agentic-data-stack/components/librechat), el [ClickHouse MCP server](/es/products/agentic-data-stack/components/mcp-server), [ClickHouse](/es/get-started/setup/install) y [Langfuse](/es/products/agentic-data-stack/components/langfuse) para observabilidad.
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* **Docker** con el plugin Compose (Compose v2 o superior).
+* **Git**, para clonar el repositorio.
+* Una API key de un proveedor de modelos (como OpenAI, Anthropic o Google). El agent necesita un modelo para responder preguntas, así que proporciona una API key durante la configuración o añade una en la UI de LibreChat antes de iniciar tu primer chat.
+
+<div id="stand-up-the-stack">
+  ## Poner en marcha el stack
+</div>
+
+<Steps>
+  <Step title="Clona el repositorio">
+    ```bash
+    git clone https://github.com/ClickHouse/agentic-data-stack
+    cd agentic-data-stack
+    ```
+
+    El repositorio incluye un archivo `docker-compose.yml` en el nivel superior, así que todo el stack se levanta con un solo comando. Consulta [Architecture](#how-it-is-wired) para ver la lista completa de servicios.
+  </Step>
+
+  <Step title="Ejecuta el script de configuración de la demo">
+    ```bash
+    ./scripts/prepare-demo.sh
+    ```
+
+    Esto genera un archivo `.env` con credenciales para cada servicio y, después, muestra un menú interactivo para configurar API keys para el proveedor que elijas. También puedes establecer estas claves directamente en el archivo `.env`. Cualquier proveedor que omitas seguirá configurado como `user_provided`, por lo que podrás añadir tu propia clave en la UI de LibreChat.
+
+    En el primer arranque, el stack crea un usuario administrador a partir de `.env`. El inicio de sesión predeterminado es `admin@admin.com` / `password`.
+
+    <Accordion title="Establece tus propias credenciales de inicio de sesión">
+      Ejecuta `generate-env.sh` con estas variables antes de `prepare-demo.sh`:
+
+      ```bash
+      USER_EMAIL="you@example.com" USER_PASSWORD="supersecret" USER_NAME="YourName" ./scripts/generate-env.sh
+      ```
+
+      Después, `prepare-demo.sh` detectará el archivo `.env` existente y pasará directamente a la configuración de las API keys.
+    </Accordion>
+  </Step>
+
+  <Step title="Inicia los servicios en segundo plano">
+    ```bash
+    docker compose up -d
+    ```
+
+    El orden de arranque se gestiona automáticamente. LibreChat se inicia solo después de que el servidor MCP esté en buen estado, por lo que su conexión con ClickHouse estará lista desde la primera carga.
+  </Step>
+
+  <Step title="Abre LibreChat e inicia sesión">
+    Una vez que el stack esté en marcha, los servicios estarán disponibles en tu navegador:
+
+    * **LibreChat** (UI de chat) — [http://localhost:3080](http://localhost:3080)
+    * **Langfuse** (observabilidad) — [http://localhost:3000](http://localhost:3000)
+    * **Admin Panel** (configuración de LibreChat desde el navegador) — [http://localhost:3081](http://localhost:3081)
+    * **MinIO console** (object storage; credenciales en `.env`) — [http://localhost:9091](http://localhost:9091)
+
+    Inicia sesión en LibreChat con las credenciales de administrador de tu archivo `.env`.
+  </Step>
+
+  <Step title="Selecciona un modelo">
+    Hay un modelo seleccionado de forma predeterminada. Si quieres cambiarlo, abre el selector de modelos y elige el que quieras usar.
+
+    <Image img="/images/agentic-data-stack/select-model.webp" alt="El selector de modelos de LibreChat en la esquina superior izquierda, mostrando el modelo predeterminado con un tooltip que dice Select a model" size="md" />
+
+    Si no configuraste una clave del proveedor durante la instalación, añade una en la UI.
+
+    <Accordion title="Establece una clave del proveedor en la UI">
+      Abre el selector de modelos y haz clic en **Set API Key** junto al proveedor.
+
+      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Selector de modelos de LibreChat con el botón Set API Key junto al proveedor Anthropic" size="md" />
+
+      Pega tu clave en el cuadro de diálogo y haz clic en **Submit**. Puedes establecer un vencimiento o hacer que la clave no caduque.
+
+      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="El cuadro de diálogo Set API Key for Anthropic con un desplegable de vencimiento, un campo Key y los botones Submit y Revoke" size="md" />
+    </Accordion>
+  </Step>
+
+  <Step title="Selecciona el servidor MCP">
+    El stack preconfigura sus servidores MCP en el archivo `librechat.yaml` de LibreChat. En el editor de mensajes, haz clic en **MCP Servers** y selecciona **ClickHouse-Local**.
+
+    Selecciona **ClickHouse-Cloud** en su lugar para usar un servicio de ClickHouse Cloud.
+
+    {/* TODO: orientar a los usuarios (o enlazar a la documentación de Remote MCP en /cloud/features/ai-ml/remote-mcp) sobre cómo conectar ClickHouse-Cloud; requiere un flujo OAuth, a diferencia del servidor local incluido. */}
+
+    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="El menú MCP Servers abierto en el editor de mensajes de LibreChat, mostrando ClickHouse-Local con un punto verde de conexión y ClickHouse-Cloud" size="md" />
+  </Step>
+
+  <Step title="Haz tu primera pregunta">
+    Por ejemplo:
+
+    > ¿Qué bases de datos y tablas hay disponibles, y cuántas filas hay en la tabla más grande?
+
+    El agent usa las herramientas del servidor MCP para listar bases de datos y tablas, ejecutar consultas de solo lectura en ClickHouse y elaborar una respuesta a partir de los resultados. No necesitas escribir SQL.
+
+    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="LibreChat respondiendo a la pregunta de ejemplo al invocar las herramientas MCP de ClickHouse-Local y listar las bases de datos y tablas disponibles" size="md" />
+  </Step>
+</Steps>
+
+<div id="stop-or-reset">
+  ## Detener o restablecer el stack
+</div>
+
+Detenga los servicios sin eliminar nada:
+
+```bash
+docker compose down
+```
+
+Para eliminar todos los contenedores y borrar todos los volúmenes para empezar de cero, usa el script para restablecer el stack:
+
+```bash
+./scripts/reset-all.sh
+```
+
+<div id="how-it-is-wired">
+  ## Arquitectura
+</div>
+
+`docker-compose.yml` es un punto de entrada ligero que incluye cuatro archivos de Compose:
+
+| Archivo de Compose           | Define                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| `langfuse-compose.yml`       | Langfuse y sus servicios subyacentes (ClickHouse, PostgreSQL, Redis, MinIO)     |
+| `clickhouse-mcp-compose.yml` | El ClickHouse MCP server                                                        |
+| `librechat-compose.yml`      | LibreChat y sus servicios subyacentes (MongoDB, Meilisearch, pgvector, RAG API) |
+| `admin-panel-compose.yml`    | El panel de administración de LibreChat                                         |
+
+Hay dos aspectos que hacen posible el arranque con un solo comando:
+
+* **Comprobaciones de estado y orden de inicio.** Compose usa comprobaciones de estado para secuenciar el arranque. El servidor MCP espera a ClickHouse, y LibreChat espera al servidor MCP.
+* **Archivo de entorno compartido.** `.env` contiene las credenciales y los valores de conexión de cada servicio, configurados de forma coherente para que puedan comunicarse entre sí. Por ejemplo, el servidor MCP se conecta a ClickHouse con las credenciales de ClickHouse definidas en `.env`. LibreChat recibe `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY` y `LANGFUSE_BASE_URL`, por lo que cada ejecución se rastrea en Langfuse desde el primer momento.
+
+ClickHouse desempeña dos funciones en el stack: es tanto el backend de almacenamiento de Langfuse como la base de datos que consulta tu agente a través del servidor MCP.
+
+<div id="next-steps">
+  ## Próximos pasos
+</div>
+
+* Aprenda qué hace cada componente del stack: [ClickHouse MCP server](/es/products/agentic-data-stack/components/mcp-server), [LibreChat](/es/products/agentic-data-stack/components/librechat) y [Langfuse](/es/products/agentic-data-stack/components/langfuse).
+* Consulte la [descripción general](/es/products/agentic-data-stack/overview) para entender cómo se integra el stack.
+* Para probar el stack con datos públicos sin instalar nada, use [AgentHouse](https://llm.clickhouse.com), la demo hospedada.

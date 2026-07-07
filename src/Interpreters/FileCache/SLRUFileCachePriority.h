@@ -83,7 +83,7 @@ public:
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        bool continue_from_last_eviction_pos,
+        EvictionCursor eviction_cursor,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -103,7 +103,7 @@ public:
 
     void shuffle(const CachePriorityGuard::WriteLock &) override;
 
-    void resetEvictionPos() override;
+    void resetEvictionPos(EvictionCursor cursor) override;
 
     PriorityDumpPtr dump(const CachePriorityGuard::ReadLock &) override;
 
@@ -164,7 +164,7 @@ private:
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        bool continue_from_last_eviction_pos,
+        EvictionCursor eviction_cursor,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,

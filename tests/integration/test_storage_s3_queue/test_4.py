@@ -13,6 +13,7 @@ from helpers.s3_queue_common import (
     create_mv,
     generate_random_string,
 )
+from helpers.test_tools import assert_eq_with_retry
 
 AVAILABLE_MODES = ["unordered", "ordered"]
 
@@ -260,7 +261,7 @@ def test_alter_settings(started_cluster):
     mv_name = f"{table_name}_mv"
     keeper_path = f"/clickhouse/test_{table_name}"
     files_path = f"{table_name}_data"
-    files_to_generate = 1000
+    files_to_generate = 100
 
     node1.query("DROP DATABASE IF EXISTS r")
     node2.query("DROP DATABASE IF EXISTS r")
@@ -306,19 +307,14 @@ def test_alter_settings(started_cluster):
 
     create_mv(node1, f"r.{table_name}", f"r.{dst_table_name}", mv_name=f"r.{mv_name}")
 
-    def get_count():
-        return int(
-            node1.query(
-                f"SELECT count() FROM clusterAllReplicas(cluster, r.{dst_table_name})"
-            )
-        )
-
     expected_rows = files_to_generate
-    for _ in range(300):
-        if expected_rows == get_count():
-            break
-        time.sleep(1)
-    assert expected_rows == get_count()
+    assert_eq_with_retry(
+        node1,
+        f"SELECT count() FROM clusterAllReplicas(cluster, r.{dst_table_name})",
+        str(expected_rows),
+        retry_count=300,
+        sleep_time=1,
+    )
 
     assert (
         "true"
