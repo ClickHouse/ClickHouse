@@ -111,8 +111,9 @@ struct SerializeBinaryBulkStateObject: public ISerialization::SerializeBinaryBul
     /// If true, statistics will be recalculated during serialization.
     bool recalculate_statistics = false;
 
-    /// For flattened serialization only.
-    std::vector<std::pair<String, ColumnPtr>> flattened_paths;
+    /// For flattened serialization only. string_views reference data inside the Object column
+    /// (shared data paths and dynamic paths map keys) which stays alive during serialization.
+    std::vector<std::pair<std::string_view, ColumnPtr>> flattened_paths;
 
     explicit SerializeBinaryBulkStateObject(SerializationObject::SerializationVersion serialization_version_)
         : serialization_version(serialization_version_)
@@ -305,7 +306,7 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, settings, object_state->dynamic_path_states[path]);
+            dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, settings, object_state->dynamic_path_states[String(path)]);
             settings.path.pop_back();
         }
         settings.path.pop_back();
@@ -342,7 +343,8 @@ void SerializationObject::serializeBinaryBulkStatePrefix(
         writeVarUInt(static_cast<UInt64>(shared_data_serialization_version.value), *stream);
         /// If serialization supports buckets, write number of buckets that will be used.
         if (shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS
-            || shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+            || shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
+            || shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
         {
             /// Avoid creating buckets for Wide part if shared data is empty.
             if (settings.data_part_type != MergeTreeDataPartType::Wide || !statistics->shared_data_paths_statistics.empty())
@@ -712,7 +714,8 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationObject::deserializeOb
                 structure_state->shared_data_serialization_version = SerializationObjectSharedData::SerializationVersion(shared_data_serialization_version);
                 /// If shared serialization version supports buckets, read number of buckets.
                 if (structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::MAP_WITH_BUCKETS
-                    || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED)
+                    || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED
+                    || structure_state->shared_data_serialization_version.value == SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED)
                 {
                     readVarUInt(structure_state->shared_data_buckets, *structure_stream);
                 }
@@ -813,7 +816,7 @@ void SerializationObject::serializeBinaryBulkWithMultipleStreams(
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            dynamic_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, offset, limit, settings, object_state->dynamic_path_states[path]);
+            dynamic_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, offset, limit, settings, object_state->dynamic_path_states[String(path)]);
             settings.path.pop_back();
         }
 
@@ -932,7 +935,7 @@ void SerializationObject::serializeBinaryBulkStateSuffix(
         {
             settings.path.push_back(Substream::ObjectDynamicPath);
             settings.path.back().object_path_name = path;
-            dynamic_serialization->serializeBinaryBulkStateSuffix(settings, object_state->dynamic_path_states[path]);
+            dynamic_serialization->serializeBinaryBulkStateSuffix(settings, object_state->dynamic_path_states[String(path)]);
             settings.path.pop_back();
         }
 

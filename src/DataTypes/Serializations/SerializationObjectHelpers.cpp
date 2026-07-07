@@ -15,12 +15,13 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-std::vector<std::pair<String, ColumnPtr>> flattenSharedDataPathsForBucket(
+std::vector<std::pair<std::string_view, ColumnPtr>> flattenSharedDataPathsForBucket(
     const IColumn & shared_data_column, size_t start, size_t end,
     const DataTypePtr & dynamic_type, size_t target_bucket, size_t num_buckets)
 {
     /// Iterate over shared data and collect values of paths belonging to target_bucket only.
-    std::unordered_map<String, MutableColumnPtr> flattened_shared_data_paths;
+    /// Use string_view keys referencing data in shared_data_paths column to avoid copying path strings.
+    std::unordered_map<std::string_view, MutableColumnPtr> flattened_shared_data_paths;
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     for (size_t i = start; i != end; ++i)
     {
@@ -28,7 +29,7 @@ std::vector<std::pair<String, ColumnPtr>> flattenSharedDataPathsForBucket(
         size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
         for (size_t j = offset_start; j != offset_end; ++j)
         {
-            std::string path{shared_data_paths->getDataAt(j)};
+            std::string_view path = shared_data_paths->getDataAt(j);
             /// Skip paths not belonging to target bucket.
             if (getSharedDataPathBucket(path, num_buckets) != target_bucket)
                 continue;
@@ -53,16 +54,42 @@ std::vector<std::pair<String, ColumnPtr>> flattenSharedDataPathsForBucket(
     }
 
     /// Collect into a sorted vector.
-    std::vector<std::pair<String, ColumnPtr>> result;
+    std::vector<std::pair<std::string_view, ColumnPtr>> result;
     result.reserve(flattened_shared_data_paths.size());
     for (auto & [path, column] : flattened_shared_data_paths)
-        result.emplace_back(std::move(path), column->getPtr());
+        result.emplace_back(path, column->getPtr());
 
     std::sort(result.begin(), result.end());
     return result;
 }
 
-std::vector<std::pair<String, ColumnPtr>> flattenPaths(const ColumnObject & object_column)
+std::vector<std::string_view> scanPathNamesForBucket(
+    const IColumn & shared_data_column, size_t start, size_t end,
+    size_t target_bucket, size_t num_buckets)
+{
+    /// Collect unique path names belonging to target_bucket without materializing ColumnDynamic columns.
+    /// Use string_view referencing data in shared_data_paths column to avoid copying path strings.
+    std::unordered_set<std::string_view> path_names;
+    const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
+    for (size_t i = start; i != end; ++i)
+    {
+        size_t offset_start = (*shared_data_offsets)[ssize_t(i) - 1];
+        size_t offset_end = (*shared_data_offsets)[ssize_t(i)];
+        for (size_t j = offset_start; j != offset_end; ++j)
+        {
+            std::string_view path = shared_data_paths->getDataAt(j);
+            if (getSharedDataPathBucket(path, num_buckets) != target_bucket)
+                continue;
+            path_names.insert(path);
+        }
+    }
+
+    std::vector<std::string_view> result(path_names.begin(), path_names.end());
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
+std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObject & object_column)
 {
     auto all_paths = flattenSharedDataPathsForBucket(*object_column.getSharedDataPtr(), 0, object_column.size(), object_column.getDynamicType(), 0, 1);
     for (const auto & [path, column] : object_column.getDynamicPaths())

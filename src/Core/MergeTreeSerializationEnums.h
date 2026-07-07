@@ -35,6 +35,7 @@ enum class MergeTreeObjectSharedDataSerializationVersion : uint8_t
     MAP,
     MAP_WITH_BUCKETS,
     ADVANCED,
+    ADVANCED_CHUNKED,
 };
 
 enum class MergeTreeDynamicSerializationVersion : uint8_t

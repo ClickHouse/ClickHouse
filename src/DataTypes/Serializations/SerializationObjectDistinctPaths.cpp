@@ -111,6 +111,7 @@ void SerializationObjectDistinctPaths::enumerateStreams(
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
             for (size_t bucket = 0; bucket < object_structure_state->shared_data_buckets; ++bucket)
             {
@@ -192,6 +193,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
             object_distinct_paths_state->bucket_shared_data_structure_states.resize(object_structure_state->shared_data_buckets);
             for (size_t bucket = 0; bucket != object_structure_state->shared_data_buckets; ++bucket)
@@ -288,6 +290,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
             for (size_t bucket = 0; bucket < object_structure_state->shared_data_buckets; ++bucket)
             {

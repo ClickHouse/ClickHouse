@@ -1260,7 +1260,8 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.7",
         {
-
+            {"object_shared_data_serialization_version", "advanced", "advanced_chunked", "Enable advanced_chunked shared data serialization version by default to reduce peak memory during merges of JSON columns with many unique paths"},
+            {"object_shared_data_target_chunk_rows", 8192, 8192, "New setting"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
