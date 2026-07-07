@@ -1147,6 +1147,12 @@ QueryPlan QueryPlan::clone() const
     result.cloneInplace(current_subplan_copy_root, root);
     result.root = current_subplan_copy_root;
 
+    /// Preserve the plan-level execution limits. They are not part of the node tree, so cloneInplace
+    /// does not copy them; without this a cloned plan runs with the default thread fan-out and no
+    /// concurrency control instead of the caps the source plan carries.
+    result.max_threads = max_threads;
+    result.concurrency_control = concurrency_control;
+
     return result;
 }
 

@@ -501,12 +501,6 @@ SetPtr FutureSetFromSubquery::buildOrderedSetInplace(const ContextPtr & context)
         try
         {
             plan = std::make_unique<QueryPlan>(source->clone());
-            /// `QueryPlan::clone` copies only the node tree, not the plan-level execution settings.
-            /// Carry over `max_threads` / `concurrency_control` so the speculative build honors the same
-            /// caps the authoritative runtime build would (set in the planner for this subquery); otherwise
-            /// it would run with the default thread fan-out and without concurrency control.
-            plan->setMaxThreads(source->getMaxThreads());
-            plan->setConcurrencyControl(source->getConcurrencyControl());
             source_preserved = true;
         }
         catch (const Exception & e)
