@@ -7,11 +7,8 @@
 #   - toString / CAST(... AS String): serialize each row into a String column (ConvertImplGenericToString);
 #   - CAST(Tuple/Map/Object AS JSON): serialize each row to a JSON string, then parse it back into a JSON column
 #     (ConvertImplGenericFromString) - the parse-back half dominates its cost.
-# Two failure shapes:
-#   1. many expensive rows in one block  - interrupted by the per-row QueryStatus check at the top of each loop;
-#   2. one row holding a single huge value - the per-row check fires once before the value, so serialization is
-#      interrupted mid-value by a cancellation-checking WriteBuffer that observes the limit on each buffer-sized
-#      flush of the bytes the (nested) serializer emits.
+# The failure shape covered: many expensive rows in one block, interrupted by the per-row QueryStatus check at the
+# top of each loop.
 # The check honors KILL QUERY and max_execution_time in BOTH the `throw` and `break` timeout overflow modes.
 # The assertion is that the query stops NEAR its limit rather than running to natural completion: a plain
 # `serverError TIMEOUT_EXCEEDED` does not distinguish fixed from unfixed, because the between-block check still
@@ -48,18 +45,12 @@ check_stopped_at_limit() {
 }
 
 # measure the natural (unlimited) run time of one query, then rerun it with max_execution_time well below that (see
-# the limit computation below) in both overflow modes and assert it stopped near the limit. $3 selects the shape:
-#   many   - a big block of many rows; break mode returns the partial result (exit 0) without an error;
-#   single - one row holding a huge value; break mode has no useful partial result so it is a hard TIMEOUT_EXCEEDED.
-# $1: unique id prefix   $2: SELECT expression   $3: many|single   $4: number of rows
+# the limit computation below) in both overflow modes and assert it stopped near the limit. A big block of many
+# rows: break mode returns the partial result (exit 0) without an error.
+# $1: unique id prefix   $2: SELECT expression   $3: number of rows
 run_case() {
-    local prefix="$1" expr="$2" shape="$3" rows="$4"
-    local settings
-    if [ "$shape" = single ]; then
-        settings="max_block_size = 1, $COMMON"
-    else
-        settings="max_block_size = ${rows}, $COMMON"   # force the whole input into one block
-    fi
+    local prefix="$1" expr="$2" rows="$3"
+    local settings="max_block_size = ${rows}, $COMMON"   # force the whole input into one block
 
     local ref="04401_${prefix}_ref_${CLICKHOUSE_DATABASE}"
     $CLICKHOUSE_CLIENT --query_id "$ref" --query "
@@ -74,8 +65,7 @@ run_case() {
     # max_execution_time is an integer number of seconds, so pick the largest whole second that stays safely below
     # the natural time: floor(natural * 0.35). This keeps a wide margin (limit <= ~0.35 * natural) so run-to-run
     # variance cannot push a single execution past the limit and skip the timeout, while still landing well past the
-    # cheap input-build phase. Floor (not round-up) is deliberate: rounding a ~1s intent up to 2s once left the
-    # single-value case with a razor-thin natural-limit margin and made it flaky on fast runners.
+    # cheap input-build phase.
     local limit=$(( natural_ms * 35 / 100 / 1000 ))
     [ "$limit" -lt 1 ] && limit=1
     local low_ms=$(( limit * 500 ))                           # >= half the limit: guards against instant failure
@@ -86,13 +76,13 @@ run_case() {
 
     for mode in throw break; do
         local id="04401_${prefix}_${mode}_${CLICKHOUSE_DATABASE}"
-        # throw always raises TIMEOUT_EXCEEDED; break raises it only for the single-value shape (no partial result).
+        # throw raises TIMEOUT_EXCEEDED; break returns the partial result without error.
         $CLICKHOUSE_CLIENT --query_id "$id" --query "
             SELECT $expr FROM numbers($rows) FORMAT Null
             SETTINGS $settings, max_execution_time = $limit, timeout_overflow_mode = '$mode'" 2>&1 \
             | grep -o -m1 "TIMEOUT_EXCEEDED"
-        # For many rows, break returns the partial result without error - print its exit code to prove that.
-        [ "$shape" = many ] && [ "$mode" = break ] && echo "break exit: ${PIPESTATUS[0]}"
+        # break returns the partial result without error - print its exit code to prove that.
+        [ "$mode" = break ] && echo "break exit: ${PIPESTATUS[0]}"
         check_stopped_at_limit "$id" "$limit" "$low_ms" "$high_ms" "$natural_ms"
     done
 }
@@ -101,18 +91,11 @@ run_case() {
 #     per-row serialize loop dominates and, without the per-row check, runs uninterrupted to the end.
 run_case "many" \
     "toString(arrayMap(z -> arrayMap(y -> range(y % 4), range(z % 7)), range(number % 20))::Dynamic)" \
-    many 3000000
+    3000000
 
 # 1b. CAST(Map AS JSON), many rows in one block: exercises the sibling serialize-then-parse-back loops one
 #     conversion over (Map serializes to a JSON object that parses back). The per-row check in both loops must
 #     interrupt it; the parse-back loop (ConvertImplGenericFromString) is the dominant half of this conversion.
 run_case "json_many" \
     "CAST(map('id', number, 'vals', arrayMap(x -> x, range(number % 30))) AS JSON)" \
-    many 2500000
-
-# 2. one row holding a single huge value (max_block_size = 1). The per-row check fires once, before the value, and
-#    cannot interrupt serializing the value itself; only the in-serializer WriteBuffer check can. There is no
-#    useful partial result for a single value, so break mode is also a hard TIMEOUT_EXCEEDED (like throw).
-run_case "single" \
-    "toString(arrayMap(x -> arrayMap(y -> range(y % 8), range(x % 40)), range(3000000))::Dynamic)" \
-    single 1
+    2500000

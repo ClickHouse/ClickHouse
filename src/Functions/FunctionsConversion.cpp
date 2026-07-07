@@ -1388,18 +1388,14 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             format_settings.json.quote_64bit_integers = false;
 
             /// Same cancellation contract as ConvertImplGenericToString (this loop has the identical shape: a single
-            /// block, or one row holding a huge Tuple/Map/Object value, would otherwise serialize uninterruptibly
-            /// after KILL QUERY or max_execution_time). The per-row check covers many rows; cancel_buffer checks on
-            /// each buffer-sized flush so one huge value is interruptible mid-serialization too.
-            CancellationCheckingWriteBuffer cancel_buffer(write_buffer, settings.query_status);
+            /// block would otherwise serialize uninterruptibly after KILL QUERY or max_execution_time). The per-row
+            /// check makes the loop interruptible.
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 throwIfQueryCancelled(settings.query_status);
-                serialization->serializeTextJSON(*arguments[0].column, i, cancel_buffer, format_settings);
-                cancel_buffer.next();
+                serialization->serializeTextJSON(*arguments[0].column, i, write_buffer, format_settings);
                 write_helper.finishRow();
             }
-            cancel_buffer.finalize();
             write_helper.finalize();
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
