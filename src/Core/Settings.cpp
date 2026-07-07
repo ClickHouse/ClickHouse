@@ -766,7 +766,7 @@ Read-ahead window size for the experimental `ReaderExecutor` (`use_reader_execut
 `ChainedBuffers` node size for the experimental `ReaderExecutor`: the per-block allocation and drain granularity, capped at the read window (`reader_executor_window_size`).)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_min_bytes_for_seek, 2097152, R"(
 Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is skipped on the open source connection (bridged / read through) instead of issuing a separate source read or reopening. Set near the bandwidth/request cost breakeven so bridging stays cost-positive.)", EXPERIMENTAL) \
-    DECLARE(UInt64, reader_executor_max_tail_for_drain, 1048576, R"(
+    DECLARE(UInt64, reader_executor_max_tail_for_drain, 524288, R"(
 Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
     DECLARE(Bool, reader_executor_use_long_connections, true, R"(
 Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \

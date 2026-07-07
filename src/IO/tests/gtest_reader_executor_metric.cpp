@@ -97,8 +97,8 @@ constexpr size_t ALIGNMENT          = (4u << 20) / COMPRESSION;    ///  4 KiB
 constexpr size_t WINDOW             = (8u << 20) / COMPRESSION;    ///  8 KiB
 constexpr size_t BLOCK              = (1u << 20) / COMPRESSION;    ///  1 KiB
 constexpr size_t MIN_BYTES_FOR_SEEK = (2u << 20) / COMPRESSION;    ///  2 KiB (bridge bound)
-constexpr size_t MAX_TAIL_FOR_DRAIN = (1u << 20) / COMPRESSION;    ///  1 KiB (drain bound)
-constexpr size_t LONG_CONN_OPEN_RANGE = (16u << 20) / COMPRESSION; /// 16 KiB (production 16 MiB)
+constexpr size_t MAX_TAIL_FOR_DRAIN = (512u << 10) / COMPRESSION;    ///  512 B (drain bound; production 512 KiB)
+constexpr size_t LONG_CONN_OPEN_RANGE = (8u << 20) / COMPRESSION; /// 8 KiB (production 8 MiB)
 constexpr size_t LONG_CONN_MAX_BOUND = (128u << 20) / COMPRESSION; /// 128 KiB (production 128 MiB)
 constexpr size_t N_SEGMENTS         = 32;
 constexpr size_t FILE_SIZE          = N_SEGMENTS * SEGMENT;        ///  1 MiB
@@ -661,10 +661,10 @@ TEST_F(ReaderExecutorMetric, SmallCachedGaps)
 
 /// PageCache is block-granular and in-memory, so a cached hole can be a single
 /// BLOCK (1 MiB production) - below both the seek threshold AND the cost breakeven.
-/// The schedule-driven interpreter coalesces the scan into one job that reads through
-/// every such block-sized hole (the bytes re-read as over-read) in a cleanly-draining
-/// connection. Unlike the 4 MiB-aligned FileCache holes, bridging here is cost-POSITIVE:
-/// reading through a sub-breakeven gap costs less than the reopen it avoids.
+/// The schedule coalesces the scan into one job that reads through every such block-sized
+/// hole (the bytes re-read as over-read). Unlike the 4 MiB-aligned FileCache holes,
+/// bridging here is cost-POSITIVE: reading through a sub-breakeven gap costs less than
+/// the reopen it avoids.
 TEST_F(ReaderExecutorMetric, PageCacheGaps)
 {
     const size_t hole = BLOCK;          /// one-block cached hole (PageCache granularity)
@@ -676,7 +676,11 @@ TEST_F(ReaderExecutorMetric, PageCacheGaps)
     auto [live, stateless] = runMatrixPageCache("pc_gaps", warm, {{0, std::nullopt}});
 
     EXPECT_LE(live.requests, 12u) << "live: coalesces the scan through the block-sized cached holes";
-    EXPECT_EQ(live.incomplete, 0u) << "live: the job-bounded connection drains cleanly through the holes";
+    /// The 512 KiB drain bound leaves the 0.5-1 MiB bound-tails abandoned instead of
+    /// drained (was 0 incomplete at the 1 MiB bound, which drained them all) - and the
+    /// harness's own cost model says the trade is POSITIVE here: the six resets cost less
+    /// than the ~6 MB of tail wire time they replace (measured 20678ms vs 20768ms).
+    EXPECT_EQ(live.incomplete, 6u) << "live: 0.5-1 MiB bound-tails abandon under the 512 KiB drain bound";
     EXPECT_GT(live.over_read, 0u) << "skipped cached blocks are re-read from source as over-read";
     EXPECT_LE(live.over_read, n_holes * MIN_BYTES_FOR_SEEK) << "each read-through gap is <= the seek threshold";
     EXPECT_GT(stateless.requests, live.requests) << "stateless: a connection per window, no bridge";

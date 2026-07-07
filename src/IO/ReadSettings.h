@@ -160,7 +160,7 @@ struct ReadSettings
     size_t reader_executor_plan_look_ahead_max_window = 8388608;
     size_t reader_executor_block_size = 1048576;
     size_t reader_executor_min_bytes_for_seek = 2097152;
-    size_t reader_executor_max_tail_for_drain = 1048576;
+    size_t reader_executor_max_tail_for_drain = 524288;
     bool reader_executor_use_long_connections = true;
 
     ReadSettings adjustBufferSize(size_t file_size) const;

@@ -100,7 +100,7 @@ public:
     /// Drain bound: if only a tail of at most this many bytes remains to a long
     /// connection's read bound, drain it so the connection completes pool-reusable
     /// (see `dropLong`) instead of being abandoned mid-response.
-    static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
+    static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 512 * 1024; /// 512 KiB
     static constexpr size_t CHAINED_BUFFER_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB per ChainedBuffers node
     /// The fixed plan window: residency is planned ONCE over this span (plan-then-stream),
     /// amortising cache discovery across many serve windows; segment folding extends a plan
@@ -113,7 +113,7 @@ public:
     /// past the cap. The continuous-read prediction may under-predict at the start of a run
     /// and over-predict at its end; these bound the resulting GET so an over-prediction
     /// cannot run away into an unbounded over-read.
-    static constexpr size_t DEFAULT_LONG_CONNECTION_OPEN_RANGE = 16 * 1024 * 1024; /// 16 MiB
+    static constexpr size_t DEFAULT_LONG_CONNECTION_OPEN_RANGE = 8 * 1024 * 1024; /// 8 MiB
     static constexpr size_t DEFAULT_LONG_CONNECTION_MAX_BOUND = 128 * 1024 * 1024; /// 128 MiB
     /// How far the in-order fill front runs AHEAD of the serve cursor (the cache-as-buffer
     /// lead): the single in-flight machine fetches up to this much into a disk (`FilesystemCache`)
