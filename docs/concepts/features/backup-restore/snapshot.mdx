@@ -1,0 +1,228 @@
+---
+description: 'How to create and restore lightweight snapshots of cloud-native tables using cloud object storage.'
+sidebarTitle: 'Snapshot backup'
+slug: /operations/backup/snapshot
+title: 'Snapshot backup and restore'
+doc_type: 'guide'
+keywords: ['snapshot', 'backup', 'restore', 'SharedMergeTree', 'SharedSet', 'SharedJoin', 'lightweight backup', 'cloud backup', 'S3', 'Azure Blob Storage', 'snapshot_locks', 'snapshot_parts', 'experimental_lightweight_snapshot']
+---
+
+Snapshot backup is a lightweight backup mode for cloud-native table engines. Instead of copying data, it writes per-part lock nodes into ClickHouse Keeper. These locks prevent the server from deleting the referenced object storage parts for as long as the snapshot is retained. The backup then records the object storage references rather than physically copying any data, making snapshot creation fast regardless of table size.
+
+The lightweight path applies to [SharedMergeTree](/products/cloud/features/infrastructure/shared-merge-tree), SharedSet, and SharedJoin tables. For all other engine types — such as Log or Memory — the backup falls back to a standard copy-based backup automatically.
+
+## Create a snapshot {#create-a-snapshot}
+
+Snapshot backup uses the standard [`BACKUP`](/concepts/features/backup-restore/overview#syntax) command with `experimental_lightweight_snapshot = true`. The `id` setting is required — it names the snapshot and is used to reference it in unlock and observability commands:
+
+```sql
+BACKUP { TABLE [db.]table_name | DATABASE db_name | ALL [EXCEPT {TABLES | DATABASES} ...] }
+TO { S3(...) | AzureBlobStorage(...) }
+SETTINGS experimental_lightweight_snapshot = true, id = '<snapshot_id>'
+```
+
+The command returns the `id` and `status`, and the `id` can be used to track the operation in [`system.backups`](/reference/system-tables/backups).
+
+Backup a single table to S3:
+
+```sql
+BACKUP TABLE mydb.events
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+Backup a full database:
+
+```sql
+BACKUP DATABASE mydb
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/mydb/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'mydb_snapshot_1'
+```
+
+Backup all tables, skipping one:
+
+```sql
+BACKUP ALL
+EXCEPT TABLES mydb.staging_table
+TO S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/full/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS experimental_lightweight_snapshot = true, id = 'full_snapshot_1'
+```
+
+The same commands work with Azure Blob Storage:
+
+```sql
+BACKUP TABLE mydb.events
+TO AzureBlobStorage('DefaultEndpointsProtocol=https;AccountName=myaccount;AccountKey=...', 'my-container', 'snapshots/events/')
+SETTINGS experimental_lightweight_snapshot = true, id = 'events_snapshot_1'
+```
+
+## Restore to the same service {#restore-to-same-service}
+
+Because a snapshot stores references to object storage files rather than copies of the data, restoring to a new or different ClickHouse service requires access to the original object storage. For that reason, cross-service restore is not supported via SQL — it is only available through the UI. By SQL, you can restore a snapshot to the same service from an external backup bucket using `snapshot_from_current_service = 1`. This reads objects directly via the destination disk instead of going through a remote snapshot reader:
+
+```sql
+RESTORE TABLE mydb.events AS mydb.events_restored
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+The `AS` clause restores into a new table name, leaving the original table intact. To overwrite the original table, drop it first:
+
+```sql
+DROP TABLE mydb.events;
+
+RESTORE TABLE mydb.events
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+SETTINGS snapshot_from_current_service = 1
+```
+
+## Unlock a snapshot {#unlock-snapshot}
+
+Each snapshot holds locks in ClickHouse Keeper that prevent the referenced object storage files from being garbage collected. After a restore completes — or when a snapshot is no longer needed — unlock it to release those locks.
+
+There are two forms: a system-level unlock that removes all locks for the snapshot at once, and a per-table unlock that removes the lock for a single table while leaving the rest of the snapshot intact.
+
+**System-level unlock** — removes all locks for the snapshot:
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+**Per-table unlock** — removes the lock for one table only:
+
+```sql
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+FROM S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', 'ACCESS_KEY_ID', 'SECRET_ACCESS_KEY')
+```
+
+The `FROM` clause is optional when the snapshot destination was stored in Keeper at creation time (visible in the `info` column of `system.snapshot_locks`):
+
+```sql
+SYSTEM UNLOCK SNAPSHOT '<snapshot_id>'
+
+-- or per-table:
+ALTER TABLE mydb.events UNLOCK SNAPSHOT '<snapshot_id>'
+```
+
+After unlocking, the corresponding row disappears from `system.snapshot_locks`, and parts no longer referenced by other snapshots drop out of `system.snapshot_parts`.
+
+## Observability {#observability}
+
+### system.backups {#system-backups}
+
+All snapshot operations appear in [`system.backups`](/reference/system-tables/backups) alongside regular backup and restore operations. Query it with the `id` you set (or the UUID returned by the command):
+
+```sql
+SELECT id, name, status, error, start_time, end_time, num_files, uncompressed_size, compressed_size
+FROM system.backups
+WHERE id = 'events_snapshot_1'
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:                events_snapshot_1
+name:              S3('https://my-bucket.s3.us-east-1.amazonaws.com/snapshots/events/', '[HIDDEN]')
+status:            BACKUP_CREATED
+error:
+start_time:        2024-06-01 10:00:00
+end_time:          2024-06-01 10:00:03
+num_files:         42
+uncompressed_size: 1073741824
+compressed_size:   0
+```
+
+### system.snapshot_locks {#system-snapshot-locks}
+
+`system.snapshot_locks` shows the committed snapshots currently registered in Keeper. When a snapshot is committed, a Keeper node is created at `/clickhouse/snapshot/committed/{snapshot_id}`. Before deleting any data part, the server checks whether a committed snapshot holds a lock on that part. If one does, deletion is skipped. The lock persists until you explicitly unlock the snapshot.
+
+```sql
+SELECT *
+FROM system.snapshot_locks
+```
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `String` | Snapshot ID |
+| `info` | `String` | Snapshot destination, e.g. `S3('...')` |
+| `ctime` | `DateTime` | When this lock was created in Keeper |
+| `lock_path` | `String` | Keeper path for this lock |
+
+Each row represents one committed snapshot. If you see locks for snapshots that no longer have a valid backup destination, run `SYSTEM UNLOCK SNAPSHOT` to clean them up.
+
+To check whether a specific snapshot lock is present:
+
+```sql
+SELECT id, info, lock_path
+FROM system.snapshot_locks
+WHERE id = 'events_snapshot_1'
+```
+
+### system.snapshot_parts {#system-snapshot-parts}
+
+`system.snapshot_parts` shows the data parts currently pinned by at least one snapshot lock. For each locked part, a Keeper node exists at `/clickhouse/snapshot/{table_uuid}/{part_name}` containing the part's compressed and uncompressed size. This table reads those nodes to show which parts are currently protected from deletion.
+
+```sql
+SELECT *
+FROM system.snapshot_parts
+ORDER BY data_compressed_bytes DESC
+LIMIT 20
+```
+
+| Column | Type | Description |
+|---|---|---|
+| `name` | `String` | Data part name |
+| `table_id` | `String` | UUID of the table this part belongs to |
+| `data_compressed_bytes` | `UInt64` | Compressed size of this part |
+| `data_uncompressed_bytes` | `UInt64` | Uncompressed size of this part |
+| `snapshots_size` | `UInt64` | Number of snapshots currently holding a lock on this part |
+
+Parts with `snapshots_size > 1` are referenced by multiple snapshots and won't be removed from object storage until all holding snapshots are unlocked.
+
+To check total pinned storage:
+
+```sql
+SELECT
+    formatReadableSize(sum(data_compressed_bytes)) AS total_pinned_compressed,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS total_pinned_uncompressed,
+    count() AS parts_count
+FROM system.snapshot_parts
+```
+
+To find parts that are locked by a snapshot but have already been dropped or are no longer active on the server — that is, data being retained in object storage solely because of snapshot locks:
+
+```sql
+SELECT
+    count(*),
+    sum(data_uncompressed_bytes)
+FROM system.snapshot_parts
+WHERE (name, table_id) NOT IN (
+    SELECT
+        name,
+        toString(tables.uuid)
+    FROM system.parts
+    INNER JOIN system.tables ON (parts.`table` = tables.name) AND parts.active
+)
+```
+
+```response
+┌─count()─┬─sum(data_uncompressed_bytes)─┐
+│    1000 │                        96037 │
+└─────────┴──────────────────────────────┘
+```
+
+This is useful for understanding the storage overhead of holding snapshots after the original data has changed or been removed.
+
+## Server settings {#server-settings}
+
+The following server configuration parameters control snapshot behavior. They are set in the server configuration file, not in SQL.
+
+| Setting | Type | Default | Changeable without restart | Description |
+|---|---|---|---|---|
+| [`max_held_snapshots`](/reference/settings/server-settings/settings#max_held_snapshots) | UInt64 | `0` | No | Maximum number of lightweight snapshots that can be held at the same time. `0` means unlimited. If the limit is reached, creating a new snapshot throws an exception. |
+| [`max_snapshot_commit_thread_pool_size`](/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_size) | UInt64 | `64` | Yes | Number of threads used to commit snapshot lock nodes into Keeper. Increase this if snapshot creation is slow on large tables with many parts. |
+| [`max_snapshot_commit_thread_pool_free_size`](/reference/settings/server-settings/settings#max_snapshot_commit_thread_pool_free_size) | UInt64 | `0` | Yes | If the number of idle threads in the snapshot commit pool exceeds this value, ClickHouse releases those threads and shrinks the pool. Threads are created again on demand. `0` means idle threads are never released. |
+| [`snapshot_cleaner_period`](/reference/settings/server-settings/settings#snapshot_cleaner_period) | UInt64 | `120` | No | How often (in seconds) the snapshot cleaner runs to remove parts that are no longer referenced by any snapshot lock. ClickHouse Cloud only. |
+| [`snapshot_cleaner_pool_size`](/reference/settings/server-settings/settings#snapshot_cleaner_pool_size) | UInt64 | `128` | No | Number of threads in the snapshot cleaner thread pool. ClickHouse Cloud only. |

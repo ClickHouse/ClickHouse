@@ -1,0 +1,160 @@
+---
+slug: /cloud/managed-postgres/faq
+sidebarTitle: 'FAQ'
+title: 'FAQ по ClickHouse Managed Postgres'
+description: 'Часто задаваемые вопросы о ClickHouse Managed Postgres'
+keywords: ['faq по managed postgres', 'вопросы по Postgres', 'метрики', 'расширения', 'миграция', 'terraform', 'pgbouncer', 'подготовленные операторы']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
+
+<div id="monitoring-and-metrics">
+  ## Мониторинг и метрики
+</div>
+
+<div id="metrics-access">
+  ### Как получить доступ к метрикам моего экземпляра Managed Postgres?
+</div>
+
+Вы можете отслеживать использование CPU, памяти, IOPS и хранилища напрямую в консоли ClickHouse Cloud на вкладке **Мониторинг** вашего экземпляра Managed Postgres.
+
+Кроме того, вы можете ознакомиться с [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) для подробного анализа ваших запросов на вкладке **Query Insights**.
+
+<div id="backup-and-recovery">
+  ## Резервное копирование и восстановление
+</div>
+
+<div id="backup-options">
+  ### Какие варианты резервного копирования доступны?
+</div>
+
+Managed Postgres включает автоматическое ежедневное резервное копирование с непрерывным архивированием WAL, что позволяет выполнять восстановление на определённый момент времени на любой момент в пределах 7-дневного периода хранения. Резервные копии хранятся в S3.
+
+Подробные сведения о частоте резервного копирования, сроках хранения и выполнении восстановления на определённый момент времени см. в документации [Backup and restore](/ru/products/managed-postgres/backup-and-restore).
+
+<div id="infrastructure-and-automation">
+  ## Инфраструктура и автоматизация
+</div>
+
+<div id="terraform-support">
+  ### Доступна ли поддержка Terraform для Managed Postgres?
+</div>
+
+Поддержка Terraform для Managed Postgres в настоящее время недоступна. Мы рекомендуем использовать консоль ClickHouse Cloud или [OpenAPI](/ru/products/managed-postgres/openapi) для создания экземпляров и управления ими.
+
+<div id="extensions-and-configuration">
+  ## Расширения и конфигурация
+</div>
+
+<div id="extensions-supported">
+  ### Какие расширения поддерживаются?
+</div>
+
+Managed Postgres включает более 90 расширений PostgreSQL, в том числе популярные PostGIS, pgvector, pg&#95;cron и многие другие. Полный список доступных расширений и инструкции по установке см. в документации [Расширения](/ru/products/managed-postgres/extensions).
+
+<div id="config-customization">
+  ### Можно ли настраивать параметры конфигурации PostgreSQL?
+</div>
+
+Да, параметры конфигурации PostgreSQL и PgBouncer можно изменять на вкладке **Настройки** в консоли. Подробнее о доступных параметрах и о том, как их изменять, см. в документации [Настройки](/ru/products/managed-postgres/settings).
+
+<Tip>
+  Если вам нужен параметр, который пока недоступен, обратитесь в [поддержку](https://clickhouse.com/support/program), чтобы запросить его.
+</Tip>
+
+<div id="connection-pooling">
+  ## Пул соединений
+</div>
+
+<div id="prepared-statement-errors">
+  ### Почему через PgBouncer возникают ошибки `prepared statement does not exist`?
+</div>
+
+Managed Postgres использует PgBouncer в режиме **transaction pooling**. В этом режиме backend-соединение Postgres выделяется вашему клиенту только на время одной транзакции, а затем возвращается в пул — следующая транзакция того же клиента может попасть на другое backend-соединение.
+
+Из-за этого не работают **серверные подготовленные операторы**, привязанные к конкретному backend-соединению, на котором был выполнен `PREPARE` (или `Parse` в extended query). Если соответствующий `EXECUTE` попадает на другое backend-соединение, возникают ошибки вида:
+
+```text
+ERROR:  prepared statement "..." does not exist
+ERROR:  unnamed prepared statement does not exist
+```
+
+Симптомы, которые часто указывают на одну и ту же первопричину:
+
+* Всплески ошибок `prepared statement does not exist`, особенно во время дозагрузки или записи с высоким параллелизмом
+* Вставки, которые как будто «тихо не срабатывают»: оператор завершается ошибкой, драйвер выполняет повторную попытку, и в итоге батч может быть применён частично или вовсе отброшен
+* Возвращаемые значения неправильного типа (например, столбец `BIGINT`, декодированный как битовый шаблон `float64`) — это происходит, когда кэшированный клиентский план повторно использует устаревшие коды типа/формата для backend-соединения, которому так и не был отправлен соответствующий `Parse`
+
+**Исправление: отключите подготовленные операторы на стороне сервера в драйвере.** Конкретный параметр зависит от используемой клиентской библиотеки:
+
+| Драйвер                          | Параметр                                                                                      |
+| -------------------------------- | --------------------------------------------------------------------------------------------- |
+| **pgx** (Go)                     | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`)        |
+| **psycopg3** (Python)            | `prepare_threshold=None`                                                                      |
+| **asyncpg** (Python)             | `statement_cache_size=0`                                                                      |
+| **JDBC** (Java)                  | `prepareThreshold=0`                                                                          |
+| **node-postgres / pg** (Node.js) | Не передавайте `name` в `query()` (именованные запросы становятся серверными подготовленными) |
+
+Если ваша рабочая нагрузка зависит от подготовленных операторов, подключайтесь **напрямую к PostgreSQL** (порт 5432), а не через пулер PgBouncer — прямые подключения штатно поддерживают подготовленные операторы. Подробнее о выборе между pooled и direct конечными точками см. в разделе [Connection](/ru/products/managed-postgres/connection).
+
+<div id="pgbouncer-vs-pg-connections">
+  ### Что означает параметр `max_client_conn` в PgBouncer и как он соотносится с `max_connections` в Postgres?
+</div>
+
+Они отвечают за разные вещи:
+
+* **`max_connections` в Postgres** ограничивает число **backend-соединений** с самим PostgreSQL. Это затратный показатель — каждое backend-соединение потребляет память и занимает слот процесса.
+* **`max_client_conn` в PgBouncer** ограничивает число **клиентских** соединений, которые могут быть одновременно открыты в пулере. PgBouncer мультиплексирует множество таких клиентских соединений на значительно меньшее число backend-соединений.
+
+Типичный экземпляр Managed Postgres настроен так, что PgBouncer принимает примерно **в 10 раз больше клиентских соединений, чем есть backend-соединений Postgres** (например, 5000 клиентских / 500 backend-соединений). Если вы видите ошибки соединения на стороне пулера, гораздо вероятнее, что вы упираетесь в лимит backend-соединений для конкретного пула (`default_pool_size`), а не в основной лимит клиентских соединений.
+
+<div id="database-capabilities">
+  ## Возможности базы данных
+</div>
+
+<div id="multiple-databases-schemas">
+  ### Могу ли я создать несколько баз данных и схем?
+</div>
+
+Да. Managed Postgres предоставляет всю нативную функциональность PostgreSQL, включая поддержку нескольких баз данных и схем в рамках одного экземпляра. Вы можете создавать базы данных и схемы и управлять ими с помощью стандартных команд PostgreSQL.
+
+<div id="rbac-support">
+  ### Поддерживается ли ролевое управление доступом (RBAC)?
+</div>
+
+У вас есть полный доступ с правами superuser к вашему экземпляру Managed Postgres, что позволяет создавать роли и управлять разрешениями с помощью стандартных команд PostgreSQL.
+
+<Note>
+  Расширенные возможности RBAC с интеграцией в консоль планируются в этом году.
+</Note>
+
+<div id="upgrades">
+  ## Обновления
+</div>
+
+<div id="version-upgrades">
+  ### Как выполняются обновления версий PostgreSQL?
+</div>
+
+Обновления как минорных, так и мажорных версий выполняются через переключение при отказе и обычно приводят лишь к нескольким секундам простоя. Вы можете настроить окно обслуживания, чтобы контролировать время применения обновлений. Подробную информацию см. в документации [Upgrades](/ru/products/managed-postgres/upgrades).
+
+<div id="migration">
+  ## Миграция
+</div>
+
+<div id="migration-tools">
+  ### Какие инструменты доступны при миграции в Managed Postgres?
+</div>
+
+Managed Postgres поддерживает несколько подходов к миграции:
+
+* **pg&#95;dump and pg&#95;restore**: Для небольших баз данных или разовых миграций. См. руководство [pg&#95;dump and pg&#95;restore](/ru/products/managed-postgres/migrations/pg_dump-pg_restore).
+* **Logical replication**: Для более крупных баз данных, где требуется минимальное время простоя. См. руководство [Логическая репликация](/ru/products/managed-postgres/migrations/logical-replication).
+* **PeerDB**: Для репликации на основе CDC из других экземпляров Postgres. См. руководство [Миграция с PeerDB](/ru/products/managed-postgres/migrations/peerdb).
+
+<Note>
+  Полностью управляемый процесс миграции скоро станет доступен.
+</Note>

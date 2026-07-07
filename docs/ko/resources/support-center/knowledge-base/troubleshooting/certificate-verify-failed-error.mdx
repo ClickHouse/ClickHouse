@@ -1,0 +1,53 @@
+---
+title: ClickHouse의 SSL 인증서 검증 오류 해결
+description: SSL Exception CERTIFICATE_VERIFY_FAILED 오류를 해결하는 방법을 알아봅니다.
+date: 2023-05-02
+tags: ['보안 및 인증', '오류 및 예외']
+keywords: ['오류', 'SSL Certificate', '210']
+---
+
+<div id="resolving-code-210-ssl-certificate-verify-error-in-clickhouse">
+  ## ClickHouse에서 코드 210 SSL 인증서 검증 오류 해결
+</div>
+
+이 오류는 일반적으로 다음과 같이 표시됩니다.
+
+`Code: 210. DB::NetException: SSL Exception: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED`
+
+<div id="cause-of-the-error">
+  ## 오류의 원인
+</div>
+
+이 오류는 `clickhouse-client`를 사용해 ClickHouse 서버에 연결하려고 할 때 발생합니다. 오류의 원인은 다음 중 하나입니다.
+
+* 클라이언트 설정 파일 `config.xml`에 시스템의 기본 CA 저장소에 있는 루트 인증서가 없거나
+* 자체 서명 인증서 또는 내부 CA 인증서가 구성되어 있지 않음
+
+<div id="solution">
+  ## 해결 방법
+</div>
+
+내부 CA 또는 자체 서명된 CA를 사용하는 경우, 클라이언트 디렉터리(예: `/etc/clickhouse-client`)의 `config.xml`에서 CA 루트 인증서를 구성하고 기본 위치에 있는 기본 루트 CA 인증서의 로드를 비활성화합니다.
+
+다음은 예시 구성입니다:
+
+```xml
+<openSSL>
+    <client>
+        <loadDefaultCAFile>false</loadDefaultCAFile>
+        <caConfig>/etc/clickhouse-server/certs/marsnet_ca.crt</caConfig>
+        <cacheSessions>true</cacheSessions>
+        <disableProtocols>sslv2,sslv3</disableProtocols>
+        <preferServerCiphers>true</preferServerCiphers>
+        <invalidCertificateHandler>
+            <name>RejectCertificateHandler</name>
+        </invalidCertificateHandler>
+    </client>
+</openSSL>
+```
+
+<div id="additional-resources">
+  ## 추가 리소스
+</div>
+
+참조 [https://clickhouse.com/docs/interfaces/cli/#configuration&#95;files](/ko/concepts/features/interfaces/cli#configuration_files)

@@ -1,0 +1,148 @@
+---
+slug: /native-protocol/server
+title: 'حزم الخادم'
+description: 'الخادم في البروتوكول الأصلي'
+doc_type: 'مرجع'
+keywords: ['البروتوكول الأصلي', 'بروتوكول tcp', 'عميل-خادم', 'مواصفات البروتوكول', 'الشبكات']
+---
+
+| value | name                             | description                                                                    |
+| ----- | -------------------------------- | ------------------------------------------------------------------------------ |
+| 0     | [Hello](#hello)                  | استجابة الخادم للمصافحة                                                        |
+| 1     | Data                             | مثل [بيانات العميل](/ar/resources/develop-contribute/native-protocol/client#data) |
+| 2     | [Exception](#exception)          | استثناء أثناء معالجة الاستعلام                                                 |
+| 3     | [Progress](#progress)            | تقدّم الاستعلام                                                                |
+| 4     | [Pong](#pong)                    | استجابة Ping                                                                   |
+| 5     | [EndOfStream](#end-of-stream)    | تم نقل جميع الحزم                                                              |
+| 6     | [ProfileInfo](#profile-info)     | بيانات التنميط                                                                 |
+| 7     | Totals                           | القيم الإجمالية                                                                |
+| 8     | Extremes                         | القيم القصوى (الحد الأدنى، الحد الأقصى)                                        |
+| 9     | TablesStatusResponse             | استجابة لطلب TableStatus                                                       |
+| 10    | [Log](#log)                      | سجل نظام الاستعلام                                                             |
+| 11    | TableColumns                     | وصف الأعمدة                                                                    |
+| 12    | UUIDs                            | قائمة بمُعرّفات الأجزاء الفريدة                                                |
+| 13    | ReadTaskRequest                  | String (UUID) يصف طلبًا يلزم له الحصول على المهمة التالية                      |
+| 14    | [ProfileEvents](#profile-events) | حزمة تحتوي على أحداث profile من الخادم                                         |
+
+يمكن ضغط `Data` و`Totals` و`Extremes`.
+
+<div id="hello">
+  ## Hello
+</div>
+
+استجابة لـ [client hello](/ar/resources/develop-contribute/native-protocol/client#hello).
+
+| الحقل             | النوع   | القيمة          | الوصف                        |
+| ----------------- | ------- | --------------- | ---------------------------- |
+| name              | String  | `Clickhouse`    | اسم الخادم                   |
+| version&#95;major | UVarInt | `21`            | الإصدار الرئيسي للخادم       |
+| version&#95;minor | UVarInt | `12`            | الإصدار الثانوي للخادم       |
+| revision          | UVarInt | `54452`         | مراجعة الخادم                |
+| tz                | String  | `Europe/Moscow` | المنطقة الزمنية للخادم       |
+| display&#95;name  | String  | `Clickhouse`    | اسم الخادم في واجهة المستخدم |
+| version&#95;patch | UVarInt | `3`             | إصدار التصحيح للخادم         |
+
+<div id="exception">
+  ## Exception
+</div>
+
+استثناء من الخادم أثناء معالجة الاستعلام.
+
+| الحقل           | النوع  | القيمة                                 | الوصف                         |
+| --------------- | ------ | -------------------------------------- | ----------------------------- |
+| code            | Int32  | `60`                                   | راجع [ErrorCodes.cpp][codes]. |
+| name            | String | `DB::Exception`                        | الإصدار الرئيسي للخادم        |
+| message         | String | `DB::Exception: Table X doesn't exist` | الإصدار الثانوي للخادم        |
+| stack&#95;trace | String | ~                                      | تتبّع المكدس في C++           |
+| nested          | Bool   | `true`                                 | مزيد من الأخطاء               |
+
+قد تأتي الاستثناءات في قائمة متتابعة إلى أن تصبح قيمة `nested` هي `false`.
+
+[codes]: https://clickhouse.com/codebrowser/ClickHouse/src/Common/ErrorCodes.cpp.html "قائمة رموز الأخطاء"
+
+<div id="progress">
+  ## Progress
+</div>
+
+يبلّغ الخادم دوريًا عن Progress تنفيذ الاستعلام.
+
+<Tip>
+  يُبلَّغ عن Progress على شكل **فروقات**. وللحصول على الإجماليات، قم بتجميعه على جانب العميل.
+</Tip>
+
+| الحقل           | النوع   | القيمة   | الوصف                      |
+| --------------- | ------- | -------- | -------------------------- |
+| rows            | UVarInt | `65535`  | عدد الصفوف                 |
+| bytes           | UVarInt | `871799` | عدد البايتات               |
+| total&#95;rows  | UVarInt | `0`      | إجمالي الصفوف              |
+| wrote&#95;rows  | UVarInt | `0`      | الصفوف الواردة من العميل   |
+| wrote&#95;bytes | UVarInt | `0`      | البايتات الواردة من العميل |
+
+<div id="pong">
+  ## Pong
+</div>
+
+استجابة إلى [Ping الخاص بالعميل](/ar/resources/develop-contribute/native-protocol/client#ping)، ولا تتضمن جسم الحزمة.
+
+<div id="end-of-stream">
+  ## نهاية الدفق
+</div>
+
+لن تُرسَل أي حزم **Data** أخرى، إذ جرى بث نتيجة الاستعلام بالكامل من الخادم إلى العميل.
+
+لا يوجد جسم للحزمة.
+
+<div id="profile-info">
+  ## معلومات profile
+</div>
+
+| الحقل                                    | النوع   |
+| ---------------------------------------- | ------- |
+| rows                                     | UVarInt |
+| blocks                                   | UVarInt |
+| bytes                                    | UVarInt |
+| applied&#95;limit                        | Bool    |
+| rows&#95;before&#95;limit                | UVarInt |
+| calculated&#95;rows&#95;before&#95;limit | Bool    |
+
+<div id="log">
+  ## Log
+</div>
+
+**كتلة بيانات** تحتوي على سجل الخادم.
+
+<Tip>
+  تُرمَّز على هيئة **كتلة بيانات** من الأعمدة، لكنها لا تُضغط مطلقًا.
+</Tip>
+
+| العمود         | النوع    |
+| -------------- | -------- |
+| time           | DateTime |
+| time&#95;micro | UInt32   |
+| host&#95;name  | String   |
+| query&#95;id   | String   |
+| thread&#95;id  | UInt64   |
+| priority       | Int8     |
+| source         | String   |
+| text           | String   |
+
+<div id="profile-events">
+  ## أحداث profile
+</div>
+
+**كتلة بيانات** تحتوي على أحداث profile.
+
+<Tip>
+  تُرمَّز على شكل **كتلة بيانات** من الأعمدة، لكنها لا تُضغط مطلقًا.
+
+  يكون نوع `value` هو `UInt64` أو `Int64`، حسب إصدار الخادم.
+</Tip>
+
+| العمود           | النوع           |
+| ---------------- | --------------- |
+| host&#95;name    | String          |
+| current&#95;time | DateTime        |
+| thread&#95;id    | UInt64          |
+| type             | Int8            |
+| name             | String          |
+| value            | UInt64 or Int64 |

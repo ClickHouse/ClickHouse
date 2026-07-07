@@ -1,0 +1,154 @@
+---
+sidebarTitle: 'DynamoDB'
+slug: /integrations/dynamodb
+description: 'ClickPipes vous permet de connecter ClickHouse à DynamoDB.'
+keywords: ['DynamoDB']
+title: 'CDC de DynamoDB vers ClickHouse'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Cette page explique comment configurer la CDC de DynamoDB vers ClickHouse à l’aide de ClickPipes. Cette intégration comporte 2 composants :
+
+1. L’instantané initial via S3 ClickPipes
+2. Les mises à jour en temps réel via Kinesis ClickPipes
+
+Les données seront ingérées dans un `ReplacingMergeTree`. Ce moteur de table est couramment utilisé dans les scénarios de CDC afin de permettre l’application des opérations de mise à jour. Pour en savoir plus sur cette approche, consultez les articles de blog suivants :
+
+* [Change Data Capture (CDC) avec PostgreSQL et ClickHouse - Partie 1](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-1?loc=docs-rockest-migrations)
+* [Change Data Capture (CDC) avec PostgreSQL et ClickHouse - Partie 2](https://clickhouse.com/blog/clickhouse-postgresql-change-data-capture-cdc-part-2?loc=docs-rockest-migrations)
+
+<div id="1-set-up-kinesis-stream">
+  ## 1. Configurer le flux Kinesis
+</div>
+
+Commencez par activer un flux Kinesis sur votre table DynamoDB afin de capturer les modifications en temps réel. Il est préférable de le faire avant de créer le snapshot afin d’éviter toute perte de données.
+Consultez le guide AWS disponible [ici](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
+
+<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="DynamoDB Kinesis Stream" border />
+
+<div id="2-create-the-snapshot">
+  ## 2. Créer le instantané
+</div>
+
+Ensuite, nous allons créer un instantané de la table DynamoDB. Cela peut se faire en exportant les données d’AWS vers S3. Consultez le guide AWS disponible [ici](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
+**Vous devrez effectuer une « Full export » au format DynamoDB JSON.**
+
+<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="Export DynamoDB vers S3" border />
+
+<div id="3-load-the-snapshot-into-clickhouse">
+  ## 3. Charger le instantané dans ClickHouse
+</div>
+
+<div id="create-necessary-tables">
+  ### Créer les tables nécessaires
+</div>
+
+Les données du instantané DynamoDB ressembleront à ceci :
+
+```json
+{
+  "age": {
+    "N": "26"
+  },
+  "first_name": {
+    "S": "sally"
+  },
+  "id": {
+    "S": "0A556908-F72B-4BE6-9048-9E60715358D4"
+  }
+}
+```
+
+Notez que les données sont dans un format imbriqué. Nous devrons les aplatir avant de les charger dans ClickHouse. Pour cela, vous pouvez utiliser la fonction `JSONExtract` de ClickHouse dans une vue matérialisée.
+
+Nous allons créer trois tables :
+
+1. Une table pour stocker les données brutes de DynamoDB
+2. Une table pour stocker les données finales aplaties (table de destination)
+3. Une vue matérialisée pour aplatir les données
+
+Pour l’exemple de données DynamoDB ci-dessus, les tables ClickHouse se présenteraient comme suit :
+
+```sql
+/* Snapshot table */
+CREATE TABLE IF NOT EXISTS "default"."snapshot"
+(
+    `item` String
+)
+ORDER BY tuple();
+
+/* Table for final flattened data */
+CREATE MATERIALIZED VIEW IF NOT EXISTS "default"."snapshot_mv" TO "default"."destination" AS
+SELECT
+    JSONExtractString(item, 'id', 'S') AS id,
+    JSONExtractInt(item, 'age', 'N') AS age,
+    JSONExtractString(item, 'first_name', 'S') AS first_name
+FROM "default"."snapshot";
+
+/* Table for final flattened data */
+CREATE TABLE IF NOT EXISTS "default"."destination" (
+    "id" String,
+    "first_name" String,
+    "age" Int8,
+    "version" Int64
+)
+ENGINE ReplacingMergeTree("version")
+ORDER BY id;
+```
+
+La table de destination doit respecter quelques exigences :
+
+* Cette table doit être une table `ReplacingMergeTree`
+* La table doit comporter une colonne `version`
+  * Dans les étapes suivantes, nous ferons correspondre le champ `ApproximateCreationDateTime` du flux Kinesis à la colonne `version`.
+* La table doit utiliser la clé de partitionnement comme clé de tri (spécifiée par `ORDER BY`)
+  * Les lignes ayant la même clé de tri seront dédupliquées en fonction de la colonne `version`.
+
+<div id="create-the-snapshot-clickpipe">
+  ### Créer le ClickPipe d’instantané
+</div>
+
+Vous pouvez maintenant créer un ClickPipe pour charger les données de l’instantané de S3 vers ClickHouse. Suivez le guide du S3 ClickPipe [ici](/fr/integrations/clickpipes/object-storage/amazon-s3/overview), mais utilisez les paramètres suivants :
+
+* **Chemin d’ingestion** : vous devrez repérer le chemin des fichiers JSON exportés dans S3. Le chemin ressemblera à ceci :
+
+```text
+https://{bucket}.s3.amazonaws.com/{prefix}/AWSDynamoDB/{export-id}/data/*
+```
+
+* **Format**: JSONEachRow
+* **Table**: Votre table de instantané (par ex. `default.snapshot` dans l’exemple ci-dessus)
+
+Une fois la création terminée, les données commenceront à alimenter les tables de instantané et de destination. Vous n&#39;avez pas besoin d&#39;attendre la fin du chargement du instantané avant de passer à l’étape suivante.
+
+<div id="4-create-the-kinesis-clickpipe">
+  ## 4. Créer le ClickPipe Kinesis
+</div>
+
+Nous pouvons maintenant configurer le ClickPipe Kinesis pour capturer les changements en temps réel du flux Kinesis. Suivez le guide ClickPipe Kinesis [ici](/fr/integrations/clickpipes/kinesis/overview), mais utilisez les paramètres suivants :
+
+* **Stream** : le flux Kinesis utilisé à l’étape 1
+* **Table** : votre table de destination (par ex. `default.destination` dans l’exemple ci-dessus)
+* **Flatten object** : true
+* **Column mappings** :
+  * `ApproximateCreationDateTime` : `version`
+  * Mappez les autres champs aux colonnes de destination appropriées, comme indiqué ci-dessous
+
+<Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="Mappage des colonnes DynamoDB" border />
+
+<div id="5-cleanup-optional">
+  ## 5. Nettoyage (facultatif)
+</div>
+
+Une fois le ClickPipe de instantané terminé, vous pouvez supprimer la table de l’instantané et la vue matérialisée.
+
+```sql
+DROP TABLE IF EXISTS "default"."snapshot";
+DROP TABLE IF EXISTS "default"."snapshot_clickpipes_error";
+DROP VIEW IF EXISTS "default"."snapshot_mv";
+```

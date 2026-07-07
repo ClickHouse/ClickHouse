@@ -1,0 +1,17 @@
+---
+description: 'Documentation de l’instruction USE'
+sidebarTitle: 'USE'
+slug: /sql-reference/statements/use
+title: 'Instruction USE'
+doc_type: 'reference'
+---
+
+```sql
+USE [DATABASE] db
+```
+
+Permet de définir la base de données courante pour la session.
+
+La base de données courante est utilisée pour rechercher des tables si la base de données n’est pas explicitement indiquée dans la requête par un point avant le nom de la table.
+
+Cette requête ne peut pas être exécutée lors de l’utilisation du protocole HTTP, car la notion de session n’existe pas.

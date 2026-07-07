@@ -1,0 +1,78 @@
+---
+sidebarTitle: '개요'
+keywords: ['ClickHouse', 'connect', 'Luzmo', 'Explo', 'Fabi.ai', 'Tableau', 'Grafana', 'Metabase', 'Mitzu', 'superset', 'Databrain','Deepnote', 'Draxlr', 'RocketBI', 'Omni', 'Querio', 'bi', 'visualization', 'tool', 'lightdash']
+title: 'ClickHouse에서 데이터 시각화'
+slug: /integrations/data-visualization
+description: 'ClickHouse에서 데이터를 시각화하는 방법을 알아보세요'
+doc_type: 'guide'
+---
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe src="https://player.vimeo.com/video/754460217?h=3dcae2e1ca" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen />
+  </Frame>
+</div>
+
+<br />
+
+이제 데이터가 ClickHouse에 저장되었으므로 분석할 차례입니다. 이 과정에는 BI 도구를 사용해 시각화를 만드는 작업이 포함되는 경우가 많습니다. 널리 사용되는 많은 BI 및 시각화 도구가 ClickHouse에 연결됩니다. 일부 도구는 별도 설정 없이 바로 ClickHouse에 연결할 수 있지만, 일부는 커넥터를 설치해야 합니다. 다음을 포함해 여러 도구에 대한 문서를 제공하고 있습니다:
+
+* [Apache Superset](/ko/integrations/connectors/data-visualization/superset-and-clickhouse)
+* [Astrato](/ko/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse)
+* [Chartbrew](/ko/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse)
+* [Databrain](/ko/integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse)
+* [Deepnote](/ko/integrations/connectors/data-visualization/community-integrations/deepnote)
+* [Dot](/ko/integrations/connectors/data-visualization/community-integrations/dot-and-clickhouse)
+* [Draxlr](/ko/integrations/connectors/data-visualization/community-integrations/draxlr-and-clickhouse)
+* [Embeddable](/ko/integrations/connectors/data-visualization/community-integrations/embeddable-and-clickhouse)
+* [Explo](/ko/integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse)
+* [Fabi.ai](/ko/integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse)
+* [Grafana](/ko/integrations/connectors/data-visualization/grafana/index)
+* [Lightdash](/ko/integrations/connectors/data-visualization/lightdash-and-clickhouse)
+* [Looker](/ko/integrations/connectors/data-visualization/looker-and-clickhouse)
+* [Luzmo](/ko/integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse)
+* [Metabase](/ko/integrations/connectors/data-visualization/metabase-and-clickhouse)
+* [Mitzu](/ko/integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse)
+* [Omni](/ko/integrations/connectors/data-visualization/omni-and-clickhouse)
+* [Querio](/ko/integrations/connectors/data-visualization/community-integrations/querio-and-clickhouse)
+* [Rill](https://docs.rilldata.com/reference/olap-engines/clickhouse)
+* [Rocket BI](/ko/integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse)
+* [Tableau](/ko/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse)
+* [Zing Data](/ko/integrations/connectors/data-visualization/community-integrations/zingdata-and-clickhouse)
+* [Holistics BI](/ko/integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse)
+
+<div id="clickhouse-cloud-compatibility-with-data-visualization-tools">
+  ## ClickHouse Cloud와 데이터 시각화 도구의 호환성
+</div>
+
+| 도구                                                                                                       | 지원 경로                   | 테스트 완료 | 문서화 완료 | 비고                                                                                                                            |
+| -------------------------------------------------------------------------------------------------------- | ----------------------- | ------ | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| [Apache Superset](/ko/integrations/connectors/data-visualization/superset-and-clickhouse)                   | ClickHouse 공식 connector | ✅      | ✅      |                                                                                                                               |
+| [Astrato](/ko/integrations/connectors/data-visualization/community-integrations/astrato-and-clickhouse)     | 네이티브 커넥터                | ✅      | ✅      | pushdown SQL을 사용하는 네이티브 방식으로 작동합니다(Direct Query 전용).                                                                          |
+| [AWS QuickSight](/ko/integrations/connectors/data-visualization/quicksight-and-clickhouse)                  | MySQL 인터페이스             | ✅      | ✅      | 일부 제한 사항이 있으나 사용 가능합니다. 자세한 내용은 [문서](/ko/integrations/connectors/data-visualization/quicksight-and-clickhouse)를 참조하십시오           |
+| [Chartbrew](/ko/integrations/connectors/data-visualization/community-integrations/chartbrew-and-clickhouse) | ClickHouse 공식 커넥터       | ✅      | ✅      |                                                                                                                               |
+| [Databrain](/ko/integrations/connectors/data-visualization/community-integrations/databrain-and-clickhouse) | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Deepnote](/ko/integrations/connectors/data-visualization/community-integrations/deepnote)                  | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Dot](/ko/integrations/connectors/data-visualization/community-integrations/dot-and-clickhouse)             | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Explo](/ko/integrations/connectors/data-visualization/community-integrations/explo-and-clickhouse)         | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Fabi.ai](/ko/integrations/connectors/data-visualization/community-integrations/fabi-and-clickhouse)        | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Grafana](/ko/integrations/connectors/data-visualization/grafana/index)                                     | ClickHouse 공식 커넥터       | ✅      | ✅      |                                                                                                                               |
+| [Hashboard](/ko/integrations/connectors/data-visualization/community-integrations/hashboard-and-clickhouse) | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Holistics](/ko/integrations/connectors/data-visualization/community-integrations/holistics-and-clickhouse) | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Lightdash](/ko/integrations/connectors/data-visualization/lightdash-and-clickhouse)                        | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+|                                                                                                          |                         |        |        |                                                                                                                               |
+| [Looker](/ko/integrations/connectors/data-visualization/looker-and-clickhouse)                              | 네이티브 커넥터                | ✅      | ✅      | 일부 제한 사항이 있으므로 자세한 내용은 [문서](/ko/integrations/connectors/data-visualization/looker-and-clickhouse)를 참조하십시오                        |
+| Looker                                                                                                   | MySQL 인터페이스             | 🚧     | ❌      |                                                                                                                               |
+| [Luzmo](/ko/integrations/connectors/data-visualization/community-integrations/luzmo-and-clickhouse)         | ClickHouse 공식 커넥터       | ✅      | ✅      |                                                                                                                               |
+| [Looker Studio](/ko/integrations/connectors/data-visualization/looker-studio-and-clickhouse)                | MySQL 인터페이스             | ✅      | ✅      |                                                                                                                               |
+| [Metabase](/ko/integrations/connectors/data-visualization/metabase-and-clickhouse)                          | ClickHouse 공식 커넥터       | ✅      | ✅      |                                                                                                                               |
+| [Mitzu](/ko/integrations/connectors/data-visualization/community-integrations/mitzu-and-clickhouse)         | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Omni](/ko/integrations/connectors/data-visualization/omni-and-clickhouse)                                  | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Power BI Desktop](/ko/integrations/connectors/data-visualization/powerbi-and-clickhouse)                   | ClickHouse 공식 커넥터       | ✅      | ✅      | ODBC를 통해 Direct Query 모드를 지원                                                                                                  |
+| [Power BI Service](/ko/integrations/connectors/data-visualization/powerbi-and-clickhouse#power-bi-service)  | ClickHouse 공식 커넥터       | ✅      | ✅      | [Microsoft Data Gateway](https://learn.microsoft.com/en-us/power-bi/connect-data/service-gateway-custom-connectors) 설정이 필요합니다 |
+| [Querio](/ko/integrations/connectors/data-visualization/community-integrations/querio-and-clickhouse)       | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Rill](https://docs.rilldata.com/reference/olap-engines/clickhouse)                                      | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |
+| [Rocket BI](/ko/integrations/connectors/data-visualization/community-integrations/rocketbi-and-clickhouse)  | 네이티브 커넥터                | ✅      | ❌      |                                                                                                                               |
+| [Tableau Desktop](/ko/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse)            | ClickHouse 공식 커넥터       | ✅      | ✅      |                                                                                                                               |
+| [Tableau Online](/ko/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)      | MySQL 인터페이스             | ✅      | ✅      | 일부 제한 사항이 있으며, 자세한 내용은 [문서](/ko/integrations/connectors/data-visualization/tableau/tableau-online-and-clickhouse)를 참조하십시오        |
+| [Zing Data](/ko/integrations/connectors/data-visualization/community-integrations/zingdata-and-clickhouse)  | 네이티브 커넥터                | ✅      | ✅      |                                                                                                                               |

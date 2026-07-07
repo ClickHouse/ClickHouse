@@ -267,6 +267,15 @@ bool ThreadStatus::isQueryCanceled() const
     return false;
 }
 
+void ThreadStatus::throwIfQueryCanceled() const
+{
+    if (!thread_group)
+        return;
+
+    if (local_data.throw_if_query_canceled_predicate)
+        local_data.throw_if_query_canceled_predicate();
+}
+
 size_t ThreadStatus::getNextPlanStepIndex() const
 {
     return local_data.plan_step_index->fetch_add(1);
