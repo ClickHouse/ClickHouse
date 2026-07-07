@@ -73,8 +73,7 @@ public:
 
     /// Whether a failed provider request should be retried: transient network failures and
     /// transient/server-side HTTP responses are retriable, deterministic argument/usage errors are not.
-    /// `eptr` must be the currently handled exception, i.e. `std::current_exception()`.
-    static bool isRetriableProviderError(std::exception_ptr eptr);
+    static bool isRetriableProviderError(std::exception_ptr exception);
 
 protected:
     ContextPtr context;

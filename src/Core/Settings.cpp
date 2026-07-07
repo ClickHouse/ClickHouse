@@ -1137,6 +1137,10 @@ In CREATE TABLE statement allows creating columns of type FixedString(n) with n 
     DECLARE(Bool, allow_suspicious_indices, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
 )", 0) \
+    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
+)", 0) \
     DECLARE(Bool, allow_suspicious_ttl_expressions, false, R"(
 Reject TTL expressions that don't depend on any of table's columns. It indicates a user error most of the time.
 )", 0) \
@@ -1756,6 +1760,22 @@ If `force_index_by_date=1`, ClickHouse checks whether the query has a date key c
 )", 0) \
     DECLARE(Bool, use_primary_key, true, R"(
 Use the primary key to prune granules during query execution for MergeTree tables.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
+Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
+
+When the partition key appears in the filter together with primary-key or skip-index columns, this lets index analysis fold the partition value separately within each part. It is most useful for disjunctive filters whose branches target different partitions. For example, with `PARTITION BY a` and `ORDER BY b`:
+
+```sql
+SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b > 10)
+```
+
+For the part in partition `a = 1` the condition folds to `b >= 1`, while for partitions `a = 2` and `a = 3` it folds to `b > 10`, so each part is analyzed with the predicate that actually applies to it.
 
 Possible values:
 
@@ -6743,6 +6763,9 @@ A higher value reduces the number of HTTP requests for cold scans on object stor
 Load MergeTree marks asynchronously
 
 Cloud default value: `1`.
+)", 0) \
+    DECLARE(Bool, use_streaming_marks_compression, false, R"(
+When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
 )", 0) \
     DECLARE(Bool, enable_filesystem_read_prefetches_log, false, R"(
 Log to system.filesystem prefetch_log during query. Should be used only for testing or debugging, not recommended to be turned on by default

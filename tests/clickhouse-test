@@ -1576,6 +1576,7 @@ class SettingsRandomizer:
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
+        "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
     }
