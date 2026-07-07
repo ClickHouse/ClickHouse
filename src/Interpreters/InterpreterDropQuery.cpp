@@ -411,13 +411,6 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} doesn't exist", backQuoteIfNeed(table_id.getDatabaseName()));
 
     const auto table_name = table_id.getTableName();
-    if (database->shouldReplicateQuery(getContext(), current_query_ptr))
-    {
-        context_->checkAccess(AccessType::DROP_TABLE, table_id);
-        ddl_guard->releaseTableLock();
-        return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
-    }
-
     const bool table_exists = database->isTableExist(table_name, context_);
     auto actual_database = std::dynamic_pointer_cast<DatabaseAtomic>(database);
     if (!actual_database)
@@ -446,6 +439,7 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
     }
 
     const bool table_detached = actual_database->isTableDetached(table_name);
+    const bool should_replicate_query = database->shouldReplicateQuery(getContext(), current_query_ptr);
     if (query.if_exists)
     {
         if (!table_exists && !table_detached)
@@ -457,6 +451,11 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
                 if (replicated_database->hasDetachedTableMetadataInZooKeeper(context_, table_name))
                 {
                     context_->checkAccess(AccessType::DROP_TABLE, table_id);
+                    if (should_replicate_query)
+                    {
+                        ddl_guard->releaseTableLock();
+                        return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
+                    }
                     replicated_database->dropDetachedTableMetadataIfExistsInZooKeeper(context_, table_name);
                 }
             }
@@ -503,6 +502,12 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
     bool check_ref_deps = getContext()->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && getContext()->getSettingsRef()[Setting::check_table_dependencies];
     DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed(detached_table_id, check_ref_deps, check_loading_deps, false);
+
+    if (should_replicate_query)
+    {
+        ddl_guard->releaseTableLock();
+        return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
+    }
 
     detached_table->dropInnerTableIfAny(query.sync, context_);
 
