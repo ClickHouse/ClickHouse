@@ -79,11 +79,14 @@ struct ArrayPackBitsImpl
         {
             const ColumnWithTypeAndName & argument = fixed_arguments[index];
 
+            /// Restricted to native integers, like `arrayTopK` does for its `K` argument. A wide (128/256-bit)
+            /// constant would be silently truncated to its low 64 bits by the `getInt`/`getUInt` accessors below,
+            /// which could turn an out-of-range size or group value into an in-range one and bypass the checks.
             WhichDataType which(argument.type);
-            if (!which.isInt() && !which.isUInt())
+            if (!which.isNativeInteger())
                 throw Exception(
                     ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                    "The {} argument of function {} must have an integer type, got {}",
+                    "The {} argument of function {} must have a native integer type (UInt8/16/32/64 or Int8/16/32/64), got {}",
                     what,
                     name,
                     argument.type->getName());
