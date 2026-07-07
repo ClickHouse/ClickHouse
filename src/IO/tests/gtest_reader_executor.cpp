@@ -47,7 +47,7 @@ struct TestThreadGroup
 
     ProfileEvents::Count get(ProfileEvents::Event event) const
     {
-        return thread_group->performance_counters[event].load(std::memory_order_relaxed);
+        return thread_group->performance_counters[event];
     }
 };
 

@@ -1,0 +1,100 @@
+---
+sidebarTitle: 'Azure Synapse'
+slug: /integrations/azure-synapse
+description: 'ClickHouse와 함께 사용하는 Azure Synapse 소개'
+keywords: ['ClickHouse', 'Azure Synapse', 'Azure', 'Synapse', 'Microsoft', 'Azure Spark', '데이터']
+title: 'Azure Synapse와 ClickHouse 통합'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Azure Synapse](https://azure.microsoft.com/en-us/products/synapse-analytics)는 빅데이터, 데이터 과학, 데이터 웨어하우징을 결합하여 빠르고 대규모 데이터 분석을 지원하는 통합 분석 서비스입니다.
+Synapse에서 Spark 풀은 필요에 따라 확장 가능한 [Apache Spark](https://spark.apache.org) 클러스터를 제공하므로, 복잡한 데이터 변환, 머신 러닝, 외부 시스템과의 통합을 실행할 수 있습니다.
+
+이 문서에서는 Azure Synapse에서 Apache Spark를 사용할 때 [ClickHouse Spark 커넥터](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector)를 연동하는 방법을 설명합니다.
+
+<div id="add-connector-dependencies">
+  ## 커넥터의 종속성 추가
+</div>
+
+Azure Synapse는 [패키지 관리](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-portal-add-libraries)를 다음 3개 수준에서 지원합니다:
+
+1. 기본 패키지
+2. Spark 풀 수준
+3. 세션 수준
+
+<br />
+
+[Apache Spark 풀용 라이브러리 관리 가이드](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-manage-pool-packages)를 따라 Spark 애플리케이션에 다음 필수 종속성을 추가하세요.
+
+* `clickhouse-spark-runtime-{spark_version}_{scala_version}-{connector_version}.jar` - [공식 Maven](https://mvnrepository.com/artifact/com.clickhouse.spark)
+* `clickhouse-jdbc-{java_client_version}-all.jar` - [공식 Maven](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)
+
+요구 사항에 맞는 버전을 확인하려면 [Spark Connector 호환성 매트릭스](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#compatibility-matrix) 문서를 참조하십시오.
+
+<div id="add-clickhouse-as-catalog">
+  ## ClickHouse를 catalog로 추가
+</div>
+
+세션에 Spark 구성을 추가하는 방법은 여러 가지가 있습니다:
+
+* 세션과 함께 로드할 사용자 지정 설정 파일
+* Azure Synapse UI를 통해 구성 추가
+* Synapse 노트북에서 구성 추가
+
+다음 [Apache Spark 구성 관리](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-create-spark-configuration)를 참고하여
+[커넥터에 필요한 Spark 구성](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required)을 추가하십시오.
+
+예를 들어, 노트북에서 다음 설정으로 Spark 세션을 구성할 수 있습니다:
+
+```python
+%%configure -f
+{
+    "conf": {
+        "spark.sql.catalog.clickhouse": "com.clickhouse.spark.ClickHouseCatalog",
+        "spark.sql.catalog.clickhouse.host": "<clickhouse host>",
+        "spark.sql.catalog.clickhouse.protocol": "https",
+        "spark.sql.catalog.clickhouse.http_port": "<port>",
+        "spark.sql.catalog.clickhouse.user": "<username>",
+        "spark.sql.catalog.clickhouse.password": "password",
+        "spark.sql.catalog.clickhouse.database": "default"
+    }
+}
+```
+
+다음과 같이 첫 번째 셀에 표시되는지 확인하십시오:
+
+<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="노트북에서 Spark 구성 설정" border />
+
+추가 설정은 [ClickHouse Spark configurations page](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations)를 참조하십시오.
+
+<Info>
+  ClickHouse Cloud를 사용하는 경우 [필수 Spark 설정](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#clickhouse-cloud-settings)을 반드시 지정하십시오.
+</Info>
+
+<div id="setup-verification">
+  ## 설정 확인
+</div>
+
+종속성과 구성이 성공적으로 설정되었는지 확인하려면 현재 세션의 Spark UI를 열고 `Environment` 탭으로 이동하십시오.
+해당 탭에서 ClickHouse 관련 설정을 찾으십시오:
+
+<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="Spark UI를 사용한 ClickHouse 설정 확인" border />
+
+<div id="additional-resources">
+  ## 추가 자료
+</div>
+
+* [ClickHouse Spark 커넥터 문서](/ko/integrations/connectors/data-ingestion/apache-spark/index)
+* [Azure Synapse Spark 풀 개요](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-overview)
+* [Apache Spark 워크로드 성능 최적화](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-performance)
+* [Synapse에서 Apache Spark 풀 라이브러리 관리](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-manage-pool-packages)
+* [Synapse에서 Apache Spark 구성 관리](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-create-spark-configuration)

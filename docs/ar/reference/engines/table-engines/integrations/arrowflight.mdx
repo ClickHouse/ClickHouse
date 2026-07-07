@@ -1,0 +1,110 @@
+---
+description: 'يتيح هذا المحرك الاستعلام عن مجموعات البيانات البعيدة والإدراج فيها عبر بروتوكول Apache Arrow Flight.'
+sidebarTitle: 'ArrowFlight'
+slug: /engines/table-engines/integrations/arrowflight
+title: 'محرك جدول ArrowFlight'
+doc_type: 'reference'
+---
+
+يُمكّن محرك جدول ArrowFlight في ClickHouse من القراءة من مجموعات البيانات البعيدة والكتابة إليها عبر بروتوكول [Apache Arrow Flight](https://arrow.apache.org/docs/format/Flight.html).
+ويتيح هذا التكامل لـ ClickHouse التفاعل مع الخوادم الخارجية الداعمة لـ Flight بتنسيق Arrow عمودي وبأداء عالٍ.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name (name1 [type1], name2 [type2], ...)
+    ENGINE = ArrowFlight('host:port', 'dataset_name' [, 'username', 'password']);
+```
+
+**معلمات المحرّك**
+
+* `host:port` — عنوان خادم Arrow Flight البعيد. إذا لم يُحدَّد المنفذ، فسيُستخدم المنفذ الافتراضي `8815`. [String](/ar/reference/data-types/string).
+* `dataset_name` — معرّف مجموعة البيانات على خادم Flight (يُستخدم كواصف PATH أو في استعلام `SELECT *`، بحسب الإعداد `arrow_flight_request_descriptor_type`). [String](/ar/reference/data-types/string).
+* `username` — اسم المستخدم لمصادقة HTTP الأساسية. [String](/ar/reference/data-types/string).
+* `password` — كلمة المرور لمصادقة HTTP الأساسية. [String](/ar/reference/data-types/string).
+
+إذا لم يتم تحديد `username` و`password`، فلن تُستخدم المصادقة (ولا يعمل ذلك إلا إذا كان خادم Arrow Flight يسمح بالوصول من دون مصادقة).
+
+قائمة الأعمدة اختيارية — إذا لم تُحدَّد، فسيُستنتج المخطط من خادم Arrow Flight البعيد عبر `GetSchema`.
+
+<div id="named-collections">
+  ## المجموعات المُسمّاة
+</div>
+
+يدعم المحرّك [المجموعات المُسمّاة](/ar/concepts/features/configuration/server-config/named-collections) لتخزين معلمات الاتصال:
+
+```sql
+CREATE TABLE remote_flight_data
+    ENGINE = ArrowFlight(named_collection_name);
+```
+
+معلمات المجموعة المسماة:
+
+| المعلمة                    | مطلوب                    | الافتراضي | الوصف                                                       |
+| -------------------------- | ------------------------ | --------- | ----------------------------------------------------------- |
+| `host` or `hostname`       | لا                       | `""`      | اسم مضيف الخادم.                                            |
+| `port`                     | نعم                      | —         | منفذ الخادم.                                                |
+| `dataset`                  | نعم                      | —         | اسم مجموعة البيانات أو الواصف.                              |
+| `use_basic_authentication` | لا                       | `true`    | تمكين المصادقة الأساسية.                                    |
+| `user` or `username`       | إذا كانت المصادقة مفعّلة | —         | اسم المستخدم للمصادقة.                                      |
+| `password`                 | لا                       | `""`      | كلمة المرور للمصادقة.                                       |
+| `enable_ssl`               | لا                       | `false`   | تمكين تشفير TLS.                                            |
+| `ssl_ca`                   | لا                       | `""`      | مسار ملف شهادة CA المستخدمة للتحقق عبر TLS.                 |
+| `ssl_override_hostname`    | لا                       | `""`      | تجاوز اسم المضيف الذي يجري التحقق منه أثناء التحقق عبر TLS. |
+
+<div id="settings">
+  ## الإعدادات
+</div>
+
+* `arrow_flight_request_descriptor_type` — يتحكّم في كيفية إرسال اسم مجموعة البيانات إلى خادم Flight. القيم المحتملة: `path` (الافتراضي، ويُرسَل على هيئة واصف PATH) أو `command` (ويُرسَل على هيئة واصف CMD مع `SELECT * FROM <dataset>`). استخدم `command` مع خوادم Flight التي تتوقع أوامر SQL (مثل Dremio).
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+قراءة البيانات من خادم Arrow Flight بعيد:
+
+```sql
+CREATE TABLE remote_flight_data
+(
+    id UInt32,
+    name String,
+    value Float64
+) ENGINE = ArrowFlight('127.0.0.1:9005', 'sample_dataset');
+
+SELECT * FROM remote_flight_data ORDER BY id;
+```
+
+```text
+┌─id─┬─name────┬─value─┐
+│  1 │ foo     │ 42.1  │
+│  2 │ bar     │ 13.3  │
+│  3 │ baz     │ 77.0  │
+└────┴─────────┴───────┘
+```
+
+إدراج البيانات في خادم Arrow Flight البعيد:
+
+```sql
+INSERT INTO remote_flight_data VALUES (4, 'qux', 99.9);
+```
+
+<div id="notes">
+  ## ملاحظات
+</div>
+
+* إذا جرى تحديد الأعمدة في عبارة `CREATE TABLE`، فيجب أن تتطابق مع المخطط الذي يعيده خادم Flight.
+* إذا لم تُحدَّد الأعمدة، فسيُستنتَج المخطط تلقائيًا من الخادم البعيد.
+* كلٌّ من القراءة (`SELECT`) والكتابة (`INSERT`) مدعومان.
+* يتحكم الإعداد `arrow_flight_request_descriptor_type` في ما إذا كان اسم مجموعة البيانات يُرسَل كواصف PATH أو كواصف CMD يتضمّن استعلام `SELECT *`.
+
+<div id="see-also">
+  ## انظر أيضًا
+</div>
+
+* [الدالة الجدولية arrowFlight](/ar/reference/functions/table-functions/arrowflight)
+* [واجهة Arrow Flight](/ar/concepts/features/interfaces/arrowflight)
+* [مواصفة Apache Arrow Flight SQL](https://arrow.apache.org/docs/format/FlightSql.html)
+* [تنسيق Arrow في ClickHouse](/ar/reference/formats/Arrow/Arrow)

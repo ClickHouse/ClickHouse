@@ -97,7 +97,7 @@ public:
         EvictionCandidates & res,
         InvalidatedEntriesInfos & invalidated_entries,
         IFileCachePriority::IteratorPtr reservee,
-        bool continue_from_last_eviction_pos,
+        EvictionCursor eviction_cursor,
         size_t max_candidates_size,
         bool is_total_space_cleanup,
         const OriginInfo & origin_info,
@@ -142,19 +142,19 @@ public:
     }
 
     /// See a comment near eviction_pos.
-    void resetEvictionPos() override
+    void resetEvictionPos(EvictionCursor cursor) override
     {
         std::lock_guard lock(eviction_pos_mutex);
-        eviction_pos = LRUQueue::iterator{};
+        evictionPos(cursor) = LRUQueue::iterator{};
     }
 
     /// Used only for unit test.
-    size_t getEvictionPosCount()
+    size_t getEvictionPosCount(EvictionCursor cursor)
     {
         std::lock_guard lock(eviction_pos_mutex);
-        if (eviction_pos == LRUQueue::iterator{})
+        if (evictionPos(cursor) == LRUQueue::iterator{})
             return 0;
-        return std::distance(queue.begin(), eviction_pos);
+        return std::distance(queue.begin(), evictionPos(cursor));
     }
 
 protected:
@@ -187,13 +187,15 @@ private:
     const std::string description;
     LoggerPtr log;
     StatePtr state;
-    /// Eviction position is a pointer used in collectCandidatesForEviction
-    /// to track where the last collectCandidatesForEviction stopped.
-    /// This is an optimization for concurrently made eviction attempts,
-    /// which allows us not to iterate the queue from scratch,
-    /// skipping elements which are likely in non-evictable state.
-    LRUQueue::iterator eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
+    /// Where the last collectCandidatesForEviction stopped, so a pass resumes instead of
+    /// rescanning from the head
+    LRUQueue::iterator reserve_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
+    LRUQueue::iterator background_eviction_pos TSA_GUARDED_BY(eviction_pos_mutex);
     mutable std::mutex eviction_pos_mutex;
+
+    /// Select the cursor member for `cursor`. `FromHead` has no cursor and must not be passed.
+    LRUQueue::iterator & evictionPos(EvictionCursor cursor) TSA_REQUIRES(eviction_pos_mutex);
+    const LRUQueue::iterator & evictionPos(EvictionCursor cursor) const TSA_REQUIRES(eviction_pos_mutex);
     struct InvalidatedRef
     {
         std::weak_ptr<Entry> entry;
@@ -256,8 +258,9 @@ private:
 
     std::string getApproxStateInfoForLog() const;
 
-    LRUQueue::iterator getEvictionPos(const CachePriorityGuard::ReadLock &) const;
-    void setEvictionPos(LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
+    LRUQueue::iterator getEvictionPos(EvictionCursor cursor, const CachePriorityGuard::ReadLock &) const;
+    void setEvictionPos(EvictionCursor cursor, LRUQueue::iterator it, const CachePriorityGuard::ReadLock &);
+    /// Advance every cursor that points at `it` (which is about to be removed/spliced out).
     void moveEvictionPosIfEqual(LRUQueue::iterator it, const CachePriorityGuard::WriteLock &);
 };
 

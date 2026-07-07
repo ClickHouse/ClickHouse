@@ -1,0 +1,49 @@
+---
+description: 'توثيق عبارة EXECUTE AS'
+sidebarTitle: 'EXECUTE AS'
+slug: /sql-reference/statements/execute_as
+title: 'عبارة EXECUTE AS'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+يسمح بتنفيذ الاستعلامات نيابةً عن مستخدم آخر.
+
+<div id="syntax">
+  ## البنية
+</div>
+
+```sql
+EXECUTE AS target_user;
+EXECUTE AS target_user subquery;
+```
+
+الصيغة الأولى (من دون `subquery`) تجعل جميع الاستعلامات التالية في الجلسة الحالية تُنفَّذ نيابةً عن `target_user` المحدد.
+
+الصيغة الثانية (مع `subquery`) لا تنفِّذ إلا `subquery` المحدد نيابةً عن `target_user` المحدد.
+
+لكي تعمل كلتا الصيغتين، يجب ضبط إعداد التهيئة `access_control_improvements.allow_impersonate_user`
+على `1`، وأن يكون امتياز `IMPERSONATE` قد مُنِح. على سبيل المثال، الأوامر التالية
+
+```sql
+GRANT IMPERSONATE ON user1 TO user2;
+GRANT IMPERSONATE ON * TO user3;
+```
+
+اسمح للمستخدم `user2` بتنفيذ الأوامر `EXECUTE AS user1 ...`، واسمح أيضًا للمستخدم `user3` بتنفيذ الأوامر باسم أي مستخدم.
+
+أثناء انتحال صفة مستخدم آخر، تُرجع الدالة [currentUser()](/ar/reference/functions/regular-functions/other-functions#currentUser) اسم ذلك المستخدم الآخر،
+وتُرجع الدالة [authenticatedUser()](/ar/reference/functions/regular-functions/other-functions#authenticatedUser) اسم المستخدم الذي تمت مصادقته فعليًا.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+```sql
+SELECT currentUser(), authenticatedUser(); -- outputs "default    default"
+CREATE USER james;
+EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- outputs "james    default"
+```

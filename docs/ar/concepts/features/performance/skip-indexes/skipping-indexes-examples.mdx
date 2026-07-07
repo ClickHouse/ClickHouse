@@ -1,0 +1,275 @@
+---
+slug: /optimize/skipping-indexes/examples
+sidebarTitle: 'فهارس تخطي البيانات - أمثلة'
+description: 'أمثلة مجمّعة لفهارس التخطي'
+title: 'أمثلة على فهارس تخطي البيانات'
+doc_type: 'دليل'
+keywords: ['فهارس التخطي', 'تخطي البيانات', 'الأداء', 'الفهرسة', 'أفضل الممارسات']
+---
+
+تجمع هذه الصفحة أمثلة لفهارس تخطي البيانات في ClickHouse، وتوضح كيفية تعريف كل نوع، ومتى يُستخدم، وكيفية التحقق من تطبيقه. تعمل جميع الميزات مع [جداول عائلة MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+**صياغة الفهرس:**
+
+```sql
+INDEX name expr TYPE type(...) [GRANULARITY N]
+```
+
+يدعم ClickHouse ستة أنواع من فهارس التخطي:
+
+| نوع الفهرس                                          | الوصف                                                                      |
+| --------------------------------------------------- | -------------------------------------------------------------------------- |
+| **minmax**                                          | يتتبع القيم الدنيا والعليا في كل حبيبة                              |
+| **set(N)**                                          | يخزّن ما يصل إلى N من القيم المميّزة لكل حبيبة                      |
+| **text**                                            | فهرس مقلوب على البيانات النصية المُجزأة إلى رموز من أجل البحث النصي الكامل |
+| **bloom&#95;filter([false&#95;positive&#95;rate])** | مرشّح احتمالي للتحقق من الوجود                                             |
+| **ngrambf&#95;v1**                                  | مرشّح bloom لـ n-gram لعمليات البحث عن سلاسل فرعية                         |
+| **tokenbf&#95;v1**                                  | مرشّح bloom قائم على الرموز لعمليات البحث النصي الكامل                     |
+
+يتضمن كل قسم أمثلة باستخدام بيانات نموذجية، ويوضح كيفية التحقق من استخدام الفهرس أثناء تنفيذ الاستعلام.
+
+<div id="minmax-index">
+  ## فهرس MinMax
+</div>
+
+يُعد فهرس `minmax` الأنسب لشروط النطاق على البيانات ذات الترتيب غير المحكم أو على الأعمدة المرتبطة بـ `ORDER BY`.
+
+```sql
+-- Define in CREATE TABLE
+CREATE TABLE events
+(
+  ts DateTime,
+  user_id UInt64,
+  value UInt32,
+  INDEX ts_minmax ts TYPE minmax GRANULARITY 1
+)
+ENGINE=MergeTree
+ORDER BY ts;
+
+-- Or add later and materialize
+ALTER TABLE events ADD INDEX ts_minmax ts TYPE minmax GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX ts_minmax;
+
+-- Query that benefits from the index
+SELECT count() FROM events WHERE ts >= now() - 3600;
+
+-- Verify usage
+EXPLAIN indexes = 1
+SELECT count() FROM events WHERE ts >= now() - 3600;
+```
+
+اطّلع على [مثال عملي](/ar/concepts/best-practices/using-data-skipping-indices#example) يتضمن `EXPLAIN` واستبعاد البيانات غير اللازمة.
+
+<div id="set-index">
+  ## فهرس Set
+</div>
+
+استخدم فهرس `set` عندما يكون عدد القيم المميّزة محليًا (في كل كتلة) منخفضًا؛ ولا يكون مفيدًا إذا كانت كل كتلة تحتوي على عدد كبير من القيم المميّزة.
+
+```sql
+ALTER TABLE events ADD INDEX user_set user_id TYPE set(100) GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX user_set;
+
+SELECT * FROM events WHERE user_id IN (101, 202);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE user_id IN (101, 202);
+```
+
+يوضح [دليل التشغيل الأساسي](/ar/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation) سير عمل الإنشاء/التجسيد والأثر قبل ذلك وبعده.
+
+<div id="textindex-for-full-text-search">
+  ## الفهرس النصي (text) للبحث النصي الكامل
+</div>
+
+`text` هو فهرس معكوس للبيانات النصية المُجزأة إلى رموز.
+وقد صُمم خصيصًا لأعباء عمل البحث النصي الكامل، مما يتيح بحثًا فعّالًا وحتميًا عن الرموز والمصطلحات.
+ويُوصى به لحالات استخدام اللغة الطبيعية أو البحث النصي على نطاق واسع.
+
+راجع [البحث النصي الكامل باستخدام الفهارس النصية](/ar/reference/engines/table-engines/mergetree-family/textindexes) لمزيد من التفاصيل والأمثلة.
+
+```sql
+ALTER TABLE logs ADD INDEX msg_text msg TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE logs MATERIALIZE INDEX msg_text;
+
+SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
+```
+
+اطّلع على مثال أكثر اكتمالًا عن observability [هنا](/ar/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search) في الوثائق.
+
+الفهرس النصي حتمي بالكامل وقابل للضبط بالكامل من حيث تقسيم النص إلى رموز ومعالجة النص، وذلك مقابل زيادة طفيفة في استهلاك التخزين مقارنةً بالفهارس المعتمدة على bloom filter،
+
+<div id="generic-bloom-filter-scalar">
+  ## مرشح Bloom عام (قيَمي)
+</div>
+
+يُعد فهرس `bloom_filter` مناسبًا لعمليات المساواة والتحقق من العضوية باستخدام IN في حالات &quot;البحث عن إبرة في كومة قش&quot;. ويقبل معلمة اختيارية تمثل معدل النتائج الإيجابية الكاذبة (الافتراضي 0.025).
+
+```sql
+ALTER TABLE events ADD INDEX value_bf value TYPE bloom_filter(0.01) GRANULARITY 3;
+ALTER TABLE events MATERIALIZE INDEX value_bf;
+
+SELECT * FROM events WHERE value IN (7, 42, 99);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE value IN (7, 42, 99);
+```
+
+<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
+  ## مرشح Bloom لـ N-gram ‏(ngrambf_v1) للبحث عن السلاسل الفرعية *(مهمل)*
+</div>
+
+<Note>
+  تم إهمال استخدام الفهارس `ngrambf_v1` للبحث النصي الكامل في إصدارات ClickHouse `>= 26.2` لصالح فهارس `text` (راجع [هنا](/ar/reference/engines/table-engines/mergetree-family/textindexes) لمزيد من التفاصيل).
+</Note>
+
+يقسّم الفهرس `ngrambf_v1` السلاسل النصية إلى n-grams. ويعمل بكفاءة مع الاستعلامات `LIKE '%...%'`. كما يدعم String/FixedString/Map (عبر mapKeys/mapValues)، بالإضافة إلى إمكانية ضبط الحجم وعدد دوال hash والبذرة. راجع وثائق [مرشح Bloom لـ N-gram](/ar/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) لمزيد من التفاصيل.
+
+```sql
+-- Create index for substring search
+ALTER TABLE logs ADD INDEX msg_ngram msg TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_ngram;
+
+-- Substring search
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+```
+
+[يوضح هذا الدليل](/ar/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search) أمثلة عملية ويوضح متى يُستخدم token بدلًا من ngram.
+
+**أدوات مساعدة لتحسين المعلمات:**
+
+تؤثر معلمات `ngrambf_v1` الأربع (حجم n-gram، وحجم bitmap، ودوال hash، وseed) تأثيرًا كبيرًا في الأداء واستهلاك الذاكرة. استخدم هذه الدوال لحساب الحجم الأمثل لـ bitmap وعدد دوال hash استنادًا إلى حجم n-gram المتوقع ومعدل الإيجابيات الكاذبة المطلوب:
+
+```sql
+CREATE FUNCTION bfEstimateFunctions AS
+(total_grams, bits) -> round((bits / total_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize AS
+(total_grams, p_false) -> ceil((total_grams * log(p_false)) / log(1 / pow(2, log(2))));
+
+-- Example sizing for 4300 ngrams, p_false = 0.0001
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_bytes;  -- ~10304
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13
+```
+
+راجع [وثائق المعلمات](/ar/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) للاطلاع على إرشادات الضبط الكاملة.
+
+<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
+  ## مرشح Bloom للرموز (tokenbf_v1) للبحث المستند إلى الكلمات *(مهمل)*
+</div>
+
+<Note>
+  أصبح استخدام فهارس `tokenbf_v1` في البحث النصي الكامل مهملًا في إصدارات ClickHouse `>= 26.2` لصالح فهارس `text` (راجع [هنا](/ar/reference/engines/table-engines/mergetree-family/textindexes) لمزيد من التفاصيل).
+</Note>
+
+يفهرس `tokenbf_v1` الرموز المفصولة بمحارف غير حرفية رقمية. ينبغي استخدامه مع [`hasToken`](/ar/reference/functions/regular-functions/string-search-functions#hasToken)، أو أنماط الكلمات في `LIKE`، أو `equals`/`IN`. وهو يدعم الأنواع `String`/`FixedString`/`Map`.
+
+راجع صفحتي [مرشح Bloom للرموز](/ar/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) و[أنواع مرشح Bloom](/ar/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-types) لمزيد من التفاصيل.
+
+```sql
+ALTER TABLE logs ADD INDEX msg_token lower(msg) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_token;
+
+-- Word search (case-insensitive via lower)
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+```
+
+اطّلع على أمثلة حول observability وإرشادات بشأن `token` مقابل `ngram` [هنا](/ar/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search).
+
+<div id="add-indexes-during-create-table-multiple-examples">
+  ## أضِف الفهارس أثناء CREATE TABLE (أمثلة متعددة)
+</div>
+
+تدعم فهارس التخطي أيضًا التعبيرات المركبة وأنواع `Map`/`Tuple`/`Nested`. ويوضح المثال أدناه ذلك:
+
+```sql
+CREATE TABLE t
+(
+  u64 UInt64,
+  s String,
+  m Map(String, String),
+
+  INDEX idx_bf u64 TYPE bloom_filter(0.01) GRANULARITY 3,
+  INDEX idx_minmax u64 TYPE minmax GRANULARITY 1,
+  INDEX idx_set u64 * length(s) TYPE set(1000) GRANULARITY 4,
+  INDEX idx_ngram s TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1,
+  INDEX idx_token mapKeys(m) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY u64;
+```
+
+<div id="materializing-on-existing-data-and-verifying">
+  ## تطبيق `MATERIALIZE` على البيانات الموجودة والتحقق
+</div>
+
+يمكنك إضافة فهرس إلى أجزاء البيانات الموجودة باستخدام `MATERIALIZE`، وفحص الاستبعاد باستخدام `EXPLAIN` أو سجلات التتبّع، كما هو موضح أدناه:
+
+```sql
+ALTER TABLE t MATERIALIZE INDEX idx_bf;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t WHERE u64 IN (123, 456);
+
+-- Optional: detailed pruning info
+SET send_logs_level = 'trace';
+```
+
+يوضح هذا [المثال التطبيقي لـ minmax](/ar/concepts/best-practices/using-data-skipping-indices#example) بنية مخرجات EXPLAIN وعدد عمليات الاستبعاد.
+
+<div id="when-use-and-when-to-avoid">
+  ## متى تستخدم فهارس التخطي ومتى تتجنبها
+</div>
+
+**استخدم فهارس التخطي عندما:**
+
+* تكون قيم التصفية متفرقة داخل كتل البيانات
+* يوجد ارتباط قوي بأعمدة `ORDER BY`، أو تؤدي أنماط إدخال البيانات إلى تجميع القيم المتشابهة معًا
+* إجراء عمليات بحث نصي في مجموعات بيانات سجلات كبيرة (النوعان `ngrambf_v1`/`tokenbf_v1`)
+
+**تجنب فهارس التخطي عندما:**
+
+* يُرجَّح أن تحتوي معظم الكتل على قيمة مطابقة واحدة على الأقل (وسيتم قراءة الكتل في جميع الأحوال)
+* التصفية على أعمدة ذات كاردينالية عالية من دون أي ارتباط بترتيب البيانات
+
+<Info>
+  **اعتبارات مهمة**
+
+  إذا ظهرت قيمة ولو مرة واحدة فقط في كتلة بيانات، فسيتعين على ClickHouse قراءة الكتلة بالكامل. اختبر الفهارس باستخدام مجموعات بيانات واقعية، واضبط درجة التحبيب والمعلمات الخاصة بالنوع استنادًا إلى قياسات الأداء الفعلية.
+</Info>
+
+<div id="temporarily-ignore-or-force-indexes">
+  ## تجاهل الفهارس أو فرض استخدامها مؤقتًا
+</div>
+
+عطّل فهارس معيّنة حسب الاسم لكل استعلام على حدة أثناء الاختبار واستكشاف الأخطاء وإصلاحها. تتوفر أيضًا إعدادات لفرض استخدام الفهارس عند الحاجة. راجع [`ignore_data_skipping_indices`](/ar/reference/settings/session-settings#ignore_data_skipping_indices).
+
+```sql
+-- Ignore an index by name
+SELECT * FROM logs
+WHERE hasToken(lower(msg), 'exception')
+SETTINGS ignore_data_skipping_indices = 'msg_token';
+```
+
+<div id="notes-and-caveats">
+  ## ملاحظات ومحاذير
+</div>
+
+* لا تُدعَم فهارس التخطي إلا في [جداول عائلة MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)؛ ويتم الاستبعاد على مستوى الحبيبات/الكتل.
+* الفهارس المعتمدة على مرشحات Bloom احتمالية (فالنتائج الإيجابية الكاذبة تؤدي إلى قراءات إضافية، لكنها لا تتسبب في تخطي بيانات صالحة).
+* ينبغي التحقق من مرشحات Bloom وفهارس التخطي الأخرى باستخدام `EXPLAIN` والتتبّع؛ واضبط درجة التحبيب لتحقيق توازن بين الاستبعاد وحجم الفهرس.
+
+<div id="related-docs">
+  ## الوثائق ذات الصلة
+</div>
+
+* [دليل فهرس تخطي البيانات](/ar/concepts/features/performance/skip-indexes/skipping-indexes)
+* [دليل أفضل الممارسات](/ar/concepts/best-practices/using-data-skipping-indices)
+* [إدارة فهارس تخطي البيانات](/ar/reference/statements/alter/skipping-index)
+* [معلومات جدول النظام](/ar/reference/system-tables/data_skipping_indices)

@@ -1,0 +1,545 @@
+---
+sidebarTitle: 'Движок таблицы Kafka'
+slug: /integrations/kafka/kafka-table-engine
+description: 'Использование движка таблицы Kafka'
+title: 'Использование движка таблицы Kafka'
+doc_type: 'guide'
+keywords: ['Kafka', 'движок таблицы', 'стриминг', 'реальное время', 'очередь сообщений']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Движок таблицы Kafka можно использовать для [**чтения** данных из](#kafka-to-clickhouse) и [**записи** данных в](#clickhouse-to-kafka) Apache Kafka и другие брокеры с поддержкой Kafka API (например, Redpanda, Amazon MSK).
+
+<div id="kafka-to-clickhouse">
+  ### Kafka в ClickHouse
+</div>
+
+<Note>
+  Если вы используете ClickHouse Cloud, мы рекомендуем вместо этого [ClickPipes](/ru/integrations/clickpipes/home). ClickPipes изначально поддерживает подключения к частным сетям, независимое масштабирование ресурсов ингестии и кластера, а также комплексный мониторинг при стриминге данных из Kafka в ClickHouse.
+</Note>
+
+Для использования движка таблицы Kafka вам следует в общих чертах понимать, как работают [materialized views ClickHouse](/ru/concepts/features/materialized-views/cascading-materialized-views).
+
+<div id="overview">
+  #### Обзор
+</div>
+
+Сначала мы рассмотрим наиболее распространённый сценарий использования: применение движка таблицы Kafka для вставки данных из Kafka в ClickHouse.
+
+Движок таблицы Kafka позволяет ClickHouse напрямую читать из топика Kafka. Хотя это удобно для просмотра сообщений в топике, по своей конструкции этот движок допускает только однократное чтение: когда к таблице выполняется запрос, он считывает данные из очереди и увеличивает смещение потребителя перед возвратом результатов вызывающей стороне. На практике данные нельзя прочитать повторно без сброса этих смещений.
+
+Чтобы сохранить данные, прочитанные через движок таблицы, нужен способ захватить их и вставить в другую таблицу. Эту возможность нативно предоставляют materialized view на основе триггеров. Materialized view инициирует чтение из движка таблицы, получая батчи документов. Предложение TO определяет пункт назначения данных — обычно это таблица семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/index). Этот процесс показан ниже:
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="Диаграмма архитектуры движка таблицы Kafka" style={{width: '80%'}} />
+
+<div id="steps">
+  #### Шаги
+</div>
+
+<div id="1-prepare">
+  ##### 1. Подготовка
+</div>
+
+Если у вас уже есть данные в целевом топике, вы можете адаптировать приведённый ниже пример для использования со своим набором данных. В качестве альтернативы [здесь](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson) доступен пример набора данных GitHub. Этот набор данных используется в примерах ниже; в нём используется сокращённая схема и подмножество строк (в частности, мы ограничились событиями GitHub, относящимися к [репозиторию ClickHouse](https://github.com/ClickHouse/ClickHouse)) по сравнению с полным набором данных, доступным [здесь](https://ghe.clickhouse.tech/), для краткости. Тем не менее его достаточно, чтобы работало большинство [запросов, опубликованных вместе с набором данных](https://ghe.clickhouse.tech/).
+
+<div id="2-configure-clickhouse">
+  ##### 2. Настройте ClickHouse
+</div>
+
+Этот шаг обязателен, если вы подключаетесь к защищённому кластеру Kafka. Эти параметры нельзя передать через команды SQL DDL, поэтому их нужно настроить в файле `config.xml` ClickHouse. Мы предполагаем, что вы подключаетесь к экземпляру, защищённому с помощью SASL. Это самый простой вариант при работе с Confluent Cloud.
+
+```xml
+<clickhouse>
+   <kafka>
+       <sasl_username>username</sasl_username>
+       <sasl_password>password</sasl_password>
+       <security_protocol>sasl_ssl</security_protocol>
+       <sasl_mechanisms>PLAIN</sasl_mechanisms>
+   </kafka>
+</clickhouse>
+```
+
+Либо поместите приведенный выше фрагмент в новый файл в каталоге conf.d/, либо добавьте его в существующие файлы конфигурации. О настройках, доступных для конфигурирования, см. [здесь](/ru/reference/engines/table-engines/integrations/kafka#configuration).
+
+Мы также создадим базу данных `KafkaEngine`, которую будем использовать в этом руководстве:
+
+```sql
+CREATE DATABASE KafkaEngine;
+```
+
+После создания базы данных переключитесь на неё:
+
+```sql
+USE KafkaEngine;
+```
+
+<div id="3-create-the-destination-table">
+  ##### 3. Создайте целевую таблицу
+</div>
+
+Подготовьте целевую таблицу. В примере ниже для краткости используется сокращённая схема GitHub. Обратите внимание: хотя здесь используется движок таблицы MergeTree, этот пример можно легко адаптировать для любого движка из [семейства MergeTree](/ru/reference/engines/table-engines/mergetree-family/index).
+
+```sql
+CREATE TABLE github
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+```
+
+<div id="4-create-and-populate-the-topic">
+  ##### 4. Создайте и заполните топик
+</div>
+
+Далее создадим топик. Для этого можно использовать несколько инструментов. Если Kafka запущена локально на нашей машине или внутри контейнера Docker, хорошо подойдет [RPK](https://docs.redpanda.com/current/get-started/rpk-install/). Мы можем создать топик с именем `github` и 5 партициями, выполнив следующую команду:
+
+```bash
+rpk topic create -p 5 github --brokers <host>:<port>
+```
+
+Если мы используем Kafka в Confluent Cloud, возможно, нам будет удобнее воспользоваться [Confluent CLI](https://docs.confluent.io/platform/current/tutorials/examples/clients/docs/kcat.html#produce-records):
+
+```bash
+confluent kafka topic create --if-not-exists github
+```
+
+Теперь нам нужно наполнить этот топик данными, и для этого мы используем [kcat](https://github.com/edenhill/kcat). Если вы запускаете Kafka локально с отключённой аутентификацией, можно выполнить команду, похожую на следующую:
+
+```bash
+cat github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+```
+
+Или следующее, если в нашем кластере Kafka для аутентификации используется SASL:
+
+```bash
+cat github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username>  \
+  -X sasl.password=<password> \
+```
+
+Датасет содержит 200 000 строк, поэтому его приём займёт всего несколько секунд. Если вы хотите работать с более крупным датасетом, ознакомьтесь с [разделом о больших датасетах](https://github.com/ClickHouse/kafka-samples/tree/main/producer#large-datasets) в [репозитории ClickHouse/kafka-samples на GitHub](https://github.com/ClickHouse/kafka-samples).
+
+<div id="5-create-the-kafka-table-engine">
+  ##### 5. Создайте таблицу с движком таблицы Kafka
+</div>
+
+В приведённом ниже примере создаётся таблица с движком Kafka и той же схемой, что и у таблицы MergeTree. Это не является обязательным требованием, поскольку в целевой таблице можно использовать alias или эфемерные столбцы. Однако настройки важны — обратите внимание, что `JSONEachRow` используется как тип данных для чтения JSON из топика Kafka. Значения `github` и `clickhouse` обозначают имя топика и имя группы потребителей соответственно. На самом деле топики могут быть списком значений.
+
+```sql
+CREATE TABLE github_queue
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+)
+   ENGINE = Kafka('kafka_host:9092', 'github', 'clickhouse',
+            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+```
+
+Ниже мы рассмотрим настройки движка и вопросы настройки производительности. На этом этапе простой запрос select к таблице `github_queue` должен прочитать несколько строк. Обратите внимание, что это сдвинет смещения consumer вперёд, из-за чего эти строки нельзя будет прочитать повторно без [сброса](#common-operations). Также обратите внимание на limit и обязательный parameter `stream_like_engine_allow_direct_select.`
+
+<div id="6-create-the-materialized-view">
+  ##### 6. Создайте materialized view
+</div>
+
+Materialized view свяжет две ранее созданные таблицы, считывая данные из движка таблицы Kafka и вставляя их в целевую таблицу MergeTree. Можно выполнить ряд преобразований данных. Мы ограничимся простым чтением и вставкой. Использование * предполагает, что имена столбцов совпадают (с учетом регистра).
+
+```sql
+CREATE MATERIALIZED VIEW github_mv TO github AS
+SELECT *
+FROM github_queue;
+```
+
+В момент создания materialized view подключается к движку Kafka и начинает чтение, вставляя строки в целевую таблицу. Этот процесс будет продолжаться бесконечно: новые сообщения, добавляемые в Kafka, будут считываться. При необходимости вы можете повторно запустить скрипт вставки, чтобы добавить в Kafka дополнительные сообщения.
+
+<div id="7-confirm-rows-have-been-inserted">
+  ##### 7. Убедитесь, что строки были вставлены
+</div>
+
+Убедитесь, что данные есть в целевой таблице:
+
+```sql
+SELECT count() FROM github;
+```
+
+Вы должны увидеть 200 000 строк:
+
+```response
+┌─count()─┐
+│  200000 │
+└─────────┘
+```
+
+<div id="common-operations">
+  #### Типовые операции
+</div>
+
+<div id="stopping--restarting-message-consumption">
+  ##### Остановка и возобновление потребления сообщений
+</div>
+
+Чтобы остановить потребление сообщений, можно отсоединить таблицу с движком Kafka:
+
+```sql
+DETACH TABLE github_queue;
+```
+
+Это не повлияет на смещения группы потребителей. Чтобы возобновить чтение и продолжить с предыдущего смещения, повторно подключите таблицу.
+
+```sql
+ATTACH TABLE github_queue;
+```
+
+<div id="adding-kafka-metadata">
+  ##### Добавление метаданных Kafka
+</div>
+
+Может быть полезно отслеживать метаданные исходных сообщений Kafka после их приёма в ClickHouse. Например, может понадобиться узнать, какую часть конкретного топика или партиции мы уже обработали. Для этого движок таблицы Kafka предоставляет несколько [виртуальных столбцов](/ru/reference/engines/table-engines/index#table_engines-virtual_columns). Их можно сохранить в виде столбцов в целевой таблице, изменив схему и оператор SELECT в materialized view.
+
+Сначала выполните описанную выше операцию остановки, а затем добавьте столбцы в целевую таблицу.
+
+```sql
+DETACH TABLE github_queue;
+```
+
+Ниже мы добавляем информационные столбцы, чтобы указать исходный топик и партицию, из которой пришла строка.
+
+```sql
+ALTER TABLE github
+   ADD COLUMN topic String,
+   ADD COLUMN partition UInt64;
+```
+
+Далее нужно убедиться, что виртуальные столбцы сопоставлены должным образом.
+Виртуальные столбцы имеют префикс `_`.
+Полный список виртуальных столбцов можно найти [здесь](/ru/reference/engines/table-engines/integrations/kafka#virtual-columns).
+
+Чтобы обновить таблицу, добавив виртуальные столбцы, потребуется удалить materialized view, повторно выполнить ATTACH для таблицы с движком Kafka и заново создать materialized view.
+
+```sql
+DROP VIEW github_mv;
+```
+
+```sql
+ATTACH TABLE github_queue;
+```
+
+```sql
+CREATE MATERIALIZED VIEW github_mv TO github AS
+SELECT *, _topic AS topic, _partition as partition
+FROM github_queue;
+```
+
+У недавно прочитанных строк должны быть метаданные.
+
+```sql
+SELECT actor_login, event_type, created_at, topic, partition
+FROM github
+LIMIT 10;
+```
+
+Результат будет выглядеть так:
+
+| actor&#95;login | event&#95;type     | created&#95;at      | topic  | partition |
+| :-------------- | :----------------- | :------------------ | :----- | :-------- |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:22:00 | github | 0         |
+| queeup          | CommitCommentEvent | 2011-02-12 02:23:23 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:23:24 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:24:50 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:25:20 | github | 0         |
+| dapi            | CommitCommentEvent | 2011-02-12 06:18:36 | github | 0         |
+| sourcerebels    | CommitCommentEvent | 2011-02-12 06:34:10 | github | 0         |
+| jamierumbelow   | CommitCommentEvent | 2011-02-12 12:21:40 | github | 0         |
+| jpn             | CommitCommentEvent | 2011-02-12 12:24:31 | github | 0         |
+| Oxonium         | CommitCommentEvent | 2011-02-12 12:31:28 | github | 0         |
+
+<div id="modify-kafka-engine-settings">
+  ##### Изменение настроек движка Kafka
+</div>
+
+Мы рекомендуем удалить таблицу с движком Kafka и заново создать её с новыми настройками. В ходе этого процесса materialized view изменять не нужно — потребление сообщений возобновится, как только таблица с движком Kafka будет создана заново.
+
+<div id="debugging-issues">
+  ##### Отладка проблем
+</div>
+
+Ошибки, например связанные с аутентификацией, не отображаются в ответах на DDL-запросы к движку Kafka. Для диагностики проблем рекомендуем использовать основной файл журнала ClickHouse `clickhouse-server.err.log`. Дополнительное журналирование трассировки для базовой клиентской библиотеки Kafka [librdkafka](https://github.com/edenhill/librdkafka) можно включить через конфигурацию.
+
+```xml
+<kafka>
+   <debug>all</debug>
+</kafka>
+```
+
+<div id="handling-malformed-messages">
+  ##### Обработка некорректных сообщений
+</div>
+
+Kafka часто используют как «свалку» для данных. Из-за этого в топиках оказываются сообщения в разных форматах и с несогласованными именами полей. По возможности избегайте этого и используйте возможности Kafka, такие как Kafka Streams или ksqlDB, чтобы сообщения были корректно сформированы и согласованы еще до записи в Kafka. Если это невозможно, в ClickHouse есть несколько возможностей, которые могут помочь.
+
+* Обрабатывайте поле сообщения как строки. При необходимости в операторе materialized view можно использовать функции для очистки и приведения типов. Это не решение для production, но может помочь при разовой ингестии.
+* Если вы читаете JSON из топика в формате JSONEachRow, используйте настройку [`input_format_skip_unknown_fields`](/ru/reference/settings/formats#input_format_skip_unknown_fields). При записи данных ClickHouse по умолчанию генерирует исключение, если входные данные содержат столбцы, которых нет в целевой таблице. Однако если эта опция включена, такие лишние столбцы будут игнорироваться. Опять же, это не решение уровня production и оно может запутать других.
+* Обратите внимание на настройку `kafka_skip_broken_messages`. Она требует, чтобы пользователь задал допустимый уровень ошибок для некорректных сообщений на block с учетом `kafka_max_block_size`. Если этот порог превышен (в абсолютном количестве сообщений), снова будет применяться стандартное поведение с исключением, а остальные сообщения будут пропущены.
+
+<div id="delivery-semantics-and-challenges-with-duplicates">
+  ##### Семантика доставки и проблемы с дубликатами
+</div>
+
+Kafka движок таблицы имеет семантику at-least-once. Дубликаты возможны в ряде известных, хотя и редких, случаев. Например, сообщения могут быть прочитаны из Kafka и успешно вставлены в ClickHouse. Но до того, как новое смещение будет зафиксировано, соединение с Kafka может быть потеряно. В такой ситуации требуется повторная попытка обработки блока. Блок может быть [дедуплицирован](/ru/reference/engines/table-engines/mergetree-family/replication) при использовании distributed таблицы или ReplicatedMergeTree в качестве целевой таблицы. Хотя это снижает вероятность появления дублирующихся строк, такой подход опирается на идентичность блоков. Такие события, как ребалансировка Kafka, могут нарушить это допущение, что в редких случаях приводит к дубликатам.
+
+<div id="quorum-based-inserts">
+  ##### Вставки на основе кворума
+</div>
+
+В некоторых случаях, когда в ClickHouse нужны более высокие гарантии доставки, могут потребоваться [вставки на основе кворума](/ru/reference/settings/session-settings#insert_quorum). Это нельзя настроить для materialized view или целевой таблицы. Однако это можно задать для пользовательских профилей, например.
+
+```xml
+<profiles>
+  <default>
+    <insert_quorum>2</insert_quorum>
+  </default>
+</profiles>
+```
+
+<div id="clickhouse-to-kafka">
+  ### Из ClickHouse в Kafka
+</div>
+
+Хотя это и более редкий сценарий использования, данные ClickHouse также можно сохранять в Kafka. Например, мы вручную вставим строки в таблицу с движком таблицы Kafka. Эти данные будут прочитаны тем же Kafka-движком, а его materialized view поместит их в таблицу MergeTree. Наконец, мы покажем, как использовать materialized views при вставке в Kafka, чтобы наполнять таблицы на основе существующих исходных таблиц.
+
+<div id="steps">
+  #### Шаги
+</div>
+
+Нашу первоначальную цель лучше всего иллюстрирует следующая схема:
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="Схема движка таблицы Kafka со вставками" />
+
+Мы предполагаем, что вы уже создали таблицы и представления, описанные в разделе [Kafka to ClickHouse](#kafka-to-clickhouse), и что топик был полностью прочитан.
+
+<div id="1-inserting-rows-directly">
+  ##### 1. Вставка строк напрямую
+</div>
+
+Сначала проверьте количество строк в целевой таблице.
+
+```sql
+SELECT count() FROM github;
+```
+
+У вас должно быть 200 000 строк:
+
+```response
+┌─count()─┐
+│  200000 │
+└─────────┘
+```
+
+Теперь выполните вставку строк из целевой таблицы GitHub обратно в движок таблицы Kafka github&#95;queue. Обратите внимание: мы используем формат JSONEachRow и ограничиваем выборку 100 строками с помощью LIMIT.
+
+```sql
+INSERT INTO github_queue SELECT * FROM github LIMIT 100 FORMAT JSONEachRow
+```
+
+Снова пересчитайте строки в GitHub, чтобы убедиться, что их количество увеличилось на 100. Как показано на схеме выше, строки были вставлены в Kafka через движок таблицы Kafka, затем тот же движок снова их считал и вставил в целевую таблицу GitHub с помощью нашего materialized view!
+
+```sql
+SELECT count() FROM github;
+```
+
+Вы должны увидеть ещё 100 строк:
+
+```response
+┌─count()─┐
+│  200100 │
+└─────────┘
+```
+
+<div id="2-using-materialized-views">
+  ##### 2. Использование materialized views
+</div>
+
+Мы можем использовать materialized views, чтобы отправлять сообщения в движок Kafka (и в топик), когда документы вставляются в таблицу. Когда строки вставляются в таблицу GitHub, срабатывает materialized view, в результате чего строки снова вставляются в движок Kafka и в новый топик. Это лучше всего показано на иллюстрации:
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="Диаграмма движка таблицы Kafka с materialized views" />
+
+Создайте новый Kafka топик `github_out` или его эквивалент. Убедитесь, что движок таблицы Kafka `github_out_queue` указывает на этот топик.
+
+```sql
+CREATE TABLE github_out_queue
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+)
+   ENGINE = Kafka('host:port', 'github_out', 'clickhouse_out',
+            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+```
+
+Теперь создайте новое materialized view `github_out_mv`, которое будет указывать на таблицу GitHub и при срабатывании выполнять вставку строк в указанный выше движок. В результате новые записи из таблицы GitHub будут отправляться в наш новый топик Kafka.
+
+```sql
+CREATE MATERIALIZED VIEW github_out_mv TO github_out_queue AS
+SELECT file_time, event_type, actor_login, repo_name,
+       created_at, updated_at, action, comment_id, path,
+       ref, ref_type, creator_user_login, number, title,
+       labels, state, assignee, assignees, closed_at, merged_at,
+       merge_commit_sha, requested_reviewers, merged_by,
+       review_comments, member_login
+FROM github
+FORMAT JsonEachRow;
+```
+
+Если выполнить вставку в исходный топик github, созданный в разделе [Kafka to ClickHouse](#kafka-to-clickhouse), документы автоматически появятся в топике &quot;github&#95;clickhouse&quot;. Убедитесь в этом с помощью встроенных инструментов Kafka. Например, ниже мы выполняем вставку 100 строк в топик github с помощью [kcat](https://github.com/edenhill/kcat) для топика, размещённого в Confluent Cloud:
+
+```sql
+head -n 10 github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username> \
+  -X sasl.password=<password>
+```
+
+Чтение из топика `github_out` должно подтвердить, что сообщения доставлены.
+
+```sql
+kcat -C \
+  -b <host>:<port> \
+  -t github_out \
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username> \
+  -X sasl.password=<password> \
+  -e -q |
+wc -l
+```
+
+Хотя это и довольно сложный пример, он показывает возможности materialized views в сочетании с движком Kafka.
+
+<div id="clusters-and-performance">
+  ### Кластеры и производительность
+</div>
+
+<div id="working-with-clickhouse-clusters">
+  #### Работа с кластерами ClickHouse
+</div>
+
+Благодаря группам потребителей Kafka несколько экземпляров ClickHouse могут читать из одного и того же топика. Каждому потребителю назначается одна партиция топика в соотношении 1:1. При масштабировании чтения ClickHouse с использованием движка таблицы Kafka учитывайте, что общее число потребителей в кластере не может превышать число партиций в топике. Поэтому заранее убедитесь, что для топика настроено достаточное число партиций.
+
+Несколько экземпляров ClickHouse можно настроить на чтение из топика с одним и тем же идентификатором группы потребителей, указанным при создании движка таблицы Kafka. Таким образом, каждый экземпляр будет читать из одной или нескольких партиций, записывая сегменты в свою локальную целевую таблицу. Целевые таблицы, в свою очередь, можно настроить на использование ReplicatedMergeTree, чтобы справляться с дублированием данных. Такой подход позволяет масштабировать чтение из Kafka вместе с кластером ClickHouse при условии, что в Kafka достаточно партиций.
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="Диаграмма движка таблицы Kafka с кластерами ClickHouse" />
+
+<div id="tuning-performance">
+  #### Настройка производительности
+</div>
+
+При увеличении пропускной способности таблицы с движком Kafka учитывайте следующее:
+
+* Производительность зависит от размера сообщений, формата и типов целевых таблиц. Показатель в 100 тыс. строк/с для одного движка таблицы считается достижимым. По умолчанию сообщения читаются блоками; это регулируется параметром kafka&#95;max&#95;block&#95;size. По умолчанию он равен [max&#95;insert&#95;block&#95;size](/ru/reference/settings/session-settings#max_insert_block_size), то есть 1,048,576. Если сообщения не являются исключительно большими, это значение почти всегда стоит увеличивать. Значения в диапазоне от 500 тыс. до 1 млн вполне обычны. Протестируйте и оцените, как это влияет на пропускную способность.
+* Число потребителей для движка таблицы можно увеличить с помощью kafka&#95;num&#95;consumers. Однако по умолчанию вставки будут выполняться последовательно в одном потоке, если kafka&#95;thread&#95;per&#95;consumer не изменить относительно значения по умолчанию 1. Установите это значение в 1, чтобы сбросы на диск выполнялись параллельно. Обратите внимание: создание таблицы с движком Kafka с N потребителями (и kafka&#95;thread&#95;per&#95;consumer=1) логически эквивалентно созданию N движков Kafka, каждый со своей materialized view и kafka&#95;thread&#95;per&#95;consumer=0.
+* Увеличение числа потребителей не даётся бесплатно. Каждый потребитель поддерживает собственные буферы и потоки, увеличивая накладные расходы на сервер. Учитывайте эти накладные расходы и по возможности сначала линейно масштабируйте нагрузку по кластеру.
+* Если пропускная способность потока сообщений Kafka непостоянна, а задержки допустимы, рассмотрите увеличение stream&#95;flush&#95;interval&#95;ms, чтобы на диск сбрасывались более крупные блоки.
+* [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ru/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size) задаёт количество потоков, выполняющих фоновые задачи. Эти потоки используются для стриминга Kafka. Этот параметр применяется при запуске сервера ClickHouse и не может быть изменён в пользовательском сеансе; по умолчанию его значение равно 16. Если вы видите тайм-ауты в журнале, возможно, стоит увеличить это значение.
+* Для взаимодействия с Kafka используется библиотека librdkafka, которая также создаёт потоки. Поэтому большое число таблиц Kafka или потребителей может приводить к большому количеству переключений контекста. Либо распределите эту нагрузку по кластеру, по возможности реплицируя только целевые таблицы, либо рассмотрите использование движка таблицы для чтения из нескольких топиков — поддерживается список значений. Из одной таблицы можно читать через несколько materialized view, каждая из которых фильтрует данные из определённого топика.
+
+Любые изменения настроек следует тестировать. Мы рекомендуем отслеживать отставание потребителей Kafka, чтобы убедиться, что масштабирование выбрано правильно.
+
+<div id="additional-settings">
+  #### Дополнительные настройки
+</div>
+
+Помимо настроек, рассмотренных выше, интерес могут представлять следующие:
+
+* [Kafka&#95;max&#95;wait&#95;ms](/ru/reference/settings/session-settings#kafka_max_wait_ms) — Время ожидания в миллисекундах при чтении сообщений из Kafka перед повторной попыткой. Задаётся на уровне профиля пользователя; значение по умолчанию — 5000.
+
+[Все настройки ](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)базовой библиотеки librdkafka также можно указывать в файлах конфигурации ClickHouse внутри элемента *kafka* — имена настроек должны быть XML-элементами, в которых точки заменены на подчёркивания, например.
+
+```xml
+<clickhouse>
+   <kafka>
+       <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+   </kafka>
+</clickhouse>
+```
+
+Это настройки для опытных пользователей, и мы рекомендуем обратиться к документации Kafka за более подробными разъяснениями.

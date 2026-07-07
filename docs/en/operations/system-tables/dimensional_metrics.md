@@ -59,6 +59,18 @@ Filesystem cache size in bytes, labelled by cache name and user id. Disabled by 
 ### `filesystem_cache_elements` {#filesystem-cache-elements}
 Filesystem cache elements (file segments), labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`.
 
+### `filesystem_cache_evictions_total` {#filesystem-cache-evictions-total}
+Number of file segments evicted from a filesystem cache, labelled by cache name. Disabled by default; enable with `expose_prometheus_eviction_metrics`.
+
+### `filesystem_cache_evicted_bytes_total` {#filesystem-cache-evicted-bytes-total}
+Total bytes of file segments evicted from a filesystem cache, labelled by cache name. Disabled by default; enable with `expose_prometheus_eviction_metrics`.
+
+### `filesystem_cache_evictions_by_user_total` {#filesystem-cache-evictions-by-user-total}
+Number of file segments evicted from a filesystem cache, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_eviction_metrics` and `expose_prometheus_eviction_metrics_per_user`.
+
+### `filesystem_cache_evicted_bytes_by_user_total` {#filesystem-cache-evicted-bytes-by-user-total}
+Total bytes of file segments evicted from a filesystem cache, labelled by cache name and user id. Disabled by default; enable with `expose_prometheus_eviction_metrics` and `expose_prometheus_eviction_metrics_per_user`.
+
 ## See also {#see-also}
 
 - [system.asynchronous_metrics](/operations/system-tables/asynchronous_metrics) — Contains periodically calculated metrics.
