@@ -92,7 +92,7 @@ public:
 
     using ColumnSizeByName = std::unordered_map<std::string, ColumnSize>;
     using ColumnSizeByNameConstPtr = std::shared_ptr<const ColumnSizeByName>;
-    using NameToNumber = std::unordered_map<std::string, size_t>;
+    using NameToNumber = SharedPartColumns::NameToNumber;
 
     using Index = Columns;
     using IndexPtr = std::shared_ptr<const Index>;

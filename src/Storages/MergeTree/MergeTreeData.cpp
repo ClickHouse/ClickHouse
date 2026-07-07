@@ -11521,6 +11521,10 @@ SharedPartColumnsPtr MergeTreeData::getSharedPartColumnsForColumns(const NamesAn
     if (auto it = shared_part_columns_cache.find(columns); it != shared_part_columns_cache.end())
         return it->second;
 
+    /// The bundle lives as long as some part of the table stores these columns: route it to the
+    /// dedicated parts arena (no-op when the caller already did).
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+
     /// Building under the lock makes concurrent loads of parts with the same columns wait and then
     /// reuse the finished bundle (build-exactly-once). The build is pure CPU on already-loaded
     /// inputs and the cache is per-table, so only same-table loads can wait here.

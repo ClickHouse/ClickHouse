@@ -43,7 +43,9 @@ class ColumnsDescription;
 class SharedPartColumns
 {
 public:
-    using NameToNumber = std::unordered_map<std::string, size_t>;
+    /// The keys are views into the names of the `columns` member of the owning bundle, which is
+    /// immutable and outlives the map, so the names are not duplicated.
+    using NameToNumber = std::unordered_map<std::string_view, size_t>;
 
     SharedPartColumns(
         NamesAndTypesList columns_,
@@ -64,8 +66,9 @@ public:
     std::shared_ptr<const SerializationByName> getSerializations(const SerializationInfoByName & infos) const;
 
     /// Returns a shared copy of the given columns substreams, deduplicated by content across all
-    /// parts of the table with this column list.
-    std::shared_ptr<const ColumnsSubstreams> internColumnsSubstreams(ColumnsSubstreams substreams) const;
+    /// parts of the table with this column list. Copies the substreams only when no part holds
+    /// equal content yet.
+    std::shared_ptr<const ColumnsSubstreams> internColumnsSubstreams(const ColumnsSubstreams & substreams) const;
 
     /// The bundle installed in parts before `setColumns` is called (and in parts that never store
     /// columns). Not interned in any cache.
@@ -88,8 +91,13 @@ private:
     struct SerializationsCacheKey
     {
         SerializationInfoSettings settings;
-        /// Per column with a serialization info entry: (name, serialized recursive kind stacks, entry settings).
-        std::vector<std::tuple<String, String, SerializationInfoSettings>> per_column_kinds;
+        /// The name and the serialized recursive kind stacks of every column with a serialization
+        /// info entry, in map order, framed unambiguously into a single string (see
+        /// `buildSerializationsCacheKey`) so that building and comparing a key does one string
+        /// allocation instead of two per column.
+        String names_and_kinds;
+        /// The settings of each entry, in the same order.
+        std::vector<SerializationInfoSettings> per_entry_settings;
 
         bool operator==(const SerializationsCacheKey & other) const = default;
     };

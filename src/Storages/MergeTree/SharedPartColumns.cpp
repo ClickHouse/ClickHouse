@@ -2,9 +2,13 @@
 
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
+#include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/ColumnsDescription.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/Jemalloc.h>
+#include <Common/JemallocMergeTreeArena.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SipHash.h>
 
@@ -22,13 +26,14 @@ namespace DB
 namespace
 {
 
+/// The keys view into the names of `columns`, which belongs to the same bundle and outlives the map.
 SharedPartColumns::NameToNumber buildColumnPositions(const NamesAndTypesList & columns)
 {
     SharedPartColumns::NameToNumber positions;
     positions.reserve(columns.size());
     size_t pos = 0;
     for (const auto & column : columns)
-        positions.emplace(column.name, pos++);
+        positions.emplace(std::string_view(column.name), pos++);
     return positions;
 }
 
@@ -64,6 +69,8 @@ SharedPartColumns::SharedPartColumns(
 SerializationByName SharedPartColumns::buildSerializations(const SerializationInfoByName & infos) const
 {
     SerializationByName serializations;
+    /// A lower bound: subcolumns add entries on top, but this avoids the first rehashes.
+    serializations.reserve(columns.size());
 
     for (const auto & column : columns)
     {
@@ -88,15 +95,33 @@ SerializationByName SharedPartColumns::buildSerializations(const SerializationIn
 
 SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializationsCacheKey(const SerializationInfoByName & infos)
 {
-    SerializationsCacheKey key{infos.getSettings(), {}};
-    key.per_column_kinds.reserve(infos.size());
+    SerializationsCacheKey key{infos.getSettings(), {}, {}};
+    key.per_entry_settings.reserve(infos.size());
 
-    /// The infos map is ordered by column name, so the key is deterministic.
-    for (const auto & [column_name, info] : infos)
+    size_t names_size = 0;
+    for (const auto & [column_name, _] : infos)
+        names_size += column_name.size();
+
+    /// The kind stacks are one byte per column in the common case; the estimate avoids most of
+    /// the buffer growth reallocations without over-reserving much.
+    key.names_and_kinds.reserve(names_size + infos.size() * 8);
+
     {
-        WriteBufferFromOwnString kinds;
-        info->serialializeKindStackBinary(kinds);
-        key.per_column_kinds.emplace_back(column_name, kinds.str(), info->getSettings());
+        WriteBufferFromString out(key.names_and_kinds, AppendModeTag{});
+
+        /// The infos map is ordered by column name, so the key is deterministic. The name is
+        /// length-prefixed and the kind stacks (whose serialized length is unknown upfront) are
+        /// length-suffixed, which keeps the encoding injective without a per-column buffer.
+        for (const auto & [column_name, info] : infos)
+        {
+            writeStringBinary(column_name, out);
+            size_t offset = out.count();
+            info->serialializeKindStackBinary(out);
+            writeVarUInt(out.count() - offset, out);
+            key.per_entry_settings.push_back(info->getSettings());
+        }
+
+        out.finalize();
     }
 
     return key;
@@ -105,45 +130,25 @@ SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializations
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
-namespace
-{
-
-/// Feed a string into the hash state, length-prefixed so concatenations are unambiguous.
-void updateHashWithString(XXH3_state_t & state, std::string_view s)
-{
-    UInt64 size = s.size();
-    XXH_INLINE_XXH3_64bits_update(&state, &size, sizeof(size));
-    XXH_INLINE_XXH3_64bits_update(&state, s.data(), s.size());
-}
-
-}
-
 size_t SharedPartColumns::SerializationsCacheKeyHash::operator()(const SerializationsCacheKey & key) const noexcept
 {
     /// XXH3 instead of the more usual SipHash: this runs on the part loading path over one entry
     /// per column with a serialization info, and XXH3 is several times faster (the hash only keys
     /// an in-memory cache, so it does not need to be cryptographic or stable across versions).
+    /// The settings go through their `updateHash` so that new fields are picked up automatically;
+    /// a stale hash could only miss sharing between equal keys, never share between unequal ones
+    /// (equality compares the full key).
     XXH3_state_t state;
     XXH_INLINE_XXH3_64bits_reset(&state);
 
     SipHash settings_hash;
     key.settings.updateHash(settings_hash);
+    for (const auto & entry_settings : key.per_entry_settings)
+        entry_settings.updateHash(settings_hash);
     UInt64 settings_hash_value = settings_hash.get64();
     XXH_INLINE_XXH3_64bits_update(&state, &settings_hash_value, sizeof(settings_hash_value));
 
-    UInt64 entries = key.per_column_kinds.size();
-    XXH_INLINE_XXH3_64bits_update(&state, &entries, sizeof(entries));
-
-    for (const auto & [name, kinds, settings] : key.per_column_kinds)
-    {
-        updateHashWithString(state, name);
-        updateHashWithString(state, kinds);
-
-        SipHash entry_settings_hash;
-        settings.updateHash(entry_settings_hash);
-        UInt64 entry_settings_hash_value = entry_settings_hash.get64();
-        XXH_INLINE_XXH3_64bits_update(&state, &entry_settings_hash_value, sizeof(entry_settings_hash_value));
-    }
+    XXH_INLINE_XXH3_64bits_update(&state, key.names_and_kinds.data(), key.names_and_kinds.size());
 
     return XXH_INLINE_XXH3_64bits_digest(&state);
 }
@@ -164,6 +169,9 @@ std::shared_ptr<const SerializationByName> SharedPartColumns::getSerializations(
     /// Build outside the lock: when the cache does not help (each part has a unique combination of
     /// serialization kinds), concurrent part loads still build their maps in parallel, exactly as
     /// they did when the map was built per-part.
+    /// The map and the cache entry live as long as some part of the table needs them: route them
+    /// to the dedicated parts arena (no-op when the caller already did).
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
     auto built = std::make_shared<const SerializationByName>(buildSerializations(infos));
 
     std::lock_guard lock(serializations_cache_mutex);
@@ -185,7 +193,7 @@ std::shared_ptr<const SerializationByName> SharedPartColumns::getSerializations(
     return built;
 }
 
-std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstreams(ColumnsSubstreams substreams) const
+std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstreams(const ColumnsSubstreams & substreams) const
 {
     UInt128 content_hash = substreams.getHash();
 
@@ -196,7 +204,10 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
                 return shared;
     }
 
-    auto built = std::make_shared<const ColumnsSubstreams>(std::move(substreams));
+    /// The first part with this content pays for the copy; it is shared from then on.
+    /// Route it to the dedicated parts arena (no-op when the caller already did).
+    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    auto built = std::make_shared<const ColumnsSubstreams>(substreams);
 
     std::lock_guard lock(substreams_cache_mutex);
     auto [it, inserted] = substreams_cache.try_emplace(content_hash);
