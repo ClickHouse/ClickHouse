@@ -397,7 +397,6 @@ namespace ServerSetting
     extern const ServerSettingsBool display_secrets_in_show_and_select;
     extern const ServerSettingsUInt64 max_backup_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_build_vector_similarity_index_thread_pool_size;
-    extern const ServerSettingsUInt64 max_remote_read_connections;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_merges_bandwidth_for_server;
