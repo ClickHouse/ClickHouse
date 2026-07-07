@@ -110,6 +110,8 @@ Shows the Abstract Syntax Tree (AST) of a query after syntax analysis.
 
 It's done by parsing the query, constructing query AST and query tree, optionally running query analyzer and optimization passes, and then converting the query tree back to the query AST.
 
+The reformatted query is returned as a single multi-line record.
+
 Settings:
 
 - `oneline` – Print the query in one line. Default: `0`.

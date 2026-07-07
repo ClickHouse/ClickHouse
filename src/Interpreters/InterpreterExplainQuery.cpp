@@ -646,7 +646,9 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     MutableColumns res_columns = sample_block.cloneEmptyColumns();
 
     WriteBufferFromOwnString buf;
-    bool single_line = false;
+    /// When set, the whole buffer is emitted as a single record. Otherwise it is split on line
+    /// feeds into one record per line (the default for tree-like PLAN/PIPELINE/AST output).
+    bool single_record = false;
     bool insert_buf = true;
 
     ContextPtr query_context = getContext();
@@ -683,6 +685,10 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         case ASTExplainQuery::AnalyzedSyntax:
         {
             auto settings = checkAndGetSettings<QuerySyntaxSettings>(ast.getSettings());
+
+            /// EXPLAIN SYNTAX is a reformatted, copy-pasteable query, so return it as one
+            /// multi-line record rather than splitting it into one record per line (issue #80410).
+            single_record = true;
 
             /// Inline any parameterized view calls with their parameter-substituted inner queries,
             /// so EXPLAIN SYNTAX shows what the view actually expands to.
@@ -797,7 +803,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
 
                 plan_array->format(json_format_settings, format_context);
 
-                single_line = true;
+                single_record = true;
             }
             else
                 plan.explainPlan(buf, settings.query_plan_options, 0, query_context->getSettingsRef()[Setting::query_plan_max_step_description_length]);
@@ -945,7 +951,7 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
     buf.finalize();
     if (insert_buf)
     {
-        if (single_line)
+        if (single_record)
             res_columns[0]->insertData(buf.str().data(), buf.str().size());
         else
             fillColumn(*res_columns[0], buf.str());
