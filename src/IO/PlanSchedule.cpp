@@ -181,7 +181,9 @@ VectorWithMemoryTracking<PlanSchedule::WriteTarget> writeTargetsFor(
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
     ByteRange request_extent,
-    size_t min_bytes_for_seek)
+    size_t min_bytes_for_seek,
+    size_t serve_window_bytes,
+    size_t serve_block_bytes)
 {
     PlanSchedule sched;
     if (geometry.plan_end <= geometry.plan_start)
@@ -413,7 +415,10 @@ PlanSchedule buildSchedule(
                     break;
                 }
 
-        sched.serve_runs.push_back(PlanSchedule::ServeRun{.output = out, .require_retrieve = require});
+        sched.serve_runs.push_back(PlanSchedule::ServeRun{
+            .output = out,
+            .require_retrieve = require,
+            .serve_bound = require.has_value() ? serve_window_bytes : serve_block_bytes});
         cursor = out_end;
     }
 

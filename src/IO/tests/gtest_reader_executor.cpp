@@ -4894,7 +4894,11 @@ void validateScheduleMatchesReality(
     }
 
     ASSERT_NE(geom, nullptr);
-    auto sched = buildSchedule(*geom, ByteRange{0, file_size}, min_bytes_for_seek);
+    /// The oracle must predict with the HARNESS executor's serve sizes (window/block span the
+    /// file, so runs are never chunked) - mismatched constants would silently diverge if this
+    /// oracle ever predicts per-call windows.
+    auto sched = buildSchedule(*geom, ByteRange{0, file_size}, min_bytes_for_seek,
+        /*serve_window_bytes=*/file_size * 2 + 1, /*serve_block_bytes=*/file_size * 2 + 1);
 
     ASSERT_EQ(outputs.size(), sched.serve_runs.size()) << "serve-run count vs live windows";
     for (size_t i = 0; i < outputs.size(); ++i)
@@ -5237,7 +5241,8 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     }
     ASSERT_NE(geom, nullptr);
 
-    auto sched = buildSchedule(*geom, ByteRange{32 * 1024, file - 32 * 1024}, 0);
+    auto sched = buildSchedule(*geom, ByteRange{32 * 1024, file - 32 * 1024}, 0,
+        /*serve_window_bytes=*/file * 2, /*serve_block_bytes=*/file * 2);
     auto k = predictKpi(sched);
 
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, k.from_source) << "R";

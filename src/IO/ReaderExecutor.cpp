@@ -2131,7 +2131,7 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     const size_t base = launchProgress(ri);
     if (base >= r.range.end())
         return;
-    const size_t chunk = std::min(r.range.end() - base, boundedReadSize(fillAheadLead(level)));
+    const size_t chunk = std::min(r.range.end() - base, boundedFetchSize(fillAheadLead(level)));
     if (chunk == 0)
         return;
 
@@ -2162,7 +2162,7 @@ void ReaderExecutor::advanceAhead()
     drainAbandonedMachines();
 
     const size_t position_phys = position + data_start_offset;
-    const size_t probe = boundedReadSize(window_size);
+    const size_t probe = boundedFetchSize(window_size);
     if (probe == 0)
         return;
     if (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, probe}))
@@ -2686,17 +2686,14 @@ ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
         return {};
 
     const auto & run = read_plan.schedule.serve_runs[serveRunAt(position_phys)];
-    const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
 
     /// ONE window of THIS serve run - never past its end (an embedded faster-tier hit splits
     /// a gap into gap / hit / gap, and reading past the boundary would key the pump to an
     /// ambiguous job; the long connection still coalesces ACROSS runs via the lane's `conn`).
-    /// A hit run is BLOCK-bounded - no remote open to amortise, the bound is just in-flight
-    /// memory per call; a job run is WINDOW-bounded - the fetch it may pump amortises over it.
-    const size_t bound = run.require_retrieve.has_value()
-        ? boundedReadSize(effectiveWindowSize(level))
-        : effectiveBlockSize(level);
-    const size_t want = std::min({readCeiling(), run.output.end() - position_phys, bound});
+    /// The granularity is SCHEDULE data (`serve_bound`) and only the ASK: the serve returns
+    /// whatever contiguous prefix is ready, the rest at the next call. `readCeiling` already
+    /// clamps to the file and the extent.
+    const size_t want = std::min({readCeiling(), run.output.end() - position_phys, run.serve_bound});
     if (want == 0)
         return {};
     const ByteRange window{position_phys, want};
@@ -2935,7 +2932,9 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     read_plan.schedule = buildSchedule(
         *read_plan.geometry(),
         schedule_request,
-        min_bytes_for_seek);
+        min_bytes_for_seek,
+        effectiveWindowSize(read_plan.geometry()->pressure_level),
+        effectiveBlockSize(read_plan.geometry()->pressure_level));
 
     /// Feed this plan's predicted source reads into the continuity estimator so its
     /// reach prediction (which sizes long source connections) stays current.
@@ -3244,8 +3243,12 @@ size_t ReaderExecutor::clampToExtent(size_t win_size) const
     return std::min(win_size, remaining);
 }
 
-size_t ReaderExecutor::boundedReadSize(size_t want) const
+size_t ReaderExecutor::boundedFetchSize(size_t want) const
 {
+    /// PRODUCER-side clamp: an arbitrary fetch ask (the fill-ahead lead, the launch probe)
+    /// bounded by what exists (the known file remainder) and what may be touched (the
+    /// extent). Deliberately NOT capped at the serving horizon - the run-ahead may exceed
+    /// one window; the consumer's ceiling is `readCeiling`.
     if (!offset_map.hasUnknownSize())
         want = std::min(want, totalSize() - position);
     return clampToExtent(want);

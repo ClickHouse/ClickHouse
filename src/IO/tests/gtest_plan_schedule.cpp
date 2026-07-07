@@ -33,7 +33,7 @@ CoverageMap geometry(size_t plan_start, size_t plan_end, std::vector<GeometryEnt
 
 PlanSchedule describe(const CoverageMap & g, ByteRange request)
 {
-    return buildSchedule(g, request, /*min_bytes_for_seek=*/2);
+    return buildSchedule(g, request, /*min_bytes_for_seek=*/2, /*serve_window_bytes=*/1 << 20, /*serve_block_bytes=*/64 * 1024);
 }
 
 struct Seg { size_t off; size_t size; PlanSchedule::Purpose purpose; bool resident; };
@@ -66,7 +66,7 @@ constexpr auto Fill = PlanSchedule::Purpose::FillOnly;
 
 PlanSchedule describeSeek(const CoverageMap & g, ByteRange request, size_t min_bytes_for_seek)
 {
-    return buildSchedule(g, request, min_bytes_for_seek);
+    return buildSchedule(g, request, min_bytes_for_seek, /*serve_window_bytes=*/1 << 20, /*serve_block_bytes=*/64 * 1024);
 }
 
 bool intoHas(const PlanSchedule::Retrieve & r, size_t entry, ByteRange cell)
@@ -509,4 +509,36 @@ TEST(PlanScheduleRetrieves, SeveralGapsEachWiredToOwnRetrieve)
     EXPECT_TRUE(rangeContains(split.retrieves[r0].range, split.serve_runs[0].output));
     EXPECT_TRUE(rangeContains(split.retrieves[r2].range, split.serve_runs[2].output));
     EXPECT_TRUE(rangeContains(split.retrieves[r4].range, split.serve_runs[4].output));
+}
+
+
+/// T8: the serve GRANULARITY is schedule data. A job run carries the window bound (the fetch
+/// it may pump amortises over it), a hit run the block bound (in-flight memory only) - a
+/// swapped argument pair would invert warm/cold serve sizing while every range assertion
+/// stays green, so pin the mapping itself.
+TEST(PlanScheduleServeRuns, ServeBoundPerRunKind)
+{
+    auto g = geometry(0, 12, {
+        tierEntry(CacheTier::PageCache, {{4, 4}}, {}),         // resident [4,8)
+        tierEntry(CacheTier::FilesystemCache, {}, {{0, 12}}),  // one segment [0,12)
+    });
+    auto s = buildSchedule(g, {0, 12}, /*min_bytes_for_seek=*/2,
+        /*serve_window_bytes=*/1 << 20, /*serve_block_bytes=*/64 * 1024);
+    bool saw_hit = false;
+    bool saw_job = false;
+    for (const auto & run : s.serve_runs)
+    {
+        if (run.require_retrieve.has_value())
+        {
+            EXPECT_EQ(run.serve_bound, 1u << 20) << "a job run serves at the WINDOW bound";
+            saw_job = true;
+        }
+        else
+        {
+            EXPECT_EQ(run.serve_bound, 64u * 1024) << "a hit run serves at the BLOCK bound";
+            saw_hit = true;
+        }
+    }
+    EXPECT_TRUE(saw_hit);
+    EXPECT_TRUE(saw_job);
 }

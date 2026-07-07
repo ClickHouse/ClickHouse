@@ -89,6 +89,11 @@ struct PlanSchedule
     {
         ByteRange output;                             /// physical / plan coords (same space as Retrieve.range and position_phys)
         std::optional<size_t> require_retrieve;       /// index into `retrieves`
+        /// The serve GRANULARITY (the consumer's ask, a maximum - the serve returns any
+        /// non-empty ready prefix): a hit run is block-bounded (no remote open to amortise,
+        /// the bound is in-flight memory per call); a job run is window-bounded (the fetch
+        /// it may pump amortises over it). Pressure-scaled at plan build.
+        size_t serve_bound = 0;
     };
 
     VectorWithMemoryTracking<TypedRange> ranges;
@@ -99,10 +104,13 @@ struct PlanSchedule
 /// Describe the work of the plan `geometry` for the half-open logical request
 /// `request_extent` (physical coords here; the caller adds the encryption-header
 /// shift). Pure function of the geometry; `min_bytes_for_seek` shapes the bridge
-/// threshold (the streaming footprint).
+/// threshold (the streaming footprint); the serve sizes (pressure-scaled by the
+/// caller) become each run's `serve_bound`.
 PlanSchedule buildSchedule(
     const CoverageMap & geometry,
     ByteRange request_extent,
-    size_t min_bytes_for_seek);
+    size_t min_bytes_for_seek,
+    size_t serve_window_bytes,
+    size_t serve_block_bytes);
 
 }

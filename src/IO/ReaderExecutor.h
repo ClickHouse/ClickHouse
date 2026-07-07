@@ -1034,7 +1034,7 @@ private:
 
     /// Trim a desired logical read size at `position` to the file end (when
     /// known) and the read extent - the per-read analogue of `boundedPlanSpan`.
-    size_t boundedReadSize(size_t want) const;
+    size_t boundedFetchSize(size_t want) const;
 
     /// The advertised read extent (`setReadUntilPosition`) has been reached - no room left
     /// within it, though the file may continue. `readNextWindow` uses this (not the file end)
@@ -1053,6 +1053,9 @@ private:
     /// (Was the `to_read` parameter.) Deliberately does NOT test `reached_eof`: when EOF latches
     /// with a machine still in flight, `readNextWindow`'s `atEnd()` branch drains that final
     /// window through `serveWindow`, which serves only while `readCeiling() > 0`.
+    /// CONSUMER-side horizon: the most a serve could return from `position` right now (the
+    /// file remainder, or one window when the size is unknown, clamped to the extent).
+    /// Zero = the extent is exhausted. The producer's clamp is `boundedFetchSize`.
     size_t readCeiling() const
     {
         return offset_map.hasUnknownSize() ? clampToExtent(window_size) : clampToExtent(totalSize() - position);
