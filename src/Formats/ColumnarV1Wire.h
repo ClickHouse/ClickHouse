@@ -117,6 +117,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Common/Exception.h>
+#include <limits>
 #include <Common/assert_cast.h>
 
 namespace DB
@@ -157,6 +158,23 @@ struct ColDescriptor
     uint64_t data_size;
 };
 static_assert(sizeof(ColDescriptor) == COLUMNAR_DESC_BYTES);
+
+// The wire descriptor's own offsets/sizes are uint64_t, but element/row counts are threaded
+// through the recursive size/write/read helpers below as uint32_t (row counts realistically
+// don't exceed 4 billion). A flattened Array(T)'s total nested element count is a different
+// story: a single top-level row can legitimately carry more than 2^32-1 elements. Narrowing
+// that through a uint32_t intermediate would silently wrap, causing writeColData to underfill
+// or overrun a buffer sized off the wrapped (small) count instead of the real (large) one.
+// Call this at every point that narrows a real element/row count into the uint32_t path, so
+// the failure mode is a clear exception instead of silent frame corruption.
+inline uint32_t checkFitsUint32(uint64_t value, const char * what)
+{
+    if (value > std::numeric_limits<uint32_t>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1: {} ({}) exceeds the maximum representable element count ({})",
+            what, value, std::numeric_limits<uint32_t>::max());
+    return static_cast<uint32_t>(value);
+}
 
 // Recursively check that `type` can round-trip through the COLUMNAR_V1 wire format,
 // throwing INCORRECT_DATA immediately with the exact reason otherwise. Without this,
@@ -280,7 +298,7 @@ inline uint64_t complexDataSize(const IColumn & col, uint32_t n)
         return complexDataSize(*lc_col->convertToFullColumn(), n);
     if (const auto * arr = typeid_cast<const ColumnArray *>(&col))
     {
-        uint32_t total = static_cast<uint32_t>(arr->getData().size());
+        uint32_t total = checkFitsUint32(arr->getData().size(), "flattened Array element count");
         return (static_cast<uint64_t>(n) + 1u) * 8u + complexDataSize(arr->getData(), total);
     }
     if (const auto * tup = typeid_cast<const ColumnTuple *>(&col))
@@ -325,7 +343,7 @@ inline void writeComplexData(const IColumn & col, uint32_t n, uint8_t * dst)
         unalignedStore<uint64_t>(dst, 0ull);
         for (uint32_t i = 0; i < n; ++i)
             unalignedStore<uint64_t>(dst + (static_cast<uint64_t>(i) + 1u) * 8u, static_cast<uint64_t>(ch_offs[i]));
-        uint32_t total = static_cast<uint32_t>(arr->getData().size());
+        uint32_t total = checkFitsUint32(arr->getData().size(), "flattened Array element count");
         writeComplexData(arr->getData(), total, dst + (static_cast<uint64_t>(n) + 1u) * 8u);
         return;
     }
@@ -438,7 +456,7 @@ inline uint64_t buildColDescriptor(
             if (sub.empty())
                 continue;
             ColDescriptor inner_desc{};
-            uint32_t sub_rows = static_cast<uint32_t>(sub.size());
+            uint32_t sub_rows = checkFitsUint32(sub.size(), "Variant sub-column row count");
             write_cursor = buildColDescriptor(&sub, false, false, sub_rows, write_cursor, inner_desc);
         }
 
@@ -467,7 +485,7 @@ inline uint64_t buildColDescriptor(
 
         const IColumn & dict_col = *lc_col->getDictionary().getNestedColumn();
         const IColumn & idx_col  = lc_col->getIndexes();
-        uint32_t dict_rows    = static_cast<uint32_t>(dict_col.size());
+        uint32_t dict_rows    = checkFitsUint32(dict_col.size(), "LowCardinality dictionary row count");
         uint32_t idx_elem_sz  = static_cast<uint32_t>(idx_col.sizeOfValueIfFixed());
 
         desc.offsets_offset = write_cursor;
@@ -504,7 +522,7 @@ inline uint64_t buildColDescriptor(
         desc.data_offset = write_cursor;
 
         const IColumn & nested = arr_col->getData();
-        uint32_t total_elems = static_cast<uint32_t>(nested.size());
+        uint32_t total_elems = checkFitsUint32(nested.size(), "flattened Array element count");
 
         // Sequential layout: uint64 offsets[num_rows+1] followed by nested complexData.
         desc.data_size = (num_rows + 1u) * sizeof(uint64_t) + complexDataSize(nested, total_elems);
@@ -665,7 +683,7 @@ inline void writeColData(
                 continue;
 
             uint8_t global_d = var_col->globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
-            uint32_t sub_rows = static_cast<uint32_t>(sub.size());
+            uint32_t sub_rows = checkFitsUint32(sub.size(), "Variant sub-column row count");
 
             ColDescriptor inner_desc{};
             sub_cursor = buildColDescriptor(&sub, false, false, sub_rows, sub_cursor, inner_desc);
@@ -686,7 +704,7 @@ inline void writeColData(
     {
         const IColumn & dict_col = *lc_col->getDictionary().getNestedColumn();
         const IColumn & idx_col  = lc_col->getIndexes();
-        uint32_t dict_rows   = static_cast<uint32_t>(dict_col.size());
+        uint32_t dict_rows   = checkFitsUint32(dict_col.size(), "LowCardinality dictionary row count");
         uint32_t idx_elem_sz = static_cast<uint32_t>(idx_col.sizeOfValueIfFixed());
 
         // Recompute the dictionary sub-column's descriptor (buildColDescriptor is
@@ -714,7 +732,7 @@ inline void writeColData(
     {
         const auto & ch_offsets = arr_col->getOffsets();
         const IColumn & nested  = arr_col->getData();
-        uint32_t total_elems = static_cast<uint32_t>(nested.size());
+        uint32_t total_elems = checkFitsUint32(nested.size(), "flattened Array element count");
 
         // Sequential layout: outer offsets at data_offset, nested data immediately after.
         uint8_t * wire_outer = buf.data() + desc.data_offset;
@@ -820,7 +838,8 @@ inline MutableColumnPtr readColumnFromDesc(
                     "COLUMNAR_V1: COL_COMPLEX nested Array outer offsets out of bounds");
             const uint8_t * outer_offs = p;
             p += outer_bytes;
-            uint32_t total_elems = static_cast<uint32_t>(unalignedLoad<uint64_t>(outer_offs + n * 8u));
+            uint32_t total_elems = checkFitsUint32(unalignedLoad<uint64_t>(outer_offs + n * 8u),
+                "flattened Array element count read from frame");
             // outer_offs holds n+1 cumulative counts (offs[0]==0, offs[n]==total_elems); the
             // module fully controls these, so reject anything non-monotonic or not starting
             // at 0 before using them as ColumnArray offsets, or a crafted [0, 3, 1]-style frame
@@ -1092,7 +1111,8 @@ inline MutableColumnPtr readColumnFromDesc(
             const uint8_t * p = buf.data() + desc.data_offset;
             const uint8_t * outer_offs = p;
             p += outer_offset_bytes;
-            uint32_t total_elems = static_cast<uint32_t>(unalignedLoad<uint64_t>(outer_offs + rows_to_dec * 8u));
+            uint32_t total_elems = checkFitsUint32(unalignedLoad<uint64_t>(outer_offs + rows_to_dec * 8u),
+                "flattened Array element count read from frame");
             // Same guest-controlled offsets as the nested decode() branch above: reject
             // anything not starting at 0 or non-monotonic before trusting total_elems for
             // the nested allocation/decode, or a crafted [0, 3, 1]-style frame can build a
@@ -1187,7 +1207,7 @@ inline MutableColumnPtr readColumnFromDesc(
             // [data_offset, data_offset+data_size) region, a malformed frame could point one
             // alternative's sub-column at bytes belonging to a sibling top-level column or
             // the frame header and still decode "successfully".
-            uint32_t sub_rows = static_cast<uint32_t>(inner_desc.null_offset);
+            uint32_t sub_rows = checkFitsUint32(inner_desc.null_offset, "Variant sub-column row count read from frame");
             uint64_t sub_region_end = desc.data_offset + desc.data_size;
             if (inner_desc.offsets_offset != 0
                 && (inner_desc.offsets_offset < desc.data_offset || inner_desc.offsets_offset > sub_region_end))
