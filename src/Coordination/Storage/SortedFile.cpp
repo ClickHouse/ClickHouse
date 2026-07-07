@@ -48,8 +48,8 @@ BlockPtr SortedFile::getBlockCoveringPath(NodePath path, BlockCache * block_cach
 {
     /// The last block with min_path <= path; if path falls past its max_path (a gap between blocks,
     /// or past the last block) or before the first block, the path is not in this file.
-    auto block_it = std::partition_point(
-        blocks.begin(), blocks.end(),
+    auto block_it = std::ranges::partition_point(
+        blocks,
         [&](const BlockInfo & block) { return block.min_path.compare(path) <= 0; });
     if (block_it == blocks.begin())
         return {};
@@ -62,8 +62,8 @@ BlockPtr SortedFile::getBlockCoveringPath(NodePath path, BlockCache * block_cach
 void SortedFile::listChildrenNames(
     NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena_, BlockCache * block_cache) const
 {
-    auto block_it = std::partition_point(
-        blocks.begin(), blocks.end(),
+    auto block_it = std::ranges::partition_point(
+        blocks,
         [&](const BlockInfo & block) { return block.max_path.compare(range_start) <= 0; });
 
     std::string path_buf;

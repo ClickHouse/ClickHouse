@@ -96,6 +96,10 @@ SortedRunWriter::~SortedRunWriter()
 
 void SortedRunWriter::appendNode(FullNode & node)
 {
+    if (file)
+        /// Assert the input is sorted.
+        chassert(node.path.compare(block_max_path) > 0);
+
     if (!file)
     {
         file = std::make_shared<SortedFile>();

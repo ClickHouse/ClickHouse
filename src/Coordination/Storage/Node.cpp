@@ -346,7 +346,8 @@ NodeRef BlockData::appendNodeNoResize(BlockPtr block, FullNode & node)
 
     memcpy(p, path_suffix_str, path_suffix_size);
     p += path_suffix_size;
-    memcpy(p, node.data_ptr, data_size);
+    if (data_size != 0)
+        memcpy(p, node.data_ptr, data_size);
     p += data_size;
     memcpy(p, &digest, 8);
     p += 8;
@@ -373,6 +374,7 @@ bool BlockData::appendNodeOrStartNewBlock(const BlockPtr & block, FullNode & nod
     }
 
     out_new_block = BlockData::create(new_block_capacity);
+    out_new_block->compatible_digest = true;
     out_node_ref = BlockData::appendNode(out_new_block, node);
     return true;
 }
