@@ -13,6 +13,7 @@
 #include <Storages/StorageMaterializedView.h>
 #include <Common/FailPoint.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/saturatedDuration.h>
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
@@ -361,7 +362,7 @@ bool DatabaseReplicatedDDLWorker::waitForReplicaToProcessAllEntries(UInt64 timeo
     {
         std::unique_lock lock{mutex};
         LOG_TRACE(log, "Waiting for worker thread to process all entries before {}, current task is {}", max_log, current_task);
-        bool processed = wait_current_task_change.wait_for(lock, std::chrono::milliseconds(timeout_ms), [&]()
+        bool processed = wait_current_task_change.wait_for(lock, saturatedMilliseconds(timeout_ms), [&]()
         {
             return zookeeper->expired() || current_task >= max_log || stop_flag;
         });

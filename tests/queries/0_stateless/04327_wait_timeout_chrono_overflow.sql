@@ -28,3 +28,16 @@ SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = 1000000000
 
 -- A negative lock_acquire_timeout must saturate to an immediate deadline, not underflow now() + timeout.
 SELECT count() > 0 FROM numbers(1000) SETTINGS lock_acquire_timeout = -100000000000;
+
+-- SYSTEM SYNC MERGES builds its deadline as now() + max_execution_time; a huge value must not overflow.
+-- SYSTEM commands take no trailing SETTINGS clause, so the timeout is set on the session. With all
+-- scheduled parts already covered the command returns immediately, so this just exercises the clamp.
+DROP TABLE IF EXISTS t_04327_sync_merges;
+CREATE TABLE t_04327_sync_merges (x UInt64) ENGINE = MergeTree ORDER BY x
+SETTINGS merge_selector_algorithm = 'Manual';
+INSERT INTO t_04327_sync_merges VALUES (1);
+SET max_execution_time = 100000000000;
+SYSTEM SYNC MERGES t_04327_sync_merges;
+SET max_execution_time = DEFAULT;
+SELECT 1;
+DROP TABLE t_04327_sync_merges;

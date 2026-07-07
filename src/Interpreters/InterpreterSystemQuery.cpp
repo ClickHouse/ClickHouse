@@ -94,6 +94,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
+#include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
@@ -2323,7 +2324,7 @@ void InterpreterSystemQuery::syncMerges()
 
     const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
     const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+    const auto deadline = std::chrono::steady_clock::now() + saturatedMilliseconds(timeout);
     while (std::chrono::steady_clock::now() < deadline)
     {
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
