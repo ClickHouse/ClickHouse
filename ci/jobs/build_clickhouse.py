@@ -3,7 +3,7 @@ import os
 import shutil
 
 from ci.defs.defs import BuildTypes, ToolSet, chcache_secret
-from ci.jobs.scripts.clickhouse_version import ClickHouseVersion
+from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.settings import Settings
@@ -271,7 +271,7 @@ def main():
         version_dict = info.get_kv_data("version")
 
     if not version_dict:
-        version_dict = ClickHouseVersion.get_current_version_as_dict()
+        version_dict = CHVersion.get_current_version_as_dict()
         if not info.is_local_run:
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"
@@ -283,7 +283,7 @@ def main():
 
     if res and JobStages.CMAKE in stages:
         assert version_dict, "Failed to determine build version"
-        ClickHouseVersion.set_binary_version(version_dict=version_dict)
+        CHVersion.set_binary_version(version_dict=version_dict)
         if "darwin" in build_type:
             Shell.check(
                 f"rm -rf {current_directory}/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"

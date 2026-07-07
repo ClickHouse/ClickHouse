@@ -9,7 +9,7 @@ import traceback
 from pathlib import Path
 from typing import Dict, List
 
-from ci.jobs.scripts.clickhouse_version import ClickHouseVersion
+from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika import Secret
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -484,7 +484,7 @@ def main():
     if not info.is_local_run:
         version_dict = info.get_kv_data("version")
     if not version_dict:
-        version_dict = ClickHouseVersion.get_current_version_as_dict()
+        version_dict = CHVersion.get_current_version_as_dict()
         if not info.is_local_run:
             print(
                 "WARNING: ClickHouse version has not been found in workflow kv storage - read from repo"

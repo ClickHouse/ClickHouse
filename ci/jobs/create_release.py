@@ -50,7 +50,7 @@ from typing import Iterator, List
 
 from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
-    ClickHouseVersion,
+    CHVersion,
     VersionType,
     update_cmake_version,
 )
@@ -258,7 +258,7 @@ class ReleaseInfo:
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
                 git = Git()
-                version = ClickHouseVersion.from_repo(git=git)
+                version = CHVersion.current()
                 release_branch = f"{version.major}.{version.minor}"
                 expected_prev_tag = f"v{version.major}.{version.minor}.1.1-new"
                 version.bump().with_description(VersionType.NEW)
@@ -270,8 +270,7 @@ class ReleaseInfo:
         if release_type == "patch":
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
-                git = Git()
-                version = ClickHouseVersion.from_repo(git=git)
+                version = CHVersion.current()
                 codename = version.get_stable_release_type()
                 version.with_description(codename)
                 release_branch = f"{version.major}.{version.minor}"
@@ -384,8 +383,7 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
-        git = Git()
-        version = ClickHouseVersion.from_repo(git=git)
+        version = CHVersion.current()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
         version_after_release.bump()
@@ -427,8 +425,7 @@ class ReleaseInfo:
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
         with checkout(self.commit_sha):
-            git = Git()
-            version = ClickHouseVersion.from_repo(git=git)
+            version = CHVersion.current()
             if self.release_type == "patch":
                 assert version.string == self.version, (
                     f"BUG: version in release info does not match version in git commit, "
@@ -484,8 +481,7 @@ class ReleaseInfo:
             print("Update version on master branch")
             branch_upd = self.get_version_bump_branch()
             with checkout(self.commit_sha):
-                git = Git()
-                version = ClickHouseVersion.from_repo(git=git)
+                version = CHVersion.current()
                 version.bump()
                 version.with_description(VersionType.TESTING)
             with checkout("master"):

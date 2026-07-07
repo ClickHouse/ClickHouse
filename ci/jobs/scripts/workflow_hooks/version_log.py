@@ -4,7 +4,7 @@ from praktika.info import Info
 from praktika.utils import Shell
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.jobs.scripts.clickhouse_version import ClickHouseVersion
+from ci.jobs.scripts.clickhouse_version import CHVersion
 
 
 def _add_build_to_version_history():
@@ -13,7 +13,7 @@ def _add_build_to_version_history():
         f"git rev-parse --is-shallow-repository | grep -q true && git fetch --unshallow --prune --no-recurse-submodules --filter=tree:0 origin {info.git_branch} ||:"
     )
     commit_parents = Shell.get_output("git log --format=%P -n 1").split(" ")
-    version = ClickHouseVersion.get_current_version_as_dict()
+    version = CHVersion.get_current_version_as_dict()
     data = {
         "check_start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "pull_request_number": info.pr_number,
@@ -27,7 +27,7 @@ def _add_build_to_version_history():
     print(f"Update version log: [{data}]")
     CIDBCluster().insert_json(table="version_history", json_str=data)
     # stores actual version data in pipline storage, to be used by jobs that need it
-    ClickHouseVersion.store_version_data_in_ci_pipeline(version)
+    CHVersion.store_version_data_in_ci_pipeline(version)
 
 
 if __name__ == "__main__":

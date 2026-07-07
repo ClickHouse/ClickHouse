@@ -1,7 +1,7 @@
 import copy
 
 from ci.defs.job_configs import JobConfigs
-from ci.jobs.scripts.clickhouse_version import ClickHouseVersion
+from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.praktika.digest import Digest
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
@@ -113,7 +113,7 @@ if __name__ == "__main__":
 
     elif info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
         # store commit sha of release branch base to find binary for performance comparison in the job script later
-        release_branch_base_sha = ClickHouseVersion.get_release_version_as_dict().get("githash")
+        release_branch_base_sha = CHVersion.get_release_version_as_dict().get("githash")
         print(f"Release branch base sha: {release_branch_base_sha}")
         assert release_branch_base_sha
         release_branch_base_sha_with_predecessors = [
