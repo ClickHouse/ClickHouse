@@ -87,7 +87,8 @@ SELECT 1 IN ((
 # /* oneline */ select 1 in ((select 1) as sub)
 SELECT 1 IN ((SELECT 1) AS sub)
 # with it as ( select * from numbers(1) ) select it.number, i.number from it as i
-WITH it AS
+WITH
+    it AS
     (
         SELECT *
         FROM numbers(1)

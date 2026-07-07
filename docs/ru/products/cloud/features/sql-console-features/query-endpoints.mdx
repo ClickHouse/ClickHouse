@@ -1,0 +1,57 @@
+---
+sidebar_title: 'Эндпоинты Query API'
+slug: /cloud/features/query-api-endpoints
+description: 'Легко создавайте REST API-эндпоинты из сохранённых запросов'
+keywords: ['api', 'эндпоинты query api', 'эндпоинты запросов', 'query rest api']
+title: 'Эндпоинты Query API'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Для создания интерактивных приложений, работающих с данными, нужны не только быстрая база данных, хорошо структурированные данные и оптимизированные запросы.
+Фронтенду и микросервисам также нужен удобный способ получать данные, возвращаемые этими запросами, — желательно через хорошо структурированные API.
+
+Возможность **эндпоинта Query API** позволяет создавать конечную точку API напрямую из любого сохранённого SQL-запроса в консоли ClickHouse Cloud.
+Вы сможете обращаться к конечным точкам API по HTTP, чтобы выполнять сохранённые запросы без необходимости подключаться к сервису ClickHouse Cloud через нативный драйвер.
+
+<div id="ip-access-control">
+  ## Управление доступом по IP
+</div>
+
+Эндпоинты Query API учитывают белый список IP-адресов на уровне ключа API. Как и SQL Console, эндпоинты Query API проксируют запросы через инфраструктуру ClickHouse, поэтому настройки белого списка IP на уровне сервиса здесь не действуют.
+
+Чтобы ограничить, какие клиенты могут вызывать ваши эндпоинты Query API:
+
+<Steps>
+  <Step>
+    #### Откройте настройки ключа API
+
+    1. Перейдите в ClickHouse Cloud Console → **Organization** → **API Keys**
+
+    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="Ключи API" />
+
+    2. Нажмите **Edit** рядом с ключом API, который используется для эндпоинтов Query API
+
+    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Изменить" />
+  </Step>
+
+  <Step>
+    #### Добавьте разрешенные IP-адреса
+
+    1. В разделе **Allow access to this API Key** выберите **Specific locations**
+    2. Введите IP-адреса или диапазоны CIDR (например, `203.0.113.1` или `203.0.113.0/24`)
+    3. При необходимости добавьте несколько записей
+
+    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Конкретные местоположения" />
+
+    Для создания эндпоинтов Query API требуется роль Admin Console и ключ API с соответствующими разрешениями.
+  </Step>
+</Steps>
+
+<Tip>
+  **Руководство**
+
+  Инструкции по быстрой настройке
+  эндпоинтов Query API см. в [руководстве по эндпоинтам Query API](/ru/products/cloud/guides/sql-console/query-endpoints)
+</Tip>

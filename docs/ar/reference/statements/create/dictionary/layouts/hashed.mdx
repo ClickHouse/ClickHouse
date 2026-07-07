@@ -1,0 +1,174 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hashed
+title: 'أنواع تخطيط القاموس hashed'
+sidebarTitle: 'hashed'
+description: 'خزّن قاموسًا في الذاكرة باستخدام جداول التجزئة: hashed, sparse_hashed, complex_key_hashed, complex_key_sparse_hashed'
+doc_type: 'مرجع'
+---
+
+<div id="hashed">
+  ## hashed
+</div>
+
+يُخزَّن القاموس بالكامل في الذاكرة على هيئة جدول تجزئة. ويمكن أن يحتوي على أي عدد من العناصر بأي معرّفات. وعمليًا، قد يصل عدد المفاتيح إلى عشرات الملايين من العناصر.
+
+مفتاح القاموس من النوع [UInt64](/ar/reference/data-types/int-uint).
+
+جميع أنواع المصادر مدعومة. وعند التحديث، تُقرأ البيانات بالكامل (من ملف أو من جدول).
+
+مثال على التهيئة:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED())
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+      <hashed />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+مثال على التهيئة مع الإعدادات:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+      <hashed>
+        <!-- إذا كانت قيمة shards أكبر من 1 (القيمة الافتراضية هي `1`)، فسيحمّل القاموس
+             البيانات بالتوازي، وهذا مفيد إذا كان لديك عدد كبير جدًا من العناصر في
+             قاموس واحد. -->
+        <shards>10</shards>
+
+        <!-- حجم التراكم للـ blocks في الطابور المتوازي.
+
+             بما أن عنق الزجاجة في التحميل المتوازي هو إعادة التجزئة، فمن أجل تجنّب
+             التوقف لأن أحد الخيوط ينفّذ إعادة التجزئة، تحتاج إلى وجود
+             قدر من التراكم.
+
+             تُعد القيمة 10000 توازنًا جيدًا بين الذاكرة والسرعة.
+             وحتى مع 10e10 عنصر، يمكنها استيعاب الحمل بالكامل دون حدوث تجويع. -->
+        <shard_load_queue_backlog>10000</shard_load_queue_backlog>
+
+        <!-- الحد الأقصى لمعامل التحميل لجدول التجزئة. ومع القيم الأعلى،
+             تُستغل الذاكرة بكفاءة أكبر (أي يُهدر قدر أقل منها)، لكن أداء
+             القراءة قد يتراجع.
+
+             القيم الصالحة: [0.5, 0.99]
+             القيمة الافتراضية: 0.5 -->
+        <max_load_factor>0.5</max_load_factor>
+      </hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="sparse_hashed">
+  ## sparse_hashed
+</div>
+
+يشبه `hashed`، لكنه يستخدم ذاكرة أقل مقابل زيادة في استخدام CPU.
+
+يكون نوع مفتاح القاموس [UInt64](/ar/reference/data-types/int-uint).
+
+مثال على التهيئة:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+      <sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+يمكن أيضًا استخدام `shards` مع هذا النوع من القواميس، وهي أكثر أهمية في `sparse_hashed` منها في `hashed` لأن `sparse_hashed` أبطأ.
+
+<div id="complex_key_hashed">
+  ## complex_key_hashed
+</div>
+
+يُستخدم هذا النوع من التخزين مع [المفاتيح المركّبة](/ar/reference/statements/create/dictionary/attributes#composite-key). وهو مشابه لـ `hashed`.
+
+مثال على التهيئة:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+      <complex_key_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_sparse_hashed">
+  ## complex_key_sparse_hashed
+</div>
+
+يُستخدم هذا النوع من التخزين مع [المفاتيح المركبة](/ar/reference/statements/create/dictionary/attributes#composite-key). وهو مشابه لـ [sparse&#95;hashed](#sparse_hashed).
+
+مثال على التهيئة:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(COMPLEX_KEY_SPARSE_HASHED([SHARDS 1] [SHARD_LOAD_QUEUE_BACKLOG 10000] [MAX_LOAD_FACTOR 0.5]))
+    ```
+  </Tab>
+
+  <Tab title="ملف التهيئة">
+    ```xml
+    <layout>
+      <complex_key_sparse_hashed>
+        <!-- <shards>1</shards> -->
+        <!-- <shard_load_queue_backlog>10000</shard_load_queue_backlog> -->
+        <!-- <max_load_factor>0.5</max_load_factor> -->
+      </complex_key_sparse_hashed>
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />

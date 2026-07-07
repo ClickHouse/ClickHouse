@@ -34,13 +34,14 @@ std::vector<std::string_view> scanPathNamesForBucket(
     size_t target_bucket, size_t num_buckets);
 
 /// Insert data from flattened representation of an Object column to a usual Object column.
-void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, std::vector<ColumnPtr> && flattened_columns, ColumnObject & object_column, size_t num_rows);
+void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Columns && flattened_columns, ColumnObject & object_column, size_t num_rows);
 
 /// Get the bucket number for a specific path.
 size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets);
 
 /// Split shared data column to num_buckets columns by putting all paths from the original column to the corresponding bucket column.
 Columns splitSharedDataPathsToBuckets(const IColumn & shared_data_column, size_t start, size_t end, size_t num_buckets);
+
 
 /// Collect paths from bucket columns into a single shared data column.
 /// If paths_prefix != nullptr collect only paths that matches this prefix

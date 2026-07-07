@@ -1,0 +1,65 @@
+---
+description: 'Documentation sur la modification des paramètres de table'
+sidebarTitle: 'SETTING'
+slug: /sql-reference/statements/alter/setting
+title: 'Modification des paramètres de table'
+doc_type: 'reference'
+---
+
+Il existe des requêtes permettant de modifier les paramètres de table. Vous pouvez modifier des paramètres ou les réinitialiser à leurs valeurs par défaut. Une même requête peut modifier plusieurs paramètres à la fois.
+Si un paramètre portant le nom spécifié n&#39;existe pas, la requête génère une exception.
+
+**Syntaxe**
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY|RESET SETTING ...
+```
+
+<Note>
+  Ces requêtes ne peuvent être appliquées qu’aux tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+</Note>
+
+<div id="modify-setting">
+  ## MODIFY SETTING
+</div>
+
+Modifie les paramètres de table.
+
+**Syntaxe**
+
+```sql
+MODIFY SETTING setting_name=value [, ...]
+```
+
+**Exemple**
+
+```sql
+CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id;
+
+ALTER TABLE example_table MODIFY SETTING max_part_loading_threads=8, max_parts_in_total=50000;
+```
+
+<div id="reset-setting">
+  ## RESET SETTING
+</div>
+
+Réinitialise les paramètres de table à leurs valeurs par défaut. Si un paramètre est déjà dans son état par défaut, aucune action n’est effectuée.
+
+**Syntaxe**
+
+```sql
+RESET SETTING setting_name [, ...]
+```
+
+**Exemple**
+
+```sql
+CREATE TABLE example_table (id UInt32, data String) ENGINE=MergeTree() ORDER BY id
+    SETTINGS max_part_loading_threads=8;
+
+ALTER TABLE example_table RESET SETTING max_part_loading_threads;
+```
+
+**Voir aussi**
+
+* [Paramètres de MergeTree](/fr/reference/settings/merge-tree-settings)

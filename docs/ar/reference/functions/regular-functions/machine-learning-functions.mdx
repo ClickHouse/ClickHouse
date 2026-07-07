@@ -1,0 +1,194 @@
+---
+description: 'توثيق دوال تعلّم الآلة'
+sidebarTitle: 'تعلّم الآلة'
+slug: /sql-reference/functions/machine-learning-functions
+title: 'دوال تعلّم الآلة'
+doc_type: 'reference'
+---
+
+<div id="evalmlmethod">
+  ## evalMLMethod
+</div>
+
+لإجراء التنبؤ باستخدام نماذج الانحدار المُقدَّرة، تُستخدَم الدالة `evalMLMethod`. راجع الرابط ضمن `linearRegression`.
+
+<div id="stochasticlinearregression">
+  ## stochasticLinearRegression
+</div>
+
+تُنفِّذ دالة التجميع [stochasticLinearRegression](/ar/reference/functions/aggregate-functions/stochasticLinearRegression) أسلوب الانحدار المتدرّج العشوائي باستخدام نموذج خطي ودالة خسارة MSE. وتستخدم `evalMLMethod` للتنبؤ بالبيانات الجديدة.
+
+<div id="stochasticlogisticregression">
+  ## stochasticLogisticRegression
+</div>
+
+تُنفِّذ دالة التجميع [stochasticLogisticRegression](/ar/reference/functions/aggregate-functions/stochasticLogisticRegression) أسلوب الهبوط التدريجي العشوائي لمشكلة التصنيف الثنائي. وتستخدم `evalMLMethod` للتنبؤ بالبيانات الجديدة.
+
+<div id="naivebayesclassifier">
+  ## naiveBayesClassifier
+</div>
+
+يُصنّف النص المُدخل باستخدام نموذج Naive Bayes مع n-grams وتنعيم لابلاس. يجب تهيئة النموذج في ClickHouse قبل استخدامه.
+
+**البنية**
+
+```sql
+naiveBayesClassifier(model_name, input_text);
+```
+
+**الوسائط**
+
+* `model_name` — اسم النموذج المُعَدّ مسبقًا. [String](/ar/reference/data-types/string)
+  يجب أن يكون النموذج معرّفًا في ملفات تكوين ClickHouse (انظر أدناه).
+* `input_text` — النص المراد تصنيفه. [String](/ar/reference/data-types/string)
+  تُعالَج المدخلات تمامًا كما أُدخِلت (مع الحفاظ على حالة الأحرف وعلامات الترقيم).
+
+**القيمة المعادة**
+
+* معرّف الفئة المتوقعة على هيئة عدد صحيح غير موقّع. [UInt32](/ar/reference/data-types/int-uint)
+  تتوافق معرّفات الفئات مع التصنيفات المحددة أثناء إنشاء النموذج.
+
+**مثال**
+
+صنّف نصًا باستخدام نموذج لاكتشاف اللغة:
+
+```sql
+SELECT naiveBayesClassifier('language', 'How are you?');
+```
+
+```response
+┌─naiveBayesClassifier('language', 'How are you?')─┐
+│ 0                                                │
+└──────────────────────────────────────────────────┘
+```
+
+*قد تمثل النتيجة `0` اللغة الإنجليزية، بينما قد تشير `1` إلى الفرنسية — إذ تعتمد دلالات الفئات على بيانات التدريب لديك.*
+
+***
+
+<div id="implementation-details">
+  ### تفاصيل التنفيذ
+</div>
+
+**الخوارزمية**
+تستخدم خوارزمية التصنيف Naive Bayes مع [تنعيم لابلاس](https://en.wikipedia.org/wiki/Additive_smoothing) للتعامل مع تسلسلات n-gram غير المرصودة، وذلك بالاستناد إلى احتمالات n-gram كما هو موضح [هنا](https://web.stanford.edu/~jurafsky/slp3/4.pdf).
+
+**الميزات الرئيسية**
+
+* تدعم تسلسلات n-gram بأي طول
+* ثلاثة أوضاع للتقسيم إلى رموز:
+  * `byte`: يعمل على البايتات الخام. كل بايت يُعد رمزًا واحدًا.
+  * `codepoint`: يعمل على القيم القياسية في Unicode المفككة من UTF‑8. كل نقطة ترميز تُعد رمزًا واحدًا.
+  * `token`: يُقسِّم عند تتابعات المسافات البيضاء في Unicode (regex \s+). تكون الرموز سلاسل فرعية غير بيضاء؛ وتُعد علامات الترقيم جزءًا من الرمز إذا كانت ملاصقة له (على سبيل المثال، &quot;you?&quot; يُعد رمزًا واحدًا).
+
+***
+
+<div id="model-configuration">
+  ### إعداد النموذج
+</div>
+
+يمكنك العثور على شيفرة مصدرية نموذجية لإنشاء نموذج Naive Bayes لاكتشاف اللغة [هنا](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models).
+
+بالإضافة إلى ذلك، تتوفر نماذج نموذجية وملفات التكوين المرتبطة بها [هنا](https://github.com/nihalzp/ClickHouse-NaiveBayesClassifier-Models/tree/main/models).
+
+فيما يلي مثال على إعداد نموذج Naive Bayes في ClickHouse:
+
+```xml
+<clickhouse>
+    <nb_models>
+        <model>
+            <name>sentiment</name>
+            <path>/etc/clickhouse-server/config.d/sentiment.bin</path>
+            <n>2</n>
+            <mode>token</mode>
+            <alpha>1.0</alpha>
+            <priors>
+                <prior>
+                    <class>0</class>
+                    <value>0.6</value>
+                </prior>
+                <prior>
+                    <class>1</class>
+                    <value>0.4</value>
+                </prior>
+            </priors>
+        </model>
+    </nb_models>
+</clickhouse>
+```
+
+**معلمات الإعداد**
+
+| المعلمة    | الوصف                                                                                                        | مثال                                                     | الافتراضي    |
+| ---------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------------ |
+| **name**   | معرّف فريد للنموذج                                                                                           | `language_detection`                                     | *مطلوب*      |
+| **path**   | المسار الكامل للملف التنفيذي الخاص بالنموذج                                                                  | `/etc/clickhouse-server/config.d/language_detection.bin` | *مطلوب*      |
+| **mode**   | طريقة تجزئة النص:<br />- `byte`: تسلسلات بايت<br />- `codepoint`: نقاط ترميز Unicode<br />- `token`: رموز الكلمات | `token`                                                  | *مطلوب*      |
+| **n**      | حجم `n-gram` (في وضع `token`):<br />- `1`=كلمة واحدة<br />- `2`=أزواج كلمات<br />- `3`=ثلاثيات كلمات         | `2`                                                      | *مطلوب*      |
+| **alpha**  | معامل تنعيم لابلاس المستخدم أثناء التصنيف لمعالجة سلاسل `n-grams` التي لا تظهر في النموذج                    | `0.5`                                                    | `1.0`        |
+| **priors** | احتمالات الفئات (% من المستندات التي تنتمي إلى فئة)                                                          | 60% للفئة 0، 40% للفئة 1                                 | توزيع متساوٍ |
+
+**دليل تدريب النموذج**
+
+**تنسيق الملف**
+بتنسيق مقروء بشريًا، بالنسبة إلى `n=1` ووضع `token`، قد يبدو النموذج كما يلي:
+
+```text
+<class_id> <n-gram> <count>
+0 excellent 15
+1 refund 28
+```
+
+بالنسبة إلى `n=3` ونمط `codepoint`، فقد يبدو الأمر كما يلي:
+
+```text
+<class_id> <n-gram> <count>
+0 exc 15
+1 ref 28
+```
+
+لا يستخدم ClickHouse التنسيق المقروء للبشر مباشرةً؛ إذ يجب تحويله إلى التنسيق الثنائي الموضّح أدناه.
+
+**تفاصيل التنسيق الثنائي**
+يُخزَّن كل `n-gram` كما يلي:
+
+1. `class_id` بحجم 4 بايت (UInt، little-endian)
+2. طول بايتات `n-gram` بحجم 4 بايت (UInt، little-endian)
+3. بايتات `n-gram` الخام
+4. `count` بحجم 4 بايت (UInt، little-endian)
+
+**متطلبات المعالجة المسبقة**
+قبل إنشاء النموذج من مجموعة المستندات، يجب إجراء معالجة مسبقة للمستندات لاستخراج `n-grams` وفقًا للقيمتين المحددتين `mode` و`n`. توضّح الخطوات التالية هذه المعالجة المسبقة:
+
+1. **أضف علامات الحدود في بداية كل مستند ونهايته استنادًا إلى وضع تقطيع الرموز:**
+
+   * **Byte**: `0x01` (البداية)، `0xFF` (النهاية)
+   * **نقطة ترميز**: `U+10FFFE` (البداية)، `U+10FFFF` (النهاية)
+   * **Token**: `<s>` (البداية)، `</s>` (النهاية)
+
+   *ملاحظة:* تُضاف `(n - 1)` من الرموز في كلٍّ من بداية المستند ونهايته.
+
+2. **Example على `n=3` في وضع `token`:**
+
+   * **المستند:** `"ClickHouse is fast"`
+   * **تتم معالجته على النحو التالي:** `<s> <s> ClickHouse is fast </s> </s>`
+   * **مقاطع `trigram` المُولَّدة:**
+     * `<s> <s> ClickHouse`
+     * `<s> ClickHouse is`
+     * `ClickHouse is fast`
+     * `is fast </s>`
+     * `fast </s> </s>`
+
+لتبسيط إنشاء النموذج لوضعي `byte` و`codepoint`، قد يكون من المناسب أولًا تقسيم المستند إلى tokens (قائمة من قيم `byte` في وضع `byte`، وقائمة من قيم `codepoint` في وضع `codepoint`). بعد ذلك، أضِف `n - 1` من tokens البداية في أول المستند و`n - 1` من tokens النهاية في آخره. وأخيرًا، أنشئ n-grams واكتبها في الملف المُسلسَل.
+
+***
+
+{/* 
+  يُستبدَل المحتوى الداخلي للوسوم أدناه أثناء مرحلة build الخاصة بإطار عمل التوثيق بـ
+  الوثائق المُولَّدة من system.functions. يُرجى عدم تعديل الوسوم أو إزالتها.
+  راجع: https://github.com/ClickHouse/clickhouse-docs/blob/main/contribute/autogenerated-documentation-from-source.md
+  */}
+
+{/*AUTOGENERATED_START*/}
+
+{/*AUTOGENERATED_END*/}

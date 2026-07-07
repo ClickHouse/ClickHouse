@@ -1,6 +1,8 @@
 -- Tags: no-parallel
 -- ^ failpoint
 
+SET explain_query_plan_default = 'legacy';
+
 DROP TABLE IF EXISTS atf_p;
 -- Pin index_granularity so EXPLAIN ... distributed=1 reports a stable granule count;
 -- random index_granularity splits the 10 rows into >1 granule and breaks the reference.

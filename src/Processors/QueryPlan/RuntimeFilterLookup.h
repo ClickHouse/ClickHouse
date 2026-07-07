@@ -148,7 +148,7 @@ public:
         if (exact_values->getTotalRowCount() == 1 && !argument_can_have_nulls)
         {
             values_count = ValuesCount::ONE;
-            single_element_in_set = (*exact_values->getSetElements().front())[0];
+            single_element_column = exact_values->getSetElements().front();
             return;
         }
 
@@ -189,7 +189,7 @@ private:
 
     bool is_full = false;
 
-    std::optional<Field> single_element_in_set;
+    ColumnPtr single_element_column;
 };
 
 class ExactContainsRuntimeFilter : public RuntimeFilterBase<false>

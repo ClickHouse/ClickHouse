@@ -1,0 +1,531 @@
+---
+sidebarTitle: '設定リファレンス'
+keywords: ['clickhouse', 'go', 'golang', 'configuration', 'options', 'reference', 'DSN', 'connection pool', 'TLS', 'compression', 'timeout']
+description: '接続レベル、コンテキストレベル、バッチオプションを網羅した、clickhouse-go クライアントの完全なオプション別設定リファレンスです。'
+slug: /integrations/language-clients/go/config-reference
+title: 'Go クライアント設定リファレンス'
+doc_type: 'reference'
+---
+
+このページでは、`clickhouse-go` v2.x で設定可能なすべてのオプションを説明します。コード例を含むガイドについては、[設定](/ja/integrations/language-clients/go/configuration) を参照してください。
+
+<Info>
+  **バージョン注記**
+
+  `clickhouse-go` v2.35.0 以降で追加されたオプションには、説明の横に *(Since vX.Y.Z)* と記されています。&quot;Since&quot; タグのないオプションは v2.0 以降すべてのサポート対象リリースで利用できます。
+</Info>
+
+<div id="how-options-are-set">
+  ## オプションの設定方法
+</div>
+
+オプションは、次の 3 つのスコープで設定できます。
+
+| Scope   | How to set                              | Lifetime      |
+| ------- | --------------------------------------- | ------------- |
+| **接続**  | `clickhouse.Options` 構造体または DSN 文字列     | その接続上のすべてのクエリ |
+| **クエリ** | `WithXxx` 関数を使った `clickhouse.Context()` | 1 回のクエリ実行     |
+| **バッチ** | `PrepareBatch()` のオプション関数               | 1 回のバッチ操作     |
+
+スコープが重複する場合は、より具体的なスコープが優先されます: **バッチ &gt; クエリ &gt; 接続**。`Settings` については、クエリレベルのキーが接続レベルのキーとマージされ、競合した場合はクエリレベルのキーが優先されます。
+
+**Options 構造体を使用する場合:**
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:        []string{"localhost:9000"},
+    Auth:        clickhouse.Auth{Database: "default", Username: "default", Password: ""},
+    DialTimeout: 10 * time.Second,
+    Compression: &clickhouse.Compression{Method: clickhouse.CompressionLZ4},
+})
+```
+
+**DSN文字列を使用する場合:**
+
+```go
+db, err := sql.Open("clickhouse", "clickhouse://user:pass@localhost:9000/default?dial_timeout=10s&compress=lz4")
+```
+
+**コネクタ経由 (Options 構造体を使用する database/sql) :**
+
+```go
+db := sql.OpenDB(clickhouse.Connector(&clickhouse.Options{
+    Addr:        []string{"localhost:9000"},
+    Auth:        clickhouse.Auth{Database: "default", Username: "default"},
+    DialTimeout: 10 * time.Second,
+}))
+// 作成後にdatabase/sql固有のプール設定を行う
+db.SetConnMaxIdleTime(5 * time.Minute)
+```
+
+**コンテキスト経由 (クエリ単位) :**
+
+```go
+ctx := clickhouse.Context(context.Background(),
+    clickhouse.WithQueryID("my-query-123"),
+    clickhouse.WithSettings(clickhouse.Settings{"max_execution_time": 60}),
+)
+rows, err := conn.Query(ctx, "SELECT ...")
+```
+
+***
+
+<div id="connection-options">
+  ## 接続オプション
+</div>
+
+<div id="protocol-and-connection">
+  ### プロトコルと接続
+</div>
+
+| Option             | Type                       | Default                                                   | DSN param                                                        | Description                                                                              | Best practice                                                                                                                                                                                                               | When misconfigured                                                                                                          |
+| ------------------ | -------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `Protocol`         | `Protocol` (int)           | `Native`                                                  | スキーム: `clickhouse://`=Native, `http://`=HTTP                     | 通信プロトコル: TCP には `Native` (0)、HTTP には `HTTP` (1) を使用                                      | およそ 30% 高いパフォーマンスが得られるため、通常は Native を使用します。proxy のサポート、ファイアウォール越え (ポート 80/443) 、または HTTP でのみ利用できる圧縮 (`gzip`/`br`) が必要な場合は HTTP を使用します。[TCP vs HTTP](/ja/integrations/language-clients/go/configuration#tcp-vs-http) を参照してください。 | Native ポート (9000) で HTTP スキームを使うと、接続が拒否されます。ファイアウォールで Native がブロックされていると、タイムアウトが発生します。                                      |
+| `Addr`             | `[]string`                 | `["localhost:9000"]` (Native) `["localhost:8123"]` (HTTP) | URL 内でカンマ区切りのホスト                                                 | 接続とフェイルオーバーに使用する `"host:port"` 形式のアドレス一覧                                                 | HA のため、本番環境では複数のアドレスを指定します。正しいポートは 9000 (Native)、8123 (HTTP)、9440 (Native+TLS)、8443 (HTTP+TLS) です。                                                                                                                          | 単一アドレス: フェイルオーバーなし。誤ったポート: `"connection refused"`。空または nil: デフォルトで localhost となり、分散デプロイメントでは失敗します。                          |
+| `ConnOpenStrategy` | `ConnOpenStrategy` (uint8) | `ConnOpenInOrder` (0)                                     | `connection_open_strategy` (`in_order`, `round_robin`, `random`) | `Addr` から server を選択する戦略。`InOrder` (0)=フェイルオーバー、`RoundRobin` (1)=負荷分散、`Random` (2)=ランダム。 | アクティブ-スタンバイには `InOrder`。アクティブ-アクティブ/K8s には `RoundRobin`。thundering herd を避けるには `Random`。                                                                                                                                    | アクティブ-アクティブ構成で `InOrder` を使うと、最初の server に負荷が集中し、ほかはアイドル状態になります。障害時には、どの戦略でもすべての server を試行します。違いは、*最初に*どの server を試すかだけです。 |
+
+***
+
+<div id="authentication">
+  ### 認証
+</div>
+
+| Option          | Type                        | Default               | DSN param                          | Description                                                                           | Best practice                                                   | When misconfigured                                                                                              |
+| --------------- | --------------------------- | --------------------- | ---------------------------------- | ------------------------------------------------------------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `Auth.Username` | `string`                    | `"default"`           | `username` or URL user portion     | ClickHouse 認証に使用するユーザー名                                                               | 本番環境では `default` を決して使用しないでください。最小権限の専用ユーザーを作成してください。           | ユーザー名が誤っている場合: `"Code: 516. DB::Exception: Authentication failed"`。空文字列の場合: 暗黙的に `"default"` が使用されます。           |
+| `Auth.Password` | `string`                    | `""`                  | `password` or URL password portion | ClickHouse 認証に使用するパスワード                                                               | 本番環境では環境変数またはシークレットマネージャーを使用してください。DSN 内の特殊文字は URL エンコードしてください。 | パスワードが誤っている場合: `"Code: 516. DB::Exception: Authentication failed"`。特殊文字が URL エンコードされていない場合: パースエラー。             |
+| `Auth.Database` | `string`                    | `""` (server default) | `database` or URL path (`/mydb`)   | connection に使用するデフォルトの database                                                       | 必ず明示的に指定してください。本番環境ではアプリケーションごとに専用の database を使用してください。         | 存在しない場合: `"Code: 81. DB::Exception: Database xyz doesn't exist"`。マルチテナント構成で空の場合: クエリが誤った database に送られます。       |
+| `GetJWT`        | `func(ctx) (string, error)` | `nil`                 | (programmatic only)                | ClickHouse Cloud 認証用の JWT を返すコールバック。`WithJWT(token)` によりクエリごとに上書きできます。 *(v2.35.0 以降)* | トークンのキャッシュ/更新を実装してください。connection/request ごとに呼び出されます。           | トークンの有効期限切れ: 認証エラー。コールバックがブロックする場合: タイムアウト。JWT はユーザー名/パスワードより優先されます。TLS が必要で、これがない場合は黙ってユーザー名/パスワードにフォールバックします。 |
+
+```go
+GetJWT: func(ctx context.Context) (string, error) {
+    return getTokenFromVault(ctx)
+}
+```
+
+***
+
+<div id="timeouts">
+  ### タイムアウト
+</div>
+
+| オプション         | 型               | デフォルト       | DSN パラメータ      | 説明                                                                 | 推奨事項                                                                                          | 誤設定時                                                                                                                                |
+| ------------- | --------------- | ----------- | -------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `DialTimeout` | `time.Duration` | `30s`       | `dial_timeout` | 新しい接続の確立にかけられる最大時間。`MaxOpenConns` に達した場合のプールからの接続取得待ち時間も制御します。     | LAN では 5〜10 秒、WAN/クラウドでは 15〜30 秒、アイドル状態の ClickHouse Cloud サービスに接続する場合は 1〜2 分。1 秒未満にはしないでください。 | 短すぎる場合: 輻輳時に `"clickhouse: acquire conn timeout"` が発生するか、アイドル状態の Cloud サービスの起動完了前に接続が失敗します。長すぎる場合 (&gt; 60s): 障害時にアプリが長時間応答しなくなります。 |
+| `ReadTimeout` | `time.Duration` | `5m` (300s) | `read_timeout` | 読み取り呼び出しごとにサーバー応答を待つ最大時間。クエリ全体ではなく、ブロックごとに適用されます。コンテキストのデッドラインが優先されます。 | 短時間の対話型クエリでは 10〜30 秒、長時間の分析クエリでは 5〜30 分。                                                      | 短すぎる場合: クエリの途中で `"i/o timeout"` または `"read: connection reset by peer"` が発生し、サーバー側では実行が継続します。長すぎる場合: 切断された接続を検出できません。                |
+
+<Note title="ClickHouse Cloud のアイドル状態のサービス">
+  アイドル状態だった ClickHouse Cloud サービスは一時停止され、最初の受信接続で起動します。起動には通常数十秒かかり、その間は接続試行がブロックされます。`DialTimeout` が起動時間より短いと、アイドル期間後の最初のクエリは実行されず、接続タイムアウトで失敗します。
+
+  アイドル状態のサービスに最初に到達する可能性がある client では、`DialTimeout` を `1m`〜`2m` に設定してください。その代償として、実際の障害時の失敗検出は遅くなります。つまり、エラーになるまで接続試行がタイムアウトいっぱいまでブロックされます。そのため、高めのタイムアウトは最初の接続だけに適用するか、個々のクエリでコンテキストのデッドラインを使ってエンドツーエンドのレイテンシを抑えることを推奨します。
+</Note>
+
+***
+
+<div id="connection-pool">
+  ### 接続プール
+</div>
+
+| Option            | Type            | Default                        | DSN param           | API               | Description                                                                                           | Best practice                                                                                                                | When misconfigured                                                                                                                                          |
+| ----------------- | --------------- | ------------------------------ | ------------------- | ----------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MaxIdleConns`    | `int`           | `5`                            | `max_idle_conns`    | Both              | プール内でアイドル状態 (未使用だが有効) の接続の最大数                                                                         | 想定される同時実行クエリ数の 50〜80%。小規模: 2〜5、中規模: 10〜20、大規模: 20〜50。                                                                        | 低すぎる場合: 接続の張り直しが頻発し、レイテンシーが増加します。高すぎる場合: メモリを無駄に消費します。上限は自動的に `MaxOpenConns` になります。                                                                         |
+| `MaxOpenConns`    | `int`           | `MaxIdleConns + 5` (デフォルト: 10) | `max_open_conns`    | Both              | 接続の総数 (アイドル + アクティブ) の最大値                                                                             | 小規模: 10〜20、中規模: 20〜50、大規模: 50〜100。式: 同時実行クエリ数 + バースト + バッファ。監視: `SELECT * FROM system.metrics WHERE metric='TCPConnection'`。 | 低すぎる場合: `"clickhouse: acquire conn timeout"`。高すぎる場合: サーバーで `"Too many connections"` が発生し、FD 制限を超える可能性があります。ClickHouse のデフォルト `max_connections`: 1024 (共有) 。 |
+| `ConnMaxLifetime` | `time.Duration` | `1h`                           | `conn_max_lifetime` | Both              | 接続を再利用できる最大時間。プールに戻される際にチェックされます。                                                                     | 安定した環境では 1〜5 時間。K8s/ローリングデプロイでは 5〜15 分。無期限にはしないでください。                                                                        | 短すぎる場合 (&lt; 1m): 接続の張り直しが頻発し、レイテンシーが増加します。長すぎる場合 / 無期限の場合: 古い接続が残り、DNS の変更が反映されず、トラフィックも再分散されません。                                                          |
+| `ConnMaxIdleTime` | `time.Duration` | `0` (なし)                       | —                   | `database/sql` のみ | 接続が *idle* 状態のままでいられる最大時間。この時間を超えると接続は閉じられます。`Options` 構造体には含まれないため、`db.SetConnMaxIdleTime()` で設定します。 | K8s や断続的に負荷が発生するワークロードでは、トラフィックスパイク後にアイドル接続を回収するため 5〜10 分。                                                                   | 未設定の場合: アイドル接続は `ConnMaxLifetime` まで維持されます。短すぎる場合 (&lt; 30s): 通常のギャップ中でも接続が再作成されます。                                                                         |
+
+<Info>
+  **database/sql のみ**
+
+  `ConnMaxIdleTime` は標準の Go `database/sql` の接続プール設定です。`clickhouse.Options` 構造体や `clickhouse.Open()` からは利用できません。`OpenDB()` の後に設定してください。
+
+  ```go
+  db := clickhouse.OpenDB(&clickhouse.Options{...})
+  db.SetConnMaxIdleTime(5 * time.Minute)
+  ```
+</Info>
+
+使用方法の詳細は [接続プーリング](/ja/integrations/language-clients/go/configuration#connection-pooling) を参照してください。
+
+***
+
+<div id="sql-db-settings">
+  ### 標準の database/sql プール設定
+</div>
+
+`clickhouse.OpenDB()` または `sql.Open("clickhouse", dsn)` を使用すると、返される `*sql.DB` では Go の標準的なプールメソッドを利用できます。`OpenDB()` は `Options` の最初の 3 つを自動で適用します。
+
+| メソッド                       | Options での対応項目    | 備考                      |
+| -------------------------- | ----------------- | ----------------------- |
+| `db.SetMaxIdleConns(n)`    | `MaxIdleConns`    | `OpenDB()` によって自動適用されます |
+| `db.SetMaxOpenConns(n)`    | `MaxOpenConns`    | `OpenDB()` によって自動適用されます |
+| `db.SetConnMaxLifetime(d)` | `ConnMaxLifetime` | `OpenDB()` によって自動適用されます |
+| `db.SetConnMaxIdleTime(d)` | *None*            | 作成後に手動で設定する必要があります      |
+
+<Info>
+  **ClickHouse API (clickhouse.Open)**
+
+  これらのメソッドは、`clickhouse.Open()` が返す接続では使用できません。ClickHouse API は `Options` 構造体のフィールドを直接使い、内部で独自にプールを管理します。
+</Info>
+
+***
+
+<div id="compression">
+  ### 圧縮
+</div>
+
+| オプション                  | 型                          | デフォルト               | DSN param                                                                         | 説明                                                                 | ベストプラクティス                                                                                                      | 誤設定時                                                                                                 |
+| ---------------------- | -------------------------- | ------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `Compression.Method`   | `CompressionMethod` (byte) | None                | `compress` (`lz4`, `zstd`, `lz4hc`, `gzip`, `deflate`, `br`, または LZ4 の場合は `true`) | データ転送時に使用する圧縮アルゴリズムです。下記のプロトコル対応表を参照してください。                        | LAN: None または LZ4。WAN: ZSTD または LZ4。CPU に制約がある場合: LZ4。最大圧縮: ZSTD (Native) または Brotli (HTTP)。1 MB 未満の挿入では省略します。 | Native で GZIP/Brotli: ハンドシェイク失敗。HTTP で LZ4HC: エラーまたは暗黙的なフォールバック。低速ネットワークで圧縮なし: 挿入が 10〜100 倍遅くなります。   |
+| `Compression.Level`    | `int`                      | `3`                 | `compress_level`                                                                  | アルゴリズム固有の圧縮レベルです。GZIP/Deflate: -2〜9。Brotli: 0〜11。LZ4/ZSTD: 無視されます。 | GZIP のバランス重視: 3〜6。Brotli のバランス重視: 4〜6。                                                                         | 非常に高いレベル: CPU 負荷が極端に高くなる一方、効果はわずかです。LZ4/ZSTD に 0 以外を指定: 暗黙的に無視されます。圧縮が有効でない状態で Level を指定しても効果はありません。 |
+| `MaxCompressionBuffer` | `int` (bytes)              | `10485760` (10 MiB) | `max_compression_buffer`                                                          | フラッシュ前の最大圧縮バッファサイズです。各接続はそれぞれ独自のバッファを持ちます。                         | デフォルトの 10 MiB で十分です。列数の多い行では 20〜50 MiB。合計メモリ = バッファ x `MaxOpenConns`。                                          | 小さすぎる場合 (&lt; 1 MiB): フラッシュが頻発し、効率が低下します。大きすぎる場合 (&gt; 100 MiB): 接続数が多いと OOM になります。                  |
+
+**プロトコルごとの圧縮方式サポート:**
+
+| Method               | Native | HTTP |
+| -------------------- | ------ | ---- |
+| `CompressionLZ4`     | はい     | はい   |
+| `CompressionLZ4HC`   | はい     | いいえ  |
+| `CompressionZSTD`    | はい     | はい   |
+| `CompressionGZIP`    | いいえ    | はい   |
+| `CompressionDeflate` | いいえ    | はい   |
+| `CompressionBrotli`  | いいえ    | はい   |
+
+***
+
+<div id="tls">
+  ### TLS
+</div>
+
+| オプション | 型             | デフォルト       | DSN パラメータ                         | 説明                                                                            | ベストプラクティス                                                                                                           | 誤設定時                                                                                                                                                                                                                                                                                                             |
+| ----- | ------------- | ----------- | --------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TLS` | `*tls.Config` | `nil` (平文)  | `secure=true`, `skip_verify=true` | TLS/SSL の設定。`nil` 以外を指定すると TLS が有効になります。ポート: Native 9000/9440、HTTP 8123/8443。 | 本番環境および ClickHouse Cloud では常に有効にしてください (必須) 。本番環境では `InsecureSkipVerify: false` にしてください。カスタム CA は `RootCAs` で追加します。 | ポートの指定誤り: `"connection reset by peer"`。本番環境で `skip_verify=true`: MITM 攻撃に対して脆弱。証明書の有効期限切れ: `"x509: certificate has expired"`。ホスト名の誤り: `"x509: certificate is valid for X, not Y"`。信頼されていない CA: `"x509: certificate signed by unknown authority"`。HTTP DSN に `secure=true` を付けた場合: 代わりに `https://` スキームを使用してください。 |
+
+コード例については [TLS](/ja/integrations/language-clients/go/configuration#using-tls) を参照してください。
+
+***
+
+<div id="logging">
+  ### ロギング
+</div>
+
+| オプション                 | Type                   | Default         | DSN param | 説明                                                                                      | ベストプラクティス                                                                         | 誤設定時                                            |
+| --------------------- | ---------------------- | --------------- | --------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `Logger`              | `*slog.Logger`         | `nil` (ログ出力なし)  | —         | Go の `log/slog` による構造化ロガー。優先順位: `Debug`+`Debugf` &gt; `Logger` &gt; no-op。*(v2.43.0以降)* | 本番環境では JSON ハンドラーとともに `slog` を使用してください。`logger.With(...)` でアプリケーションのコンテキストを追加します。 | —                                               |
+| `Debug` (deprecated)  | `bool`                 | `false`         | `debug`   | 従来のデバッグ切り替えです。代わりに `Logger` を使用してください。`Debugf` が設定されていない場合は標準出力にログを出力します。               | —                                                                                 | 本番環境で有効にすると、性能低下、冗長なログ出力、機密データが出力に含まれるリスクがあります。 |
+| `Debugf` (deprecated) | `func(string, ...any)` | `nil`           | —         | カスタムのデバッグログ関数です。代わりに `Logger` を使用してください。`Debug: true` が必要です。                            | —                                                                                 | —                                               |
+
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Logger: logger,
+    // ...
+})
+```
+
+完全な例については、[ロギング](/ja/integrations/language-clients/go/configuration#logging)を参照してください。
+
+***
+
+<div id="buffers-and-memory">
+  ### バッファとメモリ
+</div>
+
+| オプション                  | 型       | デフォルト   | DSN パラメータ           | クエリごと                      | 説明                                                 | ベストプラクティス                                                              | 設定を誤った場合                                                                                    |
+| ---------------------- | ------- | ------- | ------------------- | -------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `BlockBufferSize`      | `uint8` | `2`     | `block_buffer_size` | はい (`WithBlockBufferSize`) | 結果の読み取り時にバッファするデコード済みブロック数。読み取りとデコードの同時実行が可能になります。 | デフォルトの 2 で問題ありません。大きなストリーミング結果では 5～10。メモリ = バッファ x ブロックサイズ x 同時実行クエリ数。 | 小さすぎる場合 (1): 読み取り側がブロックされ、レイテンシが増加します。大きすぎる場合 (&gt; 50): メモリ使用量が増え、効果は頭打ちになります。             |
+| `FreeBufOnConnRelease` | `bool`  | `false` | —                   | いいえ                        | 再利用せず、各クエリの後に接続のメモリバッファを解放します。                     | クエリ頻度が高い場合は `false`。メモリに制約のあるコンテナー、または大きなバッチがまれな場合は `true`。            | `false` + メモリ制限あり: バッファが蓄積します (メモリ = バッファ x アイドル接続数)。`true` + 高頻度: GC の負荷が増え、CPU 使用率が上がります。 |
+
+***
+
+<div id="http-specific">
+  ### HTTP固有
+</div>
+
+<Warning>
+  **Native では暗黙的に無視されます**
+
+  これらのオプションは `Protocol: clickhouse.HTTP` にのみ影響します。ネイティブプロトコルの使用時は暗黙的に無視され、エラーや警告は出力されません。
+</Warning>
+
+| オプション                 | 型                                                  | デフォルト           | DSN パラメータ                | 説明                                                              | ベストプラクティス                                                                     | 設定を誤ると                                                                                           |
+| --------------------- | -------------------------------------------------- | --------------- | ------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `HttpHeaders`         | `map[string]string`                                | `nil`           | —                        | すべてのリクエストに追加される HTTP ヘッダー                                       | トレーシング (`X-Request-ID`) や認証プロキシのヘッダーに使用します。必要最小限にとどめてください。                    | 内部ヘッダー (`Content-Type`、`Authorization`) を上書きすると、予期しない動作を招く可能性があります。                              |
+| `HttpUrlPath`         | `string`                                           | `""`            | `http_path`              | リクエストに付加される URL パス。先頭の `/` は自動的に追加されます。                         | パスルーティングを行うリバースプロキシの背後にある場合に使用します。                                            | パスが誤っていると、プロキシ/LB から HTTP 404 が返されます。                                                            |
+| `HttpMaxConnsPerHost` | `int`                                              | `0` (無制限)       | —                        | トランスポート層におけるホストごとの TCP 接続数 (`http.Transport.MaxConnsPerHost`) 。 | ほとんどのアプリでは 0 のままにしてください。サーバーに厳しい接続制限がある場合にのみ設定します。                            | 低すぎる場合 (例: `MaxOpenConns`=50 で 10) 、トランスポートがボトルネックとなり、サーバー負荷が低くてもクエリが遅くなります。                     |
+| `HTTPProxyURL`        | `*url.URL`                                         | `nil` (環境変数を使用) | `http_proxy` (URL エンコード) | リクエストのルーティングに使用する HTTP プロキシ                                     | プロキシが必要な場合は明示的に設定してください。`HTTP_PROXY`/`HTTPS_PROXY` 環境変数より優先されます。              | アドレスが誤っている場合: `"dial tcp: lookup proxy: no such host"`。プロキシに認証が必要な場合: HTTP 407。                  |
+| `TransportFunc`       | `func(*http.Transport) (http.RoundTripper, error)` | `nil`           | —                        | カスタム HTTP トランスポートファクトリ。ラップ用にデフォルトのトランスポートを受け取ります。*(v2.41.0 以降)* | オブザーバビリティ用のミドルウェアに使用します。`Proxy`、`DialContext`、`TLSClientConfig` は上書きしないでください。 | `nil` を返すと panic になります。クライアントフィールドを上書きすると、TLS/プロキシは暗黙的に無視されます。RoundTripper をブロックするとデッドロックが発生します。 |
+
+<Info>
+  **HTTP の 2 層接続プール**
+
+  HTTP を使用する場合、接続プールは 2 つあります。
+
+  * **第 1 層 (アプリケーション) :** `MaxIdleConns` / `MaxOpenConns` -- `httpConnect` オブジェクトを制御します
+  * **第 2 層 (トランスポート) :** `HttpMaxConnsPerHost` -- 基盤となる TCP 接続を制御します
+
+  ネイティブプロトコルは単純な 1:1 の対応となるため、`HttpMaxConnsPerHost` は無視されます。
+</Info>
+
+```go
+TransportFunc: func(t *http.Transport) (http.RoundTripper, error) {
+    return &loggingRoundTripper{transport: t}, nil
+}
+```
+
+***
+
+<div id="advanced-connection">
+  ### 高度な接続
+</div>
+
+| オプション          | 型                                                      | デフォルト                 | DSN パラメータ | 説明                                                      | ベストプラクティス                                                                 | 設定を誤った場合                                                                                                    |
+| -------------- | ------------------------------------------------------ | --------------------- | --------- | ------------------------------------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `DialContext`  | `func(ctx, addr) (net.Conn, error)`                    | `nil` (標準ダイヤラー)       | —         | TCP connection 用のカスタムダイヤル関数です。Native と HTTP の両方で利用できます。 | 99% のケースでは `nil` のままにしてください。Unixソケット、SOCKSプロキシ、カスタムDNSで使用します。             | コンテキストを適切に扱わないと、ハングやリソースリークが発生します。`TLS` を設定している場合、カスタムダイヤラー側で TLS を処理する必要があります。不正な `net.Conn` を返すとクラッシュします。 |
+| `DialStrategy` | `func(ctx, connID, options, dial) (DialResult, error)` | `DefaultDialStrategy` | —         | カスタムのサーバー選択および接続戦略です。`ConnOpenStrategy` をオーバーライドします。    | 99.9% のケースではデフォルトを使用してください。カスタマイズは、地理情報に基づくルーティング、重み付き選択、ヘルスチェックの場合に限ります。 | すべてのサーバーを試行しないと、正常なサーバーが利用可能でも失敗します。内部で高コストな処理を行うと、接続のたびにプール取得がブロックされます。                                    |
+
+***
+
+<div id="client-information">
+  ### クライアント情報
+</div>
+
+| Option       | Type                | Default                              | DSN param                       | Per-query                  | Description                                                                                                                       | Best practice                                                                                                | When misconfigured                              |
+| ------------ | ------------------- | ------------------------------------ | ------------------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| `ClientInfo` | `ClientInfo` struct | 自動: `clickhouse-go` のバージョン + Goランタイム | `client_info_product=myapp/1.0` | はい (`WithClientInfo` で追記)  | ClickHouse に送信されるアプリケーション識別情報です。`Products` (`[]struct{Name,Version}`) と `Comment` (`[]string`) が含まれます。`system.query_log` で確認できます。 | アプリ名とバージョンは必ず設定してください。クエリの発行元特定: `SELECT client_name FROM system.query_log WHERE client_name LIKE '%myapp%'` | 未設定の場合: 複数のサービスがある環境では、どのサービスがクエリを発行したか特定できません。 |
+
+```go
+ClientInfo: clickhouse.ClientInfo{
+    Products: []struct{ Name, Version string }{
+        {Name: "my-service", Version: "1.0.0"},
+    },
+}
+// 表示例: clickhouse-go/2.x my-service/1.0.0 (lv:go/1.23; os:linux)
+```
+
+***
+
+<div id="server-settings">
+  ### ClickHouse サーバー設定
+</div>
+
+| Option          | Type                          | Default | DSN param                                     | Per-query                          | Description                                                                                                          | Best practice                                | When misconfigured                                                                                                            |
+| --------------- | ----------------------------- | ------- | --------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Settings`      | `map[string]any`              | `nil`   | 認識されない任意のパラメータ (例: `?max_execution_time=60`)  | はい (`WithSettings`。競合時はコンテキストが優先)  | すべてのクエリに適用される ClickHouse サーバー設定です。DSN の変換: `"true"`→`1`、`"false"`→`0`、数値→`int`。                                      | 共通の制限は接続レベルで設定し、必要に応じてコンテキスト経由でクエリごとに上書きします。 | タイポ: バージョンによっては黙って無視されるか、エラーになります。型が不正: `"Cannot parse string 'abc' as Int64"`。`max_execution_time=0` かつ期限なし: クエリが無期限に実行されます。 |
+| `CustomSetting` | `CustomSetting{Value string}` | —       | —                                             | はい (`WithSettings` 経由)             | ネイティブプロトコルでは、設定を &quot;custom&quot; (重要ではない) としてマークします。サーバーが認識しなくてもエラーにはなりません。HTTP では、デフォルトですべての設定が custom として扱われます。 | Experimental な設定やバージョン固有の設定に使用します。           | 重要な設定を custom として指定すると、未対応の場合でも黙って無視されます。                                                                                     |
+
+**一般的な設定:**
+
+| Setting              | Type | Description                        |
+| -------------------- | ---- | ---------------------------------- |
+| `max_execution_time` | int  | クエリのタイムアウト (秒)                     |
+| `max_memory_usage`   | int  | クエリごとのメモリ制限 (バイト)                  |
+| `max_block_size`     | int  | 処理時の block サイズ                     |
+| `readonly`           | int  | 1 = read-only、2 = read-only + 設定変更 |
+
+```go
+Settings: clickhouse.Settings{
+    "max_execution_time":  60,                                        // 重要 -- 不明な場合はエラー
+    "my_custom_setting":   clickhouse.CustomSetting{Value: "value"},  // カスタム -- 不明な場合は無視
+}
+```
+
+***
+
+<div id="context-options">
+  ## Context レベルのクエリオプション
+</div>
+
+各クエリに対して `clickhouse.Context()` を使って設定します。
+
+```go
+ctx := clickhouse.Context(context.Background(),
+    clickhouse.WithQueryID("my-query"),
+    clickhouse.WithSettings(clickhouse.Settings{"max_execution_time": 60}),
+)
+```
+
+<Info>
+  **コンテキストのデッドラインの挙動**
+
+  コンテキストのデッドラインが &gt; 1 秒の場合、`max_execution_time` は自動的に `seconds_remaining + 5` に設定されます。手動で設定した値は上書きされます。
+</Info>
+
+| オプション                     | 型                                  | デフォルト               | プロトコル     | 説明                                                                                                                                                           | ベストプラクティス                                                                                  | 誤設定時                                                                                                                                      |
+| ------------------------- | ---------------------------------- | ------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `WithQueryID`             | `string`                           | 自動生成                | 両方        | カスタムのクエリ ID。`system.query_log` と `system.processes` に表示されます。                                                                                                 | UUIDを使用してください。`KILL QUERY WHERE query_id='...'` を使う際に便利です。                                 | 重複した ID: `system.query_log` で混乱を招きます。                                                                                                     |
+| `WithQuotaKey`            | `string`                           | `""`                | 両方        | マルチテナント環境のリソース制限用のQUOTAキーです。サーバー側でQUOTAを設定しておく必要があります。                                                                                                       | 顧客単位またはユーザー単位の制限に使用します。                                                                    | Quota が設定されていない場合は、そのまま無視されます。                                                                                                            |
+| `WithJWT`                 | `string`                           | `""`                | HTTPS のみ  | ClickHouse Cloud 向けのクエリ単位の JWT オーバーライド。 *(v2.35.0 以降)*                                                                                                       | マルチテナントプロキシでのリクエスト単位の認証に使用します。                                                             | TLS を使用しない場合は無視され、接続認証にフォールバックします。期限切れ: `"Token has expired"`.                                                                            |
+| `WithSettings`            | `Settings`                         | 接続の設定を継承            | 両方        | クエリごとのサーバー設定。接続設定とマージされ、競合時はコンテキストが優先されます。                                                                                                                   | クエリタイプごとに `max_execution_time` または `max_rows_to_read` の設定を上書きします。                          | 接続レベルの`Settings`と同様です。                                                                                                                    |
+| `WithParameters`          | `Parameters` (`map[string]string`) | `nil`               | 両方        | サーバー側のパラメータ化クエリに渡す値。クエリ構文: `{param_name:Type}`。                                                                                                              | SQLインジェクションを防ぐため、文字列連結の代わりに使用します。                                                          | パラメータがありません: `"Substitution {param_name:Type} isn't set"`。型が不正です: `"Cannot parse string 'abc' as UInt64"`。                                |
+| `WithAsync`               | `bool` (wait)                      | 同期                  | 両方        | 非同期 INSERT モードです。`async_insert=1` を設定します。`wait=true` を指定すると、`wait_for_async_insert=1` も設定されます。ClickHouse 21.11+ が必要です。*(v2.41.0 以降。旧 `WithStdAsync` の後継です。)* | 高スループットの挿入に使用します。                                                                          | `wait=false`: エラーは非同期で発生する場合があります -- `system.asynchronous_insert_log` を確認してください。SELECT では無視されます。古いサーバー: `"Unknown setting async_insert"`。 |
+| `WithLogs`                | `func(*Log)`                       | `nil`               | Native のみ | クエリ実行中のサーバーログエントリのコールバック。                                                                                                                                    | 高速に保ってください。実行をブロックするため、負荷の高い処理には goroutine を使用してください。                                      | HTTP では、何の通知もなく呼び出されません。                                                                                                                  |
+| `WithProgress`            | `func(*Progress)`                  | `nil`               | Native のみ | クエリの進捗更新 (処理済みの行数/バイト数) 。                                                                                                                                    | 高速に保ってください -- 実行がブロックされます。                                                                 | HTTP では、何の通知もなく呼び出されません。                                                                                                                  |
+| `WithProfileInfo`         | `func(*ProfileInfo)`               | `nil`               | Native のみ | クエリ実行統計情報のコールバック。                                                                                                                                            | 高速に保ってください。実行をブロックします。                                                                     | HTTP では: 呼び出されません (通知もありません) 。                                                                                                            |
+| `WithProfileEvents`       | `func([]ProfileEvent)`             | `nil`               | Native のみ | パフォーマンスカウンターのコールバック。                                                                                                                                         | 高速に保つこと -- 実行をブロックします。                                                                     | HTTP では、何の通知もなく一度も呼び出されません。                                                                                                               |
+| `WithoutProfileEvents`    | —                                  | イベントを送信             | Native のみ | プロファイルイベントを無効化します。サーバー 25.11 以降でのパフォーマンス最適化です。 *(v2.44.0 以降)*                                                                                                | プロファイルイベントが不要な場合に使用します。                                                                    | 古いサーバーでは: 不明な設定としてエラーになります。                                                                                                               |
+| `WithExternalTable`       | `...*ext.Table`                    | `nil`               | 両方        | 一時的なルックアップテーブルをクエリにアタッチします。データはクエリごとに転送されます。                                                                                                                 | テーブルは &lt; 10 MB に抑えてください。HTTP (multipart) より native のほうが効率的です。                            | 大きなテーブル: クエリごとにネットワークオーバーヘッドが発生します。                                                                                                       |
+| `WithUserLocation`        | `*time.Location`                   | サーバーのタイムゾーン         | 両方        | DateTime のパース時に timezone を上書きします。                                                                                                                            | クライアントとサーバーの timezone が異なる場合は、明示的に設定します。                                                   | timezone が誤っていると、DateTime の値が気付かないうちに数時間ずれ、データ破損につながるおそれがあります。                                                                            |
+| `WithColumnNamesAndTypes` | `[]ColumnNameAndType`              | `nil` (DESCRIBEを実行) | HTTPのみ    | カラム情報を事前に指定することで、HTTPで insert する際の `DESCRIBE TABLE` の往復を省略します。 *(v2.37.0以降)*                                                                                 | スキーマが既知で安定している場合に使用します。                                                                    | 型の不一致: `"Cannot convert String to UInt64"`。移行後のスキーマドリフト: 情報が古くなります。                                                                       |
+| `WithBlockBufferSize`     | `uint8`                            | 接続レベル (2)           | 両方        | 接続レベルで設定された`BlockBufferSize`を、単一のクエリに対して上書きします。                                                                                                              | 特定のクエリでresult setが大きい場合に増やします。                                                             | —                                                                                                                                         |
+| `WithClientInfo`          | `ClientInfo`                       | 接続レベル               | 両方        | 単一のクエリに追加のクライアント情報を付加します。置き換えるのではなく、追加します。*(v2.42.0 以降)*                                                                                                     | リクエストごとのコンテキスト (例：エンドポイント名) を追加します。                                                        | —                                                                                                                                         |
+| `WithSpan`                | `trace.SpanContext`                | 空                   | ネイティブのみ   | 分散トレーシング用の OpenTelemetry span コンテキスト。                                                                                                                        | [OpenTelemetry](/ja/integrations/language-clients/go/clickhouse-api#open-telemetry)を参照してください。 | —                                                                                                                                         |
+
+```go
+ctx := clickhouse.Context(ctx,
+    clickhouse.WithQueryID("query-123"),
+    clickhouse.WithParameters(clickhouse.Parameters{
+        "user_id": "12345",
+    }),
+    clickhouse.WithProgress(func(p *clickhouse.Progress) {
+        log.Printf("Progress: %d rows, %d bytes", p.Rows, p.Bytes)
+    }),
+)
+rows, err := conn.Query(ctx, "SELECT * FROM users WHERE id = {user_id:String}")
+```
+
+***
+
+<div id="batch-options">
+  ## バッチオプション
+</div>
+
+`PrepareBatch()` に渡すオプションです。インポート: `github.com/ClickHouse/clickhouse-go/v2/lib/driver`.
+
+| Option                  | Default          | Description                                                    | Best practice                          | When misconfigured                                             |
+| ----------------------- | ---------------- | -------------------------------------------------------------- | -------------------------------------- | -------------------------------------------------------------- |
+| `WithReleaseConnection` | `Send()` まで接続を保持 | `PrepareBatch()` の直後に接続をプールへ解放します。`Send()`/`Flush()` 時に再取得します。 | プール枯渇を防ぐため、長時間保持するバッチ (数分〜数時間) で使用します。 | 長時間のバッチで使用しない場合: アクティブなものが多いと `"acquire conn timeout"` が発生します。 |
+| `WithCloseOnFlush`      | バッチは開いたまま        | `Flush()` を呼び出すとバッチを自動的に閉じます。                                  | 単発のバッチで使用します。明示的な `Close()` が不要になります。  | 複数回 `Flush()` を呼び出す用途で使用すると、最初の flush でバッチが閉じられ、以降の操作は失敗します。   |
+
+```go
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO table",
+    driver.WithReleaseConnection(),
+    driver.WithCloseOnFlush(),
+)
+```
+
+***
+
+<div id="quick-reference-tables">
+  ## 早見表
+</div>
+
+<div id="pool-sizing">
+  ### 接続プールのサイズ設定の推奨値
+</div>
+
+| アプリケーション種別        | MaxIdleConns | MaxOpenConns | ConnMaxLifetime |
+| ----------------- | ------------ | ------------ | --------------- |
+| 低トラフィックのWebアプリ    | 5            | 10           | 1h              |
+| 中程度のトラフィックのAPI    | 20           | 50           | 30m             |
+| 高トラフィックのサービス      | 50           | 100          | 15m             |
+| バックグラウンド バッチジョブ   | 10           | 20           | 2h              |
+| Kubernetesデプロイメント | 10           | 20           | 10m             |
+| サーバーレス (Lambda)   | 1            | 5            | 5m              |
+
+<div id="timeout-recommendations">
+  ### タイムアウトの推奨値
+</div>
+
+| 環境                | DialTimeout | ReadTimeout |
+| ----------------- | ----------- | ----------- |
+| ローカル / LAN        | 5s          | 30s         |
+| Cloud (同一リージョン)   | 10s         | 2m          |
+| Cloud (クロスリージョン)  | 30s         | 5m          |
+| OLAPワークロード        | 10s         | 30m         |
+| リアルタイム / OLTP     | 5s          | 10s         |
+
+<div id="dsn-parameters">
+  ### DSN パラメータ早見表
+</div>
+
+| DSN パラメータ                  | Options のフィールド           | 例                                       |
+| -------------------------- | ------------------------ | --------------------------------------- |
+| `username`                 | `Auth.Username`          | `?username=admin`                       |
+| `password`                 | `Auth.Password`          | `?password=secret`                      |
+| `database`                 | `Auth.Database`          | `?database=mydb` またはパス中の `/mydb`        |
+| `dial_timeout`             | `DialTimeout`            | `?dial_timeout=10s`                     |
+| `read_timeout`             | `ReadTimeout`            | `?read_timeout=5m`                      |
+| `max_open_conns`           | `MaxOpenConns`           | `?max_open_conns=50`                    |
+| `max_idle_conns`           | `MaxIdleConns`           | `?max_idle_conns=20`                    |
+| `conn_max_lifetime`        | `ConnMaxLifetime`        | `?conn_max_lifetime=30m`                |
+| `connection_open_strategy` | `ConnOpenStrategy`       | `?connection_open_strategy=round_robin` |
+| `block_buffer_size`        | `BlockBufferSize`        | `?block_buffer_size=10`                 |
+| `compress`                 | `Compression.Method`     | `?compress=lz4`                         |
+| `compress_level`           | `Compression.Level`      | `?compress_level=6`                     |
+| `max_compression_buffer`   | `MaxCompressionBuffer`   | `?max_compression_buffer=20971520`      |
+| `secure`                   | `TLS`                    | `?secure=true`                          |
+| `skip_verify`              | `TLS.InsecureSkipVerify` | `?skip_verify=true`                     |
+| `debug`                    | `Debug`                  | `?debug=true`                           |
+| `client_info_product`      | `ClientInfo.Products`    | `?client_info_product=myapp/1.0`        |
+| `http_proxy`               | `HTTPProxyURL`           | `?http_proxy=http%3A%2F%2Fproxy%3A8080` |
+| `http_path`                | `HttpUrlPath`            | `?http_path=/clickhouse`                |
+| *(その他)*                    | `Settings[key]`          | `?max_execution_time=60`                |
+
+***
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="acquire-conn-timeout">
+  ### 接続プールの枯渇: &quot;acquire conn timeout&quot;
+</div>
+
+**原因:** 接続プールが枯渇しています。`MaxOpenConns` で許可されたすべての接続が使用中で、`DialTimeout` 内に空きが出ませんでした。
+
+**対処方法**
+
+次の手順を順番に試し、調整項目を変更する前に根本原因を切り分けてください。
+
+1. 接続を占有している長時間実行中のクエリがないか確認します: `SELECT query_id, elapsed FROM system.processes ORDER BY elapsed DESC`。見つかった場合は、まずその低速なクエリへの対処を優先してください。
+2. 長時間存続するバッチ (`PrepareBatch()` から `Send()` までが数分～数時間) を実行している場合は、`WithReleaseConnection()` を使用して、バッチを開いたままでも接続をプールに戻してください。
+3. 実際に観測された同時実行数に合わせて `MaxOpenConns` を増やします。
+4. バーストが想定され、接続取得の待ち時間が実際のボトルネックである場合にのみ、`DialTimeout` を増やします。
+
+<div id="io-timeout">
+  ### 読み取りタイムアウトおよび接続リセットエラー
+</div>
+
+**原因:** サーバーからの応答を待っている間に `ReadTimeout` を超過したか、サーバーまたはネットワークによって connection が切断されました。
+
+**対処法:**
+
+* 長時間実行されるクエリでは `ReadTimeout` を増やします
+* クエリごとの timeout 制御には context の deadline を使用します
+* ClickHouse のサーバー側 `max_execution_time` 制限を確認します
+
+<div id="auth-failed">
+  ### &quot;Code: 516. 認証に失敗しました&quot;
+</div>
+
+**原因:** username または password が誤っているか、ユーザーが存在しません。
+
+**対処:**
+
+* `system.users` table で認証情報を確認する
+* DSN の password に含まれる特殊文字の URL エンコードに問題がないか確認する
+* ユーザーに、指定した database へのアクセス権があることを確認する
+
+<div id="tls-errors">
+  ### TLS 証明書エラー
+</div>
+
+| エラー                                             | 原因             | 修正方法                                          |
+| ----------------------------------------------- | -------------- | --------------------------------------------- |
+| `x509: certificate has expired`                 | サーバー証明書の有効期限切れ | サーバー証明書を更新する                                  |
+| `x509: certificate is valid for X, not Y`       | ホスト名の不一致       | 正しいホスト名を使用するか、SAN に追加する                       |
+| `x509: certificate signed by unknown authority` | 信頼されていない CA    | CA を `tls.Config.RootCAs` に追加する               |
+| `connection reset by peer`                      | TLS とポートの不一致   | TLS にはポート 9440 (Native) または 8443 (HTTP) を使用する |
+
+<div id="memory-growth">
+  ### 徐々に増えるメモリ使用量
+</div>
+
+**原因:** 大きなアイドル状態の接続バッファが蓄積している。
+
+**対処:**
+
+* メモリが限られる環境では `FreeBufOnConnRelease: true` を設定する
+* アイドル接続を制限するために `MaxIdleConns` を減らす
+* 圧縮を使用している場合は `MaxCompressionBuffer` を減らす
+* 接続をより頻繁に入れ替えるために `ConnMaxLifetime` を短くする

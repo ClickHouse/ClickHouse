@@ -1,0 +1,114 @@
+---
+sidebarTitle: 'Holistics'
+slug: /integrations/holistics
+keywords: ['clickhouse', 'Holistics', 'AI', 'تكامل', 'bi', 'تصوّر البيانات']
+description: 'Holistics هي منصة مدعومة بالذكاء الاصطناعي لذكاء الأعمال بالخدمة الذاتية والتحليلات المضمنة، وتساعد الجميع على اتخاذ قرارات أفضل باستخدام مقاييس خاضعة للحوكمة ويسهل الوصول إليها.'
+title: 'ربط ClickHouse بـ Holistics'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+[Holistics](https://www.holistics.io/) هي منصة ذكاء أعمال ذاتي الخدمة مصممة أصلًا للذكاء الاصطناعي، وتوفّر طبقة دلالية قابلة للبرمجة تضمن مقاييس متسقة وموثوقة.
+
+من خلال ربط ClickHouse بـ Holistics، تحصل فرقك على تجربة ذاتية الخدمة سريعة وموثوقة ومدعومة بالذكاء الاصطناعي، وترتكز إلى طبقة دلالية قائمة على الشيفرة. ويمكن لمستخدمي الأعمال استكشاف البيانات بثقة باستخدام السحب والإفلات والذكاء الاصطناعي، بينما تحافظ أنت على تعريفات المقاييس بحيث تكون قابلة لإعادة الاستخدام، وقابلة للتركيب، وخاضعة للتحكم في الإصدارات عبر Git.
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+قبل الاتصال، تأكد من توفر ما يلي:
+
+* **الأذونات:** يجب أن تكون Admin في Holistics حتى تتمكن من إضافة Data Sources جديدة.
+* **الوصول إلى الشبكة:** يجب أن يكون خادم ClickHouse لديك متاحًا للوصول من [عناوين IP الخاصة بـ Holistics](https://docs.holistics.io/docs/connect/ip-whitelisting).
+* **مستخدم قاعدة البيانات:** أنشئ مستخدمًا مخصصًا للقراءة فقط لـ Holistics بدلًا من استخدام حساب مسؤول.
+
+<div id="recommended-privileges">
+  ### الامتيازات الموصى بها
+</div>
+
+يتطلب المستخدم المخصص امتيازات `SELECT` على الجداول التي تريد الاستعلام عنها، بالإضافة إلى جداول `system` (لاكتشاف المخطط).
+
+```sql
+-- Example: Grant read access to a specific database
+GRANT SELECT ON my_database.* TO holistics_user;
+
+-- Grant access to system metadata
+GRANT SELECT ON system.* TO holistics_user;
+```
+
+<Steps>
+  <Step>
+    ## اجمع تفاصيل الاتصال
+
+    للاتصال بـ ClickHouse عبر HTTP(S)، ستحتاج إلى المعلومات التالية:
+
+    | **المعلمة**       | **الوصف**                                                                                      |
+    | ----------------- | ---------------------------------------------------------------------------------------------- |
+    | **Host**          | اسم المضيف لخادم ClickHouse لديك (على سبيل المثال: `mz322.eu-central-1.aws.clickhouse.cloud`). |
+    | **Port**          | **8443** لـ ClickHouse Cloud ‏(SSL/TLS)، و**8123** للمثيلات ذاتية الإدارة من دون SSL.          |
+    | **Database Name** | اسم قاعدة البيانات التي تريد الاتصال بها. وعادةً ما تكون القيمة الافتراضية `default`.          |
+    | **Username**      | اسم مستخدم قاعدة البيانات. والقيمة الافتراضية هي `default`.                                    |
+    | **Password**      | كلمة المرور الخاصة بمستخدم قاعدة البيانات.                                                     |
+
+    يمكنك العثور على هذه التفاصيل بالنقر على زر **Connect** في وحدة تحكم ClickHouse Cloud واختيار **HTTPS**.
+
+    <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="موضع زر Connect في وحدة تحكم ClickHouse Cloud" border />
+  </Step>
+
+  <Step>
+    ## اضبط الوصول إلى الشبكة
+
+    بما أن Holistics تطبيق قائم على السحابة، يجب أن تتمكن خوادمه من الوصول إلى قاعدة بياناتك. لديك خياران:
+
+    1. **اتصال مباشر (موصى به):** اسمح بعناوين IP الخاصة بـ Holistics في جدار الحماية لديك أو في IP Access List الخاصة بـ ClickHouse Cloud. يمكنك العثور على قائمة عناوين IP في [دليل IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_02.webp" alt="مثال على السماح بعناوين IP في ClickHouse Cloud" border />
+
+    2. **نفق SSH عكسي:** إذا كانت قاعدة بياناتك موجودة في شبكة خاصة ‏(VPC) ولا يمكن إتاحتها على الإنترنت العام، فاستخدم [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
+  </Step>
+
+  <Step>
+    ## أضف مصدر بيانات في Holistics
+
+    1. في Holistics، انتقل إلى **Settings → Data Sources**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="الانتقال إلى Data Sources في إعدادات Holistics" border />
+
+    2. انقر على **New Data Source** ثم اختر **ClickHouse**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="اختيار ClickHouse من قائمة مصادر البيانات الجديدة" border />
+
+    3. املأ النموذج بالتفاصيل التي جمعتها في الخطوة 1.
+
+       | **الحقل**         | **الإعداد**                                                             |
+       | ----------------- | ----------------------------------------------------------------------- |
+       | **Host**          | اسم مضيف ClickHouse لديك                                                |
+       | **Port**          | `8443` (أو `8123`)                                                      |
+       | **Require SSL**   | بدّل إلى **ON** إذا كنت تستخدم المنفذ 8443 (مطلوب لـ ClickHouse Cloud). |
+       | **Database Name** | `default` (أو اسم DB الخاص بك)                                          |
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_05.webp" alt="إدخال تفاصيل اتصال ClickHouse في Holistics" border />
+
+    4. انقر على **Test Connection**.
+
+       <Image size="md" img="/images/integrations/data-visualization/holistics_06.webp" alt="نجاح اختبار اتصال ClickHouse في Holistics" border />
+
+       * **نجاح:** انقر على **Save**.
+       * **فشل:** تحقق من اسم المستخدم/كلمة المرور، وتأكد من السماح [بعناوين IP الخاصة بـ Holistics](https://docs.holistics.io/docs/connect/ip-whitelisting).
+  </Step>
+</Steps>
+
+<div id="known-limitations">
+  ## القيود المعروفة
+</div>
+
+تدعم Holistics معظم ميزات SQL القياسية في ClickHouse، مع الاستثناءات التالية:
+
+* **الإجمالي التراكمي:** هذه الدالة التحليلية مدعومة حاليًا بشكل محدود في ClickHouse.
+* **أنواع البيانات المتداخلة:** قد تتطلب بُنى JSON أو Array المتداخلة بعمق تسطيحها عبر نماذج SQL قبل عرضها بصريًا.
+
+للاطلاع على القائمة الكاملة بالميزات المدعومة، يُرجى الرجوع إلى [صفحة القيود الخاصة بقاعدة البيانات](https://docs.holistics.io/docs/connect/faqs/clickhouse-limitations).
