@@ -1094,6 +1094,12 @@ private:
     /// is priced precisely instead of falling back to a flat 256-byte guess.
     static size_t estimateComplexRowBytes(const IColumn & col, size_t row_index)
     {
+        if (const auto * null_col = typeid_cast<const ColumnNullable *>(&col))
+            // Mirrors complexDataSize's nested-Nullable layout (u8 null_map[n] prepended, then
+            // the nested column's own complexData layout) but for one row: 1 null byte plus the
+            // nested column's per-row cost, regardless of whether this particular row is null
+            // (the nested column still has a real, if default-valued, entry at that row).
+            return 1 + estimateComplexRowBytes(null_col->getNestedColumn(), row_index);
         if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
             return estimateComplexRowBytes(map_col->getNestedColumn(), row_index);
         if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col))
@@ -1126,15 +1132,26 @@ private:
         return 256; // conservative fallback
     }
 
-    /// O(1) aggregate byte size of one non-string, non-fixed-width sub-column value (used to
-    /// size a Variant alternative's whole contribution below without a per-row scan).
+    /// O(1) aggregate byte size of a whole Variant alternative sub-column (used to size that
+    /// alternative's total contribution in estimateVariantTotalBytes below without a per-row
+    /// scan). Array(...)/Tuple(...)/Map(...)/top-level LowCardinality(...) are all valid
+    /// Variant alternatives (accepted by both the validator and buildColDescriptor), so this
+    /// must mirror their real COL_COMPLEX/COL_LOWCARD wire cost, not the flat 256-byte guess —
+    /// otherwise a Variant carrying e.g. one oversized Array alternative row estimates as a few
+    /// hundred bytes and never triggers the row-wise split path.
     static size_t estimateAggregateColumnBytes(const IColumn & col)
     {
         if (const auto * s = typeid_cast<const ColumnString *>(&col))
             return s->getChars().size() + (col.size() + 1) * sizeof(uint64_t);
+        if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
+            return ColumnarV1::complexDataSize(map_col->getNestedColumn(), static_cast<uint32_t>(col.size()));
+        if (typeid_cast<const ColumnArray *>(&col) || typeid_cast<const ColumnTuple *>(&col))
+            return ColumnarV1::complexDataSize(col, static_cast<uint32_t>(col.size()));
+        if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(&col))
+            return estimateLowCardTotalBytes(*lc_col, col.size(), /* materialized_const */ false);
         if (col.valuesHaveFixedSize())
             return col.sizeOfValueIfFixed() * col.size();
-        return 256 * col.size(); // conservative fallback (e.g. nested Array/Tuple/LowCardinality)
+        return 256 * col.size(); // conservative fallback
     }
 
     /// Top-level LowCardinality is directly wire-encoded (dictionary + compact index array,
@@ -1280,13 +1297,27 @@ private:
             auto stop_token = interrupt_source.get_token();
             auto col = user_defined_function->executeOnBlock(compartment, block, context, batch_size, stop_token);
 
-            if (!result_column->structureEquals(*col))
+            // Under BUFFERED_V1 + ColumnBinary (preserve_const), a guest may legitimately
+            // return COL_IS_CONST, which ColumnBinaryInputFormat decodes as a ColumnConst;
+            // structureEquals only holds between two ColumnConst instances, so compare the
+            // unwrapped nested column against result_column instead of rejecting every valid
+            // const result. See the matching fix in flush_columnar_batch above.
+            const IColumn * col_for_check = col.get();
+            if (const auto * col_const = typeid_cast<const ColumnConst *>(col_for_check))
+                col_for_check = &col_const->getDataColumn();
+            if (!result_column->structureEquals(*col_for_check))
                 throw Exception(
                     ErrorCodes::WASM_ERROR,
                     "Different column types in result blocks: {} and {}",
                     result_column->dumpStructure(),
                     col->dumpStructure());
 
+            // A ColumnConst batch result must be materialized before it's accumulated:
+            // ColumnConst::insertRangeFrom only bumps the row count, it doesn't copy in the
+            // source's actual value, so concatenating a later (possibly different) batch into a
+            // ColumnConst accumulator would silently keep repeating the first batch's value for
+            // every row appended afterwards.
+            col = IColumn::mutate(col->convertToFullColumnIfConst());
             if (result_column->empty())
                 result_column = col->assumeMutable();
             else
