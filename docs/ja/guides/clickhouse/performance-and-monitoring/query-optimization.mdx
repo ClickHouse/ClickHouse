@@ -1,0 +1,862 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: 'クエリ最適化'
+title: 'クエリ最適化のシンプルガイド'
+description: 'クエリパフォーマンスを向上させる一般的な手法を解説する、クエリ最適化のシンプルガイド'
+doc_type: 'guide'
+keywords: ['クエリ最適化', 'パフォーマンス', 'ベストプラクティス', 'クエリチューニング', '効率']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このセクションでは、一般的なシナリオを通じて、[アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer)、[クエリプロファイリング](/ja/concepts/features/performance/troubleshoot/sampling-query-profiler)、[Nullable カラムを避ける](/ja/concepts/best-practices/avoidnullablecolumns) などの各種パフォーマンス改善・最適化手法をどのように活用し、ClickHouse のクエリパフォーマンスを向上させるかを説明します。
+
+<div id="understand-query-performance">
+  ## クエリのパフォーマンスを理解する
+</div>
+
+パフォーマンス最適化を考える最適なタイミングは、ClickHouse に初めてデータを取り込む前、[データスキーマ](/ja/guides/clickhouse/data-modelling/schema-design)を設計している段階です。 
+
+とはいえ、データがどれほど増えるか、どのような種類のクエリが実行されるかを予測するのは簡単ではありません。 
+
+すでにデプロイメントがあり、改善したいクエリがいくつかある場合、まずはそれらのクエリがどのようなパフォーマンスを示しているのか、また、数ミリ秒で実行されるものもあれば、より時間がかかるものもあるのはなぜかを理解することが重要です。
+
+ClickHouse には、クエリがどのように実行されているか、そしてその実行にどのようなリソースが消費されているかを把握するのに役立つ、豊富なツールが用意されています。 
+
+このセクションでは、そうしたツールとその使い方を見ていきます。 
+
+<div id="general-considerations">
+  ## 一般的な考慮事項
+</div>
+
+クエリのパフォーマンスを理解するために、まずクエリの実行時に ClickHouse 内部で何が起きているのかを見ていきましょう。 
+
+以下では意図的に単純化し、一部は説明を省略しています。ここでの目的は細部まで説明することではなく、基本概念をすばやくつかんでもらうことです。詳しくは、[クエリアナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) を参照してください。 
+
+大まかに言うと、ClickHouse がクエリを実行する際には、次のような処理が行われます。 
+
+* **クエリのパースと分析**
+
+クエリがパース・分析され、汎用的なクエリ実行プランが作成されます。 
+
+* **クエリ最適化**
+
+クエリ実行プランが最適化され、不要なデータが削減され、クエリプランからクエリパイプラインが構築されます。 
+
+* **クエリパイプラインの実行**
+
+データが読み込まれ、並列に処理されます。これは、ClickHouse がフィルタリング、集計、ソートといったクエリ操作を実際に実行する段階です。 
+
+* **最終処理**
+
+結果がマージ、ソートされ、クライアントに送信される前に最終結果としてフォーマットされます。
+
+実際には、多くの[最適化](/ja/get-started/about/why-clickhouse-is-so-fast)が行われています。このガイドでもそれらについてもう少し詳しく説明しますが、ひとまずは、これらの主要な概念を押さえておけば、ClickHouse がクエリを実行するときに内部で何が起きているのかを十分に理解できます。 
+
+この大まかな理解を踏まえて、次に ClickHouse が提供するツールと、それらを使ってクエリのパフォーマンスに影響するメトリクスをどのように追跡できるかを見ていきましょう。 
+
+<div id="dataset">
+  ## データセット
+</div>
+
+クエリ性能へのアプローチを説明するために、実際の例を使います。 
+
+NYC のタクシー乗車データを含む NYC Taxi データセットを使ってみましょう。まず、最適化を一切行わずに NYC Taxi データセットを取り込みます。
+
+以下は、テーブルを作成し、S3バケットからデータを挿入するコマンドです。なお、ここではあえてデータからスキーマを推定しており、最適化はされていません。
+
+```sql
+-- スキーマを推論してテーブルを作成する
+CREATE TABLE trips_small_inferred
+ORDER BY () EMPTY
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+
+-- 推論されたスキーマのテーブルにデータを挿入する
+INSERT INTO trips_small_inferred
+SELECT *
+FROM s3Cluster
+('default','https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+```
+
+データから自動的に推論されたテーブルスキーマを見てみましょう。
+
+```sql
+--- 推論されたテーブルスキーマを表示する
+SHOW CREATE TABLE trips_small_inferred
+```
+
+```response
+Query id: d97361fd-c050-478e-b831-369469f0784d
+
+CREATE TABLE nyc_taxi.trips_small_inferred
+(
+    `vendor_id` Nullable(String),
+    `pickup_datetime` Nullable(DateTime64(6, 'UTC')),
+    `dropoff_datetime` Nullable(DateTime64(6, 'UTC')),
+    `passenger_count` Nullable(Int64),
+    `trip_distance` Nullable(Float64),
+    `ratecode_id` Nullable(String),
+    `pickup_location_id` Nullable(String),
+    `dropoff_location_id` Nullable(String),
+    `payment_type` Nullable(Int64),
+    `fare_amount` Nullable(Float64),
+    `extra` Nullable(Float64),
+    `mta_tax` Nullable(Float64),
+    `tip_amount` Nullable(Float64),
+    `tolls_amount` Nullable(Float64),
+    `total_amount` Nullable(Float64)
+)
+ORDER BY tuple()
+```
+
+<div id="spot-the-slow-queries">
+  ## 遅いクエリを見つける
+</div>
+
+<div id="query-logs">
+  ### クエリログ
+</div>
+
+デフォルトでは、ClickHouse は実行された各クエリに関する情報を収集し、[クエリログ](/ja/reference/system-tables/query_log)に記録します。このデータは `system.query_log` テーブルに保存されます。 
+
+ClickHouse は、実行された各クエリについて、クエリの実行時間、読み取った行数、CPU、メモリ使用量、ファイルシステムキャッシュのヒット数などのリソース使用量といった統計情報を記録します。 
+
+そのため、低速なクエリを調査する際は、まずクエリログを確認するのがよいでしょう。実行に時間のかかっているクエリを簡単に特定でき、それぞれのリソース使用量も確認できます。 
+
+それでは、NYC taxi データセットで実行時間が長いクエリの上位 5 件を見つけてみましょう。
+
+```sql
+-- nyc_taxiデータベースで過去1時間の実行時間が長いクエリ上位5件を検索
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (event_time >= (now() - toIntervalMinute(60))) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response
+Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:36
+query_duration_ms: 2967
+query:             WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:11:33
+query_duration_ms: 2026
+query:             SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:17
+query_duration_ms: 1860
+query:             SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:31
+query_duration_ms: 690
+query:             SELECT avg(total_amount) FROM nyc_taxi.trips_small_inferred WHERE trip_distance > 5
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 5:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:44
+query_duration_ms: 634
+query:             SELECT
+vendor_id,
+avg(total_amount),
+avg(trip_distance),
+FROM
+nyc_taxi.trips_small_inferred
+GROUP BY vendor_id
+ORDER BY 1 DESC
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+```
+
+フィールド `query_duration_ms` は、そのクエリの実行にどれくらい時間がかかったかを示します。クエリログの結果を見ると、最初のクエリの実行に 2967ms かかっており、改善の余地があることがわかります。 
+
+また、メモリや CPU を最も多く消費しているクエリを調べることで、どのクエリがシステムに負荷をかけているのかを把握したい場合もあるでしょう。 
+
+```sql
+-- メモリ使用量上位のクエリ
+SELECT
+    type,
+    event_time,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+    (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+    normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (type='QueryFinish') AND ((event_time >= (now() - toIntervalDay(2))) AND (event_time <= now())) AND (user NOT ILIKE '%internal%')
+ORDER BY memory_usage DESC
+LIMIT 30
+```
+
+見つかった長時間実行されているクエリを切り分け、応答時間を把握するためにそれらを数回再実行してみましょう。 
+
+この時点では、再現性を高めるために、`enable_filesystem_cache` 設定を 0 にしてファイルシステムキャッシュを無効にすることが重要です。
+
+```sql
+-- ファイルシステムキャッシュを無効化
+set enable_filesystem_cache = 0;
+
+-- クエリ1を実行
+WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+
+----
+```
+
+```response
+1 row in set. Elapsed: 1.699 sec. Processed 329.04 million rows, 8.88 GB (193.72 million rows/s., 5.23 GB/s.)
+Peak memory usage: 440.24 MiB.
+```
+
+```sql
+-- クエリ2を実行
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+---
+```
+
+```response
+4 rows in set. Elapsed: 1.419 sec. Processed 329.04 million rows, 5.72 GB (231.86 million rows/s., 4.03 GB/s.)
+Peak memory usage: 546.75 MiB.
+```
+
+```sql
+-- クエリ3を実行
+SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+
+---
+```
+
+```response
+1 row in set. Elapsed: 1.414 sec. Processed 329.04 million rows, 8.88 GB (232.63 million rows/s., 6.28 GB/s.)
+Peak memory usage: 451.53 MiB.
+```
+
+見やすいように表に要約します。
+
+| 名前    | 経過時間      | 処理行数           | ピークメモリ     |
+| ----- | --------- | -------------- | ---------- |
+| クエリ 1 | 1.699 sec | 329.04 million | 440.24 MiB |
+| クエリ 2 | 1.419 sec | 329.04 million | 546.75 MiB |
+| クエリ 3 | 1.414 sec | 329.04 million | 451.53 MiB |
+
+これらのクエリで何を実現しているのか、もう少し詳しく見てみましょう。 
+
+* クエリ 1 は、平均速度が時速 30 マイルを超える乗車について、距離の分布を計算します。
+* クエリ 2 は、週ごとの乗車回数と平均コストを求めます。 
+* クエリ 3 は、データセット内の各移動の平均所要時間を計算します。
+
+これらのクエリはいずれも、クエリ 1 がクエリを実行するたびに移動時間をその場で計算している点を除けば、それほど複雑な処理をしているわけではありません。しかし、どのクエリも実行に 1 秒以上かかっており、ClickHouse の世界ではこれは非常に長い時間です。これらのクエリのメモリ使用量にも注目できます。各クエリで 400 MiB 前後というのは、かなり大きなメモリ消費です。また、各クエリはいずれも同じ行数 (つまり 3 億 2904 万行) を読み取っているように見えます。このテーブルに何行あるのか、さっと確認してみましょう。
+
+```sql
+-- テーブルの行数をカウントする
+SELECT count()
+FROM nyc_taxi.trips_small_inferred
+```
+
+```response
+Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+   ┌───count()─┐
+1. │ 329044175 │ -- 3億2904万
+   └───────────┘
+```
+
+このテーブルには3億2,904万行が含まれているため、各クエリでテーブル全体のフルスキャンが行われています。
+
+<div id="explain-statement">
+  ### EXPLAINステートメント
+</div>
+
+実行時間の長いクエリが特定できたところで、それらがどのように実行されているかを理解しましょう。ClickHouse では、[EXPLAIN ステートメントコマンド](/ja/reference/statements/explain)がサポートされています。これは、クエリを実際に実行することなく、すべてのクエリ実行ステージを詳細に確認できる非常に便利なツールです。ClickHouse に精通していないユーザーには情報量が多く感じられるかもしれませんが、クエリがどのように実行されるかを把握するうえで欠かせないツールです。
+
+EXPLAINステートメントの概要とクエリ実行の分析方法については、ドキュメントに詳細な[ガイド](/ja/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer)があります。ここではガイドの内容を繰り返すのではなく、クエリ実行パフォーマンスのボトルネックを特定するのに役立つコマンドをいくつか紹介します。
+
+**Explain indexes = 1**
+
+まず、EXPLAIN indexes = 1 を使用してクエリプランを確認しましょう。クエリプランは、クエリがどのように実行されるかを示すツリー構造です。クエリ内の各句がどの順序で実行されるかをここで確認できます。EXPLAIN ステートメントが返すクエリプランは、下から上に向かって読みます。
+
+最初の長時間クエリを試してみましょう。
+
+```sql
+EXPLAIN indexes = 1
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: f35c412a-edda-4089-914b-fa1622d69868
+
+   ┌─explain─────────────────────────────────────────────┐
+1. │ Expression ((Projection + Before ORDER BY))         │
+2. │   Aggregating                                       │
+3. │     Expression (Before GROUP BY)                    │
+4. │       Filter (WHERE)                                │
+5. │         ReadFromMergeTree (nyc_taxi.trips_small_inferred) │
+   └─────────────────────────────────────────────────────┘
+```
+
+出力はシンプルです。クエリはまず `nyc_taxi.trips_small_inferred` テーブルからデータを読み取ります。次に、WHERE 句を適用して計算済みの値に基づいて行をフィルタリングします。フィルタリングされたデータは集計用に準備され、分位点が計算されます。最後に、結果がソートされて出力されます。
+
+ここで、主キーが使用されていないことがわかります。これはテーブル作成時に主キーを定義しなかったため、当然のことです。その結果、ClickHouse はクエリに対してテーブルのフルスキャンを実行しています。
+
+**Explain Pipeline (実行計画パイプライン)&#x20;**
+
+EXPLAIN Pipelineは、クエリの具体的な実行戦略を示します。ここでは、先ほど確認した汎用的なクエリプランをClickHouseが実際にどのように実行したかを見ることができます。
+
+```sql
+EXPLAIN PIPELINE
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                        │
+ 2. │ ExpressionTransform × 59                                                            │
+ 3. │   (Aggregating)                                                                     │
+ 4. │   Resize 59 → 59                                                                    │
+ 5. │     AggregatingTransform × 59                                                       │
+ 6. │       StrictResize 59 → 59                                                          │
+ 7. │         (Expression)                                                                │
+ 8. │         ExpressionTransform × 59                                                    │
+ 9. │           (Filter)                                                                  │
+10. │           FilterTransform × 59                                                      │
+11. │             (ReadFromMergeTree)                                                     │
+12. │             MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+```
+
+ここで、クエリの実行に使用されたスレッド数が59であることを確認できます。これは高度な並列化を示しています。これによりクエリの実行が高速化されますが、スペックの低いマシンでは時間がかかります。並列に実行されるスレッド数が多いことが、クエリが消費するメモリ量の多さの要因となっている可能性があります。
+
+理想的には、すべての低速クエリを同じ方法で調査し、不必要に複雑なクエリプランを特定するとともに、各クエリが読み取る行数と消費リソースを把握することが推奨されます。
+
+<div id="methodology">
+  ## 進め方
+</div>
+
+本番デプロイメントで問題のあるクエリを特定するのは難しいことがあります。ClickHouse のデプロイメントでは、常に非常に多くのクエリが実行されている可能性が高いためです。 
+
+問題が発生しているユーザー、データベース、またはテーブルが分かっている場合は、`system.query_logs` の `user`、`tables`、`databases` フィールドを使って検索対象を絞り込めます。 
+
+最適化したいクエリを特定したら、そのクエリの改善に着手できます。この段階で開発者がよく犯すミスの 1 つは、複数の変更を同時に加え、場当たり的な実験を行い、結果として評価が混在してしまうことです。さらに重要なのは、何がクエリを高速化したのかを十分に理解できなくなることです。 
+
+クエリ最適化には、体系立った進め方が必要です。高度なベンチマークの話ではありません。変更がクエリ性能にどう影響するかを理解するためのシンプルな手順を用意するだけでも、大きな効果があります。 
+
+まずクエリログから遅いクエリを特定し、その後、改善の可能性を個別に調査します。クエリをテストするときは、必ずファイルシステムキャッシュを無効にしてください。 
+
+> ClickHouse は、クエリ性能を向上させるために、さまざまな段階で[キャッシュ](/ja/concepts/features/performance/caches/caches)を活用しています。これはクエリ性能には有益ですが、トラブルシューティング時には、潜在的な I/O ボトルネックや不適切なテーブルスキーマを見えにくくしてしまう可能性があります。そのため、テスト中はファイルシステムキャッシュをオフにすることをお勧めします。本番環境では有効にしておいてください。
+
+最適化の候補を特定したら、それぞれが性能にどう影響するかをより正確に把握できるよう、1 つずつ実装することをお勧めします。以下は一般的な進め方を示した図です。
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="最適化ワークフロー" />
+
+*最後に、外れ値には注意してください。ユーザーが場当たり的に高コストなクエリを試したり、別の理由でシステムに負荷がかかっていたりして、クエリの実行が遅くなることは珍しくありません。`normalized_query_hash` フィールドでグループ化すると、継続的に実行されている高コストなクエリを特定できます。そうしたクエリこそ、優先的に調査すべき対象である可能性が高いでしょう。*
+
+<div id="basic-optimization">
+  ## 基本的な最適化
+</div>
+
+テスト用の基盤が整ったので、最適化を始めましょう。
+
+まず確認すべきなのは、データがどのように保存されているかです。どのデータベースでも同様に、読み取るデータが少ないほど、クエリの実行は速くなります。 
+
+データをどのように取り込んだかによっては、取り込みデータに基づいてテーブルのスキーマを推定するために、ClickHouseの[機能](/ja/concepts/features/interfaces/schema-inference)を活用しているかもしれません。これは使い始めるには非常に便利ですが、クエリのパフォーマンスを最適化したいのであれば、ユースケースに最適な形になるよう、データスキーマを見直す必要があります。
+
+<div id="nullable">
+  ### Nullable
+</div>
+
+[ベストプラクティスのドキュメント](/ja/concepts/best-practices/select-data-type#avoid-nullable-columns)で説明しているとおり、可能な限り Nullable カラムは避けてください。データインジェストの仕組みがより柔軟になるため、つい多用したくなりますが、毎回追加のカラムを処理する必要があるため、パフォーマンスに悪影響を及ぼします。
+
+NULL 値を持つ行を数える SQL クエリを実行すれば、実際に Nullable が必要なテーブル内のカラムを簡単に特定できます。
+
+```sql
+-- NULL値を含むカラムを検索
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: 4a70fc5b-2501-41c8-813c-45ce241d85ae
+
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+fare_amount_nulls:         0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+NULL 値を持つカラムは `mta_tax` と `payment_type` の 2 つだけです。残りのフィールドに `Nullable` カラムを使うべきではありません。
+
+<div id="low-cardinality">
+  ### 低カーディナリティ
+</div>
+
+String 型に対して手軽に行える最適化として、LowCardinality データ型を活用する方法があります。LowCardinality の[ドキュメント](/ja/reference/data-types/lowcardinality)で説明されているとおり、ClickHouse は LowCardinality カラムに辞書エンコーディングを適用するため、クエリのパフォーマンスが大幅に向上します。 
+
+どのカラムが LowCardinality の適切な候補かを見極めるための簡単な目安として、一意の値が 10,000 未満のカラムは最適な候補です。
+
+次の SQL クエリを使用すると、一意の値の数が少ないカラムを見つけることができます。
+
+```sql
+-- 低カーディナリティのカラムを特定する
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: d502c6a1-c9bc-4415-9d86-5de74dd6d932
+
+Row 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+カーディナリティが低いため、これら4つのカラム (`ratecode_id`、`pickup_location_id`、`dropoff_location_id`、`vendor_id`) は、LowCardinalityフィールド型に適した候補です。
+
+<div id="optimize-data-type">
+  ### データ型を最適化する
+</div>
+
+ClickHouseは多数のデータ型をサポートしています。パフォーマンスを最適化し、ディスク上のデータ使用量を削減するため、用途に合った範囲でできるだけ小さいデータ型を選択してください。 
+
+数値については、データセット内の最小値と最大値を確認し、現在の精度が実際のデータセットに見合っているかを確認できます。 
+
+```sql
+-- payment_typeフィールドの最小値/最大値を求める
+SELECT
+    min(payment_type),max(payment_type),
+    min(passenger_count), max(passenger_count)
+FROM trips_small_inferred
+```
+
+```response
+Query id: 4306a8e1-2a9c-4b06-97b4-4d902d2233eb
+
+   ┌─min(payment_type)─┬─max(payment_type)─┐
+1. │                 1 │                 4 │
+   └───────────────────┴───────────────────┘
+```
+
+日付については、データセットに合った精度を選び、実行予定のクエリに最も適したものにしてください。
+
+<div id="apply-the-optimizations">
+  ### 最適化を適用する
+</div>
+
+最適化したスキーマを使用する新しいテーブルを作成し、データを再度取り込みましょう。
+
+```sql
+-- 最適化されたデータでテーブルを作成する
+CREATE TABLE trips_small_no_pk
+(
+    `vendor_id` LowCardinality(String),
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` LowCardinality(String),
+    `dropoff_location_id` LowCardinality(String),
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+ORDER BY tuple();
+
+-- データを挿入する
+INSERT INTO trips_small_no_pk SELECT * FROM trips_small_inferred
+```
+
+改善を確認するため、新しいテーブルを使ってもう一度クエリを実行します。 
+
+| Name  | Run 1 - Elapsed | Elapsed   | Rows processed | Peak memory |
+| ----- | --------------- | --------- | -------------- | ----------- |
+| クエリ 1 | 1.699 sec       | 1.353 sec | 329.04 million | 337.12 MiB  |
+| クエリ 2 | 1.419 sec       | 1.171 sec | 329.04 million | 531.09 MiB  |
+| クエリ 3 | 1.414 sec       | 1.188 sec | 329.04 million | 265.05 MiB  |
+
+クエリ時間とメモリ使用量の両方で、一定の改善が見られます。データスキーマを最適化したことで、データの表現に必要な総データ量が減り、その結果、メモリ消費量の改善と処理時間の短縮につながっています。 
+
+違いを確認するため、テーブルのサイズを見てみましょう。 
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE (active = 1) AND ((`table` = 'trips_small_no_pk') OR (`table` = 'trips_small_inferred'))
+GROUP BY
+    database,
+    `table`
+ORDER BY size DESC
+```
+
+```response
+Query id: 72b5eb1c-ff33-4fdb-9d29-dd076ac6f532
+
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+新しいテーブルは、前のテーブルよりもかなり小さくなっています。テーブルのディスク使用量は約34%減少しています (7.38 GiB に対して 4.89 GiB) 。
+
+<div id="the-importance-of-primary-keys">
+  ## 主キーの重要性
+</div>
+
+ClickHouse の主キーは、従来の多くのデータベースシステムにおける主キーとは役割が異なります。そうしたシステムでは、主キーは一意性とデータ整合性を保証します。重複する主キー値を挿入しようとすると拒否され、通常は高速なルックアップのために B-tree またはハッシュベースの索引が作成されます。 
+
+ClickHouse では、主キーの[目的](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key)は異なります。主キーは一意性を保証せず、データ整合性にも寄与しません。代わりに、クエリ性能を最適化するために設計されています。主キーは、データがディスク上に格納される順序を定義し、各 granule の先頭の行へのポインタを保持するスパースインデックスとして実装されます。
+
+> ClickHouse における granule は、クエリ実行時に読み取られるデータの最小単位です。granule には、index&#95;granularity によって決まる固定数までの行が含まれ、デフォルト値は 8192 行です。granule は連続して格納され、主キー順にソートされます。 
+
+パフォーマンスの観点から、適切な主キーの組み合わせを選ぶことは重要です。実際、特定のクエリ群を高速化するために、同じデータを異なる table に格納し、それぞれで異なる主キーの組み合わせを使うことは珍しくありません。 
+
+Projection や materialized view など、ClickHouse がサポートするほかの選択肢を使えば、同じデータに対して異なる主キーの組み合わせを利用できます。このブログシリーズの第 2 部では、これについてさらに詳しく説明します。 
+
+<div id="choose-primary-keys">
+  ### 主キーを選ぶ
+</div>
+
+適切な主キーの組み合わせを選ぶのは複雑なテーマであり、最適な組み合わせを見つけるには、トレードオフを見極めながら試行錯誤が必要になる場合があります。 
+
+ここでは、ひとまず次のシンプルな指針に従います。 
+
+* ほとんどのクエリでフィルタに使うフィールドを選ぶ
+* カーディナリティの低いカラムから先に選ぶ 
+* タイムスタンプを含むデータセットでは時間でフィルタすることが多いため、主キーに時間ベースの要素を含めることを検討する。 
+
+この例では、`passenger_count`、`pickup_datetime`、`dropoff_datetime` を主キーとして試します。 
+
+`passenger_count` のカーディナリティは小さく (一意な値は 24 個) 、低速なクエリでも使われています。また、タイムスタンプのフィールド (`pickup_datetime` と `dropoff_datetime`) も、頻繁にフィルタされるため追加します。
+
+主キーを設定した新しいテーブルを作成し、データを再度取り込みます。
+
+```sql
+CREATE TABLE trips_small_pk
+(
+    `vendor_id` UInt8,
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` UInt16,
+    `dropoff_location_id` UInt16,
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+PRIMARY KEY (passenger_count, pickup_datetime, dropoff_datetime);
+
+-- データを挿入する
+INSERT INTO trips_small_pk SELECT * FROM trips_small_inferred
+```
+
+次に、クエリを再実行します。3 回の実験結果をまとめ、経過時間、処理行数、メモリ消費量がどのように改善されたかを確認します。 
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">クエリ 1</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>実行 1</th>
+      <th>実行 2</th>
+      <th>実行 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>経過時間</td>
+      <td>1.699 sec</td>
+      <td>1.353 sec</td>
+      <td>0.765 sec</td>
+    </tr>
+
+    <tr>
+      <td>処理行数</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+    </tr>
+
+    <tr>
+      <td>ピークメモリ</td>
+      <td>440.24 MiB</td>
+      <td>337.12 MiB</td>
+      <td>444.19 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">クエリ 2</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>実行 1</th>
+      <th>実行 2</th>
+      <th>実行 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>経過時間</td>
+      <td>1.419 sec</td>
+      <td>1.171 sec</td>
+      <td>0.248 sec</td>
+    </tr>
+
+    <tr>
+      <td>処理行数</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>41.46 million</td>
+    </tr>
+
+    <tr>
+      <td>ピークメモリ</td>
+      <td>546.75 MiB</td>
+      <td>531.09 MiB</td>
+      <td>173.50 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">クエリ 3</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>1回目</th>
+      <th>2回目</th>
+      <th>3回目</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>経過時間</td>
+      <td>1.414 sec</td>
+      <td>1.188 sec</td>
+      <td>0.431 sec</td>
+    </tr>
+
+    <tr>
+      <td>処理行数</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>276.99 million</td>
+    </tr>
+
+    <tr>
+      <td>ピークメモリ</td>
+      <td>451.53 MiB</td>
+      <td>265.05 MiB</td>
+      <td>197.38 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+実行時間とメモリ使用量の両面で、全体的に大きな改善が見られます。 
+
+クエリ 2 が主キーの恩恵を最も大きく受けています。生成されるクエリプランが以前とどう違うのかを見てみましょう。
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE (pickup_datetime >= '2009-01-01') AND (pickup_datetime < '2009-04-01')
+GROUP BY payment_type
+ORDER BY trip_count DESC
+```
+
+```response
+Query id: 30116a77-ba86-4e9f-a9a2-a01670ad2e15
+
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY [lifted up part]))                                                     │
+ 2. │   Sorting (Sorting for ORDER BY)                                                                                 │
+ 3. │     Expression (Before ORDER BY)                                                                                 │
+ 4. │       Aggregating                                                                                                │
+ 5. │         Expression (Before GROUP BY)                                                                             │
+ 6. │           Expression                                                                                             │
+ 7. │             ReadFromMergeTree (nyc_taxi.trips_small_pk)                                                          │
+ 8. │             Indexes:                                                                                             │
+ 9. │               PrimaryKey                                                                                         │
+10. │                 Keys:                                                                                            │
+11. │                   pickup_datetime                                                                                │
+12. │                 Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf))) │
+13. │                 Parts: 9/9                                                                                       │
+14. │                 Granules: 5061/40167                                                                             │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+主キーにより、テーブルのグラニュールの一部だけが選択されました。これだけでも、ClickHouse が処理するデータ量を大幅に減らせるため、クエリのパフォーマンスは大きく向上します。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+このガイドが、ClickHouse で遅いクエリを調査する方法と、それを高速化する方法についての理解を深める一助になれば幸いです。このテーマをさらに掘り下げるには、ClickHouse がクエリを実際にどのように実行しているのかをよりよく理解するために、[クエリアナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) と [プロファイリング](/ja/concepts/features/performance/troubleshoot/sampling-query-profiler) も参照してください。
+
+ClickHouse の特性に慣れてきたら、クエリを高速化するために使える、より高度な手法を学ぶために、[パーティションキー](/ja/concepts/best-practices/partitioning-keys) と [データスキッピングインデックス](/ja/concepts/features/performance/skip-indexes/skipping-indexes) について読むことをお勧めします。

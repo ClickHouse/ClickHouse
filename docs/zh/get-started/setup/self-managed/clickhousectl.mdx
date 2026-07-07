@@ -1,0 +1,100 @@
+---
+description: '使用 clickhousectl（ClickHouse 命令行客户端）安装和管理本地 ClickHouse 版本'
+keywords: ['ClickHouse', '安装', 'clickhousectl', '命令行客户端']
+sidebarTitle: 'clickhousectl (命令行客户端)'
+slug: /install/clickhousectl
+title: '使用 ClickHouse 命令行客户端安装'
+hide_title: true
+doc_type: 'guide'
+---
+
+<Info>
+  **Windows 用户**
+
+  ClickHouse 可在 Linux 和 macOS 上原生运行。在 Windows 上，请在
+  [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about) 中执行以下步骤。
+</Info>
+
+ClickHouse 命令行客户端 (`clickhousectl`) 可帮助您安装和管理本地 ClickHouse
+版本、启动服务器以及运行查询。
+
+<Steps>
+  <Step>
+    ## 安装 ClickHouse 命令行客户端
+
+    ```bash
+    curl https://clickhouse.com/cli | sh
+    ```
+
+    此外，还会自动创建一个 `chctl` 别名，方便使用。
+  </Step>
+
+  <Step>
+    ## 安装 ClickHouse
+
+    安装最新版本的 ClickHouse，并将其设为默认版本：
+
+    ```bash
+    clickhousectl local use latest
+    ```
+
+    如果该版本尚未安装，`local use` 会先进行安装，将其设为您的
+    默认版本，并在 `~/.local/bin` (位于您的 `PATH` 中) 创建一个 `clickhouse` 符号链接，
+    这样您就可以直接调用 `clickhouse` 可执行文件。之后，本文档中任何运行
+    `clickhouse` 命令的步骤都可以直接照用。
+
+    您也可以选择特定版本：
+
+    ```bash
+    clickhousectl local use 26.5            # 最新的 26.5.x.x
+    clickhousectl local use 26.5.2.39       # 精确版本
+    ```
+
+    <Info>
+      **use 与 install 的区别**
+
+      `clickhousectl local use <version>` 会安装指定版本，*并且* 将其设为您的
+      默认版本，同时更新 `PATH` 中的 `clickhouse` 符号链接。若只想下载某个版本，
+      而不更改默认版本或更新符号链接，请改用
+      `clickhousectl local install <version>`。
+    </Info>
+  </Step>
+
+  <Step>
+    ## 启动 clickhouse-server
+
+    ```bash
+    clickhousectl local server start
+    ```
+
+    服务器会在后台运行。要验证其是否已启动：
+
+    ```bash
+    clickhousectl local server list
+    ```
+  </Step>
+
+  <Step>
+    ## 启动 clickhouse-client
+
+    ```bash
+    clickhousectl local client
+    ```
+
+    您将看到类似如下内容：
+
+    ```response
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    现在，您已经可以开始向 ClickHouse 发送 SQL 命令了！
+
+    <Tip>
+      [快速入门](/zh/get-started/setup/install) 将指导您完成创建表和插入数据的步骤。
+    </Tip>
+  </Step>
+</Steps>

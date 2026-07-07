@@ -1,0 +1,130 @@
+---
+title: إنشاء اسم مستعار DNS مخصص بإعداد وكيل عكسي
+description: تعرّف على كيفية إعداد اسم مستعار DNS مخصص لمثيلك باستخدام وكيل عكسي
+date: 2025-05-16
+tags: ['إدارة الخادم', 'الأمان والمصادقة']
+keywords: ['اسم مستعار DNS مخصص', 'DNS']
+hide_title: true
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<br />
+
+<br />
+
+<div id="custom-dns-alias">
+  # اسم مستعار DNS مخصص عبر إعداد وكيل عكسي
+</div>
+
+> في هذه المقالة من قاعدة المعرفة، سنرشدك إلى كيفية إعداد اسم DNS مستعار
+> مخصص لمثيل ClickHouse Cloud الخاص بك باستخدام وكيل عكسي
+> مثل Nginx لعميل ClickHouse الأصلي.
+
+<div id="create-certificate">
+  ## أنشئ شهادة موقَّعة ذاتيًا
+</div>
+
+<Note>
+  لا حاجة إلى هذه الخطوة إذا كنت تستخدم شهادات موقَّعة.
+</Note>
+
+أنشئ شهادة موقَّعة ذاتيًا لاسم النطاق الذي تختاره.
+في هذا المثال، سنستخدم اسم النطاق `xyz-customdomain.com` وننشئ
+شهادة باسم `MyCertificate.crt`. راجع [&quot;إنشاء شهادات SSL&quot;](/ar/concepts/features/security/tls/configuring-tls#2-create-tls-certificates)
+للاطلاع على مزيد من التفاصيل.
+
+أضف الشهادة إلى `/etc/clickhouse-client/config.xml`:
+
+```yaml highlight={5}
+<clickhouse>
+    <openSSL>
+        <client>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <caConfig>/etc/ssl/certs/MyCertificate.crt</caConfig>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>
+```
+
+<div id="update-nginx-config">
+  ## تحديث إعدادات Nginx
+</div>
+
+أضف ما يلي إلى ملف `nginx.conf`:
+
+```text
+proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+proxy_ssl_server_name on;
+```
+
+```text highlight={21-22}
+stream {
+    upstream stream_backend {
+         server xyz.us-west-2.aws.clickhouse.cloud:9440;
+    }
+
+    server {
+        listen                9440 ssl;
+        proxy_pass            stream_backend;
+
+        ssl_certificate       /etc/ssl/certs/MyCertificate.crt;
+        ssl_certificate_key   /etc/ssl/certs/MyKey.key;
+        ssl_protocols         SSLv3 TLSv1 TLSv1.1 TLSv1.2;
+        ssl_ciphers           HIGH:!aNULL:!MD5;
+        ssl_session_cache     shared:SSL:20m;
+        ssl_session_timeout   4h;
+        ssl_handshake_timeout 30s;
+	proxy_ssl on;
+	proxy_ssl_trusted_certificate /etc/ssl/certs/isrgrootx1.pem;
+	proxy_ssl_session_reuse on;
+        proxy_ssl_verify on;
+	proxy_ssl_name xyz.us-west-2.aws.clickhouse.cloud;
+	proxy_ssl_server_name on;
+    }
+}
+```
+
+حيث إن `isrgrootx1.pem` هو الشهادة الجذرية الخاصة بـ ClickHouse Cloud، ويمكنك
+تنزيلها من [هنا](https://letsencrypt.org/certs/isrgrootx1.pem).
+
+<div id="update-hosts-file">
+  ## تحديث ملف hosts
+</div>
+
+<Note>
+  لا حاجة إلى الخطوة التالية إذا كنت تستخدم متحكمات النطاق الخاصة بك
+</Note>
+
+أضف ما يلي إلى ملف `/etc/hosts` على خادم Nginx:
+
+```text title='/etc/hosts'
+127.0.0.1   localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1         localhost6 localhost6.localdomain6
+10.X.Y.Z  xyz-customdomain.com
+```
+
+حيث إن `10.X.Y.Z` هو عنوان IP لخادم Nginx المحدد لديك.
+
+<div id="connect-to-cloud-using-alias">
+  ## الاتصال بـ Cloud باستخدام اسم مستعار
+</div>
+
+أنت الآن جاهز للاتصال باستخدام الاسم المستعار المخصص لك:
+
+```bash
+clickhouse-client --host xyz.customdomain.com --secure --password 'xxxxxxx'
+ClickHouse client version 23.12.1.428 (official build).
+Connecting to xyz.customdomain.com:9440 as user default.
+Connected to ClickHouse server version 23.9.2.
+
+clickhouse-cloud :)
+```

@@ -1,0 +1,334 @@
+---
+slug: /whats-new/changelog/2017
+sidebarTitle: '2017'
+title: '2017年の変更履歴'
+description: '2017年の変更履歴'
+doc_type: 'changelog'
+keywords: ['ClickHouse 2017', '2017年の変更履歴', 'リリースノート', 'バージョン履歴', '初期リリース']
+---
+
+<div id="clickhouse-release-1-1-54327-2017-12-21">
+  ### ClickHouse Release 1.1.54327, 2017-12-21
+</div>
+
+このリリースには、前回のリリース 1.1.54318 に対するバグ修正が含まれています。
+
+* データ損失につながる可能性のある、レプリケーションにおける レースコンディション の不具合を修正しました。この問題はバージョン 1.1.54310 および 1.1.54318 に影響します。これらのいずれかのバージョンで Replicated テーブルを使用している場合は、更新を強く推奨します。この問題は、ログに `Part ... from own log does not exist.` のような Warning メッセージとして現れます。ログにこれらのメッセージが表示されていなくても、この問題の影響を受ける可能性があります。
+
+<div id="clickhouse-release-1-1-54318-2017-11-30">
+  ### ClickHouse リリース 1.1.54318, 2017-11-30
+</div>
+
+このリリースには、前回のリリース 1.1.54310 に対するバグ修正が含まれています。
+
+* SummingMergeTree エンジンでの merge 中に発生していた誤った行削除を修正
+* レプリケーションされていない MergeTree エンジンにおけるメモリリークを修正
+* MergeTree エンジンで頻繁な insert により発生していたパフォーマンス低下を修正
+* レプリケーションキューの実行が停止する問題を修正
+* サーバーログのローテーションとアーカイブ処理を修正
+
+<div id="clickhouse-release-1-1-54310-2017-11-01">
+  ### ClickHouse リリース 1.1.54310、2017-11-01
+</div>
+
+<div id="new-features">
+  #### 新機能:
+</div>
+
+* MergeTree family のテーブルエンジン向けに、カスタムのパーティションキーを追加しました。
+* [Kafka](/ja/reference/engines/table-engines/integrations/kafka) テーブルエンジンを追加しました。
+* [CatBoost](https://yandex.com/dev/catboost/) モデルの読み込みと、ClickHouse に格納されたデータへの適用をサポートしました。
+* UTC からのオフセットが整数でないタイムゾーンをサポートしました。
+* time interval を使った算術演算をサポートしました。
+* Date 型および DateTime 型の値の範囲を 2105 年まで拡張しました。
+* `CREATE MATERIALIZED VIEW x TO y` クエリを追加しました (materialized view のデータを格納する既存のテーブルを指定します) 。
+* 引数なしの `ATTACH TABLE` クエリを追加しました。
+* SummingMergeTree テーブルにおいて、名前が -Map で終わる Nested カラムの処理ロジックを sumMap 集約関数に切り出しました。これにより、そのようなカラムを明示的に指定できるようになりました。
+* IP trie Dictionary の最大サイズを 128M エントリに拡大しました。
+* getSizeOfEnumType 関数を追加しました。
+* sumWithOverflow 集約関数を追加しました。
+* Cap&#39;n Proto 入力フォーマットをサポートしました。
+* zstd アルゴリズムの使用時に圧縮レベルをカスタマイズできるようになりました。
+
+<div id="backward-incompatible-changes">
+  #### 後方互換性を持たない変更:
+</div>
+
+* Memory 以外のエンジンを指定した一時テーブルの作成は許可されません。
+* View または MaterializedView エンジンを指定したテーブルの明示的な作成は許可されません。
+* テーブル作成時に、サンプリングキー式が主キーに含まれていることを検証する新しいチェックが追加されました。
+
+<div id="bug-fixes">
+  #### バグ修正:
+</div>
+
+* 分散テーブルへの同期 insert 時に発生していたハングを修正しました。
+* レプリケートテーブルでのパーツの追加および削除がアトミックでなかった問題を修正しました。
+* materialized view に挿入されたデータに対して、不要な重複排除が行われないようにしました。
+* ローカルのレプリカが遅延しており、かつリモートのレプリカが利用できない分散テーブルに対してクエリを実行しても、エラーが発生しなくなりました。
+* 一時テーブルの作成に `default` データベースへのアクセス権限が不要になりました。
+* 引数なしで Array 型を指定した際にクラッシュしていた問題を修正しました。
+* サーバーログが保存されているディスクボリュームがいっぱいのときに発生していたハングを修正しました。
+* Unix epoch の最初の週における toRelativeWeekNum 関数のオーバーフローを修正しました。
+
+<div id="build-improvements">
+  #### ビルドの改善:
+</div>
+
+* いくつかのサードパーティライブラリ (特にPoco) が更新され、Gitサブモジュール化されました。
+
+<div id="clickhouse-release-1-1-54304-2017-10-19">
+  ### ClickHouse リリース 1.1.54304、2017-10-19
+</div>
+
+<div id="new-features">
+  #### 新機能:
+</div>
+
+* ネイティブプロトコルでのTLSサポート (有効にするには、`config.xml` で `tcp_ssl_port` を設定します) 。
+
+<div id="bug-fixes">
+  #### バグ修正:
+</div>
+
+* レプリケートテーブルに対する `ALTER` が、可能な限り早く実行開始を試みるようになりました。
+* `preferred_block_size_bytes=0.` 設定時にデータ読み取りでクラッシュする問題を修正しました。
+* `Page Down` キーを押した際に `clickhouse-client` がクラッシュする問題を修正しました。
+* `GLOBAL IN` および `UNION ALL` を含む特定の複雑なクエリが正しく解釈されない問題を修正しました。
+* `FREEZE PARTITION` が常にアトミックに動作するようになりました。
+* 空の POST リクエストに対して、コード 411 のレスポンスを返すようになりました。
+* `CAST(1 AS Nullable(UInt8)).` のような式の解釈エラーを修正しました。
+* `MergeTree` テーブルから `Array(Nullable(String))` カラムを読み取る際に発生するエラーを修正しました。
+* `SELECT dummy AS dummy, dummy AS b` のようなクエリのパース時にクラッシュする問題を修正しました。
+* 無効な `users.xml` の場合でも、ユーザーが正しく更新されるようになりました。
+* 実行可能 Dictionary が 0 以外のレスポンスコードを返した場合の処理を修正しました。
+
+<div id="clickhouse-release-1-1-54292-2017-09-20">
+  ### ClickHouse リリース 1.1.54292, 2017-09-20
+</div>
+
+<div id="new-features">
+  #### 新機能:
+</div>
+
+* 座標平面上の座標を扱うための `pointInPolygon` 関数を追加しました。
+* `SummingMergeTree` と同様に配列の合計を計算する `sumMap` 集約関数を追加しました。
+* `trunc` 関数を追加しました。丸め関数 (`round`, `floor`, `ceil`, `roundToExp2`) のパフォーマンスを改善し、動作ロジックを修正しました。分数および負の数に対する `roundToExp2` 関数のロジックも変更しました。
+* ClickHouse の実行ファイルは、libc のバージョンへの依存性が以前より低くなりました。同一の ClickHouse 実行ファイルを、さまざまな Linux システムで実行できます。なお、コンパイル済みクエリ (設定 `compile = 1` を使用する場合。これはデフォルトでは無効です) を使う際には、引き続き依存関係があります。
+* クエリの動的コンパイルにかかる時間を短縮しました。
+
+<div id="bug-fixes">
+  #### バグ修正:
+</div>
+
+* `part ... intersects previous part` というメッセージが断続的に出力され、レプリカの整合性を損なっていたエラーを修正しました。
+* シャットダウン中に ZooKeeper が利用できない場合、サーバーがハングアップするエラーを修正しました。
+* レプリカの復元時に発生していた過剰なログ出力を削除しました。
+* UNION ALL の実装におけるエラーを修正しました。
+* block 内の最初のカラムが Array 型の場合に発生していた concat 関数のエラーを修正しました。
+* system.merges テーブルで Progress が正しく表示されるようになりました。
+
+<div id="clickhouse-release-1-1-54289-2017-09-13">
+  ### ClickHouse リリース 1.1.54289、2017-09-13
+</div>
+
+<div id="new-features">
+  #### 新機能:
+</div>
+
+* サーバー管理用の `SYSTEM` クエリ: `SYSTEM RELOAD DICTIONARY`、`SYSTEM RELOAD DICTIONARIES`、`SYSTEM DROP DNS CACHE`、`SYSTEM SHUTDOWN`、`SYSTEM KILL`。
+* 配列を操作するための関数 `concat`、`arraySlice`、`arrayPushBack`、`arrayPushFront`、`arrayPopBack`、`arrayPopFront` を追加。
+* ZooKeeper の設定に `root` および `identity` パラメーターを追加。これにより、同じ ZooKeeper クラスター上で個々のユーザーを分離できるようになりました。
+* 集約関数 `groupBitAnd`、`groupBitOr`、`groupBitXor` を追加 (互換性のため、`BIT_AND`、`BIT_OR`、`BIT_XOR` という名前でも利用できます) 。
+* ファイルシステム上のソケットを指定することで、MySQL から external dictionaries を読み込めるようになりました。
+* SSL 経由で MySQL から external dictionaries を読み込めるようになりました (`ssl_cert`、`ssl_key`、`ssl_ca` パラメーター) 。
+* ユーザーごとのクエリ全体の帯域幅使用量を制限するための設定 `max_network_bandwidth_for_user` を追加。
+* 一時テーブルに対する `DROP TABLE` をサポート。
+* `CSV` および `JSONEachRow` フォーマットから、Unix timestamp 形式の `DateTime` 値を読み取れるようになりました。
+* 分散クエリでは、遅延しているレプリカはデフォルトで除外されるようになりました (デフォルトのしきい値は 5 分です) 。
+* ALTER 中は FIFO ロックを使用するようになり、継続的に実行されているクエリによって ALTER クエリが無期限にブロックされることはなくなりました。
+* 設定ファイルで `umask` を設定するオプションを追加。
+* `DISTINCT` を含むクエリのパフォーマンスを改善。
+
+<div id="bug-fixes">
+  #### バグ修正:
+</div>
+
+* ZooKeeper 内の古いノードを削除する処理を改善しました。以前は、INSERT が非常に高頻度で行われると古いノードが削除されないことがあり、その結果、とくにサーバーのシャットダウンが遅くなる原因になっていました。
+* ZooKeeper への接続時にホストを選択する際のランダム化を修正しました。
+* レプリカが localhost の場合に、分散クエリで遅延しているレプリカの除外が正しく行われない問題を修正しました。
+* `Nested` 構造内の要素に対して `ALTER MODIFY` を実行した後、`ReplicatedMergeTree` テーブルのデータパートが破損することがある不具合を修正しました。
+* SELECT クエリが「ハング」することがある不具合を修正しました。
+* 分散 DDL クエリを改善しました。
+* `CREATE TABLE ... AS <materialized view>` クエリの問題を修正しました。
+* `Buffer` テーブルに対する `ALTER ... CLEAR COLUMN IN PARTITION` クエリで発生していたデッドロックを解消しました。
+* `JSONEachRow` および `TSKV` フォーマットの使用時に、`Enum` のデフォルト値が無効になっていた問題 (最小値ではなく 0 になっていた) を修正しました。
+* `executable` ソースを持つ Dictionary の使用時に、ゾンビプロセスが発生する問題を解消しました。
+* HEAD クエリで発生する segfault を修正しました。
+
+<div id="improved-workflow-for-developing-and-assembling-clickhouse">
+  #### ClickHouse の開発とビルドのワークフローを改善:
+</div>
+
+* `pbuilder` を使って ClickHouse をビルドできます。
+* Linux でのビルドでは、`libstdc++` の代わりに `libc++` を使用できます。
+* 静的コード解析ツール `Coverage`、`clang-tidy`、`cppcheck` の使用手順を追加しました。
+
+<div id="please-note-when-upgrading">
+  #### アップグレード時の注意事項:
+</div>
+
+* MergeTree 設定 `max_bytes_to_merge_at_max_space_in_pool` のデフォルト値 (マージするデータパーツの合計最大サイズ (バイト単位) ) が、100 GiB から 150 GiB に引き上げられました。これにより、サーバーのアップグレード後に大規模なマージが実行され、ディスクサブシステムの負荷が高くなる可能性があります。サーバーで使用可能な空き容量が、実行中のマージ総量の 2 倍未満の場合、小さなデータパーツのマージを含む他のすべてのマージが停止します。その結果、INSERT クエリは &quot;Merges are processing significantly slower than inserts.&quot; というメッセージとともに失敗します。状況の監視には `SELECT * FROM system.merges` クエリを使用してください。また、`system.metrics` テーブルまたは Graphite で `DiskSpaceReservedForMerge` メトリクスを確認することもできます。大規模なマージが完了すればこの問題は自然に解消されるため、対応は不要です。これを許容できない場合は、`max_bytes_to_merge_at_max_space_in_pool` 設定の値を以前の値に戻すことができます。これを行うには、config.xml の `<merge_tree>` セクションに移動し、`<merge_tree>``<max_bytes_to_merge_at_max_space_in_pool>107374182400</max_bytes_to_merge_at_max_space_in_pool>` を設定して、サーバーを再起動します。
+
+<div id="clickhouse-release-1-1-54284-2017-08-29">
+  ### ClickHouse リリース 1.1.54284, 2017-08-29
+</div>
+
+* これは、前回の 1.1.54282 リリース向けのバグ修正リリースです。ZooKeeper 内のパーツディレクトリで発生していたリークを修正しています。
+
+<div id="clickhouse-release-1-1-54282-2017-08-23">
+  ### ClickHouse リリース 1.1.54282, 2017-08-23
+</div>
+
+このリリースには、前回のリリース 1.1.54276 に対するバグ修正が含まれています。
+
+* 分散テーブルへの insert 時に発生していた `DB::Exception: Assertion violation: !_path.empty()` を修正しました。
+* 入力データが &#39;;&#39; で始まる場合の、RowBinary フォーマットでの insert 時のパースを修正しました。
+* 一部の集約関数 (例: `groupArray()`) の実行時コンパイル中に発生していたエラーを修正しました。
+
+<div id="clickhouse-release-1-1-54276-2017-08-16">
+  ### ClickHouse リリース 1.1.54276、2017-08-16
+</div>
+
+<div id="new-features">
+  #### 新機能:
+</div>
+
+* SELECT クエリで、オプションの WITH セクションが使えるようになりました。クエリ例: `WITH 1+1 AS a SELECT a, a*a`
+* 分散テーブルでは、INSERT を同期的に実行できるようになりました。すべてのデータがすべての分片に保存された後にのみ OK が返されます。これは設定 insert&#95;distributed&#95;sync=1 で有効になります。
+* 16 バイトの識別子を扱うための UUID データ型を追加しました。
+* Tableau との互換性のため、CHAR、FLOAT などの型の別名を追加しました。
+* 時刻を数値に変換する関数 toYYYYMM、toYYYYMMDD、toYYYYMMDDhhmmss を追加しました。
+* クラスター化 DDL クエリでサーバーを識別するために、ホスト名とあわせて IP アドレスも使用できるようになりました。
+* 関数 `substring(str, pos, len).` で、定数以外の argument と負の OFFSET をサポートしました。
+* `groupArray(max_size)(column)` 集約関数 に max&#95;size parameter を追加し、パフォーマンスも最適化しました。
+
+<div id="main-changes">
+  #### 主な変更点:
+</div>
+
+* セキュリティの改善: すべてのサーバーファイルが 0640 権限で作成されるようになりました (`<umask>` 設定パラメーターで変更できます) 。
+* 構文が無効なクエリに対するエラーメッセージを改善しました。
+* MergeTree データの大きな部分をマージする際のメモリ消費を大幅に削減し、パフォーマンスを向上させました。
+* ReplacingMergeTree エンジンのデータマージ性能を大幅に向上させました。
+* 複数のソース側の挿入をまとめることで、分散テーブルからの非同期挿入のパフォーマンスを向上させました。この機能を有効にするには、設定 distributed&#95;directory&#95;monitor&#95;batch&#95;inserts=1 を使用してください。
+
+<div id="backward-incompatible-changes">
+  #### 後方互換性を持たない変更:
+</div>
+
+* 配列に対する `groupArray(array_column)` 関数の集約状態のバイナリフォーマットを変更しました。
+
+<div id="complete-list-of-changes">
+  #### 変更点の完全な一覧:
+</div>
+
+* `output_format_json_quote_denormals` 設定を追加しました。これにより、JSONフォーマットで nan および inf の値を出力できるようになりました。
+* 分散テーブルから読み取る際のストリーム割り当てを最適化しました。
+* 値が変わらない場合は、読み取り専用モードでも設定を変更できるようになりました。
+* `preferred_block_size_bytes` 設定で指定されたブロックサイズの制限を満たすため、MergeTree エンジンで非整数グラニュールを取得できるようになりました。これにより、大きなカラムを持つテーブルに対するクエリの処理時に RAM 消費を削減し、cache の局所性を向上させます。
+* `toStartOfHour(x) op сonstexpr.` のような条件に対して、`toStartOfHour(x)` のような式を含む索引を効率的に利用できるようになりました。
+* MergeTree エンジン向けの新しい設定を追加しました (config.xml の merge&#95;tree セクション) :
+  * `replicated_deduplication_window_seconds` は、レプリケートテーブルで insert の重複排除を行う際に許容される秒数を設定します。
+  * `cleanup_delay_period` は、古いデータを削除するクリーンアップを開始する頻度を設定します。
+  * `replicated_can_become_leader` は、レプリカが leader になること (および merge を割り当てること) を防ぐことができます。
+* ZooKeeper から古いデータを削除するクリーンアップを高速化しました。
+* クラスター DDL クエリに対して複数の改善と修正を行いました。特に注目すべきなのは、新しい設定 `distributed_ddl_task_timeout` です。これは、クラスター内のサーバーからの応答を待つ時間を制限します。すべてのホストで DDL リクエストが実行されていない場合、応答にはタイムアウトエラーが含まれ、リクエストは非同期モードで実行されます。
+* サーバーログにおけるスタックトレースの表示を改善しました。
+* 圧縮方式に `"none"` の値を追加しました。
+* config.xml で複数の `dictionaries_config` セクションを使用できるようになりました。
+* ファイルシステム内のソケットを介して MySQL に接続できるようになりました。
+* system.parts テーブルに、マークのサイズ (バイト単位) に関する情報を持つ新しいカラムが追加されました。
+
+<div id="bug-fixes">
+  #### バグ修正:
+</div>
+
+* Merge テーブルを使用する分散テーブルで、`_table` フィールドに条件を指定した SELECT クエリが正しく動作するようになりました。
+* データパーツのチェック時に ReplicatedMergeTree でまれに発生していたレースコンディションを修正しました。
+* サーバー起動時の「leader election」で発生する可能性があったフリーズを修正しました。
+* データソースのローカルレプリカを使用している場合、max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries 設定が無視されていました。この問題を修正しました。
+* 存在しないカラムをクリーンアップしようとした際の `ALTER TABLE CLEAR COLUMN IN PARTITION` の誤動作を修正しました。
+* 空の Array または文字列を使用した際に multiIf 関数で発生していた例外を修正しました。
+* Native フォーマットのデシリアライズ時に発生していた過剰なメモリ割り当てを修正しました。
+* Trie 辞書の自動更新が正しく行われない問題を修正しました。
+* SAMPLE 使用時に、Merge テーブルから GROUP BY 句を含むクエリを実行すると発生していた例外を修正しました。
+* distributed&#95;aggregation&#95;memory&#95;efficient=1 使用時に発生していた GROUP BY のクラッシュを修正しました。
+* IN および JOIN の右辺で database.table を指定できるようになりました。
+* 並列集約に使用されるスレッド数が多すぎる問題を修正しました。
+* FixedString 引数に対する &quot;if&quot; 関数の動作を修正しました。
+* 重みが 0 の分片に対して、Distributed テーブルからの SELECT が正しく動作しない問題を修正しました。
+* `CREATE VIEW IF EXISTS` を実行してもクラッシュしなくなりました。
+* input&#95;format&#95;skip&#95;unknown&#95;fields=1 が設定されていて負の数が存在する場合の誤動作を修正しました。
+* 辞書に無効なデータがある場合に `dictGetHierarchy()` 関数で発生していた無限ループを修正しました。
+* IN または JOIN 句内のサブクエリと Merge テーブルを含む分散クエリを実行した際の `Syntax error: unexpected (...)` エラーを修正しました。
+* Dictionary テーブルからの SELECT クエリの誤った解釈を修正しました。
+* 要素数が 20 億を超える Array を IN 句および JOIN 句で使用した際の &quot;Cannot mremap&quot; エラーを修正しました。
+* ソースに MySQL を使用する辞書のフェイルオーバーを修正しました。
+
+<div id="improved-workflow-for-developing-and-assembling-clickhouse-1">
+  #### ClickHouse の開発・ビルドのワークフローを改善:
+</div>
+
+* Arcadia でビルドできるようになりました。
+* ClickHouse のコンパイルに gcc 7 を使用できます。
+* ccache+distcc を使った並列ビルドがさらに高速になりました。
+
+<div id="clickhouse-release-1-1-54245-2017-07-04">
+  ### ClickHouse リリース 1.1.54245, 2017-07-04
+</div>
+
+<div id="new-features">
+  #### 新機能:
+</div>
+
+* 分散DDL (たとえば `CREATE TABLE ON CLUSTER`)
+* レプリケートクエリ `ALTER TABLE CLEAR COLUMN IN PARTITION.`
+* Dictionaryテーブル用のエンジン (テーブル形式でDictionaryデータにアクセスできます) 。
+* Dictionaryデータベースエンジン (この種のデータベースでは、接続されているすべての外部Dictionaryに対してDictionaryテーブルが自動的に利用可能になります) 。
+* 取得元にリクエストを送信して、Dictionaryの更新を確認できます。
+* 修飾付きカラム名
+* 二重引用符を使った識別子のクォート
+* HTTPインターフェイスでのセッション
+* レプリケートテーブルに対するOPTIMIZEクエリは、リーダー上でなくても実行できます。
+
+<div id="backward-incompatible-changes">
+  #### 後方互換性を持たない変更:
+</div>
+
+* SET GLOBAL を廃止しました。
+
+<div id="minor-changes">
+  #### 軽微な変更:
+</div>
+
+* アラートがトリガーされると、ログに完全なスタックトレースが出力されるようになりました。
+* 起動時の破損したデータパーツ数および余分なデータパーツ数の検証を緩和しました (誤検知が多すぎたため) 。
+
+<div id="bug-fixes">
+  #### バグ修正:
+</div>
+
+* 分散テーブルへの insert 時に、不正な接続が「張り付いたまま」になる問題を修正しました。
+* 分散テーブルを参照する Merge テーブルからのクエリで、GLOBAL IN が動作するようになりました。
+* Google Compute Engine の仮想マシンで誤ったコア数が検出される問題を修正しました。
+* cached external dictionaries の実行可能なソースの動作を変更しました。
+* ヌル文字を含む文字列の比較を修正しました。
+* 定数との Float32 主キー フィールドの比較を修正しました。
+* 以前は、フィールドのサイズの見積もりが不正確だと、過大なメモリ割り当てにつながることがありました。
+* ALTER を使用してテーブルに追加した Nullable カラムをクエリした際のクラッシュを修正しました。
+* Nullable カラムでソートする際、行数が LIMIT より少ない場合に発生するクラッシュを修正しました。
+* 定数値だけで構成される ORDER BY サブクエリを修正しました。
+* 以前は、DROP TABLE の失敗後に Replicated テーブルが無効な状態のままになることがありました。
+* 結果が空のスカラー サブクエリの別名が失われないようになりました。
+* コンパイルを使用するクエリで、.so ファイルが破損していてもエラーで失敗しなくなりました。

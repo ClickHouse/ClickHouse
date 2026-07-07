@@ -1,0 +1,158 @@
+---
+alias: []
+description: 'Arrow 格式文档'
+input_format: true
+keywords: ['Arrow']
+output_format: true
+slug: /interfaces/formats/Arrow
+title: 'Arrow'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✔  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+[Apache Arrow](https://arrow.apache.org/) 提供两种内置的列式存储格式。
+ClickHouse 支持对这些格式进行读写。
+`Arrow` 是 Apache Arrow 的“文件模式”格式，专为内存中的随机访问而设计。
+
+<div id="data-types-matching">
+  ## 数据类型匹配
+</div>
+
+下表列出了支持的数据类型，以及它们在 `INSERT` 和 `SELECT` 查询中与 ClickHouse [数据类型](/zh/reference/data-types/index) 的对应关系。
+
+| Arrow 数据类型 (`INSERT`)                   | ClickHouse 数据类型                                                                                           | Arrow 数据类型 (`SELECT`) |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- |
+| `BOOL`                                  | [Bool](/zh/reference/data-types/boolean)                                                                     | `BOOL`                |
+| `UINT8`, `BOOL`                         | [UInt8](/zh/reference/data-types/int-uint)                                                                   | `UINT8`               |
+| `INT8`                                  | [Int8](/zh/reference/data-types/int-uint)/[Enum8](/zh/reference/data-types/enum)                                | `INT8`                |
+| `UINT16`                                | [UInt16](/zh/reference/data-types/int-uint)                                                                  | `UINT16`              |
+| `INT16`                                 | [Int16](/zh/reference/data-types/int-uint)/[Enum16](/zh/reference/data-types/enum)                              | `INT16`               |
+| `UINT32`                                | [UInt32](/zh/reference/data-types/int-uint)                                                                  | `UINT32`              |
+| `INT32`                                 | [Int32](/zh/reference/data-types/int-uint)                                                                   | `INT32`               |
+| `UINT64`                                | [UInt64](/zh/reference/data-types/int-uint)                                                                  | `UINT64`              |
+| `INT64`                                 | [Int64](/zh/reference/data-types/int-uint)                                                                   | `INT64`               |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/zh/reference/data-types/float)                                                                    | `FLOAT32`             |
+| `DOUBLE`                                | [Float64](/zh/reference/data-types/float)                                                                    | `FLOAT64`             |
+| `DATE32`                                | [Date32](/zh/reference/data-types/date32)                                                                    | `UINT16`              |
+| `DATE64`                                | [DateTime](/zh/reference/data-types/datetime)                                                                | `UINT32`              |
+| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/zh/reference/data-types/datetime64)                                                            | `TIMESTAMP`           |
+| `STRING`, `BINARY`                      | [String](/zh/reference/data-types/string)                                                                    | `BINARY`              |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/zh/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`   |
+| `DECIMAL`                               | [Decimal](/zh/reference/data-types/decimal)                                                                  | `DECIMAL`             |
+| `DECIMAL256`                            | [Decimal256](/zh/reference/data-types/decimal)                                                               | `DECIMAL256`          |
+| `LIST`                                  | [Array](/zh/reference/data-types/array)                                                                      | `LIST`                |
+| `STRUCT`                                | [Tuple](/zh/reference/data-types/tuple)                                                                      | `STRUCT`              |
+| `MAP`                                   | [Map](/zh/reference/data-types/map)                                                                          | `MAP`                 |
+| `UINT32`                                | [IPv4](/zh/reference/data-types/ipv4)                                                                        | `UINT32`              |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/zh/reference/data-types/ipv6)                                                                        | `FIXED_SIZE_BINARY`   |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/zh/reference/data-types/int-uint)                                           | `FIXED_SIZE_BINARY`   |
+| `DURATION`                              | [Interval](/zh/reference/data-types/special-data-types/interval) (Nanosecond/Microsecond/Millisecond/Second) | `DURATION`            |
+| `INT64`                                 | [Interval](/zh/reference/data-types/special-data-types/interval) (Minute/Hour/Day/Week/Month/Quarter/Year)   | `INT64`               |
+
+Array 可以嵌套，其参数也可以是 `Nullable` 类型的值。`Tuple` 和 `Map` 类型同样可以嵌套。
+
+`DICTIONARY` 类型支持用于 `INSERT` 查询；对于 `SELECT` 查询，则提供了 [`output_format_arrow_low_cardinality_as_dictionary`](/zh/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) 设置，可将 [LowCardinality](/zh/reference/data-types/lowcardinality) 类型输出为 `DICTIONARY` 类型。请注意，`LowCardinality` 字典中可能包含未使用的值，这可能导致输出的 Arrow `DICTIONARY` 中也出现未使用的值。
+
+不支持的 Arrow 数据类型：
+
+* `FIXED_SIZE_BINARY`
+* `JSON`
+* `UUID`
+* `ENUM`。
+
+ClickHouse 表中列的数据类型不必与对应的 Arrow 数据字段完全一致。插入数据时，ClickHouse 会根据上表解释数据类型，然后将数据[转换](/zh/reference/functions/regular-functions/type-conversion-functions#CAST)为为 ClickHouse 表中列设置的数据类型。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+在下面的示例中，我们使用 [ClickHouse SQL playground](https://sql.clickhouse.com) 提供的 `forex` 数据集。
+
+<div id="selecting-data">
+  ### 选择数据
+</div>
+
+我们从 Playground 中选取一天的 `EUR/USD` 汇率数据，并将其保存到本地
+`forex_eurusd.arrow` 文件中。我们通过 HTTP 接口查询 Playground，
+其中 host 为 `sql-clickhouse.clickhouse.com`，user 为
+`demo` (无需密码) ：
+
+```bash
+curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
+    --data-binary "
+        SELECT
+            concat(base, '.', quote) AS base_quote,
+            datetime AS last_update,
+            CAST(bid, 'Float32') AS bid,
+            CAST(ask, 'Float32') AS ask,
+            ask - bid AS spread
+        FROM forex
+        WHERE base = 'EUR' AND quote = 'USD'
+            AND datetime >= '2020-01-01' AND datetime < '2020-01-02'
+        ORDER BY datetime ASC
+        FORMAT Arrow
+        SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
+```
+
+<div id="reading-data">
+  ### 读取文件内容
+</div>
+
+现在，我们可以使用
+[`clickhouse-local`](/zh/concepts/features/tools-and-utilities/clickhouse-local) 和
+[`file`](/zh/reference/functions/table-functions/file) 表函数读取本地 Arrow 文件。该文件是
+自描述的，因此 `Arrow` 格式会自动推断 schema：
+
+```bash
+clickhouse-local --query "
+    SELECT *
+    FROM file('forex_eurusd.arrow', Arrow)
+    ORDER BY last_update ASC
+    LIMIT 5
+    FORMAT PrettyCompact"
+```
+
+```response title="Response"
+   ┌─base_quote─┬─────────────last_update─┬─────bid─┬─────ask─┬────────────────spread─┐
+1. │ EUR.USD    │ 2020-01-01 17:00:00.065 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
+2. │ EUR.USD    │ 2020-01-01 17:00:10.447 │  1.1212 │ 1.12192 │ 0.0007200241088867188 │
+3. │ EUR.USD    │ 2020-01-01 17:00:10.498 │ 1.12117 │ 1.12161 │ 0.0004400014877319336 │
+4. │ EUR.USD    │ 2020-01-01 17:00:12.579 │  1.1212 │ 1.12161 │ 0.0004100799560546875 │
+5. │ EUR.USD    │ 2020-01-01 17:00:12.630 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
+   └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
+```
+
+<div id="inserting-data">
+  ### 插入数据
+</div>
+
+要将 Arrow 文件加载到 ClickHouse 表中，请将其通过 `clickhouse-client`
+并使用 `FORMAT Arrow` 导入：
+
+```bash
+cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+| 设置                                                                           | 说明                                                                  | 默认值         |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------- |
+| `input_format_arrow_allow_missing_columns`                                   | 读取 Arrow 输入格式时允许缺失列                                                 | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | 匹配 Arrow 列与 CH 列时忽略大小写。                                             | `0`         |
+| `input_format_arrow_import_nested`                                           | 已废弃，无任何作用。                                                          | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | 对 Arrow 格式进行 schema 推断时，跳过类型不受支持的列                                  | `0`         |
+| `output_format_arrow_compression_method`                                     | Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd、none (未压缩)               | `lz4_frame` |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | 对 FixedString 列使用 Arrow FIXED&#95;SIZE&#95;BINARY 类型，而不是 Binary 类型。 | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | 启用将 LowCardinality 类型输出为 Arrow 的 字典 类型                      | `0`         |
+| `output_format_arrow_string_as_string`                                       | 对 String 列使用 Arrow String 类型，而不是 Binary 类型                          | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | 在 Arrow 格式中始终对字典索引使用 64 位整数                                         | `0`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | 在 Arrow 格式中对字典索引使用有符号整数                                             | `1`         |

@@ -69,6 +69,10 @@ public:
 
     virtual ~ReadBuffer() = default;
 
+    /// True if the whole input is already in the working buffer and will never be refilled
+    /// (e.g. ReadBufferFromMemory). Lets hot parsers take the no-copy path without an RTTI check.
+    virtual bool isMemoryBuffer() const { return false; }
+
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).
       * If at the moment the position is at the end of the buffer, it calls the next() method.
