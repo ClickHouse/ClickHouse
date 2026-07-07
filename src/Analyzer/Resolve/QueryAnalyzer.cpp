@@ -100,6 +100,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_experimental_session_window_frame;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -2938,6 +2939,10 @@ ProjectionName QueryAnalyzer::resolveWindow(QueryTreeNodePtr & node, IdentifierR
 
     if (window_node.hasFrameSessionWindowThreshold())
     {
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_session_window_frame])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "The SESSION window frame is experimental. Set allow_experimental_session_window_frame = 1 to enable it");
+
         frame_session_window_threshold_projection_names = resolveExpressionNode(window_node.getFrameSessionWindowThresholdNode(),
             scope,
             false /*allow_lambda_expression*/,

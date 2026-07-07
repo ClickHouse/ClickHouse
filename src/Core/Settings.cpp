@@ -8225,6 +8225,9 @@ Below the threshold: leapfrog intersection (favors sparse posting lists). At or 
     DECLARE(Bool, allow_experimental_window_view, false, R"(
 Enable WINDOW VIEW. Not mature enough.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_session_window_frame, false, R"(
+Allow the experimental `SESSION` window frame type (`... OVER (ORDER BY key SESSION threshold)`), which groups consecutive rows into disjoint sessions separated by a gap larger than `threshold` on the `ORDER BY` key.
+)", EXPERIMENTAL) \
     DECLARE(Seconds, window_view_clean_interval, 60, R"(
 The clean interval of window view in seconds to free outdated data.
 )", EXPERIMENTAL) \

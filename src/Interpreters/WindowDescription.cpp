@@ -52,6 +52,14 @@ std::string WindowFrame::toString() const
 
 void WindowFrame::toString(WriteBuffer & buf) const
 {
+    if (type == FrameType::SESSION)
+    {
+        // A SESSION frame is disjoint (one shared frame per session), so the
+        // BEGIN/END boundaries are meaningless. Print the threshold instead.
+        buf << type << " " << applyVisitor(FieldVisitorToString(), session_window_threshold);
+        return;
+    }
+
     buf << type << " BETWEEN ";
     if (begin_type == BoundaryType::Current)
     {
