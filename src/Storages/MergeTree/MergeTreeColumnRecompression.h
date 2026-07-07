@@ -20,6 +20,15 @@ NameSet getColumnDataStreamFileNames(
     const IMergeTreeDataPart & part,
     const NameAndTypePair & column);
 
+/// On-disk stream names (without extension) of a column's substreams that exist in `part`. Used to
+/// pre-seed the shared-stream set passed to `recompressColumnStreams`, so that recompression skips a
+/// stream that another writer of the same mutation (the column output stream of an updated sibling)
+/// will produce -- most notably the offsets stream shared by `Nested` siblings under
+/// `share_nested_offsets` (`n.a`/`n.b` share `n.size0`).
+NameSet getColumnDataStreamNames(
+    const IMergeTreeDataPart & part,
+    const NameAndTypePair & column);
+
 /// Re-compress all data streams of a single wide-part column with the column's current codec
 /// WITHOUT deserializing the values.
 ///
@@ -40,7 +49,9 @@ NameSet getColumnDataStreamFileNames(
 /// stream must be rewritten exactly once across the whole mutation, otherwise the shared file would
 /// be written several times and the codec of the last writer would silently win. The caller passes a
 /// `recompressed_streams` set that is shared across the calls for all recompressed columns; the first
-/// call that reaches a stream rewrites it, later calls skip it.
+/// call that reaches a stream rewrites it, later calls skip it. The caller may also pre-seed the set
+/// with streams that another writer of the same mutation (the column output stream of an updated
+/// sibling) will produce, so that recompression leaves those shared streams to that writer.
 ///
 /// Only wide parts with full (local) storage are supported; the caller must guarantee that.
 void recompressColumnStreams(

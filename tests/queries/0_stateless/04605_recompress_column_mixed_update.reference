@@ -1,0 +1,8 @@
+n.b still uncompressed after MODIFY	1
+n.b recompressed after mixed mutation	1
+data intact after UPDATE n.a + RECOMPRESS n.b	100000	100000	100000
+1
+n.a still uncompressed after MODIFY	1
+n.a recompressed after mixed mutation	1
+data intact after UPDATE n.b + RECOMPRESS n.a	100000	100000	100000
+1

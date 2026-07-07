@@ -2615,6 +2615,23 @@ private:
         /// them (the offsets stream of `Nested` siblings under `share_nested_offsets`) is rewritten
         /// exactly once, by the first column that reaches it.
         NameSet recompressed_streams;
+
+        /// Pre-seed the shared-stream set with the on-disk streams that this mutation's own column
+        /// output stream will write for the updated columns. A stream shared between a recompressed
+        /// column and an updated sibling -- the offsets stream of `Nested` siblings under
+        /// `share_nested_offsets`, where `n.a`/`n.b` share `n.size0` -- must be written only by that
+        /// output stream. Otherwise `recompressColumnStreams` would rewrite it here and the later
+        /// output stream would overwrite the same file, so the shared stream would end up under the
+        /// updated sibling's codec and RECOMPRESS COLUMN of the other sibling would not actually
+        /// recompress all of its stored streams. Seeding makes recompression skip such streams and
+        /// leave them to the output stream, matching a fresh write of the part (which also writes a
+        /// shared offsets stream exactly once). Streams are resolved against the source part so their
+        /// names match the ones `recompressColumnStreams` resolves the same way.
+        for (const auto & source_column : ctx->source_part->getColumns())
+            if (ctx->updated_header.has(source_column.name))
+                for (const auto & stream_name : getColumnDataStreamNames(*ctx->source_part, source_column))
+                    recompressed_streams.insert(stream_name);
+
         for (const auto & column : ctx->columns_to_recompress)
         {
             recompressColumnStreams(

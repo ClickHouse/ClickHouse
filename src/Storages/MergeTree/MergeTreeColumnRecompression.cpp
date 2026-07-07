@@ -300,6 +300,18 @@ NameSet getColumnDataStreamFileNames(
     return result;
 }
 
+NameSet getColumnDataStreamNames(
+    const IMergeTreeDataPart & part,
+    const NameAndTypePair & column)
+{
+    NameSet result;
+    forEachColumnStream(part, column, [&](const String & stream_name, const ISerialization::SubstreamPath &)
+    {
+        result.insert(stream_name);
+    });
+    return result;
+}
+
 void recompressColumnStreams(
     const IMergeTreeDataPart & source_part,
     IMergeTreeDataPart & new_data_part,
