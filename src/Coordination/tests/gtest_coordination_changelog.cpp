@@ -2909,9 +2909,9 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadBrokenFileBounded)
 }
 
 // Commit read-ahead (entry_at_ext(index, /*for_commit=*/true)), tested via KeeperLogStore. Peer
-// read-ahead is disabled in most of these tests to prove commit read-ahead is an always-on,
-// independent path: getCommitReadPlan builds its base item directly from logs_location, independent
-// of the latest logs cache's own eviction.
+// read-ahead is disabled in most of these tests to prove commit read-ahead is independent of the
+// peer readahead_settings.enabled flag: getCommitReadPlan builds its base item directly from
+// logs_location, independent of the latest logs cache's own eviction.
 
 // Strictly sequential entry_at_ext(i, true) calls across a changelog spanning many files must all return
 // the correct entry, with the commit reader engaging (not falling back to a pure direct-read path), and
@@ -3944,7 +3944,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadTimeoutFallbackFastForwardsFill)
         .latest_logs_cache_size_threshold = 1,
     };
     const DB::ReadAheadSettings readahead_settings{
-        .enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 100, .chunk_size = 1, .commit_window_bytes = 1};
+        .enabled = true, .window_bytes = 64 * 1024 * 1024, .max_peer_readers = 4, .serve_wait_timeout_ms = 2000, .chunk_size = 1, .commit_window_bytes = 1};
 
     // Write+close, then re-derive from disk so every entry is deterministically NOT in latest_logs_cache
     // (a live instance's refreshCache() races the write thread and could serve from memory instead).
@@ -4842,6 +4842,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadLowWaterWakeup)
     ASSERT_GT(bytes_at_first_park, budget / 2) << "Sanity: the fill must be parked above the low-water mark";
 
     const uint64_t fill_decoded_before_drain = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadFillDecodedEntries];
+    const uint64_t fallbacks_before_drain = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadTimeoutFallbacks];
 
     // Ask for more than is buffered: this can only succeed via read-ahead if the low-water crossing
     // wakes the parked fill; otherwise it times out and falls back to a direct read.
@@ -4857,6 +4858,11 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadLowWaterWakeup)
     EXPECT_GT(fill_decoded_after_drain, fill_decoded_before_drain)
         << "Low-water wakeup must let the parked fill resume decoding past the first park, rather than "
            "falling back to a direct read after a serve-wait timeout";
+
+    const uint64_t fallbacks_after_drain = ProfileEvents::global_counters[ProfileEvents::KeeperLogsReadAheadTimeoutFallbacks];
+    EXPECT_EQ(fallbacks_after_drain, fallbacks_before_drain)
+        << "Serve #2 must be satisfied via the low-water wakeup of the parked fill, not by timing out "
+           "into a direct-read fallback";
 }
 
 // A write_at landing between the pre-drain epoch check and the drain must not let a closed reader's

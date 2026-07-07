@@ -11,7 +11,7 @@
             <session_timeout_ms>10000</session_timeout_ms>
             <!-- Small cache threshold so entries quickly spill to disk log files. -->
             <latest_logs_cache_size_threshold>10000</latest_logs_cache_size_threshold>
-            <log_readahead_commit_window_bytes>10000</log_readahead_commit_window_bytes>
+            <log_readahead_commit_window_bytes>0</log_readahead_commit_window_bytes>
             <!-- Rotate every 1000 entries to produce multiple sealed files. -->
             <rotate_log_storage_interval>1000</rotate_log_storage_interval>
             <!-- Snapshot rarely so the catching-up follower must replay from log. -->

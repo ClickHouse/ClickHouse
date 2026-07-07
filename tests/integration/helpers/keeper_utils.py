@@ -314,8 +314,16 @@ def send_4lw_cmd(cluster, node, cmd="ruok", port=9181, argument=None, timeout_se
         else:
             client.send(cmd.encode())
 
-        data = client.recv(100_000)
-        data = data.decode()
+        # The server closes the connection after writing the full response, but a single
+        # recv() call is not guaranteed to return the whole payload at once (e.g. `pfev`
+        # can be tens of KB). Keep reading until the peer closes the socket.
+        chunks = []
+        while True:
+            chunk = client.recv(100_000)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        data = b"".join(chunks).decode()
         return data
     finally:
         if client is not None:

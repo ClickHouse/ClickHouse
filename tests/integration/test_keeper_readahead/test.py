@@ -10,8 +10,10 @@ Scenario:
      the leader via log_entries_ext.
   5. Wait for node 3 to become a connected follower.
   6. Assert that node 3 can read back all the znodes written in step 3.
-  7. Assert via `pfev` that the read-ahead machinery actually fired during
-     catch-up, so a silent fallback to direct reads can't pass this test.
+  7. Assert via `pfev` deltas (summed over node1 + node2) that the read-ahead
+     machinery actually fired during catch-up, so a silent fallback to direct
+     reads can't pass this test. Commit read-ahead is disabled in the cluster
+     config, so the increase can only come from node3's per-peer catch-up.
 """
 
 import pytest
@@ -100,6 +102,16 @@ def test_readahead_catchup(started_cluster):
         f"Expected at least 4 log files, got {len(log_files)}: {log_files}"
     )
 
+    # Sum over both quorum members so a re-election during catch-up doesn't lose the delta.
+    def sum_profile_event(name):
+        total = 0
+        for node in (node1, node2):
+            total += keeper_utils.get_profile_events(cluster, node).get(name, 0)
+        return total
+
+    fill_decoded_before = sum_profile_event("KeeperLogsReadAheadFillDecodedEntries")
+    cursors_installed_before = sum_profile_event("KeeperLogsReadAheadCursorsInstalled")
+
     # --- Step 2: start node3 (empty log) and wait for it to catch up ---
     node3.start_clickhouse()
     keeper_utils.wait_until_connected(cluster, node3)
@@ -121,13 +133,15 @@ def test_readahead_catchup(started_cluster):
         zk3.stop()
         zk3.close()
 
-    # --- Step 4: confirm read-ahead actually engaged on the leader ---
-    profile_events = keeper_utils.get_profile_events(cluster, leader)
-    assert profile_events.get("KeeperLogsReadAheadFillDecodedEntries", 0) > 0, (
-        "Expected KeeperLogsReadAheadFillDecodedEntries > 0 on the leader "
-        f"after catch-up, got profile events: {profile_events}"
+    # --- Step 4: confirm read-ahead actually engaged for node3's catch-up ---
+    fill_decoded_after = sum_profile_event("KeeperLogsReadAheadFillDecodedEntries")
+    cursors_installed_after = sum_profile_event("KeeperLogsReadAheadCursorsInstalled")
+
+    assert fill_decoded_after - fill_decoded_before > 0, (
+        "Expected KeeperLogsReadAheadFillDecodedEntries to increase across node1+node2 "
+        f"during catch-up, before={fill_decoded_before}, after={fill_decoded_after}"
     )
-    assert profile_events.get("KeeperLogsReadAheadCursorsInstalled", 0) > 0, (
-        "Expected KeeperLogsReadAheadCursorsInstalled > 0 on the leader "
-        f"after catch-up, got profile events: {profile_events}"
+    assert cursors_installed_after - cursors_installed_before > 0, (
+        "Expected KeeperLogsReadAheadCursorsInstalled to increase across node1+node2 "
+        f"during catch-up, before={cursors_installed_before}, after={cursors_installed_after}"
     )

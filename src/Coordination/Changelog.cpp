@@ -771,7 +771,10 @@ void validateReadAheadSettings(const ReadAheadSettings & settings)
     if (settings.pool_threads != 0 && settings.pool_threads < settings.max_peer_readers)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "log_readahead_pool_threads must be 0 (auto) or >= log_readahead_max_peer_readers");
+            "log_readahead_pool_threads must be 0 (auto) or >= log_readahead_max_peer_readers, got "
+            "log_readahead_pool_threads={} and log_readahead_max_peer_readers={}",
+            settings.pool_threads,
+            settings.max_peer_readers);
 }
 
 LogEntryStorage::LogEntryStorage(const LogFileSettings & log_settings, ReadAheadSettings readahead_settings_, KeeperContextPtr keeper_context_)
@@ -1530,7 +1533,7 @@ struct ReadAheadReader
 
     // === Lifecycle helpers (deque_mutex held by caller unless noted) ===
     void setReaderStateLocked(ReaderState s) TSA_REQUIRES(deque_mutex);
-    void closeReaderLocked(bool bump_generation) TSA_REQUIRES(deque_mutex);
+    void closeReaderLocked() TSA_REQUIRES(deque_mutex);
     void markCompacted(); ///< self-locking (acquires deque_mutex)
 
     // === Decoded deque helpers (deque_mutex held by caller) ===
@@ -1584,10 +1587,9 @@ void ReadAheadReader::setReaderStateLocked(ReaderState s)
     fill_serve_cv.notify_all();
 }
 
-void ReadAheadReader::closeReaderLocked(bool bump_generation)
+void ReadAheadReader::closeReaderLocked()
 {
-    if (bump_generation)
-        ++generation;
+    ++generation;
     setReaderStateLocked(ReaderState::Closed);
 }
 
@@ -1663,6 +1665,7 @@ void ReadAheadReader::resetFillCursorLocked()
 {
     held_buf.reset();
     resume_cursor.reset();
+    // Wakes a serve waiting on drainReader's cleared-cursor clause, now true.
     fill_serve_cv.notify_all();
 }
 
@@ -1956,6 +1959,8 @@ CursorOutcome fillFromCursor(
         // Save the current decode position so the fill can resume from here on the next wakeup.
         {
             std::lock_guard dq_lock(reader.deque_mutex);
+            // Must re-check before publishing below: a generation bump means a serve-side reset
+            // happened, and publishing stale coverage could make installPlanLocked skip a needed install.
             if (reader.state != ReaderState::Running)
                 return CursorOutcome::Terminal;
             if (reader.generation != local_generation)
@@ -2047,7 +2052,7 @@ void LogEntryStorage::retireReaderLocked(int32_t reader_id, std::shared_ptr<Read
 {
     {
         std::lock_guard dq_lock(reader->deque_mutex);
-        reader->closeReaderLocked(/*bump_generation=*/true);
+        reader->closeReaderLocked();
     }
     peer_readers.erase(reader_id);
 }
@@ -2059,7 +2064,7 @@ void LogEntryStorage::closeAllReaders()
     for (auto & [pid, reader] : peer_readers)
     {
         std::lock_guard dq_lock(reader->deque_mutex);
-        reader->closeReaderLocked(/*bump_generation=*/true);
+        reader->closeReaderLocked();
     }
     peer_readers.clear();
     // Also close and drop commit_reader: serialized against tryPopCommitReadAhead by changelog_lock,
@@ -2207,6 +2212,9 @@ LogReadPlan LogEntryStorage::getCommitReadPlan(uint64_t index, uint64_t retained
     if (!can_use_commit_readahead)
         return plan;
 
+    // N+1 planning: covers the base file's remainder plus one file beyond it, bounded by
+    // max_index_with_location (not commit_window_bytes, which only gates enablement above). No
+    // per-batch renewal here, so crossing into a third file costs one serve-wait before the next rebuild.
     LogReadPlan::ReadAheadWindow window;
     uint64_t coverage_end = appendRunCursors(window, base_loc.file_description, index, max_index_with_location + 1);
     appendNextFileCursors(window, coverage_end);
@@ -2281,8 +2289,8 @@ void LogEntryStorage::ensureReadAheadPoolLocked()
     // Don't recreate the pool after shutdown — a fill task would capture `this` after teardown.
     if (is_shutdown || readahead_pool)
         return;
-    // Commit read-ahead is always-on regardless of readahead_settings.enabled, so the pool always
-    // reserves +1 thread/queue slot for it on top of the peer threads.
+    // Commit read-ahead is independent of readahead_settings.enabled; when commit_window_bytes > 0
+    // the pool reserves +1 thread/queue slot for it, on top of the peer threads.
     size_t peer_threads = 0;
     if (readahead_settings.enabled)
     {
@@ -2325,7 +2333,7 @@ void LogEntryStorage::evictIdleReadersLocked(std::chrono::steady_clock::time_poi
             LOG_DEBUG(log, "Evicting idle read-ahead reader for peer {}", it->first);
             {
                 std::lock_guard dq_lock(r->deque_mutex);
-                r->closeReaderLocked(/*bump_generation=*/true);
+                r->closeReaderLocked();
             }
             it = peer_readers.erase(it);
         }
@@ -2414,7 +2422,18 @@ LogEntryStorage::acquireReaderLocked(int32_t reader_id, const LogReadPlan & plan
         if (!new_reader)
             return nullptr;
 
-        peer_readers[reader_id] = new_reader;
+        try
+        {
+            peer_readers[reader_id] = new_reader;
+        }
+        catch (...)
+        {
+            // The fill task already holds the only other reference; without this, an unregistered
+            // reader is never closed and shutdown's pool drain waits on it forever.
+            std::lock_guard dq_lock(new_reader->deque_mutex);
+            new_reader->closeReaderLocked();
+            throw;
+        }
         return new_reader;
     }
 
@@ -2461,14 +2480,20 @@ void LogEntryStorage::installPlanLocked(ReadAheadReader & reader, const LogReadP
     if (!plan.read_ahead_window || plan.read_ahead_window->empty())
         return;
 
-    // Append only cursors for files the fill is not already covering. A run growing past coverage_end
-    // is dropped here too, so a reader at the flushed tip takes one fallback per exhaustion cycle.
+    // Install only cursors contiguous with the live fill coverage; stop at the first hole. A run that
+    // grew past coverage_end (straddler) can't be clipped here and is dropped whole, along with
+    // everything after it -- installing across the hole would trip appendChunk's contiguity check
+    // and kill the reader. A later plan re-arms via the reset branch above once coverage_end catches up.
     size_t installed = 0;
+    uint64_t expected_next = coverage_end;
     for (const auto & cursor : *plan.read_ahead_window)
     {
-        if (cursor.first_index < coverage_end)
+        if (cursorCoverageEnd(cursor) <= expected_next)
             continue;
+        if (cursor.first_index != expected_next)
+            break;
         reader.pending_cursors.push_back(cursor);
+        expected_next = cursorCoverageEnd(cursor);
         ++installed;
     }
 
@@ -2640,6 +2665,8 @@ LogEntriesPtr LogEntryStorage::drainReader(int32_t reader_id, const std::shared_
 
                 if (!ready)
                 {
+                    // Accepted: on sustained slow storage this duplicate-read fallback can fire on every
+                    // batch; log_readahead_serve_wait_timeout_ms is the operator lever for that case.
                     dq_lock.unlock();
                     ProfileEvents::increment(ProfileEvents::KeeperLogsReadAheadTimeoutFallbacks);
                     auto fallback_result = fallback_from(item_idx, consumed);
@@ -2736,7 +2763,7 @@ void LogEntryStorage::retireCommitReaderLocked()
         return;
     {
         std::lock_guard dq_lock(commit_reader->deque_mutex);
-        commit_reader->closeReaderLocked(/*bump_generation=*/true);
+        commit_reader->closeReaderLocked();
     }
     commit_reader.reset();
 }
@@ -2951,13 +2978,13 @@ void LogEntryStorage::shutdown()
         for (auto & [pid, reader] : peer_readers)
         {
             std::lock_guard dq_lock(reader->deque_mutex);
-            reader->closeReaderLocked(/*bump_generation=*/false);
+            reader->closeReaderLocked();
         }
         peer_readers.clear();
         if (commit_reader)
         {
             std::lock_guard dq_lock(commit_reader->deque_mutex);
-            commit_reader->closeReaderLocked(/*bump_generation=*/false);
+            commit_reader->closeReaderLocked();
         }
         commit_reader.reset();
         readahead_pool_to_drain = std::move(readahead_pool);

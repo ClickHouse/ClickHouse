@@ -458,6 +458,8 @@ private:
         uint64_t end_limit) const;
 
     /// Shared N+1 planning step: extend the window with the next file's cursors past `coverage_end`.
+    /// PRECONDITION: `coverage_end` is located and non-zero (caller must guard the zero/unlocated case,
+    /// e.g. the peer site's `if (prev_file)` check), otherwise `logs_location.at` throws std::out_of_range.
     void appendNextFileCursors(LogReadPlan::ReadAheadWindow & window, uint64_t coverage_end) const;
 
     /// Mark a reader closed and remove it from the map. Fill task self-exits asynchronously.
