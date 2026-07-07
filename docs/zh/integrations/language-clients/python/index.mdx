@@ -1,0 +1,141 @@
+---
+keywords: ['clickhouse', 'python', 'client', 'connect', 'integrate']
+slug: /integrations/python
+description: '用于连接 Python 与 ClickHouse 的 ClickHouse Connect 项目套件'
+title: '使用 ClickHouse Connect 的 Python 集成'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+<div id="introduction">
+  ## 简介
+</div>
+
+ClickHouse Connect 是一个核心数据库驱动，可与广泛的 Python 应用程序实现互操作。
+
+* 主要接口是包 `clickhouse_connect.driver` 中的 `Client` 对象。该核心包还包含各种辅助类和实用函数，用于与 ClickHouse 服务器通信，以及用于高级管理插入和选择查询的 “context” 实现。
+* `clickhouse_connect.datatypes` 包为所有非 Experimental 的 ClickHouse 数据类型提供基础实现和子类。其主要功能是将 ClickHouse 数据序列化和反序列化为 ClickHouse “Native” 二进制列式格式，以实现 ClickHouse 与客户端应用程序之间最高效的数据传输。
+* `clickhouse_connect.cdriver` 包中的 Cython/C 类对一些最常见的序列化和反序列化进行了优化，与纯 Python 实现相比可显著提升性能。
+* 包 `clickhouse_connect.cc_sqlalchemy` 中提供了一个 [SQLAlchemy](https://www.sqlalchemy.org/) 方言，基于 `datatypes` 和 `dbi` 包构建。该实现支持 SQLAlchemy Core 功能，包括带有 `JOIN` (`INNER`、`LEFT OUTER`、`FULL OUTER`、`CROSS`) 的 `SELECT` 查询、`WHERE` 子句、`ORDER BY`、`LIMIT`/`OFFSET`、`DISTINCT` 操作、带有 `WHERE` 条件的 lightweight `DELETE` 语句、表反射，以及基本的 DDL 操作 (`CREATE TABLE`、`CREATE`/`DROP DATABASE`) 。虽然它不支持高级 ORM 功能或高级 DDL 功能，但提供了稳健的查询能力，适用于针对 ClickHouse 这一面向 OLAP 的数据库执行大多数分析型工作负载。
+* 核心驱动和 [ClickHouse Connect SQLAlchemy](/zh/integrations/language-clients/python/sqlalchemy) 实现是将 ClickHouse 连接到 Apache Superset 的首选方式。请使用 `ClickHouse Connect` 数据库连接，或 `clickhousedb` SQLAlchemy 方言连接字符串。
+
+本文档内容截至 clickhouse-connect 0.9.2 版本。
+
+<Note>
+  官方 ClickHouse Connect Python 驱动使用 HTTP 协议与 ClickHouse 服务器通信。因此，它支持 HTTP 负载均衡器，并且在使用防火墙和代理的企业环境中也能良好运行；但与基于 native TCP 的 协议 相比，其压缩率和性能略低，并且不支持某些高级功能，例如取消查询。对于某些用例，你也可以考虑使用采用基于 native TCP 的 协议 的 [Community Python drivers](/zh/integrations/language-clients/third-party/client-libraries)。
+</Note>
+
+<div id="requirements-and-compatibility">
+  ## 要求与兼容性
+</div>
+
+|       Python |    |       Platform¹ |    |    ClickHouse |    | SQLAlchemy² |    | Apache Superset |    | Pandas |    | Polars |    |
+| -----------: | :- | --------------: | :- | ------------: | :- | ----------: | :- | --------------: | :- | -----: | :- | -----: | :- |
+| 2.x, &lt;3.9 | ❌  |     Linux (x86) | ✅  |     &lt;25.x³ | 🟡 |  &lt;1.4.40 | ❌  |         &lt;1.4 | ❌  |   ≥1.5 | ✅  |    1.x | ✅  |
+|        3.9.x | ✅  | Linux (Aarch64) | ✅  |         25.x³ | 🟡 |     ≥1.4.40 | ✅  |           1.4.x | ✅  |    2.x | ✅  |        |    |
+|       3.10.x | ✅  |     macOS (x86) | ✅  |  25.3.x (LTS) | ✅  |        ≥2.x | ✅  |           1.5.x | ✅  |        |    |        |    |
+|       3.11.x | ✅  |     macOS (ARM) | ✅  | 25.6.x (稳定版本) | ✅  |             |    |           2.0.x | ✅  |        |    |        |    |
+|       3.12.x | ✅  |         Windows | ✅  | 25.7.x (稳定版本) | ✅  |             |    |           2.1.x | ✅  |        |    |        |    |
+|       3.13.x | ✅  |                 |    |  25.8.x (LTS) | ✅  |             |    |           3.0.x | ✅  |        |    |        |    |
+|              |    |                 |    | 25.9.x (稳定版本) | ✅  |             |    |                 |    |        |    |        |    |
+
+¹ClickHouse Connect 已针对所列平台进行了专门测试。此外，广受好评的 [`cibuildwheel`](https://cibuildwheel.readthedocs.io/en/stable/) 项目还会为其支持的所有架构构建未经测试的二进制 wheel (带 C 优化) 。最后，由于 ClickHouse Connect 也可以作为纯 Python 运行，因此源码安装应可在任何较新的 Python 环境中正常工作。
+
+²SQLAlchemy 支持仅限于 Core 功能 (查询、基本 DDL) 。不支持 ORM 功能。详情请参阅 [SQLAlchemy 集成支持](/zh/integrations/language-clients/python/sqlalchemy) 文档。
+
+³ClickHouse Connect 在官方支持范围之外的版本上通常也能良好运行。
+
+<div id="installation">
+  ## 安装
+</div>
+
+通过 pip 从 [PyPI](https://pypi.org/project/clickhouse-connect/) 安装 ClickHouse Connect：
+
+`pip install clickhouse-connect`
+
+ClickHouse Connect 也可以从源码安装：
+
+* 使用 `git clone` 克隆 [GitHub 仓库](https://github.com/ClickHouse/clickhouse-connect)。
+* (可选) 运行 `pip install cython`，以构建并启用 C/Cython 优化
+* 切换到项目根目录，运行 `pip install .`
+
+<div id="support-policy">
+  ## 支持政策
+</div>
+
+在报告任何问题之前，请先将 ClickHouse Connect 更新到最新版本。问题应提交到 [GitHub 项目](https://github.com/ClickHouse/clickhouse-connect/issues)中。未来发布的 ClickHouse Connect 发行版旨在兼容其发布时仍在支持期内的 ClickHouse 版本。当前仍在支持期内的 ClickHouse 服务器 版本可在[此处](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md)查看。如果你不确定应使用哪个版本的 ClickHouse 服务器，请阅读[此处](/zh/resources/support-center/knowledge-base/setup-installation/production#how-to-choose-between-clickhouse-releases)的讨论。我们的 CI 测试矩阵会针对最新的两个 LTS 发行版和最新的三个稳定版本进行测试。不过，由于 HTTP 协议以及 ClickHouse 各发行版之间的破坏性变更极少，ClickHouse Connect 通常也能很好地与超出官方支持范围的 server 版本配合使用，但与某些高级数据类型的兼容性可能会有所差异。
+
+<div id="basic-usage">
+  ## 基本用法
+</div>
+
+<div id="gather-your-connection-details">
+  ### 准备连接详情
+</div>
+
+<ConnectionDetails />
+
+<div id="establish-a-connection">
+  ### 建立连接
+</div>
+
+下面展示了两个连接到 ClickHouse 的示例：
+
+* 连接到 localhost 上的 ClickHouse 服务器。
+* 连接到 ClickHouse Cloud 服务。
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
+  #### 使用 ClickHouse Connect 客户端实例连接到 localhost 上运行的 ClickHouse 服务器：
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='localhost', username='default', password='password')
+```
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
+  #### 使用 ClickHouse Connect 客户端实例连接到 ClickHouse Cloud 服务：
+</div>
+
+<Tip>
+  使用前面获取的连接信息。ClickHouse Cloud 服务要求使用 TLS，因此请使用 8443 端口。
+</Tip>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='HOSTNAME.clickhouse.cloud', port=8443, username='default', password='your password')
+```
+
+<div id="interact-with-your-database">
+  ### 与数据库交互
+</div>
+
+要运行 ClickHouse SQL 命令，请使用客户端的 `command` 方法：
+
+```python
+client.command('CREATE TABLE new_table (key UInt32, value String, metric Float64) ENGINE MergeTree ORDER BY key')
+```
+
+要插入批次数据，请使用客户端的 `insert` 方法，并传入包含行和值的二维数组：
+
+```python
+row1 = [1000, 'String Value 1000', 5.233]
+row2 = [2000, 'String Value 2000', -107.04]
+data = [row1, row2]
+client.insert('new_table', data, column_names=['key', 'value', 'metric'])
+```
+
+要使用 ClickHouse SQL 查询数据，请使用客户端的 `query` 方法：
+
+```python
+result = client.query('SELECT max(key), avg(metric) FROM new_table')
+print(result.result_rows)
+# 输出：[(2000, -50.9035)]
+```

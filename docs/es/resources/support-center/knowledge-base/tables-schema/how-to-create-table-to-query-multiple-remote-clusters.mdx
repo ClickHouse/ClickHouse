@@ -1,0 +1,175 @@
+---
+title: Cómo crear una tabla que permita consultar varios clústeres remotos
+description: "Cómo crear una tabla que permita consultar varios clústeres remotos"
+date: 2024-07-03
+tags: ['Implementaciones y escalado']
+keywords: ['Consulta', 'Clúster remoto']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## Pregunta
+</div>
+
+¿Cómo creo una tabla que permita consultar otros clústeres o instancias?
+
+<div id="answer">
+  ## Respuesta
+</div>
+
+A continuación se muestra un ejemplo sencillo para probar la funcionalidad.
+
+En este ejemplo se utiliza ClickHouse Cloud, pero también funcionará con clústeres self-hosted.
+Los destinos deberán actualizarse con las URLs/hosts/DNS del nodo de destino o balanceador de carga correspondiente.
+
+En el clúster A:
+
+```
+./clickhouse client --host clusterA.us-west-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+Cree la base de datos:
+
+```
+create database db1;
+```
+
+Crea la tabla:
+
+```
+CREATE TABLE db1.table1_remote1
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+Inserte algunas filas de ejemplo:
+
+```
+insert into db1.table1_remote1
+values
+(1, '2023-09-29 00:01:00', 'a'),
+(2, '2023-09-29 00:02:00', 'b'),
+(3, '2023-09-29 00:03:00', 'c');
+```
+
+En el clúster B:
+
+```
+./clickhouse client --host clusterB.us-east-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+Cree la base de datos:
+
+```
+create database db1;
+```
+
+Crea la tabla:
+
+```
+CREATE TABLE db1.table1_remote2
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+Insertar filas de muestra:
+
+```
+insert into db1.table1_remote1
+values
+(4, '2023-09-29 00:04:00', 'x'),
+(5, '2023-09-29 00:05:00', 'y'),
+(6, '2023-09-29 00:06:00', 'z');
+```
+
+En el clúster C:
+*este clúster se utilizará para recopilar los datos de los otros dos clústeres; sin embargo, también puede usarse como fuente.
+
+```
+./clickhouse client --host clusterC.us-west-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+Crea la base de datos:
+
+```
+create database db1;
+```
+
+Cree las tablas remotas con remoteSecure() para conectarse a los demás clústeres.
+Definición para la tabla A del clúster remoto:
+
+```
+CREATE TABLE db1.table1_remote1_main
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+) AS remoteSecure('clusterA.us-west-2.aws.clickhouse.cloud:9440', 'db1.table1_remote1', 'default', 'Password123!');
+```
+
+Definición para la tabla del clúster remoto B:
+
+```
+CREATE TABLE db1.table1_remote2_main
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+) AS remoteSecure('clusterB.us-east-2.aws.clickhouse.cloud:9440', 'db1.table1_remote2', 'default', 'Password123!')
+```
+
+Cree la tabla merge que se usará para recopilar resultados:
+
+```
+create table db1.table1_merge_remote
+(
+  id UInt32,
+  timestamp_column DateTime,
+  string_column String
+)
+engine = Merge('db1', 'table.\_main');
+```
+
+Comprueba los resultados:
+
+```
+clickhouse-cloud :) select * from db1.table1_merge_remote;
+
+SELECT *
+FROM db1.table1_merge_remote
+
+Query id: 46b6e741-bbd1-47ed-b40e-69ddb6e0c364
+
+┌─id─┬────timestamp_column─┬─string_column─┐
+│  1 │ 2023-09-29 00:01:00 │ a             │
+│  2 │ 2023-09-29 00:02:00 │ b             │
+│  3 │ 2023-09-29 00:03:00 │ c             │
+└────┴─────────────────────┴───────────────┘
+┌─id─┬────timestamp_column─┬─string_column─┐
+│  4 │ 2023-09-29 00:04:00 │ x             │
+│  5 │ 2023-09-29 00:05:00 │ y             │
+│  6 │ 2023-09-29 00:06:00 │ z             │
+└────┴─────────────────────┴───────────────┘
+
+6 rows in set. Elapsed: 0.275 sec.
+```
+
+Para más información:
+
+* [Función de tabla remote](/es/reference/functions/table-functions/remote)
+* [Motor de tabla Merge](/es/reference/engines/table-engines/special/merge)

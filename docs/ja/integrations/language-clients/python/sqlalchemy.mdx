@@ -1,0 +1,149 @@
+---
+sidebarTitle: 'SQLAlchemy'
+keywords: ['clickhouse', 'python', 'sqlalchemy', 'integrate']
+description: 'ClickHouse SQLAlchemy サポート'
+slug: /integrations/language-clients/python/sqlalchemy
+title: 'SQLAlchemy サポート'
+doc_type: 'reference'
+---
+
+ClickHouse Connect には、コアドライバー上に構築された SQLAlchemy ダイアレクト (`clickhousedb`) が含まれています。これは SQLAlchemy Core API を対象としており、SQLAlchemy 1.4.40+ および 2.0.x をサポートしています。
+
+<div id="sqlalchemy-connect">
+  ## SQLAlchemy に接続する
+</div>
+
+`clickhousedb://` または `clickhousedb+connect://` の URL を使用してエンジンを作成します。クエリパラメータは、ClickHouse の設定、クライアントオプション、HTTP/TLS のトランスポートオプションに対応しています。
+
+```python
+from sqlalchemy import create_engine, text
+
+engine = create_engine(
+    "clickhousedb://user:password@host:8123/mydb?compression=zstd"
+)
+
+with engine.begin() as conn:
+    rows = conn.execute(text("SELECT version()"))
+    print(rows.scalar())
+```
+
+URL/クエリパラメータに関する注記:
+
+* ClickHouse settings: クエリパラメータとして渡します (例: `use_skip_indexes=0`) 。
+* クライアントオプション: `compression` (`compress` のエイリアス) 、`query_limit`、タイムアウトなど。
+* HTTP/TLS オプション: HTTP プールおよび TLS のオプション (例: `ch_http_max_field_name_size=99999`、`ca_cert=certifi`) 。
+
+サポートされているオプションの完全な一覧については、以下のセクションにある [Connection arguments and Settings](/ja/integrations/language-clients/python/driver-api#connection-arguments) を参照してください。これらは SQLAlchemy DSN 経由でも指定できます。
+
+<div id="sqlalchemy-core-queries">
+  ## Core クエリ
+</div>
+
+このダイアレクトは、JOIN、フィルター、並べ替え、LIMIT/OFFSET、`DISTINCT` を含む SQLAlchemy Core の `SELECT` クエリをサポートしています。
+
+```python
+from sqlalchemy import MetaData, Table, select
+
+metadata = MetaData(schema="mydb")
+users = Table("users", metadata, autoload_with=engine)
+orders = Table("orders", metadata, autoload_with=engine)
+
+# 基本的なSELECT
+with engine.begin() as conn:
+    rows = conn.execute(select(users.c.id, users.c.name).order_by(users.c.id).limit(10)).fetchall()
+
+# JOIN（INNER/LEFT OUTER/FULL OUTER/CROSS）
+with engine.begin() as conn:
+    stmt = (
+        select(users.c.name, orders.c.product)
+        .select_from(users.join(orders, users.c.id == orders.c.user_id))
+    )
+    rows = conn.execute(stmt).fetchall()
+```
+
+必須の`WHERE`句を指定した論理削除がサポートされています：
+
+```python
+from sqlalchemy import delete
+
+with engine.begin() as conn:
+    conn.execute(delete(users).where(users.c.name.like("%temp%")))
+```
+
+<div id="sqlalchemy-ddl-reflection">
+  ## DDL とリフレクション
+</div>
+
+用意されている DDL ヘルパーと型/エンジンの構成要素を使って、データベースとテーブルを作成できます。テーブルのリフレクション (カラム型やエンジンを含む) にも対応しています。
+
+```python
+import sqlalchemy as db
+from sqlalchemy import MetaData
+from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase, DropDatabase
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import UInt32, String, DateTime64
+
+with engine.begin() as conn:
+    # データベース
+    conn.execute(CreateDatabase("example_db", exists_ok=True))
+
+    # テーブル
+    metadata = MetaData(schema="example_db")
+    table = db.Table(
+        "events",
+        metadata,
+        db.Column("id", UInt32, primary_key=True),
+        db.Column("user", String),
+        db.Column("created_at", DateTime64(3)),
+        MergeTree(order_by="id"),
+    )
+    table.create(conn)
+
+    # リフレクション
+    reflected = db.Table("events", metadata, autoload_with=engine)
+    assert reflected.engine is not None
+```
+
+リフレクションで取得されたカラムには、サーバー上に存在する場合、`clickhousedb_default_type`、`clickhousedb_codec_expression`、`clickhousedb_ttl_expression` などのダイアレクト固有の属性も含まれます。
+
+<div id="sqlalchemy-inserts">
+  ## 挿入 (Core と基本的な ORM)
+</div>
+
+挿入は SQLAlchemy Core 経由で行えるほか、利便性のためにシンプルな ORM モデルでも行えます。
+
+```python
+# コアinsert
+with engine.begin() as conn:
+    conn.execute(table.insert().values(id=1, user="joe"))
+
+# 基本的なORM insert
+from sqlalchemy.orm import declarative_base, Session
+
+Base = declarative_base(metadata=MetaData(schema="example_db"))
+
+class User(Base):
+    __tablename__ = "users"
+    __table_args__ = (MergeTree(order_by=["id"]),)
+    id = db.Column(UInt32, primary_key=True)
+    name = db.Column(String)
+
+Base.metadata.create_all(engine)
+
+with Session(engine) as session:
+    session.add(User(id=1, name="Alice"))
+    session.bulk_save_objects([User(id=2, name="Bob")])
+    session.commit()
+```
+
+<div id="scope-and-limitations">
+  ## 対象範囲と制限事項
+</div>
+
+* 主な対象: `JOIN` (`INNER`、`LEFT OUTER`、`FULL OUTER`、`CROSS`) を含む `SELECT`、`WHERE`、`ORDER BY`、`LIMIT`/`OFFSET`、`DISTINCT` など、SQLAlchemy Core の機能を利用できます。
+* `WHERE` 付きの `DELETE` のみ: この ダイアレクト は論理削除の `DELETE` をサポートしますが、誤ってテーブル全体を削除しないよう、明示的な `WHERE` 句が必要です。テーブルを空にするには、`TRUNCATE TABLE` を使用してください。
+* `UPDATE` なし: ClickHouse は追記に最適化されています。この ダイアレクト では `UPDATE` は実装されていません。データを変更する必要がある場合は、上流で変換して再挿入するか、自己責任で明示的なテキスト SQL (たとえば `ALTER TABLE ... UPDATE`) を使用してください。
+* DDL とリフレクション: データベースとテーブルの作成をサポートしており、リフレクションではカラム型とテーブルエンジンのメタデータが返されます。ClickHouse はこれらの制約を強制しないため、従来の PK/FK/索引 のメタデータはありません。
+* ORM の対象範囲: 便宜上、宣言的モデルと `Session.add(...)`/`bulk_save_objects(...)` による insert は利用できます。高度な ORM 機能 (リレーションシップ管理、unit-of-work による更新、カスケード、eager/lazy loading のセマンティクス) はサポートされていません。
+* 主キーの意味合い: `Column(..., primary_key=True)` は、SQLAlchemy でオブジェクト識別のためにのみ使用されます。ClickHouse 側にサーバー側の制約が作成されるわけではありません。`ORDER BY` (および必要に応じて `PRIMARY KEY`) は、テーブルエンジン経由で定義してください (たとえば `MergeTree(order_by=...)`) 。
+* トランザクションとサーバー機能: 二相トランザクション、数列、`RETURNING`、高度な分離レベルはサポートされていません。`engine.begin()` はステートメントをまとめるための Python のコンテキストマネージャを提供しますが、実際のトランザクション制御は行いません (commit/rollback は no-op です) 。

@@ -4,10 +4,10 @@
 #if USE_DELTA_KERNEL_RS
 
 #include <Analyzer/FunctionNode.h>
+#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNothing.h>
@@ -515,7 +515,7 @@ private:
             .visit_literal_float = &visitSimpleLiteral<float, DB::DataTypeFloat32>,
             .visit_literal_double = &visitSimpleLiteral<double, DB::DataTypeFloat64>,
             .visit_literal_string = &visitStringLiteral,
-            .visit_literal_bool = &visitSimpleLiteral<bool, DB::DataTypeUInt8>,
+            .visit_literal_bool = &visitBoolLiteral,
             .visit_literal_timestamp = &visitTimestampLiteral,
             .visit_literal_timestamp_ntz = &visitTimestampNtzLiteral,
             .visit_literal_date = &visitDateLiteral,
@@ -747,6 +747,20 @@ private:
         });
     }
 
+    /// `boolean` maps to ClickHouse `Bool` in the schema, so the literal must carry `Bool` too;
+    /// a plain `DataTypeUInt8` would mismatch a `Nullable(Bool)` partition column's advertised type.
+    static void visitBoolLiteral(void * data, uintptr_t sibling_list_id, bool value)
+    {
+        ExpressionVisitorData * state = static_cast<ExpressionVisitorData *>(data);
+        visitorImpl(*state, [&]()
+        {
+            if (state->enableLogging())
+                LOG_TEST(state->logger(), "List id: {}, type: Bool", sibling_list_id);
+
+            state->addLiteral(sibling_list_id, static_cast<UInt8>(value), DB::DataTypeFactory::instance().get("Bool"));
+        });
+    }
+
     static void visitDecimalLiteral(
         void * data,
         uintptr_t sibling_list_id,
@@ -836,7 +850,7 @@ private:
                 LOG_TEST(state->logger(), "List id: {}, type: Binary", sibling_list_id);
 
             std::string value(reinterpret_cast<const char *>(buffer), len);
-            state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeFixedString>(len));
+            state->addLiteral(sibling_list_id, value, std::make_shared<DB::DataTypeString>());
         });
     }
 
@@ -846,7 +860,7 @@ private:
     {
         switch (type_tag)
         {
-            case 0: return std::make_shared<DB::DataTypeUInt8>();        /// boolean
+            case 0: return DB::DataTypeFactory::instance().get("Bool");  /// boolean (schema maps boolean -> Bool)
             case 1: return std::make_shared<DB::DataTypeInt8>();         /// byte
             case 2: return std::make_shared<DB::DataTypeInt16>();        /// short
             case 3: return std::make_shared<DB::DataTypeInt32>();        /// integer

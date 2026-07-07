@@ -1,0 +1,67 @@
+---
+description: 'percent_rank 窗口函数文档'
+sidebarTitle: 'percent_rank'
+slug: /sql-reference/window-functions/percent_rank
+title: 'percent_rank'
+doc_type: 'reference'
+---
+
+返回窗口分区中各行的相对排名 (即百分位) 。
+
+**语法**
+
+别名：`percentRank` (区分大小写)
+
+```sql
+percent_rank ()
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING]] | [window_name])
+FROM table_name
+WINDOW window_name as ([PARTITION BY grouping_column] [ORDER BY sorting_column] RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+```
+
+默认且必须指定的窗口帧定义为 `RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING`。
+
+有关窗口函数语法的更多信息，请参见：[窗口函数 - 语法](/zh/reference/functions/window-functions/index#syntax)。
+
+**示例**
+
+```sql title="Query"
+CREATE TABLE salaries
+(
+    `team` String,
+    `player` String,
+    `salary` UInt32,
+    `position` String
+)
+Engine = Memory;
+
+INSERT INTO salaries FORMAT Values
+    ('Port Elizabeth Barbarians', 'Gary Chen', 195000, 'F'),
+    ('New Coreystad Archdukes', 'Charles Juarez', 190000, 'F'),
+    ('Port Elizabeth Barbarians', 'Michael Stanley', 150000, 'D'),
+    ('New Coreystad Archdukes', 'Scott Harrison', 150000, 'D'),
+    ('Port Elizabeth Barbarians', 'Robert George', 195000, 'M'),
+    ('South Hampton Seagulls', 'Douglas Benson', 150000, 'M'),
+    ('South Hampton Seagulls', 'James Henderson', 140000, 'M');
+```
+
+```sql title="Query"
+SELECT player, salary,
+       percent_rank() OVER (ORDER BY salary DESC) AS percent_rank
+FROM salaries;
+```
+
+```response title="Response"
+
+   ┌─player──────────┬─salary─┬───────percent_rank─┐
+1. │ Gary Chen       │ 195000 │                  0 │
+2. │ Robert George   │ 195000 │                  0 │
+3. │ Charles Juarez  │ 190000 │ 0.3333333333333333 │
+4. │ Michael Stanley │ 150000 │                0.5 │
+5. │ Scott Harrison  │ 150000 │                0.5 │
+6. │ Douglas Benson  │ 150000 │                0.5 │
+7. │ James Henderson │ 140000 │                  1 │
+   └─────────────────┴────────┴────────────────────┘
+
+```

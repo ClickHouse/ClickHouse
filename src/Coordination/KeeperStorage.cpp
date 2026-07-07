@@ -2423,13 +2423,7 @@ static Coordination::ZooKeeperResponsePtr
 processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorage & storage, int64_t session_id, bool check_acl)
 {
     ProfileEvents::increment(ProfileEvents::KeeperListRequest);
-    std::shared_ptr<Coordination::ZooKeeperListResponse> response;
-    if (zk_request.getOpNum() == Coordination::OpNum::FilteredListWithStatsAndData)
-        response = std::make_shared<Coordination::ZooKeeperFilteredListWithStatsAndDataResponse>();
-    else if (zk_request.getOpNum() == Coordination::OpNum::SimpleList)
-        response = std::make_shared<Coordination::ZooKeeperSimpleListResponse>();
-    else
-        response = std::make_shared<Coordination::ZooKeeperListResponse>();
+    auto response = std::static_pointer_cast<Coordination::ZooKeeperListResponse>(zk_request.makeResponse());
 
     auto & container = storage.container;
 
@@ -2452,21 +2446,9 @@ processLocal(const Coordination::ZooKeeperListRequest & zk_request, KeeperStorag
     if (check_acl && !storage.checkACL(node_it->value.acl_id, Coordination::ACL::Read, session_id, /*committed=*/ true))
         return auth_error();
 
-    auto list_request_type = Coordination::ListRequestType::ALL;
-    bool with_stat = false;
-    bool with_data = false;
-
-    if (const auto * filtered_list = dynamic_cast<const Coordination::ZooKeeperFilteredListRequest *>(&zk_request))
-    {
-        list_request_type = filtered_list->list_request_type;
-
-        // Check if it's the extended version with stats/data support
-        if (const auto * with_stats = dynamic_cast<const Coordination::ZooKeeperFilteredListWithStatsAndDataRequest *>(filtered_list))
-        {
-            with_stat = with_stats->with_stat;
-            with_data = with_stats->with_data;
-        }
-    }
+    const auto list_request_type = zk_request.list_request_type.value_or(Coordination::ListRequestType::ALL);
+    const bool with_stat = zk_request.with_stat.value_or(false);
+    const bool with_data = zk_request.with_data.value_or(false);
 
     bool check_child_acl = check_acl && (with_stat || with_data);
 

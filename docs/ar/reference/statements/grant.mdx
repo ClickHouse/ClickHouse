@@ -1,0 +1,867 @@
+---
+description: 'توثيق لعبارة GRANT'
+sidebarTitle: 'GRANT'
+slug: /sql-reference/statements/grant
+title: 'عبارة GRANT'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+* يمنح [الامتيازات](#privileges) لحسابات مستخدمي ClickHouse أو للأدوار.
+* يسند الأدوار إلى حسابات المستخدمين أو إلى أدوار أخرى.
+
+لإلغاء الامتيازات، استخدم عبارة [REVOKE](/ar/reference/statements/revoke). ويمكنك أيضًا عرض الامتيازات الممنوحة باستخدام عبارة [SHOW GRANTS](/ar/reference/statements/show#show-grants).
+
+<div id="granting-privilege-syntax">
+  ## صيغة منح الامتيازات
+</div>
+
+```sql
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+```
+
+* `privilege` — نوع الامتياز.
+* `role` — دور مستخدم ClickHouse.
+* `user` — حساب مستخدم ClickHouse.
+
+تمنح العبارة `WITH GRANT OPTION` المستخدم `user` أو الدور `role` صلاحية تنفيذ الاستعلام `GRANT`. ويمكن للمستخدمين منح امتيازات ضمن النطاق نفسه الذي لديهم أو ضمن نطاق أضيق.
+تستبدل العبارة `WITH REPLACE OPTION` الامتيازات القديمة بامتيازات جديدة للمستخدم `user` أو الدور `role`، وإذا لم تُحدَّد، فإنها تضيف الامتيازات.
+
+<div id="assigning-role-syntax">
+  ## صيغة إسناد الدور
+</div>
+
+```sql
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
+```
+
+* `role` — دور في ClickHouse.
+* `user` — حساب مستخدم ClickHouse.
+
+يمنح البند `WITH ADMIN OPTION` امتياز [ADMIN OPTION](#admin-option) إلى `user` أو `role`.
+ويستبدل البند `WITH REPLACE OPTION` الأدوار القديمة بدور جديد لـ `user` أو `role`، وإذا لم يُحدَّد، فإنه يُضيف الأدوار.
+
+<div id="grant-current-grants-syntax">
+  ## صيغة GRANT CURRENT GRANTS
+</div>
+
+```sql
+GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+```
+
+* `privilege` — نوع الامتياز.
+* `role` — دور مستخدم في ClickHouse.
+* `user` — حساب مستخدم في ClickHouse.
+
+يتيح لك استخدام عبارة `CURRENT GRANTS` منح جميع الامتيازات المحددة للمستخدم أو الدور المحدَّد.
+إذا لم يُحدَّد أي امتياز، فسيحصل المستخدم أو الدور المحدَّد على جميع الامتيازات المتاحة لـ `CURRENT_USER`.
+
+<div id="usage">
+  ## الاستخدام
+</div>
+
+لاستخدام `GRANT`، يجب أن يمتلك حسابك امتياز `GRANT OPTION`. ولا يمكنك منح الامتيازات إلا ضمن حدود الامتيازات الممنوحة لحسابك.
+
+على سبيل المثال، منح المسؤول امتيازات للحساب `john` عبر الاستعلام التالي:
+
+```sql
+GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
+```
+
+هذا يعني أن `john` لديه الإذن بتنفيذ:
+
+* `SELECT x,y FROM db.table`.
+* `SELECT x FROM db.table`.
+* `SELECT y FROM db.table`.
+
+لا يمكن لـ `john` تنفيذ `SELECT z FROM db.table`. كما أن `SELECT * FROM db.table` غير متاح أيضًا. عند معالجة هذا الاستعلام، لا يعيد ClickHouse أي بيانات، حتى للعمودين `x` و `y`. والاستثناء الوحيد هو إذا كان الجدول يحتوي فقط على العمودين `x` و `y`. في هذه الحالة يعيد ClickHouse جميع البيانات.
+
+ويمتلك `john` أيضًا امتياز `GRANT OPTION`، لذلك يمكنه منح مستخدمين آخرين امتيازات بالنطاق نفسه أو بنطاق أضيق.
+
+يُسمح دائمًا بالوصول إلى قاعدة البيانات `system` (لأن هذه القاعدة تُستخدم لمعالجة الاستعلامات).
+
+<Note>
+  رغم وجود العديد من system tables التي يمكن للمستخدمين الجدد الوصول إليها افتراضيًا، فقد لا يتمكنون افتراضيًا من الوصول إلى جميع system tables من دون grants.
+  بالإضافة إلى ذلك، يكون الوصول إلى بعض system tables مثل `system.zookeeper` مقيّدًا لمستخدمي Cloud لأسباب أمنية.
+</Note>
+
+يمكنك منح امتيازات متعددة لعدة حسابات في استعلام واحد. ويتيح الاستعلام `GRANT SELECT, INSERT ON *.* TO john, robin` للحسابين `john` و `robin` تنفيذ استعلامَي `INSERT` و `SELECT` على جميع الجداول في جميع قواعد البيانات على الخادم.
+
+<div id="wildcard-grants">
+  ## منح الامتيازات باستخدام أحرف البدل
+</div>
+
+عند تحديد الامتيازات، يمكنك استخدام علامة النجمة (`*`) بدلًا من اسم جدول أو قاعدة بيانات. على سبيل المثال، يتيح الاستعلام `GRANT SELECT ON db.* TO john` للمستخدم `john` تنفيذ الاستعلام `SELECT` على جميع الجداول في قاعدة البيانات `db`.
+كما يمكنك حذف اسم قاعدة البيانات. في هذه الحالة، تُمنح الامتيازات لقاعدة البيانات الحالية.
+على سبيل المثال، يمنح `GRANT SELECT ON * TO john` الامتياز على جميع الجداول في قاعدة البيانات الحالية، بينما يمنح `GRANT SELECT ON mytable TO john` الامتياز على الجدول `mytable` في قاعدة البيانات الحالية.
+
+<Note>
+  الميزة الموضحة أدناه متاحة بدءًا من إصدار ClickHouse 24.10.
+</Note>
+
+يمكنك أيضًا وضع علامة النجمة في نهاية اسم جدول أو قاعدة بيانات. تتيح هذه الميزة منح الامتيازات على بادئة عامة لمسار الجدول.
+مثال: `GRANT SELECT ON db.my_tables* TO john`. يتيح هذا الاستعلام للمستخدم `john` تنفيذ الاستعلام `SELECT` على جميع جداول قاعدة البيانات `db` التي تطابق البادئة `my_tables*`.
+
+المزيد من الأمثلة:
+
+`GRANT SELECT ON db.my_tables* TO john`
+
+```sql
+SELECT * FROM db.my_tables -- granted
+SELECT * FROM db.my_tables_0 -- granted
+SELECT * FROM db.my_tables_1 -- granted
+
+SELECT * FROM db.other_table -- not_granted
+SELECT * FROM db2.my_tables -- not_granted
+```
+
+`GRANT SELECT ON db*.* TO john`
+
+```sql
+SELECT * FROM db.my_tables -- granted
+SELECT * FROM db.my_tables_0 -- granted
+SELECT * FROM db.my_tables_1 -- granted
+SELECT * FROM db.other_table -- granted
+SELECT * FROM db2.my_tables -- granted
+```
+
+ستَرِث جميع الجداول المُنشأة حديثًا ضمن المسارات الممنوحة تلقائيًا جميع الامتيازات من المسارات الأصلية التابعة لها.
+على سبيل المثال، إذا شغّلت الاستعلام `GRANT SELECT ON db.* TO john` ثم أنشأت جدولًا جديدًا `db.new_table`، فسيتمكن المستخدم `john` من تشغيل الاستعلام `SELECT * FROM db.new_table`.
+
+يمكنك تحديد النجمة **فقط** للبادئات:
+
+```sql
+GRANT SELECT ON db.* TO john -- correct
+GRANT SELECT ON db*.* TO john -- correct
+
+GRANT SELECT ON *.my_table TO john -- wrong
+GRANT SELECT ON foo*bar TO john -- wrong
+GRANT SELECT ON *suffix TO john -- wrong
+GRANT SELECT(foo) ON db.table* TO john -- wrong
+```
+
+<div id="privileges">
+  ## الامتيازات
+</div>
+
+الامتياز هو صلاحية تُمنَح لمستخدم لتنفيذ أنواع محددة من الاستعلامات.
+
+للامتيازات هيكل هرمي، وتعتمد مجموعة الاستعلامات المسموح بها على نطاق الامتياز.
+
+يظهر أدناه التسلسل الهرمي للامتيازات في ClickHouse:
+
+* [`ALL`](#all)
+  * [`إدارة الوصول`](#access-management)
+    * `ALLOW SQL SECURITY NONE`
+    * `ALTER QUOTA`
+    * `ALTER ROLE`
+    * `ALTER ROW POLICY`
+    * `ALTER SETTINGS PROFILE`
+    * `ALTER USER`
+    * `CREATE QUOTA`
+    * `CREATE ROLE`
+    * `CREATE ROW POLICY`
+    * `CREATE SETTINGS PROFILE`
+    * `CREATE USER`
+    * `DROP QUOTA`
+    * `DROP ROLE`
+    * `DROP ROW POLICY`
+    * `DROP SETTINGS PROFILE`
+    * `DROP USER`
+    * `ROLE ADMIN`
+    * `SHOW ACCESS`
+      * `SHOW QUOTAS`
+      * `SHOW ROLES`
+      * `SHOW ROW POLICIES`
+      * `SHOW SETTINGS PROFILES`
+      * `SHOW USERS`
+  * [`ALTER`](#alter)
+    * `ALTER DATABASE`
+      * `ALTER DATABASE SETTINGS`
+    * `ALTER TABLE`
+      * `ALTER COLUMN`
+        * `ALTER ADD COLUMN`
+        * `ALTER CLEAR COLUMN`
+        * `ALTER COMMENT COLUMN`
+        * `ALTER DROP COLUMN`
+        * `ALTER MATERIALIZE COLUMN`
+        * `ALTER MODIFY COLUMN`
+        * `ALTER RENAME COLUMN`
+      * `ALTER CONSTRAINT`
+        * `ALTER ADD CONSTRAINT`
+        * `ALTER DROP CONSTRAINT`
+      * `ALTER DELETE`
+      * `ALTER FETCH PARTITION`
+      * `ALTER FREEZE PARTITION`
+      * `ALTER INDEX`
+        * `ALTER ADD INDEX`
+        * `ALTER CLEAR INDEX`
+        * `ALTER DROP INDEX`
+        * `ALTER MATERIALIZE INDEX`
+        * `ALTER ORDER BY`
+        * `ALTER SAMPLE BY`
+      * `ALTER MATERIALIZE TTL`
+      * `ALTER MODIFY COMMENT`
+      * `ALTER MOVE PARTITION`
+      * `ALTER PROJECTION`
+      * `ALTER SETTINGS`
+      * `ALTER STATISTICS`
+        * `ALTER ADD STATISTICS`
+        * `ALTER DROP STATISTICS`
+        * `ALTER MATERIALIZE STATISTICS`
+        * `ALTER MODIFY STATISTICS`
+      * `ALTER TTL`
+      * `ALTER UPDATE`
+      * `ALTER TABLE EXECUTE`
+    * `ALTER VIEW`
+      * `ALTER VIEW MODIFY QUERY`
+      * `ALTER VIEW REFRESH`
+      * `ALTER VIEW MODIFY SQL SECURITY`
+  * [`BACKUP`](#backup)
+  * [`CLUSTER`](#cluster)
+  * [`CREATE`](#create)
+    * `CREATE ARBITRARY TEMPORARY TABLE`
+      * `CREATE TEMPORARY TABLE`
+    * `CREATE DATABASE`
+    * `CREATE DICTIONARY`
+    * `CREATE FUNCTION`
+    * `CREATE RESOURCE`
+    * `CREATE TABLE`
+    * `CREATE VIEW`
+    * `CREATE WORKLOAD`
+  * [`dictGet`](#dictget)
+  * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
+  * [`DROP`](#drop)
+    * `DROP DATABASE`
+    * `DROP DICTIONARY`
+    * `DROP FUNCTION`
+    * `DROP RESOURCE`
+    * `DROP TABLE`
+    * `DROP VIEW`
+    * `DROP WORKLOAD`
+  * [`INSERT`](#insert)
+  * [`INTROSPECTION`](#introspection)
+    * `addressToLine`
+    * `addressToLineWithInlines`
+    * `addressToSymbol`
+    * `demangle`
+  * `KILL QUERY`
+  * `KILL TRANSACTION`
+  * `MOVE PARTITION BETWEEN SHARDS`
+  * [`NAMED COLLECTION ADMIN`](#named-collection-admin)
+    * `ALTER NAMED COLLECTION`
+    * `CREATE NAMED COLLECTION`
+    * `DROP NAMED COLLECTION`
+    * `NAMED COLLECTION`
+    * `SHOW NAMED COLLECTIONS`
+    * `SHOW NAMED COLLECTIONS SECRETS`
+  * [`OPTIMIZE`](#optimize)
+  * [`SELECT`](#select)
+  * [`SET DEFINER`](/ar/reference/statements/create/view#sql_security)
+  * [`SHOW`](#show)
+    * `SHOW COLUMNS`
+    * `SHOW DATABASES`
+    * `SHOW DICTIONARIES`
+    * `SHOW TABLES`
+  * `SHOW FILESYSTEM CACHES`
+  * [`المصادر`](#sources)
+    * `AZURE`
+    * `FILE`
+    * `HDFS`
+    * `HIVE`
+    * `JDBC`
+    * `KAFKA`
+    * `MONGO`
+    * `MYSQL`
+    * `NATS`
+    * `ODBC`
+    * `POSTGRES`
+    * `RABBITMQ`
+    * `REDIS`
+    * `REMOTE`
+    * `S3`
+    * `SQLITE`
+    * `URL`
+  * [`SYSTEM`](#system)
+    * `SYSTEM CLEANUP`
+    * `SYSTEM DROP CACHE`
+      * `SYSTEM DROP COMPILED EXPRESSION CACHE`
+      * `SYSTEM DROP CONNECTIONS CACHE`
+      * `SYSTEM DROP DISTRIBUTED CACHE`
+      * `SYSTEM DROP DNS CACHE`
+      * `SYSTEM DROP FILESYSTEM CACHE`
+      * `SYSTEM DROP FORMAT SCHEMA CACHE`
+      * `SYSTEM DROP MARK CACHE`
+      * `SYSTEM DROP MMAP CACHE`
+      * `SYSTEM DROP PAGE CACHE`
+      * `SYSTEM DROP PRIMARY INDEX CACHE`
+      * `SYSTEM DROP QUERY CACHE`
+      * `SYSTEM DROP S3 CLIENT CACHE`
+      * `SYSTEM DROP SCHEMA CACHE`
+      * `SYSTEM DROP UNCOMPRESSED CACHE`
+    * `SYSTEM DROP PRIMARY INDEX CACHE`
+    * `SYSTEM DROP REPLICA`
+    * `SYSTEM FAILPOINT`
+    * `SYSTEM FETCHES`
+    * `SYSTEM FLUSH`
+      * `SYSTEM FLUSH ASYNC INSERT QUEUE`
+      * `SYSTEM FLUSH LOGS`
+    * `SYSTEM JEMALLOC`
+    * `SYSTEM KILL QUERY`
+    * `SYSTEM KILL TRANSACTION`
+    * `SYSTEM LISTEN`
+    * `SYSTEM LOAD PRIMARY KEY`
+    * `SYSTEM MERGES`
+    * `SYSTEM MOVES`
+    * `SYSTEM PULLING REPLICATION LOG`
+    * `SYSTEM REDUCE BLOCKING PARTS`
+    * `SYSTEM REPLICATION QUEUES`
+    * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESTART DISK`
+    * `SYSTEM RESTART REPLICA`
+    * `SYSTEM RESTORE REPLICA`
+    * `SYSTEM RELOAD`
+      * `SYSTEM RELOAD ASYNCHRONOUS METRICS`
+      * `SYSTEM RELOAD CONFIG`
+        * `SYSTEM RELOAD DICTIONARY`
+        * `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        * `SYSTEM RELOAD FUNCTION`
+        * `SYSTEM RELOAD MODEL`
+        * `SYSTEM RELOAD USERS`
+    * `SYSTEM SENDS`
+      * `SYSTEM DISTRIBUTED SENDS`
+      * `SYSTEM REPLICATED SENDS`
+    * `SYSTEM SHUTDOWN`
+    * `SYSTEM SYNC DATABASE REPLICA`
+    * `SYSTEM SYNC FILE CACHE`
+    * `SYSTEM SYNC FILESYSTEM CACHE`
+    * `SYSTEM SYNC REPLICA`
+    * `SYSTEM SYNC TRANSACTION LOG`
+    * `SYSTEM THREAD FUZZER`
+    * `SYSTEM TTL MERGES`
+    * `SYSTEM UNFREEZE`
+    * `SYSTEM UNLOAD PRIMARY KEY`
+    * `SYSTEM VIEWS`
+    * `SYSTEM VIRTUAL PARTS UPDATE`
+    * `SYSTEM WAIT LOADING PARTS`
+  * [`TABLE ENGINE`](#table-engine)
+  * [`TRUNCATE`](#truncate)
+  * `UNDROP TABLE`
+* [`NONE`](#none)
+
+أمثلة على كيفية التعامل مع هذا التسلسل الهرمي:
+
+* يشمل الامتياز `ALTER` جميع امتيازات `ALTER*` الأخرى.
+* يشمل `ALTER CONSTRAINT` امتيازي `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT`.
+
+تُطبَّق الامتيازات على مستويات مختلفة. وتساعد معرفة المستوى على تحديد الصيغة المتاحة للامتياز.
+
+المستويات (من الأدنى إلى الأعلى):
+
+* `COLUMN` — يمكن منح الامتياز على مستوى العمود أو الجدول أو قاعدة البيانات أو على المستوى العام.
+* `TABLE` — يمكن منح الامتياز على مستوى الجدول أو قاعدة البيانات أو على المستوى العام.
+* `VIEW` — يمكن منح الامتياز على مستوى العرض أو قاعدة البيانات أو على المستوى العام.
+* `DICTIONARY` — يمكن منح الامتياز على مستوى القاموس أو قاعدة البيانات أو على المستوى العام.
+* `DATABASE` — يمكن منح الامتياز على مستوى قاعدة البيانات أو على المستوى العام.
+* `GLOBAL` — لا يمكن منح الامتياز إلا على المستوى العام.
+* `GROUP` — يجمع امتيازات من مستويات مختلفة. وعند منح امتياز على مستوى `GROUP`، لا تُمنح من هذه المجموعة إلا الامتيازات التي تتوافق مع الصيغة المستخدمة.
+
+أمثلة على الصيغة المسموح بها:
+
+* `GRANT SELECT(x) ON db.table TO user`
+* `GRANT SELECT ON db.* TO user`
+
+أمثلة على الصيغة غير المسموح بها:
+
+* `GRANT CREATE USER(x) ON db.table TO user`
+* `GRANT CREATE USER ON db.* TO user`
+
+يمنح الامتياز الخاص [ALL](#all) جميع الامتيازات إلى حساب مستخدم أو دور.
+
+افتراضيًا، لا يملك حساب المستخدم أو الدور أي امتيازات.
+
+إذا لم يكن لدى مستخدم أو دور أي امتيازات، فسيُعرض ذلك على أنه الامتياز [NONE](#none).
+
+تتطلب بعض الاستعلامات، بحسب طريقة تنفيذها، مجموعة من الامتيازات. على سبيل المثال، لتنفيذ الاستعلام [RENAME](/ar/reference/statements/optimize) تحتاج إلى الامتيازات التالية: `SELECT` و`CREATE TABLE` و`INSERT` و`DROP TABLE`.
+
+<div id="select">
+  ### SELECT
+</div>
+
+يسمح بتنفيذ استعلامات [SELECT](/ar/reference/statements/select/index).
+
+مستوى الامتياز: `COLUMN`.
+
+**الوصف**
+
+يمكن للمستخدم الممنوح هذا الامتياز تنفيذ استعلامات `SELECT` على قائمة محددة من الأعمدة في الجدول وقاعدة البيانات المحددَين. وإذا تضمّن المستخدم أعمدة أخرى غير محددة، فلن يُرجع الاستعلام أي بيانات.
+
+لنأخذ الامتياز التالي:
+
+```sql
+GRANT SELECT(x,y) ON db.table TO john
+```
+
+يتيح هذا الامتياز للمستخدم `john` تنفيذ أي استعلام `SELECT` يتضمن بيانات من العمودين `x` و/أو `y` في `db.table`، على سبيل المثال: `SELECT x FROM db.table`. لا يمكن للمستخدم `john` تنفيذ `SELECT z FROM db.table`. كما أن `SELECT * FROM db.table` غير متاح أيضًا. عند معالجة هذا الاستعلام، لا يعيد ClickHouse أي بيانات، حتى `x` و`y`. والاستثناء الوحيد هو إذا كان الجدول يحتوي فقط على العمودين `x` و`y`، ففي هذه الحالة يعيد ClickHouse جميع البيانات.
+
+<div id="insert">
+  ### INSERT
+</div>
+
+يسمح بتنفيذ استعلامات [INSERT](/ar/reference/statements/insert-into).
+
+مستوى الامتياز: `COLUMN`.
+
+**الوصف**
+
+يمكن للمستخدم الممنوح هذا الامتياز تنفيذ استعلامات `INSERT` على قائمة محددة من الأعمدة في الجدول وقاعدة البيانات المحددين. وإذا تضمّن المستخدم أعمدة أخرى غير محددة، فلن يُدرِج الاستعلام أي بيانات.
+
+**مثال**
+
+```sql
+GRANT INSERT(x,y) ON db.table TO john
+```
+
+يتيح الامتياز الممنوح للمستخدم `john` إدخال بيانات في العمودين `x` و/أو `y` في `db.table`.
+
+<div id="alter">
+  ### ALTER
+</div>
+
+يسمح بتنفيذ استعلامات [ALTER](/ar/reference/statements/alter/index) وفقًا للتسلسل الهرمي التالي للامتيازات:
+
+* `ALTER`. المستوى: `COLUMN`.
+  * `ALTER TABLE`. المستوى: `GROUP`
+  * `ALTER UPDATE`. المستوى: `COLUMN`. الأسماء البديلة: `UPDATE`
+  * `ALTER DELETE`. المستوى: `COLUMN`. الأسماء البديلة: `DELETE`
+  * `ALTER COLUMN`. المستوى: `GROUP`
+  * `ALTER ADD COLUMN`. المستوى: `COLUMN`. الأسماء البديلة: `ADD COLUMN`
+  * `ALTER DROP COLUMN`. المستوى: `COLUMN`. الأسماء البديلة: `DROP COLUMN`
+  * `ALTER MODIFY COLUMN`. المستوى: `COLUMN`. الأسماء البديلة: `MODIFY COLUMN`
+  * `ALTER COMMENT COLUMN`. المستوى: `COLUMN`. الأسماء البديلة: `COMMENT COLUMN`
+  * `ALTER CLEAR COLUMN`. المستوى: `COLUMN`. الأسماء البديلة: `CLEAR COLUMN`
+  * `ALTER RENAME COLUMN`. المستوى: `COLUMN`. الأسماء البديلة: `RENAME COLUMN`
+  * `ALTER INDEX`. المستوى: `GROUP`. الأسماء البديلة: `INDEX`
+  * `ALTER ORDER BY`. المستوى: `TABLE`. الأسماء البديلة: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+  * `ALTER SAMPLE BY`. المستوى: `TABLE`. الأسماء البديلة: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`
+  * `ALTER ADD INDEX`. المستوى: `TABLE`. الأسماء البديلة: `ADD INDEX`
+  * `ALTER DROP INDEX`. المستوى: `TABLE`. الأسماء البديلة: `DROP INDEX`
+  * `ALTER MATERIALIZE INDEX`. المستوى: `TABLE`. الأسماء البديلة: `MATERIALIZE INDEX`
+  * `ALTER CLEAR INDEX`. المستوى: `TABLE`. الأسماء البديلة: `CLEAR INDEX`
+  * `ALTER CONSTRAINT`. المستوى: `GROUP`. الأسماء البديلة: `CONSTRAINT`
+  * `ALTER ADD CONSTRAINT`. المستوى: `TABLE`. الأسماء البديلة: `ADD CONSTRAINT`
+  * `ALTER DROP CONSTRAINT`. المستوى: `TABLE`. الأسماء البديلة: `DROP CONSTRAINT`
+  * `ALTER TTL`. المستوى: `TABLE`. الأسماء البديلة: `ALTER MODIFY TTL`, `MODIFY TTL`
+  * `ALTER MATERIALIZE TTL`. المستوى: `TABLE`. الأسماء البديلة: `MATERIALIZE TTL`
+  * `ALTER SETTINGS`. المستوى: `TABLE`. الأسماء البديلة: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
+  * `ALTER MOVE PARTITION`. المستوى: `TABLE`. الأسماء البديلة: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
+  * `ALTER FETCH PARTITION`. المستوى: `TABLE`. الأسماء البديلة: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
+  * `ALTER FREEZE PARTITION`. المستوى: `TABLE`. الأسماء البديلة: `FREEZE PARTITION`
+  * `ALTER EXECUTE`. المستوى: `TABLE`. الأسماء البديلة: `ALTER TABLE EXECUTE`
+  * `ALTER VIEW`. المستوى: `GROUP`
+  * `ALTER VIEW REFRESH`. المستوى: `VIEW`. الأسماء البديلة: `REFRESH VIEW`
+  * `ALTER VIEW MODIFY QUERY`. المستوى: `VIEW`. الأسماء البديلة: `ALTER TABLE MODIFY QUERY`
+  * `ALTER VIEW MODIFY SQL SECURITY`. المستوى: `VIEW`. الأسماء البديلة: `ALTER TABLE MODIFY SQL SECURITY`
+
+أمثلة على كيفية تطبيق هذا التسلسل الهرمي:
+
+* يشمل امتياز `ALTER` جميع امتيازات `ALTER*` الأخرى.
+* يشمل `ALTER CONSTRAINT` امتيازي `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT`.
+
+**ملاحظات**
+
+* يتيح امتياز `MODIFY SETTING` تعديل إعدادات محرك الجدول. ولا يؤثر في الإعدادات أو معلمات تهيئة الخادم.
+* تتطلب عملية `ATTACH` امتياز [CREATE](#create).
+* تتطلب عملية `DETACH` امتياز [DROP](#drop).
+* لإيقاف عملية mutation باستخدام الاستعلام [KILL MUTATION](/ar/reference/statements/kill#kill-mutation)، يجب أن تمتلك امتياز بدء هذه العملية. على سبيل المثال، إذا أردت إيقاف استعلام `ALTER UPDATE`، فستحتاج إلى امتياز `ALTER UPDATE` أو `ALTER TABLE` أو `ALTER`.
+
+<div id="backup">
+  ### BACKUP
+</div>
+
+يتيح تنفيذ [`BACKUP`] ضمن الاستعلامات. لمزيد من المعلومات حول النسخ الاحتياطية، راجع [&quot;النسخ الاحتياطي والاستعادة&quot;](/ar/concepts/features/backup-restore/overview).
+
+<div id="create">
+  ### CREATE
+</div>
+
+يتيح تنفيذ استعلامات DDL من نوع [CREATE](/ar/reference/statements/create/index) و[ATTACH](/ar/reference/statements/attach) وفقًا للتسلسل الهرمي التالي للامتيازات:
+
+* `CREATE`. المستوى: `GROUP`
+  * `CREATE DATABASE`. المستوى: `DATABASE`
+  * `CREATE TABLE`. المستوى: `TABLE`
+    * `CREATE ARBITRARY TEMPORARY TABLE`. المستوى: `GLOBAL`
+      * `CREATE TEMPORARY TABLE`. المستوى: `GLOBAL`
+  * `CREATE VIEW`. المستوى: `VIEW`
+  * `CREATE DICTIONARY`. المستوى: `DICTIONARY`
+
+**ملاحظات**
+
+* لحذف الجدول الذي أُنشئ، يحتاج المستخدم إلى [DROP](#drop).
+
+<div id="cluster">
+  ### CLUSTER
+</div>
+
+يسمح بتنفيذ الاستعلامات التي تستخدم `ON CLUSTER`.
+
+```sql title="Syntax"
+GRANT CLUSTER ON *.* TO <username>
+```
+
+افتراضيًا، تتطلب الاستعلامات التي تستخدم `ON CLUSTER` أن يكون لدى المستخدم امتياز `CLUSTER`.
+ستظهر لك رسالة الخطأ التالية إذا حاولت استخدام `ON CLUSTER` في استعلام بدون منح امتياز `CLUSTER` أولًا:
+
+```text
+Not enough privileges. To execute this query, it's necessary to have the grant CLUSTER ON *.*. 
+```
+
+يمكن تغيير السلوك الافتراضي من خلال تعيين الإعداد `on_cluster_queries_require_cluster_grant`،
+الموجود في قسم `access_control_improvements` في ملف `config.xml` (انظر أدناه)، إلى `false`.
+
+```yaml title="config.xml"
+<access_control_improvements>
+    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+</access_control_improvements>
+```
+
+<div id="drop">
+  ### DROP
+</div>
+
+يتيح تنفيذ استعلامات [DROP](/ar/reference/statements/drop) و[DETACH](/ar/reference/statements/detach) وفق التسلسل الهرمي التالي للامتيازات:
+
+* `DROP`. المستوى: `GROUP`
+  * `DROP DATABASE`. المستوى: `DATABASE`
+  * `DROP TABLE`. المستوى: `TABLE`
+  * `DROP VIEW`. المستوى: `VIEW`
+  * `DROP DICTIONARY`. المستوى: `DICTIONARY`
+
+<div id="truncate">
+  ### TRUNCATE
+</div>
+
+يتيح تنفيذ استعلامات [TRUNCATE](/ar/reference/statements/truncate).
+
+مستوى الامتياز: `TABLE`.
+
+<div id="optimize">
+  ### OPTIMIZE
+</div>
+
+يسمح بتنفيذ استعلامات [OPTIMIZE TABLE](/ar/reference/statements/optimize).
+
+مستوى الامتياز: `TABLE`.
+
+<div id="show">
+  ### SHOW
+</div>
+
+يسمح بتنفيذ استعلامات `SHOW` و`DESCRIBE` و`USE` و`EXISTS` وفق التسلسل الهرمي التالي للامتيازات:
+
+* `SHOW`. المستوى: `GROUP`
+  * `SHOW DATABASES`. المستوى: `DATABASE`. يتيح تنفيذ استعلامات `SHOW DATABASES` و`SHOW CREATE DATABASE` و`USE <database>`.
+  * `SHOW TABLES`. المستوى: `TABLE`. يتيح تنفيذ استعلامات `SHOW TABLES` و`EXISTS <table>` و`CHECK <table>`.
+  * `SHOW COLUMNS`. المستوى: `COLUMN`. يتيح تنفيذ استعلامات `SHOW CREATE TABLE` و`DESCRIBE`.
+  * `SHOW DICTIONARIES`. المستوى: `DICTIONARY`. يتيح تنفيذ استعلامات `SHOW DICTIONARIES` و`SHOW CREATE DICTIONARY` و`EXISTS <dictionary>`.
+
+**ملاحظات**
+
+يكون لدى المستخدم امتياز `SHOW` إذا كان لديه أي امتياز آخر متعلق بالجدول أو القاموس أو قاعدة البيانات المحددة.
+
+<div id="kill-query">
+  ### KILL QUERY
+</div>
+
+يتيح تنفيذ استعلامات [KILL](/ar/reference/statements/kill#kill-query) وفقًا للتسلسل الهرمي التالي للامتيازات:
+
+مستوى الامتياز: `GLOBAL`.
+
+**ملاحظات**
+
+يتيح امتياز `KILL QUERY` لمستخدمٍ ما إنهاء استعلامات المستخدمين الآخرين.
+
+<div id="access-management">
+  ### إدارة الوصول
+</div>
+
+يتيح للمستخدم تنفيذ الاستعلامات التي تدير المستخدمين والأدوار وسياسات الصفوف.
+
+* `ACCESS MANAGEMENT`. المستوى: `GROUP`
+  * `CREATE USER`. المستوى: `GLOBAL`
+  * `ALTER USER`. المستوى: `GLOBAL`
+  * `DROP USER`. المستوى: `GLOBAL`
+  * `CREATE ROLE`. المستوى: `GLOBAL`
+  * `ALTER ROLE`. المستوى: `GLOBAL`
+  * `DROP ROLE`. المستوى: `GLOBAL`
+  * `ROLE ADMIN`. المستوى: `GLOBAL`
+  * `CREATE ROW POLICY`. المستوى: `GLOBAL`. الأسماء البديلة: `CREATE POLICY`
+  * `ALTER ROW POLICY`. المستوى: `GLOBAL`. الأسماء البديلة: `ALTER POLICY`
+  * `DROP ROW POLICY`. المستوى: `GLOBAL`. الأسماء البديلة: `DROP POLICY`
+  * `CREATE QUOTA`. المستوى: `GLOBAL`
+  * `ALTER QUOTA`. المستوى: `GLOBAL`
+  * `DROP QUOTA`. المستوى: `GLOBAL`
+  * `CREATE SETTINGS PROFILE`. المستوى: `GLOBAL`. الأسماء البديلة: `CREATE PROFILE`
+  * `ALTER SETTINGS PROFILE`. المستوى: `GLOBAL`. الأسماء البديلة: `ALTER PROFILE`
+  * `DROP SETTINGS PROFILE`. المستوى: `GLOBAL`. الأسماء البديلة: `DROP PROFILE`
+  * `SHOW ACCESS`. المستوى: `GROUP`
+    * `SHOW_USERS`. المستوى: `GLOBAL`. الأسماء البديلة: `SHOW CREATE USER`
+    * `SHOW_ROLES`. المستوى: `GLOBAL`. الأسماء البديلة: `SHOW CREATE ROLE`
+    * `SHOW_ROW_POLICIES`. المستوى: `GLOBAL`. الأسماء البديلة: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
+    * `SHOW_QUOTAS`. المستوى: `GLOBAL`. الأسماء البديلة: `SHOW CREATE QUOTA`
+    * `SHOW_SETTINGS_PROFILES`. المستوى: `GLOBAL`. الأسماء البديلة: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+  * `ALLOW SQL SECURITY NONE`. المستوى: `GLOBAL`. الأسماء البديلة: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
+
+يتيح امتياز `ROLE ADMIN` للمستخدم منح أي أدوار وسحبها، بما في ذلك الأدوار التي لم تُمنح للمستخدم مع خيار المسؤول.
+
+<div id="system">
+  ### SYSTEM
+</div>
+
+يسمح للمستخدم بتنفيذ استعلامات [SYSTEM](/ar/reference/statements/system) وفقًا للتدرج الهرمي التالي للامتيازات.
+
+* `SYSTEM`. المستوى: `GROUP`
+  * `SYSTEM SHUTDOWN`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM KILL`, `SHUTDOWN`
+  * `SYSTEM DROP CACHE`. الأسماء البديلة: `DROP CACHE`
+    * `SYSTEM DROP DNS CACHE`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM CLEAR DNS CACHE`, `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
+    * `SYSTEM DROP MARK CACHE`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM CLEAR MARK CACHE`, `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
+    * `SYSTEM DROP UNCOMPRESSED CACHE`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
+  * `SYSTEM RELOAD`. المستوى: `GROUP`
+    * `SYSTEM RELOAD CONFIG`. المستوى: `GLOBAL`. الأسماء البديلة: `RELOAD CONFIG`
+    * `SYSTEM RELOAD DICTIONARY`. المستوى: `GLOBAL`. الأسماء البديلة: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+      * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. المستوى: `GLOBAL`. الأسماء البديلة: `RELOAD EMBEDDED DICTIONARIES`
+  * `SYSTEM MERGES`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
+  * `SYSTEM TTL MERGES`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
+  * `SYSTEM FETCHES`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
+  * `SYSTEM MOVES`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, `START MOVES`
+  * `SYSTEM SENDS`. المستوى: `GROUP`. الأسماء البديلة: `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, `START SENDS`
+    * `SYSTEM DISTRIBUTED SENDS`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP DISTRIBUTED SENDS`, `SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, `START DISTRIBUTED SENDS`
+    * `SYSTEM REPLICATED SENDS`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP REPLICATED SENDS`, `SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, `START REPLICATED SENDS`
+  * `SYSTEM REPLICATION QUEUES`. المستوى: `TABLE`. الأسماء البديلة: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
+  * `SYSTEM SYNC REPLICA`. المستوى: `TABLE`. الأسماء البديلة: `SYNC REPLICA`
+  * `SYSTEM RESTART REPLICA`. المستوى: `TABLE`. الأسماء البديلة: `RESTART REPLICA`
+  * `SYSTEM FLUSH`. المستوى: `GROUP`
+    * `SYSTEM FLUSH DISTRIBUTED`. المستوى: `TABLE`. الأسماء البديلة: `FLUSH DISTRIBUTED`
+    * `SYSTEM FLUSH LOGS`. المستوى: `GLOBAL`. الأسماء البديلة: `FLUSH LOGS`
+
+يُمنَح الامتياز `SYSTEM RELOAD EMBEDDED DICTIONARIES` ضمنيًا من خلال الامتياز `SYSTEM RELOAD DICTIONARY ON *.*`.
+
+<div id="introspection">
+  ### INTROSPECTION
+</div>
+
+يسمح باستخدام دوال [الفحص الداخلي](/ar/concepts/features/performance/troubleshoot/sampling-query-profiler).
+
+* `INTROSPECTION`. المستوى: `GROUP`. الأسماء البديلة: `INTROSPECTION FUNCTIONS`
+  * `addressToLine`. المستوى: `GLOBAL`
+  * `addressToLineWithInlines`. المستوى: `GLOBAL`
+  * `addressToSymbol`. المستوى: `GLOBAL`
+  * `demangle`. المستوى: `GLOBAL`
+
+<div id="sources">
+  ### المصادر
+</div>
+
+يتيح استخدام مصادر البيانات الخارجية. ينطبق على [محركات الجداول](/ar/reference/engines/table-engines/index) و[دوال الجداول](/ar/reference/functions/table-functions/index).
+
+* `READ`. المستوى: `GLOBAL_WITH_PARAMETER`
+* `WRITE`. المستوى: `GLOBAL_WITH_PARAMETER`
+
+المعلمات الممكنة:
+
+* `AZURE`
+* `FILE`
+* `HDFS`
+* `HIVE`
+* `JDBC`
+* `KAFKA`
+* `MONGO`
+* `MYSQL`
+* `NATS`
+* `ODBC`
+* `POSTGRES`
+* `RABBITMQ`
+* `REDIS`
+* `REMOTE`
+* `S3`
+* `SQLITE`
+* `URL`
+
+<Note>
+  يتوفر الفصل بين امتيازات READ وWRITE للمصادر بدءًا من الإصدار 25.7، وذلك فقط عند استخدام إعداد الخادم
+  `access_control_improvements.enable_read_write_grants`
+
+  وإلا، فيجب استخدام الصياغة `GRANT AZURE ON *.* TO user`، وهي مكافئة للصياغة الجديدة `GRANT READ, WRITE ON AZURE TO user`
+</Note>
+
+أمثلة:
+
+* لإنشاء جدول باستخدام [محرك جدول MySQL](/ar/reference/engines/table-engines/integrations/mysql)، تحتاج إلى امتيازَي `CREATE TABLE (ON db.table_name)` و`MYSQL`.
+* لاستخدام [دالة الجدول MySQL](/ar/reference/functions/table-functions/mysql)، تحتاج إلى `CREATE TEMPORARY TABLE` وامتيازات `MYSQL`.
+
+<div id="source-filter-grants">
+  ### امتيازات تصفية المصادر
+</div>
+
+<Note>
+  تتوفر هذه الميزة اعتبارًا من الإصدار 25.8، وفقط عند تفعيل إعداد الخادم
+  `access_control_improvements.enable_read_write_grants`
+</Note>
+
+يمكنك منح حق الوصول إلى عناوين URI لمصادر محددة باستخدام عوامل تصفية بالتعبيرات النمطية. يتيح ذلك تحكمًا دقيقًا في مصادر البيانات الخارجية التي يمكن للمستخدمين الوصول إليها.
+
+**الصيغة:**
+
+```sql
+GRANT READ ON S3('regexp_pattern') TO user
+```
+
+سيتيح هذا الامتياز للمستخدم القراءة فقط من عناوين URI الخاصة بـ S3 التي تطابق التعبير النمطي المحدد.
+
+**أمثلة:**
+
+امنح حق الوصول إلى مسارات محددة في حاوية S3:
+
+```sql
+-- Allow user to read only from s3://foo/ paths
+GRANT READ ON S3('s3://foo/.*') TO john
+
+-- Allow user to read from specific file patterns
+GRANT READ ON S3('s3://mybucket/data/2024/.*\.parquet') TO analyst
+
+-- Multiple filters can be granted to the same user
+GRANT READ ON S3('s3://foo/.*') TO john
+GRANT READ ON S3('s3://bar/.*') TO john
+```
+
+<Warning>
+  يأخذ مرشح المصدر **regexp** بوصفه معلمة، لذا فإن منح
+  `GRANT READ ON URL('http://www.google.com') TO john;`
+
+  سيسمح بالاستعلامات
+
+  ```sql
+  SELECT * FROM url('https://www.google.com');
+  SELECT * FROM url('https://www-google.com');
+  ```
+
+  لأن `.` يُعامَل في التعبيرات النمطية على أنه `Any Single Character`.
+  وقد يؤدي ذلك إلى ثغرة أمنية محتملة. ويجب أن يكون المنح الصحيح:
+
+  ```sql
+  GRANT READ ON URL('https://www\.google\.com') TO john;
+  ```
+</Warning>
+
+**إعادة المنح باستخدام `GRANT OPTION`:**
+
+إذا كان المنح الأصلي يتضمن `WITH GRANT OPTION`، فيمكن إعادة منحه باستخدام `GRANT CURRENT GRANTS`:
+
+```sql
+-- Original grant with GRANT OPTION
+GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
+
+-- John can now regrant this access to others
+GRANT CURRENT GRANTS(READ ON S3) TO alice
+```
+
+**قيود مهمة:**
+
+* **لا يُسمح بإلغاء الصلاحيات جزئيًا:** لا يمكنك إلغاء جزء من نمط التصفية الممنوح. يجب إلغاء المنح بالكامل ثم منحها من جديد باستخدام أنماط جديدة عند الحاجة.
+* **لا يُسمح بمنحٍ باستخدام أحرف البدل فقط:** لا يمكنك استخدام `GRANT READ ON *('regexp')` أو أنماط مشابهة تعتمد على أحرف البدل فقط. يجب تحديد `source` بعينه.
+
+<div id="dictget">
+  ### dictGet
+</div>
+
+* `dictGet`. الأسماء البديلة: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+
+يسمح للمستخدم بتنفيذ الدوال [dictGet](/ar/reference/functions/regular-functions/ext-dict-functions#dictGet)، و[dictHas](/ar/reference/functions/regular-functions/ext-dict-functions#dictHas)، و[dictGetHierarchy](/ar/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy)، و[dictIsIn](/ar/reference/functions/regular-functions/ext-dict-functions#dictIsIn).
+
+مستوى الامتياز: `DICTIONARY`.
+
+**أمثلة**
+
+* `GRANT dictGet ON mydb.mydictionary TO john`
+* `GRANT dictGet ON mydictionary TO john`
+
+<div id="displaysecretsinshowandselect">
+  ### displaySecretsInShowAndSelect
+</div>
+
+يسمح للمستخدم بعرض الأسرار في استعلامات `SHOW` و`SELECT` إذا كان كلٌّ من
+[`display_secrets_in_show_and_select` إعداد الخادم](/ar/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+و
+[`format_display_secrets_in_show_and_select` إعداد التنسيق](/ar/reference/settings/formats#format_display_secrets_in_show_and_select)
+مفعّلَين.
+
+<div id="named-collection-admin">
+  ### NAMED COLLECTION ADMIN
+</div>
+
+يسمح بإجراء عملية معيّنة على مجموعة مُسمّاة محددة. قبل الإصدار 23.7 كان يُسمّى NAMED COLLECTION CONTROL، وبعد 23.7 أُضيف NAMED COLLECTION ADMIN مع الإبقاء على NAMED COLLECTION CONTROL كاسم بديل.
+
+* `NAMED COLLECTION ADMIN`. المستوى: `NAMED_COLLECTION`. الأسماء البديلة: `NAMED COLLECTION CONTROL`
+  * `CREATE NAMED COLLECTION`. المستوى: `NAMED_COLLECTION`
+  * `DROP NAMED COLLECTION`. المستوى: `NAMED_COLLECTION`
+  * `ALTER NAMED COLLECTION`. المستوى: `NAMED_COLLECTION`
+  * `SHOW NAMED COLLECTIONS`. المستوى: `NAMED_COLLECTION`. الأسماء البديلة: `SHOW NAMED COLLECTIONS`
+  * `SHOW NAMED COLLECTIONS SECRETS`. المستوى: `NAMED_COLLECTION`. الأسماء البديلة: `SHOW NAMED COLLECTIONS SECRETS`
+  * `NAMED COLLECTION`. المستوى: `NAMED_COLLECTION`. الأسماء البديلة: `NAMED COLLECTION USAGE, USE NAMED COLLECTION`
+
+على عكس جميع امتيازات grant الأخرى (CREATE وDROP وALTER وSHOW)، لم يُضَف امتياز grant لـ NAMED COLLECTION إلا في الإصدار 23.7، بينما أُضيفت جميع الامتيازات الأخرى في وقتٍ سابق، في الإصدار 22.12.
+
+**أمثلة**
+
+بافتراض أن المجموعة المُسمّاة تُدعى abc، فإننا نمنح الامتياز CREATE NAMED COLLECTION للمستخدم john.
+
+* `GRANT CREATE NAMED COLLECTION ON abc TO john`
+
+<div id="table-engine">
+  ### TABLE ENGINE
+</div>
+
+يسمح باستخدام محرك جدول محدد عند إنشاء جدول. ينطبق على [محركات الجداول](/ar/reference/engines/table-engines/index).
+
+**أمثلة**
+
+* `GRANT TABLE ENGINE ON * TO john`
+* `GRANT TABLE ENGINE ON TinyLog TO john`
+
+<Note>
+  افتراضيًا، ولأسباب تتعلق بالتوافق مع الإصدارات السابقة، فإن إنشاء جدول باستخدام محرك جدول محدد يتجاهل امتيازات GRANT،
+  ومع ذلك يمكنك تغيير هذا السلوك بتعيين [`table_engines_require_grant` إلى true](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)
+  في config.xml.
+</Note>
+
+قد تتطلب بعض محركات الجداول التي تستخدم مصادر خارجية أذونات `READ`/`WRITE` على المصدر المقابل. راجع [المصادر](#sources).
+
+على سبيل المثال، بالنسبة إلى محرك الجدول AzureBlobStorage، قد يلزم منح الامتياز التالي.
+
+* `GRANT READ, WRITE ON AZURE TO john`
+
+<div id="all">
+  ### ALL
+</div>
+
+<CloudNotSupportedBadge />
+
+يمنح جميع الامتيازات على الكيان المعني إلى حساب مستخدم أو دور.
+
+<Note>
+  الامتياز `ALL` غير مدعوم في ClickHouse Cloud، حيث يمتلك المستخدم `default` أذونات محدودة. يمكن للمستخدمين منح الحد الأقصى من الأذونات لمستخدمٍ ما من خلال منح `default_role`. راجع [هنا](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users) لمزيد من التفاصيل.
+  يمكن للمستخدمين أيضًا استخدام `GRANT CURRENT GRANTS` بصفتهم المستخدم `default` لتحقيق تأثير مشابه لـ `ALL`.
+</Note>
+
+<div id="none">
+  ### NONE
+</div>
+
+لا يمنح أي امتيازات.
+
+<div id="admin-option">
+  ### ADMIN OPTION
+</div>
+
+يتيح امتياز `ADMIN OPTION` للمستخدم منح دوره إلى مستخدم آخر.

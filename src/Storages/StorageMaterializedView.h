@@ -44,6 +44,11 @@ public:
     void drop() override;
     void dropInnerTableIfAny(bool sync, ContextPtr local_context) override;
 
+    /// Forward the size guard onto the inner target table that `dropInnerTableIfAny`
+    /// will actually drop, so `CREATE OR REPLACE MATERIALIZED VIEW` cannot delete an
+    /// over-limit inner table that plain `DROP TABLE mv` would refuse.
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override;
+
     void truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &) override;
 
     bool optimize(

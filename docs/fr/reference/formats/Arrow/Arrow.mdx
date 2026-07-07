@@ -1,0 +1,159 @@
+---
+alias: []
+description: 'Documentation sur le format Arrow'
+input_format: true
+keywords: ['Arrow']
+output_format: true
+slug: /interfaces/formats/Arrow
+title: 'Arrow'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✔      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+[Apache Arrow](https://arrow.apache.org/) propose deux formats de stockage en colonnes intégrés.
+ClickHouse prend en charge les opérations de lecture et d&#39;écriture pour ces formats.
+`Arrow` est le format « mode fichier » d&#39;Apache Arrow, conçu pour un accès aléatoire en mémoire.
+
+<div id="data-types-matching">
+  ## Correspondance des types de données
+</div>
+
+Le tableau ci-dessous présente les types de données pris en charge et leur correspondance avec les [types de données](/fr/reference/data-types/index) de ClickHouse dans les requêtes `INSERT` et `SELECT`.
+
+| Type de données Arrow (`INSERT`)        | Type de données ClickHouse                                                                                     | Type de données Arrow (`SELECT`) |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `BOOL`                                  | [Bool](/fr/reference/data-types/boolean)                                                                          | `BOOL`                           |
+| `UINT8`, `BOOL`                         | [UInt8](/fr/reference/data-types/int-uint)                                                                        | `UINT8`                          |
+| `INT8`                                  | [Int8](/fr/reference/data-types/int-uint)/[Enum8](/fr/reference/data-types/enum)                                     | `INT8`                           |
+| `UINT16`                                | [UInt16](/fr/reference/data-types/int-uint)                                                                       | `UINT16`                         |
+| `INT16`                                 | [Int16](/fr/reference/data-types/int-uint)/[Enum16](/fr/reference/data-types/enum)                                   | `INT16`                          |
+| `UINT32`                                | [UInt32](/fr/reference/data-types/int-uint)                                                                       | `UINT32`                         |
+| `INT32`                                 | [Int32](/fr/reference/data-types/int-uint)                                                                        | `INT32`                          |
+| `UINT64`                                | [UInt64](/fr/reference/data-types/int-uint)                                                                       | `UINT64`                         |
+| `INT64`                                 | [Int64](/fr/reference/data-types/int-uint)                                                                        | `INT64`                          |
+| `FLOAT`, `HALF_FLOAT`                   | [Float32](/fr/reference/data-types/float)                                                                         | `FLOAT32`                        |
+| `DOUBLE`                                | [Float64](/fr/reference/data-types/float)                                                                         | `FLOAT64`                        |
+| `DATE32`                                | [Date32](/fr/reference/data-types/date32)                                                                         | `UINT16`                         |
+| `DATE64`                                | [DateTime](/fr/reference/data-types/datetime)                                                                     | `UINT32`                         |
+| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/fr/reference/data-types/datetime64)                                                                 | `TIMESTAMP`                      |
+| `STRING`, `BINARY`                      | [String](/fr/reference/data-types/string)                                                                         | `BINARY`                         |
+| `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/fr/reference/data-types/fixedstring)                                                               | `FIXED_SIZE_BINARY`              |
+| `DECIMAL`                               | [Decimal](/fr/reference/data-types/decimal)                                                                       | `DECIMAL`                        |
+| `DECIMAL256`                            | [Decimal256](/fr/reference/data-types/decimal)                                                                    | `DECIMAL256`                     |
+| `LIST`                                  | [Array](/fr/reference/data-types/array)                                                                           | `LIST`                           |
+| `STRUCT`                                | [Tuple](/fr/reference/data-types/tuple)                                                                           | `STRUCT`                         |
+| `MAP`                                   | [Map](/fr/reference/data-types/map)                                                                               | `MAP`                            |
+| `UINT32`                                | [IPv4](/fr/reference/data-types/ipv4)                                                                             | `UINT32`                         |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [IPv6](/fr/reference/data-types/ipv6)                                                                             | `FIXED_SIZE_BINARY`              |
+| `FIXED_SIZE_BINARY`, `BINARY`           | [Int128/UInt128/Int256/UInt256](/fr/reference/data-types/int-uint)                                                | `FIXED_SIZE_BINARY`              |
+| `DURATION`                              | [Interval](/fr/reference/data-types/special-data-types/interval) (Nanoseconde/Microseconde/Milliseconde/Seconde)  | `DURATION`                       |
+| `INT64`                                 | [Interval](/fr/reference/data-types/special-data-types/interval) (Minute/Heure/Jour/Semaine/Mois/Trimestre/Année) | `INT64`                          |
+
+Les `Array` peuvent être imbriqués et accepter comme argument une valeur de type `Nullable`. Les types `Tuple` et `Map` peuvent également être imbriqués.
+
+Le type `DICTIONARY` est pris en charge pour les requêtes `INSERT` et, pour les requêtes `SELECT`, le paramètre [`output_format_arrow_low_cardinality_as_dictionary`](/fr/reference/settings/formats#output_format_arrow_low_cardinality_as_dictionary) permet de restituer le type [LowCardinality](/fr/reference/data-types/lowcardinality) sous forme de type `DICTIONARY`. Notez qu&#39;il peut y avoir des valeurs inutilisées dans le dictionnaire `LowCardinality`, ce qui peut se traduire par des valeurs inutilisées dans le `DICTIONARY` Arrow en sortie.
+
+Types de données Arrow non pris en charge :
+
+* `FIXED_SIZE_BINARY`
+* `JSON`
+* `UUID`
+* `ENUM`.
+
+Les types de données des colonnes d’une table ClickHouse ne doivent pas nécessairement correspondre aux champs de données Arrow correspondants. Lors de l’insertion de données, ClickHouse interprète les types de données conformément au tableau ci-dessus, puis les [convertit](/fr/reference/functions/regular-functions/type-conversion-functions#CAST) dans le type de données défini pour la colonne de la table ClickHouse.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Dans l’exemple ci-dessous, nous utilisons le jeu de données `forex` disponible dans le
+[ClickHouse SQL playground](https://sql.clickhouse.com).
+
+<div id="selecting-data">
+  ### Sélection des données
+</div>
+
+Nous sélectionnons une journée de taux de change `EUR/USD` dans le Playground et l’enregistrons
+dans un fichier local `forex_eurusd.arrow`. Nous interrogeons le Playground via l’interface
+HTTP, où le host est `sql-clickhouse.clickhouse.com` et l’utilisateur est
+`demo` (qui n’a pas de mot de passe) :
+
+```bash
+curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
+    --data-binary "
+        SELECT
+            concat(base, '.', quote) AS base_quote,
+            datetime AS last_update,
+            CAST(bid, 'Float32') AS bid,
+            CAST(ask, 'Float32') AS ask,
+            ask - bid AS spread
+        FROM forex
+        WHERE base = 'EUR' AND quote = 'USD'
+            AND datetime >= '2020-01-01' AND datetime < '2020-01-02'
+        ORDER BY datetime ASC
+        FORMAT Arrow
+        SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
+```
+
+<div id="reading-data">
+  ### Lecture du fichier
+</div>
+
+Nous pouvons maintenant relire le fichier Arrow local avec
+[`clickhouse-local`](/fr/concepts/features/tools-and-utilities/clickhouse-local) à l’aide de la
+fonction de table [`file`](/fr/reference/functions/table-functions/file). Le fichier est
+auto-descriptif, donc le format `Arrow` infère automatiquement le schéma :
+
+```bash
+clickhouse-local --query "
+    SELECT *
+    FROM file('forex_eurusd.arrow', Arrow)
+    ORDER BY last_update ASC
+    LIMIT 5
+    FORMAT PrettyCompact"
+```
+
+```response title="Response"
+   ┌─base_quote─┬─────────────last_update─┬─────bid─┬─────ask─┬────────────────spread─┐
+1. │ EUR.USD    │ 2020-01-01 17:00:00.065 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
+2. │ EUR.USD    │ 2020-01-01 17:00:10.447 │  1.1212 │ 1.12192 │ 0.0007200241088867188 │
+3. │ EUR.USD    │ 2020-01-01 17:00:10.498 │ 1.12117 │ 1.12161 │ 0.0004400014877319336 │
+4. │ EUR.USD    │ 2020-01-01 17:00:12.579 │  1.1212 │ 1.12161 │ 0.0004100799560546875 │
+5. │ EUR.USD    │ 2020-01-01 17:00:12.630 │  1.1212 │ 1.12172 │ 0.0005199909210205078 │
+   └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
+```
+
+<div id="inserting-data">
+  ### Insertion de données
+</div>
+
+Pour charger un fichier Arrow dans une table ClickHouse, redirigez-le vers `clickhouse-client`
+avec `FORMAT Arrow` :
+
+```bash
+cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
+```
+
+<div id="format-settings">
+  ## Paramètres du format
+</div>
+
+| Paramètre                                                                    | Description                                                                                                           | Valeur par défaut |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `input_format_arrow_allow_missing_columns`                                   | Autoriser les colonnes manquantes lors de la lecture des formats d&#39;entrée Arrow                                   | `1`               |
+| `input_format_arrow_case_insensitive_column_matching`                        | Ignorer la casse lors de la correspondance entre les colonnes Arrow et les colonnes CH                                | `0`               |
+| `input_format_arrow_import_nested`                                           | Paramètre obsolète, sans effet.                                                                                       | `0`               |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Ignorer les colonnes dont les types ne sont pas pris en charge lors de l&#39;inférence de schéma pour le format Arrow | `0`               |
+| `output_format_arrow_compression_method`                                     | Méthode de compression du format de sortie Arrow. Codecs pris en charge : lz4&#95;frame, zstd, none (non compressé)   | `lz4_frame`       |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Utiliser le type Arrow FIXED&#95;SIZE&#95;BINARY au lieu de Binary pour les colonnes FixedString                      | `1`               |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | Produire le type LowCardinality en tant que type Arrow Dictionary                                                     | `0`               |
+| `output_format_arrow_string_as_string`                                       | Utiliser le type Arrow String au lieu de Binary pour les colonnes String                                              | `1`               |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Toujours utiliser des entiers 64 bits pour les index de dictionnaire au format Arrow                                  | `0`               |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Utiliser des entiers signés pour les index de dictionnaire au format Arrow                                            | `1`               |

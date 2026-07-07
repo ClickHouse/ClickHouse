@@ -1,0 +1,598 @@
+---
+date: 2023-03-17
+title: トラブルシューティングに役立つクエリ
+description: テーブルサイズの監視、長時間実行中のクエリ、エラーの確認など、ClickHouse のトラブルシューティングに役立つ便利なクエリ集です。
+tags: ['設定']
+keywords: ['役立つクエリ']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="useful-queries-for-troubleshooting">
+  ## トラブルシューティングに役立つクエリ
+</div>
+
+順不同で、ClickHouse のトラブルシューティングや、何が起きているのかを把握するのに便利なクエリをいくつか紹介します。
+
+また、[ClickHouse の監視に役立つ重要なクエリ](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)を紹介した優れたブログ記事もあります。
+
+<div id="view-which-settings-have-been-changed-from-the-default">
+  ## デフォルトから変更された設定を確認する
+</div>
+
+```sql
+SELECT
+    name,
+    value
+FROM system.settings
+WHERE changed
+```
+
+<div id="get-the-size-of-all-your-tables">
+  ## すべてのテーブルのサイズを確認する
+</div>
+
+```sql
+SELECT table,
+    formatReadableSize(sum(bytes)) as size
+    FROM system.parts
+    WHERE active
+GROUP BY table
+```
+
+レスポンスは次のようになります。
+
+```response
+┌─table───────────┬─size──────┐
+│ stat            │ 38.89 MiB │
+│ customers       │ 525.00 B  │
+│ my_sparse_table │ 40.73 MiB │
+│ crypto_prices   │ 32.18 MiB │
+│ hackernews      │ 6.23 GiB  │
+└─────────────────┴───────────┘
+```
+
+<div id="row-count-and-average-day-size-of-your-table">
+  ## テーブルの行数と1日あたりの平均サイズ
+</div>
+
+```sql
+SELECT
+    table,
+    formatReadableSize(size) AS size,
+    rows,
+    days,
+    formatReadableSize(avgDaySize) AS avgDaySize
+FROM
+(
+    SELECT
+        table,
+        sum(bytes) AS size,
+        sum(rows) AS rows,
+        min(min_date) AS min_date,
+        max(max_date) AS max_date,
+        max_date - min_date AS days,
+        size / (max_date - min_date) AS avgDaySize
+    FROM system.parts
+    WHERE active
+    GROUP BY table
+    ORDER BY rows DESC
+)
+```
+
+<div id="compression-columns-percentage-as-well-as-the-size-of-primary-index-in-memory">
+  ## カラムごとの圧縮率とメモリ上のプライマリインデックスのサイズ
+</div>
+
+データがカラムごとにどの程度圧縮されているかを確認できます。このクエリでは、メモリ上のプライマリインデックスのサイズも確認できます。プライマリインデックスはメモリに収まる必要があるため、把握しておくと役立ちます。
+
+```sql
+SELECT
+    parts.*,
+    columns.compressed_size,
+    columns.uncompressed_size,
+    columns.compression_ratio,
+    columns.compression_percentage
+FROM
+(
+    SELECT
+        table,
+        formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+        formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+        round(sum(data_compressed_bytes) / sum(data_uncompressed_bytes), 3) AS compression_ratio,
+        round(100 - ((sum(data_compressed_bytes) * 100) / sum(data_uncompressed_bytes)), 3) AS compression_percentage
+    FROM system.columns
+    GROUP BY table
+) AS columns
+RIGHT JOIN
+(
+    SELECT
+        table,
+        sum(rows) AS rows,
+        max(modification_time) AS latest_modification,
+        formatReadableSize(sum(bytes)) AS disk_size,
+        formatReadableSize(sum(primary_key_bytes_in_memory)) AS primary_keys_size,
+        any(engine) AS engine,
+        sum(bytes) AS bytes_size
+    FROM system.parts
+    WHERE active
+    GROUP BY
+        database,
+        table
+) AS parts ON columns.table = parts.table
+ORDER BY parts.bytes_size DESC
+```
+
+<div id="number-of-queries-sent-by-client-in-the-last-10-minutes">
+  ## 直近10分間にクライアントから送信されたクエリ数
+</div>
+
+`toIntervalMinute(10)` 関数では、時間間隔を増減できます。
+
+```sql
+SELECT
+    client_name,
+    count(),
+    query_kind,
+    toStartOfMinute(event_time) AS event_time_m
+FROM system.query_log
+WHERE (type = 'QueryStart') AND (event_time > (now() - toIntervalMinute(10)))
+GROUP BY
+    event_time_m,
+    client_name,
+    query_kind
+ORDER BY
+    event_time_m DESC,
+    count() ASC
+```
+
+<div id="number-of-parts-in-each-partition">
+  ## 各パーティション内のパーツ数
+</div>
+
+```sql
+SELECT
+    concat(database, '.', table),
+    partition_id,
+    count()
+FROM system.parts
+WHERE active
+GROUP BY
+    database,
+    table,
+    partition_id
+```
+
+<div id="finding-long-running-queries">
+  ## 長時間実行されているクエリを見つける
+</div>
+
+これにより、処理が停滞しているクエリを特定しやすくなります。
+
+```sql
+SELECT
+    elapsed,
+    initial_user,
+    client_name,
+    hostname(),
+    query_id,
+    query
+FROM clusterAllReplicas(default, system.processes)
+ORDER BY elapsed DESC
+```
+
+実行時間が最も長いクエリのクエリ ID を使うと、デバッグ時に役立つスタックトレースを取得できます。
+
+```
+SET allow_introspection_functions=1;
+
+SELECT
+    arrayStringConcat(
+        arrayMap(
+            x,
+            y -> concat(x, ': ', y),
+            arrayMap(x -> addressToLine(x), trace),
+            arrayMap(x -> demangle(addressToSymbol(x)), trace)
+        ),
+        '\n'
+    ) as trace
+FROM
+    system.stack_trace
+WHERE
+    query_id = '0bb6e88b-9b9a-4ffc-b612-5746c859e360';
+```
+
+<div id="view-the-most-recent-errors">
+  ## 最新のエラーを確認
+</div>
+
+```
+SELECT *
+FROM system.errors
+ORDER BY last_error_time DESC
+```
+
+レスポンスは以下のようになります。
+
+```response
+┌─name──────────────────┬─code─┬─value─┬─────last_error_time─┬─last_error_message──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─last_error_trace─┬─remote─┐
+│ UNKNOWN_TABLE         │   60 │     3 │ 2023-03-14 01:02:35 │ Table system.stack_trace doesn't exist                                                                                                              │ []               │      0 │
+│ BAD_GET               │  170 │     1 │ 2023-03-14 00:58:55 │ Requested cluster 'default' not found                                                                                                               │ []               │      0 │
+│ UNKNOWN_IDENTIFIER    │   47 │     1 │ 2023-03-14 00:49:12 │ Missing columns: 'parts.table' 'table' while processing query: 'table = parts.table', required columns: 'table' 'parts.table' 'table' 'parts.table' │ []               │      0 │
+│ NO_ELEMENTS_IN_CONFIG │  139 │     2 │ 2023-03-14 00:42:11 │ Certificate file is not set.                                                                                                                        │ []               │      0 │
+└───────────────────────┴──────┴───────┴─────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────┴────────┘
+```
+
+<div id="top-10-queries-that-are-using-the-most-cpu-and-memory">
+  ## CPUとメモリの使用量が最も多い上位10件のクエリ
+</div>
+
+```sql
+SELECT
+    type,
+    event_time,
+    initial_query_id,
+    formatReadableSize(memory_usage) AS memory,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'UserTimeMicroseconds')] AS userCPU,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM system.query_log
+ORDER BY memory_usage DESC
+LIMIT 10
+```
+
+<Note>
+  1つのクエリが、異なる `query_id` 値を持つ複数の行として記録されることがあります。分散セカンダリクエリおよび内部ビューのステップでは `is_initial_query = 0` になります。送信されたとおりのクエリを確認するには、`is_initial_query = 1` (または `query_id = initial_query_id`) でフィルタしてください。また、ClickHouse が割り当てる内部 `query_id` 値には、`queryView...` のようなラベルが含まれる場合がある点にも注意してください。詳細は [`query_log` リファレンス](/ja/reference/system-tables/query_log) を参照してください。
+</Note>
+
+<div id="how-much-disk-space-are-my-projection-using">
+  ## プロジェクションが使用しているディスク容量
+</div>
+
+```sql
+SELECT
+    name,
+    parent_name,
+    formatReadableSize(bytes_on_disk) AS bytes,
+    formatReadableSize(parent_bytes_on_disk) AS parent_bytes,
+    bytes_on_disk / parent_bytes_on_disk AS ratio
+FROM system.projection_parts
+```
+
+<div id="show-disk-storage-number-of-parts-number-of-rows-in-systemparts-and-marks-across-databases">
+  ## データベース全体のディスク使用量、system.parts 内のパーツ数・行数・マーク数を表示
+</div>
+
+```sql
+SELECT
+    database,
+    table,
+    partition,
+    count() AS parts,
+    formatReadableSize(sum(bytes_on_disk)) AS bytes_on_disk,
+    formatReadableQuantity(sum(rows)) AS rows,
+    sum(marks) AS marks
+FROM system.parts
+WHERE (database != 'system') AND active
+GROUP BY
+    database,
+    table,
+    partition
+ORDER BY database ASC
+```
+
+<div id="list-details-of-recently-written-new-parts">
+  ## 最近書き込まれた新しいパーツの詳細を一覧表示する
+</div>
+
+詳細には、作成時刻、サイズ、行数などが含まれます。
+
+```sql
+SELECT
+    modification_time,
+    rows,
+    formatReadableSize(bytes_on_disk),
+    *
+FROM clusterAllReplicas(default, system.parts)
+WHERE (database = 'default') AND active AND (level = 0)
+ORDER BY modification_time DESC
+LIMIT 100
+```
+
+<div id="cluster-wide-monitoring-queries">
+  ## クラスター全体の監視クエリ
+</div>
+
+以下のクエリは、ClickHouse クラスターの監視に便利です。`clusterAllReplicas()` を使用して、すべてのノードにまたがるデータを集約します。
+
+<Note>
+  これらのクエリは、クラスター名が `default` であることを前提としています。クラスター名が異なる場合は、`'default'` と `default` を実際のクラスター名に置き換えてください。
+</Note>
+
+<div id="avg-new-parts-per-minute-and-second">
+  ### 1分間および1秒間に作成された新規パーツの平均 (直近1時間)
+</div>
+
+```sql
+WITH
+    PER_MINUTE AS
+    (
+    SELECT
+        toStartOfInterval(modification_time, toIntervalMinute(1)) AS t,
+        count() AS new_part_count
+    FROM
+        clusterAllReplicas(default, merge(system, '^parts'))
+    WHERE
+        (database = 'default') AND
+        (table = 'your_table') AND
+        (active = true) AND
+        (level = 0) AND
+        (modification_time >= (now() - toIntervalHour(1)))
+    GROUP BY
+        t
+    ORDER BY
+        t ASC
+    SETTINGS skip_unavailable_shards = 1
+    )
+SELECT
+    AVG(new_part_count) AS new_parts_per_minute,
+    new_parts_per_minute / 60 AS new_parts_per_second
+FROM
+    PER_MINUTE
+```
+
+`'your_table'` は、監視する実際のテーブル名に置き換えてください。
+
+<div id="cpu-and-memory-intensive-queries-cluster-wide">
+  ### CPU とメモリの使用量が多いクエリ (クラスター全体)
+</div>
+
+```sql
+SELECT
+    type,
+    event_time,
+    initial_query_id,
+    formatReadableSize(memory_usage) AS memory,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'UserTimeMicroseconds')] AS userCPU,
+    `ProfileEvents.Values`[indexOf(`ProfileEvents.Names`, 'SystemTimeMicroseconds')] AS systemCPU,
+    normalizedQueryHash(query) AS normalized_query_hash
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+ORDER BY memory_usage DESC
+LIMIT 10
+```
+
+<div id="merges-in-progress-with-eta">
+  ### 進行中のマージと予想完了時間
+</div>
+
+このクエリは、クラスター上で現在実行中のマージと、その完了までの推定時間を表示します：
+
+```sql
+SELECT
+    hostName(),
+    database,
+    table,
+    round(elapsed, 0) AS elapsed_seconds,
+    round(progress, 4) AS progress_ratio,
+    formatReadableTimeDelta((elapsed / progress) - elapsed) AS estimated_time_remaining,
+    num_parts,
+    result_part_name
+FROM clusterAllReplicas(default, merge(system, '^merges'))
+ORDER BY (elapsed / progress) - elapsed ASC
+```
+
+<div id="most-common-queries-by-normalized-hash">
+  ### 正規化ハッシュ別の代表的なクエリ
+</div>
+
+最も頻繁に実行されているクエリを見つけます (最適化すべきクエリの特定に役立ちます) :
+
+```sql
+SELECT
+    normalizedQueryHash(query) AS query_hash,
+    count() AS execution_count,
+    any(query) AS example_query
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 1
+GROUP BY normalizedQueryHash(query)
+ORDER BY execution_count DESC
+LIMIT 20
+```
+
+<div id="error-counts-by-event-type-and-date">
+  ### イベントタイプと日付別のエラー数
+</div>
+
+クラスター全体のパーツ作成エラーを分析します:
+
+```sql
+SELECT
+    event_date,
+    event_type,
+    table,
+    error,
+    COUNT() AS error_count
+FROM clusterAllReplicas(default, merge(system, '^part_log'))
+WHERE database = 'default'
+GROUP BY
+    event_date,
+    event_type,
+    error,
+    table
+ORDER BY
+    event_date DESC,
+    error_count DESC
+```
+
+<div id="number-of-tables-by-node">
+  ### ノードごとのテーブル数
+</div>
+
+クラスター内のノード間でのテーブル分布を確認します。
+
+```sql
+SELECT
+    hostName() AS host,
+    count() AS table_count
+FROM clusterAllReplicas('default', merge(system, '^tables'))
+WHERE database = 'default'
+GROUP BY hostName()
+ORDER BY table_count DESC
+```
+
+<div id="check-for-async-insert-operations">
+  ### 非同期 INSERT 操作を確認する
+</div>
+
+非同期 INSERT の動作状況を監視します:
+
+```sql
+SELECT
+    event_date,
+    count() AS total_count,
+    sum(if(query LIKE '%async%', 1, 0)) AS async_count,
+    sum(if(query LIKE '%INSERT%', 1, 0)) AS insert_count
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 7
+GROUP BY event_date
+ORDER BY event_date DESC
+```
+
+<div id="parts-and-merges-analysis">
+  ## パーツとマージの分析
+</div>
+
+<div id="currently-active-parts-by-table">
+  ### テーブルごとの現在のアクティブなパーツ
+</div>
+
+クラスター全体で、各テーブルのアクティブなパーツ数を確認します。
+
+```sql
+SELECT
+    database,
+    table,
+    count() AS part_count,
+    formatReadableSize(sum(bytes_on_disk)) AS total_size
+FROM clusterAllReplicas(default, system.parts)
+WHERE active = 1 AND database = 'default'
+GROUP BY database, table
+ORDER BY part_count DESC
+```
+
+<div id="partitions-with-too-many-parts">
+  ### パーツ数が多すぎるパーティション
+</div>
+
+パーツ数が多すぎる可能性のあるパーティションを特定します (クエリのパフォーマンスに影響する可能性があります) :
+
+```sql
+SELECT
+    database,
+    table,
+    partition,
+    count() AS part_count,
+    formatReadableSize(sum(bytes_on_disk)) AS total_size
+FROM clusterAllReplicas(default, system.parts)
+WHERE active = 1
+GROUP BY database, table, partition
+HAVING part_count > 100
+ORDER BY part_count DESC
+```
+
+<div id="detached-parts">
+  ### デタッチされたパーツ
+</div>
+
+調査が必要な可能性のあるデタッチされたパーツがないか確認します。
+
+```sql
+SELECT
+    database,
+    table,
+    partition_id,
+    name,
+    reason,
+    count()
+FROM clusterAllReplicas(default, system.detached_parts)
+GROUP BY database, table, partition_id, name, reason
+ORDER BY database, table
+```
+
+<div id="system-information-queries">
+  ## システム情報に関するクエリ
+</div>
+
+<div id="cluster-wide-memory-usage-by-node">
+  ### ノード別のクラスター全体のメモリ使用量
+</div>
+
+各ノードのメモリ使用量を監視します:
+
+```sql
+SELECT
+    hostName() AS host,
+    formatReadableSize(max(memory_usage)) AS peak_memory,
+    formatReadableSize(avg(memory_usage)) AS avg_memory,
+    formatReadableSize(min(memory_usage)) AS min_memory
+FROM clusterAllReplicas(default, merge(system, '^query_log'))
+WHERE event_date >= today() - 1
+GROUP BY hostName()
+ORDER BY peak_memory DESC
+```
+
+<div id="running-queries-on-the-cluster">
+  ### クラスターでクエリを実行する
+</div>
+
+現在実行中のクエリを確認します:
+
+```sql
+SELECT
+    hostName() AS host,
+    initial_user,
+    query_id,
+    elapsed,
+    read_rows,
+    formatReadableSize(memory_usage) AS memory_usage,
+    normalizedQueryHash(query) AS query_hash
+FROM clusterAllReplicas(default, system.processes)
+ORDER BY elapsed DESC
+```
+
+<div id="modified-settings-from-defaults">
+  ### デフォルトから変更された設定
+</div>
+
+デフォルトから変更されている設定を確認します。
+
+```sql
+SELECT
+    hostName() AS host,
+    name,
+    value
+FROM clusterAllReplicas(default, system.settings)
+WHERE changed = 1
+ORDER BY hostName(), name
+```
+
+<div id="replication-queue-status">
+  ### レプリケーションキューの状態
+</div>
+
+レプリケートテーブルの場合は、レプリケーションキューを確認します。
+
+```sql
+SELECT
+    hostName() AS host,
+    database,
+    table,
+    count() AS queue_size,
+    sum(if(is_currently_executing = 1, 1, 0)) AS executing_count
+FROM clusterAllReplicas(default, system.replication_queue)
+GROUP BY hostName(), database, table
+HAVING queue_size > 0
+ORDER BY queue_size DESC
+```

@@ -1,0 +1,160 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/row-click-drilldowns
+title: 'Analyses détaillées par clic sur une ligne de tableau'
+sidebarTitle: 'Analyses détaillées par clic sur une ligne'
+description: 'Transformez une tuile de tableau en workflow d’inspection : cliquez sur une ligne pour ouvrir un tableau de bord ciblé ou les logs et traces sous-jacents, dans le contexte de la ligne sélectionnée'
+doc_type: 'guide'
+keywords: ['ClickStack', 'dashboards', 'analyse détaillée', 'table', 'clic sur une ligne', 'inspection', 'observability']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Une table tile est souvent un **catalogue** : une ligne par service, hôte, endpoint ou groupe d’erreurs, avec quelques colonnes qui attribuent un score à chacun. Les actions de clic sur les lignes transforment ce catalogue en flux d’inspection. Vous parcourez le catalogue pour trouver la ligne pertinente, vous cliquez dessus, et ClickStack reporte les valeurs de la ligne cliquée sous forme de filtres. La destination s’ouvre alors directement sur cet élément, sans requête à reconstruire manuellement.
+
+Un clic peut mener vers l’un des deux endroits suivants :
+
+* **un autre tableau de bord**, pour une vue ciblée d’un élément précis, comme un tableau de bord de détail par service, ou
+* **les événements sous-jacents** dans [Search](/fr/clickstack/features/search), pour les logs ou les traces associés à la ligne.
+
+Les deux cas d’usage ci-dessous partent du même catalogue (un inventaire des services) et approfondissent chaque destination à partir de celui-ci. Les actions de clic sur les lignes s’appliquent uniquement aux table tiles. Elles se distinguent de la fonctionnalité [drilldown vers Search](/fr/clickstack/features/dashboards/overview#drilldown-to-search) des chart, qui ouvre un menu contextuel lorsque vous cliquez sur un point d’un graphique en courbes ou en barres.
+
+<div id="inspect-in-dashboard">
+  ## Examiner un service dans son propre tableau de bord
+</div>
+
+Un tableau d’ensemble avec une ligne par service répond à la question « quel service est défaillant ? ». Un clic sur une ligne peut ouvrir un tableau de bord dédié à ce service, qui répond à « que se passe-t-il à l’intérieur ? », en se limitant au service sur lequel vous avez cliqué. Le modèle ci-dessous associe un tableau d’inventaire des services à un tableau de bord `Service Detail`.
+
+<Steps>
+  <Step>
+    ### Créer le tableau de bord de détail
+
+    Créez un tableau de bord nommé `Service Detail` et ajoutez un [filtre personnalisé](/fr/clickstack/features/dashboards/overview#custom-filters) avec l’expression `ServiceName` sur votre traces source. Le filtre au niveau du tableau de bord redéfinit la portée de chaque tuile sur un seul service, afin que les tuiles elles-mêmes n’intègrent pas de service en dur dans leurs requêtes. Ajoutez les vues par service souhaitées : indicateurs clés RED (requests, errors, durée P95), graphique des percentiles de latence (P50, P95, P99), taux de requêtes au fil du temps et ventilation par endpoint regroupée par `SpanName`.
+
+    Enregistrez d’abord ce tableau de bord afin de pouvoir le sélectionner comme cible à l’étape suivante.
+  </Step>
+
+  <Step>
+    ### Créer l’inventaire des services
+
+    Sur un tableau de bord d’ensemble, ajoutez une tuile **Table** sur votre traces source, regroupée par `ServiceName`. Donnez-lui les colonnes RED qui évaluent chaque service, chacune correspondant à une série avec alias :
+
+    * `Requests` : nombre de spans (taux).
+    * `Errors` : nombre de spans avec un statut d’erreur.
+    * `P95 Duration` : 95e centile de `Duration`. Définissez le format numérique de la colonne sur une durée afin qu’elle s’affiche comme `288ms`, et non en nanosecondes brutes.
+
+    Triez par `Requests` dans l’ordre décroissant afin que les services les plus sollicités apparaissent en haut. Ce tableau est le catalogue : une ligne par service, évalué selon RED.
+
+    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="Table d’inventaire des services avec colonnes RED (Requests, Errors, P95 Duration) pour chaque service, triée par volume de requêtes, au-dessus d’une tendance des requêtes dans le temps" size="lg" />
+
+    <Tip>
+      **Placez la colonne de group-by en premier**
+
+      Par défaut, un tableau affiche sa colonne de group-by (ici `ServiceName`) à droite, après les séries. Un catalogue se lit mieux quand l’identité de chaque ligne apparaît d’abord. Ouvrez les **Display Settings** de la tuile et activez **Display Group By Columns on Left** pour déplacer la colonne de group-by au début.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### Configurer le clic sur la ligne
+
+    Sur le tableau d’inventaire, ouvrez **Row Click Action**, sélectionnez **Dashboard**, puis choisissez `Service Detail` dans la liste des tableaux de bord. Le fait de choisir directement le tableau de bord l’ancre par ID. Le lien continue de fonctionner si le tableau de bord est renommé plus tard, et il reste valable après export et import du tableau de bord. (Réservez l’option **Template** au choix d’un tableau de bord différent par ligne ; voir [Configurer une action de clic sur une ligne](#set-up).)
+
+    Comme `Service Detail` déclare un filtre personnalisé `ServiceName`, le panneau latéral préremplit un filtre vide pour cette expression. Renseignez son modèle :
+
+    * **Expression** : `ServiceName` (déjà renseigné)
+    * **Template** : `{{ServiceName}}`
+
+    Cliquez sur **Apply** puis enregistrez. Le service de la ligne cliquée alimente désormais le filtre `ServiceName` du tableau de bord.
+  </Step>
+
+  <Step>
+    ### Cliquer sur une ligne
+
+    Au survol d’une ligne, un lien d’action apparaît sur le bord droit du tableau, avec une indication décrivant l’action (`Open dashboard "Service Detail"`). Un clic sur la ligne ouvre le tableau de bord `Service Detail` avec son filtre `ServiceName` défini sur la valeur cliquée, de sorte que chaque tuile (les indicateurs clés RED, les percentiles de latence, la ventilation par endpoint) se recentre sur ce seul service en un seul clic.
+
+    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Tableau de bord Service Detail après un clic sur une ligne, avec le filtre ServiceName défini sur le service cliqué et les indicateurs clés RED, les percentiles de latence et la ventilation par endpoint tous limités à celui-ci" size="lg" />
+  </Step>
+</Steps>
+
+<div id="jump-to-traces">
+  ## Aller d’un service à ses traces
+</div>
+
+Parfois, vous ne voulez pas d’une vue agrégée supplémentaire : vous voulez les événements bruts. Une action **Search** envoie le clic vers la page [Search](/fr/clickstack/features/search) au lieu d’un tableau de bord, en ouvrant les logs ou les traces associés à la ligne, déjà filtrés en conséquence.
+
+À partir du même tableau d’inventaire des services, configurez le clic sur une ligne pour ouvrir directement les traces plutôt que le tableau de bord de détail.
+
+<Steps>
+  <Step>
+    ### Pointer le clic sur une ligne vers Search
+
+    Dans le tableau d’inventaire, ouvrez **Row Click Action** et sélectionnez **Search**. Choisissez votre source de traces (seules les sources de logs et de traces sont proposées). Ajoutez un filtre :
+
+    * **Expression** : `ServiceName`
+    * **Template** : `{{ServiceName}}`
+
+    Cliquez sur **Apply** et enregistrez.
+  </Step>
+
+  <Step>
+    ### Cliquer sur une ligne
+
+    Un clic sur une ligne de service ouvre désormais la page Search sur cette source de traces, filtrée sur `ServiceName = <service>`, ce qui vous amène aux spans de ce seul service sur le même intervalle de temps.
+
+    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="Page Search ouverte sur la source de traces après un clic sur une ligne, filtrée sur le service sélectionné" size="lg" />
+  </Step>
+</Steps>
+
+Le même principe fonctionne pour n’importe quel catalogue d’éléments. Regroupez le tableau par opération (`SpanName`) ou par attribut d’endpoint au lieu de `ServiceName`, utilisez cette colonne comme modèle de filtre, et chaque clic sur une ligne ouvrira les événements correspondant à cette opération ou à cet endpoint. Pour un group-by sur un attribut map, consultez la note sur l’alias dans [Validation et limites](#validation).
+
+<div id="set-up">
+  ## Configurer une action de clic sur une ligne
+</div>
+
+Les actions de clic sur une ligne se configurent directement sur la tuile de tableau ; il n’existe pas de page distincte pour cela. Ajoutez ou modifiez une tuile, puis définissez son type de visualisation sur **Table**. Un bouton **Row Click Action** apparaît alors dans la barre d’outils de l’éditeur, à côté de **Display Settings**. Ce bouton n’est affiché que pour les tuiles de tableau, et son libellé reflète l’action actuelle : `Row Click Action: Default`, `Row Click Action: Search` ou `Row Click Action: Dashboard`. Cliquez dessus pour ouvrir le panneau latéral.
+
+<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="Panneau Row Click Action en mode Dashboard, avec le tableau de bord Service Detail sélectionné comme cible et un filtre ServiceName généré à partir de la ligne cliquée" size="lg" />
+
+Le panneau latéral propose trois actions :
+
+* **Default** : le comportement par défaut. Cliquer sur une ligne ouvre la page Search, filtrée selon les valeurs des colonnes de group-by de la ligne et l’intervalle de temps sélectionné. C’est le comportement obtenu lorsqu’aucune action personnalisée n’est définie.
+* **Search** : envoie le clic vers la page Search pour une source de votre choix.
+* **Dashboard** : envoie le clic vers un autre tableau de bord appartenant à votre équipe.
+
+Pour **Search** et **Dashboard**, vous choisissez la destination du clic et paramétrez les filtres transmis :
+
+* **Destination** : choisissez une source ou un tableau de bord spécifique, ou sélectionnez **Template** et saisissez un modèle [Handlebars](https://handlebarsjs.com/) mis en correspondance par nom avec une source ou un tableau de bord disponible. Le choix d’une cible spécifique l’ancre par ID. Préférez cette option pour une destination fixe unique : elle résiste aux renommages, ainsi qu’à l’export et à l’import de tableaux de bord, et, dans le cas d’un tableau de bord, elle préremplit les filtres déclarés de la destination. Utilisez **Template** lorsque la cible doit varier selon la ligne, en vous appuyant sur une colonne de la ligne pour la choisir (par exemple `Errors-{{ServiceName}}`).
+* **Filters** : cliquez sur **Add filter** et fournissez une **Expression** (une colonne ou une expression sur la destination, par exemple `ServiceName`) ainsi qu’un **Template** pour sa valeur (par exemple `{{ServiceName}}`). Les modèles référencent les colonnes de la ligne cliquée avec `{{columnName}}` (voir la note ci-dessous pour savoir quelles colonnes sont disponibles). Chaque filtre produit une condition `expression IN (value)` sur la destination, et les filtres qui partagent une même expression sont fusionnés. Lorsque la destination est un tableau de bord, le panneau latéral préremplit un filtre vide pour chaque filtre déjà déclaré par ce tableau de bord, de sorte que vous n’avez plus qu’à renseigner les modèles.
+* **WHERE** (facultatif) : un modèle Handlebars rendu dans le filtre global de la destination, en plus des conditions par filtre ci-dessus. Définissez son query language sur SQL ou Lucene pour que la destination puisse l’analyser. Par exemple, le modèle SQL `ServiceName = '{{ServiceName}}'` limite la destination au service de la ligne cliquée.
+
+<Info>
+  **Les modèles référencent les colonnes du tableau**
+
+  Un modèle `{{...}}` est résolu à partir des colonnes de la tuile de tableau elle-même : les colonnes de group-by et chaque série par son nom ou son alias, exactement telles qu’elles apparaissent dans le tableau. Il n’a pas accès aux colonnes de la source sous-jacente que le tableau ne sélectionne pas. Pour être transmise lors d’un clic, une valeur doit correspondre à une colonne du tableau ; ainsi, `{{ServiceName}}` fonctionne parce que `ServiceName` est la colonne de group-by du tableau, et une colonne aliasée est référencée par son alias. Référencer un nom que le tableau ne possède pas fait échouer le clic avec `Row has no column '<name>'`.
+</Info>
+
+Cliquez sur **Apply** pour valider les modèles (ClickStack signale ceux dont la syntaxe est invalide), puis enregistrez le tableau de bord pour conserver l’action.
+
+<div id="how-it-resolves">
+  ## Comment la destination et les filtres sont déterminés
+</div>
+
+Lorsqu&#39;un Viewer clique sur une ligne, ClickStack détermine l&#39;action à appliquer à cette ligne :
+
+* **Destination.** Choisir une source ou un tableau de bord spécifique l&#39;ancre à son ID. Une cible **Template** est générée à partir de la ligne cliquée, puis mise en correspondance par son nom avec les sources ou tableaux de bord de votre équipe. Le nom doit être unique pour que la résolution fonctionne : si deux sources ou deux tableaux de bord partagent le nom généré, le lien ne peut pas être résolu vers l&#39;un d&#39;eux. Un nom généré vide, ou un nom sans correspondance, empêche également la résolution.
+* **Filtres.** Chaque modèle de filtre est généré à partir de la ligne et devient une condition `expression IN (value)` dans la destination. Une action `Search` ouvre `/search` dans le contexte de la source choisie ; une action `Dashboard` ouvre ce tableau de bord. L&#39;intervalle de temps de la ligne cliquée est conservé dans les deux cas.
+
+<Info>
+  **Les cibles de tableau de bord nécessitent un filtre correspondant déclaré**
+
+  Un filtre transmis à un tableau de bord ne prend effet que si le tableau de bord de destination déclare un [custom filter](/fr/clickstack/features/dashboards/overview#custom-filters) de premier niveau dont l&#39;expression correspond à l&#39;**Expression** du filtre. Si aucun filtre déclaré ne correspond, cette valeur est ignorée au moment du clic et la destination s&#39;ouvre sans filtre pour cette expression. C&#39;est pourquoi le mode tableau de bord préremplit les filtres déclarés de la destination : si l&#39;expression correspond, la liste déroulante de destination se remplit automatiquement avec la valeur de la ligne cliquée.
+</Info>
+
+<div id="validation">
+  ## Validation et limites
+</div>
+
+* **Uniquement pour les tuiles de tableau.** Le bouton **Row Click Action** apparaît uniquement sur les tuiles de tableau, qu’il s’agisse du tableau du chart builder ou d’un tableau [basé sur SQL](/fr/clickstack/features/dashboards/sql-visualizations). Les autres types de tuiles n’ont pas d’action au clic sur une ligne.
+* **Les cibles Search doivent être des sources de logs ou de traces.** Les sources de métriques et de session ne sont pas proposées, car elles ne peuvent pas être affichées dans la page Search.
+* **Les noms de Template doivent être uniques.** Une cible Template est résolue par son nom ; deux sources ou deux tableaux de bord portant le même nom ne peuvent donc pas être utilisées comme cible Template.
+* **Les cibles de tableau de bord nécessitent un filtre déclaré correspondant** pour qu’une valeur transmise soit prise en compte (voir la note ci-dessus).
+* **Les colonnes de group-by sur une expression nécessitent un alias.** Un group-by sur une expression, comme un attribut de map `SpanAttributes['http.route']`, produit une colonne de résultat dont le nom est l’expression brute, ce qui est peu pratique à référencer dans un Template. Donnez un alias à la colonne dans le chart builder : ajoutez `AS <alias>` après l’expression dans le champ **Group By** (par exemple `SpanAttributes['http.route'] AS Route`), puis référencez `{{Route}}` dans le Template. Les séries agrégées prennent de la même façon un alias à partir de leur champ **Alias**. En revanche, un group-by sur une colonne simple comme `ServiceName` a déjà un nom clair et n’a pas besoin d’alias.
