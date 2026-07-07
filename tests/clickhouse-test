@@ -1713,6 +1713,8 @@ class MergeTreeSettingsRandomizer:
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas": lambda: random.randint(0, 1),
+        "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup": lambda: random.randint(0, 1),
         "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
         "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
