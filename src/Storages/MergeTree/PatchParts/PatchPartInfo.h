@@ -113,7 +113,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 struct PatchPartMetadata
 {
-    MergeTreePatchPartsVersion version;
+    MergeTreePatchPartsVersion version{MergeTreePatchPartsVersion::V2};
     StorageMetadataPtr metadata;
 };
 
