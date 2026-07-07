@@ -150,13 +150,13 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     if (checksums.empty())
         return size;
 
-    if (column.type->hasDynamicSubcolumns() && !columns_substreams.empty())
+    if (column.type->hasDynamicSubcolumns() && !getColumnsSubstreams().empty())
     {
         auto column_position = getColumnPosition(column.name);
         if (!column_position)
             return size;
 
-        const auto & substreams = columns_substreams.getColumnSubstreams(*column_position);
+        const auto & substreams = getColumnsSubstreams().getColumnSubstreams(*column_position);
         for (const auto & substream : substreams)
         {
             if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, DATA_FILE_EXTENSION, checksums))
@@ -262,14 +262,14 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
-    if (columns.empty())
+    if (getColumns().empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    auto any_column_filename = getFileNameForColumn(columns.front());
+    auto any_column_filename = getFileNameForColumn(getColumns().front());
     if (!any_column_filename)
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
             "There are no files for column {} in part {}",
-            columns.front().name, getDataPartStorage().getFullPath());
+            getColumns().front().name, getDataPartStorage().getFullPath());
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage.getSettings());
 }
@@ -381,7 +381,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 /// This is more reliable than enumerateStreams for types with dynamic structure (JSON, Dynamic)
                 /// because enumerateStreams requires deserialization state to correctly enumerate dynamic substreams.
                 size_t col_idx = 0;
-                for (const auto & name_type : columns)
+                for (const auto & name_type : getColumns())
                 {
                     const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                     for (const auto & substream : substreams)
@@ -416,7 +416,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 /// against checksums.txt.
                 ISerialization::EnumerateStreamsSettings settings;
                 settings.enumerate_dynamic_streams = false;
-                for (const auto & name_type : columns)
+                for (const auto & name_type : getColumns())
                 {
                     auto serialization = getSerialization(name_type.name);
                     auto data = ISerialization::SubstreamData(serialization)
@@ -454,7 +454,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
         {
             /// Use columns_substreams.txt as the source of truth.
             std::optional<UInt64> marks_size;
-            for (size_t col_idx = 0; col_idx != columns.size(); ++col_idx)
+            for (size_t col_idx = 0; col_idx != getColumns().size(); ++col_idx)
             {
                 const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                 for (const auto & substream : substreams)
@@ -488,7 +488,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             ISerialization::EnumerateStreamsSettings settings;
             settings.enumerate_dynamic_streams = false;
             std::optional<UInt64> marks_size;
-            for (const auto & name_type : columns)
+            for (const auto & name_type : getColumns())
             {
                 auto serialization = getSerialization(name_type.name);
                 auto data = ISerialization::SubstreamData(serialization)
@@ -588,7 +588,7 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
 void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     std::unordered_set<String> processed_substreams;
-    for (const auto & column : columns)
+    for (const auto & column : getColumns())
     {
         ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
         each_columns_size[column.name] = size;

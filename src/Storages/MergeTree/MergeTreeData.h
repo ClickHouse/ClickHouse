@@ -20,6 +20,7 @@
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/MergeTree/MergeList.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreePartsMover.h>
 #include <Storages/MergeTree/PinnedPartUUIDs.h>
@@ -1499,20 +1500,29 @@ protected:
 private:
     struct NamesAndTypesListHash
     {
+        using is_transparent = void;
         size_t operator()(const NamesAndTypesList & list) const noexcept;
     };
-    struct ColumnsDescriptionCache
+    struct NamesAndTypesListEqual
     {
-        std::shared_ptr<const ColumnsDescription> original;
-        std::shared_ptr<const ColumnsDescription> with_collected_nested;
+        using is_transparent = void;
+        bool operator()(const NamesAndTypesList & lhs, const NamesAndTypesList & rhs) const { return lhs == rhs; }
     };
-    mutable AggregatedMetrics::GlobalSum columns_descriptions_metric_handle;
-    mutable std::mutex columns_descriptions_cache_mutex;
-    mutable std::unordered_map<NamesAndTypesList, ColumnsDescriptionCache, NamesAndTypesListHash> columns_descriptions_cache TSA_GUARDED_BY(columns_descriptions_cache_mutex);
+    mutable AggregatedMetrics::GlobalSum shared_part_columns_metric_handle;
+    mutable SharedMutex shared_part_columns_cache_mutex;
+    /// Interning cache for the schema-derived metadata shared across data parts (see SharedPartColumns.h).
+    /// The key references the `columns` member of the bundle it maps to, so the column list is stored
+    /// only once per entry; the bundle is always alive while its entry exists because the cache holds
+    /// a strong reference.
+    mutable std::unordered_map<std::reference_wrapper<const NamesAndTypesList>, SharedPartColumnsPtr, NamesAndTypesListHash, NamesAndTypesListEqual>
+        shared_part_columns_cache TSA_GUARDED_BY(shared_part_columns_cache_mutex);
 
 public:
-    ColumnsDescriptionCache getColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
-    void decrefColumnsDescriptionForColumns(const NamesAndTypesList & columns) const;
+    /// Returns the shared metadata bundle for parts storing exactly these columns, building and
+    /// interning it on first request. Parts must return it via `releaseSharedPartColumns` when
+    /// they are destroyed (or replace their columns), so unused entries are evicted.
+    SharedPartColumnsPtr getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const;
+    void releaseSharedPartColumns(SharedPartColumnsPtr shared_part_columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:

@@ -501,12 +501,8 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 
-    if (columns_description)
-    {
-        columns_description.reset();
-        columns_description_with_collected_nested.reset();
-        storage.decrefColumnsDescriptionForColumns(columns);
-    }
+    if (shared_part_columns != SharedPartColumns::getEmpty())
+        storage.releaseSharedPartColumns(std::exchange(shared_part_columns, SharedPartColumns::getEmpty()));
 
     DimensionalMetrics::sub(
         DimensionalMetrics::MergeTreeParts,
@@ -621,6 +617,7 @@ String IMergeTreeDataPart::getNewName(const MergeTreePartInfo & new_part_info) c
 
 std::optional<size_t> IMergeTreeDataPart::getColumnPosition(const String & column_name) const
 {
+    const auto & column_name_to_position = shared_part_columns->column_name_to_position;
     auto it = column_name_to_position.find(column_name);
     if (it == column_name_to_position.end())
         return {};
@@ -692,48 +689,25 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
 {
-    /// Per-part metadata (`columns`, `serialization_infos`, the `serializations` map,
-    /// `column_name_to_position`, and the `columns_description{,_with_collected_nested}`) lives as
-    /// long as the part — i.e. far longer than a query. Routing these allocations to the dedicated
-    /// parts arena keeps them off the default arena's pages, which would otherwise be pinned by
-    /// per-part survivors and unable to be returned to the OS while query allocations come and go.
+    /// Per-part metadata (`serialization_infos` and the parts of `SharedPartColumns` and the
+    /// `serializations` map that end up being built here) lives as long as the part — i.e. far
+    /// longer than a query. Routing these allocations to the dedicated parts arena keeps them off
+    /// the default arena's pages, which would otherwise be pinned by per-part survivors and unable
+    /// to be returned to the OS while query allocations come and go.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
-    columns = new_columns;
     serialization_infos = new_infos;
     metadata_version = new_metadata_version;
 
-    serializations.clear();
-    column_name_to_position.clear();
-    column_name_to_position.reserve(new_columns.size());
-    size_t pos = 0;
+    auto new_shared_part_columns = storage.getSharedPartColumnsForColumns(new_columns);
+    serializations = new_shared_part_columns->getSerializations(serialization_infos);
 
-    for (const auto & column : columns)
-        column_name_to_position.emplace(column.name, pos++);
-
-    for (const auto & column : columns)
+    if (shared_part_columns != new_shared_part_columns)
     {
-        auto it = serialization_infos.find(column.name);
-        auto serialization = it == serialization_infos.end()
-            ? IDataType::getSerialization(column, serialization_infos.getSettings())
-            : IDataType::getSerialization(column, *it->second);
-
-        serializations.emplace(column.name, serialization);
-
-        IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
-        {
-            auto full_name = Nested::concatenateName(column.name, subname);
-            /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
-            if (!column_name_to_position.contains(full_name))
-                serializations.emplace(full_name, subdata.serialization);
-        }, ISerialization::SubstreamData(serialization));
+        auto old_shared_part_columns = std::exchange(shared_part_columns, std::move(new_shared_part_columns));
+        if (old_shared_part_columns != SharedPartColumns::getEmpty())
+            storage.releaseSharedPartColumns(std::move(old_shared_part_columns));
     }
-
-    auto columns_descriptions = storage.getColumnsDescriptionForColumns(columns);
-    columns_description = columns_descriptions.original;
-    columns_description_with_collected_nested = columns_descriptions.with_collected_nested
-        ? columns_descriptions.with_collected_nested
-        : columns_descriptions.original;
 }
 
 String IMergeTreeDataPart::getProjectionName() const
@@ -760,7 +734,7 @@ String IMergeTreeDataPart::getProjectionName() const
 StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 {
     if (info.isPatch())
-        return storage.getPatchPartMetadata(*columns_description, info.getPartitionId(), storage.getContext());
+        return storage.getPatchPartMetadata(getColumnsDescription(), info.getPartitionId(), storage.getContext());
 
     const auto metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     if (!parent_part)
@@ -771,12 +745,12 @@ StorageMetadataPtr IMergeTreeDataPart::getMetadataSnapshot() const
 
 NameAndTypePair IMergeTreeDataPart::getColumn(const String & column_name) const
 {
-    return columns_description->getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return getColumnsDescription().getColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
 std::optional<NameAndTypePair> IMergeTreeDataPart::tryGetColumn(const String & column_name) const
 {
-    return columns_description->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
+    return getColumnsDescription().tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
 }
 
 SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name) const
@@ -791,8 +765,8 @@ SerializationPtr IMergeTreeDataPart::getSerialization(const String & column_name
 
 SerializationPtr IMergeTreeDataPart::tryGetSerialization(const String & column_name) const
 {
-    auto it = serializations.find(column_name);
-    return it == serializations.end() ? nullptr : it->second;
+    auto it = serializations->find(column_name);
+    return it == serializations->end() ? nullptr : it->second;
 }
 
 bool IMergeTreeDataPart::isMovingPart() const
@@ -1166,7 +1140,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesRead
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "File {} is not a statistics file", filename);
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, getColumnsDescription(), required_columns);
         if (!column_desc)
             continue;
 
@@ -1200,7 +1174,7 @@ ColumnsStatistics IMergeTreeDataPart::loadStatisticsWide(const NameSet & require
         if (!filename.ends_with(STATS_FILE_SUFFIX) || !filename.starts_with(STATS_FILE_PREFIX))
             continue;
 
-        const auto * column_desc = getColumnForStatisticsFile(filename, *columns_description, required_columns);
+        const auto * column_desc = getColumnForStatisticsFile(filename, getColumnsDescription(), required_columns);
         if (!column_desc)
             continue;
 
@@ -1721,7 +1695,7 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec() const
 
     const auto & storage_columns = metadata_snapshot->getColumns();
     CompressionCodecPtr result = nullptr;
-    for (const auto & part_column : columns)
+    for (const auto & part_column : getColumns())
     {
         /// It was compressed with default codec and it's not empty
         auto column_size = getColumnSize(part_column.name);
@@ -1947,7 +1921,7 @@ void IMergeTreeDataPart::loadRowsCount()
             return;
         }
 
-        for (const NameAndTypePair & column : columns)
+        for (const NameAndTypePair & column : getColumns())
         {
             ColumnPtr column_col = column.type->createColumn(*getSerialization(column.name));
             if (!column_col->isFixedAndContiguous() || column_col->lowCardinality())
@@ -2162,20 +2136,22 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
 void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
 {
-    /// `ColumnsSubstreams::operator=` is one of the heaviest per-part allocators (deep copy of nested
-    /// vector-of-pair-of-string-of-strings + per-substream maps). Route into the parts arena, same
-    /// rationale as `setColumns` above.
+    /// The copy of `ColumnsSubstreams` used to be one of the heaviest per-part allocators (deep copy
+    /// of nested vector-of-pair-of-string-of-strings + per-substream maps). It is now shared across
+    /// parts with the same substreams, but the first copy of each distinct content is still built
+    /// here. Route it into the parts arena, same rationale as `setColumns` above.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     columns_substreams_.validateColumns(getColumns().getNames());
-    columns_substreams = columns_substreams_;
+    columns_substreams = shared_part_columns->internColumnsSubstreams(columns_substreams_);
 }
 
 void IMergeTreeDataPart::loadColumnsSubstreams()
 {
     if (auto in = readFileIfExists(COLUMNS_SUBSTREAMS_FILE_NAME))
     {
-        columns_substreams.readText(*in);
+        ColumnsSubstreams loaded_columns_substreams;
+        loaded_columns_substreams.readText(*in);
 
         /// Validate that all substream names have valid prefixes matching their column names.
         /// This detects a specific corruption caused by a bug in getFileNameForRenamedColumnStream
@@ -2185,7 +2161,7 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
         /// as if it didn't exist.
         if (part_type == MergeTreeDataPartType::Wide)
         {
-            auto [invalid_substream, invalid_column] = columns_substreams.findInvalidSubstreamName();
+            auto [invalid_substream, invalid_column] = loaded_columns_substreams.findInvalidSubstreamName();
             if (!invalid_substream.empty())
             {
                 LOG_WARNING(
@@ -2201,12 +2177,11 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
                     escapeForFileName(invalid_column),
                     escapeForFileName(Nested::extractTableName(invalid_column)));
 
-                columns_substreams = {};
                 return;
             }
         }
 
-        columns_substreams.validateColumns(getColumns().getNames());
+        setColumnsSubstreams(loaded_columns_substreams);
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
     else if (part_type == MergeTreeDataPartType::Compact && index_granularity_info.mark_type.with_substreams)
@@ -2227,7 +2202,7 @@ bool IMergeTreeDataPart::supportLightweightDeleteMutate() const
 
 bool IMergeTreeDataPart::hasLightweightDelete() const
 {
-    return columns.contains(RowExistsColumn::name);
+    return getColumns().contains(RowExistsColumn::name);
 }
 
 void IMergeTreeDataPart::assertHasVersionMetadata(MergeTreeTransaction * txn) const
@@ -2640,8 +2615,8 @@ void IMergeTreeDataPart::checkConsistency(bool require_part_metadata) const
         const auto debug_info = fmt::format(
             "columns: {}, getMarkSizeInBytes: {}, getMarksCount: {}, index_granularity_info: [{}], index_granularity: [{}], "
             "part_state: [{}]",
-            columns.toString(),
-            index_granularity_info.getMarkSizeInBytes(columns.size()),
+            getColumns().toString(),
+            index_granularity_info.getMarkSizeInBytes(getColumns().size()),
             index_granularity->getMarksCount(),
             index_granularity_info.describe(),
             index_granularity->describe(),

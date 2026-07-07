@@ -1,0 +1,54 @@
+-- { echoOn }
+
+create table t_evict_plain (key Int) engine = MergeTree order by key settings old_parts_lifetime = 480;
+insert into t_evict_plain values (1);
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_plain';
+1
+alter table t_evict_plain add column v1 String settings mutations_sync = 2;
+insert into t_evict_plain values (2, '2');
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_plain';
+2
+-- The dropped column set stays cached only while the pre-mutation parts are alive as Outdated.
+alter table t_evict_plain drop column v1 settings mutations_sync = 2;
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_plain';
+2
+alter table t_evict_plain add column v2 Nullable(Int64) settings mutations_sync = 2;
+insert into t_evict_plain values (3, 3);
+alter table t_evict_plain drop column v2 settings mutations_sync = 2;
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_plain';
+3
+select count(), sum(key) from t_evict_plain;
+3	6
+create table t_evict_nested (key Int, `n.a` Array(Int32), `n.b` Array(String)) engine = MergeTree order by key settings old_parts_lifetime = 480;
+insert into t_evict_nested values (1, [10], ['hello']);
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_nested';
+1
+alter table t_evict_nested add column value String settings mutations_sync = 2;
+insert into t_evict_nested values (2, [20], ['world'], '2');
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_nested';
+2
+-- Detaching a part destroys its in-memory object synchronously: its cache entry must be evicted
+-- (this was the leak in issue 102926: entries for schemas with a distinct collected-nested
+-- description were never evicted).
+alter table t_evict_nested detach part 'all_1_1_0';
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_nested';
+1
+detach table t_evict_nested;
+attach table t_evict_nested;
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_nested';
+1
+select count() from t_evict_nested;
+1
+create table t_evict_nested_noshare (key Int, `n.a` Array(Int32), `n.b` Array(String)) engine = MergeTree order by key settings share_nested_offsets = 0, old_parts_lifetime = 480;
+insert into t_evict_nested_noshare values (1, [10], ['hello']);
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_nested_noshare';
+1
+alter table t_evict_nested_noshare add column value String settings mutations_sync = 2;
+insert into t_evict_nested_noshare values (2, [20], ['world'], '2');
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_nested_noshare';
+2
+alter table t_evict_nested_noshare detach part 'all_1_1_0';
+select columns_descriptions_cache_size from system.tables where database = currentDatabase() and table = 't_evict_nested_noshare';
+1
+select count() from t_evict_nested_noshare;
+1

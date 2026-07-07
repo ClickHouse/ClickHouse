@@ -4,6 +4,8 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
 
+#include <xxhash.h>
+
 namespace DB
 {
 
@@ -220,6 +222,43 @@ String ColumnsSubstreams::toString() const
     writeText(buf);
     return buf.str();
 }
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
+
+/// Feed a string into the hash state, length-prefixed so concatenations are unambiguous.
+static void updateHashWithString(XXH3_state_t & state, std::string_view s)
+{
+    UInt64 size = s.size();
+    XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
+    XXH_INLINE_XXH3_128bits_update(&state, s.data(), s.size());
+}
+
+UInt128 ColumnsSubstreams::getHash() const
+{
+    /// XXH3 instead of the more usual SipHash: this hashes hundreds of substream names per part
+    /// on the part loading path, and XXH3 is several times faster (the hash is only used to key
+    /// an in-memory cache, so it does not need to be cryptographic or stable across versions).
+    XXH3_state_t state;
+    XXH_INLINE_XXH3_128bits_reset(&state);
+
+    UInt64 columns = columns_substreams.size();
+    XXH_INLINE_XXH3_128bits_update(&state, &columns, sizeof(columns));
+
+    for (const auto & [column, substreams] : columns_substreams)
+    {
+        updateHashWithString(state, column);
+        UInt64 size = substreams.size();
+        XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
+        for (const auto & substream : substreams)
+            updateHashWithString(state, substream);
+    }
+
+    auto hash = XXH_INLINE_XXH3_128bits_digest(&state);
+    return {hash.low64, hash.high64};
+}
+
+#pragma clang diagnostic pop
 
 void ColumnsSubstreams::validateColumns(const std::vector<String> & columns) const
 {

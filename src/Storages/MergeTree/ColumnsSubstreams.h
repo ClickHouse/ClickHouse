@@ -57,6 +57,12 @@ public:
     /// If some column exists in both left and right we keep only substreams from the left.
     static ColumnsSubstreams merge(const ColumnsSubstreams & left, const ColumnsSubstreams & right, const std::vector<String> & columns_order);
 
+    /// Compares only the ordered lists of substreams (the rest of the state is derived from them).
+    bool operator==(const ColumnsSubstreams & other) const { return columns_substreams == other.columns_substreams; }
+
+    /// Hash of the ordered lists of substreams, consistent with `operator==`.
+    UInt128 getHash() const;
+
 private:
     std::vector<std::pair<String, std::vector<String>>> columns_substreams;
     std::vector<std::unordered_map<String, size_t>> column_position_to_substream_positions;
