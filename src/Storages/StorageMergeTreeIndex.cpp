@@ -17,6 +17,8 @@
 #include <Storages/MergeTree/MergeTreeMarksLoader.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Common/CurrentThread.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -33,6 +35,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NOT_IMPLEMENTED;
@@ -403,10 +406,43 @@ void StorageMergeTreeIndex::readImpl(
         }
     }
 
-    context->checkAccess(
-        AccessType::SELECT,
-        source_table->getStorageID(),
-        storage_columns.getColumnNamesInStorageForAccessCheck(columns_from_storage));
+    auto source_storage_id = source_table->getStorageID();
+
+    /// Column-level grants and row policies are tracked against top-level storage columns only, so map
+    /// any requested subcolumns (e.g. `t.a`) to their parent storage column (e.g. `t`).
+    auto required_storage_columns = storage_columns.getColumnNamesInStorageForAccessCheck(columns_from_storage);
+    context->checkAccess(AccessType::SELECT, source_storage_id, required_storage_columns);
+
+    /// `mergeTreeIndex` exposes granule-level primary key values (and, with marks, per-column mark
+    /// offsets) for every row, including rows a row policy is supposed to hide. If the row policy
+    /// references any storage column whose values this introspection can leak, reject the read.
+    /// Normalize the row-policy columns through the same storage-column mapping so a subcolumn request
+    /// (e.g. `t.a`, normalized to `t`) is compared against a parent-column or sibling-subcolumn row
+    /// policy (e.g. on `t` or `t.secret`) on equal footing; otherwise the raw names never match and the
+    /// row policy is silently bypassed.
+    auto row_policy_filter = context->getRowPolicyFilter(source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+    {
+        RequiredSourceColumnsVisitor::Data columns_context;
+        RequiredSourceColumnsVisitor(columns_context).visit(row_policy_filter->expression);
+        NameSet row_policy_columns = columns_context.requiredColumns();
+
+        Names row_policy_column_names(row_policy_columns.begin(), row_policy_columns.end());
+        auto row_policy_storage_columns = storage_columns.getColumnNamesInStorageForAccessCheck(row_policy_column_names);
+        NameSet row_policy_storage_columns_set(row_policy_storage_columns.begin(), row_policy_storage_columns.end());
+
+        for (const auto & column_name : required_storage_columns)
+        {
+            if (row_policy_storage_columns_set.contains(column_name))
+            {
+                throw Exception(ErrorCodes::ACCESS_DENIED,
+                    "Cannot read from `mergeTreeIndex` because a row policy on column `{}` "
+                    "is applied on table {}. Reading index values could violate the row policy",
+                    column_name, source_storage_id.getNameForLogs());
+            }
+        }
+    }
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
 
