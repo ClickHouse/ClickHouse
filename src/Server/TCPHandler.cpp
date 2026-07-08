@@ -901,7 +901,12 @@ void TCPHandler::runImpl()
                 {
                     if (replacePipelineWithInsertReturningAfterPush(
                             query_state->io, *insert_query, query_state->query_context, query_state->stage))
+                    {
+                        /// We have finished receiving INSERT data and switched into the delayed RETURNING SELECT phase.
+                        /// Clear insert-data mode so interactive cancellation polls for `Cancel` packets while RETURNING runs.
+                        query_state->need_receive_data_for_insert = false;
                         processOrdinaryQuery(*query_state);
+                    }
                 }
 
                 query_state->io.onFinish();
