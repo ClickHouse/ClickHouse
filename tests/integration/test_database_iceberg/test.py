@@ -752,7 +752,8 @@ def test_insert(started_cluster):
         ["snapshots"],
         ["metadata-log"],
         ["snapshot-log"],
-        ["snapshots", "metadata-log", "snapshot-log"],
+        ["refs"],
+        ["snapshots", "metadata-log", "snapshot-log", "refs"],
     ],
 )
 def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
