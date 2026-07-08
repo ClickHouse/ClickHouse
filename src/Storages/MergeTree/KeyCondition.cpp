@@ -2708,6 +2708,9 @@ void KeyCondition::extractSetAtomsForKeyArgument(
             mapping.tuple_index = component;
             mapping.key_index = candidate.key_column_num;
 
+            const bool is_injective = isDeterministicTransformInjective(
+                candidate.dag.actions->getActionsDAG(), candidate.dag.input_name, candidate.dag.output_name);
+
             std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> candidate_indexes_mapping;
             candidate_indexes_mapping.emplace_back(std::move(mapping));
 
@@ -2722,9 +2725,14 @@ void KeyCondition::extractSetAtomsForKeyArgument(
             if (!candidate_atom)
                 continue;
 
-            /// Wrapped-set atoms are always relaxed: the transformed set only describes
-            /// a superset of the matching values.
-            candidate_atom->relaxed = true;
+            /// A non-injective transform relaxes the atom: the transformed set only describes a
+            /// superset of the matching values. An injective transform of a scalar predicate is
+            /// exact (`f(s) IN f(set)` is equivalent to `s IN set`), which lets negated membership
+            /// prune through this atom. An injective transform of one tuple component is still
+            /// only a necessary condition of the tuple membership; `try_build_atom` has already
+            /// marked such atoms relaxed through the mapping-size rule.
+            if (!is_injective)
+                candidate_atom->relaxed = true;
 
             for (size_t column_idx : candidate_atom->key_columns)
                 if (column_idx < has_atom_for_key_column.size())
