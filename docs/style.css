@@ -1,17 +1,13 @@
 /*
- * Safari-only fix: in dark mode the announcement banner (warning/yellow
- * background) inherits white text, producing white-on-yellow which is
- * unreadable. Force dark text on the banner in Safari only.
+ * Announcement banner dark-mode fix.
  *
- * The `@supports (-webkit-hyphens: none) and (not (translate: none))` block
- * is a well-known Safari-only feature query: `-webkit-hyphens` is Safari-
- * specific and the `translate` CSS property is not supported in Safari at
- * the time of writing, so this rule is scoped to Safari and does not
- * affect Chrome, Firefox, or other browsers.
+ * In dark mode the banner (yellow/warning background) inherits white text
+ * via Tailwind utilities like `dark:text-white/95` and
+ * `dark:[&_*]:text-white/95!`, producing white-on-yellow which is
+ * unreadable. Force dark text on the banner and all its descendants in
+ * dark mode across all browsers.
  */
-@supports (-webkit-hyphens: none) and (not (translate: none)) {
-  html.dark #banner,
-  html.dark #banner * {
-    color: #0a0a0a !important;
-  }
+html.dark #banner,
+html.dark #banner * {
+  color: #0a0a0a !important;
 }
