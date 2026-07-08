@@ -5202,25 +5202,32 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
                                                                                            : ASTConstraintDeclaration::Type::CHECK;
         fuzz(constraint->children);
     }
-    else if (typeid_cast<ASTDataType *>(ast.get()) && fuzz_rand() % 10 == 0)
+    else if (typeid_cast<ASTDataType *>(ast.get()))
     {
-        /// Re-fuzz the data type via the DataType layer, which produces structurally valid
-        /// mutations (nullable wrappers, array nesting, precision changes, etc.).
-        const auto old_type = DataTypeFactory::instance().tryGet(ast);
-        if (old_type)
+        /// A data type is only ever fuzzed via the DataType layer, which produces structurally
+        /// valid mutations (nullable wrappers, array nesting, precision changes, etc.). We must
+        /// NOT recurse into its argument list with the generic expression fuzzer: that list is
+        /// parsed by ParserDataType, which does not accept operator/function expressions, so
+        /// injecting e.g. multiply()/if()/multiIf() into it produces an ASTDataType whose
+        /// argument is an ASTFunction. Such a node cannot be produced by parsing, so
+        /// ASTDataType::formatImpl emits text that ParserDataType parses back into a different
+        /// AST, tripping the format-parse-format consistency check in executeQuery
+        /// (LOGICAL_ERROR "Inconsistent AST formatting", aborts on DEBUG/sanitizer builds; #109706).
+        if (fuzz_rand() % 10 == 0)
         {
-            const auto new_type = fuzzDataType(old_type);
-            ParserDataType parser;
-            debug_visited_nodes.erase(ast.get());
-            ast = parseQuery(
-                parser,
-                new_type->getName(),
-                DBMS_DEFAULT_MAX_QUERY_SIZE,
-                DBMS_DEFAULT_MAX_PARSER_DEPTH,
-                DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            if (const auto old_type = DataTypeFactory::instance().tryGet(ast))
+            {
+                const auto new_type = fuzzDataType(old_type);
+                ParserDataType parser;
+                debug_visited_nodes.erase(ast.get());
+                ast = parseQuery(
+                    parser,
+                    new_type->getName(),
+                    DBMS_DEFAULT_MAX_QUERY_SIZE,
+                    DBMS_DEFAULT_MAX_PARSER_DEPTH,
+                    DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            }
         }
-        else
-            fuzz(ast->children);
     }
     else if (auto * show_tables = typeid_cast<ASTShowTablesQuery *>(ast.get()))
     {
