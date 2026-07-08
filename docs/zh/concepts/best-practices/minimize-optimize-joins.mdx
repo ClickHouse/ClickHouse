@@ -1,0 +1,73 @@
+---
+slug: /best-practices/minimize-optimize-joins
+sidebarTitle: '尽量减少并优化 JOIN'
+title: '尽量减少并优化 JOIN'
+description: '介绍 ClickHouse 中 JOIN 使用最佳实践的文档'
+keywords: ['JOIN', '并行哈希 JOIN']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse 支持多种 JOIN 类型和算法，而且 JOIN 性能在最近几个发行版中已显著提升。不过，JOIN 天生就比从单个反规范化表中查询成本更高。反规范化会将计算工作从查询时转移到插入或预处理阶段，这通常会显著降低运行时延迟。对于实时或对延迟敏感的分析查询，**强烈建议采用反规范化**。
+
+一般来说，在以下情况下应进行反规范化：
+
+* 表很少发生变化，或者可以接受批量刷新。
+* 关系不是多对多，或者基数不会过高。
+* 实际会查询的列只有一小部分，也就是说，某些列可以不纳入反规范化。
+* 你具备将处理工作从 ClickHouse 转移到上游系统 (如 [Flink](/zh/integrations/connectors/data-ingestion/apache-flink)) 的能力，在那里可以管理实时富集或扁平化。
+
+并非所有数据都需要反规范化——应重点关注经常查询的属性。还可以考虑使用 [materialized views](/zh/concepts/best-practices/use-materialized-views) 来增量计算聚合，而不是复制整个子表。当 schema 更新很少且延迟至关重要时，反规范化通常能提供最佳的性能权衡。
+
+如需了解在 ClickHouse 中对数据进行反规范化的完整指南，请参见 [这里](/zh/guides/clickhouse/data-modelling/denormalization)。
+
+<div id="when-joins-are-required">
+  ## 何时需要 JOIN
+</div>
+
+当必须使用 JOIN 时，请确保使用**至少 24.12 版本，最好使用最新版本**，因为每个新版本都会持续改进 JOIN 性能。自 ClickHouse 24.12 起，查询计划器会自动将较小的表放在 JOIN 的右侧，以获得最佳性能——而这项工作此前需要手动完成。后续还会推出更多增强功能，包括更积极的过滤条件下推，以及多个 JOIN 的自动重排序。
+
+请遵循以下最佳实践来提升 JOIN 性能：
+
+* **避免笛卡尔积**：如果左侧的某个值与右侧的多个值匹配，JOIN 将返回多行——这就是所谓的笛卡尔积。如果你的使用场景并不需要右侧所有匹配项，只需要其中任意一个匹配项，可以使用 `ANY` JOIN (例如 `LEFT ANY JOIN`) 。与常规 JOIN 相比，这类 JOIN 更快且占用更少内存。
+* **减小参与 JOIN 的表规模**：JOIN 的运行时间和内存消耗会随着左右两张表的大小成比例增长。要减少 JOIN 处理的数据量，请在查询的 `WHERE` 或 `JOIN ON` 子句中添加额外的过滤条件。ClickHouse 会尽可能将过滤条件下推到查询计划的更深层，通常会在 JOIN 之前执行。如果过滤条件由于某种原因没有被自动下推，可以将 JOIN 的一侧改写为子查询，以强制进行下推。
+* **在适用时通过字典使用 direct JOIN**：ClickHouse 中的标准 JOIN 分两个阶段执行：首先是构建阶段，遍历右侧并构建哈希表；然后是探测阶段，遍历左侧，并通过哈希表查找匹配的 JOIN 对象。如果右侧是[字典](/zh/concepts/features/dictionaries/index)或另一个具有键值特征的表引擎 (例如 [EmbeddedRocksDB](/zh/reference/engines/table-engines/integrations/embedded-rocksdb) 或 [Join table engine](/zh/reference/engines/table-engines/special/join)) ，那么 ClickHouse 可以使用 “direct” JOIN 算法，从而实际上无需构建哈希表，加快查询处理速度。它适用于 `INNER` 和 `LEFT OUTER` JOIN，在实时分析类工作负载中是更推荐的选择。
+* **利用表排序优化 JOIN**：ClickHouse 中的每张表都会按照表的主键列排序。可以通过使用所谓的 sort-merge JOIN 算法 (例如 `full_sorting_merge` 和 `partial_merge`) 来利用这种排序。与基于哈希表的标准 JOIN 算法 (见下文 `parallel_hash`、`hash`、`grace_hash`) 不同，sort-merge JOIN 算法会先对两张表排序，再进行合并。如果查询是基于两张表各自的主键列进行 JOIN，那么 sort-merge 有一项优化可以省略排序步骤，从而节省处理时间和开销。
+* **避免发生落盘的 JOIN**：JOIN 的中间状态 (例如哈希表) 可能会变得非常大，以至于无法装入主内存。在这种情况下，ClickHouse 默认会返回内存不足错误。某些 join 算法 (见下文) ，例如 [`grace_hash`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-hash-joins-part2)、[`partial_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3) 和 [`full_sorting_merge`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-full-sort-partial-merge-part3)，能够将中间状态落盘并继续执行查询。不过，这些 join 算法仍应谨慎使用，因为磁盘访问会显著拖慢 join 处理。我们建议优先通过其他方式优化 JOIN 查询，以减小中间状态的规模。
+* **在 outer JOIN 中使用默认值作为未匹配标记**：左/右/全外连接会包含左表/右表/两张表中的所有值。如果某个值在另一张表中找不到对应的 JOIN 对象，ClickHouse 会用一个特殊标记来替代该 JOIN 对象。SQL 标准要求数据库使用 NULL 作为这种标记。在 ClickHouse 中，这要求将结果列包装为 Nullable，从而带来额外的内存和性能开销。作为替代方案，你可以配置设置 `join_use_nulls = 0`，并使用结果列数据类型的默认值作为标记。
+
+<Info>
+  **谨慎使用字典**
+
+  在 ClickHouse 中使用字典进行 JOIN 时，需要注意：按照设计，字典不允许出现重复键。在数据加载过程中，任何重复键都会被静默去重——对于同一个键，只保留最后加载的值。这一特性使字典非常适合一对一或多对一的关系，也就是只需要最新值或权威值的场景。但如果将字典用于一对多或多对多关系 (例如，将角色连接到演员，而一个演员可以有多个角色) ，就会导致静默的数据丢失，因为除其中一行外，其他所有匹配行都会被丢弃。因此，字典并不适用于需要在多条匹配记录之间完整保留关系的场景。有关字典适用与不适用场景的更多说明，请参见[字典最佳实践](/zh/concepts/features/dictionaries/best-practices)。
+</Info>
+
+<div id="choosing-the-right-join-algorithm">
+  ## 选择正确的 JOIN 算法
+</div>
+
+ClickHouse 支持多种 JOIN 算法，可在速度和内存占用之间进行权衡：
+
+* **Parallel Hash JOIN (默认) ：** 适用于能装入内存的中小型右侧表，速度很快。
+* **Direct JOIN：** 使用字典 (或其他具有键值特性的表引擎) 并配合 `INNER` 或 `LEFT ANY JOIN` 时尤为理想——它无需构建哈希表，因此是点查找最快的方法。
+* **Full Sorting Merge JOIN：** 当两张表都按连接键排序时，效率很高。
+* **Partial Merge JOIN：** 可将内存占用降到最低，但速度较慢——最适合在内存有限时连接大型表。
+* **Grace Hash JOIN：** 灵活且可调节内存使用，适合大型数据集，并可按需权衡性能表现。
+
+<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins —— 速度与内存" />
+
+<Note>
+  每种算法支持的 JOIN 类型各不相同。每种算法所支持 JOIN 类型的完整列表可在[这里](/zh/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)查看。
+</Note>
+
+你可以通过设置 `join_algorithm = 'auto'` (默认值) 让 ClickHouse 自动选择最佳算法，也可以根据你的工作负载显式指定。如果你需要为优化性能或内存开销而选择 JOIN 算法，我们建议参考[本指南](/zh/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)。
+
+为了获得最佳性能：
+
+* 在高性能工作负载中尽量减少 JOIN。
+* 每个查询应避免使用超过 3–4 个 JOIN。
+* 基于真实数据对不同算法进行基准测试——性能会因 JOIN 键分布和数据规模而异。
+
+如需进一步了解 JOIN 优化策略、JOIN 算法及其调优方法，请参阅 [ClickHouse 文档](/zh/concepts/features/operations/select/joining-tables)和这个[博客系列](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1)。

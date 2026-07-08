@@ -1,0 +1,692 @@
+---
+slug: /use-cases/observability/clickstack/migration/elastic/migrating-data
+title: '将数据从 Elastic 迁移至 ClickStack'
+sidebarTitle: '迁移数据'
+description: '将数据从 Elastic 迁移至 ClickStack'
+show_related_blogs: true
+keywords: ['ClickStack']
+doc_type: 'guide'
+---
+
+<div id="parallel-operation-strategy">
+  ## 并行运行策略
+</div>
+
+在因可观测性场景从 Elastic 迁移到 ClickStack 时，我们建议采用**并行运行**策略，而不是尝试迁移历史数据。这种策略有以下几个优势：
+
+1. **风险最低**：通过让两个系统同时运行，你可以在验证 ClickStack 并帮助用户熟悉新系统的同时，继续访问现有数据和仪表盘。
+2. **数据自然过期**：大多数可观测性数据的保留期都比较短 (通常为 30 天或更短) ，因此可以随着 Elastic 中的数据自然过期，平稳完成过渡。
+3. **迁移更简单**：无需借助复杂的数据传输工具或流程，在两个系统之间迁移历史数据。
+
+<br />
+
+<Info>
+  **迁移数据**
+
+  我们在[&quot;迁移数据&quot;](#migrating-data)一节中演示了一种将关键数据从 Elasticsearch 迁移到 ClickHouse 的方法。对于较大的数据集，不建议使用这种方法，因为它通常难以提供理想的性能——其瓶颈在于 Elasticsearch 的高效导出能力有限，并且仅支持 JSON 格式。
+</Info>
+
+<div id="implementation-steps">
+  ### 实施步骤
+</div>
+
+<Steps>
+  <Step>
+    #### 配置双路摄取
+
+    设置您的数据采集管道，同时将数据发送到 Elastic 和 ClickStack。
+
+    具体如何实现取决于您当前使用的采集代理，请参阅[&quot;迁移采集代理&quot;](/zh/clickstack/migration/elastic/migrating-agents)。
+  </Step>
+
+  <Step>
+    #### 调整保留期
+
+    配置 Elastic 的生存时间 (TTL) 设置，使其与您期望的保留期一致。设置 ClickStack 的 [生存时间 (TTL)](/zh/clickstack/managing/production#configure-ttl)，使数据保留相同的时长。
+  </Step>
+
+  <Step>
+    #### 验证并比较
+
+    * 在两个系统上运行查询，以确保数据一致性
+    * 比较查询性能和结果
+    * 将仪表盘和告警迁移到 ClickStack。目前这仍需手动完成。
+    * 验证所有关键仪表盘和告警在 ClickStack 中都能按预期工作
+  </Step>
+
+  <Step>
+    #### 逐步过渡
+
+    * 随着 Elastic 中的数据自然过期，您会越来越依赖 ClickStack
+    * 一旦确认 ClickStack 运行稳定可靠，您就可以开始将查询和仪表盘逐步切换过去
+  </Step>
+</Steps>
+
+<div id="long-term-retention">
+  ### 长期保留
+</div>
+
+对于需要更长期保留数据的组织：
+
+* 继续并行运行这两个系统，直到 Elastic 中的所有数据都已过期
+* ClickStack 的[分层存储](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)能力可帮助高效管理长期数据。
+* 考虑使用 [materialized views](/zh/concepts/features/materialized-views/incremental-materialized-view) 来维护聚合后或经过过滤的历史数据，同时允许原始数据过期。
+
+<div id="migration-timeline">
+  ### 迁移时间安排
+</div>
+
+迁移时间安排取决于您的数据保留要求：
+
+* **保留 30 天**：可在一个月内完成迁移。
+* **保留更长时间**：继续并行运行，直到 Elastic 中的数据过期。
+* **历史数据**：如果确有必要，可考虑使用[迁移数据](#migrating-data)导入特定的历史数据。
+
+<div id="migration-settings">
+  ## 迁移设置
+</div>
+
+从 Elastic 迁移到 ClickStack 时，需要调整索引和存储设置，以适应 ClickHouse 的架构。Elasticsearch 依赖水平扩缩容和分片来实现性能与容错，因此默认通常会有多个分片；而 ClickHouse 则针对垂直扩缩容进行了优化，通常在分片较少时能获得最佳性能。
+
+<div id="recommended-settings">
+  ### 推荐设置
+</div>
+
+我们建议从**单分片**开始，并优先进行纵向扩容。此配置适用于大多数可观测性工作负载，同时也能简化管理和查询性能调优。
+
+* **[ClickHouse Cloud](https://clickhouse.com/cloud)**：默认采用单分片、多副本架构。存储与计算可独立扩缩容，因此非常适合摄取模式难以预测且读取密集型的可观测性场景。
+* **ClickHouse OSS**：在自管理部署中，我们建议：
+  * 从单分片开始
+  * 通过增加 CPU 和 RAM 进行纵向扩容
+  * 使用[分层存储](/zh/guides/use-cases/observability/build-your-own/managing-data#storage-tiers)，借助兼容 S3 的对象存储扩展本地磁盘容量
+  * 如果需要高可用性，请使用 [`ReplicatedMergeTree`](/zh/reference/engines/table-engines/mergetree-family/replication)
+  * 对于容错能力，在可观测性工作负载中，[每个分片 1 个副本](/zh/reference/engines/table-engines/mergetree-family/replication) 通常就足够了。
+
+<div id="when-to-shard">
+  ### 何时需要分片
+</div>
+
+在以下情况下，可能需要进行分片：
+
+* 你的摄取速率超过单个节点的容量 (通常 &gt;500K 行/秒)
+* 你需要进行租户隔离或按区域隔离数据
+* 你的总数据量过大，即使使用对象存储，单台服务器也无法承载
+
+如果你确实需要分片，请参阅[水平扩缩容](/zh/guides/oss/deployment-and-scaling/examples/2-shards-1-replica)，了解有关分片键和分布式表配置的指导。
+
+<div id="retention-and-ttl">
+  ### 数据保留与 生存时间 (TTL)
+</div>
+
+ClickHouse 在 MergeTree 表上使用 [生存时间 (TTL) 子句](/zh/clickstack/managing/production#configure-ttl) 来管理数据过期。生存时间 (TTL) 策略可以：
+
+* 自动删除过期数据
+* 将较旧的数据迁移到冷对象存储
+* 仅将近期且经常查询的日志保留在高速磁盘上
+
+我们建议让 ClickHouse 的 生存时间 (TTL) 配置与现有的 Elastic 数据保留策略保持一致，以便在迁移期间维持一致的数据生命周期。示例请参见 [ClickStack 生产环境 生存时间 (TTL) 配置](/zh/clickstack/managing/production#configure-ttl)。
+
+<div id="migrating-data">
+  ## 迁移数据
+</div>
+
+虽然对于大多数可观测性数据，我们建议采用并行运行，但在某些特定情况下，可能需要将数据从 Elasticsearch 直接迁移到 ClickHouse：
+
+* 用于数据富集的小型查找表 (例如用户映射、服务目录)
+* 存储在 Elasticsearch 中、需要与可观测性数据关联的业务数据；相比 Elasticsearch 更受限的查询能力，ClickHouse 的 SQL 能力和商业智能集成使这类数据更易于维护和查询。
+* 需要在迁移过程中保留的配置数据
+
+这种方法仅适用于少于 1000 万行的数据集，因为 Elasticsearch 的导出能力仅限于通过 HTTP 导出 JSON，对更大规模的数据集扩展性较差。
+
+以下步骤说明如何将单个 Elasticsearch 索引迁移到 ClickHouse。
+
+<Steps>
+  <Step>
+    ### 迁移 schema
+
+    在 ClickHouse 中为从 Elasticsearch 迁移的索引创建一张表。您可以将 [Elasticsearch 类型映射到对应的 ClickHouse](/zh/clickstack/migration/elastic/types) 等效类型。或者，也可以直接使用 ClickHouse 中的 JSON 数据类型，该类型会在数据写入时动态创建相应类型的列。
+
+    请参考以下针对包含 `syslog` 数据的索引的 Elasticsearch 映射：
+
+    <Accordion title="Elasticsearch 映射">
+      ```javascripton
+      GET .ds-logs-system.syslog-default-2025.06.03-000001/_mapping
+      {
+        ".ds-logs-system.syslog-default-2025.06.03-000001": {
+          "mappings": {
+            "_meta": {
+              "managed_by": "fleet",
+              "managed": true,
+              "package": {
+                "name": "system"
+              }
+            },
+            "_data_stream_timestamp": {
+              "enabled": true
+            },
+            "dynamic_templates": [],
+            "date_detection": false,
+            "properties": {
+              "@timestamp": {
+                "type": "date",
+                "ignore_malformed": false
+              },
+              "agent": {
+                "properties": {
+                  "ephemeral_id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "name": {
+                    "type": "keyword",
+                    "fields": {
+                      "text": {
+                        "type": "match_only_text"
+                      }
+                    }
+                  },
+                  "type": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "cloud": {
+                "properties": {
+                  "account": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "availability_zone": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "image": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "instance": {
+                    "properties": {
+                      "id": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "machine": {
+                    "properties": {
+                      "type": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  },
+                  "provider": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "region": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "service": {
+                    "properties": {
+                      "name": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "data_stream": {
+                "properties": {
+                  "dataset": {
+                    "type": "constant_keyword",
+                    "value": "system.syslog"
+                  },
+                  "namespace": {
+                    "type": "constant_keyword",
+                    "value": "default"
+                  },
+                  "type": {
+                    "type": "constant_keyword",
+                    "value": "logs"
+                  }
+                }
+              },
+              "ecs": {
+                "properties": {
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "elastic_agent": {
+                "properties": {
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "snapshot": {
+                    "type": "boolean"
+                  },
+                  "version": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "event": {
+                "properties": {
+                  "agent_id_status": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "dataset": {
+                    "type": "constant_keyword",
+                    "value": "system.syslog"
+                  },
+                  "ingested": {
+                    "type": "date",
+                    "format": "strict_date_time_no_millis||strict_date_optional_time||epoch_millis",
+                    "ignore_malformed": false
+                  },
+                  "module": {
+                    "type": "constant_keyword",
+                    "value": "system"
+                  },
+                  "timezone": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "host": {
+                "properties": {
+                  "architecture": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "containerized": {
+                    "type": "boolean"
+                  },
+                  "hostname": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "id": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "ip": {
+                    "type": "ip"
+                  },
+                  "mac": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "name": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  },
+                  "os": {
+                    "properties": {
+                      "build": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "codename": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "family": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "kernel": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "name": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      },
+                      "platform": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "type": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      },
+                      "version": {
+                        "type": "keyword",
+                        "ignore_above": 1024
+                      }
+                    }
+                  }
+                }
+              },
+              "input": {
+                "properties": {
+                  "type": {
+                    "type": "keyword",
+                    "ignore_above": 1024
+                  }
+                }
+              },
+              "log": {
+                "properties": {
+                  "file": {
+                    "properties": {
+                      "path": {
+                        "type": "keyword",
+                        "fields": {
+                          "text": {
+                            "type": "match_only_text"
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "offset": {
+                    "type": "long"
+                  }
+                }
+              },
+              "message": {
+                "type": "match_only_text"
+              },
+              "process": {
+                "properties": {
+                  "name": {
+                    "type": "keyword",
+                    "fields": {
+                      "text": {
+                        "type": "match_only_text"
+                      }
+                    }
+                  },
+                  "pid": {
+                    "type": "long"
+                  }
+                }
+              },
+              "system": {
+                "properties": {
+                  "syslog": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      ```
+    </Accordion>
+
+    对应的 ClickHouse 表 schema：
+
+    <Accordion title="ClickHouse schema">
+      ```sql
+      SET enable_json_type = 1;
+
+      CREATE TABLE logs_system_syslog
+      (
+          `@timestamp` DateTime,
+          `agent` Tuple(
+              ephemeral_id String,
+              id String,
+              name String,
+              type String,
+              version String),
+          `cloud` Tuple(
+              account Tuple(
+                  id String),
+              availability_zone String,
+              image Tuple(
+                  id String),
+              instance Tuple(
+                  id String),
+              machine Tuple(
+                  type String),
+              provider String,
+              region String,
+              service Tuple(
+                  name String)),
+          `data_stream` Tuple(
+              dataset String,
+              namespace String,
+              type String),
+          `ecs` Tuple(
+              version String),
+          `elastic_agent` Tuple(
+              id String,
+              snapshot UInt8,
+              version String),
+          `event` Tuple(
+              agent_id_status String,
+              dataset String,
+              ingested DateTime,
+              module String,
+              timezone String),
+          `host` Tuple(
+              architecture String,
+              containerized UInt8,
+              hostname String,
+              id String,
+              ip Array(Variant(IPv4, IPv6)),
+              mac Array(String),
+              name String,
+              os Tuple(
+                  build String,
+                  codename String,
+                  family String,
+                  kernel String,
+                  name String,
+                  platform String,
+                  type String,
+                  version String)),
+          `input` Tuple(
+              type String),
+          `log` Tuple(
+              file Tuple(
+                  path String),
+              offset Int64),
+          `message` String,
+          `process` Tuple(
+              name String,
+              pid Int64),
+          `system` Tuple(
+              syslog JSON)
+      )
+      ENGINE = MergeTree
+      ORDER BY (`host.name`, `@timestamp`)
+      ```
+    </Accordion>
+
+    请注意：
+
+    * Tuple 用于表示嵌套结构，而非使用点号表示法
+    * 根据映射使用相应的 ClickHouse 类型：
+      * `keyword` → `String`
+      * `date` → `DateTime`
+      * `boolean` → `UInt8`
+      * `long` → `Int64`
+      * `ip` → `Array(Variant(IPv4, IPv6))`。这里使用 [`Variant(IPv4, IPv6)`](/zh/reference/data-types/variant)，因为该字段中同时包含 [`IPv4`](/zh/reference/data-types/ipv4) 和 [`IPv6`](/zh/reference/data-types/ipv6)。
+      * `object` → `JSON`，用于结构无法预先确定的 syslog 对象。
+    * 列 `host.ip` 和 `host.mac` 是显式声明的 `Array` 类型；而在 Elasticsearch 中，所有类型都是数组。
+    * 添加了一个使用时间戳和主机名的 `ORDER BY` 子句，以提高基于时间的查询效率
+    * 使用 `MergeTree` 作为引擎类型，最适合日志数据
+
+    **[推荐采用](/zh/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures)这种静态定义 schema、并在必要时有选择地使用 JSON 类型的方法。**
+
+    这种严格的 schema 具有以下几个优势：
+
+    * **数据验证** – 除特定结构外，强制采用严格的 schema 可避免列数爆炸的风险。
+    * **避免列爆炸风险**：虽然 JSON 类型可扩展到潜在的数千列，其中 subcolumns 会作为专用列存储，但这可能导致 column file 爆炸，即创建过多的 column file，从而影响性能。为缓解这一问题，JSON 使用的底层 [Dynamic 类型](/zh/reference/data-types/dynamic) 提供了 [`max_dynamic_paths`](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns) 参数，用于限制以独立 column file 形式存储的唯一路径数量。一旦达到阈值，额外路径就会使用紧凑编码 format 存储到共享 column file 中，从而在支持灵活数据摄取的同时兼顾性能和存储效率。不过，访问这个共享 column file 的性能会稍逊一些。另请注意，JSON 列也可以结合 [type hints](/zh/guides/clickhouse/data-formats/json/schema#using-type-hints-and-skipping-paths) 使用。带有“提示”的列将具有与专用列相同的性能。
+    * **更轻松地查看路径和类型的内部信息**：尽管 JSON 类型支持使用[内部信息函数](/zh/reference/data-types/newjson#introspection-functions)来确定已推断出的类型和路径，但对于静态结构，借助 `DESCRIBE` 等方式查看通常更简单。
+
+    <br />
+
+    或者，您也可以创建一个仅包含一个 `JSON` 列的表。
+
+    ```sql
+    SET enable_json_type = 1;
+
+    CREATE TABLE syslog_json
+    (
+     `json` JSON(`host.name` String, `@timestamp` DateTime)
+    )
+    ENGINE = MergeTree
+    ORDER BY (`json.host.name`, `json.@timestamp`)
+    ```
+
+    <Note>
+      我们在 JSON 定义中为 `host.name` 和 `timestamp` 列提供了类型提示，因为我们会在排序键/主键中使用它们。这有助于 ClickHouse 确认这些列不会为 NULL，并明确应使用哪些子列 (每种类型可能对应多个子列，否则这里会有歧义) 。
+    </Note>
+
+    后一种方法虽然更简单，但最适合用于原型设计和数据工程任务。在生产环境中，仅在必要时对动态子结构使用 `JSON`。
+
+    有关在 schema 中使用 JSON 类型及如何高效应用它的更多详情，建议参阅指南 [&quot;Designing your schema&quot;](/zh/guides/clickhouse/data-formats/json/schema)。
+  </Step>
+
+  <Step>
+    ### 安装 `elasticdump`
+
+    我们建议使用 [`elasticdump`](https://github.com/elasticsearch-dump/elasticsearch-dump) 从 Elasticsearch 导出数据。该工具依赖 `node`，应安装在一台在网络上可同时便捷访问 Elasticsearch 和 ClickHouse 的机器上。对于大多数导出任务，我们建议使用至少配备 4 个 CPU 核心和 16GB RAM 的专用服务器。
+
+    ```shell
+    npm install elasticdump -g
+    ```
+
+    `elasticdump` 在数据迁移方面有以下几个优势：
+
+    * 它直接与 Elasticsearch REST API 交互，确保数据能够被正确导出。
+    * 在导出过程中借助 Point-in-Time (PIT) API 保持数据一致性——它会在特定时刻创建数据的一致性快照。
+    * 可直接将数据导出为 JSON 格式，并流式传输到 ClickHouse 客户端进行插入。
+
+    在条件允许的情况下，我们建议将 ClickHouse、Elasticsearch 和 `elastic dump` 运行在同一可用区或数据中心，以尽量减少网络出站流量并最大化吞吐量。
+  </Step>
+
+  <Step>
+    ### 安装 ClickHouse 客户端
+
+    请确保在 `elasticdump` 所在的服务器上已[安装 ClickHouse](/zh/get-started/setup/install)。**不要启动 ClickHouse 服务器**——这些步骤只需要客户端。
+  </Step>
+
+  <Step>
+    ### 流式传输数据
+
+    要在 Elasticsearch 和 ClickHouse 之间流式传输数据，请使用 `elasticdump` 命令，并将输出直接通过管道传给 ClickHouse 客户端。以下命令会将数据插入我们结构清晰的表 `logs_system_syslog`。
+
+    ```shell
+    # 导出 URL 和凭据
+    export ELASTICSEARCH_INDEX=.ds-logs-system.syslog-default-2025.06.03-000001
+    export ELASTICSEARCH_URL=
+    export ELASTICDUMP_INPUT_USERNAME=
+    export ELASTICDUMP_INPUT_PASSWORD=
+    export CLICKHOUSE_HOST=
+    export CLICKHOUSE_PASSWORD=
+    export CLICKHOUSE_USER=default
+
+    # 要运行的命令 - 根据需要修改
+    elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
+    clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+    --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONEachRow"
+    ```
+
+    请注意，`elasticdump` 使用了以下标志：
+
+    * `type=data` - 将响应限制为仅包含 Elasticsearch 中的文档内容。
+    * `input-index` - 我们的 Elasticsearch 输入索引。
+    * `output=$` - 将所有结果重定向到 stdout。
+    * `sourceOnly` 标志可确保在响应中省略元数据字段。
+    * `searchAfter` 标志用于通过 [`searchAfter` API](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/paginate-search-results#search-after) 高效地对结果进行分页。
+    * `pit=true` - 使用 [point in time API](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-open-point-in-time) 确保不同查询之间的结果一致。
+
+    <br />
+
+    这里的 ClickHouse 客户端参数 (凭据除外) ：
+
+    * `max_insert_block_size=1000` - 达到这个行数后，ClickHouse 客户端就会发送数据。增大该值可以提高吞吐量，但代价是生成一个块所需的时间更长，因此数据出现在 ClickHouse 中的时间也会更晚。
+    * `min_insert_block_size_bytes=0` - 关闭服务端按字节进行的块 squashing。
+    * `min_insert_block_size_rows=1000` - 在服务端对来自客户端的块进行 squashing。在这种情况下，我们将其设置为 `max_insert_block_size`，这样行会立即显示出来。增大该值可提高吞吐量。
+    * `query="INSERT INTO logs_system_syslog FORMAT JSONAsRow"` - 以 [JSONEachRow format](/zh/guides/clickhouse/data-formats/json/formats) 插入数据。如果发送到定义明确的 schema (例如 `logs_system_syslog`) ，这种方式是合适的。
+
+    <br />
+
+    **你可以预期吞吐量达到每秒数千行的量级。**
+
+    <Info>
+      **插入到单个 JSON 行中**
+
+      如果要插入到单个 JSON 列中 (参见上文的 `syslog_json` schema) ，也可以使用相同的插入命令。不过，你必须将 format 指定为 `JSONAsObject`，而不是 `JSONEachRow`，例如：
+
+      ```shell
+      elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true | 
+      clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+      --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog FORMAT JSONAsObject"
+      ```
+
+      更多详情请参见[“将 JSON 作为对象读取”](/zh/guides/clickhouse/data-formats/json/formats#reading-json-as-an-object)。
+    </Info>
+  </Step>
+
+  <Step>
+    ### 转换数据 (可选)
+
+    上述命令假设 Elasticsearch 字段与 ClickHouse 列之间是一对一映射。用户通常需要在将数据插入 ClickHouse 之前，先对 Elasticsearch 数据进行过滤和转换。
+
+    这可以通过 [`input`](/zh/reference/functions/table-functions/input) table function 实现，它允许我们对 stdout 执行任意 `SELECT` 查询。
+
+    假设我们只想存储前述数据中的 `timestamp` 和 `hostname` 字段。ClickHouse schema：
+
+    ```sql
+    CREATE TABLE logs_system_syslog_v2
+    (
+        `timestamp` DateTime,
+        `hostname` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (hostname, timestamp)
+    ```
+
+    要将 `elasticdump` 的数据插入此表，只需使用 `input` 表函数即可——借助 JSON 类型动态检测并选择所需的列。请注意，这个 `SELECT` 查询也可以很方便地加入过滤条件。
+
+    ```shell
+    elasticdump --input=${ELASTICSEARCH_URL} --type=data --input-index ${ELASTICSEARCH_INDEX} --output=$ --sourceOnly --searchAfter --pit=true |
+    clickhouse-client --host ${CLICKHOUSE_HOST} --secure --password ${CLICKHOUSE_PASSWORD} --user ${CLICKHOUSE_USER} --max_insert_block_size=1000 \
+    --min_insert_block_size_bytes=0 --min_insert_block_size_rows=1000 --query="INSERT INTO test.logs_system_syslog_v2 SELECT json.\`@timestamp\` as timestamp, json.host.hostname as hostname FROM input('json JSON') FORMAT JSONAsObject"
+    ```
+
+    请注意，需要对 `@timestamp` 字段名进行转义，并使用 `JSONAsObject` 输入格式。
+  </Step>
+</Steps>
