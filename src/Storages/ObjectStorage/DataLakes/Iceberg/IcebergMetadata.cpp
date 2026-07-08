@@ -229,7 +229,8 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                         const String table_namespace = deriveTableNamespaceForLocationCheck(
                             configuration->getNamespace(), configuration->getRawURI());
                         bool location_ok = !candidate->has(f_location)
-                            || cachedLocationMatchesTableRoot(candidate->getValue<String>(f_location), table_namespace, table_root);
+                            || cachedLocationMatchesTableRoot(
+                                candidate->getValue<String>(f_location), table_namespace, table_root, configuration->getTypeName());
                         if (location_ok)
                         {
                             /// Hit from a prior validated init: cached JSON belongs to this table.

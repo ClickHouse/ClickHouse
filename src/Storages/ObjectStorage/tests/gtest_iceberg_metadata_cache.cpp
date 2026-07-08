@@ -142,7 +142,7 @@ TEST(IcebergMetadataCache, TablesWithSamePathButDifferentUuidsAreIndependent)
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootExact)
 {
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket", "ns/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket", "ns/table", "s3"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnTableRoot)
@@ -151,22 +151,22 @@ TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnTableRoot)
     // `location` field never does. Regression test for a bug where every warm
     // cache hit was rejected because of this mismatch (see test_metadata_cache
     // integration test).
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket", "ns/table/"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket", "ns/table/", "s3"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnCachedLocation)
 {
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket", "ns/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket", "ns/table", "s3"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashesOnBoth)
 {
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket", "ns/table/"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket", "ns/table/", "s3"));
 }
 
 TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentTableRoot)
 {
-    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/other_table", "bucket", "ns/table"));
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/other_table", "bucket", "ns/table", "s3"));
 }
 
 TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentBucketWithSameKey)
@@ -174,14 +174,14 @@ TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentBucketWithSameKey)
     // Regression test: a suffix-only match would wrongly accept a same-named key living in a
     // different bucket. A stale `catalog_uuid_hint` colliding with another table's UUID must not
     // be accepted just because the trailing path segments happen to coincide.
-    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://backup-bucket/ns/table", "bucket", "ns/table"));
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://backup-bucket/ns/table", "bucket", "ns/table", "s3"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesWhenNamespaceAndTableRootAreEmpty)
 {
     // Nothing to validate against (e.g. HDFS/Local backends with no bucket concept and an
     // empty root), so the check is permissive rather than rejecting every hit.
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "", ""));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "", "", "s3"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesAbsolutePathWithNoScheme)
@@ -189,12 +189,12 @@ TEST(IcebergMetadataCache, LocationMatchesAbsolutePathWithNoScheme)
     // ClickHouse writes `location` as an absolute path (no scheme) for namespace-less backends
     // (HDFS/Local). Regression test: the leading slash must be trimmed from `cached_location`
     // the same way it already is from `table_root`, or a valid warm hit is rejected.
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "", "warehouse/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "", "warehouse/table", "local"));
 }
 
 TEST(IcebergMetadataCache, LocationDoesNotMatchAbsolutePathWithDifferentRoot)
 {
-    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/other_table", "", "warehouse/table"));
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/other_table", "", "warehouse/table", "local"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesAuthorityBearingAzureUri)
@@ -204,7 +204,7 @@ TEST(IcebergMetadataCache, LocationMatchesAuthorityBearingAzureUri)
     // `StorageAzureConfiguration::getNamespace()`. The namespace must still be recognized as the
     // leading authority component.
     EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot(
-        "wasb://container@account.blob.core.windows.net/ns/table", "container", "ns/table"));
+        "wasb://container@account.blob.core.windows.net/ns/table", "container", "ns/table", "azure"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesHdfsUriWithHostAuthority)
@@ -213,18 +213,37 @@ TEST(IcebergMetadataCache, LocationMatchesHdfsUriWithHostAuthority)
     // store locations as `hdfs://namenode:8020/...`. A namespace-less backend has nothing to
     // validate the authority against, so any authority must be accepted as long as the key path
     // matches, or the UUID-hint fast path never works for HDFS-backed tables.
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://namenode:8020/warehouse/table", "", "warehouse/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://namenode:8020/warehouse/table", "", "warehouse/table", "hdfs"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesHdfsUriWithNameserviceAuthority)
 {
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://user@nameservice/warehouse/table", "", "warehouse/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://user@nameservice/warehouse/table", "", "warehouse/table", "hdfs"));
 }
 
 TEST(IcebergMetadataCache, LocationDoesNotMatchAuthorityBearingUriWithDifferentContainer)
 {
     EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot(
-        "wasb://other-container@account.blob.core.windows.net/ns/table", "container", "ns/table"));
+        "wasb://other-container@account.blob.core.windows.net/ns/table", "container", "ns/table", "azure"));
+}
+
+TEST(IcebergMetadataCache, LocationDoesNotMatchSchemelessLocalWhenCachedLocationHasAScheme)
+{
+    // Regression test: without a backend check, a Local table with an empty namespace would
+    // accept any scheme-bearing location whose key path happens to match, because the empty
+    // namespace was treated as "nothing to validate". A stale `catalog_uuid_hint` must not let an
+    // S3 or HDFS table's cached metadata.json be reused by a Local table sharing the same path.
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/warehouse/table", "", "warehouse/table", "local"));
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn/warehouse/table", "", "warehouse/table", "local"));
+}
+
+TEST(IcebergMetadataCache, LocationDoesNotMatchAzureWhenBucketNameCoincidesWithS3Backend)
+{
+    // Regression test: `authority.starts_with(table_namespace + "@")` alone would accept an Azure
+    // `wasb://bucket@account.../...` location for an S3 table whose bucket is also named "bucket",
+    // even though they are unrelated backends and unrelated tables.
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot(
+        "wasb://bucket@account.blob.core.windows.net/ns/table", "bucket", "ns/table", "s3"));
 }
 
 TEST(IcebergMetadataCache, DeriveTableNamespacePrefersNonEmptyConfigurationNamespace)
@@ -253,8 +272,8 @@ TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentHdfsAuthorityWithSamePat
     // Regression test for the cross-cluster collision: two different HDFS namenodes serving the
     // same `/warehouse/table` path must not be treated as the same table.
     const auto table_namespace = Iceberg::deriveTableNamespaceForLocationCheck("", "hdfs://nn1:8020/warehouse/table");
-    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn2:8020/warehouse/table", table_namespace, "warehouse/table"));
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn1:8020/warehouse/table", table_namespace, "warehouse/table"));
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn2:8020/warehouse/table", table_namespace, "warehouse/table", "hdfs"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn1:8020/warehouse/table", table_namespace, "warehouse/table", "hdfs"));
 }
 
 #endif

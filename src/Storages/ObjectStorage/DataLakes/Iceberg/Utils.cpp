@@ -1,4 +1,6 @@
 
+#include <algorithm>
+#include <cctype>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -470,7 +472,30 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
-bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_namespace, std::string_view table_root)
+namespace
+{
+/// Classifies a URI scheme into the storage backend family it belongs to, so that locations from
+/// unrelated backends (e.g. Azure "wasb" vs. S3 "s3") are never treated as interchangeable, even
+/// if a bucket/container name happens to coincide. Empty scheme means a schemeless
+/// absolute/relative path, as written natively by ClickHouse for the Local backend.
+std::string classifyLocationBackendFamily(std::string_view scheme)
+{
+    std::string lower(scheme);
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
+    if (lower.empty())
+        return "local";
+    if (lower == "s3" || lower == "s3a" || lower == "s3n")
+        return "s3";
+    if (lower == "wasb" || lower == "wasbs" || lower == "abfs" || lower == "abfss" || lower == "adl")
+        return "azure";
+    if (lower == "hdfs" || lower == "webhdfs" || lower == "viewfs")
+        return "hdfs";
+    return lower;
+}
+}
+
+bool cachedLocationMatchesTableRoot(
+    std::string_view cached_location, std::string_view table_namespace, std::string_view table_root, std::string_view table_backend_type)
 {
     while (table_root.ends_with('/'))
         table_root.remove_suffix(1);
@@ -479,14 +504,17 @@ bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::strin
     if (table_namespace.empty() && table_root.empty())
         return true;
 
-    /// Split `cached_location` into an optional authority (bucket/container, possibly in the
-    /// authority-bearing form used by Spark/Azure, e.g. "container@account.blob.core.windows.net")
-    /// and the key path. A location with no scheme is an absolute/relative filesystem-style path,
-    /// as written natively by ClickHouse for namespace-less backends (HDFS/Local).
+    /// Split `cached_location` into an optional scheme, an optional authority (bucket/container,
+    /// possibly in the authority-bearing form used by Spark/Azure, e.g.
+    /// "container@account.blob.core.windows.net"), and the key path. A location with no scheme is
+    /// an absolute/relative filesystem-style path, as written natively by ClickHouse for
+    /// namespace-less backends (HDFS/Local).
+    std::string_view scheme;
     std::string_view authority;
     std::string_view path = cached_location;
     if (auto scheme_pos = cached_location.find("://"); scheme_pos != std::string_view::npos)
     {
+        scheme = cached_location.substr(0, scheme_pos);
         auto rest = cached_location.substr(scheme_pos + 3);
         if (auto slash_pos = rest.find('/'); slash_pos != std::string_view::npos)
         {
@@ -499,6 +527,15 @@ bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::strin
             path = {};
         }
     }
+
+    /// Reject cross-backend collisions outright: a stale `catalog_uuid_hint` must not accept
+    /// another backend's cached `metadata.json` just because a bucket/container name or key path
+    /// happens to coincide (e.g. a Local table's schemeless location must never accept an
+    /// `s3://`/`hdfs://` location, and an S3 bucket must never accept a Azure `wasb://` location
+    /// merely because the leading authority component matches the bucket name).
+    if (classifyLocationBackendFamily(scheme) != classifyLocationBackendFamily(table_backend_type))
+        return false;
+
     while (path.starts_with('/'))
         path.remove_prefix(1);
     while (path.ends_with('/'))
