@@ -770,6 +770,48 @@ def test_system_queue_metadata_ordered_partitioned(started_cluster):
     node.query(f"DROP TABLE {table_name} SYNC")
 
 
+def test_system_queue_metadata_ordered_partitioned_last_processed(started_cluster):
+    node = started_cluster.instances["instance"]
+    table_name = f"test_system_queue_metadata_part_last_{generate_random_string()}"
+    # A unique path is necessary for repeatable tests
+    keeper_path = f"/clickhouse/test_{table_name}_{generate_random_string()}"
+    files_path = f"{table_name}_data"
+
+    partition_regex = r"(?P<hostname>[^_]+)_(?P<timestamp>\d{8}T\d{6}\.\d{6}Z)_(?P<sequence>\d+)"
+    last_processed_path = f"{files_path}/server-1_20251217T100000.000000Z_0001.csv"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_buckets": 1,
+            "s3queue_processing_threads_num": 1,
+            "s3queue_last_processed_path": last_processed_path,
+        },
+        partitioning_mode="regex",
+        partition_regex=partition_regex,
+        partition_component="hostname",
+    )
+
+    # Before any file is processed, the root `processed` node already holds
+    # the `last_processed_path` pointer and no partition children exist, so
+    # `processed_path` must expose the root pointer alone.
+    processed_path = node.query(
+        f"""
+        SELECT processed_path
+        FROM system.s3_queue_metadata
+        WHERE zookeeper_path ilike '%{keeper_path}%'
+        """
+    ).strip()
+    assert processed_path == f"{{'processed':'{last_processed_path}'}}"
+
+    node.query(f"DROP TABLE {table_name} SYNC")
+
+
 def test_system_queue_metadata_auxiliary_keeper(started_cluster):
     node = started_cluster.instances["instance"]
     table_name = f"test_system_queue_metadata_aux_{generate_random_string()}"
