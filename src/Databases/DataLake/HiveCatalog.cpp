@@ -13,18 +13,10 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
 #include <Databases/DataLake/Common.h>
-#include <Common/FailPoint.h>
 
 namespace DB::ErrorCodes
 {
-    extern const int DATALAKE_DATABASE_ERROR;
-    extern const int FAULT_INJECTED;
-    extern const int NO_HIVEMETASTORE;
-}
-
-namespace DB::FailPoints
-{
-    extern const char check_database_datalake_negative[];
+extern const int DATALAKE_DATABASE_ERROR;
 }
 
 namespace DataLake
@@ -35,122 +27,36 @@ namespace
 
 std::pair<String, Int32> parseHostPort(const String & url)
 {
-    auto protocol_sep = url.find("://");
-    if (protocol_sep == String::npos)
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid URL format: missing protocol separator '://'");
-
-    size_t start = protocol_sep + 3;
-
-    auto colon_pos = url.find(':', start);
-    if (colon_pos == String::npos)
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid URL format: missing port number");
-
-    auto slash_pos = url.find('/', start);
-
-    String host = url.substr(start, colon_pos - start);
-
-    size_t port_end = (slash_pos != String::npos) ? slash_pos : url.size();
-    String port_str = url.substr(colon_pos + 1, port_end - colon_pos - 1);
-
-    if (port_str.empty() || !std::all_of(port_str.begin(), port_str.end(), ::isdigit))
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number: '{}'", port_str);
-
-    try
+    size_t last_slash = 0;
+    size_t last_points = 0;
+    for (size_t i = 0; i < url.size(); ++i)
     {
-        Int32 port = std::stoi(port_str);
-        if (port <= 0 || port > 65535)
-            throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Port number out of valid range (1-65535): {}", port);
-        return {host, port};
+        if (url[i] == ':')
+            last_points = i;
+        if (url[i] == '/')
+            last_slash = i;
     }
-    catch (const std::out_of_range&)
-    {
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number format: {}", port_str);
-    }
-    catch (const std::invalid_argument&)
-    {
-        throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Invalid port number: '{}'", port_str);
-    }
+    return {url.substr(last_slash + 1, last_points - (last_slash + 1)), std::stoi(url.substr(last_points + 1))};
 }
 
 }
 
 HiveCatalog::HiveCatalog(const std::string & warehouse_, const std::string & base_url_, DB::ContextPtr)
     : ICatalog(warehouse_)
-    , base_url(base_url_)
+    , socket(new apache::thrift::transport::TSocket(parseHostPort(base_url_).first, parseHostPort(base_url_).second))
+    , transport(new apache::thrift::transport::TBufferedTransport(socket))
+    , protocol(new apache::thrift::protocol::TBinaryProtocol(transport))
+    , client(protocol)
 {
-    std::lock_guard lock(client_mutex);
-    reconnectUnlocked();
-}
-
-void HiveCatalog::reconnectUnlocked() const TSA_REQUIRES(client_mutex)
-{
-    if (transport && transport->isOpen())
-    {
-        try
-        {
-            transport->close();
-        }
-        catch (const std::exception & ex)
-        {
-            LOG_TRACE(&Poco::Logger::get("HiveCatalog"), "Error closing transport: {}", ex.what());
-        }
-    }
-
-    auto [host, port] = parseHostPort(base_url);
-
-    socket = std::make_shared<apache::thrift::transport::TSocket>(host, port);
-    transport = std::make_shared<apache::thrift::transport::TBufferedTransport>(socket);
-    protocol = std::make_shared<apache::thrift::protocol::TBinaryProtocol>(transport);
-    client = std::make_unique<Apache::Hadoop::Hive::ThriftHiveMetastoreClient>(protocol);
-
     transport->open();
-}
-
-template <typename Func>
-void HiveCatalog::executeWithRetry(Func && func) const
-{
-    constexpr int max_retries = 3;
-    String last_err_msg;
-
-    for (int i = 0; i < max_retries; ++i)
-    {
-        std::unique_lock lock(client_mutex);
-
-        try
-        {
-            func();
-            return;
-        }
-        catch (apache::thrift::transport::TTransportException & e)
-        {
-            last_err_msg = e.what();
-
-            try
-            {
-                reconnectUnlocked();
-            }
-            catch (const std::exception & ex)
-            {
-                LOG_TRACE(
-                    &Poco::Logger::get("HiveCatalog"), "Reconnect failed in iteration {}/{} with error: {}", i, max_retries, ex.what());
-            }
-        }
-    }
-
-    throw DB::Exception(
-        DB::ErrorCodes::NO_HIVEMETASTORE, "Hive Metastore connection failed after {} attempts. Last error: {}", max_retries, last_err_msg);
 }
 
 bool HiveCatalog::empty() const
 {
-    fiu_do_on(DB::FailPoints::check_database_datalake_negative,
-    {
-        throw DB::Exception(DB::ErrorCodes::FAULT_INJECTED, "Injecting fault when checking database");
-    });
-
     std::vector<std::string> result;
 
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(result); });
+    std::lock_guard lock(client_mutex);
+    client.get_all_databases(result);
     return result.empty();
 }
 
@@ -158,13 +64,18 @@ DB::Names HiveCatalog::getTables() const
 {
     DB::Names result;
     DB::Names databases;
-
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_databases(databases); });
+    {
+        std::lock_guard lock(client_mutex);
+        client.get_all_databases(databases);
+    }
 
     for (const auto & db : databases)
     {
         DB::Names current_tables;
-        executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_all_tables(current_tables, db); });
+        {
+            std::lock_guard lock(client_mutex);
+            client.get_all_tables(current_tables, db);
+        }
         for (const auto & table : current_tables)
             result.push_back(db + "." + table);
     }
@@ -174,8 +85,10 @@ DB::Names HiveCatalog::getTables() const
 bool HiveCatalog::existsTable(const std::string & namespace_name, const std::string & table_name) const
 {
     Apache::Hadoop::Hive::Table table;
-
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_table(table, namespace_name, table_name); });
+    {
+        std::lock_guard lock(client_mutex);
+        client.get_table(table, namespace_name, table_name);
+    }
 
     if (table.tableName.empty())
         return false;
@@ -193,7 +106,10 @@ bool HiveCatalog::tryGetTableMetadata(const std::string & namespace_name, const 
 {
     Apache::Hadoop::Hive::Table table;
 
-    executeWithRetry([&]() TSA_NO_THREAD_SAFETY_ANALYSIS { client->get_table(table, namespace_name, table_name); });
+    {
+        std::lock_guard lock(client_mutex);
+        client.get_table(table, namespace_name, table_name);
+    }
 
     if (table.tableName.empty())
         return false;

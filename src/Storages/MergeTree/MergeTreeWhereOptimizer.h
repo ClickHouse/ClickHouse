@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 #include <boost/noncopyable.hpp>
 
@@ -30,16 +31,13 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
  *  Otherwise any condition with minimal summary column size can be transferred to PREWHERE.
  *  If column sizes are unknown (in compact parts), the number of columns, participating in condition is used instead.
  */
-
-class ConditionSelectivityEstimator;
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
 class MergeTreeWhereOptimizer : private boost::noncopyable
 {
 public:
     MergeTreeWhereOptimizer(
         std::unordered_map<std::string, UInt64> column_sizes_,
-        const StorageSnapshotPtr & storage_snapshot,
-        ConditionSelectivityEstimatorPtr estimator_,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ConditionSelectivityEstimator & estimator_,
         const Names & queried_columns_,
         const std::optional<NameSet> & supported_columns_,
         LoggerPtr log_);
@@ -61,13 +59,11 @@ public:
 private:
     struct Condition
     {
-        explicit Condition(std::vector<RPNBuilderTreeNode> nodes_)
-            : nodes(std::move(nodes_))
+        explicit Condition(RPNBuilderTreeNode node_)
+            : node(std::move(node_))
         {}
 
-        /// One or more conjuncts that share the same required column set and are
-        /// treated as a single unit for PREWHERE reordering and selectivity estimation.
-        std::vector<RPNBuilderTreeNode> nodes;
+        RPNBuilderTreeNode node;
 
         UInt64 columns_size = 0;
         NameSet table_columns;
@@ -79,34 +75,12 @@ private:
         bool good = false;
 
         /// the lower the better
-        UInt64 estimated_row_count = 0;
+        Float64 estimated_row_count = 0;
 
         /// Does the condition contain primary key column?
         /// If so, it is better to move it further to the end of PREWHERE chain depending on minimal position in PK of any
         /// column in this condition because this condition have bigger chances to be already satisfied by PK analysis.
         Int64 min_position_in_primary_key = std::numeric_limits<Int64>::max() - 1;
-
-        /// For debugging purposes
-        String toString() const
-        {
-            String names;
-            for (const auto & n : nodes)
-            {
-                if (!names.empty())
-                    names += " AND ";
-                names += n.getColumnName();
-            }
-            return fmt::format(
-                "Condition(exp:{} viable: {}, good: {}, min_position_in_primary_key: {}, estimated_row_count: {}, "
-                "columns_size: {}, table_columns.size: {})",
-                names,
-                viable,
-                good,
-                min_position_in_primary_key,
-                estimated_row_count,
-                columns_size,
-                table_columns.size());
-        }
 
         auto tuple() const
         {
@@ -173,14 +147,13 @@ private:
 
     static NameSet determineArrayJoinedNames(const ASTSelectQuery & select);
 
-    ConditionSelectivityEstimatorPtr estimator;
+    const ConditionSelectivityEstimator estimator;
 
     const NameSet table_columns;
     const Names queried_columns;
     const std::optional<NameSet> supported_columns;
     const NameSet sorting_key_names;
     const NameToIndexMap primary_key_names_positions;
-    StorageMetadataPtr storage_metadata;
     LoggerPtr log;
     std::unordered_map<std::string, UInt64> column_sizes;
     UInt64 total_size_of_queried_columns = 0;

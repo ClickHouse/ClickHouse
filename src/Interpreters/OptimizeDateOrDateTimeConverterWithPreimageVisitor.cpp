@@ -33,7 +33,7 @@ namespace ErrorCodes
  *
  *  This function generates a new AST with the transformed relation.
  */
-static ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const FieldInterval & range)
+ASTPtr generateOptimizedDateFilterAST(const String & comparator, const NameAndTypePair & column, const FieldInterval & range)
 {
     const DateLUTImpl & date_lut = DateLUT::instance("UTC");
 
@@ -55,38 +55,38 @@ static ASTPtr generateOptimizedDateFilterAST(const String & comparator, const Na
 
     if (comparator == "equals")
     {
-        return makeASTOperator("and",
-                               makeASTOperator("greaterOrEquals",
-                                            make_intrusive<ASTIdentifier>(column_name),
-                                            make_intrusive<ASTLiteral>(start_date_or_date_time)
+        return makeASTFunction("and",
+                                makeASTFunction("greaterOrEquals",
+                                            std::make_shared<ASTIdentifier>(column_name),
+                                            std::make_shared<ASTLiteral>(start_date_or_date_time)
                                             ),
-                               makeASTOperator("less",
-                                            make_intrusive<ASTIdentifier>(column_name),
-                                            make_intrusive<ASTLiteral>(end_date_or_date_time)
+                                makeASTFunction("less",
+                                            std::make_shared<ASTIdentifier>(column_name),
+                                            std::make_shared<ASTLiteral>(end_date_or_date_time)
                                             )
                                 );
     }
     if (comparator == "notEquals")
     {
-        return makeASTOperator(
+        return makeASTFunction(
             "or",
-            makeASTOperator("less", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(start_date_or_date_time)),
-            makeASTOperator(
-                "greaterOrEquals", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(end_date_or_date_time)));
+            makeASTFunction("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time)),
+            makeASTFunction(
+                "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time)));
     }
     if (comparator == "greater")
     {
-        return makeASTOperator(
-            "greaterOrEquals", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(end_date_or_date_time));
+        return makeASTFunction(
+            "greaterOrEquals", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
     if (comparator == "lessOrEquals")
     {
-        return makeASTOperator("less", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(end_date_or_date_time));
+        return makeASTFunction("less", std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(end_date_or_date_time));
     }
     if (comparator == "less" || comparator == "greaterOrEquals")
     {
-        return makeASTOperator(
-            comparator, make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(start_date_or_date_time));
+        return makeASTFunction(
+            comparator, std::make_shared<ASTIdentifier>(column_name), std::make_shared<ASTLiteral>(start_date_or_date_time));
     }
     [[unlikely]] {
         throw Exception(

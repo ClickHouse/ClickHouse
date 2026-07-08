@@ -46,10 +46,12 @@ SELECT * FROM system.one UNION ALL SELECT * FROM system.one
 SELECT *
 FROM system.one
 UNION ALL
-SELECT *
-FROM system.one
+(
+    SELECT *
+    FROM system.one
+)
 # /* oneline */ select * from system.one union all (select * from system.one)
-SELECT * FROM system.one UNION ALL SELECT * FROM system.one
+SELECT * FROM system.one UNION ALL (SELECT * FROM system.one)
 # select 1 union all (select 1 union distinct select 1)
 SELECT 1
 UNION ALL

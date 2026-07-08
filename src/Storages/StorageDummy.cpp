@@ -1,7 +1,5 @@
 #include <Storages/StorageDummy.h>
 
-#include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeString.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 
@@ -17,13 +15,12 @@ StorageDummy::StorageDummy(
     const ColumnsDescription & columns_,
     const StorageSnapshotPtr & original_storage_snapshot_,
     bool supports_replication_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , original_storage_snapshot(original_storage_snapshot_)
     , supports_replication(supports_replication_)
 {
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
-    storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
 }
 
@@ -36,15 +33,7 @@ QueryProcessingStage::Enum StorageDummy::getQueryProcessingStage(
     return QueryProcessingStage::FetchColumns;
 }
 
-VirtualColumnsDescription StorageDummy::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
-
-void StorageDummy::readImpl(QueryPlan & query_plan,
+void StorageDummy::read(QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     SelectQueryInfo & query_info,
@@ -68,7 +57,7 @@ ReadFromDummy::ReadFromDummy(
     const ContextPtr & context_,
     const StorageDummy & storage_)
     : SourceStepWithFilter(std::make_shared<const Block>(SourceStepWithFilter::applyPrewhereActions(
-                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.row_level_filter, query_info_.prewhere_info)),
+                storage_snapshot_->getSampleBlockForColumns(column_names_), query_info_.prewhere_info)),
         column_names_,
         query_info_,
         storage_snapshot_,

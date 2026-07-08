@@ -1,15 +1,12 @@
 #pragma once
 
-#include <memory>
 #include <string>
 #include <vector>
+#include <memory>
+#include <optional>
+#include <Common/StringSearcher.h>
 #include <Common/re2.h>
-
-namespace DB
-{
-
-class CaseSensitiveStringSearcher;
-class ASCIICaseInsensitiveStringSearcher;
+#include "config.h"
 
 /** Uses two ways to optimize a regular expression:
   * 1. If the regular expression is trivial (reduces to finding a substring in a string),
@@ -29,14 +26,13 @@ class ASCIICaseInsensitiveStringSearcher;
   * NOTE: Multi-character metasymbols such as \Pl are handled incorrectly.
   */
 
-
 namespace OptimizedRegularExpressionDetails
 {
-struct Match
-{
-    std::string::size_type offset;
-    std::string::size_type length;
-};
+    struct Match
+    {
+        std::string::size_type offset;
+        std::string::size_type length;
+    };
 }
 
 struct RegexpAnalysisResult
@@ -65,7 +61,6 @@ public:
     /// StringSearcher store pointers to required_substring, it must be updated on move.
     OptimizedRegularExpression(OptimizedRegularExpression && rhs) noexcept;
     OptimizedRegularExpression(const OptimizedRegularExpression & rhs) = delete;
-    ~OptimizedRegularExpression();
 
     bool match(const std::string & subject) const
     {
@@ -110,12 +105,11 @@ public:
 private:
     std::string required_substring;
     bool is_trivial;
-    bool has_capture{};
+    bool has_capture;
     bool required_substring_is_prefix;
     bool is_case_insensitive;
-    std::unique_ptr<CaseSensitiveStringSearcher> case_sensitive_substring_searcher;
-    std::unique_ptr<ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
+    std::optional<DB::ASCIICaseSensitiveStringSearcher> case_sensitive_substring_searcher;
+    std::optional<DB::ASCIICaseInsensitiveStringSearcher> case_insensitive_substring_searcher;
     std::unique_ptr<re2::RE2> re2;
     unsigned number_of_subpatterns;
 };
-}

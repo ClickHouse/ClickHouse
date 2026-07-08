@@ -6,7 +6,6 @@
 #include <pcg_random.hpp>
 #include <Common/UTF8Helpers.h>
 #include <Common/randomSeed.h>
-#include <Core/ColumnsWithTypeAndName.h>
 
 #include <base/defines.h>
 
@@ -14,6 +13,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_LARGE_STRING_SIZE;
 }
 
@@ -25,7 +25,7 @@ namespace
  * ATTENTION: Method generate only assignable code points (excluded 4-13 planes).
  * See https://en.wikipedia.org/wiki/Plane_(Unicode) */
 
-class FunctionRandomStringUTF8 final : public IFunction
+class FunctionRandomStringUTF8 : public IFunction
 {
 public:
     static constexpr auto name = "randomStringUTF8";
@@ -38,13 +38,11 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
 
-    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        FunctionArgumentDescriptors mandatory_args{
-            {"length", &isNumber, nullptr, "(U)Int*"}
-        };
+        if (!isNumber(*arguments[0]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must have numeric type", getName());
 
-        validateFunctionArguments(*this, arguments, mandatory_args);
         return std::make_shared<DataTypeString>();
     }
 
@@ -173,7 +171,7 @@ It is still possible that the client interacting with ClickHouse server is not a
     };
     FunctionDocumentation::IntroducedIn introduced_in = {20, 5};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::RandomNumber;
-    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+    FunctionDocumentation documentation = {description, syntax, arguments, returned_value, examples, introduced_in, category};
 
     factory.registerFunction<FunctionRandomStringUTF8>(documentation);
 }

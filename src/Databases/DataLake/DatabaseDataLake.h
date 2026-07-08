@@ -22,14 +22,15 @@ public:
         const DatabaseDataLakeSettings & settings_,
         ASTPtr database_engine_definition_,
         ASTPtr table_engine_definition_,
-        UUID uuid,
-        bool lazy_init);
+        UUID uuid);
 
     String getEngineName() const override { return DataLake::DATABASE_ENGINE_NAME; }
     UUID getUUID() const override { return db_uuid; }
 
+    bool canContainMergeTreeTables() const override { return false; }
+    bool canContainDistributedTables() const override { return false; }
+    bool canContainRocksDBTables() const override { return false; }
     bool shouldBeEmptyOnDetach() const override { return false; }
-    bool isRemoteDatabase() const override { return true; }
 
     bool empty() const override;
 
@@ -43,16 +44,16 @@ public:
         bool skip_not_loaded) const override;
 
     /// skip_not_loaded flag ignores all non-iceberg tables
-    std::vector<LightWeightTableDetails> getLightweightTablesIterator(
+    DatabaseTablesIteratorPtr getLightweightTablesIterator(
         ContextPtr context,
         const FilterByNameFunction & filter_by_table_name,
-        bool skip_not_loaded) const override;
+        bool skip_not_loaded,
+        bool skip_data_lake_catalog) const override;
 
-    VectorWithMemoryTracking<String> getAllTableNames(ContextPtr context) const override;
-
-    void checkDatabase() const override;
 
     void shutdown() override {}
+
+    ASTPtr getCreateDatabaseQuery() const override;
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
@@ -67,9 +68,7 @@ public:
         const String & name,
         bool /*sync*/) override;
 
-    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 protected:
-    ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);
     ASTPtr getCreateTableQueryImpl(const String & table_name, ContextPtr context, bool throw_on_error) const override;
 
 private:
@@ -84,18 +83,10 @@ private:
     /// Crendetials to authenticate Iceberg Catalog.
     Poco::Net::HTTPBasicCredentials credentials;
 
-    mutable std::mutex catalog_mutex;
-    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl TSA_GUARDED_BY(catalog_mutex);
+    mutable std::shared_ptr<DataLake::ICatalog> catalog_impl;
 
     void validateSettings();
-
-    /// Builds `catalog_impl` based on the configured catalog type. Constructing a catalog can
-    /// validate credentials and perform network I/O (e.g. RestCatalog reads the catalog config),
-    /// so on ATTACH (server startup) it is deferred to the first access via `getCatalog` instead
-    /// of running eagerly in the constructor. That keeps one misconfigured or unreachable database
-    /// from blocking server startup. On CREATE it still runs eagerly so problems are reported up
-    /// front. Guarded by `catalog_mutex` because lazy initialization can race concurrent readers.
-    void initialize() const TSA_REQUIRES(catalog_mutex);
+    std::shared_ptr<DataLake::ICatalog> getCatalog() const;
 
     std::shared_ptr<StorageObjectStorageConfiguration> getConfiguration(
         DatabaseDataLakeStorageType type,

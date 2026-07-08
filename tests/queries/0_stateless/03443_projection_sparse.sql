@@ -1,6 +1,3 @@
--- Tags: no-async-insert
--- no-async-insert: initializeAggregation in VALUES is evaluated server-side via the expression template
--- system in the async insert path, which sporadically fails with type mismatch in template evaluation.
 
 DROP TABLE IF EXISTS t_projection_sparse;
 CREATE TABLE t_projection_sparse

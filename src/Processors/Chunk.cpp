@@ -3,7 +3,6 @@
 #include <IO/Operators.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnConst.h>
-#include <Columns/ColumnReplicated.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 namespace DB
@@ -156,14 +155,8 @@ UInt64 Chunk::allocatedBytes() const
 std::string Chunk::dumpStructure() const
 {
     WriteBufferFromOwnString out;
-    bool first = true;
     for (const auto & column : columns)
-    {
-        if (!first)
-            out << ", ";
-        out << column->dumpStructure();
-        first = false;
-    }
+        out << ' ' << column->dumpStructure();
 
     return out.str();
 }
@@ -200,32 +193,6 @@ void convertToFullIfSparse(Chunk & chunk)
     auto columns = chunk.detachColumns();
     for (auto & column : columns)
         column = recursiveRemoveSparse(column);
-    chunk.setColumns(std::move(columns), num_rows);
-}
-
-void removeSpecialColumnRepresentations(Chunk & chunk)
-{
-    size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-        column = removeSpecialRepresentations(column);
-    chunk.setColumns(std::move(columns), num_rows);
-}
-
-void materializeChunk(Chunk & chunk)
-{
-    size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    for (auto & column : columns)
-        column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
-    chunk.setColumns(std::move(columns), num_rows);
-}
-
-void compactReplicatedColumns(Chunk & chunk)
-{
-    size_t num_rows = chunk.getNumRows();
-    auto columns = chunk.detachColumns();
-    compactReplicatedColumns(columns);
     chunk.setColumns(std::move(columns), num_rows);
 }
 
