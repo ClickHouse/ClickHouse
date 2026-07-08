@@ -145,13 +145,20 @@ namespace
                     Int64 seconds = date_time_val.value / scale_multiplier;
                     Int64 micros = date_time_val.value % scale_multiplier;
                     auto time_zone_offset = time_zone.timezoneOffset(seconds);
-                    Int64 time_val = seconds;
+                    /// Do the whole offset adjust and scale multiply/add in Int128 so neither the offset
+                    /// add/subtract nor the scale multiply can overflow Int64 for values near the boundary,
+                    /// then clamp to the representable range. Exact for both signs (micros carries the sign
+                    /// of value) and both offset directions.
+                    Int128 time_val = seconds;
                     if (to_utc)
                         time_val -= time_zone_offset;
                     else
                         time_val += time_zone_offset;
-                    DateTime64 date_time_64(time_val * scale_multiplier + micros);
-                    result_data[i] = date_time_64;
+                    Int128 wide_val = time_val * scale_multiplier + micros;
+                    static constexpr Int128 min_val = std::numeric_limits<Int64>::min();
+                    static constexpr Int128 max_val = std::numeric_limits<Int64>::max();
+                    wide_val = wide_val < min_val ? min_val : (wide_val > max_val ? max_val : wide_val);
+                    result_data[i] = DateTime64(static_cast<Int64>(wide_val));
                 }
                 return result_column;
             }
