@@ -673,11 +673,10 @@ void SortingStep::serialize(Serialization & ctx) const
 
     serializeSortDescription(result_description, ctx.out);
 
-    /// Later
-    if (!partition_by_description.empty())
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Serialization of partitioned sorting is not implemented for SortingStep");
-
-    writeVarUInt(partition_by_description.size(), ctx.out);
+    /// A non-empty partition_by_description means "sort within streams already partitioned by these
+    /// columns" (used for window functions). For an empty description this writes a single 0, which is
+    /// byte-compatible with the previous format that wrote `partition_by_description.size()`.
+    serializeSortDescription(partition_by_description, ctx.out);
 }
 
 QueryPlanStepPtr SortingStep::clone() const
@@ -695,11 +694,12 @@ QueryPlanStepPtr SortingStep::deserialize(Deserialization & ctx)
     SortDescription result_description;
     deserializeSortDescription(result_description, ctx.in);
 
-    UInt64 partition_desc_size = 0;
-    readVarUInt(partition_desc_size, ctx.in);
+    SortDescription partition_by_description;
+    deserializeSortDescription(partition_by_description, ctx.in);
 
-    if (partition_desc_size)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Deserialization of partitioned sorting is not implemented for SortingStep");
+    if (!partition_by_description.empty())
+        return std::make_unique<SortingStep>(
+            ctx.input_headers.front(), result_description, partition_by_description, 0, std::move(sort_settings));
 
     return std::make_unique<SortingStep>(
         ctx.input_headers.front(), std::move(result_description), 0, std::move(sort_settings));

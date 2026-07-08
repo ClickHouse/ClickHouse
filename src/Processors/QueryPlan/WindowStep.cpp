@@ -1,6 +1,14 @@
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/Field.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Parsers/NullsAction.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/Serialization.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/WindowTransform.h>
@@ -9,6 +17,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
 
 static ITransformingStep::Traits getTraits(bool preserves_sorting)
 {
@@ -165,6 +178,174 @@ const WindowDescription & WindowStep::getWindowDescription() const
 QueryPlanStepPtr WindowStep::clone() const
 {
     return std::make_unique<WindowStep>(*this);
+}
+
+static void serializeWindowFrame(const WindowFrame & frame, WriteBuffer & out)
+{
+    UInt8 flags = 0;
+    if (frame.is_default)
+        flags |= 1;
+    if (frame.begin_preceding)
+        flags |= 2;
+    if (frame.end_preceding)
+        flags |= 4;
+    writeIntBinary(flags, out);
+
+    writeIntBinary(static_cast<UInt8>(frame.type), out);
+    writeIntBinary(static_cast<UInt8>(frame.begin_type), out);
+    writeIntBinary(static_cast<UInt8>(frame.end_type), out);
+
+    writeFieldBinary(frame.begin_offset, out);
+    writeFieldBinary(frame.end_offset, out);
+}
+
+static WindowFrame deserializeWindowFrame(ReadBuffer & in)
+{
+    WindowFrame frame;
+
+    UInt8 flags = 0;
+    readIntBinary(flags, in);
+    frame.is_default = bool(flags & 1);
+    frame.begin_preceding = bool(flags & 2);
+    frame.end_preceding = bool(flags & 4);
+
+    UInt8 type = 0;
+    readIntBinary(type, in);
+    frame.type = static_cast<WindowFrame::FrameType>(type);
+
+    UInt8 begin_type = 0;
+    readIntBinary(begin_type, in);
+    frame.begin_type = static_cast<WindowFrame::BoundaryType>(begin_type);
+
+    UInt8 end_type = 0;
+    readIntBinary(end_type, in);
+    frame.end_type = static_cast<WindowFrame::BoundaryType>(end_type);
+
+    frame.begin_offset = readFieldBinary(in);
+    frame.end_offset = readFieldBinary(in);
+
+    return frame;
+}
+
+static void serializeWindowFunctions(const std::vector<WindowFunctionDescription> & window_functions, WriteBuffer & out)
+{
+    writeVarUInt(window_functions.size(), out);
+    for (const auto & func : window_functions)
+    {
+        writeStringBinary(func.column_name, out);
+
+        const auto & argument_types = func.aggregate_function->getArgumentTypes();
+        writeVarUInt(argument_types.size(), out);
+        for (const auto & type : argument_types)
+            encodeDataType(type, out);
+
+        writeVarUInt(func.argument_names.size(), out);
+        for (const auto & argument_name : func.argument_names)
+            writeStringBinary(argument_name, out);
+
+        writeStringBinary(func.aggregate_function->getName(), out);
+
+        const auto & parameters = func.aggregate_function->getParameters();
+        writeVarUInt(parameters.size(), out);
+        for (const auto & param : parameters)
+            writeFieldBinary(param, out);
+    }
+}
+
+static std::vector<WindowFunctionDescription> deserializeWindowFunctions(ReadBuffer & in)
+{
+    UInt64 num_functions = 0;
+    readVarUInt(num_functions, in);
+
+    std::vector<WindowFunctionDescription> window_functions(num_functions);
+    for (auto & func : window_functions)
+    {
+        readStringBinary(func.column_name, in);
+
+        UInt64 num_argument_types = 0;
+        readVarUInt(num_argument_types, in);
+        func.argument_types.reserve(num_argument_types);
+        for (size_t i = 0; i < num_argument_types; ++i)
+            func.argument_types.emplace_back(decodeDataType(in));
+
+        UInt64 num_argument_names = 0;
+        readVarUInt(num_argument_names, in);
+        func.argument_names.resize(num_argument_names);
+        for (auto & argument_name : func.argument_names)
+            readStringBinary(argument_name, in);
+
+        String function_name;
+        readStringBinary(function_name, in);
+
+        UInt64 num_parameters = 0;
+        readVarUInt(num_parameters, in);
+        func.function_parameters.resize(num_parameters);
+        for (auto & param : func.function_parameters)
+            param = readFieldBinary(in);
+
+        AggregateFunctionProperties properties;
+        func.aggregate_function = AggregateFunctionFactory::instance().get(
+            function_name, NullsAction::EMPTY, func.argument_types, func.function_parameters, properties);
+    }
+
+    return window_functions;
+}
+
+void WindowStep::serialize(Serialization & ctx) const
+{
+    UInt8 flags = 0;
+    if (streams_fan_out)
+        flags |= 1;
+    writeIntBinary(flags, ctx.out);
+
+    writeStringBinary(window_description.window_name, ctx.out);
+
+    serializeSortDescription(window_description.partition_by, ctx.out);
+    serializeSortDescription(window_description.order_by, ctx.out);
+
+    serializeWindowFrame(window_description.frame, ctx.out);
+
+    serializeWindowFunctions(window_functions, ctx.out);
+}
+
+QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
+{
+    if (ctx.input_headers.size() != 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "WindowStep must have one input stream");
+
+    UInt8 flags = 0;
+    readIntBinary(flags, ctx.in);
+    bool streams_fan_out = bool(flags & 1);
+
+    WindowDescription window_description;
+    readStringBinary(window_description.window_name, ctx.in);
+
+    deserializeSortDescription(window_description.partition_by, ctx.in);
+    deserializeSortDescription(window_description.order_by, ctx.in);
+
+    window_description.frame = deserializeWindowFrame(ctx.in);
+
+    /// `full_sort_description` is not serialized: it is the concatenation of PARTITION BY and
+    /// ORDER BY, reconstructed here exactly as the planner builds it (see PlannerWindowFunctions).
+    window_description.full_sort_description = window_description.partition_by;
+    window_description.full_sort_description.insert(
+        window_description.full_sort_description.end(),
+        window_description.order_by.begin(),
+        window_description.order_by.end());
+
+    window_description.window_functions = deserializeWindowFunctions(ctx.in);
+
+    return std::make_unique<WindowStep>(
+        ctx.input_headers.front(),
+        window_description,
+        window_description.window_functions,
+        streams_fan_out);
+}
+
+void registerWindowStep(QueryPlanStepRegistry & registry);
+void registerWindowStep(QueryPlanStepRegistry & registry)
+{
+    registry.registerStep("Window", WindowStep::deserialize);
 }
 
 }
