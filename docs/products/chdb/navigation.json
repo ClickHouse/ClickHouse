@@ -69,7 +69,8 @@
         "products/chdb/guides/pandas-cookbook",
         "products/chdb/guides/pandas-differences",
         "products/chdb/guides/pandas-performance",
-        "products/chdb/guides/pandas-to-sql"
+        "products/chdb/guides/pandas-to-sql",
+        "products/chdb/guides/python-udf"
       ]
     },
     {
