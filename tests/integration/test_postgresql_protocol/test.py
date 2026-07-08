@@ -5,6 +5,7 @@ import decimal
 import logging
 import os
 import random
+import time
 import uuid
 from contextlib import closing
 from io import StringIO
@@ -601,6 +602,28 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
         res_num_bad = pg.exec_params(b"SELECT $1", [payload], [1700], [0], 0)
         assert res_num_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
         assert b"prepared-statement parameter" in res_num_bad.error_message, payload
+
+    # A `numeric` value with an oversize exponent (`1e1000000`) passes the lexical
+    # numeric check, so it must be rejected without an O(exponent) normalization
+    # loop or signed overflow. It is rejected promptly, and the connection is still
+    # usable afterwards (bounded work, no hang).
+    t0 = time.monotonic()
+    res_num_dos = pg.exec_params(b"SELECT $1", [b"1e1000000"], [1700], [0], 0)
+    assert res_num_dos.status == psycopg.pq.ExecStatus.FATAL_ERROR
+    assert time.monotonic() - t0 < 5.0, "numeric exponent rejection must be fast"
+
+    # `timestamptz` (OID 1184) carries its timezone as part of the type, so it maps
+    # to `DateTime64(6, 'UTC')`, not the bare `DateTime64(6)` used for plain
+    # `timestamp` (OID 1114). toTypeName must report the UTC-anchored type.
+    res_tstz = pg.exec_params(
+        b"SELECT toTypeName($1)", [b"2024-01-15 10:00:00"], [1184], [0], 0
+    )
+    assert res_tstz.status == psycopg.pq.ExecStatus.TUPLES_OK, res_tstz.error_message
+    assert res_tstz.get_value(0, 0) == b"DateTime64(6, 'UTC')", res_tstz.get_value(0, 0)
+    res_ts = pg.exec_params(
+        b"SELECT toTypeName($1)", [b"2024-01-15 10:00:00"], [1114], [0], 0
+    )
+    assert res_ts.get_value(0, 0) == b"DateTime64(6)", res_ts.get_value(0, 0)
 
     setup.execute("DROP TABLE bind_num_t;")
     ch.close()

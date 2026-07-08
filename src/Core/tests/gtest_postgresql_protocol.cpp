@@ -327,6 +327,12 @@ TEST(PostgreSQLProtocol, BindPreservesDeclaredParameterTypes)
               "SELECT accurateCast('2024-01-15', 'Date32')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1114}, {{"2024-01-15 12:30:45"}}),
               "SELECT accurateCast('2024-01-15 12:30:45', 'DateTime64(6)')");
+    /// timestamptz (OID 1184) carries its timezone as part of the type, so it maps
+    /// to a UTC-anchored DateTime64, not the bare DateTime64 used for plain
+    /// timestamp. The type name itself is emitted as a quoted, escaped SQL literal,
+    /// so its inner quotes do not break the assembled statement.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1184}, {{"2024-01-15 12:30:45"}}),
+              "SELECT accurateCast('2024-01-15 12:30:45', 'DateTime64(6, \\'UTC\\')')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {2950}, {{"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}}),
               "SELECT accurateCast('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID')");
 
@@ -393,6 +399,14 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterType)
     /// A value needing more significant digits than Decimal256 can hold is rejected,
     /// not silently rounded.
     EXPECT_TRUE(throwsBadArgument(1700, String(78, '9')));
+
+    /// An oversize exponent passes the lexical numeric check but must be rejected
+    /// without an O(exponent) zero-padding loop or signed overflow in the exponent
+    /// accumulator: the exponent is capped, so the value simply exceeds Decimal256
+    /// precision and is rejected. These must return promptly rather than hang.
+    EXPECT_TRUE(throwsBadArgument(1700, "1e1000000"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1e-1000000"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1e999999999999999999999999"));
 
     /// The numeric branch validates the value as one literal at assembly time, so an
     /// injection payload declared `numeric` is rejected, never spliced or cast.

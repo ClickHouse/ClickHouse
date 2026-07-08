@@ -186,7 +186,10 @@ void PostgreSQLHandler::run()
 
         while (tcp_server.isOpen())
         {
-            if (!is_query_in_progress)
+            /// Do not offer a new query while still in a query, nor while
+            /// draining a failed extended-query cycle (ReadyForQuery is sent
+            /// only once the recovering Sync arrives, see below).
+            if (!is_query_in_progress && !skip_until_sync)
                 message_transport->send(PostgreSQLProtocol::Messaging::ReadyForQuery(), true);
 
             constexpr size_t connection_check_timeout = 1; // 1 second
@@ -196,6 +199,22 @@ void PostgreSQLHandler::run()
             PostgreSQLProtocol::Messaging::FrontMessageType message_type = message_transport->receiveMessageType();
             if (!tcp_server.isOpen())
                 return;
+
+            /// Extended-query error recovery: after an ErrorResponse the
+            /// PostgreSQL protocol requires the server to ignore every message
+            /// until the next Sync, then respond ReadyForQuery. Drop each
+            /// message body here (all client messages are length-prefixed)
+            /// until Sync ends the failed cycle; a Terminate still closes.
+            if (skip_until_sync
+                && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::SYNC
+                && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE)
+            {
+                message_transport->dropMessage();
+                continue;
+            }
+
+            try
+            {
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
@@ -221,6 +240,7 @@ void PostgreSQLHandler::run()
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::SYNC:
                     is_query_in_progress = false;
+                    skip_until_sync = false;
                     processSyncQuery();
                     message_transport->flush();
                     break;
@@ -250,6 +270,29 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
+            }
+            }
+            catch (const Exception & e)
+            {
+                /// The per-message handler has already sent an ErrorResponse.
+                /// For the extended-query messages, do not tear the connection
+                /// down: enter skip-until-Sync recovery so the client can
+                /// finish its Parse/Bind/Describe/Execute/Sync cycle and keep
+                /// using the connection, as the PostgreSQL protocol requires.
+                /// The simple-query (Query) path keeps its previous behaviour
+                /// and lets the exception propagate.
+                if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::PARSE
+                    || message_type == PostgreSQLProtocol::Messaging::FrontMessageType::BIND
+                    || message_type == PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE
+                    || message_type == PostgreSQLProtocol::Messaging::FrontMessageType::EXECUTE
+                    || message_type == PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE)
+                {
+                    skip_until_sync = true;
+                    is_query_in_progress = true;
+                    LOG_DEBUG(log, "Extended-query message failed, skipping until Sync: {}", e.displayText());
+                }
+                else
+                    throw;
             }
         }
     }

@@ -807,14 +807,22 @@ public:
             throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
                             "Wrong parameter format code count {} in Bind message, it must not be negative", num_format_params);
         Int16 format_param = 0;
+        /// We only support the text format. Detect an unsupported (binary)
+        /// format code here but do NOT throw yet: the rejection must happen
+        /// only after the whole message has been consumed, otherwise the read
+        /// buffer is left mid-message and the extended-query error recovery in
+        /// PostgreSQLHandler (which resynchronises by dropping whole messages
+        /// until the next Sync) cannot find the next message boundary. All
+        /// parameter values are length-prefixed regardless of their format, so
+        /// the message can still be fully and correctly consumed below.
+        bool has_binary_format = false;
         for (Int16 i = 0; i < num_format_params; ++i)
         {
             readBinaryBigEndian(format_param, in);
             /// FormatCode is declared further down in this header; 0 is TEXT,
             /// anything else (1 = BINARY) is unsupported here.
             if (format_param != 0)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                                "Binary format parameters are not supported in Bind messages, use the text format");
+                has_binary_format = true;
         }
         readBinaryBigEndian(num_params, in);
         for (int i = 0; i < num_params; ++i)
@@ -841,6 +849,15 @@ public:
         Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);
+
+        /// The whole message has now been consumed, so the read buffer sits at
+        /// a clean message boundary. Only now reject an unsupported binary
+        /// format code: a binary payload would have to be decoded using the
+        /// declared type, which this handler does not do, so we refuse it
+        /// rather than splice raw bytes into the statement body.
+        if (has_binary_format)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "Binary format parameters are not supported in Bind messages, use the text format");
     }
 
     MessageType getMessageType() const override
@@ -1977,9 +1994,23 @@ private:
                 exp_negative = (*p == '-');
                 ++p;
             }
+            /// Parse the exponent with a hard cap. A value like `1e1000000`
+            /// passes the lexical check but its exponent must never be used to
+            /// drive an O(exponent) zero-padding loop (below) or overflow this
+            /// signed accumulator. Anything past this bound cannot fit in a
+            /// Decimal256 (max precision 76) once combined with the mantissa,
+            /// so clamping to a value safely beyond that precision preserves the
+            /// eventual "exceeds representable precision" rejection while
+            /// keeping the work bounded and overflow-free.
+            constexpr Int64 EXPONENT_CAP = 1000;
             Int64 exp = 0;
             for (; p != end && *p >= '0' && *p <= '9'; ++p)
-                exp = exp * 10 + (*p - '0');
+            {
+                if (exp <= EXPONENT_CAP)
+                    exp = exp * 10 + (*p - '0');
+            }
+            if (exp > EXPONENT_CAP)
+                exp = EXPONENT_CAP;
             point_from_right += exp_negative ? exp : -exp;
         }
 
@@ -2040,8 +2071,13 @@ private:
             case 700:  return "Float32";        /// float4
             case 701:  return "Float64";        /// float8
             case 1082: return "Date32";         /// date
-            case 1114: return "DateTime64(6)";  /// timestamp
-            case 1184: return "DateTime64(6)";  /// timestamptz
+            case 1114: return "DateTime64(6)";         /// timestamp
+            /// timestamptz: the timezone is part of the type semantics, so map
+            /// it to a UTC-anchored DateTime64 (matching how PostgreSQL
+            /// `timestamptz` is treated elsewhere in the repo) rather than a
+            /// bare DateTime64 that would reparse offset-bearing values as local
+            /// wall-clock time and report the wrong type via toTypeName.
+            case 1184: return "DateTime64(6, 'UTC')";  /// timestamptz
             case 2950: return "UUID";           /// uuid
             default:   return nullptr;
         }
@@ -2086,7 +2122,11 @@ private:
         }
 
         if (const char * type = clickHouseTypeForOID(oid))
-            return fmt::format("accurateCast({}, '{}')", quoteString(value), type);
+            /// The type name is itself emitted as a quoted, escaped SQL string
+            /// literal (quoteString) rather than wrapped in bare quotes, so a
+            /// mapping that contains a quote of its own (e.g. the timestamptz
+            /// type `DateTime64(6, 'UTC')`) stays well-formed SQL.
+            return fmt::format("accurateCast({}, {})", quoteString(value), quoteString(type));
 
         return std::nullopt;
     }

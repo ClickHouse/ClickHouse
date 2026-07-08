@@ -71,6 +71,12 @@ private:
 
     bool is_query_in_progress = false;
 
+    /// Set when an extended-query message (Parse/Bind/Describe/Execute/Close)
+    /// fails. Per the PostgreSQL wire protocol the server must then send one
+    /// ErrorResponse and ignore all further messages until the next Sync,
+    /// after which it reports ReadyForQuery, keeping the connection usable.
+    bool skip_until_sync = false;
+
     std::shared_ptr<ReadBufferFromPocoSocket> in;
     std::shared_ptr<WriteBuffer> out;
     std::shared_ptr<PostgreSQLProtocol::Messaging::MessageTransport> message_transport;
