@@ -227,11 +227,16 @@ TEST(BloomFilterData, EmptySerializationRoundTrip)
     empty.seed = 7;
 
     WriteBufferFromOwnString out;
-    empty.write(out);
+    empty.write(out, GROUP_BLOOM_FILTER_STATE_VERSION);
 
     AggregateFunctionGroupBloomFilterData restored;
     ReadBufferFromString in(out.str());
-    restored.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/7);
+    restored.read(
+        in,
+        /*expected_filter_size_bytes=*/64,
+        /*expected_num_hashes=*/3,
+        /*expected_seed=*/7,
+        GROUP_BLOOM_FILTER_STATE_VERSION);
 
     EXPECT_FALSE(restored.isInitialized());
     EXPECT_EQ(restored.filter_size_bytes, empty.filter_size_bytes);
@@ -247,11 +252,16 @@ TEST(BloomFilterData, InitializedSerializationRoundTrip)
     data.add(reinterpret_cast<const char *>(&value), sizeof(value));
 
     WriteBufferFromOwnString out;
-    data.write(out);
+    data.write(out, GROUP_BLOOM_FILTER_STATE_VERSION);
 
     AggregateFunctionGroupBloomFilterData restored;
     ReadBufferFromString in(out.str());
-    restored.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/7);
+    restored.read(
+        in,
+        /*expected_filter_size_bytes=*/64,
+        /*expected_num_hashes=*/3,
+        /*expected_seed=*/7,
+        GROUP_BLOOM_FILTER_STATE_VERSION);
 
     EXPECT_TRUE(restored.isInitialized());
     EXPECT_TRUE(restored.contains(reinterpret_cast<const char *>(&value), sizeof(value)));
@@ -273,10 +283,15 @@ TEST(BloomFilterData, ForgedLargeSizeRejectedBeforeAllocation)
     ReadBufferFromString in(forged.str());
 
     /// The declared parameters of the aggregate function are small (64 bytes, 3 hashes, seed 0).
-    /// read() must throw INCORRECT_DATA immediately after reading the header, without allocating
+    /// `read` must throw INCORRECT_DATA immediately after reading the header, without allocating
     /// BLOOM_FILTER_MAX_SIZE_BYTES or attempting to readStrict that many bytes.
     EXPECT_THROW(
-        victim.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/0),
+        victim.read(
+            in,
+            /*expected_filter_size_bytes=*/64,
+            /*expected_num_hashes=*/3,
+            /*expected_seed=*/0,
+            GROUP_BLOOM_FILTER_STATE_VERSION),
         Exception);
 }
 
@@ -293,7 +308,12 @@ TEST(BloomFilterData, ForgedNumHashesMismatchRejected)
     ReadBufferFromString in(forged.str());
 
     EXPECT_THROW(
-        victim.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/0),
+        victim.read(
+            in,
+            /*expected_filter_size_bytes=*/64,
+            /*expected_num_hashes=*/3,
+            /*expected_seed=*/0,
+            GROUP_BLOOM_FILTER_STATE_VERSION),
         Exception);
 }
 
@@ -310,7 +330,12 @@ TEST(BloomFilterData, InvalidSerializedDataFlagRejected)
 
     try
     {
-        victim.read(in, /*expected_filter_size_bytes=*/64, /*expected_num_hashes=*/3, /*expected_seed=*/0);
+        victim.read(
+            in,
+            /*expected_filter_size_bytes=*/64,
+            /*expected_num_hashes=*/3,
+            /*expected_seed=*/0,
+            GROUP_BLOOM_FILTER_STATE_VERSION);
         FAIL() << "Expected invalid serialized Bloom filter state flag to be rejected";
     }
     catch (const Exception & e)
@@ -325,6 +350,40 @@ TEST(BloomFilterAggregateFunction, DoesNotAllocateMemoryInArena)
     const auto aggregate_function = createGroupBloomFilterAggregate(value_type);
 
     EXPECT_FALSE(aggregate_function->allocatesMemoryInArena());
+}
+
+TEST(BloomFilterAggregateFunction, UsesVersionedStateSerialization)
+{
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+    const auto aggregate_function = createGroupBloomFilterAggregate(value_type);
+
+    EXPECT_TRUE(aggregate_function->isVersioned());
+    EXPECT_EQ(aggregate_function->getDefaultVersion(), GROUP_BLOOM_FILTER_STATE_VERSION);
+}
+
+TEST(BloomFilterData, UnsupportedSerializationVersionRejected)
+{
+    AggregateFunctionGroupBloomFilterData data;
+    data.filter_size_bytes = 64;
+    data.num_hashes = 3;
+    data.seed = 7;
+
+    WriteBufferFromOwnString out;
+    EXPECT_THROW(data.write(out, size_t{0}), Exception);
+
+    WriteBufferFromOwnString serialized;
+    data.write(serialized, GROUP_BLOOM_FILTER_STATE_VERSION);
+
+    AggregateFunctionGroupBloomFilterData restored;
+    ReadBufferFromString in(serialized.str());
+    EXPECT_THROW(
+        restored.read(
+            in,
+            /*expected_filter_size_bytes=*/64,
+            /*expected_num_hashes=*/3,
+            /*expected_seed=*/7,
+            size_t{0}),
+        Exception);
 }
 
 TEST(BloomFilterAggregateFunction, PreservesFactoryParameters)
@@ -587,7 +646,7 @@ TEST(BloomFilterContains, WrongDateTime64BloomColumnThrowsAfterTypeValidation)
         Exception);
 }
 
-/// Regression: create() must not allocate the bitset eagerly.
+/// Regression: `create` must not allocate the bitset eagerly.
 /// Empty/skipped groups (e.g. from -If combinator when all conditions are false,
 /// or all-NULL nullable inputs) must stay compact in memory and serialize with has_data = 0.
 TEST(BloomFilterAggregateFunction, CreateDoesNotAllocateBitset)
@@ -618,7 +677,7 @@ TEST(BloomFilterAggregateFunction, CreateDoesNotAllocateBitset)
     EXPECT_LT(out.str().size(), 16u); // header only, far below 64 bytes of payload
 }
 
-/// Regression: add() must lazily allocate the bitset on first value and then find it.
+/// Regression: `add` must lazily allocate the bitset on first value and then find it.
 TEST(BloomFilterAggregateFunction, AddLazilyAllocatesAndFinds)
 {
     tryRegisterAggregateFunctions();
@@ -634,7 +693,7 @@ TEST(BloomFilterAggregateFunction, AddLazilyAllocatesAndFinds)
     const auto & data = *reinterpret_cast<const AggregateFunctionGroupBloomFilterData *>(place);
     EXPECT_FALSE(data.isInitialized());
 
-    // Insert one value through the aggregate function's add() interface.
+    // Insert one value through the aggregate function's `add` interface.
     auto value_column = ColumnUInt64::create();
     value_column->insertValue(UInt64(42));
     const IColumn * columns[] = {value_column.get()};

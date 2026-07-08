@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -22,6 +23,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
 }
+
+static constexpr size_t GROUP_BLOOM_FILTER_STATE_VERSION = 1;
 
 static constexpr size_t BLOOM_FILTER_DEFAULT_SEED = 0;
 static constexpr double BLOOM_FILTER_DEFAULT_FALSE_POSITIVE_RATE = 0.025;
@@ -95,6 +98,19 @@ struct AggregateFunctionGroupBloomFilterData
 
     AggregateFunctionGroupBloomFilterData() = default;
 
+    static size_t getSerializationVersion(std::optional<size_t> version)
+    {
+        if (!version)
+            return GROUP_BLOOM_FILTER_STATE_VERSION;
+
+        if (*version != GROUP_BLOOM_FILTER_STATE_VERSION)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unsupported version {} of {} aggregate function serialization state",
+                *version, name);
+
+        return *version;
+    }
+
     void setParameters(size_t filter_size_bytes_, size_t num_hashes_, size_t seed_ = BLOOM_FILTER_DEFAULT_SEED)
     {
         filter_size_bytes = filter_size_bytes_;
@@ -155,8 +171,10 @@ struct AggregateFunctionGroupBloomFilterData
             lhs_filter[i] |= rhs_filter[i];
     }
 
-    void write(WriteBuffer & buf) const
+    void write(WriteBuffer & buf, std::optional<size_t> version) const
     {
+        getSerializationVersion(version);
+
         writeVarUInt(filter_size_bytes, buf);
         writeVarUInt(num_hashes, buf);
         writeVarUInt(seed, buf);
@@ -174,8 +192,15 @@ struct AggregateFunctionGroupBloomFilterData
 
     /// Deserialize the state, validating the header against the declared aggregate function
     /// parameters (expected_filter_size_bytes, expected_num_hashes, expected_seed)
-    void read(ReadBuffer & buf, size_t expected_filter_size_bytes, size_t expected_num_hashes, size_t expected_seed)
+    void read(
+        ReadBuffer & buf,
+        size_t expected_filter_size_bytes,
+        size_t expected_num_hashes,
+        size_t expected_seed,
+        std::optional<size_t> version)
     {
+        getSerializationVersion(version);
+
         readVarUInt(filter_size_bytes, buf);
         readVarUInt(num_hashes, buf);
         readVarUInt(seed, buf);

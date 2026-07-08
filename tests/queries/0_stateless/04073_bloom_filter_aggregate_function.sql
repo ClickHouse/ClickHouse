@@ -10,7 +10,7 @@ SELECT
     bloomFilterContains(bf, toUInt64(42)),
     bloomFilterContains(bf, toUInt64(200)),
     bloomFilterContains(subquery_bf, toUInt64(42)),
-    toTypeName(type_bf) LIKE 'AggregateFunction(groupBloomFilter%';
+    toTypeName(type_bf) LIKE 'AggregateFunction(1, groupBloomFilter%';
 
 -- bloomFilterContains must accept groupBloomFilterIfState because the If combinator
 -- keeps the same Bloom filter state representation as groupBloomFilterState.
@@ -19,7 +19,7 @@ WITH
 SELECT
     bloomFilterContains(bf, toUInt64(42)),
     bloomFilterContains(bf, toUInt64(41)),
-    toTypeName(bf) LIKE 'AggregateFunction(groupBloomFilterIf%';
+    toTypeName(bf) LIKE 'AggregateFunction(1, groupBloomFilterIf%';
 
 WITH
     (SELECT groupBloomFilterIfState(1000)(number, 0) FROM numbers(100)) AS bf

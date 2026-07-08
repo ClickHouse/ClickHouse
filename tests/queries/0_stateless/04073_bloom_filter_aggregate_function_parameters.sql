@@ -18,7 +18,7 @@ WITH
 SELECT
     bloomFilterContains(default_bf, toUInt64(42)),
     bloomFilterContains(default_bf, toInt64(-1)),
-    toTypeName(default_type_bf) LIKE 'AggregateFunction(groupBloomFilter%',
+    toTypeName(default_type_bf) LIKE 'AggregateFunction(1, groupBloomFilter%',
     toTypeName(default_type_bf) != toTypeName(explicit_default_type_bf);
 
 WITH
@@ -70,7 +70,7 @@ WITH
     (SELECT groupBloomFilterState(100, 1e-10)(number) FROM numbers(100)) AS tiny_fpr_bf
 SELECT
     bloomFilterContains(integer_second_param_bf, toUInt64(50)),
-    toTypeName(high_fpr_bf) LIKE 'AggregateFunction(groupBloomFilter%',
+    toTypeName(high_fpr_bf) LIKE 'AggregateFunction(1, groupBloomFilter%',
     bloomFilterContains(max_hashes_bf, toUInt64(50)),
     bloomFilterContains(tiny_fpr_bf, toUInt64(42));
 

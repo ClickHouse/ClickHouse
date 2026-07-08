@@ -60,36 +60,36 @@ SELECT
     bloomFilterContains(merge_into_empty_lhs_bf, toUInt64(42));
 
 -- Malformed serialized state: filter_size_bytes = 0 must throw.
-SELECT finalizeAggregation(CAST(unhex('00010000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('00010000'), 'AggregateFunction(1, groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
 
 -- Malformed serialized state: filter_size_bytes above maximum must throw.
-SELECT finalizeAggregation(CAST(unhex('8180808001010000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('8180808001010000'), 'AggregateFunction(1, groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
 
 -- Malformed serialized state: num_hashes = 0 must throw.
-SELECT finalizeAggregation(CAST(unhex('08000000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('08000000'), 'AggregateFunction(1, groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
 
 -- Malformed serialized state: num_hashes above maximum must throw.
-SELECT finalizeAggregation(CAST(unhex('08150000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('08150000'), 'AggregateFunction(1, groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
 
 -- Malformed serialized state: has_data must be 0 or 1.
-SELECT finalizeAggregation(CAST(unhex('08010002'), 'AggregateFunction(groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
+SELECT finalizeAggregation(CAST(unhex('08010002'), 'AggregateFunction(1, groupBloomFilter(1000), UInt64)')); -- { serverError INCORRECT_DATA }
 
 -- Forged serialized state: valid payload parameters must still match the declared aggregate type.
 -- groupBloomFilter(1000) expects size=960, hashes=5, seed=0, but the payload says size=8, hashes=1, seed=0.
-SELECT CAST(unhex('08010000'), 'AggregateFunction(groupBloomFilter(1000), UInt64)'); -- { serverError INCORRECT_DATA }
+SELECT CAST(unhex('08010000'), 'AggregateFunction(1, groupBloomFilter(1000), UInt64)'); -- { serverError INCORRECT_DATA }
 
 -- Forged serialized state: seed must match the declared aggregate type.
 -- groupBloomFilter(4096, 5, 0) expects seed=0, but the payload says seed=42.
-SELECT CAST(unhex('8020052a00'), 'AggregateFunction(groupBloomFilter(4096, 5, 0), UInt64)'); -- { serverError INCORRECT_DATA }
+SELECT CAST(unhex('8020052a00'), 'AggregateFunction(1, groupBloomFilter(4096, 5, 0), UInt64)'); -- { serverError INCORRECT_DATA }
 
 -- Regression: empty/skipped states must stay compact and return 0 from bloomFilterContains.
 -- When the input is empty (no rows), no bitset is allocated.
 -- When all nullable inputs are NULL, no bitset is allocated either.
--- These are lazy-state tests: create() stores only parameters; add() allocates on first value.
+-- These are lazy-state tests: `create` stores only parameters; `add` allocates on first value.
 WITH
-    -- Empty input: FROM numbers(0) produces no rows, so create() is called but add() is never called.
+    -- Empty input: FROM numbers(0) produces no rows, so `create` is called but `add` is never called.
     (SELECT groupBloomFilterState(1000)(number)                                                         FROM numbers(0))    AS empty_bf,
-    -- All-NULL nullable input: the -If combinator on nullable unwraps to skip NULLs, so add() never fires.
+    -- All-NULL nullable input: the -If combinator on nullable unwraps to skip NULLs, so `add` never fires.
     (SELECT groupBloomFilterState(1000)(materialize(CAST(NULL, 'Nullable(UInt64)')))                   FROM numbers(100)) AS all_null_bf,
     (SELECT groupBloomFilterState(1000)(number)                                                         FROM numbers(100)) AS full_bf
 SELECT

@@ -2,6 +2,7 @@
 #include <AggregateFunctions/AggregateFunctionGroupBloomFilterData.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <Core/ProtocolDefines.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -150,6 +151,17 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool isVersioned() const override { return true; }
+
+    size_t getDefaultVersion() const override { return GROUP_BLOOM_FILTER_STATE_VERSION; }
+
+    size_t getVersionFromRevision(size_t revision) const override
+    {
+        if (revision >= DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING)
+            return GROUP_BLOOM_FILTER_STATE_VERSION;
+        return 0;
+    }
+
     void create(AggregateDataPtr __restrict place) const override
     {
         new (place) AggregateFunctionGroupBloomFilterData();
@@ -161,16 +173,16 @@ public:
         this->data(place).merge(this->data(rhs));
     }
 
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        this->data(place).write(buf);
+        this->data(place).write(buf, version);
     }
 
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena *) const override
     {
-        /// Pass the declared parameters so that read() validates the serialized header
+        /// Pass the declared parameters so that read validates the serialized header
         /// against them before constructing the BloomFilter or reading the payload.
-        this->data(place).read(buf, filter_size_bytes, num_hashes, seed);
+        this->data(place).read(buf, filter_size_bytes, num_hashes, seed, version);
     }
 
     void throwIfCannotProduceFinalizedResult() const override
@@ -436,12 +448,12 @@ groupBloomFilterState(filter_size_bytes, num_hashes[, seed])(column)
         {"seed", "Seed for hash functions. Default: 0."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns the Bloom filter state as `AggregateFunction(groupBloomFilter, T)` (default form) or "
-        "`AggregateFunction(groupBloomFilter(params...), T)` (parameterized form, e.g. `AggregateFunction(groupBloomFilter(1000), String)`) "
+        "Returns the Bloom filter state as `AggregateFunction(1, groupBloomFilter, T)` (default form) or "
+        "`AggregateFunction(1, groupBloomFilter(params...), T)` (parameterized form, e.g. `AggregateFunction(1, groupBloomFilter(1000), String)`) "
         "when using the `-State` combinator. "
         "Parameterized forms must resolve to the same effective `filter_size_bytes`, `num_hashes`, and `seed` when defining `AggregatingMergeTree` columns explicitly. "
         "The finalized form throws an exception because Bloom filters do not have a meaningful scalar result.",
-        {"AggregateFunction(groupBloomFilter[(parameters...)], T)"}
+        {"AggregateFunction(1, groupBloomFilter[(parameters...)], T)"}
     };
     FunctionDocumentation::Examples examples = {
         {

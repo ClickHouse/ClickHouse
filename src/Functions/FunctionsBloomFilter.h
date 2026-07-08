@@ -63,7 +63,7 @@ public:
         if (!value_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Bloom filter state "
-                "(AggregateFunction(groupBloomFilter, T)) but it has type {}",
+                "(AggregateFunction(1, groupBloomFilter, T)) but it has type {}",
                 getName(), arguments[0]->getName());
 
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
@@ -87,7 +87,7 @@ public:
         if (!value_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "First argument for function {} must be a Bloom filter state "
-                "(AggregateFunction(groupBloomFilter, T)) but it has type {}",
+                "(AggregateFunction(1, groupBloomFilter, T)) but it has type {}",
                 getName(), arguments[0].type->getName());
 
         DataTypePtr dispatch_value_type = removeLowCardinalityAndNullable(value_type);
