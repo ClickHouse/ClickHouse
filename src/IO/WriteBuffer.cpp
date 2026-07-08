@@ -1,5 +1,6 @@
 #include <IO/WriteBuffer.h>
 
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/StackTrace.h>
@@ -13,6 +14,47 @@ namespace ErrorCodes
 extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
 extern const int CANNOT_WRITE_AFTER_BUFFER_CANCELED;
 extern const int LOGICAL_ERROR;
+}
+
+void WriteBuffer::next()
+{
+    CurrentThread::checkIfNotCancelled();
+
+    if (canceled)
+        return;
+
+    if (!offset())
+        return;
+
+    auto bytes_in_buffer = offset();
+
+    try
+    {
+        nextImpl();
+        ++flush_count;
+    }
+    catch (CurrentBufferExhausted &)
+    {
+        pos = working_buffer.begin();
+        bytes += bytes_in_buffer;
+        throw;
+    }
+    catch (...)
+    {
+        /** If the nextImpl() call was unsuccessful, move the cursor to the beginning,
+            * so that later (for example, when the stack was expanded) there was no second attempt to write data.
+            */
+        pos = working_buffer.begin();
+        bytes += bytes_in_buffer;
+
+        cancel();
+
+        throw;
+    }
+
+    bytes += bytes_in_buffer;
+    pos = working_buffer.begin() + nextimpl_working_buffer_offset;
+    nextimpl_working_buffer_offset = 0;
 }
 
 /// Calling finalize() in the destructor of derived classes is a bad practice.

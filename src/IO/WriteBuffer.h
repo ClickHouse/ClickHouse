@@ -39,44 +39,7 @@ public:
       * If direct write is performed into [position(), buffer().end()) and its length is not enough,
       * you need to fill it first (i.g with write call), after it the capacity is regained.
       */
-    void next()
-    {
-        if (canceled)
-            return;
-
-        if (!offset())
-            return;
-
-        auto bytes_in_buffer = offset();
-
-        try
-        {
-            nextImpl();
-            ++flush_count;
-        }
-        catch (CurrentBufferExhausted &)
-        {
-            pos = working_buffer.begin();
-            bytes += bytes_in_buffer;
-            throw;
-        }
-        catch (...)
-        {
-            /** If the nextImpl() call was unsuccessful, move the cursor to the beginning,
-              * so that later (for example, when the stack was expanded) there was no second attempt to write data.
-              */
-            pos = working_buffer.begin();
-            bytes += bytes_in_buffer;
-
-            cancel();
-
-            throw;
-        }
-
-        bytes += bytes_in_buffer;
-        pos = working_buffer.begin() + nextimpl_working_buffer_offset;
-        nextimpl_working_buffer_offset = 0;
-    }
+    void next();
 
     /// Calling finalize() in the destructor of derived classes is a bad practice.
     virtual ~WriteBuffer();
