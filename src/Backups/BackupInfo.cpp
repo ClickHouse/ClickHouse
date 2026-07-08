@@ -811,7 +811,8 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
                 auto key = getEffectiveKeyValueArgName(kv_arg, context);
                 return key
                     && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token" || *key == "role_arn"
-                        || *key == "role_session_name" || *key == "external_id");
+                        || *key == "role_session_name" || *key == "external_id"
+                        || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
             }),
         res.kv_args.end());
 
