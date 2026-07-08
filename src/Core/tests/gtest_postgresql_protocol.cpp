@@ -214,6 +214,27 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         return bytes;
     };
 
+    /// deserialize fully consumes the message and only records a binary format
+    /// code in `has_binary_format_param` (so the byte stream stays aligned for the
+    /// error-recovery skip-until-Sync path); attachBindQuery is what rejects it.
+    auto deserializeThenAttach = [](const std::string & bytes) -> bool
+    {
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        msg->deserialize(in);
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        try
+        {
+            manager.attachBindQuery(std::move(msg));
+            return false;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
+            return e.code() == ErrorCodes::NOT_IMPLEMENTED;
+        }
+    };
+
     auto deserializeThrows = [](const std::string & bytes, int expected_code)
     {
         ReadBufferFromMemory in(bytes.data(), bytes.size());
@@ -230,7 +251,7 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         }
     };
 
-    /// No format codes: all parameters are text (accepted).
+    /// No format codes: all parameters are text (accepted, flag not set).
     {
         std::string bytes = build({});
         ReadBufferFromMemory in(bytes.data(), bytes.size());
@@ -238,9 +259,10 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         EXPECT_NO_THROW(msg.deserialize(in));
         ASSERT_EQ(msg.parameters.size(), 1u);
         EXPECT_EQ(msg.parameters[0], "hi");
+        EXPECT_FALSE(msg.has_binary_format_param);
     }
 
-    /// Explicit text format code (accepted).
+    /// Explicit text format code (accepted, flag not set).
     {
         std::string bytes = build({0});
         ReadBufferFromMemory in(bytes.data(), bytes.size());
@@ -248,15 +270,24 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
         EXPECT_NO_THROW(msg.deserialize(in));
         ASSERT_EQ(msg.parameters.size(), 1u);
         EXPECT_EQ(msg.parameters[0], "hi");
+        EXPECT_FALSE(msg.has_binary_format_param);
     }
 
-    /// Binary format code must be rejected rather than silently misbound.
-    EXPECT_TRUE(deserializeThrows(build({1}), ErrorCodes::NOT_IMPLEMENTED));
+    /// A binary format code is consumed by deserialize (which records the flag but
+    /// does not throw, keeping the stream aligned) and rejected by attachBindQuery.
+    {
+        std::string bytes = build({1});
+        ReadBufferFromMemory in(bytes.data(), bytes.size());
+        Messaging::BindQuery msg;
+        EXPECT_NO_THROW(msg.deserialize(in));
+        EXPECT_TRUE(msg.has_binary_format_param);
+    }
+    EXPECT_TRUE(deserializeThenAttach(build({1})));
 
     /// A binary code anywhere in the array is rejected.
-    EXPECT_TRUE(deserializeThrows(build({0, 1}), ErrorCodes::NOT_IMPLEMENTED));
+    EXPECT_TRUE(deserializeThenAttach(build({0, 1})));
 
-    /// A negative format-code count is malformed.
+    /// A negative format-code count is malformed and rejected during deserialize.
     {
         std::string bytes;
         putInt32(bytes, 0);
@@ -327,12 +358,12 @@ TEST(PostgreSQLProtocol, BindPreservesDeclaredParameterTypes)
               "SELECT accurateCast('2024-01-15', 'Date32')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {1114}, {{"2024-01-15 12:30:45"}}),
               "SELECT accurateCast('2024-01-15 12:30:45', 'DateTime64(6)')");
-    /// timestamptz (OID 1184) carries its timezone as part of the type, so it maps
-    /// to a UTC-anchored DateTime64, not the bare DateTime64 used for plain
-    /// timestamp. The type name itself is emitted as a quoted, escaped SQL literal,
-    /// so its inner quotes do not break the assembled statement.
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1184}, {{"2024-01-15 12:30:45"}}),
-              "SELECT accurateCast('2024-01-15 12:30:45', 'DateTime64(6, \\'UTC\\')')");
+    /// timestamptz (OID 1184) carries its timezone in the type: it maps to
+    /// DateTime64(6, 'UTC'), not bare DateTime64(6), so toTypeName reports the
+    /// right type and offset-bearing values are interpreted as UTC, not local
+    /// wall-clock. The type name's inner quotes are escaped by quoteString.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {1184}, {{"2024-01-15 12:30:45+02"}}),
+              "SELECT accurateCast('2024-01-15 12:30:45+02', 'DateTime64(6, \\'UTC\\')')");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {2950}, {{"61f0c404-5cb3-11e7-907b-a6006ad3dba0"}}),
               "SELECT accurateCast('61f0c404-5cb3-11e7-907b-a6006ad3dba0', 'UUID')");
 
@@ -400,13 +431,15 @@ TEST(PostgreSQLProtocol, BindPreservesNumericParameterType)
     /// not silently rounded.
     EXPECT_TRUE(throwsBadArgument(1700, String(78, '9')));
 
-    /// An oversize exponent passes the lexical numeric check but must be rejected
-    /// without an O(exponent) zero-padding loop or signed overflow in the exponent
-    /// accumulator: the exponent is capped, so the value simply exceeds Decimal256
-    /// precision and is rejected. These must return promptly rather than hang.
+    /// An oversize exponent is rejected up front, before the normalizer does any
+    /// exponent arithmetic or zero-padding. This keeps the huge-exponent path cheap
+    /// and safe: `1e1000000` / `1e-1000000` can never fit Decimal256, so there is no
+    /// O(exponent) zero-padding blow-up, and an exponent large enough to overflow a
+    /// signed Int64 (`1e99999999999999999999`) can never be folded in (no UB).
     EXPECT_TRUE(throwsBadArgument(1700, "1e1000000"));
     EXPECT_TRUE(throwsBadArgument(1700, "1e-1000000"));
-    EXPECT_TRUE(throwsBadArgument(1700, "1e999999999999999999999999"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1e99999999999999999999"));
+    EXPECT_TRUE(throwsBadArgument(1700, "1e-99999999999999999999"));
 
     /// The numeric branch validates the value as one literal at assembly time, so an
     /// injection payload declared `numeric` is rejected, never spliced or cast.

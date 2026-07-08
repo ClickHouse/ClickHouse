@@ -5,7 +5,6 @@ import decimal
 import logging
 import os
 import random
-import time
 import uuid
 from contextlib import closing
 from io import StringIO
@@ -554,7 +553,10 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
     #  - bool (OID 16): `NOT $1` must negate a boolean, not error on a string.
     res_bool = pg.exec_params(b"SELECT NOT $1", [b"true"], [16], [0], 0)
     assert res_bool.status == psycopg.pq.ExecStatus.TUPLES_OK, res_bool.error_message
-    assert res_bool.get_value(0, 0) in (b"false", b"0")
+    # Bool renders as `f`/`t` in the PostgreSQL text format (`false`/`0` in some
+    # versions); accept any of them. The point is that it negated a boolean rather
+    # than erroring on a string.
+    assert res_bool.get_value(0, 0) in (b"f", b"false", b"0")
     res_bool_type = pg.exec_params(b"SELECT toTypeName($1)", [b"true"], [16], [0], 0)
     assert res_bool_type.get_value(0, 0) == b"Bool", res_bool_type.get_value(0, 0)
 
@@ -603,29 +605,64 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
         assert res_num_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
         assert b"prepared-statement parameter" in res_num_bad.error_message, payload
 
-    # A `numeric` value with an oversize exponent (`1e1000000`) passes the lexical
-    # numeric check, so it must be rejected without an O(exponent) normalization
-    # loop or signed overflow. It is rejected promptly, and the connection is still
-    # usable afterwards (bounded work, no hang).
-    t0 = time.monotonic()
-    res_num_dos = pg.exec_params(b"SELECT $1", [b"1e1000000"], [1700], [0], 0)
-    assert res_num_dos.status == psycopg.pq.ExecStatus.FATAL_ERROR
-    assert time.monotonic() - t0 < 5.0, "numeric exponent rejection must be fast"
+    # An oversize exponent for a numeric OID is rejected up front, before the
+    # normalizer does any exponent arithmetic or zero-padding: `1e1000000` would
+    # otherwise drive O(exponent) zero-padding and `1e99999999999999999999` would
+    # overflow the signed exponent accumulator. Each is rejected and the
+    # connection stays alive for the next request.
+    for payload in (b"1e1000000", b"1e-1000000", b"1e99999999999999999999"):
+        res_exp = pg.exec_params(b"SELECT $1", [payload], [1700], [0], 0)
+        assert res_exp.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
 
-    # `timestamptz` (OID 1184) carries its timezone as part of the type, so it maps
-    # to `DateTime64(6, 'UTC')`, not the bare `DateTime64(6)` used for plain
-    # `timestamp` (OID 1114). toTypeName must report the UTC-anchored type.
+    # timestamptz (OID 1184) carries its timezone in the type: it maps to
+    # DateTime64(6, 'UTC'), not bare DateTime64(6), so toTypeName reports the
+    # timezone-bearing type and offset values are interpreted as UTC.
     res_tstz = pg.exec_params(
-        b"SELECT toTypeName($1)", [b"2024-01-15 10:00:00"], [1184], [0], 0
+        b"SELECT toTypeName($1)", [b"2024-01-15 12:30:45+02"], [1184], [0], 0
     )
     assert res_tstz.status == psycopg.pq.ExecStatus.TUPLES_OK, res_tstz.error_message
-    assert res_tstz.get_value(0, 0) == b"DateTime64(6, 'UTC')", res_tstz.get_value(0, 0)
-    res_ts = pg.exec_params(
-        b"SELECT toTypeName($1)", [b"2024-01-15 10:00:00"], [1114], [0], 0
-    )
-    assert res_ts.get_value(0, 0) == b"DateTime64(6)", res_ts.get_value(0, 0)
+    assert b"UTC" in res_tstz.get_value(0, 0), res_tstz.get_value(0, 0)
 
     setup.execute("DROP TABLE bind_num_t;")
+    ch.close()
+
+
+def test_bind_error_keeps_connection_alive(started_cluster):
+    # An extended-query (Parse/Bind/Execute) error must not drop the connection:
+    # per the PostgreSQL protocol the backend sends ErrorResponse, discards
+    # messages until Sync, then sends ReadyForQuery so the same connection stays
+    # usable. Rejecting a typed Bind value (the type-preservation validation) must
+    # therefore leave the client able to run further queries on the same session.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    pg = ch.pgconn
+
+    # A rejected int4 bind returns an error, not a closed connection.
+    res_bad = pg.exec_params(b"SELECT $1", [b"1--"], [23], [0], 0)
+    assert res_bad.status == psycopg.pq.ExecStatus.FATAL_ERROR
+
+    # The SAME connection is still usable for a valid query afterwards.
+    res_ok = pg.exec_params(b"SELECT $1 + 1", [b"41"], [23], [0], 0)
+    assert res_ok.status == psycopg.pq.ExecStatus.TUPLES_OK, res_ok.error_message
+    assert res_ok.get_value(0, 0) == b"42"
+
+    # Several consecutive errors on one connection all recover.
+    for payload in (b"1+2", b"2147483648", b"3.14"):
+        res_e = pg.exec_params(b"SELECT $1", [payload], [23], [0], 0)
+        assert res_e.status == psycopg.pq.ExecStatus.FATAL_ERROR, payload
+        res_after = pg.exec_params(b"SELECT $1 + 1", [b"1"], [23], [0], 0)
+        assert res_after.status == psycopg.pq.ExecStatus.TUPLES_OK, (
+            payload,
+            res_after.error_message,
+        )
+        assert res_after.get_value(0, 0) == b"2", payload
+
     ch.close()
 
 

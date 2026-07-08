@@ -186,10 +186,10 @@ void PostgreSQLHandler::run()
 
         while (tcp_server.isOpen())
         {
-            /// Do not offer a new query while still in a query, nor while
-            /// draining a failed extended-query cycle (ReadyForQuery is sent
-            /// only once the recovering Sync arrives, see below).
-            if (!is_query_in_progress && !skip_until_sync)
+            /// While discarding messages after an extended-query error, the
+            /// backend must stay silent until it receives Sync; ReadyForQuery is
+            /// sent only once, in response to that Sync (see the SYNC case).
+            if (!is_query_in_progress && !ignore_until_sync)
                 message_transport->send(PostgreSQLProtocol::Messaging::ReadyForQuery(), true);
 
             constexpr size_t connection_check_timeout = 1; // 1 second
@@ -200,12 +200,12 @@ void PostgreSQLHandler::run()
             if (!tcp_server.isOpen())
                 return;
 
-            /// Extended-query error recovery: after an ErrorResponse the
-            /// PostgreSQL protocol requires the server to ignore every message
-            /// until the next Sync, then respond ReadyForQuery. Drop each
-            /// message body here (all client messages are length-prefixed)
-            /// until Sync ends the failed cycle; a Terminate still closes.
-            if (skip_until_sync
+            /// After an extended-query error the PostgreSQL protocol requires the
+            /// backend to discard every message until the next Sync, then answer
+            /// with ReadyForQuery. Terminate is still honoured so the client can
+            /// close the connection; everything else (including the message body)
+            /// is dropped without being processed.
+            if (ignore_until_sync
                 && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::SYNC
                 && message_type != PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE)
             {
@@ -213,8 +213,6 @@ void PostgreSQLHandler::run()
                 continue;
             }
 
-            try
-            {
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
@@ -240,7 +238,10 @@ void PostgreSQLHandler::run()
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::SYNC:
                     is_query_in_progress = false;
-                    skip_until_sync = false;
+                    /// Sync ends the current extended-query cycle and clears any
+                    /// pending error state; ReadyForQuery is sent by the top of
+                    /// the loop on the next iteration.
+                    ignore_until_sync = false;
                     processSyncQuery();
                     message_transport->flush();
                     break;
@@ -270,29 +271,6 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
-            }
-            }
-            catch (const Exception & e)
-            {
-                /// The per-message handler has already sent an ErrorResponse.
-                /// For the extended-query messages, do not tear the connection
-                /// down: enter skip-until-Sync recovery so the client can
-                /// finish its Parse/Bind/Describe/Execute/Sync cycle and keep
-                /// using the connection, as the PostgreSQL protocol requires.
-                /// The simple-query (Query) path keeps its previous behaviour
-                /// and lets the exception propagate.
-                if (message_type == PostgreSQLProtocol::Messaging::FrontMessageType::PARSE
-                    || message_type == PostgreSQLProtocol::Messaging::FrontMessageType::BIND
-                    || message_type == PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE
-                    || message_type == PostgreSQLProtocol::Messaging::FrontMessageType::EXECUTE
-                    || message_type == PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE)
-                {
-                    skip_until_sync = true;
-                    is_query_in_progress = true;
-                    LOG_DEBUG(log, "Extended-query message failed, skipping until Sync: {}", e.displayText());
-                }
-                else
-                    throw;
             }
         }
     }
@@ -843,7 +821,11 @@ void PostgreSQLHandler::processParseQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        /// Per the PostgreSQL protocol, an extended-query error is followed by
+        /// discarding messages until Sync and then ReadyForQuery. Do not rethrow:
+        /// that reaches the top-level catch and drops the connection, so the
+        /// client never sees ReadyForQuery.
+        ignore_until_sync = true;
     }
 }
 
@@ -863,7 +845,10 @@ void PostgreSQLHandler::processBindQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        /// Discard messages until Sync and keep the connection alive (see
+        /// processParseQuery). Rejecting a bad Bind value must not drop the
+        /// connection, otherwise the client never receives this ErrorResponse.
+        ignore_until_sync = true;
     }
 }
 
@@ -880,7 +865,9 @@ void PostgreSQLHandler::processDescribeQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        /// Discard messages until Sync and keep the connection alive (see
+        /// processParseQuery).
+        ignore_until_sync = true;
     }
 }
 
@@ -927,7 +914,9 @@ void PostgreSQLHandler::processExecuteQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        /// Discard messages until Sync and keep the connection alive (see
+        /// processParseQuery).
+        ignore_until_sync = true;
     }
 }
 
@@ -990,7 +979,9 @@ void PostgreSQLHandler::processCloseQuery()
             PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
                 PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
             true);
-        throw;
+        /// Discard messages until Sync and keep the connection alive (see
+        /// processParseQuery).
+        ignore_until_sync = true;
     }
 }
 
