@@ -58,6 +58,7 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"allow_commit_order_projection", trueOrFalseSetting},
     {"allow_experimental_replacing_merge_with_cleanup", trueOrFalseSetting},
     {"allow_floating_point_partition_key", trueOrFalseSetting},
+    {"allow_minmax_index_for_json", trueOrFalseSetting},
     {"allow_nullable_key", trueOrFalseSetting},
     {"allow_part_offset_column_in_projections", trueOrFalseSetting},
     {"allow_reduce_blocking_parts_task", trueOrFalseSetting},
@@ -523,19 +524,9 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"replicated_deduplication_window",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 1000)); }, {}, false)},
-    {"replicated_deduplication_window_for_async_inserts",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10000)); },
-         {},
-         false)},
     {"replicated_deduplication_window_seconds",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 3600)); }, {}, false)},
-    {"replicated_deduplication_window_seconds_for_async_inserts",
-     CHSetting(
-         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 86400)); },
-         {},
-         false)},
     {"replicated_fetches_min_part_level",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 10)); },
@@ -697,7 +688,6 @@ static std::unordered_map<String, CHSetting> mergeTreeTableSettings = {
     {"try_fetch_recompressed_part_timeout", highRangeSetting},
     {"ttl_only_drop_parts", trueOrFalseSetting},
     {"use_adaptive_write_buffer_for_dynamic_subcolumns", trueOrFalseSetting},
-    {"use_async_block_ids_cache", trueOrFalseSetting},
     {"use_compact_variant_discriminators_serialization", trueOrFalseSetting},
     {"use_const_adaptive_granularity", trueOrFalseSetting},
     {"use_minimalistic_checksums_in_zookeeper", trueOrFalseSetting},

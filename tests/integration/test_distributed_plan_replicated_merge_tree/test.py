@@ -167,6 +167,25 @@ def _create_tables_and_load_data():
             f"expected >= 2 active parts on {node.name}, got {parts_count}"
         )
 
+    # ReplacingMergeTree table for the parallel FINAL path: two overlapping batches (same ids, higher
+    # version wins) leave duplicate keys across two parts, so FINAL must deduplicate and the distributed
+    # read must split into primary-key-range layers across the workers.
+    for node in NODES:
+        node.query(
+            """
+            CREATE TABLE final_rep (id UInt64, v UInt64, ver UInt64)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{shard}/final_rep', '{replica}', ver)
+            ORDER BY id SETTINGS index_granularity = 256
+            """
+        )
+        node.query("SYSTEM STOP MERGES final_rep")
+
+    INITIATOR.query("INSERT INTO final_rep SELECT number, number, 1 FROM numbers(60000)")
+    INITIATOR.query("INSERT INTO final_rep SELECT number, number + 7, 2 FROM numbers(60000)")
+    for node in NODES:
+        node.query("SYSTEM SYNC REPLICA final_rep")
+        assert int(node.query("SELECT count() FROM final_rep").strip()) == 120_000
+
 
 def _explain_and_check(query: str, settings: str, expected_plan: str):
     """Run EXPLAIN PLAN on the query and compare its output to the expected
@@ -284,6 +303,78 @@ def test_parallel_read_missing_part_on_worker_errors(started_cluster):
         with pytest.raises(QueryRuntimeException) as exc:
             INITIATOR.query(f"SELECT count(), sum(id) FROM {table} SETTINGS {settings}")
         assert "is not available on this replica" in str(exc.value)
+    finally:
+        node2.query(f"SYSTEM START FETCHES {table}")
+        node3.query(f"SYSTEM START FETCHES {table}")
+        for node in NODES:
+            node.query(f"SYSTEM SYNC REPLICA {table}")
+            node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+@EXCHANGE_KINDS
+def test_final_parallel_read(started_cluster, exchange_kind):
+    """A FINAL scan of a ReplacingMergeTree splits into primary-key-range layers (one per worker bucket),
+    each deduplicated independently on its replica, then gathered on the initiator. The result must equal
+    local FINAL, and the read must distribute rather than fall back to a serial read."""
+    distributed, baseline = _run_both_ways(
+        "SELECT count(), sum(v) FROM final_rep FINAL",
+        settings_override=_override(exchange_kind),
+    )
+    assert distributed == baseline
+
+    pipeline = INITIATOR.query(
+        "EXPLAIN PIPELINE SELECT id, v FROM final_rep FINAL "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}, {_override(exchange_kind)}"
+    )
+    assert "ReadFromDistributedPlanSource" in pipeline
+
+
+def test_final_missing_part_on_worker_errors(started_cluster):
+    """The parallel FINAL read ships each worker the marks (by part name) of its primary-key-range layer.
+    A layer spans every part, so a worker replica missing a coordinator-selected part (replication lag)
+    cannot read its layer and the query must fail closed instead of silently dropping rows.
+
+    Stop fetches on node2/node3 and add a new overlapping part only on the coordinator (node1). Every layer
+    references the new part, so both lagging workers raise NO_SUCH_DATA_PART at once; the initiator surfaces
+    either that error directly or a cancellation triggered by it -- both prove no rows were dropped."""
+    table = "final_lagging"
+    for node in NODES:
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+        node.query(
+            f"""
+            CREATE TABLE {table} (id UInt64, v UInt64, ver UInt64)
+            ENGINE = ReplicatedReplacingMergeTree('/clickhouse/tables/{{shard}}/{table}', '{{replica}}', ver)
+            ORDER BY id SETTINGS index_granularity = 256
+            """
+        )
+        node.query(f"SYSTEM STOP MERGES {table}")
+
+    for batch in range(2):
+        offset = batch * 25_000
+        INITIATOR.query(
+            f"INSERT INTO {table} SELECT number + {offset}, number + {offset}, 1 FROM numbers(25000)"
+        )
+    for node in NODES:
+        node.query(f"SYSTEM SYNC REPLICA {table}")
+
+    node2.query(f"SYSTEM STOP FETCHES {table}")
+    node3.query(f"SYSTEM STOP FETCHES {table}")
+    try:
+        # A new overlapping part (higher version) lands only on the coordinator; node2/node3 stay behind.
+        INITIATOR.query(
+            f"INSERT INTO {table} SELECT number, number + 7, 2 FROM numbers(50000)"
+        )
+        settings = (
+            DISTRIBUTED_SETTINGS
+            + ", distributed_plan_force_exchange_kind = 'Persisted'"
+            + ", distributed_plan_prefer_replicas_over_workers = 1"
+        )
+        with pytest.raises(QueryRuntimeException) as exc:
+            INITIATOR.query(f"SELECT count(), sum(v) FROM {table} FINAL SETTINGS {settings}")
+        # Fail-closed: the missing part surfaces directly, or as a cancellation when another worker's
+        # identical failure reaches the initiator first. Both mean the read did not return a short result.
+        message = str(exc.value)
+        assert "is not available on this replica" in message or "QUERY_WAS_CANCELLED" in message
     finally:
         node2.query(f"SYSTEM START FETCHES {table}")
         node3.query(f"SYSTEM START FETCHES {table}")
