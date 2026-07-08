@@ -247,11 +247,11 @@ Note: When using `hive` partition strategy, the `use_hive_partitioning` setting 
 Example of `hive` partition strategy:
 
 ```sql
-arthur :) create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
+create table azure_table (year UInt16, country String, counter UInt8) ENGINE=AzureBlobStorage(account_name='devstoreaccount1', account_key='Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==', storage_account_url = 'http://localhost:30000/devstoreaccount1', container='cont', blob_path='hive_partitioned', format='Parquet', compression='auto', partition_strategy='hive') PARTITION BY (year, country);
 
-arthur :) insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
+insert into azure_table values (2020, 'Russia', 1), (2021, 'Brazil', 2);
 
-arthur :) select _path, * from azure_table;
+select _path, * from azure_table;
 
    ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
 1. │ cont/hive_partitioned/year=2020/country=Russia/7351305360873664512.parquet │ 2020 │ Russia  │       1 │
@@ -370,11 +370,11 @@ Note: When using `HIVE` partition strategy, the `use_hive_partitioning` setting 
 Example of `HIVE` partition strategy:
 
 ```sql
-arthur :) CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
+CREATE TABLE t_03363_parquet (year UInt16, country String, counter UInt8)
 ENGINE = S3(s3_conn, filename = 't_03363_parquet', format = Parquet, partition_strategy='hive')
 PARTITION BY (year, country);
 
-arthur :) INSERT INTO t_03363_parquet VALUES
+INSERT INTO t_03363_parquet VALUES
     (2022, 'USA', 1),
     (2022, 'Canada', 2),
     (2023, 'USA', 3),
@@ -387,7 +387,7 @@ arthur :) INSERT INTO t_03363_parquet VALUES
     (2024, 'CN', 10),
     (2025, '', 11);
 
-arthur :) select _path, * from t_03363_parquet;
+select _path, * from t_03363_parquet;
 
     ┌─_path──────────────────────────────────────────────────────────────────────┬─year─┬─country─┬─counter─┐
  1. │ test/t_03363_parquet/year=2100/country=Japan/7329604473272971264.parquet   │ 2100 │ Japan   │       9 │
