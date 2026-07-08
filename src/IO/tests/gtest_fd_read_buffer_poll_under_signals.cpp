@@ -38,7 +38,7 @@ void onTick(int)
 /// could be consumed by any other unblocked thread of the test binary) and keeps the requested
 /// cadence at kernel-timer precision (a userspace ticker thread cannot sustain a reliable
 /// sub-millisecond period).
-void checkPollExpiresUnderPeriodicSignals(long signal_period_nanoseconds)
+void checkPollExpiresUnderPeriodicSignals(Int64 signal_period_nanoseconds)
 {
     int fds[2];
     ASSERT_EQ(pipe(fds), 0);
