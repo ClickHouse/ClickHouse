@@ -731,8 +731,8 @@ def test_system_queue_metadata_ordered_partitioned(started_cluster):
         ).strip()
     )
 
-    # With partitioning there is one processed pointer per partition,
-    # keyed by `processed/<partition>`.
+    # With partitioning there is the root `processed` pointer plus one
+    # pointer per partition, keyed by `processed/<partition>`.
     keys = (
         node.query(
             f"""
@@ -745,9 +745,27 @@ def test_system_queue_metadata_ordered_partitioned(started_cluster):
         .strip()
         .split("\n")
     )
-    assert len(keys) == len(hostnames)
-    for key in keys:
+    assert len(keys) == len(hostnames) + 1
+    assert keys[0] == "processed"
+    for key in keys[1:]:
         assert key.startswith("processed/"), key
+
+    # Every pointer, including the root one parsed from `NodeMetadata`,
+    # must hold a processed file path.
+    values = (
+        node.query(
+            f"""
+            SELECT arrayJoin(mapValues(processed_path))
+            FROM system.s3_queue_metadata
+            WHERE zookeeper_path ilike '%{keeper_path}%'
+            """
+        )
+        .strip()
+        .split("\n")
+    )
+    assert len(values) == len(hostnames) + 1
+    for value in values:
+        assert files_path in value, value
 
     node.query(f"DROP TABLE {table_name} SYNC")
 

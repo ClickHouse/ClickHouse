@@ -210,14 +210,21 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
             }
 
             std::vector<std::string> leaf_paths;
+            /// Whether `leaf_paths[i]` stores `NodeMetadata` JSON (root and
+            /// per-bucket pointers) or a raw file path (per-partition children).
+            std::vector<UInt8> leaf_is_node_metadata;
             const bool partitioned = metadata->getPartitioningMode() != ObjectStorageQueuePartitioningMode::NONE;
             if (!partitioned)
             {
                 leaf_paths = std::move(roots);
+                leaf_is_node_metadata.assign(leaf_paths.size(), 1);
             }
             else
             {
-                /// Each root is a directory whose children are the partitions.
+                /// Even with partitioning, each root node itself holds a
+                /// `NodeMetadata` pointer and may carry it before any partition
+                /// child exists (e.g. for `last_processed_path`), so read both
+                /// the root and its per-partition children.
                 for (const auto & root : roots)
                 {
                     Strings partitions;
@@ -228,8 +235,14 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
                         continue;
                     if (code != Coordination::Error::ZOK)
                         throw zkutil::KeeperException::fromPath(code, root);
+
+                    leaf_paths.push_back(root);
+                    leaf_is_node_metadata.push_back(1);
                     for (const auto & partition : partitions)
+                    {
                         leaf_paths.push_back(std::filesystem::path(root) / partition);
+                        leaf_is_node_metadata.push_back(0);
+                    }
                 }
             }
 
@@ -244,11 +257,9 @@ void StorageSystemObjectStorageQueueMetadata<type>::fillData(
             {
                 if (!data[i].has_value() || data[i]->empty())
                     continue;
-                /// Partition pointers store the raw last processed file path
-                /// directly; only the root/bucket pointers are `NodeMetadata` JSON.
-                std::string file_path = partitioned
-                    ? *data[i]
-                    : ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]).file_path;
+                std::string file_path = leaf_is_node_metadata[i]
+                    ? ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(*data[i]).file_path
+                    : *data[i];
                 auto key = std::filesystem::path(leaf_paths[i]).lexically_relative(base_path).string();
                 result.emplace_back(std::move(key), std::move(file_path));
             }
