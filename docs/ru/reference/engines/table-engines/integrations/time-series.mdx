@@ -1,0 +1,443 @@
+---
+description: 'Движок таблицы, хранящий временные ряды, то есть набор значений, связанных
+  с временными метками и тегами (или метками).'
+sidebarTitle: 'TimeSeries'
+slug: /engines/table-engines/special/time_series
+title: 'Движок таблицы TimeSeries'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+Движок таблицы для хранения временных рядов, то есть набора значений, связанных с временными метками и тегами (или метками):
+
+```sql
+metric_name1[tag1=value1, tag2=value2, ...] = {timestamp1: value1, timestamp2: value2, ...}
+metric_name2[...] = ...
+```
+
+<Info>
+  Это экспериментальная возможность, которая в будущих релизах может измениться с нарушением обратной совместимости.
+  Включите использование движка таблицы TimeSeries
+  с помощью настройки [allow&#95;experimental&#95;time&#95;series&#95;table](/ru/reference/settings/session-settings#allow_experimental_time_series_table).
+  Введите команду `set allow_experimental_time_series_table = 1`.
+</Info>
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+CREATE TABLE name [(columns)] ENGINE=TimeSeries
+[SETTINGS var1=value1, ...]
+[SAMPLES db.samples_table_name | [SAMPLES INNER COLUMNS (...)] [SAMPLES INNER ENGINE engine(arguments)]]
+[TAGS db.tags_table_name | [TAGS INNER COLUMNS (...)] [TAGS INNER ENGINE engine(arguments)]]
+[METRICS db.metrics_table_name | [METRICS INNER COLUMNS (...)] [METRICS INNER ENGINE engine(arguments)]]
+```
+
+<Note>
+  У ключевого слова `SAMPLES` есть псевдоним `DATA`, сохранённый для обратной совместимости.
+</Note>
+
+<div id="usage">
+  ## Использование
+</div>
+
+Проще начать с параметров по умолчанию (таблицу `TimeSeries` можно создать, не указывая список столбцов):
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+```
+
+Затем эту таблицу можно использовать со следующими протоколами (в конфигурации сервера должен быть назначен порт):
+
+* [prometheus remote-write](/ru/concepts/features/interfaces/prometheus#remote-write)
+* [prometheus remote-read](/ru/concepts/features/interfaces/prometheus#remote-read)
+
+<div id="outer-columns">
+  ### Внешние столбцы
+</div>
+
+Столбцы таблицы TimeSeries создаются автоматически. Это внешние столбцы: они не хранят данные, а лишь предоставляют интерфейс для SELECT/INSERT. Сами данные хранятся в [целевых таблицах](#target-tables). Вот список внешних столбцов:
+
+| Имя             | Тип                                                 | Описание                                                                                                                                                                                                                                        |
+| --------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `metric_name`   | `String`                                            | Имя метрики                                                                                                                                                                                                                                     |
+| `tags`          | `Map(String, String)`                               | Карта тегов (меток) для временного ряда                                                                                                                                                                                                         |
+| `time_series`   | `Array(Tuple(DateTime64(3), Float64))` по умолчанию | Массив пар (временная метка, значение) для временного ряда. Тип временной метки в кортеже и тип его скалярного элемента можно определить по объявлению `INNER COLUMNS` для samples (см. [Указание внешних столбцов](#specifying-outer-columns)) |
+| `metric_family` | `String`                                            | Имя семейства метрик (для метаданных метрик)                                                                                                                                                                                                    |
+| `type`          | `String`                                            | Тип метрики (например, &quot;counter&quot;, &quot;gauge&quot;)                                                                                                                                                                                  |
+| `unit`          | `String`                                            | Единица измерения метрики                                                                                                                                                                                                                       |
+| `help`          | `String`                                            | Описание метрики                                                                                                                                                                                                                                |
+
+Пример:
+
+```sql
+INSERT INTO my_table (metric_name, tags, time_series) VALUES
+    ('cpu_usage', {'job': 'node_exporter', 'instance': 'host1:9100'},
+     [(toDateTime64('2024-01-01 00:00:00', 3), 0.5), (toDateTime64('2024-01-01 00:01:00', 3), 0.7)])
+```
+
+`metric_name` может быть пустым при вставке — это означает, что имя метрики задаётся в `tags`, в поле `__name__`, например:
+
+```sql
+INSERT INTO my_table (tags, time_series) VALUES
+    ({'__name__': 'cpu_usage', 'job': 'test'},
+     [(toDateTime64('2024-01-01 00:00:00', 3), 0.5)])
+```
+
+Чтобы вставить метаданные метрик, вставьте значения в столбцы `metric_family`, `type`, `unit` и `help`:
+
+```sql
+INSERT INTO my_table (metric_name, tags, time_series, metric_family, type, unit, help) VALUES
+    ('http_requests_total', {'method': 'GET'}, [(now64(), 100.0)],
+     'http_requests_total', 'counter', 'requests', 'Total HTTP requests')
+```
+
+<div id="specifying-outer-columns">
+  ### Указание внешних столбцов
+</div>
+
+Внешний столбец `time_series` можно явно указать в операторе `CREATE TABLE`, чтобы переопределить его тип по умолчанию `Array(Tuple(DateTime64(3), Float64))`. ClickHouse извлекает из кортежа тип временной метки и скалярный тип и использует их во внутренней таблице samples:
+
+```sql
+CREATE TABLE my_table (time_series Array(Tuple(UInt32, Float32))) ENGINE=TimeSeries
+```
+
+Это равносильно прямому объявлению типов столбцов временной метки и значения в предложении `INNER COLUMNS` для samples:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp UInt32, value Float32)
+```
+
+Если обе формы используются в одном операторе `CREATE TABLE`, объявленные типы должны совпадать.
+
+<div id="target-tables">
+  ## Целевые таблицы
+</div>
+
+У таблицы `TimeSeries` нет собственных данных — всё хранится в её целевых таблицах.
+Это похоже на то, как работает [materialized view](/ru/reference/statements/create/view#materialized-view),
+с той разницей, что у materialized view одна целевая таблица,
+тогда как у таблицы `TimeSeries` их три: [samples](#samples-table), [tags](#tags-table) и [metrics](#metrics-table).
+
+Целевые таблицы можно либо явно указать в запросе `CREATE TABLE`,
+либо движок таблицы `TimeSeries` может автоматически сгенерировать внутренние целевые таблицы.
+
+Строки, вставленные в таблицу `TimeSeries`, преобразуются, разбиваются на блоки и вставляются в эти три целевые таблицы.
+
+Целевые таблицы бывают следующими:
+
+<div id="samples-table">
+  ### Таблица *samples*
+</div>
+
+Таблица *samples* содержит временные ряды, связанные с определённым идентификатором.
+
+Таблица *samples* должна содержать следующие столбцы:
+
+| Имя         | Обязательно? | Тип по умолчанию | Возможные типы          | Описание                                        |
+| ----------- | ------------ | ---------------- | ----------------------- | ----------------------------------------------- |
+| `id`        | [x]          | `UUID`           | любой                   | Идентифицирует комбинацию имени метрики и тегов |
+| `timestamp` | [x]          | `DateTime64(3)`  | `DateTime64(X)`         | Момент времени                                  |
+| `value`     | [x]          | `Float64`        | `Float32` или `Float64` | Значение, связанное с `timestamp`               |
+
+<div id="tags-table">
+  ### Таблица tags
+</div>
+
+Таблица *tags* содержит идентификаторы, вычисляемые для каждой комбинации имени метрики и тегов.
+
+Таблица *tags* должна содержать следующие столбцы:
+
+| Имя                  | Обязательный? | Тип по умолчанию                      | Возможные типы                                                                                                          | Описание                                                                                                                                                                         |
+| -------------------- | ------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | [x]           | `UUID`                                | any (must match the type of `id` in the [samples](#samples-table) table)                                                | `id` идентифицирует комбинацию имени метрики и тегов. Выражение DEFAULT задаёт способ вычисления такого идентификатора                                                           |
+| `metric_name`        | [x]           | `LowCardinality(String)`              | `String` or `LowCardinality(String)`                                                                                    | Имя метрики                                                                                                                                                                      |
+| `<tag_value_column>` | [ ]           | `String`                              | `String` or `LowCardinality(String)` or `LowCardinality(Nullable(String))`                                              | Значение конкретного тега; имя тега и имя соответствующего столбца задаются в настройке [tags&#95;to&#95;columns](#settings)                                                     |
+| `tags`               | [x]           | `Map(LowCardinality(String), String)` | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Карта тегов, за исключением тега `__name__`, содержащего имя метрики, а также тегов с именами, перечисленными в настройке [tags&#95;to&#95;columns](#settings)                   |
+| `all_tags`           | [ ]           | `Map(String, String)`                 | `Map(String, String)` or `Map(LowCardinality(String), String)` or `Map(LowCardinality(String), LowCardinality(String))` | Эфемерный столбец: каждая строка содержит карту всех тегов, за исключением только тега `__name__`, содержащего имя метрики. Этот столбец используется только при вычислении `id` |
+| `min_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | Минимальная временная метка временного ряда с данным `id`. Столбец создаётся, если [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) имеет значение `true`            |
+| `max_time`           | [ ]           | `Nullable(DateTime64(3))`             | `DateTime64(X)` or `Nullable(DateTime64(X))`                                                                            | Максимальная временная метка временного ряда с данным `id`. Столбец создаётся, если [store&#95;min&#95;time&#95;and&#95;max&#95;time](#settings) имеет значение `true`           |
+
+<div id="metrics-table">
+  ### Таблица metrics
+</div>
+
+Таблица *metrics* содержит информацию о собираемых метриках, их типах и описаниях.
+
+Таблица *metrics* должна иметь следующие столбцы:
+
+| Имя                  | Обязательный? | Тип по умолчанию         | Возможные типы                        | Описание                                                                                                                                                           |
+| -------------------- | ------------- | ------------------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `metric_family_name` | [x]           | `String`                 | `String` или `LowCardinality(String)` | Имя семейства метрик                                                                                                                                               |
+| `type`               | [x]           | `LowCardinality(String)` | `String` или `LowCardinality(String)` | Тип семейства метрик: один из &quot;counter&quot;, &quot;gauge&quot;, &quot;summary&quot;, &quot;stateset&quot;, &quot;histogram&quot;, &quot;gaugehistogram&quot; |
+| `unit`               | [x]           | `LowCardinality(String)` | `String` или `LowCardinality(String)` | Единица измерения, используемая в метрике                                                                                                                          |
+| `help`               | [x]           | `String`                 | `String` или `LowCardinality(String)` | Описание метрики                                                                                                                                                   |
+
+<div id="creation">
+  ## Создание
+</div>
+
+Таблицу с движком таблицы `TimeSeries` можно создать несколькими способами.
+Самый простой оператор
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+```
+
+в результате будет создана следующая таблица (это можно увидеть, выполнив `SHOW CREATE TABLE my_table`):
+
+```sql
+CREATE TABLE my_table
+(
+    `metric_name` String,
+    `tags` Map(String, String),
+    `time_series` Array(Tuple(DateTime64(3), Float64)),
+    `metric_family` String,
+    `type` String,
+    `unit` String,
+    `help` String
+)
+ENGINE = TimeSeries
+SAMPLES INNER COLUMNS
+(
+    `id` UUID,
+    `timestamp` DateTime64(3),
+    `value` Float64
+)
+SAMPLES INNER ENGINE = MergeTree ORDER BY (id, timestamp)
+TAGS INNER COLUMNS
+(
+    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `metric_name` LowCardinality(String),
+    `tags` Map(LowCardinality(String), String),
+    `all_tags` Map(String, String) EPHEMERAL,
+    `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+)
+TAGS INNER ENGINE = AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
+METRICS INNER COLUMNS
+(
+    `metric_family_name` String,
+    `type` LowCardinality(String),
+    `unit` LowCardinality(String),
+    `help` String
+)
+METRICS INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name
+```
+
+Итак, столбцы были сгенерированы автоматически, и при этом есть три внутренние целевые таблицы с собственными определениями столбцов,
+сохранёнными в секциях `INNER COLUMNS`.
+
+Внутренние целевые таблицы имеют имена вида `.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`, `.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`,
+и каждая целевая таблица имеет собственный набор столбцов:
+
+```sql
+CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` UUID,
+    `timestamp` DateTime64(3),
+    `value` Float64
+)
+ENGINE = MergeTree
+ORDER BY (id, timestamp)
+```
+
+```sql
+CREATE TABLE default.`.inner_id.tags.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `id` UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
+    `metric_name` LowCardinality(String),
+    `tags` Map(LowCardinality(String), String),
+    `all_tags` Map(String, String) EPHEMERAL,
+    `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))),
+    `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+)
+ENGINE = AggregatingMergeTree
+PRIMARY KEY metric_name
+ORDER BY (metric_name, id)
+```
+
+```sql
+CREATE TABLE default.`.inner_id.metrics.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
+(
+    `metric_family_name` String,
+    `type` LowCardinality(String),
+    `unit` LowCardinality(String),
+    `help` String
+)
+ENGINE = ReplacingMergeTree
+ORDER BY metric_family_name
+```
+
+<div id="create-as">
+  ## Создание таблицы AS на основе существующей таблицы
+</div>
+
+Оператор `CREATE TABLE new_table AS existing_table` копирует из `existing_table`:
+
+* `SETTINGS`
+* `INNER COLUMNS` для каждого вида
+* `INNER ENGINE` для каждого вида
+
+Этот оператор недопустим, если у `existing_table` есть внешние цели.
+Внешний список столбцов формируется заново, а не копируется.
+
+<div id="adjusting-column-types">
+  ## Настройка типов столбцов
+</div>
+
+Вы можете настраивать типы столбцов во внутренних целевых таблицах с помощью предложения `INNER COLUMNS`. Например, чтобы хранить временные метки в микросекундах, а значения — как `Float32`:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(6), value Float32)
+```
+
+То же выражение можно использовать, чтобы указать кодеки и другие атрибуты столбца:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES INNER COLUMNS (timestamp DateTime64(3) CODEC(DoubleDelta))
+```
+
+<div id="id-column">
+  ## Столбец `id`
+</div>
+
+Столбец `id` содержит идентификаторы; каждый из них вычисляется для комбинации имени метрики и тегов.
+Тип и выражение `DEFAULT`, используемое для генерации идентификаторов, можно настроить с помощью конструкции `TAGS INNER COLUMNS`:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+TAGS INNER COLUMNS (id UInt64 DEFAULT sipHash64(metric_name, all_tags))
+```
+
+Тип столбца `id` должен быть одним из следующих: `UUID`, `UInt64`, `UInt128` или `FixedString(16)`. Если выражение `DEFAULT` не указано, ClickHouse автоматически выберет его на основе типа `id`. Типы `id`, объявленные во внутренних таблицах samples и tags, должны совпадать.
+
+Параметр `id_generator` позволяет выполнить ту же настройку без использования конструкции `INNER COLUMNS`:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS id_generator = 'sipHash64(metric_name, all_tags)'
+```
+
+Если этот параметр задан, для генерации `id` используется именно он, даже если `DEFAULT` столбца содержит другое выражение.
+
+<div id="tags-and-all-tags">
+  ## Столбцы `tags` и `all_tags`
+</div>
+
+Есть два столбца, содержащих карты тегов, — `tags` и `all_tags`. В этом примере они означают одно и то же, однако могут различаться,
+если используется настройка `tags_to_columns`. Эта настройка позволяет указать, что определённый тег следует хранить в отдельном столбце, а не
+в карте внутри столбца `tags`:
+
+```sql
+CREATE TABLE my_table
+ENGINE = TimeSeries 
+SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
+```
+
+Этот оператор добавит столбцы `instance` и `job` во внутреннюю целевую [таблицу `tags`](#tags-table).
+В этом случае столбец `tags` не будет содержать теги `instance` и `job`,
+но столбец `all_tags` будет их содержать. Столбец `all_tags` является эфемерным, и его единственное назначение — использоваться в выражении DEFAULT
+для столбца `id`.
+
+<div id="inner-table-engines">
+  ## Движки внутренних целевых таблиц
+</div>
+
+По умолчанию внутренние целевые таблицы используют следующие движки таблиц:
+
+* таблица [samples](#samples-table) использует [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree);
+* таблица [tags](#tags-table) использует [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree), поскольку одни и те же данные часто вставляются в эту таблицу несколько раз, поэтому необходим способ
+  удалять дубликаты, а также потому, что для столбцов `min_time` и `max_time` требуется выполнять агрегацию;
+* таблица [metrics](#metrics-table) использует [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree), поскольку одни и те же данные часто вставляются в эту таблицу несколько раз, поэтому необходим способ
+  удалять дубликаты.
+
+Для внутренних целевых таблиц также можно использовать другие движки таблиц, если это указано:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SAMPLES ENGINE=ReplicatedMergeTree
+TAGS ENGINE=ReplicatedAggregatingMergeTree
+METRICS ENGINE=ReplicatedReplacingMergeTree
+```
+
+<div id="external-target-tables">
+  ## Внешние целевые таблицы
+</div>
+
+Таблицу `TimeSeries` можно настроить так, чтобы она использовала таблицу, созданную вручную:
+
+```sql
+CREATE TABLE samples_for_my_table
+(
+    `id` UUID,
+    `timestamp` DateTime64(3),
+    `value` Float64
+)
+ENGINE = MergeTree
+ORDER BY (id, timestamp);
+
+CREATE TABLE tags_for_my_table ...
+
+CREATE TABLE metrics_for_my_table ...
+
+CREATE TABLE my_table ENGINE=TimeSeries SAMPLES samples_for_my_table TAGS tags_for_my_table METRICS metrics_for_my_table;
+```
+
+Типы столбцов внешних таблиц (`id`, `timestamp`, `value` и `<tag_value_column>`, перечисленные в [`tags_to_columns`](#settings)) должны совпадать с теми, которые таблица `TimeSeries` в противном случае сгенерировала бы внутри системы (ограничения на типы см. в разделах [таблица Samples](#samples-table), [таблица Tags](#tags-table) и [таблица Metrics](#metrics-table)). О несоответствии типов сообщается во время `CREATE`.
+
+Выражение генератора `id` для внешней целевой таблицы tags вычисляется во время `INSERT` в следующем порядке: сначала настройка [`id_generator`](#settings) (если она задана), затем `DEFAULT`, объявленный для столбца `id` внешней таблицы (если он есть), и затем канонический генератор, определяемый типом `id`. Таким образом, эта настройка имеет приоритет над любым `DEFAULT`, объявленным для внешней таблицы — подробности см. в разделе [Столбец `id`](#id-column).
+
+<div id="altering-settings">
+  ## Изменение настроек
+</div>
+
+После `CREATE` можно изменить две настройки:
+
+* `id_generator`
+* `filter_by_min_time_and_max_time`
+
+```sql
+ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(metric_name, all_tags)';
+ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+```
+
+Обратите внимание: если изменить `id_generator`, когда данные уже есть в таблице tags, для одной и той же комбинации metric+tag могут создаваться разные идентификаторы — старые строки сохранят прежние идентификаторы, а новые будут использовать новый генератор.
+
+Другие настройки нельзя изменить с помощью `ALTER ... MODIFY SETTING`, потому что они закладываются в схему внутренних таблиц во время `CREATE`.
+
+<div id="settings">
+  ## Настройки
+</div>
+
+Ниже приведён список настроек, которые можно указать при определении таблицы `TimeSeries`:
+
+| Имя                                  | Тип        | По умолчанию         | Описание                                                                                                                                                                                                                                                         |
+| ------------------------------------ | ---------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id_generator`                       | Expression | зависит от типа `id` | Выражение, вычисляющее идентификатор (fingerprint) временного ряда по его тегам. Если не задано, используется выражение по умолчанию для столбца `id`. Если выражение по умолчанию для столбца `id` также не задано, выражение выбирается автоматически          |
+| `tags_to_columns`                    | Map        | {}                   | Map, задающий, какие теги следует вынести в отдельные столбцы таблицы [tags](#tags-table). Синтаксис: `{'tag1': 'column1', 'tag2' : column2, ...}`                                                                                                               |
+| `use_all_tags_column_to_generate_id` | Bool       | true                 | При формировании выражения для вычисления идентификатора временного ряда этот флаг включает использование в вычислении столбца `all_tags`                                                                                                                        |
+| `store_min_time_and_max_time`        | Bool       | true                 | Если установлено значение true, таблица будет хранить `min_time` и `max_time` для каждого временного ряда                                                                                                                                                        |
+| `aggregate_min_time_and_max_time`    | Bool       | true                 | При создании внутренней целевой таблицы `tags` этот флаг включает использование `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` вместо просто `Nullable(DateTime64(3))` в качестве типа столбца `min_time`; то же самое относится и к столбцу `max_time` |
+| `filter_by_min_time_and_max_time`    | Bool       | true                 | Если установлено значение true, таблица будет использовать столбцы `min_time` и `max_time` для фильтрации временных рядов                                                                                                                                        |
+
+<div id="functions">
+  # Функции
+</div>
+
+Ниже приведён список функций, поддерживающих таблицу `TimeSeries` в качестве аргумента:
+
+* [timeSeriesSamples](/ru/reference/functions/table-functions/timeSeriesSamples)
+* [timeSeriesTags](/ru/reference/functions/table-functions/timeSeriesTags)
+* [timeSeriesMetrics](/ru/reference/functions/table-functions/timeSeriesMetrics)

@@ -1,0 +1,562 @@
+---
+title: Общее о пользователях и ролях
+---
+
+<div id="test-admin-privileges">
+  ## Проверьте права администратора
+</div>
+
+Выйдите из системы под пользователем `default` и снова войдите под пользователем `clickhouse_admin`.
+
+Все перечисленные ниже действия должны выполниться успешно:
+
+```sql
+SHOW GRANTS FOR clickhouse_admin;
+```
+
+```sql
+CREATE DATABASE db1
+```
+
+```sql
+CREATE TABLE db1.table1 (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+```sql
+INSERT INTO db1.table1 (id, column1) VALUES (1, 'abc');
+```
+
+```sql
+SELECT * FROM db1.table1;
+```
+
+```sql
+DROP TABLE db1.table1;
+```
+
+```sql
+DROP DATABASE db1;
+```
+
+<div id="non-admin-users">
+  ## Пользователи без прав администратора
+</div>
+
+Пользователям следует предоставить необходимые привилегии; не всем из них нужны права администратора. Далее в этом документе приведены примеры сценариев и указаны требуемые роли.
+
+<div id="preparation">
+  ### Подготовка
+</div>
+
+Создайте эти таблицы и пользователей для использования в примерах.
+
+<div id="creating-a-sample-database-table-and-rows">
+  #### Создание тестовой базы данных, таблицы и строк
+</div>
+
+<Steps>
+  <Step>
+    ##### Создайте тестовую базу данных
+
+    ```sql
+    CREATE DATABASE db1;
+    ```
+  </Step>
+
+  <Step>
+    ##### Создайте таблицу
+
+    ```sql
+    CREATE TABLE db1.table1 (
+       id UInt64,
+       column1 String,
+       column2 String
+    )
+    ENGINE MergeTree
+    ORDER BY id;
+    ```
+  </Step>
+
+  <Step>
+    ##### Заполните таблицу тестовыми строками
+
+    ```sql
+    INSERT INTO db1.table1
+       (id, column1, column2)
+    VALUES
+       (1, 'A', 'abc'),
+       (2, 'A', 'def'),
+       (3, 'B', 'abc'),
+       (4, 'B', 'def');
+    ```
+  </Step>
+
+  <Step>
+    ##### Проверьте содержимое таблицы
+
+    ```sql title="Запрос"
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response title="Ответ"
+    Query id: 475015cc-6f51-4b20-bda2-3c9c41404e49
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### Создайте `column_user`
+
+    Создайте обычного пользователя для демонстрации ограничения доступа к определённым столбцам:
+
+    ```sql
+    CREATE USER column_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+
+  <Step>
+    ##### Создайте `row_user`
+
+    Создайте обычного пользователя для демонстрации ограничения доступа к строкам с определёнными значениями:
+
+    ```sql
+    CREATE USER row_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+</Steps>
+
+<div id="creating-roles">
+  #### Создание ролей
+</div>
+
+В этом наборе примеров:
+
+* будут созданы роли с разными привилегиями, например на уровне столбцов и строк
+* ролям будут выданы привилегии
+* пользователи будут назначены каждой роли
+
+Роли используются для определения групп пользователей с определёнными привилегиями вместо того, чтобы управлять каждым пользователем отдельно.
+
+<Steps>
+  <Step>
+    ##### Создайте роль, чтобы ограничить пользователей этой роли просмотром только `column1` в базе данных `db1` и таблице `table1`:
+
+    ```sql
+    CREATE ROLE column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Задайте привилегии, разрешающие просмотр `column1`
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Добавьте пользователя `column_user` в роль `column1_users`
+
+    ```sql
+    GRANT column1_users TO column_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### Создайте роль, чтобы ограничить пользователей этой роли просмотром только выбранных строк — в данном случае только строк, где `column1` содержит `A`
+
+    ```sql
+    CREATE ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Добавьте `row_user` в роль `A_rows_users`
+
+    ```sql
+    GRANT A_rows_users TO row_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### Создайте политику, разрешающую просмотр только строк, где `column1` имеет значение `A`
+
+    ```sql
+    CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Задайте привилегии для базы данных и таблицы
+
+    ```sql
+    GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Выдайте явные разрешения другим ролям, чтобы у них по-прежнему был доступ ко всем строкам
+
+    ```sql
+    CREATE ROW POLICY allow_other_users_filter 
+    ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
+    ```
+
+    <Note>
+      При привязке политики к таблице система применяет эту политику, и только указанные в ней пользователи и роли смогут выполнять операции с таблицей; всем остальным любые операции будут запрещены. Чтобы ограничивающая политика строк не применялась к другим пользователям, необходимо определить другую политику, которая предоставит другим пользователям и ролям обычный или иной тип доступа.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="verification">
+  ## Проверка
+</div>
+
+<div id="testing-role-privileges-with-column-restricted-user">
+  ### Проверка привилегий роли для пользователя с ограничением доступа к столбцам
+</div>
+
+<Steps>
+  <Step>
+    ##### Войдите в клиент ClickHouse под пользователем `clickhouse_admin`
+
+    ```bash
+    clickhouse-client --user clickhouse_admin --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### Проверьте доступ к базе данных, таблице и всем строкам под пользователем admin.
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: f5e906ea-10c6-45b0-b649-36334902d31d
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### Войдите в клиент ClickHouse под пользователем `column_user`
+
+    ```bash
+    clickhouse-client --user column_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### Проверьте `SELECT` со всеми столбцами
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5576f4eb-7450-435c-a2d6-d6b49b7c4a23
+
+    0 rows in set. Elapsed: 0.006 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+
+    <Note>
+      Доступ запрещён, так как указаны все столбцы, а у пользователя есть доступ только к `id` и `column1`
+    </Note>
+  </Step>
+
+  <Step>
+    ##### Проверьте запрос `SELECT`, указав только разрешённые столбцы:
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: cef9a083-d5ce-42ff-9678-f08dc60d4bb9
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    │  3 │ B       │
+    │  4 │ B       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="testing-role-privileges-with-row-restricted-user">
+  ### Проверка привилегий роли с пользователем с ограничением по строкам
+</div>
+
+<Steps>
+  <Step>
+    ##### Войдите в клиент ClickHouse под пользователем `row_user`
+
+    ```bash
+    clickhouse-client --user row_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### Просмотрите доступные строки
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: a79a113c-1eca-4c3f-be6e-d034f9a220fb
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+
+    <Note>
+      Убедитесь, что возвращаются только две строки, показанные выше; строки со значением `B` в `column1` должны быть исключены.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="modifying-users-and-roles">
+  ## Изменение пользователей и ролей
+</div>
+
+Пользователю можно назначить несколько ролей, чтобы получить нужную комбинацию привилегий. При использовании нескольких ролей система объединяет их для определения привилегий, то есть права, предоставленные ролями, суммируются.
+
+Например, если `role1` разрешает только SELECT по `column1`, а `role2` разрешает SELECT по `column1` и `column2`, то пользователь получит доступ к обоим столбцам.
+
+<Steps>
+  <Step>
+    ##### Используя учетную запись администратора, создайте нового пользователя с ограничением доступа и по строкам, и по столбцам, а также с ролями по умолчанию
+
+    ```sql
+    CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Удалите ранее выданные привилегии у роли `A_rows_users`
+
+    ```sql
+    REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Разрешите роли `A_row_users` выполнять SELECT только по `column1`
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### Войдите в клиент ClickHouse под пользователем `row_and_column_user`
+
+    ```bash
+    clickhouse-client --user row_and_column_user --password password;
+    ```
+  </Step>
+
+  <Step>
+    ##### Проверка со всеми столбцами:
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 8cdf0ff5-e711-4cbe-bd28-3c02e52e8bc4
+
+    0 rows in set. Elapsed: 0.005 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: row_and_column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+  </Step>
+
+  <Step>
+    ##### Проверка с ограниченным набором разрешенных столбцов:
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5e30b490-507a-49e9-9778-8159799a6ed0
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Устранение неполадок
+</div>
+
+Иногда пересечение или сочетание привилегий приводит к неожиданным результатам; чтобы сузить область поиска проблемы, можно использовать следующие команды, выполнив вход под учетной записью администратора
+
+<div id="listing-the-grants-and-roles-for-a-user">
+  ### Просмотр привилегий и ролей пользователя
+</div>
+
+```sql
+SHOW GRANTS FOR row_and_column_user
+```
+
+```response
+Query id: 6a73a3fe-2659-4aca-95c5-d012c138097b
+
+┌─GRANTS FOR row_and_column_user───────────────────────────┐
+│ GRANT A_rows_users, column1_users TO row_and_column_user │
+└──────────────────────────────────────────────────────────┘
+```
+
+<div id="list-roles-in-clickhouse">
+  ### Просмотр ролей в ClickHouse
+</div>
+
+```sql
+SHOW ROLES
+```
+
+```response
+Query id: 1e21440a-18d9-4e75-8f0e-66ec9b36470a
+
+┌─name────────────┐
+│ A_rows_users    │
+│ column1_users   │
+└─────────────────┘
+```
+
+<div id="display-the-policies">
+  ### Просмотреть политики
+</div>
+
+```sql
+SHOW ROW POLICIES
+```
+
+```response
+Query id: f2c636e9-f955-4d79-8e80-af40ea227ebc
+
+┌─name───────────────────────────────────┐
+│ A_row_filter ON db1.table1             │
+│ allow_other_users_filter ON db1.table1 │
+└────────────────────────────────────────┘
+```
+
+<div id="view-how-a-policy-was-defined-and-current-privileges">
+  ### Просмотрите, как задана политика и какие привилегии действуют сейчас
+</div>
+
+```sql
+SHOW CREATE ROW POLICY A_row_filter ON db1.table1
+```
+
+```response
+Query id: 0d3b5846-95c7-4e62-9cdd-91d82b14b80b
+
+┌─CREATE ROW POLICY A_row_filter ON db1.table1────────────────────────────────────────────────┐
+│ CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="example-commands-to-manage-roles-policies-and-users">
+  ## Пример команд для управления ролями, политиками и пользователями
+</div>
+
+Следующие команды можно использовать, чтобы:
+
+* удалить привилегии
+* удалить политики
+* отвязать пользователей от ролей
+* удалить пользователей и роли
+  <br />
+
+<Tip>
+  Выполняйте эти команды от имени пользователя с правами администратора или пользователя `default`
+</Tip>
+
+<div id="remove-privilege-from-a-role">
+  ### Отозвать привилегию у роли
+</div>
+
+```sql
+REVOKE SELECT(column1, id) ON db1.table1 FROM A_rows_users;
+```
+
+<div id="delete-a-policy">
+  ### Удалить политику
+</div>
+
+```sql
+DROP ROW POLICY A_row_filter ON db1.table1;
+```
+
+<div id="unassign-a-user-from-a-role">
+  ### Удалить пользователя из роли
+</div>
+
+```sql
+REVOKE A_rows_users FROM row_user;
+```
+
+<div id="delete-a-role">
+  ### Удалить роль
+</div>
+
+```sql
+DROP ROLE A_rows_users;
+```
+
+<div id="delete-a-user">
+  ### Удаление пользователя
+</div>
+
+```sql
+DROP USER row_user;
+```
+
+<div id="summary">
+  ## Краткие итоги
+</div>
+
+В этой статье мы рассмотрели основы создания SQL-пользователей и ролей, а также шаги по настройке и изменению привилегий для пользователей и ролей. Более подробную информацию по каждой из этих тем см. в наших руководствах пользователя и справочной документации.

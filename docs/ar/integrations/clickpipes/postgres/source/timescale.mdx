@@ -1,0 +1,122 @@
+---
+sidebarTitle: 'Timescale'
+description: 'إعداد Postgres مع إضافة TimescaleDB كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/postgres/source/timescale
+title: 'دليل إعداد Postgres مع TimescaleDB كمصدر'
+keywords: ['TimescaleDB']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<div id="background">
+  ## الخلفية
+</div>
+
+يُعد [TimescaleDB](https://github.com/timescale/timescaledb) امتدادًا مفتوح المصدر لـ Postgres طوّرته Timescale Inc،
+ويهدف إلى تحسين أداء استعلامات التحليلات دون الحاجة إلى مغادرة Postgres. ويتحقق ذلك من خلال
+إنشاء &quot;الجداول الفائقة&quot; التي يديرها الامتداد وتدعم التقسيم التلقائي إلى &quot;chunks&quot;.
+كما تدعم &quot;الجداول الفائقة&quot; أيضًا الضغط الشفاف والتخزين الهجين الصفّي-العمودي (المعروف باسم &quot;hypercore&quot;)، إلا أن هذه
+الميزات تتطلب إصدارًا من الامتداد بترخيص احتكاري.
+
+وتقدّم Timescale Inc أيضًا خدمتين مُدارتين لـ TimescaleDB:
+
+* `Managed Service for Timescale`
+* `Timescale Cloud`.
+
+كما توجد جهات خارجية تقدّم خدمات مُدارة تتيح لك استخدام امتداد TimescaleDB، ولكن بسبب
+قيود الترخيص، لا تدعم هذه الجهات سوى الإصدار مفتوح المصدر من الامتداد.
+
+وتعمل &quot;الجداول الفائقة&quot; في Timescale بطريقة تختلف عن جداول Postgres العادية من عدة نواحٍ. وهذا يفرض بعض التعقيدات
+على عملية النسخ المتماثل لها، ولذلك ينبغي اعتبار القدرة على النسخ المتماثل لـ &quot;الجداول الفائقة&quot; في Timescale
+**مبنية على أفضل جهد ممكن**.
+
+<div id="supported-postgres-versions">
+  ## إصدارات Postgres المدعومة
+</div>
+
+تدعم ClickPipes الإصدار 12 من Postgres وما بعده.
+
+<div id="enable-logical-replication">
+  ## تفعيل النسخ المتماثل المنطقي
+</div>
+
+تعتمد الخطوات التي ينبغي اتباعها على طريقة نشر مثيل Postgres لديك مع TimescaleDB.
+
+* إذا كنت تستخدم خدمة مُدارة وكان موفّر الخدمة مدرجًا في الشريط الجانبي، فيُرجى اتباع الدليل الخاص به.
+* إذا كنت تنشر TimescaleDB بنفسك، فاتبع الدليل العام.
+
+بالنسبة إلى الخدمات المُدارة الأخرى، يُرجى فتح تذكرة دعم لدى موفّر الخدمة للمساعدة في تفعيل النسخ المتماثل المنطقي إذا
+لم يكن مفعّلًا بالفعل.
+
+<Info>
+  لا يدعم Timescale Cloud تفعيل النسخ المتماثل المنطقي، وهو مطلوب لمسارات Postgres في وضع CDC.
+  ونتيجةً لذلك، لا يمكن لمستخدمي Timescale Cloud سوى إجراء تحميل بيانات لمرة واحدة (`Initial Load Only`) باستخدام
+  Postgres ClickPipe.
+</Info>
+
+<div id="configuration">
+  ## التهيئة
+</div>
+
+لا تخزّن الجداول الفائقة في Timescale أي بيانات تُدرَج فيها. وبدلًا من ذلك، تُخزَّن البيانات في عدة
+جداول &quot;chunk&quot; مقابلة ضمن المخطط `_timescaledb_internal`. لا يمثّل هذا مشكلة عند تشغيل الاستعلامات على الجداول الفائقة.
+لكن أثناء النسخ المتماثل المنطقي، نكتشف التغييرات في جداول &quot;chunk&quot; بدلًا من اكتشافها في الجدول الفائق نفسه.
+ويتضمن Postgres ClickPipe منطقًا يعيد تلقائيًا ربط التغييرات من جداول &quot;chunk&quot; بالجدول الفائق الأب،
+لكن ذلك يتطلب خطوات إضافية.
+
+<Info>
+  إذا كنت تريد فقط تنفيذ تحميل لمرة واحدة لبياناتك (`Initial Load Only`)، فيُرجى تخطي الخطوة 2 وما يليها.
+</Info>
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. امنح المستخدم الذي أنشأته في الخطوة السابقة وصولًا للقراءة فقط على مستوى المخطط. يوضّح المثال التالي الأذونات الخاصة بالمخطط `public`. كرر هذه الأوامر لكل مخطط يحتوي على الجداول التي تريد تضمينها في النسخ المتماثل:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. امنح المستخدم امتيازات النسخ المتماثل:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. بصفتك مستخدم Postgres فائق الصلاحيات/مسؤولًا، أنشئ [منشورًا](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول الفائقة التي تريد نسخها متماثلًا. **يجب أن يتضمن المنشور أيضًا المخطط `_timescaledb_internal` بالكامل** حتى يتمكن المسار من تلقي التغييرات من جداول &quot;chunk&quot; الأساسية. ونوصي بشدة بقصر المنشور على الجداول التي تحتاج إليها فقط لتجنب العبء الإضافي على الأداء.
+
+<Warning>
+  يجب أن يكون لأي جدول مُدرج في المنشور إما **مفتاح أساسي** معرّف *أو* أن تكون **replica identity** الخاصة به مضبوطة على `FULL`. راجع [الأسئلة الشائعة الخاصة بـ Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+</Warning>
+
+```sql
+   -- When adding new tables to the ClickPipe, you'll need to add them to the publication manually as well.
+   CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2, TABLES IN SCHEMA _timescaledb_internal;
+```
+
+سيحتوي المنشور `clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وسيُستخدم لاحقًا لاستيعاب تدفق النسخ المتماثل.
+
+<Info>
+  لا تمنح بعض الخدمات المُدارة المستخدمين الإداريين لديها الأذونات المطلوبة لإنشاء منشور لمخطط كامل. إذا كان هذا هو الحال، فأنشئ تذكرة دعم لدى مزودك. وبدلًا من ذلك، يمكنك تخطي هذه الخطوة (والخطوات التالية) وإجراء تحميل لمرة واحدة لبياناتك.
+</Info>
+
+بعد إكمال هذه الخطوات، ينبغي أن تتمكن من المتابعة إلى [إنشاء ClickPipe](/ar/integrations/clickpipes/postgres/index).
+
+<div id="configure-network-access">
+  ## تكوين الوصول إلى الشبكة
+</div>
+
+إذا كنت تريد تقييد حركة المرور إلى مثيل Timescale الخاص بك، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الموثّقة](/ar/integrations/clickpipes/home#list-of-static-ips) إلى قائمة السماح.
+تختلف التعليمات اللازمة لذلك باختلاف مزوّدي الخدمة، لذا يُرجى الرجوع إلى الشريط الجانبي إذا كان مزوّدك مدرجًا، أو فتح
+تذكرة دعم لديهم.

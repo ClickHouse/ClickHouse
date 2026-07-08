@@ -1,0 +1,324 @@
+---
+sidebarTitle: '面向 ClickHouse 的 SQL Server CDC（变更数据捕获）'
+keywords: ['ClickHouse', 'Streamkap', 'CDC（变更数据捕获）', 'SQL Server', '连接', '集成', 'ETL', '数据集成', '变更数据捕获']
+slug: /integrations/data-ingestion/etl-tools/sql-server-clickhouse
+description: '将数据从 SQL Server 流式传输到 ClickHouse，实现快速分析'
+title: '将数据从 SQL Server 流式传输到 ClickHouse，实现快速分析：分步指南'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本文将拆解一个教程，向你展示如何将数据从 SQL Server 流式传输到 ClickHouse。如果你希望为内部或面向客户的仪表盘提供超高速分析，ClickHouse 是理想之选。我们会一步步带你完成这两个数据库的设置、连接方式，以及最后如何使用 [Streamkap](https://streamkap.com) 流式传输数据。如果 SQL Server 承担着你的日常业务操作，而你又需要 ClickHouse 的分析速度和能力，那么你来对地方了。
+
+<div id="why-stream-data-from-sql-server-to-clickhouse">
+  ## 为什么要将数据从 SQL Server 流式传输到 ClickHouse？
+</div>
+
+如果你读到这里，大概率已经深有体会：SQL Server 在事务处理方面非常可靠，但它并不是为高负载的实时分析查询而设计的。
+
+这正是 ClickHouse 的用武之地。ClickHouse 专为分析而生，即使面对海量数据集，也能提供极快的聚合与报表能力。因此，搭建一条流式 CDC (变更数据捕获) 管道，把事务型数据推送到 ClickHouse 后，你就能生成速度极快的报表——非常适合运营团队、产品团队或面向客户的仪表盘。
+
+典型用例：
+
+* 不会拖慢生产应用的内部报表
+* 需要响应迅速且始终保持最新的面向客户的仪表盘
+* 事件流处理，例如让用户活动日志持续保持最新状态，以便进行分析
+
+<div id="what-youll-need-to-get-started">
+  ## 开始前需要准备的内容
+</div>
+
+在深入细节之前，请先准备好以下内容：
+
+<div id="prerequisites">
+  ### 前置条件
+</div>
+
+* 一个正在运行的 SQL Server 实例
+
+* 在本教程中，我们使用 AWS RDS for SQL Server，但任何现代 SQL Server 实例都适用。[从零开始搭建 AWS SQL Server。](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23setting-up-a-new-rds-sql-server-from-scratch)
+
+* 一个 ClickHouse 实例
+
+* 自托管或云端部署均可。[从零开始搭建 ClickHouse。](https://streamkap.com/blog/how-to-stream-data-from-rds-sql-server-to-clickhouse-cloud-using-streamkap%23creating-a-new-clickhouse-account)
+
+* Streamkap
+
+* 该工具将作为您的数据流式管道的核心。
+
+<div id="connection-info">
+  ### 连接信息
+</div>
+
+请确保你已准备好：
+
+* SQL Server 服务器地址、端口、用户名和密码。建议为 Streamkap 创建单独的用户和角色，以访问你的 SQL Server 数据库。[查看我们的配置文档。](https://www.google.com/url?q=https://docs.streamkap.com/docs/sql-server\&sa=D\&source=editors\&ust=1760992472358213\&usg=AOvVaw3jfocCF1VSijgsq1OCpZPj)
+* ClickHouse 服务器地址、端口、用户名和密码。ClickHouse 中的 IP 访问列表决定了哪些服务可以连接到你的 ClickHouse 数据库。[请按照此处的说明操作。](https://www.google.com/url?q=https://docs.streamkap.com/docs/clickhouse\&sa=D\&source=editors\&ust=1760992472359060\&usg=AOvVaw3H1XqqwvqAso_TQPNBKEhD)
+* 你想要流式传输的表——暂时先从一张表开始
+
+<div id="setting-up-sql-server-as-a-source">
+  ## 将 SQL Server 设置为数据源
+</div>
+
+开始吧！
+
+<div id="step-1-creating-a-sql-server-source-in-streamkap">
+  ### 第 1 步：在 Streamkap 中创建 SQL Server 数据源
+</div>
+
+我们先设置数据源连接。这样 Streamkap 才知道要从哪里获取变更。
+
+操作如下：
+
+1. 打开 Streamkap，进入 Sources 部分。
+2. 创建一个新数据源。
+
+* 为其指定一个易于识别的名称 (例如：sqlserver-demo-source) 。
+
+3. 填写 SQL Server 连接信息：
+
+* 主机 (例如：your-db-instance.rds.amazonaws.com) 
+* 端口 (SQL Server 的默认端口为 3306) 
+* 用户名和密码
+* 数据库名称
+
+<Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+
+<div id="whats-happening-behind-the-scenes">
+  #### 幕后发生了什么
+</div>
+
+<Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+
+设置完成后，Streamkap 会连接到你的 SQL Server 并识别出表。这里我们以演示为例，选择一张已经有数据持续流入的表，例如事件或事务表。
+
+<div id="creating-a-clickhouse-destination">
+  ## 创建 ClickHouse 目标端
+</div>
+
+现在，我们来配置用于发送所有这些数据的目标端。
+
+<div id="step-2-add-a-clickhouse-destination-in-streamkap">
+  ### 步骤 2：在 Streamkap 中添加 ClickHouse 目标端
+</div>
+
+与 数据源 的配置类似，我们将使用 ClickHouse 连接信息创建一个目标端。
+
+<div id="steps">
+  #### 步骤：
+</div>
+
+1. 前往 Streamkap 中的目标端部分。
+2. 添加一个新的目标端——选择 ClickHouse 作为目标端类型。
+3. 输入你的 ClickHouse 信息：
+
+* 主机
+* 端口 (默认为 9000) 
+* 用户名和密码
+* 数据库名称
+
+示例截图：在 Streamkap 仪表板中添加新的 ClickHouse 目标端。
+
+<div id="upsert-mode-what-is-that">
+  ### Upsert 模式：这是什么？
+</div>
+
+这是一个重要步骤：我们要使用 ClickHouse 的“upsert”模式——其底层依赖 ClickHouse 的 ReplacingMergeTree 引擎。这样就能高效合并新写入的记录，并在摄取后通过 ClickHouse 所说的“分片合并”来处理更新。
+
+* 这可以确保当 SQL Server 端发生变化时，你的目标表不会被重复数据占满。
+
+<div id="handling-schema-evolution">
+  ### 处理 schema 演进
+</div>
+
+ClickHouse 和 SQL Server 有时列并不完全一致——尤其是在应用已上线、开发人员还在持续动态新增列的情况下。
+
+* 好消息是：Streamkap 可以处理基本的 schema 演进。这意味着，如果你在 SQL Server 中新增了一列，ClickHouse 端也会同步出现这一列。
+
+只需在目标端设置中选择“schema evolution”即可。后续也可以根据需要随时调整。
+
+<div id="building-the-streaming-pipeline">
+  ## 构建流式管道
+</div>
+
+源端和目标端都已设置就绪，现在到了最有意思的部分——开始流式传输数据！
+
+<div id="step-3-set-up-the-pipeline-in-streamkap">
+  ### 步骤 3：在 Streamkap 中配置管道
+</div>
+
+<div id="pipeline-setup">
+  #### 管道设置
+</div>
+
+1. 在 Streamkap 中打开 Pipelines 选项卡。
+
+2. 创建一个新管道。
+
+3. 选择你的 SQL Server 数据源 (sqlserver-demo-source) 。
+
+4. 选择你的 ClickHouse 目标端 (clickhouse-tutorial-destination) 。
+
+5. 选择要进行流式传输的表——这里假设为 events。
+
+6. 配置 CDC (变更数据捕获) 。
+
+* 在这次运行中，我们将流式传输新数据 (刚开始可以先跳过回填，重点关注 CDC 事件) 。
+
+管道设置截图——选择数据源、目标端和表。
+
+<div id="should-you-backfill">
+  #### 是否需要回填？
+</div>
+
+<Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+
+你可能会问：我应该回填旧数据吗？
+
+在很多分析场景中，你可能只需要从现在开始流式同步变更；当然，之后也随时可以回过头来补载历史数据。
+
+所以，除非你有明确需求，否则目前直接选择“不要回填”即可。
+
+<div id="streaming-in-action-what-to-expect">
+  ## 流式实战：效果预览
+</div>
+
+现在，您的管道已配置完成并开始运行！
+
+<div id="step-4-watch-the-data-stream">
+  ### 第 4 步：观察数据流
+</div>
+
+下面是实际发生的过程：
+
+* 当新数据进入 SQL Server 的数据源表时，Streamkap 管道会捕获这些变更并将其发送到 ClickHouse。
+* ClickHouse (借助 ReplacingMergeTree 和分片合并) 会摄取这些行，并合并更新。
+* schema 也能保持同步——如果你在 SQL Server 中新增列，它们也会出现在 ClickHouse 中。
+
+你可以在实时仪表板或日志中看到 ClickHouse 和 SQL Server 中的行数实时增长。
+
+随着 SQL Server 接收数据，你可以直观地看到 ClickHouse 中的行数也随之快速上升。
+
+```sql
+-- 示例：查询 ClickHouse 中的行数 
+SELECT COUNT(*) FROM analytics.events; |
+```
+
+在高负载场景下会有一定延迟，但大多数场景都能实现接近实时的流式传输。
+
+<div id="under-the-hood-whats-streamkap-actually-doing">
+  ## 底层原理：Streamkap 实际在做什么？
+</div>
+
+让你大致了解一下它的工作方式：
+
+* Streamkap 会监控 SQL Server 的二进制日志 (也就是用于复制的那种日志) 。
+* 只要你的表中有行被插入、更新或删除，Streamkap 就会捕获这个事件。
+* 它会将该事件转换为 ClickHouse 能理解的内容并发送过去——把变更立即应用到你的分析数据库中。
+
+这不只是 ETL——而是完整的 CDC (变更数据捕获) ，并且是实时流式传输的。
+
+<div id="advanced-options">
+  ## 高级选项
+</div>
+
+<div id="upsert-vs-insert-modes">
+  ### Upsert 与 Insert 模式
+</div>
+
+仅插入每一行 (Insert Mode) 与同时确保更新和删除也会同步过来 (Upsert Mode) ，两者有什么区别？
+
+* Insert Mode：每个新行都会被添加——即使它其实是一次更新，也会产生重复数据。
+* Upsert Mode：对现有行的更新会覆盖原有内容——更适合让分析数据保持最新且整洁。
+
+<div id="handling-schema-changes">
+  ### 处理 schema 变更
+</div>
+
+应用会不断变化，schema 也是如此。使用这条管道后：
+
+* 给业务表新增一列？
+  Streamkap 会自动识别，并在 ClickHouse 端同步添加这一列。
+* 删除一列？
+  这取决于具体设置，你可能需要执行迁移——不过大多数新增都能顺利处理。
+
+<div id="real-world-monitoring-keeping-tabs-on-the-pipeline">
+  ## 生产环境监控：随时掌握管道运行状态
+</div>
+
+<div id="checking-pipeline-health">
+  ### 检查管道运行状况
+</div>
+
+Streamkap 提供了一个仪表盘，你可以：
+
+* 查看管道滞后情况 (你的数据有多新鲜？) 
+* 监控行数和吞吐量
+* 在出现异常时接收告警
+
+仪表盘示例：滞后图、行数、健康状态指示器。
+
+<div id="common-metrics-to-watch">
+  ### 需要重点关注的常见指标
+</div>
+
+* 滞后：ClickHouse 比 SQL Server 落后多少？
+* 吞吐量：每秒处理的行数
+* 错误率：应接近零
+
+<div id="going-live-querying-clickhouse">
+  ## 开始使用：查询 ClickHouse
+</div>
+
+现在数据已经进入 ClickHouse，你可以使用各种高速分析工具对其进行查询。下面是一个基础示例：
+
+```sql
+-- 查看过去一小时内活跃度最高的前 10 名用户
+SELECT user\_id, COUNT(*) AS actionsFROM analytics.eventsWHERE event\_time >= now() - INTERVAL 1 HOURGROUP BY user\_idORDER BY actions DESCLIMIT 10;
+```
+
+将 ClickHouse 与 Grafana、Superset 或 Redash 等仪表盘工具结合使用，可实现功能完善的报表分析。
+
+<div id="next-steps-and-deep-dives">
+  ## 后续步骤与深入研究
+</div>
+
+本指南只是展示了你可以实现的部分功能。掌握基础之后，接下来你还可以进一步探索：
+
+* 设置带过滤的流 (仅同步部分表/列) 
+* 将多个数据源流式传输到同一个分析型数据库
+* 将其与 S3/数据湖结合用于冷存储
+* 在更改表时自动执行 schema 迁移
+* 使用 SSL 和防火墙规则保护你的管道
+
+请关注 [Streamkap 博客](https://streamkap.com/blog)，获取更深入的指南。
+
+<div id="faq-and-troubleshooting">
+  ## 常见问题与故障排查
+</div>
+
+问：这适用于云数据库吗？
+答：是的！我们在这个示例中使用了 AWS RDS。只要确保放通了正确的端口即可。
+
+问：性能如何？
+答：ClickHouse 速度很快。瓶颈通常在网络或源数据库的 binlog 速度上，但在大多数情况下，延迟都会低于 1 秒。
+
+问：也能处理删除操作吗？
+答：当然可以。在 upsert 模式下，删除操作也会被标记，并在 ClickHouse 中处理。
+
+<div id="wrapping-up">
+  ## 总结
+</div>
+
+以上就是使用 Streamkap 将 SQL Server 数据流式传输到 ClickHouse 的完整介绍。它快速、灵活，非常适合需要近实时分析、又不想给生产数据库带来过大压力的团队。
+
+准备好试试了吗？
+前往[注册页面](https://app.streamkap.com/account/sign-up)，如果你希望我们介绍以下主题，也欢迎告诉我们：
+
+* Upsert 与 Insert 的区别，以及两者的技术细节
+* 端到端延迟：多久才能获得最终的分析视图？
+* 性能调优与吞吐量
+* 基于这套技术栈构建的真实场景仪表盘
+
+感谢阅读！祝你流式处理顺利。
