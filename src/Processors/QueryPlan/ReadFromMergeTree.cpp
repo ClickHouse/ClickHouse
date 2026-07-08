@@ -2428,7 +2428,7 @@ bool ReadFromMergeTree::isPrewhereDeferredAfterFinal() const
     if (!isQueryWithFinal())
         return false;
 
-    /// PREWHERE must run after the row policy, so a deferred row policy defers PREWHERE as well
+    /// PREWHERE must run after the row policy, so deferred row policy defers PREWHERE as well
     return context->getSettingsRef()[Setting::apply_prewhere_after_final] || isRowPolicyDeferredAfterFinal();
 }
 
@@ -3193,8 +3193,7 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 {
     query_info.prewhere_info = prewhere_info_value;
 
-    /// Keep the deferred copy in sync: when PREWHERE is deferred after FINAL, a later rewrite
-    /// (e.g. text index preprocessing) must apply to the filter that actually runs
+    /// when PREWHERE is deferred after FINAL, a later rewrite must apply to the filter that actually runs
     if (isPrewhereDeferredAfterFinal())
         deferred_prewhere_info = prewhere_info_value;
 
