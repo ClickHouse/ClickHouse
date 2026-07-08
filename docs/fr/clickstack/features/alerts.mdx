@@ -1,0 +1,393 @@
+---
+slug: /use-cases/observability/clickstack/alerts
+title: 'Alertes avec ClickStack'
+sidebarTitle: 'Alertes'
+description: 'Alertes avec ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack', 'observability', 'alertes', 'search-alerts', 'notifications', 'seuils', 'slack', 'email', 'pagerduty', 'monitoring-des-erreurs', 'monitoring-des-performances', 'événements-utilisateur']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+ClickStack inclut la prise en charge native des alertes, ce qui permet aux équipes de détecter les problèmes et d’y répondre en temps réel dans les logs, les metrics et les traces.
+
+Les alertes peuvent être créées directement dans l’interface HyperDX et s’intègrent à des systèmes de notification courants comme Slack et PagerDuty.
+
+Les alertes fonctionnent de manière fluide sur l’ensemble de vos données ClickStack, pour vous aider à suivre l’état de santé du système, à détecter les régressions de performance et à surveiller les événements métier clés.
+
+<div id="types-of-alerts">
+  ## Types d’alertes
+</div>
+
+ClickStack prend en charge deux façons complémentaires de créer des alertes : **alertes de recherche** et **Dashboard chart alerts**. Une fois l’alerte créée, elle est associée soit à la recherche, soit au graphique.
+
+<div id="search-alerts">
+  ### 1. Alertes de recherche
+</div>
+
+Les alertes de recherche vous permettent de déclencher des notifications en fonction des résultats d&#39;une recherche enregistrée. Elles vous aident à détecter lorsque des événements ou des schémas spécifiques se produisent plus (ou moins) fréquemment que prévu.
+
+Une alerte est déclenchée lorsque le nombre de résultats correspondants, dans une fenêtre de temps définie, dépasse ou passe sous un seuil spécifié.
+
+Pour créer une alerte de recherche :
+
+Pour qu&#39;une alerte puisse être créée pour une recherche, celle-ci doit être enregistrée. Vous pouvez soit créer l&#39;alerte pour une recherche enregistrée existante, soit enregistrer la recherche pendant le processus de création de l&#39;alerte. Dans l&#39;exemple ci-dessous, nous partons du principe que la recherche n&#39;est pas enregistrée.
+
+<Steps>
+  <Step>
+    #### Ouvrir la boîte de dialogue de création d&#39;alerte
+
+    Commencez par saisir une [recherche](/fr/clickstack/features/search), puis cliquez sur le bouton `Alerts` dans l&#39;angle supérieur droit de la page `Search`.
+
+    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="Vue Search des alertes" size="lg" />
+  </Step>
+
+  <Step>
+    #### Créer l&#39;alerte
+
+    Depuis le panneau de création d&#39;alerte, vous pouvez :
+
+    * Attribuer un nom à la recherche enregistrée associée à l&#39;alerte.
+    * Définir un seuil et préciser combien de fois il doit être atteint sur une période donnée. Les seuils peuvent également servir de bornes supérieures ou inférieures. La période détermine également la fréquence de déclenchement de l&#39;alerte.
+    * Spécifier une valeur `grouped by`. Cela permet de soumettre la recherche à une agrégation, par exemple `ServiceName`, et donc de déclencher plusieurs alertes à partir de la même recherche.
+    * Choisir une destination webhook pour les notifications. Vous pouvez ajouter un nouveau webhook directement depuis cette vue. Voir [Ajouter un webhook](#add-webhook) pour plus de détails.
+
+    Avant d&#39;enregistrer, ClickStack visualise la condition de seuil afin que vous puissiez vérifier qu&#39;elle se comportera comme prévu.
+
+    <Image img="/images/use-cases/observability/search_alert.webp" alt="Alertes de recherche" size="lg" />
+  </Step>
+</Steps>
+
+Notez que plusieurs alertes peuvent être ajoutées à une recherche. Si vous répétez le processus ci-dessus, vous verrez les alertes actuelles sous forme d&#39;onglets en haut de la boîte de dialogue de modification d&#39;alerte, chaque alerte étant associée à un numéro.
+
+<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="Alertes multiples" size="md" />
+
+<div id="dashboard-alerts">
+  ### 2. Alertes de graphiques sur tableau de bord
+</div>
+
+Les alertes sur tableau de bord étendent l’alerte aux graphiques.
+
+Vous pouvez créer une alerte basée sur un graphique directement depuis un tableau de bord enregistré, grâce à toute la puissance des agrégations SQL et des fonctions ClickHouse pour les calculs avancés.
+
+Lorsqu’une métrique franchit un seuil défini, l’alerte se déclenche automatiquement, ce qui vous permet de surveiller les KPI, les latences ou d’autres métriques clés au fil du temps.
+
+<Note>
+  Pour qu’une alerte puisse être créée pour une visualisation sur un tableau de bord, le tableau de bord doit être enregistré.
+</Note>
+
+Pour ajouter une alerte sur tableau de bord :
+
+Les alertes peuvent être créées pendant le processus de création du graphique, lors de l’ajout d’un graphique à un tableau de bord, ou sur des graphiques existants. Dans l’exemple ci-dessous, nous supposons que le graphique existe déjà sur le tableau de bord.
+
+<Steps>
+  <Step>
+    #### Ouvrir la boîte de dialogue de modification du graphique
+
+    Ouvrez le menu de configuration du graphique et sélectionnez le bouton d’alerte. La boîte de dialogue de modification du graphique s’affiche.
+
+    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="Modifier l’alerte du graphique" size="lg" />
+  </Step>
+
+  <Step>
+    #### Ajouter l’alerte
+
+    Sélectionnez **Add Alert**.
+
+    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="Ajouter une alerte au graphique" size="lg" />
+  </Step>
+
+  <Step>
+    #### Définir les conditions de l’alerte
+
+    Définissez la condition (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), le seuil, la durée et le webhook. La durée détermine également la fréquence de déclenchement de l’alerte.
+
+    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="Créer une alerte pour le graphique" size="lg" />
+
+    Vous pouvez ajouter un nouveau webhook directement depuis cette vue. Voir [Ajouter un webhook](#add-webhook) pour plus de détails.
+  </Step>
+</Steps>
+
+<div id="add-webhook">
+  ## Ajouter un webhook
+</div>
+
+Lors de la création d&#39;une alerte, vous pouvez utiliser un webhook existant ou en créer un. Une fois créé, le webhook pourra être réutilisé dans d&#39;autres alertes.
+
+Un webhook peut être créé pour différents types de service, notamment Slack et PagerDuty, ainsi que pour des cibles génériques.
+
+Par exemple, prenons le cas de la création de l&#39;alerte pour un graphique ci-dessous. Avant de spécifier le webhook, l&#39;utilisateur peut sélectionner `Add New Webhook`.
+
+<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="Ajouter un webhook" size="lg" />
+
+Cela ouvre la boîte de dialogue de création du webhook, dans laquelle vous pouvez créer un nouveau webhook :
+
+<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="Création du webhook" size="md" />
+
+Un nom de webhook est requis, tandis que la description est facultative. Les autres paramètres à renseigner dépendent du type de service.
+
+Notez que les types de service disponibles diffèrent entre ClickStack Open Source et ClickStack Cloud. Voir [Service type integrations](#integrations).
+
+<div id="integrations">
+  ### Intégrations par type de service
+</div>
+
+Les alertes ClickStack prennent en charge nativement les types de service suivants :
+
+* **Slack** : envoyez des notifications directement vers un canal via un webhook ou l’API.
+* **PagerDuty** : acheminez les incidents vers les équipes d’astreinte via l’API PagerDuty.
+* **Webhook** : connectez les alertes à n’importe quel système ou workflow personnalisé via un webhook générique.
+
+<Info>
+  **Intégrations disponibles uniquement dans ClickHouse Cloud**
+
+  Les intégrations Slack API et PagerDuty ne sont prises en charge que dans ClickHouse Cloud.
+</Info>
+
+Selon le type de service, vous devrez fournir des informations différentes, à savoir :
+
+**Slack (URL du webhook)**
+
+* URL du webhook. Par exemple : `https://hooks.slack.com/services/<unique_path>`. Consultez la [documentation Slack](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) pour plus de détails.
+
+**Slack (API)**
+
+* Jeton du bot Slack. Consultez la [documentation Slack](https://docs.slack.dev/authentication/tokens/#bot/) pour plus de détails.
+
+**API PagerDuty**
+
+* Clé d’intégration PagerDuty. Consultez la [documentation PagerDuty](https://support.pagerduty.com/main/docs/api-access-keys) pour plus de détails.
+
+**Générique**
+
+* URL du webhook
+* En-têtes du webhook (facultatif)
+* Corps du webhook (facultatif). Le corps prend actuellement en charge les variables de modèle `{{title}}`, `{{body}}` et `{{link}}`.
+
+<div id="managing-alerts">
+  ## Gérer les alertes
+</div>
+
+Les alertes peuvent être gérées de façon centralisée depuis le panneau des alertes, sur la gauche de HyperDX.
+
+<Image img="/images/use-cases/observability/manage_alerts.webp" alt="Gérer les alertes" size="lg" />
+
+Depuis cette vue, vous pouvez voir toutes les alertes qui ont été créées et qui sont actuellement actives dans ClickStack.
+
+<Image img="/images/use-cases/observability/alerts_view.webp" alt="Vue des alertes" size="lg" />
+
+Cette vue affiche également l’historique d’évaluation des alertes. Les alertes sont évaluées à intervalles réguliers (définis par la période/durée configurée lors de la création de l’alerte). À chaque évaluation, HyperDX interroge vos données pour vérifier si la condition de l’alerte est remplie :
+
+* **Barre rouge** : la condition de seuil a été remplie lors de cette évaluation et l’alerte s’est déclenchée (notification envoyée)
+* **Barre verte** : l’alerte a été évaluée, mais la condition de seuil n’a pas été remplie (aucune notification envoyée)
+
+Chaque évaluation est indépendante : l’alerte vérifie les données pour cette fenêtre temporelle et ne se déclenche que si la condition est vraie à ce moment-là.
+
+Dans l’exemple ci-dessus, la première alerte s’est déclenchée à chaque évaluation, ce qui indique un problème persistant. La deuxième alerte montre un problème résolu : elle s’est déclenchée deux fois au départ (barres rouges), puis, lors des évaluations suivantes, la condition de seuil n’était plus remplie (barres vertes).
+
+En cliquant sur une alerte, vous accédez au graphique ou à la recherche auquel elle est associée.
+
+<div id="deleting-alerts">
+  ### Suppression d’une alerte
+</div>
+
+Pour supprimer une alerte, ouvrez la boîte de dialogue de modification du Search ou du graphique associé, puis sélectionnez **Supprimer l’alerte**.
+Dans l’exemple ci-dessous, le bouton `Remove Alert` supprimera l’alerte du graphique.
+
+<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="Supprimer l’alerte du graphique" size="lg" />
+
+<div id="sql-based-alerts">
+  ## Alertes de graphiques basées sur SQL
+</div>
+
+Les alertes de graphiques basées sur SQL vous permettent d’écrire n’importe quelle requête ClickHouse SQL pour définir des conditions d’alerte. Vous gardez ainsi un contrôle total sur le filtrage, l’agrégation et les calculs : tout ce que vous pouvez exprimer en SQL peut devenir une alerte.
+
+<div id="supported-chart-types">
+  ### Types de graphiques pris en charge
+</div>
+
+Les alertes SQL sont prises en charge pour trois types de graphiques :
+
+| Type de graphique | Comportement                                                                                                                                                          |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Line**          | Alerte de série temporelle. La requête doit produire des lignes regroupées par intervalle de temps. Chaque intervalle est évalué indépendamment par rapport au seuil. |
+| **Stacked Bar**   | Alerte de série temporelle. Même comportement que **Line**.                                                                                                           |
+| **Number**        | Alerte à valeur unique. La requête renvoie un seul résultat numérique, comparé au seuil une fois par évaluation.                                                      |
+
+Les autres types de graphiques SQL (Table, Pie, Heatmap, etc.) ne prennent pas en charge les alertes.
+
+<div id="create-sql-based-alert">
+  ### Créer une alerte SQL
+</div>
+
+Pour créer une alerte sur un graphique SQL :
+
+<Steps>
+  <Step>
+    #### Créer ou ouvrir un graphique SQL sur un tableau de bord
+
+    À partir d’un tableau de bord enregistré, [créez un nouveau graphique avec le mode **SQL**](/fr/clickstack/features/dashboards/sql-visualizations) ou ouvrez un graphique SQL existant pour le modifier.
+
+    Choisissez **Line**, **Stacked Bar** ou **Number** comme type d’affichage.
+
+    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="Créer un graphique SQL" size="lg" />
+  </Step>
+
+  <Step>
+    #### Ajouter l’alerte
+
+    Sélectionnez **Add Alert** dans la section des alertes de l’éditeur de graphique. Configurez :
+
+    * **Threshold type** : `>=` (supérieur ou égal à), `>` (supérieur à), `<=` (inférieur ou égal à), `<` (inférieur à), `=` (égal à), `!=` (différent de), `<= x >=` (entre) ou `> or <` (en dehors de)
+    * **Threshold value** : la valeur numérique de comparaison
+    * **Interval** : la fréquence d’évaluation de l’alerte (1m, 5m, 15m, 30m, 1h, 6h, 12h ou 1d). Cela définit également l’intervalle de temps de chaque évaluation.
+    * **Webhook** : le canal de notification à utiliser lorsque l’alerte se déclenche. Voir [Ajouter un webhook](#add-webhook).
+
+    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="Modifier l’alerte du graphique" size="lg" />
+
+    <Warning>
+      **Alert Time Range**
+
+      En règle générale, les requêtes d’alerte sont exécutées une fois par intervalle. Cependant, si un ou plusieurs intervalles sont sautés en raison d’erreurs ou de requêtes lentes, l’exécution suivante utilisera un intervalle de temps qui inclut les intervalles manqués. Dans ce cas, les paramètres d’intervalle de la requête resteraient définis sur la période configurée pour l’alerte, tandis que les paramètres d’intervalle de temps refléteraient cette plage plus longue.
+    </Warning>
+  </Step>
+
+  <Step>
+    #### Enregistrer le tableau de bord
+
+    Enregistrez le tableau de bord pour activer l’alerte. L’alerte commencera à être évaluée selon l’intervalle configuré.
+  </Step>
+</Steps>
+
+<div id="sql-result-interpretation">
+  ### Comment les résultats de requête sont interprétés
+</div>
+
+Le système d’alertes examine les colonnes renvoyées par votre requête SQL afin de déterminer la valeur à comparer au seuil.
+
+* **Colonne de valeur** : la **dernière colonne numérique** de votre clause `SELECT` est utilisée comme valeur d’alerte. Si votre requête renvoie plusieurs colonnes numériques (par ex., `count, avg_latency, p99_latency`), seule la dernière (`p99_latency`) est comparée au seuil.
+* **Colonne d’horodatage** : pour les graphiques de séries temporelles (Line et Stacked Bar), le système identifie la colonne Date/DateTime dans vos résultats comme l’intervalle de temps (c.-à-d. l’axe des x d’un graphique de séries temporelles). La colonne de valeur de chaque intervalle de temps est évaluée indépendamment par rapport au seuil, et si la valeur de l’un de ces intervalles dépasse le seuil configuré, l’alerte se déclenche.
+* **Colonnes de groupe** : toutes les colonnes qui ne sont ni numériques ni des colonnes d’horodatage (par ex., `ServiceName`, `Environment`) sont traitées comme des dimensions de regroupement. Lorsque des groupes sont présents, chaque combinaison unique de valeurs de groupe est suivie et fait l’objet d’une alerte distincte. ClickStack enverra une alerte pour chaque groupe dont la valeur dépasse le seuil configuré. Les groupes sont disponibles uniquement pour les graphiques de séries temporelles.
+
+<div id="query-params">
+  ### Paramètres de requête et macros
+</div>
+
+Les requêtes SQL d’alerte prennent en charge les paramètres de template et les macros, qui sont automatiquement remplacés au moment de l’évaluation. Il s’agit des mêmes paramètres et macros que ceux disponibles lors de la [création d’un graphique SQL](/fr/clickstack/features/dashboards/sql-visualizations).
+
+<div id="required-alert-parameters">
+  #### Paramètres requis et recommandés
+</div>
+
+Les requêtes utilisées pour les alertes de graphiques linéaires ou à barres empilées **doivent** inclure un paramètre d’intervalle ou une macro (`{intervalSeconds:Int64}`, `{intervalMilliseconds:Int64}`, `$__timeInterval(col)` ou `$__timeInterval_ms(col)`). Lors de l’exécution de l’alerte, ce paramètre sera remplacé par la période configurée de l’alerte.
+
+Les requêtes utilisées pour les alertes **devraient** inclure un filtre d’intervalle de temps (`{startDateMilliseconds:Int64}` et `{endDateMilliseconds:Int64}`, ou `$__timeFilter(col)`, etc.). Qu’un filtre d’intervalle de temps soit présent ou non dans la requête, la requête d’alerte s’exécutera sur la période configurée de l’alerte. S’il n’y a pas de filtre d’intervalle de temps, la requête lira alors l’intégralité de l’intervalle de temps disponible dans la table source à chaque exécution.
+
+<Warning>
+  **Intervalle de temps de l’alerte**
+
+  En général, les requêtes d’alerte sont exécutées une fois par intervalle. Cependant, si un ou plusieurs intervalles sont ignorés en raison d’erreurs ou de requêtes lentes, l’exécution suivante utilisera un intervalle de temps incluant les intervalles manqués. Dans ce cas, les paramètres d’intervalle de la requête resteront définis sur la période configurée de l’alerte, mais les paramètres d’intervalle de temps refléteront cet intervalle de temps plus long.
+</Warning>
+
+<div id="example-queries">
+  ### Exemples de requêtes d’alerte
+</div>
+
+<div id="example-error-rate">
+  #### Taux d’erreur par service (série temporelle)
+</div>
+
+Déclenchez une alerte lorsqu’un service présente un taux d’erreur supérieur à 5 %, avec au moins 10 requêtes sur la période d’alerte, afin d’éviter les alertes parasites sur les services à faible trafic.
+
+```sql
+WITH error_rates AS (
+  SELECT
+    $__timeInterval(Timestamp) as ts,
+    ServiceName,
+    countIf (SpanKind = 'Server') as request_count,
+    countIf (
+      SpanKind = 'Server'
+      and StatusCode = 'Error'
+    ) as error_count,
+    error_count / request_count * 100 AS error_percent
+  FROM $__sourceTable
+  WHERE $__timeFilter(Timestamp)
+  GROUP BY ts, ServiceName
+)
+SELECT ts, ServiceName, error_percent
+FROM error_rates
+WHERE request_count > 10
+```
+
+**Type d’affichage** : Ligne ou barres empilées
+**Seuil** : `>= 5` (se déclenche lorsque le taux d’erreur atteint 5 %)
+
+Dans cette requête, `ServiceName` est une colonne qui n’est ni numérique ni de type horodatage ; chaque service est donc suivi dans un groupe d’alertes distinct. L’alerte se déclenche indépendamment pour chaque service.
+
+<div id="example-anomaly-detection">
+  #### Détection d’anomalies avec moyenne décalée (séries temporelles)
+</div>
+
+Déclenchez une alerte lorsque le nombre d’erreurs dépasse une moyenne mobile de plus de deux écarts-types. Cela permet de détecter des pics par rapport au niveau de référence récent plutôt qu’en fonction d’un seuil fixe.
+
+```sql
+WITH buckets AS (
+  SELECT
+    $__timeInterval(Timestamp) AS ts,
+    count() AS bucket_count
+  FROM $__sourceTable
+  WHERE TimestampTime >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+        - toIntervalSecond($__interval_s * 30) -- Fetch 30 intervals back
+    AND TimestampTime < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+    AND SeverityText = 'error'
+  GROUP BY ts
+  ORDER BY ts
+  WITH FILL
+    FROM toDateTime(fromUnixTimestamp64Milli({startDateMilliseconds:Int64}))
+    TO toDateTime(fromUnixTimestamp64Milli({endDateMilliseconds:Int64}))
+    STEP toIntervalSecond($__interval_s)
+),
+
+anomaly_detection AS (
+  SELECT
+    ts,
+    bucket_count,
+    avg(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_avg,
+    stddevPop(bucket_count) OVER (
+      ORDER BY ts ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING
+    ) AS previous_30_stddev,
+    greatest(
+      bucket_count - (previous_30_avg + 2 * previous_30_stddev), 0
+    ) AS excess_error_count
+  FROM buckets
+)
+
+SELECT ts, excess_error_count
+FROM anomaly_detection
+WHERE ts >= fromUnixTimestamp64Milli({startDateMilliseconds:Int64})
+  AND ts < fromUnixTimestamp64Milli({endDateMilliseconds:Int64})
+```
+
+**Type d&#39;affichage** : Ligne
+**Seuil** : `> 0` (se déclenche lorsqu’un excès d’erreurs au-dessus de la baseline glissante est détecté)
+
+Notez que la requête récupère 30 intervalles *avant* le début de la plage de dates afin d’initialiser les calculs de fenêtre glissante, puis filtre le résultat final pour ne conserver que la fenêtre d’évaluation.
+
+<div id="common-alert-scenarios">
+  ## Scénarios d&#39;alerte courants
+</div>
+
+Voici quelques scénarios d&#39;alerte courants pour lesquels vous pouvez utiliser HyperDX :
+
+**Erreurs :** Nous vous recommandons de configurer des alertes pour les recherches enregistrées par défaut
+`All Error Events` et `HTTP Status >= 400` afin d&#39;être averti en cas de
+nombre excessif d&#39;erreurs.
+
+**Opérations lentes :** Vous pouvez également configurer une recherche pour les opérations lentes (par exemple,
+`duration:>5000`), puis déclencher une alerte lorsqu&#39;un trop grand nombre d&#39;opérations lentes
+surviennent.
+
+**Événements utilisateur :** Vous pouvez aussi configurer des alertes pour que les équipes en contact avec les clients soient
+averties lorsque de nouveaux utilisateurs s&#39;inscrivent ou lorsqu&#39;une action utilisateur critique est effectuée.

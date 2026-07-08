@@ -1,0 +1,130 @@
+---
+title: 'Eficiencia del almacenamiento - series temporales'
+sidebarTitle: 'Eficiencia del almacenamiento'
+description: 'Mejora de la eficiencia del almacenamiento de series temporales'
+slug: /use-cases/time-series/storage-efficiency
+keywords: ['series temporales', 'eficiencia del almacenamiento', 'compresión', 'retención de datos', 'TTL', 'optimización del almacenamiento', 'uso de disco']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Después de ver cómo consultar nuestro conjunto de datos de estadísticas de Wikipedia, centrémonos ahora en optimizar su eficiencia de almacenamiento en ClickHouse.
+En esta sección se muestran técnicas prácticas para reducir las necesidades de almacenamiento sin afectar al rendimiento de las consultas.
+
+<div id="time-series-type-optimization">
+  ## Optimización de tipos
+</div>
+
+El enfoque general para optimizar la eficiencia del almacenamiento es usar tipos de datos óptimos.
+Tomemos las columnas `project` y `subproject`. Estas columnas son de tipo String, pero tienen una cantidad relativamente reducida de valores únicos:
+
+```sql
+SELECT
+    uniq(project),
+    uniq(subproject)
+FROM wikistat;
+```
+
+```text
+┌─uniq(project)─┬─uniq(subproject)─┐
+│          1332 │              130 │
+└───────────────┴──────────────────┘
+```
+
+Esto significa que podemos usar el tipo de datos LowCardinality(), que utiliza una codificación por diccionario. Esto hace que ClickHouse almacene el ID del valor interno en lugar de la cadena original, lo que a su vez ahorra mucho espacio:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `project` LowCardinality(String),
+MODIFY COLUMN `subproject` LowCardinality(String)
+```
+
+También hemos usado un tipo UInt64 para la columna `hits`, que ocupa 8 bytes, pero tiene un valor máximo relativamente pequeño:
+
+```sql
+SELECT max(hits)
+FROM wikistat;
+```
+
+```text
+┌─max(hits)─┐
+│    449017 │
+└───────────┘
+```
+
+Dado este valor, podemos usar UInt32 en su lugar, que ocupa solo 4 bytes y permite almacenar hasta ~4 mil millones como valor máximo:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `hits` UInt32;
+```
+
+Esto reducirá al menos a la mitad el tamaño de esta columna en memoria. Ten en cuenta que el tamaño en disco no cambiará debido a la compresión. Pero ten cuidado: ¡elige tipos de datos que no sean demasiado pequeños!
+
+<div id="time-series-specialized-codecs">
+  ## Codecs especializados
+</div>
+
+Cuando trabajamos con datos secuenciales, como las series temporales, podemos mejorar aún más la eficiencia del almacenamiento usando codecs especiales.
+La idea general es almacenar las diferencias entre valores en lugar de los valores absolutos, lo que requiere mucho menos espacio cuando se trabaja con datos que cambian lentamente:
+
+```sql
+ALTER TABLE wikistat
+MODIFY COLUMN `time` CODEC(Delta, ZSTD);
+```
+
+Hemos usado el códec Delta para la columna `time`, que resulta muy adecuado para datos de series temporales.
+
+La clave de ordenación adecuada también puede ahorrar espacio en disco.
+Como normalmente queremos filtrar por una ruta, añadiremos `path` a la clave de ordenación.
+Esto requiere recrear la tabla.
+
+A continuación, podemos ver el comando `CREATE` para nuestra tabla inicial y la tabla optimizada:
+
+```sql
+CREATE TABLE wikistat
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (time);
+```
+
+```sql
+CREATE TABLE optimized_wikistat
+(
+    `time` DateTime CODEC(Delta(4), ZSTD(1)),
+    `project` LowCardinality(String),
+    `subproject` LowCardinality(String),
+    `path` String,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY (path, time);
+```
+
+Y veamos cuánto espacio ocupan los datos en cada tabla:
+
+```sql
+SELECT
+    table,
+    formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed,
+    formatReadableSize(sum(data_compressed_bytes)) AS compressed,
+    count() AS parts
+FROM system.parts
+WHERE table LIKE '%wikistat%'
+GROUP BY ALL;
+```
+
+```text
+┌─table──────────────┬─uncompressed─┬─compressed─┬─parts─┐
+│ wikistat           │ 35.28 GiB    │ 12.03 GiB  │     1 │
+│ optimized_wikistat │ 30.31 GiB    │ 2.84 GiB   │     1 │
+└────────────────────┴──────────────┴────────────┴───────┘
+```
+
+La tabla optimizada ocupa, en su forma comprimida, poco menos de una cuarta parte del espacio.

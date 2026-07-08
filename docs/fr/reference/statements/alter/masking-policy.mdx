@@ -1,0 +1,25 @@
+---
+description: 'Documentation sur ALTER MASKING POLICY'
+sidebarTitle: 'POLITIQUE DE MASQUAGE'
+slug: /sql-reference/statements/alter/masking-policy
+title: 'ALTER MASKING POLICY'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/fr/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+Modifie une politique de masquage existante.
+
+Syntaxe :
+
+```sql
+ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
+    [UPDATE column1 = expression1 [, column2 = expression2 ...]]
+    [WHERE condition]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+    [PRIORITY priority_number]
+```
+
+Toutes les clauses sont facultatives. Seules les clauses indiquées seront mises à jour.

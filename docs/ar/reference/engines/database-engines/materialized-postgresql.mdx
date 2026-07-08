@@ -1,0 +1,330 @@
+---
+description: 'ينشئ قاعدة بيانات في ClickHouse تحتوي على جداول من قاعدة بيانات PostgreSQL.'
+sidebarTitle: 'MaterializedPostgreSQL'
+slug: /engines/database-engines/materialized-postgresql
+title: 'MaterializedPostgreSQL'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Note>
+  يُوصى لمستخدمي ClickHouse Cloud باستخدام [ClickPipes](/ar/integrations/clickpipes/home) لنسخ PostgreSQL إلى ClickHouse. ويدعم ذلك أصلاً CDC (التقاط تغييرات البيانات) عالي الأداء لـ PostgreSQL.
+</Note>
+
+ينشئ قاعدة بيانات في ClickHouse تحتوي على جداول من قاعدة بيانات PostgreSQL. في البداية، تنشئ قاعدة البيانات التي تستخدم المحرك `MaterializedPostgreSQL` لقطة لقاعدة بيانات PostgreSQL وتحمّل الجداول المطلوبة. ويمكن أن تشمل الجداول المطلوبة أي subset من الجداول من أي subset من المخططات ضمن قاعدة البيانات المحددة. وبالتزامن مع إنشاء لقطة، يحصل محرك قاعدة البيانات على LSN، وبعد تنفيذ dump أولي للجداول يبدأ في سحب التحديثات من WAL. بعد إنشاء قاعدة البيانات، لا تتم إضافة الجداول التي تُضاف لاحقاً إلى قاعدة بيانات PostgreSQL تلقائياً إلى النسخ المتماثل. ويجب إضافتها يدوياً باستخدام الاستعلام `ATTACH TABLE db.table`.
+
+يُنفَّذ النسخ المتماثل باستخدام PostgreSQL Logical Replication Protocol، الذي لا يسمح بتكرار DDL، لكنه يتيح معرفة ما إذا كانت قد حدثت breaking changes تؤثر في النسخ المتماثل (مثل تغيير نوع العمود أو إضافة الأعمدة/إزالتها). تُكتشف هذه التغييرات، وعندها تتوقف الجداول المعنية عن تلقي التحديثات. في هذه الحالة، يجب استخدام استعلامي `ATTACH` و `DETACH PERMANENTLY` لإعادة تحميل الجدول بالكامل. وإذا كان DDL لا يعطّل النسخ المتماثل (على سبيل المثال، إعادة تسمية عمود)، فسيستمر الجدول في تلقي التحديثات (تتم عملية insertion حسب الموضع).
+
+<Note>
+  محرك قاعدة البيانات هذا تجريبي. لاستخدامه، اضبط `allow_experimental_database_materialized_postgresql` على 1 في configuration files أو باستخدام الأمر `SET`:
+
+  ```sql
+  SET allow_experimental_database_materialized_postgresql=1
+  ```
+</Note>
+
+<div id="creating-a-database">
+  ## إنشاء قاعدة بيانات
+</div>
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster]
+ENGINE = MaterializedPostgreSQL('host:port', 'database', 'user', 'password') [SETTINGS ...]
+```
+
+**معلمات المحرك**
+
+* `host:port` — نقطة نهاية خادم PostgreSQL.
+* `database` — اسم قاعدة بيانات PostgreSQL.
+* `user` — اسم مستخدم PostgreSQL.
+* `password` — كلمة مرور المستخدم.
+
+<div id="example-of-use">
+  ## مثال للاستخدام
+</div>
+
+```sql
+CREATE DATABASE postgres_db
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password');
+
+SHOW TABLES FROM postgres_db;
+
+┌─name───┐
+│ table1 │
+└────────┘
+
+SELECT * FROM postgres_db.postgres_table;
+```
+
+<div id="dynamically-adding-table-to-replication">
+  ## إضافة جداول جديدة إلى النسخ المتماثل بشكل ديناميكي
+</div>
+
+بعد إنشاء قاعدة البيانات `MaterializedPostgreSQL`، فإنها لا تكتشف تلقائيًا الجداول الجديدة في قاعدة بيانات PostgreSQL المقابلة. ويمكن إضافة هذه الجداول يدويًا:
+
+```sql
+ATTACH TABLE postgres_database.new_table;
+```
+
+<Warning>
+  قبل الإصدار 22.1، كانت إضافة جدول إلى النسخ المتماثل تترك فتحة النسخ المتماثل مؤقتة بدون حذف (اسمها `{db_name}_ch_replication_slot_tmp`). إذا كنت تُرفق جداول في إصدار ClickHouse أقدم من 22.1، فتأكّد من حذفها يدويًا (`SELECT pg_drop_replication_slot('{db_name}_ch_replication_slot_tmp')`). وإلا فسيزداد استخدام القرص. وقد أُصلحت هذه المشكلة في الإصدار 22.1.
+</Warning>
+
+<div id="dynamically-removing-table-from-replication">
+  ## إزالة الجداول من النسخ المتماثل ديناميكيًا
+</div>
+
+يمكن إزالة جداول محددة من النسخ المتماثل:
+
+```sql
+DETACH TABLE postgres_database.table_to_remove PERMANENTLY;
+```
+
+<div id="schema">
+  ## مخطط PostgreSQL
+</div>
+
+يمكن إعداد [مخطط](https://www.postgresql.org/docs/9.1/ddl-schemas.html) PostgreSQL بثلاث طرق (ابتداءً من الإصدار 21.12).
+
+1. مخطط واحد لكل محرك قاعدة بيانات `MaterializedPostgreSQL`. يتطلب ذلك استخدام الإعداد `materialized_postgresql_schema`.
+   يتم الوصول إلى الجداول باستخدام اسم الجدول فقط:
+
+```sql
+CREATE DATABASE postgres_database
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema = 'postgres_schema';
+
+SELECT * FROM postgres_database.table1;
+```
+
+2. أي عدد من المخططات مع مجموعة جداول محددة لمحرك قاعدة بيانات `MaterializedPostgreSQL` واحد. يتطلب ذلك استخدام الإعداد `materialized_postgresql_tables_list`. يُذكر كل جدول مع المخطط التابع له.
+   يتم الوصول إلى الجداول باستخدام اسم المخطط واسم الجدول في الوقت نفسه:
+
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_tables_list = 'schema1.table1,schema2.table2,schema1.table3',
+         materialized_postgresql_tables_list_with_schema = 1;
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+لكن في هذه الحالة، يجب كتابة جميع الجداول في `materialized_postgresql_tables_list` مع اسم الـ مخطط الخاص بها.
+يتطلب ذلك `materialized_postgresql_tables_list_with_schema = 1`.
+
+تحذير: في هذه الحالة، لا يُسمح بوجود نقاط في اسم الجدول.
+
+3. أي عدد من الـ مخططات مع المجموعة الكاملة من الجداول لمحرك قاعدة البيانات `MaterializedPostgreSQL` واحد. يتطلب ذلك استخدام الإعداد `materialized_postgresql_schema_list`.
+
+```sql
+CREATE DATABASE database1
+ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+SETTINGS materialized_postgresql_schema_list = 'schema1,schema2,schema3';
+
+SELECT * FROM database1.`schema1.table1`;
+SELECT * FROM database1.`schema1.table2`;
+SELECT * FROM database1.`schema2.table2`;
+```
+
+تحذير: في هذه الحالة، لا يُسمح بوجود نقاط في اسم الجدول.
+
+<div id="requirements">
+  ## المتطلبات
+</div>
+
+1. يجب أن تكون قيمة إعداد [wal&#95;level](https://www.postgresql.org/docs/current/runtime-config-wal.html) هي `logical`، وأن تكون قيمة المَعلمة `max_replication_slots` في ملف إعدادات PostgreSQL `2` على الأقل.
+
+2. يجب أن يتضمن كل جدول مكرّر أحد خيارات [هوية النسخة المتماثلة](https://www.postgresql.org/docs/10/sql-altertable.html#SQL-CREATETABLE-REPLICA-IDENTITY) التالية:
+
+* المفتاح الأساسي (افتراضيًا)
+
+* فهرس
+
+```bash
+postgres# CREATE TABLE postgres_table (a Integer NOT NULL, b Integer, c Integer NOT NULL, d Integer, e Integer NOT NULL);
+postgres# CREATE unique INDEX postgres_table_index on postgres_table(a, c, e);
+postgres# ALTER TABLE postgres_table REPLICA IDENTITY USING INDEX postgres_table_index;
+```
+
+يُتحقَّق دائمًا أولًا من المفتاح الأساسي. وإذا لم يكن موجودًا، فيُتحقَّق من الفهرس المعرَّف على أنه فهرس هوية النسخة المتماثلة.
+إذا استُخدم الفهرس بوصفه هويةً لنسخة متماثلة، فلا بد من وجود فهرس واحد فقط من هذا النوع في الجدول.
+يمكنك التحقق من النوع المستخدم لجدول معيّن باستخدام الأمر التالي:
+
+```bash
+postgres# SELECT CASE relreplident
+          WHEN 'd' THEN 'default'
+          WHEN 'n' THEN 'nothing'
+          WHEN 'f' THEN 'full'
+          WHEN 'i' THEN 'index'
+       END AS replica_identity
+FROM pg_class
+WHERE oid = 'postgres_table'::regclass;
+```
+
+<Note>
+  لا يدعم النسخ المتماثل لقيم [**TOAST**](https://www.postgresql.org/docs/9.5/storage-toast.html). وسيُستخدم النوع الافتراضي للبيانات.
+</Note>
+
+<div id="settings">
+  ## الإعدادات
+</div>
+
+<div id="materialized-postgresql-tables-list">
+  ### `materialized_postgresql_tables_list`
+</div>
+
+يحدّد قائمة مفصولة بفواصل من جداول قاعدة بيانات PostgreSQL التي ستتم مزامنتها عبر محرك قاعدة البيانات [MaterializedPostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql).
+
+يمكن أن يتضمن كل جدول مجموعة فرعية من الأعمدة المُكرَّرة بين قوسين. وإذا أُهملت المجموعة الفرعية من الأعمدة، فستُكرَّر جميع أعمدة الجدول.
+
+```sql
+    materialized_postgresql_tables_list = 'table1(co1, col2),table2,table3(co3, col5, col7)
+```
+
+القيمة الافتراضية: قائمة فارغة — وهذا يعني أنه ستتم عملية النسخ المتماثل لقاعدة بيانات PostgreSQL بالكامل.
+
+<div id="materialized-postgresql-schema">
+  ### `materialized_postgresql_schema`
+</div>
+
+القيمة الافتراضية: سلسلة فارغة. (يُستخدَم المخطط الافتراضي)
+
+<div id="materialized-postgresql-schema-list">
+  ### `materialized_postgresql_schema_list`
+</div>
+
+القيمة الافتراضية: قائمة فارغة. (يُستخدَم المخطط الافتراضي)
+
+<div id="materialized-postgresql-max-block-size">
+  ### `materialized_postgresql_max_block_size`
+</div>
+
+يحدّد عدد الصفوف التي تُجمَّع في الذاكرة قبل دفع البيانات إلى جدول قاعدة بيانات PostgreSQL.
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+
+القيمة الافتراضية: `65536`.
+
+<div id="materialized-postgresql-replication-slot">
+  ### `materialized_postgresql_replication_slot`
+</div>
+
+فتحة النسخ المتماثل ينشئها المستخدم. يجب استخدامها مع `materialized_postgresql_snapshot`.
+
+<div id="materialized-postgresql-snapshot">
+  ### `materialized_postgresql_snapshot`
+</div>
+
+سلسلة نصية تُحدِّد لقطة لقطة سيتم انطلاقًا منها إجراء [التفريغ الأولي لجداول PostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql). يجب استخدامها بالاقتران مع `materialized_postgresql_replication_slot`.
+
+```sql
+    CREATE DATABASE database1
+    ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+    SETTINGS materialized_postgresql_tables_list = 'table1,table2,table3';
+
+    SELECT * FROM database1.table1;
+```
+
+يمكن تغيير الإعدادات، عند الحاجة، باستخدام استعلام DDL. لكن لا يمكن تغيير الإعداد `materialized_postgresql_tables_list`. ولتحديث قائمة الجداول في هذا الإعداد، استخدم استعلام `ATTACH TABLE`.
+
+```sql
+    ALTER DATABASE postgres_database MODIFY SETTING materialized_postgresql_max_block_size = <new_size>;
+```
+
+<div id="materialized_postgresql_use_unique_replication_consumer_identifier">
+  ### `materialized_postgresql_use_unique_replication_consumer_identifier`
+</div>
+
+استخدم معرّف مستهلك فريدًا لعملية النسخ المتماثل. القيمة الافتراضية: `0`.
+إذا ضُبطت القيمة على `1`، فسيُسمح بإعداد عدة جداول `MaterializedPostgreSQL` تشير إلى جدول `PostgreSQL` نفسه.
+
+<div id="notes">
+  ## ملاحظات
+</div>
+
+<div id="logical-replication-slot-failover">
+  ### التبديل عند الفشل لفتحة النسخ المنطقي
+</div>
+
+فتحات النسخ المنطقي الموجودة على العقدة الأساسية لا تكون متاحة على النسخ الاحتياطية.
+لذلك، إذا حدث تبديل عند الفشل، فلن تكون العقدة الأساسية الجديدة (أي العقدة الاحتياطية الفعلية السابقة) على علم بأي فتحات كانت موجودة على العقدة الأساسية القديمة. وسيؤدي ذلك إلى تعطل النسخ من PostgreSQL.
+ويتمثل أحد الحلول في أن تدير فتحات النسخ بنفسك وتحدد فتحة النسخ المتماثل دائمة (يمكن العثور على بعض المعلومات [هنا](https://patroni.readthedocs.io/en/latest/SETTINGS.html)). ستحتاج إلى تمرير اسم الفتحة عبر الإعداد `materialized_postgresql_replication_slot`، ويجب تصديرها باستخدام الخيار `EXPORT SNAPSHOT`. كما يجب تمرير معرّف اللقطة عبر الإعداد `materialized_postgresql_snapshot`.
+
+يرجى ملاحظة أن هذا يجب استخدامه فقط عند الحاجة الفعلية إليه. إذا لم تكن هناك حاجة حقيقية لذلك أو فهم واضح لسببه، فمن الأفضل السماح لـ table engine بإنشاء فتحة النسخ المتماثل الخاصة به وإدارتها.
+
+**مثال (من [@bchrobot](https://github.com/bchrobot))**
+
+1. هيّئ فتحة النسخ المتماثل في PostgreSQL.
+
+   ```yaml
+   apiVersion: "acid.zalan.do/v1"
+   kind: postgresql
+   metadata:
+     name: acid-demo-cluster
+   spec:
+     numberOfInstances: 2
+     postgresql:
+       parameters:
+         wal_level: logical
+     patroni:
+       slots:
+         clickhouse_sync:
+           type: logical
+           database: demodb
+           plugin: pgoutput
+   ```
+
+2. انتظر حتى تصبح فتحة النسخ المتماثل جاهزة، ثم ابدأ معاملة وصدّر معرّف لقطة المعاملة:
+
+   ```sql
+   BEGIN;
+   SELECT pg_export_snapshot();
+   ```
+
+3. في ClickHouse، أنشئ database:
+
+   ```sql
+   CREATE DATABASE demodb
+   ENGINE = MaterializedPostgreSQL('postgres1:5432', 'postgres_database', 'postgres_user', 'postgres_password')
+   SETTINGS
+     materialized_postgresql_replication_slot = 'clickhouse_sync',
+     materialized_postgresql_snapshot = '0000000A-0000023F-3',
+     materialized_postgresql_tables_list = 'table1,table2,table3';
+   ```
+
+4. أنهِ معاملة PostgreSQL بمجرد تأكيد النسخ إلى ClickHouse DB. تحقّق من أن النسخ يستمر بعد التبديل عند الفشل:
+
+   ```bash
+   kubectl exec acid-demo-cluster-0 -c postgres -- su postgres -c 'patronictl failover --candidate acid-demo-cluster-1 --force'
+   ```
+
+<div id="required-permissions">
+  ### الأذونات المطلوبة
+</div>
+
+1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- امتياز إنشاء الاستعلام.
+
+2. [CREATE&#95;REPLICATION&#95;SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- امتياز replication.
+
+3. [pg&#95;drop&#95;replication&#95;slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- امتياز replication أو superuser.
+
+4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- مالك publication (أي `username` في engine ‏MaterializedPostgreSQL نفسه).
+
+يمكن تجنب تنفيذ الأمرين `2` و`3` وتجنّب الحاجة إلى هذه الأذونات. استخدم الإعدادين `materialized_postgresql_replication_slot` و`materialized_postgresql_snapshot`، ولكن بحذر شديد.
+
+الوصول إلى الجداول:
+
+1. pg&#95;publication
+
+2. pg&#95;replication&#95;slots
+
+3. pg&#95;publication&#95;tables

@@ -1,0 +1,1999 @@
+---
+title: '为可观测性设计 schema'
+description: '为可观测性设计 schema'
+keywords: ['可观测性', '日志', '链路追踪', '指标', 'OpenTelemetry', 'Grafana', 'OTel']
+slug: /use-cases/observability/schema-design
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+我们建议用户始终为日志和链路追踪创建自己的 schema，原因如下：
+
+* **选择主键** - 默认 schema 使用的 `ORDER BY` 是针对特定访问模式优化的。你的访问模式很可能与其并不匹配。
+* **提取结构** - 你可能希望从现有列中提取新列，例如 `Body` 列。这可以通过物化列来实现 (更复杂的情况下可使用 materialized view) 。这需要修改 schema。
+* **优化 Map** - 默认 schema 使用 Map 类型 来存储属性。这些列允许存储任意元数据。虽然这是一项必不可少的能力——因为事件中的元数据通常不会预先定义，因此无法以其他方式存储到像 ClickHouse 这样强类型的数据库中——但访问 map 中的键及其值，不如访问普通列高效。我们通过修改 schema 来解决这个问题，确保最常访问的 map 键成为顶层列——参见[&quot;使用 SQL 提取结构&quot;](#extracting-structure-with-sql)。这需要修改 schema。
+* **简化 map 键访问** - 访问 map 中的键需要使用更繁琐的语法。你可以通过别名来缓解这一问题。参见[&quot;使用别名&quot;](#using-aliases)以简化查询。
+* **二级索引** - 默认 schema 使用二级索引来加速对 Map 的访问并提升文本查询性能。通常并不需要这些索引，而且还会额外占用磁盘空间。它们可以使用，但应先经过测试，以确认确有必要。参见[&quot;二级索引 / 数据跳过索引&quot;](#secondarydata-skipping-indices)。
+* **使用编解码器** - 如果你了解预期数据的特征，并且有证据表明这能提高压缩效果，那么你可能希望为列自定义编解码器。
+
+*下面我们将详细介绍上述每一种使用场景。*
+
+**重要：** 虽然我们鼓励用户扩展和修改自己的 schema 以获得最佳压缩率和查询性能，但在可能的情况下，仍应遵循 OTel 对核心列的 schema 命名。ClickHouse Grafana 插件会假定某些基础 OTel 列存在，以帮助构建查询，例如 Timestamp 和 SeverityText。日志和链路追踪所需的列分别记录在这里 [[1]](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)[[2]](https://grafana.com/docs/grafana/latest/explore/logs-integration/) 和 [这里](https://grafana.com/docs/grafana/latest/explore/trace-integration/#data-frame-structure)。你也可以选择更改这些列名，并在插件配置中覆盖默认值。
+
+<Tip>
+  **ClickStack 提供经过优化的默认 schema**
+
+  **ClickStack 为日志、链路追踪和指标提供开箱即用的 schema**，其中整合了最新的 ClickHouse 功能 (用于全文和 map 键搜索的文本索引、用于直接读取过滤的物化列和 ALIAS 数组、基于块号的行查找) ，并且已经过基准测试，可为日志和链路追踪工作负载提供强劲的开箱即用性能。你可以将它们作为自己设计 schema 时的参考起点。
+
+  * 规范 DDL：[ClickStack 使用的表和 schema](/zh/clickstack/ingesting-data/schemas)。
+  * 优化方案：[ClickStack 性能调优](/zh/clickstack/managing/performance-tuning)。该页面上的许多建议 (物化列、跳过索引、主键选择、projections、materialized views) 都可直接应用于自行构建的部署。
+</Tip>
+
+<div id="extracting-structure-with-sql">
+  ## 使用 SQL 提取结构
+</div>
+
+无论是摄取结构化日志还是非结构化日志，用户通常都需要以下能力：
+
+* **从字符串 blob 中提取列**。与在查询时使用字符串操作相比，直接查询这些列会更快。
+* **从 Map 中提取键**。默认 schema 会将任意属性放入 Map 类型的列中。这种类型提供了无 schema 的能力，优势在于用户在定义日志和链路追踪时，无需预先为这些属性定义列——而在从 Kubernetes 收集日志并希望保留 pod (容器组) 标记以供后续搜索时，这往往是不现实的。访问 map 中的键及其值，比查询普通 ClickHouse 列更慢。因此，通常希望将 map 中的键提取到表的顶层列中。
+
+请看以下查询：
+
+假设我们希望使用结构化日志统计哪些 URL 路径接收了最多的 POST 请求。JSON blob 存储在 `Body` 列中，类型为 String。此外，如果用户在 collector 中启用了 json&#95;parser，它也可能存储在 `LogAttributes` 列中，类型为 `Map(String, String)`。
+
+```sql
+SELECT LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+LogAttributes: {'status':'200','log.file.name':'access-structured.log','request_protocol':'HTTP/1.1','run_time':'0','time_local':'2019-01-22 00:26:14.000','size':'30577','user_agent':'Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)','referer':'-','remote_user':'-','request_type':'GET','request_path':'/filter/27|13 ,27|  5 ,p53','remote_addr':'54.36.149.41'}
+```
+
+假设 `LogAttributes` 可用，用于统计站点中哪些 URL 路径收到最多 POST 请求的查询如下：
+
+```sql
+SELECT path(LogAttributes['request_path']) AS path, count() AS c
+FROM otel_logs
+WHERE ((LogAttributes['request_type']) = 'POST')
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.735 sec. Processed 10.36 million rows, 4.65 GB (14.10 million rows/s., 6.32 GB/s.)
+峰值内存占用: 153.71 MiB.
+```
+
+请注意，这里使用了 map 语法，例如 `LogAttributes['request_path']`，以及用于从 URL 中去除查询参数的 [`path` 函数](/zh/reference/functions/regular-functions/url-functions#path)。
+
+如果用户尚未在 collector 中启用 JSON 解析，那么 `LogAttributes` 将为空，这意味着我们只能使用 [JSON 函数](/zh/reference/functions/regular-functions/json-functions) 从 String `Body` 中提取列。
+
+<Info>
+  **优先使用 ClickHouse 进行解析**
+
+  我们通常建议用户在 ClickHouse 中对结构化日志执行 JSON 解析。我们相信 ClickHouse 提供了速度最快的 JSON 解析实现。不过，我们也理解，你可能希望将日志发送到其他 source，而不希望这部分逻辑放在 SQL 中。
+</Info>
+
+```sql
+SELECT path(JSONExtractString(Body, 'request_path')) AS path, count() AS c
+FROM otel_logs
+WHERE JSONExtractString(Body, 'request_type') = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.668 sec. Processed 10.37 million rows, 5.13 GB (15.52 million rows/s., 7.68 GB/s.)
+峰值内存占用: 172.30 MiB.
+```
+
+现在再来看一下非结构化日志的情况：
+
+```sql
+SELECT Body, LogAttributes
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           151.233.185.144 - - [22/Jan/2019:19:08:54 +0330] "GET /image/105/brand HTTP/1.1" 200 2653 "https://www.zanbil.ir/filter/b43,p56" "Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/71.0.3578.98 Safari/537.36" "-"
+LogAttributes: {'log.file.name':'access-unstructured.log'}
+```
+
+对于非结构化日志，类似的查询需要借助 `extractAllGroupsVertical` 函数和正则表达式来实现。
+
+```sql
+SELECT
+        path((groups[1])[2]) AS path,
+        count() AS c
+FROM
+(
+        SELECT extractAllGroupsVertical(Body, '(\\w+)\\s([^\\s]+)\\sHTTP/\\d\\.\\d') AS groups
+        FROM otel_logs
+        WHERE ((groups[1])[1]) = 'POST'
+)
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productModelImages │ 10866 │
+│ /site/productAdditives   │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 1.953 sec. Processed 10.37 million rows, 3.59 GB (5.31 million rows/s., 1.84 GB/s.)
+```
+
+解析非结构化日志会增加查询的复杂度和成本 (请注意性能差异) ，因此我们建议用户尽可能始终使用结构化日志。
+
+<Info>
+  **考虑使用字典**
+
+  上述查询可以优化为利用正则表达式字典。更多详情请参见[使用字典](#using-dictionaries)。
+</Info>
+
+这两种用例都可以通过 ClickHouse 将上述查询逻辑移到写入时来实现。下面我们将介绍几种方法，并说明各自适用的场景。
+
+<Info>
+  **使用 OTel 还是 ClickHouse 进行处理？**
+
+  你也可以按[此处](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry#processing---filtering-transforming-and-enriching)所述，使用 OTel collector 的处理器和操作器进行处理。在大多数情况下，你会发现 ClickHouse 在资源效率和速度方面都明显优于 collector 的处理器。使用 SQL 执行所有事件处理的主要缺点在于，解决方案会与 ClickHouse 绑定。例如，你可能希望从 OTel collector 将处理后的日志发送到其他目标端，例如 S3。
+</Info>
+
+<div id="materialized-columns">
+  ### 物化列
+</div>
+
+物化列提供了从其他列中提取结构化信息的最简单方式。这类列的值始终在写入时计算，且不能在 `INSERT` 查询中指定。
+
+<Info>
+  **开销**
+
+  物化列会带来额外的存储开销，因为这些值会在写入时被提取并写入磁盘上的新列。
+</Info>
+
+物化列支持任何 ClickHouse 表达式，并且可以利用各种分析函数来[处理字符串](/zh/reference/functions/regular-functions/string-functions) (包括[正则和搜索](/zh/reference/functions/regular-functions/string-search-functions)) 以及处理 [URL](/zh/reference/functions/regular-functions/url-functions)，执行[类型转换](/zh/reference/functions/regular-functions/type-conversion-functions)、[从 JSON 中提取值](/zh/reference/functions/regular-functions/json-functions)或[数学运算](/zh/reference/functions/regular-functions/math-functions)。
+
+我们建议将物化列用于基础处理。它们尤其适合从 Map 中提取值、将其提升为顶层列，以及执行类型转换。在非常基础的 schema 中使用时，或与 materialized view 结合使用时，它们通常最有价值。请看下面这个日志 schema，其中 JSON 已由 collector 提取到 `LogAttributes` 列中：
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPage` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer'])
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+使用 JSON 函数从 String `Body` 中提取数据的等效 schema 可在[此处](https://pastila.nl/?005cbb97/513b174a7d6114bf17ecc657428cf829#gqoOOiomEjIiG6zlWhE+Sg==)查看。
+
+我们的三个物化列分别提取请求页面、请求类型以及引荐来源域名。它们会访问 map 中的键，并对其值应用函数。因此，后续查询会快得多：
+
+```sql
+SELECT RequestPage AS path, count() AS c
+FROM otel_logs
+WHERE RequestType = 'POST'
+GROUP BY path
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─path─────────────────────┬─────c─┐
+│ /m/updateVariation       │ 12182 │
+│ /site/productCard        │ 11080 │
+│ /site/productPrice       │ 10876 │
+│ /site/productAdditives   │ 10866 │
+│ /site/productModelImages │ 10866 │
+└──────────────────────────┴───────┘
+
+5 rows in set. Elapsed: 0.173 sec. Processed 10.37 million rows, 418.03 MB (60.07 million rows/s., 2.42 GB/s.)
+峰值内存占用: 3.16 MiB.
+```
+
+<Note>
+  默认情况下，物化列不会出现在 `SELECT *` 的返回结果中。这是为了保持这样一个不变性：`SELECT *` 的结果始终可以使用 INSERT 再次插入回该表。可通过设置 `asterisk_include_materialized_columns=1` 关闭此行为，也可以在 Grafana 中启用 (参见数据源配置中的 `Additional Settings -> Custom Settings`) 。
+</Note>
+
+<div id="materialized-views">
+  ## Materialized views
+</div>
+
+[Materialized views](/zh/concepts/features/materialized-views/index) 提供了对日志和链路追踪应用 SQL 过滤与转换的更强大方式。
+
+Materialized Views 允许你将计算成本从查询时转移到写入时。ClickHouse materialized view 本质上只是一个 trigger：当数据块插入表中时，它会对这些块执行查询。该查询的结果会被插入到第二个“目标”表中。
+
+<Image img="/images/use-cases/observability/observability-10.webp" alt="Materialized view" size="md" />
+
+<Info>
+  **实时更新**
+
+  ClickHouse 中的 materialized views 会在数据流入其所基于的表时实时更新，作用更像持续更新的索引。相比之下，在其他数据库中，materialized views 通常是某个查询的静态快照，必须刷新 (类似于 ClickHouse Refreshable Materialized Views) 。
+</Info>
+
+与 materialized view 关联的查询理论上可以是任何查询，包括 aggregation，尽管 [Joins 存在一些限制](https://clickhouse.com/blog/using-materialized-views-in-clickhouse#materialized-views-and-joins)。对于日志和链路追踪所需的转换和过滤类 workload，你可以认为任何 `SELECT` statement 都是可行的。
+
+你需要记住，这个查询只是一个 trigger，它会针对正在插入源表的行执行，并将结果发送到一个新表 (目标表) 。
+
+为了确保数据不会被持久化两次 (即在源表和目标表中各存一份) ，我们可以将源表改为 [Null table engine](/zh/reference/engines/table-engines/special/null)，同时保留原始 schema。我们的 OTel collectors 仍会继续向这张表发送数据。例如，对于日志，`otel_logs` 表会变成：
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1))
+) ENGINE = Null
+```
+
+The Null table engine 是一种非常有效的优化方式——可以将其理解为 `/dev/null`。这个表不会存储任何数据，但任何附加的 materialized view 仍会在插入的行被丢弃前基于这些行执行。
+
+请看下面的查询。它会把行转换为我们希望保留的格式：从 `LogAttributes` 中提取所有列 (这里假设这些列已由 collector 通过 `json_parser` operator 设置) ，并设置 `SeverityText` 和 `SeverityNumber` (依据一些简单条件以及[这些列](https://opentelemetry.io/docs/specs/otel/logs/data-model/#field-severitytext)的定义) 。在这个示例中，我们也只选择明确会被填充的列——忽略 `TraceId`、`SpanId` 和 `TraceFlags` 等列。
+
+```sql
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddr,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddr:     54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 row in set. Elapsed: 0.027 sec.
+```
+
+我们还提取了上述 `Body` 列——以防后续新增了未被 SQL 提取的额外属性。该列在 ClickHouse 中应具有良好的压缩效果，且极少被访问，因此不会影响查询性能。最后，我们通过类型转换将 Timestamp 缩减为 DateTime (以节省存储空间——参见 [&quot;Optimizing Types&quot;](#optimizing-types)) 。
+
+<Info>
+  **条件函数**
+
+  请注意，上文使用了[条件函数](/zh/reference/functions/regular-functions/conditional-functions)来提取 `SeverityText` 和 `SeverityNumber`。它们对于编写复杂条件以及检查 Map 中是否存在已设置的值非常有用——这里我们只是简单假设 `LogAttributes` 中的所有键都存在。我们建议用户熟悉这些函数——除了处理[空值](/zh/reference/functions/regular-functions/functions-for-nulls)的函数外，它们在日志解析中也非常好用！
+</Info>
+
+我们需要一张表来接收这些结果。下面的目标表与上述查询相匹配：
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+此处选择的类型基于[「优化类型」](#optimizing-types)中讨论的优化方案。
+
+<Note>
+  请注意，我们已经对 schema 做了大幅调整。实际上，你很可能还有一些也需要保留的 trace 列，以及 `ResourceAttributes` 列 (其中通常包含 Kubernetes 元数据) 。Grafana 可以利用 trace 列提供日志与链路追踪之间的关联功能——参见[&quot;使用 Grafana&quot;](/zh/guides/use-cases/observability/build-your-own/grafana)。
+</Note>
+
+下面，我们创建一个 materialized view `otel_logs_mv`，用于对 `otel_logs` 表执行上述查询，并将结果发送到 `otel_logs_v2`。
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+如下图所示：
+
+<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+
+如果现在重启在[&quot;导出到 ClickHouse&quot;](/zh/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse)中使用的 collector 配置，数据就会以所需格式出现在 `otel_logs_v2` 中。请注意，这里使用了带类型的 JSON 提取函数。
+
+```sql
+SELECT *
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+Body:           {"remote_addr":"54.36.149.41","remote_user":"-","run_time":"0","time_local":"2019-01-22 00:26:14.000","request_type":"GET","request_path":"\/filter\/27|13 ,27|  5 ,p53","request_protocol":"HTTP\/1.1","status":"200","size":"30577","referer":"-","user_agent":"Mozilla\/5.0 (compatible; AhrefsBot\/6.1; +http:\/\/ahrefs.com\/robot\/)"}
+Timestamp:      2019-01-22 00:26:14
+ServiceName:
+Status:         200
+RequestProtocol: HTTP/1.1
+RunTime:        0
+Size:           30577
+UserAgent:      Mozilla/5.0 (compatible; AhrefsBot/6.1; +http://ahrefs.com/robot/)
+Referer:        -
+RemoteUser:     -
+RequestType:    GET
+RequestPath:    /filter/27|13 ,27|  5 ,p53
+RemoteAddress:  54.36.149.41
+RefererDomain:
+RequestPage:    /filter/27|13 ,27|  5 ,p53
+SeverityText:   INFO
+SeverityNumber:  9
+
+1 行，共 1 行。耗时：0.010 秒。
+```
+
+下面展示了一个等效的 Materialized view，它通过 JSON 函数从 `Body` 列中提取各列：
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT  Body, 
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        JSONExtractUInt(Body, 'status') AS Status,
+        JSONExtractString(Body, 'request_protocol') AS RequestProtocol,
+        JSONExtractUInt(Body, 'run_time') AS RunTime,
+        JSONExtractUInt(Body, 'size') AS Size,
+        JSONExtractString(Body, 'user_agent') AS UserAgent,
+        JSONExtractString(Body, 'referer') AS Referer,
+        JSONExtractString(Body, 'remote_user') AS RemoteUser,
+        JSONExtractString(Body, 'request_type') AS RequestType,
+        JSONExtractString(Body, 'request_path') AS RequestPath,
+        JSONExtractString(Body, 'remote_addr') AS remote_addr,
+        domain(JSONExtractString(Body, 'referer')) AS RefererDomain,
+        path(JSONExtractString(Body, 'request_path')) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+<div id="beware-types">
+  ### 注意类型
+</div>
+
+上述 materialized view 依赖隐式类型转换，尤其是在使用 `LogAttributes` Map 的情况下。ClickHouse 通常会自动将提取出的值转换为目标表的类型，从而减少所需的语法。不过，我们建议用户始终通过以下方式测试视图：使用该视图的 `SELECT` 语句，并配合一个面向相同 schema 目标表的 [`INSERT INTO`](/zh/reference/statements/insert-into) 语句。这样应能确认类型是否得到了正确处理。尤其要注意以下情况：
+
+* 如果某个 key 在 Map 中不存在，将返回空字符串。对于数值类型，你需要将其映射为合适的值。这可以通过[条件函数](/zh/reference/functions/regular-functions/conditional-functions)实现，例如 `if(LogAttributes['status'] = ", 200, LogAttributes['status'])`；如果可以接受默认值，也可以使用[类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)，例如 `toUInt8OrDefault(LogAttributes['status'] )`
+* 某些类型并不总是会被自动转换，例如，数值的字符串表示形式不会被转换为枚举值。
+* 如果未找到值，JSON 提取函数会返回该类型的默认值。请务必确认这些值是合理的！
+
+<Info>
+  **避免使用 Nullable**
+
+  避免在 ClickHouse 中对可观测性数据使用 [Nullable](/zh/reference/data-types/nullable)。在日志和链路追踪中，通常很少需要区分空值和 NULL。此功能会带来额外的存储开销，并对查询性能产生负面影响。更多详细信息请参见[此处](/zh/guides/clickhouse/data-modelling/schema-design#optimizing-types)。
+</Info>
+
+<div id="choosing-a-primary-ordering-key">
+  ## 选择主键 (排序键)
+</div>
+
+提取出所需的列后，就可以开始优化排序键/主键了。
+
+可以套用一些简单的规则来帮助选择排序键。以下几点有时会彼此冲突，因此请按顺序权衡。通过这一过程，你可以确定多个候选键，通常 4 到 5 个就足够了：
+
+1. 选择符合常见过滤条件和访问模式的列。如果你通常通过按某个特定列 (例如 pod 名称) 过滤来开始可观测性调查，那么该列会经常出现在 `WHERE` 子句中。与使用频率较低的列相比，应优先将这类列纳入键中。
+2. 优先选择那些在过滤时能够排除总行数中很大一部分的列，从而减少需要读取的数据量。服务名称和状态码通常都是不错的候选项——不过对后者来说，仅当你过滤的值能排除大多数行时才成立。例如，在大多数系统中按 200 范围过滤会匹配大部分行，而 500 错误通常只对应较小的一个子集。
+3. 优先选择与表中其他列高度相关的列。这有助于确保这些值也连续存储，从而提升压缩效果。
+4. 对排序键中的列执行 `GROUP BY` 和 `ORDER BY` 操作时，内存利用率会更高。
+
+<br />
+
+确定了排序键的列子集后，还必须按特定顺序声明它们。这个顺序会显著影响查询中对排序键后续列的过滤效率，以及表数据文件的压缩率。一般来说，**最好按基数升序排列这些键**。但这需要结合这样一个事实来权衡：对排序键中越靠后的列进行过滤，效率会低于对 Tuple 中越靠前的列进行过滤。请结合你的访问模式，在这些因素之间做好平衡。最重要的是，要测试不同方案。若想进一步了解排序键及其优化方法，我们推荐阅读[这篇文章](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
+
+<Info>
+  **先确定结构**
+
+  我们建议在完成日志结构化之后再决定排序键。不要将 attribute Map 中的键或 JSON 提取表达式用作排序键。请确保排序键在表中是顶层列。
+</Info>
+
+<div id="using-maps">
+  ## 使用 Map
+</div>
+
+前面的示例展示了如何使用 `map['key']` 这种 map 语法来访问 `Map(String, String)` 列中的值。除了使用 map 表示法访问嵌套键之外，还可以使用专门的 ClickHouse [map functions](/zh/reference/functions/regular-functions/tuple-map-functions#mapKeys) 来过滤或选取这些列。
+
+例如，下面的查询先使用 [`mapKeys` function](/zh/reference/functions/regular-functions/tuple-map-functions#mapKeys)，再使用 [`groupArrayDistinctArray` function](/zh/reference/functions/aggregate-functions/combinators) (一种组合器) ，找出 `LogAttributes` 列中所有可用的唯一键。
+
+```sql
+SELECT groupArrayDistinctArray(mapKeys(LogAttributes))
+FROM otel_logs
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+groupArrayDistinctArray(mapKeys(LogAttributes)): ['remote_user','run_time','request_type','log.file.name','referer','request_path','status','user_agent','remote_addr','time_local','size','request_protocol']
+
+1 row in set. Elapsed: 1.139 sec. Processed 5.63 million rows, 2.53 GB (4.94 million rows/s., 2.22 GB/s.)
+Peak memory usage: 71.90 MiB.
+```
+
+<Info>
+  **避免使用点号**
+
+  不建议在 Map 列名中使用点号，此类用法后续可能会被弃用。请改用 `_`。
+</Info>
+
+<div id="using-aliases">
+  ## 使用别名
+</div>
+
+查询 Map 类型比查询普通列更慢——请参见[&quot;加速查询&quot;](#accelerating-queries)。此外，它的语法也更复杂，编写起来可能比较繁琐。为了解决后一个问题，我们建议使用 Alias 列。
+
+ALIAS 列是在查询时计算的，不会存储在表中。因此，无法向这种类型的列中 INSERT 值。借助别名，我们可以引用 Map 键并简化语法，将 Map 中的条目像普通列一样透明地暴露出来。请看下面的示例：
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `TraceFlags` UInt32 CODEC(ZSTD(1)),
+        `SeverityText` LowCardinality(String) CODEC(ZSTD(1)),
+        `SeverityNumber` Int32 CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `Body` String CODEC(ZSTD(1)),
+        `ResourceSchemaUrl` String CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeSchemaUrl` String CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `ScopeAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `LogAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `RequestPath` String MATERIALIZED path(LogAttributes['request_path']),
+        `RequestType` LowCardinality(String) MATERIALIZED LogAttributes['request_type'],
+        `RefererDomain` String MATERIALIZED domain(LogAttributes['referer']),
+        `RemoteAddr` IPv4 ALIAS LogAttributes['remote_addr']
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, Timestamp)
+```
+
+我们有几个物化列，以及一个用于访问 Map `LogAttributes` 的 `ALIAS` 列 `RemoteAddr`。现在，我们可以通过该列查询 `LogAttributes['remote_addr']` 的值，从而简化查询，即
+
+```sql
+SELECT RemoteAddr
+FROM default.otel_logs
+LIMIT 5
+```
+
+```response
+┌─RemoteAddr────┐
+│ 54.36.149.41  │
+│ 31.56.96.51   │
+│ 31.56.96.51   │
+│ 40.77.167.129 │
+│ 91.99.72.15   │
+└───────────────┘
+
+5 rows in set. Elapsed: 0.011 sec.
+```
+
+此外，使用 `ALTER TABLE` 命令添加 `ALIAS` 也很简单。这些列会立即可用，例如
+
+```sql
+ALTER TABLE default.otel_logs
+        (ADD COLUMN `Size` String ALIAS LogAttributes['size'])
+
+SELECT Size
+FROM default.otel_logs_v3
+LIMIT 5
+```
+
+```response
+┌─Size──┐
+│ 30577 │
+│ 5667  │
+│ 5379  │
+│ 1696  │
+│ 41483 │
+└───────┘
+
+5 rows in set. Elapsed: 0.014 sec.
+```
+
+<Info>
+  **默认排除别名列**
+
+  默认情况下，`SELECT *` 不会包含 `ALIAS` 列。可通过设置 `asterisk_include_alias_columns=1` 来禁用这一行为。
+</Info>
+
+<div id="optimizing-types">
+  ## 优化数据类型
+</div>
+
+[ClickHouse 关于优化数据类型的通用最佳实践](/zh/guides/clickhouse/data-modelling/schema-design#optimizing-types)同样适用于此类 ClickHouse 使用场景。
+
+<div id="using-codecs">
+  ## 使用编解码器
+</div>
+
+除了类型优化之外，在尝试优化 ClickHouse 可观测性 schema 的压缩时，你还可以遵循[编解码器的一般最佳实践](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec)。
+
+一般而言，`ZSTD` 编解码器非常适用于日志和 trace 数据集。将压缩级别从默认值 1 调高，可能会提升压缩效果。不过，这一点仍需经过测试，因为更高的取值会在写入时带来更大的 CPU 开销。通常情况下，我们观察到调高该值带来的收益很有限。
+
+此外，时间戳虽然能通过 delta 编码获得更好的压缩效果，但实践表明，如果该列被用作主键/排序键，可能会导致慢查询性能下降。我们建议用户评估压缩率与查询性能之间的权衡。
+
+<div id="using-dictionaries">
+  ## 使用字典
+</div>
+
+[字典](/zh/reference/statements/create/dictionary)是 ClickHouse 的一项[核心特性](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)，为来自各种内部和外部[数据源](/zh/reference/statements/create/dictionary/sources/overview#dictionary-sources)的数据提供内存中的[键值](https://en.wikipedia.org/wiki/Key%E2%80%93value_database)表示，并针对超低延迟查找查询进行了优化。
+
+<Image img="/images/use-cases/observability/observability-12.webp" alt="可观测性与字典" size="md" />
+
+这在多种场景下都很实用，例如在不拖慢摄取过程的情况下实时富集已摄取的数据，以及整体提升查询性能，其中对 JOIN 的加速尤为明显。
+虽然在可观测性场景中很少需要使用 JOIN，但字典在富集方面仍然很有用——无论是在写入时还是查询时。下面我们会分别给出这两种示例。
+
+<Info>
+  **加速 JOIN**
+
+  如果你希望使用字典来加速 JOIN，可以在[这里](/zh/concepts/features/dictionaries/index)了解更多详情。
+</Info>
+
+<div id="insert-time-vs-query-time">
+  ### 写入时 vs 查询时
+</div>
+
+字典可用于在查询时或写入时对数据集进行富集。这两种方式各有优缺点。总结如下：
+
+* **写入时** - 如果富集值基本不变，并且存在于可用于填充字典的外部数据源中，通常适合采用这种方式。在这种情况下，在写入时对行进行富集，可以避免查询时再到字典中查找。但代价是会影响写入性能，并带来额外的存储开销，因为富集后的值会作为列存储。
+* **查询时** - 如果字典中的值经常变化，则通常更适合在查询时查找。这样一来，如果映射值发生变化，就无需更新列 (以及重写数据) 。这种灵活性的代价是查询时的查找开销。如果很多行都需要查找，例如在过滤器子句中使用字典查找，这种查询时开销通常会比较明显。对于结果富集，也就是在 `SELECT` 中，这种开销通常并不明显。
+
+我们建议用户先熟悉一下字典的基础知识。字典提供了一个内存中的查找表，可通过专用的[函数](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetAll)从中获取值。
+
+如需查看简单的富集示例，请参阅[此处](/zh/concepts/features/dictionaries/index)的字典指南。下面我们将重点介绍常见的可观测性富集任务。
+
+<div id="using-ip-dictionaries">
+  ### 使用 IP 字典
+</div>
+
+使用 IP 地址为日志和链路追踪添加经纬度信息进行地理富化，是一种常见的可观测性需求。我们可以使用 `ip_trie` 结构化字典来实现这一点。
+
+我们使用由 [DB-IP.com](https://db-ip.com/) 提供的公开可用的 [DB-IP 城市级数据集](https://github.com/sapics/ip-location-db#db-ip-database-update-monthly)，其使用条款遵循 [CC BY 4.0 许可证](https://creativecommons.org/licenses/by/4.0/)。
+
+从 [readme](https://github.com/sapics/ip-location-db#csv-format) 中可以看到，该数据的结构如下：
+
+```csv
+| ip_range_start | ip_range_end | country_code | state1 | state2 | city | postcode | latitude | longitude | timezone |
+```
+
+基于这一结构，我们先使用 [url()](/zh/reference/functions/table-functions/url) 表函数快速查看一下数据：
+
+```sql
+SELECT *
+FROM url('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV', '\n           \tip_range_start IPv4, \n       \tip_range_end IPv4, \n         \tcountry_code Nullable(String), \n     \tstate1 Nullable(String), \n           \tstate2 Nullable(String), \n           \tcity Nullable(String), \n     \tpostcode Nullable(String), \n         \tlatitude Float64, \n          \tlongitude Float64, \n         \ttimezone Nullable(String)\n   \t')
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+ip_range_start: 1.0.0.0
+ip_range_end:   1.0.0.255
+country_code:   AU
+state1:         Queensland
+state2:         ᴺᵁᴸᴸ
+city:           South Brisbane
+postcode:       ᴺᵁᴸᴸ
+latitude:       -27.4767
+longitude:      153.017
+timezone:       ᴺᵁᴸᴸ
+```
+
+为了简化操作，我们使用 [`URL()`](/zh/reference/engines/table-engines/special/url) 表引擎，按我们的字段名创建一个 ClickHouse 表对象，并确认总行数：
+
+```sql
+CREATE TABLE geoip_url(
+        ip_range_start IPv4,
+        ip_range_end IPv4,
+        country_code Nullable(String),
+        state1 Nullable(String),
+        state2 Nullable(String),
+        city Nullable(String),
+        postcode Nullable(String),
+        latitude Float64,
+        longitude Float64,
+        timezone Nullable(String)
+) ENGINE=URL('https://raw.githubusercontent.com/sapics/ip-location-db/master/dbip-city/dbip-city-ipv4.csv.gz', 'CSV')
+
+select count() from geoip_url;
+```
+
+```response
+┌─count()─┐
+│ 3261621 │ -- 326万
+└─────────┘
+```
+
+由于 `ip_trie` 字典要求以 CIDR 表示法表示 IP 地址范围，因此我们需要转换 `ip_range_start` 和 `ip_range_end`。
+
+可以通过以下查询简洁地计算出每个范围对应的 CIDR：
+
+```sql
+WITH
+        bitXor(ip_range_start, ip_range_end) AS xor,
+        if(xor != 0, ceil(log2(xor)), 0) AS unmatched,
+        32 - unmatched AS cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) AS cidr_address
+SELECT
+        ip_range_start,
+        ip_range_end,
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) AS cidr    
+FROM
+        geoip_url
+LIMIT 4;
+```
+
+```response
+┌─ip_range_start─┬─ip_range_end─┬─cidr───────┐
+│ 1.0.0.0        │ 1.0.0.255    │ 1.0.0.0/24 │
+│ 1.0.1.0        │ 1.0.3.255    │ 1.0.0.0/22 │
+│ 1.0.4.0        │ 1.0.7.255    │ 1.0.4.0/22 │
+│ 1.0.8.0        │ 1.0.15.255   │ 1.0.8.0/21 │
+└────────────────┴──────────────┴────────────┘
+
+4 行。耗时：0.259 秒。
+```
+
+<Note>
+  上面的查询内容很多。感兴趣的话，可以阅读这篇很棒的[解释](https://clickhouse.com/blog/geolocating-ips-in-clickhouse-and-grafana#using-bit-functions-to-convert-ip-ranges-to-cidr-notation)。否则，只需知道上面的计算结果是为一个 IP 范围得出 CIDR。
+</Note>
+
+对我们来说，只需要 IP 范围、国家代码和坐标，因此创建一个新表并插入 Geo IP 数据即可：
+
+```sql
+CREATE TABLE geoip
+(
+        `cidr` String,
+        `latitude` Float64,
+        `longitude` Float64,
+        `country_code` String
+)
+ENGINE = MergeTree
+ORDER BY cidr
+
+INSERT INTO geoip
+WITH
+        bitXor(ip_range_start, ip_range_end) as xor,
+        if(xor != 0, ceil(log2(xor)), 0) as unmatched,
+        32 - unmatched as cidr_suffix,
+        toIPv4(bitAnd(bitNot(pow(2, unmatched) - 1), ip_range_start)::UInt64) as cidr_address
+SELECT
+        concat(toString(cidr_address),'/',toString(cidr_suffix)) as cidr,
+        latitude,
+        longitude,
+        country_code    
+FROM geoip_url
+```
+
+为了在 ClickHouse 中进行低延迟的 IP 查找，我们会使用字典在内存中存储 Geo IP 数据的键 -&gt; 属性映射。ClickHouse 提供了 `ip_trie` [字典结构](/zh/reference/statements/create/dictionary/layouts/ip-trie)，可将网络前缀 (CIDR 块) 映射到坐标和国家/地区代码。下面的查询使用这种布局，并以上述表作为源来定义一个字典。
+
+```sql
+CREATE DICTIONARY ip_trie (
+   cidr String,
+   latitude Float64,
+   longitude Float64,
+   country_code String
+)
+primary key cidr
+source(clickhouse(table 'geoip'))
+layout(ip_trie)
+lifetime(3600);
+```
+
+我们可以从字典中查询行，并确认这些数据可用于查找：
+
+```sql
+SELECT * FROM ip_trie LIMIT 3
+```
+
+```response
+┌─cidr───────┬─latitude─┬─longitude─┬─country_code─┐
+│ 1.0.0.0/22 │  26.0998 │   119.297 │ CN           │
+│ 1.0.0.0/24 │ -27.4767 │   153.017 │ AU           │
+│ 1.0.4.0/22 │ -38.0267 │   145.301 │ AU           │
+└────────────┴──────────┴───────────┴──────────────┘
+
+3 rows in set. Elapsed: 4.662 sec.
+```
+
+<Info>
+  **定期刷新**
+
+  ClickHouse 中的字典会根据底层表数据以及上文使用的 lifetime 子句定期刷新。要让我们的 Geo IP 字典反映 DB-IP 数据集中的最新变更，只需将 `geoip_url` 远程表中的数据重新插入 `geoip` 表，并应用相应的转换即可。
+</Info>
+
+现在，我们已经将 Geo IP 数据加载到 `ip_trie` 字典中 (它的名字也恰好是 `ip_trie`) ，就可以用它来进行 IP 地理位置定位了。这可以通过如下方式使用 [`dictGet()` 函数](/zh/reference/functions/regular-functions/ext-dict-functions) 来实现：
+
+```sql
+SELECT dictGet('ip_trie', ('country_code', 'latitude', 'longitude'), CAST('85.242.48.167', 'IPv4')) AS ip_details
+```
+
+```response
+┌─ip_details──────────────┐
+│ ('PT',38.7944,-9.34284) │
+└─────────────────────────┘
+
+1 行，集合中。Elapsed: 0.003 sec.
+```
+
+请注意这里的检索速度。这让我们能够对日志进行富集。在这种情况下，我们选择**在查询时进行富集**。
+
+回到最初的日志数据集，我们可以利用上述方法按国家/地区聚合日志。以下内容假定我们使用的是前面 materialized view 生成的 schema，其中已提取出 `RemoteAddress` 列。
+
+```sql
+SELECT dictGet('ip_trie', 'country_code', tuple(RemoteAddress)) AS country,
+        formatReadableQuantity(count()) AS num_requests
+FROM default.otel_logs_v2
+WHERE country != ''
+GROUP BY country
+ORDER BY count() DESC
+LIMIT 5
+```
+
+```response
+┌─country─┬─num_requests────┐
+│ IR      │ 7.36 million    │
+│ US      │ 1.67 million    │
+│ AE      │ 526.74 thousand │
+│ DE      │ 159.35 thousand │
+│ FR      │ 109.82 thousand │
+└─────────┴─────────────────┘
+
+5 rows in set. Elapsed: 0.140 sec. Processed 20.73 million rows, 82.92 MB (147.79 million rows/s., 591.16 MB/s.)
+Peak memory usage: 1.16 MiB.
+```
+
+由于 IP 到地理位置的映射可能发生变化，用户通常更希望知道请求发出当时来自何处，而不是同一地址当前对应的地理位置。因此，这里通常更适合在索引时进行富集。这可以像下面所示那样通过物化列来实现，也可以在 materialized view 的 SELECT 中实现：
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        `Country` String MATERIALIZED dictGet('ip_trie', 'country_code', tuple(RemoteAddress)),
+        `Latitude` Float32 MATERIALIZED dictGet('ip_trie', 'latitude', tuple(RemoteAddress)),
+        `Longitude` Float32 MATERIALIZED dictGet('ip_trie', 'longitude', tuple(RemoteAddress))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Info>
+  **定期更新**
+
+  用户通常会希望随着新数据的到来，定期更新 IP 富集字典。这可以通过使用字典的 `LIFETIME` 子句来实现，从而使字典定期从底层表重新加载。要更新底层表，请参阅[&quot;可刷新 materialized view&quot;](/zh/concepts/features/materialized-views/refreshable-materialized-view)。
+</Info>
+
+上述国家和坐标不仅可用于按国家分组和过滤，还支持更多可视化方式。可参考[&quot;可视化地理数据&quot;](/zh/guides/use-cases/observability/build-your-own/grafana#visualizing-geo-data)。
+
+<div id="using-regex-dictionaries-user-agent-parsing">
+  ### 使用正则表达式字典 (User-Agent 解析)
+</div>
+
+解析 [user agent strings](https://en.wikipedia.org/wiki/User_agent) 是一个经典的正则表达式问题，也是基于日志和 trace 的数据集中常见的需求。ClickHouse 通过正则表达式树字典 (Regular Expression Tree Dictionaries) 提供了高效的 User-Agent 解析能力。
+
+在 ClickHouse 开源版中，正则表达式树字典通过 YAMLRegExpTree 字典源类型定义，该类型提供指向包含正则表达式树的 YAML 文件的路径。如果你想提供自己的正则表达式字典，可在[此处](/zh/reference/statements/create/dictionary/layouts/regexp-tree#use-regular-expression-tree-dictionary-in-clickhouse-open-source)查看所需结构的详细说明。下面我们将重点介绍如何使用 [uap-core](https://github.com/ua-parser/uap-core) 进行 User-Agent 解析，并为受支持的 CSV 格式加载字典。这种方法兼容 OSS 和 ClickHouse Cloud。
+
+<Note>
+  在下面的示例中，我们使用的是截至 2024 年 6 月最新版 uap-core 中用于 User-Agent 解析的正则表达式快照。最新文件会不定期更新，可在[此处](https://raw.githubusercontent.com/ua-parser/uap-core/master/regexes.yaml)找到。你可以按照[此处](/zh/reference/statements/create/dictionary/layouts/regexp-tree#collecting-attribute-values)的步骤，将其加载到下面使用的 CSV 文件中。
+</Note>
+
+创建以下 Memory 表。这些表保存了解析设备、浏览器和操作系统所需的正则表达式。
+
+```sql
+CREATE TABLE regexp_os
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_browser
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+
+CREATE TABLE regexp_device
+(
+        id UInt64,
+        parent_id UInt64,
+        regexp String,
+        keys   Array(String),
+        values Array(String)
+) ENGINE=Memory;
+```
+
+这些表可以通过 `url` 表函数，使用以下公开托管的 CSV 文件填充：
+
+```sql
+INSERT INTO regexp_os SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_os.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_device SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_device.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+
+INSERT INTO regexp_browser SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/user_agent_regex/regexp_browser.csv', 'CSV', 'id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+```
+
+在内存表填充好数据后，我们就可以加载正则表达式字典了。请注意，我们需要将键值指定为列，这些列就是我们可以从 User-Agent 中提取的属性。
+
+```sql
+CREATE DICTIONARY regexp_os_dict
+(
+        regexp String,
+        os_replacement String default 'Other',
+        os_v1_replacement String default '0',
+        os_v2_replacement String default '0',
+        os_v3_replacement String default '0',
+        os_v4_replacement String default '0'
+)
+PRIMARY KEY regexp
+SOURCE(CLICKHOUSE(TABLE 'regexp_os'))
+LIFETIME(MIN 0 MAX 0)
+LAYOUT(REGEXP_TREE);
+
+CREATE DICTIONARY regexp_device_dict
+(
+        regexp String,
+        device_replacement String default 'Other',
+        brand_replacement String,
+        model_replacement String
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_device'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+
+CREATE DICTIONARY regexp_browser_dict
+(
+        regexp String,
+        family_replacement String default 'Other',
+        v1_replacement String default '0',
+        v2_replacement String default '0'
+)
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_browser'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+```
+
+加载这些字典后，我们可以提供一个 user-agent 示例，并测试新的字典提取功能：
+
+```sql
+WITH 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:127.0) Gecko/20100101 Firefox/127.0' AS user_agent
+SELECT
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), user_agent) AS device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), user_agent) AS browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), user_agent) AS os
+```
+
+```response
+┌─device────────────────┬─browser───────────────┬─os─────────────────────────┐
+│ ('Mac','Apple','Mac') │ ('Firefox','127','0') │ ('Mac OS X','10','15','0') │
+└───────────────────────┴───────────────────────┴────────────────────────────┘
+
+1 row in set. Elapsed: 0.003 sec.
+```
+
+鉴于 User-Agent 相关规则几乎不会变化，而字典通常只需在出现新的浏览器、操作系统和设备时更新，因此在写入时执行这项提取是合理的。
+
+我们既可以使用 materialized column 来完成这项工作，也可以使用 materialized view。下面我们将修改前面使用的 materialized view：
+
+```sql
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2
+AS SELECT
+        Body,
+        CAST(Timestamp, 'DateTime') AS Timestamp,
+        ServiceName,
+        LogAttributes['status'] AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(CAST(Status, 'UInt64') > 500, 'CRITICAL', CAST(Status, 'UInt64') > 400, 'ERROR', CAST(Status, 'UInt64') > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(CAST(Status, 'UInt64') > 500, 20, CAST(Status, 'UInt64') > 400, 17, CAST(Status, 'UInt64') > 300, 13, 9) AS SeverityNumber,
+        dictGet('regexp_device_dict', ('device_replacement', 'brand_replacement', 'model_replacement'), UserAgent) AS Device,
+        dictGet('regexp_browser_dict', ('family_replacement', 'v1_replacement', 'v2_replacement'), UserAgent) AS Browser,
+        dictGet('regexp_os_dict', ('os_replacement', 'os_v1_replacement', 'os_v2_replacement', 'os_v3_replacement'), UserAgent) AS Os
+FROM otel_logs
+```
+
+这需要我们修改目标表 `otel_logs_v2` 的 schema：
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+ `Body` String,
+ `Timestamp` DateTime,
+ `ServiceName` LowCardinality(String),
+ `Status` UInt8,
+ `RequestProtocol` LowCardinality(String),
+ `RunTime` UInt32,
+ `Size` UInt32,
+ `UserAgent` String,
+ `Referer` String,
+ `RemoteUser` String,
+ `RequestType` LowCardinality(String),
+ `RequestPath` String,
+ `remote_addr` IPv4,
+ `RefererDomain` String,
+ `RequestPage` String,
+ `SeverityText` LowCardinality(String),
+ `SeverityNumber` UInt8,
+ `Device` Tuple(device_replacement LowCardinality(String), brand_replacement LowCardinality(String), model_replacement LowCardinality(String)),
+ `Browser` Tuple(family_replacement LowCardinality(String), v1_replacement LowCardinality(String), v2_replacement LowCardinality(String)),
+ `Os` Tuple(os_replacement LowCardinality(String), os_v1_replacement LowCardinality(String), os_v2_replacement LowCardinality(String), os_v3_replacement LowCardinality(String))
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp, Status)
+```
+
+按照前文所述步骤重启采集器并摄取结构化日志后，我们就可以查询新提取出的 Device、Browser 和 Os 列了。
+
+```sql
+SELECT Device, Browser, Os
+FROM otel_logs_v2
+LIMIT 1
+FORMAT Vertical
+```
+
+```response
+行 1:
+──────
+Device:  ('Spider','Spider','Desktop')
+Browser: ('AhrefsBot','6','1')
+Os:     ('Other','0','0','0')
+```
+
+<Info>
+  **用于复杂结构的 Tuple**
+
+  请注意，这些 User-Agent 列使用了 Tuple。对于层级结构事先已知的复杂数据，建议使用 Tuple。子列在允许异构类型的同时，还能提供与普通列相同的性能 (这点不同于 Map 键) 。
+</Info>
+
+<div id="further-reading">
+  ### 延伸阅读
+</div>
+
+如需查看更多有关字典的示例和详细说明，推荐阅读以下文章：
+
+* [高级字典主题](/zh/concepts/features/dictionaries/index#advanced-dictionary-topics)
+* [“使用字典加速查询”](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)
+* [字典](/zh/reference/statements/create/dictionary)
+
+<div id="accelerating-queries">
+  ## 加速查询
+</div>
+
+ClickHouse 支持多种提升查询性能的技术。只有在选定合适的主键/排序键，以针对最常见的访问模式进行优化并尽可能提高压缩率之后，才应考虑以下技术。通常，这样往往能以最小的投入带来最大的性能提升。
+
+<div id="using-materialized-views-incremental-for-aggregations">
+  ### 使用 Materialized views (增量) 进行聚合
+</div>
+
+在前面的章节中，我们已经介绍了如何将 Materialized views 用于数据转换和过滤。不过，Materialized views 还可以在写入时预先计算聚合结果并将其存储下来。后续写入的数据还能继续更新这些结果，从而实现于写入时预计算聚合。
+
+其核心思想在于，这类结果通常是原始数据的更小表示形式 (对于聚合来说，则是部分草图) 。再配合一个更简单的查询来从目标表中读取结果，查询速度就会比直接对原始数据执行相同计算更快。
+
+请看下面这个查询，我们使用结构化日志来计算每小时的总流量：
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour,
+        sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.666 sec. Processed 10.37 million rows, 4.73 GB (15.56 million rows/s., 7.10 GB/s.)
+峰值内存占用：1.40 MiB.
+```
+
+我们可以设想，这可能是用户在 Grafana 中绘制的一种常见折线图。这个查询确实非常快——数据集只有 1000 万行，而且 ClickHouse 本来就很快！不过，如果规模扩大到数十亿甚至数万亿行，我们理想情况下仍希望保持这样的查询性能。
+
+<Note>
+  如果使用 `otel_logs_v2` 表，这个查询还可以快 10 倍。该表来自我们前面创建的 materialized view，它会从 `LogAttributes` map 中提取 size 键。这里使用原始数据仅仅是为了演示；如果这是一个常见查询，我们建议使用前面的视图。
+</Note>
+
+如果我们希望通过 Materialized view 在写入时完成这项计算，就需要一张表来接收结果。这张表应该每小时只保留 1 行。如果某个已有小时收到了更新，其他列应合并到该小时现有的行中。要实现这种增量状态的合并，其他列必须存储部分状态。
+
+这需要使用 ClickHouse 中一种特殊的引擎类型：SummingMergeTree。它会将具有相同排序键的所有行合并为一行，其中包含数值列的汇总值。下面这张表会合并所有日期相同的行，并对其中的数值列求和。
+
+```sql
+CREATE TABLE bytes_per_hour
+(
+  `Hour` DateTime,
+  `TotalBytes` UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY Hour
+```
+
+为了演示我们的 materialized view，假设 `bytes_per_hour` 表为空，尚未接收任何数据。我们的 materialized view 会对插入到 `otel_logs` 的数据执行上述 `SELECT` (这会按配置大小的块进行) ，并将结果发送到 `bytes_per_hour`。其语法如下所示：
+
+```sql
+CREATE MATERIALIZED VIEW bytes_per_hour_mv TO bytes_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+       sum(toUInt64OrDefault(LogAttributes['size'])) AS TotalBytes
+FROM otel_logs
+GROUP BY Hour
+```
+
+这里的 `TO` 子句至关重要，用于指定结果将发送到哪里，即 `bytes_per_hour`。
+
+如果我们重启 OTel collector 并重新发送日志，`bytes_per_hour` 表就会根据上述查询结果逐步增量填充。完成后，我们可以确认 `bytes_per_hour` 的大小——每小时应有 1 行：
+
+```sql
+SELECT count()
+FROM bytes_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│     113 │
+└─────────┘
+
+1 行数据。Elapsed: 0.039 sec.
+```
+
+通过存储查询结果，我们已将这里的行数从 1000 万 (`otel_logs` 中) 有效减少到 113。关键在于，如果有新的日志插入 `otel_logs` 表，新的值就会被发送到 `bytes_per_hour` 中对应的小时，并在后台自动异步合并——由于每小时只保留一行，`bytes_per_hour` 因此会始终保持体量小且数据最新。
+
+由于行合并是异步进行的，因此用户发起查询时，每小时可能仍然有多于一行。要确保所有尚未合并的行都在查询时完成合并，我们有两种选择：
+
+* 在表名上使用 [`FINAL` modifier](/zh/reference/statements/select/from#final-modifier) (我们在上面的计数查询中就是这样做的) 。
+* 按最终表中使用的 排序键 (即 Timestamp) 进行聚合，并对指标求和。
+
+通常，第二种方式效率更高，也更灵活 (该表还可用于其他用途) ，但对某些查询来说，第一种方式更简单。下面我们会展示这两种方式：
+
+```sql
+SELECT
+        Hour,
+        sum(TotalBytes) AS TotalBytes
+FROM bytes_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.008 sec.
+```
+
+```sql
+SELECT
+        Hour,
+        TotalBytes
+FROM bytes_per_hour
+FINAL
+ORDER BY Hour DESC
+LIMIT 5
+```
+
+```response
+┌────────────────Hour─┬─TotalBytes─┐
+│ 2019-01-26 16:00:00 │ 1661716343 │
+│ 2019-01-26 15:00:00 │ 1824015281 │
+│ 2019-01-26 14:00:00 │ 1506284139 │
+│ 2019-01-26 13:00:00 │ 1580955392 │
+│ 2019-01-26 12:00:00 │ 1736840933 │
+└─────────────────────┴────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+这使我们的查询时间从 0.6 秒缩短到 0.008 秒——快了 75 倍以上！
+
+<Note>
+  在更大的数据集上执行更复杂的查询时，性能提升幅度可能会更大。示例请参见[此处](https://github.com/ClickHouse/clickpy)。
+</Note>
+
+<div id="a-more-complex-example">
+  #### 一个更复杂的示例
+</div>
+
+上述示例使用 [SummingMergeTree](/zh/reference/engines/table-engines/mergetree-family/summingmergetree) 按小时对简单计数进行聚合。若要统计的不只是简单求和，则需要使用不同的目标表引擎：[AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree)。
+
+假设我们希望计算每天的唯一 IP 地址数 (或唯一用户数) 。对应的查询如下：
+
+```sql
+SELECT toStartOfHour(Timestamp) AS Hour, uniq(LogAttributes['remote_addr']) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │     4763    │
+│ 2019-01-22 00:00:00 │     536     │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.667 sec. Processed 10.37 million rows, 4.73 GB (15.53 million rows/s., 7.09 GB/s.)
+```
+
+为了持久化支持增量更新的基数统计，需要使用 AggregatingMergeTree。
+
+```sql
+CREATE TABLE unique_visitors_per_hour
+(
+  `Hour` DateTime,
+  `UniqueUsers` AggregateFunction(uniq, IPv4)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Hour
+```
+
+为确保 ClickHouse 知道这里存储的是聚合状态，我们将 `UniqueUsers` 列定义为 [`AggregateFunction`](/zh/reference/data-types/aggregatefunction) 类型，并指定部分状态对应的函数来源 (uniq) 以及源列的类型 (IPv4) 。与 SummingMergeTree 类似，具有相同 `ORDER BY` 键值的行会被合并 (如上例中的 Hour) 。
+
+对应的 materialized view 使用前面的查询：
+
+```sql
+CREATE MATERIALIZED VIEW unique_visitors_per_hour_mv TO unique_visitors_per_hour AS
+SELECT toStartOfHour(Timestamp) AS Hour,
+        uniqState(LogAttributes['remote_addr']::IPv4) AS UniqueUsers
+FROM otel_logs
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+请注意，我们在聚合函数末尾加上了 `State` 后缀。这样返回的就是函数的聚合状态，而不是最终结果。其中会包含额外信息，以便这个部分状态能与其他状态合并。
+
+通过重启采集器重新加载数据后，我们可以确认 `unique_visitors_per_hour` 表中有 113 行数据。
+
+```sql
+SELECT count()
+FROM unique_visitors_per_hour
+FINAL
+```
+
+```response
+┌─count()─┐
+│   113   │
+└─────────┘
+
+1 row in set. Elapsed: 0.009 sec.
+```
+
+我们最终的查询需要在函数中使用 Merge 后缀 (因为这些列存储的是部分聚合状态) ：
+
+```sql
+SELECT Hour, uniqMerge(UniqueUsers) AS UniqueUsers
+FROM unique_visitors_per_hour
+GROUP BY Hour
+ORDER BY Hour DESC
+```
+
+```response
+┌────────────────Hour─┬─UniqueUsers─┐
+│ 2019-01-26 16:00:00 │      4763   │
+│ 2019-01-22 00:00:00 │      536    │
+└─────────────────────┴─────────────┘
+
+113 rows in set. Elapsed: 0.027 sec.
+```
+
+请注意，这里使用的是 `GROUP BY`，而不是 `FINAL`。
+
+<div id="using-materialized-views-incremental--for-fast-lookups">
+  ### 使用 materialized view (增量式) 实现快速查找
+</div>
+
+选择 ClickHouse 排序键时，应结合查询访问模式，优先考虑经常出现在过滤和聚合子句中的列。在可观测性场景中，这种做法可能会受到限制，因为用户的访问模式更加多样，难以用单一的一组列来概括。默认 OTel schema 中内置的一个示例很好地说明了这一点。下面以链路追踪的默认 schema 为例：
+
+```sql
+CREATE TABLE otel_traces
+(
+        `Timestamp` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `TraceId` String CODEC(ZSTD(1)),
+        `SpanId` String CODEC(ZSTD(1)),
+        `ParentSpanId` String CODEC(ZSTD(1)),
+        `TraceState` String CODEC(ZSTD(1)),
+        `SpanName` LowCardinality(String) CODEC(ZSTD(1)),
+        `SpanKind` LowCardinality(String) CODEC(ZSTD(1)),
+        `ServiceName` LowCardinality(String) CODEC(ZSTD(1)),
+        `ResourceAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `ScopeName` String CODEC(ZSTD(1)),
+        `ScopeVersion` String CODEC(ZSTD(1)),
+        `SpanAttributes` Map(LowCardinality(String), String) CODEC(ZSTD(1)),
+        `Duration` Int64 CODEC(ZSTD(1)),
+        `StatusCode` LowCardinality(String) CODEC(ZSTD(1)),
+        `StatusMessage` String CODEC(ZSTD(1)),
+        `Events.Timestamp` Array(DateTime64(9)) CODEC(ZSTD(1)),
+        `Events.Name` Array(LowCardinality(String)) CODEC(ZSTD(1)),
+        `Events.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        `Links.TraceId` Array(String) CODEC(ZSTD(1)),
+        `Links.SpanId` Array(String) CODEC(ZSTD(1)),
+        `Links.TraceState` Array(String) CODEC(ZSTD(1)),
+        `Links.Attributes` Array(Map(LowCardinality(String), String)) CODEC(ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.001) GRANULARITY 1,
+        INDEX idx_res_attr_key mapKeys(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_res_attr_value mapValues(ResourceAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_key mapKeys(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_span_attr_value mapValues(SpanAttributes) TYPE bloom_filter(0.01) GRANULARITY 1,
+        INDEX idx_duration Duration TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+```
+
+此 schema 已针对按 `ServiceName`、`SpanName` 和 `Timestamp` 进行过滤做了优化。在 tracing 场景中，用户还需要能够按特定的 `TraceId` 执行查找，并获取该 trace 关联的 spans。虽然它也包含在排序键中，但由于其位于末尾，[过滤效率不会那么高](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#ordering-key-columns-efficiently)，因此在获取单个 trace 时，很可能仍需扫描大量数据。
+
+OTel collector 还会安装一个 materialized view 及其关联表来应对这一问题。该表和视图如下所示：
+
+```sql
+CREATE TABLE otel_traces_trace_id_ts
+(
+        `TraceId` String CODEC(ZSTD(1)),
+        `Start` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        `End` DateTime64(9) CODEC(Delta(8), ZSTD(1)),
+        INDEX idx_trace_id TraceId TYPE bloom_filter(0.01) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (TraceId, toUnixTimestamp(Start))
+
+CREATE MATERIALIZED VIEW otel_traces_trace_id_ts_mv TO otel_traces_trace_id_ts
+(
+        `TraceId` String,
+        `Start` DateTime64(9),
+        `End` DateTime64(9)
+)
+AS SELECT
+        TraceId,
+        min(Timestamp) AS Start,
+        max(Timestamp) AS End
+FROM otel_traces
+WHERE TraceId != ''
+GROUP BY TraceId
+```
+
+该视图实际上确保 `otel_traces_trace_id_ts` 表中包含该 trace 的最小和最大时间戳。该表按 `TraceId` 排序，因此可以高效地检索这些时间戳。反过来，这些时间戳范围又可用于查询主 `otel_traces` 表。更具体地说，在根据 id 检索 trace 时，Grafana 会使用以下查询：
+
+```sql
+WITH 'ae9226c78d1d360601e6383928e4d22d' AS trace_id,
+        (
+        SELECT min(Start)
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_start,
+        (
+        SELECT max(End) + 1
+          FROM default.otel_traces_trace_id_ts
+          WHERE TraceId = trace_id
+        ) AS trace_end
+SELECT
+        TraceId AS traceID,
+        SpanId AS spanID,
+        ParentSpanId AS parentSpanID,
+        ServiceName AS serviceName,
+        SpanName AS operationName,
+        Timestamp AS startTime,
+        Duration * 0.000001 AS duration,
+        arrayMap(key -> map('key', key, 'value', SpanAttributes[key]), mapKeys(SpanAttributes)) AS tags,
+        arrayMap(key -> map('key', key, 'value', ResourceAttributes[key]), mapKeys(ResourceAttributes)) AS serviceTags
+FROM otel_traces
+WHERE (traceID = trace_id) AND (startTime >= trace_start) AND (startTime <= trace_end)
+LIMIT 1000
+```
+
+这里的 CTE 会先找出 trace ID `ae9226c78d1d360601e6383928e4d22d` 的最小和最大时间戳，再据此过滤主 `otel_traces` 表中与之关联的 spans。
+
+同样的方法也适用于类似的访问模式。我们在数据建模的[这里](/zh/concepts/features/materialized-views/incremental-materialized-view#lookup-table)探讨了一个类似的示例。
+
+<div id="using-projections">
+  ### 使用 PROJECTION
+</div>
+
+ClickHouse 投影允许你为一张表指定多个 `ORDER BY` 子句。
+
+在前面的章节中，我们探讨了如何在 ClickHouse 中使用 materialized view 预计算聚合、转换行，并针对不同访问模式优化可观测性查询。
+
+我们给出了一个示例：materialized view 会将行写入目标表，而该目标表使用的排序键与接收 insert 的原始表不同，从而优化按 trace id 进行的查找。
+
+PROJECTION 也可以用来解决同样的问题，让用户能够针对不属于主键的列优化查询。
+
+理论上，这种能力可以让一张表拥有多个排序键，但有一个明显的缺点：数据重复。具体来说，除了需要按主键的主要排序顺序写入数据外，还必须额外按照每个 PROJECTION 指定的顺序再写入一次。这会降低 insert 速度，并占用更多磁盘空间。
+
+<Info>
+  **PROJECTION 与 Materialized Views**
+
+  PROJECTION 具备许多与 materialized view 相同的能力，但应谨慎使用，通常更推荐后者。你需要了解它们的缺点以及适用场景。比如，虽然 PROJECTION 可用于预计算聚合，但我们更建议用户为此使用 Materialized views。
+</Info>
+
+<Image img="/images/use-cases/observability/observability-13.webp" alt="可观测性与投影" size="md" />
+
+考虑下面这个查询，它会按 500 错误码过滤 `otel_logs_v2` 表中的数据。这很可能是日志场景中的一种常见访问模式，因为用户往往希望按错误码进行过滤：
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 0.177 sec. Processed 10.37 million rows, 685.32 MB (58.66 million rows/s., 3.88 GB/s.)
+Peak memory usage: 56.54 MiB.
+```
+
+<Info>
+  **使用 Null 衡量性能**
+
+  这里我们使用 `FORMAT Null`，不输出结果。这会强制读取所有结果但不返回，从而避免查询因 LIMIT 而提前终止。这样做只是为了展示扫描全部 1000 万行所花费的时间。
+</Info>
+
+在所选排序键 `(ServiceName, Timestamp)`` 下，上述查询需要进行线性扫描。虽然我们可以将 `Status&#96; 添加到排序键末尾，以提升上述查询的性能，但也可以添加 PROJECTION。
+
+```sql
+ALTER TABLE otel_logs_v2 (
+  ADD PROJECTION status
+  (
+     SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent ORDER BY Status
+  )
+)
+
+ALTER TABLE otel_logs_v2 MATERIALIZE PROJECTION status
+```
+
+请注意，我们必须先创建 PROJECTION，然后再将其物化。后一条命令会使数据以两种不同的顺序在磁盘上各存储一份。PROJECTION 也可以在创建数据时一并定义，如下所示，并且会在数据插入时自动维护。
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+        PROJECTION status
+        (
+           SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+           ORDER BY Status
+        )
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+需要注意的是，如果 PROJECTION 是通过 `ALTER` 创建的，那么在发出 `MATERIALIZE PROJECTION` 命令后，其创建过程是异步进行的。你可以使用以下查询确认此操作的进度，并等待 `is_done=1`。
+
+```sql
+SELECT parts_to_do, is_done, latest_fail_reason
+FROM system.mutations
+WHERE (`table` = 'otel_logs_v2') AND (command LIKE '%MATERIALIZE%')
+```
+
+```response
+┌─parts_to_do─┬─is_done─┬─latest_fail_reason─┐
+│           0 │     1   │                    │
+└─────────────┴─────────┴────────────────────┘
+
+1 行数据。Elapsed: 0.008 sec.
+```
+
+如果再次执行上述查询，可以看到性能已显著提升，但代价是会占用更多存储空间 (关于如何衡量这一点，请参见[&quot;测量表大小和压缩&quot;](#measuring-table-size--compression)) 。
+
+```sql
+SELECT Timestamp, RequestPath, Status, RemoteAddress, UserAgent
+FROM otel_logs_v2
+WHERE Status = 500
+FORMAT `Null`
+```
+
+```response
+0 rows in set. Elapsed: 0.031 sec. Processed 51.42 thousand rows, 22.85 MB (1.65 million rows/s., 734.63 MB/s.)
+Peak memory usage: 27.85 MiB.
+```
+
+在上面的示例中，我们在 PROJECTION 中指定了前一个查询所使用的列。这意味着磁盘上作为 PROJECTION 一部分存储的只会是这些指定列，并且会按 Status 排序。或者，如果这里使用的是 `SELECT *`，则会存储所有列。虽然这样可以让更多查询 (使用任意列子集) 从 PROJECTION 中受益，但也会带来额外的存储开销。有关如何测量磁盘空间和压缩率，请参阅[“测量表大小和压缩”](#measuring-table-size--compression)。
+
+<div id="secondarydata-skipping-indices">
+  ### 二级索引/数据跳过索引
+</div>
+
+无论在 ClickHouse 中如何精心调整主键，某些查询终究还是不可避免地需要全表扫描。虽然可以通过 materialized views (以及针对某些查询的 projections) 在一定程度上缓解这一问题，但这些方法都需要额外维护，而且用户还必须知道它们可用，才能确保真正利用起来。传统关系型数据库通常通过二级索引解决这个问题，但这类索引在 ClickHouse 这样的列式数据库中并不有效。为此，ClickHouse 使用“跳过”索引，使数据库能够跳过不包含匹配值的大块数据，从而显著提升查询性能。
+
+默认的 OTel schema 使用二级索引来尝试加速对 map 的访问。虽然根据我们的经验，它们通常效果不佳，因此也不建议你在自定义 schema 中照搬，但数据跳过索引在某些情况下仍然有用。
+
+在尝试使用它们之前，你应先阅读并理解[二级索引指南](/zh/concepts/features/performance/skip-indexes/skipping-indexes)。
+
+**一般来说，只有当主键与目标非主键列/表达式之间存在很强的相关性，且用户查找的是稀有值——也就是不会出现在很多粒度中的值——时，它们才会有效。**
+
+<div id="text-index-for-full-text-search">
+  ### 用于全文检索的文本索引
+</div>
+
+ClickHouse 提供了一种专用于全文检索的[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
+该索引会在分词后的文本数据上构建倒排索引，从而实现快速的基于标记的搜索查询。
+
+文本索引从 ClickHouse 26.2 版本开始可用。
+
+它们可以定义在 MergeTree 表中的以下列类型上：[String](/zh/reference/data-types/string)、[FixedString](/zh/reference/data-types/fixedstring)、[Array(String)](/zh/reference/data-types/array)、[Array(FixedString)](/zh/reference/data-types/array) 以及 [Map](/zh/reference/data-types/map) (通过 [mapKeys](/zh/reference/functions/regular-functions/tuple-map-functions#mapKeys) 和 [mapValues](/zh/reference/functions/regular-functions/tuple-map-functions#mapValues) map 函数) 列。
+
+文本索引在定义时需要提供 `tokenizer` 参数。也可以指定预处理函数，在分词前对输入字符串进行转换。
+
+推荐用于检索文本索引的函数有：`hasAnyTokens` 和 `hasAllTokens`。
+存在文本索引时，一些传统的字符串搜索函数也会自动得到优化。
+有关详细信息及支持的函数，请参阅[此处](/zh/reference/engines/table-engines/mergetree-family/textindexes#using-a-text-index)和[此处](/zh/reference/engines/table-engines/mergetree-family/textindexes#functions-example-hasanytokens-hasalltokens)的文档。
+
+在下面的示例中，我们使用一个结构化日志数据集。
+
+```sql
+CREATE TABLE otel_logs
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+我们也可以在没有文本索引的情况下使用 `hasAnyTokens`，但这样查询时就会对 Body 列执行缓慢的全表扫描：
+
+```sql
+SELECT count()
+FROM otel_logs
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ff0b866c-6df7-47be-9e36-795ef3888169
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.584 sec. Processed 19.95 million rows, 3.08 GB (34.15 million rows/s., 5.27 GB/s.)
+```
+
+<div id="adding-a-text-index">
+  #### 添加文本索引
+</div>
+
+可在创建表时为 Body 列添加文本索引：
+
+```sql
+CREATE TABLE otel_logs_index_body
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+         INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000
+)
+ENGINE = MergeTree
+ORDER BY Timestamp
+SETTINGS index_granularity = 8192
+```
+
+或稍后通过 `ALTER TABLE` 添加：
+
+```sql
+ALTER TABLE otel_logs ADD INDEX idx_body Body TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 100000000;
+ALTER TABLE otel_logs MATERIALIZE INDEX idx_body;
+```
+
+如果再次运行相同的 SELECT 查询，就会执行一次文本索引查找。
+访问数据量将从 GB 级降至 MB 级，性能提升约 45 倍。
+
+```sql
+SELECT count()
+FROM otel_logs_index_body
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: ebc31a94-92b3-48aa-860a-939d7e788ef4
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 行（已返回）。耗时：0.013 秒。已处理 2041 万行，20.41 MB（每秒 15.9 亿行，1.59 GB/s）
+峰值内存占用：15.23 MiB。
+```
+
+<div id="using-a-preprocessor">
+  #### 使用预处理器
+</div>
+
+在这个数据集中，Body 列包含一个 JSON 格式的字符串，其中包含多个键值对 (例如 `msg`、`id`、`ctx`、`attr` 等) 。
+
+假设我们只想在 `msg` 字段中搜索。
+与其为整个 JSON 字符串建立索引，不如定义一个预处理器，在分词前仅提取 `msg` 的值。
+
+例如：
+
+```sql
+ INDEX idx_text Body TYPE text(tokenizer = splitByNonAlpha,
+                               preprocessor = JSONExtract(Body, 'msg', 'String'))
+```
+
+在这个示例中，预处理器：
+
+* 减少了被分词和建立索引的文本量，
+* 缩小了索引体积，
+* 降低了误报概率，并且
+* 提升了查询性能。
+
+```sql
+SELECT count()
+FROM otel_logs_text_body_preprocessed
+WHERE hasAllTokens(Body, ['Connection', 'accepted'])
+```
+
+```response
+Query id: f6a5cd9c-665f-4e4f-82f2-d6a4408a68a8
+
+   ┌─count()─┐
+1. │   27281 │
+   └─────────┘
+
+1 row in set. Elapsed: 0.006 sec. Processed 13.54 million rows, 13.54 MB (2.45 billion rows/s., 2.45 GB/s.)
+Peak memory usage: 1.95 MiB.
+```
+
+与未经预处理的索引相比，性能可提升约 2 倍。
+
+使用预处理器还可将索引大小从数 GB 减少到几百 KB，仅为原始大小的 0.01%。
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(data_compressed_bytes) AS compressed_size,
+    formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+FROM system.data_skipping_indices
+WHERE startsWith(`table`, 'otel_logs')
+```
+
+```response
+Query id: 730e4b77-e697-40b3-a24d-67219ec42075
+
+   ┌─table───────────────────────────────────┬─compressed_size─┬─uncompressed_size─┐
+1. │ otel_logs_text_index_body_preprocessed  │ 423.98 KiB      │ 424.29 KiB        │
+2. │ otel_logs_text_index_body               │ 2.76 GiB        │ 2.78 GiB          │
+   └─────────────────────────────────────────┴─────────────────┴───────────────────┘
+```
+
+**其他用于文本搜索的索引
+
+有关二级跳过索引的更多详细信息，请参见[此处](/zh/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-functions)。
+
+<details markdown="1">
+  <summary>用于全文搜索的布隆过滤器</summary>
+
+  <Note>
+    `ngrambf_v1` 和 `tokenbf_v1` 索引已不再推荐用于全文检索。
+  </Note>
+
+  基于 ngram 和标记的 bloom filter 索引 [`ngrambf_v1`](/zh/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types) 和 [`tokenbf_v1`](/zh/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types) 可用于加速对 String 列使用 `LIKE`、`IN` 和 hasToken 运算符的搜索。需要注意的是，基于标记的索引以非字母数字字符作为分隔符来生成标记，因此在查询时只能匹配完整的标记 (即完整单词) 。如需更细粒度的匹配，可使用 [N-gram bloom filter](/zh/concepts/features/performance/skip-indexes/skipping-indexes#bloom-filter-types)，它将字符串拆分为指定大小的 ngram，从而支持子词匹配。
+
+  要查看将被生成并用于匹配的标记，可以使用 `tokens` 函数：
+
+  ```sql
+  SELECT tokens('https://www.zanbil.ir/m/filter/b113')
+  ```
+
+  ```response
+  ┌─tokens────────────────────────────────────────────┐
+  │ ['https','www','zanbil','ir','m','filter','b113'] │
+  └───────────────────────────────────────────────────┘
+
+  1 行。Elapsed: 0.008 sec.
+  ```
+
+  `ngram` 函数提供类似的功能，其中 `ngram` 的大小可作为第二个参数指定：
+
+  ```sql
+  SELECT ngrams('https://www.zanbil.ir/m/filter/b113', 3)
+  ```
+
+  ```response
+  ┌─ngrams('https://www.zanbil.ir/m/filter/b113', 3)────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+  │ ['htt','ttp','tps','ps:','s:/','://','//w','/ww','www','ww.','w.z','.za','zan','anb','nbi','bil','il.','l.i','.ir','ir/','r/m','/m/','m/f','/fi','fil','ilt','lte','ter','er/','r/b','/b1','b11','113'] │
+  └─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  1 row in set. Elapsed: 0.008 sec.
+  ```
+
+  在本示例中，我们使用结构化日志数据集。假设我们希望统计 `Referer` 列中包含 `ultra` 的日志条数。
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │  114514 │
+  └─────────┘
+
+  1 行，in set。Elapsed: 0.177 sec. 已处理 1037 万行，908.49 MB（5857 万行/秒，5.13 GB/秒）
+  ```
+
+  此处我们需要匹配大小为 3 的 ngram，因此创建一个 `ngrambf_v1` 索引。
+
+  ```sql
+  CREATE TABLE otel_logs_bloom
+  (
+          `Body` String,
+          `Timestamp` DateTime,
+          `ServiceName` LowCardinality(String),
+          `Status` UInt16,
+          `RequestProtocol` LowCardinality(String),
+          `RunTime` UInt32,
+          `Size` UInt32,
+          `UserAgent` String,
+          `Referer` String,
+          `RemoteUser` String,
+          `RequestType` LowCardinality(String),
+          `RequestPath` String,
+          `RemoteAddress` IPv4,
+          `RefererDomain` String,
+          `RequestPage` String,
+          `SeverityText` LowCardinality(String),
+          `SeverityNumber` UInt8,
+          INDEX idx_span_attr_value Referer TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1
+  )
+  ENGINE = MergeTree
+  ORDER BY (Timestamp)
+  ```
+
+  此处的索引 `ngrambf_v1(3, 10000, 3, 7)` 接受四个参数。最后一个参数 (值为 7) 表示种子 (seed) ，其余参数分别表示 ngram 大小 (3) 、值 `m` (过滤器大小) 以及哈希函数数量 `k` (7) 。`k` 和 `m` 需要调优，其取值取决于唯一 ngram/标记的数量以及过滤器产生真负结果的概率——即确认某个值不存在于某个粒度中。我们建议参考[这些函数](/zh/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter)来确定上述参数值。
+
+  若调优得当，此处的查询加速效果将十分显著：
+
+  ```sql
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─count()─┐
+  │   182   │
+  └─────────┘
+
+  结果集中 1 行。Elapsed: 0.077 sec. 已处理 422 万行，375.29 MB（5481 万行/秒，4.87 GB/秒）
+  峰值内存占用：129.60 KiB。
+  ```
+
+  <Info>
+    **仅作示例**
+
+    以上内容仅用于说明。我们建议用户在插入日志时提取其结构，而不是尝试使用基于标记的布隆过滤器来优化文本搜索。不过，在某些情况下，对于堆栈跟踪或其他较大的 String，由于其结构不太固定，文本搜索还是很有用的。
+  </Info>
+
+  以下是使用布隆过滤器的一些通用准则：
+
+  bloom 过滤器的目标是过滤[粒度](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design)，从而避免加载列中的所有值并执行线性扫描。带有参数 `indexes=1` 的 `EXPLAIN` 子句可用于查看已跳过的粒度数量。请参考下方针对原始表 `otel_logs_v2` 和带有 ngram bloom 过滤器的表 `otel_logs_bloom` 的查询结果。
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_v2
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_v2)                     │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │
+  │               Condition: true                                      │
+  │               Parts: 9/9                                           │
+  │               Granules: 1278/1278                                  │
+  └────────────────────────────────────────────────────────────────────┘
+
+  10 rows in set. Elapsed: 0.016 sec.
+  ```
+
+  ```sql
+  EXPLAIN indexes = 1
+  SELECT count()
+  FROM otel_logs_bloom
+  WHERE Referer LIKE '%ultra%'
+  ```
+
+  ```response
+  ┌─explain────────────────────────────────────────────────────────────┐
+  │ Expression ((Project names + Projection))                          │
+  │   Aggregating                                                      │
+  │       Expression (Before GROUP BY)                                 │
+  │       Filter ((WHERE + Change column names to column identifiers)) │
+  │       ReadFromMergeTree (default.otel_logs_bloom)                  │
+  │       Indexes:                                                     │
+  │               PrimaryKey                                           │ 
+  │               Condition: true                                      │
+  │               Parts: 8/8                                           │
+  │               Granules: 1276/1276                                  │
+  │               Skip                                                 │
+  │               Name: idx_span_attr_value                            │
+  │               Description: ngrambf_v1 GRANULARITY 1                │
+  │               Parts: 8/8                                           │
+  │               Granules: 517/1276                                   │
+  └────────────────────────────────────────────────────────────────────┘
+  ```
+
+  只有当 bloom filter 的大小小于列本身时，它通常才能带来速度提升。若 bloom filter 更大，则性能收益可能微乎其微。使用以下查询比较过滤器与列的大小：
+
+  ```sql
+  SELECT
+          name,
+          formatReadableSize(sum(data_compressed_bytes)) AS compressed_size,
+          formatReadableSize(sum(data_uncompressed_bytes)) AS uncompressed_size,
+          round(sum(data_uncompressed_bytes) / sum(data_compressed_bytes), 2) AS ratio
+  FROM system.columns
+  WHERE (`table` = 'otel_logs_bloom') AND (name = 'Referer')
+  GROUP BY name
+  ORDER BY sum(data_compressed_bytes) DESC
+  ```
+
+  ```response
+  ┌─name────┬─compressed_size─┬─uncompressed_size─┬─ratio─┐
+  │ Referer │ 56.16 MiB       │ 789.21 MiB        │ 14.05 │
+  └─────────┴─────────────────┴───────────────────┴───────┘
+
+  1 行，位于 Set 中。耗时：0.018 秒。
+  ```
+
+  ```sql
+  SELECT
+          `table`,
+          formatReadableSize(data_compressed_bytes) AS compressed_size,
+          formatReadableSize(data_uncompressed_bytes) AS uncompressed_size
+  FROM system.data_skipping_indices
+  WHERE `table` = 'otel_logs_bloom'
+  ```
+
+  ```response
+  ┌─table───────────┬─compressed_size─┬─uncompressed_size─┐
+  │ otel_logs_bloom │ 12.03 MiB       │ 12.17 MiB         │
+  └─────────────────┴─────────────────┴───────────────────┘
+
+  1 row in set. Elapsed: 0.004 sec.
+  ```
+
+  在上述示例中，我们可以看到二级 bloom filter 索引为 12MB——仅为该列本身压缩大小 (56MB) 的约五分之一。
+
+  布隆过滤器可能需要大量调优。我们建议参阅[此处](/zh/reference/engines/table-engines/mergetree-family/mergetree#bloom-filter)的相关说明，以帮助确定最优配置。布隆过滤器在插入和合并阶段也可能带来较高的性能开销。在将布隆过滤器引入生产环境之前，应先评估其对插入性能的影响。
+</details>
+
+<div id="extracting-from-maps">
+  ### 从 Map 中提取
+</div>
+
+Map 类型在 OTel schema 中很常见。该类型要求键和值具有相同的类型——这对于 Kubernetes 标记等元数据来说已经足够。请注意，查询 Map 类型中的某个子键时，整个父列都会被加载。如果该 Map 包含很多键，与将该键单独作为一列存储相比，这会带来明显的查询性能损耗，因为需要从磁盘读取更多数据。
+
+如果你经常查询某个特定键，建议考虑将其移到根级别的独立专用列中。这通常是在部署后根据常见访问模式进行的调整，在生产环境上线前往往很难预判。有关如何在部署后修改 schema，请参阅[“管理 schema 变更”](/zh/guides/use-cases/observability/build-your-own/managing-data#managing-schema-changes)。
+
+<div id="measuring-table-size--compression">
+  ## 测量表大小与压缩
+</div>
+
+压缩是 ClickHouse 用于可观测性场景的主要原因之一。
+
+除了能显著降低存储成本，磁盘上的数据更少还意味着更低的 I/O 开销，以及更快的查询和插入。对于 CPU 而言，I/O 的减少所带来的收益会超过压缩算法本身的开销。因此，在确保 ClickHouse 查询性能时，首先应关注如何提升数据的压缩效果。
+
+有关如何测量压缩效果的详细信息，请参见[此处](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。

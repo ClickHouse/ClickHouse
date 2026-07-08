@@ -1,0 +1,94 @@
+---
+slug: /use-cases/observability/clickstack/tuning-clickstack-schema
+title: 'Managed ClickStack 튜닝 - 스키마 다듬기'
+description: 'Managed ClickStack에서 쿼리 성능과 스토리지 효율성을 높일 수 있도록 ClickStack 스키마를 다듬습니다'
+doc_type: 'guide'
+keywords: ['clickstack', '튜닝', '스키마', 'managed', '관측성', '성능', '최적화', '스토리지']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+ClickStack을 한동안 운영해 왔다면, 기본 스키마만으로도 대부분의 관측성 워크로드를 별도 변경 없이 처리할 수 있다는 점을 이미 느끼셨을 것입니다. 이 페이지는 그것만으로 더 이상 충분하지 않을 때를 위한 것입니다. 즉, 쿼리 지연 시간이 늘어나기 시작했거나 액세스 패턴이 기본값에서 벗어난 경우입니다.
+
+실무에서 효과를 보는 방법은 대체로 네 가지 최적화로 정리할 수 있습니다. 아래 항목은 대략적인 투입 노력 순서대로 나열되어 있습니다. 처음 두 가지는 점진적으로 적용할 수 있는 로컬 `ALTER TABLE` 변경입니다. 세 번째는 동일한 집계가 dashboard에서 반복적으로 실행될 때 효과적입니다. 네 번째는 테이블 migration이 필요하므로 가장 복잡합니다.
+
+아래 요약은 의도적으로 짧게 작성했습니다. 각 변경의 배경 설명, 벤치마크, 그리고 이를 기존 데이터에 적용하는 방법은 [성능 튜닝](/ko/clickstack/managing/performance-tuning)을 참조하십시오.
+
+<Steps>
+  <Step>
+    ## 자주 쿼리하는 속성 구체화하기
+
+    `LogAttributes['service.version']`로 필터링하면 ClickHouse는 검사하는 모든 행에 대해 `LogAttributes` 맵 전체를 로드하고 디코딩해야 합니다. 이 속성을 `MATERIALIZED` 컬럼으로 승격하면 동일한 필터가 컬럼 읽기로 바뀌어, 보통 10배 정도 더 빨라집니다. 컬럼이 만들어지면 ClickStack이 필터를 자동으로 재작성하므로 저장된 검색과 대시보드는 수정 없이 계속 동작합니다.
+
+    실제로 자주 쿼리하는 속성만 선택하십시오. 각 구체화된 컬럼은 스토리지와 삽입 시점 비용을 추가하므로, &quot;모든 것을 승격&quot;하기보다 &quot;실제로 사용하는 것만 승격&quot;하는 방식으로 접근해야 합니다.
+
+    ```sql
+    ALTER TABLE otel_logs
+      ADD COLUMN ServiceVersion LowCardinality(String)
+      MATERIALIZED LogAttributes['service.version'];
+    ```
+
+    기존 행은 `ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion`도 실행하기 전까지 새 컬럼이 비어 있습니다.
+
+    자세히 보기: [자주 쿼리하는 속성 구체화하기](/ko/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes).
+  </Step>
+
+  <Step>
+    ## 스킵 인덱스 추가하기
+
+    스킵 인덱스를 사용하면 ClickHouse가 필터와 일치할 수 없는 데이터 그래뉼을 미리 제외할 수 있어, 전체 스캔을 작고 정확한 읽기로 줄일 수 있습니다. 알아두면 좋은 유형은 3가지입니다.
+
+    * 문자열 컬럼과 `mapKeys`/`*AttributeItems` 배열에 사용하는 **텍스트 인덱스** (`text(tokenizer = ...)`)입니다. 기본 로그 스키마에는 이미 포함되어 있습니다.
+    * 범위 조건으로 필터링하는 숫자 컬럼에 사용하는 **MinMax 인덱스**입니다. 트레이스의 `Duration`이 대표적인 사례입니다.
+    * 아직 텍스트 인덱스를 지원하지 않는 ClickHouse 버전에서, 카디널리티가 높은 값에 대한 동등 비교 조회에 사용하는 **블룸 필터**입니다.
+
+    ```sql
+    ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+    ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+    ```
+
+    스킵 인덱스는 실제로 그래뉼을 가지치기할 때만 평가 비용만큼의 효과를 냅니다. 도움이 되었다고 가정하기 전에 대표적인 쿼리에 대해 `EXPLAIN indexes = 1`로 확인하십시오.
+
+    자세히 보기: [스킵 인덱스 추가하기](/ko/clickstack/managing/performance-tuning#adding-skip-indexes).
+  </Step>
+
+  <Step>
+    ## 반복되는 집계 미리 계산하기
+
+    대시보드에서 같은 집계가 반복해서 실행된다면(오류율 기준 상위 서비스, 엔드포인트별 p99 지연 시간, 분당 요청 수), materialized view가 삽입 시점에 결과를 계산해 작은 롤업 테이블에 기록합니다. 그러면 대시보드는 원시 logs나 traces 대신 롤업 테이블을 조회하게 되며, 비용이 훨씬 적게 듭니다.
+
+    이 방식은 대시보드 조회가 빈번하고 기본 테이블이 클 때 효과적입니다. 대신 삽입 시점에 CPU를 더 사용하게 되고, 유지 관리할 두 번째 테이블이 추가됩니다.
+
+    자세히 보기: [materialized view 활용하기](/ko/clickstack/managing/performance-tuning#exploiting-materialized-views).
+  </Step>
+
+  <Step>
+    ## 액세스 패턴에 맞는 프라이머리 키 선택하기
+
+    프라이머리 키는 행이 디스크에서 어떻게 정렬되는지를 결정합니다. 키의 앞부분 컬럼을 조건으로 사용하는 필터가 있으면 ClickHouse가 관련 영역으로 바로 이동할 수 있지만, 그렇지 않은 필터는 전체 파티션을 스캔합니다.
+
+    기본 로그 키 `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)`는 &quot;서비스 X에서 최근 N분 동안 무슨 일이 있었는가&quot; 같은 쿼리에 유리합니다. 대부분의 쿼리가 다른 컬럼(테넌트 ID, 고객 ID, 리전)으로 시작한다면, 프라이머리 키의 선두를 그 컬럼으로 바꾸는 것이 가장 큰 효과를 내는 변경입니다.
+
+    ```sql
+    CREATE TABLE otel_logs_v2
+    (
+      -- otel_logs와 동일한 컬럼
+    )
+    ENGINE = MergeTree
+    ORDER BY (TenantId, ServiceName, Timestamp);
+    ```
+
+    ClickHouse는 프라이머리 키를 제자리에서 수정할 수 없으므로, 이것은 단순한 `ALTER`가 아니라 테이블 migration입니다. 성능 튜닝 가이드에서는 새 테이블 생성, 수집 경로 전환, 그리고 기존 대시보드가 이전 데이터와 새 데이터 모두에서 계속 동작하도록 `Merge` 테이블을 사용하는 방법을 안내합니다.
+
+    자세히 보기: [프라이머리 키 수정하기](/ko/clickstack/managing/performance-tuning#modifying-the-primary-key).
+  </Step>
+</Steps>
+
+<div id="further-reading">
+  ## 추가 참고 자료
+</div>
+
+* [성능 튜닝](/ko/clickstack/managing/performance-tuning): 프로젝션과 행 조회 가속화를 포함한 전체 가이드입니다.
+* [ClickStack에서 사용하는 테이블과 스키마](/ko/clickstack/ingesting-data/schemas): 이러한 최적화의 기반이 되는 기준 DDL입니다.
+* [프로덕션 환경으로 전환](/ko/clickstack/managing/production): 더 폭넓은 프로덕션 권장 사항입니다.
