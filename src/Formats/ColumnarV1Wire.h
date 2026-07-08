@@ -852,7 +852,11 @@ inline MutableColumnPtr readColumnFromDesc(
                     "COLUMNAR_V1: COL_COMPLEX nested Array outer offsets out of bounds");
             const uint8_t * outer_offs = p;
             p += outer_bytes;
-            uint32_t total_elems = checkFitsUint32(unalignedLoad<uint64_t>(outer_offs + n * 8u),
+            // Widen before the multiply: n is guest-controlled, and n * 8u computed in
+            // uint32_t arithmetic wraps for any n >= 0x20000000, making this read the wrong
+            // (or an in-bounds but unintended) slot instead of the true last cumulative count.
+            uint32_t total_elems = checkFitsUint32(
+                unalignedLoad<uint64_t>(outer_offs + static_cast<uint64_t>(n) * 8u),
                 "flattened Array element count read from frame");
             // outer_offs holds n+1 cumulative counts (offs[0]==0, offs[n]==total_elems); the
             // module fully controls these, so reject anything non-monotonic or not starting
@@ -866,7 +870,8 @@ inline MutableColumnPtr readColumnFromDesc(
             uint64_t prev_off = 0;
             for (uint32_t i = 0; i < n; ++i)
             {
-                uint64_t off = unalignedLoad<uint64_t>(outer_offs + (i + 1u) * 8u);
+                // Widen before the multiply: same n * 8u wraparound hazard as above.
+                uint64_t off = unalignedLoad<uint64_t>(outer_offs + (static_cast<uint64_t>(i) + 1u) * 8u);
                 if (off < prev_off)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "COLUMNAR_V1: COL_COMPLEX Array offsets must be non-decreasing");
@@ -895,7 +900,8 @@ inline MutableColumnPtr readColumnFromDesc(
                     "COLUMNAR_V1: COL_COMPLEX String offsets out of bounds");
             const uint8_t * wire_offs = p;
             p += off_bytes;
-            uint64_t total_chars = unalignedLoad<uint64_t>(wire_offs + n * 8u);
+            // Same n * 8u wraparound hazard as the Array branch above: widen before the multiply.
+            uint64_t total_chars = unalignedLoad<uint64_t>(wire_offs + static_cast<uint64_t>(n) * 8u);
             if (total_chars > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX String chars out of bounds");
@@ -916,8 +922,9 @@ inline MutableColumnPtr readColumnFromDesc(
             uint64_t prev_wire_end = 0;
             for (uint32_t i = 0; i < n; ++i)
             {
-                uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offs + (i + 1u) * 8u);
-                uint64_t wire_start = unalignedLoad<uint64_t>(wire_offs + i * 8u);
+                // Widen before the multiply: same n * 8u wraparound hazard as above.
+                uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offs + (static_cast<uint64_t>(i) + 1u) * 8u);
+                uint64_t wire_start = unalignedLoad<uint64_t>(wire_offs + static_cast<uint64_t>(i) * 8u);
                 if (wire_start != prev_wire_end || wire_end < wire_start)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "COLUMNAR_V1: COL_COMPLEX String offsets must be non-decreasing and contiguous");
@@ -1023,8 +1030,11 @@ inline MutableColumnPtr readColumnFromDesc(
         uint64_t expected_start = 0ull;
         for (uint32_t i = 0; i < rows_to_dec; ++i)
         {
-            uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offsets + (i + 1u) * 8u);
-            uint64_t wire_start = unalignedLoad<uint64_t>(wire_offsets + i * 8u);
+            // Widen before the multiply: i * 8u computed in uint32_t arithmetic wraps for
+            // i >= 0x20000000, which a large enough frame (raised column_binary_max_frame_size,
+            // or an oversized WASM guest output) can reach.
+            uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offsets + (static_cast<uint64_t>(i) + 1u) * 8u);
+            uint64_t wire_start = unalignedLoad<uint64_t>(wire_offsets + static_cast<uint64_t>(i) * 8u);
             if (wire_start != expected_start)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_BYTES offsets must be contiguous starting at 0: row {} expected "
@@ -1164,7 +1174,10 @@ inline MutableColumnPtr readColumnFromDesc(
             const uint8_t * p = buf.data() + desc.data_offset;
             const uint8_t * outer_offs = p;
             p += outer_offset_bytes;
-            uint32_t total_elems = checkFitsUint32(unalignedLoad<uint64_t>(outer_offs + rows_to_dec * 8u),
+            // Widen before the multiply: rows_to_dec * 8u computed in uint32_t arithmetic
+            // wraps for rows_to_dec >= 0x20000000.
+            uint32_t total_elems = checkFitsUint32(
+                unalignedLoad<uint64_t>(outer_offs + static_cast<uint64_t>(rows_to_dec) * 8u),
                 "flattened Array element count read from frame");
             // Same guest-controlled offsets as the nested decode() branch above: reject
             // anything not starting at 0 or non-monotonic before trusting total_elems for
@@ -1176,7 +1189,8 @@ inline MutableColumnPtr readColumnFromDesc(
             uint64_t prev_off = 0;
             for (uint32_t i = 0; i < rows_to_dec; ++i)
             {
-                uint64_t off = unalignedLoad<uint64_t>(outer_offs + (i + 1u) * 8u);
+                // Widen before the multiply: same wraparound hazard as above.
+                uint64_t off = unalignedLoad<uint64_t>(outer_offs + (static_cast<uint64_t>(i) + 1u) * 8u);
                 if (off < prev_off)
                     throw Exception(ErrorCodes::INCORRECT_DATA,
                         "COLUMNAR_V1: COL_COMPLEX Array offsets must be non-decreasing");
@@ -1185,7 +1199,7 @@ inline MutableColumnPtr readColumnFromDesc(
             auto nested_col = decode(p, arr_type->getNestedType(), total_elems);
             auto offsets_col = ColumnUInt64::create(rows_to_dec);
             for (uint32_t i = 0; i < rows_to_dec; ++i)
-                offsets_col->getData()[i] = unalignedLoad<uint64_t>(outer_offs + (i + 1u) * 8u);
+                offsets_col->getData()[i] = unalignedLoad<uint64_t>(outer_offs + (static_cast<uint64_t>(i) + 1u) * 8u);
             col = maybe_nullable(ColumnArray::create(std::move(nested_col), std::move(offsets_col)));
         }
         else
