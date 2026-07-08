@@ -2265,7 +2265,7 @@ static BlockIO executeQueryImpl(
             /// the INSERT persisted). Log it as a started query that failed, not as EXCEPTION_BEFORE_START.
             if (!internal)
                 if (auto query_exception_quota = context->getQuota())
-                    query_exception_quota->used(QuotaType::ERRORS, 1, /* check_exceeded = */ false);
+                    query_exception_quota->usedForQuery(normalized_query_hash, QuotaType::ERRORS, 1, /* check_exceeded = */ false);
             logQueryException(query_log_elem, context, start_watch, out_ast, query_span, internal, log_as_internal, /* log_error = */ true);
         }
         else

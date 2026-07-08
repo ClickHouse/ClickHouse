@@ -2014,6 +2014,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         {},
         [&](const Progress & progress) { onProgress(progress); });
 
+    bool returning_receive_started = false;
     try
     {
         if (send_external_tables)
@@ -2037,6 +2038,7 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
             {
                 const Settings & settings = client_context->getSettingsRef();
                 const Int32 signals_before_stop = settings[Setting::partial_result_on_first_cancel] ? 2 : 1;
+                returning_receive_started = true;
                 receiveResult(parsed_query, signals_before_stop, settings[Setting::partial_result_on_first_cancel]);
             }
             else
@@ -2050,8 +2052,13 @@ void ClientBase::processInsertQuery(String query, ASTPtr parsed_query)
         /// the original exception (e.g., a parsing error with row number).
         try
         {
-            if (sendCancel(std::current_exception()))
-                receiveEndOfQueryForInsert();
+            /// `receiveResult` already performs ordinary-query cleanup and drains packets to EndOfStream.
+            /// Re-running insert-style cleanup after that may wait for packets that are already consumed.
+            if (!(parsed_insert_query.returning_select && returning_receive_started))
+            {
+                if (sendCancel(std::current_exception()))
+                    receiveEndOfQueryForInsert();
+            }
         }
         catch (const std::exception &) // NOLINT(bugprone-empty-catch)
         {
