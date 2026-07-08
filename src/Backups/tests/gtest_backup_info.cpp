@@ -4,8 +4,12 @@
 
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
+#include <Parsers/ASTCreateNamedCollectionQuery.h>
+#include <Parsers/ASTDropNamedCollectionQuery.h>
+#include <base/scope_guard.h>
 
 #include <Poco/Util/MapConfiguration.h>
 
@@ -494,6 +498,29 @@ TEST(BackupInfo, NormalizedStringPreservesKeyValueArgNames)
     EXPECT_NE(first.toNormalizedString(), second.toNormalizedString());
     EXPECT_NE(first.toNormalizedString().find("url="), String::npos);
     EXPECT_NE(second.toNormalizedString().find("URL="), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringRejectsNonOverridableNamedCollectionOverride)
+{
+    const String collection_name = "backup_info_non_overridable_url";
+
+    auto create_query = make_intrusive<ASTCreateNamedCollectionQuery>();
+    create_query->collection_name = collection_name;
+    create_query->changes.emplace_back("url", Field("s3://bucket/base"));
+    create_query->overridability.emplace("url", false);
+    NamedCollectionFactory::instance().createFromSQL(*create_query);
+
+    SCOPE_EXIT({
+        auto drop_query = make_intrusive<ASTDropNamedCollectionQuery>();
+        drop_query->collection_name = collection_name;
+        drop_query->if_exists = true;
+        NamedCollectionFactory::instance().removeFromSQL(*drop_query);
+    });
+
+    auto context = getContext().context;
+    auto info = BackupInfo::fromString("S3(" + collection_name + ", url='s3://bucket/other')");
+
+    EXPECT_THROW((void)info.toNormalizedString(context), Exception);
 }
 
 TEST(BackupInfo, NormalizedStringRejectsNonStringKeyValueArg)

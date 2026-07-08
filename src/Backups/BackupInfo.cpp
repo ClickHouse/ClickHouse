@@ -5,7 +5,6 @@
 
 #include <Access/ContextAccess.h>
 #include <Common/NamedCollections/NamedCollections.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <IO/Archives/hasRegisteredArchiveFileExtension.h>
@@ -871,27 +870,12 @@ NamedCollectionPtr BackupInfo::getNamedCollection(ContextPtr context) const
         return frozen_named_collection;
     }
 
-    /// Load named collections (both from config and SQL-defined)
-    NamedCollectionFactory::instance().loadIfNot();
+    ASTs collection_args;
+    collection_args.reserve(1 + kv_args.size());
+    collection_args.push_back(make_intrusive<ASTIdentifier>(id_arg));
+    collection_args.insert(collection_args.end(), kv_args.begin(), kv_args.end());
 
-    auto collection = NamedCollectionFactory::instance().tryGet(id_arg);
-    if (!collection)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "There is no named collection `{}`", id_arg);
-
-    /// Check access rights for the named collection
-    context->checkAccess(AccessType::NAMED_COLLECTION, id_arg);
-
-    /// Apply key-value overrides from the query (e.g., url='...', blob_path='...')
-    if (!kv_args.empty())
-    {
-        auto mutable_collection = collection->duplicate();
-        auto params_from_query = getParamsMapFromAST(kv_args, context);
-        for (const auto & [key, value] : params_from_query)
-            mutable_collection->setOrUpdate<String>(key, fieldToString(value), {});
-        collection = std::move(mutable_collection);
-    }
-
-    return collection;
+    return tryGetNamedCollectionWithOverrides(collection_args, context, /* throw_unknown_collection = */ true);
 }
 
 BackupInfo BackupInfo::freezeNamedCollection(ContextPtr context) const
