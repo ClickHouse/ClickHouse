@@ -450,7 +450,7 @@ profiles:
         previous run holds the ports we are about to bind.
 
         The CI test config sets `listen_try=true`, so if a stale server still
-        holds e.g. 9000/8123/9181/9009 the fresh server does NOT fail to start:
+        holds any listen port the fresh server does NOT fail to start:
         it logs each `Listen ... Address already in use` only as a Warning,
         stays alive, but never listens on the TCP port. wait_ready() then times
         out with Code 210 (Connection refused) and the whole job fails at setup
@@ -498,7 +498,15 @@ profiles:
             # before we launch our own (listen_try=true otherwise turns a port
             # collision into a silent wait_ready timeout). Done once, before any
             # of our replicas start, so it only ever targets stale processes.
-            self._ensure_server_ports_free([9000, 8123, 9181, 9009])
+            # Full stateless-server listen-port set, kept in sync with
+            # wait_server_ports_free() in tests/docker_scripts/stress_tests.lib:
+            #   8123 HTTP        9009 Interserver  9022 SSH    9181 Keeper
+            #   8443 HTTPS       9010 TCP proxy    9100 gRPC   9234 Keeper Raft
+            #   9000 Native TCP  9004 MySQL        9005 PGSQL  9440 Native TLS
+            #                                                  9988 Prometheus
+            self._ensure_server_ports_free(
+                [8123, 8443, 9000, 9004, 9005, 9009, 9010, 9022, 9100, 9181, 9234, 9440, 9988]
+            )
 
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
