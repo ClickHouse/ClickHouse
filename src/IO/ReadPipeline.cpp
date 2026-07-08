@@ -162,6 +162,11 @@ void ReadPipeline::needDecryption(String path, size_t buffer_size, KeyFinderFunc
         .key_finder = std::move(key_finder)});
 }
 
+void ReadPipeline::needLongConnectionLimit(std::shared_ptr<LongConnectionLimit> limit)
+{
+    long_connection_limit = std::move(limit);
+}
+
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 {
     if (!source)
@@ -195,7 +200,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() const
 {
     const auto & settings = source->read_settings;
-    if (!settings.use_reader_executor)
+    if (!settings.reader_executor.enabled)
         return nullptr;
 
     /// The executor does not implement caches, decryption, async prefetch, or the
@@ -248,7 +253,12 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
         return nullptr;
     }
 
-    auto executor = std::make_unique<ReaderExecutor>(source_reader, source->objects, block_size);
+    auto executor = std::make_unique<ReaderExecutor>(
+        source_reader, source->objects, ReaderExecutor::Options{
+            .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
+            .block_size = block_size,
+            .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
+            .long_connection_limit = long_connection_limit});
 
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }

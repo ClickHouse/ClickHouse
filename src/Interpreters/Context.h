@@ -195,6 +195,7 @@ class ServerType;
 template <class Queue>
 class MergeTreeBackgroundExecutor;
 class AsyncLoader;
+class LongConnectionLimit;
 class HTTPHeaderFilter;
 struct AsyncReadCounters;
 struct ICgroupsReader;
@@ -958,6 +959,7 @@ public:
 
     /// Returns information about the client executing a query.
     const ClientInfo & getClientInfo() const { return client_info; }
+    ClientInfo & getClientInfo() { return client_info; }
 
     /// Modify stored in the context information about the client executing a query.
     void setClientInfo(const ClientInfo & client_info_);
@@ -1179,6 +1181,10 @@ public:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfiles() const;
 
     AsyncLoader & getAsyncLoader() const;
+
+    /// Global limit on source connections `ReaderExecutor` keeps open for sequential-read
+    /// reuse (lazily created from `max_remote_read_connections`).
+    std::shared_ptr<LongConnectionLimit> getLongConnectionLimit() const;
 
     const ExternalDictionariesLoader & getExternalDictionariesLoader() const;
     ExternalDictionariesLoader & getExternalDictionariesLoader();
@@ -1998,6 +2004,7 @@ public:
 
     void reloadRemoteThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
     void reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const;
+    void reloadLongConnectionLimitConfig(size_t max_remote_read_connections) const;
 
     /// Kitchen sink
     using ContextData::KitchenSink;

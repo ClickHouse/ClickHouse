@@ -28,31 +28,6 @@
 03976_geometry_functions_accept_subtypes
 04402_float_parsing_corner_cases
 
-# SSD cache dictionaries: the SSD_CACHE layout is Linux/FreeBSD-only (uses O_DIRECT and Linux
-# native AIO io_submit/io_getevents); not built on macOS. Needs an I/O-layer port to enable.
-01684_ssd_cache_dictionary_simple_key
-01685_ssd_cache_dictionary_complex_key
-01875_ssd_cache_dictionary_decimal256_type
-01903_ssd_cache_dictionary_array_type
-01904_ssd_cache_dictionary_default_nullable_type
-02950_dictionary_ssd_cache_short_circuit
-03405_ssd_cache_incorrect_min_max_lifetimes_and_block_size
-
-# StorageFileLog: needs inotify (USE_FILELOG off on macOS), so the FileLog engine is not registered
-# (Unknown table engine FileLog). Needs a kqueue-based DirectoryWatcher port to enable.
-02022_storage_filelog_one_file
-02023_storage_filelog
-02025_storage_filelog_virtual_col
-02125_fix_storage_filelog
-02126_fix_filelog
-02889_file_log_save_errors
-02968_file_log_multiple_read
-03010_file_log_large_poll_batch_size
-03277_dead_letter_queue_unsupported
-03381_file_log_merge_empty
-04242_file_log_delete_recreate
-04257_file_log_rename_and_recreate
-
 # Streaming distributed exchange: the DistributedQuery/stateless-worker layer is eventfd-based and
 # Linux-only ("Stateless worker client is not enabled" / "Only Persisted exchange is supported").
 03394_distributed_shuffle_join_with_aggregation

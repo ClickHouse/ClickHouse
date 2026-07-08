@@ -1174,6 +1174,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                "add_minmax_index_for_temporal_columns",
                "allow_coalescing_columns_in_partition_or_order_key",
                "allow_floating_point_partition_key",
+               "allow_minmax_index_for_json",
                "allow_nullable_key",
                "allow_summing_columns_in_partition_or_order_key",
                "allow_suspicious_indices",
@@ -3917,9 +3918,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
-        /// AI functions: 2-arg (named_collection, text → result)
+        /// AI functions: text + optional params map
         {"aiEmbed", "aiGenerate"},
-        /// AI functions: 3-arg (named_collection, text, semantic_arg → result)
+        /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
         {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},

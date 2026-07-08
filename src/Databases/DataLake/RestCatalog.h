@@ -51,6 +51,8 @@ public:
 
     DB::Names getTables() const override;
 
+    Namespaces getNamespaces() const override;
+
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
     void getTableMetadata(
@@ -149,11 +151,17 @@ protected:
         StopCondition stop_condition,
         ExecuteFunc func) const;
 
-    Namespaces getNamespaces(const std::string & base_namespace) const;
+    /// List the immediate child namespaces directly under `base_namespace`
+    /// (single level, not recursive). An empty base lists the root namespaces.
+    Namespaces listChildNamespaces(const std::string & base_namespace) const;
 
     Namespaces parseNamespaces(DB::ReadBuffer & buf, const std::string & base_namespace, String & next_page_token) const;
 
-    DB::Names getTables(const std::string & base_namespace, size_t limit = 0) const;
+    /// Non-recursive list of tables directly in `base_namespace` (not in sub-namespaces).
+    /// `limit` is a soft cap on the number of returned names; 0 means no limit.
+    DB::Names listTablesInNamespace(const std::string & base_namespace, size_t limit = 0) const;
+
+    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     DB::Names parseTables(DB::ReadBuffer & buf, const std::string & base_namespace, size_t limit, String & next_page_token) const;
 
@@ -164,8 +172,6 @@ protected:
 
     Config loadConfig();
     virtual DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const;
-
-    void validateAuthHeaders(const DB::HTTPHeaderEntry & header) const;
     static void parseCatalogConfigurationSettings(const Poco::JSON::Object::Ptr & object, Config & result);
 
     void sendRequest(
@@ -188,7 +194,6 @@ public:
         const std::string & onelake_tenant_id,
         const std::string & onelake_client_id,
         const std::string & onelake_client_secret,
-        const std::string & bearer_token_,
         const std::string & auth_scope_,
         const std::string & oauth_server_uri_,
         bool oauth_server_use_request_body_,
@@ -201,15 +206,11 @@ public:
 
     String getTenantId() const { return tenant_id; }
 
-    String getBearerToken() const;
-
     DB::HTTPHeaderEntries getAuthHeaders(bool update_token) const override;
 
 protected:
     /// Parameters for OneLake OAuth.
     const std::string tenant_id;
-    /// Set from `onelake_bearer_token`.
-    String bearer_token;
 };
 
 class BigLakeCatalog : public RestCatalog

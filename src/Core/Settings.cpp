@@ -760,6 +760,12 @@ Possible values:
 Enable or disables pread for HDFS files. By default, `hdfsPread` is used. If disabled, `hdfsRead` and `hdfsSeek` will be used to read hdfs files.)", 0) \
     DECLARE(Bool, use_reader_executor, false, R"(
 Experimental. Route reads through the new pipeline `ReaderExecutor` instead of the legacy matryoshka of read buffers. Falls back to the legacy path for configurations the executor does not yet support.)", EXPERIMENTAL) \
+    DECLARE(Bool, reader_executor_use_long_connections, false, R"(
+Reuse a bounded long source connection across windows in the experimental `ReaderExecutor`. A long connection is one whose range exceeds the current read window; when disabled, the executor takes no connection-pool budget and every window opens a short-lived one-shot connection (the stateless path).)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_min_bytes_for_seek, 2097152, R"(
+Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is skipped on the open source connection (bridged / read through) instead of issuing a separate source read or reopening. Set near the bandwidth/request cost breakeven so bridging stays cost-positive.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_max_tail_for_drain, 1048576, R"(
+Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -1124,6 +1130,10 @@ In CREATE TABLE statement allows creating columns of type FixedString(n) with n 
 )", 0) \
     DECLARE(Bool, allow_suspicious_indices, false, R"(
 Reject primary/secondary indexes and sorting keys with identical expressions
+)", 0) \
+    DECLARE(Bool, allow_minmax_index_for_json, false, R"(
+Allow creating minmax skip indexes on JSON (Object) columns. Disabled by default because the minmax
+index serialization path cannot handle heterogeneous Field values that JSON columns may contain.
 )", 0) \
     DECLARE(Bool, allow_suspicious_ttl_expressions, false, R"(
 Reject TTL expressions that don't depend on any of table's columns. It indicates a user error most of the time.
@@ -1587,6 +1597,19 @@ Possible values:
 
 - Any positive even integer.
 )", 0) \
+    DECLARE(UInt64, merge_tree_generic_exclusion_search_max_steps, 0, R"(
+When a filter cannot be evaluated as a single continuous range of the primary key, for example when it uses key columns other than the first one, ClickHouse runs an iterative generic exclusion search algorithm over the index marks. This setting limits the number of steps (index checks) the algorithm spends on each data part.
+
+The budget is spent on the largest remaining mark ranges first. When it is exhausted, the ranges that were not fully analyzed are accepted as a whole, so the query stays correct but may read more granules than an unlimited search would select. A lower budget speeds up index analysis at the cost of reading more data. The limit is approximate rather than a strict cap on the analysis cost: the search can exceed it by roughly one round of splitting, and when the part is already divided into many ranges (for example, by the query condition cache), each of them is checked at least once regardless of the limit.
+
+The number of steps the search made for each data part is reported in the trace level log messages of the query, and the `IndexGenericExclusionSearchStepLimitReached` profile event counts how many times the budget was exhausted.
+
+The (default) value 0 means unlimited steps.
+
+Possible values:
+
+- 0 for unlimited steps, or any positive integer.
+)", 0) \
     DECLARE(UInt64, merge_tree_max_rows_to_use_cache, (128 * 8192), R"(
 If ClickHouse should read more than `merge_tree_max_rows_to_use_cache` rows in one query, it does not use the cache of uncompressed blocks.
 
@@ -1744,6 +1767,22 @@ If `force_index_by_date=1`, ClickHouse checks whether the query has a date key c
 )", 0) \
     DECLARE(Bool, use_primary_key, true, R"(
 Use the primary key to prune granules during query execution for MergeTree tables.
+
+Possible values:
+
+- 0 — Disabled.
+- 1 — Enabled.
+)", 0) \
+    DECLARE(Bool, use_constant_folding_in_index_analysis, false, R"(
+Substitute partition-level constants into the filter predicate when analyzing per-part primary key and skip indexes.
+
+When the partition key appears in the filter together with primary-key or skip-index columns, this lets index analysis fold the partition value separately within each part. It is most useful for disjunctive filters whose branches target different partitions. For example, with `PARTITION BY a` and `ORDER BY b`:
+
+```sql
+SELECT * FROM t WHERE (a = 1 AND b >= 1) OR (a = 2 AND b > 10) OR (a = 3 AND b > 10)
+```
+
+For the part in partition `a = 1` the condition folds to `b >= 1`, while for partitions `a = 2` and `a = 3` it folds to `b > 10`, so each part is analyzed with the predicate that actually applies to it.
 
 Possible values:
 
@@ -6729,6 +6768,9 @@ Load MergeTree marks asynchronously
 
 Cloud default value: `1`.
 )", 0) \
+    DECLARE(Bool, use_streaming_marks_compression, false, R"(
+When loading marks for MergeTree parts, compress them into the in-memory representation one block at a time (streaming) instead of materializing the full plain marks array first. This significantly reduces peak memory usage during marks loading for compact parts with many substreams (e.g. tables with JSON columns and write_marks_for_substreams_in_compact_parts enabled).
+)", 0) \
     DECLARE(Bool, enable_filesystem_read_prefetches_log, false, R"(
 Log to system.filesystem prefetch_log during query. Should be used only for testing or debugging, not recommended to be turned on by default
 )", 0) \
@@ -8445,6 +8487,12 @@ If true (default), exceeding an AI function quota limit (`ai_function_max_input_
 )", EXPERIMENTAL) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by `aiEmbed`. Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_function_text_default_credentials, "", R"(
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
+)", EXPERIMENTAL) \
+    DECLARE(String, ai_function_embedding_default_credentials, "", R"(
+Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint and model differ from a chat one.
 )", EXPERIMENTAL) \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \
     /* ####################################################### */ \
