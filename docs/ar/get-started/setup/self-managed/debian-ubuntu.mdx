@@ -1,0 +1,152 @@
+---
+description: 'تثبيت ClickHouse على نظام Linux من Debian/Ubuntu'
+keywords: ['ClickHouse', 'install', 'Debian', 'Ubuntu', 'deb']
+sidebarTitle: 'Debian/Ubuntu'
+slug: /install/debian_ubuntu
+title: 'تثبيت ClickHouse على Debian/Ubuntu'
+hide_title: true
+doc_type: 'guide'
+---
+
+import Recommendations from '/snippets/ar/recommendations.mdx';
+
+> يُوصى باستخدام حزم `deb` الرسمية المُجمَّعة مسبقًا لـ **Debian** أو **Ubuntu**.
+
+<Steps>
+  <Step>
+    ## راجع التوصيات
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## إعداد مستودع Debian
+
+    لتثبيت ClickHouse، شغّل الأوامر التالية:
+
+    ```bash
+    # تثبيت الحزم المطلوبة مسبقًا
+    sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+
+    # تنزيل مفتاح GPG الخاص بـ ClickHouse وتخزينه في حلقة المفاتيح
+    curl -fsSL 'https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key' | sudo gpg --dearmor -o /usr/share/keyrings/clickhouse-keyring.gpg
+
+    # الحصول على معمارية النظام
+    ARCH=$(dpkg --print-architecture)
+
+    # إضافة مستودع ClickHouse إلى مصادر apt
+    echo "deb [signed-by=/usr/share/keyrings/clickhouse-keyring.gpg arch=${ARCH}] https://packages.clickhouse.com/deb stable main" | sudo tee /etc/apt/sources.list.d/clickhouse.list
+
+    # تحديث قوائم حزم apt
+    sudo apt-get update
+    ```
+
+    * يمكنك استبدال `stable` بـ `lts` لاستخدام [إصدارات](/ar/resources/support-center/knowledge-base/setup-installation/production) مختلفة بحسب احتياجاتك.
+    * يمكنك تنزيل الحزم وتثبيتها يدويًا من [packages.clickhouse.com](https://packages.clickhouse.com/deb/pool/main/c/).
+
+    <br />
+
+    <Accordion title="الطريقة القديمة لتثبيت حزم deb على التوزيعات الأقدم">
+      ```bash
+      # تثبيت الحزم المطلوبة مسبقًا
+      sudo apt-get install apt-transport-https ca-certificates dirmngr
+
+      # إضافة مفتاح GPG الخاص بـ ClickHouse لمصادقة الحزم
+      sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 8919F6BD2B48D754
+
+      # إضافة مستودع ClickHouse إلى مصادر apt
+      echo "deb https://packages.clickhouse.com/deb stable main" | sudo tee \
+          /etc/apt/sources.list.d/clickhouse.list
+          
+      # تحديث قوائم حزم apt
+      sudo apt-get update
+
+      # تثبيت حزمتَي clickhouse-server و clickhouse-client
+      sudo apt-get install -y clickhouse-server clickhouse-client
+
+      # بدء خدمة ClickHouse server
+      sudo service clickhouse-server start
+
+      # تشغيل عميل سطر الأوامر الخاص بـ ClickHouse
+      clickhouse-client # أو "clickhouse-client --password" إذا قمت بإعداد كلمة مرور.
+      ```
+    </Accordion>
+  </Step>
+
+  <Step>
+    ## تثبيت ClickHouse server وclient
+
+    ```bash
+    sudo apt-get install -y clickhouse-server clickhouse-client
+    ```
+  </Step>
+
+  <Step>
+    ## بدء تشغيل ClickHouse
+
+    لبدء ClickHouse server، شغّل:
+
+    ```bash
+    sudo service clickhouse-server start
+    ```
+
+    لبدء ClickHouse client، شغّل:
+
+    ```bash
+    clickhouse-client
+    ```
+
+    إذا قمت بإعداد كلمة مرور لخادمك، فستحتاج إلى تشغيل:
+
+    ```bash
+    clickhouse-client --password
+    ```
+  </Step>
+
+  <Step>
+    ## تثبيت standalone ClickHouse Keeper
+
+    <Tip>
+      في بيئات production، نوصي بشدة بتشغيل ClickHouse Keeper على عُقد مخصصة.
+      في بيئات الاختبار، إذا قررت تشغيل ClickHouse Server وClickHouse Keeper على الخادم نفسه،
+      فلن تحتاج إلى تثبيت ClickHouse Keeper لأنه مُضمَّن مع ClickHouse server.
+    </Tip>
+
+    لتثبيت `clickhouse-keeper` على خوادم standalone ClickHouse Keeper، شغّل:
+
+    ```bash
+    sudo apt-get install -y clickhouse-keeper
+    ```
+  </Step>
+
+  <Step>
+    ## تمكين ClickHouse Keeper وبدء تشغيله
+
+    ```bash
+    sudo systemctl enable clickhouse-keeper
+    sudo systemctl start clickhouse-keeper
+    sudo systemctl status clickhouse-keeper
+    ```
+  </Step>
+</Steps>
+
+<div id="packages">
+  ## الحزم
+</div>
+
+فيما يلي تفاصيل حزم deb المختلفة المتاحة:
+
+| Package                        | Description                                                                                                                                                                                                                                                    |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `clickhouse-common-static`     | يثبّت الملفات الثنائية المُجمَّعة الخاصة بـ ClickHouse.                                                                                                                                                                                                        |
+| `clickhouse-server`            | ينشئ رابطًا رمزيًا لـ `clickhouse-server` ويثبّت تهيئة الخادم الافتراضية.                                                                                                                                                                                      |
+| `clickhouse-client`            | ينشئ رابطًا رمزيًا لـ `clickhouse-client` وأدوات أخرى مرتبطة بالعميل، ويثبّت ملفات تهيئة العميل.                                                                                                                                                               |
+| `clickhouse-common-static-dbg` | يثبّت الملفات الثنائية المُجمَّعة الخاصة بـ ClickHouse مع معلومات التنقيح.                                                                                                                                                                                     |
+| `clickhouse-keeper`            | يُستخدم لتثبيت ClickHouse Keeper على عُقد ClickHouse Keeper المخصّصة. إذا كنت تشغّل ClickHouse Keeper على الخادم نفسه الذي يعمل عليه ClickHouse server، فلن تحتاج إلى تثبيت هذه الحزمة. كما يثبّت ClickHouse Keeper وملفات تهيئة ClickHouse Keeper الافتراضية. |
+
+<br />
+
+<Info>
+  إذا كنت بحاجة إلى تثبيت إصدار معيّن من ClickHouse، فيجب تثبيت جميع الحزم بالإصدار نفسه:
+  `sudo apt-get install clickhouse-server=21.8.5.7 clickhouse-client=21.8.5.7 clickhouse-common-static=21.8.5.7`
+</Info>

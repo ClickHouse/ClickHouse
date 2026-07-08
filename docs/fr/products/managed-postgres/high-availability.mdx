@@ -1,0 +1,76 @@
+---
+slug: /cloud/managed-postgres/high-availability
+sidebarTitle: 'Haute disponibilité'
+title: 'Haute disponibilité'
+description: 'Configurez des répliques instance de secours et des modes de réplication pour la haute disponibilité dans ClickHouse Managed Postgres'
+keywords: ['haute disponibilité', 'ha', 'standby', 'réplication', 'failover', 'postgres ha']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
+
+Managed Postgres offre différents niveaux de haute disponibilité pour répondre à vos exigences en matière de durabilité et de performances. Vous pouvez ajouter une ou deux répliques d’instance de secours lors du provisionnement de votre base de données, ou modifier cette configuration ultérieurement depuis la page **Paramètres**, selon vos besoins.
+
+{/* TODO(kaushik-ubi): Capture d’écran de la vue de configuration de la haute disponibilité
+    Chemin : /images/cloud/managed-postgres/high-availability-config.png */}
+
+<div id="high-availability-options">
+  ## Options de haute disponibilité
+</div>
+
+<div id="two-standbys">
+  ### 2 instances de secours
+</div>
+
+Avec deux instances de secours, deux nœuds répliques sont provisionnés aux côtés de votre nœud primaire. Les deux instances de secours ont la même taille que le primaire, et l’un comme l’autre peut prendre le relais en cas de défaillance du primaire.
+
+Cette configuration utilise une **réplication synchrone**, dans laquelle le primaire attend l’accusé de réception d’au moins une instance de secours avant de confirmer les écritures. Elle offre des garanties de durabilité plus solides que la réplication asynchrone. Comme un seul accusé de réception est requis (et non les deux), l’impact sur les performances est moins important qu’avec une réplication synchrone avec une seule instance de secours.
+
+<div id="one-standby">
+  ### 1 instance de secours
+</div>
+
+Avec une instance de secours, un nœud réplique est déployé aux côtés de votre primaire. L’instance de secours a la même taille que le primaire et peut prendre le relais en cas de défaillance de celui-ci.
+
+Les données sont répliquées vers l’instance de secours à l’aide de la **réplication asynchrone**. Cela signifie que les écritures sont validées sur le primaire sans attendre d’accusé de réception de l’instance de secours. La réplication asynchrone garantit que la haute disponibilité ne ralentit pas vos écritures en raison d’une latence réseau supplémentaire. Cependant, cela signifie aussi que l’instance de secours peut ne pas avoir reçu les transactions les plus récentes au moment de la défaillance du primaire. Pour la plupart des applications, ce compromis entre performances et faible risque de perdre des écritures très récentes en vaut la peine. Si la durabilité des écritures est indispensable, il est recommandé d’opter pour 2 instances de secours.
+
+<div id="no-standby">
+  ### Sans instance de secours
+</div>
+
+Avec cette option, seul un nœud primaire est provisionné dans la taille sélectionnée. Aucun nœud instance de secours n&#39;est créé. Votre nœud primaire reste surveillé en cas de défaillance, mais la recovery peut prendre plus de temps selon la nature du problème, puisqu&#39;aucune réplique n&#39;est prête à prendre le relais. Cette configuration convient particulièrement aux environnements de développement, aux tests ou aux workloads non critiques pour lesquels un certain downtime est acceptable.
+
+<div id="standbys-vs-read-replicas">
+  ## Instances de secours vs répliques de lecture
+</div>
+
+Les instances de secours et les répliques de lecture ont des usages différents dans Managed Postgres et se configurent séparément.
+
+**Les instances de secours** sont exclusivement dédiées à la haute disponibilité et au basculement automatique. Elles répliquent les données de l’instance primaire via la réplication en flux continu et sont toujours prêtes à être promues en cas de défaillance de l’instance primaire. Les instances de secours ne sont pas exposées aux requêtes de lecture.
+
+**Les répliques de lecture** sont conçues pour la mise à l’échelle des lectures. Elles récupèrent les données du WAL (Write-Ahead Log) depuis le stockage d’objets et s’exécutent dans un environnement réseau distinct, avec leur propre point de terminaison de connexion. Les répliques de lecture vous permettent de décharger le trafic de lecture de votre instance primaire sans compromettre les garanties de haute disponibilité.
+
+<div id="why-standbys-dont-serve-read-queries">
+  ### Pourquoi les instances de secours ne traitent pas les requêtes en lecture
+</div>
+
+Bien que certains fournisseurs de bases de données proposent des instances de secours actives pour les requêtes en lecture seule, Managed Postgres ne le fait délibérément pas. Autoriser des requêtes en lecture sur des instances de secours peut compromettre leur rôle principal : être prêtes à prendre le relais instantanément en cas de défaillance de l’instance primaire.
+
+Il existe deux préoccupations majeures :
+
+1. **Concurrence avec le rejeu du WAL** : avec des charges d’écriture élevées, les requêtes en lecture sur une instance de secours entrent en concurrence avec le rejeu du WAL pour les ressources système. Cette concurrence peut entraîner un retard de réplication important, ce qui signifie que l’instance de secours se retrouve en retard par rapport à l’instance primaire. Si un basculement se produit alors que l’instance de secours est en retard, elle ne disposera pas des données les plus récentes et pourrait ne pas être en mesure de prendre le relais correctement.
+
+2. **Interférence avec `VACUUM`** : des requêtes en lecture de longue durée sur une instance de secours peuvent empêcher `VACUUM` (et `AUTOVACUUM`) de nettoyer les tuples morts sur l’instance primaire. PostgreSQL ne peut pas supprimer des lignes auxquelles une requête active sur une réplique pourrait encore devoir accéder. Cela peut entraîner une augmentation de la taille des tables et une dégradation des performances au fil du temps.
+
+En réservant les instances de secours au basculement, Managed Postgres garantit qu’elles restent toujours synchronisées et prêtes à prendre le relais avec une perte de données et une indisponibilité minimales. Pour la mise à l’échelle des lectures, utilisez plutôt des [répliques de lecture](/fr/products/managed-postgres/read-replicas).
+
+<div id="handling-failures">
+  ## Gestion des pannes
+</div>
+
+Toutes les instances Managed Postgres sont surveillées en continu afin de détecter les défaillances, que la haute disponibilité soit activée ou non. Dans tous les cas, le système tente de se rétablir automatiquement.
+
+Lorsque des instances de secours sont disponibles, la reprise automatique est plus rapide et plus simple. En règle générale, le système se rétablit en quelques minutes en faisant d’une instance de secours l’instance primaire. Sans instance de secours, la reprise peut nécessiter une intervention manuelle, ce qui augmente considérablement la durée de l’interruption.

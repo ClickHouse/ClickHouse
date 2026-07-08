@@ -1,0 +1,25 @@
+---
+description: 'ClickHouse 中 String 类型文档'
+sidebarTitle: 'String'
+slug: /sql-reference/data-types/string
+title: 'String'
+doc_type: 'reference'
+---
+
+长度任意的字符串，长度不受限制。其值可以包含任意字节序列，包括空字节。
+String 类型可替代其他 DBMS 中的 VARCHAR、BLOB、CLOB 等类型。
+
+创建表时，可以为字符串字段设置数值参数 (例如 `VARCHAR(255)`) ，但 ClickHouse 会忽略这些参数。
+
+别名：
+
+* `String` — `LONGTEXT`, `MEDIUMTEXT`, `TINYTEXT`, `TEXT`, `LONGBLOB`, `MEDIUMBLOB`, `TINYBLOB`, `BLOB`, `VARCHAR`, `CHAR`, `CHAR LARGE OBJECT`, `CHAR VARYING`, `CHARACTER LARGE OBJECT`, `CHARACTER VARYING`, `NCHAR LARGE OBJECT`, `NCHAR VARYING`, `NATIONAL CHARACTER LARGE OBJECT`, `NATIONAL CHARACTER VARYING`, `NATIONAL CHAR VARYING`, `NATIONAL CHARACTER`, `NATIONAL CHAR`, `BINARY LARGE OBJECT`, `BINARY VARYING`,
+
+<div id="encodings">
+  ## 编码
+</div>
+
+ClickHouse 没有“编码”这一概念。String 可以包含任意字节序列，并按原样存储和输出。
+如果需要存储文本，建议使用 UTF-8 编码。至少在终端使用 UTF-8 (也推荐这样做) 时，你可以无需转换就读写这些值。
+类似地，某些用于处理字符串的函数还有单独的变体，假定字符串包含的是表示 UTF-8 编码文本的字节序列。
+例如，[length](/zh/reference/functions/regular-functions/array-functions#length) 函数按字节计算字符串长度，而 [lengthUTF8](/zh/reference/functions/regular-functions/string-functions#lengthUTF8) 函数则在假定该值采用 UTF-8 编码的情况下，按 Unicode 码点计算字符串长度。

@@ -1,0 +1,124 @@
+---
+slug: /cloud/managed-postgres/monitoring/metrics
+sidebarTitle: 'メトリクス リファレンス'
+title: 'Managed Postgres メトリクス リファレンス'
+description: 'Managed Postgres Prometheus エンドポイントで公開されるメトリクスの完全な一覧'
+keywords: ['managed postgres', 'メトリクス', 'prometheus', 'reference', 'オブザーバビリティ']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-metrics-beta" />
+
+このページでは、
+[Managed Postgres Prometheus エンドポイント](/ja/products/managed-postgres/monitoring/prometheus)
+で公開されるすべてのメトリクスを一覧表示します。
+設定と認証については、[Prometheus エンドポイント] ページを参照してください。
+
+<div id="common-labels">
+  ## 共通ラベル
+</div>
+
+すべてのメトリクスには、次のラベルが含まれます。
+
+| Label                   | Description         |
+| ----------------------- | ------------------- |
+| `clickhouse_org`        | Organization ID     |
+| `postgres_service`      | Postgres service ID |
+| `postgres_service_name` | Postgres service名   |
+
+一部のメトリクスには、分類する次元を表すラベルも追加されます (例:
+CPUメトリクスの`mode`、connectionsの`state`、データベース
+サイズの`database`) 。これらは各メトリクスの説明に併記されています。
+
+<div id="information-metric">
+  ## 情報メトリクス
+</div>
+
+`PostgresServiceInfo` は常に `1` となる Gauge で、サービスの現在のステータスとバージョンをラベルとして持ちます。これを使うと、他のメトリクスにステータスを join したり、サービスが `running` 状態でなくなった際に alert を発したりできます。
+
+| メトリクス                 | 型     | 追加ラベル                                 | 説明                            |
+| --------------------- | ----- | ------------------------------------- | ----------------------------- |
+| `PostgresServiceInfo` | gauge | `postgres_status`, `postgres_version` | サービスごとに 1 つの series。値は常に `1`。 |
+
+`postgres_status` は、サービスの現在のライフサイクル状態
+(例: `running`、`creating`、`stopped`) を示します。`postgres_version`
+は、Postgres のメジャーバージョン (例: `17`、`18`) を示します。
+
+<div id="capacity">
+  ## 容量
+</div>
+
+サービスにプロビジョニングされた静的な上限値です。これらが変わるのは、
+サービスのサイズを変更した場合のみです。
+
+| メトリック                             | 種別    | 単位    | 説明                    |
+| ---------------------------------- | ----- | ----- | --------------------- |
+| `PostgresServer_CPUCores`          | gauge | cores | サービスに割り当てられた CPU コア数。 |
+| `PostgresServer_MemoryLimitBytes`  | gauge | bytes | サービスに割り当てられたメモリ。      |
+| `PostgresServer_StorageLimitBytes` | gauge | bytes | サービスに割り当てられたストレージ。    |
+
+<div id="resource-utilization">
+  ## リソース使用率
+</div>
+
+| メトリック                                  | タイプ   | 追加ラベル  | 説明                                                                                       |
+| -------------------------------------- | ----- | ------ | ---------------------------------------------------------------------------------------- |
+| `PostgresServer_CPUSeconds_Total`      | カウンター | `mode` | 消費されたCPU時間。`user`、`system`、`iowait`、`softirq`、`steal`、`irq`、`nice`、`idle` の各モード別に分類されます。 |
+| `PostgresServer_MemoryUsedPercent`     | Gauge |        | 使用中メモリ。`PostgresServer_MemoryLimitBytes` に対する割合。                                         |
+| `PostgresServer_MemoryCachePercent`    | Gauge |        | キャッシュとバッファで使用されているメモリ。総メモリに対する割合。                                                        |
+| `PostgresServer_FilesystemUsedPercent` | Gauge |        | 使用中のファイルシステム領域。総ストレージに対する割合。                                                             |
+
+CPU使用率をパーセンテージで計算するには、
+対象のモードについて `PostgresServer_CPUSeconds_Total` のレートを求め、
+それを `PostgresServer_CPUCores` で割ります。
+
+<div id="io">
+  ## ディスクおよびネットワーク I/O
+</div>
+
+| メトリック                                      | 型     | 単位    | 説明                 |
+| ------------------------------------------- | ----- | ----- | ------------------ |
+| `PostgresServer_DiskReads_Total`            | カウンター | ops   | 完了したディスク読み取り操作数。   |
+| `PostgresServer_DiskWrites_Total`           | カウンター | ops   | 完了したディスク書き込み操作数。   |
+| `PostgresServer_NetworkReceiveBytes_Total`  | カウンター | bytes | ネットワーク経由で受信したバイト数。 |
+| `PostgresServer_NetworkTransmitBytes_Total` | カウンター | bytes | ネットワーク経由で送信したバイト数。 |
+
+<div id="database-activity">
+  ## データベースアクティビティ
+</div>
+
+サービス開始以降の累積カウンターです。`rate()` または `irate()` を使用して、
+1 秒あたりの値に換算できます。
+
+| メトリック                                        | 型     | 説明                  |
+| --------------------------------------------- | ----- | ------------------- |
+| `PostgresServer_TuplesFetched_Total`          | カウンター | クエリで取得された行数。        |
+| `PostgresServer_TuplesInserted_Total`         | カウンター | 挿入された行数。            |
+| `PostgresServer_TuplesUpdated_Total`          | カウンター | 更新された行数。            |
+| `PostgresServer_TuplesDeleted_Total`          | カウンター | 削除された行数。            |
+| `PostgresServer_TransactionsCommitted_Total`  | カウンター | コミットされたトランザクション数。   |
+| `PostgresServer_TransactionsRolledBack_Total` | カウンター | ロールバックされたトランザクション数。 |
+| `PostgresServer_Deadlocks_Total`              | カウンター | 検出されたデッドロック数。       |
+
+<div id="connections-cache-size">
+  ## 接続数、cache、データベースサイズ
+</div>
+
+| メトリック                             | 種類    | 追加ラベル      | 説明                                                                     |
+| ---------------------------------- | ----- | ---------- | ---------------------------------------------------------------------- |
+| `PostgresServer_ActiveConnections` | gauge | `state`    | 状態別の接続数 (例: `active`、`idle`) 。                                         |
+| `PostgresServer_CacheHitRatio`     | gauge |            | バッファcacheヒット率。アクセスされたblocks全体に占める、cacheから提供されたblocksの割合を百分率で示します。      |
+| `PostgresServer_DatabaseSizeBytes` | gauge | `database` | 各データベースのディスクサイズ (バイト単位) 。デフォルトの `postgres` と、ユーザーが作成したすべてのデータベースを含みます。 |
+
+<div id="related">
+  ## 関連ページ
+</div>
+
+* [Prometheus エンドポイント] — 設定、認証、スクレイピング
+* [ダッシュボード](/ja/products/managed-postgres/monitoring/dashboard) — 組み込みのクラウドコンソールのチャート
+* [OpenAPI ガイド](/ja/products/managed-postgres/openapi) — API key の作成
+  および organization ID と service ID の確認
+
+[Prometheus エンドポイント]: /products/managed-postgres/monitoring/prometheus

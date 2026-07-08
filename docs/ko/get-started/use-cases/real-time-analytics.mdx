@@ -1,0 +1,71 @@
+---
+slug: /cloud/get-started/cloud/use-cases/real-time-analytics
+title: '실시간 분석'
+description: 'ClickHouse Cloud를 사용해 즉각적인 인사이트 확보와 데이터 기반 의사 결정을 지원하는 실시간 분석 애플리케이션을 구축하는 방법을 알아보십시오'
+keywords: ['사용 사례', '실시간 분석']
+sidebarTitle: '실시간 분석'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+분석에서 &quot;실시간&quot;은 보통 사용자 경험 자체가 실제로 즉각적으로 반응한다고 느껴지는 것을 의미합니다.
+고객은 대시보드를 갱신하거나, 순위표를 열거나, 문제를 조사할 때 데이터에 방금 발생한 일이 반영되어 있기를 기대합니다.
+기술적으로 이는 단순히 지연 시간이 짧은 분석 쿼리를 제공하는 데 그치지 않고, 대량의 데이터가 지속적으로 삽입되는 동안에도 이를 실현하는 것을 의미합니다.
+
+<div id="system-properties">
+  ## 실시간 분석 시스템의 특성
+</div>
+
+고객이 실시간 분석 플랫폼을 평가할 때 흔히 쿼리 지연 시간에만 집중합니다. &quot;50ms 안에 답을 반환할 수 있는가?&quot;는 타당한 질문입니다. 고정된 데이터셋에 충분한 컴퓨트를 투입할 수 있다면, 대부분의 분석 엔진은 이 질문에 충분히 설득력 있게 답할 수 있습니다.
+
+하지만 사용자가 실제로 무엇을 경험하는지를 결정하는 질문은 더 어렵습니다. 수집이 계속 진행 중이고 다른 사용자들도 동시에 쿼리하는 상황에서, **1초 전에 도착한 데이터에 대해** 시스템이 50ms 안에 답을 반환할 수 있는지가 핵심입니다.
+
+데이터 가용성을 판단하려면 인사이트를 얻기까지의 종단 간 시간(end-to-end time-to-insight)을 고려해야 하며, 여기에는 3가지 구성 요소가 있습니다.
+
+* **수집까지 걸리는 시간**: 새로 생성된 데이터가 플랫폼에 도착해 안정적으로 영구 저장되기까지 얼마나 걸립니까?
+* **변환 및 준비까지 걸리는 시간**: 쿼리가 실제로 참조하는 구조(materialized views, 롤업, 인덱스)를 정제하고, 보강하고, 조인하고, 사전 집계하거나, 갱신하는 데 얼마나 걸립니까?
+* **쿼리까지 걸리는 시간**: 데이터를 사용할 수 있게 된 뒤 읽기 작업을 계획하고 실행하는 데 얼마나 걸립니까?
+
+<Image img="/images/use-cases/rta-considerations.webp" alt="실시간 분석: 수집, 변환, 쿼리까지 걸리는 시간" />
+
+<div id="clickhouse-rta">
+  ## ClickHouse가 실시간 분석을 지원하는 방식
+</div>
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="ClickHouse가 실시간 분석을 지원하는 방식" />
+  </div>
+
+  <ExclusiveGroup name="rta-arch">
+    <AccordionGroup>
+      <Accordion title="데이터 수집" defaultOpen>
+        ClickHouse Cloud에서만 제공되는 [ClickPipes](/ko/integrations/clickpipes/home)를 사용하면 대량의 데이터를 손쉽게 수집할 수 있는 턴키 통합 엔진을 활용할 수 있습니다. 유입되는 데이터 소스와 포맷을 선택하고, 스키마를 조정한 뒤, 파이프라인을 실행하면 됩니다.
+
+        ClickHouse의 광범위한 [테이블 엔진](/ko/reference/engines/table-engines) 라이브러리는 Kafka 토픽, S3 버킷, OLTP 데이터베이스 등에서 데이터를 수집할 수 있도록 지원합니다. 고처리량을 위해 배치 삽입이 필요한 다른 OLAP 데이터베이스와 달리, ClickHouse는 작은 payload도 문제없이 처리합니다 — [asynchronous inserts](/ko/concepts/features/operations/insert/asyncinserts)가 이를 자동으로 배치 처리해 최적의 쓰기 성능을 제공합니다.
+      </Accordion>
+
+      <Accordion title="데이터 변환 및 쿼리">
+        [materialized view](/ko/concepts/features/materialized-views)는 데이터 변환을 매끄럽게 처리합니다 — 새 데이터가 삽입되면 자동으로 실행되어, 별도의 맞춤형 파이프라인 없이도 데이터가 들어오는 즉시 이를 추출, 집계, 수정합니다. 여러 개를 연결하면 모듈식으로 유연하게 구성할 수 있습니다.
+
+        materialized view에 대한 쿼리는 결과가 전용 테이블에 저장되므로 매우 빠릅니다. ClickHouse Cloud에는 별도의 추가 요금제 없이 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache), [희소 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes), [프로젝션](/ko/concepts/features/projections/projections)이 포함됩니다.
+      </Accordion>
+
+      <Accordion title="애플리케이션 및 대시보드">
+        ClickHouse는 금융 서비스, 게임, 전자상거래 등 다양한 분야에서 사용자 대상 분석을 지원합니다. REST 인터페이스를 지원하므로 웹 개발자는 복잡한 바이너리 프로토콜 없이도 경량 애플리케이션을 구축할 수 있습니다.
+
+        [Grafana](/ko/integrations/connectors/data-visualization/grafana), [Tableau](/ko/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse), [Looker](/ko/integrations/connectors/data-visualization/looker-and-clickhouse)와 같은 BI 도구용 네이티브 커넥터는 물론, 네이티브 커넥터가 없는 도구를 위한 언어 클라이언트, SQL 클라이언트, [MySQL wire protocol](/ko/concepts/features/interfaces/mysql)도 지원합니다.
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>

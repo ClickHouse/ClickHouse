@@ -1,0 +1,101 @@
+---
+description: 'CREATE DATABASE 的文档'
+sidebarTitle: '数据库'
+slug: /sql-reference/statements/create/database
+title: 'CREATE DATABASE'
+doc_type: 'reference'
+---
+
+创建新数据库。
+
+```sql
+CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
+```
+
+<div id="clauses">
+  ## 子句
+</div>
+
+<div id="if-not-exists">
+  ### IF NOT EXISTS
+</div>
+
+如果 `db_name` 数据库已存在，则 ClickHouse 不会创建新的数据库，并且：
+
+* 如果指定了该子句，则不会抛出异常。
+* 如果未指定该子句，则会抛出异常。
+
+<div id="on-cluster">
+  ### ON CLUSTER
+</div>
+
+ClickHouse 会在指定集群的所有服务器上创建 `db_name` 数据库。更多信息，请参见 [Distributed DDL](/zh/reference/statements/distributed-ddl) 一文。
+
+<div id="engine">
+  ### 引擎
+</div>
+
+默认情况下，ClickHouse 使用其自带的 [Atomic](/zh/reference/engines/database-engines/atomic) 数据库引擎。另有 [MySQL](/zh/reference/engines/database-engines/mysql)、[PostgresSQL](/zh/reference/engines/database-engines/postgresql)、[MaterializedPostgreSQL](/zh/reference/engines/database-engines/materialized-postgresql)、[Replicated](/zh/reference/engines/database-engines/replicated) 和 [SQLite](/zh/reference/engines/database-engines/sqlite)。
+
+<div id="comment">
+  ### 注释
+</div>
+
+你可以在创建数据库时添加注释。
+
+所有数据库引擎均支持注释。
+
+**语法**
+
+```sql
+CREATE DATABASE db_name ENGINE = engine(...) COMMENT 'Comment'
+```
+
+**示例**
+
+```sql title="Query"
+CREATE DATABASE db_comment ENGINE = Memory COMMENT 'The temporary database';
+SELECT name, comment FROM system.databases WHERE name = 'db_comment';
+```
+
+```text title="Response"
+┌─name───────┬─comment────────────────┐
+│ db_comment │ The temporary database │
+└────────────┴────────────────────────┘
+```
+
+<div id="settings">
+  ### SETTINGS
+</div>
+
+<div id="lazy-load-tables">
+  #### lazy_load_tables
+</div>
+
+启用后，数据库启动时不会完全加载各个表。相反，系统会为每个表创建一个轻量级代理，并在首次访问时才将实际的表引擎物化出来。对于包含大量表、但实际只会查询其中一部分的数据库，这可以减少启动时间和内存使用量。
+
+```sql
+CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
+```
+
+适用于将表元数据存储在磁盘上的数据库 引擎 (例如 `Atomic`、`Ordinary`) 。无论此设置如何，视图、materialized view、字典以及基于表函数的表始终都会立即加载。
+
+**何时使用：** 对于拥有大量表 (数百张甚至数千张) 、但只有一部分会被频繁查询的数据库，此设置非常有用。它会将表引擎对象的创建、数据分区片段的扫描以及后台线程的初始化推迟到首次访问时再进行，从而减少服务器启动时间和内存占用。
+
+**对 `system.tables` 的影响：**
+
+* 在表被访问之前，`system.tables` 会将其引擎显示为 `TableProxy`。首次访问后，则会显示真实的引擎名称 (例如 `MergeTree`) 。
+* 对于尚未加载的表，`total_rows` 和 `total_bytes` 等列会返回 `NULL`，因为真实存储此时尚未创建。
+
+**与 DDL 操作的交互：**
+
+* `SELECT`、`INSERT`、`ALTER`、`DROP` 在首次使用时会透明地触发真实表引擎的加载。
+* `RENAME TABLE` 无需触发加载即可工作。
+* 表一旦加载，在服务器进程的整个生命周期内都会保持已加载状态。
+
+**限制：**
+
+* 依赖 `system.tables` 元数据 (例如 `total_rows`、`engine`) 的监控工具，看到的未加载表信息可能不完整。
+* 对未加载表执行第一次查询时会产生一次性加载开销 (解析已存储的 `CREATE TABLE` 语句并初始化引擎) 。
+
+默认值：`0` (禁用) 。
