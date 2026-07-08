@@ -13,8 +13,21 @@
 namespace DB
 {
 
-class IJoin;
-using JoinPtr = std::shared_ptr<IJoin>;
+/// One inequality join condition `left.x op right.x`: the comparison operator and the
+/// positions of the key columns in the input headers (not bound to column names).
+struct IEJoinCondition
+{
+    JoinConditionOperator op = JoinConditionOperator::Unknown;
+    size_t left_key_position = 0;
+    size_t right_key_position = 0;
+
+    /// `side` is 0 for the left input, 1 for the right one.
+    size_t keyPosition(size_t side) const { return side == 0 ? left_key_position : right_key_position; }
+};
+
+/// The two conditions `left.x op1 right.x AND left.y op2 right.y` executed by the IEJoin
+/// algorithm: the first condition defines the L1 order, the second the L2 order.
+using IEJoinConditions = std::array<IEJoinCondition, 2>;
 
 /*
  * Joins two fully materialized streams by two inequality conditions
@@ -31,7 +44,7 @@ using JoinPtr = std::shared_ptr<IJoin>;
 class IEJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    IEJoinAlgorithm(JoinPtr table_join_, const SharedHeaders & input_headers_, size_t max_block_size_);
+    IEJoinAlgorithm(const IEJoinConditions & conditions, const SharedHeaders & input_headers_, size_t max_block_size_);
 
     const char * getName() const override { return "IEJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -72,9 +85,7 @@ private:
     SharedHeaders input_headers;
     size_t max_block_size;
 
-    std::array<JoinConditionOperator, 2> operators;
-    /// Positions of the key columns in the input headers: [side][key_index].
-    std::array<std::array<size_t, 2>, 2> key_positions;
+    IEJoinConditions conditions;
 
     std::array<Chunks, 2> accumulated_chunks;
     std::array<bool, 2> source_finished = {false, false};
@@ -83,8 +94,20 @@ private:
 
     /// All columns of each side with NULL-key rows removed. Result rows are gathered from them.
     std::array<Columns, 2> side_columns;
-    /// Key columns of side_columns prepared for comparisons: [side][key_index].
-    std::array<std::array<ColumnPtr, 2>, 2> key_columns;
+
+    /// Both sides' key column of one condition, prepared for comparisons
+    /// (from `side_columns`, with `LowCardinality` stripped).
+    struct ConditionKeyColumns
+    {
+        ColumnPtr left;
+        ColumnPtr right;
+
+        ColumnPtr & bySide(size_t side) { return side == 0 ? left : right; }
+        const ColumnPtr & bySide(size_t side) const { return side == 0 ? left : right; }
+    };
+
+    /// Prepared key columns, one entry per condition.
+    std::array<ConditionKeyColumns, 2> key_columns;
     std::array<size_t, 2> num_side_rows = {0, 0};
     size_t n_union = 0;
 
@@ -126,7 +149,7 @@ class IEJoinTransform final : public IMergingTransform<IEJoinAlgorithm>
 
 public:
     IEJoinTransform(
-        JoinPtr table_join,
+        const IEJoinConditions & conditions,
         SharedHeaders & input_headers,
         SharedHeader output_header,
         size_t max_block_size,

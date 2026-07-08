@@ -32,7 +32,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/IEJoin.h>
+#include <Processors/QueryPlan/IEJoinStep.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/PasteJoin.h>
@@ -826,15 +826,24 @@ static JoinConditionOperator reverseInequalityOperator(JoinConditionOperator op)
     }
 }
 
+/// Two inequality conditions extracted from the JOIN ON expression for the IEJoin algorithm.
+/// Key names refer to the outputs of the pre-join actions; they are used only inside the planner
+/// to resolve the key positions for `IEJoinStep`.
+struct IEJoinPlanDescription
+{
+    Names key_names_left;
+    Names key_names_right;
+    std::array<JoinConditionOperator, 2> operators;
+};
+
 /// Try to interpret the JOIN ON expression as exactly two inequality conditions between the two tables
 /// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape,
 /// so that the caller falls back to the generic handling (a CROSS join with a filter).
 /// On success the conditions are consumed from `join_expression`: key expressions are casted
-/// to common types, registered in `used_expressions` and in the table join clause.
-static std::optional<IEJoinDescription> tryExtractIEJoinDescription(
+/// to common types and registered in `used_expressions`.
+static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     std::vector<JoinActionRef> & join_expression,
     const JoinOperator & join_operator,
-    TableJoin::JoinOnClause & table_join_clause,
     std::vector<JoinActionRef> & used_expressions,
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
@@ -848,7 +857,7 @@ static std::optional<IEJoinDescription> tryExtractIEJoinDescription(
     if (join_expression.size() != 2)
         return {};
 
-    IEJoinDescription description;
+    IEJoinPlanDescription description;
     std::vector<std::pair<JoinActionRef, JoinActionRef>> keys;
     for (size_t i = 0; i < 2; ++i)
     {
@@ -869,14 +878,13 @@ static std::optional<IEJoinDescription> tryExtractIEJoinDescription(
         keys.emplace_back(std::move(lhs), std::move(rhs));
     }
 
-    /// Both conditions are validated, commit: mutate the DAG and the table join clause.
+    /// Both conditions are validated, commit: mutate the DAG.
     for (auto & [lhs, rhs] : keys)
     {
         predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
 
         description.key_names_left.push_back(lhs.getColumnName());
         description.key_names_right.push_back(rhs.getColumnName());
-        table_join_clause.addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
 
         used_expressions.push_back(lhs);
         used_expressions.push_back(rhs);
@@ -1158,6 +1166,48 @@ static void constructPhysicalStep(
         nodes, makeDescription("Post Join Actions"));
 }
 
+static void constructIEJoinStep(
+    QueryPlanNode & node,
+    ActionsDAG left_pre_join_actions,
+    ActionsDAG right_pre_join_actions,
+    ActionsDAG post_join_actions,
+    std::pair<String, bool> residual_filter_condition,
+    IEJoinPlanDescription description,
+    const JoinSettings & join_settings,
+    QueryPlan::Nodes & nodes)
+{
+    if (node.children.size() != 2)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 children, got {}", node.children.size());
+
+    auto * join_left_node = node.children[0];
+    auto * join_right_node = node.children[1];
+
+    makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Pre Join Actions"));
+
+    makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, makeDescription("Right Pre Join Actions"));
+
+    const auto & left_header = join_left_node->step->getOutputHeader();
+    const auto & right_header = join_right_node->step->getOutputHeader();
+
+    IEJoinConditions conditions;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        conditions[i].op = description.operators[i];
+        conditions[i].left_key_position = left_header->getPositionByName(description.key_names_left[i]);
+        conditions[i].right_key_position = right_header->getPositionByName(description.key_names_right[i]);
+    }
+
+    node.step = std::make_unique<IEJoinStep>(left_header, right_header, conditions, join_settings.max_block_size);
+
+    node.children = {join_left_node, join_right_node};
+
+    post_join_actions.appendInputsForUnusedColumns(*node.step->getOutputHeader());
+    makeFilterNodeOnTopOf(
+        node, std::move(post_join_actions),
+        residual_filter_condition.first, residual_filter_condition.second,
+        nodes, makeDescription("Post Join Actions"));
+}
+
 static QueryPlanNode buildPhysicalJoinImpl(
     std::vector<QueryPlanNode *> children,
     JoinOperator join_operator,
@@ -1228,7 +1278,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
 
     bool is_disjunctive_condition = false;
-    std::optional<IEJoinDescription> ie_join_description;
+    std::optional<IEJoinPlanDescription> ie_join_description;
     auto & table_join_clauses = table_join->getClauses();
     if (!is_join_without_expression)
     {
@@ -1238,7 +1288,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
         {
             if (join_settings.allow_experimental_ie_join)
                 ie_join_description = tryExtractIEJoinDescription(
-                    join_expression, join_operator, table_join_clauses.back(), used_expressions, join_settings, planning_context);
+                    join_expression, join_operator, used_expressions, join_settings, planning_context);
 
             if (!ie_join_description)
             {
@@ -1499,19 +1549,27 @@ static QueryPlanNode buildPhysicalJoinImpl(
     }
     table_join->setJoinOperator(join_operator);
 
+    if (ie_join_description)
+    {
+        QueryPlanNode node;
+        node.children = std::move(children);
+        String ie_residual_filter_condition_name = residual_filter_condition ? residual_filter_condition.getColumnName() : "";
+        constructIEJoinStep(
+            node, std::move(left_dag), std::move(right_dag), std::move(residual_dag),
+            std::make_pair(ie_residual_filter_condition_name, can_remove_residual_filter),
+            std::move(*ie_join_description), join_settings, nodes);
+        return node;
+    }
+
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
     SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
-    JoinPtr join_algorithm_ptr;
-    if (ie_join_description)
-        join_algorithm_ptr = std::make_shared<IEJoin>(table_join, right_sample_block, std::move(*ie_join_description));
-    else
-        join_algorithm_ptr = chooseJoinAlgorithm(
-            table_join,
-            prepared_join_storage,
-            left_sample_block,
-            right_sample_block,
-            join_algorithm_params);
+    JoinPtr join_algorithm_ptr = chooseJoinAlgorithm(
+        table_join,
+        prepared_join_storage,
+        left_sample_block,
+        right_sample_block,
+        join_algorithm_params);
 
     QueryPlanNode node;
     node.children = std::move(children);

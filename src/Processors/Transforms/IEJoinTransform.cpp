@@ -8,10 +8,8 @@
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
-#include <Interpreters/IEJoin.h>
 #include <Processors/Transforms/IEJoinTransform.h>
 #include <Common/iota.h>
-#include <Common/typeid_cast.h>
 
 namespace DB
 {
@@ -28,29 +26,29 @@ static bool isInequalityOperator(JoinConditionOperator op)
         || op == JoinConditionOperator::Greater || op == JoinConditionOperator::GreaterOrEquals;
 }
 
-IEJoinAlgorithm::IEJoinAlgorithm(JoinPtr table_join_, const SharedHeaders & input_headers_, size_t max_block_size_)
+IEJoinAlgorithm::IEJoinAlgorithm(const IEJoinConditions & conditions_, const SharedHeaders & input_headers_, size_t max_block_size_)
     : input_headers(input_headers_)
     , max_block_size(std::max<size_t>(1, max_block_size_))
+    , conditions(conditions_)
 {
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoinAlgorithm requires exactly two inputs");
 
-    const auto * ie_join = typeid_cast<const IEJoin *>(table_join_.get());
-    if (!ie_join)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoinAlgorithm requires IEJoin");
-
-    const auto & description = ie_join->getDescription();
-    operators = description.operators;
-    for (auto op : operators)
+    for (const auto & condition : conditions)
     {
-        if (!isInequalityOperator(op))
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected operator in IEJoin condition: {}", toString(op));
-    }
+        if (!isInequalityOperator(condition.op))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected operator in IEJoin condition: {}", toString(condition.op));
 
-    for (size_t key_index = 0; key_index < 2; ++key_index)
-    {
-        key_positions[0][key_index] = input_headers[0]->getPositionByName(description.key_names_left[key_index]);
-        key_positions[1][key_index] = input_headers[1]->getPositionByName(description.key_names_right[key_index]);
+        if (condition.left_key_position >= input_headers[0]->columns() || condition.right_key_position >= input_headers[1]->columns())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin key positions {} and {} are out of range for inputs with {} and {} columns",
+                condition.left_key_position, condition.right_key_position, input_headers[0]->columns(), input_headers[1]->columns());
+
+        /// The planner casts both sides of each condition to a common type.
+        const auto & left_type = input_headers[0]->getByPosition(condition.left_key_position).type;
+        const auto & right_type = input_headers[1]->getByPosition(condition.right_key_position).type;
+        if (!left_type->equals(*right_type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoin key types do not match: {} and {}",
+                left_type->getName(), right_type->getName());
     }
 }
 
@@ -92,12 +90,13 @@ int IEJoinAlgorithm::compareKeysAt(size_t key_index, size_t union_a, size_t unio
     size_t row_a = union_a - (side_a ? num_side_rows[0] : 0);
     size_t side_b = union_b < num_side_rows[0] ? 0 : 1;
     size_t row_b = union_b - (side_b ? num_side_rows[0] : 0);
-    return key_columns[side_a][key_index]->compareAt(row_a, row_b, *key_columns[side_b][key_index], /* nan_direction_hint */ 1);
+    const auto & keys = key_columns[key_index];
+    return keys.bySide(side_a)->compareAt(row_a, row_b, *keys.bySide(side_b), /* nan_direction_hint */ 1);
 }
 
 bool IEJoinAlgorithm::frontierAdvances(size_t l2_from, size_t l2_current) const
 {
-    const auto op2 = operators[1];
+    const auto op2 = conditions[1].op;
     const bool descending = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::LessOrEquals;
     const bool strict = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::Greater;
 
@@ -166,7 +165,7 @@ void IEJoinAlgorithm::buildJoinState()
 
         std::array<ColumnPtr, 2> comparison_keys;
         for (size_t key_index = 0; key_index < 2; ++key_index)
-            comparison_keys[key_index] = columns[key_positions[side][key_index]]->convertToFullColumnIfLowCardinality();
+            comparison_keys[key_index] = columns[conditions[key_index].keyPosition(side)]->convertToFullColumnIfLowCardinality();
 
         /// Exclude rows with NULL in any key from the union entirely: a NULL fails every inequality,
         /// so such rows cannot produce matches (the join is INNER).
@@ -193,13 +192,14 @@ void IEJoinAlgorithm::buildJoinState()
         }
 
         side_columns[side] = std::move(columns);
-        key_columns[side] = std::move(comparison_keys);
+        for (size_t key_index = 0; key_index < 2; ++key_index)
+            key_columns[key_index].bySide(side) = std::move(comparison_keys[key_index]);
         num_side_rows[side] = side_columns[side].empty() ? 0 : side_columns[side].front()->size();
     }
 
     n_union = num_side_rows[0] + num_side_rows[1];
 
-    const auto op1 = operators[0];
+    const auto op1 = conditions[0].op;
     const bool l1_descending = op1 == JoinConditionOperator::Greater || op1 == JoinConditionOperator::GreaterOrEquals;
     const bool op1_strict = op1 == JoinConditionOperator::Less || op1 == JoinConditionOperator::Greater;
 
@@ -236,7 +236,7 @@ void IEJoinAlgorithm::buildJoinState()
             li[pos] = -(static_cast<Int64>(entry - num_side_rows[0]) + 1);
     }
 
-    const auto op2 = operators[1];
+    const auto op2 = conditions[1].op;
     const bool l2_descending = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::LessOrEquals;
 
     /// L2: L1 positions ordered by the second condition's keys, so that every entry satisfies
@@ -399,8 +399,9 @@ Chunk IEJoinAlgorithm::produceBatch()
 
 bool IEJoinAlgorithm::checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const
 {
-    int cmp = key_columns[0][key_index]->compareAt(left_row, right_row, *key_columns[1][key_index], /* nan_direction_hint */ 1);
-    switch (operators[key_index])
+    const auto & keys = key_columns[key_index];
+    int cmp = keys.left->compareAt(left_row, right_row, *keys.right, /* nan_direction_hint */ 1);
+    switch (conditions[key_index].op)
     {
         case JoinConditionOperator::Less:
             return cmp < 0;
@@ -444,7 +445,7 @@ IMergingAlgorithm::MergedStats IEJoinAlgorithm::getMergedStats() const
 }
 
 IEJoinTransform::IEJoinTransform(
-    JoinPtr table_join,
+    const IEJoinConditions & conditions,
     SharedHeaders & input_headers,
     SharedHeader output_header,
     size_t max_block_size,
@@ -456,7 +457,7 @@ IEJoinTransform::IEJoinTransform(
         limit_hint_,
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
-        table_join,
+        conditions,
         input_headers,
         max_block_size)
 {

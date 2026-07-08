@@ -158,6 +158,14 @@ public:
         size_t max_block_size,
         Processors * collected_processors = nullptr);
 
+    /// Join two independent pipelines with a two-input joining transform created by the caller.
+    /// Both pipelines are squashed to a single stream.
+    static std::unique_ptr<QueryPipelineBuilder> joinPipelinesPaired(
+        std::unique_ptr<QueryPipelineBuilder> left,
+        std::unique_ptr<QueryPipelineBuilder> right,
+        ProcessorPtr joining,
+        Processors * collected_processors);
+
     static std::unique_ptr<QueryPipelineBuilder> joinPipelinesYShapedByShards(
         std::unique_ptr<QueryPipelineBuilder> left,
         std::unique_ptr<QueryPipelineBuilder> right,
