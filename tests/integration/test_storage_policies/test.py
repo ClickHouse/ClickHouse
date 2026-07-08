@@ -54,6 +54,17 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
     def exec_sh(command):
         node.exec_in_container(["bash", "-c", command])
 
+    def set_remove_stale_moving_parts(enabled):
+        config_path = "/etc/clickhouse-server/config.d/disable_remove_stale_moving_parts.xml"
+        if enabled:
+            exec_sh(f"rm -f {shlex.quote(config_path)}")
+        else:
+            node.copy_file_to_container(
+                os.path.join(CONFIG_DIR, "disable_remove_stale_moving_parts.xml"),
+                config_path,
+            )
+        node.query("SYSTEM RELOAD CONFIG")
+
     def render(command, data_path, disk2_data_path):
         return command.format(data_path=shlex.quote(data_path), disk2_data_path=shlex.quote(disk2_data_path))
 
@@ -104,6 +115,8 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
 
     for table_name, command, expected_error, with_ignored_contents in [
         ("test_mismatched_format_version", "mkdir -p {disk2_data_path} && printf 255 > {disk2_data_path}/format_version.txt", "Version file", False),
+        ("test_format_version_garbage_after_number", "mkdir -p {disk2_data_path} && printf '1x' > {disk2_data_path}/format_version.txt", "Bad version file", False),
+        ("test_format_version_empty_file", "mkdir -p {disk2_data_path} && : > {disk2_data_path}/format_version.txt", "Bad version file", False),
         ("test_format_version_directory", "mkdir -p {disk2_data_path}/format_version.txt", "Bad version file", False),
         (
             "test_detached_file",
@@ -117,3 +130,13 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         ("test_valid_detached_part", "mkdir -p {disk2_data_path}/detached/all_0_0_0", "already contain data", True),
     ]:
         check_case(table_name, command, expected_error, with_ignored_contents=with_ignored_contents)
+
+    try:
+        set_remove_stale_moving_parts(False)
+        check_case(
+            "test_moving_directory_cleanup_disabled",
+            "mkdir -p {disk2_data_path}/moving/all_0_0_0",
+            "already contain data",
+        )
+    finally:
+        set_remove_stale_moving_parts(True)

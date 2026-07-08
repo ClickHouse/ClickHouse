@@ -37,6 +37,7 @@
 #include <Disks/TemporaryFileOnDisk.h>
 #include <Disks/createVolume.h>
 #include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
 #include <IO/S3Common.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteBufferFromString.h>
@@ -5267,8 +5268,7 @@ void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
     if (auto buf = disk->readFileIfExists(format_version_path, getReadSettings()))
     {
         UInt32 current_format_version{0};
-        readIntText(current_format_version, *buf);
-        if (!buf->eof())
+        if (!tryReadIntText(current_format_version, *buf) || !buf->eof())
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Bad version file: {}", fullPath(disk, format_version_path));
 
         if (current_format_version != format_version.toUnderType())
@@ -5322,9 +5322,18 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
         if (startsWith(name, "tmp_mutation_") && endsWith(name, ".txt") && disk->existsFile(entry_path))
             continue;
 
-        /// `moving/` contains interrupted part-move scratch data; startup recovery clears its children.
-        if (name == MOVING_DIR_NAME && disk->existsDirectory(entry_path))
+        /// `moving/` contains interrupted part-move scratch data; startup recovery clears its children
+        /// only when stale moving part cleanup is enabled.
+        if (name == MOVING_DIR_NAME)
+        {
+            if (!disk->existsDirectory(entry_path))
+                return true;
+
+            if (!allowRemoveStaleMovingParts() && !disk->isDirectoryEmpty(entry_path))
+                return true;
+
             continue;
+        }
 
         if (name == DETACHED_DIR_NAME)
         {
