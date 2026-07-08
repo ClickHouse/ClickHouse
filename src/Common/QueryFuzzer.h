@@ -252,6 +252,11 @@ private:
     /// rejects the arguments. Shared by fuzzDataType and getRandomType so the factory + build logic lives in
     /// one place.
     DataTypePtr makeAggregateFunctionType(const String & name, const DataTypes & argument_types, const Array & parameters, bool simple);
+    /// Builds a DateTime / DateTime64 type, occasionally with an explicit valid timezone (otherwise no explicit
+    /// timezone). For DateTime64 the scale is passed in. Shared by fuzzDataType and getRandomType so the valid
+    /// timezone set lives in one place.
+    DataTypePtr makeRandomDateTime();
+    DataTypePtr makeRandomDateTime64(UInt32 scale);
     void fuzzJoinType(ASTTableJoin * table_join);
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast, size_t nproj);

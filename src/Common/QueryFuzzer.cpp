@@ -2196,9 +2196,13 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         return std::make_shared<DataTypeFixedString>(new_n);
     }
 
+    const auto * type_datetime = typeid_cast<const DataTypeDateTime *>(type.get());
+    if (type_datetime && fuzz_rand() % 4 != 0)
+        return makeRandomDateTime(); /// keep it default or fuzz to another valid explicit timezone
+
     const auto * type_datetime64 = typeid_cast<const DataTypeDateTime64 *>(type.get());
     if (type_datetime64 && fuzz_rand() % 4 != 0)
-        return std::make_shared<DataTypeDateTime64>(fuzz_rand() % 10); /// scale in [0, 9]
+        return makeRandomDateTime64(fuzz_rand() % 10); /// scale in [0, 9], keep/fuzz the explicit timezone
 
     const auto * type_time64 = typeid_cast<const DataTypeTime64 *>(type.get());
     if (type_time64 && fuzz_rand() % 4 != 0)
@@ -2400,6 +2404,29 @@ DataTypePtr QueryFuzzer::makeAggregateFunctionType(
     }
 }
 
+namespace
+{
+    /// Valid timezone names the fuzzer may attach to DateTime / DateTime64 types. Shared by
+    /// makeRandomDateTime / makeRandomDateTime64.
+    constexpr const char * fuzzer_timezones[] = {"UTC", "Europe/Moscow", "America/New_York", "Asia/Tokyo", "Australia/Sydney"};
+}
+
+DataTypePtr QueryFuzzer::makeRandomDateTime()
+{
+    /// One third of the time attach an explicit valid timezone, otherwise leave it default. Both forms
+    /// round-trip through ParserDataType.
+    if (fuzz_rand() % 3 == 0)
+        return std::make_shared<DataTypeDateTime>(fuzzer_timezones[fuzz_rand() % std::size(fuzzer_timezones)]);
+    return std::make_shared<DataTypeDateTime>();
+}
+
+DataTypePtr QueryFuzzer::makeRandomDateTime64(UInt32 scale)
+{
+    if (fuzz_rand() % 3 == 0)
+        return std::make_shared<DataTypeDateTime64>(scale, fuzzer_timezones[fuzz_rand() % std::size(fuzzer_timezones)]);
+    return std::make_shared<DataTypeDateTime64>(scale);
+}
+
 DataTypePtr QueryFuzzer::getRandomType()
 {
     checkIterationLimit();
@@ -2427,7 +2454,6 @@ DataTypePtr QueryFuzzer::getRandomType()
     if (pick >= random_types.size())
         return DataTypeFactory::instance().get(geo_type_names[pick - random_types.size()]);
 
-    static constexpr const char * timezones[] = {"UTC", "Europe/Moscow", "America/New_York", "Asia/Tokyo", "Australia/Sydney"};
     const auto type_id = random_types[pick];
 
 /// NOLINTBEGIN(bugprone-macro-parentheses)
@@ -2489,15 +2515,9 @@ DataTypePtr QueryFuzzer::getRandomType()
             return std::make_shared<DataTypeEnum<Int16>>(values);
         }
         case TypeIndex::DateTime:
-            if (fuzz_rand() % 3 == 0)
-                return std::make_shared<DataTypeDateTime>(timezones[fuzz_rand() % std::size(timezones)]);
-            return std::make_shared<DataTypeDateTime>();
-        case TypeIndex::DateTime64: {
-            const UInt32 scale = fuzz_rand() % 10;
-            if (fuzz_rand() % 3 == 0)
-                return std::make_shared<DataTypeDateTime64>(scale, timezones[fuzz_rand() % std::size(timezones)]);
-            return std::make_shared<DataTypeDateTime64>(scale);
-        }
+            return makeRandomDateTime();
+        case TypeIndex::DateTime64:
+            return makeRandomDateTime64(fuzz_rand() % 10);
         case TypeIndex::Time64:
             return std::make_shared<DataTypeTime64>(fuzz_rand() % 10);
         case TypeIndex::Dynamic:

@@ -81,6 +81,10 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
         "QBit(Float32, 16)",
         "SimpleAggregateFunction(sum, UInt64)",
         "SimpleAggregateFunction(sumMap, Tuple(Array(String), Array(UInt64)))",
+        "DateTime",
+        "DateTime('Asia/Istanbul')",
+        "DateTime64(3)",
+        "DateTime64(3, 'UTC')",
     };
     for (const auto & type_name : valid_type_names)
     {
