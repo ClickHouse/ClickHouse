@@ -1,6 +1,9 @@
 -- Tags: no-old-analyzer
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
 
+SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
+
 DROP TABLE IF EXISTS t1_04341;
 DROP TABLE IF EXISTS t2_04341;
 CREATE TABLE t1_04341 (key UInt64, val Nullable(String)) ENGINE = MergeTree ORDER BY key;

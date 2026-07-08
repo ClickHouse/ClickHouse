@@ -1,6 +1,8 @@
 -- Tags: no-old-analyzer
 
 -- Reset the global max_rows_to_group_by; distributed aggregation rejects a nonzero limit.
+SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET explain_query_plan_default = 'legacy';
 SET max_rows_to_group_by = 0;
 -- Pin off: statistics change the estimated group count, flipping the distributed aggregation

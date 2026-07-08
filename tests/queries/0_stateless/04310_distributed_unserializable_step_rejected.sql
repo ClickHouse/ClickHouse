@@ -9,6 +9,8 @@ DROP TABLE IF EXISTS t_unserializable;
 CREATE TABLE t_unserializable (a UInt32, v UInt32) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_unserializable SELECT number % 10, number FROM numbers(100000);
 
+SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3;
 
 SELECT a, sum(v) OVER (PARTITION BY a) AS w FROM t_unserializable
