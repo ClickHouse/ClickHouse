@@ -2158,9 +2158,47 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
             return type;
         }
 
-        /// Any other custom-named type (geo Point/Ring/Polygon/MultiPolygon, Bool, ...) is a parameterless fixed
-        /// alias with no child types to fuzz. Return it unchanged rather than letting the storage-type arms below
-        /// rewrite it to its (unnamed) storage type and drop the alias.
+        /// Geo aliases (Point, Ring, Polygon, MultiPolygon, LineString, MultiLineString, Geometry) are
+        /// DataTypeCustomFixedName types whose storage carries nested structure (Point is Tuple(Float64,
+        /// Float64); Ring/Polygon/MultiPolygon/LineString are Array(...); MultiLineString is Array(LineString);
+        /// Geometry is Variant(...)). getName() returns the fixed alias string regardless of that storage, so
+        /// there is no round-trippable way to attach the fixed name to a *mutated* storage: getName() would
+        /// still emit the alias, which re-parses to the canonical storage and hides the mutation (and yields a
+        /// name/storage-inconsistent type). To still fuzz the nested point/array/variant structure of schemas
+        /// that contain these types, occasionally emit the fuzzed storage type (dropping the alias, which is a
+        /// valid structural mutation with a genuine round-trippable getName()); otherwise keep the alias.
+        static const std::unordered_set<String> geo_alias_names
+            = {"Point", "Ring", "Polygon", "MultiPolygon", "LineString", "MultiLineString", "Geometry"};
+        if (geo_alias_names.contains(type->getCustomName()->getName()) && fuzz_rand() % 4 == 0)
+        {
+            try
+            {
+                if (const auto * geo_array = typeid_cast<const DataTypeArray *>(type.get()))
+                    return std::make_shared<DataTypeArray>(fuzzDataType(geo_array->getNestedType()));
+                if (const auto * geo_tuple = typeid_cast<const DataTypeTuple *>(type.get()))
+                {
+                    DataTypes elements;
+                    for (const auto & element : geo_tuple->getElements())
+                        elements.push_back(fuzzDataType(element));
+                    return std::make_shared<DataTypeTuple>(elements);
+                }
+                if (const auto * geo_variant = typeid_cast<const DataTypeVariant *>(type.get()))
+                {
+                    DataTypes variants;
+                    for (const auto & v : geo_variant->getVariants())
+                        variants.push_back(fuzzDataType(v));
+                    return std::make_shared<DataTypeVariant>(variants);
+                }
+            }
+            catch (...) // NOLINT(bugprone-empty-catch) Ok: a fuzzed storage type may violate a container invariant
+            {
+                return type;
+            }
+        }
+
+        /// Any other custom-named type (Bool, ...) is a parameterless fixed alias with no child types to fuzz.
+        /// Return it unchanged rather than letting the storage-type arms below rewrite it to its (unnamed)
+        /// storage type and drop the alias.
         return type;
     }
 

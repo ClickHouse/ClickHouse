@@ -92,6 +92,13 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
         "DateTime64(3, 'UTC')",
         "Nested(a UInt32, b String)",
         "Nested(a UInt32, b Array(Nullable(Int64)))",
+        "Point",
+        "Ring",
+        "Polygon",
+        "MultiPolygon",
+        "LineString",
+        "MultiLineString",
+        "Geometry",
     };
     for (const auto & type_name : valid_type_names)
     {
