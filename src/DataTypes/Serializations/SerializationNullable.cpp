@@ -960,13 +960,15 @@ ReturnType deserializeTextJSONImpl(IColumn & column, ReadBuffer & istr, const Fo
         /// (e.g. "nan" for Nullable(Float64)) and the nested parser stopped before consuming
         /// all the bytes that were pulled into the peekable buffer's own memory while probing for "null".
         /// We also should delete incorrectly deserialized value from nested column.
-        nested_column.popBack(1);
-
         if constexpr (!std::is_same_v<ReturnType, void>)
+        {
+            nested_column.popBack(1);
             return ReturnType(false);
+        }
 
         WriteBufferFromOwnString parsed_value;
         nested->serializeTextJSON(nested_column, nested_column.size() - 1, parsed_value, settings);
+        nested_column.popBack(1);
         throw DB::Exception(
                 ErrorCodes::CANNOT_READ_ALL_DATA,
                 "Error while parsing \"{}{}\" as Nullable"

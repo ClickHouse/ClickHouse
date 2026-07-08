@@ -195,6 +195,18 @@ void SerializationDateTime64::serializeTextJSON(const IColumn & column, size_t r
     writeChar('"', ostr);
 }
 
+/// Dispatches on the first character so at most one checkString() is attempted, since checkString() does not roll back on a partial mismatch.
+static bool checkISODatePrefix(ReadBuffer & istr)
+{
+    if (istr.eof())
+        return false;
+    if (*istr.position() == 'n')
+        return checkString("new ISODate(", istr);
+    if (*istr.position() == 'I')
+        return checkString("ISODate(", istr);
+    return false;
+}
+
 /// Not valid JSON but accept it as mongodb shell syntax to parse inner string
 /// Case: ISODate("2024-05-29T23:16:12.256") or new ISODate("2024-05-29T23:16:12.256Z")
 template <typename ReturnType>
@@ -247,7 +259,7 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
     }
     /// Not valid JSON but accept it as mongodb shell syntax to parse inner string
     /// Case: ISODate("2024-05-29T23:16:12.256")
-    else if (checkString("new ISODate(", istr) || checkString("ISODate(", istr))
+    else if (checkISODatePrefix(istr))
     {
         deserializeISODateJSON<void>(x, scale, istr, settings, time_zone, utc_time_zone);
     }
@@ -268,7 +280,7 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
     }
     /// Not valid JSON but accept it as mongodb shell syntax to parse inner string
     /// Case: ISODate("2024-05-29T23:16:12.256")
-    else if (checkString("new ISODate(", istr) || checkString("ISODate(", istr))
+    else if (checkISODatePrefix(istr))
     {
         if (!deserializeISODateJSON<bool>(x, scale, istr, settings, time_zone, utc_time_zone))
             return false;
