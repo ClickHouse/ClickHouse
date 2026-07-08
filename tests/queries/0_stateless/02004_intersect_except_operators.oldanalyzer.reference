@@ -119,19 +119,29 @@ SELECT 1
 INTERSECT ALL
 SELECT 1
 explain syntax select 1 except select 1;
-SELECT 1
+(
+    SELECT 1
+)
 EXCEPT ALL
 SELECT 1
 explain syntax select 1 union all select 2  except (select 2 except select 1 union all select 1) except select 4;
-SELECT 1
-UNION ALL
-SELECT 2
-EXCEPT ALL
-SELECT 2
-EXCEPT ALL
-SELECT 1
-UNION ALL
-SELECT 1
+(
+    (
+        SELECT 1
+        UNION ALL
+        SELECT 2
+    )
+    EXCEPT ALL
+    (
+        (
+            SELECT 2
+        )
+        EXCEPT ALL
+        SELECT 1
+        UNION ALL
+        SELECT 1
+    )
+)
 EXCEPT ALL
 SELECT 4
 set limit=1;

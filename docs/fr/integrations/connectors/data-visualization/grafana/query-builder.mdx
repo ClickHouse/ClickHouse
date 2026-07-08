@@ -1,0 +1,289 @@
+---
+sidebarTitle: 'Constructeur de requêtes'
+slug: /integrations/grafana/query-builder
+description: 'Utilisation du constructeur de requêtes dans le plugin Grafana de ClickHouse'
+title: 'Constructeur de requêtes'
+doc_type: 'guide'
+keywords: ['grafana', 'constructeur de requêtes', 'visualisation', 'tableaux de bord', 'plugin']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+N’importe quelle requête peut être exécutée avec le plugin ClickHouse.
+Le query builder est une option pratique pour les requêtes simples, mais pour les requêtes plus complexes, vous devrez utiliser le [SQL Editor](#sql-editor).
+
+Toutes les requêtes du query builder ont un [type de requête](#query-types) et nécessitent la sélection d’au moins une colonne.
+
+Les types de requête disponibles sont les suivants :
+
+* [Table](#table) : le type de requête le plus simple pour afficher les données sous forme de tableau. Il convient aussi bien aux requêtes simples qu’aux requêtes complexes contenant des fonctions d’agrégation.
+* [Logs](#logs) : optimisé pour créer des requêtes sur les logs. Fonctionne le mieux dans la vue Explore avec les [valeurs par défaut configurées](/fr/integrations/connectors/data-visualization/grafana/config#logs).
+* [Time Series](#time-series) : particulièrement adapté à la création de requêtes de séries temporelles. Permet de sélectionner une colonne de temps dédiée et d’ajouter des fonctions d’agrégation.
+* [Traces](#traces) : optimisé pour rechercher et afficher les traces. Fonctionne le mieux dans la vue Explore avec les [valeurs par défaut configurées](/fr/integrations/connectors/data-visualization/grafana/config#traces).
+* [SQL Editor](#sql-editor) : le SQL Editor peut être utilisé lorsque vous souhaitez garder un contrôle total sur la requête. Dans ce mode, toute requête SQL peut être exécutée.
+
+<div id="query-types">
+  ## Types de requête
+</div>
+
+Le paramètre *Type de requête* modifie la disposition du générateur de requêtes afin qu’elle corresponde au type de requête en cours de création.
+Le type de requête détermine également le panneau utilisé pour visualiser les données.
+
+<div id="table">
+  ### Tableau
+</div>
+
+Le type de requête le plus flexible est la requête de type tableau. Il s’agit d’une option générique qui regroupe les autres constructeurs de requêtes conçus pour gérer les requêtes simples et les requêtes d’agrégation.
+
+| Champ        | Description                                                                                                                                                                                                                                                          |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Builder Mode | Les requêtes simples n’incluent pas Aggregates ni Group By, tandis que les requêtes d’agrégation incluent ces options.                                                                                                                                               |
+| Columns      | Les colonnes sélectionnées. Vous pouvez saisir du Raw SQL dans ce champ pour utiliser des fonctions et définir des alias de colonnes.                                                                                                                                |
+| Aggregates   | Une liste de [aggregate functions](/fr/reference/functions/aggregate-functions/index). Permet de définir des valeurs personnalisées pour la fonction et la colonne. Visible uniquement en mode Aggregate.                                                               |
+| Group By     | Une liste d’expressions [GROUP BY](/fr/reference/statements/select/group-by). Visible uniquement en mode Aggregate.                                                                                                                                                     |
+| Order By     | Une liste d’expressions [ORDER BY](/fr/reference/statements/select/order-by).                                                                                                                                                                                           |
+| Limit        | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. Si cette valeur est définie sur `0`, elle est exclue. Certaines visualizations peuvent nécessiter que cette valeur soit définie sur `0` pour afficher toutes les données. |
+| Filters      | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                                                                             |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Exemple de requête de tableau agrégée" border />
+
+Ce type de requête affiche les données sous forme de tableau.
+
+<div id="logs">
+  ### Journaux
+</div>
+
+Le type de requête logs propose un query builder axé sur l&#39;interrogation des données de logs.
+Des valeurs par défaut peuvent être configurées dans la [configuration des logs](/fr/integrations/connectors/data-visualization/grafana/config#logs) de la source de données afin de précharger le query builder avec une base de données/table et des colonnes par défaut.
+OpenTelemetry peut également être activé pour sélectionner automatiquement les colonnes en fonction d&#39;une version de schéma.
+
+Les filtres **Time** et **Level** sont ajoutés par défaut, ainsi qu&#39;un Order By sur la colonne Time.
+Ces filtres sont liés à leurs champs respectifs et se mettront à jour lorsque les colonnes seront modifiées.
+Le filtre **Level** est exclu du SQL par défaut ; il est activé dès que vous remplacez l&#39;option `IS ANYTHING`.
+
+Le type de requête logs prend en charge les [liens de données](#data-links).
+
+| Champ             | Description                                                                                                                                                                                                           |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Use OTel          | Active les colonnes OpenTelemetry. Remplace les colonnes sélectionnées par celles définies par la version du schéma OTel choisie (désactive la sélection de colonnes).                                                |
+| Colonnes          | Colonnes supplémentaires à ajouter aux lignes de log. Vous pouvez saisir du Raw SQL dans ce champ pour utiliser des fonctions et le column aliasing.                                                                  |
+| Time              | Colonne timestamp principale du log. Affiche les types temporels, mais permet aussi des valeurs/fonctions personnalisées.                                                                                             |
+| Niveau de log     | Facultatif. Le *niveau* ou la *sévérité* du log. Les valeurs ressemblent généralement à `INFO`, `error`, `Debug`, etc.                                                                                                |
+| Message           | Contenu du message de log.                                                                                                                                                                                            |
+| Order By          | Une liste d&#39;expressions [ORDER BY](/fr/reference/statements/select/order-by).                                                                                                                                        |
+| Limite            | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. Si elle est définie sur `0`, elle sera exclue, mais cela n&#39;est pas recommandé pour les grands jeux de données de logs. |
+| Filtres           | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                              |
+| Filtre de message | Champ de saisie permettant de filtrer facilement les logs avec un `LIKE %value%`. Exclu lorsque le champ est vide.                                                                                                    |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Exemple de requête de logs OTel" border />
+
+<br />
+
+Ce type de requête affiche les données dans le panneau de logs, avec un panneau d&#39;histogramme des logs en haut.
+
+Les colonnes supplémentaires sélectionnées dans la requête peuvent être consultées dans la ligne de log développée :
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Exemple de champs supplémentaires dans une requête de logs" border />
+
+<div id="time-series">
+  ### Séries temporelles
+</div>
+
+Le type de requête de séries temporelles est similaire à [table](#table), mais se concentre sur les données de séries temporelles.
+
+Les deux vues sont globalement identiques, avec toutefois les différences notables suivantes :
+
+* Un champ *Time* dédié.
+* En Aggregate mode, une macro d’intervalle de temps est automatiquement appliquée, avec un Group By sur le champ Time.
+* En Aggregate mode, le champ &quot;Columns&quot; est masqué.
+* Un filtre sur l’intervalle de temps et un Order By sont automatiquement ajoutés pour le champ **Time**.
+
+<Warning>
+  **Des données manquent dans votre visualisation ?**
+
+  Dans certains cas, le panneau de séries temporelles peut sembler tronqué, car la limite par défaut est de `1000`.
+
+  Essayez de supprimer la clause `LIMIT` en la définissant sur `0` (si votre jeu de données le permet).
+</Warning>
+
+| Field        | Description                                                                                                                                                                                                                                           |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Builder Mode | Les requêtes simples excluent Aggregates et Group By, tandis que les requêtes d’agrégation incluent ces options.                                                                                                                                      |
+| Time         | La colonne temporelle principale de la requête. Affiche les types apparentés au temps, mais autorise également des valeurs/fonctions personnalisées.                                                                                                  |
+| Columns      | Les colonnes sélectionnées. Il est possible de saisir du Raw SQL dans ce champ pour utiliser des fonctions et le column aliasing. Visible uniquement en Simple mode.                                                                                  |
+| Aggregates   | Une liste de [aggregate functions](/fr/reference/functions/aggregate-functions/index). Permet de définir des valeurs personnalisées pour la fonction et la colonne. Visible uniquement en Aggregate mode.                                                |
+| Group By     | Une liste d’expressions [GROUP BY](/fr/reference/statements/select/group-by). Visible uniquement en Aggregate mode.                                                                                                                                      |
+| Order By     | Une liste d’expressions [ORDER BY](/fr/reference/statements/select/order-by).                                                                                                                                                                            |
+| Limit        | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. S’il est défini sur `0`, il est exclu ; cela est recommandé pour certains jeux de données de séries temporelles afin d’afficher la visualisation complète. |
+| Filters      | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                                                              |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Exemple de requête de séries temporelles" border />
+
+Ce type de requête affichera les données dans le panneau de séries temporelles.
+
+<div id="traces">
+  ### Traces
+</div>
+
+Le type de requête de trace propose un générateur de requêtes pour rechercher et afficher facilement des traces.
+Il est conçu pour les données OpenTelemetry, mais il est possible de sélectionner des colonnes pour afficher des traces à partir d&#39;un autre schéma.
+Des valeurs par défaut peuvent être configurées dans la [configuration des traces](/fr/integrations/connectors/data-visualization/grafana/config#traces) de la source de données afin de précharger le générateur de requêtes avec une base de données/table et des colonnes par défaut. Si des valeurs par défaut sont configurées, la sélection des colonnes sera réduite par défaut.
+OpenTelemetry peut également être activé pour sélectionner automatiquement les colonnes en fonction d&#39;une version de schéma.
+
+Des filtres par défaut sont ajoutés afin de n&#39;afficher que les spans de premier niveau.
+Un ORDER BY sur les colonnes Time et Duration Time est également inclus.
+Ces filtres sont associés à leurs champs respectifs et se mettront à jour lorsque les colonnes seront modifiées.
+Le filtre **Service Name** est exclu du SQL par défaut ; le modifier depuis l&#39;option `IS ANYTHING` l&#39;activera.
+
+Le type de requête de trace prend en charge les [liens de données](#data-links).
+
+| Champ                 | Description                                                                                                                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Trace Mode            | Fait passer la requête de Trace Search à la recherche par Trace ID.                                                                                                                                                          |
+| Use OTel              | Active les colonnes OpenTelemetry. Remplace les colonnes sélectionnées pour utiliser celles définies par la version de schéma OTel choisie (désactive la sélection de colonnes).                                             |
+| Trace ID Column       | L&#39;ID de la trace.                                                                                                                                                                                                        |
+| Span ID Column        | L&#39;ID du span.                                                                                                                                                                                                            |
+| Parent Span ID Column | L&#39;ID du span parent. Ce champ est généralement vide pour les traces de premier niveau.                                                                                                                                   |
+| Service Name Column   | Le nom du service.                                                                                                                                                                                                           |
+| Operation Name Column | Le nom de l&#39;opération.                                                                                                                                                                                                   |
+| Start Time Column     | La colonne temporelle principale du trace span. L&#39;heure à laquelle le span a commencé.                                                                                                                                   |
+| Duration Time Column  | La durée du span. Par défaut, Grafana attend ici un float en millisecondes. Une conversion est automatiquement appliquée via la liste déroulante `Duration Unit`.                                                            |
+| Duration Unit         | L&#39;unité de temps utilisée pour la durée. Nanosecondes par défaut. L&#39;unité sélectionnée sera convertie en float en millisecondes, comme l&#39;exige Grafana.                                                          |
+| Tags Column           | Les tags du span. Excluez cette colonne si vous n&#39;utilisez pas un schéma basé sur OTel, car un type de colonne Map spécifique est attendu.                                                                               |
+| Service Tags Column   | Les tags du service. Excluez cette colonne si vous n&#39;utilisez pas un schéma basé sur OTel, car un type de colonne Map spécifique est attendu.                                                                            |
+| Order By              | Une liste d&#39;expressions [ORDER BY](/fr/reference/statements/select/order-by).                                                                                                                                               |
+| Limit                 | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. Si la valeur est définie sur `0`, elle sera exclue, mais cela n&#39;est pas recommandé pour les grands jeux de données de traces. |
+| Filters               | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                                     |
+| Trace ID              | L&#39;ID de trace sur lequel filtrer. Utilisé uniquement en mode Trace ID et lors de l&#39;ouverture d&#39;un [lien de données](#data-links) de type Trace ID.                                                               |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Exemple de requête de trace OTel" border />
+
+Ce type de requête affichera les données dans la vue tableau pour le mode Trace Search, et dans le panneau de traces pour le mode Trace ID.
+
+<div id="sql-editor">
+  ## SQL Editor
+</div>
+
+Pour les requêtes trop complexes pour le query builder, vous pouvez utiliser le SQL Editor.
+Il vous donne un contrôle total sur la requête en vous permettant d’écrire et d’exécuter directement du ClickHouse SQL.
+
+Le SQL Editor peut être ouvert en sélectionnant &quot;SQL Editor&quot; en haut de l’éditeur de requêtes.
+
+Les [fonctions macro](#macros) peuvent toujours être utilisées dans ce mode.
+
+Vous pouvez basculer entre les types de requêtes pour obtenir la visualisation la mieux adaptée à votre requête.
+Ce changement a également un effet en vue dashboard, notamment avec les données de séries temporelles.
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Exemple de requête Raw SQL" border />
+
+<div id="data-links">
+  ## Liens de données
+</div>
+
+Les [liens de données](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
+de Grafana peuvent être utilisés pour créer des liens vers de nouvelles requêtes.
+Cette fonctionnalité a été activée dans le plugin ClickHouse pour lier une trace aux logs et inversement. Elle fonctionne mieux lorsque OpenTelemetry est configuré à la fois pour les logs et les traces dans la [configuration de la source de données](/fr/integrations/connectors/data-visualization/grafana/config#opentelemetry)
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
+  Exemple de liens de traces dans un tableau
+
+  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="Liens de traces dans un tableau" border />
+</div>
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  Exemple de liens de traces dans les logs
+
+  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="Liens de traces dans les logs" border />
+</div>
+
+<div id="how-to-make-a-data-link">
+  ### Comment créer un lien de données
+</div>
+
+Vous pouvez créer un lien de données en sélectionnant une colonne nommée `traceID` dans votre requête. Ce nom n’est pas sensible à la casse et accepte l’ajout d’un trait de soulignement avant « ID ». Par exemple : `traceId`, `TraceId`, `TRACE_ID` et `tracE_iD` sont tous valides.
+
+Si OpenTelemetry est activé dans une requête de [logs](#logs) ou de [trace](#traces), une colonne d’ID de trace sera ajoutée automatiquement.
+
+En incluant une colonne d’ID de trace, les liens &quot;**View Trace**&quot; et &quot;**View Logs**&quot; seront associés aux données.
+
+<div id="linking-abilities">
+  ### Fonctionnalités de liaison
+</div>
+
+Avec les data links en place, vous pouvez ouvrir des traces et des logs à l’aide du trace ID fourni.
+
+&quot;**View Trace**&quot; ouvre un panneau fractionné contenant la trace, et &quot;**View Logs**&quot; ouvre une requête de logs filtrée sur le trace ID.
+Si vous cliquez sur le lien depuis un dashboard plutôt que depuis la vue Explore, il s’ouvrira dans un nouvel onglet de la vue Explore.
+
+Il est nécessaire de configurer des valeurs par défaut pour les [logs](/fr/integrations/connectors/data-visualization/grafana/config#logs) et les [traces](/fr/integrations/connectors/data-visualization/grafana/config#traces) lorsque vous passez d’un type de requête à l’autre (des logs vers les traces et des traces vers les logs). En revanche, aucune valeur par défaut n’est requise lors de l’ouverture d’un lien du même type de requête, car la requête peut simplement être copiée.
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  Exemple d’affichage d’une trace (panneau de droite) à partir d’une requête de logs (panneau de gauche)
+
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Exemple de liaison avec des data links" border />
+</div>
+
+<div id="macros">
+  ## Macros
+</div>
+
+Les macros sont un moyen simple d&#39;ajouter du SQL dynamique à votre requête.
+Avant qu&#39;une requête ne soit envoyée au serveur ClickHouse, le plugin développe la macro et la remplace par l&#39;expression complète.
+
+Les requêtes du SQL Editor comme du Query Builder peuvent utiliser des macros.
+
+<div id="using-macros">
+  ### Utilisation des macros
+</div>
+
+Les macros peuvent être utilisées n’importe où dans la requête, et plusieurs fois si nécessaire.
+
+Voici un exemple d’utilisation de la macro `$__timeFilter` :
+
+Entrée :
+
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE $__timeFilter(log_time)
+```
+
+Résultat final de la requête :
+
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
+```
+
+Dans cet exemple, l’intervalle de temps du tableau de bord Grafana est appliqué à la colonne `log_time`.
+
+Le plugin prend également en charge la notation avec des accolades `{}`. Utilisez cette notation lorsqu’il est nécessaire d’utiliser des requêtes dans les [paramètres](/fr/reference/syntax#defining-and-using-query-parameters).
+
+<div id="list-of-macros">
+  ### Liste des macros
+</div>
+
+Voici la liste de toutes les macros disponibles dans le plugin :
+
+| Macro                                        | Description                                                                                                                                                                                                   | Exemple de sortie                                                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `$__dateFilter(columnName)`                  | Remplacé par un filtre sur l&#39;intervalle de temps de la colonne fournie, en utilisant l&#39;intervalle de temps du panneau Grafana comme [Date](/fr/reference/data-types/date).                               | `columnName >= toDate('2022-10-21') AND columnName <= toDate('2022-10-23')`                                       |
+| `$__timeFilter(columnName)`                  | Remplacé par un filtre sur l&#39;intervalle de temps de la colonne fournie, en utilisant l&#39;intervalle de temps du panneau Grafana comme [DateTime](/fr/reference/data-types/datetime).                       | `columnName >= toDateTime(1415792726) AND time <= toDateTime(1447328726)`                                         |
+| `$__timeFilter_ms(columnName)`               | Remplacé par un filtre sur l&#39;intervalle de temps de la colonne fournie, en utilisant l&#39;intervalle de temps du panneau Grafana comme [DateTime64](/fr/reference/data-types/datetime64).                   | `columnName >= fromUnixTimestamp64Milli(1415792726123) AND columnName <= fromUnixTimestamp64Milli(1447328726456)` |
+| `$__dateTimeFilter(dateColumn, timeColumn)`  | Raccourci qui combine `$__dateFilter()` et `$__timeFilter()` en utilisant des colonnes Date et DateTime distinctes. Alias : `$__dt()`                                                                         | `$__dateFilter(dateColumn) AND $__timeFilter(timeColumn)`                                                         |
+| `$__fromTime`                                | Remplacé par l&#39;heure de début de l&#39;intervalle du panneau Grafana, convertie en [DateTime](/fr/reference/data-types/datetime).                                                                            | `toDateTime(1415792726)`                                                                                          |
+| `$__fromTime_ms`                             | Remplacé par l&#39;heure de début de l&#39;intervalle du panneau, convertie en [DateTime64](/fr/reference/data-types/datetime64).                                                                                | `fromUnixTimestamp64Milli(1415792726123)`                                                                         |
+| `$__toTime`                                  | Remplacé par l&#39;heure de fin de l&#39;intervalle du panneau Grafana, convertie en [DateTime](/fr/reference/data-types/datetime).                                                                              | `toDateTime(1447328726)`                                                                                          |
+| `$__toTime_ms`                               | Remplacé par l&#39;heure de fin de l&#39;intervalle du panneau, convertie en [DateTime64](/fr/reference/data-types/datetime64).                                                                                  | `fromUnixTimestamp64Milli(1447328726456)`                                                                         |
+| `$__timeInterval(columnName)`                | Remplacé par une fonction qui calcule l&#39;intervalle en fonction de la taille de la fenêtre en secondes.                                                                                                    | `toStartOfInterval(toDateTime(columnName), INTERVAL 20 second)`                                                   |
+| `$__timeInterval_ms(columnName)`             | Remplacé par une fonction qui calcule l&#39;intervalle en fonction de la taille de la fenêtre en millisecondes.                                                                                               | `toStartOfInterval(toDateTime64(columnName, 3), INTERVAL 20 millisecond)`                                         |
+| `$__interval_s`                              | Remplacé par l&#39;intervalle du tableau de bord en secondes.                                                                                                                                                 | `20`                                                                                                              |
+| `$__conditionalAll(condition, $templateVar)` | Remplacé par le premier paramètre lorsque la variable de template du second paramètre ne sélectionne pas toutes les valeurs. Remplacé par 1=1 lorsque la variable de template sélectionne toutes les valeurs. | `condition` ou `1=1`                                                                                              |

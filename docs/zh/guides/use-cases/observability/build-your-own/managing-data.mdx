@@ -1,0 +1,502 @@
+---
+title: '数据管理'
+description: '可观测性数据管理'
+slug: /observability/managing-data
+keywords: ['可观测性', '日志', '链路追踪', '指标', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+用于可观测性的 ClickHouse 部署通常都会涉及海量数据集，因此需要妥善管理。ClickHouse 提供了多项功能来帮助进行数据管理。
+
+<Tip>
+  **ClickStack 随附了经过优化的默认 schema**
+
+  **ClickStack 为日志、链路追踪和指标提供开箱即用的 schema**，其中集成了最新的 ClickHouse 特性 (用于全文和 map 键搜索的文本索引、用于直接读取过滤的 materialized 列和 ALIAS 数组，以及基于块编号的行查找) ，并且已经过基准测试，可为日志和链路追踪工作负载提供出色的开箱即用性能。你可以将其作为自行设计时的参考基线。
+
+  * 规范 DDL：[ClickStack 使用的表和 schema](/zh/clickstack/ingesting-data/schemas)。
+  * 优化方案：[ClickStack 性能调优](/zh/clickstack/managing/performance-tuning)。该页面中的许多建议 (materialized 列、跳过索引、主键选择、投影、materialized views) 都可直接应用于自行搭建的方案。
+</Tip>
+
+<div id="partitions">
+  ## 分区
+</div>
+
+ClickHouse 中的分区允许根据某个列或 SQL 表达式在磁盘上对数据进行逻辑划分。通过这种逻辑划分，可以对每个分区独立执行操作，例如删除。这让你能够按时间高效地在不同存储层级之间移动分区及其子集，或者[让数据过期/从集群中高效删除数据](/zh/reference/statements/alter/partition)。
+
+分区是在表初始定义时通过 `PARTITION BY` 子句指定的。该子句可以包含基于任意列的 SQL 表达式，其结果决定每一行会被写入哪个分区。
+
+<Image img="/images/use-cases/observability/observability-14.webp" alt="分区" size="md" />
+
+磁盘上的每个分区都会在逻辑上关联相应的数据分区片段 (通过相同的文件夹名前缀) ，并且可以单独查询。以下面的示例为例，默认的 `otel_logs` schema 使用表达式 `toDate(Timestamp)` 按天分区。随着行被插入 ClickHouse，系统会对每一行计算该表达式，并将其路由到对应的分区；如果某一天的第一行到来，则会创建该分区。
+
+```sql
+CREATE TABLE default.otel_logs
+(
+...
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SeverityText, toUnixTimestamp(Timestamp), TraceId)
+```
+
+可以对分区执行[多种操作](/zh/reference/statements/alter/partition)，包括[备份](/zh/reference/statements/alter/partition#freeze-partition)、[列操作](/zh/reference/statements/alter/partition#clear-column-in-partition)、按行[修改](/zh/reference/statements/alter/partition#update-in-partition)/[删除](/zh/reference/statements/alter/partition#delete-in-partition)数据的变更)以及[清除索引 (例如二级索引) ](/zh/reference/statements/alter/partition#clear-index-in-partition)。
+
+例如，假设我们的 `otel_logs` 表按天分区。如果写入结构化日志数据集，其中将包含数天的数据：
+
+```sql
+SELECT Timestamp::Date AS day,
+         count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-26 │ 1986456 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+5 rows in set. Elapsed: 0.058 sec. Processed 10.37 million rows, 82.92 MB (177.96 million rows/s., 1.42 GB/s.)
+峰值内存占用: 4.41 MiB.
+```
+
+可以使用一个简单的系统表查询来查看当前分区：
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'otel_logs'
+```
+
+```response
+┌─partition──┐
+│ 2019-01-22 │
+│ 2019-01-23 │
+│ 2019-01-24 │
+│ 2019-01-25 │
+│ 2019-01-26 │
+└────────────┘
+
+5 rows in set. Elapsed: 0.005 sec.
+```
+
+我们可能还有另一张表 `otel_logs_archive`，用于存储较早的数据。可以按分区高效地将数据迁移到这张表中 (这只是元数据层面的变更) 。
+
+```sql
+CREATE TABLE otel_logs_archive AS otel_logs
+--将数据移至归档表
+ALTER TABLE otel_logs
+        (MOVE PARTITION tuple('2019-01-26') TO TABLE otel_logs_archive
+--确认数据已移动
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 2333977 │
+│ 2019-01-23 │ 2326694 │
+│ 2019-01-24 │ 1896255 │
+│ 2019-01-25 │ 1821770 │
+└────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.051 sec. Processed 8.38 million rows, 67.03 MB (163.52 million rows/s., 1.31 GB/s.)
+Peak memory usage: 4.40 MiB.
+```
+
+```sql
+SELECT Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs_archive
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-26 │ 1986456 │
+└────────────┴─────────┘
+
+1 row in set. Elapsed: 0.024 sec. Processed 1.99 million rows, 15.89 MB (83.86 million rows/s., 670.87 MB/s.)
+Peak memory usage: 4.99 MiB.
+```
+
+这不同于其他方法，后者需要使用 `INSERT INTO SELECT`，并将数据重写到新的目标表中。
+
+<Info>
+  **移动分区**
+
+  [在表之间移动分区](/zh/reference/statements/alter/partition#move-partition-to-table)需要满足若干条件，其中一个基本要求是这些表必须具有相同的结构、分区键、主键以及索引/投影。有关如何在 `ALTER` DDL 中指定分区的详细说明，见[此处](/zh/reference/statements/alter/partition#how-to-set-partition-expression)。
+</Info>
+
+此外，还可以按分区高效删除数据。与其他替代方案 (变更或轻量级删除) 相比，这种方式的资源效率要高得多，因此应优先采用。
+
+```sql
+ALTER TABLE otel_logs
+        (DROP PARTITION tuple('2019-01-25'))
+
+SELECT
+        Timestamp::Date AS day,
+        count() AS c
+FROM otel_logs
+GROUP BY day
+ORDER BY c DESC
+```
+
+```response
+┌────────day─┬───────c─┐
+│ 2019-01-22 │ 4667954 │
+│ 2019-01-23 │ 4653388 │
+│ 2019-01-24 │ 3792510 │
+└────────────┴─────────┘
+```
+
+<Note>
+  使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts) 时，生存时间 (TTL) 会利用这一特性。更多详情，请参见[使用 生存时间 (TTL) 进行数据管理](#data-management-with-ttl-time-to-live)。
+</Note>
+
+<div id="applications">
+  ### 应用场景
+</div>
+
+以上说明了如何按分区高效地移动和处理数据。实际上，在可观测性场景中，你最常使用分区操作的很可能是以下两种情况：
+
+* **分层架构** - 在不同存储层之间移动数据 (参见 [存储层级](#storage-tiers)) ，从而构建冷热架构。
+* **高效删除** - 当数据达到指定的生存时间 (TTL) 时 (参见 [Data management with 生存时间 (TTL)](#data-management-with-ttl-time-to-live))
+
+下面我们将分别详细介绍这两种场景。
+
+<div id="query-performance">
+  ### 查询性能
+</div>
+
+尽管分区可以帮助提升查询性能，但这在很大程度上取决于访问模式。如果查询只涉及少量分区 (理想情况下是一个) ，性能可能会有所提升。通常，这只在分区键不在主键中且查询按该键进行过滤时才有意义。不过，如果查询需要覆盖很多分区，其性能反而可能比不使用分区更差 (因为可能会有更多的 parts) 。如果分区键已经是主键中靠前的项，那么针对单个分区所带来的收益就会很不明显，甚至几乎没有。如果每个分区中的值都是唯一的，分区还可以用于[优化 GROUP BY 查询](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key#group-by-optimisation-using-partition-key)。但总体而言，你应该先确保主键已得到优化，只有在少数特殊场景下，才考虑将分区作为一种查询优化手段——例如按天分区，而大多数查询都集中在最近一天，这类访问模式只会访问一个可预测的特定数据子集。有关这种行为的示例，请参见[这里](https://medium.com/datadenys/using-partitions-in-clickhouse-3ea0decb89c4)。
+
+<div id="data-management-with-ttl-time-to-live">
+  ## 使用 生存时间 (TTL) (生存时间) 进行数据管理
+</div>
+
+生存时间 (TTL) 是基于 ClickHouse 的可观测性解决方案中的一项关键功能，能够高效地进行数据保留和管理，尤其适用于持续产生海量数据的场景。在 ClickHouse 中配置 生存时间 (TTL) 后，旧数据可以自动过期并删除，从而确保存储得到充分利用，并在无需人工干预的情况下保持系统性能。这一能力对于精简数据库、降低存储成本，以及通过聚焦最新且最相关的数据来保证查询快速高效，至关重要。此外，它还能通过系统化管理数据生命周期，帮助满足数据保留策略方面的合规要求，从而提升可观测性解决方案整体的可持续性和可扩展性。
+
+在 ClickHouse 中，可以在表级或列级指定 生存时间 (TTL)。
+
+<div id="table-level-ttl">
+  ### 表级 生存时间 (TTL)
+</div>
+
+日志和链路追踪的默认 schema 都包含 生存时间 (TTL)，用于在指定时间后让数据过期。可在 ClickHouse exporter 中通过 `ttl` 键进行设置，例如：
+
+```yaml
+exporters:
+ clickhouse:
+   endpoint: tcp://localhost:9000?dial_timeout=10s&compress=lz4&async_insert=1
+   ttl: 72h
+```
+
+此语法当前支持 [Golang Duration syntax](https://pkg.go.dev/time#ParseDuration)。**我们建议用户使用 `h`，并确保其与分区周期保持一致。例如，如果按天分区，请确保其为天数的整数倍，例如 24h、48h、72h。** 这样会自动为表添加 生存时间 (TTL) 子句，例如当 `ttl: 96h` 时。
+
+```sql
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId)
+TTL toDateTime(Timestamp) + toIntervalDay(4)
+SETTINGS ttl_only_drop_parts = 1
+```
+
+默认情况下，带有已过期生存时间 (TTL) 的数据会在 ClickHouse [合并数据分区片段](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) 时被移除。当 ClickHouse 检测到数据已过期时，会执行一次计划外合并。
+
+<Info>
+  **计划性 生存时间 (TTL)**
+
+  生存时间 (TTL) 不会立即生效，而是如上所述按计划执行。MergeTree 表设置 `merge_with_ttl_timeout` 用于设置再次执行带删除生存时间 (TTL) 的合并前的最小延迟时间 (秒) 。默认值为 14400 秒 (4 小时) 。但这只是最小延迟，实际触发生存时间 (TTL) 合并可能还需要更长时间。如果该值过低，会执行大量计划外合并，并可能消耗大量资源。可以使用命令 `ALTER TABLE my_table MATERIALIZE TTL` 强制触发生存时间 (TTL) 过期处理。
+</Info>
+
+**重要：我们建议使用设置 [`ttl_only_drop_parts=1`](/zh/reference/settings/merge-tree-settings#ttl_only_drop_parts) ** (默认 schema 会应用该设置) 。启用此设置后，当某个 part 中的所有行都已过期时，ClickHouse 会直接删除整个 part。相比清理 part 中部分已过期的 生存时间 (TTL) 行 (在 `ttl_only_drop_parts=0` 时，这需要通过资源密集型变更来完成) ，直接删除整个 part 可以使用更短的 `merge_with_ttl_timeout`，并降低对系统性能的影响。如果数据按执行 生存时间 (TTL) 过期所依据的相同单位进行分区，例如按天分区，那么 part 自然只会包含该时间间隔内的数据。这将确保 `ttl_only_drop_parts=1` 能够被高效应用。
+
+<div id="column-level-ttl">
+  ### 列级生存时间 (TTL)
+</div>
+
+上述示例是在表级让数据过期。你也可以让数据在列级过期。随着数据老化，这可用于删除那些在调查中价值不足以抵消其保留成本的列。例如，我们建议保留 `Body` 列，以防新增了尚未在写入时提取的动态元数据，比如新的 Kubernetes 标签。经过一段时间后，例如 1 个月，可能就会明显看出这些额外元数据并不实用——因此继续保留 `Body` 列的价值也就有限了。
+
+下面，我们将说明如何在 30 天后删除 `Body` 列。
+
+```sql
+CREATE TABLE otel_logs_v2
+(
+        `Body` String TTL Timestamp + INTERVAL 30 DAY,
+        `Timestamp` DateTime,
+        ...
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+```
+
+<Note>
+  指定列级生存时间 (TTL) 需要用户自行定义 schema。OTel collector 中无法进行此项配置。
+</Note>
+
+<div id="recompressing-data">
+  ## 重新压缩数据
+</div>
+
+虽然对于可观测性数据集，我们通常建议使用 `ZSTD(1)`，但你也可以尝试不同的压缩算法或更高的压缩级别，例如 `ZSTD(3)`。除了可以在创建 schema 时指定外，还可以将压缩配置为在设定的一段时间后切换。如果某种 codec 或压缩算法能提升压缩率，但会导致查询性能下降，那么这种做法可能是合适的。对于查询频率较低的旧数据，这种权衡或许可以接受；但对于较新的数据则未必如此，因为这些数据在调查中会更频繁地使用。
+
+下面展示了一个示例：4 天后使用 `ZSTD(3)` 压缩数据，而不是将其删除。
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `Size` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8,
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+TTL Timestamp + INTERVAL 4 DAY RECOMPRESS CODEC(ZSTD(3))
+```
+
+<Info>
+  **评估性能**
+
+  我们建议用户始终评估不同压缩级别和算法对 insert 和查询性能的影响。例如，delta 编解码器有助于压缩时间戳。不过，如果这些时间戳属于主键的一部分，过滤性能可能会受到影响。
+</Info>
+
+有关配置生存时间 (TTL) 的更多详细信息和示例，请参见[此处](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)。有关如何为表和列添加及修改 生存时间 (TTL) 的示例，请参见[此处](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)。关于 生存时间 (TTL) 如何支持热温分层等存储层级架构，请参见[存储层级](#storage-tiers)。
+
+<div id="storage-tiers">
+  ## 存储层级
+</div>
+
+在 ClickHouse 中，你可以在不同磁盘上创建存储层级，例如将热数据/近期数据放在 SSD 上，而将较旧的数据存储在以 S3 为后端的介质上。这种架构可以让较旧的数据使用成本更低的存储；由于这些数据在调查中使用频率较低，因此通常可以接受更宽松的查询 SLA。
+
+<Info>
+  **不适用于 ClickHouse Cloud**
+
+  ClickHouse Cloud 使用单份数据副本，以 S3 为后端，并配有基于 SSD 的节点缓存。因此，ClickHouse Cloud 不需要存储层级。
+</Info>
+
+创建存储层级时，用户需要先创建磁盘，再基于这些磁盘定义存储策略，并在创建表时指定相应的卷。数据可以根据写满率、分片大小和卷优先级在磁盘之间自动移动。更多详细信息请参见[这里](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)。
+
+虽然可以使用 `ALTER TABLE MOVE PARTITION` 命令在磁盘之间手动移动数据，但也可以使用 TTL 来控制数据在卷之间的移动。完整示例请参见[这里](/zh/concepts/features/operations/delete/ttl#implementing-a-hotwarmcold-architecture)。
+
+<div id="managing-schema-changes">
+  ## 管理 schema 变更
+</div>
+
+在系统的整个生命周期内，日志和 trace 的 schema 几乎不可避免会发生变化，例如当用户开始监控带有不同元数据或 pod (容器组) 标记的新系统时。通过使用 OTel schema 生成数据，并以结构化格式保留原始事件数据，ClickHouse schema 能够较好地适应这些变化。不过，随着新的元数据不断出现，以及查询访问模式发生变化，你也需要相应更新 schema 以反映这些变化。
+
+为了避免在 schema 变更期间发生停机，用户有几种可选方案，我们将在下文介绍。
+
+<div id="use-default-values">
+  ### 使用默认值
+</div>
+
+可以使用 [`DEFAULT` 值](/zh/reference/statements/create/table#default)向 schema 中添加列。如果在 INSERT 时未指定，则会使用指定的默认值。
+
+在修改任何 materialized view 转换逻辑或 OTel collector 配置之前，可以先更改 schema，这样后续就会发送这些新列。
+
+schema 更改完成后，你可以重新配置 OTel collectors。假设用户采用了[“使用 SQL 提取结构”](/zh/guides/use-cases/observability/build-your-own/schema-design#extracting-structure-with-sql)中介绍的推荐流程，即 OTel collectors 将数据发送到使用 Null table engine 的表，由 materialized view 负责提取目标 schema，并将结果发送到目标表中存储，那么可以使用 [`ALTER TABLE ... MODIFY QUERY` 语法](/zh/reference/statements/alter/view)来修改该视图。假设我们有下面这个目标表及其对应的 materialized view (类似于“使用 SQL 提取结构”中使用的方式) ，用于从 OTel 结构化日志中提取目标 schema：
+
+```sql
+CREATE TABLE default.otel_logs_v2
+(
+        `Body` String,
+        `Timestamp` DateTime,
+        `ServiceName` LowCardinality(String),
+        `Status` UInt16,
+        `RequestProtocol` LowCardinality(String),
+        `RunTime` UInt32,
+        `UserAgent` String,
+        `Referer` String,
+        `RemoteUser` String,
+        `RequestType` LowCardinality(String),
+        `RequestPath` String,
+        `RemoteAddress` IPv4,
+        `RefererDomain` String,
+        `RequestPage` String,
+        `SeverityText` LowCardinality(String),
+        `SeverityNumber` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (ServiceName, Timestamp)
+
+CREATE MATERIALIZED VIEW otel_logs_mv TO otel_logs_v2 AS
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300, 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+假设我们想从 `LogAttributes` 中提取一个新的列 `Size`。我们可以使用 `ALTER TABLE` 将其添加到 schema 中，并指定默认值：
+
+```sql
+ALTER TABLE otel_logs_v2
+        (ADD COLUMN `Size` UInt64 DEFAULT JSONExtractUInt(Body, 'size'))
+```
+
+在上面的示例中，我们将默认值指定为 `LogAttributes` 中的 `size` 键 (如果该键不存在，则为 0) 。这意味着，对于未插入该值的行，查询这一列时必须访问该 Map，因此速度会更慢。我们也可以很容易地将其指定为一个常量，例如 0，从而降低后续查询这些没有该值的行时的开销。查询此表可以看到，该值已按预期从 Map 中填充：
+
+```sql
+SELECT Size
+FROM otel_logs_v2
+LIMIT 5
+```
+
+```response
+┌──Size─┐
+│ 30577 │
+│  5667 │
+│  5379 │
+│  1696 │
+│ 41483 │
+└───────┘
+
+5 行，耗时 0.012 秒。
+```
+
+为确保今后的所有数据都会插入该值，我们可以使用如下所示的 `ALTER TABLE` 语法来修改 materialized view：
+
+```sql
+ALTER TABLE otel_logs_mv
+        MODIFY QUERY
+SELECT
+        Body,
+        Timestamp::DateTime AS Timestamp,
+        ServiceName,
+        LogAttributes['status']::UInt16 AS Status,
+        LogAttributes['request_protocol'] AS RequestProtocol,
+        LogAttributes['run_time'] AS RunTime,
+        LogAttributes['size'] AS Size,
+        LogAttributes['user_agent'] AS UserAgent,
+        LogAttributes['referer'] AS Referer,
+        LogAttributes['remote_user'] AS RemoteUser,
+        LogAttributes['request_type'] AS RequestType,
+        LogAttributes['request_path'] AS RequestPath,
+        LogAttributes['remote_addr'] AS RemoteAddress,
+        domain(LogAttributes['referer']) AS RefererDomain,
+        path(LogAttributes['request_path']) AS RequestPage,
+        multiIf(Status::UInt64 > 500, 'CRITICAL', Status::UInt64 > 400, 'ERROR', Status::UInt64 > 300,                 'WARNING', 'INFO') AS SeverityText,
+        multiIf(Status::UInt64 > 500, 20, Status::UInt64 > 400, 17, Status::UInt64 > 300, 13, 9) AS SeverityNumber
+FROM otel_logs
+```
+
+后续行的 `Size` 列会在写入时自动填充。
+
+<div id="create-new-tables">
+  ### 创建新表
+</div>
+
+除了上述流程外，你也可以直接按新的 schema 创建一张新的目标表。然后，可使用上文的 `ALTER TABLE MODIFY QUERY.` 修改任何 materialized view，使其改用这张新表。采用这种方式，你可以为表添加版本号，例如 `otel_logs_v3`。
+
+这种方式会导致用户需要面对多个可查询的表。若要跨表查询，可以使用[`merge` 函数](/zh/reference/functions/table-functions/merge)，它支持对表名使用通配符 pattern。下面我们通过查询 `otel_logs` 表的 v2 和 v3 版本来演示这一点：
+
+```sql
+SELECT Status, count() AS c
+FROM merge('otel_logs_v[2|3]')
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.137 sec. Processed 41.46 million rows, 82.92 MB (302.43 million rows/s., 604.85 MB/s.)
+```
+
+如果用户希望避免使用 `merge` 函数，并向最终用户提供一张整合多个表的表，则可以使用 [Merge 表引擎](/zh/reference/engines/table-engines/special/merge)。下面我们来演示这一点：
+
+```sql
+CREATE TABLE otel_logs_merged
+ENGINE = Merge('default', 'otel_logs_v[2|3]')
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 38319300 │
+│   304  │  1360912 │
+│   302  │   799340 │
+│   404  │   420044 │
+│   301  │   270212 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.073 sec. Processed 41.46 million rows, 82.92 MB (565.43 million rows/s., 1.13 GB/s.)
+```
+
+每次新增表时，都可以使用 `EXCHANGE` 表语法来更新。例如，要添加 v4 表，可以先创建一个新表，再通过原子方式将其与上一版本进行交换。
+
+```sql
+CREATE TABLE otel_logs_merged_temp
+ENGINE = Merge('default', 'otel_logs_v[2|3|4]')
+
+EXCHANGE TABLE otel_logs_merged_temp AND otel_logs_merged
+
+SELECT Status, count() AS c
+FROM otel_logs_merged
+GROUP BY Status
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─Status─┬────────c─┐
+│   200  │ 39259996 │
+│   304  │  1378564 │
+│   302  │   820118 │
+│   404  │   429220 │
+│   301  │   276960 │
+└────────┴──────────┘
+
+5 rows in set. Elapsed: 0.068 sec. Processed 42.46 million rows, 84.92 MB (620.45 million rows/s., 1.24 GB/s.)
+```

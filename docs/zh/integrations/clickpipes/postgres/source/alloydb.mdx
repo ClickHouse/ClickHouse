@@ -1,0 +1,151 @@
+---
+sidebarTitle: 'AlloyDB Postgres'
+description: '将 AlloyDB Postgres 实例配置为 ClickPipes 的数据源'
+slug: /integrations/clickpipes/postgres/source/alloydb
+title: 'AlloyDB Postgres 数据源设置指南'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="supported-versions">
+  ## 支持的版本
+</div>
+
+要使用 ClickPipes 将数据从您的 AlloyDB 实例传输到 ClickHouse Cloud，您的实例必须配置为支持**逻辑复制**。此功能**从 AlloyDB 14 版本开始**受支持。
+
+<div id="enable-logical-replication">
+  ## 启用逻辑复制
+</div>
+
+要检查 AlloyDB 实例是否已启用逻辑复制，请在主节点实例上运行以下查询：
+
+```sql
+SHOW  wal_level;
+```
+
+如果结果是 `logical`，则说明逻辑复制已启用，你可以跳到[下一步](#create-a-clickpipes-user-and-manage-replication-permissions)。如果结果是 `replica`，则必须在主节点实例中将 [`alloydb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) 和 [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) 标志设为 `on`。
+
+<Warning>
+  如 [AlloyDB 标志文档](https://cloud.google.com/alloydb/docs/reference/alloydb-flags)所述，修改用于启用逻辑复制的标志后，需要重启主节点实例。
+</Warning>
+
+要启用这些标志，请执行以下操作：
+
+1. 在 Google Cloud Console 中，前往 AlloyDB 的 [Clusters](https://console.cloud.google.com/alloydb/clusters) 页面。在主节点实例对应的 **Actions** 菜单中，点击 **Edit**。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="编辑主节点实例配置" size="lg" border />
+
+2. 向下滚动到 **Advanced configuration options** 并展开该部分。在 **Flags** 下，点击 **Add a database flag**。
+
+   * 添加 [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) 标志，并将其值设为 `on`
+   * 添加 [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) 标志，并将其值设为 `on`
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="将 allowdb.enable_pglogical 和 alloydb.logical_decoding 标志设为 on" size="lg" border />
+
+3. 点击 **Update instance** 保存配置更改。请注意，此操作**会触发主节点实例重启。**
+
+4. 当实例状态从 `Updating` 变为 `Ready` 后，对主节点实例运行以下查询，以验证逻辑复制是否已启用：
+
+   ```sql
+   SHOW  wal_level;
+   ```
+
+   结果应为 `logical`。
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="验证逻辑复制已启用" size="lg" border />
+
+<div id="create-a-clickpipes-user-and-manage-replication-permissions">
+  ## 创建 ClickPipes 用户并管理复制权限
+</div>
+
+以管理员用户身份连接到 AlloyDB 实例，然后执行以下命令：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 为上一步创建的用户授予 schema 级只读访问权限。以下示例展示了 `public` schema 的权限。对于每个包含待复制表的 schema，都需要重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 向该用户授予复制权限：
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 使用你要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议只在 publication 中包含所需的表，以避免额外的性能开销。
+
+<Warning>
+  publication 中包含的任何表都必须定义 **主键**，&#95;或者&#95;将其 **副本标识** 配置为 `FULL`。有关如何确定范围的指导，请参阅 [Postgres FAQs](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication 将包含指定表生成的一组变更事件，后续将用于摄取复制流。
+
+<div id="configure-network-access">
+  ## 配置网络访问
+</div>
+
+<Note>
+  ClickPipes 不支持 Private Service Connect (PSC) 连接。如果你不允许公开访问 AlloyDB 实例，可以[使用 SSH 隧道](#configure-network-access)进行安全连接。未来将支持 PSC。
+</Note>
+
+接下来，你必须允许 ClickPipes 连接到你的 AlloyDB 实例。
+
+<Tabs>
+  <Tab title="允许 ClickPipes IP">
+    1. 在 Google Cloud Console 中，前往 AlloyDB 的 [Clusters](https://console.cloud.google.com/alloydb/clusters) 页面。选择你的主节点实例，打开 **Overview** 页面。
+
+    2. 向下滚动到 **Instances in your cluster**，然后点击 **Edit primary**。
+
+    3. 勾选 **Enable Public IP** 复选框，以允许通过公共互联网连接到该实例。在 **Authorized external networks** 下，输入你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips)。
+
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="配置公共访问和 IP 允许列表的网络设置" size="lg" border />
+
+    <Note>
+      AlloyDB 要求使用 [CIDR 表示法](https://cloud.google.com/alloydb/docs/connection-overview#public-ip) 指定地址。你可以在每个地址后附加 `/32`，将提供的 ClickPipes 静态 IP 地址列表转换为这种格式。
+    </Note>
+
+    4. 在 **Network Security** 下，选择 **Require SSL Encryption (default)** (如果尚未选中) 。
+
+    5. 点击 **Update instance** 保存网络安全配置更改。
+  </Tab>
+
+  <Tab title="使用 SSH 隧道">
+    如果你不允许公开访问 AlloyDB 实例，则必须先设置一台 SSH 堡垒机主机，以通过安全隧道建立连接。要在 Google Cloud Platform 上设置 SSH 堡垒机主机：
+
+    1. 按照[官方文档](https://cloud.google.com/compute/docs/instances/create-start-instance)创建并启动一个 Google Compute Engine (GCE) 实例。
+       * 确保 GCE 实例与你的 AlloyDB 实例位于同一个 Virtual Private Network (VPC) 中。
+       * 确保 GCE 实例具有一个[静态公网 IP 地址](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address)。将 ClickPipes 连接到 SSH 堡垒机主机时，你需要使用此 IP 地址。
+
+    2. 更新 SSH 堡垒机主机的防火墙规则，以允许来自你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/home#list-of-static-ips) 的流量。
+
+    3. 更新 AlloyDB 的防火墙规则，以允许来自 SSH 堡垒机主机的流量。
+  </Tab>
+</Tabs>
+
+<div id="whats-next">
+  ## 下一步是什么？
+</div>
+
+你现在可以[创建你的 ClickPipe](/zh/integrations/clickpipes/postgres/index)，并开始将 Postgres 实例中的数据摄取到 ClickHouse Cloud。
+请务必记下你在设置 Postgres 实例时使用的连接信息，因为在创建 ClickPipe 的过程中会用到这些信息。

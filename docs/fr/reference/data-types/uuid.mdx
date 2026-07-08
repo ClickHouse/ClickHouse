@@ -1,0 +1,150 @@
+---
+description: 'Documentation sur le type de données UUID dans ClickHouse'
+sidebarTitle: 'UUID'
+slug: /sql-reference/data-types/uuid
+title: 'UUID'
+doc_type: 'reference'
+---
+
+Un identifiant universellement unique (UUID) est une valeur de 16 octets utilisée pour identifier des enregistrements. Pour plus d’informations sur les UUID, consultez [Wikipedia](https://en.wikipedia.org/wiki/Universally_unique_identifier).
+
+Bien qu’il existe différentes variantes d’UUID, par exemple UUIDv4 et UUIDv7 (voir [ici](https://datatracker.ietf.org/doc/html/draft-ietf-uuidrev-rfc4122bis)), ClickHouse ne vérifie pas que les UUID insérés sont conformes à une variante particulière.
+En interne, les UUID sont traités comme une séquence de 16 octets aléatoires, avec une [représentation 8-4-4-4-12](https://en.wikipedia.org/wiki/Universally_unique_identifier#Textual_representation) au niveau SQL.
+
+Exemple de valeur UUID :
+
+```text
+61f0c404-5cb3-11e7-907b-a6006ad3dba0
+```
+
+L’UUID par défaut est entièrement à zéro. Il est utilisé, par exemple, lorsqu’un nouvel enregistrement est inséré mais qu’aucune valeur n’est spécifiée pour une colonne UUID :
+
+```text
+00000000-0000-0000-0000-000000000000
+```
+
+<Warning>
+  Pour des raisons historiques, les UUID sont triés selon leur seconde moitié.
+
+  Si cela ne pose pas de problème pour les valeurs UUIDv4, cela peut dégrader les performances lorsque des colonnes UUIDv7 sont utilisées dans des définitions d&#39;index primaire (leur utilisation dans des clés d&#39;ordonnancement ou de partitionnement ne pose pas de problème).
+  Plus précisément, les valeurs UUIDv7 se composent d&#39;un horodatage dans la première moitié et d&#39;un compteur dans la seconde.
+  Le tri des UUIDv7 dans les index clairsemés de clé primaire (c.-à-d. les premières valeurs de chaque granule d&#39;index) se fera donc sur le champ compteur.
+  En supposant que les UUID soient triés selon leur première moitié (l&#39;horodatage), l&#39;étape d&#39;analyse de l&#39;index primaire au début des requêtes devrait permettre d&#39;élaguer tous les marks de toutes les parts sauf une.
+  En revanche, avec un tri selon la seconde moitié (le compteur), au moins un mark devrait être renvoyé pour toutes les parts, ce qui entraîne des accès disque inutiles.
+</Warning>
+
+Exemple :
+
+```sql title="Query"
+CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (uuid);
+
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+SELECT * FROM tab;
+```
+
+```text title="Response"
+┌─uuid─────────────────────────────────┐
+│ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
+│ 019d2555-7874-7e9d-a284-9b46c3353be7 │
+│ 019d2555-7878-77fc-a36f-4081aa58ec2b │
+│ 019d2555-7878-77fc-a36f-40826555fb9b │
+│ 019d2555-7870-7432-ba62-5250ac595328 │
+│ 019d2555-7870-7432-ba62-5251da22bd19 │
+│ 019d2555-786c-73e9-a031-4a7936df7d56 │
+│ 019d2555-786c-73e9-a031-4a7a35a9544f │
+│ 019d2555-7868-7333-89d1-2bd1639899c3 │
+│ 019d2555-7868-7333-89d1-2bd297eb7d42 │
+└──────────────────────────────────────┘
+
+```
+
+Pour contourner ce problème, l’UUID peut être converti en horodatage extrait de la seconde moitié :
+
+```sql title="Query"
+CREATE TABLE tab (uuid UUID) ENGINE = MergeTree PRIMARY KEY (UUIDv7ToDateTime(uuid));
+-- Or alternatively:                      [...] PRIMARY KEY (toStartOfHour(UUIDv7ToDateTime(uuid)));
+
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+INSERT INTO tab SELECT generateUUIDv7() FROM numbers(2);
+SELECT * FROM tab;
+```
+
+Résultat (en supposant que les mêmes données ont été insérées) :
+
+```text title="Response"
+┌─uuid─────────────────────────────────┐
+│ 019d2555-7868-7333-89d1-2bd1639899c3 │
+│ 019d2555-7868-7333-89d1-2bd297eb7d42 │
+│ 019d2555-786c-73e9-a031-4a7936df7d56 │
+│ 019d2555-786c-73e9-a031-4a7a35a9544f │
+│ 019d2555-7870-7432-ba62-5250ac595328 │
+│ 019d2555-7870-7432-ba62-5251da22bd19 │
+│ 019d2555-7874-7e9d-a284-9b45a0b2f165 │
+│ 019d2555-7874-7e9d-a284-9b46c3353be7 │
+│ 019d2555-7878-77fc-a36f-4081aa58ec2b │
+│ 019d2555-7878-77fc-a36f-40826555fb9b │
+└──────────────────────────────────────┘
+
+```
+
+ORDER BY (UUIDv7ToDateTime(uuid), uuid)
+
+<div id="generating-uuids">
+  ## Génération d’UUIDs
+</div>
+
+ClickHouse fournit la fonction [generateUUIDv4](/fr/reference/functions/regular-functions/uuid-functions) pour générer des UUID version 4 aléatoires.
+
+<div id="usage-example">
+  ## Exemple d’utilisation
+</div>
+
+**Exemple 1**
+
+Cet exemple illustre la création d’une table comportant une colonne UUID, ainsi que l’insertion d’une valeur dans cette table.
+
+```sql title="Query"
+CREATE TABLE t_uuid (x UUID, y String) ENGINE=TinyLog
+
+INSERT INTO t_uuid SELECT generateUUIDv4(), 'Example 1'
+
+SELECT * FROM t_uuid
+```
+
+```text title="Response"
+┌────────────────────────────────────x─┬─y─────────┐
+│ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
+└──────────────────────────────────────┴───────────┘
+```
+
+**Exemple 2**
+
+Dans cet exemple, aucune valeur de la colonne UUID n’est spécifiée lors de l’insertion de l’enregistrement, c’est-à-dire que la valeur UUID par défaut est insérée :
+
+```sql
+INSERT INTO t_uuid (y) VALUES ('Example 2')
+
+SELECT * FROM t_uuid
+```
+
+```text
+┌────────────────────────────────────x─┬─y─────────┐
+│ 417ddc5d-e556-4d27-95dd-a34d84e46a50 │ Example 1 │
+│ 00000000-0000-0000-0000-000000000000 │ Example 2 │
+└──────────────────────────────────────┴───────────┘
+```
+
+<div id="restrictions">
+  ## Restrictions
+</div>
+
+Le type de données UUID ne prend en charge que les fonctions prises en charge par le type de données [String](/fr/reference/data-types/string) (par exemple, [min](/fr/reference/functions/aggregate-functions/min), [max](/fr/reference/functions/aggregate-functions/max) et [count](/fr/reference/functions/aggregate-functions/count)).
+
+Le type de données UUID ne peut pas être utilisé avec des opérations arithmétiques (par exemple, [abs](/fr/reference/functions/regular-functions/arithmetic-functions#abs)) ni avec des fonctions d’agrégation, telles que [sum](/fr/reference/functions/aggregate-functions/sum) et [avg](/fr/reference/functions/aggregate-functions/avg).

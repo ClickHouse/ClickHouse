@@ -154,6 +154,9 @@ Possible values:
     DECLARE(Bool, input_format_csv_empty_as_default, true, R"(
 Treat empty fields in CSV input as default values.
 )", 0) \
+    DECLARE(Bool, input_format_csv_missing_nullable_as_empty_string, false, R"(
+Controls how `Nullable(String)` is read from a missing value in CSV. A missing value is an empty space between/before/after commas, not surrounded by quotes. If this setting is enabled, regardless of the value of `input_format_csv_empty_as_default`, the missing value of `Nullable(String)` will be interpreted as an empty `String`, not as NULL.
+)", 0) \
     DECLARE(Bool, input_format_tsv_empty_as_default, false, R"(
 Treat empty fields in TSV input as default values.
 )", 0) \
@@ -1545,8 +1548,8 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled.
 )", IMPORTANT) \
-    DECLARE(Bool, precise_float_parsing, false, R"(
-Prefer more precise (but slower) float parsing algorithm
+    DECLARE(Bool, precise_float_parsing, true, R"(
+Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
 Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.

@@ -39,7 +39,12 @@ static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_META
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_FILE_BUCKETS_INFO = 4;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_EXCLUDED_ROWS = 5;
 static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_FILE_STATS = 6;
-static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_FILE_STATS;
+/// Version 7 is reserved for a feature implemented in the private repository (Iceberg compaction).
+/// It is kept here, unused, so that the cluster-function protocol version number space stays identical
+/// between the open-source and the private repositories and a given number never has two meanings.
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_ICEBERG_COMPACTION = 7;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX = 8;
+static constexpr auto DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION = DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX;
 
 static constexpr auto DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION = 1;
 
@@ -48,7 +53,8 @@ static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION = 5;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK = 6;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID = 7;
-static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 7;
+static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE = 8;
+static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 8;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
@@ -150,6 +156,8 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT = 
 
 static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485;
 
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -158,5 +166,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54485;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54486;
 }

@@ -1,0 +1,138 @@
+---
+description: 'Consulta datos desde/hacia un servidor HTTP/HTTPS remoto. Este motor es similar
+  al motor File.'
+sidebarTitle: 'URL'
+slug: /engines/table-engines/special/url
+title: 'motor de tabla URL'
+doc_type: 'reference'
+---
+
+Consulta datos desde/hacia un servidor HTTP/HTTPS remoto. Este motor es similar al motor [File](/es/reference/engines/table-engines/special/file).
+
+Sintaxis: `URL(URL [,Format] [,CompressionMethod])`
+
+* El parámetro `URL` debe ajustarse a la estructura de un Uniform Resource Locator. La URL especificada debe apuntar a un servidor que use HTTP o HTTPS. Esto no requiere encabezados adicionales para obtener una respuesta del servidor.
+
+* `Format` debe ser uno que ClickHouse pueda usar en consultas `SELECT` y, si es necesario, en `INSERTs`. Para ver la lista completa de formatos admitidos, consulte [Formats](/es/reference/formats/index#formats-overview).
+
+  Si no se especifica este argumento, ClickHouse detecta el formato automáticamente a partir del sufijo del parámetro `URL`. Si el sufijo del parámetro `URL` no coincide con ninguno de los formatos admitidos, no se podrá crear la tabla. Por ejemplo, para la expresión del motor `URL('http://localhost/test.json')`, se aplica el formato `JSON`.
+
+* `CompressionMethod` indica si el body HTTP debe comprimirse. Si la compresión está habilitada, los paquetes HTTP enviados por el motor URL contienen el header &#39;Content-Encoding&#39; para indicar qué método de compresión se está usando.
+
+Para habilitar la compresión, primero asegúrese de que el endpoint HTTP remoto indicado por el parámetro `URL` admita el algoritmo de compresión correspondiente.
+
+Los valores admitidos de `CompressionMethod` deben ser uno de los siguientes:
+
+* gzip or gz
+* deflate
+* brotli or br
+* lzma or xz
+* zstd or zst
+* lz4
+* bz2
+* snappy
+* none
+* auto
+
+Si no se especifica `CompressionMethod`, el valor predeterminado es `auto`. Esto significa que ClickHouse detecta automáticamente el método de compresión a partir del sufijo del parámetro `URL`. Si el sufijo coincide con cualquiera de los métodos de compresión enumerados anteriormente, se aplica la compresión correspondiente; de lo contrario, no se habilita ninguna compresión.
+
+Por ejemplo, para la expresión del motor `URL('http://localhost/test.gzip')`, se aplica el método de compresión `gzip`, pero para `URL('http://localhost/test.fr')`, no se habilita ninguna compresión porque el sufijo `fr` no coincide con ninguno de los métodos de compresión anteriores.
+
+<div id="using-the-engine-in-the-clickhouse-server">
+  ## Uso
+</div>
+
+Las consultas `INSERT` y `SELECT` se transforman en peticiones `POST` y `GET`,
+respectivamente. Para procesar las peticiones `POST`, el servidor remoto debe admitir
+la [codificación de transferencia en fragmentos](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
+
+Puede limitar el número máximo de redirecciones HTTP GET mediante el ajuste [max&#95;http&#95;get&#95;redirects](/es/reference/settings/session-settings#max_http_get_redirects).
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+**1.** Cree una tabla `url_engine_table` en el servidor:
+
+```sql
+CREATE TABLE url_engine_table (word String, value UInt64)
+ENGINE=URL('http://127.0.0.1:12345/', CSV)
+```
+
+**2.** Crea un servidor HTTP básico con las herramientas estándar de Python 3 e
+inícialo:
+
+```python3
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```bash
+$ python3 server.py
+```
+
+**3.** Solicitar datos:
+
+```sql
+SELECT * FROM url_engine_table
+```
+
+```text
+┌─word──┬─value─┐
+│ Hello │     1 │
+│ World │     2 │
+└───────┴───────┘
+```
+
+<div id="details-of-implementation">
+  ## Detalles de la implementación
+</div>
+
+* Las lecturas y escrituras pueden realizarse en paralelo
+* No se admite:
+  * las operaciones `ALTER` y `SELECT...SAMPLE`.
+  * Índices.
+  * Replicación.
+
+<div id="virtual-columns">
+  ## Columnas virtuales
+</div>
+
+* `_path` — Ruta de la `URL`. Tipo: `LowCardinality(String)`.
+* `_file` — Nombre del recurso de la `URL`. Tipo: `LowCardinality(String)`.
+* `_size` — Tamaño del recurso en bytes. Tipo: `Nullable(UInt64)`. Si se desconoce el tamaño, el valor es `NULL`.
+* `_time` — Fecha y hora de la última modificación del archivo. Tipo: `Nullable(DateTime)`. Si se desconoce la hora, el valor es `NULL`.
+* `_headers` - Encabezados de la respuesta HTTP. Tipo: `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="resolving-relative-urls">
+  ## Resolución de las URL relativas
+</div>
+
+La configuración [url&#95;base](/es/reference/settings/session-settings#url_base) permite usar una URL relativa en el motor `URL`. Cuando se establece `url_base`, la URL que se pasa al motor se resuelve con respecto a esta según la [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986). Para obtener una descripción completa de las reglas de resolución, consulta la [documentación de la función de tabla url](/es/reference/functions/table-functions/url#resolving-relative-urls).
+
+**Ejemplo**
+
+```sql
+SET url_base = 'http://127.0.0.1:12345/';
+CREATE TABLE url_engine_table (word String, value UInt64) ENGINE = URL('hello.csv', CSV);
+SELECT * FROM url_engine_table;
+```
+
+<div id="storage-settings">
+  ## Configuración de almacenamiento
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/es/reference/settings/session-settings#engine_url_skip_empty_files) - permite omitir archivos vacíos durante la lectura. Está deshabilitado de forma predeterminada.
+* [enable&#95;url&#95;encoding](/es/reference/settings/session-settings#enable_url_encoding) - permite habilitar o deshabilitar la decodificación/codificación de la ruta en el URI. Está habilitado de forma predeterminada.
+* [url&#95;base](/es/reference/settings/session-settings#url_base) - URL base para resolver las URL relativas que se pasan al motor.
