@@ -334,14 +334,28 @@ void ASTAlterSettingsProfileElements::updateTreeHashImpl(SipHash & hash_state, b
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
     hash_state.update(drop_all_settings);
     hash_state.update(drop_all_profiles);
-    /// The formatter emits an `add`/`modify`/`drop` clause only when the collection is present and
-    /// not empty (see `formatImpl`), so map "absent" and "set but empty" to the same hash.
+    /// The ALTER formatter (`formatSettingsProfileElementsForAlter`) emits an `add`/`modify`/`drop`
+    /// clause only when the collection is present and not empty, so map "absent" and "set but empty"
+    /// to the same hash. Within a clause that formatter lists all profile references first and then
+    /// all settings, regardless of the stored order of the elements, so the format -> parse round-trip
+    /// reorders them. Fold the elements in that same profiles-then-settings order (rather than
+    /// delegating to `ASTSettingsProfileElements::updateTreeHash`, which preserves the stored order),
+    /// so the tree hash is stable across the round-trip that the debug-build AST consistency check
+    /// requires.
     auto fold = [&](const boost::intrusive_ptr<ASTSettingsProfileElements> & elems)
     {
         bool present = elems && !elems->empty();
         hash_state.update(present);
-        if (present)
-            elems->updateTreeHash(hash_state, ignore_aliases);
+        if (!present)
+            return;
+        hash_state.update(elems->getNumberOfProfiles());
+        for (const auto & element : elems->elements)
+            if (!element->parent_profile.empty())
+                element->updateTreeHash(hash_state, ignore_aliases);
+        hash_state.update(elems->getNumberOfSettings());
+        for (const auto & element : elems->elements)
+            if (!element->setting_name.empty())
+                element->updateTreeHash(hash_state, ignore_aliases);
     };
     fold(add_settings);
     fold(modify_settings);
