@@ -167,12 +167,14 @@ void ChangelogFileDescription::waitAllAsyncOperations()
 
 void ChangelogFileDescription::ValidRuns::addLocatedRecord(uint64_t index, size_t position, size_t size_in_file)
 {
-    /// A new location for this file is always contiguous with end_index; anything else is a bug, so
-    /// fail fast before mutating anything rather than risk serving stale bytes later.
-    if (!runs.empty() && index != end_index)
+    /// Backwards means re-locating an already-located index -- a bug. Fail fast.
+    if (!runs.empty() && index < end_index)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "Valid-run metadata: non-contiguous located record (index {}, expected {})", index, end_index);
-    if (runs.empty() || position != end_position)
+            "Valid-run metadata: located record moves backwards (index {}, already located up to {})", index, end_index);
+    /// A forward gap is legitimate (compaction drops pending locations before refreshCache folds them);
+    /// any gap starts a fresh run. Reads clip to retained_start, so skipped indices are never queried.
+    const bool extends_last_run = !runs.empty() && index == end_index && position == end_position;
+    if (!extends_last_run)
         runs.push_back(Run{.start_position = position, .first_index = index});
     end_index = index + 1;
     end_position = position + size_in_file;

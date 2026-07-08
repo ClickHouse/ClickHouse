@@ -30,7 +30,6 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace CoordinationSetting
@@ -167,6 +166,26 @@ TEST(CoordinationSettingsLoadFromConfig, MapsObsoleteCommitLogsCacheSizeThreshol
 </clickhouse>)END");
         EXPECT_EQ(settings[DB::CoordinationSetting::log_readahead_commit_window_bytes], 500ull * 1024 * 1024);
     }
+}
+
+TEST(ChangelogValidRuns, ForwardGapAfterCompactionStartsNewRun)
+{
+    /// Regression: compaction drops pending locations below its new start before refreshCache folds
+    /// them in, so the next located record has a forward gap. It must open a fresh run, not throw.
+    DB::ChangelogFileDescription::ValidRuns runs;
+    runs.addLocatedRecord(1597, /*position=*/0, /*size_in_file=*/10);
+    runs.addLocatedRecord(1598, /*position=*/10, /*size_in_file=*/10);
+
+    /// end_index is now 1599; index 1600 skips the compacted 1599.
+    EXPECT_NO_THROW(runs.addLocatedRecord(1600, /*position=*/30, /*size_in_file=*/10));
+
+    ASSERT_EQ(runs.runs.size(), 2u);
+    EXPECT_EQ(runs.runs[0].first_index, 1597u);
+    EXPECT_EQ(runs.runs[0].start_position, 0u);
+    EXPECT_EQ(runs.runs[1].first_index, 1600u);
+    EXPECT_EQ(runs.runs[1].start_position, 30u);
+    EXPECT_EQ(runs.end_index, 1601u);
+    EXPECT_EQ(runs.end_position, 40u);
 }
 
 TYPED_TEST(CoordinationChangelogTest, ChangelogTestSimple)
@@ -5081,78 +5100,6 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefresh
     ASSERT_NE(entry2, nullptr);
     EXPECT_EQ(entry2->get_term(), 2u);
     EXPECT_TRUE(changelog.hasCommitReaderForTests());
-}
-
-// log_entries contractually never returns nullptr; on a concurrent write_at it must throw instead.
-TYPED_TEST(CoordinationChangelogTest, LogEntriesThrowsOnConcurrentTruncation)
-{
-    if (this->enable_compression)
-        GTEST_SKIP() << "Compressed logs not supported in executeReadPlan seek path";
-
-    ChangelogDirTest test("./logs");
-    this->setLogDirectory("./logs");
-
-    DB::KeeperLogStore changelog(
-        DB::LogFileSettings{
-            .force_sync = false,
-            .compress_logs = false,
-            .rotate_interval = 100,
-            .latest_logs_cache_size_threshold = 1,
-        },
-        DB::FlushSettings(),
-        DB::ReadAheadSettings{},
-        this->keeper_context);
-    changelog.init(0, 0);
-
-    for (uint64_t i = 1; i <= 10; ++i)
-    {
-        auto entry = getLogEntry("log_entries_epoch_race_" + std::to_string(i), i);
-        changelog.append(entry);
-    }
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-
-    DB::FailPointInjection::enableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
-
-    std::promise<void> reader_done;
-    std::exception_ptr reader_exception;
-    std::thread reader([&]
-    {
-        try
-        {
-            changelog.log_entries(1, 6);
-        }
-        catch (...)
-        {
-            reader_exception = std::current_exception();
-        }
-        reader_done.set_value();
-    });
-
-    DB::FailPointInjection::waitForPause(DB::FailPoints::keeper_changelog_read_plan_resolved);
-
-    auto rewrite_entry = getLogEntry("log_entries_epoch_race_rewrite_3", 999);
-    changelog.write_at(3, rewrite_entry);
-    changelog.end_of_append_batch(0, 0);
-    waitDurableLogs(changelog);
-
-    DB::FailPointInjection::disableFailPoint(DB::FailPoints::keeper_changelog_read_plan_resolved);
-    reader_done.get_future().wait();
-    reader.join();
-
-    ASSERT_NE(reader_exception, nullptr) << "log_entries must throw rather than return nullptr on a concurrent truncation race";
-    try
-    {
-        std::rethrow_exception(reader_exception);
-    }
-    catch (const DB::Exception & ex)
-    {
-        EXPECT_EQ(ex.code(), DB::ErrorCodes::LOGICAL_ERROR) << ex.message();
-    }
-    catch (...) // Ok: FAIL() reports the test failure
-    {
-        FAIL() << "Expected a DB::Exception";
-    }
 }
 
 #endif

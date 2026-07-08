@@ -548,6 +548,7 @@ if [[ "$BUGFIX_VALIDATE_CHECK" -eq 1 || "$PREVIOUS_RELEASE_CONFIG" -eq 1 ]]; the
     }
 
     remove_keeper_config "nuraft_use_bg_thread_for_snapshot_io" "[[:digit:]]\+"
+    remove_keeper_config "log_readahead_commit_window_bytes" "[[:digit:]]\+"
 fi
 
 if [[ $REMOTE_DATABASE_DISK -eq 1 ]]; then

@@ -126,7 +126,9 @@ struct ChangelogFileDescription
         };
 
         /// Sorted by first_index; run i covers [runs[i].first_index, runs[i+1].first_index), the last
-        /// covers [runs.back().first_index, end_index). No index gap between consecutive runs.
+        /// covers [runs.back().first_index, end_index). A run may over-claim compacted indices at its
+        /// tail (compaction drops pending locations before they are folded in), but reads clip to
+        /// retained_start, so those indices are never queried.
         std::vector<Run> runs;
         /// One-past the last located index recorded into this file. 0 = no runs.
         uint64_t end_index = 0;
