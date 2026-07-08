@@ -14,6 +14,15 @@ class IVolume;
 using VolumePtr = std::shared_ptr<IVolume>;
 class PackedFilesWriter;
 
+/// Arms the part-cleanup move failpoints (mergetree_part_cleanup_inject_*_retryable_exception) for the
+/// current thread. The outdated/unexpected part loaders scope this around the cleanup step so those
+/// failpoints fire only for the retry-safe loaders, not for every server rename/remove. Test scaffolding.
+struct PartCleanupMoveFailpointGuard
+{
+    PartCleanupMoveFailpointGuard();
+    ~PartCleanupMoveFailpointGuard();
+};
+
 class DataPartStorageOnDiskBase : public IDataPartStorage
 {
 public:
@@ -154,16 +163,14 @@ public:
         std::string new_part_dir,
         LoggerPtr log,
         bool remove_new_dir_if_exists,
-        bool fsync_part_dir,
-        bool * out_directory_was_moved) override;
+        bool fsync_part_dir) override;
 
     void remove(
         CanRemoveCallback && can_remove_callback,
         const MergeTreeDataPartChecksums & checksums,
         std::list<ProjectionChecksums> projections,
         bool is_temp,
-        LoggerPtr log,
-        bool * out_directory_was_moved) override;
+        LoggerPtr log) override;
 
     void changeRootPath(const std::string & from_root, const std::string & to_root) override;
     void createDirectories() override;

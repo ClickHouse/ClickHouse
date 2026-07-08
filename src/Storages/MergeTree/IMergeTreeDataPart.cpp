@@ -2283,7 +2283,7 @@ bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & stora
     return !storage_policy->getVolumeByDiskName(disk_name)->areMergesAvoided();
 }
 
-void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists, bool * out_directory_was_moved)
+void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_new_dir_if_exists)
 {
     std::string relative_path = storage.relative_data_path;
     bool fsync_dir = (*storage.getSettings())[MergeTreeSetting::fsync_part_directory];
@@ -2297,7 +2297,7 @@ void IMergeTreeDataPart::renameTo(const String & new_relative_path, bool remove_
     auto old_projection_root_path = getDataPartStorage().getRelativePath();
     auto to = fs::path(relative_path) / new_relative_path;
 
-    getDataPartStorage().rename(to.parent_path(), to.filename(), storage.log.load(), remove_new_dir_if_exists, fsync_dir, out_directory_was_moved);
+    getDataPartStorage().rename(to.parent_path(), to.filename(), storage.log.load(), remove_new_dir_if_exists, fsync_dir);
 
     auto new_projection_root_path = to.string();
 
@@ -2329,7 +2329,7 @@ void IMergeTreeDataPart::initializeIndexGranularityInfo(const MergeTreeSettings 
     index_granularity = std::make_unique<MergeTreeIndexGranularityAdaptive>();
 }
 
-void IMergeTreeDataPart::remove(bool * out_directory_was_moved)
+void IMergeTreeDataPart::remove()
 {
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::remove");
     chassert(assertHasValidVersionMetadata());
@@ -2368,7 +2368,7 @@ void IMergeTreeDataPart::remove(bool * out_directory_was_moved)
     }
 
     bool is_temporary_part = is_temp || state == MergeTreeDataPartState::Temporary;
-    getDataPartStorage().remove(std::move(can_remove_callback), checksums, projection_checksums, is_temporary_part, storage.log.load(), out_directory_was_moved);
+    getDataPartStorage().remove(std::move(can_remove_callback), checksums, projection_checksums, is_temporary_part, storage.log.load());
 }
 
 std::optional<String> IMergeTreeDataPart::getRelativePathForPrefix(const String & prefix, bool detached, bool broken) const
@@ -2404,13 +2404,13 @@ String IMergeTreeDataPart::getRelativePathOfActivePart() const
     return fs::path(getDataPartStorage().getFullRootPath()) / name / "";
 }
 
-void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error, bool * out_directory_was_moved)
+void IMergeTreeDataPart::renameToDetached(const String & prefix, bool ignore_error)
 {
     auto path_to_detach = getRelativePathForDetachedPart(prefix, /* broken */ false);
     chassert(path_to_detach);
     try
     {
-        renameTo(path_to_detach.value(), true, out_directory_was_moved);
+        renameTo(path_to_detach.value(), true);
     }
     /// This exceptions majority of cases:
     /// - fsync
