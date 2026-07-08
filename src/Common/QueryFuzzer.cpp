@@ -2661,11 +2661,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
     {
         if (fuzz_rand() % 5 == 0)
         {
-            /// Emit UInt64, not bool: every EXPLAIN settings parser (checkAndGetSettings
-            /// and WhatIfSettings::fromAST) rejects non-UInt64 fields with
-            /// INVALID_SETTING_VALUE, and a bool field formats as `true`, which is parsed
-            /// back as Bool.
-            changes.emplace_back(setting, static_cast<UInt64>(1));
+            changes.emplace_back(setting, true);
         }
     }
 }
