@@ -1,0 +1,241 @@
+---
+slug: /cloud/data-sources/secure-iceberg
+sidebarTitle: 'Iceberg データへの安全なアクセス'
+title: 'Iceberg データへの安全なアクセス'
+description: 'この記事では、ClickHouse Cloud のお客様がロールベースのアクセス制御を使用して、オブジェクトストレージ内の Apache Iceberg データに安全にアクセスする方法を説明します。'
+keywords: ['Iceberg', 'RBAC', 'Amazon S3', '認証']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+ClickHouse Cloud は、ARN ベースの AWS IAM 信頼関係を利用して、オブジェクトストレージ (通常は S3) に保存された Iceberg データへの安全なロールベースアクセスをサポートしています。このガイドでは、[S3 データへの安全なアクセス](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely)と同じ安全なセットアップのパターンに沿って、ClickHouse に Iceberg 固有の設定を追加します。
+
+<div id="overview">
+  ## 概要
+</div>
+
+* ClickHouse Cloud サービスロール ID (IAM) を取得します。
+* ClickHouse が引き受けられる IAM ロールを AWS アカウントに作成します。
+* Iceberg 固有のオブジェクトポリシーとカタログポリシーをロールにアタッチします。
+* ロールベースの認証情報を使用して、Iceberg テーブル関数または IcebergS3 テーブルエンジンを使用します。
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ## ClickHouseサービスのロール ID (ARN) を取得する
+</div>
+
+<Steps>
+  <Step>
+    ### 1. ClickHouse Cloud アカウントにログインします。
+  </Step>
+
+  <Step>
+    ### 2. Iceberg データをクエリする ClickHouseサービスを選択します。
+  </Step>
+
+  <Step>
+    ### 3. **Settings** タブに移動します。
+  </Step>
+
+  <Step>
+    ### 4. **Network security information** までスクロールします。
+  </Step>
+
+  <Step>
+    ### 5. **サービスロール ID (IAM)** の値をコピーします。
+
+    この ARN は、Iceberg データにアクセスする AWS IAM ロールの信頼ポリシーで必要になります。
+
+    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="ClickHouseサービスの IAM ロール ARN を取得する" border />
+  </Step>
+</Steps>
+
+<div id="setting-up-iam-assume-role">
+  ## IAM AssumeRole を設定する
+</div>
+
+<Steps>
+  <Step>
+    ### 1. AWS にログインし、IAM サービスに移動します。
+  </Step>
+
+  <Step>
+    ### 2. `Roles` を選択し、次に `Create role` を選択します。
+
+    `Trusted entity type` で `Custom trust policy` を選択し、ステップ 3 に基づいて値を入力します。
+  </Step>
+
+  <Step>
+    ### 3. 信頼ポリシーと IAM ポリシーを追加します。
+
+    `{service-role-id}` を、ClickHouse インスタンスの Service Role ID (IAM) に置き換えてください。
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "ClickHouseServiceRoleTrustPolicy",
+          "Effect": "Allow",
+          "Action": "sts:AssumeRole",
+          "Principal": {
+            "AWS": "{service-role-id}"  
+          }
+        },
+        {
+          "Sid": "ReadOnlyIcebergS3IAMPolicy",
+          "Effect": "Allow",
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket",
+            "s3:GetObject",
+            "s3:ListMultipartUploadParts",
+            "s3:GetObjectVersion",
+            "s3:ListBucketVersions"
+          ],
+          "Resource": [
+            "arn:aws:s3:::{your-bucket}",
+            "arn:aws:s3:::{your-bucket}/*"
+          ]
+        },
+        {
+          "Sid": "OptionalGlueDataCatalogIAMPolicy",
+          "Effect": "Allow",
+          "Action": [
+            "glue:GetDatabase",
+            "glue:GetDatabases",
+            "glue:GetTable",
+            "glue:GetTables",
+            "glue:GetPartition",
+            "glue:GetPartitions"
+          ],
+          "Resource": "arn:aws:glue:{region}:{account-id}:*"
+        }
+      ]
+    }
+    ```
+
+    <Note>
+      読み取り/書き込みワークロードの場合、IAM ポリシーには `s3:PutObject`、`s3:DeleteObject`、および Iceberg のメタデータを変更するアクションを含める必要があります。上記のサンプルは、控えめな読み取り専用構成です。
+
+      より厳密に分離したい場合は、リクエストの送信元を ClickHouse Cloud VPC endpoints に制限してください。このオプションの詳細については、[Secure S3 advanced action control](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely#advanced-action-control) を参照してください。
+    </Note>
+  </Step>
+
+  <Step>
+    ### 4. ロールの作成を完了します。
+
+    a. `Next` をクリックし、権限割り当て画面でもう一度 `Next` をクリックします。
+
+    b. 名前 (例: `iceberg-role-for-clickhouse`) と説明を追加します。
+
+    c. タグを追加します (任意) 。
+
+    d. ポリシーを確認します。
+
+    e. `Create role` を選択します。
+  </Step>
+
+  <Step>
+    ### 5. 作成後、新しい **IAM Role Arn** をコピーします。
+  </Step>
+</Steps>
+
+<div id="configure-iceberg-access">
+  ## ClickHouse Cloud で Iceberg へのアクセスを設定する
+</div>
+
+<div id="iceberg-table-function-with-role-arn">
+  ### オプション A: ロール ARN を使用する Iceberg テーブル関数
+</div>
+
+`NOSIGN` オプションとロールベースの認証情報を指定して、`icebergS3` テーブル関数を使用します。ClickHouse Cloud はロールを引き受けるために STS を呼び出します。
+
+```sql
+SELECT count(*)
+FROM icebergS3(
+  'https://{your-bucket}.s3.{region}.amazonaws.com/{iceberg-path}/',
+  'NOSIGN',
+  extra_credentials(role_arn='arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse', role_session_name='iceberg-session')
+);
+```
+
+<div id="persistent-iceberg-table-engine">
+  ### オプション B: 永続型 Iceberg テーブルエンジン
+</div>
+
+```sql
+CREATE TABLE iceberg_secure (
+  id UInt64,
+  event_date Date,
+  data String
+)
+ENGINE = IcebergS3(
+  'https://{your-bucket}.s3.{region}.amazonaws.com/{iceberg-path}/',
+  'NOSIGN',
+  extra_credentials(role_arn='arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse')
+);
+```
+
+<div id="glue-catalog-plus-icebergs3">
+  ### オプション C: Glue カタログ + IcebergS3
+</div>
+
+```sql
+CREATE TABLE my_db.my_table
+ENGINE = IcebergS3(
+  's3://{your-bucekt}/warehouse/{db}/{table}/',
+  'NOSIGN',
+  extra_credentials(role_arn='arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse')
+)
+SETTINGS
+  catalog_type = 'glue',
+  warehouse = '{your-warehouse}',
+  storage_endpoint = 's3://{your-bucket}',
+  region = '{region}'
+  aws_role_arn = 'arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse';
+```
+
+> 注: Glue カタログを使用する場合は、IAM ロールに S3 と Glue の両方の読み取り/一覧表示権限があることを確認してください。
+
+<div id="datalake-catalog-for-glue">
+  ### オプション D: Glue 向け DataLake Catalog
+</div>
+
+<Note>
+  DataLake Catalog for Glue はバージョン 26.2 で提供開始予定です。
+</Note>
+
+```sql
+CREATE DATABASE glue_test2
+ENGINE = DataLakeCatalog
+SETTINGS 
+    catalog_type = 'glue', 
+    region = {region}, 
+    aws_role_arn = 'arn:aws:iam::{account-id}:role/iceberg-role-for-clickhouse',
+    aws_role_session_name = {session-name},
+    SETTINGS
+    allow_database_glue_catalog = 1;
+```
+
+<div id="validate-access">
+  ## アクセスを確認する
+</div>
+
+1. 簡単なクエリを実行します:
+
+```sql
+SELECT * FROM icebergS3('https://{your-bucket}.s3.{region}.amazonaws.com/{iceberg-path}/', 'NOSIGN')
+LIMIT 5;
+```
+
+2. `AccessDenied` や `InvalidAccessKeyId` などの IAM エラーがないか確認します。
+
+<div id="troubelshooting">
+  ## トラブルシューティング
+</div>
+
+* ClickHouse Cloud サービスの設定でロール ARN を確認します。
+* レイテンシとコストを抑えるため、バケット/オブジェクトが Iceberg クエリと同じリージョンにあることを確認します。
+* Iceberg テーブルのパスが有効な Iceberg メタデータの場所 (テーブルのルート配下にある `metadata/v1/...` ファイル) を指していることを確認します。
+* カタログ モードでは、AWS Glue コンソールで Glue メタデータとパーティションの可視性を確認します。

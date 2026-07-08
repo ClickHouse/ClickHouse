@@ -1,0 +1,52 @@
+---
+alias: []
+description: 'Documentación sobre el formato SQLInsert'
+input_format: false
+keywords: ['SQLInsert']
+output_format: true
+slug: /interfaces/formats/SQLInsert
+title: 'SQLInsert'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✗       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+Produce los datos en forma de una secuencia de sentencias `INSERT INTO table (columns...) VALUES (...), (...) ...;`.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Ejemplo:
+
+```sql
+SELECT number AS x, number + 1 AS y, 'Hello' AS z FROM numbers(10) FORMAT SQLInsert SETTINGS output_format_sql_insert_max_batch_size = 2
+```
+
+```sql
+INSERT INTO table (x, y, z) VALUES (0, 1, 'Hello'), (1, 2, 'Hello');
+INSERT INTO table (x, y, z) VALUES (2, 3, 'Hello'), (3, 4, 'Hello');
+INSERT INTO table (x, y, z) VALUES (4, 5, 'Hello'), (5, 6, 'Hello');
+INSERT INTO table (x, y, z) VALUES (6, 7, 'Hello'), (7, 8, 'Hello');
+INSERT INTO table (x, y, z) VALUES (8, 9, 'Hello'), (9, 10, 'Hello');
+```
+
+Para leer los datos generados en este formato, puede usar el formato de entrada [MySQLDump](/es/reference/formats/MySQLDump).
+
+<div id="format-settings">
+  ## Configuración de formato
+</div>
+
+| Configuración                                                                                                                | Descripción                                                                        | Predeterminado |
+| ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | -------------- |
+| [`output_format_sql_insert_max_batch_size`](/es/reference/settings/formats#output_format_sql_insert_max_batch_size)             | El número máximo de filas en una sentencia INSERT.                                 | `65505`        |
+| [`output_format_sql_insert_table_name`](/es/reference/settings/formats#output_format_sql_insert_table_name)                     | El nombre de la tabla en la consulta INSERT de salida.                             | `'table'`      |
+| [`output_format_sql_insert_include_column_names`](/es/reference/settings/formats#output_format_sql_insert_include_column_names) | Incluye los nombres de las columnas en la consulta INSERT.                         | `true`         |
+| [`output_format_sql_insert_use_replace`](/es/reference/settings/formats#output_format_sql_insert_use_replace)                   | Usa la sentencia REPLACE en lugar de INSERT.                                       | `false`        |
+| [`output_format_sql_insert_quote_names`](/es/reference/settings/formats#output_format_sql_insert_quote_names)                   | Pone entre comillas los nombres de las columnas con el carácter &quot;&#96;&quot;. | `true`         |

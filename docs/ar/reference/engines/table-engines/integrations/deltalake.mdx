@@ -1,0 +1,146 @@
+---
+description: 'يوفّر هذا المحرك تكاملًا بوضع القراءة فقط مع جداول Delta Lake
+  الموجودة في Amazon S3.'
+sidebarTitle: 'DeltaLake'
+slug: /engines/table-engines/integrations/deltalake
+title: 'محرك جدول DeltaLake'
+doc_type: 'مرجع'
+---
+
+يوفّر هذا المحرك تكاملًا مع جداول [Delta Lake](https://github.com/delta-io/delta) الموجودة في S3 وGCP وAzure Storage، ويدعم عمليتَي القراءة والكتابة كلتيهما (بدءًا من v25.10).
+
+<div id="create-table">
+  ## إنشاء جدول DeltaLake
+</div>
+
+لإنشاء جدول DeltaLake، يجب أن يكون الجدول موجودًا مسبقًا في S3 أو GCP أو Azure Storage. لا تقبل الأوامر أدناه معلمات DDL لإنشاء جدول جديد.
+
+<Tabs>
+  <Tab title="S3">
+    **البنية**
+
+    ```sql
+    CREATE TABLE table_name
+    ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
+    ```
+
+    **معلمات المحرك**
+
+    * `url` — عنوان URL للـ bucket مع المسار إلى جدول Delta Lake الحالي.
+    * `aws_access_key_id`, `aws_secret_access_key` - بيانات اعتماد طويلة الأجل لمستخدم حساب [AWS](https://aws.amazon.com/). يمكنك استخدامها لمصادقة طلباتك. هذه المعلمة اختيارية. وإذا لم يتم تحديد بيانات الاعتماد، فسيتم استخدامها من ملف الإعدادات.
+    * `extra_credentials` - اختياري. يُستخدم لتمرير `role_arn` للوصول المستند إلى الأدوار في ClickHouse Cloud. راجع [تأمين S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لمعرفة خطوات الإعداد.
+
+    يمكن تحديد معلمات المحرك باستخدام [المجموعات المسماة](/ar/concepts/features/configuration/server-config/named-collections).
+
+    **مثال**
+
+    ```sql
+    CREATE TABLE deltalake
+    ENGINE = DeltaLake('http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/test_table/', 'ABC123', 'Abc+123')
+    ```
+
+    باستخدام المجموعات المسماة:
+
+    ```xml
+    <clickhouse>
+        <named_collections>
+            <deltalake_conf>
+                <url>http://mars-doc-test.s3.amazonaws.com/clickhouse-bucket-3/</url>
+                <access_key_id>ABC123</access_key_id>
+                <secret_access_key>Abc+123</secret_access_key>
+            </deltalake_conf>
+        </named_collections>
+    </clickhouse>
+    ```
+
+    ```sql
+    CREATE TABLE deltalake
+    ENGINE = DeltaLake(deltalake_conf, filename = 'test_table')
+    ```
+  </Tab>
+
+  <Tab title="GCP">
+    **البنية**
+
+    ```sql
+    -- استخدام عنوان URL عبر HTTPS (موصى به)
+    CREATE TABLE table_name
+    ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
+    ```
+
+    <Info>
+      **مُعرّف URI الخاص بـ gsutil غير مدعوم**
+
+      مُعرّف URI الخاص بـ gsutil مثل `gs://clickhouse-docs-example-bucket` غير مدعوم. يُرجى استخدام عنوان URL يبدأ بـ `https://storage.googleapis.com`
+    </Info>
+
+    **الوسائط**
+
+    * `url` — عنوان URL لـ GCS bucket المؤدي إلى جدول Delta Lake. يجب استخدام التنسيق `https://storage.googleapis.com/<bucket>/<path>/`
+      (وهو API endpoint الخاص بـ GCS XML)، أو `gs://<bucket>/<path>/` الذي يُحوَّل تلقائيًا.
+    * `access_key_id` — مفتاح الوصول إلى GCS. أنشِئه عبر Google Cloud Console → Cloud Storage → Settings → Interoperability.
+    * `secret_access_key` — المفتاح السري لـ GCS.
+
+    **المجموعات المسماة**
+
+    يمكنك أيضًا استخدام المجموعات المسماة.
+    على سبيل المثال:
+
+    ```sql
+    CREATE NAMED COLLECTION gcs_creds AS
+    access_key_id = '<access_key>',
+    secret_access_key = '<secret>';
+
+    CREATE TABLE gcpDeltaLake
+    ENGINE = DeltaLake(gcs_creds, url = 'https://storage.googleapis.com/<bucket>/<path>')
+    ```
+  </Tab>
+
+  <Tab title="Azure">
+    **البنية**
+
+    ```sql
+    CREATE TABLE table_name
+    ENGINE = DeltaLake(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+    ```
+
+    **الوسائط**
+
+    * `connection_string` — سلسلة اتصال Azure
+    * `storage_account_url` — عنوان URL لحساب Azure Storage (على سبيل المثال، https://account.blob.core.windows.net)
+    * `container_name` — اسم Azure container
+    * `blobpath` — المسار إلى جدول Delta Lake داخل الـ container
+    * `account_name` — اسم حساب Azure Storage
+    * `account_key` — مفتاح حساب Azure Storage
+  </Tab>
+</Tabs>
+
+<div id="insert-data">
+  ## كتابة البيانات باستخدام جدول DeltaLake
+</div>
+
+بعد إنشاء جدول باستخدام محرك جدول DeltaLake، يمكنك إدراج البيانات فيه باستخدام:
+
+```sql
+SET allow_experimental_delta_lake_writes = 1;
+
+INSERT INTO deltalake(id, firstname, lastname, gender, age)
+VALUES (1, 'John', 'Smith', 'M', 32);
+```
+
+<Note>
+  لا تُدعَم الكتابة باستخدام محرك الجدول إلا عبر delta kernel.
+  الكتابة إلى Azure غير مدعومة بعد، لكنها تعمل مع S3 وGCS.
+</Note>
+
+<div id="data-cache">
+  ### ذاكرة التخزين المؤقت للبيانات
+</div>
+
+يدعم محرك جدول `DeltaLake` ودالة الجدول التخزين المؤقت للبيانات، تمامًا كما هو الحال مع أنظمة التخزين `S3` و`AzureBlobStorage` و`HDFS`. راجع [&quot;محرك جدول S3&quot;](/ar/reference/engines/table-engines/integrations/s3#data-cache) لمزيد من التفاصيل.
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [دالة الجدول deltaLake](/ar/reference/functions/table-functions/deltalake)

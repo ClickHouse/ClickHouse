@@ -495,33 +495,55 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
                 combinator_name);
         }
 
-        DataTypes nested_types = combinator->transformArguments(argument_types);
         Array nested_parameters = combinator->transformParameters(parameters);
 
-        /// Resolve the combinator's nested function. Normally without the Variant fallback adapter: this keeps the
-        /// adapter (when needed for a Variant argument in the top-level call) as the outermost wrapper, so combinators
-        /// like -If/-Array are applied inside it in the usual order (e.g. Adapter(Null(If(sum))) rather than
-        /// If(Adapter(Null(sum)))). The argument types here are already recursively free of LowCardinality (stripped
-        /// by the top-level get()).
-        ///
-        /// The exception is a combinator that reintroduces a Variant argument from a stored aggregate-function state
-        /// type -- most importantly -Merge, whose nested argument types come from an AggregateFunction(f, Variant(...))
-        /// state (produced earlier by this same Variant adapter). There the nested function itself must go through the
-        /// adapter, so that the merge side reconstructs the same Adapter(f) state layout the state was produced with
-        /// (otherwise resolving f over the Variant throws). We recognize this narrowly by the combinator consuming an
-        /// AggregateFunction state type (as -Merge/-MergeState do). Combinators that merely expose a nested Variant
-        /// from ordinary user data (e.g. -Array turning Array(Variant(...)) into a nested Variant argument) are NOT
-        /// adapted: nested Variant arguments stay out of scope -- only top-level Variant arguments are handled, which
-        /// keeps the documented "top-level Variant only; nested Array/Tuple Variant still rejected" contract.
-        bool consumes_aggregate_state = std::any_of(
-            argument_types.begin(), argument_types.end(),
-            [](const auto & type) { return typeid_cast<const DataTypeAggregateFunction *>(type.get()) != nullptr; });
-        bool nested_has_variant = std::any_of(
-            nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
-        AggregateFunctionPtr nested_function = (apply_variant_adapter_to_nested && nested_has_variant && consumes_aggregate_state)
-            ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant)
-            : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested);
-        auto combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        AggregateFunctionPtr combined_function;
+        if (combinator->transformsMultipleNestedFunctions())
+        {
+            /// A combinator that wraps one nested function per argument list (e.g. -Tuple: one per
+            /// tuple element). Nested Variant arguments in this path are resolved through the normal
+            /// adapter-aware get() (the top-level Variant handling applies to each nested argument list);
+            /// the -Merge state-reintroduction special case below is specific to single-nested combinators.
+            auto nested_arguments_list = combinator->transformArgumentsForMultipleNestedFunctions(argument_types);
+
+            VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
+            nested_functions.reserve(nested_arguments_list.size());
+            for (const auto & nested_arguments : nested_arguments_list)
+                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant));
+
+            combined_function = combinator->transformAggregateFunctionFromMultipleNestedFunctions(
+                getAliasToOrName(nested_name), std::move(nested_functions), out_properties, argument_types, parameters);
+        }
+        else
+        {
+            DataTypes nested_types = combinator->transformArguments(argument_types);
+
+            /// Resolve the combinator's nested function. Normally without the Variant fallback adapter: this keeps the
+            /// adapter (when needed for a Variant argument in the top-level call) as the outermost wrapper, so combinators
+            /// like -If/-Array are applied inside it in the usual order (e.g. Adapter(Null(If(sum))) rather than
+            /// If(Adapter(Null(sum)))). The argument types here are already recursively free of LowCardinality (stripped
+            /// by the top-level get()).
+            ///
+            /// The exception is a combinator that reintroduces a Variant argument from a stored aggregate-function state
+            /// type -- most importantly -Merge, whose nested argument types come from an AggregateFunction(f, Variant(...))
+            /// state (produced earlier by this same Variant adapter). There the nested function itself must go through the
+            /// adapter, so that the merge side reconstructs the same Adapter(f) state layout the state was produced with
+            /// (otherwise resolving f over the Variant throws). We recognize this narrowly by the combinator consuming an
+            /// AggregateFunction state type (as -Merge/-MergeState do). Combinators that merely expose a nested Variant
+            /// from ordinary user data (e.g. -Array turning Array(Variant(...)) into a nested Variant argument) are NOT
+            /// adapted: nested Variant arguments stay out of scope -- only top-level Variant arguments are handled, which
+            /// keeps the documented "top-level Variant only; nested Array/Tuple Variant still rejected" contract.
+            bool consumes_aggregate_state = std::any_of(
+                argument_types.begin(), argument_types.end(),
+                [](const auto & type) { return typeid_cast<const DataTypeAggregateFunction *>(type.get()) != nullptr; });
+            bool nested_has_variant = std::any_of(
+                nested_types.begin(), nested_types.end(), [](const auto & type) { return isVariant(type); });
+            AggregateFunctionPtr nested_function = (apply_variant_adapter_to_nested && nested_has_variant && consumes_aggregate_state)
+                ? get(nested_name, action, nested_types, nested_parameters, out_properties, state_variant)
+                : getWithoutVariantAdapter(nested_name, action, nested_types, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested);
+            combined_function = combinator->transformAggregateFunction(nested_function, out_properties, argument_types, parameters);
+        }
+
         /// Same invariant as above.
         chassert(combined_function && (combined_function->getParameters().empty() || combined_function->getParameters() == parameters),
             "function->getParameters() must equal the parameters passed to the factory");
