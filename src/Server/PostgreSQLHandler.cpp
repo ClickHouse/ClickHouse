@@ -264,6 +264,10 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Client tried to access via extended query protocol");
                     message_transport->dropMessage();
+                    /// This is an extended-query error: discard everything until
+                    /// the next Sync so a pipeline like `Parse; Bind; FLUSH;
+                    /// Execute; Sync` does not run the Execute after the error.
+                    ignore_until_sync = true;
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
                     is_query_in_progress = true;
@@ -279,6 +283,10 @@ void PostgreSQLHandler::run()
                         true);
                     LOG_ERROR(log, "Command is not supported. Command code {:d}", static_cast<Int32>(message_type));
                     message_transport->dropMessage();
+                    /// Treat an unsupported message as an extended-query error and
+                    /// discard until the next Sync, so a following Execute in the
+                    /// same pipeline is not run after this ErrorResponse.
+                    ignore_until_sync = true;
             }
         }
     }

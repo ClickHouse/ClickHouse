@@ -854,6 +854,113 @@ def test_bind_negative_count_recovers(started_cluster):
         sock.close()
 
 
+def test_flush_error_discards_until_sync(started_cluster):
+    # Regression for the skip-until-Sync recovery on the FLUSH and unsupported-
+    # message error branches. FLUSH is not supported and answers with an
+    # ErrorResponse. Before the fix that branch left ignore_until_sync = false, so
+    # a pipeline like Parse; Bind; FLUSH; Execute; Sync would still run the Execute
+    # after the FLUSH error instead of discarding everything until Sync. The
+    # Execute must NOT run (no RowDescription / DataRow / CommandComplete), and the
+    # backend must emit exactly one ReadyForQuery for the Sync, then stay usable.
+    node = started_cluster.instances["node"]
+
+    def sync():
+        return _fe("S", b"")
+
+    def flush():
+        return _fe("H", b"")
+
+    def parse(stmt, query, oids):
+        b = stmt.encode() + b"\x00" + query.encode() + b"\x00" + struct.pack("!H", len(oids))
+        for o in oids:
+            b += struct.pack("!I", o)
+        return _fe("P", b)
+
+    def bind(portal, stmt, values):
+        b = portal.encode() + b"\x00" + stmt.encode() + b"\x00" + struct.pack("!H", 0)
+        b += struct.pack("!H", len(values))
+        for v in values:
+            vb = v.encode()
+            b += struct.pack("!i", len(vb)) + vb
+        b += struct.pack("!H", 0)
+        return _fe("B", b)
+
+    def execute(portal):
+        return _fe("E", portal.encode() + b"\x00" + struct.pack("!I", 0))
+
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(
+        parse("", "SELECT $1 AS a", (23,))
+        + bind("", "", ("5",))
+        + flush()
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" in types, f"FLUSH must produce an ErrorResponse, got {types}"
+    # The Execute after the FLUSH error must be discarded, not run.
+    assert "T" not in types and "D" not in types and "C" not in types, (
+        f"Execute after FLUSH error must be discarded until Sync, got {types}"
+    )
+    assert types.count("Z") == 1, (
+        f"FLUSH pipeline must emit one ReadyForQuery per Sync, got {types}"
+    )
+    # The same connection must stay usable.
+    sock.sendall(_fe("Q", b"SELECT 7\x00"))
+    types = read_until_ready()
+    assert "C" in types, f"connection must stay alive after FLUSH error, got {types}"
+    sock.close()
+
+
+def test_bind_binary_result_format_rejected(started_cluster):
+    # Regression for the Bind requested-result-format codes. A binary result
+    # format request (resultFormat = 1) cannot be honored (we only emit text
+    # RowDescription / DataRow), so it must be rejected with an ErrorResponse
+    # rather than silently returning text rows the client will misread as binary.
+    # The connection must recover on the same socket after the error.
+    node = started_cluster.instances["node"]
+
+    def sync():
+        return _fe("S", b"")
+
+    def parse(stmt, query, oids):
+        b = stmt.encode() + b"\x00" + query.encode() + b"\x00" + struct.pack("!H", len(oids))
+        for o in oids:
+            b += struct.pack("!I", o)
+        return _fe("P", b)
+
+    # Bind with one text parameter and a single binary (1) result format code.
+    def bind_binary_result(portal, stmt, values):
+        b = portal.encode() + b"\x00" + stmt.encode() + b"\x00" + struct.pack("!H", 0)
+        b += struct.pack("!H", len(values))
+        for v in values:
+            vb = v.encode()
+            b += struct.pack("!i", len(vb)) + vb
+        b += struct.pack("!H", 1) + struct.pack("!H", 1)  # one result format code = binary
+        return _fe("B", b)
+
+    def execute(portal):
+        return _fe("E", portal.encode() + b"\x00" + struct.pack("!I", 0))
+
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(
+        parse("", "SELECT $1 AS a", (23,))
+        + bind_binary_result("", "", ("5",))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" in types, f"binary result format must be rejected, got {types}"
+    assert types.count("Z") == 1, (
+        f"rejected result format must emit one ReadyForQuery per Sync, got {types}"
+    )
+    # The same connection must stay usable (stream stayed aligned).
+    sock.sendall(_fe("Q", b"SELECT 7\x00"))
+    types = read_until_ready()
+    assert "C" in types, f"connection must stay alive after binary result reject, got {types}"
+    sock.close()
+
+
 def test_execute_no_sql_injection(started_cluster):
     # Simple-query PREPARE/EXECUTE path: EXECUTE arguments are spliced into the
     # prepared statement body by $N substitution, so a string argument must be

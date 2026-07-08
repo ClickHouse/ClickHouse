@@ -794,6 +794,12 @@ public:
     /// Rejecting mid-deserialization would leave the stream misaligned and break
     /// the error-recovery skip-until-Sync path.
     bool has_binary_format_param = false;
+    /// True if any requested result column format code is non-text (binary). We
+    /// only emit text RowDescription/DataRow (see PostgreSQLOutputFormat), so a
+    /// binary result request cannot be honored. Recorded here and rejected by the
+    /// caller after the whole message is consumed, for the same stream-alignment
+    /// reason as has_binary_format_param above.
+    bool has_binary_result_format_param = false;
 
     void deserialize(ReadBuffer & in) override
     {
@@ -853,7 +859,14 @@ public:
                             "Wrong result format code count {} in Bind message, it must not be negative", num_format_params_result);
         Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
+        {
             readBinaryBigEndian(format_param_result, in);
+            /// 0 = TEXT, anything else (1 = BINARY) requests binary result
+            /// columns, which this handler cannot produce. Record it and let the
+            /// caller reject once the message is fully read (stream stays aligned).
+            if (format_param_result != 0)
+                has_binary_result_format_param = true;
+        }
     }
 
     MessageType getMessageType() const override
@@ -1820,6 +1833,15 @@ public:
         if (query->has_binary_format_param)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Binary format parameters are not supported in Bind messages, use the text format");
+
+        /// We only produce text result columns (see PostgreSQLOutputFormat, which
+        /// hard-codes text RowDescription/DataRow). A binary result format request
+        /// cannot be honored, so reject it rather than silently returning text
+        /// rows the client will misread. The Bind message was fully consumed by
+        /// deserialize, so the byte stream stays aligned for the error-recovery path.
+        if (query->has_binary_result_format_param)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Binary result format is not supported in Bind messages, use the text format");
 
         /// For the unnamed portal, a new `Bind` replaces the previous one
         /// per the PostgreSQL extended-query protocol — clients such as Npgsql
