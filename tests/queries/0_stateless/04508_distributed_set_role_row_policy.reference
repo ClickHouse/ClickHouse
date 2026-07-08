@@ -1,0 +1,17 @@
+--- SET ROLE role_a on local table: expect workspace_id=1 only ---
+1	ws1_row1
+1	ws1_row2
+--- SET ROLE role_b on local table: expect workspace_id=2 only ---
+2	ws2_row1
+2	ws2_row2
+--- SET ROLE role_a on distributed table: expect workspace_id=1 only ---
+1	ws1_row1
+1	ws1_row2
+--- SET ROLE role_b on distributed table: expect workspace_id=2 only ---
+2	ws2_row1
+2	ws2_row2
+--- Both roles on distributed table: expect all rows ---
+1	ws1_row1
+1	ws1_row2
+2	ws2_row1
+2	ws2_row2
