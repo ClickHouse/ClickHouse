@@ -13,13 +13,28 @@ query()
     ${CLICKHOUSE_CLIENT} --send_logs_level=none --query "$1"
 }
 
+get_disk_path()
+{
+    local disk_name="$1"
+    local path
+    path=$(query "SELECT path FROM system.disks WHERE name = '${disk_name}'")
+
+    if [[ -z "$path" ]]
+    then
+        echo "Missing disk ${disk_name}. Check that storage_conf_04506.xml is installed." >&2
+        exit 1
+    fi
+
+    echo "$path"
+}
+
 with_trailing_slash()
 {
     local path="$1"
 
-    if [[ -z "$path" || "$path" == "/" ]]
+    if [[ "$path" == "/" || "$path" != *"/04506_alter_storage_policy_existing_disk_contents/"* ]]
     then
-        echo "Unsafe or missing disk path: ${path:-<empty>}" >&2
+        echo "Unsafe disk path: $path" >&2
         exit 1
     fi
 
@@ -31,8 +46,8 @@ with_trailing_slash()
     fi
 }
 
-disk1_root=$(with_trailing_slash "$(query "SELECT path FROM system.disks WHERE name = 'disk1_04506'")")
-disk2_root=$(with_trailing_slash "$(query "SELECT path FROM system.disks WHERE name = 'disk2_04506'")")
+disk1_root=$(with_trailing_slash "$(get_disk_path disk1_04506)")
+disk2_root=$(with_trailing_slash "$(get_disk_path disk2_04506)")
 
 remove_test_root()
 {
@@ -84,6 +99,7 @@ table_data_path()
 disk2_data_path()
 {
     local data_path="$1"
+    local data_path_suffix
 
     if [[ "$data_path" != "$disk1_root"* ]]
     then
@@ -91,7 +107,14 @@ disk2_data_path()
         exit 1
     fi
 
-    echo "${disk2_root}${data_path#"$disk1_root"}"
+    data_path_suffix="${data_path#"$disk1_root"}"
+    if [[ -z "$data_path_suffix" ]]
+    then
+        echo "Unexpected empty data path suffix: $data_path" >&2
+        exit 1
+    fi
+
+    echo "${disk2_root}${data_path_suffix}"
 }
 
 expect_error()
@@ -125,7 +148,7 @@ run_case()
     fi
 
     query "DROP TABLE ${table} SYNC"
-    rm -rf "$disk2_path"
+    remove_test_root "$disk2_path"
 }
 
 setup_no_path()
