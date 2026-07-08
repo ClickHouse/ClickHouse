@@ -337,11 +337,15 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
     }
 }
 
-TEST(PostgreSQLProtocol, BindRejectsBinaryResultFormat)
+TEST(PostgreSQLProtocol, BindConsumesResultFormatCodesAndKeepsStreamAligned)
 {
-    /// Build a Bind with a single text parameter "hi" and explicit result column
-    /// format codes. `result_codes` become the requested result-format-code array
-    /// (0 = text, 1 = binary).
+    /// Build a Bind with a single text parameter "hi", explicit result column
+    /// format codes, and a trailing marker byte. `result_codes` become the
+    /// requested result-format-code array (0 = text, 1 = binary). We always emit
+    /// text rows and RowDescription advertises text for every column, so a binary
+    /// result request is accepted and ignored (real clients such as Npgsql request
+    /// binary by default). The only requirement is that deserialize consumes the
+    /// codes exactly and leaves the stream aligned on the next message boundary.
     auto build = [](const std::vector<Int16> & result_codes)
     {
         std::string bytes;
@@ -355,61 +359,31 @@ TEST(PostgreSQLProtocol, BindRejectsBinaryResultFormat)
         putInt16(bytes, static_cast<Int16>(result_codes.size()));
         for (Int16 code : result_codes)
             putInt16(bytes, code);
+        bytes.push_back('X'); /// trailing marker: must remain unread after deserialize
         return bytes;
     };
 
-    /// deserialize fully consumes the message and only records a binary result
-    /// format code in `has_binary_result_format_param` (keeping the stream aligned
-    /// for the skip-until-Sync recovery); attachBindQuery is what rejects it.
-    auto deserializeThenAttach = [](const std::string & bytes) -> bool
+    /// deserialize must succeed for any result format request and leave exactly the
+    /// trailing marker byte in the buffer (stream aligned for the next message).
+    auto deserializeKeepsAligned = [](const std::string & bytes)
     {
         ReadBufferFromMemory in(bytes.data(), bytes.size());
-        auto msg = std::make_unique<Messaging::BindQuery>();
-        msg->deserialize(in);
-        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
-        try
-        {
-            manager.attachBindQuery(std::move(msg));
-            return false;
-        }
-        catch (const Exception & e)
-        {
-            EXPECT_EQ(e.code(), ErrorCodes::NOT_IMPLEMENTED);
-            return e.code() == ErrorCodes::NOT_IMPLEMENTED;
-        }
+        Messaging::BindQuery msg;
+        EXPECT_NO_THROW(msg.deserialize(in));
+        char marker = 0;
+        in.readStrict(&marker, 1);
+        EXPECT_EQ(marker, 'X');
+        EXPECT_TRUE(in.eof());
     };
 
-    /// No result format codes: text results (accepted, flag not set).
-    {
-        std::string bytes = build({});
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::BindQuery msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_FALSE(msg.has_binary_result_format_param);
-    }
-
-    /// Explicit text result format code (accepted, flag not set).
-    {
-        std::string bytes = build({0});
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::BindQuery msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_FALSE(msg.has_binary_result_format_param);
-    }
-
-    /// A binary result format code is consumed by deserialize (flag recorded, no
-    /// throw, stream aligned) and rejected by attachBindQuery.
-    {
-        std::string bytes = build({1});
-        ReadBufferFromMemory in(bytes.data(), bytes.size());
-        Messaging::BindQuery msg;
-        EXPECT_NO_THROW(msg.deserialize(in));
-        EXPECT_TRUE(msg.has_binary_result_format_param);
-    }
-    EXPECT_TRUE(deserializeThenAttach(build({1})));
-
-    /// A binary code anywhere in the result-format array is rejected.
-    EXPECT_TRUE(deserializeThenAttach(build({0, 1})));
+    /// No result format codes (text results).
+    deserializeKeepsAligned(build({}));
+    /// Explicit text result format code.
+    deserializeKeepsAligned(build({0}));
+    /// A single binary result format code (accepted, ignored, stream aligned).
+    deserializeKeepsAligned(build({1}));
+    /// Mixed per-column result format codes (accepted, ignored, stream aligned).
+    deserializeKeepsAligned(build({0, 1}));
 }
 
 namespace

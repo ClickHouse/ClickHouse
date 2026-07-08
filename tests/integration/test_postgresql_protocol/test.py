@@ -912,12 +912,14 @@ def test_flush_error_discards_until_sync(started_cluster):
     sock.close()
 
 
-def test_bind_binary_result_format_rejected(started_cluster):
-    # Regression for the Bind requested-result-format codes. A binary result
-    # format request (resultFormat = 1) cannot be honored (we only emit text
-    # RowDescription / DataRow), so it must be rejected with an ErrorResponse
-    # rather than silently returning text rows the client will misread as binary.
-    # The connection must recover on the same socket after the error.
+def test_bind_binary_result_format_accepted_as_text(started_cluster):
+    # Regression for the Bind requested-result-format codes. We always emit text
+    # rows and RowDescription advertises FormatCode::TEXT for every column, so a
+    # binary result format request (resultFormat = 1) is accepted and ignored: the
+    # client receives text and adapts. Real clients (e.g. Npgsql / the .NET driver)
+    # request binary results by default, so rejecting the request would break them.
+    # The extended-query flow must complete normally (RowDescription, DataRow,
+    # CommandComplete) and the result-format codes must not misalign the stream.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -950,14 +952,15 @@ def test_bind_binary_result_format_rejected(started_cluster):
         + sync()
     )
     types = read_until_ready()
-    assert "E" in types, f"binary result format must be rejected, got {types}"
+    assert "E" not in types, f"binary result format must be accepted, not rejected, got {types}"
+    assert "C" in types, f"query must complete normally, got {types}"
     assert types.count("Z") == 1, (
-        f"rejected result format must emit one ReadyForQuery per Sync, got {types}"
+        f"a single Sync must emit exactly one ReadyForQuery, got {types}"
     )
     # The same connection must stay usable (stream stayed aligned).
     sock.sendall(_fe("Q", b"SELECT 7\x00"))
     types = read_until_ready()
-    assert "C" in types, f"connection must stay alive after binary result reject, got {types}"
+    assert "C" in types, f"connection must stay alive after query, got {types}"
     sock.close()
 
 
