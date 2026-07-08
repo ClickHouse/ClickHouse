@@ -76,7 +76,9 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
     bool use_iceberg_metadata_cache
-        = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestFileMetadata);
+        = (persistent_table_components.metadata_cache
+           && local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+           && log_level < DB::IcebergMetadataLogLevel::ManifestFileMetadata);
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
