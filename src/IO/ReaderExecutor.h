@@ -631,13 +631,17 @@ private:
     /// the serve position and the lane's ahead cursor; there is no third to maintain.
     size_t serveRunAt(size_t pos_phys) const;
 
-    /// Bring the plan up to date for serving at `position_phys`: collect an in-flight
-    /// machine sitting at the consumed plan end, then (re)plan once the plan is fully consumed
-    /// (the position before `plan_start`, or at `plan_end` with the plan not already running
-    /// to EOF).
+    /// The epoch scheduler - the ONE entry to `observeAndSchedule`. Collects an in-flight
+    /// machine sitting at the consumed plan end, then (re)plans per the caller's role:
+    ///   - `coverage_ahead == 0` (the serve front): only a fully consumed plan replans (the
+    ///     position before `plan_start`, or at `plan_end` with the plan not running to EOF) -
+    ///     plans are used to their last byte, no pre-emptive look-ahead on the consumer side.
+    ///   - `coverage_ahead > 0` (`advanceAhead`): replan when coverage does not reach
+    ///     `position_phys + coverage_ahead`, so the ahead launch always has scheduled jobs -
+    ///     the producer's deliberately pre-emptive look-ahead extension.
     /// Never replans while a machine is in flight - that would re-probe residency and could see
     /// the worker's just-fetched gap as resident.
-    void preparePlan(size_t position_phys);
+    void preparePlan(size_t position_phys, size_t coverage_ahead = 0);
 
     /// The shared post-serve tail of `readNextWindow`: account the served window, net out the
     /// over-read, drop the fill pin at EOF, launch the next read-ahead, and decrypt. Returns

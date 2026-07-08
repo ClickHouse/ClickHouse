@@ -275,7 +275,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     return finishWindow(serveWindow(position_phys));
 }
 
-void ReaderExecutor::preparePlan(size_t position_phys)
+void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
 {
     /// At the read extent there is nothing left to (re)plan: `boundedPlanSpan` clamps to the
     /// extent, so a replan would only build an empty plan (and needlessly reset the in-flight
@@ -295,14 +295,19 @@ void ReaderExecutor::preparePlan(size_t position_phys)
     if (machine && at_plan_end)
         collectInFlightInto(machine->retrieve_index);
 
-    /// Re-plan only once the plan is fully consumed - the cursor fell before `plan_start`, or
-    /// reached `plan_end` and the plan does not already run to EOF. The plan is used to its end
-    /// before a rebuild (no pre-emptive look-ahead). Never replan while a machine is in flight:
-    /// it would re-probe residency and could see the worker's just-fetched gap as resident. The
-    /// per-plan pressure level is sampled once inside `observeAndSchedule`.
-    const bool want_replan = !read_plan.geometry()
-        || position_phys < read_plan.geometry()->plan_start
-        || (at_plan_end && !planReachesEnd());
+    /// The consumer (`coverage_ahead == 0`) re-plans only once the plan is fully consumed -
+    /// the cursor fell before `plan_start`, or reached `plan_end` and the plan does not
+    /// already run to EOF: a plan is used to its end before a rebuild. The producer
+    /// (`coverage_ahead > 0`) re-plans as soon as coverage falls short of the next ahead
+    /// window - its launch needs scheduled jobs AHEAD of the cursor, and the post-collect
+    /// gap here is the one instant a mid-plan replan is legal. Never replan while a machine
+    /// is in flight: it would re-probe residency and could see the worker's just-fetched
+    /// gap as resident. The per-plan pressure level is sampled once inside `observeAndSchedule`.
+    const bool want_replan = coverage_ahead
+        ? (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, coverage_ahead}))
+        : (!read_plan.geometry()
+            || position_phys < read_plan.geometry()->plan_start
+            || (at_plan_end && !planReachesEnd()));
     if (!machine && want_replan)
     {
         observeAndSchedule(position_phys);
@@ -2053,8 +2058,9 @@ void ReaderExecutor::advanceAhead()
     const size_t probe = boundedFetchSize(window_size);
     if (probe == 0)
         return;
-    if (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, probe}))
-        observeAndSchedule(position_phys);
+    /// The producer's look-ahead replan: demand coverage through the next ahead window
+    /// (the machine above is collected, so the mid-plan rebuild is legal here).
+    preparePlan(position_phys, /*coverage_ahead=*/probe);
     /// Fully cache-served plan: the look-ahead re-plan above has already pulled any
     /// upcoming cold region into the plan, so if there is still no `Source::Remote`
     /// retrieve there is nothing to prefetch - skip the rest of the bookkeeping.
