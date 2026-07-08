@@ -1,3 +1,5 @@
+-- Tags: no-parallel-replicas
+
 -- Test for bug 95944: text index preprocessor fails with ALIAS columns
 
 SET enable_analyzer = 1;
