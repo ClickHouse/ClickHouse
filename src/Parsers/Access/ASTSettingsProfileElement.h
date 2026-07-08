@@ -27,6 +27,11 @@ public:
     String getID(char) const override { return "SettingsProfileElement"; }
     ASTPtr clone() const override { return make_intrusive<ASTSettingsProfileElement>(*this); }
 
+    /// All distinguishing state is kept in plain members outside `children` and `getID` is
+    /// constant, so `getTreeHash` would otherwise treat different settings profile elements
+    /// (e.g. `max_threads = 1` and `max_threads = 2`) as equal. Fold the formatter-emitted state.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
 };
@@ -51,6 +56,9 @@ public:
     void setUseInheritKeyword(bool use_inherit_keyword_);
 
     void add(ASTSettingsProfileElements && other);
+
+    /// `elements` are kept outside `children`, so fold them into the hash.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & settings, FormatState &, FormatStateStacked) const override;
@@ -78,6 +86,9 @@ public:
     ASTPtr clone() const override;
 
     void add(ASTAlterSettingsProfileElements && other);
+
+    /// The add/modify/drop settings are kept outside `children`, so fold them into the hash.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
 
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;

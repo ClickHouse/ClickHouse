@@ -1,6 +1,8 @@
 #include <Parsers/Access/ASTSettingsProfileElement.h>
 #include <Parsers/formatSettingName.h>
+#include <Common/FieldVisitorHash.h>
 #include <Common/FieldVisitorToString.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 #include <base/insertAtEnd.h>
@@ -116,6 +118,40 @@ void ASTSettingsProfileElement::formatImpl(WriteBuffer & ostr, const FormatSetti
 }
 
 
+void ASTSettingsProfileElement::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the formatter-emitted state. Each folded field is produced by the formatter, so it
+    /// survives the format -> parse round-trip that the debug-build AST consistency check requires.
+    /// `disallowed_values` is intentionally not folded because the formatter does not emit it.
+    hash_state.update(parent_profile);
+    hash_state.update(setting_name);
+
+    hash_state.update(value.has_value());
+    if (value)
+        applyVisitor(FieldVisitorHash(hash_state), *value);
+
+    hash_state.update(min_value.has_value());
+    if (min_value)
+        applyVisitor(FieldVisitorHash(hash_state), *min_value);
+
+    hash_state.update(max_value.has_value());
+    if (max_value)
+        applyVisitor(FieldVisitorHash(hash_state), *max_value);
+
+    /// An absent `writability` and the `MAX` sentinel both emit nothing, so they must hash
+    /// identically; the three real values (`WRITABLE` / `CONST` / `CHANGEABLE_IN_READONLY`) emit
+    /// distinct keywords.
+    auto writability_value = (writability && *writability != SettingConstraintWritability::MAX)
+        ? *writability
+        : SettingConstraintWritability::MAX;
+    hash_state.update(writability_value);
+
+    hash_state.update(id_mode);
+    hash_state.update(use_inherit_keyword);
+}
+
+
 bool ASTSettingsProfileElements::empty() const
 {
     for (const auto & element : elements)
@@ -163,6 +199,23 @@ void ASTSettingsProfileElements::formatImpl(WriteBuffer & ostr, const FormatSett
 
         element->format(ostr, settings);
     }
+}
+
+
+void ASTSettingsProfileElements::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// The formatter emits `NONE` when the collection is empty (regardless of how many empty
+    /// elements it holds), so collapse that case to keep the format -> parse round-trip stable;
+    /// otherwise fold every element (the formatter iterates over all of them).
+    if (empty())
+    {
+        hash_state.update(static_cast<size_t>(0));
+        return;
+    }
+    hash_state.update(elements.size());
+    for (const auto & element : elements)
+        element->updateTreeHash(hash_state, ignore_aliases);
 }
 
 
@@ -274,6 +327,25 @@ void ASTAlterSettingsProfileElements::add(ASTAlterSettingsProfileElements && oth
             drop_settings = make_intrusive<ASTSettingsProfileElements>();
         drop_settings->add(std::move(*other.drop_settings));
     }
+}
+
+void ASTAlterSettingsProfileElements::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    hash_state.update(drop_all_settings);
+    hash_state.update(drop_all_profiles);
+    /// The formatter emits an `add`/`modify`/`drop` clause only when the collection is present and
+    /// not empty (see `formatImpl`), so map "absent" and "set but empty" to the same hash.
+    auto fold = [&](const boost::intrusive_ptr<ASTSettingsProfileElements> & elems)
+    {
+        bool present = elems && !elems->empty();
+        hash_state.update(present);
+        if (present)
+            elems->updateTreeHash(hash_state, ignore_aliases);
+    };
+    fold(add_settings);
+    fold(modify_settings);
+    fold(drop_settings);
 }
 
 }

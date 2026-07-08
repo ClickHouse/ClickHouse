@@ -77,6 +77,14 @@ public:
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
+    /// Only `authentication_methods` and `global_valid_until` are kept in `children`; all the other
+    /// distinguishing state (the target user names, flags, hosts, default role/database, grantees,
+    /// settings, ...) is kept in plain members and `getID` is constant, so `getTreeHash` would
+    /// otherwise treat e.g. `CREATE USER a` and `CREATE USER b` as equal. Fold that state into the
+    /// hash. Every folded field is produced by the formatter, so it survives the format -> parse
+    /// round-trip that the debug-build AST consistency check requires.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
 protected:
     void formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const override;
 };
