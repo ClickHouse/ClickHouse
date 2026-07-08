@@ -1,9 +1,9 @@
 -- Tags: no-fasttest
 -- no-fasttest: the S3 table engine is not available in the fast test build.
 
--- session_token and the Google ADC secrets (google_adc_client_secret, google_adc_refresh_token)
--- passed as named arguments to the explicit-url S3 form must be masked like secret_access_key.
--- They used to leak in plaintext into SHOW CREATE and the logged query text.
+-- session_token, the Google ADC secrets (google_adc_client_secret, google_adc_refresh_token) and
+-- the extra_credentials assume-role material (external_id) passed to the explicit-url S3 form must
+-- be masked like secret_access_key. They used to leak in plaintext in SHOW CREATE and logged queries.
 
 -- Engine form: masked in SHOW CREATE.
 DROP TABLE IF EXISTS t_04510;
@@ -11,31 +11,36 @@ CREATE TABLE t_04510 (x UInt8)
 ENGINE = S3('http://localhost:11111/test/04510', 'ak', 'sk',
             session_token = 'SESSIONTOKENSECRET',
             google_adc_client_secret = 'ADCCLIENTSECRET',
-            google_adc_refresh_token = 'ADCREFRESHTOKEN', format = 'TSV');
+            google_adc_refresh_token = 'ADCREFRESHTOKEN',
+            extra_credentials(role_arn = 'MYROLEARN', external_id = 'EXTERNALIDSECRET'),
+            format = 'TSV');
 SHOW CREATE TABLE t_04510 SETTINGS format_display_secrets_in_show_and_select = 0;
 DROP TABLE t_04510;
 
--- Function and BACKUP forms: masked in the logged query text. Both fail at analysis (empty
--- host / unknown table) before any network access, and are logged with secrets replaced.
+-- Function and BACKUP forms: masked in the logged query text. Both fail at analysis (empty host)
+-- before any network access, and are logged with secrets replaced.
 SELECT * FROM s3('url', 'ak', 'sk',
                  session_token = 'SESSIONTOKENSECRET',
                  google_adc_client_secret = 'ADCCLIENTSECRET',
                  google_adc_refresh_token = 'ADCREFRESHTOKEN',
+                 extra_credentials(external_id = 'EXTERNALIDSECRET'),
                  format = 'TSV', structure = 'x UInt8'); -- { serverError BAD_ARGUMENTS }
 
 BACKUP TABLE nonexistent_04510 TO S3('url', 'ak', 'sk',
                  session_token = 'SESSIONTOKENSECRET',
                  google_adc_client_secret = 'ADCCLIENTSECRET',
-                 google_adc_refresh_token = 'ADCREFRESHTOKEN'); -- { serverError BAD_ARGUMENTS }
+                 google_adc_refresh_token = 'ADCREFRESHTOKEN',
+                 extra_credentials(external_id = 'EXTERNALIDSECRET')); -- { serverError BAD_ARGUMENTS }
 
 SYSTEM FLUSH LOGS query_log;
+-- Assert each explicit-url form is individually logged and masked, and that no form leaks any secret.
 SELECT
-    countIf(query LIKE '%SESSIONTOKENSECRET%'
-         OR query LIKE '%ADCCLIENTSECRET%'
-         OR query LIKE '%ADCREFRESHTOKEN%') AS leaked,
-    countIf(query LIKE '%[HIDDEN]%') > 0 AS masked
+    countIf(query LIKE 'SELECT % FROM s3(%' AND query LIKE '%[HIDDEN]%') > 0 AS s3_masked,
+    countIf(query LIKE 'BACKUP %' AND query LIKE '%[HIDDEN]%') > 0 AS backup_masked,
+    countIf((query LIKE 'SELECT % FROM s3(%' OR query LIKE 'BACKUP %')
+         AND (query LIKE '%SESSIONTOKENSECRET%' OR query LIKE '%ADCCLIENTSECRET%'
+           OR query LIKE '%ADCREFRESHTOKEN%' OR query LIKE '%EXTERNALIDSECRET%')) AS leaked
 FROM system.query_log
 WHERE current_database = currentDatabase()
-  AND (query LIKE 'SELECT % FROM s3(%' OR query LIKE 'BACKUP %')
   AND query NOT LIKE '%query_log%' -- exclude this counting query itself
   AND event_date >= yesterday() AND event_time > now() - INTERVAL 5 MINUTE;

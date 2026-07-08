@@ -96,8 +96,10 @@ protected:
     }
 
     /// Named arguments carrying S3 secrets, shared by every S3 form (explicit-url and named-collection).
+    /// `external_id` is the shared secret of the assume-role triple; the other two (`role_arn`,
+    /// `role_session_name`) are identifiers passed inside `extra_credentials`, masked by maskS3ExtraCredentials.
     static constexpr std::string_view s3_secret_keys[]
-        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token"};
+        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
 
     /// Mask the S3 secret named arguments that can accompany the explicit-url form as `key = value`
     /// overrides. Widens the masked span to cover each one present; the positional secret (when used)
@@ -106,6 +108,21 @@ protected:
     {
         for (const auto & key : s3_secret_keys)
             findSecretNamedArgument(key, start);
+    }
+
+    /// `extra_credentials(role_arn = ..., external_id = ..., ...)` carries S3 assume-role auth material.
+    /// Mask all of its values, like `headers`; over-masking the non-secret identifiers is safe.
+    void maskS3ExtraCredentials()
+    {
+        for (size_t i = 0, size = function->arguments->size(); i < size; ++i)
+        {
+            const auto f = function->arguments->at(i)->getFunction();
+            if (f && f->name() == "extra_credentials")
+            {
+                result.nested_maps.push_back("extra_credentials");
+                return;
+            }
+        }
     }
 
     void findOrdinaryFunctionSecretArguments()
@@ -376,6 +393,7 @@ protected:
         }
 
         findS3ExplicitUrlSecretNamedArguments(url_arg_idx);
+        maskS3ExtraCredentials();
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -728,6 +746,7 @@ protected:
         }
 
         findS3ExplicitUrlSecretNamedArguments(0);
+        maskS3ExtraCredentials();
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -855,6 +874,7 @@ protected:
         {
             /// S3('url', 'access_key_id', 'secret_access_key' [, session_token = ..., google_adc_* = ...])
             findS3ExplicitUrlSecretNamedArguments(0);
+            maskS3ExtraCredentials();
             markSecretArgument(2);
         }
     }
@@ -959,6 +979,7 @@ protected:
             }
             /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key] [, session_token = ..., google_adc_* = ...])
             findS3ExplicitUrlSecretNamedArguments(0);
+            maskS3ExtraCredentials();
             markSecretArgument(2);
         }
         else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
