@@ -148,10 +148,10 @@ const std::vector<String> & ColumnsSubstreams::getColumnSubstreams(size_t column
 
 const std::vector<String> * ColumnsSubstreams::tryGetColumnSubstreams(const String & column_name) const
 {
-    for (const auto & [name, substreams] : columns_substreams)
+    for (const auto & entry : columns_substreams)
     {
-        if (name == column_name)
-            return &substreams;
+        if (entry->column == column_name)
+            return &entry->substreams;
     }
     return nullptr;
 }
