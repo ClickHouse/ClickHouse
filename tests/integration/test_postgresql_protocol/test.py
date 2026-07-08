@@ -630,6 +630,78 @@ def test_bind_preserves_declared_parameter_types(started_cluster):
     ch.close()
 
 
+def test_bind_unspecified_oid_infers_type(started_cluster):
+    # An OID of 0 (or an omitted OID) in Parse means "the server infers the parameter
+    # type from the statement", NOT "text". A standards-compliant frontend that binds
+    # `SELECT $1 + 1` / `LIMIT $1` with an unspecified OID (e.g. PQexecParams with
+    # paramTypes = NULL) must keep working as a number, not regress to `'41' + 1`
+    # (type error) / `LIMIT '1'` (rejected). A numeric value is inferred as a numeric
+    # literal; a non-numeric value stays a safely quoted string; injection payloads
+    # can never break out of the value position.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    pg = ch.pgconn
+
+    # OID 0 = unspecified. `SELECT $1 + 1` with `41` must add arithmetically (42),
+    # not concatenate/error as a String would.
+    res_add = pg.exec_params(b"SELECT $1 + 1", [b"41"], [0], [0], 0)
+    assert res_add.status == psycopg.pq.ExecStatus.TUPLES_OK, res_add.error_message
+    assert res_add.get_value(0, 0) == b"42"
+
+    # `LIMIT $1` with an unspecified OID requires a numeric literal; inference makes
+    # the bound value work as a LIMIT (a String would be rejected by ClickHouse).
+    setup = ch.cursor()
+    setup.execute("DROP TABLE IF EXISTS bind_infer_t;")
+    setup.execute("CREATE TABLE bind_infer_t (x Int32) ENGINE = Memory;")
+    setup.execute("INSERT INTO bind_infer_t VALUES (1), (2), (3), (4), (5);")
+
+    res_limit = pg.exec_params(
+        b"SELECT count() FROM (SELECT x FROM bind_infer_t ORDER BY x LIMIT $1)",
+        [b"2"],
+        [0],
+        [0],
+        0,
+    )
+    assert res_limit.status == psycopg.pq.ExecStatus.TUPLES_OK, res_limit.error_message
+    assert res_limit.get_value(0, 0) == b"2"
+
+    # Passing no paramTypes at all (paramTypes = NULL, the common libpq call) also
+    # leaves the OID unspecified and infers.
+    res_none = pg.exec_params(b"SELECT $1 + 1", [b"41"])
+    assert res_none.status == psycopg.pq.ExecStatus.TUPLES_OK, res_none.error_message
+    assert res_none.get_value(0, 0) == b"42"
+
+    # A non-numeric unspecified-OID value can only be inferred as text, so it stays a
+    # safely quoted string literal.
+    res_text = pg.exec_params(b"SELECT $1", [b"hello"], [0], [0], 0)
+    assert res_text.status == psycopg.pq.ExecStatus.TUPLES_OK, res_text.error_message
+    assert res_text.get_value(0, 0) == b"hello"
+
+    # Injection payloads with an unspecified OID are not single numeric literals, so
+    # they fall through to a quoted string and cannot splice SQL. `1--` used as a
+    # WHERE value can never truncate the trailing predicate into a comment.
+    res_inj = pg.exec_params(
+        b"SELECT count() FROM bind_infer_t WHERE x = $1 AND x = 42",
+        [b"1--"],
+        [0],
+        [0],
+        0,
+    )
+    # The quoted string compared against an Int32 column is a type error, not a
+    # rows-leaking comment truncation; either way it must not return all rows.
+    if res_inj.status == psycopg.pq.ExecStatus.TUPLES_OK:
+        assert res_inj.get_value(0, 0) == b"0", res_inj.get_value(0, 0)
+
+    setup.execute("DROP TABLE bind_infer_t;")
+    ch.close()
+
+
 def test_bind_error_keeps_connection_alive(started_cluster):
     # An extended-query (Parse/Bind/Execute) error must not drop the connection:
     # per the PostgreSQL protocol the backend sends ErrorResponse, discards

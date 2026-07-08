@@ -1897,10 +1897,16 @@ public:
                 arguments.emplace_back("NULL");
                 continue;
             }
-            /// A parameter without a declared type (OID 0 or none) is treated as text.
+            /// An OID of 0 (or an omitted trailing OID) means "the server infers the
+            /// parameter type from the statement" in the PostgreSQL protocol, not
+            /// "text". A declared OID we can map keeps its type via formatTypedParameter;
+            /// a declared-but-unmapped OID is text (quoted+escaped string). Only OID 0
+            /// goes through formatInferredParameter, which lets the server infer.
             const Int32 oid = i < parameter_types.size() ? parameter_types[i] : 0;
             if (auto formatted = formatTypedParameter(oid, *parameter))
                 arguments.push_back(std::move(*formatted));
+            else if (oid == 0)
+                arguments.push_back(formatInferredParameter(*parameter));
             else
                 arguments.push_back(quoteString(*parameter));
         }
@@ -2217,6 +2223,29 @@ private:
             return fmt::format("accurateCast({}, {})", quoteString(value), quoteString(type));
 
         return std::nullopt;
+    }
+
+    /// Formats a Bind parameter whose type was left unspecified (OID 0 / omitted) in
+    /// the Parse message. In the PostgreSQL protocol OID 0 means "let the server infer
+    /// the parameter type from the statement", so `Parse("SELECT $1 + 1")` /
+    /// `Parse("... LIMIT $1")` must keep working as numbers, not regress to a String
+    /// literal (`'41' + 1` fails, `LIMIT '1'` is rejected). We honor inference for the
+    /// only case where the value's own text carries an unambiguous type: a numeric
+    /// literal is emitted verbatim, wrapped in parentheses, so ClickHouse infers its
+    /// numeric type exactly as an inline literal would. Any other value stays a
+    /// quoted+escaped string literal (its only safe inference is text).
+    ///
+    /// Injection-safe by construction: isSingleNumericLiteral accepts ONLY a single
+    /// optionally-signed decimal/exponent literal, so a payload such as `1--`, `1+2`,
+    /// `1 UNION ALL SELECT ...` or `x'; DROP ...` fails validation and falls through to
+    /// the quoted-string branch. The wrapping parentheses additionally prevent
+    /// token-adjacency effects with neighboring SQL (e.g. a body `5-$1` with value
+    /// `-5` becomes `5-(-5)`, never the comment-truncating `5--5`).
+    static String formatInferredParameter(const String & value)
+    {
+        if (isSingleNumericLiteral(value))
+            return fmt::format("({})", value);
+        return quoteString(value);
     }
 
     /// Substitutes `$1`, `$2`, ... in the prepared statement body with the given
