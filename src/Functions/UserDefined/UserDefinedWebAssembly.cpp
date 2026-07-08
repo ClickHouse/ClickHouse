@@ -366,6 +366,16 @@ public:
             {
                 wasm_data = allocateInWasmMemory(wmm.get(), *precomputed);
                 auto wasm_mem = wasm_data.getMemoryView();
+                // Same defensive check as the fallback branch below: a buggy clickhouse_create_buffer
+                // implementation in the WASM module could return a handle to a smaller buffer than
+                // requested. Without this check, WriteBufferFromPointer below would be constructed
+                // with the *requested* size (*precomputed) rather than the actual buffer size, and
+                // out->write(block) could write past the end of the real guest buffer.
+                if (wasm_mem.size() != *precomputed)
+                    throw Exception(ErrorCodes::WASM_ERROR,
+                        "Cannot allocate WASM buffer of size {}, got {}. "
+                        "Maybe '{}' function implementation in WebAssembly module is incorrect",
+                        *precomputed, wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
                 WriteBufferFromPointer wb(reinterpret_cast<char *>(wasm_mem.data()), *precomputed);
                 auto out = context->getOutputFormat(serialization_format, wb, block.cloneEmpty());
                 // write()+finalize() instead of formatBlock(): formatBlock calls flush()
