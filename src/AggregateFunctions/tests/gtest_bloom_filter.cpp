@@ -15,15 +15,24 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionsBloomFilter.h>
+#include <Interpreters/BloomFilter.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
+#include <Common/CurrentThread.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Common/tests/gtest_global_register.h>
 
 #include <gtest/gtest.h>
 
 using namespace DB;
+
+namespace DB::ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
+}
 
 namespace
 {
@@ -133,6 +142,41 @@ TEST(BloomFilterData, OptimalParamsHonorFalsePositiveRateAfterIntegerHashSelecti
 
     /// recomputed size > 256 MB → throw
     EXPECT_THROW(bloomFilterOptimalParams(100'000'000, 1e-7), Exception);
+}
+
+TEST(BloomFilterData, AllocationObeysMemoryLimit)
+{
+    MainThreadStatus::getInstance();
+
+    auto & thread_tracker = CurrentThread::get().memory_tracker;
+
+    const Int64 saved_untracked_limit = CurrentThread::get().untracked_memory_limit;
+    const Int64 saved_thread_hard_limit = thread_tracker.getHardLimit();
+    const Int64 saved_total_hard_limit = total_memory_tracker.getHardLimit();
+
+    SCOPE_EXIT({
+        total_memory_tracker.setHardLimit(saved_total_hard_limit);
+        thread_tracker.setHardLimit(saved_thread_hard_limit);
+        CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
+    });
+
+    CurrentThread::get().untracked_memory_limit = 0;
+    CurrentThread::flushUntrackedMemory();
+    total_memory_tracker.resetCounters();
+    thread_tracker.resetCounters();
+
+    total_memory_tracker.setHardLimit(1_MiB);
+    thread_tracker.setHardLimit(1_MiB);
+
+    try
+    {
+        BloomFilter filter(8_MiB, 3, 0);
+        FAIL() << "BloomFilter allocation was expected to throw under the memory limit";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::MEMORY_LIMIT_EXCEEDED);
+    }
 }
 
 TEST(BloomFilterData, EmptyStateAndContains)
