@@ -63,6 +63,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int UNSUPPORTED_METHOD;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace Setting
@@ -636,39 +637,18 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
     return isDeltaKernelEnabled(context, storage_type);
 }
 
+#if USE_DELTA_KERNEL_RS
 namespace
 {
 
-/// Forward of `getFieldType`/`getSimpleTypeByName`: serialize a ClickHouse type to the Delta
-/// protocol "type" representation (https://github.com/delta-io/delta/blob/master/PROTOCOL.md).
-/// Returns a plain string for primitive types and a JSON object for array/map/struct. Field-level
-/// nullability is set by the caller; nested nullability is embedded here (`containsNull` /
-/// `valueContainsNull`). Kept consistent with the kernel-side visitor `visitFieldFromClickHouseType`
-/// in `getSchemaFromSnapshot.cpp`, so a table registered in the catalog matches its `_delta_log`.
+/// Serialize a ClickHouse type to the Delta "type" JSON (a string for primitives, an object for
+/// array/map/struct). Primitive mapping/rejection is shared via `classifyDeltaPrimitive`.
 Poco::Dynamic::Var deltaTypeToJSON(const DataTypePtr & full_type)
 {
     DataTypePtr type = full_type->isNullable() ? removeNullable(full_type) : full_type;
 
     switch (type->getTypeId())
     {
-        case TypeIndex::Int8:    return String("byte");
-        case TypeIndex::Int16:   return String("short");
-        case TypeIndex::Int32:   return String("integer");
-        case TypeIndex::Int64:   return String("long");
-        case TypeIndex::Float32: return String("float");
-        case TypeIndex::Float64: return String("double");
-        case TypeIndex::UInt8:   return String("boolean"); /// ClickHouse stores Bool as UInt8.
-        case TypeIndex::String:
-        case TypeIndex::FixedString: return String("string");
-        case TypeIndex::Date:
-        case TypeIndex::Date32:  return String("date");
-        case TypeIndex::DateTime:
-        case TypeIndex::DateTime64: return String("timestamp");
-        case TypeIndex::Decimal32:
-        case TypeIndex::Decimal64:
-        case TypeIndex::Decimal128:
-        case TypeIndex::Decimal256:
-            return String(fmt::format("decimal({},{})", getDecimalPrecision(*type), getDecimalScale(*type)));
         case TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DataTypeArray &>(*type);
@@ -711,11 +691,25 @@ Poco::Dynamic::Var deltaTypeToJSON(const DataTypePtr & full_type)
             return obj;
         }
         default:
-            throw Exception(
-                ErrorCodes::NOT_IMPLEMENTED,
-                "ClickHouse type `{}` cannot be mapped to a Delta Lake type for CREATE TABLE",
-                type->getName());
+            break;
     }
+
+    switch (DeltaLakeMetadata::classifyDeltaPrimitive(type))
+    {
+        case DeltaPrimitiveType::Boolean:   return String("boolean");
+        case DeltaPrimitiveType::Byte:      return String("byte");
+        case DeltaPrimitiveType::Short:     return String("short");
+        case DeltaPrimitiveType::Integer:   return String("integer");
+        case DeltaPrimitiveType::Long:      return String("long");
+        case DeltaPrimitiveType::Float:     return String("float");
+        case DeltaPrimitiveType::Double:    return String("double");
+        case DeltaPrimitiveType::String:    return String("string");
+        case DeltaPrimitiveType::Date:      return String("date");
+        case DeltaPrimitiveType::Timestamp: return String("timestamp");
+        case DeltaPrimitiveType::Decimal:
+            return String(fmt::format("decimal({},{})", getDecimalPrecision(*type), getDecimalScale(*type)));
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Unhandled DeltaPrimitiveType for `{}`", type->getName());
 }
 
 /// Build the Delta `StructType.fields` array (used for catalog registration).
@@ -735,6 +729,7 @@ Poco::JSON::Array::Ptr buildDeltaSchemaFields(const NamesAndTypesList & schema)
 }
 
 }
+#endif
 
 void DeltaLakeMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
@@ -747,22 +742,24 @@ void DeltaLakeMetadata::createInitial(
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id_)
 {
-#if USE_DELTA_KERNEL_RS
     auto configuration_ptr = configuration.lock();
+
+#if USE_DELTA_KERNEL_RS
     if (configuration_ptr && isDeltaKernelEnabled(local_context, configuration_ptr->getType()))
     {
         if (!columns.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE TABLE for DeltaLake requires explicit column definitions");
 
+        /// `StorageObjectStorage::ctor` calls `configuration->check()` only after this path, so
+        /// enforce `RemoteHostFilter`/`HTTPHeaderFilter` here, before the first remote commit.
+        configuration_ptr->check(local_context);
+
         /// Materialize the initial `_delta_log` commit (Protocol + Metadata actions) on storage.
         DeltaLakeMetadataDeltaKernel::createTable(
             object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
 
-        /// For catalog-backed databases (e.g. Unity) register the freshly created table with the
-        /// external catalog, so it becomes visible to `SHOW TABLES` / `SELECT`. Mirrors
-        /// `IcebergMetadata::createInitial`. Existence in the catalog is already checked upstream by
-        /// `InterpreterCreateQuery`, so this only runs for a genuinely new table. Physical columns
-        /// (`getAllPhysical`) must match the `_delta_log` schema written above.
+        /// For catalog databases (e.g. Unity) register the new table so it is visible via the catalog,
+        /// mirroring `IcebergMetadata::createInitial`. Physical columns must match the `_delta_log` schema.
         if (catalog)
         {
             const auto location = configuration_ptr->getRawPath().path;
@@ -775,18 +772,22 @@ void DeltaLakeMetadata::createInitial(
         }
         return;
     }
-#else
-    (void)object_storage;
-    (void)configuration;
+#endif
+
+    /// No non-kernel writer exists: attaching to an existing `_delta_log` is fine, but a fresh CREATE
+    /// (no `_delta_log`) must fail rather than silently succeed writing nothing.
+    if (configuration_ptr && !deltaLogExists(*object_storage, configuration_ptr->getRawPath().path))
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Creating a new Delta Lake table requires allow_experimental_delta_kernel_rs = 1 "
+            "(there is no non-kernel Delta Lake writer)");
+
     (void)local_context;
     (void)columns;
     (void)partition_by;
     (void)if_not_exists;
     (void)catalog;
     (void)table_id_;
-#endif
-    /// Non-kernel path: nothing to materialize on disk. The legacy JSON metadata
-    /// reader expects an existing `_delta_log` and there is no writer for it.
 }
 
 DataLakeMetadataPtr DeltaLakeMetadata::create(
@@ -879,6 +880,63 @@ DataTypePtr DeltaLakeMetadata::getSimpleTypeByName(const String & type_name)
         return std::make_shared<DataTypeString>();
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unsupported DeltaLake type: {}", type_name);
+}
+
+DeltaPrimitiveType DeltaLakeMetadata::classifyDeltaPrimitive(const DataTypePtr & type)
+{
+    /// `Bool` is stored as `UInt8`, so detect it before the plain `UInt8` case -- otherwise a `UInt8`
+    /// column would be committed as Delta `boolean` and corrupt values 2..255.
+    if (isBool(type))
+        return DeltaPrimitiveType::Boolean;
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Int8:    return DeltaPrimitiveType::Byte;
+        case TypeIndex::Int16:   return DeltaPrimitiveType::Short;
+        case TypeIndex::Int32:   return DeltaPrimitiveType::Integer;
+        case TypeIndex::Int64:   return DeltaPrimitiveType::Long;
+        case TypeIndex::Float32: return DeltaPrimitiveType::Float;
+        case TypeIndex::Float64: return DeltaPrimitiveType::Double;
+        case TypeIndex::String:  return DeltaPrimitiveType::String;
+        case TypeIndex::Date32:  return DeltaPrimitiveType::Date;
+        case TypeIndex::DateTime64:
+            /// Delta `timestamp` is microsecond precision; only `DateTime64(6)` round-trips.
+            if (assert_cast<const DataTypeDateTime64 &>(*type).getScale() == 6)
+                return DeltaPrimitiveType::Timestamp;
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DeltaLake `timestamp` is microsecond precision; declare the column as `DateTime64(6)` "
+                "instead of `{}` for CREATE TABLE",
+                type->getName());
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return DeltaPrimitiveType::Decimal;
+        case TypeIndex::UInt8:
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DeltaLake has no unsigned 8-bit type; use `Bool` or a signed integer instead of `UInt8` for CREATE TABLE");
+        case TypeIndex::FixedString:
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DeltaLake has no fixed-length string; use `String` instead of `{}` for CREATE TABLE",
+                type->getName());
+        case TypeIndex::Date:
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DeltaLake `date` maps back to `Date32`; declare the column as `Date32` instead of `Date` for CREATE TABLE");
+        case TypeIndex::DateTime:
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "DeltaLake `timestamp` maps back to `DateTime64(6)`; declare the column as `DateTime64(6)` "
+                "instead of `DateTime` for CREATE TABLE");
+        default:
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "ClickHouse type `{}` cannot be mapped to a Delta Lake type for CREATE TABLE",
+                type->getName());
+    }
 }
 
 

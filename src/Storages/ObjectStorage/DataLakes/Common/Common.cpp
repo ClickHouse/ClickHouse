@@ -49,6 +49,13 @@ std::vector<String> listFiles(
     return res;
 }
 
+bool deltaLogExists(const IObjectStorage & object_storage, const String & path)
+{
+    /// An empty suffix matches every entry, so this lists all files under `_delta_log/`
+    /// (commits, checkpoints and `_last_checkpoint`), not only `*.json` commits.
+    return !listFiles(object_storage, path, "_delta_log", /* suffix */ "").empty();
+}
+
 String resolvePathInsideTable(const String & table_path, const String & relative_path)
 {
     auto base = std::filesystem::path(table_path);

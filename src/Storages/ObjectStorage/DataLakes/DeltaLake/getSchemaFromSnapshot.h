@@ -6,6 +6,7 @@
 
 #include <Core/NamesAndTypes.h>
 #include <delta_kernel_ffi.hpp>
+#include <exception>
 
 namespace ffi
 {
@@ -37,11 +38,21 @@ DB::Names getPartitionColumnsFromSnapshot(ffi::SharedSnapshot * snapshot);
 
 DB::NamesAndTypesList convertToClickHouseSchema(ffi::SharedSchema * schema, ffi::SharedExternEngine * engine);
 
-/// Builds a delta-kernel `EngineSchema` view over a ClickHouse `NamesAndTypesList`.
-/// The returned struct stores a pointer to `schema_list`; the caller must keep
-/// `schema_list` alive for the duration of any FFI call that uses the returned value
-/// (e.g. `ffi::get_create_table_builder`).
-ffi::EngineSchema buildKernelEngineSchema(const DB::NamesAndTypesList & schema_list);
+/// Validate that every column type round-trips through Delta metadata, throwing otherwise. Call before
+/// the create-table FFI so unsupported types fail in C++, not inside the Rust visitor callback.
+void validateSchemaForDeltaCreate(const DB::NamesAndTypesList & schema);
+
+/// Caller-owned state for the kernel create-schema visitor: the schema to visit plus any exception it
+/// raised, rethrown after the FFI returns (never through Rust frames). Mirrors `SchemaVisitorData`.
+struct KernelCreateSchemaState
+{
+    const DB::NamesAndTypesList * schema_list = nullptr;
+    std::exception_ptr exception;
+};
+
+/// Build a delta-kernel `EngineSchema` over `state.schema_list`; `state` must outlive the FFI call.
+/// After the call, rethrow `state.exception` if set. Validate with `validateSchemaForDeltaCreate` first.
+ffi::EngineSchema buildKernelEngineSchema(KernelCreateSchemaState & state);
 
 }
 

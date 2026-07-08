@@ -1,6 +1,6 @@
 ---
-description: 'This engine provides a read-only integration with existing Delta Lake
-  tables in Amazon S3.'
+description: 'This engine provides an integration with Delta Lake tables in Amazon S3,
+  supporting reads, writes and creating new tables.'
 sidebar_label: 'DeltaLake'
 sidebar_position: 40
 slug: /engines/table-engines/integrations/deltalake
@@ -17,7 +17,9 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 
 ## Create a DeltaLake table {#create-table}
 
-To create a DeltaLake table it must already exist in S3, GCP or Azure storage. The commands below do not take DDL parameters to create a new table.
+A `DeltaLake` table can be created either over an **existing** Delta Lake table in S3, GCP or Azure storage, or at an **empty** location, in which case a brand-new Delta Lake table is created (the initial `_delta_log` is written).
+
+Creating a new table is experimental and requires both `allow_experimental_delta_kernel_rs = 1` and `allow_experimental_delta_lake_writes = 1`. If the location already contains a `_delta_log`, the statement attaches to the existing table instead, and no settings are required. When creating a new table the following are not yet supported: the `PARTITION BY`, `ORDER BY`, `PRIMARY KEY` and `SAMPLE BY` clauses, and only column types that round-trip through Delta metadata are accepted — for example use `Bool` (not `UInt8`), `Date32` (not `Date`) and `DateTime64(6)` (not `DateTime`).
 
 <Tabs>
 <TabItem value="S3" label="S3" default>

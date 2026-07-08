@@ -277,6 +277,10 @@ void WriteTransaction::commit(const std::vector<CommitFile> & files)
 
 void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const DB::Names & partition_columns)
 {
+    /// Reject non-round-tripping column types before the kernel FFI (and before `prepareForTableCreation`),
+    /// so an unsupported type is a normal exception rather than a throw through the Rust visitor callback.
+    DeltaLake::validateSchemaForDeltaCreate(schema);
+
     if (!partition_columns.empty())
     {
         /// The v0.23.0 FFI `get_create_table_builder` does not expose
@@ -298,19 +302,24 @@ void WriteTransaction::createTable(const DB::NamesAndTypesList & schema, const D
     auto * engine_builder = kernel_helper->createBuilder();
     engine = DeltaLake::KernelUtils::unwrapResult(ffi::builder_build(engine_builder), "builder_build");
 
-    auto engine_schema = DeltaLake::buildKernelEngineSchema(schema);
+    DeltaLake::KernelCreateSchemaState schema_state;
+    schema_state.schema_list = &schema;
+    auto engine_schema = DeltaLake::buildKernelEngineSchema(schema_state);
 
     using KernelCreateTableBuilder = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTableBuilder, ffi::free_create_table_builder>;
     using KernelCreateTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCreateTransaction, ffi::create_table_free_transaction>;
     using KernelCommittedTransaction = DeltaLake::KernelPointerWrapper<ffi::ExclusiveCommittedTransaction, ffi::free_committed_transaction>;
 
-    KernelCreateTableBuilder builder(DeltaLake::KernelUtils::unwrapResult(
-        ffi::get_create_table_builder(
-            DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
-            &engine_schema,
-            DeltaLake::KernelUtils::toDeltaString(engine_info),
-            engine.get()),
-        "get_create_table_builder"));
+    /// The visitor ran inside the call above; if it captured an exception (rather than unwinding
+    /// through Rust frames), surface it now, before touching the result.
+    auto builder_result = ffi::get_create_table_builder(
+        DeltaLake::KernelUtils::toDeltaString(kernel_helper->getTableLocation()),
+        &engine_schema,
+        DeltaLake::KernelUtils::toDeltaString(engine_info),
+        engine.get());
+    if (schema_state.exception)
+        std::rethrow_exception(schema_state.exception);
+    KernelCreateTableBuilder builder(DeltaLake::KernelUtils::unwrapResult(builder_result, "get_create_table_builder"));
 
     /// `create_table_builder_build` consumes the builder on both success and
     /// failure paths inside the kernel, so release() is correct here.

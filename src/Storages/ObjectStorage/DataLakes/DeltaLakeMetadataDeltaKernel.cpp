@@ -732,20 +732,12 @@ void DeltaLakeMetadataDeltaKernel::createTable(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
 
-    /// If a `_delta_log` already exists at the location, the Delta table is already
-    /// present on storage. This is the normal "point a ClickHouse table at an existing
-    /// Delta table" flow (the primary, read-only path), so attach to it instead of
-    /// creating -- regardless of `IF NOT EXISTS` and without requiring write access.
-    /// A duplicate ClickHouse table *name* is rejected separately by `IDatabase::createTable`.
-    /// `listFiles` returns the .json commits.
+    /// If a `_delta_log` already exists, attach to the existing table instead of creating (any entry,
+    /// including a checkpoint-only log). Duplicate table names are rejected by `IDatabase::createTable`.
     const auto data_path = configuration_ptr->getRawPath().path;
-    const auto existing_commits = listFiles(*object_storage_, data_path, deltalake_metadata_directory, metadata_file_suffix);
-    if (!existing_commits.empty())
+    if (deltaLogExists(*object_storage_, data_path))
     {
-        LOG_DEBUG(
-            log,
-            "Delta table already exists at `{}` ({} commit(s)); attaching to it without creating",
-            data_path, existing_commits.size());
+        LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
         return;
     }
 
@@ -762,12 +754,7 @@ void DeltaLakeMetadataDeltaKernel::createTable(
     Names partition_columns = extractPartitionColumnNames(partition_by);
 
     /// Use `getAllPhysical()` (ordinary + materialized) so the Delta schema matches the physical
-    /// columns the writer later emits to Parquet: `MATERIALIZED` columns are physical and appear in
-    /// `getSampleBlock` (used by `WriteTransaction::validateSchema`), while `EPHEMERAL`/`ALIAS`
-    /// columns are not stored and must not appear in the `_delta_log`.
-    /// `WriteTransaction::createTable` -> `buildKernelEngineSchema` consumes this list and walks it
-    /// through the `ffi::visit_field_*` visitor, which is the same conversion shape used by the
-    /// read-side helpers in `getSchemaFromSnapshot.{h,cpp}` (just in the reverse direction).
+    /// columns the writer emits to Parquet -- `EPHEMERAL`/`ALIAS` are excluded, `MATERIALIZED` kept.
     auto schema_list = columns.getAllPhysical();
 
     auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);

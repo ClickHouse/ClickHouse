@@ -1169,3 +1169,98 @@ def test_create_delta_table_writes_initial_log(started_cluster):
         node1.query("DROP TABLE IF EXISTS t_dl_initial_log")
         for obj in list(minio_client.list_objects(bucket, prefix=table_key + "/", recursive=True)):
             minio_client.remove_object(bucket, obj.object_name)
+
+
+def test_create_delta_table_in_unity_catalog(started_cluster):
+    """
+    Issue #103155, point 4 (catalog case): CREATE TABLE inside a Unity-backed
+    ``DataLakeCatalog`` database must both
+
+      (a) write the initial ``_delta_log`` via the kernel create-table FFI, and
+      (b) register the table with Unity via ``UnityCatalog::createTable``,
+
+    so the freshly created table becomes visible to ``SHOW TABLES`` and
+    queryable via ``SELECT`` (``DatabaseDataLake`` keeps no local table list --
+    it always asks the catalog). The path exercised:
+
+        InterpreterCreateQuery
+        -> StorageObjectStorage::ctor (mode=CREATE, is_datalake_query=false, catalog=Unity)
+        -> DataLakeConfiguration::create()
+        -> DeltaLakeMetadata::createInitial
+           -> DeltaLakeMetadataDeltaKernel::createTable   # writes _delta_log
+           -> catalog->createTable(...)                   # UnityCatalog REST POST /tables
+    """
+    node1 = started_cluster.instances["node1"]
+    test_uuid = str(uuid.uuid4()).replace("-", "_")
+    db_name = f"unity_create_{test_uuid}"
+    schema_name = f"create_schema_{test_uuid}"
+    table_name = f"created_table_{test_uuid}"
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+
+    # The target Unity schema must exist before ClickHouse can register a table in
+    # it (Unity rejects a table create into a missing schema). Create it via Spark.
+    execute_multiple_spark_queries(
+        node1, [f"CREATE SCHEMA IF NOT EXISTS {schema_name}"], retry_on_timeout=True
+    )
+
+    node1.query(
+        f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+        "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+        "allow_experimental_delta_kernel_rs=1",
+        settings={"allow_experimental_database_unity_catalog": "1"},
+    )
+
+    write_settings = {
+        "allow_experimental_database_unity_catalog": 1,
+        "allow_experimental_delta_kernel_rs": 1,
+        "allow_experimental_delta_lake_writes": 1,
+    }
+    try:
+        node1.query(
+            f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` (id Int32, name String) "
+            f"ENGINE = DeltaLakeLocal('{location}')",
+            settings=write_settings,
+        )
+
+        # (a) commit 0 must exist on disk.
+        commit_text = node1.exec_in_container(
+            ["bash", "-c", f"cat {location}/_delta_log/00000000000000000000.json"]
+        )
+        assert '"metaData"' in commit_text, commit_text
+        assert '"protocol"' in commit_text, commit_text
+
+        # (b) the table must be visible through the catalog (SHOW TABLES asks Unity).
+        tables = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'",
+            settings=write_settings,
+        ).strip()
+        assert f"{schema_name}.{table_name}" in tables, tables
+
+        # ... and queryable through the catalog (freshly created, so empty).
+        row_count = int(
+            node1.query(
+                f"SELECT count() FROM {db_name}.`{schema_name}.{table_name}`",
+                settings=write_settings,
+            ).strip()
+        )
+        assert row_count == 0
+
+        # A fresh database handle must also see the table (proves it lives in Unity,
+        # not in any per-connection ClickHouse state).
+        node1.query(f"DROP DATABASE {db_name}", settings=write_settings)
+        node1.query(
+            f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') "
+            "settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, "
+            "allow_experimental_delta_kernel_rs=1",
+            settings={"allow_experimental_database_unity_catalog": "1"},
+        )
+        tables_after = node1.query(
+            f"SHOW TABLES FROM {db_name} LIKE '{schema_name}%'",
+            settings=write_settings,
+        ).strip()
+        assert f"{schema_name}.{table_name}" in tables_after, tables_after
+    finally:
+        node1.query(
+            f"DROP DATABASE IF EXISTS {db_name}",
+            settings={"allow_experimental_database_unity_catalog": 1},
+        )

@@ -8,6 +8,10 @@
 # whose Metadata action carries all column names, types and nullability.
 # This exercises a wider type matrix than 04260_create_table_deltalake_writes_initial_log.sh
 # so we catch regressions in the C++ -> kernel schema visitor.
+#
+# It also checks the type-round-trip contract: only ClickHouse types that read back
+# unchanged through Delta metadata are accepted (e.g. `Bool` is committed as Delta
+# `boolean`, NOT plain `UInt8`), and non-round-tripping types are rejected up front.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -33,6 +37,10 @@ CREATE TABLE t_dl_schema_types (
     c_float   Float32,
     c_double  Float64,
     c_string  String,
+    c_bool    Bool,
+    c_date    Date32,
+    c_ts      DateTime64(6),
+    c_decimal Decimal(10, 2),
     c_n_int   Nullable(Int32),
     c_n_str   Nullable(String)
 ) ENGINE = DeltaLakeLocal('${TABLE_PATH}', Parquet);
@@ -45,7 +53,9 @@ if [ ! -f "$INITIAL_LOG" ]; then
 fi
 echo "post-create: initial commit exists"
 
-# Verify the kernel can read the table back: empty, with the declared columns.
+# Verify the kernel can read the table back: empty, with the declared columns, and every type
+# identical to what was declared (the round-trip contract; a `Bool` written as Delta `boolean`
+# must read back as `Bool`, not `UInt8`).
 $CLICKHOUSE_CLIENT --query "
 SET allow_experimental_delta_kernel_rs = 1;
 SET allow_experimental_delta_lake_writes = 1;
@@ -63,7 +73,7 @@ DROP TABLE t_dl_schema_types;
 # Column names live in the `metaData.schemaString` field, which is itself a
 # JSON-encoded string, so the quotes around each name are backslash-escaped
 # (e.g. \"c_byte\"). Match that escaped form with a fixed-string grep.
-for col in c_byte c_short c_int c_long c_float c_double c_string c_n_int c_n_str; do
+for col in c_byte c_short c_int c_long c_float c_double c_string c_bool c_date c_ts c_decimal c_n_int c_n_str; do
     if ! grep -qF "\\\"$col\\\"" "$INITIAL_LOG"; then
         echo "fail: column $col not found in initial commit"
         exit 1
@@ -72,3 +82,23 @@ done
 echo "commit-json: contains all declared column names"
 
 rm -rf "$TABLE_PATH"
+
+# Types that cannot round-trip through Delta metadata must be rejected before commit 0 is written
+# (Code: 48 = NOT_IMPLEMENTED). `UInt8` is the important one: it must NOT be silently committed as
+# Delta `boolean` (that is `Bool`), which would lose values 2..255.
+echo "rejections:"
+for spec in "UInt8" "UInt32" "FixedString(4)" "Date" "DateTime" "DateTime64(3)" "LowCardinality(String)"; do
+    reject_path="${TABLE_PATH}_reject"
+    rm -rf "$reject_path"
+    if $CLICKHOUSE_CLIENT --query "
+SET allow_experimental_delta_kernel_rs = 1;
+SET allow_experimental_delta_lake_writes = 1;
+CREATE TABLE t_dl_reject (c ${spec}) ENGINE = DeltaLakeLocal('${reject_path}', Parquet);
+" 2>&1 | grep -q "Code: 48"; then
+        echo "${spec}: rejected"
+    else
+        echo "${spec}: NOT rejected"
+    fi
+    $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS t_dl_reject" >/dev/null 2>&1
+    rm -rf "$reject_path"
+done

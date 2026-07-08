@@ -49,9 +49,8 @@ public:
         return DB::DatabaseDataLakeCatalogType::UNITY;
     }
 
-    /// Register a freshly created (external, DELTA) table with Unity. `new_metadata_path` carries the
-    /// Delta table storage location and `metadata_content` the Delta schema fields built by
-    /// `DeltaLakeMetadata::createInitial` (keys `location`, `fields`).
+    /// Register a freshly created external DELTA table with Unity. `new_metadata_path` is the storage
+    /// location; `metadata_content` holds the Delta schema (`location`, `fields`) from `createInitial`.
     void createTable(
         const String & namespace_name,
         const String & table_name,

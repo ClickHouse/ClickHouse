@@ -56,11 +56,8 @@ public:
 
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override { return {}; }
 
-    /// Table creation for DeltaLake catalog databases is driven from the metadata
-    /// layer during storage construction (`DeltaLakeMetadata::createInitial`, mirroring
-    /// `IcebergMetadata::createInitial`): that path writes the `_delta_log` and registers
-    /// the table with the catalog (`UnityCatalog::createTable`). By the time this method
-    /// runs the table is already created and registered, so it is a no-op here.
+    /// No-op: creation + catalog registration happen earlier in `DeltaLakeMetadata::createInitial`
+    /// during storage construction (like `IcebergMetadata::createInitial`).
     void createTable(
         ContextPtr /*context*/,
         const String & /*name*/,

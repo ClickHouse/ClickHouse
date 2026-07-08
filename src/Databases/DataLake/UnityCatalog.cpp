@@ -307,10 +307,8 @@ void UnityCatalog::createTable(
     const String & new_metadata_path,
     Poco::JSON::Object::Ptr metadata_content) const
 {
-    /// Build the Unity `ColumnInfo` array from the Delta schema fields produced by
-    /// `DeltaLakeMetadata::createInitial`. `type_json` is written in the exact shape that the read
-    /// path (`tryGetTableMetadata`) parses back: a bare quoted type name for primitives, and an
-    /// object with a `type` key for array/map/struct.
+    /// Build the Unity `ColumnInfo` array from the Delta schema fields. `type_json` matches what the
+    /// read path (`tryGetTableMetadata`) parses back: a quoted type name for primitives, an object for nested.
     auto fields = metadata_content->getArray("fields");
     if (!fields)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Delta schema fields are missing for Unity createTable");

@@ -3,6 +3,7 @@
 #if USE_DELTA_KERNEL_RS
 #include <DataTypes/DataTypeFactory.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/getSchemaFromSnapshot.h>
+#include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelUtils.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 
@@ -646,32 +647,10 @@ uintptr_t visitFieldFromClickHouseType(
         return KernelUtils::unwrapResult(result, label);
     };
 
+    /// Nested types recurse and register their children first; primitive/leaf types are classified
+    /// (and rejected if they would not round-trip) via the shared `DeltaLakeMetadata::classifyDeltaPrimitive`.
     switch (type->getTypeId())
     {
-        case DB::TypeIndex::Int8:
-            return unwrap(ffi::visit_field_byte(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_byte");
-        case DB::TypeIndex::Int16:
-            return unwrap(ffi::visit_field_short(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_short");
-        case DB::TypeIndex::Int32:
-            return unwrap(ffi::visit_field_integer(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_integer");
-        case DB::TypeIndex::Int64:
-            return unwrap(ffi::visit_field_long(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_long");
-        case DB::TypeIndex::Float32:
-            return unwrap(ffi::visit_field_float(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_float");
-        case DB::TypeIndex::Float64:
-            return unwrap(ffi::visit_field_double(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_double");
-        case DB::TypeIndex::UInt8:
-            /// ClickHouse stores Bool as UInt8 today.
-            return unwrap(ffi::visit_field_boolean(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_boolean");
-        case DB::TypeIndex::String:
-        case DB::TypeIndex::FixedString:
-            return unwrap(ffi::visit_field_string(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_string");
-        case DB::TypeIndex::Date:
-        case DB::TypeIndex::Date32:
-            return unwrap(ffi::visit_field_date(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_date");
-        case DB::TypeIndex::DateTime:
-        case DB::TypeIndex::DateTime64:
-            return unwrap(ffi::visit_field_timestamp(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_timestamp");
         case DB::TypeIndex::Array:
         {
             const auto & array_type = assert_cast<const DB::DataTypeArray &>(*type);
@@ -702,10 +681,33 @@ uintptr_t visitFieldFromClickHouseType(
                 ffi::visit_field_struct(state, name_slice, child_ids.data(), child_ids.size(), nullable, &KernelUtils::allocateError),
                 "visit_field_struct");
         }
-        case DB::TypeIndex::Decimal32:
-        case DB::TypeIndex::Decimal64:
-        case DB::TypeIndex::Decimal128:
-        case DB::TypeIndex::Decimal256:
+        default:
+            break;
+    }
+
+    switch (DB::DeltaLakeMetadata::classifyDeltaPrimitive(type))
+    {
+        case DB::DeltaPrimitiveType::Boolean:
+            return unwrap(ffi::visit_field_boolean(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_boolean");
+        case DB::DeltaPrimitiveType::Byte:
+            return unwrap(ffi::visit_field_byte(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_byte");
+        case DB::DeltaPrimitiveType::Short:
+            return unwrap(ffi::visit_field_short(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_short");
+        case DB::DeltaPrimitiveType::Integer:
+            return unwrap(ffi::visit_field_integer(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_integer");
+        case DB::DeltaPrimitiveType::Long:
+            return unwrap(ffi::visit_field_long(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_long");
+        case DB::DeltaPrimitiveType::Float:
+            return unwrap(ffi::visit_field_float(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_float");
+        case DB::DeltaPrimitiveType::Double:
+            return unwrap(ffi::visit_field_double(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_double");
+        case DB::DeltaPrimitiveType::String:
+            return unwrap(ffi::visit_field_string(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_string");
+        case DB::DeltaPrimitiveType::Date:
+            return unwrap(ffi::visit_field_date(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_date");
+        case DB::DeltaPrimitiveType::Timestamp:
+            return unwrap(ffi::visit_field_timestamp(state, name_slice, nullable, &KernelUtils::allocateError), "visit_field_timestamp");
+        case DB::DeltaPrimitiveType::Decimal:
             return unwrap(
                 ffi::visit_field_decimal(
                     state, name_slice,
@@ -714,12 +716,8 @@ uintptr_t visitFieldFromClickHouseType(
                     nullable,
                     &KernelUtils::allocateError),
                 "visit_field_decimal");
-        default:
-            throw DB::Exception(
-                DB::ErrorCodes::NOT_IMPLEMENTED,
-                "ClickHouse type `{}` cannot be mapped to a Delta Lake type for CREATE TABLE",
-                type->getName());
     }
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unhandled DeltaPrimitiveType for `{}`", type->getName());
 }
 
 uintptr_t visitElementFromClickHouseType(ffi::KernelSchemaVisitorState * state, const DB::DataTypePtr & full_type)
@@ -736,31 +734,73 @@ uintptr_t visitElementFromClickHouseType(ffi::KernelSchemaVisitorState * state, 
 /// also satisfies `-Wmissing-prototypes`.
 uintptr_t kernelEngineSchemaVisitorTrampoline(void * schema_void, ffi::KernelSchemaVisitorState * state)
 {
-    const auto * schema_list = static_cast<const DB::NamesAndTypesList *>(schema_void);
-    std::vector<uintptr_t> field_ids;
-    field_ids.reserve(schema_list->size());
-    for (const auto & col : *schema_list)
-        field_ids.push_back(visitFieldFromClickHouseType(state, col.name, col.type));
+    auto * ctx = static_cast<KernelCreateSchemaState *>(schema_void);
+    try
+    {
+        std::vector<uintptr_t> field_ids;
+        field_ids.reserve(ctx->schema_list->size());
+        for (const auto & col : *ctx->schema_list)
+            field_ids.push_back(visitFieldFromClickHouseType(state, col.name, col.type));
 
-    /// Top-level struct has an empty name; the kernel ignores it for the root schema.
-    auto empty_name = KernelUtils::toDeltaString("");
-    return KernelUtils::unwrapResult(
-        ffi::visit_field_struct(
-            state, empty_name, field_ids.data(), field_ids.size(),
-            /* nullable */ false,
-            &KernelUtils::allocateError),
-        "visit_field_struct(top-level)");
+        /// Top-level struct has an empty name; the kernel ignores it for the root schema.
+        auto empty_name = KernelUtils::toDeltaString("");
+        return KernelUtils::unwrapResult(
+            ffi::visit_field_struct(
+                state, empty_name, field_ids.data(), field_ids.size(),
+                /* nullable */ false,
+                &KernelUtils::allocateError),
+            "visit_field_struct(top-level)");
+    }
+    catch (...)
+    {
+        /// A C++ exception must not unwind through the kernel's Rust frames; capture it and return a
+        /// sentinel. The caller rethrows `state.exception` after the FFI returns.
+        ctx->exception = std::current_exception();
+        return 0;
+    }
 }
 
 }
 
-ffi::EngineSchema buildKernelEngineSchema(const DB::NamesAndTypesList & schema_list)
+/// Recursively check that a ClickHouse type maps to a round-tripping Delta type, throwing otherwise.
+static void validateClickHouseTypeForDeltaCreate(const DB::DataTypePtr & full_type)
 {
-    /// `schema` is `void *`; the kernel never mutates it, but the FFI struct field
-    /// is non-const, so cast accordingly. The visitor reads only — there is no
-    /// thread safety concern.
+    DB::DataTypePtr type = full_type->isNullable() ? DB::removeNullable(full_type) : full_type;
+    switch (type->getTypeId())
+    {
+        case DB::TypeIndex::Array:
+            validateClickHouseTypeForDeltaCreate(assert_cast<const DB::DataTypeArray &>(*type).getNestedType());
+            return;
+        case DB::TypeIndex::Map:
+        {
+            const auto & map_type = assert_cast<const DB::DataTypeMap &>(*type);
+            validateClickHouseTypeForDeltaCreate(map_type.getKeyType());
+            validateClickHouseTypeForDeltaCreate(map_type.getValueType());
+            return;
+        }
+        case DB::TypeIndex::Tuple:
+            for (const auto & element : assert_cast<const DB::DataTypeTuple &>(*type).getElements())
+                validateClickHouseTypeForDeltaCreate(element);
+            return;
+        default:
+            /// Throws `NOT_IMPLEMENTED` for any leaf type that cannot round-trip through Delta metadata.
+            DB::DeltaLakeMetadata::classifyDeltaPrimitive(type);
+            return;
+    }
+}
+
+void validateSchemaForDeltaCreate(const DB::NamesAndTypesList & schema)
+{
+    for (const auto & column : schema)
+        validateClickHouseTypeForDeltaCreate(column.type);
+}
+
+ffi::EngineSchema buildKernelEngineSchema(KernelCreateSchemaState & state)
+{
+    /// `schema` is `void *`; the kernel never mutates it. The visitor reads `state.schema_list` and,
+    /// on error, stores the exception in `state.exception` for the caller to rethrow.
     return ffi::EngineSchema{
-        /* schema */  const_cast<DB::NamesAndTypesList *>(&schema_list),
+        /* schema */  &state,
         /* visitor */ &kernelEngineSchemaVisitorTrampoline,
     };
 }

@@ -1,7 +1,10 @@
 pre-create: no _delta_log
 post-create: initial commit exists
 0
+c_bool	Bool
 c_byte	Int8
+c_date	Date32
+c_decimal	Decimal(10, 2)
 c_double	Float64
 c_float	Float32
 c_int	Int32
@@ -10,4 +13,13 @@ c_n_int	Nullable(Int32)
 c_n_str	Nullable(String)
 c_short	Int16
 c_string	String
+c_ts	DateTime64(6)
 commit-json: contains all declared column names
+rejections:
+UInt8: rejected
+UInt32: rejected
+FixedString(4): rejected
+Date: rejected
+DateTime: rejected
+DateTime64(3): rejected
+LowCardinality(String): rejected
