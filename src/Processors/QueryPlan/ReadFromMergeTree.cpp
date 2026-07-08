@@ -5009,7 +5009,10 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// A bucketed read is pinned to the coordinator's marks and cannot reproduce these features on the
     /// worker, so fall back to a serial read instead of bucketing and then failing when the fragment ships.
     if (!supportsBucketedRead())
+    {
+        LOG_TRACE(log, "Distributed read not bucketed: the read does not support bucketing");
         return 0;
+    }
 
     /// A non-FINAL read needs no merge, so its marks can be split arbitrarily: cut the analyzed marks into
     /// contiguous mark-balanced slices, one bucket each. FINAL needs primary-key-range layers (handled
@@ -5018,7 +5021,10 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     {
         auto analysis = selectRangesToRead();
         if (!analysis || analysis->parts_with_ranges.empty())
+        {
+            LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
             return 0;
+        }
 
         /// Keep every bucket, including empty ones, so the count stays `target_buckets` and matches the
         /// downstream exchange (dropping empties would shrink the count for tiny tables and force a reshuffle).
@@ -5040,23 +5046,38 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// ordered primary key. Read serially otherwise.
     const auto & modifiers = query_info.table_expression_modifiers;
     if (modifiers && (modifiers->hasSampleSizeRatio() || modifiers->hasSampleOffsetRatio()))
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: SAMPLE");
         return 0;
+    }
 
     /// `Graphite` rollup parameters are not shipped to the worker, so its FINAL cannot be range-split. Read serially.
     if (data.merging_params.mode == MergeTreeData::MergingParams::Graphite)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: Graphite rollup");
         return 0;
+    }
 
     const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
     if (!isSafePrimaryKey(primary_key))
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: the primary key is not safe for range splitting");
         return 0;
+    }
 
     auto in_reverse_order = deriveReverseOrder(primary_key, storage_snapshot->metadata->getSortingKey());
     if (!in_reverse_order)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: mixed sort directions");
         return 0;
+    }
 
     auto analysis = selectRangesToRead();
     if (!analysis || analysis->parts_with_ranges.empty())
+    {
+        LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
         return 0;
+    }
 
     /// When FINAL does not merge across partitions, each partition is deduplicated independently, so a
     /// layer must not span partitions (a key may repeat across partitions and must not be merged). Group
@@ -5144,8 +5165,14 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// rather than under-parallelize or exceed it.
     const size_t tasks = (buckets.size() + lanes_per_task - 1) / lanes_per_task;
     if (tasks <= 1 || tasks > max_total_buckets)
+    {
+        LOG_TRACE(log, "Distributed FINAL read not bucketed: {} layers in {} lanes per task make {} tasks (target {}, limit {})",
+            buckets.size(), lanes_per_task, tasks, target_buckets, max_total_buckets);
         return 0;
+    }
 
+    LOG_TRACE(log, "Distributed FINAL read bucketed: {} layers in {} lanes per task make {} tasks (target {})",
+        buckets.size(), lanes_per_task, tasks, target_buckets);
     distributed_read_lanes_per_task = lanes_per_task;
     distributed_read_buckets = std::move(buckets);
     setDistributedRead(tasks);
