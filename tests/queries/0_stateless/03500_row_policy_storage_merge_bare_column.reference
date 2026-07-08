@@ -1,0 +1,12 @@
+bare column policy (was crash)
+1	1
+3	1
+filter column not in select list
+1
+3
+expression policy
+2	0
+3	1
+4	0
+compound policy
+1	1
