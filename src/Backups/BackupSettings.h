@@ -134,14 +134,6 @@ struct BackupSettings
 
     static bool isAsync(const ASTBackupQuery & query);
 
-    /// Returns only the non-backup-specific settings from a `BACKUP` query.
-    /// In contrast to `fromBackupQuery`, this helper does not touch the
-    /// `base_backup_name` AST node, so it is safe to call before
-    /// `ReplaceQueryParameterVisitor` has substituted query parameters.
-    /// Used by `InterpreterSetQuery::applySettingsFromQuery` to apply core
-    /// settings (e.g. `max_execution_time`) before `ProcessList::insert`.
-    static SettingsChanges extractCoreSettingsFromQuery(const ASTBackupQuery & query);
-
     struct Util
     {
         static std::vector<Strings> clusterHostIDsFromAST(const IAST & ast);

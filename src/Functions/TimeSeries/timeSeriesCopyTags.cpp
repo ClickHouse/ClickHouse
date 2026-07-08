@@ -16,7 +16,7 @@ namespace ErrorCodes
 
 /// Function timeSeriesCopyTags(dest_group, src_group, ['tag_name_1', 'tag_name_2', ...])
 /// copies specified tags from the `src` group to the `dest` group, and returns the new tags group.
-class FunctionTimeSeriesCopyTags final : public IFunction
+class FunctionTimeSeriesCopyTags : public IFunction
 {
 public:
     static constexpr auto name = "timeSeriesCopyTags";
@@ -32,12 +32,6 @@ public:
     /// Function timeSeriesCopyTags uses information stored in the query context, it's deterministic in the scope of the current query.
     bool isDeterministic() const override { return false; }
     bool isDeterministicInScopeOfQuery() const override { return true; }
-
-    /// Stateful: result depends on the per-query tags collector populated by timeSeriesStoreTags().
-    bool isStateful() const override { return true; }
-
-    /// Disable constant folding: the per-query tags collector is not populated at analysis time.
-    bool isSuitableForConstantFolding() const override { return false; }
 
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
@@ -70,7 +64,7 @@ public:
 
         auto tags_to_copy = TimeSeriesTagsFunctionHelpers::extractConstTagNamesFromArgument(name, arguments, 2);
 
-        VectorWithMemoryTracking<Group> new_groups;
+        std::vector<Group> new_groups;
 
         if (dest_groups.size() == 1)
             new_groups = tags_collector->copyTags(dest_groups[0], src_groups, tags_to_copy);

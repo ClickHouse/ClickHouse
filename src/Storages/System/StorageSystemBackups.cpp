@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemBackups.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 #include <Backups/BackupsWorker.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -92,6 +91,3 @@ void StorageSystemBackups::fillData(MutableColumns & res_columns, ContextPtr con
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemBackups) }
