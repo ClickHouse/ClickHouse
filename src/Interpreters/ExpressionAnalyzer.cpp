@@ -104,6 +104,7 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsUInt64 min_count_to_compile_sort_description;
+    extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
     extern const SettingsOverflowMode set_overflow_mode;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_read_in_order;
@@ -1015,6 +1016,9 @@ static std::shared_ptr<IJoin> tryCreateJoin(
     std::unique_ptr<QueryPlan> & joined_plan,
     ContextPtr context)
 {
+    if (context->getSettingsRef()[Setting::min_rows_ratio_for_hash_join_row_store] == 0.0)
+        analyzed_join->setRowStoreEnabled(true);
+
     if (analyzed_join->kind() == JoinKind::Paste)
         return std::make_shared<PasteJoin>(analyzed_join, right_sample_block);
 
