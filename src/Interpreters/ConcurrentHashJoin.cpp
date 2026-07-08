@@ -518,8 +518,7 @@ StepAnalyzeInfo ConcurrentHashJoin::getAnalyzedInternalStats(size_t group) const
         case JoinStage::Probe:
         {
             const HashJoin::ProbeStats stats = getProbeStats();
-            const double match_rate = stats.lookups ? 100.0 * static_cast<double>(stats.matches) / static_cast<double>(stats.lookups) : 0.0;
-            internal_stats.emplace_back("match rate", match_rate, StepMetric::Format::Percent);
+            appendJoinMatchStats(internal_stats, {stats.total_left_rows, stats.matched_left_rows});
             break;
         }
         case JoinStage::Default:

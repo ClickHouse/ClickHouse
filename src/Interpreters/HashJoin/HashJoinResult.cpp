@@ -370,8 +370,8 @@ HashJoinResult::HashJoinResult(
     IColumn::Offsets && matched_rows_,
     ScatteredBlock && block_,
     Properties properties_,
-    UInt64 probe_times_,
-    UInt64 match_times_)
+    UInt64 total_left_rows_,
+    UInt64 matched_left_rows_)
     : lazy_output(std::move(lazy_output_))
     , properties(std::move(properties_))
     , scattered_block(std::move(block_))
@@ -379,8 +379,8 @@ HashJoinResult::HashJoinResult(
     , offsets(std::move(offsets_))
     , filter(std::move(filter_))
     , matched_rows(std::move(matched_rows_))
-    , probe_times(probe_times_)
-    , match_times(match_times_)
+    , total_left_rows(total_left_rows_)
+    , matched_left_rows(matched_left_rows_)
 {
 }
 

@@ -547,27 +547,26 @@ public:
 
     struct ProbeStats
     {
-        UInt64 lookups = 0;
-        UInt64 matches = 0;
+        UInt64 total_left_rows = 0;
+        UInt64 matched_left_rows = 0;
 
         ProbeStats & operator+=(const ProbeStats & other)
         {
-            lookups += other.lookups;
-            matches += other.matches;
+            total_left_rows += other.total_left_rows;
+            matched_left_rows += other.matched_left_rows;
             return *this;
         }
     };
 
-    void addProbeStats(size_t probe, size_t match)
+    void addProbeStats(size_t total, size_t matched)
     {
-        probe_times.fetch_add(probe, std::memory_order_relaxed);
-        match_times.fetch_add(match, std::memory_order_relaxed);
+        left_rows_total.fetch_add(total, std::memory_order_relaxed);
+        left_rows_matched.fetch_add(matched, std::memory_order_relaxed);
     }
 
-    /// Read the accumulated raw probe statistics (counts only, no formatting).
     ProbeStats getProbeStats() const
     {
-        return {probe_times.load(std::memory_order_relaxed), match_times.load(std::memory_order_relaxed)};
+        return {left_rows_total.load(std::memory_order_relaxed), left_rows_matched.load(std::memory_order_relaxed)};
     }
 
 private:
@@ -627,10 +626,10 @@ private:
     /// Maximum number of rows in result block. If it is 0, then no limits.
     size_t max_joined_block_rows = 0;
     size_t max_joined_block_bytes = 0;
-    /// Probe hit-ratio counters. Updated only from the non-const probe entry point
+    /// Per-row match counters. Updated only from the non-const probe entry point
     /// (joinBlock), so no `mutable` is needed; read (load) from the const stats getter.
-    std::atomic<UInt64> probe_times{0};
-    std::atomic<UInt64> match_times{0};
+    std::atomic<UInt64> left_rows_total{0};
+    std::atomic<UInt64> left_rows_matched{0};
     bool joined_block_split_single_row = false;
     bool enable_lazy_columns_replication = false;
     bool enable_lazy_columns_indexing = false;

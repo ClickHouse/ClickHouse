@@ -174,6 +174,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
 
     bool has_required_right_keys = (join.required_right_keys.columns() != 0);
     added_columns.need_filter = join_features.need_filter || has_required_right_keys;
+    added_columns.collect_stats = join.table_join->collectAnalyzeStats();
     added_columns.max_joined_block_rows = join.max_joined_block_rows;
     if (!added_columns.max_joined_block_rows)
         added_columns.max_joined_block_rows = std::numeric_limits<size_t>::max();
@@ -183,6 +184,10 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
     size_t processed_rows = switchJoinRightColumns(maps_, added_columns, block.getSelector(), join.data->type, *join.used_flags, join.data->key_range);
     /// Do not hold memory for join_on_keys anymore
     added_columns.join_on_keys.clear();
+
+    /// Number of left rows probed in this call (denominator of the match rate). The block may be
+    /// split below, so read its size before the split; processed_rows == 0 means the whole block.
+    const size_t probed_rows = processed_rows ? processed_rows : block.rows();
 
     std::optional<ScatteredBlock> next_scattered_block;
     if (0 < processed_rows && processed_rows < block.rows())
@@ -213,8 +218,8 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
             join.enable_lazy_columns_replication,
             join.enable_lazy_columns_indexing
         },
-        added_columns.lookups,
-        added_columns.matches);
+        probed_rows,
+        added_columns.matched_left_rows);
 
     if (next_scattered_block)
         join_result->setNextBlock(std::move(next_scattered_block.value()));
@@ -381,15 +386,27 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchNu
     JoinStuff::JoinUsedFlags & used_flags)
 {
     if (added_columns.need_filter)
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+    {
+        if (added_columns.collect_stats)
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true, true>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+        else
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, true, false>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+    }
     else
-        return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false>(
-            std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+    {
+        if (added_columns.collect_stats)
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false, true>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+        else
+            return joinRightColumnsSwitchMultipleDisjuncts<KeyGetter, Map, false, false>(
+                std::forward<std::vector<KeyGetter>>(key_getter_vector), mapv, added_columns, selector, used_flags);
+    }
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename Map, bool need_filter, typename AddedColumns>
+template <typename KeyGetter, typename Map, bool need_filter, bool collect_stats, typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMultipleDisjuncts(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
@@ -403,7 +420,7 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         if (added_columns.additional_filter_expression)
         {
             const bool mark_per_row_used = join_features.right || join_features.full || mapv.size() > 1;
-            return joinRightColumnsWithAdditionalFilter<KeyGetter, Map>(
+            return joinRightColumnsWithAdditionalFilter<KeyGetter, Map, collect_stats>(
                 std::forward<std::vector<KeyGetter>>(key_getter_vector),
                 mapv,
                 added_columns,
@@ -422,20 +439,20 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         if (mapv.size() > 1 || added_columns.join_on_keys.empty())
         {
             if (std::ranges::any_of(added_columns.join_on_keys, [](const auto & elem) { return elem.null_map; }))
-                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, collect_stats, /*check_null_map=*/true>(
                     std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
             else
-                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, collect_stats, /*check_null_map=*/false>(
                     std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getRange());
         }
         else
         {
             chassert(key_getter_vector.size() == 1);
             if (added_columns.join_on_keys.at(0).null_map)
-                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, collect_stats, /*check_null_map=*/true>(
                     key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
             else
-                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, collect_stats, /*check_null_map=*/false>(
                     key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getRange());
         }
     }
@@ -444,20 +461,20 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchMu
         if (mapv.size() > 1 || added_columns.join_on_keys.empty())
         {
             if (std::ranges::any_of(added_columns.join_on_keys, [](const auto & elem) { return elem.null_map; }))
-                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, collect_stats, /*check_null_map=*/true>(
                     std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
             else
-                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, collect_stats, /*check_null_map=*/false>(
                     std::move(key_getter_vector), mapv, added_columns, used_flags, selector.getIndexes());
         }
         else
         {
             chassert(key_getter_vector.size() == 1);
             if (added_columns.join_on_keys.at(0).null_map)
-                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/true>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, collect_stats, /*check_null_map=*/true>(
                     key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
             else
-                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, /*check_null_map=*/false>(
+                return joinRightColumnsSwitchJoinMaskKind<KeyGetter, Map, need_filter, collect_stats, /*check_null_map=*/false>(
                     key_getter_vector.at(0), mapv.at(0), added_columns, used_flags, selector.getIndexes());
         }
     }
@@ -563,6 +580,7 @@ template <
     typename KeyGetter,
     typename Map,
     bool need_filter,
+    bool collect_stats,
     bool check_null_map,
     JoinCommon::JoinMask::Kind join_mask_kind,
     typename AddedColumns,
@@ -604,8 +622,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
         });
 
     IColumn::Offset current_offset = 0;
-    size_t lookups = 0;
-    size_t matches = 0;
     for (size_t i = 0; i < rows; ++i)
     {
         if constexpr (can_prefetch)
@@ -630,19 +646,19 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
             else
                 row_acceptable = !join_keys.isRowFiltered(ind);
 
-            lookups += row_acceptable;
-            
             using FindResult = typename KeyGetter::FindResult;
             auto find_result = row_acceptable ? key_getter.findKey(*map, ind, pool) : FindResult();
 
             if (find_result.isFound())
             {
                 right_row_found = true;
-                ++matches;
                 processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
                     find_result, added_columns, used_flags, i, ind, current_offset, dummy_known_rows);
             }
         }
+
+        if constexpr (collect_stats)
+            added_columns.matched_left_rows += right_row_found;
 
         if (!right_row_found)
         {
@@ -658,26 +674,24 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     }
 
     added_columns.applyLazyDefaults();
-    added_columns.lookups = lookups;
-    added_columns.matches = matches;
     return 0;
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
+template <typename KeyGetter, typename Map, bool need_filter, bool collect_stats, bool check_null_map, typename AddedColumns, typename Selector>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJoinMaskKind(
     KeyGetter & key_getter, const Map * map, AddedColumns & added_columns, JoinStuff::JoinUsedFlags & used_flags, const Selector & selector)
 {
     switch (added_columns.join_on_keys.at(0).join_mask_column.getKind())
     {
         case JoinCommon::JoinMask::Kind::Unknown:
-            return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, JoinCommon::JoinMask::Kind::Unknown>(
+            return joinRightColumns<KeyGetter, Map, need_filter, collect_stats, check_null_map, JoinCommon::JoinMask::Kind::Unknown>(
                 key_getter, map, added_columns, used_flags, selector);
         case JoinCommon::JoinMask::Kind::AllFalse:
-            return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, JoinCommon::JoinMask::Kind::AllFalse>(
+            return joinRightColumns<KeyGetter, Map, need_filter, collect_stats, check_null_map, JoinCommon::JoinMask::Kind::AllFalse>(
                 key_getter, map, added_columns, used_flags, selector);
         case JoinCommon::JoinMask::Kind::AllTrue:
-            return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, JoinCommon::JoinMask::Kind::AllTrue>(
+            return joinRightColumns<KeyGetter, Map, need_filter, collect_stats, check_null_map, JoinCommon::JoinMask::Kind::AllTrue>(
                 key_getter, map, added_columns, used_flags, selector);
     }
 }
@@ -689,6 +703,7 @@ template <
     typename KeyGetter,
     typename Map,
     bool need_filter,
+    bool collect_stats,
     bool check_null_map,
     JoinCommon::JoinMask::Kind join_mask_kind,
     typename AddedColumns,
@@ -740,8 +755,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
 
     IColumn::Offset current_offset = 0;
     size_t i = 0;
-    size_t lookups = 0;
-    size_t matches = 0;
     for (; i < rows && current_offset < max_joined_rows; ++i)
     {
         if constexpr (can_prefetch)
@@ -768,14 +781,12 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 else
                     row_acceptable = !join_keys.isRowFiltered(ind);
 
-                lookups += row_acceptable;
                 using FindResult = typename KeyGetter::FindResult;
                 auto find_result = row_acceptable ? key_getter_vector[onexpr_idx].findKey(*(mapv[onexpr_idx]), ind, pool) : FindResult();
 
                 if (find_result.isFound())
                 {
                     right_row_found = true;
-                    ++matches;
                     processMatch<KIND, STRICTNESS, need_filter, flag_per_row, MapsTemplate, Map, KeyGetter>(
                         find_result, added_columns, used_flags, i, ind, current_offset, known_rows);
 
@@ -784,6 +795,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
                 }
             }
         }
+
+        if constexpr (collect_stats)
+            added_columns.matched_left_rows += right_row_found;
 
         if (!right_row_found)
         {
@@ -797,8 +811,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumns(
     }
 
     added_columns.applyLazyDefaults();
-    added_columns.lookups = lookups;
-    added_columns.matches = matches;
     return i;
 }
 
@@ -807,6 +819,7 @@ template <
     typename KeyGetter,
     typename Map,
     bool need_filter,
+    bool collect_stats,
     bool check_null_map,
     typename AddedColumns,
     typename Selector>
@@ -820,17 +833,17 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsSwitchJo
     using Kind = JoinCommon::JoinMask::Kind;
     if (std::ranges::all_of(added_columns.join_on_keys, [](const auto & elem) { return elem.join_mask_column.getKind() == Kind::AllTrue; }))
     {
-        return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::AllTrue>(
+        return joinRightColumns<KeyGetter, Map, need_filter, collect_stats, check_null_map, Kind::AllTrue>(
             std::move(key_getter_vector), mapv, added_columns, used_flags, selector);
     }
     else if (std::ranges::all_of(added_columns.join_on_keys, [](const auto & elem) { return elem.join_mask_column.getKind() == Kind::AllFalse; }))
     {
-        return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::AllFalse>(
+        return joinRightColumns<KeyGetter, Map, need_filter, collect_stats, check_null_map, Kind::AllFalse>(
             std::move(key_getter_vector), mapv, added_columns, used_flags, selector);
     }
     else
     {
-        return joinRightColumns<KeyGetter, Map, need_filter, check_null_map, Kind::Unknown>(
+        return joinRightColumns<KeyGetter, Map, need_filter, collect_stats, check_null_map, Kind::Unknown>(
             std::move(key_getter_vector), mapv, added_columns, used_flags, selector);
     }
 }
@@ -951,7 +964,7 @@ static ColumnPtr buildAdditionalFilter(
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename Map, typename AddedColumns>
+template <typename KeyGetter, typename Map, bool collect_stats, typename AddedColumns>
 size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAdditionalFilter(
     std::vector<KeyGetter> && key_getter_vector,
     const std::vector<const Map *> & mapv,
@@ -993,9 +1006,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
     std::vector<FindResult> find_results;
     find_results.reserve(left_block_rows);
     IColumn::Offset total_added_rows = 0;
-
-    size_t lookups = 0;
-    size_t matches = 0;
 
     IColumn::Offsets row_replicate_offset;
     row_replicate_offset.reserve(left_block_rows);
@@ -1039,14 +1049,12 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
                     continue;
 
                 bool row_acceptable = !join_keys.isRowFiltered(ind);
-                lookups += row_acceptable;
                 auto find_result
                     = row_acceptable ? key_getter_vector[join_clause_idx].findKey(*(mapv[join_clause_idx]), ind, *pool) : FindResult();
 
                 if (find_result.isFound())
                 {
                     auto & mapped = find_result.getMapped();
-                    ++matches;
                     find_results.push_back(find_result);
                     /// We don't add missing in addFoundRowAll here. we will add it after filter is applied.
                     /// it's different from `joinRightColumns`.
@@ -1204,6 +1212,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
             }
             find_result_index += (prev_replicated_row != row_replicate_offset[i]);
 
+            if constexpr (collect_stats)
+                added_columns.matched_left_rows += any_matched;
+
             if constexpr (join_features.need_replication)
             {
                 added_columns.offsets_to_replicate[i] = total_added_rows;
@@ -1218,8 +1229,6 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
         added_columns.filter.resize(left_block_rows);
     }
     added_columns.applyLazyDefaults();
-    added_columns.lookups = lookups;
-    added_columns.matches = matches;
     return left_block_rows;
 }
 

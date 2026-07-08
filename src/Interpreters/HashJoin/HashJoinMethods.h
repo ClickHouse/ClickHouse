@@ -136,7 +136,7 @@ private:
         const ScatteredBlock::Selector & selector,
         JoinStuff::JoinUsedFlags & used_flags);
 
-    template <typename KeyGetter, typename Map, bool need_filter, typename AddedColumns>
+    template <typename KeyGetter, typename Map, bool need_filter, bool collect_stats, typename AddedColumns>
     static size_t joinRightColumnsSwitchMultipleDisjuncts(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,
@@ -150,6 +150,7 @@ private:
         typename KeyGetter,
         typename Map,
         bool need_filter,
+        bool collect_stats,
         bool check_null_map,
         JoinCommon::JoinMask::Kind join_mask_kind,
         typename AddedColumns,
@@ -165,6 +166,7 @@ private:
         typename KeyGetter,
         typename Map,
         bool need_filter,
+        bool collect_stats,
         bool check_null_map,
         typename AddedColumns,
         typename Selector>
@@ -179,6 +181,7 @@ private:
         typename KeyGetter,
         typename Map,
         bool need_filter,
+        bool collect_stats,
         bool check_null_map,
         JoinCommon::JoinMask::Kind join_mask_kind,
         typename AddedColumns,
@@ -190,7 +193,7 @@ private:
         JoinStuff::JoinUsedFlags & used_flags,
         const Selector & selector);
 
-    template <typename KeyGetter, typename Map, bool need_filter, bool check_null_map, typename AddedColumns, typename Selector>
+    template <typename KeyGetter, typename Map, bool need_filter, bool collect_stats, bool check_null_map, typename AddedColumns, typename Selector>
     static size_t joinRightColumnsSwitchJoinMaskKind(
         KeyGetter & key_getter,
         const Map * map,
@@ -199,7 +202,7 @@ private:
         const Selector & selector);
 
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    template <typename KeyGetter, typename Map, typename AddedColumns>
+    template <typename KeyGetter, typename Map, bool collect_stats, typename AddedColumns>
     static size_t joinRightColumnsWithAdditionalFilter(
         std::vector<KeyGetter> && key_getter_vector,
         const std::vector<const Map *> & mapv,

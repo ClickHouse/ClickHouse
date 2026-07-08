@@ -513,8 +513,8 @@ void GraceHashJoin::GraceHashJoinStats::foldIn(const HashJoin & in_memory_join)
     right_rows += in_memory_join.getRightTableRowCount();
     unique_keys += in_memory_join.getTotalRowCount();
     const auto probe = in_memory_join.getProbeStats();
-    lookups += probe.lookups;
-    matches += probe.matches;
+    total_left_rows += probe.total_left_rows;
+    matched_left_rows += probe.matched_left_rows;
     peak_in_memory_bytes = std::max(peak_in_memory_bytes, in_memory_join.getPeakBuildBytes());
 }
 
@@ -558,8 +558,7 @@ StepAnalyzeInfo GraceHashJoin::getAnalyzedInternalStats(size_t group) const
         }
         case JoinStage::Probe:
         {
-            const double match_rate = stats_snapshot.lookups ? 100.0 * static_cast<double>(stats_snapshot.matches) / static_cast<double>(stats_snapshot.lookups) : 0.0;
-            internal_stats.emplace_back("match rate", match_rate, StepMetric::Format::Percent);
+            appendJoinMatchStats(internal_stats, {stats_snapshot.total_left_rows, stats_snapshot.matched_left_rows});
             internal_stats.emplace_back("left spilled", stats_snapshot.left_spill.compressed_size, StepMetric::Format::Bytes);
             break;
         }

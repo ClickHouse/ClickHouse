@@ -62,8 +62,8 @@ private:
     Block sample_block_with_columns_to_add;
     LoggerPtr log;
 
-    std::atomic<UInt64> probe_times{0};
-    std::atomic<UInt64> match_times{0};
+    std::atomic<UInt64> left_rows_total{0};
+    std::atomic<UInt64> left_rows_matched{0};
 };
 
 }

@@ -53,8 +53,8 @@ class GraceHashJoin final : public IJoin
     {
         size_t right_rows = 0;
         size_t unique_keys = 0;
-        size_t lookups = 0;
-        size_t matches = 0;
+        size_t total_left_rows = 0;
+        size_t matched_left_rows = 0;
         size_t peak_in_memory_bytes = 0;
         size_t num_rehashes = 0;
         size_t num_buckets = 0;

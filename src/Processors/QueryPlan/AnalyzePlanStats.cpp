@@ -7,7 +7,6 @@
 #include <vector>
 #include <Processors/Port.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
-#include <Processors/QueryPlan/BoundaryPortStats.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/StepWallClock.h>
@@ -71,18 +70,6 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
-    // using SetOfPorts = std::unordered_set<const Port *>;
-    // using StepToPorts = std::unordered_map<StepAndGroup, SetOfPorts>;
-
-    // /// To count exact number of rows and bytes per step input/output 
-    // /// we need to count only the ones on the boundary with another step 
-    // StepToPorts step_to_in_ports;
-    // StepToPorts step_to_out_ports;
-
-    // step_to_in_ports.reserve(64);
-    // step_to_out_ports.reserve(64);
-    // steps_to_stats.reserve(64);
-
     const auto & processors = pipeline.getProcessors();
 
     collectIoStats(processors);
@@ -92,7 +79,10 @@ AnalyzeStepsStats::AnalyzeStepsStats(const QueryPipeline & pipeline, UInt64 exec
 
 void AnalyzeStepsStats::collectIoStats(const Processors & processors)
 {
-    auto step_of = [](const IProcessor & processor) { return processor.getQueryPlanStep(); };
+    auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)
+    {
+        return owner.getQueryPlanStep() != neighbour.getQueryPlanStep();
+    };
 
     for (const auto & proc : processors)
     {
@@ -102,19 +92,35 @@ void AnalyzeStepsStats::collectIoStats(const Processors & processors)
             continue;
 
         auto & step_stats = stats_by_step[step];
-        processors_by_step[step].push_back(proc.get());
 
-        forEachBoundaryInputPort(*proc, step_of, [&](const IProcessor::PortDataCounters & counters)
-        {
-            step_stats.input_rows += counters.rows;
-            step_stats.input_bytes += counters.bytes;
-        });
+        const auto step_group_key = std::make_pair(step, proc->getQueryPlanStepGroup());
+        processors_by_step_group[step_group_key].push_back(proc.get());
 
-        forEachBoundaryOutputPort(*proc, step_of, [&](const IProcessor::PortDataCounters & counters)
+        for (const auto & input_port : proc->getInputs())
         {
-            step_stats.output_rows += counters.rows;
-            step_stats.output_bytes += counters.bytes;
-        });
+            if (!input_port.isConnected())
+                continue;
+
+            if (crosses_step_boundary(*proc, input_port.getOutputPort().getProcessor()))
+            {
+                const auto counters = proc->getPortDataCounters(input_port);
+                step_stats.input_rows += counters.rows;
+                step_stats.input_bytes += counters.bytes;
+            }
+        }
+
+        for (const auto & output_port : proc->getOutputs())
+        {
+            if (!output_port.isConnected())
+                continue;
+
+            if (crosses_step_boundary(*proc, output_port.getInputPort().getProcessor()))
+            {
+                const auto counters = proc->getPortDataCounters(output_port);
+                step_stats.output_rows += counters.rows;
+                step_stats.output_bytes += counters.bytes;
+            }
+        }
     }
 }
 
@@ -247,7 +253,14 @@ void AnalyzeStepsStats::printStepStats(const IQueryPlanStep * step, WriteBuffer 
                 << " · max " << formatReadableTime(static_cast<double>(group_stats.max_elapsed_ns))
                 << " · sum " << formatReadableTime(static_cast<double>(group_stats.sum_elapsed_ns)) << "\n";
 
-        const StepAnalyzeInfo internal_stats = step->getAnalyzedInternalStats(group, {});
+        const auto step_group_key = std::make_pair(step, group);
+        const auto group_processors_it = processors_by_step_group.find(step_group_key);
+
+        std::vector<IProcessor *> group_processors;
+        if (group_processors_it != processors_by_step_group.end())
+            group_processors = group_processors_it->second;
+
+        const StepAnalyzeInfo internal_stats = step->getAnalyzedInternalStats(group, group_processors);
         if (!internal_stats.empty())
         {
             out << prefix << "    ";

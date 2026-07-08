@@ -652,8 +652,7 @@ StepAnalyzeInfo HashJoin::getAnalyzedInternalStats(size_t group) const
         case JoinStage::Probe:
         {
             const ProbeStats stats = getProbeStats();
-            const double match_rate = stats.lookups ? 100.0 * static_cast<double>(stats.matches) / static_cast<double>(stats.lookups) : 0.0;
-            internal_stats.emplace_back("match rate", match_rate, StepMetric::Format::Percent);
+            appendJoinMatchStats(internal_stats, {stats.total_left_rows, stats.matched_left_rows});
             break;
         }
         case JoinStage::Default:
@@ -1422,9 +1421,9 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
     if (!joined)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
 
-    /// Fold the per-block probe stats carried by the result into our counters.
+    /// Fold the per-block match stats carried by the result into our counters.
     const auto & hash_result = assert_cast<const HashJoinResult &>(*res);
-    addProbeStats(hash_result.getProbeTimes(), hash_result.getMatchTimes());
+    addProbeStats(hash_result.getTotalLeftRows(), hash_result.getMatchedLeftRows());
     return res;
 }
 

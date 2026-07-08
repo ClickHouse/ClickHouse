@@ -81,7 +81,7 @@ public:
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 
-    StepAnalyzeInfo getAnalyzedInternalStats(size_t group, const std::vector<IProcessor *> /*processors*/) const override;
+    StepAnalyzeInfo getAnalyzedInternalStats(size_t group, const std::vector<IProcessor *> processors) const override;
 
 private:
     bool optimized = false;
