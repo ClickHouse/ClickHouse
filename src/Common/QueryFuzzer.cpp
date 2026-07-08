@@ -2268,31 +2268,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 
     const auto * type_qbit = typeid_cast<const DataTypeQBit *>(type.get());
     if (type_qbit && fuzz_rand() % 4 != 0)
-    {
-        /// QBit only accepts Int8/BFloat16/Float32/Float64 element types and a (dimension, stride) pair
-        /// where dimension % stride == 0 and, when actually strided, stride % 8 == 0. We mutate within
-        /// those bounds rather than handing the argument list to the generic fuzzer.
-        static const DataTypePtr qbit_element_types[]
-            = {std::make_shared<DataTypeInt8>(),
-               std::make_shared<DataTypeBFloat16>(),
-               std::make_shared<DataTypeFloat32>(),
-               std::make_shared<DataTypeFloat64>()};
-        const auto element_type = (fuzz_rand() % 2 == 0)
-            ? qbit_element_types[fuzz_rand() % std::size(qbit_element_types)]
-            : type_qbit->getElementType();
-
-        /// Occasionally build a strided QBit, otherwise keep it non-strided (stride == dimension).
-        if (fuzz_rand() % 4 == 0)
-        {
-            const size_t stride = (fuzz_rand() % 16 + 1) * 8; /// multiple of 8 in [8, 128]
-            const size_t num_groups = fuzz_rand() % 8 + 1; /// 1..8 stride groups
-            const size_t dimension = stride * num_groups;
-            return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
-        }
-
-        const size_t dimension = (fuzz_rand() % 2 == 0) ? (fuzz_rand() % 128 + 1) : type_qbit->getDimension();
-        return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
-    }
+        return makeRandomQBit(); /// Replacing with a fresh valid QBit is a valid, round-trippable mutation.
 
     /// NOLINTBEGIN(bugprone-macro-parentheses)
     /// Enum types: add or remove enum values
@@ -2386,6 +2362,30 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         return getRandomType();
 
     return type;
+}
+
+DataTypePtr QueryFuzzer::makeRandomQBit()
+{
+    /// QBit only accepts Int8/BFloat16/Float32/Float64 element types and a (dimension, stride) pair
+    /// where dimension % stride == 0 and, when actually strided, stride % 8 == 0.
+    static const DataTypePtr qbit_element_types[]
+        = {std::make_shared<DataTypeInt8>(),
+           std::make_shared<DataTypeBFloat16>(),
+           std::make_shared<DataTypeFloat32>(),
+           std::make_shared<DataTypeFloat64>()};
+    const auto & element_type = qbit_element_types[fuzz_rand() % std::size(qbit_element_types)];
+
+    /// Occasionally build a strided QBit, otherwise keep it non-strided (stride == dimension).
+    if (fuzz_rand() % 4 == 0)
+    {
+        const size_t stride = (fuzz_rand() % 16 + 1) * 8; /// multiple of 8 in [8, 128]
+        const size_t num_groups = fuzz_rand() % 8 + 1; /// 1..8 stride groups
+        const size_t dimension = stride * num_groups;
+        return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
+    }
+
+    const size_t dimension = fuzz_rand() % 128 + 1;
+    return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
 }
 
 DataTypePtr QueryFuzzer::getRandomType()
@@ -2492,26 +2492,8 @@ DataTypePtr QueryFuzzer::getRandomType()
             return std::make_shared<DataTypeDynamic>(fuzz_rand() % 20);
         case TypeIndex::Object:
             return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
-        case TypeIndex::QBit: {
-            static const DataTypePtr qbit_element_types[]
-                = {std::make_shared<DataTypeInt8>(),
-                   std::make_shared<DataTypeBFloat16>(),
-                   std::make_shared<DataTypeFloat32>(),
-                   std::make_shared<DataTypeFloat64>()};
-            const auto & element_type = qbit_element_types[fuzz_rand() % std::size(qbit_element_types)];
-
-            /// Occasionally build a strided QBit. The constraints are: dimension % stride == 0 and (when strided) stride % 8 == 0.
-            if (fuzz_rand() % 4 == 0)
-            {
-                const size_t stride = (fuzz_rand() % 16 + 1) * 8; /// multiple of 8 in [8, 128]
-                const size_t num_groups = fuzz_rand() % 8 + 1; /// 1..8 stride groups
-                const size_t dimension = stride * num_groups;
-                return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
-            }
-
-            const size_t dimension = fuzz_rand() % 128 + 1;
-            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
-        }
+        case TypeIndex::QBit:
+            return makeRandomQBit();
         case TypeIndex::AggregateFunction: {
             const size_t nargs = fuzz_rand() % 3;
             String name = "count";

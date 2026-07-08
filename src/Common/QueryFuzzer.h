@@ -233,6 +233,10 @@ private:
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
     DataTypePtr getRandomType();
+    /// Builds a random, structurally valid QBit type (valid element type + a dimension/stride pair
+    /// satisfying dimension % stride == 0 and, when strided, stride % 8 == 0). Shared by fuzzDataType
+    /// and getRandomType so the stride constraints live in one place.
+    DataTypePtr makeRandomQBit();
     void fuzzJoinType(ASTTableJoin * table_join);
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast, size_t nproj);
