@@ -2098,6 +2098,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
             if (fuzz_rand() % 4 != 0)
             {
                 DataTypes new_arg_types = type_simple_aggr->getArgumentsDataTypes();
+                Array new_parameters = type_simple_aggr->getParameters();
                 bool changed = false;
                 for (auto & arg_type : new_arg_types)
                 {
@@ -2108,10 +2109,18 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
                         changed = true;
                     }
                 }
+                /// Fuzz any literal parameters too (rare for SimpleAggregateFunction, but forwarded unchanged
+                /// otherwise); the factory re-validates and returns nullptr if the fuzzed parameters are rejected.
+                if (!new_parameters.empty() && fuzz_rand() % 3 == 0)
+                {
+                    for (auto & param : new_parameters)
+                        param = fuzzField(param);
+                    changed = true;
+                }
                 if (changed)
                 {
                     if (auto fuzzed = makeAggregateFunctionType(
-                            type_simple_aggr->getFunctionName(), new_arg_types, type_simple_aggr->getParameters(), /*simple=*/true))
+                            type_simple_aggr->getFunctionName(), new_arg_types, new_parameters, /*simple=*/true))
                         return fuzzed;
                 }
             }
@@ -2321,6 +2330,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         const auto nargs = type_aggr->getArgumentsDataTypes().size();
         String new_name = type_aggr->getFunctionName();
         DataTypes new_arg_types = type_aggr->getArgumentsDataTypes();
+        Array new_parameters = type_aggr->getParameters();
         bool changed = false;
 
         if (nargs > 0 && nargs < 3 && swapAggrs.contains(nargs) && fuzz_rand() % 3 == 0)
@@ -2341,9 +2351,18 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
                 changed = true;
             }
         }
+        /// ASTDataType is opaque to the generic walk, so this arm is the only mutation path for the aggregate's
+        /// literal parameters (e.g. quantileExact(0.5), topK(10)). Fuzz the Field values and rebuild through the
+        /// factory, which re-validates and returns nullptr if the fuzzed parameters are rejected.
+        if (!new_parameters.empty() && fuzz_rand() % 3 == 0)
+        {
+            for (auto & param : new_parameters)
+                param = fuzzField(param);
+            changed = true;
+        }
         if (changed)
         {
-            if (auto fuzzed = makeAggregateFunctionType(new_name, new_arg_types, type_aggr->getParameters(), /*simple=*/false))
+            if (auto fuzzed = makeAggregateFunctionType(new_name, new_arg_types, new_parameters, /*simple=*/false))
                 return fuzzed;
         }
         return type;
