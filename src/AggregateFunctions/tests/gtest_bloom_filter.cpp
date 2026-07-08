@@ -27,6 +27,8 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
+
 using namespace DB;
 
 namespace DB::ErrorCodes
@@ -146,21 +148,24 @@ TEST(BloomFilterData, OptimalParamsHonorFalsePositiveRateAfterIntegerHashSelecti
 
 TEST(BloomFilterData, AllocationObeysMemoryLimit)
 {
-    MainThreadStatus::getInstance();
+    std::optional<ThreadStatus> thread_status;
+    if (!CurrentThread::isInitialized())
+        thread_status.emplace();
 
-    auto & thread_tracker = CurrentThread::get().memory_tracker;
+    auto & thread = CurrentThread::get();
+    auto & thread_tracker = thread.memory_tracker;
 
-    const Int64 saved_untracked_limit = CurrentThread::get().untracked_memory_limit;
+    const Int64 saved_untracked_limit = thread.untracked_memory_limit;
     const Int64 saved_thread_hard_limit = thread_tracker.getHardLimit();
     const Int64 saved_total_hard_limit = total_memory_tracker.getHardLimit();
 
     SCOPE_EXIT({
         total_memory_tracker.setHardLimit(saved_total_hard_limit);
         thread_tracker.setHardLimit(saved_thread_hard_limit);
-        CurrentThread::get().untracked_memory_limit = saved_untracked_limit;
+        thread.untracked_memory_limit = saved_untracked_limit;
     });
 
-    CurrentThread::get().untracked_memory_limit = 0;
+    thread.untracked_memory_limit = 0;
     CurrentThread::flushUntrackedMemory();
     total_memory_tracker.resetCounters();
     thread_tracker.resetCounters();
