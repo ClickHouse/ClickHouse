@@ -2222,7 +2222,6 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     ///    counters). Bytes our own worker committed meanwhile are dropped: the serve reads
     ///    and counts them from the cells, once. A bypass gap has no fill-target writer:
     ///    no-op there.
-    IntervalSet cov = display.coverage(fetch_window);
     {
         ChainedBuffers waited;
         IntervalSet wait_cov = display.coverage(window);
@@ -2275,7 +2274,9 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
         piece = nextScheduledPiece(ri, window);
     if (piece.size == 0)
     {
-        auto gaps = cov.subtract(fetch_window);
+        /// Coverage read HERE, after the wait: bytes it banked or the worker committed
+        /// meanwhile are not gaps anymore, so the piece is not re-fetched over them.
+        auto gaps = display.coverage(fetch_window).subtract(fetch_window);
         if (gaps.empty())
             return false;
         piece = gaps.front();
