@@ -259,8 +259,10 @@ void HTTPHandler::processQuery(
     if (!default_format.empty())
         context->setDefaultFormat(default_format);
 
-    /// Mutating HTTP methods (POST, PUT, DELETE) may run modifying queries; other methods imply readonly.
-    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());
+    /// POST always allows modifying queries. For SQL-defined handlers (which set `introspection_handler_name`)
+    /// the mutating idempotent methods PUT and DELETE are allowed to modify data too, as decided per handler in
+    /// `makeSQLDefinedHandler`. Config-defined and built-in handlers keep the POST-only behavior.
+    setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod(), /*allow_mutating_idempotent_methods=*/ !introspection_handler_name.empty());
 
     /// Set the query id supplied by the user, if any, and also update the OpenTelemetry fields.
     String query_id = params.get("query_id", request.get("X-ClickHouse-Query-Id", ""));
