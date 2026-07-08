@@ -207,27 +207,27 @@ class CHVersion:
     def get_current_version_as_dict(cls):
         """Version stamped into the binary during a CI build.
 
-        Starts from the rev-list-based version and adjusts for the CI `Info`
-        context: the tweak is pinned to 1 in PRs (it is meaningless there and
-        otherwise diverges across re-runs for the same HEAD, yielding two versions
-        at one artifact prefix), the type is derived from the branch, and githash
-        is the CI sha.
+        In a PR the tweak is pinned to 1 and git rev-list is NOT consulted: the
+        merge commit's count diverges across close/reopen for the same HEAD,
+        which would upload diverging version strings to one artifact prefix. On
+        master / release branches the tweak is the real commit count (via
+        `_get_current_version_from_rev_list`) and the type is derived from the
+        branch. githash is always the CI sha.
         """
-        version = cls._get_current_version_from_rev_list()
         info = Info()
+        version_type = "testing"
         if info.pr_number != 0:
+            version = cls.get_release_version_as_dict()
             version["tweak"] = 1
             version["string"] = (
                 f'{version["major"]}.{version["minor"]}.{version["patch"]}.1'
             )
-        version_type = "testing"
-        if info.pr_number == 0 and bool(
-            re.match(r"^\d{2}\.\d+$", info.git_branch.removeprefix("release/"))
-        ):
-            if version["minor"] % 5 == 3:
-                version_type = "lts"
-            else:
-                version_type = "stable"
+        else:
+            version = cls._get_current_version_from_rev_list()
+            if bool(
+                re.match(r"^\d{2}\.\d+$", info.git_branch.removeprefix("release/"))
+            ):
+                version_type = "lts" if version["minor"] % 5 == 3 else "stable"
         version["githash"] = info.sha
         version["describe"] = f'v{version["string"]}-{version_type}'
         return version
