@@ -282,11 +282,15 @@ public:
             String col_name = !argument_names[i].empty() ? argument_names[i] : fmt::format("arg{}", i);
             input_header.insert(ColumnWithTypeAndName(arguments[i], col_name));
         }
+        // Built once, with default FormatSettings, purely for its constructor's side effect:
+        // it validates argument types eagerly when serialization_format is ColumnBinary (see
+        // ColumnBinaryOutputFormat's constructor) instead of deferring to the first call.
+        // executeOnBlock below builds its own format from the query's actual Context for the
+        // real precompute/serialize work, since this one's default settings would silently
+        // diverge from whatever the query actually configured.
         probe_format = FormatFactory::instance().getOutputFormatWithDefaultSettings(serialization_format, probe_null_wb, input_header);
-        // probe_format's construction above already validates argument types when
-        // serialization_format is ColumnBinary (see ColumnBinaryOutputFormat's
-        // constructor); the result type is only read back lazily on the first call,
-        // so validate it eagerly here too.
+        // The result type is only read back lazily on the first call, so validate it eagerly
+        // here too.
         if (serialization_format == "ColumnBinary")
             validateColumnarV1SupportedType(result_type);
     }
@@ -346,7 +350,17 @@ public:
         {
             ProfileEventTimeIncrement<Microseconds> timer_serialize(ProfileEvents::WasmSerializationMicroseconds);
 
-            std::optional<uint64_t> precomputed = probe_format->precomputeSerializedSize(block, num_rows);
+            // Build a fresh probe from the query's actual Context here rather than reusing
+            // probe_format (built once at construction with FormatFactory's default
+            // FormatSettings, kept only for its early argument-type-validation side effect):
+            // otherwise this precompute/allocate fast path silently ignores per-query settings
+            // like column_binary_disable_preallocation while the real `out` format below
+            // correctly picks them up from context, so the two could disagree on whether/how
+            // to serialize. A local NullWriteBuffer (not the probe_null_wb member) avoids a
+            // data race if this const method is called concurrently for the same instance.
+            NullWriteBuffer local_probe_wb;
+            auto probe = context->getOutputFormat(serialization_format, local_probe_wb, block.cloneEmpty());
+            std::optional<uint64_t> precomputed = probe->precomputeSerializedSize(block, num_rows);
 
             if (precomputed)
             {
