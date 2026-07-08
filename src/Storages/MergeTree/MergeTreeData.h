@@ -476,7 +476,9 @@ public:
         bool allow_tuple_element_aggregation = false;
 
         /// Check that needed columns are present and have correct types.
-        void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const;
+        /// `sanity_checks` is true only when the table is being created (not attached/loaded); some
+        /// checks that would break the loading of already-existing tables are gated on it.
+        void check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata, bool sanity_checks) const;
 
         String getModeName() const;
 
@@ -1704,6 +1706,8 @@ protected:
         const StorageInMemoryMetadata & old_metadata,
         bool attach = false,
         ContextPtr local_context = nullptr);
+
+    void checkMinMaxIndexForJSON(const IndexDescription & index) const;
 
     void checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key);
 

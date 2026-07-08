@@ -290,6 +290,17 @@ DB::Names GlueCatalog::getTables() const
     return result;
 }
 
+DataLake::ICatalog::Namespaces GlueCatalog::getNamespaces() const
+{
+    /// Glue databases are flat — they cannot contain nested namespaces.
+    return getDatabases("");
+}
+
+DB::Names GlueCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return getTablesForDatabase(namespace_name);
+}
+
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
     Aws::Glue::Model::GetTableRequest request;
