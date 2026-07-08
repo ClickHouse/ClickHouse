@@ -437,5 +437,24 @@ def test_refreshable_mv_scheduling_missing_flags_when_exchange_wins_race(started
     # not that the exchange was skipped.
     assert node.query("SELECT count() FROM rdb5.mv").strip() == str(REFRESH_ROWS)
 
+    # The give-up path must reconcile the finished attempt in Keeper before entering the permanent
+    # coordination-unavailable state. The reconciliation write (set + remove, no MULTI_READ /
+    # CREATE_IF_NOT_EXISTS needed) records the successful attempt and clears the '/running' lock. If
+    # it were skipped, last_success_time would stay NULL and '/running' would dangle until another
+    # replica reclaimed it as a crash, leaving Keeper and system.view_refreshes on the pre-refresh
+    # state even though the target table was already swapped.
+    last_success = node.query(
+        "SELECT last_success_time IS NOT NULL FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb5'"
+    ).strip()
+    assert last_success == "1", last_success
+
+    uuid = node.query(
+        "SELECT uuid FROM system.tables WHERE database = 'rdb5' AND name = 'mv'"
+    ).strip()
+    running_exists = node.query(
+        f"SELECT count() FROM system.zookeeper WHERE path = '/clickhouse/tables/{uuid}/1' AND name = 'running'"
+    ).strip()
+    assert running_exists == "0", running_exists
+
     node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
     node.query("DROP DATABASE rdb5 SYNC")

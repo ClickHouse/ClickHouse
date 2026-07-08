@@ -793,9 +793,11 @@ void RefreshTask::doScheduling(bool is_shutdown)
                 /// the local execution before giving up coordination: otherwise a non-APPEND refresh
                 /// would keep exchanging/dropping tables locally while Keeper still thinks this
                 /// replica is running the refresh, blocking the coordinated view on other replicas.
-                /// We can't finalize the refresh in Keeper here (that needs the multi-read this
-                /// Keeper lacks, and a throwing write would hit the catch-all and abort the server),
-                /// so we just cancel it; the stale '/running' znode is then reclaimed by the existing
+                /// A refresh that has already Finished is finalized in Keeper here (see below):
+                /// updateCoordinationState only does set + optional remove, which needs neither
+                /// MULTI_READ nor CREATE_IF_NOT_EXISTS, so it works on this downgraded Keeper. A
+                /// refresh still in flight can't be finalized (its result isn't ready), so we only
+                /// interrupt it; the stale '/running' znode is then reclaimed by the existing
                 /// crashed-replica grace period, same as if this replica had crashed.
                 ///
                 /// If a refresh is still in flight (Requested/Running), do NOT declare coordination
@@ -821,7 +823,28 @@ void RefreshTask::doScheduling(bool is_shutdown)
                 }
 
                 if (execution.state == ExecutionState::State::Finished)
+                {
+                    /// The deferred in-flight attempt finished. Reconcile its result in Keeper
+                    /// (write last_success_*/last_attempt_*, clear the '/running' lock, notify
+                    /// dependents) BEFORE giving up coordination permanently. Otherwise the target
+                    /// table would have been swapped locally while Keeper still records this replica
+                    /// as running: last_* stay on the pre-refresh state, dependents are never
+                    /// notified, and '/running' dangles until another replica reclaims it as a crash.
+                    /// updateCoordinationState only does set + optional remove, so it needs neither
+                    /// MULTI_READ nor CREATE_IF_NOT_EXISTS and works on this downgraded Keeper.
+                    if (execution.znode.version == coordination.root_znode.version)
+                    {
+                        if (!updateCoordinationState(execution.znode, /*running=*/ false, zookeeper, lock))
+                            return;
+                    }
+                    else
+                    {
+                        CoordinationZnode znode = coordination.root_znode;
+                        znode.refresh_running = false;
+                        updateCoordinationState(znode, /*running=*/ false, zookeeper, lock);
+                    }
                     execution.state = ExecutionState::State::None;
+                }
                 else if (execution.state != ExecutionState::State::None)
                     interruptExecution();
 
