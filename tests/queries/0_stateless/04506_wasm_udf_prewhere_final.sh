@@ -40,8 +40,17 @@ ${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=1 --query_plan_optimize_
 ${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=1 --query_plan_optimize_prewhere=1 -q "SELECT count() FROM (EXPLAIN actions=1 SELECT * FROM t_wasm_prewhere_final FINAL WHERE wasm_prewhere_nondet(k) > 100) WHERE explain LIKE '%Prewhere filter%'"
 
 echo "= legacy AST-level optimization: deterministic is moved, non-deterministic is not ="
-${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=0 --query_plan_optimize_prewhere=0 -q "EXPLAIN SYNTAX SELECT * FROM t_wasm_prewhere_final FINAL WHERE wasm_prewhere_det(k) > 100" | grep -c "PREWHERE" || true
-${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=0 --query_plan_optimize_prewhere=0 -q "EXPLAIN SYNTAX SELECT * FROM t_wasm_prewhere_final FINAL WHERE wasm_prewhere_nondet(k) > 100" | grep -c "PREWHERE" || true
+# capture the output first so a failing query breaks the reference instead of counting as 0
+count_ast_prewhere() {
+    local output
+    if ! output=$(${CLICKHOUSE_CLIENT} ${MOVE_SETTINGS} --enable_analyzer=0 --query_plan_optimize_prewhere=0 -q "EXPLAIN SYNTAX SELECT * FROM t_wasm_prewhere_final FINAL WHERE $1" 2>&1); then
+        echo "query failed: ${output}"
+        return
+    fi
+    echo "${output}" | grep -c "PREWHERE" || true
+}
+count_ast_prewhere "wasm_prewhere_det(k) > 100"
+count_ast_prewhere "wasm_prewhere_nondet(k) > 100"
 
 ${CLICKHOUSE_CLIENT} << 'EOF'
 DROP TABLE t_wasm_prewhere_final;
