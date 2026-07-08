@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #include <Columns/ColumnArray.h>
@@ -955,4 +956,95 @@ TEST(ColumnarV1Wire, LowCardinalityStringEncodeDecodeRoundTrip)
     EXPECT_EQ(decoded_lc->getDataAt(1), "b");
     EXPECT_EQ(decoded_lc->getDataAt(2), "a");
     EXPECT_EQ(decoded_lc->getDataAt(3), "c");
+}
+
+// ── Bounds check: wrapped offset must not bypass the check via integer overflow ──
+//
+// A malformed frame can set an offset field close to UINT64_MAX. The naive check
+// `offset + length > buf.size()` overflows the addition and wraps back into range,
+// trivially passing. The safe form checks `offset > buf.size()` first, then bounds
+// the length against the *remaining* space. These three cases exercise that pattern
+// at the null map, COL_BYTES offsets array, and COL_FIXED8 data sites.
+
+TEST(ColumnarV1Wire, BoundsCheckWrappedNullOffsetRejected)
+{
+    const uint32_t num_rows = 3;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_FIXED64 | COL_IS_NULLABLE;
+    // null_offset + num_rows would wrap a naive uint64_t addition back under buf.size().
+    desc.null_offset = std::numeric_limits<uint64_t>::max() - 1;
+    desc.data_offset = data_off;
+    desc.data_size   = num_rows * 8u;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
+}
+
+TEST(ColumnarV1Wire, BoundsCheckWrappedColBytesOffsetsOffsetRejected)
+{
+    const uint32_t num_rows  = 1;
+    const uint32_t data_off  = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_size = 1u;
+
+    std::vector<uint8_t> buf(data_off + data_size, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type = COL_BYTES;
+    // offsets_offset + (num_rows + 1) * 8 would wrap a naive uint64_t addition back
+    // under buf.size().
+    desc.offsets_offset = std::numeric_limits<uint64_t>::max() - 4;
+    desc.data_offset    = data_off;
+    desc.data_size      = data_size;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeString>();
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
+}
+
+TEST(ColumnarV1Wire, BoundsCheckWrappedLowCardIndexOffsetsOffsetRejected)
+{
+    const uint32_t num_rows = 4;
+    constexpr uint64_t header_bytes = 4u + 4u + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    std::vector<uint8_t> buf(data_off + header_bytes, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    // Minimal COL_LOWCARD header: dict_row_count=1, index_elem_width=1, empty dict_desc
+    // (COL_BYTES, 0 rows, 0 bytes) so the dictionary decode itself succeeds trivially.
+    uint8_t * header = buf.data() + data_off;
+    uint32_t dict_row_count = 1;
+    std::memcpy(header, &dict_row_count, 4);
+    header[4] = 1;  // index_elem_width
+    ColDescriptor dict_desc{};
+    dict_desc.type        = COL_BYTES;
+    dict_desc.offsets_offset = data_off;  // 0-row COL_BYTES: offsets array is [0], within region
+    dict_desc.data_offset = data_off;
+    dict_desc.data_size   = 0;
+    std::memcpy(header + 8u, &dict_desc, COLUMNAR_DESC_BYTES);
+
+    ColDescriptor desc{};
+    desc.type = COL_LOWCARD;
+    // offsets_offset + num_rows * index_elem_width would wrap a naive uint64_t addition
+    // back under buf.size(), letting the index array read run past the frame.
+    desc.offsets_offset = std::numeric_limits<uint64_t>::max() - 2;
+    desc.data_offset = data_off;
+    desc.data_size   = header_bytes;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
 }

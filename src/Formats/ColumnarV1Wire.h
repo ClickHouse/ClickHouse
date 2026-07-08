@@ -843,7 +843,11 @@ inline MutableColumnPtr readColumnFromDesc(
             // n == UINT32_MAX wraps the uint32_t addition to 0, making outer_bytes 0 and
             // trivially passing the bounds check below.
             uint64_t outer_bytes = (static_cast<uint64_t>(n) + 1u) * sizeof(uint64_t);
-            if (p + outer_bytes > data_end)
+            // Compare against the remaining space (data_end - p, safe since p <= data_end is
+            // a loop invariant) rather than forming p + outer_bytes: outer_bytes is guest-
+            // controlled and can be large enough that the raw pointer addition overflows the
+            // address space, producing UB before the comparison even runs.
+            if (outer_bytes > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX nested Array outer offsets out of bounds");
             const uint8_t * outer_offs = p;
@@ -884,13 +888,15 @@ inline MutableColumnPtr readColumnFromDesc(
         {
             // Same overflow hazard as the Array branch above: widen before the +1.
             uint64_t off_bytes = (static_cast<uint64_t>(n) + 1u) * sizeof(uint64_t);
-            if (p + off_bytes > data_end)
+            // See the Array branch above: compare against remaining space, not p + off_bytes,
+            // to avoid overflowing pointer arithmetic on a guest-controlled length.
+            if (off_bytes > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX String offsets out of bounds");
             const uint8_t * wire_offs = p;
             p += off_bytes;
             uint64_t total_chars = unalignedLoad<uint64_t>(wire_offs + n * 8u);
-            if (p + total_chars > data_end)
+            if (total_chars > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX String chars out of bounds");
             const uint8_t * chars_src = p;
@@ -928,7 +934,7 @@ inline MutableColumnPtr readColumnFromDesc(
         {
             // Mirrors writeComplexData: u8 null_map[n] prepended, then the nested
             // type's own complexData layout.
-            if (p + static_cast<uint64_t>(n) > data_end)
+            if (static_cast<uint64_t>(n) > static_cast<uint64_t>(data_end - p))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_COMPLEX nested Nullable null map out of bounds");
             auto null_map_col = ColumnUInt8::create(n);
@@ -942,7 +948,7 @@ inline MutableColumnPtr readColumnFromDesc(
                 "COLUMNAR_V1: nested Variant inside Array/Tuple is not supported in COL_COMPLEX; "
                 "use a flat variant column or a different format");
         uint32_t elem_bytes = static_cast<uint32_t>(type->getSizeOfValueInMemory());
-        if (p + static_cast<uint64_t>(n) * elem_bytes > data_end)
+        if (static_cast<uint64_t>(n) * elem_bytes > static_cast<uint64_t>(data_end - p))
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_COMPLEX fixed data out of bounds");
         auto col = type->createColumn();
@@ -967,7 +973,10 @@ inline MutableColumnPtr readColumnFromDesc(
         if (desc.null_offset == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_IS_NULLABLE is set but null_offset is 0 (missing null map)");
-        if (desc.null_offset + static_cast<uint64_t>(rows_to_dec) > buf.size())
+        // null_offset is an untrusted uint64_t straight from the wire: check the offset
+        // against buf.size() first, then the length against the *remaining* space, instead
+        // of offset + length > buf.size(), which a large offset can wrap past overflow.
+        if (desc.null_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) > buf.size() - desc.null_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: null map out of bounds: offset={}, rows={}, buf={}",
                 desc.null_offset, rows_to_dec, buf.size());
@@ -985,11 +994,15 @@ inline MutableColumnPtr readColumnFromDesc(
         // and rows_to_dec == UINT32_MAX would wrap (rows_to_dec + 1) to 0 in uint32_t
         // arithmetic before the cast, making the bounds check below trivially pass and letting
         // offsets.resize/the read loop run against out-of-frame data.
-        if (desc.offsets_offset + (static_cast<uint64_t>(rows_to_dec) + 1u) * 8u > buf.size())
+        // offsets_offset is an untrusted uint64_t straight from the wire: check the offset
+        // against buf.size() first, then the length against the *remaining* space, instead
+        // of offset + length > buf.size(), which a large offset can wrap past overflow.
+        const uint64_t offsets_bytes = (static_cast<uint64_t>(rows_to_dec) + 1u) * 8u;
+        if (desc.offsets_offset > buf.size() || offsets_bytes > buf.size() - desc.offsets_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_BYTES offsets array out of bounds: offset={}, rows={}, buf={}",
                 desc.offsets_offset, rows_to_dec, buf.size());
-        if (desc.data_offset + desc.data_size > buf.size())
+        if (desc.data_offset > buf.size() || desc.data_size > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_BYTES data out of bounds: offset={}, size={}, buf={}",
                 desc.data_offset, desc.data_size, buf.size());
@@ -1040,7 +1053,7 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED8 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
-        if (desc.data_offset + static_cast<uint64_t>(rows_to_dec) > buf.size())
+        if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED8 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
@@ -1057,7 +1070,7 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED16 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
-        if (desc.data_offset + static_cast<uint64_t>(rows_to_dec) * 2u > buf.size())
+        if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 2u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED16 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
@@ -1073,7 +1086,7 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED32 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
-        if (desc.data_offset + static_cast<uint64_t>(rows_to_dec) * 4u > buf.size())
+        if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 4u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED32 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
@@ -1089,7 +1102,7 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED64 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
-        if (desc.data_offset + static_cast<uint64_t>(rows_to_dec) * 8u > buf.size())
+        if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 8u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED64 data out of bounds: offset={}, rows={}, buf={}",
                 desc.data_offset, rows_to_dec, buf.size());
@@ -1197,14 +1210,14 @@ inline MutableColumnPtr readColumnFromDesc(
                 "COLUMNAR_V1: COL_VARIANT declared type has too many alternatives: {}", alt_types.size());
 
         // Discriminators: uint8[rows_to_dec] at null_offset (NULL_DISCRIMINATOR=0xFF for NULL rows).
-        if (desc.null_offset + static_cast<uint64_t>(rows_to_dec) > buf.size())
+        if (desc.null_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) > buf.size() - desc.null_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_VARIANT discriminators out of bounds: offset={}, rows={}, buf={}",
                 desc.null_offset, rows_to_dec, buf.size());
         const uint8_t * disc_src = buf.data() + desc.null_offset;
 
         // Row offsets: uint32[rows_to_dec] at offsets_offset (position within the row's sub-column).
-        if (desc.offsets_offset + static_cast<uint64_t>(rows_to_dec) * 4u > buf.size())
+        if (desc.offsets_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 4u > buf.size() - desc.offsets_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_VARIANT row offsets out of bounds: offset={}, rows={}, buf={}",
                 desc.offsets_offset, rows_to_dec, buf.size());
@@ -1375,7 +1388,8 @@ inline MutableColumnPtr readColumnFromDesc(
         // its caller, so the subspan is safe.
         auto dict_col = readColumnFromDesc(buf.subspan(0, region_end), dict_desc, dict_row_count, lowcard_type->getDictionaryType());
 
-        if (desc.offsets_offset + static_cast<uint64_t>(rows_to_dec) * index_elem_width > buf.size())
+        if (desc.offsets_offset > buf.size()
+            || static_cast<uint64_t>(rows_to_dec) * index_elem_width > buf.size() - desc.offsets_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_LOWCARD index array out of bounds: offset={}, rows={}, width={}, buf={}",
                 desc.offsets_offset, rows_to_dec, static_cast<uint32_t>(index_elem_width), buf.size());
