@@ -92,6 +92,14 @@ SELECT max(CAST([1] AS Variant(Array(UInt8), Array(UInt16)))); -- { serverError 
 SELECT sumArray([CAST(1 AS Variant(UInt8, UInt64)), CAST(2 AS Variant(UInt8, UInt64))]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT minArray([CAST(1 AS Variant(UInt8, UInt64)), CAST(2 AS Variant(UInt8, UInt64))]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 
+-- The -Tuple combinator (the only combinator that wraps one nested function per argument list, e.g. one per tuple
+-- element) resolves each element's function without the adapter too, so a nested Variant inside a tuple element also
+-- stays out of scope: sumTuple(tuple(Variant(...))) is rejected with the original error, just like the -Array case
+-- above. Ordinary (non-Variant) tuples are unaffected.
+SELECT 'sumTuple', sumTuple(tuple(number, number + 1)) FROM numbers(4);
+SELECT sumTuple(tuple(CAST(1 AS Variant(UInt8, UInt64)))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT avgTuple(tuple(CAST(1 AS Variant(UInt8, UInt64)))); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
 -- The -Merge combinator over an AggregateFunction(f, Variant(...)) state type. Such a state type is constructible
 -- (e.g. as the type of a non-final aggregation block, which keeps the original Variant argument list) and
 -- reconstructible, so -Merge must resolve its nested function through the same Variant adapter, otherwise it would

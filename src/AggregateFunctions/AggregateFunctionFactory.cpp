@@ -500,16 +500,22 @@ AggregateFunctionPtr AggregateFunctionFactory::getImpl(
         AggregateFunctionPtr combined_function;
         if (combinator->transformsMultipleNestedFunctions())
         {
-            /// A combinator that wraps one nested function per argument list (e.g. -Tuple: one per
-            /// tuple element). Nested Variant arguments in this path are resolved through the normal
-            /// adapter-aware get() (the top-level Variant handling applies to each nested argument list);
-            /// the -Merge state-reintroduction special case below is specific to single-nested combinators.
+            /// A combinator that wraps one nested function per argument list (e.g. -Tuple: one per tuple
+            /// element). Like the single-nested path below, resolve each nested function without the Variant
+            /// fallback adapter: a Variant appearing inside a tuple element is a nested (not a top-level)
+            /// Variant and stays out of scope, so e.g. sumTuple(tuple(CAST(1 AS Variant(UInt8, UInt64)))) keeps
+            /// throwing ILLEGAL_TYPE_OF_ARGUMENT like the other nested-Variant cases (-Array etc.). This is the
+            /// only multiple-nested combinator (-Tuple) and it does not consume an aggregate-function state, so
+            /// the -Merge state-reintroduction special case below does not arise here; we still propagate
+            /// apply_variant_adapter_to_nested so a deeper state-reintroducing combinator remains consistent.
+            /// (For non-Variant arguments this is equivalent to the plain get() master used here.)
             auto nested_arguments_list = combinator->transformArgumentsForMultipleNestedFunctions(argument_types);
 
             VectorWithMemoryTracking<AggregateFunctionPtr> nested_functions;
             nested_functions.reserve(nested_arguments_list.size());
             for (const auto & nested_arguments : nested_arguments_list)
-                nested_functions.push_back(get(nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant));
+                nested_functions.push_back(getWithoutVariantAdapter(
+                    nested_name, action, nested_arguments, nested_parameters, out_properties, state_variant, apply_variant_adapter_to_nested));
 
             combined_function = combinator->transformAggregateFunctionFromMultipleNestedFunctions(
                 getAliasToOrName(nested_name), std::move(nested_functions), out_properties, argument_types, parameters);
