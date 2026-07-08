@@ -39,6 +39,11 @@ namespace DB::ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace DB::Setting
+{
+    extern const SettingsBool use_iceberg_metadata_files_cache;
+}
+
 namespace DB::Iceberg
 {
 
@@ -130,18 +135,20 @@ static Plan getPlan(
     Plan plan;
     plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
 
+    const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_table_components.metadata_cache : nullptr;
     const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
-        persistent_table_components.metadata_cache,
+        effective_cache,
         context,
         log.get(),
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method);
 
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
     if (initial_metadata_object->getValue<Int32>(Iceberg::f_format_version) < 2)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Compaction is supported only for format_version 2.");

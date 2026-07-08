@@ -4,6 +4,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 
+#include <Core/Settings.h>
 #include <Poco/JSON/Object.h>
 
 #include <Common/logger_useful.h>
@@ -12,6 +13,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
+
+namespace DB::Setting
+{
+extern const SettingsBool use_iceberg_metadata_files_cache;
+}
 
 namespace DB::Iceberg
 {
@@ -127,11 +133,13 @@ ReachableFilesResult collectReachableFiles(
     ContextPtr context,
     LoggerPtr log)
 {
+    const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_table_components.metadata_cache : nullptr;
     auto [version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
-        persistent_table_components.metadata_cache,
+        effective_cache,
         context,
         log.get(),
         persistent_table_components.table_uuid,
@@ -142,7 +150,7 @@ ReachableFilesResult collectReachableFiles(
     auto metadata = getMetadataJSONObject(
         metadata_path,
         object_storage,
-        persistent_table_components.metadata_cache,
+        effective_cache,
         context,
         log,
         compression_method,
