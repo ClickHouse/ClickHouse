@@ -5,6 +5,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SnapshotFilesTraversal.h>
 
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Poco/JSON/Object.h>
 
 #include <Common/logger_useful.h>
