@@ -121,6 +121,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsBool merge_tree_use_prefixes_deserialization_thread_pool;
+    extern const SettingsBool use_streaming_marks_compression;
 }
 
 namespace ErrorCodes
@@ -843,7 +844,8 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
                 /*save_marks_in_cache=*/ true,
                 read_settings,
                 /*load_marks_threadpool=*/ nullptr,
-                /*num_columns_in_mark=*/ 1));
+                /*num_columns_in_mark=*/ 1,
+                storage.getContext()->getSettingsRef()[Setting::use_streaming_marks_compression]));
 
             loaders.back()->startAsyncLoad();
         }
@@ -1063,6 +1065,19 @@ size_t IMergeTreeDataPart::getFileSizeOrZero(const String & file_name) const
     if (checksum == checksums.files.end())
         return 0;
     return checksum->second.file_size;
+}
+
+size_t IMergeTreeDataPart::getFileSizeOrZeroResolved(const String & stream_name, const String & extension) const
+{
+    /// Resolve the stream's actual on-disk name (original or hashed) from checksums and read its
+    /// size there (no I/O). A stream with no checksums entry -- e.g. a substream bundled in
+    /// skp_idx.packed -- is sized via the storage instead. Lets callers ask for a stream's size
+    /// without knowing its on-disk name or layout. Mirrors getStreamNameOrHashResolved.
+    if (auto actual = getStreamNameOrHash(stream_name, extension, checksums))
+        return getFileSizeOrZero(*actual + extension);
+    const auto & part_storage = getDataPartStorage();
+    const String file_name = stream_name + extension;
+    return part_storage.existsFile(file_name) ? part_storage.getFileSize(file_name) : 0;
 }
 
 String IMergeTreeDataPart::getColumnNameWithMinimumCompressedSize(const NamesAndTypesList & available_columns) const
@@ -1686,6 +1701,13 @@ void IMergeTreeDataPart::removeDeleteOnDestroyMarker()
 
 void IMergeTreeDataPart::removeVersionMetadata()
 {
+    /// Remove both the committed metadata file and any leftover temporary file. A stale
+    /// `txn_version.txt.tmp` left behind without `txn_version.txt` makes the part load as a
+    /// rolled-back transaction (see `VersionMetadataOnDisk::loadMetadata`) and get discarded as
+    /// `Outdated`, so it must be cleaned up together with the main file. Remove the temporary file
+    /// first so the cleanup is fail-closed: a failure between the two removals leaves a valid
+    /// `txn_version.txt` rather than the dangerous tmp-only state.
+    getDataPartStorage().removeFileIfExists(VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME);
     getDataPartStorage().removeFileIfExists(VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
 }
 
@@ -2681,13 +2703,8 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     auto secondary_indices_descriptions = storage_metadata_snapshot->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
 
-    /// For packed-archive substreams the per-virtual-file entry is intentionally absent from
-    /// checksums.txt (the archive's own entry covers them). Fall back to the storage overlay
-    /// here so `secondary_indices_compressed_bytes` reflects packed indices too: existsFile /
-    /// getFileSize transparently serve virtual files from skp_idx.packed for names that aren't
-    /// real on-disk files.
-    const auto & storage_ref = getDataPartStorage();
-
+    /// A substream with no standalone checksums entry (e.g. bundled in skp_idx.packed) is sized
+    /// via getFileSizeOrZeroResolved below, so `secondary_indices_compressed_bytes` reflects it too.
     for (auto & index_description : secondary_indices_descriptions)
     {
         auto index_ptr = MergeTreeIndexFactory::instance().get(storage_metadata_snapshot, index_description, *storage.getSettings());
@@ -2717,50 +2734,20 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
                         substream_size.data_uncompressed = bin_checksum->second.file_size;
                 }
             }
-            else
+            else if (size_t size = getFileSizeOrZeroResolved(index_stream_name, index_substream.extension))
             {
-                /// Packed substreams: not in checksums.txt as standalone files because they
-                /// live inside skp_idx.packed. The storage overlay routes existsFile /
-                /// getFileSize through the archive's index, so we get the virtual file's size
-                /// without touching the real filesystem.
-                const String virtual_file = index_stream_name + index_substream.extension;
-                if (storage_ref.existsFile(virtual_file))
-                {
-                    const auto size = storage_ref.getFileSize(virtual_file);
-                    substream_size.data_compressed = size;
-                    /// data_uncompressed is approximated as compressed size for packed substreams:
-                    /// the archive's per-virtual-file index records only the on-disk (compressed)
-                    /// size, and the uncompressed count is lost once `MergeTreeWriterStream` is
-                    /// destroyed. The undercount matters in one place behaviorally:
-                    /// `ReadFromMergeTree::get_indexes_size` gates `distributed_index_analysis`
-                    /// activation on `data_uncompressed`, so a packed skip index that compresses
-                    /// well (`set` / `bloom_filter` over strings) may not cross
-                    /// `distributed_index_analysis_min_indexes_bytes_to_activate` and distributed
-                    /// index analysis won't trigger. The fallback is the normal query plan, not
-                    /// a wrong result. Elsewhere `data_uncompressed` only feeds telemetry in
-                    /// `system.data_skipping_indices` / `system.parts`. To remove this
-                    /// approximation entirely, add `uncompressed_size` to
-                    /// `PackedFilesIO::Index` entries and bump the archive format version.
+                /// Substreams bundled in skp_idx.packed have no standalone checksums entry. The
+                /// uncompressed size is recorded in the archive index (v1+); fall back to the
+                /// compressed size for uncompressed substreams and for v0 archives.
+                substream_size.data_compressed = size;
+                if (MergeTreeIndexSubstream::isCompressed(index_substream.type))
+                    substream_size.data_uncompressed
+                        = getDataPartStorage().getPackedFileUncompressedSize(index_stream_name + index_substream.extension).value_or(size);
+                else
                     substream_size.data_uncompressed = size;
-                }
             }
 
-            auto actual_marks_file_name = getStreamNameOrHash(index_stream_name, getMarksFileExtension(), checksums);
-            if (actual_marks_file_name)
-            {
-                auto full_marks_file_name = *actual_marks_file_name + getMarksFileExtension();
-                auto mrk_checksum = checksums.files.find(full_marks_file_name);
-                if (mrk_checksum != checksums.files.end())
-                    substream_size.marks = mrk_checksum->second.file_size;
-            }
-            else
-            {
-                /// Same packed-substream fallback as for the data file above: marks for a
-                /// packed skip index live inside skp_idx.packed, served by the storage overlay.
-                const String virtual_marks_file = index_stream_name + getMarksFileExtension();
-                if (storage_ref.existsFile(virtual_marks_file))
-                    substream_size.marks = storage_ref.getFileSize(virtual_marks_file);
-            }
+            substream_size.marks = getFileSizeOrZeroResolved(index_stream_name, getMarksFileExtension());
 
             total_secondary_indices_size.add(substream_size);
             new_secondary_index_sizes[index_description.name].add(substream_size);
@@ -2846,15 +2833,20 @@ IndexSize IMergeTreeDataPart::getTotalSecondaryIndicesSize() const
 bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const StorageMetadataPtr & metadata) const
 {
     auto file_name = getIndexFileName(index_name, metadata->escape_index_filenames);
-    /// Check checksums first (both original and hashed names) for per-file layout, and fall
-    /// back to the storage overlay for packed substreams (which are not in checksums.txt).
-    if (getStreamNameOrHash(file_name, ".idx", checksums).has_value()
-        || getStreamNameOrHash(file_name, ".idx2", checksums).has_value())
-        return true;
+    return getStreamNameOrHashResolved(file_name, ".idx").has_value()
+        || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
+}
 
-    const auto & storage_ref = getDataPartStorage();
-    return getStreamNameOrHash(file_name, ".idx", storage_ref).has_value()
-        || getStreamNameOrHash(file_name, ".idx2", storage_ref).has_value();
+bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const
+{
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());
+    if (!disk_storage)
+        return false;
+    const String file_name = skip_index.getFileName();
+    for (const auto & substream : skip_index.getSubstreams())
+        if (disk_storage->isFileInPackedSkipIndicesArchive(file_name + substream.suffix + substream.extension))
+            return true;
+    return false;
 }
 
 void IMergeTreeDataPart::accumulateColumnSizes(ColumnToSize & column_to_size) const
@@ -2915,22 +2907,6 @@ String IMergeTreeDataPart::getUniqueId() const
     return getDataPartStorage().getUniqueId();
 }
 
-UInt128 IMergeTreeDataPart::getPartBlockIDHash() const
-{
-    SipHash hash;
-    checksums.computeTotalChecksumDataOnly(hash);
-    return hash.get128();
-}
-
-String IMergeTreeDataPart::getNewPartBlockID() const
-{
-    if (info.min_block != info.max_block)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to get block id for part {} that contains more than one block", name);
-
-    const auto hash_value = getPartBlockIDHash();
-    return info.getPartitionId() + "_" + toString(hash_value.items[0]) + "_" + toString(hash_value.items[1]);
-}
-
 std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
     const String & stream_name,
     const String & extension,
@@ -2959,6 +2935,16 @@ std::optional<String> IMergeTreeDataPart::getStreamNameOrHash(
         return hash;
 
     return {};
+}
+
+std::optional<String> IMergeTreeDataPart::getStreamNameOrHashResolved(const String & stream_name, const String & extension) const
+{
+    /// Fast path: resolve against checksums (no I/O). A stream with no checksums entry -- e.g. a
+    /// substream bundled in skp_idx.packed -- is resolved against the storage, which knows the
+    /// archive's members. Mirrors getFileSizeOrZeroResolved.
+    if (auto result = getStreamNameOrHash(stream_name, extension, checksums))
+        return result;
+    return getStreamNameOrHash(stream_name, extension, getDataPartStorage());
 }
 
 std::optional<String> IMergeTreeDataPart::getStreamNameForColumn(

@@ -42,6 +42,7 @@
 #include <Core/ServerSettings.h>
 
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SocketDefs.h>
 #include <Poco/Net/DNS.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -533,6 +534,14 @@ ZooKeeper::ZooKeeper(
         {
             requests_queue.finish();
             socket.shutdown();
+        }
+        catch (const Poco::Net::NetException & e)
+        {
+            /// On macOS, shutdown() on an already-disconnected socket returns ENOTCONN; this is benign here.
+            if (e.code() == POCO_ENOTCONN)
+                LOG_TRACE(log, "Socket already disconnected on shutdown: {}", e.message());
+            else
+                tryLogCurrentException(log);
         }
         catch (...)
         {
@@ -1431,6 +1440,14 @@ void ZooKeeper::finalize(bool error_send, bool error_receive, const String & rea
         {
             /// This will also wakeup the receiving thread.
             socket.shutdown();
+        }
+        catch (const Poco::Net::NetException & e)
+        {
+            /// On macOS, shutdown() on an already-disconnected socket returns ENOTCONN; this is benign here.
+            if (e.code() == POCO_ENOTCONN)
+                LOG_TRACE(log, "Socket already disconnected on shutdown: {}", e.message());
+            else
+                tryLogCurrentException(log);
         }
         catch (...)
         {

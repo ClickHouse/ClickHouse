@@ -11,7 +11,7 @@
 
   // Locales with their own page tree; each has a localized homepage at
   // /<locale> and mirrors the English paths beneath it.
-  var LOCALES = ['es', 'ja', 'ko', 'pt-BR', 'ru', 'zh'];
+  var LOCALES = ['ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh'];
 
   // '' at root (.app, mint dev); '/docs' on the subpath deploy
   var BASE = /^\/docs(\/|$)/.test(window.location.pathname) ? '/docs' : '';
