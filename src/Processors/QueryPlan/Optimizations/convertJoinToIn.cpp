@@ -208,21 +208,16 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto left_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.first; }));
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
 
-    /// Decline the conversion if any input of `join_output_actions` is not
-    /// exposed by the stream that `left_pre_join_actions` produces. After the
-    /// rewrite, the post-JOIN ExpressionStep would otherwise reference a
-    /// column (e.g. source `L.col` whose only forwarded form is
-    /// `arrayJoin(L.col)`) that the rewritten plan's stream header does not
-    /// expose: `mergeInplace` with `remove_dangling_inputs = true` drops the
-    /// unmatched INPUT, leading to a NOT_FOUND_COLUMN_IN_BLOCK exception at
-    /// execution. The bail-out must happen here, before any plan mutation
-    /// below.
-    ///
-    /// The stream header is not just the DAG outputs: ActionsDAG::updateHeader
-    /// also forwards input columns the DAG does not consume, and duplicate
-    /// names are matched by multiplicity (both in updateHeader and in
-    /// mergeInplace). So compare against the real post-expression header,
-    /// counting occurrences per name.
+    /// Decline the conversion if the rewritten plan could not resolve some
+    /// input of `join_output_actions`: `mergeInplace` with
+    /// `remove_dangling_inputs = true` would drop the unmatched INPUT (e.g.
+    /// source `L.col` whose only forwarded form is `arrayJoin(L.col)`),
+    /// causing a `NOT_FOUND_COLUMN_IN_BLOCK` exception at execution. The
+    /// check must happen before any plan mutation below. Compare against the
+    /// real post-expression header (`ActionsDAG::updateHeader`: DAG outputs
+    /// plus input columns the DAG does not consume), counting occurrences
+    /// per name, because both `updateHeader` and `mergeInplace` match
+    /// duplicate names by multiplicity.
     {
         auto join_output_actions_subdag = JoinExpressionActions::getSubDAG(join_output_actions);
         const auto & left_input_header = parent_node->children.at(0)->step->getOutputHeader();

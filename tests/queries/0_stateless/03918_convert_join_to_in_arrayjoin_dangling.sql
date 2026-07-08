@@ -2,12 +2,15 @@
 -- Regression test for convertJoinToIn bug: with `query_plan_convert_join_to_in = 1`,
 -- a query `INNER JOIN ON arrayJoin(L.col) = R.col` whose SELECT (or post-JOIN
 -- expression) references the source `L.col` or `arrayJoin(L.col)` again used
--- to throw NOT_FOUND_COLUMN_IN_BLOCK at execution. `left_pre_join_actions`
--- only forwards the JOIN keys, so the cloned post-JOIN ExpressionStep
--- referenced an INPUT (`L.col`) that the rewritten plan no longer exposed.
--- The fix declines the conversion in those cases and falls back to the
--- normal JOIN plan, which is correct. Co-located with #96989 (Bug A) and
--- the JOIN-ON arrayJoin duplicate-execution fix in the same family.
+-- to throw `NOT_FOUND_COLUMN_IN_BLOCK` at execution. The stream after the
+-- left-keys ExpressionStep contains the key expressions plus the left-header
+-- columns the key DAG does not consume; columns consumed by the key
+-- expression (like `L.col` under `arrayJoin(L.col)`) are gone, so the cloned
+-- post-JOIN ExpressionStep referenced an INPUT the rewritten plan no longer
+-- exposed. The fix declines the conversion exactly in those cases (falling
+-- back to the normal JOIN plan) while keeping it for safe projections of
+-- forwarded non-key columns. Co-located with #96989 (Bug A) and the JOIN-ON
+-- arrayJoin duplicate-execution fix in the same family.
 
 -- `query_plan_convert_join_to_in` and `arrayJoin` in JOIN ON are new-analyzer
 -- features; the old analyzer rejects `arrayJoin` in JOIN ON with
@@ -24,7 +27,8 @@ ENGINE = MergeTree() ORDER BY tag_id;
 INSERT INTO lt_03918_dangling VALUES (1, ['a','b','c']), (2, ['d','e']);
 INSERT INTO rt_03918_dangling VALUES ('a'), ('d');
 
--- (1) Conversion stays on: SELECT references only the JOIN key column.
+-- (1) Conversion stays on: SELECT references only `id`, a non-key column
+--     that the post-expression stream still forwards untouched.
 SELECT 'just_id', lt_03918_dangling.id
 FROM lt_03918_dangling INNER JOIN rt_03918_dangling
     ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
