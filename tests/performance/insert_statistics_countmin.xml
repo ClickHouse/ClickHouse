@@ -1,0 +1,217 @@
+<test>
+    <!-- The materialize_statistics_on_insert variants use separate target tables
+         so the no-build control and build benchmark do not share state. -->
+    <settings>
+        <allow_suspicious_low_cardinality_types>1</allow_suspicious_low_cardinality_types>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>materialize</name>
+            <values>
+                <value>0</value>
+                <value>1</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_countmin_string_stats_src(
+            c1 UInt64,
+            c2 String,
+            c3 String,
+            c4 String,
+            c5 String,
+            c6 LowCardinality(String),
+            c7 LowCardinality(String),
+            c8 LowCardinality(String),
+            c9 LowCardinality(String))
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_stats_string_{materialize}(
+            c1 UInt64,
+            c2 String STATISTICS(countmin),
+            c3 String STATISTICS(countmin),
+            c4 String STATISTICS(countmin),
+            c5 String STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_stats_low_cardinality_{materialize}(
+            c1 UInt64,
+            c2 LowCardinality(String) STATISTICS(countmin),
+            c3 LowCardinality(String) STATISTICS(countmin),
+            c4 LowCardinality(String) STATISTICS(countmin),
+            c5 LowCardinality(String) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_numeric_stats_src(
+            c1 UInt64,
+            c2 UInt32,
+            c3 UInt32,
+            c4 LowCardinality(UInt32),
+            c5 LowCardinality(UInt32))
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_stats_numeric_{materialize}(
+            c1 UInt64,
+            c2 UInt32 STATISTICS(countmin),
+            c3 UInt32 STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_stats_low_cardinality_numeric_{materialize}(
+            c1 UInt64,
+            c2 LowCardinality(UInt32) STATISTICS(countmin),
+            c3 LowCardinality(UInt32) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_nullable_string_stats_src(
+            c1 UInt64,
+            c2 Nullable(String),
+            c3 LowCardinality(Nullable(String)))
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_stats_nullable_string_{materialize}(
+            c1 UInt64,
+            c2 Nullable(String) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_stats_low_cardinality_nullable_string_{materialize}(
+            c1 UInt64,
+            c2 LowCardinality(Nullable(String)) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_large_dictionary_stats_src(
+            c1 UInt64,
+            c2 LowCardinality(UInt32))
+        ENGINE = Memory;
+    </create_query>
+
+    <create_query>
+        CREATE TABLE t_countmin_stats_low_cardinality_large_dictionary_{materialize}(
+            c1 UInt64,
+            c2 LowCardinality(UInt32) STATISTICS(countmin))
+        ENGINE = MergeTree ORDER BY c1 SETTINGS auto_statistics_types = '', materialize_statistics_on_merge = 0;
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_countmin_string_stats_src
+        SELECT
+            number,
+            toString(number % 10),
+            toString(number % 100),
+            toString(number % 1000),
+            toString(number % 100000),
+            toString(number % 10),
+            toString(number % 100),
+            toString(number % 1000),
+            toString(number % 100000)
+        FROM numbers(1000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO t_countmin_numeric_stats_src
+        SELECT
+            number,
+            toUInt32(if(number &lt; 400000, 42, number)),
+            toUInt32(number % 100000),
+            toUInt32(if(number &lt; 400000, 42, number)),
+            toUInt32(number % 100000)
+        FROM numbers(1000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO t_countmin_nullable_string_stats_src
+        SELECT
+            number,
+            multiIf(number % 10 = 0, CAST(NULL, 'Nullable(String)'), number % 10 = 1, '', 'apple'),
+            multiIf(number % 10 = 0, CAST(NULL, 'Nullable(String)'), number % 10 = 1, '', 'apple')
+        FROM numbers(1000000)
+    </fill_query>
+
+    <fill_query>
+        INSERT INTO t_countmin_large_dictionary_stats_src
+        SELECT number, toUInt32(number)
+        FROM numbers(1000000)
+    </fill_query>
+
+    <fill_query>SYSTEM STOP MERGES t_countmin_stats_string_{materialize}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_stats_low_cardinality_{materialize}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_stats_numeric_{materialize}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_stats_low_cardinality_numeric_{materialize}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_stats_nullable_string_{materialize}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_stats_low_cardinality_nullable_string_{materialize}</fill_query>
+    <fill_query>SYSTEM STOP MERGES t_countmin_stats_low_cardinality_large_dictionary_{materialize}</fill_query>
+
+    <query>
+        INSERT INTO t_countmin_stats_string_{materialize}
+        SELECT c1, c2, c3, c4, c5 FROM t_countmin_string_stats_src
+        SETTINGS materialize_statistics_on_insert = {materialize}
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_stats_low_cardinality_{materialize}
+        SELECT c1, c6, c7, c8, c9 FROM t_countmin_string_stats_src
+        SETTINGS materialize_statistics_on_insert = {materialize}
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_stats_numeric_{materialize}
+        SELECT c1, c2, c3 FROM t_countmin_numeric_stats_src
+        SETTINGS materialize_statistics_on_insert = {materialize}
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_stats_low_cardinality_numeric_{materialize}
+        SELECT c1, c4, c5 FROM t_countmin_numeric_stats_src
+        SETTINGS materialize_statistics_on_insert = {materialize}
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_stats_nullable_string_{materialize}
+        SELECT c1, c2 FROM t_countmin_nullable_string_stats_src
+        SETTINGS materialize_statistics_on_insert = {materialize}
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_stats_low_cardinality_nullable_string_{materialize}
+        SELECT c1, c3 FROM t_countmin_nullable_string_stats_src
+        SETTINGS materialize_statistics_on_insert = {materialize}
+    </query>
+
+    <query>
+        INSERT INTO t_countmin_stats_low_cardinality_large_dictionary_{materialize}
+        SELECT c1, c2 FROM t_countmin_large_dictionary_stats_src WHERE c1 >= 990000
+        SETTINGS materialize_statistics_on_insert = {materialize}
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats_string_{materialize}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats_low_cardinality_{materialize}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats_numeric_{materialize}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats_low_cardinality_numeric_{materialize}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats_nullable_string_{materialize}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats_low_cardinality_nullable_string_{materialize}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_stats_low_cardinality_large_dictionary_{materialize}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_string_stats_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_numeric_stats_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_nullable_string_stats_src</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_countmin_large_dictionary_stats_src</drop_query>
+</test>
