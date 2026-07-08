@@ -101,7 +101,6 @@ namespace
     }
 }
 
-void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMLMethod(AggregateFunctionFactory & factory)
 {
     // stochasticLinearRegression documentation

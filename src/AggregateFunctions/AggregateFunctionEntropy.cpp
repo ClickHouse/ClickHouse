@@ -130,7 +130,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -175,7 +175,6 @@ AggregateFunctionPtr createAggregateFunctionEntropy(
 
 }
 
-void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory);
 void registerAggregateFunctionEntropy(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

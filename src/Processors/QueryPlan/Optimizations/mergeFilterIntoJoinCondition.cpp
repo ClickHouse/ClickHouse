@@ -1,7 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
-#include <Columns/ColumnConst.h>
-#include <Common/assert_cast.h>
 #include <Core/Joins.h>
 
 #include <Functions/FunctionsLogical.h>
@@ -181,10 +179,7 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
 
             /// We can't push equality condition into JOIN if types are not equal.
             if (!lhs->result_type->equals(*rhs->result_type))
-            {
-                rejected_conjuncts.push_back(conjunct);
                 continue;
-            }
 
             /// We need to check if arguments are coming from different sides of JOIN
             auto lhs_side = getExpressionSide(lhs, left_stream_allowed_nodes, right_stream_allowed_nodes);
@@ -211,8 +206,10 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
             auto it = conjuncts_to_replace.find(output);
             if (it != conjuncts_to_replace.end())
             {
-                auto const_column = output->result_type->createColumnConst(0, 1);
-                output = &filter_dag.addColumn(std::move(const_column), output->result_type, output->result_name);
+                output = &filter_dag.addColumn(ColumnWithTypeAndName(
+                    output->result_type->createColumnConst(1, 1),
+                    output->result_type,
+                    output->result_name));
             }
         }
 

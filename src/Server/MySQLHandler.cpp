@@ -8,7 +8,6 @@
 #include <Core/MySQL/PacketsProtocolText.h>
 #include <Core/NamesAndTypes.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <IO/LimitReadBuffer.h>
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadBufferFromString.h>
@@ -89,7 +88,7 @@ static bool isFederatedServerSetupSetCommand(const String & query)
         "|(^(SET sql_mode(.*)))"
         "|(^(SET @@(.*)))"
         "|(^(SET SESSION TRANSACTION ISOLATION LEVEL(.*)))", regexp_options);
-    chassert(expr.ok());
+    assert(expr.ok());
     return re2::RE2::FullMatch(query, expr);
 }
 
@@ -591,7 +590,7 @@ void MySQLHandler::comStmtPrepare(DB::ReadBuffer & payload)
 
 void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 {
-    uint32_t statement_id = 0;
+    uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     auto statement_opt = getPreparedStatement(statement_id);
@@ -603,7 +602,7 @@ void MySQLHandler::comStmtExecute(ReadBuffer & payload)
 
 void MySQLHandler::comStmtClose(ReadBuffer & payload)
 {
-    uint32_t statement_id = 0;
+    uint32_t statement_id;
     payload.readStrict(reinterpret_cast<char *>(&statement_id), 4);
 
     // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_stmt_close.html

@@ -165,7 +165,7 @@ struct ClientFake : DB::S3::Client
 
     Aws::S3::Model::GetObjectOutcome GetObject([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) const override
     {
-        chassert(getObjectImpl);
+        assert(getObjectImpl);
         return (*getObjectImpl)(request);
     }
 
@@ -198,7 +198,7 @@ TEST_F(ReadBufferFromS3Test, RetainsSessionWhenPending)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
-    read_settings.remote_fs_settings.buffer_size = 2;
+    read_settings.remote_fs_buffer_size = 2;
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
@@ -218,7 +218,7 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenStreamEof)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
-    read_settings.remote_fs_settings.buffer_size = 10;
+    read_settings.remote_fs_buffer_size = 10;
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
@@ -238,7 +238,7 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
 {
     const auto client = std::make_shared<ClientFake>();
     DB::ReadSettings read_settings;
-    read_settings.remote_fs_settings.buffer_size = 2;
+    read_settings.remote_fs_buffer_size = 2;
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
@@ -370,18 +370,23 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     object_metadata.size_bytes = data.size();
     object_metadata.etag = "tag1";
     DB::RelativePathWithMetadata relative_path_with_metadata("test_key", object_metadata);
-    auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
-
+    /// Configure the fake GET stub before createReadBuffer: for a small object it issues the
+    /// initial prefetch eagerly (also over the filesystem cache), so the data must already be
+    /// servable when that background read runs.
     auto session = std::make_shared<CountedSession>();
     const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>(data);
     auto storage_client = object_storage->getS3StorageClient();
     dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectSuccess(session, stream_buf.get());
 
+    auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
+
     auto * async_buf = dynamic_cast<DB::AsynchronousBoundedReadBuffer *>(buf.get());
-    auto * cached_buf = dynamic_cast<DB::CachedOnDiskReadBufferFromFile *>(async_buf->getImpl().get());
     ASSERT_TRUE(async_buf);
+    auto * cached_buf = dynamic_cast<DB::CachedOnDiskReadBufferFromFile *>(async_buf->getImpl().get());
     ASSERT_TRUE(cached_buf);
 
+    /// The initial small-object prefetch is already in flight, so this manual prefetch is a no-op
+    /// on the pending future; the driven read/seek sequence below is unchanged.
     async_buf->prefetch(Priority{0});
     async_buf->next();
     ASSERT_EQ(async_buf->available(), 4);

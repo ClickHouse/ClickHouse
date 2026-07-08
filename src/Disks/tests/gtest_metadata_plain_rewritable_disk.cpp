@@ -94,7 +94,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<IObjectStorage>> active_object_storages;
 };
 
-static size_t writeObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path, const std::string & data)
+size_t writeObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path, const std::string & data)
 {
     StoredObject object(remote_path);
     auto buffer = object_storage->writeObject(object, WriteMode::Rewrite);
@@ -105,7 +105,7 @@ static size_t writeObject(const std::shared_ptr<IObjectStorage> & object_storage
     return written_bytes;
 }
 
-static std::string readObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path)
+std::string readObject(const std::shared_ptr<IObjectStorage> & object_storage, const std::string & remote_path)
 {
     StoredObject object(remote_path);
     auto buffer = object_storage->readObject(object, getReadSettings(), /*read_hint=*/std::nullopt);
@@ -115,20 +115,20 @@ static std::string readObject(const std::shared_ptr<IObjectStorage> & object_sto
     return content;
 }
 
-static std::string generateObjectKeyPrefixForDirectoryPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
+std::string generateObjectKeyPrefixForDirectoryPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
 {
     auto tx = metadata->createTransaction();
     auto file_remote_path = tx->generateObjectKeyForPath(fs::path(directory) / "file.txt").serialize();
     return fs::path(file_remote_path).parent_path().filename();
 }
 
-static std::string generateObjectKeyForPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & path)
+std::string generateObjectKeyForPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & path)
 {
     auto tx = metadata->createTransaction();
     return tx->generateObjectKeyForPath(path).serialize();
 }
 
-static std::string createMetadataObjectPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
+std::string createMetadataObjectPath(const std::shared_ptr<IMetadataStorage> & metadata, const std::string & directory)
 {
     auto tx = metadata->createTransaction();
     auto file_remote_path = tx->generateObjectKeyForPath(fs::path(directory) / "file.txt").serialize();
@@ -137,13 +137,13 @@ static std::string createMetadataObjectPath(const std::shared_ptr<IMetadataStora
     return fs::path(common_key_prefix) / "__meta" / object_key_prefix / "prefix.path";
 }
 
-static std::vector<std::string> sorted(std::vector<std::string> array)
+std::vector<std::string> sorted(std::vector<std::string> array)
 {
     std::sort(array.begin(), array.end());
     return array;
 }
 
-static std::vector<std::string> listAllBlobs(std::string test)
+std::vector<std::string> listAllBlobs(std::string test)
 {
     if (!std::filesystem::exists(fmt::format("./{}", test)))
         return {};

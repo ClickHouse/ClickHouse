@@ -8,6 +8,8 @@ title: 'Iceberg table engine'
 doc_type: 'reference'
 ---
 
+# Iceberg table engine {#iceberg-table-engine}
+
 :::warning 
 We recommend using the [Iceberg Table Function](/sql-reference/table-functions/iceberg.md) for working with Iceberg data in ClickHouse. The Iceberg Table Function currently provides sufficient functionality, offering a partial read-only interface for Iceberg tables.
 
@@ -72,7 +74,7 @@ CREATE TABLE iceberg_table ENGINE=IcebergS3(iceberg_conf, filename = 'test_table
 
 ## Aliases {#aliases}
 
-The `Iceberg` table engine auto-detects the storage backend from the `disk` setting and dispatches to `IcebergS3`, `IcebergAzure`, or `IcebergLocal` accordingly. When no `disk` is specified, it defaults to the `IcebergS3` implementation.
+Table engine `Iceberg` is an alias to `IcebergS3` now.
 
 ## Data types {#data-types}
 

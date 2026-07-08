@@ -2,7 +2,6 @@
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn_fwd.h>
 #include <Columns/IColumn.h>
@@ -225,7 +224,7 @@ String MergeTreeIndexTextPreprocessor::processConstant(const String & input) con
         return input;
 
     auto input_type = std::make_shared<DataTypeString>();
-    ColumnPtr input_column = input_type->createColumnConst(1, Field(input));
+    auto input_column = input_type->createColumnConst(1, Field(input));
     Block block{{ColumnWithTypeAndName(input_column, input_type, preprocessor_column_name)}};
 
     size_t n_rows = 1;

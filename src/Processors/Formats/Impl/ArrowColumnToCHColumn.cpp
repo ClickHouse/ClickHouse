@@ -1747,10 +1747,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             {
                 return readColumnWithGeoData(arrow_column, column_name, *geo_metadata);
             }
-            if (type_hint && type_hint->getName() == "Geometry" && settings.allow_geoparquet_parser)
-            {
-                return readColumnWithGeoData(arrow_column, column_name, GeoColumnMetadata{GeoEncoding::WKB, GeoType::Mixed});
-            }
             return readColumnWithStringData<arrow::BinaryArray>(arrow_column, column_name);
         }
         case arrow::Type::EXTENSION:
@@ -2194,9 +2190,6 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
         case arrow::Type::DICTIONARY:
         {
             auto & dict_info = dictionary_infos[column_name];
-            const bool is_lc_nullable = make_nullable_if_low_cardinality
-                || arrow_column->null_count() > 0
-                || (type_hint && type_hint->isLowCardinalityNullable());
 
             /// Load dictionary values only once and reuse it.
             if (!dict_info.values)
@@ -2234,11 +2227,11 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
                     }
                 }
 
-                auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_column.type) : dict_column.type);
+                auto lc_type = std::make_shared<DataTypeLowCardinality>(make_nullable_if_low_cardinality ? makeNullable(dict_column.type) : dict_column.type);
                 auto tmp_lc_column = lc_type->createColumn();
                 auto tmp_dict_column = IColumn::mutate(assert_cast<ColumnLowCardinality *>(tmp_lc_column.get())->getDictionaryPtr());
                 dynamic_cast<IColumnUnique *>(tmp_dict_column.get())->uniqueInsertRangeFrom(*dict_column.column, 0, dict_column.column->size());
-                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + is_lc_nullable;
+                size_t expected_dictionary_size = dict_column.column->size() + (dict_info.default_value_index == -1) + make_nullable_if_low_cardinality;
                 if (tmp_dict_column->size() != expected_dictionary_size)
                 {
                     throw Exception(
@@ -2261,9 +2254,9 @@ static ColumnWithTypeAndName readNonNullableColumnFromArrowColumn(
             }
 
             auto arrow_indexes_column = std::make_shared<arrow::ChunkedArray>(indexes_array);
-            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, is_lc_nullable);
+            auto indexes_column = readColumnWithIndexesData(arrow_indexes_column, dict_info.default_value_index, dict_info.dictionary_size, make_nullable_if_low_cardinality);
             auto lc_column = ColumnLowCardinality::create(dict_info.values->column, indexes_column, /*is_shared=*/true);
-            auto lc_type = std::make_shared<DataTypeLowCardinality>(is_lc_nullable ? makeNullable(dict_info.values->type) : dict_info.values->type);
+            auto lc_type = std::make_shared<DataTypeLowCardinality>(make_nullable_if_low_cardinality ? makeNullable(dict_info.values->type) : dict_info.values->type);
             return {std::move(lc_column), std::move(lc_type), column_name};
         }
 #    define DISPATCH(ARROW_NUMERIC_TYPE, CPP_NUMERIC_TYPE) \
@@ -2352,8 +2345,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
     for (int chunk_i = 0, num_chunks = arrow_column->num_chunks(); chunk_i < num_chunks; ++chunk_i)
         checkValidityBitmap(*arrow_column->chunk(chunk_i), column_name);
 
-    bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
-    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
+    bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && settings.allow_inferring_nullable_columns;
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
@@ -2408,7 +2400,7 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 static void checkStatus(const arrow::Status & status, const String & column_name, const String & format_name)
 {
     if (!status.ok())
-        throwFromArrowStatus(status, ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}'", format_name, column_name);
+        throw Exception{ErrorCodes::UNKNOWN_EXCEPTION, "Error with a {} column '{}': {}.", format_name, column_name, status.ToString()};
 }
 
 static std::shared_ptr<arrow::DataType> unwrapArrowExtensionTypesRecursively(const std::shared_ptr<arrow::DataType> & type)
@@ -2516,12 +2508,8 @@ Block ArrowColumnToCHColumn::arrowSchemaToCHHeader(
 
     ColumnsWithTypeAndName sample_columns;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (const auto & field : schema.fields())
     {
@@ -2649,12 +2637,8 @@ Chunk ArrowColumnToCHColumn::arrowColumnsToCHChunk(
 
     std::unordered_map<String, std::pair<BlockPtr, std::shared_ptr<NestedColumnExtractHelper>>> nested_tables;
 
-    std::unordered_map<String, GeoColumnMetadata> geo_columns;
-    if (settings.allow_geoparquet_parser)
-    {
-        const std::string * geo_json_str = extractGeoMetadata(metadata);
-        geo_columns = parseGeoMetadataEncoding(geo_json_str);
-    }
+    const std::string * geo_json_str = extractGeoMetadata(metadata);
+    std::unordered_map<String, GeoColumnMetadata> geo_columns = parseGeoMetadataEncoding(geo_json_str);
 
     for (size_t column_i = 0, header_columns = header.columns(); column_i < header_columns; ++column_i)
     {

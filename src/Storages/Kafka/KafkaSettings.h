@@ -19,8 +19,6 @@ const auto KAFKA_CONSUMERS_CLEANUP_CHECK_INTERVAL_MS = 500;
 const auto KAFKA_MAX_THREAD_WORK_DURATION_MS = 60000;
 // 10min
 const auto KAFKA_CONSUMERS_POOL_TTL_MS_MAX = 600'000;
-// Timeout for waiting for consumers to be released during shutdown
-const auto KAFKA_CONSUMER_CLOSE_TIMEOUT_S = 60;
 
 /// List of available types supported in KafkaSettings object
 #define KAFKA_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
@@ -34,7 +32,6 @@ const auto KAFKA_CONSUMER_CLOSE_TIMEOUT_S = 60;
     M(CLASS_NAME, Double) \
     M(CLASS_NAME, EscapingRule) \
     M(CLASS_NAME, Float) \
-    M(CLASS_NAME, GeoJSONUnsupportedGeometryHandling) \
     M(CLASS_NAME, IdentifierQuotingRule) \
     M(CLASS_NAME, IdentifierQuotingStyle) \
     M(CLASS_NAME, InputFormatColumnMatchingCaseSensitivity) \
