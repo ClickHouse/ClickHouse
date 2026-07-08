@@ -5,7 +5,11 @@ import random
 import subprocess
 from pathlib import Path
 
-from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
+from ci.jobs.scripts.bugfix_validation import (
+    bugfix_build_types,
+    download_master_builds,
+    find_master_builds,
+)
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
 from ci.jobs.scripts.find_tests import Targeting
@@ -434,18 +438,7 @@ def main():
             build_urls = find_master_builds(build_types)
             assert build_urls, "Could not find master builds in S3"
         if build_urls:
-            for bt, url in build_urls.items():
-                bt_path = bt_paths[bt]
-                if not info.is_local_run or not Path(bt_path).is_file():
-                    # retries: transient S3 5xx must not abort the job; strict
-                    # still fails closed if the artifact is genuinely missing.
-                    Shell.run(
-                        f"wget -nv -O {bt_path} {url}",
-                        verbose=True,
-                        strict=True,
-                        retries=5,
-                    )
-                    Shell.run(f"chmod +x {bt_path}", verbose=True)
+            download_master_builds(build_urls, bt_paths, info.is_local_run)
         Shell.run(
             f"cp {temp_dir}/clickhouse_{build_types[0]} {temp_dir}/clickhouse",
             verbose=True,
