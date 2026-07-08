@@ -12,7 +12,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorCachePopulateRequests;
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorIncompleteConnections;
-    extern const Event ReaderExecutorOverReadBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
     extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorCacheGetMicroseconds;
@@ -75,7 +74,6 @@ void ReaderExecutorStats::add(Counter c, UInt64 value)
             ProfileEvents::increment(ProfileEvents::ReaderExecutorIncompleteConnections, value);
             ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 5000 * value);
             break;
-        case OverReadBytes:             ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadBytes, value); break;
         case RequestedBytes:            ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, value); break;
         case CacheGetMicroseconds:      ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetMicroseconds, value); break;
         case CachePopulateMicroseconds: ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateMicroseconds, value); break;

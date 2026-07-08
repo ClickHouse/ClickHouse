@@ -79,7 +79,6 @@ namespace ProfileEvents
     extern const Event ReaderExecutorBytesFromSource;
     extern const Event ReaderExecutorBytesFromPageCache;
     extern const Event ReaderExecutorBytesFromFilesystemCache;
-    extern const Event ReaderExecutorOverReadBytes;
     extern const Event ReaderExecutorSourceRequests;
     extern const Event ReaderExecutorRequestedBytes;
     extern const Event ReaderExecutorModeledCostMicroseconds;
@@ -4839,8 +4838,8 @@ namespace
 /// rebuilds - the schedule's maximal-run steps then map 1:1 to the live calls.
 ///
 /// Byte-KPIs computed analytically from the schedule (the cost oracle): every
-/// byte's origin is in the schedule, so R / served / over-read need no run.
-struct PredictedKpi { size_t from_source = 0; size_t served_from_cache = 0; size_t over_read = 0; };
+/// byte's origin is in the schedule, so R / served need no run.
+struct PredictedKpi { size_t from_source = 0; size_t served_from_cache = 0; };
 
 PredictedKpi predictKpi(const PlanSchedule & s)
 {
@@ -4855,10 +4854,6 @@ PredictedKpi predictKpi(const PlanSchedule & s)
     for (const auto & tr : s.ranges)
         if (tr.purpose == PlanSchedule::Purpose::User)
             k.served_from_cache += tr.range.size;
-    /// Net-waste over-read: this oracle is asserted only on a full-consume read (window >= file,
-    /// `min_bytes_for_seek == 0`), so every fetched byte - including the segment-alignment prefill
-    /// (`FillOnly`) - is read back from the cache by the scan, netting the over-read to zero.
-    k.over_read = 0;
     return k;
 }
 
@@ -4880,7 +4875,6 @@ void validateScheduleMatchesReality(
     const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
     const auto page0 = pe[ProfileEvents::ReaderExecutorBytesFromPageCache];
     const auto fs0 = pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache];
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor executor(src, objects, std::move(caches), opts);
 
@@ -4915,7 +4909,7 @@ void validateScheduleMatchesReality(
     /// > 0`) the schedule's `connections()` predicts a resident hole is
     /// over-read from remote, but whether the executor actually bridges it is a
     /// runtime live-connection decision the static schedule cannot predict
-    /// exactly (and the >= file window distorts it further), so the R / over-read
+    /// exactly (and the >= file window distorts it further), so the R
     /// prediction is only an upper bound there. The no-bridge case is exact.
     if (min_bytes_for_seek == 0)
     {
@@ -4924,7 +4918,6 @@ void validateScheduleMatchesReality(
         EXPECT_EQ((pe[ProfileEvents::ReaderExecutorBytesFromPageCache] - page0)
                 + (pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache] - fs0),
             k.served_from_cache) << "served from cache";
-        EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, k.over_read) << "over-read";
     }
 }
 
@@ -5209,7 +5202,7 @@ TEST(ReaderExecutor, SeveralFetchesFillAllGaps)
 }
 
 /// The schedule predicts the executor's byte-KPIs exactly. Gap + resident island
-/// + before-slack (seek mid-block) so R, served, and over-read are all non-zero.
+/// + before-slack (seek mid-block) so R and served are both non-zero.
 TEST(ReaderExecutor, SchedulePredictsByteKpis)
 {
     const size_t block = 64 * 1024;
@@ -5223,7 +5216,6 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
     const auto page0 = pe[ProfileEvents::ReaderExecutorBytesFromPageCache];
     const auto fs0 = pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache];
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor::Options opts;
     opts.window_size = file * 2;
@@ -5252,7 +5244,6 @@ TEST(ReaderExecutor, SchedulePredictsByteKpis)
     EXPECT_EQ((pe[ProfileEvents::ReaderExecutorBytesFromPageCache] - page0)
             + (pe[ProfileEvents::ReaderExecutorBytesFromFilesystemCache] - fs0),
         k.served_from_cache) << "served from cache";
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, k.over_read) << "over-read";
 }
 
 /// An embedded upper-tier hit inside a lower-tier segment is sourced from the
@@ -5274,7 +5265,6 @@ TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
     TestThreadGroup tg;
     auto & pe = CurrentThread::getProfileEvents();
     const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;       // window >= segment: the production case
@@ -5289,8 +5279,6 @@ TEST(ReaderExecutor, EmbeddedUpperHitFilledFromUpperServeNotRemote)
     /// Only the true gaps reach the source; the embedded hit is NOT over-read.
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, 448u * 1024u)
         << "only the gaps [0,192K)+[256K,512K) are fetched";
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, 0u)
-        << "the embedded hit is sourced from the upper serve, not over-read";
     /// The slow segment still completes (filled across the embedded hit).
     EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
     EXPECT_TRUE(slow->hasBlock(1)) << "slow segment [256K,512K) completes";
@@ -5316,7 +5304,6 @@ TEST(ReaderExecutor, WideEmbeddedUpperHitReopensAndFillsDown)
     TestThreadGroup tg;
     auto & pe = CurrentThread::getProfileEvents();
     const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;       // window >= segment: the production case
@@ -5332,8 +5319,6 @@ TEST(ReaderExecutor, WideEmbeddedUpperHitReopensAndFillsDown)
     /// the source, and the hit is never over-read.
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, 384u * 1024u)
         << "only the gaps [0,128K)+[256K,512K) are fetched; the wide hit reopens, not bridges";
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, 0u)
-        << "the embedded hit is sourced from the upper serve, not over-read";
     /// The slow segment still completes (filled down across the embedded hit).
     EXPECT_TRUE(slow->hasBlock(0)) << "slow segment [0,256K) completes across the embedded hit";
     EXPECT_TRUE(slow->hasBlock(1)) << "slow segment [256K,512K) completes";
@@ -5358,7 +5343,6 @@ TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
     TestThreadGroup tg;
     auto & pe = CurrentThread::getProfileEvents();
     const auto src0 = pe[ProfileEvents::ReaderExecutorBytesFromSource];
-    const auto over0 = pe[ProfileEvents::ReaderExecutorOverReadBytes];
 
     ReaderExecutor::Options opts;
     opts.window_size = file * 2 + 1;
@@ -5372,8 +5356,6 @@ TEST(ReaderExecutor, LowerSegmentFullyCoveredByUpperHitNeedsNoRemote)
 
     EXPECT_EQ(pe[ProfileEvents::ReaderExecutorBytesFromSource] - src0, 0u)
         << "fully upper-resident request: no remote fetch";
-    EXPECT_EQ(pe[ProfileEvents::ReaderExecutorOverReadBytes] - over0, 0u)
-        << "no over-read at all";
     /// The slower tier is NOT written down from the fully-covering upper hit
     /// today (no gap -> no fetch -> no assemble-push); a page->fs write-down is
     /// a separate unimplemented policy. Pins the current behavior.

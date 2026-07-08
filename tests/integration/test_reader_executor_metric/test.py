@@ -37,7 +37,6 @@ SAMPLES = 5  # stability samples per (load x cache-state)
 METRIC_EVENTS = {
     "R": "ReaderExecutorSourceRequests",
     "I": "ReaderExecutorIncompleteConnections",
-    "O": "ReaderExecutorOverReadBytes",
     "S": "ReaderExecutorBytesFromSource",
     "Wc": "ReaderExecutorCachePopulateRequests",
     "Rc": "ReaderExecutorCacheGetRequests",
@@ -257,7 +256,7 @@ def _stats(samples):
 
 def test_metric_values_and_stability(started_cluster):
     # Asserts only CONFIG-INDEPENDENT invariants (the pool-side I bound, the cost-formula
-    # equality, executor-ran) plus the async-metric registration. The per-cell R/I/O/cost
+    # equality, executor-ran) plus the async-metric registration. The per-cell R/I/cost
     # magnitudes are printed for diagnostics but NOT gated: they are timing/config-sensitive on
     # a max_threads=8 read and cannot hold a tight band across the full CI sanitizer/config matrix.
     report = []

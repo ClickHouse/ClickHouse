@@ -29,9 +29,6 @@ struct ReaderExecutorStats
         /// Source connections dropped before their right bound (not
         /// pool-reusable; the metric's `I`).
         IncompleteConnections,
-        /// Source bytes that did not serve the request (alignment slack +
-        /// bridged-gap bytes).
-        OverReadBytes,
         /// Useful bytes delivered to read requests (cost denominator).
         RequestedBytes,
         CacheGetMicroseconds,

@@ -158,13 +158,6 @@ ReaderExecutor::~ReaderExecutor()
         fill_lane.conn.reset();
     }
 
-    /// Emit the genuine over-read once, now that every serve has run: `overread_pending` holds
-    /// the source bytes fetched beyond their window MINUS those the cursor later read back from
-    /// the cache (removed at serve), so what remains is the true waste - alignment slack and a
-    /// read-ahead's fetched-ahead bytes that a seek-away or EOF left unconsumed. Counting it per
-    /// fetch (the old way) miscounted every forward read-ahead's fetch-ahead as over-read.
-    stats.add(Stats::OverReadBytes, overread_pending.totalBytes());
-
     /// A transient `readBigAt` executor rolls its stats into the parent via
     /// mergeTransientStats; emitting ProfileEvents / a reader_executor_log row
     /// here too would double-count. The parent's destructor reports the aggregate.
@@ -181,7 +174,7 @@ ReaderExecutor::~ReaderExecutor()
         "prefetch_discarded_running={} "
         "prefetch_issued_source_bytes={} "
         "prefetch_wasted_source_bytes={} "
-        "incomplete_connections={} over_read_bytes={}",
+        "incomplete_connections={}",
         stats.get(Stats::BytesFromPageCache), stats.get(Stats::BytesFromFilesystemCache), stats.get(Stats::BytesFromSource),
         stats.get(Stats::BytesPushedToCacheSync),
         stats.get(Stats::CacheGetRequests), stats.get(Stats::CachePopulateRequests), stats.get(Stats::SourceRequests),
@@ -192,7 +185,7 @@ ReaderExecutor::~ReaderExecutor()
         stats.get(Stats::PrefetchDiscardedRunning),
         stats.get(Stats::PrefetchIssuedSourceBytes),
         stats.get(Stats::PrefetchWastedSourceBytes),
-        stats.get(Stats::IncompleteConnections), stats.get(Stats::OverReadBytes));
+        stats.get(Stats::IncompleteConnections));
 
     if (reader_executor_log)
     {
@@ -215,7 +208,6 @@ ReaderExecutor::~ReaderExecutor()
         elem.cache_populate_requests = stats.get(Stats::CachePopulateRequests);
         elem.source_requests = stats.get(Stats::SourceRequests);
         elem.incomplete_connections = stats.get(Stats::IncompleteConnections);
-        elem.over_read_bytes = stats.get(Stats::OverReadBytes);
         elem.cache_get_us = stats.get(Stats::CacheGetMicroseconds);
         elem.cache_populate_us = stats.get(Stats::CachePopulateMicroseconds);
         elem.source_read_us = stats.get(Stats::SourceReadMicroseconds);
@@ -321,12 +313,6 @@ ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
 {
     stats.add(Stats::RequestedBytes, chain.range().size);
     position += chain.range().size;
-    /// Credit the over-read: bytes now delivered to the consumer that were earlier fetched ahead
-    /// (alignment slack / read-ahead) and parked in `overread_pending`. Removing the served range
-    /// nets them out, so only fetched-but-never-read bytes remain as genuine over-read. `chain` is
-    /// logical (post-header); shift to the physical file offsets `overread_pending` is keyed on.
-    if (chain.range().size)
-        overread_pending.remove({chain.range().offset + data_start_offset, chain.range().size});
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         chain.range().size, chain.getNodes().size(), position);
 
@@ -767,7 +753,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
         {
             ChainedBuffers assembled;
             IntervalSet covered_unused;
-            assembleAndWriteBack(m->physical_window, requested_phys, m->fetched, assembled, covered_unused,
+            assembleAndWriteBack(m->physical_window, m->fetched, assembled, covered_unused,
                 /*push_to_writers=*/false, stats);
             runPutStep(std::move(m), assembled);
             return false;
@@ -806,7 +792,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// already wrote inline is NOT re-read from cache here - a redundant `CacheGet` that would
     /// defeat the prefetch. Then re-credit a grown committed prefix / late hit for whatever
     /// `fetched` does not cover (an embedded faster-tier hit, a neighbour's fill).
-    assembleAndWriteBack(m->physical_window, requested_phys, m->fetched, result, covered,
+    assembleAndWriteBack(m->physical_window, m->fetched, result, covered,
         /*push_to_writers=*/false, stats);
     recreditCommittedPrefixes(m->physical_window, result, covered, stats);
     serveLateHits(m->physical_window, result, covered, stats);
@@ -1136,7 +1122,7 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
 }
 
 void ReaderExecutor::assembleAndWriteBack(
-    ByteRange fetch_window, ByteRange requested_window,
+    ByteRange fetch_window,
     const ChainedBuffers & source_bytes, ChainedBuffers & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats)
 {
     /// Append the source bytes for the still-uncovered gaps of `fetch_window`, in offset
@@ -1160,26 +1146,6 @@ void ReaderExecutor::assembleAndWriteBack(
             const ByteRange sub{lo, hi - lo};
             result.append(source_bytes.slice(sub));
             covered.add(sub);
-        }
-    }
-
-    /// Over-read - source bytes fetched BEYOND the requested window: alignment slack fetched to
-    /// fill a cache cell and the read-ahead's fetched-ahead bytes, both written to the cache.
-    /// Record their RANGES as pending rather than counting them now: a forward read-ahead fetches
-    /// far past the current window, but the cursor consumes those bytes from the cache a few
-    /// windows later, at which point the serve removes the range (`overread_pending.remove`). What
-    /// is never read back is the genuine over-read, emitted as `OverReadBytes` in the destructor -
-    /// so the read-ahead's "+" (fetch ahead) and "-" (read back from cache) balance on a large
-    /// window and only true waste remains. (Bytes already covered within the window - a redundant
-    /// late-hit copy - are also served-from-cache and so are correctly not counted.)
-    for (const auto & run : source_bytes.getIntervals())
-    {
-        if (run.offset < requested_window.offset)
-            overread_pending.add({run.offset, std::min(run.end(), requested_window.offset) - run.offset});
-        if (run.end() > requested_window.end())
-        {
-            const size_t tail = std::max(run.offset, requested_window.end());
-            overread_pending.add({tail, run.end() - tail});
         }
     }
 
@@ -1720,7 +1686,6 @@ ChainedBuffers ReaderExecutor::serveFromLongConnection(std::optional<LongConnect
         /// bytes cross the wire (over-read) but the source request is saved.
         const size_t skipped = conn->skipForward(offset - conn->current_position, block_size);
         out_stats.add(Stats::BytesFromSource, skipped);
-        out_stats.add(Stats::OverReadBytes, skipped);
     }
     /// The served bytes are counted as `BytesFromSource` by the caller (the returned
     /// chain), as on the one-shot path.
@@ -1741,7 +1706,6 @@ void ReaderExecutor::dropLongConnection(std::optional<LongConnection> & conn, St
     /// connection in an unknown state, so it is always released as incomplete.
     const auto drain = conn->drainTail(max_tail_for_drain, block_size, log);
     out_stats.add(Stats::BytesFromSource, drain.bytes);
-    out_stats.add(Stats::OverReadBytes, drain.bytes);
     if (drain.failed)
         out_stats.add(Stats::IncompleteConnections);
     else
@@ -2314,18 +2278,6 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     if (!launchMachineForWindow(ri, piece, *local_runner))
         return false;
     collectInFlightInto(ri);
-    /// Over-read accounting for the piece's extension beyond the cursor window, keyed off the
-    /// display frontier - what LANDED as servable (committed, banked, or a read-through hole's
-    /// resident coverage: those bytes were pulled from the source too) - so a short fill
-    /// records only that. The machine's own write path does not account over-read.
-    const size_t frontier = display.frontier(piece);
-    if (piece.offset < window.offset && frontier > piece.offset)
-        overread_pending.add(ByteRange{piece.offset, std::min(frontier, window.offset) - piece.offset});
-    if (frontier > window.end())
-    {
-        const size_t tail = std::max(piece.offset, window.end());
-        overread_pending.add(ByteRange{tail, frontier - tail});
-    }
     /// The ahead cursor to the window end: attempted, whether the cells took the bytes or
     /// the overflow bank did - the background never re-launches it.
     fill_lane.advanceAttempted(window.end());

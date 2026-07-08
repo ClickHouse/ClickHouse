@@ -37,7 +37,6 @@ ColumnsDescription ReaderExecutorLogElement::getColumnsDescription()
         {"cache_populate_requests", std::make_shared<DataTypeUInt64>(), "Number of `CacheWriter::write` invocations."},
         {"source_requests", std::make_shared<DataTypeUInt64>(), "Number of source-side requests (long-connection reuses are not counted)."},
         {"incomplete_connections", std::make_shared<DataTypeUInt64>(), "Number of source connections dropped before being drained to their right bound (not pool-reusable)."},
-        {"over_read_bytes", std::make_shared<DataTypeUInt64>(), "Bytes fetched from source that did not serve the requested window (head-alignment slack and bridged-gap bytes)."},
 
         {"cache_get_microseconds", std::make_shared<DataTypeUInt64>(), "Time spent inside `CacheReader::read`."},
         {"cache_populate_microseconds", std::make_shared<DataTypeUInt64>(), "Time spent inside `CacheWriter::write`."},
@@ -77,7 +76,6 @@ void ReaderExecutorLogElement::appendToBlock(MutableColumns & columns) const
     columns[i++]->insert(cache_populate_requests);
     columns[i++]->insert(source_requests);
     columns[i++]->insert(incomplete_connections);
-    columns[i++]->insert(over_read_bytes);
 
     columns[i++]->insert(cache_get_us);
     columns[i++]->insert(cache_populate_us);
