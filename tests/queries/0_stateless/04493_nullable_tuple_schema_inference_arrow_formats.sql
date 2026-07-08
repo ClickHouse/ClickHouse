@@ -52,9 +52,9 @@ SELECT count() FROM test_04493;
 DROP TABLE test_04493;
 
 -- Parquet (native reader)
-DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet');
-SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') ORDER BY id;
-CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet');
+DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet') SETTINGS input_format_parquet_use_native_reader_v3 = 1;
+SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') ORDER BY id SETTINGS input_format_parquet_use_native_reader_v3 = 1;
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.parquet', 'Parquet') SETTINGS input_format_parquet_use_native_reader_v3 = 1;
 SELECT count() FROM test_04493;
 DROP TABLE test_04493;
 
