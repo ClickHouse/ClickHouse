@@ -776,10 +776,10 @@ TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
         EXPECT_NO_THROW(bindN(manager, 2));
         /// Both placeholders are substituted (arity satisfied). With no declared OID
         /// the numeric values infer as bare, space-padded numeric literals.
-        /// Expected value is the space-padded "SELECT" + inferred "1" + "," + "2". The literal
-        /// is split at the comma (compile-time concatenated) so the style whitespace-before-comma
-        /// rule does not match inside this string.
-        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT  1 " ",  2 ");
+        /// Expected value is the space-padded "SELECT" + inferred "1" + "," + "2". The comma is
+        /// isolated in its own adjacent literal (compile-time concatenated) so neither the
+        /// whitespace-before-comma nor the double-space-after-comma style rule matches in source.
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT  1 " "," "  2 ");
     }
 
     /// One placeholder: an extra value is rejected (previously silently dropped).
