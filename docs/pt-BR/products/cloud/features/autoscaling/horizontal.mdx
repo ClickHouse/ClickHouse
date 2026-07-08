@@ -1,0 +1,56 @@
+---
+sidebarTitle: 'Escalonamento horizontal'
+slug: /cloud/features/autoscaling/horizontal
+description: 'Escalonamento horizontal manual no ClickHouse Cloud'
+keywords: ['escalonamento horizontal', 'escalonamento', 'réplicas', 'escalonamento manual', 'picos', 'surtos']
+title: 'Escalonamento horizontal'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+<div id="manual-horizontal-scaling">
+  ## Escalonamento horizontal manual
+</div>
+
+<ScalePlanFeatureBadge feature="Escalonamento horizontal manual" />
+
+Você pode usar as [APIs públicas](/api-reference/organization/get-list-of-available-organizations#/paths/~1v1~1organizations~1:organizationId~1services~1:serviceId~1scaling/patch) do ClickHouse Cloud para escalar seu serviço atualizando as configurações de escalonamento do serviço ou ajustar o número de réplicas no console do ClickHouse Cloud.
+
+Os tiers **Scale** e **Enterprise** também oferecem suporte a serviços com uma única réplica. Depois de serem expandidos horizontalmente, os serviços podem ser reduzidos novamente até o mínimo de uma única réplica. Observe que serviços com uma única réplica têm disponibilidade reduzida e não são recomendados para uso em produção.
+
+<Note>
+  Os serviços podem escalar horizontalmente até o máximo de 20 réplicas. Se você precisar de réplicas adicionais, entre em contato com nossa equipe de suporte.
+</Note>
+
+<div id="horizontal-scaling-via-api">
+  ### Escalonamento horizontal via API
+</div>
+
+Para escalar horizontalmente um cluster, envie uma solicitação `PATCH` pela API para ajustar o número de réplicas. As capturas de tela abaixo mostram uma chamada de API para aumentar um cluster de `3` réplicas para `6` réplicas, e a resposta correspondente.
+
+<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="Solicitação PATCH de escalonamento" border />
+
+*Solicitação `PATCH` para atualizar `numReplicas`*
+
+<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="Resposta PATCH de escalonamento" border />
+
+*Resposta à solicitação `PATCH`*
+
+Se você enviar uma nova solicitação de escalonamento, ou várias solicitações em sequência, enquanto outra já estiver em andamento, o serviço de escalonamento ignorará os estados intermediários e convergirá para a contagem final de réplicas.
+
+<div id="horizontal-scaling-via-ui">
+  ### Escalonamento horizontal pela UI
+</div>
+
+Para escalar um serviço horizontalmente pela UI, você pode ajustar o número de réplicas do serviço na página **Settings**.
+
+<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="Configurações de escalonamento" border />
+
+*Configurações de escalonamento do serviço no console do ClickHouse Cloud*
+
+Depois que o serviço for escalado, o dashboard de métricas no console do ClickHouse Cloud deverá mostrar a alocação correta do serviço. A captura de tela abaixo mostra o cluster escalado para uma memória total de `96 GiB`, isto é, `6` réplicas, cada uma com alocação de memória de `16 GiB`.
+
+<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="Alocação de memória do escalonamento" border />

@@ -1,0 +1,176 @@
+---
+slug: /integrations/mysql
+sidebarTitle: 'MySQL'
+title: 'Intégration de MySQL avec ClickHouse'
+hide_title: true
+description: "Page décrivant l’intégration de MySQL"
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse'
+keywords: ['mysql', 'intégration de base de données', 'table externe', 'source de données', 'base de données SQL']
+---
+
+import CloudNotSupportedBadge from "/snippets/fr/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+Cette page décrit l’utilisation du moteur de table `MySQL` pour lire les données d’une table MySQL.
+
+<Note>
+  Avec ClickHouse Cloud, vous pouvez également utiliser [MySQL ClickPipe](/fr/integrations/clickpipes/mysql/index) (actuellement en bêta publique) pour transférer facilement des données depuis vos tables MySQL vers ClickHouse.
+</Note>
+
+<div id="connecting-clickhouse-to-mysql-using-the-mysql-table-engine">
+  ## Connecter ClickHouse à MySQL avec le moteur de table MySQL
+</div>
+
+Le moteur de table `MySQL` vous permet de connecter ClickHouse à MySQL. Des instructions **SELECT** et **INSERT** peuvent être exécutées soit dans ClickHouse, soit dans la table MySQL. Cet article présente les principales méthodes d’utilisation du moteur de table `MySQL`.
+
+<div id="1-configure-mysql">
+  ### 1. Configurer MySQL
+</div>
+
+1. Créez une base de données dans MySQL :
+
+```sql
+  CREATE DATABASE db1;
+```
+
+2. Créez une table :
+
+```sql
+  CREATE TABLE db1.table1 (
+    id INT,
+    column1 VARCHAR(255)
+  );
+```
+
+3. Insérez des lignes d’exemple :
+
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (1, 'abc'),
+    (2, 'def'),
+    (3, 'ghi');
+```
+
+4. Créez un utilisateur permettant à ClickHouse de se connecter :
+
+```sql
+  CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
+```
+
+5. Accordez les privilèges nécessaires. (À des fins de démonstration, des privilèges d’administration sont accordés à l’utilisateur `mysql_clickhouse`.)
+
+```sql
+  GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
+```
+
+<Note>
+  Si vous utilisez cette fonctionnalité dans ClickHouse Cloud, vous devrez peut-être autoriser les adresses IP de ClickHouse Cloud à accéder à votre instance MySQL.
+  Consultez l&#39;[API Cloud Endpoints](/fr/products/cloud/guides/sql-console/query-endpoints) de ClickHouse pour plus d’informations sur le trafic sortant.
+</Note>
+
+<div id="2-define-a-table-in-clickhouse">
+  ### 2. Définir une table dans ClickHouse
+</div>
+
+1. Créons maintenant une table dans ClickHouse qui utilise le moteur de table `MySQL` :
+
+```sql
+  CREATE TABLE mysql_table1 (
+    id UInt64,
+    column1 String
+  )
+  ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
+```
+
+Les paramètres minimaux sont :
+
+| paramètre | Description                                 | exemple               |
+| --------- | ------------------------------------------- | --------------------- |
+| host      | nom d’hôte ou adresse IP                    | mysql-host.domain.com |
+| database  | nom de la base de données MySQL             | db1                   |
+| table     | nom de la table MySQL                       | table1                |
+| user      | nom d’utilisateur pour se connecter à MySQL | mysql&#95;clickhouse  |
+| password  | mot de passe pour se connecter à MySQL      | Password123!          |
+
+<Note>
+  Consultez la page de documentation du [moteur de table MySQL](/fr/reference/engines/table-engines/integrations/mysql) pour obtenir la liste complète des paramètres.
+</Note>
+
+<div id="3-test-the-integration">
+  ### 3. Tester l’intégration
+</div>
+
+1. Dans MySQL, insérez une ligne d’exemple :
+
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (4, 'jkl');
+```
+
+2. Constatez que les lignes existantes de la table MySQL se trouvent dans la table ClickHouse, ainsi que la nouvelle ligne que vous venez d’ajouter :
+
+```sql
+  SELECT
+      id,
+      column1
+  FROM mysql_table1
+```
+
+Vous devriez voir 4 lignes :
+
+```response
+  Query id: 6d590083-841e-4e95-8715-ef37d3e95197
+
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  │  3 │ ghi     │
+  │  4 │ jkl     │
+  └────┴─────────┘
+
+  4 rows in set. Elapsed: 0.044 sec.
+```
+
+3. Ajoutons une ligne à la table ClickHouse :
+
+```sql
+  INSERT INTO mysql_table1
+    (id, column1)
+  VALUES
+    (5,'mno')
+```
+
+4. Remarquez que la nouvelle ligne apparaît dans MySQL :
+
+```bash
+  mysql> select id,column1 from db1.table1;
+```
+
+Vous devriez voir la nouvelle ligne :
+
+```response
+  +------+---------+
+  | id   | column1 |
+  +------+---------+
+  |    1 | abc     |
+  |    2 | def     |
+  |    3 | ghi     |
+  |    4 | jkl     |
+  |    5 | mno     |
+  +------+---------+
+  5 rows in set (0.01 sec)
+```
+
+<div id="summary">
+  ### Résumé
+</div>
+
+Le moteur de table `MySQL` vous permet de connecter ClickHouse à MySQL pour échanger des données dans les deux sens. Pour en savoir plus, consultez la page de documentation du [moteur de table MySQL](/fr/reference/functions/table-functions/mysql).

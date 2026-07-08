@@ -1,0 +1,137 @@
+---
+description: '集約関数のドキュメント'
+sidebarTitle: '集約関数'
+slug: /sql-reference/aggregate-functions/
+title: '集約関数'
+doc_type: 'reference'
+---
+
+集約関数は、データベースの専門家が想定するとおり、[通常の](http://www.sql-tutorial.com/sql-aggregate-functions-sql-tutorial)方法で動作します。
+
+ClickHouse は、以下もサポートしています。
+
+* [パラメトリック集約関数](/ja/reference/functions/aggregate-functions/parametric-functions): カラムに加えて、ほかのパラメータも受け取ります。
+* [コンビネータ](/ja/reference/functions/aggregate-functions/combinators): 集約関数の動作を変更します。
+
+<div id="null-processing">
+  ## NULL の処理
+</div>
+
+集約では、`NULL` の argument はすべてスキップされます。集約 に複数の argument がある場合は、そのうち 1 つ以上が NULL である行は無視されます。
+
+この規則には例外があります。関数 [`first_value`](/ja/reference/functions/aggregate-functions/first_value)、[`last_value`](/ja/reference/functions/aggregate-functions/last_value) と、それらの別名 (それぞれ `any` と `anyLast`) に modifier `RESPECT NULLS` が続く場合です。たとえば、`FIRST_VALUE(b) RESPECT NULLS` です。
+
+**例:**
+
+次の table を考えます。
+
+```text
+┌─x─┬────y─┐
+│ 1 │    2 │
+│ 2 │ ᴺᵁᴸᴸ │
+│ 3 │    2 │
+│ 3 │    3 │
+│ 3 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+たとえば、`y` カラムの値の合計を求めるとします。
+
+```sql
+SELECT sum(y) FROM t_null_big
+```
+
+```text
+┌─sum(y)─┐
+│      7 │
+└────────┘
+```
+
+これで、`groupArray` 関数を使って `y` カラムから配列を作成できます。
+
+```sql
+SELECT groupArray(y) FROM t_null_big
+```
+
+```text
+┌─groupArray(y)─┐
+│ [2,2,3]       │
+└───────────────┘
+```
+
+`groupArray` は、結果の配列に `NULL` を含めません。
+
+[COALESCE](/ja/reference/functions/regular-functions/functions-for-nulls#coalesce) を使うと、`NULL` を用途に応じた適切な値に置き換えられます。たとえば `avg(COALESCE(column, 0))` では、集約時にカラムの値を使用し、`NULL` の場合は 0 を使用します。
+
+```sql
+SELECT
+    avg(y),
+    avg(coalesce(y, 0))
+FROM t_null_big
+```
+
+```text
+┌─────────────avg(y)─┬─avg(coalesce(y, 0))─┐
+│ 2.3333333333333335 │                 1.4 │
+└────────────────────┴─────────────────────┘
+```
+
+また、NULL のスキップ動作を回避するには、[Tuple](/ja/reference/data-types/tuple)を使うこともできます。`NULL`値だけを含む`Tuple`は`NULL`ではないため、集約関数はその`NULL`値があってもその行をスキップしません。
+
+```sql
+SELECT
+    groupArray(y),
+    groupArray(tuple(y)).1
+FROM t_null_big;
+
+┌─groupArray(y)─┬─tupleElement(groupArray(tuple(y)), 1)─┐
+│ [2,2,3]       │ [2,NULL,2,3,NULL]                     │
+└───────────────┴───────────────────────────────────────┘
+```
+
+カラムが集計関数の引数として使用される場合、集計はスキップされることに注意してください。たとえば、[`count`](/ja/reference/functions/aggregate-functions/count) は、パラメータなし (`count()`) または定数パラメータ付き (`count(1)`) の場合、ブロック内のすべての行をカウントします (引数に GROUP BY カラムが含まれないため、その値には依存しません) 。一方、`count(column)` は、column が NULL ではない行数のみを返します。
+
+```sql
+SELECT
+    v,
+    count(1),
+    count(v)
+FROM
+(
+    SELECT if(number < 10, NULL, number % 3) AS v
+    FROM numbers(15)
+)
+GROUP BY v
+
+┌────v─┬─count()─┬─count(v)─┐
+│ ᴺᵁᴸᴸ │      10 │        0 │
+│    0 │       1 │        1 │
+│    1 │       2 │        2 │
+│    2 │       2 │        2 │
+└──────┴─────────┴──────────┘
+```
+
+また、`RESPECT NULLS` を指定した first&#95;value の例を以下に示します。この例では、NULL 入力がそのまま考慮されるため、NULL であるかどうかにかかわらず、最初に読み取られた値が返されることがわかります。
+
+```sql
+SELECT
+    col || '_' || ((col + 1) * 5 - 1) AS range,
+    first_value(odd_or_null) AS first,
+    first_value(odd_or_null) IGNORE NULLS as first_ignore_null,
+    first_value(odd_or_null) RESPECT NULLS as first_respect_nulls
+FROM
+(
+    SELECT
+        intDiv(number, 5) AS col,
+        if(number % 2 == 0, NULL, number) AS odd_or_null
+    FROM numbers(15)
+)
+GROUP BY col
+ORDER BY col
+
+┌─range─┬─first─┬─first_ignore_null─┬─first_respect_nulls─┐
+│ 0_4   │     1 │                 1 │                ᴺᵁᴸᴸ │
+│ 1_9   │     5 │                 5 │                   5 │
+│ 2_14  │    11 │                11 │                ᴺᵁᴸᴸ │
+└───────┴───────┴───────────────────┴─────────────────────┘
+```

@@ -1,0 +1,45 @@
+---
+title: 컬럼형 데이터베이스란 무엇입니까?
+description: "컬럼형 데이터베이스는 각 컬럼의 데이터를 독립적으로 저장합니다. 따라서 주어진 쿼리에서 사용하는 컬럼에 대해서만 디스크에서 데이터를 읽을 수 있습니다."
+date: 2021-09-01
+tags: ['핵심 데이터 개념']
+keywords: ['컬럼형 데이터베이스']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## 소개
+</div>
+
+컬럼형 데이터베이스는 각 컬럼의 데이터를 독립적으로 저장합니다. 따라서 주어진 쿼리에서 사용하는 컬럼에 대해서만 디스크에서 데이터를 읽을 수 있습니다. 반면, 전체 행에 영향을 미치는 작업은 그만큼 더 많은 비용이 듭니다. 컬럼형 데이터베이스는 컬럼 지향 데이터베이스 관리 시스템이라고도 합니다. ClickHouse는 이러한 시스템의 대표적인 예시입니다.
+
+<div id="advantages-of-a-columnar-database">
+  ## 컬럼형 데이터베이스의 장점
+</div>
+
+컬럼형 데이터베이스의 주요 장점은 다음과 같습니다.
+
+* 많은 컬럼 중 일부 컬럼만 사용하는 쿼리
+* 대규모 데이터에 대한 집계 쿼리
+* 컬럼 단위 데이터 압축
+
+<div id="row-oriented-vs-column-oriented-databases">
+  ## 행 지향 데이터베이스와 컬럼 지향 데이터베이스 비교
+</div>
+
+다음은 보고서를 생성할 때 기존의 행 지향 시스템과 컬럼형 데이터베이스의 차이를 보여주는 그림입니다.
+
+**기존의 행 지향 방식**
+
+<Image img="/images/row-oriented.webp" alt="기존의 행 지향 데이터베이스 저장 방식의 그림" size="md" />
+
+**컬럼형**
+
+<Image img="/images/column-oriented.webp" alt="컬럼형 데이터베이스 저장 방식의 그림" size="md" />
+
+컬럼형 데이터베이스는 분석 애플리케이션에 가장 적합한 선택지입니다. 필요에 대비해 테이블에 많은 컬럼을 추가해 두더라도, 읽기 쿼리를 실행할 때 사용하지 않는 컬럼 때문에 비용을 치를 필요가 없기 때문입니다(기존의 OLTP 데이터베이스는 데이터가 컬럼이 아니라 행 단위로 저장되므로 쿼리 실행 중 모든 데이터를 읽습니다). 컬럼 지향 데이터베이스는 빅데이터 처리와 데이터 웨어하우징을 위해 설계되었습니다. 처리량을 높이기 위해 저비용 하드웨어로 구성된 분산 클러스터로 네이티브하게 확장되는 경우가 많습니다. ClickHouse는 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블과 [복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블을 조합해 이를 구현합니다.

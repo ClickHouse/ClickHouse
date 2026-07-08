@@ -57,6 +57,7 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
+    extern const int ACCESS_DENIED;
 }
 
 namespace DB::Setting
@@ -417,7 +418,8 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
-    DB::ContextPtr context_)
+    DB::ContextPtr context_,
+    bool allow_server_credentials_in_user_queries_)
     : RestCatalog(warehouse_, base_url_, "", "", false, context_)
     , google_project_id(google_project_id_)
     , google_service_account(google_service_account_)
@@ -426,6 +428,7 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
+    , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
@@ -490,23 +493,29 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
 
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 {
-    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
-    {
-        try
-        {
-            return retrieveGoogleCloudAccessTokenFromRefreshToken();
-        }
-        catch (const DB::Exception & e)
-        {
-            LOG_DEBUG(log, "Failed to use ADC credentials, falling back to metadata service: {}", e.what());
-        }
-    }
+    const auto & context = getContext();
 
-    /// Fallback to GCP metadata service (works inside GCP infrastructure)
+    /// An explicit Application Default Credentials triple is a user-supplied credential, so it is honored.
+    /// Fail closed if it does not work: do not fall back to the server's GCP metadata service, which would
+    /// mint a token with the server's own identity.
+    if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
+        return retrieveGoogleCloudAccessTokenFromRefreshToken();
+
+    /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
+    /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
+    /// unless that was allowed when the database was created. The context here is the global one, whose live
+    /// setting never reflects the creating session, so pass the value captured at CREATE time.
+    if (context->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries))
+        throw DB::Exception(
+            DB::ErrorCodes::ACCESS_DENIED,
+            "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
+            "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
+            "google_adc_client_secret, google_adc_refresh_token), or enable the setting "
+            "`s3_allow_server_credentials_in_user_queries`.");
+
+    /// GCP metadata service (works inside GCP infrastructure)
     /// https://cloud.google.com/compute/docs/metadata/overview
     static constexpr auto DEFAULT_REQUEST_TOKEN_PATH = "/computeMetadata/v1/instance/service-accounts";
-
-    const auto & context = getContext();
 
     const auto allowed_metadata_hosts = getAllowedBigLakeMetadataServiceHosts(context->getConfigRef());
     if (allowed_metadata_hosts.empty())

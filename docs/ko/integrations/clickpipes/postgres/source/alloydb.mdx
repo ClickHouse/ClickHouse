@@ -1,0 +1,151 @@
+---
+sidebarTitle: 'AlloyDB Postgres'
+description: 'AlloyDB Postgres 인스턴스를 ClickPipes 소스로 설정합니다'
+slug: /integrations/clickpipes/postgres/source/alloydb
+title: 'AlloyDB Postgres 소스 설정 가이드'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="supported-versions">
+  ## 지원 버전
+</div>
+
+ClickPipes를 사용해 AlloyDB 인스턴스에서 ClickHouse Cloud로 데이터를 전송하려면, 해당 인스턴스가 **논리적 복제**를 사용하도록 구성되어 있어야 합니다. 이 기능은 **AlloyDB Version 14부터** 지원됩니다.
+
+<div id="enable-logical-replication">
+  ## 논리적 복제 활성화
+</div>
+
+AlloyDB 인스턴스에서 논리적 복제가 활성화되었는지 확인하려면 프라이머리 인스턴스에서 다음 쿼리를 실행하십시오.
+
+```sql
+SHOW  wal_level;
+```
+
+결과가 `logical`이면 논리적 복제가 이미 활성화되어 있으므로 [다음 단계](#create-a-clickpipes-user-and-manage-replication-permissions)로 건너뛸 수 있습니다. 결과가 `replica`이면 프라이머리 인스턴스에서 [`alloydb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) 및 [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) 플래그를 `on`으로 설정해야 합니다.
+
+<Warning>
+  [AlloyDB flags documentation](https://cloud.google.com/alloydb/docs/reference/alloydb-flags)에 나와 있듯이, 논리적 복제를 활성화하는 플래그를 수정하려면 프라이머리 인스턴스를 다시 시작해야 합니다.
+</Warning>
+
+이 플래그를 활성화하려면 다음 단계를 수행하세요:
+
+1. Google Cloud Console에서 AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters) 페이지로 이동합니다. 프라이머리 인스턴스의 **Actions** 메뉴에서 **Edit**를 클릭합니다.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="프라이머리 인스턴스 구성 편집" size="lg" border />
+
+2. 아래로 스크롤하여 **Advanced configuration options** 섹션을 펼칩니다. **Flags** 아래에서 **Add a database flag**를 클릭합니다.
+
+   * [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) 플래그를 추가하고 값을 `on`으로 설정합니다
+   * [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) 플래그를 추가하고 값을 `on`으로 설정합니다
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="allowdb.enable_pglogical 및 alloydb.logical_decoding 플래그를 on으로 설정" size="lg" border />
+
+3. **Update instance**를 클릭하여 구성 변경 사항을 저장합니다. 이 작업을 수행하면 **프라이머리 인스턴스가 다시 시작된다는 점에 유의해야 합니다.**
+
+4. 인스턴스 상태가 `Updating`에서 `Ready`로 변경되면 프라이머리 인스턴스에서 다음 쿼리를 실행하여 논리적 복제가 활성화되었는지 확인합니다:
+
+   ```sql
+   SHOW  wal_level;
+   ```
+
+   결과는 `logical`이어야 합니다.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="논리적 복제가 활성화되었는지 확인" size="lg" border />
+
+<div id="create-a-clickpipes-user-and-manage-replication-permissions">
+  ## ClickPipes 사용자를 생성하고 복제 권한 관리하기
+</div>
+
+관리자 사용자로 AlloyDB 인스턴스에 연결한 다음, 다음 명령을 실행합니다.
+
+1. ClickPipes 전용 사용자를 생성합니다.
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 이전 단계에서 생성한 사용자에게 스키마(schema) 수준의 읽기 전용 권한을 부여합니다. 다음 예시는 `public` 스키마에 대한 권한을 보여줍니다. 복제할 테이블이 포함된 각 스키마에 대해 이 명령을 반복하십시오.
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 사용자에게 복제 권한을 부여합니다.
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 복제할 테이블을 포함하는 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)을 생성합니다. 성능 오버헤드를 피하려면 publication에는 필요한 테이블만 포함할 것을 강력히 권장합니다.
+
+<Warning>
+  publication에 포함된 모든 테이블에는 **기본 키(primary key)**가 정의되어 있거나 **replica identity**가 `FULL`로 설정되어 있어야 합니다. 범위를 어떻게 지정할지에 대한 자세한 내용은 [Postgres FAQ](/ko/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)를 참조하십시오.
+</Warning>
+
+* 특정 테이블에 대한 publication을 생성하려면:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 특정 스키마의 모든 테이블에 대한 publication을 생성하려면:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+`clickpipes` publication에는 지정한 테이블에서 생성된 변경 이벤트 집합이 포함되며, 이후 복제 스트림을 수집하는 데 사용됩니다.
+
+<div id="configure-network-access">
+  ## 네트워크 액세스 구성
+</div>
+
+<Note>
+  ClickPipes는 Private Service Connect (PSC) 연결을 지원하지 않습니다. AlloyDB 인스턴스에 대한 공개 액세스를 허용하지 않는 경우, [SSH 터널을 사용](#configure-network-access)하여 안전하게 연결할 수 있습니다. PSC는 향후 지원될 예정입니다.
+</Note>
+
+다음으로, ClickPipes에서 AlloyDB 인스턴스로 연결할 수 있도록 허용해야 합니다.
+
+<Tabs>
+  <Tab title="ClickPipes IP 허용">
+    1. Google Cloud Console에서 AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters) 페이지로 이동합니다. 프라이머리 인스턴스를 선택하여 **Overview** 페이지를 엽니다.
+
+    2. 아래로 스크롤하여 **Instances in your cluster** 섹션으로 이동한 다음 **Edit primary**를 클릭합니다.
+
+    3. **Enable Public IP** 확인란을 선택하여 공용 인터넷을 통해 인스턴스에 연결할 수 있도록 합니다. **Authorized external networks** 아래에 서비스가 배포된 리전에 해당하는 [ClickPipes 정적 IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)을 입력합니다.
+
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="IP 허용 목록을 사용해 공개 액세스를 위한 네트워킹 구성" size="lg" border />
+
+    <Note>
+      AlloyDB는 주소를 [CIDR 표기법](https://cloud.google.com/alloydb/docs/connection-overview#public-ip)으로 지정해야 합니다. 제공된 ClickPipes 정적 IP 주소 목록의 각 주소 끝에 `/32`를 추가하면 이 표기법에 맞출 수 있습니다.
+    </Note>
+
+    4. **Network Security**에서 **Require SSL Encryption (default)**를 선택합니다(아직 선택되지 않은 경우).
+
+    5. 네트워크 보안 구성 변경 사항을 저장하려면 **Update instance**를 클릭합니다.
+  </Tab>
+
+  <Tab title="SSH 터널 사용">
+    AlloyDB 인스턴스에 대한 공개 액세스를 허용하지 않는 경우, 먼저 SSH 배스천 호스트를 설정하여 연결을 안전하게 터널링해야 합니다. Google Cloud Platform에서 SSH 배스천 호스트를 설정하려면 다음 단계를 수행하십시오.
+
+    1. [공식 문서](https://cloud.google.com/compute/docs/instances/create-start-instance)에 따라 Google Compute Engine (GCE) 인스턴스를 생성하고 시작합니다.
+       * GCE 인스턴스가 AlloyDB 인스턴스와 동일한 Virtual Private Network (VPC)에 있는지 확인합니다.
+       * GCE 인스턴스에 [고정 공용 IP 주소](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address)가 있는지 확인합니다. 이 IP 주소는 ClickPipes를 SSH 배스천 호스트에 연결할 때 사용합니다.
+
+    2. 서비스가 배포된 리전에 해당하는 [ClickPipes 정적 IP 주소 목록](/ko/integrations/clickpipes/home#list-of-static-ips)에서 들어오는 트래픽을 허용하도록 SSH 배스천 호스트의 방화벽 규칙을 업데이트합니다.
+
+    3. SSH 배스천 호스트에서 들어오는 트래픽을 허용하도록 AlloyDB의 방화벽 규칙을 업데이트합니다.
+  </Tab>
+</Tabs>
+
+<div id="whats-next">
+  ## 다음 단계
+</div>
+
+이제 [ClickPipe를 생성](/ko/integrations/clickpipes/postgres/index)하고 Postgres 인스턴스에서 ClickHouse Cloud로 데이터를 수집하기 시작할 수 있습니다.
+ClickPipe 생성 과정에서 필요하므로 Postgres 인스턴스를 설정할 때 사용한 연결 정보를 반드시 기록해 두십시오.

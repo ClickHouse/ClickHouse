@@ -59,6 +59,7 @@
 #include <Parsers/ASTInsertQuery.h>
 #include <Common/ErrorHandlers.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/pointInPolygon.h>
 #include <Functions/registerFunctions.h>
 #include <AggregateFunctions/registerAggregateFunctions.h>
@@ -553,6 +554,12 @@ void LocalServer::tryInitPath()
     std::string user_scripts_path = getClientConfiguration().getString("user_scripts_path", fs::path(path) / "user_scripts" / "");
     global_context->setUserScriptsPath(user_scripts_path);
 
+    std::string dynamic_udf_path = getClientConfiguration().getString(
+        "dynamic_user_defined_executable_functions_path",
+        fs::path(path) / "dynamic_user_defined_executable_functions" / "");
+    global_context->setDynamicUserDefinedExecutableFunctionsPath(dynamic_udf_path);
+    fs::create_directories(dynamic_udf_path);
+
     /// Set path for filesystem caches
     String filesystem_caches_path(getClientConfiguration().getString("filesystem_caches_path", fs::path(path) / "cache" / ""));
     if (!filesystem_caches_path.empty())
@@ -681,7 +688,8 @@ void LocalServer::startServers(const ServerType & server_type)
             /* heavy_metrics_update_period_seconds= */ 120,
             metrics_func,
             /* update_jemalloc_epoch_= */ false,
-            /* update_rss_= */ false);
+            /* update_rss_= */ false
+        );
     }
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
@@ -1163,7 +1171,13 @@ try
     /// try to load user defined executable functions, throw on error and die
     try
     {
+        global_context->loadUserDefinedExecutableFunctionDrivers(getClientConfiguration());
         global_context->loadOrReloadUserDefinedExecutableFunctions(getClientConfiguration());
+
+        /// Re-run drivers for previously persisted ATTACH FUNCTION entries whose
+        /// dynamic configuration files are missing.
+        UserDefinedSQLFunctionFactory::instance().reloadDriverBasedFunctions(
+            global_context, global_context->getUserDefinedSQLObjectsStorage());
     }
     catch (...)
     {
@@ -1795,7 +1809,16 @@ void LocalServer::applyCmdSettings(ContextMutablePtr context)
 
 void LocalServer::applyCmdOptions(ContextMutablePtr context)
 {
-    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", is_interactive ? "PrettyCompact" : "TSV")));
+    /// This sets the default output format for the (global) context, which is used by connections
+    /// served by `clickhouse-local` when it acts as a server (`SYSTEM START LISTEN TCP/HTTP`), as
+    /// well as by internal usages that consult the context's default format. It must match a real
+    /// `clickhouse-server`, which defaults to `TabSeparated`.
+    ///
+    /// Do not use the interactive default (`PrettyCompact`) here: that format is only for rendering
+    /// query results in the terminal and is applied separately via `ClientBase::default_output_format`.
+    /// Otherwise a client connecting over HTTP would receive a `PrettyCompact`-formatted response and
+    /// fail to parse it (for example, the version query used during connection handshake).
+    context->setDefaultFormat(getClientConfiguration().getString("output-format", getClientConfiguration().getString("format", "TSV")));
     applyCmdSettings(context);
 }
 
