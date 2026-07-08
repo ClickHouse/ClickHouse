@@ -53,6 +53,7 @@
 #include <Storages/System/StorageSystemParts.h>
 #include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
+#include <Storages/System/StorageSystemPartStatistics.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemUserProcesses.h>
@@ -248,6 +249,7 @@ void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, b
     attachNoDescription<StorageSystemDetachedParts>(context, system_database, "detached_parts", "Contains a list of all parts which are being found in /detached directory along with a reason why it was detached. ClickHouse server doesn't use such parts anyhow.");
     attachNoDescription<StorageSystemPartsColumns>(context, system_database, "parts_columns", "Contains a list of columns of all currently existing parts of all MergeTree tables. Each column is represented by a single row.");
     attachNoDescription<StorageSystemProjectionPartsColumns>(context, system_database, "projection_parts_columns", "Contains a list of columns of all currently existing projection parts of all MergeTree tables. Each column is represented by a single row.");
+    attachNoDescription<StorageSystemPartStatistics>(context, system_database, "part_statistics", "Contains column statistics stored in data parts of MergeTree tables. Each row describes one column of one data part that has statistics; parts and columns without statistics are omitted.");
     attachNoDescription<StorageSystemDisks>(context, system_database, "disks", "Contains information about disks defined in the server configuration.");
     attachNoDescription<StorageSystemStoragePolicies>(context, system_database, "storage_policies", "Contains information about storage policies and volumes defined in the server configuration.");
     attach<StorageSystemProcesses>(context, system_database, "processes", "Contains a list of currently executing processes (queries) with their progress.");
