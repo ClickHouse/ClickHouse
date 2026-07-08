@@ -1,7 +1,9 @@
 -- Tags: no-parallel-replicas
 -- Bloom filter skip index on an Array column must be used for `arrayJoin(col) IN (set)`
--- (and `GLOBAL IN`), the same way it is already used for `hasAny(col, set)`.
--- Issue: https://github.com/ClickHouse/ClickHouse/issues/109516
+-- (and `GLOBAL IN`), the same way it is already used for `hasAny(col, set)`, and for
+-- `arrayJoin(col) = const`, the same way it is already used for `has(col, const)`.
+-- Issues: https://github.com/ClickHouse/ClickHouse/issues/109516
+--         https://github.com/ClickHouse/ClickHouse/issues/109844
 
 DROP TABLE IF EXISTS t_arrayjoin_bf;
 
@@ -36,9 +38,17 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf 
 -- Safety: NOT IN must NOT prune (a granule with the set element can still yield rows outside the set).
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) NOT IN ('tag_42')) WHERE explain ILIKE '%Granules: 13/13%';
 
+-- arrayJoin(tags) = const now uses the index and prunes identically to has(tags, const).
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) = 'tag_42') WHERE explain ILIKE '%Granules: 2/13%';
+
+-- Safety: != must NOT prune (a granule with the value can still yield rows whose arrayJoined value differs).
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) != 'tag_42') WHERE explain ILIKE '%Granules: 13/13%';
+
 -- Correctness: results are unaffected by index usage.
 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) IN ('tag_42', 'tag_99999');
 SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) NOT IN ('tag_42');
+SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) = 'tag_42';
+SELECT count() FROM t_arrayjoin_bf WHERE arrayJoin(tags) != 'tag_42';
 
 DROP TABLE t_arrayjoin_bf;
 
@@ -66,6 +76,16 @@ INSERT INTO t_arrayjoin_bf_default SELECT number + 5000, [concat('tag_', toStrin
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('')) WHERE explain ILIKE '%Granules: 2/13%';
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('') SETTINGS use_skip_indexes = 1;
 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) IN ('') SETTINGS use_skip_indexes = 0;
+-- Equality form with the default value: the analyzer rewrites `s = ''` into `empty(s)`, so the
+-- derivation does not fire (it keys off `equals`) and no granule is skipped. This is the safe
+-- fallback -> full scan, correct result. Results must be identical with the skip index on and off.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '') WHERE explain ILIKE '%Granules: 13/13%';
+SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = '' SETTINGS use_skip_indexes = 0;
+-- A non-default value that is a real element in one granule -> pruning fires (1/13), result correct.
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = 'x_1') WHERE explain ILIKE '%Granules: 1/13%';
+SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = 'x_1' SETTINGS use_skip_indexes = 1;
+SELECT count() FROM t_arrayjoin_bf_default WHERE arrayJoin(tags) = 'x_1' SETTINGS use_skip_indexes = 0;
 
 DROP TABLE t_arrayjoin_bf_default;
 

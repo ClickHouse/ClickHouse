@@ -830,6 +830,35 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 {
     auto key_column_name = key_node.getColumnName();
 
+    /// Handle `arrayJoin(indexed_array_column) = const` by mapping it to the same granule test as
+    /// `has(indexed_array_column, const)`. `arrayJoin` only multiplies rows, so a granule can produce
+    /// a row matching the equality only if at least one array element in the granule equals the const,
+    /// which is exactly what the bloom filter evaluates for `has`. `notEquals` is not derivable: a
+    /// granule containing the const can still yield arrayJoined rows whose value differs from it.
+    if (function_name == "equals")
+    {
+        if (auto array_join_argument = key_node.getArrayJoinArgument())
+        {
+            auto array_column_name = array_join_argument->getColumnName();
+            if (header.has(array_column_name))
+            {
+                size_t position = header.getPositionByName(array_column_name);
+                const DataTypePtr & index_type = header.getByPosition(position).type;
+                if (const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get()))
+                {
+                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
+                    if (converted_field.isNull())
+                        return false;
+
+                    out.function = RPNElement::FUNCTION_HAS;
+                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
+                    return true;
+                }
+            }
+        }
+    }
+
     if (header.has(key_column_name))
     {
         size_t position = header.getPositionByName(key_column_name);
