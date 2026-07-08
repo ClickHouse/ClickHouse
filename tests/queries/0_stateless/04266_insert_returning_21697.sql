@@ -191,12 +191,13 @@ CREATE TABLE db_insert_returning_tx.t_insert_returning_tx (id UInt64) ENGINE = M
 
 SELECT 'returning failure rolls back implicit transaction';
 INSERT INTO db_insert_returning_tx.t_insert_returning_tx
-SELECT number FROM numbers(3)
 SETTINGS implicit_transaction=1
+SELECT number FROM numbers(3)
 RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT count() FROM db_insert_returning_tx.t_insert_returning_tx;
 
 SELECT 'returning failure rolls back explicit transaction';
+TRUNCATE TABLE db_insert_returning_tx.t_insert_returning_tx;
 BEGIN TRANSACTION;
 INSERT INTO db_insert_returning_tx.t_insert_returning_tx
 SELECT number + 10 FROM numbers(3)
