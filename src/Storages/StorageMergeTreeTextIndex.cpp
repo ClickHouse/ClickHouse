@@ -440,12 +440,15 @@ void StorageMergeTreeTextIndex::readImpl(
     auto source_storage_id = source_table->getStorageID();
     auto required_columns = text_index->getColumnsRequiredForIndexCalc();
     auto source_metadata_snapshot = source_table->getInMemoryMetadataPtr(context, false);
-    context->checkAccess(
-        AccessType::SELECT,
-        source_storage_id,
-        source_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(required_columns));
+    const auto & source_columns = source_metadata_snapshot->getColumns();
+
+    /// Column-level grants and row policies are tracked against top-level storage columns only, so map
+    /// any subcolumns required for the index (e.g. `json.a.b`) to their parent storage column (e.g. `json`).
+    auto required_storage_columns = source_columns.getColumnNamesInStorageForAccessCheck(required_columns);
+    context->checkAccess(AccessType::SELECT, source_storage_id, required_storage_columns);
+
     /// If the row policy filter references any column required for building the index,
-    /// reading from the text index would expose tokens derived from those columnsand violate the row policy.
+    /// reading from the text index would expose tokens derived from those columns and violate the row policy.
     auto row_policy_filter = context->getRowPolicyFilter(source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
 
     if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
@@ -454,9 +457,17 @@ void StorageMergeTreeTextIndex::readImpl(
         RequiredSourceColumnsVisitor(columns_context).visit(row_policy_filter->expression);
         NameSet row_policy_columns = columns_context.requiredColumns();
 
-        for (const auto & column_name : required_columns)
+        /// Normalize the row-policy columns through the same storage-column mapping used for the SELECT
+        /// check above, so a subcolumn text index (e.g. `json.a.b`) is compared against a parent-column
+        /// row policy (e.g. on `json`) on equal footing. Without this, the raw names never match and the
+        /// row policy is silently bypassed, exposing tokens derived from rows the policy should hide.
+        Names row_policy_column_names(row_policy_columns.begin(), row_policy_columns.end());
+        auto row_policy_storage_columns = source_columns.getColumnNamesInStorageForAccessCheck(row_policy_column_names);
+        NameSet row_policy_storage_columns_set(row_policy_storage_columns.begin(), row_policy_storage_columns.end());
+
+        for (const auto & column_name : required_storage_columns)
         {
-            if (row_policy_columns.contains(column_name))
+            if (row_policy_storage_columns_set.contains(column_name))
             {
                 throw Exception(ErrorCodes::ACCESS_DENIED,
                     "Cannot read from `mergeTreeTextIndex` because a row policy on column `{}` "
