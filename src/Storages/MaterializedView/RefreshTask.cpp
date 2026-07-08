@@ -98,6 +98,11 @@ namespace FailPoints
     /// exchange, so a test can deterministically hit the post-insert window where the executor is
     /// already gone and only the interrupt_execution flag can stop the exchange.
     extern const char refresh_mv_pause_before_exchange[];
+    /// Pauses the refresh thread AFTER the pre-exchange interrupt re-check has already passed (the
+    /// executor_mutex was read and released) but BEFORE the exchange, so a test can deterministically
+    /// hit the window where a scheduling pass that gives up coordination must not still cause the
+    /// exchange to be lost / the view to be disabled mid-flight.
+    extern const char refresh_mv_pause_after_interrupt_check[];
 }
 
 namespace
@@ -792,6 +797,29 @@ void RefreshTask::doScheduling(bool is_shutdown)
                 /// Keeper lacks, and a throwing write would hit the catch-all and abort the server),
                 /// so we just cancel it; the stale '/running' znode is then reclaimed by the existing
                 /// crashed-replica grace period, same as if this replica had crashed.
+                ///
+                /// If a refresh is still in flight (Requested/Running), do NOT declare coordination
+                /// permanently unavailable yet: interruptExecution() only cancels the pipeline, and
+                /// executeRefreshUnlocked() runs with `mutex` released, so a cancellation can race the
+                /// exchange step (executeRefreshUnlocked re-checks the interrupt flag under
+                /// executor_mutex, releases it, then exchanges). Were we to set coordination.unavailable
+                /// now, every later doScheduling() would bail at the top before the in-flight attempt is
+                /// reconciled, so a refresh that won that race would swap the target table while this
+                /// view is already Disabled. Instead, only interrupt here and let the attempt reach
+                /// Finished; the next scheduling pass (execution.state == Finished -> None below) then
+                /// gives up coordination cleanly. That pass runs because executeRefresh() schedules the
+                /// scheduling task when it sets Finished. (On shutdown there is no next pass: the
+                /// scheduling task is deactivated and execution has already been drained, so we give
+                /// up immediately as before.)
+                if (!is_shutdown
+                    && (execution.state == ExecutionState::State::Requested
+                        || execution.state == ExecutionState::State::Running))
+                {
+                    interruptExecution();
+                    setState(RefreshState::Running, lock);
+                    return;
+                }
+
                 if (execution.state == ExecutionState::State::Finished)
                     execution.state = ExecutionState::State::None;
                 else if (execution.state != ExecutionState::State::None)
@@ -1249,6 +1277,13 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 if (execution.interrupt_execution.load())
                     throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
             }
+
+            /// The interrupt flag was just read and executor_mutex released, but the exchange has not
+            /// started. A scheduling pass that gives up coordination can land in exactly this window;
+            /// this pause lets a test reproduce it deterministically. It is safe for the exchange to
+            /// win this race: doScheduling only interrupts (does not disable) while the refresh is in
+            /// flight, so the attempt still reaches Finished and is reconciled by the next pass.
+            FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_after_interrupt_check);
 
             query_for_logging = "(exchange tables)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);

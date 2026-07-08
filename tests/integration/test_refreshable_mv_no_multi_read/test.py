@@ -277,8 +277,10 @@ def test_refreshable_mv_scheduling_detects_missing_flags_after_insert(started_cl
     # The window is forced with two failpoints: refresh_mv_pause_before_exchange pauses the refresh
     # thread right after the insert finished and before the exchange, and
     # refresh_mv_force_scheduling_feature_flags_missing makes the scheduling pass that runs while it
-    # is paused decide to give up coordination (setting the interrupt flag). When the refresh thread
-    # resumes it must see the flag and skip the exchange.
+    # is paused decide to give up coordination (setting the interrupt flag). Because a refresh is
+    # still in flight, that pass must only interrupt it, NOT disable the view yet; it must let the
+    # attempt reconcile first. When the refresh thread resumes it sees the flag and skips the
+    # exchange, and only the following scheduling pass disables the view.
     use_keeper_config("enable_keeper_multi_read.xml")
     node.restart_clickhouse()
 
@@ -313,27 +315,34 @@ def test_refreshable_mv_scheduling_detects_missing_flags_after_insert(started_cl
     assert node.query("SELECT count() FROM rdb4.mv").strip() == "0"
 
     # Run a scheduling pass that discovers the missing flags while the refresh sits in the post-insert
-    # window. It finds execution.state == Running, sets the interrupt flag (a no-op for the gone
-    # executor), gives up coordination, and disables the view.
+    # window. It finds execution.state == Running, so it only interrupts the in-flight refresh and
+    # must NOT declare coordination unavailable yet: disabling the view now would make every later
+    # scheduling pass bail before the attempt is reconciled. The view therefore stays Running (not
+    # Disabled) while the refresh is still paused.
     node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
     node.query("SYSTEM REFRESH VIEW rdb4.mv")
+    # Give the scheduling pass time to run, then confirm the view was NOT prematurely disabled.
+    time.sleep(3)
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb4'"
+    ).strip()
+    assert status == "Running", status
+    # The exchange still has not happened.
+    assert node.query("SELECT count() FROM rdb4.mv").strip() == "0"
+
+    # Resume the paused refresh thread. Its pre-exchange check must now observe the interrupt flag and
+    # skip the exchange instead of swapping the target table outside coordination. The refresh reaches
+    # Finished, and only the following scheduling pass gives up coordination and disables the view.
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_pause_before_exchange")
+
     status = None
     for _ in range(60):
         status = node.query(
-            "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb4'"
-        ).strip()
-        if status == "Disabled":
+            "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb4'"
+        )
+        if "Disabled" in status:
             break
         time.sleep(0.5)
-    assert status == "Disabled", status
-
-    # Resume the paused refresh thread. Its pre-exchange check must now observe the interrupt flag and
-    # skip the exchange instead of swapping the target table outside coordination.
-    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_pause_before_exchange")
-
-    status = node.query(
-        "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb4'"
-    )
     assert "Disabled" in status, status
     assert "multi-read" in status.lower() or "multi_read" in status.lower(), status
 
@@ -351,3 +360,82 @@ def test_refreshable_mv_scheduling_detects_missing_flags_after_insert(started_cl
 
     node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
     node.query("DROP DATABASE rdb4 SYNC")
+
+
+def test_refreshable_mv_scheduling_missing_flags_when_exchange_wins_race(started_cluster):
+    # The exchange-wins variant of the post-insert race. The pre-exchange interrupt re-check reads the
+    # interrupt flag under executor_mutex, releases the mutex, and only THEN exchanges tables. A
+    # scheduling pass that discovers the missing flags in that tiny gap (after the check passed, before
+    # the exchange) sets the interrupt flag too late: the exchange happens anyway. This is safe ONLY
+    # because doScheduling does not disable the view while a refresh is in flight; it just interrupts
+    # and lets the attempt reach Finished, so the next scheduling pass reconciles the coordination
+    # state (records the znode, clears '/running') before giving up. If doScheduling disabled the view
+    # in that gap instead, coordination.unavailable would short-circuit every later pass and the
+    # Finished result would never be reconciled, leaving Keeper believing this replica is still running.
+    #
+    # The gap is forced deterministically with refresh_mv_pause_after_interrupt_check, which pauses the
+    # refresh thread after the interrupt check passed but before the exchange.
+    use_keeper_config("enable_keeper_multi_read.xml")
+    node.restart_clickhouse()
+
+    node.query(
+        "CREATE DATABASE rdb5 ENGINE = Replicated('/clickhouse/rdb5', '{shard}', '{replica}')"
+    )
+    REFRESH_ROWS = 5
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW rdb5.mv
+        REFRESH EVERY 1 YEAR
+        ENGINE = ReplicatedMergeTree ORDER BY x
+        EMPTY
+        AS SELECT number AS x FROM numbers({REFRESH_ROWS})
+        """
+    )
+
+    aborts_before = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+
+    # Pause the refresh after the pre-exchange interrupt check has already passed, before the exchange.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_interrupt_check")
+    node.query("SYSTEM REFRESH VIEW rdb5.mv")
+    node.query("SYSTEM WAIT FAILPOINT refresh_mv_pause_after_interrupt_check PAUSE", timeout=60)
+
+    # The exchange has not happened yet, but the interrupt check for this attempt is already behind us.
+    assert node.query("SELECT count() FROM rdb5.mv").strip() == "0"
+
+    # A scheduling pass now finds the flags missing while the refresh is in flight. It must only
+    # interrupt (a no-op here: the check already passed and the executor is gone) and leave the view
+    # Running, not Disabled.
+    node.query("SYSTEM ENABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("SYSTEM REFRESH VIEW rdb5.mv")
+    time.sleep(3)
+    status = node.query(
+        "SELECT status FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb5'"
+    ).strip()
+    assert status == "Running", status
+
+    # Resume. The exchange wins the race and populates the target (the interrupt landed too late). That
+    # is fine: the attempt reaches Finished and the next scheduling pass reconciles it cleanly and only
+    # then disables the view, with the missing-flags reason and no scheduling-thread abort.
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_pause_after_interrupt_check")
+
+    status = None
+    for _ in range(60):
+        status = node.query(
+            "SELECT status, exception FROM system.view_refreshes WHERE view = 'mv' AND database = 'rdb5'"
+        )
+        if "Disabled" in status:
+            break
+        time.sleep(0.5)
+    assert "Disabled" in status, status
+    assert "multi-read" in status.lower() or "multi_read" in status.lower(), status
+
+    aborts_after = int(node.count_in_log("Unexpected exception in refresh scheduling"))
+    assert aborts_after == aborts_before, (aborts_before, aborts_after)
+
+    # The exchange did happen (it won the race), so the target holds the refreshed rows. The point of
+    # this test is that the state machine stayed consistent (the view reconciled and then disabled),
+    # not that the exchange was skipped.
+    assert node.query("SELECT count() FROM rdb5.mv").strip() == str(REFRESH_ROWS)
+
+    node.query("SYSTEM DISABLE FAILPOINT refresh_mv_force_scheduling_feature_flags_missing")
+    node.query("DROP DATABASE rdb5 SYNC")

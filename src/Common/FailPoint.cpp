@@ -136,6 +136,7 @@ static struct InitFiu
     REGULAR(refresh_mv_skip_attach_feature_flag_check) \
     REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
     PAUSEABLE(refresh_mv_pause_before_exchange) \
+    PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
     ONCE(space_saving_copy_arena_throw) \
     REGULAR(keepermap_fail_drop_data) \
