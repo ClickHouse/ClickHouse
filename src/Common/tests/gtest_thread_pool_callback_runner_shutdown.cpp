@@ -118,11 +118,17 @@ TEST(ThreadPoolCallbackRunner, DroppedOnShutdownDoesNotBreakPromise)
 /// when scheduleOrThrowOnError() throws (the pool is shutting down, or -- as injected here -- a
 /// thread-allocation fault), the just-created job lambda that solely owns the CallbackRunnerTask is
 /// destroyed during stack unwinding on the caller's thread. That thread is typically running a query
-/// and is already attached to its own thread group, which differs from the group the runner captured
-/// at creation time (e.g. a persistent WriteBufferFromS3 whose scheduler was created by an earlier
-/// query). The drop path (~CallbackRunnerTask) must release the callback under the task's group
-/// WITHOUT asserting the thread is detached; otherwise it constructs a LOGICAL_ERROR, which aborts
-/// the server in builds that treat logical errors as assertions.
+/// and is already attached to its own thread group. The drop path (~CallbackRunnerTask) must release
+/// the callback under the task's group WITHOUT aborting: constructing a LOGICAL_ERROR would abort the
+/// server in builds that treat logical errors as assertions.
+///
+/// The runner captures the current thread group at ENQUEUE time (getCurrentThreadGroupForAsyncCallback,
+/// see PR #108988), not when the long-lived runner object was created -- a borrowed group captured at
+/// creation could outlive its parent query and be attached on a pool thread (a use-after-free). So the
+/// task's group equals the scheduling thread's own group, and the synchronous drop releases the callback
+/// under that group. This test attaches the scheduling thread to a group DIFFERENT from the one that was
+/// current when the runner was created, and verifies the drop releases under the enqueue-time group
+/// (not the creation-time one) and does not abort.
 TEST(ThreadPoolCallbackRunner, DroppedSynchronouslyWhileAttachedToAnotherGroup)
 {
     /// Run in a dedicated thread so current_thread starts as nullptr, independent of whatever
@@ -131,8 +137,8 @@ TEST(ThreadPoolCallbackRunner, DroppedSynchronouslyWhileAttachedToAnotherGroup)
     {
         ThreadStatus ts;
         auto context = getContext().context;
-        auto task_group = std::make_shared<ThreadGroup>(context, 0);   /// group the runner captures
-        auto caller_group = std::make_shared<ThreadGroup>(context, 0); /// group the scheduling thread is on
+        auto creation_group = std::make_shared<ThreadGroup>(context, 0); /// current when the runner is created
+        auto enqueue_group = std::make_shared<ThreadGroup>(context, 0);  /// current when the callback is enqueued (and dropped)
 
         ThreadPool pool(
             CurrentMetrics::LocalThread,
@@ -140,15 +146,30 @@ TEST(ThreadPoolCallbackRunner, DroppedSynchronouslyWhileAttachedToAnotherGroup)
             CurrentMetrics::LocalThreadScheduled,
             /*max_threads=*/ 1);
 
-        /// The runner captures getCurrentThreadGroup() at creation, so create it while attached to
-        /// task_group. The dropped task will then try to switch to a group that differs from the
-        /// scheduling thread's own group.
-        CurrentThread::attachToGroupIfDetached(task_group);
+        /// Create the runner while attached to creation_group. This group is intentionally NOT the one
+        /// that should be captured: the runner captures the group at enqueue time, not here.
+        CurrentThread::attachToGroupIfDetached(creation_group);
         auto runner = threadPoolCallbackRunnerUnsafe<void>(pool, ThreadName::REMOTE_FS_WRITE_THREAD_POOL);
         CurrentThread::detachFromGroupIfNotDetached();
 
-        /// Now attach the scheduling thread to a different group, as a running query would be.
-        CurrentThread::attachToGroupIfDetached(caller_group);
+        /// Now attach the scheduling thread to a different group, as a running query would be. This is
+        /// the group the runner must capture at enqueue time and release the dropped callback under.
+        CurrentThread::attachToGroupIfDetached(enqueue_group);
+
+        /// First, prove the enqueue-time capture is actually applied on the RUN path, where it is
+        /// observable. Schedule a task that succeeds: it runs on the pool worker thread (which starts
+        /// detached), and the callback records the group active inside its body. Correct enqueue-time
+        /// capture attaches the worker to enqueue_group for the duration of the callback; a regression
+        /// that captured nullptr (e.g. reverting to creation-time/borrowed-group handling) would leave
+        /// the worker detached and record nullptr. The synchronous-drop assertions below cannot catch
+        /// that regression on their own -- the drop runs on the scheduling thread, already attached to
+        /// enqueue_group, so ThreadGroupSwitcher(nullptr) is a no-op and the recorder still sees
+        /// enqueue_group. This run-path check is what guards the non-borrowed enqueue-time contract.
+        auto worker_group = std::make_shared<ThreadGroupPtr>();
+        runner([worker_group]() { *worker_group = getCurrentThreadGroup(); }, Priority{}).get();
+        EXPECT_EQ(*worker_group, enqueue_group)
+            << "the worker callback must run under the enqueue-time thread group (a detached worker "
+               "reporting nullptr means enqueue-time capture regressed)";
 
         /// Make scheduleOrThrowOnError() throw synchronously on this thread.
         CannotAllocateThreadFaultInjector::setFaultProbability(1.0);
@@ -168,7 +189,7 @@ TEST(ThreadPoolCallbackRunner, DroppedSynchronouslyWhileAttachedToAnotherGroup)
         try
         {
             /// Throws while unwinding, dropping the sole task owner on this thread (attached to
-            /// caller_group). With the bug this aborts; with the fix it unwinds cleanly.
+            /// enqueue_group). With the abort bug this aborts; otherwise it unwinds cleanly.
             runner(std::move(callback), Priority{});
         }
         catch (const Exception & e)
@@ -177,10 +198,13 @@ TEST(ThreadPoolCallbackRunner, DroppedSynchronouslyWhileAttachedToAnotherGroup)
         }
 
         EXPECT_TRUE(threw_cannot_schedule) << "scheduling onto a faulted pool must throw CANNOT_SCHEDULE_TASK";
-        /// The drop path must release the callback under the task's group, not the caller's.
-        EXPECT_EQ(*released_group, task_group) << "dropped callback must be released under the task's thread group";
-        /// ... and it must restore the scheduling thread's original group afterwards.
-        EXPECT_EQ(getCurrentThreadGroup(), caller_group) << "the scheduling thread's group must be restored";
+        /// The runner captures the group at enqueue time, so the dropped callback is released under the
+        /// enqueue-time group -- which happens to equal the scheduling thread's own group, so the drop-path
+        /// ThreadGroupSwitcher is a no-op. The creation-time group must NOT be used.
+        EXPECT_EQ(*released_group, enqueue_group) << "dropped callback must be released under the enqueue-time thread group";
+        EXPECT_NE(*released_group, creation_group) << "the group captured when the runner was created must not be used";
+        /// ... and the scheduling thread's own group is unchanged.
+        EXPECT_EQ(getCurrentThreadGroup(), enqueue_group) << "the scheduling thread's group must be preserved";
 
         CurrentThread::detachFromGroupIfNotDetached();
     });
