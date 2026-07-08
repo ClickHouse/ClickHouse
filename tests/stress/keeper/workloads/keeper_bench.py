@@ -560,22 +560,29 @@ class KeeperBench:
         # so they cannot race its recursive wipe + re-create.  Session setup is
         # serial at roughly tens of sessions per second, so the wait scales with
         # shard 0's session count.
-        marker_wait_s = 120 + shard_sessions[0] // 10
-        marker_deadline = _time.monotonic() + marker_wait_s
-        while _time.monotonic() < marker_deadline and th0.is_alive():
+        def _marker_seen():
             p = self.bench_error_path
             try:
-                if p and Path(p).exists() and BENCH_SETUP_DONE_MARKER in Path(p).read_text(errors="ignore"):
-                    break
+                return bool(p and Path(p).exists() and BENCH_SETUP_DONE_MARKER in Path(p).read_text(errors="ignore"))
             except Exception:
-                pass
+                return False
+
+        marker_wait_s = 120 + shard_sessions[0] // 10
+        marker_deadline = _time.monotonic() + marker_wait_s
+        while _time.monotonic() < marker_deadline and th0.is_alive() and not _marker_seen():
             _time.sleep(2)
-        else:
-            if th0.is_alive():
-                print(
-                    f"[keeper][bench] WARNING: setup-done marker not seen within {marker_wait_s}s; "
-                    "launching remaining shards anyway"
-                )
+        # Final re-check: a fast shard 0 may have printed the marker and exited
+        # between polls; that is success, not a reason to abort.
+        if not _marker_seen():
+            reason = (
+                "shard 0 exited before printing the setup-done marker"
+                if not th0.is_alive()
+                else f"setup-done marker not seen within {marker_wait_s}s"
+            )
+            raise AssertionError(
+                f"not launching shards 1..{n_shards - 1}: {reason}"
+                + (f"; {failures[0]}" if failures[0] else "")
+            )
 
         shard_threads = [th0]
         for i in range(1, n_shards):

@@ -9,7 +9,7 @@ import pytest
 
 from keeper.framework.core.settings import DEFAULT_WORKLOAD_CONFIG
 from keeper.tests.test_scenarios import _build_bench_step
-from keeper.workloads.keeper_bench import KeeperBench
+from keeper.workloads.keeper_bench import BENCH_SETUP_DONE_MARKER, KeeperBench
 
 
 class _StubNode:
@@ -84,3 +84,47 @@ def test_env_clients_rejected_on_replay(monkeypatch, tmp_path):
         monkeypatch, tmp_path, _StubNode(), "/tmp/req.log", "8",
         match="not supported",
     )
+
+
+def _sharded_bench(tmp_path):
+    cfg = tmp_path / "wl.yaml"
+    cfg.write_text("concurrency: 2\n")
+    return KeeperBench(
+        nodes=[_StubNode()], ctx={}, cfg_path=str(cfg), duration_s=30, replay_path=None,
+    )
+
+
+def test_run_sharded_aborts_when_shard0_exits_without_marker(monkeypatch, tmp_path):
+    """9000 clients -> 3 shards; shard 0 exits without printing the setup-done
+    marker, so shards 1..2 must never be started."""
+    kb = _sharded_bench(tmp_path)
+    calls = []
+
+    def _stub(bench_cfg, cfg_path):
+        calls.append(bench_cfg)
+        return "", None, None
+
+    monkeypatch.setattr(kb, "_run_bench_subprocess", _stub)
+    with pytest.raises(AssertionError, match="setup-done marker"):
+        kb._run_sharded({"concurrency": 2}, 9000, 90)
+    assert len(calls) == 1
+
+
+def test_run_sharded_launches_all_shards_after_marker(monkeypatch, tmp_path):
+    """When shard 0 prints the marker (even exiting immediately after), all
+    shards launch and the per-shard summaries are merged."""
+    kb = _sharded_bench(tmp_path)
+    calls = []
+
+    def _stub(bench_cfg, cfg_path):
+        calls.append(bench_cfg)
+        stderr = tmp_path / f"stderr_{len(calls)}.log"
+        stderr.write_text(BENCH_SETUP_DONE_MARKER)
+        kb.bench_error_path = str(stderr)
+        return '{"ops": 10, "errors": 0}', None, str(stderr)
+
+    monkeypatch.setattr(kb, "_run_bench_subprocess", _stub)
+    merged = kb._run_sharded({"concurrency": 2}, 9000, 90)
+    assert len(calls) == 3
+    assert merged["shards"] == 3
+    assert merged["ops"] == 30
