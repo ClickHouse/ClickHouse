@@ -1,7 +1,11 @@
 #include <Parsers/ASTDatabaseOrNone.h>
+#include <Parsers/CommonParsers.h>
+#include <Common/StringUtils.h>
 #include <Common/quoteString.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -12,7 +16,16 @@ void ASTDatabaseOrNone::formatImpl(WriteBuffer & ostr, const FormatSettings &, F
         ostr << "NONE";
         return;
     }
-    ostr << backQuoteIfNeed(database_name);
+
+    /// A database literally named `NONE` (case-insensitive) must be quoted: emitted as a bare
+    /// identifier it would be reparsed by `ParserDatabaseOrNone` as the `NONE` keyword (meaning
+    /// "no default database"). That is wrong on replay (e.g. `SHOW CREATE USER`) and breaks the
+    /// format -> parse round-trip that the debug-build AST-consistency check requires now that
+    /// `updateTreeHashImpl` folds `database_name`.
+    if (std::ranges::equal(database_name, toStringView(Keyword::NONE), equalsCaseInsensitive))
+        ostr << backQuote(database_name);
+    else
+        ostr << backQuoteIfNeed(database_name);
 }
 
 void ASTDatabaseOrNone::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
