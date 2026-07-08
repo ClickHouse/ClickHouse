@@ -225,7 +225,7 @@ namespace
 /// Used to write metadata substreams (PathsMarks, Substreams, SubstreamsMarks, PathsSubstreamsMetadata, StructureSuffix).
 struct ChunkBucketSerializationMetadata
 {
-    MarkInCompressedFile data_stream_mark;
+    MarkInCompressedFile data_stream_mark{};
     std::vector<MarkInCompressedFile> paths_marks;
     std::vector<std::vector<String>> paths_substreams;
     std::vector<std::vector<MarkInCompressedFile>> paths_substreams_marks;
