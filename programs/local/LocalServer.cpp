@@ -688,7 +688,8 @@ void LocalServer::startServers(const ServerType & server_type)
             /* heavy_metrics_update_period_seconds= */ 120,
             metrics_func,
             /* update_jemalloc_epoch_= */ false,
-            /* update_rss_= */ false);
+            /* update_rss_= */ false
+        );
     }
 
     Poco::Net::HTTPServerParams::Ptr http_params = new Poco::Net::HTTPServerParams;
@@ -1319,6 +1320,9 @@ void LocalServer::processConfig()
     global_context->setExternalAuthenticatorsConfig(getClientConfiguration());
 
     setupUsers();
+
+    /// SYSTEM ALLOCATE MEMORY is a diagnostic command, harmless to enable in clickhouse-local.
+    global_context->allowSystemAllocateMemory(true);
 
     /// Limit on total number of concurrently executing queries.
     /// Plain `clickhouse-local` runs a single query at a time, but once it is turned into a server

@@ -171,6 +171,16 @@ Maximal size of block in bytes accumulated during aggregation in order of primar
 
 Number of threads to use for merge intermediate aggregation results in memory efficient mode. When bigger, then more memory is consumed. 0 means - same as 'max_threads'.
 
+## ai_function_embedding_default_credentials {#ai_function_embedding_default_credentials} 
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "New setting"}]}]}/>
+
+Name of the named collection used by `aiEmbed` when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. Kept separate from `ai_function_text_default_credentials` because an embeddings endpoint and model differ from a chat one.
+
 ## ai_function_embedding_max_batch_size {#ai_function_embedding_max_batch_size} 
 
 <ExperimentalBadge/>
@@ -244,6 +254,16 @@ Timeout in seconds for individual HTTP requests made by AI functions (AI chat co
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "New setting"}]}]}/>
 
 Initial delay in milliseconds before the first retry of a failed AI function API request. The delay doubles on each subsequent attempt (exponential backoff). For example, with default settings: 1000ms, 2000ms, 4000ms.
+
+## ai_function_text_default_credentials {#ai_function_text_default_credentials} 
+
+<ExperimentalBadge/>
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "New setting"}]}]}/>
+
+Name of the named collection used by the text AI functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) when the call does not pass `credentials` in its parameter map. Empty means no default: such calls must pass `credentials` explicitly. A chat-completions endpoint and model differ from an embeddings one, so this is separate from `ai_function_embedding_default_credentials`.
 
 ## ai_function_throw_on_error {#ai_function_throw_on_error} 
 

@@ -16,7 +16,6 @@
               "group": "开始使用",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
-                "zh/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -38,7 +37,8 @@
                   ],
                   "root": "zh/get-started/use-cases/overview"
                 },
-                "zh/get-started/about/deployment-modes"
+                "zh/get-started/about/deployment-modes",
+                "zh/get-started/quickstarts/home"
               ],
               "root": "zh/get-started/index"
             },

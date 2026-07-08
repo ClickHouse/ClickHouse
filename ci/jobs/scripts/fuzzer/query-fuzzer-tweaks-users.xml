@@ -33,8 +33,9 @@
                 </enable_analyzer>
 
                 <!-- Recursion-limiting constraints (max_ast_depth, max_parser_depth,
-                     max_parser_backtracks) live in limit-recursion-settings.xml, installed
-                     alongside this file and shared with the stress test. -->
+                     max_parser_backtracks) and the max_threads cap live in
+                     limit-recursion-settings.xml, installed alongside this file and
+                     shared with the stress test. -->
 
             </constraints>
 
