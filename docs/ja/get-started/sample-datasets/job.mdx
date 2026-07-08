@@ -1,0 +1,130 @@
+---
+description: 'Join Order Benchmark (JOB) のデータセットとクエリ。'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['サンプルデータセット', 'job', 'join order benchmark', 'ベンチマーク', '性能テスト', 'クエリオプティマイザ', 'join ordering']
+---
+
+Join Order Benchmark (JOB) は、実世界の強い相関を持つデータセット (IMDb のスナップショット) に対する 113 個の分析クエリによって、クエリオプティマイザを厳しく試すベンチマークです。登場以来、JOB ベンチマークは、カーディナリティ推定や JOIN 順序最適化を含む、リレーショナルデータベースのクエリオプティマイザの性能を評価するための事実上の標準となっています。一様で独立したデータを前提とする合成ベンチマークとは異なり、JOB では偏りや相関のある実データを使用するため、JOIN 順序付けとカーディナリティ推定にとって難度の高いテストになります。
+
+このデータセットには、21 個のテーブルにまたがって約 7,400 万行が含まれており、ClickHouse では圧縮後のサイズは約 1.15 GiB です。
+
+113 個のクエリは 33 のファミリー (`1`–`33`) に分類されています。同じファミリー内のクエリ (`a`、`b`、`c`、...) は同じ JOIN グラフを共有しますが、選択述語が異なります。
+
+**参考資料**
+
+* [How Good Are Query Optimizers, Really?](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis ほか、VLDB 2015)
+* [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark) リポジトリ
+
+<div id="creating-tables">
+  ## テーブルの作成
+</div>
+
+JOB データセットは、21 個のテーブルで構成される IMDb のスナップショットです。テーブル定義は、ClickHouse リポジトリ内の [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) で確認できます。
+
+各テーブルは、主キーのカラム `id` でソートされた [`MergeTree`](/engines/table-engines/mergetree-family/mergetree) エンジンを使用しており、すべてのテーブルで `id integer NOT NULL PRIMARY KEY` を宣言している元の PostgreSQL スキーマを反映しています。NULL 許容の PostgreSQL カラムは、`Nullable(...)` 型に対応します。
+
+テーブルを作成します:
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+<div id="loading-the-data">
+  ## データの読み込み
+</div>
+
+データは、JOB で使用される元の IMDb スナップショットに由来し、テーブルごとに 1 つの CSV ファイル (`aka_name.csv`、`title.csv`、...) として配布されています。
+これらの CSV は、`ESCAPE '\'` を伴う PostgreSQL の `COPY` セマンティクスを使用しています。つまり、バックスラッシュは引用符で囲まれたフィールド内でのみ引用符文字をエスケープし、引用符の外では文字どおりの文字として扱われます。
+ClickHouse は RFC 4180 準拠の CSV (二重引用符を使用し、バックスラッシュによるエスケープはなし) を想定しているため、まずファイルを再エンコードする必要があります。
+
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) は、この再エンコードを行います。
+これは元の CSV を stdin から読み込み、標準的な CSV を stdout に書き出します。その際、埋め込まれた引用符は二重化され、引用符で囲まれていない空フィールドはそのまま保持されます (ClickHouse では、これらは `Nullable` カラムでは `NULL` にマッピングされます) 。
+
+元の CSV からテーブルを構築するには:
+
+* テーブルを作成します (上記を参照) 。
+* Join Order Benchmark リポジトリの手順に従って、IMDb データセットを `imdb.tgz` ファイルとしてダウンロードします。
+* データを変換してインポートします:
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+テーブルへのデータ投入が完了したら、後でより高速に再インポートできるよう、たとえば Parquet 形式でエクスポートできます。
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+各テーブルの詳細なサイズ:
+
+| Table                  | サイズ (行数)       | 圧縮サイズ (ClickHouse)  |
+| ---------------------- | -------------- | ------------------- |
+| aka&#95;name           | 901,343        | 31.86 MiB           |
+| aka&#95;title          | 361,472        | 14.32 MiB           |
+| cast&#95;info          | 36,244,344     | 296.25 MiB          |
+| char&#95;name          | 3,140,339      | 107.95 MiB          |
+| comp&#95;cast&#95;type | 4              | 132.00 B            |
+| company&#95;name       | 234,997        | 8.38 MiB            |
+| company&#95;type       | 4              | 162.00 B            |
+| complete&#95;cast      | 135,086        | 748.80 KiB          |
+| info&#95;type          | 113            | 1.25 KiB            |
+| keyword                | 134,170        | 1.88 MiB            |
+| kind&#95;type          | 7              | 177.00 B            |
+| link&#95;type          | 18             | 284.00 B            |
+| movie&#95;companies    | 2,609,129      | 21.20 MiB           |
+| movie&#95;info         | 14,835,720     | 300.46 MiB          |
+| movie&#95;info&#95;idx | 1,380,035      | 8.01 MiB            |
+| movie&#95;keyword      | 4,523,930      | 21.06 MiB           |
+| movie&#95;link         | 29,997         | 178.21 KiB          |
+| name                   | 4,167,491      | 131.16 MiB          |
+| person&#95;info        | 2,963,664      | 154.12 MiB          |
+| role&#95;type          | 12             | 246.00 B            |
+| title                  | 2,528,312      | 78.04 MiB           |
+| **合計**                 | **74,190,187** | **1.15 GiB**        |
+
+(ClickHouse での圧縮サイズは `system.tables.total_bytes` から取得したもので、上記のテーブル定義に基づいています。)
+
+<div id="queries">
+  ## クエリ
+</div>
+
+113 個の JOB クエリは、ClickHouse リポジトリの[こちら](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries)にあります。
+実行時に使用する設定は [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json) にあります。
+既知の問題や特定のクエリに関する注意事項については、[README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md) を参照してください。
+
+これらのクエリはテーブル名を直接参照するため、`job` データベースに対して実行してください (たとえば、`clickhouse client --database job` を使用します) 。
+
+クエリの例 (`1a`) :
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

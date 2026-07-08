@@ -223,6 +223,8 @@ public:
 
     size_t getBoundaryAlignment() const { return boundary_alignment; }
 
+    size_t getReserveGranularity() const { return reserve_granularity.load(std::memory_order_relaxed); }
+
     bool tryReserve(
         FileSegment & file_segment,
         size_t size,
@@ -275,6 +277,7 @@ private:
     std::atomic<size_t> max_file_segment_size;
     const size_t bypass_cache_threshold;
     const size_t boundary_alignment;
+    std::atomic<size_t> reserve_granularity;
     std::atomic<size_t> background_download_max_file_segment_size;
     UInt64 load_metadata_threads;
     const bool load_metadata_asynchronously;

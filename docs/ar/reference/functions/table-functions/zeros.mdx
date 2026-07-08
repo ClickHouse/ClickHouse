@@ -1,0 +1,37 @@
+---
+description: 'تُستخدم لأغراض الاختبار باعتبارها أسرع طريقة لتوليد عدد كبير من الصفوف.
+  وهي مشابهة لجدولي النظام `system.zeros` و`system.zeros_mt`.'
+sidebarTitle: 'zeros'
+slug: /sql-reference/table-functions/zeros
+title: 'zeros'
+doc_type: 'مرجع'
+---
+
+* `zeros(N)` – تعيد جدولًا بعمود واحد باسم &#39;zero&#39; (UInt8) يحتوي على العدد الصحيح 0 مكررًا `N` مرة
+* `zeros_mt(N)` – مثل `zeros`، لكنها تستخدم خيوط تنفيذ متعددة.
+
+تُستخدم هذه الدالة لأغراض الاختبار باعتبارها أسرع طريقة لتوليد عدد كبير من الصفوف. وهي مشابهة لجدولي النظام `system.zeros` و`system.zeros_mt`.
+
+الاستعلامات التالية متكافئة:
+
+```sql
+SELECT * FROM zeros(10);
+SELECT * FROM system.zeros LIMIT 10;
+SELECT * FROM zeros_mt(10);
+SELECT * FROM system.zeros_mt LIMIT 10;
+```
+
+```response
+┌─zero─┐
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+│    0 │
+└──────┘
+```

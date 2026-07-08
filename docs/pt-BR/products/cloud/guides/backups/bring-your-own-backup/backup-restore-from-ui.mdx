@@ -1,0 +1,483 @@
+---
+sidebarTitle: 'Criar backup ou restaurar pela UI'
+slug: /cloud/manage/backups/backup-restore-via-ui
+title: Backup / restauração pela interface do usuário
+description: 'Página que descreve como criar um backup ou restaurar um backup pela UI com seu próprio bucket'
+doc_type: 'guide'
+keywords: ['backups', 'recuperação de desastres', 'proteção de dados', 'restauração', 'funcionalidades do Cloud']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<Note>
+  Os backups automatizados para seu bucket externo são configurados para ser executados como backups &quot;completos&quot; a cada 24 horas, e a frequência não é configurável.
+</Note>
+
+<div id="AWS">
+  ## AWS
+</div>
+
+<div id="taking-backups-to-aws">
+  ### Fazendo backups na AWS
+</div>
+
+<div id="aws-steps">
+  #### 1. Etapas a seguir na AWS
+</div>
+
+<Note>
+  Estas etapas são semelhantes à configuração segura do S3, conforme descrito em [&quot;Acessando dados do S3 com segurança&quot;](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely). No entanto, há ações adicionais necessárias nas permissões da role.
+</Note>
+
+Siga as etapas abaixo na sua conta da AWS:
+
+<Steps>
+  <Step>
+    ##### Crie um bucket do S3 na AWS
+
+    Crie um bucket do S3 na AWS na sua conta para o qual você deseja exportar os backups.
+  </Step>
+
+  <Step>
+    ##### Crie uma IAM role
+
+    A AWS usa autenticação baseada em roles, então crie uma IAM role que o serviço ClickHouse Cloud poderá assumir para gravar nesse bucket.
+
+    * a. Obtenha o ARN na página de configurações do serviço ClickHouse Cloud, em Network security information, que será semelhante a este:
+
+    <Image img="/images/cloud/manage/backups/arn.webp" alt="ARN do AWS S3" size="lg" />
+
+    * b. Para essa role, crie a política de confiança da seguinte forma:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "backup service",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS":  "arn:aws:iam::463754717262:role/CH-S3-bordeaux-ar-90-ue2-29-Role"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ##### Atualize as permissões da role
+
+    Você também precisará definir as permissões dessa role para que este serviço ClickHouse Cloud possa gravar no bucket do S3.
+    Isso é feito criando uma política de permissões para a role com um JSON semelhante a este, no qual você substitui o ARN do seu bucket no recurso em ambos os locais.
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui"
+          ],
+          "Effect": "Allow"
+        },
+        {
+          "Action": [
+            "s3:Get*",
+            "s3:List*",
+            "s3:PutObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui/*"
+          ],
+          "Effect": "Allow"
+        },
+        {
+          "Action": [
+            "s3:DeleteObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui/*/.lock"
+          ],
+          "Effect": "Allow"
+        }
+      ]
+    }
+    ```
+  </Step>
+</Steps>
+
+<div id="cloud-steps">
+  #### 2. Etapas a seguir no ClickHouse Cloud
+</div>
+
+Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket externo:
+
+<Steps>
+  <Step>
+    ##### Alterar o backup externo
+
+    Na página Settings, clique em Configurar backup externo:
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Alterar o backup externo" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Configurar o ARN da IAM role da AWS e os detalhes do bucket do S3
+
+    Na tela seguinte, informe o ARN da IAM role da AWS que você acabou de criar e a URL do bucket do S3 no formato a seguir:
+
+    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Configurar o ARN da IAM role da AWS e os detalhes do bucket do S3" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Salvar alterações
+
+    Clique em “Salvar bucket externo” para salvar as configurações
+  </Step>
+
+  <Step>
+    ##### Alterar o agendamento de backups em relação ao padrão
+
+    Agora, os backups externos serão realizados no seu bucket de acordo com o agendamento padrão.
+    Como alternativa, você pode configurar o agendamento de backups na página “Settings”.
+    Se ele for configurado de outra forma, o agendamento personalizado será usado para gravar backups no seu
+    bucket, e o agendamento padrão (backups a cada 24 horas) será usado para os backups no
+    bucket pertencente ao ClickHouse Cloud.
+  </Step>
+
+  <Step>
+    ##### Ver backups armazenados no seu bucket
+
+    A página Backups exibirá esses backups no seu bucket em uma tabela separada,
+    como mostrado abaixo:
+
+    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="Ver backups armazenados no seu bucket" size="lg" />
+  </Step>
+</Steps>
+
+<div id="restoring-backups-from-aws">
+  ### Restaurando backups da AWS
+</div>
+
+Siga as etapas abaixo para restaurar backups da AWS:
+
+<Steps>
+  <Step>
+    ##### Crie um novo serviço para receber a restauração
+
+    Crie um novo serviço para o qual o backup será restaurado.
+  </Step>
+
+  <Step>
+    ##### Adicione o ARN do serviço
+
+    Adicione o ARN do serviço recém-criado (na página de configurações do serviço no console do ClickHouse
+    Cloud) à política de confiança da IAM role. Isso é o mesmo que a
+    [segunda etapa](#create-iam-role) na seção Etapas da AWS acima. Isso é necessário
+    para que o novo serviço possa acessar o bucket do S3.
+  </Step>
+
+  <Step>
+    ##### Obtenha o comando SQL usado para restaurar o backup
+
+    Clique no link “acessar ou restaurar um backup” acima da lista de backups na
+    UI para obter o comando SQL de restauração do backup. O comando será semelhante a este:
+
+    <Image img="/images/cloud/manage/backups/backup_command.webp" alt="Obter comando SQL usado para restaurar backup" size="md" />
+
+    <Warning>
+      **Movendo backups para outro local**
+
+      Se você mover os backups para outro local, precisará personalizar o comando de restauração para apontar para o novo local.
+    </Warning>
+
+    <Tip>
+      **Comando ASYNC**
+
+      No comando de restauração, você também pode adicionar opcionalmente `ASYNC` ao final para restaurações grandes.
+      Isso permite que as restaurações ocorram de forma assíncrona, para que, se a conexão for perdida, a restauração continue em execução.
+      É importante observar que o comando ASYNC retorna imediatamente um status de sucesso.
+      Isso não significa que a restauração foi bem-sucedida.
+      Você precisará monitorar a tabela `system.backups` para ver se a restauração foi concluída e se foi bem-sucedida ou falhou.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### Execute o comando de restauração
+
+    Execute o comando de restauração no SQL Console do serviço recém-criado para
+    restaurar o backup.
+  </Step>
+</Steps>
+
+<div id="gcp">
+  ## GCP
+</div>
+
+<div id="taking-backups-to-gcp">
+  ### Fazendo backup no GCP
+</div>
+
+Siga as etapas abaixo para fazer backup no GCP:
+
+<div id="gcp-steps-to-follow">
+  #### Etapas a seguir no GCP
+</div>
+
+<Steps>
+  <Step>
+    ##### Crie um bucket de armazenamento no GCP
+
+    Crie um bucket de armazenamento na sua conta do GCP para exportar backups.
+  </Step>
+
+  <Step>
+    ##### Gere uma chave HMAC e um segredo
+
+    Gere uma chave HMAC e um segredo, necessários para a autenticação baseada em senha. Siga as etapas abaixo para gerar as chaves:
+
+    * a. Crie uma conta de serviço
+      * I.  Acesse a seção IAM &amp; Admin no Google Cloud Console e selecione `Service Accounts`.
+      * II. Clique em `Create Service Account` e forneça um nome e um ID. Clique em `Create and Continue`.
+      * III. Conceda a função Storage Object User a essa conta de serviço.
+      * IV. Clique em `Done` para concluir a criação da conta de serviço.
+
+    * b. Gere a chave HMAC
+      * I. Vá para Cloud Storage no Google Cloud Console e selecione `Settings`
+      * II Vá para a guia Interoperability.
+      * III. Na seção `Service account HMAC`, clique em `Create a key for a service account`.
+      * IV. Escolha a conta de serviço que você criou na etapa anterior no menu suspenso.
+      * V. Clique em `Create key`.
+
+    * c. Armazene as credenciais com segurança:
+      * I. O sistema exibirá o Access ID (sua chave HMAC) e o Secret (seu segredo HMAC). Salve esses valores, pois
+        o segredo não será exibido novamente depois que você fechar esta janela.
+  </Step>
+</Steps>
+
+<div id="gcp-cloud-steps">
+  #### Etapas a seguir no ClickHouse Cloud
+</div>
+
+Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket externo:
+
+<Steps>
+  <Step>
+    ##### Alterar backup externo
+
+    Na página `Settings`, clique em `Change external backup`
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Alterar backup externo" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Configurar a chave HMAC e o Secret do GCP
+
+    Na janela pop-up, informe o caminho do bucket do GCP, a chave HMAC e o Secret criados na seção anterior.
+
+    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Configurar a chave HMAC e o Secret do GCP" size="md" />
+  </Step>
+
+  <Step>
+    ##### Salvar bucket externo
+
+    Clique em `Save External Bucket` para salvar as configurações.
+  </Step>
+
+  <Step>
+    ##### Alterar o agendamento de backup em relação ao padrão
+
+    Os backups externos passarão a ser realizados no seu bucket de acordo com o agendamento padrão.
+    Como alternativa, você pode configurar o agendamento de backup na página `Settings`.
+    Se ele for configurado de outra forma, o agendamento personalizado será usado para gravar backups no seu
+    bucket, e o agendamento padrão (backups a cada 24 horas) será usado para backups no
+    bucket do ClickHouse Cloud.
+  </Step>
+
+  <Step>
+    ##### Ver backups armazenados no seu bucket
+
+    A página Backups deve exibir esses backups no seu bucket em uma tabela separada, como mostrado abaixo:
+
+    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="Ver backups armazenados no seu bucket" size="lg" />
+  </Step>
+</Steps>
+
+<div id="gcp-restoring-backups-from-gcp">
+  ### Restaurando backups do GCP
+</div>
+
+Siga as etapas abaixo para restaurar backups do GCP:
+
+<Steps>
+  <Step>
+    ##### Crie um novo serviço para o qual restaurar
+
+    Crie um novo serviço para o qual o backup será restaurado.
+  </Step>
+
+  <Step>
+    ##### Obtenha o comando SQL usado para restaurar o backup
+
+    Clique no link `access or restore a backup` acima da lista de backups na
+    UI para obter o comando SQL para restaurar o backup. O comando deve ser parecido com este,
+    e você pode selecionar o backup adequado no menu suspenso para obter o comando de restauração
+    desse backup específico. Você precisará adicionar sua chave de acesso secreta
+    ao comando:
+
+    <Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="Obter o comando SQL usado para restaurar o backup" size="md" />
+
+    <Warning>
+      **Movendo backups para outro local**
+
+      Se você mover os backups para outro local, precisará personalizar o comando de restauração para apontar para o novo local.
+    </Warning>
+
+    <Tip>
+      **Comando ASYNC**
+
+      No comando Restore, você também pode adicionar opcionalmente `ASYNC` ao final para restaurações grandes.
+      Isso permite que as restaurações ocorram de forma assíncrona, de modo que, se a conexão for perdida, a restauração continue em execução.
+      É importante observar que o comando ASYNC retorna imediatamente um status de sucesso.
+      Isso não significa que a restauração foi bem-sucedida.
+      Você precisará monitorar a tabela `system.backups` para verificar se a restauração foi concluída e se foi bem-sucedida ou falhou.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### Execute o comando SQL para restaurar o backup
+
+    Execute o comando de restauração no SQL Console do serviço recém-criado para
+    restaurar o backup.
+  </Step>
+</Steps>
+
+<div id="azure">
+  ## Azure
+</div>
+
+<div id="taking-backups-to-azure">
+  ### Fazendo backups no Azure
+</div>
+
+Siga as etapas abaixo para fazer backups no Azure:
+
+<div id="steps-to-follow-in-azure">
+  #### Etapas a seguir no Azure
+</div>
+
+<Steps>
+  <Step>
+    ##### Criar uma conta de armazenamento
+
+    Crie uma conta de armazenamento ou selecione uma conta de armazenamento existente no portal do Azure
+    onde deseja armazenar seus backups.
+  </Step>
+
+  <Step>
+    ##### Obter a string de conexão
+
+    * a. Na visão geral da sua conta de armazenamento, procure a seção chamada `Security + networking` e clique em `Access keys`.
+    * b. Aqui, você verá `key1` e `key2`. Em cada uma delas, encontrará um campo `Connection string`.
+    * c. Clique em `Show` para exibir a string de conexão. Copie a string de conexão que você usará na configuração do ClickHouse Cloud.
+  </Step>
+</Steps>
+
+<div id="azure-cloud-steps">
+  #### Etapas no ClickHouse Cloud
+</div>
+
+Siga as etapas abaixo no console do ClickHouse Cloud para configurar o bucket externo:
+
+<Steps>
+  <Step>
+    ##### Alterar backup externo
+
+    Na página `Settings`, clique em `Change external backup`
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Alterar backup externo" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Informe a Connection String e o nome do Container da sua conta de armazenamento do Azure
+
+    Na próxima tela, informe a Connection String e o Container Name da sua
+    conta de armazenamento do Azure criada na seção anterior:
+
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Informe a Connection String e o nome do Container da sua conta de armazenamento do Azure" size="md" />
+  </Step>
+
+  <Step>
+    ##### Salvar bucket externo
+
+    Clique em `Save External Bucket` para salvar as configurações
+  </Step>
+
+  <Step>
+    ##### Alterar o agendamento de backup padrão
+
+    Os backups externos passarão a ser feitos no seu bucket seguindo o agendamento padrão. Como alternativa,
+    você pode configurar o agendamento de backup na página “Settings”. Se ele for configurado de forma diferente,
+    o agendamento personalizado será usado para gravar backups no seu bucket, e o agendamento padrão
+    (backups a cada 24 horas) será usado para os backups no bucket gerenciado pelo ClickHouse Cloud.
+  </Step>
+
+  <Step>
+    ##### Ver backups armazenados no seu bucket
+
+    A página Backups deve exibir esses backups no seu bucket em uma tabela separada,
+    como mostrado abaixo:
+
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="Ver backups armazenados no seu bucket" size="md" />
+  </Step>
+</Steps>
+
+<div id="azure-restore-steps">
+  ### Restaurando backups do Azure
+</div>
+
+Para restaurar backups do Azure, siga as etapas abaixo:
+
+<Steps>
+  <Step>
+    ##### Crie um novo serviço para restaurar o backup
+
+    Crie um novo serviço para o qual o backup será restaurado. No momento, oferecemos suporte apenas à restauração de um backup em um novo serviço.
+  </Step>
+
+  <Step>
+    ##### Obtenha o comando SQL usado para restaurar o backup
+
+    Clique no link `access or restore a backup` acima da lista de backups na UI para obter o comando SQL de restauração do backup. O comando deve ser parecido com este, e você pode selecionar o backup apropriado na lista suspensa para obter o comando de restauração desse backup específico. Você precisará adicionar ao comando a string de conexão da sua conta de armazenamento do Azure.
+
+    <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Restaurar backups no Azure" size="md" />
+
+    <Warning>
+      **Mover backups para outro local**
+
+      Se você mover os backups para outro local, precisará ajustar o comando de restauração para apontar para o novo local.
+    </Warning>
+
+    <Tip>
+      **Comando ASYNC**
+
+      No comando de restauração, você também pode adicionar opcionalmente `ASYNC` ao final para restaurações grandes.
+      Isso permite que a restauração ocorra de forma assíncrona, de modo que, se a conexão for perdida, ela continue em execução.
+      É importante observar que o comando ASYNC retorna imediatamente um status de sucesso.
+      Isso não significa que a restauração foi bem-sucedida.
+      Você precisará monitorar a tabela `system.backups` para verificar se a restauração foi concluída e se foi bem-sucedida ou falhou.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### Execute o comando SQL para restaurar o backup
+
+    Execute o comando de restauração no console SQL do serviço recém-criado para restaurar o backup.
+  </Step>
+</Steps>

@@ -1174,6 +1174,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
                "add_minmax_index_for_temporal_columns",
                "allow_coalescing_columns_in_partition_or_order_key",
                "allow_floating_point_partition_key",
+               "allow_minmax_index_for_json",
                "allow_nullable_key",
                "allow_summing_columns_in_partition_or_order_key",
                "allow_suspicious_indices",
@@ -2391,8 +2392,19 @@ DataTypePtr QueryFuzzer::getRandomType()
                    std::make_shared<DataTypeBFloat16>(),
                    std::make_shared<DataTypeFloat32>(),
                    std::make_shared<DataTypeFloat64>()};
+            const auto & element_type = qbit_element_types[fuzz_rand() % std::size(qbit_element_types)];
+
+            /// Occasionally build a strided QBit. The constraints are: dimension % stride == 0 and (when strided) stride % 8 == 0.
+            if (fuzz_rand() % 4 == 0)
+            {
+                const size_t stride = (fuzz_rand() % 16 + 1) * 8; /// multiple of 8 in [8, 128]
+                const size_t num_groups = fuzz_rand() % 8 + 1; /// 1..8 stride groups
+                const size_t dimension = stride * num_groups;
+                return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
+            }
+
             const size_t dimension = fuzz_rand() % 128 + 1;
-            return std::make_shared<DataTypeQBit>(qbit_element_types[fuzz_rand() % std::size(qbit_element_types)], dimension);
+            return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
         }
         case TypeIndex::AggregateFunction: {
             const size_t nargs = fuzz_rand() % 3;
@@ -3906,9 +3918,9 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"naiveBayesClassifier", "detectCharset", "detectLanguage", "detectLanguageUnknown", "detectLanguageMixed", "detectTonality"},
         /// Word-level NLP (language/extension + word)
         {"stem", "lemmatize", "synonyms"},
-        /// AI functions: 2-arg (named_collection, text → result)
+        /// AI functions: text + optional params map
         {"aiEmbed", "aiGenerate"},
-        /// AI functions: 3-arg (named_collection, text, semantic_arg → result)
+        /// AI functions: text + a per-function arg (categories / instruction / target_language) + optional params map
         {"aiClassify", "aiExtract", "aiTranslate"},
         /// Geo distance functions (lon1, lat1, lon2, lat2 → Float64)
         {"greatCircleDistance", "geoDistance", "greatCircleAngle"},
