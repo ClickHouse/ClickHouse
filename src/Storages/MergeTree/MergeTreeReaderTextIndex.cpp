@@ -898,7 +898,8 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                 std::vector<PositionList> position_lists;
                 position_lists.reserve(position_offsets.size());
 
-                auto positions_codec = TextIndexPositionCodec::parseEncoding(granule->getParams().positions_codec);
+                /// Decode with the codec persisted in this part's header, not current metadata.
+                auto positions_codec = static_cast<TextIndexPositionCodec::Encoding>(granule->getPositionsCodec());
 
                 auto * data_buffer = positions_stream->getDataBuffer();
                 {

@@ -219,14 +219,6 @@ static PostingsSerialization createPostingsSerialization(const IMergeTreeIndex &
     return PostingsSerialization(std::move(codec_copy), static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithCodec));
 }
 
-static PostingsSerialization createSourcePostingsSerialization(MergeTreeIndexReaderStream & header_stream)
-{
-    header_stream.seekToStart();
-    /// Only the version and codec are needed here, so skip deserializing the sparse index.
-    auto header = TextIndexSerialization::deserializeHeaderPrefix(*header_stream.getDataBuffer());
-    return PostingsSerialization(PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
-}
-
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
     MergeTreeMutableDataPartPtr new_data_part_,
@@ -278,13 +270,19 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         }
     }
 
-    /// Resolve each source part's codec from its own header.
+    /// Resolve each source part's codecs (postings + positions) from its own header.
     source_postings_serializations.reserve(segments.size());
+    source_positions_codecs.reserve(segments.size());
 
     for (size_t i = 0; i < segments.size(); ++i)
     {
         auto * stream = input_streams[i].at(MergeTreeIndexSubstream::Type::Regular);
-        source_postings_serializations.emplace_back(createSourcePostingsSerialization(*stream));
+        stream->seekToStart();
+        /// Only the version and codecs are needed here, so skip deserializing the sparse index.
+        auto header = TextIndexSerialization::deserializeHeaderPrefix(*stream->getDataBuffer());
+        source_postings_serializations.emplace_back(
+            PostingListCodecFactory::createPostingListCodec(header.codec_type), header.version);
+        source_positions_codecs.emplace_back(static_cast<TextIndexPositionCodec::Encoding>(header.positions_codec));
     }
 }
 
@@ -524,7 +522,7 @@ bool MergeTextIndexesTask::executeStep()
                 PODArray<RoaringishEntry> position_entries;
                 TextIndexPositionCodec::decode(
                     *pos_data_buffer, position_entries,
-                    TextIndexPositionCodec::parseEncoding(params.positions_codec),
+                    source_positions_codecs[current->order],
                     token_info.position_cardinality,
                     position_decode_scratch);
 
@@ -572,9 +570,12 @@ void MergeTextIndexesTask::finalize()
     auto * index_stream = output_streams.at(MergeTreeIndexSubstream::Type::Regular);
     DictionarySparseIndex sparse_index(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 
+    /// The merged part is written in the current on-disk format; persist its positions codec.
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
-    TextIndexSerialization::serializeHeader(sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions, index_stream->compressed_hashing);
+        params.positions ? TextIndexHeader::Version::WithPositionsCodec : TextIndexHeader::Version::WithCodec);
+    TextIndexSerialization::serializeHeader(
+        sparse_index, postings_serialization.getPostingListCodec()->getType(), serialization_version, params.positions,
+        static_cast<UInt8>(TextIndexPositionCodec::parseEncoding(params.positions_codec)), index_stream->compressed_hashing);
 
     for (auto & stream : output_streams_holders)
         stream->finalize();

@@ -147,6 +147,8 @@ private:
     PostingsSerialization postings_serialization;
     /// Per-source deserializers, each using the codec read from that source part's own header.
     std::vector<PostingsSerialization> source_postings_serializations;
+    /// Per-source positions codec, read from that source part's own header (decode with the format actually written).
+    std::vector<TextIndexPositionCodec::Encoding> source_positions_codecs;
 
     bool is_initialized = false;
 };

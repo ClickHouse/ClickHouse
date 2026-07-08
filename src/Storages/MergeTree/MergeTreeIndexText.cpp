@@ -496,6 +496,7 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
     auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
     serialization_version = text_index_header->version;
+    positions_codec = text_index_header->positions_codec;
 
     analyzeDictionaryForTokens(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
     analyzeDictionaryForPatterns(text_index_header->sparse_index, postings_serialization, *dictionary_stream, state);
@@ -1176,7 +1177,7 @@ void TextIndexSerialization::serializeTokenInfo(WriteBuffer & ostr, const TokenP
     }
 }
 
-void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr)
+void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr)
 {
     UInt64 codec_type = static_cast<UInt64>(posting_list_codec_type);
 
@@ -1185,6 +1186,9 @@ void TextIndexSerialization::serializeHeader(const DictionarySparseIndex & spars
 
     if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositions))
         writeVarUInt(static_cast<UInt64>(has_positions), ostr);
+
+    if (version >= static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::WithPositionsCodec))
+        writeVarUInt(static_cast<UInt64>(positions_codec), ostr);
 
     /// Sparse indexes are created with raw columns and bit-packed only by optimize.
     /// The write path never calls optimize, so expect the raw columns here.
@@ -1205,7 +1209,7 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
     UInt64 version = 0;
     readVarUInt(version, istr);
 
-    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithPositions))
+    if (version > static_cast<UInt64>(TextIndexHeader::Version::WithPositionsCodec))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Unsupported version of sparse index ({})", version);
 
     TextIndexHeader header;
@@ -1227,6 +1231,16 @@ TextIndexHeader TextIndexSerialization::deserializeHeaderPrefix(ReadBuffer & ist
         UInt64 has_positions = 0;
         readVarUInt(has_positions, istr);
         header.has_positions = has_positions != 0;
+    }
+
+    /// Older WithPositions parts predate pfor, so their positions are Raw (the default).
+    if (version >= static_cast<UInt64>(TextIndexHeader::Version::WithPositionsCodec))
+    {
+        UInt64 positions_codec = 0;
+        readVarUInt(positions_codec, istr);
+        if (positions_codec > static_cast<UInt64>(TextIndexPositionCodec::Encoding::Pfor))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Unknown positions codec in text index header: {}", positions_codec);
+        header.positions_codec = static_cast<UInt8>(positions_codec);
     }
 
     return header;
@@ -1527,9 +1541,9 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         positions_stream = it->second;
     }
 
-    /// Positional parts need a WithPositions reader.
+    /// Positional parts persist the positions codec (WithPositionsCodec) so the reader decodes with the format actually written.
     auto serialization_version = static_cast<MergeTreeIndexVersion>(
-        params.positions ? TextIndexHeader::Version::WithPositions : TextIndexHeader::Version::WithCodec);
+        params.positions ? TextIndexHeader::Version::WithPositionsCodec : TextIndexHeader::Version::WithCodec);
 
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
     PostingsSerialization postings_serialization(std::move(postings_codec), serialization_version);
@@ -1542,7 +1556,9 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         postings_serialization,
         positions_stream);
 
-    TextIndexSerialization::serializeHeader(sparse_index_block, posting_list_codec_type, serialization_version, params.positions, index_stream->compressed_hashing);
+    TextIndexSerialization::serializeHeader(
+        sparse_index_block, posting_list_codec_type, serialization_version, params.positions,
+        static_cast<UInt8>(TextIndexPositionCodec::parseEncoding(params.positions_codec)), index_stream->compressed_hashing);
 }
 
 void MergeTreeIndexGranuleTextWritable::deserializeBinary(ReadBuffer &, MergeTreeIndexVersion)

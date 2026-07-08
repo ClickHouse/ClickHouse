@@ -291,12 +291,15 @@ struct TextIndexHeader
         Initial = 0,
         WithCodec = 1,
         WithPositions = 2,
+        WithPositionsCodec = 3,
     };
 
     MergeTreeIndexVersion version = static_cast<MergeTreeIndexVersion>(Version::Initial);
     IPostingListCodec::Type codec_type = IPostingListCodec::Type::None;
     /// Persisted for version >= WithPositions.
     bool has_positions = false;
+    /// Positions on-disk codec (TextIndexPositionCodec::Encoding as UInt8); persisted for version >= WithPositionsCodec, else defaults to Raw.
+    UInt8 positions_codec = 0;
     DictionarySparseIndex sparse_index;
 };
 
@@ -316,7 +319,7 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, WriteBuffer & ostr);
+    static void serializeHeader(const DictionarySparseIndex & sparse_index, IPostingListCodec::Type posting_list_codec_type, MergeTreeIndexVersion version, bool has_positions, UInt8 positions_codec, WriteBuffer & ostr);
 
     static TextIndexHeader deserializeHeader(ReadBuffer & istr);
     /// Reads only the version and posting list codec from the start of the header, without the
@@ -375,6 +378,8 @@ public:
     const String & getIndexIdForCaches() const { return index_id_for_caches; }
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeIndexVersion getSerializationVersion() const { return serialization_version; }
+    /// Positions on-disk codec persisted in the header (TextIndexPositionCodec::Encoding as UInt8).
+    UInt8 getPositionsCodec() const { return positions_codec; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -412,6 +417,8 @@ private:
     IPostingListCodec::Type postings_codec_type = IPostingListCodec::Type::None;
     /// On-disk serialization version of the text index header.
     MergeTreeIndexVersion serialization_version = static_cast<MergeTreeIndexVersion>(TextIndexHeader::Version::Initial);
+    /// Positions on-disk codec persisted in the header (TextIndexPositionCodec::Encoding as UInt8).
+    UInt8 positions_codec = 0;
 };
 
 /// Text index granule created on writing of the index.
