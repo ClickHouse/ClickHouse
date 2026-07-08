@@ -253,7 +253,7 @@ NamesAndTypesList JSONColumnsSchemaReaderBase::readSchema()
     /// Read data block by block and determine the type for each column
     /// until max_rows_to_read/max_bytes_to_read is reached.
     /// Note that we can exceed max_bytes_to_read to compete block parsing.
-    while (total_rows_read < max_rows_to_read && in.count() < max_bytes_to_read)
+    while (total_rows_read < max_rows_to_read && getDataOffsetMaybeCompressed(in) < max_bytes_to_read)
     {
         if (in.eof())
             break;

@@ -2,6 +2,7 @@
 #include <IO/ReadBufferFromFile.h>
 #include <IO/CompressedReadBufferWrapper.h>
 #include <IO/ReadBufferFromFileDecorator.h>
+#include <IO/ReadBufferWrapperBase.h>
 #include <IO/PeekableReadBuffer.h>
 
 
@@ -62,9 +63,9 @@ bool isBufferWithFileSize(const ReadBuffer & in)
     {
         return delegate->isWithFileSize();
     }
-    if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
+    if (const auto * wrapper = dynamic_cast<const ReadBufferWrapperBase *>(&in))
     {
-        return isBufferWithFileSize(compressed->getWrappedReadBuffer());
+        return isBufferWithFileSize(wrapper->getWrappedReadBuffer());
     }
 
     return dynamic_cast<const WithFileSize *>(&in) != nullptr;
@@ -76,9 +77,9 @@ size_t getDataOffsetMaybeCompressed(const ReadBuffer & in)
     {
         return getDataOffsetMaybeCompressed(delegate->getWrappedReadBuffer());
     }
-    if (const auto * compressed = dynamic_cast<const CompressedReadBufferWrapper *>(&in))
+    if (const auto * wrapper = dynamic_cast<const ReadBufferWrapperBase *>(&in))
     {
-        return getDataOffsetMaybeCompressed(compressed->getWrappedReadBuffer());
+        return getDataOffsetMaybeCompressed(wrapper->getWrappedReadBuffer());
     }
     if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
     {
