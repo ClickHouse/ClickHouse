@@ -1000,6 +1000,16 @@ private:
     /// (MsgPack, RowBinary, CSV, ...) a large constant broadcast batch_size times must
     /// count towards the estimate, or the splitter can miss a needed split.
     /// Runs in O(1) — reads column metadata, no per-row scanning.
+    ///
+    /// This estimate sizes values by their in-memory column width, not each
+    /// serialization_format's actual worst-case wire size (e.g. CSV/TSV escaping,
+    /// MsgPack's per-scalar type byte). That is a known, tracked gap: it can make the
+    /// splitter under-split for text formats. It is NOT a memory-safety issue, though —
+    /// the actual allocation later in executeOnBlock (allocateInWasmMemory) asks the WASM
+    /// guest's own allocator for the real serialized size and throws WASM_ERROR cleanly if
+    /// the guest can't satisfy it (bounded by webassembly_udf_max_memory), exactly as it
+    /// always has for oversized single blocks. Under-splitting here can only turn an
+    /// otherwise-successful split into a clean allocation failure, not a buffer overflow.
     size_t estimateTotalSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row_count, bool preserve_const) const
     {
         const auto & declared_arguments = user_defined_function->getArguments();
@@ -1266,6 +1276,8 @@ private:
     /// Used for the cumulative flush pass below: a fixed stride derived from the average
     /// row size can still put an oversized row in the same batch as its neighbors and
     /// blow the input budget on a skewed block (e.g. one huge string among many tiny ones).
+    /// Same format-awareness caveat as estimateTotalSerializedSize above: not a memory-safety
+    /// issue, see the comment there.
     size_t estimateRowSerializedSize(const ColumnsWithTypeAndName & arguments, size_t row, bool preserve_const) const
     {
         const auto & declared_arguments = user_defined_function->getArguments();
