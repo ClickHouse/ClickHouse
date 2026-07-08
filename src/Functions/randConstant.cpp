@@ -104,7 +104,7 @@ public:
 
         ColumnVector<UInt32>::Container vec_to(1);
 
-        TargetSpecific::Default::RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(UInt32));
+        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), sizeof(UInt32));
         UInt32 value = vec_to[0];
 
         return std::make_unique<FunctionBaseRandomConstant>(value, argument_types, return_type);

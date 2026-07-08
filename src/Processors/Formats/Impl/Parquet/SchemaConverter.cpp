@@ -1,5 +1,6 @@
 #include <Processors/Formats/Impl/Parquet/SchemaConverter.h>
 
+#include <Common/checkStackSize.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime64.h>
@@ -169,6 +170,21 @@ std::string_view SchemaConverter::useColumnMapperIfNeeded(const parq::SchemaElem
 
 void SchemaConverter::processSubtree(TraversalNode & node)
 {
+    /// Reject deeply nested schemas before recursing. The def-level guard below (def == UINT8_MAX)
+    /// only counts OPTIONAL/REPEATED nodes, so a chain of REQUIRED groups would bypass it and
+    /// overflow the native stack. Track the real recursion depth unconditionally and reject early;
+    /// checkStackSize is a last-resort backstop if max_parser_depth is raised.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    checkStackSize();
+    ++recursion_depth;
+    SCOPE_EXIT({ --recursion_depth; });
+    if (options.format.max_parser_depth != 0 && recursion_depth > options.format.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Parquet schema is nested deeper than the limit ({}). It can be raised with the setting "
+            "'max_parser_depth', but a very deeply nested schema is rarely intentional",
+            options.format.max_parser_depth);
+
     if (node.type_hint)
         chassert(node.requested);
     if (schema_idx >= file_metadata.schema.size())
@@ -597,6 +613,26 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     <recurse> `name2`
     ///     ...
 
+    /// The requested type may wrap the tuple in Nullable (e.g. `Nullable(Tuple(...))` is a legal
+    /// type). Unwrap it, match elements against the inner Tuple, and let the outer wrapper be
+    /// restored via outer_type_hint (needs_cast) in processSubtree.
+    /// Only unwrap when the tuple is always defined (REQUIRED group, no optional struct-group
+    /// ancestor), so the restored outer Nullable is always-non-null and lossless. Only Nullable
+    /// levels nested below the innermost array count: a Nullable level at or before it is the
+    /// optional wrapper of a LIST/MAP, whose nulls are normalized to empty collections by
+    /// processRepDefLevelsForArray and never reach the inner tuple null-map.
+    size_t innermost_array_idx = 0;
+    for (size_t i = 0; i < levels.size(); ++i)
+        if (levels[i].is_array)
+            innermost_array_idx = i;
+    bool has_optional_ancestor = false;
+    for (size_t i = innermost_array_idx + 1; i < levels.size(); ++i)
+        has_optional_ancestor |= !levels[i].is_array;
+    if (node.type_hint && node.type_hint->isNullable()
+        && node.element->repetition_type == parq::FieldRepetitionType::REQUIRED
+        && !has_optional_ancestor)
+        node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
+
     const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
     if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", node.getNameForLogging(), node.type_hint->getName());
@@ -894,7 +930,7 @@ void SchemaConverter::processPrimitiveColumn(
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected physical type of GeoParquet column: {}", thriftToString(type));
 
         out_inferred_type = getGeoDataType(geo_metadata->type);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(*geo_metadata, options.format.precise_float_parsing);
         return;
     }
 
@@ -902,7 +938,7 @@ void SchemaConverter::processPrimitiveColumn(
     {
         GeoColumnMetadata iceberg_geo{GeoEncoding::WKB, GeoType::Mixed};
         out_inferred_type = getGeoDataType(GeoType::Mixed);
-        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo);
+        out_decoder.string_converter = std::make_shared<GeoConverter>(iceberg_geo, options.format.precise_float_parsing);
         return;
     }
 

@@ -9,6 +9,10 @@ doc_type: 'reference'
 AI Functions are built-in functions in ClickHouse that you can use to call AI or generate embeddings to work with your data, extract information, classify data, etc...
 
 :::note
+AI functions are experimental. Set [`allow_experimental_ai_functions`](/operations/settings/settings#allow_experimental_ai_functions) to enable them.
+:::
+
+:::note
 AI functions can return unpredictable outputs. The result will highly depend on the quality of the prompt and the model used.
 :::
 
@@ -61,6 +65,17 @@ The `endpoint` URL in an AI named collection is an outbound destination the serv
 ```
 
 Note that this setting is server-wide and applies to all HTTP-using features.
+
+### Transport security (HTTP vs HTTPS) {#transport-security}
+
+The transport is determined solely by the scheme of the `endpoint` URL. There is no application-level encryption of the request payload; the protection of data in transit depends entirely on the scheme:
+
+- `https://` — the connection uses TLS. The request body (input text, prompts) and the `api_key` in the request headers are encrypted in transit, and the provider's certificate is validated. Use this for any remote provider.
+- `http://` — the connection is **not encrypted**. The request body and the `api_key` are sent in cleartext. Only use this for a trusted provider on a private network (e.g. a local `vLLM` or `Ollama` instance).
+
+AI functions do not force HTTPS: an `http://` endpoint is accepted and sends data unencrypted. There is currently no server-side setting that rejects cleartext AI endpoints — [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) restricts the destination host only and does not inspect the URL scheme, so an `http://` endpoint to an allowed host still passes. To ensure encrypted transport, configure named collections with `https://` endpoints.
+
+Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
 ## Supported providers {#supported-providers}
 

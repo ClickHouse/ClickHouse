@@ -1,0 +1,113 @@
+---
+title: "查询 ClickHouse 的 system 数据库"
+slug: /cloud/monitoring/system-tables
+description: '通过直接查询系统表监控 ClickHouse Cloud'
+keywords: ['cloud', '监控', '系统表', 'query_log', 'clusterAllReplicas', '可观测性仪表板']
+sidebarTitle: '系统表'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+所有 ClickHouse 实例都自带一组位于 `system` 数据库中的[系统表](/zh/reference/system-tables/overview)，其中包含以下信息：
+
+* 服务器状态、进程和环境。
+* 服务器内部进程。
+* 构建 ClickHouse 二进制文件时使用的选项。
+
+直接查询这些表有助于监控 ClickHouse 部署，尤其适用于深入查看内部信息和进行调试。
+
+<div id="using-cloud-console">
+  ## 使用 ClickHouse Cloud 控制台
+</div>
+
+ClickHouse Cloud 控制台内置了可用于查询系统表的 [SQL 控制台](/zh/products/cloud/features/sql-console-features/sql-console) 和 [仪表盘工具](/zh/products/cloud/features/sql-console-features/dashboards)。例如，下面的查询展示了在过去两小时内新建了多少个 parts (以及创建频率) ：
+
+```sql
+SELECT
+    count() AS new_parts,
+    toStartOfMinute(event_time) AS modification_time_m,
+    table,
+    sum(rows) AS total_written_rows,
+    formatReadableSize(sum(size_in_bytes)) AS total_bytes_on_disk
+FROM clusterAllReplicas(default, system.part_log)
+WHERE (event_type = 'NewPart') AND (event_time > (now() - toIntervalHour(2)))
+GROUP BY
+    modification_time_m,
+    table
+ORDER BY
+    modification_time_m ASC,
+    table DESC
+```
+
+<Tip>
+  **更多示例查询**
+
+  如需查看更多监控查询，请参阅以下资源：
+
+  * [用于故障排查的实用查询](/zh/resources/support-center/knowledge-base/queries-sql/useful-queries-for-troubleshooting)
+  * [监控和排查 insert 查询](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+  * [监控和排查 select 查询](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)
+
+  您还可以使用这些查询在 Cloud Console 中[创建自定义仪表板](https://clickhouse.com/blog/essential-monitoring-queries-creating-a-dashboard-in-clickHouse-cloud)。
+</Tip>
+
+<div id="built-in-advanced-observability-dashboard">
+  ## 内置高级可观测性仪表板
+</div>
+
+ClickHouse 内置了高级可观测性仪表板功能，可通过 `$HOST:$PORT/dashboard` 访问 (需要用户名和密码) ，显示 `system.dashboards` 中包含的 Cloud 概览指标。
+
+<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="原生高级可观测性仪表板" border />
+
+<Note>
+  此仪表板需要直接对 ClickHouse 实例进行身份验证，并且独立于 [Cloud Console 高级仪表板](/zh/products/cloud/features/monitoring/cloud-console#advanced-dashboard)；后者可通过 Cloud Console 界面访问，无需额外身份验证。
+</Note>
+
+有关可用可视化内容以及如何使用它们进行故障排查的更多信息，请参阅[高级仪表板文档](/zh/products/cloud/features/monitoring/advanced-dashboard)。
+
+<div id="querying-across-nodes">
+  ## 跨节点和版本查询
+</div>
+
+为了全面查看整个集群，用户可以结合使用 `clusterAllReplicas` 函数和 `merge` 函数。`clusterAllReplicas` 函数支持跨 &quot;default&quot; 集群中的所有副本查询系统表，并将各节点的数据汇总为统一结果。与 `merge` 函数结合使用时，它可用于访问集群中特定表的全部系统数据。
+
+例如，要查找过去一小时内所有副本中运行时间最长的前 5 个查询：
+
+```sql
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE event_time >= (now() - toIntervalMinute(60)) AND type = 'QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+这种方法对于监控和调试整个集群范围内的操作尤其有价值，能帮助用户更有效地分析其 ClickHouse Cloud 部署的健康状况和性能。
+
+更多详情，请参见[跨节点查询](/zh/reference/system-tables/overview#querying-across-nodes)。
+
+<div id="system-considerations">
+  ## 系统注意事项
+</div>
+
+<Warning>
+  直接查询系统表会增加生产服务的查询负载，导致 ClickHouse Cloud 实例无法进入闲置状态 (这可能会影响成本) ，并使监控可用性依赖于生产系统的健康状况。如果生产系统发生故障，监控也可能受到影响。
+</Warning>
+
+如果需要与生产环境隔离的实时生产监控，建议使用[与 Prometheus 兼容的指标端点](/zh/products/cloud/features/monitoring/prometheus)或 [Cloud Console 仪表盘](/zh/products/cloud/features/monitoring/cloud-console)。这两者都使用预先抓取的指标，不会向底层服务发出查询。
+
+<div id="related">
+  ## 相关页面
+</div>
+
+* [系统表参考](/zh/reference/system-tables/overview) — 所有可用系统表的完整参考
+* [Cloud Console 监控](/zh/products/cloud/features/monitoring/cloud-console) — 零配置仪表盘，且不会影响服务性能
+* [Prometheus 端点](/zh/products/cloud/features/monitoring/prometheus) — 将指标导出到外部监控工具
+* [高级仪表板](/zh/products/cloud/features/monitoring/advanced-dashboard) — 仪表板可视化的详细参考

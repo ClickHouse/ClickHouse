@@ -76,8 +76,8 @@ TTLTransform::TTLTransform(
         if (algorithm->isMaxTTLExpired() && !rows_ttl.where_expression_ast)
             all_data_dropped = true;
 
-        delete_algorithm = algorithm.get();
         algorithms.emplace_back(std::move(algorithm));
+        delete_algorithm = static_cast<const TTLDeleteAlgorithm *>(algorithms.back().get());
     }
 
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())

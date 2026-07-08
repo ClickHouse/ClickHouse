@@ -1,0 +1,354 @@
+---
+slug: /sql-reference/functions/geo/s2
+sidebarTitle: 'S2 Geometry'
+title: 'S2 인덱스 작업 함수'
+description: 'S2 인덱스 작업 함수에 대한 문서'
+doc_type: 'reference'
+---
+
+<div id="s2index">
+  ## S2Index
+</div>
+
+[S2](https://s2geometry.io/)는 모든 지리 데이터를 구면(지구본과 유사한 형태) 위에 표현하는 지리 인덱싱 시스템입니다.
+
+S2 라이브러리에서 점은 기존의 (위도, 경도) 쌍과 달리 S2 인덱스로 표현됩니다. S2 인덱스는 단위 구의 표면 위 한 점을 내부적으로 인코딩한 특정 숫자입니다. (위도, 경도) 포맷으로 지정된 점의 S2 포인트 인덱스를 얻으려면 [geoToS2](#geotos2) 함수를 사용하십시오. 또한 지정한 S2 포인트 인덱스에 해당하는 지리 좌표를 얻으려면 [s2ToGeo](#s2togeo) 함수를 사용할 수 있습니다.
+
+<div id="geotos2">
+  ## geoToS2
+</div>
+
+주어진 좌표 `(longitude, latitude)`에 해당하는 [S2](#s2index) 포인트 인덱스를 반환합니다.
+
+**구문**
+
+```sql
+geoToS2(lon, lat)
+```
+
+**인수**
+
+* `lon` — 경도. [Float64](/ko/reference/data-types/float).
+* `lat` — 위도. [Float64](/ko/reference/data-types/float).
+
+**반환 값**
+
+* S2 point 인덱스. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT geoToS2(37.79506683, 55.71290588) AS s2Index;
+```
+
+```text title="Response"
+┌─────────────s2Index─┐
+│ 4704772434919038107 │
+└─────────────────────┘
+```
+
+<div id="s2togeo">
+  ## s2ToGeo
+</div>
+
+주어진 [S2](#s2index) 포인트 인덱스에 해당하는 Geo 좌표 `(longitude, latitude)`를 반환합니다.
+
+**구문**
+
+```sql
+s2ToGeo(s2index)
+```
+
+**인수**
+
+* `s2index` — S2 인덱스. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 다음 두 값으로 이루어진 [튜플](/ko/reference/data-types/tuple):
+  * `lon`. [Float64](/ko/reference/data-types/float).
+  * `lat`. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT s2ToGeo(4704772434919038107) AS s2Coodrinates;
+```
+
+```text title="Response"
+┌─s2Coodrinates────────────────────────┐
+│ (37.79506681471008,55.7129059052841) │
+└──────────────────────────────────────┘
+```
+
+<div id="s2getneighbors">
+  ## s2GetNeighbors
+</div>
+
+지정된 [S2](#s2index)에 해당하는 S2 이웃 인덱스를 반환합니다. S2 시스템의 각 셀은 4개의 측지선으로 둘러싸인 사각형입니다. 따라서 각 셀에는 이웃이 4개 있습니다.
+
+**구문**
+
+```sql
+s2GetNeighbors(s2index)
+```
+
+**인수**
+
+* `s2index` — S2 인덱스. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* 4개의 인접 인덱스로 이루어진 배열: `array[s2index1, s2index3, s2index2, s2index4]`. [배열](/ko/reference/data-types/array)([UInt64](/ko/reference/data-types/int-uint)).
+
+**예시**
+
+```sql title="Query"
+SELECT s2GetNeighbors(5074766849661468672) AS s2Neighbors;
+```
+
+```text title="Response"
+┌─s2Neighbors───────────────────────────────────────────────────────────────────────┐
+│ [5074766987100422144,5074766712222515200,5074767536856236032,5074767261978329088] │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="s2cellsintersect">
+  ## s2CellsIntersect
+</div>
+
+제공된 두 [S2](#s2index) 셀이 서로 겹치는지 여부를 확인합니다.
+
+**구문**
+
+```sql
+s2CellsIntersect(s2index1, s2index2)
+```
+
+**인수**
+
+* `siIndex1`, `s2index2` — S2 인덱스. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `1` — 두 셀이 교차하면 반환됩니다. [UInt8](/ko/reference/data-types/int-uint).
+* `0` — 두 셀이 교차하지 않으면 반환됩니다. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT s2CellsIntersect(9926595209846587392, 9926594385212866560) AS intersect;
+```
+
+```text title="Response"
+┌─intersect─┐
+│         1 │
+└───────────┘
+```
+
+<div id="s2capcontains">
+  ## s2CapContains
+</div>
+
+cap이 S2 점을 포함하는지 판별합니다. cap은 평면으로 잘라낸 구의 일부분을 나타냅니다. 구 위의 한 점과 도 단위의 반지름으로 정의됩니다.
+
+**구문**
+
+```sql
+s2CapContains(center, degrees, point)
+```
+
+**인수**
+
+* `center` — cap에 대응하는 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `degrees` — cap의 반지름(도)입니다. [Float64](/ko/reference/data-types/float).
+* `point` — S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `1` — cap에 해당 S2 point index가 포함된 경우입니다. [UInt8](/ko/reference/data-types/int-uint).
+* `0` — cap에 해당 S2 point index가 포함되지 않은 경우입니다. [UInt8](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT s2CapContains(1157339245694594829, 1.0, 1157347770437378819) AS capContains;
+```
+
+```text title="Response"
+┌─capContains─┐
+│           1 │
+└─────────────┘
+```
+
+<div id="s2capunion">
+  ## s2CapUnion
+</div>
+
+주어진 두 입력 캡을 모두 포함하는 가장 작은 캡을 구합니다. 캡은 평면으로 잘라낸 구의 일부를 나타냅니다. 이는 구 위의 한 점과 도 단위의 반경으로 정의됩니다.
+
+**구문**
+
+```sql
+s2CapUnion(center1, radius1, center2, radius2)
+```
+
+**인수**
+
+* `center1`, `center2` — 두 입력 cap에 대응하는 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `radius1`, `radius2` — 두 입력 cap의 반지름(도)입니다. [Float64](/ko/reference/data-types/float).
+
+**반환 값**
+
+* `center` — 두 입력 cap을 포함하는 가장 작은 cap의 중심에 대응하는 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `radius` — 두 입력 cap을 포함하는 가장 작은 cap의 반지름입니다. [Float64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT s2CapUnion(3814912406305146967, 1.0, 1157347770437378819, 1.0) AS capUnion;
+```
+
+```text title="Response"
+┌─capUnion───────────────────────────────┐
+│ (4534655147792050737,60.2088283994957) │
+└────────────────────────────────────────┘
+```
+
+<div id="s2rectadd">
+  ## s2RectAdd
+</div>
+
+지정된 S2 점을 포함하도록 경계 사각형의 크기를 확장합니다. S2 시스템에서 사각형은 위도-경도 공간의 사각형을 나타내는 `S2LatLngRect`라는 S2Region 유형으로 표현됩니다.
+
+**구문**
+
+```sql
+s2RectAdd(s2pointLow, s2pointHigh, s2Point)
+```
+
+**인수**
+
+* `s2PointLow` — 사각형에 해당하는 하한 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2PointHigh` — 사각형에 해당하는 상한 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2Point` — 경계 사각형이 포함하도록 확장할 대상 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `s2PointLow` — 확장된 사각형에 해당하는 하한 S2 cell id입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2PointHigh` — 확장된 사각형에 해당하는 상한 S2 cell id입니다. [UInt64](/ko/reference/data-types/float).
+
+**예시**
+
+```sql title="Query"
+SELECT s2RectAdd(5178914411069187297, 5177056748191934217, 5179056748191934217) AS rectAdd;
+```
+
+```text title="Response"
+┌─rectAdd───────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectcontains">
+  ## s2RectContains
+</div>
+
+주어진 사각형에 S2 점이 포함되는지 판별합니다. S2 시스템에서 사각형은 위도-경도 공간의 사각형을 나타내는 `S2LatLngRect`라는 S2Region 유형으로 표현됩니다.
+
+**구문**
+
+```sql
+s2RectContains(s2PointLow, s2PointHi, s2Point)
+```
+
+**인수**
+
+* `s2PointLow` — 사각형에 해당하는 하한 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2PointHigh` — 사각형에 해당하는 상한 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2Point` — 대상 S2 point index입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `1` — 사각형이 지정된 S2 point를 포함하는 경우입니다.
+* `0` — 사각형이 지정된 S2 point를 포함하지 않는 경우입니다.
+
+**예시**
+
+```sql title="Query"
+SELECT s2RectContains(5179062030687166815, 5177056748191934217, 5177914411069187297) AS rectContains;
+```
+
+```text title="Response"
+┌─rectContains─┐
+│            0 │
+└──────────────┘
+```
+
+<div id="s2rectunion">
+  ## s2RectUnion
+</div>
+
+이 사각형과 지정된 사각형의 합집합을 포함하는 최소 사각형을 반환합니다. S2 시스템에서 사각형은 위도-경도 공간의 사각형을 나타내는 `S2LatLngRect`라는 S2Region 유형으로 표현됩니다.
+
+**구문**
+
+```sql
+s2RectUnion(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**인수**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — 첫 번째 직사각형에 해당하는 Low 및 High S2 point index 값입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2Rect2PointLow`, `s2Rect2PointHi` — 두 번째 직사각형에 해당하는 Low 및 High S2 point index 값입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `s2UnionRect2PointLow` — 합집합 직사각형에 해당하는 Low S2 cell id입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2UnionRect2PointHi` — 합집합 직사각형에 해당하는 High S2 cell id입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT s2RectUnion(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectUnion;
+```
+
+```text title="Response"
+┌─rectUnion─────────────────────────────────┐
+│ (5179062030687166815,5177056748191934217) │
+└───────────────────────────────────────────┘
+```
+
+<div id="s2rectintersection">
+  ## s2RectIntersection
+</div>
+
+이 직사각형과 지정된 직사각형의 교집합을 포함하는 가장 작은 직사각형을 반환합니다. S2 시스템에서 직사각형은 위도-경도 공간의 직사각형을 나타내는 `S2LatLngRect`라는 S2Region 유형으로 표현됩니다.
+
+**구문**
+
+```sql
+s2RectIntersection(s2Rect1PointLow, s2Rect1PointHi, s2Rect2PointLow, s2Rect2PointHi)
+```
+
+**인수**
+
+* `s2Rect1PointLow`, `s2Rect1PointHi` — 첫 번째 직사각형에 해당하는 낮은 및 높은 S2 point index 값입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2Rect2PointLow`, `s2Rect2PointHi` — 두 번째 직사각형에 해당하는 낮은 및 높은 S2 point index 값입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**반환 값**
+
+* `s2UnionRect2PointLow` — 지정된 직사각형들의 교집합을 포함하는 직사각형에 해당하는 낮은 S2 cell id입니다. [UInt64](/ko/reference/data-types/int-uint).
+* `s2UnionRect2PointHi` — 지정된 직사각형들의 교집합을 포함하는 직사각형에 해당하는 높은 S2 cell id입니다. [UInt64](/ko/reference/data-types/int-uint).
+
+**예시**
+
+```sql title="Query"
+SELECT s2RectIntersection(5178914411069187297, 5177056748191934217, 5179062030687166815, 5177056748191934217) AS rectIntersection;
+```
+
+```text title="Response"
+┌─rectIntersection──────────────────────────┐
+│ (5178914411069187297,5177056748191934217) │
+└───────────────────────────────────────────┘
+```

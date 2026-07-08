@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'Configurar la programación de copias de seguridad'
+slug: /cloud/manage/backups/configurable-backups
+description: 'Guía sobre cómo configurar copias de seguridad'
+title: 'Configurar la programación de copias de seguridad'
+keywords: ['copias de seguridad', 'copias de seguridad en la nube', 'restauración']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="Copias de seguridad configurables" linking_verb_are="True" />
+
+Para configurar la programación de las copias de seguridad de un servicio, ve a la pestaña **Configuración** de la consola y haz clic en **Cambiar la configuración de las copias de seguridad**.
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Configurar las opciones de las copias de seguridad" border />
+
+Se abrirá una pestaña a la derecha donde podrás elegir los valores de retención, frecuencia y hora de inicio. Tendrás que guardar la configuración seleccionada para que los cambios surtan efecto.
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Seleccionar la retención y la frecuencia de las copias de seguridad" border />
+
+<Note>
+  La hora de inicio y la frecuencia son mutuamente excluyentes. La hora de inicio tiene prioridad.
+</Note>
+
+<Note>
+  Cambiar la programación de las copias de seguridad puede aumentar los cargos mensuales por almacenamiento, ya que es posible que algunas copias de seguridad no estén cubiertas por las copias de seguridad predeterminadas del servicio. Consulta [&quot;Comprender el costo de las copias de seguridad&quot;](/es/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>

@@ -1,0 +1,50 @@
+---
+description: 'Читает временные ряды из таблицы TimeSeries, отфильтрованные селектором, с временными метками в заданном интервале.'
+sidebarTitle: 'timeSeriesSelector'
+slug: /sql-reference/table-functions/timeSeriesSelector
+title: 'timeSeriesSelector'
+doc_type: 'reference'
+---
+
+Читает временные ряды из таблицы TimeSeries, отфильтрованные селектором, с временными метками в заданном интервале.
+Эта функция похожа на [диапазонные селекторы](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors), но также используется для реализации [мгновенных селекторов](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors).
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+timeSeriesSelector('db_name', 'time_series_table', 'instant_query', min_time, max_time)
+timeSeriesSelector(db_name.time_series_table, 'instant_query', min_time, max_time)
+timeSeriesSelector('time_series_table', 'instant_query', min_time, max_time)
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `db_name` - Имя базы данных, в которой находится таблица TimeSeries.
+* `time_series_table` - Имя таблицы TimeSeries.
+* `instant_query` - Мгновенный селектор, записанный с использованием [синтаксиса PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/#instant-vector-selectors), без модификаторов `@` или `offset`.
+* &#96;min&#95;time - Начальная временная метка, включительно.
+* &#96;max&#95;time - Конечная временная метка, включительно.
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Функция возвращает три столбца:
+
+* `id` — содержит идентификаторы временных рядов, соответствующих указанному селектору.
+* `timestamp` — содержит временные метки.
+* `value` — содержит значения.
+
+Для возвращаемых данных определённый порядок не гарантируется.
+
+<div id="example">
+  ## Пример
+</div>
+
+```sql
+SELECT * FROM timeSeriesSelector(mytable, 'http_requests{job="prometheus"}', now() - INTERVAL 10 MINUTES, now())
+```

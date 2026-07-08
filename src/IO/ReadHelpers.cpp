@@ -10,6 +10,7 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/readFloatText.h>
 #include <IO/Operators.h>
+#include <cstdint>
 #include <cstdlib>
 #include <bit>
 #include <utility>
@@ -229,15 +230,46 @@ bool checkStringByFirstCharacterAndAssertTheRestCaseInsensitive(const char * s, 
 }
 
 
+/// Diagnostic predicate for the bounds-corruption class of bug tracked in
+/// `https://github.com/ClickHouse/ClickHouse/issues/104692`. Validates the
+/// caller-supplied `[rb.position(), end)` source range against the working
+/// buffer `[rb.buffer().begin(), rb.buffer().end())` WITHOUT performing
+/// relational pointer comparisons on the untrusted range. C++ relational
+/// comparisons between pointers from different allocations are UB; if
+/// `working_buffer` is corrupt and its begin/end / `end` come from different
+/// allocations, the predicates `end >= rb.position()`, `end <= rb.buffer().end()`,
+/// and `rb.position() >= rb.buffer().begin()` could trigger UB before
+/// `chassert` ever reports the bug. Compare the four pointers as integer
+/// addresses instead.
+static void assertReadBufferRangeForAppend(ReadBuffer & rb, const char * end)
+{
+    auto pos_addr = reinterpret_cast<std::uintptr_t>(rb.position());
+    auto end_addr = reinterpret_cast<std::uintptr_t>(end);
+    auto wb_begin_addr = reinterpret_cast<std::uintptr_t>(rb.buffer().begin());
+    auto wb_end_addr = reinterpret_cast<std::uintptr_t>(rb.buffer().end());
+    chassert(pos_addr <= end_addr);
+    chassert(end_addr <= wb_end_addr);
+    chassert(pos_addr >= wb_begin_addr);
+}
+
 template <typename T>
 static void appendToStringOrVector(T & s, ReadBuffer & rb, const char * end)
 {
+    /// Diagnostic asserts for the bounds-corruption class of bug tracked in
+    /// `https://github.com/ClickHouse/ClickHouse/issues/104692`. If
+    /// `working_buffer` becomes inverted or extends past the underlying owned
+    /// `Memory<>`, the `s.append` below memcpys an arbitrary span and corrupts
+    /// the destination `String`'s heap arena. The exception then surfaces
+    /// either at the memcpy itself (unmapped source) or much later when the
+    /// oversized `String` is freed.
+    assertReadBufferRangeForAppend(rb, end);
     s.append(rb.position(), end - rb.position());
 }
 
 template <>
 inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, const char * end)
 {
+    assertReadBufferRangeForAppend(rb, end);
     if (rb.isPadded())
         s.insertSmallAllowReadWriteOverflow15(rb.position(), end);
     else
@@ -247,6 +279,7 @@ inline void appendToStringOrVector(PaddedPODArray<UInt8> & s, ReadBuffer & rb, c
 template <>
 inline void appendToStringOrVector(PODArray<char> & s, ReadBuffer & rb, const char * end)
 {
+    assertReadBufferRangeForAppend(rb, end);
     s.insert(rb.position(), end);
 }
 
@@ -1858,7 +1891,7 @@ ReturnType skipJSONFieldImpl(ReadBuffer & buf, std::string_view name_of_field, c
             ++buf.position();
 
         double v = 0;
-        if (!tryReadFloatText(v, buf))
+        if (!tryReadFloatTextPrecise(v, buf))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "Expected a number field for key '{}'", name_of_field);
@@ -2436,13 +2469,13 @@ ReturnType readQuotedFieldInto(Vector & s, ReadBuffer & buf)
     else
     {
         /// It's an integer, float or decimal. They all can be parsed as float.
+        /// This only tokenizes: the parsed value is discarded (we keep the consumed text), so use
+        /// the non-throwing parser. A non-numeric field then consumes nothing and is left for the
+        /// caller to handle, instead of raising a "cannot read float" error.
         auto parse_func = [](ReadBuffer & in)
         {
             Float64 tmp = 0;
-            if constexpr (throw_exception)
-                readFloatText(tmp, in);
-            else
-                return tryReadFloatText(tmp, in);
+            return tryReadFloatTextPrecise(tmp, in);
         };
 
         return readParsedValueInto<ReturnType>(s, buf, parse_func);

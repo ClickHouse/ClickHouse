@@ -1,0 +1,61 @@
+---
+sidebarTitle: '查询数据'
+title: '查询 ClickHouse 数据'
+slug: /guides/writing-queries
+description: '了解如何查询 ClickHouse 数据'
+keywords: ['SELECT', '数据格式']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+ClickHouse 是一个 SQL 数据库，你可以像平时一样编写熟悉的 `SELECT` 查询来查询数据。例如：
+
+```sql
+SELECT *
+FROM helloworld.my_first_table
+ORDER BY timestamp
+```
+
+<Note>
+  有关语法以及可用子句和选项的更多信息，请参阅 [SQL 参考](/zh/reference/statements/select/index)。
+</Note>
+
+注意，返回结果会以清晰的表格形式显示：
+
+```response
+┌─user_id─┬─message────────────────────────────────────────────┬───────────timestamp─┬──metric─┐
+│     102 │ Insert a lot of rows per batch                     │ 2022-03-21 00:00:00 │ 1.41421 │
+│     102 │ Sort your data based on your commonly-used queries │ 2022-03-22 00:00:00 │   2.718 │
+│     101 │ Hello, ClickHouse!                                 │ 2022-03-22 14:04:09 │      -1 │
+│     101 │ Granules are the smallest chunks of data read      │ 2022-03-22 14:04:14 │ 3.14159 │
+└─────────┴────────────────────────────────────────────────────┴─────────────────────┴─────────┘
+
+4 rows in set. Elapsed: 0.008 sec.
+```
+
+使用 `FORMAT` 子句指定 [ClickHouse 支持的多种输出格式](/zh/reference/formats/index#formats-overview) 中的一种：
+
+```sql
+SELECT *
+FROM helloworld.my_first_table
+ORDER BY timestamp
+FORMAT TabSeparated
+```
+
+在上述查询中，输出将以制表符分隔的形式返回：
+
+```response
+Query id: 3604df1c-acfd-4117-9c56-f86c69721121
+
+102 Insert a lot of rows per batch      2022-03-21 00:00:00     1.41421
+102 Sort your data based on your commonly-used queries  2022-03-22 00:00:00     2.718
+101 Hello, ClickHouse!  2022-03-22 14:04:09     -1
+101 Granules are the smallest chunks of data read       2022-03-22 14:04:14     3.14159
+
+4 rows in set. Elapsed: 0.005 sec.
+```
+
+<Note>
+  ClickHouse 支持 70 多种输入和输出格式，再加上数千个函数和各种数据格式，你可以使用 ClickHouse 执行高效且出色的类 ETL 数据转换。实际上，你甚至
+  不需要运行中的 ClickHouse server 就能转换数据——只需使用 `clickhouse-local` 工具即可。详情请参阅 [`clickhouse-local` 文档页面](/zh/concepts/features/interfaces/cli)。
+</Note>

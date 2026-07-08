@@ -1,0 +1,129 @@
+---
+title: ClickHouse MySQL Cloud 配置
+---
+
+<Steps>
+  <Step>
+    #### 选择 `Connect your app`
+
+    创建 ClickHouse Cloud 服务后，在 `Connect your app` 页面中，从下拉菜单选择 MySQL。
+
+    <Image size="lg" img="/images/_snippets/mysql1.webp" alt="显示 MySQL 接口选择下拉菜单的 ClickHouse Cloud 凭据页面" border />
+  </Step>
+
+  <Step>
+    #### 启用 MySQL 接口
+
+    切换开关，为此特定服务启用 MySQL 接口。
+    这将为该服务开放端口 `3306`，并显示 MySQL 连接页面，其中包含你唯一的 MySQL 用户名。
+
+    <Image size="lg" img="/images/_snippets/mysql2.webp" alt="ClickHouse Cloud MySQL 接口启用开关和连接详细信息" border />
+
+    或者，如需为现有服务启用 MySQL 接口：
+  </Step>
+
+  <Step>
+    #### 选择 `Connect`
+
+    确保你的服务处于 `Running` 状态，然后点击你要为其启用 MySQL 接口的服务。
+    从左侧菜单中选择 “Connect”：
+
+    <Image size="lg" img="/images/_snippets/mysql3.webp" alt="突出显示 Connect 选项的 ClickHouse Cloud 服务连接页面" border />
+  </Step>
+
+  <Step>
+    #### 选择 `MySQL`
+
+    从 `Connect With` 下拉菜单中选择 `MySQL`。
+
+    <Image size="md" img="/images/_snippets/mysql4.webp" alt="显示 MySQL 选项选择的 ClickHouse Cloud 连接页面" border />
+  </Step>
+
+  <Step>
+    #### 启用 MySQL 接口
+
+    切换开关，为此特定服务启用 MySQL 接口。
+    这将为该服务开放端口 `3306`，并显示 MySQL 连接页面，其中包含你唯一的 MySQL 用户名。
+  </Step>
+</Steps>
+
+<Image size="md" img="/images/_snippets/mysql5.webp" alt="已启用 MySQL 接口并显示连接详细信息的 ClickHouse Cloud 连接页面" border />
+
+<div id="creating-multiple-mysql-users-in-clickhouse-cloud">
+  ## 在 ClickHouse Cloud 中创建只读 MySQL 用户
+</div>
+
+ClickHouse Cloud 会自动创建一个 `mysql4<subdomain>` 用户，该用户与默认用户使用相同的密码。
+`<subdomain>` 部分对应你的 ClickHouse Cloud 主机名的第一部分。
+
+这种用户名格式是为了兼容那些会建立安全连接、但在 TLS 握手中不包含 [SNI (Server Name Indication) ](https://www.cloudflare.com/learning/ssl/what-is-sni) 数据的工具。
+如果没有 SNI 信息，系统就无法进行正确的内部路由，因此嵌入用户名中的子域名提示会提供所需的路由信息。
+MySQL 控制台客户端就是一个需要这种格式的工具示例。
+
+<Tip>
+  建议的最佳实践是新建一个只读 MySQL 用户。
+</Tip>
+
+<Note>
+  对于 `foobar.us-east1.aws.clickhouse.cloud` 这样的 ClickHouse Cloud 主机名，`<subdomain>` 部分就是 `foobar`，自定义 MySQL 用户名可以是 `mysql4foobar_team1` 这样的形式。
+</Note>
+
+<Steps>
+  <Step>
+    #### 创建只读 settings profile
+
+    创建一个要应用于只读用户的 [settings profile](/zh/reference/statements/create/settings-profile)，
+    将 `readonly` setting 设为 `1`：
+
+    ```sql
+    CREATE SETTINGS PROFILE readonly_profile SETTINGS readonly = 1
+    ```
+  </Step>
+
+  <Step>
+    #### 创建新的只读 MySQL 用户
+
+    [创建用户](/zh/reference/statements/create/user)，名称需遵循以下格式：
+
+    ```sql
+    mysql4<subdomain>_<username>
+    ```
+
+    将 `readonly_profile` 应用于新用户，并确保密码采用 double SHA1 格式。例如：
+
+    ```sql
+    CREATE USER mysql4foobar_readonly
+    IDENTIFIED WITH double_sha1_password BY 'YourPassword42$'
+    SETTINGS PROFILE 'readonly_profile';
+    ```
+  </Step>
+
+  <Step>
+    #### 授予新用户访问所需表的权限
+
+    向新用户 [授予](/zh/reference/statements/grant) 访问目标表或数据库所需的权限。
+    例如，如果你只想授予对 `system.query_log` 的访问权限：
+
+    ```sql
+    GRANT SELECT ON system.query_log TO mysql4foobar_readonly;
+    ```
+
+    <Note>
+      对于只读用户，请确保只向需要访问的表授予 `SELECT` 权限。
+    </Note>
+
+    新创建的用户可用于通过 MySQL 接口连接到你的 ClickHouse Cloud 服务。
+  </Step>
+</Steps>
+
+<div id="troubleshooting-multiple-mysql-users-in-clickhouse-cloud">
+  ### 在 ClickHouse Cloud 中排查多个 MySQL 用户相关问题
+</div>
+
+如果您创建了一个新的 MySQL 用户，并在通过 MySQL CLI 客户端连接时看到以下错误：
+
+```
+ERROR 2013 (HY000): Lost connection to MySQL server at 'reading authorization packet', system error: 54
+```
+
+在这种情况下，请确保用户名采用 `mysql4<subdomain>_<username>` 格式，如[上文](#creating-multiple-mysql-users-in-clickhouse-cloud)所述。

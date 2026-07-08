@@ -59,6 +59,7 @@ namespace S3AuthSetting
 
     extern const S3AuthSettingsString role_arn;
     extern const S3AuthSettingsString role_session_name;
+    extern const S3AuthSettingsString external_id;
     extern const S3AuthSettingsString http_client;
     extern const S3AuthSettingsString service_account;
     extern const S3AuthSettingsString metadata_service;
@@ -107,13 +108,18 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_strategy",
     "partition_columns_in_data_file",
     "storage_class_name",
+    "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
+    "external_id", /// for extra_credentials
     "http_client", /// For GCP
     "metadata_service", /// For GCP
     "service_account", /// For GCP
     "request_token_path", /// For GCP
+    "google_adc_client_id", /// For GCP (explicit Application Default Credentials triple)
+    "google_adc_client_secret", /// For GCP
+    "google_adc_refresh_token", /// For GCP
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -168,13 +174,17 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
             headers_from_ast.begin(), headers_from_ast.end());
     }
 
-    auto client = getClient(url, *s3_settings, context, /* for_disk_s3 */false);
+    auto client = getClient(
+        url, *s3_settings, context, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, /*refresh_credentials_callback*/ std::nullopt,
+        is_loading_from_existing_metadata, force_anonymous_load_fallback);
 
     auto client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
     {
         if (!refresh_credentials_callback)
             return nullptr;
-        auto new_client = getClient(url, *s3_settings, context_, /* for_disk_s3 */false, /*opt_disk_name*/ {}, refresh_credentials_callback);
+        auto new_client = getClient(
+            url, *s3_settings, context_, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, refresh_credentials_callback,
+            is_loading_from_existing_metadata, force_anonymous_load_fallback);
         return new_client;
     };
     return std::make_shared<S3ObjectStorage>(
@@ -185,7 +195,8 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         /*key_generator=*/nullptr,
         "StorageS3",
         false,
-        client_refresher);
+        client_refresher,
+        /*client_restricts_server_credentials=*/context->shouldRestrictUserQueryS3Credentials());
 }
 
 void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & collection, ContextPtr context)
@@ -219,10 +230,20 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
     }
 
+    /// Under the restriction the collection must fully define its request-auth material, so drop the
+    /// headers/access-headers and SSE-C/SSE-KMS keys merged from the server `<s3>`/endpoint config above.
+    /// Otherwise a URL-only collection would still send the server's headers (which can include `Authorization`)
+    /// or encryption keys to its endpoint, breaking the contract that such a collection reads anonymously. With
+    /// the opt-in (`s3_allow_server_credentials_in_user_queries = 1`) the server material is kept.
+    if (context->shouldRestrictUserQueryS3Credentials())
+        s3_settings->auth_settings.clearServerManagedRequestAuth();
+
     s3_settings->auth_settings[S3AuthSetting::access_key_id] = collection.getOrDefault<String>("access_key_id", "");
     s3_settings->auth_settings[S3AuthSetting::secret_access_key] = collection.getOrDefault<String>("secret_access_key", "");
+    /// Default to 0 so a URL-only collection reads anonymously instead of using the server's identity; a
+    /// collection can still opt in with `use_environment_credentials = 1`.
     s3_settings->auth_settings[S3AuthSetting::use_environment_credentials]
-        = collection.getOrDefault<UInt64>("use_environment_credentials", 1);
+        = collection.getOrDefault<UInt64>("use_environment_credentials", 0);
     s3_settings->auth_settings[S3AuthSetting::no_sign_request] = collection.getOrDefault<bool>("no_sign_request", false);
     s3_settings->auth_settings[S3AuthSetting::expiration_window_seconds]
         = collection.getOrDefault<UInt64>("expiration_window_seconds", S3::DEFAULT_EXPIRATION_WINDOW_SECONDS);
@@ -250,11 +271,25 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
     s3_settings->auth_settings[S3AuthSetting::role_arn] = collection.getOrDefault<String>("role_arn", "");
     s3_settings->auth_settings[S3AuthSetting::role_session_name] = collection.getOrDefault<String>("role_session_name", "");
+    s3_settings->auth_settings[S3AuthSetting::external_id] = collection.getOrDefault<String>("external_id", "");
+
+    /// A query-overridden `role_arn` (`s3(collection, role_arn = ...)`) must not be assumed using the
+    /// collection's operator-provisioned keys as the STS base. Honor it only when the same query also supplied
+    /// the base key pair; a `role_arn` from the stored collection definition is left untouched.
+    if (context->shouldRestrictUserQueryS3Credentials() && collection.isQueryOverridden("role_arn")
+        && !(collection.isQueryOverridden("access_key_id") && collection.isQueryOverridden("secret_access_key")))
+    {
+        s3_settings->auth_settings.clearRoleArn();
+    }
 
     s3_settings->auth_settings[S3AuthSetting::http_client] = collection.getOrDefault<String>("http_client", "");
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
     s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.getOrDefault<String>("metadata_service", "");
     s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
+    /// An explicit Google ADC triple is a user-supplied credential, so `gcp_oauth` with it is allowed.
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = collection.getOrDefault<String>("google_adc_client_id", "");
+    s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<String>("google_adc_client_secret", "");
+    s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<String>("google_adc_refresh_token", "");
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
@@ -325,6 +360,8 @@ bool S3StorageParsedArguments::collectCredentials(ASTPtr maybe_credentials, S3::
             auth_settings_[S3AuthSetting::role_arn] = arg_value.safeGet<String>();
         else if (arg_name == "role_session_name")
             auth_settings_[S3AuthSetting::role_session_name] = arg_value.safeGet<String>();
+        else if (arg_name == "external_id")
+            auth_settings_[S3AuthSetting::external_id] = arg_value.safeGet<String>();
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid credential argument found: {}", arg_name);
     }
@@ -359,6 +396,33 @@ void S3StorageParsedArguments::fromDisk(const DiskPtr & disk, ASTs & args, Conte
     if (parsing_result.structure.has_value())
         structure = *parsing_result.structure;
     path_suffix = parsing_result.path_suffix;
+}
+
+namespace
+{
+
+/// Whether an ambiguous positional literal is a partition strategy (vs a compression method). Exact enum
+/// spellings (incl. uppercase `NONE`) match for backward compatibility; matching is also case-insensitive
+/// for real strategies (`hive`), but lowercase `none` is left to mean the `compression_method`.
+bool looksLikeExplicitPartitionStrategy(const String & arg)
+{
+    if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(arg))
+        return true;
+    const auto strategy = magic_enum::enum_cast<PartitionStrategyFactory::StrategyType>(arg, magic_enum::case_insensitive);
+    return strategy.has_value() && *strategy != PartitionStrategyFactory::StrategyType::NONE;
+}
+
+/// Whether a positional argument is a bool literal (`partition_columns_in_data_file`) rather than a
+/// `partition_strategy` string. Matches `checkAndGetLiteralArgument<bool>`: a `Bool` or a `UInt64`.
+bool looksLikeBoolArgument(const ASTPtr & arg)
+{
+    const auto * literal = arg ? arg->as<ASTLiteral>() : nullptr;
+    if (!literal)
+        return false;
+    const auto type = literal->value.getType();
+    return type == Field::Types::Which::Bool || type == Field::Types::Which::UInt64;
+}
+
 }
 
 void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool with_structure)
@@ -553,7 +617,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            if (looksLikeExplicitPartitionStrategy(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}};
             }
@@ -578,7 +642,9 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         if (with_structure)
         {
             auto sixth_arg = checkAndGetLiteralArgument<String>(args[6], "compression_method/partition_strategy");
-            if (magic_enum::enum_contains<PartitionStrategyFactory::StrategyType>(sixth_arg))
+            /// A bool last argument means args[6] is the partition strategy; otherwise inspect args[6].
+            /// This keeps the valid `(..., 'NONE', 1)` form working.
+            if (looksLikeBoolArgument(args[7]) || looksLikeExplicitPartitionStrategy(sixth_arg))
             {
                 engine_args_to_idx = {{"access_key_id", 1}, {"secret_access_key", 2}, {"session_token", 3}, {"format", 4}, {"structure", 5}, {"partition_strategy", 6}, {"partition_columns_in_data_file", 7}};
             }
@@ -621,12 +687,40 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     s3_settings->loadFromConfigForObjectStorage(
         config, "s3", context->getSettingsRef(), url.uri.getScheme(), context->getSettingsRef()[Setting::s3_validate_request_settings]);
 
+    /// Drop any role_arn/STS fields from the global `<s3>` config before parsing `extra_credentials`, so only
+    /// a query-supplied role_arn remains (a server role_arn would assume the role with the server's identity).
+    const bool restrict_server_credentials = context->shouldRestrictUserQueryS3Credentials();
+    if (restrict_server_credentials)
+        s3_settings->auth_settings.clearRoleArn();
+
     S3StorageParsedArguments::collectCredentials(extra_credentials, s3_settings->auth_settings, context);
+
+    /// Remember the query-supplied role_arn/STS fields so the per-endpoint `<s3>` merge below cannot replace them.
+    const String user_role_arn = s3_settings->auth_settings[S3AuthSetting::role_arn];
+    const String user_role_session_name = s3_settings->auth_settings[S3AuthSetting::role_session_name];
+    const String user_external_id = s3_settings->auth_settings[S3AuthSetting::external_id];
 
     if (auto endpoint_settings = context->getStorageS3Settings().getSettings(url.uri.toString(), context->getUserName()))
     {
         s3_settings->auth_settings.updateIfChanged(endpoint_settings->auth_settings);
         s3_settings->request_settings.updateIfChanged(endpoint_settings->request_settings);
+    }
+
+    if (restrict_server_credentials)
+    {
+        s3_settings->auth_settings[S3AuthSetting::role_arn] = user_role_arn;
+        s3_settings->auth_settings[S3AuthSetting::role_session_name] = user_role_session_name;
+        s3_settings->auth_settings[S3AuthSetting::external_id] = user_external_id;
+
+        /// Drop any GCP OAuth mechanism inherited from `<s3>` config: the bare-URL `s3(...)` form cannot supply
+        /// these fields, so a value here is always server-configured and would mint a server-identity token.
+        s3_settings->auth_settings.clearServerManagedGcpOAuth();
+
+        /// The bare-URL `s3(...)` form likewise cannot supply request-auth material, so the headers/access
+        /// headers and SSE-C/SSE-KMS keys here come from the server `<s3>`/endpoint config. Drop them so an
+        /// anonymous/NOSIGN request does not send the server's `Authorization` header or encryption keys to the
+        /// user-chosen endpoint.
+        s3_settings->auth_settings.clearServerManagedRequestAuth();
     }
 
     /// Re-apply user/profile/query-level settings on top, so they take priority over the global <s3> config section.
@@ -676,22 +770,44 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     else
         partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
 
+    bool query_provided_access_key_id = false;
     if (auto access_key_id_value = getFromPositionOrKeyValue<String>("access_key_id", args, engine_args_to_idx, key_value_args);
         access_key_id_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::access_key_id] = access_key_id_value.value();
+        query_provided_access_key_id = true;
     }
 
+    bool query_provided_secret_access_key = false;
     if (auto secret_access_key_value = getFromPositionOrKeyValue<String>("secret_access_key", args, engine_args_to_idx, key_value_args);
         secret_access_key_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::secret_access_key] = secret_access_key_value.value();
+        query_provided_secret_access_key = true;
     }
 
+    bool query_provided_session_token = false;
     if (auto session_token_value = getFromPositionOrKeyValue<String>("session_token", args, engine_args_to_idx, key_value_args);
         session_token_value.has_value())
     {
         s3_settings->auth_settings[S3AuthSetting::session_token] = session_token_value.value();
+        query_provided_session_token = true;
+    }
+
+    /// When the query supplies its own key pair but no `session_token`, drop any token inherited from the
+    /// global/per-endpoint `<s3>` config: the server's temporary token does not belong with the query's keys
+    /// (it would be sent to a user-chosen endpoint and breaks otherwise-valid explicit credentials).
+    if (query_provided_access_key_id && query_provided_secret_access_key && !query_provided_session_token)
+        s3_settings->auth_settings[S3AuthSetting::session_token] = "";
+
+    /// A query-supplied `role_arn` must assume the role with the query's own base keys, not the server `<s3>`
+    /// static keys (a confused-deputy STS path). Drop it when the query did not supply its own key pair.
+    if (restrict_server_credentials && !String(s3_settings->auth_settings[S3AuthSetting::role_arn]).empty()
+        && !(query_provided_access_key_id && query_provided_secret_access_key))
+    {
+        s3_settings->auth_settings[S3AuthSetting::role_arn] = "";
+        s3_settings->auth_settings[S3AuthSetting::role_session_name] = "";
+        s3_settings->auth_settings[S3AuthSetting::external_id] = "";
     }
 
     if (no_sign_request)
@@ -704,8 +820,11 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         s3_settings->auth_settings[S3AuthSetting::no_sign_request] = no_sign_value.value();
     }
 
-    if (auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
-        storage_class_name.has_value())
+    /// `storage_class` is an interchangeable alias for `storage_class_name` (see issue #68551).
+    auto storage_class_name = getFromPositionOrKeyValue<String>("storage_class_name", args, engine_args_to_idx, key_value_args);
+    if (!storage_class_name.has_value())
+        storage_class_name = getFromPositionOrKeyValue<String>("storage_class", args, {}, key_value_args);
+    if (storage_class_name.has_value())
     {
         s3_settings->request_settings[S3RequestSetting::storage_class_name] = storage_class_name.value();
     }
@@ -759,7 +878,10 @@ static void addStructureAndFormatToArgsIfNeededS3(
         if (count > max_number_of_arguments)
         {
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "Expected 1 to {} arguments in table function s3, got {}", max_number_of_arguments, count);
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Expected 1 to {} arguments in table function s3, got {}",
+                max_number_of_arguments,
+                count);
         }
 
         auto format_literal = make_intrusive<ASTLiteral>(format_);

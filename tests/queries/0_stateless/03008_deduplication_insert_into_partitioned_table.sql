@@ -22,7 +22,7 @@ INSERT INTO partitioned_table VALUES (1, 'A'), (2, 'B');
 INSERT INTO partitioned_table VALUES (1, 'A'), (2, 'C');
 INSERT INTO partitioned_table VALUES (1, 'D'), (2, 'B');
 
-SELECT 'partitioned_table is deduplicated bacause deduplication works in scope of one partiotion:';
+SELECT 'partitioned_table is not deduplicated because the inserts are different (deduplication works per insert):';
 SELECT * FROM partitioned_table ORDER BY ALL;
 SELECT 'mv_table is not deduplicated because the inserted blocks was different:';
 SELECT * FROM mv_table ORDER BY ALL;

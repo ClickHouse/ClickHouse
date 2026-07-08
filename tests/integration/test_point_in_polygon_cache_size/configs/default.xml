@@ -1,0 +1,3 @@
+<clickhouse>
+    <point_in_polygon_cache_size>268435456</point_in_polygon_cache_size>
+</clickhouse>

@@ -2,6 +2,7 @@
 
 #include <Analyzer/TableNode.h>
 
+#include <Common/Exception.h>
 #include <Common/typeid_cast.h>
 
 #include <Interpreters/getColumnFromBlock.h>
@@ -72,11 +73,22 @@ protected:
     {
         if (initializer_func)
         {
-            if (materialized_cte && !materialized_cte->is_built)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Reading from materialized CTE '{}' before it has been materialized (materialization was planned: {})",
-                    materialized_cte->cte_name,
-                    materialized_cte->is_materialization_planned.load());
+            if (materialized_cte)
+            {
+                /// Fail-fast invariant: by the time `MemorySource::generate`
+                /// runs, `DelayedPortsProcessor` (inserted by
+                /// `MaterializingCTEsStep::updatePipeline` via
+                /// `addPipelineBefore`) has already gated this reader on the
+                /// corresponding `MaterializingCTETransform` finishing. If we
+                /// observe `is_built == false` here, the planner failed to
+                /// wire the gate - fail loudly rather than read from a
+                /// half-populated `StorageMemory`.
+                if (!materialized_cte->is_built.load(std::memory_order_acquire))
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Reading from materialized CTE '{}' before its materialization completed - "
+                        "DelayedPortsProcessor gate is missing in the query plan",
+                        materialized_cte->cte_name);
+            }
 
             initializer_func(data);
             initializer_func = {};

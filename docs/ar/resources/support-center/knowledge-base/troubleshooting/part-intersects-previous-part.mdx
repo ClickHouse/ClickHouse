@@ -1,0 +1,76 @@
+---
+title: "DB::Exception: الجزء XXXXX يتداخل مع الجزء السابق YYYYY. هذا خلل برمجي أو نتيجة تدخّل يدوي في بيانات ZooKeeper."
+date: 2023-05-02
+description: "توضح هذه المقالة كيفية حل خطأ DB::Exception المرتبط بتداخل الأجزاء في ClickHouse، والذي ينجم غالبًا عن حالة تسابق أو عن تدخّل يدوي في بيانات ZooKeeper."
+tags: ['الأخطاء والاستثناءات', 'جداول النظام']
+keywords: ['تداخل الأجزاء', 'system.replicas']
+---
+
+<div id="why-it-occurs">
+  ## لماذا يحدث هذا
+</div>
+
+عند وقوع هذا الخطأ، يظهر أحد الجداول على أنه للقراءة فقط، وتوضح رسالة الخطأ وجود أجزاء متداخلة.
+
+يمكنك رؤية الخطأ في السجلات أو من خلال
+
+```sql
+SELECT *
+FROM system.replicas
+WHERE is_readonly = 1
+```
+
+تكون رسالة الخطأ على النحو التالي:
+
+```
+Code: 49. DB::Exception: Part XXXXX intersects previous part YYYYY. It is a bug or a result of manual intervention in the ZooKeeper data. (LOGICAL_ERROR) (version 21.12.4.1 (official build))
+```
+
+<div id="cause-of-the-error">
+  ## سبب الخطأ
+</div>
+
+قد ينجم هذا الخطأ عن حالة تسابق بين `mergeSelectingTask` وإعادة تهيئة قائمة الانتظار.
+
+<div id="solution">
+  ## الحل
+</div>
+
+نفِّذ الاستعلامات التالية على جميع النسخ المتماثلة:
+
+```sql
+DETACH TABLE table_name;  -- Required for DROP REPLICA
+
+SYSTEM DROP REPLICA 'replica_name' FROM ZKPATH '/table_path_in_zk/'; -- It will remove everything from /table_path_in_zk
+
+ATTACH TABLE table_name;  -- Table will be in readonly mode, because there is no metadata in ZK
+```
+
+ثم نفّذ ما يلي على جميع النُسخ المتماثلة:
+
+```sql
+SYSTEM RESTORE REPLICA table_name;  -- It will detach all partitions, re-create metadata in ZK (like it's new empty table), and then attach all partitions back
+
+SYSTEM SYNC REPLICA table_name; -- Wait for replicas to synchronize parts. Also it's recommended to check `system.detached_parts` on all replicas after recovery is finished.
+```
+
+<Tip>
+  يُنصح بالترقية إلى أحدث إصدار من ClickHouse
+</Tip>
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+طلبات الدمج ومسائل GitHub ذات الصلة:
+
+* [ClickHouse/ClickHouse#34096](https://github.com/ClickHouse/ClickHouse/pull/34096)
+* [ClickHouse/ClickHouse#30651](https://github.com/ClickHouse/ClickHouse/pull/30651)
+* [ClickHouse/ClickHouse#31060](https://github.com/ClickHouse/ClickHouse/pull/31060)
+* [ClickHouse/ClickHouse#35863](https://github.com/ClickHouse/ClickHouse/issues/35863)
+
+<div id="versions-affected">
+  ## الإصدارات المتأثرة:
+</div>
+
+ClickHouse v 22.12 والإصدارات السابقة

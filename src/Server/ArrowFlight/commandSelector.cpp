@@ -279,7 +279,7 @@ static SQLSet commandGetPrimaryKeys(const arrow::flight::protocol::sql::CommandG
         auto & pk_column = block.getByPosition(column_name_pos);
         auto pk_col = pk_column.column->convertToFullIfNeeded();
 
-        std::vector<MutableColumnPtr> new_columns;
+        MutableColumns new_columns;
         for (size_t col = 0; col < num_columns; ++col)
             new_columns.push_back(block.getByPosition(col).column->cloneEmpty());
 

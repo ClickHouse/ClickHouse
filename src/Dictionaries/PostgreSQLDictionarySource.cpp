@@ -242,12 +242,12 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             common_configuration.password = named_collection->getOrDefault<String>("password", "");
             common_configuration.database = named_collection->getAnyOrDefault<String>({"database", "db"}, "");
             common_configuration.schema = named_collection->getOrDefault<String>("schema", "");
-            common_configuration.table = named_collection->getOrDefault<String>("table", "");
+            common_configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, named_collection->getOrDefault<String>("table", ""));
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration{
                 .db = common_configuration.database,
                 .schema = common_configuration.schema,
-                .table = common_configuration.table,
+                .table = common_configuration.table_or_query.getTableName(),
                 .query = named_collection->getOrDefault<String>("query", ""),
                 .where = named_collection->getOrDefault<String>("where", ""),
                 .invalidate_query = named_collection->getOrDefault<String>("invalidate_query", ""),
@@ -270,13 +270,13 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
             common_configuration.password = config.getString(settings_config_prefix + ".password", "");
             common_configuration.database = config.getString(fmt::format("{}.database", settings_config_prefix), config.getString(fmt::format("{}.db", settings_config_prefix), ""));
             common_configuration.schema = config.getString(fmt::format("{}.schema", settings_config_prefix), "");
-            common_configuration.table = config.getString(fmt::format("{}.table", settings_config_prefix), "");
+            common_configuration.table_or_query = TableNameOrQuery(TableNameOrQuery::Type::TABLE, config.getString(fmt::format("{}.table", settings_config_prefix), ""));
 
             dictionary_configuration.emplace(PostgreSQLDictionarySource::Configuration
             {
                 .db = common_configuration.database,
                 .schema = common_configuration.schema,
-                .table = common_configuration.table,
+                .table = common_configuration.table_or_query.getTableName(),
                 .query = config.getString(fmt::format("{}.query", settings_config_prefix), ""),
                 .where = config.getString(fmt::format("{}.where", settings_config_prefix), ""),
                 .invalidate_query = config.getString(fmt::format("{}.invalidate_query", settings_config_prefix), ""),
@@ -351,7 +351,14 @@ void registerDictionarySourcePostgreSQL(DictionarySourceFactory & factory)
 #endif
     };
 
-    factory.registerSource("postgresql", create_table_source);
+    factory.registerSource("postgresql", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table in a PostgreSQL server."
+#if !USE_LIBPQXX
+            " Currently unavailable, because this ClickHouse build does not include PostgreSQL support."
+#endif
+        ,
+        .syntax = "SOURCE(POSTGRESQL(host 'host' port 5432 user 'user' password '' db 'db' table 'table'))",
+        .related = {"mysql", "clickhouse"}});
 }
 
 }

@@ -1,0 +1,281 @@
+---
+description: 'SELECT 查询文档'
+sidebarTitle: 'SELECT'
+slug: /sql-reference/statements/select/
+title: 'SELECT 查询'
+doc_type: 'reference'
+---
+
+`SELECT` 查询用于检索数据。默认情况下，查询请求的数据会返回给客户端；而与 [INSERT INTO](/zh/reference/statements/insert-into) 结合使用时，也可以将其发送到另一张表。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+[WITH expr_list(subquery)]
+SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
+[FROM [db.]table | (subquery) | table_function] [FINAL]
+[SAMPLE sample_coeff]
+[ARRAY JOIN ...]
+[GLOBAL] [ANY|ALL|ASOF] [INNER|LEFT|RIGHT|FULL|CROSS] [OUTER|SEMI|ANTI] JOIN (subquery)|table [(alias1 [, alias2 ...])] (ON <expr_list>)|(USING <column_list>)
+[PREWHERE expr]
+[WHERE expr]
+[GROUP BY expr_list] [WITH ROLLUP|WITH CUBE] [WITH TOTALS]
+[HAVING expr]
+[WINDOW window_expr_list]
+[QUALIFY expr]
+[ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
+[LIMIT [offset_value, ]n BY columns]
+[LIMIT [n, ]m] [WITH TIES]
+[SETTINGS ...]
+[UNION  ...]
+[INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
+[FORMAT format]
+```
+
+除紧跟在 `SELECT` 后面的必需表达式列表外，所有子句都是可选的；关于这部分的更详细说明，请参见[下文](#select-clause)。
+
+各可选子句的具体说明分别见单独章节，下面按其执行顺序列出：
+
+* [WITH 子句](/zh/reference/statements/select/with)
+* [SELECT 子句](#select-clause)
+* [DISTINCT 子句](/zh/reference/statements/select/distinct)
+* [FROM 子句](/zh/reference/statements/select/from)
+* [SAMPLE 子句](/zh/reference/statements/select/sample)
+* [JOIN 子句](/zh/reference/statements/select/join)
+* [PREWHERE 子句](/zh/reference/statements/select/prewhere)
+* [WHERE 子句](/zh/reference/statements/select/where)
+* [WINDOW 子句](/zh/reference/functions/window-functions/index)
+* [GROUP BY 子句](/zh/reference/statements/select/group-by)
+* [LIMIT BY 子句](/zh/reference/statements/select/limit-by)
+* [HAVING 子句](/zh/reference/statements/select/having)
+* [QUALIFY 子句](/zh/reference/statements/select/qualify)
+* [LIMIT 子句](/zh/reference/statements/select/limit)
+* [OFFSET 子句](/zh/reference/statements/select/offset)
+* [UNION 子句](/zh/reference/statements/select/union)
+* [INTERSECT 子句](/zh/reference/statements/select/intersect)
+* [EXCEPT 子句](/zh/reference/statements/select/except)
+* [INTO OUTFILE 子句](/zh/reference/statements/select/into-outfile)
+* [FORMAT 子句](/zh/reference/statements/select/format)
+
+<div id="select-clause">
+  ## SELECT 子句
+</div>
+
+`SELECT` 子句中指定的[表达式](/zh/reference/syntax#expressions)会在上文所述各子句中的所有操作完成后再进行计算。这些表达式会被视为分别作用于结果中的各行。如果 `SELECT` 子句中的表达式包含聚合函数，那么 ClickHouse 会在 [GROUP BY](/zh/reference/statements/select/group-by) 聚合期间处理这些聚合函数以及作为其参数使用的表达式。
+
+如果你希望结果中包含所有列，请使用星号 (`*`) 。例如，`SELECT * FROM ...`。
+
+<div id="dynamic-column-selection">
+  ### Dynamic 列选择
+</div>
+
+Dynamic 列选择 (也称为 COLUMNS 表达式) 允许你使用 [re2](https://en.wikipedia.org/wiki/RE2_\(software\)) 正则表达式匹配结果中的某些列。
+
+```sql
+COLUMNS('regexp')
+```
+
+例如，来看下面这张表：
+
+```sql
+CREATE TABLE default.col_names (aa Int8, ab Int8, bc Int8) ENGINE = TinyLog
+```
+
+以下查询从名称中包含 `a` 符号的所有列中选取数据。
+
+```sql
+SELECT COLUMNS('a') FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+返回选中列时，不会按字母顺序排列。
+
+你可以在一个查询中使用多个 `COLUMNS` 表达式，并对其应用函数。
+
+例如：
+
+```sql
+SELECT COLUMNS('a'), COLUMNS('c'), toTypeName(COLUMNS('c')) FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┬─bc─┬─toTypeName(bc)─┐
+│  1 │  1 │  1 │ Int8           │
+└────┴────┴────┴────────────────┘
+```
+
+`COLUMNS` 表达式返回的每一列都会作为单独的参数传递给函数。此外，如果函数支持，也可以向其传递其他参数。使用函数时请务必小心。如果某个函数不支持你传入的参数个数，ClickHouse 会抛出异常。
+
+例如：
+
+```sql
+SELECT COLUMNS('a') + COLUMNS('c') FROM col_names
+```
+
+```text
+Received exception from server (version 19.14.1):
+Code: 42. DB::Exception: Received from localhost:9000. DB::Exception: Number of arguments for function plus does not match: passed 3, should be 2.
+```
+
+在此示例中，`COLUMNS('a')` 返回两列：`aa` 和 `ab`。`COLUMNS('c')` 返回 `bc` 列。`+` 运算符不能用于 3 个参数，因此 ClickHouse 会抛出带有相应消息的异常。
+
+与 `COLUMNS` 表达式匹配的列可以具有不同的数据类型。如果 `COLUMNS` 没有匹配到任何列，且它是 `SELECT` 中唯一的表达式，则 ClickHouse 会抛出异常。
+
+<div id="select-columns-with-like-or-ilike">
+  #### 使用 `LIKE` 或 `ILIKE` 选择列
+</div>
+
+你也可以在 `*` 后使用区分大小写的 `LIKE` 或不区分大小写的 `ILIKE`，通过将列名与某个模式匹配来选择列：
+
+```sql
+SELECT * ILIKE 'a%' FROM col_names
+```
+
+```text
+┌─aa─┬─ab─┐
+│  1 │  1 │
+└────┴────┘
+```
+
+`LIKE` 和 `ILIKE` 模式遵循的是 `LIKE` 语义，而非正则表达式语义。`%` 字符可匹配任意字符序列，`_` 字符可匹配任意单个字符，`\` 用于转义 `%`、`_` 和 `\`。两者唯一的区别是：`LIKE` 按区分大小写的方式匹配列名，而 `ILIKE` 不区分大小写。例如：
+
+```sql
+SELECT * ILIKE 'a_' FROM col_names
+```
+
+该查询会选取名称为两个字符且以 `a` 开头的列，例如 `aa` 和 `ab`。
+
+`* LIKE` 和 `* ILIKE` 也支持限定星号和列转换器：
+
+```sql
+SELECT t.* ILIKE 'a%' EXCEPT (ab) FROM col_names AS t
+```
+
+```text
+┌─aa─┐
+│  1 │
+└────┘
+```
+
+<div id="asterisk">
+  ### 星号
+</div>
+
+你可以在查询的任意位置用星号代替表达式。查询在分析时，星号会展开为表中所有列的列表 (不包括 `MATERIALIZED` 和 `ALIAS` 列) 。只有以下几种情况适合使用星号：
+
+* 创建表转储时。
+* 对于仅包含少量列的表，例如系统表。
+* 用于查看表中有哪些列。在这种情况下，可设置 `LIMIT 1`。不过，更好的方式是使用 `DESC TABLE` 查询。
+* 使用 `PREWHERE` 对少量列进行强过滤时。
+* 在子查询中 (因为外部查询不需要的列会从子查询中排除) 。
+
+在其他所有情况下，我们都不建议使用星号，因为它只会带来列式 DBMS 的缺点，而体现不出其优势。换句话说，不推荐使用星号。
+
+<div id="extreme-values">
+  ### 极值
+</div>
+
+除了查询结果外，您还可以获取结果列的最小值和最大值。为此，请将 **extremes** 设置为 1。系统会对数值类型、日期类型以及日期时间类型计算最小值和最大值。对于其他列，则输出默认值。
+
+系统会额外计算两行——分别表示最小值和最大值。这额外的两行会在 `XML`、`JSON*`、`TabSeparated*`、`CSV*`、`Vertical`、`Template` 和 `Pretty*` [格式](/zh/reference/formats/index)中与其他行分开输出。其他格式则不会输出。
+
+在 `JSON*` 和 `XML` 格式中，极值会输出在单独的 `extremes` 字段中。在 `TabSeparated*`、`CSV*` 和 `Vertical` 格式中，这两行会出现在主结果之后；如果存在 `totals`，则也会位于其后。它们前面会有一个空行 (即在其他数据之后) 。在 `Pretty*` 格式中，这两行会作为单独的表输出在主结果之后；如果存在 `totals`，则也会位于其后。在 `Template` 格式中，极值会按照指定模板输出。
+
+极值是在 `LIMIT` 之前、但在 `LIMIT BY` 之后的行上计算的。不过，在使用 `LIMIT offset, size` 时，`offset` 之前的行也会计入 `extremes`。在流式请求中，结果还可能包含少量已通过 `LIMIT` 的行。
+
+<div id="notes">
+  ### 说明
+</div>
+
+你可以在查询的任何部分使用别名 (`AS` 别名) 。
+
+`GROUP BY`、`ORDER BY` 和 `LIMIT BY` 子句支持位置参数。要启用此功能，请打开 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings#enable_positional_arguments) 设置。例如，`ORDER BY 1,2` 会先按表中的第 1 列、再按第 2 列对行进行排序。
+
+<div id="implementation-details">
+  ## 实现细节
+</div>
+
+如果查询中省略了 `DISTINCT`、`GROUP BY` 和 `ORDER BY` 子句，以及 `IN` 和 `JOIN` 子查询，则整个查询都将以流式方式处理，只需使用 O(1) 量级的 RAM。否则，如果没有设置适当的限制，查询可能会消耗大量 RAM：
+
+* `max_memory_usage`
+* `max_rows_to_group_by`
+* `max_rows_to_sort`
+* `max_rows_in_distinct`
+* `max_bytes_in_distinct`
+* `max_rows_in_set`
+* `max_bytes_in_set`
+* `max_rows_in_join`
+* `max_bytes_in_join`
+* `max_bytes_before_external_sort`
+* `max_bytes_ratio_before_external_sort`
+* `max_bytes_before_external_group_by`
+* `max_bytes_ratio_before_external_group_by`
+
+更多信息，请参见“Settings”一节。也可以使用外部排序 (将临时表保存到磁盘) 和外部聚合。
+
+<div id="select-modifiers">
+  ## SELECT 修饰符
+</div>
+
+你可以在 `SELECT` 查询中使用以下修饰符。
+
+| 修饰符                                                        | 描述                                                                                                                                                   |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`APPLY`](/zh/reference/statements/select/apply_modifier)     | 允许你对查询外层表表达式返回的每一行调用某个函数。                                                                                                                            |
+| [`EXCEPT`](/zh/reference/statements/select/except_modifier)   | 指定要从结果中排除的一个或多个列名。所有匹配的列名都会从输出中省略。                                                                                                                   |
+| [`REPLACE`](/zh/reference/statements/select/replace_modifier) | 指定一个或多个[表达式别名](/zh/reference/syntax#expression-aliases)。每个别名都必须与 `SELECT *` 语句中的某个列名匹配。在输出列列表中，与别名匹配的列会被该 `REPLACE` 中的表达式替换。此修饰符不会更改列的名称或顺序，但可以更改值及其类型。 |
+
+<div id="modifier-combinations">
+  ### 修饰符组合
+</div>
+
+你可以单独使用每个修饰符，也可以组合使用。
+
+**示例：**
+
+多次使用同一个修饰符。
+
+```sql
+SELECT COLUMNS('[jk]') APPLY(toString) APPLY(length) APPLY(max) FROM columns_transformers;
+```
+
+```response
+┌─max(length(toString(j)))─┬─max(length(toString(k)))─┐
+│                        2 │                        3 │
+└──────────────────────────┴──────────────────────────┘
+```
+
+在一个查询中使用多个修饰符。
+
+```sql
+SELECT * REPLACE(i + 1 AS i) EXCEPT (j) APPLY(sum) from columns_transformers;
+```
+
+```response
+┌─sum(plus(i, 1))─┬─sum(k)─┐
+│             222 │    347 │
+└─────────────────┴────────┘
+```
+
+<div id="settings-in-select-query">
+  ## SELECT 查询中的 SETTINGS
+</div>
+
+你可以直接在 `SELECT` 查询中指定所需设置。该设置值仅对此查询生效，并会在查询执行后恢复为默认值或之前的值。
+
+有关设置的其他指定方式，请参见[这里](/zh/concepts/features/configuration/settings/overview)。
+
+对于值为 true 的布尔设置，你可以省略赋值，使用简写语法。仅指定设置名称时，它会自动设为 `1` (true) 。
+
+**示例**
+
+```sql
+SELECT * FROM some_table SETTINGS optimize_read_in_order=1, cast_keep_nullable=1;
+```
