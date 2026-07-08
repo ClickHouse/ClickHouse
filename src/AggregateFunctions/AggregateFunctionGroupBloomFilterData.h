@@ -103,6 +103,9 @@ struct AggregateFunctionGroupBloomFilterData
         if (!version)
             return GROUP_BLOOM_FILTER_STATE_VERSION;
 
+        if (*version == 0)
+            return GROUP_BLOOM_FILTER_STATE_VERSION;
+
         if (*version != GROUP_BLOOM_FILTER_STATE_VERSION)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "Unsupported version {} of {} aggregate function serialization state",

@@ -1069,7 +1069,7 @@ So a `Point` column is decoded exactly as `Tuple(Float64, Float64)` (rendering a
 :::note
 Two related types are **not** aliases. They are valid `Native` column types — a client can receive an `AggregateFunction` column from a `-State` combinator or distributed aggregation, for instance — but each carries its own specialized payload that is outside the scope of this page:
 
-- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version.
+- `AggregateFunction(func, ...)` holds an *intermediate* aggregation state (not a finalized value); its binary layout is specific to the aggregate function and version. When the `Native` revision is below `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`, including revision `0`, the state is written without an embedded aggregate-state version and ClickHouse passes version `0` to versioned aggregate functions as a compatibility marker.
 - `QBit(T, N[, stride])` stores a vector with its bit planes transposed for vector-search workloads; its on-wire stream layout (group-major `FixedString` bit-plane streams, `element_size * (N / stride)` of them with an explicit `stride`) and its binary type encoding (tag `0x36`, or `0x37` `QBitWithStride` when `stride != N`) are documented on the [`QBit` data type page](/sql-reference/data-types/qbit) and in the [binary type encoding](/sql-reference/data-types/data-types-binary-encoding) reference, so a `Native` reader does not have to recover them from the C++ source.
 :::
 

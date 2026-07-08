@@ -366,6 +366,32 @@ TEST(BloomFilterAggregateFunction, UsesVersionedStateSerialization)
     EXPECT_EQ(aggregate_function->getDefaultVersion(), GROUP_BLOOM_FILTER_STATE_VERSION);
 }
 
+TEST(BloomFilterData, SerializationVersionZeroUsesCurrentLayout)
+{
+    AggregateFunctionGroupBloomFilterData data;
+    data.init(64, 3, 7);
+    data.add("value", 5);
+
+    WriteBufferFromOwnString explicit_zero;
+    data.write(explicit_zero, size_t{0});
+
+    WriteBufferFromOwnString explicit_current;
+    data.write(explicit_current, GROUP_BLOOM_FILTER_STATE_VERSION);
+
+    EXPECT_EQ(explicit_zero.str(), explicit_current.str());
+
+    AggregateFunctionGroupBloomFilterData restored;
+    ReadBufferFromString in(explicit_zero.str());
+    restored.read(
+        in,
+        /*expected_filter_size_bytes=*/64,
+        /*expected_num_hashes=*/3,
+        /*expected_seed=*/7,
+        size_t{0});
+
+    EXPECT_TRUE(restored.contains("value", 5));
+}
+
 TEST(BloomFilterData, UnsupportedSerializationVersionRejected)
 {
     AggregateFunctionGroupBloomFilterData data;
@@ -374,7 +400,7 @@ TEST(BloomFilterData, UnsupportedSerializationVersionRejected)
     data.seed = 7;
 
     WriteBufferFromOwnString out;
-    EXPECT_THROW(data.write(out, size_t{0}), Exception);
+    EXPECT_THROW(data.write(out, size_t{2}), Exception);
 
     WriteBufferFromOwnString serialized;
     data.write(serialized, GROUP_BLOOM_FILTER_STATE_VERSION);
@@ -387,7 +413,7 @@ TEST(BloomFilterData, UnsupportedSerializationVersionRejected)
             /*expected_filter_size_bytes=*/64,
             /*expected_num_hashes=*/3,
             /*expected_seed=*/7,
-            size_t{0}),
+            size_t{2}),
         Exception);
 }
 

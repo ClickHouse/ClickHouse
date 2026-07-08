@@ -99,3 +99,17 @@ SELECT
     -- Compactness: empty state serializes much smaller than a populated one
     length(CAST(empty_bf   AS String)) < length(CAST(full_bf AS String)) AS empty_compact,
     length(CAST(all_null_bf AS String)) < length(CAST(full_bf AS String)) AS all_null_compact;
+
+-- Regression: versioned `groupBloomFilter` states must round-trip through revision-0 `Native` files.
+INSERT INTO FUNCTION file(currentDatabase() || '_04073_bloom_filter_native.native', 'Native', 'bf AggregateFunction(groupBloomFilter(1000), UInt64), skipped AggregateFunction(groupBloomFilterIf(1000), UInt64, UInt8)')
+SELECT
+    groupBloomFilterState(1000)(number) AS bf,
+    groupBloomFilterIfState(1000)(number, 0) AS skipped
+FROM numbers(100)
+SETTINGS engine_file_truncate_on_insert = 1;
+
+SELECT
+    bloomFilterContains(bf, toUInt64(42)),
+    bloomFilterContains(bf, toUInt64(200)),
+    bloomFilterContains(skipped, toUInt64(42))
+FROM file(currentDatabase() || '_04073_bloom_filter_native.native', 'Native', 'bf AggregateFunction(groupBloomFilter(1000), UInt64), skipped AggregateFunction(groupBloomFilterIf(1000), UInt64, UInt8)');
