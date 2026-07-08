@@ -126,6 +126,8 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         ),
         ("test_unknown_root_entry", "mkdir -p {disk2_data_path}/not_a_part", "already contain data", True),
         ("test_temporary_file", "touch {disk2_data_path}/tmp_not_a_directory", "already contain data", True),
+        ("test_moving_file", "mkdir -p {disk2_data_path}/moving && touch {disk2_data_path}/moving/not_a_part", "already contain data", True),
+        ("test_moving_non_part_directory", "mkdir -p {disk2_data_path}/moving/not_a_part", "already contain data", True),
         ("test_valid_root_part", "mkdir -p {disk2_data_path}/all_0_0_0", "already contain data", True),
         ("test_valid_detached_part", "mkdir -p {disk2_data_path}/detached/all_0_0_0", "already contain data", True),
     ]:
