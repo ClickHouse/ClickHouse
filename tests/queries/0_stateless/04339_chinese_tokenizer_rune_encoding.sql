@@ -26,10 +26,13 @@ SELECT tokens('a;b;c', 'chinese');
 SELECT tokens('foo(bar)baz', 'chinese');
 SELECT tokens('hello,world', 'chinese', 'fine_grained');
 
--- Full-width Chinese punctuation is a separator.
-SELECT '-- full-width punctuation is a separator';
+-- All Unicode punctuation and separators (General Category P or Z) are dropped.
+SELECT '-- unicode punctuation and separators are dropped';
 SELECT tokens('你好，世界', 'chinese');
 SELECT tokens('你好。再见', 'chinese');
+SELECT tokens('你好（世界）', 'chinese');
+SELECT tokens('北京【大学】', 'chinese');
+SELECT tokens('测试' || unhex('E38080') || '空格', 'chinese'); -- U+3000 ideographic space
 
 -- Astral (>BMP) characters must not throw or corrupt token offsets: surrounding tokens are
 -- still sliced at the correct byte boundaries (the astral char becomes its own token).

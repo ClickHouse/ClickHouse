@@ -14,9 +14,12 @@
 ['a','b','c']
 ['foo','bar','baz']
 ['hello','world']
--- full-width punctuation is a separator
+-- unicode punctuation and separators are dropped
 ['你好','世界']
 ['你好','再见']
+['你好','世界']
+['北京','大学']
+['测试','空格']
 -- astral characters do not throw or corrupt offsets
 ['北京','😀','大学']
 ['😀😀']
