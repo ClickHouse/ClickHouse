@@ -294,14 +294,16 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
         # generators' page creation and navigation insertion (listing tables).
         content = gen["content"]() if callable(gen["content"]) else gen["content"]
     else:
-        scratch = tempfile.mkdtemp(prefix="autogen-")
-        # Stage the files the SQL reads via file() (C++ sources, etc.) into scratch.
-        for staged, src in gen.get("deps", {}).items():
-            shutil.copyfile(os.path.join(repo_root, src), os.path.join(scratch, staged))
-        for sql in gen["sql"]:
-            run_sql(binary, os.path.join(SQL_DIR, sql), scratch, gen.get("params"))
-        with open(os.path.join(scratch, gen["outfile"]), encoding="utf-8") as f:
-            content = f.read()
+        with tempfile.TemporaryDirectory(prefix="autogen-") as scratch:
+            # Stage the files the SQL reads via file() (C++ sources, etc.) into scratch.
+            for staged, src in gen.get("deps", {}).items():
+                shutil.copyfile(
+                    os.path.join(repo_root, src), os.path.join(scratch, staged)
+                )
+            for sql in gen["sql"]:
+                run_sql(binary, os.path.join(SQL_DIR, sql), scratch, gen.get("params"))
+            with open(os.path.join(scratch, gen["outfile"]), encoding="utf-8") as f:
+                content = f.read()
     if gen.get("skip_if_empty") and not content.strip():
         return None, None, None  # e.g. a page whose name is not an aggregate function
 
