@@ -12,6 +12,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ARGUMENT_OUT_OF_BOUND;
+    extern const int LOGICAL_ERROR;
 }
 
 PipelineReadBuffer::PipelineReadBuffer(std::unique_ptr<ReaderExecutor> executor_)
@@ -168,13 +169,22 @@ size_t PipelineReadBuffer::readBigAt(
         ChainedBuffers window = sub->readNextWindow();
         if (window.empty())
             break;
-        for (const auto & node : window.getNodes())
+        /// Consume through the chain cursor, not by concatenating raw nodes: the chain
+        /// can hold overlapping nodes (each byte reachable once - `advance` drops a node
+        /// the cursor has passed), so only the cursor walk maps bytes to positions.
+        while (total_copied < want)
         {
-            if (total_copied >= want)
+            const auto span = window.peek();
+            if (span.size == 0)
                 break;
-            const size_t copy = std::min(node.size, want - total_copied);
-            std::memcpy(to + total_copied, node.data(), copy);
+            if (span.logical_offset != offset + total_copied)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "PipelineReadBuffer::readBigAt: window not contiguous at {} (expected {})",
+                    span.logical_offset, offset + total_copied);
+            const size_t copy = std::min(span.size, want - total_copied);
+            std::memcpy(to + total_copied, span.data, copy);
             total_copied += copy;
+            window.advance(copy);
         }
 
         /// `progress_callback(m)` publishes bytes-so-far and returns

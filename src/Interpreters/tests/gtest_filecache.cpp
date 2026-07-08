@@ -2596,12 +2596,7 @@ TEST_F(FileCacheTest, PipelineReadBufferReadBigAtConcurrent)
                 size_t offset = rng() % file_size;
                 size_t want = 1 + (rng() % (file_size - offset));
                 size_t got = buf.readBigAt(tmp.data(), want, offset, nullptr);
-                if (got != want)
-                {
-                    ++failures;
-                    return;
-                }
-                if (std::memcmp(tmp.data(), data.data() + offset, want) != 0)
+                if (got != want || std::memcmp(tmp.data(), data.data() + offset, want) != 0)
                 {
                     ++failures;
                     return;
