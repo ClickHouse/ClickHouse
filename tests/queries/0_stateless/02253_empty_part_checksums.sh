@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-random-detach
+# Tags: zookeeper, no-replicated-database, no-shared-merge-tree, no-random-detach, no-darwin
 # no-random-detach: test checks system.parts
 # no-replicated-database because it adds extra replicas
 # no-shared-merge-tree do something with parts on local fs
+# no-darwin: replace_long_file_name_to_hash=0 is not honored on APFS (case-insensitive), so checksums differ
 # add_minmax_index_for_numeric_columns=0: Adds extra files, which changes the hashes
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

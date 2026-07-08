@@ -93,18 +93,28 @@ struct CallbackRunnerTask
         if (was_run)
             return;
 
-        /// The task was dropped without running (the pool was shut down while it was still queued,
-        /// so ThreadPool::worker drains it via job_data.reset()). Mirror the run() path above:
+        /// The task was dropped without running. This happens in two ways:
+        ///  * The pool was shut down while the task was still queued, so ThreadPool::worker drains it
+        ///    via job_data.reset() on a pool worker thread (which has no thread group attached).
+        ///  * scheduleOrThrowOnError() threw synchronously (e.g. the pool is shutting down or its queue
+        ///    is full), so the just-created job lambda -- the sole owner of this task -- is destroyed
+        ///    during stack unwinding on the SCHEDULING thread, which is typically running a query and is
+        ///    already attached to its own thread group.
+        ///
+        /// Mirror the run() path above:
         ///
         /// 1. Release the callback (destroying its captures) under the task's thread group and
         ///    BEFORE satisfying the promise. set_exception can wake a waiter immediately; a waiter
         ///    that treats future.get() as "the task is done" may then tear down state that the
         ///    captures reference, so the captures must be gone first (same ordering the run path
-        ///    keeps with ThreadGroupSwitcher + SCOPE_EXIT_SAFE before set_value). ThreadGroupSwitcher's
-        ///    ctor is noexcept and a no-op for a null/identical group, so this is safe on the drain
-        ///    thread; SCOPE_EXIT_SAFE keeps a throwing capture destructor from escaping this destructor.
+        ///    keeps with ThreadGroupSwitcher + SCOPE_EXIT_SAFE before set_value). Because the drop can
+        ///    run on a thread already attached to a different group (the scheduling-thread case above),
+        ///    pass allow_existing_group=true so ThreadGroupSwitcher saves and restores that group
+        ///    instead of asserting -- constructing the LOGICAL_ERROR would abort the server in builds
+        ///    that treat logical errors as assertions. SCOPE_EXIT_SAFE keeps a throwing capture
+        ///    destructor from escaping this destructor.
         {
-            ThreadGroupSwitcher switcher(thread_group, thread_name);
+            ThreadGroupSwitcher switcher(thread_group, thread_name, /*allow_existing_group=*/ true);
             SCOPE_EXIT_SAFE({ [[maybe_unused]] auto released = std::move(callback); });
         }
 
