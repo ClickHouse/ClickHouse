@@ -88,8 +88,7 @@ SELECT length(arrayAutocorrelation(arrayMap(x -> 5, range(toUInt64(20000)))));
 
 SELECT '--- Nullable and LowCardinality ---';
 SELECT arrayAutocorrelation(CAST([1, 2, 3], 'Array(Nullable(UInt32))')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
--- Nullable lag: framework strips Nullable, function evaluates on the underlying integer.
-SELECT arrayAutocorrelation([1, 2, 3], CAST(2, 'Nullable(UInt32)'));
+SELECT arrayAutocorrelation([1, 2, 3], CAST(2, 'Nullable(UInt32)')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SET allow_suspicious_low_cardinality_types = 1;
 SELECT arrayAutocorrelation(CAST([1, 2, 3], 'Array(LowCardinality(UInt32))'));
 SELECT arrayAutocorrelation([1, 2, 3], CAST(2, 'LowCardinality(UInt32)'));

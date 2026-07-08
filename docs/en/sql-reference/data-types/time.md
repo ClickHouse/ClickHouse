@@ -8,6 +8,8 @@ title: 'Time'
 doc_type: 'reference'
 ---
 
+# Time
+
 Data type `Time` represents a time with hour, minute, and second components.
 It is independent of any calendar date and is suitable for values which do not need day, months and year components.
 

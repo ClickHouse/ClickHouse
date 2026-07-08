@@ -28,7 +28,7 @@ namespace ErrorCodes
 
 namespace
 {
-    class UTCTimestampTransform final : public IFunction
+    class UTCTimestampTransform : public IFunction
     {
     public:
         UTCTimestampTransform(const char * name_, bool to_utc_) : function_name(name_), to_utc(to_utc_) {}
