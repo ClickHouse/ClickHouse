@@ -12,7 +12,6 @@
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -48,6 +47,11 @@ namespace Setting
 {
     extern const SettingsMaxThreads max_parsing_threads;
     extern const SettingsUInt64 keeper_max_retries;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ObjectStorageQueueSetting
@@ -291,7 +295,7 @@ ObjectStorageQueueSource::FileIterator::next()
                 }
 
                 Coordination::Responses responses;
-                Coordination::Error code = {};
+                Coordination::Error code;
                 zk_retry.retryLoop([&]
                 {
                     auto zk_client = metadata->getZooKeeper();
@@ -975,6 +979,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , commit_once_processed(commit_once_processed_)
     , add_deduplication_info(add_deduplication_info_)
     , is_deduplication_v2(is_deduplication_v2_)
+    , insert_deduplication_version(context_->getServerSettings()[ServerSetting::insert_deduplication_version].value)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1017,8 +1022,6 @@ Chunk ObjectStorageQueueSource::generate()
 
     return chunk;
 }
-
-void ObjectStorageQueueSource::onFinish() { parser_shared_resources->finishStream(); }
 
 Chunk ObjectStorageQueueSource::generateImpl()
 {
@@ -1115,7 +1118,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
             const auto context = getContext();
             reader = StorageObjectStorageSource::createReader(
                 processor_id,
-                storage_id,
                 file_iterator,
                 configuration,
                 object_storage,
@@ -1254,7 +1256,7 @@ Chunk ObjectStorageQueueSource::generateImpl()
                 /// Create unique token per chunk: etag + row offset
                 dedup_token = fmt::format("{}:{}", etag, row_offset);
 
-                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true);
+                auto deduplication_info = DeduplicationInfo::create(/*async_insert*/true, insert_deduplication_version);
                 deduplication_info->setUserToken(dedup_token, chunk.getNumRows());
                 chunk.getChunkInfos().add(std::move(deduplication_info));
             }
@@ -1287,7 +1289,6 @@ Chunk ObjectStorageQueueSource::generateImpl()
                     .storage_id = storage_id,
                     .size = object_metadata->size_bytes,
                     .last_modified = object_metadata->last_modified,
-                    .etag = &(object_metadata->etag),
                 },
                 getContext(),
                 format_settings);
@@ -1652,7 +1653,7 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
 
     auto zk_retry = ObjectStorageQueueMetadata::getKeeperRetriesControl(log);
     const auto & settings = getContext()->getSettingsRef();
-    Coordination::Error code = {};
+    Coordination::Error code;
     size_t try_num = 0;
     zk_retry.retryLoop([&]
     {

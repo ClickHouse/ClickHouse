@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-darwin
 # shellcheck disable=SC2009
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

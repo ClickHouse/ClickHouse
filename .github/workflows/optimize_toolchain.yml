@@ -48,7 +48,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "OptimizeToolchain" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Config Workflow' --workflow "OptimizeToolchain" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_amd:
     runs-on: [self-hosted, style-checker]
@@ -85,7 +88,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "OptimizeToolchain" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (amd)' --workflow "OptimizeToolchain" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   dockers_build_arm:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -122,7 +128,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "OptimizeToolchain" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Dockers Build (arm)' --workflow "OptimizeToolchain" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_toolchain_pgo_bolt_amd64:
     runs-on: [self-hosted, amd-large]
@@ -160,7 +169,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build Toolchain (PGO, BOLT) (amd64)' --workflow "OptimizeToolchain" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build Toolchain (PGO, BOLT) (amd64)' --workflow "OptimizeToolchain" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   build_toolchain_pgo_bolt_aarch64:
     runs-on: [self-hosted, arm-large]
@@ -198,7 +210,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build Toolchain (PGO, BOLT) (aarch64)' --workflow "OptimizeToolchain" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Build Toolchain (PGO, BOLT) (aarch64)' --workflow "OptimizeToolchain" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   update_toolchain_dockerfile:
     runs-on: [self-hosted, style-checker]
@@ -235,7 +250,10 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Update Toolchain Dockerfile' --workflow "OptimizeToolchain" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Update Toolchain Dockerfile' --workflow "OptimizeToolchain" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log
 
   finish_workflow:
     runs-on: [self-hosted, style-checker-aarch64]
@@ -272,4 +290,7 @@ jobs:
         id: run
         run: |
           . ./ci/tmp/praktika_setup_env.sh
-          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "OptimizeToolchain" --ci --timestamp
+          set -o pipefail
+          PYTHONUNBUFFERED=1 python3 -m praktika run 'Finish Workflow' --workflow "OptimizeToolchain" --ci 2>&1 | python3 -u -c 'import sys,datetime
+          prefix=lambda: datetime.datetime.now().strftime("[%Y-%m-%d %H:%M:%S]")
+          for line in sys.stdin: sys.stdout.write(prefix() + " " + line); sys.stdout.flush()' | tee ./ci/tmp/job.log

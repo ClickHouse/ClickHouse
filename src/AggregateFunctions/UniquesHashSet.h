@@ -78,11 +78,11 @@ private:
     using Allocator = HashTableAllocatorWithStackMemory<(1ULL << UNIQUES_HASH_SET_INITIAL_SIZE_DEGREE) * sizeof(UInt32)>;
 
     UInt32 m_size;          /// Number of elements
-    UInt8 size_degree{};      /// The size of the table as a power of 2
+    UInt8 size_degree;      /// The size of the table as a power of 2
     UInt8 skip_degree;      /// Skip elements not divisible by 2 ^ skip_degree
     bool has_zero;          /// The hash table contains an element with a hash value of 0.
 
-    HashValue * buf{};
+    HashValue * buf;
 
 #ifdef UNIQUES_HASH_SET_COUNT_COLLISIONS
     /// For profiling.
@@ -280,7 +280,7 @@ private:
 public:
     using value_type = Value;
 
-    UniquesHashSet() : // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
+    UniquesHashSet() :
         m_size(0),
         skip_degree(0),
         has_zero(false)
@@ -291,7 +291,7 @@ public:
 #endif
     }
 
-    UniquesHashSet(const UniquesHashSet & rhs) // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - base class is an allocator with stack memory, initialized in alloc()
+    UniquesHashSet(const UniquesHashSet & rhs)
         : m_size(rhs.m_size), skip_degree(rhs.skip_degree), has_zero(rhs.has_zero)
     {
         alloc(rhs.size_degree);
@@ -352,14 +352,14 @@ public:
                 /// We read and transform multiple values at once which allows both the compiler and the CPU to better optimize the code.
                 /// We calculate place() even for !good() hashes to maximize data independence and enable better out-of-order execution.
                 /// The extra work is negligible compared to the instruction level parallelization benefits.
-                std::array<HashValue, insert_many_batch_size> hash_value; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+                std::array<HashValue, insert_many_batch_size> hash_value;
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     hash_value[j] = hash(Transform(data[i + j]));
                 }
                 i += insert_many_batch_size;
 
-                std::array<size_t, insert_many_batch_size> place_value_batch; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
+                std::array<size_t, insert_many_batch_size> place_value_batch;
                 for (size_t j = 0; j < insert_many_batch_size; ++j)
                 {
                     place_value_batch[j] = place(hash_value[j]);

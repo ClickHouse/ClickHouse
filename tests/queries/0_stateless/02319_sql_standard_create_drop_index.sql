@@ -1,7 +1,4 @@
 -- add_minmax_index_for_numeric_columns=0: Adds more output to system.data_skipping_indices
--- Tags: no-shared-merge-tree
--- no-shared-merge-tree: sync replica won't wait for metadata mutations
-
 drop table if exists t_index;
 create table t_index(a int, b String) engine=MergeTree() order by a SETTINGS add_minmax_index_for_numeric_columns=0;
 
