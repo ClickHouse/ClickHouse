@@ -111,31 +111,8 @@ SETTINGS_GENERATORS = [
         "sql": ["mergetree-settings.sql"],
         "outfile": "generated_merge_tree_settings.md",
         "dest": "docs/operations/settings/merge-tree-settings.md",
-        "fixups": True,  # backtick-wrap angle-bracket text so it is valid MDX
     },
 ]
-
-# mergetree descriptions contain `<= 0`, `<part>/...` etc. that MDX would parse
-# as JSX. Backtick-wrap them, mirroring the sed fixups in the original script.
-MERGETREE_FIXUPS = [
-    ("Limit the max number of partitions that can be accessed in one query. <= 0 means unlimited.",
-     "Limit the max number of partitions that can be accessed in one query. `<=` 0 means unlimited."),
-    ("this merge is created when set min_age_to_force_merge_seconds > 0 and min_age_to_force_merge_on_partition_only = true",
-     "this merge is created when set `min_age_to_force_merge_seconds > 0` and `min_age_to_force_merge_on_partition_only = true`"),
-    ("If >= 1, columns will be always written in full serialization.",
-     "If `>= 1`, columns will be always written in full serialization."),
-    ("<candidate partitions for mutations only (partitions that cannot be merged)>/<candidate partitions for mutations>",
-     "`<candidate partitions for mutations only (partitions that cannot be merged)>/<candidate partitions for mutations>`"),
-    ("(<part>/columns and <part>/checksums)",
-     "`(<part>/columns and <part>/checksums)`"),
-]
-
-
-def apply_fixups(content):
-    for old, new in MERGETREE_FIXUPS:
-        content = content.replace(old, new)
-    return content
-
 
 # Regular-function docs: one page per category. generate-functions.sql takes the
 # category as a param and always writes temp-functions.md; each category's output
@@ -321,8 +298,6 @@ def generate(gen, binary, docs_dir, repo_root, migrate, lk, file_map, remap):
         raise ValueError(f"no Mintlify destination for {gen['dest']}")
     dest = os.path.join(docs_dir, dest_rel)
 
-    if gen.get("fixups"):
-        content = apply_fixups(content)
     if remap and not gen.get("no_transform"):
         if gen.get("full_transform"):
             content = catalog.full_transform(
