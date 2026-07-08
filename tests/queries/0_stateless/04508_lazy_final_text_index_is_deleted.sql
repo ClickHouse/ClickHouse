@@ -48,10 +48,12 @@ WHERE explain LIKE '%is_deleted = 0%';
 
 DROP TABLE tab;
 
--- Mixed intersecting and non-intersecting parts with is_deleted: the intersecting
--- pair (parts 1+2 overlap on id 2) forces the regular-FINAL branch, while the
--- non-intersecting part 3 (id 10) takes the direct-read + is_deleted branch. Lazy
--- FINAL unions the two, so this exercises the union path with a deletion filter.
+-- Mixed intersecting and non-intersecting parts with is_deleted. The single-token
+-- queries below do NOT produce a union: text-index pruning drops the other side's
+-- parts before the plan split, so each collapses to one side -- 'aaa'/'bbb'/'ccc'
+-- to the intersecting regular-FINAL replacing read, 'zzz' to the non-intersecting
+-- direct-read + is_deleted branch (verified via EXPLAIN). They still assert correct
+-- replacement/deletion on both sides. The union itself is exercised separately below.
 CREATE TABLE tab
 (
     id UInt64,
@@ -72,5 +74,23 @@ SELECT count() FROM tab FINAL WHERE str = 'bbb';    -- 0: id 2 deleted by the ne
 SELECT count() FROM tab FINAL WHERE str = 'ccc';    -- 1: survivor from the intersecting pair
 SELECT count() FROM tab FINAL WHERE str = 'zzz';    -- 1: from the non-intersecting part
 SELECT count() FROM tab FINAL PREWHERE str = 'zzz'; -- 1: same via PREWHERE
+
+-- A query spanning both sides ('aaa' intersecting + 'zzz' non-intersecting) is what
+-- actually yields the union of the regular-FINAL and non-intersecting plans. The IN
+-- filter stays above the union (not rewritten to a direct index read), so this covers
+-- the union path together with the deletion filter (`is_deleted = 0`), not a direct read.
+SELECT count() FROM tab FINAL WHERE str IN ('aaa', 'zzz');  -- 2: one survivor per side
+
+SELECT 'union in plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT count() FROM tab FINAL WHERE str IN ('aaa', 'zzz')
+)
+WHERE explain LIKE '%Union%';
+
+SELECT 'is_deleted filter in union plan', count() > 0 FROM
+(
+    EXPLAIN actions = 1 SELECT count() FROM tab FINAL WHERE str IN ('aaa', 'zzz')
+)
+WHERE explain LIKE '%is_deleted = 0%';
 
 DROP TABLE tab;
