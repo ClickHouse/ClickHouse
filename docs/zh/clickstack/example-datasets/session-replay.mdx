@@ -1,0 +1,198 @@
+---
+slug: /use-cases/observability/clickstack/example-datasets/session-replay-demo
+title: '会话回放演示'
+description: '演示如何为 Web 应用接入 ClickStack 会话回放的交互式示例应用'
+doc_type: 'guide'
+keywords: ['clickstack', '会话回放', 'browser sdk', '演示', '可观测性', '插桩']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Info>
+  **摘要**
+
+  本指南将介绍如何使用 ClickStack Browser SDK 为 Web 应用接入会话回放。与其他加载预生成数据的示例数据集不同，本演示提供了一个交互式应用，你可以通过自己的操作生成会话数据。
+
+  所需时间：10–15 分钟
+</Info>
+
+<div id="overview">
+  ## 概述
+</div>
+
+[会话回放演示应用](https://github.com/ClickHouse/clickstack-session-replay-demo)是一个使用原生 JavaScript 构建的文档浏览器。它展示了会话回放的埋点可以做到多么精简——只需一个 script 标签和一次初始化调用，就能自动捕获所有用户交互。
+
+该仓库包含两个分支：
+
+* **`main`** — 已完成全部埋点，可直接使用
+* **`pre-instrumented`** — 未埋点的纯净版本，代码注释中标明了应在何处添加埋点
+
+本指南会先使用 `main` 分支，查看会话回放的实际效果；然后再逐步讲解埋点代码，以便你将同样的模式应用到自己的应用中。
+
+有关会话回放的背景及其在 ClickStack 中的作用，请参阅[会话回放](/zh/clickstack/features/session-replay)功能页面。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 已安装 Docker 和 Docker Compose
+* 3000、4317、4318 和 8080 端口可用
+
+<div id="running-the-demo">
+  ## 运行演示
+</div>
+
+<Steps>
+  <Step>
+    ### 克隆代码仓库
+
+    ```shell
+    git clone https://github.com/ClickHouse/clickstack-session-replay-demo
+    cd clickstack-session-replay-demo
+    ```
+  </Step>
+
+  <Step>
+    ### 启动 ClickStack
+
+    ```shell
+    docker-compose up -d clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### 获取 API key
+
+    1. 在 [http://localhost:8080](http://localhost:8080) 打开 HyperDX
+    2. 创建账号，或根据需要登录
+    3. 前往 **Team Settings → API Keys**
+    4. 复制你的 **摄取 API key**
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+
+    5. 将其设置为环境变量：
+
+    ```shell
+    export CLICKSTACK_API_KEY='your-api-key-here'
+    ```
+  </Step>
+
+  <Step>
+    ### 启动演示应用
+
+    ```shell
+    docker-compose --profile demo up demo-app
+    ```
+
+    <Note>
+      请确保在导出 `CLICKSTACK_API_KEY` 变量的同一个终端中运行此命令。
+    </Note>
+
+    在浏览器中打开 [http://localhost:3000](http://localhost:3000) 并与应用交互——搜索主题、按类别过滤、查看代码示例，以及收藏条目。
+
+    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="会话回放演示应用" />
+
+    所有交互都会由 ClickStack Browser SDK 自动记录。
+  </Step>
+
+  <Step>
+    ### 查看你的会话回放
+
+    返回 HyperDX ([http://localhost:8080](http://localhost:8080)) ，然后在左侧边栏中前往 **Client Sessions**。
+
+    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="会话回放搜索" />
+
+    你应该会看到自己的会话已列出，并显示其耗时和事件数量。点击 ▶️ 按钮即可回放。
+
+    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="会话回放" />
+
+    在 **Highlighted** 和 **All Events** 模式之间切换，以调整时间轴上的详细程度。
+  </Step>
+</Steps>
+
+<div id="instrumentation">
+  ## 埋点
+</div>
+
+该演示应用展示了启用会话回放所需的代码有多么少。只需在应用中添加两处内容即可：
+
+**1. 引入 SDK (`app/public/index.html`) ：**
+
+```html
+<script src="https://unpkg.com/@hyperdx/browser@0.21.0/build/index.js"></script>
+```
+
+**2. 初始化 ClickStack (`app/public/js/app.js`) ：**
+
+```javascript
+window.HyperDX.init({
+  url: 'http://localhost:4318',
+  apiKey: window.CLICKSTACK_API_KEY,
+  service: 'clickhouse-session-replay-demo',
+  consoleCapture: true,
+  advancedNetworkCapture: true,
+});
+```
+
+其余部分都属于标准应用代码。SDK 会自动采集所有用户交互、控制台日志、网络请求和错误——无需额外埋点。
+
+<div id="try-it-yourself">
+  ### 动手试试
+</div>
+
+要从零开始为应用添加遥测采集，请切换到 `pre-instrumented` 分支：
+
+```shell
+git checkout pre-instrumented
+```
+
+这个分支包含的是同一个应用，但未添加任何 ClickStack 埋点。`app/public/index.html` 和 `app/public/js/app.js` 中的代码注释明确标出了应在何处添加上面的两个代码片段。添加完成后，重启演示应用，你的交互操作就会开始出现在 ClickStack 中。
+
+<div id="troubleshooting">
+  ## 故障排查
+</div>
+
+<div id="sessions-not-appearing">
+  ### HyperDX 中未显示会话
+</div>
+
+1. 检查浏览器控制台是否有错误
+2. 验证 ClickStack 是否正在运行：`docker-compose ps`
+3. 确认已设置 API key：`echo $CLICKSTACK_API_KEY`
+4. 在 Client Sessions 视图中调整时间范围 (尝试 **最近 15 分钟**)
+5. 强制刷新浏览器：`Cmd+Shift+R` (Mac) 或 `Ctrl+Shift+R` (Windows/Linux)
+
+<div id="401-errors">
+  ### 401 Unauthorized 错误
+</div>
+
+API key 设置不正确。请确保你已：
+
+1. 在终端中导出该密钥：`export CLICKSTACK_API_KEY='your-key'`
+2. 在**导出该密钥的同一个终端**中启动演示应用
+3. 该密钥是从 HyperDX 界面获取的 (而不是随意生成的一串字符串)
+
+<div id="cleanup">
+  ## 清理
+</div>
+
+停止服务：
+
+```bash
+docker-compose down
+```
+
+删除所有数据：
+
+```bash
+docker-compose down -v
+```
+
+<div id="learn-more">
+  ## 了解更多
+</div>
+
+* [会话回放](/zh/clickstack/features/session-replay) — 功能概览、SDK 选项及隐私控制
+* [Browser SDK 参考文档](/zh/clickstack/ingesting-data/sdks/browser) — 完整的 SDK 选项和高级配置
+* [ClickStack 入门](/zh/clickstack/getting-started/index) — 部署 ClickStack 并摄取您的第一批数据
+* [所有示例数据集](/zh/clickstack/example-datasets/index) — 其他示例数据集及相关指南

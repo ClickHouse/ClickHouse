@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'Integração do Apache Spark com ClickHouse'
+slug: /integrations/apache-spark
+description: 'Introdução à integração do Apache Spark com ClickHouse'
+keywords: ['clickhouse', 'Apache Spark', 'migração', 'dados']
+title: 'Integração do Apache Spark com ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Apache Spark](https://spark.apache.org/) é um mecanismo multilíngue para executar engenharia de dados, ciência de dados e aprendizado de máquina em máquinas de um único nó ou clusters.
+
+Há duas formas principais de conectar o Apache Spark ao ClickHouse:
+
+1. [Spark Connector](/pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) - O Spark connector implementa o `DataSourceV2` e tem seu próprio gerenciamento de catálogo.
+   Atualmente, esta é a forma recomendada de integrar o ClickHouse ao Spark.
+2. [Spark JDBC](/pt-BR/integrations/connectors/data-ingestion/apache-spark/spark-jdbc) - Integre o Spark ao ClickHouse
+   usando uma [fonte de dados JDBC](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html).
+
+<br />
+
+Ambas as soluções foram testadas com sucesso e são totalmente compatíveis com várias APIs, incluindo Java, Scala, PySpark e Spark SQL.
+
+<div id="spark-runtime-environment">
+  ### Ambientes de runtime para Spark
+</div>
+
+<div id="standard-spark-runtime">
+  #### Runtimes padrão do Spark
+</div>
+
+O Spark Connector funciona sem configuração adicional em ambientes que seguem de perto o runtime padrão do Apache Spark, como o Amazon EMR ou implantações do Spark baseadas em Kubernetes.
+
+<div id="managed-spark-platforms">
+  #### Plataformas Spark gerenciadas
+</div>
+
+Plataformas como [AWS Glue](/pt-BR/integrations/connectors/data-ingestion/AWS/glue) e [Databricks](/pt-BR/integrations/connectors/data-ingestion/apache-spark/databricks) introduzem abstrações adicionais e comportamentos específicos de cada ambiente.
+Embora a integração principal permaneça a mesma, elas podem exigir configuração e etapas de instalação específicas. Consulte as respectivas páginas da documentação para mais detalhes.
