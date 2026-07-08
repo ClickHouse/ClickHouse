@@ -83,6 +83,11 @@ run_case()
     if [ -z "$read_rows" ] || [ "$read_rows" -lt "$ROWS" ]; then
         echo "${label}: did not observe the column write phase"
         cat "$err"
+        # The INSERT may still be running (e.g. a stuck read); terminate it bounded so this failure
+        # stays a clean FAIL instead of leaving a client behind for the harness hung-check.
+        timeout 15 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" >/dev/null || true
+        kill "$insert_pid" 2>/dev/null
+        wait "$insert_pid" 2>/dev/null
     # On the fixed server the cancel is observed at the next throttled check (within one 65536-row
     # batch, well under a second even on sanitizer builds) and `KILL QUERY` returns quickly. The bound
     # is far below the full-block ZSTD(22) write time (tens of seconds), so a regression -- KILL ignored
@@ -169,7 +174,11 @@ run_timeout_case()
     done
     if [ "$deadline_fired" -eq 0 ]; then
         echo "timeout wide: max_execution_time never fired within 60s, killing the query"
-        ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" >/dev/null
+        # Bounded like the KILL in run_case: if the writer-side check regressed too, an unbounded
+        # SYNC would block until the whole block is written; fall back to killing the client.
+        if ! timeout 15 ${CLICKHOUSE_CLIENT} -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" >/dev/null; then
+            kill "$insert_pid" 2>/dev/null
+        fi
     fi
 
     wait "$insert_pid" 2>/dev/null
