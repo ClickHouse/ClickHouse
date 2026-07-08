@@ -5,6 +5,7 @@ SET allow_experimental_eval_table_function = 1;
 SELECT count() FROM system.table_functions WHERE name = 'eval';
 
 SELECT * FROM eval('SEL' || 'ECT 1 AS x');
+SELECT * FROM eval('SELECT (SELECT 42)');
 
 SET param_q = 'SELECT 2 AS y';
 SELECT * FROM eval({q:String});

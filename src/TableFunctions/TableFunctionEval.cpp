@@ -12,7 +12,10 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -351,6 +354,43 @@ ContextMutablePtr getContextWithGeneratedQuerySettings(ContextPtr context, const
     return query_context;
 }
 
+ASTPtr wrapGeneratedQueryWithColumnAliases(const ASTPtr & query, const ColumnsDescription & columns)
+{
+    auto column_aliases = make_intrusive<ASTExpressionList>();
+    for (const auto & column : columns.getOrdinary())
+        column_aliases->children.push_back(make_intrusive<ASTIdentifier>(column.name));
+
+    auto subquery = make_intrusive<ASTSubquery>(query->clone());
+    subquery->setAlias("_eval");
+
+    auto table_expression = make_intrusive<ASTTableExpression>();
+    table_expression->subquery = std::move(subquery);
+    table_expression->children.push_back(table_expression->subquery);
+    table_expression->column_aliases = std::move(column_aliases);
+    table_expression->children.push_back(table_expression->column_aliases);
+
+    auto tables_element = make_intrusive<ASTTablesInSelectQueryElement>();
+    tables_element->table_expression = std::move(table_expression);
+    tables_element->children.push_back(tables_element->table_expression);
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(std::move(tables_element));
+
+    auto select_list = make_intrusive<ASTExpressionList>();
+    select_list->children.push_back(make_intrusive<ASTAsterisk>());
+
+    auto select = make_intrusive<ASTSelectQuery>();
+    select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list));
+    select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+
+    auto select_with_union = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union->list_of_selects = make_intrusive<ASTExpressionList>();
+    select_with_union->list_of_selects->children.push_back(std::move(select));
+    select_with_union->children.push_back(select_with_union->list_of_selects);
+
+    return select_with_union;
+}
+
 }
 
 void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -399,12 +439,16 @@ StoragePtr TableFunctionEval::executeImpl(
     const ASTPtr & /*ast_function*/,
     ContextPtr context,
     const std::string & table_name,
-    ColumnsDescription /*cached_columns*/,
+    ColumnsDescription cached_columns,
     bool is_insert_query) const
 {
     auto query_context = getContextWithGeneratedQuerySettings(context, create.children[0]);
-    auto columns = getActualTableStructure(query_context, is_insert_query);
-    auto storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), create, columns, "", false, query_context);
+    auto columns = cached_columns.empty() ? getActualTableStructure(query_context, is_insert_query) : std::move(cached_columns);
+
+    ASTCreateQuery wrapped_create;
+    wrapped_create.set(wrapped_create.select, wrapGeneratedQueryWithColumnAliases(create.children[0], columns));
+
+    auto storage = std::make_shared<StorageView>(StorageID(getDatabaseName(), table_name), wrapped_create, columns, "", false, query_context);
     storage->startup();
     return storage;
 }
