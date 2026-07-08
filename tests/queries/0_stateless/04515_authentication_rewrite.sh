@@ -45,7 +45,7 @@ cleanup
 
 $CLICKHOUSE_CLIENT --query "
     CREATE USER ${user_no_password};
-    CREATE USER ${user_with_password} IDENTIFIED BY 'qwerty';
+    CREATE USER ${user_with_password} IDENTIFIED WITH plaintext_password BY 'qwerty';
 "
 
 [ "$(query_as "$user_no_password" "" "SELECT currentUser()")" = "${user_no_password}" ]

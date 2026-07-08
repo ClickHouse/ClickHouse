@@ -6,9 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-user_name="user_04509_${CLICKHOUSE_DATABASE}"
-role_x="role_x_04509_${CLICKHOUSE_DATABASE}"
-role_y="role_y_04509_${CLICKHOUSE_DATABASE}"
+user_name="user_04509_default"
+role_x="role_x_04509_default"
+role_y="role_y_04509_default"
 
 cleanup()
 {
