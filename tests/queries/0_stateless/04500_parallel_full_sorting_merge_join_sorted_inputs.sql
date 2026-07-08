@@ -1,10 +1,10 @@
 -- `parallel_full_sorting_merge` is advertised as working on any sorted input, not only MergeTree read in
--- order. When the input is already sorted by the join key (a sorted subquery, a sorted `UNION ALL`, or any
--- other sorted upstream operator), `applyOrder` turns the pre-join full sort into a `FinishSorting`. Such a
--- `FinishSorting` must still be scattered into per-shard merge joins (`ScatterByPartitionTransform`): the
--- scatter re-establishes a full sort inside each shard, so it is correct, and the algorithm keeps its
--- advertised scope. Only read-in-order MergeTree reads (which carry buffering / virtual-row chunks) are
--- deliberately left to the primary-key-range sharding path, so they are NOT hash-scattered here.
+-- order. Every already-sorted side (a `FinishSorting`, whether it comes from a read-in-order MergeTree read
+-- or from `applyOrder` on a sorted subquery / sorted `UNION ALL` / any other sorted upstream operator) is
+-- scattered into per-shard merge joins by the hash of the join keys (`ScatterByPartitionTransform`). A side
+-- produced by `applyOrder` (non-buffering `FinishSorting`) has its sort re-established inside each shard,
+-- while a read-in-order side (buffering `FinishSorting`) has its sort finished per shard without redoing it;
+-- either way the result is correct and the algorithm keeps its advertised scope.
 --
 -- The join key is an integer (hash-compatible with the merge-join comparison), so sharding is not disabled
 -- for a key-type reason. `max_threads = 4` keeps the shard count > 1 on any runner. Two
@@ -38,14 +38,15 @@ FROM (EXPLAIN PIPELINE
   INNER JOIN (SELECT number AS k FROM numbers(4000) ORDER BY k) AS r ON l.k = r.k
   SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4);
 
--- Read-in-order MergeTree reads are NOT hash-scattered here: they are handled by the primary-key-range path.
-SELECT 'analyzer read_in_order_not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
+-- Read-in-order MergeTree reads are also scattered (a read-in-order side is a buffering `FinishSorting`,
+-- scattered while preserving order so each shard finishes the sort instead of redoing it).
+SELECT 'analyzer read_in_order_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
 FROM (EXPLAIN PIPELINE
   SELECT l.k FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.k = r.k
   SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1);
 
--- Same with virtual rows enabled: still not hash-scattered.
-SELECT 'analyzer read_in_order_virtual_row_not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
+-- Same with virtual rows enabled: still scattered (virtual-row emission is disabled on a scattered side).
+SELECT 'analyzer read_in_order_virtual_row_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
 FROM (EXPLAIN PIPELINE
   SELECT l.k FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.k = r.k
   SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1);
