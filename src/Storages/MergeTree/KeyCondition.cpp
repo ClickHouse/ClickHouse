@@ -755,13 +755,11 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             [] (RPNElement & out, const Field &)
             {
                 out.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+                out.relaxed = true;
                 return true;
             }
         }
 };
-
-static const std::set<KeyCondition::RPNElement::Function> always_relaxed_atom_elements
-    = {KeyCondition::RPNElement::FUNCTION_UNKNOWN, KeyCondition::RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE, KeyCondition::RPNElement::FUNCTION_POINT_IN_POLYGON};
 
 /// Functions with range inversion cannot be relaxed. It will become stricter instead.
 /// For example:
@@ -1458,7 +1456,6 @@ KeyCondition::KeyCondition(
     if (skip_analysis_)
     {
         has_filter = (filter_dag.predicate != nullptr);
-        relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
@@ -1471,7 +1468,6 @@ KeyCondition::KeyCondition(
     if (!filter_dag.predicate)
     {
         has_filter = false;
-        relaxed = true;
         rpn.emplace_back(RPNElement::FUNCTION_UNKNOWN);
         return;
     }
@@ -1499,21 +1495,28 @@ KeyCondition::KeyCondition(
     }));
 
     findHyperrectanglesForArgumentsOfSpaceFillingCurves();
-
-    if (std::any_of(rpn.begin(), rpn.end(), [&](const auto & elem) { return always_relaxed_atom_elements.contains(elem.function); }))
-        relaxed = true;
 }
 
 KeyCondition::KeyCondition(
     ThisIsPrivate, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
-    bool date_time_overflow_behavior_ignore_, bool relaxed_)
+    bool date_time_overflow_behavior_ignore_)
     : has_filter(true)
     , key_columns(std::move(key_columns_))
     , num_key_columns(num_key_columns_)
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
-    , relaxed(relaxed_)
 {}
+
+bool KeyCondition::isRelaxed() const
+{
+    return std::any_of(rpn.begin(), rpn.end(), [](const auto & elem)
+    {
+        return elem.relaxed
+            || elem.function == RPNElement::FUNCTION_UNKNOWN
+            || ((elem.function == RPNElement::FUNCTION_IN_SET || elem.function == RPNElement::FUNCTION_NOT_IN_SET)
+                && elem.set_index->size() > 1);
+    });
+}
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
@@ -2626,14 +2629,6 @@ void KeyCondition::extractSetAtomsForKeyArgument(
         out.emplace_back(std::move(*atom));
     }
 
-    /// Propagate to KeyCondition-level relaxed flag (NOT element-level).
-    /// A multi-element set or relaxed atom means the KeyCondition as a whole is relaxed,
-    /// but the individual atom's `relaxed` flag should only reflect semantic inexactness
-    /// (e.g., non-injective transform, size mismatch).
-    for (const auto & element : out)
-        if (element.set_index && (element.set_index->size() > 1 || element.relaxed))
-            relaxed = true;
-
     /// This records the key columns that are already covered by the direct atom.
     /// The wrapped-set candidates below only fill in the columns that have no atom yet,
     /// because the direct atom is more precise.
@@ -3650,10 +3645,10 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     const bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
 
     /// This fills the function kind and the range/set of every prepared element in `out` via the
-    /// atom_map builder and propagates relaxation. An atom that cannot be built is dropped: the atoms
-    /// of one leaf are ANDed necessary conditions, so the remaining ones stay usable, and if none
-    /// remain, RPNBuilder turns the empty leaf into FUNCTION_UNKNOWN. The value argument is unused by
-    /// the set and unary builders reached from here; comparison atoms pass the real constant in
+    /// atom_map builder. An atom that cannot be built is dropped: the atoms of one leaf are ANDed
+    /// necessary conditions, so the remaining ones stay usable, and if none remain, RPNBuilder turns
+    /// the empty leaf into FUNCTION_UNKNOWN. The value argument is unused by the set and unary
+    /// builders reached from here; comparison atoms pass the real constant in
     /// `extractBinaryComparisonAtoms`.
     auto finalize_atoms = [&]
     {
@@ -3674,8 +3669,6 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
                 continue;
             }
 
-            if (it->relaxed)
-                relaxed = true;
             ++it;
         }
     };
@@ -3814,6 +3807,10 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
     boost::geometry::envelope(element.polygon->ring, element.polygon->bbox);
 
     element.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
+    /// The atom is always relaxed (like in the atom_map builder for `pointInPolygon`): its evaluation
+    /// only checks whether the granule's rectangle intersects the polygon, so it never produces an
+    /// exact `can_be_false`.
+    element.relaxed = true;
 
     out.emplace_back(std::move(element));
 }
@@ -4269,9 +4266,6 @@ void KeyCondition::extractComparisonAtomsForKeyArgument(
         if (!atom_it_for_candidate->second(normalized->element, normalized->const_value))
             continue;
 
-        if (normalized->element.relaxed)
-            relaxed = true;
-
         out.emplace_back(std::move(normalized->element));
         if (candidate.key_column_num < has_atom_for_key_column.size())
             has_atom_for_key_column[candidate.key_column_num] = true;
@@ -4382,6 +4376,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
             RPNElement collapsed_elem;
             collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+            collapsed_elem.relaxed = true;
             collapsed_elem.key_columns = elem.key_columns;
             collapsed_elem.space_filling_curve_args_hyperrectangle = std::move(hyperrectangle);
 
@@ -4404,6 +4399,7 @@ void KeyCondition::findHyperrectanglesForArgumentsOfSpaceFillingCurves()
 
                 RPNElement collapsed_elem;
                 collapsed_elem.function = RPNElement::FUNCTION_ARGS_IN_HYPERRECTANGLE;
+                collapsed_elem.relaxed = true;
                 collapsed_elem.key_columns = cond1.key_columns;
                 collapsed_elem.space_filling_curve_args_hyperrectangle
                     = intersect(cond1.space_filling_curve_args_hyperrectangle, cond2.space_filling_curve_args_hyperrectangle);
@@ -4730,8 +4726,14 @@ static BoolMask forAnyHyperrectangle(
     const DataTypes & data_types,
     size_t prefix_size,
     BoolMask initial_mask,
+    const Hyperrectangle * key_bounds,
     F && callback)
 {
+    auto universe = [&](size_t i) -> Range
+    {
+        return key_bounds ? (*key_bounds)[i] : Range::createWholeUniverseTypeAware(data_types[i]);
+    };
+
     if (!left_bounded && !right_bounded)
         return callback(hyperrectangle);
 
@@ -4759,11 +4761,9 @@ static BoolMask forAnyHyperrectangle(
         if (left_bounded && right_bounded)
             hyperrectangle[prefix_size] = Range(left_keys[prefix_size], true, right_keys[prefix_size], true);
         else if (left_bounded)
-            hyperrectangle[prefix_size]
-                = Range::createLeftBounded(left_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+            hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], true, universe(prefix_size));
         else if (right_bounded)
-            hyperrectangle[prefix_size]
-                = Range::createRightBounded(right_keys[prefix_size], true, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+            hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], true, universe(prefix_size));
 
         return callback(hyperrectangle);
     }
@@ -4773,19 +4773,12 @@ static BoolMask forAnyHyperrectangle(
     if (left_bounded && right_bounded)
         hyperrectangle[prefix_size] = Range(left_keys[prefix_size], false, right_keys[prefix_size], false);
     else if (left_bounded)
-        hyperrectangle[prefix_size]
-            = Range::createLeftBounded(left_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        hyperrectangle[prefix_size] = Range::createLeftBounded(left_keys[prefix_size], false, universe(prefix_size));
     else if (right_bounded)
-        hyperrectangle[prefix_size]
-            = Range::createRightBounded(right_keys[prefix_size], false, isNullableOrLowCardinalityNullable(data_types[prefix_size]));
+        hyperrectangle[prefix_size] = Range::createRightBounded(right_keys[prefix_size], false, universe(prefix_size));
 
     for (size_t i = prefix_size + 1; i < key_size; ++i)
-    {
-        if (isNullableOrLowCardinalityNullable(data_types[i]))
-            hyperrectangle[i] = Range::createWholeUniverse();
-        else
-            hyperrectangle[i] = Range::createWholeUniverseWithoutNull();
-    }
+        hyperrectangle[i] = universe(i);
 
     auto result = BoolMask::combine(initial_mask, callback(hyperrectangle));
 
@@ -4802,7 +4795,7 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+                key_size, left_keys, right_keys, true, false, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
 
         if (result.isComplete())
             return result;
@@ -4816,7 +4809,7 @@ static BoolMask forAnyHyperrectangle(
         result = BoolMask::combine(
             result,
             forAnyHyperrectangle(
-                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, callback));
+                key_size, left_keys, right_keys, false, true, hyperrectangle, data_types, prefix_size + 1, initial_mask, key_bounds, callback));
     }
 
     return result;
@@ -4830,7 +4823,8 @@ static BoolMask forAnyHyperrectangle(
   * hyperrectangle. However, this is a problem if PK is very long but filter only uses few key columns only because creating
   * and doing operations with `Range` object is very slow.
   * That's why we use sparse representation of hyperrectangle by only storing and processing
-  * information about key columns that are used by some RPNElement (and whose marks were also loaded in memory).
+  * information about key columns that are used by some RPNElement (and whose marks were also loaded in memory,
+  * or that are constant coordinates whose range is known from `key_bounds`, e.g. from the part's partition minmax).
   *
   * It is important to note that even if we only have sparse representation of hyperrectangle, we actually enumerate
   * over all possible hyperrectangles by iterating using `prefix_size`. `prefix_size` goes from 0 till `equal_boundaries_mask.size() - 1`.
@@ -4857,22 +4851,33 @@ static BoolMask forAnySparseHyperrectangle(
     const DataTypes & sparse_data_types,
     size_t prefix_size,
     BoolMask initial_mask,
+    const Hyperrectangle * key_bounds,
     F && callback)
 {
-    const size_t key_size = equal_boundaries_mask.size();
+    /// The enumeration walks only the leading key columns that have per-range boundary values (the prefix
+    /// covered by `equal_boundaries_mask`). Sparse columns beyond it are constant coordinates: their range
+    /// is fixed for the whole call and never touched here.
+    const size_t enumerated_key_prefix_size = equal_boundaries_mask.size();
+
+    /// Returns the bound that a used key column (full position `key_index`, sparse position `sparse_pos`)
+    /// is known to lie within. The whole universe when unbounded.
+    auto universe = [&](size_t sparse_pos, size_t key_index) -> Range
+    {
+        return key_bounds ? (*key_bounds)[key_index] : Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]);
+    };
 
 #ifndef NDEBUG
     const size_t sparse_keys_size = sparse_key_indices.size();
 
-    chassert(key_size == key_col_to_sparse_pos.size());
-    chassert(full_key_size >= key_size);
+    chassert(enumerated_key_prefix_size <= key_col_to_sparse_pos.size());
+    chassert(full_key_size >= enumerated_key_prefix_size);
     chassert(sparse_key_indices.size() <= sparse_data_types.size());
-    chassert(prefix_size <= key_size);
+    chassert(prefix_size <= enumerated_key_prefix_size);
 
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
     for (size_t i = 0; i < sparse_keys_size; ++i)
-        chassert(sparse_key_indices[i] < key_size);
+        chassert(sparse_key_indices[i] < key_col_to_sparse_pos.size());
 
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
         chassert(key_col_to_sparse_pos[sparse_key_indices[sparse_pos]] == static_cast<int>(sparse_pos));
@@ -4884,7 +4889,7 @@ static BoolMask forAnySparseHyperrectangle(
     /// Extend common prefix in full key space (not sparse)
     if (left_bounded && right_bounded)
     {
-        while (prefix_size < key_size && equal_boundaries_mask[prefix_size])
+        while (prefix_size < enumerated_key_prefix_size && equal_boundaries_mask[prefix_size])
         {
             bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
             size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[prefix_size]);
@@ -4895,7 +4900,7 @@ static BoolMask forAnySparseHyperrectangle(
         }
     }
 
-    if (prefix_size == key_size)
+    if (prefix_size == enumerated_key_prefix_size)
         return callback(sparse_hyperrectangle);
 
     const bool is_key_col_used = (key_col_to_sparse_pos[prefix_size] != -1);
@@ -4913,12 +4918,12 @@ static BoolMask forAnySparseHyperrectangle(
             else if (left_bounded)
             {
                 sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                    sparse_left_keys[sparse_pos], true, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+                    sparse_left_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
             }
             else if (right_bounded)
             {
                 sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                    sparse_right_keys[sparse_pos], true, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+                    sparse_right_keys[sparse_pos], true, universe(sparse_pos, prefix_size));
             }
         }
 
@@ -4937,24 +4942,26 @@ static BoolMask forAnySparseHyperrectangle(
         else if (left_bounded)
         {
             sparse_hyperrectangle[sparse_pos] = Range::createLeftBounded(
-                sparse_left_keys[sparse_pos], false, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+                sparse_left_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
         }
         else if (right_bounded)
         {
             sparse_hyperrectangle[sparse_pos] = Range::createRightBounded(
-                sparse_right_keys[sparse_pos], false, isNullableOrLowCardinalityNullable(sparse_data_types[sparse_pos]));
+                sparse_right_keys[sparse_pos], false, universe(sparse_pos, prefix_size));
         }
     }
 
-    /// Tail coordinates > prefix_size for sparse columns become whole universe
+    /// Tail coordinates in (prefix_size, enumerated_key_prefix_size) for sparse columns become their known bound (whole universe
+    /// by default). Sparse coordinates >= enumerated_key_prefix_size are constant: they are set once at initialization and are
+    /// never touched by the enumeration.
     auto it = std::upper_bound(sparse_key_indices.begin(), sparse_key_indices.end(), prefix_size);
-    for (; it != sparse_key_indices.end(); ++it)
+    for (; it != sparse_key_indices.end() && *it < enumerated_key_prefix_size; ++it)
     {
         size_t key_index = *it;
         chassert(key_col_to_sparse_pos[key_index] >= 0);
         size_t sparse_pos = static_cast<size_t>(key_col_to_sparse_pos[key_index]);
 
-        sparse_hyperrectangle[sparse_pos] = Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]);
+        sparse_hyperrectangle[sparse_pos] = universe(sparse_pos, key_index);
     }
 
     auto result = BoolMask::combine(initial_mask, callback(sparse_hyperrectangle));
@@ -4988,6 +4995,7 @@ static BoolMask forAnySparseHyperrectangle(
                 sparse_data_types,
                 prefix_size + 1,
                 initial_mask,
+                key_bounds,
                 callback));
 
         if (result.isComplete())
@@ -5018,6 +5026,7 @@ static BoolMask forAnySparseHyperrectangle(
                 sparse_data_types,
                 prefix_size + 1,
                 initial_mask,
+                key_bounds,
                 callback));
     }
 
@@ -5029,20 +5038,15 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * left_keys,
     const FieldRef * right_keys,
     const DataTypes & data_types,
-    BoolMask initial_mask) const
+    BoolMask initial_mask,
+    const Hyperrectangle * key_bounds) const
 {
     Hyperrectangle key_ranges;
-
     key_ranges.reserve(used_key_size);
     for (size_t i = 0; i < used_key_size; ++i)
-    {
-        if (isNullableOrLowCardinalityNullable(data_types[i]))
-            key_ranges.push_back(Range::createWholeUniverse());
-        else
-            key_ranges.push_back(Range::createWholeUniverseWithoutNull());
-    }
+        key_ranges.push_back(Range::createWholeUniverseTypeAware(data_types[i]));
 
-    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask,
+    return forAnyHyperrectangle(used_key_size, left_keys, right_keys, true, true, key_ranges, data_types, 0, initial_mask, key_bounds,
         [&] (const Hyperrectangle & key_ranges_hyperrectangle)
     {
         return checkInHyperrectangle(key_ranges_hyperrectangle, data_types);
@@ -5056,36 +5060,45 @@ BoolMask KeyCondition::checkInRange(
     const FieldRef * sparse_right_keys,
     const DataTypes & sparse_data_types,
     const std::vector<UInt8> & equal_boundaries_mask,
-    BoolMask initial_mask) const
+    BoolMask initial_mask,
+    const Hyperrectangle * key_bounds) const
 {
     const size_t sparse_keys_size = sparse_key_indices.size();
 
 #ifndef NDEBUG
     chassert(sparse_keys_size <= sparse_data_types.size());
 
-    if (sparse_keys_size > 0)
-        chassert(equal_boundaries_mask.size() > *std::max_element(sparse_key_indices.begin(), sparse_key_indices.end()));
-
     for (size_t i = 1; i < sparse_keys_size; ++i)
         chassert(sparse_key_indices[i - 1] < sparse_key_indices[i]);
 #endif
+
+    const size_t enumerated_key_prefix_size = equal_boundaries_mask.size();
+
+    /// Sparse columns at indices >= enumerated_key_prefix_size are constant coordinates: they take their range from `key_bounds`
+    /// here, once per call, and do not participate in the hyperrectangle enumeration. The enumerated columns
+    /// are overwritten by `forAnySparseHyperrectangle` before every callback.
+    const size_t mapping_size = sparse_keys_size > 0 ? std::max(enumerated_key_prefix_size, sparse_key_indices.back() + 1) : enumerated_key_prefix_size;
+    chassert(!key_bounds || key_bounds->size() >= mapping_size);
+    chassert(key_bounds || mapping_size == enumerated_key_prefix_size);
 
     Hyperrectangle sparse_key_ranges;
     sparse_key_ranges.reserve(sparse_keys_size);
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
     {
         chassert(sparse_pos < sparse_data_types.size());
-        sparse_key_ranges.emplace_back(Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]));
+        size_t key_index = sparse_key_indices[sparse_pos];
+        if (key_index >= enumerated_key_prefix_size)
+            sparse_key_ranges.emplace_back((*key_bounds)[key_index]);
+        else
+            sparse_key_ranges.emplace_back(Range::createWholeUniverseTypeAware(sparse_data_types[sparse_pos]));
     }
 
-    const size_t key_size = equal_boundaries_mask.size();
-
     /// Mapping: full key index -> position in sparse hyperrectangle, or -1 if not tracked.
-    std::vector<int> key_col_to_sparse_pos(key_size, -1);
+    std::vector<int> key_col_to_sparse_pos(mapping_size, -1);
     for (size_t sparse_pos = 0; sparse_pos < sparse_keys_size; ++sparse_pos)
     {
         size_t key_index = sparse_key_indices[sparse_pos];
-        chassert(key_index < key_size);
+        chassert(key_index < mapping_size);
         chassert(key_col_to_sparse_pos[key_index] == -1 && "sparse_key_indices contains duplicate entries");
 
         key_col_to_sparse_pos[key_index] = static_cast<int>(sparse_pos);
@@ -5104,6 +5117,7 @@ BoolMask KeyCondition::checkInRange(
         sparse_data_types,
         /*prefix_size*/ 0,
         initial_mask,
+        key_bounds,
         [&](const Hyperrectangle & key_ranges_hyperrectangle)
         {
             return checkInHyperrectangle(key_col_to_sparse_pos, key_ranges_hyperrectangle, sparse_data_types);
@@ -5378,7 +5392,7 @@ bool KeyCondition::extractPlainRanges(Ranges & ranges) const
         /// `FUNCTION_IS_NULL`, `FUNCTION_IS_NOT_NULL`, ...) and any future atom that introduces
         /// relaxation handling. Operator elements (`FUNCTION_AND`, `FUNCTION_OR`, `FUNCTION_NOT`,
         /// `ALWAYS_TRUE`, `ALWAYS_FALSE`) are never set as relaxed; relaxation propagates through them
-        /// via their child atoms (see the comment on `KeyCondition::relaxed` in `KeyCondition.h`).
+        /// via their child atoms (see the comment on `KeyCondition::isRelaxed` in `KeyCondition.h`).
         if (element.relaxed)
             return false;
 
@@ -5563,7 +5577,7 @@ Ranges KeyCondition::extractBounds() const
     {
         /// Evaluate a single top-level conjunct in isolation, because `extractPlainRanges()` requires
         /// the whole RPN to be representable by plain range operations.
-        KeyCondition one_conjunct(ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+        KeyCondition one_conjunct(ThisIsPrivate{}, key_columns, num_key_columns, single_point, date_time_overflow_behavior_ignore);
         one_conjunct.rpn.assign(rpn.begin() + start, rpn.begin() + end);
 
         Ranges conjunct_ranges;
@@ -7051,7 +7065,7 @@ void KeyCondition::extractSingleColumnConditions(std::vector<std::pair<size_t, s
                 continue;
 
             ColumnIndices one_key_column = {{*key_column_names[i], i}};
-            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore, relaxed);
+            auto condition = std::make_shared<KeyCondition>(ThisIsPrivate(), std::move(one_key_column), num_key_columns, single_point, date_time_overflow_behavior_ignore);
             add_rpn_ranges(*condition, *this, ranges);
             out_column_conditions.emplace_back(i, std::move(condition));
         }

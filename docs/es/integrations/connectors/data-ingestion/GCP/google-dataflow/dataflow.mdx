@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Integración de Dataflow con ClickHouse'
+slug: /integrations/google-dataflow/dataflow
+description: 'Puede ingestar datos en ClickHouse con Google Dataflow'
+title: 'Integración de Google Dataflow con ClickHouse'
+doc_type: 'guide'
+keywords: ['Google Dataflow ClickHouse', 'integración de Dataflow con ClickHouse', 'Apache Beam ClickHouse', 'conector ClickHouseIO', 'integración de Google Cloud con ClickHouse']
+---
+
+import ClickHouseSupportedBadge from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Google Dataflow](https://cloud.google.com/dataflow) es un servicio totalmente gestionado de procesamiento de datos en streaming y por lotes. Admite pipelines escritos en Java o Python y está basado en el SDK de Apache Beam.
+
+Hay dos formas principales de usar Google Dataflow con ClickHouse; ambas aprovechan el [`ClickHouseIO Apache Beam connector`](/es/integrations/connectors/data-ingestion/etl-tools/apache-beam).
+Estas son:
+
+* [runner de Java](#1-java-runner)
+* [Plantillas predefinidas](#2-predefined-templates)
+
+<div id="1-java-runner">
+  ## Runner de Java
+</div>
+
+El [runner de Java](/es/integrations/connectors/data-ingestion/GCP/google-dataflow/java-runner) le permite implementar pipelines personalizados de Dataflow con la integración `ClickHouseIO` del SDK de Apache Beam. Este enfoque proporciona flexibilidad y control totales sobre la lógica del pipeline, lo que le permite adaptar el proceso de ETL a requisitos específicos.
+Sin embargo, esta opción requiere conocimientos de programación en Java y familiaridad con el framework Apache Beam.
+
+<div id="key-features">
+  ### Características principales
+</div>
+
+* Alto grado de personalización.
+* Ideal para casos de uso complejos o avanzados.
+* Requiere saber programar y comprender la API de Beam.
+
+<div id="2-predefined-templates">
+  ## Plantillas predefinidas
+</div>
+
+ClickHouse ofrece [plantillas predefinidas](/es/integrations/connectors/data-ingestion/GCP/google-dataflow/templates) diseñadas para casos de uso específicos, como importaciones por lotes desde BigQuery o la ingestión en streaming desde Pub/Sub a ClickHouse. Estas plantillas están listas para usar y simplifican el proceso de integración, por lo que son una excelente opción si prefieres una solución sin necesidad de código.
+
+<div id="key-features">
+  ### Características principales
+</div>
+
+* No requiere programación en Beam.
+* Configuración rápida y sencilla para casos de uso simples.
+* También es adecuado si se tienen conocimientos mínimos de programación.
+
+Ambos enfoques son totalmente compatibles con Google Cloud y el ecosistema de ClickHouse, y ofrecen flexibilidad en función de los conocimientos técnicos y los requisitos del proyecto.

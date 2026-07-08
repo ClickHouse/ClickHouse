@@ -1,0 +1,121 @@
+---
+description: 'ClickHouse の Array データ型に関するドキュメント'
+sidebarTitle: 'Array(T)'
+slug: /sql-reference/data-types/array
+title: 'Array(T)'
+doc_type: 'reference'
+---
+
+`T` 型の要素からなる配列です。配列のインデックスは 1 から始まります。`T` には、Arrayを含む任意のデータ型を指定できます。
+
+<div id="creating-an-array">
+  ## Arrayの作成
+</div>
+
+関数を使ってArrayを作成できます:
+
+```sql
+array(T)
+```
+
+`[]`も使用できます。
+
+```sql
+[]
+```
+
+Array の作成例:
+
+```sql
+SELECT array(1, 2) AS x, toTypeName(x)
+```
+
+```text
+┌─x─────┬─toTypeName(array(1, 2))─┐
+│ [1,2] │ Array(UInt8)            │
+└───────┴─────────────────────────┘
+```
+
+```sql
+SELECT [1, 2] AS x, toTypeName(x)
+```
+
+```text
+┌─x─────┬─toTypeName([1, 2])─┐
+│ [1,2] │ Array(UInt8)       │
+└───────┴────────────────────┘
+```
+
+<div id="working-with-data-types">
+  ## データ型の扱い
+</div>
+
+配列をその場で作成する場合、ClickHouse は、指定されたすべての引数を格納できる最も狭いデータ型を、引数の型として自動的に決定します。[Nullable](/ja/reference/data-types/nullable) またはリテラルの [NULL](/ja/reference/settings/formats#input_format_null_as_default) 値が含まれている場合、配列要素の型も [Nullable](/ja/reference/data-types/nullable) になります。
+
+ClickHouse がデータ型を判定できない場合は、例外を返します。たとえば、文字列と数値を同時に含むArrayを作成しようとした場合に発生します (`SELECT array(1, 'a')`) 。
+
+データ型の自動検出の例:
+
+```sql
+SELECT array(1, 2, NULL) AS x, toTypeName(x)
+```
+
+```text
+┌─x──────────┬─toTypeName(array(1, 2, NULL))─┐
+│ [1,2,NULL] │ Array(Nullable(UInt8))        │
+└────────────┴───────────────────────────────┘
+```
+
+互換性のないデータ型からなるArrayを作成しようとすると、ClickHouse は例外を返します：
+
+```sql
+SELECT array(1, 'a')
+```
+
+```text
+Received exception from server (version 1.1.54388):
+Code: 386. DB::Exception: Received from localhost:9000, 127.0.0.1. DB::Exception: There is no supertype for types UInt8, String because some of them are String/FixedString and some of them are not.
+```
+
+<div id="array-size">
+  ## Arrayのサイズ
+</div>
+
+配列全体を読み取らなくても、`size0` サブカラムを使って配列のサイズを調べることができます。多次元配列では、求めたい次元を `N` として、`sizeN-1` を使用できます。
+
+**例**
+
+```sql title="Query"
+CREATE TABLE t_arr (`arr` Array(Array(Array(UInt32)))) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_arr VALUES ([[[12, 13, 0, 1],[12]]]);
+
+SELECT arr.size0, arr.size1, arr.size2 FROM t_arr;
+```
+
+```text title="Response"
+┌─arr.size0─┬─arr.size1─┬─arr.size2─┐
+│         1 │ [2]       │ [[4,1]]   │
+└───────────┴───────────┴───────────┘
+```
+
+<div id="reading-nested-subcolumns-from-array">
+  ## Array からネストされたサブカラムを読み出す
+</div>
+
+`Array` 内のネストされた型 `T` にサブカラムがある場合 (たとえば [名前付きタプル](/ja/reference/data-types/tuple) の場合) 、`Array(T)` 型からも同じサブカラム名でそのサブカラムを読み出せます。サブカラムの型は、元のサブカラムの型を要素とする `Array` になります。
+
+**例**
+
+```sql
+CREATE TABLE t_arr (arr Array(Tuple(field1 UInt32, field2 String))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_arr VALUES ([(1, 'Hello'), (2, 'World')]), ([(3, 'This'), (4, 'is'), (5, 'subcolumn')]);
+SELECT arr.field1, toTypeName(arr.field1), arr.field2, toTypeName(arr.field2) from t_arr;
+```
+
+```test
+┌─arr.field1─┬─toTypeName(arr.field1)─┬─arr.field2────────────────┬─toTypeName(arr.field2)─┐
+│ [1,2]      │ Array(UInt32)          │ ['Hello','World']         │ Array(String)          │
+│ [3,4,5]    │ Array(UInt32)          │ ['This','is','subcolumn'] │ Array(String)          │
+└────────────┴────────────────────────┴───────────────────────────┴────────────────────────┘
+```

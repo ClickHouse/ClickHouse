@@ -1,0 +1,113 @@
+---
+description: 'Documentation de l’utilitaire client ClickHouse Keeper'
+sidebarTitle: 'clickhouse-keeper-client'
+slug: /operations/utilities/clickhouse-keeper-client
+title: 'utilitaire clickhouse-keeper-client'
+doc_type: 'reference'
+---
+
+Une application cliente permettant d’interagir avec ClickHouse Keeper via son protocole natif.
+
+<div id="clickhouse-keeper-client">
+  ## Options
+</div>
+
+* `-q QUERY`, `--query=QUERY` — Requête à exécuter. Si ce paramètre n&#39;est pas fourni, `clickhouse-keeper-client` démarrera en mode interactif.
+* `-h HOST`, `--host=HOST` — Hôte du serveur. Valeur par défaut : `localhost`.
+* `-p N`, `--port=N` — Port du serveur. Valeur par défaut : 9181
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — Définit le chemin du fichier de configuration à utiliser pour récupérer la chaîne de connexion. Valeur par défaut : `config.xml`.
+* `--password=PASSWORD` — Mot de passe pour l&#39;authentification. Peut également être défini via la variable d&#39;environnement `CLICKHOUSE_KEEPER_PASSWORD` ou dans le fichier de configuration XML sous `<zookeeper><password>`.
+* `--identity=IDENTITY` — Identité pour le schéma d&#39;authentification `digest`. Peut également être définie via la variable d&#39;environnement `CLICKHOUSE_KEEPER_IDENTITY` ou dans le fichier de configuration XML sous `<zookeeper><identity>`.
+* `--connection-timeout=TIMEOUT` — Définit le délai d&#39;expiration de connexion en secondes. Valeur par défaut : 10s.
+* `--session-timeout=TIMEOUT` — Définit le délai d&#39;expiration de session en secondes. Valeur par défaut : 10s.
+* `--operation-timeout=TIMEOUT` — Définit le délai d&#39;expiration de l&#39;opération en secondes. Valeur par défaut : 10s.
+* `--history-file=FILE_PATH` — Définit le chemin du fichier d&#39;historique. Valeur par défaut : `~/.keeper-client-history`.
+* `--log-level=LEVEL` — Définit le niveau de journalisation. Valeur par défaut : `information`.
+* `--no-confirmation` — Si défini, ne demandera pas de confirmation pour plusieurs commandes. Valeur par défaut : `false` en mode interactif et `true` pour la requête
+* `--help` — Affiche le message d&#39;aide.
+
+<div id="clickhouse-keeper-client-env">
+  ## Variables d&#39;environnement
+</div>
+
+* `CLICKHOUSE_KEEPER_PASSWORD` — Utilisée comme mot de passe par défaut si `--password` n&#39;est pas indiqué sur la ligne de commande.
+* `CLICKHOUSE_KEEPER_IDENTITY` — Utilisée comme identité par défaut si `--identity` n&#39;est pas indiqué sur la ligne de commande.
+
+<div id="clickhouse-keeper-client-auth">
+  ## Authentification
+</div>
+
+Lors de la connexion à un serveur Keeper qui nécessite une authentification, le mot de passe est déterminé selon l&#39;ordre de priorité suivant (la première correspondance l&#39;emporte) :
+
+1. argument de ligne de commande `--password`
+2. variable d&#39;environnement `CLICKHOUSE_KEEPER_PASSWORD`
+3. `<zookeeper><password>` dans le fichier de configuration XML spécifié par `--config-file`
+
+Le même ordre de priorité s&#39;applique à `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`.
+
+Exemple de fichier de configuration XML avec les paramètres d&#39;authentification :
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <password>secret</password>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="clickhouse-keeper-client-example">
+  ## Exemple
+</div>
+
+```bash
+./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
+Connected to ZooKeeper at [::1]:9181 with session_id 137
+/ :) ls
+keeper foo bar
+/ :) cd 'keeper'
+/keeper :) ls
+api_version
+/keeper :) cd 'api_version'
+/keeper/api_version :) ls
+
+/keeper/api_version :) cd 'xyz'
+Path /keeper/api_version/xyz does not exist
+/keeper/api_version :) cd ../../
+/ :) ls
+keeper foo bar
+/ :) get 'keeper/api_version'
+2
+```
+
+<div id="clickhouse-keeper-client-commands">
+  ## Commandes
+</div>
+
+* `ls '[path]' [watch_id]` -- Liste les nœuds du chemin indiqué (par défaut : cwd). Définit éventuellement un watch sur les enfants identifié par `watch_id`
+* `cd '[path]'` -- Change le chemin courant (par défaut `.`)
+* `cp '<src>' '<dest>'`  -- Copie le nœud &#39;src&#39; vers le chemin &#39;dest&#39;
+* `cpr '<src>' '<dest>'`  -- Copie le sous-arbre du nœud &#39;src&#39; vers le chemin &#39;dest&#39;
+* `mv '<src>' '<dest>'`  -- Déplace le nœud &#39;src&#39; vers le chemin &#39;dest&#39;
+* `mvr '<src>' '<dest>'`  -- Déplace le sous-arbre du nœud &#39;src&#39; vers le chemin &#39;dest&#39;
+* `exists '<path>' [watch_id]` -- Renvoie `1` si le nœud existe, `0` sinon. Définit éventuellement un watch identifié par `watch_id`
+* `set '<path>' <value> [version]` -- Met à jour la valeur du nœud. Effectue la mise à jour uniquement si la version correspond (par défaut : -1)
+* `create '<path>' <value> [mode]` -- Crée un nouveau nœud avec la valeur définie
+* `touch '<path>'` -- Crée un nouveau nœud avec une chaîne vide comme valeur. Ne lève pas d&#39;exception si le nœud existe déjà
+* `get '<path>' [watch_id]` -- Renvoie la valeur du nœud. Définit éventuellement un watch sur les données identifié par `watch_id`
+* `watch <watch_id> [timeout_seconds]` -- Attend l&#39;événement de watch identifié par `watch_id` et affiche le type d&#39;événement et le chemin. Si `timeout_seconds` est spécifié, renvoie une erreur après le délai indiqué
+* `rm '<path>' [version]` -- Supprime le nœud uniquement si la version correspond (par défaut : -1)
+* `rmr '<path>' [limit]` -- Supprime récursivement le chemin si la taille du sous-arbre est inférieure à la limite. Confirmation requise (limite par défaut = 100)
+* `flwc <command>` -- Exécute une commande à quatre lettres
+* `help` -- Affiche ce message
+* `get_direct_children_number '[path]'` -- Renvoie le nombre de nœuds enfants directs sous un chemin donné
+* `get_all_children_number '[path]'` -- Renvoie le nombre total de nœuds enfants sous un chemin donné
+* `get_stat '[path]'` -- Renvoie les statistiques du nœud (par défaut `.`)
+* `find_super_nodes <threshold> '[path]'` -- Trouve les nœuds dont le nombre d&#39;enfants dépasse un certain seuil pour le chemin indiqué (par défaut `.`)
+* `delete_stale_backups` -- Supprime les nœuds ClickHouse utilisés pour des sauvegardes désormais inactives
+* `find_big_family [path] [n]` -- Renvoie les n premiers nœuds ayant la plus grande famille dans le sous-arbre (chemin par défaut = `.` et n = 10)
+* `sync '<path>'` -- Synchronise le nœud entre les processus et le leader
+* `reconfig <add|remove|set> "<arg>" [version]` -- Reconfigure le cluster Keeper. Voir /docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration

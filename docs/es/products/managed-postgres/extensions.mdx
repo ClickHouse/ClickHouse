@@ -1,0 +1,158 @@
+---
+slug: /cloud/managed-postgres/extensions
+sidebarTitle: 'Extensiones'
+title: 'Extensiones de PostgreSQL'
+description: 'Extensiones de PostgreSQL disponibles en ClickHouse Managed Postgres'
+keywords: ['extensiones de postgres', 'postgis', 'pgvector', 'pg_cron', 'extensiones de postgresql']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.extensions-beta" />
+
+Managed Postgres incluye una selección de extensiones para ampliar la funcionalidad de su base de datos. A continuación, se muestra la lista de extensiones disponibles.
+
+<div id="installing-extensions">
+  ## Instalar extensiones
+</div>
+
+Para instalar una extensión, conéctese a su base de datos y ejecute:
+
+```sql
+CREATE EXTENSION extension_name;
+```
+
+Para ver qué extensiones están instaladas actualmente:
+
+```sql
+SELECT * FROM pg_extension;
+```
+
+Para ver todas las extensiones disponibles y sus versiones:
+
+```sql
+SELECT * FROM pg_available_extensions;
+```
+
+<div id="available-extensions">
+  ## Extensiones disponibles
+</div>
+
+| Extensión                      | Versión | Descripción                                                                                    |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------------------------- |
+| `address_standardizer`         | 3.6.3   | Se usa para descomponer una dirección en sus elementos constitutivos                           |
+| `address_standardizer_data_us` | 3.6.3   | Ejemplo de conjunto de datos de Address Standardizer de EE. UU.                                |
+| `adminpack`                    | 2.1     | Funciones administrativas para PostgreSQL *(solo PG16)*                                        |
+| `age`                          | 1.7.0   | Extensión de base de datos de grafos Apache AGE                                                |
+| `amcheck`                      |         | Funciones para verificar la integridad de las relaciones                                       |
+| `autoinc`                      | 1.0     | Funciones para campos autoincrementales                                                        |
+| `bloom`                        | 1.0     | Método de acceso Bloom: índice basado en archivo de firmas                                     |
+| `bool_plperl`                  | 1.0     | Transformación entre bool y plperl                                                             |
+| `bool_plperlu`                 | 1.0     | Transformación entre bool y plperlu                                                            |
+| `btree_gin`                    | 1.3     | Soporte para indexar tipos de datos comunes en GIN                                             |
+| `btree_gist`                   | 1.8     | Soporte para indexar tipos de datos comunes en GiST                                            |
+| `citext`                       | 1.8     | Tipo de dato para cadenas de caracteres sin distinción entre mayúsculas y minúsculas           |
+| `cube`                         | 1.5     | Tipo de dato para cubos multidimensionales                                                     |
+| `dblink`                       | 1.2     | Conexión a otras bases de datos PostgreSQL desde dentro de una base de datos                   |
+| `dict_int`                     | 1.0     | Plantilla de diccionario de búsqueda de texto para enteros                                     |
+| `dict_xsyn`                    | 1.0     | Plantilla de diccionario de búsqueda de texto para el procesamiento ampliado de sinónimos      |
+| `earthdistance`                | 1.2     | Calcular distancias de gran círculo sobre la superficie de la Tierra                           |
+| `file_fdw`                     | 1.0     | Wrapper de datos externos para acceder a archivos planos                                       |
+| `fuzzystrmatch`                | 1.2     | Determinar similitudes y distancias entre cadenas                                              |
+| `h3`                           | 4.2.3   | Bindings de H3 para PostgreSQL                                                                 |
+| `h3_postgis`                   | 4.2.3   | Integración de H3 con PostGIS                                                                  |
+| `hll`                          | 2.19    | Tipo para almacenar datos de HyperLogLog                                                       |
+| `hstore`                       | 1.8     | Tipo de dato para almacenar conjuntos de pares (clave, valor)                                  |
+| `hstore_plperl`                | 1.0     | Transformación entre hstore y plperl                                                           |
+| `hstore_plperlu`               | 1.0     | Transformación entre hstore y plperlu                                                          |
+| `hypopg`                       | 1.4.2   | Índices hipotéticos para PostgreSQL                                                            |
+| `intagg`                       | 1.1     | Agregador y enumerador de enteros (obsoleto)                                                   |
+| `insert_username`              | 1.0     | Funciones para registrar quién cambió una tabla                                                |
+| `intarray`                     | 1.5     | Funciones, operadores y soporte de índices para arrays unidimensionales de enteros             |
+| `ip4r`                         | 2.4     | Tipos de índice para rangos IPv4 e IPv6                                                        |
+| `isn`                          | 1.3     | Tipos de datos para estándares internacionales de numeración de productos                      |
+| `jsonb_plperl`                 | 1.0     | Transformación entre jsonb y plperl                                                            |
+| `jsonb_plperlu`                | 1.0     | Transformación entre jsonb y plperlu                                                           |
+| `lo`                           | 1.2     | Mantenimiento de objetos grandes                                                               |
+| `ltree`                        | 1.3     | Tipo de dato para estructuras jerárquicas en forma de árbol                                    |
+| `moddatetime`                  | 1.0     | Funciones para rastrear la hora de la última modificación                                      |
+| `mysql_fdw`                    | 1.2     | Foreign data wrapper para consultar un servidor MySQL                                          |
+| `old_snapshot`                 | 1.0     | Utilidades de soporte para old&#95;snapshot&#95;threshold *(solo PG16)*                        |
+| `orafce`                       | 4.16    | Funciones y operadores que emulan un subconjunto de funciones y paquetes de Oracle RDBMS       |
+| `pageinspect`                  | 1.13    | Inspeccionar a bajo nivel el contenido de las páginas de la base de datos                      |
+| `pg_buffercache`               |         | Examinar la caché de búferes compartidos                                                       |
+| `pg_clickhouse`                | 0.3     | Interfaces para consultar bases de datos de ClickHouse desde PostgreSQL                        |
+| `pg_cron`                      | 1.6     | Programador de trabajos para PostgreSQL                                                        |
+| `pg_freespacemap`              | 1.3     | Examinar el mapa de espacio libre (FSM)                                                        |
+| `pg_hint_plan`                 |         | Sugerencias para el optimizador de PostgreSQL                                                  |
+| `pg_ivm`                       | 1.13    | Mantenimiento incremental de vistas en PostgreSQL                                              |
+| `pg_logicalinspect`            | 1.0     | Funciones para inspeccionar componentes de logical decoding *(PG18+)*                          |
+| `pg_partman`                   | 5.4.3   | Extensión para gestionar tablas particionadas por tiempo o ID                                  |
+| `pg_prewarm`                   | 1.2     | Precargar datos de relaciones                                                                  |
+| `pg_re2`                       | 0.1     | Funciones de expresiones regulares compatibles con ClickHouse basadas en RE2 de Google         |
+| `pg_repack`                    | 1.5.3   | Reorganizar tablas en bases de datos PostgreSQL con un bloqueo mínimo                          |
+| `pg_similarity`                | 1.0     | Compatibilidad con consultas de similitud                                                      |
+| `pg_stat_ch`                   | 0.3     | Envía en tiempo real a ClickHouse la telemetría de ejecución por consulta                      |
+| `pg_stat_statements`           |         | Rastrea las estadísticas de planificación y ejecución de todas las sentencias SQL ejecutadas   |
+| `pg_surgery`                   | 1.0     | Extensión para reparar una relación dañada                                                     |
+| `pg_tokenizer`                 | 0.1.1   | Tokenizador de texto utilizado con `vchord_bm25`                                               |
+| `pg_trgm`                      | 1.6     | Medición de similitud de texto y búsqueda en índices basada en trigramas                       |
+| `pg_visibility`                | 1.2     | Examinar el mapa de visibilidad (VM) y la información de visibilidad a nivel de página         |
+| `pg_walinspect`                | 1.1     | Funciones para inspeccionar el contenido del Write-Ahead Log de PostgreSQL                     |
+| `pgaudit`                      |         | Proporciona funciones de auditoría                                                             |
+| `pgcrypto`                     | 1.4     | Funciones criptográficas                                                                       |
+| `pglogical`                    | 2.4.6   | Replicación lógica de PostgreSQL                                                               |
+| `pglogical_origin`             | 1.0.0   | Extensión ficticia para compatibilidad durante la actualización desde Postgres 9.4             |
+| `pgrouting`                    | 4.0.1   | Extensión pgRouting                                                                            |
+| `pgrowlocks`                   | 1.2     | Muestra información de bloqueo a nivel de fila                                                 |
+| `pgstattuple`                  | 1.5     | Muestra estadísticas a nivel de tupla                                                          |
+| `pgtap`                        | 1.3.4   | Pruebas unitarias para PostgreSQL                                                              |
+| `plperl`                       | 1.0     | Lenguaje procedimental PL/Perl                                                                 |
+| `plperlu`                      | 1.0     | Lenguaje procedimental PL/PerlU no confiable                                                   |
+| `plpgsql`                      | 1.0     | Lenguaje procedimental PL/pgSQL                                                                |
+| `plpgsql_check`                | 2.8     | Verificación ampliada de funciones PL/pgSQL                                                    |
+| `postgis`                      | 3.6.3   | Tipos y funciones espaciales de geometría y geografía de PostGIS                               |
+| `postgis_raster`               | 3.6.3   | Tipos y funciones ráster de PostGIS                                                            |
+| `postgis_sfcgal`               | 3.6.3   | Funciones SFCGAL de PostGIS                                                                    |
+| `postgis_tiger_geocoder`       | 3.6.3   | Geocodificador Tiger y geocodificador inverso de PostGIS                                       |
+| `postgis_topology`             | 3.6.3   | Tipos y funciones espaciales de topología de PostGIS                                           |
+| `postgres_fdw`                 | 1.2     | Wrapper de datos externos para servidores PostgreSQL remotos                                   |
+| `prefix`                       | 1.2.0   | Módulo Prefix Range para PostgreSQL                                                            |
+| `refint`                       | 1.0     | Funciones para implementar la integridad referencial (obsoleto)                                |
+| `seg`                          | 1.4     | Tipo de dato para representar segmentos de línea o intervalos de coma flotante                 |
+| `semver`                       | 0.41.0  | Tipo de dato para versión semántica                                                            |
+| `sslinfo`                      | 1.2     | Información sobre certificados SSL                                                             |
+| `tablefunc`                    | 1.0     | Funciones que manipulan tablas completas, incluido crosstab                                    |
+| `tcn`                          | 1.0     | Notificaciones de cambios activadas por desencadenadores                                       |
+| `tds_fdw`                      | 2.0.5   | Wrapper de datos externos para consultar una base de datos TDS (Sybase o Microsoft SQL Server) |
+| `tsm_system_rows`              | 1.0     | Método TABLESAMPLE que acepta un número de filas como límite                                   |
+| `tsm_system_time`              | 1.0     | Método TABLESAMPLE que acepta un tiempo en milisegundos como límite                            |
+| `uint`                         |         | Tipos enteros sin signo                                                                        |
+| `unaccent`                     | 1.1     | Diccionario de búsqueda de texto que elimina acentos                                           |
+| `unit`                         | 7       | Extensión de unidades del SI                                                                   |
+| `uuid-ossp`                    | 1.1     | Generación de identificadores universalmente únicos (UUIDs)                                    |
+| `vchord`                       | 1.1.1   | Métodos de acceso para indexación vectorial en Postgres                                        |
+| `vchord_bm25`                  | 0.3.0   | Método de acceso de clasificación BM25 para la búsqueda de texto completo                      |
+| `vector`                       | 0.8.2   | Tipo de datos vectorial y métodos de acceso ivfflat y hnsw                                     |
+| `xml2`                         | 1.2     | Consultas XPath y XSLT                                                                         |
+
+<div id="pg-clickhouse">
+  ## extensión pg_clickhouse
+</div>
+
+La extensión `pg_clickhouse` viene preinstalada en cada instancia de Managed Postgres. Permite consultar bases de datos de ClickHouse directamente desde PostgreSQL, lo que proporciona una capa de consultas unificada tanto para transacciones como para análisis.
+
+Consulte la [documentación de pg&#95;clickhouse](/es/products/managed-postgres/extensions/pg_clickhouse/introduction) para obtener instrucciones de configuración y detalles de uso.
+
+<div id="pg-stat-ch">
+  ## Extensión `pg_stat_ch`
+</div>
+
+La extensión `pg_stat_ch` proporciona observabilidad a nivel de consulta para su instancia de Managed Postgres. Captura telemetría por consulta (tiempos, filas, búferes, WAL y errores) y la envía a la UI de ClickHouse Cloud, donde se muestra en las vistas de consultas lentas, errores y carga de trabajo. No requiere configuración.
+
+<div id="pg-re2">
+  ## extensión pg_re2
+</div>
+
+La extensión `pg_re2` añade a Managed Postgres funciones de expresiones regulares compatibles con ClickHouse, basadas en el motor RE2 de Google. Resulta útil al portar consultas entre ambos o al ejecutar cargas de trabajo híbridas que requieren una semántica de coincidencia de patrones idéntica en ambos sistemas.

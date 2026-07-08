@@ -1,0 +1,78 @@
+---
+sidebarTitle: '支出告警'
+slug: /cloud/manage/billing/spend-alerts
+title: '配置组织支出告警'
+description: '配置支出告警，以便在一个计费周期内监控 ClickHouse Cloud 使用量是否达到设定阈值。'
+keywords: ['计费', '支出告警', '使用阈值', '通知', '成本监控', '组织计费']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+支出告警会在贵组织在一个计费周期内的用量达到已配置阈值时通知您，帮助您避免意外费用。它们仅发送通知；有关会触发自动开票的阈值，请参阅[Payment thresholds](/zh/products/cloud/reference/billing/payment-thresholds)。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 您必须拥有 **Organization Admin** 或 **Billing Admin** 角色，才能配置和查看支出告警。
+
+<div id="how-spend-alerts-work">
+  ## 支出告警如何工作
+</div>
+
+* 告警基于一个计费周期内的总用量，并会在每个新周期开始时重置。
+* 告警每小时评估一次，并以当时计算出的总用量为准，因此会在超过阈值后触发。
+
+<Info>
+  **支出告警不会限制用量**
+
+  支出告警达到 100% 时，并不会限制或封顶您的用量——超过 100% 阈值后，支出仍会继续累积。
+</Info>
+
+<div id="set-up-spend-alert">
+  ## 设置支出告警
+</div>
+
+<Steps>
+  <Step>
+    ### 打开支出告警对话框
+
+    1. 在 ClickHouse Cloud 控制台中前往 **Organization &gt; Billing**。
+    2. 点击 **Actions &gt; Add spend alerts**。
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" size="lg" alt="Billing 页面中已打开 Actions 菜单，并高亮显示 Add spend alerts" />
+  </Step>
+
+  <Step>
+    ### 配置并保存告警
+
+    1. 输入每个计费周期的支出告警金额，单位可以是美元或 credits。
+    2. 选择通知渠道：**Email**、**UI** 和/或 **Slack**。
+    3. 点击 **Save**。
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" size="md" alt="组织支出告警对话框，包含支出上限、自动阈值告警和通知渠道" />
+  </Step>
+</Steps>
+
+<div id="threshold-alerts">
+  ## 自动阈值告警
+</div>
+
+系统会根据你配置的支出告警金额，自动创建并触发三条告警：
+
+| 阈值       | 触发条件     | 示例 ($10 告警) |
+| -------- | -------- | ----------- |
+| **50%**  | 支出达到一半   | $5          |
+| **75%**  | 支出达到四分之三 | $7.50       |
+| **100%** | 支出达到全部金额 | $10         |
+
+<div id="notification-channels">
+  ## 通知渠道
+</div>
+
+| 渠道        | 描述                             |
+| --------- | ------------------------------ |
+| **Email** | 将告警发送到已配置的电子邮箱地址。点击编辑图标可更改收件人。 |
+| **UI**    | 在 ClickHouse Cloud 控制台中显示告警。   |
+| **Slack** | 将告警发送到 Slack 频道。点击编辑图标进行配置。    |

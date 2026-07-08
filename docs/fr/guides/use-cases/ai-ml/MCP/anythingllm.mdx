@@ -1,0 +1,132 @@
+---
+slug: /use-cases/AI/MCP/anythingllm
+sidebarTitle: 'Intégrer AnythingLLM'
+title: 'Utiliser le serveur MCP ClickHouse avec AnythingLLM'
+description: 'Ce guide explique comment configurer AnythingLLM avec un serveur MCP ClickHouse à l’aide de Docker.'
+keywords: ['AI', 'AnythingLLM', 'MCP']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+> Ce guide explique comment configurer [AnythingLLM](https://anythingllm.com/) avec un serveur MCP ClickHouse à l’aide de Docker
+> et le connecter aux jeux de données d’exemple de ClickHouse.
+
+<Steps>
+  <Step>
+    ## Installer Docker
+
+    Vous aurez besoin de Docker pour exécuter AnythingLLM et le serveur MCP. Pour installer Docker :
+
+    1. Rendez-vous sur [docker.com](https://www.docker.com/products/docker-desktop)
+    2. Téléchargez Docker Desktop pour votre système d’exploitation
+    3. Installez Docker en suivant les instructions correspondant à votre système d’exploitation
+    4. Ouvrez Docker Desktop et assurez-vous qu’il est en cours d’exécution
+
+    <br />
+
+    Pour plus d’informations, consultez la [documentation Docker](https://docs.docker.com/get-docker/).
+  </Step>
+
+  <Step>
+    ## Récupérer l’image Docker AnythingLLM
+
+    Exécutez la commande suivante pour récupérer l’image Docker AnythingLLM sur votre machine :
+
+    ```bash
+    docker pull anythingllm/anythingllm
+    ```
+  </Step>
+
+  <Step>
+    ## Définir l’emplacement de stockage
+
+    Créez un répertoire de stockage et initialisez le fichier d’environnement :
+
+    ```bash
+    export STORAGE_LOCATION=$PWD/anythingllm && \
+    mkdir -p $STORAGE_LOCATION && \
+    touch "$STORAGE_LOCATION/.env" 
+    ```
+  </Step>
+
+  <Step>
+    ## Configurer le fichier de config du serveur MCP
+
+    Créez le répertoire `plugins` :
+
+    ```bash
+    mkdir -p "$STORAGE_LOCATION/plugins"
+    ```
+
+    Créez un fichier nommé `anythingllm_mcp_servers.json` dans le répertoire `plugins` et ajoutez-y le contenu suivant :
+
+    ```json
+    {
+      "mcpServers": {
+        "mcp-clickhouse": {
+          "command": "uv",
+          "args": [
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+          ],
+          "env": {
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": ""
+          }
+        }
+      }
+    }
+    ```
+
+    Si vous souhaitez explorer vos propres données, vous pouvez le faire en
+    utilisant le [host, username and password](/fr/get-started/setup/cloud#connect-with-your-app)
+    de votre propre service ClickHouse Cloud.
+  </Step>
+
+  <Step>
+    ## Démarrer le conteneur Docker AnythingLLM
+
+    Exécutez la commande suivante pour démarrer le conteneur Docker AnythingLLM :
+
+    ```bash
+    docker run -p 3001:3001 \
+    --cap-add SYS_ADMIN \
+    -v ${STORAGE_LOCATION}:/app/server/storage \
+    -v ${STORAGE_LOCATION}/.env:/app/server/.env \
+    -e STORAGE_DIR="/app/server/storage" \
+    mintplexlabs/anythingllm
+    ```
+
+    Une fois le démarrage terminé, accédez à `http://localhost:3001` dans votre navigateur.
+    Sélectionnez le modèle que vous souhaitez utiliser et indiquez votre API key.
+  </Step>
+
+  <Step>
+    ## Attendre le démarrage des serveurs MCP
+
+    Cliquez sur l’icône d’outil en bas à gauche de l’UI :
+
+    <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="Icône d’outil" size="md" />
+
+    Cliquez sur `Agent Skills` et regardez dans la section `MCP servers`.
+    Attendez que `Mcp ClickHouse` passe à `On`
+
+    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="Serveurs MCP prêts" size="md" />
+  </Step>
+
+  <Step>
+    ## Discuter avec le serveur MCP ClickHouse dans AnythingLLM
+
+    Nous sommes maintenant prêts à démarrer une conversation.
+    Pour rendre les serveurs MCP disponibles dans une conversation, vous devrez faire précéder le premier message de `@agent`.
+
+    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="Conversation" size="md" />
+  </Step>
+</Steps>
