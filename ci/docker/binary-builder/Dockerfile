@@ -29,6 +29,7 @@ RUN add-apt-repository ppa:ubuntu-toolchain-r/test --yes \
     && apt-get -o Dpkg::Options::="--force-overwrite" install --yes \
         binutils-dev \
         build-essential \
+        zlib1g-dev \
         python3-boto3 \
         yasm \
         zstd \
