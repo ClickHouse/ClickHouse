@@ -726,7 +726,7 @@ TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
         msg->function_name = "s";
         for (size_t i = 0; i < n; ++i)
             msg->parameters.push_back(String{std::to_string(i + 1)});
-        return manager.attachBindQuery(std::move(msg));
+        manager.attachBindQuery(std::move(msg));
     };
 
     /// Two placeholders, zero declared OIDs: one value must be rejected (the bug),
