@@ -55,6 +55,7 @@ class ClickHouseService:
                 config_dir / "config.d",
                 symlinks=False,
                 dirs_exist_ok=True,
+                ignore=shutil.ignore_patterns("keeper_port.xml"),
             )
 
         # Recreate data directory so it is owned by the current process user.
