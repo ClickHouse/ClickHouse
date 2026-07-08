@@ -55,6 +55,10 @@ public:
         /// The serialization of the column itself followed by the serializations of its
         /// subcolumns in enumeration order.
         std::vector<SerializationPtr> serializations;
+        /// The lookup name of every serialization above (the column name, then the subcolumn full
+        /// names). Stored so that the name lookup map can be assembled from interned groups
+        /// without re-enumerating the subcolumns.
+        std::vector<String> names;
     };
     using ColumnGroupPtr = std::shared_ptr<const ColumnGroup>;
 
@@ -165,18 +169,14 @@ private:
         size_t operator()(const UInt128 & key) const noexcept { return static_cast<size_t>(key); }
     };
 
-    /// The result of building the serializations of all columns for one set of infos,
-    /// before the pieces are interned.
-    struct SerializationsBuild
-    {
-        std::vector<PartSerializations::ColumnGroupPtr> groups;
-        std::vector<SerializationGroupKey> group_keys;
-        std::shared_ptr<PartSerializations::NameToSlot> name_to_slot;
-        /// Hash of the deterministic build sequence of `name_to_slot`, used as its interning key.
-        UInt128 name_to_slot_hash;
-    };
+    /// Builds the serialization group of one column (the group key must be the one built by
+    /// `buildSerializationGroupKeys` for that column).
+    PartSerializations::ColumnGroupPtr buildSerializationGroup(const NameAndTypePair & column, const SerializationInfoByName & infos) const;
 
-    SerializationsBuild buildSerializations(const SerializationInfoByName & infos) const;
+    /// The per-column interning keys for the given infos: everything the group of each column
+    /// depends on besides the column itself. Cheap to build (no serialization objects), so the
+    /// group cache can be probed before building anything.
+    std::vector<SerializationGroupKey> buildSerializationGroupKeys(const SerializationInfoByName & infos) const;
 
     /// Everything `buildSerializations` reads from the infos besides the column list:
     /// the serialization kinds and the settings, but not the per-part `SerializationInfo::Data`.

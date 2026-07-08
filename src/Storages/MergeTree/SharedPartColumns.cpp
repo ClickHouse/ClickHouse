@@ -89,28 +89,10 @@ const PartSerializations::NameToSlotPtr & PartSerializations::getEmptyNameToSlot
     return empty;
 }
 
-SharedPartColumns::SerializationsBuild SharedPartColumns::buildSerializations(const SerializationInfoByName & infos) const
+std::vector<SharedPartColumns::SerializationGroupKey> SharedPartColumns::buildSerializationGroupKeys(const SerializationInfoByName & infos) const
 {
-    SerializationsBuild build;
-    build.groups.reserve(columns.size());
-    build.group_keys.reserve(columns.size());
-    build.name_to_slot = std::make_shared<PartSerializations::NameToSlot>();
-    /// A lower bound: subcolumns add entries on top, but this avoids the first rehashes.
-    build.name_to_slot->reserve(columns.size());
-
-    /// The lookup map is a pure function of its deterministic build sequence, so hashing the
-    /// sequence gives a valid interning key for it (verified by full content comparison on a hit).
-    XXH3_state_t name_sequence_hash;
-    XXH_INLINE_XXH3_128bits_reset(&name_sequence_hash);
-
-    auto add_name = [&](const String & name, UInt32 column_position, UInt32 index_in_group)
-    {
-        /// emplace: the first occurrence of a name wins, as in the flat map this replaces.
-        build.name_to_slot->emplace(name, std::make_pair(column_position, index_in_group));
-        UInt64 size = name.size();
-        XXH_INLINE_XXH3_128bits_update(&name_sequence_hash, &size, sizeof(size));
-        XXH_INLINE_XXH3_128bits_update(&name_sequence_hash, name.data(), name.size());
-    };
+    std::vector<SerializationGroupKey> keys;
+    keys.reserve(columns.size());
 
     UInt32 position = 0;
     for (const auto & column : columns)
@@ -132,35 +114,39 @@ SharedPartColumns::SerializationsBuild SharedPartColumns::buildSerializations(co
             key.kinds = std::move(kinds.str());
         }
 
-        auto serialization = it == infos.end()
-            ? IDataType::getSerialization(column, infos.getSettings())
-            : IDataType::getSerialization(column, *it->second);
-
-        auto group = std::make_shared<PartSerializations::ColumnGroup>();
-        group->serializations.push_back(serialization);
-        add_name(column.name, position, 0);
-
-        IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
-        {
-            auto full_name = Nested::concatenateName(column.name, subname);
-            /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
-            if (!column_name_to_position.contains(full_name))
-            {
-                add_name(full_name, position, static_cast<UInt32>(group->serializations.size()));
-                group->serializations.push_back(subdata.serialization);
-            }
-        }, ISerialization::SubstreamData(serialization));
-
-        /// The group is shared and long-lived: don't keep the growth overshoot of the vector.
-        group->serializations.shrink_to_fit();
-        build.groups.push_back(std::move(group));
-        build.group_keys.push_back(std::move(key));
+        keys.push_back(std::move(key));
         ++position;
     }
 
-    auto hash = XXH_INLINE_XXH3_128bits_digest(&name_sequence_hash);
-    build.name_to_slot_hash = {hash.low64, hash.high64};
-    return build;
+    return keys;
+}
+
+PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(const NameAndTypePair & column, const SerializationInfoByName & infos) const
+{
+    auto it = infos.find(column.name);
+    auto serialization = it == infos.end()
+        ? IDataType::getSerialization(column, infos.getSettings())
+        : IDataType::getSerialization(column, *it->second);
+
+    auto group = std::make_shared<PartSerializations::ColumnGroup>();
+    group->serializations.push_back(serialization);
+    group->names.push_back(column.name);
+
+    IDataType::forEachSubcolumn([&](const auto &, const auto & subname, const auto & subdata)
+    {
+        auto full_name = Nested::concatenateName(column.name, subname);
+        /// Don't override the column serialization with subcolumn serialization if column with the same name exists.
+        if (!column_name_to_position.contains(full_name))
+        {
+            group->names.push_back(std::move(full_name));
+            group->serializations.push_back(subdata.serialization);
+        }
+    }, ISerialization::SubstreamData(serialization));
+
+    /// The group is shared and long-lived: don't keep the growth overshoot of the vectors.
+    group->serializations.shrink_to_fit();
+    group->names.shrink_to_fit();
+    return group;
 }
 
 SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializationsCacheKey(const SerializationInfoByName & infos)
@@ -248,61 +234,113 @@ PartSerializationsPtr SharedPartColumns::getSerializations(const SerializationIn
                 return shared;
     }
 
-    /// Build outside the lock: when the whole-object cache does not help (each part has a unique
-    /// combination of serialization kinds), concurrent part loads still build in parallel, exactly
-    /// as they did when the serializations were built per-part.
-    /// Everything built here lives as long as some part of the table needs it: route it to the
-    /// dedicated parts arena (no-op when the caller already did).
+    /// Whole-object miss: a new combination of serialization kinds. Probe the per-column group
+    /// cache before building anything: the keys are cheap to compute (the kind encodings fit in
+    /// SSO strings), and when only some columns' kinds changed, the groups of all the others are
+    /// reused without constructing a single serialization object.
+    auto group_keys = buildSerializationGroupKeys(infos);
+    std::vector<PartSerializations::ColumnGroupPtr> groups(group_keys.size());
+
+    {
+        SharedLockGuard lock(serializations_cache_mutex);
+        for (size_t i = 0; i != group_keys.size(); ++i)
+            if (auto it = serialization_groups_cache.find(group_keys[i]); it != serialization_groups_cache.end())
+                groups[i] = it->second.lock();
+    }
+
+    {
+        /// Build the missing groups outside the lock (concurrent loads of parts with distinct
+        /// kinds do not serialize each other) and inside the parts arena: the groups live as long
+        /// as some part of the table needs them. Only the survivors are built here — the transient
+        /// work of this function (keys, the lookup map draft) stays in the default arena.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        size_t i = 0;
+        for (const auto & column : columns)
+        {
+            if (!groups[i])
+                groups[i] = buildSerializationGroup(column, infos);
+            ++i;
+        }
+    }
+
+    /// Assemble the name lookup map from the names stored in the groups (no subcolumn
+    /// enumeration). The map is a pure function of the name sequence, so the sequence hash is its
+    /// interning key, verified by full content comparison on a hit.
+    XXH3_state_t name_sequence_hash;
+    XXH_INLINE_XXH3_128bits_reset(&name_sequence_hash);
+    size_t total_names = 0;
+    for (const auto & group : groups)
+    {
+        total_names += group->names.size();
+        for (const auto & name : group->names)
+        {
+            UInt64 size = name.size();
+            XXH_INLINE_XXH3_128bits_update(&name_sequence_hash, &size, sizeof(size));
+            XXH_INLINE_XXH3_128bits_update(&name_sequence_hash, name.data(), name.size());
+        }
+    }
+    auto sequence_hash = XXH_INLINE_XXH3_128bits_digest(&name_sequence_hash);
+    UInt128 name_to_slot_hash{sequence_hash.low64, sequence_hash.high64};
+
+    PartSerializations::NameToSlot name_to_slot_draft;
+    name_to_slot_draft.reserve(total_names);
+    for (UInt32 group_index = 0; group_index != groups.size(); ++group_index)
+        for (UInt32 name_index = 0; name_index != groups[group_index]->names.size(); ++name_index)
+            /// emplace: the first occurrence of a name wins, as in the flat map this replaces.
+            name_to_slot_draft.emplace(groups[group_index]->names[name_index], std::make_pair(group_index, name_index));
+
+    /// Route everything that ends up owned by the caches or the parts to the dedicated arena.
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-    auto build = buildSerializations(infos);
 
     std::lock_guard lock(serializations_cache_mutex);
 
-    /// Intern the per-column groups and the name lookup map, so that parts whose serialization
-    /// kinds differ in some columns still share the groups of every column they agree on (and the
-    /// lookup map, which does not depend on the kinds at all).
-    for (size_t i = 0; i != build.groups.size(); ++i)
+    /// Intern the groups this thread built (a concurrent load may have interned the same keys).
+    for (size_t i = 0; i != groups.size(); ++i)
     {
-        auto [it, inserted] = serialization_groups_cache.try_emplace(std::move(build.group_keys[i]));
+        auto [it, inserted] = serialization_groups_cache.try_emplace(std::move(group_keys[i]));
         if (!inserted)
         {
             if (auto shared = it->second.lock())
             {
-                build.groups[i] = std::move(shared);
+                groups[i] = std::move(shared);
                 continue;
             }
-            it->second = build.groups[i];
+            it->second = groups[i];
             continue;
         }
-        it->second = build.groups[i];
+        it->second = groups[i];
         serialization_groups_metric_handle.add(1);
     }
     sweepExpiredEntries(serialization_groups_cache, serialization_groups_size_after_sweep, serialization_groups_metric_handle);
 
-    PartSerializations::NameToSlotPtr name_to_slot = std::move(build.name_to_slot);
+    PartSerializations::NameToSlotPtr name_to_slot;
     {
-        auto [it, inserted] = serialization_name_slots_cache.try_emplace(build.name_to_slot_hash);
-        if (!inserted)
+        auto it = serialization_name_slots_cache.find(name_to_slot_hash);
+        if (it != serialization_name_slots_cache.end())
         {
-            /// The sequence hash is verified by full content comparison: on a mismatch (a hash
-            /// collision) the map is simply left unshared. Correctness never depends on the hash.
-            if (auto shared = it->second.lock())
-            {
-                if (*shared == *name_to_slot)
-                    name_to_slot = std::move(shared);
-            }
-            else
-                it->second = name_to_slot;
+            /// On a hash collision (different content) the map is simply left unshared below.
+            /// Correctness never depends on the hash.
+            if (auto shared = it->second.lock(); shared && *shared == name_to_slot_draft)
+                name_to_slot = std::move(shared);
         }
-        else
-            it->second = name_to_slot;
+
+        if (!name_to_slot)
+        {
+            /// The draft was built in the default arena; the interned copy (exact capacity)
+            /// belongs to the parts arena.
+            name_to_slot = std::make_shared<const PartSerializations::NameToSlot>(name_to_slot_draft);
+            if (it != serialization_name_slots_cache.end())
+                it->second = name_to_slot;
+            else
+                serialization_name_slots_cache.emplace(name_to_slot_hash, name_to_slot);
+        }
 
         /// This cache holds one entry per distinct name set (almost always exactly one), so
         /// expired entries are swept unconditionally.
         std::erase_if(serialization_name_slots_cache, [](const auto & entry) { return entry.second.expired(); });
     }
 
-    auto built = std::make_shared<const PartSerializations>(std::move(name_to_slot), std::move(build.groups));
+    auto built = std::make_shared<const PartSerializations>(std::move(name_to_slot), std::move(groups));
 
     auto [it, inserted] = serializations_cache.try_emplace(std::move(key));
     if (!inserted)

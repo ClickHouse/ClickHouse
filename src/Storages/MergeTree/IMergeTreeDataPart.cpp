@@ -689,14 +689,18 @@ std::pair<time_t, time_t> IMergeTreeDataPart::getMinMaxTime() const
 
 void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const SerializationInfoByName & new_infos, int32_t new_metadata_version)
 {
-    /// Per-part metadata (`serialization_infos` and the parts of `SharedPartColumns` and the
-    /// `serializations` map that end up being built here) lives as long as the part — i.e. far
-    /// longer than a query. Routing these allocations to the dedicated parts arena keeps them off
-    /// the default arena's pages, which would otherwise be pinned by per-part survivors and unable
-    /// to be returned to the OS while query allocations come and go.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+    {
+        /// Per-part metadata lives as long as the part — i.e. far longer than a query. Routing
+        /// these allocations to the dedicated parts arena keeps them off the default arena's
+        /// pages, which would otherwise be pinned by per-part survivors and unable to be returned
+        /// to the OS while query allocations come and go. The scope covers only the copy that the
+        /// part keeps; the shared bundle and serializations manage their own arena scopes around
+        /// the pieces that survive in the caches, so their transient build work stays in the
+        /// default arena.
+        ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
+        serialization_infos = new_infos;
+    }
 
-    serialization_infos = new_infos;
     metadata_version = new_metadata_version;
 
     /// Install the bundle into the part before anything below can throw: the cache entry lives
@@ -2138,13 +2142,8 @@ void IMergeTreeDataPart::loadColumns(bool require, bool load_metadata_version)
 
 void IMergeTreeDataPart::setColumnsSubstreams(const ColumnsSubstreams & columns_substreams_)
 {
-    /// The copy of `ColumnsSubstreams` used to be one of the heaviest per-part allocators (deep copy
-    /// of nested vector-of-pair-of-string-of-strings + per-substream maps). It is now shared across
-    /// parts with the same substreams, but the first copy of each distinct content is still built
-    /// here. Route it into the parts arena, same rationale as `setColumns` above.
-    ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-
     columns_substreams_.validateColumns(getColumns().getNames());
+    /// `internColumnsSubstreams` routes everything that survives in the cache to the parts arena.
     columns_substreams = shared_part_columns->internColumnsSubstreams(columns_substreams_);
 }
 
