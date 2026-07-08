@@ -1141,6 +1141,11 @@ private:
     /// hundred bytes and never triggers the row-wise split path.
     static size_t estimateAggregateColumnBytes(const IColumn & col)
     {
+        if (const auto * null_col = typeid_cast<const ColumnNullable *>(&col))
+            // Mirrors complexDataSize's nested-Nullable layout: 1 null byte per row plus the
+            // nested column's own aggregate cost. Needed because a LowCardinality(Nullable(T))
+            // dictionary is exactly this shape (see estimateLowCardTotalBytes below).
+            return col.size() + estimateAggregateColumnBytes(null_col->getNestedColumn());
         if (const auto * s = typeid_cast<const ColumnString *>(&col))
             return s->getChars().size() + (col.size() + 1) * sizeof(uint64_t);
         if (const auto * map_col = typeid_cast<const ColumnMap *>(&col))
@@ -1160,19 +1165,34 @@ private:
     static size_t estimateLowCardTotalBytes(const ColumnLowCardinality & lc, size_t row_count, bool materialized_const)
     {
         constexpr size_t header_bytes = 4 + 4 + 40; // dict_row_count + index_elem_width/pad + embedded ColDescriptor
-        // header_bytes is a fixed per-column structural cost present on the wire regardless of
-        // how many rows a given batch carries (see the matching comment in
-        // estimateTotalSerializedSize above) — a row_count == 0 reservation call must still
-        // charge it, but must not charge the dictionary's real (non-row-scaled) data.
-        if (row_count == 0)
-            return header_bytes;
-        const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
         if (materialized_const)
+        {
+            // header_bytes is a fixed per-column structural cost present on the wire
+            // regardless of how many rows a given batch carries; a row_count == 0 reservation
+            // call must still charge it, but must not charge the (row-scaled) materialized
+            // value cost below.
+            if (row_count == 0)
+                return header_bytes;
+            const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
             // A materializing format expands the single constant value row_count times; the
             // dictionary then holds just that one distinct value, and the index array is
             // row_count entries all pointing at it.
             return lc.getIndexes().sizeOfValueIfFixed() * row_count + estimateComplexRowBytes(dict_col, lc.getIndexes().getUInt(0)) + header_bytes;
-        return lc.getIndexes().sizeOfValueIfFixed() * row_count + estimateAggregateColumnBytes(dict_col) + header_bytes;
+        }
+        // Unlike header_bytes, the dictionary is NOT a "real content that scales with
+        // row_count, correctly zero for a 0-row batch" quantity: buildColDescriptor's
+        // COL_LOWCARD branch always writes `lc.getDictionary().getNestedColumn()` — the SAME
+        // dictionary object shared across every row-range slice of this argument (cut()/split
+        // doesn't prune it down to just that batch's used values) — so every batch produced
+        // from this same LowCardinality argument pays the dictionary's full cost regardless of
+        // how many rows that particular batch has. Treating it as zero at row_count == 0 (as
+        // an earlier version of this function did) undercounted the fixed per-batch
+        // reservation for a large shared dictionary.
+        const IColumn & dict_col = *lc.getDictionary().getNestedColumn();
+        size_t dict_bytes = estimateAggregateColumnBytes(dict_col);
+        if (row_count == 0)
+            return header_bytes + dict_bytes;
+        return lc.getIndexes().sizeOfValueIfFixed() * row_count + dict_bytes + header_bytes;
     }
 
     /// Top-level Variant only (nested Variant is validator-rejected, structurally unreachable);
@@ -1233,12 +1253,14 @@ private:
             const DataTypePtr & declared_type = declared_arguments[i];
             const IColumn * col = arg.column.get();
             size_t row_index = row;
+            bool materialized_const = false;
             if (typeid_cast<const ColumnConst *>(col))
             {
                 if (preserve_const)
                     continue; // fixed per-batch cost, not per-row
                 col = &typeid_cast<const ColumnConst &>(*col).getDataColumn();
                 row_index = 0; // materialized const columns only ever have row 0
+                materialized_const = true;
             }
             // See the matching unwrap in estimateTotalSerializedSize above.
             bool is_col_nullable = false;
@@ -1256,8 +1278,24 @@ private:
             else if (declared_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
                 total += declared_type->getSizeOfValueInMemory() + null_map_bytes;
             else if (typeid_cast<const ColumnArray *>(col) || typeid_cast<const ColumnTuple *>(col)
-                    || typeid_cast<const ColumnMap *>(col) || typeid_cast<const ColumnLowCardinality *>(col))
+                    || typeid_cast<const ColumnMap *>(col))
                 total += estimateComplexRowBytes(*col, row_index) + null_map_bytes;
+            else if (const auto * lc_col = typeid_cast<const ColumnLowCardinality *>(col))
+            {
+                if (materialized_const)
+                    // No dictionary/index concept on this wire (RowBinary/MsgPack/CSV/...):
+                    // the resolved value is broadcast in full on every row, matching what
+                    // estimateComplexRowBytes already computes for the nested-materialized case.
+                    total += estimateComplexRowBytes(*lc_col, row_index) + null_map_bytes;
+                else
+                    // Top-level direct COL_LOWCARD encoding: the dictionary's (potentially
+                    // large) cost is already reserved once per batch via
+                    // estimateLowCardTotalBytes (see estimateTotalSerializedSize above), so
+                    // this row's only genuine marginal cost is its compact index entry —
+                    // charging the resolved value's full size here too would double-count the
+                    // dictionary and split far more aggressively than the real wire cost needs.
+                    total += lc_col->getIndexes().sizeOfValueIfFixed() + null_map_bytes;
+            }
             else if (const auto * var_col = typeid_cast<const ColumnVariant *>(col))
                 total += estimateVariantRowBytes(*var_col, row_index) + null_map_bytes;
             else
