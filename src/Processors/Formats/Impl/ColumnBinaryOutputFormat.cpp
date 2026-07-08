@@ -33,7 +33,8 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
     if (rows == 0 || block.columns() == 0)
         return std::nullopt;
 
-    uint64_t cursor = ColumnarV1::COLUMNAR_HEADER_BYTES + block.columns() * ColumnarV1::COLUMNAR_DESC_BYTES;
+    const uint64_t hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + block.columns() * ColumnarV1::COLUMNAR_DESC_BYTES;
+    uint64_t cursor = hdr_desc_size;
 
     for (size_t i = 0; i < block.columns(); ++i)
     {
@@ -48,6 +49,15 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
         ColumnarV1::ColDescriptor desc{};
         cursor = ColumnarV1::buildColDescriptor(actual, is_const, is_nullable, col_rows, cursor, desc);
     }
+
+    // Callers that preallocate straight from this return value (e.g. the buffered WASM guest
+    // buffer) would otherwise allocate an oversized buffer before consume()'s equivalent check
+    // ever runs. Throw here too so an oversized frame is rejected before any allocation happens,
+    // not only before the actual write.
+    if (cursor - hdr_desc_size > max_frame_size_)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
+            cursor - hdr_desc_size, max_frame_size_);
 
     return cursor;
 }
