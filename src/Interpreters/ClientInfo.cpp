@@ -218,6 +218,12 @@ void ClientInfo::write(WriteBuffer & out, UInt64 server_protocol_revision, bool 
 
         if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             writeBinary(http_referer, out);
+
+        if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
+        {
+            writeBinary(http_handler_name, out);
+            writeBinary(http_request_url, out);
+        }
     }
 
     if (server_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)
@@ -349,6 +355,12 @@ void ClientInfo::read(ReadBuffer & in, UInt64 client_protocol_revision, bool wit
 
         if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_REFERER_IN_CLIENT_INFO)
             readBinary(http_referer, in);
+
+        if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_HTTP_HANDLER_IN_CLIENT_INFO)
+        {
+            readBinary(http_handler_name, in);
+            readBinary(http_request_url, in);
+        }
     }
 
     if (client_protocol_revision >= DBMS_MIN_REVISION_WITH_QUOTA_KEY_IN_CLIENT_INFO)

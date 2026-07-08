@@ -26,6 +26,7 @@ HWHO="hwho_${DB}"
 HDBNAME="hdbname_${DB}"
 HHDR="hhdr_${DB}"
 HBRANCH="hbranch_${DB}"
+HDIST="hdist_${DB}"
 HORDA="aaa_ord_${DB}"
 HORDZ="zzz_ord_${DB}"
 USER="u_${DB}"
@@ -36,7 +37,7 @@ cleanup() {
     # and under heavy configurations (sanitizers, S3 storage, metadata in Keeper), so we minimize the
     # number of separate clickhouse-client invocations to keep the running time well under the limit.
     local drops=""
-    for h in "$HA" "$HB" "$HC" "$HP" "$HPOST" "$HINS" "$HPUT" "$HDEL" "$HPROTO" "$HCONST" "$HSECRET" "$HVIEW" "$HWHO" "$HDBNAME" "$HHDR" "$HBRANCH" "$HORDA" "$HORDZ" "hbad_${DB}" "hx_${DB}"; do
+    for h in "$HA" "$HB" "$HC" "$HP" "$HPOST" "$HINS" "$HPUT" "$HDEL" "$HPROTO" "$HCONST" "$HSECRET" "$HVIEW" "$HWHO" "$HDBNAME" "$HHDR" "$HBRANCH" "$HDIST" "$HORDA" "$HORDZ" "hbad_${DB}" "hx_${DB}"; do
         drops+="DROP HANDLER IF EXISTS \`$h\`; "
     done
     $CLICKHOUSE_CLIENT -q "${drops}DROP USER IF EXISTS \`$USER\`, \`$RUSER\`"
@@ -62,6 +63,12 @@ ${CLICKHOUSE_CURL} -sS "${BASE}${P}/introspect?max_block_size=100"
 echo "=== currentHandler() can be used to branch query behavior ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HBRANCH\` URL '${P}/branch' AS SELECT if(currentHandler() = '${HBRANCH}', 'matched', 'no') AS r FORMAT TSV"
 ${CLICKHOUSE_CURL} -sS "${BASE}${P}/branch"
+
+echo "=== currentHandler() and currentRequestURL() are visible on remote shards of a distributed query ==="
+# The handler name and request URL live in ClientInfo, so they are serialized on distributed fan-out.
+# Evaluate them on a remote shard via remote(view(...)) and check they match the values seen locally.
+$CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HDIST\` URL '${P}/dist' AS SELECT * FROM remote('127.0.0.2', view(SELECT currentHandler() = '${HDIST}' AS h_ok, currentRequestURL() = '${P}/dist' AS u_ok)) FORMAT TSV"
+${CLICKHOUSE_CURL} -sS "${BASE}${P}/dist"
 
 echo "=== parameterized query via regexp URL capture ==="
 $CLICKHOUSE_CLIENT -q "CREATE HANDLER \`$HC\` URL REGEXP '${P}/item/(?P<id>[0-9]+)' AS SELECT {id:UInt32} AS id FORMAT TSV"

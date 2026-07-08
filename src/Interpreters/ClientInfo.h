@@ -122,6 +122,12 @@ public:
     String http_user_agent;
     String http_referer;
     std::unordered_map<String, String> http_headers;
+    /// Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query (empty otherwise). Kept in
+    /// ClientInfo so that `currentHandler()` and the query_log report it on remote shards of a distributed query.
+    String http_handler_name;
+    /// The HTTP request URL (path and query string) that invoked the query (empty for non-HTTP). Kept in
+    /// ClientInfo so that `currentRequestURL()` and the query_log report it on remote shards.
+    String http_request_url;
 
     /// For mysql and postgresql
     UInt64 connection_id = 0;

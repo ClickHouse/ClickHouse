@@ -8,6 +8,8 @@ prefixed
 1	1
 === currentHandler() can be used to branch query behavior ===
 matched
+=== currentHandler() and currentRequestURL() are visible on remote shards of a distributed query ===
+1	1
 === parameterized query via regexp URL capture ===
 12345
 === parameterized query via URL query-string parameter ===
