@@ -1,0 +1,15 @@
+all_1_1_0	id	UInt64	['Uniq','MinMax']	1000	0	999	1000	\N
+all_1_1_0	n	Nullable(Int64)	['Basic']	1000	1	999	\N	100
+all_1_1_0	s	String	['Uniq']	1000	\N	\N	100	\N
+all_1_1_0	s2	String	['Basic']	1000	\N	\N	\N	\N
+all_1_1_0	t	Float64	['TDigest']	1000	\N	\N	\N	\N
+all_2_2_0	id	UInt64	['Uniq','MinMax']	500	1000	1499	500	\N
+all_2_2_0	n	Nullable(Int64)	['Basic']	500	\N	\N	\N	500
+all_2_2_0	s	String	['Uniq']	500	\N	\N	1	\N
+all_2_2_0	s2	String	['Basic']	500	\N	\N	\N	\N
+all_2_2_0	t	Float64	['TDigest']	500	\N	\N	\N	\N
+compact
+id	UInt64	['MinMax']	100	0	99	\N
+s	String	['Uniq']	100	\N	\N	3
+no stats
+0
