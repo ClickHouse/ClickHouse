@@ -756,9 +756,9 @@ def test_insert(started_cluster):
     ],
 )
 def test_insert_into_table_without_optional_metadata_arrays(started_cluster, fields_to_remove):
-    # The Iceberg spec marks snapshots / metadata-log / snapshot-log as optional, so external
-    # engines may create empty-table metadata that omits any of them. Inserting into such a table
-    # must still succeed instead of aborting in the metadata write path.
+    # The Iceberg spec marks snapshots / metadata-log / snapshot-log / refs as optional, so
+    # external engines may create empty-table metadata that omits any of them. Inserting into
+    # such a table must still succeed instead of aborting in the metadata write path.
     node = started_cluster.instances["node1"]
 
     test_ref = f"test_insert_no_optional_arrays_{uuid.uuid4()}"
