@@ -31,3 +31,14 @@ SELECT
     toDateTime64OrNull('1234', 3, 'UTC') = toDateTime64('1234', 3, 'UTC'),
     toDateTime64OrNull('0', 3, 'UTC')    = toDateTime64('0', 3, 'UTC')
 "
+
+# Leading-dot fractions long enough / zero-padded to reach the optimistic path (>= 19 bytes) must also
+# agree between the throwing and non-throwing entrypoints (the optimistic path used to reject '.').
+${CLICKHOUSE_LOCAL} -q "
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
+SELECT
+    toDateTime64OrNull('.1234567890123456789', 3, 'UTC') IS NOT NULL
+        AND toDateTime64OrNull('.1234567890123456789', 3, 'UTC') = toDateTime64('.1234567890123456789', 3, 'UTC'),
+    toDateTime64OrNull(toFixedString('.5', 20), 3, 'UTC') IS NOT NULL
+        AND toDateTime64OrNull(toFixedString('.5', 20), 3, 'UTC') = toDateTime64(toFixedString('.5', 20), 3, 'UTC')
+"

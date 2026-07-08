@@ -904,6 +904,21 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     if (s + date_time_broken_down_length > buf.buffer().end())
         return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, fraction_prefix);
 
+    /// In DateTime64 mode a value like ".5" or "-.5" has no integer part: the whole part is zero and the
+    /// caller reads the fraction. Handle it before the date/integer classification below, because zero
+    /// padding (FixedString) or a long fractional tail can make s[4] == s[7] look like a date delimiter,
+    /// which the fallback avoids but this optimistic path would otherwise reject.
+    if constexpr (dt64_mode)
+    {
+        if (s[0] == '.' || ((s[0] == '-' || s[0] == '+') && s[1] == '.'))
+        {
+            if (s[0] == '-' || s[0] == '+')
+                ++buf.position();
+            datetime = 0;
+            return ReturnType(true);
+        }
+    }
+
     if (!(s[4] == s[7] && (s[4] < '0' || s[4] > '9')))
     {
         /// Not a YYYY-MM-DD date, so it is a unix timestamp, possibly with a fractional part that is handled by the caller.
