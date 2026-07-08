@@ -4,6 +4,7 @@
 -- `coalesce(a_1, ..., a_N) <op> const` with N > 2.
 -- See `src/Storages/MergeTree/KeyCondition.cpp::tryRewriteCoalesceComparison`.
 
+SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan = 1;
 SET use_query_condition_cache = 0;
 SET use_skip_indexes_on_data_read = 0;
@@ -31,7 +32,8 @@ SETTINGS index_granularity = 64, index_granularity_bytes = 0,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    add_minmax_index_for_numeric_columns = 0;
+    add_minmax_index_for_numeric_columns = 0,
+    default_compression_codec = 'LZ4'; -- index/granule output is codec-stable; the default codec is randomized server-side
 
 INSERT INTO tab3
 SELECT number,
@@ -83,7 +85,8 @@ SETTINGS index_granularity = 64, index_granularity_bytes = 0,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    add_minmax_index_for_numeric_columns = 0;
+    add_minmax_index_for_numeric_columns = 0,
+    default_compression_codec = 'LZ4'; -- index/granule output is codec-stable; the default codec is randomized server-side
 
 INSERT INTO tab3_mid
 SELECT number,
@@ -135,7 +138,8 @@ SETTINGS index_granularity = 64, index_granularity_bytes = 0,
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
     max_bytes_to_merge_at_max_space_in_pool = 1,
-    add_minmax_index_for_numeric_columns = 0;
+    add_minmax_index_for_numeric_columns = 0,
+    default_compression_codec = 'LZ4'; -- index/granule output is codec-stable; the default codec is randomized server-side
 
 INSERT INTO tab4
 SELECT number,

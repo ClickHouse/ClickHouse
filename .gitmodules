@@ -27,7 +27,7 @@
 	url = https://github.com/ClickHouse/capnproto
 [submodule "contrib/re2"]
 	path = contrib/re2
-	url = https://github.com/google/re2
+	url = https://github.com/ClickHouse/re2
 [submodule "contrib/mariadb-connector-c"]
 	path = contrib/mariadb-connector-c
 	url = https://github.com/ClickHouse/mariadb-connector-c
@@ -399,3 +399,9 @@
 [submodule "contrib/xsimd"]
 	path = contrib/xsimd
 	url = https://github.com/xtensor-stack/xsimd
+[submodule "contrib/wagyu"]
+	path = contrib/wagyu
+	url = https://github.com/ClickHouse/wagyu
+[submodule "contrib/mapbox-geometry"]
+	path = contrib/mapbox-geometry
+	url = https://github.com/ClickHouse/geometry.hpp

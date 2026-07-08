@@ -3,6 +3,8 @@
 #include <IO/OffsetMap.h>
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/ChainedBuffers.h>
+#include <IO/ReadContinuityTracker.h>
+#include <IO/LongConnectionLimit.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
@@ -26,11 +28,30 @@ class ReaderExecutor
 {
 public:
     static constexpr size_t DEFAULT_BLOCK_SIZE = 1 * 1024 * 1024; /// 1 MiB
+    static constexpr size_t DEFAULT_MIN_BYTES_FOR_SEEK = 2 * 1024 * 1024; /// 2 MiB
+    static constexpr size_t DEFAULT_MAX_TAIL_FOR_DRAIN = 1 * 1024 * 1024; /// 1 MiB
+
+    /// Tunables, grouped so the constructor stays stable as the executor gains knobs (cache,
+    /// prefetch, ...). `long_connection_limit` null disables connection reuse (the stateless path);
+    /// the caller fills these from settings on the `use_reader_executor` path.
+    struct Options
+    {
+        size_t min_bytes_for_seek = DEFAULT_MIN_BYTES_FOR_SEEK;
+        size_t block_size = DEFAULT_BLOCK_SIZE;
+        size_t max_tail_for_drain = DEFAULT_MAX_TAIL_FOR_DRAIN;
+        std::shared_ptr<LongConnectionLimit> long_connection_limit = nullptr;
+    };
 
     ReaderExecutor(
         std::shared_ptr<IFileBasedSourceReader> source,
         const StoredObjects & objects,
-        size_t block_size = DEFAULT_BLOCK_SIZE);
+        Options options);
+
+    /// All-defaults overload (cannot be a default argument: `Options{}` in a member declaration
+    /// would need the initializers in a complete-class context).
+    ReaderExecutor(
+        std::shared_ptr<IFileBasedSourceReader> source,
+        const StoredObjects & objects);
 
     ~ReaderExecutor();
 
@@ -57,8 +78,8 @@ public:
 private:
     /// Per-instance read-path counters. `add` is the only mutator and the single place a
     /// counter maps to its ProfileEvent (and modeled-cost contribution), so they never
-    /// drift and every update is instantly observable. The cache / connection counters
-    /// have no caller in this minimal slice, so they stay 0 until their features land.
+    /// drift and every update is instantly observable. The cache counters have no caller
+    /// in this minimal slice, so they stay 0 until caching lands.
     struct Stats
     {
         enum Counter : size_t
@@ -70,6 +91,10 @@ private:
             CacheGetRequests,
             CachePopulateRequests,
             WorkMicroseconds,
+            LongConnectionOpened,       /// held connections opened for reuse
+            LongConnectionHits,         /// windows served from a held connection
+            LongConnectionFallbacks,    /// opens skipped because no slot was free
+            LongConnectionBytes,        /// bytes served through held connections
             NumCounters,
         };
 
@@ -96,6 +121,46 @@ private:
         Stopwatch watch;
     };
 
+    /// A held source connection (a bounded GET) reused across sequential windows:
+    /// `readInto` streams forward from it, `skipForward` bridges a small forward gap by
+    /// discarding bytes on the open stream. Offsets are object-local.
+    struct LongConnection
+    {
+        std::unique_ptr<ReadBufferFromFileBase> buffer;
+        String object_path;
+        size_t opened_at = 0;
+        size_t current_position = 0;
+        size_t read_until = 0;
+        LongConnectionSlot slot;
+
+        bool servesObject(const String & path) const { return object_path == path; }
+        bool atBound() const { return current_position >= read_until; }
+        bool isComplete(bool at_eof) const { return at_eof || atBound(); }
+        /// Whether any bytes have been consumed from the stream (read or skipped) since it opened.
+        bool consumedAnyBytes() const { return current_position > opened_at; }
+        /// Forward, within `bridgeable_gap`, and `[off, off+want)` stays inside the bound.
+        bool canContinue(size_t off, size_t want, size_t bridgeable_gap) const
+        {
+            return off >= current_position && off - current_position <= bridgeable_gap && off + want <= read_until;
+        }
+
+        /// Read up to `want` bytes from the open stream into `dst`; advances the frontier.
+        size_t readInto(char * dst, size_t want);
+        /// Discard up to `gap` bytes on the stream (over-read) to advance over a hole.
+        size_t skipForward(size_t gap, size_t block_bytes);
+
+        struct DrainResult
+        {
+            size_t bytes = 0;   /// bytes actually drained
+            bool failed = false;   /// a read error interrupted the drain
+        };
+        /// If only a tail <= `max_tail` remains to the bound, read it out so the connection
+        /// completes (pool-reusable). The drained bytes are discarded (keep-alive only), so a read
+        /// error here must not fail the query: it is caught, logged, and reported via
+        /// `DrainResult::failed`. Best-effort -- never throws.
+        DrainResult drainTail(size_t max_tail, size_t block_bytes, LoggerPtr log) noexcept;
+    };
+
     /// At known size, EOF is `position >= totalSize`. At unknown size, a short
     /// source read latches `reached_eof`; a backward `seek` clears it. A
     /// `read_until` bound caps EOF earlier.
@@ -106,6 +171,22 @@ private:
         return !offset_map.hasUnknownSize() && position >= totalSize();
     }
 
+    /// Predicted forward reach as a logical end position, clamped to the file end.
+    size_t clampReach(size_t reach, size_t logical_pos) const;
+    /// Open a long connection now? True when a slot budget is configured, none is held,
+    /// and the estimator predicts the read continues past this window.
+    bool shouldOpenLongConnection() const;
+    /// Acquire a slot and open a held connection on `object` at `object_offset`; false if
+    /// no slot was available (caller falls back to a one-shot read).
+    bool tryOpenLongConnection(const StoredObject & object, size_t object_offset);
+    /// Serve one window (<= `want`) from the held connection, bridging a small leading gap;
+    /// releases the connection if it reaches its bound. Precondition: `canContinue`.
+    size_t serveFromLongConnection(size_t object_offset, size_t want, char * dst);
+    /// One-shot bounded read (the stateless path): open, seek, read `want` into `dst`.
+    size_t readOneShot(const StoredObject & object, size_t object_offset, size_t want, char * dst);
+    /// Drop the held connection: drain a small tail to complete it, else account it incomplete.
+    void dropLongConnection();
+
     std::shared_ptr<IFileBasedSourceReader> source;
     OffsetMap offset_map;
     String log_file_path;
@@ -114,6 +195,15 @@ private:
     bool reached_eof = false;
     /// Hard upper bound on the logical read position; `nullopt` = read to end.
     std::optional<size_t> read_until;
+
+    /// Held source connection reused across sequential windows; empty when none is open.
+    std::optional<LongConnection> long_conn;
+    /// Forward-reach estimator, fed `recordReadRange`/`recordSeek`; drives the open-long decision.
+    ReadContinuityTracker continuity_tracker;
+    /// Connection-reuse budget; null disables long connections (the stateless path).
+    std::shared_ptr<LongConnectionLimit> long_connection_limit;
+    size_t min_bytes_for_seek;
+    size_t max_tail_for_drain;
 
     Stats stats;
     CurrentMetrics::Increment active_metric;  /// the ReaderExecutorActive gauge, for the lifetime

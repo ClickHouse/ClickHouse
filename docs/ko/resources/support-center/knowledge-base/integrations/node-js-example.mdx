@@ -1,0 +1,127 @@
+---
+title: NodeJS에서 @clickhouse/client 사용하기
+description: "Node.js 애플리케이션에서 @clickhouse/client를 사용해 ClickHouse와 상호 작용하고 쿼리를 실행하는 방법을 알아보세요."
+date: 2023-11-22
+tags: ['언어 클라이언트']
+keywords: ['NodeJS']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="use-nodejs-with-clickhouseclient">
+  ## NodeJS에서 @clickhouse/client 사용하기
+</div>
+
+다음은 기본적인 코드 예제 파일 `main.ts`입니다.
+
+`Package.json` (`./` 경로 아래에 배치):
+
+```json
+{
+  "name": "a simple clickhouse client example",
+  "version": "1.0.0",
+  "main": "main.js",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^0.2.6"
+  }
+}
+```
+
+`Main.ts` (`./src` 아래에 둡니다):
+
+```ts
+import { ClickHouseClient, createClient } from '@clickhouse/client'; // or '@clickhouse/client-web'
+
+interface ClickHouseResultSet<T> {
+  meta: Meta[];
+  data: T[];
+  rows: number;
+  statistics: Statistics;
+}
+
+interface Statistics {
+  elapsed: number;
+  rows_read: number;
+  bytes_read: number;
+}
+
+interface Meta {
+  name: string;
+  type: string;
+}
+
+interface Count {
+  c: number;
+}
+
+//`host`, `username`, `password`, `database` 등의 클라이언트 연결 매개변수를 필요에 따라 교체하십시오.
+
+const initClickHouseClient = async (): Promise<ClickHouseClient> => {
+  const client = createClient({
+    host: 'https://FQDN.aws.clickhouse.cloud',
+    username: 'default',
+    password: 'password',
+    database: 'default',
+    application: `pingpong`,
+  });
+
+  console.log('ClickHouse ping');
+  if (!(await client.ping())) {
+    throw new Error('failed to ping clickhouse!');
+  }
+  console.log('ClickHouse pong!');
+  return client;
+};
+
+const main = async () => {
+  console.log('Initialising clickhouse client');
+  const client = await initClickHouseClient();
+
+  const row = await client.query({
+    query: `SELECT count() AS c FROM system.tables WHERE database='system'`,
+  });
+
+  const jsonRow: ClickHouseResultSet<Count> = await row.json();
+
+  console.log(`I have found ${jsonRow.data[0].c} system tables!`);
+
+  await client.close();
+  console.log(`👋`);
+};
+
+main();
+```
+
+패키지를 설치하려면 `./` 디렉터리에서 `yarn`을 실행하세요:
+
+```
+$ yarn
+yarn install v1.22.19
+[1/4] 🔍  Resolving packages...
+[2/4] 🚚  Fetching packages...
+[3/4] 🔗  Linking dependencies...
+[4/4] 🔨  Building fresh packages...
+✨  Done in 0.14s.
+```
+
+다음 명령으로 `./`에서 `main.ts` 코드를 실행합니다:
+
+```
+$ npx ts-node src/main.ts
+```
+
+다음과 같이 출력됩니다:
+
+```
+Initialising clickhouse client
+ClickHouse ping
+ClickHouse pong!
+I have found 120 system tables!
+👋
+```

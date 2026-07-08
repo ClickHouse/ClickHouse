@@ -1,0 +1,480 @@
+---
+description: 'تشرح هذه الصفحة كيفية تهيئة ClickHouse server باستخدام ملفات الإعداد
+  بصيغة XML أو YAML.'
+sidebarTitle: 'ملفات الإعداد'
+slug: /operations/configuration-files
+title: 'ملفات الإعداد'
+doc_type: 'guide'
+---
+
+<Note>
+  ملفات الإعداد وملفات التعريف للإعدادات المستندة إلى XML غير مدعومة في ClickHouse Cloud. لذلك، في ClickHouse Cloud، لن تجد ملف `config.xml`. وبدلًا من ذلك، يجب استخدام أوامر SQL لإدارة الإعدادات من خلال ملفات تعريف الإعدادات.
+
+  للمزيد من التفاصيل، راجع [&quot;تهيئة الإعدادات&quot;](/ar/products/cloud/reference/settings)
+</Note>
+
+يمكن تهيئة ClickHouse server باستخدام ملفات إعداد بصيغة XML أو YAML.
+في معظم أنواع التثبيت، يعمل ClickHouse server باستخدام `/etc/clickhouse-server/config.xml` بوصفه ملف الإعداد الافتراضي، ولكن يمكن أيضًا تحديد موقع ملف الإعداد يدويًا عند بدء تشغيل الخادم باستخدام خيار سطر الأوامر `--config-file` أو `-C`.
+يمكن وضع ملفات إعداد إضافية داخل الدليل `config.d/` نسبةً إلى ملف الإعداد الرئيسي، على سبيل المثال داخل الدليل `/etc/clickhouse-server/config.d/`.
+تُدمج الملفات الموجودة في هذا الدليل مع الإعداد الرئيسي في خطوة معالجة مسبقة قبل تطبيق الإعداد في ClickHouse server.
+تُدمج ملفات الإعداد بترتيب أبجدي.
+ولتسهيل التحديثات وتحسين التنظيم إلى وحدات، من أفضل الممارسات إبقاء ملف `config.xml` الافتراضي دون تعديل، ووضع أي تخصيصات إضافية في `config.d/`.
+يوجد إعداد ClickHouse Keeper في `/etc/clickhouse-keeper/keeper_config.xml`.
+وبالمثل، يجب وضع ملفات الإعداد الإضافية الخاصة بـ Keeper في `/etc/clickhouse-keeper/keeper_config.d/`.
+
+يمكن المزج بين ملفات إعداد XML وYAML، فعلى سبيل المثال يمكن أن يكون لديك ملف إعداد رئيسي `config.xml` وملفات إعداد إضافية هي `config.d/network.xml` و`config.d/timezone.yaml` و`config.d/keeper.yaml`.
+لا يُدعم المزج بين XML وYAML داخل ملف إعداد واحد.
+يجب أن تستخدم ملفات إعداد XML الوسم الأعلى مستوى `<clickhouse>...</clickhouse>`.
+في ملفات إعداد YAML، يكون `clickhouse:` اختياريًا، وإذا كان غير موجود، فإن المُحلِّل يدرجه تلقائيًا.
+
+<div id="merging">
+  ## دمج ملفات الإعداد
+</div>
+
+يُدمَج ملفا إعداد (عادةً ملف الإعداد الرئيسي وملف إعداد آخر من `config.d/`) كما يلي:
+
+* إذا ظهرت عقدة (أي `path` يؤدي إلى عنصر) في كلا الملفين ولم تكن تحتوي على السمات `replace` أو `remove`، فتُضمَّن في ملف الإعداد المدمج، كما تُضمَّن العناصر الفرعية من كلتا العقدتين وتُدمَج تكراريًا.
+* إذا كانت إحدى العقدتين تحتوي على السمة `replace`، فتُضمَّن في ملف الإعداد المدمج، ولكن لا تُضمَّن إلا العناصر الفرعية من العقدة التي تحتوي على السمة `replace`.
+* إذا كانت إحدى العقدتين تحتوي على السمة `remove`، فلا تُضمَّن العقدة في ملف الإعداد المدمج (وإذا كانت موجودة بالفعل، فتُحذَف).
+
+على سبيل المثال، إذا كان لديك ملفا الإعداد التاليان:
+
+```xml title="config.xml"
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+    </config_a>
+    <config_b>
+        <setting_2>2</setting_2>
+    </config_b>
+    <config_c>
+        <setting_3>3</setting_3>
+    </config_c>
+</clickhouse>
+```
+
+و
+
+```xml title="config.d/other_config.xml"
+<clickhouse>
+    <config_a>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b replace="replace">
+        <setting_5>5</setting_5>
+    </config_b>
+    <config_c remove="remove">
+        <setting_6>6</setting_6>
+    </config_c>
+</clickhouse>
+```
+
+سيكون ملف التهيئة الناتج بعد الدمج كما يلي:
+
+```xml
+<clickhouse>
+    <config_a>
+        <setting_1>1</setting_1>
+        <setting_4>4</setting_4>
+    </config_a>
+    <config_b>
+        <setting_5>5</setting_5>
+    </config_b>
+</clickhouse>
+```
+
+<div id="from_env_zk">
+  ### الاستبدال باستخدام متغيرات البيئة وعُقد ZooKeeper
+</div>
+
+لتحديد أن قيمة أحد العناصر يجب أن تُستبدل بقيمة متغير بيئة، يمكنك استخدام السمة `from_env`.
+
+على سبيل المثال، مع متغير البيئة `$MAX_QUERY_SIZE = 150000`:
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size from_env="MAX_QUERY_SIZE"/>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+سيكون التكوين الناتج كما يلي:
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+يمكن فعل الأمر نفسه باستخدام `from_zk` (عقدة ZooKeeper):
+
+```xml
+<clickhouse>
+    <postgresql_port from_zk="/zk_configs/postgresql_port"/>
+</clickhouse>
+```
+
+```shell
+# clickhouse-keeper-client
+/ :) touch /zk_configs
+/ :) create /zk_configs/postgresql_port "9005"
+/ :) get /zk_configs/postgresql_port
+9005
+```
+
+لينتج عن ذلك الإعداد التالي:
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+<div id="default-values">
+  #### القيم الافتراضية
+</div>
+
+قد يحتوي عنصر يحمل السمة `from_env` أو `from_zk` أيضًا على السمة `replace="1"` (ويجب أن تظهر الأخيرة قبل `from_env`/`from_zk`).
+في هذه الحالة، يمكن للعنصر أيضًا تحديد قيمة افتراضية.
+تكون قيمة العنصر هي قيمة متغير البيئة أو عقدة ZooKeeper إذا كانت معيّنة، وإلا فتكون القيمة الافتراضية.
+
+يتكرر المثال السابق، ولكن بافتراض أن `MAX_QUERY_SIZE` غير معيّن:
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size replace="1" from_env="MAX_QUERY_SIZE">150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+لينتج عن ذلك الإعداد التالي:
+
+```xml
+<clickhouse>
+    <profiles>
+        <default>
+            <max_query_size>150000</max_query_size>
+        </default>
+    </profiles>
+</clickhouse>
+```
+
+<div id="substitution-with-file-content">
+  ## الاستبدال بمحتوى الملف
+</div>
+
+يمكن أيضًا استبدال أجزاء من التهيئة بمحتويات الملفات. ويمكن تنفيذ ذلك بطريقتين:
+
+* *استبدال القيم*: إذا كان العنصر يحتوي على السمة `incl`، فستُستبدل قيمته بمحتوى الملف المشار إليه. يكون المسار إلى الملف الذي يحتوي على قيم الاستبدال هو `/etc/metrika.xml` افتراضيًا. ويمكن تغيير ذلك في العنصر [`include_from`](/ar/reference/settings/server-settings/settings#include_from) ضمن تهيئة الخادم. وتُحدَّد قيم الاستبدال في عناصر `/clickhouse/substitution_name` داخل هذا الملف. وإذا لم تكن قيمة الاستبدال المحددة في `incl` موجودة، فسيُسجَّل ذلك في السجل. ولمنع ClickHouse من تسجيل قيم الاستبدال المفقودة، حدِّد السمة `optional="true"` (على سبيل المثال، إعدادات [الماكرو](/ar/reference/settings/server-settings/settings#macros)).
+* *استبدال العناصر*: إذا كنت تريد استبدال العنصر بالكامل بقيمة استبدال، فاستخدم `include` اسمًا للعنصر. ويمكن الجمع بين اسم العنصر `include` والسمة `from_zk = "/path/to/node"`. في هذه الحالة، تُستبدل قيمة العنصر بمحتويات عقدة ZooKeeper الموجودة في `/path/to/node`. وينجح ذلك أيضًا إذا خزّنت شجرة XML فرعية كاملة بوصفها عقدة ZooKeeper، إذ ستُدرج بالكامل في العنصر المصدر.
+
+يظهر مثال على ذلك أدناه:
+
+```xml
+<clickhouse>
+    <!-- Appends XML subtree found at `/profiles-in-zookeeper` ZK path to `<profiles>` element. -->
+    <profiles from_zk="/profiles-in-zookeeper" />
+
+    <users>
+        <!-- Replaces `include` element with the subtree found at `/users-in-zookeeper` ZK path. -->
+        <include from_zk="/users-in-zookeeper" />
+        <include from_zk="/other-users-in-zookeeper" />
+    </users>
+</clickhouse>
+```
+
+إذا كنت تريد دمج محتوى الاستبدال مع التهيئة الحالية بدلًا من إلحاقه بها، فيمكنك استخدام السمة `merge="true"`. على سبيل المثال: `<include from_zk="/some_path" merge="true">`. في هذه الحالة، ستُدمج التهيئة الحالية مع المحتوى القادم من الاستبدال، وستُستبدل إعدادات التهيئة الحالية بالقيم القادمة من الاستبدال.
+
+<div id="encryption">
+  ## تشفير الإعدادات وإخفاؤها
+</div>
+
+يمكنك استخدام التشفير المتماثل لتشفير عنصر من عناصر الإعدادات، مثل كلمة مرور بنص واضح أو مفتاح خاص.
+للقيام بذلك، اضبط أولًا [ترميز التشفير](/ar/reference/statements/create/table#encryption-codecs)، ثم أضف السمة `encrypted_by` إلى العنصر المراد تشفيره، على أن تكون قيمتها اسم ترميز التشفير.
+
+وعلى خلاف السمات `from_zk` و`from_env` و`incl` أو العنصر `include`، لا يُجرى أي استبدال (أي فك تشفير القيمة المشفرة) في الملف المُعالَج مسبقًا.
+ولا يحدث فك التشفير إلا وقت التشغيل داخل عملية الخادم.
+
+على سبيل المثال:
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex>00112233445566778899aabbccddeeff</key_hex>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+يمكن أيضًا تطبيق السمتين [`from_env`](#from_env_zk) و[`from_zk`](#from_env_zk) على `encryption_codecs`:
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_env="CLICKHOUSE_KEY_HEX"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+    <interserver_http_credentials>
+        <user>admin</user>
+        <password encrypted_by="AES_128_GCM_SIV">961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+يمكن تعريف مفاتيح التشفير والقيم المشفّرة في أيٍّ من ملفَي الإعداد.
+
+فيما يلي مثال على `config.xml`:
+
+```xml
+<clickhouse>
+
+    <encryption_codecs>
+        <aes_128_gcm_siv>
+            <key_hex from_zk="/clickhouse/aes128_key_hex"/>
+        </aes_128_gcm_siv>
+    </encryption_codecs>
+
+</clickhouse>
+```
+
+فيما يلي مثال على `users.xml`:
+
+```xml
+<clickhouse>
+
+    <users>
+        <test_user>
+            <password encrypted_by="AES_128_GCM_SIV">96280000000D000000000030D4632962295D46C6FA4ABF007CCEC9C1D0E19DA5AF719C1D9A46C446</password>
+            <profile>default</profile>
+        </test_user>
+    </users>
+
+</clickhouse>
+```
+
+لتشفير قيمة، يمكنك استخدام البرنامج (كمثال) `encrypt_decrypt`:
+
+```bash
+./encrypt_decrypt /etc/clickhouse-server/config.xml -e AES_128_GCM_SIV abcd
+```
+
+```text
+961F000000040000000000EEDDEF4F453CFE6457C4234BD7C09258BD651D85
+```
+
+حتى مع عناصر التهيئة المشفَّرة، تظل العناصر المشفَّرة ظاهرة في الملف المُعالَج مسبقًا.
+إذا كانت هذه مشكلة في عملية نشر ClickHouse لديك، فهناك بديلان: إما ضبط أذونات الملف المُعالَج مسبقًا على 600، أو استخدام السمة `hide_in_preprocessed`.
+
+على سبيل المثال:
+
+```xml
+<clickhouse>
+
+    <interserver_http_credentials hide_in_preprocessed="true">
+        <user>admin</user>
+        <password>secret</password>
+    </interserver_http_credentials>
+
+</clickhouse>
+```
+
+<div id="user-settings">
+  ## إعدادات المستخدم
+</div>
+
+يمكن لملف `config.xml` تحديد إعداد منفصل يتضمن إعدادات المستخدم وملفات التعريف والحصص. ويُحدَّد المسار النسبي لهذا الإعداد في العنصر `users_config`. وتكون قيمته افتراضيًا `users.xml`. وإذا لم يتم تحديد `users_config`، فستُحدَّد إعدادات المستخدم وملفات التعريف والحصص مباشرةً في `config.xml`.
+
+يمكن تقسيم إعدادات المستخدم إلى ملفات منفصلة، على غرار `config.xml` و`config.d/`.
+ويُحدَّد اسم الدليل على أنه قيمة الإعداد `users_config` بعد حذف اللاحقة `.xml` وإضافة `.d`.
+ويُستخدَم الدليل `users.d` افتراضيًا، لأن القيمة الافتراضية لـ `users_config` هي `users.xml`.
+
+لاحظ أن ملفات التهيئة تُدمَج أولًا مع مراعاة الإعدادات، ثم تُعالَج التضمينات بعد ذلك. راجع أيضًا [الدمج](#merging).
+
+<div id="example">
+  ## مثال XML
+</div>
+
+على سبيل المثال، يمكنك إنشاء ملف إعدادات منفصل لكل مستخدم كما يلي:
+
+```bash
+$ cat /etc/clickhouse-server/users.d/alice.xml
+```
+
+```xml
+<clickhouse>
+    <users>
+      <alice>
+          <profile>analytics</profile>
+            <networks>
+                  <ip>::/0</ip>
+            </networks>
+          <password_sha256_hex>...</password_sha256_hex>
+          <quota>analytics</quota>
+      </alice>
+    </users>
+</clickhouse>
+```
+
+<div id="example-1">
+  ## أمثلة YAML
+</div>
+
+هنا يمكنك الاطلاع على ملف الإعدادات الافتراضي المكتوب بصيغة YAML: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
+
+توجد بعض الاختلافات بين تنسيقي YAML وXML من حيث إعدادات ClickHouse.
+فيما يلي نصائح لكتابة الإعدادات بصيغة YAML.
+
+يُمثَّل وسم XML ذو القيمة النصية بزوج مفتاح-قيمة في YAML
+
+```yaml
+key: value
+```
+
+XML المقابل:
+
+```xml
+<key>value</key>
+```
+
+تُمثَّل عقدة XML المتداخلة بخريطة YAML:
+
+```yaml
+map_key:
+  key1: val1
+  key2: val2
+  key3: val3
+```
+
+تنسيق XML المقابل:
+
+```xml
+<map_key>
+    <key1>val1</key1>
+    <key2>val2</key2>
+    <key3>val3</key3>
+</map_key>
+```
+
+لإنشاء وسم XML نفسه عدة مرات، استخدم تسلسلاً في YAML:
+
+```yaml
+seq_key:
+  - val1
+  - val2
+  - key1: val3
+  - map:
+      key2: val4
+      key3: val5
+```
+
+شيفرة XML المقابلة:
+
+```xml
+<seq_key>val1</seq_key>
+<seq_key>val2</seq_key>
+<seq_key>
+    <key1>val3</key1>
+</seq_key>
+<seq_key>
+    <map>
+        <key2>val4</key2>
+        <key3>val5</key3>
+    </map>
+</seq_key>
+```
+
+لتحديد سمة XML، يمكنك استخدام مفتاح السمة مع البادئة `@`. لاحظ أن الرمز `@` محجوز وفقًا لمعيار YAML، لذا يجب وضعه بين علامتَي اقتباس مزدوجتين:
+
+```yaml
+map:
+  "@attr1": value1
+  "@attr2": value2
+  key: 123
+```
+
+تمثيل XML المقابل:
+
+```xml
+<map attr1="value1" attr2="value2">
+    <key>123</key>
+</map>
+```
+
+كما يمكن أيضًا استخدام السمات ضمن تسلسل YAML:
+
+```yaml
+seq:
+  - "@attr1": value1
+  - "@attr2": value2
+  - 123
+  - abc
+```
+
+XML المقابل:
+
+```xml
+<seq attr1="value1" attr2="value2">123</seq>
+<seq attr1="value1" attr2="value2">abc</seq>
+```
+
+لا تتيح الصياغة المذكورة أعلاه تمثيل عقد النص في XML التي تتضمن سمات XML بصيغة YAML. ويمكن التعامل مع هذه الحالة الخاصة باستخدام مفتاح السمة
+`#text`:
+
+```yaml
+map_key:
+  "@attr1": value1
+  "#text": value2
+```
+
+صيغة XML المقابلة:
+
+```xml
+<map_key attr1="value1">value2</map>
+```
+
+<div id="implementation-details">
+  ## تفاصيل التنفيذ
+</div>
+
+بالنسبة إلى كل ملف إعدادات، يُنشئ الخادم أيضًا ملفات `file-preprocessed.xml` عند بدء التشغيل. تحتوي هذه الملفات على جميع عمليات الاستبدال والتجاوزات المكتملة، وهي مخصّصة للاطلاع فقط. إذا استُخدمت عمليات استبدال ZooKeeper في ملفات الإعدادات، ولكن ZooKeeper لم يكن متاحًا عند بدء تشغيل الخادم، فإن الخادم يحمّل الإعدادات من الملف المُعالَج مسبقًا.
+
+يتتبّع الخادم التغييرات في ملفات الإعدادات، وكذلك الملفات وعُقد ZooKeeper التي استُخدمت عند تنفيذ عمليات الاستبدال والتجاوزات، ويعيد تحميل إعدادات المستخدمين والعناقيد أثناء التشغيل. وهذا يعني أنه يمكنك تعديل العنقود والمستخدمين وإعداداتهم من دون إعادة تشغيل الخادم.

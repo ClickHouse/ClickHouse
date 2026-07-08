@@ -353,7 +353,7 @@ struct Reader
         /// Derived from parquet's repetition/definition levels. See comment on LevelInfo.
         /// ("Arrays offsets" is intentionally grammatically incorrect to emphasize that it's a
         ///  list of lists.)
-        std::vector<MutableColumnPtr> arrays_offsets;
+        MutableColumns arrays_offsets;
 
         /// Null maps for nullable array levels, parallel to arrays_offsets.
         std::vector<MutableColumnPtr> arrays_null_maps;

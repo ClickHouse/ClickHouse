@@ -1,0 +1,105 @@
+---
+sidebarTitle: 'إعداد الخدمات المتوافقة مع HIPAA'
+slug: /cloud/security/compliance/hipaa-onboarding
+title: 'إعداد الخدمات المتوافقة مع HIPAA'
+description: 'تعرّف على كيفية إعداد الخدمات المتوافقة مع HIPAA'
+doc_type: 'guide'
+keywords: ['hipaa', 'الامتثال', 'الرعاية الصحية', 'الأمان', 'حماية البيانات']
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<EnterprisePlanFeatureBadge feature="HIPAA" />
+
+تقدّم ClickHouse خدمات متوافقة مع قاعدة الأمان لقانون قابلية نقل التأمين الصحي والمساءلة (HIPAA) لعام 1996. ويمكن للعملاء معالجة المعلومات الصحية المحمية (PHI) ضمن هذه الخدمات بعد توقيع اتفاقية الشريك التجاري (BAA) ونشر الخدمات في منطقة متوافقة.
+
+لمزيد من المعلومات حول برنامج الامتثال في ClickHouse ومدى توفّر تقارير التدقيق من جهات خارجية، راجع [نظرة عامة على الامتثال](/ar/products/cloud/reference/security/compliance-overview) و[Trust Center](https://trust.clickhouse.com). بالإضافة إلى ذلك، ينبغي للعملاء مراجعة صفحة [ميزات الأمان](/ar/products/cloud/features/security) لاختيار ضوابط الأمان المناسبة لأعباء العمل لديهم وتنفيذها.
+
+توضح هذه الصفحة عملية تمكين نشر الخدمات المتوافقة مع HIPAA في ClickHouse Cloud.
+
+<div id="enable-hipaa-compliant-services">
+  ## تمكين ونشر الخدمات المتوافقة مع HIPAA
+</div>
+
+<Steps>
+  <Step>
+    ### الاشتراك في خدمات Enterprise
+
+    1. حدِّد اسم مؤسستك في الزاوية السفلية اليسرى من Console.
+    2. انقر على **Billing**.
+    3. راجع **Plan** في الزاوية العلوية اليسرى.
+    4. إذا كانت **Plan** لديك هي **Enterprise**، فانتقل إلى القسم التالي. وإذا لم تكن كذلك، فانقر على **Change plan**.
+    5. حدِّد **Switch to Enterprise**.
+  </Step>
+
+  <Step>
+    ### تمكين HIPAA لمؤسستك
+
+    1. حدِّد اسم مؤسستك في الزاوية السفلية اليسرى من Console.
+    2. انقر على **Organization details**.
+    3. فعِّل **Enable HIPAA**.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_1.webp" size="md" alt="طلب تمكين HIPAA" background="black" />
+
+    <br />
+
+    4. اتبع الإرشادات الظاهرة على الشاشة لتقديم طلب لاستكمال اتفاقية BAA.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_2.webp" size="md" alt="إرسال طلب BAA" background="black" />
+
+    <br />
+
+    5. بعد اكتمال اتفاقية BAA، سيتم تمكين HIPAA للمؤسسة.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_3.webp" size="md" alt="تم تمكين HIPAA" background="black" />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### نشر الخدمات في المناطق المتوافقة مع HIPAA
+
+    1. حدِّد **New service** في الزاوية العلوية اليسرى من الشاشة الرئيسية في Console
+    2. غيِّر **Region type** إلى **HIPAA compliant**
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/hipaa_4.webp" size="md" alt="النشر في منطقة متوافقة مع HIPAA" background="black" />
+
+    <br />
+
+    3. أدخل اسمًا للخدمة وأكمِل المعلومات المتبقية
+
+    للاطلاع على قائمة كاملة بموفري الخدمات السحابية والخدمات المتوافقة مع HIPAA، راجع صفحة [Supported cloud regions](/ar/products/cloud/reference/supported-regions).
+  </Step>
+</Steps>
+
+<div id="migrate-to-hipaa">
+  ## ترحيل الخدمات الحالية
+</div>
+
+ننصح العملاء بشدة بنشر الخدمات في البيئات المتوافقة عند الحاجة. تتضمن عملية ترحيل الخدمات من منطقة عادية إلى منطقة متوافقة مع HIPAA الاستعادة من نسخة احتياطية، وقد تتطلب بعض فترة التوقف.
+
+إذا كان الترحيل من المناطق العادية إلى المناطق المتوافقة مع HIPAA مطلوبًا، فاتبع الخطوات التالية لإجراء عمليات ترحيل ذاتية الخدمة:
+
+1. حدِّد الخدمة المطلوب ترحيلها.
+2. انقر على **Backups** من الجهة اليسرى.
+3. حدِّد النقاط الثلاث إلى يسار النسخة الاحتياطية المطلوب استعادتها.
+4. حدِّد **Region type** لاستعادة النسخة الاحتياطية إلى منطقة متوافقة مع HIPAA.
+5. بعد اكتمال الاستعادة، شغِّل بعض الاستعلامات للتحقق من أن المخططات وأعداد السجلات مطابقة لما هو متوقع.
+6. احذف الخدمة القديمة.
+
+<Info>
+  **القيود**
+
+  يجب أن تبقى الخدمات ضمن موفر السحابة نفسه والمنطقة الجغرافية نفسها. تنقل هذه العملية الخدمة إلى البيئة المتوافقة ضمن موفر السحابة والمنطقة نفسيهما.
+</Info>

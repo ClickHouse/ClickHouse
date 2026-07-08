@@ -1,0 +1,118 @@
+---
+description: 'Documentação da API HTTP e do painel web incorporado do ClickHouse Keeper'
+sidebarTitle: 'API HTTP do Keeper'
+slug: /operations/utilities/clickhouse-keeper-http-api
+title: 'API HTTP e painel do Keeper'
+doc_type: 'reference'
+---
+
+O ClickHouse Keeper fornece uma API HTTP e um painel web incorporado para monitoramento, verificações de integridade e gerenciamento do armazenamento.
+Essa interface permite aos operadores inspecionar o status do cluster, executar comandos e gerenciar o armazenamento do Keeper por meio de um navegador web ou de clientes HTTP.
+
+<div id="configuration">
+  ## Configuração
+</div>
+
+Para habilitar a API HTTP, adicione a seção `http_control` à configuração do `keeper_server`:
+
+```xml
+<keeper_server>
+    <!-- Outras configurações do keeper_server -->
+
+    <http_control>
+        <port>9182</port>
+        <!-- <secure_port>9443</secure_port> -->
+    </http_control>
+</keeper_server>
+```
+
+<div id="configuration-options">
+  ### Opções de configuração
+</div>
+
+| Configuração                              | Padrão   | Descrição                                                     |
+| ----------------------------------------- | -------- | ------------------------------------------------------------- |
+| `http_control.port`                       | -        | Porta HTTP para o painel e a API                              |
+| `http_control.secure_port`                | -        | Porta HTTPS (requer configuração de SSL)                      |
+| `http_control.readiness.endpoint`         | `/ready` | Caminho personalizado para a probe de prontidão               |
+| `http_control.storage.session_timeout_ms` | `30000`  | Tempo limite da sessão para operações da API de armazenamento |
+
+<div id="endpoints">
+  ## Endpoints
+</div>
+
+<div id="dashboard">
+  ### Painel
+</div>
+
+* **Caminho**: `/dashboard`
+* **Método**: GET
+* **Descrição**: Disponibiliza um painel web integrado para monitoramento e gerenciamento do Keeper
+
+O painel oferece:
+
+* Visualização em tempo real do status do cluster
+* Monitoramento de nós (função, latência, conexões)
+* Explorador de armazenamento
+* Interface para execução de comandos
+
+<div id="readiness-probe">
+  ### Sonda de prontidão
+</div>
+
+* **Caminho**: `/ready` (configurável)
+* **Método**: GET
+* **Descrição**: endpoint de verificação de integridade
+
+Resposta de sucesso (HTTP 200):
+
+```json
+{
+  "status": "ok",
+  "details": {
+    "role": "leader",
+    "hasLeader": true
+  }
+}
+```
+
+<div id="commands-api">
+  ### API de comandos
+</div>
+
+* **Caminho**: `/api/v1/commands/{command}`
+* **Métodos**: GET, POST
+* **Descrição**: Executa comandos Four-Letter Word ou comandos da CLI do cliente ClickHouse Keeper
+
+Parâmetros de consulta:
+
+* `command` - O comando a ser executado
+* `cwd` - Diretório de trabalho atual para comandos baseados em caminho (padrão: `/`)
+
+Exemplos:
+
+```bash
+# Comando Four-Letter Word
+curl http://localhost:9182/api/v1/commands/stat
+
+# Comando ZooKeeper CLI
+curl "http://localhost:9182/api/v1/commands/ls?command=ls%20'/'&cwd=/"
+```
+
+<div id="storage-api">
+  ### API de armazenamento
+</div>
+
+* **Caminho base**: `/api/v1/storage`
+* **Descrição**: API REST para operações de armazenamento do Keeper
+
+A API de armazenamento segue as convenções REST, em que os métodos HTTP indicam o tipo de operação:
+
+| Operação  | Caminho                                | Método | Código de status | Descrição                |
+| --------- | -------------------------------------- | ------ | ---------------- | ------------------------ |
+| Obter     | `/api/v1/storage/{path}`               | GET    | 200              | Obter dados do nó        |
+| Listar    | `/api/v1/storage/{path}?children=true` | GET    | 200              | Listar nós filhos        |
+| Verificar | `/api/v1/storage/{path}`               | HEAD   | 200              | Verificar se o nó existe |
+| Criar     | `/api/v1/storage/{path}`               | POST   | 201              | Criar um novo nó         |
+| Atualizar | `/api/v1/storage/{path}?version={v}`   | PUT    | 200              | Atualizar dados do nó    |
+| Excluir   | `/api/v1/storage/{path}?version={v}`   | DELETE | 204              | Excluir nó               |

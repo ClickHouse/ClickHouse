@@ -1062,6 +1062,8 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_int_div = IsOperation<Op>::int_div;
     static constexpr bool is_int_div_or_zero = IsOperation<Op>::int_div_or_zero;
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
+    static constexpr bool is_div_floating_or_null = IsOperation<Op>::div_floating_or_null;
+    static constexpr bool is_int_div_or_null = IsOperation<Op>::int_div_or_null;
 
     ContextPtr context;
 
@@ -2126,11 +2128,29 @@ class FunctionBinaryArithmetic : public IFunction
 
         /// Empty null rows before element execution to avoid evaluating hidden nested
         /// payloads (e.g. division by zero in a NULL array row).
-        const ColumnUInt8 * row_null_map = nullptr;
-        if (unwrapped_array.null_map)
+        ColumnPtr merged_row_null_map = unwrapped_array.null_map;
+        ColumnPtr right_row_null_map_column;
+        if (right_nullmap)
         {
-            const auto & materialized = detail::materializeNullMapToRowCount(unwrapped_array.null_map, input_rows_count);
-            row_null_map = &assert_cast<const ColumnUInt8 &>(*materialized);
+            if (right_nullmap->size() != input_rows_count && right_nullmap->size() != 1)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Null map size {} does not match row count {} and is not a single constant value",
+                    right_nullmap->size(), input_rows_count);
+
+            auto right_row_null_map_column_mut = ColumnUInt8::create(input_rows_count, false);
+            auto & right_row_null_map_data = right_row_null_map_column_mut->getData();
+            for (size_t row = 0; row < input_rows_count; ++row)
+                right_row_null_map_data[row] = right_nullmap->size() == 1 ? (*right_nullmap)[0] : (*right_nullmap)[row];
+            right_row_null_map_column = std::move(right_row_null_map_column_mut);
+            detail::mergeRowNullMap(merged_row_null_map, right_row_null_map_column, input_rows_count);
+        }
+
+        ColumnPtr materialized_row_null_map;
+        const ColumnUInt8 * row_null_map = nullptr;
+        if (merged_row_null_map)
+        {
+            materialized_row_null_map = detail::materializeNullMapToRowCount(merged_row_null_map, input_rows_count);
+            row_null_map = &assert_cast<const ColumnUInt8 &>(*materialized_row_null_map);
         }
         if (auto null_rows_empty_array = NullableArrayOffsets::emptyNullRows(*left_array_col, row_null_map, input_rows_count))
         {
@@ -3043,8 +3063,30 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         return col_res;
     }
 
+    /// Decides whether a division-or-null operation must return NULL for the given operands.
+    /// The null condition has to match exactly when the underlying operation would raise an FPE:
+    ///  - floating division (`divideOrNull`): only division by zero (the signed `INT_MIN / -1`
+    ///    overflow is a valid floating-point result, not an FPE);
+    ///  - integer division (`intDivOrNull`): division by zero and signed `INT_MIN / -1`, computed
+    ///    with the same operand casts as `DivideIntegralImpl::apply` (so mixed signed/unsigned
+    ///    operands such as `Int8(-128) / UInt8(255)` are handled like the actual division);
+    ///  - modulo (`moduloOrNull`, `positiveModuloOrNull`): for integer modulo, division by zero and
+    ///    signed `INT_MIN / -1` (the `idiv` instruction computes the quotient too, so the overflow
+    ///    raises just like division); for floating modulo, only division by zero, because the float
+    ///    modulo path never raises (`INT_MIN % -1` is a finite remainder). See `moduloLeadsToFPE`.
     template <typename A, typename B>
-    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap) const
+    static bool divisionOrNullLeadsToNull(A a, B b)
+    {
+        if constexpr (is_div_floating_or_null)
+            return b == 0;
+        else if constexpr (is_int_div_or_null)
+            return integerDivisionLeadsToFPE(a, b);
+        else
+            return moduloLeadsToFPE(a, b);
+    }
+
+    template <typename A, typename B>
+    ColumnPtr executeNumeric(const ColumnsWithTypeAndName & arguments, const A & left, const B & right, const NullMap * right_nullmap, NullMap * result_nullmap = nullptr) const
     {
         using LeftDataType = std::decay_t<decltype(left)>;
         using RightDataType = std::decay_t<decltype(right)>;
@@ -3149,6 +3191,13 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                         col_left_const->template getValue<T0>(),
                         col_right_const->template getValue<T1>());
 
+                    if constexpr (is_division_or_null)
+                    {
+                        if (result_nullmap)
+                            result_nullmap->resize_fill(col_left_const->size(),
+                                divisionOrNullLeadsToNull(col_left_const->template getValue<T0>(), col_right_const->template getValue<T1>()));
+                    }
+
                     return ResultDataType().createColumnConst(col_left_const->size(), toField(res));
                 }
 
@@ -3186,6 +3235,20 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
                 else
                     return nullptr;
+
+                if constexpr (is_division_or_null)
+                {
+                    if (result_nullmap)
+                    {
+                        result_nullmap->resize_fill(col_left_size, false);
+                        for (size_t i = 0; i < col_left_size; ++i)
+                        {
+                            auto a = col_left ? col_left->getData()[i] : col_left_const->template getValue<T0>();
+                            auto b = col_right ? col_right->getData()[i] : col_right_const->template getValue<T1>();
+                            (*result_nullmap)[i] = divisionOrNullLeadsToNull(a, b);
+                        }
+                    }
+                }
 
                 return col_res;
             }
@@ -3256,7 +3319,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
         return executeImpl2(arguments, result_type, input_rows_count);
     }
 
-    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr) const
+    ColumnPtr executeImpl2(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, const NullMap * right_nullmap = nullptr, NullMap * result_nullmap = nullptr) const
     {
         const auto & left_argument = arguments[0];
         const auto & right_argument = arguments[1];
@@ -3277,6 +3340,21 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
             const auto & null_bytemap = nullable_column->getNullMapData();
 
+            if (result_type->isNullable() && isArray(removeNullable(result_type)))
+            {
+                bool all_rows_null = null_bytemap.size() == 1 ? null_bytemap[0] : null_bytemap.size() == input_rows_count;
+                for (size_t row = 0; all_rows_null && null_bytemap.size() != 1 && row < input_rows_count; ++row)
+                    all_rows_null = null_bytemap[row];
+
+                if (all_rows_null)
+                {
+                    auto res = removeNullable(result_type)->createColumn();
+                    res->insertManyDefaults(input_rows_count);
+                    auto null_map_col = ColumnUInt8::create(input_rows_count, true);
+                    return wrapInNullable(std::move(res), std::move(null_map_col));
+                }
+            }
+
             /// If the left argument is Nullable(Array(...)), its hidden nested array payload
             /// can still be evaluated for null rows after stripping. Empty those rows first.
             ColumnsWithTypeAndName stripped_args = createBlockWithNestedColumns(arguments);
@@ -3285,7 +3363,10 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 auto merged_null_map_col = ColumnUInt8::create(input_rows_count, false);
                 auto & merged_data = merged_null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    merged_data[i] = null_bytemap[i] || left_argument.column->isNullAt(i);
+                {
+                    const bool right_is_null = null_bytemap.size() == 1 ? null_bytemap[0] : null_bytemap[i];
+                    merged_data[i] = right_is_null || left_argument.column->isNullAt(i);
+                }
 
                 const auto * row_null_map = merged_null_map_col.get();
                 for (auto & arg : stripped_args)
@@ -3294,6 +3375,15 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     {
                         if (auto emptied = NullableArrayOffsets::emptyNullRows(*arr_col, row_null_map, input_rows_count))
                             arg.column = std::move(emptied);
+                    }
+                    else if (checkAndGetColumnConst<ColumnArray>(arg.column.get()))
+                    {
+                        auto full_column = arg.column->convertToFullColumnIfConst();
+                        const auto * full_array_col = assert_cast<const ColumnArray *>(full_column.get());
+                        if (auto emptied = NullableArrayOffsets::emptyNullRows(*full_array_col, row_null_map, input_rows_count))
+                            arg.column = std::move(emptied);
+                        else
+                            arg.column = std::move(full_column);
                     }
                 }
             }
@@ -3318,12 +3408,17 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
             }
             else if (!result_is_array && result_type->isNullable())
             {
+                /// Compute null map at the typed level using divisionLeadsToFPE, which handles b==0 and INT_MIN/-1 cases
+                NullMap fpe_nullmap;
+                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap, &fpe_nullmap);
+
+                /// merge null maps
                 auto null_map_col = ColumnUInt8::create(input_rows_count, false);
-                PaddedPODArray<UInt8> & null_map_data = null_map_col->getData();
+                auto & null_map_data = null_map_col->getData();
                 for (size_t i = 0; i < input_rows_count; ++i)
-                    null_map_data[i] = left_argument.column->isNullAt(i) || !right_argument.column->getBool(i);
-                auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, right_nullmap);
-                return !null_map_col->empty() ? wrapInNullable(res, std::move(null_map_col)) : makeNullable(res);
+                    null_map_data[i] = fpe_nullmap[i] || left_argument.column->isNullAt(i) || right_argument.column->isNullAt(i);
+
+                return wrapInNullable(res, std::move(null_map_col));
             }
         }
 
@@ -3343,7 +3438,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
             };
 
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
         }
 
         /// Special case - one or both arguments are IPv6
@@ -3362,7 +3457,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
             };
 
-            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+            return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
         }
 
         /// Special case - Decimal op Float (or Float op Decimal): both sides are converted to
@@ -3385,7 +3480,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                     {castColumn(arguments[0], float64_type), float64_type, arguments[0].name},
                     {castColumn(arguments[1], float64_type), float64_type, arguments[1].name},
                 };
-                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap);
+                return executeImpl2(new_arguments, result_type, input_rows_count, right_nullmap, result_nullmap);
             }
         }
 
@@ -3436,7 +3531,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 return false;
             }
             else
-                return (res = executeNumeric(arguments, left, right, right_nullmap)) != nullptr;
+                return (res = executeNumeric(arguments, left, right, right_nullmap, result_nullmap)) != nullptr;
         });
 
         const auto nested_result_type = removeNullable(result_type);

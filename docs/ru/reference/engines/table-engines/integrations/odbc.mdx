@@ -1,0 +1,145 @@
+---
+description: 'Позволяет ClickHouse подключаться к внешним базам данных через ODBC.'
+sidebarTitle: 'ODBC'
+slug: /engines/table-engines/integrations/odbc
+title: 'Движок таблицы ODBC'
+doc_type: 'справочник'
+---
+
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Позволяет ClickHouse подключаться к внешним базам данных через [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+
+Для безопасной работы с подключениями ODBC ClickHouse использует отдельную программу `clickhouse-odbc-bridge`. Если драйвер ODBC загружается напрямую из `clickhouse-server`, проблемы с драйвером могут привести к сбою сервера ClickHouse. При необходимости ClickHouse автоматически запускает `clickhouse-odbc-bridge`. Программа моста ODBC устанавливается из того же пакета, что и `clickhouse-server`.
+
+Этот движок поддерживает тип данных [Nullable](/ru/reference/data-types/nullable).
+
+<div id="creating-a-table">
+  ## Создание таблицы
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+)
+ENGINE = ODBC(datasource, external_database, external_table)
+```
+
+См. подробное описание запроса [CREATE TABLE](/ru/reference/statements/create/table).
+
+Структура таблицы может отличаться от структуры исходной таблицы:
+
+* Имена столбцов должны совпадать с именами в исходной таблице, но можно использовать только часть этих столбцов и в любом порядке.
+* Типы столбцов могут отличаться от типов в исходной таблице. ClickHouse пытается [привести](/ru/reference/functions/regular-functions/type-conversion-functions#CAST) значения к типам данных ClickHouse.
+* Настройка [external&#95;table&#95;functions&#95;use&#95;nulls](/ru/reference/settings/session-settings#external_table_functions_use_nulls) определяет, как обрабатывать столбцы с типом Nullable. Значение по умолчанию: 1. Если 0, табличная функция не создаёт столбцы с типом Nullable и вместо null вставляет значения по умолчанию. Это также применимо к значениям NULL внутри массивов.
+
+**Параметры движка**
+
+* `datasource` — Имя раздела с настройками подключения в файле `odbc.ini`.
+* `external_database` — Имя базы данных во внешней СУБД.
+* `external_table` — Имя таблицы в `external_database`.
+
+Эти параметры также можно передавать с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections).
+
+<div id="usage-example">
+  ## Пример использования
+</div>
+
+**Получение данных из локальной установки MySQL через ODBC**
+
+Этот пример проверен на Ubuntu Linux 18.04 и сервере MySQL 5.7.
+
+Убедитесь, что установлены `unixODBC` и MySQL Connector.
+
+По умолчанию (если ClickHouse установлен из пакетов) ClickHouse запускается от имени пользователя `clickhouse`. Поэтому вам нужно создать и настроить этого пользователя на сервере MySQL.
+
+```bash
+$ sudo mysql
+```
+
+```sql
+mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'localhost' WITH GRANT OPTION;
+```
+
+Затем настройте соединение в `/etc/odbc.ini`.
+
+```bash
+$ cat /etc/odbc.ini
+[mysqlconn]
+DRIVER = /usr/local/lib/libmyodbc5w.so
+SERVER = 127.0.0.1
+PORT = 3306
+DATABASE = test
+USER = clickhouse
+PASSWORD = clickhouse
+```
+
+Вы можете проверить соединение с помощью утилиты `isql`, входящей в состав unixODBC.
+
+```bash
+$ isql -v mysqlconn
++-------------------------+
+| Connected!                            |
+|                                       |
+...
+```
+
+Таблица в MySQL:
+
+```text
+mysql> CREATE DATABASE test;
+Query OK, 1 row affected (0,01 sec)
+
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test.test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test.test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+Таблица в ClickHouse, извлекающая данные из таблицы MySQL:
+
+```sql
+CREATE TABLE odbc_t
+(
+    `int_id` Int32,
+    `float_nullable` Nullable(Float32)
+)
+ENGINE = ODBC('DSN=mysqlconn', 'test', 'test')
+```
+
+```sql
+SELECT * FROM odbc_t
+```
+
+```text
+┌─int_id─┬─float_nullable─┐
+│      1 │           ᴺᵁᴸᴸ │
+└────────┴────────────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [Словари ODBC](/ru/reference/statements/create/dictionary/sources/odbc)
+* [Табличная функция ODBC](/ru/reference/functions/table-functions/odbc)
