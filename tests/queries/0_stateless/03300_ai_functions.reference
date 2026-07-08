@@ -1,12 +1,14 @@
 -- Disabled by default
 -- Enabled after setting
 aiGenerate
--- ai_function_credentials unset errors
 -- aiGenerate: too few arguments
 -- aiGenerate: too many arguments
+-- Missing credentials (no default, no map)
 -- Named collection missing provider
 -- Named collection missing endpoint
--- Named collection missing model
+-- Named collection missing model (and none in map)
+-- Model supplied via the parameter map resolves
+0
 -- Named collection without api_key resolves
 0
 -- Named collection without api_key reaches HTTP path
@@ -23,25 +25,25 @@ result	String
 -- Anthropic provider resolves
 0
 -- aiEmbed rejects anthropic provider
--- Custom system prompt accepted
+-- Custom system prompt via map
 0
--- Temperature: Float32
+-- Temperature via map
 0
--- Temperature: Float64
+-- max_tokens and model via map
 0
--- Temperature: zero
-0
--- Temperature: integer literal
-0
--- Temperature without system prompt
--- Temperature without system prompt (integer)
--- Non-constant system prompt
--- Non-constant temperature
--- Wrong type for system prompt (number instead of string)
--- Wrong type for temperature (string instead of number)
--- ai_function_credentials setting default
-1
+-- Unknown parameter key rejected
+-- Non-numeric temperature rejected
+-- Non-integer max_tokens rejected
+-- Negative max_tokens rejected
+-- Out-of-range max_tokens rejected (exceeds Int64)
+-- Overflowing max_tokens rejected (exceeds UInt64, must not wrap)
+-- Duplicate map key rejected
+-- Non-constant parameter map rejected
+-- Wrong type for parameter argument (not a map)
+-- Wrong map value type (Map(String, Float) not accepted)
+-- Map in the prompt position rejected
 -- Setting defaults
+ai_function_embedding_default_credentials	
 ai_function_embedding_max_batch_size	100
 ai_function_max_api_calls_per_query	0
 ai_function_max_input_tokens_per_query	1000000
@@ -49,6 +51,7 @@ ai_function_max_output_tokens_per_query	500000
 ai_function_max_retries	0
 ai_function_request_timeout_sec	60
 ai_function_retry_initial_delay_ms	1000
+ai_function_text_default_credentials	
 ai_function_throw_on_error	1
 ai_function_throw_on_quota_exceeded	1
 allow_experimental_ai_functions	0
@@ -95,9 +98,8 @@ result	String
 aiEmbed
 -- aiEmbed: too few arguments
 -- aiEmbed: too many arguments
--- aiEmbed: non-constant dimensions
--- aiEmbed: wrong type for dimensions (signed integer)
--- aiEmbed: wrong type for dimensions (string)
+-- aiEmbed: non-constant parameter map
+-- aiEmbed: wrong type for parameter argument (not a map)
 -- aiEmbed: return type
 result	Array(Float32)
 -- aiEmbed: return type with dimensions
@@ -114,14 +116,14 @@ result	Array(Float32)
 result	Array(Float32)
 -- aiEmbed: NULL input → []
 0
--- aiEmbed: DEFAULT survives INSERT (no server crash)
+-- aiEmbed: DEFAULT survives INSERT (no exception)
 1	0
--- aiGenerate: DEFAULT survives INSERT (no server crash)
+-- aiGenerate: DEFAULT survives INSERT (no exception)
 1	0
--- aiClassify: DEFAULT survives INSERT (no server crash)
+-- aiClassify: DEFAULT survives INSERT (no exception)
 1	0
--- aiExtract: DEFAULT survives INSERT (no server crash)
+-- aiExtract: DEFAULT survives INSERT (no exception)
 1	0
--- aiTranslate: DEFAULT survives INSERT (no server crash)
+-- aiTranslate: DEFAULT survives INSERT (no exception)
 1	0
 -- Re-disabled blocks function

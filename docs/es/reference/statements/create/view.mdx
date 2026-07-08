@@ -1,0 +1,757 @@
+---
+description: 'Documentación sobre CREATE VIEW'
+sidebarTitle: 'VIEW'
+slug: /sql-reference/statements/create/view
+title: 'CREATE VIEW'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import DeprecatedBadge from "/snippets/es/components/DeprecatedBadge/DeprecatedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+Crea una nueva vista. Las vistas pueden ser [normales](#normal-view), [materializadas](#materialized-view), [materializadas actualizables](#refreshable-materialized-view) y [de ventana](/es/reference/statements/create/view#window-view).
+
+<div id="normal-view">
+  ## Vista normal
+</div>
+
+Sintaxis:
+
+```sql
+CREATE [OR REPLACE] VIEW [IF NOT EXISTS] [db.]table_name [(alias1 [, alias2 ...])] [ON CLUSTER cluster_name]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+Las vistas normales no almacenan datos. Simplemente leen de otra tabla en cada acceso. En otras palabras, una vista normal no es más que una consulta guardada. Al leer una vista, esta consulta guardada se usa como subconsulta en la cláusula [FROM](/es/reference/statements/select/from).
+
+Como ejemplo, suponga que ha creado una vista:
+
+```sql
+CREATE VIEW view AS SELECT ...
+```
+
+y escribir una consulta:
+
+```sql
+SELECT a, b, c FROM view
+```
+
+Esta consulta equivale por completo a usar la subconsulta:
+
+```sql
+SELECT a, b, c FROM (SELECT ...)
+```
+
+<div id="parameterized-view">
+  ## Vista parametrizada
+</div>
+
+Las vistas parametrizadas son similares a las vistas normales, pero pueden crearse con parámetros que no se resuelven inmediatamente. Estas vistas pueden usarse con funciones de tabla, que especifican el nombre de la vista como nombre de la función y los valores de los parámetros como argumentos.
+
+```sql
+CREATE VIEW view AS SELECT * FROM TABLE WHERE Column1={column1:datatype1} and Column2={column2:datatype2} ...
+```
+
+Lo anterior crea una vista para la tabla, que puede usarse como función de tabla al sustituir los parámetros, como se muestra a continuación.
+
+```sql
+SELECT * FROM view(column1=value1, column2=value2 ...)
+```
+
+<div id="materialized-view">
+  ## Vista materializada
+</div>
+
+```sql
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+[REFRESH ...]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+```sql
+CREATE OR REPLACE MATERIALIZED VIEW [db.]table_name [ON CLUSTER cluster_name] [TO[db.]name [(columns)]] [ENGINE = engine] [POPULATE]
+[REFRESH ...]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+`OR REPLACE` e `IF NOT EXISTS` son mutuamente excluyentes: combinarlos da lugar a un error de sintaxis.
+
+<div id="create-or-replace-materialized-view">
+  ### CREATE OR REPLACE MATERIALIZED VIEW
+</div>
+
+`CREATE OR REPLACE MATERIALIZED VIEW` reemplaza de forma atómica una vista materializada existente y su tabla de almacenamiento subyacente (si la hay). La operación requiere un motor de base de datos `Atomic` o `Replicated`.
+
+```sql
+CREATE OR REPLACE MATERIALIZED VIEW [db.]name [ON CLUSTER cluster]
+[TO [db.]target_table]
+[ENGINE = engine]
+[POPULATE]
+[REFRESH ...]
+AS SELECT ...
+```
+
+Comportamientos clave:
+
+* **Sin la cláusula `TO`**: se elimina la tabla interna anterior y se crea una nueva. Los datos existentes en la tabla interna se pierden, salvo que se especifique `POPULATE`.
+* **Con la cláusula `TO`**: solo se reemplaza la definición de la vista; la tabla de destino y sus datos no se ven afectados.
+* Compatible con `REFRESH`, `ON CLUSTER` y todas las opciones del motor. `POPULATE` solo se admite en bases de datos `Atomic`; se rechaza en bases de datos `Replicated` (consulte la nota sobre `POPULATE` más abajo).
+* Requiere los privilegios `CREATE VIEW` y `DROP VIEW`.
+
+<Note>
+  `CREATE OR REPLACE MATERIALIZED VIEW` solo es compatible con los motores de base de datos `Atomic` o `Replicated`. No es compatible con el motor de base de datos `Ordinary`.
+</Note>
+
+**Ejemplos:**
+
+```sql
+-- Create a materialized view with an inner table
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    AS SELECT x, sum(y) AS total FROM src GROUP BY x;
+
+-- Replace with a new definition (old inner table data is lost)
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    AS SELECT x, count() AS cnt FROM src GROUP BY x;
+
+-- Replace with POPULATE to backfill from existing source data
+CREATE OR REPLACE MATERIALIZED VIEW mv
+    ENGINE = MergeTree ORDER BY x
+    POPULATE
+    AS SELECT x FROM src;
+
+-- Replace an inner-table MV with a TO-table MV (target data is preserved)
+CREATE OR REPLACE MATERIALIZED VIEW mv TO target
+    AS SELECT x FROM src;
+```
+
+<Tip>
+  Aquí tienes una guía paso a paso sobre cómo usar [vistas materializadas](/es/concepts/features/materialized-views/cascading-materialized-views).
+</Tip>
+
+Las vistas materializadas almacenan los datos transformados por la consulta [SELECT](/es/reference/statements/select/index) correspondiente.
+
+Al crear una vista materializada sin `TO [db].[table]`, debes especificar `ENGINE`: el motor de tabla para almacenar los datos.
+
+Al crear una vista materializada con `TO [db].[table]`, tampoco puedes usar `POPULATE`.
+
+Una vista materializada se implementa de la siguiente manera: al insertar datos en la tabla especificada en `SELECT`, una parte de los datos insertados se transforma mediante esta consulta `SELECT`, y el resultado se inserta en la vista.
+
+<Note>
+  Las vistas materializadas en ClickHouse usan **nombres de columna** en lugar del orden de las columnas durante la inserción en la tabla de destino. Si algunos nombres de columna no están presentes en el resultado de la consulta `SELECT`, ClickHouse usa un valor predeterminado, incluso si la columna no es [Nullable](/es/reference/data-types/nullable). Una práctica segura es agregar alias para cada columna al usar vistas materializadas.
+
+  Las vistas materializadas en ClickHouse se implementan más bien como desencadenadores de inserción. Si hay alguna agregación en la consulta de la vista, se aplica solo al lote de datos recién insertados. Cualquier cambio en los datos existentes de la tabla de origen (como `UPDATE`, `DELETE`, `DROP PARTITION`, etc.) no modifica la vista materializada.
+
+  Las vistas materializadas en ClickHouse no tienen un comportamiento determinista en caso de errores. Esto significa que los bloques que ya se hayan escrito se conservarán en la tabla de destino, pero todos los bloques posteriores al error no.
+
+  De forma predeterminada, si el envío a una de las vistas genera una excepción, la consulta `INSERT` falla. No se garantiza que, para ese momento, el bloque ya haya llegado a la tabla de origen: eso depende del momento en la canalización de inserción, no del error de la vista. Reintente el `INSERT` fallido con deduplicación de inserción (`insert_deduplicate`, `deduplicate_blocks_in_dependent_materialized_views`) para obtener entrega exactly-once a la tabla de origen y a todas las vistas dependientes.
+
+  Establecer `materialized_views_ignore_errors=true` en la consulta `INSERT` solo cambia el informe de errores: cada error de vista se registra como una advertencia y la consulta `INSERT` se completa correctamente. La entrega al destino de la vista que falla es parcial: los bloques procesados antes de la excepción se conservan, y el bloque que falla más cualquier bloque posterior se descartan de esa vista. Las vistas aguas abajo de ese destino ven solo los bloques que sí llegaron, por lo que su entrega también es parcial. Las vistas hermanas (y sus cadenas aguas abajo) que no generaron una excepción se escriben por completo, y en la tabla de origen se escribe como de costumbre. Como el `INSERT` informa éxito, el cliente no recibe ninguna señal de fallo y no se activa ningún reintento automático; use esta configuración solo cuando las escrituras en la tabla de origen no deban bloquearse por problemas del lado de la vista (por ejemplo, tablas `system.*_log`).
+
+  `materialized_views_ignore_errors` es `true` de forma predeterminada para las tablas `system.*_log`.
+</Note>
+
+Si especifica `POPULATE`, los datos existentes de la tabla se insertan en la vista al crearla, como si se hiciera un `CREATE TABLE ... AS SELECT ...`. De lo contrario, la consulta contiene solo los datos insertados en la tabla después de crear la vista. **No recomendamos** usar `POPULATE`, ya que los datos insertados en la tabla durante la creación de la vista no se insertarán en ella.
+
+<Note>
+  Dado que `POPULATE` funciona como `CREATE TABLE ... AS SELECT ...`, tiene limitaciones:
+
+  * No es compatible con base de datos `Replicated`
+  * No es compatible con ClickHouse Cloud
+
+  En su lugar, se puede usar un `INSERT ... SELECT` por separado.
+</Note>
+
+Una consulta `SELECT` puede contener `DISTINCT`, `GROUP BY`, `ORDER BY`, `LIMIT`. Tenga en cuenta que las transformaciones correspondientes se realizan de forma independiente en cada bloque de datos insertados. Por ejemplo, si se establece `GROUP BY`, los datos se agregan durante la inserción, pero solo dentro de un único paquete de datos insertados. Los datos no se volverán a agregar después. La excepción es cuando se usa un `ENGINE` que realiza la agregación de datos por sí mismo, como `SummingMergeTree`.
+
+Si la vista materializada usa la construcción `TO [db.]name`, puede aplicar `DETACH` a la vista, ejecutar `ALTER` en la tabla de destino y luego hacer `ATTACH` de la vista previamente separada con `DETACH`.
+
+Tenga en cuenta que la vista materializada se ve afectada por la configuración [optimize&#95;on&#95;insert](/es/reference/settings/session-settings#optimize_on_insert). Los datos se fusionan antes de insertarse en una vista.
+
+Las vistas tienen el mismo aspecto que las tablas normales. Por ejemplo, aparecen en el resultado de la consulta `SHOW TABLES`.
+
+Para eliminar una vista, use [DROP VIEW](/es/reference/statements/drop#drop-view). Aunque `DROP TABLE` también funciona para las VIEW.
+
+<div id="sql_security">
+  ## SQL security
+</div>
+
+`DEFINER` y `SQL SECURITY` permiten especificar qué usuario de ClickHouse se utilizará al ejecutar la consulta subyacente de la vista.
+`SQL SECURITY` tiene tres valores válidos: `DEFINER`, `INVOKER` o `NONE`. Puede especificar cualquier usuario existente o `CURRENT_USER` en la cláusula `DEFINER`.
+
+La siguiente tabla explica qué permisos se requieren para cada usuario al seleccionar datos de una vista.
+Tenga en cuenta que, independientemente de la opción de SQL security, en todos los casos sigue siendo necesario tener `GRANT SELECT ON <view>` para poder leer de ella.
+
+| Opción de SQL security | Vista                                                                           | Vista materializada                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DEFINER alice`        | `alice` debe tener el privilegio `SELECT` sobre la tabla fuente de la vista.    | `alice` debe tener el privilegio `SELECT` sobre la tabla fuente de la vista y el privilegio `INSERT` sobre la tabla de destino de la vista. |
+| `INVOKER`              | El usuario debe tener el privilegio `SELECT` sobre la tabla fuente de la vista. | No se puede especificar `SQL SECURITY INVOKER` para las vistas materializadas.                                                              |
+| `NONE`                 | -                                                                               | -                                                                                                                                           |
+
+<Note>
+  `SQL SECURITY NONE` es una opción obsoleta. Cualquier usuario con permisos para crear vistas con `SQL SECURITY NONE` podrá ejecutar cualquier consulta arbitraria.
+  Por lo tanto, es necesario tener `GRANT ALLOW SQL SECURITY NONE TO <user>` para crear una vista con esta opción.
+</Note>
+
+Si no se especifican `DEFINER`/`SQL SECURITY`, se usan los valores predeterminados:
+
+* `SQL SECURITY`: `INVOKER` para las vistas normales y `DEFINER` para las vistas materializadas ([configurable en Settings](/es/reference/settings/session-settings#default_normal_view_sql_security))
+* `DEFINER`: `CURRENT_USER` ([configurable en Settings](/es/reference/settings/session-settings#default_view_definer))
+
+Si una vista se adjunta sin especificar `DEFINER`/`SQL SECURITY`, el valor predeterminado es `SQL SECURITY NONE` para la vista materializada y `SQL SECURITY INVOKER` para la vista normal.
+
+Para cambiar SQL security de una vista existente, use
+
+```sql
+ALTER TABLE MODIFY SQL SECURITY { DEFINER | INVOKER | NONE } [DEFINER = { user | CURRENT_USER }]
+```
+
+<div id="examples">
+  ### Ejemplos
+</div>
+
+```sql
+CREATE VIEW test_view
+DEFINER = alice SQL SECURITY DEFINER
+AS SELECT ...
+```
+
+```sql
+CREATE VIEW test_view
+SQL SECURITY INVOKER
+AS SELECT ...
+```
+
+<div id="live-view">
+  ## Live View
+</div>
+
+<DeprecatedBadge />
+
+Esta función está obsoleta y se eliminará en el futuro.
+
+Para mayor comodidad, la documentación anterior está disponible [aquí](https://pastila.nl/?00f32652/fdf07272a7b54bda7e13b919264e449f.md)
+
+<div id="refreshable-materialized-view">
+  ## Vista materializada actualizable
+</div>
+
+```sql
+CREATE MATERIALIZED VIEW [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+REFRESH [EVERY|AFTER interval [OFFSET interval]]
+[RANDOMIZE FOR interval]
+[DEPENDS ON [db.]name [, [db.]name [, ...]]]
+[SETTINGS name = value [, name = value [, ...]]]
+[APPEND]
+[TO[db.]name] [(columns)] [ENGINE = engine]
+[EMPTY]
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
+AS SELECT ...
+[COMMENT 'comment']
+```
+
+donde `interval` es una secuencia de intervalos simples:
+
+```sql
+number SECOND|MINUTE|HOUR|DAY|WEEK|MONTH|YEAR
+```
+
+La cláusula `REFRESH` debe especificar al menos uno de `EVERY`, `AFTER` o `DEPENDS ON`. `REFRESH` sin más (sin ninguno de ellos) se rechaza. `REFRESH DEPENDS ON ...` sin `EVERY`/`AFTER` es una forma abreviada de `REFRESH AFTER 0 SECOND DEPENDS ON ...`; consulta [Dependencias de actualización](#refresh-dependencies) más abajo.
+
+Ejecuta periódicamente la consulta correspondiente y almacena su resultado en una tabla.
+
+* Si se especifica `APPEND`, cada actualización inserta filas en la tabla sin eliminar las existentes. La inserción no es atómica, igual que en una consulta `INSERT INTO ... SELECT` normal.
+* De lo contrario, cada actualización reemplaza atómicamente el contenido previo de la tabla.
+
+Diferencias con las vistas materializadas normales no actualizables:
+
+* No hay trigger de inserción. Cuando se insertan datos nuevos en la tabla especificada en `SELECT`, *no* se envían automáticamente a la vista materializada actualizable. En su lugar, los datos solo se insertan durante las ejecuciones de actualización periódicas o manuales.
+* La consulta `SELECT` no tiene restricciones. Se permiten funciones de tabla (por ejemplo, `url()`), vistas, UNION y JOIN.
+
+<Note>
+  La configuración de la parte `REFRESH ... SETTINGS` de la consulta corresponde a los parámetros de actualización (por ejemplo, `refresh_retries`), y es distinta de la configuración normal (por ejemplo, `max_threads`). La configuración normal puede especificarse con `SETTINGS` al final de la consulta.
+</Note>
+
+<div id="refresh-schedule">
+  ### Programación de actualización
+</div>
+
+Ejemplos de programación de actualización:
+
+```sql
+REFRESH EVERY 1 DAY -- every day, at midnight (UTC)
+REFRESH EVERY 1 MONTH -- on 1st day of every month, at midnight
+REFRESH EVERY 1 MONTH OFFSET 5 DAY 2 HOUR -- on 6th day of every month, at 2:00 am
+REFRESH EVERY 2 WEEK OFFSET 5 DAY 15 HOUR 10 MINUTE -- every other Saturday, at 3:10 pm
+REFRESH EVERY 30 MINUTE -- at 00:00, 00:30, 01:00, 01:30, etc
+REFRESH AFTER 30 MINUTE -- 30 minutes after the previous refresh completes, no alignment with time of day
+-- REFRESH AFTER 1 HOUR OFFSET 1 MINUTE -- syntax error, OFFSET is not allowed with AFTER
+REFRESH EVERY 1 WEEK 2 DAYS -- every 9 days, not on any particular day of the week or month;
+                            -- specifically, when day number (since 1969-12-29) is divisible by 9
+REFRESH EVERY 5 MONTHS -- every 5 months, different months each year (as 12 is not divisible by 5);
+                       -- specifically, when month number (since 1970-01) is divisible by 5
+```
+
+`RANDOMIZE FOR` ajusta aleatoriamente el momento en que se realiza cada actualización, por ejemplo:
+
+```sql
+REFRESH EVERY 1 DAY OFFSET 2 HOUR RANDOMIZE FOR 1 HOUR -- every day at random time between 01:30 and 02:30
+```
+
+Como máximo, puede haber una sola actualización en ejecución a la vez para una vista determinada. Por ejemplo, si una vista con `REFRESH EVERY 1 MINUTE` tarda 2 minutos en actualizarse, simplemente se actualizará cada 2 minutos. Si después se vuelve más rápida y empieza a actualizarse en 10 segundos, volverá a actualizarse cada minuto. (En particular, no se actualizará cada 10 segundos para compensar actualizaciones omitidas: no existe tal retraso acumulado).
+
+Normalmente, la primera actualización se inicia inmediatamente después de crear la vista materializada: el tiempo transcurrido desde la última actualización es infinito, por lo que cualquier programación indica que es momento de actualizarla. Si se especifica `EMPTY`, esta actualización inicial se omite y la primera actualización se realiza en el siguiente momento programado; por ejemplo, para `EVERY 1 HOUR`, la primera actualización se realizará al final de la hora actual.
+
+<div id="in-replicated-db">
+  ### En una DB Replicated
+</div>
+
+Si la vista materializada actualizable está en una [base de datos Replicated](/es/reference/engines/database-engines/replicated), las réplicas se coordinan entre sí para que solo una de ellas realice la actualización en cada momento programado. Se requiere el motor de tabla [ReplicatedMergeTree](/es/reference/engines/table-engines/mergetree-family/replication) para que todas las réplicas vean los datos generados por la actualización.
+
+En modo `APPEND`, la coordinación puede deshabilitarse con `SETTINGS all_replicas = 1`. Esto hace que las réplicas realicen las actualizaciones de forma independiente. En este caso, ReplicatedMergeTree no es necesario.
+
+En el modo no `APPEND`, solo se admite la actualización coordinada. Para una actualización no coordinada, use la base de datos `Atomic` y la consulta `CREATE ... ON CLUSTER` para crear vistas materializadas actualizables en todas las réplicas.
+
+La coordinación se realiza mediante Keeper. La ruta del znode se determina mediante la configuración de servidor [default&#95;replica&#95;path](/es/reference/settings/server-settings/settings#default_replica_path).
+
+<div id="refresh-dependencies">
+  ### Dependencias de actualización
+</div>
+
+`DEPENDS ON` sincroniza las actualizaciones de diferentes tablas:
+
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH EVERY 1 HOUR DEPENDS ON dependency [...]
+```
+
+La actualización de la vista dependiente solo comenzará una vez que hayan finalizado las actualizaciones de todas las vistas de las que depende.
+
+Para actualizarla inmediatamente después de la actualización de otra vista:
+
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH AFTER 0 SECOND DEPENDS ON dependency [...]
+```
+
+O, de forma equivalente:
+
+```sql
+CREATE MATERIALIZED VIEW dependent REFRESH DEPENDS ON dependency [...]
+```
+
+<Note>
+  `DEPENDS ON` solo funciona entre vistas materializadas actualizables. En particular, si la vista de la que depende usa `TO <table>`, asegúrate de usar el nombre de la vista y no el de la tabla. Si la lista de `DEPENDS ON` contiene una tabla normal, una vista no actualizable o un error tipográfico, la vista no se actualizará nunca y mostrará el estado `MissingDependencies` en `system.view_refreshes`. Las dependencias pueden modificarse o eliminarse con `ALTER`; consulta [Cambiar los parámetros de actualización](#changing-refresh-parameters).
+</Note>
+
+<div id="using-depends-on-for-consistent-propagation-latency">
+  #### Uso de DEPENDS ON para una latencia de propagación constante
+</div>
+
+Si ambas vistas usan `REFRESH EVERY` con el mismo período, la dependencia se aplica en cada franja horaria.
+
+P. ej., supongamos que las vistas X e Y usan `REFRESH EVERY 1 HOUR`, y que Y lee de la tabla de salida de X. Sin dependencias, Y normalmente vería los datos de X de la actualización de la hora anterior. Con `DEPENDS ON X`, la actualización de Y de las 11:00 solo comenzará después de que finalice la actualización de X de las 11:00.
+
+```text
+           10:00            11:00            12:00
+           │                │                │
+  X:        [run]┐           [run]┐           [run]┐
+                 │                │                │
+  Y:             └►[run]          └►[run]          └►[run]
+```
+
+Tanto la dependencia como la vista dependiente pueden omitir franjas horarias de forma independiente si las actualizaciones tardan más que el período de actualización. No se garantiza que la vista dependiente se actualice exactamente una vez por cada actualización de la dependencia.
+
+```text
+           10:00          11:00          12:00          13:00
+           │              │              │              |
+  X:        [run]┐         [run]┐         [run]┐         [run]┐
+                 │              └────┐    (Y skips 12:00)     └───┐
+  Y:             └►[10:00 ru------un]└►[11:00 ru---------------un]└►[13:00 run]
+```
+
+<div id="using-depends-on-for-batched-stream-processing">
+  #### Uso de DEPENDS ON para el procesamiento de flujo por lotes
+</div>
+
+Si no se usa `REFRESH EVERY`, la vista dependiente X se actualiza si todas sus dependencias se han actualizado al menos una vez desde la última actualización de X. `REFRESH AFTER T` añade un retraso: la vista dependiente iniciará la actualización T unidades de tiempo después de que la dependencia complete una actualización.
+
+Se permiten las dependencias circulares y son útiles. Considere este grafo de vistas materializadas actualizables:
+
+1. X toma un lote de filas de un flujo y las coloca en una tabla.
+2. Luego, Y y Z leen de esa tabla, realizan agregaciones distintas y añaden los resultados a otras tablas.
+3. Una vez que el lote se ha procesado por completo, X toma el siguiente lote y el ciclo se repite.
+
+```text
+            source
+               │
+               ▼
+          ┌─────────┐
+     ┌───►│    X    │◄───┐
+     │    └──┬───┬──┘    │
+  DEPENDS    │   │    DEPENDS
+    ON       ▼   ▼      ON
+     │      ┌─┐ ┌─┐      │
+     └──────┤Y│ │Z├──────┘
+            └─┘ └─┘
+```
+
+Ejemplo completo:
+
+```sql
+CREATE TABLE current_batch (t UInt64, v Int64) ENGINE ReplicatedMergeTree ORDER BY t;
+CREATE TABLE batch_log (max_t UInt64, n Int64, v_sum Int64, processed_at DateTime64) ENGINE ReplicatedMergeTree ORDER BY max_t;
+CREATE TABLE stats (h UInt64, n UInt64) ENGINE ReplicatedSummingMergeTree ORDER BY h;
+
+-- (system.numbers stands in for a data source with monotonically increasing timestamps or sequence numbers)
+CREATE MATERIALIZED VIEW current_batch_v REFRESH EVERY 10 SECOND DEPENDS ON batch_log_v, stats_v TO current_batch AS SELECT number as t, number * 10 as v FROM system.numbers WHERE number > (SELECT max(max_t) FROM batch_log) LIMIT 100;
+
+CREATE MATERIALIZED VIEW batch_log_v REFRESH DEPENDS ON current_batch_v APPEND TO batch_log AS SELECT max(t) as max_t, count() as n, sum(v) as v_sum, now64() as processed_at FROM current_batch;
+
+CREATE MATERIALIZED VIEW stats_v REFRESH DEPENDS ON current_batch_v APPEND TO stats AS SELECT cityHash64(v) % 20 as h, count() as n FROM current_batch GROUP BY h;
+
+-- Must trigger initial refresh manually.
+SYSTEM REFRESH VIEW current_batch_v;
+```
+
+Las cadenas más largas también funcionan.
+
+Esto solo funciona bien cuando la coordinación de actualización está habilitada, es decir, cuando las vistas están en una base de datos Replicated o Shared. Sin coordinación, un reinicio del servidor interrumpe el ciclo, por lo que se requiere un `SYSTEM REFRESH VIEW` manual después de cada reinicio, en lugar de solo una vez tras crear las vistas.
+
+<div id="refresh-settings">
+  ### Parámetros de actualización
+</div>
+
+Parámetros de actualización disponibles:
+
+* `refresh_retries` - Cuántas veces reintentar si la consulta de actualización falla con una excepción. Si fallan todos los reintentos, se pasa a la siguiente hora de actualización programada. 0 significa que no hay reintentos; -1, que los reintentos son infinitos. Predeterminado: 2.
+* `refresh_retry_initial_backoff_ms` - Retraso antes del primer reintento, si `refresh_retries` no es cero. Cada reintento posterior duplica el retraso, hasta `refresh_retry_max_backoff_ms`. Predeterminado: 100 ms.
+* `refresh_retry_max_backoff_ms` - Límite del crecimiento exponencial del retraso entre intentos de actualización. Predeterminado: 60000 ms (1 minuto).
+* `all_replicas` - En una [base de datos Replicated](/es/reference/engines/database-engines/replicated) con `APPEND`, controla si todas las réplicas se actualizan de forma independiente o si solo una réplica se actualiza en cada momento programado. No se puede cambiar después de crear la vista. Predeterminado: `false`.
+
+<div id="changing-refresh-parameters">
+  ### Cambiar los parámetros de actualización
+</div>
+
+Los parámetros de actualización de una vista materializada actualizable existente se modifican mediante [`ALTER TABLE ... MODIFY REFRESH`](/es/reference/statements/alter/view#alter-table--modify-refresh-statement):
+
+```sql
+ALTER TABLE [db.]name MODIFY REFRESH EVERY|AFTER ... [RANDOMIZE FOR ...] [DEPENDS ON ...] [SETTINGS ...]
+```
+
+La programación (`EVERY` o `AFTER`) es obligatoria: la sentencia siempre sustituye *todos* los parámetros de actualización —la programación, `RANDOMIZE FOR`, `DEPENDS ON` y los parámetros de actualización— por los especificados. Todo lo que se omita se restablece a su valor predeterminado (configuración) o se elimina (dependencias, aleatorización).
+
+<Note>
+  * Para cambiar solo los parámetros de actualización (por ejemplo, `refresh_retries`), repita la programación actual:
+
+    ```sql
+    ALTER TABLE rmv MODIFY REFRESH EVERY 1 HOUR SETTINGS refresh_retries = 5;
+    ```
+
+  * `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` no es compatible con las vistas materializadas; debe hacerse mediante `MODIFY REFRESH`.
+
+  * No se admite añadir ni quitar `APPEND`.
+
+  * La configuración `all_replicas` no puede cambiarse después de la creación.
+</Note>
+
+Ejemplos:
+
+```sql
+-- Cambiar el horario, eliminar la configuración y las dependencias existentes.
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE;
+
+-- Cambiar el horario y ajustar el comportamiento de reintentos.
+ALTER TABLE rmv MODIFY REFRESH EVERY 30 MINUTE
+SETTINGS refresh_retries = 5,
+         refresh_retry_initial_backoff_ms = 500,
+         refresh_retry_max_backoff_ms = 60000;
+
+-- Mantener la dependencia al cambiar el período.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR DEPENDS ON other_rmv;
+
+-- Eliminar la dependencia omitiendo `DEPENDS ON`.
+ALTER TABLE rmv MODIFY REFRESH EVERY 6 HOUR;
+```
+
+<div id="other-operations">
+  ### Otras operaciones
+</div>
+
+El estado de todas las vistas materializadas actualizables está disponible en la tabla [`system.view_refreshes`](/es/reference/system-tables/view_refreshes). En particular, incluye el progreso de la actualización (si está en curso), la hora de la última y de la próxima actualización, y el mensaje de excepción si una actualización falló.
+
+Para detener, iniciar, activar o cancelar actualizaciones manualmente, use [`SYSTEM STOP|START|REFRESH|WAIT|CANCEL VIEW`](/es/reference/statements/system#managing-refreshable-materialized-views).
+
+Para esperar a que se complete una actualización, use [`SYSTEM WAIT VIEW`](/es/reference/statements/system#wait-view). En particular, resulta útil para esperar a que termine la actualización inicial tras crear una vista.
+
+<Note>
+  Dato curioso: la consulta de actualización puede leer de la vista que se está actualizando y ver la versión de los datos anterior a la actualización. Esto significa que puede implementar el juego de la vida de Conway: https://pastila.nl/?00021a4b/d6156ff819c83d490ad2dcec05676865#O0LGWTO7maUQIA4AcGUtlA==
+</Note>
+
+<div id="window-view">
+  ## Window View
+</div>
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<Info>
+  Esta es una función experimental que puede cambiar de forma incompatible con versiones anteriores en futuras versiones. Habilite el uso de las Window View y de la consulta `WATCH` mediante la opción de configuración [allow&#95;experimental&#95;window&#95;view](/es/reference/settings/session-settings#allow_experimental_window_view). Introduzca el comando `set allow_experimental_window_view = 1`.
+</Info>
+
+```sql
+CREATE WINDOW VIEW [IF NOT EXISTS] [db.]table_name [TO [db.]table_name] [INNER ENGINE engine] [ENGINE engine] [WATERMARK strategy] [ALLOWED_LATENESS interval_function] [POPULATE]
+AS SELECT ...
+GROUP BY time_window_function
+[COMMENT 'comment']
+```
+
+Una window view puede agregar datos por ventana de tiempo y generar los resultados cuando la ventana esté lista para dispararse. Almacena los resultados parciales de la agregación en una tabla interna (o especificada) para reducir la latencia, y puede enviar el resultado del procesamiento a una tabla especificada o enviar notificaciones mediante la consulta WATCH.
+
+Crear una window view es similar a crear `MATERIALIZED VIEW`. Una window view necesita un motor de almacenamiento interno para guardar datos intermedios. El almacenamiento interno puede especificarse mediante la cláusula `INNER ENGINE`; la window view usará `AggregatingMergeTree` como motor interno predeterminado.
+
+Al crear una window view sin `TO [db].[table]`, debe especificar `ENGINE`, el motor de tabla para almacenar los datos.
+
+<div id="time-window-functions">
+  ### Funciones de ventana de tiempo
+</div>
+
+Las [funciones de ventana de tiempo](/es/reference/functions/regular-functions/time-window-functions) se utilizan para obtener los límites inferior y superior de la ventana de los registros. La window view debe usarse con una función de ventana de tiempo.
+
+<div id="time-attributes">
+  ### ATRIBUTOS DE TIEMPO
+</div>
+
+Window view admite el uso de **tiempo de procesamiento** y **tiempo de evento**.
+
+El **tiempo de procesamiento** permite que window view genere resultados en función de la hora de la máquina local y se usa de forma predeterminada. Es la noción de tiempo más sencilla, pero no proporciona determinismo. El atributo de tiempo de procesamiento puede definirse estableciendo el valor de `time_attr` de la función de ventana de tiempo en una columna de la tabla o mediante la función `now()`. La siguiente consulta crea una window view con tiempo de procesamiento.
+
+```sql
+CREATE WINDOW VIEW wv AS SELECT count(number), tumbleStart(w_id) as w_start from date GROUP BY tumble(now(), INTERVAL '5' SECOND) as w_id
+```
+
+El **tiempo del evento** es el momento en que ocurrió cada evento individual en el dispositivo que lo produjo. Este tiempo suele estar incluido en los registros cuando se generan. El procesamiento por tiempo del evento permite obtener resultados coherentes incluso en caso de eventos desordenados o tardíos. Window view admite el procesamiento por tiempo del evento mediante la sintaxis `WATERMARK`.
+
+Window view proporciona tres estrategias de watermark:
+
+* `STRICTLY_ASCENDING`: Emite un watermark con la marca temporal máxima observada hasta el momento. Las filas con una marca temporal inferior a la marca temporal máxima no se consideran tardías.
+* `ASCENDING`: Emite un watermark con la marca temporal máxima observada hasta el momento menos 1. Las filas con una marca temporal igual o inferior a la marca temporal máxima no se consideran tardías.
+* `BOUNDED`: WATERMARK=INTERVAL. Emite watermarks que corresponden a la marca temporal máxima observada menos el retraso especificado.
+
+Las siguientes consultas son ejemplos de creación de una window view con `WATERMARK`:
+
+```sql
+CREATE WINDOW VIEW wv WATERMARK=STRICTLY_ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+CREATE WINDOW VIEW wv WATERMARK=ASCENDING AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+CREATE WINDOW VIEW wv WATERMARK=INTERVAL '3' SECOND AS SELECT count(number) FROM date GROUP BY tumble(timestamp, INTERVAL '5' SECOND);
+```
+
+De forma predeterminada, la ventana se activará cuando llegue la watermark, y los elementos que lleguen por detrás de la watermark se descartarán. La window view admite el procesamiento de eventos tardíos configurando `ALLOWED_LATENESS=INTERVAL`. Un ejemplo de gestión de la tardanza es:
+
+```sql
+CREATE WINDOW VIEW test.wv TO test.dst WATERMARK=ASCENDING ALLOWED_LATENESS=INTERVAL '2' SECOND AS SELECT count(a) AS count, tumbleEnd(wid) AS w_end FROM test.mt GROUP BY tumble(timestamp, INTERVAL '5' SECOND) AS wid;
+```
+
+Tenga en cuenta que los elementos emitidos por una activación tardía deben tratarse como resultados actualizados de un cálculo anterior. En lugar de activarse al final de las ventanas, la window view se activará inmediatamente cuando llegue el evento tardío. Por lo tanto, generará múltiples salidas para la misma ventana. Los usuarios deben tener en cuenta estos resultados duplicados o deduplicarlos.
+
+Puede modificar la consulta `SELECT` especificada en la window view mediante la sentencia `ALTER TABLE ... MODIFY QUERY`. La estructura de datos resultante de la nueva consulta `SELECT` debe ser la misma que la de la consulta `SELECT` original, con o sin la cláusula `TO [db.]name`. Tenga en cuenta que los datos de la ventana actual se perderán porque el estado intermedio no se puede reutilizar.
+
+<div id="monitoring-new-windows">
+  ### Supervisión de nuevas ventanas
+</div>
+
+Window view admite la consulta [WATCH](/es/reference/statements/watch) para supervisar los cambios, o use la sintaxis `TO` para enviar los resultados a una tabla.
+
+```sql
+WATCH [db.]window_view
+[EVENTS]
+[LIMIT n]
+[FORMAT format]
+```
+
+Se puede especificar un `LIMIT` para definir el número de actualizaciones que se recibirán antes de finalizar la consulta. La cláusula `EVENTS` puede usarse para obtener una forma abreviada de la consulta `WATCH`, donde, en lugar del resultado de la consulta, solo se obtiene la watermark más reciente de la consulta.
+
+<div id="settings-1">
+  ### Configuración
+</div>
+
+* `window_view_clean_interval`: El intervalo de limpieza de window view, en segundos, para liberar datos obsoletos. El sistema conservará las ventanas que no se hayan activado por completo según la hora del sistema o la configuración de `WATERMARK`, y eliminará el resto de los datos.
+* `window_view_heartbeat_interval`: El intervalo de heartbeat, en segundos, para indicar que la consulta watch sigue activa.
+* `wait_for_window_view_fire_signal_timeout`: Tiempo de espera para recibir la señal de activación de window view durante el procesamiento por tiempo de evento.
+
+<div id="example">
+  ### Ejemplo
+</div>
+
+Supongamos que necesitamos contar la cantidad de logs de clics por cada 10 segundos en una tabla de logs llamada `data`, cuya estructura es:
+
+```sql
+CREATE TABLE data ( `id` UInt64, `timestamp` DateTime) ENGINE = Memory;
+```
+
+Primero, creamos una window view con una tumble window con un intervalo de 10 segundos:
+
+```sql
+CREATE WINDOW VIEW wv as select count(id), tumbleStart(w_id) as window_start from data group by tumble(timestamp, INTERVAL '10' SECOND) as w_id
+```
+
+A continuación, usamos la consulta `WATCH` para obtener los resultados.
+
+```sql
+WATCH wv
+```
+
+Cuando se insertan logs en la tabla `data`,
+
+```sql
+INSERT INTO data VALUES(1,now())
+```
+
+La consulta `WATCH` debería mostrar los resultados de la siguiente manera:
+
+```text
+┌─count(id)─┬────────window_start─┐
+│         1 │ 2020-01-14 16:56:40 │
+└───────────┴─────────────────────┘
+```
+
+Como alternativa, podemos adjuntar la salida a otra tabla mediante la sintaxis `TO`.
+
+```sql
+CREATE WINDOW VIEW wv TO dst AS SELECT count(id), tumbleStart(w_id) as window_start FROM data GROUP BY tumble(timestamp, INTERVAL '10' SECOND) as w_id
+```
+
+Se pueden encontrar ejemplos adicionales en las pruebas con estado de ClickHouse (allí se llaman `*window_view*`).
+
+<div id="window-view-usage">
+  ### Uso de Window View
+</div>
+
+La window view es útil en los siguientes escenarios:
+
+* **Monitoreo**: Agrega y calcula las métricas de los logs a lo largo del tiempo, y envía los resultados a una tabla de destino. El dashboard puede usar la tabla de destino como tabla de origen.
+* **Análisis**: Agrega y preprocesa automáticamente los datos dentro de la ventana de tiempo. Esto puede ser útil al analizar una gran cantidad de logs. El preprocesamiento elimina cálculos repetidos en múltiples consultas y reduce la latencia de las consultas.
+
+<div id="related-content">
+  ## Contenido relacionado
+</div>
+
+* Blog: [Cómo trabajar con datos de series temporales en ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)
+* Blog: [Creación de una solución de observabilidad con ClickHouse - Parte 2 - Trazas](https://clickhouse.com/blog/storing-traces-and-spans-open-telemetry-in-clickhouse)
+
+<div id="temporary-views">
+  ## Vistas temporales
+</div>
+
+ClickHouse admite **vistas temporales** con las siguientes características (en línea con las tablas temporales, cuando corresponde):
+
+* **Duración de la sesión**
+  Una vista temporal existe solo durante la sesión actual. Se elimina automáticamente cuando la sesión finaliza.
+
+* **Sin base de datos**
+  **No se puede** calificar una vista temporal con un nombre de base de datos. Existe fuera de las bases de datos (en el espacio de nombres de la sesión).
+
+* **No replicadas / sin ON CLUSTER**
+  Los objetos temporales son locales a la sesión y **no pueden** crearse con `ON CLUSTER`.
+
+* **Resolución de nombres**
+  Si un objeto temporal (tabla o vista) tiene el mismo nombre que un objeto persistente y una consulta hace referencia a ese nombre **sin** una base de datos, se usa el objeto **temporal**.
+
+* **Objeto lógico (sin almacenamiento)**
+  Una vista temporal solo almacena su texto `SELECT` (usa internamente el motor `View`). No conserva datos y no admite `INSERT`.
+
+* **Cláusula ENGINE**
+  **No** es necesario especificar `ENGINE`; si se indica como `ENGINE = View`, se ignora o se trata como la misma vista lógica.
+
+* **Seguridad / privilegios**
+  Para crear una vista temporal se requiere el privilegio `CREATE TEMPORARY VIEW`, que se concede implícitamente mediante `CREATE VIEW`.
+
+* **SHOW CREATE**
+  Use `SHOW CREATE TEMPORARY VIEW view_name;` para mostrar el DDL de una vista temporal.
+
+<div id="temporary-views-syntax">
+  ### Sintaxis
+</div>
+
+```sql
+CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
+```
+
+`OR REPLACE` **no** se admite para las vistas temporales (para mantener la coherencia con las tablas temporales). Si necesita “reemplazar” una vista temporal, elimínela y vuelva a crearla.
+
+<div id="examples">
+  ### Ejemplos
+</div>
+
+Cree una tabla fuente temporal y una vista temporal sobre esta:
+
+```sql
+CREATE TEMPORARY TABLE t_src (id UInt32, val String);
+INSERT INTO t_src VALUES (1, 'a'), (2, 'b');
+
+CREATE TEMPORARY VIEW tview AS
+SELECT id, upper(val) AS u
+FROM t_src
+WHERE id <= 2;
+
+SELECT * FROM tview ORDER BY id;
+```
+
+Muestra su DDL:
+
+```sql
+SHOW CREATE TEMPORARY VIEW tview;
+```
+
+Elimínela:
+
+```sql
+DROP TEMPORARY VIEW IF EXISTS tview;  -- las vistas temporales se eliminan con la sintaxis TEMPORARY TABLE
+```
+
+<div id="temporary-views-limitations">
+  ### No permitidos / limitaciones
+</div>
+
+* `CREATE OR REPLACE TEMPORARY VIEW ...` → **no permitido** (usa `DROP` + `CREATE`).
+* `CREATE TEMPORARY MATERIALIZED VIEW ...` / `WINDOW VIEW` → **no permitido**.
+* `CREATE TEMPORARY VIEW db.view AS ...` → **no permitido** (sin calificador de base de datos).
+* `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **no permitido** (los objetos temporales son locales a la sesión).
+* `POPULATE`, `REFRESH`, `TO [db.table]`, motores internos y todas las cláusulas específicas de las MV → **no aplicables** a las vistas temporales.
+
+<div id="temporary-views-distributed-notes">
+  ### Notas sobre las consultas distribuidas
+</div>
+
+Una **vista** temporal es solo una definición; no hay datos que transferir. Si la vista temporal hace referencia a **tablas** temporales (p. ej., `Memory`), sus datos pueden enviarse a servidores remotos durante la ejecución de consultas distribuidas, del mismo modo que ocurre con las tablas temporales.
+
+<div id="temporary-views-distributed-example">
+  #### Ejemplo
+</div>
+
+```sql
+-- Una tabla en memoria con ámbito de sesión
+CREATE TEMPORARY TABLE temp_ids (id UInt64) ENGINE = Memory;
+
+INSERT INTO temp_ids VALUES (1), (5), (42);
+
+-- Una vista con ámbito de sesión sobre la tabla temporal (puramente lógica)
+CREATE TEMPORARY VIEW v_ids AS
+SELECT id FROM temp_ids;
+
+-- Reemplaza 'test' con el nombre de tu cluster.
+-- GLOBAL JOIN obliga a ClickHouse a *enviar* el lado pequeño del join (temp_ids a través de v_ids)
+-- a cada servidor remoto que ejecuta el lado izquierdo.
+SELECT count()
+FROM cluster('test', system.numbers) AS n
+GLOBAL ANY INNER JOIN v_ids USING (id)
+WHERE n.number < 100;
+
+```

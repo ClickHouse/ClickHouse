@@ -307,7 +307,8 @@ MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const 
         settings.save_marks_in_cache,
         settings.read_settings,
         load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1);
+        /*num_columns_in_mark=*/ 1,
+        settings.use_streaming_marks_compression);
 
     auto stream_settings = settings;
     stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);

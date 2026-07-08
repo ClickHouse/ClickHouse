@@ -1,0 +1,117 @@
+---
+slug: /clickhouse-operator/install/kubectl
+title: "Installer ClickHouse Operator avec kubectl"
+keywords: ['kubernetes']
+description: "Ce guide explique comment installer ClickHouse Operator à l'aide de kubectl et de fichiers manifeste."
+doc_type: 'guide'
+sidebarTitle: 'kubectl'
+---
+
+Ce guide explique comment installer ClickHouse Operator à l&#39;aide de kubectl et de fichiers manifeste.
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* cluster Kubernetes v1.28.0 ou version ultérieure
+* kubectl v1.28.0 ou version ultérieure
+* permissions d’administrateur du cluster
+
+<div id="install-from-release-manifests">
+  ## Installer à partir des manifestes de la dernière version
+</div>
+
+<Note>
+  Nécessite cert-manager pour émettre les certificats du webhook.
+</Note>
+
+Installez l’opérateur et les CRD depuis la dernière version publiée :
+
+```bash
+kubectl apply --server-side --force-conflicts -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator.yaml
+```
+
+L’application côté serveur est nécessaire, car l’ensemble des CRD dépasse la limite de taille de l’application côté client. Pour les environnements qui ne prennent en charge que l’application côté client, utilisez la variante de CRD sans descriptions :
+
+```bash
+kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator-stripped-crds.yaml
+```
+
+Cela va :
+
+1. Créer l’espace de noms `clickhouse-operator-system`
+2. Installer les définitions de ressources personnalisées (CRD) pour ClickHouseCluster et KeeperCluster
+3. Créer les ServiceAccounts, Roles et RoleBindings nécessaires
+4. Déployer le controller manager de l’opérateur
+5. Enregistrer les webhooks pour la validation des ressources et l’attribution de valeurs par défaut
+6. Configurer les certificats SSL à l’aide de cert-manager
+7. Activer le point de terminaison de métriques
+
+<div id="verify-installation">
+  ## Vérifier l’installation
+</div>
+
+Vérifiez que l’opérateur est bien en cours d’exécution :
+
+```bash
+kubectl get pods -n clickhouse-operator-system
+```
+
+Résultat attendu :
+
+```
+NAME                                                 READY   STATUS    RESTARTS   AGE
+clickhouse-operator-controller-manager-xxxxxxxxxx    1/1     Running   0          1m
+```
+
+Vérifiez que les CRD sont installés :
+
+```bash
+kubectl get crd | grep clickhouse.com
+```
+
+Résultat attendu :
+
+```
+clickhouseclusters.clickhouse.com    2025-01-06T00:00:00Z
+keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
+```
+
+<div id="configure-custom-deployment-options">
+  ## Configurer des options de déploiement personnalisées
+</div>
+
+Si vous souhaitez configurer les options de déploiement de l&#39;opérateur, suivez les étapes ci-dessous.
+
+<Steps>
+  <Step>
+    ### Cloner le dépôt
+
+    ```bash
+    git clone https://github.com/ClickHouse/clickhouse-operator.git
+    cd clickhouse-operator
+    ```
+  </Step>
+
+  <Step>
+    ### Configurer les options d&#39;installation
+
+    Modifiez `config/default/kustomization.yaml` pour activer ou désactiver les fonctionnalités selon vos besoins.
+
+    * Pour désactiver les webhooks, mettez en commentaire les sections `[WEBHOOK]` et `[CERTMANAGER]`.
+    * Pour activer le point de terminaison de métriques sécurisé, mettez en commentaire les sections `[METRICS]` et décommentez les sections `[METRICS SECURE]` et `[CERTMANAGER]`.
+    * Pour activer ServiceMonitor pour Prometheus Operator, décommentez la section `[PROMETHEUS]`.
+    * Pour activer les politiques réseau de l&#39;opérateur, décommentez la section `[NETWORK POLICY]`.
+  </Step>
+
+  <Step>
+    ### Générer et déployer
+
+    Générez les manifestes de l&#39;opérateur et appliquez-les :
+
+    ```bash
+    make build-installer VERSION=<required operator version> [IMG=<custom registry path>]
+    kubectl apply --server-side --force-conflicts -f dist/install.yaml
+    ```
+  </Step>
+</Steps>
