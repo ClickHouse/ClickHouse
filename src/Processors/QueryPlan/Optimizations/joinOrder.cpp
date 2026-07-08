@@ -356,7 +356,8 @@ private:
     /// equivalent to the `BitSet` overloads but bypass per-CCP allocations entirely.
     void initDPsubScratch();
     std::optional<JoinKind> isValidJoinOrderMask(UInt32 left_mask, UInt32 right_mask) const;
-    /// Returns the connecting (and, for two-relation joins, the early non-connecting) predicates,
+    /// Returns the connecting predicates, plus single-relation predicates attached at the leaf join
+    /// of their relation (and constant predicates at two-relation joins),
     /// reusing an internal scratch buffer that is overwritten on every call.
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
     SelectivityEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
@@ -630,7 +631,14 @@ static std::optional<UInt64> estimateJoinCardinality(
 
     double joined_rows = 1.0;
     if (!left_rows || !right_rows)
+    {
+        /// One side is unknown: for an equi join assume FK->PK, so the join keeps the known side.
+        /// For a cross or range-only join the result is a product with an unknown multiplier;
+        /// returning the known side would make the cross product look deceptively small.
+        if (!selectivity.has_equi)
+            return {};
         joined_rows = std::max(lhs, rhs);
+    }
     else if (selectivity.reliable)
         joined_rows = std::max(selectivity.value * lhs * rhs, 1.0);
     else if (selectivity.has_equi)
@@ -1009,6 +1017,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
     while (components.size() > 1)
     {
         std::shared_ptr<DPJoinEntry> best_plan = nullptr;
+        bool best_plan_connected = false;
         size_t best_i = 0;
         size_t best_j = 0;
 
@@ -1032,7 +1041,12 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
 
                 auto selectivity = computeSelectivity(edges, left->relations, right->relations);
                 auto current_cost = computeJoinCost(left, right, selectivity);
-                if (!best_plan || current_cost < best_plan->cost)
+                /// A connected pair always supersedes an unconnected (cross product) one, regardless
+                /// of cost: cost estimates of cross products are unreliable (a relation without a row
+                /// estimate makes the product look arbitrarily small), so an unconnected pair that
+                /// happened to be evaluated first must not shadow valid connected plans.
+                if (!best_plan || (connected && !best_plan_connected)
+                    || (connected == best_plan_connected && current_cost < best_plan->cost))
                 {
                     if (join_kind == JoinKind::Inner && edges.empty() && !transitively_connected)
                         join_kind = JoinKind::Cross;
@@ -1052,6 +1066,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveGreedy()
                     }
                     applied_edges = std::move(edges);
                     best_plan = std::make_shared<DPJoinEntry>(left, right, current_cost, cardinality, std::move(join_operator));
+                    best_plan_connected = connected;
                     best_i = i;
                     best_j = j;
                 }
@@ -1260,19 +1275,31 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
 
                     auto applicable_edge = getApplicableExpressions(left->relations, right->relations);
                     /// Only leave the edges that connect left and right.
-                    /// DPsize also includes non-connecting predicates (single-table filters) at the earliest
-                    /// stage (component_size == 2), unlike DPhyp which handles them separately via the hyperedge graph.
+                    /// DPsize also includes non-connecting predicates (single-relation filters merged into the
+                    /// join graph), unlike DPhyp which bails out on them and falls back to another algorithm.
+                    bool has_direct_connection = false;
                     std::vector<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
+                        const auto & edge_sources = edge_it->getSourceRelations();
                         if (connects(edge_it, left->relations, right->relations))
                         {
                             LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            has_direct_connection = true;
                             edge.push_back(edge_it);
                         }
-                        else if ((edge_it->fromLeft() || edge_it->fromRight() || edge_it->fromNone()) && component_size == 2)
+                        else if (edge_sources.count() == 1 && (edge_sources == left->relations || edge_sources == right->relations))
                         {
-                            LOG_TEST(log, "Adding early non-connecting predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            /// A single-relation predicate is attached at the join step where its relation forms
+                            /// a whole side, i.e. at the leaf join of that relation. Every join tree contains
+                            /// exactly one such step per relation, so the predicate is applied exactly once
+                            /// regardless of the chosen join order.
+                            LOG_TEST(log, "Adding single-relation predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            edge.push_back(edge_it);
+                        }
+                        else if (edge_sources.none() && component_size == 2)
+                        {
+                            LOG_TEST(log, "Adding constant predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             edge.push_back(edge_it);
                         }
                         else
@@ -1281,7 +1308,10 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                         }
                     }
 
-                    bool connected = hasEquiConnection(edge, left->relations, right->relations)
+                    /// Any predicate referencing both sides makes the pair joinable, including non-equi ones
+                    /// (ranges, OR, ...): they are costed as a full cross product (see `computeSelectivity`),
+                    /// but must still produce a valid plan when they are the only link between the two sides.
+                    bool connected = has_direct_connection
                         || query_graph.areTransitivelyConnected(left->relations, right->relations);
 
                     LOG_TEST(log, "Considering join between {} and {}, predicates count: {}, connected: {}",
@@ -1337,8 +1367,8 @@ void JoinOrderOptimizer::tryJoin(const BitSet & left_rels, const BitSet & right_
         /// Predicates spanning 2+ relations were already applied in a sub-join.
         /// Single-table or constant predicates (e.g. moved into `ON` by
         /// `query_plan_merge_filter_into_join_condition`) are not handled by `dphyp` here;
-        /// `dpsize` attaches them at the smallest containing join, but `dphyp` would need
-        /// extra bookkeeping to avoid double-application. For now, mark the query as
+        /// `dpsize` and `dpsub` attach them at the leaf join of their relation, but `dphyp` would
+        /// need extra bookkeeping to avoid double-application. For now, mark the query as
         /// unsupported and let `solveDPhyp` return `nullptr` so the fallback chain runs.
         if (predicate->getSourceRelations().count() < 2)
         {
