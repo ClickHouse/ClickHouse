@@ -1,0 +1,34 @@
+-- Ported from DuckDB test/sql/join/iejoin/iejoin_projection_maps.test_slow: only a subset
+-- of the columns is selected from the join, so the unused ones must be pruned correctly.
+-- The original relies on seeded `random()` and DuckDB-internal projection maps; here the data
+-- is deterministic and the result is compared with the cross join with a filter.
+
+SET allow_experimental_ie_join = 1;
+
+DROP TABLE IF EXISTS df;
+
+CREATE TABLE df ENGINE = MergeTree ORDER BY tuple() AS
+SELECT toInt32(cityHash64(number, 1) % 100 + 1) AS id,
+       toInt32(cityHash64(number, 2) % 10 + 1) AS id2,
+       toInt32(cityHash64(number, 3) % 5 + 1) AS id3,
+       toInt32(cityHash64(number, 4) % 10000) AS v
+FROM numbers(3000);
+
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id2, r.v FROM df l JOIN df r ON l.id3 > r.id3 AND l.id3 < r.id3 + 3) WHERE explain LIKE '%IEJoin%';
+
+SELECT (
+    SELECT (count(), sum(cityHash64(l.id2, r.v))) FROM df l JOIN df r ON l.id3 > r.id3 AND l.id3 < r.id3 + 3
+) = (
+    SELECT (count(), sum(cityHash64(l.id2, r.v))) FROM df l JOIN df r ON l.id3 > r.id3 AND l.id3 < r.id3 + 3
+    SETTINGS allow_experimental_ie_join = 0
+);
+
+-- The same with an aggregation on top, as in the original
+SELECT (
+    SELECT groupArray((id2, id3, s)) FROM (SELECT l.id2 AS id2, r.id3 AS id3, sum(l.v * r.v) AS s FROM df l JOIN df r ON l.id3 > r.id3 AND l.id3 < r.id3 + 3 GROUP BY id2, id3 ORDER BY id2, id3)
+) = (
+    SELECT groupArray((id2, id3, s)) FROM (SELECT l.id2 AS id2, r.id3 AS id3, sum(l.v * r.v) AS s FROM df l JOIN df r ON l.id3 > r.id3 AND l.id3 < r.id3 + 3 GROUP BY id2, id3 ORDER BY id2, id3)
+    SETTINGS allow_experimental_ie_join = 0
+);
+
+DROP TABLE df;
