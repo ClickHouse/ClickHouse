@@ -19,7 +19,7 @@ doc_type: 'reference'
 
 A frame has the following layout:
 
-```
+```txt
 [ColumnarV1Header: 8 bytes]
 [ColDescriptor × num_columns: 40 bytes each]
 [Column data blocks]
