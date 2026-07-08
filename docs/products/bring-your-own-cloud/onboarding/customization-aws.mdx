@@ -89,13 +89,55 @@ New region setup can take up to 40 minutes.
 For organizations with advanced security requirements or strict compliance policies, you can provide your own IAM roles instead of having ClickHouse Cloud create them. This approach gives you complete control over IAM permissions and allows you to enforce your organization's security policies.
 
 <Info>
-Customer-managed IAM roles are in private preview. If you require this capability, contact ClickHouse Support to discuss your specific requirements and timeline.
-
-When available, this feature will allow you to:
-
-- Provide pre-configured IAM roles for ClickHouse Cloud to use
-- Remove write permissions to IAM related permissions for `ClickHouseManagementRole` used for cross-account access
-- Maintain full control over role permissions and trust relationships
+Customer-managed IAM roles are in private preview. Contact ClickHouse Support to enable this capability for your organization before following the steps below.
 </Info>
+
+With customer-managed IAM roles, you:
+
+- Pre-create the per-infrastructure IAM roles that ClickHouse Cloud would otherwise create
+- Remove IAM write permissions from the `ClickHouseManagementRole` used for cross-account access
+- Maintain full control over role permissions and trust relationships
+
+<Steps>
+<Step>
+### Configure the management role without IAM write permissions {#byo-iam-management-role}
+
+When performing the [initial BYOC setup](/cloud/reference/byoc/onboarding/standard), disable IAM write permissions on the management role. With the CloudFormation template, set the `IncludeIAMWritePermissions` parameter to `false`. With the Terraform module:
+
+```hcl
+module "clickhouse_onboarding" {
+  source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+  external_id                   = "<external-id-provided-by-clickhouse>"
+  include_iam_write_permissions = false
+}
+```
+
+Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) — always use the latest release.
+</Step>
+<Step>
+### Create the per-infrastructure IAM roles {#byo-iam-per-infra-roles}
+
+Before each BYOC infrastructure is provisioned, create its required IAM roles (EKS pod identity roles, the ClickHouse S3 access role, and the data-plane management role) with the [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) per-infra module:
+
+```hcl
+module "clickhouse_per_infra_iam" {
+  source = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws-per-infra-iam?ref=<version>"
+
+  spoken_name = "<spoken-name-provided-by-clickhouse>"
+  region      = "<aws-region-of-the-infrastructure>"
+  external_id = "<external-id-provided-by-clickhouse>"
+}
+```
+
+Replace `<version>` with the latest tag from the module's [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) — always use the latest release.
+</Step>
+<Step>
+### Keep the per-infrastructure roles up to date {#byo-iam-keep-up-to-date}
+
+<Warning>
+ClickHouse periodically adds roles and permissions required by new platform capabilities. When ClickHouse notifies you of an update, re-apply the per-infra module at the latest release — running an outdated version can cause provisioning and upgrades of your BYOC infrastructure to fail.
+</Warning>
+</Step>
+</Steps>
 
 For information about the IAM roles that ClickHouse Cloud creates by default, see the [BYOC Privilege Reference](/products/bring-your-own-cloud/reference/privilege).
