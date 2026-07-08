@@ -2,11 +2,12 @@
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
 -- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
--- Regression test: a distributed Cascades plan must not split a MergeTree read into per-node
--- mark-range buckets for FINAL on engines with specialized merging (ReplacingMergeTree, ...).
--- A shuffle join over `t_final FINAL` would otherwise read it with ParallelRead (bucketed), so
--- FINAL dedup runs per node and equal-key rows are never merged, double-counting v. The FINAL
--- read must stay serial (the same way tryMakeDistributedRead does for the non-Cascades plan).
+-- Regression test: a distributed Cascades plan must not split a FINAL MergeTree read into
+-- arbitrary mark-range buckets on engines with specialized merging (ReplacingMergeTree, ...):
+-- FINAL dedup would run per node and equal-key rows would never merge, double-counting v.
+-- A FINAL read is bucketed only through the primary-key-range layers computed by
+-- `setupDistributedReadBuckets` (a dedup group never spans buckets); a read it cannot split
+-- safely stays serial.
 
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
