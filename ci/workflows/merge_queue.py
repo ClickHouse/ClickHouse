@@ -1,6 +1,6 @@
 from praktika import Workflow
 
-from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs, ArtifactNames, JobNames
+from ci.defs.defs import DOCKERS, SECRETS, ArtifactConfigs, ArtifactNames
 from ci.defs.job_configs import JobConfigs
 
 workflow = Workflow.Config(

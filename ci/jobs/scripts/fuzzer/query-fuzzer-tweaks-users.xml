@@ -32,14 +32,16 @@
                     <min>1</min>
                 </enable_analyzer>
 
-                <!-- Prevent stack overflow -->
-                <max_ast_depth>
-                    <readonly/>
-                </max_ast_depth>
+                <!-- Recursion-limiting constraints (max_ast_depth, max_parser_depth,
+                     max_parser_backtracks) live in limit-recursion-settings.xml, installed
+                     alongside this file and shared with the stress test. -->
 
             </constraints>
 
             <!-- Allow all experimental features by default -->
+            <ast_fuzzer_runs>5</ast_fuzzer_runs>
+            <ast_fuzzer_any_query>true</ast_fuzzer_any_query>
+
             <allow_create_index_without_type>1</allow_create_index_without_type>
             <allow_custom_error_code_in_throwif>1</allow_custom_error_code_in_throwif>
             <allow_ddl>1</allow_ddl>

@@ -118,13 +118,18 @@ public:
                 type_val->getName(),
                 getName());
 
-        if (isDynamic(this->type_val) || isVariant(this->type_val))
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of aggregate function {} because the column of that type can contain values with different "
-                "data types. Consider using typed subcolumns or cast column to a specific data type",
-                this->type_val->getName(),
-                getName());
+        auto check_not_dynamic_or_variant = [&](const IDataType & type)
+        {
+            if (isDynamic(type) || isVariant(type))
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument of aggregate function {} because the values of that data type can contain values with "
+                    "different data types. Consider using typed subcolumns or cast column to a specific data type",
+                    this->type_val->getName(),
+                    getName());
+        };
+        check_not_dynamic_or_variant(*this->type_val);
+        this->type_val->forEachChild(check_not_dynamic_or_variant);
     }
 
     static DataTypePtr createResultType(const DataTypes & argument_types_, bool return_both_)
@@ -238,7 +243,7 @@ public:
             add(place, columns, *idx, arena);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         if constexpr (isMin)
         {
@@ -583,6 +588,9 @@ SELECT argMax(a, (b,a)) FROM test;
         {[](const std::string & name, const DataTypes & argument_types, const Array & params, const Settings * settings)
          { return createAggregateFunctionArgMinMax<false>(name, argument_types, params, settings, false); },
          documentation_argMax, properties});
+
+    factory.registerAlias("min_by", "argMin", AggregateFunctionFactory::Case::Insensitive);
+    factory.registerAlias("max_by", "argMax", AggregateFunctionFactory::Case::Insensitive);
 
     FunctionDocumentation::Description description_argAndMin = R"(
 Calculates the `arg` and `val` value for a minimum `val` value.

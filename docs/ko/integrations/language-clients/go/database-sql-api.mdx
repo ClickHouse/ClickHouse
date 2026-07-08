@@ -1,0 +1,667 @@
+---
+sidebarTitle: '데이터베이스/SQL API'
+keywords: ['clickhouse', 'go', 'golang', 'database', 'sql', 'standard']
+description: 'clickhouse-go와 함께 database/sql 표준 인터페이스를 사용하는 방법입니다.'
+slug: /integrations/language-clients/go/database-sql-api
+title: '데이터베이스/SQL API'
+doc_type: 'reference'
+---
+
+표준 API의 전체 코드 예시는 [여기](https://github.com/ClickHouse/clickhouse-go/tree/main/examples/std)에서 확인할 수 있습니다.
+
+연결 구성은 [Configuration](/ko/integrations/language-clients/go/configuration)을 참조하십시오.
+지원되는 데이터 타입 및 Go 타입 매핑은 [Data Types](/ko/integrations/language-clients/go/data-types)를 참조하십시오.
+
+`database/sql` 또는 &quot;표준&quot; API를 사용하면 표준 인터페이스를 준수함으로써, 애플리케이션 코드가 기본 데이터베이스에 종속되지 않아야 하는 시나리오에서 클라이언트를 사용할 수 있습니다. 다만 그에 따른 대가도 있습니다. 추가적인 추상화 계층과 간접화가 생기며, ClickHouse와 완전히 맞지 않는 기본 타입도 포함됩니다. 그러나 도구가 여러 데이터베이스에 연결해야 하는 환경에서는 이러한 비용이 일반적으로 수용 가능한 수준입니다.
+
+또한 이 클라이언트는 전송 계층으로 HTTP를 사용하는 것도 지원합니다. 이 경우에도 최적의 성능을 위해 데이터는 계속 Native 형식으로 인코딩됩니다.
+
+<div id="connecting">
+  ## 연결
+</div>
+
+연결은 `clickhouse://<host>:<port>?<query_option>=<value>` 형식의 DSN 문자열과 `Open` 메서드를 사용하거나 `clickhouse.OpenDB` 메서드를 통해 설정할 수 있습니다. 후자는 `database/sql` 사양의 일부는 아니지만 `sql.DB` 인스턴스를 반환합니다. 이 메서드는 프로파일링과 같은 기능을 제공하며, 이러한 기능은 `database/sql` 사양만으로는 명확하게 노출하기 어렵습니다.
+
+```go
+func Connect() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn := clickhouse.OpenDB(&clickhouse.Options{
+                Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+                Auth: clickhouse.Auth{
+                        Database: env.Database,
+                        Username: env.Username,
+                        Password: env.Password,
+                },
+        })
+        return conn.Ping()
+}
+
+func ConnectDSN() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn, err := sql.Open("clickhouse", fmt.Sprintf("clickhouse://%s:%d?username=%s&password=%s", env.Host, env.Port, env.Username, env.Password))
+        if err != nil {
+                return err
+        }
+        return conn.Ping()
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect.go)
+
+**이후의 모든 예시에서는 별도 언급이 없는 한, ClickHouse `conn` 변수가 이미 생성되어 사용 가능한 것으로 가정합니다.**
+
+<div id="connection-settings">
+  ### 연결 설정
+</div>
+
+대부분의 구성 옵션은 ClickHouse API와 공유됩니다. 공통 설정은 [Configuration](/ko/integrations/language-clients/go/configuration)을 참조하십시오. 다음과 같은 SQL 전용 DSN 매개변수를 사용할 수 있습니다:
+
+* `hosts` - 로드 밸런싱 및 장애 조치를 위한 단일 주소 호스트를 쉼표로 구분한 목록 - [Connecting to Multiple Nodes](/ko/integrations/language-clients/go/configuration#connecting-to-multiple-nodes)를 참조하십시오.
+* `username/password` - 인증 자격 증명 - [Authentication](/ko/integrations/language-clients/go/configuration#authentication)을 참조하십시오.
+* `database` - 현재 기본 데이터베이스를 선택합니다
+* `dial_timeout` - 기간 문자열로, 부호가 있을 수도 있는 10진수 값에 선택적 소수부와 `300ms`, `1s` 같은 단위 접미사를 붙여 지정합니다. 유효한 시간 단위는 `ms`, `s`, `m`입니다.
+* `connection_open_strategy` - `random/in_order` (기본값 `random`) - [Connecting to Multiple Nodes](/ko/integrations/language-clients/go/configuration#connecting-to-multiple-nodes)를 참조하십시오.
+  * `round_robin` - 집합에서 라운드 로빈 방식으로 서버를 선택합니다
+  * `in_order` - 지정된 순서에서 먼저 사용 가능한 서버를 선택합니다
+* `debug` - 디버그 출력을 활성화합니다 (불리언 값)
+* `compress` - 압축 알고리즘을 지정합니다 - `none` (기본값), `zstd`, `lz4`, `gzip`, `deflate`, `br`. `true`로 설정하면 `lz4`가 사용됩니다. 네이티브 통신에서는 `lz4`와 `zstd`만 지원됩니다.
+* `compress_level` - 압축 수준(기본값은 `0`)입니다. 압축을 참조하십시오. 이는 알고리즘에 따라 다릅니다:
+  * `gzip` - `-2` (최고 속도)부터 `9` (최고 압축)까지
+  * `deflate` - `-2` (최고 속도)부터 `9` (최고 압축)까지
+  * `br` - `0` (최고 속도)부터 `11` (최고 압축)까지
+  * `zstd`, `lz4` - 무시됩니다
+* `secure` - 보안 SSL 연결을 설정합니다 (기본값은 `false`)
+* `skip_verify` - 인증서 검증을 건너뜁니다 (기본값은 `false`)
+* `block_buffer_size` - block 버퍼 크기를 제어할 수 있습니다. [`BlockBufferSize`](/ko/integrations/language-clients/go/configuration#connection-settings)를 참조하십시오. (기본값은 `2`)
+
+```go
+func ConnectSettings() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn, err := sql.Open("clickhouse", fmt.Sprintf("clickhouse://127.0.0.1:9001,127.0.0.1:9002,%s:%d/%s?username=%s&password=%s&dial_timeout=10s&connection_open_strategy=round_robin&debug=true&compress=lz4", env.Host, env.Port, env.Database, env.Username, env.Password))
+        if err != nil {
+                return err
+        }
+        return conn.Ping()
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_settings.go)
+
+<div id="connecting-over-http">
+  ### HTTP를 통한 연결
+</div>
+
+기본적으로 연결은 네이티브 프로토콜을 통해 설정됩니다. HTTP가 필요한 경우 DSN에 HTTP 프로토콜을 포함하도록 수정하거나, 연결 옵션에서 Protocol을 지정해 활성화할 수 있습니다.
+
+```go
+func ConnectHTTP() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn := clickhouse.OpenDB(&clickhouse.Options{
+                Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.HttpPort)},
+                Auth: clickhouse.Auth{
+                        Database: env.Database,
+                        Username: env.Username,
+                        Password: env.Password,
+                },
+                Protocol: clickhouse.HTTP,
+        })
+        return conn.Ping()
+}
+
+func ConnectDSNHTTP() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn, err := sql.Open("clickhouse", fmt.Sprintf("http://%s:%d?username=%s&password=%s", env.Host, env.HttpPort, env.Username, env.Password))
+        if err != nil {
+                return err
+        }
+        return conn.Ping()
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_http.go)
+
+<div id="sessions">
+  ### 세션
+</div>
+
+<Info>
+  **HTTP 전용**
+
+  세션은 HTTP 전송을 사용할 때만 필요합니다. 네이티브 TCP 연결은 세션이 기본으로 자동 제공됩니다.
+</Info>
+
+HTTP를 사용할 때는 `session_id`를 설정으로 전달해 임시 테이블과 같은 세션 기반 기능을 활성화합니다.
+
+```go
+conn := clickhouse.OpenDB(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.HttpPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Protocol: clickhouse.HTTP,
+    Settings: clickhouse.Settings{
+        "session_id": uuid.NewString(),
+    },
+})
+if _, err := conn.Exec(`DROP TABLE IF EXISTS example`); err != nil {
+    return err
+}
+_, err = conn.Exec(`
+    CREATE TEMPORARY TABLE IF NOT EXISTS example (
+            Col1 UInt8
+    )
+`)
+if err != nil {
+    return err
+}
+scope, err := conn.Begin()
+if err != nil {
+    return err
+}
+batch, err := scope.Prepare("INSERT INTO example")
+if err != nil {
+    return err
+}
+for i := 0; i < 10; i++ {
+    _, err := batch.Exec(
+        uint8(i),
+    )
+    if err != nil {
+        return err
+    }
+}
+rows, err := conn.Query("SELECT * FROM example")
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+var (
+    col1 uint8
+)
+for rows.Next() {
+    if err := rows.Scan(&col1); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%d\n", col1)
+}
+
+// 참고: rows.Err() 확인을 생략하지 마십시오
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/session.go)
+
+<div id="execution">
+  ## 실행
+</div>
+
+연결이 설정되면 Exec 메서드로 `sql` SQL 문을 실행할 수 있습니다.
+
+```go
+conn.Exec(`DROP TABLE IF EXISTS example`)
+_, err = conn.Exec(`
+    CREATE TABLE IF NOT EXISTS example (
+        Col1 UInt8,
+        Col2 String
+    ) engine=Memory
+`)
+if err != nil {
+    return err
+}
+_, err = conn.Exec("INSERT INTO example VALUES (1, 'test-1')")
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/exec.go)
+
+이 메서드는 context를 전달받는 것을 지원하지 않으며, 기본적으로 background context를 사용해 실행됩니다. 필요한 경우 `ExecContext`를 사용할 수 있습니다. 자세한 내용은 [Context 사용](#using-context)을 참조하십시오.
+
+<div id="batch-insert">
+  ## 배치 삽입
+</div>
+
+배치 방식은 `Being` 메서드로 `sql.Tx`를 생성하면 구현할 수 있습니다. 그런 다음 `INSERT` 문으로 `Prepare` 메서드를 사용해 배치를 준비할 수 있습니다. 그러면 `Exec` 메서드로 행을 추가할 수 있는 `sql.Stmt`가 반환됩니다. 배치는 원래 `sql.Tx`에서 `Commit`을 실행할 때까지 메모리에 누적됩니다.
+
+```go
+batch, err := scope.Prepare("INSERT INTO example")
+if err != nil {
+    return err
+}
+for i := 0; i < 1000; i++ {
+    _, err := batch.Exec(
+        uint8(42),
+        "ClickHouse", "Inc",
+        uuid.New(),
+        map[string]uint8{"key": 1},             // Map(String, UInt8)
+        []string{"Q", "W", "E", "R", "T", "Y"}, // Array(String)
+        []interface{}{ // Tuple(String, UInt8, Array(Map(String, String)))
+            "String Value", uint8(5), []map[string]string{
+                map[string]string{"key": "value"},
+                map[string]string{"key": "value"},
+                map[string]string{"key": "value"},
+            },
+        },
+        time.Now(),
+    )
+    if err != nil {
+        return err
+    }
+}
+return scope.Commit()
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/batch.go)
+
+<div id="querying-rows">
+  ## 행 조회
+</div>
+
+단일 행 조회는 `QueryRow` 메서드를 사용해 수행할 수 있습니다. 이 메서드는 *sql.Row를 반환하며, 여기서 컬럼이 매핑될 변수의 포인터를 전달해 Scan을 호출할 수 있습니다. `QueryRowContext` 변형을 사용하면 background가 아닌 다른 Context를 전달할 수 있습니다. 자세한 내용은 [Context 사용](#using-context)를 참조하십시오.
+
+```go
+row := conn.QueryRow("SELECT * FROM example")
+var (
+    col1             uint8
+    col2, col3, col4 string
+    col5             map[string]uint8
+    col6             []string
+    col7             interface{}
+    col8             time.Time
+)
+if err := row.Scan(&col1, &col2, &col3, &col4, &col5, &col6, &col7, &col8); err != nil {
+    return err
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_row.go)
+
+여러 행을 순회하려면 `Query` 메서드를 사용해야 합니다. 이 메서드는 `*sql.Rows` 구조체를 반환하며, 이 구조체에서 Next를 호출해 행을 순회할 수 있습니다. 이에 해당하는 `QueryContext`는 `context`를 전달할 수 있습니다.
+
+```go
+rows, err := conn.Query("SELECT * FROM example")
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+var (
+    col1             uint8
+    col2, col3, col4 string
+    col5             map[string]uint8
+    col6             []string
+    col7             interface{}
+    col8             time.Time
+)
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2, &col3, &col4, &col5, &col6, &col7, &col8); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%d, col2=%s, col3=%s, col4=%s, col5=%v, col6=%v, col7=%v, col8=%v\n", col1, col2, col3, col4, col5, col6, col7, col8)
+}
+// 참고: rows.Err() 확인을 생략하지 마십시오
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_rows.go)
+
+<div id="async-insert">
+  ## 비동기 삽입
+</div>
+
+비동기 삽입은 `ExecContext` 메서드를 사용해 삽입을 실행하면 구현할 수 있습니다. 아래와 같이 비동기 모드가 활성화된 Context를 전달해야 합니다. 이렇게 하면 클라이언트가 서버의 삽입 완료까지 기다릴지, 아니면 데이터가 수신되는 즉시 응답할지를 사용자가 지정할 수 있습니다. 이는 사실상 [wait&#95;for&#95;async&#95;insert](/ko/reference/settings/session-settings#wait_for_async_insert) 매개변수를 제어합니다.
+
+```go
+const ddl = `
+    CREATE TABLE example (
+            Col1 UInt64
+        , Col2 String
+        , Col3 Array(UInt8)
+        , Col4 DateTime
+    ) ENGINE = Memory
+    `
+if _, err := conn.Exec(ddl); err != nil {
+    return err
+}
+ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
+{
+    for i := 0; i < 100; i++ {
+        _, err := conn.ExecContext(ctx, fmt.Sprintf(`INSERT INTO example VALUES (
+            %d, '%s', [1, 2, 3, 4, 5, 6, 7, 8, 9], now()
+        )`, i, "Golang SQL database driver"))
+        if err != nil {
+            return err
+        }
+    }
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
+
+<div id="parameter-binding">
+  ## 매개변수 바인딩
+</div>
+
+표준 API는 [ClickHouse API](/ko/integrations/language-clients/go/clickhouse-api#parameter-binding)와 동일한 매개변수 바인딩 기능을 지원하므로 `Exec`, `Query`, `QueryRow` 메서드(및 이에 상응하는 [Context](#using-context) 버전)에 매개변수를 전달할 수 있습니다. 위치 기반, 이름 기반, 번호 기반 매개변수를 지원합니다.
+
+```go
+var count uint64
+// 위치 기반 바인드
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 >= ? AND Col3 < ?", 500, now.Add(time.Duration(750)*time.Second)).Scan(&count); err != nil {
+    return err
+}
+// 250
+fmt.Printf("Positional bind count: %d\n", count)
+// 숫자 기반 바인드
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 <= $2 AND Col3 > $1", now.Add(time.Duration(150)*time.Second), 250).Scan(&count); err != nil {
+    return err
+}
+// 100
+fmt.Printf("Numeric bind count: %d\n", count)
+// 이름 기반 바인드
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 <= @col1 AND Col3 > @col3", clickhouse.Named("col1", 100), clickhouse.Named("col3", now.Add(time.Duration(50)*time.Second))).Scan(&count); err != nil {
+    return err
+}
+// 50
+fmt.Printf("Named bind count: %d\n", count)
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/bind.go)
+
+[special cases](/ko/integrations/language-clients/go/clickhouse-api#special-cases)도 여전히 적용됩니다.
+
+<div id="using-context">
+  ## Using context
+</div>
+
+표준 API는 [ClickHouse API](/ko/integrations/language-clients/go/clickhouse-api#using-context)와 마찬가지로 context를 통해 마감 시간, 취소 신호, 기타 요청 범위 값을 전달하는 기능을 지원합니다. ClickHouse API와 달리, 이 기능은 메서드의 `Context` 변형을 사용해 구현합니다. 즉, 기본적으로 background context를 사용하는 `Exec` 같은 메서드에는 context를 첫 번째 매개변수로 전달할 수 있는 `ExecContext` 변형이 있습니다. 이를 통해 애플리케이션 흐름의 어느 단계에서나 context를 전달할 수 있습니다. 예를 들어, `ConnContext`를 통해 연결을 설정할 때나 `QueryRowContext`를 통해 쿼리 행을 요청할 때 context를 전달할 수 있습니다. 사용 가능한 모든 메서드의 예시는 아래와 같습니다.
+
+context를 사용해 마감 시간, 취소 신호, Query id, quota 키, 연결 설정을 전달하는 방법에 대한 자세한 내용은 ClickHouse API의 [Context 사용](/ko/integrations/language-clients/go/clickhouse-api#using-context)를 참조하십시오.
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithSettings(clickhouse.Settings{
+    "async_insert": "1",
+}))
+
+// context를 사용하여 쿼리를 취소할 수 있습니다
+ctx, cancel := context.WithCancel(context.Background())
+go func() {
+    cancel()
+}()
+if err = conn.QueryRowContext(ctx, "SELECT sleep(3)").Scan(); err == nil {
+    return fmt.Errorf("expected cancel")
+}
+
+// 쿼리에 데드라인을 설정합니다 - 절대 시간에 도달하면 쿼리가 취소됩니다. 마찬가지로 연결만 종료되며,
+// 쿼리는 ClickHouse에서 완료될 때까지 계속 실행됩니다
+ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+defer cancel()
+if err := conn.PingContext(ctx); err == nil {
+    return fmt.Errorf("expected deadline exceeeded")
+}
+
+// 로그에서 쿼리 추적을 위해 쿼리 id를 설정합니다 (예: system.query_log 참조)
+var one uint8
+ctx = clickhouse.Context(context.Background(), clickhouse.WithQueryID(uuid.NewString()))
+if err = conn.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
+    return err
+}
+
+conn.ExecContext(context.Background(), "DROP QUOTA IF EXISTS foobar")
+defer func() {
+    conn.ExecContext(context.Background(), "DROP QUOTA IF EXISTS foobar")
+}()
+ctx = clickhouse.Context(context.Background(), clickhouse.WithQuotaKey("abcde"))
+// quota 키를 설정합니다 - 먼저 quota를 생성합니다
+if _, err = conn.ExecContext(ctx, "CREATE QUOTA IF NOT EXISTS foobar KEYED BY client_key FOR INTERVAL 1 minute MAX queries = 5 TO default"); err != nil {
+    return err
+}
+
+// context를 사용하여 쿼리를 취소할 수 있습니다
+ctx, cancel = context.WithCancel(context.Background())
+// 취소 전에 일부 결과를 가져옵니다
+ctx = clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
+    "max_block_size": "1",
+}))
+rows, err := conn.QueryContext(ctx, "SELECT sleepEachRow(1), number FROM numbers(100);")
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+var (
+    col1 uint8
+    col2 uint8
+)
+
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2); err != nil {
+        if col2 > 3 {
+            fmt.Println("expected cancel")
+            return nil
+        }
+        return err
+    }
+    fmt.Printf("row: col2=%d\n", col2)
+    if col2 == 3 {
+        cancel()
+    }
+}
+// 참고: rows.Err() 확인을 생략하지 마십시오
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/context.go)
+
+<div id="dynamic-scanning">
+  ## 동적 스캔
+</div>
+
+[ClickHouse API](/ko/integrations/language-clients/go/clickhouse-api#dynamic-scanning)와 마찬가지로, 컬럼 유형 정보를 활용해 `Scan`에 전달할 수 있는 올바른 유형의 변수 런타임 인스턴스를 생성할 수 있습니다. 이를 통해 유형을 미리 알 수 없는 컬럼도 읽을 수 있습니다.
+
+```go
+const query = `
+SELECT
+        1     AS Col1
+    , 'Text' AS Col2
+`
+rows, err := conn.QueryContext(context.Background(), query)
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+columnTypes, err := rows.ColumnTypes()
+if err != nil {
+    return err
+}
+vars := make([]interface{}, len(columnTypes))
+for i := range columnTypes {
+    vars[i] = reflect.New(columnTypes[i].ScanType()).Interface()
+}
+for rows.Next() {
+    if err := rows.Scan(vars...); err != nil {
+        return err
+    }
+    for _, v := range vars {
+        switch v := v.(type) {
+        case *string:
+            fmt.Println(*v)
+        case *uint8:
+            fmt.Println(*v)
+        }
+    }
+}
+// 참고: rows.Err() 확인을 생략하지 마십시오
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/dynamic_scan_types.go)
+
+<div id="external-tables">
+  ## 외부 테이블
+</div>
+
+[외부 테이블](/ko/reference/engines/table-engines/special/external-data)을 사용하면 클라이언트가 `SELECT` 쿼리와 함께 데이터를 ClickHouse로 보낼 수 있습니다. 이 데이터는 임시 테이블에 저장되며, 쿼리 자체에서 평가에 사용할 수 있습니다.
+
+쿼리와 함께 클라이언트에서 외부 데이터를 보내려면, 먼저 `ext.NewTable`로 외부 테이블을 생성한 다음 이를 Context를 통해 전달해야 합니다.
+
+```go
+table1, err := ext.NewTable("external_table_1",
+    ext.Column("col1", "UInt8"),
+    ext.Column("col2", "String"),
+    ext.Column("col3", "DateTime"),
+)
+if err != nil {
+    return err
+}
+
+for i := 0; i < 10; i++ {
+    if err = table1.Append(uint8(i), fmt.Sprintf("value_%d", i), time.Now()); err != nil {
+        return err
+    }
+}
+
+table2, err := ext.NewTable("external_table_2",
+    ext.Column("col1", "UInt8"),
+    ext.Column("col2", "String"),
+    ext.Column("col3", "DateTime"),
+)
+
+for i := 0; i < 10; i++ {
+    table2.Append(uint8(i), fmt.Sprintf("value_%d", i), time.Now())
+}
+ctx := clickhouse.Context(context.Background(),
+    clickhouse.WithExternalTable(table1, table2),
+)
+rows, err := conn.QueryContext(ctx, "SELECT * FROM external_table_1")
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+for rows.Next() {
+    var (
+        col1 uint8
+        col2 string
+        col3 time.Time
+    )
+    rows.Scan(&col1, &col2, &col3)
+    fmt.Printf("col1=%d, col2=%s, col3=%v\n", col1, col2, col3)
+}
+// 참고: rows.Err() 확인을 생략하지 마십시오
+if err := rows.Err(); err != nil {
+    return err
+}
+
+var count uint64
+if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM external_table_1").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_1: %d\n", count)
+if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM external_table_2").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_2: %d\n", count)
+if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM (SELECT * FROM external_table_1 UNION ALL SELECT * FROM external_table_2)").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_1 UNION external_table_2: %d\n", count)
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/external_data.go)
+
+<div id="open-telemetry">
+  ## OpenTelemetry
+</div>
+
+ClickHouse는 TCP 및 HTTP 전송 모두에서 [추적 컨텍스트 전파](/ko/guides/oss/deployment-and-scaling/monitoring/opentelemetry)를 지원합니다. 컨텍스트를 통해 `clickhouse.WithSpan`을 사용해 쿼리에 스팬을 연결하십시오.
+
+<Info>
+  **HTTP 전송 제한 사항**
+
+  ClickHouse 서버는 표준 `traceparent` / `tracestate` HTTP 헤더를 허용하지만, clickhouse-go의 HTTP 전송은 현재 이를 전송하지 않으므로 HTTP에서는 `WithSpan`이 적용되지 않습니다. 우회 방법으로 연결 옵션의 `HttpHeaders`를 통해 헤더를 수동으로 설정할 수 있습니다.
+</Info>
+
+```go
+var count uint64
+rows := conn.QueryRowContext(clickhouse.Context(context.Background(), clickhouse.WithSpan(
+    trace.NewSpanContext(trace.SpanContextConfig{
+        SpanID:  trace.SpanID{1, 2, 3, 4, 5},
+        TraceID: trace.TraceID{5, 4, 3, 2, 1},
+    }),
+)), "SELECT COUNT() FROM (SELECT number FROM system.numbers LIMIT 5)")
+if err := rows.Scan(&count); err != nil {
+    return err
+}
+// 참고: rows.Err() 확인을 생략하지 마십시오
+if err := rows.Err(); err != nil {
+    return err
+}
+fmt.Printf("count: %d\n", count)
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/open_telemetry.go)
+
+<div id="compression">
+  ## 압축
+</div>
+
+표준 API는 네이티브 [ClickHouse API](/ko/integrations/language-clients/go/configuration#compression)와 동일한 압축 알고리즘, 즉 블록 수준의 `lz4` 및 `zstd` 압축을 지원합니다. 또한 HTTP 연결에서는 `gzip`, `deflate`, `br` 압축도 지원합니다. 이들 중 하나라도 활성화되면 삽입 시 블록과 쿼리 응답에 압축이 적용됩니다. 그 외 요청(예: Ping 또는 쿼리 요청)은 압축되지 않습니다. 이는 `lz4` 및 `zstd` 옵션의 동작과 일치합니다.
+
+연결을 설정할 때 `OpenDB` 메서드를 사용하는 경우 Compression 구성을 전달할 수 있습니다. 여기에는 압축 수준을 지정하는 기능도 포함됩니다(아래 참조). DSN과 함께 `sql.Open`으로 연결하는 경우 `compress` 매개변수를 사용하십시오. 이 값에는 `gzip`, `deflate`, `br`, `zstd`, `lz4`와 같은 특정 압축 알고리즘이나 불리언 플래그를 사용할 수 있습니다. `true`로 설정하면 `lz4`가 사용됩니다. 기본값은 `none`이며, 즉 압축이 비활성화된 상태입니다.
+
+```go
+conn := clickhouse.OpenDB(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.HttpPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionBrotli,
+        Level:  5,
+    },
+    Protocol: clickhouse.HTTP,
+})
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/compression.go#L27-L76)
+
+```go
+conn, err := sql.Open("clickhouse", fmt.Sprintf("http://%s:%d?username=%s&password=%s&compress=gzip&compress_level=5", env.Host, env.HttpPort, env.Username, env.Password))
+```
+
+[전체 예시](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/compression.go#L78-L115)
+
+적용할 압축 수준은 DSN 매개변수 `compress&#95;level` 또는 Compression 옵션의 Level 필드로 제어할 수 있습니다. 기본값은 0이지만 알고리즘마다 다릅니다:
+
+* `gzip` - `-2` (최고 속도) ~ `9` (최고 압축)
+* `deflate` - `-2` (최고 속도) ~ `9` (최고 압축)
+* `br` - `0` (최고 속도) ~ `11` (최고 압축)
+* `zstd`, `lz4` - 무시됩니다

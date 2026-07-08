@@ -78,10 +78,10 @@ FilterDAGInfo buildPartitionFilter(
 
     const auto string_type = std::make_shared<DataTypeString>();
     const auto int64_type = std::make_shared<DataTypeInt64>();
-    const auto & partition_const = dag.addColumn(ColumnWithTypeAndName{string_type->createColumnConst(1, partition_id), string_type, "_partition_id_const"});
-    const auto & safe_const = dag.addColumn(ColumnWithTypeAndName{int64_type->createColumnConst(1, safe_block_number), int64_type, "_safe_block_number_const"});
-    const auto & last_bn_const = dag.addColumn(ColumnWithTypeAndName{int64_type->createColumnConst(1, last_emitted_position.block_number), int64_type, "_last_bn_const"});
-    const auto & last_bo_const = dag.addColumn(ColumnWithTypeAndName{int64_type->createColumnConst(1, last_emitted_position.block_offset), int64_type, "_last_bo_const"});
+    const auto & partition_const = dag.addColumn(string_type->createColumnConst(1, partition_id), string_type, "_partition_id_const");
+    const auto & safe_const = dag.addColumn(int64_type->createColumnConst(1, safe_block_number), int64_type, "_safe_block_number_const");
+    const auto & last_bn_const = dag.addColumn(int64_type->createColumnConst(1, last_emitted_position.block_number), int64_type, "_last_bn_const");
+    const auto & last_bo_const = dag.addColumn(int64_type->createColumnConst(1, last_emitted_position.block_offset), int64_type, "_last_bo_const");
 
     const auto construct_function = [&context](const String & name) { return FunctionFactory::instance().get(name, context); };
     const auto & eq_partition = dag.addFunction(construct_function("equals"), {partition_input, &partition_const}, "");

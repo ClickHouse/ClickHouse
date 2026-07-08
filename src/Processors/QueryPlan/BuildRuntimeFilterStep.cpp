@@ -62,6 +62,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     String filter_column_name_,
     const DataTypePtr & filter_column_type_,
     String filter_name_,
+    String filter_key_,
     UInt64 exact_values_limit_,
     UInt64 bloom_filter_bytes_,
     UInt64 bloom_filter_hash_functions_,
@@ -76,6 +77,7 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , filter_column_type(filter_column_type_)
     , filter_name(filter_name_)
+    , filter_key(std::move(filter_key_))
     , exact_values_limit(exact_values_limit_)
     , bloom_filter_bytes(bloom_filter_bytes_)
     , bloom_filter_hash_functions(bloom_filter_hash_functions_)
@@ -103,6 +105,13 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
 
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    /// A step with no rendezvous key (e.g. a deserialized/placeholder plan — the random key is never
+    /// serialized) can never register a filter that any `__applyFilter` looks up. Skip the build
+    /// transform entirely so the step is a true passthrough: no key casting/insertion, no wasted
+    /// build work for a filter that would never be applied.
+    if (filter_key.empty())
+        return;
+
     auto streams = pipeline.getNumStreams();
     auto query_context = CurrentThread::get().tryGetQueryContext();
     pipeline.addSimpleTransform([&, query_context](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type)-> ProcessorPtr
@@ -116,6 +125,7 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             filter_column_name,
             filter_column_type,
             filter_name,
+            filter_key,
             /*filters_to_merge_=*/streams - 1,
             exact_values_limit,
             bloom_filter_bytes,
@@ -174,11 +184,14 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     const Float64 blocks_to_skip_before_reenabling = static_cast<Float64>(ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling]);
     const Float64 max_ratio_of_set_bits_in_bloom_filter = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits];
 
+    /// A deserialized step carries no random lookup key (it is never serialized); runtime filters are
+    /// re-derived per plan build. If such a step is ever executed, `finish()` no-ops on the empty key.
     return std::make_unique<BuildRuntimeFilterStep>(
         ctx.input_headers.front(),
         std::move(filter_column_name),
         filter_column_type,
         std::move(filter_name),
+        /*filter_key_=*/String{},
         exact_values_limit,
         bloom_filter_bytes,
         bloom_filter_hash_functions,

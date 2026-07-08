@@ -96,7 +96,8 @@ GlueCatalog::GlueCatalog(
     const String & endpoint,
     DB::ContextPtr context_,
     const CatalogSettings & settings_,
-    DB::ASTPtr table_engine_definition_)
+    DB::ASTPtr table_engine_definition_,
+    bool allow_server_credentials_in_user_queries_)
     : ICatalog("")
     , DB::WithContext(context_)
     , log(getLogger("GlueCatalog(" + settings_.region + ")"))
@@ -109,6 +110,12 @@ GlueCatalog::GlueCatalog(
     creds_config.use_environment_credentials = true;
     creds_config.role_arn = settings.aws_role_arn;
     creds_config.role_session_name = settings.aws_role_session_name;
+    creds_config.external_id = settings.aws_external_id;
+
+    /// A Glue catalog is created by user SQL, so it must not reuse the server's credentials unless allowed at
+    /// CREATE time. The cached catalog uses the global context, so pass the value captured then, not the live setting.
+    creds_config.forbid_implicit_credentials
+        = getContext()->shouldRestrictUserQueryS3Credentials(allow_server_credentials_in_user_queries_);
 
     const auto & server_settings = getContext()->getGlobalContext()->getServerSettings();
     const DB::Settings & global_settings = getContext()->getGlobalContext()->getSettingsRef();
@@ -154,10 +161,10 @@ GlueCatalog::GlueCatalog(
         client_configuration.endpointOverride = endpoint;
         endpoint_provider->OverrideEndpoint(endpoint);
 
-        if (credentials.IsEmpty())
+        if (credentials.IsEmpty() && !creds_config.forbid_implicit_credentials)
         {
-            /// You can specify any key for fake moto glue, it's just important
-            /// for it not to be empty.
+            /// Placeholder key for mocked moto glue (must be non-empty). Skipped under the restriction with no
+            /// explicit credentials, so it does not mask the refusal that the test exercises.
             credentials.SetAWSAccessKeyId("testing");
             credentials.SetAWSSecretKey("testing");
         }
@@ -281,6 +288,17 @@ DB::Names GlueCatalog::getTables() const
         result.insert(result.end(), tables_in_database.begin(), tables_in_database.end());
     }
     return result;
+}
+
+DataLake::ICatalog::Namespaces GlueCatalog::getNamespaces() const
+{
+    /// Glue databases are flat — they cannot contain nested namespaces.
+    return getDatabases("");
+}
+
+DB::Names GlueCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return getTablesForDatabase(namespace_name);
 }
 
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
@@ -671,6 +689,16 @@ bool GlueCatalog::updateMetadata(const String & namespace_name, const String & t
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Can not update metadata in glue catalog {}", response.GetError().GetMessage());
 
     return true;
+}
+
+bool GlueCatalog::updateSchema(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    return updateMetadata(namespace_name, table_name, new_metadata_path, nullptr);
 }
 
 void GlueCatalog::dropTable(const String & namespace_name, const String & table_name) const
