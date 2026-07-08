@@ -401,9 +401,9 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
         if (returning_select)
         {
+            merge_settings_ast(source_select_settings_global_ast, source_select_settings_ast);
             if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(select.get()))
                 merge_settings_ast(source_select_settings_global_ast, query_with_output->settings_ast);
-            merge_settings_ast(source_select_settings_global_ast, source_select_settings_ast);
         }
 
     }

@@ -49,6 +49,9 @@ nested source settings do not affect outer source expressions
 source default settings merged with trailing settings
 3
 3
+source duplicate settings keep trailing precedence
+10
+10
 source query global settings are rejected
 0
 nested source query global settings are rejected

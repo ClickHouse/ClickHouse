@@ -109,6 +109,16 @@ SET max_result_rows = 0, result_overflow_mode = 'throw';
 
 SELECT count() FROM t_ret_settings;
 
+-- When the same source setting appears both before and after RETURNING, trailing SETTINGS win consistently.
+SELECT 'source duplicate settings keep trailing precedence';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT number FROM numbers(10)
+SETTINGS max_result_rows = 1, result_overflow_mode = 'break'
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS max_result_rows = DEFAULT;
+
+SELECT count() FROM t_ret_settings;
+
 -- Source-only query-global settings that bind at query registration are rejected.
 SELECT 'source query global settings are rejected';
 TRUNCATE TABLE t_ret_settings;
