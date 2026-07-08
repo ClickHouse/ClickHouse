@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/TypePromotion.h>
+#include <Common/checkStackSize.h>
 
 #include <Parsers/IASTFormatState.h>
 #include <Parsers/IASTHash.h>
@@ -321,6 +322,7 @@ public:
 
     void format(WriteBuffer & ostr, const FormatSettings & settings, FormatState & state, FormatStateStacked frame) const
     {
+        checkStackSize();
         formatImpl(ostr, settings, state, std::move(frame));
     }
 
@@ -335,6 +337,7 @@ public:
 
     void format(FormattingBuffer out) const
     {
+        checkStackSize();
         formatImpl(out.ostr, out.settings, out.state, out.frame);
     }
 

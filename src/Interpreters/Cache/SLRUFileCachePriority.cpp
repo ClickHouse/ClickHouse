@@ -159,6 +159,27 @@ IFileCachePriority::IteratorPtr SLRUFileCachePriority::add( /// NOLINT
         is_protected);
 }
 
+IFileCachePriority::IteratorPtr SLRUFileCachePriority::addForRestore( /// NOLINT
+    KeyMetadataPtr key_metadata,
+    size_t offset,
+    size_t size,
+    QueueEntryType original_queue_type,
+    const CachePriorityGuard::WriteLock & lock,
+    const CacheStateGuard::Lock * state_lock)
+{
+    /// Restore to the original queue: protected entries go back to protected,
+    /// everything else goes to probationary.
+    bool is_protected = (original_queue_type == QueueEntryType::SLRU_Protected);
+
+    auto entry = std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata);
+    return std::make_shared<SLRUIterator>(
+        this,
+        is_protected
+            ? protected_queue.add(std::move(entry), lock, state_lock)
+            : probationary_queue.add(std::move(entry), lock, state_lock),
+        is_protected);
+}
+
 void SLRUFileCachePriority::iterate(
     IterateFunc func,
     FileCacheReserveStat & stat,
@@ -261,9 +282,13 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
 {
     if (is_total_space_cleanup)
     {
+        /// Use per-queue local stat objects so that each sub-queue's
+        /// stopping condition sees only its own accumulated releasable bytes,
+        /// not the cumulative total from both passes.
+        FileCacheReserveStat probationary_stat;
         bool success_probationary = probationary_queue.collectCandidatesForEviction(
             eviction_info,
-            stat,
+            probationary_stat,
             res,
             invalidated_entries,
             reservee,
@@ -280,9 +305,10 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
         /// We do not use collectCandidatesForEvictionInProtected method,
         /// because it will "downgrade" instead of remove,
         /// but for total space cleanup we need remove.
+        FileCacheReserveStat protected_stat;
         bool success_protected = protected_queue.collectCandidatesForEviction(
             eviction_info,
-            stat,
+            protected_stat,
             res,
             invalidated_entries,
             reservee,
@@ -292,6 +318,9 @@ bool SLRUFileCachePriority::collectCandidatesForEviction(
             origin_info,
             cache_guard,
             state_guard);
+
+        stat += probationary_stat;
+        stat += protected_stat;
 
         return success_probationary && success_protected;
     }

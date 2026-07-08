@@ -136,6 +136,13 @@ public:
             case QueryTreeNodeType::CONSTANT:
             {
                 const auto & constant_node = node->as<ConstantNode &>();
+                /// A masked secret must be named by its placeholder, never by its value or source expression,
+                /// identically on initiator and secondary servers so distributed headers still match.
+                if (constant_node.isMasked())
+                {
+                    result = calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context.getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+                    break;
+                }
                 /* To ensure that headers match during distributed query we need to simulate action node naming on
                 * secondary servers. If we don't do that headers will mismatch due to constant folding.
                 *
@@ -776,7 +783,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     const auto & column_node = node->as<ColumnNode &>();
 
     const auto & column_node_ptr = static_pointer_cast<ColumnNode>(node);
-    if (correlated_columns_set.contains(column_node_ptr))
+    if (!correlated_columns_set.empty() && correlated_columns_set.contains(column_node_ptr))
         return visitCorrelatedColumn(column_node_ptr);
 
     auto column_node_name = action_node_name_helper.calculateActionNodeName(node);
@@ -831,6 +838,11 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 
     auto constant_node_name = !override_column_name.empty() ? override_column_name : [&]()
     {
+        /// A masked secret must be named by its placeholder, never by its value or source expression,
+        /// identically on initiator and secondary servers so distributed headers still match.
+        if (constant_node.isMasked())
+            return calculateActionNodeNameWithCastIfNeeded(constant_node, planner_context->getQueryContext()->getSettingsRef()[Setting::optimize_const_name_size]);
+
         /* To ensure that headers match during distributed query we need to simulate action node naming on
          * secondary servers. If we don't do that headers will mismatch due to constant folding.
          *

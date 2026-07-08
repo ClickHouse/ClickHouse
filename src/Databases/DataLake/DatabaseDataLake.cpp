@@ -70,6 +70,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_tenant_id;
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
+    extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
     extern const DatabaseDataLakeSettingsString google_project_id;
@@ -628,7 +629,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         azure_configuration->setInitializationAsOneLake(
             rest_catalog->getClientId(),
             rest_catalog->getClientSecret(),
-            rest_catalog->getTenantId()
+            rest_catalog->getTenantId(),
+            settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type Azure for Iceberg OneLake catalog");
@@ -938,9 +940,13 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             database_settings.loadFromQuery(*database_engine_define, args.create_query.attach);
 
         const auto & auth_header_str = database_settings[DatabaseDataLakeSetting::auth_header].value;
-        if (!auth_header_str.empty())
+        /// Validate `auth_header` on CREATE only (matches the `allow_experimental_database_*`
+        /// gates below, which also self-skip on attach). An already-persisted database whose
+        /// `auth_header` was accepted by an older version must still attach at startup, so a
+        /// single misconfigured database cannot block the server from starting. The malformed
+        /// header is then reported lazily on first use of the database.
+        if (!args.create_query.attach && !auth_header_str.empty())
         {
-            /// Validate `auth_header` against the forbidden HTTP header filter at creation time.
             /// Only headers with a valid `name: value` format are accepted.
             auto pos = auth_header_str.find(':');
             if (pos != std::string::npos)

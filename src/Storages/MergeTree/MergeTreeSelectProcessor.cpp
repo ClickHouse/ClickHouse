@@ -132,7 +132,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     const ExpressionActionsSettings & actions_settings_,
     const MergeTreeReaderSettings & reader_settings_,
     MergeTreeIndexBuildContextPtr merge_tree_index_build_context_,
-    LazyMaterializingRowsPtr lazy_materializing_rows_)
+    LazyMaterializingRowsPtr lazy_materializing_rows_,
+    const ColumnsDescription * columns_)
     : pool(std::move(pool_))
     , algorithm(std::move(algorithm_))
     , row_level_filter(row_level_filter_)
@@ -144,7 +145,8 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
           index_read_tasks_,
           actions_settings,
           reader_settings_.enable_multiple_prewhere_read_steps,
-          reader_settings_.force_short_circuit_execution))
+          reader_settings_.force_short_circuit_execution,
+          columns_))
     , reader_settings(reader_settings_)
     , result_header(transformHeader(pool->getHeader(), row_level_filter, prewhere_info))
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
@@ -172,7 +174,8 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     const IndexReadTasks & index_read_tasks,
     const ExpressionActionsSettings & actions_settings,
     bool enable_multiple_prewhere_read_steps,
-    bool force_short_circuit_execution)
+    bool force_short_circuit_execution,
+    const ColumnsDescription * columns)
 {
     PrewhereExprInfo prewhere_actions;
 
@@ -186,6 +189,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .remove_filter_column = row_level_filter->do_remove_column,
             .need_filter = true,
             .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
         };
 
@@ -204,7 +208,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     }
 
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns)))
     {
         PrewhereExprStep prewhere_step
         {
@@ -214,6 +218,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
             .remove_filter_column = prewhere_info->remove_prewhere_column,
             .need_filter = prewhere_info->need_filter,
             .perform_alter_conversions = true,
+            .columns_overwritten_by_chain = {},
             .mutation_version = std::nullopt,
         };
 

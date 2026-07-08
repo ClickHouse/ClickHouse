@@ -49,6 +49,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeSelectProcessor.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -519,7 +520,9 @@ Pipe ReadFromMergeTree::readFromPoolParallelReplicas(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            LazyMaterializingRowsPtr{},
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
         pipes.emplace_back(std::move(source));
@@ -628,7 +631,9 @@ Pipe ReadFromMergeTree::readFromPool(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            LazyMaterializingRowsPtr{},
+            &storage_snapshot->metadata->getColumns());
 
         auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
 
@@ -745,7 +750,9 @@ Pipe ReadFromMergeTree::readInOrder(
             index_read_tasks,
             actions_settings,
             reader_settings,
-            index_build_context);
+            index_build_context,
+            LazyMaterializingRowsPtr{},
+            &storage_snapshot->metadata->getColumns());
 
         processor->addPartLevelToChunk(isQueryWithFinal());
 
@@ -2626,7 +2633,10 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         }
 
         std::optional<size_t> condition_hash;
-        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal())
+        if (reader_settings.use_query_condition_cache && query_info_.filter_actions_dag && !query_info_.isFinal()
+                && !vector_search_parameters.has_value() /// Vector search filters through the ORDER BY, so excluded ranges are not described by the WHERE DAG hash alone.
+                && !result.sampling.use_sampling)        /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+                                                         /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
         {
             const auto & outputs = query_info_.filter_actions_dag->getOutputs();
             if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs.front()))
@@ -3247,6 +3257,16 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
     if (!indexes || !indexes->use_skip_indexes || indexes->skip_indexes.empty())
         return false;
 
+    /// When a vector similarity index is present, disable the use_skip_indexes_on_data_read path entirely and apply
+    /// all skip indexes during index analysis instead - the vector index runs first (it is the most selective) and the
+    /// remaining skip indexes run after it.
+    const bool has_vector_similarity_index = std::ranges::any_of(indexes->skip_indexes.useful_indices, [](const auto & idx)
+    {
+        return idx.index->isVectorSimilarityIndex();
+    });
+    if (has_vector_similarity_index)
+        return false;
+
     const auto & settings = context->getSettingsRef();
     if (!settings[Setting::use_skip_indexes_on_data_read])
         return false;
@@ -3384,6 +3404,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     /// If we have neither a WHERE nor a PREWHERE condition, the query condition cache doesn't save anything --> disable it.
     bool has_where_or_prewhere = query_info.prewhere_info || query_info.filter_actions_dag;
     if (!allow_query_condition_cache || !has_where_or_prewhere)
+        reader_settings.use_query_condition_cache = false;
+
+    /// SAMPLE-ing narrows the marks too, but the query condition cache cache key encodes only the WHERE predicate.
+    /// Avoid that SAMPLE-narrowed entries poison the cache (later non-SAMPLE-ing queries would return wrong results).
+    if (result.sampling.use_sampling)
         reader_settings.use_query_condition_cache = false;
 
     /// Initializing parallel replicas coordinator with empty ranges to read in case of

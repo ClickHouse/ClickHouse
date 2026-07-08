@@ -485,7 +485,7 @@ std::optional<std::pair<ColumnPtr, size_t>> ISerialization::getColumnWithNumRead
 
 void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path, std::unique_ptr<ISubstreamsCacheElement> && element)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return;
 
     cache->insert_or_assign(getSubcolumnNameForStream(path, true), std::move(element));
@@ -493,7 +493,7 @@ void ISerialization::addElementToSubstreamsCache(ISerialization::SubstreamsCache
 
 ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstreamsCache(ISerialization::SubstreamsCache * cache, const ISerialization::SubstreamPath & path)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path, true));
@@ -502,7 +502,7 @@ ISerialization::ISubstreamsCacheElement * ISerialization::getElementFromSubstrea
 
 void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path, DeserializeBinaryBulkStatePtr state)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return;
 
     cache->emplace(getSubcolumnNameForStream(path, true), state);
@@ -510,7 +510,7 @@ void ISerialization::addToSubstreamsDeserializeStatesCache(SubstreamsDeserialize
 
 ISerialization::DeserializeBinaryBulkStatePtr ISerialization::getFromSubstreamsDeserializeStatesCache(SubstreamsDeserializeStatesCache * cache, const SubstreamPath & path)
 {
-    if (!cache || path.empty())
+    if (!cache)
         return nullptr;
 
     auto it = cache->find(getSubcolumnNameForStream(path, true));

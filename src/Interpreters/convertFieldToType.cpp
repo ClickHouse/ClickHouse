@@ -24,6 +24,7 @@
 #include <Core/AccurateComparison.h>
 
 #include <Common/typeid_cast.h>
+#include <Common/checkStackSize.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/NaNUtils.h>
 #include <Common/FieldAccurateComparison.h>
@@ -301,15 +302,16 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return dynamic_cast<const IDataTypeEnum &>(type).castToValue(src);
         }
 
-        if ((which_type.isDate() || which_type.isDateTime()) && src.getType() == Field::Types::UInt64)
+        if (which_type.isDate() && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and DateTime
-            return src;
+            /// Date is UInt16 under the hood; range-check so out-of-range integers
+            /// don't get silently truncated by the Date serializer downstream.
+            return convertNumericType<UInt16>(src, type);
         }
 
-        if ((which_type.isDate() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
+        if ((which_type.isDateTime() || which_type.isTime()) && src.getType() == Field::Types::UInt64)
         {
-            /// We don't need any conversion UInt64 is under type of Date and Time
+            /// We don't need any conversion UInt64 is under type of DateTime and Time
             return src;
         }
 
@@ -376,11 +378,12 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
             return DecimalField<Time64>(DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(value, 0, 1), scale_to);
         }
 
-        /// For toDate('xxx') in 1::Int64, we CAST `src` to UInt64, which may
-        /// produce wrong result in some special cases.
+        /// For toDate('xxx') in 1::Int64. Date is UInt16 under the hood;
+        /// range-check so out-of-range integers don't get silently truncated
+        /// by the Date serializer downstream.
         if (which_type.isDate() && src.getType() == Field::Types::Int64)
         {
-            return convertNumericType<UInt64>(src, type);
+            return convertNumericType<UInt16>(src, type);
         }
 
         /// For toDate32('xxx') in 1, we CAST `src` to Int64. Also, it may
@@ -768,6 +771,8 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 
 Field convertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint, const FormatSettings & format_settings)
 {
+    checkStackSize();
+
     if (from_value.isNull())
         return from_value;
 
