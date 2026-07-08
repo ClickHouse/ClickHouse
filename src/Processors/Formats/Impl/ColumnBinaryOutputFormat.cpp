@@ -12,6 +12,8 @@
 #include <Common/Exception.h>
 #include <Formats/ColumnarV1Wire.h>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -32,6 +34,15 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
 
     if (rows == 0 || block.columns() == 0)
         return std::nullopt;
+
+    // The frame header's num_rows field is a uint32_t, and buildColDescriptor's row-count
+    // arithmetic (e.g. (num_rows + 1) for String/Array offsets) is only overflow-safe up to
+    // UINT32_MAX; reject before the narrowing cast below, rather than silently truncating
+    // (and, above 2^32, wrapping the +1 and under-sizing the frame).
+    if (rows >= std::numeric_limits<uint32_t>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: block has {} rows, exceeding the maximum representable row count ({})",
+            rows, std::numeric_limits<uint32_t>::max());
 
     const uint64_t hdr_desc_size = ColumnarV1::COLUMNAR_HEADER_BYTES + block.columns() * ColumnarV1::COLUMNAR_DESC_BYTES;
     uint64_t cursor = hdr_desc_size;
@@ -68,6 +79,13 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
 {
     if (!chunk)
         return;
+
+    // See the matching check in precomputeSerializedSize: reject before the narrowing cast
+    // rather than silently truncating/wrapping the row count.
+    if (chunk.getNumRows() >= std::numeric_limits<uint32_t>::max())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "ColumnBinary: chunk has {} rows, exceeding the maximum representable row count ({})",
+            chunk.getNumRows(), std::numeric_limits<uint32_t>::max());
 
     uint32_t num_rows = static_cast<uint32_t>(chunk.getNumRows());
     uint32_t num_cols = static_cast<uint32_t>(std::min<size_t>(chunk.getNumColumns(), header_->columns()));
