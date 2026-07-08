@@ -1786,9 +1786,11 @@ ReturnType readDateTimeTextFallback(
                     return false;
             }
 
-            /// In DateTime64 mode a value like "-.5" is a valid timestamp, leave  whole part at
-            /// zero and let the caller read the fraction
-            if (dt64_mode && negative_multiplier == -1 && *buf.position() == '.')
+            /// In DateTime64 mode a value like ".5" or "-.5" is a valid timestamp: a fractional part
+            /// with no integer digits (optionally signed). Leave the whole part at zero and let the caller
+            /// read the fraction, so the non-throwing entrypoints (toDateTime64OrNull, schema inference)
+            /// agree with the throwing ones, which recover this case through their catch at the '.'.
+            if (dt64_mode && *buf.position() == '.')
             {
                 datetime = 0;
                 return ReturnType(true);

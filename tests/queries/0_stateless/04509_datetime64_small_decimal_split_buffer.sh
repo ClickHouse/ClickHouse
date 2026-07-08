@@ -21,11 +21,12 @@ if [ "$split" = "$whole" ]; then echo "split parsing matches"; else echo "MISMAT
 rm -f "$DATA_FILE"
 
 # The non-throwing entrypoints (OrNull / schema inference) must agree with the throwing ones,
-# including leading-dot negatives ("-.5") and bare small integers ("1234", "0").
+# including leading-dot fractions with and without a sign (".5", "-.5") and bare small integers.
 ${CLICKHOUSE_LOCAL} -q "
 SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
 SELECT
     toDateTime64OrNull('-.5', 3, 'UTC') IS NOT NULL AND toDateTime64OrNull('-.5', 3, 'UTC') = toDateTime64('-.5', 3, 'UTC'),
+    toDateTime64OrNull('.5', 3, 'UTC')  IS NOT NULL AND toDateTime64OrNull('.5', 3, 'UTC')  = toDateTime64('.5', 3, 'UTC'),
     toDateTime64OrNull('-0.5', 3, 'UTC') = toDateTime64('-0.5', 3, 'UTC'),
     toDateTime64OrNull('1234', 3, 'UTC') = toDateTime64('1234', 3, 'UTC'),
     toDateTime64OrNull('0', 3, 'UTC')    = toDateTime64('0', 3, 'UTC')
