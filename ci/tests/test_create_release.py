@@ -194,11 +194,11 @@ def test_version_bump():
 def test_prestable_is_a_valid_version_type():
     import ci.jobs.scripts.clickhouse_version as chv
 
-    # The tag regex accepts `-prestable`, so the version type set must too,
-    # otherwise `_version_from_tag` on a prestable tag raises.
+    # `prestable` must be a valid version type so `with_description` accepts it.
     assert "prestable" in chv.VersionType.VALID
-    version = chv._version_from_tag("v26.6.1.1-prestable")
-    assert version.description == "prestable"
+    version = chv.CHVersion(26, 6, 1, -1, 1).with_description("prestable")
+    assert version.version_type == "prestable"
+    assert version.describe == "v26.6.1.1-prestable"
 
 
 # --- full dry-run patch release, start to finish -----------------------------
