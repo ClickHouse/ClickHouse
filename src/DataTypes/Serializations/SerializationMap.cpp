@@ -1067,9 +1067,10 @@ void splitMapToBucketsDispatchByIndex(
     IColumn & bucket_index_column,
     size_t start, size_t end, size_t num_buckets)
 {
+// NOLINTNEXTLINE(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
 #define CALL_SPLIT(IndexColumn) splitMapToBucketsTyped<KeyColumn, ValueColumn, IndexColumn>( \
     src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, \
-    static_cast<IndexColumn &>(bucket_index_column), start, end, num_buckets) // NOLINTNEXTLINE(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
+    static_cast<IndexColumn &>(bucket_index_column), start, end, num_buckets)
     DISPATCH_BUCKET_INDEX_COLUMN_TYPE(bucket_index_column.getDataType(), CALL_SPLIT)
 #undef CALL_SPLIT
 }
@@ -1086,6 +1087,7 @@ void splitMapToBucketsDispatchByValue(
     IColumn & bucket_index_column,
     size_t start, size_t end, size_t num_buckets)
 {
+// NOLINTNEXTLINE(bugprone-macro-parentheses) -- ValueColumn is a type used as a template argument
 #define CALL_SPLIT(ValueColumn) splitMapToBucketsDispatchByIndex<KeyColumn, ValueColumn>( \
     src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, bucket_index_column, start, end, num_buckets)
     DISPATCH_MAP_COLUMN_TYPE(src_values.getDataType(), CALL_SPLIT)
@@ -1107,6 +1109,7 @@ void splitMapToBucketsDispatch(
     IColumn & bucket_index_column,
     size_t start, size_t end, size_t num_buckets)
 {
+// NOLINTNEXTLINE(bugprone-macro-parentheses) -- KeyColumn is a type used as a template argument
 #define CALL_KEY_SPLIT(KeyColumn) splitMapToBucketsDispatchByValue<KeyColumn>( \
     src_keys, src_values, src_offsets, dst_keys, dst_values, dst_offsets, bucket_index_column, start, end, num_buckets)
     DISPATCH_MAP_COLUMN_TYPE(src_keys.getDataType(), CALL_KEY_SPLIT)
@@ -1178,8 +1181,9 @@ void collectMapFromBucketsWithOrderDispatch(
     const IColumn & bucket_index_column,
     IColumn & map_column)
 {
+// NOLINTNEXTLINE(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
 #define CALL_COLLECT(IndexColumn) collectMapFromBucketsWithOrderImpl<IndexColumn>( \
-    map_buckets, static_cast<const IndexColumn &>(bucket_index_column), map_column) // NOLINTNEXTLINE(bugprone-macro-parentheses) -- IndexColumn is a type used in static_cast<>
+    map_buckets, static_cast<const IndexColumn &>(bucket_index_column), map_column)
     DISPATCH_BUCKET_INDEX_COLUMN_TYPE(bucket_index_column.getDataType(), CALL_COLLECT)
 #undef CALL_COLLECT
 }
