@@ -761,13 +761,14 @@ void DeltaLakeMetadataDeltaKernel::createTable(
     auto kernel_helper = DB::getKernelHelper(configuration_ptr, object_storage_);
     Names partition_columns = extractPartitionColumnNames(partition_by);
 
-    /// Use `getInsertable()` so ordinary + ephemeral columns are visible -- the
-    /// Delta protocol does not have a notion of materialized/alias columns.
-    /// `WriteTransaction::createTable` -> `buildKernelEngineSchema` consumes
-    /// this list and walks it through the `ffi::visit_field_*` visitor, which
-    /// is the same conversion shape used by the read-side helpers in
-    /// `getSchemaFromSnapshot.{h,cpp}` (just in the reverse direction).
-    auto schema_list = columns.getInsertable();
+    /// Use `getAllPhysical()` (ordinary + materialized) so the Delta schema matches the physical
+    /// columns the writer later emits to Parquet: `MATERIALIZED` columns are physical and appear in
+    /// `getSampleBlock` (used by `WriteTransaction::validateSchema`), while `EPHEMERAL`/`ALIAS`
+    /// columns are not stored and must not appear in the `_delta_log`.
+    /// `WriteTransaction::createTable` -> `buildKernelEngineSchema` consumes this list and walks it
+    /// through the `ffi::visit_field_*` visitor, which is the same conversion shape used by the
+    /// read-side helpers in `getSchemaFromSnapshot.{h,cpp}` (just in the reverse direction).
+    auto schema_list = columns.getAllPhysical();
 
     auto write_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
     write_transaction->createTable(schema_list, partition_columns);

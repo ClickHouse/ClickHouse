@@ -18,6 +18,8 @@
 #include <IO/ReadHelpers.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
+#include <Databases/DataLake/Common.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Context.h>
@@ -634,6 +636,106 @@ bool DeltaLakeMetadata::supportsTotalBytes(ContextPtr context, ObjectStorageType
     return isDeltaKernelEnabled(context, storage_type);
 }
 
+namespace
+{
+
+/// Forward of `getFieldType`/`getSimpleTypeByName`: serialize a ClickHouse type to the Delta
+/// protocol "type" representation (https://github.com/delta-io/delta/blob/master/PROTOCOL.md).
+/// Returns a plain string for primitive types and a JSON object for array/map/struct. Field-level
+/// nullability is set by the caller; nested nullability is embedded here (`containsNull` /
+/// `valueContainsNull`). Kept consistent with the kernel-side visitor `visitFieldFromClickHouseType`
+/// in `getSchemaFromSnapshot.cpp`, so a table registered in the catalog matches its `_delta_log`.
+Poco::Dynamic::Var deltaTypeToJSON(const DataTypePtr & full_type)
+{
+    DataTypePtr type = full_type->isNullable() ? removeNullable(full_type) : full_type;
+
+    switch (type->getTypeId())
+    {
+        case TypeIndex::Int8:    return String("byte");
+        case TypeIndex::Int16:   return String("short");
+        case TypeIndex::Int32:   return String("integer");
+        case TypeIndex::Int64:   return String("long");
+        case TypeIndex::Float32: return String("float");
+        case TypeIndex::Float64: return String("double");
+        case TypeIndex::UInt8:   return String("boolean"); /// ClickHouse stores Bool as UInt8.
+        case TypeIndex::String:
+        case TypeIndex::FixedString: return String("string");
+        case TypeIndex::Date:
+        case TypeIndex::Date32:  return String("date");
+        case TypeIndex::DateTime:
+        case TypeIndex::DateTime64: return String("timestamp");
+        case TypeIndex::Decimal32:
+        case TypeIndex::Decimal64:
+        case TypeIndex::Decimal128:
+        case TypeIndex::Decimal256:
+            return String(fmt::format("decimal({},{})", getDecimalPrecision(*type), getDecimalScale(*type)));
+        case TypeIndex::Array:
+        {
+            const auto & array_type = assert_cast<const DataTypeArray &>(*type);
+            const auto & nested = array_type.getNestedType();
+            Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
+            obj->set("type", "array");
+            obj->set("elementType", deltaTypeToJSON(nested));
+            obj->set("containsNull", nested->isNullable());
+            return obj;
+        }
+        case TypeIndex::Map:
+        {
+            const auto & map_type = assert_cast<const DataTypeMap &>(*type);
+            const auto & value_type = map_type.getValueType();
+            Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
+            obj->set("type", "map");
+            obj->set("keyType", deltaTypeToJSON(map_type.getKeyType()));
+            obj->set("valueType", deltaTypeToJSON(value_type));
+            obj->set("valueContainsNull", value_type->isNullable());
+            return obj;
+        }
+        case TypeIndex::Tuple:
+        {
+            const auto & tuple_type = assert_cast<const DataTypeTuple &>(*type);
+            const auto & element_types = tuple_type.getElements();
+            const auto & element_names = tuple_type.getElementNames();
+            Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+            for (size_t i = 0; i < element_types.size(); ++i)
+            {
+                Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+                field->set("name", element_names[i]);
+                field->set("type", deltaTypeToJSON(element_types[i]));
+                field->set("nullable", element_types[i]->isNullable());
+                field->set("metadata", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+                fields->add(field);
+            }
+            Poco::JSON::Object::Ptr obj = new Poco::JSON::Object;
+            obj->set("type", "struct");
+            obj->set("fields", fields);
+            return obj;
+        }
+        default:
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "ClickHouse type `{}` cannot be mapped to a Delta Lake type for CREATE TABLE",
+                type->getName());
+    }
+}
+
+/// Build the Delta `StructType.fields` array (used for catalog registration).
+Poco::JSON::Array::Ptr buildDeltaSchemaFields(const NamesAndTypesList & schema)
+{
+    Poco::JSON::Array::Ptr fields = new Poco::JSON::Array;
+    for (const auto & column : schema)
+    {
+        Poco::JSON::Object::Ptr field = new Poco::JSON::Object;
+        field->set("name", column.name);
+        field->set("type", deltaTypeToJSON(column.type));
+        field->set("nullable", column.type->isNullable());
+        field->set("metadata", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
+        fields->add(field);
+    }
+    return fields;
+}
+
+}
+
 void DeltaLakeMetadata::createInitial(
     const ObjectStoragePtr & object_storage,
     const StorageObjectStorageConfigurationWeakPtr & configuration,
@@ -642,8 +744,8 @@ void DeltaLakeMetadata::createInitial(
     ASTPtr partition_by,
     ASTPtr /*order_by*/,
     bool if_not_exists,
-    std::shared_ptr<DataLake::ICatalog> /*catalog*/,
-    const StorageID & /*table_id_*/)
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const StorageID & table_id_)
 {
 #if USE_DELTA_KERNEL_RS
     auto configuration_ptr = configuration.lock();
@@ -651,8 +753,26 @@ void DeltaLakeMetadata::createInitial(
     {
         if (!columns.has_value())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "CREATE TABLE for DeltaLake requires explicit column definitions");
+
+        /// Materialize the initial `_delta_log` commit (Protocol + Metadata actions) on storage.
         DeltaLakeMetadataDeltaKernel::createTable(
             object_storage, configuration, local_context, *columns, partition_by, if_not_exists);
+
+        /// For catalog-backed databases (e.g. Unity) register the freshly created table with the
+        /// external catalog, so it becomes visible to `SHOW TABLES` / `SELECT`. Mirrors
+        /// `IcebergMetadata::createInitial`. Existence in the catalog is already checked upstream by
+        /// `InterpreterCreateQuery`, so this only runs for a genuinely new table. Physical columns
+        /// (`getAllPhysical`) must match the `_delta_log` schema written above.
+        if (catalog)
+        {
+            const auto location = configuration_ptr->getRawPath().path;
+            Poco::JSON::Object::Ptr metadata_content = new Poco::JSON::Object;
+            metadata_content->set("location", location);
+            metadata_content->set("fields", buildDeltaSchemaFields(columns->getAllPhysical()));
+
+            const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id_.getTableName());
+            catalog->createTable(namespace_name, table_name, location, metadata_content);
+        }
         return;
     }
 #else
@@ -662,6 +782,8 @@ void DeltaLakeMetadata::createInitial(
     (void)columns;
     (void)partition_by;
     (void)if_not_exists;
+    (void)catalog;
+    (void)table_id_;
 #endif
     /// Non-kernel path: nothing to materialize on disk. The legacy JSON metadata
     /// reader expects an existing `_delta_log` and there is no writer for it.
