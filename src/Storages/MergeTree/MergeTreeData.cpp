@@ -5315,6 +5315,9 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
         if (is_temporary_directory)
             continue;
 
+        if (startsWith(name, "tmp_mutation_") && endsWith(name, ".txt") && disk->existsFile(entry_path))
+            continue;
+
         if (name == MOVING_DIR_NAME && disk->existsDirectory(entry_path))
             continue;
 
