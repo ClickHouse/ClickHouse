@@ -41,13 +41,8 @@ bool ParallelReadImplementation::checkPattern(GroupExpressionPtr expression, con
         || required_properties.distribution.is_replicated)
         return false;
 
-    /// Mark-range bucketing splits rows with the same sorting key across buckets, breaking FINAL
-    /// dedup on engines with specialized merging (Replacing, Collapsing, ...). Keep such reads
-    /// serial, the same way `tryMakeDistributedRead` does for the non-Cascades distributed plan.
-    if (read_step->isQueryWithFinal()
-        && read_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-        return false;
-
+    /// FINAL reads are bucketed by primary-key-range layers (a dedup group never spans buckets);
+    /// `setupDistributedReadBuckets` in `applyImpl` refuses the reads it cannot split safely.
     return true;
 }
 
@@ -65,7 +60,13 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
             "ParallelReadImplementation: clone() of ReadFromMergeTree returned unexpected step type for expression '{}'",
             expression->getDescription());
 
-    parallel_read_step->setDistributedRead(node_count);
+    /// The coordinator computes each bucket's authoritative marks; the fan-out ships them to
+    /// the workers in the `read_bucket` task parameters. A read that cannot be bucketed
+    /// (an unsupported feature, nothing to read, an unsplittable FINAL) or that does not split
+    /// into one bucket per node gets no parallel implementation and stays local.
+    const size_t actual_buckets = parallel_read_step->setupDistributedReadBuckets(node_count, ReadFromMergeTree::max_distributed_read_buckets);
+    if (actual_buckets != node_count)
+        return {};
     parallel_read_step->setStepDescription(fmt::format("ParallelRead {}", read_step->getStepDescription()), 200);
 
     GroupExpressionPtr parallel_read_expression = std::make_shared<GroupExpression>(*expression);

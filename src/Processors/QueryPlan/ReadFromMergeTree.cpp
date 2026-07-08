@@ -3473,6 +3473,11 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     cloned_step->allow_query_condition_cache = allow_query_condition_cache;
     cloned_step->enable_remove_parts_from_snapshot_optimization = enable_remove_parts_from_snapshot_optimization;
     cloned_step->distributed_read_bucket_count = distributed_read_bucket_count;
+    /// The coordinator-computed mark buckets and their per-task grouping; without them the
+    /// fan-out has nothing to ship in the `read_bucket` task parameters, and a FINAL read
+    /// with several lanes per task would serialize misaligned lanes and lose rows.
+    cloned_step->distributed_read_buckets = distributed_read_buckets;
+    cloned_step->distributed_read_lanes_per_task = distributed_read_lanes_per_task;
     /// Filters deferred until after FINAL merging: losing them would apply the filter
     /// before deduplication and return rows a newer version should have replaced.
     cloned_step->deferred_row_level_filter = deferred_row_level_filter;

@@ -413,6 +413,10 @@ public:
     /// primary-key-range layers (one merge per layer, per partition when FINAL does not merge across
     /// partitions). Returns the bucket count, or 0 (read serially) when a FINAL read cannot be range-split
     /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds `max_total_buckets`.
+    /// Ceiling for the virtual buckets of one distributed read (FINAL layer splits can
+    /// exceed the task count).
+    static constexpr size_t max_distributed_read_buckets = 256;
+
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
     /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
     /// per-bucket blob shipped as the `read_bucket` task parameter; empty unless this is a distributed read.

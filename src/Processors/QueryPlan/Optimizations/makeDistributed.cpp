@@ -86,7 +86,7 @@ bool planContainsLogicalExchange(const QueryPlan::Node & root)
 
 /// A bucket count sizes the exchange fan-out: each bucket becomes a separate task and a scatter
 /// output port. The cap limits memory consumption.
-constexpr UInt64 MAX_DISTRIBUTED_PLAN_BUCKET_COUNT = 256;
+constexpr UInt64 MAX_DISTRIBUTED_PLAN_BUCKET_COUNT = ReadFromMergeTree::max_distributed_read_buckets;
 
 static void validateBucketCount(UInt64 bucket_count, const char * setting_name)
 {
