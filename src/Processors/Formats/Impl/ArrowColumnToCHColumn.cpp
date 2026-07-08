@@ -2354,11 +2354,19 @@ static ColumnWithTypeAndName readColumnFromArrowColumn(
 
     bool type_hint_not_nullable_capable = type_hint && !removeNullable(type_hint)->canBeInsideNullable();
     bool read_as_nullable_column = (arrow_column->null_count() || is_nullable_column || (type_hint && (type_hint->isNullable() || type_hint->isLowCardinalityNullable()))) && !geo_metadata && !type_hint_not_nullable_capable && settings.allow_inferring_nullable_columns;
+    /// A struct is wrapped into Nullable only when the Nullable(Tuple) type is allowed by
+    /// allow_experimental_nullable_tuple_type (otherwise schema inference would return a type
+    /// that CREATE TABLE rejects) or explicitly requested by the type hint (e.g. an existing
+    /// table with such a column). Otherwise the struct is read as a plain Tuple, as it worked
+    /// before Nullable(Tuple) was supported.
+    bool allow_nullable_struct = settings.format_settings.schema_inference_allow_nullable_tuple_type
+        || (type_hint && isNullableOrLowCardinalityNullable(type_hint));
     if (read_as_nullable_column &&
         arrow_column->type()->id() != arrow::Type::LIST &&
         arrow_column->type()->id() != arrow::Type::LARGE_LIST &&
         arrow_column->type()->id() != arrow::Type::FIXED_SIZE_LIST &&
         arrow_column->type()->id() != arrow::Type::MAP &&
+        (arrow_column->type()->id() != arrow::Type::STRUCT || allow_nullable_struct) &&
         arrow_column->type()->id() != arrow::Type::DICTIONARY)
     {
         DataTypePtr nested_type_hint;
