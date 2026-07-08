@@ -226,7 +226,8 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                         /// UUID -- an exact match is required, not a suffix match, so a same-named
                         /// key living in a different bucket is correctly rejected.
                         const String & table_root = configuration->getPathForRead().path;
-                        const String table_namespace = configuration->getNamespace();
+                        const String table_namespace = deriveTableNamespaceForLocationCheck(
+                            configuration->getNamespace(), configuration->getRawURI());
                         bool location_ok = !candidate->has(f_location)
                             || cachedLocationMatchesTableRoot(candidate->getValue<String>(f_location), table_namespace, table_root);
                         if (location_ok)

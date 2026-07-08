@@ -523,6 +523,20 @@ bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::strin
     return authority == table_namespace || authority.starts_with(std::string(table_namespace) + "@");
 }
 
+std::string deriveTableNamespaceForLocationCheck(std::string_view configuration_namespace, std::string_view configuration_raw_uri)
+{
+    if (!configuration_namespace.empty())
+        return std::string(configuration_namespace);
+
+    if (auto scheme_pos = configuration_raw_uri.find("://"); scheme_pos != std::string_view::npos)
+    {
+        auto rest = configuration_raw_uri.substr(scheme_pos + 3);
+        auto slash_pos = rest.find('/');
+        return std::string(slash_pos == std::string_view::npos ? rest : rest.substr(0, slash_pos));
+    }
+    return {};
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,

@@ -147,6 +147,16 @@ std::string normalizeUuid(const std::string & uuid);
 /// since there is nothing to validate it against.
 bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_namespace, std::string_view table_root);
 
+/// Derives the namespace/authority to validate against in `cachedLocationMatchesTableRoot`.
+/// Returns `configuration_namespace` (e.g. `IObjectStorageConfiguration::getNamespace`) as-is when
+/// non-empty. Otherwise (namespace-less backends like HDFS, where `getNamespace` is always empty
+/// even though the table identity still includes the namenode/nameservice) falls back to the
+/// authority component of `configuration_raw_uri` (e.g. `getRawURI`), so two different HDFS
+/// clusters sharing the same key path are not treated as the same table. Backends with no scheme
+/// in their raw URI at all (e.g. Local) still yield an empty result, which is intentionally
+/// permissive since there is no cluster identity to validate.
+std::string deriveTableNamespaceForLocationCheck(std::string_view configuration_namespace, std::string_view configuration_raw_uri);
+
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 
 enum class FileCategory : uint8_t

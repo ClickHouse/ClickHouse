@@ -227,4 +227,34 @@ TEST(IcebergMetadataCache, LocationDoesNotMatchAuthorityBearingUriWithDifferentC
         "wasb://other-container@account.blob.core.windows.net/ns/table", "container", "ns/table"));
 }
 
+TEST(IcebergMetadataCache, DeriveTableNamespacePrefersNonEmptyConfigurationNamespace)
+{
+    EXPECT_EQ(Iceberg::deriveTableNamespaceForLocationCheck("bucket", "s3://bucket/ns/table"), "bucket");
+}
+
+TEST(IcebergMetadataCache, DeriveTableNamespaceFallsBackToRawUriAuthorityForHdfs)
+{
+    // `StorageHDFSConfiguration::getNamespace()` is always empty, but the table identity still
+    // includes the namenode/nameservice from `getRawURI()`. Without this fallback, a stale
+    // `catalog_uuid_hint` could reuse another HDFS cluster's cached metadata.json whenever both
+    // tables share the same key path.
+    EXPECT_EQ(Iceberg::deriveTableNamespaceForLocationCheck("", "hdfs://namenode:8020/warehouse/table"), "namenode:8020");
+    EXPECT_EQ(Iceberg::deriveTableNamespaceForLocationCheck("", "hdfs://user@nameservice/warehouse/table"), "user@nameservice");
+}
+
+TEST(IcebergMetadataCache, DeriveTableNamespaceIsEmptyForSchemelessRawUri)
+{
+    // Local has no cluster identity to validate, so the result stays permissively empty.
+    EXPECT_EQ(Iceberg::deriveTableNamespaceForLocationCheck("", "/warehouse/table"), "");
+}
+
+TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentHdfsAuthorityWithSamePath)
+{
+    // Regression test for the cross-cluster collision: two different HDFS namenodes serving the
+    // same `/warehouse/table` path must not be treated as the same table.
+    const auto table_namespace = Iceberg::deriveTableNamespaceForLocationCheck("", "hdfs://nn1:8020/warehouse/table");
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn2:8020/warehouse/table", table_namespace, "warehouse/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn1:8020/warehouse/table", table_namespace, "warehouse/table"));
+}
+
 #endif
