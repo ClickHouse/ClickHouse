@@ -35,6 +35,11 @@ STYLE_AND_FAST_TESTS = [
     *[j.name for j in JobConfigs.tidy_build_arm_jobs],
 ]
 
+CODE_REVIEW_BLOCKING_JOBS = [
+    JobNames.STYLE_CHECK,
+    JobNames.FAST_TEST,
+]
+
 REGULAR_BUILD_NAMES = [job.name for job in JobConfigs.build_jobs]
 
 PLAIN_FUNCTIONAL_TEST_JOB = [
@@ -47,7 +52,7 @@ workflow = Workflow.Config(
     base_branches=[BASE_BRANCH],
     jobs=[
         JobConfigs.style_check,
-        JobConfigs.code_review.set_run_after(STYLE_AND_FAST_TESTS),
+        JobConfigs.code_review.set_run_after(CODE_REVIEW_BLOCKING_JOBS),
         JobConfigs.docs_job,
         JobConfigs.docs_job_mintlify,
         JobConfigs.fast_test,
