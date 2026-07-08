@@ -1,0 +1,22 @@
+numeric fixture distribution
+400	1	20
+lc_value common value ordered after selective_probe
+1
+baseline_value common value ordered after selective_probe
+1
+lc_value rare value ordered before selective_probe
+1
+nullable string fixture distribution
+600	10	390	30
+lc_value empty string is not inflated by NULLs
+1
+lc_value common string ordered after selective_probe
+1
+lc_value missing string ordered before selective_probe
+1
+sliced dictionary fixture distribution
+6	3	2	1	2
+sliced lc_value common touched value uses row frequency
+1
+sliced lc_value unused dictionary value is not counted
+1
