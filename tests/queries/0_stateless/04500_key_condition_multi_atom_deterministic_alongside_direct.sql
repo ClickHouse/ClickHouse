@@ -1,3 +1,7 @@
+-- The `EXPLAIN indexes = 1` output shape for the exact-count-eligible `count()` queries depends on
+-- `optimize_use_implicit_projections`; pin it so the settings randomizer cannot flip the plan shape.
+SET optimize_use_implicit_projections = 1;
+
 -- { echo }
 
 -- Deterministic key-transform atoms must be produced for the key columns that the
