@@ -7217,13 +7217,7 @@ Pipe MergeTreeData::alterPartition(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
-    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-    /// must reject explicit partition mutations as well. Partition commands are dispatched here directly by
-    /// `InterpreterAlterQuery`, bypassing `StorageMergeTree::alter` / `assertNotReadonly`, so without this
-    /// gate a read-only table could still have its parts dropped, moved, attached, fetched, or replaced.
-    /// Operations that do not modify the table's data (`FREEZE`/`UNFREEZE` of a backup, `FORGET PARTITION`)
-    /// remain allowed, and the `table_readonly` setting itself can always be toggled back via
-    /// `ALTER ... MODIFY/RESET SETTING` (which goes through `alter`, not this path).
+    /// A read-only table must reject explicit partition mutations as well.
     if ((*getSettings())[MergeTreeSetting::table_readonly])
     {
         for (const PartitionCommand & command : commands)
@@ -10338,14 +10332,6 @@ bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assigne
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
-    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-    /// must not waste background CPU and I/O moving parts between volumes/disks, neither because of the
-    /// storage policy `move_factor` nor because of `TTL ... TO DISK/VOLUME` rules. Explicit
-    /// `ALTER TABLE ... MOVE` commands are rejected separately by `assertNotReadonly`; this only suppresses
-    /// the automatic background moves. The setting is sampled here, immediately before move selection and
-    /// scheduling, so the window against a concurrent `ALTER ... MODIFY SETTING table_readonly = 1` is
-    /// minimal; suppression of an already-selected move is best-effort and a single in-flight move that
-    /// slips through right at the moment the setting is published is harmless (see `scheduleDataProcessingJob`).
     if ((*getSettings())[MergeTreeSetting::table_readonly])
         return false;
 
