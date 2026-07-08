@@ -4011,7 +4011,7 @@ TEST(ReaderExecutor, UnifiedForegroundStopsAtFirstSiblingLedSegment)
            "waiting on the sibling's committed cell (a cache read), not a synchronous source read";
 }
 
-/// KT2b of the two-cursors model (`tmp/reader-executor-two-cursors/DESIGN.md`): display truth
+/// KT2b of the two-cursors model (see `ReaderExecutor`'s class comment): display truth
 /// can REGRESS behind the launch high-water. A sibling wins a segment's downloader, our serve
 /// stops at its boundary (short window) - then the sibling's query DIES without committing a
 /// byte, resetting the segment to EMPTY. The hole sits behind everything already attempted,

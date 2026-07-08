@@ -13,7 +13,7 @@ namespace DB
 /// The explicit work of ONE look-ahead plan, computed once from the immutable
 /// `CoverageMap`. Collapses fetch/fill/promote into a single `Retrieve`
 /// job kind and predicts what each `readNextWindow` returns. Pure description -
-/// no buffers, no I/O; see `tmp/reader-executor-unified-plan/DESIGN.md`.
+/// no buffers, no I/O; the model lives in `ReaderExecutor`'s class comment.
 struct PlanSchedule
 {
     enum class Purpose : uint8_t

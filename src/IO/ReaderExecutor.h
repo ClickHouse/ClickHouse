@@ -83,6 +83,12 @@ class ReaderExecutorInspector;
 /// async/decrypt/cache read buffers. Each source read is a bounded GET; the
 /// long connection coalesces them across pieces.
 ///
+/// Vocabulary joins (names the narrative above does not spell out):
+///   piece  -> one `FetchMachine` window;
+///   F      -> `FillLane::attempted_end`, the producer's ahead cursor;
+///   bank   -> `FillLane::bank`, the one overflow display cell;
+///   epoch  -> one plan lifetime, opened by `observeAndSchedule` on replan.
+///
 /// One instance per column-stream; not thread-safe beyond the machine handoff:
 /// while a fetch machine is in flight the worker exclusively owns the machine
 /// payload, and the foreground reclaims it only through the runner's
@@ -236,6 +242,8 @@ public:
 
 private:
     // ─── Nested types ────────────────────────────────────────────────────
+    // (`Display` is declared further down at the display section; `FillLane`
+    //  at the fill-lane section - each next to the verbs that use it.)
 
     /// Per-executor accumulating stats, flushed to ProfileEvents as they
     /// happen and logged at destruction. The foreground passes `this->stats`

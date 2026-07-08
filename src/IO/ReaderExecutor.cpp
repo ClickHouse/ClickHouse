@@ -103,6 +103,28 @@ namespace DB::FailPoints
 namespace DB
 {
 
+/// ─────────────────────────────── FILE MAP ────────────────────────────────────
+/// Regions in MODEL order (the two-cursors doc: ReaderExecutor.h class comment).
+/// File order is historical; anchors are function names - grep, don't scroll.
+///
+/// CONSUMER (top of the model, inverted in file order):
+///   `readNextWindow` -> `serveWindow` (the consumer loop) -> `pump` (in the
+///   Schedule-driven interpreter region) -> `finishWindow`.
+/// PLAN BUILD, three spans: `preparePlan` (the epoch scheduler, in Read path),
+///   `mergeRanges`, and `observeAndSchedule` + its extract* helpers.
+/// COLLECT, four spans: `tryCollectMachine`; the put trio `collectFillTargets` /
+///   `runPutStep` / `foldPutResult`; `collectInFlightInto`; and teardown's
+///   `cancelMachine` / `drainAbandonedMachines`.
+/// DISPLAY read surface, two spans: the `Display` methods, plus the plan-view
+///   hit serve `readHitFromView` / `serveLateHits` they join at `Display::read`.
+/// PRODUCER: `coordinatedPrefetch` (machine fetch step) -> `fetchGapsFromSource`
+///   -> `readFromSource` / the Long connection region; fills land through
+///   `FillLane::write`; deferred puts run at collect.
+/// ──────────────────────────────────────────────────────────────────────────────
+
+
+// ─── Stats ─────────────────────────────────────────────────────────────────
+
 /// The ONE place a counter is mapped to its ProfileEvent. Bump the counter, emit the event,
 /// and (for the cost-model counters) add the modeled-cost contribution - so a running query's
 /// events advance as the read happens. The prefetch worker runs in the submitter's thread
@@ -230,6 +252,8 @@ ReaderExecutor::FetchMachine::FetchMachine()
     : inflight_gauge(CurrentMetrics::ReaderExecutorPrefetchInFlight)
 {
 }
+
+// ─── Construction / teardown ───────────────────────────────────────────────
 
 ReaderExecutor::ReaderExecutor(
     std::shared_ptr<IFileBasedSourceReader> source_,
@@ -380,6 +404,8 @@ ReaderExecutor::~ReaderExecutor()
         }
     }
 }
+
+// ─── Read path ─────────────────────────────────────────────────────────────
 
 /// One window of bytes, or empty at EOF. At EOF an in-flight prefetch is drained FIRST: an
 /// unknown-size worker can latch `reached_eof` on a short read while still holding the file's
@@ -549,6 +575,8 @@ void ReaderExecutor::setReadExtent(std::optional<size_t> logical_end)
     read_extent_end = logical_end;
 }
 
+// ─── Transient reads (readBigAt) ───────────────────────────────────────────
+
 std::unique_ptr<ReaderExecutor> ReaderExecutor::makeTransientForReadAt(size_t start_position, size_t read_size) const
 {
     /// `prefetch_pool` and `reader_executor_log` are intentionally NOT propagated:
@@ -583,6 +611,8 @@ void ReaderExecutor::mergeTransientStats(const ReaderExecutor & transient)
     std::lock_guard lock(transient_stats_mutex);
     stats += transient.stats;
 }
+
+// ─── Decryption ────────────────────────────────────────────────────────────
 
 void ReaderExecutor::addDecryptionLayer(
     [[maybe_unused]] String path,
@@ -762,6 +792,8 @@ size_t ReaderExecutor::totalSize() const
     return physical > data_start_offset ? physical - data_start_offset : 0;
 }
 
+// ─── Plan build (cont. at observeAndSchedule) ──────────────────────────────
+
 VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWithMemoryTracking<ByteRange> & ranges, size_t min_gap)
 {
     if (ranges.empty() || min_gap == 0)
@@ -797,6 +829,8 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWith
 
     return merged;
 }
+
+// ─── Window serve path - collect (cont. at collectInFlightInto) ────────────
 
 bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
 {
@@ -956,6 +990,8 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     return true;
 }
 
+// ─── The display (cont.): plan-view hit serve ──────────────────────────────
+
 /// Serve a clamped resident sub-range from a held `planResidencyView` view's hit read
 /// buffers: find each `HitEntry` overlapping `clamped`, read the overlap from its
 /// re-readable buffer (clamped to `readable()` so a partial prefix is never over-read),
@@ -1056,6 +1092,8 @@ void ReaderExecutor::serveLateHits(ByteRange window, ChainedBuffers & result, In
         remaining = std::move(still_missing);
     }
 }
+
+// ─── Machine fetch step ────────────────────────────────────────────────────
 
 void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
 {
@@ -1169,6 +1207,8 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
             break;
     }
 }
+
+// ─── Gap fetch + backfill ──────────────────────────────────────────────────
 
 ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
     bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
@@ -1422,6 +1462,8 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
     }
 }
 
+// ─── Fill lane ─────────────────────────────────────────────────────────────
+
 size_t ReaderExecutor::FillLane::write(CacheWriter & writer, ChainedBuffers && slice)
 {
 #if defined(DEBUG_OR_SANITIZER_BUILD)
@@ -1519,6 +1561,8 @@ void ReaderExecutor::recreditCommittedPrefixes(
         }
     }
 }
+
+// ─── Source read ───────────────────────────────────────────────────────────
 
 ChainedBuffers ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
@@ -1956,6 +2000,8 @@ std::optional<ReaderExecutor::LongConnection> ReaderExecutor::takeLongConnection
     src.reset();
     return taken;
 }
+
+// ─── Deferred puts / promotes ──────────────────────────────────────────────
 
 void ReaderExecutor::collectFillTargets(FetchMachine & m)
 {
@@ -2618,6 +2664,8 @@ size_t ReaderExecutor::launchProgress(size_t ri) const
     return std::max(jobFrontier(ri), std::min(std::max(r.range.offset, fill_lane.attempted_end), r.range.end()));
 }
 
+// ─── The display ───────────────────────────────────────────────────────────
+
 bool ReaderExecutor::Display::coversByte(size_t phys) const
 {
     if (const auto & geom = ex.read_plan.geometry())
@@ -2812,6 +2860,8 @@ void ReaderExecutor::Display::wait(
     }
 }
 
+// ─── Window serve path (cont.): the consumer loop ──────────────────────────
+
 ChainedBuffers ReaderExecutor::serveFromDisplay(ByteRange window)
 {
     ChainedBuffers out;
@@ -2868,6 +2918,8 @@ ChainedBuffers ReaderExecutor::serveWindow(size_t position_phys)
             return {};
     }
 }
+
+// ─── Plan build ────────────────────────────────────────────────────────────
 
 void ReaderExecutor::observeAndSchedule(size_t physical_start)
 {
@@ -3206,6 +3258,8 @@ CacheWriter::CacheSegmentPin ReaderExecutor::writerPinAt(size_t frontier) const
     return {};
 }
 
+// ─── Machine lifecycle ─────────────────────────────────────────────────────
+
 void ReaderExecutor::cancelMachine(bool cancelled)
 {
     drainAbandonedMachines();
@@ -3327,6 +3381,8 @@ WindowAndBlock sizesAtPressure(MemoryPressureLevel pressure, size_t base_window,
 }
 
 }
+
+// ─── Sizing / bounds ───────────────────────────────────────────────────────
 
 size_t ReaderExecutor::effectiveWindowSize(MemoryPressureLevel level) const
 {
