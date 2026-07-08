@@ -390,19 +390,20 @@ def test_drop_detached_in_replicated_database(start_cluster):
     assert "must be detached" in error
     assert_eq_with_retry(
         replica2,
-        f"SELECT count() FROM test_r.{table_name}",
-        "10",
+        f"EXISTS TABLE test_r.{table_name}",
+        "1",
     )
 
     error = replica1.query_and_get_error(
-        "SET allow_experimental_drop_detached_table=1; "
-        "DROP DETACHED TABLE test_r.missing_table SYNC"
+        f"SET allow_experimental_drop_detached_table=1; "
+        f"DROP DETACHED TABLE IF EXISTS test_r.{table_name} SYNC"
     )
-    assert "doesn't exist" in error
+    assert "must be detached" in error
 
     replica1.query(f"DETACH TABLE test_r.{table_name} PERMANENTLY")
 
     assert_detached_table_count(replica1, table_name, "1")
+    assert_detached_table_count(replica2, table_name, "1")
     replica1.query(
         f"SET allow_experimental_drop_detached_table=1; "
         f"DROP DETACHED TABLE test_r.{table_name} SYNC"

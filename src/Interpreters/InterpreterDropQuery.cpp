@@ -443,24 +443,7 @@ BlockIO InterpreterDropQuery::executeToDetachedTable(const ContextPtr & context_
     if (query.if_exists)
     {
         if (!table_exists && !table_detached)
-        {
-            if (auto * replicated_database = typeid_cast<DatabaseReplicated *>(database.get()))
-            {
-                /// Initial `DatabaseReplicated` DDL worker can have no local detached metadata
-                /// while stale Keeper `/metadata/<table>` still exists. Clean it before `IF EXISTS` skips locally.
-                if (replicated_database->hasDetachedTableMetadataInZooKeeper(context_, table_name))
-                {
-                    context_->checkAccess(AccessType::DROP_TABLE, table_id);
-                    if (should_replicate_query)
-                    {
-                        ddl_guard->releaseTableLock();
-                        return database->tryEnqueueReplicatedDDL(new_query_ptr, context_, {}, std::move(ddl_guard));
-                    }
-                    replicated_database->dropDetachedTableMetadataIfExistsInZooKeeper(context_, table_name);
-                }
-            }
             return {};
-        }
     }
     if (!table_exists && !table_detached)
         throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} doesn't exist", table_id.getNameForLogs());
