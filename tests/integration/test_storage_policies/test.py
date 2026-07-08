@@ -54,17 +54,6 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
     def exec_sh(command):
         node.exec_in_container(["bash", "-c", command])
 
-    def set_remove_stale_moving_parts(enabled):
-        config_path = "/etc/clickhouse-server/config.d/disable_remove_stale_moving_parts.xml"
-        if enabled:
-            exec_sh(f"rm -f {shlex.quote(config_path)}")
-        else:
-            node.copy_file_to_container(
-                os.path.join(CONFIG_DIR, "disable_remove_stale_moving_parts.xml"),
-                config_path,
-            )
-        node.query("SYSTEM RELOAD CONFIG")
-
     def render(command, data_path, disk2_data_path):
         return command.format(data_path=shlex.quote(data_path), disk2_data_path=shlex.quote(disk2_data_path))
 
@@ -107,7 +96,6 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         ("test_delete_tmp_directory", "mkdir -p {disk2_data_path}/delete_tmp_all_0_0_0"),
         ("test_tmp_fetch_directory", "mkdir -p {disk2_data_path}/tmp-fetch_1_1_0"),
         ("test_tmp_mutation_file", "mkdir -p {disk2_data_path} && touch {disk2_data_path}/tmp_mutation_1.txt"),
-        ("test_moving_directory", "mkdir -p {disk2_data_path}/moving/all_0_0_0"),
     ]:
         check_case(table_name, command)
 
@@ -126,19 +114,10 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         ),
         ("test_unknown_root_entry", "mkdir -p {disk2_data_path}/not_a_part", "already contain data", True),
         ("test_temporary_file", "touch {disk2_data_path}/tmp_not_a_directory", "already contain data", True),
+        ("test_moving_directory", "mkdir -p {disk2_data_path}/moving/all_0_0_0", "already contain data", True),
         ("test_moving_file", "mkdir -p {disk2_data_path}/moving && touch {disk2_data_path}/moving/not_a_part", "already contain data", True),
         ("test_moving_non_part_directory", "mkdir -p {disk2_data_path}/moving/not_a_part", "already contain data", True),
         ("test_valid_root_part", "mkdir -p {disk2_data_path}/all_0_0_0", "already contain data", True),
         ("test_valid_detached_part", "mkdir -p {disk2_data_path}/detached/all_0_0_0", "already contain data", True),
     ]:
         check_case(table_name, command, expected_error, with_ignored_contents=with_ignored_contents)
-
-    try:
-        set_remove_stale_moving_parts(False)
-        check_case(
-            "test_moving_directory_cleanup_disabled",
-            "mkdir -p {disk2_data_path}/moving/all_0_0_0",
-            "already contain data",
-        )
-    finally:
-        set_remove_stale_moving_parts(True)

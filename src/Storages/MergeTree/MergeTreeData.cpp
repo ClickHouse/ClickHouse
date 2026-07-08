@@ -5322,27 +5322,11 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
         if (startsWith(name, "tmp_mutation_") && endsWith(name, ".txt") && disk->existsFile(entry_path))
             continue;
 
-        /// `moving/` contains interrupted part-move scratch data. Startup recovery can clear only
-        /// parseable stale part directories from it, and only when stale moving part cleanup is enabled.
+        /// `moving/` can conflict with later part moves before startup recovery has a chance to
+        /// clean it up. Keep rejecting it until storage-policy disk initialization is authoritative
+        /// on actual disk use. See #109823.
         if (name == MOVING_DIR_NAME)
-        {
-            if (!disk->existsDirectory(entry_path))
-                return true;
-
-            if (!allowRemoveStaleMovingParts() && !disk->isDirectoryEmpty(entry_path))
-                return true;
-
-            for (auto moving_it = disk->iterateDirectory(entry_path); moving_it->isValid(); moving_it->next())
-            {
-                if (!disk->existsDirectory(moving_it->path()))
-                    return true;
-
-                if (!MergeTreePartInfo::tryParsePartName(moving_it->name(), format_version))
-                    return true;
-            }
-
-            continue;
-        }
+            return true;
 
         if (name == DETACHED_DIR_NAME)
         {

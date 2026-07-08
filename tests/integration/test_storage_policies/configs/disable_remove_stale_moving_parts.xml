@@ -1,3 +1,0 @@
-<clickhouse>
-    <allow_remove_stale_moving_parts>false</allow_remove_stale_moving_parts>
-</clickhouse>
