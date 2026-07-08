@@ -142,7 +142,7 @@ TEST(IcebergMetadataCache, TablesWithSamePathButDifferentUuidsAreIndependent)
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootExact)
 {
-    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket/ns/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket/ns/table"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnTableRoot)
@@ -151,29 +151,29 @@ TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnTableRoot)
     // `location` field never does. Regression test for a bug where every warm
     // cache hit was rejected because of this mismatch (see test_metadata_cache
     // integration test).
-    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket/ns/table/"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket/ns/table/"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnCachedLocation)
 {
-    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket/ns/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket/ns/table"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashesOnBoth)
 {
-    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket/ns/table/"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket/ns/table/"));
 }
 
 TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentTableRoot)
 {
-    EXPECT_FALSE(cachedLocationMatchesTableRoot("s3://bucket/ns/other_table", "bucket/ns/table"));
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/other_table", "bucket/ns/table"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesWhenTableRootIsEmpty)
 {
     // An empty table_root means the caller has nothing to validate against, so
     // the check is permissive rather than rejecting every hit.
-    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table", ""));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", ""));
 }
 
 #endif
