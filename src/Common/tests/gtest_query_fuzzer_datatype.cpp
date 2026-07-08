@@ -79,6 +79,8 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
         "Dynamic(max_types = 8)",
         "JSON(max_dynamic_paths=8, max_dynamic_types=4, p1 UInt32, p2 Array(String), SKIP s, SKIP REGEXP 'r.*')",
         "QBit(Float32, 16)",
+        "SimpleAggregateFunction(sum, UInt64)",
+        "SimpleAggregateFunction(sumMap, Tuple(Array(String), Array(UInt64)))",
     };
     for (const auto & type_name : valid_type_names)
     {

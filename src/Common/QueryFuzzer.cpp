@@ -3,6 +3,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -2077,6 +2078,51 @@ static const std::map<size_t, Strings> swapAggrs
 DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
     checkIterationLimit();
+
+    /// SimpleAggregateFunction is a custom-named type whose physical representation is its storage type
+    /// (e.g. the storage of SimpleAggregateFunction(sum, Nullable(Float64)) is Nullable(Float64)). It must be
+    /// handled before the structural Array/Tuple/Nullable/... arms below, otherwise those arms would match the
+    /// storage type and silently strip the custom name. We recursively fuzz the argument types and re-validate
+    /// the aggregate via the factory, keeping the aggregate name and parameters, so the result stays a
+    /// structurally valid, round-trippable SimpleAggregateFunction (no generic-expression injection).
+    if (type->hasCustomName())
+    {
+        if (const auto * type_simple_aggr
+            = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+            type_simple_aggr && fuzz_rand() % 4 != 0)
+        {
+            DataTypes new_arg_types = type_simple_aggr->getArgumentsDataTypes();
+            bool changed = false;
+            for (auto & arg_type : new_arg_types)
+            {
+                auto fuzzed = fuzzDataType(arg_type);
+                if (fuzzed != arg_type)
+                {
+                    arg_type = fuzzed;
+                    changed = true;
+                }
+            }
+            if (changed)
+            {
+                try
+                {
+                    AggregateFunctionProperties properties;
+                    auto new_func = AggregateFunctionFactory::instance().get(
+                        type_simple_aggr->getFunctionName(),
+                        NullsAction::EMPTY,
+                        new_arg_types,
+                        type_simple_aggr->getParameters(),
+                        properties);
+                    DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(new_func);
+                    return createSimpleAggregateFunctionType(new_func, new_arg_types, type_simple_aggr->getParameters());
+                }
+                catch (...) // NOLINT(bugprone-empty-catch) Ok: the aggregate may reject the fuzzed argument types
+                {
+                }
+            }
+            return type;
+        }
+    }
 
     /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
     const auto * type_array = typeid_cast<const DataTypeArray *>(type.get());
