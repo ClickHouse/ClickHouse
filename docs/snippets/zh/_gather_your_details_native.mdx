@@ -1,0 +1,22 @@
+---
+title: 收集 Native 连接详细信息
+---
+
+要通过原生 TCP 连接到 ClickHouse，你需要以下信息：
+
+| Parameters                | Description                            |
+| ------------------------- | -------------------------------------- |
+| `HOST` and `PORT`         | 通常，使用 TLS 时端口为 9440；不使用 TLS 时端口为 9000。 |
+| `DATABASE NAME`           | 默认会有一个名为 `default` 的数据库，请使用你要连接的数据库名称。 |
+| `USERNAME` and `PASSWORD` | 默认用户名为 `default`。请根据你的使用场景使用相应的用户名。    |
+
+你的 ClickHouse Cloud 服务的详细信息可在 ClickHouse Cloud 控制台中查看。
+选择要连接的服务，然后点击 **Connect**：
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud 服务连接按钮" border />
+
+选择 **Native**，即可在示例 `clickhouse-client` 命令中看到详细信息。
+
+<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="ClickHouse Cloud 原生 TCP 连接详细信息" border />
+
+如果你使用的是自管理 ClickHouse，连接详细信息由你的 ClickHouse 管理员设置。

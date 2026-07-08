@@ -1,0 +1,149 @@
+---
+description: 'تُبسِّط التحديثات خفيفة الوزن عملية تحديث البيانات في قاعدة البيانات باستخدام أجزاء التصحيح.'
+keywords: ['update']
+sidebarTitle: 'UPDATE'
+slug: /sql-reference/statements/update
+title: 'تعليمة UPDATE خفيفة الوزن'
+doc_type: 'مرجع'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+<Note>
+  التحديثات الخفيفة لا تزال حاليًا في المرحلة التجريبية.
+  إذا واجهت أي مشكلات، يُرجى فتح issue في [مستودع ClickHouse](https://github.com/clickhouse/clickhouse/issues).
+</Note>
+
+تعمل تعليمة `UPDATE` خفيفة الوزن على تحديث الصفوف في الجدول `[db.]table` التي تطابق التعبير `filter_expr`.
+وسُمّيت &quot;lightweight update&quot; لتمييزها عن استعلام [`ALTER TABLE ... UPDATE`](/ar/reference/statements/alter/update)، وهي عملية ثقيلة تعيد كتابة أعمدة كاملة في أجزاء البيانات.
+وهي متاحة فقط لعائلة محركات الجداول [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+
+```sql
+UPDATE [db.]table [ON CLUSTER cluster] SET column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr;
+```
+
+يجب أن يكون `filter_expr` من النوع `UInt8`. يحدّث هذا الاستعلام قيم الأعمدة المحددة إلى قيم التعبيرات المقابلة في الصفوف التي تكون فيها قيمة `filter_expr` غير صفرية.
+تُحوَّل القيم إلى نوع العمود باستخدام العامل `CAST`. لا يُدعم تحديث الأعمدة المستخدمة في حساب المفتاح الأساسي أو مفتاح التقسيم.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+```sql
+UPDATE hits SET Title = 'Updated Title' WHERE EventDate = today();
+
+UPDATE wikistat SET hits = hits + 1, time = now() WHERE path = 'ClickHouse';
+```
+
+<div id="lightweight-update-does-not-update-data-immediately">
+  ## التحديثات خفيفة الوزن لا تُحدِّث البيانات على الفور
+</div>
+
+يُنفَّذ `UPDATE` خفيف الوزن باستخدام **أجزاء التصحيح** - وهي نوع خاص من أجزاء البيانات لا يحتوي إلا على الأعمدة والصفوف المحدَّثة.
+ينشئ `UPDATE` خفيف الوزن أجزاء تصحيح، لكنه لا يُعدِّل البيانات الأصلية فعليًا في التخزين على الفور.
+تشبه عملية التحديث استعلام `INSERT ... SELECT ...`، لكن استعلام `UPDATE` ينتظر حتى يكتمل إنشاء جزء التصحيح قبل أن يُرجِع النتيجة.
+
+تكون القيم المحدَّثة:
+
+* **مرئية فورًا** في استعلامات `SELECT` من خلال تطبيق التصحيحات
+* **تُطبَّق فعليًا على التخزين** فقط أثناء عمليات الدمج وعمليات mutation اللاحقة
+* **تُنظَّف تلقائيًا** بمجرد أن تُطبَّق التصحيحات فعليًا على جميع الأجزاء النشطة
+
+<div id="lightweight-update-requirements">
+  ## متطلبات التحديثات الخفيفة
+</div>
+
+تدعم التحديثات الخفيفة محركات [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/mergetree) و[`ReplacingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) و[`CollapsingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/collapsingmergetree) و[`VersionedCollapsingMergeTree`](/ar/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree)، بالإضافة إلى إصداراتها [`Replicated`](/ar/reference/engines/table-engines/mergetree-family/replication) و[`Shared`](/ar/products/cloud/features/infrastructure/shared-merge-tree).
+
+لاستخدام التحديثات الخفيفة، يجب تمكين إضفاء الطابع المادي على العمودين `_block_number` و`_block_offset` باستخدام إعدادات الجدول [`enable_block_number_column`](/ar/reference/settings/merge-tree-settings#enable_block_number_column) و[`enable_block_offset_column`](/ar/reference/settings/merge-tree-settings#enable_block_offset_column).
+
+<div id="lightweight-delete">
+  ## عمليات `DELETE` الخفيفة
+</div>
+
+يمكن تنفيذ استعلام [lightweight `DELETE`](/ar/reference/statements/delete) على شكل `UPDATE` خفيف الوزن بدلًا من mutation `ALTER UPDATE`. ويُتحكَّم في تنفيذ lightweight `DELETE` من خلال الإعداد [`lightweight_delete_mode`](/ar/reference/settings/session-settings#lightweight_delete_mode).
+
+<div id="performance-considerations">
+  ## اعتبارات الأداء
+</div>
+
+**مزايا التحديثات خفيفة الوزن:**
+
+* زمن استجابة التحديث مماثل لزمن استجابة استعلام `INSERT ... SELECT ...`
+* لا تُكتب سوى الأعمدة والقيم المُحدَّثة، وليس الأعمدة كاملةً في أجزاء البيانات
+* لا حاجة إلى انتظار اكتمال عمليات الدمج/التعديلات الجارية حاليًا، لذلك يكون زمن استجابة التحديث متوقعًا
+* يمكن تنفيذ التحديثات خفيفة الوزن بالتوازي
+
+**التأثيرات المحتملة على الأداء:**
+
+* تضيف عبئًا إضافيًا على استعلامات `SELECT` التي تحتاج إلى تطبيق التصحيحات
+* لن تُستخدم [فهارس التخطي](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) للأعمدة في أجزاء البيانات التي توجد عليها تصحيحات يجب تطبيقها. ولن تُستخدم [الإسقاطات](/ar/reference/engines/table-engines/mergetree-family/mergetree#projections) إذا كانت هناك أجزاء التصحيح في الجدول، بما في ذلك أجزاء البيانات التي لا توجد عليها تصحيحات يجب تطبيقها.
+* قد تؤدي التحديثات الصغيرة المتكررة جدًا إلى ظهور الخطأ &quot;too many parts&quot;. ويُنصح بتجميع عدة تحديثات في استعلام واحد، على سبيل المثال بوضع معرّفات التحديثات في عبارة `IN` واحدة داخل عبارة `WHERE`
+* صُممت التحديثات خفيفة الوزن لتحديث عدد صغير من الصفوف (حتى نحو 10% من الجدول). وإذا كنت بحاجة إلى تحديث كمية أكبر، فيُنصح باستخدام [`ALTER TABLE ... UPDATE`](/ar/reference/statements/alter/update) mutation
+
+<div id="concurrent-operations">
+  ## العمليات المتزامنة
+</div>
+
+لا تنتظر التحديثات خفيفة الوزن اكتمال عمليات الدمج أو التعديلات الجارية حاليًا، بخلاف التعديلات الثقيلة.
+ويُتحكَّم في اتساق التحديثات خفيفة الوزن المتزامنة من خلال الإعدادات [`update_sequential_consistency`](/ar/reference/settings/session-settings#update_sequential_consistency) و[`update_parallel_mode`](/ar/reference/settings/session-settings#update_parallel_mode).
+
+<div id="update-permissions">
+  ## أذونات `UPDATE`
+</div>
+
+يتطلب `UPDATE` امتياز `ALTER UPDATE`. لتمكين عبارات `UPDATE` على جدول محدد لمستخدم معيّن، شغّل:
+
+```sql
+GRANT ALTER UPDATE ON db.table TO username;
+```
+
+<div id="details-of-the-implementation">
+  ## تفاصيل التنفيذ
+</div>
+
+أجزاء التصحيح هي نفسها الأجزاء العادية، لكنها لا تحتوي إلا على الأعمدة المحدَّثة وعدة أعمدة خاصة بالنظام:
+
+* `_part` - اسم الجزء الأصلي
+* `_part_offset` - رقم الصف في الجزء الأصلي
+* `_block_number` - رقم block الخاص بالصف في الجزء الأصلي
+* `_block_offset` - إزاحة block الخاصة بالصف في الجزء الأصلي
+* `_data_version` - إصدار بيانات البيانات المحدَّثة (رقم block المخصَّص لاستعلام `UPDATE`)
+
+في المتوسط، يضيف ذلك نحو 40 بايتًا (بيانات غير مضغوطة) من العبء الإضافي لكل صف محدَّث في أجزاء التصحيح.
+وتساعد أعمدة النظام في العثور على الصفوف في الجزء الأصلي التي يجب تحديثها.
+وترتبط أعمدة النظام بـ [الأعمدة الافتراضية](/ar/reference/engines/table-engines/mergetree-family/mergetree#virtual-columns) في الجزء الأصلي، والتي تُضاف عند القراءة إذا كان يلزم تطبيق أجزاء التصحيح.
+وتُرتَّب أجزاء التصحيح حسب `_part` و `_part_offset`.
+
+تنتمي أجزاء التصحيح إلى تقسيمات مختلفة عن الجزء الأصلي.
+ويكون معرّف التقسيم لجزء التصحيح هو `patch-<hash of column names in patch part>-<original_partition_id>`.
+لذلك تُخزَّن أجزاء التصحيح ذات الأعمدة المختلفة في تقسيمات مختلفة.
+فعلى سبيل المثال، ستنشئ ثلاثة تحديثات `SET x = 1 WHERE <cond>` و `SET y = 1 WHERE <cond>` و `SET x = 1, y = 1 WHERE <cond>` ثلاثة أجزاء تصحيح في ثلاثة تقسيمات مختلفة.
+
+يمكن دمج أجزاء التصحيح فيما بينها لتقليل عدد التصحيحات المطبَّقة على استعلامات `SELECT` وتقليل العبء الإضافي. ويستخدم دمج أجزاء التصحيح خوارزمية الدمج [الاستبدالية](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) مع `_data_version` بوصفه version column.
+لذلك تحتفظ أجزاء التصحيح دائمًا بأحدث إصدار لكل صف محدَّث في الجزء.
+
+لا تنتظر تحديثات خفيفة الوزن انتهاء عمليات الدمج وعمليات التعديل الجارية حاليًا، بل تستخدم دائمًا snapshot الحالية من data parts لتنفيذ تحديث وإنتاج جزء تصحيح.
+وبسبب ذلك، يمكن أن توجد حالتان عند تطبيق أجزاء التصحيح.
+
+فعلى سبيل المثال، إذا قرأنا الجزء `A`، فسنحتاج إلى تطبيق جزء التصحيح `X`:
+
+* إذا كان `X` يحتوي على الجزء `A` نفسه. ويحدث هذا إذا لم يكن `A` مشاركًا في عملية دمج عند تنفيذ `UPDATE`.
+* إذا كان `X` يحتوي على الجزأين `B` و `C`، اللذين يغطيهما الجزء `A`. ويحدث هذا إذا كانت هناك عملية دمج (`B`, `C`) -&gt; `A` قيد التشغيل عند تنفيذ `UPDATE`.
+
+ولهاتين الحالتين، توجد طريقتان لتطبيق أجزاء التصحيح، على الترتيب:
+
+* استخدام merge على الأعمدة المرتَّبة `_part` و `_part_offset`.
+* استخدام join على العمودين `_block_number` و `_block_offset`.
+
+ويكون وضع join أبطأ ويتطلب ذاكرة أكبر من وضع merge، لكنه يُستخدم بوتيرة أقل.
+
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
+
+* [`ALTER UPDATE`](/ar/reference/statements/alter/update) - عمليات `UPDATE` الثقيلة
+* [Lightweight `DELETE`](/ar/reference/statements/delete) - عمليات `DELETE` خفيفة الوزن
+* [`APPLY PATCHES`](/ar/reference/statements/alter/apply-patches) - فرض التخزين المادي للتصحيحات في أجزاء البيانات (عملية mutation)

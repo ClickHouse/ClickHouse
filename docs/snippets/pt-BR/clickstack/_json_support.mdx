@@ -1,0 +1,24 @@
+---
+title: Suporte a JSON
+---
+
+<div id="json-type-support">
+  ## Suporte ao tipo JSON
+</div>
+
+<BetaBadge />
+
+<Warning>
+  **Funcionalidade Beta - não está pronta para produção**
+
+  O suporte ao tipo JSON no **ClickStack** é uma **funcionalidade beta**. Embora o próprio tipo JSON esteja pronto para produção no ClickHouse 25.3+, sua integração ao ClickStack ainda está em desenvolvimento ativo e pode ter limitações, mudar no futuro ou conter bugs.
+</Warning>
+
+O ClickStack oferece suporte beta para o [tipo JSON](/pt-BR/reference/formats/JSON/JSON) a partir da versão `2.0.4`.
+
+Para conhecer os benefícios desse tipo, consulte [Benefícios do tipo JSON](/pt-BR/clickstack/ingesting-data/schema/map-vs-json).
+
+Para habilitar o suporte ao tipo JSON, você deve definir as seguintes variáveis de ambiente:
+
+* `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` - habilita o suporte no OTel collector, garantindo que os esquemas sejam criados usando o tipo JSON.
+* `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true` (somente ClickStack Open Source) - habilita o suporte na UI do ClickStack, permitindo consultar dados JSON.

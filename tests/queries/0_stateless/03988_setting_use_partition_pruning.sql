@@ -1,6 +1,7 @@
 -- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
 -- EXPLAIN output may differ
 SET explain_query_plan_default = 'legacy';
+SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT add a Statistics step to EXPLAIN
 
 SET optimize_trivial_count_query = 1;
 SET query_plan_optimize_prewhere = 1;

@@ -10,6 +10,7 @@
 
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
+#include <Functions/LloydMaxQuantization.h>
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
@@ -188,12 +189,30 @@ struct DotProductTransposed
   * only receive individual bit planes. Type mismatches will produce incorrect results.
   */
 
-template <typename Kernel>
+/// When `Quantized` is true the function operates on a `QBit(Int8)` whose codes were produced by the `quantizeBFloat16ToInt8`
+/// Lloyd-Max codec. Because that quantizer is non-linear, the distance cannot be computed on the `Int8` codes directly: each
+/// reconstructed code is dequantized to its Lloyd-Max reconstruction level (as `Float32`) on the fly and the distance is
+/// computed against the reference (query) vector. The reference vector is polymorphic: a `Float` reference is the query, compared
+/// directly (asymmetric distance) and cast to `Float32` -- the reconstruction precision of the dequantized codes -- exactly as the
+/// non-quantized transposed functions cast the reference to the QBit element type (so a `BFloat16` query widens to `Float32`
+/// losslessly and a `Float64` query is narrowed to the `Float32` compute precision, since the stored side reconstructs only to
+/// `Float32`). An `Array(Int8)` reference is instead treated as `quantizeBFloat16ToInt8` codes and dequantized to its exact Lloyd-Max
+/// levels (equivalent to `dequantizeInt8ToBFloat16`). Note that `p` truncates only the stored `QBit` codes; the `Array(Int8)`
+/// reference is a complete query and is always reconstructed at full 8-bit precision (row 8 of the LUT), so the comparison is a
+/// symmetric quantized-vs-quantized distance only at `p = 8` -- for `p < 8` only the stored side is read at coarser precision. The
+/// function is registered under the `...Quantized` name (e.g. `cosineDistanceTransposedQuantized`).
+template <typename Kernel, bool Quantized = false>
 class FunctionArrayDistance : public IFunction
 {
 public:
-    String getName() const override { return Kernel::name; }
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance<Kernel>>(); }
+    String getName() const override
+    {
+        if constexpr (Quantized)
+            return String(Kernel::name) + "Quantized";
+        else
+            return Kernel::name;
+    }
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayDistance>(); }
     bool isVariadic() const override { return true; }
     size_t getNumberOfArguments() const override { return 0; }
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {}; }
@@ -231,6 +250,16 @@ public:
 
         if (!zeroth_arg_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "First argument of function {} must be a QBit", getName());
+
+        if constexpr (Quantized)
+        {
+            if (!WhichDataType(zeroth_arg_type->getElementType()).isInt8())
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "First argument of function {} must be a QBit(Int8) holding quantizeBFloat16ToInt8 codes, got QBit({})",
+                    getName(),
+                    zeroth_arg_type->getElementType()->getName());
+        }
 
         if (!first_arg_type)
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Second argument of function {} must be an Array", getName());
@@ -369,11 +398,32 @@ public:
                 return {};
         }
 
-        /// The type of reference vector dictates what type QBit had before we sliced it into bit planes.
-        /// Check that the precision doesn't exceed the maximum for the reference vector type.
-        const size_t max_precision_for_type = ref_vec_type->getNestedType()->getSizeOfValueInMemory() * 8;
-        if (res.precision > max_precision_for_type)
-            return {};
+        /// For the quantized form the QBit is always Int8 (8 bit planes) and the reference vector is either the full-precision
+        /// Float32 query or a quantized Array(Int8) query, so the reference type no longer encodes the QBit element type; cap the
+        /// precision at 8 directly.
+        if constexpr (Quantized)
+        {
+            /// The quantized internal form is only ever generated with an Array(Float32) reference (DistanceTransposedPartialReadsPass
+            /// casts a Float query to Array(Float32)) or an Array(Int8) reference (a quantized query, passed through unchanged), and
+            /// executeQuantizedDistanceCalculation reads it as ColumnVector<Float32> or dequantizes it from ColumnVector<Int8>
+            /// accordingly. Reject any other element type so a hand-written internal call with e.g. an Array(Float64) or Array(BFloat16)
+            /// reference falls through to the user-facing path and gets a clean ILLEGAL_TYPE_OF_ARGUMENT instead of reinterpreting the
+            /// reference vector's memory as Float32.
+            const WhichDataType ref_which(ref_vec_type->getNestedType());
+            if (!ref_which.isFloat32() && !ref_which.isInt8())
+                return {};
+
+            if (res.precision > 8)
+                return {};
+        }
+        else
+        {
+            /// The type of reference vector dictates what type QBit had before we sliced it into bit planes.
+            /// Check that the precision doesn't exceed the maximum for the reference vector type.
+            const size_t max_precision_for_type = ref_vec_type->getNestedType()->getSizeOfValueInMemory() * 8;
+            if (res.precision > max_precision_for_type)
+                return {};
+        }
 
         return res;
     }
@@ -431,6 +481,16 @@ public:
                 expanded_planes.emplace_back(arg.column->convertToFullColumnIfConst(), arg.type, arg.name);
             else
                 expanded_planes.emplace_back(arg);
+        }
+
+        if constexpr (Quantized)
+        {
+            /// The QBit is Int8 (Lloyd-Max codes) and the reference vector is Float32. Reconstruct each code, dequantize it to
+            /// its Float32 Lloyd-Max level, and compute the distance against the reference. See executeQuantizedDistanceCalculation.
+            const bool ref_is_const = arguments.back().column->isConst();
+            return ref_is_const
+                ? executeQuantizedDistanceCalculation<true>(reference_vector, expanded_planes, precision, stride, used_dims, input_rows_count)
+                : executeQuantizedDistanceCalculation<false>(reference_vector, expanded_planes, precision, stride, used_dims, input_rows_count);
         }
 
         /// We need to find two types: the type of the reference vector and the type of the calculation.
@@ -551,9 +611,22 @@ private:
                 DataTypeUInt64().createColumnConst(1, dimension), std::make_shared<DataTypeUInt64>(), "dimension");
         }
 
-        /// Cast reference vector to match QBit element type to ensure correct dispatch
+        /// Cast reference vector to match QBit element type to ensure correct dispatch. For the quantized form the QBit codes are
+        /// dequantized to Float32 levels on the fly, so a Float reference (query) is cast to Array(Float32); a quantized Array(Int8)
+        /// reference is passed through unchanged and dequantized on the fly exactly like the QBit codes.
         auto ref_vec_type = arguments[1].type;
-        auto expected_ref_vec_type = std::make_shared<DataTypeArray>(qbit_type->getElementType());
+        auto expected_ref_vec_type = [&]() -> std::shared_ptr<DataTypeArray>
+        {
+            if constexpr (Quantized)
+            {
+                if (const auto * ref_array = checkAndGetDataType<DataTypeArray>(ref_vec_type.get());
+                    ref_array && WhichDataType(ref_array->getNestedType()).isInt8())
+                    return std::make_shared<DataTypeArray>(std::make_shared<DataTypeInt8>());
+                return std::make_shared<DataTypeArray>(std::make_shared<DataTypeFloat32>());
+            }
+            else
+                return std::make_shared<DataTypeArray>(qbit_type->getElementType());
+        }();
 
         if (ref_vec_type->equals(*expected_ref_vec_type))
         {
@@ -702,12 +775,146 @@ private:
 
         return col_res;
     }
+
+    /// Quantized variant: the QBit holds Int8 Lloyd-Max codes and the reference vector is either the full-precision Float32 query or
+    /// a quantized Array(Int8) query.
+    /// `planes` holds `num_groups * precision` FixedString bit-plane columns in group-major order (plane[g * precision + b]).
+    /// Each stride group is untransposed into a contiguous slice of a `used_dims`-element buffer of raw code bytes, which is then
+    /// dequantized to Float32 Lloyd-Max reconstruction levels (rounding a truncated code to its coarse cell's centre) before the
+    /// Float32 distance kernel runs. The distance therefore equals the distance computed on `dequantizeInt8ToBFloat16` of the codes.
+    /// An Array(Int8) reference is a complete (not partially read) quantized query, so it is dequantized at full precision (row 8 of
+    /// the LUT, i.e. `dequantizeInt8ToBFloat16`) before the kernel runs; a Float32 reference is used verbatim.
+    template <bool ref_is_const>
+    ColumnPtr executeQuantizedDistanceCalculation(
+        const ColumnArray & col_y,
+        const ColumnsWithTypeAndName & planes,
+        const size_t precision,
+        const size_t stride,
+        const size_t used_dims,
+        size_t input_rows_count) const
+    {
+        const size_t num_groups = used_dims / stride;
+        const size_t bytes_per_group = DataTypeQBit::bitsToBytes(stride);
+        /// Number of code bytes one group untransposes into. When strided, stride % 8 == 0, so this equals `stride` and groups pack
+        /// contiguously into a `used_dims`-element buffer. For the non-strided single group it may be padded above `used_dims`.
+        const size_t padded_group = bytes_per_group * 8;
+        const size_t padded_array_size = num_groups * padded_group;
+
+        /// The reference (query) vector is either the full-precision Float32 query (an Array(Float32), used verbatim) or a quantized
+        /// Array(Int8) query, whose codes are dequantized at full precision (row 8 of the LUT, i.e. `dequantizeInt8ToBFloat16`) into a
+        /// Float32 buffer once, up front. `parseInternalArguments` guarantees the reference element type is exactly Float32 or Int8.
+        const IColumn & ref_data_column = col_y.getData();
+        PaddedPODArray<Float32> ref_dequantized;
+        const PaddedPODArray<Float32> * ref_data_ptr = nullptr;
+        if (const auto * ref_f32 = checkAndGetColumn<ColumnVector<Float32>>(&ref_data_column))
+        {
+            ref_data_ptr = &ref_f32->getData();
+        }
+        else
+        {
+            const auto & ref_codes = assert_cast<const ColumnVector<Int8> &>(ref_data_column).getData();
+            const std::array<Float32, 256> & dequant_ref = LloydMax::transposedDequantLUT()[8];
+            ref_dequantized.resize(ref_codes.size());
+            for (size_t i = 0; i < ref_codes.size(); ++i)
+                ref_dequantized[i] = dequant_ref[static_cast<uint8_t>(ref_codes[i])];
+            ref_data_ptr = &ref_dequantized;
+        }
+        const auto & ref_array_data = *ref_data_ptr;
+        [[maybe_unused]] const auto & ref_offsets = col_y.getOffsets();
+
+        auto col_res = ColumnVector<Float64>::create(input_rows_count);
+        auto & result_data = col_res->getData();
+
+        /// Reconstruction table for this precision: maps a raw code byte to its Float32 Lloyd-Max level.
+        const std::array<Float32, 256> & dequant = LloydMax::transposedDequantLUT()[precision];
+
+        /// We process 32 rows per iteration, mirroring executeDistanceCalculation.
+        constexpr size_t block_size = 32;
+        /// Reconstructed raw code bytes for the block; the Int8 QBit untransposes into 8-bit words.
+        VectorWithMemoryTracking<uint8_t> codes(block_size * padded_array_size);
+        /// The dequantized Float32 vectors for the block.
+        VectorWithMemoryTracking<Float32> block(block_size * padded_array_size);
+        auto codes_row = [&](size_t r) -> uint8_t * { return codes.data() + r * padded_array_size; };
+        auto block_row = [&](size_t r) -> Float32 * { return block.data() + r * padded_array_size; };
+
+#if USE_SIMSIMD
+        simsimd_metric_dense_punned_t simd_kernel = resolveSimdKernel<Float32>();
+#endif
+
+#if USE_MULTITARGET_CODE
+        const auto untranspose_kernel = SerializationQBit::resolveUntransposeBitPlane<uint8_t>();
+#else
+        constexpr auto untranspose_kernel = TargetSpecific::Default::untransposeBitPlaneImpl<uint8_t>;
+#endif
+
+        for (size_t base_row = 0; base_row < input_rows_count; base_row += block_size)
+        {
+            const size_t rows_in_block = std::min(block_size, input_rows_count - base_row);
+
+            memset(codes.data(), 0, rows_in_block * padded_array_size * sizeof(uint8_t));
+
+            /// Untranspose, for each stride group, its `precision` bit planes (MSB first) into that group's code-byte slice.
+            for (size_t group = 0; group < num_groups; ++group)
+            {
+                for (size_t bit = 0; bit < precision; ++bit)
+                {
+                    const auto & col = assert_cast<const ColumnFixedString &>(*planes[group * precision + bit].column);
+                    const uint8_t bit_mask = static_cast<uint8_t>(1u << (8 - 1 - bit));
+
+                    for (size_t r = 0; r < rows_in_block; ++r)
+                    {
+                        const UInt8 * src = reinterpret_cast<const UInt8 *>(col.getChars().data()) + (base_row + r) * bytes_per_group;
+                        untranspose_kernel(src, codes_row(r) + group * padded_group, padded_group, bit_mask);
+                    }
+                }
+            }
+
+            /// Dequantize the reconstructed codes to Float32 Lloyd-Max levels. Only the first `used_dims` entries are meaningful:
+            /// strided groups pack contiguously, and for the single non-strided group the trailing entries are padding.
+            for (size_t r = 0; r < rows_in_block; ++r)
+            {
+                const uint8_t * src_codes = codes_row(r);
+                Float32 * dst = block_row(r);
+                for (size_t i = 0; i < used_dims; ++i)
+                    dst[i] = dequant[src_codes[i]];
+            }
+
+            /// Calculate distance
+            for (size_t r = 0; r < rows_in_block; ++r)
+            {
+                /// The branching in `else` is fine performance-wise since multiple reference vectors per QBit is rare
+                const Float32 * ref_data = [&]()
+                {
+                    if constexpr (ref_is_const)
+                        return ref_array_data.data();
+                    else
+                        return ref_array_data.data() + (base_row + r == 0 ? 0 : ref_offsets[base_row + r - 1]);
+                }();
+
+                Float32 * dst = block_row(r);
+                Float64 * res = &result_data[base_row + r];
+
+#if USE_SIMSIMD
+                /// Branch is scary, but clang hoists it out of the loop.
+                if (simd_kernel)
+                    simd_kernel(dst, ref_data, used_dims, res);
+                else
+#endif
+                    Kernel::distance(dst, ref_data, used_dims, res);
+            }
+        }
+
+        return col_res;
+    }
 };
 
 /// Used by TupleOrArrayFunction
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
 FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
 FunctionPtr createFunctionArrayDotProductTransposed(ContextPtr context_);
+FunctionPtr createFunctionArrayL2DistanceTransposedQuantized(ContextPtr context_);
+FunctionPtr createFunctionArrayCosineDistanceTransposedQuantized(ContextPtr context_);
+FunctionPtr createFunctionArrayDotProductTransposedQuantized(ContextPtr context_);
 
 FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_)
 {
@@ -722,5 +929,20 @@ FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_)
 FunctionPtr createFunctionArrayDotProductTransposed(ContextPtr context_)
 {
     return FunctionArrayDistance<DotProductTransposed>::create(context_);
+}
+
+FunctionPtr createFunctionArrayL2DistanceTransposedQuantized(ContextPtr context_)
+{
+    return FunctionArrayDistance<L2DistanceTransposed, true>::create(context_);
+}
+
+FunctionPtr createFunctionArrayCosineDistanceTransposedQuantized(ContextPtr context_)
+{
+    return FunctionArrayDistance<CosineDistanceTransposed, true>::create(context_);
+}
+
+FunctionPtr createFunctionArrayDotProductTransposedQuantized(ContextPtr context_)
+{
+    return FunctionArrayDistance<DotProductTransposed, true>::create(context_);
 }
 }

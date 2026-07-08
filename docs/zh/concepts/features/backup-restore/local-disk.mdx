@@ -1,0 +1,354 @@
+---
+description: '介绍 Backup 到本地磁盘或从本地磁盘恢复的详细信息'
+sidebarTitle: '本地磁盘 / S3 磁盘'
+slug: /operations/backup/disk
+title: 'Backup / RESTORE到磁盘'
+doc_type: 'guide'
+---
+
+import ExampleSetup from '/snippets/zh/_example_setup.mdx';
+import Syntax from '/snippets/zh/_syntax.mdx';
+
+<div id="syntax">
+  ## 语法
+</div>
+
+<Syntax />
+
+<div id="configure-backup-destinations-for-disk">
+  ## 配置磁盘备份目标位置
+</div>
+
+<div id="configure-a-backup-destination">
+  ### 为本地磁盘配置备份目标位置
+</div>
+
+在下面的示例中，你会看到备份目标位置被指定为 `Disk('backups', '1.zip')`。
+要使用 `Disk` 备份引擎，首先需要在下面的路径添加一个用于指定
+备份目标位置的文件：
+
+```text
+/etc/clickhouse-server/config.d/backup_disk.xml
+```
+
+例如，下面的配置定义了一个名为 `backups` 的磁盘，并将其添加到
+**backups** 的 **allowed&#95;disk** 列表中：
+
+```xml highlight={4,10-13}
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+        <allowed_path>/backups/</allowed_path>
+    </backups>
+</clickhouse>
+```
+
+<div id="backuprestore-using-an-s3-disk">
+  ### 为 S3 磁盘配置备份目标位置
+</div>
+
+也可以通过在 ClickHouse 存储配置中配置 S3 磁盘，将 `BACKUP`/`RESTORE` 到 S3。像上文为本地磁盘所做的那样，在
+`/etc/clickhouse-server/config.d` 中添加一个文件来配置该磁盘。
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <s3_plain>
+                <type>s3_plain</type>
+                <endpoint></endpoint>
+                <access_key_id></access_key_id>
+                <secret_access_key></secret_access_key>
+            </s3_plain>
+        </disks>
+        <policies>
+            <s3>
+                <volumes>
+                    <main>
+                        <disk>s3_plain</disk>
+                    </main>
+                </volumes>
+            </s3>
+        </policies>
+    </storage_configuration>
+
+    <backups>
+        <allowed_disk>s3_plain</allowed_disk>
+    </backups>
+</clickhouse>
+```
+
+对 S3 磁盘执行 `BACKUP`/`RESTORE` 的方式与本地磁盘相同：
+
+```sql
+BACKUP TABLE data TO Disk('s3_plain', 'cloud_backup');
+RESTORE TABLE data AS data_restored FROM Disk('s3_plain', 'cloud_backup');
+```
+
+<Note>
+  * 此磁盘不应用于 `MergeTree` 本身，只用于 `BACKUP`/`RESTORE`
+  * 如果你的表使用 S3 存储，且磁盘类型不同，
+    则不会使用 `CopyObject` 调用将 parts 复制到目标端 bucket，而是
+    通过下载后再上传来完成，这样效率非常低。在这种情况下，建议优先使用
+    `BACKUP ... TO S3(<endpoint>)` 语法来处理此类用例。
+</Note>
+
+<div id="usage-examples">
+  ## 本地磁盘备份/恢复使用示例
+</div>
+
+<div id="backup-and-restore-a-table">
+  ### 对表进行备份和恢复
+</div>
+
+<ExampleSetup />
+
+要备份该表，可以运行：
+
+```sql title="Query"
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status─────────┐
+1. │ 065a8baf-9db7-4393-9c3f-ba04d1e76bcd │ BACKUP_CREATED │
+   └──────────────────────────────────────┴────────────────┘
+```
+
+如果该表为空，可使用以下命令从备份中恢复：
+
+```sql title="Query"
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+```
+
+```response title="Response"
+   ┌─id───────────────────────────────────┬─status───┐
+1. │ f29c753f-a7f2-4118-898e-0e4600cd2797 │ RESTORED │
+   └──────────────────────────────────────┴──────────┘
+```
+
+<Note>
+  如果表 `test.table` 中已有数据，上述 `RESTORE` 将会失败。
+  设置 `allow_non_empty_tables=true` 允许 `RESTORE TABLE` 将数据插入
+  到非空表中。这会将表中原有数据与从备份中提取的数据混合在一起。
+  因此，此设置可能会导致表中出现重复数据，应谨慎使用。
+</Note>
+
+要恢复已包含数据的表，请运行：
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.zip')
+SETTINGS allow_non_empty_tables=true
+```
+
+表在恢复或备份时可以使用新名称：
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table_renamed FROM Disk('backups', '1.zip')
+```
+
+此备份的归档结构如下：
+
+```text
+├── .backup
+└── metadata
+    └── test_db
+        └── test_table.sql
+```
+
+{/* 待办： 
+  此处补充有关 Backup 格式的说明。参见问题 24a
+  https://github.com/ClickHouse/clickhouse-docs/issues/3968
+  */}
+
+可以使用 zip 以外的格式。更多详细信息，请参阅下方的[&quot;tar 归档形式的备份&quot;](#backups-as-tar-archives)。
+
+<div id="incremental-backups">
+  ### 磁盘增量备份
+</div>
+
+ClickHouse 中的基础备份是初始的全量备份，后续的
+增量备份都基于它创建。增量备份仅存储自基础备份以来
+发生的更改，因此必须保留基础备份，才能从任何
+增量备份中恢复。可以通过设置
+`base_backup` 来指定基础备份的存储位置。
+
+<Note>
+  增量备份依赖基础备份。必须保留基础备份，
+  才能从增量备份中恢复。
+</Note>
+
+要为某个表创建增量备份，首先请创建一个基础备份：
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'd.zip')
+```
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', 'incremental-a.zip')
+SETTINGS base_backup = Disk('backups', 'd.zip')
+```
+
+增量备份和基础备份中的所有数据都可以通过以下命令恢复到
+新表 `test_db.test_table2`：
+
+```sql
+RESTORE TABLE test_db.test_table AS test_db.test_table2
+FROM Disk('backups', 'incremental-a.zip');
+```
+
+<div id="assign-a-password-to-the-backup">
+  ### 保护备份
+</div>
+
+写入磁盘的备份文件可以设置密码。
+可使用 `password` 设置指定密码。
+
+<Note>
+  密码保护仅支持 ZIP 归档 (`.zip`、`.zipx`) 。
+  备份路径必须以 `.zip` 或 `.zipx` 结尾，密码才会生效。
+  对任何其他格式使用密码——包括 tar 归档和非归档路径——都会
+  导致 `BAD_ARGUMENTS` 错误：`Password is not applicable, backup cannot be encrypted`。
+</Note>
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+要恢复受密码保护的备份，必须再次
+通过 `password` 设置指定密码：
+
+```sql
+RESTORE TABLE test_db.test_table
+FROM Disk('backups', 'password-protected.zip')
+SETTINGS password='qwerty'
+```
+
+<div id="backups-as-tar-archives">
+  ### tar 归档形式的备份
+</div>
+
+备份不仅可以存储为 zip 归档，也可以存储为 tar 归档。
+其功能与 zip 相同，不同之处在于 tar 归档不支持密码保护。
+此外，tar 归档还支持多种
+压缩方法。
+
+要将表备份为 tar 归档：
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar')
+```
+
+从 tar 归档恢复：
+
+```sql
+RESTORE TABLE test_db.test_table FROM Disk('backups', '1.tar')
+```
+
+要更改压缩方法，应在
+备份名称后附加正确的文件后缀。例如，要使用 gzip 压缩 tar 归档文件，请运行：
+
+```sql
+BACKUP TABLE test_db.test_table TO Disk('backups', '1.tar.gz')
+```
+
+支持的压缩文件后缀如下：
+
+* `tar.gz`
+* `.tgz`
+* `tar.bz2`
+* `tar.lzma`
+* `.tar.zst`
+* `.tzst`
+* `.tar.xz`
+
+<div id="compression-settings">
+  ### 压缩设置
+</div>
+
+可分别通过设置 `compression_method` 和 `compression_level`
+来指定压缩方法和压缩级别。
+
+{/* 待办：
+  需要补充有关这些设置的更多信息，以及为何要这样做
+  */}
+
+```sql
+BACKUP TABLE test_db.test_table
+TO Disk('backups', 'filename.zip')
+SETTINGS compression_method='lzma', compression_level=3
+```
+
+<div id="restore-specific-partitions">
+  ### 恢复特定分区
+</div>
+
+如果需要恢复某个表的特定分区，可以显式指定这些分区。
+
+下面创建一个简单的分区表，将数据分到四个分区中，插入一些数据，然后
+仅备份第 1 和第 4 个分区：
+
+<Accordion title="设置">
+  ```sql
+  CREATE IF NOT EXISTS test_db;
+         
+  -- 创建一个分区表
+  CREATE TABLE test_db.partitioned (
+      id UInt32,
+      data String,
+      partition_key UInt8
+  ) ENGINE = MergeTree()
+  PARTITION BY partition_key
+  ORDER BY id;
+
+  INSERT INTO test_db.partitioned VALUES
+  (1, 'data1', 1),
+  (2, 'data2', 2),
+  (3, 'data3', 3),
+  (4, 'data4', 4);
+
+  SELECT count() FROM test_db.partitioned;
+
+  SELECT partition_key, count() 
+  FROM test_db.partitioned
+  GROUP BY partition_key
+  ORDER BY partition_key;
+  ```
+
+  ```response
+     ┌─count()─┐
+  1. │       4 │
+     └─────────┘
+     ┌─partition_key─┬─count()─┐
+  1. │             1 │       1 │
+  2. │             2 │       1 │
+  3. │             3 │       1 │
+  4. │             4 │       1 │
+     └───────────────┴─────────┘
+  ```
+</Accordion>
+
+运行以下命令来备份分区 1 和 4：
+
+```sql
+BACKUP TABLE test_db.partitioned PARTITIONS '1', '4'
+TO Disk('backups', 'partitioned.zip')
+```
+
+运行以下命令，恢复分区 1 和 4：
+
+```sql
+RESTORE TABLE test_db.partitioned PARTITIONS '1', '4'
+FROM Disk('backups', 'partitioned.zip')
+SETTINGS allow_non_empty_tables=true
+```

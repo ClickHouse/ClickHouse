@@ -1,0 +1,271 @@
+---
+slug: /use-cases/observability/clickstack/integrations/nodejs-traces
+title: 'ClickStackでNode.jsのトレースを監視'
+sidebarTitle: 'Node.jsトレース'
+description: 'ClickStackでNode.jsアプリケーションのトレースを監視'
+doc_type: 'guide'
+keywords: ['Node.js', 'トレース', 'OTEL', 'ClickStack', '分散トレーシング']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **要点**
+
+  OpenTelemetry の自動インストルメンテーションを使用して、Node.js アプリケーションの分散トレースを ClickStack に取り込みます。デモデータセットとあらかじめ用意されたダッシュボードも含まれています。
+</Info>
+
+<div id="existing-nodejs">
+  ## 既存の Node.js アプリケーションとのインテグレーション
+</div>
+
+このセクションでは、OpenTelemetry の自動インストルメンテーションを使用して、既存の Node.js アプリケーションに分散トレーシングを追加する方法を説明します。
+
+既存環境の構成を行う前にこのインテグレーションを試したい場合は、あらかじめ構成済みの環境とサンプルデータを使って、[デモデータセットのセクション](#demo-dataset)で試すことができます。
+
+<div id="prerequisites">
+  ##### 前提条件
+</div>
+
+* OTLP エンドポイントにアクセス可能な状態で稼働している ClickStack インスタンス (ポート 4317/4318)
+* 既存の Node.js アプリケーション (Node.js 14 以上)
+* npm または yarn パッケージマネージャー
+* ClickStack のホスト名または IP アドレス
+
+<Steps>
+  <Step>
+    #### OpenTelemetry をインストールして設定する
+
+    `@hyperdx/node-opentelemetry` パッケージをインストールし、アプリケーションの起動時に初期化します。インストール手順の詳細は、[Node.js SDK ガイド](/ja/clickstack/ingesting-data/sdks/nodejs#getting-started)を参照してください。
+  </Step>
+
+  <Step>
+    #### ClickStack API key を取得する
+
+    ClickStack の OTLP エンドポイントにトレースを送信するための API key です。
+
+    1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
+    2. 必要に応じてアカウントを作成するか、ログインします
+    3. **Team Settings → API Keys** に移動します
+    4. **インジェスト API key** をコピーします
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+  </Step>
+
+  <Step>
+    #### アプリケーションを実行する
+
+    環境変数を設定して Node.js アプリケーションを起動します。
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    ```
+  </Step>
+
+  <Step>
+    #### トラフィックを生成する
+
+    アプリケーションにリクエストを送信してトレースを生成します。
+
+    ```bash
+    # 単純なリクエスト
+    curl http://localhost:3000/
+    curl http://localhost:3000/api/users
+    curl http://localhost:3000/api/products
+
+    # 負荷をシミュレートする
+    for i in {1..100}; do curl -s http://localhost:3000/ > /dev/null; done
+    ```
+  </Step>
+
+  <Step>
+    #### HyperDX でトレースを確認する
+
+    設定が完了したら、HyperDX にログインしてトレースが流れていることを確認します。次のように表示されるはずです。トレースが表示されない場合は、時間範囲を調整してみてください。
+
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="トレース検索ビュー" />
+
+    任意のトレースをクリックすると、span、タイミング、属性を含む詳細ビューを確認できます。
+
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="個別トレースビュー" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## デモデータセット
+</div>
+
+本番アプリケーションをインストルメントする前に ClickStack で Node.js のトレーシングを試したいユーザー向けに、実際のトラフィックパターンに近い、事前生成済みの Node.js アプリケーショントレースのサンプルデータセットを提供しています。
+
+<Steps>
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
+    サンプルトレースファイルをダウンロードします。
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
+    ```
+  </Step>
+
+  <Step>
+    #### ClickStack を起動する
+
+    まだ ClickStack を起動していない場合は、次のコマンドで起動します。
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CLICKHOUSE_USER=default \
+      -e CLICKHOUSE_PASSWORD= \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+  </Step>
+
+  <Step>
+    #### ClickStack API key を取得する
+
+    トレースを ClickStack の OTLP エンドポイントに送信するには、API key が必要です。
+
+    1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
+    2. 必要に応じてアカウントを作成するか、ログインします
+    3. **Team Settings → API Keys** に移動します
+    4. **インジェスト API key** をコピーします
+
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+
+    API key を環境変数として設定します。
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### トレースを ClickStack に送信する
+
+    ```bash
+    curl -X POST http://localhost:4318/v1/traces \
+      -H "Content-Type: application/json" \
+      -H "Authorization: $CLICKSTACK_API_KEY" \
+      -d @nodejs-traces-sample.json
+    ```
+
+    トレースが正常に送信されたことを示す、`{"partialSuccess":{}}` のようなレスポンスが返されるはずです。
+  </Step>
+
+  <Step>
+    #### HyperDX でトレースを確認する
+
+    1. [HyperDX](http://localhost:8080/) を開いてアカウントにログインします (先にアカウントの作成が必要な場合があります)
+    2. **Search** ビューに移動し、ソースを **Traces** に設定します
+    3. 時間範囲を **2025-10-25 13:00:00 - 2025-10-28 13:00:00** に設定します
+
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="トレース検索ビュー" />
+
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="個別のトレースビュー" />
+
+    <Info>
+      **タイムゾーン表示**
+
+      HyperDX では、タイムスタンプはブラウザーのローカルタイムゾーンで表示されます。デモデータの期間は **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** です。時間範囲を広めに設定しているため、どこからアクセスしてもデモトレースを確認できます。トレースが表示されたら、より見やすく可視化するために、範囲を 24 時間に絞り込めます。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## ダッシュボードと可視化
+</div>
+
+Node.js アプリケーションのパフォーマンス監視をすぐに始められるよう、主要なトレースの可視化を含むあらかじめ用意されたダッシュボードを提供しています。
+
+<Steps>
+  <Step>
+    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nodejs-traces-dashboard.json'} download="nodejs-traces-dashboard.json" eventName="docs.node_traces_monitoring.dashboard_download">ダウンロード</TrackedLink>する
+  </Step>
+
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
+    1. HyperDX を開き、**Dashboards** セクションに移動します
+    2. 右上の **Import Dashboard** をクリックします (省略記号メニュー内)
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard" />
+
+    3. `nodejs-traces-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
+
+    <Image img="/images/clickstack/nodejs/finish-import.webp" alt="Finish import" />
+  </Step>
+
+  <Step>
+    #### すべての可視化が事前設定された状態でダッシュボードが作成されます
+
+    <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Example dashboard" />
+
+    <Note>
+      デモデータセットを使用する場合は、時間範囲を **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されていません。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="demo-traces-not-appearing">
+  ### curl 経由でデモのトレースが表示されない
+</div>
+
+curl でトレースを送信しても HyperDX に表示されない場合は、もう一度トレースを送信してみてください。
+
+```bash
+curl -X POST http://localhost:4318/v1/traces \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $CLICKSTACK_API_KEY" \
+  -d @nodejs-traces-sample.json
+```
+
+これは、curl を使ったデモ方式で発生する既知の問題であり、インストルメントされた本番環境のアプリケーションには影響しません。
+
+<div id="no-traces">
+  ### HyperDX にトレースが表示されない
+</div>
+
+**環境変数が設定されていることを確認してください：**
+
+```bash
+echo $CLICKSTACK_API_KEY
+# API キーが出力されます
+
+echo $OTEL_EXPORTER_OTLP_ENDPOINT
+# http://localhost:4318 またはご利用の ClickStack ホストが出力されます
+```
+
+**ネットワーク接続を確認する:**
+
+```bash
+curl -v http://localhost:4318/v1/traces
+```
+
+OTLP エンドポイントに正常に接続できるはずです。
+
+**アプリケーションログを確認してください:**
+アプリの起動時に OpenTelemetry の初期化メッセージが出力されているか確認してください。HyperDX SDK から、初期化が完了したことを示すメッセージが出力されるはずです。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* 重要なメトリクス (エラー率、レイテンシのしきい値) に対する[alerts](/ja/clickstack/features/alerts)を設定します
+* 特定のユースケース (API の監視、セキュリティイベント) 向けに追加のダッシュボードを作成します
+
+<div id="going-to-production">
+  ## 本番環境での運用
+</div>
+
+このガイドでは、トレースを ClickStack の OTLP エンドポイントへ直接送信する HyperDX SDK を使用します。これは、開発、テスト、小規模～中規模の本番環境での運用に適しています。
+より大規模な本番環境で運用する場合や、テレメトリーデータをより細かく制御する必要がある場合は、独自の OpenTelemetry Collector をエージェントとしてデプロイすることを検討してください。
+本番環境向けのデプロイパターンや collector の設定例については、[OpenTelemetry で取り込む](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

@@ -1,0 +1,57 @@
+---
+description: 'Документация по конструкции PARALLEL WITH'
+sidebarTitle: 'PARALLEL WITH'
+slug: /sql-reference/statements/parallel_with
+title: 'Конструкция PARALLEL WITH'
+doc_type: 'reference'
+---
+
+Позволяет выполнять несколько команд одновременно.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+statement1 PARALLEL WITH statement2 [PARALLEL WITH statement3 ...]
+```
+
+Выполняет команды `statement1`, `statement2`, `statement3`, ... параллельно. Результат выполнения этих команд отбрасывается.
+
+Во многих случаях параллельное выполнение команд может быть быстрее, чем их обычное последовательное выполнение. Например, `statement1 PARALLEL WITH statement2 PARALLEL WITH statement3`, скорее всего, выполнится быстрее, чем `statement1; statement2; statement3`.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Создаются две таблицы параллельно:
+
+```sql
+CREATE TABLE table1(x Int32) ENGINE = MergeTree ORDER BY tuple()
+PARALLEL WITH
+CREATE TABLE table2(y String) ENGINE = MergeTree ORDER BY tuple();
+```
+
+Удаляет две таблицы параллельно:
+
+```sql
+DROP TABLE table1
+PARALLEL WITH
+DROP TABLE table2;
+```
+
+<div id="settings">
+  ## Настройки
+</div>
+
+Параметр [max&#95;threads](/ru/reference/settings/session-settings#max_threads) определяет, сколько потоков будет создано.
+
+<div id="comparison-with-union">
+  ## Сравнение с UNION
+</div>
+
+Конструкция `PARALLEL WITH` в некоторой степени похожа на [UNION](/ru/reference/statements/select/union), который тоже выполняет свои операнды параллельно. Однако есть несколько отличий:
+
+* `PARALLEL WITH` не возвращает никаких результатов выполнения своих операндов и может лишь повторно сгенерировать возникшее в них исключение, если оно есть;
+* `PARALLEL WITH` не требует, чтобы его операнды имели один и тот же набор результирующих столбцов;
+* `PARALLEL WITH` может выполнять любые команды (не только `SELECT`).
