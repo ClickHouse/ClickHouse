@@ -940,14 +940,19 @@ DataLakeMetadataPtr IcebergMetadata::create(
 
     auto log = getLogger("IcebergMetadata");
 
-    IcebergMetadataFilesCachePtr cache_ptr = nullptr;
-
+    /// Fetch the cache pointer unconditionally so it is stored in `persistent_components` for
+    /// the lifetime of this `IcebergMetadata` object: subsequent queries gate its use on their
+    /// own `use_iceberg_metadata_files_cache` setting (see `getRelevantState`, `getState`, etc.),
+    /// so a disabled setting on this first call must not permanently null out the stored cache.
+    IcebergMetadataFilesCachePtr cache_ptr = local_context->getIcebergMetadataFilesCache();
+    IcebergMetadataFilesCachePtr cache_ptr_for_init = nullptr;
     if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
-        cache_ptr = local_context->getIcebergMetadataFilesCache();
+        cache_ptr_for_init = cache_ptr;
     else
         LOG_TRACE(
             log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
-    auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
+    auto persistent_components = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr_for_init, local_context, log);
+    persistent_components.metadata_cache = cache_ptr;
     return std::make_unique<IcebergMetadata>(object_storage, configuration_ptr, std::move(persistent_components), local_context);
 }
 
@@ -1510,9 +1515,13 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
     Int32 metadata_compression_method_val = 0;
     readVarInt(metadata_compression_method_val, in);
     auto metadata_compression_method = static_cast<CompressionMethod>(metadata_compression_method_val);
-    IcebergMetadataFilesCachePtr cache_ptr = nullptr;
+    /// See the comment in `IcebergMetadata::create`: fetch the cache pointer unconditionally so
+    /// it is stored for the lifetime of this object, and gate only this call's probe on the
+    /// current setting.
+    IcebergMetadataFilesCachePtr cache_ptr = local_context->getIcebergMetadataFilesCache();
+    IcebergMetadataFilesCachePtr cache_ptr_for_init = nullptr;
     if (local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache])
-        cache_ptr = local_context->getIcebergMetadataFilesCache();
+        cache_ptr_for_init = cache_ptr;
     else
         LOG_TRACE(
             log, "Not using in-memory cache for iceberg metadata files, because the setting use_iceberg_metadata_files_cache is false.");
@@ -1520,11 +1529,11 @@ DataLakeMetadataPtr IcebergMetadata::createWithDeserialization(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Iceberg table, but storage configuration is expired");
     auto standard_persistent_components
-        = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr, local_context, log);
+        = initializePersistentTableComponents(object_storage, configuration_ptr, cache_ptr_for_init, local_context, log);
     auto schema_processor = standard_persistent_components.schema_processor;
     auto deserialized_persistent_components = Iceberg::PersistentTableComponents{
         .schema_processor = schema_processor,
-        .metadata_cache = standard_persistent_components.metadata_cache,
+        .metadata_cache = cache_ptr,
         .format_version = format_version,
         .table_location = table_location,
         .metadata_compression_method = metadata_compression_method,
