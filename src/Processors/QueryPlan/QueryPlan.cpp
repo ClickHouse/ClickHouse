@@ -1153,6 +1153,12 @@ QueryPlan QueryPlan::clone() const
     result.max_threads = max_threads;
     result.concurrency_control = concurrency_control;
 
+    /// Preserve the resource holder (storage holders, table locks, interpreter contexts, etc.).
+    /// These keep the objects a cloned plan reads (e.g. MergeTree parts in the direct-join lookup
+    /// path) alive for as long as the clone lives. append copies the shared handles, so ownership is
+    /// only ever shared, never moved out of the source: strictly a lifetime extension for the clone.
+    result.resources.append(resources);
+
     return result;
 }
 
