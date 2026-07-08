@@ -9,6 +9,13 @@ SET query_plan_direct_read_from_text_index = 1;
 -- disabled under FINAL, so the direct text-index read is never produced and the
 -- interaction under test is not covered. Pin it on.
 SET use_skip_indexes_if_final = 1;
+-- Same reasoning for the two settings below (also randomized by clickhouse-test):
+-- at exact_mode=0 the text index prunes the middle part outright, so parts 1+3 no
+-- longer intersect and the plan collapses to the fully-replaced branch (no union);
+-- at optimize_on_insert=0 parts aren't pre-replaced at insert so the
+-- non-intersecting split never happens. Both break the union assertions below.
+SET use_skip_indexes_if_final_exact_mode = 1;
+SET optimize_on_insert = 1;
 
 CREATE TABLE tab
 (
