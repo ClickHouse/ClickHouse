@@ -957,7 +957,8 @@ protected:
                 findS3NamedCollectionSecretArguments(1);
                 return;
             }
-            /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key])
+            /// BACKUP ... TO S3(url, [aws_access_key_id, aws_secret_access_key] [, session_token = ..., google_adc_* = ...])
+            findS3ExplicitUrlSecretNamedArguments(0);
             markSecretArgument(2);
         }
         else if (engine_name == "AzureBlobStorage" || engine_name == "AzureQueue")
