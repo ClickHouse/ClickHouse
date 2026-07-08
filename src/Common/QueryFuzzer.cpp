@@ -2080,52 +2080,64 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
 {
     checkIterationLimit();
 
-    /// SimpleAggregateFunction is a custom-named type whose physical representation is its storage type
-    /// (e.g. the storage of SimpleAggregateFunction(sum, Nullable(Float64)) is Nullable(Float64)). It must be
-    /// handled before the structural Array/Tuple/Nullable/... arms below, otherwise those arms would match the
-    /// storage type and silently strip the custom name. We recursively fuzz the argument types and re-validate
-    /// the aggregate via the factory, keeping the aggregate name and parameters, so the result stays a
-    /// structurally valid, round-trippable SimpleAggregateFunction (no generic-expression injection).
+    /// A custom-named type (SimpleAggregateFunction, Nested, geo Point/Ring/Polygon, Bool, ...) has a physical
+    /// representation that is a plain storage type (e.g. the storage of SimpleAggregateFunction(sum,
+    /// Nullable(Float64)) is Nullable(Float64), of Nested(...) is Array(Tuple(...)), of Point is Tuple(...)).
+    /// Such a type MUST be handled here, unconditionally, before the structural Array/Tuple/Nullable/... arms
+    /// below: if control ever falls through to those arms they match the storage type and silently strip the
+    /// custom name. So the randomness stays INSIDE this block (rebuild the custom type vs return it unchanged);
+    /// a custom-named type never reaches the storage-type arms.
     if (type->hasCustomName())
     {
+        /// Recursively fuzz the aggregate argument types and re-validate via the factory, keeping the aggregate
+        /// name and parameters, so the result stays a structurally valid, round-trippable
+        /// SimpleAggregateFunction (no generic-expression injection).
         if (const auto * type_simple_aggr
-            = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
-            type_simple_aggr && fuzz_rand() % 4 != 0)
+            = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
         {
-            DataTypes new_arg_types = type_simple_aggr->getArgumentsDataTypes();
-            bool changed = false;
-            for (auto & arg_type : new_arg_types)
+            if (fuzz_rand() % 4 != 0)
             {
-                auto fuzzed = fuzzDataType(arg_type);
-                if (fuzzed != arg_type)
+                DataTypes new_arg_types = type_simple_aggr->getArgumentsDataTypes();
+                bool changed = false;
+                for (auto & arg_type : new_arg_types)
                 {
-                    arg_type = fuzzed;
-                    changed = true;
+                    auto fuzzed = fuzzDataType(arg_type);
+                    if (fuzzed != arg_type)
+                    {
+                        arg_type = fuzzed;
+                        changed = true;
+                    }
                 }
-            }
-            if (changed)
-            {
-                if (auto fuzzed = makeAggregateFunctionType(
-                        type_simple_aggr->getFunctionName(), new_arg_types, type_simple_aggr->getParameters(), /*simple=*/true))
-                    return fuzzed;
+                if (changed)
+                {
+                    if (auto fuzzed = makeAggregateFunctionType(
+                            type_simple_aggr->getFunctionName(), new_arg_types, type_simple_aggr->getParameters(), /*simple=*/true))
+                        return fuzzed;
+                }
             }
             return type;
         }
 
-        /// Nested(a T1, b T2, ...) is a custom-named Array(Tuple(...)) alias. Without this arm it falls through
-        /// to the structural Array arm below, which rebuilds a plain Array(Tuple(...)) and drops the Nested
-        /// custom name, so the Nested parser/formatter path stops being fuzzed. Recursively fuzz each named
-        /// element type and rebuild via createNested, preserving the element names, so the result stays a
-        /// structurally valid, round-trippable Nested (no generic-expression injection).
-        if (const auto * type_nested = typeid_cast<const DataTypeNestedCustomName *>(type->getCustomName());
-            type_nested && fuzz_rand() % 4 != 0)
+        /// Nested(a T1, b T2, ...) is a custom-named Array(Tuple(...)) alias. Recursively fuzz each named element
+        /// type and rebuild via createNested, preserving the element names, so the result stays a structurally
+        /// valid, round-trippable Nested (no generic-expression injection).
+        if (const auto * type_nested = typeid_cast<const DataTypeNestedCustomName *>(type->getCustomName()))
         {
-            const auto & names = type_nested->getNames();
-            DataTypes new_elems = type_nested->getElements();
-            for (auto & elem : new_elems)
-                elem = fuzzDataType(elem);
-            return createNested(new_elems, names);
+            if (fuzz_rand() % 4 != 0)
+            {
+                const auto & names = type_nested->getNames();
+                DataTypes new_elems = type_nested->getElements();
+                for (auto & elem : new_elems)
+                    elem = fuzzDataType(elem);
+                return createNested(new_elems, names);
+            }
+            return type;
         }
+
+        /// Any other custom-named type (geo Point/Ring/Polygon/MultiPolygon, Bool, ...) is a parameterless fixed
+        /// alias with no child types to fuzz. Return it unchanged rather than letting the storage-type arms below
+        /// rewrite it to its (unnamed) storage type and drop the alias.
+        return type;
     }
 
     /// Do not replace Array/Tuple/etc. with not Array/Tuple too often.
