@@ -3193,6 +3193,11 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 {
     query_info.prewhere_info = prewhere_info_value;
 
+    /// Keep the deferred copy in sync: when PREWHERE is deferred after FINAL, a later rewrite
+    /// (e.g. text index preprocessing) must apply to the filter that actually runs
+    if (isPrewhereDeferredAfterFinal())
+        deferred_prewhere_info = prewhere_info_value;
+
     /// Build sets for the new PREWHERE synchronously. PREWHERE is evaluated at the
     /// storage level during data reading, before the pipeline-level CreatingSetsStep
     /// has a chance to execute. If a condition with IN (subquery) was moved to PREWHERE
