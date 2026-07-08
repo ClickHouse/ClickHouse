@@ -168,8 +168,8 @@ void registerDictionarySourceMysql(DictionarySourceFactory & factory)
                         if (replica_key.starts_with("replica"))
                         {
                             const auto replica_prefix = settings_config_prefix + "." + replica_key;
-                            /// A replica without its own port connects to the top-level port
-                            /// (see mysqlxx::Pool), so validate that effective port.
+                            /// Resolve the port the same way mysqlxx::Pool does, so the checked port
+                            /// always matches the port the connection actually dials.
                             global_context->getRemoteHostFilter().checkHostAndPort(
                                 config.getString(replica_prefix + ".host"),
                                 toString(config.getInt(replica_prefix + ".port",
