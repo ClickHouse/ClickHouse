@@ -699,15 +699,18 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
     serialization_infos = new_infos;
     metadata_version = new_metadata_version;
 
-    auto new_shared_part_columns = storage.getSharedPartColumnsForColumns(new_columns);
-    serializations = new_shared_part_columns->getSerializations(serialization_infos);
-
-    if (shared_part_columns != new_shared_part_columns)
+    /// Install the bundle into the part before anything below can throw: the cache entry lives
+    /// while some part holds the bundle, so once it is in the member, the part destructor is
+    /// responsible for returning it via `releaseSharedPartColumns` even when building the
+    /// serializations fails and this part never finishes loading.
+    if (auto new_shared_part_columns = storage.getSharedPartColumnsForColumns(new_columns); shared_part_columns != new_shared_part_columns)
     {
         auto old_shared_part_columns = std::exchange(shared_part_columns, std::move(new_shared_part_columns));
         if (old_shared_part_columns != SharedPartColumns::getEmpty())
             storage.releaseSharedPartColumns(std::move(old_shared_part_columns));
     }
+
+    serializations = shared_part_columns->getSerializations(serialization_infos);
 }
 
 String IMergeTreeDataPart::getProjectionName() const
