@@ -1,0 +1,164 @@
+---
+sidebarTitle: 'تشفير البيانات'
+slug: /cloud/security/cmek
+title: 'تشفير البيانات'
+description: 'تعرّف على المزيد عن تشفير البيانات في ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'التشفير', 'CMEK', 'أداة التحقق الدوري من مفتاح KMS']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="storage-encryption">
+  ## التشفير على مستوى التخزين
+</div>
+
+يتم تكوين ClickHouse Cloud افتراضيًا مع تشفير البيانات المخزنة باستخدام مفاتيح AES 256 التي يديرها موفر السحابة. لمزيد من المعلومات، راجع:
+
+* [تشفير AWS من جانب الخادم لـ S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingServerSideEncryption.html)
+* [التشفير الافتراضي للبيانات المخزنة في GCP](https://cloud.google.com/docs/security/encryption/default-encryption)
+* [تشفير Azure Storage للبيانات المخزنة](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
+
+<div id="database-encryption">
+  ## التشفير على مستوى قاعدة البيانات
+</div>
+
+<EnterprisePlanFeatureBadge feature="Enhanced Encryption" />
+
+تُشفَّر البيانات المخزَّنة افتراضيًا باستخدام مفاتيح AES 256 التي يديرها مزود الخدمة السحابية. يمكن للعملاء تفعيل التشفير الشفاف للبيانات (TDE) لإضافة طبقة حماية إضافية لبيانات الخدمة، أو استخدام مفتاحهم الخاص لتطبيق مفاتيح التشفير المُدارة من العميل (CMEK) على خدمتهم.
+
+يتوفر التشفير المحسّن حاليًا في خدمات AWS وGCP. وسيتوفر Azure قريبًا.
+
+<div id="transparent-data-encryption-tde">
+  ### التشفير الشفاف للبيانات (TDE)
+</div>
+
+يجب تمكين TDE عند إنشاء الخدمة. ولا يمكن تشفير الخدمات الحالية بعد إنشائها. وبمجرد تمكين TDE، لا يمكن تعطيله. ستظل جميع البيانات في الخدمة مشفّرة. وإذا أردت تعطيل TDE بعد تمكينه، فيجب عليك إنشاء خدمة جديدة وترحيل بياناتك إليها.
+
+1. حدِّد `Create new service`
+2. سمِّ الخدمة
+3. حدِّد AWS أو GCP باعتباره موفّر السحابة، ثم اختر المنطقة المطلوبة من القائمة المنسدلة
+4. انقر على القائمة المنسدلة الخاصة بميزات Enterprise، ثم فعِّل خيار Enable Transparent Data Encryption (TDE)
+5. انقر على Create service
+
+<div id="customer-managed-encryption-keys-cmek">
+  ### مفتاح التشفير المُدار من العميل (CMEK)
+</div>
+
+<Warning>
+  سيؤدي حذف مفتاح KMS المستخدم لتشفير خدمة ClickHouse Cloud إلى إيقاف خدمة ClickHouse لديك، وستصبح بياناتها غير قابلة للاسترداد، وكذلك النسخ الاحتياطية الحالية. ولتجنّب فقدان البيانات عن طريق الخطأ عند تدوير المفاتيح، قد ترغب في الاحتفاظ بمفاتيح KMS القديمة لفترة من الوقت قبل حذفها.
+</Warning>
+
+بمجرد تشفير الخدمة باستخدام TDE، يمكن للعملاء تحديث المفتاح لتمكين CMEK. ستُعاد تشغيل الخدمة تلقائيًا بعد تحديث إعداد TDE. أثناء هذه العملية، يفك مفتاح KMS القديم تشفير مفتاح تشفير البيانات (DEK)، ثم يعيد مفتاح KMS الجديد تشفير DEK. ويضمن ذلك أن تستخدم الخدمة، بعد إعادة التشغيل، مفتاح KMS الجديد في عمليات التشفير مستقبلًا. وقد تستغرق هذه العملية عدة دقائق.
+
+<Accordion title="تمكين CMEK باستخدام AWS KMS">
+  1. في ClickHouse Cloud، حدِّد الخدمة المشفّرة
+
+  2. انقر على Settings في الجهة اليسرى
+
+  3. في أسفل الشاشة، وسِّع قسم Network security information
+
+  4. انسخ Encryption role ID (AWS) أو Encryption Service Account (GCP) — ستحتاج إليه في خطوة لاحقة
+
+  5. [أنشئ مفتاح KMS لـ AWS](https://docs.aws.amazon.com/kms/latest/developerguide/create-keys.html)
+
+  6. انقر على المفتاح
+
+  7. حدِّث Key Policy في AWS كما يلي:
+
+     ```json
+     {
+         "Sid": "Allow ClickHouse Access",
+         "Effect": "Allow",
+         "Principal": {
+             "AWS": [ "Encryption role ID " ]
+         },
+         "Action": [
+             "kms:Encrypt",
+             "kms:Decrypt",
+             "kms:ReEncrypt*",
+             "kms:DescribeKey"
+         ],
+         "Resource": "*"
+     }
+     ```
+
+  8. احفظ Key Policy
+
+  9. انسخ Key ARN
+
+  10. ارجع إلى ClickHouse Cloud والصق Key ARN في قسم التشفير الشفاف للبيانات ضمن Service Settings
+
+  11. احفظ التغيير
+</Accordion>
+
+<Accordion title="تمكين CMEK باستخدام GCP KMS">
+  1. في ClickHouse Cloud، حدِّد الخدمة المشفّرة
+  2. انقر على Settings في الجهة اليسرى
+  3. في أسفل الشاشة، وسِّع قسم Network security information
+  4. انسخ Encryption Service Account (GCP) — ستحتاج إليه في خطوة لاحقة
+  5. [أنشئ مفتاح KMS لـ GCP](https://cloud.google.com/kms/docs/create-key)
+  6. انقر على المفتاح
+  7. امنح الأذونات التالية إلى GCP Encryption Service Account الذي نسخته في الخطوة 4 أعلاه.
+     * Cloud KMS CryptoKey Encrypter/Decrypter
+     * Cloud KMS Viewer
+  8. احفظ إذن المفتاح
+  9. انسخ Key Resource Path
+  10. ارجع إلى ClickHouse Cloud والصق Key Resource Path في قسم التشفير الشفاف للبيانات ضمن Service Settings
+  11. احفظ التغيير
+</Accordion>
+
+<Accordion title="تمكين CMEK باستخدام Azure KMS">
+  1. في ClickHouse Cloud، حدِّد الخدمة المشفّرة
+  2. انقر على `Settings` في الجانب الأيسر
+  3. في أسفل الشاشة، وسِّع `Network security information`
+  4. انسخ `Cross Tenant App Client ID` — ستحتاج إليه في الخطوة التالية
+  5. سجّل الدخول إلى اشتراك Azure الخاص بك، واستخدم الأمر التالي عبر Azure CLI لإنشاء service principal جديد؛ واستبدل `{azure_cross_tenant_app_client_id}` بالقيمة التي نسختها في الخطوة السابقة
+     `az ad sp create --id {azure_cross_tenant_app_client_id}`
+  6. انسخ قيمة `Name` الخاصة بـ service principal الجديد الذي تم إنشاؤه — ستحتاج إليها في خطوة لاحقة
+  7. [أنشئ Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal)
+  8. [أنشئ مفتاحًا في Key Vault على Azure](https://learn.microsoft.com/en-us/azure/key-vault/keys/quick-create-portal)
+  9. من مفتاح Key Vault، حدِّد `Access control (IAM)` من الجانب الأيسر
+  10. حدِّد `Role assignments` من القائمة العلوية
+  11. انقر على `Add` ثم `Add role assignment` من القائمة العلوية
+  12. حدِّد الدور `Key Vault Crypto User`، ثم انقر على `Next`
+  13. اترك الخيارات الافتراضية في شاشة `Add role assignment` كما هي، ثم انقر على `+Select members`
+  14. الصق اسم service principal الذي نسخته في الخطوة 6 (يبدأ بـ CH-TDE)، ثم حدِّد service principal وانقر على `Select`
+  15. انقر على `Next` ثم `Review + assign`
+  16. ارجع إلى Azure Key Vault وانسخ القيم التالية:
+      * من صفحة `Overview`، انسخ Vault URI
+      * من صفحة `Overview`، انسخ Directory ID
+      * من صفحة `Keys`، انسخ `Name` الخاص بمفتاحك
+  17. ارجع إلى إعدادات خدمتك في ClickHouse Cloud والصق القيم من الخطوة 16 في الحقول التالية:
+      * Key ID &gt; الصق `Name` الخاص بمفتاحك
+      * Key Vault URI &gt; الصق Vault URI
+      * Key Tenant ID &gt; الصق Directory ID
+  18. انقر على Rotate KMS، وانتظر بضع دقائق لأن هذا سيؤدي إلى إعادة تشغيل متدرجة، ثم تحقّق من أن خدمتك تعمل
+</Accordion>
+
+<div id="key-rotation">
+  #### تدوير المفتاح
+</div>
+
+بمجرد إعداد CMEK، قم بتدوير المفتاح باتباع الإجراءات الواردة أعلاه لإنشاء مفتاح KMS جديد ومنح الأذونات. ارجع إلى إعدادات الخدمة للصق ARN الجديد (AWS) أو Key Resource Path ‏(GCP) أو Key Name ‏(Azure)، ثم احفظ الإعدادات. ستُعاد تشغيل الخدمة لتطبيق المفتاح الجديد.
+
+<div id="kms-key-poller">
+  #### أداة التحقق الدوري من مفتاح KMS
+</div>
+
+عند استخدام CMEK، يتم التحقق من صلاحية مفتاح KMS المحدد كل 10 دقائق. وإذا لم يعد الوصول إلى مفتاح KMS صالحًا، فستتوقف خدمة ClickHouse. ولاستئناف الخدمة، أعِد الوصول إلى مفتاح KMS باتباع الخطوات الواردة في هذا الدليل، ثم أعد تشغيل الخدمة.
+
+<div id="backup-and-restore">
+  ### النسخ الاحتياطي والاستعادة
+</div>
+
+تُشفَّر النسخ الاحتياطية باستخدام المفتاح نفسه المرتبط بالخدمة المعنية. وعند استعادة نسخة احتياطية مشفّرة، تُنشئ عملية الاستعادة مثيلاً مشفّرًا يستخدم مفتاح KMS نفسه المستخدم في المثيل الأصلي. وإذا لزم الأمر، يمكنك تدوير مفتاح KMS بعد الاستعادة؛ راجع [تدوير المفتاح](#key-rotation) لمزيد من التفاصيل.
+
+<div id="performance">
+  ## الأداء
+</div>
+
+يعتمد تشفير قاعدة البيانات على [ميزة نظام الملفات الافتراضي لتشفير البيانات](/ar/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) المدمجة في ClickHouse لتشفير بياناتك وحمايتها. والخوارزمية المستخدمة في هذه الميزة هي `AES_256_CTR`، ومن المتوقع أن تؤدي إلى انخفاض في الأداء بنسبة تتراوح بين 5% و15% بحسب عبء العمل:
+
+<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="انخفاض أداء CMEK" />

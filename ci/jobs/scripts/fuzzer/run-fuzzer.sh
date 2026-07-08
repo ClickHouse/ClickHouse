@@ -66,6 +66,7 @@ function configure
     cp -av --dereference "$repo_dir"/tests/config/config.d/listen.xml $CONFIG_DIR/config.d
     cp -av --dereference "$repo_dir"/tests/config/users.d/ci_logs_sender.yaml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/query-fuzzer-tweaks-users.xml $CONFIG_DIR/users.d
+    cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/limit-recursion-settings.xml $CONFIG_DIR/users.d
     cp -av --dereference "$repo_dir"/ci/jobs/scripts/fuzzer/fuzz-server-settings.xml $CONFIG_DIR/config.d
 
     cat > $CONFIG_DIR/config.d/max_server_memory_usage_to_ram_ratio.xml <<EOL
@@ -234,11 +235,17 @@ function fuzz
     # Allow the fuzzer to run for some time, giving it a grace period of 5m to finish once the time
     # out triggers. After that, it'll send a SIGKILL to the fuzzer to make sure it finishes within
     # a reasonable time.
+    # Bound the parser/AST recursion on the client command line, matching the server-side caps in
+    # limit-recursion-settings.xml. The client parses every corpus query locally, and a corpus
+    # `SET compatibility=...` reverts max_parser_backtracks to its pre-24.3 default of 0 (unbounded);
+    # a command-line value survives that revert, unlike a profile value.
     timeout --verbose --signal TERM --kill-after=5m --preserve-status "${FUZZ_TIME_LIMIT:-30m}" clickhouse-client \
         --max_memory_usage_in_client=1000000000 \
         --receive_timeout=10 \
         --receive_data_timeout_ms=10000 \
         --stacktrace \
+        --max_parser_backtracks=1000000 \
+        --max_parser_depth=1000 \
         $FUZZER_ARGS \
         > fuzzer.log \
         2>&1 &

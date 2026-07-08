@@ -1,0 +1,60 @@
+---
+slug: /data-compression/compression-modes
+title: '压缩模式'
+description: 'ClickHouse 列压缩模式'
+keywords: ['压缩', 'codec', '编码', '模式']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+ClickHouse 协议支持对**数据块**进行带校验和的压缩。
+如果不确定该选择哪种模式，请使用 `LZ4`。
+&#96;&#96;
+
+<Tip>
+  进一步了解可用的[列压缩编解码器](/zh/reference/statements/create/table#column_compression_codec)，并在创建表时或之后为列指定它们。
+</Tip>
+
+<div id="modes">
+  ## 模式
+</div>
+
+| value  | name               | description            |
+| ------ | ------------------ | ---------------------- |
+| `0x02` | [None](#none-mode) | 不压缩，仅使用校验和             |
+| `0x82` | LZ4                | 速度极快，压缩效果较好            |
+| `0x90` | ZSTD               | Zstandard，速度相当快，压缩效果最佳 |
+
+LZ4 和 ZSTD 都出自同一位作者，但取舍各不相同。
+摘自 [Facebook benchmarks](https://facebook.github.io/zstd/#benchmarks)：
+
+| name              | ratio | encoding | decoding  |
+| ----------------- | ----- | -------- | --------- |
+| **zstd** 1.4.5 -1 | 2.8   | 500 MB/s | 1660 MB/s |
+| **lz4** 1.9.2     | 2.1   | 740 MB/s | 4530 MB/s |
+
+<div id="block">
+  ## 块
+</div>
+
+| 字段                  | 类型      | 描述                                                                       |
+| ------------------- | ------- | ------------------------------------------------------------------------ |
+| checksum            | uint128 |  (头部 + 压缩数据) 的 [哈希值](/zh/resources/develop-contribute/native-protocol/hash) |
+| raw&#95;size        | uint32  | 不含头部的原始大小                                                                |
+| data&#95;size       | uint32  | 未压缩数据大小                                                                  |
+| mode                | byte    | 压缩模式                                                                     |
+| compressed&#95;data | binary  | 压缩数据块                                                                    |
+
+<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="说明 ClickHouse 压缩块结构的示意图" />
+
+头部为 (raw&#95;size + data&#95;size + mode)，raw&#95;size 的值为 len(header + compressed&#95;data)。
+
+校验和为 `hash(header + compressed_data)`，使用 [ClickHouse CityHash](/zh/resources/develop-contribute/native-protocol/hash)。
+
+<div id="none-mode">
+  ## None 模式
+</div>
+
+如果使用 *None* 模式，`compressed_data` 与原始数据相同。
+由于哈希计算的开销可以忽略不计，无压缩模式也有助于借助校验和进一步确保数据完整性。

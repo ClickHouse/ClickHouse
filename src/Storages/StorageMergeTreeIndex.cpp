@@ -29,9 +29,15 @@
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_streaming_marks_compression;
+}
 
 namespace ErrorCodes
 {
@@ -188,7 +194,8 @@ private:
             /*save_marks_in_cache=*/ false,
             local_context->getReadSettings(),
             /*load_marks_threadpool=*/ nullptr,
-            num_columns);
+            num_columns,
+            local_context->getSettingsRef()[Setting::use_streaming_marks_compression]);
     }
 
     ColumnPtr fillMarks(

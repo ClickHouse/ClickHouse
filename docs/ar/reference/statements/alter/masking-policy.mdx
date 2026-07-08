@@ -1,0 +1,25 @@
+---
+description: 'توثيق ALTER MASKING POLICY'
+sidebarTitle: 'سياسة الإخفاء'
+slug: /sql-reference/statements/alter/masking-policy
+title: 'ALTER MASKING POLICY'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/ar/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+يُعدِّل سياسة إخفاء موجودة.
+
+الصيغة:
+
+```sql
+ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
+    [UPDATE column1 = expression1 [, column2 = expression2 ...]]
+    [WHERE condition]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+    [PRIORITY priority_number]
+```
+
+جميع العبارات اختيارية. لن تُحدَّث إلا العبارات المحددة.
