@@ -48,20 +48,36 @@ def _log_tail(path: Path, max_lines: int = 50, max_bytes: int = 65536) -> str:
     return "\n".join(data.decode("utf-8", errors="replace").splitlines()[-max_lines:])
 
 
+# A server-transmitted exception is printed by the client prefixed with
+# "Received from <host>." A client-side 241 raised under
+# --max_memory_usage_in_client prints "Code: 241. DB::Exception: ..." with no
+# such prefix, so this signature keeps only genuine server-survived limits.
+SERVER_MLE_SIGNATURE = r"Received from.*MEMORY_LIMIT_EXCEEDED"
+
+
 def _is_benign_memory_limit(
-    server_died: bool, fuzzer_exit_code: int, fuzzer_log_has_mle: bool
+    server_died: bool, fuzzer_exit_code: int, fuzzer_log_has_server_mle: bool
 ) -> bool:
-    """True when the fuzzer exited only because the server hit its memory cap.
+    """True when the fuzzer exited only because the SERVER hit its memory cap.
 
     A fuzzed query pushes the server over its memory limit; the memory tracker
     rejects the allocation with Code 241 (MEMORY_LIMIT_EXCEEDED) and the server
-    stays up (server_died=0). clickhouse-client returns the server error code as
-    its exit status, so the fuzzer exits 241. This is the tracker working as
-    intended, not a crash or a finding -- run-fuzzer.sh's liveness loop already
-    treats a 241 as "alive, busy". A genuine unbounded-memory bug crashes the
-    server instead and is caught via server_died / OOM-in-dmesg.
+    stays up (server_died=0). The server transmits that exception to the client,
+    which prints it prefixed with "Received from <host>. ... (MEMORY_LIMIT_
+    EXCEEDED)" and exits with the server error code (241). This is the tracker
+    working as intended, not a crash or a finding -- run-fuzzer.sh's liveness
+    loop already treats a 241 as "alive, busy".
+
+    The evidence must be server-origin (SERVER_MLE_SIGNATURE). clickhouse-client
+    itself can raise 241 under --max_memory_usage_in_client (a client-side cap;
+    see tests/queries/0_stateless/02003_memory_limit_in_client.sh) and
+    mainEntryClickHouseClient returns that code verbatim -- such a client/harness
+    241 has no "Received from" prefix and must NOT be swallowed, or a real
+    client/harness regression would be masked.
     """
-    return not server_died and fuzzer_exit_code == 241 and fuzzer_log_has_mle
+    return (
+        not server_died and fuzzer_exit_code == 241 and fuzzer_log_has_server_mle
+    )
 
 
 def _read_fuzzer_status(status_path: Path) -> tuple[bool, int, int]:
@@ -354,7 +370,7 @@ def run_fuzz_job(check_name: str):
     elif _is_benign_memory_limit(
         server_died,
         fuzzer_exit_code,
-        Shell.check(f"rg --text -q 'MEMORY_LIMIT_EXCEEDED' {fuzzer_log}"),
+        Shell.check(f"rg --text -q '{SERVER_MLE_SIGNATURE}' {fuzzer_log}"),
     ):
         # Server hit its memory cap on a fuzzed query but stayed alive; see
         # _is_benign_memory_limit. Not a crash or a finding.
