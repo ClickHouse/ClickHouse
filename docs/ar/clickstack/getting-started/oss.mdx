@@ -1,0 +1,147 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/oss
+title: 'بدء استخدام ClickStack مفتوح المصدر'
+sidebarTitle: 'مفتوح المصدر'
+description: 'بدء استخدام ClickStack مفتوح المصدر'
+doc_type: 'guide'
+keywords: ['ClickStack Open Source', 'بدء الاستخدام', 'نشر Docker', 'واجهة HyperDX', 'نشر محلي']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+لنشر **ClickStack Open Source**، حيث تتولى تشغيل ClickHouse وClickStack UI وإدارتهما بنفسك، نوفر صور Docker جاهزة تجمع واجهة المستخدم وOpenTelemetry Collector وClickHouse في حاوية واحدة، مما يجعل بدء التطوير المحلي والاختبار وعمليات النشر المُدارة ذاتيًا أمرًا سهلًا.
+
+<Tip>
+  تتوفر أيضًا نسخة مُدارة من ClickStack — راجع [Managed ClickStack](/ar/clickstack/getting-started/managed).
+</Tip>
+
+تعتمد هذه الصور على حزمة Debian الرسمية الخاصة بـ ClickHouse، وهي متاحة في عدة توزيعات لتناسب حالات استخدام مختلفة.
+
+أبسط خيار هو **توزيعة أحادية الصورة** تتضمن جميع المكونات الأساسية للحزمة مجمّعة معًا:
+
+* **HyperDX UI**
+* **OpenTelemetry (OTel) Collector**
+* **ClickHouse**
+
+تتيح لك هذه الصورة المتكاملة تشغيل الحزمة بالكامل بأمر واحد، مما يجعلها مثالية للاختبار والتجربة أو لعمليات النشر المحلية السريعة.
+
+<Steps>
+  <Step>
+    ## انشر الحزمة باستخدام docker
+
+    سيؤدي الأمر التالي إلى تشغيل OpenTelemetry Collector (على المنفذين 4317 و4318)، وHyperDX UI (على المنفذ 8080)، وClickHouse (على المنفذ 8123).
+
+    ```shell
+    docker run --name clickstack -p 8123:8123 -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-all-in-one:latest clickstack
+    ```
+
+    <Info>
+      **تحديث اسم الصورة**
+
+      تُنشر صور ClickStack الآن باسم `clickhouse/clickstack-*` (وكانت سابقًا `docker.hyperdx.io/hyperdx/*`).
+    </Info>
+
+    <Tip>
+      **الاحتفاظ بالبيانات والإعدادات**
+
+      للاحتفاظ بالبيانات والإعدادات عبر عمليات إعادة تشغيل الحاوية، يمكنك تعديل أمر docker أعلاه لتركيب المسارات `/data/db` و`/var/lib/clickhouse` و`/var/log/clickhouse-server`.
+
+      على سبيل المثال:
+
+      ```shell
+      # عدّل الأمر لتركيب المسارات
+      docker run \
+        --name clickstack \
+        -p 8123:8123 \
+        -p 8080:8080 \
+        -p 4317:4317 \
+        -p 4318:4318 \
+        -v "$(pwd)/.volumes/db:/data/db" \
+        -v "$(pwd)/.volumes/ch_data:/var/lib/clickhouse" \
+        -v "$(pwd)/.volumes/ch_logs:/var/log/clickhouse-server" \
+        clickhouse/clickstack-all-in-one:latest
+      ```
+    </Tip>
+  </Step>
+
+  <Step>
+    ## انتقل إلى ClickStack UI
+
+    زُر [http://localhost:8080](http://localhost:8080) للوصول إلى ClickStack UI ‏(HyperDX).
+
+    أنشئ مستخدمًا بإدخال اسم مستخدم وكلمة مرور يستوفيان متطلبات التعقيد.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    سيتصل HyperDX تلقائيًا بالعنقود المحلي وينشئ مصادر البيانات الخاصة بالسجلات والتتبعات والمقاييس والجلسات، مما يتيح لك استكشاف المنتج فورًا.
+  </Step>
+
+  <Step>
+    ## استكشف المنتج
+
+    بعد نشر الحزمة، جرّب إحدى مجموعات البيانات التجريبية لدينا.
+
+    لمتابعة استخدام العنقود المحلي:
+
+    * [Example dataset](/ar/clickstack/example-datasets/sample-data) - حمّل مجموعة بيانات تجريبية من العرض التوضيحي العام لدينا. شخّص مشكلة بسيطة.
+    * [Local files and metrics](/ar/clickstack/example-datasets/local-data) - حمّل ملفات محلية وراقب النظام على OSX أو Linux باستخدام OpenTelemetry Collector محلي.
+
+    <br />
+
+    بدلاً من ذلك، يمكنك الاتصال بعنقود تجريبي حيث يمكنك استكشاف مجموعة بيانات أكبر:
+
+    * [Remote demo dataset](/ar/clickstack/example-datasets/remote-demo-data) - استكشف مجموعة بيانات تجريبية في ClickHouse service التجريبية الخاصة بنا.
+  </Step>
+</Steps>
+
+<div id="alternative-deployment-models">
+  ## نماذج النشر البديلة
+</div>
+
+<div id="local-mode">
+  ### الوضع المحلي
+</div>
+
+الوضع المحلي هو طريقة لنشر HyperDX من دون الحاجة إلى المصادقة.
+
+**المصادقة غير مدعومة**.
+
+هذا الوضع مخصص للاختبارات السريعة والتطوير والعروض التوضيحية وحالات استخدام استكشاف الأخطاء وإصلاحها، حيث لا تكون المصادقة أو حفظ الإعدادات ضرورية.
+
+لمزيد من التفاصيل حول نموذج النشر هذا، راجع [&quot;الوضع المحلي فقط&quot;](/ar/clickstack/deployment/local-mode-only).
+
+<div id="hosted-version">
+  ### الإصدار المستضاف
+</div>
+
+يمكنك استخدام نسخة مستضافة من ClickStack في الوضع المحلي، وهي متاحة على [play-clickstack.clickhouse.com](https://play-clickstack.clickstack.com).
+
+<div id="self-hosted-version">
+  ### الإصدار المستضاف ذاتيًا
+</div>
+
+<Steps>
+  <Step>
+    ### التشغيل باستخدام Docker
+
+    تأتي صورة الوضع المحلي للإصدار المستضاف ذاتيًا مزوّدة مسبقًا بكلٍّ من OpenTelemetry Collector وClickStack UI وClickHouse server. وهذا يسهّل استقبال بيانات telemetry من تطبيقاتك وعرضها بأقل قدر من الإعدادات الخارجية. للبدء بالإصدار المستضاف ذاتيًا، ما عليك سوى تشغيل حاوية Docker مع إعادة توجيه المنافذ المناسبة:
+
+    ```shell
+    docker run -p 8080:8080 clickhouse/clickstack-local:latest
+    ```
+
+    وعلى خلاف صورة &quot;All in one&quot;، لن يُطلب منك إنشاء مستخدم لأن **الوضع المحلي لا يتضمن مصادقة**.
+  </Step>
+
+  <Step>
+    ### أكمل بيانات اعتماد الاتصال
+
+    للاتصال بـ **تجمّع ClickHouse خارجي** خاص بك، يمكنك إدخال بيانات اعتماد الاتصال يدويًا.
+
+    وبدلاً من ذلك، لاستكشاف المنتج بسرعة، يمكنك أيضًا النقر على **Connect to Demo Server** للوصول إلى مجموعات بيانات محمّلة مسبقًا وتجربة ClickStack من دون أي إعداد.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="بيانات الاعتماد" size="md" />
+
+    إذا كنت تتصل بخادم Demo، فيمكنك استكشاف مجموعة البيانات باستخدام [إرشادات demo dataset](/ar/clickstack/example-datasets/remote-demo-data).
+  </Step>
+</Steps>

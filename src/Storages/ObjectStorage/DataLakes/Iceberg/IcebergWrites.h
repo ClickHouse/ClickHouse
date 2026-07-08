@@ -48,7 +48,7 @@ void generateManifestFile(
     Poco::JSON::Object::Ptr metadata,
     const std::vector<String> & partition_columns,
     const std::vector<Field> & partition_values,
-    const std::vector<DataTypePtr> & partition_types,
+    const DataTypes & partition_types,
     const std::vector<Iceberg::IcebergPathFromMetadata> & data_file_names,
     const std::vector<UInt64> & data_file_row_counts,
     const std::vector<UInt64> & data_file_byte_counts,
@@ -72,7 +72,8 @@ void generateManifestList(
     const std::vector<Int64> & manifest_entry_sizes,
     WriteBuffer & buf,
     Iceberg::FileContentType content_type,
-    bool use_previous_snapshots = true);
+    bool use_previous_snapshots = true,
+    const std::vector<Iceberg::FileContentType> & per_entry_content_types = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {

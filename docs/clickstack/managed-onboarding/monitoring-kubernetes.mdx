@@ -1,0 +1,338 @@
+---
+slug: /use-cases/observability/clickstack/monitoring-kubernetes
+title: 'Monitoring Kubernetes with Managed ClickStack'
+description: 'Collect logs, infrastructure metrics, and events from a Kubernetes cluster into Managed ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'kubernetes', 'k8s', 'managed', 'observability', 'logs', 'metrics', 'events', 'daemonset', 'helm']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+This guide walks you through collecting logs, infrastructure metrics, and Kubernetes events from a cluster into Managed ClickStack, then viewing them in the built-in Kubernetes dashboard.
+
+The pattern is the standard OpenTelemetry one: two collectors deployed via the [OpenTelemetry Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), each forwarding to your ClickStack gateway collector via OTLP. A **DaemonSet** runs on every node to collect container logs and kubelet metrics. A **Deployment** with a single replica collects Kubernetes events and cluster-wide metrics. For background on the gateway role, see [Collector roles](/clickstack/ingesting-data/collector#collector-roles).
+
+This guide assumes you've completed [Setting up your OpenTelemetry Collector](/clickstack/managed-onboarding/setting-up-your-opentelemetry-collector) and have a ClickStack gateway collector running. 
+
+For a Kubernetes-resident workload, the gateway collector itself should be deployed **inside the same cluster using the upstream OpenTelemetry Helm chart with the ClickStack collector image**. Follow the Helm path in [Deploying the collector](/clickstack/ingesting-data/collector#configuring-the-collector) to install it. **Ensure you have recorded this OTLP endpoint**.
+
+<Steps>
+<Step>
+## Gather your prerequisites {#gather-prerequisites}
+
+You'll need:
+
+- A **Kubernetes cluster** (v1.20+ recommended) with `kubectl` configured against it.
+- **[Helm](https://helm.sh/) v3+**.
+- The **OTLP endpoint** of your ClickStack gateway collector, reachable from inside the cluster, for example `http://clickstack-otel-collector.observability.svc.cluster.local:4318`. The collector should be deployed somewhere your DaemonSets and Deployment can reach it, typically in the same cluster or via a service of type `LoadBalancer`.
+- The `OTLP_AUTH_TOKEN` value you set when deploying the gateway collector. If you didn't secure the collector, you can skip the secret step below and drop the `authorization` header from the manifests.
+
+<Info>
+**Where the gateway runs**
+
+For a cluster-local deployment, run the gateway collector as a Kubernetes `Deployment` or `StatefulSet` inside the same cluster and address it through its in-cluster service DNS. For a gateway running outside the cluster, use its externally reachable URL.
+</Info>
+</Step>
+<Step>
+## Create the auth secret and ConfigMap {#create-secret-and-configmap}
+
+Pick the namespace you want the collectors to live in, then create a secret holding the `OTLP_AUTH_TOKEN` and a ConfigMap pointing at your gateway:
+
+```shell
+export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+export OTEL_COLLECTOR_ENDPOINT="http://clickstack-otel-collector.observability.svc.cluster.local:4318"
+export NAMESPACE=observability
+
+kubectl create namespace ${NAMESPACE} --dry-run=client -o yaml | kubectl apply -f -
+
+kubectl create secret generic clickstack-otlp-secret \
+  --from-literal=OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+  -n ${NAMESPACE}
+
+kubectl create configmap otel-config-vars \
+  --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=${OTEL_COLLECTOR_ENDPOINT} \
+  -n ${NAMESPACE}
+```
+
+Both collectors below read these values via `extraEnvs`, so the same secret and ConfigMap are reused across them.
+</Step>
+<Step>
+## Add the OpenTelemetry Helm repo {#add-otel-helm-repo}
+
+```shell
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo update
+```
+</Step>
+<Step>
+## Deploy the cluster collector {#deploy-cluster-collector}
+
+This is a single-replica Deployment that collects **Kubernetes events** and **cluster-wide metrics** (node counts, pod phases, deployment status, and so on). Running more than one replica would produce duplicates.
+
+Save the following as `k8s_deployment.yaml`:
+
+<Accordion title="k8s_deployment.yaml">
+```yaml
+# k8s_deployment.yaml
+mode: deployment
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: 0.123.0
+
+# We only want one of these collectors - any more and we'd produce duplicate data
+replicaCount: 1
+
+presets:
+  kubernetesAttributes:
+    enabled: true
+    extractAllPodLabels: true
+    extractAllPodAnnotations: true
+  # Collects Kubernetes events via the k8sobject receiver.
+  kubernetesEvents:
+    enabled: true
+  # Collects cluster-level metrics via the k8s_cluster receiver.
+  clusterMetrics:
+    enabled: true
+
+extraEnvs:
+  - name: OTLP_AUTH_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: clickstack-otlp-secret
+        key: OTLP_AUTH_TOKEN
+        optional: true
+  - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+    valueFrom:
+      configMapKeyRef:
+        name: otel-config-vars
+        key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+config:
+  exporters:
+    otlphttp:
+      endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+      compression: gzip
+      headers:
+        authorization: "${env:OTLP_AUTH_TOKEN}"
+  service:
+    pipelines:
+      logs:
+        exporters:
+          - otlphttp
+      metrics:
+        exporters:
+          - otlphttp
+```
+</Accordion>
+
+Install it:
+
+```shell
+helm install k8s-otel-deployment open-telemetry/opentelemetry-collector \
+  -f k8s_deployment.yaml \
+  -n ${NAMESPACE}
+```
+</Step>
+<Step>
+## Deploy the node collector {#deploy-node-collector}
+
+This is a DaemonSet that runs on every node to collect **container logs**, **host metrics**, and **kubelet metrics** (per-pod and per-container CPU and memory utilisation against requests and limits).
+
+Save the following as `k8s_daemonset.yaml`:
+
+<Accordion title="k8s_daemonset.yaml">
+```yaml
+# k8s_daemonset.yaml
+mode: daemonset
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: 0.123.0
+
+# Required to use the kubeletstats cpu/memory utilization metrics
+clusterRole:
+  create: true
+  rules:
+    - apiGroups:
+        - ''
+      resources:
+        - nodes/proxy
+      verbs:
+        - get
+
+presets:
+  logsCollection:
+    enabled: true
+  hostMetrics:
+    enabled: true
+  kubernetesAttributes:
+    enabled: true
+    extractAllPodLabels: true
+    extractAllPodAnnotations: true
+  kubeletMetrics:
+    enabled: true
+
+extraEnvs:
+  - name: OTLP_AUTH_TOKEN
+    valueFrom:
+      secretKeyRef:
+        name: clickstack-otlp-secret
+        key: OTLP_AUTH_TOKEN
+        optional: true
+  - name: YOUR_OTEL_COLLECTOR_ENDPOINT
+    valueFrom:
+      configMapKeyRef:
+        name: otel-config-vars
+        key: YOUR_OTEL_COLLECTOR_ENDPOINT
+
+config:
+  receivers:
+    # Additional kubelet metrics expressed as utilisation against requests and limits.
+    kubeletstats:
+      collection_interval: 20s
+      auth_type: 'serviceAccount'
+      endpoint: '${env:K8S_NODE_NAME}:10250'
+      insecure_skip_verify: true
+      metrics:
+        k8s.pod.cpu_limit_utilization:
+          enabled: true
+        k8s.pod.cpu_request_utilization:
+          enabled: true
+        k8s.pod.memory_limit_utilization:
+          enabled: true
+        k8s.pod.memory_request_utilization:
+          enabled: true
+        k8s.pod.uptime:
+          enabled: true
+        k8s.node.uptime:
+          enabled: true
+        k8s.container.cpu_limit_utilization:
+          enabled: true
+        k8s.container.cpu_request_utilization:
+          enabled: true
+        k8s.container.memory_limit_utilization:
+          enabled: true
+        k8s.container.memory_request_utilization:
+          enabled: true
+        container.uptime:
+          enabled: true
+
+  exporters:
+    otlphttp:
+      endpoint: "${env:YOUR_OTEL_COLLECTOR_ENDPOINT}"
+      compression: gzip
+      headers:
+        authorization: "${env:OTLP_AUTH_TOKEN}"
+
+  service:
+    pipelines:
+      logs:
+        exporters:
+          - otlphttp
+      metrics:
+        exporters:
+          - otlphttp
+```
+</Accordion>
+
+Install it:
+
+```shell
+helm install k8s-otel-daemonset open-telemetry/opentelemetry-collector \
+  -f k8s_daemonset.yaml \
+  -n ${NAMESPACE}
+```
+
+Confirm both releases are healthy:
+
+```shell
+kubectl get pods -n ${NAMESPACE} -l app.kubernetes.io/name=opentelemetry-collector
+```
+
+You should see one Deployment pod and one DaemonSet pod per node, all in `Running` state.
+</Step>
+<Step>
+## Forward Kubernetes attributes to your apps (recommended) {#forward-k8s-attributes}
+
+To correlate your application logs, metrics, and traces with Kubernetes metadata (pod name, namespace, node, deployment), forward the metadata into your application via `OTEL_RESOURCE_ATTRIBUTES`. The DaemonSet's `k8sattributes` processor will then enrich incoming telemetry with the matching pod and node attributes.
+
+```yaml
+# my_app_deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      labels:
+        app: app
+        service.name: <MY_APP_NAME>
+    spec:
+      containers:
+        - name: app-container
+          image: my-image
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: DEPLOYMENT_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['deployment']
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: k8s.pod.name=$(POD_NAME),k8s.pod.uid=$(POD_UID),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),k8s.deployment.name=$(DEPLOYMENT_NAME)
+```
+</Step>
+<Step>
+## Confirm in the ClickStack UI {#confirm-in-ui}
+
+Open your service in the [ClickHouse Cloud console](https://console.clickhouse.cloud) and select **ClickStack** from the left menu.
+
+<Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Launch ClickStack" border/>
+
+In the **Search** view, switch the source to `Logs` and set the time range to **Last 15 minutes**. Container logs from across the cluster should appear within a few seconds, enriched with attributes like `k8s.namespace.name`, `k8s.pod.name`, and `k8s.node.name`.
+
+<Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="ClickStack Search view with Kubernetes logs"/>
+
+To see infrastructure metrics and events in context, open the built-in **Kubernetes** dashboard  by navigating to **Dashboards** -> **Kubernetes**. The `Pods`, `Nodes`, and `Namespaces` tabs should all be populated.
+
+<Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="ClickStack Kubernetes dashboard" border/>
+
+If nothing shows up:
+
+- Verify the DaemonSet and Deployment pods are `Running` and tail their logs with `kubectl logs -n ${NAMESPACE} <pod>`.
+- Confirm `YOUR_OTEL_COLLECTOR_ENDPOINT` is reachable from inside the cluster (`kubectl exec` into one of the collector pods and `curl` it).
+- Check that the `OTLP_AUTH_TOKEN` in the secret matches the value set on the gateway collector.
+</Step>
+<Step>
+## Further reading {#further-reading}
+
+- [Kubernetes integration reference](/clickstack/integration-examples/kubernetes) for the full set of receivers, processors, and tuning options.
+- [Forwarding resource tags to pods](/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods) for more detail on application-side enrichment.
+- [Securing the collector](/clickstack/ingesting-data/collector#securing-the-collector) with TLS on the OTLP endpoint and least-privilege ingestion users.
+- [Estimating resources](/clickstack/ingesting-data/collector#estimating-resources) for gateway and agent deployments at your expected throughput.
+- [Going to production](/clickstack/managing/production) for recommendations when going to production.
+</Step>
+</Steps>

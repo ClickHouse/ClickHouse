@@ -1,0 +1,40 @@
+---
+slug: /faq/integration/json-import
+title: '如何将 JSON 导入 ClickHouse？'
+toc_hidden: true
+toc_priority: 11
+description: '本页介绍如何将 JSON 导入 ClickHouse'
+keywords: ['JSON 导入', 'JSONEachRow 格式', '数据导入', 'JSON 摄取', '数据格式']
+doc_type: 'guide'
+---
+
+ClickHouse 支持多种用于输入和输出的[数据格式](/zh/reference/formats/index)。其中包含多种 JSON 变体，但最常用于数据摄取的是 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow)。它要求每一行对应一个 JSON 对象，并且各对象之间以换行符分隔。
+
+<div id="examples">
+  ## 示例
+</div>
+
+使用 [HTTP 接口](/zh/concepts/features/interfaces/http)：
+
+```bash
+$ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+通过 [接口](/zh/concepts/features/interfaces/cli)：
+
+```bash
+$ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
+```
+
+与其手动插入数据，不如考虑改用[集成工具](/zh/integrations/home)。
+
+<div id="useful-settings">
+  ## 常用设置
+</div>
+
+* `input_format_skip_unknown_fields` 允许插入 JSON，即使其中包含表 schema 中不存在的额外字段 (这些字段会被丢弃) 。
+* `input_format_import_nested_json` 允许将嵌套的 JSON 对象插入到 [Nested](/zh/reference/data-types/nested-data-structures/index) 类型的列中。
+
+<Note>
+  这些设置可通过 HTTP 接口 的 `GET` 参数指定，或在 `接口` 中作为带有 `--` 前缀的额外命令行参数传入。
+</Note>

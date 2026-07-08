@@ -254,6 +254,14 @@ void optimizeTreeSecondPass(
         });
     }
 
+    /// Compute aggregation hash-table preallocation keys here, BEFORE join runtime filters are added
+    /// in the traversal below. A join runtime filter injects a per-execution-random constant into the
+    /// probe-side Filter (see `joinRuntimeFilter.cpp`); hashing a plan that contains it would make an
+    /// aggregation's key differ across executions of the same query and defeat the size-stats cache.
+    /// Join steps avoid this for exactly the same reason by computing their key before the filter is
+    /// added. The plan here is already deterministic (post first pass and subplan materialization).
+    setAggregationHashTableCacheKeys(optimization_settings, root);
+
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -579,6 +587,11 @@ void optimizeTreeSecondPass(
 
     /// Trying to reuse sorting property for other steps.
     applyOrder(optimization_settings, root);
+
+    /// Push LIMIT into aggregation-in-order when ORDER BY matches GROUP BY.
+    /// Must run after applyOrder, which converts SortingStep to FinishSorting.
+    if (optimization_settings.optimize_aggregation_in_order_limit)
+        optimizeLimitForAggregationInOrder(root);
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);

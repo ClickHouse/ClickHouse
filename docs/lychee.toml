@@ -1,0 +1,70 @@
+include_fragments = "full"
+include_verbatim = false
+root_dir = "."
+no_progress = true
+format = "compact"
+fallback_extensions = ["mdx", "md"]
+
+# Only the Mintlify site under docs/ is checked. These paths are legacy
+# Docusaurus content, build output, or generated translations that are not part
+# of the Mintlify navigation, so exclude them as lychee inputs.
+exclude_path = [
+  # Legacy Docusaurus content, pending removal
+  "^\\./en/",
+  "^\\./changelogs/",
+  "^\\./_description_templates/",
+  "^\\./_includes/",
+  "^\\./_migration/",
+  # Site source assets (redirects.json, favicon, logos, customization JS) that
+  # are referenced by docs.json, not doc pages to link-check.
+  "^\\./_site/",
+  # Generated translations of the English site. These live both at the top
+  # level (./zh/) and under snippets/ (./snippets/zh/), so match the locale
+  # directory at any depth. The codes only ever name locale dirs, so this is
+  # safe -- unlike the legacy dirs above, which must stay top-level-anchored.
+  "/ar/",
+  "/es/",
+  "/fr/",
+  "/ja/",
+  "/ko/",
+  "/pt-BR/",
+  "/ru/",
+  "/zh/",
+  # Repo housekeeping files, not doc pages
+  "^\\./README\\.md$",
+  "^\\./AGENTS\\.md$",
+  "^\\./changelog_entry_guidelines\\.md$",
+  # The pg_clickhouse reference is a known-stale upstream copy whose outbound
+  # links use the wrong anchor casing; exclude it as an input so its links are
+  # not checked (the `pg_clickhouse` entry in `exclude` below only covers links
+  # pointing *into* it, not the outbound links it contains). Fix separately.
+  "/pg_clickhouse/",
+]
+
+exclude = [
+  # Links into the legacy Docusaurus English tree, which is excluded from the
+  # site (see exclude_path above). Skip them here too so they are not silently
+  # satisfied by a placeholder rather than genuinely checked.
+  "/en/",
+  # OpenAPI-generated routes — no .mdx files on disk, runtime-only
+  "api-reference/",
+  "academic-overview\\.mdx#page-",
+  "github\\.com",
+  "youtube\\.com",
+  # pg_clickhouse reference has many stale upstream anchors — fix separately
+  "pg_clickhouse",
+  # ClickStack/managed-postgres dashboard download buttons use a JSX expression
+  # href: `<TrackedLink href={'https://.../examples/<name>-dashboard.json'}>`.
+  # lychee cannot parse the `{'...'}` JSX wrapper and mangles it into a bogus
+  # relative link (`{'https://...'}`), so it false-positives regardless of the
+  # URL. The URLs are valid external S3 links (verified separately); exclude the
+  # pattern so the JSX wrapper is not misread as a broken local path.
+  "-dashboard\\.json",
+  # Connection strings in docker-compose / config examples, not links.
+  "mongodb://",
+  "PLAINTEXT://",
+  # chDB connection-string examples in docs tables (e.g.
+  # `file:test.db?param1=value1&param2=value2`) that lychee reads as file:// URLs.
+  # `test.db` is only ever an example database name, never a real link target.
+  "test\\.db",
+]

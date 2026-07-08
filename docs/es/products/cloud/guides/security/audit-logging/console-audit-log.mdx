@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Registro de auditoría de la consola'
+slug: /cloud/security/audit-logging/console-audit-log
+title: 'Registro de auditoría de la consola'
+description: 'Esta página describe cómo revisar el registro de auditoría de la nube'
+doc_type: 'guide'
+keywords: ['registro de auditoría']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Las actividades de la consola se registran en el registro de auditoría. Si tiene el rol Admin o Developer de la organización, puede revisar el registro e integrarlo con sus sistemas de logging.
+
+<div id="console-audit-log-ui">
+  ## Acceder al registro de la consola desde la interfaz de usuario
+</div>
+
+<Steps>
+  <Step>
+    ## Seleccionar organización
+
+    En ClickHouse Cloud, ve a los detalles de tu organización.
+
+    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="Pestaña Activity de ClickHouse Cloud" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## Seleccionar auditoría
+
+    Selecciona la pestaña **Audit** en el menú de la izquierda para ver qué cambios se han realizado en tu organización de ClickHouse Cloud, incluido quién los hizo y cuándo se produjeron.
+
+    La página **Activity** muestra una tabla con una lista de eventos registrados sobre tu organización. De forma predeterminada, esta lista está ordenada en orden cronológico inverso (el evento más reciente aparece arriba). Puedes cambiar el orden de la tabla haciendo clic en los encabezados de las columnas. Cada elemento de la tabla contiene los siguientes campos:
+
+    * **Activity:** Un fragmento de texto que describe el evento
+    * **User:** El usuario que inició el evento
+    * **IP Address:** Cuando corresponde, este campo muestra la dirección IP del usuario que inició el evento
+    * **Time:** La marca temporal del evento
+
+    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="Tabla Activity de ClickHouse Cloud" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## Usar la barra de búsqueda
+
+    Puedes usar la barra de búsqueda para filtrar eventos según distintos criterios, como el nombre del servicio o la dirección IP. También puedes exportar esta información en formato CSV para distribuirla o analizarla en una herramienta externa.
+  </Step>
+</Steps>
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="Exportación CSV de Activity de ClickHouse Cloud" border />
+</div>
+
+<div id="console-audit-log-api">
+  ## Acceder al registro de auditoría de la consola mediante la API
+</div>
+
+Puedes usar el endpoint `activity` de la API de ClickHouse Cloud para obtener una exportación
+de eventos de auditoría. Encontrarás más detalles en la [Referencia de la API](/es/api-reference/organization/get-list-of-available-organizations).
+
+<div id="log-integrations">
+  ## Integraciones de logs
+</div>
+
+Puede usar la API para integrarse con la plataforma de logging que prefiera. Las siguientes plataformas cuentan con conectores compatibles listos para usar:
+
+* [Complemento de auditoría de ClickHouse Cloud para Splunk](/es/integrations/connectors/data-integrations/integrations/splunk)

@@ -1,0 +1,343 @@
+---
+description: 'توثيق معدِّلات الدوال التجميعية'
+sidebarTitle: 'المعدِّلات'
+slug: /sql-reference/aggregate-functions/combinators
+title: 'معدِّلات الدوال التجميعية'
+doc_type: 'reference'
+---
+
+يمكن إلحاق لاحقة باسم الدالة التجميعية. وهذا يغيّر طريقة عملها.
+
+<div id="-if">
+  ## -If
+</div>
+
+يمكن إلحاق اللاحقة -If باسم أي دالة تجميعية. في هذه الحالة، تقبل الدالة التجميعية وسيطة إضافية — شرطًا (من النوع Uint8). ولا تعالج الدالة التجميعية إلا الصفوف التي تحقق الشرط. وإذا لم يتحقق الشرط ولو مرة واحدة، فإنها تُرجع قيمة افتراضية (عادةً أصفارًا أو سلاسل نصية فارغة).
+
+أمثلة: `sumIf(column, cond)`, `countIf(cond)`, `avgIf(x, cond)`, `quantilesTimingIf(level1, level2)(x, cond)`, `argMinIf(arg, val, cond)` وما إلى ذلك.
+
+باستخدام الدوال التجميعية الشرطية، يمكنك حساب القيم المجمعة لعدة شروط في الوقت نفسه، من دون استخدام الاستعلامات الفرعية وعمليات `JOIN`. على سبيل المثال، يمكن استخدام الدوال التجميعية الشرطية لتنفيذ ميزة مقارنة الشرائح.
+
+<div id="-array">
+  ## -Array
+</div>
+
+يمكن إلحاق اللاحقة -Array بأي دالة تجميع. في هذه الحالة، تأخذ دالة التجميع وسيطات من النوع &#39;Array(T)&#39; (مصفوفات) بدلًا من وسيطات من النوع &#39;T&#39;. وإذا كانت دالة التجميع تقبل عدة وسيطات، فيجب أن تكون هذه الوسيطات مصفوفات ذات أطوال متساوية. وعند معالجة المصفوفات، تعمل دالة التجميع بالطريقة نفسها التي تعمل بها دالة التجميع الأصلية على جميع عناصر المصفوفة.
+
+مثال 1: `sumArray(arr)` - يجمع إجمالي جميع عناصر كل مصفوفات &#39;arr&#39;. في هذا المثال، كان يمكن كتابة ذلك بصورة أبسط: `sum(arraySum(arr))`.
+
+مثال 2: `uniqArray(arr)` – يحسب عدد العناصر الفريدة في جميع مصفوفات &#39;arr&#39;. ويمكن تنفيذ ذلك بطريقة أسهل: `uniq(arrayJoin(arr))`، لكن لا يكون من الممكن دائمًا إضافة &#39;arrayJoin&#39; إلى استعلام.
+
+يمكن الجمع بين ‎-If و -Array. ومع ذلك، يجب أن تأتي &#39;Array&#39; أولًا ثم &#39;If&#39;. أمثلة: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. وبسبب هذا الترتيب، لن تكون الوسيطة &#39;cond&#39; مصفوفة.
+
+<div id="-map">
+  ## -Map
+</div>
+
+يمكن إلحاق اللاحقة `-Map` بأي aggregate function. ويؤدي ذلك إلى إنشاء aggregate function تستقبل Map type كـ argument، وتُجمِّع values الخاصة بكل key في الـ map كلًّا على حدة باستخدام aggregate function المحددة. وتكون النتيجة أيضًا من Map type.
+
+**مثال**
+
+```sql
+CREATE TABLE map_map(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO map_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
+
+SELECT
+    timeslot,
+    sumMap(status),
+    avgMap(status),
+    minMap(status)
+FROM map_map
+GROUP BY timeslot;
+
+┌────────────timeslot─┬─sumMap(status)───────────────────────┬─avgMap(status)───────────────────────┬─minMap(status)───────────────────────┐
+│ 2000-01-01 00:00:00 │ {'a':10,'b':10,'c':20,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │
+│ 2000-01-01 00:01:00 │ {'d':10,'e':10,'f':20,'g':20}        │ {'d':10,'e':10,'f':10,'g':10}        │ {'d':10,'e':10,'f':10,'g':10}        │
+└─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="-simplestate">
+  ## -SimpleState
+</div>
+
+إذا طبّقت هذا الـ combinator، فستُرجِع aggregate function القيمة نفسها ولكن بنوع مختلف. ويكون هذا [SimpleAggregateFunction(...)](/ar/reference/data-types/simpleaggregatefunction) قابلاً للتخزين في table للعمل مع جداول [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+
+**الصياغة**
+
+```sql
+<aggFunction>SimpleState(x)
+```
+
+**الوسائط**
+
+* `x` — معلمات الدالة التجميعية.
+
+**القيم المُعادة**
+
+قيمة دالة تجميعية من النوع `SimpleAggregateFunction(...)`.
+
+**مثال**
+
+```sql title="Query"
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+```text title="Response"
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
+
+<div id="-state">
+  ## -State
+</div>
+
+إذا طبّقت هذا combinator، فلن تُرجِع الدالة التجميعية القيمةَ الناتجة (مثل عدد القيم الفريدة للدالة [uniq](/ar/reference/functions/aggregate-functions/uniq))، بل تُرجِع حالةً وسيطة من عملية التجميع (وبالنسبة إلى `uniq`، فهذه هي hash table المستخدمة لحساب عدد القيم الفريدة). وهذا `AggregateFunction(...)` يمكن استخدامه لمزيد من المعالجة أو تخزينه في جدول لإكمال التجميع لاحقًا.
+
+<Note>
+  يرجى ملاحظة أن ‎-MapState ليس ثابتًا للبيانات نفسها، لأن ترتيب البيانات في الحالة الوسيطة قد يتغير، رغم أن ذلك لا يؤثر في إدخال هذه البيانات.
+</Note>
+
+للعمل مع هذه الحالات، استخدم:
+
+* محرك الجدول [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+* الدالة [finalizeAggregation](/ar/reference/functions/regular-functions/other-functions#finalizeAggregation).
+* الدالة [runningAccumulate](/ar/reference/functions/regular-functions/other-functions#runningAccumulate).
+* combinator ‏[-Merge](#-merge).
+* combinator ‏[-MergeState](#-mergestate).
+
+<div id="-merge">
+  ## -Merge
+</div>
+
+إذا طبّقت هذا المُركِّب، فإن دالة التجميع تأخذ حالة التجميع الوسيطة كوسيطة، ثم تدمج الحالات لاستكمال التجميع وتُرجِع القيمة الناتجة.
+
+<div id="-mergestate">
+  ## -MergeState
+</div>
+
+يدمج حالات التجميع الوسيطة بالطريقة نفسها التي يعمل بها المُركِّب -Merge. لكنه لا يعيد القيمة الناتجة، بل يعيد حالة تجميع وسيطة، على غرار المُركِّب -State.
+
+<div id="-foreach">
+  ## -ForEach
+</div>
+
+يحوّل دالة تجميع تُستخدم مع الجداول إلى دالة تجميع للمصفوفات، بحيث تُجمِّع العناصر المناظرة في المصفوفات وتُرجع مصفوفة من النتائج. على سبيل المثال، تُرجع `sumForEach` للمصفوفات `[1, 2]` و`[3, 4, 5]` و`[6, 7]` النتيجة `[10, 13, 5]` بعد جمع العناصر المناظرة معًا.
+
+<div id="-distinct">
+  ## -Distinct
+</div>
+
+لن يُحتسب كل تجميع لكل تركيبة فريدة من الوسائط إلا مرة واحدة فقط. وتُتجاهل القيم المتكررة.
+أمثلة: `sum(DISTINCT x)` (أو `sumDistinct(x)`)، و`groupArray(DISTINCT x)` (أو `groupArrayDistinct(x)`)، و`corrStable(DISTINCT x, y)` (أو `corrStableDistinct(x, y)`) وهكذا.
+
+<div id="-ordefault">
+  ## -OrDefault
+</div>
+
+يغيّر سلوك دالة تجميع.
+
+إذا لم تكن لدالة التجميع قيم إدخال، فإن هذا المُركِّب يجعلها تُرجع القيمة الافتراضية لنوع بيانات الإرجاع الخاص بها. ينطبق ذلك على دوال التجميع التي يمكنها قبول بيانات إدخال فارغة.
+
+يمكن استخدام `-OrDefault` مع مُركِّبات أخرى.
+
+**الصيغة**
+
+```sql
+<aggFunction>OrDefault(x)
+```
+
+**المعاملات**
+
+* `x` — معلمات دالة التجميع.
+
+**القيم المُعادة**
+
+تعيد القيمة الافتراضية لنوع الإرجاع الخاص بدالة التجميع إذا لم تكن هناك قيم لتجميعها.
+
+يعتمد النوع على دالة التجميع المستخدمة.
+
+**مثال**
+
+```sql title="Query"
+SELECT avg(number), avgOrDefault(number) FROM numbers(0)
+```
+
+```text title="Response"
+┌─avg(number)─┬─avgOrDefault(number)─┐
+│         nan │                    0 │
+└─────────────┴──────────────────────┘
+```
+
+يمكن أيضًا استخدام `-OrDefault` مع combinators أخرى. ويكون ذلك مفيدًا عندما لا تقبل aggregate function مدخلات فارغة.
+
+```sql title="Query"
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+```text title="Response"
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
+```
+
+<div id="-ornull">
+  ## -OrNull
+</div>
+
+يغيّر سلوك دالة تجميعية.
+
+يحوّل هذا المُركِّب ناتج الدالة التجميعية إلى نوع البيانات [Nullable](/ar/reference/data-types/nullable). وإذا لم تتوفر للدالة التجميعية قيم لإجراء الحساب عليها، فإنها تُرجع [NULL](/ar/reference/settings/formats#input_format_null_as_default).
+
+يمكن استخدام `-OrNull` مع مُركِّبات أخرى.
+
+**البنية**
+
+```sql
+<aggFunction>OrNull(x)
+```
+
+**الوسيطات**
+
+* `x` — وسيطات الدالة التجميعية.
+
+**القيم المُعادة**
+
+* ناتج الدالة التجميعية بعد تحويله إلى نوع البيانات `Nullable`.
+* `NULL` إذا لم تكن هناك قيم لتجميعها.
+
+النوع: `Nullable(aggregate function return type)`.
+
+**مثال**
+
+أضف `-orNull` إلى نهاية اسم الدالة التجميعية.
+
+```sql title="Query"
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+```text title="Response"
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+يمكن أيضًا استخدام `-OrNull` مع combinators أخرى. ويكون ذلك مفيدًا عندما لا تقبل الدالة التجميعية مُدخلًا فارغًا.
+
+```sql title="Query"
+SELECT avgOrNullIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+```text title="Response"
+┌─avgOrNullIf(x, greater(x, 10))─┐
+│                           ᴺᵁᴸᴸ │
+└────────────────────────────────┘
+```
+
+<div id="-resample">
+  ## -Resample
+</div>
+
+يتيح لك تقسيم البيانات إلى مجموعات، ثم تجميع البيانات داخل تلك المجموعات كلٌّ على حدة. تُنشأ المجموعات بتقسيم قيم عمود واحد إلى فترات.
+
+```sql
+<aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
+```
+
+**الوسيطات**
+
+* `start` — قيمة بداية النطاق الزمني الكامل المطلوب لقيم `resampling_key`.
+* `stop` — قيمة نهاية النطاق الزمني الكامل المطلوب لقيم `resampling_key`. لا يشمل النطاق الزمني الكامل القيمة `stop` ‏`[start, stop)`.
+* `step` — الخطوة المستخدمة لتقسيم النطاق الزمني الكامل إلى نطاقات زمنية فرعية. تُنفَّذ `aggFunction` على كل نطاق زمني فرعي من هذه النطاقات بشكل مستقل.
+* `resampling_key` — العمود الذي تُستخدم قيمه لتقسيم البيانات إلى نطاقات زمنية.
+* `aggFunction_params` — معاملات `aggFunction`.
+
+**القيم المُعادة**
+
+* مصفوفة من نتائج `aggFunction` لكل نطاق زمني فرعي.
+
+**مثال**
+
+لنفترض الجدول `people` الذي يحتوي على البيانات التالية:
+
+```text
+┌─name───┬─age─┬─wage─┐
+│ John   │  16 │   10 │
+│ Alice  │  30 │   15 │
+│ Mary   │  35 │    8 │
+│ Evelyn │  48 │ 11.5 │
+│ David  │  62 │  9.9 │
+│ Brian  │  60 │   16 │
+└────────┴─────┴──────┘
+```
+
+لنحصل على أسماء الأشخاص الذين تقع أعمارهم ضمن المجالين `[30,60)` و`[60,75)`. وبما أننا نستخدم الأعداد الصحيحة لتمثيل العمر، فإن الأعمار تقع ضمن المجالين `[30, 59]` و`[60,74]`.
+
+لتجميع الأسماء في مصفوفة، نستخدم الدالة التجميعية [groupArray](/ar/reference/functions/aggregate-functions/groupArray). وهي تأخذ وسيطًا واحدًا. في حالتنا، هذا هو العمود `name`. ويجب أن تستخدم الدالة `groupArrayResample` العمود `age` لتجميع الأسماء حسب العمر. ولتحديد المجالات المطلوبة، نمرّر الوسائط `30, 75, 30` إلى الدالة `groupArrayResample`.
+
+```sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
+```
+
+```text
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+تأمّل النتائج.
+
+`John` خارج العينة لأنه أصغر من الفئة العمرية المطلوبة. أمّا الأشخاص الآخرون فتوزيعهم يكون وفقًا للفترات العمرية المحددة.
+
+والآن، لنحسب العدد الإجمالي للأشخاص ومتوسط أجورهم ضمن الفترات العمرية المحددة.
+
+```sql
+SELECT
+    countResample(30, 75, 30)(name, age) AS amount,
+    avgResample(30, 75, 30)(wage, age) AS avg_wage
+FROM people
+```
+
+```text
+┌─amount─┬─avg_wage──────────────────┐
+│ [3,2]  │ [11.5,12.949999809265137] │
+└────────┴───────────────────────────┘
+```
+
+<div id="-argmin">
+  ## -ArgMin
+</div>
+
+يمكن إلحاق اللاحقة -ArgMin باسم أي دالة تجميعية. في هذه الحالة، تقبل الدالة التجميعية وسيطة إضافية يمكن أن تكون أي تعبير قابل للمقارنة. ولا تعالج الدالة التجميعية إلا الصفوف التي تحمل الحد الأدنى من القيمة للتعبير الإضافي المحدد.
+
+أمثلة: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` وما إلى ذلك.
+
+<div id="-argmax">
+  ## -ArgMax
+</div>
+
+تشبه اللاحقة -ArgMin، لكنها تعالج فقط الصفوف التي تحتوي على القيمة القصوى للتعبير الإضافي المحدد.
+
+<div id="related-content">
+  ## محتوى ذو صلة
+</div>
+
+* مدونة: [استخدام مُبدِّلات التجميع في ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
