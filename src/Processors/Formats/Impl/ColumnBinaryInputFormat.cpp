@@ -89,6 +89,33 @@ Chunk ColumnBinaryInputFormat::read()
         std::memcpy(&desc,
                     frame.data() + ColumnarV1::COLUMNAR_HEADER_BYTES + i * ColumnarV1::COLUMNAR_DESC_BYTES,
                     sizeof(desc));
+
+        // null_offset/offsets_offset use 0 as the sentinel for "absent" (no null map / no
+        // offsets array); a nonzero value must still point at or past the end of the
+        // header + descriptor table, since no genuine null map/offsets array starts inside
+        // the metadata region. These two are never included in the data_end computation
+        // below, so a small nonzero value here would otherwise pass every later bounds
+        // check (which only compares against the frame's total size, not the
+        // metadata/data boundary) and read metadata as if it were a null map or offsets
+        // array.
+        for (uint64_t off : {desc.null_offset, desc.offsets_offset})
+            if (off != 0 && off < static_cast<uint64_t>(hdr_desc_size))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ColumnBinary: descriptor offset {} points inside the header/descriptor table (< {})",
+                    off, hdr_desc_size);
+
+        // data_offset has no "absent" sentinel — the writer's cursor always starts at
+        // hdr_desc_size and only grows, so data_offset is never 0 (or otherwise less than
+        // hdr_desc_size) in a genuine frame, even for an empty column. Without this check,
+        // a descriptor like {data_offset=0, data_size=1} leaves data_end unchanged
+        // (0+1 < hdr_desc_size), so no data section is ever read from the wire, and the
+        // decoder then silently interprets header/descriptor bytes as column payload
+        // instead of throwing.
+        if (desc.data_offset < static_cast<uint64_t>(hdr_desc_size))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ColumnBinary: descriptor data_offset {} points inside the header/descriptor table (< {})",
+                desc.data_offset, hdr_desc_size);
+
         if (desc.data_offset > std::numeric_limits<uint64_t>::max() - desc.data_size)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ColumnBinary: descriptor data_offset + data_size overflows: offset={}, size={}",

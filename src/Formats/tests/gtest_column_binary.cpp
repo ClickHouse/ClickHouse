@@ -26,8 +26,11 @@
 #include <Processors/Formats/IRowInputFormat.h>
 
 #include <Formats/FormatSettings.h>
+#include <Formats/ColumnarV1Wire.h>
 
 #include <Common/typeid_cast.h>
+
+#include <cstring>
 
 using namespace DB;
 
@@ -1405,4 +1408,72 @@ TEST(ColumnBinary, MaxFrameSizeZeroMeansUnlimitedRoundTrip)
     auto chunk = input.read();
     ASSERT_EQ(chunk.getNumColumns(), 1u);
     ASSERT_EQ(chunk.getNumRows(), 1000u);
+}
+
+// ── Frame validator must reject descriptors pointing into header/descriptor metadata ──
+//
+// A descriptor with data_offset=0, data_size=1 leaves data_end unchanged at
+// hdr_desc_size (0+1 < hdr_desc_size), so read() never reads a data section from
+// the wire at all -- and without the fix, readColumnFromDesc would then silently
+// decode the first byte of the frame header as the column's data instead of
+// throwing. null_offset/offsets_offset have the same gap since they are never
+// part of the data_end computation.
+
+TEST(ColumnBinary, FrameValidatorRejectsDataOffsetInsideHeader)
+{
+    using namespace ColumnarV1;
+
+    const uint32_t num_rows = 1;
+    const uint32_t num_cols = 1;
+    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    std::string frame(hdr_desc_size, '\0');
+    std::memcpy(frame.data(), &num_rows, 4);
+    std::memcpy(frame.data() + 4, &num_cols, 4);
+
+    ColDescriptor desc{};
+    desc.type = COL_FIXED64;
+    desc.null_offset = 0;
+    desc.offsets_offset = 0;
+    desc.data_offset = 0;  // points at the frame header, not a real data section
+    desc.data_size = 1;
+    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    Block header;
+    header.insert(ColumnWithTypeAndName{ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "col0"});
+
+    ReadBufferFromString rb{frame};
+    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
+    EXPECT_THROW(input.read(), DB::Exception);
+}
+
+TEST(ColumnBinary, FrameValidatorRejectsNullOffsetInsideHeader)
+{
+    using namespace ColumnarV1;
+
+    const uint32_t num_rows = 1;
+    const uint32_t num_cols = 1;
+    const size_t hdr_desc_size = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint64_t data_off = hdr_desc_size;
+
+    std::string frame(hdr_desc_size + 8, '\0');
+    std::memcpy(frame.data(), &num_rows, 4);
+    std::memcpy(frame.data() + 4, &num_cols, 4);
+
+    ColDescriptor desc{};
+    desc.type = COL_FIXED64 | COL_IS_NULLABLE;
+    desc.null_offset = 4;  // nonzero, but points inside the frame header, not a real null map
+    desc.offsets_offset = 0;
+    desc.data_offset = data_off;
+    desc.data_size = 8;
+    std::memcpy(frame.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto nested_type = std::make_shared<DataTypeUInt64>();
+    auto col = ColumnNullable::create(ColumnUInt64::create(), ColumnUInt8::create());
+    Block header;
+    header.insert(ColumnWithTypeAndName{std::move(col), std::make_shared<DataTypeNullable>(nested_type), "col0"});
+
+    ReadBufferFromString rb{frame};
+    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
+    EXPECT_THROW(input.read(), DB::Exception);
 }
