@@ -6,8 +6,6 @@ SET query_plan_optimize_lazy_final = 1;
 SET min_filtered_ratio_for_lazy_final = 0;
 SET query_plan_direct_read_from_text_index = 1;
 
-DROP TABLE IF EXISTS tab;
-
 CREATE TABLE tab
 (
     id UInt64,
