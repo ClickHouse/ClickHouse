@@ -27,7 +27,18 @@ struct IEJoinCondition
 
 /// The two conditions `left.x op1 right.x AND left.y op2 right.y` executed by the IEJoin
 /// algorithm: the first condition defines the L1 order, the second the L2 order.
-using IEJoinConditions = std::array<IEJoinCondition, 2>;
+struct IEJoinConditions
+{
+    std::array<IEJoinCondition, 2> conditions;
+
+    /// Set by the planner when it inserted a `SortingStep` over the first condition's key
+    /// (always ascending, NULLS LAST) on each input. Selects the merge-based L1 build in the
+    /// operator; with the flag off the operator orders the union itself with an index sort.
+    bool inputs_sorted_by_first_key = false;
+
+    IEJoinCondition & operator[](size_t index) { return conditions[index]; }
+    const IEJoinCondition & operator[](size_t index) const { return conditions[index]; }
+};
 
 /*
  * Joins two fully materialized streams by two inequality conditions
@@ -81,6 +92,12 @@ private:
     /// Check that the bit array is exactly {right-side entries whose L2 key qualifies
     /// against the current left entry} (debug builds, small inputs only).
     void checkFrontierInvariant() const;
+#ifndef NDEBUG
+    /// With `inputs_sorted_by_first_key` the operator trusts the upstream order; check that an
+    /// input chunk is ordered by the first condition's key, also against the previous chunk of
+    /// the same input (debug builds; catches wiring bugs).
+    void checkInputChunkOrder(const Chunk & chunk, size_t source_num);
+#endif
 
     SharedHeaders input_headers;
     size_t max_block_size;
@@ -89,6 +106,11 @@ private:
 
     std::array<Chunks, 2> accumulated_chunks;
     std::array<bool, 2> source_finished = {false, false};
+
+#ifndef NDEBUG
+    /// Key column of the last accumulated chunk per input, to check order across chunk boundaries.
+    std::array<ColumnPtr, 2> last_input_key_column;
+#endif
 
     /// Populated by buildJoinState:
 

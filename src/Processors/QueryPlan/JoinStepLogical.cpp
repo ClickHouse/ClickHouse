@@ -1174,6 +1174,8 @@ static void constructIEJoinStep(
     std::pair<String, bool> residual_filter_condition,
     IEJoinPlanDescription description,
     const JoinSettings & join_settings,
+    const SortingStep::Settings & sort_settings,
+    size_t max_step_description_length,
     QueryPlan::Nodes & nodes)
 {
     if (node.children.size() != 2)
@@ -1186,6 +1188,29 @@ static void constructIEJoinStep(
 
     makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, makeDescription("Right Pre Join Actions"));
 
+    /// Pre-sort each input by its first-condition key, so that the operator builds the L1 order
+    /// with an O(n) merge of two sorted runs instead of sorting the whole union. The sort is
+    /// always ascending with NULLS LAST regardless of the operator: a descending L1 order is
+    /// produced by iterating the materialized inputs backwards inside the operator, and an
+    /// ascending sort keeps read-in-order in forward-read mode (`optimizeReadInOrder` turns the
+    /// sort into `FinishSorting` or elides it when the table is already ordered by the key).
+    /// Which condition gets the plan-level sort is a planner degree of freedom (sorting by
+    /// whichever key matches the table's `ORDER BY` makes elision more likely); fixed to the
+    /// first condition for now.
+    auto add_sorting = [&](QueryPlan::Node *& sort_node, const String & key_name, JoinTableSide join_table_side)
+    {
+        SortDescription sort_description;
+        sort_description.emplace_back(key_name);
+
+        auto sorting_step = std::make_unique<SortingStep>(
+            sort_node->step->getOutputHeader(), std::move(sort_description), 0 /*limit*/, sort_settings, true /*is_sorting_for_merge_join*/);
+        sorting_step->setStepDescription(fmt::format("Sort {} before JOIN", join_table_side), max_step_description_length);
+        sort_node = &nodes.emplace_back(QueryPlan::Node{std::move(sorting_step), {sort_node}});
+    };
+
+    add_sorting(join_left_node, description.key_names_left[0], JoinTableSide::Left);
+    add_sorting(join_right_node, description.key_names_right[0], JoinTableSide::Right);
+
     const auto & left_header = join_left_node->step->getOutputHeader();
     const auto & right_header = join_right_node->step->getOutputHeader();
 
@@ -1196,6 +1221,7 @@ static void constructIEJoinStep(
         conditions[i].left_key_position = left_header->getPositionByName(description.key_names_left[i]);
         conditions[i].right_key_position = right_header->getPositionByName(description.key_names_right[i]);
     }
+    conditions.inputs_sorted_by_first_key = true;
 
     node.step = std::make_unique<IEJoinStep>(left_header, right_header, conditions, join_settings.max_block_size);
 
@@ -1557,7 +1583,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         constructIEJoinStep(
             node, std::move(left_dag), std::move(right_dag), std::move(residual_dag),
             std::make_pair(ie_residual_filter_condition_name, can_remove_residual_filter),
-            std::move(*ie_join_description), join_settings, nodes);
+            std::move(*ie_join_description), join_settings, sorting_settings,
+            optimization_settings.max_step_description_length, nodes);
         return node;
     }
 
