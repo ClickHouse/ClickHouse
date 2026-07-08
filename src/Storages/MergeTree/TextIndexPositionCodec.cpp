@@ -158,10 +158,13 @@ void decodePfor(ReadBuffer & in, PODArray<RoaringishEntry> & entries, UInt64 exp
 
     UInt64 payload_bytes = 0;
     readVarUInt(payload_bytes, in);
-    /// Bound the payload against the (now-validated) count before allocating, so a corrupt length can't force an arbitrary resize.
-    if (payload_bytes > 3 * PFor::maxCompressedBytes<UInt32>(count))
+    /// Bound the payload against the (validated) count before any resize: at least 1 byte per block per lane, at most three full lanes. Otherwise a corrupt length forces a huge resize(count) before decode reports corruption.
+    const size_t min_payload = 3 * ((count + PFor::BLOCK - 1) / PFor::BLOCK);
+    const size_t max_payload = 3 * PFor::maxCompressedBytes<UInt32>(count);
+    if (payload_bytes < min_payload || payload_bytes > max_payload)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (pfor): payload size {} exceeds the maximum for {} entries", payload_bytes, count);
+            "Corrupt text index positions (pfor): payload size {} outside the valid range [{}, {}] for {} entries",
+            payload_bytes, min_payload, max_payload, count);
 
     /// Reused buffers; PaddedPODArray::resize skips value-init and keeps trailing SIMD padding.
     scratch.payload.resize(payload_bytes);
@@ -197,10 +200,13 @@ void decodePforSoA(ReadBuffer & in, PositionList & pl, UInt64 expected_count, Pa
 
     UInt64 payload_bytes = 0;
     readVarUInt(payload_bytes, in);
-    /// Bound the payload against the (now-validated) count before allocating, so a corrupt length can't force an arbitrary resize.
-    if (payload_bytes > 3 * PFor::maxCompressedBytes<UInt32>(count))
+    /// Bound the payload against the (validated) count before any resize: at least 1 byte per block per lane, at most three full lanes. Otherwise a corrupt length forces a huge resize(count) before decode reports corruption.
+    const size_t min_payload = 3 * ((count + PFor::BLOCK - 1) / PFor::BLOCK);
+    const size_t max_payload = 3 * PFor::maxCompressedBytes<UInt32>(count);
+    if (payload_bytes < min_payload || payload_bytes > max_payload)
         throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions (pfor): payload size {} exceeds the maximum for {} entries", payload_bytes, count);
+            "Corrupt text index positions (pfor): payload size {} outside the valid range [{}, {}] for {} entries",
+            payload_bytes, min_payload, max_payload, count);
 
     payload.resize(payload_bytes);
     if (payload_bytes > 0)
