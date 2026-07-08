@@ -28,3 +28,13 @@ SELECT to_utc_timestamp(toDateTime64('1969-10-26 01:59:59.999', 3), 'America/New
 -- Positive offset direction: Europe/Paris changes +02:00 -> +01:00 at 1945-09-16 01:00:00 UTC,
 -- so the floor second 00:59:59 UTC is still +02:00 and from_utc_timestamp must return 02:59:59.999.
 SELECT from_utc_timestamp(toDateTime64('1945-09-16 00:59:59.999', 3), 'Europe/Paris');
+
+-- Same floor-second split invariant in the DateTime64 -> Time64 conversion path: for a negative
+-- fractional underlying value truncated division picks the ceil second, so timezoneOffset() can
+-- read the wrong side of an offset boundary. The DateTime64 is typed with the target timezone and
+-- holds a UTC instant; reinterpret() reaches the exact underlying value. America/New_York is
+-- -05:00 at the floor second 1969-04-27 06:59:59 UTC, so toTime64 must return 01:59:59.999,
+-- not 02:59:59.999 (the -04:00 next second). Positive direction: Europe/Paris is +02:00 at the
+-- floor second 1945-09-16 00:59:59 UTC, so toTime64 must return 02:59:59.999.
+SELECT toTime64(reinterpret(toDateTime64('1969-04-27 06:59:59.999', 3, 'UTC'), 'DateTime64(3, \'America/New_York\')'), 3);
+SELECT toTime64(reinterpret(toDateTime64('1945-09-16 00:59:59.999', 3, 'UTC'), 'DateTime64(3, \'Europe/Paris\')'), 3);

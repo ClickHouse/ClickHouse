@@ -2182,6 +2182,18 @@ struct ConvertImpl
                 auto utc_seconds = vec_to[i] / scale_mult;
                 auto fraction = vec_to[i] % scale_mult;
 
+                /// Truncated division rounds toward zero, so for a negative fractional value
+                /// `utc_seconds` is the ceil second and `fraction` is negative. timezoneOffset()
+                /// must inspect the floor second, otherwise it can read the offset of the next
+                /// second and pick the wrong side of a DST/offset boundary. Adjust to floor
+                /// division: keep `fraction` non-negative and step `utc_seconds` down. The identity
+                /// utc_seconds * scale_mult + fraction == value is preserved.
+                if (fraction < 0)
+                {
+                    utc_seconds -= 1;
+                    fraction += scale_mult;
+                }
+
                 /// Compute local seconds-of-day using timezone offset (aligned with other toTime/toTime64 conversions)
                 Int64 offset = time_zone->timezoneOffset(utc_seconds);
                 Int64 local_seconds = (static_cast<Int64>(utc_seconds) + offset) % 86400;
