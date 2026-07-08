@@ -36,6 +36,9 @@ public:
 
     const std::vector<String> & getColumnSubstreams(size_t column_position) const;
 
+    /// Returns the recorded substreams for a column by name, or nullptr if the column is not present.
+    const std::vector<String> * tryGetColumnSubstreams(const String & column_name) const;
+
     void writeText(WriteBuffer & buf) const;
     void readText(ReadBuffer & buf);
     String toString() const;
