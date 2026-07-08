@@ -2033,7 +2033,7 @@ static bool applyDeterministicDagToColumn(
         return true;
     };
 
-    /// Cast column to target_type and fail if the cast introduces NULLs.
+    /// Cast column to target_type and fail if the cast introduces NULLs or is impossible.
     auto cast_without_nulls = [&](ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type) -> bool
     {
         if (canBeSafelyCast(type, target_type))
@@ -2057,7 +2057,23 @@ static bool applyDeterministicDagToColumn(
             return false;
         }
 
-        ColumnPtr probe_column = castColumnAccurateOrNull({column, type, ""}, probe_type);
+        ColumnPtr probe_column;
+        try
+        {
+            probe_column = castColumnAccurateOrNull({column, type, ""}, probe_type);
+        }
+        catch (const Exception &)
+        {
+            /// The OrNull contract applies per value: the cast yields NULL for values that cannot
+            /// be converted, but the conversion between the two types must exist. When it is not
+            /// implemented at all (for example, casting `IPv6` into `FixedString(16)`), building
+            /// the cast throws before any value is seen. There is no single error code for such
+            /// type pairs (`NOT_IMPLEMENTED`, `CANNOT_CONVERT_TYPE`, `TYPE_MISMATCH`, ... depending
+            /// on the target type), so treat any error as "this constant cannot be transformed
+            /// into the key space" and let the caller skip this candidate.
+            return false;
+        }
+
         const auto & n = assert_cast<const ColumnNullable &>(*probe_column);
 
         /// If we have any NULLs after cast, that means cast could not be applied accurately for all values
