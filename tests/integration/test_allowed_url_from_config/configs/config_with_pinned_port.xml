@@ -1,0 +1,5 @@
+<clickhouse>
+    <remote_url_allow_hosts>
+        <host>127.0.0.1:3306</host>
+    </remote_url_allow_hosts>
+</clickhouse>
