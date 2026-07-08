@@ -1523,10 +1523,11 @@ void registerParquetSchemaReader(FormatFactory & factory)
         [](const FormatSettings & settings)
         {
             return fmt::format(
-                "schema_inference_make_columns_nullable={};enable_json_parsing={};use_native_reader_v3={}",
+                "schema_inference_make_columns_nullable={};enable_json_parsing={};use_native_reader_v3={};schema_inference_allow_nullable_tuple_type={}",
                 settings.schema_inference_make_columns_nullable,
                 settings.parquet.enable_json_parsing,
-                settings.parquet.use_native_reader_v3);
+                settings.parquet.use_native_reader_v3,
+                settings.schema_inference_allow_nullable_tuple_type);
         });
 }
 
