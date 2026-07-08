@@ -464,7 +464,7 @@ namespace
             {
                 throw Exception(
                     ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                    "Backup AzureBlobStorage requires 3 or 5 arguments: connection string>/<url, container, path, "
+                    "Backup AzureBlobStorage requires 3 or 5 arguments: connection string/url, container, path, "
                     "[account name], [account key]");
             }
 
