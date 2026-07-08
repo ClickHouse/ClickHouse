@@ -1843,21 +1843,44 @@ public:
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Binary result format is not supported in Bind messages, use the text format");
 
+        /// `Bind` creates the (unnamed) portal, so resolve and snapshot the
+        /// referenced prepared statement now — not lazily at `Execute`. Per the
+        /// extended-query protocol, once `BindComplete` is sent the portal owns
+        /// its statement body/types: a later `Parse` that redefines the statement
+        /// or a `Close` that deallocates it must not change what `Execute` runs.
+        /// Re-resolving through the live `statements` map at `Execute` broke that
+        /// (`Parse s AS SELECT 1; Bind("",s); Parse s AS SELECT 2; Execute("")`
+        /// wrongly ran `SELECT 2`, and `Close('S','s')` between `Bind` and
+        /// `Execute` turned it into `Execute without prior Bind`).
+        auto it = statements.find(query->function_name);
+        if (it == statements.end())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
+
+        /// Arity check: the frontend must supply a value for every parameter it
+        /// declared a type for at `Parse`. `Parse` may declare types for only a
+        /// prefix of the parameters (the rest are inferred), so the supplied value
+        /// count may exceed the declared-type count but must never be smaller.
+        if (query->parameters.size() < it->second.parameter_types.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Bind supplies {} parameter value(s) but the prepared statement declares {} parameter type(s)",
+                query->parameters.size(), it->second.parameter_types.size());
+
         /// For the unnamed portal, a new `Bind` replaces the previous one
         /// per the PostgreSQL extended-query protocol — clients such as Npgsql
         /// issue multiple Parse/Bind/Execute/Sync cycles per connection.
+        bound_statement = it->second;
         bind_query = std::move(query);
     }
 
     String getStatmentFromBind()
     {
-        if (!bind_query)
+        if (!bind_query || !bound_statement.has_value())
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Execute without prior Bind");
 
-        auto it = statements.find(bind_query->function_name);
-        if (it == statements.end())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
-        const auto & parameter_types = it->second.parameter_types;
+        /// Use the statement snapshotted at `Bind` time (see attachBindQuery),
+        /// not a fresh `statements` lookup — the portal is independent of any
+        /// later redefinition or `Close` of the prepared statement.
+        const auto & parameter_types = bound_statement->parameter_types;
 
         /// Bind parameters arrive as untyped text from the wire. Turn each into a
         /// safe SQL literal before it is spliced into the statement body. The NULL
@@ -1891,17 +1914,13 @@ public:
                 arguments.push_back(quoteString(*parameter));
         }
 
-        return substitute(it->second.body, arguments);
+        return substitute(bound_statement->body, arguments);
     }
 
     void resetBindQuery()
     {
         bind_query.reset();
-    }
-
-    bool bindReferencesStatement(const String & function_name) const
-    {
-        return bind_query && bind_query->function_name == function_name;
+        bound_statement.reset();
     }
 
 private:
@@ -1916,6 +1935,10 @@ private:
     UnorderedMapWithMemoryTracking<String, PreparedStatement> statements;
     std::optional<size_t> limit_statements;
     std::unique_ptr<PostgreSQLProtocol::Messaging::BindQuery> bind_query;
+    /// Snapshot of the prepared statement taken when the current `bind_query`
+    /// was attached. `Execute` reads this, so the portal stays valid even if the
+    /// prepared statement is later redefined by `Parse` or removed by `Close`.
+    std::optional<PreparedStatement> bound_statement;
 
     /// Returns true if the whole string is exactly one decimal numeric literal:
     ///   [sign] digits [. digits] [ (e|E) [sign] digits ]

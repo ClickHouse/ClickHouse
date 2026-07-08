@@ -1352,3 +1352,109 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
     cur = ch.cursor()
     cur.execute("DROP USER IF EXISTS pg_restricted")
     ch.close()
+
+
+def test_bind_portal_snapshots_statement(started_cluster):
+    # Regression for the extended-query portal contract. Once Bind creates the
+    # (unnamed) portal, the portal owns a snapshot of the referenced prepared
+    # statement. A later Parse that redefines the statement, or a Close that
+    # deallocates it, must not change what the already-bound Execute runs. Before
+    # the fix, Execute re-resolved the statement from the live map, so
+    # redefinition leaked into the bound portal and a Close turned Execute into
+    # "Execute without prior Bind".
+    node = started_cluster.instances["node"]
+
+    def sync():
+        return _fe("S", b"")
+
+    def close(kind, name):
+        return _fe("C", kind.encode() + name.encode() + b"\x00")
+
+    def parse(stmt, query, oids):
+        b = stmt.encode() + b"\x00" + query.encode() + b"\x00" + struct.pack("!H", len(oids))
+        for o in oids:
+            b += struct.pack("!I", o)
+        return _fe("P", b)
+
+    def bind(portal, stmt, values):
+        b = portal.encode() + b"\x00" + stmt.encode() + b"\x00" + struct.pack("!H", 0)
+        b += struct.pack("!H", len(values))
+        for v in values:
+            vb = v.encode()
+            b += struct.pack("!i", len(vb)) + vb
+        b += struct.pack("!H", 0)
+        return _fe("B", b)
+
+    def execute(portal):
+        return _fe("E", portal.encode() + b"\x00" + struct.pack("!I", 0))
+
+    def datarow_values(raw):
+        # Extract the DataRow ('D') payloads' first column text from a raw byte
+        # stream of framed backend messages.
+        out = []
+        buf = raw
+        while len(buf) >= 5:
+            mtype = chr(buf[0])
+            (mlen,) = struct.unpack("!I", buf[1:5])
+            if len(buf) < 1 + mlen:
+                break
+            body = buf[5 : 1 + mlen]
+            if mtype == "D":
+                (ncols,) = struct.unpack("!H", body[0:2])
+                if ncols >= 1:
+                    (collen,) = struct.unpack("!i", body[2:6])
+                    if collen >= 0:
+                        out.append(body[6 : 6 + collen].decode())
+            buf = buf[1 + mlen :]
+        return out
+
+    # Redefining the prepared statement after Bind must not affect the portal:
+    # Parse s AS SELECT 1; Bind("", s); Parse s AS SELECT 2; Execute("") -> 1.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.settimeout(10)
+    sock.sendall(
+        parse("s", "SELECT 1", ())
+        + bind("", "s", ())
+        + parse("s", "SELECT 2", ())
+        + execute("")
+        + sync()
+    )
+    # Collect the whole reply up to ReadyForQuery.
+    buf = b""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        chunk = sock.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+        # Stop once we see a ReadyForQuery frame (Z, length 5) at the tail.
+        if b"Z\x00\x00\x00\x05" in buf:
+            break
+    vals = datarow_values(buf)
+    assert vals == ["1"], f"portal must run the bound SELECT 1, not the redefined SELECT 2, got {vals} ({buf!r})"
+    assert b"E\x00" not in buf[:1] , "no error expected"
+    sock.close()
+
+    # Deallocating the prepared statement after Bind must not invalidate the
+    # portal: Parse s; Bind("", s); Close('S', s); Execute("") -> still runs.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.settimeout(10)
+    sock.sendall(
+        parse("s", "SELECT 1", ())
+        + bind("", "s", ())
+        + close("S", "s")
+        + execute("")
+        + sync()
+    )
+    buf = b""
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        chunk = sock.recv(65536)
+        if not chunk:
+            break
+        buf += chunk
+        if b"Z\x00\x00\x00\x05" in buf:
+            break
+    vals = datarow_values(buf)
+    assert vals == ["1"], f"portal must survive Close of its prepared statement, got {vals} ({buf!r})"
+    sock.close()

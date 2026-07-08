@@ -12,6 +12,7 @@
 namespace DB::ErrorCodes
 {
     extern const int UNKNOWN_PACKET_FROM_CLIENT;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
 }
@@ -594,6 +595,112 @@ TEST(PostgreSQLProtocol, BindTextParameterStaysQuotedString)
     EXPECT_EQ(
         bindAndGetStatement("SELECT $1", {0}, {{"1 UNION ALL SELECT secret FROM s"}}),
         "SELECT '1 UNION ALL SELECT secret FROM s'");
+}
+
+TEST(PostgreSQLProtocol, BindSnapshotsStatementForPortalContract)
+{
+    /// Per the extended-query protocol, once `Bind` creates the portal it owns a
+    /// snapshot of the referenced prepared statement. A later `Parse` that
+    /// redefines the statement, or a `Close` that deallocates it, must not change
+    /// what the already-bound `Execute` runs. Before this fix `Execute`
+    /// re-resolved the statement from the live map, so redefinition/close leaked
+    /// into the bound portal.
+    auto addStatement = [](PreparedStatements::PreparedStatemetsManager & manager, const String & name, const String & body)
+    {
+        ASTPreparedStatement statement;
+        statement.function_name = name;
+        statement.function_body = body;
+        manager.addStatement(&statement);
+    };
+    auto bind = [](PreparedStatements::PreparedStatemetsManager & manager, const String & name)
+    {
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        msg->function_name = name;
+        manager.attachBindQuery(std::move(msg));
+    };
+
+    /// Redefining the prepared statement after Bind does not affect the portal.
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStatement(manager, "s", "SELECT 1");
+        bind(manager, "s");
+        addStatement(manager, "s", "SELECT 2"); /// Parse s AS SELECT 2
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT 1");
+    }
+
+    /// Deallocating the prepared statement after Bind does not invalidate the
+    /// portal — Execute still runs the bound statement, no "Execute without prior
+    /// Bind".
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStatement(manager, "s", "SELECT 1");
+        bind(manager, "s");
+        manager.tryDeleteStatement("s"); /// Close('S', 's')
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT 1");
+    }
+}
+
+TEST(PostgreSQLProtocol, ExecuteWithoutBindIsRejected)
+{
+    /// Execute with no prior Bind (and after a Sync/Close reset) must fail cleanly
+    /// rather than run stale state.
+    PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+    ASTPreparedStatement statement;
+    statement.function_name = "s";
+    statement.function_body = "SELECT 1";
+    manager.addStatement(&statement);
+
+    try
+    {
+        manager.getStatmentFromBind();
+        FAIL() << "expected Execute without prior Bind to throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT);
+    }
+
+    /// After a valid Bind, resetBindQuery (Sync/portal Close) clears the portal.
+    auto msg = std::make_unique<Messaging::BindQuery>();
+    msg->function_name = "s";
+    manager.attachBindQuery(std::move(msg));
+    manager.resetBindQuery();
+    EXPECT_THROW(manager.getStatmentFromBind(), Exception);
+}
+
+TEST(PostgreSQLProtocol, BindRejectsArityMismatch)
+{
+    /// The frontend must supply a value for every parameter it declared a type
+    /// for at Parse. Fewer values than declared types is malformed and rejected
+    /// at Bind. More values are allowed (Parse may declare only a prefix).
+    PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+    ASTPreparedStatement statement;
+    statement.function_name = "s";
+    statement.function_body = "SELECT $1, $2";
+    statement.parameter_types.push_back(23);
+    statement.parameter_types.push_back(23);
+    manager.addStatement(&statement);
+
+    auto tooFew = std::make_unique<Messaging::BindQuery>();
+    tooFew->function_name = "s";
+    tooFew->parameters.push_back(String{"1"}); /// only one value for two declared types
+    try
+    {
+        manager.attachBindQuery(std::move(tooFew));
+        FAIL() << "expected arity mismatch to throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+    }
+
+    /// Exactly matching arity is accepted.
+    auto ok = std::make_unique<Messaging::BindQuery>();
+    ok->function_name = "s";
+    ok->parameters.push_back(String{"1"});
+    ok->parameters.push_back(String{"2"});
+    EXPECT_NO_THROW(manager.attachBindQuery(std::move(ok)));
+    EXPECT_EQ(manager.getStatmentFromBind(), "SELECT accurateCast('1', 'Int32'), accurateCast('2', 'Int32')");
 }
 
 TEST(PostgreSQLProtocol, CopyDataRejectsLengthBelowFour)

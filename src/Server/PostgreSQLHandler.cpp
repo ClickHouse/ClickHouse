@@ -958,13 +958,11 @@ void PostgreSQLHandler::processCloseQuery()
         /// otherwise a later Bind/Execute on the same statement would fail.
         if (query->close_target == 'S')
         {
-            /// If the bind currently references the statement being deallocated,
-            /// the bind becomes stale and must be dropped. Closing a *different*
-            /// statement must not touch unrelated bind state — otherwise
-            /// `Parse s1; Parse s2; Bind(s1); Close('S', 's2'); Execute` would
-            /// fail with `Execute without prior Bind`.
-            if (prepared_statements_manager.bindReferencesStatement(query->function_name))
-                prepared_statements_manager.resetBindQuery();
+            /// Closing a prepared statement must NOT touch the portal: per the
+            /// extended-query protocol the portal owns the statement snapshot it
+            /// captured at `Bind` (see attachBindQuery), so `Parse s; Bind("",s);
+            /// Close('S','s'); Execute("")` still runs the bound statement rather
+            /// than failing with `Execute without prior Bind`.
             /// Per the PostgreSQL wire protocol, `Close` on a non-existent
             /// prepared statement is not an error — it is a silent no-op that
             /// still responds with `CloseComplete`. Using the throwing
