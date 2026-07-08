@@ -214,9 +214,10 @@ def _build_bench_step(scenario, nodes, ctx, replay_path=""):
         if scenario_wl.get("concurrency") is not None:
             wl["concurrency"] = int(scenario_wl["concurrency"])
     
-    # If no workload defined anywhere, use default
-    if not wl:
-        wl = {"config": DEFAULT_WORKLOAD_CONFIG}
+    # If no workload config/replay defined anywhere (a scenario may set only
+    # clients/concurrency), use the default workload config
+    if not (wl.get("config") or wl.get("replay")):
+        wl["config"] = DEFAULT_WORKLOAD_CONFIG
     
     # Convert relative paths to absolute. Paths starting with "tests/" are
     # relative to the project root (cwd); others (e.g. "workloads/...") to WORKDIR.

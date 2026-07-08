@@ -336,6 +336,8 @@ class KeeperBench:
             print(f"[keeper][bench] ZooKeeper: single connection, operation_timeout={ZOOKEEPER_OPERATION_TIMEOUT_MS//1000}s session_timeout={ZOOKEEPER_SESSION_TIMEOUT_MS//1000}s")
         clients_env = os.environ.get("KEEPER_BENCH_CLIENTS", "").strip()
         if clients_env:
+            if self._is_zookeeper or self.replay_path:
+                raise ValueError("KEEPER_BENCH_CLIENTS is not supported with the ZooKeeper backend or replay mode: both rewrite sessions/workers")
             if int(clients_env) <= 0:
                 raise ValueError(f"KEEPER_BENCH_CLIENTS must be > 0, got {clients_env!r}")
             print(f"[keeper][bench] Using KEEPER_BENCH_CLIENTS={clients_env} from environment")
