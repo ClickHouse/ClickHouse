@@ -1,0 +1,146 @@
+---
+slug: /use-cases/observability/clickstack/notebooks
+title: 'AI Notebooks de ClickStack'
+sidebarTitle: 'AI Notebooks'
+description: 'Cuadernos de investigación con IA para ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'AI notebooks', 'investigación', 'observabilidad', 'HyperDX']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+AI Notebooks es una herramienta interactiva de investigación en ClickStack que combina un agente de IA con análisis manual. Puedes describir un problema en lenguaje natural, y el agente de IA consultará logs, trazas y métricas por ti, mostrando datos, gráficos y resúmenes relevantes como una serie de tiles. También puedes añadir tus propios tiles (gráficos, tablas, búsquedas y notas en markdown) junto con los resultados generados por la IA, creando un registro completo de la investigación.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-hero.webp" alt="AI Notebook investigando una interrupción total de Visa por caché llena" size="lg" />
+
+<Info>
+  **Solo en Managed ClickStack**
+
+  AI Notebooks solo está disponible en implementaciones de Managed ClickStack.
+</Info>
+
+<div id="setup">
+  ## Configuración
+</div>
+
+AI Notebooks está actualmente en beta en ClickHouse Cloud. Los modelos y los proveedores de IA se gestionan automáticamente en la plataforma.
+
+Antes de usar AI Notebooks:
+
+1. **Generative AI habilitada** — Un administrador del equipo debe habilitar el interruptor de consentimiento de Generative AI. Consulta [Habilitar Generative AI](#enabling-generative-ai).
+2. **Acceso a Notebooks** — Tu Role debe tener permisos de lectura y escritura para Notebooks.
+
+Una vez habilitada, la entrada **Notebooks** aparece en la barra lateral izquierda para todas las personas que tengan el Role adecuado.
+
+<div id="enabling-generative-ai">
+  ## Habilitar Generative AI
+</div>
+
+Un administrador del equipo debe activar el interruptor de consentimiento de Generative AI antes de poder usar los notebooks (y otras funciones de IA).
+
+1. Vaya a **Team Settings &gt; Security Policies**.
+2. Active **Generative AI**.
+3. Revise y acepte el cuadro de diálogo de consentimiento.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-ai-consent.webp" alt="Interruptor de Generative AI en Team Settings" size="lg" />
+
+<div id="using-notebooks">
+  ## Uso de AI Notebooks
+</div>
+
+<div id="creating-a-notebook">
+  ### Crear un notebook
+</div>
+
+1. Selecciona **Notebooks** en la barra lateral izquierda.
+2. Haz clic en **New Private Notebook** (visible solo para ti) o en **New Shared Notebook** (visible para tu equipo).
+
+La página de la lista de notebooks muestra todos los notebooks a los que tienes acceso. Puedes filtrar por nombre, etiquetas o alternar entre **My Notebooks** y **All Notebooks**.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-list.webp" alt="Página de la lista de notebooks" size="lg" />
+
+<div id="running-investigation">
+  ### Ejecutar una investigación con IA
+</div>
+
+En la parte inferior de un notebook, introduce un prompt que describa lo que quieres investigar; por ejemplo, *&quot;¿Por qué se dispararon las tasas de error en el servicio de checkout durante la última hora?&quot;*
+
+Pulsa **Send** (o presiona Enter). El agente de IA hará lo siguiente:
+
+1. Examinará las fuentes de datos que tienes disponibles.
+2. Ejecutará consultas de búsqueda y agregación sobre tus logs, traces y métricas.
+3. Generará una serie de tiles que mostrarán su razonamiento, las consultas que ejecutó, gráficos intermedios y un resumen final con sus conclusiones.
+
+Cada paso aparece como un tile en el notebook. Los tiles de **Thought process** muestran el razonamiento detrás de cada consulta, y los tiles de **Output** contienen las conclusiones del agente y gráficos opcionales. A diferencia de un chat de IA estándar, los notebooks te permiten ver exactamente con qué datos está trabajando la IA en cada paso, para que puedas verificar su razonamiento, detectar pistas interesantes que podría haber pasado por alto y [bifurcar](#branching) la investigación para orientarla en otra dirección.
+
+Mientras una investigación se está ejecutando, puedes hacer clic en **Stop** para cancelarla.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-tiles.webp" alt="Notebook con tiles generados por IA" size="lg" />
+
+<div id="branching">
+  ### Ramificar una investigación
+</div>
+
+A medida que la IA investiga, es posible que notes un paso intermedio que muestra algo interesante, pero el agente siguió por otro camino. **Ramificar** te permite reiniciar desde ese punto con un `prompt` diferente, sin perder la ruta original de la investigación.
+
+Para crear una rama:
+
+1. Expande un tile del Thought process y haz clic en **Restart from Here**.
+2. En el cuadro de diálogo, introduce un `prompt` modificado que guíe la investigación en la nueva dirección.
+3. Haz clic en **Interrupt &amp; Create Branch**. La IA inicia una nueva rama de investigación desde ese punto.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-branch-modal.webp" alt="Cuadro de diálogo Create New Branch" size="md" />
+
+Cuando un tile tiene varias ramas, aparecen botones de flecha izquierda y derecha en el encabezado del tile, junto con una insignia (p. ej., **1/2**) que indica cuántas ramas existen. Haz clic en las flechas para cambiar entre ramas.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-branching.webp" alt="Flechas de navegación entre ramas e insignia 1/2 en un tile" size="lg" />
+
+<div id="manual-tiles">
+  ### Añadir tiles manuales
+</div>
+
+Además de los tiles generados por IA, puedes añadir tus propios bloques de análisis usando los botones de la parte inferior del notebook:
+
+| Button       | Shortcut | Description                                                                                                                                         |
+| ------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Search**   | `S`      | Una vista de búsqueda de logs/traces, equivalente a la página de búsqueda.                                                                          |
+| **Chart**    | `L`      | Un gráfico de líneas de series temporales, usando el mismo generador de visualizaciones que [Dashboards](/es/clickstack/features/dashboards/overview). |
+| **Table**    | `T`      | Una vista tabular de agregación.                                                                                                                    |
+| **Markdown** | `M`      | Texto libre para notas, hipótesis o conclusiones.                                                                                                   |
+
+Después de añadir un tile, se abre en modo de edición en línea, donde puedes configurar la fuente de datos, los filtros y las agregaciones; la misma interfaz que se usa al crear [visualizaciones de dashboard](/es/clickstack/features/dashboards/overview#creating-visualizations). Haz clic en **Save** para finalizar el tile.
+
+Los tiles manuales se añaden debajo del último tile visible de la rama actual. Puedes cambiar el tamaño vertical de los tiles arrastrando su borde inferior.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp" alt="Botones de tiles manuales en la parte inferior de un notebook" size="lg" />
+
+<Note>
+  Si actualmente se está ejecutando una investigación de IA, añadir o editar un tile manual cancelará la investigación. Antes de continuar, aparecerá un cuadro de diálogo de confirmación.
+</Note>
+
+<div id="sharing-organizing">
+  ### Compartir y organizar
+</div>
+
+* **Privado vs. compartido** — Alterna el icono de candado en el encabezado del notebook para cambiar entre privado (solo tú) y compartido (visible para el equipo). Solo el creador del notebook puede cambiar esta opción.
+* **Etiquetas** — Añade etiquetas a los notebooks para filtrarlos fácilmente en la página de lista.
+* **Nombre** — Haz clic en el título del notebook para cambiarle el nombre. Si inicias una investigación en un notebook sin título, la IA sugerirá uno automáticamente.
+
+<div id="custom-agent-context">
+  ### Contexto personalizado del agente
+</div>
+
+Los administradores del equipo pueden proporcionar contexto adicional que se incluye en cada investigación de IA en Notebooks del equipo. Esto resulta útil para proporcionar a la IA información de fondo sobre la arquitectura de su sistema, las convenciones de nomenclatura o los problemas conocidos.
+
+Para configurarlo:
+
+1. Vaya a **Notebooks** desde la barra lateral izquierda.
+2. Abra **Agent Settings** (disponible para los administradores del equipo).
+3. Introduzca su contexto personalizado (hasta 50.000 caracteres) y guarde los cambios.
+
+Este contexto se añade al system prompt de la IA para todas las investigaciones en Notebooks del equipo.
+
+<Image img="/images/use-cases/observability/hyperdx-notebook-agent-context.webp" alt="Panel de Agent Settings para contexto personalizado" size="lg" />

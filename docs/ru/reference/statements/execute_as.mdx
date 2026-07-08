@@ -1,0 +1,49 @@
+---
+description: 'Документация по оператору EXECUTE AS'
+sidebarTitle: 'EXECUTE AS'
+slug: /sql-reference/statements/execute_as
+title: 'Оператор EXECUTE AS'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Позволяет выполнять запросы от имени другого пользователя.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+EXECUTE AS target_user;
+EXECUTE AS target_user subquery;
+```
+
+Первая форма (без `subquery`) задаёт, что все последующие запросы в текущем сеансе будут выполняться от имени указанного `target_user`.
+
+Вторая форма (с `subquery`) выполняет только указанный `subquery` от имени указанного `target_user`.
+
+Для работы обеих форм требуется, чтобы параметр конфигурации `access_control_improvements.allow_impersonate_user`
+был установлен в `1`, а привилегия `IMPERSONATE` — выдана. Например, следующие команды
+
+```sql
+GRANT IMPERSONATE ON user1 TO user2;
+GRANT IMPERSONATE ON * TO user3;
+```
+
+разрешить пользователю `user2` выполнять команды `EXECUTE AS user1 ...`, а также разрешить пользователю `user3` выполнять команды от имени любого пользователя.
+
+При работе от имени другого пользователя функция [currentUser()](/ru/reference/functions/regular-functions/other-functions#currentUser) возвращает имя этого пользователя,
+а функция [authenticatedUser()](/ru/reference/functions/regular-functions/other-functions#authenticatedUser) возвращает имя пользователя, который фактически прошёл аутентификацию.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+```sql
+SELECT currentUser(), authenticatedUser(); -- выводит "default    default"
+CREATE USER james;
+EXECUTE AS james SELECT currentUser(), authenticatedUser(); -- выводит "james    default"
+```

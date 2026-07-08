@@ -1,0 +1,93 @@
+---
+sidebarTitle: 'PCI 온보딩'
+slug: /cloud/security/compliance/pci-onboarding
+title: 'PCI 온보딩'
+description: 'PCI 준수 서비스로 온보딩하는 방법을 알아보세요'
+doc_type: 'guide'
+keywords: ['pci', '컴플라이언스', '결제 보안', '데이터 보호', '보안']
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<EnterprisePlanFeatureBadge feature="PCI 컴플라이언스" />
+
+ClickHouse는 Payment Card Industry Data Security Standard(PCI-DSS)를 준수하는 서비스를 제공하며, Level 1 서비스 제공업체 요구 사항에 따라 감사를 거칩니다. 이 기능을 활성화하고 규정을 준수하는 리전에 서비스를 배포하면 이러한 서비스 내에서 주 계정 번호(PAN)를 처리할 수 있습니다.
+
+ClickHouse의 컴플라이언스 프로그램과 제3자 감사 보고서의 제공 여부에 대한 자세한 내용은 [컴플라이언스 개요](/ko/products/cloud/reference/security/compliance-overview)를 참조하십시오. PCI 공동 책임 문서 사본은 [Trust Center](https://trust.clickhouse.com)에서 확인할 수 있습니다. 또한 워크로드에 적합한 보안 제어를 선택하고 구현하려면 [보안 기능](/ko/products/cloud/features/security) 페이지를 검토하십시오.
+
+이 페이지에서는 ClickHouse Cloud에서 PCI 준수 서비스 배포를 활성화하는 방법을 설명합니다.
+
+<Steps>
+  <Step>
+    ### Enterprise 서비스 가입
+
+    1. 콘솔 왼쪽 하단에서 조직 이름을 선택합니다.
+    2. **Billing**을 클릭합니다.
+    3. 왼쪽 상단에서 **Plan**을 확인합니다.
+    4. **Plan**이 **Enterprise**이면 다음 섹션으로 이동합니다. 그렇지 않으면 **Change plan**을 클릭합니다.
+    5. **Switch to Enterprise**를 선택합니다.
+  </Step>
+
+  <Step>
+    ### 조직에 PCI 활성화
+
+    1. 콘솔 왼쪽 하단에서 조직 이름을 선택합니다.
+    2. **Organization details**를 클릭합니다.
+    3. **Enable PCI**를 켭니다.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_1.webp" size="md" alt="PCI 활성화" background="black" />
+
+    <br />
+
+    4. 활성화되면 해당 조직에서 PCI 서비스를 배포할 수 있습니다.
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_2.webp" size="md" alt="PCI 활성화됨" background="black" />
+
+    <br />
+  </Step>
+
+  <Step>
+    ### 서비스를 PCI 준수 리전에 배포
+
+    1. 콘솔 홈 화면의 왼쪽 상단에서 **New service**를 선택합니다
+    2. **Region type**을 **HIPAA compliant**로 변경합니다
+
+    <br />
+
+    <Image img="/images/cloud/security/compliance/pci_3.webp" size="md" alt="PCI 리전에 배포" background="black" />
+
+    <br />
+
+    3. 서비스 이름을 입력하고 나머지 정보를 입력합니다
+
+    PCI 준수 클라우드 제공업체 및 서비스의 전체 목록은 [Supported cloud regions](/ko/products/cloud/reference/supported-regions) 페이지를 참조하십시오.
+  </Step>
+</Steps>
+
+<div id="migrate-to-hipaa">
+  ## 기존 서비스 마이그레이션
+</div>
+
+필요한 경우 서비스를 규정을 준수하는 환경에 배포하는 것을 강력히 권장합니다. 서비스를 표준 리전에서 PCI 준수 리전으로 마이그레이션하는 과정에는 백업에서 복원하는 작업이 포함되며, 일부 다운타임이 발생할 수 있습니다.
+
+표준 리전에서 PCI 준수 리전으로 마이그레이션해야 하는 경우, 다음 단계에 따라 셀프 서비스 마이그레이션을 수행하십시오.
+
+1. 마이그레이션할 서비스를 선택합니다.
+2. 왼쪽에서 **Backups**를 클릭합니다.
+3. 복원할 백업 왼쪽의 점 3개 메뉴를 선택합니다.
+4. 백업을 PCI 준수 리전으로 복원하도록 **Region type**을 선택합니다.
+5. 복원이 완료되면 몇 가지 쿼리를 실행하여 스키마와 레코드 수가 예상대로인지 확인합니다.
+6. 이전 서비스를 삭제합니다.
+
+<Info>
+  **제한 사항**
+
+  서비스는 동일한 클라우드 제공업체와 동일한 지리적 리전에 유지되어야 합니다. 이 프로세스는 동일한 클라우드 제공업체와 리전 내에서 서비스를 규정을 준수하는 환경으로 마이그레이션합니다.
+</Info>

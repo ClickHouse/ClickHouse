@@ -1,0 +1,95 @@
+---
+title: 如何使用 EXCHANGE 命令交换表
+description: "如何使用 EXCHANGE 命令交换表"
+date: 2024-11-21
+tags: ['数据管理']
+keywords: ['EXCHANGE']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+***
+
+<div id="question">
+  ## 问题
+</div>
+
+如何使用 [`EXCHANGE`](/zh/reference/statements/exchange) 命令交换表名？
+
+<div id="answer">
+  ## 回答
+</div>
+
+当你需要将当前表切换为另一张临时表，而该临时表中的主键或其他设置可能已经更新时，`EXCHANGE` 命令非常有用。
+与 `RENAME` 命令不同，这一操作是原子性的。
+如果源表上有关联的 materialized views，且你想避免重建视图，它也同样适用。
+
+下面通过一个简单示例说明其工作方式以及如何进行测试：
+
+* 创建示例数据库
+
+```sql
+create database db1;
+```
+
+* 创建示例表
+
+```sql
+create table db1.table1_exchange
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* 插入一行示例数据
+
+```sql
+insert into db1.table1_exchange
+values
+(1, 'a');
+```
+
+* 创建将要进行 EXCHANGE 的示例临时表
+
+```sql
+create table db1.table1_exchange_temp
+(
+ id Int32,
+ string_field String
+)
+engine = MergeTree()
+order by id;
+```
+
+* 向临时表中插入示例数据行
+
+```sql
+insert into db1.table1_exchange_temp
+values
+(2, 'b');
+```
+
+* 运行 `EXCHANGE` 命令以交换这些表
+
+```sql
+exchange tables db1.table1_exchange and db1.table1_exchange_temp;
+```
+
+* 验证这些表现已完成交换，并显示各行也已互换
+
+```sql
+select * from db1.table1_exchange;
+```
+
+```text
+┌─id─┬─string_field─┐
+│  2 │ b            │
+└────┴──────────────┘
+
+1 row in set. Elapsed: 0.002 sec. 
+```

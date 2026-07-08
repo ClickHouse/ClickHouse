@@ -53,7 +53,8 @@ static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MARK_SEGMENT_SIZE_
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_PROJECTION = 5;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_MIN_MARKS_PER_TASK = 6;
 static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_STREAM_ID = 7;
-static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 7;
+static constexpr auto DBMS_PARALLEL_REPLICAS_MIN_VERSION_WITH_ANNOUNCEMENT_RESPONSE = 8;
+static constexpr auto DBMS_PARALLEL_REPLICAS_PROTOCOL_VERSION = 8;
 static constexpr auto DBMS_MIN_REVISION_WITH_PARALLEL_REPLICAS = 54453;
 static constexpr auto DBMS_MIN_REVISION_WITH_QUERY_AND_LINE_NUMBERS = 54475;
 
@@ -155,6 +156,8 @@ static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_PROGRESS_IN_ASYNC_INSERT = 
 
 static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485;
 
+static constexpr auto DBMS_MIN_PROTOCOL_VERSION_WITH_INTERNAL_QUERY_FLAG = 54486;
+
 
 /// Version of ClickHouse TCP protocol.
 ///
@@ -163,5 +166,5 @@ static constexpr auto DBMS_MIN_REVISION_WITH_CLIENT_AGENT_IN_CLIENT_INFO = 54485
 /// NOTE: DBMS_TCP_PROTOCOL_VERSION has nothing common with VERSION_REVISION,
 /// later is just a number for server version (one number instead of commit SHA)
 /// for simplicity (sometimes it may be more convenient in some use cases).
-static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54485;
+static constexpr auto DBMS_TCP_PROTOCOL_VERSION = 54486;
 }

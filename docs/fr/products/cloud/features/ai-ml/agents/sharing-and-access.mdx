@@ -1,0 +1,91 @@
+---
+sidebarTitle: 'Partage et accès'
+slug: /cloud/features/ai-ml/agents/sharing-and-access
+title: 'Partage et contrôle d’accès'
+description: 'Modèle d’autorisations et contrôle d’accès pour ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'partage', 'contrôle d’accès', 'autorisations', 'RBAC']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<BetaBadge />
+
+ClickHouse Agents utilise un modèle d’autorisation en couches : les rôles contrôlent les fonctionnalités que les utilisateurs peuvent utiliser, les listes d’accès au niveau des ressources déterminent qui peut utiliser un agent spécifique ou une autre ressource, et les autorisations d’administration déterminent qui gère l’ensemble.
+
+<div id="roles">
+  ## Rôles
+</div>
+
+Un rôle est un ensemble de permissions liées aux fonctionnalités, attribué à un ou plusieurs utilisateurs. Par défaut :
+
+* **User** - peut exécuter des agents et utiliser le chat. La possibilité de créer des agents, de créer des skills, de partager des ressources, etc. dépend des options d’activation définies pour chaque fonctionnalité dans son rôle.
+* **Admin** - tout ce que permet User, avec en plus des contrôles au niveau de l’org : gestion des utilisateurs, configuration du marketplace, attribution de permissions.
+
+Les admins peuvent créer des rôles personnalisés avec leurs propres options d’activation pour un contrôle plus fin.
+
+<div id="resource-sharing">
+  ## Partage des ressources
+</div>
+
+Les agents, les prompts et les skills disposent chacun d’une liste d’accès. Trois niveaux d’accès par principal :
+
+* **Viewer** - peut utiliser la ressource, mais ne peut pas la modifier.
+* **Editor** - peut modifier la configuration de la ressource (instructions, outils associés, modèle, etc.).
+* **Owner** - correspond au niveau Editor, avec en plus la possibilité de supprimer la ressource ou d’en modifier le partage.
+
+Lorsque vous créez une ressource, vous en êtes propriétaire par défaut. Tout ce que vous ne partagez pas explicitement reste privé pour vous.
+
+<div id="principals">
+  ## Principals
+</div>
+
+Vous pouvez accorder l’accès à :
+
+* **Utilisateurs individuels** - un utilisateur à la fois.
+* **Groupes** - équipes ou unités de l’org. Si un utilisateur rejoint ou quitte le groupe par la suite, son accès est mis à jour automatiquement.
+* **À l’échelle de l’organisation** - tous les membres de l’org voient la ressource. Sous réserve du bouton bascule au niveau du rôle qui l’autorise.
+
+La visibilité à l’échelle de l’organisation est ce qui rend une ressource visible dans la [marketplace](/fr/products/cloud/features/ai-ml/agents/marketplace).
+
+<div id="share-an-agent">
+  ## Partager un agent
+</div>
+
+Cliquez sur l’icône **share** en bas de l’Agent Builder. Un badge sur l’icône indique combien d’utilisateurs ou de groupes ont actuellement accès.
+
+<Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="Bas du panneau Agent Builder avec l’icône share mise en évidence et un badge indiquant qu’un principal partagé a accès" size="sm" />
+
+La fenêtre modale **Share** s’ouvre. Recherchez un utilisateur ou un groupe par nom ou par adresse e-mail, choisissez le niveau d’accès (**Viewer**, **Editor** ou **Owner**), puis cliquez sur **Save Changes**. Pour partager avec toute l’organisation, activez le bouton bascule **Share with everyone in ClickHouse**.
+
+<Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="Fenêtre modale Share avec la section des autorisations des utilisateurs et des groupes, un champ de recherche, un utilisateur existant avec un rôle Owner, un bouton bascule Share with everyone in ClickHouse, ainsi que les boutons Cancel et Save Changes" size="md" />
+
+Le destinataire verra l’agent dans sa liste des agents disponibles la prochaine fois qu’il actualisera. Pour révoquer l’accès, supprimez la ligne dans cette même fenêtre modale. Le destinataire perd immédiatement l’accès ; ses conversations en cours se terminent, mais il ne pourra pas en ouvrir de nouvelles.
+
+<div id="default-agent">
+  ## Agent par défaut
+</div>
+
+Vous pouvez définir un agent par défaut. Les nouvelles conversations s&#39;ouvrent avec cet agent, sauf si vous en choisissez un autre. Les Admins peuvent également définir un agent par défaut à l&#39;échelle de l&#39;org pour les utilisateurs qui n&#39;ont pas choisi le leur.
+
+<div id="admin-operations">
+  ## Opérations d’Admin
+</div>
+
+Les opérations réservées aux Admin comprennent :
+
+* La création et la modification des rôles.
+* La configuration des catégories du marketplace et la mise en avant d’agents.
+* L’activation ou la désactivation de fonctionnalités au niveau de l’org (memory, web search, code interpreter, marketplace, etc.).
+* L’attribution de permissions d’admin à d’autres utilisateurs.
+
+Dans ClickHouse Cloud, le panneau d’administration est accessible aux admins de l’org. Si vous ne le voyez pas, contactez l’admin de votre org ou le support ClickHouse Cloud pour demander l’accès.
+
+<div id="gotchas">
+  ## Points d’attention
+</div>
+
+* **La suppression d’un agent interrompt tout partage.** Les destinataires perdent l’accès ; leurs conversations enregistrées avec l’agent restent consultables, mais ne peuvent plus être poursuivies.
+* **La modification d’un agent partagé affecte tous ses utilisateurs.** Utilisez une copie si vous devez faire des essais sans perturber les autres.
+* **Révoquer le rôle d’un utilisateur ne supprime pas les ressources qu’il a créées.** Ses agents, Prompts et Skills restent dans ses listes d’accès ; transférez-en la propriété avant de finaliser son départ.

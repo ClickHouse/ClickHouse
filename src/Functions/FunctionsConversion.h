@@ -939,7 +939,7 @@ void parseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateLUTI
         if (precise_float_parsing)
             readFloatTextPrecise(x, rb);
         else
-            readFloatTextFast(x, rb);
+            readFloatImpreciseForCompatibility(x, rb);
     }
     else
         readText(x, rb);
@@ -1011,7 +1011,7 @@ bool tryParseImpl(typename DataType::FieldType & x, ReadBuffer & rb, const DateL
         if (precise_float_parsing)
             return tryReadFloatTextPrecise(x, rb);
         else
-            return tryReadFloatTextFast(x, rb);
+            return tryReadFloatImpreciseForCompatibility(x, rb);
     }
     else /*if constexpr (is_integral_v<typename DataType::FieldType>)*/
         return tryReadIntText(x, rb);

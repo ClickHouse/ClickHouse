@@ -1,0 +1,111 @@
+---
+sidebarTitle: 'FAQ'
+description: 'MongoDB용 ClickPipes에 관해 자주 묻는 질문입니다.'
+slug: /integrations/clickpipes/mongodb/faq
+title: 'MongoDB용 ClickPipes FAQ'
+doc_type: '참고'
+keywords: ['ClickPipes', 'MongoDB', 'CDC', '데이터 수집', '실시간 동기화']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+<div id="can-i-query-for-individual-fields-in-the-json-datatype">
+  ### JSON 데이터 유형에서 개별 필드를 쿼리할 수 있습니까?
+</div>
+
+`{"user_id": 123}`처럼 필드에 직접 접근할 때는 **점 표기법**을 사용할 수 있습니다:
+
+```sql
+SELECT doc.user_id as user_id FROM your_table;
+```
+
+`{"address": { "city": "San Francisco", "state": "CA" }}`처럼 중첩된 객체 필드에 직접 접근하려면 `^` 연산자를 사용합니다:
+
+```sql
+SELECT doc.^address.city AS city FROM your_table;
+```
+
+집계를 위해서는 `CAST` 함수 또는 `::` 구문을 사용해 필드를 적절한 유형으로 변환합니다:
+
+```sql
+SELECT sum(doc.shipping.cost::Float32) AS total_shipping_cost FROM t1;
+```
+
+JSON을 다루는 방법에 대해 자세히 알아보려면 [Working with JSON 가이드](/ko/integrations/clickpipes/mongodb/quickstart)를 참조하십시오.
+
+<div id="how-do-i-flatten-the-nested-mongodb-documents-in-clickhouse">
+  ### ClickHouse에서 중첩된 MongoDB 문서를 어떻게 평탄화할 수 있나요?
+</div>
+
+MongoDB 문서는 기본적으로 ClickHouse에서 JSON 타입으로 복제되며, 중첩 구조가 그대로 유지됩니다. 이 데이터를 평탄화하는 방법은 여러 가지가 있습니다. 데이터를 컬럼으로 평탄화하려면 일반 뷰, materialized view 또는 쿼리 시점 접근 방식을 사용할 수 있습니다.
+
+1. **일반 뷰**: 일반 뷰를 사용해 평탄화 로직을 캡슐화합니다.
+2. **Materialized Views**: 작은 데이터셋의 경우 [`FINAL` 수정자](/ko/reference/statements/select/from#final-modifier)를 사용하는 갱신 가능한 materialized view로 데이터를 주기적으로 평탄화하고 중복을 제거할 수 있습니다. 더 큰 데이터셋의 경우 `FINAL` 없이 증분형 materialized view를 사용해 데이터를 실시간으로 평탄화한 다음, 쿼리 시점에 중복을 제거하는 방식을 권장합니다.
+3. **쿼리 시점 접근**: 평탄화하는 대신 점 표기법을 사용해 쿼리에서 중첩 필드에 직접 접근합니다.
+
+자세한 예시는 [Working with JSON 가이드](/ko/integrations/clickpipes/mongodb/quickstart)를 참조하십시오.
+
+<div id="can-i-connect-mongodb-databases-that-dont-have-a-public-ip-or-are-in-private-networks">
+  ### 공개 IP가 없거나 프라이빗 네트워크에 있는 MongoDB 데이터베이스에 연결할 수 있나요?
+</div>
+
+공개 IP가 없거나 프라이빗 네트워크에 있는 MongoDB 데이터베이스에 연결할 수 있도록 AWS PrivateLink를 지원합니다. 현재 Azure Private Link와 GCP Private Service Connect는 지원하지 않습니다.
+
+<div id="what-happens-if-i-delete-a-database-table-from-my-mongodb-database">
+  ### MongoDB 데이터베이스에서 데이터베이스/테이블을 삭제하면 어떻게 됩니까?
+</div>
+
+MongoDB에서 데이터베이스/테이블을 삭제하면 ClickPipes는 계속 실행되지만, 삭제된 데이터베이스/테이블의 변경 사항은 더 이상 복제되지 않습니다. ClickHouse의 해당 테이블은 그대로 유지됩니다.
+
+<div id="how-does-mongodb-cdc-connector-handle-transactions">
+  ### MongoDB CDC Connector는 트랜잭션을 어떻게 처리합니까?
+</div>
+
+트랜잭션 내 각 문서 변경은 개별적으로 ClickHouse에 반영됩니다. 변경 사항은 oplog에 기록된 순서대로 적용되며, 커밋된 변경 사항만 ClickHouse에 복제됩니다. MongoDB 트랜잭션이 롤백되면 해당 변경 사항은 change stream에 나타나지 않습니다.
+
+추가 예시는 [Working with JSON 가이드](/ko/integrations/clickpipes/mongodb/quickstart)를 참조하십시오.
+
+<div id="resume-point-may-no-longer-be-in-the-oplog-error">
+  ### `resume of change stream was not possible, as the resume point may no longer be in the oplog.` 오류는 어떻게 해결하나요?
+</div>
+
+이 오류는 일반적으로 oplog가 잘려 ClickPipe가 예상한 지점에서 change stream을 재개할 수 없을 때 발생합니다. 이 문제를 해결하려면 [ClickPipe를 resync](/ko/integrations/clickpipes/mongodb/resync)하십시오. 이 문제가 다시 발생하지 않도록 하려면 oplog 보존 기간을 늘리는 것이 좋습니다. [MongoDB Atlas](/ko/integrations/clickpipes/mongodb/source/atlas#enable-oplog-retention), [자가 관리형 MongoDB](/ko/integrations/clickpipes/mongodb/source/generic#enable-oplog-retention), 또는 [Amazon DocumentDB](/ko/integrations/clickpipes/mongodb/source/documentdb#configure-change-stream-log-retention)에 대한 안내를 참조하십시오.
+
+<div id="how-is-replication-managed">
+  ### 복제는 어떻게 관리되나요?
+</div>
+
+데이터베이스의 변경 사항을 추적하기 위해 MongoDB의 네이티브 Change Streams API를 사용합니다. Change Streams API는 MongoDB의 oplog(operations log)를 활용해 데이터베이스 변경 사항을 재개 가능한 스트림 형태로 제공합니다. ClickPipe는 MongoDB의 resume token을 사용해 oplog 내 위치를 추적하고, 모든 변경 사항이 ClickHouse에 복제되도록 보장합니다.
+
+<div id="which-read-preference-should-i-use">
+  ### 어떤 읽기 설정을 사용해야 하나요?
+</div>
+
+사용할 읽기 설정은 구체적인 사용 사례에 따라 달라집니다. 프라이머리 노드의 부하를 최소화하려면 `secondaryPreferred` 읽기 설정을 사용하는 것이 좋습니다. 수집 지연 시간을 최적화하려면 `primaryPreferred` 읽기 설정을 사용하는 것이 좋습니다. 자세한 내용은 [MongoDB 문서](https://www.mongodb.com/docs/manual/core/read-preference/#read-preference-modes-1)를 참조하십시오.
+
+<div id="does-the-mongodb-clickpipe-support-sharded-cluster">
+  ### MongoDB ClickPipe는 Sharded Cluster를 지원합니까?
+</div>
+
+예, MongoDB ClickPipe는 Replica Set과 Sharded Cluster를 모두 지원합니다.
+
+<div id="documentdb-support">
+  ### MongoDB ClickPipe는 Amazon DocumentDB를 지원합니까?
+</div>
+
+예, MongoDB ClickPipe는 Amazon DocumentDB 5.0을 지원합니다. 자세한 내용은 [Amazon DocumentDB 소스 설정 가이드](/ko/integrations/clickpipes/mongodb/source/documentdb)를 참조하십시오.
+
+<div id="privatelink-support">
+  ### MongoDB ClickPipe는 PrivateLink를 지원합니까?
+</div>
+
+AWS의 MongoDB(및 DocumentDB) 클러스터에 대해서만 PrivateLink를 지원합니다.
+
+단일 노드 관계형 데이터베이스와 달리 MongoDB 클라이언트는 구성된 `ReadPreference`를 따르려면 레플리카 세트를 성공적으로 검색할 수 있어야 합니다. 이를 위해서는 클러스터의 모든 노드에 대해 PrivateLink를 설정해야 하며, 그래야 MongoDB 클라이언트가 레플리카 세트 연결을 정상적으로 설정하고 연결된 노드에 장애가 발생했을 때 다른 노드로 전환할 수 있습니다.
+
+클러스터의 단일 노드에 연결하려는 경우 ClickPipes 설정 중 connection string에 `/?directConnection=true`를 지정하여 레플리카 세트 검색을 건너뛸 수 있습니다. 이 경우 PrivateLink 설정은 단일 노드 관계형 데이터베이스와 유사하며, PrivateLink 지원을 위한 가장 간단한 옵션입니다.
+
+레플리카 세트 연결의 경우 VPC 리소스 또는 VPC 엔드포인트 서비스를 사용해 MongoDB용 PrivateLink를 설정할 수 있습니다. VPC 리소스를 사용하는 경우 `GROUP` 리소스 구성과 더불어 클러스터의 각 노드마다 `CHILD` 리소스 구성을 생성해야 합니다. VPC 엔드포인트 서비스를 사용하는 경우 클러스터의 각 노드마다 별도의 엔드포인트 서비스(및 별도의 NLB)를 생성해야 합니다.
+
+자세한 내용은 [ClickPipes용 AWS PrivateLink](/ko/integrations/clickpipes/aws-privatelink) 문서를 참조하십시오. 도움이 필요하면 ClickHouse 지원팀에 문의하십시오.

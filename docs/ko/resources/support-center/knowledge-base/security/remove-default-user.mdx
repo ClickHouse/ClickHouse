@@ -1,0 +1,101 @@
+---
+date: 2025-01-16
+title: 기본 사용자를 삭제하려면 어떻게 해야 하나요?
+description: "ClickHouse 서버를 실행할 때 기본 사용자를 삭제하는 방법을 알아봅니다."
+tags: ['서버 관리']
+words: ['기본 사용자 삭제', 'ClickHouse 서버']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="removing-the-default-user">
+  ## 기본 사용자 제거
+</div>
+
+<Note>
+  이 가이드는 ClickHouse Cloud에는 적용되지 않습니다.
+</Note>
+
+이 가이드에서는 ClickHouse 서버에서 `default` 사용자를 제거하는 방법을 알아보겠습니다.
+
+이를 위해 아래 내용을 담은 YAML 파일(`remove_default_user.yaml`이라고 하겠습니다)을 만들면 됩니다.
+
+```yaml
+users:
+  default:
+    "@remove": remove
+```
+
+이 파일의 위치는 ClickHouse 설치 방식에 따라 달라집니다.
+
+<div id="running-the-executable-directly">
+  ## 실행 파일을 직접 실행하기
+</div>
+
+ClickHouse를 직접 실행하는 경우(`clickhouse server`), 파일을 `config.d` 디렉터리 아래에 두어야 합니다.
+
+ClickHouse 서버를 실행할 때:
+
+```
+clickhouse server
+```
+
+로그에 다음과 같은 줄이 표시됩니다:
+
+```
+{} <Debug> ConfigProcessor: Merging configuration file 'config.d/remove_default_user.yaml'.
+```
+
+`clickhouse client`를 사용해 연결할 수 없게 됩니다:
+
+```
+ClickHouse client version 24.11.1.2557 (official build).
+Connecting to localhost:9000 as user default.
+Password for user (default):
+Connecting to localhost:9000 as user default.
+Code: 516. DB::Exception: Received from localhost:9000. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
+```
+
+<div id="docker-or-installed">
+  ## Docker 또는 설치된 환경
+</div>
+
+ClickHouse를 Docker로 실행 중이거나 로컬 머신에 설치한 경우, 파일을 대신 `/etc/clickhouse-server/users.d` 디렉터리 아래에 두어야 합니다.
+
+따라서 Docker로 실행 중이라면, 앞에서 생성한 `config.d` 디렉터리를 `/etc/clickhouse-server/users.d`에 마운트할 수 있습니다:
+
+```bash
+docker run \
+  -v ./config.d:/etc/clickhouse-server/users.d \
+  -p 8123:8123 -p9000:9000 \
+  clickhouse/clickhouse-server:24.12
+```
+
+```
+Merging configuration file '/etc/clickhouse-server/config.d/docker_related_config.xml'.
+Logging trace to /var/log/clickhouse-server/clickhouse-server.log
+Logging errors to /var/log/clickhouse-server/clickhouse-server.err.log
+```
+
+그런 다음 서버 로그를 검색해 정상적으로 인식되었는지 확인할 수 있습니다:
+
+```bash
+docker ps --format "table {{.ID}}\t{{.Image}}\t{{.Names}}\t{{.Command}}"
+```
+
+```text
+CONTAINER ID   IMAGE                                NAMES               COMMAND
+383e8ed89431   clickhouse/clickhouse-server:24.12   trusting_rosalind   "/entrypoint.sh"
+```
+
+```
+docker exec -it trusting_rosalind grep "users\.d" /var/log/clickhouse-server/clickhouse-server.log
+```
+
+다음과 같은 줄이 표시되어야 합니다:
+
+```text
+{} <Debug> ConfigProcessor: Merging configuration file '/etc/clickhouse-server/users.d/remove_default_user.yaml'.
+```

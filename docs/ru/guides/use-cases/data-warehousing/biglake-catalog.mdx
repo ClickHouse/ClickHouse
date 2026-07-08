@@ -1,0 +1,110 @@
+---
+slug: /use-cases/data-lake/biglake-catalog
+sidebarTitle: 'BigLake Metastore'
+title: 'Каталог среды выполнения Lakehouse (BigLake Metastore)'
+description: 'В этом руководстве мы покажем, как выполнять запросы к данным в Google Cloud Storage с помощью ClickHouse и каталога среды выполнения Lakehouse (BigLake Metastore).'
+keywords: ['BigLake', 'GCS', 'озеро данных', 'Iceberg', 'Google Cloud', 'каталог среды выполнения Lakehouse']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+ClickHouse поддерживает интеграцию с несколькими каталогами (Unity, Glue, Polaris и т. д.). В этом руководстве показано, как выполнять запросы к таблицам Iceberg в [каталоге среды выполнения Lakehouse, также известном как BigLake Metastore](https://docs.cloud.google.com/biglake/docs/), через ClickHouse.
+
+<Note>
+  Поскольку эта возможность находится в статусе бета, её нужно включить с помощью:
+  `SET allow_database_iceberg = 1;`
+</Note>
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Перед созданием подключения из ClickHouse к каталогу среды выполнения Lakehouse (BigLake Metastore) убедитесь, что у вас есть:
+
+* **Проект Google Cloud** с включенным каталогом среды выполнения Lakehouse
+* **Учетные данные Application Default** (OAuth client ID и client secret) для приложения, созданные через [Google Cloud Console](https://docs.cloud.google.com/docs/authentication/provide-credentials-adc)
+* **Токен обновления**, полученный после прохождения OAuth-потока с соответствующими областями доступа (например, `https://www.googleapis.com/auth/bigquery` и областью доступа к хранилищу для GCS)
+* Путь к **хранилищу**: бакет GCS (и необязательный префикс), где хранятся ваши таблицы, например `gs://your-bucket` или `gs://your-bucket/prefix`
+
+<div id="creating-a-connection">
+  ## Создание подключения между каталогом среды выполнения Lakehouse и ClickHouse
+</div>
+
+После настройки учетных данных OAuth создайте в ClickHouse базу данных, использующую движок базы данных [DataLakeCatalog](/ru/reference/engines/database-engines/datalake):
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE lakehouse_runtime_catalog
+ENGINE = DataLakeCatalog('https://biglake.googleapis.com/iceberg/v1/restcatalog')
+SETTINGS
+    catalog_type = 'biglake',
+    google_adc_client_id = '<client-id>',
+    google_adc_client_secret = '<client-secret>',
+    google_adc_refresh_token = '<refresh-token>',
+    google_adc_quota_project_id = '<gcp-project-id>',
+    warehouse = 'gs://<bucket_name>/<optional-prefix>';
+```
+
+<div id="querying-lakehouse-runtime-tables">
+  ## Запросы к таблицам каталога среды выполнения Lakehouse из ClickHouse
+</div>
+
+После создания подключения можно выполнять запросы к таблицам, зарегистрированным в каталоге среды выполнения Lakehouse.
+
+```sql
+USE LAKEHOUSE_RUNTIME_CATALOG;
+
+SHOW TABLES;
+```
+
+Пример вывода:
+
+```response
+┌─name──────────────────────────────────────┐
+│lakehouse_runtime_catalog.my_iceberg_table │   
+└───────────────────────────────────────────┘
+```
+
+```sql
+SELECT count(*) FROM `lakehouse_runtime_catalog.my_iceberg_table`;
+```
+
+<Info>
+  **Обратные кавычки обязательны**
+
+  Обратные кавычки обязательны, потому что ClickHouse не поддерживает работу более чем с одним пространством имен.
+</Info>
+
+Чтобы просмотреть определение таблицы:
+
+```sql
+SHOW CREATE TABLE `lakehouse_runtime_catalog.my_iceberg_table`;
+```
+
+<div id="loading-data-into-clickhouse">
+  ## Загрузка данных из Lakehouse в ClickHouse
+</div>
+
+Чтобы загрузить данные из таблицы каталога среды выполнения Lakehouse в локальную таблицу ClickHouse для ускорения повторных запросов, создайте таблицу MergeTree и выполните вставку из каталога:
+
+```sql
+CREATE TABLE clickhouse_table
+(
+    `id` Int64,
+    `event_time` DateTime64(3),
+    `user_id` String,
+    `payload` String
+)
+ENGINE = MergeTree
+ORDER BY (event_time, id);
+
+INSERT INTO local_events
+SELECT * FROM lakehouse_runtime_catalog.`icebench.my_iceberg_table`;
+```
+
+После первоначальной загрузки выполняйте запросы к `clickhouse_table`, чтобы снизить задержку. При необходимости повторно запустите `INSERT INTO ... SELECT`, чтобы обновить данные из BigLake.
