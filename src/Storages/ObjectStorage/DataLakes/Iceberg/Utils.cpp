@@ -479,24 +479,43 @@ bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::strin
     if (table_namespace.empty() && table_root.empty())
         return true;
 
-    /// Strip the scheme (e.g. "s3://") so we compare only the storage-namespace + key part.
+    /// Split `cached_location` into an optional authority (bucket/container, possibly in the
+    /// authority-bearing form used by Spark/Azure, e.g. "container@account.blob.core.windows.net")
+    /// and the key path. A location with no scheme is an absolute/relative filesystem-style path,
+    /// as written natively by ClickHouse for namespace-less backends (HDFS/Local).
+    std::string_view authority;
+    std::string_view path = cached_location;
     if (auto scheme_pos = cached_location.find("://"); scheme_pos != std::string_view::npos)
-        cached_location.remove_prefix(scheme_pos + 3);
-    while (cached_location.ends_with('/'))
-        cached_location.remove_suffix(1);
-
-    /// Compare the full namespace (bucket/container) + key, not just a path suffix: a suffix-only
-    /// check would accept a same-named key living in a different bucket (e.g. a stale
-    /// `catalog_uuid_hint` colliding with another table's UUID whose `location` is
-    /// `s3://other-bucket/<same key>`), which must be rejected.
-    std::string expected_root(table_namespace);
-    if (!table_root.empty())
     {
-        if (!expected_root.empty())
-            expected_root += '/';
-        expected_root += table_root;
+        auto rest = cached_location.substr(scheme_pos + 3);
+        if (auto slash_pos = rest.find('/'); slash_pos != std::string_view::npos)
+        {
+            authority = rest.substr(0, slash_pos);
+            path = rest.substr(slash_pos + 1);
+        }
+        else
+        {
+            authority = rest;
+            path = {};
+        }
     }
-    return cached_location == expected_root;
+    while (path.starts_with('/'))
+        path.remove_prefix(1);
+    while (path.ends_with('/'))
+        path.remove_suffix(1);
+
+    if (path != table_root)
+        return false;
+
+    if (table_namespace.empty())
+        return authority.empty();
+
+    /// Compare the namespace exactly, not just the trailing path: a suffix-only check would
+    /// accept a same-named key living in a different bucket (e.g. a stale `catalog_uuid_hint`
+    /// colliding with another table's UUID whose `location` is `s3://other-bucket/<same key>`),
+    /// which must be rejected. Authority-bearing forms ("container@account...") are accepted as
+    /// long as the namespace is the leading component before '@'.
+    return authority == table_namespace || authority.starts_with(std::string(table_namespace) + "@");
 }
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(

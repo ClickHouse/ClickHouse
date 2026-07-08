@@ -184,4 +184,33 @@ TEST(IcebergMetadataCache, LocationMatchesWhenNamespaceAndTableRootAreEmpty)
     EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "", ""));
 }
 
+TEST(IcebergMetadataCache, LocationMatchesAbsolutePathWithNoScheme)
+{
+    // ClickHouse writes `location` as an absolute path (no scheme) for namespace-less backends
+    // (HDFS/Local). Regression test: the leading slash must be trimmed from `cached_location`
+    // the same way it already is from `table_root`, or a valid warm hit is rejected.
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "", "warehouse/table"));
+}
+
+TEST(IcebergMetadataCache, LocationDoesNotMatchAbsolutePathWithDifferentRoot)
+{
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/other_table", "", "warehouse/table"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesAuthorityBearingAzureUri)
+{
+    // Spark/Azure locations carry the container in an authority-bearing form
+    // ("container@account.blob.core.windows.net"), not a bare namespace equal to
+    // `StorageAzureConfiguration::getNamespace()`. The namespace must still be recognized as the
+    // leading authority component.
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot(
+        "wasb://container@account.blob.core.windows.net/ns/table", "container", "ns/table"));
+}
+
+TEST(IcebergMetadataCache, LocationDoesNotMatchAuthorityBearingUriWithDifferentContainer)
+{
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot(
+        "wasb://other-container@account.blob.core.windows.net/ns/table", "container", "ns/table"));
+}
+
 #endif

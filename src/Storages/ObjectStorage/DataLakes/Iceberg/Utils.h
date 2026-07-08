@@ -137,9 +137,11 @@ std::string normalizeUuid(const std::string & uuid);
 /// Whether `cached_location` (the Iceberg `location` field of a cached metadata JSON) refers to
 /// this table, identified by its storage `table_namespace` (bucket/container, e.g. from
 /// `IObjectStorageConfiguration::getNamespace`) and `table_root` (the storage engine's configured
-/// key path, e.g. from `getPathForRead().path`). The comparison is exact (after stripping the
-/// scheme and trailing/leading slashes), not a suffix match, so a same-named key in a different
-/// bucket is correctly rejected.
+/// key path, e.g. from `getPathForRead().path`). Handles both scheme-less absolute paths (as
+/// written natively by ClickHouse for namespace-less backends like HDFS/Local) and scheme-bearing
+/// URIs, including the authority-bearing form used by Spark/Azure
+/// (`wasb://container@account.blob.core.windows.net/...`). The key-path comparison is exact, not
+/// a suffix match, so a same-named key in a different bucket/container is correctly rejected.
 bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_namespace, std::string_view table_root);
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
