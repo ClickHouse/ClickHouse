@@ -9,10 +9,6 @@
 #include <Poco/JSON/JSON.h>
 #include <Poco/JSON/Object.h>
 #include <xxhash.h>
-
-/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
-/// so any actual use triggers this warning.
-#pragma clang diagnostic ignored "-Wused-but-marked-unused"
 #include <DataTypes/DataTypeObject.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/ColumnFixedString.h>
@@ -1069,6 +1065,10 @@ void writeColumnImpl(
 
             if (hashes_for_bloom_filter.has_value())
             {
+/// With XXH_INLINE_ALL (from contrib/xxHash) every XXH function is marked as unused,
+/// so any actual use triggers this warning.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wused-but-marked-unused"
                 for (size_t i = 0; i < data_count; ++i)
                 {
                     UInt64 h = 0;
@@ -1084,6 +1084,7 @@ void writeColumnImpl(
                     }
                     hashes_for_bloom_filter->insert(h);
                 }
+#pragma clang diagnostic pop
             }
 
             if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
