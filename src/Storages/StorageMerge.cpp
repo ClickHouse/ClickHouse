@@ -1375,8 +1375,16 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
     /// this case, because the diff was empty.)
     const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
 
+    /// The alias name must be unique not only against the current DAG outputs, but also against the
+    /// child table's real columns: a source table may legitimately have a column named
+    /// __row_policy_filter, and on SELECT * it flows into the same block as the alias, so a clash
+    /// would make Block::insert throw on the duplicate name.
+    NameSet reserved_names;
+    for (const auto & column : needed_columns)
+        reserved_names.insert(column.name);
+
     filter_column_name = "__row_policy_filter";
-    for (size_t i = 0; actions_dag.tryFindInOutputs(filter_column_name) != nullptr; ++i)
+    for (size_t i = 0; actions_dag.tryFindInOutputs(filter_column_name) != nullptr || reserved_names.contains(filter_column_name); ++i)
         filter_column_name = "__row_policy_filter_" + std::to_string(i);
 
     const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);

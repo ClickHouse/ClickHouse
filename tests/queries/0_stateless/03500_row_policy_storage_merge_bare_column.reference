@@ -10,3 +10,6 @@ expression policy
 4	0
 compound policy
 1	1
+name clash with real __row_policy_filter column
+1	1	x
+3	1	z
