@@ -653,6 +653,31 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
+/// Walk an AST and throw if it references a virtual column that only the query plan can
+/// materialize (see isQueryPlanOnlyVirtualColumn). Such a reference is valid in a SELECT but
+/// impossible to evaluate in a mutation, so we reject it up front. A physical column that
+/// happens to share the name is left alone.
+static void rejectQueryPlanOnlyVirtualColumns(const IAST * ast, const ColumnsDescription & columns)
+{
+    if (!ast)
+        return;
+
+    if (const auto * identifier = ast->as<ASTIdentifier>())
+    {
+        const auto & name = identifier->name();
+        if (isQueryPlanOnlyVirtualColumn(name) && !columns.has(name))
+            throw Exception(
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "Cannot use virtual column {} in a mutation: its value is only available while "
+                "executing a SELECT query, not while mutating a data part",
+                backQuote(name));
+        return;
+    }
+
+    for (const auto & child : ast->children)
+        rejectQueryPlanOnlyVirtualColumns(child.get(), columns);
+}
+
 void MutationsInterpreter::prepare(bool dry_run)
 {
     auto component_guard = Coordination::setCurrentComponent("MutationsInterpreter");
@@ -673,6 +698,21 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
+
+    /// Reject references to virtual columns whose value is only produced by the query plan
+    /// (e.g. `_sample_factor`, `_table`, `_database`). They cannot be materialized by the
+    /// mutation read path, so a mutation referencing them would otherwise parse and start
+    /// running, then fail mid-execution in MergeTreeSequentialSource. Fail at analysis time
+    /// instead. A physical column with the same name (if the table happens to define one)
+    /// is still allowed.
+    if (source.getMergeTreeData())
+    {
+        for (const auto & command : commands)
+        {
+            if (auto ast = command.ast())
+                rejectQueryPlanOnlyVirtualColumns(ast.get(), columns_desc);
+        }
+    }
 
     NameSet updated_columns;
     bool materialize_ttl_recalculate_only = source.materializeTTLRecalculateOnly();

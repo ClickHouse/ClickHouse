@@ -77,4 +77,12 @@ Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTree
     throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Unexpected const virtual column: {}", column_name);
 }
 
+bool isQueryPlanOnlyVirtualColumn(const String & column_name)
+{
+    /// These are filled by ReadFromMergeTree into shared_virtual_fields, i.e. their value only
+    /// exists inside a SELECT query plan. The mutation/merge read path (MergeTreeSequentialSource)
+    /// cannot produce them.
+    return column_name == "_sample_factor" || column_name == "_table" || column_name == "_database";
+}
+
 }
