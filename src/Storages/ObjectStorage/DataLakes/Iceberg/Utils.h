@@ -142,9 +142,12 @@ std::string normalizeUuid(const std::string & uuid);
 /// Azure `wasb://` location matching an S3 bucket of the same name; equivalences mirror
 /// `DataLake::parseStorageTypeFromString`: `file` -> local, `s3a`/`gs`/`oss` -> s3, `abfss` -> azure).
 /// A schemeless `cached_location` -- as ClickHouse itself writes by default
-/// (`write_full_path_in_iceberg_metadata = 0`), regardless of backend -- is accepted for any
-/// backend as long as the key path matches, since it carries no authority to validate. Scheme-
-/// bearing URIs are also handled, including the authority-bearing form used by Spark/Azure
+/// (`write_full_path_in_iceberg_metadata = 0`), regardless of backend -- carries no authority to
+/// validate, so it is only accepted when `table_namespace` is itself empty (nothing to validate
+/// against); when `table_namespace` is non-empty it is treated as unverifiable and rejected, since
+/// two different tables in different buckets/containers could otherwise produce the same
+/// schemeless location for the same key path. Scheme-bearing URIs are handled, including the
+/// authority-bearing form used by Spark/Azure
 /// (`wasb://container@account.blob.core.windows.net/...`) or HDFS
 /// (`hdfs://namenode:8020/...`, `hdfs://user@nameservice/...`). The key-path comparison is always
 /// exact, not a suffix match, so a same-named key in a different bucket/container is correctly

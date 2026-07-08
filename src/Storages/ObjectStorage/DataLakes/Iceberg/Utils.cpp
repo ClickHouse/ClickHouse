@@ -551,10 +551,15 @@ bool cachedLocationMatchesTableRoot(
         return false;
 
     /// A schemeless `cached_location` (ClickHouse's default write format, see above) carries no
-    /// authority to validate against `table_namespace`: the backend-family and path checks above
-    /// already establish this is a plausible match, so accept it.
+    /// authority to validate. That is only safe to accept when `table_namespace` is itself empty
+    /// (nothing to validate against, e.g. Local, or HDFS with no derivable raw-URI authority):
+    /// otherwise two different tables in different buckets/containers/nameservices but the same
+    /// key path would produce the same schemeless location, and a stale `catalog_uuid_hint`
+    /// colliding with another table's UUID would accept that table's cached `metadata.json`. When
+    /// `table_namespace` is non-empty, treat the schemeless location as unverifiable and miss
+    /// (fall back to a cold read) rather than trust it.
     if (scheme.empty())
-        return true;
+        return table_namespace.empty();
 
     /// Namespace-less backends (HDFS/Local, where `getNamespace()` is always empty) have no
     /// namespace to validate: `IcebergPathResolver` already accepts authority-bearing locations

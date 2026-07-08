@@ -276,14 +276,22 @@ TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentHdfsAuthorityWithSamePat
     EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn1:8020/warehouse/table", table_namespace, "warehouse/table", "hdfs"));
 }
 
-TEST(IcebergMetadataCache, LocationMatchesSchemelessDefaultWriteForNonLocalBackends)
+TEST(IcebergMetadataCache, LocationDoesNotMatchSchemelessDefaultWriteWhenNamespaceIsUnverifiable)
 {
     // With `write_full_path_in_iceberg_metadata = 0` (the default), ClickHouse writes a schemeless
-    // `location` regardless of backend. Regression test: this must be accepted for S3/Azure/HDFS
-    // tables too, not just Local, or the UUID-hint fast path never works for the default
-    // configuration.
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("warehouse/table", "bucket", "warehouse/table", "s3"));
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "container", "warehouse/table", "azure"));
+    // `location` regardless of backend. Two different tables in different buckets/containers with
+    // the same key path would then produce the *same* schemeless location, so a stale
+    // `catalog_uuid_hint` colliding with another table's UUID must not be accepted just because
+    // the key path matches: a schemeless location carries no authority to check `table_namespace`
+    // against, so it must miss (fall back to a cold read) whenever there is a namespace to verify.
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("warehouse/table", "bucket", "warehouse/table", "s3"));
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "container", "warehouse/table", "azure"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesSchemelessDefaultWriteWhenNamespaceIsEmpty)
+{
+    // When there is genuinely nothing to validate (e.g. HDFS with no derivable raw-URI authority,
+    // or Local), a schemeless location is still accepted.
     EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "", "warehouse/table", "hdfs"));
 }
 
