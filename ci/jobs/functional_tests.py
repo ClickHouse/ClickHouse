@@ -319,6 +319,14 @@ def main():
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
 
+    # A --no-stateful run filters out every `stateful`-tagged test, i.e. exactly
+    # the tests that use the preloaded test.hits/test.visits datasets. Preparing
+    # those datasets is then wasted work (a multi-minute lazy read of hits_v1/
+    # visits_v1 from the web disk, real AWS S3), so signal prepare_stateful_data
+    # to skip it. Keyed off the actual runner flag, not a specific storage
+    # option, so any --no-stateful job wins.
+    is_no_stateful = "--no-stateful" in runner_options
+
     if is_llvm_coverage:
         # Pin random-by-default fault injection seeds server-side (in the default
         # profile) so coverage is deterministic, instead of injecting them as
@@ -698,6 +706,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    no_stateful=is_no_stateful,
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -901,6 +910,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            no_stateful=is_no_stateful,
                         ):
                             # Prefer the concrete sub-command + ClickHouse error
                             # captured by prepare_stateful_data() over the generic
