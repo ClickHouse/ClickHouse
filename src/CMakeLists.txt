@@ -219,10 +219,10 @@ if (ENABLE_CLIENT_AI)
     add_headers_and_sources(dbms Client/AI)
 endif()
 
-if (OS_LINUX)
+if (OS_LINUX OR OS_DARWIN)
     add_headers_and_sources(dbms Storages/FileLog)
 else()
-    message(STATUS "StorageFileLog is only supported on Linux")
+    message(STATUS "StorageFileLog is only supported on Linux and macOS")
 endif ()
 
 list(APPEND clickhouse_common_io_sources ${CONFIG_INCLUDE_PATH}/config_version.cpp)

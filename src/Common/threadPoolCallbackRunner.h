@@ -154,9 +154,12 @@ struct CallbackRunnerTask
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
-        auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
+        /// Capture the current `ThreadGroup` at enqueue time. The runner object can be stored longer
+        /// than the query, and the worker thread has its own current group, so neither is a safe source.
+        auto captured_thread_group = getCurrentThreadGroupForAsyncCallback();
+        auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(std::move(captured_thread_group), thread_name, std::move(callback));
 
         auto future = task->promise.get_future();
 
@@ -312,8 +315,10 @@ public:
         auto promise = std::make_shared<std::promise<Result>>();
         auto task = std::make_shared<Task>();
         task->future = promise->get_future();
+        /// Capture the current `ThreadGroup` at enqueue time, before the callback moves to a pool thread.
+        auto captured_thread_group = getCurrentThreadGroupForAsyncCallback();
 
-        auto task_func = [this, task, thread_group = getCurrentThreadGroup(), my_callback = std::move(callback), promise]() mutable -> void
+        auto task_func = [this, task, thread_group = std::move(captured_thread_group), my_callback = std::move(callback), promise]() mutable -> void
         {
             TaskState expected = SCHEDULED;
             if (!task->state.compare_exchange_strong(expected, RUNNING))

@@ -9,10 +9,6 @@
       "light": "#FFFFFF"
     }
   },
-  "banner": {
-    "content": "ClickHouse launches Claude-powered Agents and House Mates partner program at Open House 2026 [Read more →](https://clickhouse.com/blog/clickhouse-tops-250m-arr-and-4000-customers)",
-    "dismissible": true
-  },
   "colors": {
     "dark": "#fdff75",
     "light": "#333431",
