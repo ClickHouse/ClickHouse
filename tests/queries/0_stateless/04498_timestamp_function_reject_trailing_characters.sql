@@ -17,3 +17,7 @@ SELECT timestamp('12.5 abc'); -- { serverError CANNOT_PARSE_DATETIME }
 -- FixedString: trailing zero bytes are padding and must be ignored, other trailing characters rejected.
 SELECT timestamp(CAST('2024-04-04' AS FixedString(20)));
 SELECT timestamp(CAST('2024 April 4' AS FixedString(12))); -- { serverError CANNOT_PARSE_DATETIME }
+
+-- The optional second argument (a time added to the value) must reject trailing characters too.
+SELECT timestamp('2024-04-04', '12:00:00');
+SELECT timestamp('2024-04-04', '12:00:00 junk'); -- { serverError CANNOT_PARSE_DATETIME }

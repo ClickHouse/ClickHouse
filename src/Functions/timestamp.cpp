@@ -31,7 +31,7 @@ void assertDateTimeFullyParsed(ReadBuffer & buf, bool skip_zero_padding)
             ++buf.position();
 
     if (!buf.eof())
-        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp is not a valid DateTime");
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp has trailing characters after the value");
 }
 
 /** timestamp(expr[, expr_time])
@@ -149,6 +149,7 @@ public:
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
+                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/false);
                 vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
@@ -169,6 +170,7 @@ public:
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
+                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/true);
                 vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
