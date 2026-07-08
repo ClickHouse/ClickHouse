@@ -23,7 +23,6 @@ static const std::unordered_set<int32_t> VALID_OPERATIONS =
     static_cast<int32_t>(OpNum::Check),
     static_cast<int32_t>(OpNum::Reconfig),
     static_cast<int32_t>(OpNum::Multi),
-    static_cast<int32_t>(OpNum::CreateTTL),
     static_cast<int32_t>(OpNum::MultiRead),
     static_cast<int32_t>(OpNum::CreateIfNotExists),
     static_cast<int32_t>(OpNum::Auth),
@@ -58,7 +57,6 @@ std::string_view opNumToString(OpNum op_num)
         case OpNum::Error: return "Error";
         case OpNum::Create: return "Create";
         case OpNum::Create2: return "Create2";
-        case OpNum::CreateTTL: return "CreateTTL";
         case OpNum::Remove: return "Remove";
         case OpNum::Exists: return "Exists";
         case OpNum::Get: return "Get";
@@ -117,7 +115,6 @@ const char * toOperationTypeMetricLabel(OpNum op_num)
 
         case OpNum::Create:
         case OpNum::Create2:
-        case OpNum::CreateTTL:
         case OpNum::Remove:
         case OpNum::TryRemove:
         case OpNum::RemoveWatch:

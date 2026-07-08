@@ -257,7 +257,12 @@ size_t SerializationEnum<Type>::allocatedBytes() const
 {
     size_t bytes = sizeof(*this);
     if (own_enum_values)
-        bytes += own_enum_values->allocatedBytes();
+    {
+        const auto & vals = own_enum_values->getValues();
+        bytes += vals.capacity() * sizeof(typename EnumValues<Type>::Value);
+        for (const auto & [name, _] : vals)
+            bytes += name.capacity();
+    }
     return bytes;
 }
 

@@ -1,5 +1,6 @@
 -- Tags: no-replicated-database, no-parallel-replicas
--- no-parallel, no-parallel-replicas: Dictionary is not created in parallel replicas.
+-- no-replicated-database: EXPLAIN output differs for replicated database.
+-- no-parallel-replicas: Dictionary is not available on parallel-replica workers.
 
 SET enable_analyzer = 1;
 SET optimize_inverse_dictionary_lookup = 1;
@@ -54,15 +55,21 @@ INSERT INTO t VALUES
     (4, 'd'),
     (5, 'R');
 
-SELECT 'Less, LHS - plan';
+SELECT 'Equality, LHS - plan';
 EXPLAIN SYNTAX run_query_tree_passes=1
 SELECT color_id, payload
 FROM t
-WHERE dictGetString('colors', 'name', color_id) < 'red'
+WHERE dictGetString('colors', 'name', color_id) = 'red'
 ORDER BY color_id, payload;
 
-SELECT 'Less, LHS';
+SELECT 'Equality, LHS';
 SELECT color_id, payload
 FROM t
-WHERE dictGetString('colors', 'name', color_id) < 'red'
+WHERE dictGetString('colors', 'name', color_id) = 'red'
 ORDER BY color_id, payload;
+SELECT 'Equality, LHS, opt off';
+SELECT color_id, payload
+FROM t
+WHERE dictGetString('colors', 'name', color_id) = 'red'
+ORDER BY color_id, payload
+SETTINGS optimize_inverse_dictionary_lookup = 0;

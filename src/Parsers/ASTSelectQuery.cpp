@@ -70,15 +70,9 @@ void ASTSelectQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         if (recursive_with)
             ostr << " RECURSIVE";
 
-        if (s.one_line)
-            with()->format(ostr, s, state, frame);
-        else
-        {
-            /// Put every CTE on its own indented line, even a single one, for consistent formatting.
-            FormatStateStacked with_frame = frame;
-            with_frame.expression_list_always_start_on_new_line = true;
-            with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, with_frame);
-        }
+        s.one_line
+            ? with()->format(ostr, s, state, frame)
+            : with()->as<ASTExpressionList &>().formatImplMultiline(ostr, s, state, frame);
         ostr << s.nl_or_ws;
     }
 
@@ -457,7 +451,7 @@ static String getTableExpressionAlias(const ASTTableExpression * table_expressio
 
 void ASTSelectQuery::replaceDatabaseAndTable(const String & database_name, const String & table_name)
 {
-    chassert(database_name != "_temporary_and_external_tables");
+    assert(database_name != "_temporary_and_external_tables");
     replaceDatabaseAndTable(StorageID(database_name, table_name));
 }
 

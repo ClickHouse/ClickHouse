@@ -2,7 +2,6 @@
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
 
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -102,9 +101,9 @@ void MergedBlockOutputStream::cancel() noexcept
 /** If the data is not sorted, but we pre-calculated the permutation, after which they will be sorted.
     * This method is used to save RAM, since you do not need to keep two blocks at once - the source and the sorted.
     */
-void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
+void MergedBlockOutputStream::writeWithPermutation(const Block & block, const IColumn::Permutation * permutation)
 {
-    writeImpl(block, permutation, permuted_columns_cache);
+    writeImpl(block, permutation);
 }
 
 struct MergedBlockOutputStream::Finalizer::Impl
@@ -339,13 +338,12 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "MinMax index was not initialized for new non-empty part {}", new_part->name);
             }
 
-            /// Every patch part must have `source_parts.dat` on disk: `loadSourcePartsSet`
-            /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
-            if (new_part->info.isPatch())
+            const auto & source_parts = new_part->getSourcePartsSet();
+            if (!source_parts.empty())
             {
                 write_hashed_file(SourcePartsSetForPatch::FILENAME, [&](auto & buffer)
                 {
-                    new_part->getSourcePartsSet().writeBinary(buffer);
+                    source_parts.writeBinary(buffer);
                 });
             }
         }
@@ -417,13 +415,10 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
         new_part->setColumnsSubstreams(columns_substreams);
     }
 
-    if (!new_part->storage.storesMetadataVersionInPartAttributes())
+    write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
     {
-        write_plain_file(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, [&](auto & buffer)
-        {
-            writeIntText(new_part->getMetadataVersion(), buffer);
-        });
-    }
+        writeIntText(new_part->getMetadataVersion(), buffer);
+    });
 
     if (default_codec != nullptr)
     {
@@ -445,14 +440,14 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     return written_files;
 }
 
-void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation, Block * permuted_columns_cache)
+void MergedBlockOutputStream::writeImpl(const Block & block, const IColumn::Permutation * permutation)
 {
     block.checkNumberOfRows();
     size_t rows = block.rows();
     if (!rows)
         return;
 
-    writer->write(block, permutation, permuted_columns_cache);
+    writer->write(block, permutation);
     if (reset_columns)
         new_serialization_infos.add(block);
 

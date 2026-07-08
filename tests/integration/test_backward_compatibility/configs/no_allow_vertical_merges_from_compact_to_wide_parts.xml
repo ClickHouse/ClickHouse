@@ -1,0 +1,5 @@
+<clickhouse>
+    <merge_tree>
+        <allow_vertical_merges_from_compact_to_wide_parts>0</allow_vertical_merges_from_compact_to_wide_parts>
+    </merge_tree>
+</clickhouse>

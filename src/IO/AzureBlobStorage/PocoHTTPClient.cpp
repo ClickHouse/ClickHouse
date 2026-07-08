@@ -7,7 +7,6 @@
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/NetException.h>
 #include <Common/Throttler.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
@@ -384,7 +383,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             body_stream->Rewind();
 
             /// Manual copy
-            VectorWithMemoryTracking<uint8_t> buffer(8192);
+            std::vector<uint8_t> buffer(8192);
             while (auto read = body_stream->Read(buffer.data(), 8192))
             {
                 if (read > 0)
@@ -504,23 +503,6 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
     }
 }
 
-}
-
-/// Default transport for SDK pipelines created without an explicit transport,
-/// e.g. internal pipelines of `ManagedIdentityCredential` and `WorkloadIdentityCredential`.
-/// The SDK is built with `BUILD_TRANSPORT_CUSTOM_ADAPTER` and has no other transport.
-std::shared_ptr<Azure::Core::Http::HttpTransport> AzureSdkGetCustomHttpTransport()
-{
-    static const DB::RemoteHostFilter remote_host_filter;
-    static auto transport = std::make_shared<DB::PocoAzureHTTPClient>(
-        DB::PocoAzureHTTPClientConfiguration{
-            .remote_host_filter = remote_host_filter,
-            .max_redirects = 10,
-            .for_disk_azure = false,
-            .request_throttler = {},
-            .extra_headers = {},
-        });
-    return transport;
 }
 
 #endif

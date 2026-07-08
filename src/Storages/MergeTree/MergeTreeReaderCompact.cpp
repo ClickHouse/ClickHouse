@@ -288,15 +288,9 @@ void MergeTreeReaderCompact::readData(
 
                 /// TODO: Avoid extra copying.
                 if (column->empty())
-                {
                     column = IColumn::mutate(subcolumn);
-                }
                 else
-                {
-                    auto mutable_column = IColumn::mutate(std::move(column));
-                    mutable_column->insertRangeFrom(*subcolumn, 0, subcolumn->size());
-                    column = std::move(mutable_column);
-                }
+                    column->assumeMutable()->insertRangeFrom(*subcolumn, 0, subcolumn->size());
             }
         }
         else
