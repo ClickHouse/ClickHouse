@@ -68,10 +68,13 @@ def has_bin(node, name):
     return str(r.get("out", "")).strip().endswith("0")
 
 
-def host_sh(cmd, timeout=None):
+def host_sh(cmd, timeout=None, on_start=None):
     """Execute a command on the host. On timeout, kills the whole process tree
     (bash + child e.g. keeper-bench); subprocess.run only kills the direct child
     so keeper-bench would keep running.
+
+    on_start, when given, is called with the Popen right after spawn so the
+    caller can keep a cancellable handle to the process group.
     """
     try:
         args = cmd if isinstance(cmd, list) else ["bash", "-c", cmd]
@@ -83,6 +86,8 @@ def host_sh(cmd, timeout=None):
             text=True,
             start_new_session=True,  # new session/process group so we can kill the whole tree on timeout
         ) as p:
+            if on_start:
+                on_start(p)
             try:
                 out, _ = p.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:

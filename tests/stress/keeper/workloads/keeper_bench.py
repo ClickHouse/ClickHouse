@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shlex
+import signal
 import socket
 import subprocess
 import threading
@@ -33,6 +34,10 @@ SESSIONS_PER_BENCH = 4000
 # setup, and the other shards are only launched after this marker appears so they never
 # race the recursive cleanup + re-create of the workload tree.
 BENCH_SETUP_DONE_MARKER = "---- Created test data ----"
+# Deadline for shard 0's setup-done marker.  keeper-bench prints it right after tree
+# creation, before shard 0 opens any benchmark session, so this only has to cover
+# process startup plus the recursive wipe + re-create of the workload tree.
+BENCH_SETUP_MARKER_WAIT_S = 300
 
 
 def _parse_hosts(servers):
@@ -146,6 +151,9 @@ class KeeperBench:
         self._stop = False
         self._result = {}
         self._error = None
+        # Popen handles of spawned bench subprocesses; _kill_bench_procs() tears down
+        # any that are still running (abort paths, stop() after a hung thread).
+        self._bench_procs = []
 
     def _bench_base_cmd(self, cfg_path):
         ch = os.environ.get("CLICKHOUSE_BINARY")
@@ -263,6 +271,19 @@ class KeeperBench:
             return 0
         return sum(int(c.get("sessions", 1) or 1) for c in conn if isinstance(c, dict))
 
+    def _kill_bench_procs(self):
+        """SIGKILL the process group of every still-running bench subprocess.
+
+        No-op after normal completion: exited procs are skipped, vanished ones raise
+        ProcessLookupError which is swallowed.
+        """
+        for p in self._bench_procs:
+            if p.poll() is None:
+                try:
+                    os.killpg(os.getpgid(p.pid), signal.SIGKILL)
+                except OSError:  # includes ProcessLookupError
+                    pass
+
     def _run_bench_subprocess(self, bench_cfg, patched_cfg_path):
         """Run keeper-bench subprocess and return (out_text, stdout_path, stderr_path).
 
@@ -293,7 +314,7 @@ class KeeperBench:
 
         try:
             cmd = f"{self._bench_base_cmd(patched_cfg_path)} > {shlex.quote(stdout_path)} 2> {shlex.quote(stderr_path)}"
-            host_sh(cmd, timeout=bench_timeout)
+            host_sh(cmd, timeout=bench_timeout, on_start=self._bench_procs.append)
         except subprocess.TimeoutExpired:
             print(f"[keeper][bench] host_sh timed out after {bench_timeout}s; reading output from {stdout_path}")
 
@@ -489,9 +510,10 @@ class KeeperBench:
 
         - shard 0 keeps the workload's `setup` tree: it alone wipes + creates the tree
           on startup and removes it on exit; the other shards get `setup` stripped;
-        - shards 1+ launch only after shard 0 prints the setup-done marker, and get a
-          shorter timelimit so they finish before shard 0's exit cleanup removes the
-          tree from under them;
+        - shards 1+ launch only after shard 0 prints the setup-done marker (emitted
+          right after tree creation, before any session ramp), and get a shorter
+          timelimit so they finish before shard 0's exit cleanup removes the tree
+          from under them;
         - per-shard summaries are merged: counters/rates sum, latency percentiles take
           the max across shards (a conservative upper bound).
 
@@ -557,9 +579,9 @@ class KeeperBench:
         th0.start()
 
         # Launch the remaining shards only once shard 0 has created the setup tree,
-        # so they cannot race its recursive wipe + re-create.  Session setup is
-        # serial at roughly tens of sessions per second, so the wait scales with
-        # shard 0's session count.
+        # so they cannot race its recursive wipe + re-create.  keeper-bench prints the
+        # marker before establishing its benchmark sessions, so all shards ramp their
+        # sessions in parallel; the wait only covers startup + tree creation.
         def _marker_seen():
             p = self.bench_error_path
             try:
@@ -567,7 +589,7 @@ class KeeperBench:
             except Exception:
                 return False
 
-        marker_wait_s = 120 + shard_sessions[0] // 10
+        marker_wait_s = BENCH_SETUP_MARKER_WAIT_S
         marker_deadline = _time.monotonic() + marker_wait_s
         while _time.monotonic() < marker_deadline and th0.is_alive() and not _marker_seen():
             _time.sleep(2)
@@ -579,6 +601,10 @@ class KeeperBench:
                 if not th0.is_alive()
                 else f"setup-done marker not seen within {marker_wait_s}s"
             )
+            # Shard 0 may still be running (e.g. stuck in setup); kill its bench
+            # subprocess so it cannot keep mutating the tree during teardown.
+            self._kill_bench_procs()
+            th0.join(timeout=30)
             raise AssertionError(
                 f"not launching shards 1..{n_shards - 1}: {reason}"
                 + (f"; {failures[0]}" if failures[0] else "")
@@ -673,6 +699,9 @@ class KeeperBench:
             # the bench never got as far as computing it.
             join_timeout = (self._bench_timeout_s + 120) if self._bench_timeout_s else (self.duration_s + 300)
             self._th.join(timeout=join_timeout)
+            # No-op after normal completion; kills leaked bench subprocesses when the
+            # thread is stuck (e.g. join timed out).
+            self._kill_bench_procs()
             paths = [
                 ("config (original)", self.cfg_path),
                 ("replay", self.replay_path),

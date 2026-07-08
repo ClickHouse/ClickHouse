@@ -5,6 +5,9 @@ PYTHONPATH=".:tests/stress:ci".  They take no `scenario` fixture, so the
 scenario loader does not parametrize them and CI collection of this
 directory just runs them as fast unit tests.
 """
+import threading
+import time
+
 import pytest
 
 from keeper.framework.core.settings import DEFAULT_WORKLOAD_CONFIG
@@ -96,18 +99,21 @@ def _sharded_bench(tmp_path):
 
 def test_run_sharded_aborts_when_shard0_exits_without_marker(monkeypatch, tmp_path):
     """9000 clients -> 3 shards; shard 0 exits without printing the setup-done
-    marker, so shards 1..2 must never be started."""
+    marker, so shards 1..2 must never be started and shard 0's thread must be
+    cleaned up before the abort propagates (no leaked background bench)."""
     kb = _sharded_bench(tmp_path)
     calls = []
 
     def _stub(bench_cfg, cfg_path):
         calls.append(bench_cfg)
+        time.sleep(4)  # keep shard 0 alive so the abort path exercises the join
         return "", None, None
 
     monkeypatch.setattr(kb, "_run_bench_subprocess", _stub)
     with pytest.raises(AssertionError, match="setup-done marker"):
         kb._run_sharded({"concurrency": 2}, 9000, 90)
     assert len(calls) == 1
+    assert not [t for t in threading.enumerate() if t.name.startswith("bench-shard-")]
 
 
 def test_run_sharded_launches_all_shards_after_marker(monkeypatch, tmp_path):
