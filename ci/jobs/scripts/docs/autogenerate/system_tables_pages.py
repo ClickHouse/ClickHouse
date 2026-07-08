@@ -307,7 +307,6 @@ def build_generators(binary, config=DEFAULT_CONFIG):
             "dest": f"docs/operations/system-tables/{table}.md",
             # New tables are not in the slug map; place their page here.
             "dest_fallback": f"reference/system-tables/{table}.mdx",
-            "method": "markers",
             "add_markers": add_markers_to_page,
             "create_page": new_page(table, table_comments.get(table, ""), columns_md),
             "nav": (["System Tables"], f"reference/system-tables/{table}"),

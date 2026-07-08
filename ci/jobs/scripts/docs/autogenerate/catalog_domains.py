@@ -100,11 +100,9 @@ def _item_generators(domain, rows, docs_dir, migrate, lk):
     """Common per-domain flow: match rows to existing pages, create pages for
     full-page items without one, count coverage gaps.
 
-    `docs/en` is the pre-cutover source of truth: a matched item's embedded
-    documentation is compared against its `docs/en` page (via the slug map's
-    `docusaurus_file`). When they agree, the reference page is fully replaced
-    by the generated version; when the embedded copy lags `docs/en`, the item
-    is reported as `SOURCE-STALE` with the diff to upstream into the C++."""
+    The embedded documentation is authoritative: a matched item's page keeps its
+    frontmatter and gets its body replaced by the generated region; a full-page
+    item without a page yet gets one created."""
     index = catalog.scan_pages(docs_dir, domain["dirs"],
                                exclude_dirs=domain.get("exclude_dirs", ()))
     gens = []
@@ -124,9 +122,8 @@ def _item_generators(domain, rows, docs_dir, migrate, lk):
             slug_row = (lk.by_mintlify_file.get(page_rel)
                         or lk.by_mintlify_file.get(page_rel[:-1]))
             docu = (slug_row or {}).get("docusaurus_file", "")
-            gen = {
+            gens.append({
                 "name": f"{domain['family']}:{name}",
-                "method": "content-drift",
                 "content": row["description"],
                 # The Docusaurus source path anchors relative-link rewriting;
                 # the slug map's real file path (e.g. the formats family
@@ -134,25 +131,14 @@ def _item_generators(domain, rows, docs_dir, migrate, lk):
                 "dest": docu or f"docs{slug}.md",
                 "dest_rel": page_rel,
                 "title": fm.get("title"),
+                "badge": catalog.badge("system.documentation"),
                 "full_transform": True,
                 "source": row.get("source", ""),
-            }
-            en_path = (os.path.join(docs_dir, "en", docu[len("docs/"):])
-                       if docu.startswith("docs/") else "")
-            if en_path and os.path.isfile(en_path):
-                with open(en_path, encoding="utf-8") as f:
-                    en_body = catalog.page_body(f.read())
-                gen["en_file"] = os.path.relpath(en_path, docs_dir)
-                gen["synced"] = (catalog.norm_ws(row["description"])
-                                 == catalog.norm_ws(en_body))
-                if not gen["synced"]:
-                    gen["en_body"] = en_body
-            gens.append(gen)
+            })
         elif len(row["description"]) > FULL_PAGE_MIN_LEN:
             page_rel, nav_group, fm_text, title = domain["new_item"](row)
             gens.append({
                 "name": f"{domain['family']}:{name}",
-                "method": "content-drift",  # unused: the page does not exist
                 "content": row["description"],
                 "dest": f"docs/{domain['legacy_prefix']}/{os.path.basename(page_rel)[:-len('.mdx')]}.md",
                 "dest_rel": page_rel,
@@ -339,6 +325,12 @@ def build_generators(docs_map, binary, docs_dir, migrate, lk):
         lk,
     )
 
+    # Table functions are intentionally NOT generated yet: their embedded source
+    # descriptions are still thin (e.g. `s3` is ~170 chars) while the committed
+    # pages carry rich hand-written docs, so wholesale generation would destroy
+    # content. Their docs must first be burned down into the C++ source (as was
+    # done for engines/types/formats).
+
     return gens
 
 
@@ -383,7 +375,6 @@ def listing_generators(docs_dir, get_fragment):
             "content": render(group_path),
             "dest": "docs/" + rel,  # unused (no_transform)
             "dest_rel": rel,
-            "method": "markers",
             "no_transform": True,
         }
         for rel, group_path in LISTINGS

@@ -185,17 +185,6 @@ def parse_frontmatter(page):
     return fm
 
 
-def page_body(page):
-    """The page content with the frontmatter block stripped."""
-    return FRONTMATTER_RE.sub("", page, count=1)
-
-
-def norm_ws(text):
-    """Whitespace-normalized text for source-vs-docs comparison: the C++
-    embedding strips trailing whitespace, which is not a content change."""
-    return "\n".join(line.rstrip() for line in text.strip().splitlines())
-
-
 def yaml_quote(value):
     return "'" + str(value).replace("'", "''") + "'"
 
