@@ -1285,16 +1285,20 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                 /// The function was resolved (overload picked, return type computed) for a fixed set of
                 /// argument types during analysis. Partial evaluation can be handed a column whose type no
                 /// longer matches, e.g. when a concurrent EXCHANGE TABLES swaps the underlying table between
-                /// analysis and header computation. Executing the function on a mismatched type would trip an
-                /// internal LOGICAL_ERROR inside the function body, which aborts the server in debug/sanitizer
-                /// builds. Detect the mismatch here and raise a recoverable TYPE_MISMATCH instead.
+                /// analysis and header computation. Executing the function on a genuinely different type
+                /// would trip an internal LOGICAL_ERROR inside the function body, which aborts the server in
+                /// debug/sanitizer builds. Detect that here and raise a recoverable TYPE_MISMATCH instead.
+                /// Compare base types only (strip Nullable/LowCardinality): the prepared function applies its
+                /// default implementations for those wrappers, so a wrapper-only difference is handled fine
+                /// (it legitimately arises from JOIN use_nulls / group_by_use_nulls widening a header column).
                 const auto & expected_argument_types = node->function_base->getArgumentTypes();
                 if (expected_argument_types.size() == arguments.size())
                 {
                     for (size_t i = 0; i < arguments.size(); ++i)
                     {
                         if (arguments[i].type && expected_argument_types[i]
-                            && !arguments[i].type->equals(*expected_argument_types[i]))
+                            && !removeLowCardinalityAndNullable(arguments[i].type)
+                                    ->equals(*removeLowCardinalityAndNullable(expected_argument_types[i])))
                             throw Exception(
                                 ErrorCodes::TYPE_MISMATCH,
                                 "Argument {} of function {} has type {}, but the function was resolved for type {}",
