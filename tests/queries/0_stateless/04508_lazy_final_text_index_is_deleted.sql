@@ -5,6 +5,10 @@ DROP TABLE IF EXISTS tab;
 SET query_plan_optimize_lazy_final = 1;
 SET min_filtered_ratio_for_lazy_final = 0;
 SET query_plan_direct_read_from_text_index = 1;
+-- clickhouse-test randomizes use_skip_indexes_if_final; at 0 skip indexes are
+-- disabled under FINAL, so the direct text-index read is never produced and the
+-- interaction under test is not covered. Pin it on.
+SET use_skip_indexes_if_final = 1;
 
 CREATE TABLE tab
 (
