@@ -38,7 +38,6 @@ import logging
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV
 
 LDAP_ADMIN_BIND_DN = "cn=admin,dc=example,dc=org"
 LDAP_ADMIN_PASSWORD = "clickhouse"
