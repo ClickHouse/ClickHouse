@@ -2041,7 +2041,7 @@ void ReaderExecutor::advanceAhead()
     if (machine)
     {
         const size_t cursor_phys = position + data_start_offset;
-        if (!reached_eof && !atEnd() && cursor_phys < machine->physical_window.end())
+        if (!atEnd() && cursor_phys < machine->physical_window.end())
             return;  /// still filling ahead of the cursor
         collectInFlightInto(machine->retrieve_index);
     }
