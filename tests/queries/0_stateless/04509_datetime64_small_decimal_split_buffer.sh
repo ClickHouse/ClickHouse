@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 DATA_FILE="${CLICKHOUSE_TMP}/small_decimal_dt64_${CLICKHOUSE_DATABASE}.tsv"
-printf '1234.5\n3333.77\n23.9\n2025.08.31\n-0.1\n' > "$DATA_FILE"
+printf '1234.5\n3333.77\n23.9\n2025.08.31\n-0.1\n+.5\n+1234.5\n' > "$DATA_FILE"
 
 # A 2-byte read buffer forces every value to be refilled mid-parse, so the dot and fraction
 # digits consumed while probing for a YYYY-MM-DD date must be passed through, not dropped.
@@ -27,6 +27,8 @@ SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
 SELECT
     toDateTime64OrNull('-.5', 3, 'UTC') IS NOT NULL AND toDateTime64OrNull('-.5', 3, 'UTC') = toDateTime64('-.5', 3, 'UTC'),
     toDateTime64OrNull('.5', 3, 'UTC')  IS NOT NULL AND toDateTime64OrNull('.5', 3, 'UTC')  = toDateTime64('.5', 3, 'UTC'),
+    toDateTime64OrNull('+.5', 3, 'UTC') IS NOT NULL AND toDateTime64OrNull('+.5', 3, 'UTC') = toDateTime64('+.5', 3, 'UTC'),
+    toDateTime64OrNull('+1234.5', 3, 'UTC') IS NOT NULL AND toDateTime64OrNull('+1234.5', 3, 'UTC') = toDateTime64('+1234.5', 3, 'UTC'),
     toDateTime64OrNull('-0.5', 3, 'UTC') = toDateTime64('-0.5', 3, 'UTC'),
     toDateTime64OrNull('1234', 3, 'UTC') = toDateTime64('1234', 3, 'UTC'),
     toDateTime64OrNull('0', 3, 'UTC')    = toDateTime64('0', 3, 'UTC')

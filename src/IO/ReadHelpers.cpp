@@ -1599,6 +1599,12 @@ ReturnType readDateTimeTextFallback(
                 return false;
         }
     }
+    else if constexpr (dt64_mode)
+    {
+        /// Mirror the optimistic path, which accepts an optional leading '+' for DateTime64.
+        if (!buf.eof() && *buf.position() == '+')
+            ++buf.position();
+    }
 
     /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
     while (s_pos < s + date_time_broken_down_length && !buf.eof() && isNumericASCII(*buf.position()))

@@ -901,7 +901,9 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     /// If the buffer does not contain a whole broken-down date and time, the value may still continue
     /// beyond the end of the current buffer (e.g. it is read from a stream and is split between two
     /// buffers), so parse it character by character.
-    if (s + date_time_broken_down_length > buf.buffer().end())
+    /// Compare lengths as integers; forming `s + date_time_broken_down_length` when fewer bytes remain
+    /// would create a pointer more than one past the buffer (undefined behavior) for short/split inputs.
+    if (buf.buffer().end() - s < date_time_broken_down_length)
         return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow, fraction_prefix);
 
     /// In DateTime64 mode a value like ".5" or "-.5" has no integer part: the whole part is zero and the
