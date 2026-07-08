@@ -172,3 +172,16 @@ DROP TABLE t_variant_argminmax;
 -- A Variant in both positions with a numeric supertype: the result type is still the original arg Variant, not the
 -- adapted Nullable(supertype) of the key.
 SELECT 'argMax type', toTypeName(argMax(CAST(number AS Variant(UInt8, UInt64)), CAST(number AS Variant(UInt8, UInt64)))) FROM numbers(4);
+
+-- Not every aggregate creator rejects an unsupported argument type with ILLEGAL_TYPE_OF_ARGUMENT: analysisOfVariance
+-- and the *TTest family reject with BAD_ARGUMENTS, and rankCorr with NOT_IMPLEMENTED. The adapter retries on all of
+-- these "unsupported argument type" errors, so those functions can be applied to a Variant argument too, aggregating
+-- over its supertype (here the lossless UInt64). rankCorr over perfectly correlated data is 1; analysisOfVariance
+-- returns the same value as the equivalent aggregation over the plain supertype.
+SELECT 'rankCorr', rankCorr(CAST(number AS Variant(UInt8, UInt64)), number) FROM numbers(4);
+SELECT 'analysisOfVariance', analysisOfVariance(CAST(number AS Variant(UInt8, UInt64)), number % 2) = analysisOfVariance(toUInt64(number), number % 2) FROM numbers(10);
+
+-- When the Variant cannot be adapted (no common numeric supertype), the adapter gives up and the original creator
+-- error code is reported unchanged -- BAD_ARGUMENTS / NOT_IMPLEMENTED, not ILLEGAL_TYPE_OF_ARGUMENT.
+SELECT rankCorr(CAST(1 AS Variant(String, UInt64)), 1); -- { serverError NOT_IMPLEMENTED }
+SELECT analysisOfVariance(CAST(1 AS Variant(String, UInt64)), 0); -- { serverError BAD_ARGUMENTS }

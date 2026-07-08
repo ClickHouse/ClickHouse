@@ -22,3 +22,5 @@ unify	13
 argMax	b	Variant(String, UInt64)
 argMin	a	Variant(String, UInt64)
 argMax type	Variant(UInt64, UInt8)
+rankCorr	1
+analysisOfVariance	1

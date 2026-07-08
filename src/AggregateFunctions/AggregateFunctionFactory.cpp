@@ -30,12 +30,25 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_AGGREGATION;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_AGGREGATE_FUNCTION;
+}
+
+/// An aggregate-function creator signals "these argument types are not supported" with one of a few error codes:
+/// most use ILLEGAL_TYPE_OF_ARGUMENT, but some reject unsupported types with BAD_ARGUMENTS (e.g. analysisOfVariance,
+/// the *TTest family) or NOT_IMPLEMENTED (e.g. rankCorr). For the Variant adapter they all mean the same thing: the
+/// native call did not accept the argument types, so it is worth retrying after adapting the Variant arguments to
+/// their supertype. Any other error code is a genuine failure and must propagate unchanged.
+static bool isUnsupportedArgumentTypeError(int code)
+{
+    return code == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT
+        || code == ErrorCodes::BAD_ARGUMENTS
+        || code == ErrorCodes::NOT_IMPLEMENTED;
 }
 
 const String & getAggregateFunctionCanonicalNameIfAny(const String & name)
@@ -126,7 +139,10 @@ AggregateFunctionPtr AggregateFunctionFactory::get(
             }
             catch (const Exception & e)
             {
-                if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+                /// A creator may reject the Variant argument with any of a few "unsupported type" error codes, not
+                /// only ILLEGAL_TYPE_OF_ARGUMENT (see isUnsupportedArgumentTypeError); all of them are worth retrying
+                /// through the adapter. Anything else is a genuine failure and must propagate.
+                if (!isUnsupportedArgumentTypeError(e.code()))
                     throw;
                 native_error = std::current_exception();
             }
@@ -307,7 +323,9 @@ AggregateFunctionPtr AggregateFunctionFactory::tryGetVariantAdapter(
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT)
+            /// Same set of "unsupported type" error codes as the top-level retry in getImpl: a creator that rejects
+            /// the (partially) adapted types with any of them means "these types do not resolve", not a hard error.
+            if (isUnsupportedArgumentTypeError(e.code()))
                 return nullptr;
             throw;
         }
