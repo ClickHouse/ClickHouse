@@ -276,4 +276,23 @@ TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentHdfsAuthorityWithSamePat
     EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://nn1:8020/warehouse/table", table_namespace, "warehouse/table", "hdfs"));
 }
 
+TEST(IcebergMetadataCache, LocationMatchesSchemelessDefaultWriteForNonLocalBackends)
+{
+    // With `write_full_path_in_iceberg_metadata = 0` (the default), ClickHouse writes a schemeless
+    // `location` regardless of backend. Regression test: this must be accepted for S3/Azure/HDFS
+    // tables too, not just Local, or the UUID-hint fast path never works for the default
+    // configuration.
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("warehouse/table", "bucket", "warehouse/table", "s3"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "container", "warehouse/table", "azure"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("/warehouse/table", "", "warehouse/table", "hdfs"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesFileGsOssSchemeEquivalents)
+{
+    // Mirrors DataLake::parseStorageTypeFromString's equivalences: `file` -> Local, `gs`/`oss` -> S3.
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("file:///warehouse/table", "", "warehouse/table", "local"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("gs://bucket/ns/table", "bucket", "ns/table", "s3"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("oss://bucket/ns/table", "bucket", "ns/table", "s3"));
+}
+
 #endif

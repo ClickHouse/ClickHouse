@@ -474,19 +474,21 @@ std::string normalizeUuid(const std::string & uuid)
 
 namespace
 {
-/// Classifies a URI scheme into the storage backend family it belongs to, so that locations from
-/// unrelated backends (e.g. Azure "wasb" vs. S3 "s3") are never treated as interchangeable, even
-/// if a bucket/container name happens to coincide. Empty scheme means a schemeless
-/// absolute/relative path, as written natively by ClickHouse for the Local backend.
+/// Classifies a URI scheme (or `IObjectStorageConfiguration::getTypeName()`) into the storage
+/// backend family it belongs to, so that locations from unrelated backends (e.g. Azure "wasb" vs.
+/// S3 "s3") are never treated as interchangeable, even if a bucket/container name happens to
+/// coincide. Mirrors `DataLake::parseStorageTypeFromString`'s equivalences (`file` -> Local,
+/// `s3a`/`gs`/`oss` -> S3, `abfss` -> Azure). Empty scheme means a schemeless absolute/relative
+/// path, as written natively by ClickHouse for the Local backend.
 std::string classifyLocationBackendFamily(std::string_view scheme)
 {
     std::string lower(scheme);
     std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return std::tolower(c); });
-    if (lower.empty())
+    if (lower.empty() || lower == "local" || lower == "file")
         return "local";
-    if (lower == "s3" || lower == "s3a" || lower == "s3n")
+    if (lower == "s3" || lower == "s3a" || lower == "s3n" || lower == "gs" || lower == "oss")
         return "s3";
-    if (lower == "wasb" || lower == "wasbs" || lower == "abfs" || lower == "abfss" || lower == "adl")
+    if (lower == "azure" || lower == "wasb" || lower == "wasbs" || lower == "abfs" || lower == "abfss" || lower == "adl")
         return "azure";
     if (lower == "hdfs" || lower == "webhdfs" || lower == "viewfs")
         return "hdfs";
@@ -532,8 +534,12 @@ bool cachedLocationMatchesTableRoot(
     /// another backend's cached `metadata.json` just because a bucket/container name or key path
     /// happens to coincide (e.g. a Local table's schemeless location must never accept an
     /// `s3://`/`hdfs://` location, and an S3 bucket must never accept a Azure `wasb://` location
-    /// merely because the leading authority component matches the bucket name).
-    if (classifyLocationBackendFamily(scheme) != classifyLocationBackendFamily(table_backend_type))
+    /// merely because the leading authority component matches the bucket name). A schemeless
+    /// `cached_location` is exempted from this check: with `write_full_path_in_iceberg_metadata`
+    /// off (the default), ClickHouse itself writes a schemeless `location` regardless of backend,
+    /// so rejecting it here would defeat the UUID-hint fast path for the default configuration on
+    /// every non-Local backend.
+    if (!scheme.empty() && classifyLocationBackendFamily(scheme) != classifyLocationBackendFamily(table_backend_type))
         return false;
 
     while (path.starts_with('/'))
@@ -543,6 +549,12 @@ bool cachedLocationMatchesTableRoot(
 
     if (path != table_root)
         return false;
+
+    /// A schemeless `cached_location` (ClickHouse's default write format, see above) carries no
+    /// authority to validate against `table_namespace`: the backend-family and path checks above
+    /// already establish this is a plausible match, so accept it.
+    if (scheme.empty())
+        return true;
 
     /// Namespace-less backends (HDFS/Local, where `getNamespace()` is always empty) have no
     /// namespace to validate: `IcebergPathResolver` already accepts authority-bearing locations

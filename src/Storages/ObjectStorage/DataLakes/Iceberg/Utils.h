@@ -139,9 +139,12 @@ std::string normalizeUuid(const std::string & uuid);
 /// `IObjectStorageConfiguration::getNamespace`), `table_root` (the storage engine's configured key
 /// path, e.g. from `getPathForRead().path`), and `table_backend_type` (e.g. from
 /// `IObjectStorageConfiguration::getTypeName`, used to reject cross-backend collisions such as an
-/// Azure `wasb://` location matching an S3 bucket of the same name). Handles both scheme-less
-/// absolute paths (as written natively by ClickHouse for namespace-less backends like HDFS/Local)
-/// and scheme-bearing URIs, including the authority-bearing form used by Spark/Azure
+/// Azure `wasb://` location matching an S3 bucket of the same name; equivalences mirror
+/// `DataLake::parseStorageTypeFromString`: `file` -> local, `s3a`/`gs`/`oss` -> s3, `abfss` -> azure).
+/// A schemeless `cached_location` -- as ClickHouse itself writes by default
+/// (`write_full_path_in_iceberg_metadata = 0`), regardless of backend -- is accepted for any
+/// backend as long as the key path matches, since it carries no authority to validate. Scheme-
+/// bearing URIs are also handled, including the authority-bearing form used by Spark/Azure
 /// (`wasb://container@account.blob.core.windows.net/...`) or HDFS
 /// (`hdfs://namenode:8020/...`, `hdfs://user@nameservice/...`). The key-path comparison is always
 /// exact, not a suffix match, so a same-named key in a different bucket/container is correctly
