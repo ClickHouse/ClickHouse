@@ -2223,15 +2223,29 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     const auto * type_qbit = typeid_cast<const DataTypeQBit *>(type.get());
     if (type_qbit && fuzz_rand() % 4 != 0)
     {
-        /// QBit only accepts BFloat16/Float32/Float64 element types and a positive dimension, so we
-        /// mutate within those bounds rather than handing the argument list to the generic fuzzer.
+        /// QBit only accepts Int8/BFloat16/Float32/Float64 element types and a (dimension, stride) pair
+        /// where dimension % stride == 0 and, when actually strided, stride % 8 == 0. We mutate within
+        /// those bounds rather than handing the argument list to the generic fuzzer.
         static const DataTypePtr qbit_element_types[]
-            = {std::make_shared<DataTypeBFloat16>(), std::make_shared<DataTypeFloat32>(), std::make_shared<DataTypeFloat64>()};
+            = {std::make_shared<DataTypeInt8>(),
+               std::make_shared<DataTypeBFloat16>(),
+               std::make_shared<DataTypeFloat32>(),
+               std::make_shared<DataTypeFloat64>()};
         const auto element_type = (fuzz_rand() % 2 == 0)
             ? qbit_element_types[fuzz_rand() % std::size(qbit_element_types)]
             : type_qbit->getElementType();
+
+        /// Occasionally build a strided QBit, otherwise keep it non-strided (stride == dimension).
+        if (fuzz_rand() % 4 == 0)
+        {
+            const size_t stride = (fuzz_rand() % 16 + 1) * 8; /// multiple of 8 in [8, 128]
+            const size_t num_groups = fuzz_rand() % 8 + 1; /// 1..8 stride groups
+            const size_t dimension = stride * num_groups;
+            return std::make_shared<DataTypeQBit>(element_type, dimension, stride);
+        }
+
         const size_t dimension = (fuzz_rand() % 2 == 0) ? (fuzz_rand() % 128 + 1) : type_qbit->getDimension();
-        return std::make_shared<DataTypeQBit>(element_type, dimension);
+        return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
     }
 
     /// NOLINTBEGIN(bugprone-macro-parentheses)
