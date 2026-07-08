@@ -69,7 +69,11 @@ private:
     Int32 connection_id = 0;
     Int32 secret_key = 0;
 
-    bool is_query_in_progress = false;
+    /// ReadyForQuery is emitted only at explicit protocol boundaries, never at the
+    /// top of every idle loop iteration. This flag is set once at startup, after a
+    /// simple query completes, and on Sync — giving exactly one ReadyForQuery per
+    /// boundary (in particular exactly one per Sync, even a bare standalone Sync).
+    bool need_ready_for_query = false;
 
     /// Set after an error in the extended-query protocol (Parse/Bind/Describe/
     /// Execute/Close). Per the PostgreSQL protocol the backend must then discard

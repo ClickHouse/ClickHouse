@@ -20,6 +20,7 @@
 #include <Poco/SHA1Engine.h>
 #include <Access/Credentials.h>
 #include <algorithm>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
@@ -1782,7 +1783,8 @@ public:
         if (limit_statements && statements.size() + 1 >= limit_statements.value())
             throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Statements limit exceeded");
 
-        statements[statement->function_name] = PreparedStatement{statement->function_body, statement->parameter_types};
+        statements[statement->function_name] =
+            PreparedStatement{statement->function_body, statement->parameter_types, countPlaceholders(statement->function_body)};
     }
 
     String getStatement(ASTExecute * execute)
@@ -1856,14 +1858,19 @@ public:
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
 
-        /// Arity check: the frontend must supply a value for every parameter it
-        /// declared a type for at `Parse`. `Parse` may declare types for only a
-        /// prefix of the parameters (the rest are inferred), so the supplied value
-        /// count may exceed the declared-type count but must never be smaller.
-        if (query->parameters.size() < it->second.parameter_types.size())
+        /// Arity check. The frontend must supply exactly one value per placeholder
+        /// the statement text references. The declared-type count is NOT the arity:
+        /// PostgreSQL lets `Parse` send zero or fewer explicit OIDs than there are
+        /// `$N` placeholders (the rest are inferred), so checking against
+        /// `parameter_types.size()` would let `Parse "SELECT $1, $2"` + one-value
+        /// `Bind` through, leaving `$2` literally in the SQL at `Execute`, and would
+        /// silently ignore extra bound values (`substitute` drops arguments past the
+        /// highest referenced placeholder). Check against the true parameter count —
+        /// the highest `$N` in the body — recorded when the statement was stored.
+        if (query->parameters.size() != it->second.parameter_count)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Bind supplies {} parameter value(s) but the prepared statement declares {} parameter type(s)",
-                query->parameters.size(), it->second.parameter_types.size());
+                "Bind supplies {} parameter value(s) but the prepared statement has {} parameter(s)",
+                query->parameters.size(), it->second.parameter_count);
 
         /// For the unnamed portal, a new `Bind` replaces the previous one
         /// per the PostgreSQL extended-query protocol — clients such as Npgsql
@@ -1930,7 +1937,50 @@ private:
         /// Declared parameter type OIDs from the Parse message (empty for the
         /// simple PREPARE/EXECUTE path). Used to format Bind values by type.
         VectorWithMemoryTracking<Int32> parameter_types;
+        /// The statement's true parameter count: the highest `$N` referenced in
+        /// the body. This is the arity `Bind` must match exactly, independent of
+        /// how many parameter type OIDs `Parse` chose to declare.
+        size_t parameter_count = 0;
     };
+
+    /// Count the statement's parameters as the highest `$N` placeholder in the
+    /// body (1-based). Mirrors `substitute`'s placeholder recognition: a `$`
+    /// followed by digits, tokenized as a BareWord by the Lexer. A `$` followed by
+    /// a non-digit is an identifier, not a placeholder.
+    static size_t countPlaceholders(const String & body)
+    {
+        size_t max_index = 0;
+        Lexer lexer(body.data(), body.data() + body.size());
+        for (Token token = lexer.nextToken(); !token.isEnd(); token = lexer.nextToken())
+        {
+            if (token.isError())
+                break;
+            std::string_view text(token.begin, token.size());
+            if (token.type != TokenType::BareWord || text.size() <= 1 || text[0] != '$')
+                continue;
+            size_t index = 0;
+            bool is_placeholder = true;
+            for (size_t i = 1; i < text.size(); ++i)
+            {
+                if (text[i] < '0' || text[i] > '9')
+                {
+                    is_placeholder = false;
+                    break;
+                }
+                /// Guard against overflow from an absurdly long digit run; such a
+                /// token cannot be a real placeholder anyway.
+                if (index > (std::numeric_limits<size_t>::max() - 9) / 10)
+                {
+                    is_placeholder = false;
+                    break;
+                }
+                index = index * 10 + static_cast<size_t>(text[i] - '0');
+            }
+            if (is_placeholder && index >= 1)
+                max_index = std::max(max_index, index);
+        }
+        return max_index;
+    }
 
     UnorderedMapWithMemoryTracking<String, PreparedStatement> statements;
     std::optional<size_t> limit_statements;

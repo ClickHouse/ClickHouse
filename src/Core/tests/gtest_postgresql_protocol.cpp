@@ -670,9 +670,9 @@ TEST(PostgreSQLProtocol, ExecuteWithoutBindIsRejected)
 
 TEST(PostgreSQLProtocol, BindRejectsArityMismatch)
 {
-    /// The frontend must supply a value for every parameter it declared a type
-    /// for at Parse. Fewer values than declared types is malformed and rejected
-    /// at Bind. More values are allowed (Parse may declare only a prefix).
+    /// Bind must supply exactly one value per placeholder the statement references.
+    /// Fewer values leaves a `$N` in the SQL at Execute; more values are silently
+    /// dropped by substitute. Both are rejected.
     PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
     ASTPreparedStatement statement;
     statement.function_name = "s";
@@ -683,7 +683,7 @@ TEST(PostgreSQLProtocol, BindRejectsArityMismatch)
 
     auto tooFew = std::make_unique<Messaging::BindQuery>();
     tooFew->function_name = "s";
-    tooFew->parameters.push_back(String{"1"}); /// only one value for two declared types
+    tooFew->parameters.push_back(String{"1"}); /// only one value for two placeholders
     try
     {
         manager.attachBindQuery(std::move(tooFew));
@@ -701,6 +701,95 @@ TEST(PostgreSQLProtocol, BindRejectsArityMismatch)
     ok->parameters.push_back(String{"2"});
     EXPECT_NO_THROW(manager.attachBindQuery(std::move(ok)));
     EXPECT_EQ(manager.getStatmentFromBind(), "SELECT accurateCast('1', 'Int32'), accurateCast('2', 'Int32')");
+}
+
+TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
+{
+    /// The arity Bind must match is the statement's true parameter count — the
+    /// highest `$N` in the body — NOT the number of parameter type OIDs Parse
+    /// chose to declare. PostgreSQL lets Parse send zero or fewer OIDs than there
+    /// are placeholders (the rest are inferred). Checking against the declared-type
+    /// count let `Parse "SELECT $1, $2"` (no OIDs) + one-value Bind through,
+    /// leaving `$2` in the SQL, and silently dropped extra values.
+    auto addStmt = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body, std::vector<Int32> oids)
+    {
+        ASTPreparedStatement statement;
+        statement.function_name = "s";
+        statement.function_body = body;
+        for (Int32 oid : oids)
+            statement.parameter_types.push_back(oid);
+        manager.addStatement(&statement);
+    };
+    auto bindN = [](PreparedStatements::PreparedStatemetsManager & manager, size_t n)
+    {
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        msg->function_name = "s";
+        for (size_t i = 0; i < n; ++i)
+            msg->parameters.push_back(String{std::to_string(i + 1)});
+        return manager.attachBindQuery(std::move(msg));
+    };
+
+    /// Two placeholders, zero declared OIDs: one value must be rejected (the bug),
+    /// two values accepted.
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStmt(manager, "SELECT $1, $2", {});
+        try
+        {
+            bindN(manager, 1);
+            FAIL() << "expected one value for two placeholders to throw";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStmt(manager, "SELECT $1, $2", {});
+        EXPECT_NO_THROW(bindN(manager, 2));
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT '1', '2'");
+    }
+
+    /// One placeholder: an extra value is rejected (previously silently dropped).
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStmt(manager, "SELECT $1", {});
+        try
+        {
+            bindN(manager, 2);
+            FAIL() << "expected two values for one placeholder to throw";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
+
+    /// A repeated placeholder counts once: `$1 + $1` has arity 1.
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStmt(manager, "SELECT $1 + $1", {});
+        EXPECT_NO_THROW(bindN(manager, 1));
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT '1' + '1'");
+    }
+
+    /// A statement with no placeholders has arity 0: any value is rejected.
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStmt(manager, "SELECT 1", {});
+        EXPECT_NO_THROW(bindN(manager, 0));
+        try
+        {
+            addStmt(manager, "SELECT 1", {});
+            bindN(manager, 1);
+            FAIL() << "expected a value for a zero-parameter statement to throw";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    }
 }
 
 TEST(PostgreSQLProtocol, CopyDataRejectsLengthBelowFour)

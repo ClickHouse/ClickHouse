@@ -184,17 +184,21 @@ void PostgreSQLHandler::run()
         if (!startup())
             return;
 
+        /// ReadyForQuery marks the backend idle and ready for a new query. It is
+        /// emitted only at explicit protocol boundaries — here after startup, then
+        /// after a simple query and on Sync (see below) — never speculatively at
+        /// the top of every idle iteration. That guarantees exactly one
+        /// ReadyForQuery per boundary, including exactly one per Sync even for a
+        /// bare standalone Sync issued while the backend is already idle.
+        need_ready_for_query = true;
+
         while (tcp_server.isOpen())
         {
-            /// The extended-query protocol contract is exactly one ReadyForQuery
-            /// per Sync. Every message that is part of an extended-query series
-            /// (Parse, Bind, Execute, Describe, Close) sets is_query_in_progress,
-            /// so no ReadyForQuery is emitted mid-series; Sync clears the flag and
-            /// the top of the loop then sends the single ReadyForQuery. While
-            /// discarding messages after an extended-query error the backend also
-            /// stays silent until that Sync (see the SYNC case).
-            if (!is_query_in_progress && !ignore_until_sync)
+            if (need_ready_for_query)
+            {
                 message_transport->send(PostgreSQLProtocol::Messaging::ReadyForQuery(), true);
+                need_ready_for_query = false;
+            }
 
             constexpr size_t connection_check_timeout = 1; // 1 second
             while (!in->poll(1000000 * connection_check_timeout))
@@ -220,38 +224,42 @@ void PostgreSQLHandler::run()
             switch (message_type)
             {
                 case PostgreSQLProtocol::Messaging::FrontMessageType::QUERY:
+                    /// Simple-query protocol: a single Query is a complete cycle, so
+                    /// it is its own boundary — arm ReadyForQuery for the next
+                    /// iteration.
                     processQuery();
+                    need_ready_for_query = true;
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::TERMINATE:
                     LOG_DEBUG(log, "Client closed the connection");
                     return;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::PARSE:
-                    is_query_in_progress = true;
+                    /// Extended-query messages (Parse/Bind/Execute/Describe/Close)
+                    /// are NOT boundaries: no ReadyForQuery until the series ends at
+                    /// Sync, so they never arm the flag.
                     processParseQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::BIND:
-                    is_query_in_progress = true;
                     processBindQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::EXECUTE:
-                    is_query_in_progress = true;
                     processExecuteQuery();
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::SYNC:
-                    is_query_in_progress = false;
                     /// Sync ends the current extended-query cycle and clears any
-                    /// pending error state; ReadyForQuery is sent by the top of
-                    /// the loop on the next iteration.
+                    /// pending error state. It is a boundary: arm exactly one
+                    /// ReadyForQuery, whether or not any extended-query messages
+                    /// preceded it (a bare standalone Sync also gets exactly one).
                     ignore_until_sync = false;
                     processSyncQuery();
+                    need_ready_for_query = true;
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE:
-                    is_query_in_progress = true;
                     processDescribeQuery();
                     message_transport->flush();
                     break;
@@ -270,7 +278,6 @@ void PostgreSQLHandler::run()
                     ignore_until_sync = true;
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
-                    is_query_in_progress = true;
                     processCloseQuery();
                     message_transport->flush();
                     break;

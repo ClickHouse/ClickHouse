@@ -961,6 +961,112 @@ def test_bind_binary_result_format_rejected(started_cluster):
     sock.close()
 
 
+def test_standalone_sync_emits_one_ready_for_query(started_cluster):
+    # Regression: ReadyForQuery must be emitted exactly once per Sync, including a
+    # bare standalone Sync issued while the backend is already idle. When
+    # ReadyForQuery was sent speculatively at the top of every idle loop iteration,
+    # a client sending Sync while idle received that pre-loop ReadyForQuery, and the
+    # Sync then produced a second one, giving two per Sync. ReadyForQuery is now
+    # emitted only at explicit boundaries (startup, simple query, Sync), so each
+    # Sync yields exactly one.
+    node = started_cluster.instances["node"]
+
+    def sync():
+        return _fe("S", b"")
+
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    # A single standalone Sync: exactly one ReadyForQuery.
+    sock.sendall(sync())
+    types = read_until_ready()
+    assert types.count("Z") == 1, f"standalone Sync must emit one ReadyForQuery, got {types}"
+
+    # Several standalone Syncs in a row: exactly one ReadyForQuery each (no extra
+    # mid-cycle ReadyForQuery). Read them one at a time so the count is unambiguous.
+    for _ in range(3):
+        sock.sendall(sync())
+        types = read_until_ready()
+        assert types.count("Z") == 1, (
+            f"each standalone Sync must emit one ReadyForQuery, got {types}"
+        )
+
+    # The connection stays usable for a normal query afterwards.
+    sock.sendall(_fe("Q", b"SELECT 7\x00"))
+    types = read_until_ready()
+    assert "C" in types, f"connection must stay alive after standalone Syncs, got {types}"
+    sock.close()
+
+
+def test_bind_requires_exact_placeholder_count(started_cluster):
+    # Regression: Bind arity is the statement's placeholder count (highest $N), not
+    # the number of declared parameter type OIDs. Parse may declare fewer OIDs than
+    # there are placeholders, so checking against the declared-type count let a
+    # "SELECT $1, $2" statement bound with one value through, leaving $2 in the SQL
+    # at Execute; extra values were silently dropped. Both mismatches must now be
+    # rejected with an ErrorResponse, and the connection must recover.
+    node = started_cluster.instances["node"]
+
+    def sync():
+        return _fe("S", b"")
+
+    # Parse with NO declared OIDs but two placeholders.
+    def parse(stmt, query, oids):
+        b = stmt.encode() + b"\x00" + query.encode() + b"\x00" + struct.pack("!H", len(oids))
+        for o in oids:
+            b += struct.pack("!I", o)
+        return _fe("P", b)
+
+    def bind(portal, stmt, values):
+        b = portal.encode() + b"\x00" + stmt.encode() + b"\x00" + struct.pack("!H", 0)
+        b += struct.pack("!H", len(values))
+        for v in values:
+            vb = v.encode()
+            b += struct.pack("!i", len(vb)) + vb
+        b += struct.pack("!H", 0)
+        return _fe("B", b)
+
+    def execute(portal):
+        return _fe("E", portal.encode() + b"\x00" + struct.pack("!I", 0))
+
+    # Two placeholders, no declared OIDs, one bound value -> rejected (previously
+    # this passed and left $2 literally in the query).
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(
+        parse("", "SELECT $1, $2", ())
+        + bind("", "", ("1",))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" in types, f"too-few values for two placeholders must be rejected, got {types}"
+    assert "C" not in types, f"Execute must not run after the arity error, got {types}"
+    assert types.count("Z") == 1, f"arity error must emit one ReadyForQuery, got {types}"
+
+    # Too many values (one placeholder, two values) -> rejected (previously the
+    # extra value was silently dropped).
+    sock.sendall(
+        parse("", "SELECT $1", ())
+        + bind("", "", ("1", "2"))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" in types, f"too-many values for one placeholder must be rejected, got {types}"
+    assert types.count("Z") == 1, f"arity error must emit one ReadyForQuery, got {types}"
+
+    # Exactly matching arity still works end to end.
+    sock.sendall(
+        parse("", "SELECT $1, $2", ())
+        + bind("", "", ("10", "20"))
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert "E" not in types, f"matching arity must not error, got {types}"
+    assert "C" in types, f"matching arity must execute, got {types}"
+    assert types.count("Z") == 1, f"matching arity must emit one ReadyForQuery, got {types}"
+    sock.close()
+
+
 def test_execute_no_sql_injection(started_cluster):
     # Simple-query PREPARE/EXECUTE path: EXECUTE arguments are spliced into the
     # prepared statement body by $N substitution, so a string argument must be
