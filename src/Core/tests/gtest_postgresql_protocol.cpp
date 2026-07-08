@@ -574,26 +574,27 @@ TEST(PostgreSQLProtocol, BindUnspecifiedOidInfersType)
 {
     /// An OID of 0 (or an omitted trailing OID) means "the server infers the parameter
     /// type from the statement" in the PostgreSQL protocol, NOT "text". A numeric value
-    /// is emitted as a parenthesized numeric literal so `Parse("SELECT $1 + 1")` and
-    /// `Parse("... LIMIT $1")` keep working as numbers instead of regressing to
-    /// `'41' + 1` (type error) / `LIMIT '1'` (rejected).
-    EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {0}, {{"41"}}), "SELECT (41) + 1");
-    EXPECT_EQ(bindAndGetStatement("SELECT * FROM t LIMIT $1", {0}, {{"10"}}), "SELECT * FROM t LIMIT (10)");
+    /// is emitted as a bare, space-padded numeric literal so `Parse("SELECT $1 + 1")`,
+    /// `Parse("... LIMIT $1")` and `Parse("SELECT $1::Int32")` keep working as numbers
+    /// instead of regressing to `'41' + 1` (type error) / `LIMIT '1'` (rejected) /
+    /// `CAST('(42)', 'Int32')` (parse error).
+    EXPECT_EQ(bindAndGetStatement("SELECT $1 + 1", {0}, {{"41"}}), "SELECT  41  + 1");
+    EXPECT_EQ(bindAndGetStatement("SELECT * FROM t LIMIT $1", {0}, {{"10"}}), "SELECT * FROM t LIMIT  10 ");
     /// An omitted trailing OID (Parse declared fewer OIDs than placeholders) infers
     /// per-slot: the slot with a declared OID keeps its accurateCast, the slot with
     /// the omitted OID infers.
     EXPECT_EQ(bindAndGetStatement("SELECT $1 + $2", {23}, {{"1"}, {"2"}}),
-              "SELECT accurateCast('1', 'Int32') + (2)");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1 + $2", {}, {{"1"}, {"2"}}), "SELECT (1) + (2)");
+              "SELECT accurateCast('1', 'Int32') +  2 ");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1 + $2", {}, {{"1"}, {"2"}}), "SELECT  1  +  2 ");
 
     /// Every numeric literal form the value's own text carries is preserved verbatim,
-    /// wrapped in parentheses so ClickHouse infers the numeric type exactly as an
-    /// inline literal would (signed, decimal, exponent).
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"-5"}}), "SELECT (-5)");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"+5"}}), "SELECT (+5)");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"3.14"}}), "SELECT (3.14)");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"-2.5e-3"}}), "SELECT (-2.5e-3)");
-    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{".5"}}), "SELECT (.5)");
+    /// space-padded so ClickHouse infers the numeric type exactly as an inline literal
+    /// would (signed, decimal, exponent).
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"-5"}}), "SELECT  -5 ");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"+5"}}), "SELECT  +5 ");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"3.14"}}), "SELECT  3.14 ");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"-2.5e-3"}}), "SELECT  -2.5e-3 ");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{".5"}}), "SELECT  .5 ");
 
     /// A non-numeric value's only safe inference is text, so it stays a
     /// quoted+escaped string literal.
@@ -614,9 +615,9 @@ TEST(PostgreSQLProtocol, BindUnspecifiedOidIsInjectionSafe)
               "SELECT '1 UNION ALL SELECT secret FROM s'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"1.2.3"}}), "SELECT '1.2.3'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"1e"}}), "SELECT '1e'");
-    /// The parentheses additionally block token-adjacency: a body `5-$1` with value
-    /// `-5` becomes `5-(-5)`, never the comment-truncating `5--5`.
-    EXPECT_EQ(bindAndGetStatement("SELECT 5-$1", {0}, {{"-5"}}), "SELECT 5-(-5)");
+    /// The surrounding spaces additionally block token-adjacency: a body `5-$1` with
+    /// value `-5` becomes `5- -5 ` (= 5 - (-5)), never the comment-truncating `5--5`.
+    EXPECT_EQ(bindAndGetStatement("SELECT 5-$1", {0}, {{"-5"}}), "SELECT 5- -5 ");
     /// A single quote in a non-numeric value is backslash-escaped so it cannot close
     /// the string literal.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"x' OR 1=1--"}}), "SELECT 'x\\' OR 1=1--'");
@@ -774,8 +775,8 @@ TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
         addStmt(manager, "SELECT $1, $2", {});
         EXPECT_NO_THROW(bindN(manager, 2));
         /// Both placeholders are substituted (arity satisfied). With no declared OID
-        /// the numeric values infer as parenthesized numeric literals.
-        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT (1), (2)");
+        /// the numeric values infer as bare, space-padded numeric literals.
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT  1 ,  2 ");
     }
 
     /// One placeholder: an extra value is rejected (previously silently dropped).
@@ -798,7 +799,7 @@ TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         addStmt(manager, "SELECT $1 + $1", {});
         EXPECT_NO_THROW(bindN(manager, 1));
-        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT (1) + (1)");
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT  1  +  1 ");
     }
 
     /// A statement with no placeholders has arity 0: any value is rejected.

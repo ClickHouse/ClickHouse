@@ -2231,20 +2231,26 @@ private:
     /// `Parse("... LIMIT $1")` must keep working as numbers, not regress to a String
     /// literal (`'41' + 1` fails, `LIMIT '1'` is rejected). We honor inference for the
     /// only case where the value's own text carries an unambiguous type: a numeric
-    /// literal is emitted verbatim, wrapped in parentheses, so ClickHouse infers its
-    /// numeric type exactly as an inline literal would. Any other value stays a
-    /// quoted+escaped string literal (its only safe inference is text).
+    /// literal is emitted verbatim as a bare, space-padded literal, so ClickHouse
+    /// infers its numeric type exactly as an inline literal would. Any other value
+    /// stays a quoted+escaped string literal (its only safe inference is text).
+    ///
+    /// The value is emitted bare (not parenthesized): a body like `SELECT $1::Int32`
+    /// must stay a numeric cast, but `($1)::Int32` parses as `CAST('(42)', 'Int32')`
+    /// (a parenthesized literal before `::` is taken as a string) and then fails to
+    /// parse. The single space on each side blocks token-adjacency instead: a body
+    /// `5-$1` with value `-5` becomes `5- -5 ` (= 5 - (-5)), never the
+    /// comment-truncating `5--5`.
     ///
     /// Injection-safe by construction: isSingleNumericLiteral accepts ONLY a single
     /// optionally-signed decimal/exponent literal, so a payload such as `1--`, `1+2`,
     /// `1 UNION ALL SELECT ...` or `x'; DROP ...` fails validation and falls through to
-    /// the quoted-string branch. The wrapping parentheses additionally prevent
-    /// token-adjacency effects with neighboring SQL (e.g. a body `5-$1` with value
-    /// `-5` becomes `5-(-5)`, never the comment-truncating `5--5`).
+    /// the quoted-string branch. The surrounding spaces keep the validated literal a
+    /// single, self-contained token sequence regardless of neighboring SQL.
     static String formatInferredParameter(const String & value)
     {
         if (isSingleNumericLiteral(value))
-            return fmt::format("({})", value);
+            return fmt::format(" {} ", value);
         return quoteString(value);
     }
 
