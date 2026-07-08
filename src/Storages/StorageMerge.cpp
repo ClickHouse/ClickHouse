@@ -1466,6 +1466,14 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                 if (!table_filter || table_filter(iterator->databaseName(), iterator->name()))
                     if (granted_show_on_all_tables || access->isGranted(AccessType::SHOW_TABLES, iterator->databaseName(), iterator->name()))
                     {
+                        /// Lock the child for share before snapshotting its schema, so the columns
+                        /// authorized by the access check below are the ones the read will actually
+                        /// use. Snapshotting before locking would open a TOCTOU window: a concurrent
+                        /// ALTER could rebind a dotted identifier like `a.b` (e.g. from a subcolumn of
+                        /// a `Tuple` column `a` to a newly added real column `a.b`) between this check
+                        /// and the locked read.
+                        auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
+
                         if  (!granted_select_on_all_tables)
                         {
                             const auto columns_to_check = VirtualColumnUtils::filterVirtualColumns(all_column_names, storage_snapshot->metadata, VirtualsKind::All, VirtualsMaterializationPlace::All);
@@ -1473,15 +1481,14 @@ StorageMerge::StorageListWithLocks ReadFromMerge::getSelectedTables(
                             /// subcolumn name here, but column-level grants are stored against top-level storage
                             /// columns only. Map subcolumns back to their parent column so that `GRANT SELECT(t)`
                             /// implicitly covers `t.a`, `t.b`, etc. Resolve against the current child table's
-                            /// schema, not the merge table's: children may have different layouts, so the same
-                            /// dotted identifier can be a subcolumn of a `Tuple` column in one child and a real
-                            /// column named `a.b` in another, and the check is against the child table.
+                            /// (locked) schema, not the merge table's: children may have different layouts, so the
+                            /// same dotted identifier can be a subcolumn of a `Tuple` column in one child and a
+                            /// real column named `a.b` in another, and the check is against the child table.
                             auto child_metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                             const auto columns_in_storage = child_metadata_snapshot->getColumns().getColumnNamesInStorageForAccessCheck(columns_to_check);
                             access->checkAccess(AccessType::SELECT, iterator->databaseName(), iterator->name(), columns_in_storage);
                         }
 
-                        auto table_lock = storage->lockForShare(query_context->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
                         res.emplace_back(iterator->databaseName(), storage, std::move(table_lock), iterator->name());
                     }
             iterator->next();
