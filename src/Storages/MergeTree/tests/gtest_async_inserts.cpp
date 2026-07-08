@@ -2,7 +2,6 @@
 #include <Interpreters/InsertDeduplication.h>
 #include <Processors/Chunk.h>
 #include <Columns/IColumn.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Common/PODArray.h>
 #include <base/defines.h>
@@ -28,7 +27,7 @@ std::vector<Int64> testSelfDeduplicate(std::vector<Int64> data, std::vector<size
     }
     Block block({ColumnWithTypeAndName(std::move(column), DataTypePtr(new DataTypeInt64()), "a")});
 
-    auto deduplication_info = DeduplicationInfo::create(true);
+    auto deduplication_info = DeduplicationInfo::create(true, InsertDeduplicationVersions::NEW_UNIFIED_HASHES);
     deduplication_info->setRootViewID({});
     deduplication_info->disabled = false; // there is no insert dependencies instance in this test
     deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));
@@ -86,7 +85,7 @@ std::vector<String> testSelfDeduplicateStrings(std::vector<String> data, std::ve
     }
     Block block({ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeString>(), "a")});
 
-    auto deduplication_info = DeduplicationInfo::create(true);
+    auto deduplication_info = DeduplicationInfo::create(true, InsertDeduplicationVersions::NEW_UNIFIED_HASHES);
     deduplication_info->setRootViewID({});
     deduplication_info->disabled = false; // there is no insert dependencies instance in this test
     deduplication_info->updateOriginalBlock(Chunk(block.getColumns(), block.rows()), std::make_shared<const Block>(block.cloneEmpty()));

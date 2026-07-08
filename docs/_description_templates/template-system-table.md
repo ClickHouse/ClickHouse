@@ -8,12 +8,15 @@ Columns:
 
 **Example**
 
+Query:
 
-```sql title="Query"
+```sql
 SELECT * FROM system.table_name
 ```
 
-```text title="Response"
+Result:
+
+```text
 Some output. It shouldn't be too long.
 ```
 
