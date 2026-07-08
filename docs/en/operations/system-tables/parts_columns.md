@@ -130,3 +130,4 @@ column_marks_bytes:                    48
 
 - [MergeTree family](../../engines/table-engines/mergetree-family/mergetree.md)
 - [Calculating the number and size of compact and wide parts](/knowledgebase/count-parts-by-type)
+- [system.part_statistics](../../operations/system-tables/part_statistics.md)
