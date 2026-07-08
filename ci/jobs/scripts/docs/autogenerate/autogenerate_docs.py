@@ -461,6 +461,7 @@ def main(argv=None):
     drift = 0
     nav_inserts = []  # (group_path, page_id) for pages created by --write
     nav_groups = []  # generator-owned groups (fully generated domains)
+    created_ids = set()  # page ids added this run (may not be on disk yet in --check)
 
     def flush_nav_inserts():
         # Newly created pages are added to the navigation fragment; docs.json
@@ -499,8 +500,30 @@ def main(argv=None):
             else:
                 print("[dry-run] would write: reference/navigation.json"
                       f" ({', '.join(changed)})")
+        created_ids.update(page_id for _, page_id in nav_inserts)
+        created_ids.update(p for spec in nav_groups for p in spec.get("pages", []))
         nav_inserts.clear()
         nav_groups.clear()
+
+    def prune_nav():
+        # insert_page only appends, so a renamed or deleted page leaves its old
+        # id in the fragment. Drop any id whose page file is gone (keeping this
+        # run's freshly created pages, which are not on disk yet in --check).
+        nonlocal drift
+        fragment = current_fragment()
+        removed = navigation.prune_missing_pages(fragment, docs_dir, protect=created_ids)
+        if not removed:
+            return
+        if args.write:
+            with open(frag_path, "w", encoding="utf-8") as f:
+                f.write(navigation.dump_fragment(fragment))
+            print(f"wrote: reference/navigation.json (pruned {', '.join(removed)})")
+        elif args.check:
+            print("DRIFT: reference/navigation.json has stale entries"
+                  f" ({', '.join(removed)})")
+            drift += 1
+        else:
+            print(f"[dry-run] would prune stale nav entries ({', '.join(removed)})")
 
     for gen in generators:
         if gen.get("no_transform"):
@@ -546,6 +569,11 @@ def main(argv=None):
             print(f"[dry-run] would {verb}: {rel}")
 
     flush_nav_inserts()
+    if not args.only:
+        # Prune stale ids only on a full run: a partial `--only` run has not
+        # visited every generator, so it cannot tell a stale id from one another
+        # generator owns.
+        prune_nav()
 
     # Domains whose hand-written pages are richer than the embedded summaries
     # are checked for coverage instead of generated (see coverage.py).

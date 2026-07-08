@@ -76,6 +76,42 @@ def ensure_group(fragment, parent_path, group, pages, root=None, after_group=Non
     return changed
 
 
+def prune_missing_pages(fragment, docs_dir, protect=()):
+    """Remove string page ids whose page file no longer exists on disk. Since
+    `insert_page` only appends, a renamed or deleted page otherwise leaves its
+    old id behind, advertising a dead route (`insert_page` cannot reconcile a
+    rename on its own). Ids in `protect` are kept even when absent -- they are
+    pages created in this same run, which are not yet written in `--check`.
+    Returns the sorted list of removed ids."""
+    protect = set(protect)
+    removed = []
+
+    def present(page_id):
+        return page_id in protect or any(
+            os.path.isfile(os.path.join(docs_dir, page_id + ext))
+            for ext in (".mdx", ".md")
+        )
+
+    def walk(node):
+        if not isinstance(node, dict):
+            return
+        for key in ("pages", "groups"):
+            entries = node.get(key)
+            if not isinstance(entries, list):
+                continue
+            kept = []
+            for entry in entries:
+                if isinstance(entry, str):
+                    (kept if present(entry) else removed).append(entry)
+                else:
+                    walk(entry)
+                    kept.append(entry)
+            node[key] = kept
+
+    walk(fragment)
+    return sorted(removed)
+
+
 def insert_page(fragment, group_path, page_id):
     """Insert `page_id` into the group at `group_path`, before the first string
     sibling that sorts after it (case-insensitive, by path basename). Group
