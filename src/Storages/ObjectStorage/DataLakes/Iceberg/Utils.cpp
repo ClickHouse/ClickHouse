@@ -470,6 +470,17 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
+bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_root)
+{
+    while (table_root.ends_with('/'))
+        table_root.remove_suffix(1);
+    if (table_root.empty())
+        return true;
+    while (cached_location.ends_with('/'))
+        cached_location.remove_suffix(1);
+    return cached_location.ends_with(table_root);
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,

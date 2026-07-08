@@ -134,6 +134,11 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::string normalizeUuid(const std::string & uuid);
 
+/// Whether `cached_location` (the Iceberg `location` field of a cached metadata JSON, which per
+/// spec never has a trailing slash) refers to `table_root` (the storage engine's configured path,
+/// which does carry a trailing slash). Trailing slashes are trimmed from both sides before comparing.
+bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_root);
+
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 
 enum class FileCategory : uint8_t

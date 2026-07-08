@@ -4,6 +4,7 @@
 
 #include <gtest/gtest.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
 using namespace DB;
 
@@ -137,6 +138,42 @@ TEST(IcebergMetadataCache, TablesWithSamePathButDifferentUuidsAreIndependent)
     auto result_a = cache.getOrSetTableMetadata(key_a, [&]() -> String { ++load_count; return "wrong"; });
     EXPECT_EQ(load_count, 2); // no new load
     EXPECT_EQ(result_a, "json-a");
+}
+
+TEST(IcebergMetadataCache, LocationMatchesTableRootExact)
+{
+    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket/ns/table"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnTableRoot)
+{
+    // The storage engine's configured path carries a trailing slash; the Iceberg
+    // `location` field never does. Regression test for a bug where every warm
+    // cache hit was rejected because of this mismatch (see test_metadata_cache
+    // integration test).
+    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket/ns/table/"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnCachedLocation)
+{
+    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket/ns/table"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashesOnBoth)
+{
+    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket/ns/table/"));
+}
+
+TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentTableRoot)
+{
+    EXPECT_FALSE(cachedLocationMatchesTableRoot("s3://bucket/ns/other_table", "bucket/ns/table"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesWhenTableRootIsEmpty)
+{
+    // An empty table_root means the caller has nothing to validate against, so
+    // the check is permissive rather than rejecting every hit.
+    EXPECT_TRUE(cachedLocationMatchesTableRoot("s3://bucket/ns/table", ""));
 }
 
 #endif
