@@ -3,7 +3,7 @@
 
 -- session_token and the Google ADC secrets (google_adc_client_secret, google_adc_refresh_token)
 -- passed as named arguments to the explicit-url S3 form must be masked like secret_access_key.
--- They used to leak in plaintext into SHOW CREATE and system.query_log.
+-- They used to leak in plaintext into SHOW CREATE and the logged query text.
 
 DROP TABLE IF EXISTS t_04510;
 CREATE TABLE t_04510 (x UInt8)
