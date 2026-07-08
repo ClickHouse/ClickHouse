@@ -2,6 +2,10 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
+
 #include <pcg-random/pcg_random.hpp>
 
 #include <Core/Field.h>
@@ -237,6 +241,17 @@ private:
     /// satisfying dimension % stride == 0 and, when strided, stride % 8 == 0). Shared by fuzzDataType
     /// and getRandomType so the stride constraints live in one place.
     DataTypePtr makeRandomQBit();
+    /// Builds a structurally valid JSON Object type with the given typed paths / SKIP lists and randomized
+    /// max_dynamic_paths / max_dynamic_types (within parser limits). Shared by fuzzDataType and getRandomType.
+    DataTypePtr makeRandomObject(
+        std::unordered_map<String, DataTypePtr> typed_paths = {},
+        std::unordered_set<String> paths_to_skip = {},
+        std::vector<String> path_regexps_to_skip = {});
+    /// Builds an (Simple)AggregateFunction type from a name / argument types / parameters, re-validating via
+    /// the factory (and, for the simple form, checkSupportedFunctions). Returns nullptr if the aggregate
+    /// rejects the arguments. Shared by fuzzDataType and getRandomType so the factory + build logic lives in
+    /// one place.
+    DataTypePtr makeAggregateFunctionType(const String & name, const DataTypes & argument_types, const Array & parameters, bool simple);
     void fuzzJoinType(ASTTableJoin * table_join);
     void fuzzOrderByElement(ASTOrderByElement * elem);
     void fuzzOrderByList(IAST * ast, size_t nproj);

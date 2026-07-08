@@ -2104,21 +2104,9 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
             }
             if (changed)
             {
-                try
-                {
-                    AggregateFunctionProperties properties;
-                    auto new_func = AggregateFunctionFactory::instance().get(
-                        type_simple_aggr->getFunctionName(),
-                        NullsAction::EMPTY,
-                        new_arg_types,
-                        type_simple_aggr->getParameters(),
-                        properties);
-                    DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(new_func);
-                    return createSimpleAggregateFunctionType(new_func, new_arg_types, type_simple_aggr->getParameters());
-                }
-                catch (...) // NOLINT(bugprone-empty-catch) Ok: the aggregate may reject the fuzzed argument types
-                {
-                }
+                if (auto fuzzed = makeAggregateFunctionType(
+                        type_simple_aggr->getFunctionName(), new_arg_types, type_simple_aggr->getParameters(), /*simple=*/true))
+                    return fuzzed;
             }
             return type;
         }
@@ -2238,27 +2226,16 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
     const auto * type_object = typeid_cast<const DataTypeObject *>(type.get());
     if (type_object && fuzz_rand() % 4 != 0)
     {
-        /// Fuzz the typed-path element types (recursively) and the numeric parameters, keeping the
-        /// SKIP paths / SKIP REGEXP lists intact so the result stays a structurally valid, round-trippable
-        /// DataTypeObject (its getName() re-parses via ParserDataType to the same type).
+        /// Fuzz the typed-path element types (recursively), then rebuild via the shared JSON Object generator
+        /// which randomizes the numeric parameters, keeping the SKIP paths / SKIP REGEXP lists intact so the
+        /// result stays a structurally valid, round-trippable DataTypeObject.
         std::unordered_map<String, DataTypePtr> typed_paths = type_object->getTypedPaths();
         for (auto & [path, path_type] : typed_paths)
             path_type = fuzzDataType(path_type);
-        size_t max_dynamic_paths = (fuzz_rand() % 4 == 0)
-            ? fuzz_rand() % (DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT + 1)
-            : type_object->getMaxDynamicPaths();
-        size_t max_dynamic_types = (fuzz_rand() % 4 == 0)
-            ? fuzz_rand() % (ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT + 1)
-            : type_object->getMaxDynamicTypes();
         try
         {
-            return std::make_shared<DataTypeObject>(
-                type_object->getSchemaFormat(),
-                std::move(typed_paths),
-                type_object->getPathsToSkip(),
-                type_object->getPathRegexpsToSkip(),
-                max_dynamic_paths,
-                max_dynamic_types);
+            return makeRandomObject(
+                std::move(typed_paths), type_object->getPathsToSkip(), type_object->getPathRegexpsToSkip());
         }
         catch (...) // NOLINT(bugprone-empty-catch) Ok: a fuzzed typed-path type may violate an Object invariant
         {
@@ -2334,16 +2311,8 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         }
         if (changed)
         {
-            try
-            {
-                AggregateFunctionProperties properties;
-                auto new_func = AggregateFunctionFactory::instance().get(
-                    new_name, NullsAction::EMPTY, new_arg_types, type_aggr->getParameters(), properties);
-                return std::make_shared<DataTypeAggregateFunction>(new_func, new_arg_types, type_aggr->getParameters());
-            }
-            catch (...) // NOLINT(bugprone-empty-catch) Ok: aggregate may reject fuzzed argument types
-            {
-            }
+            if (auto fuzzed = makeAggregateFunctionType(new_name, new_arg_types, type_aggr->getParameters(), /*simple=*/false))
+                return fuzzed;
         }
         return type;
     }
@@ -2386,6 +2355,49 @@ DataTypePtr QueryFuzzer::makeRandomQBit()
 
     const size_t dimension = fuzz_rand() % 128 + 1;
     return std::make_shared<DataTypeQBit>(element_type, dimension, dimension);
+}
+
+DataTypePtr QueryFuzzer::makeRandomObject(
+    std::unordered_map<String, DataTypePtr> typed_paths,
+    std::unordered_set<String> paths_to_skip,
+    std::vector<String> path_regexps_to_skip)
+{
+    /// Randomize max_dynamic_paths / max_dynamic_types within the parser limits, keeping the given
+    /// typed paths and SKIP lists intact so the result stays a structurally valid, round-trippable
+    /// JSON Object (its getName() re-parses via ParserDataType to the same type).
+    const size_t max_dynamic_paths = (fuzz_rand() % 4 == 0)
+        ? fuzz_rand() % (DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT + 1)
+        : DataTypeObject::DEFAULT_MAX_DYNAMIC_PATHS;
+    const size_t max_dynamic_types = (fuzz_rand() % 4 == 0)
+        ? fuzz_rand() % (ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT + 1)
+        : DataTypeDynamic::DEFAULT_MAX_DYNAMIC_TYPES;
+    return std::make_shared<DataTypeObject>(
+        DataTypeObject::SchemaFormat::JSON,
+        std::move(typed_paths),
+        std::move(paths_to_skip),
+        std::move(path_regexps_to_skip),
+        max_dynamic_paths,
+        max_dynamic_types);
+}
+
+DataTypePtr QueryFuzzer::makeAggregateFunctionType(
+    const String & name, const DataTypes & argument_types, const Array & parameters, bool simple)
+{
+    try
+    {
+        AggregateFunctionProperties properties;
+        auto func = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, argument_types, parameters, properties);
+        if (simple)
+        {
+            DataTypeCustomSimpleAggregateFunction::checkSupportedFunctions(func);
+            return createSimpleAggregateFunctionType(func, argument_types, parameters);
+        }
+        return std::make_shared<DataTypeAggregateFunction>(func, argument_types, parameters);
+    }
+    catch (...) // NOLINT(bugprone-empty-catch) Ok: the aggregate may reject the given argument types
+    {
+        return nullptr;
+    }
 }
 
 DataTypePtr QueryFuzzer::getRandomType()
@@ -2491,7 +2503,7 @@ DataTypePtr QueryFuzzer::getRandomType()
         case TypeIndex::Dynamic:
             return std::make_shared<DataTypeDynamic>(fuzz_rand() % 20);
         case TypeIndex::Object:
-            return std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON);
+            return makeRandomObject();
         case TypeIndex::QBit:
             return makeRandomQBit();
         case TypeIndex::AggregateFunction: {
@@ -2504,18 +2516,10 @@ DataTypePtr QueryFuzzer::getRandomType()
                 for (size_t i = 0; i < nargs; ++i)
                     arg_types.push_back(getRandomType());
             }
-            try
-            {
-                AggregateFunctionProperties properties;
-                auto func = AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, arg_types, {}, properties);
-                return std::make_shared<DataTypeAggregateFunction>(func, arg_types, Array{});
-            }
-            catch (...) // NOLINT(bugprone-empty-catch) Ok: aggregate may reject random argument types
-            {
-                AggregateFunctionProperties properties;
-                auto func = AggregateFunctionFactory::instance().get("count", NullsAction::EMPTY, {}, {}, properties);
-                return std::make_shared<DataTypeAggregateFunction>(func, DataTypes{}, Array{});
-            }
+            if (auto random = makeAggregateFunctionType(name, arg_types, Array{}, /*simple=*/false))
+                return random;
+            /// The random aggregate rejected the random argument types: fall back to argument-less count.
+            return makeAggregateFunctionType("count", DataTypes{}, Array{}, /*simple=*/false);
         }
         default:
             break;
