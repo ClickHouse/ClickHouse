@@ -1,0 +1,109 @@
+---
+alias: []
+description: 'Documentación sobre el formato Avro'
+input_format: true
+keywords: ['Avro']
+output_format: true
+slug: /interfaces/formats/Avro
+title: 'Avro'
+doc_type: 'reference'
+---
+
+import DataTypeMapping from '/snippets/es/data-types-matching.mdx';
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+[Apache Avro](https://avro.apache.org/) es un formato de serialización orientado a filas que utiliza codificación binaria para procesar datos de forma eficiente. El formato `Avro` permite leer y escribir [archivos de datos de Avro](https://avro.apache.org/docs/current/specification/#object-container-files). Este formato espera mensajes autodescriptivos con un esquema integrado. Si utiliza Avro con un registro de esquemas, consulte el formato [`AvroConfluent`](/es/reference/formats/Avro/AvroConfluent).
+
+<div id="data-type-mapping">
+  ## Correspondencia de tipos de datos
+</div>
+
+<DataTypeMapping />
+
+<div id="format-settings">
+  ## Configuración de formato
+</div>
+
+| Configuración                              | Descripción                                                                                                                                                                                      | Predeterminado |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| `input_format_avro_allow_missing_fields`   | Si se debe usar un valor predeterminado en lugar de generar un error cuando no se encuentra un campo en el esquema.                                                                              | `0`            |
+| `input_format_avro_null_as_default`        | Si se debe usar un valor predeterminado en lugar de generar un error al insertar un valor `null` en una columna no `Nullable`.                                                                   | `0`            |
+| `output_format_avro_codec`                 | Algoritmo de compresión para archivos de salida Avro. Posibles valores: `null`, `deflate`, `snappy`, `zstd`.                                                                                     |                |
+| `output_format_avro_sync_interval`         | Frecuencia del marcador de sincronización en archivos Avro (en bytes).                                                                                                                           | `16384`        |
+| `output_format_avro_string_column_pattern` | Expresión regular para identificar columnas `String` para el mapeo al tipo `string` de Avro. De forma predeterminada, las columnas `String` de ClickHouse se escriben como tipo `bytes` de Avro. |                |
+| `output_format_avro_rows_in_file`          | Número máximo de filas por archivo de salida Avro. Cuando se alcanza este límite, se crea un archivo nuevo (si el sistema de almacenamiento admite la división de archivos).                     | `1`            |
+
+<div id="examples">
+  ## Ejemplos
+</div>
+
+<div id="reading-avro-data">
+  ### Lectura de datos en Avro
+</div>
+
+Para leer datos desde un archivo Avro en una tabla de ClickHouse:
+
+```bash
+$ cat file.avro | clickhouse-client --query="INSERT INTO {some_table} FORMAT Avro"
+```
+
+El esquema raíz del archivo Avro ingerido debe ser de tipo `record`.
+
+Para determinar la correspondencia entre las columnas de la tabla y los campos del esquema Avro, ClickHouse compara sus nombres.
+Esta comparación distingue entre mayúsculas y minúsculas, y los campos no utilizados se omiten.
+
+Los tipos de datos de las columnas de la tabla de ClickHouse pueden diferir de los de los campos correspondientes en los datos Avro insertados. Al insertar datos, ClickHouse interpreta los tipos de datos según la tabla anterior y luego [convierte](/es/reference/functions/regular-functions/type-conversion-functions#CAST) los datos al tipo de columna correspondiente.
+
+Al importar datos, si no se encuentra un campo en el esquema y la configuración [`input_format_avro_allow_missing_fields`](/es/reference/settings/formats#input_format_avro_allow_missing_fields) está habilitada, se utilizará el valor predeterminado en lugar de generar un error.
+
+<div id="writing-avro-data">
+  ### Escritura de datos en Avro
+</div>
+
+Para escribir datos de una tabla de ClickHouse en un archivo Avro:
+
+```bash
+$ clickhouse-client --query="SELECT * FROM {some_table} FORMAT Avro" > file.avro
+```
+
+Los nombres de las columnas deben:
+
+* Comenzar con `[A-Za-z_]`
+* Estar seguidos únicamente de `[A-Za-z0-9_]`
+
+La compresión de salida y el intervalo de sincronización de los archivos Avro pueden configurarse mediante las opciones [`output_format_avro_codec`](/es/reference/settings/formats#output_format_avro_codec) y [`output_format_avro_sync_interval`](/es/reference/settings/formats#output_format_avro_sync_interval), respectivamente.
+
+<div id="inferring-the-avro-schema">
+  ### Inferir el esquema de Avro
+</div>
+
+Con la función [`DESCRIBE`](/es/reference/statements/describe-table) de ClickHouse, puede ver rápidamente el formato inferido de un archivo Avro, como en el siguiente ejemplo.
+Este ejemplo incluye la URL de un archivo Avro disponible públicamente en el bucket público de S3 de ClickHouse:
+
+```sql
+DESCRIBE url('https://clickhouse-public-datasets.s3.eu-central-1.amazonaws.com/hits.avro', 'Avro');
+
+┌─name───────────────────────┬─type────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ WatchID                    │ Int64           │              │                    │         │                  │                │
+│ JavaEnable                 │ Int32           │              │                    │         │                  │                │
+│ Title                      │ String          │              │                    │         │                  │                │
+│ GoodEvent                  │ Int32           │              │                    │         │                  │                │
+│ EventTime                  │ Int32           │              │                    │         │                  │                │
+│ EventDate                  │ Date32          │              │                    │         │                  │                │
+│ CounterID                  │ Int32           │              │                    │         │                  │                │
+│ ClientIP                   │ Int32           │              │                    │         │                  │                │
+│ ClientIP6                  │ FixedString(16) │              │                    │         │                  │                │
+│ RegionID                   │ Int32           │              │                    │         │                  │                │
+...
+│ IslandID                   │ FixedString(16) │              │                    │         │                  │                │
+│ RequestNum                 │ Int32           │              │                    │         │                  │                │
+│ RequestTry                 │ Int32           │              │                    │         │                  │                │
+└────────────────────────────┴─────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```

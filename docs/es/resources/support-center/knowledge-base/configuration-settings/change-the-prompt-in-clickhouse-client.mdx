@@ -1,0 +1,164 @@
+---
+title: Cambiar el prompt en clickhouse-client
+description: "Este artículo explica cómo cambiar el prompt en tu cliente de ClickHouse y en la ventana de terminal de clickhouse-local de :) a un prefijo seguido de :)"
+date: 2023-11-16
+tags: ['Configuración', 'Clientes nativos e interfaces']
+keywords: ['Cliente de ClickHouse', 'Cambiar prompt']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+Si no te gusta cómo `clickhouse client` y clickhouse-local muestran el prompt en la ventana de tu terminal, puedes cambiarlo para añadirle un prefijo.
+En este artículo se explica cómo cambiar el prompt por el que quieras.
+
+El prompt predeterminado es el nombre de tu equipo, seguido de `:) `:
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="Prompt predeterminado del cliente de ClickHouse" />
+
+Estas son las variables que puedes usar en un prompt: `{user}`, `{host}`
+
+Hay varias formas de actualizar el prompt, y veremos cada una de ellas.
+
+<div id="--prompt-flag">
+  ## Opción `--prompt`
+</div>
+
+La primera forma de cambiar la opción consiste en usar `--prompt`:
+
+```bash
+clickhouse --prompt 👉
+```
+
+Esto añadirá el emoji de dedo antes de la carita sonriente:
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con emoji de dedo" />
+
+<div id="config-file---top-level">
+  ## Archivo de configuración: nivel superior
+</div>
+
+Como alternativa, puedes proporcionar un prefijo para el `prompt` en un archivo `config.xml`:
+
+```xml
+<config>
+    <prompt>👉 </prompt>
+</config>
+```
+
+```
+clickhouse
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="Prompt del cliente de ClickHouse con archivo de configuración" />
+
+Podemos usar un archivo de configuración con cualquier nombre y pasarlo con la opción `-C`:
+
+```xml
+<config>
+    <prompt>🎄 </prompt>
+</config>
+```
+
+```
+clickhouse -C christmas.xml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="Prompt del cliente de ClickHouse con emoji de árbol de Navidad" />
+
+¿Prefieres que tus archivos de configuración estén en YAML?
+También funciona:
+
+```yaml
+prompt: 🟡
+```
+
+```bash
+clickhouse -C christmas.yaml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="prompt del cliente de ClickHouse con emoji de círculo amarillo" />
+
+<div id="config-file---connections_credentials">
+  ## Archivo de configuración - connections_credentials
+</div>
+
+Como alternativa, puede especificar un prompt para cada conjunto de credenciales de conexión.
+Esto solo tiene sentido cuando se utiliza `clickhouse-client`.
+
+```xml
+<config>
+    <connections_credentials>
+        <connection>
+            <n>prod<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
+        </connection>
+        <connection>
+            <n>dev<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[32m[DEVELOPMENT]\e[0m {user}@dev</prompt>
+        </connection>
+    </connections_credentials>
+</config>
+```
+
+Luego podemos intentar conectarnos usando la conexión `dev`:
+
+```bash
+clickhouse client -C connections.xml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con conexión de Development" />
+
+O la de `prod`:
+
+```bash
+clickhouse client -C connections.xml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="Indicador del cliente de ClickHouse con conexión de producción" />
+
+Y aquí tienes una versión en YAML:
+
+```yaml
+connections_credentials:
+  connection:
+    - name: prod
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[35m[PRODUCTION]\e[0m {user}@{host}"
+    - name: dev
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[34m[DEVELOPMENT]\e[0m {user}@{host}"
+```
+
+Con la conexión `dev`:
+
+```bash
+clickhouse client -C connections.yaml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con conexión Development mediante YAML" />
+
+Y ahora `prod`:
+
+```bash
+clickhouse client -C connections.yaml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="Prompt de cliente de ClickHouse con una conexión de producción mediante YAML" />

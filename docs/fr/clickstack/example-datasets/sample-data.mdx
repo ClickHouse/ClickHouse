@@ -1,0 +1,305 @@
+---
+slug: /use-cases/observability/clickstack/getting-started/sample-data
+title: 'Logs, traces et métriques d’exemple'
+description: "Premiers pas avec ClickStack et un jeu de données d’exemple comprenant des logs, des sessions, des traces et des métriques"
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'données d’exemple', 'jeu de données d’exemple', 'logs', 'observability']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Ce guide présente à la fois ClickStack Open Source et Managed ClickStack à l’aide d’un jeu de données d’exemple.
+
+<Tabs>
+  <Tab title="ClickStack managé">
+    Le guide suivant suppose que vous avez suivi le [guide de démarrage pour Managed ClickStack](/fr/clickstack/deployment/managed) et que vous avez [noté les identifiants de connexion](/fr/clickstack/getting-started/managed#next-steps).
+
+    <Steps>
+      <Step>
+        ### Sélectionnez votre service
+
+        Sélectionnez le service Managed ClickStack sur la page d’accueil principale de ClickHouse Cloud.
+
+        <Image img="/images/clickstack/select_service.webp" alt="Sélectionnez le service" size="lg" />
+      </Step>
+
+      <Step>
+        ### Accédez à la ClickStack UI (HyperDX)
+
+        Sélectionnez `ClickStack` dans le menu de gauche pour accéder à la ClickStack UI, où vous serez automatiquement authentifié.
+
+        <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
+      </Step>
+
+      <Step>
+        ### Télécharger les données d’exemple
+
+        Pour alimenter l’UI avec des données d’exemple, téléchargez le fichier suivant :
+
+        [Données d’exemple](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+        ```shell
+        # curl
+        curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+        # or
+        # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+        ```
+
+        Ce fichier contient des exemples de logs, de métriques et de traces issus de notre [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo), une simple boutique en ligne à microservices accessible au public. Copiez ce fichier dans le répertoire de votre choix.
+      </Step>
+
+      <Step>
+        ### Charger des données d’exemple
+
+        Pour charger ces données, il suffit de les envoyer au point de terminaison HTTP du collector OpenTelemetry (OTel) déployé.
+
+        Exécutez la commande suivante pour envoyer les données au collector OTel :
+
+        ```shell
+        for filename in $(tar -tf sample.tar.gz); do
+          endpoint="http://localhost:4318/v1/${filename%.json}"
+          echo "loading ${filename%.json}"
+          tar -xOf sample.tar.gz "$filename" | while read -r line; do
+            printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+            -H "Content-Type: application/json" \
+            -H "authorization: ${CLICKSTACK_API_KEY}" \
+            --data-binary @-
+          done
+        done
+        ```
+
+        Cela simule des sources OTLP de logs, de traces et de métriques envoyant des données à l’OTel collector. En production, ces sources peuvent être des clients dans différents langages, voire d’autres OTel collectors.
+
+        En revenant à la vue `Search`, vous devriez voir que les données commencent à se charger (ajustez la période sur `Last 1 hour` si les données ne s’affichent pas) :
+
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="Recherche HyperDX" size="lg" />
+
+        Le chargement des données prendra quelques minutes. Attendez qu’il soit terminé avant de passer aux étapes suivantes.
+      </Step>
+
+      <Step>
+        ### Explorer les sessions
+
+        Supposons que nous recevions des signalements selon lesquels nos utilisateurs rencontrent des problèmes au moment de payer leurs achats. Nous pouvons visualiser leur expérience à l’aide des fonctionnalités de session replay d’HyperDX.
+
+        Sélectionnez `Client Sessions` dans le menu de gauche.
+
+        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Sessions" size="lg" />
+
+        Cette vue permet de voir les sessions du front-end de notre boutique e-commerce. Les sessions restent anonymes jusqu’à ce que les utilisateurs passent au paiement et essaient de finaliser un achat.
+
+        Notez que certaines sessions associées à des e-mails comportent une erreur, ce qui confirme potentiellement les signalements de transactions ayant échoué.
+
+        Sélectionnez une trace en échec associée à une adresse e-mail. La vue suivante permet de rejouer la session de l’utilisateur et d’examiner son problème. Appuyez sur play pour regarder la session.
+
+        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Session replay" size="lg" />
+
+        La relecture montre l’utilisateur naviguant sur le site et ajoutant des articles à son panier. N’hésitez pas à avancer plus loin dans la session, jusqu’au moment où il tente d’effectuer le paiement.
+
+        <Tip>
+          Les erreurs sont annotées en rouge sur la chronologie.
+        </Tip>
+
+        L’utilisateur n’a pas pu finaliser la commande, sans qu’aucune erreur évidente n’apparaisse. Faites défiler jusqu’en bas du panneau de gauche, qui contient les événements réseau et console du navigateur de l’utilisateur. Vous remarquerez qu’une erreur 500 a été déclenchée lors d’un appel à `/api/checkout`.
+
+        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Erreur dans la session" size="lg" />
+
+        Sélectionnez cette erreur `500`. Ni `Overview` ni `Column Values` n’indiquent la source du problème, si ce n’est que l’erreur est inattendue et provoque une `Internal Error`.
+      </Step>
+
+      <Step>
+        ### Explorer les traces
+
+        Accédez à l’onglet `Trace` pour afficher la trace distribuée complète.
+
+        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Trace de session" size="lg" />
+
+        Faites défiler la trace vers le bas pour voir l’origine de l’erreur : le span du service `checkout`. Sélectionnez le span du service `Payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Span" size="lg" />
+
+        Sélectionnez l’onglet `Column Values`, puis faites défiler vers le bas. Nous pouvons voir que le problème est lié à un cache plein.
+
+        <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Valeurs de colonne" size="lg" />
+
+        En remontant puis en revenant à la trace, nous pouvons voir que les logs sont corrélés au span grâce à notre configuration précédente. Ils apportent davantage de contexte.
+
+        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Log corrélé" size="lg" />
+
+        Nous avons établi qu’un cache se remplit dans le service `Payment`, ce qui empêche les paiements d’aboutir.
+      </Step>
+
+      <Step>
+        ### Explorer les logs
+
+        Pour plus de détails, revenons à `Search` :
+
+        Sélectionnez `Logs` parmi les sources et appliquez un filtre au service `payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="Logs" size="lg" />
+
+        On voit que, même si le problème est récent, le nombre de paiements affectés est élevé. De plus, un cache lié aux paiements Visa semble être à l’origine du problème.
+      </Step>
+
+      <Step>
+        ### Métriques du graphique
+
+        Bien qu&#39;une erreur ait clairement été introduite dans le code, nous pouvons utiliser les métriques pour confirmer la taille du cache. Accédez à la vue `Chart Explorer`.
+
+        Sélectionnez `Metrics` comme source de données. Configurez le générateur de graphiques pour tracer le `Maximum` de `visa_validation_cache.size (Gauge)`, puis cliquez sur le bouton play. Le cache augmentait nettement avant d&#39;atteindre une taille maximale, après quoi des erreurs ont été générées.
+
+        <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Métriques" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    L&#39;exemple suivant suppose que vous avez démarré Open Source ClickStack en suivant les [instructions relatives à l&#39;image tout-en-un](/fr/clickstack/getting-started/oss) et que vous vous êtes connecté à l&#39;[instance ClickHouse locale](/fr/clickstack/getting-started/oss#complete-connection-credentials).
+
+    <Steps>
+      <Step>
+        ### Accéder à ClickStack UI (HyperDX)
+
+        Rendez-vous sur [http://localhost:8080](http://localhost:8080) pour accéder à ClickStack UI.
+
+        <Image img="/images/use-cases/observability/hyperdx.webp" alt="ClickStack UI" size="lg" />
+      </Step>
+
+      <Step>
+        ### Copier la clé API d’ingestion
+
+        Accédez à [`Team Settings`](http://localhost:8080/team) et copiez la `Ingestion API Key` dans la section `API Keys`. Cette clé API garantit la sécurité de l’ingestion des données via le collecteur OpenTelemetry.
+
+        <Image img="/images/use-cases/observability/copy_api_key.webp" alt="Copier la clé API" size="lg" />
+      </Step>
+
+      <Step>
+        ### Télécharger des données d’exemple
+
+        Afin d’alimenter l’interface utilisateur avec des données d’exemple, téléchargez le fichier suivant :
+
+        [Données d’exemple](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+
+        ```shell
+        # curl
+        curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
+        # or
+        # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
+        ```
+
+        Ce fichier contient des exemples de logs, de métriques et de traces issus de notre [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) publique — une simple boutique en ligne s’appuyant sur des microservices. Copiez ce fichier dans le répertoire de votre choix.
+      </Step>
+
+      <Step>
+        ### Charger des données d’exemple
+
+        Pour charger ces données, il suffit de les envoyer au point de terminaison HTTP du collector OpenTelemetry (OTel) déployé.
+
+        Commencez par exporter la clé API copiée ci-dessus.
+
+        ```shell
+        # export API key
+        export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
+        ```
+
+        Exécutez la commande suivante pour envoyer les données à l’OTel collector :
+
+        ```shell
+        for filename in $(tar -tf sample.tar.gz); do
+          endpoint="http://localhost:4318/v1/${filename%.json}"
+          echo "loading ${filename%.json}"
+          tar -xOf sample.tar.gz "$filename" | while read -r line; do
+            printf '%s\n' "$line" | curl -s -o /dev/null -X POST "$endpoint" \
+            -H "Content-Type: application/json" \
+            -H "authorization: ${CLICKSTACK_API_KEY}" \
+            --data-binary @-
+          done
+        done
+        ```
+
+        Cela simule des sources OTLP de logs, de traces et de métriques qui envoient des données à l’OTel collector. En production, ces sources peuvent être des clients pour différents langages, voire d’autres OTel collectors.
+
+        De retour dans la vue `Search`, vous devriez voir que les données ont commencé à se charger (ajustez la période sur `Last 1 hour` si les données ne s&#39;affichent pas) :
+
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="Recherche HyperDX" size="lg" />
+
+        Le chargement des données prendra quelques minutes. Attendez qu’il soit terminé avant de passer aux étapes suivantes.
+      </Step>
+
+      <Step>
+        ### Explorer les sessions
+
+        Supposons que nous recevions des signalements indiquant que nos utilisateurs rencontrent des problèmes au moment de payer leurs achats. Nous pouvons consulter leur expérience à l’aide des fonctionnalités de session replay d’HyperDX.
+
+        Sélectionnez [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572) dans le menu de gauche.
+
+        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Sessions" size="lg" />
+
+        Cette vue permet de voir les sessions front-end de notre boutique e-commerce. Les sessions restent anonymes jusqu’à ce que les utilisateurs passent en caisse et tentent de finaliser un achat.
+
+        Notez que certaines sessions associées à des adresses e-mail comportent une erreur, ce qui peut confirmer les signalements d’échec de transaction.
+
+        Sélectionnez une trace présentant un échec et associée à une adresse e-mail. La vue suivante permet de rejouer la session de l’utilisateur et d’examiner son problème. Appuyez sur play pour visionner la session.
+
+        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Session replay" size="lg" />
+
+        La relecture montre l’utilisateur naviguant sur le site et ajoutant des articles à son panier. N’hésitez pas à avancer plus loin dans la session, jusqu’au moment où il tente de finaliser le paiement.
+
+        <Tip>
+          Les erreurs sont annotées en rouge sur la chronologie.
+        </Tip>
+
+        L’utilisateur n’a pas pu passer la commande, sans erreur évidente. Faites défiler jusqu’en bas du panneau de gauche, qui contient les événements réseau et console du navigateur de l’utilisateur. Vous remarquerez qu’une erreur 500 a été renvoyée lors d’un appel à `/api/checkout`.
+
+        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Erreur dans la session" size="lg" />
+
+        Sélectionnez cette erreur `500`. Ni l’`Overview` ni les `Column Values` n’indiquent la source du problème, si ce n’est que l’erreur est inattendue et provoque une `Internal Error`.
+      </Step>
+
+      <Step>
+        ### Explorer les traces
+
+        Accédez à l’onglet `Trace` pour afficher la trace distribuée complète.
+
+        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Trace de session" size="lg" />
+
+        Faites défiler la trace vers le bas pour voir l’origine de l’erreur : le span du service `checkout`. Sélectionnez le span du service `Payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Span" size="lg" />
+
+        Sélectionnez l’onglet `Column Values`, puis faites défiler vers le bas. Nous pouvons voir que le problème est lié à un cache saturé.
+
+        <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Valeurs de colonne" size="lg" />
+
+        En remontant puis en revenant à la trace, nous pouvons voir que les logs sont corrélés au span grâce à notre configuration précédente. Ils fournissent un contexte supplémentaire.
+
+        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Log corrélé" size="lg" />
+
+        Nous avons établi qu’un cache se remplit dans le service de paiement, ce qui empêche les paiements d’aboutir.
+      </Step>
+
+      <Step>
+        ### Explorer les logs
+
+        Pour plus de détails, nous pouvons revenir à la vue [`Search`](http://localhost:8080/search) :
+
+        Sélectionnez `Logs` dans les sources et appliquez un filtre sur le service `payment`.
+
+        <Image img="/images/use-cases/observability/hyperdx-18.webp" alt="Logs" size="lg" />
+
+        Nous pouvons constater que, bien que le problème soit récent, le nombre de paiements affectés est élevé. De plus, un cache lié aux paiements Visa semble être à l’origine du problème.
+      </Step>
+
+      <Step>
+        ### Métriques du graphique
+
+        Bien qu&#39;une erreur ait clairement été introduite dans le code, nous pouvons utiliser les métriques pour confirmer la taille du cache. Accédez à la vue `Chart Explorer`.
+
+        Sélectionnez `Metrics` comme source de données. Configurez le chart builder pour tracer le `Maximum` de `visa_validation_cache.size (Gauge)`, puis appuyez sur le bouton play. Le cache augmentait clairement jusqu&#39;à atteindre une taille maximale, après quoi des erreurs se sont produites.
+
+        <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Métriques" size="lg" />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>

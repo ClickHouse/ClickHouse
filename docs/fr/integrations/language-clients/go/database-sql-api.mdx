@@ -1,0 +1,667 @@
+---
+sidebarTitle: 'API Database/SQL'
+keywords: ['clickhouse', 'go', 'golang', 'database', 'sql', 'standard']
+description: "Utilisation de l'interface standard database/sql avec clickhouse-go."
+slug: /integrations/language-clients/go/database-sql-api
+title: 'API Database/SQL'
+doc_type: 'reference'
+---
+
+Vous trouverez [ici](https://github.com/ClickHouse/clickhouse-go/tree/main/examples/std) des exemples de code complets pour l’API standard.
+
+Pour la configuration de la connexion, voir [Configuration](/fr/integrations/language-clients/go/configuration).
+Pour les types de données pris en charge et les correspondances de types Go, voir [Types de données](/fr/integrations/language-clients/go/data-types).
+
+L’API `database/sql`, ou API « standard », vous permet d’utiliser le client dans des scénarios où le code d’application doit rester indépendant des bases de données sous-jacentes en s’appuyant sur une interface standard. Cela a toutefois un coût : des couches supplémentaires d’abstraction et d’indirection, ainsi que des primitives qui ne sont pas nécessairement adaptées à ClickHouse. Ces contraintes restent généralement acceptables dans les cas où des outils doivent se connecter à plusieurs bases de données.
+
+De plus, ce client prend en charge HTTP comme couche de transport ; les données restent encodées au format natif pour des performances optimales.
+
+<div id="connecting">
+  ## Connexion
+</div>
+
+La connexion peut s’effectuer soit à l’aide d’une chaîne DSN au format `clickhouse://<host>:<port>?<query_option>=<value>` avec la méthode `Open`, soit via la méthode `clickhouse.OpenDB`. Cette dernière ne fait pas partie de la spécification `database/sql`, mais renvoie une instance `sql.DB`. Cette méthode offre des fonctionnalités telles que le profilage, qu’il n’est pas possible d’exposer clairement via la spécification `database/sql`.
+
+```go
+func Connect() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn := clickhouse.OpenDB(&clickhouse.Options{
+                Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+                Auth: clickhouse.Auth{
+                        Database: env.Database,
+                        Username: env.Username,
+                        Password: env.Password,
+                },
+        })
+        return conn.Ping()
+}
+
+func ConnectDSN() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn, err := sql.Open("clickhouse", fmt.Sprintf("clickhouse://%s:%d?username=%s&password=%s", env.Host, env.Port, env.Username, env.Password))
+        if err != nil {
+                return err
+        }
+        return conn.Ping()
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect.go)
+
+**Pour tous les exemples suivants, sauf indication contraire, nous partons du principe que la variable ClickHouse `conn` a déjà été créée et qu&#39;elle est disponible.**
+
+<div id="connection-settings">
+  ### Paramètres de connexion
+</div>
+
+La plupart des options de configuration sont partagées avec l’API ClickHouse. Consultez [Configuration](/fr/integrations/language-clients/go/configuration) pour les paramètres communs. Les paramètres DSN spécifiques à SQL suivants sont disponibles :
+
+* `hosts` - liste d’hôtes à adresse unique séparés par des virgules pour l’équilibrage de charge et le basculement - voir [Connexion à plusieurs nœuds](/fr/integrations/language-clients/go/configuration#connecting-to-multiple-nodes).
+* `username/password` - identifiants d’authentification - voir [Authentification](/fr/integrations/language-clients/go/configuration#authentication)
+* `database` - sélectionne la base de données par défaut active
+* `dial_timeout` - une chaîne de durée est une séquence éventuellement signée de nombres décimaux, chacun pouvant inclure une fraction et un suffixe d’unité tel que `300ms`, `1s`. Les unités de temps valides sont `ms`, `s`, `m`.
+* `connection_open_strategy` - `random/in_order` (par défaut : `random`) - voir [Connexion à plusieurs nœuds](/fr/integrations/language-clients/go/configuration#connecting-to-multiple-nodes)
+  * `round_robin` - sélectionne un serveur en round-robin dans l’ensemble
+  * `in_order` - le premier serveur disponible est sélectionné dans l’ordre spécifié
+* `debug` - active la sortie de débogage (valeur booléenne)
+* `compress` - spécifie l’algorithme de compression - `none` (par défaut), `zstd`, `lz4`, `gzip`, `deflate`, `br`. Si défini sur `true`, `lz4` sera utilisé. Seuls `lz4` et `zstd` sont pris en charge pour la communication native.
+* `compress_level` - niveau de compression (la valeur par défaut est `0`). Voir Compression. Cela dépend de l’algorithme :
+  * `gzip` - `-2` (vitesse maximale) à `9` (compression maximale)
+  * `deflate` - `-2` (vitesse maximale) à `9` (compression maximale)
+  * `br` - `0` (vitesse maximale) à `11` (compression maximale)
+  * `zstd`, `lz4` - ignoré
+* `secure` - établit une connexion SSL sécurisée (la valeur par défaut est `false`)
+* `skip_verify` - ignore la vérification du certificat (la valeur par défaut est `false`)
+* `block_buffer_size` - permet de contrôler la taille du tampon de bloc. Voir [`BlockBufferSize`](/fr/integrations/language-clients/go/configuration#connection-settings). (la valeur par défaut est `2`)
+
+```go
+func ConnectSettings() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn, err := sql.Open("clickhouse", fmt.Sprintf("clickhouse://127.0.0.1:9001,127.0.0.1:9002,%s:%d/%s?username=%s&password=%s&dial_timeout=10s&connection_open_strategy=round_robin&debug=true&compress=lz4", env.Host, env.Port, env.Database, env.Username, env.Password))
+        if err != nil {
+                return err
+        }
+        return conn.Ping()
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_settings.go)
+
+<div id="connecting-over-http">
+  ### Connexion via HTTP
+</div>
+
+Par défaut, les connexions sont établies via le protocole natif. Si vous devez utiliser HTTP, vous pouvez l’activer soit en modifiant le DSN pour y inclure le protocole HTTP, soit en spécifiant Protocol dans les options de connexion.
+
+```go
+func ConnectHTTP() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn := clickhouse.OpenDB(&clickhouse.Options{
+                Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.HttpPort)},
+                Auth: clickhouse.Auth{
+                        Database: env.Database,
+                        Username: env.Username,
+                        Password: env.Password,
+                },
+                Protocol: clickhouse.HTTP,
+        })
+        return conn.Ping()
+}
+
+func ConnectDSNHTTP() error {
+        env, err := GetStdTestEnvironment()
+        if err != nil {
+                return err
+        }
+        conn, err := sql.Open("clickhouse", fmt.Sprintf("http://%s:%d?username=%s&password=%s", env.Host, env.HttpPort, env.Username, env.Password))
+        if err != nil {
+                return err
+        }
+        return conn.Ping()
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/connect_http.go)
+
+<div id="sessions">
+  ### Sessions
+</div>
+
+<Info>
+  **HTTP uniquement**
+
+  Les sessions ne sont nécessaires qu’avec le transport HTTP. Les connexions TCP natives intègrent automatiquement une session.
+</Info>
+
+Lorsque vous utilisez HTTP, transmettez un `session_id` comme paramètre pour activer les fonctionnalités liées à la session, telles que les tables temporaires.
+
+```go
+conn := clickhouse.OpenDB(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.HttpPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Protocol: clickhouse.HTTP,
+    Settings: clickhouse.Settings{
+        "session_id": uuid.NewString(),
+    },
+})
+if _, err := conn.Exec(`DROP TABLE IF EXISTS example`); err != nil {
+    return err
+}
+_, err = conn.Exec(`
+    CREATE TEMPORARY TABLE IF NOT EXISTS example (
+            Col1 UInt8
+    )
+`)
+if err != nil {
+    return err
+}
+scope, err := conn.Begin()
+if err != nil {
+    return err
+}
+batch, err := scope.Prepare("INSERT INTO example")
+if err != nil {
+    return err
+}
+for i := 0; i < 10; i++ {
+    _, err := batch.Exec(
+        uint8(i),
+    )
+    if err != nil {
+        return err
+    }
+}
+rows, err := conn.Query("SELECT * FROM example")
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+var (
+    col1 uint8
+)
+for rows.Next() {
+    if err := rows.Scan(&col1); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%d\n", col1)
+}
+
+// NOTE: Do not skip rows.Err() check
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/session.go)
+
+<div id="execution">
+  ## Exécution
+</div>
+
+Une fois la connexion établie, vous pouvez exécuter des instructions `sql` à l’aide de la méthode Exec.
+
+```go
+conn.Exec(`DROP TABLE IF EXISTS example`)
+_, err = conn.Exec(`
+    CREATE TABLE IF NOT EXISTS example (
+        Col1 UInt8,
+        Col2 String
+    ) engine=Memory
+`)
+if err != nil {
+    return err
+}
+_, err = conn.Exec("INSERT INTO example VALUES (1, 'test-1')")
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/exec.go)
+
+Cette méthode n’accepte pas de `Context` en paramètre ; par défaut, elle s’exécute avec le Context d’arrière-plan. Vous pouvez utiliser `ExecContext` si nécessaire ; voir [Using Context](#using-context).
+
+<div id="batch-insert">
+  ## Insertion par lot
+</div>
+
+Le fonctionnement par lot peut être obtenu en créant un `sql.Tx` via la méthode `Being`. À partir de celui-ci, il est possible d’obtenir un lot à l’aide de la méthode `Prepare` avec l’instruction `INSERT`. Cela renvoie un `sql.Stmt` auquel des lignes peuvent être ajoutées via la méthode `Exec`. Le lot est accumulé en mémoire jusqu’à l’exécution de `Commit` sur le `sql.Tx` d’origine.
+
+```go
+batch, err := scope.Prepare("INSERT INTO example")
+if err != nil {
+    return err
+}
+for i := 0; i < 1000; i++ {
+    _, err := batch.Exec(
+        uint8(42),
+        "ClickHouse", "Inc",
+        uuid.New(),
+        map[string]uint8{"key": 1},             // Map(String, UInt8)
+        []string{"Q", "W", "E", "R", "T", "Y"}, // Array(String)
+        []interface{}{ // Tuple(String, UInt8, Array(Map(String, String)))
+            "String Value", uint8(5), []map[string]string{
+                map[string]string{"key": "value"},
+                map[string]string{"key": "value"},
+                map[string]string{"key": "value"},
+            },
+        },
+        time.Now(),
+    )
+    if err != nil {
+        return err
+    }
+}
+return scope.Commit()
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/batch.go)
+
+<div id="querying-rows">
+  ## Interroger des lignes
+</div>
+
+Il est possible d’interroger une seule ligne à l’aide de la méthode `QueryRow`. Cette méthode renvoie un *sql.Row, sur lequel Scan peut être appelé avec des pointeurs vers des variables dans lesquelles les valeurs des colonnes seront stockées. Une variante `QueryRowContext` permet de transmettre un Context autre que background - voir [Using Context](#using-context).
+
+```go
+row := conn.QueryRow("SELECT * FROM example")
+var (
+    col1             uint8
+    col2, col3, col4 string
+    col5             map[string]uint8
+    col6             []string
+    col7             interface{}
+    col8             time.Time
+)
+if err := row.Scan(&col1, &col2, &col3, &col4, &col5, &col6, &col7, &col8); err != nil {
+    return err
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_row.go)
+
+Pour itérer sur plusieurs lignes, il faut utiliser la méthode `Query`. Celle-ci renvoie une structure `*sql.Rows`, sur laquelle on peut appeler `Next` pour parcourir les lignes. Son équivalent `QueryContext` permet de transmettre un contexte.
+
+```go
+rows, err := conn.Query("SELECT * FROM example")
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+var (
+    col1             uint8
+    col2, col3, col4 string
+    col5             map[string]uint8
+    col6             []string
+    col7             interface{}
+    col8             time.Time
+)
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2, &col3, &col4, &col5, &col6, &col7, &col8); err != nil {
+        return err
+    }
+    fmt.Printf("row: col1=%d, col2=%s, col3=%s, col4=%s, col5=%v, col6=%v, col7=%v, col8=%v\n", col1, col2, col3, col4, col5, col6, col7, col8)
+}
+// NOTE: Do not skip rows.Err() check
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/query_rows.go)
+
+<div id="async-insert">
+  ## Insertion asynchrone
+</div>
+
+Les insertions asynchrones peuvent être effectuées en exécutant une insertion via la méthode `ExecContext`. Cette méthode doit recevoir un contexte dans lequel le mode asynchrone est activé, comme illustré ci-dessous. Cela permet à l&#39;utilisateur de préciser si le client doit attendre que le serveur termine l&#39;insertion ou s&#39;il doit répondre dès que les données ont été reçues. Cela contrôle en pratique le paramètre [wait&#95;for&#95;async&#95;insert](/fr/reference/settings/session-settings#wait_for_async_insert).
+
+```go
+const ddl = `
+    CREATE TABLE example (
+            Col1 UInt64
+        , Col2 String
+        , Col3 Array(UInt8)
+        , Col4 DateTime
+    ) ENGINE = Memory
+    `
+if _, err := conn.Exec(ddl); err != nil {
+    return err
+}
+ctx := clickhouse.Context(context.Background(), clickhouse.WithStdAsync(false))
+{
+    for i := 0; i < 100; i++ {
+        _, err := conn.ExecContext(ctx, fmt.Sprintf(`INSERT INTO example VALUES (
+            %d, '%s', [1, 2, 3, 4, 5, 6, 7, 8, 9], now()
+        )`, i, "Golang SQL database driver"))
+        if err != nil {
+            return err
+        }
+    }
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/async.go)
+
+<div id="parameter-binding">
+  ## Liaison de paramètres
+</div>
+
+L’API standard prend en charge les mêmes mécanismes de liaison de paramètres que la [API ClickHouse](/fr/integrations/language-clients/go/clickhouse-api#parameter-binding), ce qui permet de passer des paramètres aux méthodes `Exec`, `Query` et `QueryRow` (ainsi qu’à leurs variantes [Context](#using-context) équivalentes). Les paramètres positionnels, nommés et numérotés sont pris en charge.
+
+```go
+var count uint64
+// positional bind
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 >= ? AND Col3 < ?", 500, now.Add(time.Duration(750)*time.Second)).Scan(&count); err != nil {
+    return err
+}
+// 250
+fmt.Printf("Positional bind count: %d\n", count)
+// numeric bind
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 <= $2 AND Col3 > $1", now.Add(time.Duration(150)*time.Second), 250).Scan(&count); err != nil {
+    return err
+}
+// 100
+fmt.Printf("Numeric bind count: %d\n", count)
+// named bind
+if err = conn.QueryRow(ctx, "SELECT count() FROM example WHERE Col1 <= @col1 AND Col3 > @col3", clickhouse.Named("col1", 100), clickhouse.Named("col3", now.Add(time.Duration(50)*time.Second))).Scan(&count); err != nil {
+    return err
+}
+// 50
+fmt.Printf("Named bind count: %d\n", count)
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/bind.go)
+
+Notez que les [cas particuliers](/fr/integrations/language-clients/go/clickhouse-api#special-cases) s&#39;appliquent toujours.
+
+<div id="using-context">
+  ## Utilisation du contexte
+</div>
+
+L’API standard permet également de transmettre, via le contexte, des deadlines, des signaux d’annulation et d’autres valeurs associées à la portée de la requête, comme avec la [API ClickHouse](/fr/integrations/language-clients/go/clickhouse-api#using-context). Contrairement à la API ClickHouse, cela se fait à l’aide de variantes `Context` des méthodes. Autrement dit, des méthodes comme `Exec`, qui utilisent par défaut le contexte d’arrière-plan, ont une variante `ExecContext` à laquelle un contexte peut être passé en premier paramètre. Cela permet de transmettre un contexte à n’importe quelle étape du flux d’une application. Par exemple, vous pouvez passer un contexte lors de l’établissement d’une connexion via `ConnContext` ou lors de la récupération d’une ligne de requête via `QueryRowContext`. Des exemples de toutes les méthodes disponibles sont présentés ci-dessous.
+
+Pour plus de détails sur l’utilisation du contexte pour transmettre des deadlines, des signaux d’annulation, des identifiants de requête, des quota keys et des paramètres de connexion, consultez [Using Context](/fr/integrations/language-clients/go/clickhouse-api#using-context) pour la API ClickHouse.
+
+```go
+ctx := clickhouse.Context(context.Background(), clickhouse.WithSettings(clickhouse.Settings{
+    "async_insert": "1",
+}))
+
+// queries can be cancelled using the context
+ctx, cancel := context.WithCancel(context.Background())
+go func() {
+    cancel()
+}()
+if err = conn.QueryRowContext(ctx, "SELECT sleep(3)").Scan(); err == nil {
+    return fmt.Errorf("expected cancel")
+}
+
+// set a deadline for a query - this will cancel the query after the absolute time is reached. Again terminates the connection only,
+// queries will continue to completion in ClickHouse
+ctx, cancel = context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+defer cancel()
+if err := conn.PingContext(ctx); err == nil {
+    return fmt.Errorf("expected deadline exceeeded")
+}
+
+// set a query id to assist tracing queries in logs e.g. see system.query_log
+var one uint8
+ctx = clickhouse.Context(context.Background(), clickhouse.WithQueryID(uuid.NewString()))
+if err = conn.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
+    return err
+}
+
+conn.ExecContext(context.Background(), "DROP QUOTA IF EXISTS foobar")
+defer func() {
+    conn.ExecContext(context.Background(), "DROP QUOTA IF EXISTS foobar")
+}()
+ctx = clickhouse.Context(context.Background(), clickhouse.WithQuotaKey("abcde"))
+// set a quota key - first create the quota
+if _, err = conn.ExecContext(ctx, "CREATE QUOTA IF NOT EXISTS foobar KEYED BY client_key FOR INTERVAL 1 minute MAX queries = 5 TO default"); err != nil {
+    return err
+}
+
+// queries can be cancelled using the context
+ctx, cancel = context.WithCancel(context.Background())
+// we will get some results before cancel
+ctx = clickhouse.Context(ctx, clickhouse.WithSettings(clickhouse.Settings{
+    "max_block_size": "1",
+}))
+rows, err := conn.QueryContext(ctx, "SELECT sleepEachRow(1), number FROM numbers(100);")
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+var (
+    col1 uint8
+    col2 uint8
+)
+
+for rows.Next() {
+    if err := rows.Scan(&col1, &col2); err != nil {
+        if col2 > 3 {
+            fmt.Println("expected cancel")
+            return nil
+        }
+        return err
+    }
+    fmt.Printf("row: col2=%d\n", col2)
+    if col2 == 3 {
+        cancel()
+    }
+}
+// NOTE: Do not skip rows.Err() check
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/context.go)
+
+<div id="dynamic-scanning">
+  ## Analyse dynamique
+</div>
+
+Comme avec la [API ClickHouse](/fr/integrations/language-clients/go/clickhouse-api#dynamic-scanning), les informations de type des colonnes sont disponibles pour vous permettre de créer, à l’exécution, des instances de variables correctement typées pouvant être passées à Scan. Cela permet de lire des colonnes dont le type n’est pas connu.
+
+```go
+const query = `
+SELECT
+        1     AS Col1
+    , 'Text' AS Col2
+`
+rows, err := conn.QueryContext(context.Background(), query)
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+columnTypes, err := rows.ColumnTypes()
+if err != nil {
+    return err
+}
+vars := make([]interface{}, len(columnTypes))
+for i := range columnTypes {
+    vars[i] = reflect.New(columnTypes[i].ScanType()).Interface()
+}
+for rows.Next() {
+    if err := rows.Scan(vars...); err != nil {
+        return err
+    }
+    for _, v := range vars {
+        switch v := v.(type) {
+        case *string:
+            fmt.Println(*v)
+        case *uint8:
+            fmt.Println(*v)
+        }
+    }
+}
+// NOTE: Do not skip rows.Err() check
+if err := rows.Err(); err != nil {
+    return err
+}
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/dynamic_scan_types.go)
+
+<div id="external-tables">
+  ## Tables externes
+</div>
+
+Les [tables externes](/fr/reference/engines/table-engines/special/external-data) permettent au client d&#39;envoyer des données à ClickHouse avec une requête `SELECT`. Ces données sont placées dans une table temporaire et peuvent être utilisées dans la requête elle-même lors de son exécution.
+
+Pour envoyer des données externes avec une requête, l&#39;utilisateur doit créer une table externe via `ext.NewTable` avant de la transmettre dans le contexte.
+
+```go
+table1, err := ext.NewTable("external_table_1",
+    ext.Column("col1", "UInt8"),
+    ext.Column("col2", "String"),
+    ext.Column("col3", "DateTime"),
+)
+if err != nil {
+    return err
+}
+
+for i := 0; i < 10; i++ {
+    if err = table1.Append(uint8(i), fmt.Sprintf("value_%d", i), time.Now()); err != nil {
+        return err
+    }
+}
+
+table2, err := ext.NewTable("external_table_2",
+    ext.Column("col1", "UInt8"),
+    ext.Column("col2", "String"),
+    ext.Column("col3", "DateTime"),
+)
+
+for i := 0; i < 10; i++ {
+    table2.Append(uint8(i), fmt.Sprintf("value_%d", i), time.Now())
+}
+ctx := clickhouse.Context(context.Background(),
+    clickhouse.WithExternalTable(table1, table2),
+)
+rows, err := conn.QueryContext(ctx, "SELECT * FROM external_table_1")
+if err != nil {
+    return err
+}
+defer rows.Close()
+
+for rows.Next() {
+    var (
+        col1 uint8
+        col2 string
+        col3 time.Time
+    )
+    rows.Scan(&col1, &col2, &col3)
+    fmt.Printf("col1=%d, col2=%s, col3=%v\n", col1, col2, col3)
+}
+// NOTE: Do not skip rows.Err() check
+if err := rows.Err(); err != nil {
+    return err
+}
+
+var count uint64
+if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM external_table_1").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_1: %d\n", count)
+if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM external_table_2").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_2: %d\n", count)
+if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM (SELECT * FROM external_table_1 UNION ALL SELECT * FROM external_table_2)").Scan(&count); err != nil {
+    return err
+}
+fmt.Printf("external_table_1 UNION external_table_2: %d\n", count)
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/external_data.go)
+
+<div id="open-telemetry">
+  ## OpenTelemetry
+</div>
+
+ClickHouse prend en charge la [propagation du contexte de trace](/fr/guides/oss/deployment-and-scaling/monitoring/opentelemetry) sur les transports TCP et HTTP. Utilisez `clickhouse.WithSpan` pour associer un span à une requête via le contexte.
+
+<Info>
+  **Limitation du transport HTTP**
+
+  Bien que le serveur ClickHouse accepte les en-têtes HTTP standard `traceparent` / `tracestate`, le transport HTTP de clickhouse-go ne les envoie pas actuellement — `WithSpan` n’a donc aucun effet avec HTTP. Pour contourner cette limitation, vous pouvez définir l’en-tête manuellement via `HttpHeaders` dans les options de connexion.
+</Info>
+
+```go
+var count uint64
+rows := conn.QueryRowContext(clickhouse.Context(context.Background(), clickhouse.WithSpan(
+    trace.NewSpanContext(trace.SpanContextConfig{
+        SpanID:  trace.SpanID{1, 2, 3, 4, 5},
+        TraceID: trace.TraceID{5, 4, 3, 2, 1},
+    }),
+)), "SELECT COUNT() FROM (SELECT number FROM system.numbers LIMIT 5)")
+if err := rows.Scan(&count); err != nil {
+    return err
+}
+// NOTE: Do not skip rows.Err() check
+if err := rows.Err(); err != nil {
+    return err
+}
+fmt.Printf("count: %d\n", count)
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/open_telemetry.go)
+
+<div id="compression">
+  ## Compression
+</div>
+
+L’API standard prend en charge les mêmes algorithmes de compression que l’[API ClickHouse](/fr/integrations/language-clients/go/configuration#compression), à savoir la compression `lz4` et `zstd` au niveau des blocs. En outre, les compressions gzip, deflate et br sont prises en charge pour les connexions HTTP. Si l’une d’elles est activée, la compression est appliquée aux blocs lors de l’insertion et pour les réponses aux requêtes. Les autres requêtes, par ex. les pings ou les requêtes de query, resteront non compressées. Cela est conforme au comportement des options `lz4` et `zstd`.
+
+Si vous utilisez la méthode `OpenDB` pour établir une connexion, vous pouvez transmettre une configuration de compression. Cela permet notamment de spécifier le niveau de compression (voir ci-dessous). Si vous vous connectez via `sql.Open` avec un DSN, utilisez le paramètre `compress`. Celui-ci peut être soit un algorithme de compression spécifique, à savoir `gzip`, `deflate`, `br`, `zstd` ou `lz4`, soit un indicateur booléen. S’il est défini sur true, `lz4` sera utilisé. La valeur par défaut est `none`, c.-à-d. la compression est désactivée.
+
+```go
+conn := clickhouse.OpenDB(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.HttpPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionBrotli,
+        Level:  5,
+    },
+    Protocol: clickhouse.HTTP,
+})
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/compression.go#L27-L76)
+
+```go
+conn, err := sql.Open("clickhouse", fmt.Sprintf("http://%s:%d?username=%s&password=%s&compress=gzip&compress_level=5", env.Host, env.HttpPort, env.Username, env.Password))
+```
+
+[Exemple complet](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/std/compression.go#L78-L115)
+
+Le niveau de Compression appliqué peut être contrôlé à l’aide du paramètre DSN compress&#95;level ou du champ Level de l’option Compression. La valeur par défaut est 0, mais elle dépend de l’algorithme :
+
+* `gzip` - de `-2` (vitesse maximale) à `9` (compression maximale)
+* `deflate` - de `-2` (vitesse maximale) à `9` (compression maximale)
+* `br` - de `0` (vitesse maximale) à `11` (compression maximale)
+* `zstd`, `lz4` - ignoré

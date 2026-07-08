@@ -1,0 +1,161 @@
+---
+title: Windows 10에 ClickHouse를 설치하려면 어떻게 해야 합니까?
+description: "WSL 2를 사용해 Windows 10에서 ClickHouse를 설치하고 테스트하는 방법을 알아봅니다. 설정, 문제 해결, 테스트 환경 실행 방법을 포함합니다."
+date: 2023-04-24
+tags: ['도구 및 유틸리티']
+keywords: ['Windows 10']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-install-and-test-clickhouse-on-microsoft-windows">
+  ## Microsoft Windows에 ClickHouse를 설치하고 테스트하는 방법
+</div>
+
+Windows 10에 ClickHouse를 설치할 때 데이터를 삽입하는 과정에서 오류가 발생할 수 있습니다. 예를 들면 다음과 같습니다:
+
+```
+DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in rename: Permission denied ["./store/711/71144174-d098-4056-8976-6ad1204205ec/tmp_insert_all_1_1_0/"] ["./store/711/71144174-d098-4056-8976-6ad1204205ec/all_1_1_0/"]. Stack trace:
+```
+
+Windows 10에서는 WSL을 WSL 2로 업그레이드해야 합니다.
+
+* PowerShell 아이콘을 마우스 오른쪽 버튼으로 클릭한 다음 &quot;관리자 권한으로 실행&quot;을 선택해 PowerShell을 엽니다.
+
+* 다음 Microsoft 지침에 따라 WSL 2로 업그레이드하십시오:
+  https://learn.microsoft.com/en-us/windows/wsl/install
+
+* 업그레이드가 완료되면 PowerShell에서 WSL을 엽니다.
+
+```
+wsl
+```
+
+* 테스트하려면 다음 지침을 따르십시오. 그러면 비슷한 출력이 표시됩니다:
+  테스트 목적이므로 권한 문제를 피하기 위해 root로 로그인했습니다:
+
+```
+sudo -i
+```
+
+* ClickHouse 디렉터리를 생성합니다:
+
+```
+root@marspc2:~# mkdir /clickhouse
+```
+
+* 새로 만든 디렉터리에서 clickhouse를 다운로드합니다:
+
+```
+root@marspc2:/# cd clickhouse
+
+root@marspc2:/clickhouse# curl https://clickhouse.com | sh
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  2739    0  2739    0     0   5515      0 --:--:-- --:--:-- --:--:--  5511
+
+Will download https://builds.clickhouse.com/master/amd64/clickhouse into clickhouse
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  530M  100  530M    0     0  8859k      0  0:01:01  0:01:01 --:--:-- 8549k
+
+Successfully downloaded the ClickHouse binary, you can run it as:
+    ./clickhouse
+
+You can also install it:
+    sudo ./clickhouse install
+```
+
+* ClickHouse 서버를 시작하세요:
+
+```
+root@marspc2:/clickhouse# ./clickhouse server
+Processing configuration file 'config.xml'.
+There is no file 'config.xml', will use embedded config.
+Cannot set max size of core file to 1073741824
+2023.04.17 19:19:23.155323 [ 500 ] {} <Information> SentryWriter: Sending crash reports is disabled
+2023.04.17 19:19:23.165447 [ 500 ] {} <Trace> Pipe: Pipe capacity is 1.00 MiB
+2023.04.17 19:19:23.271147 [ 500 ] {} <Information> Application: Starting ClickHouse 23.4.1.1222 (revision: 54473, git hash: 3993aef8e281815ac4269d44e27bb1dcdcff21cb, build id: AF16AA59B689841860F39ACDBED30AC8F9AB70FA), PID 500
+2023.04.17 19:19:23.271208 [ 500 ] {} <Information> Application: starting up
+2023.04.17 19:19:23.271237 [ 500 ] {} <Information> Application: OS name: Linux, version: 5.15.90.1-microsoft-standard-WSL2, architecture: x86_64
+...
+```
+
+* 다른 WSL 창에서 클라이언트를 시작합니다:
+
+```
+root@marspc2:/clickhouse# ./clickhouse client
+ClickHouse client version 23.4.1.1222 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 23.4.1 revision 54462.
+
+Warnings:
+ * Linux transparent hugepages are set to "always". Check /sys/kernel/mm/transparent_hugepage/enabled
+
+marspc2. :)
+```
+
+* 데이터베이스와 테이블을 생성합니다:
+
+```
+marspc2. :) create database db1;
+
+CREATE DATABASE db1
+
+Query id: 688f79e2-8132-44ed-98d6-0581abe9903a
+
+Ok.
+
+0 rows in set. Elapsed: 0.007 sec.
+
+marspc2. :) create table db1.table1 (id Int64, string_column String) engine = MergeTree() order by id;
+
+CREATE TABLE db1.table1
+(
+    `id` Int64,
+    `string_column` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: d91a93b4-e13f-4e17-8201-f329223287d0
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+```
+
+* 샘플 행을 삽입하세요:
+
+```
+marspc2. :) insert into db1.table1 (id, string_column) values (1, 'a'), (2,'b');
+
+INSERT INTO db1.table1 (id, string_column) FORMAT Values
+
+Query id: 2b274eef-09af-434b-88e0-c25799649910
+
+Ok.
+
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+* 행을 조회합니다:
+
+```
+marspc2. :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: 74c76bf1-d944-4b21-a384-cc0b5e6aa579
+
+┌─id─┬─string_column─┐
+│  1 │ a             │
+│  2 │ b             │
+└────┴───────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+```

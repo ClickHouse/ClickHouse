@@ -1,0 +1,568 @@
+---
+title: 'Travailler avec les tableaux dans ClickHouse'
+description: 'Guide d’introduction à l’utilisation des tableaux dans ClickHouse'
+keywords: ['Tableaux']
+sidebarTitle: 'Travailler avec les tableaux dans ClickHouse'
+slug: /guides/working-with-arrays
+doc_type: 'guide'
+---
+
+import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.jsx";
+
+> Dans ce guide, vous apprendrez à utiliser les tableaux dans ClickHouse, ainsi que quelques-unes des [fonctions de tableau](/fr/reference/functions/regular-functions/array-functions) les plus couramment utilisées.
+
+<div id="array-basics">
+  ## Introduction aux tableaux
+</div>
+
+Un tableau est une structure de données en mémoire qui regroupe des valeurs.
+On appelle ces valeurs les *éléments* du tableau, et chaque élément peut être désigné par un indice, qui indique sa position dans cet ensemble.
+
+Dans ClickHouse, les tableaux peuvent être créés à l&#39;aide de la fonction [`array`](/fr/reference/data-types/array) :
+
+```sql
+array(T)
+```
+
+Ou bien, en utilisant `[]` :
+
+```sql
+[]
+```
+
+Par exemple, vous pouvez créer un tableau de nombres :
+
+```sql
+SELECT array(1, 2, 3) AS numeric_array
+```
+
+```response
+┌─numeric_array─┐
+│ [1,2,3]       │
+└───────────────┘
+```
+
+Ou un tableau de chaînes :
+
+```sql
+SELECT array('hello', 'world') AS string_array
+```
+
+```response
+┌─string_array──────┐
+│ ['hello','world'] │
+└───────────────────┘
+```
+
+Ou un tableau de types imbriqués tels que des [tuples](/fr/reference/data-types/tuple):
+
+```sql
+SELECT array(tuple(1, 2), tuple(3, 4))
+```
+
+```response
+┌─[(1, 2), (3, 4)]─┐
+│ [(1,2),(3,4)]    │
+└──────────────────┘
+```
+
+Vous pourriez être tenté de créer un tableau contenant différents types, comme ceci :
+
+```sql
+SELECT array('Hello', 'world', 1, 2, 3)
+```
+
+Cependant, les éléments d’un tableau doivent toujours avoir un super-type commun, c’est-à-dire le plus petit type de données capable de représenter sans perte des valeurs de deux types ou plus, afin de pouvoir les utiliser ensemble.
+S’il n’existe pas de super-type commun, une exception sera renvoyée lorsque vous tenterez de constituer le tableau :
+
+```sql
+Received exception:
+Code: 386. DB::Exception: There is no supertype for types String, String, UInt8, UInt8, UInt8 because some of them are String/FixedString/Enum and some of them are not: In scope SELECT ['Hello', 'world', 1, 2, 3]. (NO_COMMON_TYPE)
+```
+
+lors de la création de tableaux à la volée, ClickHouse choisit le type le plus spécifique compatible avec tous les éléments.
+Par exemple, si vous créez un tableau d’entiers et de nombres à virgule flottante, un supertype flottant est choisi :
+
+```sql
+SELECT [1::UInt8, 2.5::Float32, 3::UInt8] AS mixed_array, toTypeName([1, 2.5, 3]) AS array_type;
+```
+
+```response
+┌─mixed_array─┬─array_type─────┐
+│ [1,2.5,3]   │ Array(Float64) │
+└─────────────┴────────────────┘
+```
+
+<Accordion title="Création de tableaux de types différents">
+  Vous pouvez utiliser le paramètre `use_variant_as_common_type` pour modifier le comportement par défaut décrit ci-dessus.
+  Cela permet d’utiliser le type [Variant](/fr/reference/data-types/variant) comme type de résultat pour les fonctions `if`/`multiIf`/`array`/`map` lorsqu’il n’existe aucun type commun entre les types d’argument.
+
+  Par exemple :
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      toTypeName(array)
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─toTypeName(array)────────────────────────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ Array(Variant(Array(String), String, UInt8)) │
+  └──────────────────────────────────────┴──────────────────────────────────────────────┘
+  ```
+
+  Vous pouvez ensuite extraire du tableau les valeurs par nom de type :
+
+  ```sql
+  SELECT
+      [1, 'ClickHouse', ['Another', 'Array']] AS array,
+      array.UInt8,
+      array.String,
+      array.`Array(String)`
+  SETTINGS use_variant_as_common_type = 1;
+  ```
+
+  ```response
+  ┌─array────────────────────────────────┬─array.UInt8───┬─array.String─────────────┬─array.Array(String)─────────┐
+  │ [1,'ClickHouse',['Another','Array']] │ [1,NULL,NULL] │ [NULL,'ClickHouse',NULL] │ [[],[],['Another','Array']] │
+  └──────────────────────────────────────┴───────────────┴──────────────────────────┴─────────────────────────────┘
+  ```
+</Accordion>
+
+La notation d’indexation `[]` offre un moyen pratique d’accéder aux éléments d’un tableau.
+Dans ClickHouse, il est important de savoir que l’indice d’un tableau commence toujours à **1**.
+Cela peut différer d’autres langages de programmation auxquels vous êtes habitué, où les tableaux sont indexés à partir de zéro.
+
+Par exemple, étant donné un tableau, vous pouvez en sélectionner le premier élément en écrivant :
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[1];
+```
+
+```response
+┌─arrayElement⋯g_array, 1)─┐
+│ hello                    │
+└──────────────────────────┘
+```
+
+Il est également possible d&#39;utiliser des indices négatifs.
+Vous pouvez ainsi sélectionner des éléments par rapport au dernier élément :
+
+```sql
+WITH array('hello', 'world') AS string_array
+SELECT string_array[-1];
+```
+
+```response
+┌─arrayElement⋯g_array, -1)─┐
+│ world                     │
+└───────────────────────────┘
+```
+
+Bien que les tableaux soient indexés à partir de 1, vous pouvez tout de même accéder à l’élément en position 0.
+La valeur renvoyée sera la *valeur par défaut* du type de tableau.
+Dans l’exemple ci-dessous, une chaîne vide est renvoyée, car il s’agit de la valeur par défaut du type de données String :
+
+```sql
+WITH ['hello', 'world', 'arrays are great aren\'t they?'] AS string_array
+SELECT string_array[0]
+```
+
+```response
+┌─arrayElement⋯g_array, 0)─┐
+│                          │
+└──────────────────────────┘
+```
+
+<div id="array-functions">
+  ## Fonctions de tableau
+</div>
+
+ClickHouse propose de nombreuses fonctions utiles pour manipuler les tableaux.
+Dans cette section, nous allons passer en revue quelques-unes des plus utiles, en commençant par les plus simples pour aller vers les plus complexes.
+
+<div id="length-arrayEnumerate-indexOf-has-functions">
+  ### fonctions length, arrayEnumerate, indexOf, has*
+</div>
+
+La fonction `length` renvoie le nombre d’éléments du tableau :
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT length(string_array);
+```
+
+```response
+┌─length(string_array)─┐
+│                    3 │
+└──────────────────────┘
+```
+
+Vous pouvez également utiliser la fonction [`arrayEnumerate`](/fr/reference/functions/regular-functions/array-functions#arrayEnumerate) pour retourner un tableau contenant les indices des éléments :
+
+```sql
+WITH array('learning', 'ClickHouse', 'arrays') AS string_array
+SELECT arrayEnumerate(string_array);
+```
+
+```response
+┌─arrayEnumerate(string_array)─┐
+│ [1,2,3]                      │
+└──────────────────────────────┘
+```
+
+Si vous souhaitez trouver la position d’une valeur particulière, vous pouvez utiliser la fonction `indexOf` :
+
+```sql
+SELECT indexOf([4, 2, 8, 8, 9], 8);
+```
+
+```response
+┌─indexOf([4, 2, 8, 8, 9], 8)─┐
+│                           3 │
+└─────────────────────────────┘
+```
+
+Notez que cette fonction renverra le premier indice trouvé s’il existe plusieurs valeurs identiques dans le tableau.
+Si les éléments de votre tableau sont triés par ordre croissant, vous pouvez utiliser la fonction [`indexOfAssumeSorted`](/fr/reference/functions/regular-functions/array-functions#indexOfAssumeSorted).
+
+Les fonctions `has`, `hasAll` et `hasAny` sont utiles pour déterminer si un tableau contient une valeur donnée.
+Prenons l’exemple suivant :
+
+```sql
+WITH ['Airbus A380', 'Airbus A350', 'Airbus A220', 'Boeing 737', 'Boeing 747-400'] AS airplanes
+SELECT
+    has(airplanes, 'Airbus A350') AS has_true,
+    has(airplanes, 'Lockheed Martin F-22 Raptor') AS has_false,
+    hasAny(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAny_true,
+    hasAny(airplanes, ['Lockheed Martin F-22 Raptor', 'Eurofighter Typhoon']) AS hasAny_false,
+    hasAll(airplanes, ['Boeing 737', 'Boeing 747-400']) AS hasAll_true,
+    hasAll(airplanes, ['Boeing 737', 'Eurofighter Typhoon']) AS hasAll_false
+FORMAT Vertical;
+```
+
+```response
+has_true:     1
+has_false:    0
+hasAny_true:  1
+hasAny_false: 0
+hasAll_true:  1
+hasAll_false: 0
+```
+
+<div id="exploring-flight-data-with-array-functions">
+  ## Exploration des données de vol avec les fonctions de tableau
+</div>
+
+Jusqu’ici, les exemples étaient assez simples.
+L’utilité des tableaux apparaît vraiment lorsqu’ils sont appliqués à un jeu de données réel.
+
+Nous allons utiliser le [jeu de données ontime](/fr/get-started/sample-datasets/ontime), qui contient des données de vol du Bureau of Transportation Statistics.
+Vous trouverez ce jeu de données dans le [SQL playground](https://sql.clickhouse.com/?query_id=M4FSVBVMSHY98NKCQP8N4K).
+
+Nous avons choisi ce jeu de données, car les tableaux sont souvent bien adaptés aux données de séries temporelles et peuvent aider à simplifier
+des requêtes autrement complexes.
+
+<Tip>
+  Cliquez sur le bouton &quot;play&quot; ci-dessous pour exécuter les requêtes directement dans la documentation et voir le résultat en direct.
+</Tip>
+
+<div id="grouparray">
+  ### groupArray
+</div>
+
+Ce jeu de données comporte de nombreuses colonnes, mais nous allons nous concentrer sur un sous-ensemble de colonnes.
+Exécutez la requête ci-dessous pour voir à quoi ressemblent les données :
+
+<RunnableCode>
+  ```sql
+  -- SELECT
+  -- *
+  -- FROM ontime.ontime LIMIT 100
+
+  SELECT
+      FlightDate,
+      Origin,
+      OriginCityName,
+      Dest,
+      DestCityName,
+      DepTime,
+      DepDelayMinutes,
+      ArrTime,
+      ArrDelayMinutes
+  FROM ontime.ontime LIMIT 5
+  ```
+</RunnableCode>
+
+Examinons les 10 aéroports les plus fréquentés des États-Unis un jour donné choisi au hasard, par exemple &#39;2024-01-01&#39;.
+Nous voulons savoir combien de vols partent de chaque aéroport.
+Nos données contiennent une ligne par vol, mais il serait pratique de pouvoir regrouper les données par aéroport d&#39;origine et de rassembler les destinations dans un tableau.
+
+Pour ce faire, nous pouvons utiliser la fonction d&#39;agrégation [`groupArray`](/fr/reference/functions/aggregate-functions/groupArray), qui prend les valeurs de la colonne spécifiée pour chaque ligne et les regroupe dans un tableau.
+
+Exécutez la requête ci-dessous pour voir comment cela fonctionne :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+  FROM ontime.ontime
+  WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA') AND FlightDate='2024-01-01'
+  GROUP BY FlightDate, Origin
+  ORDER BY length(Destinations)
+  ```
+</RunnableCode>
+
+La fonction [`toStringCutToZero`](/fr/reference/functions/regular-functions/type-conversion-functions#toStringCutToZero) dans la requête ci-dessus sert à supprimer les caractères nuls qui apparaissent après le code à 3 lettres de certains aéroports.
+
+Avec les données sous cette forme, nous pouvons facilement classer les aéroports les plus fréquentés en calculant la longueur des tableaux « Destinations » agrégés :
+
+<RunnableCode>
+  ```sql highlight={7}
+  WITH
+      '2024-01-01' AS date,
+      busy_airports AS (
+      SELECT
+      FlightDate,
+      Origin,
+      groupArray(toStringCutToZero(Dest)) AS Destinations
+      FROM ontime.ontime
+      WHERE Origin IN ('ATL', 'ORD', 'DFW', 'DEN', 'LAX', 'JFK', 'LAS', 'CLT', 'SFO', 'SEA')
+      AND FlightDate = date
+      GROUP BY FlightDate, Origin
+      ORDER BY length(Destinations)
+      )
+  SELECT
+      Origin,
+      length(Destinations) AS outward_flights
+  FROM busy_airports
+  ORDER BY outward_flights DESC
+  ```
+</RunnableCode>
+
+<div id="arraymap">
+  ### arrayMap et arrayZip
+</div>
+
+Nous avons vu dans la requête précédente que l’aéroport international de Denver était celui qui comptait le plus de vols au départ pour la journée choisie.
+Voyons maintenant combien de ces vols étaient à l’heure, retardés de 15 à 30 minutes ou retardés de plus de 30 minutes.
+
+Dans ClickHouse, de nombreuses fonctions de tableau sont ce que l’on appelle des [&quot;fonctions d’ordre supérieur&quot;](/fr/reference/functions/regular-functions/overview#higher-order-functions) et acceptent une fonction lambda comme premier paramètre.
+La fonction [`arrayMap`](/fr/reference/functions/regular-functions/array-functions#arrayMap) en est un exemple : elle renvoie un nouveau tableau à partir du tableau fourni en appliquant une fonction lambda à chaque élément du tableau d’origine.
+
+Exécutez la requête ci-dessous, qui utilise la fonction `arrayMap`, pour voir quels vols étaient retardés ou à l’heure.
+Pour chaque paire origine/destination, elle affiche le numéro de queue et le statut de chaque vol :
+
+<RunnableCode>
+  ```sql
+  WITH arrayMap(
+                d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME')),
+                groupArray(DepDelayMinutes)
+      ) AS statuses
+
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      arrayZip(groupArray(Tail_Number), statuses) as tailNumberStatuses
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+    AND FlightDate = '2024-01-01'
+    AND DepTime IS NOT NULL
+    AND DepDelayMinutes IS NOT NULL
+  GROUP BY ALL
+  ```
+</RunnableCode>
+
+Dans la requête ci-dessus, la fonction `arrayMap` prend un tableau à un seul élément `[DepDelayMinutes]` et applique la fonction lambda `d -> if(d >= 30, 'DELAYED', if(d >= 15, 'WARNING', 'ON-TIME'` pour le catégoriser.
+Ensuite, le premier élément du tableau résultant est extrait avec `[DepDelayMinutes][1]`.
+La fonction [`arrayZip`](/fr/reference/functions/regular-functions/array-functions#arrayZip) combine le tableau `Tail_Number` et le tableau `statuses` en un seul tableau.
+
+<div id="arrayfilter">
+  ### arrayFilter
+</div>
+
+Ensuite, nous allons examiner uniquement le nombre de vols retardés de 30 minutes ou plus pour les aéroports `DEN`, `ATL` et `DFW` :
+
+<RunnableCode>
+  ```sql highlight={4}
+  SELECT
+      Origin,
+      OriginCityName,
+      length(arrayFilter(d -> d >= 30, groupArray(ArrDelayMinutes))) AS num_delays_30_min_or_more
+  FROM ontime.ontime
+  WHERE Origin IN ('DEN', 'ATL', 'DFW')
+      AND FlightDate = '2024-01-01'
+  GROUP BY Origin, OriginCityName
+  ORDER BY num_delays_30_min_or_more DESC
+  ```
+</RunnableCode>
+
+Dans la requête ci-dessus, nous passons une fonction lambda comme premier argument à la fonction [`arrayFilter`](/fr/reference/functions/regular-functions/array-functions#arrayFilter).
+Cette fonction lambda prend elle-même le retard en minutes (`d`) et renvoie `1` si la condition est remplie, sinon `0`.
+
+```sql
+d -> d >= 30
+```
+
+<div id="arraysort-and-arrayintersect">
+  ### arraySort et arrayIntersect
+</div>
+
+Ensuite, nous allons déterminer quelles paires de grands aéroports américains desservent le plus de destinations en commun à l&#39;aide des fonctions [`arraySort`](/fr/reference/functions/regular-functions/array-functions#arraySort) et [`arrayIntersect`](/fr/reference/functions/regular-functions/array-functions#arrayIntersect).
+`arraySort` prend un tableau et trie ses éléments par défaut dans l&#39;ordre croissant, même s&#39;il est également possible de lui passer une fonction lambda pour définir l&#39;ordre de tri.
+`arrayIntersect` prend plusieurs tableaux et renvoie un tableau contenant les éléments présents dans tous les tableaux.
+
+Exécutez la requête ci-dessous pour voir ces deux fonctions de tableau en action :
+
+<RunnableCode>
+  ```sql highlight={4,12}
+  WITH airport_routes AS (
+      SELECT 
+          Origin,
+          arraySort(groupArray(DISTINCT toStringCutToZero(Dest))) AS destinations
+      FROM ontime.ontime
+      WHERE FlightDate = '2024-01-01'
+      GROUP BY Origin
+  )
+  SELECT 
+      a1.Origin AS airport1,
+      a2.Origin AS airport2,
+      length(arrayIntersect(a1.destinations, a2.destinations)) AS common_destinations
+  FROM airport_routes a1
+  CROSS JOIN airport_routes a2
+  WHERE a1.Origin < a2.Origin
+      AND a1.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+      AND a2.Origin IN ('DEN', 'ATL', 'DFW', 'ORD', 'LAS')
+  ORDER BY common_destinations DESC
+  LIMIT 10
+  ```
+</RunnableCode>
+
+La requête fonctionne en deux grandes étapes.
+D&#39;abord, elle crée un jeu de données temporaire appelé `airport_routes` à l&#39;aide d&#39;une expression de table commune (CTE), qui examine tous les vols du 1er janvier 2024 et construit, pour chaque aéroport d&#39;origine, une liste triée de toutes les destinations uniques qu&#39;il dessert.
+Dans le jeu de résultats `airport_routes`, par exemple, DEN peut avoir un tableau contenant toutes les villes qu&#39;il dessert, comme `['ATL', 'BOS', 'LAX', 'MIA', ...]`, et ainsi de suite.
+
+Dans la deuxième étape, la requête prend cinq grands hubs aéroportuaires américains (`DEN`, `ATL`, `DFW`, `ORD` et `LAS`) et compare toutes les paires possibles.
+Elle le fait à l&#39;aide d&#39;un CROSS JOIN, qui crée toutes les combinaisons de ces aéroports.
+Ensuite, pour chaque paire, elle utilise la fonction `arrayIntersect` pour identifier les destinations qui apparaissent dans les listes des deux aéroports.
+La fonction `length` compte le nombre de destinations qu&#39;ils ont en commun.
+
+La condition `a1.Origin < a2.Origin` garantit que chaque paire n&#39;apparaît qu&#39;une seule fois.
+Sans cela, vous obtiendriez à la fois JFK-LAX et LAX-JFK comme résultats distincts, ce qui serait redondant puisqu&#39;ils représentent la même comparaison.
+Enfin, la requête trie les résultats pour montrer quelles paires d&#39;aéroports ont le plus grand nombre de destinations communes et ne renvoie que les 10 premières.
+Cela met en évidence les grands hubs dont les réseaux de liaisons se recoupent le plus, ce qui peut indiquer des marchés concurrentiels où plusieurs compagnies aériennes desservent les mêmes paires de villes, ou des hubs qui desservent des régions géographiques similaires et pourraient donc servir de points de correspondance alternatifs pour les voyageurs.
+
+<div id="arrayReduce">
+  ### arrayReduce
+</div>
+
+Puisque nous examinons les retards, utilisons une autre fonction de tableau d&#39;ordre supérieur, `arrayReduce`, pour trouver le retard moyen et le retard maximal
+pour chaque itinéraire au départ de l&#39;aéroport international de Denver :
+
+<RunnableCode>
+  ```sql highlight={5-6}
+  SELECT
+      Origin,
+      toStringCutToZero(Dest) AS Destination,
+      groupArray(DepDelayMinutes) AS delays,
+      round(arrayReduce('avg', groupArray(DepDelayMinutes)), 2) AS avg_delay,
+      round(arrayReduce('max', groupArray(DepDelayMinutes)), 2) AS worst_delay
+  FROM ontime.ontime
+  WHERE Origin = 'DEN'
+      AND FlightDate = '2024-01-01'
+      AND DepDelayMinutes IS NOT NULL
+  GROUP BY Origin, Destination
+  ORDER BY avg_delay DESC
+  ```
+</RunnableCode>
+
+Dans l&#39;exemple ci-dessus, nous avons utilisé `arrayReduce` pour déterminer les retards moyen et maximal de différents vols au départ de `DEN`.
+`arrayReduce` applique une fonction d&#39;agrégation, spécifiée dans le premier paramètre de la fonction, aux éléments du tableau fourni, spécifié dans le second paramètre de la fonction.
+
+<div id="arrayJoin">
+  ### arrayJoin
+</div>
+
+Les fonctions classiques de ClickHouse ont la propriété de renvoyer le même nombre de lignes qu&#39;elles en reçoivent.
+Il existe toutefois une fonction intéressante et unique qui enfreint cette règle, et qui mérite d&#39;être connue : la fonction `arrayJoin`.
+
+`arrayJoin` « déplie » un tableau en créant une ligne distincte pour chaque élément.
+Cela s&#39;apparente aux fonctions SQL `UNNEST` ou `EXPLODE` dans d&#39;autres bases de données.
+
+Contrairement à la plupart des fonctions de tableau, qui renvoient des tableaux ou des valeurs scalaires, `arrayJoin` modifie fondamentalement le jeu de résultats en multipliant le nombre de lignes.
+
+Considérez la requête ci-dessous, qui renvoie un tableau de valeurs de 0 à 100 par pas de 10.
+On peut considérer que ce tableau représente différents temps de retard : 0 minute, 10 minutes, 20 minutes, etc.
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay
+  SELECT delay
+  ```
+</RunnableCode>
+
+Nous pouvons écrire une requête utilisant `arrayJoin` pour déterminer combien de retards il y a eu jusqu&#39;à ce nombre de minutes entre deux aéroports.
+La requête ci-dessous crée un histogramme montrant la distribution des retards de vol de Denver (DEN) à Miami (MIA) le 1er janvier 2024, en utilisant des buckets de retard cumulatifs :
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay,
+      toStringCutToZero(Dest) AS Destination
+
+  SELECT
+      'Up to ' || arrayJoin(delay) || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= arrayJoin(delay)) AS flightsDelayed
+  FROM ontime.ontime
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY delayTime
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+Dans la requête ci-dessus, nous renvoyons un tableau de retards à l&#39;aide d&#39;une clause CTE (clause `WITH`).
+`Destination` convertit le code de destination en chaîne de caractères.
+
+Nous utilisons `arrayJoin` pour déplier le tableau de retards en lignes distinctes.
+Chaque valeur du tableau `delay` devient sa propre ligne avec l&#39;alias `del`,
+et nous obtenons 10 lignes : une pour `del=0`, une pour `del=10`, une pour `del=20`, etc.
+Pour chaque seuil de retard (`del`), la requête compte combien de vols avaient des retards supérieurs ou égaux à ce seuil
+à l&#39;aide de `countIf(DepDelayMinutes >= del)`.
+
+`arrayJoin` a également un équivalent en SQL : `ARRAY JOIN`.
+La requête ci-dessus est reproduite ci-dessous avec l&#39;équivalent SQL à des fins de comparaison :
+
+<RunnableCode>
+  ```sql
+  WITH range(0, 100, 10) AS delay, 
+       toStringCutToZero(Dest) AS Destination
+
+  SELECT    
+      'Up to ' || del || ' minutes' AS delayTime,
+      countIf(DepDelayMinutes >= del) flightsDelayed
+  FROM ontime.ontime
+  ARRAY JOIN delay AS del
+  WHERE Origin = 'DEN' AND Destination = 'MIA' AND FlightDate = '2024-01-01'
+  GROUP BY ALL
+  ORDER BY flightsDelayed DESC
+  ```
+</RunnableCode>
+
+<div id="next-steps">
+  ## Étapes suivantes
+</div>
+
+Félicitations ! Vous avez appris à utiliser les tableaux dans ClickHouse, de la création et de l’indexation de tableaux simples à des fonctions puissantes comme `groupArray`, `arrayFilter`, `arrayMap`, `arrayReduce` et `arrayJoin`.
+Pour aller plus loin, consultez la référence complète des fonctions de tableau afin de découvrir d’autres fonctions comme `arrayFlatten`, `arrayReverse` et `arrayDistinct`.
+Vous pouvez également vous intéresser à des structures de données connexes, comme les [`tuples`](/fr/reference/data-types/tuple#creating-tuples) et les types [JSON](/fr/reference/data-types/newjson) et [Map](/fr/reference/data-types/map), qui s’utilisent très bien avec les tableaux.
+Exercez-vous à appliquer ces concepts à vos propres jeux de données, et testez différentes requêtes dans le SQL playground ou sur d’autres jeux de données d’exemple.
+
+Les tableaux sont une fonctionnalité fondamentale de ClickHouse qui permettent d’effectuer des requêtes analytiques efficaces. À mesure que vous vous familiariserez avec les fonctions de tableau, vous constaterez qu’elles peuvent considérablement simplifier des aggregations complexes et l’analyse de séries temporelles.
+Pour aller encore plus loin sur les tableaux, nous vous recommandons la vidéo YouTube ci-dessous de Mark, notre expert data :
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7jaw3J6U_h8?si=6NiEJ7S1odU-VVqX" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
