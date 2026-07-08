@@ -40,16 +40,19 @@ FROM (EXPLAIN PIPELINE
 
 -- Read-in-order MergeTree reads are also scattered (a read-in-order side is a buffering `FinishSorting`,
 -- scattered while preserving order so each shard finishes the sort instead of redoing it).
+-- `query_plan_join_shard_by_pk_ranges = 0` keeps the read-in-order side on this algorithm's hash-scatter
+-- path: the PK-range sharding path parallelizes it differently (a `PartitionedFinishSorting`, without
+-- `ScatterByPartitionTransform`), and it is randomized in CI, so pin it here.
 SELECT 'analyzer read_in_order_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
 FROM (EXPLAIN PIPELINE
   SELECT l.k FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.k = r.k
-  SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1);
+  SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, query_plan_join_shard_by_pk_ranges = 0);
 
 -- Same with virtual rows enabled: still scattered (virtual-row emission is disabled on a scattered side).
 SELECT 'analyzer read_in_order_virtual_row_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
 FROM (EXPLAIN PIPELINE
   SELECT l.k FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.k = r.k
-  SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1);
+  SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, query_plan_join_shard_by_pk_ranges = 0);
 
 -- Legacy analyzer: the sorted subquery must scatter too. `enable_analyzer` cannot be changed inside a
 -- subquery, so set it at session level (as in `04494` / `04497`).

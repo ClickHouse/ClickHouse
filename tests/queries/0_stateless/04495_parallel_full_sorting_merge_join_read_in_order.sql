@@ -19,13 +19,17 @@ INSERT INTO pfsmj_rio_right SELECT number % 20000, number * 3 FROM numbers(50000
 
 -- The join is on `id`, the tables' ORDER BY key, so read-in-order applies. `parallel_full_sorting_merge` must
 -- still scatter both sides by the hash of the join key (`ScatterByPartitionTransform`, one per side)...
+-- `optimize_read_in_order = 1` keeps the read in order (otherwise the pre-join sort would be a full sort that
+-- is redone per shard), and `query_plan_join_shard_by_pk_ranges = 0` keeps the read-in-order side on this
+-- algorithm's hash-scatter path (the PK-range sharding path parallelizes differently, without
+-- `ScatterByPartitionTransform`). Both settings are randomized in CI, so pin them here.
 SELECT 'read_in_order_is_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 2
-FROM (EXPLAIN PIPELINE SELECT l.a FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.id = r.id SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4);
+FROM (EXPLAIN PIPELINE SELECT l.a FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.id = r.id SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, query_plan_join_shard_by_pk_ranges = 0);
 
 -- ...and it must NOT redo the sort from scratch: a full re-sort would add `MergeSortingTransform`, but the
 -- read-in-order side only merges (`MergingSortedTransform`) and finishes the sort, so there is no full sort.
 SELECT 'read_in_order_not_resorted', countIf(explain LIKE '%MergeSortingTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT l.a FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.id = r.id SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4);
+FROM (EXPLAIN PIPELINE SELECT l.a FROM pfsmj_rio_left AS l INNER JOIN pfsmj_rio_right AS r ON l.id = r.id SETTINGS join_algorithm = 'parallel_full_sorting_merge', max_threads = 4, optimize_read_in_order = 1, query_plan_join_shard_by_pk_ranges = 0);
 
 -- Contrast: plain `full_sorting_merge` on the same query is a single merge join with no scatter.
 SELECT 'plain_is_not_scattered', countIf(explain LIKE '%ScatterByPartitionTransform%') = 0
