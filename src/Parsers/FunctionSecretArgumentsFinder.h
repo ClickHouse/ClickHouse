@@ -95,6 +95,19 @@ protected:
             result.are_named = false;
     }
 
+    /// Named arguments carrying S3 secrets, shared by every S3 form (explicit-url and named-collection).
+    static constexpr std::string_view s3_secret_keys[]
+        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token"};
+
+    /// Mask the S3 secret named arguments that can accompany the explicit-url form as `key = value`
+    /// overrides. Widens the masked span to cover each one present; the positional secret (when used)
+    /// is masked separately by the caller.
+    void findS3ExplicitUrlSecretNamedArguments(size_t start)
+    {
+        for (const auto & key : s3_secret_keys)
+            findSecretNamedArgument(key, start);
+    }
+
     void findOrdinaryFunctionSecretArguments()
     {
         if ((function->name() == "mysql") || (function->name() == "postgresql"))
@@ -362,7 +375,7 @@ protected:
             return;
         }
 
-        findSecretNamedArgument("secret_access_key", url_arg_idx);
+        findS3ExplicitUrlSecretNamedArguments(url_arg_idx);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// s3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -714,7 +727,7 @@ protected:
             return;
         }
 
-        findSecretNamedArgument("secret_access_key", 0);
+        findS3ExplicitUrlSecretNamedArguments(0);
 
         /// We should check other arguments first because we don't need to do any replacement in case of
         /// S3('url', NOSIGN, 'format' [, 'compression'] [, extra_credentials(..)] [, headers(..)])
@@ -840,7 +853,8 @@ protected:
         }
         else
         {
-            /// S3('url', 'access_key_id', 'secret_access_key')
+            /// S3('url', 'access_key_id', 'secret_access_key' [, session_token = ..., google_adc_* = ...])
+            findS3ExplicitUrlSecretNamedArguments(0);
             markSecretArgument(2);
         }
     }
@@ -869,9 +883,6 @@ protected:
         if (!storage_function || storage_function->name() != "S3" || !storage_function->hasArguments())
             return;
 
-        static constexpr std::string_view secret_keys[]
-            = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token"};
-
         const auto & nested_args = *storage_function->arguments;
         const bool is_named_collection = nested_args.size() >= 1 && nested_args.at(0)->isIdentifier();
 
@@ -891,7 +902,7 @@ protected:
                 String key;
                 if (key_value->arguments->at(0)->tryGetString(&key, /* allow_identifier= */ true))
                 {
-                    const bool is_secret = std::find(std::begin(secret_keys), std::end(secret_keys), key) != std::end(secret_keys);
+                    const bool is_secret = std::find(std::begin(s3_secret_keys), std::end(s3_secret_keys), key) != std::end(s3_secret_keys);
                     replacement += key;
                     replacement += " = ";
                     String value;
@@ -1012,11 +1023,9 @@ protected:
     /// a secret visible). Mirrors the "hide all named arguments" handling used for ambiguous XDBC collections.
     void findS3NamedCollectionSecretArguments(size_t start = 0)
     {
-        static constexpr std::string_view secret_keys[]
-            = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token"};
         ssize_t min_idx = -1;
         ssize_t max_idx = -1;
-        for (const auto & key : secret_keys)
+        for (const auto & key : s3_secret_keys)
         {
             ssize_t arg_idx = findNamedArgument(nullptr, key, start);
             if (arg_idx < 0)
