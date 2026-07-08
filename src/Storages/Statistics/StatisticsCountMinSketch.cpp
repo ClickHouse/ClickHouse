@@ -30,8 +30,12 @@ static constexpr auto num_buckets = 2718uz;
 namespace
 {
 
-template <typename Sketch, typename Counts>
-void updateSketchFromDictionaryCounts(Sketch & sketch, const IColumnUnique & dictionary, const Counts & counts)
+using DictionaryCounts = ColumnUInt64::Container;
+
+void updateSketchFromDictionaryCounts(
+    datasketches::count_min_sketch<UInt64> & sketch,
+    const IColumnUnique & dictionary,
+    const DictionaryCounts & counts)
 {
     for (size_t dictionary_row = 0, size = counts.size(); dictionary_row < size; ++dictionary_row)
     {
