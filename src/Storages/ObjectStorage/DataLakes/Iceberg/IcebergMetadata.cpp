@@ -223,13 +223,19 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                         /// another table's real UUID. Verify the cached JSON's `location` field
                         /// encodes this table's own root path so we don't load another table's
                         /// schema/metadata under a colliding UUID.
-                        const String & table_root = configuration->getPathForRead().path;
+                        std::string_view table_root = configuration->getPathForRead().path;
+                        while (table_root.ends_with('/'))
+                            table_root.remove_suffix(1);
                         bool location_ok = true;
                         if (!table_root.empty() && candidate->has(f_location))
                         {
-                            const String & cached_location = candidate->getValue<String>(f_location);
+                            std::string_view cached_location = candidate->getValue<String>(f_location);
+                            while (cached_location.ends_with('/'))
+                                cached_location.remove_suffix(1);
                             /// `cached_location` is the full URI (e.g. "s3://bucket/ns/table");
-                            /// `table_root` is the path portion ("bucket/ns/table").
+                            /// `table_root` is the path portion ("bucket/ns/table"). The engine's
+                            /// storage URL carries a trailing slash while the Iceberg spec's
+                            /// `location` field never does, so both are trimmed before comparing.
                             /// Accept only when table_root is a suffix of cached_location.
                             location_ok = cached_location.ends_with(table_root);
                         }
