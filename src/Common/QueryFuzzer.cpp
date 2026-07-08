@@ -142,8 +142,9 @@ void setAsteriskLikeMatcher(Matcher & matcher, Rng & rng, bool as_like = true)
 
 /// Storage/table-engine timeout settings that must NOT be fuzzed: a timeout/sleep blown up huge
 /// blocks the server for minutes and trips a false hung-check. Query-level and MergeTree settings
-/// are pinned read-only in `query-fuzzer-tweaks-users.xml` instead; only these, which have no
-/// profile-constraint mechanism, are handled here. Aliases are resolved before the lookup.
+/// are pinned via profile constraints in `limit-recursion-settings.xml` (installed by both the
+/// AST fuzzer and the stress test) instead; only these, which have no profile-constraint
+/// mechanism, are handled here. Aliases are resolved before the lookup.
 bool isEngineTimeDurationSetting(const String & name)
 {
     static const std::unordered_set<String> time_duration_settings = {
