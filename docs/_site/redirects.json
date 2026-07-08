@@ -1737,7 +1737,7 @@
   },
   {
     "source": "/engines/database-engines/datalakecatalog",
-    "destination": "/reference/engines/database-engines/datalake"
+    "destination": "/reference/engines/database-engines/datalakecatalog"
   },
   {
     "source": "/engines/database-engines/materialized-mysql",
@@ -6593,7 +6593,7 @@
   },
   {
     "source": "/jp/engines/database-engines/datalakecatalog",
-    "destination": "/ja/reference/engines/database-engines/datalake"
+    "destination": "/ja/reference/engines/database-engines/datalakecatalog"
   },
   {
     "source": "/jp/engines/database-engines/materialized-mysql",
@@ -17181,7 +17181,7 @@
   },
   {
     "source": "/ko/engines/database-engines/datalakecatalog",
-    "destination": "/ko/reference/engines/database-engines/datalake"
+    "destination": "/ko/reference/engines/database-engines/datalakecatalog"
   },
   {
     "source": "/ko/engines/database-engines/materialized-mysql",
@@ -29293,7 +29293,7 @@
   },
   {
     "source": "/ru/engines/database-engines/datalakecatalog",
-    "destination": "/ru/reference/engines/database-engines/datalake"
+    "destination": "/ru/reference/engines/database-engines/datalakecatalog"
   },
   {
     "source": "/ru/engines/database-engines/materialized-mysql",
@@ -42857,7 +42857,7 @@
   },
   {
     "source": "/zh/engines/database-engines/datalakecatalog",
-    "destination": "/zh/reference/engines/database-engines/datalake"
+    "destination": "/zh/reference/engines/database-engines/datalakecatalog"
   },
   {
     "source": "/zh/engines/database-engines/materialized-mysql",

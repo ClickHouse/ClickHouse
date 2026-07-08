@@ -423,7 +423,6 @@
           "pages": [
             "reference/engines/database-engines/atomic",
             "reference/engines/database-engines/backup",
-            "reference/engines/database-engines/datalake",
             "reference/engines/database-engines/datalakecatalog",
             "reference/engines/database-engines/materialized-postgresql",
             "reference/engines/database-engines/mysql",

@@ -76,7 +76,7 @@ The table engine supports data caching, metadata caching, schema evolution, and 
 <Step>
 ## Connect to a catalog {#connect-catalog}
 
-Most organizations manage Iceberg tables through a data catalog to centralize the table metadata and data discovery. ClickHouse supports connecting to your catalog using the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) database engine, exposing all catalog tables as a ClickHouse database. This is the more scalable path so as new Iceberg tables are created, they are always accessible in ClickHouse without additional work. 
+Most organizations manage Iceberg tables through a data catalog to centralize the table metadata and data discovery. ClickHouse supports connecting to your catalog using the [`DataLakeCatalog`](/reference/engines/database-engines/datalakecatalog) database engine, exposing all catalog tables as a ClickHouse database. This is the more scalable path so as new Iceberg tables are created, they are always accessible in ClickHouse without additional work. 
 
 Here's an example connecting to [AWS Glue](/guides/use-cases/data-warehousing/glue-catalog):
 

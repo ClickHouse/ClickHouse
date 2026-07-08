@@ -190,7 +190,7 @@ ClickHouse recently added native support for Apache Iceberg tables and data cata
 
 * You can use ClickHouse to **query Iceberg tables stored in object storage** (S3, Azure Blob Storage, Google Cloud Storage) using the [Iceberg table engine](/reference/engines/table-engines/integrations/iceberg) and [iceberg table function](/reference/functions/table-functions/iceberg).
 
-* Additionally, ClickHouse provides the [DataLakeCatalog database engine](/reference/engines/database-engines/datalake), which enables **connection to external data catalogs** including AWS Glue Catalog, Databricks Unity Catalog, Hive Metastore, and REST Catalogs. This allows you to query open table format data (Iceberg, Delta Lake) directly from external catalogs without data duplication.
+* Additionally, ClickHouse provides the [DataLakeCatalog database engine](/reference/engines/database-engines/datalakecatalog), which enables **connection to external data catalogs** including AWS Glue Catalog, Databricks Unity Catalog, Hive Metastore, and REST Catalogs. This allows you to query open table format data (Iceberg, Delta Lake) directly from external catalogs without data duplication.
 
 ### Workarounds for Working with Iceberg and Catalogs {#workarounds-iceberg-catalogs}
 
