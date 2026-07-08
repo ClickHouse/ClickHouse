@@ -23,13 +23,22 @@ ch2 = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
 )
+ch3 = cluster.add_instance(
+    "ch3",
+    main_configs=[
+        "configs/config.d/clusters.xml",
+        "configs/config.d/distributed_ddl.xml",
+    ],
+    with_zookeeper=True,
+    stay_alive=True,
+)
 
 
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
         cluster.start()
-        ch1.query("CREATE DATABASE test_db ON CLUSTER 'cluster'")
+        ch1.query("CREATE DATABASE test_db ON CLUSTER 'cluster_three'")
         yield cluster
     finally:
         cluster.shutdown()
@@ -85,6 +94,18 @@ def wait_for_ddl_entry_failed_on_hosts(node, entry_path, expected_hosts):
           AND position(value, 'Cannot execute replicated DDL query, maximum retries exceeded') > 0
         """,
         check_callback=lambda result: int(result.strip()) == expected_hosts,
+    )
+
+
+def wait_for_ddl_shard_max_tries_exceeded(node, shard_path):
+    node.query_with_retry(
+        f"""
+        SELECT count()
+        FROM system.zookeeper
+        WHERE path = '{shard_path}'
+          AND name = 'max_tries_exceeded'
+        """,
+        check_callback=lambda result: int(result.strip()) == 1,
     )
 
 
@@ -376,14 +397,12 @@ def test_exhausted_replicated_ddl_retries_allow_queue_to_continue(started_cluste
         "CREATE TABLE ddl_retry_poison (id UInt64) "
         "ENGINE=ReplicatedMergeTree('{zk}', '{replica}') ORDER BY id"
     )
-    ch1.query(
-        database="test_db",
-        sql=create_sql.format(zk=zookeeper_path, replica="r1"),
-    )
-    ch2.query(
-        database="test_db",
-        sql=create_sql.format(zk=zookeeper_path, replica="r2"),
-    )
+    nodes = [(ch1, "r1"), (ch2, "r2"), (ch3, "r3")]
+    for node, replica in nodes:
+        node.query(
+            database="test_db",
+            sql=create_sql.format(zk=zookeeper_path, replica=replica),
+        )
 
     seed_column = "seed_for_retry_poison"
     poison_column = "poisoned_retry_column"
@@ -391,7 +410,7 @@ def test_exhausted_replicated_ddl_retries_allow_queue_to_continue(started_cluste
 
     ch1.query(
         database="test_db",
-        sql=f"ALTER TABLE ddl_retry_poison ON CLUSTER 'cluster' ADD COLUMN {seed_column} UInt8",
+        sql=f"ALTER TABLE ddl_retry_poison ON CLUSTER 'cluster_three' ADD COLUMN {seed_column} UInt8",
     )
 
     zk = started_cluster.get_kazoo_client("zoo1")
@@ -404,7 +423,7 @@ def test_exhausted_replicated_ddl_retries_allow_queue_to_continue(started_cluste
     poison_path = None
     stopped_nodes = []
     try:
-        for node in [ch1, ch2]:
+        for node, _ in nodes:
             if node.stop_clickhouse():
                 stopped_nodes.append(node)
 
@@ -418,22 +437,26 @@ def test_exhausted_replicated_ddl_retries_allow_queue_to_continue(started_cluste
         shard_path = f"{poison_path}/shards/{shard_names[0]}"
         zk.ensure_path(shard_path)
         tries_to_execute_path = f"{shard_path}/tries_to_execute"
+        max_tries_exceeded_path = f"{shard_path}/max_tries_exceeded"
         zk.create(tries_to_execute_path, b"4")
 
-        for node in [ch1, ch2]:
+        for node, _ in nodes:
             node.start_clickhouse()
         stopped_nodes.clear()
 
-        wait_for_ddl_entry_failed_on_hosts(ch1, poison_path, expected_hosts=2)
+        wait_for_ddl_shard_max_tries_exceeded(ch1, shard_path)
         assert zk.get(tries_to_execute_path)[0] == b"4"
+        assert zk.exists(max_tries_exceeded_path) is not None
         assert zk.exists(poison_path) is not None
 
         ch1.query(
-            f"ALTER TABLE test_db.ddl_retry_poison ON CLUSTER 'cluster' ADD COLUMN {later_column} UInt8",
+            f"ALTER TABLE test_db.ddl_retry_poison ON CLUSTER 'cluster_three' ADD COLUMN {later_column} UInt8",
             settings={"distributed_ddl_task_timeout": 10},
         )
 
-        for node in [ch1, ch2]:
+        wait_for_ddl_entry_failed_on_hosts(ch1, poison_path, expected_hosts=len(nodes))
+
+        for node, _ in nodes:
             node.query_with_retry(
                 f"""
                 SELECT count()
@@ -451,5 +474,5 @@ def test_exhausted_replicated_ddl_retries_allow_queue_to_continue(started_cluste
             zk.delete(poison_path, recursive=True)
         ch1.query(
             database="test_db",
-            sql="DROP TABLE IF EXISTS ddl_retry_poison ON CLUSTER 'cluster' SYNC",
+            sql="DROP TABLE IF EXISTS ddl_retry_poison ON CLUSTER 'cluster_three' SYNC",
         )

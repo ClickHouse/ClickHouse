@@ -857,6 +857,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
     String shard_path = task.getShardNodePath();
     String is_executed_path = fs::path(shard_path) / "executed";
     String tries_to_execute_path = fs::path(shard_path) / "tries_to_execute";
+    String max_tries_exceeded_path = fs::path(shard_path) / "max_tries_exceeded";
     chassert(shard_path.starts_with(String(fs::path(task.entry_path) / "shards" / "")));
     zookeeper->createIfNotExists(fs::path(task.entry_path) / "shards", "");
     zookeeper->createIfNotExists(shard_path, "");
@@ -939,6 +940,7 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
                     extra_attempt_for_replicated_database = true;
                 else
                 {
+                    zookeeper->createIfNotExists(max_tries_exceeded_path, task.host_id_str);
                     max_tries_exceeded = true;
                     break;
                 }
@@ -970,13 +972,21 @@ bool DDLWorker::tryExecuteQueryOnSingleReplica(
             break;
         }
 
+        if (zookeeper->exists(max_tries_exceeded_path))
+        {
+            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
+            max_tries_exceeded = true;
+            break;
+        }
+
         String tries_count;
         zookeeper->tryGet(tries_to_execute_path, tries_count);
         if (parse<int>(tries_count) > MAX_TRIES_TO_EXECUTE)
         {
-            /// Nobody will try to execute query again
-            LOG_WARNING(log, "Maximum retries count for task {} exceeded, cannot execute replicated DDL query", task.entry_name);
-            break;
+            LOG_WARNING(
+                log,
+                "Maximum retries count for task {} exceeded, waiting until the shard lock holder confirms no attempt is in flight",
+                task.entry_name);
         }
 
         /// Will try to wait or execute
