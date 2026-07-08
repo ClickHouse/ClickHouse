@@ -138,6 +138,17 @@ endif ()
 
 include (cmake/add_warning.cmake)
 
+# A compiler without zlib accepts -gz but only warns, so -Werror on that warning makes the check fail.
+include (CheckCompilerFlag)
+set (CMAKE_REQUIRED_FLAGS "-Werror=debug-compression-unavailable")
+check_compiler_flag (C   "-gz=zlib" C_COMPILER_SUPPORTS_GZ_ZLIB)
+check_compiler_flag (CXX "-gz=zlib" CXX_COMPILER_SUPPORTS_GZ_ZLIB)
+unset (CMAKE_REQUIRED_FLAGS)
+set (COMPILER_SUPPORTS_GZ_ZLIB OFF)
+if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
+    set (COMPILER_SUPPORTS_GZ_ZLIB ON)
+endif ()
+
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
 # version-dependent behaviour must be gated on CMAKE_CXX_COMPILER_VERSION explicitly.
@@ -392,6 +403,17 @@ if (NOT CMAKE_BUILD_TYPE_UC STREQUAL "RELEASE")
     # NOTE: that clang has a bug because of it does not emit .debug_aranges
     # with ThinLTO, so custom ld.lld wrapper is shipped in docker images.
     set(DEBUG_INFO_FLAGS "${DEBUG_INFO_FLAGS} -gdwarf-aranges")
+endif ()
+
+# Compress DWARF debug sections (`.debug_*`) in object files with -gz=zlib to shrink the build dir
+# (debug info dominates it). Compile-only via add_compile_options, so binaries stay uncompressed and
+# the symbolizer is unaffected. Defaults on where the compiler supports it (probed above).
+option (COMPRESS_DEBUG_SECTIONS "Compress DWARF debug sections in object files with zlib (-gz)" ${COMPILER_SUPPORTS_GZ_ZLIB})
+
+if (COMPRESS_DEBUG_SECTIONS)
+    # Only C/C++ (and GNU-style ASM handled by clang) understand -gz; scope it away from other
+    # languages such as ASM_NASM (ISA-L on amd64), whose nasm assembler rejects the flag.
+    add_compile_options ($<$<COMPILE_LANGUAGE:C,CXX,ASM>:-gz=zlib>)
 endif ()
 
 # Disable omit frame pointer compiler optimization using -fno-omit-frame-pointer
