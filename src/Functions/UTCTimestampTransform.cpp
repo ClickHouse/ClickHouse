@@ -144,6 +144,17 @@ namespace
                     DateTime64 date_time_val = date_time_col.getElement(i);
                     Int64 seconds = date_time_val.value / scale_multiplier;
                     Int64 micros = date_time_val.value % scale_multiplier;
+                    /// Truncated division rounds toward zero, so for a negative fractional value
+                    /// `seconds` is the ceil second and `micros` is negative. timezoneOffset() must
+                    /// inspect the floor second (the second the instant actually falls in), otherwise
+                    /// it can read the offset of the next second and pick the wrong side of a DST/offset
+                    /// boundary. Adjust to floor division: keep `micros` non-negative and step `seconds`
+                    /// down. The identity seconds * scale_multiplier + micros == value is preserved.
+                    if (micros < 0)
+                    {
+                        seconds -= 1;
+                        micros += scale_multiplier;
+                    }
                     auto time_zone_offset = time_zone.timezoneOffset(seconds);
                     /// Do the whole offset adjust and scale multiply/add in Int128 so neither the offset
                     /// add/subtract nor the scale multiply can overflow Int64 for values near the boundary,
