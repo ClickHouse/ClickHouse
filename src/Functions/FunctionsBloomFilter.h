@@ -202,6 +202,11 @@ private:
         if (function_size < nested_function_size)
             return {};
 
+        /// The `OrNull` and `OrDefault` combinators append their flag byte after the
+        /// nested state, so the nested `groupBloomFilter` state still starts at offset 0.
+        if (function_name == nested_function_name + "OrNull" || function_name == nested_function_name + "OrDefault")
+            return 0;
+
         /// Nullable aggregate function wrappers keep a small prefix before the nested state.
         /// The nullable adapter for the `If` combinator keeps the public name with the `If`
         /// suffix while storing the same nested `groupBloomFilter` state after that prefix.
