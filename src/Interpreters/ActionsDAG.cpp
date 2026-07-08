@@ -1285,12 +1285,18 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                 /// The function was resolved (overload picked, return type computed) for a fixed set of
                 /// argument types during analysis. Partial evaluation can be handed a column whose type no
                 /// longer matches, e.g. when a concurrent EXCHANGE TABLES swaps the underlying table between
-                /// analysis and header computation. Executing the function on a genuinely different type
-                /// would trip an internal LOGICAL_ERROR inside the function body, which aborts the server in
-                /// debug/sanitizer builds. Detect that here and raise a recoverable TYPE_MISMATCH instead.
+                /// analysis and header computation. Executing a strict function (e.g. arithmetic) on a
+                /// genuinely different type would trip an internal LOGICAL_ERROR inside the function body,
+                /// which aborts the server in debug/sanitizer builds. There is no generic way to tell a
+                /// polymorphic function that tolerates the drift (e.g. _CAST, toNullable) from a strict one
+                /// that aborts, so we do not try to execute at all on a mismatch: constant folding is only an
+                /// optimization for header/constant evaluation, and the node's declared result type is already
+                /// known. Skip folding and leave the column empty; the real execution path re-resolves the
+                /// function and reports a clean, recoverable error if the drift is genuinely illegal.
                 /// Compare base types only (strip Nullable/LowCardinality): the prepared function applies its
                 /// default implementations for those wrappers, so a wrapper-only difference is handled fine
                 /// (it legitimately arises from JOIN use_nulls / group_by_use_nulls widening a header column).
+                bool argument_types_match = true;
                 const auto & expected_argument_types = node->function_base->getArgumentTypes();
                 if (expected_argument_types.size() == arguments.size())
                 {
@@ -1299,14 +1305,21 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                         if (arguments[i].type && expected_argument_types[i]
                             && !removeLowCardinalityAndNullable(arguments[i].type)
                                     ->equals(*removeLowCardinalityAndNullable(expected_argument_types[i])))
-                            throw Exception(
-                                ErrorCodes::TYPE_MISMATCH,
-                                "Argument {} of function {} has type {}, but the function was resolved for type {}",
-                                i,
-                                node->function->getName(),
-                                arguments[i].type->getName(),
-                                expected_argument_types[i]->getName());
+                        {
+                            argument_types_match = false;
+                            break;
+                        }
                     }
+                }
+
+                if (!argument_types_match)
+                {
+                    /// Do not fold: produce a non-const empty column of the declared result type so header
+                    /// computation can proceed without executing (and possibly aborting) the function.
+                    res_column.column = res_column.type->createColumn();
+                    if (input_rows_count != 0)
+                        res_column.column = res_column.column->cloneResized(input_rows_count);
+                    break;
                 }
 
                 if (only_constant_arguments)
