@@ -1,4 +1,5 @@
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Interpreters/IndexUsageStatistics.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -34,7 +35,9 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UncompressedCachePtr uncompressed_cache_,
     VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
     MergeTreeReaderSettings reader_settings_,
-    LoggerPtr log_)
+    LoggerPtr log_,
+    IndexUsageStatisticsPtr usage_statistics_,
+    StorageID usage_statistics_table_id_)
     : skip_indexes(std::move(skip_indexes_))
     , key_condition_rpn_template(std::move(key_condition_rpn_template_))
     , use_for_disjunctions(use_for_disjunctions_)
@@ -43,7 +46,24 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     , vector_similarity_index_cache(std::move(vector_similarity_index_cache_))
     , reader_settings(std::move(reader_settings_))
     , log(std::move(log_))
+    , usage_statistics(std::move(usage_statistics_))
+    , usage_statistics_table_id(std::move(usage_statistics_table_id_))
+    , granules_dropped_per_index(skip_indexes.useful_indices.size())
 {
+}
+
+MergeTreeSkipIndexReader::~MergeTreeSkipIndexReader()
+{
+    if (!usage_statistics)
+        return;
+
+    for (size_t i = 0; i < skip_indexes.useful_indices.size(); ++i)
+    {
+        usage_statistics->addGranulesDropped(
+            IndexUsageStatistics::makeKey(
+                usage_statistics_table_id, IndexUsageStatistics::IndexKind::Skip, skip_indexes.useful_indices[i].index->index.name),
+            granules_dropped_per_index[i].load(std::memory_order_relaxed));
+    }
 }
 
 SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns)
@@ -58,8 +78,10 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
     MergeTreeDataSelectExecutor::PartialDisjunctionResult partial_eval_results;
     if (use_for_disjunctions)
         partial_eval_results.resize(part.data_part->index_granularity->getMarksCountWithoutFinal() * MergeTreeDataSelectExecutor::MAX_BITS_FOR_PARTIAL_DISJUNCTION_RESULT, true);
-    for (const auto & index_and_condition : skip_indexes.useful_indices)
+    for (size_t index_pos = 0; index_pos < skip_indexes.useful_indices.size(); ++index_pos)
     {
+        const auto & index_and_condition = skip_indexes.useful_indices[index_pos];
+
         if (is_cancelled)
             return {};
 
@@ -96,6 +118,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(const RangesInDataPart & p
 
         LOG_DEBUG(log, "Index {} has dropped {}/{} granules in part {}", index_and_condition.index->index.name,
                         (total_granules - ranges.getNumberOfMarks()), total_granules, part.data_part->name);
+
+        /// The evaluation itself is counted once per reading step during index analysis,
+        /// here only the granules dropped at read time are accumulated (flushed in the destructor).
+        granules_dropped_per_index[index_pos].fetch_add(total_granules - ranges.getNumberOfMarks(), std::memory_order_relaxed);
+
         total_granules = ranges.getNumberOfMarks();
     }
 

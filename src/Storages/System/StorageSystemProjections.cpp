@@ -3,9 +3,11 @@
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -13,6 +15,7 @@
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/IndexUsageStatistics.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTProjectionDeclaration.h>
@@ -48,6 +51,12 @@ StorageSystemProjections::StorageSystemProjections(const StorageID & table_id_)
         {"settings",
          std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>()),
          "Projection settings."},
+        {"times_chosen",
+         std::make_shared<DataTypeUInt64>(),
+         "How many executed reading steps chose this projection: read it instead of the table or used it for part-level filtering. In-memory counter per server, reset on server restart."},
+        {"last_chosen_time",
+         std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()),
+         "Time when this projection was last chosen. NULL if the projection was never chosen since server start."},
     }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -129,6 +138,8 @@ protected:
                     continue;
                 const auto & projections = metadata_snapshot->getProjections();
 
+                auto usage_statistics = context->getIndexUsageStatistics();
+                auto table_storage_id = table->getStorageID();
                 for (const auto & projection : projections)
                 {
                     ++rows_count;
@@ -182,6 +193,22 @@ protected:
                             }
                         }
                         res_columns[res_index++]->insert(settings_map);
+                    }
+
+                    auto usage = usage_statistics->get(
+                        IndexUsageStatistics::makeKey(table_storage_id, IndexUsageStatistics::IndexKind::Projection, projection.name));
+
+                    // 'times_chosen' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(usage.times_used);
+
+                    // 'last_chosen_time' column
+                    if (column_mask[src_index++])
+                    {
+                        if (usage.times_used > 0)
+                            res_columns[res_index++]->insert(static_cast<UInt32>(usage.last_used_time));
+                        else
+                            res_columns[res_index++]->insertDefault();
                     }
                 }
             }

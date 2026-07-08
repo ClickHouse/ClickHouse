@@ -494,6 +494,7 @@ void filterPartsAndCollectProjectionCandidates(
     {
         auto & stats = parent_reading_select_result.projection_stats.emplace_back();
         stats.name = projection.name;
+        stats.used_for_filtering = true;
         if (in_use)
             stats.description = "Projection has been analyzed and will be applied during reading";
         else

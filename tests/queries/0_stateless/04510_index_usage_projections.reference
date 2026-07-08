@@ -1,0 +1,11 @@
+before queries
+p_agg	Aggregate	0	\N
+p_order	Normal	0	\N
+5
+after query using p_order
+p_agg	Aggregate	0	0
+p_order	Normal	1	1
+0	0
+after query using p_agg
+p_agg	Aggregate	1	1
+p_order	Normal	1	1

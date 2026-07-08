@@ -504,6 +504,9 @@ public:
 
     bool isProjectionPart() const { return parent_part != nullptr; }
 
+    /// Returns the name of projection for projection part, empty string for regular part.
+    String getProjectionName() const;
+
     void setSourcePartsSet(SourcePartsSetForPatch source_parts_set_) { source_parts_set = std::move(source_parts_set_); }
     const SourcePartsSetForPatch & getSourcePartsSet() const { return source_parts_set; }
 
@@ -854,9 +857,6 @@ private:
     void decrementStateMetric(MergeTreeDataPartState state) const;
 
     void checkConsistencyBase() const;
-
-    /// Returns the name of projection for projection part, empty string for regular part.
-    String getProjectionName() const;
 
     /// Returns the name of the part state as a string.
     String stateToString() const;

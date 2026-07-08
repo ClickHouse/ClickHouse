@@ -2,8 +2,10 @@
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/IDatabase.h>
@@ -11,6 +13,7 @@
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/IndexUsageStatistics.h>
 #include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Processors/ISource.h>
@@ -46,6 +49,10 @@ StorageSystemDataSkippingIndices::StorageSystemDataSkippingIndices(const Storage
             { "data_compressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of compressed data, in bytes."},
             { "data_uncompressed_bytes", std::make_shared<DataTypeUInt64>(), "The size of decompressed data, in bytes."},
             { "marks_bytes", std::make_shared<DataTypeUInt64>(), "The size of marks, in bytes."},
+            { "times_evaluated", std::make_shared<DataTypeUInt64>(), "How many executed reading steps evaluated this index. In-memory counter per server, reset on server restart."},
+            { "granules_evaluated", std::make_shared<DataTypeUInt64>(), "Total number of granules this index was evaluated on. In-memory counter per server, reset on server restart."},
+            { "granules_dropped", std::make_shared<DataTypeUInt64>(), "Total number of granules this index dropped. In-memory counter per server, reset on server restart."},
+            { "last_used_time", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "Time of the last evaluation of this index. NULL if the index was never evaluated since server start."},
         }));
     storage_metadata.setVirtuals(createVirtuals());
     setInMemoryMetadata(storage_metadata);
@@ -128,6 +135,8 @@ protected:
                 const auto indices = metadata_snapshot->getSecondaryIndices();
 
                 auto secondary_index_sizes = table->getSecondaryIndexSizes();
+                auto usage_statistics = context->getIndexUsageStatistics();
+                auto table_storage_id = table->getStorageID();
                 for (const auto & index : indices)
                 {
                     ++rows_count;
@@ -187,6 +196,30 @@ protected:
                     /// 'marks_bytes' column
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(secondary_index_size.marks);
+
+                    auto usage = usage_statistics->get(
+                        IndexUsageStatistics::makeKey(table_storage_id, IndexUsageStatistics::IndexKind::Skip, index.name));
+
+                    // 'times_evaluated' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(usage.times_used);
+
+                    // 'granules_evaluated' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(usage.granules_evaluated);
+
+                    // 'granules_dropped' column
+                    if (column_mask[src_index++])
+                        res_columns[res_index++]->insert(usage.granules_dropped);
+
+                    // 'last_used_time' column
+                    if (column_mask[src_index++])
+                    {
+                        if (usage.times_used > 0)
+                            res_columns[res_index++]->insert(static_cast<UInt32>(usage.last_used_time));
+                        else
+                            res_columns[res_index++]->insertDefault();
+                    }
                 }
             }
         }

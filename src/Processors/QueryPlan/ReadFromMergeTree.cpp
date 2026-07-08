@@ -22,6 +22,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/IndexUsageStatistics.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/TreeRewriter.h>
@@ -3699,6 +3700,83 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
         predicate_stats_log->add(std::move(elem));
 }
 
+void ReadFromMergeTree::updateIndexUsageStatistics(const AnalysisResult & result) const
+{
+    if (query_info.is_internal)
+        return;
+
+    auto storage_id = data.getStorageID();
+    if (storage_id.database_name.empty())
+        return;
+
+    auto usage_statistics = context->getIndexUsageStatistics();
+    auto now = time(nullptr);
+
+    if (result.readFromProjection())
+    {
+        /// This step reads projection parts instead of the table; `index_stats` here describe
+        /// the projection's internal primary key, so only the projection usage is recorded.
+        String projection_name = result.parts_with_ranges.front().data_part->getProjectionName();
+        if (!projection_name.starts_with('_'))
+        {
+            auto key = IndexUsageStatistics::makeKey(storage_id, IndexUsageStatistics::IndexKind::Projection, projection_name);
+            usage_statistics->record(key, 0, 0, now);
+        }
+        return;
+    }
+
+    /// Granule counts form a funnel: each index's input is the previous entry's output.
+    struct SkipIndexUsage
+    {
+        UInt64 granules_evaluated = 0;
+        UInt64 granules_dropped = 0;
+    };
+    std::unordered_map<std::string_view, SkipIndexUsage> skip_index_usage;
+
+    UInt64 prev_granules = 0;
+    for (const auto & stat : result.index_stats)
+    {
+        /// Per-part entries (`per_part_index_stats` = 1) don't form a funnel.
+        if (!stat.part_name.empty())
+            continue;
+
+        if (stat.type == IndexType::None)
+        {
+            prev_granules = stat.num_granules_after;
+            continue;
+        }
+
+        UInt64 evaluated = prev_granules > 0 ? prev_granules : stat.num_granules_after;
+        UInt64 dropped = evaluated > stat.num_granules_after ? evaluated - stat.num_granules_after : 0;
+        prev_granules = stat.num_granules_after;
+
+        if (stat.type != IndexType::Skip || stat.name == COMBINED_SKIP_INDEXES_STAT_NAME)
+            continue;
+
+        /// The same index can appear twice (e.g. an extra top-K filtering pass):
+        /// count the evaluation once, sum the dropped granules.
+        auto [it, inserted] = skip_index_usage.try_emplace(stat.name);
+        if (inserted)
+            it->second.granules_evaluated = evaluated;
+        it->second.granules_dropped += dropped;
+    }
+
+    for (const auto & [index_name, usage] : skip_index_usage)
+    {
+        auto key = IndexUsageStatistics::makeKey(storage_id, IndexUsageStatistics::IndexKind::Skip, String(index_name));
+        usage_statistics->record(key, usage.granules_evaluated, usage.granules_dropped, now);
+    }
+
+    for (const auto & projection_stat : result.projection_stats)
+    {
+        if (!projection_stat.used_for_filtering)
+            continue;
+
+        auto key = IndexUsageStatistics::makeKey(storage_id, IndexUsageStatistics::IndexKind::Projection, projection_stat.name);
+        usage_statistics->record(key, 0, 0, now);
+    }
+}
+
 /// Splits the analyzed marks across `bucket_count` distributed-read buckets as contiguous, mark-balanced
 /// slices: bucket b gets global mark offsets [b*M/bucket_count, (b+1)*M/bucket_count) of the parts' marks
 /// flattened in analyzed order (M = total marks). Computed on the coordinator so a worker never re-derives
@@ -3754,6 +3832,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     auto & result = getAnalysisResult();
 
     logPredicateStatistics(result);
+    updateIndexUsageStatistics(result);
 
     /// A distributed worker reads exactly the bucket described by its `read_bucket` task parameter: its
     /// marks, whether it needs a FINAL merge, and (for a merge layer) the borders + index. Match the marks
@@ -4009,6 +4088,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         if (!applicable_skip_indexes.empty())
         {
+            auto storage_id = data.getStorageID();
+            bool update_usage_statistics = !query_info.is_internal && !storage_id.database_name.empty();
             skip_index_reader = std::make_shared<MergeTreeSkipIndexReader>(
                 applicable_skip_indexes,
                 indexes->key_condition_rpn_template,
@@ -4017,7 +4098,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 context->getIndexUncompressedCache(),
                 context->getVectorSimilarityIndexCache(),
                 reader_settings,
-                getLogger("MergeTreeSkipIndexReader"));
+                getLogger("MergeTreeSkipIndexReader"),
+                update_usage_statistics ? context->getIndexUsageStatistics() : nullptr,
+                update_usage_statistics ? storage_id : StorageID::createEmpty());
         }
     }
 

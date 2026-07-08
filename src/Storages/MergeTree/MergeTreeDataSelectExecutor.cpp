@@ -1369,7 +1369,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
         {
             index_stats.emplace_back(ReadFromMergeTree::IndexStat{
                 .type = ReadFromMergeTree::IndexType::Skip,
-                .name = "<Combined skip indexes>",
+                .name = ReadFromMergeTree::COMBINED_SKIP_INDEXES_STAT_NAME,
                 .description = "Final set of granules after AND/OR processing",
                 .num_parts_after = sum_parts_pk.load(std::memory_order_relaxed),
                 .num_granules_after = sum_marks_union.load(std::memory_order_relaxed)});

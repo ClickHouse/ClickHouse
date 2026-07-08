@@ -140,7 +140,11 @@ CREATE TABLE system.data_skipping_indices
     `granularity` UInt64,
     `data_compressed_bytes` UInt64,
     `data_uncompressed_bytes` UInt64,
-    `marks_bytes` UInt64
+    `marks_bytes` UInt64,
+    `times_evaluated` UInt64,
+    `granules_evaluated` UInt64,
+    `granules_dropped` UInt64,
+    `last_used_time` Nullable(DateTime)
 )
 ENGINE = SystemDataSkippingIndices
 COMMENT 'Contains all the information about all the data skipping indices in tables, similar to system.columns.'

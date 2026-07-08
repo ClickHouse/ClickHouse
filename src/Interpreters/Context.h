@@ -122,6 +122,7 @@ struct FileProgress;
 class Clusters;
 class QueryResultCache;
 class QueryConditionCache;
+class IndexUsageStatistics;
 class ISystemLog;
 class QueryLog;
 class QueryMetricLog;
@@ -1557,6 +1558,9 @@ public:
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
     void clearQueryConditionCache() const;
+
+    /// Cumulative usage counters of skip indexes and projections, see `IndexUsageStatistics`.
+    std::shared_ptr<IndexUsageStatistics> getIndexUsageStatistics() const;
 
     /** Clear the caches of the uncompressed blocks and marks.
       * This is usually done when renaming tables, changing the type of columns, deleting a table.

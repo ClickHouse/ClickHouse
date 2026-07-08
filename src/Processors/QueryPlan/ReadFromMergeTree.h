@@ -115,6 +115,9 @@ public:
         /// - search_algorithm
     };
 
+    /// Pseudo-entry in `index_stats` with the final set of granules after AND/OR combination of skip indexes.
+    static constexpr auto COMBINED_SKIP_INDEXES_STAT_NAME = "<Combined skip indexes>";
+
     /// This is a struct with information about applied indexes.
     /// Is used for introspection only, in EXPLAIN query.
     struct IndexStat
@@ -146,6 +149,9 @@ public:
         UInt64 selected_marks = 0;
         UInt64 selected_rows = 0;
         UInt64 filtered_parts = 0;
+        /// True only for projections actually used while reading the parent table (projection index
+        /// reading or part-level filtering), false for merely analyzed candidates.
+        bool used_for_filtering = false;
     };
 
     /// `deque` is used to ensure stable addresses during projection analysis stats building.
@@ -596,6 +602,7 @@ private:
     ReadFromMergeTree::AnalysisResult & getAnalysisResult() { return getAnalysisResultImpl(); }
 
     void logPredicateStatistics(const AnalysisResult & result) const;
+    void updateIndexUsageStatistics(const AnalysisResult & result) const;
 
     int getSortDirection() const;
     void updateSortDescription();

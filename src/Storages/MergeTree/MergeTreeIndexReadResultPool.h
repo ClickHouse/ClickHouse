@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/SharedMutex.h>
+#include <Interpreters/StorageID.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/ConditionTemplate.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
@@ -10,6 +11,9 @@
 
 namespace DB
 {
+
+class IndexUsageStatistics;
+using IndexUsageStatisticsPtr = std::shared_ptr<IndexUsageStatistics>;
 
 class IMergeTreeDataPart;
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
@@ -36,7 +40,11 @@ public:
         UncompressedCachePtr uncompressed_cache_,
         VectorSimilarityIndexCachePtr vector_similarity_index_cache_,
         MergeTreeReaderSettings reader_settings_,
-        LoggerPtr log_);
+        LoggerPtr log_,
+        IndexUsageStatisticsPtr usage_statistics_,
+        StorageID usage_statistics_table_id_);
+
+    ~MergeTreeSkipIndexReader();
 
     SkipIndexReadResultPtr read(const RangesInDataPart & part, const StorageMetadataPtr & metadata_snapshot, const NameSet & all_updated_columns);
 
@@ -51,6 +59,12 @@ private:
     VectorSimilarityIndexCachePtr vector_similarity_index_cache;
     MergeTreeReaderSettings reader_settings;
     LoggerPtr log;
+
+    /// Granules dropped at read time are buffered per index (in the order of `skip_indexes.useful_indices`)
+    /// and flushed into the index usage counters on destruction; `usage_statistics` may be nullptr.
+    IndexUsageStatisticsPtr usage_statistics;
+    StorageID usage_statistics_table_id = StorageID::createEmpty();
+    std::vector<std::atomic<UInt64>> granules_dropped_per_index;
 
     std::atomic_bool is_cancelled = false;
 };

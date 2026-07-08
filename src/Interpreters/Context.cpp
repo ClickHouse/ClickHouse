@@ -77,6 +77,7 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Cache/QueryResultCache.h>
+#include <Interpreters/IndexUsageStatistics.h>
 #include <Interpreters/Cache/ReverseLookupCache.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/SessionTracker.h>
@@ -596,6 +597,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable TextIndexHeaderCachePtr text_index_header_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index headers.
     mutable TextIndexPostingsCachePtr text_index_postings_cache TSA_GUARDED_BY(mutex);  /// Cache of deserialized text index posting lists.
     mutable QueryConditionCachePtr query_condition_cache TSA_GUARDED_BY(mutex);       /// Cache of matching marks for predicates
+    /// Usage counters of skip indexes and projections. Created eagerly and never replaced, so access needs no lock.
+    IndexUsageStatisticsPtr index_usage_statistics = std::make_shared<IndexUsageStatistics>();
     mutable QueryResultCachePtr query_result_cache TSA_GUARDED_BY(mutex);             /// Cache of query results.
     mutable MarkCachePtr index_mark_cache TSA_GUARDED_BY(mutex);                      /// Cache of marks in compressed files of MergeTree indices.
     mutable MMappedFileCachePtr mmap_cache TSA_GUARDED_BY(mutex);                     /// Cache of mmapped files to avoid frequent open/map/unmap/close and to reuse from several threads.
@@ -4980,6 +4983,11 @@ QueryConditionCachePtr Context::getQueryConditionCache() const
 {
     SharedLockGuard lock(shared->mutex);
     return shared->query_condition_cache;
+}
+
+IndexUsageStatisticsPtr Context::getIndexUsageStatistics() const
+{
+    return shared->index_usage_statistics;
 }
 
 void Context::updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
