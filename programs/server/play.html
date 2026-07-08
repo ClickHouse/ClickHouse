@@ -1604,7 +1604,10 @@ class QueryProgressElement extends HTMLElement
                 :host
                 {
                     display: grid;
-                    grid-template-columns: auto 1fr auto;
+                    /* Progress and stats share the available width equally, and both can
+                       shrink below their content size (the zero minimum), so they resize
+                       uniformly when the row is narrow instead of one hogging the space. */
+                    grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr);
                     gap: 1rem;
                     align-items: center;
                 }
@@ -1644,7 +1647,6 @@ class QueryProgressElement extends HTMLElement
                 #stats
                 {
                     color: var(--misc-text-color);
-                    white-space: nowrap;
                 }
 
                 #stats b
@@ -7485,8 +7487,25 @@ query_area.addEventListener('keydown', (e) => {
         }
         return;
     }
+    /// The selected candidate whose full text equals the already-typed word (an "empty
+    /// completion" — same length as the prefix, since every candidate starts with it) would
+    /// accept to a no-op. In that case Right / Enter must keep their native meaning — move the
+    /// caret one character, or insert a newline — instead of being swallowed by a completion
+    /// that changes nothing. This matters e.g. after typing `f()` with the caret between `f`
+    /// and `(`: Right should step into the parens, not "accept" the already-complete `f`.
+    const selectedIsNoop = completionCandidates[completionSelected].length === completionPrefix.length;
+
     /// Plain Enter accepts the completion; Ctrl/Cmd+Enter is left alone so it still runs the query.
-    if (e.key === 'Tab' || e.key === 'ArrowRight' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey)) {
+    if (e.key === 'ArrowRight' || (e.key === 'Enter' && !e.ctrlKey && !e.metaKey)) {
+        if (selectedIsNoop) {
+            /// Nothing to accept — dismiss the list and let the key act natively.
+            closeCompletions();
+            return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        acceptCompletion(completionSelected);
+    } else if (e.key === 'Tab') {
         e.preventDefault();
         e.stopImmediatePropagation();
         acceptCompletion(completionSelected);
