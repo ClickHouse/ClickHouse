@@ -21,6 +21,7 @@ public:
         String filter_column_name_,
         const DataTypePtr & filter_column_type_,
         String filter_name_,
+        String filter_key_,
         size_t filters_to_merge_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_bytes_,
@@ -43,6 +44,8 @@ private:
     const DataTypePtr filter_column_original_type;
     const DataTypePtr filter_column_target_type;
     const String filter_name;
+    /// Random per-plan-build key the built filter is registered under (matches `__applyFilter`).
+    const String filter_key;
 
     FunctionBasePtr cast_to_target_type;
 

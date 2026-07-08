@@ -2,7 +2,9 @@
 
 #include <Common/Logger.h>
 
+#include <cstdint>
 #include <functional>
+#include <string>
 
 
 namespace Coordination
@@ -34,7 +36,8 @@ enum class KeeperDigestVersion : uint8_t
     V1 = 1,
     V2 = 2, // added system nodes that modify the digest on startup so digest from V0 is invalid
     V3 = 3, // fixed bug with casting, removed duplicate czxid usage
-    V4 = 4  // 0 is not a valid digest value
+    V4 = 4, // 0 is not a valid digest value
+    V5 = 5  // added TTL fields (destroy_time and ttl) to the node digest
 };
 
 struct KeeperDigest
@@ -43,7 +46,7 @@ struct KeeperDigest
     uint64_t value{0};
 };
 
-static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V4;
+static constexpr auto KEEPER_CURRENT_DIGEST_VERSION = KeeperDigestVersion::V5;
 
 struct KeeperResponseForSession
 {
@@ -68,12 +71,22 @@ using KeeperRequestsForSessions = std::vector<KeeperRequestForSession>;
 
 inline static constexpr std::string_view tmp_keeper_file_prefix = "tmp_";
 
+/// Parse the log index out of a snapshot file name/path. Works for both legacy
+/// ("snapshot_100.bin.zstd") and unique ("snapshot_100_<uuid>.bin.zstd") names.
+uint64_t getLogIdxFromSnapshotPath(const std::string & snapshot_path);
+
+/// Canonical S3 key for a snapshot file: strips the unique suffix so every node uploads
+/// the same logical index under the same key, e.g. "snapshot_100_<uuid>.bin.zstd" -> "snapshot_100.bin.zstd".
+std::string getCanonicalSnapshotS3Name(const std::string & snapshot_path);
+
+/// `before_file_remove_op` runs after the copy and before the source removal. Returning
+/// `false` rejects the move: the source is kept, the caller cleans up the copied target.
 void moveFileBetweenDisks(
     DiskPtr disk_from,
     const std::string & path_from,
     DiskPtr disk_to,
     const std::string & path_to,
-    std::function<void()> before_file_remove_op,
+    std::function<bool()> before_file_remove_op,
     LoggerPtr logger,
     const KeeperContextPtr & keeper_context);
 

@@ -344,13 +344,13 @@ def get_table_uuid(database, name):
 
 @pytest.fixture(scope="module", name="attachable_part")
 def fixture_attachable_part(started_cluster):
-    main_node.query(f"CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
+    main_node.query("CREATE DATABASE testdb_attach_atomic ENGINE = Atomic")
     main_node.query(
-        f"CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)"
+        "CREATE TABLE testdb_attach_atomic.test (CounterID UInt32) ENGINE = MergeTree ORDER BY (CounterID)"
     )
-    main_node.query(f"INSERT INTO testdb_attach_atomic.test VALUES (123)")
+    main_node.query("INSERT INTO testdb_attach_atomic.test VALUES (123)")
     main_node.query(
-        f"ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'"
+        "ALTER TABLE testdb_attach_atomic.test FREEZE WITH NAME 'test_attach'"
     )
     table_uuid = get_table_uuid("testdb_attach_atomic", "test")
     return os.path.join(
@@ -1219,13 +1219,14 @@ def test_sync_replica(started_cluster):
     with PartitionManager() as pm:
         pm.drop_instance_zk_connections(dummy_node)
 
-        for i in range(number_of_tables):
-            main_node.query(
-                "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n".format(
-                    i
-                ),
-                settings=settings,
+        # Single client invocation: one process spawn instead of N.
+        create_queries = "\n".join(
+            "CREATE TABLE test_sync_database.table_{} (n int) ENGINE=MergeTree order by n;".format(
+                i
             )
+            for i in range(number_of_tables)
+        )
+        main_node.query(create_queries, settings=settings)
 
     # wait for host to reconnect
     dummy_node.query_with_retry("SELECT * FROM system.zookeeper WHERE path='/'")
@@ -1389,7 +1390,7 @@ def test_replicated_table_structure_alter(started_cluster):
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3)")
 
     metadata_path = competing_node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
+        "SELECT metadata_path FROM system.tables WHERE database='table_structure' AND name='mem'"
     ).strip()
     db_disk_name = get_database_disk_name(competing_node)
     competing_node.exec_in_container(
@@ -1490,7 +1491,7 @@ def test_table_metadata_corruption(started_cluster):
     dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_metadata_corruption")
 
     metadata_path = dummy_node.query(
-        f"SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
+        "SELECT metadata_path FROM system.tables WHERE database='table_metadata_corruption' AND name='rmt1'"
     ).strip()
     # Server should handle this by throwing an exception during table loading, which should lead to server shutdown
 
@@ -1520,7 +1521,7 @@ def test_table_metadata_corruption(started_cluster):
             # Server did not shut down as expected, kill it so we can fix metadata
             dummy_node.stop_clickhouse(kill=True)
 
-        print(f"Fix corrupted metadata")
+        print("Fix corrupted metadata")
         replace_text_in_metadata(
             dummy_node, metadata_path, "CorruptedMergeTree", "ReplicatedMergeTree"
         )
@@ -1753,6 +1754,102 @@ def test_lag_after_recovery(started_cluster):
         )
         == "0\n"
     )
+
+
+def test_sync_database_replica_strict(started_cluster):
+    # Differential test for SYSTEM SYNC DATABASE REPLICA ... STRICT.
+    #
+    # It pins down two things that a plain (DEFAULT) sync cannot:
+    #
+    #   1. STRICT actually takes effect (the interpreter forwards
+    #      query.sync_replica_mode). We freeze replica2's DDL worker mid-queue
+    #      with the pauseable failpoint and keep the lag *below*
+    #      max_replication_lag_to_enqueue. DEFAULT sync needs the exact snapshot
+    #      processed -> it times out (TIMEOUT_EXCEEDED). STRICT sync only needs
+    #      our_log_ptr + max_replication_lag_to_enqueue >= max_log_ptr -> it
+    #      succeeds. The opposite outcomes under identical conditions can only
+    #      happen if STRICT is honored; if STRICT were ignored it would time out
+    #      exactly like DEFAULT.
+    #
+    #   2. The Keeper-component guard in
+    #      DatabaseReplicated::waitForReplicaToProcessAllEntries. The STRICT path
+    #      reads .../max_log_ptr directly via getZooKeeper()->get on the query
+    #      thread (the DEFAULT path goes through the DDL worker, which sets its
+    #      own component). Integration nodes run with
+    #      enforce_keeper_component_tracking=true, so without the guard that read
+    #      throws LOGICAL_ERROR "Current component is empty" (release) or aborts
+    #      the server (debug). Here STRICT instead succeeds, which only holds
+    #      with the guard in place.
+    main_node.query("drop database if exists strict_sync sync")
+    dummy_node.query("drop database if exists strict_sync sync")
+
+    main_node.query(
+        "create database strict_sync engine=Replicated('/clickhouse/databases/strict_sync', 'shard1', 'replica1')"
+    )
+    # Generous threshold so a small lag stays well within it (became_synced).
+    dummy_node.query(
+        "create database strict_sync engine=Replicated('/clickhouse/databases/strict_sync', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=100"
+    )
+
+    # Make sure replica2 is fully caught up before we freeze it.
+    assert_eq_with_retry(
+        dummy_node,
+        "select replication_lag from system.clusters where name='strict_sync' and database_replica_name='replica2'",
+        "0\n",
+    )
+
+    # Freeze replica2's worker on the next entry it tries to execute, so it
+    # stays a few entries behind max_log_ptr (but within the threshold).
+    dummy_node.query(
+        "system enable failpoint database_replicated_stop_entry_execution"
+    )
+    try:
+        settings = {"distributed_ddl_task_timeout": 0}
+        for i in range(3):
+            main_node.query(
+                f"create table strict_sync.t{i} (n int) engine=Memory",
+                settings=settings,
+            )
+
+        # `receive_timeout` (set server-side via HTTP `params`) is the sync's wait
+        # budget. STRICT checks became_synced before waiting on the worker, so it
+        # returns almost immediately here (lag 3 <= threshold 100); DEFAULT needs
+        # the frozen snapshot fully processed, so it waits out the whole budget and
+        # times out. We drive both over HTTP so the python read timeout (`timeout=`)
+        # is independent of the server-side `receive_timeout`: that lets us assert
+        # the DEFAULT *server-side* TIMEOUT_EXCEEDED with a generous read window
+        # instead of coupling it to the native client's socket timeout, which fires
+        # at the same `receive_timeout` and would make the timeout's origin a flaky
+        # client/server race.
+        sync_params = {"receive_timeout": 3}
+
+        # DEFAULT: needs the frozen snapshot fully processed -> times out.
+        default_error = dummy_node.http_query_and_get_error(
+            "system sync database replica strict_sync",
+            params=sync_params,
+            timeout=60,
+        )
+        assert "TIMEOUT_EXCEEDED" in default_error, default_error
+
+        # STRICT: lag is within max_replication_lag_to_enqueue, so the guarded
+        # getZooKeeper()->get(max_log_ptr) runs and became_synced is true ->
+        # the query succeeds (it would time out like DEFAULT if STRICT were
+        # ignored, and would raise "Current component is empty" / crash without
+        # the guard).
+        dummy_node.http_query(
+            "system sync database replica strict_sync strict",
+            params=sync_params,
+            timeout=60,
+        )
+    finally:
+        dummy_node.query(
+            "system disable failpoint database_replicated_stop_entry_execution"
+        )
+
+    assert dummy_node.query("select 1") == "1\n"
+
+    main_node.query("drop database if exists strict_sync sync")
+    dummy_node.query("drop database if exists strict_sync sync")
 
 
 def test_system_database_replicas_with_ro(started_cluster):

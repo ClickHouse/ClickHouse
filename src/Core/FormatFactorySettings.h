@@ -42,6 +42,11 @@ Possible values:
     DECLARE(Bool, output_format_csv_serialize_tuple_into_separate_columns, true, R"(
 If it set to true, then Tuples in CSV format are serialized as separate columns (that is, their nesting in the tuple is lost)
 )", 0) \
+    DECLARE(Bool, output_format_csv_header_serialize_tuple_into_separate_columns, true, R"(
+When [output_format_csv_serialize_tuple_into_separate_columns](#output_format_csv_serialize_tuple_into_separate_columns) is enabled, the header rows of `CSVWithNames` and `CSVWithNamesAndTypes` flatten each Tuple column into its leaf fields (dotted names like `t.a`, `t.b`, and the leaf type names), so the header has the same number of columns as the data. For `CustomSeparated*` this flattening applies only when `format_custom_escaping_rule = 'CSV'` and `format_custom_field_delimiter` is a single character equal to `format_csv_delimiter`; otherwise (for example the default tab delimiter or `format_custom_field_delimiter = '|'`) the header stays unflattened so it still matches the data. Set it to `0` to keep the previous behavior where the header keeps the single top-level Tuple name and type.
+
+Note: a flattened header is not read back into a Tuple by name when `input_format_with_names_use_header = 1`. To read such data back into a Tuple, either set this setting to `0` on output, or read with `input_format_with_names_use_header = 0` (and, for the `*WithNamesAndTypes` formats `CSVWithNamesAndTypes` and `CustomSeparatedWithNamesAndTypes`, also `input_format_with_types_use_header = 0`, since the flattened types row is otherwise validated against the single top-level Tuple input field and rejected).
+)", 0) \
     DECLARE(Bool, input_format_csv_deserialize_separate_columns_into_tuple, true, R"(
 If it set to true, then separate columns written in CSV format can be deserialized to Tuple column.
 )", 0) \
@@ -148,6 +153,9 @@ Possible values:
 )", IMPORTANT) \
     DECLARE(Bool, input_format_csv_empty_as_default, true, R"(
 Treat empty fields in CSV input as default values.
+)", 0) \
+    DECLARE(Bool, input_format_csv_missing_nullable_as_empty_string, false, R"(
+Controls how `Nullable(String)` is read from a missing value in CSV. A missing value is an empty space between/before/after commas, not surrounded by quotes. If this setting is enabled, regardless of the value of `input_format_csv_empty_as_default`, the missing value of `Nullable(String)` will be interpreted as an empty `String`, not as NULL.
 )", 0) \
     DECLARE(Bool, input_format_tsv_empty_as_default, false, R"(
 Treat empty fields in TSV input as default values.
@@ -1243,6 +1251,11 @@ Output trailing zeros when printing Decimal values. E.g. 1.230000 instead of 1.2
 
 Disabled by default.
 )", 0) \
+    DECLARE(Bool, output_format_always_write_decimal_point_in_float_and_decimal, false, R"(
+Always print a decimal point for floating-point and Decimal numbers in text formats, even when the value is a whole number. For example, output `1.` instead of `1`.
+
+Disabled by default.
+)", 0) \
     DECLARE(UInt64, output_format_float_precision, 0, R"(
 When non-zero, format floating-point output (`Float32`, `Float64`, `BFloat16`) with at most this many digits after the decimal point (trailing zeros are removed).
 When 0 (the default), use the shortest round-trip representation.
@@ -1279,6 +1292,24 @@ If both `input_format_allow_errors_num` and `input_format_allow_errors_ratio` ar
 )", 0) \
     DECLARE(String, input_format_record_errors_file_path, "", R"(
 Path of the file used to record errors while reading text formats (CSV, TSV).
+)", 0) \
+    DECLARE(GeoJSONUnsupportedGeometryHandling, input_format_geojson_unsupported_geometry_handling, FormatSettings::UnsupportedGeometryHandling::Throw, R"(
+Controls what happens when a valid `GeoJSON` geometry type that cannot be represented in ClickHouse's `Geometry` type (such as `GeometryCollection` or `MultiPoint`) must be stored in the `geometry` column while reading `GeoJSON` input.
+
+Possible values:
+- `'throw'` (default) — throw an exception.
+- `'null'` — insert a `NULL` value for the `geometry` column and continue parsing.
+
+This applies only when the `geometry` column is materialized. When it is not a requested output column, such a geometry is validated for well-formedness but does not trigger the handling.
+)", 0) \
+    DECLARE(Bool, format_geojson_validate_geometry, true, R"(
+Controls whether the `GeoJSON` format enforces RFC 7946 geometry validity, in both directions.
+
+When enabled (default), a geometry that violates the GeoJSON shape rules is rejected: a `LineString` (or a line of a `MultiLineString`) with fewer than two points; a `Polygon` or `MultiPolygon` ring with fewer than four points or whose first and last points differ (an unclosed ring); or an empty `MultiLineString`, `Polygon`, or `MultiPolygon`. This applies both when reading (such a document is rejected) and when writing (such a ClickHouse value is rejected instead of producing a document the input format would reject).
+
+When disabled, these shape rules are not enforced: such geometries are read as-is and written as-is, so degenerate geometries round-trip, but a written document may not be valid GeoJSON.
+
+The validation is structural only: it checks point counts and ring closure. It does not inspect the geometric correctness of a shape — ring orientation (the right-hand rule / winding order) is not enforced, and structurally valid but geometrically degenerate geometries are accepted, such as a zero-area polygon, a self-intersecting ring, or a polygon whose holes lie outside its outer ring. Non-finite coordinates (`NaN`, `Inf`) are always rejected regardless of this setting, because they cannot be represented as JSON numbers.
 )", 0) \
     DECLARE(String, errors_output_format, "CSV", R"(
 Method to write Errors to text output.
@@ -1362,6 +1393,11 @@ Enabled by default
 )", 0) \
     DECLARE(Bool, output_format_pretty_row_numbers, true, R"(
 Add row numbers before each row for pretty output format
+)", 0) \
+    DECLARE(Bool, output_format_pretty_use_nbsp_for_padding, false, R"(
+If enabled, padding in `Pretty` output formats is rendered with `U+00A0` instead of an ASCII space.
+The output remains visually identical in monospace, but the padding survives tools that compress or trim runs of regular spaces.
+Only takes effect when `output_format_pretty_grid_charset` is `UTF-8`.
 )", 0) \
     DECLARE(Bool, output_format_pretty_highlight_digit_groups, true, R"(
 If enabled and if output is a terminal, highlight every digit corresponding to the number of thousands, millions, etc. with underline.
@@ -1512,8 +1548,8 @@ Possible values:
 -   0 — Disabled.
 -   1 — Enabled.
 )", IMPORTANT) \
-    DECLARE(Bool, precise_float_parsing, false, R"(
-Prefer more precise (but slower) float parsing algorithm
+    DECLARE(Bool, precise_float_parsing, true, R"(
+Use the precise float parsing algorithm, which always returns the closest representable value to the input. When disabled, a faster but less accurate algorithm is used that may differ from the precise result by the least significant bits.
 )", 0) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
 Defines the behavior when [Date](../../sql-reference/data-types/date.md), [Date32](../../sql-reference/data-types/date32.md), [DateTime](../../sql-reference/data-types/datetime.md), [DateTime64](../../sql-reference/data-types/datetime64.md) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type.
@@ -1535,6 +1571,28 @@ Set the quoting rule for identifiers in SHOW CREATE query
 )", 0) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
 Set the quoting style for identifiers in SHOW CREATE query
+)", 0) \
+    DECLARE(UInt64, output_format_image_width, 1024, R"(
+The width of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(UInt64, output_format_image_height, 1024, R"(
+The height of the output image in pixels for image output formats such as `PNG`.
+
+Default value: 1024.
+)", 0) \
+    DECLARE(String, output_format_image_terminal_mode, "", R"(
+For image output formats such as `PNG`, output the image directly to the terminal using an inline image protocol instead of writing the raw image bytes.
+
+Possible values:
+- `` (empty) — write the raw image bytes (the default).
+- `iterm` — use the iTerm2 inline image protocol.
+- `kitty` — use the Kitty graphics protocol.
+- `sixel` — use the Sixel protocol.
+- `auto` — if the output is a terminal, detect its capabilities and use `iterm`, `kitty`, or `sixel` (in this order); otherwise write the raw image bytes.
+
+Default value: `` (empty).
 )", 0) \
     DECLARE(UInt64, input_format_max_block_size_bytes, 0, R"(
 Limits the size of the blocks formed during data parsing in input formats in bytes. Used in row based input formats when block is formed on ClickHouse side.

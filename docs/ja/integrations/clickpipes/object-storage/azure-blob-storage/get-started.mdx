@@ -1,0 +1,101 @@
+---
+sidebarTitle: 'はじめに'
+description: '初めての Azure Blob Storage（ABS）ClickPipe を作成するためのステップごとのガイド。'
+slug: /integrations/clickpipes/object-storage/azure-blob-storage/get-started
+title: '初めての Azure Blob Storage ClickPipe を作成する'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+**前提条件**
+
+このガイドを進めるには、次のものが必要です。
+
+* Azure Blob Storage アカウント
+* [Azure 接続文字列](/ja/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage#acquiring-azure-blob-storage-access-keys)
+* コンテナー名
+* 稼働中の ClickHouse Cloud サービス
+
+<Steps>
+  <Step>
+    ## データソースに移動する
+
+    サービスのホームページから、左側のメニューにある **Data sources** をクリックします。
+    **ClickPipes** のドロップダウンを展開し、**Create ClickPipe** をクリックします
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="データソースに移動する" size="md" />
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="ClickPipe を作成する" size="md" />
+  </Step>
+
+  <Step>
+    ## データソースを選択する
+
+    データタイプとして **Azure Blob Storage** を選択します
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="Azure Blob Storage を選択する" size="md" />
+  </Step>
+
+  <Step>
+    ## ClickPipe 接続を設定する
+
+    1. ClickPipe にわかりやすい名前を付けます
+    2. 認証方法のドロップダウンから **Connection String** を選択します
+    3. **Connection string** の欄に Azure 接続文字列を貼り付けます
+    4. コンテナー名を入力します
+    5. Azure Blob Storage のファイルパスを入力します。複数ファイルを取り込む場合はワイルドカードを使用します
+
+    必要に応じて、継続的インジェストを有効にします。詳しくは[&quot;継続的インジェスト&quot;](/ja/integrations/clickpipes/object-storage/azure-blob-storage/overview#continuous-ingestion)を参照してください。
+
+    最後に、**Incoming data** をクリックします
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="設定の詳細" size="md" />
+  </Step>
+
+  <Step>
+    ## データフォーマットを選択する
+
+    1. ファイルタイプを選択します
+    2. ファイル圧縮 (`detect automatically`, `none`, `gzip`, `brotli`, `xz` または `zstd`)
+    3. カンマ区切りのフォーマットで使用する区切り文字など、フォーマット固有の追加設定を完了します
+    4. **Parse information** をクリックします
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="データフォーマットを選択する" size="md" />
+  </Step>
+
+  <Step>
+    ## テーブル、スキーマ、設定を構成する
+
+    次に、受信データの保存先となる新しいテーブルを作成するか、既存のテーブルを選択する必要があります。
+
+    1. データを新しいテーブルにアップロードするか、既存のテーブルにアップロードするかを選択します
+    2. 使用するデータベースと、新規テーブルの場合はそのテーブル名を選択します
+    3. ソートキーを 1 つ以上選択します
+    4. カラム名、カラム型、デフォルト値、NULL 許容性について、ソースファイルから宛先テーブルへのマッピングを定義します
+    5. 最後に、使用するエンジンタイプ、パーティション化に使う式、主キーなどの詳細設定を指定します
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="情報を解析する" size="md" />
+
+    テーブル、スキーマ、設定の構成が完了したら、**Details and settings** をクリックします
+  </Step>
+
+  <Step>
+    ## 権限を構成する
+
+    ClickPipes は、データ書き込み専用のデータベースユーザーを設定します。
+    このユーザーに割り当てるロールを選択できます。
+    宛先テーブルに対して materialized view や Dictionary アクセスを利用する場合は、&quot;Full access&quot; を選択してください。
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="権限を構成する" size="md" />
+  </Step>
+
+  <Step>
+    ## セットアップを完了する
+
+    セットアップを完了するには **Create ClickPipe** をクリックします
+
+    これで、ClickPipe が Provisioning ステータスで表示されるはずです。
+    しばらくすると **provisioning** から **completed** に変わります。
+  </Step>
+</Steps>

@@ -1,0 +1,405 @@
+---
+slug: /cloud/managed-postgres/local-development
+sidebarTitle: 'Local development'
+title: 'Local development environments'
+description: 'Run PostgreSQL locally with Docker for fast development against Managed Postgres'
+keywords: ['managed postgres', 'local development', 'docker', 'postgresql', 'seed data', 'migrations']
+doc_type: 'guide'
+---
+
+Managed Postgres is built on standard PostgreSQL and works with the existing PostgreSQL ecosystem. For most development tasks, you can develop and test against a local PostgreSQL instance running in Docker rather than a cloud deployment.
+
+This approach provides a fast feedback loop, simplifies onboarding, reduces dependencies on shared infrastructure, and lets you experiment safely without impacting production systems.
+
+The goal isn't to replicate production exactly. Instead, create a reproducible local environment that:
+
+- Uses the same PostgreSQL major version as production.
+- Applies the same schema definitions as production.
+- Contains representative development data.
+- Supports normal application development and testing workflows.
+
+Because Managed Postgres is standard PostgreSQL, existing migration frameworks, schema management tools, and data seeding approaches work without modification.
+
+## Example development flow {#example-development-flow}
+
+A typical local development workflow looks like:
+
+```mermaid
+graph LR
+    A[Apply the application<br/>schema] --> B[Local PostgreSQL in Docker] --> C[Apply schema]
+```
+
+```mermaid
+graph LR
+    A[Restore sanitized tenant<br/>dataset] -.-> B[Generate seed data] -.-> C[Develop and test locally]
+```
+
+Managed Postgres fits into existing PostgreSQL development workflows. By developing against a local PostgreSQL instance, teams can iterate quickly, maintain reproducible environments, and gain confidence that applications behave consistently when deployed to Managed Postgres.
+
+## Run PostgreSQL locally with Docker {#run-postgresql-locally-with-docker}
+
+The simplest way to create a local development environment is to run PostgreSQL in Docker.
+
+Choose a PostgreSQL version that matches your Managed Postgres deployment:
+
+```yaml title="docker-compose.yml"
+services:
+  postgres:
+    image: postgres:18
+    container_name: local-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app
+
+    ports:
+      - "15432:5432"
+
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+volumes:
+  postgres_data:
+```
+
+Start PostgreSQL:
+
+```bash
+docker compose up -d
+```
+
+Verify connectivity:
+
+```bash
+psql -h localhost -U postgres -p 15432 -d app
+```
+
+At this point PostgreSQL is running locally but doesn't yet contain the application schema or any development data.
+
+## Apply the application schema {#apply-the-application-schema}
+
+There's no single required approach for creating the schema in a local environment. Most organizations already have an established schema management workflow that can be reused unchanged.
+
+### Application migrations {#application-migrations}
+
+Many teams use the same migration framework that runs in staging and production environments — tools like Flyway, Liquibase, Rails migrations, Django migrations, Prisma migrations, or Alembic.
+
+Applying migrations locally ensures schema evolution is continuously tested as part of normal development:
+
+```bash
+./migrate up
+# or
+npm run migrate
+# or
+rails db:migrate
+```
+
+### Schema-only PostgreSQL dumps {#schema-only-postgresql-dumps}
+
+A schema-only PostgreSQL export can reproduce an existing database structure. This is useful for onboarding, investigating schema behavior, validating compatibility, or quickly bootstrapping development environments.
+
+Export the schema:
+
+```bash
+pg_dump \
+  --schema-only \
+  --no-owner \
+  --no-privileges \
+  -h <host> \
+  -U <user> \
+  -d <database> \
+  > schema.sql
+```
+
+Restore locally:
+
+```bash
+psql \
+  -h localhost \
+  -U postgres \
+  -p 15432    \
+  -d app \
+  -f schema.sql
+```
+
+### Checked-in SQL definitions {#checked-in-sql-definitions}
+
+Some teams maintain schema definitions directly in source control as SQL files. These can be applied directly to a local PostgreSQL instance during environment setup.
+
+Regardless of the approach, the important outcome is that schema creation is automated, reproducible, and derived from version-controlled definitions.
+
+## Populate representative development data {#populate-representative-development-data}
+
+Once the schema exists, populate the database with representative development data.
+
+For most development workflows, synthetic datasets generated through seed scripts are sufficient. They're easy to recreate, safe to distribute, and avoid the compliance and security considerations associated with production data.
+
+A common approach for SaaS applications is to generate data for a small number of sample tenants and create realistic relationships between users, products, orders, and other business entities.
+
+### Example multi-tenant schema {#example-multi-tenant-schema}
+
+The following schema represents a simplified multi-tenant SaaS application:
+
+```sql
+CREATE TABLE tenants (
+    id UUID PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    email TEXT NOT NULL,
+    first_name TEXT,
+    last_name TEXT,
+    created_at TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE products (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    name TEXT NOT NULL,
+    price NUMERIC(10,2)
+);
+
+CREATE TABLE orders (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    user_id UUID NOT NULL REFERENCES users(id),
+    status TEXT,
+    created_at TIMESTAMP DEFAULT now()
+);
+
+CREATE TABLE order_items (
+    id UUID PRIMARY KEY,
+    order_id UUID NOT NULL REFERENCES orders(id),
+    product_id UUID NOT NULL REFERENCES products(id),
+    quantity INTEGER
+);
+
+CREATE TABLE audit_logs (
+    id UUID PRIMARY KEY,
+    tenant_id UUID NOT NULL REFERENCES tenants(id),
+    entity_type TEXT,
+    entity_id UUID,
+    action TEXT,
+    created_at TIMESTAMP DEFAULT now()
+);
+```
+
+### Generate sample data {#generate-sample-data}
+
+Install dependencies:
+
+```bash
+pip install faker psycopg2-binary
+```
+
+Create a file named `seed.py`:
+
+```python title="seed.py"
+import random
+import uuid
+
+import psycopg2
+from faker import Faker
+
+fake = Faker()
+
+conn = psycopg2.connect(
+    host="localhost",
+    port=15432,
+    dbname="app",
+    user="postgres",
+    password="postgres"
+)
+
+cur = conn.cursor()
+
+tenant_ids = []
+
+for tenant_name in [
+    "Tenant A",
+    "Tenant B",
+    "Tenant C"
+]:
+    tenant_id = str(uuid.uuid4())
+    tenant_ids.append(tenant_id)
+
+    cur.execute(
+        """
+        INSERT INTO tenants(id, name)
+        VALUES (%s, %s)
+        """,
+        (tenant_id, tenant_name)
+    )
+
+for tenant_id in tenant_ids:
+
+    users = []
+    products = []
+
+    for _ in range(20):
+        user_id = str(uuid.uuid4())
+        users.append(user_id)
+
+        cur.execute(
+            """
+            INSERT INTO users(
+                id,
+                tenant_id,
+                email,
+                first_name,
+                last_name
+            )
+            VALUES (%s,%s,%s,%s,%s)
+            """,
+            (
+                user_id,
+                tenant_id,
+                fake.email(),
+                fake.first_name(),
+                fake.last_name()
+            )
+        )
+
+    for _ in range(15):
+        product_id = str(uuid.uuid4())
+        products.append(product_id)
+
+        cur.execute(
+            """
+            INSERT INTO products(
+                id,
+                tenant_id,
+                name,
+                price
+            )
+            VALUES (%s,%s,%s,%s)
+            """,
+            (
+                product_id,
+                tenant_id,
+                fake.word(),
+                round(random.uniform(10, 500), 2)
+            )
+        )
+
+    for _ in range(50):
+
+        order_id = str(uuid.uuid4())
+
+        cur.execute(
+            """
+            INSERT INTO orders(
+                id,
+                tenant_id,
+                user_id,
+                status
+            )
+            VALUES (%s,%s,%s,%s)
+            """,
+            (
+                order_id,
+                tenant_id,
+                random.choice(users),
+                random.choice([
+                    "pending",
+                    "completed",
+                    "cancelled"
+                ])
+            )
+        )
+
+        for _ in range(random.randint(1, 5)):
+            cur.execute(
+                """
+                INSERT INTO order_items(
+                    id,
+                    order_id,
+                    product_id,
+                    quantity
+                )
+                VALUES (%s,%s,%s,%s)
+                """,
+                (
+                    str(uuid.uuid4()),
+                    order_id,
+                    random.choice(products),
+                    random.randint(1, 10)
+                )
+            )
+
+        cur.execute(
+            """
+            INSERT INTO audit_logs(
+                id,
+                tenant_id,
+                entity_type,
+                entity_id,
+                action
+            )
+            VALUES (%s,%s,%s,%s,%s)
+            """,
+            (
+                str(uuid.uuid4()),
+                tenant_id,
+                "order",
+                order_id,
+                "created"
+            )
+        )
+
+conn.commit()
+conn.close()
+```
+
+Run the script:
+
+```bash
+python seed.py
+```
+
+The resulting dataset contains:
+
+| Table | Records |
+|---|---|
+| tenants | 3 |
+| users | 60 |
+| products | 45 |
+| orders | 150 |
+| order_items | 400+ |
+| audit_logs | 150+ |
+
+This dataset is large enough to exercise common application workflows, tenant isolation logic, reporting queries, and relational integrity checks while remaining lightweight for local development and testing.
+
+## PostgreSQL + ClickHouse development environment {#postgresql-clickhouse-development-environment}
+
+The examples above focus on local PostgreSQL development. If you want to test the complete PostgreSQL-to-ClickHouse architecture locally, you can run the open-source PostgreSQL + ClickHouse stack.
+
+This stack combines PostgreSQL for transactional workloads, ClickHouse for analytics, and PeerDB for native change data capture (CDC). It lets you develop against PostgreSQL while continuously replicating data into ClickHouse — making it possible to test operational analytics, reporting workloads, and real-time data pipelines directly from your laptop.
+
+The stack can be started with a single command and includes all required services preconfigured:
+
+```bash
+git clone https://github.com/ClickHouse/postgres-clickhouse-stack.git
+cd postgres-clickhouse-stack
+
+./run.sh start
+```
+
+The stack includes:
+
+- PostgreSQL
+- ClickHouse
+- PeerDB for PostgreSQL CDC
+- Supporting services and sample applications
+
+For setup instructions, architecture details, and a walkthrough of the complete stack, see:
+
+- [Blog: PostgreSQL + ClickHouse OSS](https://clickhouse.com/blog/postgres-clickhouse-oss)
+- [GitHub: postgres-clickhouse-stack](https://github.com/ClickHouse/postgres-clickhouse-stack)
+
+This is a useful next step once your application runs locally against PostgreSQL and you want to validate PostgreSQL-to-ClickHouse synchronization, real-time analytics, and end-to-end application behavior.

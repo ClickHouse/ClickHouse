@@ -9,6 +9,7 @@
 #include <IO/ParallelReadBuffer.h>
 #include <IO/SharedThreadPools.h>
 #include <IO/WriteHelpers.h>
+#include <IO/BufferWithOwnMemory.h>
 #include <Processors/Formats/IRowInputFormat.h>
 #include <Processors/Formats/IRowOutputFormat.h>
 #include <Processors/Formats/Impl/MySQLOutputFormat.h>
@@ -53,6 +54,8 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
     extern const SettingsBool allow_experimental_nullable_tuple_type;
 
+    extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
+    extern SettingsBool format_geojson_validate_geometry;
     extern SettingsBool input_format_parallel_parsing;
     extern SettingsBool output_format_parallel_formatting;
     extern SettingsUInt64 output_format_compression_level;
@@ -120,12 +123,14 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.csv.allow_double_quotes = settings[Setting::format_csv_allow_double_quotes];
     format_settings.csv.allow_single_quotes = settings[Setting::format_csv_allow_single_quotes];
     format_settings.csv.serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_serialize_tuple_into_separate_columns];
+    format_settings.csv.header_serialize_tuple_into_separate_columns = settings[Setting::output_format_csv_header_serialize_tuple_into_separate_columns];
     format_settings.csv.deserialize_separate_columns_into_tuple = settings[Setting::input_format_csv_deserialize_separate_columns_into_tuple];
     format_settings.csv.crlf_end_of_line = settings[Setting::output_format_csv_crlf_end_of_line];
     format_settings.csv.allow_cr_end_of_line = settings[Setting::input_format_csv_allow_cr_end_of_line];
     format_settings.csv.delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.tuple_delimiter = settings[Setting::format_csv_delimiter];
     format_settings.csv.empty_as_default = settings[Setting::input_format_csv_empty_as_default];
+    format_settings.csv.missing_nullable_as_empty_string = settings[Setting::input_format_csv_missing_nullable_as_empty_string];
     format_settings.csv.enum_as_number = settings[Setting::input_format_csv_enum_as_number];
     format_settings.csv.null_representation = settings[Setting::format_csv_null_representation];
     format_settings.csv.arrays_as_nested_csv = settings[Setting::input_format_csv_arrays_as_nested_csv];
@@ -206,6 +211,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.null_as_default = settings[Setting::input_format_null_as_default];
     format_settings.force_null_for_omitted_fields = settings[Setting::input_format_force_null_for_omitted_fields];
     format_settings.decimal_trailing_zeros = settings[Setting::output_format_decimal_trailing_zeros];
+    format_settings.always_write_decimal_point_in_float_and_decimal = settings[Setting::output_format_always_write_decimal_point_in_float_and_decimal];
     format_settings.float_precision = settings[Setting::output_format_float_precision];
     format_settings.trim_fixed_string = settings[Setting::output_format_trim_fixed_string];
     format_settings.parquet.row_group_rows = settings[Setting::output_format_parquet_row_group_size];
@@ -270,6 +276,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.max_value_width_apply_for_single_value = settings[Setting::output_format_pretty_max_value_width_apply_for_single_value];
     format_settings.pretty.highlight_digit_groups = settings[Setting::output_format_pretty_highlight_digit_groups];
     format_settings.pretty.row_numbers = settings[Setting::output_format_pretty_row_numbers];
+    format_settings.pretty.use_nbsp_for_padding = settings[Setting::output_format_pretty_use_nbsp_for_padding];
     format_settings.pretty.single_large_number_tip_threshold = settings[Setting::output_format_pretty_single_large_number_tip_threshold];
     format_settings.pretty.display_footer_column_names = settings[Setting::output_format_pretty_display_footer_column_names];
     format_settings.pretty.display_footer_column_names_min_rows = settings[Setting::output_format_pretty_display_footer_column_names_min_rows];
@@ -362,6 +369,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
+    format_settings.geojson.unsupported_geometry_handling = settings[Setting::input_format_geojson_unsupported_geometry_handling];
+    format_settings.geojson.validate_geometry = settings[Setting::format_geojson_validate_geometry];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
     format_settings.mysql_dump.map_column_names = settings[Setting::input_format_mysql_dump_map_column_names];
     format_settings.sql_insert.max_batch_size = settings[Setting::output_format_sql_insert_max_batch_size];
@@ -369,6 +378,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.sql_insert.table_name = settings[Setting::output_format_sql_insert_table_name];
     format_settings.sql_insert.use_replace = settings[Setting::output_format_sql_insert_use_replace];
     format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
+    format_settings.precise_float_parsing = settings[Setting::precise_float_parsing];
     format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
     format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];
     format_settings.try_infer_datetimes = settings[Setting::input_format_try_infer_datetimes];
@@ -392,6 +402,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.max_parser_depth = settings[Setting::max_parser_depth];
     format_settings.date_time_overflow_behavior = settings[Setting::date_time_overflow_behavior];
     format_settings.try_infer_variant = settings[Setting::input_format_try_infer_variants];
+    format_settings.image.width = settings[Setting::output_format_image_width];
+    format_settings.image.height = settings[Setting::output_format_image_height];
+    format_settings.image.terminal_mode = settings[Setting::output_format_image_terminal_mode];
     format_settings.client_protocol_version = context->getClientProtocolVersion();
     format_settings.allow_special_bool_values_inside_variant = settings[Setting::allow_special_bool_values_inside_variant];
     format_settings.max_block_size_bytes = settings[Setting::input_format_max_block_size_bytes];
@@ -513,7 +526,8 @@ InputFormatPtr FormatFactory::getInputImpl(
 
     RowInputFormatParams row_input_format_params;
     row_input_format_params.max_block_size_rows = max_block_size;
-    row_input_format_params.max_block_size_bytes = max_block_size_bytes.value_or(format_settings.max_block_size_bytes);
+    row_input_format_params.max_block_size_bytes =
+        (max_block_size_bytes && *max_block_size_bytes > 0) ? *max_block_size_bytes : format_settings.max_block_size_bytes;
     row_input_format_params.min_block_size_rows = min_block_size_rows.value_or(0);
     row_input_format_params.min_block_size_bytes = min_block_size_bytes.value_or(0);
     row_input_format_params.max_block_wait_ms = format_settings.max_block_wait_ms;
@@ -946,6 +960,20 @@ void FormatFactory::registerOutputFormat(const String & name, OutputCreator outp
     KnownFormatNames::instance().add(name, /* case_insensitive = */ true);
 }
 
+void FormatFactory::setDocumentation(const String & name, Documentation documentation)
+{
+    /// Attach documentation only to a format that is actually registered in this build.
+    /// Many formats depend on optional libraries (`Avro`, `Arrow`, `Parquet`, ...) and are
+    /// absent from some builds (for example, the fast-test build). We must not create a phantom
+    /// entry for such a format: it would make the format appear "known but not usable" (turning
+    /// an `UNKNOWN_FORMAT` error into `FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT`) and would pollute
+    /// `system.formats` with rows for formats that this build cannot read or write.
+    auto it = dict.find(boost::to_lower_copy(name));
+    if (it == dict.end())
+        return;
+    it->second.documentation = std::move(documentation);
+}
+
 void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
 {
     file_extension_formats[boost::to_lower_copy(extension)] = format_name;
@@ -1207,7 +1235,7 @@ FormatFactory & FormatFactory::instance()
     return ret;
 }
 
-std::vector<String> FormatFactory::getAllRegisteredNames() const
+VectorWithMemoryTracking<String> FormatFactory::getAllRegisteredNames() const
 {
     return KnownFormatNames::instance().getAllRegisteredNames();
 }

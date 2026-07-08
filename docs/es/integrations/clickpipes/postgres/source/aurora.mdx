@@ -1,0 +1,151 @@
+---
+sidebarTitle: 'Amazon Aurora Postgres'
+description: 'Configura Amazon Aurora Postgres como origen para ClickPipes'
+slug: /integrations/clickpipes/postgres/source/aurora
+title: 'Guía de configuración de Aurora Postgres como origen'
+doc_type: 'guide'
+keywords: ['Amazon Aurora', 'PostgreSQL', 'ClickPipes', 'base de datos de AWS', 'configuración de la replicación lógica']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="supported-postgres-versions">
+  ## Versiones de Postgres compatibles
+</div>
+
+ClickPipes es compatible con Aurora PostgreSQL-Compatible Edition, versión 12 y posteriores.
+
+<div id="enable-logical-replication">
+  ## Habilitar la replicación lógica
+</div>
+
+Puede omitir esta sección si su instancia de Aurora ya tiene configurada la siguiente opción:
+
+* `rds.logical_replication = 1`
+
+Esta opción suele venir preconfigurada si anteriormente utilizó otra herramienta de replicación de datos.
+
+```text
+postgres=> SHOW rds.logical_replication ;
+ rds.logical_replication
+-------------------------
+ on
+(1 row)
+```
+
+Si todavía no está configurado, siga estos pasos:
+
+1. Cree un nuevo grupo de parámetros para su versión de Aurora PostgreSQL con la configuración requerida:
+   * Establezca `rds.logical_replication` en 1
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="Dónde encontrar los grupos de parámetros en Aurora" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="Cambiar rds.logical_replication" size="lg" border />
+
+2. Aplique el nuevo grupo de parámetros a su clúster de Aurora PostgreSQL
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="Modificar Aurora PostgreSQL con el nuevo grupo de parámetros" size="lg" border />
+
+3. Reinicie su clúster de Aurora para aplicar los cambios
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="Reiniciar Aurora PostgreSQL" size="lg" border />
+
+<div id="configure-database-user">
+  ## Configurar el usuario de la base de datos
+</div>
+
+Conéctese a la instancia de escritura de Aurora PostgreSQL como usuario administrador y ejecute los siguientes comandos:
+
+1. Cree un usuario dedicado para ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Otorgue al usuario que creó en el paso anterior acceso de solo lectura a nivel de esquema. El siguiente ejemplo muestra los permisos para el esquema `public`. Repita estos comandos para cada esquema que contenga tablas que desee replicar:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Otorgue privilegios de replicación al usuario:
+
+   ```sql
+   GRANT rds_replication TO clickpipes_user;
+   ```
+
+4. Cree una [publicación](https://www.postgresql.org/docs/current/logical-replication-publication.html) con las tablas que desea replicar. Recomendamos encarecidamente incluir en la publicación solo las tablas que necesite para evitar una sobrecarga en el rendimiento.
+
+<Warning>
+  Cualquier tabla incluida en la publicación debe tener definida una **clave primaria** *o* tener su **identidad de réplica** configurada como `FULL`. Consulte las [preguntas frecuentes de Postgres](/es/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) para obtener orientación sobre cómo delimitar el alcance.
+</Warning>
+
+* Para crear una publicación para tablas específicas:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * Para crear una publicación para todas las tablas de un esquema específico:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+La publicación `clickpipes` contendrá el conjunto de eventos de cambio generados a partir de las tablas especificadas y, más adelante, se usará para ingestar el flujo de replicación.
+
+<div id="configure-network-access">
+  ## Configurar el acceso a la red
+</div>
+
+<div id="ip-based-access-control">
+  ### Control de acceso basado en IP
+</div>
+
+Si desea restringir el tráfico a su clúster de Aurora, añada las [IP estáticas de NAT documentadas](/es/integrations/clickpipes/home#list-of-static-ips) a las `Inbound rules` de su grupo de seguridad de Aurora.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="¿Dónde encontrar el grupo de seguridad en Aurora PostgreSQL?" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Editar las reglas de entrada del grupo de seguridad anterior" size="lg" border />
+
+<div id="private-access-via-aws-privatelink">
+  ### Acceso privado mediante AWS PrivateLink
+</div>
+
+Para conectarte a tu clúster de Aurora mediante una red privada, puedes usar AWS PrivateLink. Sigue nuestra [guía de configuración de AWS PrivateLink para ClickPipes](/es/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) para establecer la conexión.
+
+<div id="aurora-specific-considerations">
+  ### Consideraciones específicas de Aurora
+</div>
+
+Al configurar ClickPipes con Aurora PostgreSQL, ten en cuenta estas consideraciones:
+
+1. **Endpoint de conexión**: Conéctate siempre al endpoint del escritor de tu clúster de Aurora, ya que la replicación lógica requiere acceso de escritura para crear slots de replicación y debe conectarse a la instancia principal.
+
+2. **Gestión del failover**: En caso de failover, Aurora promocionará automáticamente una instancia de lectura como nuevo escritor. ClickPipes detectará la desconexión e intentará volver a conectarse al endpoint del escritor, que ahora apuntará a la nueva instancia principal.
+
+3. **Aurora Global Database**: Si usas Aurora Global Database, debes conectarte al endpoint del escritor de la región principal, ya que la replicación entre regiones ya se encarga de mover los datos entre ellas.
+
+4. **Consideraciones de almacenamiento**: La capa de almacenamiento de Aurora se comparte entre todas las instancias de un clúster, lo que puede ofrecer un mejor rendimiento para la replicación lógica en comparación con RDS estándar.
+
+<div id="dealing-with-dynamic-cluster-endpoints">
+  ### Cómo gestionar endpoints dinámicos del clúster
+</div>
+
+Aunque Aurora proporciona endpoints estables que redirigen automáticamente a la instancia adecuada, aquí tienes algunos métodos adicionales para garantizar una conectividad consistente:
+
+1. En configuraciones de alta disponibilidad, configura tu aplicación para que use el endpoint del escritor de Aurora, que apunta automáticamente a la instancia primaria activa.
+
+2. Si utilizas replicación entre regiones, considera configurar ClickPipes independientes para cada región a fin de reducir la latencia y mejorar la tolerancia a fallos.
+
+<div id="whats-next">
+  ## ¿Qué sigue?
+</div>
+
+Ya puede [crear su ClickPipe](/es/integrations/clickpipes/postgres/index) y comenzar a ingestar datos desde su clúster de Aurora PostgreSQL en ClickHouse Cloud.
+Asegúrese de anotar los detalles de conexión que utilizó al configurar su clúster de Aurora PostgreSQL, ya que los necesitará durante el proceso de creación de ClickPipe.

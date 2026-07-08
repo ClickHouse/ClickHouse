@@ -2,6 +2,7 @@
 
 #include <Analyzer/HashUtils.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
 
 #include <Interpreters/Context_fwd.h>
@@ -164,6 +165,7 @@ private:
     StoragePtr storage;
     StorageID storage_id;
     TableLockHolder storage_lock;
+    StorageMetadataHandle storage_metadata;
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;

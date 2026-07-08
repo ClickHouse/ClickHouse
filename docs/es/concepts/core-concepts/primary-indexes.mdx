@@ -1,0 +1,206 @@
+---
+slug: /primary-indexes
+title: 'Índices primarios'
+description: 'Cómo funciona el índice primario disperso de ClickHouse'
+keywords: ['índice primario disperso', 'índice primario', 'índice']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<Tip>
+  **¿Buscas información avanzada sobre la indexación?**
+
+  Esta página presenta el índice primario disperso de ClickHouse: cómo se construye, cómo funciona y cómo ayuda a acelerar las consultas.
+
+  Para conocer estrategias avanzadas de indexación y obtener información técnica más detallada, consulta la [guía detallada sobre índices primarios](/es/guides/clickhouse/data-modelling/sparse-primary-indexes).
+</Tip>
+
+<div id="how-does-the-sparse-primary-index-work-in-clickHouse">
+  ## ¿Cómo funciona el índice primario disperso en ClickHouse?
+</div>
+
+<br />
+
+El índice primario disperso en ClickHouse ayuda a identificar de forma eficiente los [gránulos](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) —bloques de filas— que podrían contener datos que coincidan con la condición de una consulta sobre las columnas de la clave primaria de la tabla. En la siguiente sección, explicamos cómo se construye este índice a partir de los valores de esas columnas.
+
+<div id="sparse-primary-index-creation">
+  ### Creación del índice primario disperso
+</div>
+
+Para ilustrar cómo se construye el índice primario disperso, usamos la tabla [uk&#95;price&#95;paid&#95;simple](/es/concepts/core-concepts/parts) junto con algunas animaciones.
+
+Como [recordatorio](/es/concepts/core-concepts/parts), en nuestra tabla de ejemplo ① con la clave primaria (town, street), los datos ② insertados se ③ almacenan en disco, ordenados por los valores de las columnas de la clave primaria y comprimidos, en archivos separados para cada columna:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+
+<br />
+
+<br />
+
+Para su procesamiento, los datos de cada columna se ④ dividen lógicamente en gránulos; cada uno abarca 8.192 filas y constituye la unidad más pequeña con la que trabajan los mecanismos de procesamiento de datos de ClickHouse.
+
+Esta estructura de gránulos también es lo que hace que el índice primario sea **disperso**: en lugar de indexar cada fila, ClickHouse almacena ⑤ los valores de la clave primaria de una sola fila por gránulo, concretamente la primera. Esto da como resultado una entrada de índice por gránulo:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+
+<br />
+
+<br />
+
+Gracias a su naturaleza dispersa, el índice primario es lo bastante pequeño como para caber por completo en memoria, lo que permite filtrar rápidamente las consultas con predicados sobre columnas de la clave primaria. En la siguiente sección, mostramos cómo ayuda a acelerar esas consultas.
+
+<div id="primary-index-usage">
+  ### Uso del índice primario
+</div>
+
+A continuación, mostramos de forma esquemática cómo se utiliza el índice primario disperso para acelerar las consultas con otra animación:
+
+<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+
+<br />
+
+<br />
+
+① La consulta de ejemplo incluye un predicado sobre ambas columnas de la clave primaria: `town = 'LONDON' AND street = 'OXFORD STREET'`.
+
+② Para acelerar la consulta, ClickHouse carga en memoria el índice primario de la tabla.
+
+③ A continuación, examina las entradas del índice para identificar qué gránulos podrían contener filas que coincidan con el predicado; es decir, qué gránulos no se pueden omitir.
+
+④ Después, estos gránulos potencialmente relevantes se cargan y se [procesan](/es/concepts/core-concepts/query-parallelism) en memoria, junto con los gránulos correspondientes de cualquier otra columna necesaria para la consulta.
+
+<div id="monitoring-primary-indexes">
+  ## Supervisión de índices primarios
+</div>
+
+Cada [parte de datos](/es/concepts/core-concepts/parts) de la tabla tiene su propio índice primario. Podemos inspeccionar el contenido de estos índices mediante la [función de tabla mergeTreeIndex](/es/reference/functions/table-functions/mergeTreeIndex).
+
+La siguiente consulta muestra el número de entradas del índice primario para cada parte de datos de nuestra tabla de ejemplo:
+
+```sql
+SELECT
+    part_name,
+    max(mark_number) AS entries
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+GROUP BY part_name;
+```
+
+```txt
+   ┌─part_name─┬─entries─┐
+1. │ all_2_2_0 │     914 │
+2. │ all_1_1_0 │    1343 │
+3. │ all_0_0_0 │    1349 │
+   └───────────┴─────────┘
+```
+
+Esta consulta muestra las primeras 10 entradas del índice primario de una de las partes de datos actuales. Ten en cuenta que estas partes se [fusionan](/es/concepts/core-concepts/merges) continuamente en segundo plano para formar partes más grandes:
+
+```sql
+SELECT 
+    mark_number + 1 AS entry,
+    town,
+    street
+FROM mergeTreeIndex('uk', 'uk_price_paid_simple')
+WHERE part_name = (SELECT any(part_name) FROM mergeTreeIndex('uk', 'uk_price_paid_simple')) 
+ORDER BY mark_number ASC
+LIMIT 10;
+```
+
+```txt
+    ┌─entry─┬─town───────────┬─street───────────┐
+ 1. │     1 │ ABBOTS LANGLEY │ ABBEY DRIVE      │
+ 2. │     2 │ ABERDARE       │ RICHARDS TERRACE │
+ 3. │     3 │ ABERGELE       │ PEN Y CAE        │
+ 4. │     4 │ ABINGDON       │ CHAMBRAI CLOSE   │
+ 5. │     5 │ ABINGDON       │ THORNLEY CLOSE   │
+ 6. │     6 │ ACCRINGTON     │ MAY HILL CLOSE   │
+ 7. │     7 │ ADDLESTONE     │ HARE HILL        │
+ 8. │     8 │ ALDEBURGH      │ LINDEN ROAD      │
+ 9. │     9 │ ALDERSHOT      │ HIGH STREET      │
+10. │    10 │ ALFRETON       │ ALMA STREET      │
+    └───────┴────────────────┴──────────────────┘
+```
+
+Por último, usamos la cláusula [EXPLAIN](/es/reference/statements/explain) para ver cómo los índices primarios de todas las partes de datos se utilizan para descartar gránulos que no pueden contener filas que coincidan con los predicados de la consulta de ejemplo. Estos gránulos se excluyen de la carga y el procesamiento:
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    max(price)
+FROM
+    uk.uk_price_paid_simple
+WHERE
+    town = 'LONDON' AND street = 'OXFORD STREET';
+```
+
+```txt
+    ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Project names + Projection))                                                                  │
+ 2. │   Aggregating                                                                                              │
+ 3. │     Expression (Before GROUP BY)                                                                           │
+ 4. │       Expression                                                                                           │
+ 5. │         ReadFromMergeTree (uk.uk_price_paid_simple)                                                        │
+ 6. │         Indexes:                                                                                           │
+ 7. │           PrimaryKey                                                                                       │
+ 8. │             Keys:                                                                                          │
+ 9. │               town                                                                                         │
+10. │               street                                                                                       │
+11. │             Condition: and((street in ['OXFORD STREET', 'OXFORD STREET']), (town in ['LONDON', 'LONDON'])) │
+12. │             Parts: 3/3                                                                                     │
+13. │             Granules: 3/3609                                                                               │
+    └────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+Observe cómo la fila 13 de la salida de EXPLAIN anterior muestra que solo 3 de los 3,609 gránulos de todas las partes de datos fueron seleccionados por el análisis del índice primario para su procesamiento. Los gránulos restantes se omitieron por completo.
+
+También podemos observar que se omitió la mayor parte de los datos con solo ejecutar la consulta:
+
+```sql
+SELECT max(price)
+FROM uk.uk_price_paid_simple
+WHERE (town = 'LONDON') AND (street = 'OXFORD STREET');
+```
+
+```txt
+   ┌─max(price)─┐
+1. │  263100000 │ -- 263.10 millones
+   └────────────┘
+
+1 row in set. Elapsed: 0.010 sec. Processed 24.58 thousand rows, 159.04 KB (2.53 million rows/s., 16.35 MB/s.)
+Peak memory usage: 13.00 MiB.
+```
+
+Como se muestra arriba, solo se procesaron unas 25.000 filas de los aproximadamente 30 millones de filas de la tabla de ejemplo:
+
+```sql
+SELECT count() FROM uk.uk_price_paid_simple;
+```
+
+```txt
+   ┌──count()─┐
+1. │ 29556244 │ -- 29.56 million
+   └──────────┘
+```
+
+<div id="key-takeaways">
+  ## Puntos clave
+</div>
+
+* Los **índices primarios dispersos** ayudan a ClickHouse a omitir datos innecesarios al identificar qué gránulos podrían contener filas que coincan con las condiciones de la consulta en las columnas de la clave primaria.
+
+* Cada índice almacena solo los valores de la clave primaria de la **primera fila de cada gránulo** (un gránulo tiene 8,192 filas de forma predeterminada), lo que lo hace lo bastante compacto como para caber en memoria.
+
+* **Cada parte de datos** de una tabla MergeTree tiene su **propio índice primario**, que se utiliza de forma independiente durante la ejecución de consultas.
+
+* Durante las consultas, el índice permite a ClickHouse **omitir gránulos**, lo que reduce la E/S y el uso de memoria, a la vez que mejora el rendimiento.
+
+* Puede **inspeccionar el contenido del índice** mediante la función de tabla `mergeTreeIndex` y supervisar el uso del índice con la cláusula `EXPLAIN`.
+
+<div id="where-to-find-more-information">
+  ## Dónde encontrar más información
+</div>
+
+Si quieres profundizar en cómo funcionan los índices primarios dispersos en ClickHouse, incluidas sus diferencias con los índices de bases de datos tradicionales y las buenas prácticas para utilizarlos, consulta nuestro [análisis detallado](/es/guides/clickhouse/data-modelling/sparse-primary-indexes) sobre indexación.
+
+Si te interesa cómo ClickHouse procesa en paralelo, de forma muy eficiente, los datos seleccionados por el escaneo del índice primario, consulta la guía sobre paralelismo de consultas [aquí](/es/concepts/core-concepts/query-parallelism).

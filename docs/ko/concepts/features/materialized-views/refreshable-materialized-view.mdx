@@ -1,0 +1,409 @@
+---
+slug: /materialized-view/refreshable-materialized-view
+title: '갱신 가능 구체화 뷰'
+description: 'materialized view를 사용해 쿼리 성능을 높이는 방법'
+keywords: ['갱신 가능 구체화 뷰', '갱신', 'materialized views', '쿼리 성능 향상', '쿼리 최적화']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+[갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)는 개념적으로 전통적인 OLTP 데이터베이스의 materialized view와 유사합니다. 지정된 쿼리의 결과를 저장해 빠르게 조회할 수 있게 하고, 리소스를 많이 소모하는 쿼리를 반복 실행할 필요를 줄여줍니다. ClickHouse의 [증분형 materialized view](/ko/concepts/features/materialized-views/incremental-materialized-view)와 달리, 갱신 가능 구체화 뷰는 전체 데이터셋에 대해 쿼리를 주기적으로 실행해야 합니다. 이렇게 생성된 결과는 쿼리할 수 있도록 대상 테이블에 저장됩니다. 이 result set은 이론적으로 원본 데이터셋보다 더 작아야 하므로, 후속 쿼리를 더 빠르게 실행할 수 있습니다.
+
+다음 다이어그램은 갱신 가능 구체화 뷰가 작동하는 방식을 설명합니다:
+
+<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="갱신 가능 구체화 뷰 다이어그램" />
+
+다음 동영상도 확인할 수 있습니다:
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/-KhFJSY8yrs?si=VPRSZb20vaYkuR_C" title="YouTube 동영상 플레이어" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="when-should-refreshable-materialized-views-be-used">
+  ## 갱신 가능 구체화 뷰는 언제 사용해야 하나요?
+</div>
+
+ClickHouse의 증분형 materialized view는 매우 강력하며, 특히 단일 테이블에 대해 집계를 수행해야 하는 경우 갱신 가능 구체화 뷰 방식보다 일반적으로 훨씬 뛰어난 확장성을 제공합니다. 데이터가 삽입될 때마다 각 block에 대해서만 집계를 계산하고, 최종 테이블에서 이러한 증분 상태를 병합하므로 쿼리는 전체 데이터가 아닌 일부 데이터에 대해서만 실행됩니다. 이 방식은 잠재적으로 페타바이트 규모의 데이터까지 확장될 수 있으며, 보통 더 선호됩니다.
+
+하지만 이러한 증분 처리 방식이 필요하지 않거나 적용할 수 없는 사용 사례도 있습니다. 어떤 문제는 증분 방식과 호환되지 않거나 실시간 갱신이 필요하지 않아, 주기적으로 다시 빌드하는 편이 더 적절합니다. 예를 들어, 증분 방식과 호환되지 않는 복잡한 join을 사용하므로 전체 데이터셋을 대상으로 뷰를 정기적으로 완전히 다시 계산해야 할 수 있습니다.
+
+> 갱신 가능 구체화 뷰는 비정규화와 같은 작업을 수행하는 배치 프로세스를 실행할 수 있습니다. 또한 갱신 가능 구체화 뷰 간에 종속성을 설정할 수 있으므로, 한 뷰가 다른 뷰의 결과에 의존하고 해당 뷰가 완료된 후에만 실행되도록 구성할 수 있습니다. 이를 통해 예약된 워크플로나 [dbt](https://www.getdbt.com/) job과 같은 단순한 DAG를 대체할 수 있습니다. 갱신 가능 구체화 뷰 간 종속성을 설정하는 방법에 대한 자세한 내용은 [CREATE VIEW](/ko/reference/statements/create/view#refresh-dependencies)의 `Dependencies` 섹션을 참조하십시오.
+
+<div id="how-do-you-refresh-a-refreshable-materialized-view">
+  ## 갱신 가능 구체화 뷰를 어떻게 갱신합니까?
+</div>
+
+갱신 가능 구체화 뷰는 생성할 때 정의한 인터벌에 따라 자동으로 갱신됩니다.
+예를 들어, 다음 materialized view는 1분마다 갱신됩니다.
+
+```sql
+CREATE MATERIALIZED VIEW table_name_mv
+REFRESH EVERY 1 MINUTE TO table_name AS
+...
+```
+
+materialized view를 강제로 갱신하려면 `SYSTEM REFRESH VIEW` 절을 사용할 수 있습니다:
+
+```sql
+SYSTEM REFRESH VIEW table_name_mv;
+```
+
+뷰 실행을 취소하거나 중지 또는 시작할 수도 있습니다.
+자세한 내용은 [갱신 가능 구체화 뷰 관리](/ko/reference/statements/system#managing-refreshable-materialized-views) 문서를 참조하십시오.
+
+<div id="when-was-a-refreshable-materialized-view-last-refreshed">
+  ## 갱신 가능 구체화 뷰가 마지막으로 갱신된 시점은 언제입니까?
+</div>
+
+갱신 가능 구체화 뷰가 마지막으로 언제 갱신되었는지 확인하려면 아래와 같이 [`system.view_refreshes`](/ko/reference/system-tables/view_refreshes) 시스템 테이블(system table)을 쿼리하면 됩니다:
+
+```sql
+SELECT database, view, status,
+       last_success_time, last_refresh_time, next_refresh_time,
+       read_rows, written_rows
+FROM system.view_refreshes;
+```
+
+```text
+┌─database─┬─view─────────────┬─status────┬───last_success_time─┬───last_refresh_time─┬───next_refresh_time─┬─read_rows─┬─written_rows─┐
+│ database │ table_name_mv    │ Scheduled │ 2024-11-11 12:10:00 │ 2024-11-11 12:10:00 │ 2024-11-11 12:11:00 │   5491132 │       817718 │
+└──────────┴──────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┴──────────────┘
+```
+
+<div id="how-can-i-change-the-refresh-rate">
+  ## 갱신 주기는 어떻게 변경하나요?
+</div>
+
+갱신 가능 구체화 뷰의 갱신 주기를 변경하려면 [`ALTER TABLE...MODIFY REFRESH`](/ko/reference/statements/alter/view#alter-table--modify-refresh-statement) 구문을 사용하십시오.
+
+```sql
+ALTER TABLE table_name_mv
+MODIFY REFRESH EVERY 30 SECONDS;
+```
+
+이 작업을 마치면 [갱신 가능 구체화 뷰가 마지막으로 갱신된 시점은 언제입니까?](/ko/concepts/features/materialized-views/refreshable-materialized-view#when-was-a-refreshable-materialized-view-last-refreshed) 쿼리로 비율이 업데이트되었는지 확인할 수 있습니다:
+
+```text
+┌─database─┬─view─────────────┬─status────┬───last_success_time─┬───last_refresh_time─┬───next_refresh_time─┬─read_rows─┬─written_rows─┐
+│ database │ table_name_mv    │ Scheduled │ 2024-11-11 12:22:30 │ 2024-11-11 12:22:30 │ 2024-11-11 12:23:00 │   5491132 │       817718 │
+└──────────┴──────────────────┴───────────┴─────────────────────┴─────────────────────┴─────────────────────┴───────────┴──────────────┘
+```
+
+<div id="using-append-to-add-new-rows">
+  ## 새 행을 추가할 때 `APPEND` 사용하기
+</div>
+
+`APPEND` 기능을 사용하면 전체 뷰를 교체하지 않고 테이블 끝에 새 행을 추가할 수 있습니다.
+
+이 기능의 한 가지 활용 방식은 특정 시점의 값 스냅샷을 저장하는 것입니다. 예를 들어, [Kafka](https://kafka.apache.org/), [Redpanda](https://www.redpanda.com/), 또는 다른 스트리밍 데이터 플랫폼의 메시지 스트림으로 채워지는 `events` 테이블이 있다고 가정해 보겠습니다.
+
+```sql
+SELECT *
+FROM events
+LIMIT 10
+```
+
+```response
+Query id: 7662bc39-aaf9-42bd-b6c7-bc94f2881036
+
+┌──────────────────ts─┬─uuid─┬─count─┐
+│ 2008-08-06 17:07:19 │ 0eb  │   547 │
+│ 2008-08-06 17:07:19 │ 60b  │   148 │
+│ 2008-08-06 17:07:19 │ 106  │   750 │
+│ 2008-08-06 17:07:19 │ 398  │   875 │
+│ 2008-08-06 17:07:19 │ ca0  │   318 │
+│ 2008-08-06 17:07:19 │ 6ba  │   105 │
+│ 2008-08-06 17:07:19 │ df9  │   422 │
+│ 2008-08-06 17:07:19 │ a71  │   991 │
+│ 2008-08-06 17:07:19 │ 3a2  │   495 │
+│ 2008-08-06 17:07:19 │ 598  │   238 │
+└─────────────────────┴──────┴───────┘
+```
+
+이 데이터셋의 `uuid` 컬럼에는 `4096`개의 값이 있습니다. 총 개수가 가장 많은 값을 찾으려면 다음 쿼리를 작성할 수 있습니다:
+
+```sql
+SELECT
+    uuid,
+    sum(count) AS count
+FROM events
+GROUP BY ALL
+ORDER BY count DESC
+LIMIT 10
+```
+
+```response
+┌─uuid─┬───count─┐
+│ c6f  │ 5676468 │
+│ 951  │ 5669731 │
+│ 6a6  │ 5664552 │
+│ b06  │ 5662036 │
+│ 0ca  │ 5658580 │
+│ 2cd  │ 5657182 │
+│ 32a  │ 5656475 │
+│ ffe  │ 5653952 │
+│ f33  │ 5653783 │
+│ c5b  │ 5649936 │
+└──────┴─────────┘
+```
+
+10초마다 각 `uuid`의 개수를 집계하여 `events_snapshot`이라는 새 테이블(table)에 저장한다고 가정하겠습니다. `events_snapshot`의 스키마(schema)는 다음과 같습니다:
+
+```sql
+CREATE TABLE events_snapshot (
+    ts DateTime32,
+    uuid String,
+    count UInt64
+)
+ENGINE = MergeTree
+ORDER BY uuid;
+```
+
+그런 다음 이 테이블을 채우는 갱신 가능 구체화 뷰를 생성할 수 있습니다:
+
+```sql
+CREATE MATERIALIZED VIEW events_snapshot_mv
+REFRESH EVERY 10 SECOND APPEND TO events_snapshot
+AS SELECT
+    now() AS ts,
+    uuid,
+    sum(count) AS count
+FROM events
+GROUP BY ALL;
+```
+
+그런 다음 `events_snapshot`를 쿼리하여 특정 `uuid`의 시간 경과에 따른 개수를 확인할 수 있습니다:
+
+```sql
+SELECT *
+FROM events_snapshot
+WHERE uuid = 'fff'
+ORDER BY ts ASC
+FORMAT PrettyCompactMonoBlock
+```
+
+```response
+┌──────────────────ts─┬─uuid─┬───count─┐
+│ 2024-10-01 16:12:56 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:00 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:10 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:20 │ fff  │ 5424711 │
+│ 2024-10-01 16:13:30 │ fff  │ 5674669 │
+│ 2024-10-01 16:13:40 │ fff  │ 5947912 │
+│ 2024-10-01 16:13:50 │ fff  │ 6203361 │
+│ 2024-10-01 16:14:00 │ fff  │ 6501695 │
+└─────────────────────┴──────┴─────────┘
+```
+
+<div id="examples">
+  ## 예시
+</div>
+
+이제 몇 가지 예시 데이터셋을 사용해 갱신 가능 구체화 뷰를 사용하는 방법을 살펴보겠습니다.
+
+<div id="stack-overflow">
+  ### Stack Overflow
+</div>
+
+[데이터 비정규화 가이드](/ko/guides/clickhouse/data-modelling/denormalization)에서는 Stack Overflow 데이터셋을 사용해 데이터를 비정규화하는 다양한 기법을 소개합니다. 데이터는 다음 테이블에 채워 넣습니다: `votes`, `users`, `badges`, `posts`, `postlinks`.
+
+해당 가이드에서는 다음 쿼리를 사용해 `postlinks` 데이터셋을 `posts` 테이블에 비정규화하는 방법을 설명했습니다:
+
+```sql
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts_types_codecs_ordered.Id = postlinks.PostId;
+```
+
+그런 다음 이 데이터를 `posts_with_links` 테이블에 한 번만 삽입하는 방법을 살펴보았지만, 프로덕션 시스템에서는 이 작업을 주기적으로 실행하는 것이 좋습니다.
+
+`posts` 테이블과 `postlinks` 테이블은 모두 업데이트될 수 있습니다. 따라서 이 join을 증분형 materialized view로 구현하려 하기보다는, 이 쿼리가 일정한 인터벌(예: 1시간에 한 번)로 실행되도록 예약하고 그 결과를 `post_with_links` 테이블에 저장하는 방식으로도 충분할 수 있습니다.
+
+이때 갱신 가능 구체화 뷰가 유용하며, 다음 쿼리로 생성할 수 있습니다:
+
+```sql
+CREATE MATERIALIZED VIEW posts_with_links_mv
+REFRESH EVERY 1 HOUR TO posts_with_links AS
+SELECT
+    posts.*,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Linked' AND p.2 != 0, Related)) AS LinkedPosts,
+    arrayMap(p -> (p.1, p.2), arrayFilter(p -> p.3 = 'Duplicate' AND p.2 != 0, Related)) AS DuplicatePosts
+FROM posts
+LEFT JOIN (
+    SELECT
+         PostId,
+         groupArray((CreationDate, RelatedPostId, LinkTypeId)) AS Related
+    FROM postlinks
+    GROUP BY PostId
+) AS postlinks ON posts_types_codecs_ordered.Id = postlinks.PostId;
+```
+
+뷰는 설정에 따라 즉시 실행되며, 이후에는 매시간 실행되어 원본 테이블의 업데이트가 반영되도록 합니다. 중요한 점은 쿼리가 다시 실행될 때 결과 집합이 원자적으로 투명하게 갱신된다는 것입니다.
+
+<Note>
+  여기의 구문은 [`REFRESH`](/ko/reference/statements/create/view#refreshable-materialized-view) 절이 포함된다는 점만 빼면 증분형 materialized view와 동일합니다:
+</Note>
+
+<div id="imdb">
+  ### IMDb
+</div>
+
+[dbt 및 ClickHouse 통합 가이드](/ko/integrations/connectors/data-ingestion/etl-tools/dbt/index)에서는 `actors`, `directors`, `genres`, `movie_directors`, `movies`, `roles` 테이블로 IMDb 데이터셋을 구성했습니다.
+
+그런 다음 영화 출연 횟수가 많은 순으로 정렬해 각 배우의 요약 정보를 계산하는 다음 쿼리를 작성할 수 있습니다.
+
+```sql
+SELECT
+  id, any(actor_name) AS name, uniqExact(movie_id) AS movies,
+  round(avg(rank), 2) AS avg_rank, uniqExact(genre) AS genres,
+  uniqExact(director_name) AS directors, max(created_at) AS updated_at
+FROM (
+  SELECT
+    imdb.actors.id AS id,
+    concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+    imdb.movies.id AS movie_id, imdb.movies.rank AS rank, genre,
+    concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+    created_at
+  FROM imdb.actors
+  INNER JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+  LEFT JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+  LEFT JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+  LEFT JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+  LEFT JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+)
+GROUP BY id
+ORDER BY movies DESC
+LIMIT 5;
+```
+
+```text
+┌─────id─┬─name─────────┬─num_movies─┬───────────avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│  45332 │ Mel Blanc    │        909 │ 5.7884792542982515 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers │        672 │  5.540605094212635 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London   │        549 │ 2.8057034230202023 │            18 │            208 │ 2024-11-11 12:01:35 │
+│ 356804 │ Bud Osborne  │        544 │ 1.9575342420755093 │            16 │            157 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi  │        544 │                  0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴──────────────┴────────────┴────────────────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.393 sec. Processed 5.45 million rows, 86.82 MB (13.87 million rows/s., 221.01 MB/s.)
+Peak memory usage: 1.38 GiB.
+```
+
+결과를 반환하는 데 오래 걸리지는 않지만, 이를 더 빠르고 계산 비용도 더 적게 만들고 싶다고 가정해 보겠습니다.
+또한 이 데이터셋은 계속해서 업데이트된다고 가정해 보겠습니다. 새로운 배우와 감독이 계속 등장하고, 새로운 영화도 꾸준히 개봉됩니다.
+
+이제 갱신 가능 구체화 뷰를 사용할 차례이므로, 먼저 결과를 저장할 대상 테이블을 생성하겠습니다:
+
+```sql
+CREATE TABLE imdb.actor_summary
+(
+        `id` UInt32,
+        `name` String,
+        `num_movies` UInt16,
+        `avg_rank` Float32,
+        `unique_genres` UInt16,
+        `uniq_directors` UInt16,
+        `updated_at` DateTime
+)
+ENGINE = MergeTree
+ORDER BY num_movies
+```
+
+이제 뷰를 정의할 수 있습니다:
+
+```sql
+CREATE MATERIALIZED VIEW imdb.actor_summary_mv
+REFRESH EVERY 1 MINUTE TO imdb.actor_summary AS
+SELECT
+        id,
+        any(actor_name) AS name,
+        uniqExact(movie_id) AS num_movies,
+        avg(rank) AS avg_rank,
+        uniqExact(genre) AS unique_genres,
+        uniqExact(director_name) AS uniq_directors,
+        max(created_at) AS updated_at
+FROM
+(
+        SELECT
+        imdb.actors.id AS id,
+        concat(imdb.actors.first_name, ' ', imdb.actors.last_name) AS actor_name,
+        imdb.movies.id AS movie_id,
+        imdb.movies.rank AS rank,
+        genre,
+        concat(imdb.directors.first_name, ' ', imdb.directors.last_name) AS director_name,
+        created_at
+        FROM imdb.actors
+    INNER JOIN imdb.roles ON imdb.roles.actor_id = imdb.actors.id
+    LEFT JOIN imdb.movies ON imdb.movies.id = imdb.roles.movie_id
+    LEFT JOIN imdb.genres ON imdb.genres.movie_id = imdb.movies.id
+    LEFT JOIN imdb.movie_directors ON imdb.movie_directors.movie_id = imdb.movies.id
+    LEFT JOIN imdb.directors ON imdb.directors.id = imdb.movie_directors.director_id
+)
+GROUP BY id
+ORDER BY num_movies DESC;
+```
+
+이 뷰는 설정된 대로 즉시 실행되며, 이후에는 1분마다 실행되어 원본 테이블의 업데이트가 반영되도록 합니다. 배우 요약을 구하는 이전 쿼리는 문법적으로 더 간단해지고 실행 속도도 훨씬 빨라집니다!
+
+```sql
+SELECT *
+FROM imdb.actor_summary
+ORDER BY num_movies DESC
+LIMIT 5
+```
+
+```text
+┌─────id─┬─name─────────┬─num_movies─┬──avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│  45332 │ Mel Blanc    │        909 │ 5.7884793 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers │        672 │  5.540605 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London   │        549 │ 2.8057034 │            18 │            208 │ 2024-11-11 12:01:35 │
+│ 356804 │ Bud Osborne  │        544 │ 1.9575342 │            16 │            157 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi  │        544 │         0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴──────────────┴────────────┴───────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.007 sec.
+```
+
+예를 들어, 영화에 많이 출연한 새로운 배우 &quot;Clicky McClickHouse&quot;를 소스 데이터에 추가한다고 가정해 보겠습니다!
+
+```sql
+INSERT INTO imdb.actors VALUES (845466, 'Clicky', 'McClickHouse', 'M');
+INSERT INTO imdb.roles SELECT
+        845466 AS actor_id,
+        id AS movie_id,
+        'Himself' AS role,
+        now() AS created_at
+FROM imdb.movies
+LIMIT 10000, 910;
+```
+
+60초도 채 지나지 않아 대상 테이블이 Clicky의 다작 활동을 반영하도록 업데이트됩니다:
+
+```sql
+SELECT *
+FROM imdb.actor_summary
+ORDER BY num_movies DESC
+LIMIT 5;
+```
+
+```text
+┌─────id─┬─name────────────────┬─num_movies─┬──avg_rank─┬─unique_genres─┬─uniq_directors─┬──────────updated_at─┐
+│ 845466 │ Clicky McClickHouse │        910 │ 1.4687939 │            21 │            662 │ 2024-11-11 12:53:51 │
+│  45332 │ Mel Blanc           │        909 │ 5.7884793 │            19 │            148 │ 2024-11-11 12:01:35 │
+│ 621468 │ Bess Flowers        │        672 │  5.540605 │            20 │            301 │ 2024-11-11 12:01:35 │
+│ 283127 │ Tom London          │        549 │ 2.8057034 │            18 │            208 │ 2024-11-11 12:01:35 │
+│  41669 │ Adoor Bhasi         │        544 │         0 │             4 │            121 │ 2024-11-11 12:01:35 │
+└────────┴─────────────────────┴────────────┴───────────┴───────────────┴────────────────┴─────────────────────┘
+
+5 rows in set. Elapsed: 0.006 sec.
+```

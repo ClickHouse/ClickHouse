@@ -1,0 +1,83 @@
+---
+description: 'Clickhouse-disks 文档'
+sidebarTitle: 'clickhouse-disks'
+slug: /operations/utilities/clickhouse-disks
+title: 'Clickhouse-disks'
+doc_type: 'reference'
+---
+
+一个为 ClickHouse 磁盘 提供类似文件系统操作的实用工具。它既支持交互模式，也支持非交互模式。
+
+<div id="program-wide-options">
+  ## 程序级选项
+</div>
+
+* `--config-file, -C` -- ClickHouse 配置文件的 path，默认为 `/etc/clickhouse-server/config.xml`。
+* `--save-logs` -- 将所调用命令的进度日志记录到 `/var/log/clickhouse-server/clickhouse-disks.log`。
+* `--log-level` -- 要记录的[type](/zh/reference/settings/server-settings/settings#logger)事件，默认为 `none`。
+* `--disk` -- `mkdir, move, read, write, remove` 命令使用哪个 磁盘。默认为 `default`。
+* `--query, -q` -- 无需启动交互模式即可执行的单个查询
+* `--help, -h` -- 打印所有选项和命令及其说明
+
+<div id="lazy-initialization">
+  ## 惰性初始化
+</div>
+
+配置中所有可用的 磁盘 都采用惰性初始化。这意味着，只有当某个 磁盘 在某条命令中实际被使用时，才会初始化其对应的对象。这样做是为了提高该工具的稳健性，并避免访问那些虽在配置中定义但用户并未使用、且可能在初始化过程中失败的 磁盘。不过，在启动 clickhouse-disks 时，仍需有一个已初始化的 磁盘。该 磁盘 通过命令行参数 `--disk` 指定 (默认值为 `default`) 。
+
+<div id="default-disks">
+  ## 默认磁盘
+</div>
+
+启动后，有两个未在配置中指定但可用于初始化的磁盘。
+
+1. **`local` 磁盘**：该磁盘用于模拟启动 `clickhouse-disks` 实用工具时所在的本地文件系统。其初始路径为启动 `clickhouse-disks` 时所在的目录，并挂载在文件系统的根目录下。
+
+2. **`default` 磁盘**：该磁盘挂载到本地文件系统中由配置里的 `clickhouse/path` 参数指定的目录 (默认值为 `/var/lib/clickhouse`) 。其初始路径设为 `/`。
+
+<div id="clickhouse-disks-state">
+  ## Clickhouse-disks 状态
+</div>
+
+对于每个已添加的磁盘，该工具都会保存当前目录 (就像普通文件系统一样) 。用户可以更改当前目录，并在不同磁盘之间切换。
+
+状态会显示在提示符 &quot;`disk_name`:`path_name`&quot; 中
+
+<div id="commands">
+  ## 命令
+</div>
+
+在本文档文件中，所有必需的位置参数均记为 `<parameter>`，命名参数记为 `[--parameter value]`。所有位置参数也都可以用具有相应名称的命名参数表示。
+
+* `cd (change-dir, change_dir) [--disk disk] <path>`
+  将当前目录切换到磁盘 `disk` 上的路径 `path` (默认值为当前磁盘) 。不会切换磁盘。
+* `copy (cp) [--disk-from disk_1] [--disk-to disk_2] <path-from> <path-to>`.
+  递归地将磁盘 `disk_1` 上 `path-from` 的数据复制
+  到磁盘 `disk_2` 上的 `path-to` (`disk_1` 和 `disk_2` 的默认值均为当前磁盘，在非交互模式下为参数 `disk`) 。
+* `current_disk_with_path (current, current_disk, current_path)`
+  按如下格式打印当前状态：
+  `Disk: "current_disk" Path: "current path on current disk"`
+* `help [<command>]`
+  打印命令 `command` 的帮助信息。如果未指定 `command`，则打印所有命令的信息。
+* `move (mv) <path-from> <path-to>`.
+  在当前磁盘内将文件或目录从 `path-from` 移动到 `path-to`。
+* `remove (rm, delete) <path>`.
+  在当前磁盘上递归删除 `path`。
+* `link (ln) <path-from> <path-to>`.
+  在当前磁盘上创建从 `path-from` 到 `path-to` 的硬链接。
+* `list (ls) [--recursive] <path>`
+  列出当前磁盘上 `path` 中的文件。默认非递归。
+* `list-disks (list_disks, ls-disks, ls_disks)`.
+  列出磁盘名称。
+* `mkdir [--recursive] <path>` on a current disk.
+  创建目录。默认非递归。
+* `read (r) <path-from> [--path-to path]`
+  将 `path-from` 中的文件读取到 `path` (如果未提供，则输出到 `stdout`) 。
+* `read-bitmap <path-from> [--values]`
+  检查位于 `path-from` 的 delete-bitmap (`.rbm`) sidecar。打印 magic 和 version、CRC 是否有效、cardinality (已删除的行数) 以及行范围。使用 `--values` 时，还会按升序转储所有置位 (已删除行的 offsets) 。
+* `read-checksums <path>`
+  读取当前磁盘上 `MergeTree` 数据分区片段的 `checksums.txt` 文件，并将其以制表符分隔、便于阅读的表格形式打印到 `stdout`，表格包含 `name`、`file_size`、`file_hash`、`uncompressed_size` 和 `uncompressed_hash` 列。最后两列仅在压缩文件中存在。
+* `switch-disk [--path path] <disk>`
+  切换到路径 `path` 上的磁盘 `disk` (如果未指定 `path`，则默认使用磁盘 `disk` 上之前的路径) 。
+* `write (w) [--path-from path] <path-to>`.
+  将来自 `path` 的文件写入 `path-to` (如果未提供 `path` 则为 `stdin`，输入必须以 Ctrl+D 结束) 。
