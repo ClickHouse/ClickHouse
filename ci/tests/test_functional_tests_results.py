@@ -36,7 +36,9 @@ _TWO_FAILURES = (
 
 def _process(tmp_path, output, runner_exit_code):
     (tmp_path / "test_result.txt").write_text(output, encoding="utf-8")
-    return FTResultsProcessor(wd=str(tmp_path)).run(runner_exit_code=runner_exit_code)
+    return FTResultsProcessor(wd=str(tmp_path), test_options=[]).run(
+        runner_exit_code=runner_exit_code
+    )
 
 
 def _named(result, name):

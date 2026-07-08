@@ -8,6 +8,8 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.info import Info
+from ci.praktika.runtime import RunConfig
+from ci.praktika.settings import Settings
 
 
 def only_docs(changed_files):
@@ -61,6 +63,23 @@ FUNCTIONAL_TEST_FLAKY_CHECK_JOBS = [
     "Stateless tests (amd_debug, flaky check)",
     "Stateless tests (amd_binary, flaky check)",
 ]
+
+# The aarch64/arm exclude tags are meant to skip arm *tests*, but the arm release
+# build and its docker jobs are release artifacts, not tests, so they must keep
+# running even when arm tests are excluded.
+DOCKER_REQUIRED_ARM_JOBS = {
+    "Build (arm_release)",
+    Settings.DOCKER_BUILD_ARM_LINUX_JOB_NAME,
+    Settings.DOCKER_BUILD_MANIFEST_JOB_NAME,
+}
+
+
+def is_ci_excluded_by_tag(job_name, tag):
+    if tag in ("aarch64", "arm") and job_name in DOCKER_REQUIRED_ARM_JOBS:
+        return False
+
+    return tag in job_name.lower()
+
 
 # Must match ci.workflows.pull_request.KEEPER_STRESS_PR_NAME
 KEEPER_STRESS_PR_NAME = "Keeper Stress Tests (PR)"
@@ -254,9 +273,14 @@ def should_skip_job(job_name):
     ):
         return True, "Skipped, not labeled with 'pr-performance'"
 
-    ci_exclude_tags = _info_cache.get_kv_data("ci_exclude_tags") or []
+    # The CI tags live in workflow_config.custom_data (see parse_ci_tags.py),
+    # which runs as a pre-hook, so the value is present by the time this runs.
+    ci_exclude_tags = (
+        RunConfig.from_fs(_info_cache.workflow_name).custom_data.get("ci_exclude_tags")
+        or []
+    )
     for tag in ci_exclude_tags:
-        if tag in job_name.lower():
+        if is_ci_excluded_by_tag(job_name, tag):
             return True, f"Skipped, job name includes excluded tag '{tag}'"
 
     # If only CI scripts changed (no product code), run a minimal set of tests

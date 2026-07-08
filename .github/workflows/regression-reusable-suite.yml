@@ -99,7 +99,7 @@ jobs:
         --local
         --collect-service-logs
         --output ${{ inputs.output_format }}
-        --attr project="${GITHUB_REPOSITORY}" project.id="${GITHUB_REPOSITORY_ID}" user.name="${GITHUB_ACTOR}" version="${{ fromJson(inputs.workflow_config).JOB_KV_DATA.version.string }}" package="$clickhouse_path" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$REPORT_JOB_NAME" job.retry=$GITHUB_RUN_ATTEMPT job.url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" arch="$(uname -i)"
+        --attr project="${GITHUB_REPOSITORY}" project.id="${GITHUB_REPOSITORY_ID}" user.name="${GITHUB_ACTOR}" version="${{ fromJson(inputs.workflow_config).workflow_config.custom_data.version.string }}" package="$clickhouse_path" repository="https://github.com/Altinity/clickhouse-regression" commit.hash="$(git rev-parse HEAD)" job.name="$REPORT_JOB_NAME" job.retry=$GITHUB_RUN_ATTEMPT job.url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" arch="$(uname -i)"
         --cicd
         --log raw.log
         ${{ inputs.flags != 'none' && inputs.flags || ''}}

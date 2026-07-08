@@ -4,7 +4,7 @@ import mimetypes
 import os
 import time
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 from urllib.parse import quote
 import re
 
@@ -95,14 +95,14 @@ class S3:
 
     @dataclasses.dataclass
     class Object:
-        AcceptRanges: str
-        Expiration: str
-        LastModified: str
-        ContentLength: int
-        ETag: str
-        ContentType: str
-        ServerSideEncryption: str
-        Metadata: Dict
+        AcceptRanges: Optional[str] = None
+        Expiration: Optional[str] = None
+        LastModified: Optional[str] = None
+        ContentLength: Optional[int] = None
+        ETag: Optional[str] = None
+        ContentType: Optional[str] = None
+        ServerSideEncryption: Optional[str] = None
+        Metadata: Dict = dataclasses.field(default_factory=dict)
 
         def has_tags(self, tags):
             meta = self.Metadata
@@ -440,7 +440,10 @@ class S3:
         if not output:
             return None
         else:
-            return cls.Object(**json.loads(output))
+            data = json.loads(output)
+            object_fields = {field.name for field in dataclasses.fields(cls.Object)}
+            object_data = {k: v for k, v in data.items() if k in object_fields}
+            return cls.Object(**object_data)
 
     @classmethod
     def assert_read_access(cls, s3_path):

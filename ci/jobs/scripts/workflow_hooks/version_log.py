@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from praktika.info import Info
+from praktika.runtime import RunConfig
 from praktika.utils import Shell
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
@@ -29,6 +30,14 @@ def _add_build_to_version_history():
 
     # stores actual version data in pipline storage, to be used by jobs that need it
     CHVersion.store_version_data_in_ci_pipeline(version)
+
+    # Also mirror it into workflow_config.custom_data so GitHub Actions `if:`
+    # expressions can read `custom_data.version.string` as plain JSON - the
+    # config job's `data` output emits JOB_KV_DATA base64-encoded, so
+    # `fromJson(...).JOB_KV_DATA.version` is not dereferenceable from a workflow.
+    workflow_config = RunConfig.from_fs(Info().workflow_name)
+    workflow_config.custom_data["version"] = version
+    workflow_config.dump()
 
 
 if __name__ == "__main__":

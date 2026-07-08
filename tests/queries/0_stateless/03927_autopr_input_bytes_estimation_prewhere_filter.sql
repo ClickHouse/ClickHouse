@@ -1,4 +1,4 @@
--- Tags: stateful, long
+-- Tags: stateful, long, no-random-settings
 
 SET use_uncompressed_cache=0;
 

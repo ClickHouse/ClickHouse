@@ -35,21 +35,21 @@ ${CLICKHOUSE_CLIENT} -q """
 max_insert_threads=8
 
 echo "inserting into a remote table from local with concurrency equal to max_insert_threads"
-${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" -q """
+${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --max_insert_threads_min_free_memory_per_thread 0 -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t1_local;
 """ | grep -v EmptySink | grep -c Sink
 
 echo "inserting into a remote table from remote with concurrency max_insert_threads"
-${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --parallel_distributed_insert_select 0 -q """
+${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --max_insert_threads_min_free_memory_per_thread 0 --parallel_distributed_insert_select 0 -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t3_dist;
 """ | grep -v EmptySink | grep -c Sink
 
 echo "inserting into a remote table from remote (reading with parallel replicas) with concurrency max_insert_threads"
-${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --enable_parallel_replicas 2 --cluster_for_parallel_replicas 'parallel_replicas' --max_parallel_replicas 3 -q """
+${CLICKHOUSE_CLIENT} --max_insert_threads "$max_insert_threads" --max_insert_threads_min_free_memory_per_thread 0 --enable_parallel_replicas 2 --cluster_for_parallel_replicas 'parallel_replicas' --max_parallel_replicas 3 -q """
     EXPLAIN PIPELINE
     INSERT INTO t3_dist
     SELECT * FROM t4_pr;

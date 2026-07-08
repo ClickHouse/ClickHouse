@@ -70,7 +70,6 @@ DISABLED_WORKFLOWS = [
     "nightly_upload.py",
     "optimize_clickhouse.py",
     "pr_version_info.py",
-    "release_builds.py",
     "VectorSearchStress.py",
 ]
 
