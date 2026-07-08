@@ -108,7 +108,7 @@ void CustomSeparatedRowInputFormat::syncAfterError()
 
 void CustomSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    if (need_utf_bom_detection)
+    if (need_utf_bom_detection && !typeid_cast<UTFConvertingReadBuffer *>(&in_))
     {
         auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_);
         buf = std::make_unique<PeekableReadBuffer>(*utf_buf);
