@@ -1036,7 +1036,19 @@ void Connection::sendQuery(
 
     writeStringBinary(query, *out);
 
-    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_RAW_QUERY_PARAMETERS)
+    {
+        /// Send parameters as a raw name->value string map. Routing them through a Settings
+        /// object corrupted parameters whose name collides with a builtin setting: the value
+        /// was normalized by the setting's toString and the name was alias-resolved (issue #85768).
+        writeVarUInt(query_parameters.size(), *out);
+        for (const auto & [name, value] : query_parameters)
+        {
+            writeStringBinary(name, *out);
+            writeStringBinary(value, *out);
+        }
+    }
+    else if (server_revision >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
     {
         Settings params;
         for (const auto & [name, value] : query_parameters)

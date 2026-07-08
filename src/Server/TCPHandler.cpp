@@ -2395,9 +2395,29 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 
     readStringBinary(state->query, *in);
 
-    Settings passed_params;
-    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
-        passed_params.read(*in, settings_format);
+    NameToNameMap passed_params;
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_RAW_QUERY_PARAMETERS)
+    {
+        /// Parameters arrive as a raw name->value string map (see the client side and
+        /// DBMS_MIN_PROTOCOL_VERSION_WITH_RAW_QUERY_PARAMETERS for why they are no longer
+        /// packed into a Settings object).
+        UInt64 num_params = 0;
+        readVarUInt(num_params, *in);
+        for (UInt64 i = 0; i < num_params; ++i)
+        {
+            String name;
+            String value;
+            readStringBinary(name, *in);
+            readStringBinary(value, *in);
+            passed_params.insert_or_assign(std::move(name), std::move(value));
+        }
+    }
+    else if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    {
+        Settings legacy_params;
+        legacy_params.read(*in, settings_format);
+        passed_params = legacy_params.toNameToNameMap();
+    }
 
     if (is_interserver_mode)
     {
@@ -2587,7 +2607,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// so we have to apply the changes first.
     state->query_context->setCurrentQueryId(state->query_id);
 
-    state->query_context->addQueryParameters(passed_params.toNameToNameMap());
+    state->query_context->addQueryParameters(passed_params);
 
     state->allow_partial_result_on_first_cancel = state->query_context->getSettingsRef()[Setting::partial_result_on_first_cancel];
 
@@ -2629,7 +2649,17 @@ void TCPHandler::processUnexpectedQuery()
 
     readStringBinary(skip_string, *in);
 
-    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
+    if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_RAW_QUERY_PARAMETERS)
+    {
+        UInt64 num_params = 0;
+        readVarUInt(num_params, *in);
+        for (UInt64 i = 0; i < num_params; ++i)
+        {
+            readStringBinary(skip_string, *in);
+            readStringBinary(skip_string, *in);
+        }
+    }
+    else if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_PARAMETERS)
         skip_settings.read(*in, settings_format);
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet Query received from client");
