@@ -462,7 +462,7 @@ For the [`JSON`](/sql-reference/data-types/newjson) data type, a bloom filter in
 :::note
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `ngrambf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
 :::
 
 For each index granule stores a [bloom filter](https://en.wikipedia.org/wiki/Bloom_filter) for the [n-grams](https://en.wikipedia.org/wiki/N-gram) of the specified columns.
@@ -534,7 +534,7 @@ The functions above refer to the bloom filter calculator [here](https://hur.st/b
 :::note
 With general availability (GA) of the `text` index starting from ClickHouse version 26.2, the `tokenbf_v1` index is no longer recommended for full text search.
 
-See page ["Full-text search with text indexes"](/engines/table-engines/mergetree-family/textindexes) for details.
+See page ["Full-text search with text indexes"](./textindexes.md) for details.
 :::
 
 ```text title="Syntax"
@@ -551,11 +551,11 @@ sparse_grams(min_ngram_length, max_ngram_length, min_cutoff_length, size_of_bloo
 
 ### Text index {#text}
 
-Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](/engines/table-engines/mergetree-family/textindexes) for details.
+Builds an inverted index over tokenized string data, enabling efficient and deterministic full-text search. See [here](textindexes.md) for details.
 
 #### Vector similarity {#vector-similarity}
 
-Supports approximate nearest neighbor search, see [here](/engines/table-engines/mergetree-family/annindexes) for details.
+Supports approximate nearest neighbor search, see [here](annindexes.md) for details.
 
 ### Functions support {#functions-support}
 
@@ -873,7 +873,7 @@ If you perform the `SELECT` query between merges, you may get expired data. To a
 
 In addition to local block devices, ClickHouse supports these storage types:
 - [`s3` for S3 and MinIO](#table_engine-mergetree-s3)
-- [`gcs` for GCS](/integrations/gcs#creating-a-disk)
+- [`gcs` for GCS](/integrations/data-ingestion/gcs/index.md/#creating-a-disk)
 - [`blob_storage_disk` for Azure Blob Storage](/operations/storing-data#azure-blob-storage)
 - [`hdfs` for HDFS](/engines/table-engines/integrations/hdfs)
 - [`web` for read-only from web](/operations/storing-data#web-storage)

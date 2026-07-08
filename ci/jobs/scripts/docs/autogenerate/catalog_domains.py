@@ -6,15 +6,13 @@ exposed by `system.documentation` (the unified source for all embedded docs;
 the per-domain tables are queried only for non-documentation metadata such as
 format input/output flags and data-type aliases).
 
-Policy (pre-cutover, `docs/en` is the source of truth): a matched item's
-embedded documentation is verified against its `docs/en` page. When they
-agree, the reference page is fully replaced by the generated version (it IS
-the migrated `docs/en` content); when the embedded copy lags `docs/en`, the
-item is reported as `SOURCE-STALE` with the diff to upstream into the C++,
-and the page is left alone. Items that are documented in the source (a
-full-page `description`) but have no page get one created, plus a navigation
-entry. Items with only a short summary and no page are counted as coverage
-gaps for upstream enrichment, not created.
+The embedded documentation is authoritative: a matched reference page has its
+generated region replaced by the embedded `description` on every run (this
+generator does not read `docs/en` -- it works entirely from `system.documentation`
+and writes only under `docs/reference`). Items that are documented in the source
+(a full-page `description`) but have no page get one created, plus a navigation
+entry. Items with only a short summary and no page are counted as coverage gaps
+for upstream enrichment, not created.
 
 Also provides the listing-table generators that refresh the
 `| Page | Description |` tables on the index pages between their
