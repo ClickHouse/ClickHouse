@@ -193,6 +193,44 @@ TEST(PostgreSQLProtocol, BindHandlesParameterLength)
     }
 }
 
+TEST(PostgreSQLProtocol, BindRejectsNegativeCounts)
+{
+    /// A malformed Bind carrying a negative parameter count must be rejected
+    /// rather than silently skipping the params loop: a negative num_params would
+    /// leave the parameter payload unread and the next bytes would be misread as
+    /// the result-format-code count, desynchronizing the skip-until-Sync recovery.
+    {
+        std::string bytes;
+        putInt32(bytes, 0); /// outer size field is unused for bounds here
+        bytes.push_back('\0'); /// empty portal name
+        bytes.push_back('\0'); /// empty statement name
+        putInt16(bytes, 0); /// no parameter format codes
+        putInt16(bytes, -1); /// negative parameter count
+        EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
+        {
+            Messaging::BindQuery msg;
+            msg.deserialize(in);
+        }));
+    }
+
+    /// A negative result-format-code count is malformed for the same reason and
+    /// must also be rejected.
+    {
+        std::string bytes;
+        putInt32(bytes, 0);
+        bytes.push_back('\0');
+        bytes.push_back('\0');
+        putInt16(bytes, 0); /// no parameter format codes
+        putInt16(bytes, 0); /// no parameters
+        putInt16(bytes, -1); /// negative result-format-code count
+        EXPECT_TRUE(throwsUnknownPacket(bytes, [](ReadBuffer & in)
+        {
+            Messaging::BindQuery msg;
+            msg.deserialize(in);
+        }));
+    }
+}
+
 TEST(PostgreSQLProtocol, BindRejectsBinaryFormatParameters)
 {
     /// Build a Bind message whose parameter format codes are given explicitly.

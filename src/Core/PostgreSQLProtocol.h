@@ -824,6 +824,9 @@ public:
                 has_binary_format_param = true;
         }
         readBinaryBigEndian(num_params, in);
+        if (num_params < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong parameter count {} in Bind message, it must not be negative", num_params);
         for (int i = 0; i < num_params; ++i)
         {
             Int32 sz_param = 0;
@@ -845,6 +848,9 @@ public:
 
         Int16 num_format_params_result = 0;
         readBinaryBigEndian(num_format_params_result, in);
+        if (num_format_params_result < 0)
+            throw Exception(ErrorCodes::UNKNOWN_PACKET_FROM_CLIENT,
+                            "Wrong result format code count {} in Bind message, it must not be negative", num_format_params_result);
         Int16 format_param_result = 0;
         for (Int16 i = 0; i < num_format_params_result; ++i)
             readBinaryBigEndian(format_param_result, in);

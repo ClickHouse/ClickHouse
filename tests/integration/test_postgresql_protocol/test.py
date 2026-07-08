@@ -809,6 +809,51 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     sock.close()
 
 
+def test_bind_negative_count_recovers(started_cluster):
+    # Regression for malformed Bind count fields. A negative num_params (or
+    # num_format_params_result) would skip the params loop, misread the following
+    # bytes as the next count, and leave the rest of the Bind body unread, which
+    # desyncs the skip-until-Sync recovery. The backend must reject a negative
+    # count with an ErrorResponse and still emit exactly one ReadyForQuery for the
+    # Sync, keeping the connection usable.
+    node = started_cluster.instances["node"]
+
+    def sync():
+        return _fe("S", b"")
+
+    # Bind with num_params = -1: empty portal/statement names, no parameter
+    # format codes, then a negative parameter count.
+    def bind_neg_num_params():
+        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1)
+        return _fe("B", b)
+
+    # Bind with a negative result-format-code count: valid names, no format
+    # codes, no parameters, then a negative result-format-code count.
+    def bind_neg_result_formats():
+        b = (
+            b"\x00"
+            + b"\x00"
+            + struct.pack("!H", 0)
+            + struct.pack("!H", 0)
+            + struct.pack("!h", -1)
+        )
+        return _fe("B", b)
+
+    for make_bind in (bind_neg_num_params, bind_neg_result_formats):
+        sock, read_until_ready = _pg_raw_extended_query_session(node)
+        sock.sendall(make_bind() + sync())
+        types = read_until_ready()
+        assert "E" in types, f"malformed Bind must be rejected, got {types}"
+        assert types.count("Z") == 1, (
+            f"malformed Bind must emit one ReadyForQuery per Sync, got {types}"
+        )
+        # The same connection must stay usable (stream stayed aligned).
+        sock.sendall(_fe("Q", b"SELECT 7\x00"))
+        types = read_until_ready()
+        assert "C" in types, f"connection must stay alive after malformed Bind, got {types}"
+        sock.close()
+
+
 def test_execute_no_sql_injection(started_cluster):
     # Simple-query PREPARE/EXECUTE path: EXECUTE arguments are spliced into the
     # prepared statement body by $N substitution, so a string argument must be
