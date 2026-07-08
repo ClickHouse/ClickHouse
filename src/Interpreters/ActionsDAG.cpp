@@ -1282,6 +1282,29 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         {
             try
             {
+                /// The function was resolved (overload picked, return type computed) for a fixed set of
+                /// argument types during analysis. Partial evaluation can be handed a column whose type no
+                /// longer matches, e.g. when a concurrent EXCHANGE TABLES swaps the underlying table between
+                /// analysis and header computation. Executing the function on a mismatched type would trip an
+                /// internal LOGICAL_ERROR inside the function body, which aborts the server in debug/sanitizer
+                /// builds. Detect the mismatch here and raise a recoverable TYPE_MISMATCH instead.
+                const auto & expected_argument_types = node->function_base->getArgumentTypes();
+                if (expected_argument_types.size() == arguments.size())
+                {
+                    for (size_t i = 0; i < arguments.size(); ++i)
+                    {
+                        if (arguments[i].type && expected_argument_types[i]
+                            && !arguments[i].type->equals(*expected_argument_types[i]))
+                            throw Exception(
+                                ErrorCodes::TYPE_MISMATCH,
+                                "Argument {} of function {} has type {}, but the function was resolved for type {}",
+                                i,
+                                node->function->getName(),
+                                arguments[i].type->getName(),
+                                expected_argument_types[i]->getName());
+                    }
+                }
+
                 if (only_constant_arguments)
                     res_column.column = node->function->execute(arguments, res_column.type, input_rows_count, true);
                 else
