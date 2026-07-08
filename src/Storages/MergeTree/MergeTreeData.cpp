@@ -3042,7 +3042,8 @@ try
                             }
                             catch (...) /// NOLINT(bugprone-empty-catch)
                             {
-                                /// Leave it false: an indeterminate check must fail fast, not reschedule.
+                                /// Ok to swallow: an indeterminate existence check must leave the flag false so
+                                /// we fail fast rather than reschedule a possibly-moved part.
                             }
 
                             if (!original_directory_still_present)
@@ -3308,7 +3309,8 @@ try
                     }
                     catch (...) /// NOLINT(bugprone-empty-catch)
                     {
-                        /// Leave it false: an indeterminate check must fail fast, not requeue.
+                        /// Ok to swallow: an indeterminate existence check must leave the flag false so we
+                        /// fail fast rather than requeue a possibly-moved part.
                     }
 
                     if (!original_directory_still_present)
