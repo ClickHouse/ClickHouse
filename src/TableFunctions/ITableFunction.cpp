@@ -35,17 +35,26 @@ bool containsArgumentIndex(const VectorWithMemoryTracking<size_t> & argument_ind
     return false;
 }
 
-}
-
-bool hasShardSideResolvedTableFunctionArguments(const ASTPtr & table_function_ast, ContextPtr context)
+bool hasShardSideResolvedTableFunctionArgumentsImpl(const ASTPtr & ast, ContextPtr context, bool expect_table_function)
 {
-    const auto * function = table_function_ast ? table_function_ast->as<ASTFunction>() : nullptr;
+    const auto * function = ast ? ast->as<ASTFunction>() : nullptr;
     if (!function)
         return false;
 
     auto table_function = TableFunctionFactory::instance().tryGet(function->name, context);
     if (!table_function)
+    {
+        if (expect_table_function)
+            return false;
+
+        for (const auto & child : function->children)
+        {
+            if (hasShardSideResolvedTableFunctionArgumentsImpl(child, context, false))
+                return true;
+        }
+
         return false;
+    }
 
     if (table_function->hasShardSideResolvedQueryArguments())
         return true;
@@ -53,15 +62,22 @@ bool hasShardSideResolvedTableFunctionArguments(const ASTPtr & table_function_as
     if (!function->arguments)
         return false;
 
-    auto table_expression_argument_indexes = table_function->getTableExpressionArgumentIndexes(table_function_ast, context);
+    auto table_expression_argument_indexes = table_function->getTableExpressionArgumentIndexes(ast, context);
     for (size_t argument_index = 0; argument_index != function->arguments->children.size(); ++argument_index)
     {
         if (containsArgumentIndex(table_expression_argument_indexes, argument_index)
-            && hasShardSideResolvedTableFunctionArguments(function->arguments->children[argument_index], context))
+            && hasShardSideResolvedTableFunctionArgumentsImpl(function->arguments->children[argument_index], context, false))
             return true;
     }
 
     return false;
+}
+
+}
+
+bool hasShardSideResolvedTableFunctionArguments(const ASTPtr & table_function_ast, ContextPtr context)
+{
+    return hasShardSideResolvedTableFunctionArgumentsImpl(table_function_ast, context, true);
 }
 
 const char * ITableFunction::getNonClusteredStorageEngineName() const

@@ -38,6 +38,38 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+bool isDatabaseOverrideWithTableFunctionValue(const ASTPtr & argument)
+{
+    const auto * function = argument->as<ASTFunction>();
+    if (!function || function->name != "equals" || !function->arguments)
+        return false;
+
+    const auto * function_args_expr = function->arguments->as<ASTExpressionList>();
+    if (!function_args_expr || function_args_expr->children.size() != 2)
+        return false;
+
+    String key;
+    if (!tryGetIdentifierNameInto(function_args_expr->children[0], key))
+    {
+        const auto * literal = function_args_expr->children[0]->as<ASTLiteral>();
+        if (!literal || literal->value.getType() != Field::Types::String)
+            return false;
+
+        key = literal->value.safeGet<String>();
+    }
+
+    if (key != "database" && key != "db")
+        return false;
+
+    const auto * value_function = function_args_expr->children[1]->as<ASTFunction>();
+    return value_function && TableFunctionFactory::instance().isTableFunctionName(value_function->name);
+}
+
+}
+
 
 void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
@@ -406,11 +438,19 @@ VectorWithMemoryTracking<size_t> TableFunctionRemote::getTableExpressionArgument
     if (!function || !function->arguments || function->arguments->children.size() <= 1)
         return {};
 
+    VectorWithMemoryTracking<size_t> result;
+
     const auto * table_function_argument = function->arguments->children[1]->as<ASTFunction>();
     if (table_function_argument && TableFunctionFactory::instance().isTableFunctionName(table_function_argument->name))
-        return {1};
+        result.push_back(1);
 
-    return {};
+    for (size_t argument_index = 1; argument_index != function->arguments->children.size(); ++argument_index)
+    {
+        if (isDatabaseOverrideWithTableFunctionValue(function->arguments->children[argument_index]))
+            result.push_back(argument_index);
+    }
+
+    return result;
 }
 
 TableFunctionRemote::TableFunctionRemote(const std::string & name_, bool secure_)

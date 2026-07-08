@@ -4509,6 +4509,36 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     auto & table_function_arguments = table_function_node_typed.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments.size();
 
+    auto resolveEvalExpressionArgumentsInTableExpression = [&](auto && self, QueryTreeNodePtr & node) -> void
+    {
+        auto * function = node->as<FunctionNode>();
+        if (!function)
+            return;
+
+        if (function->getFunctionName() == "eval")
+        {
+            auto & eval_arguments = function->getArguments().getNodes();
+            if (!(eval_arguments.size() == 1 && isSubqueryNodeType(eval_arguments[0]->getNodeType())))
+            {
+                for (auto & eval_argument : eval_arguments)
+                {
+                    resolveExpressionNode(
+                        eval_argument,
+                        scope,
+                        false /*allow_lambda_expression*/,
+                        false /*allow_table_expression*/,
+                        false /*ignore_alias*/,
+                        false /*allow_niladic_functions*/);
+                }
+            }
+
+            return;
+        }
+
+        for (auto & argument : function->getArguments().getNodes())
+            self(self, argument);
+    };
+
     for (size_t table_function_argument_index = 0; table_function_argument_index < table_function_arguments_size; ++table_function_argument_index)
     {
         auto & table_function_argument = table_function_arguments[table_function_argument_index];
@@ -4551,6 +4581,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
                 table_expression_argument_indexes.begin(),
                 table_expression_argument_indexes.end(),
                 table_function_argument_index);
+            if (table_expression_argument_index_it != table_expression_argument_indexes.end())
+            {
+                /// `eval` inside table-expression argument wrappers such as named-collection
+                /// overrides must keep resolving outer aliases before the wrapper is sent to a shard.
+                resolveEvalExpressionArgumentsInTableExpression(resolveEvalExpressionArgumentsInTableExpression, table_function_argument);
+            }
+
             if (table_expression_argument_index_it != table_expression_argument_indexes.end()
                 && nested_table_function_ptr)
             {

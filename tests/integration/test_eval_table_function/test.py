@@ -5,7 +5,7 @@ from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
 
-initiator = cluster.add_instance("initiator")
+initiator = cluster.add_instance("initiator", main_configs=["configs/named_collections.xml"])
 remote = cluster.add_instance("remote")
 
 
@@ -163,6 +163,36 @@ def test_remote_eval_resolves_concat_alias_arguments_on_initiator():
             SELECT *
             FROM remote('remote', eval(a || b))
             SETTINGS allow_experimental_eval_table_function = 1, enable_analyzer = 1
+            """
+        )
+        == "42\n"
+    )
+
+
+def test_remote_named_collection_eval_database_override_resolves_alias_on_initiator():
+    assert (
+        initiator.query(
+            """
+            WITH 'SELECT x FROM remote_only_eval_table' AS q
+            SELECT *
+            FROM remote(remote_eval, database = eval(q))
+            SETTINGS allow_experimental_eval_table_function = 1, enable_analyzer = 1
+            """
+        )
+        == "42\n"
+    )
+
+
+def test_remote_named_collection_eval_database_override_resolves_alias_on_initiator_with_serialized_plan():
+    assert (
+        initiator.query(
+            """
+            WITH 'SELECT x FROM remote_only_eval_table' AS q
+            SELECT *
+            FROM remote(remote_eval, database = eval(q))
+            SETTINGS allow_experimental_eval_table_function = 1,
+                enable_analyzer = 1,
+                serialize_query_plan = 1
             """
         )
         == "42\n"

@@ -1,0 +1,8 @@
+<clickhouse>
+    <named_collections>
+        <remote_eval>
+            <addresses_expr>remote</addresses_expr>
+            <table>unused</table>
+        </remote_eval>
+    </named_collections>
+</clickhouse>
