@@ -412,7 +412,7 @@ namespace
             (void)getStringArgForNormalizedIdentity(info.args[i], info.backup_engine_name, i);
     }
 
-    void validateBackupInfoShapeForNormalizedIdentity(const BackupInfo & info, const ContextPtr & context)
+    void validateBackupInfoShapeForNormalizedIdentity(const BackupInfo & info, [[maybe_unused]] const ContextPtr & context)
     {
         const bool has_named_collection = !info.id_arg.empty();
 
