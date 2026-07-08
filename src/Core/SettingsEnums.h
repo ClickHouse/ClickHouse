@@ -582,15 +582,6 @@ enum class DeduplicateInsertMode : uint8_t
 
 DECLARE_SETTING_ENUM(DeduplicateInsertMode)
 
-enum class InsertDeduplicationVersions : uint8_t
-{
-    OLD_SEPARATE_HASHES = 0,
-    COMPATIBLE_DOUBLE_HASHES,
-    NEW_UNIFIED_HASHES,
-};
-
-DECLARE_SETTING_ENUM(InsertDeduplicationVersions)
-
 enum class JemallocProfileFormat : uint8_t
 {
     Raw = 0,
