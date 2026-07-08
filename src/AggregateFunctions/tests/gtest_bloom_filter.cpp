@@ -423,6 +423,30 @@ TEST(BloomFilterAggregateFunction, NullableIfHasSameStateRepresentationAsBareNul
     EXPECT_TRUE(bare_default->getNormalizedStateType()->equals(*if_explicit_default->getNormalizedStateType()));
 }
 
+TEST(BloomFilterAggregateFunction, NullableIfConditionHasSameNormalizedStateTypeAsBare)
+{
+    tryRegisterAggregateFunctions();
+
+    const auto value_type = std::make_shared<DataTypeUInt64>();
+    const auto nullable_condition_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+
+    AggregateFunctionProperties properties;
+    const auto bare_default = AggregateFunctionFactory::instance().get(
+        AggregateFunctionGroupBloomFilterData::name,
+        NullsAction::EMPTY,
+        {value_type},
+        {},
+        properties);
+    const auto if_nullable_condition = AggregateFunctionFactory::instance().get(
+        String(AggregateFunctionGroupBloomFilterData::name) + "If",
+        NullsAction::EMPTY,
+        {value_type, nullable_condition_type},
+        {},
+        properties);
+
+    EXPECT_TRUE(bare_default->getNormalizedStateType()->equals(*if_nullable_condition->getNormalizedStateType()));
+}
+
 TEST(BloomFilterContains, WrongNumericBloomColumnThrowsAfterTypeValidation)
 {
     const auto value_type = std::make_shared<DataTypeUInt64>();
