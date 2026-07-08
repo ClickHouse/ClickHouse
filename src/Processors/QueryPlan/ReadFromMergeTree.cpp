@@ -1449,7 +1449,7 @@ static bool arePrefixSortingColumnsFixed(
     {
         const auto & col_name = sorting_key.column_names[j];
 
-        ActionsDAGWithInversionPushDown filter_dag(filter_actions_dag->getOutputs().front(), context);
+        ActionsDAGWithInversionPushDown filter_dag(filter_actions_dag->getOutputs().front(), context, false);
         auto key_expr = std::make_shared<ExpressionActions>(sorting_key.expression->getActionsDAG().clone());
         KeyCondition key_condition(filter_dag, context, Names{col_name}, key_expr);
 
