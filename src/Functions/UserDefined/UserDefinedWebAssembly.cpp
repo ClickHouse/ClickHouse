@@ -1241,8 +1241,27 @@ private:
         // Fixed per-column structural cost, present on the wire regardless of row count (see
         // the matching comment in estimateTotalSerializedSize above); must still be charged at
         // row_count == 0, but not the real (non-row-scaled) per-alternative data.
+        //
+        // Except: a LowCardinality alternative is itself direct-COL_LOWCARD-encoded here (the
+        // Variant writer's buildColDescriptor recursion on each alternative applies the same
+        // top-level dispatch used for a standalone LowCardinality argument), so it carries the
+        // same shared, not-row-scaled dictionary cost — paid again for every split batch that
+        // includes this alternative, exactly like a top-level LowCardinality argument (see
+        // estimateLowCardTotalBytes above). That must be part of the row_count == 0 fixed
+        // reservation too, or a Variant(LowCardinality(String), ...) batch can look cheap here
+        // while estimateVariantRowBytes (below) only charges the per-row index width — leaving
+        // the dictionary's cost uncounted on both sides of the split-path estimate.
         if (row_count == 0)
-            return header_bytes;
+        {
+            size_t fixed_sub_bytes = 0;
+            for (size_t local = 0; local < num_variants; ++local)
+            {
+                const IColumn & sub = var.getVariantByLocalDiscriminator(local);
+                if (const auto * lc_sub = typeid_cast<const ColumnLowCardinality *>(&sub); lc_sub && !sub.empty())
+                    fixed_sub_bytes += estimateLowCardTotalBytes(*lc_sub, 0, false);
+            }
+            return header_bytes + fixed_sub_bytes;
+        }
         if (materialized_const)
             // Each of the row_count materialized rows needs its own discriminator + row-offset
             // + payload (estimateVariantRowBytes already includes all three per row).
@@ -1269,6 +1288,14 @@ private:
             return control_bytes;
         const IColumn & sub = var.getVariantByGlobalDiscriminator(global_discr);
         size_t sub_row = var.getOffsets()[row_index];
+        if (const auto * lc_sub = typeid_cast<const ColumnLowCardinality *>(&sub))
+            // Mirrors the top-level LowCardinality argument's per-row model in
+            // estimateRowSerializedSize: the dictionary's cost is already reserved once per
+            // batch (via estimateVariantTotalBytes's row_count == 0 case above), so this row's
+            // only marginal cost is its compact index entry. estimateComplexRowBytes would
+            // instead price the resolved dictionary value per row and never account for the
+            // shared dictionary at all, undercounting the real per-batch wire cost.
+            return control_bytes + lc_sub->getIndexes().sizeOfValueIfFixed();
         return control_bytes + estimateComplexRowBytes(sub, sub_row);
     }
 
