@@ -1786,6 +1786,14 @@ ReturnType readDateTimeTextFallback(
                     return false;
             }
 
+            /// In DateTime64 mode a value like "-.5" is a valid timestamp, leave  whole part at 
+            /// zero and let the caller read the fraction
+            if (dt64_mode && negative_multiplier == -1 && *buf.position() == '.')
+            {
+                datetime = 0;
+                return ReturnType(true);
+            }
+
             if (negative_multiplier == -1)
             {
                 /// Match readIntText, which throws for a sign without any digits.
