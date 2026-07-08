@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import re
-import time
 
 import pytest
 
@@ -10,7 +9,11 @@ from helpers.cluster import ClickHouseCluster
 NUM_TABLES = 12
 DATABASE = "many_tables"
 FAILPOINT = "database_catalog_shutdown_sleep_per_table"
-MAX_EXPECTED_SHUTDOWN_SEC = 10
+# concurrency.xml sets database_catalog_shutdown_table_concurrency = 4, so with a 1s
+# per-table sleep the 12 tables drain in ~3 waves (~3s). Sequential would be ~12s.
+# We assert against the server-reported duration (not wall clock) so sanitizer overhead
+# on the test/orchestration side doesn't make this flaky.
+MAX_EXPECTED_SHUTDOWN_MS = 8000
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
@@ -60,20 +63,13 @@ def test_parallel_shutdown_logs_and_data_intact(started_cluster):
 
         # Soft shutdown — exercises the same Context::shutdown path that
         # production SIGTERM hits, including DatabaseWithOwnTablesBase::shutdown.
-        shutdown_started = time.monotonic()
         node.stop_clickhouse(kill=False, stop_wait_sec=60)
-        shutdown_elapsed = time.monotonic() - shutdown_started
-
-        assert shutdown_elapsed < MAX_EXPECTED_SHUTDOWN_SEC, (
-            "Graceful shutdown took too long with per-table delay injection: "
-            f"{shutdown_elapsed:.2f}s >= {MAX_EXPECTED_SHUTDOWN_SEC}s. "
-            "That looks closer to sequential shutdown than the expected parallel path."
-        )
 
         # zgrep uses BRE — escape +. Database name is unquoted unless it needs
         # backquoting; `many_tables` is a plain identifier so no backticks appear.
+        # Format: "Shut down N tables in many_tables in M ms"
         shutdown_log = node.grep_in_log(
-            f"Shut down [0-9][0-9]* tables in {DATABASE} in",
+            f"Shut down [0-9][0-9]* tables in {DATABASE} in [0-9][0-9]* ms",
             only_latest=True,
         )
         assert shutdown_log, (
@@ -81,10 +77,17 @@ def test_parallel_shutdown_logs_and_data_intact(started_cluster):
             "the parallel shutdown path may not have run."
         )
 
-        # Format: "Shut down N tables in many_tables in M ms"
-        match = re.search(r"Shut down (\d+) tables", shutdown_log)
-        assert match, f"Could not parse table count from log line: {shutdown_log!r}"
+        match = re.search(rf"Shut down (\d+) tables in {DATABASE} in (\d+) ms", shutdown_log)
+        assert match, f"Could not parse the shutdown log line: {shutdown_log!r}"
         assert int(match.group(1)) == NUM_TABLES
+
+        # Server-reported drain duration. With the per-table sleep this proves the tables
+        # were shut down in parallel: sequential would be ~NUM_TABLES seconds.
+        shutdown_ms = int(match.group(2))
+        assert shutdown_ms < MAX_EXPECTED_SHUTDOWN_MS, (
+            f"Shutdown drain took {shutdown_ms} ms >= {MAX_EXPECTED_SHUTDOWN_MS} ms with per-table "
+            "delay injection — that looks closer to sequential than the expected parallel path."
+        )
 
         node.start_clickhouse()
         restarted = True
