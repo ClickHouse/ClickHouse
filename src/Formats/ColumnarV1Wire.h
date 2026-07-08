@@ -798,8 +798,18 @@ inline MutableColumnPtr readColumnFromDesc(
     bool is_const         = (desc.type & COL_IS_CONST) != 0;
     uint32_t rows_to_dec  = is_const ? 1u : num_rows;
 
+    // desc.type is otherwise-untrusted (guest/network-controlled): a malformed frame could set
+    // COL_IS_NULLABLE against a declared type that isn't actually Nullable(T). Check explicitly
+    // and throw a normal INCORRECT_DATA exception instead of letting a reference dynamic_cast
+    // throw std::bad_cast, which isn't a DB::Exception and wouldn't be handled the same way by
+    // callers expecting a clean parse-error contract from this function.
+    const auto * nullable_result_type = typeid_cast<const DataTypeNullable *>(result_type.get());
+    if (is_nullable_wire && !nullable_result_type)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1: descriptor sets COL_IS_NULLABLE but declared type {} is not Nullable",
+            result_type->getName());
     const DataTypePtr & base_type = is_nullable_wire
-        ? dynamic_cast<const DataTypeNullable &>(*result_type).getNestedType()
+        ? nullable_result_type->getNestedType()
         : result_type;
 
     // desc comes straight from guest/network memory and is otherwise untrusted:
@@ -944,18 +954,27 @@ inline MutableColumnPtr readColumnFromDesc(
 
     auto maybe_nullable = [&](MutableColumnPtr inner) -> MutableColumnPtr
     {
-        if (is_nullable_wire && desc.null_offset)
-        {
-            if (desc.null_offset + static_cast<uint64_t>(rows_to_dec) > buf.size())
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "COLUMNAR_V1: null map out of bounds: offset={}, rows={}, buf={}",
-                    desc.null_offset, rows_to_dec, buf.size());
-            // Null map: 1=null, 0=non-null — identical to ColumnNullable layout; direct copy.
-            auto null_col = ColumnUInt8::create(rows_to_dec);
-            std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, rows_to_dec);
-            return ColumnNullable::create(std::move(inner), std::move(null_col));
-        }
-        return inner;
+        if (!is_nullable_wire)
+            return inner;
+        // null_offset == 0 must be rejected, not treated as "no null map": 0 is a valid sentinel
+        // for offset fields that are genuinely optional (e.g. offsets_offset on a fixed-width
+        // column), but every real frame has header + descriptor table before any data blob, so
+        // byte 0 can never be a legitimate null-map location. Falling through to return the
+        // plain (non-nullable) inner column here would let a malformed frame's non-nullable
+        // source reach ColumnNullable::insertRangeFrom downstream (e.g. via
+        // StreamingFormatExecutor::insertChunk on the INSERT path), whose release-build
+        // assert_cast is a raw static_cast — UB instead of a clean parse error.
+        if (desc.null_offset == 0)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_IS_NULLABLE is set but null_offset is 0 (missing null map)");
+        if (desc.null_offset + static_cast<uint64_t>(rows_to_dec) > buf.size())
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: null map out of bounds: offset={}, rows={}, buf={}",
+                desc.null_offset, rows_to_dec, buf.size());
+        // Null map: 1=null, 0=non-null — identical to ColumnNullable layout; direct copy.
+        auto null_col = ColumnUInt8::create(rows_to_dec);
+        std::memcpy(null_col->getData().data(), buf.data() + desc.null_offset, rows_to_dec);
+        return ColumnNullable::create(std::move(inner), std::move(null_col));
     };
 
     MutableColumnPtr col;

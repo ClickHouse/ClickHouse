@@ -848,6 +848,67 @@ TEST(ColumnarV1Wire, BoundsCheckComplexDataEndTruncated)
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, arr_type, num_rows), DB::Exception);
 }
 
+// ── Malformed nullable descriptor: COL_IS_NULLABLE set but null_offset == 0 ──
+//
+// null_offset == 0 must never be treated as "no null map" for a nullable
+// descriptor (byte 0 is always occupied by the frame header, so it can never
+// be a real null-map location) — otherwise the decoder would silently return
+// a plain (non-nullable) column for a declared Nullable(T) result, which can
+// reach undefined behavior downstream (e.g. ColumnNullable::insertRangeFrom's
+// release-build assert_cast) instead of a clean parse error.
+
+TEST(ColumnarV1Wire, NullableDescriptorMissingNullMapRejected)
+{
+    const uint32_t num_rows = 3;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_FIXED64 | COL_IS_NULLABLE;
+    desc.null_offset = 0;  // malformed: nullable bit set but no null map
+    desc.data_offset = data_off;
+    desc.data_size   = num_rows * 8u;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>());
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
+                 DB::Exception);
+}
+
+// ── Malformed nullable descriptor: COL_IS_NULLABLE set but declared type isn't
+// Nullable ────────────────────────────────────────────────────────────────────
+//
+// Must reject with a normal DB::Exception, not let a reference dynamic_cast
+// throw std::bad_cast (which callers expecting this function's clean
+// parse-error contract would not handle the same way).
+
+TEST(ColumnarV1Wire, NullableBitAgainstNonNullableDeclaredTypeRejected)
+{
+    const uint32_t num_rows = 3;
+    const uint32_t null_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+    const uint32_t data_off = null_off + num_rows;
+
+    std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_FIXED64 | COL_IS_NULLABLE;
+    desc.null_offset = null_off;
+    desc.data_offset = data_off;
+    desc.data_size   = num_rows * 8u;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeUInt64>();  // not Nullable, but wire says it is
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows),
+                 DB::Exception);
+}
+
 // ── LowCardinality(String) encoder/decoder: verify COL_LOWCARD wire shape ────
 //
 // Input: 4 rows — "a", "b", "a", "c". ColumnUnique reserves position 0 for the
