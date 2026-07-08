@@ -143,7 +143,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
             {
                 /// Recursive checkpoint is in sub buffer with current position.
                 /// Just move position to the recursive checkpoint
-                pos = buffer().begin() + (offset_from_checkpoint - offset_from_checkpoint_in_own_memory);
+                pos = sub_buf->position() + (offset_from_checkpoint - offset_from_checkpoint_in_own_memory);
                 if (pos > working_buffer.end())
                     pos = working_buffer.end();
             }
@@ -353,7 +353,7 @@ size_t PeekableReadBuffer::offsetFromCheckpoint() const
     }
 
     /// Checkpoint is in own memory, position is in sub buffer.
-    return offset() + offsetFromCheckpointInOwnMemory();
+    return (pos - sub_buf->position()) + offsetFromCheckpointInOwnMemory();
 }
 
 bool PeekableReadBuffer::poll(size_t timeout_microseconds)
