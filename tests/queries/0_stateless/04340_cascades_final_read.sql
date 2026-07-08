@@ -5,9 +5,8 @@
 -- Regression test: a distributed Cascades plan must not split a FINAL MergeTree read into
 -- arbitrary mark-range buckets on engines with specialized merging (ReplacingMergeTree, ...):
 -- FINAL dedup would run per node and equal-key rows would never merge, double-counting v.
--- A FINAL read is bucketed only through the primary-key-range layers computed by
--- `setupDistributedReadBuckets` (a dedup group never spans buckets); a read it cannot split
--- safely stays serial.
+-- A FINAL read is bucketed only along primary-key-range layers, so a dedup group never spans
+-- buckets; a read that cannot be split safely stays serial.
 
 SET enable_analyzer = 1;
 SET enable_cascades_optimizer = 1;
