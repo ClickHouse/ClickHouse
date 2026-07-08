@@ -60,6 +60,7 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 namespace Setting
 {
 extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
+extern const SettingsBool use_iceberg_metadata_files_cache;
 }
 
 namespace Iceberg
@@ -146,7 +147,9 @@ ManifestFileCacheKeys getManifestList(
     IcebergMetadataLogLevel log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
     bool use_iceberg_metadata_cache
-        = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestListMetadata);
+        = (persistent_table_components.metadata_cache
+           && local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+           && log_level < DB::IcebergMetadataLogLevel::ManifestListMetadata);
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
