@@ -209,20 +209,36 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     auto right_pre_join_actions = JoinExpressionActions::getSubDAG(key_pairs | std::views::transform([](const auto & key_pair) { return key_pair.second; }));
 
     /// Decline the conversion if any input of `join_output_actions` is not
-    /// among the outputs of `left_pre_join_actions`. After the rewrite, the
-    /// post-JOIN ExpressionStep would otherwise reference a column
-    /// (e.g. source `L.col` whose only forwarded form is `arrayJoin(L.col)`)
-    /// that the rewritten plan's stream header does not expose, leading to a
-    /// NOT_FOUND_COLUMN_IN_BLOCK exception at execution. The bail-out must
-    /// happen here, before any plan mutation below.
+    /// exposed by the stream that `left_pre_join_actions` produces. After the
+    /// rewrite, the post-JOIN ExpressionStep would otherwise reference a
+    /// column (e.g. source `L.col` whose only forwarded form is
+    /// `arrayJoin(L.col)`) that the rewritten plan's stream header does not
+    /// expose: `mergeInplace` with `remove_dangling_inputs = true` drops the
+    /// unmatched INPUT, leading to a NOT_FOUND_COLUMN_IN_BLOCK exception at
+    /// execution. The bail-out must happen here, before any plan mutation
+    /// below.
+    ///
+    /// The stream header is not just the DAG outputs: ActionsDAG::updateHeader
+    /// also forwards input columns the DAG does not consume, and duplicate
+    /// names are matched by multiplicity (both in updateHeader and in
+    /// mergeInplace). So compare against the real post-expression header,
+    /// counting occurrences per name.
     {
         auto join_output_actions_subdag = JoinExpressionActions::getSubDAG(join_output_actions);
-        std::unordered_set<std::string_view> forwarded_columns;
-        for (const auto * out : left_pre_join_actions.getOutputs())
-            forwarded_columns.insert(out->result_name);
+        const auto & left_input_header = parent_node->children.at(0)->step->getOutputHeader();
+        auto post_left_header = left_pre_join_actions.updateHeader(*left_input_header);
+
+        std::unordered_map<std::string_view, size_t> forwarded_columns;
+        for (const auto & column : post_left_header)
+            ++forwarded_columns[column.name];
+
         for (const auto * input : join_output_actions_subdag.getInputs())
-            if (!forwarded_columns.contains(input->result_name))
+        {
+            auto it = forwarded_columns.find(input->result_name);
+            if (it == forwarded_columns.end() || it->second == 0)
                 return 0;
+            --it->second;
+        }
     }
 
     auto * lhs_in_node = parent_node->children.at(0);

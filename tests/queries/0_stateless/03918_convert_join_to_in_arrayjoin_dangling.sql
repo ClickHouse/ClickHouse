@@ -55,5 +55,40 @@ FROM lt_03918_dangling INNER JOIN rt_03918_dangling
 ORDER BY lt_03918_dangling.id, aj
 SETTINGS query_plan_convert_join_to_in = 0;
 
+-- (5) Plan assertions. Query (1) projects only columns the rewritten plan
+--     still exposes (`id` is forwarded unchanged next to the computed
+--     `arrayJoin(tags)` key), so the conversion must apply: no `Join` step,
+--     a `CreatingSets` step instead.
+SET explain_query_plan_default = 'legacy'; -- stable step-per-line output for the assertions below
+SELECT 'explain_just_id', countIf(step LIKE 'Join%') = 0, countIf(step LIKE '%CreatingSets%') >= 1
+FROM
+(
+    SELECT trimLeft(explain) AS step FROM
+    (
+        EXPLAIN description = 0
+        SELECT lt_03918_dangling.id
+        FROM lt_03918_dangling INNER JOIN rt_03918_dangling
+            ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
+        ORDER BY lt_03918_dangling.id
+        SETTINGS query_plan_convert_join_to_in = 1
+    )
+);
+
+-- (6) Query (2) references `tags`, whose only forwarded form is
+--     `arrayJoin(tags)`, so the conversion must be declined: `Join` stays.
+SELECT 'explain_with_tags', countIf(step LIKE 'Join%') = 1, countIf(step LIKE '%CreatingSets%') = 0
+FROM
+(
+    SELECT trimLeft(explain) AS step FROM
+    (
+        EXPLAIN description = 0
+        SELECT lt_03918_dangling.id, lt_03918_dangling.tags
+        FROM lt_03918_dangling INNER JOIN rt_03918_dangling
+            ON arrayJoin(lt_03918_dangling.tags) = rt_03918_dangling.tag_id
+        ORDER BY lt_03918_dangling.id
+        SETTINGS query_plan_convert_join_to_in = 1
+    )
+);
+
 DROP TABLE lt_03918_dangling;
 DROP TABLE rt_03918_dangling;

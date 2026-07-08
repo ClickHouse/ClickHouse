@@ -12,3 +12,5 @@ with_arrjoin_off	1	b
 with_arrjoin_off	1	c
 with_arrjoin_off	2	d
 with_arrjoin_off	2	e
+explain_just_id	1	1
+explain_with_tags	1	1
