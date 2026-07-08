@@ -16,7 +16,6 @@
               "group": "ابدأ",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
-                "ar/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -38,7 +37,8 @@
                   ],
                   "root": "ar/get-started/use-cases/overview"
                 },
-                "ar/get-started/about/deployment-modes"
+                "ar/get-started/about/deployment-modes",
+                "ar/get-started/quickstarts/home"
               ],
               "root": "ar/get-started/index"
             },
