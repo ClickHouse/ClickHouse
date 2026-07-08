@@ -144,8 +144,7 @@ void PeekableReadBuffer::rollbackToCheckpoint(bool drop)
                 /// Recursive checkpoint is in sub buffer with current position.
                 /// Just move position to the recursive checkpoint
                 pos = sub_buf->position() + (offset_from_checkpoint - offset_from_checkpoint_in_own_memory);
-                if (pos > working_buffer.end())
-                    pos = working_buffer.end();
+                pos = std::min(pos, working_buffer.end());
             }
             else
             {
