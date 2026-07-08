@@ -502,12 +502,35 @@ IMergeTreeDataPart::~IMergeTreeDataPart()
     decrementStateMetric(state);
     decrementTypeMetric(part_type);
 
-    if (shared_part_columns != SharedPartColumns::getEmpty())
-        storage.releaseSharedPartColumns(std::exchange(shared_part_columns, SharedPartColumns::getEmpty()));
+    /// `shared_part_columns` returns its reference to the per-table cache in its own destructor.
 
     DimensionalMetrics::sub(
         DimensionalMetrics::MergeTreeParts,
         {stateToString(), part_type.toString(), std::to_string(isProjectionPart())});
+}
+
+SharedPartColumnsHolder & SharedPartColumnsHolder::operator=(SharedPartColumnsHolder && other) noexcept
+{
+    if (this != &other)
+    {
+        release();
+        storage = std::exchange(other.storage, nullptr);
+        bundle = std::exchange(other.bundle, SharedPartColumns::getEmpty());
+    }
+    return *this;
+}
+
+SharedPartColumnsHolder::~SharedPartColumnsHolder()
+{
+    release();
+}
+
+void SharedPartColumnsHolder::release() noexcept
+{
+    if (storage && bundle != SharedPartColumns::getEmpty())
+        storage->releaseSharedPartColumns(std::move(bundle));
+    storage = nullptr;
+    bundle = SharedPartColumns::getEmpty();
 }
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
@@ -704,16 +727,12 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
 
     metadata_version = new_metadata_version;
 
-    /// Install the bundle into the part before anything below can throw: the cache entry lives
-    /// while some part holds the bundle, so once it is in the member, the part destructor is
-    /// responsible for returning it via `releaseSharedPartColumns` even when building the
-    /// serializations fails and this part never finishes loading.
-    if (auto new_shared_part_columns = storage.getSharedPartColumnsForColumns(new_columns); shared_part_columns != new_shared_part_columns)
-    {
-        auto old_shared_part_columns = std::exchange(shared_part_columns, std::move(new_shared_part_columns));
-        if (old_shared_part_columns != SharedPartColumns::getEmpty())
-            storage.releaseSharedPartColumns(std::move(old_shared_part_columns));
-    }
+    /// Install the bundle into the part before anything below can throw: the holder returns the
+    /// reference to the cache in its destructor, so once it is in the member the part is
+    /// responsible for it even when building the serializations fails and this part never finishes
+    /// loading. The move-assignment returns the previously held reference.
+    if (auto new_shared_part_columns = storage.getSharedPartColumnsForColumns(new_columns); shared_part_columns.get() != new_shared_part_columns.get())
+        shared_part_columns = std::move(new_shared_part_columns);
 
     serializations = shared_part_columns->getSerializations(serialization_infos);
 }

@@ -49,6 +49,40 @@ struct FutureMergedMutatedPart;
 class IReservation;
 using ReservationPtr = std::unique_ptr<IReservation>;
 
+/// Move-only owner of a reference to an interned `SharedPartColumns` bundle.
+///
+/// A reference can be obtained only from `MergeTreeData::getSharedPartColumnsForColumns` (this
+/// holder's constructor is private) and is returned to the per-table cache only by this holder's
+/// destructor or move-assignment (the sole caller of `MergeTreeData::releaseSharedPartColumns`).
+/// That makes the cache's reference accounting - and therefore the eviction of entries no part
+/// uses anymore - impossible to bypass from part code: a reference cannot be duplicated (the holder
+/// is non-copyable and the part is non-copyable), leaked, or hand-released. A default/moved-from
+/// holder owns the shared empty sentinel bundle and releases nothing.
+class SharedPartColumnsHolder
+{
+public:
+    SharedPartColumnsHolder() = default;
+    SharedPartColumnsHolder(SharedPartColumnsHolder && other) noexcept { *this = std::move(other); }
+    SharedPartColumnsHolder & operator=(SharedPartColumnsHolder && other) noexcept;
+    ~SharedPartColumnsHolder();
+
+    const SharedPartColumns & operator*() const { return *bundle; }
+    const SharedPartColumns * operator->() const { return bundle.get(); }
+    const SharedPartColumns * get() const { return bundle.get(); }
+
+private:
+    friend class MergeTreeData;
+    SharedPartColumnsHolder(const MergeTreeData & storage_, SharedPartColumnsPtr bundle_)
+        : storage(&storage_), bundle(std::move(bundle_)) {}
+
+    void release() noexcept;
+
+    const MergeTreeData * storage = nullptr;
+    SharedPartColumnsPtr bundle = SharedPartColumns::getEmpty();
+};
+
+static_assert(!std::is_copy_constructible_v<SharedPartColumnsHolder>, "a bundle reference must not be duplicable");
+
 class IMergeTreeReader;
 class MarkCache;
 class UncompressedCache;
@@ -774,8 +808,9 @@ private:
     /// is necessary) and the columns descriptions (for more convenient access to columns by
     /// name and getting subcolumns; the collected-nested variant is used while reading from
     /// wide parts). Cannot be changed after part initialization. Obtained from (and returned
-    /// to) the per-table cache in `MergeTreeData`, see `SharedPartColumns.h`.
-    SharedPartColumnsPtr shared_part_columns = SharedPartColumns::getEmpty();
+    /// to) the per-table cache in `MergeTreeData`, see `SharedPartColumns.h`. The holder makes the
+    /// reference accounting impossible to bypass (see `SharedPartColumnsHolder`).
+    SharedPartColumnsHolder shared_part_columns;
 
     /// List of substreams in order of serialization/deserialization for each column.
     /// Shared across parts of the table with the same substreams. Never null.

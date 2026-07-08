@@ -11636,7 +11636,7 @@ size_t MergeTreeData::NamesAndTypesListHash::operator()(const NamesAndTypesList 
     return hash;
 }
 
-SharedPartColumnsPtr MergeTreeData::getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const
+SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const
 {
     /// After the first part of each schema every lookup is a hit that does not modify the map,
     /// so a shared lock keeps concurrent part loads parallel (copying the shared_ptr only
@@ -11645,14 +11645,14 @@ SharedPartColumnsPtr MergeTreeData::getSharedPartColumnsForColumns(const NamesAn
     {
         SharedLockGuard lock(shared_part_columns_cache_mutex);
         if (auto it = shared_part_columns_cache.find(columns); it != shared_part_columns_cache.end())
-            return it->second;
+            return SharedPartColumnsHolder(*this, it->second);
     }
 
     std::lock_guard lock(shared_part_columns_cache_mutex);
 
     /// Another load may have interned the same columns while the lock was upgraded.
     if (auto it = shared_part_columns_cache.find(columns); it != shared_part_columns_cache.end())
-        return it->second;
+        return SharedPartColumnsHolder(*this, it->second);
 
     /// The bundle lives as long as some part of the table stores these columns: route it to the
     /// dedicated parts arena (no-op when the caller already did).
@@ -11676,7 +11676,7 @@ SharedPartColumnsPtr MergeTreeData::getSharedPartColumnsForColumns(const NamesAn
 
     shared_part_columns_cache.emplace(std::cref(shared_part_columns->columns), shared_part_columns);
     shared_part_columns_metric_handle.add(1);
-    return shared_part_columns;
+    return SharedPartColumnsHolder(*this, shared_part_columns);
 }
 
 void MergeTreeData::releaseSharedPartColumns(SharedPartColumnsPtr shared_part_columns) const

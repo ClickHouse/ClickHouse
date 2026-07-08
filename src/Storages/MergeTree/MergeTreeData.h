@@ -1523,12 +1523,16 @@ private:
     mutable std::unordered_map<std::reference_wrapper<const NamesAndTypesList>, SharedPartColumnsPtr, NamesAndTypesListHash, NamesAndTypesListEqual>
         shared_part_columns_cache TSA_GUARDED_BY(shared_part_columns_cache_mutex);
 
-public:
-    /// Returns the shared metadata bundle for parts storing exactly these columns, building and
-    /// interning it on first request. Parts must return it via `releaseSharedPartColumns` when
-    /// they are destroyed (or replace their columns), so unused entries are evicted.
-    SharedPartColumnsPtr getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const;
+    /// Returns the interned reference to the cache entry to be evicted when no part uses it anymore.
+    /// Only `SharedPartColumnsHolder` may call it, so the reference accounting cannot be bypassed.
     void releaseSharedPartColumns(SharedPartColumnsPtr shared_part_columns) const;
+    friend class SharedPartColumnsHolder;
+
+public:
+    /// Returns a holder of the shared metadata bundle for parts storing exactly these columns,
+    /// building and interning it on first request. The holder returns the reference to the cache
+    /// when it is destroyed or reassigned, so unused entries are evicted (see SharedPartColumns.h).
+    SharedPartColumnsHolder getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const;
     size_t getColumnsDescriptionsCacheSize() const;
 
 protected:
