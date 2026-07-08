@@ -80,6 +80,8 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
         "JSON(max_dynamic_paths=8, max_dynamic_types=4, p1 UInt32, p2 Array(String), SKIP s, SKIP REGEXP 'r.*')",
         "QBit(Float32, 16)",
         "SimpleAggregateFunction(sum, UInt64)",
+        "SimpleAggregateFunction(max, UInt64)",
+        "SimpleAggregateFunction(groupArrayArray, Array(UInt64))",
         "SimpleAggregateFunction(sumMap, Tuple(Array(String), Array(UInt64)))",
         "AggregateFunction(quantileExact(0.5), Float64)",
         "AggregateFunction(topK(10), String)",

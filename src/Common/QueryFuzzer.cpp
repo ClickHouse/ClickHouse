@@ -2097,9 +2097,24 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         {
             if (fuzz_rand() % 4 != 0)
             {
+                String new_name = type_simple_aggr->getFunctionName();
                 DataTypes new_arg_types = type_simple_aggr->getArgumentsDataTypes();
                 Array new_parameters = type_simple_aggr->getParameters();
                 bool changed = false;
+                /// ASTDataType is opaque to the generic walk, so this arm is also the only mutation path for the
+                /// aggregate name. Try a small compatible candidate set; makeAggregateFunctionType re-validates via
+                /// the factory and checkSupportedFunctions (rejecting names not usable as SimpleAggregateFunction),
+                /// falling back to the original type on rejection.
+                const auto nargs = new_arg_types.size();
+                if (nargs > 0 && nargs < 3 && swapAggrs.contains(nargs) && fuzz_rand() % 3 == 0)
+                {
+                    String candidate = pickRandomly(fuzz_rand, swapAggrs.at(nargs));
+                    if (candidate != new_name)
+                    {
+                        new_name = std::move(candidate);
+                        changed = true;
+                    }
+                }
                 for (auto & arg_type : new_arg_types)
                 {
                     auto fuzzed = fuzzDataType(arg_type);
@@ -2120,7 +2135,7 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
                 if (changed)
                 {
                     if (auto fuzzed = makeAggregateFunctionType(
-                            type_simple_aggr->getFunctionName(), new_arg_types, new_parameters, /*simple=*/true))
+                            new_name, new_arg_types, new_parameters, /*simple=*/true))
                         return fuzzed;
                 }
             }
