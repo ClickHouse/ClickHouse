@@ -183,5 +183,5 @@ SELECT 'analysisOfVariance', analysisOfVariance(CAST(number AS Variant(UInt8, UI
 
 -- When the Variant cannot be adapted (no common numeric supertype), the adapter gives up and the original creator
 -- error code is reported unchanged -- BAD_ARGUMENTS / NOT_IMPLEMENTED, not ILLEGAL_TYPE_OF_ARGUMENT.
-SELECT rankCorr(CAST(1 AS Variant(String, UInt64)), 1); -- { serverError NOT_IMPLEMENTED }
-SELECT analysisOfVariance(CAST(1 AS Variant(String, UInt64)), 0); -- { serverError BAD_ARGUMENTS }
+SELECT rankCorr(CAST(toUInt64(1) AS Variant(String, UInt64)), 1); -- { serverError NOT_IMPLEMENTED }
+SELECT analysisOfVariance(CAST(toUInt64(1) AS Variant(String, UInt64)), 0); -- { serverError BAD_ARGUMENTS }
