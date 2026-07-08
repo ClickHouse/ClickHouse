@@ -2081,11 +2081,23 @@ static bool applyDeterministicDagToColumn(
             if (b)
                 return false;
 
-        /// No NULLs were introduced, so the cast is accurate for every value. Produce the requested
-        /// target_type (which may be LowCardinality and/or Nullable); the accurate cast cannot throw
-        /// here because the probe above already proved every value fits.
-        column = castColumnAccurate({column, type, ""}, target_type);
-        type = target_type;
+        /// No NULLs were introduced, so every value fits and the probe already holds the converted
+        /// values; reuse them instead of casting the source again. A Nullable target is exactly the
+        /// probe column, a plain target is its nested column.
+        if (probe_type->isNullable())
+            column = probe_column;
+        else
+            column = n.getNestedColumnPtr();
+        type = probe_type;
+
+        /// Only the `LowCardinality` wrapper stripped before the probe may remain; adding it back
+        /// is a lossless dictionary encoding of the already-converted values.
+        if (!probe_type->equals(*target_type))
+        {
+            column = castColumn({column, type, ""}, target_type);
+            type = target_type;
+        }
+
         return true;
     };
 
