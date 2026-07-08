@@ -5,6 +5,7 @@
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/IEJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/MaterializedCTE.h>
 #include <Interpreters/TableJoin.h>
@@ -24,6 +25,7 @@
 #include <Processors/Transforms/InputSelectorTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/ExtremesTransform.h>
+#include <Processors/Transforms/IEJoinTransform.h>
 #include <Processors/Transforms/JoiningTransform.h>
 #include <Processors/Transforms/MaterializingCTETransform.h>
 #include <Processors/Transforms/MergeJoinTransform.h>
@@ -354,7 +356,11 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
 
     left->pipe.dropExtremes();
     right->pipe.dropExtremes();
-    if ((left->getNumStreams() != 1 || right->getNumStreams() != 1) && join->getTableJoin().kind() == JoinKind::Paste)
+    bool is_ie_join = typeid_cast<const IEJoin *>(join.get()) != nullptr;
+    /// Paste and IE joins consume unsorted inputs, so upstream pipelines are not required
+    /// to end with a single-stream merge and may need to be squashed into one stream here.
+    if ((left->getNumStreams() != 1 || right->getNumStreams() != 1)
+        && (join->getTableJoin().kind() == JoinKind::Paste || is_ie_join))
     {
         left->pipe.resize(1);
         right->pipe.resize(1);
@@ -370,6 +376,12 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesYShaped
     if (join->getTableJoin().kind() == JoinKind::Paste)
     {
         auto joining = std::make_shared<PasteJoinTransform>(join, inputs, out_header, max_block_size);
+        return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
+    }
+
+    if (is_ie_join)
+    {
+        auto joining = std::make_shared<IEJoinTransform>(join, inputs, out_header, max_block_size);
         return mergePipelines(std::move(left), std::move(right), std::move(joining), collected_processors);
     }
 

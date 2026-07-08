@@ -32,6 +32,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FullSortingMergeJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/IEJoin.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/PasteJoin.h>
@@ -812,6 +813,79 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
     return has_join_predicates;
 }
 
+static JoinConditionOperator reverseInequalityOperator(JoinConditionOperator op)
+{
+    switch (op)
+    {
+        case JoinConditionOperator::Less: return JoinConditionOperator::Greater;
+        case JoinConditionOperator::Greater: return JoinConditionOperator::Less;
+        case JoinConditionOperator::LessOrEquals: return JoinConditionOperator::GreaterOrEquals;
+        case JoinConditionOperator::GreaterOrEquals: return JoinConditionOperator::LessOrEquals;
+        default:
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reverse operator {}", toString(op));
+    }
+}
+
+/// Try to interpret the JOIN ON expression as exactly two inequality conditions between the two tables
+/// to execute the join with the IEJoin algorithm. Returns std::nullopt when the join has a different shape,
+/// so that the caller falls back to the generic handling (a CROSS join with a filter).
+/// On success the conditions are consumed from `join_expression`: key expressions are casted
+/// to common types, registered in `used_expressions` and in the table join clause.
+static std::optional<IEJoinDescription> tryExtractIEJoinDescription(
+    std::vector<JoinActionRef> & join_expression,
+    const JoinOperator & join_operator,
+    TableJoin::JoinOnClause & table_join_clause,
+    std::vector<JoinActionRef> & used_expressions,
+    const JoinSettings & join_settings,
+    const JoinPlanningContext & planning_context)
+{
+    if (join_operator.kind != JoinKind::Inner || join_operator.strictness != JoinStrictness::All)
+        return {};
+
+    if (planning_context.is_storage_join)
+        return {};
+
+    if (join_expression.size() != 2)
+        return {};
+
+    IEJoinDescription description;
+    std::vector<std::pair<JoinActionRef, JoinActionRef>> keys;
+    for (size_t i = 0; i < 2; ++i)
+    {
+        auto [predicate_op, lhs, rhs] = join_expression[i].asBinaryPredicate();
+        if (predicate_op != JoinConditionOperator::Less && predicate_op != JoinConditionOperator::LessOrEquals
+            && predicate_op != JoinConditionOperator::Greater && predicate_op != JoinConditionOperator::GreaterOrEquals)
+            return {};
+
+        if (lhs.fromRight() && rhs.fromLeft())
+        {
+            predicate_op = reverseInequalityOperator(predicate_op);
+            std::swap(lhs, rhs);
+        }
+        else if (!lhs.fromLeft() || !rhs.fromRight())
+            return {};
+
+        description.operators[i] = predicate_op;
+        keys.emplace_back(std::move(lhs), std::move(rhs));
+    }
+
+    /// Both conditions are validated, commit: mutate the DAG and the table join clause.
+    for (auto & [lhs, rhs] : keys)
+    {
+        predicateOperandsToCommonType(lhs, rhs, join_settings, planning_context);
+
+        description.key_names_left.push_back(lhs.getColumnName());
+        description.key_names_right.push_back(rhs.getColumnName());
+        table_join_clause.addKey(lhs.getColumnName(), rhs.getColumnName(), /* null_safe_comparison = */ false);
+
+        used_expressions.push_back(lhs);
+        used_expressions.push_back(rhs);
+    }
+
+    join_expression.clear();
+    return description;
+}
+
 
 static SharedHeader blockWithActionsDAGOutput(const ActionsDAG & actions_dag)
 {
@@ -1154,6 +1228,7 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
 
     bool is_disjunctive_condition = false;
+    std::optional<IEJoinDescription> ie_join_description;
     auto & table_join_clauses = table_join->getClauses();
     if (!is_join_without_expression)
     {
@@ -1161,23 +1236,30 @@ static QueryPlanNode buildPhysicalJoinImpl(
 
         if (!has_keys && join_operator.strictness != JoinStrictness::Asof)
         {
-            bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
-                && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
-                && join_operator.strictness == JoinStrictness::All;
+            if (join_settings.allow_experimental_ie_join)
+                ie_join_description = tryExtractIEJoinDescription(
+                    join_expression, join_operator, table_join_clauses.back(), used_expressions, join_settings, planning_context);
 
-            table_join_clauses.pop_back();
-            is_disjunctive_condition = tryAddDisjunctiveConditions(
-                join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
-
-            if (!is_disjunctive_condition)
+            if (!ie_join_description)
             {
-                if (!can_convert_to_cross)
-                    throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
-                        formatJoinCondition(join_expression));
+                bool can_convert_to_cross = (isInner(join_operator.kind) || isCrossOrComma(join_operator.kind))
+                    && TableJoin::isEnabledAlgorithm(join_settings.join_algorithms, JoinAlgorithm::HASH)
+                    && join_operator.strictness == JoinStrictness::All;
 
-                join_operator.kind = JoinKind::Cross;
-                join_operator.residual_filter.append_range(join_expression);
-                join_expression.clear();
+                table_join_clauses.pop_back();
+                is_disjunctive_condition = tryAddDisjunctiveConditions(
+                    join_expression, table_join_clauses, used_expressions, join_settings, planning_context, !can_convert_to_cross);
+
+                if (!is_disjunctive_condition)
+                {
+                    if (!can_convert_to_cross)
+                        throw Exception(ErrorCodes::INVALID_JOIN_ON_EXPRESSION, "Cannot determine join keys in JOIN ON expression {}",
+                            formatJoinCondition(join_expression));
+
+                    join_operator.kind = JoinKind::Cross;
+                    join_operator.residual_filter.append_range(join_expression);
+                    join_expression.clear();
+                }
             }
         }
     }
@@ -1420,12 +1502,16 @@ static QueryPlanNode buildPhysicalJoinImpl(
     SharedHeader left_sample_block = blockWithActionsDAGOutput(left_dag);
     SharedHeader right_sample_block = blockWithActionsDAGOutput(right_dag);
 
-    auto join_algorithm_ptr = chooseJoinAlgorithm(
-        table_join,
-        prepared_join_storage,
-        left_sample_block,
-        right_sample_block,
-        join_algorithm_params);
+    JoinPtr join_algorithm_ptr;
+    if (ie_join_description)
+        join_algorithm_ptr = std::make_shared<IEJoin>(table_join, right_sample_block, std::move(*ie_join_description));
+    else
+        join_algorithm_ptr = chooseJoinAlgorithm(
+            table_join,
+            prepared_join_storage,
+            left_sample_block,
+            right_sample_block,
+            join_algorithm_params);
 
     QueryPlanNode node;
     node.children = std::move(children);
