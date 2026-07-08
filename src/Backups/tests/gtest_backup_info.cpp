@@ -490,14 +490,44 @@ TEST(BackupInfo, NormalizedStringValidatesFilePathWithContext)
     EXPECT_NE(allowed.toNormalizedString(context).find("/also_allowed/backup"), String::npos);
 }
 
-TEST(BackupInfo, NormalizedStringPreservesKeyValueArgNames)
+TEST(BackupInfo, NormalizedStringIncludesOnlyEffectiveNamedCollectionOverrides)
 {
-    auto first = BackupInfo::fromString("S3(collection, url='s3://bucket/backup')");
-    auto second = BackupInfo::fromString("S3(collection, URL='s3://bucket/backup')");
+    auto base = BackupInfo::fromString("S3(collection)");
+    auto locator_override = BackupInfo::fromString("S3(collection, url='https://user:password@s3.example.com/bucket/backup')");
+    auto ignored_case_mismatch = BackupInfo::fromString("S3(collection, URL='https://user:password@s3.example.com/bucket/backup')");
+    auto ignored_non_locator = BackupInfo::fromString("S3(collection, storage_class_name='STANDARD_IA')");
 
-    EXPECT_NE(first.toNormalizedString(), second.toNormalizedString());
-    EXPECT_NE(first.toNormalizedString().find("url="), String::npos);
-    EXPECT_NE(second.toNormalizedString().find("URL="), String::npos);
+    EXPECT_NE(base.toNormalizedString(), locator_override.toNormalizedString());
+    EXPECT_EQ(base.toNormalizedString(), ignored_case_mismatch.toNormalizedString());
+    EXPECT_EQ(base.toNormalizedString(), ignored_non_locator.toNormalizedString());
+    EXPECT_EQ(locator_override.toNormalizedString().find("password"), String::npos);
+    EXPECT_EQ(ignored_case_mismatch.toNormalizedString().find("password"), String::npos);
+    EXPECT_EQ(ignored_non_locator.toNormalizedString().find("STANDARD_IA"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringIgnoresCaseInsensitiveAndGoogleAdcCredentialOverrides)
+{
+    auto base = BackupInfo::fromString("S3(collection)");
+    auto with_credentials = BackupInfo::fromString(
+        "S3(collection, ACCESS_KEY_ID='KEYID', google_adc_client_id='CLIENTID', google_adc_client_secret='CLIENTSECRET', "
+        "google_adc_refresh_token='REFRESHTOKEN')");
+
+    EXPECT_EQ(base.toNormalizedString(), with_credentials.toNormalizedString());
+    EXPECT_EQ(with_credentials.toNormalizedString().find("KEYID"), String::npos);
+    EXPECT_EQ(with_credentials.toNormalizedString().find("CLIENTID"), String::npos);
+    EXPECT_EQ(with_credentials.toNormalizedString().find("CLIENTSECRET"), String::npos);
+    EXPECT_EQ(with_credentials.toNormalizedString().find("REFRESHTOKEN"), String::npos);
+}
+
+TEST(BackupInfo, NormalizedStringIgnoresAzureNonLocatorNamedCollectionOverrides)
+{
+    auto base = BackupInfo::fromString("AzureBlobStorage(collection)");
+    auto locator_override = BackupInfo::fromString("AzureBlobStorage(collection, blob_path='backup')");
+    auto ignored_non_locator = BackupInfo::fromString("AzureBlobStorage(collection, format='CSV')");
+
+    EXPECT_NE(base.toNormalizedString(), locator_override.toNormalizedString());
+    EXPECT_EQ(base.toNormalizedString(), ignored_non_locator.toNormalizedString());
+    EXPECT_EQ(ignored_non_locator.toNormalizedString().find("CSV"), String::npos);
 }
 
 TEST(BackupInfo, NormalizedStringRejectsNonOverridableNamedCollectionOverride)

@@ -339,28 +339,42 @@ namespace
 
     bool isCredentialKeyForNormalizedIdentity(const String & backup_engine_name, const String & key)
     {
+        String lower_key = toLower(key);
+
         if (backup_engine_name == "S3")
-            return key == "access_key_id"
-                || key == "secret_access_key"
-                || key == "session_token"
-                || key == "use_environment_credentials"
-                || key == "no_sign_request"
-                || key == "expiration_window_seconds"
-                || key == "role_arn"
-                || key == "role_session_name"
-                || key == "http_client"
-                || key == "service_account"
-                || key == "metadata_service"
-                || key == "external_id"
-                || key == "request_token_path";
+            return lower_key == "access_key_id"
+                || lower_key == "secret_access_key"
+                || lower_key == "session_token"
+                || lower_key == "use_environment_credentials"
+                || lower_key == "no_sign_request"
+                || lower_key == "expiration_window_seconds"
+                || lower_key == "role_arn"
+                || lower_key == "role_session_name"
+                || lower_key == "http_client"
+                || lower_key == "service_account"
+                || lower_key == "metadata_service"
+                || lower_key == "external_id"
+                || lower_key == "request_token_path"
+                || lower_key == "google_adc_client_id"
+                || lower_key == "google_adc_client_secret"
+                || lower_key == "google_adc_refresh_token";
 
         if (backup_engine_name == "AzureBlobStorage")
-            return key == "account_name"
-                || key == "account_key"
-                || key == "client_id"
-                || key == "tenant_id"
-                || key == "shared_access_signature";
+            return lower_key == "account_name"
+                || lower_key == "account_key"
+                || lower_key == "client_id"
+                || lower_key == "tenant_id"
+                || lower_key == "shared_access_signature";
 
+        return false;
+    }
+
+    bool isLocatorKeyForNormalizedIdentity(const String & backup_engine_name, const String & key)
+    {
+        if (backup_engine_name == "S3")
+            return key == "url" || key == "filename";
+        if (backup_engine_name == "AzureBlobStorage")
+            return key == "connection_string" || key == "storage_account_url" || key == "container" || key == "blob_path";
         return false;
     }
 
@@ -534,6 +548,9 @@ namespace
                         kv->formatForErrorMessage());
 
                 if (isCredentialKeyForNormalizedIdentity(info.backup_engine_name, *key))
+                    continue;
+
+                if (!isLocatorKeyForNormalizedIdentity(info.backup_engine_name, *key))
                     continue;
 
                 auto value = getKeyValueArgStringValue(kv);
