@@ -342,7 +342,7 @@ TEST(PipelineReadBuffer, MMapReportsNoExternalBufferMode)
 {
     /// Direct contract check: the mmap buffer must advertise that it cannot
     /// refill into a caller-supplied external buffer. Without this, any caller
-    /// using `set()+next()` (notably `ReaderExecutor::readIntoBlock`) treats
+    /// using `set()+next()` (notably `readIntoBlock`) treats
     /// the first call as EOF.
     auto path = std::filesystem::temp_directory_path() / "test_pipeline_mmap_contract";
     {

@@ -7,6 +7,7 @@
 #include <IO/IFileBasedSourceReader.h>
 #include <IO/LongConnectionLimit.h>
 #include <IO/LongConnection.h>
+#include <IO/ReaderExecutorStats.h>
 #include <IO/CoverageMap.h>
 #include <IO/PlanSchedule.h>
 #include <IO/FetchMachine.h>
@@ -246,102 +247,11 @@ private:
     // (`Display` is declared further down at the display section; `FillLane`
     //  at the fill-lane section - each next to the verbs that use it.)
 
-    /// Per-executor accumulating stats, flushed to ProfileEvents as they
-    /// happen and logged at destruction. The foreground passes `this->stats`
-    /// into the read path; a worker passes the machine's own `Stats` (merged
-    /// at collect/cancel), so a worker never writes a shared counter.
-    struct Stats
-    {
-        /// `add` is the only mutator and the single place a counter maps to
-        /// its ProfileEvent, so the two can never drift apart.
-        enum Counter : size_t
-        {
-            BytesFromPageCache,
-            BytesFromFilesystemCache,
-            BytesFromSource,
-            BytesPushedToCacheSync,
-            BytesPromoted,
-            CacheGetRequests,
-            CachePopulateRequests,
-            SourceRequests,
-            /// Source connections dropped before their right bound (not
-            /// pool-reusable; the metric's `I`).
-            IncompleteConnections,
-            /// Source bytes that did not serve the request (alignment slack +
-            /// bridged-gap bytes).
-            OverReadBytes,
-            /// Useful bytes delivered to read requests (cost denominator).
-            RequestedBytes,
-            CacheGetMicroseconds,
-            CachePopulateMicroseconds,
-            SourceReadMicroseconds,
-            DecryptMicroseconds,
-            PrefetchWaitMicroseconds,
-            SyncReadMicroseconds,
-            WorkMicroseconds,
-            PrefetchHits,
-            PrefetchCancelled,
-            PrefetchPoolFull,
-            PrefetchDiscardedRunning,
-            PrefetchIssuedSourceBytes,
-            PrefetchWastedSourceBytes,
-            /// A machine wrapped up early at an interrupt point on request.
-            MachineInterrupted,
-            /// Collects that served a non-empty partial prefix of an
-            /// interrupted fetch.
-            PartialCollects,
-            /// A deferred cache fill whose put step threw - logged, never the
-            /// client's error.
-            PutFailed,
-            /// Long source connections: opened, windows served from an open one,
-            /// fallbacks to a one-shot when no slot was free, bytes served through them.
-            LongConnectionOpened,
-            LongConnectionHits,
-            LongConnectionFallbacks,
-            LongConnectionBytes,
-            /// Number of `observeAndSchedule` calls = residency-plan (re)builds. The
-            /// plan is reused across mark-range advances; it rebuilds only on a
-            /// want_replan (the cursor leaves `plan_start..plan_end`). This sizes how
-            /// short-lived the held cache readers are.
-            Observations,
-            NumCounters
-        };
-
-        /// Bump `c` AND emit its ProfileEvent (the one place events are
-        /// incremented, so a worker in the submitter's thread group attributes
-        /// to the query too).
-        void add(Counter c, UInt64 value = 1);
-
-        /// Read a counter for the final report; does not emit.
-        UInt64 get(Counter c) const { return values[c]; }
-
-        /// Roll another executor's / worker's stats into this aggregate
-        /// WITHOUT re-emitting (each counter already hit ProfileEvents at its
-        /// `add`).
-        Stats & operator+=(const Stats & o);
-
-    private:
-        std::array<UInt64, NumCounters> values{};
-    };
-
-    /// RAII timer: on scope exit, add the elapsed microseconds to a `Stats`
-    /// timing counter through `Stats::add`.
-    class StatTimer
-    {
-    public:
-        StatTimer(Stats & stats_, Stats::Counter counter_);
-        ~StatTimer();
-
-        StatTimer(const StatTimer &) = delete;
-        StatTimer & operator=(const StatTimer &) = delete;
-
-        UInt64 elapsedMicroseconds() const { return watch.elapsedMicroseconds(); }
-
-    private:
-        Stats & target;
-        Stats::Counter counter;
-        Stopwatch watch;
-    };
+    /// The stats machinery lives in `IO/ReaderExecutorStats.h` (pure move); these
+    /// aliases keep the ~100 in-class references and the test inspector's
+    /// `ReaderExecutor::Stats::X` spellings compiling unchanged.
+    using Stats = ReaderExecutorStats;
+    using StatTimer = ReaderExecutorStatTimer;
 
     /// One (object-piece, tier) entry of the FOREGROUND-PRIVATE half of a
     /// plan: the provider/object identity, the read-only `planResidencyView`

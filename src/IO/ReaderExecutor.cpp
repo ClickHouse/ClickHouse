@@ -9,7 +9,6 @@
 #include <Common/FailPoint.h>
 #include <Common/HistogramMetrics.h>
 #include <Common/MemoryPressureMonitor.h>
-#include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
@@ -20,42 +19,6 @@
 
 #include "config.h"
 
-namespace ProfileEvents
-{
-    extern const Event ReaderExecutorBytesFromPageCache;
-    extern const Event ReaderExecutorBytesFromFilesystemCache;
-    extern const Event ReaderExecutorBytesFromSource;
-    extern const Event ReaderExecutorBytesPushedToCacheSync;
-    extern const Event ReaderExecutorBytesPromoted;
-    extern const Event ReaderExecutorCacheGetRequests;
-    extern const Event ReaderExecutorCachePopulateRequests;
-    extern const Event ReaderExecutorSourceRequests;
-    extern const Event ReaderExecutorIncompleteConnections;
-    extern const Event ReaderExecutorOverReadBytes;
-    extern const Event ReaderExecutorModeledCostMicroseconds;
-    extern const Event ReaderExecutorRequestedBytes;
-    extern const Event ReaderExecutorCacheGetMicroseconds;
-    extern const Event ReaderExecutorCachePopulateMicroseconds;
-    extern const Event ReaderExecutorSourceReadMicroseconds;
-    extern const Event ReaderExecutorDecryptMicroseconds;
-    extern const Event ReaderExecutorPrefetchWaitMicroseconds;
-    extern const Event ReaderExecutorSyncReadMicroseconds;
-    extern const Event ReaderExecutorWorkMicroseconds;
-    extern const Event ReaderExecutorPrefetchHits;
-    extern const Event ReaderExecutorPrefetchCancelled;
-    extern const Event ReaderExecutorPrefetchPoolFull;
-    extern const Event ReaderExecutorPrefetchDiscardedRunning;
-    extern const Event ReaderExecutorPrefetchIssuedSourceBytes;
-    extern const Event ReaderExecutorPrefetchWastedSourceBytes;
-    extern const Event ReaderExecutorMachineInterrupted;
-    extern const Event ReaderExecutorPartialCollects;
-    extern const Event ReaderExecutorPutFailed;
-    extern const Event ReaderExecutorLongConnectionOpened;
-    extern const Event ReaderExecutorLongConnectionHits;
-    extern const Event ReaderExecutorLongConnectionFallbacks;
-    extern const Event ReaderExecutorLongConnectionBytes;
-    extern const Event ReaderExecutorObservations;
-}
 
 namespace CurrentMetrics
 {
@@ -122,97 +85,6 @@ namespace DB
 ///   `FillLane::write`; deferred puts run at collect.
 /// ──────────────────────────────────────────────────────────────────────────────
 
-
-// ─── Stats ─────────────────────────────────────────────────────────────────
-
-/// The ONE place a counter is mapped to its ProfileEvent. Bump the counter, emit the event,
-/// and (for the cost-model counters) add the modeled-cost contribution - so a running query's
-/// events advance as the read happens. The prefetch worker runs in the submitter's thread
-/// group (attached by `PrefetchThreadPool`), so a worker-thread emit attributes to the query.
-/// The bytes term's per-increment integer rounding is negligible against the millisecond model.
-void ReaderExecutor::Stats::add(Counter c, UInt64 value)
-{
-    values[c] += value;
-    switch (c)
-    {
-        case BytesFromPageCache:        ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromPageCache, value); break;
-        case BytesFromFilesystemCache:  ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromFilesystemCache, value); break;
-        case BytesFromSource:
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesFromSource, value);
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 20000ULL * value / (1024 * 1024));
-            break;
-        case BytesPushedToCacheSync:    ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPushedToCacheSync, value); break;
-        case BytesPromoted:             ProfileEvents::increment(ProfileEvents::ReaderExecutorBytesPromoted, value); break;
-        case CacheGetRequests:
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetRequests, value);
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 50 * value);
-            break;
-        case CachePopulateRequests:
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateRequests, value);
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 100 * value);
-            break;
-        case SourceRequests:
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceRequests, value);
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 30000 * value);
-            break;
-        case IncompleteConnections:
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorIncompleteConnections, value);
-            ProfileEvents::increment(ProfileEvents::ReaderExecutorModeledCostMicroseconds, 5000 * value);
-            break;
-        case OverReadBytes:             ProfileEvents::increment(ProfileEvents::ReaderExecutorOverReadBytes, value); break;
-        case RequestedBytes:            ProfileEvents::increment(ProfileEvents::ReaderExecutorRequestedBytes, value); break;
-        case CacheGetMicroseconds:      ProfileEvents::increment(ProfileEvents::ReaderExecutorCacheGetMicroseconds, value); break;
-        case CachePopulateMicroseconds: ProfileEvents::increment(ProfileEvents::ReaderExecutorCachePopulateMicroseconds, value); break;
-        case SourceReadMicroseconds:    ProfileEvents::increment(ProfileEvents::ReaderExecutorSourceReadMicroseconds, value); break;
-        case DecryptMicroseconds:       ProfileEvents::increment(ProfileEvents::ReaderExecutorDecryptMicroseconds, value); break;
-        case PrefetchWaitMicroseconds:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWaitMicroseconds, value); break;
-        case SyncReadMicroseconds:      ProfileEvents::increment(ProfileEvents::ReaderExecutorSyncReadMicroseconds, value); break;
-        case WorkMicroseconds:          ProfileEvents::increment(ProfileEvents::ReaderExecutorWorkMicroseconds, value); break;
-        case PrefetchHits:              ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchHits, value); break;
-        case PrefetchCancelled:         ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchCancelled, value); break;
-        case PrefetchPoolFull:          ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchPoolFull, value); break;
-        case PrefetchDiscardedRunning:  ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchDiscardedRunning, value); break;
-        case PrefetchIssuedSourceBytes: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchIssuedSourceBytes, value); break;
-        case PrefetchWastedSourceBytes: ProfileEvents::increment(ProfileEvents::ReaderExecutorPrefetchWastedSourceBytes, value); break;
-        case MachineInterrupted:        ProfileEvents::increment(ProfileEvents::ReaderExecutorMachineInterrupted, value); break;
-        case PartialCollects:           ProfileEvents::increment(ProfileEvents::ReaderExecutorPartialCollects, value); break;
-        case PutFailed:                 ProfileEvents::increment(ProfileEvents::ReaderExecutorPutFailed, value); break;
-        case LongConnectionOpened:      ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionOpened, value); break;
-        case LongConnectionHits:        ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionHits, value); break;
-        case LongConnectionFallbacks:   ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionFallbacks, value); break;
-        case LongConnectionBytes:       ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionBytes, value); break;
-        case Observations:              ProfileEvents::increment(ProfileEvents::ReaderExecutorObservations, value); break;
-        case NumCounters:               break;
-    }
-}
-
-/// The cooperative stop probe. The policy lives at the call sites: a LIVE
-/// connection stops at the next block (it is saved with the machine and
-/// continues from its frontier later - nothing is forfeited); a one-shot GET
-/// is never cut mid-response (its request would be forfeited and the remainder
-/// would pay a fresh one) - stateless fetches stop only BETWEEN connections.
-static bool stopRequested(const MachineBase * stop)
-{
-    return stop && stop->interrupt_requested.load(std::memory_order_relaxed);
-}
-
-ReaderExecutor::Stats & ReaderExecutor::Stats::operator+=(const Stats & o)
-{
-    for (size_t i = 0; i < NumCounters; ++i)
-        values[i] += o.values[i];
-    return *this;
-}
-
-ReaderExecutor::StatTimer::StatTimer(Stats & stats_, Stats::Counter counter_)
-    : target(stats_)
-    , counter(counter_)
-{
-}
-
-ReaderExecutor::StatTimer::~StatTimer()
-{
-    target.add(counter, watch.elapsedMicroseconds());
-}
 
 ReaderExecutor::FetchMachine::FetchMachine()
     : inflight_gauge(CurrentMetrics::ReaderExecutorPrefetchInFlight)
@@ -1175,6 +1047,16 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
 }
 
 // ─── Gap fetch + backfill ──────────────────────────────────────────────────
+
+/// The cooperative stop probe. The policy lives at the call sites: a LIVE
+/// connection stops at the next block (it is saved with the machine and
+/// continues from its frontier later - nothing is forfeited); a one-shot GET
+/// is never cut mid-response (its request would be forfeited and the remainder
+/// would pay a fresh one) - stateless fetches stop only BETWEEN connections.
+static bool stopRequested(const MachineBase * stop)
+{
+    return stop && stop->interrupt_requested.load(std::memory_order_relaxed);
+}
 
 ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bool from_prefetch,
     bool & eof_latch, MemoryPressureLevel pressure_level, std::optional<size_t> read_extent,
