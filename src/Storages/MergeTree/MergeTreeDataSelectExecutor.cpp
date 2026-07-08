@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/MergeTreeIndexReader.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/GenericExclusionSearch.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeSelectProcessor.h>
@@ -75,6 +76,7 @@ extern const Event FilteringMarksWithPrimaryKeyMicroseconds;
 extern const Event FilteringMarksWithSecondaryKeysMicroseconds;
 extern const Event IndexBinarySearchAlgorithm;
 extern const Event IndexGenericExclusionSearchAlgorithm;
+extern const Event IndexGenericExclusionSearchStepLimitReached;
 extern const Event FilterPartsByVirtualColumnsMicroseconds;
 }
 
@@ -91,6 +93,7 @@ namespace Setting
     extern const SettingsUInt64 max_threads_for_indexes;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsUInt64 merge_tree_coarse_index_granularity;
+    extern const SettingsUInt64 merge_tree_generic_exclusion_search_max_steps;
     extern const SettingsUInt64 merge_tree_min_bytes_for_seek;
     extern const SettingsUInt64 merge_tree_min_rows_for_seek;
     extern const SettingsBool use_lightweight_primary_key_index_analysis;
@@ -181,14 +184,13 @@ size_t MergeTreeDataSelectExecutor::getApproximateTotalRowsToRead(
         pk_to_minmax_slot = buildPrimaryKeyToMinMaxSlotMapping(metadata_snapshot, parts.front().data_part->storage.getSettings());
     const auto * pk_to_minmax_slot_ptr = pk_to_minmax_slot.empty() ? nullptr : &pk_to_minmax_slot;
 
-    MarkRanges exact_ranges;
     for (const auto & part : parts)
     {
-        MarkRanges part_ranges = markRangesFromPKRange(part, metadata_snapshot, key_condition, nullptr, nullptr, &exact_ranges, pk_to_minmax_slot_ptr, settings, log);
+        MarkRanges part_ranges = markRangesFromPKRange(
+            part, metadata_snapshot, key_condition, nullptr, nullptr, /*exact_ranges=*/nullptr, pk_to_minmax_slot_ptr, settings, log);
         for (const auto & range : part_ranges)
             rows_count += part.data_part->index_granularity->getRowsCountInRange(range);
     }
-    UNUSED(exact_ranges);
 
     return rows_count;
 }
@@ -808,9 +810,12 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
     /// 1. The setting is disabled
     /// 2. The query uses FINAL
     /// 3. There are on-the-fly mutations or patch parts (statistics only reflects original data)
+    /// 4. A masking policy applies: it rewrites values at read time, so the statistics (like
+    ///    the on-the-fly mutations above) no longer describe the values the query sees.
     if (!settings[Setting::use_statistics_for_part_pruning]
         || query_info.isFinal()
-        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        || (!parts.empty() && parts.front().data_part->storage.hasEnabledMaskingPolicies(context)))
     {
         return parts;
     }
@@ -2141,65 +2146,34 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
             part->index_granularity_info.fixed_index_granularity,
             part->index_granularity_info.index_granularity_bytes);
 
-        size_t steps = 0;
-
-        for (const auto & part_range : part_with_ranges.ranges)
+        GenericExclusionSearchSettings search_settings
         {
-            /// There will always be disjoint suspicious segments on the stack, the leftmost one at the top (back).
-            /// At each step, take the left segment and check if it fits.
-            /// If fits, split it into smaller ones and put them on the stack. If not, discard it.
-            /// If the segment is already of one mark length, add it to response and discard it.
+            .coarse_index_granularity = settings[Setting::merge_tree_coarse_index_granularity],
+            .max_steps = settings[Setting::merge_tree_generic_exclusion_search_max_steps],
+            .min_marks_for_seek = min_marks_for_seek,
+        };
 
-            std::vector<MarkRange> ranges_stack = {part_range};
-            while (!ranges_stack.empty())
-            {
-                MarkRange range = ranges_stack.back();
-                ranges_stack.pop_back();
+        auto search_result = genericExclusionSearch(
+            part_with_ranges.ranges,
+            [&](const MarkRange & mark_range) { return check_in_range(mark_range, BoolMask()); },
+            search_settings,
+            exact_ranges != nullptr);
 
-                ++steps;
-
-                auto result = check_in_range(range, BoolMask());
-                if (!result.can_be_true)
-                    continue;
-
-                if (!result.can_be_false || range.end == range.begin + 1)
-                {
-                    /// We saw a useful gap between neighboring marks. Either add it to the last range, or start a new range.
-                    if (res.empty() || range.begin - res.back().end > min_marks_for_seek)
-                        res.push_back(range);
-                    else
-                        res.back().end = range.end;
-
-                    if (exact_ranges && !result.can_be_false)
-                    {
-                        if (exact_ranges->empty() || range.begin - exact_ranges->back().end > min_marks_for_seek)
-                            exact_ranges->push_back(range);
-                        else
-                            exact_ranges->back().end = range.end;
-                    }
-                }
-                else
-                {
-                    /// Break the segment and put the result on the stack from right to left.
-                    size_t step = (range.end - range.begin - 1) / settings[Setting::merge_tree_coarse_index_granularity] + 1;
-                    size_t end = 0;
-
-                    for (end = range.end; end > range.begin + step; end -= step)
-                        ranges_stack.emplace_back(end - step, end);
-
-                    ranges_stack.emplace_back(range.begin, end);
-                }
-            }
-        }
+        res = std::move(search_result.ranges);
+        if (exact_ranges)
+            *exact_ranges = std::move(search_result.exact_ranges);
 
         res.search_algorithm = MarkRanges::SearchAlgorithm::GenericExclusionSearch;
         ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchAlgorithm);
+        if (search_result.reached_step_limit)
+            ProfileEvents::increment(ProfileEvents::IndexGenericExclusionSearchStepLimitReached);
         LOG_TRACE(
             log,
-            "Used generic exclusion search {}over index for part {} with {} steps",
+            "Used generic exclusion search {}over index for part {} with {} steps{}",
             exact_ranges ? "with exact ranges " : "",
             part_name,
-            steps);
+            search_result.num_steps,
+            search_result.reached_step_limit ? " (step limit reached, remaining ranges were accepted without further splitting)" : "");
     }
     else
     {
