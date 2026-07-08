@@ -348,7 +348,7 @@ public:
 
 class FinalizingViewsTransform final : public IProcessor
 {
-    static InputPorts initPorts(std::vector<Block> headers)
+    static InputPorts initPorts(Blocks headers)
     {
         InputPorts res;
         for (auto & header : headers)
@@ -357,7 +357,7 @@ class FinalizingViewsTransform final : public IProcessor
     }
 
 public:
-    FinalizingViewsTransform(std::vector<Block> headers, std::vector<StorageID> views, InsertDependenciesBuilder::ConstPtr insert_dependencies_, ViewErrorsRegistryPtr views_error_registry_)
+    FinalizingViewsTransform(Blocks headers, std::vector<StorageID> views, InsertDependenciesBuilder::ConstPtr insert_dependencies_, ViewErrorsRegistryPtr views_error_registry_)
         : IProcessor(initPorts(std::move(headers)), {Block()})
         , output(outputs.front())
         , insert_dependencies(insert_dependencies_)
@@ -953,20 +953,6 @@ VectorWithMemoryTracking<Chain> InsertDependenciesBuilder::createChainWithDepend
 }
 
 
-Chain InsertDependenciesBuilder::createRedefineDeduplicationInfoWithDataHashTransformChain() const
-{
-    const auto & dependent_views_ids = dependent_views.at(root_view);
-    if (dependent_views_ids.empty())
-        return {};
-
-    auto output_header = output_headers.at(root_view);
-
-    Chain chain;
-    chain.addSink(std::make_shared<RedefineDeduplicationInfoWithDataHashTransform>(output_header));
-    return chain;
-}
-
-
 Chain InsertDependenciesBuilder::createChainWithDependencies() const
 {
     Chain result;
@@ -982,7 +968,6 @@ Chain InsertDependenciesBuilder::createChainWithDependencies() const
     // When *Log storages push data to the dependent views, then `skip_destination_table` is true, data is pushed to the views only, not to the destination table
     if (!init_storage->noPushingToViewsOnInserts() || skip_destination_table)
     {
-        result = Chain::concat(std::move(result), createRedefineDeduplicationInfoWithDataHashTransformChain());
         result = Chain::concat(std::move(result), createPostSink(root_view));
     }
 
@@ -1370,7 +1355,7 @@ Chain InsertDependenciesBuilder::createSelect(StorageIDMaybeEmpty view_id) const
     }
 
 
-    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota());
+    auto counting = std::make_shared<CountingTransform>(output_header, insert_context->getQuota(), insert_context->getNormalizedQueryHash());
     counting->setProcessListElement(insert_context->getProcessListElement());
     counting->setProgressCallback(insert_context->getProgressCallback());
     counting->setRuntimeData(thread_groups.at(view_id));
@@ -1538,7 +1523,7 @@ Chain InsertDependenciesBuilder::createPostSink(StorageIDMaybeEmpty view_id) con
     VectorWithMemoryTracking<Chain> view_chains;
     view_chains.reserve(dependent_views_ids.size());
 
-    std::vector<Block> output_view_chains_headers;
+    Blocks output_view_chains_headers;
     output_view_chains_headers.reserve(dependent_views_ids.size());
 
     for (const auto & child_view_id : dependent_views_ids)

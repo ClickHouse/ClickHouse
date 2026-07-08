@@ -382,29 +382,32 @@ message ExprList {
     repeated Expr extra_exprs = 2;
 }
 
+message ExprInType {
+    oneof in_oneof {
+        Expr single_expr = 1;
+        ExprList array = 2;
+        ExprList tuple = 3;
+        ExplainQuery sel = 4;
+    }
+}
+
 message ExprIn {
     required ExprList expr = 1;
     required bool global = 2;
     required bool not = 3;
-    oneof in_oneof {
-        Expr single_expr = 4;
-        ExprList array = 5;
-        ExprList tuple = 6;
-        ExplainQuery sel = 7;
-    }
-}
-
-enum AnyAllSome {
-    AAS_ANY = 1;
-    AAS_ALL = 2;
-    AAS_SOME = 3;
+    required ExprInType in_type = 4;
 }
 
 message ExprAny {
+    enum AnyAllSome {
+        AAS_ANY = 1;
+        AAS_ALL = 2;
+        AAS_SOME = 3;
+    }
     required Expr expr = 1;
     required BinaryOperator op = 2;
     required AnyAllSome anyall = 3;
-    required ExplainQuery sel = 4;
+    required ExprInType in_type = 4;
 }
 
 message ExprTruthTests {
@@ -644,9 +647,12 @@ message IntervalExpr {
         CENTURY = 17;
         DECADE = 18;
         MILLENNIUM = 19;
+        TIMEZONE_HOUR = 20;
+        TIMEZONE_MINUTE = 21;
     }
     required Interval interval = 1;
     required Expr expr = 2;
+    required bool use_extract = 3;
 }
 
 /// Separate this out to inflate the probability of having a literal value
@@ -1535,6 +1541,7 @@ message Dynamic {
 message QBit {
     required FloatingPoints subtype = 1;
     required uint32 dimension = 2;
+    optional uint32 stride = 3;
 }
 
 message AggregateParam {

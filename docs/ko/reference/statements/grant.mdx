@@ -1,0 +1,867 @@
+---
+description: 'GRANT 문에 대한 문서'
+sidebarTitle: 'GRANT'
+slug: /sql-reference/statements/grant
+title: 'GRANT 문'
+doc_type: '참고'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+* ClickHouse 사용자 계정 또는 역할에 [권한](#privileges)을 부여합니다.
+* 사용자 계정이나 다른 역할에 역할을 할당합니다.
+
+권한을 취소하려면 [REVOKE](/ko/reference/statements/revoke) SQL 문을 사용하십시오. 또한 [SHOW GRANTS](/ko/reference/statements/show#show-grants) SQL 문을 사용해 부여된 권한 목록을 확인할 수 있습니다.
+
+<div id="granting-privilege-syntax">
+  ## 권한 부여 구문
+</div>
+
+```sql
+GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.table[*]|db[*].*|*.*|table[*]|*} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+```
+
+* `privilege` — 권한의 유형입니다.
+* `role` — ClickHouse 사용자 역할입니다.
+* `user` — ClickHouse 사용자 계정입니다.
+
+`WITH GRANT OPTION` 절은 `user` 또는 `role`에 `GRANT` 쿼리를 실행할 수 있는 권한을 부여합니다. 사용자는 자신이 보유한 것과 동일한 범위 또는 그보다 좁은 범위의 권한을 부여할 수 있습니다.
+`WITH REPLACE OPTION` 절은 `user` 또는 `role`의 기존 권한을 새 권한으로 대체하며, 지정하지 않으면 권한을 추가합니다.
+
+<div id="assigning-role-syntax">
+  ## 역할 할당 구문
+</div>
+
+```sql
+GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
+```
+
+* `role` — ClickHouse 사용자 역할.
+* `user` — ClickHouse 사용자 계정.
+
+`WITH ADMIN OPTION` 절은 `user` 또는 `role`에 [ADMIN OPTION](#admin-option) 권한을 부여합니다.
+`WITH REPLACE OPTION` 절은 `user` 또는 `role`의 기존 역할을 새 역할로 대체하고, 지정하지 않으면 역할을 추가합니다.
+
+<div id="grant-current-grants-syntax">
+  ## GRANT CURRENT GRANTS 구문
+</div>
+
+```sql
+GRANT CURRENT GRANTS{(privilege[(column_name [,...])] [,...] ON {db.table|db.*|*.*|table|*}) | ON {db.table|db.*|*.*|table|*}} TO {user | role | CURRENT_USER} [,...] [WITH GRANT OPTION] [WITH REPLACE OPTION]
+```
+
+* `privilege` — 권한의 유형입니다.
+* `role` — ClickHouse 사용자 역할입니다.
+* `user` — ClickHouse 사용자 계정입니다.
+
+`CURRENT GRANTS` 문을 사용하면 지정된 사용자 또는 역할에 명시한 모든 권한을 부여할 수 있습니다.
+권한을 하나도 지정하지 않으면 지정된 사용자 또는 역할에 `CURRENT_USER`에 대해 사용 가능한 모든 권한이 부여됩니다.
+
+<div id="usage">
+  ## 사용법
+</div>
+
+`GRANT`를 사용하려면 계정에 `GRANT OPTION` 권한이 있어야 합니다. 권한은 계정에 부여된 권한 범위 내에서만 부여할 수 있습니다.
+
+예를 들어, 관리자는 다음 쿼리를 사용해 `john` 계정에 권한을 부여했습니다.
+
+```sql
+GRANT SELECT(x,y) ON db.table TO john WITH GRANT OPTION
+```
+
+이는 `john`에게 다음을 실행할 권한이 있음을 의미합니다.
+
+* `SELECT x,y FROM db.table`.
+* `SELECT x FROM db.table`.
+* `SELECT y FROM db.table`.
+
+`john`은 `SELECT z FROM db.table`를 실행할 수 없습니다. `SELECT * FROM db.table`도 사용할 수 없습니다. ClickHouse는 이 쿼리를 처리할 때 `x`와 `y`를 포함해 어떤 데이터도 반환하지 않습니다. 유일한 예외는 테이블에 `x`와 `y` 컬럼만 있는 경우입니다. 이 경우 ClickHouse는 모든 데이터를 반환합니다.
+
+또한 `john`은 `GRANT OPTION` 권한도 가지고 있으므로, 동일하거나 더 좁은 범위의 권한을 다른 사용자에게 부여할 수 있습니다.
+
+`system` 데이터베이스에 대한 접근은 항상 허용됩니다(이 데이터베이스는 쿼리 처리에 사용되기 때문입니다).
+
+<Note>
+  기본적으로 새 사용자가 접근할 수 있는 시스템 테이블은 많지만, 권한 부여 없이는 모든 시스템 테이블에 기본적으로 접근할 수 있는 것은 아닙니다.
+  또한 `system.zookeeper`와 같은 일부 시스템 테이블에 대한 접근은 보안상의 이유로 Cloud 사용자에게 제한됩니다.
+</Note>
+
+하나의 쿼리로 여러 계정에 여러 권한을 부여할 수 있습니다. `GRANT SELECT, INSERT ON *.* TO john, robin` 쿼리를 사용하면 계정 `john`과 `robin`은 서버의 모든 데이터베이스에 있는 모든 테이블에서 `INSERT` 및 `SELECT` 쿼리를 실행할 수 있습니다.
+
+<div id="wildcard-grants">
+  ## 와일드카드 권한 부여
+</div>
+
+권한을 지정할 때 테이블이나 데이터베이스 이름 대신 별표(`*`)를 사용할 수 있습니다. 예를 들어 `GRANT SELECT ON db.* TO john` 쿼리는 `john`이 `db` 데이터베이스의 모든 테이블에서 `SELECT` 쿼리를 실행할 수 있도록 합니다.
+또한 데이터베이스 이름을 생략할 수도 있습니다. 이 경우 권한은 현재 데이터베이스에 부여됩니다.
+예를 들어 `GRANT SELECT ON * TO john`은 현재 데이터베이스의 모든 테이블에 권한을 부여하고, `GRANT SELECT ON mytable TO john`은 현재 데이터베이스의 `mytable` 테이블에 권한을 부여합니다.
+
+<Note>
+  아래에서 설명하는 기능은 ClickHouse 24.10 버전부터 사용할 수 있습니다.
+</Note>
+
+테이블이나 데이터베이스 이름 끝에도 별표를 붙일 수 있습니다. 이 기능을 사용하면 테이블 경로의 접두사에 대해 권한을 부여할 수 있습니다.
+예시: `GRANT SELECT ON db.my_tables* TO john`. 이 쿼리는 `john`이 `db` 데이터베이스에서 `my_tables*` 접두사를 가진 모든 테이블에 대해 `SELECT` 쿼리를 실행할 수 있도록 합니다.
+
+추가 예시:
+
+`GRANT SELECT ON db.my_tables* TO john`
+
+```sql
+SELECT * FROM db.my_tables -- 권한 부여됨
+SELECT * FROM db.my_tables_0 -- 권한 부여됨
+SELECT * FROM db.my_tables_1 -- 권한 부여됨
+
+SELECT * FROM db.other_table -- 권한 부여 안 됨
+SELECT * FROM db2.my_tables -- 권한 부여 안 됨
+```
+
+`GRANT SELECT ON db*.* TO john`
+
+```sql
+SELECT * FROM db.my_tables -- 권한 부여됨
+SELECT * FROM db.my_tables_0 -- 권한 부여됨
+SELECT * FROM db.my_tables_1 -- 권한 부여됨
+SELECT * FROM db.other_table -- 권한 부여됨
+SELECT * FROM db2.my_tables -- 권한 부여됨
+```
+
+권한이 부여된 경로 아래에서 새로 생성된 모든 테이블은 상위 경로의 모든 권한을 자동으로 상속받습니다.
+예를 들어, `GRANT SELECT ON db.* TO john` 쿼리를 실행한 다음 새 테이블 `db.new_table`을 생성하면 사용자 `john`은 `SELECT * FROM db.new_table` 쿼리를 실행할 수 있습니다.
+
+별표는 **오직** 프리픽스에만 지정할 수 있습니다:
+
+```sql
+GRANT SELECT ON db.* TO john -- 올바름
+GRANT SELECT ON db*.* TO john -- 올바름
+
+GRANT SELECT ON *.my_table TO john -- 잘못됨
+GRANT SELECT ON foo*bar TO john -- 잘못됨
+GRANT SELECT ON *suffix TO john -- 잘못됨
+GRANT SELECT(foo) ON db.table* TO john -- 잘못됨
+```
+
+<div id="privileges">
+  ## 권한
+</div>
+
+권한(Privilege)은 사용자가 특정 유형의 쿼리를 실행할 수 있도록 부여되는 권한입니다.
+
+권한은 계층 구조로 이루어져 있으며, 허용되는 쿼리 집합은 권한 범위에 따라 달라집니다.
+
+ClickHouse의 권한 계층 구조는 아래와 같습니다.
+
+* [`ALL`](#all)
+  * [`액세스 관리`](#access-management)
+    * `ALLOW SQL SECURITY NONE`
+    * `ALTER QUOTA`
+    * `ALTER ROLE`
+    * `ALTER ROW POLICY`
+    * `ALTER SETTINGS PROFILE`
+    * `ALTER USER`
+    * `CREATE QUOTA`
+    * `CREATE ROLE`
+    * `CREATE ROW POLICY`
+    * `CREATE SETTINGS PROFILE`
+    * `CREATE USER`
+    * `DROP QUOTA`
+    * `DROP ROLE`
+    * `DROP ROW POLICY`
+    * `DROP SETTINGS PROFILE`
+    * `DROP USER`
+    * `ROLE ADMIN`
+    * `SHOW ACCESS`
+      * `SHOW QUOTAS`
+      * `SHOW ROLES`
+      * `SHOW ROW POLICIES`
+      * `SHOW SETTINGS PROFILES`
+      * `SHOW USERS`
+  * [`ALTER`](#alter)
+    * `ALTER DATABASE`
+      * `ALTER DATABASE SETTINGS`
+    * `ALTER TABLE`
+      * `ALTER COLUMN`
+        * `ALTER ADD COLUMN`
+        * `ALTER CLEAR COLUMN`
+        * `ALTER COMMENT COLUMN`
+        * `ALTER DROP COLUMN`
+        * `ALTER MATERIALIZE COLUMN`
+        * `ALTER MODIFY COLUMN`
+        * `ALTER RENAME COLUMN`
+      * `ALTER CONSTRAINT`
+        * `ALTER ADD CONSTRAINT`
+        * `ALTER DROP CONSTRAINT`
+      * `ALTER DELETE`
+      * `ALTER FETCH PARTITION`
+      * `ALTER FREEZE PARTITION`
+      * `ALTER INDEX`
+        * `ALTER ADD INDEX`
+        * `ALTER CLEAR INDEX`
+        * `ALTER DROP INDEX`
+        * `ALTER MATERIALIZE INDEX`
+        * `ALTER ORDER BY`
+        * `ALTER SAMPLE BY`
+      * `ALTER MATERIALIZE TTL`
+      * `ALTER MODIFY COMMENT`
+      * `ALTER MOVE PARTITION`
+      * `ALTER PROJECTION`
+      * `ALTER SETTINGS`
+      * `ALTER STATISTICS`
+        * `ALTER ADD STATISTICS`
+        * `ALTER DROP STATISTICS`
+        * `ALTER MATERIALIZE STATISTICS`
+        * `ALTER MODIFY STATISTICS`
+      * `ALTER TTL`
+      * `ALTER UPDATE`
+      * `ALTER TABLE EXECUTE`
+    * `ALTER VIEW`
+      * `ALTER VIEW MODIFY QUERY`
+      * `ALTER VIEW REFRESH`
+      * `ALTER VIEW MODIFY SQL SECURITY`
+  * [`BACKUP`](#backup)
+  * [`CLUSTER`](#cluster)
+  * [`CREATE`](#create)
+    * `CREATE ARBITRARY TEMPORARY TABLE`
+      * `CREATE TEMPORARY TABLE`
+    * `CREATE DATABASE`
+    * `CREATE DICTIONARY`
+    * `CREATE FUNCTION`
+    * `CREATE RESOURCE`
+    * `CREATE TABLE`
+    * `CREATE VIEW`
+    * `CREATE WORKLOAD`
+  * [`dictGet`](#dictget)
+  * [`displaySecretsInShowAndSelect`](#displaysecretsinshowandselect)
+  * [`DROP`](#drop)
+    * `DROP DATABASE`
+    * `DROP DICTIONARY`
+    * `DROP FUNCTION`
+    * `DROP RESOURCE`
+    * `DROP TABLE`
+    * `DROP VIEW`
+    * `DROP WORKLOAD`
+  * [`INSERT`](#insert)
+  * [`내부 검사`](#introspection)
+    * `addressToLine`
+    * `addressToLineWithInlines`
+    * `addressToSymbol`
+    * `demangle`
+  * `KILL QUERY`
+  * `KILL TRANSACTION`
+  * `MOVE PARTITION BETWEEN SHARDS`
+  * [`NAMED COLLECTION ADMIN`](#named-collection-admin)
+    * `ALTER NAMED COLLECTION`
+    * `CREATE NAMED COLLECTION`
+    * `DROP NAMED COLLECTION`
+    * `NAMED COLLECTION`
+    * `SHOW NAMED COLLECTIONS`
+    * `SHOW NAMED COLLECTIONS SECRETS`
+  * [`OPTIMIZE`](#optimize)
+  * [`SELECT`](#select)
+  * [`SET DEFINER`](/ko/reference/statements/create/view#sql_security)
+  * [`SHOW`](#show)
+    * `SHOW COLUMNS`
+    * `SHOW DATABASES`
+    * `SHOW DICTIONARIES`
+    * `SHOW TABLES`
+  * `SHOW FILESYSTEM CACHES`
+  * [`SOURCES`](#sources)
+    * `AZURE`
+    * `FILE`
+    * `HDFS`
+    * `HIVE`
+    * `JDBC`
+    * `KAFKA`
+    * `MONGO`
+    * `MYSQL`
+    * `NATS`
+    * `ODBC`
+    * `POSTGRES`
+    * `RABBITMQ`
+    * `REDIS`
+    * `REMOTE`
+    * `S3`
+    * `SQLITE`
+    * `URL`
+  * [`SYSTEM`](#system)
+    * `SYSTEM CLEANUP`
+    * `SYSTEM DROP CACHE`
+      * `SYSTEM DROP COMPILED EXPRESSION CACHE`
+      * `SYSTEM DROP CONNECTIONS CACHE`
+      * `SYSTEM DROP DISTRIBUTED CACHE`
+      * `SYSTEM DROP DNS CACHE`
+      * `SYSTEM DROP FILESYSTEM CACHE`
+      * `SYSTEM DROP FORMAT SCHEMA CACHE`
+      * `SYSTEM DROP MARK CACHE`
+      * `SYSTEM DROP MMAP CACHE`
+      * `SYSTEM DROP PAGE CACHE`
+      * `SYSTEM DROP PRIMARY INDEX CACHE`
+      * `SYSTEM DROP QUERY CACHE`
+      * `SYSTEM DROP S3 CLIENT CACHE`
+      * `SYSTEM DROP SCHEMA CACHE`
+      * `SYSTEM DROP UNCOMPRESSED CACHE`
+    * `SYSTEM DROP PRIMARY INDEX CACHE`
+    * `SYSTEM DROP REPLICA`
+    * `SYSTEM FAILPOINT`
+    * `SYSTEM FETCHES`
+    * `SYSTEM FLUSH`
+      * `SYSTEM FLUSH ASYNC INSERT QUEUE`
+      * `SYSTEM FLUSH LOGS`
+    * `SYSTEM JEMALLOC`
+    * `SYSTEM KILL QUERY`
+    * `SYSTEM KILL TRANSACTION`
+    * `SYSTEM LISTEN`
+    * `SYSTEM LOAD PRIMARY KEY`
+    * `SYSTEM MERGES`
+    * `SYSTEM MOVES`
+    * `SYSTEM PULLING REPLICATION LOG`
+    * `SYSTEM REDUCE BLOCKING PARTS`
+    * `SYSTEM REPLICATION QUEUES`
+    * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESTART DISK`
+    * `SYSTEM RESTART REPLICA`
+    * `SYSTEM RESTORE REPLICA`
+    * `SYSTEM RELOAD`
+      * `SYSTEM RELOAD ASYNCHRONOUS METRICS`
+      * `SYSTEM RELOAD CONFIG`
+        * `SYSTEM RELOAD DICTIONARY`
+        * `SYSTEM RELOAD EMBEDDED DICTIONARIES`
+        * `SYSTEM RELOAD FUNCTION`
+        * `SYSTEM RELOAD MODEL`
+        * `SYSTEM RELOAD USERS`
+    * `SYSTEM SENDS`
+      * `SYSTEM DISTRIBUTED SENDS`
+      * `SYSTEM REPLICATED SENDS`
+    * `SYSTEM SHUTDOWN`
+    * `SYSTEM SYNC DATABASE REPLICA`
+    * `SYSTEM SYNC FILE CACHE`
+    * `SYSTEM SYNC FILESYSTEM CACHE`
+    * `SYSTEM SYNC REPLICA`
+    * `SYSTEM SYNC TRANSACTION LOG`
+    * `SYSTEM THREAD FUZZER`
+    * `SYSTEM TTL MERGES`
+    * `SYSTEM UNFREEZE`
+    * `SYSTEM UNLOAD PRIMARY KEY`
+    * `SYSTEM VIEWS`
+    * `SYSTEM VIRTUAL PARTS UPDATE`
+    * `SYSTEM WAIT LOADING PARTS`
+  * [`테이블 엔진`](#table-engine)
+  * [`TRUNCATE`](#truncate)
+  * `UNDROP TABLE`
+* [`NONE`](#none)
+
+이 계층 구조가 어떻게 취급되는지에 대한 예시는 다음과 같습니다.
+
+* `ALTER` 권한에는 다른 모든 `ALTER*` 권한이 포함됩니다.
+* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT` 및 `ALTER DROP CONSTRAINT` 권한이 포함됩니다.
+
+권한은 서로 다른 수준에서 적용됩니다. 각 수준을 알면 해당 권한에 사용할 수 있는 구문을 파악할 수 있습니다.
+
+수준(낮은 수준부터 높은 수준 순):
+
+* `COLUMN` — 권한은 컬럼, 테이블, 데이터베이스 또는 전역에 부여할 수 있습니다.
+* `TABLE` — 권한은 테이블, 데이터베이스 또는 전역에 부여할 수 있습니다.
+* `VIEW` — 권한은 뷰, 데이터베이스 또는 전역에 부여할 수 있습니다.
+* `DICTIONARY` — 권한은 딕셔너리, 데이터베이스 또는 전역에 부여할 수 있습니다.
+* `DATABASE` — 권한은 데이터베이스 또는 전역에 부여할 수 있습니다.
+* `GLOBAL` — 권한은 전역에만 부여할 수 있습니다.
+* `GROUP` — 서로 다른 수준의 권한을 그룹화합니다. `GROUP` 수준의 권한이 부여되면, 그룹에 속한 권한 중 사용된 구문에 해당하는 권한만 부여됩니다.
+
+허용되는 구문의 예시:
+
+* `GRANT SELECT(x) ON db.table TO user`
+* `GRANT SELECT ON db.* TO user`
+
+허용되지 않는 구문의 예시:
+
+* `GRANT CREATE USER(x) ON db.table TO user`
+* `GRANT CREATE USER ON db.* TO user`
+
+특수 권한 [ALL](#all)은 사용자 계정 또는 역할에 모든 권한을 부여합니다.
+
+기본적으로 사용자 계정이나 역할에는 권한이 없습니다.
+
+사용자나 역할에 권한이 없으면 [NONE](#none) 권한으로 표시됩니다.
+
+일부 쿼리는 구현 방식에 따라 여러 권한이 필요합니다. 예를 들어 [RENAME](/ko/reference/statements/optimize) 쿼리를 실행하려면 `SELECT`, `CREATE TABLE`, `INSERT`, `DROP TABLE` 권한이 필요합니다.
+
+<div id="select">
+  ### SELECT
+</div>
+
+[SELECT](/ko/reference/statements/select/index) 쿼리를 실행할 수 있습니다.
+
+권한 수준: `COLUMN`.
+
+**설명**
+
+이 권한이 부여된 사용자는 지정된 데이터베이스와 테이블에서 지정된 컬럼 목록에 대해 `SELECT` 쿼리를 실행할 수 있습니다. 사용자가 지정된 컬럼 외의 다른 컬럼을 포함하면 쿼리 결과가 반환되지 않습니다.
+
+다음 권한을 살펴보겠습니다:
+
+```sql
+GRANT SELECT(x,y) ON db.table TO john
+```
+
+이 권한이 있으면 `john`은 `db.table`의 `x` 및/또는 `y` 컬럼 데이터를 포함하는 모든 `SELECT` 쿼리를 실행할 수 있습니다. 예를 들어 `SELECT x FROM db.table`은 실행할 수 있습니다. `john`은 `SELECT z FROM db.table`은 실행할 수 없습니다. `SELECT * FROM db.table`도 실행할 수 없습니다. 이 쿼리를 처리할 때 ClickHouse는 `x`와 `y`를 포함해 어떤 데이터도 반환하지 않습니다. 유일한 예외는 테이블에 `x`와 `y` 컬럼만 있는 경우이며, 이때는 ClickHouse가 모든 데이터를 반환합니다.
+
+<div id="insert">
+  ### INSERT
+</div>
+
+[INSERT](/ko/reference/statements/insert-into) 쿼리를 실행할 수 있도록 허용합니다.
+
+권한 수준: `COLUMN`.
+
+**설명**
+
+이 권한이 부여된 사용자는 지정된 데이터베이스와 테이블의 지정된 컬럼 목록에 대해 `INSERT` 쿼리를 실행할 수 있습니다. 지정된 컬럼 외의 다른 컬럼이 포함되면 해당 쿼리는 데이터를 삽입하지 않습니다.
+
+**예시**
+
+```sql
+GRANT INSERT(x,y) ON db.table TO john
+```
+
+부여된 권한으로 `john`은 `db.table`의 `x` 및/또는 `y` 컬럼에 데이터를 삽입할 수 있습니다.
+
+<div id="alter">
+  ### ALTER
+</div>
+
+다음 권한 계층에 따라 [ALTER](/ko/reference/statements/alter/index) 쿼리 실행을 허용합니다:
+
+* `ALTER`. 수준: `COLUMN`.
+  * `ALTER TABLE`. 수준: `GROUP`
+  * `ALTER UPDATE`. 수준: `COLUMN`. 별칭: `UPDATE`
+  * `ALTER DELETE`. 수준: `COLUMN`. 별칭: `DELETE`
+  * `ALTER COLUMN`. 수준: `GROUP`
+  * `ALTER ADD COLUMN`. 수준: `COLUMN`. 별칭: `ADD COLUMN`
+  * `ALTER DROP COLUMN`. 수준: `COLUMN`. 별칭: `DROP COLUMN`
+  * `ALTER MODIFY COLUMN`. 수준: `COLUMN`. 별칭: `MODIFY COLUMN`
+  * `ALTER COMMENT COLUMN`. 수준: `COLUMN`. 별칭: `COMMENT COLUMN`
+  * `ALTER CLEAR COLUMN`. 수준: `COLUMN`. 별칭: `CLEAR COLUMN`
+  * `ALTER RENAME COLUMN`. 수준: `COLUMN`. 별칭: `RENAME COLUMN`
+  * `ALTER INDEX`. 수준: `GROUP`. 별칭: `INDEX`
+  * `ALTER ORDER BY`. 수준: `TABLE`. 별칭: `ALTER MODIFY ORDER BY`, `MODIFY ORDER BY`
+  * `ALTER SAMPLE BY`. 수준: `TABLE`. 별칭: `ALTER MODIFY SAMPLE BY`, `MODIFY SAMPLE BY`
+  * `ALTER ADD INDEX`. 수준: `TABLE`. 별칭: `ADD INDEX`
+  * `ALTER DROP INDEX`. 수준: `TABLE`. 별칭: `DROP INDEX`
+  * `ALTER MATERIALIZE INDEX`. 수준: `TABLE`. 별칭: `MATERIALIZE INDEX`
+  * `ALTER CLEAR INDEX`. 수준: `TABLE`. 별칭: `CLEAR INDEX`
+  * `ALTER CONSTRAINT`. 수준: `GROUP`. 별칭: `CONSTRAINT`
+  * `ALTER ADD CONSTRAINT`. 수준: `TABLE`. 별칭: `ADD CONSTRAINT`
+  * `ALTER DROP CONSTRAINT`. 수준: `TABLE`. 별칭: `DROP CONSTRAINT`
+  * `ALTER TTL`. 수준: `TABLE`. 별칭: `ALTER MODIFY TTL`, `MODIFY TTL`
+  * `ALTER MATERIALIZE TTL`. 수준: `TABLE`. 별칭: `MATERIALIZE TTL`
+  * `ALTER SETTINGS`. 수준: `TABLE`. 별칭: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
+  * `ALTER MOVE PARTITION`. 수준: `TABLE`. 별칭: `ALTER MOVE PART`, `MOVE PARTITION`, `MOVE PART`
+  * `ALTER FETCH PARTITION`. 수준: `TABLE`. 별칭: `ALTER FETCH PART`, `FETCH PARTITION`, `FETCH PART`
+  * `ALTER FREEZE PARTITION`. 수준: `TABLE`. 별칭: `FREEZE PARTITION`
+  * `ALTER EXECUTE`. 수준: `TABLE`. 별칭: `ALTER TABLE EXECUTE`
+  * `ALTER VIEW`. 수준: `GROUP`
+  * `ALTER VIEW REFRESH`. 수준: `VIEW`. 별칭: `REFRESH VIEW`
+  * `ALTER VIEW MODIFY QUERY`. 수준: `VIEW`. 별칭: `ALTER TABLE MODIFY QUERY`
+  * `ALTER VIEW MODIFY SQL SECURITY`. 수준: `VIEW`. 별칭: `ALTER TABLE MODIFY SQL SECURITY`
+
+이 계층이 적용되는 방식의 예시는 다음과 같습니다:
+
+* `ALTER` 권한에는 다른 모든 `ALTER*` 권한이 포함됩니다.
+* `ALTER CONSTRAINT` 권한에는 `ALTER ADD CONSTRAINT` 및 `ALTER DROP CONSTRAINT` 권한이 포함됩니다.
+
+**참고**
+
+* `MODIFY SETTING` 권한은 테이블 엔진 설정을 수정할 수 있게 해줍니다. 이 권한은 설정이나 서버 구성 매개변수에는 영향을 주지 않습니다.
+* `ATTACH` 작업에는 [CREATE](#create) 권한이 필요합니다.
+* `DETACH` 작업에는 [DROP](#drop) 권한이 필요합니다.
+* [KILL MUTATION](/ko/reference/statements/kill#kill-mutation) 쿼리로 mutation을 중지하려면, 해당 mutation을 시작할 수 있는 권한이 있어야 합니다. 예를 들어 `ALTER UPDATE` 쿼리를 중지하려면 `ALTER UPDATE`, `ALTER TABLE` 또는 `ALTER` 권한이 필요합니다.
+
+<div id="backup">
+  ### BACKUP
+</div>
+
+쿼리에서 [`BACKUP`]을 실행할 수 있도록 합니다. 백업에 대한 자세한 내용은 [&quot;백업 및 복원&quot;](/ko/concepts/features/backup-restore/overview)을 참조하십시오.
+
+<div id="create">
+  ### CREATE
+</div>
+
+다음 권한 계층에 따라 [CREATE](/ko/reference/statements/create/index) 및 [ATTACH](/ko/reference/statements/attach) DDL 쿼리의 실행을 허용합니다:
+
+* `CREATE`. 수준: `GROUP`
+  * `CREATE DATABASE`. 수준: `DATABASE`
+  * `CREATE TABLE`. 수준: `TABLE`
+    * `CREATE ARBITRARY TEMPORARY TABLE`. 수준: `GLOBAL`
+      * `CREATE TEMPORARY TABLE`. 수준: `GLOBAL`
+  * `CREATE VIEW`. 수준: `VIEW`
+  * `CREATE DICTIONARY`. 수준: `DICTIONARY`
+
+**참고**
+
+* 생성한 테이블을 삭제하려면 [DROP](#drop) 권한이 필요합니다.
+
+<div id="cluster">
+  ### CLUSTER
+</div>
+
+`ON CLUSTER` 쿼리 실행을 허용합니다.
+
+```sql title="Syntax"
+GRANT CLUSTER ON *.* TO <username>
+```
+
+기본적으로 `ON CLUSTER`가 포함된 쿼리를 실행하려면 사용자에게 `CLUSTER` 권한이 있어야 합니다.
+먼저 `CLUSTER` 권한을 부여하지 않은 상태에서 쿼리에서 `ON CLUSTER`를 사용하려고 하면 다음과 같은 오류가 발생합니다:
+
+```text
+권한이 부족합니다. 이 쿼리를 실행하려면 CLUSTER ON *.* 권한이 필요합니다. 
+```
+
+기본 동작은 `config.xml`의 `access_control_improvements` 섹션에 있는
+`on_cluster_queries_require_cluster_grant` 설정(아래 참조)을 `false`로 지정하여 변경할 수 있습니다.
+
+```yaml title="config.xml"
+<access_control_improvements>
+    <on_cluster_queries_require_cluster_grant>true</on_cluster_queries_require_cluster_grant>
+</access_control_improvements>
+```
+
+<div id="drop">
+  ### DROP
+</div>
+
+다음과 같은 권한 계층에 따라 [DROP](/ko/reference/statements/drop) 및 [DETACH](/ko/reference/statements/detach) 쿼리를 실행할 수 있습니다.
+
+* `DROP`. 수준: `GROUP`
+  * `DROP DATABASE`. 수준: `DATABASE`
+  * `DROP TABLE`. 수준: `TABLE`
+  * `DROP VIEW`. 수준: `VIEW`
+  * `DROP DICTIONARY`. 수준: `DICTIONARY`
+
+<div id="truncate">
+  ### TRUNCATE
+</div>
+
+[TRUNCATE](/ko/reference/statements/truncate) 쿼리 실행을 허용합니다.
+
+권한 수준: `TABLE`.
+
+<div id="optimize">
+  ### OPTIMIZE
+</div>
+
+[OPTIMIZE TABLE](/ko/reference/statements/optimize) 쿼리 실행을 허용합니다.
+
+권한 수준: `TABLE`.
+
+<div id="show">
+  ### SHOW
+</div>
+
+다음 권한 계층에 따라 `SHOW`, `DESCRIBE`, `USE`, `EXISTS` 쿼리를 실행할 수 있습니다.
+
+* `SHOW`. 수준: `GROUP`
+  * `SHOW DATABASES`. 수준: `DATABASE`. `SHOW DATABASES`, `SHOW CREATE DATABASE`, `USE <database>` 쿼리를 실행할 수 있습니다.
+  * `SHOW TABLES`. 수준: `TABLE`. `SHOW TABLES`, `EXISTS <table>`, `CHECK <table>` 쿼리를 실행할 수 있습니다.
+  * `SHOW COLUMNS`. 수준: `COLUMN`. `SHOW CREATE TABLE`, `DESCRIBE` 쿼리를 실행할 수 있습니다.
+  * `SHOW DICTIONARIES`. 수준: `DICTIONARY`. `SHOW DICTIONARIES`, `SHOW CREATE DICTIONARY`, `EXISTS <dictionary>` 쿼리를 실행할 수 있습니다.
+
+**참고**
+
+지정된 테이블, 딕셔너리 또는 데이터베이스에 대한 다른 권한을 하나라도 보유한 사용자는 `SHOW` 권한도 가집니다.
+
+<div id="kill-query">
+  ### KILL QUERY
+</div>
+
+다음 권한 계층에 따라 [KILL](/ko/reference/statements/kill#kill-query) 쿼리 실행을 허용합니다:
+
+권한 수준: `GLOBAL`.
+
+**참고**
+
+`KILL QUERY` 권한이 있으면 다른 사용자의 쿼리를 종료할 수 있습니다.
+
+<div id="access-management">
+  ### 액세스 관리
+</div>
+
+사용자, 역할, 행 정책을 관리하는 쿼리를 실행할 수 있게 합니다.
+
+* `ACCESS MANAGEMENT`. 수준: `GROUP`
+  * `CREATE USER`. 수준: `GLOBAL`
+  * `ALTER USER`. 수준: `GLOBAL`
+  * `DROP USER`. 수준: `GLOBAL`
+  * `CREATE ROLE`. 수준: `GLOBAL`
+  * `ALTER ROLE`. 수준: `GLOBAL`
+  * `DROP ROLE`. 수준: `GLOBAL`
+  * `ROLE ADMIN`. 수준: `GLOBAL`
+  * `CREATE ROW POLICY`. 수준: `GLOBAL`. 별칭: `CREATE POLICY`
+  * `ALTER ROW POLICY`. 수준: `GLOBAL`. 별칭: `ALTER POLICY`
+  * `DROP ROW POLICY`. 수준: `GLOBAL`. 별칭: `DROP POLICY`
+  * `CREATE QUOTA`. 수준: `GLOBAL`
+  * `ALTER QUOTA`. 수준: `GLOBAL`
+  * `DROP QUOTA`. 수준: `GLOBAL`
+  * `CREATE SETTINGS PROFILE`. 수준: `GLOBAL`. 별칭: `CREATE PROFILE`
+  * `ALTER SETTINGS PROFILE`. 수준: `GLOBAL`. 별칭: `ALTER PROFILE`
+  * `DROP SETTINGS PROFILE`. 수준: `GLOBAL`. 별칭: `DROP PROFILE`
+  * `SHOW ACCESS`. 수준: `GROUP`
+    * `SHOW_USERS`. 수준: `GLOBAL`. 별칭: `SHOW CREATE USER`
+    * `SHOW_ROLES`. 수준: `GLOBAL`. 별칭: `SHOW CREATE ROLE`
+    * `SHOW_ROW_POLICIES`. 수준: `GLOBAL`. 별칭: `SHOW POLICIES`, `SHOW CREATE ROW POLICY`, `SHOW CREATE POLICY`
+    * `SHOW_QUOTAS`. 수준: `GLOBAL`. 별칭: `SHOW CREATE QUOTA`
+    * `SHOW_SETTINGS_PROFILES`. 수준: `GLOBAL`. 별칭: `SHOW PROFILES`, `SHOW CREATE SETTINGS PROFILE`, `SHOW CREATE PROFILE`
+  * `ALLOW SQL SECURITY NONE`. 수준: `GLOBAL`. 별칭: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
+
+`ROLE ADMIN` 권한이 있으면 admin 옵션과 함께 사용자에게 부여되지 않은 역할을 포함해 모든 역할을 할당하거나 회수할 수 있습니다.
+
+<div id="system">
+  ### SYSTEM
+</div>
+
+다음 권한 계층에 따라 사용자가 [SYSTEM](/ko/reference/statements/system) 쿼리를 실행할 수 있습니다.
+
+* `SYSTEM`. 수준: `GROUP`
+  * `SYSTEM SHUTDOWN`. 수준: `GLOBAL`. 별칭: `SYSTEM KILL`, `SHUTDOWN`
+  * `SYSTEM DROP CACHE`. 별칭: `DROP CACHE`
+    * `SYSTEM DROP DNS CACHE`. 수준: `GLOBAL`. 별칭: `SYSTEM CLEAR DNS CACHE`, `SYSTEM DROP DNS`, `DROP DNS CACHE`, `DROP DNS`
+    * `SYSTEM DROP MARK CACHE`. 수준: `GLOBAL`. 별칭: `SYSTEM CLEAR MARK CACHE`, `SYSTEM DROP MARK`, `DROP MARK CACHE`, `DROP MARKS`
+    * `SYSTEM DROP UNCOMPRESSED CACHE`. 수준: `GLOBAL`. 별칭: `SYSTEM CLEAR UNCOMPRESSED CACHE`, `SYSTEM DROP UNCOMPRESSED`, `DROP UNCOMPRESSED CACHE`, `DROP UNCOMPRESSED`
+  * `SYSTEM RELOAD`. 수준: `GROUP`
+    * `SYSTEM RELOAD CONFIG`. 수준: `GLOBAL`. 별칭: `RELOAD CONFIG`
+    * `SYSTEM RELOAD DICTIONARY`. 수준: `GLOBAL`. 별칭: `SYSTEM RELOAD DICTIONARIES`, `RELOAD DICTIONARY`, `RELOAD DICTIONARIES`
+      * `SYSTEM RELOAD EMBEDDED DICTIONARIES`. 수준: `GLOBAL`. 별칭: `RELOAD EMBEDDED DICTIONARIES`
+  * `SYSTEM MERGES`. 수준: `TABLE`. 별칭: `SYSTEM STOP MERGES`, `SYSTEM START MERGES`, `STOP MERGES`, `START MERGES`
+  * `SYSTEM TTL MERGES`. 수준: `TABLE`. 별칭: `SYSTEM STOP TTL MERGES`, `SYSTEM START TTL MERGES`, `STOP TTL MERGES`, `START TTL MERGES`
+  * `SYSTEM FETCHES`. 수준: `TABLE`. 별칭: `SYSTEM STOP FETCHES`, `SYSTEM START FETCHES`, `STOP FETCHES`, `START FETCHES`
+  * `SYSTEM MOVES`. 수준: `TABLE`. 별칭: `SYSTEM STOP MOVES`, `SYSTEM START MOVES`, `STOP MOVES`, `START MOVES`
+  * `SYSTEM SENDS`. 수준: `GROUP`. 별칭: `SYSTEM STOP SENDS`, `SYSTEM START SENDS`, `STOP SENDS`, `START SENDS`
+    * `SYSTEM DISTRIBUTED SENDS`. 수준: `TABLE`. 별칭: `SYSTEM STOP DISTRIBUTED SENDS`, `SYSTEM START DISTRIBUTED SENDS`, `STOP DISTRIBUTED SENDS`, `START DISTRIBUTED SENDS`
+    * `SYSTEM REPLICATED SENDS`. 수준: `TABLE`. 별칭: `SYSTEM STOP REPLICATED SENDS`, `SYSTEM START REPLICATED SENDS`, `STOP REPLICATED SENDS`, `START REPLICATED SENDS`
+  * `SYSTEM REPLICATION QUEUES`. 수준: `TABLE`. 별칭: `SYSTEM STOP REPLICATION QUEUES`, `SYSTEM START REPLICATION QUEUES`, `STOP REPLICATION QUEUES`, `START REPLICATION QUEUES`
+  * `SYSTEM SYNC REPLICA`. 수준: `TABLE`. 별칭: `SYNC REPLICA`
+  * `SYSTEM RESTART REPLICA`. 수준: `TABLE`. 별칭: `RESTART REPLICA`
+  * `SYSTEM FLUSH`. 수준: `GROUP`
+    * `SYSTEM FLUSH DISTRIBUTED`. 수준: `TABLE`. 별칭: `FLUSH DISTRIBUTED`
+    * `SYSTEM FLUSH LOGS`. 수준: `GLOBAL`. 별칭: `FLUSH LOGS`
+
+`SYSTEM RELOAD DICTIONARY ON *.*` 권한이 있으면 `SYSTEM RELOAD EMBEDDED DICTIONARIES` 권한도 암묵적으로 부여됩니다.
+
+<div id="introspection">
+  ### INTROSPECTION
+</div>
+
+[인트로스펙션](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler) 함수를 사용할 수 있습니다.
+
+* `INTROSPECTION`. 수준: `GROUP`. 별칭: `INTROSPECTION FUNCTIONS`
+  * `addressToLine`. 수준: `GLOBAL`
+  * `addressToLineWithInlines`. 수준: `GLOBAL`
+  * `addressToSymbol`. 수준: `GLOBAL`
+  * `demangle`. 수준: `GLOBAL`
+
+<div id="sources">
+  ### SOURCES
+</div>
+
+외부 데이터 소스를 사용할 수 있도록 허용합니다. [테이블 엔진](/ko/reference/engines/table-engines/index) 및 [테이블 함수](/ko/reference/functions/table-functions/index)에 적용됩니다.
+
+* `READ`. 수준: `GLOBAL_WITH_PARAMETER`
+* `WRITE`. 수준: `GLOBAL_WITH_PARAMETER`
+
+가능한 매개변수:
+
+* `AZURE`
+* `FILE`
+* `HDFS`
+* `HIVE`
+* `JDBC`
+* `KAFKA`
+* `MONGO`
+* `MYSQL`
+* `NATS`
+* `ODBC`
+* `POSTGRES`
+* `RABBITMQ`
+* `REDIS`
+* `REMOTE`
+* `S3`
+* `SQLITE`
+* `URL`
+
+<Note>
+  소스에 대한 READ/WRITE 권한 분리는 버전 25.7부터 사용할 수 있으며, 서버 설정
+  `access_control_improvements.enable_read_write_grants`
+  이 활성화된 경우에만 지원됩니다.
+
+  그렇지 않으면 `GRANT AZURE ON *.* TO user` 구문을 사용해야 하며, 이는 새로운 `GRANT READ, WRITE ON AZURE TO user`와 동일합니다.
+</Note>
+
+예시:
+
+* [MySQL 테이블 엔진](/ko/reference/engines/table-engines/integrations/mysql)으로 테이블을 생성하려면 `CREATE TABLE (ON db.table_name)` 및 `MYSQL` 권한이 필요합니다.
+* [MySQL 테이블 함수](/ko/reference/functions/table-functions/mysql)를 사용하려면 `CREATE TEMPORARY TABLE` 및 `MYSQL` 권한이 필요합니다.
+
+<div id="source-filter-grants">
+  ### 소스 필터 권한 부여
+</div>
+
+<Note>
+  이 기능은 버전 25.8부터 사용할 수 있으며, 서버 설정
+  `access_control_improvements.enable_read_write_grants`
+  이 활성화된 경우에만 지원됩니다.
+</Note>
+
+정규식 필터를 사용해 특정 소스 URI에 대한 접근 권한을 부여할 수 있습니다. 이를 통해 사용자가 접근할 수 있는 외부 데이터 소스를 세부적으로 제어할 수 있습니다.
+
+**구문:**
+
+```sql
+GRANT READ ON S3('regexp_pattern') TO user
+```
+
+이 권한을 부여하면 사용자는 지정된 정규식 패턴과 일치하는 S3 URI에서만 읽을 수 있습니다.
+
+**예시:**
+
+특정 S3 버킷 경로에 대한 액세스 권한을 부여합니다:
+
+```sql
+-- 사용자가 s3://foo/ 경로에서만 읽을 수 있도록 허용
+GRANT READ ON S3('s3://foo/.*') TO john
+
+-- 사용자가 특정 파일 패턴에서 읽을 수 있도록 허용
+GRANT READ ON S3('s3://mybucket/data/2024/.*\.parquet') TO analyst
+
+-- 동일한 사용자에게 여러 필터를 부여할 수 있음
+GRANT READ ON S3('s3://foo/.*') TO john
+GRANT READ ON S3('s3://bar/.*') TO john
+```
+
+<Warning>
+  소스 필터는 **regexp**를 매개변수로 받으므로, 다음 권한 부여
+  `GRANT READ ON URL('http://www.google.com') TO john;`
+
+  는 다음 쿼리를 허용합니다.
+
+  ```sql
+  SELECT * FROM url('https://www.google.com');
+  SELECT * FROM url('https://www-google.com');
+  ```
+
+  이는 `.`가 regexp에서 `Any Single Character`로 처리되기 때문입니다.
+  이로 인해 잠재적인 취약점이 발생할 수 있습니다. 올바른 권한 부여는 다음과 같아야 합니다.
+
+  ```sql
+  GRANT READ ON URL('https://www\.google\.com') TO john;
+  ```
+</Warning>
+
+**GRANT OPTION을 사용한 재권한 부여:**
+
+원래 권한 부여에 `WITH GRANT OPTION`이 있으면 `GRANT CURRENT GRANTS`를 사용해 다시 권한을 부여할 수 있습니다.
+
+```sql
+-- GRANT OPTION이 포함된 원본 권한 부여
+GRANT READ ON S3('s3://foo/.*') TO john WITH GRANT OPTION
+
+-- 이제 John은 이 접근 권한을 다른 사용자에게 재부여할 수 있습니다
+GRANT CURRENT GRANTS(READ ON S3) TO alice
+```
+
+**중요한 제한 사항:**
+
+* **부분 철회는 허용되지 않습니다:** 이미 권한이 부여된 filter 패턴의 부분 집합만 철회할 수는 없습니다. 필요한 경우 전체 권한 부여를 철회한 후 새 패턴으로 다시 권한을 부여해야 합니다.
+* **와일드카드 권한 부여는 허용되지 않습니다:** `GRANT READ ON *('regexp')` 또는 이와 유사한 와일드카드 전용 패턴은 사용할 수 없습니다. 반드시 구체적인 source를 지정해야 합니다.
+
+<div id="dictget">
+  ### dictGet
+</div>
+
+* `dictGet`. 별칭: `dictHas`, `dictGetHierarchy`, `dictIsIn`
+
+사용자가 [dictGet](/ko/reference/functions/regular-functions/ext-dict-functions#dictGet), [dictHas](/ko/reference/functions/regular-functions/ext-dict-functions#dictHas), [dictGetHierarchy](/ko/reference/functions/regular-functions/ext-dict-functions#dictGetHierarchy), [dictIsIn](/ko/reference/functions/regular-functions/ext-dict-functions#dictIsIn) 함수를 실행할 수 있게 합니다.
+
+권한 수준: `DICTIONARY`.
+
+**예시**
+
+* `GRANT dictGet ON mydb.mydictionary TO john`
+* `GRANT dictGet ON mydictionary TO john`
+
+<div id="displaysecretsinshowandselect">
+  ### displaySecretsInShowAndSelect
+</div>
+
+[`display_secrets_in_show_and_select` 서버 설정](/ko/reference/settings/server-settings/settings#display_secrets_in_show_and_select)
+및
+[`format_display_secrets_in_show_and_select` 포맷 설정](/ko/reference/settings/formats#format_display_secrets_in_show_and_select)
+이 모두 활성화되어 있으면, `SHOW` 및 `SELECT` 쿼리에서 시크릿을 볼 수 있습니다.
+
+<div id="named-collection-admin">
+  ### NAMED COLLECTION ADMIN
+</div>
+
+지정된 명명된 컬렉션에 대해 특정 작업을 허용합니다. 버전 23.7 이전에는 NAMED COLLECTION CONTROL이라고 불렸고, 23.7부터는 NAMED COLLECTION ADMIN이 추가되었으며 NAMED COLLECTION CONTROL은 별칭으로 유지됩니다.
+
+* `NAMED COLLECTION ADMIN`. 수준: `NAMED_COLLECTION`. 별칭: `NAMED COLLECTION CONTROL`
+  * `CREATE NAMED COLLECTION`. 수준: `NAMED_COLLECTION`
+  * `DROP NAMED COLLECTION`. 수준: `NAMED_COLLECTION`
+  * `ALTER NAMED COLLECTION`. 수준: `NAMED_COLLECTION`
+  * `SHOW NAMED COLLECTIONS`. 수준: `NAMED_COLLECTION`. 별칭: `SHOW NAMED COLLECTIONS`
+  * `SHOW NAMED COLLECTIONS SECRETS`. 수준: `NAMED_COLLECTION`. 별칭: `SHOW NAMED COLLECTIONS SECRETS`
+  * `NAMED COLLECTION`. 수준: `NAMED_COLLECTION`. 별칭: `NAMED COLLECTION USAGE, USE NAMED COLLECTION`
+
+다른 모든 권한(CREATE, DROP, ALTER, SHOW)과 달리, NAMED COLLECTION 권한은 23.7에서만 추가되었고 나머지는 그보다 앞선 22.12에 추가되었습니다.
+
+**예시**
+
+명명된 컬렉션의 이름이 abc라고 가정하면, 사용자 john에게 CREATE NAMED COLLECTION 권한을 부여합니다.
+
+* `GRANT CREATE NAMED COLLECTION ON abc TO john`
+
+<div id="table-engine">
+  ### 테이블 엔진
+</div>
+
+테이블을 생성할 때 지정된 테이블 엔진을 사용할 수 있도록 허용합니다. [테이블 엔진](/ko/reference/engines/table-engines/index)에 적용됩니다.
+
+**예시**
+
+* `GRANT TABLE ENGINE ON * TO john`
+* `GRANT TABLE ENGINE ON TinyLog TO john`
+
+<Note>
+  기본적으로는 하위 호환성 때문에 특정 테이블 엔진으로 테이블을 생성할 때 권한 부여를 확인하지 않습니다.
+  하지만 config.xml에서 [`table_engines_require_grant`를 true로 설정](https://github.com/ClickHouse/ClickHouse/blob/df970ed64eaf472de1e7af44c21ec95956607ebb/programs/server/config.xml#L853-L855)하여 이 동작을 변경할 수 있습니다.
+</Note>
+
+외부 소스를 사용하는 일부 테이블 엔진은 해당 소스에 대한 `READ`/`WRITE` 권한이 필요할 수 있습니다. [SOURCES](#sources)를 참조하십시오.
+
+예를 들어 AzureBlobStorage 테이블 엔진에는 다음과 같은 권한 부여가 필요할 수 있습니다.
+
+* `GRANT READ, WRITE ON AZURE TO john`
+
+<div id="all">
+  ### ALL
+</div>
+
+<CloudNotSupportedBadge />
+
+규제된 엔터티에 대한 모든 권한을 사용자 계정 또는 역할에 부여합니다.
+
+<Note>
+  `ALL` 권한은 ClickHouse Cloud에서 지원되지 않으며, 이 환경에서 `default` 사용자는 제한된 권한만 가집니다. 사용자는 `default_role`을 부여해 사용자에게 최대 권한을 부여할 수 있습니다. 자세한 내용은 [여기](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users)를 참조하십시오.
+  또한 사용자는 `default` 사용자로 `GRANT CURRENT GRANTS`를 사용해 `ALL`과 유사한 효과를 얻을 수 있습니다.
+</Note>
+
+<div id="none">
+  ### NONE
+</div>
+
+어떤 권한도 부여하지 않습니다.
+
+<div id="admin-option">
+  ### ADMIN OPTION
+</div>
+
+`ADMIN OPTION` 권한이 있으면 사용자는 자신의 역할을 다른 사용자에게 부여할 수 있습니다.

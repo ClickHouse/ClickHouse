@@ -9,6 +9,7 @@
 #include <IO/ReadBufferFromFile.h>
 
 #include <condition_variable>
+#include <source_location>
 #include <string>
 #include <vector>
 #include <optional>
@@ -27,12 +28,17 @@ class ReadBuffer;
 
 struct AsynchronousMetricValue
 {
-    double value;
-    const char * documentation;
+    double value = 0;
+    const char * documentation = nullptr;
+    /// The source file where this metric and its documentation are produced. Asynchronous metrics are defined across
+    /// several files (`AsynchronousMetrics.cpp`, `ServerAsynchronousMetrics.cpp`, `KeeperAsynchronousMetrics.cpp`, ...),
+    /// so it is captured per metric at the construction site via the constructor's default argument. Used by
+    /// `system.documentation`. May be `nullptr` for a default-constructed value (before it is assigned).
+    const char * source = nullptr;
 
     template <typename T>
-    AsynchronousMetricValue(T value_, const char * documentation_)
-        : value(static_cast<double>(value_)), documentation(documentation_) {}
+    AsynchronousMetricValue(T value_, const char * documentation_, std::source_location source_ = std::source_location::current())
+        : value(static_cast<double>(value_)), documentation(documentation_), source(source_.file_name()) {}
     AsynchronousMetricValue() = default; /// For std::unordered_map::operator[].
 };
 
