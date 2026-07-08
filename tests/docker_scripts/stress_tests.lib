@@ -266,19 +266,25 @@ function wait_server_port_free()
     fi
 }
 
+# Single source of truth for the full stateless-server listen-port set.
+# Parsed by ci/jobs/scripts/clickhouse_proc.py, so keep the assignment on one
+# line in the form  CLICKHOUSE_SERVER_PORTS="..."  (see _server_ports there).
+#   8123  HTTP               9010  TCP with proxy protocol
+#   8443  HTTPS              9022  SSH
+#   9000  Native TCP         9100  gRPC
+#   9004  MySQL compat       9181  Keeper
+#   9005  PostgreSQL compat  9234  Keeper Raft
+#   9009  Interserver HTTP   9440  Native TCP TLS
+#                            9988  Prometheus
+CLICKHOUSE_SERVER_PORTS="8123 8443 9000 9004 9005 9009 9010 9022 9100 9181 9234 9440 9988"
+
 function wait_server_ports_free()
 {
     # Wait for all ClickHouse listen ports to become available.
     # In debug+ThreadFuzzer builds, shutdown is slow and the kernel
     # may still hold sockets from the previous server instance.
-    #   8123  HTTP               9010  TCP with proxy protocol
-    #   8443  HTTPS              9022  SSH
-    #   9000  Native TCP         9100  gRPC
-    #   9004  MySQL compat       9181  Keeper
-    #   9005  PostgreSQL compat  9234  Keeper Raft
-    #   9009  Interserver HTTP   9440  Native TCP TLS
-    #                            9988  Prometheus
-    for port in 8123 8443 9000 9004 9005 9009 9010 9022 9100 9181 9234 9440 9988; do
+    # Port list documented at CLICKHOUSE_SERVER_PORTS above.
+    for port in $CLICKHOUSE_SERVER_PORTS; do
         wait_server_port_free "$port"
     done
 }

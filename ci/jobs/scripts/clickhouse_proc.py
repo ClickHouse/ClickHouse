@@ -445,6 +445,24 @@ profiles:
             verbose=True,
         )
 
+    # Single source of truth for the stateless-server listen ports is the
+    # CLICKHOUSE_SERVER_PORTS assignment in tests/docker_scripts/stress_tests.lib
+    # (also consumed by wait_server_ports_free there). Parse it instead of
+    # keeping a second hard-coded copy that can silently drift.
+    _STRESS_TESTS_LIB = "tests/docker_scripts/stress_tests.lib"
+
+    @staticmethod
+    def _server_ports():
+        path = Path(ClickHouseProc._STRESS_TESTS_LIB)
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if line.startswith("CLICKHOUSE_SERVER_PORTS="):
+                value = line.split("=", 1)[1].strip().strip('"').strip("'")
+                return [int(p) for p in value.split()]
+        raise RuntimeError(
+            f"CLICKHOUSE_SERVER_PORTS not found in {ClickHouseProc._STRESS_TESTS_LIB}"
+        )
+
     def _ensure_server_ports_free(self, ports, timeout_s=45):
         """Best-effort: make sure no leftover clickhouse-server/keeper from a
         previous run holds the ports we are about to bind.
@@ -498,15 +516,8 @@ profiles:
             # before we launch our own (listen_try=true otherwise turns a port
             # collision into a silent wait_ready timeout). Done once, before any
             # of our replicas start, so it only ever targets stale processes.
-            # Full stateless-server listen-port set, kept in sync with
-            # wait_server_ports_free() in tests/docker_scripts/stress_tests.lib:
-            #   8123 HTTP        9009 Interserver  9022 SSH    9181 Keeper
-            #   8443 HTTPS       9010 TCP proxy    9100 gRPC   9234 Keeper Raft
-            #   9000 Native TCP  9004 MySQL        9005 PGSQL  9440 Native TLS
-            #                                                  9988 Prometheus
-            self._ensure_server_ports_free(
-                [8123, 8443, 9000, 9004, 9005, 9009, 9010, 9022, 9100, 9181, 9234, 9440, 9988]
-            )
+            # Port set is single-sourced from stress_tests.lib (see _server_ports).
+            self._ensure_server_ports_free(self._server_ports())
 
         if replica_num == 1:
             pid_file = self.pid_file_replica_1
