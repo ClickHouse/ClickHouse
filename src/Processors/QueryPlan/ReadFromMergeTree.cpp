@@ -1739,7 +1739,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
     /// Genuine range splitting runs only for the initiator and for purely-local reads.
     /// Followers use all parts for every split and only need `num_streams` as the split count,
     /// since the initiator is the authority on split topology.
-    const bool need_split = is_local_plan_initiator || !is_parallel_reading_from_replicas;
+    const bool need_split = !use_lazy_partition_reading && (is_local_plan_initiator || !is_parallel_reading_from_replicas);
 
     /// Only the local-plan follower path needs all parts replicated across per-split pools
     /// (each split reads from a copy and filters down to its assigned subset). The legacy
