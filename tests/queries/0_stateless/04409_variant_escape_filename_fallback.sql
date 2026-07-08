@@ -33,3 +33,23 @@ select v, v.`Tuple(a UInt32, b UInt32)`.a, v.`Tuple(a UInt32, b UInt32)`.b from 
 insert into test_fallback select tuple(7, 8)::Tuple(a UInt32, b UInt32);
 select v, v.`Tuple(a UInt32, b UInt32)`.a, v.`Tuple(a UInt32, b UInt32)`.b from test_fallback order by v.`Tuple(a UInt32, b UInt32)`.a;
 drop table test_fallback;
+
+-- Case 3: RENAME COLUMN after switching escaping from disabled to enabled.
+-- Parts written without escaping must survive a column rename after enabling escaping.
+drop table if exists test_fallback;
+create table test_fallback (v Variant(Tuple(a UInt32, b UInt32))) engine=MergeTree order by tuple() settings min_rows_for_wide_part=0, min_bytes_for_wide_part=0, escape_variant_subcolumn_filenames=0, replace_long_file_name_to_hash=0;
+insert into test_fallback select tuple(1, 2)::Tuple(a UInt32, b UInt32);
+alter table test_fallback modify setting escape_variant_subcolumn_filenames=1;
+alter table test_fallback rename column v to w;
+select w, w.`Tuple(a UInt32, b UInt32)`.a, w.`Tuple(a UInt32, b UInt32)`.b from test_fallback;
+drop table test_fallback;
+
+-- Case 4: RENAME COLUMN after switching escaping from enabled to disabled.
+-- Parts written with escaping must survive a column rename after disabling escaping.
+drop table if exists test_fallback;
+create table test_fallback (v Variant(Tuple(a UInt32, b UInt32))) engine=MergeTree order by tuple() settings min_rows_for_wide_part=0, min_bytes_for_wide_part=0, escape_variant_subcolumn_filenames=1, replace_long_file_name_to_hash=0;
+insert into test_fallback select tuple(3, 4)::Tuple(a UInt32, b UInt32);
+alter table test_fallback modify setting escape_variant_subcolumn_filenames=0;
+alter table test_fallback rename column v to w;
+select w, w.`Tuple(a UInt32, b UInt32)`.a, w.`Tuple(a UInt32, b UInt32)`.b from test_fallback;
+drop table test_fallback;
