@@ -5290,8 +5290,7 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
     if (!disk->existsDirectory(relative_data_path))
         return false;
 
-    /// A newly added disk may have only explicitly safe entries:
-    /// matching format_version.txt, temporary root directories, and empty/non-part detached entries.
+    /// A newly added disk may have only explicitly safe entries.
     /// Anything else would become owned by the table path after the policy change.
     validateFormatVersion(disk);
 
@@ -5314,6 +5313,9 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
         }
 
         if (is_temporary_directory)
+            continue;
+
+        if (name == MOVING_DIR_NAME && disk->existsDirectory(entry_path))
             continue;
 
         if (name == DETACHED_DIR_NAME)

@@ -95,6 +95,7 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         ("test_tmp_directory", "mkdir -p {disk2_data_path}/tmp_1_1_0"),
         ("test_delete_tmp_directory", "mkdir -p {disk2_data_path}/delete_tmp_all_0_0_0"),
         ("test_tmp_fetch_directory", "mkdir -p {disk2_data_path}/tmp-fetch_1_1_0"),
+        ("test_moving_directory", "mkdir -p {disk2_data_path}/moving/all_0_0_0"),
     ]:
         check_case(table_name, command)
 
