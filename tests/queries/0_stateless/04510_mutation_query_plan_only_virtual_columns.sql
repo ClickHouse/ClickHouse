@@ -4,8 +4,8 @@
 
 DROP TABLE IF EXISTS t_mut_qp_virtuals;
 
-CREATE TABLE t_mut_qp_virtuals (c0 UInt32) ENGINE = MergeTree ORDER BY c0 SAMPLE BY c0;
-INSERT INTO t_mut_qp_virtuals VALUES (1), (2), (3);
+CREATE TABLE t_mut_qp_virtuals (c0 UInt32, u Int32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY c0 SAMPLE BY c0;
+INSERT INTO t_mut_qp_virtuals VALUES (1, 10, [1, 2]), (2, 20, [3]), (3, 30, [4]);
 
 SET mutations_sync = 2;
 
@@ -13,8 +13,21 @@ SET mutations_sync = 2;
 DELETE FROM t_mut_qp_virtuals WHERE _sample_factor > 0.1; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DELETE FROM t_mut_qp_virtuals WHERE _table != ''; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 DELETE FROM t_mut_qp_virtuals WHERE _database != ''; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
-ALTER TABLE t_mut_qp_virtuals UPDATE c0 = 9 WHERE _sample_factor > 0.1; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+ALTER TABLE t_mut_qp_virtuals UPDATE u = 9 WHERE _sample_factor > 0.1; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
 ALTER TABLE t_mut_qp_virtuals DELETE WHERE toFloat64(_table = '') > c0; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+-- The right-hand side of an UPDATE assignment is checked too.
+ALTER TABLE t_mut_qp_virtuals UPDATE u = toInt32(_sample_factor) WHERE c0 > 0; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+-- A qualified reference resolves to the same virtual column and must still be rejected;
+-- matching the raw identifier name (t._sample_factor) would miss this one.
+ALTER TABLE t_mut_qp_virtuals DELETE WHERE t_mut_qp_virtuals._sample_factor > 0.1; -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+
+-- A lambda formal parameter that merely shares the name is not a reference to the virtual
+-- column and must be allowed (matching the raw identifier name would falsely reject it).
+ALTER TABLE t_mut_qp_virtuals UPDATE arr = arrayMap(_table -> _table + 1, arr) WHERE c0 > 0;
+ALTER TABLE t_mut_qp_virtuals UPDATE arr = arrayMap(_sample_factor -> _sample_factor * 2, arr) WHERE c0 > 0;
+
+-- A subquery is evaluated as its own SELECT and can materialize these virtuals.
+ALTER TABLE t_mut_qp_virtuals DELETE WHERE c0 IN (SELECT c0 FROM t_mut_qp_virtuals WHERE _sample_factor > 100);
 
 -- The value is only available in a SELECT, which keeps working.
 SELECT _sample_factor FROM t_mut_qp_virtuals SAMPLE 0.5 LIMIT 1 FORMAT Null;

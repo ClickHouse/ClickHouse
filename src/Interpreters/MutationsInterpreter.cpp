@@ -33,6 +33,8 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSubquery.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <DataTypes/NestedUtils.h>
@@ -653,19 +655,69 @@ static std::optional<std::vector<ASTPtr>> getExpressionsOfUpdatedNestedSubcolumn
     return res;
 }
 
-/// Walk an AST and throw if it references a virtual column that only the query plan can
-/// materialize (see isQueryPlanOnlyVirtualColumn). Such a reference is valid in a SELECT but
-/// impossible to evaluate in a mutation, so we reject it up front. A physical column that
-/// happens to share the name is left alone.
-static void rejectQueryPlanOnlyVirtualColumns(const IAST * ast, const ColumnsDescription & columns)
+/// Throw if a mutation expression references a virtual column whose value is only produced
+/// by the query plan (isQueryPlanOnlyVirtualColumn: `_sample_factor`, `_table`, `_database`).
+/// ReadFromMergeTree fills these into shared_virtual_fields, so they only exist inside a
+/// SELECT plan; the mutation read path (MergeTreeSequentialSource) cannot materialize them.
+/// A mutation referencing one would otherwise pass analysis, start, then fail mid-execution
+/// with "Unexpected const virtual column". Reject it up front instead.
+///
+/// A raw ASTIdentifier name match is wrong in both directions: it would falsely reject a
+/// lambda formal parameter that merely shares the name (a plain ASTIdentifier too), and it
+/// would miss a qualified reference like `t._sample_factor` whose name() is the compound
+/// identifier. So this walk mirrors what resolution would conclude about source-column usage:
+///   - it uses the identifier's short (last) name, so `t._sample_factor` is recognized;
+///   - a compound whose leading part is a real column (`tuple_col._table`) is a subcolumn
+///     access, not the virtual, and is left alone;
+///   - lambda formal parameters are shadowed for the body of the lambda and never counted;
+///   - subqueries are not descended into: their own read path is a SELECT that can
+///     materialize these virtuals.
+/// A physical column that happens to share the name is always left alone.
+static void rejectQueryPlanOnlyVirtualColumns(
+    const IAST * ast, const ColumnsDescription & columns, NameSet & shadowed)
 {
     if (!ast)
         return;
 
+    /// Do not descend into subqueries: they are evaluated as their own SELECT.
+    if (ast->as<ASTSelectWithUnionQuery>() || ast->as<ASTSelectQuery>() || ast->as<ASTSubquery>())
+        return;
+
+    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "lambda"
+        && function->arguments && function->arguments->children.size() == 2)
+    {
+        /// Shadow the lambda's formal parameters while visiting its body, so an argument
+        /// named like a virtual column is not mistaken for a reference to that column.
+        std::vector<String> params;
+        if (const auto * args_tuple = function->arguments->children[0]->as<ASTFunction>();
+            args_tuple && args_tuple->name == "tuple" && args_tuple->arguments)
+        {
+            for (const auto & arg : args_tuple->arguments->children)
+                if (const auto * param = arg->as<ASTIdentifier>())
+                    params.push_back(param->name());
+        }
+
+        std::vector<String> newly_shadowed;
+        for (const auto & param : params)
+            if (shadowed.insert(param).second)
+                newly_shadowed.push_back(param);
+
+        rejectQueryPlanOnlyVirtualColumns(function->arguments->children[1].get(), columns, shadowed);
+
+        for (const auto & param : newly_shadowed)
+            shadowed.erase(param);
+        return;
+    }
+
     if (const auto * identifier = ast->as<ASTIdentifier>())
     {
-        const auto & name = identifier->name();
-        if (isQueryPlanOnlyVirtualColumn(name) && !columns.has(name))
+        /// A compound identifier whose leading part names a real column is a subcolumn
+        /// access (e.g. `tuple_col._table`), not a reference to the virtual column.
+        if (identifier->compound() && columns.has(identifier->name_parts.front()))
+            return;
+
+        const auto & name = identifier->shortName();
+        if (isQueryPlanOnlyVirtualColumn(name) && !shadowed.contains(name) && !columns.has(name))
             throw Exception(
                 ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
                 "Cannot use virtual column {} in a mutation: its value is only available while "
@@ -675,7 +727,23 @@ static void rejectQueryPlanOnlyVirtualColumns(const IAST * ast, const ColumnsDes
     }
 
     for (const auto & child : ast->children)
-        rejectQueryPlanOnlyVirtualColumns(child.get(), columns);
+        rejectQueryPlanOnlyVirtualColumns(child.get(), columns, shadowed);
+}
+
+/// Reject query-plan-only virtual columns referenced by a mutation command's expressions:
+/// the WHERE predicate (DELETE/UPDATE) and the right-hand sides of UPDATE assignments. The
+/// assignment target names an existing column (validated elsewhere) and is not an expression
+/// over the part, so it is not scanned.
+static void rejectQueryPlanOnlyVirtualColumns(const ASTAlterCommand & alter, const ColumnsDescription & columns)
+{
+    NameSet shadowed;
+    if (alter.predicate)
+        rejectQueryPlanOnlyVirtualColumns(alter.predicate, columns, shadowed);
+
+    if (alter.update_assignments)
+        for (const auto & child : alter.update_assignments->children)
+            if (const auto * assignment = child->as<ASTAssignment>())
+                rejectQueryPlanOnlyVirtualColumns(assignment->expression().get(), columns, shadowed);
 }
 
 void MutationsInterpreter::prepare(bool dry_run)
@@ -699,19 +767,14 @@ void MutationsInterpreter::prepare(bool dry_run)
     auto all_columns = storage_snapshot->getColumnsByNames(options, available_columns);
     NameSet available_columns_set(available_columns.begin(), available_columns.end());
 
-    /// Reject references to virtual columns whose value is only produced by the query plan
-    /// (e.g. `_sample_factor`, `_table`, `_database`). They cannot be materialized by the
-    /// mutation read path, so a mutation referencing them would otherwise parse and start
-    /// running, then fail mid-execution in MergeTreeSequentialSource. Fail at analysis time
-    /// instead. A physical column with the same name (if the table happens to define one)
-    /// is still allowed.
+    /// Reject query-plan-only virtual columns (`_sample_factor`, `_table`, `_database`)
+    /// referenced by the mutation's expressions before the mutation can start. See
+    /// rejectQueryPlanOnlyVirtualColumns above for why a raw name match is insufficient.
     if (source.getMergeTreeData())
     {
         for (const auto & command : commands)
-        {
-            if (auto ast = command.ast())
-                rejectQueryPlanOnlyVirtualColumns(ast.get(), columns_desc);
-        }
+            if (auto alter = command.ast())
+                rejectQueryPlanOnlyVirtualColumns(*alter, columns_desc);
     }
 
     NameSet updated_columns;
