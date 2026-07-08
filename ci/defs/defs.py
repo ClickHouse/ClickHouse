@@ -113,10 +113,19 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
+        name="clickhouse/stateful-dataset",
+        path="./ci/docker/stateful-dataset",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        depends_on=["clickhouse/test-base"],
+        # FROM clickhouse/stateful-dataset (which is FROM clickhouse/test-base) so
+        # the baked /opt/ch-stateful datasets are inherited. praktika passes the
+        # single dependency as FROM_TAG, so no digest needs to be pinned by hand.
+        depends_on=["clickhouse/stateful-dataset"],
     ),
     Docker.Config(
         name="clickhouse/cctools",

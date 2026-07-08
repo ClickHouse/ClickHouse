@@ -1,12 +1,7 @@
--- Attaches the hits_v1/visits_v1 stateful datasets from the local, self-contained
--- (table_disk) store baked into clickhouse/stateless-test at /opt/ch-stateful
--- (see ci/docker/stateful-dataset). The disk is read-only, so CREATE attaches the
--- pre-generated data instantly at local-disk speed, instead of the previous lazy
--- read from the web disk (real AWS S3), which was too slow. The path is a symlink
--- under custom_local_disks_base_directory created by prepare_stateful_data.
---
--- The column schema here MUST stay identical to ci/docker/stateful-dataset/create_source.sql
--- (that file generates the baked store); only the disk clause differs.
+-- Source (web-disk) definitions of hits_v1/visits_v1, used ONLY by generate.sh to
+-- read the datasets and copy them into the local baked store shipped in the image.
+-- The column schema here MUST stay identical to tests/docker_scripts/create.sql
+-- (which serves the baked store read-only); only the disk clause differs.
 CREATE TABLE datasets.hits_v1
 (
     WatchID UInt64,
@@ -149,7 +144,8 @@ ORDER BY (CounterID, EventDate, intHash32(UserID))
 SAMPLE BY intHash32(UserID)
 SETTINGS
     table_disk = 1,
-    disk = disk(type = object_storage, object_storage_type = local_blob_storage, metadata_type = plain_rewritable, readonly = true, path = '/var/lib/clickhouse/disks/stateful/hits_v1/');
+    disk = disk(type = cache, path = 'filesystem_caches/stateful/', max_size = '4G',
+    disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/store/78e/78ebf6a1-d987-4579-b3ec-00c1a087b1f3/'));
 
 CREATE TABLE datasets.visits_v1
 (
@@ -341,4 +337,5 @@ ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
 SAMPLE BY intHash32(UserID)
 SETTINGS
     table_disk = 1,
-    disk = disk(type = object_storage, object_storage_type = local_blob_storage, metadata_type = plain_rewritable, readonly = true, path = '/var/lib/clickhouse/disks/stateful/visits_v1/');
+    disk = disk(type = cache, path = 'filesystem_caches/stateful/', max_size = '4G',
+    disk = disk(type = web, endpoint = 'https://clickhouse-datasets-web.s3.us-east-1.amazonaws.com/store/513/5131f834-711f-4168-98a5-968b691a104b/'));

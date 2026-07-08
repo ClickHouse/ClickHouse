@@ -839,6 +839,12 @@ MAX_EXECUTION_TIME=1800
 
 clickhouse-client --query "SHOW DATABASES"
 clickhouse-client --query "CREATE DATABASE datasets"
+# create.sql attaches hits_v1/visits_v1 from the local baked store at
+# /opt/ch-stateful (shipped in clickhouse/stateless-test). Custom local disks must
+# sit under custom_local_disks_base_directory (/var/lib/clickhouse/disks/), so
+# expose the baked store there via a symlink instead of relaxing that guard.
+mkdir -p /var/lib/clickhouse/disks
+ln -sfn /opt/ch-stateful /var/lib/clickhouse/disks/stateful
 clickhouse-client < ./tests/docker_scripts/create.sql
 bash ./tests/docker_scripts/create_tpcds.sh
 bash ./tests/docker_scripts/create_tpch.sh

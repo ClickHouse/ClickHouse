@@ -1,0 +1,55 @@
+#!/bin/bash
+# Bakes the hits_v1/visits_v1 stateful datasets into a local, self-contained
+# (table_disk) store at /opt/ch-stateful, so clickhouse/stateless-test (which is
+# built FROM clickhouse/stateful-dataset) can attach them instantly from a local
+# disk instead of lazily reading them from the web disk (real AWS S3), which is
+# too slow. See tests/docker_scripts/create.sql for the serve-time (read-only)
+# attach and ci/jobs/scripts/clickhouse_proc.py for the symlink that exposes
+# /opt/ch-stateful under custom_local_disks_base_directory.
+set -euo pipefail
+
+DEST=/opt/ch-stateful
+GEN="$(mktemp -d)"
+cd "$GEN"
+
+# The image has no clickhouse binary; fetch a static one just to run this one-off
+# generation. The on-disk MergeTree format is backward compatible, so the server
+# under test (built from the PR) reads what a recent stable produced here.
+curl -fsSL https://clickhouse.com/ | sh
+
+# Read each dataset from its web-disk source and copy it into a local
+# plain_rewritable table_disk store under $DEST. plain_rewritable is writable
+# during generation; create.sql serves the very same store with readonly = true.
+# `CREATE ... AS <src>` copies the column list, so the schema lives only in
+# create_source.sql (kept in sync with tests/docker_scripts/create.sql).
+./clickhouse local --path "$GEN/state" --multiquery "
+CREATE DATABASE datasets;
+
+$(cat /opt/gen/create_source.sql)
+
+CREATE DATABASE staging;
+
+CREATE TABLE staging.hits_v1 AS datasets.hits_v1
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(EventDate)
+ORDER BY (CounterID, EventDate, intHash32(UserID))
+SAMPLE BY intHash32(UserID)
+SETTINGS table_disk = 1,
+    disk = disk(type = object_storage, object_storage_type = local_blob_storage, metadata_type = plain_rewritable, path = '$DEST/hits_v1/');
+INSERT INTO staging.hits_v1 SELECT * FROM datasets.hits_v1 SETTINGS max_insert_threads = 16;
+
+CREATE TABLE staging.visits_v1 AS datasets.visits_v1
+ENGINE = CollapsingMergeTree(Sign)
+PARTITION BY toYYYYMM(StartDate)
+ORDER BY (CounterID, StartDate, intHash32(UserID), VisitID)
+SAMPLE BY intHash32(UserID)
+SETTINGS table_disk = 1,
+    disk = disk(type = object_storage, object_storage_type = local_blob_storage, metadata_type = plain_rewritable, path = '$DEST/visits_v1/');
+INSERT INTO staging.visits_v1 SELECT * FROM datasets.visits_v1 SETTINGS max_insert_threads = 16;
+"
+
+echo "Baked stateful dataset sizes:"
+du -sh "$DEST"/*
+
+cd /
+rm -rf "$GEN"
