@@ -129,6 +129,9 @@ public:
     /// Get metadata for a file inside path dir.
     virtual Poco::Timestamp getFileLastModified(const std::string & file_name) const = 0;
     virtual size_t getFileSize(const std::string & file_name) const = 0;
+    /// Uncompressed size of a packed skip-index substream from the archive index, or nullopt if
+    /// unknown (non-packed file, or v0 archive). Callers fall back to the compressed size.
+    virtual std::optional<UInt64> getPackedFileUncompressedSize(const std::string & /*file_name*/) const { return {}; }
     virtual UInt32 getRefCount(const std::string & file_name) const = 0;
 
     /// Get path on remote filesystem from file name on local filesystem.

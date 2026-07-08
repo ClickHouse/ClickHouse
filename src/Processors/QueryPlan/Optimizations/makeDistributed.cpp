@@ -108,6 +108,13 @@ void checkDistributedReadSupported(const QueryPlan::Node & root)
 
         if (const auto * read = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
         {
+            /// The old interpreter plans read-in-order before the query plan is optimized (with
+            /// query_plan_read_in_order = 0). The shipped fragments do not carry the in-order contract,
+            /// so reject it cleanly here instead of failing on a non-serializable finish-sorting step.
+            if (read->getQueryInfo().input_order_info)
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "make_distributed_plan does not support a read-in-order distributed read");
+
             if (read->hasPinnedBlockNumbers())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                     "make_distributed_plan does not support a distributed read with a pinned block-number "
@@ -543,25 +550,25 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         return;
 
     /// TODO: estimate number of buckets based on statistics and available nodes and memory
-    const size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
+    size_t bucket_count = optimization_settings.distributed_plan_default_reader_bucket_count;
 
     if (read_from_merge_tree_step)
     {
-        /// Round-robin mark-range bucketing would split rows with the same sort key across buckets and
-        /// break FINAL dedup on engines with specialized merging (Replacing, Collapsing, ...). Fall back
-        /// to serial read until a correctness-preserving bucketing strategy exists.
-        if (read_from_merge_tree_step->isQueryWithFinal() &&
-            read_from_merge_tree_step->getMergeTreeData().merging_params.mode != MergeTreeData::MergingParams::Ordinary)
-            return;
-
         /// Check if table is big enough for distributed read
         /// TODO: implement better logic for choosing number of parallel readers
         auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
         if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
             return;
 
-        /// Move read step to a new node and set it to distributed read
-        read_from_merge_tree_step->setDistributedRead(bucket_count);
+        /// The coordinator computes each bucket's authoritative marks: contiguous mark slices for a plain
+        /// read, primary-key-range layers for FINAL (one merge per layer, so rows sharing a sort key are
+        /// not split across buckets). Fall back to a serial read when a FINAL read cannot be range-split
+        /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds the bucket limit.
+        const size_t actual_buckets = read_from_merge_tree_step->setupDistributedReadBuckets(
+            bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
+        if (actual_buckets == 0)
+            return;
+        bucket_count = actual_buckets;
     }
     else if (read_from_object_storage_step)
     {
@@ -1029,7 +1036,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
             {
                 /// No children, this means that this is a leaf step.
 
-                auto populate_shards = [&](std::vector<String> shards_for_read)
+                auto populate_shards = [&](std::vector<String> shards_for_read, std::vector<String> read_buckets = {})
                 {
                     for (size_t bucket = 0; bucket < shards_for_read.size(); ++bucket)
                     {
@@ -1038,31 +1045,48 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                         task.parameters.parameters["bucket_id"] = Field(shard_id);
                         task.parameters.parameters["bucket_description"] = Field(shards_for_read[bucket]);
                         task.parameters.parameters["total_buckets"] = Field(shards_for_read.size());
+                        /// A MergeTree distributed read ships this bucket's authoritative marks (and, for a
+                        /// FINAL merge layer, its borders + index) here, so the worker reads exactly its slice.
+                        if (!read_buckets.empty())
+                            task.parameters.parameters["read_bucket"] = Field(read_buckets[bucket]);
                         frame.list_of_shards[shard_id] = std::move(task);
                     }
                 };
 
 #if CLICKHOUSE_CLOUD
                 ReadFromMergeTree * read_merge_tree = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
-                if (read_merge_tree && !optimization_settings.distributed_plan_prefer_replicas_over_workers)
+                /// A read using a feature the worker step cannot reproduce from shipped parts (see
+                /// `canCreateFrom`) goes to a full replica below, which re-plans the read locally.
+                if (read_merge_tree && !optimization_settings.distributed_plan_prefer_replicas_over_workers
+                    && ReadFromMergeTreeAtWorker::canCreateFrom(*read_merge_tree))
                 {
+                    /// Ship each bucket's authoritative marks (and FINAL borders + index) the same way the
+                    /// replica path does, so the worker reads exactly its slice and does FINAL per-lane.
+                    std::vector<String> read_buckets = read_merge_tree->serializeDistributedReadBuckets();
+
                     auto worker_step = ReadFromMergeTreeAtWorker::createFrom(*read_merge_tree);
                     auto shards_for_read = worker_step->getShardsForDistributedRead();
 
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(worker_step));
 
-                    populate_shards(std::move(shards_for_read));
+                    populate_shards(std::move(shards_for_read), std::move(read_buckets));
                 }
                 else
 #endif
                 {
                     auto shards_for_read = makeListOfShardsForReadStep(frame.node->step.get());
 
+                    /// Ship each MergeTree bucket its authoritative marks as a task parameter (object-storage
+                    /// reads carry no per-bucket marks and keep using only `bucket_id` / `total_buckets`).
+                    std::vector<String> read_buckets;
+                    if (auto * read_merge_tree_step = typeid_cast<ReadFromMergeTree *>(frame.node->step.get()))
+                        read_buckets = read_merge_tree_step->serializeDistributedReadBuckets();
+
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(frame.node->step));
 
-                    populate_shards(std::move(shards_for_read));
+                    populate_shards(std::move(shards_for_read), std::move(read_buckets));
                 }
             }
 
