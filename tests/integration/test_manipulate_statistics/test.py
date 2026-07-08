@@ -70,7 +70,9 @@ def check_stats_in_part(
         [
             "bash",
             "-c",
-            "find {p} -type f -name statistics.packed".format(p=part_path),
+            "find {p} -type f -name statistics.packed".format(
+                p=part_path, col=column_name
+            ),
         ],
         privileged=True,
     )

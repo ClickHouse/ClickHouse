@@ -1,4 +1,4 @@
-/* 75ef4224f81c052e9e5aeea2ac7de75357d2169ff9908e39edc08b9dc3052513 (2.8.1+)
+/* 28bcd8b1ba7eb595d82822908257fd9c3589b4243e3c922d0369f35bfcd7b506 (2.7.3+)
                             __  __            _
                          ___\ \/ /_ __   __ _| |_
                         / _ \\  /| '_ \ / _` | __|
@@ -13,7 +13,7 @@
    Copyright (c) 2002-2016 Karl Waclawek <karl@waclawek.net>
    Copyright (c) 2005-2009 Steven Solie <steven@solie.ca>
    Copyright (c) 2016      Eric Rahm <erahm@mozilla.com>
-   Copyright (c) 2016-2026 Sebastian Pipping <sebastian@pipping.org>
+   Copyright (c) 2016-2025 Sebastian Pipping <sebastian@pipping.org>
    Copyright (c) 2016      Gaurav <g.gupta@samsung.com>
    Copyright (c) 2016      Thomas Beutlich <tc@tbeu.de>
    Copyright (c) 2016      Gustavo Grieco <gustavo.grieco@imag.fr>
@@ -41,16 +41,11 @@
    Copyright (c) 2023-2024 Sony Corporation / Snild Dolkow <snild@sony.com>
    Copyright (c) 2024-2025 Berkay Eren Ürün <berkay.ueruen@siemens.com>
    Copyright (c) 2024      Hanno Böck <hanno@gentoo.org>
-   Copyright (c) 2025-2026 Matthew Fernandez <matthew.fernandez@gmail.com>
-   Copyright (c) 2025      Atrem Borovik <polzovatellllk@gmail.com>
-   Copyright (c) 2025      Alfonso Gregory <gfunni234@gmail.com>
-   Copyright (c) 2026      Rosen Penev <rosenp@gmail.com>
-   Copyright (c) 2026      Francesco Bertolaccini
-   Copyright (c) 2026      Christian Ng <christianrng@berkeley.edu>
+   Copyright (c) 2025      Matthew Fernandez <matthew.fernandez@gmail.com>
    Licensed under the MIT license:
 
    Permission is hereby granted, free of charge, to any person obtaining
-   a copy of this software and associated documentation files (the
+   a copy of this software  and associated documentation files (the
    "Software"), to deal in the Software without restriction, including
    without limitation the rights to use, copy, modify, merge, publish,
    distribute, sublicense, and/or sell copies of the Software, and to permit
@@ -86,16 +81,28 @@
 #  error XML_CONTEXT_BYTES must be defined, non-empty and >=0 (0 to disable, >=1 to enable; 1024 is a common default)
 #endif
 
+#if defined(HAVE_SYSCALL_GETRANDOM)
+#  if ! defined(_GNU_SOURCE)
+#    define _GNU_SOURCE 1 /* syscall prototype */
+#  endif
+#endif
+
+#ifdef _WIN32
+/* force stdlib to define rand_s() */
+#  if ! defined(_CRT_RAND_S)
+#    define _CRT_RAND_S
+#  endif
+#endif
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h> /* memset(), memcpy() */
 #include <assert.h>
 #include <limits.h> /* INT_MAX, UINT_MAX */
 #include <stdio.h>  /* fprintf */
-#include <stdlib.h> /* getenv */
-#include <stdint.h> /* SIZE_MAX, uintptr_t */
+#include <stdlib.h> /* getenv, rand_s */
+#include <stdint.h> /* uintptr_t */
 #include <math.h>   /* isnan */
-#include <errno.h>
 
 #define EXPAT_POCO 1
 
@@ -112,7 +119,7 @@
 #  include <errno.h>
 #endif
 
-#ifdef _WIN32
+#ifdef EXPAT_WIN32
 #  include "winconfig.h"
 #endif
 
@@ -120,35 +127,31 @@
 #include "Poco/XML/expat.h"
 #include "siphash.h"
 
-#if defined(HAVE_ARC4RANDOM)
-#  include "random_arc4random.h"
-#endif /* defined(HAVE_ARC4RANDOM) */
-
-#if defined(HAVE_ARC4RANDOM_BUF)
-#  include "random_arc4random_buf.h"
-#endif // defined(HAVE_ARC4RANDOM_BUF)
-
-#if defined(XML_DEV_URANDOM)
-#  include "random_dev_urandom.h"
-#endif /* defined(XML_DEV_URANDOM) */
-
-#if defined(HAVE_GETENTROPY)
-#  include "random_getentropy.h"
-#endif // defined(HAVE_GETENTROPY)
-
 #if defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM)
-#  include "random_getrandom.h"
-#endif /* defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM) */
+#  if defined(HAVE_GETRANDOM)
+#    include <sys/random.h> /* getrandom */
+#  else
+#    include <unistd.h>      /* syscall */
+#    include <sys/syscall.h> /* SYS_getrandom */
+#  endif
+#  if ! defined(GRND_NONBLOCK)
+#    define GRND_NONBLOCK 0x0001
+#  endif /* defined(GRND_NONBLOCK) */
+#endif   /* defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM) */
 
-#if defined(_WIN32)
-#  include "random_rand_s.h"
-#endif /* defined(_WIN32) */
+#if defined(HAVE_LIBBSD)                                                       \
+    && (defined(HAVE_ARC4RANDOM_BUF) || defined(HAVE_ARC4RANDOM))
+#  include <bsd/stdlib.h>
+#endif
+
+#if defined(_WIN32) && ! defined(LOAD_LIBRARY_SEARCH_SYSTEM32)
+#  define LOAD_LIBRARY_SEARCH_SYSTEM32 0x00000800
+#endif
 
 #if ! defined(HAVE_GETRANDOM) && ! defined(HAVE_SYSCALL_GETRANDOM)             \
     && ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)            \
-    && ! defined(HAVE_GETENTROPY) && ! defined(XML_DEV_URANDOM)                \
-    && ! defined(_WIN32) && ! defined(XML_POOR_ENTROPY)                        \
-    && ! defined(EXPAT_POCO)
+    && ! defined(XML_DEV_URANDOM) && ! defined(_WIN32)                         \
+    && ! defined(XML_POOR_ENTROPY) && ! defined(EXPAT_POCO)
 #  error You do not have support for any sources of high quality entropy \
     enabled.  For end user security, that is probably not what you want. \
     \
@@ -157,11 +160,12 @@
       * Linux >=3.17 + glibc (including <2.25) (syscall SYS_getrandom): HAVE_SYSCALL_GETRANDOM, \
       * BSD / macOS >=10.7 / glibc >=2.36 (arc4random_buf): HAVE_ARC4RANDOM_BUF, \
       * BSD / macOS (including <10.7) / glibc >=2.36 (arc4random): HAVE_ARC4RANDOM, \
-      * BSD / macOS >=10.12 / glibc >=2.25 (getentropy): HAVE_GETENTROPY, \
+      * libbsd (arc4random_buf): HAVE_ARC4RANDOM_BUF + HAVE_LIBBSD, \
+      * libbsd (arc4random): HAVE_ARC4RANDOM + HAVE_LIBBSD, \
       * Linux (including <3.17) / BSD / macOS (including <10.7) / Solaris >=8 (/dev/urandom): XML_DEV_URANDOM, \
       * Windows >=Vista (rand_s): _WIN32. \
     \
-    If you insist on not using any of these, bypass this error by defining \
+    If insist on not using any of these, bypass this error by defining \
     XML_POOR_ENTROPY; you have been warned. \
     \
     If you have reasons to patch this detection code away or need changes \
@@ -312,11 +316,8 @@ typedef struct tag {
   const char *rawName; /* tagName in the original encoding */
   int rawNameLength;
   TAG_NAME name; /* tagName in the API encoding */
-  union {
-    char *raw;     /* for byte-level access (rawName storage) */
-    XML_Char *str; /* for character-level access (converted name) */
-  } buf;           /* buffer for name components */
-  char *bufEnd;    /* end of the buffer */
+  char *buf;     /* buffer for name components */
+  char *bufEnd;  /* end of the buffer */
   BINDING *bindings;
 } TAG;
 
@@ -353,7 +354,7 @@ typedef struct {
 typedef struct block {
   struct block *next;
   int size;
-  XML_Char s[];
+  XML_Char s[1];
 } BLOCK;
 
 typedef struct {
@@ -393,7 +394,6 @@ typedef struct {
   int nDefaultAtts;
   int allocDefaultAtts;
   DEFAULT_ATTRIBUTE *defaultAtts;
-  HASH_TABLE defaultAttsNames;
 } ELEMENT_TYPE;
 
 typedef struct {
@@ -596,8 +596,6 @@ static XML_Char *poolStoreString(STRING_POOL *pool, const ENCODING *enc,
 static XML_Bool FASTCALL poolGrow(STRING_POOL *pool);
 static const XML_Char *FASTCALL poolCopyString(STRING_POOL *pool,
                                                const XML_Char *s);
-static const XML_Char *FASTCALL poolCopyStringNoFinish(STRING_POOL *pool,
-                                                       const XML_Char *s);
 static const XML_Char *poolCopyStringN(STRING_POOL *pool, const XML_Char *s,
                                        int n);
 static const XML_Char *FASTCALL poolAppendString(STRING_POOL *pool,
@@ -610,7 +608,7 @@ static ELEMENT_TYPE *getElementType(XML_Parser parser, const ENCODING *enc,
 
 static XML_Char *copyString(const XML_Char *s, XML_Parser parser);
 
-static struct sipkey generate_hash_secret_salt(void);
+static unsigned long generate_hash_secret_salt(XML_Parser parser);
 static XML_Bool startParsing(XML_Parser parser);
 
 static XML_Parser parserCreate(const XML_Char *encodingName,
@@ -783,8 +781,7 @@ struct XML_ParserStruct {
   XML_Bool m_useForeignDTD;
   enum XML_ParamEntityParsing m_paramEntityParsing;
 #endif
-  struct sipkey m_hash_secret_salt_128;
-  XML_Bool m_hash_secret_salt_set;
+  unsigned long m_hash_secret_salt;
 #if XML_GE == 1
   ACCOUNTING m_accounting;
   MALLOC_TRACKER m_alloc_tracker;
@@ -805,7 +802,7 @@ struct XML_ParserStruct {
 
 #if XML_GE == 1
 static void
-expat_heap_stat(XML_Parser rootParser, char operator, XmlBigCount absDiff,
+expat_heap_stat(XML_Parser rootParser, char op, XmlBigCount absDiff,
                 XmlBigCount newTotal, XmlBigCount peakTotal, int sourceLine) {
   // NOTE: This can be +infinity or -nan
   const float amplification
@@ -814,7 +811,7 @@ expat_heap_stat(XML_Parser rootParser, char operator, XmlBigCount absDiff,
       stderr,
       "expat: Allocations(%p): Direct " EXPAT_FMT_ULL("10") ", allocated %c" EXPAT_FMT_ULL(
           "10") " to " EXPAT_FMT_ULL("10") " (" EXPAT_FMT_ULL("10") " peak), amplification %8.2f (xmlparse.c:%d)\n",
-      (void *)rootParser, rootParser->m_accounting.countBytesDirect, operator,
+      (void *)rootParser, rootParser->m_accounting.countBytesDirect, op,
       absDiff, newTotal, peakTotal, (double)amplification, sourceLine);
 }
 
@@ -1043,112 +1040,231 @@ static const XML_Char implicitContext[]
        ASCII_s,     ASCII_p,     ASCII_a,      ASCII_c,      ASCII_e,
        '\0'};
 
+
 #if ! defined(EXPAT_POCO)
-#  if ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)
+
+/* To avoid warnings about unused functions: */
+#if ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)
+
+#  if defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM)
+
+/* Obtain entropy on Linux 3.17+ */
+static int
+writeRandomBytes_getrandom_nonblock(void *target, size_t count) {
+  int success = 0; /* full count bytes written? */
+  size_t bytesWrittenTotal = 0;
+  const unsigned int getrandomFlags = GRND_NONBLOCK;
+
+  do {
+    void *const currentTarget = (void *)((char *)target + bytesWrittenTotal);
+    const size_t bytesToWrite = count - bytesWrittenTotal;
+
+    assert(bytesToWrite <= INT_MAX);
+
+    const int bytesWrittenMore =
+#    if defined(HAVE_GETRANDOM)
+        (int)getrandom(currentTarget, bytesToWrite, getrandomFlags);
+#    else
+        (int)syscall(SYS_getrandom, currentTarget, bytesToWrite,
+                     getrandomFlags);
+#    endif
+
+    if (bytesWrittenMore > 0) {
+      bytesWrittenTotal += bytesWrittenMore;
+      if (bytesWrittenTotal >= count)
+        success = 1;
+    }
+  } while (! success && (errno == EINTR));
+
+  return success;
+}
+
+#  endif /* defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM) */
+
+#  if ! defined(_WIN32) && defined(XML_DEV_URANDOM)
+
+/* Extract entropy from /dev/urandom */
+static int
+writeRandomBytes_dev_urandom(void *target, size_t count) {
+  int success = 0; /* full count bytes written? */
+  size_t bytesWrittenTotal = 0;
+
+  const int fd = open("/dev/urandom", O_RDONLY);
+  if (fd < 0) {
+    return 0;
+  }
+
+  do {
+    void *const currentTarget = (void *)((char *)target + bytesWrittenTotal);
+    const size_t bytesToWrite = count - bytesWrittenTotal;
+
+    const ssize_t bytesWrittenMore = read(fd, currentTarget, bytesToWrite);
+
+    if (bytesWrittenMore > 0) {
+      bytesWrittenTotal += bytesWrittenMore;
+      if (bytesWrittenTotal >= count)
+        success = 1;
+    }
+  } while (! success && (errno == EINTR));
+
+  close(fd);
+  return success;
+}
+
+#  endif /* ! defined(_WIN32) && defined(XML_DEV_URANDOM) */
+
+#endif /* ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM) */
+
+#if defined(HAVE_ARC4RANDOM) && ! defined(HAVE_ARC4RANDOM_BUF)
+
+static void
+writeRandomBytes_arc4random(void *target, size_t count) {
+  size_t bytesWrittenTotal = 0;
+
+  while (bytesWrittenTotal < count) {
+    const uint32_t random32 = arc4random();
+    size_t i = 0;
+
+    for (; (i < sizeof(random32)) && (bytesWrittenTotal < count);
+         i++, bytesWrittenTotal++) {
+      const uint8_t random8 = (uint8_t)(random32 >> (i * 8));
+      ((uint8_t *)target)[bytesWrittenTotal] = random8;
+    }
+  }
+}
+
+#endif /* defined(HAVE_ARC4RANDOM) && ! defined(HAVE_ARC4RANDOM_BUF) */
+
+#ifdef _WIN32
+
+/* Provide declaration of rand_s() for MinGW-32 (not 64, which has it),
+   as it didn't declare it in its header prior to version 5.3.0 of its
+   runtime package (mingwrt, containing stdlib.h).  The upstream fix
+   was introduced at https://osdn.net/projects/mingw/ticket/39658 . */
+#  if defined(__MINGW32__) && defined(__MINGW32_VERSION)                       \
+      && __MINGW32_VERSION < 5003000L && ! defined(__MINGW64_VERSION_MAJOR)
+__declspec(dllimport) int rand_s(unsigned int *);
+#  endif
+
+/* Obtain entropy on Windows using the rand_s() function which
+ * generates cryptographically secure random numbers.  Internally it
+ * uses RtlGenRandom API which is present in Windows XP and later.
+ */
+static int
+writeRandomBytes_rand_s(void *target, size_t count) {
+  size_t bytesWrittenTotal = 0;
+
+  while (bytesWrittenTotal < count) {
+    unsigned int random32 = 0;
+    size_t i = 0;
+
+    if (rand_s(&random32))
+      return 0; /* failure */
+
+    for (; (i < sizeof(random32)) && (bytesWrittenTotal < count);
+         i++, bytesWrittenTotal++) {
+      const uint8_t random8 = (uint8_t)(random32 >> (i * 8));
+      ((uint8_t *)target)[bytesWrittenTotal] = random8;
+    }
+  }
+  return 1; /* success */
+}
+
+#endif /* _WIN32 */
+
+#if ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM)
 
 static unsigned long
 gather_time_entropy(void) {
-#    ifdef _WIN32
+#  ifdef _WIN32
   FILETIME ft;
   GetSystemTimeAsFileTime(&ft); /* never fails */
   return ft.dwHighDateTime ^ ft.dwLowDateTime;
-#    else
+#  else
   struct timeval tv;
   int gettimeofday_res;
 
   gettimeofday_res = gettimeofday(&tv, NULL);
 
-#      if defined(NDEBUG)
+#    if defined(NDEBUG)
   (void)gettimeofday_res;
-#      else
+#    else
   assert(gettimeofday_res == 0);
-#      endif /* defined(NDEBUG) */
+#    endif /* defined(NDEBUG) */
 
   /* Microseconds time is <20 bits entropy */
   return tv.tv_usec;
-#    endif
+#  endif
 }
 
-#  endif /* ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM) */
-#endif   /* ! defined(EXPAT_POCO) */
+#endif /* ! defined(HAVE_ARC4RANDOM_BUF) && ! defined(HAVE_ARC4RANDOM) */
 
-static struct sipkey
-ENTROPY_DEBUG(const char *label, struct sipkey entropy_128) {
+#endif /* ! defined(EXPAT_POCO) */
+
+static unsigned long
+ENTROPY_DEBUG(const char *label, unsigned long entropy) {
   if (getDebugLevel("EXPAT_ENTROPY_DEBUG", 0) >= 1u) {
-    fprintf(stderr,
-            "expat: Entropy: %s --> [0x" EXPAT_FMT_LLX(
-                "016") ", 0x" EXPAT_FMT_LLX("016") "] (16 bytes)\n",
-            label, (unsigned long long)entropy_128.k[0],
-            (unsigned long long)entropy_128.k[1]);
+    fprintf(stderr, "expat: Entropy: %s --> 0x%0*lx (%lu bytes)\n", label,
+            (int)sizeof(entropy) * 2, entropy, (unsigned long)sizeof(entropy));
   }
-  return entropy_128;
+  return entropy;
 }
 
-static struct sipkey
-generate_hash_secret_salt(void) {
-  struct sipkey entropy;
+static unsigned long
+generate_hash_secret_salt(XML_Parser parser) {
+  unsigned long entropy;
+  (void)parser;
 #if defined(EXPAT_POCO)
   Poco::RandomInputStream rstr;
   Poco::BinaryReader rrdr(rstr);
-  // Read into `unsigned long` (64-bit on all supported platforms) because
-  // `Poco::BinaryReader` has no `uint64_t` overload on macOS, where
-  // `uint64_t` is `unsigned long long` rather than `unsigned long`.
-  unsigned long k0 = 0;
-  unsigned long k1 = 0;
-  rrdr >> k0;
-  rrdr >> k1;
-  entropy.k[0] = k0;
-  entropy.k[1] = k1;
+  rrdr >> entropy;
   return ENTROPY_DEBUG("RandomInputStream", entropy);
 #else
-
   /* "Failproof" high quality providers: */
-#  if defined(HAVE_ARC4RANDOM_BUF)
-  writeRandomBytes_arc4random_buf(&entropy, sizeof(entropy));
+#if defined(HAVE_ARC4RANDOM_BUF)
+  arc4random_buf(&entropy, sizeof(entropy));
   return ENTROPY_DEBUG("arc4random_buf", entropy);
-#  elif defined(HAVE_ARC4RANDOM)
-  writeRandomBytes_arc4random(&entropy, sizeof(entropy));
+#elif defined(HAVE_ARC4RANDOM)
+  writeRandomBytes_arc4random((void *)&entropy, sizeof(entropy));
   return ENTROPY_DEBUG("arc4random", entropy);
-#  else
+#else
   /* Try high quality providers first .. */
-#    ifdef _WIN32
-  if (writeRandomBytes_rand_s(&entropy, sizeof(entropy))) {
+#  ifdef _WIN32
+  if (writeRandomBytes_rand_s((void *)&entropy, sizeof(entropy))) {
     return ENTROPY_DEBUG("rand_s", entropy);
   }
-#    elif defined(HAVE_GETENTROPY)
-  if (writeRandomBytes_getentropy(&entropy, sizeof(entropy))) {
-    return ENTROPY_DEBUG("getentropy", entropy);
-  }
-  errno = 0;
-#    elif defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM)
-  if (writeRandomBytes_getrandom_nonblock(&entropy, sizeof(entropy))) {
+#  elif defined(HAVE_GETRANDOM) || defined(HAVE_SYSCALL_GETRANDOM)
+  if (writeRandomBytes_getrandom_nonblock((void *)&entropy, sizeof(entropy))) {
     return ENTROPY_DEBUG("getrandom", entropy);
   }
-#    endif
-#    if ! defined(_WIN32) && defined(XML_DEV_URANDOM)
-  if (writeRandomBytes_dev_urandom(&entropy, sizeof(entropy))) {
+#  endif
+#  if ! defined(_WIN32) && defined(XML_DEV_URANDOM)
+  if (writeRandomBytes_dev_urandom((void *)&entropy, sizeof(entropy))) {
     return ENTROPY_DEBUG("/dev/urandom", entropy);
   }
-#    endif /* ! defined(_WIN32) && defined(XML_DEV_URANDOM) */
+#  endif /* ! defined(_WIN32) && defined(XML_DEV_URANDOM) */
   /* .. and self-made low quality for backup: */
 
-  entropy.k[0] = 0;
-  entropy.k[1] = gather_time_entropy();
-#    if ! defined(__wasi__)
   /* Process ID is 0 bits entropy if attacker has local access */
-  entropy.k[1] ^= getpid();
-#    endif
+  entropy = gather_time_entropy() ^ getpid();
 
   /* Factors are 2^31-1 and 2^61-1 (Mersenne primes M31 and M61) */
   if (sizeof(unsigned long) == 4) {
-    entropy.k[1] *= 2147483647;
-    return ENTROPY_DEBUG("fallback(4)", entropy);
+    return ENTROPY_DEBUG("fallback(4)", entropy * 2147483647);
   } else {
-    entropy.k[1] *= 2305843009213693951ULL;
-    return ENTROPY_DEBUG("fallback(8)", entropy);
+    return ENTROPY_DEBUG("fallback(8)",
+                         entropy * (unsigned long)2305843009213693951ULL);
   }
-#  endif
+#endif
 #endif /* defined(EXPAT_POCO) */
+}
+
+static unsigned long
+get_hash_secret_salt(XML_Parser parser) {
+  const XML_Parser rootParser = getRootParserOf(parser, NULL);
+  assert(! rootParser->m_parentParser);
+
+  return rootParser->m_hash_secret_salt;
 }
 
 static enum XML_Error
@@ -1219,10 +1335,8 @@ callProcessor(XML_Parser parser, const char *start, const char *end,
 static XML_Bool /* only valid for root parser */
 startParsing(XML_Parser parser) {
   /* hash functions must be initialized before setContext() is called */
-  if (parser->m_hash_secret_salt_set != XML_TRUE) {
-    parser->m_hash_secret_salt_128 = generate_hash_secret_salt();
-    parser->m_hash_secret_salt_set = XML_TRUE;
-  }
+  if (parser->m_hash_secret_salt == 0)
+    parser->m_hash_secret_salt = generate_hash_secret_salt(parser);
   if (parser->m_ns) {
     /* implicit context only set for root parser, since child
        parsers (i.e. external entity parsers) will inherit it
@@ -1510,9 +1624,7 @@ parserInit(XML_Parser parser, const XML_Char *encodingName) {
   parser->m_useForeignDTD = XML_FALSE;
   parser->m_paramEntityParsing = XML_PARAM_ENTITY_PARSING_NEVER;
 #endif
-  parser->m_hash_secret_salt_128.k[0] = 0;
-  parser->m_hash_secret_salt_128.k[1] = 0;
-  parser->m_hash_secret_salt_set = XML_FALSE;
+  parser->m_hash_secret_salt = 0;
 
 #if XML_GE == 1
   memset(&parser->m_accounting, 0, sizeof(ACCOUNTING));
@@ -1658,7 +1770,6 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
   XML_ExternalEntityRefHandler oldExternalEntityRefHandler;
   XML_SkippedEntityHandler oldSkippedEntityHandler;
   XML_UnknownEncodingHandler oldUnknownEncodingHandler;
-  void *oldUnknownEncodingHandlerData;
   XML_ElementDeclHandler oldElementDeclHandler;
   XML_AttlistDeclHandler oldAttlistDeclHandler;
   XML_EntityDeclHandler oldEntityDeclHandler;
@@ -1679,8 +1790,7 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
      from hash tables associated with either parser without us having
      to worry which hash secrets each table has.
   */
-  struct sipkey oldhash_secret_salt_128;
-  XML_Bool oldhash_secret_salt_set;
+  unsigned long oldhash_secret_salt;
   XML_Bool oldReparseDeferralEnabled;
 
   /* Validate the oldParser parameter before we pull everything out of it */
@@ -1705,7 +1815,6 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
   oldExternalEntityRefHandler = parser->m_externalEntityRefHandler;
   oldSkippedEntityHandler = parser->m_skippedEntityHandler;
   oldUnknownEncodingHandler = parser->m_unknownEncodingHandler;
-  oldUnknownEncodingHandlerData = parser->m_unknownEncodingHandlerData;
   oldElementDeclHandler = parser->m_elementDeclHandler;
   oldAttlistDeclHandler = parser->m_attlistDeclHandler;
   oldEntityDeclHandler = parser->m_entityDeclHandler;
@@ -1726,8 +1835,7 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
      from hash tables associated with either parser without us having
      to worry which hash secrets each table has.
   */
-  oldhash_secret_salt_128 = parser->m_hash_secret_salt_128;
-  oldhash_secret_salt_set = parser->m_hash_secret_salt_set;
+  oldhash_secret_salt = parser->m_hash_secret_salt;
   oldReparseDeferralEnabled = parser->m_reparseDeferralEnabled;
 
 #ifdef XML_DTD
@@ -1767,7 +1875,6 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
   parser->m_externalEntityRefHandler = oldExternalEntityRefHandler;
   parser->m_skippedEntityHandler = oldSkippedEntityHandler;
   parser->m_unknownEncodingHandler = oldUnknownEncodingHandler;
-  parser->m_unknownEncodingHandlerData = oldUnknownEncodingHandlerData;
   parser->m_elementDeclHandler = oldElementDeclHandler;
   parser->m_attlistDeclHandler = oldAttlistDeclHandler;
   parser->m_entityDeclHandler = oldEntityDeclHandler;
@@ -1782,8 +1889,7 @@ XML_ExternalEntityParserCreate(XML_Parser oldParser, const XML_Char *context,
     parser->m_externalEntityRefHandlerArg = oldExternalEntityRefHandlerArg;
   parser->m_defaultExpandInternalEntities = oldDefaultExpandInternalEntities;
   parser->m_ns_triplets = oldns_triplets;
-  parser->m_hash_secret_salt_128 = oldhash_secret_salt_128;
-  parser->m_hash_secret_salt_set = oldhash_secret_salt_set;
+  parser->m_hash_secret_salt = oldhash_secret_salt;
   parser->m_reparseDeferralEnabled = oldReparseDeferralEnabled;
   parser->m_parentParser = oldParser;
 #ifdef XML_DTD
@@ -1844,7 +1950,7 @@ XML_ParserFree(XML_Parser parser) {
     }
     p = tagList;
     tagList = tagList->parent;
-    FREE(parser, p->buf.raw);
+    FREE(parser, p->buf);
     destroyBindings(p->bindings, parser);
     FREE(parser, p);
   }
@@ -2227,7 +2333,6 @@ XML_SetParamEntityParsing(XML_Parser parser,
 #endif
 }
 
-// DEPRECATED since Expat 2.8.0.
 int XMLCALL
 XML_SetHashSalt(XML_Parser parser, unsigned long hash_salt) {
   if (parser == NULL)
@@ -2239,44 +2344,8 @@ XML_SetHashSalt(XML_Parser parser, unsigned long hash_salt) {
   /* block after XML_Parse()/XML_ParseBuffer() has been called */
   if (parserBusy(rootParser))
     return 0;
-
-  rootParser->m_hash_secret_salt_128.k[0] = 0;
-  rootParser->m_hash_secret_salt_128.k[1] = hash_salt;
-
-  if (hash_salt != 0) { // to remain backwards compatible
-    rootParser->m_hash_secret_salt_set = XML_TRUE;
-
-    if (sizeof(unsigned long) == 4)
-      ENTROPY_DEBUG("explicit(4)", rootParser->m_hash_secret_salt_128);
-    else
-      ENTROPY_DEBUG("explicit(8)", rootParser->m_hash_secret_salt_128);
-  }
-
+  rootParser->m_hash_secret_salt = hash_salt;
   return 1;
-}
-
-XML_Bool XMLCALL
-XML_SetHashSalt16Bytes(XML_Parser parser, const uint8_t entropy[16]) {
-  if (parser == NULL)
-    return XML_FALSE;
-
-  if (entropy == NULL)
-    return XML_FALSE;
-
-  const XML_Parser rootParser = getRootParserOf(parser, NULL);
-  assert(! rootParser->m_parentParser);
-
-  /* block after XML_Parse()/XML_ParseBuffer() has been called */
-  if (parserBusy(rootParser))
-    return XML_FALSE;
-
-  sip_tokey(&(rootParser->m_hash_secret_salt_128), entropy);
-
-  rootParser->m_hash_secret_salt_set = XML_TRUE;
-
-  ENTROPY_DEBUG("explicit(16)", rootParser->m_hash_secret_salt_128);
-
-  return XML_TRUE;
 }
 
 enum XML_Status XMLCALL
@@ -2546,7 +2615,7 @@ XML_GetBuffer(XML_Parser parser, int len) {
       // NOTE: We are avoiding MALLOC(..) here to leave limiting
       //       the input size to the application using Expat.
       newBuf = (char*)parser->m_mem.malloc_fcn(bufferSize);
-      if (newBuf == NULL) {
+      if (newBuf == 0) {
         parser->m_errorCode = XML_ERROR_NO_MEMORY;
         return NULL;
       }
@@ -3073,7 +3142,7 @@ storeRawNames(XML_Parser parser) {
     size_t bufSize;
     size_t nameLen = sizeof(XML_Char) * (tag->name.strLen + 1);
     size_t rawNameLen;
-    char *rawNameBuf = tag->buf.raw + nameLen;
+    char *rawNameBuf = tag->buf + nameLen;
     /* Stop if already stored.  Since m_tagStack is a stack, we can stop
        at the first entry that has already been copied; everything
        below it in the stack is already been accounted for in a
@@ -3089,22 +3158,22 @@ storeRawNames(XML_Parser parser) {
     if (rawNameLen > (size_t)INT_MAX - nameLen)
       return XML_FALSE;
     bufSize = nameLen + rawNameLen;
-    if (bufSize > (size_t)(tag->bufEnd - tag->buf.raw)) {
-      char *temp = (char*)REALLOC(parser, tag->buf.raw, bufSize);
+    if (bufSize > (size_t)(tag->bufEnd - tag->buf)) {
+      char *temp = (char*)REALLOC(parser, tag->buf, bufSize);
       if (temp == NULL)
         return XML_FALSE;
-      /* if tag->name.str points to tag->buf.str (only when namespace
+      /* if tag->name.str points to tag->buf (only when namespace
          processing is off) then we have to update it
       */
-      if (tag->name.str == tag->buf.str)
+      if (tag->name.str == (XML_Char *)tag->buf)
         tag->name.str = (XML_Char *)temp;
       /* if tag->name.localPart is set (when namespace processing is on)
          then update it as well, since it will always point into tag->buf
       */
       if (tag->name.localPart)
         tag->name.localPart
-            = (XML_Char *)temp + (tag->name.localPart - tag->buf.str);
-      tag->buf.raw = temp;
+            = (XML_Char *)temp + (tag->name.localPart - (XML_Char *)tag->buf);
+      tag->buf = temp;
       tag->bufEnd = temp + bufSize;
       rawNameBuf = temp + nameLen;
     }
@@ -3419,12 +3488,12 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
         tag = (TAG*)MALLOC(parser, sizeof(TAG));
         if (! tag)
           return XML_ERROR_NO_MEMORY;
-        tag->buf.raw = (char*)MALLOC(parser, INIT_TAG_BUF_SIZE);
-        if (! tag->buf.raw) {
+        tag->buf = (char*)MALLOC(parser, INIT_TAG_BUF_SIZE);
+        if (! tag->buf) {
           FREE(parser, tag);
           return XML_ERROR_NO_MEMORY;
         }
-        tag->bufEnd = tag->buf.raw + INIT_TAG_BUF_SIZE;
+        tag->bufEnd = tag->buf + INIT_TAG_BUF_SIZE;
       }
       tag->bindings = NULL;
       tag->parent = parser->m_tagStack;
@@ -3437,32 +3506,31 @@ doContent(XML_Parser parser, int startTagLevel, const ENCODING *enc,
       {
         const char *rawNameEnd = tag->rawName + tag->rawNameLength;
         const char *fromPtr = tag->rawName;
-        toPtr = tag->buf.str;
+        toPtr = (XML_Char *)tag->buf;
         for (;;) {
+          int bufSize;
           int convLen;
           const enum XML_Convert_Result convert_res
               = XmlConvert(enc, &fromPtr, rawNameEnd, (ICHAR **)&toPtr,
                            (ICHAR *)tag->bufEnd - 1);
-          convLen = (int)(toPtr - tag->buf.str);
+          convLen = (int)(toPtr - (XML_Char *)tag->buf);
           if ((fromPtr >= rawNameEnd)
               || (convert_res == XML_CONVERT_INPUT_INCOMPLETE)) {
             tag->name.strLen = convLen;
             break;
           }
-          if (SIZE_MAX / 2 < (size_t)(tag->bufEnd - tag->buf.raw))
-            return XML_ERROR_NO_MEMORY;
-          const size_t bufSize = (size_t)(tag->bufEnd - tag->buf.raw) * 2;
+          bufSize = (int)(tag->bufEnd - tag->buf) << 1;
           {
-            char *temp = (char*)REALLOC(parser, tag->buf.raw, bufSize);
+            char *temp = (char*)REALLOC(parser, tag->buf, bufSize);
             if (temp == NULL)
               return XML_ERROR_NO_MEMORY;
-            tag->buf.raw = temp;
+            tag->buf = temp;
             tag->bufEnd = temp + bufSize;
             toPtr = (XML_Char *)temp + convLen;
           }
         }
       }
-      tag->name.str = tag->buf.str;
+      tag->name.str = (XML_Char *)tag->buf;
       *toPtr = XML_T('\0');
       result
           = storeAtts(parser, enc, s, &(tag->name), &(tag->bindings), account);
@@ -3793,8 +3861,6 @@ storeAtts(XML_Parser parser, const ENCODING *enc, const char *attStr,
                                          sizeof(ELEMENT_TYPE));
     if (! elementType)
       return XML_ERROR_NO_MEMORY;
-    if (! elementType->defaultAttsNames.parser)
-      hashTableInit(&(elementType->defaultAttsNames), parser);
     if (parser->m_ns && ! setElementTypePrefix(parser, elementType))
       return XML_ERROR_NO_MEMORY;
   }
@@ -3828,7 +3894,7 @@ storeAtts(XML_Parser parser, const ENCODING *enc, const char *attStr,
      * from -Wtype-limits on platforms where
      * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-    if ((unsigned)parser->m_attsSize > SIZE_MAX / sizeof(ATTRIBUTE)) {
+    if ((unsigned)parser->m_attsSize > (size_t)(-1) / sizeof(ATTRIBUTE)) {
       parser->m_attsSize = oldAttsSize;
       return XML_ERROR_NO_MEMORY;
     }
@@ -3847,7 +3913,7 @@ storeAtts(XML_Parser parser, const ENCODING *enc, const char *attStr,
      * from -Wtype-limits on platforms where
      * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #  if UINT_MAX >= SIZE_MAX
-    if ((unsigned)parser->m_attsSize > SIZE_MAX / sizeof(XML_AttrInfo)) {
+    if ((unsigned)parser->m_attsSize > (size_t)(-1) / sizeof(XML_AttrInfo)) {
       parser->m_attsSize = oldAttsSize;
       return XML_ERROR_NO_MEMORY;
     }
@@ -4023,7 +4089,7 @@ storeAtts(XML_Parser parser, const ENCODING *enc, const char *attStr,
        * from -Wtype-limits on platforms where
        * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-      if (nsAttsSize > SIZE_MAX / sizeof(NS_ATT)) {
+      if (nsAttsSize > (size_t)(-1) / sizeof(NS_ATT)) {
         /* Restore actual size of memory in m_nsAtts */
         parser->m_nsAttsPower = oldNsAttsPower;
         return XML_ERROR_NO_MEMORY;
@@ -4206,7 +4272,7 @@ storeAtts(XML_Parser parser, const ENCODING *enc, const char *attStr,
      * from -Wtype-limits on platforms where
      * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-    if ((unsigned)(n + EXPAND_SPARE) > SIZE_MAX / sizeof(XML_Char)) {
+    if ((unsigned)(n + EXPAND_SPARE) > (size_t)(-1) / sizeof(XML_Char)) {
       return XML_ERROR_NO_MEMORY;
     }
 #endif
@@ -4452,7 +4518,7 @@ addBinding(XML_Parser parser, PREFIX *prefix, const ATTRIBUTE_ID *attId,
        * from -Wtype-limits on platforms where
        * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-      if ((unsigned)(len + EXPAND_SPARE) > SIZE_MAX / sizeof(XML_Char)) {
+      if ((unsigned)(len + EXPAND_SPARE) > (size_t)(-1) / sizeof(XML_Char)) {
         return XML_ERROR_NO_MEMORY;
       }
 #endif
@@ -4479,7 +4545,7 @@ addBinding(XML_Parser parser, PREFIX *prefix, const ATTRIBUTE_ID *attId,
      * from -Wtype-limits on platforms where
      * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-    if ((unsigned)(len + EXPAND_SPARE) > SIZE_MAX / sizeof(XML_Char)) {
+    if ((unsigned)(len + EXPAND_SPARE) > (size_t)(-1) / sizeof(XML_Char)) {
       return XML_ERROR_NO_MEMORY;
     }
 #endif
@@ -5030,7 +5096,7 @@ entityValueInitProcessor(XML_Parser parser, const char *s, const char *end,
     }
     /* If we get this token, we have the start of what might be a
        normal tag, but not a declaration (i.e. it doesn't begin with
-       "<!" or "<?").  In a DTD context, that isn't legal.
+       "<!").  In a DTD context, that isn't legal.
     */
     else if (tok == XML_TOK_INSTANCE_START) {
       *nextPtr = next;
@@ -5119,15 +5185,6 @@ entityValueProcessor(XML_Parser parser, const char *s, const char *end,
       /* found end of entity value - can store it now */
       return storeEntityValue(parser, enc, s, end, XML_ACCOUNT_DIRECT, NULL);
     }
-    /* If we get this token, we have the start of what might be a
-       normal tag, but not a declaration (i.e. it doesn't begin with
-       "<!" or "<?").  In a DTD context, that isn't legal.
-    */
-    else if (tok == XML_TOK_INSTANCE_START) {
-      *nextPtr = next;
-      return XML_ERROR_SYNTAX;
-    }
-
     start = next;
   }
 }
@@ -5879,18 +5936,15 @@ doProlog(XML_Parser parser, const ENCODING *enc, const char *s, const char *end,
              * from -Wtype-limits on platforms where
              * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-            if (parser->m_groupSize > SIZE_MAX / sizeof(int)) {
-              parser->m_groupSize /= 2;
+            if (parser->m_groupSize > (size_t)(-1) / sizeof(int)) {
               return XML_ERROR_NO_MEMORY;
             }
 #endif
 
             int *const new_scaff_index = (int*)REALLOC(
                 parser, dtd->scaffIndex, parser->m_groupSize * sizeof(int));
-            if (new_scaff_index == NULL) {
-              parser->m_groupSize /= 2;
+            if (new_scaff_index == NULL)
               return XML_ERROR_NO_MEMORY;
-            }
             dtd->scaffIndex = new_scaff_index;
           }
         } else {
@@ -6742,14 +6796,7 @@ storeEntityValue(XML_Parser parser, const ENCODING *enc,
       return XML_ERROR_NO_MEMORY;
   }
 
-  const char *next = entityTextPtr;
-
-  /* Nothing to tokenize. */
-  if (entityTextPtr >= entityTextEnd) {
-    result = XML_ERROR_NONE;
-    goto endEntityValue;
-  }
-
+  const char *next;
   for (;;) {
     next
         = entityTextPtr; /* XmlEntityValueTok doesn't always set the last arg */
@@ -7128,10 +7175,10 @@ defineAttribute(ELEMENT_TYPE *type, ATTRIBUTE_ID *attId, XML_Bool isCdata,
   if (value || isId) {
     /* The handling of default attributes gets messed up if we have
        a default which duplicates a non-default. */
-    NAMED *const nameFound
-        = (NAMED *)lookup(parser, &(type->defaultAttsNames), attId->name, 0);
-    if (nameFound)
-      return 1;
+    int i;
+    for (i = 0; i < type->nDefaultAtts; i++)
+      if (attId == type->defaultAtts[i].id)
+        return 1;
     if (isId && ! type->idAtt && ! attId->xmlns)
       type->idAtt = attId;
   }
@@ -7159,7 +7206,7 @@ defineAttribute(ELEMENT_TYPE *type, ATTRIBUTE_ID *attId, XML_Bool isCdata,
        * from -Wtype-limits on platforms where
        * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-      if ((unsigned)count > SIZE_MAX / sizeof(DEFAULT_ATTRIBUTE)) {
+      if ((unsigned)count > (size_t)(-1) / sizeof(DEFAULT_ATTRIBUTE)) {
         return 0;
       }
 #endif
@@ -7178,12 +7225,6 @@ defineAttribute(ELEMENT_TYPE *type, ATTRIBUTE_ID *attId, XML_Bool isCdata,
   att->isCdata = isCdata;
   if (! isCdata)
     attId->maybeTokenized = XML_TRUE;
-
-  NAMED *const nameAddedOrFound = (NAMED *)lookup(
-      parser, &(type->defaultAttsNames), attId->name, sizeof(NAMED));
-  if (! nameAddedOrFound)
-    return 0;
-
   type->nDefaultAtts += 1;
   return 1;
 }
@@ -7405,24 +7446,16 @@ setContext(XML_Parser parser, const XML_Char *context) {
       else {
         if (! poolAppendChar(&parser->m_tempPool, XML_T('\0')))
           return XML_FALSE;
-        const XML_Char *const prefixName = poolCopyStringNoFinish(
-            &dtd->pool, poolStart(&parser->m_tempPool));
-        if (! prefixName) {
-          return XML_FALSE;
-        }
-
-        prefix = (PREFIX *)lookup(parser, &dtd->prefixes, prefixName,
-                                  sizeof(PREFIX));
-
-        const bool prefixNameUsed = prefix && prefix->name == prefixName;
-        if (prefixNameUsed)
-          poolFinish(&dtd->pool);
-        else
-          poolDiscard(&dtd->pool);
-
+        prefix
+            = (PREFIX *)lookup(parser, &dtd->prefixes,
+                               poolStart(&parser->m_tempPool), sizeof(PREFIX));
         if (! prefix)
           return XML_FALSE;
-
+        if (prefix->name == poolStart(&parser->m_tempPool)) {
+          prefix->name = poolCopyString(&dtd->pool, prefix->name);
+          if (! prefix->name)
+            return XML_FALSE;
+        }
         poolDiscard(&parser->m_tempPool);
       }
       for (context = s + 1; *context != CONTEXT_SEP && *context != XML_T('\0');
@@ -7509,7 +7542,6 @@ dtdReset(DTD *p, XML_Parser parser) {
     ELEMENT_TYPE *e = (ELEMENT_TYPE *)hashTableIterNext(&iter);
     if (! e)
       break;
-    hashTableDestroy(&(e->defaultAttsNames));
     if (e->allocDefaultAtts != 0)
       FREE(parser, e->defaultAtts);
   }
@@ -7551,7 +7583,6 @@ dtdDestroy(DTD *p, XML_Bool isDocEntity, XML_Parser parser) {
     ELEMENT_TYPE *e = (ELEMENT_TYPE *)hashTableIterNext(&iter);
     if (! e)
       break;
-    hashTableDestroy(&(e->defaultAttsNames));
     if (e->allocDefaultAtts != 0)
       FREE(parser, e->defaultAtts);
   }
@@ -7645,17 +7676,14 @@ dtdCopy(XML_Parser oldParser, DTD *newDtd, const DTD *oldDtd,
                                   sizeof(ELEMENT_TYPE));
     if (! newE)
       return 0;
-
-    if (! newE->defaultAttsNames.parser)
-      hashTableInit(&(newE->defaultAttsNames), parser);
-
     if (oldE->nDefaultAtts) {
       /* Detect and prevent integer overflow.
        * The preprocessor guard addresses the "always false" warning
        * from -Wtype-limits on platforms where
        * sizeof(int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-      if ((size_t)oldE->nDefaultAtts > SIZE_MAX / sizeof(DEFAULT_ATTRIBUTE)) {
+      if ((size_t)oldE->nDefaultAtts
+          > ((size_t)(-1) / sizeof(DEFAULT_ATTRIBUTE))) {
         return 0;
       }
 #endif
@@ -7673,9 +7701,8 @@ dtdCopy(XML_Parser oldParser, DTD *newDtd, const DTD *oldDtd,
       newE->prefix = (PREFIX *)lookup(oldParser, &(newDtd->prefixes),
                                       oldE->prefix->name, 0);
     for (i = 0; i < newE->nDefaultAtts; i++) {
-      const XML_Char *const attributeName = oldE->defaultAtts[i].id->name;
       newE->defaultAtts[i].id = (ATTRIBUTE_ID *)lookup(
-          oldParser, &(newDtd->attributeIds), attributeName, 0);
+          oldParser, &(newDtd->attributeIds), oldE->defaultAtts[i].id->name, 0);
       newE->defaultAtts[i].isCdata = oldE->defaultAtts[i].isCdata;
       if (oldE->defaultAtts[i].value) {
         newE->defaultAtts[i].value
@@ -7684,12 +7711,6 @@ dtdCopy(XML_Parser oldParser, DTD *newDtd, const DTD *oldDtd,
           return 0;
       } else
         newE->defaultAtts[i].value = NULL;
-
-      NAMED *const nameAddedOrFound = (NAMED *)lookup(
-          parser, &(newE->defaultAttsNames), attributeName, sizeof(NAMED));
-      if (! nameAddedOrFound) {
-        return 0;
-      }
     }
   }
 
@@ -7803,10 +7824,8 @@ keylen(KEY s) {
 
 static void
 copy_salt_to_sipkey(XML_Parser parser, struct sipkey *key) {
-  const XML_Parser rootParser = getRootParserOf(parser, NULL);
-  assert(! rootParser->m_parentParser);
-
-  *key = rootParser->m_hash_secret_salt_128;
+  key->k[0] = 0;
+  key->k[1] = get_hash_secret_salt(parser);
 }
 
 static unsigned long FASTCALL
@@ -7866,7 +7885,7 @@ lookup(XML_Parser parser, HASH_TABLE *table, KEY name, size_t createSize) {
       unsigned long newMask = (unsigned long)newSize - 1;
 
       /* Detect and prevent integer overflow */
-      if (newSize > SIZE_MAX / sizeof(NAMED *)) {
+      if (newSize > (size_t)(-1) / sizeof(NAMED *)) {
         return NULL;
       }
 
@@ -8025,23 +8044,6 @@ poolCopyString(STRING_POOL *pool, const XML_Char *s) {
   return s;
 }
 
-// A version of `poolCopyString` that does not call `poolFinish`
-// and reverts any partial advancement upon failure.
-static const XML_Char *FASTCALL
-poolCopyStringNoFinish(STRING_POOL *pool, const XML_Char *s) {
-  const XML_Char *const original = s;
-  do {
-    if (! poolAppendChar(pool, *s)) {
-      // Revert any previously successful advancement
-      const ptrdiff_t advancedBy = s - original;
-      if (advancedBy > 0)
-        pool->ptr -= advancedBy;
-      return NULL;
-    }
-  } while (*s++);
-  return pool->start;
-}
-
 static const XML_Char *
 poolCopyStringN(STRING_POOL *pool, const XML_Char *s, int n) {
   if (! pool->ptr && ! poolGrow(pool)) {
@@ -8119,7 +8121,7 @@ poolBytesToAllocateFor(int blockSize) {
 static XML_Bool FASTCALL
 poolGrow(STRING_POOL *pool) {
   if (pool->freeBlocks) {
-    if (pool->start == NULL) {
+    if (pool->start == 0) {
       pool->blocks = pool->freeBlocks;
       pool->freeBlocks = pool->freeBlocks->next;
       pool->blocks->next = NULL;
@@ -8231,7 +8233,7 @@ nextScaffoldPart(XML_Parser parser) {
      * from -Wtype-limits on platforms where
      * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-    if (parser->m_groupSize > SIZE_MAX / sizeof(int)) {
+    if (parser->m_groupSize > ((size_t)(-1) / sizeof(int))) {
       return -1;
     }
 #endif
@@ -8258,7 +8260,7 @@ nextScaffoldPart(XML_Parser parser) {
        * from -Wtype-limits on platforms where
        * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-      if (dtd->scaffSize > SIZE_MAX / 2u / sizeof(CONTENT_SCAFFOLD)) {
+      if (dtd->scaffSize > (size_t)(-1) / 2u / sizeof(CONTENT_SCAFFOLD)) {
         return -1;
       }
 #endif
@@ -8308,15 +8310,15 @@ build_model(XML_Parser parser) {
    * from -Wtype-limits on platforms where
    * sizeof(unsigned int) < sizeof(size_t), e.g. on x86_64. */
 #if UINT_MAX >= SIZE_MAX
-  if (dtd->scaffCount > SIZE_MAX / sizeof(XML_Content)) {
+  if (dtd->scaffCount > (size_t)(-1) / sizeof(XML_Content)) {
     return NULL;
   }
-  if (dtd->contentStringLen > SIZE_MAX / sizeof(XML_Char)) {
+  if (dtd->contentStringLen > (size_t)(-1) / sizeof(XML_Char)) {
     return NULL;
   }
 #endif
   if (dtd->scaffCount * sizeof(XML_Content)
-      > SIZE_MAX - dtd->contentStringLen * sizeof(XML_Char)) {
+      > (size_t)(-1) - dtd->contentStringLen * sizeof(XML_Char)) {
     return NULL;
   }
 
@@ -8436,8 +8438,6 @@ getElementType(XML_Parser parser, const ENCODING *enc, const char *ptr,
                                sizeof(ELEMENT_TYPE));
   if (! ret)
     return NULL;
-  if (! ret->defaultAttsNames.parser)
-    hashTableInit(&(ret->defaultAttsNames), getRootParserOf(parser, NULL));
   if (ret->name != name)
     poolDiscard(&dtd->pool);
   else {

@@ -92,7 +92,6 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
 {
     if (request->getOpNum() == Coordination::OpNum::Create
         || request->getOpNum() == Coordination::OpNum::Create2
-        || request->getOpNum() == Coordination::OpNum::CreateTTL
         || request->getOpNum() == Coordination::OpNum::CreateIfNotExists
         || request->getOpNum() == Coordination::OpNum::Set)
     {
@@ -114,7 +113,6 @@ static bool checkIfRequestIncreaseMem(const Coordination::ZooKeeperRequestPtr & 
             {
                 case Coordination::OpNum::Create:
                 case Coordination::OpNum::Create2:
-                case Coordination::OpNum::CreateTTL:
                 case Coordination::OpNum::CreateIfNotExists: {
                     Coordination::ZooKeeperCreateRequest & create_req
                         = dynamic_cast<Coordination::ZooKeeperCreateRequest &>(*sub_zk_request);
@@ -257,7 +255,7 @@ void KeeperRequestDispatcher::shutdown(bool closed_all_connections)
             std::vector<nuraft::ptr<nuraft::buffer>> entries;
             entries.reserve(close_requests.size());
             for (const auto & r : close_requests)
-                entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
+                entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
 
             temp_stream->append(std::move(entries));
 
@@ -306,7 +304,7 @@ bool KeeperRequestDispatcher::putRequest(const Coordination::ZooKeeperRequestPtr
     int64_t max_request_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_bytes_size]);
     auto try_push = [&]
     {
-        return requests_queue_bytes.load() <= max_request_queue_bytes && requests_queue.tryPush(request_info);
+        return requests_queue_bytes.load() <= max_request_queue_bytes && requests_queue.tryPush(std::move(request_info));
     };
 
     if (!try_push())
@@ -372,7 +370,7 @@ void KeeperRequestDispatcher::onResponse(KeeperResponseForSession response) noex
     int64_t max_response_queue_bytes = int64_t(keeper_context->getCoordinationSettings()[CoordinationSetting::max_response_queue_bytes_size]);
     auto try_push = [&]
     {
-        return response_bytes_in_all_queues.load() <= max_response_queue_bytes && responses_queue.tryPush(response);
+        return response_bytes_in_all_queues.load() <= max_response_queue_bytes && responses_queue.tryPush(std::move(response));
     };
 
     if (!try_push())
@@ -767,8 +765,7 @@ void KeeperRequestDispatcher::dispatchThread()
                     Session * session = nullptr;
                     auto op = request.request->getOpNum();
                     if (op != Coordination::OpNum::Close &&
-                        op != Coordination::OpNum::SessionID &&
-                        request.session_id >= 0)
+                        op != Coordination::OpNum::SessionID)
                     {
                         auto it = sessions.find(request.session_id);
                         if (it == sessions.end() || it->second.dead.load())
@@ -891,7 +888,7 @@ void KeeperRequestDispatcher::dispatchThread()
                 std::vector<nuraft::ptr<nuraft::buffer>> entries;
                 entries.reserve(requests.size());
                 for (const auto & r : requests)
-                    entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
+                    entries.push_back(IKeeperStateMachine::getZooKeeperLogEntry(r));
 
                 /// Add information about the batch to the queue of in-flight requests.
 

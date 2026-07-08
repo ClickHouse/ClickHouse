@@ -32,13 +32,13 @@ namespace Setting
     extern const SettingsString url_base;
 }
 
-VectorWithMemoryTracking<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
+std::vector<size_t> TableFunctionURL::skipAnalysisForArguments(const QueryTreeNodePtr & query_node_table_function, ContextPtr) const
 {
     auto & table_function_node = query_node_table_function->as<TableFunctionNode &>();
     auto & table_function_arguments_nodes = table_function_node.getArguments().getNodes();
     size_t table_function_arguments_size = table_function_arguments_nodes.size();
 
-    VectorWithMemoryTracking<size_t> result;
+    std::vector<size_t> result;
 
     for (size_t i = 0; i < table_function_arguments_size; ++i)
     {
@@ -123,6 +123,11 @@ StoragePtr TableFunctionURL::getStorage(
         && !is_secondary_query
         && !is_insert_query;
 
+    const auto & client_info = context->getClientInfo();
+    bool can_use_distributed_iterator =
+        client_info.collaborate_with_initiator &&
+        context->hasClusterFunctionReadTaskCallback();
+
     if (can_use_parallel_replicas)
     {
         return std::make_shared<StorageURLCluster>(
@@ -137,8 +142,6 @@ StoragePtr TableFunctionURL::getStorage(
             configuration);
     }
 
-    /// Note: distributed_processing is always false for the plain url() table function.
-    /// Cluster table functions (urlCluster) handle distributed processing in their own getStorage() method.
     return std::make_shared<StorageURL>(
         source,
         StorageID(getDatabaseName(), table_name),
@@ -152,7 +155,7 @@ StoragePtr TableFunctionURL::getStorage(
         configuration.headers,
         configuration.http_method,
         nullptr,
-        /*distributed_processing=*/false);
+        /*distributed_processing=*/can_use_distributed_iterator);
 }
 
 ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const

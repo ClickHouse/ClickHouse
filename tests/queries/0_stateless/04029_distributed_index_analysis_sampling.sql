@@ -2,7 +2,6 @@
 
 -- Verify that SAMPLE clause is passed to remote replicas during distributed index analysis,
 -- so they can prune granules by the sampling range.
-SET explain_query_plan_default = 'legacy';
 
 SET send_logs_level = 'error';
 

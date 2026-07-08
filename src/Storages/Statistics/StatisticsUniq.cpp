@@ -64,13 +64,13 @@ void StatisticsUniq::serialize(WriteBuffer & buf)
 
 void StatisticsUniq::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
 {
-    bool is_null = false;
+    bool is_null;
     readBinary(is_null, buf);
     auto nested_func = collector->getNestedFunction();
     /// when serialize is nullable, but we removed the nullable
     if (is_null && !nested_func)
     {
-        bool serialize_flag = false;
+        bool serialize_flag;
         readBinary(serialize_flag, buf);
         if (!serialize_flag)
             return;

@@ -1,5 +1,4 @@
 #include <Storages/System/StorageSystemDatabaseReplicas.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <future>
 #include <memory>
@@ -43,7 +42,7 @@ using TStatus = typename StorageSystemDatabaseReplicas::TPools::StatusPool::TSta
 namespace
 {
 
-class SystemDatabaseReplicasSource final : public ISource
+class SystemDatabaseReplicasSource : public ISource
 {
 public:
     SystemDatabaseReplicasSource(
@@ -105,7 +104,7 @@ Chunk SystemDatabaseReplicasSource::generate()
             }
         }
 
-        const TStatus * status = nullptr;
+        const TStatus * status;
         try
         {
             status = &futures[index].get();
@@ -302,7 +301,7 @@ void StorageSystemDatabaseReplicas::readImpl(
     const bool need_to_check_access_for_databases = !access->isGranted(AccessType::SHOW_DATABASES);
 
     std::map<String, DatabasePtr> replicated_databases;
-    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
+    for (const auto & [db_name, db_data] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
         if (!dynamic_cast<const DatabaseReplicated *>(db_data.get()))
             continue;
@@ -339,6 +338,3 @@ void StorageSystemDatabaseReplicas::readImpl(
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemDatabaseReplicas) }

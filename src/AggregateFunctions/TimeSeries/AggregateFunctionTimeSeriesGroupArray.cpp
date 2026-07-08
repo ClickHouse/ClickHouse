@@ -89,7 +89,6 @@ namespace
     }
 }
 
-void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

@@ -1,5 +1,4 @@
 #include <memory>
-#include <base/defines.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -546,7 +545,7 @@ bool ParserSelectQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (distinct_on_expression_list)
     {
         /// DISTINCT ON and LIMIT BY are mutually exclusive, checked before
-        chassert(limit_by_expression_list == nullptr);
+        assert (limit_by_expression_list == nullptr);
 
         /// Transform `DISTINCT ON expr` to `LIMIT 1 BY expr`
         limit_by_expression_list = distinct_on_expression_list;
