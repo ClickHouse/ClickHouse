@@ -1,0 +1,5 @@
+-- separator-only needle: WHERE returns 0 rows
+0
+-- separator-only needle: text index NOT used (bypassed)
+-- valid needle: text index IS used
+Name: idx
