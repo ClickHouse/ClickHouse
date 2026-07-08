@@ -85,6 +85,8 @@ TEST(QueryFuzzer, MalformedDataTypeArgumentRoundTrip)
         "DateTime('Asia/Istanbul')",
         "DateTime64(3)",
         "DateTime64(3, 'UTC')",
+        "Nested(a UInt32, b String)",
+        "Nested(a UInt32, b Array(Nullable(Int64)))",
     };
     for (const auto & type_name : valid_type_names)
     {

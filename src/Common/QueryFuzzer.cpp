@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNested.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeQBit.h>
@@ -2109,6 +2110,21 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
                     return fuzzed;
             }
             return type;
+        }
+
+        /// Nested(a T1, b T2, ...) is a custom-named Array(Tuple(...)) alias. Without this arm it falls through
+        /// to the structural Array arm below, which rebuilds a plain Array(Tuple(...)) and drops the Nested
+        /// custom name, so the Nested parser/formatter path stops being fuzzed. Recursively fuzz each named
+        /// element type and rebuild via createNested, preserving the element names, so the result stays a
+        /// structurally valid, round-trippable Nested (no generic-expression injection).
+        if (const auto * type_nested = typeid_cast<const DataTypeNestedCustomName *>(type->getCustomName());
+            type_nested && fuzz_rand() % 4 != 0)
+        {
+            const auto & names = type_nested->getNames();
+            DataTypes new_elems = type_nested->getElements();
+            for (auto & elem : new_elems)
+                elem = fuzzDataType(elem);
+            return createNested(new_elems, names);
         }
     }
 
