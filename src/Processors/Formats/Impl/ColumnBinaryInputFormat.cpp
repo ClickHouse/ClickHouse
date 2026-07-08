@@ -100,7 +100,11 @@ Chunk ColumnBinaryInputFormat::read()
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: descriptor references data before descriptor table end");
 
-    if (data_end - static_cast<uint64_t>(hdr_desc_size) > format_settings_.column_binary.max_frame_size)
+    // 0 is the pre-existing-setting compatibility fallback (this setting did not exist before
+    // 26.7) and means "no cap", matching the pre-setting unlimited behavior — not a literal
+    // zero-byte limit, which would reject every non-empty frame.
+    if (format_settings_.column_binary.max_frame_size != 0
+        && data_end - static_cast<uint64_t>(hdr_desc_size) > format_settings_.column_binary.max_frame_size)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
             data_end - hdr_desc_size, format_settings_.column_binary.max_frame_size);

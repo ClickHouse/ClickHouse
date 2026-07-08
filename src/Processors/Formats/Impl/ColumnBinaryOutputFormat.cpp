@@ -54,7 +54,9 @@ std::optional<uint64_t> ColumnBinaryOutputFormat::precomputeSerializedSize(const
     // buffer) would otherwise allocate an oversized buffer before consume()'s equivalent check
     // ever runs. Throw here too so an oversized frame is rejected before any allocation happens,
     // not only before the actual write.
-    if (cursor - hdr_desc_size > max_frame_size_)
+    // 0 is the pre-existing-setting compatibility fallback and means "no cap", not a literal
+    // zero-byte limit — see the matching check in consume() below.
+    if (max_frame_size_ != 0 && cursor - hdr_desc_size > max_frame_size_)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
             cursor - hdr_desc_size, max_frame_size_);
@@ -88,8 +90,9 @@ void ColumnBinaryOutputFormat::consume(Chunk chunk)
     }
 
     // Mirror ColumnBinaryInputFormat's read-side check: reject before allocating/writing
-    // rather than emitting a frame the same setting would refuse to read back.
-    if (cursor - hdr_desc_size > max_frame_size_)
+    // rather than emitting a frame the same setting would refuse to read back. 0 means
+    // "no cap" (the pre-existing-setting compatibility fallback), not a zero-byte limit.
+    if (max_frame_size_ != 0 && cursor - hdr_desc_size > max_frame_size_)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "ColumnBinary: frame data size {} exceeds column_binary_max_frame_size limit {}",
             cursor - hdr_desc_size, max_frame_size_);

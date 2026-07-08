@@ -1354,3 +1354,55 @@ TEST(ColumnBinary, MaxFrameSizeAllowsFrameWithinLimit)
     const auto & decoded = typeid_cast<const ColumnUInt8 &>(*chunk.getColumns()[0]);
     EXPECT_EQ(decoded.getData()[0], 42);
 }
+
+// ── column_binary_max_frame_size = 0 must mean "no cap", not a zero-byte limit ──
+//
+// 0 is the setting's compatibility-fallback value for a `compatibility` setting
+// pinned to a version before this setting existed (SettingsChangesHistory.cpp).
+// Checking `frame_size > max_frame_size_` without special-casing 0 would reject
+// every non-empty frame in that configuration, breaking every ColumnBinary
+// read/write and every buffered WASM call using it. Exercise all three
+// enforcement sites: output precompute, output consume/write, and input read.
+
+TEST(ColumnBinary, MaxFrameSizeZeroMeansUnlimitedOnPrecompute)
+{
+    DataTypes types = {std::make_shared<DataTypeString>()};
+    auto col = ColumnString::create();
+    for (int i = 0; i < 1000; ++i)
+        col->insertData("0123456789", 10);
+    size_t rows = col->size();
+    Block header;
+    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
+    Block block_for_precompute = header;
+
+    WriteBufferFromOwnString obuf;
+    ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
+                                    /*disable_preallocation=*/false, /*max_frame_size=*/0);
+    EXPECT_NO_THROW(output.precomputeSerializedSize(block_for_precompute, rows));
+}
+
+TEST(ColumnBinary, MaxFrameSizeZeroMeansUnlimitedRoundTrip)
+{
+    DataTypes types = {std::make_shared<DataTypeString>()};
+    auto col = ColumnString::create();
+    for (int i = 0; i < 1000; ++i)
+        col->insertData("0123456789", 10);
+    Block header;
+    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
+
+    WriteBufferFromOwnString obuf;
+    {
+        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header),
+                                        /*disable_preallocation=*/false, /*max_frame_size=*/0);
+        output.write(header);
+    }
+    obuf.finalize();
+
+    FormatSettings format_settings;
+    format_settings.column_binary.max_frame_size = 0;
+    ReadBufferFromString rb{obuf.str()};
+    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, format_settings);
+    auto chunk = input.read();
+    ASSERT_EQ(chunk.getNumColumns(), 1u);
+    ASSERT_EQ(chunk.getNumRows(), 1000u);
+}
