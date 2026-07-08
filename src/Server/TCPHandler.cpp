@@ -42,6 +42,7 @@
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/Util/LayeredConfiguration.h>
 #include <Common/OpenTelemetryTraceContext.h>
+#include <Common/CancellationChecksBlockerInThread.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
@@ -1319,6 +1320,7 @@ void TCPHandler::skipData(QueryState & state)
 
     state.skipping_data = true;
     SCOPE_EXIT({ state.skipping_data = false; });
+    CancellationChecksBlockerInThread cancellation_checks_blocker;
 
     size_t blocks = 0;
     while (receivePacketsExpectData(state))
