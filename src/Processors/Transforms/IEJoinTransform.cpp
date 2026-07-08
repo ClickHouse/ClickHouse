@@ -185,15 +185,23 @@ void IEJoinAlgorithm::buildJoinState()
 
         const size_t rows = columns.empty() ? 0 : columns.front()->size();
 
+        /// The two conditions may read the same column (e.g. `x BETWEEN a AND b`), prepare it once.
+        const bool side_key_shared = conditions[0].keyPosition(side) == conditions[1].keyPosition(side);
         std::array<ColumnPtr, 2> comparison_keys;
         for (size_t key_index = 0; key_index < 2; ++key_index)
-            comparison_keys[key_index] = columns[conditions[key_index].keyPosition(side)]->convertToFullColumnIfLowCardinality();
+        {
+            if (key_index == 1 && side_key_shared)
+                comparison_keys[1] = comparison_keys[0];
+            else
+                comparison_keys[key_index] = columns[conditions[key_index].keyPosition(side)]->convertToFullColumnIfLowCardinality();
+        }
 
         /// Exclude rows with NULL in any key from the union entirely: a NULL fails every inequality,
         /// so such rows cannot produce matches (the join is INNER).
         IColumn::Filter non_null_filter;
-        for (const auto & key : comparison_keys)
+        for (size_t key_index = 0; key_index < (side_key_shared ? 1u : 2u); ++key_index)
         {
+            const auto & key = comparison_keys[key_index];
             const auto * nullable = checkAndGetColumn<ColumnNullable>(key.get());
             if (!nullable)
                 continue;
@@ -209,8 +217,8 @@ void IEJoinAlgorithm::buildJoinState()
         {
             for (auto & column : columns)
                 column = column->filter(non_null_filter, -1);
-            for (auto & key : comparison_keys)
-                key = key->filter(non_null_filter, -1);
+            comparison_keys[0] = comparison_keys[0]->filter(non_null_filter, -1);
+            comparison_keys[1] = side_key_shared ? comparison_keys[0] : comparison_keys[1]->filter(non_null_filter, -1);
         }
 
         side_columns[side] = std::move(columns);
@@ -310,13 +318,61 @@ void IEJoinAlgorithm::buildJoinState()
     /// L2: L1 positions ordered by the second condition's keys, so that every entry satisfies
     /// the condition with respect to all entries after it. No tie-break is needed: the frontier
     /// advances by comparing values, so the order within a run of equal keys is irrelevant.
-    permutation.resize(n_union);
-    iota(permutation.data(), n_union, UInt64(0));
-    ::sort(permutation.begin(), permutation.end(), [&](UInt64 pos_a, UInt64 pos_b)
+    auto l2_order_less = [&](UInt64 pos_a, UInt64 pos_b)
     {
         int cmp = compareKeysAt(1, l1_union[pos_a], l1_union[pos_b]);
         return l2_descending ? cmp > 0 : cmp < 0;
-    });
+    };
+
+    permutation.resize(n_union);
+    const bool left_key_shared = conditions[0].left_key_position == conditions[1].left_key_position;
+    if (left_key_shared && l1_descending == l2_descending)
+    {
+        /// `x BETWEEN a AND b` shapes: both left conditions read the same column, and the
+        /// operator families are opposite - exactly then the L1 and L2 directions coincide, so
+        /// the left entries are already in L2 order within L1 order (entries with equal first
+        /// keys have equal second keys). Build L2 by sorting only the right entries by the
+        /// second key and merging the two runs, instead of sorting the whole union.
+        PaddedPODArray<UInt64> right_positions;
+        right_positions.reserve(num_side_rows[1]);
+        size_t num_left_positions = 0;
+        for (size_t pos = 0; pos < n_union; ++pos)
+        {
+            if (li[pos] > 0)
+                permutation[num_left_positions++] = pos;
+            else
+                right_positions.push_back(pos);
+        }
+        chassert(num_left_positions == num_side_rows[0]);
+        ::sort(right_positions.begin(), right_positions.end(), l2_order_less);
+
+        /// Merge the two runs in place from the back; a prefix of the left run that is never
+        /// displaced stays where it is.
+        size_t left_remaining = num_left_positions;
+        size_t right_remaining = right_positions.size();
+        size_t write = n_union;
+        while (left_remaining > 0 && right_remaining > 0)
+        {
+            if (l2_order_less(permutation[left_remaining - 1], right_positions[right_remaining - 1]))
+                permutation[--write] = right_positions[--right_remaining];
+            else
+                permutation[--write] = permutation[--left_remaining];
+        }
+        while (right_remaining > 0)
+            permutation[--write] = right_positions[--right_remaining];
+        chassert(write == left_remaining);
+    }
+    else
+    {
+        iota(permutation.data(), n_union, UInt64(0));
+        ::sort(permutation.begin(), permutation.end(), l2_order_less);
+    }
+
+#ifndef NDEBUG
+    /// Both L2 build paths must produce an order the general comparator accepts.
+    for (size_t i = 1; i < n_union; ++i)
+        chassert(!l2_order_less(permutation[i], permutation[i - 1]));
+#endif
 
     l2_union.resize(n_union);
     for (size_t i = 0; i < n_union; ++i)
