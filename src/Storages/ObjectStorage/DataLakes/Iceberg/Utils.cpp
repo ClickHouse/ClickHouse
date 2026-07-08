@@ -507,8 +507,13 @@ bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::strin
     if (path != table_root)
         return false;
 
+    /// Namespace-less backends (HDFS/Local, where `getNamespace()` is always empty) have no
+    /// namespace to validate: `IcebergPathResolver` already accepts authority-bearing locations
+    /// such as `hdfs://namenode:8020/...` or `hdfs://user@nameservice/...` for these backends, so
+    /// requiring an empty authority here would reject valid cached entries and defeat the
+    /// UUID-hint fast path for every namespace-less table.
     if (table_namespace.empty())
-        return authority.empty();
+        return true;
 
     /// Compare the namespace exactly, not just the trailing path: a suffix-only check would
     /// accept a same-named key living in a different bucket (e.g. a stale `catalog_uuid_hint`

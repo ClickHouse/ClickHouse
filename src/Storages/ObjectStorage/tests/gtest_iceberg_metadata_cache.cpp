@@ -207,6 +207,20 @@ TEST(IcebergMetadataCache, LocationMatchesAuthorityBearingAzureUri)
         "wasb://container@account.blob.core.windows.net/ns/table", "container", "ns/table"));
 }
 
+TEST(IcebergMetadataCache, LocationMatchesHdfsUriWithHostAuthority)
+{
+    // `StorageHDFSConfiguration::getNamespace()` is always empty, but external writers commonly
+    // store locations as `hdfs://namenode:8020/...`. A namespace-less backend has nothing to
+    // validate the authority against, so any authority must be accepted as long as the key path
+    // matches, or the UUID-hint fast path never works for HDFS-backed tables.
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://namenode:8020/warehouse/table", "", "warehouse/table"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesHdfsUriWithNameserviceAuthority)
+{
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("hdfs://user@nameservice/warehouse/table", "", "warehouse/table"));
+}
+
 TEST(IcebergMetadataCache, LocationDoesNotMatchAuthorityBearingUriWithDifferentContainer)
 {
     EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot(

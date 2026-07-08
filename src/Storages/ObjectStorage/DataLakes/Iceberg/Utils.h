@@ -140,8 +140,11 @@ std::string normalizeUuid(const std::string & uuid);
 /// key path, e.g. from `getPathForRead().path`). Handles both scheme-less absolute paths (as
 /// written natively by ClickHouse for namespace-less backends like HDFS/Local) and scheme-bearing
 /// URIs, including the authority-bearing form used by Spark/Azure
-/// (`wasb://container@account.blob.core.windows.net/...`). The key-path comparison is exact, not
-/// a suffix match, so a same-named key in a different bucket/container is correctly rejected.
+/// (`wasb://container@account.blob.core.windows.net/...`) or HDFS
+/// (`hdfs://namenode:8020/...`, `hdfs://user@nameservice/...`). The key-path comparison is always
+/// exact, not a suffix match, so a same-named key in a different bucket/container is correctly
+/// rejected. When `table_namespace` is empty (namespace-less backends), any authority is accepted
+/// since there is nothing to validate it against.
 bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_namespace, std::string_view table_root);
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
