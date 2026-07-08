@@ -2683,12 +2683,19 @@ private:
         /// updated sibling's codec and RECOMPRESS COLUMN of the other sibling would not actually
         /// recompress all of its stored streams. Seeding makes recompression skip such streams and
         /// leave them to the output stream, matching a fresh write of the part (which also writes a
-        /// shared offsets stream exactly once). Streams are resolved against the source part so their
-        /// names match the ones `recompressColumnStreams` resolves the same way.
-        for (const auto & source_column : ctx->source_part->getColumns())
-            if (ctx->updated_header.has(source_column.name))
-                for (const auto & stream_name : getColumnDataStreamNames(*ctx->source_part, source_column))
-                    recompressed_streams.insert(stream_name);
+        /// shared offsets stream exactly once).
+        ///
+        /// Resolve the streams via `getStreamCounts` -- the same computation `collectFilesToSkip` uses
+        /// to decide which files the output stream produces -- over the columns the interpreter writes,
+        /// resolved against the source part's checksums. This also covers an updated column that is not
+        /// present in the source part yet, e.g. a `Nested` sibling `n.c` being materialized in the same
+        /// mutation as a RECOMPRESS COLUMN of another sibling (created by `ADD COLUMN n.c ...` so old
+        /// parts still lack it): the new sibling's own data streams do not resolve against the source
+        /// part and are skipped, while its shared offsets stream does resolve (it was created by the
+        /// existing siblings) and gets seeded, so recompression leaves it to the single output-stream
+        /// writer. Iterating only `source_part->getColumns()` here would miss that shared stream.
+        for (const auto & [stream_name, _] : MutationHelpers::getStreamCounts(ctx->new_data_part, ctx->source_part->checksums, ctx->updated_header.getNames()))
+            recompressed_streams.insert(stream_name);
 
         for (const auto & column : ctx->columns_to_recompress)
         {
