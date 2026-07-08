@@ -2807,7 +2807,11 @@ void KeyCondition::tryPrepareSetAtomsForHas(
 
     auto analysis = analyzePredicateExpressionForSetIndex(key_arg, info);
 
-    if (analysis.indexes_mapping.empty())
+    /// If no direct key mapping was found AND the wrapped-candidates pass of
+    /// `extractSetAtomsForKeyArgument` cannot produce anything either, return early. This mirrors
+    /// the guard of `tryPrepareSetAtomsForIn`.
+    if (analysis.indexes_mapping.empty()
+        && exprNamesForWrappedSetAtoms(key_arg, info.key_subexpr_names, analysis.args_count, allow_constant_transformation).empty())
         return;
 
     /// Check if array argument is usable
