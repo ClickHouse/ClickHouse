@@ -470,15 +470,33 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
-bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_root)
+bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_namespace, std::string_view table_root)
 {
     while (table_root.ends_with('/'))
         table_root.remove_suffix(1);
-    if (table_root.empty())
+    while (table_root.starts_with('/'))
+        table_root.remove_prefix(1);
+    if (table_namespace.empty() && table_root.empty())
         return true;
+
+    /// Strip the scheme (e.g. "s3://") so we compare only the storage-namespace + key part.
+    if (auto scheme_pos = cached_location.find("://"); scheme_pos != std::string_view::npos)
+        cached_location.remove_prefix(scheme_pos + 3);
     while (cached_location.ends_with('/'))
         cached_location.remove_suffix(1);
-    return cached_location.ends_with(table_root);
+
+    /// Compare the full namespace (bucket/container) + key, not just a path suffix: a suffix-only
+    /// check would accept a same-named key living in a different bucket (e.g. a stale
+    /// `catalog_uuid_hint` colliding with another table's UUID whose `location` is
+    /// `s3://other-bucket/<same key>`), which must be rejected.
+    std::string expected_root(table_namespace);
+    if (!table_root.empty())
+    {
+        if (!expected_root.empty())
+            expected_root += '/';
+        expected_root += table_root;
+    }
+    return cached_location == expected_root;
 }
 
 Poco::JSON::Object::Ptr getMetadataJSONObject(

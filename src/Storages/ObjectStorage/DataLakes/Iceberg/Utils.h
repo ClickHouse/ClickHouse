@@ -134,10 +134,13 @@ std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV1Method(const Poco::J
 std::pair<Poco::JSON::Object::Ptr, Int32> parseTableSchemaV2Method(const Poco::JSON::Object::Ptr & metadata_object);
 std::string normalizeUuid(const std::string & uuid);
 
-/// Whether `cached_location` (the Iceberg `location` field of a cached metadata JSON, which per
-/// spec never has a trailing slash) refers to `table_root` (the storage engine's configured path,
-/// which does carry a trailing slash). Trailing slashes are trimmed from both sides before comparing.
-bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_root);
+/// Whether `cached_location` (the Iceberg `location` field of a cached metadata JSON) refers to
+/// this table, identified by its storage `table_namespace` (bucket/container, e.g. from
+/// `IObjectStorageConfiguration::getNamespace`) and `table_root` (the storage engine's configured
+/// key path, e.g. from `getPathForRead().path`). The comparison is exact (after stripping the
+/// scheme and trailing/leading slashes), not a suffix match, so a same-named key in a different
+/// bucket is correctly rejected.
+bool cachedLocationMatchesTableRoot(std::string_view cached_location, std::string_view table_namespace, std::string_view table_root);
 
 DataTypePtr getFunctionResultType(const String & iceberg_transform_name, DataTypePtr source_type);
 

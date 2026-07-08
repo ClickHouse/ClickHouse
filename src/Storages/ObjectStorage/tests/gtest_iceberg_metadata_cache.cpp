@@ -142,7 +142,7 @@ TEST(IcebergMetadataCache, TablesWithSamePathButDifferentUuidsAreIndependent)
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootExact)
 {
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket/ns/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket", "ns/table"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnTableRoot)
@@ -151,29 +151,37 @@ TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnTableRoot)
     // `location` field never does. Regression test for a bug where every warm
     // cache hit was rejected because of this mismatch (see test_metadata_cache
     // integration test).
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket/ns/table/"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "bucket", "ns/table/"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashOnCachedLocation)
 {
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket/ns/table"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket", "ns/table"));
 }
 
 TEST(IcebergMetadataCache, LocationMatchesTableRootWithTrailingSlashesOnBoth)
 {
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket/ns/table/"));
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table/", "bucket", "ns/table/"));
 }
 
 TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentTableRoot)
 {
-    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/other_table", "bucket/ns/table"));
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/other_table", "bucket", "ns/table"));
 }
 
-TEST(IcebergMetadataCache, LocationMatchesWhenTableRootIsEmpty)
+TEST(IcebergMetadataCache, LocationDoesNotMatchDifferentBucketWithSameKey)
 {
-    // An empty table_root means the caller has nothing to validate against, so
-    // the check is permissive rather than rejecting every hit.
-    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", ""));
+    // Regression test: a suffix-only match would wrongly accept a same-named key living in a
+    // different bucket. A stale `catalog_uuid_hint` colliding with another table's UUID must not
+    // be accepted just because the trailing path segments happen to coincide.
+    EXPECT_FALSE(Iceberg::cachedLocationMatchesTableRoot("s3://backup-bucket/ns/table", "bucket", "ns/table"));
+}
+
+TEST(IcebergMetadataCache, LocationMatchesWhenNamespaceAndTableRootAreEmpty)
+{
+    // Nothing to validate against (e.g. HDFS/Local backends with no bucket concept and an
+    // empty root), so the check is permissive rather than rejecting every hit.
+    EXPECT_TRUE(Iceberg::cachedLocationMatchesTableRoot("s3://bucket/ns/table", "", ""));
 }
 
 #endif

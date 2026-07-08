@@ -221,11 +221,14 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
                         /// `metadata_file_path` is relative, so two different tables can share
                         /// the same key if a stale/wrong `catalog_uuid_hint` happens to equal
                         /// another table's real UUID. Verify the cached JSON's `location` field
-                        /// encodes this table's own root path so we don't load another table's
-                        /// schema/metadata under a colliding UUID.
+                        /// encodes this table's own storage namespace (bucket/container) and root
+                        /// path so we don't load another table's schema/metadata under a colliding
+                        /// UUID -- an exact match is required, not a suffix match, so a same-named
+                        /// key living in a different bucket is correctly rejected.
                         const String & table_root = configuration->getPathForRead().path;
+                        const String table_namespace = configuration->getNamespace();
                         bool location_ok = !candidate->has(f_location)
-                            || cachedLocationMatchesTableRoot(candidate->getValue<String>(f_location), table_root);
+                            || cachedLocationMatchesTableRoot(candidate->getValue<String>(f_location), table_namespace, table_root);
                         if (location_ok)
                         {
                             /// Hit from a prior validated init: cached JSON belongs to this table.
