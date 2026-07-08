@@ -186,9 +186,13 @@ void PostgreSQLHandler::run()
 
         while (tcp_server.isOpen())
         {
-            /// While discarding messages after an extended-query error, the
-            /// backend must stay silent until it receives Sync; ReadyForQuery is
-            /// sent only once, in response to that Sync (see the SYNC case).
+            /// The extended-query protocol contract is exactly one ReadyForQuery
+            /// per Sync. Every message that is part of an extended-query series
+            /// (Parse, Bind, Execute, Describe, Close) sets is_query_in_progress,
+            /// so no ReadyForQuery is emitted mid-series; Sync clears the flag and
+            /// the top of the loop then sends the single ReadyForQuery. While
+            /// discarding messages after an extended-query error the backend also
+            /// stays silent until that Sync (see the SYNC case).
             if (!is_query_in_progress && !ignore_until_sync)
                 message_transport->send(PostgreSQLProtocol::Messaging::ReadyForQuery(), true);
 
@@ -233,6 +237,7 @@ void PostgreSQLHandler::run()
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::EXECUTE:
+                    is_query_in_progress = true;
                     processExecuteQuery();
                     message_transport->flush();
                     break;
@@ -246,7 +251,9 @@ void PostgreSQLHandler::run()
                     message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::DESCRIBE:
+                    is_query_in_progress = true;
                     processDescribeQuery();
+                    message_transport->flush();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::FLUSH:
                     message_transport->send(
@@ -259,6 +266,7 @@ void PostgreSQLHandler::run()
                     message_transport->dropMessage();
                     break;
                 case PostgreSQLProtocol::Messaging::FrontMessageType::CLOSE:
+                    is_query_in_progress = true;
                     processCloseQuery();
                     message_transport->flush();
                     break;
@@ -858,6 +866,16 @@ void PostgreSQLHandler::processDescribeQuery()
     {
         std::unique_ptr<PostgreSQLProtocol::Messaging::DescribeQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::DescribeQuery>();
+
+        /// Describe must reply with ParameterDescription + RowDescription (for a
+        /// prepared statement) or RowDescription / NoData (for a portal). The
+        /// PostgreSQL wire implementation here does not produce those messages,
+        /// so a silent no-op would leave any client that issues Describe waiting
+        /// until timeout. Fail fast with a clear error instead, matching how the
+        /// unsupported named-portal / binary-format / FLUSH paths behave; the
+        /// error is followed by skip-until-Sync so the connection stays alive.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Describe is not supported in the PostgreSQL wire protocol");
     }
     catch (const Exception & e)
     {

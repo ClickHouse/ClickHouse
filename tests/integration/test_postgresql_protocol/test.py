@@ -5,6 +5,9 @@ import decimal
 import logging
 import os
 import random
+import socket
+import struct
+import time
 import uuid
 from contextlib import closing
 from io import StringIO
@@ -664,6 +667,138 @@ def test_bind_error_keeps_connection_alive(started_cluster):
         assert res_after.get_value(0, 0) == b"2", payload
 
     ch.close()
+
+
+def _pg_raw_extended_query_session(node):
+    # Minimal PostgreSQL v3 wire client used to drive the extended-query state
+    # machine directly (Parse/Bind/Describe/Close/Sync). libpq/psycopg hide these
+    # messages, so a raw socket is the only way to send a standalone
+    # Describe/Sync or Close/Sync and count the backend's ReadyForQuery replies.
+    sock = socket.create_connection((node.ip_address, server_port), timeout=10)
+
+    def read_until_ready(timeout=10.0):
+        # Read framed backend messages until ReadyForQuery ('Z'); return the
+        # list of message type characters seen (in order).
+        sock.settimeout(timeout)
+        buf = b""
+        types = []
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+            while len(buf) >= 5:
+                mtype = chr(buf[0])
+                (mlen,) = struct.unpack("!I", buf[1:5])
+                if len(buf) < 1 + mlen:
+                    break
+                types.append(mtype)
+                buf = buf[1 + mlen :]
+            if types and types[-1] == "Z":
+                return types
+        return types
+
+    # Startup + cleartext-password auth (the 'default' user has password '123').
+    params = b"user\x00default\x00database\x00default\x00\x00"
+    sock.sendall(struct.pack("!I", 8 + len(params)) + struct.pack("!I", 196608) + params)
+    sock.settimeout(10)
+    auth = sock.recv(65536)
+    assert auth[0:1] == b"R", "expected authentication request"
+    (auth_code,) = struct.unpack("!I", auth[5:9])
+    if auth_code == 3:  # AuthenticationCleartextPassword
+        pwd = b"123\x00"
+        sock.sendall(b"p" + struct.pack("!I", 4 + len(pwd)) + pwd)
+    read_until_ready()  # drain to the first ReadyForQuery
+    return sock, read_until_ready
+
+
+def _fe(t, body):
+    return t.encode() + struct.pack("!I", 4 + len(body)) + body
+
+
+def test_extended_query_ready_for_query_and_describe(started_cluster):
+    # Regression for the extended-query protocol contract on the typed-Bind path.
+    #
+    # 1. ReadyForQuery must be emitted exactly once per Sync. Marking only
+    #    Parse/Bind (not Describe/Close/Execute) as in-progress caused a
+    #    standalone Describe/Sync or Close/Sync to emit ReadyForQuery mid-cycle
+    #    (before the Sync was read) and then again for the Sync, desyncing
+    #    strict clients that count one ReadyForQuery per Sync.
+    # 2. Describe must not be a silent no-op: on success the backend sends none
+    #    of ParameterDescription/RowDescription/NoData, so a client issuing
+    #    Describe would hang until timeout. It must fail fast with a clear error.
+    node = started_cluster.instances["node"]
+
+    def sync():
+        return _fe("S", b"")
+
+    def describe(kind, name):
+        return _fe("D", kind.encode() + name.encode() + b"\x00")
+
+    def close(kind, name):
+        return _fe("C", kind.encode() + name.encode() + b"\x00")
+
+    def parse(stmt, query, oids):
+        b = stmt.encode() + b"\x00" + query.encode() + b"\x00" + struct.pack("!H", len(oids))
+        for o in oids:
+            b += struct.pack("!I", o)
+        return _fe("P", b)
+
+    def bind(portal, stmt, values):
+        b = portal.encode() + b"\x00" + stmt.encode() + b"\x00" + struct.pack("!H", 0)
+        b += struct.pack("!H", len(values))
+        for v in values:
+            vb = v.encode()
+            b += struct.pack("!i", len(vb)) + vb
+        b += struct.pack("!H", 0)
+        return _fe("B", b)
+
+    def execute(portal):
+        return _fe("E", portal.encode() + b"\x00" + struct.pack("!I", 0))
+
+    # Close('S', <nonexistent>)/Sync: CloseComplete then exactly ONE ReadyForQuery.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(close("S", "nope") + sync())
+    types = read_until_ready()
+    assert types.count("Z") == 1, f"Close/Sync must emit one ReadyForQuery, got {types}"
+    assert "3" in types, f"Close must respond with CloseComplete, got {types}"
+    sock.close()
+
+    # Describe('S', '')/Sync: an error (not a silent no-op) then ONE ReadyForQuery.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(describe("S", "") + sync())
+    types = read_until_ready()
+    assert "E" in types, f"Describe must return an error, not hang silently, got {types}"
+    assert types.count("Z") == 1, f"Describe/Sync must emit one ReadyForQuery, got {types}"
+    sock.close()
+
+    # Full Parse/Bind/Describe/Execute/Sync: ONE ReadyForQuery (Describe errors,
+    # then the backend discards until Sync). The typed int4 bind keeps this on
+    # the path this PR touches.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(
+        parse("", "SELECT $1", (23,))
+        + bind("", "", ("5",))
+        + describe("P", "")
+        + execute("")
+        + sync()
+    )
+    types = read_until_ready()
+    assert types.count("Z") == 1, f"P/B/D/E/S must emit one ReadyForQuery, got {types}"
+    sock.close()
+
+    # A rejected typed Bind (the 1-- injection guard) must still emit exactly one
+    # ReadyForQuery per Sync and keep the connection usable afterwards.
+    sock, read_until_ready = _pg_raw_extended_query_session(node)
+    sock.sendall(parse("", "SELECT $1 AS a", (23,)) + bind("", "", ("1--",)) + execute("") + sync())
+    types = read_until_ready()
+    assert "E" in types, f"1-- injection must be rejected, got {types}"
+    assert types.count("Z") == 1, f"rejected Bind must emit one ReadyForQuery, got {types}"
+    sock.sendall(_fe("Q", b"SELECT 7\x00"))
+    types = read_until_ready()
+    assert "C" in types, f"connection must stay alive after a rejected Bind, got {types}"
+    sock.close()
 
 
 def test_execute_no_sql_injection(started_cluster):
