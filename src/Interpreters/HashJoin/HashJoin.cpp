@@ -1553,10 +1553,7 @@ HashJoin::~HashJoin()
             }
 
             if (stats_collecting_params.match.isCollectionAndUseEnabled())
-            {
-                if (const auto matches = getHashTableMatches())
-                    getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = matches}, stats_collecting_params.match);
-            }
+                getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = getHashTableMatches()}, stats_collecting_params.match);
         }
     }
     catch (...)
@@ -2133,13 +2130,15 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     LOG_TRACE(
         log, "{}Join data is being released, {} bytes and {} rows in hash table", instance_log_id, getTotalByteCount(), getTotalRowCount());
 
+    const auto column_access_indexes = data->column_access_indexes;
+
     /// Reconstruct full column list from compact columns and row store
     /// using the access indexes to place each column back at its original position.
     /// TODO: make the row store spillable.
     auto materialize_columns = [&](StoredBlock & stored_block)
     {
         const auto & stored_columns = stored_block.columns;
-        const auto & access_indexes = data->column_access_indexes;
+        const auto & access_indexes = column_access_indexes;
         const auto & selector = stored_block.selector;
 
         MutableColumns row_store_columns;
@@ -2152,6 +2151,7 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
             }
             else
                 row_store_columns = stored_block.row_store->scatterRows(selector.getIndexes().getData());
+            stored_block.row_store.reset();
         }
 
         Columns columnar_columns;
@@ -2198,9 +2198,8 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     if (!restructure)
     {
         auto sample_block = std::move(data->sample_block);
-        auto result = extract_source_blocks(std::move(right_columns), sample_block);
         data.reset();
-        return result;
+        return extract_source_blocks(std::move(right_columns), sample_block);
     }
 
     data->maps.clear();

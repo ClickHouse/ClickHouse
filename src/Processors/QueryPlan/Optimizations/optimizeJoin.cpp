@@ -307,7 +307,22 @@ struct RuntimeHashStatisticsContext
         raw_hashes[&new_node] = raw_new;
         cache_keys[&new_node] = raw_new;
 
-        return {right_key, raw_new};
+        /// Derive a key for the join output stats that takes the kind, strictness
+        /// and non-equi conditions into account, in addition to the equi conditions
+        /// covered by `calculateJoinStepCacheKeyContribution`.
+        SipHash output_hash;
+        output_hash.update(raw_new);
+        const auto & join_operator = join_step.getJoinOperator();
+        output_hash.update(join_operator.kind);
+        output_hash.update(join_operator.strictness);
+        for (const auto & condition : join_operator.expression)
+        {
+            if (condition.isFunction(JoinConditionOperator::Equals) || condition.isFunction(JoinConditionOperator::NullSafeEquals))
+                continue;
+            condition.getNode()->updateHash(output_hash);
+        }
+
+        return {right_key, output_hash.get64()};
     }
 };
 

@@ -83,8 +83,7 @@ void updateStatistics(const auto & hash_joins, const DB::StatsCollectingParams &
             hash_joins.end(),
             0ull,
             [](auto acc, const auto & hash_join) { return acc + hash_join->data->getHashTableMatches(); });
-        if (ht_matches)
-            DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = ht_matches}, match_params);
+        DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = ht_matches}, match_params);
     }
 
     if (!build_params.isCollectionAndUseEnabled() || !hash_joins[0]->data->twoLevelMapIsUsed())
