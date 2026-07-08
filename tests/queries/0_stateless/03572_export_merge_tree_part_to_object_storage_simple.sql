@@ -46,13 +46,13 @@ CREATE TABLE 03572_partition_type_mismatch_mt (id UInt64, year String) ENGINE = 
 CREATE TABLE 03572_partition_type_mismatch_s3 (id UInt64, year UInt16) ENGINE = S3(s3_conn, filename='03572_partition_type_mismatch_s3', format='Parquet', partition_strategy='hive') PARTITION BY year;
 
 ALTER TABLE 03572_partition_type_mismatch_mt EXPORT PART '2020_1_1_0' TO TABLE 03572_partition_type_mismatch_s3
-SETTINGS allow_experimental_export_merge_tree_part = 1; -- {serverError BAD_ARGUMENTS}
+SETTINGS allow_experimental_export_merge_tree_part = 1; -- {serverError INCOMPATIBLE_COLUMNS}
 
 CREATE TABLE 03572_lossy_mt (id Int64, year UInt16) ENGINE = MergeTree() PARTITION BY year ORDER BY tuple();
 CREATE TABLE 03572_lossy_s3 (id Int32, year UInt16) ENGINE = S3(s3_conn, filename='03572_lossy_s3', format='Parquet', partition_strategy='hive') PARTITION BY year;
 
 ALTER TABLE 03572_lossy_mt EXPORT PART '2020_1_1_0' TO TABLE 03572_lossy_s3
-SETTINGS allow_experimental_export_merge_tree_part = 1; -- {serverError BAD_ARGUMENTS}
+SETTINGS allow_experimental_export_merge_tree_part = 1; -- {serverError INCOMPATIBLE_COLUMNS}
 
 -- With the acknowledgment setting enabled, the lossy cast passes validation and reaches the
 -- part lookup, which fails because the part does not exist.

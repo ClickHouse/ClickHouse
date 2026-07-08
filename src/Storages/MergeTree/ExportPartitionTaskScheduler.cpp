@@ -12,6 +12,7 @@
 #include "Storages/MergeTree/MergeTreePartExportManifest.h"
 #include "Formats/FormatFactory.h"
 #include <Core/Settings.h>
+#include <limits>
 
 namespace ProfileEvents
 {
@@ -40,20 +41,50 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+    /// Capped exponential back-off, matching the standard ClickHouse convention
+    /// (see ZooKeeperRetriesControl): delay = min(initial << (retry_count - 1), max).
+    /// `retry_count` is the number of failures so far (>= 1 when a retry is pending).
+    /// The shift is guarded against overflow by saturating to `max_backoff_seconds`.
+    size_t computeRetryBackoffSeconds(size_t retry_count, size_t initial_backoff_seconds, size_t max_backoff_seconds)
+    {
+        const size_t initial = std::min(initial_backoff_seconds, max_backoff_seconds);
+
+        if (retry_count <= 1 || initial == 0)
+            return initial;
+
+        const size_t shift = retry_count - 1;
+
+        /// If shifting would overflow size_t, the result is certainly clamped to the cap.
+        static constexpr size_t bits = sizeof(size_t) * 8;
+        if (shift >= bits)
+            return max_backoff_seconds;
+
+        const size_t headroom = std::numeric_limits<size_t>::max() >> shift;
+        if (initial > headroom)
+            return max_backoff_seconds;
+
+        return std::min(initial << shift, max_backoff_seconds);
+    }
+}
+
 ExportPartitionTaskScheduler::ExportPartitionTaskScheduler(StorageReplicatedMergeTree & storage_)
     : storage(storage_)
 {
 }
 
-void ExportPartitionTaskScheduler::run()
+std::optional<time_t> ExportPartitionTaskScheduler::run()
 {
+    std::optional<time_t> earliest_backoff_retry;
+
     const auto available_move_executors = storage.background_moves_assignee.getAvailableMoveExecutors();
 
     /// this is subject to TOCTOU - but for now we choose to live with it.
     if (available_move_executors == 0)
     {
         LOG_DEBUG(storage.log, "ExportPartition scheduler task: No available move executors, skipping");
-        return;
+        return earliest_backoff_retry;
     }
 
     /// Respect the background memory soft-limit: refuse to schedule new export-part tasks when
@@ -67,7 +98,7 @@ void ExportPartitionTaskScheduler::run()
             "so won't select new parts to export. Current background tasks memory usage: {}.",
             formatReadableSizeWithBinarySuffix(background_memory_tracker.getSoftLimit()),
             formatReadableSizeWithBinarySuffix(background_memory_tracker.get()));
-        return;
+        return earliest_backoff_retry;
     }
 
     LOG_DEBUG(storage.log, "ExportPartition scheduler task: Available move executors: {}", available_move_executors);
@@ -82,9 +113,11 @@ void ExportPartitionTaskScheduler::run()
     /// is a pure reader; status converges via the status watch -> handleStatusChanges and poll().
     const auto model = storage.export_partition_manifests.get();
     if (!model)
-        return;
+        return earliest_backoff_retry;
 
     auto zk = storage.getZooKeeper();
+
+    pruneLocalBackoff(model->get<ExportPartitionTaskEntryTagByTransactionId>());
 
     // Iterate sorted by create_time
     for (const auto & entry : model->get<ExportPartitionTaskEntryTagByCreateTime>())
@@ -172,6 +205,8 @@ void ExportPartitionTaskScheduler::run()
 
         std::unordered_set<std::string> locked_parts_set(locked_parts.begin(), locked_parts.end());
 
+        const auto now = time(nullptr);
+
         for (const auto & zk_part_name : parts_in_processing_or_pending)
         {
             if (scheduled_exports_count >= available_move_executors)
@@ -183,6 +218,11 @@ void ExportPartitionTaskScheduler::run()
             if (locked_parts_set.contains(zk_part_name))
             {
                 LOG_DEBUG(storage.log, "ExportPartition scheduler task: Part {} is locked, skipping", zk_part_name);
+                continue;
+            }
+
+            if (shouldBackOff(entry.getTransactionId(), zk_part_name, now, earliest_backoff_retry))
+            {
                 continue;
             }
 
@@ -234,10 +274,101 @@ void ExportPartitionTaskScheduler::run()
                 ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
                 ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRemove);
                 zk->tryRemove(fs::path(storage.zookeeper_path) / "exports" / key / "locks" / zk_part_name);
-                /// we should not increment retry_count because the node might just be full
+                /// Dispatch-time failure (e.g. Keeper node full). We do not arm the local
+                /// back-off here: the export never started, so the part stays immediately
+                /// eligible for this or another replica on the next tick.
             }
         }
     }
+
+    return earliest_backoff_retry;
+}
+
+bool ExportPartitionTaskScheduler::shouldBackOff(
+    const std::string & transaction_id,
+    const std::string & part_name,
+    time_t now,
+    std::optional<time_t> & earliest_backoff_retry) const
+{
+    std::lock_guard lock(local_backoff_mutex);
+    const auto task_it = local_backoff.find(transaction_id);
+    if (task_it == local_backoff.end())
+        return false;
+
+    const auto part_it = task_it->second.find(part_name);
+    if (part_it == task_it->second.end() || now >= part_it->second.next_retry_time)
+        return false;
+
+    const auto next_retry_time = part_it->second.next_retry_time;
+    LOG_TRACE(storage.log, "ExportPartition scheduler task: Part {} is backing off locally, next retry at {} (now {}), skipping", part_name, next_retry_time, now);
+    earliest_backoff_retry = earliest_backoff_retry
+        ? std::min(*earliest_backoff_retry, next_retry_time) : next_retry_time;
+    return true;
+}
+
+time_t ExportPartitionTaskScheduler::registerLocalBackoff(
+    const std::string & transaction_id,
+    const std::string & part_name,
+    const ExportReplicatedMergeTreePartitionManifest & manifest)
+{
+    std::lock_guard lock(local_backoff_mutex);
+
+    /// First retryable failure for (transaction_id, part_name): create the map entries.
+    auto & parts = local_backoff.try_emplace(transaction_id).first->second;
+    auto & backoff = parts.try_emplace(part_name).first->second;
+
+    ++backoff.attempts;
+    const auto backoff_seconds = computeRetryBackoffSeconds(
+        backoff.attempts, manifest.retry_initial_backoff_seconds, manifest.retry_max_backoff_seconds);
+    const auto now = time(nullptr);
+    /// Clamp so a huge configured back-off cannot overflow time_t (now is a normal wall-clock value).
+    const size_t headroom = static_cast<size_t>(std::numeric_limits<time_t>::max() - now);
+    backoff.next_retry_time = now + static_cast<time_t>(std::min(backoff_seconds, headroom));
+    return backoff.next_retry_time;
+}
+
+void ExportPartitionTaskScheduler::clearLocalBackoff(const std::string & transaction_id, const std::string & part_name)
+{
+    std::lock_guard lock(local_backoff_mutex);
+    if (const auto task_it = local_backoff.find(transaction_id); task_it != local_backoff.end())
+    {
+        task_it->second.erase(part_name);
+        if (task_it->second.empty())
+            local_backoff.erase(task_it);
+    }
+}
+
+void ExportPartitionTaskScheduler::pruneLocalBackoff(const ExportPartitionTaskEntriesContainer::index<ExportPartitionTaskEntryTagByTransactionId>::type & model)
+{
+    std::lock_guard lock(local_backoff_mutex);
+    for (auto it = local_backoff.begin(); it != local_backoff.end();)
+    {
+        const auto found = model.find(it->first);
+        if (found != model.end() && found->status == ExportReplicatedMergeTreePartitionTaskEntry::Status::PENDING)
+        {
+            ++it;
+            continue;
+        }
+
+        it = local_backoff.erase(it);
+    }
+}
+
+ExportPartitionTaskScheduler::LocalBackoffMap ExportPartitionTaskScheduler::getLocalBackoffSnapshot() const
+{
+    LocalBackoffMap snapshot;
+
+    std::lock_guard lock(local_backoff_mutex);
+    snapshot.reserve(local_backoff.size());
+    for (const auto & [transaction_id, parts] : local_backoff)
+    {
+        auto & out_parts = snapshot[transaction_id];
+        out_parts.reserve(parts.size());
+        for (const auto & [part_name, backoff] : parts)
+            out_parts.emplace(part_name, LocalBackoff{backoff.attempts, backoff.next_retry_time});
+    }
+
+    return snapshot;
 }
 
 void ExportPartitionTaskScheduler::handlePartExportCompletion(
@@ -261,7 +392,7 @@ void ExportPartitionTaskScheduler::handlePartExportCompletion(
     }
     else
     {
-        handlePartExportFailure(processing_parts_path, part_name, export_path, zk, result.exception, manifest.max_retries);
+        handlePartExportFailure(part_name, export_path, zk, result.exception, manifest);
     }
 }
 
@@ -289,6 +420,9 @@ void ExportPartitionTaskScheduler::handlePartExportSuccess(
         return;
     }
 
+    /// Part is done on this replica; drop any local back-off state we held for it.
+    clearLocalBackoff(manifest.transaction_id, part_name);
+
     LOG_INFO(storage.log, "ExportPartition scheduler task: Marked part export {} as completed", part_name);
 
     if (!areAllPartsProcessed(export_path, zk))
@@ -307,15 +441,16 @@ void ExportPartitionTaskScheduler::handlePartExportSuccess(
     {
         LOG_INFO(storage.log, "ExportPartition scheduler task: Caught exception while committing export partition, {}", e.message());
 
-        /// Bump commit-attempts counter; transition to FAILED once the budget is exhausted.
-        /// Prevents the task from remaining stuck in PENDING if commit() fails persistently
-        /// (e.g. schema/spec mismatch, prolonged destination outage).
+        /// Classify the commit failure: a non-retryable error (e.g. schema/spec mismatch)
+        /// transitions the task to FAILED immediately; a retryable one (transient catalog or
+        /// destination outage) only records the exception and leaves the task PENDING so the
+        /// commit is retried until the absolute task timeout.
         /// The exception is recorded in <export_path>/last_exception via appendExceptionOps
-        /// inside the same multi as the commit_attempts bump and the (possible) FAILED set.
+        /// inside the same multi as the (possible) FAILED set.
         const bool became_failed = ExportPartitionUtils::handleCommitFailure(
             zk,
             export_path,
-            manifest.max_retries,
+            e.code(),
             storage.replica_name,
             e.message(),
             storage.log.load());
@@ -323,19 +458,18 @@ void ExportPartitionTaskScheduler::handlePartExportSuccess(
         if (became_failed)
         {
             LOG_WARNING(storage.log,
-                "ExportPartition scheduler task: Commit for {} transitioned to FAILED after exhausting max_retries={}",
-                export_path.string(), manifest.max_retries);
+                "ExportPartition scheduler task: Commit for {} transitioned to FAILED due to non-retryable error (code {})",
+                export_path.string(), e.code());
         }
     }
 }
 
 void ExportPartitionTaskScheduler::handlePartExportFailure(
-    const std::filesystem::path & processing_parts_path,
     const std::string & part_name,
     const std::filesystem::path & export_path,
     const zkutil::ZooKeeperPtr & zk,
     const std::optional<Exception> & exception,
-    size_t max_retries
+    const ExportReplicatedMergeTreePartitionManifest & manifest
 )
 {
     LOG_INFO(storage.log, "ExportPartition scheduler task: Part {} export failed", part_name);
@@ -415,42 +549,25 @@ void ExportPartitionTaskScheduler::handlePartExportFailure(
         return;
     }
 
+    const bool non_retryable = ExportPartitionUtils::isNonRetryableExportError(exception->code());
+
     Coordination::Requests ops;
 
-    const auto processing_part_path = processing_parts_path / part_name;
-
-    ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperRequests);
-    ProfileEvents::increment(ProfileEvents::ExportPartitionZooKeeperGet);
-    std::string processing_part_string;
-
-    if (!zk->tryGet(processing_part_path, processing_part_string))
-    {
-        LOG_WARNING(storage.log, "ExportPartition scheduler task: Failed to get processing part, will not increment error counts");
-        return;
-    }
-
-    /// todo arthur could this have been cached?
-    auto processing_part_entry = ExportReplicatedMergeTreePartitionProcessingPartEntry::fromJsonString(processing_part_string);
-
-    processing_part_entry.retry_count++;
-
     ops.emplace_back(zkutil::makeRemoveRequest(export_path / "locks" / part_name, locked_by_stat.version));
-    ops.emplace_back(zkutil::makeSetRequest(processing_part_path, processing_part_entry.toJsonString(), -1));
 
-    LOG_INFO(storage.log, "ExportPartition scheduler task: Updating processing part entry for part {}, retry count: {}, max retries: {}", part_name, processing_part_entry.retry_count, max_retries);
-
-    if (processing_part_entry.retry_count >= max_retries)
+    if (non_retryable)
     {
-        /// just set status in processing_part_path and finished_by
-        processing_part_entry.status = ExportReplicatedMergeTreePartitionProcessingPartEntry::Status::FAILED;
-        processing_part_entry.finished_by = storage.replica_name;
-
-        ops.emplace_back(zkutil::makeSetRequest(status_path, String(magic_enum::enum_name(ExportReplicatedMergeTreePartitionTaskEntry::Status::FAILED)).data(), status_stat.version));
-        LOG_WARNING(storage.log, "ExportPartition scheduler task: Retry count limit exceeded for part {}, will try to fail the entire task", part_name);
+        /// Deterministic failure (e.g. schema/type incompatibility): retrying cannot help,
+        /// so fail the whole task immediately instead of waiting for the absolute timeout.
+        ops.emplace_back(zkutil::makeSetRequest(
+            status_path,
+            String(magic_enum::enum_name(ExportReplicatedMergeTreePartitionTaskEntry::Status::FAILED)).data(),
+            status_stat.version));
+        LOG_WARNING(storage.log, "ExportPartition scheduler task: Part {} failed with non-retryable error (code {}), failing the entire task", part_name, exception->code());
     }
     else
     {
-        LOG_DEBUG(storage.log, "ExportPartition scheduler task: Retry count limit not exceeded for part {}, will increment retry count", part_name);
+        LOG_DEBUG(storage.log, "ExportPartition scheduler task: Part {} failed with retryable error (code {}), will back off and retry until the task timeout", part_name, exception->code());
     }
 
     ExportPartitionUtils::appendExceptionOps(
@@ -466,7 +583,15 @@ void ExportPartitionTaskScheduler::handlePartExportFailure(
         return;
     }
 
-    LOG_INFO(storage.log, "ExportPartition scheduler task: Successfully updated exception counters for part {}", part_name);
+    /// Only after the lock release + exception record committed do we arm the local back-off,
+    /// so a Keeper failure above does not leave this replica skipping the part for no reason.
+    if (!non_retryable)
+    {
+        const auto next_retry_time = registerLocalBackoff(manifest.transaction_id, part_name, manifest);
+        LOG_INFO(storage.log, "ExportPartition scheduler task: Part {} backing off locally, next retry at {}", part_name, next_retry_time);
+    }
+
+    LOG_INFO(storage.log, "ExportPartition scheduler task: Successfully recorded failure for part {}", part_name);
 }
 
 bool ExportPartitionTaskScheduler::tryToMovePartToProcessed(

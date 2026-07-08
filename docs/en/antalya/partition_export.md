@@ -61,11 +61,17 @@ TO TABLE [destination_database.]destination_table
 - **Default**: `false`
 - **Description**: Ignore existing partition export and overwrite the ZooKeeper entry. Allows re-exporting a partition that was already exported to the same destination. **IMPORTANT:** this is dangerous because it can lead to duplicated data, use it with caution.
 
-#### `export_merge_tree_partition_max_retries` (Optional)
+#### `export_merge_tree_partition_retry_initial_backoff_seconds` (Optional)
 
 - **Type**: `UInt64`
-- **Default**: `3`
-- **Description**: Maximum number of retries for exporting a merge tree part in an export partition task. If it exceeds, the entire task fails.
+- **Default**: `5`
+- **Description**: Initial delay (in seconds) before retrying a failed part export. The delay grows exponentially with the per-replica retry count (`delay = min(initial << (attempts - 1), max)`). The back-off is per-replica in-memory state: it only spaces this replica's retries out in time and never prevents another replica from attempting the same part. Retryable failures (transient memory/network/object-storage/Keeper errors) are retried until the task succeeds or `export_merge_tree_partition_task_timeout_seconds` elapses, while non-retryable failures (e.g. schema/type incompatibilities) fail the task immediately.
+
+#### `export_merge_tree_partition_retry_max_backoff_seconds` (Optional)
+
+- **Type**: `UInt64`
+- **Default**: `300`
+- **Description**: Maximum delay (in seconds) between retries of a failed part export. Caps the exponential growth controlled by `export_merge_tree_partition_retry_initial_backoff_seconds`.
 
 #### `export_merge_tree_part_file_already_exists_policy` (Optional)
 

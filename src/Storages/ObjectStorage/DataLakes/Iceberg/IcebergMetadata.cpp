@@ -117,6 +117,12 @@ extern const int ICEBERG_SPECIFICATION_VIOLATION;
 extern const int S3_ERROR;
 extern const int TABLE_ALREADY_EXISTS;
 extern const int SUPPORT_IS_DISABLED;
+<<<<<<< HEAD
+=======
+extern const int INCORRECT_DATA;
+extern const int METADATA_MISMATCH;
+extern const int UNFINISHED;
+>>>>>>> 091776b7b65 (Merge pull request #1984 from Altinity/export-partition-retry-backoff)
 }
 
 namespace Setting
@@ -1456,7 +1462,7 @@ namespace
 {
 
 /// Find the partition spec object with the given spec-id inside a metadata JSON document.
-/// Throws BAD_ARGUMENTS if the spec is not found (indicates metadata/spec-id mismatch).
+/// Throws METADATA_MISMATCH if the spec is not found (indicates metadata/spec-id mismatch).
 Poco::JSON::Object::Ptr lookupPartitionSpec(const Poco::JSON::Object::Ptr & meta, Int64 spec_id)
 {
     auto specs = meta->getArray(Iceberg::f_partition_specs);
@@ -1466,7 +1472,7 @@ Poco::JSON::Object::Ptr lookupPartitionSpec(const Poco::JSON::Object::Ptr & meta
         if (spec->getValue<Int64>(Iceberg::f_spec_id) == spec_id)
             return spec;
     }
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+    throw Exception(ErrorCodes::METADATA_MISMATCH,
         "Partition spec with id {} not found in table metadata", spec_id);
 }
 
@@ -1480,7 +1486,7 @@ Poco::JSON::Object::Ptr lookupSchema(const Poco::JSON::Object::Ptr & meta, Int64
             return schema;
     }
 
-    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+    throw Exception(ErrorCodes::METADATA_MISMATCH,
         "Schema with id {} not found in table metadata", schema_id);
 }
 
@@ -1658,13 +1664,13 @@ bool IcebergMetadata::commitImportPartitionTransactionImpl(
             /// the caller has to restart the export from scratch.
             const auto new_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
             if (new_schema_id != original_schema_id)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                throw Exception(ErrorCodes::METADATA_MISMATCH,
                     "Table schema changed during export (expected schema {}, got {}). Restart the export operation.",
                     original_schema_id, new_schema_id);
 
             const Int64 new_partition_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
             if (new_partition_spec_id != partition_spec_id)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                throw Exception(ErrorCodes::METADATA_MISMATCH,
                     "Partition spec changed during export (expected spec {}, got {}). Restart the export operation.",
                     partition_spec_id, new_partition_spec_id);
 
@@ -1879,14 +1885,14 @@ void IcebergMetadata::commitExportPartitionTransaction(
     /// The exported data files and partition values were produced against the original spec;
     const auto latest_schema_id = metadata->getValue<Int64>(Iceberg::f_current_schema_id);
     if (latest_schema_id != original_schema_id)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        throw Exception(ErrorCodes::METADATA_MISMATCH,
             "Table schema changed before export could commit (expected schema {}, got {}). "
             "Restart the export operation.",
             original_schema_id, latest_schema_id);
 
     const auto latest_spec_id = metadata->getValue<Int64>(Iceberg::f_default_spec_id);
     if (latest_spec_id != partition_spec_id)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        throw Exception(ErrorCodes::METADATA_MISMATCH,
             "Partition spec changed before export could commit (expected spec {}, got {}). "
             "Restart the export operation.",
             partition_spec_id, latest_spec_id);
@@ -1978,7 +1984,7 @@ void IcebergMetadata::commitExportPartitionTransaction(
         ++attempt;
     }
 
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+    throw Exception(ErrorCodes::UNFINISHED,
         "Failed to commit export partition transaction after {} attempts due to repeated metadata conflicts.",
         attempt);
 }

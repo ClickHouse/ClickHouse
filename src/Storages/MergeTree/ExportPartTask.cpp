@@ -18,6 +18,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include "Common/setThreadName.h"
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEventsScope.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Storages/MergeTree/ExportList.h>
@@ -43,6 +44,18 @@ namespace ErrorCodes
     extern const int FILE_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int BAD_ARGUMENTS;
+    extern const int FAULT_INJECTED;
+}
+
+namespace FailPoints
+{
+    /// Throw a non-retryable (denylisted) error from the part-export worker, so the whole
+    /// export task transitions to FAILED immediately regardless of any timeout.
+    extern const char export_part_non_retryable_throw[];
+    /// Throw a retryable error from the part-export worker, so the part is retried with the
+    /// per-replica back-off until the task succeeds or the absolute timeout fires.
+    extern const char export_part_retryable_throw[];
 }
 
 namespace Setting
@@ -233,6 +246,18 @@ bool ExportPartTask::executeStep()
     try
     {
         ThreadGroupSwitcher switcher((*exports_list_entry)->thread_group, ThreadName::EXPORT_PART);
+
+        fiu_do_on(FailPoints::export_part_non_retryable_throw,
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Failpoint: export_part_non_retryable_throw");
+        });
+
+        fiu_do_on(FailPoints::export_part_retryable_throw,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED,
+                "Failpoint: export_part_retryable_throw");
+        });
 
         const auto filename = buildDestinationFilename(manifest, storage.getStorageID(), local_context);
 

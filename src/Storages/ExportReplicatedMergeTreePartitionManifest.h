@@ -23,7 +23,6 @@ struct ExportReplicatedMergeTreePartitionProcessingPartEntry
 
     String part_name;
     Status status;
-    size_t retry_count;
     String finished_by;
 
     std::string toJsonString() const
@@ -32,7 +31,6 @@ struct ExportReplicatedMergeTreePartitionProcessingPartEntry
 
         json.set("part_name", part_name);
         json.set("status", String(magic_enum::enum_name(status)));
-        json.set("retry_count", retry_count);
         json.set("finished_by", finished_by);
         std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
         oss.exceptions(std::ios::failbit);
@@ -51,7 +49,6 @@ struct ExportReplicatedMergeTreePartitionProcessingPartEntry
 
         entry.part_name = json->getValue<String>("part_name");
         entry.status = magic_enum::enum_cast<Status>(json->getValue<String>("status")).value();
-        entry.retry_count = json->getValue<size_t>("retry_count");
         if (json->has("finished_by"))
         {
             entry.finished_by = json->getValue<String>("finished_by");
@@ -163,7 +160,8 @@ struct ExportReplicatedMergeTreePartitionManifest
     size_t number_of_parts;
     std::vector<String> parts;
     time_t create_time;
-    size_t max_retries;
+    size_t retry_initial_backoff_seconds = 5;
+    size_t retry_max_backoff_seconds = 300;
     size_t task_timeout_seconds;
     size_t max_threads;
     bool parallel_formatting;
@@ -208,7 +206,8 @@ struct ExportReplicatedMergeTreePartitionManifest
         json.set("file_already_exists_policy", String(magic_enum::enum_name(file_already_exists_policy)));
         json.set("filename_pattern", filename_pattern);
         json.set("create_time", create_time);
-        json.set("max_retries", max_retries);
+        json.set("retry_initial_backoff_seconds", retry_initial_backoff_seconds);
+        json.set("retry_max_backoff_seconds", retry_max_backoff_seconds);
         json.set("task_timeout_seconds", task_timeout_seconds);
         json.set("write_full_path_in_iceberg_metadata", write_full_path_in_iceberg_metadata);
         json.set("allow_lossy_cast", allow_lossy_cast);
@@ -236,7 +235,16 @@ struct ExportReplicatedMergeTreePartitionManifest
         manifest.destination_table = json->getValue<String>("destination_table");
         manifest.source_replica = json->getValue<String>("source_replica");
         manifest.number_of_parts = json->getValue<size_t>("number_of_parts");
-        manifest.max_retries = json->getValue<size_t>("max_retries");
+
+        if (json->has("retry_initial_backoff_seconds"))
+        {
+            manifest.retry_initial_backoff_seconds = json->getValue<size_t>("retry_initial_backoff_seconds");
+        }
+
+        if (json->has("retry_max_backoff_seconds"))
+        {
+            manifest.retry_max_backoff_seconds = json->getValue<size_t>("retry_max_backoff_seconds");
+        }
 
         if (json->has("iceberg_metadata_json"))
         {

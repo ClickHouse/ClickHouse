@@ -28,6 +28,14 @@ ColumnsDescription StorageSystemReplicatedPartitionExports::getColumnsDescriptio
         },
         Names{"replica", "message", "part", "time", "count"});
 
+    auto backoff_tuple = std::make_shared<DataTypeTuple>(
+        DataTypes{
+            std::make_shared<DataTypeString>(),
+            std::make_shared<DataTypeUInt64>(),
+            std::make_shared<DataTypeDateTime>(),
+        },
+        Names{"part", "attempts", "next_retry_time"});
+
     return ColumnsDescription
     {
         {"source_database", std::make_shared<DataTypeString>(), "Name of the source database."},
@@ -47,6 +55,8 @@ ColumnsDescription StorageSystemReplicatedPartitionExports::getColumnsDescriptio
             "Per-replica last exception entries. Each tuple records the most recent exception observed by that replica plus a best-effort within-replica count. Empty array if no replica has reported an exception for this task."},
         {"exception_count", std::make_shared<DataTypeUInt64>(),
             "Sum of per-replica exception counts. Each replica owns its own count, so the sum is exact w.r.t. the in-memory snapshot; within-replica updates remain best-effort and may under-count by one under concurrent failures."},
+        {"local_backoff_per_part", std::make_shared<DataTypeArray>(backoff_tuple),
+            "Per-part retry back-off local to this replica: parts currently waiting before their next attempt, with attempt count and the next eligible time. Not shared across replicas; empty if no part is backing off."},
     };
 }
 
@@ -152,6 +162,12 @@ void StorageSystemReplicatedPartitionExports::fillData(MutableColumns & res_colu
                 per_replica.push_back(Tuple{ex.replica, ex.message, ex.part, ex.time, ex.count});
             res_columns[i++]->insert(per_replica);
             res_columns[i++]->insert(info.exception_count);
+
+            Array backoff_array;
+            backoff_array.reserve(info.backoff_per_part.size());
+            for (const auto & b : info.backoff_per_part)
+                backoff_array.push_back(Tuple{b.part, b.attempts, b.next_retry_time});
+            res_columns[i++]->insert(backoff_array);
         }
     }
 }

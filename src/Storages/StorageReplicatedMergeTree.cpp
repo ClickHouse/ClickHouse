@@ -225,7 +225,8 @@ namespace Setting
     extern const SettingsBool update_sequential_consistency;
     extern const SettingsBool allow_experimental_export_merge_tree_part;
     extern const SettingsBool export_merge_tree_partition_force_export;
-    extern const SettingsUInt64 export_merge_tree_partition_max_retries;
+    extern const SettingsUInt64 export_merge_tree_partition_retry_initial_backoff_seconds;
+    extern const SettingsUInt64 export_merge_tree_partition_retry_max_backoff_seconds;
     extern const SettingsUInt64 export_merge_tree_partition_task_timeout_seconds;
     extern const SettingsBool output_format_parallel_formatting;
     extern const SettingsBool output_format_parquet_parallel_encoding;
@@ -4739,6 +4740,11 @@ void StorageReplicatedMergeTree::exportMergeTreePartitionUpdatingTask()
 void StorageReplicatedMergeTree::selectPartsToExport()
 {
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::selectPartsToExport");
+
+    /// Default tick interval; may be shortened below if a part's back-off expires sooner.
+    static constexpr int64_t default_reschedule_ms = 1000 * 5;
+    int64_t reschedule_ms = default_reschedule_ms;
+
     try
     {
         if (parts_mover.moves_blocker.isCancelled())
@@ -4747,7 +4753,16 @@ void StorageReplicatedMergeTree::selectPartsToExport()
         }
         else
         {
-            export_merge_tree_partition_task_scheduler->run();
+            const auto earliest_backoff_retry = export_merge_tree_partition_task_scheduler->run();
+
+            /// If a part is only waiting on its back-off deadline and that deadline is sooner than
+            /// the default tick, wake up earlier so the retry is not delayed by up to a full tick.
+            if (earliest_backoff_retry)
+            {
+                const auto now = time(nullptr);
+                const int64_t until_ms = (static_cast<int64_t>(*earliest_backoff_retry) - static_cast<int64_t>(now)) * 1000;
+                reschedule_ms = std::clamp<int64_t>(until_ms, 0, default_reschedule_ms);
+            }
         }
     }
     catch (...)
@@ -4755,7 +4770,7 @@ void StorageReplicatedMergeTree::selectPartsToExport()
         tryLogCurrentException(log, __PRETTY_FUNCTION__);
     }
 
-    export_merge_tree_partition_select_task->scheduleAfter(1000 * 5);
+    export_merge_tree_partition_select_task->scheduleAfter(reschedule_ms);
 }
 
 void StorageReplicatedMergeTree::exportMergeTreePartitionStatusHandlingTask()
@@ -8708,7 +8723,8 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
     manifest.number_of_parts = part_names.size();
     manifest.parts = part_names;
     manifest.create_time = time(nullptr);
-    manifest.max_retries = query_context->getSettingsRef()[Setting::export_merge_tree_partition_max_retries];
+    manifest.retry_initial_backoff_seconds = query_context->getSettingsRef()[Setting::export_merge_tree_partition_retry_initial_backoff_seconds];
+    manifest.retry_max_backoff_seconds = query_context->getSettingsRef()[Setting::export_merge_tree_partition_retry_max_backoff_seconds];
     manifest.task_timeout_seconds = query_context->getSettingsRef()[Setting::export_merge_tree_partition_task_timeout_seconds];
     manifest.max_threads = query_context->getSettingsRef()[Setting::max_threads];
     manifest.parallel_formatting = query_context->getSettingsRef()[Setting::output_format_parallel_formatting];
@@ -8795,7 +8811,6 @@ void StorageReplicatedMergeTree::exportPartitionToTable(const PartitionCommand &
         ExportReplicatedMergeTreePartitionProcessingPartEntry entry;
         entry.status = ExportReplicatedMergeTreePartitionProcessingPartEntry::Status::PENDING;
         entry.part_name = part;
-        entry.retry_count = 0;
 
         ops.emplace_back(zkutil::makeCreateRequest(
             fs::path(partition_exports_path) / "processing" / part,

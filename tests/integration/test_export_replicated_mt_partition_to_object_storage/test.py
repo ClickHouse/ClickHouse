@@ -196,11 +196,9 @@ def test_restart_nodes_during_export(cluster):
         
         export_queries = f"""
             ALTER TABLE {mt_table}
-            EXPORT PARTITION ID '2020' TO TABLE {s3_table}
-            SETTINGS export_merge_tree_partition_max_retries = 50;
+            EXPORT PARTITION ID '2020' TO TABLE {s3_table};
             ALTER TABLE {mt_table}
-            EXPORT PARTITION ID '2021' TO TABLE {s3_table}
-            SETTINGS export_merge_tree_partition_max_retries = 50;
+            EXPORT PARTITION ID '2021' TO TABLE {s3_table};
         """
 
         node.query(export_queries)
@@ -289,11 +287,9 @@ def test_kill_export(cluster):
         
         export_queries = f"""
             ALTER TABLE {mt_table}
-            EXPORT PARTITION ID '2020' TO TABLE {s3_table}
-            SETTINGS export_merge_tree_partition_max_retries = 50;
+            EXPORT PARTITION ID '2020' TO TABLE {s3_table};
             ALTER TABLE {mt_table}
-            EXPORT PARTITION ID '2021' TO TABLE {s3_table}
-            SETTINGS export_merge_tree_partition_max_retries = 50;
+            EXPORT PARTITION ID '2021' TO TABLE {s3_table};
         """
 
         node.query(export_queries)
@@ -356,7 +352,6 @@ def test_kill_export_resilient_to_status_handling_failure(cluster):
 
         node.query(
             f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
-            f" SETTINGS export_merge_tree_partition_max_retries = 50"
         )
 
         node.query("SYSTEM ENABLE FAILPOINT export_partition_status_change_throw")
@@ -425,9 +420,9 @@ def test_drop_source_table_during_export(cluster):
         
         export_queries = f"""
             ALTER TABLE {mt_table}
-            EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS s3_retry_attempts = 500, export_merge_tree_partition_max_retries = 50;
+            EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS s3_retry_attempts = 500;
             ALTER TABLE {mt_table}
-            EXPORT PARTITION ID '2021' TO TABLE {s3_table} SETTINGS s3_retry_attempts = 500, export_merge_tree_partition_max_retries = 50;
+            EXPORT PARTITION ID '2021' TO TABLE {s3_table} SETTINGS s3_retry_attempts = 500;
         """
 
         node.query(export_queries)
@@ -517,14 +512,22 @@ def test_failure_is_logged_in_system_table(cluster):
         }
         pm.add_rule(pm_rule_reject_requests)
 
+        # Blocked MinIO produces transient (retryable) S3 errors. There is no retry
+        # budget anymore, so the task keeps retrying and is only torn down once the
+        # absolute task timeout fires (transitioning to KILLED). Use a small timeout
+        # so the test does not wait for the default (a day).
         node.query(
-            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS export_merge_tree_partition_max_retries=1;"
+            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
+            f" SETTINGS export_merge_tree_partition_task_timeout_seconds = 5;"
         )
 
-        # Wait so that the export fails
-        wait_for_export_status(node, mt_table, s3_table, "2020", "FAILED", timeout=60)
+        # Wait for the timeout to kill the stuck task. The KILL is a Keeper operation
+        # (MinIO being blocked does not affect it); the status mirror needs roughly one
+        # manifest-updater poll cycle (~30s) plus watch propagation on top of the 5s
+        # timeout, so allow a generous budget.
+        wait_for_export_status(node, mt_table, s3_table, "2020", "KILLED", timeout=90)
 
-    # Network restored; verify the export is marked as FAILED in the system table
+    # Network restored; verify the export is marked as KILLED in the system table
     # Also verify we captured at least one exception and no commit file exists
     status = node.query(
         f"""
@@ -535,7 +538,7 @@ def test_failure_is_logged_in_system_table(cluster):
         """
     )
 
-    assert status.strip() == "FAILED", f"Expected FAILED status, got: {status!r}"
+    assert status.strip() == "KILLED", f"Expected KILLED status, got: {status!r}"
 
     exception_count = node.query(
         f"""
@@ -588,9 +591,10 @@ def test_inject_short_living_failures(cluster):
         }
         pm.add_rule(pm_rule_reject_requests)
 
-        # set big max_retries so that the export does not fail completely
+        # Transient (retryable) failures never fail the task on a budget; it keeps
+        # retrying until the network is restored and the export completes.
         node.query(
-            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS export_merge_tree_partition_max_retries=100;"
+            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table};"
         )
 
         # wait for at least one exception to occur, but not enough to finish the export.
@@ -625,6 +629,85 @@ def test_inject_short_living_failures(cluster):
         """
     )
     assert int(exception_count.strip()) >= 1, "Expected at least one exception"
+
+
+def test_export_partition_retry_backoff(cluster):
+    """Verify the per-replica in-memory exponential back-off between failed part exports.
+
+    The back-off is local in-memory state (no ZooKeeper retry_count / next_retry_time
+    anymore), so it is not directly observable; instead we observe its effect. With a
+    large back-off, a part that keeps failing (object storage blocked) is parked for the
+    back-off window after its first failure and must NOT be retried on every ~5s
+    scheduler tick. We assert that exception_count stays low across a window that spans
+    several ticks. Once the network is restored and the back-off elapses, the export
+    completes (there is no retry budget to exhaust)."""
+    skip_if_remote_database_disk_enabled(cluster)
+    node = cluster.instances["replica1"]
+
+    postfix = str(uuid.uuid4()).replace("-", "_")
+    mt_table = f"retry_backoff_mt_table_{postfix}"
+    s3_table = f"retry_backoff_s3_table_{postfix}"
+
+    create_tables_and_insert_data(node, mt_table, s3_table, "replica1")
+
+    # Large back-off so a single failed attempt parks the part well beyond the
+    # ~5s scheduler tick. Kept moderate so the export can still complete promptly
+    # once the network is restored.
+    initial_backoff_seconds = 30
+    max_backoff_seconds = 30
+
+    minio_ip = cluster.minio_ip
+    minio_port = cluster.minio_port
+
+    with PartitionManager() as pm:
+        # Block responses from MinIO (source_port matches MinIO service)
+        pm.add_rule({
+            "instance": node,
+            "destination": node.ip_address,
+            "protocol": "tcp",
+            "source_port": minio_port,
+            "action": "REJECT --reject-with tcp-reset",
+        })
+        # Also block requests to MinIO to fail fast
+        pm.add_rule({
+            "instance": node,
+            "destination": minio_ip,
+            "protocol": "tcp",
+            "destination_port": minio_port,
+            "action": "REJECT --reject-with tcp-reset",
+        })
+
+        node.query(
+            f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table} "
+            f"SETTINGS export_merge_tree_partition_retry_initial_backoff_seconds = {initial_backoff_seconds}, "
+            f"export_merge_tree_partition_retry_max_backoff_seconds = {max_backoff_seconds}"
+        )
+
+        # Wait until the first failure is recorded.
+        count_after_first = wait_for_exception_count(
+            node, mt_table, s3_table, "2020", min_exception_count=1, timeout=60
+        )
+
+        # While the part is backing off (~30s) it must not be retried again. Observe
+        # across a window that spans several scheduler ticks: without back-off the
+        # ~5s tick would add roughly five more failures, so a small increase proves
+        # the back-off is pacing retries.
+        time.sleep(25)
+        count_during_backoff = int(node.query(
+            f"SELECT exception_count FROM system.replicated_partition_exports"
+            f" WHERE source_table = '{mt_table}'"
+            f"   AND destination_table = '{s3_table}'"
+            f"   AND partition_id = '2020'"
+        ).strip())
+        assert count_during_backoff - count_after_first <= 2, (
+            f"exception_count jumped during the back-off window: "
+            f"{count_after_first} -> {count_during_backoff}; back-off was not applied"
+        )
+
+    # Network restored; once the back-off elapses the export should complete because
+    # there is no retry budget to exhaust.
+    wait_for_export_status(node, mt_table, s3_table, "2020", "COMPLETED", timeout=120)
+    assert node.query(f"SELECT count() FROM {s3_table} WHERE year = 2020") == "3\n", "Export did not succeed"
 
 
 def test_export_partition_file_already_exists_policy(cluster):
@@ -694,10 +777,11 @@ def test_export_partition_file_already_exists_policy(cluster):
         """
     ) == '1\n', "Expected the export to be marked as COMPLETED"
 
-    # last but not least, let's try with the error policy
-    # max retries = 1 so it fails fast
+    # last but not least, let's try with the error policy. FILE_ALREADY_EXISTS is a
+    # non-retryable error (retrying always hits the same existing file), so the task
+    # fails fast without needing a retry budget.
     node.query(
-        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS export_merge_tree_partition_force_export=1, export_merge_tree_part_file_already_exists_policy='error', export_merge_tree_partition_max_retries=1",
+        f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table} SETTINGS export_merge_tree_partition_force_export=1, export_merge_tree_part_file_already_exists_policy='error'",
     )
 
     # wait for the export to finish
@@ -1376,7 +1460,6 @@ def test_export_partition_resumes_after_stop_moves(cluster):
 
     node.query(
         f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
-        f" SETTINGS export_merge_tree_partition_max_retries = 50"
     )
 
     wait_for_export_to_start(node, mt_table, s3_table, "2020")
@@ -1435,7 +1518,6 @@ def test_export_partition_resumes_after_stop_moves_during_export(cluster):
 
         node.query(
             f"ALTER TABLE {mt_table} EXPORT PARTITION ID '2020' TO TABLE {s3_table}"
-            f" SETTINGS export_merge_tree_partition_max_retries = 50"
         )
 
         wait_for_export_to_start(node, mt_table, s3_table, "2020")
@@ -1544,8 +1626,8 @@ def test_export_partition_partition_column_castable_type_mismatch(cluster):
         f"ALTER TABLE {mt_table} EXPORT PARTITION ID '{partition_id}' "
         f"TO TABLE {s3_table}"
     )
-    assert "BAD_ARGUMENTS" in error, (
-        f"Expected BAD_ARGUMENTS for a lossy partition-column cast, "
+    assert "INCOMPATIBLE_COLUMNS" in error, (
+        f"Expected INCOMPATIBLE_COLUMNS for a lossy partition-column cast, "
         f"got: {error!r}"
     )
     assert "requires a lossy cast" in error and "'year'" in error, (

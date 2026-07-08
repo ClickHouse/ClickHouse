@@ -29,6 +29,15 @@ struct ReplicatedPartitionExportInfo
     /// single replica the count is best-effort (concurrent failing writers may under-
     /// count by one), matching the documented column semantics.
     size_t exception_count = 0;
+
+    struct PartBackoffEntry
+    {
+        String part;
+        size_t attempts = 0;
+        time_t next_retry_time = 0;
+    };
+    /// Parts of this task currently backing off (local to this replica). Empty if none.
+    std::vector<PartBackoffEntry> backoff_per_part;
 };
 
 class StorageSystemReplicatedPartitionExports final : public IStorageSystemOneBlock
