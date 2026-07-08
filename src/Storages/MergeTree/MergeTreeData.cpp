@@ -5298,11 +5298,14 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
     {
         const auto name = it->name();
 
+        /// `format_version.txt` is validated above and has no table rows or mutable table state.
         if (name == MergeTreeData::FORMAT_VERSION_FILE_NAME)
             continue;
 
         const auto entry_path = fs::path(relative_data_path) / name;
         bool is_temporary_directory = false;
+        /// These root directories are the same recovery-only temporary prefixes
+        /// that `clearOldTemporaryDirectories` removes on startup.
         for (const auto & prefix : ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY)
         {
             if (std::string_view(name).starts_with(prefix) && disk->existsDirectory(entry_path))
@@ -5315,14 +5318,17 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
         if (is_temporary_directory)
             continue;
 
+        /// `tmp_mutation_*.txt` is a not-yet-committed mutation file; `loadMutations` removes it.
         if (startsWith(name, "tmp_mutation_") && endsWith(name, ".txt") && disk->existsFile(entry_path))
             continue;
 
+        /// `moving/` contains interrupted part-move scratch data; startup recovery clears its children.
         if (name == MOVING_DIR_NAME && disk->existsDirectory(entry_path))
             continue;
 
         if (name == DETACHED_DIR_NAME)
         {
+            /// `detached/` is safe only as a directory without attachable detached parts.
             if (!disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
                 return true;
 
