@@ -511,7 +511,6 @@ private:
     ReplicatedMergeTreeCleanupThread cleanup_thread;
 
     AsyncBlockIDsCache<StorageReplicatedMergeTree> deduplication_hashes_cache;
-    AsyncBlockIDsCache<StorageReplicatedMergeTree> async_block_ids_cache;
 
     /// A thread that checks the data of the parts, as well as the queue of the parts to be checked.
     ReplicatedMergeTreePartCheckThread part_check_thread;
@@ -917,6 +916,12 @@ private:
     // Partition helpers
     void dropPartition(const ASTPtr & partition, bool detach, ContextPtr query_context) override;
     PartitionCommandsResultInfo attachPartition(const PartitionCommand & command, const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) override;
+    PartitionCommandsResultInfo attachPartitionImpl(
+        const PartitionCommand & command,
+        const StorageMetadataPtr & metadata_snapshot,
+        ContextPtr query_context,
+        bool allow_attach_while_readonly,
+        bool deduplicate_part);
     void replacePartitionFrom(const StoragePtr & source_table, const ASTPtr & partition, bool replace, ContextPtr query_context) override;
     void movePartitionToTable(const StoragePtr & dest_table, const ASTPtr & partition, ContextPtr query_context) override;
     void movePartitionToShard(const ASTPtr & partition, bool move_part, const String & to, ContextPtr query_context) override;

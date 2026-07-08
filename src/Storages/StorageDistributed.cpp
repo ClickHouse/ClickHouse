@@ -305,6 +305,48 @@ bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
     return true;
 }
 
+/// Find the sharding key output node in `sharding_key_dag`.
+/// `sharding_key_column_name` is the name of the unanalyzed sharding key AST and can differ from the
+/// analyzed DAG output name: the analyzer may const-fold or otherwise rewrite the expression, so a name
+/// lookup misses. The DAG produced with `project=false` has the sharding key output plus its
+/// source-column inputs. When the name lookup fails we resolve by structure: a single output is the key
+/// (even if it is a source column, for keys that fold to a bare column); otherwise the key is the unique
+/// output that is not a source column. Returns nullptr when the node can't be resolved unambiguously, so
+/// callers skip the optimization (and query all shards) rather than assert.
+const ActionsDAG::Node * tryFindShardingKeyOutput(const ActionsDAG & sharding_key_dag, const std::string & sharding_key_column_name)
+{
+    if (const ActionsDAG::Node * node = sharding_key_dag.tryFindInOutputs(sharding_key_column_name))
+        return node;
+
+    /// The name lookup missed because the analyzer rewrote the key: it const-folds e.g.
+    /// `if(2, toInt32(id), t0)` to the computed output `toInt32(id)`, or folds `if(1, id, id + 1)`
+    /// all the way down to the bare source column `id`. The DAG built with `project=false` has the
+    /// sharding key output plus its source-column inputs.
+    const ActionsDAG::NodeRawConstPtrs & outputs = sharding_key_dag.getOutputs();
+
+    /// A single output is unambiguously the sharding key, even when that output is a source column
+    /// (a key that folds to a bare column, e.g. `if(1, id, id + 1)` -> `id`).
+    if (outputs.size() == 1)
+        return outputs.front();
+
+    /// With several outputs the key is the one that is not a source/input column: for `intHash64(id)`
+    /// the outputs are [id, intHash64(id)] and `id` is only a source column.
+    const Names & names = sharding_key_dag.getRequiredColumnsNames();
+    const NameSet source_columns(names.begin(), names.end());
+
+    const ActionsDAG::Node * result = nullptr;
+    for (const ActionsDAG::Node * output : outputs)
+    {
+        if (source_columns.contains(output->result_name))
+            continue;
+        if (result != nullptr)
+            return nullptr; /// More than one non-source output: ambiguous, bail out.
+        result = output;
+    }
+
+    return result;
+}
+
 class ReplacingConstantExpressionsMatcher
 {
 public:
@@ -432,6 +474,12 @@ StorageDistributed::StorageDistributed(
         checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
         sharding_key_column_name = sharding_key_->getColumnName();
+        /// Building the expression analyzes (and may rewrite) the sharding key: e.g. the analyzer const-folds
+        /// `if(2, toInt32(id), t0)` down to `toInt32(id)`, so the raw AST name is absent from the expression
+        /// outputs. Resolve it to the actual output name so every consumer that looks the column up in the
+        /// expression's result (shard skipping, sharding key IN rewrite, DistributedSink selector) finds it.
+        if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
+            sharding_key_column_name = node->result_name;
         sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
     }
 
@@ -609,8 +657,10 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
     /// For example, if the sharding key is `intHash64(user_id)`, then `getOutputs() = [intHash64(user_id), user_id]`. The `user_id` column is a source
     /// column but not a key value, and should be excluded from checks. We need to find the actual sharding key output
     /// node to check that it depends only on the allowed set of nodes (`irreducible_nodes`).
-    const auto sharding_key_outputs = sharding_key_dag.findInOutputs(Names{sharding_key_column_name});
-    return allOutputsDependsOnlyOnAllowedNodes(sharding_key_outputs, irreducibe_nodes, matches);
+    const ActionsDAG::Node * sharding_key_output = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);
+    if (sharding_key_output == nullptr)
+        return false;
+    return allOutputsDependsOnlyOnAllowedNodes({sharding_key_output}, irreducibe_nodes, matches);
 }
 
 std::optional<QueryProcessingStage::Enum> StorageDistributed::getOptimizedQueryProcessingStageAnalyzer(const SelectQueryInfo & query_info, const Settings & settings) const
@@ -1027,8 +1077,9 @@ void StorageDistributed::read(
             storage_snapshot,
             processed_stage);
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
     auto shard_filter_generator = ClusterProxy::getShardFilterGeneratorForCustomKey(
-        *modified_query_info.getCluster(), local_context, getInMemoryMetadataPtr(local_context, false)->columns);
+        *modified_query_info.getCluster(), local_context, metadata_snapshot->columns);
 
     ClusterProxy::executeQuery(
         query_plan,
@@ -1317,8 +1368,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteFromClusterStor
     const auto cluster = getCluster();
 
     /// Select query is needed for pruining on virtual columns
+    const auto storage_metadata = src_storage_cluster.getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster.getTaskIteratorExtension(
-        predicate, filter.get(), local_context, cluster, src_storage_cluster.getInMemoryMetadataPtr(local_context, false));
+        predicate, filter.get(), local_context, cluster, storage_metadata);
 
     /// Here we take addresses from destination cluster and assume source table exists on these nodes
     size_t replica_index = 0;
@@ -1434,7 +1486,8 @@ void StorageDistributed::checkAlterIsPossible(const AlterCommands & commands, Co
         }
     }
 
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     commands.apply(new_metadata, local_context);
     checkShardingKeyExistsAndIsNumeric(sharding_key, local_context, new_metadata.columns.getAllPhysical());
 }
@@ -1444,7 +1497,8 @@ void StorageDistributed::alter(const AlterCommands & params, ContextPtr local_co
     auto table_id = getStorageID();
 
     checkAlterIsPossible(params, local_context);
-    StorageInMemoryMetadata new_metadata = *getInMemoryMetadataPtr(local_context, false);
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    StorageInMemoryMetadata new_metadata = *metadata_snapshot;
     params.apply(new_metadata, local_context);
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
@@ -1778,12 +1832,12 @@ ClusterPtr StorageDistributed::skipUnusedShardsWithAnalyzer(
         throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND, "optimize_skip_unused_shards_limit out of range (0, {}]", SSIZE_MAX);
     }
 
-    const auto & sharding_key_dag = sharding_key_expr->getActionsDAG();
-    const auto * expr_node = sharding_key_dag.tryFindInOutputs(sharding_key_column_name);
-    if (!expr_node)
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "Cannot find sharding key column {} in expression {}",
-            sharding_key_column_name, sharding_key_dag.dumpDAG());
+    const ActionsDAG & sharding_key_dag = sharding_key_expr->getActionsDAG();
+    const ActionsDAG::Node * expr_node = tryFindShardingKeyOutput(sharding_key_dag, sharding_key_column_name);
+    if (expr_node == nullptr)
+        /// Sharding key column can't be resolved in the analyzed expression (e.g. a const-folded key like
+        /// `if(2, toInt32(id), t0)`). Skip the optimization and query all shards instead of asserting.
+        return nullptr;
 
     const auto * predicate = query_info.filter_actions_dag->getOutputs().at(0);
     const auto variants = evaluateExpressionOverConstantCondition(predicate, {expr_node}, local_context, limit);
@@ -2203,7 +2257,8 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2
 |--------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
 | `fsync_after_insert`                       | Do the `fsync` for the file data after background insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.                                                             | `false`       |
 | `fsync_directories`                        | Do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).                        | `false`       |
-| `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards. Shard is marked as unavailable when: 1) The shard cannot be reached due to a connection failure. 2) Shard is unresolvable through DNS. 3) Table does not exist on the shard.   | `false`       |
+| `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards. The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.                                                                                   | `false`       |
+| `skip_unavailable_shards_mode`             | Controls which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled: `unavailable` ignores only connection errors; `unavailable_or_table_missing` also ignores a missing table or database; `unavailable_or_exception_before_processing` also ignores any exception received before the shard returned data. | `unavailable_or_table_missing` |
 | `bytes_to_throw_insert`                    | If more than this number of compressed bytes will be pending for background `INSERT`, an exception will be thrown. `0` - do not throw.                                                                                                | `0`           |
 | `bytes_to_delay_insert`                    | If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.                                                                                                      | `0`           |
 | `max_delay_to_insert`                      | Max delay of inserting data into Distributed table in seconds, if there are a lot of pending bytes for background send.                                                                                                               | `60`          |

@@ -2,7 +2,15 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.test_tools import tsv_close_to
-from .prometheus_test_utils import *
+import requests
+
+from .prometheus_test_utils import (
+    convert_time_series_to_protobuf,
+    execute_query_via_http_api,
+    execute_range_query_via_http_api,
+    http_api_response_close_to,
+    send_protobuf_to_remote_write,
+)
 
 
 cluster = ClickHouseCluster(__file__)
@@ -1635,7 +1643,6 @@ def test_multiblock_instant_vector_json():
     Before the fix, each block would re-emit "resultType":"vector","result":[...] producing malformed JSON like:
     {"status":"success","data":{"resultType":"vector","result":[e1]"resultType":"vector","result":[e2]}}
     """
-    import json
     import urllib
 
     query = "http_errors"
@@ -1659,7 +1666,6 @@ def test_multiblock_range_query_json():
     Before the fix, entries from different blocks had no comma between them, producing malformed JSON like:
     {"status":"success","data":{"resultType":"matrix","result":[{...}{...}]}}
     """
-    import json
     import urllib
 
     query = "http_errors"

@@ -1,0 +1,48 @@
+---
+title: "خطأ ODBC Authentication failed عند استخدام موصل ClickHouse لـ Power BI"
+description: "خطأ ODBC Authentication failed عند استخدام موصل ClickHouse لـ Power BI"
+date: 2024-07-10
+tags: ['العملاء الأصليون والواجهات', 'الأخطاء والاستثناءات']
+keywords: ['ODBC', 'موصل Power BI', 'Authentication Failed']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## السؤال
+</div>
+
+عند محاولة الاتصال من PowerBI بـ ClickHouse باستخدام الموصل، يظهر لك خطأ في المصادقة.
+
+يكون هذا الخطأ عادةً على النحو التالي:
+
+```
+We encountered an error while trying to connect.
+Details: "ODBC: ERROR [HY000] HTTP status code: 403
+Received error:
+Code: 516. DB::Exception: default: Authentication failed: password is incorrect, or there is no user with such name.
+If you have installed ClickHouse and forgot password you can reset it in the configuration file.
+The password for default user is typically located at /etc/clickhouse-server/users.d/default-password.xml and deleting this file will reset the password.
+See also /etc/clickhouse-server/users.ml on the server where
+ClickHouse is installed.
+```
+
+<Image img="/images/knowledgebase/powerbi_odbc_authentication_error.webp" size="md" alt="مربع حوار خطأ مصادقة ODBC في Power BI" border />
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+حدّث ClickHouse ODBC Driver إلى الإصدار [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523).
+
+إذا لم يكن التحديث ممكنًا، فتحقق مما إذا كانت كلمة المرور تحتوي على الرمز (~)، إذ قد يتسبب ذلك في حدوث مشكلات في الإصدارات الأقدم من [1.4.1](https://github.com/ClickHouse/clickhouse-odbc/releases/tag/1.4.1.20250523).
+
+نوصي باستخدام مستخدم مخصص للاتصال وتعيين كلمة المرور يدويًا.  إذا كنت تستخدم ClickHouse Cloud وتحتاج إلى صلاحيات على مستوى المسؤول تعادل صلاحيات المستخدم `default`، فأنشئ مستخدمًا جديدًا وأسنِد إليه `default_role`.
+
+لمزيد من المعلومات:
+https://clickhouse.com/docs/operations/access-rights#user-account-management
+https://clickhouse.com/docs/cloud/security/cloud-access-management#database-roles

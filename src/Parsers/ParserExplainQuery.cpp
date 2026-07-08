@@ -1,6 +1,7 @@
 #include <Parsers/ParserExplainQuery.h>
 
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -26,6 +27,7 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserKeyword s_estimates(Keyword::ESTIMATE);
     ParserKeyword s_table_override(Keyword::TABLE_OVERRIDE);
     ParserKeyword s_current_transaction(Keyword::CURRENT_TRANSACTION);
+    ParserKeyword s_whatif(Keyword::WHATIF);
 
     if (s_explain.ignore(pos, expected))
     {
@@ -47,6 +49,8 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
             kind = ASTExplainQuery::ExplainKind::TableOverride;
         else if (s_current_transaction.ignore(pos, expected))
             kind = ASTExplainQuery::ExplainKind::CurrentTransaction;
+        else if (s_whatif.ignore(pos, expected))
+            kind = ASTExplainQuery::ExplainKind::WhatIf;
     }
     else
         return false;
@@ -140,20 +144,25 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         /// We also keep the FORMAT on the INSERT when it describes the insert's input data,
         /// i.e. when the data is read FROM INFILE or via the `input` table function -- in
         /// those cases the format is required for the insert input, not the EXPLAIN output.
+        ASTPtr explain_output_format;
         if (auto * insert_query = query->as<ASTInsertQuery>())
         {
             ASTPtr input_function;
             insert_query->tryFindInputFunction(input_function);
 
-            if (insert_query->select && !insert_query->format.empty() && insert_query->format != "Values"
-                && !insert_query->settings_ast && !insert_query->infile && !input_function)
+            if (insert_query->select && !insert_query->format.empty() && !insert_query->infile && !input_function)
             {
                 ParserKeyword s_format(Keyword::FORMAT);
                 if (!s_format.checkWithoutMoving(pos, expected))
                 {
-                    /// Rewind past the format name identifier and the FORMAT keyword.
-                    --pos;
-                    --pos;
+                    /// We set the output format on the EXPLAIN query directly instead of rewinding
+                    /// `pos` and letting ParserQueryWithOutput re-parse it: a `pos` rewind is only
+                    /// correct when `FORMAT <name>` is the last thing the INSERT consumed, which is
+                    /// not the case when SETTINGS follow the FORMAT
+                    /// (allow_settings_after_format_in_insert).
+                    explain_output_format = make_intrusive<ASTIdentifier>(insert_query->format);
+                    setIdentifierSpecial(explain_output_format);
+
                     insert_query->format.clear();
                     insert_query->data = nullptr;
                     insert_query->end = nullptr;
@@ -162,6 +171,11 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         }
 
         explain_query->setExplainedQuery(std::move(query));
+
+        /// Attach the moved FORMAT only after setExplainedQuery, so that the explained query
+        /// is added to the children first, as the rest of the code expects.
+        if (explain_output_format)
+            explain_query->set(explain_query->format_ast, std::move(explain_output_format));
     }
     else
     {

@@ -1,0 +1,50 @@
+---
+alias: []
+description: 'توثيق لتنسيق One'
+input_format: true
+keywords: ['One']
+output_format: false
+slug: /interfaces/formats/One
+title: 'One'
+doc_type: 'مرجع'
+---
+
+| الإدخال | الإخراج | اسم مستعار |
+| ------- | ------- | ---------- |
+| ✔       | ✗       |            |
+
+<div id="description">
+  ## الوصف
+</div>
+
+تنسيق `One` هو تنسيق إدخال خاص لا يقرأ أي بيانات من ملف، ويُرجع صفًا واحدًا فقط يحتوي على عمود من النوع [`UInt8`](/ar/reference/data-types/int-uint) باسم `dummy` وقيمته `0` (مثل الجدول `system.one`).
+يمكن استخدامه مع الأعمدة الافتراضية `_file/_path` لسرد جميع الملفات من دون قراءة البيانات الفعلية.
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+مثال:
+
+```sql title="Query"
+SELECT _file FROM file('path/to/files/data*', One);
+```
+
+```text title="Response"
+┌─_file────┐
+│ data.csv │
+└──────────┘
+┌─_file──────┐
+│ data.jsonl │
+└────────────┘
+┌─_file────┐
+│ data.tsv │
+└──────────┘
+┌─_file────────┐
+│ data.parquet │
+└──────────────┘
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

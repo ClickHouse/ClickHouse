@@ -104,7 +104,7 @@ public:
         ++counter(place, category_count, y);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         for (size_t i = 0; i <= category_count; ++i)
         {

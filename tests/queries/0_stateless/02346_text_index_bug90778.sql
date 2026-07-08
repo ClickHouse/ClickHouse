@@ -1,11 +1,12 @@
 -- Tags: no-parallel-replicas
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab
 (
     col LowCardinality(String),
-    INDEX idx col type text(tokenizer='array')
+    INDEX idx col type text(tokenizer='splitByNonAlpha')
 )
 ENGINE = MergeTree ORDER BY tuple();
 
@@ -22,9 +23,6 @@ WHERE explain LIKE '%INPUT%\_\_text_index%';
 
 SELECT count() FROM tab WHERE hasToken(col, 'config');
 
--- `hasToken` uses `splitByNonAlpha` semantics, which do not match the `array` index tokens
--- (the array tokenizer keeps the whole value as one token), so the index is intentionally not
--- used for `hasToken` and this EXPLAIN deliberately produces no `__text_index` INPUT line.
 SELECT trim(explain) FROM
 (
     EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(col, 'config')
