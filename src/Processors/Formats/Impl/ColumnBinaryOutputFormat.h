@@ -11,7 +11,8 @@ class ColumnBinaryOutputFormat final : public IOutputFormat
 {
 public:
     ColumnBinaryOutputFormat(WriteBuffer & out_, SharedHeader header,
-                             bool disable_preallocation = false);
+                             bool disable_preallocation = false,
+                             UInt64 max_frame_size = 1024ull * 1024 * 1024);
 
     String getName() const override { return "ColumnBinary"; }
 
@@ -25,6 +26,7 @@ protected:
 
     SharedHeader header_;
     bool disable_preallocation_;
+    UInt64 max_frame_size_;
 };
 
 void registerOutputFormatColumnBinary(FormatFactory & factory);
