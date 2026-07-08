@@ -867,15 +867,15 @@ void PostgreSQLHandler::processDescribeQuery()
         std::unique_ptr<PostgreSQLProtocol::Messaging::DescribeQuery> query =
             message_transport->receive<PostgreSQLProtocol::Messaging::DescribeQuery>();
 
-        /// Describe must reply with ParameterDescription + RowDescription (for a
-        /// prepared statement) or RowDescription / NoData (for a portal). The
-        /// PostgreSQL wire implementation here does not produce those messages,
-        /// so a silent no-op would leave any client that issues Describe waiting
-        /// until timeout. Fail fast with a clear error instead, matching how the
-        /// unsupported named-portal / binary-format / FLUSH paths behave; the
-        /// error is followed by skip-until-Sync so the connection stays alive.
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Describe is not supported in the PostgreSQL wire protocol");
+        /// Consume the Describe and reply with nothing here. In this wire
+        /// implementation the row layout is not known until the query runs, and
+        /// the RowDescription is emitted at Execute time by PostgreSQLOutputFormat.
+        /// Standard clients pipeline Describe with Bind/Execute/Sync in one flush
+        /// and read all responses together, so the RowDescription from Execute
+        /// satisfies the Describe. Failing the Describe instead would abort the
+        /// whole extended-query cycle (skip-until-Sync drops the following
+        /// Execute), breaking the common prepared-statement path such as psycopg
+        /// execute(..., prepare=True).
     }
     catch (const Exception & e)
     {

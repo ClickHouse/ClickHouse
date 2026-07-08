@@ -720,14 +720,19 @@ def _fe(t, body):
 def test_extended_query_ready_for_query_and_describe(started_cluster):
     # Regression for the extended-query protocol contract on the typed-Bind path.
     #
-    # 1. ReadyForQuery must be emitted exactly once per Sync. Marking only
-    #    Parse/Bind (not Describe/Close/Execute) as in-progress caused a
-    #    standalone Describe/Sync or Close/Sync to emit ReadyForQuery mid-cycle
-    #    (before the Sync was read) and then again for the Sync, desyncing
-    #    strict clients that count one ReadyForQuery per Sync.
-    # 2. Describe must not be a silent no-op: on success the backend sends none
-    #    of ParameterDescription/RowDescription/NoData, so a client issuing
-    #    Describe would hang until timeout. It must fail fast with a clear error.
+    # ReadyForQuery must be emitted exactly once per Sync. Marking only
+    # Parse/Bind (not Describe/Close/Execute) as in-progress caused a standalone
+    # Describe/Sync or Close/Sync to emit ReadyForQuery mid-cycle (before the
+    # Sync was read) and then again for the Sync, desyncing strict clients that
+    # count one ReadyForQuery per Sync. Every extended-query message now sets
+    # is_query_in_progress; only Sync clears it and emits the single
+    # ReadyForQuery that ends the series.
+    #
+    # Describe is a silent no-op: this wire implementation does not know the row
+    # layout until the query runs, and the RowDescription is emitted at Execute
+    # time by PostgreSQLOutputFormat, which standard clients (which pipeline
+    # Describe with Bind/Execute/Sync) read together. So a Parse/Bind/Describe/
+    # Execute/Sync cycle must let the Execute run to completion, not abort it.
     node = started_cluster.instances["node"]
 
     def sync():
@@ -765,17 +770,18 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     assert "3" in types, f"Close must respond with CloseComplete, got {types}"
     sock.close()
 
-    # Describe('S', '')/Sync: an error (not a silent no-op) then ONE ReadyForQuery.
+    # Describe('S', '')/Sync: a silent no-op then exactly ONE ReadyForQuery. The
+    # backend must not desync by emitting a mid-cycle ReadyForQuery before Sync.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.sendall(describe("S", "") + sync())
     types = read_until_ready()
-    assert "E" in types, f"Describe must return an error, not hang silently, got {types}"
     assert types.count("Z") == 1, f"Describe/Sync must emit one ReadyForQuery, got {types}"
     sock.close()
 
-    # Full Parse/Bind/Describe/Execute/Sync: ONE ReadyForQuery (Describe errors,
-    # then the backend discards until Sync). The typed int4 bind keeps this on
-    # the path this PR touches.
+    # Full Parse/Bind/Describe/Execute/Sync: the Describe no-op must NOT abort the
+    # cycle. The Execute runs, so the backend sends RowDescription ('T'),
+    # DataRow ('D'), CommandComplete ('C') and then exactly ONE ReadyForQuery for
+    # the Sync. The typed int4 bind keeps this on the path this PR touches.
     sock, read_until_ready = _pg_raw_extended_query_session(node)
     sock.sendall(
         parse("", "SELECT $1", (23,))
@@ -786,6 +792,8 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     )
     types = read_until_ready()
     assert types.count("Z") == 1, f"P/B/D/E/S must emit one ReadyForQuery, got {types}"
+    assert "E" not in types, f"P/B/D/E/S must not error on the Describe no-op, got {types}"
+    assert "T" in types and "C" in types, f"Execute must run and return rows, got {types}"
     sock.close()
 
     # A rejected typed Bind (the 1-- injection guard) must still emit exactly one
