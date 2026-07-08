@@ -982,11 +982,23 @@ inline MutableColumnPtr readColumnFromDesc(
         auto & offsets = col_str->getOffsets();
         offsets.resize(rows_to_dec);
         uint64_t ch_pos = 0ull;
+        // The writer emits offsets that start at 0 and cover the chars blob exactly and
+        // contiguously (buildColDescriptor sets data_size = total_chars precisely, no padding
+        // or gaps), so validate that shape here rather than only bounding each [start, end)
+        // pair independently — otherwise a malformed frame like offsets [1, 3] over payload
+        // "abc" decodes as "bc" (a shifted string) instead of being rejected, and [0, 1] would
+        // silently leave trailing bytes of the declared block unused.
+        uint64_t expected_start = 0ull;
         for (uint32_t i = 0; i < rows_to_dec; ++i)
         {
             uint64_t wire_end   = unalignedLoad<uint64_t>(wire_offsets + (i + 1u) * 8u);
             uint64_t wire_start = unalignedLoad<uint64_t>(wire_offsets + i * 8u);
-            if (wire_start > wire_end || wire_end > desc.data_size)
+            if (wire_start != expected_start)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "COLUMNAR_V1: COL_BYTES offsets must be contiguous starting at 0: row {} expected "
+                    "start {}, got {}",
+                    i, expected_start, wire_start);
+            if (wire_end < wire_start || wire_end > desc.data_size)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
                     "COLUMNAR_V1: COL_BYTES invalid string offsets at row {}: [{}, {}), data_size={}",
                     i, wire_start, wire_end, desc.data_size);
@@ -995,7 +1007,12 @@ inline MutableColumnPtr readColumnFromDesc(
             std::memcpy(chars.data() + ch_pos, data + wire_start, str_len);
             ch_pos += str_len;
             offsets[i] = ch_pos;
+            expected_start = wire_end;
         }
+        if (expected_start != desc.data_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_BYTES offsets do not cover the full data block: consumed {}, data_size={}",
+                expected_start, desc.data_size);
         col = maybe_nullable(std::move(col_str));
     }
     else if (raw_type == COL_FIXED8)
