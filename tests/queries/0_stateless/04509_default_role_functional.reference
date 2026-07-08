@@ -1,0 +1,23 @@
+set_default_role
+[]	[]	[]
+['role_x_04509_test','role_y_04509_test']	['role_x_04509_test','role_y_04509_test']	['role_x_04509_test','role_y_04509_test']
+[]	[]	[]
+['role_x_04509_test']	['role_x_04509_test']	['role_x_04509_test']
+['role_y_04509_test']	['role_y_04509_test']	['role_y_04509_test']
+['role_x_04509_test','role_y_04509_test']	['role_x_04509_test','role_y_04509_test']	['role_x_04509_test','role_y_04509_test']
+['role_y_04509_test']	['role_y_04509_test']	['role_y_04509_test']
+
+alter_user
+[]	[]	[]
+['role_x_04509_test','role_y_04509_test']	['role_x_04509_test','role_y_04509_test']	['role_x_04509_test','role_y_04509_test']
+[]	[]	[]
+['role_x_04509_test']	['role_x_04509_test']	['role_x_04509_test']
+['role_x_04509_test','role_y_04509_test']	['role_x_04509_test','role_y_04509_test']	['role_x_04509_test','role_y_04509_test']
+['role_y_04509_test']	['role_y_04509_test']	['role_y_04509_test']
+
+errors
+UNKNOWN_USER
+UNKNOWN_USER
+UNKNOWN_ROLE
+UNKNOWN_ROLE
+UNKNOWN_ROLE
