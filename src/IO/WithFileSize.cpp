@@ -83,8 +83,6 @@ size_t getDataOffsetMaybeCompressed(const ReadBuffer & in)
     }
     if (const auto * peekable = dynamic_cast<const PeekableReadBuffer *>(&in))
     {
-        if (peekable->getSubBuffer().isMemoryBuffer())
-            return peekable->count();
         return getDataOffsetMaybeCompressed(peekable->getSubBuffer());
     }
 

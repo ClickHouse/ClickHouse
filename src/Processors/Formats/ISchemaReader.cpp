@@ -160,7 +160,7 @@ NamesAndTypesList IRowSchemaReader::readSchema()
             data_types[i] = hint_it->second;
     }
 
-    for (rows_read = 1; rows_read < max_rows_to_read && getDataOffsetMaybeCompressed(in) < max_bytes_to_read; ++rows_read)
+    for (rows_read = 1; rows_read < max_rows_to_read && in.count() < max_bytes_to_read; ++rows_read)
     {
         auto new_data_types_maybe = readRowAndGetDataTypes();
         if (!new_data_types_maybe)
@@ -288,7 +288,7 @@ NamesAndTypesList IRowWithNamesSchemaReader::readSchema()
         names_order.push_back(name);
     }
 
-    for (rows_read = 1; rows_read < max_rows_to_read && getDataOffsetMaybeCompressed(in) < max_bytes_to_read; ++rows_read)
+    for (rows_read = 1; rows_read < max_rows_to_read && in.count() < max_bytes_to_read; ++rows_read)
     {
         auto new_names_and_types = readRowAndGetNamesAndDataTypes(eof);
         if (eof)
