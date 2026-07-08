@@ -43,8 +43,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         {
             {"materialize_statistics_on_insert", false, true, "Materialize column statistics on INSERT by default for tables below materialize_statistics_on_insert_max_table_size, so cost-based join reordering has good estimates on freshly-loaded dimension tables."},
             {"materialize_statistics_on_insert_max_table_size", 0, 1073741824, "New setting: only materialize column statistics on INSERT for tables whose current size is below this threshold. previous_value=0 (no limit) so `compatibility` with versions before 26.7 restores the pre-existing behavior (before this PR there was no size cap, so users who explicitly re-enable `materialize_statistics_on_insert` keep materializing statistics regardless of table size)."},
+            {"merge_tree_generic_exclusion_search_max_steps", 0, 0, "New setting to limit the number of steps of the generic exclusion search over the primary key index."},
             {"use_streaming_marks_compression", false, false, "New setting to compress marks into in-memory representation one block at a time (streaming) instead of materializing the full plain marks array, reducing peak memory during marks loading for compact parts with many substreams."},
             {"s3_validate_etag_on_read", false, true, "New setting to detect concurrent in-place overwrites of S3/GCS objects during a read by validating the GET response ETag against the listed one. previous_value=false so `compatibility` with versions before 26.7 restores the pre-existing behavior (no validation)."},
+            {"ai_function_text_default_credentials", "", "", "New setting"},
+            {"ai_function_embedding_default_credentials", "", "", "New setting"},
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
