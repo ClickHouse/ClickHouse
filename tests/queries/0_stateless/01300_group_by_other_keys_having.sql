@@ -1,4 +1,4 @@
--- Tags: long
+-- Tags: no-flaky-check
 set optimize_group_by_function_keys = 1;
 set optimize_syntax_fuse_functions = 0;
 set optimize_arithmetic_operations_in_aggregate_functions = 1;
