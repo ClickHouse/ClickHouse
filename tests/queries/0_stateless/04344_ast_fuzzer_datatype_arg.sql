@@ -14,6 +14,6 @@ SET send_logs_level = 'fatal';
 SET ast_fuzzer_runs = 20;
 SET ast_fuzzer_any_query = 1;
 
-CREATE TABLE t_04344 (a Nullable(Int32), b LowCardinality(String), c Array(Nullable(UInt64)), d Map(String, Int64), e FixedString(8)) ENGINE = Memory;
+CREATE TABLE t_04344 (a Nullable(Int32), b LowCardinality(String), c Array(Nullable(UInt64)), d Map(String, Int64), e FixedString(8), f JSON(max_dynamic_paths=8, p1 UInt32, p2 Array(String), SKIP s), g QBit(Float32, 16)) ENGINE = Memory;
 
 SELECT 1;

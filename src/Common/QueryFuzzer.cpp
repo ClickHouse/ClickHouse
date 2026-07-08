@@ -1,5 +1,6 @@
 #include <Common/QueryFuzzer.h>
 
+#include <Columns/ColumnDynamic.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -1996,6 +1997,51 @@ DataTypePtr QueryFuzzer::fuzzDataType(DataTypePtr type)
         if (variants.size() > 1 && fuzz_rand() % 4 == 0)
             variants.erase(variants.begin() + fuzz_rand() % variants.size());
         return std::make_shared<DataTypeVariant>(variants);
+    }
+
+    const auto * type_object = typeid_cast<const DataTypeObject *>(type.get());
+    if (type_object && fuzz_rand() % 4 != 0)
+    {
+        /// Fuzz the typed-path element types (recursively) and the numeric parameters, keeping the
+        /// SKIP paths / SKIP REGEXP lists intact so the result stays a structurally valid, round-trippable
+        /// DataTypeObject (its getName() re-parses via ParserDataType to the same type).
+        std::unordered_map<String, DataTypePtr> typed_paths = type_object->getTypedPaths();
+        for (auto & [path, path_type] : typed_paths)
+            path_type = fuzzDataType(path_type);
+        size_t max_dynamic_paths = (fuzz_rand() % 4 == 0)
+            ? fuzz_rand() % (DataTypeObject::MAX_DYNAMIC_PATHS_LIMIT + 1)
+            : type_object->getMaxDynamicPaths();
+        size_t max_dynamic_types = (fuzz_rand() % 4 == 0)
+            ? fuzz_rand() % (ColumnDynamic::MAX_DYNAMIC_TYPES_LIMIT + 1)
+            : type_object->getMaxDynamicTypes();
+        try
+        {
+            return std::make_shared<DataTypeObject>(
+                type_object->getSchemaFormat(),
+                std::move(typed_paths),
+                type_object->getPathsToSkip(),
+                type_object->getPathRegexpsToSkip(),
+                max_dynamic_paths,
+                max_dynamic_types);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: a fuzzed typed-path type may violate an Object invariant
+        {
+            return type;
+        }
+    }
+
+    const auto * type_qbit = typeid_cast<const DataTypeQBit *>(type.get());
+    if (type_qbit && fuzz_rand() % 4 != 0)
+    {
+        /// QBit only accepts BFloat16/Float32/Float64 element types and a positive dimension, so we
+        /// mutate within those bounds rather than handing the argument list to the generic fuzzer.
+        static const DataTypePtr qbit_element_types[]
+            = {std::make_shared<DataTypeBFloat16>(), std::make_shared<DataTypeFloat32>(), std::make_shared<DataTypeFloat64>()};
+        const auto element_type = (fuzz_rand() % 2 == 0)
+            ? qbit_element_types[fuzz_rand() % std::size(qbit_element_types)]
+            : type_qbit->getElementType();
+        const size_t dimension = (fuzz_rand() % 2 == 0) ? (fuzz_rand() % 128 + 1) : type_qbit->getDimension();
+        return std::make_shared<DataTypeQBit>(element_type, dimension);
     }
 
     /// NOLINTBEGIN(bugprone-macro-parentheses)
