@@ -14,4 +14,14 @@ echo -e '1\tfoo' | $CLICKHOUSE_CLIENT --async_insert=0 --query "INSERT INTO t_in
 
 $CLICKHOUSE_CLIENT --async_insert=0 --query "SELECT id, name FROM t_insert_returning_native ORDER BY id"
 
+# `input`-backed source keeps `FORMAT` before `RETURNING`; formatting must be stable across round-trips.
+query_with_input="INSERT INTO t_insert_returning_native (id, name) SELECT * FROM input('id UInt64, name String') FORMAT TabSeparated RETURNING (SELECT count() FROM t_insert_returning_native)"
+once=$(echo "$query_with_input" | ${CLICKHOUSE_FORMAT})
+twice=$(echo "$once" | ${CLICKHOUSE_FORMAT})
+[ "$once" = "$twice" ] && echo "stable" || echo "UNSTABLE"
+
+echo -e '2\tbar' | $CLICKHOUSE_CLIENT --async_insert=0 --query "$query_with_input"
+
+$CLICKHOUSE_CLIENT --async_insert=0 --query "SELECT id, name FROM t_insert_returning_native ORDER BY id"
+
 $CLICKHOUSE_CLIENT --async_insert=0 --query "DROP TABLE t_insert_returning_native"

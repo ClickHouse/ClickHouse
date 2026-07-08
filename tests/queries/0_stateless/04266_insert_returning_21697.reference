@@ -53,3 +53,7 @@ returning query cache session rejection
 1
 returning query cache insert settings rejection
 1
+returning failure rolls back implicit transaction
+0
+returning failure rolls back explicit transaction
+0

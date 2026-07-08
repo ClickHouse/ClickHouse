@@ -184,5 +184,27 @@ TRUNCATE TABLE t_insert_returning;
 INSERT INTO t_insert_returning (id, name) SETTINGS use_query_cache=1 RETURNING (SELECT 1) VALUES (208, 'query_cache_insert'); -- { serverError NOT_IMPLEMENTED }
 SELECT count() AS inserted_after_returning_query_cache_insert FROM t_insert_returning WHERE id = 208;
 
+-- RETURNING planning failure rolls back persisted INSERT rows when implicit transactions are enabled.
+DROP DATABASE IF EXISTS db_insert_returning_tx;
+CREATE DATABASE db_insert_returning_tx ENGINE = Atomic;
+CREATE TABLE db_insert_returning_tx.t_insert_returning_tx (id UInt64) ENGINE = MergeTree ORDER BY id;
+
+SELECT 'returning failure rolls back implicit transaction';
+INSERT INTO db_insert_returning_tx.t_insert_returning_tx
+SELECT number FROM numbers(3)
+SETTINGS implicit_transaction=1
+RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT count() FROM db_insert_returning_tx.t_insert_returning_tx;
+
+SELECT 'returning failure rolls back explicit transaction';
+BEGIN TRANSACTION;
+INSERT INTO db_insert_returning_tx.t_insert_returning_tx
+SELECT number + 10 FROM numbers(3)
+RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx); -- { serverError UNKNOWN_IDENTIFIER }
+ROLLBACK;
+SELECT count() FROM db_insert_returning_tx.t_insert_returning_tx;
+
+DROP DATABASE db_insert_returning_tx;
+
 DROP TABLE t_insert_returning_other;
 DROP TABLE t_insert_returning;

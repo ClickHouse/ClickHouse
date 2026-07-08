@@ -186,6 +186,12 @@ For `INSERT SELECT`, the `RETURNING` clause appears after the source query:
 INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ... RETURNING (SELECT ...) [SETTINGS ...]
 ```
 
+If the source query reads client-sent rows through the `input` table function, keep `FORMAT <name>` before `RETURNING` so the input stream still belongs to the source phase:
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] SELECT ... FROM input(...) FORMAT format_name RETURNING (SELECT ...)
+```
+
 A trailing `SETTINGS` clause after the `RETURNING` subquery is applied to the **source `SELECT`**, not to the `RETURNING` subquery. To set options that shape the returned rows, place the `SETTINGS` inside the subquery itself, for example `RETURNING (SELECT ... SETTINGS ...)`.
 
 For `INSERT ... RETURNING`, source-side `SETTINGS` that bind query-global state at query registration are rejected with `NOT_IMPLEMENTED` (the same rejection class as for unsupported `RETURNING` subquery settings). This includes settings such as `max_execution_time`, memory/admission limits, throttling settings, and `profile`. `use_concurrency_control` is an exception: it is accepted on source-side `SETTINGS`.
