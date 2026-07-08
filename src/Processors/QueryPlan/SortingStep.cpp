@@ -313,6 +313,18 @@ void SortingStep::convertToFinishSorting(SortDescription prefix_description_, bo
     apply_virtual_row_conversions = apply_virtual_row_conversions_;
 }
 
+/// A hash scatter into `threads` shards followed by per-shard merges of the `streams` inputs wires up
+/// (threads * streams) connections in the pipeline. Bound this by a sane value so that a large
+/// `max_threads` cannot explode the port/processor count. Both the full-sort (`scatterByPartitionIfNeeded`)
+/// and the read-in-order (`Type::PartitionedFinishSorting`) scatter paths share this limit.
+static void checkScatterConnectionLimit(size_t threads, size_t streams)
+{
+    const size_t connection_count_limit = 1000000;
+    if (threads * streams > connection_count_limit)
+        throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
+            threads, streams, connection_count_limit);
+}
+
 void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
 {
     /// For a hash-sharded merge join the partition count is fixed (see `convertToScatteredFullSort`), so
@@ -325,10 +337,7 @@ void SortingStep::scatterByPartitionIfNeeded(QueryPipelineBuilder& pipeline)
     {
         /// We are going to shuffle the data from streams to threads. This will create (threads * streams) connections in the pipeline.
         /// Let's limit this by some sane value to avoid explosion.
-        const size_t connection_count_limit = 1000000;
-        if (threads * streams > connection_count_limit)
-            throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Parallelism limit exceeded in SortingStep: {} threads X {} streams, limit {}, try to reduce `max_threads` value",
-                threads, streams, connection_count_limit);
+        checkScatterConnectionLimit(threads, streams);
 
         auto stream_header = pipeline.getSharedHeader();
 
@@ -574,6 +583,10 @@ void SortingStep::transformPipeline(QueryPipelineBuilder & pipeline, const Build
         /// partitioned upstream (the primary-key-range path), so no scatter is inserted.
         if (scatter_partitions > 0 && !partition_by_description.empty())
         {
+            /// Like `scatterByPartitionIfNeeded`, cap the (shards * streams) fan-out so a large
+            /// `max_threads` fails fast with `LIMIT_EXCEEDED` instead of materializing the whole matrix.
+            checkScatterConnectionLimit(scatter_partitions, pipeline.getNumStreams());
+
             auto stream_header = pipeline.getSharedHeader();
             ColumnNumbers key_columns;
             key_columns.reserve(partition_by_description.size());
