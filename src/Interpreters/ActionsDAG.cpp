@@ -1314,11 +1314,19 @@ static ColumnWithTypeAndName executeActionForPartialResult(
 
                 if (!argument_types_match)
                 {
-                    /// Do not fold: produce a non-const empty column of the declared result type so header
-                    /// computation can proceed without executing (and possibly aborting) the function.
-                    res_column.column = res_column.type->createColumn();
-                    if (input_rows_count != 0)
-                        res_column.column = res_column.column->cloneResized(input_rows_count);
+                    /// Do not fold on type drift. For header-only evaluation (input_rows_count == 0)
+                    /// produce an empty column of the declared result type so header computation can
+                    /// proceed. For the shared partial-evaluation callers with input_rows_count == 1
+                    /// (getFilterResult / createSelector / extractPathValuesFromFilter, reached via
+                    /// filterResultForNotMatchedRows/MatchedRows, JOIN rewrites, shard skipping and
+                    /// virtual-column path extraction) we must NOT manufacture a one-row value: they
+                    /// treat any non-null output as a definitive folded result (getBool(0), hashing),
+                    /// so a tolerated type drift would silently become false / 0 / '' instead of
+                    /// "unknown", changing JOIN rewrites or skipping the wrong shards. Leave the column
+                    /// null so those callers route this node through their existing "unknown value"
+                    /// path instead of reading a fabricated default.
+                    if (input_rows_count == 0)
+                        res_column.column = res_column.type->createColumn();
                     break;
                 }
 
