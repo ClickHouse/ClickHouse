@@ -408,13 +408,10 @@ public:
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
     void setDistributedRead(size_t bucket_count);
-    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets and records them. A
-    /// non-FINAL read is sliced into contiguous mark-balanced buckets; a FINAL read is split into
-    /// primary-key-range layers (one merge per layer, per partition when FINAL does not merge across
-    /// partitions). Returns the bucket count, or 0 (read serially) when a FINAL read cannot be range-split
-    /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds `max_total_buckets`.
-    /// Ceiling for the virtual buckets of one distributed read (FINAL layer splits can
-    /// exceed the task count).
+    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets: mark-balanced
+    /// slices for a plain read, primary-key-range layers grouped into the buckets for FINAL. Returns
+    /// the bucket count, or 0 (read serially) when a FINAL read cannot be split safely.
+    /// Ceiling for the tasks of one distributed read (lanes per task are unbounded).
     static constexpr size_t max_distributed_read_buckets = 256;
 
     size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);

@@ -5079,10 +5079,9 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         return 0;
     }
 
-    /// When FINAL does not merge across partitions, each partition is deduplicated independently, so a
-    /// layer must not span partitions (a key may repeat across partitions and must not be merged). Group
-    /// the parts into one span per partition (parts of a partition are adjacent in the analyzed order);
-    /// otherwise all parts form a single span that is merged together.
+    /// When FINAL does not merge across partitions, a layer must not span partitions (a key may
+    /// repeat across partitions and must stay unmerged): make one span per partition. Otherwise
+    /// all parts form a single span.
     std::vector<RangesInDataParts> spans;
     if (doNotMergePartsAcrossPartitionsFinal())
     {
@@ -5106,24 +5105,22 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (const auto & span : spans)
         total_marks += span.getMarksCountAllParts();
 
-    /// How many merge layers to aim for per task. A fixed value: the split is part of the
-    /// distributed plan and must not depend on the machine that builds it, and the workers'
-    /// resources are unknown here anyway. Each worker parallelizes its lanes on its own.
+    /// Merge layers to aim for per task, fixed so the split does not depend on the machine
+    /// that builds the plan.
     constexpr size_t slicing_lanes = 16;
+    const size_t layer_budget = target_buckets * slicing_lanes;
 
-    /// Split each span by primary key into non-intersecting ranges (each owned by a single level>0 part,
-    /// already deduplicated, so read without a merge) and intersecting ranges (overlapping across parts,
-    /// merged in PK-range layers). Each gets a share of the span's bucket budget proportional to its marks;
-    /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split. A
-    /// read-in-order read is caught by `supportsBucketedRead` at the top of this method and
-    /// falls back to a serial read before reaching here, so the split needs no read-in-order guard.
+    /// Split each span by primary key into non-intersecting ranges (owned by a single level>0 part,
+    /// already deduplicated, read without a merge) and intersecting ranges (merged in PK-range layers),
+    /// each getting a share of the span's budget proportional to its marks.
+    /// `split_parts_ranges_into_intersecting_and_non_intersecting_final` (default on) gates the split.
     const bool split_non_intersecting
         = context->getSettingsRef()[Setting::split_parts_ranges_into_intersecting_and_non_intersecting_final];
     std::vector<DistributedReadBucket> buckets;
     for (auto & span : spans)
     {
         const size_t span_marks = span.getMarksCountAllParts();
-        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * slicing_lanes * span_marks / total_marks);
+        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, layer_budget * span_marks / total_marks);
 
         RangesInDataParts intersecting;
         if (split_non_intersecting)
@@ -5160,10 +5157,9 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         }
     }
 
-    /// Group the layers into `target_buckets` tasks; with fewer layers than the target the data
-    /// cannot fill it and every layer becomes its own task. A single task has nothing to
-    /// distribute, and a per-partition split with many partitions can exceed the task limit;
-    /// read serially rather than under-parallelize or exceed it.
+    /// Group the layers into `target_buckets` tasks. More layers than the target (a per-partition
+    /// split makes at least one per partition) just mean more lanes per task, and each task ships
+    /// only its own lanes. A single task or a task count above the ceiling reads serially.
     const size_t grouping_lanes = std::max<size_t>(1, (buckets.size() + target_buckets - 1) / target_buckets);
     const size_t tasks = (buckets.size() + grouping_lanes - 1) / grouping_lanes;
     if (tasks <= 1 || tasks > max_total_buckets)

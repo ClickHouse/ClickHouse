@@ -680,7 +680,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         /// The coordinator computes each bucket's authoritative marks: contiguous mark slices for a plain
         /// read, primary-key-range layers for FINAL (one merge per layer, so rows sharing a sort key are
         /// not split across buckets). Fall back to a serial read when a FINAL read cannot be range-split
-        /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds the bucket limit.
+        /// (SAMPLE, unsafe or mixed-order primary key, a single layer).
         const size_t actual_buckets = read_from_merge_tree_step->setupDistributedReadBuckets(
             bucket_count, MAX_DISTRIBUTED_PLAN_BUCKET_COUNT);
         if (actual_buckets == 0)

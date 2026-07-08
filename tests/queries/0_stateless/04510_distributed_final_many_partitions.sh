@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Tags: no-darwin, no-old-analyzer
+# no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
+# no-old-analyzer: make_distributed_plan requires the analyzer.
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+# A per-partition FINAL split creates at least one primary-key-range layer per partition, so a
+# table with many partitions produces more layers than the planner asks for. The read must still
+# distribute: the layers are grouped into the target task count, several lanes per task, the same
+# way a single-node per-partition FINAL builds one merge pipe per partition. The plan shape does
+# not expose the split, so the check reads the planner's trace message.
+
+$CLICKHOUSE_CLIENT --multiquery -q "
+SET max_partitions_per_insert_block = 300;
+DROP TABLE IF EXISTS t_final_many_partitions;
+CREATE TABLE t_final_many_partitions (k UInt64, p UInt16, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver)
+PARTITION BY p ORDER BY k SETTINGS index_granularity = 64;
+SYSTEM STOP MERGES t_final_many_partitions;
+-- 300 partitions, far more than the 4 tasks x 16 layers per task the planner aims for. Every key
+-- appears in every partition and must survive per-partition dedup, and its newer version must win.
+INSERT INTO t_final_many_partitions SELECT number % 100, intDiv(number, 100), number, 1 FROM numbers(30000);
+INSERT INTO t_final_many_partitions SELECT number % 100, intDiv(number, 100), number + 5, 2 FROM numbers(30000);
+"
+
+SETTINGS="enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, max_rows_to_group_by = 0,
+    distributed_plan_default_reader_bucket_count = 4, do_not_merge_across_partitions_select_final = 1"
+
+echo -n "split groups all partitions into the target tasks "
+if $CLICKHOUSE_CLIENT --send_logs_level=trace -q "
+    SELECT count(), sum(v) FROM t_final_many_partitions FINAL FORMAT Null
+    SETTINGS make_distributed_plan = 1, $SETTINGS" 2>&1 \
+    | grep -q "Distributed FINAL read bucketed: 300 layers in 75 lanes per task make 4 tasks"
+then echo 1; else echo 0; fi
+
+# Both plans must return identical results.
+echo -n "distributed plan "
+$CLICKHOUSE_CLIENT -q "
+    SELECT count(), sum(v) FROM t_final_many_partitions FINAL
+    SETTINGS make_distributed_plan = 1, $SETTINGS"
+echo -n "plain plan "
+$CLICKHOUSE_CLIENT -q "
+    SELECT count(), sum(v) FROM t_final_many_partitions FINAL
+    SETTINGS make_distributed_plan = 0, $SETTINGS"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE t_final_many_partitions"
