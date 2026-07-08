@@ -5106,10 +5106,10 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (const auto & span : spans)
         total_marks += span.getMarksCountAllParts();
 
-    /// Lanes (merge layers) per task, matching single-node FINAL's parallelism
-    /// `min(requested_num_streams, max_final_threads)`.
-    const size_t lanes_per_task
-        = std::max<size_t>(1, std::min<size_t>(requested_num_streams, context->getSettingsRef()[Setting::max_final_threads]));
+    /// How many merge layers to aim for per task. A fixed value: the split is part of the
+    /// distributed plan and must not depend on the machine that builds it, and the workers'
+    /// resources are unknown here anyway. Each worker parallelizes its lanes on its own.
+    constexpr size_t slicing_lanes = 16;
 
     /// Split each span by primary key into non-intersecting ranges (each owned by a single level>0 part,
     /// already deduplicated, so read without a merge) and intersecting ranges (overlapping across parts,
@@ -5123,7 +5123,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     for (auto & span : spans)
     {
         const size_t span_marks = span.getMarksCountAllParts();
-        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * lanes_per_task * span_marks / total_marks);
+        const size_t span_budget = total_marks == 0 ? 1 : std::max<size_t>(1, target_buckets * slicing_lanes * span_marks / total_marks);
 
         RangesInDataParts intersecting;
         if (split_non_intersecting)
@@ -5160,20 +5160,22 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         }
     }
 
-    /// Group `lanes_per_task` consecutive virtual buckets into each task. A single task has nothing to
-    /// distribute, and a per-partition split with many partitions can exceed the task limit. Read serially
-    /// rather than under-parallelize or exceed it.
-    const size_t tasks = (buckets.size() + lanes_per_task - 1) / lanes_per_task;
+    /// Group the layers into `target_buckets` tasks; with fewer layers than the target the data
+    /// cannot fill it and every layer becomes its own task. A single task has nothing to
+    /// distribute, and a per-partition split with many partitions can exceed the task limit;
+    /// read serially rather than under-parallelize or exceed it.
+    const size_t grouping_lanes = std::max<size_t>(1, (buckets.size() + target_buckets - 1) / target_buckets);
+    const size_t tasks = (buckets.size() + grouping_lanes - 1) / grouping_lanes;
     if (tasks <= 1 || tasks > max_total_buckets)
     {
         LOG_TRACE(log, "Distributed FINAL read not bucketed: {} layers in {} lanes per task make {} tasks (target {}, limit {})",
-            buckets.size(), lanes_per_task, tasks, target_buckets, max_total_buckets);
+            buckets.size(), grouping_lanes, tasks, target_buckets, max_total_buckets);
         return 0;
     }
 
     LOG_TRACE(log, "Distributed FINAL read bucketed: {} layers in {} lanes per task make {} tasks (target {})",
-        buckets.size(), lanes_per_task, tasks, target_buckets);
-    distributed_read_lanes_per_task = lanes_per_task;
+        buckets.size(), grouping_lanes, tasks, target_buckets);
+    distributed_read_lanes_per_task = grouping_lanes;
     distributed_read_buckets = std::move(buckets);
     setDistributedRead(tasks);
     return tasks;
