@@ -962,7 +962,11 @@ inline MutableColumnPtr readColumnFromDesc(
 
     if (raw_type == COL_BYTES)
     {
-        if (desc.offsets_offset + static_cast<uint64_t>(rows_to_dec + 1) * 8u > buf.size())
+        // Widen before the +1: rows_to_dec is otherwise-untrusted (guest/network-controlled),
+        // and rows_to_dec == UINT32_MAX would wrap (rows_to_dec + 1) to 0 in uint32_t
+        // arithmetic before the cast, making the bounds check below trivially pass and letting
+        // offsets.resize/the read loop run against out-of-frame data.
+        if (desc.offsets_offset + (static_cast<uint64_t>(rows_to_dec) + 1u) * 8u > buf.size())
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_BYTES offsets array out of bounds: offset={}, rows={}, buf={}",
                 desc.offsets_offset, rows_to_dec, buf.size());
@@ -1209,6 +1213,14 @@ inline MutableColumnPtr readColumnFromDesc(
             // the frame header and still decode "successfully".
             uint32_t sub_rows = checkFitsUint32(inner_desc.null_offset, "Variant sub-column row count read from frame");
             uint64_t sub_region_end = desc.data_offset + desc.data_size;
+            // offsets_offset's *start* being inside the region isn't enough: its full extent
+            // (e.g. COL_BYTES's uint64[rows+1] array) depends on the alternative's raw type, so
+            // checking only the start here would let a malformed frame point an alternative's
+            // offsets array partly at sibling bytes outside this COL_VARIANT's own blob while
+            // still passing this check. Confining the recursive decode below to a subspan that
+            // ends at sub_region_end makes every one of its own internal bounds checks (which
+            // compare against buf.size()) automatically bound against this region instead of
+            // the whole frame, without duplicating per-type offset-array size formulas here.
             if (inner_desc.offsets_offset != 0
                 && (inner_desc.offsets_offset < desc.data_offset || inner_desc.offsets_offset > sub_region_end))
                 throw Exception(ErrorCodes::INCORRECT_DATA,
@@ -1234,7 +1246,11 @@ inline MutableColumnPtr readColumnFromDesc(
             if (sub_present[g])
             {
                 const auto & [inner_desc, sub_rows] = sub_by_global[g];
-                variant_cols.push_back(readColumnFromDesc(buf, inner_desc, sub_rows, alt_types[g]));
+                // sub_region_end <= buf.size() always (this COL_VARIANT descriptor is itself
+                // validated against buf.size() by its caller), so this subspan is safe; see the
+                // comment above on why confining it here closes the offsets_offset extent gap.
+                variant_cols.push_back(readColumnFromDesc(
+                    buf.subspan(0, desc.data_offset + desc.data_size), inner_desc, sub_rows, alt_types[g]));
             }
             else
             {
@@ -1314,7 +1330,14 @@ inline MutableColumnPtr readColumnFromDesc(
                 "COLUMNAR_V1: COL_LOWCARD dictionary data range [{}, {}) outside data region [{}, {})",
                 dict_desc.data_offset, dict_desc.data_offset + dict_desc.data_size, desc.data_offset, region_end);
 
-        auto dict_col = readColumnFromDesc(buf, dict_desc, dict_row_count, lowcard_type->getDictionaryType());
+        // Confining to a subspan ending at region_end (rather than checking
+        // null_offset/offsets_offset as start-only pointers) closes the extent gap for both:
+        // a malformed frame could otherwise point either one's start inside this COL_LOWCARD's
+        // own blob while its full byte range (dict_row_count null-map bytes, or the
+        // type-dependent offsets array) still reaches into sibling bytes. region_end <=
+        // buf.size() always, since this descriptor is itself validated against buf.size() by
+        // its caller, so the subspan is safe.
+        auto dict_col = readColumnFromDesc(buf.subspan(0, region_end), dict_desc, dict_row_count, lowcard_type->getDictionaryType());
 
         if (desc.offsets_offset + static_cast<uint64_t>(rows_to_dec) * index_elem_width > buf.size())
             throw Exception(ErrorCodes::INCORRECT_DATA,
