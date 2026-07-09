@@ -1842,3 +1842,100 @@ def test_namespace_prefix_mysql_field_list(started_cluster):
         assert b"id" in joined and b"data" in joined, f"unexpected field list: {joined[:200]!r}"
     finally:
         conn.close()
+
+
+def test_namespace_prefix_create_drop_table(started_cluster):
+    """
+    CREATE TABLE with a bare name under USE db.namespace must create the table in
+    the namespace; DROP TABLE must resolve both bare and namespace.table forms.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_createdrop_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "create_drop_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(
+        f"USE {CATALOG_NAME}.{namespace}; "
+        f"CREATE TABLE {table_name} (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings={"write_full_path_in_iceberg_metadata": 1},
+    )
+    full_name = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+    assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
+
+    # DROP via the two-part form under USE catalog.
+    node.query(f"USE {CATALOG_NAME}; DROP TABLE {namespace}.{table_name}")
+    assert node.query(f"EXISTS TABLE {full_name}").strip() == "0"
+
+
+def test_namespace_prefix_update_authorization(started_cluster):
+    """
+    UPDATE under USE db.namespace must authorize the namespace-qualified table,
+    not the bare name.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_updauth_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "upd_auth_table"
+    user = f"user_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(f"CREATE USER {user}")
+    try:
+        update = (
+            f"USE {CATALOG_NAME}.{namespace}; "
+            f"UPDATE {table_name} SET data = 'x' WHERE 1 "
+            f"SETTINGS enable_lightweight_update = 1"
+        )
+        # Grant on the bare (wrong) name only: must be denied.
+        node.query(f"GRANT SELECT, ALTER UPDATE ON {CATALOG_NAME}.{table_name} TO {user}")
+        _, err = node.query_and_get_answer_with_error(update, user=user)
+        assert "ACCESS_DENIED" in err, f"expected ACCESS_DENIED with bare-name grant, got: {err}"
+
+        # Grant on the namespace-qualified table: authorization must pass
+        # (the engine then rejects lightweight updates, which is fine).
+        node.query(
+            f"GRANT SELECT, ALTER UPDATE ON {CATALOG_NAME}.`{namespace}.{table_name}` TO {user}"
+        )
+        _, err = node.query_and_get_answer_with_error(update, user=user)
+        assert "ACCESS_DENIED" not in err, f"unexpected ACCESS_DENIED with folded-name grant: {err}"
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+
+
+def test_namespace_prefix_row_policy_any_table_rejected(started_cluster):
+    """
+    CREATE ROW POLICY ON * under USE db.namespace would silently target the whole
+    catalog, so it must be rejected.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_polstar_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    policy = f"pol_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    _, err = node.query_and_get_answer_with_error(
+        f"USE {CATALOG_NAME}.{namespace}; CREATE ROW POLICY {policy} ON * USING 1 TO ALL"
+    )
+    assert "BAD_ARGUMENTS" in err or "not supported while a namespace" in err, (
+        f"expected rejection of ON * under a namespace, got: {err}"
+    )
+    node.query(f"DROP ROW POLICY IF EXISTS {policy} ON {CATALOG_NAME}.*")
