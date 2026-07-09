@@ -1,3 +1,6 @@
+-- Tags: no-random-settings, no-random-merge-tree-settings
+-- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
+
 SET optimize_rewrite_has_to_in = 0;
 
 SET explain_query_plan_default = 'legacy';
