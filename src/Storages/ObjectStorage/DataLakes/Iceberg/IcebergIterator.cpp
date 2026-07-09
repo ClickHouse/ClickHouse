@@ -14,6 +14,7 @@
 #include <Poco/JSON/Object.h>
 #include <Poco/JSON/Stringifier.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
 
 
@@ -74,6 +75,11 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
+extern const int CANNOT_SCHEDULE_TASK;
+}
+namespace FailPoints
+{
+extern const char iceberg_parallel_manifest_decode_spawn_failure[];
 }
 namespace Setting
 {
@@ -357,6 +363,14 @@ IcebergIterator::IcebergIterator(
     {
         for (size_t i = 0; i < parallel_threads; ++i)
         {
+            /// Testing-only: fail the second spawn so exactly one producer is already
+            /// running, exercising the drain-and-join recovery in the catch below.
+            if (i == 1)
+                fiu_do_on(FailPoints::iceberg_parallel_manifest_decode_spawn_failure,
+                {
+                    throw Exception(ErrorCodes::CANNOT_SCHEDULE_TASK, "Simulated producer spawn failure (failpoint)");
+                });
+
             auto * iter = data_files_iterators[i].get();
             producer_tasks.emplace_back(
                 [this, iter, in_flight = producers_in_flight, thread_group = CurrentThread::getGroup()]()

@@ -26,6 +26,11 @@ This test:
    asserts the spawn counter still equals the DATA manifest count, not the total
    manifest-list entry count — the case that distinguishes clamping on
    `content_type == DATA` entries from clamping on `manifest_list_entries.size()`.
+6. Forces the second producer spawn to fail via the
+   `iceberg_parallel_manifest_decode_spawn_failure` failpoint and verifies the
+   constructor's recovery path: the query fails with a regular exception (no
+   server abort), the server stays reachable, and the same query succeeds right
+   afterwards.
 """
 
 import uuid
@@ -201,3 +206,21 @@ def test_parallel_manifest_decode_matches_serial(
         f"({DATA_MANIFESTS}), not the total manifest-list entry count "
         f"({DATA_MANIFESTS + 1} including the delete manifest), got {actual}"
     )
+
+    # Spawn-failure recovery. The ONCE failpoint makes the second producer spawn
+    # throw CANNOT_SCHEDULE_TASK while the first producer is already running,
+    # driving the constructor's drain-and-join cleanup. The query must fail with
+    # a regular, catchable exception — not abort the server — and the very next
+    # attempt (the failpoint disarms itself after one hit) must succeed with
+    # correct results, proving the failed construction left no wedged state.
+    instance.query(
+        "SYSTEM ENABLE FAILPOINT iceberg_parallel_manifest_decode_spawn_failure"
+    )
+    with pytest.raises(Exception, match="Simulated producer spawn failure"):
+        instance.query(
+            f"SELECT count() FROM {cluster_expr} "
+            f"SETTINGS iceberg_parallel_manifest_decode_threads = 8"
+        )
+    assert instance.query("SELECT 1").strip() == "1", "server unreachable after spawn failure"
+    _, recovered = query_with_threads("recovery", select_all, 8)
+    assert recovered == serial_del
