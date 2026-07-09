@@ -378,7 +378,7 @@ public:
     using Permutation = IColumnPermutation;
     virtual void batchSerializeAsComparable(
         size_t num_rows,
-        std::vector<String> & out,
+        VectorWithMemoryTracking<String> & out,
         const Permutation * permutation) const;
 
     /// Deserializes a value that was serialized using IColumn::serializeValueIntoArena method.

@@ -242,7 +242,7 @@ void IColumn::serializeAsComparable(size_t /* n */, String & /* out */) const
 
 void IColumn::batchSerializeAsComparable(
     size_t num_rows,
-    std::vector<String> & out,
+    VectorWithMemoryTracking<String> & out,
     const Permutation * permutation) const
 {
     for (size_t r = 0; r < num_rows; ++r)

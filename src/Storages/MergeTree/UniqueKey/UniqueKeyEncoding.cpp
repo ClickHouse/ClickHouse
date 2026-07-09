@@ -19,7 +19,7 @@ void encodeBlock(
     const Columns & columns,
     const IColumn::Permutation * permutation,
     size_t max_size,
-    std::vector<String> & out)
+    VectorWithMemoryTracking<String> & out)
 {
     out.clear();
     if (columns.empty())

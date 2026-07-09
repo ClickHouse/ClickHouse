@@ -1491,7 +1491,7 @@ void ColumnVector<T>::serializeAsComparable(size_t n, String & out) const
 template <typename T>
 void ColumnVector<T>::batchSerializeAsComparable(
     size_t num_rows,
-    std::vector<String> & out,
+    VectorWithMemoryTracking<String> & out,
     const IColumn::Permutation * permutation) const
 {
     if (permutation)

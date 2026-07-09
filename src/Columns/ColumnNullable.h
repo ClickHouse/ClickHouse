@@ -209,7 +209,7 @@ public:
     bool isCollationSupported() const override { return nested_column->isCollationSupported(); }
 
     void serializeAsComparable(size_t n, String & out) const override;
-    void batchSerializeAsComparable(size_t num_rows, std::vector<String> & out, const IColumn::Permutation * permutation) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation) const override;
 
 
     /// Return the column that represents values.

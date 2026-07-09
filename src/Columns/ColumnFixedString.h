@@ -233,7 +233,7 @@ public:
     std::span<char> insertRawUninitialized(size_t count) override;
 
     void serializeAsComparable(size_t n, String & out) const override;
-    void batchSerializeAsComparable(size_t num_rows, std::vector<String> & out, const IColumn::Permutation * permutation) const override;
+    void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation) const override;
 
     /// Specialized part of interface, not from IColumn.
     void insertString(const String & string) { insertData(string.c_str(), string.size()); }
