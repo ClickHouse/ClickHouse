@@ -1583,12 +1583,14 @@ ReturnType readDateTimeTextFallback(
       */
 
     int negative_multiplier = 1;
+    bool has_sign = false;
 
     if (!buf.eof() && *buf.position() == '-')
     {
         if constexpr (dt64_mode)
         {
             negative_multiplier = -1;
+            has_sign = true;
             ++buf.position();
         }
         else
@@ -1601,9 +1603,14 @@ ReturnType readDateTimeTextFallback(
     }
     else if constexpr (dt64_mode)
     {
-        /// Mirror the optimistic path, which accepts an optional leading '+' for DateTime64.
+        /// Mirror the optimistic path, which accepts an optional leading '+' for DateTime64. A sign is
+        /// only valid for a unix timestamp (integer or leading-dot fraction), never for a broken-down
+        /// date, so a signed value must not enter the date-layout branch below.
         if (!buf.eof() && *buf.position() == '+')
+        {
             ++buf.position();
+            has_sign = true;
+        }
     }
 
     /// A piece similar to unix timestamp, maybe scaled to subsecond precision.
@@ -1616,7 +1623,7 @@ ReturnType readDateTimeTextFallback(
 
     /// 2015-01-01 01:02:03 or 2015-01-01
     /// if negative, it is a timestamp with no ambiguity
-    if (negative_multiplier == 1 && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
+    if (!has_sign && s_pos == s + 4 && !buf.eof() && !isNumericASCII(*buf.position()))
     {
         /// The value can be a date, or a small unix timestamp with a fractional part (e.g. 1234.5)
         /// or with other characters after it (e.g. a field delimiter of a row-based format).
