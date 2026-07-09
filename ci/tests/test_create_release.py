@@ -395,7 +395,7 @@ def test_prepare_recovers_from_tag(tmp_path):
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
-    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
     env = {
         **os.environ,
@@ -484,7 +484,7 @@ def test_prepare_recovers_already_released_commit(tmp_path):
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
-    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
     env = {
         **os.environ,
@@ -580,7 +580,7 @@ def test_prepare_refuses_out_of_order_commit(tmp_path):
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
-    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
     env = {
         **os.environ,
@@ -673,7 +673,7 @@ def test_prepare_refuses_stale_commit_even_when_it_is_a_tagged_release(tmp_path)
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
-    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
     env = {
         **os.environ,
@@ -762,7 +762,7 @@ def test_prepare_creates_from_branch_ref(tmp_path):
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
-    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
     env = {
         **os.environ,
