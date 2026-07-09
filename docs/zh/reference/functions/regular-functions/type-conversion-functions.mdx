@@ -394,10 +394,10 @@ SELECT accurateCastOrNull('abc', 'UInt32')
 
 通过指定格式将任意表达式转换为字符串。
 
-<Note>
-  如果格式包含前缀/后缀，它们会写入每一行。
-  此函数仅支持基于行的格式。
-</Note>
+:::note
+如果格式包含前缀/后缀，它们会写入每一行。
+此函数仅支持基于行的格式。
+:::
 
 **语法**
 
@@ -586,9 +586,9 @@ SELECT fromUnixTimestamp64Milli(1640995200123)
 
 输入值会被视为纳秒精度的 Unix 时间戳 (即自 1970-01-01 00:00:00 UTC 以来的纳秒数) 。
 
-<Note>
-  请注意，输入值会被视为 UTC 时间戳，而不是按输入值自身的时区来处理。
-</Note>
+:::note
+请注意，输入值会被视为 UTC 时间戳，而不是按输入值自身的时区来处理。
+:::
 
 **语法**
 
@@ -2684,9 +2684,9 @@ toBFloat16('42.7'):          42.5
 * 二进制和十六进制值的字符串表示形式。
 * 数值。
 
-<Note>
-  该函数在从字符串表示形式转换时，允许静默丢失精度。
-</Note>
+:::note
+该函数在从字符串表示形式转换时，允许静默丢失精度。
+:::
 
 另请参见：
 
@@ -2712,9 +2712,9 @@ toBFloat16OrNull(x)
 **用法示例**
 
 ```sql title=Query
-SELECT toBFloat16OrNull('0x5E'), -- 不支持的参数
-       toBFloat16OrNull('12.3'), -- 典型用法
-       toBFloat16OrNull('12.3456789') -- 精度静默丢失
+SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
+       toBFloat16OrNull('12.3'), -- typical use
+       toBFloat16OrNull('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -2741,9 +2741,9 @@ SELECT toBFloat16OrNull('0x5E'), -- 不支持的参数
 * 二进制和十六进制值的字符串表示形式。
 * 数值。
 
-<Note>
-  该函数允许在从字符串表示形式转换时静默丢失精度。
-</Note>
+:::note
+该函数允许在从字符串表示形式转换时静默丢失精度。
+:::
 
 另请参见：
 
@@ -2769,9 +2769,9 @@ toBFloat16OrZero(x)
 **使用示例**
 
 ```sql title=Query
-SELECT toBFloat16OrZero('0x5E'), -- 不支持的参数
-       toBFloat16OrZero('12.3'), -- 典型用法
-       toBFloat16OrZero('12.3456789') -- 静默精度损失
+SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
+       toBFloat16OrZero('12.3'), -- typical use
+       toBFloat16OrZero('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -3193,11 +3193,11 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
 
 将输入值转换为 [DateTime](/zh/reference/data-types/datetime) 类型。
 
-<Note>
-  如果 `expr` 是数值，则会将其解释为自 Unix 纪元开始以来的秒数 (即 Unix timestamp) 。
-  如果 `expr` 是 [String](/zh/reference/data-types/string)，则可能会将其解释为 Unix timestamp，或解释为日期 / 日期时间的字符串表示形式。
-  因此，由于存在歧义，较短数字的字符串表示形式 (最多 4 位) 会明确禁用解析。例如，字符串 `'1999'` 既可能表示年份 (Date / DateTime 的不完整字符串表示形式) ，也可能是 Unix timestamp。更长的数字字符串则允许解析。
-</Note>
+:::note
+如果 `expr` 是数值，则会将其解释为自 Unix 纪元开始以来的秒数 (即 Unix timestamp) 。
+如果 `expr` 是 [String](/zh/reference/data-types/string)，则可能会被解释为 Unix timestamp，或者解释为日期 / 日期时间的字符串表示形式。
+因此，由于存在歧义，较短数字的字符串表示形式 (最多 4 位) 会明确禁用解析。例如，字符串 `'1999'` 既可能表示年份 (Date / DateTime 的不完整字符串表示形式) ，也可能是 Unix timestamp。更长的数字字符串则允许解析。
+:::
 
 **语法**
 
@@ -3630,17 +3630,17 @@ SELECT toDateTimeOrZero('2025-12-30 13:44:17'), toDateTimeOrZero('invalid')
 * Float* 类型的 `NaN` 和 `Inf` 值，及其字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toDecimal128('0xc0fe', 1);`。
 
-<Note>
-  如果 `expr` 的值超出 `Decimal128` 的范围：`(-1*10^(38 - S), 1*10^(38 - S))`，则可能发生溢出。
-  小数部分中过多的位数会被截掉 (不进行舍入) 。
-  整数部分中过多的位数会导致异常。
-</Note>
+:::note
+如果 `expr` 的值超出 `Decimal128` 的范围：`(-1*10^(38 - S), 1*10^(38 - S))`，则可能发生溢出。
+小数部分中过多的位数会被截掉 (不进行舍入) 。
+整数部分中过多的位数会导致异常。
+:::
 
-<Warning>
-  转换会截掉多余的位数；处理 Float32/Float64 输入时，由于运算使用的是浮点指令，结果可能不符合预期。
-  例如：`toDecimal128(1.15, 2)` 的结果是 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
-  你可以使用 String 输入，这样运算会使用底层整数类型：`toDecimal128('1.15', 2) = 1.15`
-</Warning>
+:::warning
+转换会截掉多余的位数；处理 Float32/Float64 输入时，由于运算使用的是浮点指令，结果可能不符合预期。
+例如：`toDecimal128(1.15, 2)` 的结果是 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
+你可以使用 String 输入，这样运算会使用底层整数类型：`toDecimal128('1.15', 2) = 1.15`
+:::
 
 **语法**
 
@@ -3650,7 +3650,7 @@ toDecimal128(expr, S)
 
 **参数**
 
-* `expr` — 返回数值或数值字符串表示形式的表达式。[`表达式`](/zh/reference/data-types/special-data-types/expression)
+* `expr` — 返回数值或数值字符串表示形式的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression)
 * `S` — 取值范围为 0 到 38 的 scale 参数，用于指定数值的小数部分可以有多少位。[`UInt8`](/zh/reference/data-types/int-uint)
 
 **返回值**
@@ -3800,9 +3800,9 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 * Float* 值 `NaN` 和 `Inf`，或其字符串表示形式 (不区分大小写) 。
 * 二进制值和十六进制值的字符串表示形式。
 
-<Note>
-  如果输入值超出 `Decimal128` 的范围：`(-1*10^(38 - S), 1*10^(38 - S))`，函数将返回 `0`。
-</Note>
+:::note
+如果输入值超出 `Decimal128` 的范围：`(-1*10^(38 - S), 1*10^(38 - S))`，函数将返回 `0`。
+:::
 
 **语法**
 
@@ -3851,17 +3851,17 @@ SELECT toDecimal128OrZero('42.7', 2), toDecimal128OrZero('invalid', 2)
 * Float* 值 `NaN` 和 `Inf` 及其字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toDecimal256('0xc0fe', 1);`。
 
-<Note>
-  如果 `expr` 的值超出 `Decimal256` 的取值范围：`(-1*10^(76 - S), 1*10^(76 - S))`，则可能发生溢出。
-  小数部分中过多的数字会被截去 (不进行舍入) 。
-  整数部分位数过多将导致异常。
-</Note>
+:::note
+如果 `expr` 的值超出 `Decimal256` 的取值范围：`(-1*10^(76 - S), 1*10^(76 - S))`，则可能发生溢出。
+小数部分中过多的数字会被截去 (不进行舍入) 。
+整数部分位数过多将导致异常。
+:::
 
-<Warning>
-  转换会截去多余的数字；在处理 Float32/Float64 输入时，由于运算使用浮点指令执行，结果可能不符合预期。
-  例如：`toDecimal256(1.15, 2)` 的结果为 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
-  你可以使用 String 类型的输入，这样运算会使用底层整数类型：`toDecimal256('1.15', 2) = 1.15`
-</Warning>
+:::warning
+转换会截去多余的数字；在处理 Float32/Float64 输入时，由于运算使用浮点指令执行，结果可能不符合预期。
+例如：`toDecimal256(1.15, 2)` 的结果为 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
+你可以使用 String 类型的输入，这样运算会使用底层整数类型：`toDecimal256('1.15', 2) = 1.15`
+:::
 
 **语法**
 
@@ -3871,7 +3871,7 @@ toDecimal256(expr, S)
 
 **参数**
 
-* `expr` — 返回数值或数值字符串表示形式的表达式。[`表达式`](/zh/reference/data-types/special-data-types/expression)
+* `expr` — 返回数值或数值字符串表示形式的表达式。[`Expression`](/zh/reference/data-types/special-data-types/expression)
 * `S` — 介于 0 到 76 之间的 scale 参数，指定数值的小数部分可包含的位数。[`UInt8`](/zh/reference/data-types/int-uint)
 
 **返回值**
@@ -4021,9 +4021,9 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 * Float* 值 `NaN` 和 `Inf`，以及它们的字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式。
 
-<Note>
-  如果输入值超出 `Decimal256` 的范围：`(-1*10^(76 - S), 1*10^(76 - S))`，函数将返回 `0`。
-</Note>
+:::note
+如果输入值超出 `Decimal256` 的范围：`(-1*10^(76 - S), 1*10^(76 - S))`，函数将返回 `0`。
+:::
 
 另请参阅：
 
@@ -4078,17 +4078,17 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 * Float* 值 `NaN` 和 `Inf` 及其字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toDecimal32('0xc0fe', 1);`。
 
-<Note>
-  如果 `expr` 的值超出 `Decimal32` 的范围：`(-1*10^(9 - S), 1*10^(9 - S))`，则可能发生溢出。
-  小数部分中多余的数字会被截去 (不进行四舍五入) 。
-  整数部分中多余的数字会导致抛出异常。
-</Note>
+:::note
+如果 `expr` 的值超出 `Decimal32` 的范围：`(-1*10^(9 - S), 1*10^(9 - S))`，则可能发生溢出。
+小数部分中多余的数字会被截去 (不进行四舍五入) 。
+整数部分中多余的数字会导致抛出异常。
+:::
 
-<Warning>
-  转换会截去多余的数字；处理 Float32/Float64 输入时，由于这些操作是通过浮点指令执行的，因此结果可能不符合预期。
-  例如：`toDecimal32(1.15, 2)` 的结果为 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
-  你可以改用 String 输入，这样操作将使用底层整数类型：`toDecimal32('1.15', 2) = 1.15`
-</Warning>
+:::warning
+转换会截去多余的数字；处理 Float32/Float64 输入时，由于这些操作是通过浮点指令执行的，因此结果可能不符合预期。
+例如：`toDecimal32(1.15, 2)` 的结果为 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
+你可以改用 String 输入，这样操作将使用底层整数类型：`toDecimal32('1.15', 2) = 1.15`
+:::
 
 **语法**
 
@@ -4248,9 +4248,9 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 * Float* 值 `NaN` 和 `Inf`，以及它们的字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式。
 
-<Note>
-  如果输入值超出 `Decimal32` 的范围：`(-1*10^(9 - S), 1*10^(9 - S))`，则函数返回 `0`。
-</Note>
+:::note
+如果输入值超出 `Decimal32` 的范围：`(-1*10^(9 - S), 1*10^(9 - S))`，则函数返回 `0`。
+:::
 
 **语法**
 
@@ -4300,17 +4300,17 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 * Float* 类型的 `NaN` 和 `Inf` 值，或其字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toDecimal64('0xc0fe', 1);`。
 
-<Note>
-  如果 `expr` 的值超出 `Decimal64` 的范围：`(-1*10^(18 - S), 1*10^(18 - S))`，则可能发生溢出。
-  小数部分中多余的数字会被截去 (不进行四舍五入) 。
-  整数部分中多余的数字会导致抛出异常。
-</Note>
+:::note
+如果 `expr` 的值超出 `Decimal64` 的范围：`(-1*10^(18 - S), 1*10^(18 - S))`，则可能发生溢出。
+小数部分中多余的数字会被截去 (不进行四舍五入) 。
+整数部分中多余的数字会导致抛出异常。
+:::
 
-<Warning>
-  转换会截去多余的数字；处理 Float32/Float64 输入时，由于这些操作是通过浮点指令执行的，结果可能会出现意外情况。
-  例如：`toDecimal64(1.15, 2)` 等于 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
-  你可以改用 String 输入，这样操作将使用底层整数类型：`toDecimal64('1.15', 2) = 1.15`
-</Warning>
+:::warning
+转换会截去多余的数字；处理 Float32/Float64 输入时，由于这些操作是通过浮点指令执行的，结果可能不符合预期。
+例如：`toDecimal64(1.15, 2)` 等于 `1.14`，因为在浮点运算中，1.15 * 100 的结果是 114.99。
+你可以改用 String 输入，这样操作将使用底层整数类型：`toDecimal64('1.15', 2) = 1.15`
+:::
 
 **语法**
 
@@ -4470,9 +4470,9 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 * Float* 类型的 `NaN` 和 `Inf` 值，或其字符串表示形式 (不区分大小写) 。
 * 二进制和十六进制值的字符串表示形式。
 
-<Note>
-  如果输入值超出 `Decimal64` 的范围：`(-1*10^(18 - S), 1*10^(18 - S))`，函数将返回 `0`。
-</Note>
+:::note
+如果输入值超出 `Decimal64` 的范围：`(-1*10^(18 - S), 1*10^(18 - S))`，函数将返回 `0`。
+:::
 
 另请参见：
 
@@ -5062,10 +5062,10 @@ toFloat64OrZero('abc'):  0
 * `Float*` 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt128('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 Int128 的取值范围内表示，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 Int128 的取值范围内表示，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -5100,7 +5100,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-第 1 行：
+Row 1:
 ──────
 toInt128(-128):   -128
 toInt128(-128.8): -128
@@ -5170,10 +5170,10 @@ Introduced in: v20.8.0
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt128OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [Int128](/zh/reference/data-types/int-uint) 的可表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [Int128](/zh/reference/data-types/int-uint) 的可表示范围，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 See also:
 
@@ -5283,15 +5283,15 @@ SELECT toInt128OrZero('abc')
 * Float* 类型值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt16('0xc0fe');`。
 
-<Note>
-  如果输入值无法表示在 [Int16](/zh/reference/data-types/int-uint) 的范围内，则结果会发生上溢或下溢。
-  这不视为错误。
-  例如：`SELECT toInt16(32768) == -32768;`。
-</Note>
+:::note
+如果输入值无法表示在 [Int16](/zh/reference/data-types/int-uint) 的范围内，则结果会发生上溢或下溢。
+这不视为错误。
+例如：`SELECT toInt16(32768) == -32768;`。
+:::
 
-<Note>
-  该函数采用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，也就是说会截去数字的小数位。
-</Note>
+:::note
+该函数采用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，也就是说会截去数字的小数位。
+:::
 
 另请参阅：
 
@@ -5396,10 +5396,10 @@ SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt16OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值无法表示为 [Int16](/zh/reference/data-types/int-uint) 范围内的值，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法表示在 [Int16](/zh/reference/data-types/int-uint) 的范围内，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -5451,15 +5451,15 @@ toInt16OrNull('abc'): \N
 
 * (U)Int* 的字符串表示形式。
 
-不支持的参数 (返回 `0`) ：
+不支持的参数 (返回 `0`)：
 
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt16OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [Int16](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 [Int16](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -5493,7 +5493,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-第 1 行:
+Row 1:
 ──────
 toInt16OrZero('16'): 16
 toInt16OrZero('abc'): 0
@@ -5519,10 +5519,10 @@ toInt16OrZero('abc'): 0
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt256('0xc0fe');`。
 
-<Note>
-  如果输入值超出 Int256 的表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 Int256 的表示范围，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -5627,10 +5627,10 @@ SELECT toInt256OrDefault('abc', CAST('-1', 'Int256'))
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt256OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值超出了 [Int256](/zh/reference/data-types/int-uint) 的可表示范围，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出了 [Int256](/zh/reference/data-types/int-uint) 的可表示范围，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参阅：
 
@@ -5740,15 +5740,15 @@ Introduced in: v1.1.0
 * Float* 类型值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt32('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [Int32](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-  例如：`SELECT toInt32(2147483648) == -2147483648;`
-</Note>
+:::note
+如果输入值超出 [Int32](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
+这不视为错误。
+例如：`SELECT toInt32(2147483648) == -2147483648;`
+:::
 
-<Note>
-  该函数采用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即截去数字的小数位。
-</Note>
+:::note
+该函数采用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即截去数字的小数位。
+:::
 
 See also:
 
@@ -5853,10 +5853,10 @@ SELECT toInt32OrDefault('abc', CAST('-1', 'Int32'))
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt32OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [Int32](/zh/reference/data-types/int-uint) 的取值范围内表示，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 [Int32](/zh/reference/data-types/int-uint) 的取值范围内表示，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参阅：
 
@@ -5913,10 +5913,10 @@ toInt32OrNull('abc'): \N
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt32OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [Int32](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [Int32](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参阅：
 
@@ -5975,15 +5975,15 @@ toInt32OrZero('abc'): 0
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt64('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [Int64](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-  例如：`SELECT toInt64(9223372036854775808) == -9223372036854775808;`
-</Note>
+:::note
+如果输入值超出 [Int64](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
+这不视为错误。
+例如：`SELECT toInt64(9223372036854775808) == -9223372036854775808;`
+:::
 
-<Note>
-  该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截断数字的小数位。
-</Note>
+:::note
+该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截断数字的小数位。
+:::
 
 另请参见：
 
@@ -6088,10 +6088,10 @@ SELECT toInt64OrDefault('abc', CAST('-1', 'Int64'))
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt64OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [Int64](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [Int64](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -6201,15 +6201,15 @@ SELECT toInt64OrZero('abc')
 * `Float*` 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt8('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [Int8](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-  例如：`SELECT toInt8(128) == -128;`。
-</Note>
+:::note
+如果输入值超出 [Int8](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
+这不视为错误。
+例如：`SELECT toInt8(128) == -128;`。
+:::
 
-<Note>
-  此函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截去数字的小数位。
-</Note>
+:::note
+此函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截去数字的小数位。
+:::
 
 另请参见：
 
@@ -6314,10 +6314,10 @@ SELECT toInt8OrDefault('abc', CAST('-1', 'Int8'))
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制值和十六进制值的字符串表示形式，例如 `SELECT toInt8OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [Int8](/zh/reference/data-types/int-uint) 的范围内表示，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 [Int8](/zh/reference/data-types/int-uint) 的范围内表示，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参阅：
 
@@ -6369,15 +6369,15 @@ toInt8OrNull('abc'): \N
 
 * (U)Int* 的字符串表示形式。
 
-不支持的参数 (返回 `0`) ：
+不支持的参数 (返回 `0`)：
 
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toInt8OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [Int8](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [Int8](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -6932,10 +6932,10 @@ SELECT date + interval_to_year AS result
 
 将输入参数转换为相同数据类型的 [LowCardinality](/zh/reference/data-types/lowcardinality) 版本。
 
-<Tip>
-  若要将 `LowCardinality` 数据类型转换为常规数据类型，请使用 [CAST](#CAST) 函数。
-  例如：`CAST(x AS String)`。
-</Tip>
+:::tip
+若要将 `LowCardinality` 数据类型转换为常规数据类型，请使用 [CAST](#CAST) 函数。
+例如：`CAST(x AS String)`。
+:::
 
 **语法**
 
@@ -7061,7 +7061,7 @@ SELECT
 引入版本：v1.1.0
 
 将输入值转换为 [Time](/zh/reference/data-types/time) 类型。
-支持从 String、FixedString、DateTime 或表示自午夜起经过秒数的数值类型进行转换。
+支持从 String、FixedString、DateTime、DateTime64 或表示自午夜起经过秒数的数值类型进行转换。
 
 **语法**
 
@@ -7071,7 +7071,7 @@ toTime(x)
 
 **参数**
 
-* `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
 
 **返回值**
 
@@ -7079,10 +7079,12 @@ toTime(x)
 
 **示例**
 
-**String 转换为 Time**
+**DateTime64 转换为 Time**
 
 ```sql title=Query
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 ```
 
 ```response title=Response
@@ -7092,6 +7094,8 @@ SELECT toTime('14:30:25')
 **DateTime 转换为 Time**
 
 ```sql title=Query
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7099,10 +7103,12 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**将整数转换为时间**
+**将整数 (表示自纪元以来的秒数) 转换为时间**
 
 ```sql title=Query
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
 ```
 
 ```response title=Response
@@ -7116,29 +7122,31 @@ SELECT toTime(52225)
 引入版本：v25.6.0
 
 将输入值转换为 [Time64](/zh/reference/data-types/time64) 类型。
-支持从 String、FixedString、DateTime64，或表示自午夜起微秒数的数值类型进行转换。
-为时间值提供微秒级精度。
+支持从 String、FixedString、DateTime64，或表示自午夜起经过秒数的数值类型进行转换。
+可为时间值提供子秒级精度，最多支持 `scale` 位小数。
 
 **语法**
 
 ```sql
-toTime64(x)
+toTime64(x, scale)
 ```
 
 **参数**
 
 * `x` — 要转换的输入值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`DateTime64`](/zh/reference/data-types/datetime64) 或 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float)
+* `scale` — 结果 `Time64` 的精度 (小数位数，`0`–`9`) 。[`(U)Int*`](/zh/reference/data-types/int-uint)
 
 **返回值**
 
-返回转换后的输入值，精度为微秒。[`Time64(6)`](/zh/reference/data-types/time64)
+返回按请求的 `scale` 转换后的值。[`Time64`](/zh/reference/data-types/time64)
 
 **示例**
 
-**String 转换为 Time64**
+**将 String 转换为 Time64**
 
 ```sql title=Query
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
 ```
 
 ```response title=Response
@@ -7148,17 +7156,19 @@ SELECT toTime64('14:30:25.123456')
 **DateTime64 转换为 Time64**
 
 ```sql title=Query
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**整数转换为 Time64**
+**Float (自午夜起的秒数) 转换为 Time64**
 
 ```sql title=Query
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
 ```
 
 ```response title=Response
@@ -7343,10 +7353,10 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt128('0xc0fe');`。
 
-<Note>
-  如果输入值超出 UInt128 的表示范围，结果会发生上溢或下溢。
-  这不被视为错误。
-</Note>
+:::note
+如果输入值超出 UInt128 的表示范围，结果会发生上溢或下溢。
+这不被视为错误。
+:::
 
 另请参见：
 
@@ -7451,10 +7461,10 @@ SELECT toUInt128OrDefault('abc', CAST('0', 'UInt128'))
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt128OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [`UInt128`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 [`UInt128`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参阅：
 
@@ -7511,10 +7521,10 @@ toUInt128OrNull('abc'): \N
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt128OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [`UInt128`](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [`UInt128`](/zh/reference/data-types/int-uint) 的表示范围，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -7573,15 +7583,15 @@ toUInt128OrZero('abc'): 0
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt16('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [`UInt16`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
-  这不视为错误。
-  例如：`SELECT toUInt16(65536) == 0;`。
-</Note>
+:::note
+如果输入值无法在 [`UInt16`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
+这不视为错误。
+例如：`SELECT toUInt16(65536) == 0;`。
+:::
 
-<Note>
-  该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截断数字的小数位。
-</Note>
+:::note
+该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截断数字的小数位。
+:::
 
 另请参见：
 
@@ -7616,7 +7626,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-第 1 行:
+Row 1:
 ──────
 toUInt16(16):    16
 toUInt16(16.16): 16
@@ -7686,10 +7696,10 @@ Introduced in: v1.1.0
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt16OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [`UInt16`](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [`UInt16`](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 See also:
 
@@ -7746,10 +7756,10 @@ toUInt16OrNull('abc'): \N
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt16OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值超出了 [`UInt16`](/zh/reference/data-types/int-uint) 的可表示范围，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出了 [`UInt16`](/zh/reference/data-types/int-uint) 的可表示范围，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参阅：
 
@@ -7809,10 +7819,10 @@ toUInt16OrZero('abc'): 0
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt256('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 UInt256 的取值范围内表示，结果会发生上溢或下溢。
-  这不被视为错误。
-</Note>
+:::note
+如果输入值无法在 UInt256 的取值范围内表示，结果会发生上溢或下溢。
+这不被视为错误。
+:::
 
 另请参见：
 
@@ -7847,7 +7857,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-行 1:
+Row 1:
 ──────
 toUInt256(256):     256
 toUInt256(256.256): 256
@@ -7917,10 +7927,10 @@ SELECT toUInt256OrDefault('abc', CAST('0', 'UInt256'))
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制值和十六进制值的字符串表示形式，例如 `SELECT toUInt256OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [`UInt256`](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [`UInt256`](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参阅：
 
@@ -7977,10 +7987,10 @@ toUInt256OrNull('abc'): \N
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt256OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [`UInt256`](/zh/reference/data-types/int-uint) 的可表示范围，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [`UInt256`](/zh/reference/data-types/int-uint) 的可表示范围，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -7996,7 +8006,7 @@ toUInt256OrZero(x)
 
 **参数**
 
-* `x` — 数值的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8039,15 +8049,15 @@ toUInt256OrZero('abc'): 0
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制值和十六进制值的字符串表示形式，例如 `SELECT toUInt32('0xc0fe');`。
 
-<Note>
-  如果输入值无法用 [`UInt32`](/zh/reference/data-types/int-uint) 的取值范围表示，结果会发生上溢或下溢。
-  这不视为错误。
-  例如：`SELECT toUInt32(4294967296) == 0;`
-</Note>
+:::note
+如果输入值无法用 [`UInt32`](/zh/reference/data-types/int-uint) 的取值范围表示，结果会发生上溢或下溢。
+这不视为错误。
+例如：`SELECT toUInt32(4294967296) == 0;`
+:::
 
-<Note>
-  该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截去数字的小数位。
-</Note>
+:::note
+该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截去数字的小数位。
+:::
 
 另请参见：
 
@@ -8152,10 +8162,10 @@ SELECT toUInt32OrDefault('abc', CAST('0', 'UInt32'))
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt32OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [`UInt32`](/zh/reference/data-types/int-uint) 的范围内表示，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 [`UInt32`](/zh/reference/data-types/int-uint) 的范围内表示，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -8171,7 +8181,7 @@ toUInt32OrNull(x)
 
 **参数**
 
-* `x` — 数值的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8201,7 +8211,7 @@ toUInt32OrNull('abc'): \N
 
 引入版本：v1.1.0
 
-与 [`toUInt32`](#toUInt32) 类似，此函数会将输入值转换为 [`UInt32`](/zh/reference/data-types/int-uint) 类型的值，但如果发生错误，则返回 `0`。
+与 [`toUInt32`](#toUInt32) 类似，此函数将输入值转换为 [`UInt32`](/zh/reference/data-types/int-uint) 类型的值，但如果发生错误，则返回 `0`。
 
 支持的参数：
 
@@ -8212,10 +8222,10 @@ toUInt32OrNull('abc'): \N
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt32OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [`UInt32`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 [`UInt32`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -8231,7 +8241,7 @@ toUInt32OrZero(x)
 
 **参数**
 
-* `x` — 数值的 String 表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8274,15 +8284,15 @@ toUInt32OrZero('abc'): 0
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt64('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [`UInt64`](/zh/reference/data-types/int-uint) 的取值范围，结果会发生上溢或下溢。
-  这不视为错误。
-  例如：`SELECT toUInt64(18446744073709551616) == 0;`
-</Note>
+:::note
+如果输入值超出 [`UInt64`](/zh/reference/data-types/int-uint) 的取值范围，结果会发生上溢或下溢。
+这不视为错误。
+例如：`SELECT toUInt64(18446744073709551616) == 0;`
+:::
 
-<Note>
-  该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截断数字的小数位。
-</Note>
+:::note
+该函数使用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即会截断数字的小数位。
+:::
 
 另请参见：
 
@@ -8382,15 +8392,15 @@ SELECT toUInt64OrDefault('abc', CAST('0', 'UInt64'))
 
 * (U)Int* 的字符串表示形式。
 
-不支持的参数 (返回 `NULL`) ：
+不支持的参数 (返回 `NULL`)：
 
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt64OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [`UInt64`](/zh/reference/data-types/int-uint) 的范围内表示，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 [`UInt64`](/zh/reference/data-types/int-uint) 的范围内表示，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -8406,7 +8416,7 @@ toUInt64OrNull(x)
 
 **参数**
 
-* `x` — 数值的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8447,10 +8457,10 @@ toUInt64OrNull('abc'): \N
 * Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt64OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值无法表示在 [`UInt64`](/zh/reference/data-types/int-uint) 的范围内，结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法表示在 [`UInt64`](/zh/reference/data-types/int-uint) 的范围内，结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -8509,15 +8519,15 @@ Introduced in: v1.1.0
 * Float* 类型值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt8('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [UInt8](/zh/reference/data-types/int-uint) 的范围内表示，结果会发生上溢或下溢。
-  这不视为错误。
-  例如：`SELECT toUInt8(256) == 0;`。
-</Note>
+:::note
+如果输入值无法在 [UInt8](/zh/reference/data-types/int-uint) 的范围内表示，结果会发生上溢或下溢。
+这不视为错误。
+例如：`SELECT toUInt8(256) == 0;`。
+:::
 
-<Note>
-  该函数采用[向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即截断数字的小数位。
-</Note>
+:::note
+该函数采用 [向零舍入](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)，即截断数字的小数位。
+:::
 
 另请参见：
 
@@ -8622,10 +8632,10 @@ SELECT toUInt8OrDefault('abc', CAST('0', 'UInt8'))
 * 普通 Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt8OrNull('0xc0fe');`。
 
-<Note>
-  如果输入值无法在 [`UInt8`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值无法在 [`UInt8`](/zh/reference/data-types/int-uint) 的取值范围内表示，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参见：
 
@@ -8641,7 +8651,7 @@ toUInt8OrNull(x)
 
 **参数**
 
-* `x` — 数字的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8682,10 +8692,10 @@ toUInt8OrNull('abc'): \N
 * 普通 Float* 值的字符串表示形式，包括 `NaN` 和 `Inf`。
 * 二进制和十六进制值的字符串表示形式，例如 `SELECT toUInt8OrZero('0xc0fe');`。
 
-<Note>
-  如果输入值超出 [`UInt8`](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
-  这不视为错误。
-</Note>
+:::note
+如果输入值超出 [`UInt8`](/zh/reference/data-types/int-uint) 的表示范围，则结果会发生上溢或下溢。
+这不视为错误。
+:::
 
 另请参阅：
 
@@ -8701,7 +8711,7 @@ toUInt8OrZero(x)
 
 **参数**
 
-* `x` — 数字的 String 字符串表示形式。[`String`](/zh/reference/data-types/string)
+* `x` — 字符串表示形式。[`String`](/zh/reference/data-types/string)
 
 **返回值**
 
@@ -8819,9 +8829,9 @@ SELECT
 将 [`DateTime64`](/zh/reference/data-types/datetime64) 转换为具有固定微秒精度的 [`Int64`](/zh/reference/data-types/int-uint) 值。
 输入值会根据其精度相应地进行放大或缩小。
 
-<Note>
-  输出值以 UTC 为基准，而不是以输入值的时区为基准。
-</Note>
+:::note
+输出值以 UTC 为基准，而不是以输入值的时区为基准。
+:::
 
 **语法**
 
@@ -8861,9 +8871,9 @@ SELECT toUnixTimestamp64Micro(dt64);
 将 [`DateTime64`](/zh/reference/data-types/datetime64) 转换为具有固定毫秒精度的 [`Int64`](/zh/reference/data-types/int-uint) 值。
 输入值会根据其精度按相应比例放大或缩小。
 
-<Note>
-  输出值是相对于 UTC 的，而不是相对于输入值的时区。
-</Note>
+:::note
+输出值是相对于 UTC 的，而不是相对于输入值的时区。
+:::
 
 **语法**
 
@@ -8903,9 +8913,9 @@ SELECT toUnixTimestamp64Milli(dt64);
 将 [`DateTime64`](/zh/reference/data-types/datetime64) 转换为具有固定纳秒精度的 [`Int64`](/zh/reference/functions/regular-functions/type-conversion-functions#toInt64) 值。
 输入值会根据其精度相应放大或缩小。
 
-<Note>
-  输出值是相对于 UTC 的，而不是相对于输入值的时区。
-</Note>
+:::note
+输出值是相对于 UTC 的，而不是相对于输入值的时区。
+:::
 
 **语法**
 
@@ -8945,9 +8955,9 @@ SELECT toUnixTimestamp64Nano(dt64);
 将 [`DateTime64`](/zh/reference/data-types/datetime64) 转换为具有固定秒级精度的 [`Int64`](/zh/reference/data-types/int-uint) 值。
 输入值会根据其精度相应按比例放大或缩小。
 
-<Note>
-  输出值是相对于 UTC 的，而不是相对于输入值的时区。
-</Note>
+:::note
+输出值是相对于 UTC 的，而不是相对于输入值的时区。
+:::
 
 **语法**
 

@@ -42,7 +42,7 @@ dotProduct(vector1, vector2)
 
 **القيمة المُعادة**
 
-تعيد حاصل الضرب النقطي للمتجهين. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
+تعيد حاصل الضرب النقطي للمتجهين. وتتراكم مصفوفتا `BFloat16` باستخدام `Float32` وتُرجعان قيمة من النوع `Float32`. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal`](/ar/reference/data-types/decimal)
 
 **أمثلة**
 
@@ -175,9 +175,9 @@ SELECT tupleConcat((1, 2), ('a',), (true, false))
 
 تحسب القسمة عنصرًا بعنصر لـ tupleين أو أكثر من الحجم نفسه، وتُطبَّق من اليسار إلى اليمين.
 
-<Note>
-  ستُرجع القسمة على صفر القيمة `inf`.
-</Note>
+:::note
+ستُرجع القسمة على صفر القيمة `inf`.
+:::
 
 **البنية**
 
@@ -224,9 +224,9 @@ SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0))
 
 يُرجع قيمة Tuple تكون جميع عناصرها مقسومة على عدد.
 
-<Note>
-  ستُرجع القسمة على صفر القيمة `inf`.
-</Note>
+:::note
+ستُرجع القسمة على صفر القيمة `inf`.
+:::
 
 **البنية**
 
@@ -352,24 +352,25 @@ hello
 
 تعيد [مسافة هامينغ](https://en.wikipedia.org/wiki/Hamming_distance) بين قيمتَي Tuple لهما العدد نفسه من العناصر.
 
-<Note>
-  يُحدَّد نوع النتيجة بالطريقة نفسها المتبعة في [الدوال الحسابية](/ar/reference/functions/regular-functions/arithmetic-functions)، وذلك بناءً على عدد العناصر في قيمتَي Tuple المُدخلتَين.
+:::note
+يُحدَّد نوع النتيجة بالطريقة نفسها المتبعة في [الدوال الحسابية](/ar/reference/functions/regular-functions/arithmetic-functions)، وذلك بناءً على عدد العناصر في قيمتَي Tuple المُدخلتَين.
 
-  ```sql
-  SELECT
-      toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
-      toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
-      toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
-      toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
-      toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
-  ```
+```sql
+SELECT
+    toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
+    toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
+    toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
+```
 
-  ```text
-  ┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
-  │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
-  └───────┴────────┴────────┴────────┴────────┘
-  ```
-</Note>
+```text
+┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
+│ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
+└───────┴────────┴────────┴────────┴────────┘
+```
+
+:::
 
 **الصيغة**
 

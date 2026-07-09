@@ -16,7 +16,7 @@ doc_type: 'reference'
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – тип каждого элемента вектора. Допустимые типы: `BFloat16`, `Float32` и `Float64`
+* `element_type` – тип каждого элемента вектора. Допустимые типы: `Int8`, `BFloat16`, `Float32` и `Float64`
 * `dimension` – размерность, то есть число элементов в каждом векторе
 
 <div id="creating-qbit">
@@ -63,6 +63,28 @@ SELECT * FROM vectors ORDER BY id;
 
 Явное преобразование также работает с `CAST`, например `CAST(embedding AS QBit(Float32, 8))`.
 
+<div id="converting-qbit-to-arrays">
+  ## Преобразование QBit в массивы
+</div>
+
+Обратное преобразование восстанавливает исходный вектор из битово-транспонированного представления, поэтому приведение `QBit` к `Array` возвращает сохранённые значения. Это обратная операция к [преобразованию массивов в `QBit`](#converting-arrays-to-qbit):
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::Array(Float32) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+Восстановленный массив использует тип элементов `QBit`, после чего его элементы преобразуются в запрошенный тип элементов массива. Поэтому работает и приведение, которое одновременно меняет тип элементов, например из `QBit(Float32, N)` в `Array(Float64)`.
+
+Преобразование по цепочке `Array` -&gt; `QBit` -&gt; `Array` не приводит к потере данных для `Int8`, `Float32` и `Float64`. Для `BFloat16` оно соответствует прямому преобразованию в `BFloat16` — единственная потеря точности связана с самим `BFloat16`.
+
+Когда `dimension` не кратна 8, конечные элементы дополнения, присутствующие во внутреннем представлении, отбрасываются, поэтому результат всегда содержит ровно `dimension` элементов.
+
 <div id="qbit-subcolumns">
   ## Подстолбцы QBit
 </div>
@@ -85,6 +107,7 @@ SELECT bin(vec.1) FROM test;
 
 Количество доступных подстолбцов зависит от типа элементов:
 
+* `Int8`: 8 подстолбцов (1-8)
 * `BFloat16`: 16 подстолбцов (1-16)
 * `Float32`: 32 подстолбца (1-32)
 * `Float64`: 64 подстолбца (1-64)
@@ -97,3 +120,4 @@ SELECT bin(vec.1) FROM test;
 
 * [`L2DistanceTransposed`](/ru/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](/ru/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)
+* [`dotProductTransposed`](/ru/reference/functions/regular-functions/distance-functions#dotProductTransposed)

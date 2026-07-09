@@ -199,9 +199,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### إنشاء إعداد أداة التجميع للاختبار
+    #### إنشاء تهيئة collector للاختبار
 
-    أنشئ ملفًا باسم `redis-demo.yaml` بالإعداد التالي:
+    أنشئ ملفًا باسم `redis-demo.yaml` بالتهيئة التالية:
 
     ```yaml
     cat > redis-demo.yaml << 'EOF'
@@ -243,9 +243,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### تشغيل ClickStack باستخدام الإعداد التجريبي
+    #### تشغيل ClickStack باستخدام التهيئة التجريبية
 
-    شغّل ClickStack باستخدام السجلات والإعداد التجريبي:
+    شغّل ClickStack باستخدام السجلات والتهيئة التجريبية:
 
     ```bash
     docker run --name clickstack-demo \
@@ -271,7 +271,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **عرض المنطقة الزمنية**
 
-      يعرض HyperDX الطوابع الزمنية بحسب المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على مرئيات أوضح.
+      يعرض HyperDX الطوابع الزمنية بحسب المنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**. يضمن النطاق الزمني الواسع ظهور السجلات التجريبية بغض النظر عن موقعك. وبعد ظهور السجلات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
     </Info>
 
     <Image img="/images/clickstack/redis/redis-log-view.webp" alt="عرض السجل" />
@@ -420,4 +420,4 @@ tail -5 /var/log/redis/redis-server.log
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يستفيد هذا الدليل من OpenTelemetry Collector المدمج في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما بالنسبة إلى عمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

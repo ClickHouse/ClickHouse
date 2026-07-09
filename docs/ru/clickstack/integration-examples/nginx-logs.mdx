@@ -138,14 +138,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... существующая конфигурация ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... другие переменные окружения ...
+          # ... other environment variables ...
         volumes:
           - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/nginx:/var/log/nginx:ro
-          # ... другие тома ...
+          # ... other volumes ...
     ```
 
     ##### Вариант 2: Docker Run (универсальный образ)
@@ -274,9 +274,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       HyperDX отображает временные метки в локальном часовом поясе вашего браузера. Демо-данные охватывают период 2025-10-20 11:00:00 - 2025-10-21 11:00:00 UTC. Широкий временной диапазон гарантирует, что вы увидите демо-журналы независимо от своего местоположения. После этого можно сузить диапазон до 24 часов для более наглядных визуализаций.
     </Info>
 
-    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="Представление журналов" />
+    <Image img="/images/clickstack/nginx-logs-search-view.webp" alt="представление логов" />
 
-    <Image img="/images/clickstack/log-view.webp" alt="Представление журналов" />
+    <Image img="/images/clickstack/log-view.webp" alt="представление логов" />
   </Step>
 </Steps>
 
@@ -380,4 +380,4 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
   ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel collector и отправлять данные в конечную точку OTLP ClickStack. Сведения о конфигурации для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшн мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. раздел [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) с конфигурацией для продакшн.

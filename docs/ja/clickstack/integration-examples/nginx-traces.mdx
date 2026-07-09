@@ -239,7 +239,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     <Info>
       **localhost で実行する場合**
 
-      このデモは、ClickStack が `localhost:4318` でローカル実行されていることを前提としています。リモートのインスタンスを使用する場合は、`localhost` を ClickStack の hostname に置き換えてください。
+      このデモは、ClickStack が `localhost:4318` でローカル実行されていることを前提としています。リモートのインスタンスを使用する場合は、`localhost` を ClickStack のホスト名 に置き換えてください。
     </Info>
 
     トレースが正常に送信されたことを示す `{"partialSuccess":{}}` のようなレスポンスが返るはずです。1,000 件すべてのトレースが ClickStack に取り込まれます。
@@ -361,4 +361,4 @@ tail -f /var/log/nginx/access.log
   ## 本番環境への移行
 </div>
 
-このガイドでは、Nginx OpenTelemetry モジュールから ClickStack の OTLP エンドポイントへトレースを直接送信します。本番環境へのデプロイでは、バッチ処理と耐障害性を確保するため、ゲートウェイとして独自の OTel collector を実行することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+このガイドでは、Nginx OpenTelemetry モジュールから ClickStack の OTLP エンドポイント にトレースを直接送信します。本番環境へのデプロイでは、バッチ処理と耐障害性を確保するため、ゲートウェイとして独自の OTel collector を実行することを推奨します。本番環境向けの設定については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

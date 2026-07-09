@@ -36,17 +36,17 @@ Abre la [consola de ClickHouse Cloud](https://clickhouse.cloud) y selecciona tu 
 
 <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Tarjeta del servicio de Managed Postgres en la lista de servicios de ClickHouse Cloud" size="lg" border />
 
-En la barra lateral izquierda, haz clic en **fuentes de datos**.
+En la barra lateral izquierda, haz clic en **orígenes de datos**.
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada de fuentes de datos en la barra lateral del servicio de Managed Postgres" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada de orígenes de datos en la barra lateral del servicio de Managed Postgres" size="lg" border />
 
 Haz clic en **Start import**.
 
-<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Página de fuentes de datos con el botón Start import" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Página de orígenes de datos con el botón Start import" size="lg" border />
 
-Completa los datos de conexión de tu base de datos PostgreSQL de origen: host, puerto, nombre de usuario, contraseña y nombre de la base de datos. Habilita **TLS** si tu base de datos de origen lo requiere.
+Completa los datos de conexión de tu base de datos PostgreSQL de origen: host, puerto, nombre de usuario, contraseña y nombre de la base de datos. Habilita **TLS** si tu origen lo requiere.
 
-Si necesitas una conexión privada a tu base de datos de origen, puedes usar **SSH tunneling** y proporcionar los datos de SSH necesarios. Esto permite que la migración se conecte de forma segura a bases de datos que no son accesibles públicamente.
+Si necesitas una conexión privada a tu base de datos de origen, puedes optar por **SSH tunneling** y proporcionar los datos de SSH necesarios. Esto permite que la migración se conecte de forma segura a bases de datos que no son accesibles públicamente.
 
 Elige un método de ingestión:
 
@@ -138,9 +138,9 @@ Haz clic en **Crear migración**.
   ## Supervisar la migración
 </div>
 
-Después de crear la migración, la verá en **Fuentes de datos** con el estado **En ejecución**.
+Después de crear la migración, la verá en **orígenes de datos** con el estado **En ejecución**.
 
-<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Lista de fuentes de datos que muestra una migración en ejecución" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Lista de orígenes de datos que muestra una migración en ejecución" size="lg" border />
 
 Haga clic en la migración para abrir la vista detallada. La pestaña **Tablas** muestra el progreso de la carga inicial de cada tabla, incluidas las filas procesadas, las particiones y el tiempo promedio por partición. La pestaña **Métricas** muestra el retraso de replicación y el rendimiento una vez que comienza CDC.
 
@@ -210,9 +210,9 @@ SELECT pg_drop_replication_slot('<slot_name>');
 ```
 
 <div id="next-steps">
-  ## Próximos pasos
+  ## Siguientes pasos
 </div>
 
-* [Guía de inicio rápido de Managed Postgres](/es/products/managed-postgres/quickstart)
-* [Detalles de conexión de Managed Postgres](/es/products/managed-postgres/connection)
+* [Inicio rápido de Managed Postgres](/es/products/managed-postgres/quickstart)
+* [Datos de conexión de Managed Postgres](/es/products/managed-postgres/connection)
 * [FAQ de ClickPipes para Postgres](/es/integrations/clickpipes/postgres/faq)

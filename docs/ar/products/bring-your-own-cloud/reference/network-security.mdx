@@ -54,14 +54,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 1. **تسجيل عنوان Tailnet**: تسجّل كل نقطة نهاية عنوان tailnet فريدًا (مثل `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com` لخادم Kubernetes API)
 
-2. **حاوية وكيل Tailscale**: تعمل حاوية وكيل Tailscale في مجموعة EKS لديك، وتكون مسؤولة عن:
+2. **حاوية وكيل Tailscale**: تعمل حاوية وكيل Tailscale في عنقود EKS لديك، وتكون مسؤولة عن:
    * الاتصال بخادم التنسيق في Tailscale
    * تسجيل الخدمات لتصبح قابلة للاكتشاف
    * تنسيق إعداد الشبكة مع كبسولات Nginx
 
 3. **كبسولة Nginx**: كبسولة Nginx تقوم بما يلي:
    * إنهاء حركة مرور TLS الواردة من Tailscale
-   * توجيه حركة المرور إلى عناوين IP المناسبة داخل مجموعة EKS لديك
+   * توجيه حركة المرور إلى عناوين IP المناسبة داخل عنقود EKS لديك
 
 <div id="tailscale-connection-process">
   ### عملية الاتصال بالشبكة

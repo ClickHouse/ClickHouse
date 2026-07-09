@@ -52,7 +52,7 @@ Tailscale 会在 ClickHouse 控制平面 (位于 ClickHouse 的 VPC 中) 与您�
 
 对于每个需要通过 Tailscale 访问的服务或端点，ClickHouse BYOC 会部署：
 
-1. **Tailnet 地址注册**：每个端点都会注册一个唯一的 tailnet 地址 (例如，Kubernetes API 服务器的 `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com`)
+1. **Tailnet 地址注册**：每个端点都会注册一个唯一的 tailnet 地址 (例如，Kubernetes API 服务器的 `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com`) 
 
 2. **Tailscale agent 容器**：一个 Tailscale agent 容器会在你的 EKS 集群中运行，负责：
    * 连接到 Tailscale 协调服务器

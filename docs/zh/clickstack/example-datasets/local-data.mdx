@@ -27,10 +27,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
         receivers:
           filelog:
             include:
-              - /host/var/log/**/*.log        # 来自主机的 Linux 日志
+              - /host/var/log/**/*.log        # Linux logs from host
               - /host/var/log/syslog
               - /host/var/log/messages
-              - /host/private/var/log/*.log   # 来自主机的 macOS 日志
+              - /host/private/var/log/*.log   # macOS logs from host
             start_at: beginning
             resource:
               service.name: "system-logs"
@@ -143,25 +143,25 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       </Step>
 
       <Step>
-        ### 查看系统指标
+        ### 探索系统指标
 
-        我们可以使用图表查看指标。
+        我们可以使用图表来探索指标。
 
-        通过左侧菜单进入 Chart Explorer。选择数据源 `Metrics`，并将聚合类型设为 `Maximum`。
+        通过左侧菜单进入 Chart Explorer。将 source 选择为 `Metrics`，并将聚合类型设置为 `Maximum`。
 
-        在 `Select a Metric` 菜单中，只需输入 `memory`，然后选择 `system.memory.utilization (Gauge)`。
+        在 `Select a Metric` 菜单中，先输入 `memory`，再选择 `system.memory.utilization (Gauge)`。
 
-        点击 `运行` 按钮，即可将内存利用率随时间变化的情况可视化。
+        点击运行按钮，即可可视化内存使用率随时间的变化情况。
 
         <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="内存随时间变化" size="lg" />
 
-        注意，返回的数值是浮点数形式的 `%` 值。为了更清晰地显示，请选择 `Set number format`。
+        请注意，该数值以浮点数 `%` 的形式返回。若要使其显示更直观，请选择 `Set number format`。
 
-        <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数值格式" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数字格式" size="lg" />
 
-        在随后出现的菜单中，从 `Output format` 下拉菜单里选择 `Percentage`，然后点击 `Apply`。
+        在随后出现的菜单中，您可以从 `Output format` 下拉菜单中选择 `Percentage`，然后点击 `Apply`。
 
-        <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="内存百分比随时间变化" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="内存时间占比" size="lg" />
       </Step>
     </Steps>
   </Tab>
@@ -169,16 +169,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Tab title="ClickStack 开源版">
     ### 创建自定义 OpenTelemetry 配置
 
-    创建一个 `custom-local-config.yaml` 文件，内容如下：
+    创建 `custom-local-config.yaml` 文件，内容如下：
 
     ```yaml
     receivers:
       filelog:
         include:
-          - /host/var/log/**/*.log        # 来自主机的 Linux 日志
+          - /host/var/log/**/*.log        # Linux logs from host
           - /host/var/log/syslog
           - /host/var/log/messages
-          - /host/private/var/log/*.log   # 来自主机的 macOS 日志
+          - /host/private/var/log/*.log   # macOS logs from host
         start_at: beginning
         resource:
           service.name: "system-logs"
@@ -235,7 +235,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
             - clickhouse
     ```
 
-    此配置收集 OSX 和 Linux 系统的系统日志与指标，并将结果发送至 ClickStack。该配置通过添加新的接收器和管道来扩展 ClickStack collector——您可以引用已在基础 ClickStack collector 中配置的 `clickhouse` exporter 和处理器 (`memory_limiter`、`batch`) 。
+    此配置会收集 OSX 和 Linux 系统的系统日志和指标，并将结果发送到 ClickStack。该配置通过添加新的 receivers 和 pipelines 来扩展 ClickStack collector——你将引用基础 ClickStack collector 中已配置好的 `clickhouse` exporter 和 processors (`memory_limiter`、`batch`) 。
 
     <Info>
       **摄取时间戳**
@@ -247,7 +247,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       为避免这种情况，你可以在 receiver 配置中将起始位置设为 `end`。这样可确保只摄取新条目，并为其分配接近真实到达时间的时间戳。
     </Info>
 
-    有关 OpenTelemetry (OTel) 配置结构的更多详情，请参阅[官方指南](https://opentelemetry.io/docs/collector/configuration/)。
+    有关 OpenTelemetry (OTel) 配置结构的更多信息，建议参阅[官方指南](https://opentelemetry.io/docs/collector/configuration/)。
 
     ### 使用自定义配置启动 ClickStack
 
@@ -272,7 +272,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       请注意，我们将主机的 `/var/log` 挂载到容器内的 `/host/var/log`，以避免与容器自身的日志文件发生冲突。
     </Info>
 
-    ### 探索系统日志
+    ### 查看系统日志
 
     如果在本地部署，请访问 [http://localhost:8080](http://localhost:8080) 以访问 ClickStack UI。
 
@@ -280,24 +280,24 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="HyperDX 本地日志" size="lg" />
 
-    ### 探索系统指标
+    ### 查看系统指标
 
-    我们可以使用图表来探索指标。
+    我们可以使用图表查看指标。
 
-    通过左侧菜单进入 Chart Explorer。将 source 选择为 `Metrics`，并将聚合类型设置为 `Maximum`。
+    通过左侧菜单进入 Chart Explorer。选择数据源 `Metrics`，并将聚合类型设为 `Maximum`。
 
-    在 `Select a Metric` 菜单中，先输入 `memory`，再选择 `system.memory.utilization (Gauge)`。
+    在 `Select a Metric` 菜单中，只需输入 `memory`，然后选择 `system.memory.utilization (Gauge)`。
 
-    点击运行按钮，即可可视化内存使用率随时间的变化情况。
+    点击运行按钮，即可将内存利用率随时间变化的情况可视化。
 
     <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="内存随时间变化" size="lg" />
 
-    请注意，该数值以浮点数 `%` 的形式返回。若要使其显示更直观，请选择 `Set number format`。
+    注意，返回的数值是浮点数形式的 `%` 值。为了更清晰地显示，请选择 `Set number format`。
 
-    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数字格式" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="数值格式" size="lg" />
 
-    在随后出现的菜单中，您可以从 `Output format` 下拉菜单中选择 `Percentage`，然后点击 `Apply`。
+    在随后出现的菜单中，从 `Output format` 下拉菜单里选择 `Percentage`，然后点击 `Apply`。
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="内存时间占比" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="内存百分比随时间变化" size="lg" />
   </Tab>
 </Tabs>

@@ -49,19 +49,19 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Добавьте или измените следующие настройки в `postgresql.conf`:
 
     ```conf
-    # Обязательно для логирования в формате CSV
+    # Required for CSV logging
     logging_collector = on
     log_destination = 'csvlog'
 
-    # Рекомендуется: логирование подключений
+    # Recommended: Connection logging
     log_connections = on
     log_disconnections = on
 
-    # Опционально: настройте в соответствии с потребностями мониторинга
-    #log_min_duration_statement = 1000  # Логировать запросы, выполняющиеся дольше 1 секунды
-    #log_statement = 'ddl'               # Логировать DDL-операторы (CREATE, ALTER, DROP)
-    #log_checkpoints = on                # Логировать активность контрольных точек
-    #log_lock_waits = on                 # Логировать конкуренцию за блокировки
+    # Optional: Tune based on your monitoring needs
+    #log_min_duration_statement = 1000  # Log queries taking more than 1 second
+    #log_statement = 'ddl'               # Log DDL statements (CREATE, ALTER, DROP)
+    #log_checkpoints = on                # Log checkpoint activity
+    #log_lock_waits = on                 # Log lock contention
     ```
 
     <Note>
@@ -71,17 +71,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     После внесения этих изменений перезапустите PostgreSQL:
 
     ```bash
-    # Для systemd
+    # For systemd
     sudo systemctl restart postgresql
 
-    # Для Docker
+    # For Docker
     docker restart 
     ```
 
     Проверьте, что записи журнала создаются:
 
     ```bash
-    # Расположение логов по умолчанию в Linux
+    # Default log location on Linux
     tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
 
     # macOS Homebrew
@@ -100,7 +100,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     receivers:
       filelog/postgres:
         include:
-          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Измените путь в соответствии с вашей инсталляцией PostgreSQL
+          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Adjust to match your PostgreSQL installation
         start_at: end
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
@@ -169,14 +169,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... существующая конфигурация ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... другие переменные окружения ...
+          # ... other environment variables ...
         volumes:
           - ./postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/lib/postgresql:/var/lib/postgresql:ro
-          # ... другие тома ...
+          # ... other volumes ...
     ```
 
     ##### Вариант 2: Docker Run (образ «всё в одном»)
@@ -405,4 +405,4 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
   ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный OpenTelemetry Collector из ClickStack. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурацию для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве для быстрой настройки используется встроенный OpenTelemetry Collector ClickStack. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Инструкции по настройке для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

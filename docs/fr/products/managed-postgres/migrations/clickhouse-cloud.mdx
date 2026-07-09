@@ -46,17 +46,17 @@ Cliquez sur **Start import**.
 
 Renseignez les informations de connexion de votre base de données PostgreSQL source : hôte, port, nom d&#39;utilisateur, mot de passe et nom de la base de données. Activez **TLS** si votre source l&#39;exige.
 
-Si vous avez besoin d&#39;une connexion privée à votre base de données source, vous pouvez utiliser un **tunnel SSH** et fournir les informations SSH nécessaires. Cela permet à la migration de se connecter en toute sécurité à des bases de données qui ne sont pas accessibles publiquement.
+Si vous avez besoin d&#39;une connexion privée à votre base de données source, vous pouvez opter pour un **tunnel SSH** et fournir les informations SSH nécessaires. Cela permet à la migration de se connecter en toute sécurité à des bases de données qui ne sont pas accessibles publiquement.
 
 Choisissez une méthode d&#39;ingestion :
 
-* **Chargement initial + CDC** — copie les données existantes, puis maintient la cible synchronisée avec les modifications ultérieures.
+* **Chargement initial + CDC** — copie les données existantes, puis maintient la cible synchronisée avec les modifications en cours.
 * **Chargement initial uniquement** — copie unique, sans réplication continue.
 * **CDC uniquement** — ignore la copie initiale et réplique uniquement les nouvelles modifications à partir de ce moment.
 
 <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Étape 1 : formulaire de connexion à la base de données source avec options de méthode d'ingestion" size="lg" border />
 
-Cliquez sur **Next**.
+Cliquez sur **Suivant**.
 
 <div id="step-2-export-schema">
   ## Étape 2 : Exportez le schéma de votre base de données
@@ -122,7 +122,7 @@ Développez **Paramètres avancés de réplication** pour ajuster le débit :
 
 <Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Étape 4 : formulaire des paramètres d’ingestion avec publication et options avancées de réplication" size="lg" border />
 
-Cliquez sur **Next**.
+Cliquez sur **Suivant**.
 
 <div id="step-5-select-tables">
   ## Étape 5 : Sélectionner des tables
@@ -214,5 +214,5 @@ SELECT pg_drop_replication_slot('<slot_name>');
 </div>
 
 * [Guide de démarrage rapide de Managed Postgres](/fr/products/managed-postgres/quickstart)
-* [Détails de connexion de Managed Postgres](/fr/products/managed-postgres/connection)
-* [FAQ ClickPipes pour Postgres](/fr/integrations/clickpipes/postgres/faq)
+* [Paramètres de connexion de Managed Postgres](/fr/products/managed-postgres/connection)
+* [FAQ de ClickPipes pour Postgres](/fr/integrations/clickpipes/postgres/faq)

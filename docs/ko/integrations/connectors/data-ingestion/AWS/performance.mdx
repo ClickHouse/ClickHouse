@@ -40,11 +40,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 데이터가 완전히 로드될 때까지 서버는 다음 루프를 실행합니다:
 
 ```bash
-① 다음 데이터 부분을 가져와 파싱하고, 이를 기반으로 인메모리 데이터 블록(파티셔닝 키당 하나)을 구성합니다.
+① Pull and parse the next portion of data and form an in-memory data block (one per partitioning key) from it.
 
-② 블록을 스토리지의 새 파트에 씁니다.
+② Write the block into a new part on storage.
 
-①로 돌아갑니다. 
+Go to ① 
 ```
 
 ①에서 크기는 삽입 블록 크기에 따라 달라지며, 이는 다음 두 가지 설정으로 제어할 수 있습니다:
@@ -101,11 +101,11 @@ ClickHouse 서버는 데이터를 병렬로 처리하고 삽입할 수 있습니
 모든 파일의 데이터가 모두 처리될 때까지 각 삽입 스레드는 다음 루프를 실행합니다:
 
 ```bash
-① 처리되지 않은 파일 데이터의 다음 부분을 가져오고(부분 크기는 설정된 블록 크기를 기반으로 함), 이를 메모리 내 데이터 블록으로 생성합니다.
+① Get the next portion of unprocessed file data (portion size is based on the configured block size) and create an in-memory data block from it.
 
-② 블록을 스토리지의 새 파트에 씁니다.
+② Write the block into a new part on storage.
 
-①로 돌아갑니다. 
+Go to ①. 
 ```
 
 이러한 병렬 삽입에 사용하는 삽입 스레드 수는 [`max_insert_threads`](/ko/reference/settings/session-settings#max_insert_threads) 설정으로 구성할 수 있습니다. 기본값은 오픈소스 ClickHouse에서 `1`, [ClickHouse Cloud](https://clickhouse.com/cloud)에서는 4입니다.
@@ -353,7 +353,7 @@ SETTINGS max_threads = 92
 
 클러스터를 사용해 S3 읽기를 수행하려면 [클러스터 활용](/ko/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#utilizing-clusters)에 설명된 대로 `s3Cluster` 함수를 사용해야 합니다. 이렇게 하면 읽기가 여러 노드에 분산됩니다.
 
-처음에 삽입 쿼리를 수신한 서버는 먼저 glob 패턴을 확인한 다음, 일치하는 각 파일의 처리를 자신과 다른 서버에 동적으로 분배합니다.
+처음에 삽입 쿼리를 수신한 서버는 먼저 글롭 패턴을 확인한 다음, 일치하는 각 파일의 처리를 자신과 다른 서버에 동적으로 분배합니다.
 
 <Image img="/images/integrations/data-ingestion/s3/s3Cluster.webp" size="lg" border alt="ClickHouse의 s3Cluster 함수" />
 

@@ -726,7 +726,7 @@ Le même exemple, où `SeverityText` devient la première colonne de la clé pri
   <Step>
     #### Créer une nouvelle table
 
-    Créez la nouvelle table avec la clé primaire souhaitée. Notez le suffixe `_23_01_2025` : adaptez-le à la date actuelle. Par exemple :
+    Créez la nouvelle table avec la clé primaire souhaitée. Notez le suffixe `_23_01_2025` : adaptez-le à la date actuelle. Par exemple :
 
     ```sql
     CREATE TABLE otel_logs_23_01_2025 AS otel_logs
@@ -785,7 +785,7 @@ Ce processus peut être adapté si d’autres modifications des clés primaires 
     #### Créer une nouvelle table
 
     Créez la nouvelle table avec la clé primaire souhaitée.
-    Dans l’exemple ci-dessous, `30_01_2025` est utilisé comme suffixe pour indiquer la date de la table. Par exemple :
+    Dans l’exemple ci-dessous, `30_01_2025` est utilisé comme suffixe pour indiquer la date de la table. Par exemple :
 
     ```sql
     CREATE TABLE otel_logs_30_01_2025 AS otel_logs
@@ -991,7 +991,7 @@ Les versions plus récentes de ClickHouse prennent également en charge des proj
   ### Alternatives
 </div>
 
-Si vous avez besoin de plusieurs clés de tri, les projections ne sont pas la seule option. Selon les contraintes opérationnelles et la manière dont vous souhaitez que ClickStack achemine les requêtes, envisagez :
+Si vous avez besoin de plusieurs clés de tri, les projections ne sont pas la seule option. Selon les contraintes opérationnelles et la façon dont vous voulez que ClickStack achemine les requêtes, envisagez :
 
-* de configurer votre collecteur OpenTelemetry pour écrire dans deux tables avec des clés de tri différentes, et de créer des sources ClickStack distinctes pour chaque table.
-* de créer une vue matérialisée comme pipeline de copie, c.-à-d. d’attacher une vue matérialisée à la table principale qui redirige les lignes brutes vers une table secondaire avec une clé de tri différente (un modèle de dénormalisation ou de routage). Créez une source pour cette table cible. Vous trouverez des exemples [ici](/fr/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).
+* De configurer votre OpenTelemetry Collector pour écrire dans deux tables avec des clés `ORDER BY` différentes, puis de créer des sources ClickStack distinctes pour chaque table.
+* De créer une vue matérialisée sous forme de pipeline de copie, c.-à-d. d’attacher une vue matérialisée à la table principale qui copie les lignes brutes vers une table secondaire avec une clé de tri différente (un schéma de dénormalisation ou de routage). Créez une source pour cette table cible. Vous trouverez des exemples [ici](/fr/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).

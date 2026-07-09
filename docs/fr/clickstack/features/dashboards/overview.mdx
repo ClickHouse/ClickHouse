@@ -212,6 +212,20 @@ Pour supprimer, modifier ou dupliquer une visualisation, survolez-la, puis utili
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="Modifier le tableau de bord" size="lg" />
 
+<div id="tile-display-settings">
+  ### Paramètres d’affichage de la tuile
+</div>
+
+Chaque tuile dispose d’un volet **Paramètres d’affichage** proposant des options qui contrôlent la façon dont sa valeur est rendue. Ouvrez-le depuis l’éditeur de tuiles en cliquant sur **Paramètres d’affichage**. Les options disponibles dépendent du type de visualisation.
+
+Les tuiles Number peuvent afficher un **graphique d’arrière-plan** : une mini-courbe de tendance tracée derrière la valeur, pour visualiser d’un coup d’œil son évolution sur l’intervalle de temps sélectionné. C’est utile pour les tuiles de SLO et de budget d’erreur, où la tendance d’une valeur compte autant que sa valeur actuelle.
+
+Avec une tuile Number sélectionnée, ouvrez **Paramètres d’affichage** et définissez **Graphique d’arrière-plan** sur **Ligne** ou **Zone** (ou **Aucun** pour le désactiver). La mini-courbe est dérivée d’une version de la requête de la tuile regroupée par intervalles de temps ; aucune configuration supplémentaire n’est donc nécessaire. Elle hérite par défaut de la couleur de la tuile ; définissez une **Couleur d’arrière-plan** pour la remplacer par une couleur précise de la palette.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Volet Paramètres d’affichage pour une tuile Number, avec Graphique d’arrière-plan défini sur Zone" size="lg" />
+
+Les graphiques d’arrière-plan s’appliquent aux tuiles Number créées avec le générateur de requêtes. Les tuiles Number en Raw SQL renvoient une valeur unique, sans dimension temporelle à regrouper, donc l’option apparaît mais reste désactivée pour elles.
+
 <div id="dashboard-listing-search">
   ## Tableaux de bord - liste et recherche
 </div>

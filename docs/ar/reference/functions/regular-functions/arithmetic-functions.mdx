@@ -261,12 +261,12 @@ SELECT byteSwap(123294967295)
 
 أُضيف في: v1.1.0
 
-يحسب ناتج قسمة القيمتين `a` و`b`. ويكون نوع النتيجة دائمًا [Float64](/ar/reference/data-types/float).
+يحسب خارج القسمة للقيمتين `a` و`b`. ويكون نوع النتيجة دائمًا [Float64](/ar/reference/data-types/float).
 وتوفّر الدالة `intDiv` القسمة الصحيحة.
 
-<Note>
-  تؤدي القسمة على `0` إلى إرجاع `inf` أو `-inf` أو `nan`.
-</Note>
+:::note
+تؤدي القسمة على `0` إلى إرجاع `inf` أو `-inf` أو `nan`.
+:::
 
 **البنية**
 
@@ -280,7 +280,7 @@ divide(x, y)
 
 **القيمة المُعادة**
 
-ناتج قسمة x على y
+خارج القسمة لـ x على y
 
 **أمثلة**
 
@@ -313,10 +313,10 @@ inf
 يجري قسمة عددين عشريين. تكون القيمة الناتجة من النوع [Decimal256](/ar/reference/data-types/decimal).
 يمكن تحديد مقياس النتيجة صراحةً باستخدام الوسيط `result_scale` (عدد صحيح ثابت ضمن النطاق `[0, 76]`). وإذا لم يُحدَّد، فسيكون مقياس النتيجة هو أكبر مقياس بين الوسيطات المُعطاة.
 
-<Note>
-  تعمل هذه الدالة بسرعة أبطأ بكثير من `divide` الاعتيادية.
-  إذا لم تكن بحاجة فعلًا إلى دقة مضبوطة و/أو كنت تحتاج إلى حساب سريع، ففكّر في استخدام [divide](#divide).
-</Note>
+:::note
+تعمل هذه الدالة بسرعة أبطأ بكثير من `divide` الاعتيادية.
+إذا لم تكن بحاجة فعلًا إلى دقة مضبوطة و/أو كنت تحتاج إلى حساب سريع، ففكّر في استخدام [divide](#divide).
+:::
 
 **الصياغة**
 
@@ -1050,8 +1050,9 @@ SELECT moduloLegacy(10, 3)
 
 أُضيف في: v25.5.0
 
-يحسب remainder عند قسمة `a` على `b`. وهو مشابه للدالة `modulo`، إلا أن `moduloOrNull` تُرجع NULL
-إذا كانت الوسيطة اليمنى تساوي 0.
+يحسب remainder عند قسمة `a` على `b`. وهو مشابه للدالة `modulo`، إلا أن `moduloOrNull` تُرجع `NULL`
+عندما تؤدي العملية، لولا ذلك، إلى حدوث استثناء فاصلة عائمة. وبالنسبة إلى معاملات الفاصلة العائمة، لا يحدث هذا إلا عندما يكون
+المقسوم عليه `0`؛ أما بالنسبة إلى المعاملات الصحيحة، فيشمل ذلك أيضاً باقي قسمة أصغر قيمة سالبة على `-1` (مثل `-128 % -1` في `Int8`).
 
 **البنية**
 
@@ -1061,21 +1062,32 @@ moduloOrNull(x, y)
 
 **الأسماء البديلة**: `modOrNull`
 
-**المعاملات**
+**الوسيطات**
 
 * `x` — المقسوم. [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
-* `y` — القاسم (`modulus`). [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
+* `y` — المقسوم عليه (`الموديولس`). [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المُعادة**
 
-تعيد ناتج باقي قسمة `x` على `y`، أو `NULL` إذا كان القاسم صفراً.
+تعيد ناتج باقي قسمة `x` على `y`، أو `NULL` عندما تؤدي العملية إلى حدوث استثناء فاصلة عائمة:
+عندما يكون المقسوم عليه صفراً، أو، بالنسبة إلى الوسيطات الصحيحة، عند حساب أصغر قيمة سالبة بتطبيق modulo على `-1`.
 
 **أمثلة**
 
-**moduloOrNull عندما يكون القاسم صفراً**
+**moduloOrNull عندما يكون المقسوم عليه صفراً**
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**moduloOrNull عند قسمة أصغر عدد صحيح سالب على -1**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1162,10 +1174,10 @@ SELECT multiply(5,5)
 يُجري عملية ضرب على عددين من النوع Decimal. ستكون قيمة النتيجة من النوع [Decimal256](/ar/reference/data-types/decimal).
 يمكن تحديد مقياس النتيجة صراحةً باستخدام الوسيط `result_scale` (عدد صحيح ثابت ضمن النطاق `[0, 76]`). وإذا لم يُحدَّد، فسيكون مقياس النتيجة هو أكبر مقياس بين الوسيطات المُعطاة.
 
-<Note>
-  تعمل هذه الدوال أبطأ بكثير من `multiply` العادية.
-  إذا لم تكن بحاجة فعلًا إلى دقة مضبوطة و/أو كنت تحتاج إلى حسابات سريعة، ففكّر في استخدام [multiply](#multiply)
-</Note>
+:::note
+تعمل هذه الدوال أبطأ بكثير من `multiply` العادية.
+إذا لم تكن بحاجة فعلًا إلى دقة مضبوطة و/أو كنت تحتاج إلى حسابات سريعة، ففكّر في استخدام [multiply](#multiply)
+:::
 
 **البنية**
 
@@ -1371,10 +1383,11 @@ SELECT positiveModulo(-1, 10)
 
 تم تقديمها في: v25.5.0
 
-تحسب الباقي عند قسمة `a` على `b`. وهي مشابهة للدالة `positiveModulo`، باستثناء أن `positiveModuloOrNull` تُرجِع NULL
-إذا كان المعامل الأيمن يساوي 0.
+تحسب الباقي عند قسمة `a` على `b`. وهي مشابهة للدالة `positiveModulo`، باستثناء أن `positiveModuloOrNull` تُرجِع `NULL`
+عندما كانت العملية ستؤدي، لولا ذلك، إلى استثناء فاصلة عائمة. وبالنسبة إلى الوسائط ذات الفاصلة العائمة، لا يحدث هذا إلا عندما
+يكون المقسوم عليه `0`؛ أما بالنسبة إلى الوسائط الصحيحة، فإنه يشمل أيضاً القيمة السالبة الدنيا modulo `-1` (مثل `-128 % -1` بالنسبة إلى `Int8`).
 
-**الصياغة**
+**البنية**
 
 ```sql
 positiveModuloOrNull(x, y)
@@ -1382,21 +1395,32 @@ positiveModuloOrNull(x, y)
 
 **الأسماء البديلة**: `positive_modulo_or_null`, `pmodOrNull`
 
-**الوسائط**
+**الوسيطات**
 
-* `x` — المقسوم. [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float32/64`](/ar/reference/data-types/float). - `x` — القاسم (modulus). [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float32/64`](/ar/reference/data-types/float).
+* `x` — المقسوم. [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float32/64`](/ar/reference/data-types/float). - `x` — المقسوم عليه (الموديولس). [`(U)Int*`](/ar/reference/data-types/int-uint)/[`Float32/64`](/ar/reference/data-types/float).
 
 **القيمة المُعادة**
 
 تعيد الفرق بين `x` وأقرب عدد صحيح لا يزيد عن
-`x` ويقبل القسمة على `y`، وتُعيد `null` عندما يكون القاسم صفراً.
+`x` ويقبل القسمة على `y`، أو `NULL` إذا كانت العملية ستؤدي إلى استثناء فاصلة عائمة: عندما يكون المقسوم عليه صفراً، أو،
+بالنسبة إلى الوسائط الصحيحة، عند حساب أصغر قيمة سالبة بترديد `-1`.
 
 **أمثلة**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull على الصفر**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**positiveModuloOrNull لأصغر عدد صحيح سالب مع -1**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response

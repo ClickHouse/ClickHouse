@@ -25,9 +25,9 @@ Para usar el motor de tabla Kafka, deberías tener conocimientos generales sobre
   #### Resumen
 </div>
 
-Inicialmente, nos centramos en el caso de uso más común: utilizar el motor de tabla Kafka para insertar datos en ClickHouse desde Kafka.
+Inicialmente, nos centramos en el caso de uso más común: utilizar el motor de tabla de Kafka para insertar datos en ClickHouse desde Kafka.
 
-El motor de tabla Kafka permite a ClickHouse leer directamente de un Kafka topic. Aunque es útil para ver mensajes en un topic, este motor, por diseño, solo permite una única lectura; es decir, cuando se ejecuta una consulta sobre la tabla, consume datos de la cola y avanza el offset del consumer antes de devolver los resultados al cliente. En la práctica, los datos no pueden volver a leerse sin restablecer esos offsets.
+El motor de tabla de Kafka permite a ClickHouse leer directamente de un Kafka topic. Aunque es útil para ver mensajes en un topic, este motor, por diseño, solo permite una única lectura; es decir, cuando se ejecuta una consulta sobre la tabla, consume datos de la cola y avanza el offset del consumer antes de devolver los resultados al cliente. En la práctica, los datos no pueden volver a leerse sin restablecer esos offsets.
 
 Para conservar estos datos a partir de una lectura del motor de tabla, necesitamos un mecanismo para capturarlos e insertarlos en otra tabla. Las vistas materializadas basadas en triggers proporcionan esta funcionalidad de forma nativa. Una vista materializada inicia una lectura del motor de tabla y recibe lotes de documentos. La cláusula TO determina el destino de los datos, normalmente una tabla de la [familia MergeTree](/es/reference/engines/table-engines/mergetree-family/index). Este proceso se visualiza a continuación:
 
@@ -361,13 +361,13 @@ Puede que necesite [inserciones basadas en quorum](/es/reference/settings/sessio
 
 Aunque es un caso de uso menos habitual, los datos de ClickHouse también pueden persistirse en Kafka. Por ejemplo, insertaremos filas manualmente en un motor de tabla Kafka. Estos datos los leerá el mismo motor Kafka, cuya vista materializada colocará los datos en una tabla MergeTree. Por último, demostramos cómo aplicar vistas materializadas a las inserciones en Kafka para leer tablas a partir de tablas de origen existentes.
 
-<div id="steps">
+<div id="steps-1">
   #### Pasos
 </div>
 
 Nuestro objetivo inicial se ilustra mejor de la siguiente manera:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="Diagrama del motor de tabla Kafka con inserciones" />
+<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="Diagrama del motor de tabla de Kafka con inserciones" />
 
 Suponemos que ya ha creado las tablas y vistas en los pasos de [Kafka a ClickHouse](#kafka-to-clickhouse) y que el topic ya se ha consumido por completo.
 
@@ -503,9 +503,9 @@ Aunque se trata de un ejemplo complejo, ilustra la potencia de las vistas materi
   #### Trabajo con clústeres de ClickHouse
 </div>
 
-Mediante grupos de consumidores de Kafka, varias instancias de ClickHouse pueden leer potencialmente del mismo topic. A cada consumidor se le asigna una partición del topic en una relación 1:1. Al escalar el consumo de ClickHouse con el motor de tabla Kafka, tenga en cuenta que el número total de consumidores dentro de un clúster no puede superar el número de particiones del topic. Por lo tanto, asegúrese de configurar de antemano un particionado adecuado para el topic.
+Mediante grupos de consumidores de Kafka, varias instancias de ClickHouse pueden leer potencialmente del mismo topic. A cada consumidor se le asigna una partición del topic en una relación 1:1. Al escalar el consumo de ClickHouse con el motor de tabla de Kafka, tenga en cuenta que el número total de consumidores dentro de un clúster no puede superar el número de particiones del topic. Por lo tanto, asegúrese de configurar de antemano un particionado adecuado para el topic.
 
-Se pueden configurar varias instancias de ClickHouse para leer de un topic con el mismo ID de grupo de consumidores, especificado durante la creación del motor de tabla Kafka. De este modo, cada instancia leerá de una o más particiones e insertará segmentos en su tabla de destino local. A su vez, las tablas de destino pueden configurarse para usar ReplicatedMergeTree y gestionar la duplicación de datos. Este enfoque permite escalar las lecturas de Kafka junto con el clúster de ClickHouse, siempre que haya suficientes particiones de Kafka.
+Se pueden configurar varias instancias de ClickHouse para leer de un topic con el mismo ID de grupo de consumidores, especificado durante la creación del motor de tabla de Kafka. De este modo, cada instancia leerá de una o más particiones e insertará segmentos en su tabla de destino local. A su vez, las tablas de destino pueden configurarse para usar ReplicatedMergeTree y gestionar la duplicación de datos. Este enfoque permite escalar las lecturas de Kafka junto con el clúster de ClickHouse, siempre que haya suficientes particiones de Kafka.
 
 <Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="Diagrama del motor de tabla Kafka con clústeres de ClickHouse" />
 

@@ -78,11 +78,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     系统会提示您在 ClickHouse Cloud 控制台中设置基础设施，包括对象存储桶、VPC/VNet 和 Kubernetes 集群。某些配置必须在此阶段确定，因为后续无法更改。具体包括：
 
-    * **区域**：我们的 [supported regions](/zh/products/cloud/reference/supported-regions) 文档中列出的所有**公共区域**均可用于 BYOC 部署。目前暂不支持私有区域。
+    * **区域**：我们的 [supported regions](/zh/products/cloud/reference/supported-regions) 文档中列出的所有**公网区域**均可用于 BYOC 部署。目前暂不支持私有区域。
 
-    * **VPC/VNet CIDR 范围**：默认情况下，我们使用 `10.0.0.0/16` 作为 BYOC 的 VPC (AWS/GCP) 或 VNet (Azure) CIDR 范围。如果您计划与另一个账户建立 VPC/VNet peering，请确保 CIDR 范围不重叠。请为 BYOC 分配合适的 CIDR 范围，最小为 `/23`，以容纳所需的工作负载。
+    * **VPC/VNet CIDR 范围**：默认情况下，我们使用 `10.0.0.0/16` 作为 BYOC VPC (AWS/GCP) 或 VNet (Azure) 的 CIDR 范围。如果您计划与另一个账户建立 VPC/VNet peering，请确保 CIDR 范围不重叠。请为 BYOC 分配合适的 CIDR 范围，最小为 `/23`，以容纳所需的工作负载。
 
-    * **Availability Zones**：如果您计划使用 VPC peering，使源账户与 BYOC 账户的可用区对齐，有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户之间可能对应不同的物理可用区 ID。详情请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
+    * **Availability Zones**：如果您计划使用 VPC peering，使源账户与 BYOC 账户的可用区保持一致，有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户之间可能对应不同的物理可用区 ID。详情请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background="black" />
   </Step>

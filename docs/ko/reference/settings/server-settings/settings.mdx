@@ -10,6 +10,10 @@ doc_type: 'reference'
 import SystemLogParameters from '/snippets/ko/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 
+<div id="server-settings">
+  # 서버 설정
+</div>
+
 이 섹션에는 서버 설정에 대한 설명이 포함되어 있습니다. 이러한 설정은
 세션이나 쿼리 수준에서는 변경할 수 없습니다.
 
@@ -79,6 +83,12 @@ SQL 명령으로 생성된 사용자 및 역할 구성이 ClickHouse 서버에 �
 
 <SettingsInfoBlock type="UInt64" default_value="16777215" changeable_without_restart="No" />groupArray 함수에서 배열 요소의 최대 크기(바이트 단위)입니다. 이 제한은 serialization 시 검사되며, state 크기가 과도하게 커지는 것을 방지하는 데 도움이 됩니다.
 
+<div id="allow_experimental_executable_udf_drivers">
+  ## allow_experimental_executable_udf_drivers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />`user_defined_executable_function_drivers_config`를 통해 선언되는 실행형 사용자 정의 함수 드라이버에 대한 Experimental 지원을 활성화합니다. 드라이버는 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'`에 제공된 사용자 코드 조각을 실행형 UDF로 변환합니다.
+
 <div id="allow_experimental_webassembly_udf">
   ## allow_experimental_webassembly_udf
 </div>
@@ -105,9 +115,9 @@ SQL 명령으로 생성된 사용자 및 역할 구성이 ClickHouse 서버에 �
 
 이는 모든 `EXPERIMENTAL` / `BETA` 기능에 읽기 전용 제약 조건을 설정하는 것과 같습니다.
 
-<Note>
-  값이 `0`이면 모든 설정을 변경할 수 있습니다.
-</Note>
+:::note
+값이 `0`이면 모든 설정을 변경할 수 있습니다.
+:::
 
 <div id="allow_impersonate_user">
   ## allow_impersonate_user
@@ -334,11 +344,11 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 
 예를 들어, 이 비율이 2이고 [`background_pool_size`](/ko/reference/settings/server-settings/settings#background_pool_size)가 16으로 설정된 경우 ClickHouse는 백그라운드 머지를 동시에 32개까지 실행할 수 있습니다. 이는 백그라운드 작업을 일시 중단했다가 나중으로 미룰 수 있기 때문에 가능합니다. 이렇게 하면 작은 머지가 더 우선적으로 실행되도록 할 수 있습니다.
 
-<Note>
-  이 비율은 런타임에 높이기만 할 수 있습니다. 낮추려면 server를 다시 시작해야 합니다.
+:::note
+이 비율은 런타임에 높이기만 할 수 있습니다. 낮추려면 server를 다시 시작해야 합니다.
 
-  [`background_pool_size`](/ko/reference/settings/server-settings/settings#background_pool_size) 설정과 마찬가지로, 이전 버전과의 호환성을 위해 [`background_merges_mutations_concurrency_ratio`](/ko/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio)도 `default` 프로필에서 적용할 수 있습니다.
-</Note>
+[`background_pool_size`](/ko/reference/settings/server-settings/settings#background_pool_size) 설정과 마찬가지로, 이전 버전과의 호환성을 위해 [`background_merges_mutations_concurrency_ratio`](/ko/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio)도 `default` 프로필에서 적용할 수 있습니다.
+:::
 
 <div id="background_merges_mutations_scheduling_policy">
   ## background_merges_mutations_scheduling_policy
@@ -376,16 +386,17 @@ ClickHouse Cloud 배포에서는 기본적으로 활성화됩니다.
 
 MergeTree 엔진 테이블에서 백그라운드 머지와 뮤테이션을 수행하는 스레드 수를 설정합니다.
 
-<Note>
-  * 이 설정은 하위 호환성을 위해 ClickHouse 서버 시작 시 `default` 프로필 구성에서 적용할 수도 있습니다.
-  * 런타임에는 스레드 수를 늘릴 수만 있습니다.
-  * 스레드 수를 줄이려면 서버를 다시 시작해야 합니다.
-  * 이 설정을 조정하면 CPU 및 디스크 부하를 관리할 수 있습니다.
-</Note>
+:::note
 
-<Danger>
-  풀 크기가 작을수록 CPU 및 디스크 리소스 사용량은 줄어들지만, 백그라운드 프로세스의 진행 속도도 느려지므로 결국 쿼리 성능에 영향을 줄 수 있습니다.
-</Danger>
+* 이 설정은 이전 버전과의 호환성을 위해 ClickHouse 서버 시작 시 `default` 프로필 구성에서 적용할 수도 있습니다.
+* 런타임에는 스레드 수를 늘릴 수만 있습니다.
+* 스레드 수를 줄이려면 서버를 다시 시작해야 합니다.
+* 이 설정을 조정하면 CPU 및 디스크 부하를 관리할 수 있습니다.
+  :::
+
+:::danger
+풀 크기가 작을수록 CPU 및 디스크 리소스 사용량은 줄어들지만, 백그라운드 프로세스의 진행 속도도 느려지므로 결국 쿼리 성능에 영향을 줄 수 있습니다.
+:::
 
 변경하기 전에 다음과 같은 관련 MergeTree 설정도 함께 확인하십시오.
 
@@ -398,6 +409,12 @@ MergeTree 엔진 테이블에서 백그라운드 머지와 뮤테이션을 수�
 ```xml
 <background_pool_size>16</background_pool_size>
 ```
+
+<div id="background_schedule_pool_initial_size">
+  ## background_schedule_pool_initial_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />각 background schedule pool에 할당되는 초기 worker 스레드 수입니다. 각 풀은 현재 worker 수로 처리할 수 있는 수요를 초과하면, 구성된 상한(`background_schedule_pool_size` 및 관련 설정)까지 필요할 때만 점진적으로 확장됩니다. 값을 낮게 설정하면 시작 오버헤드와 유휴 스레드 수를 줄일 수 있고, 값을 높게 설정하면 사용량이 많은 서버에서 첫 작업의 스케줄링 지연 시간을 없앨 수 있습니다.
 
 <div id="background_schedule_pool_log">
   ## background_schedule_pool_log
@@ -430,7 +447,7 @@ MergeTree 엔진 테이블에서 백그라운드 머지와 뮤테이션을 수�
   ## background_schedule_pool_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="증가만 가능" />복제된 테이블, Kafka 스트리밍, DNS 캐시 업데이트를 위한 일부 경량 주기 작업을 지속적으로 실행하는 데 사용할 수 있는 최대 스레드 수입니다.
+<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="증가만 가능" />복제된 테이블, Kafka 스트리밍, DNS 캐시 업데이트 및 이와 유사한 작업을 위한 경량 주기 작업을 실행하는 데 사용되는 스레드 수의 상한입니다. 스레드는 필요할 때만 이 상한까지 생성되므로, 백그라운드 부하가 낮은 서버는 이 수보다 훨씬 적은 스레드만 사용합니다.
 
 <div id="backup_log">
   ## backup_log
@@ -530,9 +547,9 @@ MergeTree 엔진 테이블에서 백그라운드 머지와 뮤테이션을 수�
 
 Backups IO Thread pool에 예약할 수 있는 작업의 최대 개수입니다. 현재 S3 백업 로직으로 인해 이 큐는 무제한으로 유지하는 것이 좋습니다.
 
-<Note>
-  `0` 값(기본값)은 무제한을 의미합니다.
-</Note>
+:::note
+`0` 값(기본값)은 무제한을 의미합니다.
+:::
 
 <div id="bcrypt_workfactor">
   ## bcrypt_workfactor
@@ -676,6 +693,18 @@ cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오
 </compression>
 ```
 
+<div id="concurrent_threads_lazy_allocation">
+  ## concurrent_threads_lazy_allocation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
+
+CPU 슬롯이 쿼리에 할당되는 방식을 제어합니다.
+
+`true`(기본값)인 경우, 쿼리는 1개의 CPU 슬롯으로 시작하며, 파이프라인에서 실제로 더 많은 병렬 처리 가능한 작업이 발생할 때만 스케줄러에 추가 슬롯을 요청합니다. 이렇게 하면 쿼리가 최대 `max_threads`개의 슬롯을 예약해 놓고도 실제로는 그중 일부만 사용해, 동시에 실행 중인 다른 쿼리가 자원을 할당받지 못하는 상황을 방지할 수 있습니다. 이 설정은 동시성 제어와 워크로드용 선점형 CPU 스케줄러 모두에 적용됩니다.
+
+`false`인 경우, 쿼리는 시작 시점에 `max_threads` 슬롯 전체를 한 번에 요청합니다.
+
 <div id="concurrent_threads_scheduler">
   ## concurrent_threads_scheduler
 </div>
@@ -698,9 +727,9 @@ cgroup observer를 비활성화하려면 이 값을 `0`으로 설정하십시오
 
 원격 서버에서 데이터를 가져오는 스레드를 제외하고, 모든 쿼리를 실행하는 데 사용할 수 있는 쿼리 처리 스레드의 최대 개수입니다. 이는 하드 제한이 아닙니다. 제한에 도달하더라도 각 쿼리에는 실행을 위해 최소 1개의 스레드가 할당됩니다. 이후 더 많은 스레드를 사용할 수 있게 되면, 쿼리는 실행 중에 원하는 개수까지 스레드를 늘릴 수 있습니다.
 
-<Note>
-  `0` 값(기본값)은 무제한을 의미합니다.
-</Note>
+:::note
+`0` 값(기본값)은 무제한을 의미합니다.
+:::
 
 <div id="concurrent_threads_soft_limit_ratio_to_cores">
   ## concurrent_threads_soft_limit_ratio_to_cores
@@ -904,9 +933,9 @@ CPU 리소스(MASTER THREAD 및 WORKER THREAD)에 대한 워크로드 스케줄�
 `store/` 디렉터리의 불필요한 데이터를 정리하는 작업의 매개변수입니다.
 작업의 실행 주기를 설정합니다.
 
-<Note>
-  값이 `0`이면 &quot;수행 안 함&quot;을 의미합니다. 기본값은 1일에 해당합니다.
-</Note>
+:::note
+값이 `0`이면 &quot;수행 안 함&quot;을 의미합니다. 기본값은 1일에 해당합니다.
+:::
 
 <div id="database_catalog_unused_dir_hide_timeout_sec">
   ## database_catalog_unused_dir_hide_timeout_sec
@@ -920,9 +949,9 @@ CPU 리소스(MASTER THREAD 및 WORKER THREAD)에 대한 워크로드 스케줄�
 모든 접근 권한을 제거하여 해당 디렉터리를 &quot;숨깁니다&quot;. 이는 clickhouse-server가
 `store/` 내부에 있을 것으로 예상하지 않는 디렉터리에도 적용됩니다.
 
-<Note>
-  값이 `0`이면 &quot;즉시&quot;를 의미합니다.
-</Note>
+:::note
+값이 `0`이면 &quot;즉시&quot;를 의미합니다.
+:::
 
 <div id="database_catalog_unused_dir_rm_timeout_sec">
   ## database_catalog_unused_dir_rm_timeout_sec
@@ -938,9 +967,9 @@ CPU 리소스(MASTER THREAD 및 WORKER THREAD)에 대한 워크로드 스케줄�
 또한 `store/` 내부에 있지만 clickhouse-server가
 존재할 것으로 예상하지 않는 디렉터리에도 적용됩니다.
 
-<Note>
-  값이 `0`이면 &quot;절대 안 함&quot;을 의미합니다. 기본값은 30일입니다.
-</Note>
+:::note
+값이 `0`이면 &quot;절대 안 함&quot;을 의미합니다. 기본값은 30일입니다.
+:::
 
 <div id="database_replicated_allow_detach_permanently">
   ## database_replicated_allow_detach_permanently
@@ -1078,10 +1107,10 @@ ZooKeeper에 있는 테이블 경로입니다.
 * `true`이면 각 딕셔너리는 처음 사용할 때 로드됩니다. 로드에 실패하면 해당 딕셔너리를 사용하던 함수가 예외를 발생시킵니다.
 * `false`이면 서버가 시작 시 모든 딕셔너리를 로드합니다.
 
-<Note>
-  서버는 연결을 수락하기 전에 시작 시 모든 딕셔너리의 로딩이 완료될 때까지 대기합니다
-  (예외: [`wait_dictionaries_load_at_startup`](/ko/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup)가 `false`로 설정된 경우).
-</Note>
+:::note
+서버는 연결을 수락하기 전에 시작 시 모든 딕셔너리의 로딩이 완료될 때까지 대기합니다
+(예외: [`wait_dictionaries_load_at_startup`](/ko/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup)가 `false`로 설정된 경우).
+:::
 
 **예시**
 
@@ -1163,7 +1192,7 @@ IP 주소, 도메인, 서브도메인, 그리고 전체 우회를 위한 `'*'` �
   ## disk_connections_rcvbuf
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />디스크(S3, Azure, GCS) 연결의 SO&#95;RCVBUF 옵션 크기입니다. 0보다 큰 값으로 설정하면 수신 버퍼에 대한 커널 TCP 자동 튜닝을 덮어씁니다. 0 = 커널 기본값(자동 튜닝)입니다. 참고: 이 설정을 다시 0으로 변경하면 새로 생성되는 연결에 대해서만 자동 튜닝이 복원되며, 기존의 풀링된 연결은 다시 생성될 때까지 고정된 버퍼 크기를 유지합니다.
+<SettingsInfoBlock type="UInt64" default_value="204800" changeable_without_restart="Yes" />디스크(S3, Azure, GCS) 연결의 SO&#95;RCVBUF 옵션 크기입니다. 기본값은 204800(200 KB)입니다. 객체 스토리지는 동일 Region 내에서 액세스되며, 이 경우 대역폭-지연 곱이 100 KB보다 훨씬 낮으므로 작은 상한값만으로도 전체 처리량을 확보하면서, 그렇지 않으면 커널 자동 튜닝이 소켓당 할당할 수 MiB 크기의 버퍼를 피할 수 있습니다. 대신 수신 버퍼에 커널 TCP 자동 튜닝을 사용하려면 0으로 설정하십시오. 참고: 이 설정을 다시 0으로 변경하면 새로 생성되는 연결에 대해서만 자동 튜닝이 복원되며, 기존의 풀링된 연결은 다시 생성될 때까지 고정된 버퍼 크기를 유지합니다.
 
 <div id="disk_connections_sndbuf">
   ## disk_connections_sndbuf
@@ -1370,6 +1399,21 @@ DDL 쿼리 실행에 사용되는 profile
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />Distributed Cache 삭제에 사용되는 스레드 풀의 큐 크기입니다.
 
+<div id="dynamic_user_defined_executable_functions_path">
+  ## dynamic_user_defined_executable_functions_path
+</div>
+
+<SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="No" />
+
+드라이버가 동적으로 생성한 실행형 UDF의 설정 파일을 보관하는 디렉터리입니다(`CREATE FUNCTION ... ENGINE = DriverName(...)` 참조).
+server를 다시 시작하면 이 디렉터리에서 설정 파일을 검사하고, 드라이버를 다시 호출하지 않아도 해당 UDF를 로드합니다.
+
+**예시**
+
+```xml
+<dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+```
+
 <div id="enable_azure_sdk_logging">
   ## enable_azure_sdk_logging
 </div>
@@ -1531,9 +1575,9 @@ DDL 쿼리 실행에 사용되는 profile
 
 입력 파싱용 스레드 풀의 큐에 예약할 수 있는 최대 작업 수입니다.
 
-<Note>
-  값이 `0`이면 무제한을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 무제한을 의미합니다.
+:::
 
 <div id="format_schema_path">
   ## format_schema_path
@@ -1714,28 +1758,16 @@ HSTS의 만료 시간(초)입니다.
 새 http handler를 추가하려면 새 `<rule>`을 추가하면 됩니다.
 규칙은 정의된 순서대로 위에서 아래로 검사되며,
 가장 먼저 일치하는 규칙의 핸들러가 실행됩니다.
-일치 조건이 없는 규칙(`handler`만 있는 경우)은 모든 요청과 일치합니다. 규칙은 순서대로 검사되므로,
-이러한 규칙은 마지막에 배치하는 폴백으로만 유용합니다.
 
-다음 설정은 하위 태그로 구성할 수 있습니다(`handler`를 제외한 모든 하위 태그는 선택 사항):
+다음 설정은 하위 태그로 구성할 수 있습니다:
 
-| Sub-tags             | Definition                                                                                                                                                                    |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                | 요청 URL 경로와 일치시킵니다. 매칭할 때 쿼리 문자열은 무시됩니다                                                                                                                                        |
-| `url_prefix`         | 요청 URL 경로를 기준 경로와 일치시킵니다. 경로 자체 또는 경로 세그먼트 경계에서 그 하위의 모든 경로와 일치합니다(예: &#39;/api/v1&#39;은 /api/v1, /api/v1/ 및 /api/v1/write와 일치하지만 /api/v1beta와는 일치하지 않음). 매칭할 때 쿼리 문자열은 무시됩니다 |
-| `url_regexp`         | 요청 URL 경로를 정규식과 일치시킵니다. 매칭할 때 쿼리 문자열은 무시됩니다                                                                                                                                   |
-| `full_url`           | 전체 요청 URL `scheme://host:port/path`와 일치시킵니다. 매칭할 때 쿼리 문자열은 무시되며, host는 `Host` 헤더가 아니라 연결 IP 주소입니다                                                                         |
-| `full_url_prefix`    | 전체 요청 URL `scheme://host:port/path`를 기준 URL `scheme://host:port/base_path`와 경로 세그먼트 경계에서 일치시킵니다(`url_prefix` 참고). 매칭할 때 쿼리 문자열은 무시됩니다                                         |
-| `full_url_regexp`    | 전체 요청 URL `scheme://host:port/path`를 정규식과 일치시킵니다. 매칭할 때 쿼리 문자열은 무시됩니다                                                                                                         |
-| `methods`            | 요청 메서드와 일치시키려면 쉼표로 구분해 여러 메서드를 지정할 수 있습니다                                                                                                                                     |
-| `headers`            | 요청 헤더와 일치시키려면 각 하위 요소를 매칭합니다(하위 요소 이름은 헤더 이름임)                                                                                                                       |
-| `headers_regexp`     | `headers`와 같지만 각 하위 요소의 값은 정규식과 매칭됩니다                                                                                                                                         |
-| `empty_query_string` | URL에 쿼리 문자열이 없는지 확인합니다                                                                                                                                                        |
-| `handler`            | 요청 핸들러(필수)                                                                                                                                                                    |
-
-<Note>
-  `url_regexp`, `full_url_regexp`, `headers_regexp` 대신 `url`, `full_url`, `headers`에 `regex:` 접두사를 사용해 정규식을 작성할 수도 있습니다(예: `<url>regex:/api/.*</url>`). 이는 이전 버전과의 호환성을 위해 계속 지원되지만, 폐기된 방식입니다. 전용 `url_regexp`, `full_url_regexp`, `headers_regexp` 하위 태그를 사용하는 것이 좋습니다.
-</Note>
+| Sub-tags             | Definition                                                                                  |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| `url`                | 요청 URL과 일치시키려면 `regex:` 접두사를 사용해 정규식 매칭을 사용할 수 있습니다(선택 사항)                                  |
+| `methods`            | 요청 메서드와 일치시키려면 쉼표로 구분해 여러 메서드를 지정할 수 있습니다(선택 사항)                                            |
+| `headers`            | 요청 헤더와 일치시키려면 각 하위 요소를 매칭합니다(하위 요소 이름은 헤더 이름임). `regex:` 접두사를 사용해 정규식 매칭을 사용할 수 있습니다(선택 사항) |
+| `handler`            | 요청 핸들러                                                                                      |
+| `empty_query_string` | URL에 쿼리 문자열이 없는지 확인합니다                                                                      |
 
 `handler`에는 다음 설정이 포함되며, 하위 태그로 구성할 수 있습니다:
 
@@ -1744,10 +1776,10 @@ HSTS의 만료 시간(초)입니다.
 | `url`              | 리디렉션할 위치                                                                                                                        |
 | `type`             | 지원되는 타입: static, dynamic&#95;query&#95;handler, predefined&#95;query&#95;handler, redirect                                      |
 | `status`           | static 타입과 함께 사용하며, 응답 상태 코드를 지정합니다                                                                                             |
-| `query_param_name` | dynamic&#95;query&#95;handler 타입과 함께 사용하며, HTTP 요청 params에서 `<query_param_name>`에 해당하는 값을 추출해 실행합니다                             |
+| `query_param_name` | dynamic&#95;query&#95;handler 타입과 함께 사용하며, HTTP 요청 파라미터에서 `<query_param_name>`에 해당하는 값을 추출해 실행합니다                               |
 | `query`            | predefined&#95;query&#95;handler 타입과 함께 사용하며, 핸들러가 호출되면 쿼리를 실행합니다                                                               |
 | `content_type`     | static 타입과 함께 사용하며, 응답 content-type을 지정합니다                                                                                      |
-| `response_content` | static 타입과 함께 사용하며, 클라이언트로 전송할 응답 콘텐츠입니다. &#39;file://&#39; 또는 &#39;config://&#39; 접두사를 사용하는 경우 파일 또는 구성에서 콘텐츠를 찾아 클라이언트로 전송합니다 |
+| `response_content` | static 타입과 함께 사용하며, 클라이언트에 전송할 응답 콘텐츠입니다. &#39;file://&#39; 또는 &#39;config://&#39; 접두사를 사용하는 경우 파일 또는 구성에서 콘텐츠를 찾아 클라이언트에 전송합니다 |
 
 규칙 목록과 함께 `<defaults/>`를 지정하여 모든 기본 핸들러를 활성화할 수도 있습니다.
 
@@ -1908,9 +1940,9 @@ ClickHouse HTTP(s) 서버에 접근할 때 기본으로 표시되는 페이지�
 
 값이 true이면 ClickHouse는 `CREATE VIEW` 쿼리에서 비어 있는 SQL security 문에 기본값을 기록하지 않습니다.
 
-<Note>
-  이 설정은 마이그레이션 기간에만 필요하며 24.4부터는 더 이상 사용되지 않습니다.
-</Note>
+:::note
+이 설정은 마이그레이션 기간에만 필요하며 24.4부터는 더 이상 사용되지 않습니다.
+:::
 
 <div id="include_from">
   ## include_from
@@ -1948,11 +1980,12 @@ ClickHouse HTTP(s) 서버에 접근할 때 기본으로 표시되는 페이지�
 
 인덱스 마크 캐시의 최대 크기입니다.
 
-<Note>
-  값이 `0`이면 비활성화됩니다.
+:::note
 
-  이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
-</Note>
+값이 `0`이면 비활성화됩니다.
+
+이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="index_mark_cache_size_ratio">
   ## index_mark_cache_size_ratio
@@ -1974,11 +2007,11 @@ ClickHouse HTTP(s) 서버에 접근할 때 기본으로 표시되는 페이지�
 
 `MergeTree` 인덱스의 비압축 블록에 대한 캐시의 최대 크기입니다.
 
-<Note>
-  값이 `0`이면 비활성화된 상태를 의미합니다.
+:::note
+값이 `0`이면 비활성화된 상태를 의미합니다.
 
-  이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
-</Note>
+이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="index_uncompressed_cache_size_ratio">
   ## index_uncompressed_cache_size_ratio
@@ -1990,15 +2023,19 @@ ClickHouse HTTP(s) 서버에 접근할 때 기본으로 표시되는 페이지�
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="compatible_double_hashes" changeable_without_restart="No" />
+<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="new_unified_hash" changeable_without_restart="No" />
 
 이 설정을 사용하면 sync 및 async 삽입에 대해 서로 완전히 다르고 호환되지 않는 방식으로 중복 제거를 수행하는 코드 버전에서, 삽입된 데이터가 sync 및 async 삽입 전체에 걸쳐 중복 제거되는 코드 버전으로 마이그레이션할 수 있습니다.
 값 `old_separate_hashes`는 ClickHouse가 sync 및 async 삽입에 서로 다른 중복 제거 해시를 사용한다는 의미입니다(이전과 동일).
-마이그레이션을 시작할 계획이 없다면 이 값을 기본값으로 사용해야 합니다.
+이 값은 의도적으로 마이그레이션을 시작하지 않은 인스턴스에서 마이그레이션 이전의 레거시 동작을 유지하며, 더 이상 권장 기본값은 아닙니다.
 값 `compatible_double_hashes`는 ClickHouse가 두 개의 중복 제거 해시를 사용한다는 의미입니다. 하나는 sync 또는 async 삽입에 대한 기존 해시이고, 다른 하나는 모든 삽입에 대한 새 해시입니다. 이 값은 기존 인스턴스를 새 동작으로 안전하게 마이그레이션할 때 사용해야 합니다.
 마이그레이션 중 sync 또는 async 삽입이 손실되지 않도록 하려면 이 값을 일정 기간 활성화해야 합니다(`replicated_deduplication_window` 및 `non_replicated_deduplication_window` 설정 참조).
 마지막으로 값 `new_unified_hash`는 ClickHouse가 sync 및 async 삽입에 새 중복 제거 해시를 사용한다는 의미입니다. 이 값은 새 ClickHouse 인스턴스나, 이미 한동안 `compatible_double_hashes` 값을 사용해 온 인스턴스에서 활성화할 수 있습니다.
-안전하게 2단계에 걸쳐 마이그레이션을 완료하기 위해 기본값은 먼저 `compatible_double_hashes`로 설정되고, 이후 향후 ClickHouse 버전에서 `new_unified_hash`로 변경될 예정입니다.
+`new_unified_hash`에서는 중복 제거 해시가 삽입된 전체 block을 기준으로 계산되므로, 삽입은 개별 파티션별로가 아니라 전체 데이터가 이전 삽입(재시도)과 완전히 일치할 때만 중복 제거됩니다.
+`new_unified_hash`에서는 async 삽입도 통합 해시를 사용하며 sync 중복 제거 윈도우(`replicated_deduplication_window` / `replicated_deduplication_window_seconds`)를 공유합니다. `*_for_async_inserts` 윈도우 설정은 레거시 `old_separate_hashes` / `compatible_double_hashes` 경로에만 적용됩니다.
+기본값은 마이그레이션의 한 단계 동안 `compatible_double_hashes`였으며, 이제는 `new_unified_hash`입니다. 이를 통해 2단계에 걸쳐 안전하게 마이그레이션이 완료됩니다.
+`old_separate_hashes`에서 직접 업그레이드한 인스턴스는 통합 해시를 사용하기 전에 가장 긴 관련 중복 제거 윈도우가 경과할 때까지 `compatible_double_hashes`로 실행해야 합니다(sync 윈도우 `replicated_deduplication_window` / `replicated_deduplication_window_seconds`, async 삽입을 사용하는 경우 기본값이 1주인 async 윈도우 `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts`, 그리고 `non_replicated_deduplication_window`). 그렇지 않으면 이전 `blocks` / `async_blocks` 디렉터리에 여전히 보관된 업그레이드 전 id를 통합 해시가 인식하지 못해, 해당 재시도가 새 삽입으로 받아들여지면서 중복이 발생할 수 있습니다.
+Async 삽입은 `new_unified_hash`로 전환할 때 한 가지 주의사항이 있습니다. `compatible_double_hashes`에서는 중복 제거가 사실상 async 윈도우 전체에 걸쳐 적용되지만(`async_blocks` id가 그 기간 동안 유지됨), `new_unified_hash`는 `deduplication_hashes`만 조회합니다(sync 윈도우 동안 유지됨). 따라서 sync 윈도우보다 오래된 async 삽입은 충분히 기다린 뒤에도 전환 후 다시 받아들여질 수 있습니다. async 워크로드를 전환하기 전에 `replicated_deduplication_window` / `replicated_deduplication_window_seconds`를 async 윈도우 길이까지 늘린 뒤 전체 async 윈도우 동안 해당 상태로 실행하거나, async 윈도우 동안 async 삽입을 중지하거나, `compatible_double_hashes`를 계속 유지하십시오.
 
 <div id="interserver_http_credentials">
   ## interserver_http_credentials
@@ -2141,9 +2178,9 @@ Keeper를 사용하는 경우 동일한 제한이 서로 다른 Keeper 인스턴
 
 IO 스레드 풀에 스케줄링할 수 있는 작업의 최대 개수입니다.
 
-<Note>
-  `0`은 무제한을 의미합니다.
-</Note>
+:::note
+`0`은 무제한을 의미합니다.
+:::
 
 <div id="jemalloc_collect_global_profile_samples_in_trace_log">
   ## jemalloc_collect_global_profile_samples_in_trace_log
@@ -2206,12 +2243,12 @@ jemalloc의 `lg_prof_sample`을 제어합니다. 이는 할당 샘플 간 평균
 
 <SettingsInfoBlock type="Seconds" default_value="30" changeable_without_restart="No" />
 
-ClickHouse가 연결을 닫기 전에 HTTP protocol을 통한 들어오는 요청을 기다리는 시간(초)입니다.
+ClickHouse가 연결을 닫기 전에 HTTP 프로토콜을 통한 들어오는 요청을 기다리는 시간(초)입니다.
 
 **예시**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>30</keep_alive_timeout>
 ```
 
 <div id="keeper_hosts">
@@ -2431,7 +2468,7 @@ ClickHouse Enterprise Edition 라이선스 파일 내용
 
 `log` 및 `errorLog` 경로의 파일 이름은 생성되는 파일 이름에 대해 아래 포맷 지정자를 지원합니다(디렉터리 부분에서는 지원되지 않습니다).
 
-「예시」 컬럼은 `2023-07-06 18:32:07` 시점의 출력을 보여줍니다.
+「예시」 컬럼은 `2023-07-06 18:32:07` 시점의 출력을 보여줍니다。
 
 | 지정자  | 설명                                                                                                                         | 예시                         |
 | ---- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -2725,9 +2762,9 @@ JSON 로깅 지원을 활성화하려면 다음 스니펫을 사용하십시오:
 
 마크([`MergeTree`](/ko/reference/engines/table-engines/mergetree-family/index) 계열 테이블의 인덱스) 캐시의 최대 크기입니다.
 
-<Note>
-  이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
-</Note>
+:::note
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="mark_cache_size_ratio">
   ## mark_cache_size_ratio
@@ -2751,9 +2788,9 @@ JSON 로깅 지원을 활성화하려면 다음 스니펫을 사용하십시오:
 이 설정을 변경해도 기존 사용자에게는 영향을 주지 않습니다. 인증 관련 생성/변경 쿼리가 이 설정에 지정된 한도를 초과하면 실패합니다.
 인증과 무관한 생성/변경 쿼리는 성공합니다.
 
-<Note>
-  값이 `0`이면 무제한을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 무제한을 의미합니다.
+:::
 
 <div id="max_backup_bandwidth_for_server">
   ## max_backup_bandwidth_for_server
@@ -2781,9 +2818,9 @@ JSON 로깅 지원을 활성화하려면 다음 스니펫을 사용하십시오:
 
 벡터 인덱스를 빌드할 때 사용할 수 있는 최대 스레드 수입니다.
 
-<Note>
-  값이 `0`이면 모든 코어를 사용합니다.
-</Note>
+:::note
+값이 `0`이면 모든 코어를 사용합니다.
+:::
 
 <div id="max_concurrent_insert_queries">
   ## max_concurrent_insert_queries
@@ -2793,11 +2830,12 @@ JSON 로깅 지원을 활성화하려면 다음 스니펫을 사용하십시오:
 
 동시에 실행할 수 있는 삽입 쿼리의 총수를 제한합니다.
 
-<Note>
-  값이 `0`(기본값)이면 제한이 없습니다.
+:::note
 
-  이 설정은 런타임에 수정할 수 있으며, 변경 사항은 즉시 적용됩니다. 이미 실행 중인 쿼리에는 영향을 주지 않습니다.
-</Note>
+값이 `0`(기본값)이면 제한이 없습니다.
+
+이 설정은 런타임에 수정할 수 있으며, 변경 사항은 즉시 적용됩니다. 이미 실행 중인 쿼리에는 영향을 주지 않습니다.
+:::
 
 <div id="max_concurrent_queries">
   ## max_concurrent_queries
@@ -2813,11 +2851,12 @@ JSON 로깅 지원을 활성화하려면 다음 스니펫을 사용하십시오:
 * [`max_concurrent_select_queries`](/ko/reference/settings/server-settings/settings#max_concurrent_select_queries)
 * [`max_concurrent_queries_for_all_users`](/ko/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-<Note>
-  값 `0`(기본값)은 제한이 없음을 의미합니다.
+:::note
 
-  이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다. 이미 실행 중인 쿼리는 변경되지 않습니다.
-</Note>
+값 `0`(기본값)은 제한이 없음을 의미합니다.
+
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다. 이미 실행 중인 쿼리는 변경되지 않습니다.
+:::
 
 <div id="max_concurrent_select_queries">
   ## max_concurrent_select_queries
@@ -2827,11 +2866,12 @@ JSON 로깅 지원을 활성화하려면 다음 스니펫을 사용하십시오:
 
 동시에 실행할 수 있는 select 쿼리의 총 개수를 제한합니다.
 
-<Note>
-  값이 `0`(기본값)이면 제한이 없습니다.
+:::note
 
-  이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다. 이미 실행 중인 쿼리에는 영향을 주지 않습니다.
-</Note>
+값이 `0`(기본값)이면 제한이 없습니다.
+
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다. 이미 실행 중인 쿼리에는 영향을 주지 않습니다.
+:::
 
 <div id="max_connections">
   ## max_connections
@@ -2880,9 +2920,9 @@ attached 상태인 데이터베이스 수가 지정된 값을 초과하면, Clic
 * Replicated
 * Lazy
 
-<Note>
-  값이 `0`이면 제한이 없다는 뜻입니다.
-</Note>
+:::note
+값이 `0`이면 제한이 없다는 뜻입니다.
+:::
 
 **예시**
 
@@ -2950,6 +2990,17 @@ attached 상태인 딕셔너리의 개수가 지정된 값을 초과하면, Clic
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />동시에 유지할 수 있는 경량 스냅샷의 최대 개수입니다. 0은 무제한을 의미합니다. 스냅샷 수가 이 한도에 도달한 상태에서 새 스냅샷을 생성하려고 하면 예외가 발생합니다.
 
+<div id="max_http_index_page_size">
+  ## max_http_index_page_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
+
+HTTP를 통한 디렉터리 목록 조회에 사용되는 HTTP 인덱스 페이지 응답의 최대 크기입니다.
+응답이 이 한도를 초과하면 쿼리가 오류와 함께 실패합니다.
+
+기본값: `10485760` (10 MiB).
+
 <div id="max_io_thread_pool_free_size">
   ## max_io_thread_pool_free_size
 </div>
@@ -2988,9 +3039,9 @@ ClickHouse 서버가 단일 keep-alive connection을 종료하기 전까지, 해
 
 로컬 읽기의 최대 속도를 초당 바이트 수로 지정합니다.
 
-<Note>
-  값이 `0`이면 제한이 없음을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 제한이 없음을 의미합니다.
+:::
 
 <div id="max_local_write_bandwidth_for_server">
   ## max_local_write_bandwidth_for_server
@@ -3000,9 +3051,9 @@ ClickHouse 서버가 단일 keep-alive connection을 종료하기 전까지, 해
 
 로컬 쓰기의 최대 속도를 초당 바이트 수로 나타냅니다.
 
-<Note>
-  값이 `0`이면 제한이 없음을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 제한이 없음을 의미합니다.
+:::
 
 <div id="max_materialized_views_count_for_table">
   ## max_materialized_views_count_for_table
@@ -3012,9 +3063,9 @@ ClickHouse 서버가 단일 keep-alive connection을 종료하기 전까지, 해
 
 테이블에 연결된 materialized view의 수를 제한합니다.
 
-<Note>
-  여기서는 직접 종속된 뷰만 고려하며, 한 뷰를 기반으로 다른 뷰를 생성하는 경우는 고려하지 않습니다.
-</Note>
+:::note
+여기서는 직접 종속된 뷰만 고려하며, 한 뷰를 기반으로 다른 뷰를 생성하는 경우는 고려하지 않습니다.
+:::
 
 <div id="max_merges_bandwidth_for_server">
   ## max_merges_bandwidth_for_server
@@ -3036,9 +3087,9 @@ ClickHouse 서버가 단일 keep-alive connection을 종료하기 전까지, 해
 
 이 값보다 이름이 지정된 컬렉션 수가 많으면 서버가 예외를 발생시킵니다.
 
-<Note>
-  값이 `0`이면 제한이 없음을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 제한이 없음을 의미합니다.
+:::
 
 **예시**
 
@@ -3068,9 +3119,9 @@ ClickHouse 서버가 단일 keep-alive connection을 종료하기 전까지, 해
 
 열어 둘 수 있는 파일의 최대 개수입니다.
 
-<Note>
-  macOS에서는 getrlimit() 함수가 잘못된 값을 반환하므로 이 옵션을 사용하는 것이 좋습니다.
-</Note>
+:::note
+macOS에서는 getrlimit() 함수가 잘못된 값을 반환하므로 이 옵션을 사용하는 것이 좋습니다.
+:::
 
 <div id="max_os_cpu_wait_time_ratio_to_drop_connection">
   ## max_os_cpu_wait_time_ratio_to_drop_connection
@@ -3112,11 +3163,11 @@ ClickHouse 서버가 단일 keep-alive connection을 종료하기 전까지, 해
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 크기가 [`max_partition_size_to_drop`](#max_partition_size_to_drop) 값을 초과하면(바이트 기준), [DROP PARTITION](/ko/reference/statements/alter/partition#drop-partitionpart) 쿼리로 파티션을 삭제할 수 없습니다.
 이 설정은 적용을 위해 ClickHouse 서버를 재시작할 필요가 없습니다. 이 제한을 비활성화하는 또 다른 방법은 `<clickhouse-path>/flags/force_drop_table` 파일을 생성하는 것입니다.
 
-<Note>
-  값이 `0`이면 제한 없이 파티션을 삭제할 수 있습니다.
+:::note
+값이 `0`이면 제한 없이 파티션을 삭제할 수 있습니다.
 
-  이 제한은 테이블 삭제(drop table) 및 테이블 비우기(truncate table)에는 적용되지 않습니다. [max&#95;table&#95;size&#95;to&#95;drop](/ko/reference/settings/session-settings#max_table_size_to_drop)을 참조하십시오.
-</Note>
+이 제한은 테이블 삭제(drop table) 및 테이블 비우기(truncate table)에는 적용되지 않습니다. [max&#95;table&#95;size&#95;to&#95;drop](/ko/reference/settings/session-settings#max_table_size_to_drop)을 참조하십시오.
+:::
 
 **예시**
 
@@ -3158,6 +3209,14 @@ ClickHouse 서버가 단일 keep-alive connection을 종료하기 전까지, 해
 <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
 ```
 
+<div id="max_per_cpu_untracked_memory">
+  ## max_per_cpu_untracked_memory
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Yes" />
+
+한 CPU에서 실행 중인 모든 스레드가 메모리 트래커로 플러시되기 전에 동시에 보유할 수 있는 미추적 메모리의 상한을 바이트 단위로 지정합니다. `max_untracked_memory`가 단일 스레드의 상한을 제한하는 반면, 이 설정은 CPU별 총량의 상한을 제한하므로 많은 스레드가 스레드별 허용량을 합쳐 server 전체에서 큰 오버커밋을 일으키지 못하게 합니다. 따라서 미추적 메모리의 총량은 대략 `number_of_cpus * max_per_cpu_untracked_memory`로 제한됩니다. 값이 `0`이면 CPU별 상한이 비활성화되며(스레드별 `max_untracked_memory`만 적용됨), Linux에서만 사용할 수 있습니다.
+
 <div id="max_prefixes_deserialization_thread_pool_free_size">
   ## max_prefixes_deserialization_thread_pool_free_size
 </div>
@@ -3182,9 +3241,9 @@ ClickHouse는 MergeTree의 Wide 파트에서 파일 프리픽스의 컬럼 및 �
 
 읽기 시 네트워크를 통한 데이터 전송의 초당 최대 바이트 수입니다.
 
-<Note>
-  값이 `0`(기본값)이면 제한이 없음을 의미합니다.
-</Note>
+:::note
+값이 `0`(기본값)이면 제한이 없음을 의미합니다.
+:::
 
 <div id="max_remote_write_network_bandwidth_for_server">
   ## max_remote_write_network_bandwidth_for_server
@@ -3194,9 +3253,9 @@ ClickHouse는 MergeTree의 Wide 파트에서 파일 프리픽스의 컬럼 및 �
 
 쓰기 작업 시 네트워크를 통한 데이터 전송의 초당 최대 속도(바이트)입니다.
 
-<Note>
-  값이 `0`(기본값)이면 제한이 없음을 의미합니다.
-</Note>
+:::note
+값이 `0`(기본값)이면 제한이 없음을 의미합니다.
+:::
 
 <div id="max_replicated_fetches_network_bandwidth_for_server">
   ## max_replicated_fetches_network_bandwidth_for_server
@@ -3225,9 +3284,9 @@ ClickHouse는 MergeTree의 Wide 파트에서 파일 프리픽스의 컬럼 및 �
 * Replicated
 * Lazy
 
-<Note>
-  값이 `0`이면 제한이 없다는 뜻입니다.
-</Note>
+:::note
+값이 `0`이면 제한이 없다는 뜻입니다.
+:::
 
 **예시**
 
@@ -3243,9 +3302,9 @@ ClickHouse는 MergeTree의 Wide 파트에서 파일 프리픽스의 컬럼 및 �
 
 서버가 사용할 수 있는 메모리의 최대량으로, 바이트 단위로 지정됩니다.
 
-<Note>
-  서버의 최대 메모리 사용량은 `max_server_memory_usage_to_ram_ratio` 설정에 의해 추가로 제한됩니다.
-</Note>
+:::note
+서버의 최대 메모리 사용량은 `max_server_memory_usage_to_ram_ratio` 설정에 의해 추가로 제한됩니다.
+:::
 
 특수한 경우로, 값이 `0`(기본값)이면 서버는 사용 가능한 모든 메모리를 사용할 수 있습니다(`max_server_memory_usage_to_ram_ratio`에 의해 적용되는 추가 제한 제외).
 
@@ -3269,9 +3328,9 @@ RAM과 스왑이 부족한 호스트에서는 [`max_server_memory_usage_to_ram_r
 
 비율을 `0`으로 설정하면 시작 시 제한과 런타임 조정이 모두 비활성화됩니다. 런타임 조정은 Linux가 아닌 시스템과 이 설정을 노출하지 않는 `clickhouse-keeper`에서는 적용되지 않습니다. 정적인 시작/다시 로드 제한은 유지하면서 런타임 조정만 비활성화하려면(이전 버전의 동작) `memory_worker_dynamic_hard_limit`을 `0`으로 설정하십시오.
 
-<Note>
-  서버의 최대 메모리 사용량은 `max_server_memory_usage` 설정에 의해 추가로 제한됩니다.
-</Note>
+:::note
+서버의 최대 메모리 사용량은 `max_server_memory_usage` 설정에 의해 추가로 제한됩니다.
+:::
 
 <div id="max_session_timeout">
   ## max_session_timeout
@@ -3319,9 +3378,9 @@ RAM과 스왑이 부족한 호스트에서는 [`max_server_memory_usage_to_ram_r
 * Replicated
 * Lazy
 
-<Note>
-  값이 `0`이면 제한이 없음을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 제한이 없음을 의미합니다.
+:::
 
 **예시**
 
@@ -3353,11 +3412,11 @@ attached 상태인 테이블 수가 지정된 값을 초과하면, ClickHouse �
 
 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블의 크기가 `max_table_size_to_drop`(바이트 단위)를 초과하면 [`DROP`](/ko/reference/statements/drop) 쿼리 또는 [`TRUNCATE`](/ko/reference/statements/truncate) 쿼리로 삭제할 수 없습니다.
 
-<Note>
-  값이 `0`이면 아무 제한 없이 모든 테이블을 삭제할 수 있습니다.
+:::note
+값이 `0`이면 아무 제한 없이 모든 테이블을 삭제할 수 있습니다.
 
-  이 설정은 적용하는 데 ClickHouse 서버 재시작이 필요하지 않습니다. 이 제한을 비활성화하는 또 다른 방법은 `<clickhouse-path>/flags/force_drop_table` 파일을 생성하는 것입니다.
-</Note>
+이 설정은 적용하는 데 ClickHouse 서버 재시작이 필요하지 않습니다. 이 제한을 비활성화하는 또 다른 방법은 `<clickhouse-path>/flags/force_drop_table` 파일을 생성하는 것입니다.
+:::
 
 **예시**
 
@@ -3374,9 +3433,9 @@ attached 상태인 테이블 수가 지정된 값을 초과하면, ClickHouse �
 외부 집계, 조인 또는 정렬에 사용할 수 있는 최대 저장 공간입니다.
 이 한도를 초과하는 쿼리는 예외가 발생하며 실패합니다.
 
-<Note>
-  값이 `0`이면 무제한을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 무제한을 의미합니다.
+:::
 
 관련 항목:
 
@@ -3432,9 +3491,9 @@ ClickHouse는 쿼리를 처리할 때 Global Thread 풀의 스레드를 사용�
 * Replicated
 * Lazy
 
-<Note>
-  값이 `0`이면 제한이 없음을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 제한이 없음을 의미합니다.
+:::
 
 **예시**
 
@@ -3465,23 +3524,24 @@ attached 상태인 뷰 수가 지정된 값을 초과하면 ClickHouse 서버가
 동시에 대기할 수 있는 전체 쿼리 수의 상한입니다.
 필요한 테이블이 비동기적으로 로드되는 동안에는 대기 중인 쿼리의 실행이 차단됩니다([`async_load_databases`](/ko/reference/settings/server-settings/settings#async_load_databases) 참조).
 
-<Note>
-  다음 설정으로 제어되는 제한을 검사할 때는 대기 중인 쿼리가 집계되지 않습니다.
+:::note
+다음 설정으로 제어되는 제한을 검사할 때는 대기 중인 쿼리가 집계되지 않습니다.
 
-  * [`max_concurrent_queries`](/ko/reference/settings/server-settings/settings#max_concurrent_queries)
-  * [`max_concurrent_insert_queries`](/ko/reference/settings/server-settings/settings#max_concurrent_insert_queries)
-  * [`max_concurrent_select_queries`](/ko/reference/settings/server-settings/settings#max_concurrent_select_queries)
-  * [`max_concurrent_queries_for_user`](/ko/reference/settings/session-settings#max_concurrent_queries_for_user)
-  * [`max_concurrent_queries_for_all_users`](/ko/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+* [`max_concurrent_queries`](/ko/reference/settings/server-settings/settings#max_concurrent_queries)
+* [`max_concurrent_insert_queries`](/ko/reference/settings/server-settings/settings#max_concurrent_insert_queries)
+* [`max_concurrent_select_queries`](/ko/reference/settings/server-settings/settings#max_concurrent_select_queries)
+* [`max_concurrent_queries_for_user`](/ko/reference/settings/session-settings#max_concurrent_queries_for_user)
+* [`max_concurrent_queries_for_all_users`](/ko/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-  이 보정은 server 시작 직후 이러한 제한에 도달하는 일을 방지하기 위해 수행됩니다.
-</Note>
+이 보정은 server 시작 직후 이러한 제한에 도달하는 일을 방지하기 위해 수행됩니다.
+:::
 
-<Note>
-  `0` 값(기본값)은 무제한을 의미합니다.
+:::note
 
-  이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다. 이미 실행 중인 쿼리에는 영향을 주지 않습니다.
-</Note>
+`0` 값(기본값)은 무제한을 의미합니다.
+
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다. 이미 실행 중인 쿼리에는 영향을 주지 않습니다.
+:::
 
 <div id="max_zookeeper_pooled_connections">
   ## max_zookeeper_pooled_connections
@@ -3545,6 +3605,28 @@ ClickHouse 서버에서 사용 가능한 메모리 대비 jemalloc 더티 페이
 
 ClickHouse 서버에서 사용할 수 있는 메모리를 기준으로 jemalloc을 정리하는 임계값 비율입니다. 전체 메모리 사용량이 이 비율을 초과하면 백그라운드 메모리 워커가 더티 페이지 정리를 강제로 수행합니다. 0으로 설정하면 전체 메모리를 기준으로 한 강제 정리가 비활성화됩니다.
 
+<div id="memory_worker_rss_speculative_reserve_ratio">
+  ## memory_worker_rss_speculative_reserve_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
+
+각 `MemoryWorker` 틱마다 관측된 RSS에
+`ratio * min(resident - previous_resident, resident - tracked)`를 추가로 예약합니다.
+이는 다음 틱에서도 직전과 같은 양만큼 증가할 수 있다고 가정하기 때문입니다
+(`resident - previous_resident`는 지난 틱 동안의 RSS 증가량입니다).
+이 증가량의 상한은 `resident - tracked`이며, 이는 전역 메모리 추적기에
+포착되지 않는 RSS 부분입니다. 이미 추적 중인 증가분은 일반적인 하드 제한 검사에서
+처리되기 때문입니다. 이 예약은 전역 하드 제한 검사가
+`MemoryTracker::allocImpl`을 통해 참조하는 `rss` 카운터에 적용되므로,
+외삽된 값이 `max_server_memory_usage`를 넘으면 이후 할당은 커널 OOM-killer가
+작동하기 전에 `MEMORY_LIMIT_EXCEEDED`를 발생시킵니다. 값이 `0`이면
+speculation이 비활성화되어 (`rss = resident`로 돌아감), 기본값 `1`은
+다음 인터벌을 위해 전체 증가 delta에 해당하는 여유 용량을 예약합니다. 새니타이저
+환경(`ASan`, `UBSan`, `MSan`, `TSan`)에서는 기본값이 `0`인데, 이는
+`resident - tracked` 간극이 tracker의 bookkeeping 지연보다 새니타이저의 shadow /
+런타임 오버헤드의 영향을 더 크게 받기 때문입니다.
+
 <div id="memory_worker_use_cgroup">
   ## memory_worker_use_cgroup
 </div>
@@ -3588,9 +3670,9 @@ ClickHouse 서버에서 사용할 수 있는 메모리를 기준으로 jemalloc�
 머지 및 뮤테이션 작업 수행에 사용할 수 있는 RAM 한도를 설정합니다.
 ClickHouse가 설정된 한도에 도달하면 새로운 백그라운드 머지 또는 뮤테이션 작업을 더 이상 스케줄링하지 않지만, 이미 스케줄링된 작업은 계속 실행합니다.
 
-<Note>
-  값이 `0`이면 제한이 없음을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 제한이 없음을 의미합니다.
+:::
 
 **예시**
 
@@ -3685,9 +3767,9 @@ ClickHouse 자체의 대형 버퍼(컬럼 데이터, 해시 테이블, 아레나
 
 시작 후 `<mlockall>`을 수행하여 초기 쿼리의 지연 시간을 줄이고, 높은 IO 부하 시 ClickHouse 실행 파일이 페이징 아웃되지 않도록 합니다.
 
-<Note>
-  이 옵션을 활성화하는 것을 권장하지만, 시작 시간이 몇 초 정도 늘어날 수 있습니다. 또한 이 설정은 &quot;CAP&#95;IPC&#95;LOCK&quot; capability가 없으면 작동하지 않습니다.
-</Note>
+:::note
+이 옵션을 활성화하는 것을 권장하지만, 시작 시간이 몇 초 정도 늘어날 수 있습니다. 또한 이 설정은 &quot;CAP&#95;IPC&#95;LOCK&quot; capability가 없으면 작동하지 않습니다.
+:::
 
 **예시**
 
@@ -3714,11 +3796,11 @@ ClickHouse 자체의 대형 버퍼(컬럼 데이터, 해시 테이블, 아레나
 * [`system.metrics`](/ko/reference/system-tables/metrics), [`system.metric_log`](/ko/reference/system-tables/metric_log)의 `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells`
 * [`system.events`](/ko/reference/system-tables/events), [`system.processes`](/ko/reference/system-tables/processes), [`system.query_log`](/ko/reference/system-tables/query_log), [`system.query_thread_log`](/ko/reference/system-tables/query_thread_log), [`system.query_views_log`](/ko/reference/system-tables/query_views_log)의 `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses`
 
-<Note>
-  매핑된 파일의 데이터 양은 메모리를 직접 소비하지 않으며, 쿼리 또는 서버 메모리 사용량에도 포함되지 않습니다. 이는 이 메모리가 OS 페이지 캐시와 유사하게 폐기될 수 있기 때문입니다. 캐시는 MergeTree 엔진 계열 테이블에서 오래된 파트가 제거될 때 자동으로 제거되며(파일이 닫힘), `SYSTEM DROP MMAP CACHE` 쿼리로 수동으로 제거할 수도 있습니다.
+:::note
+매핑된 파일의 데이터 양은 메모리를 직접 소비하지 않으며, 쿼리 또는 서버 메모리 사용량에도 포함되지 않습니다. 이는 이 메모리가 OS 페이지 캐시와 유사하게 폐기될 수 있기 때문입니다. 캐시는 MergeTree 엔진 계열 테이블에서 오래된 파트가 제거될 때 자동으로 제거되며(파일이 닫힘), `SYSTEM DROP MMAP CACHE` 쿼리로 수동으로 제거할 수도 있습니다.
 
-  이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
-</Note>
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="mutation_workload">
   ## mutation_workload
@@ -4315,15 +4397,37 @@ shared merge tree parts killer 스레드를 정리하는 데 사용하는 스레
 
 데이터가 저장된 디렉터리의 경로입니다.
 
-<Note>
-  마지막 슬래시는 반드시 포함해야 합니다.
-</Note>
+:::note
+마지막 슬래시는 반드시 포함해야 합니다.
+:::
 
 **예시**
 
 ```xml
 <path>/var/lib/clickhouse/</path>
 ```
+
+<div id="per_cpu_untracked_memory_thread_buffer">
+  ## per_cpu_untracked_memory_thread_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
+
+각 스레드가 공유 per-CPU 예산을 건드리지 않고 보유할 수 있는 추적되지 않은 메모리의 양(바이트)입니다. 이는 작은 allocations에서 per-CPU bookkeeping 비용을 분산해 주며, 최악의 경우 `max_per_cpu_untracked_memory * number_of_cpus`에 추가로 더해지는 여유분입니다. 값이 `0`이면 이 여유분이 없어집니다. 즉, 모든 allocation이 공유 per-CPU counter를 업데이트합니다(가장 정확하지만 경합은 더 커집니다). Linux에서만 지원됩니다.
+
+<div id="point_in_polygon_cache_size">
+  ## point_in_polygon_cache_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
+
+상수 다각형 인수를 사용하는 `pointInPolygon` 함수에서 사용하는 전처리된 다각형 캐시의 최대 크기(바이트)입니다.
+한도를 초과한 항목은 가장 오래전에 사용된 순서대로 제거됩니다.
+이 값을 `0`으로 설정하면 캐시가 비활성화됩니다. 즉, 캐시된 모든 다각형이 제거되며, 이후 실행되는 모든 쿼리에서는 상수 다각형을 매번 새로 전처리합니다.
+이 한도 값을 변경하지 않아도 [`SYSTEM DROP POINT IN POLYGON CACHE`](/ko/reference/statements/system#drop-point-in-polygon-cache) 쿼리를 사용해 캐시를 수동으로 비울 수 있습니다.
+:::note
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="postgresql_port">
   ## postgresql_port
@@ -4368,9 +4472,9 @@ PostgreSQL 프로토콜을 통해 클라이언트와 통신할 때 사용하는 
 
 prefixes 역직렬화용 스레드 풀에 스케줄링할 수 있는 최대 작업 수입니다.
 
-<Note>
-  `0`은 무제한을 의미합니다.
-</Note>
+:::note
+`0`은 무제한을 의미합니다.
+:::
 
 <div id="prepare_system_log_tables_on_startup">
   ## prepare_system_log_tables_on_startup
@@ -4696,10 +4800,9 @@ ClickHouse는 요청 프로토콜에 대해 우선순위가 가장 높은 리졸
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 
 쿼리 조건 캐시의 최대 크기입니다.
-
-<Note>
-  이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
-</Note>
+:::note
+이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="query_condition_cache_size_ratio">
   ## query_condition_cache_size_ratio
@@ -4868,9 +4971,9 @@ ClickHouse는 요청 프로토콜에 대해 우선순위가 가장 높은 리졸
 
 huge page를 사용하여 머신 코드(&quot;text&quot;)용 메모리를 재할당할지 설정합니다.
 
-<Note>
-  이 기능은 아직 매우 실험적입니다.
-</Note>
+:::note
+이 기능은 아직 매우 실험적입니다.
+:::
 
 **예시**
 
@@ -5057,6 +5160,12 @@ ClickHouse 코어 개발팀에 크래시 보고서를 전송하기 위한 설정
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />true로 설정되면 스택 트레이스에 주소를 표시합니다
+
+<div id="show_license_expiration_warnings">
+  ## show_license_expiration_warnings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />system.warnings에 예정된 라이선스 만료 경고를 표시합니다
 
 <div id="shutdown_wait_backups_and_restores">
   ## shutdown_wait_backups_and_restores
@@ -5292,9 +5401,9 @@ Storage configuration은 다음과 같은 구조를 따릅니다:
 
 백그라운드 풀에서 비동기 로딩 작업을 수행하는 스레드 수를 설정합니다. 백그라운드 풀은 서버 시작 후 해당 테이블을 기다리는 쿼리가 없을 때 테이블을 비동기로 로딩하는 데 사용됩니다. 테이블이 많은 경우 백그라운드 풀의 스레드 수를 적게 유지하면 도움이 될 수 있습니다. 이렇게 하면 동시에 실행되는 쿼리를 위해 CPU 리소스를 확보할 수 있습니다.
 
-<Note>
-  값이 `0`이면 사용 가능한 모든 CPU가 사용됩니다.
-</Note>
+:::note
+값이 `0`이면 사용 가능한 모든 CPU가 사용됩니다.
+:::
 
 <div id="tables_loader_foreground_pool_size">
   ## tables_loader_foreground_pool_size
@@ -5302,11 +5411,11 @@ Storage configuration은 다음과 같은 구조를 따릅니다:
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
-포그라운드 풀에서 load job을 수행하는 thread 수를 설정합니다. 포그라운드 풀은 server가 포트 수신을 시작하기 전에 table을 동기적으로 loading할 때와, 대기 중인 table을 loading할 때 사용됩니다. 포그라운드 풀은 백그라운드 풀보다 우선순위가 높습니다. 즉, 포그라운드 풀에서 job이 실행 중인 동안에는 백그라운드 풀에서 어떤 job도 시작되지 않습니다.
+포그라운드 풀에서 load job을 수행하는 스레드 수를 설정합니다. 포그라운드 풀은 server가 포트 수신을 시작하기 전에 table을 동기적으로 loading할 때와, 대기 중인 table을 loading할 때 사용됩니다. 포그라운드 풀은 백그라운드 풀보다 우선순위가 높습니다. 즉, 포그라운드 풀에서 job이 실행 중인 동안에는 백그라운드 풀에서 어떤 job도 시작되지 않습니다.
 
-<Note>
-  `0` 값은 사용 가능한 모든 CPU를 사용한다는 의미입니다.
-</Note>
+:::note
+`0` 값은 사용 가능한 모든 CPU를 사용한다는 의미입니다.
+:::
 
 <div id="tcp_close_connection_after_queries_num">
   ## tcp_close_connection_after_queries_num
@@ -5362,17 +5471,17 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 
 이 옵션을 사용하면 임시 데이터가 해당 디스크의 캐시에 저장됩니다.
 이 섹션에서는 유형이 `cache`인 디스크 이름을 지정해야 합니다.
-이 경우 캐시와 임시 데이터가 동일한 공간을 공유하며, 임시 데이터를 만들기 위해 디스크 캐시가 제거될 수 있습니다.
+이 경우 캐시와 임시 데이터가 동일한 공간을 공유하며, 임시 데이터를 생성하기 위해 디스크 캐시가 제거될 수 있습니다.
 
-<Note>
-  임시 데이터 저장소를 구성하는 옵션으로는 `tmp_path`, `tmp_policy`, `temporary_data_in_cache` 중 하나만 사용할 수 있습니다.
-</Note>
+:::note
+임시 데이터 저장소를 구성하는 옵션으로는 `tmp_path`, `tmp_policy`, `temporary_data_in_cache` 중 하나만 사용할 수 있습니다.
+:::
 
 **예시**
 
-`local_disk`의 캐시와 임시 데이터는 모두 파일 시스템의 `/tiny_local_cache`에 저장되며, `tiny_local_cache`가 이를 관리합니다.
+`local_disk`의 캐시와 임시 데이터는 모두 `tiny_local_cache`가 관리하는 파일 시스템의 `/tiny_local_cache`에 저장됩니다.
 
-```xml highlight={9-16,20}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5381,6 +5490,7 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 <path>/local_disk/</path>
 </local_disk>
 
+<!-- highlight-start -->
 <tiny_local_cache>
 <type>cache</type>
 <disk>local_disk</disk>
@@ -5389,10 +5499,13 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 <max_file_segment_size>1M</max_file_segment_size>
 <cache_on_write_operations>1</cache_on_write_operations>
 </tiny_local_cache>
+<!-- highlight-end -->
 </disks>
 </storage_configuration>
 
+<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5418,11 +5531,11 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
   ## text_index_header_cache_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />텍스트 인덱스 header의 캐시 크기입니다. 0이면 비활성화됩니다.
+<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />텍스트 인덱스 헤더의 캐시 크기입니다. 0이면 비활성화됩니다.
 
-<Note>
-  이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
-</Note>
+:::note
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="text_index_header_cache_size_ratio">
   ## text_index_header_cache_size_ratio
@@ -5448,9 +5561,9 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />텍스트 인덱스 포스팅 리스트 캐시 크기입니다. 0은 비활성화를 의미합니다.
 
-<Note>
-  이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
-</Note>
+:::note
+이 설정은 런타임에 변경할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="text_index_postings_cache_size_ratio">
   ## text_index_postings_cache_size_ratio
@@ -5474,11 +5587,11 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
   ## text_index_tokens_cache_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />텍스트 인덱스 tokens용 캐시 크기입니다. 0이면 비활성화됩니다.
+<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />텍스트 인덱스 토큰용 캐시 크기입니다. 0이면 비활성화됩니다.
 
-<Note>
-  이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
-</Note>
+:::note
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="text_index_tokens_cache_size_ratio">
   ## text_index_tokens_cache_size_ratio
@@ -5527,9 +5640,9 @@ PTY를 통해 내장 클라이언트를 사용해 대화형으로 연결하고 �
 
 Global Thread 풀에서 스케줄링할 수 있는 작업의 최대 개수입니다. 큐 크기를 늘리면 메모리 사용량이 증가합니다. 이 값은 [`max_thread_pool_size`](/ko/reference/settings/server-settings/settings#max_thread_pool_size)와 같게 유지하는 것이 좋습니다.
 
-<Note>
-  값이 `0`이면 무제한을 의미합니다.
-</Note>
+:::note
+값이 `0`이면 무제한을 의미합니다.
+:::
 
 **예시**
 
@@ -5622,10 +5735,11 @@ UTC 시간대 또는 지리적 위치를 나타내는 IANA 식별자(예: Africa
 
 대용량 쿼리 처리 시 임시 데이터를 저장하는 로컬 파일 시스템 경로입니다.
 
-<Note>
-  * 임시 데이터 저장소를 구성할 때는 tmp&#95;path, tmp&#95;policy, temporary&#95;data&#95;in&#95;cache 중 하나만 사용할 수 있습니다.
-  * 끝의 슬래시는 반드시 포함해야 합니다.
-</Note>
+:::note
+
+* 임시 데이터 저장소를 구성할 때는 tmp&#95;path, tmp&#95;policy, temporary&#95;data&#95;in&#95;cache 중 하나만 사용할 수 있습니다.
+* 끝의 슬래시는 반드시 포함해야 합니다.
+  :::
 
 **예시**
 
@@ -5639,27 +5753,28 @@ UTC 시간대 또는 지리적 위치를 나타내는 IANA 식별자(예: Africa
 
 임시 데이터를 저장하는 스토리지 정책입니다. `tmp` 접두사가 있는 모든 파일은 시작할 때 제거됩니다.
 
-<Note>
-  `tmp_policy`로 객체 스토리지를 사용할 때의 권장 사항:
+:::note
+`tmp_policy`로 객체 스토리지를 사용할 때의 권장 사항:
 
-  * 각 서버마다 별도의 `bucket:path`를 사용합니다
-  * `metadata_type=plain`을 사용합니다
-  * 이 버킷에 TTL을 설정하는 것도 좋습니다
-</Note>
+* 각 서버마다 별도의 `bucket:path`를 사용합니다
+* `metadata_type=plain`을 사용합니다
+* 이 버킷에 TTL을 설정하는 것도 좋습니다
+  :::
 
-<Note>
-  * 임시 데이터 스토리지를 구성하는 데 사용할 수 있는 옵션은 `tmp_path`, `tmp_policy`, `temporary_data_in_cache` 중 하나뿐입니다.
-  * `move_factor`, `keep_free_space_bytes`, `max_data_part_size_bytes`는 무시됩니다.
-  * 정책에는 정확히 *하나의 볼륨*만 있어야 합니다
+:::note
 
-  자세한 내용은 [MergeTree 테이블 엔진](/ko/reference/engines/table-engines/mergetree-family/mergetree) 문서를 참조하십시오.
-</Note>
+* 임시 데이터 스토리지를 구성하는 데 사용할 수 있는 옵션은 `tmp_path`, `tmp_policy`, `temporary_data_in_cache` 중 하나뿐입니다.
+* `move_factor`, `keep_free_space_bytes`, `max_data_part_size_bytes`는 무시됩니다.
+* 정책에는 정확히 *하나의 볼륨*만 있어야 합니다
+
+자세한 내용은 [MergeTree 테이블 엔진](/ko/reference/engines/table-engines/mergetree-family/mergetree) 문서를 참조하십시오.
+:::
 
 **예시**
 
 `/disk1`이 가득 차면 임시 데이터는 `/disk2`에 저장됩니다.
 
-```xml highlight={13-20,24}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5672,6 +5787,7 @@ UTC 시간대 또는 지리적 위치를 나타내는 IANA 식별자(예: Africa
 </disks>
 
 <policies>
+<!-- highlight-start -->
 <tmp_two_disks>
 <volumes>
 <main>
@@ -5680,10 +5796,13 @@ UTC 시간대 또는 지리적 위치를 나타내는 IANA 식별자(예: Africa
 </main>
 </volumes>
 </tmp_two_disks>
+<!-- highlight-end -->
 </policies>
 </storage_configuration>
 
+<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5793,17 +5912,35 @@ MergeTree 엔진 계열의 테이블 엔진에서 사용하는 비압축 데이�
 
 비압축 캐시는 매우 짧은 쿼리에서 경우에 따라 유용할 수 있습니다.
 
-<Note>
-  값이 `0`이면 비활성화된 상태를 의미합니다.
+:::note
+값이 `0`이면 비활성화된 상태를 의미합니다.
 
-  이 설정은 런타임에 수정할 수 있으며, 변경 사항은 즉시 적용됩니다.
-</Note>
+이 설정은 런타임에 수정할 수 있으며, 변경 사항은 즉시 적용됩니다.
+:::
 
 <div id="uncompressed_cache_size_ratio">
   ## uncompressed_cache_size_ratio
 </div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />비압축 캐시에서 보호 큐( SLRU 정책 사용 시)가 전체 캐시 크기에서 차지하는 비율입니다.
+
+<div id="unique_key_bitmap_cache_policy">
+  ## unique_key_bitmap_cache_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />UNIQUE KEY 삭제 비트맵의 캐시 정책 이름입니다(SLRU 또는 LRU).
+
+<div id="unique_key_bitmap_cache_size_bytes">
+  ## unique_key_bitmap_cache_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />UNIQUE KEY의 파트별 삭제 비트맵을 위한 in-process 캐시의 최대 크기(바이트)입니다. 캐시를 비활성화하려면 0으로 설정하십시오.
+
+<div id="unique_key_bitmap_cache_size_ratio">
+  ## unique_key_bitmap_cache_size_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />UNIQUE KEY 삭제 비트맵 캐시에서 전체 캐시 크기 대비 보호 큐(SLRU 정책을 사용하는 경우)의 크기입니다.
 
 <div id="unique_key_index_cache_policy">
   ## unique_key_index_cache_policy
@@ -6080,9 +6217,9 @@ ClickHouse Cloud에서만 사용할 수 있습니다. 활성화하면 `system.*_
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />벡터 유사성 인덱스의 캐시 크기입니다. 0은 비활성화됨을 의미합니다.
 
-<Note>
-  이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
-</Note>
+:::note
+이 설정은 런타임에 수정할 수 있으며 즉시 적용됩니다.
+:::
 
 <div id="vector_similarity_index_cache_size_ratio">
   ## vector_similarity_index_cache_size_ratio
@@ -6183,16 +6320,14 @@ ClickHouse가 [ZooKeeper](http://zookeeper.apache.org/) 클러스터와 상호 �
 
 또한 `zookeeper_load_balancing` 설정(선택 사항)을 사용해 ZooKeeper 노드 선택 알고리즘을 고를 수 있습니다.
 
-| Algorithm Name                   | Description                                                                   |
-| -------------------------------- | ----------------------------------------------------------------------------- |
-| `random`                         | ZooKeeper 노드 중 하나를 무작위로 선택합니다.                                                |
-| `in_order`                       | 첫 번째 ZooKeeper 노드를 선택하고, 사용할 수 없으면 두 번째 노드, 그다음 노드 순서로 선택합니다.                 |
-| `nearest_hostname`               | 서버의 호스트명과 가장 유사한 호스트명을 가진 ZooKeeper 노드를 선택하며, 호스트명은 이름 접두사 기준으로 비교합니다.        |
-| `hostname_levenshtein_distance`  | nearest&#95;hostname과 같지만, 호스트명을 Levenshtein distance 방식으로 비교합니다.             |
-| `hostname_longest_common_prefix` | nearest&#95;hostname과 같지만, 서버의 호스트명과 가장 긴 공통 접두사를 공유하는 호스트명을 가진 노드를 우선 선택합니다. |
-| `hostname_longest_common_suffix` | nearest&#95;hostname과 같지만, 서버의 호스트명과 가장 긴 공통 접미사를 공유하는 호스트명을 가진 노드를 우선 선택합니다. |
-| `first_or_random`                | 첫 번째 ZooKeeper 노드를 선택하고, 사용할 수 없으면 나머지 ZooKeeper 노드 중 하나를 무작위로 선택합니다.         |
-| `round_robin`                    | 첫 번째 ZooKeeper 노드를 선택하고, 재연결이 발생하면 다음 노드를 선택합니다.                              |
+| Algorithm Name                  | Description                                                            |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| `random`                        | ZooKeeper 노드 중 하나를 무작위로 선택합니다.                                         |
+| `in_order`                      | 첫 번째 ZooKeeper 노드를 선택하고, 사용할 수 없으면 두 번째 노드, 그다음 노드 순서로 선택합니다.          |
+| `nearest_hostname`              | 서버의 호스트명과 가장 유사한 호스트명을 가진 ZooKeeper 노드를 선택하며, 호스트명은 이름 접두사 기준으로 비교합니다. |
+| `hostname_levenshtein_distance` | nearest&#95;hostname과 같지만, 호스트명을 Levenshtein distance 방식으로 비교합니다.      |
+| `first_or_random`               | 첫 번째 ZooKeeper 노드를 선택하고, 사용할 수 없으면 나머지 ZooKeeper 노드 중 하나를 무작위로 선택합니다.  |
+| `round_robin`                   | 첫 번째 ZooKeeper 노드를 선택하고, 재연결이 발생하면 다음 노드를 선택합니다.                       |
 
 **예시 구성**
 
@@ -6212,7 +6347,7 @@ ClickHouse가 [ZooKeeper](http://zookeeper.apache.org/) 클러스터와 상호 �
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / hostname_longest_common_prefix / hostname_longest_common_suffix / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
     <!-- Optional. Enable 64-bit transaction IDs. -->
     <use_xid_64>false</use_xid_64>

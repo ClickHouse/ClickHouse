@@ -50,7 +50,7 @@
                 "ru/get-started/setup/cloud",
                 {
                   "expanded": true,
-                  "group": "Самоуправляемое развертывание",
+                  "group": "Самоуправляемая версия",
                   "pages": [
                     {
                       "group": "Локальная разработка",
@@ -133,7 +133,7 @@
                   ]
                 },
                 {
-                  "group": "Публичные реестры и открытые данные",
+                  "group": "Госреестры и открытые данные",
                   "pages": [
                     "ru/get-started/sample-datasets/covid19",
                     "ru/get-started/sample-datasets/menus",
@@ -198,7 +198,7 @@
                   ]
                 },
                 {
-                  "group": "Из OSS в Cloud",
+                  "group": "OSS в Cloud",
                   "pages": [
                     "ru/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
                   ]
@@ -218,7 +218,7 @@
         },
         {
           "icon": "/images/icons/icon-concepts.svg",
-          "item": "Концепции",
+          "item": "Основные понятия",
           "pages": [
             "ru/concepts/index",
             {
@@ -278,7 +278,7 @@
                       ]
                     },
                     {
-                      "group": "Пропускающие индексы",
+                      "group": "Индексы пропуска данных",
                       "pages": [
                         "ru/concepts/features/performance/skip-indexes/skipping-indexes",
                         "ru/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -476,7 +476,7 @@
             },
             {
               "expanded": true,
-              "group": "Рекомендации",
+              "group": "Лучшие практики",
               "pages": [
                 "ru/concepts/best-practices/choosing-a-primary-key",
                 "ru/concepts/best-practices/select-data-type",
@@ -590,7 +590,7 @@
                 },
                 "ru/guides/oss/update",
                 {
-                  "group": "Рекомендации для OSS",
+                  "group": "Лучшие практики для OSS",
                   "pages": [
                     "ru/guides/oss/best-practices/sizing-and-hardware-recommendations",
                     "ru/guides/oss/best-practices/tips"
@@ -638,7 +638,7 @@
             },
             {
               "expanded": true,
-              "group": "Практические руководства",
+              "group": "Руководства по сценариям использования",
               "pages": [
                 {
                   "group": "Real-time аналитика",
@@ -665,7 +665,7 @@
                     "ru/guides/use-cases/observability/cloud-monitoring",
                     "ru/guides/use-cases/observability/self-managed-monitoring",
                     {
-                      "group": "Соберите собственное решение",
+                      "group": "Создайте собственное решение",
                       "pages": [
                         "ru/guides/use-cases/observability/build-your-own/introduction",
                         "ru/guides/use-cases/observability/build-your-own/schema-design",
@@ -732,7 +732,7 @@
                         "ru/guides/use-cases/ai-ml/MCP/ollama",
                         "ru/guides/use-cases/ai-ml/MCP/janai",
                         {
-                          "group": "Библиотеки для AI-агентов",
+                          "group": "Библиотеки AI-агентов",
                           "pages": [
                             "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
                             "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
@@ -773,7 +773,7 @@
             {
               "expandable": true,
               "expanded": true,
-              "group": "Справочник по SQL",
+              "group": "Справочник по ClickHouse SQL",
               "pages": [
                 "ru/reference/syntax",
                 {
@@ -1128,7 +1128,6 @@
                         "ru/reference/engines/table-engines/mergetree-family/collapsingmergetree",
                         "ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key",
                         "ru/reference/engines/table-engines/mergetree-family/graphitemergetree",
-                        "ru/reference/engines/table-engines/mergetree-family/invertedindexes",
                         "ru/reference/engines/table-engines/mergetree-family/replacingmergetree",
                         "ru/reference/engines/table-engines/mergetree-family/replication",
                         "ru/reference/engines/table-engines/mergetree-family/summingmergetree",
@@ -1863,7 +1862,7 @@
               "root": "ru/reference/system-tables/overview"
             },
             {
-              "group": "Озёра данных",
+              "group": "Озера данных",
               "pages": [],
               "root": "ru/reference/datalakes"
             }
@@ -1938,7 +1937,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Администратор",
+                      "group": "Admin",
                       "pages": [
                         {
                           "group": "Cloud API",
@@ -2017,7 +2016,7 @@
                   ]
                 },
                 {
-                  "group": "Справочник Cloud",
+                  "group": "Справочник по Cloud",
                   "pages": [
                     "ru/products/cloud/reference/service-uptime",
                     "ru/products/cloud/reference/account-close",
@@ -2071,7 +2070,7 @@
                   "group": "Руководства",
                   "pages": [
                     {
-                      "group": "Рекомендации",
+                      "group": "Лучшие практики",
                       "pages": [
                         "ru/products/cloud/guides/best-practices/multitenancy",
                         "ru/products/cloud/guides/best-practices/usagelimits"
@@ -2080,7 +2079,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Общее",
+                      "group": "Общие сведения",
                       "pages": [
                         "ru/products/cloud/guides/cloud-compatibility",
                         "ru/products/cloud/guides/production-readiness"
@@ -2110,7 +2109,7 @@
                         "ru/products/cloud/guides/backups/configurable-backups",
                         {
                           "expanded": false,
-                          "group": "Использование собственной резервной копии",
+                          "group": "Собственная резервная копия",
                           "pages": [
                             "ru/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                             "ru/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -2153,7 +2152,7 @@
                       "pages": [
                         {
                           "expanded": false,
-                          "group": "Управление доступом в Cloud",
+                          "group": "Управление доступом к Cloud",
                           "pages": [
                             "ru/products/cloud/guides/security/cloud-access-management/manage-my-account",
                             "ru/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
@@ -2187,7 +2186,7 @@
                         },
                         {
                           "expanded": false,
-                          "group": "Журнал аудита",
+                          "group": "Журналирование аудита",
                           "pages": [
                             "ru/products/cloud/guides/security/audit-logging/console-audit-log",
                             "ru/products/cloud/guides/security/audit-logging/database-audit-log",
@@ -2218,7 +2217,175 @@
                 },
                 {
                   "group": "Справочник API",
-                  "openapi": "https://api.clickhouse.cloud/v1"
+                  "openapi": "https://api.clickhouse.cloud/v1",
+                  "pages": [
+                    {
+                      "group": "Организация",
+                      "pages": [
+                        "ru/GET /v1/organizations",
+                        "ru/GET /v1/organizations/{organizationId}",
+                        "ru/PATCH /v1/organizations/{organizationId}",
+                        "ru/GET /v1/organizations/{organizationId}/activities",
+                        "ru/GET /v1/organizations/{organizationId}/activities/{activityId}",
+                        "ru/GET /v1/organizations/{organizationId}/privateEndpointConfig",
+                        "ru/POST /v1/organizations/{organizationId}/byocInfrastructure",
+                        "ru/DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        "ru/PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        {
+                          "group": "Биллинг",
+                          "pages": [
+                            "ru/GET /v1/organizations/{organizationId}/usageCost"
+                          ]
+                        },
+                        {
+                          "group": "Управление пользователями",
+                          "pages": [
+                            "ru/GET /v1/organizations/{organizationId}/members",
+                            "ru/GET /v1/organizations/{organizationId}/members/{userId}",
+                            "ru/PATCH /v1/organizations/{organizationId}/members/{userId}",
+                            "ru/DELETE /v1/organizations/{organizationId}/members/{userId}",
+                            "ru/GET /v1/organizations/{organizationId}/invitations",
+                            "ru/POST /v1/organizations/{organizationId}/invitations",
+                            "ru/GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+                            "ru/DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+                          ]
+                        },
+                        {
+                          "group": "Управление ролями",
+                          "pages": [
+                            "ru/GET /v1/organizations/{organizationId}/roles",
+                            "ru/POST /v1/organizations/{organizationId}/roles",
+                            "ru/GET /v1/organizations/{organizationId}/roles/{roleId}",
+                            "ru/PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+                            "ru/DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "Сервис",
+                      "pages": [
+                        "ru/GET /v1/organizations/{organizationId}/services",
+                        "ru/POST /v1/organizations/{organizationId}/services",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ru/POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/scaling",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+                        "ru/POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ru/POST /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ru/PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        {
+                          "group": "Backup",
+                          "pages": [
+                            "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+                            "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+                            "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ru/POST /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/backupBucket"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "OpenAPI",
+                      "pages": [
+                        "ru/GET /v1/organizations/{organizationId}/keys",
+                        "ru/POST /v1/organizations/{organizationId}/keys",
+                        "ru/GET /v1/organizations/{organizationId}/keys/{keyId}",
+                        "ru/PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+                        "ru/DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+                      ]
+                    },
+                    {
+                      "group": "Prometheus",
+                      "pages": [
+                        "ru/GET /v1/organizations/{organizationId}/prometheus",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+                        "ru/GET /v1/organizations/{organizationId}/postgres/prometheus",
+                        "ru/GET /v1/organizations/{organizationId}/postgres/{postgresId}/prometheus"
+                      ]
+                    },
+                    {
+                      "group": "ClickPipes",
+                      "pages": [
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "ru/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "ru/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "ru/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "ru/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+                      ]
+                    },
+                    {
+                      "group": "ClickStack",
+                      "pages": [
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "ru/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ru/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "ru/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ru/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ru/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ru/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks"
+                      ],
+                      "tag": "Beta"
+                    },
+                    {
+                      "group": "Postgres",
+                      "pages": [
+                        "ru/POST /v1/organizations/{organizationId}/postgres",
+                        "ru/GET /v1/organizations/{organizationId}/postgres",
+                        "ru/GET /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ru/DELETE /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ru/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ru/GET /v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates",
+                        "ru/POST /v1/organizations/{organizationId}/postgres/{postgresId}/restoredService",
+                        "ru/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/password",
+                        "ru/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/state",
+                        "ru/POST /v1/organizations/{organizationId}/postgres/{postgresId}/readReplica",
+                        "ru/GET /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ru/POST /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ru/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ru/GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
+                        "ru/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
+                        "ru/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}"
+                      ],
+                      "tag": "Beta"
+                    }
+                  ]
                 }
               ]
             },
@@ -2246,7 +2413,7 @@
                     "ru/products/bring-your-own-cloud/onboarding/aws",
                     "ru/products/bring-your-own-cloud/onboarding/standard",
                     {
-                      "group": "Настройка",
+                      "group": "Кастомизация",
                       "pages": [
                         "ru/products/bring-your-own-cloud/onboarding/customization-aws",
                         "ru/products/bring-your-own-cloud/onboarding/customization-gcp"
@@ -2294,7 +2461,7 @@
               ]
             },
             {
-              "group": "Возможности",
+              "group": "Функции",
               "pages": [
                 "ru/products/managed-postgres/connection",
                 "ru/products/managed-postgres/settings",
@@ -2306,6 +2473,14 @@
                 "ru/products/managed-postgres/read-replicas",
                 "ru/products/managed-postgres/backup-and-restore",
                 "ru/products/managed-postgres/extensions",
+                {
+                  "group": "pg_clickhouse",
+                  "pages": [
+                    "ru/products/managed-postgres/extensions/pg_clickhouse/reference",
+                    "ru/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+                  ],
+                  "root": "ru/products/managed-postgres/extensions/pg_clickhouse/introduction"
+                },
                 "ru/products/managed-postgres/upgrades",
                 "ru/products/managed-postgres/openapi",
                 "ru/products/managed-postgres/terraform"
@@ -2318,7 +2493,7 @@
               ]
             },
             {
-              "group": "Цены",
+              "group": "Тарифы",
               "pages": [
                 "ru/products/managed-postgres/pricing"
               ]
@@ -2405,7 +2580,7 @@
                   "group": "Развертывание",
                   "pages": [
                     {
-                      "group": "С открытым исходным кодом",
+                      "group": "Открытый исходный код",
                       "pages": [
                         "ru/clickstack/deployment/all-in-one",
                         {
@@ -2759,7 +2934,7 @@
           "pages": [
             "ru/products/clickhouse-private/index",
             {
-              "group": "Пошаговые руководства",
+              "group": "Учебные руководства",
               "icon": "graduation-cap",
               "pages": [
                 "ru/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks",
@@ -2804,7 +2979,7 @@
               ]
             },
             {
-              "group": "Пояснения",
+              "group": "Объяснение",
               "icon": "lightbulb",
               "pages": [
                 "ru/products/clickhouse-private/explanation/clickhouse-operator-architecture",
@@ -2833,9 +3008,11 @@
           "groups": [
             {
               "group": "ClickPipes для объектного хранилища",
+              "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
               "pages": [
                 {
                   "group": "Amazon S3",
+                  "icon": "/images/integrations/logos/amazon_s3_logo.svg",
                   "pages": [
                     "ru/integrations/clickpipes/object-storage/amazon-s3/overview",
                     "ru/integrations/clickpipes/object-storage/amazon-s3/get-started",
@@ -2844,6 +3021,7 @@
                 },
                 {
                   "group": "Google Cloud Storage",
+                  "icon": "/images/integrations/logos/gcs.svg",
                   "pages": [
                     "ru/integrations/clickpipes/object-storage/google-cloud-storage/overview",
                     "ru/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
@@ -2852,6 +3030,7 @@
                 },
                 {
                   "group": "Azure Blob Storage",
+                  "icon": "/images/integrations/logos/azureblobstorage.svg",
                   "pages": [
                     "ru/integrations/clickpipes/object-storage/azure-blob-storage/overview",
                     "ru/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
@@ -2862,6 +3041,7 @@
             },
             {
               "group": "ClickPipes для Postgres",
+              "icon": "/images/integrations/logos/postgresql.svg",
               "pages": [
                 "ru/integrations/clickpipes/postgres/deduplication",
                 "ru/integrations/clickpipes/postgres/ordering-keys",
@@ -2907,6 +3087,7 @@
             },
             {
               "group": "ClickPipes для Kafka",
+              "icon": "/images/integrations/logos/kafka.svg",
               "pages": [
                 "ru/integrations/clickpipes/kafka/create-kafka-clickpipe",
                 "ru/integrations/clickpipes/kafka/schema-registries",
@@ -2918,6 +3099,7 @@
             },
             {
               "group": "ClickPipes для Kinesis",
+              "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
               "pages": [
                 "ru/integrations/clickpipes/kinesis/overview",
                 "ru/integrations/clickpipes/kinesis/auth"
@@ -2926,6 +3108,7 @@
             },
             {
               "group": "ClickPipes для GCP Pub/Sub",
+              "icon": "/images/integrations/logos/google_pubsub.svg",
               "pages": [
                 "ru/integrations/clickpipes/pubsub/overview",
                 "ru/integrations/clickpipes/pubsub/auth"
@@ -2934,6 +3117,7 @@
             },
             {
               "group": "ClickPipes для MySQL",
+              "icon": "/images/integrations/logos/mysql.svg",
               "pages": [
                 "ru/integrations/clickpipes/mysql/faq",
                 "ru/integrations/clickpipes/mysql/datatypes",
@@ -2969,6 +3153,7 @@
             },
             {
               "group": "ClickPipes для MongoDB",
+              "icon": "/images/integrations/logos/mongodb.svg",
               "pages": [
                 "ru/integrations/clickpipes/mongodb/datatypes",
                 "ru/integrations/clickpipes/mongodb/quickstart",
@@ -2999,20 +3184,23 @@
             },
             {
               "group": "ClickPipes для BigQuery",
+              "icon": "/images/logo-bigquery.svg",
               "pages": [
                 "ru/integrations/clickpipes/bigquery/overview",
                 "ru/integrations/clickpipes/bigquery/get-started"
               ]
             },
             {
-              "group": "Доступ через API",
+              "group": "Программный доступ",
+              "icon": "code",
               "pages": [
                 "ru/integrations/clickpipes/programmatic-access/openapi",
                 "ru/integrations/clickpipes/programmatic-access/terraform"
               ]
             },
             {
-              "group": "Прочее",
+              "group": "Другое",
+              "icon": "ellipsis",
               "pages": [
                 "ru/integrations/clickpipes/aws-privatelink",
                 "ru/integrations/clickpipes/dynamodb",
@@ -3218,6 +3406,7 @@
               "group": "Ингестия данных",
               "pages": [
                 "ru/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
+                "ru/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
                 "ru/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
                 {
                   "expanded": false,
@@ -3445,7 +3634,7 @@
                   "root": "ru/resources/support-center/troubleshooting/index"
                 },
                 {
-                  "group": "Таблицы и схема",
+                  "group": "Таблицы и схемы",
                   "pages": [
                     "ru/resources/support-center/knowledge-base/tables-schema/add-column",
                     "ru/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -3526,10 +3715,10 @@
                   ]
                 },
                 {
-                  "group": "Общее и FAQ",
+                  "group": "Общие вопросы и FAQ",
                   "pages": [
                     {
-                      "group": "Общее",
+                      "group": "Общая информация",
                       "pages": [
                         "ru/resources/support-center/knowledge-base/general-faqs/columnar-database",
                         "ru/resources/support-center/knowledge-base/general-faqs/concurrency",
@@ -3662,7 +3851,7 @@
             }
           ],
           "icon": "/images/icons/icon-contribute.svg",
-          "item": "Разработка и вклад в проект",
+          "item": "Разработка и вклад",
           "root": "ru/resources/develop-contribute/index"
         },
         {
@@ -3682,7 +3871,7 @@
                 },
                 "ru/resources/changelogs/cloud/release-status",
                 {
-                  "group": "Журнал изменений релизов облачной базы данных",
+                  "group": "Журнал изменений релизов базы данных Cloud",
                   "pages": [
                     "ru/resources/changelogs/cloud/release-notes/26_02",
                     "ru/resources/changelogs/cloud/release-notes/25_12",
@@ -3703,7 +3892,7 @@
               "root": "ru/resources/changelogs/cloud/index"
             },
             {
-              "group": "Самоуправляемый",
+              "group": "Самоуправляемое развертывание",
               "pages": [
                 "ru/resources/changelogs/oss/2026",
                 "ru/resources/changelogs/oss/2025",
@@ -3720,7 +3909,7 @@
             }
           ],
           "icon": "/images/icons/icon-changelogs.svg",
-          "item": "Журнал изменений",
+          "item": "История изменений",
           "root": "ru/resources/changelogs/cloud/2026"
         },
         {
@@ -3729,7 +3918,6 @@
               "group": "О ClickHouse",
               "pages": [
                 "ru/resources/about/adopters",
-                "ru/resources/about/cloud",
                 "ru/resources/about/support"
               ],
               "root": "ru/resources/about/index"

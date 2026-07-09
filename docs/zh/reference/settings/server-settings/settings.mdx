@@ -10,6 +10,10 @@ doc_type: 'reference'
 import SystemLogParameters from '/snippets/zh/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 
+<div id="server-settings">
+  # 服务器设置
+</div>
+
 本节包含服务器设置的说明。这些设置
 无法在会话或查询级别更改。
 
@@ -79,6 +83,12 @@ ClickHouse server 用于存储通过 SQL 命令创建的用户和角色配置的
 
 <SettingsInfoBlock type="UInt64" default_value="16777215" changeable_without_restart="No" />groupArray 函数中数组元素的最大大小 (以字节为单位) 。此限制会在序列化时进行检查，以避免状态过大。
 
+<div id="allow_experimental_executable_udf_drivers">
+  ## allow_experimental_executable_udf_drivers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />启用对可执行用户自定义函数驱动程序的 Experimental 功能支持；这些驱动程序通过 `user_defined_executable_function_drivers_config` 声明。驱动程序会将 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` 中提供的用户代码片段转换为可运行的可执行 UDF。
+
 <div id="allow_experimental_webassembly_udf">
   ## allow_experimental_webassembly_udf
 </div>
@@ -105,9 +115,9 @@ ClickHouse server 用于存储通过 SQL 命令创建的用户和角色配置的
 
 这相当于为所有 `EXPERIMENTAL` / `BETA` 功能设置只读约束。
 
-<Note>
-  值为 `0` 表示可以修改所有设置。
-</Note>
+:::note
+值为 `0` 表示可以修改所有设置。
+:::
 
 <div id="allow_impersonate_user">
   ## allow_impersonate_user
@@ -334,11 +344,11 @@ ClickHouse server 用于存储通过 SQL 命令创建的用户和角色配置的
 
 例如，如果该比率为 2，且 [`background_pool_size`](/zh/reference/settings/server-settings/settings#background_pool_size) 设置为 16，那么 ClickHouse 最多可以并发执行 32 个后台合并。这之所以可行，是因为后台操作可以被挂起并延后执行。这样做是为了让较小的合并获得更高的执行优先级。
 
-<Note>
-  你只能在运行时提高此比率。若要降低，则必须重启服务器。
+:::note
+你只能在运行时提高此比率。若要降低，则必须重启服务器。
 
-  与 [`background_pool_size`](/zh/reference/settings/server-settings/settings#background_pool_size) 设置一样，出于向后兼容性的考虑，[`background_merges_mutations_concurrency_ratio`](/zh/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) 也可以从 `default` profile 中应用。
-</Note>
+与 [`background_pool_size`](/zh/reference/settings/server-settings/settings#background_pool_size) 设置一样，出于向后兼容性的考虑，[`background_merges_mutations_concurrency_ratio`](/zh/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) 也可以从 `default` profile 中应用。
+:::
 
 <div id="background_merges_mutations_scheduling_policy">
   ## background_merges_mutations_scheduling_policy
@@ -376,16 +386,17 @@ ClickHouse server 用于存储通过 SQL 命令创建的用户和角色配置的
 
 设置用于为采用 MergeTree 引擎的表执行后台合并和变更的线程数。
 
-<Note>
-  * 出于向后兼容性的考虑，该设置也可以在 ClickHouse server 启动时通过 `default` profile 配置应用。
-  * 您只能在运行时增加线程数。
-  * 若要减少线程数，则必须重启 server。
-  * 通过调整此设置，您可以控制 CPU 和磁盘负载。
-</Note>
+:::note
 
-<Danger>
-  较小的线程池会占用更少的 CPU 和磁盘资源，但后台进程推进得更慢，最终可能会影响查询性能。
-</Danger>
+* 出于向后兼容性的考虑，该设置也可以在 ClickHouse server 启动时通过 `default` profile 配置应用。
+* 您只能在运行时增加线程数。
+* 若要减少线程数，则必须重启 server。
+* 通过调整此设置，您可以控制 CPU 和磁盘负载。
+  :::
+
+:::danger
+较小的线程池会占用更少的 CPU 和磁盘资源，但后台进程推进得更慢，最终可能会影响查询性能。
+:::
 
 在修改此设置之前，也请查看相关的 MergeTree settings，例如：
 
@@ -398,6 +409,12 @@ ClickHouse server 用于存储通过 SQL 命令创建的用户和角色配置的
 ```xml
 <background_pool_size>16</background_pool_size>
 ```
+
+<div id="background_schedule_pool_initial_size">
+  ## background_schedule_pool_initial_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />为每个后台调度池分配的初始工作线程数。每个池都会按需逐步扩容，直到达到其配置的上限 (`background_schedule_pool_size` 及相关设置) ，即当需求超过当前工作线程数时触发。较低的值可减少启动开销和空闲线程数；较高的值则可消除繁忙服务器上首个任务的调度延迟。
 
 <div id="background_schedule_pool_log">
   ## background_schedule_pool_log
@@ -430,7 +447,7 @@ ClickHouse server 用于存储通过 SQL 命令创建的用户和角色配置的
   ## background_schedule_pool_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="仅可增加" />用于持续执行某些轻量级周期性操作的最大线程数，包括复制表、Kafka 流式处理以及 DNS 缓存更新。
+<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="仅可增加" />用于执行复制表、Kafka 流式处理、DNS 缓存更新及类似任务的轻量级周期性操作的线程数量上限。线程会按需惰性创建，直到达到该上限，因此后台负载较轻的服务器使用的线程数会远少于这个数值。
 
 <div id="backup_log">
   ## backup_log
@@ -530,9 +547,9 @@ ClickHouse server 用于存储通过 SQL 命令创建的用户和角色配置的
 
 可在备份 IO 线程池中调度的最大作业数。鉴于当前的 S3 备份逻辑，建议保持此队列为无限制。
 
-<Note>
-  值为 `0` (默认值) 表示无限制。
-</Note>
+:::note
+值为 `0` (默认值) 表示无限制。
+:::
 
 <div id="bcrypt_workfactor">
   ## bcrypt_workfactor
@@ -676,6 +693,18 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。这样无需重启服务
 </compression>
 ```
 
+<div id="concurrent_threads_lazy_allocation">
+  ## concurrent_threads_lazy_allocation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="是" />
+
+控制如何为查询分配 CPU 插槽。
+
+当为 `true` (默认值) 时，查询启动时先分配一个 CPU 插槽，只有当其管道实际产生了更多可并行执行的工作时，才会向调度器请求额外的插槽。这样可以避免查询一开始就预留最多 `max_threads` 个插槽、却始终只用到其中一部分，从而挤占其他并发查询资源的情况。该设置同时适用于并发控制和面向工作负载的抢占式 CPU 调度器。
+
+当为 `false` 时，查询会在启动时一次性请求全部 `max_threads` 个插槽。
+
 <div id="concurrent_threads_scheduler">
   ## concurrent_threads_scheduler
 </div>
@@ -698,9 +727,9 @@ ClickHouse 每隔 x 秒重新加载一次内置字典。这样无需重启服务
 
 允许运行所有查询的查询处理线程最大数量，不包括用于从远程服务器获取数据的线程。这不是硬性限制。即使达到该限制，每个查询仍至少会分配到一个线程运行。如果后续有更多线程可用，查询在执行过程中还可以扩展到所需的线程数。
 
-<Note>
-  值为 `0` (默认) 表示不受限制。
-</Note>
+:::note
+值为 `0` (默认) 表示不受限制。
+:::
 
 <div id="concurrent_threads_soft_limit_ratio_to_cores">
   ## concurrent_threads_soft_limit_ratio_to_cores
@@ -904,9 +933,9 @@ ClickHouse 重新加载配置并检查是否有新变更的频率
 用于清理 `store/` 目录中垃圾数据的任务参数。
 设置该任务的调度周期。
 
-<Note>
-  值为 `0` 表示“从不”。默认值对应 1 天。
-</Note>
+:::note
+值为 `0` 表示“从不”。默认值对应 1 天。
+:::
 
 <div id="database_catalog_unused_dir_hide_timeout_sec">
   ## database_catalog_unused_dir_hide_timeout_sec
@@ -920,9 +949,9 @@ ClickHouse 重新加载配置并检查是否有新变更的频率
 移除所有访问权限来“隐藏”该目录。它同样适用于 clickhouse-server 不
 应在 `store/` 中看到的目录。
 
-<Note>
-  值为 `0` 表示“立即”。
-</Note>
+:::note
+值为 `0` 表示“立即”。
+:::
 
 <div id="database_catalog_unused_dir_rm_timeout_sec">
   ## database_catalog_unused_dir_rm_timeout_sec
@@ -938,9 +967,9 @@ ClickHouse 重新加载配置并检查是否有新变更的频率
 这也适用于 clickhouse-server 不应
 在 `store/` 中看到的目录。
 
-<Note>
-  `0` 表示“永不”。默认值对应 30 天。
-</Note>
+:::note
+`0` 表示“永不”。默认值对应 30 天。
+:::
 
 <div id="database_replicated_allow_detach_permanently">
   ## database_replicated_allow_detach_permanently
@@ -1078,10 +1107,10 @@ ZooKeeper 中该表的路径。
 * 如果为 `true`，则每个字典会在首次使用时加载。如果加载失败，使用该字典的函数将抛出异常。
 * 如果为 `false`，则服务器会在启动时加载所有字典。
 
-<Note>
-  服务器在开始接收任何连接之前，会在启动时等待所有字典加载完成
-  (例外情况：如果 [`wait_dictionaries_load_at_startup`](/zh/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) 设置为 `false`) 。
-</Note>
+:::note
+服务器在开始接收任何连接之前，会在启动时等待所有字典加载完成
+(例外情况：如果 [`wait_dictionaries_load_at_startup`](/zh/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) 设置为 `false`) 。
+:::
 
 **示例**
 
@@ -1163,7 +1192,7 @@ ZooKeeper 中该表的路径。
   ## disk_connections_rcvbuf
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="是" />磁盘 (S3、Azure、GCS) 连接的 `SO_RCVBUF` 选项大小。若设置为大于 0 的值，则会覆盖内核对接收缓冲区的 TCP 自动调优。0 = 内核默认值 (自动调优) 。注意：将此设置改回 0 后，只有新创建的连接才会恢复自动调优；现有连接池中的连接会继续保留固定的缓冲区大小，直到重新创建为止。
+<SettingsInfoBlock type="UInt64" default_value="204800" changeable_without_restart="是" />磁盘 (S3、Azure、GCS) 连接的 `SO_RCVBUF` 选项大小。默认值为 204800 (200 KB)：对象存储通常通过区域内网络访问，其带宽-时延乘积远低于 100 KB，因此较小的上限就能提供完整吞吐量，同时避免内核自动调优原本会为每个套接字分配数 MiB 的缓冲区。将其设置为 0 则改为对接收缓冲区使用内核 TCP 自动调优。注意：将此设置改回 0 后，只有新创建的连接才会恢复自动调优；现有连接池中的连接会继续保留固定的缓冲区大小，直到重新创建为止。
 
 <div id="disk_connections_sndbuf">
   ## disk_connections_sndbuf
@@ -1370,6 +1399,21 @@ ZooKeeper 中该表的路径。
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />用于删除分布式缓存的线程池队列大小。
 
+<div id="dynamic_user_defined_executable_functions_path">
+  ## dynamic_user_defined_executable_functions_path
+</div>
+
+<SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="No" />
+
+该目录用于存放由驱动动态创建的可执行 UDF 的配置文件 (参见 `CREATE FUNCTION ... ENGINE = DriverName(...)`) 。
+server 重启时，会扫描该目录中的配置文件，并加载相应的 UDF，而无需再次调用驱动。
+
+**示例**
+
+```xml
+<dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+```
+
 <div id="enable_azure_sdk_logging">
   ## enable_azure_sdk_logging
 </div>
@@ -1531,9 +1575,9 @@ ZooKeeper 中该表的路径。
 
 可调度到用于解析输入的线程池中的最大作业数。
 
-<Note>
-  值为 `0` 表示无限制。
-</Note>
+:::note
+值为 `0` 表示无限制。
+:::
 
 <div id="format_schema_path">
   ## format_schema_path
@@ -1714,28 +1758,16 @@ HSTS 的过期时间 (以秒为单位) 。
 要添加新的 http 处理程序，只需新增一条 `<rule>`。
 规则会按照定义顺序自上而下进行检查，
 第一个匹配的规则将运行相应的处理程序。
-没有匹配条件的规则 (仅包含 `handler`) 会匹配每个请求；由于规则会按顺序进行检查，
-因此，这类规则只有作为放在最后的回退规则时才有用。
 
-以下设置可通过子标签进行配置 (除 `handler` 外，所有这些子标签都是可选的) ：
+以下设置可通过子标签进行配置：
 
-| Sub-tags             | Definition                                                                                                                            |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                | 用于匹配请求 URL 路径。匹配时会忽略查询字符串                                                                                                             |
-| `url_prefix`         | 用于将请求 URL 路径与基础路径进行匹配：路径本身或其下方按路径段边界划分的任何内容 (例如，&#39;/api/v1&#39; 可匹配 /api/v1、/api/v1/ 和 /api/v1/write，但不匹配 /api/v1beta) 。匹配时会忽略查询字符串 |
-| `url_regexp`         | 用于将请求 URL 路径与正则表达式进行匹配。匹配时会忽略查询字符串                                                                                                    |
-| `full_url`           | 用于匹配完整的请求 URL `scheme://host:port/path`。匹配时会忽略查询字符串，且 host 是连接 IP 地址 (而不是 `Host` 请求头)                                                 |
-| `full_url_prefix`    | 用于将完整的请求 URL `scheme://host:port/path` 与基础 URL `scheme://host:port/base_path` 在路径段边界上进行匹配 (见 `url_prefix`) 。匹配时会忽略查询字符串               |
-| `full_url_regexp`    | 用于将完整的请求 URL `scheme://host:port/path` 与正则表达式进行匹配。匹配时会忽略查询字符串                                                                         |
-| `methods`            | 用于匹配请求方法；可使用逗号分隔多个方法                                                                                                                  |
-| `headers`            | 用于匹配请求头；会匹配每个子元素 (子元素名称即请求头名称)                                                                                                        |
-| `headers_regexp`     | 与 `headers` 类似，但每个子元素的值都会与正则表达式进行匹配                                                                                                   |
-| `empty_query_string` | 检查 URL 中是否不包含查询字符串                                                                                                                    |
-| `handler`            | 请求处理程序 (必需)                                                                                                                           |
-
-<Note>
-  除了 `url_regexp`、`full_url_regexp` 和 `headers_regexp` 之外，也可以在 `url`、`full_url` 或 `headers` 中使用 `regex:` 前缀来编写正则表达式 (例如 `<url>regex:/api/.*</url>`) 。出于向后兼容性考虑，这种写法仍然受支持，但已过时：建议优先使用专用的 `url_regexp`、`full_url_regexp` 和 `headers_regexp` 子标签。
-</Note>
+| Sub-tags             | Definition                                                         |
+| -------------------- | ------------------------------------------------------------------ |
+| `url`                | 用于匹配请求 URL，可以使用 &#39;regex:&#39; 前缀启用正则匹配 (可选)                     |
+| `methods`            | 用于匹配请求方法；可使用逗号分隔多个方法 (可选)                                          |
+| `headers`            | 用于匹配请求头；会匹配每个子元素 (子元素名称即请求头名称)，可以使用 &#39;regex:&#39; 前缀启用正则匹配 (可选) |
+| `handler`            | 请求处理程序                                                             |
+| `empty_query_string` | 检查 URL 中是否不包含查询字符串                                                 |
 
 `handler` 包含以下设置，这些设置可通过子标签进行配置：
 
@@ -1908,9 +1940,9 @@ HSTS 的过期时间 (以秒为单位) 。
 
 如果为 true，ClickHouse 在 `CREATE VIEW` 查询中不会为未指定的 SQL SECURITY 语句写入默认值。
 
-<Note>
-  此设置仅在迁移期间需要，并将在 24.4 中弃用
-</Note>
+:::note
+此设置仅在迁移期间需要，并将在 24.4 中弃用
+:::
 
 <div id="include_from">
   ## include_from
@@ -1948,11 +1980,12 @@ HSTS 的过期时间 (以秒为单位) 。
 
 索引标记缓存的最大容量。
 
-<Note>
-  值为 `0` 表示禁用。
+:::note
 
-  此设置可在运行时修改，并立即生效。
-</Note>
+值为 `0` 表示禁用。
+
+此设置可在运行时修改，并立即生效。
+:::
 
 <div id="index_mark_cache_size_ratio">
   ## index_mark_cache_size_ratio
@@ -1974,11 +2007,11 @@ HSTS 的过期时间 (以秒为单位) 。
 
 `MergeTree` 索引未压缩块缓存的最大大小。
 
-<Note>
-  值为 `0` 表示已禁用。
+:::note
+值为 `0` 表示已禁用。
 
-  此设置可在运行时修改，并会立即生效。
-</Note>
+此设置可在运行时修改，并会立即生效。
+:::
 
 <div id="index_uncompressed_cache_size_ratio">
   ## index_uncompressed_cache_size_ratio
@@ -1990,15 +2023,19 @@ HSTS 的过期时间 (以秒为单位) 。
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="compatible_double_hashes" changeable_without_restart="No" />
+<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="new_unified_hash" changeable_without_restart="No" />
 
 此设置可用于从这样一个代码版本迁移：该版本对同步和异步插入的插入去重采用完全不同且不透明的方式；迁移到另一个代码版本：在该版本中，已插入的数据会在同步和异步插入之间统一去重。
 值 `old_separate_hashes` 表示 ClickHouse 会为同步和异步插入使用不同的去重哈希 (与此前相同) 。
-如果不打算开始迁移，则应将此值作为默认值。
+此值会保留迁移前的 legacy 行为，适用于有意尚未开始迁移的实例；它不再是推荐的默认值。
 值 `compatible_double_hashes` 表示 ClickHouse 会使用两个去重哈希：一个旧哈希用于同步或异步插入，另一个新哈希用于所有插入。应使用此值，以安全的方式将现有实例迁移到新行为。
 应在一段时间内启用此值 (参见 replicated&#95;deduplication&#95;window 和 non&#95;replicated&#95;deduplication&#95;window 设置) ，以确保迁移期间不会丢失任何同步或异步插入。
 最后，值 `new_unified_hash` 表示 ClickHouse 会为同步和异步插入使用新的去重哈希。此值可在新的 ClickHouse 实例上启用，也可在已使用 `compatible_double_hashes` 一段时间的实例上启用。
-默认值将先设置为 `compatible_double_hashes`，之后在未来的 ClickHouse 版本中再设置为 `new_unified_hash`，以便分两个阶段安全地完成迁移。
+使用 `new_unified_hash` 时，去重哈希会覆盖整个插入块，因此只有当一次插入的全部数据都与之前的一次插入 (即一次重试) 完全匹配时，该插入才会被去重，而不是按单个分区分别去重。
+在 `new_unified_hash` 下，异步插入也会使用统一哈希，并共享同步去重窗口 (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`)；`*_for_async_inserts` 窗口设置仅适用于 legacy 的 `old_separate_hashes` / `compatible_double_hashes` 路径。
+默认值在迁移的一个阶段曾是 `compatible_double_hashes`，现在则是 `new_unified_hash`，从而分两个阶段安全地完成迁移。
+如果实例是从 `old_separate_hashes` 直接升级而来，在依赖统一哈希之前，应先以 `compatible_double_hashes` 运行，直到相关的最长去重窗口结束 (同步窗口 `replicated_deduplication_window` / `replicated_deduplication_window_seconds`、异步窗口 `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts` —— 如果使用异步插入，其默认值为一周，以及 `non_replicated_deduplication_window`)。否则，升级前仍保存在旧 `blocks` / `async_blocks` 目录中的 id 不会被统一哈希识别，它们的重试可能会被当作新的插入接受，从而产生重复数据。
+异步插入在切换到 `new_unified_hash` 时还有一个注意事项：在 `compatible_double_hashes` 下，其去重实际上覆盖整个异步窗口 (即 `async_blocks` id 会保留这么长时间)，而 `new_unified_hash` 只查询 `deduplication_hashes` (其保留时间为同步窗口)，因此切换后，即使已经等待过，早于同步窗口的异步插入仍可能再次被接受。对于异步工作负载，在切换之前，可以将 `replicated_deduplication_window` / `replicated_deduplication_window_seconds` 提高到异步窗口并保持运行一个完整的异步窗口、在异步窗口期间停止异步插入，或者继续使用 `compatible_double_hashes`。
 
 <div id="interserver_http_credentials">
   ## interserver_http_credentials
@@ -2141,9 +2178,9 @@ ClickHouse 服务器之间通过 `<HTTPS>` 交换数据所使用的端口。
 
 可在 IO 线程池中调度的最大作业数。
 
-<Note>
-  值为 `0` 表示无限制。
-</Note>
+:::note
+值为 `0` 表示无限制。
+:::
 
 <div id="jemalloc_collect_global_profile_samples_in_trace_log">
   ## jemalloc_collect_global_profile_samples_in_trace_log
@@ -2211,7 +2248,7 @@ ClickHouse 在关闭连接前，通过 HTTP 协议等待传入请求的秒数。
 **示例**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>30</keep_alive_timeout>
 ```
 
 <div id="keeper_hosts">
@@ -2725,9 +2762,9 @@ ClickHouse Enterprise 版的许可证文件内容
 
 标记缓存 ([`MergeTree`](/zh/reference/engines/table-engines/mergetree-family/index) 家族表的索引) 的最大大小。
 
-<Note>
-  此设置可在运行时修改，并会立即生效。
-</Note>
+:::note
+此设置可在运行时修改，并会立即生效。
+:::
 
 <div id="mark_cache_size_ratio">
   ## mark_cache_size_ratio
@@ -2751,9 +2788,9 @@ ClickHouse Enterprise 版的许可证文件内容
 更改此设置不会影响现有用户。如果与身份验证相关的创建/修改查询超过此设置指定的限制，则会失败。
 与身份验证无关的创建/修改查询将成功。
 
-<Note>
-  值为 `0` 表示不受限制。
-</Note>
+:::note
+值为 `0` 表示不受限制。
+:::
 
 <div id="max_backup_bandwidth_for_server">
   ## max_backup_bandwidth_for_server
@@ -2781,9 +2818,9 @@ ClickHouse Enterprise 版的许可证文件内容
 
 用于构建向量索引的最大线程数。
 
-<Note>
-  值为 `0` 表示使用全部 CPU 核心。
-</Note>
+:::note
+值为 `0` 表示使用全部 CPU 核心。
+:::
 
 <div id="max_concurrent_insert_queries">
   ## max_concurrent_insert_queries
@@ -2793,11 +2830,12 @@ ClickHouse Enterprise 版的许可证文件内容
 
 限制并发 `insert` 查询的总数量。
 
-<Note>
-  值为 `0` (默认值) 表示不限制。
+:::note
 
-  此设置可在运行时修改，并立即生效。已在运行中的查询不会受到影响。
-</Note>
+值为 `0` (默认值) 表示不限制。
+
+此设置可在运行时修改，并立即生效。已在运行中的查询不会受到影响。
+:::
 
 <div id="max_concurrent_queries">
   ## max_concurrent_queries
@@ -2805,7 +2843,7 @@ ClickHouse Enterprise 版的许可证文件内容
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="是" />
 
-对并发执行的查询总数的限制。请注意，还需要同时考虑 `INSERT` 和 `SELECT` 查询的限制，以及针对用户的最大查询数限制。
+对并发执行的查询总数的限制。请注意，还需要同时考虑 `INSERT` 和 `SELECT` 查询的限制，以及用户的最大查询数限制。
 
 另请参见：
 
@@ -2813,11 +2851,12 @@ ClickHouse Enterprise 版的许可证文件内容
 * [`max_concurrent_select_queries`](/zh/reference/settings/server-settings/settings#max_concurrent_select_queries)
 * [`max_concurrent_queries_for_all_users`](/zh/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-<Note>
-  值为 `0` (默认值) 表示不限制。
+:::note
 
-  此设置可在运行时修改，并会立即生效。已在运行的查询不会受到影响。
-</Note>
+值为 `0` (默认值) 表示不受限制。
+
+此设置可在运行时修改，并会立即生效。已在运行的查询不会受到影响。
+:::
 
 <div id="max_concurrent_select_queries">
   ## max_concurrent_select_queries
@@ -2827,11 +2866,12 @@ ClickHouse Enterprise 版的许可证文件内容
 
 并发执行的 select 查询总数上限。
 
-<Note>
-  值为 `0` (默认) 表示不限制。
+:::note
 
-  此设置可在运行时修改，并会立即生效。已在运行的查询不会受到影响。
-</Note>
+值为 `0` (默认) 表示不限制。
+
+此设置可在运行时修改，并会立即生效。已在运行的查询不会受到影响。
+:::
 
 <div id="max_connections">
   ## max_connections
@@ -2880,9 +2920,9 @@ ClickHouse Enterprise 版的许可证文件内容
 * Replicated
 * Lazy
 
-<Note>
-  值为 `0` 表示不受限制。
-</Note>
+:::note
+值为 `0` 表示不受限制。
+:::
 
 **示例**
 
@@ -2950,6 +2990,17 @@ ClickHouse Enterprise 版的许可证文件内容
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />可同时保留的轻量级快照的最大数量。0 表示不受限制。如果快照数量达到此限制，则在尝试创建新快照时会抛出异常。
 
+<div id="max_http_index_page_size">
+  ## max_http_index_page_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
+
+通过 HTTP 列出目录时，HTTP 索引页响应的最大大小。
+如果响应超过此限制，查询将失败并报错。
+
+默认值：`10485760` (10 MiB) 。
+
 <div id="max_io_thread_pool_free_size">
   ## max_io_thread_pool_free_size
 </div>
@@ -2988,9 +3039,9 @@ ClickHouse 使用 IO 线程池中的线程执行某些 IO 操作 (例如与 S3 �
 
 本地读取的最大速度，单位为每秒字节数。
 
-<Note>
-  值为 `0` 表示不受限制。
-</Note>
+:::note
+值为 `0` 表示不受限制。
+:::
 
 <div id="max_local_write_bandwidth_for_server">
   ## max_local_write_bandwidth_for_server
@@ -3000,9 +3051,9 @@ ClickHouse 使用 IO 线程池中的线程执行某些 IO 操作 (例如与 S3 �
 
 本地写入的最大速度，单位为每秒字节数。
 
-<Note>
-  值为 `0` 表示无限制。
-</Note>
+:::note
+值为 `0` 表示无限制。
+:::
 
 <div id="max_materialized_views_count_for_table">
   ## max_materialized_views_count_for_table
@@ -3012,9 +3063,9 @@ ClickHouse 使用 IO 线程池中的线程执行某些 IO 操作 (例如与 S3 �
 
 限制附加到表上的 materialized view 数量。
 
-<Note>
-  这里只考虑直接依赖的视图，不包括在另一个视图之上创建视图的情况。
-</Note>
+:::note
+这里只考虑直接依赖的视图，不包括在另一个视图之上创建视图的情况。
+:::
 
 <div id="max_merges_bandwidth_for_server">
   ## max_merges_bandwidth_for_server
@@ -3036,9 +3087,9 @@ ClickHouse 使用 IO 线程池中的线程执行某些 IO 操作 (例如与 S3 �
 
 如果命名集合的数量大于此值，服务器将抛出异常。
 
-<Note>
-  值为 `0` 表示不受限制。
-</Note>
+:::note
+值为 `0` 表示不受限制。
+:::
 
 **示例**
 
@@ -3068,9 +3119,9 @@ ClickHouse 使用 IO 线程池中的线程执行某些 IO 操作 (例如与 S3 �
 
 可打开文件的最大数量。
 
-<Note>
-  由于 getrlimit() 函数会返回错误的值，我们建议在 macOS 上使用此选项。
-</Note>
+:::note
+由于 getrlimit() 函数会返回错误的值，我们建议在 macOS 上使用此选项。
+:::
 
 <div id="max_os_cpu_wait_time_ratio_to_drop_connection">
   ## max_os_cpu_wait_time_ratio_to_drop_connection
@@ -3112,11 +3163,11 @@ ClickHouse 使用 IO 线程池中的线程执行某些 IO 操作 (例如与 S3 �
 如果 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表的大小超过 [`max_partition_size_to_drop`](#max_partition_size_to_drop) (以字节为单位) ，则无法使用 [DROP PARTITION](/zh/reference/statements/alter/partition#drop-partitionpart) 查询删除分区。
 此设置生效时无需重启 ClickHouse server。另一种禁用此限制的方法是创建 `<clickhouse-path>/flags/force_drop_table` 文件。
 
-<Note>
-  值 `0` 表示可以不受任何限制地删除分区。
+:::note
+值 `0` 表示可以不受任何限制地删除分区。
 
-  此限制不适用于 drop table 和 truncate table，参见 [max&#95;table&#95;size&#95;to&#95;drop](/zh/reference/settings/session-settings#max_table_size_to_drop)
-</Note>
+此限制不适用于 drop table 和 truncate table，参见 [max&#95;table&#95;size&#95;to&#95;drop](/zh/reference/settings/session-settings#max_table_size_to_drop)
+:::
 
 **示例**
 
@@ -3158,6 +3209,14 @@ ClickHouse 使用 IO 线程池中的线程执行某些 IO 操作 (例如与 S3 �
 <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
 ```
 
+<div id="max_per_cpu_untracked_memory">
+  ## max_per_cpu_untracked_memory
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Yes" />
+
+在刷新到 memory tracker 之前，单个 CPU 上运行的所有线程可同时持有的未跟踪内存总量上限 (以字节为单位) 。`max_untracked_memory` 限制的是单个线程，而此设置限制的是每个 CPU 的总量，因此即使有很多线程，也无法把各自的线程级配额累加成覆盖整个 server 的大规模 overcommit。因此，未跟踪内存总量大致受限于 `number_of_cpus * max_per_cpu_untracked_memory`。值为 `0` 时，将禁用每 CPU 限制 (仅应用每线程的 `max_untracked_memory`) 。仅适用于 Linux。
+
 <div id="max_prefixes_deserialization_thread_pool_free_size">
   ## max_prefixes_deserialization_thread_pool_free_size
 </div>
@@ -3182,9 +3241,9 @@ ClickHouse 使用 prefixes deserialization 线程池中的线程，并行读取 
 
 读取时通过网络进行数据交换的最大速率，单位为字节/秒。
 
-<Note>
-  值为 `0` (默认值) 表示无限制。
-</Note>
+:::note
+值为 `0` (默认值) 表示无限制。
+:::
 
 <div id="max_remote_write_network_bandwidth_for_server">
   ## max_remote_write_network_bandwidth_for_server
@@ -3194,9 +3253,9 @@ ClickHouse 使用 prefixes deserialization 线程池中的线程，并行读取 
 
 写入时通过网络进行数据交换的最大速率，以每秒字节数为单位。
 
-<Note>
-  值为 `0` (默认值) 表示不受限制。
-</Note>
+:::note
+值为 `0` (默认值) 表示不受限制。
+:::
 
 <div id="max_replicated_fetches_network_bandwidth_for_server">
   ## max_replicated_fetches_network_bandwidth_for_server
@@ -3218,16 +3277,16 @@ ClickHouse 使用 prefixes deserialization 线程池中的线程，并行读取 
 
 如果复制表的数量超过此值，server 将抛出异常。
 
-仅统计以下 database engine 的表：
+仅统计以下数据库引擎的表：
 
 * Atomic
 * Ordinary
 * Replicated
 * Lazy
 
-<Note>
-  值为 `0` 表示不受限制。
-</Note>
+:::note
+值为 `0` 表示不受限制。
+:::
 
 **示例**
 
@@ -3243,9 +3302,9 @@ ClickHouse 使用 prefixes deserialization 线程池中的线程，并行读取 
 
 服务器允许使用的最大内存量，以字节为单位。
 
-<Note>
-  服务器的最大内存消耗还会受到设置 `max_server_memory_usage_to_ram_ratio` 的进一步限制。
-</Note>
+:::note
+服务器的最大内存消耗还会受到设置 `max_server_memory_usage_to_ram_ratio` 的进一步限制。
+:::
 
 特殊情况下，值为 `0` (默认值) 表示服务器可以消耗所有可用内存 (不包括 `max_server_memory_usage_to_ram_ratio` 施加的进一步限制) 。
 
@@ -3269,9 +3328,9 @@ ClickHouse 使用 prefixes deserialization 线程池中的线程，并行读取 
 
 将该比例设为 `0` 会同时禁用启动时上限和运行时调整。在非 Linux 系统中，以及在不提供此设置的 `clickhouse-keeper` 中，运行时调整同样是空操作。若要保留静态的启动/重新加载上限，但禁用运行时调整 (即先前版本的行为) ，请将 `memory_worker_dynamic_hard_limit` 设为 `0`。
 
-<Note>
-  服务器的最大内存消耗还会进一步受到设置 `max_server_memory_usage` 的限制。
-</Note>
+:::note
+服务器的最大内存消耗还会进一步受到设置 `max_server_memory_usage` 的限制。
+:::
 
 <div id="max_session_timeout">
   ## max_session_timeout
@@ -3319,9 +3378,9 @@ ClickHouse 使用 prefixes deserialization 线程池中的线程，并行读取 
 * Replicated
 * Lazy
 
-<Note>
-  值为 `0` 表示不受限制。
-</Note>
+:::note
+值为 `0` 表示不受限制。
+:::
 
 **示例**
 
@@ -3353,11 +3412,11 @@ ClickHouse 使用 prefixes deserialization 线程池中的线程，并行读取 
 
 如果某个 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表的大小超过 `max_table_size_to_drop` (以字节为单位) ，则无法使用 [`DROP`](/zh/reference/statements/drop) 语句或 [`TRUNCATE`](/zh/reference/statements/truncate) 语句将其删除。
 
-<Note>
-  值为 `0` 表示可以不受任何限制地删除所有表。
+:::note
+值为 `0` 表示可以不受任何限制地删除所有表。
 
-  此设置生效无需重启 ClickHouse server。另一种禁用此限制的方法是创建 `<clickhouse-path>/flags/force_drop_table` 文件。
-</Note>
+此设置生效无需重启 ClickHouse server。另一种禁用此限制的方法是创建 `<clickhouse-path>/flags/force_drop_table` 文件。
+:::
 
 **示例**
 
@@ -3374,9 +3433,9 @@ ClickHouse 使用 prefixes deserialization 线程池中的线程，并行读取 
 可用于外部聚合、join 或排序操作的最大存储空间。
 超出此限制的查询将抛出异常并失败。
 
-<Note>
-  值为 `0` 表示无限制。
-</Note>
+:::note
+值为 `0` 表示无限制。
+:::
 
 另请参见：
 
@@ -3432,9 +3491,9 @@ ClickHouse 使用全局线程池中的线程来处理查询。如果当前没有
 * Replicated
 * Lazy
 
-<Note>
-  值为 `0` 表示不限制。
-</Note>
+:::note
+值为 `0` 表示不限制。
+:::
 
 **示例**
 
@@ -3465,23 +3524,24 @@ ClickHouse 使用全局线程池中的线程来处理查询。如果当前没有
 对并发等待中的查询总数的限制。
 当所需表正在异步加载时，等待中的查询会被阻塞，无法执行 (请参见 [`async_load_databases`](/zh/reference/settings/server-settings/settings#async_load_databases)) 。
 
-<Note>
-  在检查以下设置控制的限制时，等待中的查询不会计入其中：
+:::note
+在检查以下设置控制的限制时，等待中的查询不会计入其中：
 
-  * [`max_concurrent_queries`](/zh/reference/settings/server-settings/settings#max_concurrent_queries)
-  * [`max_concurrent_insert_queries`](/zh/reference/settings/server-settings/settings#max_concurrent_insert_queries)
-  * [`max_concurrent_select_queries`](/zh/reference/settings/server-settings/settings#max_concurrent_select_queries)
-  * [`max_concurrent_queries_for_user`](/zh/reference/settings/session-settings#max_concurrent_queries_for_user)
-  * [`max_concurrent_queries_for_all_users`](/zh/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+* [`max_concurrent_queries`](/zh/reference/settings/server-settings/settings#max_concurrent_queries)
+* [`max_concurrent_insert_queries`](/zh/reference/settings/server-settings/settings#max_concurrent_insert_queries)
+* [`max_concurrent_select_queries`](/zh/reference/settings/server-settings/settings#max_concurrent_select_queries)
+* [`max_concurrent_queries_for_user`](/zh/reference/settings/session-settings#max_concurrent_queries_for_user)
+* [`max_concurrent_queries_for_all_users`](/zh/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-  这样修正是为了避免在服务器刚启动后就触及这些限制。
-</Note>
+这样修正是为了避免在服务器刚启动后就触及这些限制。
+:::
 
-<Note>
-  值为 `0` (默认值) 表示不受限制。
+:::note
 
-  此设置可在运行时修改，并会立即生效。已经在运行的查询不会受到影响。
-</Note>
+值为 `0` (默认值) 表示不受限制。
+
+此设置可在运行时修改，并会立即生效。已经在运行的查询不会受到影响。
+:::
 
 <div id="max_zookeeper_pooled_connections">
   ## max_zookeeper_pooled_connections
@@ -3545,6 +3605,27 @@ jemalloc 脏页相对于 ClickHouse server 可用内存的阈值比例。当脏�
 
 用于相对于 ClickHouse server 可用内存确定 jemalloc 清理的阈值比例。当总内存使用量超过该比例时，后台内存工作线程会强制清理脏页。如果设置为 0，则会禁用基于总内存的强制清理。
 
+<div id="memory_worker_rss_speculative_reserve_ratio">
+  ## memory_worker_rss_speculative_reserve_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
+
+在每个 `MemoryWorker` tick 上，除了已观测到的 RSS 之外，还会额外预留
+`ratio * min(resident - previous_resident, resident - tracked)`，
+这是基于这样一种假设：下一个 tick 可能会按与上一个 tick 相同的幅度增长
+(`resident - previous_resident` 表示上一个 tick 期间 RSS 的增长量) 。
+该增长以上限 `resident - tracked` 为准，也就是全局 memory tracker 不可见的那部分
+RSS，因为已经被跟踪的增长会由常规的硬限制检查处理。该预留会计入 `rss`
+计数器，而全局硬限制检查会通过 `MemoryTracker::allocImpl` 读取这个计数器，
+因此当外推值超过 `max_server_memory_usage` 时，后续内存分配会抛出
+`MEMORY_LIMIT_EXCEEDED`，先于内核 OOM killer 触发。值为 `0`
+时会禁用这种推测机制 (回退为 `rss = resident`) ；默认值 `1`
+会为下一个时间间隔预留一个完整增长 delta 的 headroom。在使用
+sanitizer (`ASan`、`UBSan`、`MSan`、`TSan`) 时，默认值为 `0`，因为
+`resident - tracked` 之间的差距主要来自 sanitizer 的 shadow / runtime 开销，
+而不是 tracker 记账延迟。
+
 <div id="memory_worker_use_cgroup">
   ## memory_worker_use_cgroup
 </div>
@@ -3588,9 +3669,9 @@ jemalloc 脏页相对于 ClickHouse server 可用内存的阈值比例。当脏�
 设置执行合并和变更操作时允许使用的 RAM 限制。
 如果 ClickHouse 达到所设限制，将不再调度新的后台合并或变更操作，但会继续执行已调度的任务。
 
-<Note>
-  值为 `0` 表示不受限制。
-</Note>
+:::note
+值为 `0` 表示不受限制。
+:::
 
 **示例**
 
@@ -3685,9 +3766,9 @@ jemalloc 脏页相对于 ClickHouse server 可用内存的阈值比例。当脏�
 
 启动后执行 `<mlockall>`，以降低首次查询的延迟，并防止在高 IO 负载下 ClickHouse 可执行文件被换出到交换空间。
 
-<Note>
-  建议启用此选项，但这会使启动时间最多增加几秒。请注意，没有 &quot;CAP&#95;IPC&#95;LOCK&quot; 能力时，此设置将无法生效。
-</Note>
+:::note
+建议启用此选项，但这会使启动时间最多增加几秒。请注意，没有 &quot;CAP&#95;IPC&#95;LOCK&quot; 能力时，此设置将无法生效。
+:::
 
 **示例**
 
@@ -3714,11 +3795,11 @@ jemalloc 脏页相对于 ClickHouse server 可用内存的阈值比例。当脏�
 * [`system.metrics`](/zh/reference/system-tables/metrics)、[`system.metric_log`](/zh/reference/system-tables/metric_log) 中的 `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells`
 * [`system.events`](/zh/reference/system-tables/events)、[`system.processes`](/zh/reference/system-tables/processes)、[`system.query_log`](/zh/reference/system-tables/query_log)、[`system.query_thread_log`](/zh/reference/system-tables/query_thread_log)、[`system.query_views_log`](/zh/reference/system-tables/query_views_log) 中的 `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses`
 
-<Note>
-  映射文件中的数据量不会直接占用内存，也不会计入查询或服务器的内存使用量——因为这部分内存可以像操作系统页缓存一样被丢弃。在 MergeTree 家族的表中删除旧 parts 时，缓存会自动被清除 (文件会被关闭) ；也可以通过 `SYSTEM DROP MMAP CACHE` 查询手动清除。
+:::note
+映射文件中的数据量不会直接占用内存，也不会计入查询或服务器的内存使用量——因为这部分内存可以像操作系统页缓存一样被丢弃。在 MergeTree 家族的表中删除旧 parts 时，缓存会自动被清除 (文件会被关闭) ；也可以通过 `SYSTEM DROP MMAP CACHE` 查询手动清除。
 
-  此设置可在运行时修改，并会立即生效。
-</Note>
+此设置可在运行时修改，并会立即生效。
+:::
 
 <div id="mutation_workload">
   ## mutation_workload
@@ -4320,15 +4401,37 @@ SharedMergeTree 表在单个清理周期内从 Keeper 拉取的废弃 parts 的�
 
 包含数据的目录的路径。
 
-<Note>
-  末尾的斜杠必不可少。
-</Note>
+:::note
+末尾的斜杠必不可少。
+:::
 
 **示例**
 
 ```xml
 <path>/var/lib/clickhouse/</path>
 ```
+
+<div id="per_cpu_untracked_memory_thread_buffer">
+  ## per_cpu_untracked_memory_thread_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
+
+每个线程在不动用每 CPU 共享预算的情况下可持有的未跟踪内存量，单位为字节。它通过将小型内存分配的每 CPU 记账开销分摊开来降低成本；在最坏情况下，它也是在 `max_per_cpu_untracked_memory * number_of_cpus` 之上额外增加的缓冲量。值为 `0` 时将移除这部分缓冲：每次分配都会更新共享的每 CPU 计数器 (精度最高，但争用也更多) 。仅限 Linux。
+
+<div id="point_in_polygon_cache_size">
+  ## point_in_polygon_cache_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
+
+用于带有常量多边形参数的 `pointInPolygon` 函数的预处理多边形缓存的最大大小 (以字节为单位) 。
+超出此限制的条目会按最近最少使用顺序被淘汰。
+将其设置为 `0` 会禁用缓存：所有已缓存的多边形都会被清除，之后的每个查询都会重新预处理其常量多边形。
+也可以在不更改此限制的情况下，通过 [`SYSTEM DROP POINT IN POLYGON CACHE`](/zh/reference/statements/system#drop-point-in-polygon-cache) 查询手动清除此缓存。
+:::note
+此设置可在运行时修改，并会立即生效。
+:::
 
 <div id="postgresql_port">
   ## postgresql_port
@@ -4373,9 +4476,9 @@ SharedMergeTree 表在单个清理周期内从 Keeper 拉取的废弃 parts 的�
 
 可在前缀反序列化线程池中调度的最大作业数。
 
-<Note>
-  值为 `0` 表示无限制。
-</Note>
+:::note
+值为 `0` 表示无限制。
+:::
 
 <div id="prepare_system_log_tables_on_startup">
   ## prepare_system_log_tables_on_startup
@@ -4694,10 +4797,9 @@ ClickHouse 会检查适用于该请求协议的最高优先级解析器类型。
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 
 查询条件缓存的最大容量。
-
-<Note>
-  此设置可在运行时修改，并立即生效。
-</Note>
+:::note
+此设置可在运行时修改，并立即生效。
+:::
 
 <div id="query_condition_cache_size_ratio">
   ## query_condition_cache_size_ratio
@@ -4864,9 +4966,9 @@ ClickHouse 会检查适用于该请求协议的最高优先级解析器类型。
 
 用于通过大页重新映射机器代码 (&quot;text&quot;) 内存的设置。
 
-<Note>
-  此功能具有高度实验性。
-</Note>
+:::note
+此功能具有高度实验性。
+:::
 
 **示例**
 
@@ -5053,6 +5155,12 @@ Keeper 中用于存放由 `generateSerialID` 函数生成的自增数字的路�
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />如果设为 true，则会在堆栈跟踪中显示地址
+
+<div id="show_license_expiration_warnings">
+  ## show_license_expiration_warnings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="是" />在 system.warnings 中显示许可证即将到期的警告
 
 <div id="shutdown_wait_backups_and_restores">
   ## shutdown_wait_backups_and_restores
@@ -5288,9 +5396,9 @@ Host Key Configurations 默认未启用。
 
 设置在 background pool 中执行异步加载作业的线程数。background pool 用于在 server 启动后、且没有查询在等待该表时，异步加载表。如果表很多，将 background pool 中的线程数保持在较低水平可能更有利。这样可以为并发查询执行保留 CPU 资源。
 
-<Note>
-  `0` 表示将使用所有可用的 CPU。
-</Note>
+:::note
+`0` 表示将使用所有可用的 CPU。
+:::
 
 <div id="tables_loader_foreground_pool_size">
   ## tables_loader_foreground_pool_size
@@ -5300,9 +5408,9 @@ Host Key Configurations 默认未启用。
 
 设置前台池中执行加载作业的线程数。前台池用于在 server 开始监听端口之前同步加载表，以及加载那些需要等待完成的表。前台池的优先级高于后台池。这意味着，只要前台池中仍有作业在运行，后台池就不会启动任何作业。
 
-<Note>
-  值为 `0` 表示将使用所有可用的 CPU。
-</Note>
+:::note
+值为 `0` 表示将使用所有可用的 CPU。
+:::
 
 <div id="tcp_close_connection_after_queries_num">
   ## tcp_close_connection_after_queries_num
@@ -5360,15 +5468,15 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 在本节中，应指定类型为 `cache` 的磁盘名称。
 在这种情况下，缓存和临时数据将共享同一空间，并且可以通过驱逐磁盘缓存来腾出空间存放临时数据。
 
-<Note>
-  只能使用以下其中一个选项来配置临时数据存储：`tmp_path` ,`tmp_policy`, `temporary_data_in_cache`。
-</Note>
+:::note
+只能使用以下其中一个选项来配置临时数据存储：`tmp_path` ,`tmp_policy`, `temporary_data_in_cache`。
+:::
 
 **示例**
 
 `local_disk` 的缓存和临时数据都会存储在文件系统中的 `/tiny_local_cache` 下，并由 `tiny_local_cache` 管理。
 
-```xml highlight={9-16,20}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5377,6 +5485,7 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 <path>/local_disk/</path>
 </local_disk>
 
+<!-- highlight-start -->
 <tiny_local_cache>
 <type>cache</type>
 <disk>local_disk</disk>
@@ -5385,10 +5494,13 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 <max_file_segment_size>1M</max_file_segment_size>
 <cache_on_write_operations>1</cache_on_write_operations>
 </tiny_local_cache>
+<!-- highlight-end -->
 </disks>
 </storage_configuration>
 
+<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5416,9 +5528,9 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />文本索引头部的缓存大小。0 表示禁用。
 
-<Note>
-  此设置可在运行时修改，并且会立即生效。
-</Note>
+:::note
+此设置可在运行时修改，并且会立即生效。
+:::
 
 <div id="text_index_header_cache_size_ratio">
   ## text_index_header_cache_size_ratio
@@ -5444,9 +5556,9 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />文本索引倒排列表缓存的大小。零表示禁用。
 
-<Note>
-  此设置可在运行时修改，并会立即生效。
-</Note>
+:::note
+此设置可在运行时修改，并会立即生效。
+:::
 
 <div id="text_index_postings_cache_size_ratio">
   ## text_index_postings_cache_size_ratio
@@ -5472,9 +5584,9 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />文本索引 标记缓存大小。0 表示禁用。
 
-<Note>
-  此设置可在运行时修改，并会立即生效。
-</Note>
+:::note
+此设置可在运行时修改，并会立即生效。
+:::
 
 <div id="text_index_tokens_cache_size_ratio">
   ## text_index_tokens_cache_size_ratio
@@ -5523,9 +5635,9 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 
 可在全局线程池中调度的最大作业数。增大队列大小会导致内存使用量增加。建议将此值设置为与 [`max_thread_pool_size`](/zh/reference/settings/server-settings/settings#max_thread_pool_size) 相同。
 
-<Note>
-  值为 `0` 表示无限制。
-</Note>
+:::note
+值为 `0` 表示无限制。
+:::
 
 **示例**
 
@@ -5618,10 +5730,11 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 
 本地文件系统上用于存储处理大型查询时产生的临时数据的路径。
 
-<Note>
-  * 配置临时数据存储时，只能使用以下选项之一：tmp&#95;path、tmp&#95;policy、temporary&#95;data&#95;in&#95;cache。
-  * 末尾斜杠必不可少。
-</Note>
+:::note
+
+* 配置临时数据存储时，只能使用以下选项之一：tmp&#95;path、tmp&#95;policy、temporary&#95;data&#95;in&#95;cache。
+* 末尾斜杠必不可少。
+  :::
 
 **示例**
 
@@ -5635,27 +5748,28 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 
 用于存储临时数据的策略。所有带有 `tmp` 前缀的文件都会在启动时被删除。
 
-<Note>
-  将对象存储用作 `tmp_policy` 时的建议：
+:::note
+将对象存储用作 `tmp_policy` 时的建议：
 
-  * 在每台服务器上使用独立的 `bucket:path`
-  * 使用 `metadata_type=plain`
-  * 你可能还需要为此 bucket 设置生存时间 (TTL)
-</Note>
+* 在每台服务器上使用独立的 `bucket:path`
+* 使用 `metadata_type=plain`
+* 你可能还需要为此 bucket 设置生存时间 (TTL)
+  :::
 
-<Note>
-  * 配置临时数据存储时，只能使用以下选项之一：`tmp_path`、`tmp_policy`、`temporary_data_in_cache`。
-  * `move_factor`、`keep_free_space_bytes`、`max_data_part_size_bytes` 会被忽略。
-  * 该策略必须恰好包含 *一个卷*
+:::note
 
-  更多信息请参见 [MergeTree 表引擎](/zh/reference/engines/table-engines/mergetree-family/mergetree) 文档。
-</Note>
+* 配置临时数据存储时，只能使用以下选项之一：`tmp_path`、`tmp_policy`、`temporary_data_in_cache`。
+* `move_factor`、`keep_free_space_bytes`、`max_data_part_size_bytes` 会被忽略。
+* 该策略必须恰好包含 *一个卷*
+
+更多信息请参见 [MergeTree 表引擎](/zh/reference/engines/table-engines/mergetree-family/mergetree) 文档。
+:::
 
 **示例**
 
 当 `/disk1` 已满时，临时数据将存储在 `/disk2` 上。
 
-```xml highlight={13-20,24}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5668,6 +5782,7 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 </disks>
 
 <policies>
+<!-- highlight-start -->
 <tmp_two_disks>
 <volumes>
 <main>
@@ -5676,10 +5791,13 @@ SSH server 的端口，用户可通过 PTY 使用嵌入式客户端进行交互�
 </main>
 </volumes>
 </tmp_two_disks>
+<!-- highlight-end -->
 </policies>
 </storage_configuration>
 
+<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5789,17 +5907,35 @@ MergeTree 家族表引擎使用的未压缩数据的最大大小 (以字节为�
 
 对于非常短的查询，在某些情况下使用未压缩缓存会更有优势。
 
-<Note>
-  值为 `0` 表示禁用。
+:::note
+值为 `0` 表示禁用。
 
-  此设置可在运行时修改，并会立即生效。
-</Note>
+此设置可在运行时修改，并会立即生效。
+:::
 
 <div id="uncompressed_cache_size_ratio">
   ## uncompressed_cache_size_ratio
 </div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />在未压缩缓存中，受保护队列 (采用 SLRU 策略时) 的大小占缓存总大小的比例。
+
+<div id="unique_key_bitmap_cache_policy">
+  ## unique_key_bitmap_cache_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />UNIQUE KEY 删除 bitmap 的缓存策略的名称 (SLRU 或 LRU) 。
+
+<div id="unique_key_bitmap_cache_size_bytes">
+  ## unique_key_bitmap_cache_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="是" />UNIQUE KEY 每个分片删除 bitmap 的进程内缓存最大大小 (以字节为单位) 。将其设置为 0 可禁用缓存。
+
+<div id="unique_key_bitmap_cache_size_ratio">
+  ## unique_key_bitmap_cache_size_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="否" />在 UNIQUE KEY 删除 bitmap 缓存中，受保护队列 (采用 SLRU 策略时) 的大小占缓存总大小的比例。
 
 <div id="unique_key_index_cache_policy">
   ## unique_key_index_cache_policy
@@ -6076,9 +6212,9 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />向量相似度索引缓存大小。设为零表示禁用。
 
-<Note>
-  此设置可在运行时修改，并会立即生效。
-</Note>
+:::note
+此设置可在运行时修改，并会立即生效。
+:::
 
 <div id="vector_similarity_index_cache_size_ratio">
   ## 向量相似度索引缓存大小比例
@@ -6177,16 +6313,14 @@ ZooKeeper 节点的 path，用作存储所有 `CREATE WORKLOAD` 和 `CREATE RESO
 
 此外，还有一个 `zookeeper_load_balancing` 设置 (可选) ，可用于选择 ZooKeeper 节点的选取算法：
 
-| Algorithm Name                   | Description                                                                 |
-| -------------------------------- | --------------------------------------------------------------------------- |
-| `random`                         | 随机选择一个 ZooKeeper 节点。                                                        |
-| `in_order`                       | 选择第一个 ZooKeeper 节点；如果它不可用，则选择第二个，依此类推。                                      |
-| `nearest_hostname`               | 选择主机名与 server 的 hostname 最相似的 ZooKeeper 节点，按名称前缀比较 hostname。                |
-| `hostname_levenshtein_distance`  | 与 nearest&#95;hostname 类似，但会以 Levenshtein distance 的方式比较 hostname。          |
-| `hostname_longest_common_prefix` | 与 nearest&#95;hostname 类似，但会优先选择其 hostname 与 server 的 hostname 具有最长公共前缀的节点。 |
-| `hostname_longest_common_suffix` | 与 nearest&#95;hostname 类似，但会优先选择其 hostname 与 server 的 hostname 具有最长公共后缀的节点。 |
-| `first_or_random`                | 选择第一个 ZooKeeper 节点；如果它不可用，则从其余 ZooKeeper 节点中随机选择一个。                         |
-| `round_robin`                    | 选择第一个 ZooKeeper 节点；如果发生重新连接，则选择下一个。                                         |
+| Algorithm Name                  | Description                                                        |
+| ------------------------------- | ------------------------------------------------------------------ |
+| `random`                        | 随机选择一个 ZooKeeper 节点。                                               |
+| `in_order`                      | 选择第一个 ZooKeeper 节点；如果它不可用，则选择第二个，依此类推。                             |
+| `nearest_hostname`              | 选择主机名与 server 的 hostname 最相似的 ZooKeeper 节点，按名称前缀比较 hostname。       |
+| `hostname_levenshtein_distance` | 与 nearest&#95;hostname 类似，但会以 Levenshtein distance 的方式比较 hostname。 |
+| `first_or_random`               | 选择第一个 ZooKeeper 节点；如果它不可用，则从其余 ZooKeeper 节点中随机选择一个。                |
+| `round_robin`                   | 选择第一个 ZooKeeper 节点；如果发生重新连接，则选择下一个。                                |
 
 **示例配置**
 
@@ -6206,7 +6340,7 @@ ZooKeeper 节点的 path，用作存储所有 `CREATE WORKLOAD` 和 `CREATE RESO
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / hostname_longest_common_prefix / hostname_longest_common_suffix / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
     <!-- Optional. Enable 64-bit transaction IDs. -->
     <use_xid_64>false</use_xid_64>

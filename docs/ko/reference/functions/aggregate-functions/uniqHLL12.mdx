@@ -15,11 +15,12 @@ doc_type: 'reference'
 
 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) 알고리즘을 사용하여 서로 다른 인수 값의 대략적인 개수를 계산합니다.
 
-<Warning>
-  이 함수는 사용을 권장하지 않습니다. 대부분의 경우 [uniq](/ko/reference/functions/aggregate-functions/uniq) 또는 [uniqCombined](/ko/reference/functions/aggregate-functions/uniqCombined) 함수를 사용하십시오.
-</Warning>
+:::warning
+이 함수는 사용을 권장하지 않습니다. 대부분의 경우 [uniq](/ko/reference/functions/aggregate-functions/uniq) 또는 [uniqCombined](/ko/reference/functions/aggregate-functions/uniqCombined) 함수를 사용하십시오.
+:::
 
-<Accordion title="구현 세부 정보">
+<details>
+  <summary>구현 세부 정보</summary>
   이 함수는 집계의 모든 매개변수에 대해 해시를 계산한 다음, 이를 계산에 사용합니다.
   HyperLogLog 알고리즘을 사용해 서로 다른 인수 값의 개수를 근사합니다.
 
@@ -30,7 +31,7 @@ doc_type: 'reference'
   100M부터는 추정 오류가 증가하며, 카디널리티가 매우 높은 데이터 세트(1B+ 요소)에서는 함수가 매우 부정확한 결과를 반환합니다.
 
   결정적인 결과를 제공합니다(쿼리 처리 순서에 영향을 받지 않음).
-</Accordion>
+</details>
 
 **구문**
 

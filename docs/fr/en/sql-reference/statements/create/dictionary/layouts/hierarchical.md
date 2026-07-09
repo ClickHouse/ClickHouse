@@ -1,0 +1,96 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/hierarchical
+title: 'Dictionnaires hiérarchiques'
+sidebar_label: 'Hiérarchique'
+sidebar_position: 10
+description: 'Configurez des dictionnaires hiérarchiques à l’aide de relations de clé parent-enfant.'
+doc_type: 'reference'
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+<div id="hierarchical-dictionaries">
+  ## Dictionnaires hiérarchiques
+</div>
+
+ClickHouse prend en charge les dictionnaires hiérarchiques dotés d’une [clé numérique](../attributes.md#numeric-key).
+
+Considérez la structure hiérarchique suivante :
+
+```text
+0 (Common parent)
+│
+├── 1 (United States of America)
+│   │
+│   └── 2 (California)
+│       │
+│       └── 3 (San Francisco)
+│
+└── 4 (Great Britain)
+    │
+    └── 5 (London)
+```
+
+Cette hiérarchie peut être représentée sous la forme de la table de dictionnaire suivante.
+
+| region&#95;id | parent&#95;region | region&#95;name           |
+| ------------- | ----------------- | ------------------------- |
+| 1             | 0                 | États-Unis d&#39;Amérique |
+| 2             | 1                 | Californie                |
+| 3             | 2                 | San Francisco             |
+| 4             | 0                 | Grande-Bretagne           |
+| 5             | 4                 | Londres                   |
+
+Cette table contient une colonne `parent_region` qui contient la clé du parent le plus proche de l&#39;élément.
+
+ClickHouse prend en charge la propriété hiérarchique pour les attributs des dictionnaires externes. Cette propriété vous permet de configurer le dictionnaire hiérarchique de manière semblable à ce qui est décrit ci-dessus.
+
+La fonction [dictGetHierarchy](/fr/sql-reference/functions/ext-dict-functions.md#dictGetHierarchy) vous permet d&#39;obtenir la chaîne des parents d&#39;un élément.
+
+Dans notre exemple, la structure du dictionnaire peut être la suivante :
+
+<Tabs>
+  <TabItem value="ddl" label="DDL" default>
+    ```sql
+    CREATE DICTIONARY regions_dict
+    (
+        region_id UInt64,
+        parent_region UInt64 DEFAULT 0 HIERARCHICAL,
+        region_name String DEFAULT ''
+    )
+    PRIMARY KEY region_id
+    SOURCE(...)
+    LAYOUT(HASHED())
+    LIFETIME(3600);
+    ```
+  </TabItem>
+
+  <TabItem value="xml" label="Fichier de configuration">
+    ```xml
+    <dictionary>
+        <structure>
+            <id>
+                <name>region_id</name>
+            </id>
+
+            <attribute>
+                <name>parent_region</name>
+                <type>UInt64</type>
+                <null_value>0</null_value>
+                <hierarchical>true</hierarchical>
+            </attribute>
+
+            <attribute>
+                <name>region_name</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+
+        </structure>
+    </dictionary>
+    ```
+  </TabItem>
+</Tabs>
+
+<br />

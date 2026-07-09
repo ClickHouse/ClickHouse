@@ -278,9 +278,9 @@ SELECT reverseBySeparator('abcde', '')
 Разбивает строку по указанному постоянному разделителю `separator`, представляющему собой строку длиной ровно в один символ, на массив подстрок.
 Пустые подстроки могут появляться, если разделитель находится в начале или в конце строки, либо если подряд встречается несколько разделителей.
 
-<Note>
-  Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
-</Note>
+:::note
+Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаясяся часть строки включена в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
+:::
 
 Пустые подстроки могут появляться в следующих случаях:
 
@@ -326,9 +326,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 
 Разбивает строку по пробельным символам и знакам пунктуации на массив подстрок.
 
-<Note>
-  Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, включается ли оставшаяся часть строки в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
-</Note>
+:::note
+Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, включается ли оставшаяся часть строки в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
+:::
 
 **Синтаксис**
 
@@ -373,9 +373,9 @@ SELECT splitByNonAlpha('user@domain.com');
 * есть несколько последовательных совпадений непустого регулярного выражения
 * исходная строка пуста, а регулярное выражение не пусто.
 
-<Note>
-  Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если argument `max_substrings > 0`.
-</Note>
+:::note
+Параметр [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если argument `max_substrings > 0`.
+:::
 
 **Синтаксис**
 
@@ -434,9 +434,9 @@ SELECT splitByRegexp('', 'abcde');
 * Идут подряд несколько непустых разделителей
 * Исходная строка `s` пуста, а разделитель непустой
 
-<Note>
-  Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, включается ли оставшаяся часть строки в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
-</Note>
+:::note
+Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, включается ли оставшаяся часть строки в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
+:::
 
 **Синтаксис**
 
@@ -488,9 +488,9 @@ SELECT splitByString('', 'abcde');
 
 Разбивает строку, разделённую пробельными символами, на массив подстрок.
 
-<Note>
-  Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
-</Note>
+:::note
+Настройка [`splitby_max_substrings_includes_remaining_string`](/ru/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (по умолчанию: `0`) определяет, будет ли оставшаяся часть строки включена в последний элемент результирующего массива, если аргумент `max_substrings > 0`.
+:::
 
 **Синтаксис**
 

@@ -28,20 +28,20 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
   ##### Prérequis
 </div>
 
-* Une instance ClickStack en cours d’exécution avec des endpoints OTLP accessibles (ports 4317/4318)
-* Une installation Nginx existante (version 1.18 ou ultérieure)
-* Un accès root ou sudo pour modifier la configuration de Nginx
-* Le nom d’hôte ou l’adresse IP de votre instance ClickStack
+* Instance ClickStack en cours d’exécution avec des endpoints OTLP accessibles (ports 4317/4318)
+* Installation Nginx existante (version 1.18 ou ultérieure)
+* Accès root ou sudo pour modifier la configuration Nginx
+* Nom d’hôte ou adresse IP de votre instance ClickStack
 
 <Steps>
   <Step>
     #### Installer le module Nginx OpenTelemetry
 
-    Le moyen le plus simple d’ajouter le traçage à Nginx consiste à utiliser l’image Nginx officielle avec la prise en charge intégrée d’OpenTelemetry.
+    Le moyen le plus simple d’ajouter le traçage à Nginx consiste à utiliser l’image Nginx officielle avec la prise en charge d’OpenTelemetry intégrée.
 
     ##### Utilisation de l’image nginx:otel
 
-    Remplacez votre image Nginx actuelle par la version avec OpenTelemetry activé :
+    Remplacez votre image Nginx actuelle par la version compatible OpenTelemetry :
 
     ```yaml
     # Dans votre docker-compose.yml ou Dockerfile
@@ -51,23 +51,23 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
     Cette image inclut `ngx_otel_module.so`, préinstallé et prêt à l’emploi.
 
     <Note>
-      Si vous exécutez Nginx en dehors de Docker, consultez la [documentation Nginx OpenTelemetry](https://github.com/open-telemetry/opentelemetry-cpp-contrib/tree/main/instrumentation/nginx) pour les instructions d’installation manuelle.
+      Si vous exécutez Nginx en dehors de Docker, consultez la [documentation OpenTelemetry Nginx](https://github.com/open-telemetry/opentelemetry-cpp-contrib/tree/main/instrumentation/nginx) pour les instructions d’installation manuelle.
     </Note>
   </Step>
 
   <Step>
     #### Configurer Nginx pour envoyer des traces à ClickStack
 
-    Ajoutez la configuration OpenTelemetry à votre fichier `nginx.conf`. Elle charge le module et envoie les traces vers l’endpoint OTLP de ClickStack.
+    Ajoutez la configuration OpenTelemetry à votre fichier `nginx.conf`. Cette configuration charge le module et envoie les traces vers l’endpoint OTLP de ClickStack.
 
-    Commencez par récupérer votre clé API :
+    Commencez par récupérer votre clé API :
 
     1. Ouvrez HyperDX à l’URL de votre instance ClickStack
     2. Accédez à Settings → API Keys
     3. Copiez votre **clé API d’ingestion**
-    4. Définissez-la comme variable d’environnement : `export CLICKSTACK_API_KEY=your-api-key-here`
+    4. Définissez-la comme variable d’environnement : `export CLICKSTACK_API_KEY=your-api-key-here`
 
-    Ajoutez ceci à votre `nginx.conf` :
+    Ajoutez ceci à votre `nginx.conf` :
 
     ```yaml
     load_module modules/ngx_otel_module.so;
@@ -93,7 +93,7 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
             listen 80;
             
             location / {
-                # Activer le traçage pour cette location
+                # Activer le traçage pour cet emplacement
                 otel_trace_context propagate;
                 otel_span_name "$request_method $uri";
                 
@@ -109,7 +109,7 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
     }
     ```
 
-    Si vous exécutez Nginx dans Docker, transmettez la variable d’environnement au conteneur :
+    Si vous exécutez Nginx dans Docker, transmettez la variable d’environnement au conteneur :
 
     ```yaml
     services:
@@ -124,31 +124,31 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
     Remplacez `<clickstack-host>` par le nom d’hôte ou l’adresse IP de votre instance ClickStack.
 
     <Note>
-      * Le **port 4317** est l’endpoint gRPC utilisé par le module Nginx
-      * **otel&#95;service&#95;name** doit décrire clairement votre instance Nginx (par ex. : &quot;api-gateway&quot;, &quot;frontend-proxy&quot;)
-      * Adaptez **otel&#95;service&#95;name** à votre environnement pour faciliter l’identification dans HyperDX
+      * **Le port 4317** est l’endpoint gRPC utilisé par le module Nginx
+      * **otel&#95;service&#95;name** doit décrire clairement votre instance Nginx (par ex. : &quot;api-gateway&quot;, &quot;frontend-proxy&quot;)
+      * Modifiez **otel&#95;service&#95;name** pour qu’il corresponde à votre environnement afin de faciliter l’identification dans HyperDX
     </Note>
 
     ##### Comprendre la configuration
 
-    **Ce qui est tracé :**
-    Chaque requête vers Nginx crée un span de trace affichant :
+    **Ce qui est tracé :**
+    Chaque requête vers Nginx crée un trace span affichant :
 
-    * La méthode et le chemin de la requête
-    * Le code d’état HTTP
-    * La durée de la requête
-    * L’horodatage
+    * la méthode et le chemin de la requête
+    * le code d’état HTTP
+    * la durée de la requête
+    * l’horodatage
 
-    **Attributs du span :**
+    **Attributs de span :**
     Les directives `otel_span_attr` ajoutent des métadonnées à chaque trace, ce qui vous permet de filtrer et d’analyser les requêtes dans HyperDX par code d’état, méthode, route, etc.
 
-    Après avoir effectué ces modifications, testez votre configuration Nginx :
+    Après avoir effectué ces modifications, testez votre configuration Nginx :
 
     ```bash
     nginx -t
     ```
 
-    Si le test réussit, rechargez Nginx :
+    Si le test réussit, rechargez Nginx :
 
     ```bash
     # Pour Docker
@@ -162,7 +162,7 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
   <Step>
     #### Vérifier les traces dans HyperDX
 
-    Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les traces arrivent. Vous devriez voir quelque chose comme ceci. Si vous ne voyez pas de traces, essayez d’ajuster votre plage de temps :
+    Une fois la configuration en place, connectez-vous à HyperDX et vérifiez que les traces arrivent bien. Vous devriez voir quelque chose comme ceci ; si vous ne voyez pas de traces, essayez d’ajuster l’intervalle de temps :
 
     <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Afficher les traces" />
   </Step>
@@ -172,7 +172,7 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre insta
   ## Jeu de données de démonstration
 </div>
 
-Pour les utilisateurs qui souhaitent tester l’intégration des traces Nginx avant de configurer leurs systèmes de production, nous fournissons un jeu de données d’exemple contenant des traces Nginx pré-générées avec des profils de trafic réalistes.
+Pour les utilisateurs qui souhaitent tester l’intégration des traces nginx avant de configurer leurs systèmes de production, nous fournissons un jeu de données d’exemple contenant des traces Nginx pré-générées avec des profils de trafic réalistes.
 
 <Steps>
   <Step>
@@ -257,7 +257,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration des traces Nginx av
     <Info>
       **Affichage du fuseau horaire**
 
-      HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Cette large plage horaire garantit que vous verrez les traces de démonstration quel que soit votre emplacement. Une fois les traces visibles, vous pourrez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
+      HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Ce large intervalle de temps garantit que vous verrez les traces de démonstration quel que soit votre emplacement. Une fois les traces visibles, vous pourrez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
     </Info>
 
     <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Voir les traces" />
@@ -361,4 +361,4 @@ tail -f /var/log/nginx/access.log
   ## Passage en production
 </div>
 
-Ce guide envoie les traces directement du module Nginx OpenTelemetry vers l’endpoint OTLP de ClickStack. Pour les déploiements de production, nous vous recommandons d&#39;exécuter votre propre OTel collector en tant que passerelle afin d&#39;assurer le regroupement par lots et la résilience. Consultez [Sending OpenTelemetry data](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
+Ce guide envoie les traces directement du module OpenTelemetry de Nginx vers l’endpoint OTLP de ClickStack. Pour les déploiements en production, nous recommandons d’exécuter votre propre OTel collector en tant que passerelle afin d’apporter le traitement par lots et la résilience. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

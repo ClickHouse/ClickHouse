@@ -13,7 +13,7 @@
           "item": "시작하기",
           "pages": [
             {
-              "group": "시작하기",
+              "group": "Get started",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
                 "ko/get-started/quickstarts/home",
@@ -44,7 +44,7 @@
             },
             {
               "expanded": true,
-              "group": "설치 및 설정",
+              "group": "Setup",
               "icon": "/images/menu-icon-gear.svg",
               "pages": [
                 "ko/get-started/setup/cloud",
@@ -204,7 +204,7 @@
                   ]
                 },
                 {
-                  "group": "기타 방법",
+                  "group": "기타 메서드",
                   "pages": [
                     "ko/get-started/migrate/other-methods/clickhouse-local-etl",
                     "ko/get-started/migrate/other-methods/etl-tool-to-clickhouse",
@@ -223,7 +223,7 @@
             "ko/concepts/index",
             {
               "expanded": true,
-              "group": "기초",
+              "group": "기본 사항",
               "pages": [
                 "ko/concepts/core-concepts/glossary",
                 "ko/concepts/core-concepts/parts",
@@ -240,7 +240,7 @@
               "group": "ClickHouse 개념",
               "pages": [
                 {
-                  "group": "구체화된 뷰(Materialized Views)",
+                  "group": "materialized views",
                   "pages": [
                     "ko/concepts/features/materialized-views/incremental-materialized-view",
                     "ko/concepts/features/materialized-views/refreshable-materialized-view",
@@ -249,7 +249,7 @@
                   "root": "ko/concepts/features/materialized-views/index"
                 },
                 {
-                  "group": "딕셔너리",
+                  "group": "Dictionaries",
                   "pages": [
                     "ko/concepts/features/dictionaries/best-practices"
                   ],
@@ -286,7 +286,7 @@
                     },
                     "ko/concepts/features/performance/lazy-materialization",
                     {
-                      "group": "문제 해결",
+                      "group": "Troubleshooting",
                       "pages": [
                         "ko/concepts/features/performance/troubleshoot/debugging-memory-issues",
                         "ko/concepts/features/performance/troubleshoot/performance-test",
@@ -317,7 +317,7 @@
                       ]
                     },
                     {
-                      "group": "업데이트",
+                      "group": "수정",
                       "pages": [
                         "ko/concepts/features/operations/update/overview",
                         "ko/concepts/features/operations/update/on-fly-mutations",
@@ -386,7 +386,7 @@
                       "root": "ko/concepts/features/security/tls/index"
                     },
                     {
-                      "group": "외부 인증 시스템",
+                      "group": "외부 인증 수단",
                       "pages": [
                         {
                           "group": "SSL",
@@ -558,7 +558,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "집계 조합자 예시",
+                  "group": "집계 함수 조합자 예시",
                   "pages": [
                     "ko/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
                     "ko/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -732,7 +732,7 @@
                         "ko/guides/use-cases/ai-ml/MCP/ollama",
                         "ko/guides/use-cases/ai-ml/MCP/janai",
                         {
-                          "group": "AI 에이전트 라이브러리",
+                          "group": "AI Agent 라이브러리",
                           "pages": [
                             "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
                             "ko/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
@@ -1020,7 +1020,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "널 허용 및 옵셔널 타입",
+                  "group": "널 허용 타입 및 선택적 타입",
                   "pages": [
                     "ko/reference/data-types/nullable",
                     "ko/reference/data-types/lowcardinality"
@@ -1028,7 +1028,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "특수 타입",
+                  "group": "특수 용도 타입",
                   "pages": [
                     "ko/reference/data-types/uuid",
                     "ko/reference/data-types/enum",
@@ -1057,7 +1057,7 @@
                   "root": "ko/reference/data-types/special-data-types/index"
                 },
                 {
-                  "group": "바이너리 인코딩",
+                  "group": "이진 인코딩",
                   "pages": [
                     "ko/reference/data-types/data-types-binary-encoding"
                   ]
@@ -1109,7 +1109,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Log 계열",
+                      "group": "Log 엔진 계열",
                       "pages": [
                         "ko/reference/engines/table-engines/log-family/log",
                         "ko/reference/engines/table-engines/log-family/stripelog",
@@ -1128,7 +1128,6 @@
                         "ko/reference/engines/table-engines/mergetree-family/collapsingmergetree",
                         "ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key",
                         "ko/reference/engines/table-engines/mergetree-family/graphitemergetree",
-                        "ko/reference/engines/table-engines/mergetree-family/invertedindexes",
                         "ko/reference/engines/table-engines/mergetree-family/replacingmergetree",
                         "ko/reference/engines/table-engines/mergetree-family/replication",
                         "ko/reference/engines/table-engines/mergetree-family/summingmergetree",
@@ -1885,7 +1884,7 @@
               "group": "ClickHouse Cloud",
               "pages": [
                 {
-                  "group": "시작하기",
+                  "group": "Get started",
                   "pages": [
                     "ko/products/cloud/getting-started/intro",
                     "ko/products/cloud/getting-started/resource-tour"
@@ -2218,7 +2217,175 @@
                 },
                 {
                   "group": "API 참조",
-                  "openapi": "https://api.clickhouse.cloud/v1"
+                  "openapi": "https://api.clickhouse.cloud/v1",
+                  "pages": [
+                    {
+                      "group": "조직",
+                      "pages": [
+                        "ko/GET /v1/organizations",
+                        "ko/GET /v1/organizations/{organizationId}",
+                        "ko/PATCH /v1/organizations/{organizationId}",
+                        "ko/GET /v1/organizations/{organizationId}/activities",
+                        "ko/GET /v1/organizations/{organizationId}/activities/{activityId}",
+                        "ko/GET /v1/organizations/{organizationId}/privateEndpointConfig",
+                        "ko/POST /v1/organizations/{organizationId}/byocInfrastructure",
+                        "ko/DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        "ko/PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        {
+                          "group": "청구",
+                          "pages": [
+                            "ko/GET /v1/organizations/{organizationId}/usageCost"
+                          ]
+                        },
+                        {
+                          "group": "사용자 관리",
+                          "pages": [
+                            "ko/GET /v1/organizations/{organizationId}/members",
+                            "ko/GET /v1/organizations/{organizationId}/members/{userId}",
+                            "ko/PATCH /v1/organizations/{organizationId}/members/{userId}",
+                            "ko/DELETE /v1/organizations/{organizationId}/members/{userId}",
+                            "ko/GET /v1/organizations/{organizationId}/invitations",
+                            "ko/POST /v1/organizations/{organizationId}/invitations",
+                            "ko/GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+                            "ko/DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+                          ]
+                        },
+                        {
+                          "group": "역할 관리",
+                          "pages": [
+                            "ko/GET /v1/organizations/{organizationId}/roles",
+                            "ko/POST /v1/organizations/{organizationId}/roles",
+                            "ko/GET /v1/organizations/{organizationId}/roles/{roleId}",
+                            "ko/PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+                            "ko/DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "서비스",
+                      "pages": [
+                        "ko/GET /v1/organizations/{organizationId}/services",
+                        "ko/POST /v1/organizations/{organizationId}/services",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ko/POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/scaling",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+                        "ko/POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ko/POST /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ko/PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        {
+                          "group": "Backup",
+                          "pages": [
+                            "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+                            "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+                            "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ko/POST /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/backupBucket"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "OpenAPI",
+                      "pages": [
+                        "ko/GET /v1/organizations/{organizationId}/keys",
+                        "ko/POST /v1/organizations/{organizationId}/keys",
+                        "ko/GET /v1/organizations/{organizationId}/keys/{keyId}",
+                        "ko/PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+                        "ko/DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+                      ]
+                    },
+                    {
+                      "group": "Prometheus",
+                      "pages": [
+                        "ko/GET /v1/organizations/{organizationId}/prometheus",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+                        "ko/GET /v1/organizations/{organizationId}/postgres/prometheus",
+                        "ko/GET /v1/organizations/{organizationId}/postgres/{postgresId}/prometheus"
+                      ]
+                    },
+                    {
+                      "group": "ClickPipes",
+                      "pages": [
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "ko/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "ko/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "ko/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "ko/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+                      ]
+                    },
+                    {
+                      "group": "ClickStack",
+                      "pages": [
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "ko/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ko/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "ko/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ko/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ko/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ko/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks"
+                      ],
+                      "tag": "Beta"
+                    },
+                    {
+                      "group": "Postgres",
+                      "pages": [
+                        "ko/POST /v1/organizations/{organizationId}/postgres",
+                        "ko/GET /v1/organizations/{organizationId}/postgres",
+                        "ko/GET /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ko/DELETE /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ko/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ko/GET /v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates",
+                        "ko/POST /v1/organizations/{organizationId}/postgres/{postgresId}/restoredService",
+                        "ko/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/password",
+                        "ko/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/state",
+                        "ko/POST /v1/organizations/{organizationId}/postgres/{postgresId}/readReplica",
+                        "ko/GET /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ko/POST /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ko/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ko/GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
+                        "ko/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
+                        "ko/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}"
+                      ],
+                      "tag": "Beta"
+                    }
+                  ]
                 }
               ]
             },
@@ -2306,6 +2473,14 @@
                 "ko/products/managed-postgres/read-replicas",
                 "ko/products/managed-postgres/backup-and-restore",
                 "ko/products/managed-postgres/extensions",
+                {
+                  "group": "pg_clickhouse",
+                  "pages": [
+                    "ko/products/managed-postgres/extensions/pg_clickhouse/reference",
+                    "ko/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+                  ],
+                  "root": "ko/products/managed-postgres/extensions/pg_clickhouse/introduction"
+                },
                 "ko/products/managed-postgres/upgrades",
                 "ko/products/managed-postgres/openapi",
                 "ko/products/managed-postgres/terraform"
@@ -2318,13 +2493,13 @@
               ]
             },
             {
-              "group": "가격",
+              "group": "가격 책정",
               "pages": [
                 "ko/products/managed-postgres/pricing"
               ]
             },
             {
-              "group": "ClickHouse Integration",
+              "group": "ClickHouse 통합",
               "pages": [
                 "ko/products/managed-postgres/clickhouse-integration"
               ]
@@ -2423,7 +2598,7 @@
                               "root": "ko/clickstack/deployment/helm"
                             },
                             {
-                              "group": "v1.x (deprecated)",
+                              "group": "v1.x (지원 중단 예정)",
                               "pages": [
                                 "ko/clickstack/deployment/helm-configuration-v1",
                                 "ko/clickstack/deployment/helm-deployment-options-v1",
@@ -2569,7 +2744,7 @@
                   "group": "마이그레이션 가이드",
                   "pages": [
                     {
-                      "group": "Elastic에서 마이그레이션하기",
+                      "group": "Elastic에서 마이그레이션",
                       "pages": [
                         "ko/clickstack/migration/elastic/intro",
                         "ko/clickstack/migration/elastic/concepts",
@@ -2611,7 +2786,7 @@
         {
           "href": "#",
           "icon": "/images/icons/section-header.svg",
-          "item": "오픈 소스"
+          "item": "오픈소스"
         },
         {
           "groups": [
@@ -2721,7 +2896,7 @@
         },
         {
           "icon": "/images/icons/icon-kubernetes-operator.svg",
-          "item": "Kubernetes Operator",
+          "item": "Kubernetes 오퍼레이터",
           "pages": [
             "ko/products/kubernetes-operator/overview",
             {
@@ -2832,10 +3007,12 @@
         {
           "groups": [
             {
-              "group": "객체 스토리지용 ClickPipes",
+              "group": "ClickPipes for Object Storage",
+              "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
               "pages": [
                 {
                   "group": "Amazon S3",
+                  "icon": "/images/integrations/logos/amazon_s3_logo.svg",
                   "pages": [
                     "ko/integrations/clickpipes/object-storage/amazon-s3/overview",
                     "ko/integrations/clickpipes/object-storage/amazon-s3/get-started",
@@ -2844,6 +3021,7 @@
                 },
                 {
                   "group": "Google Cloud Storage",
+                  "icon": "/images/integrations/logos/gcs.svg",
                   "pages": [
                     "ko/integrations/clickpipes/object-storage/google-cloud-storage/overview",
                     "ko/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
@@ -2852,6 +3030,7 @@
                 },
                 {
                   "group": "Azure Blob Storage",
+                  "icon": "/images/integrations/logos/azureblobstorage.svg",
                   "pages": [
                     "ko/integrations/clickpipes/object-storage/azure-blob-storage/overview",
                     "ko/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
@@ -2862,6 +3041,7 @@
             },
             {
               "group": "ClickPipes for Postgres",
+              "icon": "/images/integrations/logos/postgresql.svg",
               "pages": [
                 "ko/integrations/clickpipes/postgres/deduplication",
                 "ko/integrations/clickpipes/postgres/ordering-keys",
@@ -2875,7 +3055,7 @@
                 "ko/integrations/clickpipes/postgres/lifecycle",
                 "ko/integrations/clickpipes/postgres/auth",
                 {
-                  "group": "작업",
+                  "group": "운영",
                   "pages": [
                     "ko/integrations/clickpipes/postgres/add-table",
                     "ko/integrations/clickpipes/postgres/pause-and-resume",
@@ -2907,6 +3087,7 @@
             },
             {
               "group": "ClickPipes for Kafka",
+              "icon": "/images/integrations/logos/kafka.svg",
               "pages": [
                 "ko/integrations/clickpipes/kafka/create-kafka-clickpipe",
                 "ko/integrations/clickpipes/kafka/schema-registries",
@@ -2918,6 +3099,7 @@
             },
             {
               "group": "ClickPipes for Kinesis",
+              "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
               "pages": [
                 "ko/integrations/clickpipes/kinesis/overview",
                 "ko/integrations/clickpipes/kinesis/auth"
@@ -2926,6 +3108,7 @@
             },
             {
               "group": "ClickPipes for GCP Pub/Sub",
+              "icon": "/images/integrations/logos/google_pubsub.svg",
               "pages": [
                 "ko/integrations/clickpipes/pubsub/overview",
                 "ko/integrations/clickpipes/pubsub/auth"
@@ -2934,6 +3117,7 @@
             },
             {
               "group": "ClickPipes for MySQL",
+              "icon": "/images/integrations/logos/mysql.svg",
               "pages": [
                 "ko/integrations/clickpipes/mysql/faq",
                 "ko/integrations/clickpipes/mysql/datatypes",
@@ -2941,7 +3125,7 @@
                 "ko/integrations/clickpipes/mysql/schema-changes",
                 "ko/integrations/clickpipes/mysql/lifecycle",
                 {
-                  "group": "작업",
+                  "group": "운영",
                   "pages": [
                     "ko/integrations/clickpipes/mysql/add-table",
                     "ko/integrations/clickpipes/mysql/pause-and-resume",
@@ -2969,13 +3153,14 @@
             },
             {
               "group": "ClickPipes for MongoDB",
+              "icon": "/images/integrations/logos/mongodb.svg",
               "pages": [
                 "ko/integrations/clickpipes/mongodb/datatypes",
                 "ko/integrations/clickpipes/mongodb/quickstart",
                 "ko/integrations/clickpipes/mongodb/lifecycle",
                 "ko/integrations/clickpipes/mongodb/faq",
                 {
-                  "group": "작업",
+                  "group": "운영",
                   "pages": [
                     "ko/integrations/clickpipes/mongodb/add-table",
                     "ko/integrations/clickpipes/mongodb/remove-table",
@@ -2999,6 +3184,7 @@
             },
             {
               "group": "ClickPipes for BigQuery",
+              "icon": "/images/logo-bigquery.svg",
               "pages": [
                 "ko/integrations/clickpipes/bigquery/overview",
                 "ko/integrations/clickpipes/bigquery/get-started"
@@ -3006,6 +3192,7 @@
             },
             {
               "group": "프로그래밍 방식 액세스",
+              "icon": "code",
               "pages": [
                 "ko/integrations/clickpipes/programmatic-access/openapi",
                 "ko/integrations/clickpipes/programmatic-access/terraform"
@@ -3013,6 +3200,7 @@
             },
             {
               "group": "기타",
+              "icon": "ellipsis",
               "pages": [
                 "ko/integrations/clickpipes/aws-privatelink",
                 "ko/integrations/clickpipes/dynamodb",
@@ -3218,6 +3406,7 @@
               "group": "데이터 수집",
               "pages": [
                 "ko/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
+                "ko/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
                 "ko/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
                 {
                   "expanded": false,
@@ -3252,7 +3441,7 @@
                     "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
                     {
                       "expanded": false,
-                      "group": "Dataflow templates",
+                      "group": "Dataflow Template",
                       "pages": [
                         "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                         "ko/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -3471,7 +3660,7 @@
                   ]
                 },
                 {
-                  "group": "구체화된 뷰 및 프로젝션",
+                  "group": "materialized views 및 프로젝션",
                   "pages": [
                     "ko/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
                     "ko/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -3569,7 +3758,7 @@
                       "root": "ko/resources/support-center/knowledge-base/integrations/index"
                     },
                     {
-                      "group": "작업",
+                      "group": "운영",
                       "pages": [
                         "ko/resources/support-center/knowledge-base/tables-schema/delete-old-data",
                         "ko/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
@@ -3582,7 +3771,7 @@
                   "root": "ko/resources/support-center/knowledge-base/general-faqs/faq-index"
                 },
                 {
-                  "group": "팁과 요령",
+                  "group": "팁 및 요령",
                   "pages": [
                     "ko/resources/support-center/tips-and-tricks/community-wisdom",
                     "ko/resources/support-center/tips-and-tricks/cost-optimization",
@@ -3633,7 +3822,7 @@
               ]
             },
             {
-              "group": "기여하기",
+              "group": "기여",
               "pages": [
                 "ko/resources/develop-contribute/contribute/tests",
                 "ko/resources/develop-contribute/contribute/continuous-integration",
@@ -3662,7 +3851,7 @@
             }
           ],
           "icon": "/images/icons/icon-contribute.svg",
-          "item": "개발 및 기여하기",
+          "item": "개발 및 기여",
           "root": "ko/resources/develop-contribute/index"
         },
         {
@@ -3720,7 +3909,7 @@
             }
           ],
           "icon": "/images/icons/icon-changelogs.svg",
-          "item": "변경 이력",
+          "item": "변경 로그",
           "root": "ko/resources/changelogs/cloud/2026"
         },
         {
@@ -3729,7 +3918,6 @@
               "group": "ClickHouse 소개",
               "pages": [
                 "ko/resources/about/adopters",
-                "ko/resources/about/cloud",
                 "ko/resources/about/support"
               ],
               "root": "ko/resources/about/index"

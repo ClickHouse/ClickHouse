@@ -10,6 +10,10 @@ doc_type: 'reference'
 import SystemLogParameters from '/snippets/ar/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 
+<div id="server-settings">
+  # إعدادات الخادم
+</div>
+
 يحتوي هذا القسم على أوصاف لإعدادات الخادم. وهي إعدادات
 لا يمكن تغييرها على مستوى الجلسة أو الاستعلام.
 
@@ -79,6 +83,12 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="16777215" changeable_without_restart="No" />الحد الأقصى لحجم عنصر المصفوفة بالبايتات لدالة groupArray. يُتحقَّق من هذا الحد أثناء التسلسل، ويساعد على تجنّب تضخّم حجم الحالة.
 
+<div id="allow_experimental_executable_udf_drivers">
+  ## allow_experimental_executable_udf_drivers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="لا" />يُفعِّل الدعم التجريبي لبرامج تشغيل الدوال المعرّفة من قبل المستخدم القابلة للتنفيذ، والمُعلنة عبر `user_defined_executable_function_drivers_config`. ويحوّل برنامج التشغيل مقتطف شيفرة يوفّره المستخدم في `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` إلى دالة UDF قابلة للتنفيذ.
+
 <div id="allow_experimental_webassembly_udf">
   ## allow_experimental_webassembly_udf
 </div>
@@ -105,9 +115,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 يعادل هذا تعيين قيد `readonly` على جميع ميزات `EXPERIMENTAL` / `BETA`.
 
-<Note>
-  تعني القيمة `0` أنه يمكن تغيير جميع الإعدادات.
-</Note>
+:::note
+تعني القيمة `0` أنه يمكن تغيير جميع الإعدادات.
+:::
 
 <div id="allow_impersonate_user">
   ## allow_impersonate_user
@@ -334,11 +344,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 على سبيل المثال، إذا كانت النسبة تساوي 2 وكان [`background_pool_size`](/ar/reference/settings/server-settings/settings#background_pool_size) مضبوطًا على 16، فيمكن لـ ClickHouse تنفيذ 32 عملية دمج في الخلفية بالتوازي. وهذا ممكن لأن العمليات الخلفية يمكن تعليقها وتأجيلها. وهذا ضروري لمنح عمليات الدمج الصغيرة أولوية أعلى في التنفيذ.
 
-<Note>
-  يمكنك فقط زيادة هذه النسبة في وقت التشغيل. ولخفضها، يجب عليك إعادة تشغيل الخادم.
+:::note
+يمكنك فقط زيادة هذه النسبة في وقت التشغيل. ولخفضها، يجب عليك إعادة تشغيل الخادم.
 
-  وكما هو الحال مع الإعداد [`background_pool_size`](/ar/reference/settings/server-settings/settings#background_pool_size)، يمكن تطبيق [`background_merges_mutations_concurrency_ratio`](/ar/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) من ملف التعريف `default` من أجل التوافق مع الإصدارات السابقة.
-</Note>
+وكما هو الحال مع الإعداد [`background_pool_size`](/ar/reference/settings/server-settings/settings#background_pool_size)، يمكن تطبيق [`background_merges_mutations_concurrency_ratio`](/ar/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) من ملف التعريف `default` من أجل التوافق مع الإصدارات السابقة.
+:::
 
 <div id="background_merges_mutations_scheduling_policy">
   ## background_merges_mutations_scheduling_policy
@@ -374,18 +384,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />
 
-يحدّد عدد خيوط التنفيذ التي تُجري عمليات الدمج وعمليات mutation في الخلفية للجداول التي تستخدم محركات MergeTree.
+يحدّد عدد خيوط التنفيذ التي تُجري عمليات الدمج وعمليات التعديل في الخلفية للجداول التي تستخدم محركات MergeTree.
 
-<Note>
-  * يمكن أيضًا تطبيق هذا الإعداد عند بدء تشغيل الخادم من تهيئة ملف التعريف `default` للحفاظ على التوافق مع الإصدارات السابقة عند بدء خادم ClickHouse.
-  * لا يمكنك أثناء وقت التشغيل سوى زيادة عدد خيوط التنفيذ.
-  * لتقليل عدد خيوط التنفيذ، يجب إعادة تشغيل الخادم.
-  * من خلال ضبط هذا الإعداد، يمكنك إدارة حمل CPU والقرص.
-</Note>
+:::note
 
-<Danger>
-  يستهلك حجم التجمع الأصغر موارد CPU والقرص بشكل أقل، لكن عمليات الخلفية تتقدم ببطء أكبر، ما قد يؤثر في النهاية في أداء الاستعلامات.
-</Danger>
+* يمكن أيضًا تطبيق هذا الإعداد عند بدء تشغيل الخادم من تهيئة ملف التعريف `default` للحفاظ على التوافق مع الإصدارات السابقة عند بدء خادم ClickHouse.
+* لا يمكنك أثناء وقت التشغيل سوى زيادة عدد خيوط التنفيذ.
+* لتقليل عدد خيوط التنفيذ، يجب إعادة تشغيل الخادم.
+* من خلال ضبط هذا الإعداد، يمكنك إدارة حمل CPU والقرص.
+  :::
+
+:::danger
+يستهلك حجم التجمع الأصغر موارد CPU والقرص بشكل أقل، لكن عمليات الخلفية تتقدم ببطء أكبر، ما قد يؤثر في النهاية في أداء الاستعلامات.
+:::
 
 قبل تغييره، يُرجى أيضًا الاطلاع على إعدادات MergeTree ذات الصلة، مثل:
 
@@ -398,6 +409,12 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 ```xml
 <background_pool_size>16</background_pool_size>
 ```
+
+<div id="background_schedule_pool_initial_size">
+  ## background_schedule_pool_initial_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />العدد الأولي لخيوط العمل المخصّصة لكل مجمّع جدولة في الخلفية. يتوسّع كل مجمّع تدريجيًا عند الحاجة حتى يصل إلى الحد الأقصى المضبوط له (`background_schedule_pool_size` وما شابهه)، وذلك عندما يتجاوز الطلب عدد خيوط العمل الحالي. تؤدي القيم الأقل إلى تقليل الحمل الإضافي عند بدء التشغيل وعدد الخيوط الخاملة، بينما تزيل القيم الأعلى زمن تأخر جدولة أول مهمة على الخوادم ذات الحمل المرتفع.
 
 <div id="background_schedule_pool_log">
   ## background_schedule_pool_log
@@ -430,7 +447,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## background_schedule_pool_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="Increase only" />الحد الأقصى لعدد خيوط التنفيذ التي ستُستخدم للتنفيذ المستمر لبعض العمليات الدورية خفيفة الوزن الخاصة بالجداول المُكرّرة، وبث Kafka، وتحديثات ذاكرة التخزين المؤقت لـ DNS.
+<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="Increase only" />الحد الأقصى لعدد خيوط التنفيذ التي ستُستخدم للتنفيذ المستمر لبعض العمليات الدورية خفيفة الوزن الخاصة بالجداول المُكرّرة، وبث Kafka، وتحديثات ذاكرة التخزين المؤقت لـ DNS، والمهام المشابهة. تُنشأ خيوط التنفيذ عند الطلب وبشكل تدريجي حتى هذا الحد الأقصى، لذلك يستخدم الخادم ذو الحمل الخلفي الخفيف عددًا أقل بكثير من خيوط التنفيذ مقارنةً بهذا العدد.
 
 <div id="backup_log">
   ## backup_log
@@ -530,9 +547,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لعدد المهام التي يمكن جدولة تنفيذها في Backups IO Thread pool. يُوصى بالإبقاء على قائمة الانتظار هذه غير محدودة بسبب آلية النسخ الاحتياطي الحالية في S3.
 
-<Note>
-  تعني القيمة `0` (الافتراضية) عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` (الافتراضية) عدم وجود حد.
+:::
 
 <div id="bcrypt_workfactor">
   ## bcrypt_workfactor
@@ -676,6 +693,18 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 </compression>
 ```
 
+<div id="concurrent_threads_lazy_allocation">
+  ## concurrent_threads_lazy_allocation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
+
+يتحكم هذا الإعداد في كيفية تخصيص حصص CPU للاستعلامات.
+
+عندما تكون القيمة `true` (الافتراضية)، يبدأ الاستعلام بحصة CPU واحدة، ويطلب حصصًا إضافية من المجدول فقط عندما يدفع خط المعالجة الخاص به فعليًا المزيد من العمل القابل للتنفيذ بالتوازي. يجنّب ذلك الحالة التي يحجز فيها الاستعلام ما يصل إلى `max_threads` من الفتحات، لكنه لا يستخدم فعليًا سوى جزء منها، مما يحرم الاستعلامات المتزامنة الأخرى منها. وينطبق ذلك على كلٍّ من التحكم في التزامن ومجدول CPU الاستباقي لأعباء العمل.
+
+عندما تكون القيمة `false`، يطلب الاستعلام جميع فتحات `max_threads` مسبقًا عند البدء.
+
 <div id="concurrent_threads_scheduler">
   ## concurrent_threads_scheduler
 </div>
@@ -698,9 +727,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لعدد خيوط التنفيذ لمعالجة الاستعلامات، باستثناء خيوط التنفيذ المخصّصة لجلب البيانات من الخوادم البعيدة، والمسموح بتشغيلها عبر جميع الاستعلامات. هذا ليس حدًا صارمًا. إذا تم بلوغ هذا الحد، فسيحصل الاستعلام مع ذلك على خيط تنفيذ واحد على الأقل ليعمل بها. ويمكن للاستعلام أن يزيد إلى العدد المطلوب من خيوط التنفيذ أثناء التنفيذ إذا أصبحت خيوط تنفيذ إضافية متاحة.
 
-<Note>
-  تعني القيمة `0` (الافتراضية) عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` (الافتراضية) عدم وجود حد.
+:::
 
 <div id="concurrent_threads_soft_limit_ratio_to_cores">
   ## concurrent_threads_soft_limit_ratio_to_cores
@@ -904,9 +933,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 معامل لمهمة تنظّف المهملات من الدليل `store/`.
 يضبط فترة جدولة المهمة.
 
-<Note>
-  تعني القيمة `0` «أبدًا». وتتوافق القيمة الافتراضية مع يوم واحد.
-</Note>
+:::note
+تعني القيمة `0` «أبدًا». وتتوافق القيمة الافتراضية مع يوم واحد.
+:::
 
 <div id="database_catalog_unused_dir_hide_timeout_sec">
   ## database_catalog_unused_dir_hide_timeout_sec
@@ -914,15 +943,15 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="3600" changeable_without_restart="No" />
 
-مَعلمة لمهمة تُنظّف الملفات المهملة من الدليل `store/`.
+مَعلمة لمهمة تُنّظف المهملات من الدليل `store/`.
 إذا كان أي دليل فرعي لا يستخدمه clickhouse-server، ولم يُجرَ أي تعديل على هذا الدليل خلال آخر
 [`database_catalog_unused_dir_hide_timeout_sec`](/ar/reference/settings/server-settings/settings#database_catalog_unused_dir_hide_timeout_sec) ثانية، فستقوم المهمة &quot;بإخفاء&quot; هذا الدليل من خلال
 إزالة جميع حقوق الوصول. وينطبق ذلك أيضًا على الدلائل التي لا يتوقع clickhouse-server
 وجودها داخل `store/`.
 
-<Note>
-  القيمة `0` تعني &quot;فورًا&quot;.
-</Note>
+:::note
+القيمة `0` تعني &quot;فورًا&quot;.
+:::
 
 <div id="database_catalog_unused_dir_rm_timeout_sec">
   ## database_catalog_unused_dir_rm_timeout_sec
@@ -930,7 +959,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="2592000" changeable_without_restart="No" />
 
-معلمة لمهمة تنظّف الملفات غير الضرورية من دليل `store/`.
+معلمة لمهمة تنظّف المهملات من دليل `store/`.
 إذا كان أحد الأدلة الفرعية غير مستخدم من قِبل clickhouse-server وكان قد &quot;أُخفي&quot; سابقًا
 (راجع [database&#95;catalog&#95;unused&#95;dir&#95;hide&#95;timeout&#95;sec](/ar/reference/settings/server-settings/settings#database_catalog_unused_dir_hide_timeout_sec))
 ولم يُجرَ أي تعديل على هذا الدليل خلال آخر
@@ -938,9 +967,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 وينطبق ذلك أيضًا على الأدلة التي لا يتوقع clickhouse-server
 وجودها داخل `store/`.
 
-<Note>
-  تعني القيمة `0` &quot;أبدًا&quot;. وتساوي القيمة الافتراضية 30 يومًا.
-</Note>
+:::note
+تعني القيمة `0` &quot;أبدًا&quot;. وتساوي القيمة الافتراضية 30 يومًا.
+:::
 
 <div id="database_replicated_allow_detach_permanently">
   ## database_replicated_allow_detach_permanently
@@ -1078,10 +1107,10 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * إذا كانت القيمة `true`، فسيُحمَّل كل قاموس عند أول استخدام. وإذا تعذّر التحميل، فستُطلق الدالة التي تستخدم القاموس استثناءً.
 * إذا كانت القيمة `false`، فسيُحمِّل الخادم جميع القواميس عند بدء التشغيل.
 
-<Note>
-  سينتظر الخادم عند بدء التشغيل إلى أن تنتهي جميع القواميس من التحميل قبل استقبال أي اتصالات
-  (الاستثناء: إذا كان [`wait_dictionaries_load_at_startup`](/ar/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) مضبوطًا على `false`).
-</Note>
+:::note
+سينتظر الخادم عند بدء التشغيل إلى أن تنتهي جميع القواميس من التحميل قبل استقبال أي اتصالات
+(الاستثناء: إذا كان [`wait_dictionaries_load_at_startup`](/ar/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) مضبوطًا على `false`).
+:::
 
 **مثال**
 
@@ -1163,7 +1192,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## disk_connections_rcvbuf
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />حجم الخيار `SO_RCVBUF` لاتصالات الأقراص (S3 وAzure وGCS). إذا ضُبطت على قيمة أكبر من 0، فإنها تتجاوز الضبط التلقائي في النواة لمخزن TCP المؤقت للاستقبال. 0 = القيمة الافتراضية للنواة (الضبط التلقائي). ملاحظة: تؤدي إعادة هذا الإعداد إلى 0 إلى استعادة الضبط التلقائي للاتصالات المُنشأة حديثًا فقط؛ أما الاتصالات الحالية في المجمّع فتحتفظ بأحجام مخزن مؤقت ثابتة إلى أن يُعاد إنشاؤها.
+<SettingsInfoBlock type="UInt64" default_value="204800" changeable_without_restart="Yes" />حجم الخيار `SO_RCVBUF` لاتصالات الأقراص (S3 وAzure وGCS). القيمة الافتراضية هي 204800 (200 كيلوبايت): إذ يُجرى الوصول إلى التخزين الكائني داخل الـRegion حيث يكون حاصل عرض النطاق الترددي-التأخير أقل بكثير من 100 كيلوبايت، لذا يوفّر حدّ صغير معدل نقل كاملًا مع تجنّب المخازن المؤقتة لكل socket بحجم عدة MiB التي كان الضبط التلقائي في النواة سيخصصها لولا ذلك. اضبطها على 0 لاستخدام الضبط التلقائي في النواة لمخزن TCP المؤقت للاستقبال بدلًا من ذلك. ملاحظة: تؤدي إعادة هذا الإعداد إلى 0 إلى استعادة الضبط التلقائي للاتصالات المُنشأة حديثًا فقط؛ أما الاتصالات الحالية في المجمّع فتحتفظ بأحجام مخزن مؤقت ثابتة إلى أن يُعاد إنشاؤها.
 
 <div id="disk_connections_sndbuf">
   ## disk_connections_sndbuf
@@ -1371,6 +1400,21 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />حجم قائمة انتظار الـ مجموعة مؤشرات الترابط المستخدم لحذف distributed cache.
 
+<div id="dynamic_user_defined_executable_functions_path">
+  ## dynamic_user_defined_executable_functions_path
+</div>
+
+<SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="No" />
+
+يُستخدم هذا الدليل للاحتفاظ بملفات الإعداد الخاصة بدوال UDF التنفيذية التي تُنشأ ديناميكيًا بواسطة برامج التشغيل (راجع `CREATE FUNCTION ... ENGINE = DriverName(...)`).
+عند إعادة تشغيل الخادم، يُفحَص الدليل بحثًا عن ملفات الإعداد، وتُحمَّل دوال UDF المقابلة دون استدعاء برنامج التشغيل مرة أخرى.
+
+**مثال**
+
+```xml
+<dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+```
+
 <div id="enable_azure_sdk_logging">
   ## enable_azure_sdk_logging
 </div>
@@ -1532,9 +1576,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لعدد المهام التي يمكن جدولة تنفيذها في قائمة انتظار مجموعة مؤشرات الترابط الخاصة بتحليل المدخلات.
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 <div id="format_schema_path">
   ## format_schema_path
@@ -1715,28 +1759,16 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 لإضافة معالج http جديد، ما عليك سوى إضافة `<rule>` جديد.
 تُفحَص القواعد من الأعلى إلى الأسفل كما هي معرّفة،
 ويُشغَّل المعالج عند أول تطابق.
-القاعدة التي لا تحتوي على شروط تطابق (فقط `handler`) تطابق كل طلب؛ وبما أن القواعد تُفحَص بالترتيب،
-فإن مثل هذه القاعدة لا تكون مفيدة إلا كخيار fallback يوضع في النهاية.
 
-يمكن تهيئة الإعدادات التالية باستخدام الوسوم الفرعية (جميع هذه الوسوم الفرعية اختيارية باستثناء `handler`):
+يمكن تهيئة الإعدادات التالية باستخدام الوسوم الفرعية:
 
-| Sub-tags             | Definition                                                                                                                                                                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                | لمطابقة مسار URL الخاص بالطلب. يتم تجاهل سلسلة الاستعلام عند المطابقة                                                                                                                                                                   |
-| `url_prefix`         | لمطابقة مسار URL الخاص بالطلب مع مسار أساسي: المسار نفسه أو أي مسار تحته عند حدّ مقطع المسار (على سبيل المثال &#39;/api/v1&#39; يطابق /api/v1 و /api/v1/ و /api/v1/write، ولكن ليس /api/v1beta). يتم تجاهل سلسلة الاستعلام عند المطابقة |
-| `url_regexp`         | لمطابقة مسار URL الخاص بالطلب مع تعبير نمطي. يتم تجاهل سلسلة الاستعلام عند المطابقة                                                                                                                                                     |
-| `full_url`           | لمطابقة URL الكامل للطلب `scheme://host:port/path`. يتم تجاهل سلسلة الاستعلام عند المطابقة، ويكون المضيف هو عنوان IP الخاص بالاتصال (وليس ترويسة `Host`)                                                                                |
-| `full_url_prefix`    | لمطابقة URL الكامل للطلب `scheme://host:port/path` مع URL الأساسي ‏`scheme://host:port/base_path`، عند حدّ مقطع المسار (راجع `url_prefix`). يتم تجاهل سلسلة الاستعلام عند المطابقة                                                      |
-| `full_url_regexp`    | لمطابقة URL الكامل للطلب `scheme://host:port/path` مع تعبير نمطي. يتم تجاهل سلسلة الاستعلام عند المطابقة                                                                                                                                |
-| `methods`            | لمطابقة methods الخاصة بالطلب، يمكنك استخدام الفواصل للفصل بين عدة methods                                                                                                                                                              |
-| `headers`            | لمطابقة ترويسات الطلب، طابِق كل عنصر فرعي (اسم العنصر الفرعي هو اسم الترويسة)                                                                                                                                                           |
-| `headers_regexp`     | مثل `headers`، ولكن تتم مطابقة قيمة كل عنصر فرعي مع تعبير نمطي                                                                                                                                                                          |
-| `empty_query_string` | التحقّق من عدم وجود سلسلة استعلام في URL                                                                                                                                                                                                |
-| `handler`            | معالج الطلب (مطلوب)                                                                                                                                                                                                                     |
-
-<Note>
-  بدلاً من `url_regexp` و `full_url_regexp` و `headers_regexp`، يمكنك أيضًا كتابة تعبير نمطي في `url` أو `full_url` أو `headers` باستخدام البادئة `regex:` (على سبيل المثال `<url>regex:/api/.*</url>`). لا يزال هذا مدعومًا من أجل التوافق مع الإصدارات السابقة، لكنه مهمل: ويُفضَّل استخدام الوسوم الفرعية المخصّصة `url_regexp` و `full_url_regexp` و `headers_regexp`.
-</Note>
+| Sub-tags             | Definition                                                                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `url`                | لمطابقة URL الخاص بالطلب، يمكنك استخدام البادئة &#39;regex:&#39; لاستخدام المطابقة بالتعبير النمطي (اختياري)                                                       |
+| `methods`            | لمطابقة methods الخاصة بالطلب، يمكنك استخدام الفواصل للفصل بين عدة methods (اختياري)                                                                               |
+| `headers`            | لمطابقة ترويسات الطلب، طابِق كل عنصر فرعي (اسم العنصر الفرعي هو اسم الترويسة)، ويمكنك استخدام البادئة &#39;regex:&#39; لاستخدام المطابقة بالتعبير النمطي (اختياري) |
+| `handler`            | معالج الطلب                                                                                                                                                        |
+| `empty_query_string` | التحقّق من عدم وجود سلسلة استعلام في URL                                                                                                                           |
 
 يحتوي `handler` على الإعدادات التالية، والتي يمكن تهيئتها باستخدام وسوم فرعية:
 
@@ -1909,9 +1941,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 إذا كانت القيمة true، فلن يكتب ClickHouse القيم الافتراضية لعبارة SQL security الفارغة ضمن استعلامات `CREATE VIEW`.
 
-<Note>
-  لا يكون هذا الإعداد ضروريًا إلا خلال فترة الترحيل فقط، وسيصبح مهملًا في الإصدار 24.4
-</Note>
+:::note
+لا يكون هذا الإعداد ضروريًا إلا خلال فترة الترحيل فقط، وسيصبح مهملًا في الإصدار 24.4
+:::
 
 <div id="include_from">
   ## include_from
@@ -1947,13 +1979,14 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />
 
-الحد الأقصى لحجم ذاكرة التخزين المؤقت لعلامات الفهرسة.
+الحد الأقصى لحجم ذاكرة التخزين المؤقت لعلامات الفهرس.
 
-<Note>
-  تعني القيمة `0` أن هذه الميزة معطّلة.
+:::note
 
-  يمكن تعديل هذا الإعداد في وقت التشغيل، ويسري مفعوله فورًا.
-</Note>
+تعني القيمة `0` أن هذه الميزة معطّلة.
+
+يمكن تعديل هذا الإعداد في وقت التشغيل، ويسري مفعوله فورًا.
+:::
 
 <div id="index_mark_cache_size_ratio">
   ## index_mark_cache_size_ratio
@@ -1975,11 +2008,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لحجم ذاكرة التخزين المؤقت للكتل غير المضغوطة الخاصة بفهارس `MergeTree`.
 
-<Note>
-  تعني القيمة `0` أن هذه الميزة معطّلة.
+:::note
+تعني القيمة `0` أن هذه الميزة معطّلة.
 
-  يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق فورًا.
-</Note>
+يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق فورًا.
+:::
 
 <div id="index_uncompressed_cache_size_ratio">
   ## index_uncompressed_cache_size_ratio
@@ -1991,15 +2024,19 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="compatible_double_hashes" changeable_without_restart="No" />
+<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="new_unified_hash" changeable_without_restart="No" />
 
 يتيح هذا الإعداد الترحيل من إصدار الشيفرة الذي يجعل insert deduplication لعمليات insert المتزامنة وغير المتزامنة مختلفًا تمامًا وغير شفاف، إلى إصدار الشيفرة الذي تُزال فيه ازدواجية البيانات المُدرجة عبر عمليات insert المتزامنة وغير المتزامنة.
 تعني القيمة `old_separate_hashes` أن ClickHouse سيستخدم قيم hash مختلفة لإزالة الازدواجية لعمليات insert المتزامنة وغير المتزامنة (كما كان سابقًا).
-يجب استخدام هذه القيمة كقيمة افتراضية إذا لم تكن هناك نية لبدء migration.
+تحافظ هذه القيمة على السلوك القديم السابق للترحيل، وذلك للحالات التي لم تبدأ الترحيل عمدًا؛ ولم تعد هي القيمة الافتراضية الموصى بها.
 تعني القيمة `compatible_double_hashes` أن ClickHouse سيستخدم قيمتي hash لإزالة الازدواجية: القديمة لعمليات insert المتزامنة أو غير المتزامنة، وأخرى جديدة لجميع عمليات insert. ينبغي استخدام هذه القيمة لترحيل instances الحالية إلى السلوك الجديد بطريقة آمنة.
 يجب تمكين هذه القيمة لبعض الوقت (راجع الإعدادين replicated&#95;deduplication&#95;window و non&#95;replicated&#95;deduplication&#95;window) للتأكد من عدم فقدان أي عمليات insert متزامنة أو غير متزامنة أثناء migration.
 أخيرًا، تعني القيمة `new_unified_hash` أن ClickHouse سيستخدم قيمة hash الجديدة لإزالة الازدواجية لعمليات insert المتزامنة وغير المتزامنة. يمكن تمكين هذه القيمة في instances الجديدة من ClickHouse أو في instances التي استخدمت بالفعل القيمة `compatible_double_hashes` لبعض الوقت.
-سيُضبط الافتراضي على `compatible_double_hashes` ثم لاحقًا على `new_unified_hash` في الإصدارات المستقبلية من ClickHouse من أجل إكمال migration بطريقة آمنة وعلى مرحلتين.
+مع `new_unified_hash`، تغطي قيمة hash الخاصة بإزالة الازدواجية الـ block المُدرج بالكامل، لذا لا تُزال ازدواجية عملية insert إلا عندما تتطابق بياناتها بالكامل مع عملية insert سابقة (retry)، وليس لكل partition على حدة.
+في `new_unified_hash` تستخدم async inserts أيضًا قيمة hash الموحّدة وتشارك نافذة إزالة الازدواجية الخاصة بالعمليات المتزامنة (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`)؛ ولا تنطبق إعدادات النافذة `*_for_async_inserts` إلا على المسار القديم `old_separate_hashes` / `compatible_double_hashes`.
+كانت القيمة الافتراضية `compatible_double_hashes` خلال مرحلة واحدة من الترحيل، وهي الآن `new_unified_hash`، ما يُكمل الترحيل بطريقة آمنة وعلى مرحلتين.
+يجب على instances التي تُرقّى مباشرةً من `old_separate_hashes` أن تعمل باستخدام `compatible_double_hashes` إلى أن تنقضي أطول نافذة إزالة ازدواجية ذات صلة (نافذة العمليات المتزامنة `replicated_deduplication_window` / `replicated_deduplication_window_seconds`، ونافذة العمليات غير المتزامنة `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts` التي تكون افتراضيًا أسبوعًا واحدًا إذا كانت async inserts مستخدمة، و`non_replicated_deduplication_window`) قبل الاعتماد على قيمة hash الموحّدة. وإلا فإن المعرّفات السابقة للترقية والمحفوظة في الدليلين القديمين `blocks` / `async_blocks` لن تراها قيمة hash الموحّدة، وقد تُقبل محاولات retry الخاصة بها كعمليات insert جديدة، مما ينتج عنه تكرارات.
+تضيف async inserts ملاحظة مهمة عند التحويل إلى `new_unified_hash`: ففي `compatible_double_hashes` تمتد إزالة الازدواجية الخاصة بها فعليًا عبر نافذة العمليات غير المتزامنة (إذ يُحتفظ بمعرّف `async_blocks` طوال تلك المدة)، بينما لا يستشير `new_unified_hash` سوى `deduplication_hashes` (المحفوظة لنافذة العمليات المتزامنة)، لذا يمكن إعادة قبول async inserts الأقدم من نافذة العمليات المتزامنة بعد التحويل حتى بعد الانتظار. قبل تحويل workloads غير المتزامنة، إما ارفع `replicated_deduplication_window` / `replicated_deduplication_window_seconds` إلى نافذة العمليات غير المتزامنة ودع النظام يعمل كذلك طوال نافذة async كاملة، أو أوقف async inserts مؤقتًا طوال نافذة async، أو أبقِ على `compatible_double_hashes`.
 
 <div id="interserver_http_credentials">
   ## interserver_http_credentials
@@ -2140,11 +2177,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="نعم" />
 
-الحد الأقصى لعدد المهام التي يمكن جدولتها في مجمع مؤشرات ترابط الإدخال/الإخراج.
+الحد الأقصى لعدد المهام التي يمكن جدولتها في مجمّع خيوط الإدخال/الإخراج.
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 <div id="jemalloc_collect_global_profile_samples_in_trace_log">
   ## jemalloc_collect_global_profile_samples_in_trace_log
@@ -2212,7 +2249,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 **مثال**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>30</keep_alive_timeout>
 ```
 
 <div id="keeper_hosts">
@@ -2726,9 +2763,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لحجم ذاكرة التخزين المؤقت للعلامات (فهرس جداول عائلة [`MergeTree`](/ar/reference/engines/table-engines/mergetree-family/index)).
 
-<Note>
-  يمكن تعديل هذا الإعداد أثناء التشغيل، وتسري التغييرات فورًا.
-</Note>
+:::note
+يمكن تعديل هذا الإعداد أثناء التشغيل، وتسري التغييرات فورًا.
+:::
 
 <div id="mark_cache_size_ratio">
   ## mark_cache_size_ratio
@@ -2752,9 +2789,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 لا يؤثر تغيير هذا الإعداد في المستخدمين الحاليين. ستفشل استعلامات الإنشاء/التعديل المرتبطة بالمصادقة إذا تجاوزت الحد المحدد في هذا الإعداد.
 أما استعلامات الإنشاء/التعديل غير المرتبطة بالمصادقة فستنجح.
 
-<Note>
-  القيمة `0` تعني عدم وجود حد.
-</Note>
+:::note
+القيمة `0` تعني عدم وجود حد.
+:::
 
 <div id="max_backup_bandwidth_for_server">
   ## max_backup_bandwidth_for_server
@@ -2782,9 +2819,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لعدد الخيوط المستخدمة في بناء فهارس تشابه المتجهات.
 
-<Note>
-  تعني القيمة `0` استخدام جميع الأنوية.
-</Note>
+:::note
+تعني القيمة `0` استخدام جميع الأنوية.
+:::
 
 <div id="max_concurrent_insert_queries">
   ## max_concurrent_insert_queries
@@ -2794,11 +2831,12 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 حدّ إجمالي عدد استعلامات الإدراج المتزامنة.
 
-<Note>
-  تعني القيمة `0` (الافتراضية) عدم وجود حد.
+:::note
 
-  يمكن تعديل هذا الإعداد أثناء وقت التشغيل، ويُطبَّق فورًا. أما الاستعلامات قيد التشغيل بالفعل فتبقى دون تغيير.
-</Note>
+تعني القيمة `0` (الافتراضية) عدم وجود حد.
+
+يمكن تعديل هذا الإعداد أثناء وقت التشغيل، ويُطبَّق فورًا. أما الاستعلامات قيد التشغيل بالفعل فتبقى دون تغيير.
+:::
 
 <div id="max_concurrent_queries">
   ## max_concurrent_queries
@@ -2814,11 +2852,12 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * [`max_concurrent_select_queries`](/ar/reference/settings/server-settings/settings#max_concurrent_select_queries)
 * [`max_concurrent_queries_for_all_users`](/ar/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-<Note>
-  القيمة `0` (الافتراضية) تعني عدم وجود حد.
+:::note
 
-  يمكن تعديل هذا الإعداد في وقت التشغيل، ويسري مفعوله فورًا. أما الاستعلامات قيد التشغيل بالفعل فتبقى دون تغيير.
-</Note>
+القيمة `0` (الافتراضية) تعني عدم وجود حد.
+
+يمكن تعديل هذا الإعداد في وقت التشغيل، ويسري مفعوله فورًا. أما الاستعلامات قيد التشغيل بالفعل فتبقى دون تغيير.
+:::
 
 <div id="max_concurrent_select_queries">
   ## max_concurrent_select_queries
@@ -2828,11 +2867,12 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لإجمالي عدد استعلامات SELECT المتزامنة.
 
-<Note>
-  تعني القيمة `0` (الافتراضية) عدم وجود حد.
+:::note
 
-  يمكن تعديل هذا الإعداد أثناء التشغيل، ويسري مفعوله فورًا. أما الاستعلامات التي تعمل بالفعل فستبقى دون تغيير.
-</Note>
+تعني القيمة `0` (الافتراضية) عدم وجود حد.
+
+يمكن تعديل هذا الإعداد أثناء التشغيل، ويسري مفعوله فورًا. أما الاستعلامات التي تعمل بالفعل فستبقى دون تغيير.
+:::
 
 <div id="max_connections">
   ## max_connections
@@ -2881,9 +2921,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * Replicated
 * Lazy
 
-<Note>
-  تعني القيمة `0` عدم وجود أي حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود أي حد.
+:::
 
 **مثال**
 
@@ -2951,6 +2991,17 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />الحد الأقصى لعدد اللقطات خفيفة الوزن التي يمكن الاحتفاظ بها في الوقت نفسه. يشير الصفر إلى عدم وجود حد. إذا بلغ عدد اللقطات هذا الحد، فسيُرفع استثناء عند محاولة إنشاء لقطة جديدة.
 
+<div id="max_http_index_page_size">
+  ## max_http_index_page_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
+
+الحد الأقصى لحجم استجابة صفحة فهرس HTTP المستخدمة لسرد محتويات الدليل عبر HTTP.
+إذا تجاوزت الاستجابة هذا الحد، يفشل الاستعلام مع ظهور خطأ.
+
+القيمة الافتراضية: `10485760`‏ (10 MiB).
+
 <div id="max_io_thread_pool_free_size">
   ## max_io_thread_pool_free_size
 </div>
@@ -2989,9 +3040,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لمعدل القراءات المحلية بالبايت في الثانية.
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 <div id="max_local_write_bandwidth_for_server">
   ## max_local_write_bandwidth_for_server
@@ -3001,9 +3052,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لسرعة الكتابة المحلية بالبايت في الثانية.
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 <div id="max_materialized_views_count_for_table">
   ## max_materialized_views_count_for_table
@@ -3013,9 +3064,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 حدّ أقصى لعدد العروض المُجسَّدة المرتبطة بجدول.
 
-<Note>
-  لا تُؤخذ هنا في الاعتبار إلا العروض التابعة المباشرة، ولا يُؤخذ في الاعتبار إنشاء عرض فوق عرض آخر.
-</Note>
+:::note
+لا تُؤخذ هنا في الاعتبار إلا العروض التابعة المباشرة، ولا يُؤخذ في الاعتبار إنشاء عرض فوق عرض آخر.
+:::
 
 <div id="max_merges_bandwidth_for_server">
   ## max_merges_bandwidth_for_server
@@ -3037,9 +3088,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 إذا كان عدد المجموعات المُسمّاة أكبر من هذه القيمة، فسيرفع الخادم استثناءً.
 
-<Note>
-  تعني القيمة `0` عدم وجود أي قيد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود أي قيد.
+:::
 
 **مثال**
 
@@ -3069,9 +3120,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لعدد الملفات المفتوحة.
 
-<Note>
-  نوصي باستخدام هذا الخيار في MacOS، لأن الدالة `getrlimit()` تُرجع قيمة غير صحيحة.
-</Note>
+:::note
+نوصي باستخدام هذا الخيار في MacOS، لأن الدالة `getrlimit()` تُرجع قيمة غير صحيحة.
+:::
 
 <div id="max_os_cpu_wait_time_ratio_to_drop_connection">
   ## max_os_cpu_wait_time_ratio_to_drop_connection
@@ -3111,13 +3162,13 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 قيد على حذف الأقسام.
 
 إذا تجاوز حجم table من نوع [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) قيمة [`max_partition_size_to_drop`](#max_partition_size_to_drop) (بالبايت)، فلن تتمكن من حذف partition باستخدام استعلام [DROP PARTITION](/ar/reference/statements/alter/partition#drop-partitionpart).
-لا يتطلب تطبيق هذا الإعداد إعادة تشغيل ClickHouse server. وهناك طريقة أخرى لتعطيل هذا القيد، وهي إنشاء الملف `<clickhouse-path>/flags/force_drop_table`.
+لا يتطلب تطبيق هذا الإعداد إعادة تشغيل خادم ClickHouse. وهناك طريقة أخرى لتعطيل هذا القيد، وهي إنشاء الملف `<clickhouse-path>/flags/force_drop_table`.
 
-<Note>
-  تعني القيمة `0` أنه يمكنك حذف الأقسام دون أي قيود.
+:::note
+تعني القيمة `0` أنه يمكنك حذف الأقسام دون أي قيود.
 
-  لا ينطبق هذا القيد على عمليتي drop table و truncate table، راجع [max&#95;table&#95;size&#95;to&#95;drop](/ar/reference/settings/session-settings#max_table_size_to_drop)
-</Note>
+لا ينطبق هذا القيد على عمليتي drop table و truncate table، راجع [max&#95;table&#95;size&#95;to&#95;drop](/ar/reference/settings/session-settings#max_table_size_to_drop)
+:::
 
 **مثال**
 
@@ -3159,6 +3210,14 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
 ```
 
+<div id="max_per_cpu_untracked_memory">
+  ## max_per_cpu_untracked_memory
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="نعم" />
+
+الحد الأقصى، بالبايت، للذاكرة غير المتعقَّبة التي يمكن أن تحتفظ بها جميع الخيوط العاملة على CPU واحد في الوقت نفسه قبل تفريغها إلى متعقّب الذاكرة. في حين أن `max_untracked_memory` يقيّد خيطًا واحدًا، فإن هذا الإعداد يقيّد الإجمالي لكل CPU، بحيث لا تتمكن الخيوط المتعددة من مضاعفة الحصة المسموح بها لكل خيط لتتحول إلى overcommit كبير على مستوى الخادم بأكمله. لذلك، يكون إجمالي الذاكرة غير المتعقَّبة مقيَّدًا تقريبًا بالقيمة `number_of_cpus * max_per_cpu_untracked_memory`. تؤدي القيمة `0` إلى تعطيل الحد لكل CPU (وعندها لا يُطبَّق سوى `max_untracked_memory` لكل خيط). Linux فقط.
+
 <div id="max_prefixes_deserialization_thread_pool_free_size">
   ## max_prefixes_deserialization_thread_pool_free_size
 </div>
@@ -3183,9 +3242,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لسرعة نقل البيانات عبر الشبكة، بالبايت في الثانية، لعمليات القراءة.
 
-<Note>
-  تعني القيمة `0` (الافتراضية) عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` (الافتراضية) عدم وجود حد.
+:::
 
 <div id="max_remote_write_network_bandwidth_for_server">
   ## max_remote_write_network_bandwidth_for_server
@@ -3195,9 +3254,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 السرعة القصوى لتبادل البيانات عبر الشبكة، محسوبةً بالبايت في الثانية، لعمليات الكتابة.
 
-<Note>
-  تعني القيمة `0` (الافتراضية) عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` (الافتراضية) عدم وجود حد.
+:::
 
 <div id="max_replicated_fetches_network_bandwidth_for_server">
   ## max_replicated_fetches_network_bandwidth_for_server
@@ -3217,7 +3276,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="لا" />
 
-إذا كان عدد الجداول المُكرَّرة أكبر من هذه القيمة، فسيرفع الخادوم استثناءً.
+إذا كان عدد الجداول المُكرَّرة أكبر من هذه القيمة، فسيطرح الخادوم استثناءً.
 
 يُحتسب عدد الجداول فقط لمحركات قواعد البيانات التالية:
 
@@ -3226,9 +3285,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * Replicated
 * Lazy
 
-<Note>
-  تعني القيمة `0` عدم وجود أي قيد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود أي قيد.
+:::
 
 **مثال**
 
@@ -3244,9 +3303,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 الحد الأقصى لمقدار الذاكرة المسموح للخادم باستخدامه، ويُعبَّر عنه بالبايت.
 
-<Note>
-  يُقيَّد الحد الأقصى لاستهلاك الخادم للذاكرة أيضًا بالإعداد `max_server_memory_usage_to_ram_ratio`.
-</Note>
+:::note
+يُقيَّد الحد الأقصى لاستهلاك الخادم للذاكرة أيضًا بالإعداد `max_server_memory_usage_to_ram_ratio`.
+:::
 
 كحالة خاصة، تعني القيمة `0` (الافتراضية) أن الخادم يمكنه استهلاك كل الذاكرة المتاحة (باستثناء القيود الإضافية التي يفرضها `max_server_memory_usage_to_ram_ratio`).
 
@@ -3266,13 +3325,13 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 تُطبَّق هذه النسبة بطريقتين:
 
 * عند بدء التشغيل (وعند إعادة تحميل الإعدادات)، فإنها تقيّد الحد الأقصى الصارم لذاكرة الخادوم بهذه النسبة من إجمالي RAM الفعلية، كما هو موضح أعلاه.
-* أثناء وقت التشغيل، يعيد background memory worker حساب hard memory limit دوريًا وفقًا للمعادلة `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`، بحيث يترك الخادوم headroom للعمليات الأخرى التي تعمل على المضيف نفسه. وعند التشغيل داخل cgroup بحد memory limit محدد، تُستخدم الذاكرة المتاحة الخاصة بـ cgroup بدلًا من القيمة على مستوى المضيف كله. ومع ازدياد استهلاك العمليات الأخرى وتراجع الذاكرة المتاحة، ينخفض الحد الصارم للخادوم تبعًا لذلك، فيقيّد التوسع قبل أن تنفد الذاكرة على المضيف (أو داخل cgroup).
+* أثناء وقت التشغيل، يعيد عامل الذاكرة في الخلفية حساب الحد الصارم للذاكرة دوريًا وفقًا للمعادلة `(resident memory + system available memory) * max_server_memory_usage_to_ram_ratio`، بحيث يترك الخادوم سعة احتياطية للعمليات الأخرى التي تعمل على المضيف نفسه. وعند التشغيل داخل cgroup بحد memory limit محدود، تُستخدم الذاكرة المتاحة الخاصة بـ cgroup بدلًا من القيمة على مستوى المضيف كله. ومع ازدياد استهلاك العمليات الأخرى وتراجع الذاكرة المتاحة، ينخفض الحد الصارم للخادوم تبعًا لذلك، فيقيّد التوسع قبل أن تنفد الذاكرة على المضيف (أو داخل cgroup).
 
 يؤدي تعيين النسبة إلى `0` إلى تعطيل كلٍّ من القيد عند بدء التشغيل والضبط أثناء وقت التشغيل. كما أن الضبط أثناء وقت التشغيل يكون أيضًا بلا تأثير على الأنظمة غير Linux وفي `clickhouse-keeper`، الذي لا يوفّر هذا الإعداد. وللاحتفاظ بالقيد الثابت عند بدء التشغيل/إعادة التحميل مع تعطيل الضبط أثناء وقت التشغيل (وهو سلوك الإصدارات السابقة)، اضبط `memory_worker_dynamic_hard_limit` على `0`.
 
-<Note>
-  يُقيَّد الحد الأقصى لاستهلاك ذاكرة الخادوم أيضًا بواسطة الإعداد `max_server_memory_usage`.
-</Note>
+:::note
+يُقيَّد الحد الأقصى لاستهلاك ذاكرة الخادوم أيضًا بواسطة الإعداد `max_server_memory_usage`.
+:::
 
 <div id="max_session_timeout">
   ## max_session_timeout
@@ -3304,7 +3363,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
-إذا كان عدد الجداول أكبر من هذه القيمة، فسيُطلق الخادم استثناءً.
+إذا كان عدد الجداول أكبر من هذه القيمة، فسيطرح الخادم استثناءً.
 
 لا تُحتسب الجداول التالية:
 
@@ -3320,9 +3379,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * Replicated
 * Lazy
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 **مثال**
 
@@ -3354,11 +3413,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 إذا تجاوز حجم جدول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) قيمة `max_table_size_to_drop` (بالبايت)، فلن تتمكن من حذفه باستخدام استعلام [`DROP`](/ar/reference/statements/drop) أو [`TRUNCATE`](/ar/reference/statements/truncate).
 
-<Note>
-  تعني القيمة `0` أنه يمكنك حذف جميع الجداول دون أي قيود.
+:::note
+تعني القيمة `0` أنه يمكنك حذف جميع الجداول دون أي قيود.
 
-  لا يتطلب تطبيق هذا الإعداد إعادة تشغيل خادم ClickHouse. وهناك طريقة أخرى لتعطيل هذا القيد، وهي إنشاء الملف `<clickhouse-path>/flags/force_drop_table`.
-</Note>
+لا يتطلب تطبيق هذا الإعداد إعادة تشغيل خادم ClickHouse. وهناك طريقة أخرى لتعطيل هذا القيد، وهي إنشاء الملف `<clickhouse-path>/flags/force_drop_table`.
+:::
 
 **مثال**
 
@@ -3375,9 +3434,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 الحد الأقصى لمساحة التخزين التي يمكن استخدامها للتجميع الخارجي أو عمليات الربط أو الفرز.
 ستفشل الاستعلامات التي تتجاوز هذا الحد مع ظهور استثناء.
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 انظر أيضًا:
 
@@ -3433,9 +3492,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * Replicated
 * Lazy
 
-<Note>
-  تعني القيمة `0` عدم وجود أي قيد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود أي قيد.
+:::
 
 **مثال**
 
@@ -3466,23 +3525,24 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 حدّ إجمالي عدد الاستعلامات المنتظرة بالتزامن.
 يُعلَّق تنفيذ الاستعلام المنتظر أثناء تحميل الجداول المطلوبة بشكل غير متزامن (راجع [`async_load_databases`](/ar/reference/settings/server-settings/settings#async_load_databases).
 
-<Note>
-  لا تُحتسب الاستعلامات المنتظرة عند التحقق من الحدود التي تتحكم فيها الإعدادات التالية:
+:::note
+لا تُحتسب الاستعلامات المنتظرة عند التحقق من الحدود التي تتحكم فيها الإعدادات التالية:
 
-  * [`max_concurrent_queries`](/ar/reference/settings/server-settings/settings#max_concurrent_queries)
-  * [`max_concurrent_insert_queries`](/ar/reference/settings/server-settings/settings#max_concurrent_insert_queries)
-  * [`max_concurrent_select_queries`](/ar/reference/settings/server-settings/settings#max_concurrent_select_queries)
-  * [`max_concurrent_queries_for_user`](/ar/reference/settings/session-settings#max_concurrent_queries_for_user)
-  * [`max_concurrent_queries_for_all_users`](/ar/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+* [`max_concurrent_queries`](/ar/reference/settings/server-settings/settings#max_concurrent_queries)
+* [`max_concurrent_insert_queries`](/ar/reference/settings/server-settings/settings#max_concurrent_insert_queries)
+* [`max_concurrent_select_queries`](/ar/reference/settings/server-settings/settings#max_concurrent_select_queries)
+* [`max_concurrent_queries_for_user`](/ar/reference/settings/session-settings#max_concurrent_queries_for_user)
+* [`max_concurrent_queries_for_all_users`](/ar/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-  يُجرى هذا التصحيح لتجنّب بلوغ هذه الحدود مباشرةً بعد بدء تشغيل الخادم.
-</Note>
+يُجرى هذا التصحيح لتجنّب بلوغ هذه الحدود مباشرةً بعد بدء تشغيل الخادم.
+:::
 
-<Note>
-  القيمة `0` (الافتراضية) تعني عدم وجود حد.
+:::note
 
-  يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق فورًا. أما الاستعلامات التي تكون قيد التشغيل بالفعل، فستبقى دون تغيير.
-</Note>
+القيمة `0` (الافتراضية) تعني عدم وجود حد.
+
+يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق فورًا. أما الاستعلامات التي تكون قيد التشغيل بالفعل، فستبقى دون تغيير.
+:::
 
 <div id="max_zookeeper_pooled_connections">
   ## max_zookeeper_pooled_connections
@@ -3546,6 +3606,29 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 نسبة العتبة لتنفيذ تطهير في `jemalloc` مقارنةً بالذاكرة المتاحة لخادم ClickHouse. عندما يتجاوز إجمالي استخدام الذاكرة هذه النسبة، يفرض عامل الذاكرة في الخلفية تنفيذ تطهير للصفحات المتسخة. إذا ضُبطت على 0، يُعطَّل تنفيذ التطهير القسري استنادًا إلى إجمالي الذاكرة.
 
+<div id="memory_worker_rss_speculative_reserve_ratio">
+  ## memory_worker_rss_speculative_reserve_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
+
+عند كل نبضة لـ `MemoryWorker`، يُحجَز مقدار إضافي قدره
+`ratio * min(resident - previous_resident, resident - tracked)` فوق
+قيمة RSS المرصودة، على افتراض أن النبضة التالية قد تنمو بالمقدار نفسه
+الذي نمت به النبضة السابقة (`resident - previous_resident` هو مقدار نمو RSS
+خلال النبضة الأخيرة). ويُقيَّد هذا النمو بـ `resident - tracked`، وهو الجزء
+من RSS غير المرئي لمتتبّع الذاكرة العام، لأن النمو الذي جرى تتبعه بالفعل
+تتعامل معه آلية التحقق المعتادة من الحد الصارم. ويُطبَّق هذا الحجز على العداد `rss`
+الذي ترجع إليه آلية التحقق العامة من الحد الصارم عبر `MemoryTracker::allocImpl`،
+لذلك عندما تتجاوز القيمة المستقرأة `max_server_memory_usage`، فإن
+عمليات التخصيص اللاحقة تُطلِق `MEMORY_LIMIT_EXCEEDED`
+قبل أن يتدخل OOM-killer في النواة. تؤدي القيمة `0`
+إلى تعطيل هذا التقدير الاستباقي (مع الرجوع إلى `rss = resident`)؛ أما القيمة الافتراضية `1`
+فتحجز دلتا نمو كاملة واحدة كسعة احتياطية للفاصل الزمني التالي. عند استخدام
+sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`) تكون القيمة الافتراضية `0`، لأن
+الفجوة `resident - tracked` تهيمن عليها أعباء الـ shadow / runtime الخاصة بـ sanitizer
+بدلًا من تأخر التتبع المحاسبي في المتتبّع.
+
 <div id="memory_worker_use_cgroup">
   ## memory_worker_use_cgroup
 </div>
@@ -3589,9 +3672,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 يُحدّد هذا الإعداد مقدار ذاكرة RAM المسموح باستخدامه لتنفيذ عمليات الدمج والتعديل.
 إذا بلغ ClickHouse الحد المحدد، فلن يُجدول أي عمليات دمج أو تعديل جديدة في الخلفية، لكنه سيواصل تنفيذ المهام المجدولة بالفعل.
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 **مثال**
 
@@ -3686,9 +3769,9 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 نفِّذ `<mlockall>` بعد بدء التشغيل لتقليل زمن استجابة الاستعلامات الأولى ومنع ترحيل الملف التنفيذي لـ ClickHouse خارج الذاكرة عند ارتفاع حمل IO.
 
-<Note>
-  يُوصى بتمكين هذا الخيار، لكنه سيؤدي إلى زيادة وقت بدء التشغيل بما يصل إلى بضع ثوانٍ. ضع في اعتبارك أن هذا الإعداد لن يعمل دون الصلاحية ‏&quot;CAP&#95;IPC&#95;LOCK&quot;.
-</Note>
+:::note
+يُوصى بتمكين هذا الخيار، لكنه سيؤدي إلى زيادة وقت بدء التشغيل بما يصل إلى بضع ثوانٍ. ضع في اعتبارك أن هذا الإعداد لن يعمل دون الصلاحية &quot;CAP&#95;IPC&#95;LOCK&quot;.
+:::
 
 **مثال**
 
@@ -3715,11 +3798,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 * `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` في [`system.metrics`](/ar/reference/system-tables/metrics)، [`system.metric_log`](/ar/reference/system-tables/metric_log)
 * `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` في [`system.events`](/ar/reference/system-tables/events)، [`system.processes`](/ar/reference/system-tables/processes)، [`system.query_log`](/ar/reference/system-tables/query_log)، [`system.query_thread_log`](/ar/reference/system-tables/query_thread_log)، [`system.query_views_log`](/ar/reference/system-tables/query_views_log)
 
-<Note>
-  حجم البيانات في الملفات المعيّنة لا يستهلك الذاكرة مباشرةً، ولا يُحتسب ضمن استخدام الذاكرة الخاص بالاستعلام أو الخادم، لأن هذه الذاكرة يمكن التخلص منها بطريقة مشابهة لذاكرة صفحات نظام التشغيل. يُسقَط cache (أي تُغلَق الملفات) تلقائيًا عند إزالة الأجزاء القديمة في جداول من عائلة MergeTree، كما يمكن إسقاطه يدويًا عبر الاستعلام `SYSTEM DROP MMAP CACHE`.
+:::note
+حجم البيانات في الملفات المعيّنة لا يستهلك الذاكرة مباشرةً، ولا يُحتسب ضمن استخدام الذاكرة الخاص بالاستعلام أو الخادم، لأن هذه الذاكرة يمكن التخلص منها بطريقة مشابهة لذاكرة صفحات نظام التشغيل. يُسقَط cache (أي تُغلَق الملفات) تلقائيًا عند إزالة الأجزاء القديمة في جداول من عائلة MergeTree، كما يمكن إسقاطه يدويًا عبر الاستعلام `SYSTEM DROP MMAP CACHE`.
 
-  يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق أثره فورًا.
-</Note>
+يمكن تعديل هذا الإعداد أثناء التشغيل، ويُطبَّق أثره فورًا.
+:::
 
 <div id="mutation_workload">
   ## mutation_workload
@@ -4322,15 +4405,37 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 المسار إلى الدليل الذي يحتوي على البيانات.
 
-<Note>
-  الشرطة المائلة الأخيرة إلزامية.
-</Note>
+:::note
+الشرطة المائلة الأخيرة إلزامية.
+:::
 
 **مثال**
 
 ```xml
 <path>/var/lib/clickhouse/</path>
 ```
+
+<div id="per_cpu_untracked_memory_thread_buffer">
+  ## per_cpu_untracked_memory_thread_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
+
+مقدار الذاكرة غير المتتبَّعة، بالبايت، الذي يمكن لكل خيط تنفيذ الاحتفاظ به دون المساس بالميزانية المشتركة لكل CPU. يخفّض ذلك الكلفة المتوسطة لتتبّع الاستهلاك لكل CPU عند تخصيصات الذاكرة الصغيرة، وهو الهامش المُضاف فوق `max_per_cpu_untracked_memory * number_of_cpus` في أسوأ الحالات. تؤدي القيمة `0` إلى إزالة هذا الهامش: إذ يُحدِّث كل تخصيص العدادَ المشترك لكل CPU (وهذا هو الأدق، لكنه يسبب مزيدًا من التزاحم). على Linux فقط.
+
+<div id="point_in_polygon_cache_size">
+  ## point_in_polygon_cache_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
+
+الحد الأقصى للحجم، بالبايت، لذاكرة التخزين المؤقت للمضلعات المُعالجة مسبقًا والمستخدمة في الدالة `pointInPolygon` مع وسيطة مضلع ثابتة.
+تُزال العناصر التي تتجاوز هذا الحد وفق ترتيب الأقل استخدامًا مؤخرًا.
+يؤدي تعيينه إلى `0` إلى تعطيل ذاكرة التخزين المؤقت: تُزال جميع المضلعات المخزنة مؤقتًا، ويُعاد إجراء المعالجة المسبقة لمضلع ثابت في كل استعلام لاحق من جديد.
+يمكن أيضًا مسح ذاكرة التخزين المؤقت يدويًا، دون تغيير هذا الحد، باستخدام استعلام [`SYSTEM DROP POINT IN POLYGON CACHE`](/ar/reference/statements/system#drop-point-in-polygon-cache).
+:::note
+يمكن تعديل هذا الإعداد في وقت التشغيل، وسيصبح ساري المفعول فورًا.
+:::
 
 <div id="postgresql_port">
   ## postgresql_port
@@ -4373,11 +4478,11 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Yes" />
 
-الحد الأقصى لعدد المهام التي يمكن إدراجها في قائمة انتظار تجمع مؤشرات الترابط لفك تسلسل البوادئ.
+الحد الأقصى لعدد المهام التي يمكن إدراجها في قائمة انتظار مجمّع خيط لإلغاء تسلسل البوادئ.
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 <div id="prepare_system_log_tables_on_startup">
   ## prepare_system_log_tables_on_startup
@@ -4702,10 +4807,9 @@ curl 127.0.0.1:9363/metrics
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="نعم" />
 
 الحد الأقصى لحجم ذاكرة التخزين المؤقت لشروط الاستعلام.
-
-<Note>
-  يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق على الفور.
-</Note>
+:::note
+يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق على الفور.
+:::
 
 <div id="query_condition_cache_size_ratio">
   ## query_condition_cache_size_ratio
@@ -4874,9 +4978,9 @@ curl 127.0.0.1:9363/metrics
 
 إعداد لإعادة تخصيص الذاكرة للشفرة الآلية (&quot;text&quot;) باستخدام الصفحات الضخمة.
 
-<Note>
-  هذه الميزة تجريبية للغاية.
-</Note>
+:::note
+هذه الميزة تجريبية للغاية.
+:::
 
 **مثال**
 
@@ -5063,6 +5167,12 @@ curl 127.0.0.1:9363/metrics
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />إذا تم ضبطه على true، فسيُظهر العناوين في تتبعات المكدس
+
+<div id="show_license_expiration_warnings">
+  ## show_license_expiration_warnings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />يعرض تحذيرًا بشأن قرب انتهاء صلاحية الترخيص في system.warnings
 
 <div id="shutdown_wait_backups_and_restores">
   ## shutdown_wait_backups_and_restores
@@ -5298,9 +5408,9 @@ curl 127.0.0.1:9363/metrics
 
 يحدّد عدد خيوط التنفيذ التي تنفّذ مهام التحميل غير المتزامنة في مجمّع الخلفية. يُستخدم مجمّع الخلفية لتحميل الجداول بشكل غير متزامن بعد بدء تشغيل الخادم إذا لم تكن هناك أي استعلامات تنتظر الجدول. قد يكون من المفيد الإبقاء على عدد منخفض من خيوط التنفيذ في مجمّع الخلفية إذا كان هناك عدد كبير من الجداول. فهذا يترك موارد CPU متاحة لتنفيذ الاستعلامات المتزامنة.
 
-<Note>
-  تعني القيمة `0` استخدام جميع وحدات CPU المتاحة.
-</Note>
+:::note
+تعني القيمة `0` استخدام جميع وحدات CPU المتاحة.
+:::
 
 <div id="tables_loader_foreground_pool_size">
   ## tables_loader_foreground_pool_size
@@ -5310,9 +5420,9 @@ curl 127.0.0.1:9363/metrics
 
 يحدّد عدد الخيوط التي تنفّذ مهام التحميل في المجمّع الأمامي. يُستخدم المجمّع الأمامي لتحميل الجداول بشكل متزامن قبل أن يبدأ الخادم الاستماع على منفذ، وكذلك لتحميل الجداول التي يُنتظر اكتمال تحميلها. ويتمتع المجمّع الأمامي بأولوية أعلى من المجمّع الخلفي. وهذا يعني أنه لا تبدأ أي مهمة في المجمّع الخلفي ما دامت هناك مهام قيد التشغيل في المجمّع الأمامي.
 
-<Note>
-  تعني القيمة `0` استخدام جميع وحدات CPU المتاحة.
-</Note>
+:::note
+تعني القيمة `0` استخدام جميع وحدات CPU المتاحة.
+:::
 
 <div id="tcp_close_connection_after_queries_num">
   ## tcp_close_connection_after_queries_num
@@ -5370,15 +5480,15 @@ curl 127.0.0.1:9363/metrics
 في هذا القسم، يجب تحديد اسم القرص من النوع `cache`.
 في هذه الحالة، ستتشارك ذاكرة التخزين المؤقت والبيانات المؤقتة المساحة نفسها، ويمكن إخلاء ذاكرة التخزين المؤقت الخاصة بالقرص لإنشاء بيانات مؤقتة.
 
-<Note>
-  لا يمكن استخدام إلا خيار واحد لتهيئة تخزين البيانات المؤقتة: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
-</Note>
+:::note
+لا يمكن استخدام إلا خيار واحد لتهيئة تخزين البيانات المؤقتة: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+:::
 
 **مثال**
 
 سيتم تخزين كلٍّ من ذاكرة التخزين المؤقت الخاصة بـ `local_disk` والبيانات المؤقتة في `/tiny_local_cache` على نظام الملفات، والذي يديره `tiny_local_cache`.
 
-```xml highlight={9-16,20}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5387,6 +5497,7 @@ curl 127.0.0.1:9363/metrics
 <path>/local_disk/</path>
 </local_disk>
 
+<!-- highlight-start -->
 <tiny_local_cache>
 <type>cache</type>
 <disk>local_disk</disk>
@@ -5395,10 +5506,13 @@ curl 127.0.0.1:9363/metrics
 <max_file_segment_size>1M</max_file_segment_size>
 <cache_on_write_operations>1</cache_on_write_operations>
 </tiny_local_cache>
+<!-- highlight-end -->
 </disks>
 </storage_configuration>
 
+<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5426,9 +5540,9 @@ curl 127.0.0.1:9363/metrics
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />حجم ذاكرة التخزين المؤقت لرؤوس الفهرس النصي. وتعني القيمة صفر أنه معطّل.
 
-<Note>
-  يمكن تعديل هذا الإعداد أثناء التشغيل، ويسري مفعوله فورًا.
-</Note>
+:::note
+يمكن تعديل هذا الإعداد أثناء التشغيل، ويسري مفعوله فورًا.
+:::
 
 <div id="text_index_header_cache_size_ratio">
   ## text_index_header_cache_size_ratio
@@ -5454,9 +5568,9 @@ curl 127.0.0.1:9363/metrics
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="نعم" />حجم ذاكرة التخزين المؤقت لقوائم الترحيل في الفهرس النصي. تعني القيمة صفر أن هذه الميزة معطّلة.
 
-<Note>
-  يمكن تعديل هذا الإعداد في وقت التشغيل، ويُطبَّق فورًا.
-</Note>
+:::note
+يمكن تعديل هذا الإعداد في وقت التشغيل، ويُطبَّق فورًا.
+:::
 
 <div id="text_index_postings_cache_size_ratio">
   ## text_index_postings_cache_size_ratio
@@ -5482,9 +5596,9 @@ curl 127.0.0.1:9363/metrics
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />حجم ذاكرة التخزين المؤقت لرموز الفهرس النصي. تعني القيمة صفر أنه معطّل.
 
-<Note>
-  يمكن تعديل هذا الإعداد في وقت التشغيل، ويسري مفعوله فورًا.
-</Note>
+:::note
+يمكن تعديل هذا الإعداد في وقت التشغيل، ويسري مفعوله فورًا.
+:::
 
 <div id="text_index_tokens_cache_size_ratio">
   ## text_index_tokens_cache_size_ratio
@@ -5533,9 +5647,9 @@ curl 127.0.0.1:9363/metrics
 
 الحد الأقصى لعدد المهام التي يمكن جدولة تنفيذها في مجمّع الخيوط العام. تؤدي زيادة حجم الطابور إلى ارتفاع استخدام الذاكرة. يُوصى بالإبقاء على هذه القيمة مساوية لـ [`max_thread_pool_size`](/ar/reference/settings/server-settings/settings#max_thread_pool_size).
 
-<Note>
-  تعني القيمة `0` عدم وجود حد.
-</Note>
+:::note
+تعني القيمة `0` عدم وجود حد.
+:::
 
 **مثال**
 
@@ -5628,10 +5742,11 @@ curl 127.0.0.1:9363/metrics
 
 المسار في نظام الملفات المحلي لتخزين البيانات المؤقتة المستخدمة في معالجة الاستعلامات الكبيرة.
 
-<Note>
-  * لا يمكن استخدام سوى خيار واحد لإعداد تخزين البيانات المؤقتة: tmp&#95;path, tmp&#95;policy, temporary&#95;data&#95;in&#95;cache.
-  * الشرطة المائلة الختامية إلزامية.
-</Note>
+:::note
+
+* لا يمكن استخدام سوى خيار واحد لإعداد تخزين البيانات المؤقتة: tmp&#95;path, tmp&#95;policy, temporary&#95;data&#95;in&#95;cache.
+* الشرطة المائلة الختامية إلزامية.
+  :::
 
 **مثال**
 
@@ -5645,27 +5760,28 @@ curl 127.0.0.1:9363/metrics
 
 سياسة لتخزين البيانات المؤقتة. ستُزال جميع الملفات ذات البادئة `tmp` عند بدء التشغيل.
 
-<Note>
-  توصيات لاستخدام التخزين الكائني مع `tmp_policy`:
+:::note
+توصيات لاستخدام التخزين الكائني مع `tmp_policy`:
 
-  * استخدم `bucket:path` منفصلًا على كل خادم
-  * استخدم `metadata_type=plain`
-  * قد ترغب أيضًا في تعيين TTL لهذه الـ bucket
-</Note>
+* استخدم `bucket:path` منفصلًا على كل خادم
+* استخدم `metadata_type=plain`
+* قد ترغب أيضًا في تعيين TTL لهذه الـ bucket
+  :::
 
-<Note>
-  * لا يمكن استخدام سوى خيار واحد لتهيئة تخزين البيانات المؤقتة: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
-  * يتم تجاهل `move_factor` و`keep_free_space_bytes` و`max_data_part_size_bytes`.
-  * يجب أن تحتوي السياسة على *volume* واحدة فقط
+:::note
 
-  لمزيد من المعلومات، راجع توثيق [محرك جدول MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
-</Note>
+* لا يمكن استخدام سوى خيار واحد لتهيئة تخزين البيانات المؤقتة: `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+* يتم تجاهل `move_factor` و`keep_free_space_bytes` و`max_data_part_size_bytes`.
+* يجب أن تحتوي السياسة على *volume* واحدة فقط
+
+لمزيد من المعلومات، راجع توثيق [محرك جدول MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
+:::
 
 **مثال**
 
 عندما تمتلئ `/disk1`، ستُخزَّن البيانات المؤقتة على `/disk2`.
 
-```xml highlight={13-20,24}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5678,6 +5794,7 @@ curl 127.0.0.1:9363/metrics
 </disks>
 
 <policies>
+<!-- highlight-start -->
 <tmp_two_disks>
 <volumes>
 <main>
@@ -5686,10 +5803,13 @@ curl 127.0.0.1:9363/metrics
 </main>
 </volumes>
 </tmp_two_disks>
+<!-- highlight-end -->
 </policies>
 </storage_configuration>
 
+<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5799,17 +5919,35 @@ curl 127.0.0.1:9363/metrics
 
 تكون ذاكرة التخزين المؤقت غير المضغوطة مفيدة للاستعلامات القصيرة جدًا في بعض الحالات.
 
-<Note>
-  تعني القيمة `0` أنه معطّل.
+:::note
+تعني القيمة `0` أنه معطّل.
 
-  يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق فورًا.
-</Note>
+يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق فورًا.
+:::
 
 <div id="uncompressed_cache_size_ratio">
   ## uncompressed_cache_size_ratio
 </div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />حجم الطابور المحمي (في حالة سياسة SLRU) في ذاكرة التخزين المؤقت غير المضغوطة، نسبةً إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
+
+<div id="unique_key_bitmap_cache_policy">
+  ## unique_key_bitmap_cache_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="لا" />اسم سياسة التخزين المؤقت لـ delete-bitmap في UNIQUE KEY ‏(SLRU أو LRU).
+
+<div id="unique_key_bitmap_cache_size_bytes">
+  ## unique_key_bitmap_cache_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />الحد الأقصى للحجم، بالبايت، لذاكرة التخزين المؤقت داخل العملية لخرائط البت الخاصة بحذف UNIQUE KEY لكل جزء. اضبطه على 0 لتعطيل ذاكرة التخزين المؤقت.
+
+<div id="unique_key_bitmap_cache_size_ratio">
+  ## unique_key_bitmap_cache_size_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="لا" />حجم الطابور المحمي (في حال استخدام سياسة SLRU) في ذاكرة التخزين المؤقت لـ delete-bitmap الخاصة بـ UNIQUE KEY، كنسبة إلى الحجم الإجمالي لذاكرة التخزين المؤقت.
 
 <div id="unique_key_index_cache_policy">
   ## unique_key_index_cache_policy
@@ -6086,9 +6224,9 @@ curl 127.0.0.1:9363/metrics
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />حجم ذاكرة التخزين المؤقت لفهارس تشابه المتجهات. تعني القيمة صفر أنه معطّل.
 
-<Note>
-  يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق فورًا.
-</Note>
+:::note
+يمكن تعديل هذا الإعداد أثناء التشغيل، وسيُطبَّق فورًا.
+:::
 
 <div id="vector_similarity_index_cache_size_ratio">
   ## vector_similarity_index_cache_size_ratio
@@ -6189,16 +6327,14 @@ curl 127.0.0.1:9363/metrics
 
 يوجد أيضًا الإعداد `zookeeper_load_balancing` (اختياري) الذي يتيح لك اختيار خوارزمية تحديد عقدة ZooKeeper:
 
-| Algorithm Name                   | Description                                                                                                               |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `random`                         | يختار عشوائيًا إحدى عقد ZooKeeper.                                                                                        |
-| `in_order`                       | يختار أول عقدة ZooKeeper، وإذا لم تكن متاحة فالثانية، وهكذا.                                                              |
-| `nearest_hostname`               | يختار عقدة ZooKeeper التي يكون اسم المضيف فيها الأكثر تشابهًا مع اسم مضيف الخادم، وتُجرى المقارنة باستخدام بادئة الاسم.   |
-| `hostname_levenshtein_distance`  | مثل `nearest_hostname` تمامًا، لكنه يقارن اسم المضيف باستخدام مسافة Levenshtein.                                          |
-| `hostname_longest_common_prefix` | مثل `nearest_hostname` تمامًا، لكنه يفضّل العقدة التي يشترك اسم المضيف الخاص بها مع اسم مضيف الخادم في أطول بادئة مشتركة. |
-| `hostname_longest_common_suffix` | مثل `nearest_hostname` تمامًا، لكنه يفضّل العقدة التي يشترك اسم المضيف الخاص بها مع اسم مضيف الخادم في أطول لاحقة مشتركة. |
-| `first_or_random`                | يختار أول عقدة ZooKeeper، وإذا لم تكن متاحة يختار عشوائيًا إحدى عقد ZooKeeper المتبقية.                                   |
-| `round_robin`                    | يختار أول عقدة ZooKeeper، وإذا حدثت إعادة اتصال يختار العقدة التالية.                                                     |
+| Algorithm Name                  | Description                                                                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `random`                        | يختار عشوائيًا إحدى عقد ZooKeeper.                                                                                      |
+| `in_order`                      | يختار أول عقدة ZooKeeper، وإذا لم تكن متاحة فالثانية، وهكذا.                                                            |
+| `nearest_hostname`              | يختار عقدة ZooKeeper التي يكون اسم المضيف فيها الأكثر تشابهًا مع اسم مضيف الخادم، وتُجرى المقارنة باستخدام بادئة الاسم. |
+| `hostname_levenshtein_distance` | مثل `nearest_hostname` تمامًا، لكنه يقارن اسم المضيف باستخدام مسافة Levenshtein.                                        |
+| `first_or_random`               | يختار أول عقدة ZooKeeper، وإذا لم تكن متاحة يختار عشوائيًا إحدى عقد ZooKeeper المتبقية.                                 |
+| `round_robin`                   | يختار أول عقدة ZooKeeper، وإذا حدثت إعادة اتصال يختار العقدة التالية.                                                   |
 
 **مثال على التهيئة**
 
@@ -6218,7 +6354,7 @@ curl 127.0.0.1:9363/metrics
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / hostname_longest_common_prefix / hostname_longest_common_suffix / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
     <!-- Optional. Enable 64-bit transaction IDs. -->
     <use_xid_64>false</use_xid_64>
@@ -6227,7 +6363,7 @@ curl 127.0.0.1:9363/metrics
 </zookeeper>
 ```
 
-**راجع أيضًا**
+**انظر أيضًا**
 
 * [النسخ المتماثل](/ar/reference/engines/table-engines/mergetree-family/replication)
 * [دليل المبرمج لـ ZooKeeper](http://zookeeper.apache.org/doc/current/zookeeperProgrammers.html)

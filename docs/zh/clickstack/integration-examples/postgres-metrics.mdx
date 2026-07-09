@@ -301,7 +301,7 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 * 复制 receiver 配置，并为其指定不同的端点和服务名称，以监控多个 PostgreSQL 实例
 
 <div id="going-to-production">
-  ## 投入生产环境
+  ## 进入生产环境
 </div>
 
-本指南利用 ClickStack 内置的 OpenTelemetry Collector 实现快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南基于 ClickStack 内置的 OpenTelemetry Collector，可帮助您快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

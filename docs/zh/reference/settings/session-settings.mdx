@@ -198,15 +198,17 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 在内存高效模式下，用于合并中间聚合结果的线程数。该值越大，消耗的内存越多。0 表示与 `max_threads` 相同。
 
-<div id="ai_function_credentials">
-  ## ai_function_credentials
+<div id="ai_function_embedding_default_credentials">
+  ## ai_function_embedding_default_credentials
 </div>
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "新设置"}]}]} />
+<SettingsInfoBlock type="String" default_value="" />
 
-AI 函数用于存放提供商凭据和配置 (`provider`、`endpoint`、`model`、可选的 `api_key` 等) 的命名集合名称。为空时，将引发异常。
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "新设置"}]}]} />
+
+当调用未在参数映射中传入 `credentials` 时，`aiEmbed` 所使用的命名集合名称。空值表示没有默认值：此类调用必须显式传入 `credentials`。之所以与 `ai_function_text_default_credentials` 分开，是因为嵌入向量使用的端点和模型与聊天使用的不同。
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -295,6 +297,18 @@ AI 函数发起的单个 HTTP 请求 (AI 聊天补全和 embedding API 调用) �
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "新设置"}]}]} />
 
 失败的 AI 函数 API 请求在首次重试前的初始延迟 (以毫秒为单位) 。此后每次重试时，延迟都会翻倍 (指数退避) 。例如，在默认设置下：1000ms、2000ms、4000ms。
+
+<div id="ai_function_text_default_credentials">
+  ## ai_function_text_default_credentials
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "新设置"}]}]} />
+
+当调用未在参数映射中传递 `credentials` 时，文本 AI 函数 (`aiGenerate`、`aiClassify`、`aiExtract`、`aiTranslate`) 将使用的命名集合名称。空值表示没有默认值：这类调用必须显式传递 `credentials`。聊天补全使用的端点和模型与嵌入向量使用的不同，因此该设置与 `ai_function_embedding_default_credentials` 分开。
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error
@@ -406,19 +420,6 @@ AI 函数发起的单个 HTTP 请求 (AI 聊天补全和 embedding API 调用) �
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "允许使用已弃用的易出错窗口函数（neighbor、runningAccumulate、runningDifferenceStartingWithFirstValue、runningDifference）"}]}]} />
 
 允许使用已弃用的易出错窗口函数 (neighbor、runningAccumulate、runningDifferenceStartingWithFirstValue、runningDifference)
-
-<div id="allow_deprecated_snowflake_conversion_functions">
-  ## allow_deprecated_snowflake_conversion_functions
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "已禁用已废弃的函数 snowflakeToDateTime[64] 和 dateTime[64]ToSnowflake。"}]}]} />
-
-函数 `snowflakeToDateTime`、`snowflakeToDateTime64`、`dateTimeToSnowflake` 和 `dateTime64ToSnowflake` 已废弃，且默认处于禁用状态。
-请改用 `snowflakeIDToDateTime`、`snowflakeIDToDateTime64`、`dateTimeToSnowflakeID` 和 `dateTime64ToSnowflakeID` 函数。
-
-如需重新启用这些已废弃的函数 (例如在过渡期间) ，请将此设置设为 `true`。
 
 <div id="allow_deprecated_syntax_for_merge_tree">
   ## allow_deprecated_syntax_for_merge_tree
@@ -618,11 +619,13 @@ Cloud 默认值：`1`。
   ## allow_experimental_delta_lake_writes
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
+
+**别名**: `allow_delta_lake_writes`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "新增设置。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Delta Lake 写入功能已转为 Beta。"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "新增设置。"}]}]} />
 
 启用 delta-kernel 写入功能。
 
@@ -654,9 +657,9 @@ Cloud 默认值：`1`。
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新增设置，允许将 Iceberg 的 geometry/geography 字段解析为 Geometry 类型。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "新增设置，允许将 Iceberg geometry/geography 字段解析为 Geometry 类型。"}]}]} />
 
-允许将 Iceberg 的 `geometry` 和 `geography` 字段类型解析为 ClickHouse `Geometry` (Variant) 类型。
+允许将 Iceberg `geometry` 和 `geography` 字段类型解析为 ClickHouse `Geometry` (Variant) 类型。
 
 <div id="allow_experimental_hash_functions">
   ## allow_experimental_hash_functions
@@ -823,18 +826,6 @@ Cloud 默认值：`1`。
 
 启用 PRQL，这是一种可替代 SQL 的语言。
 
-<div id="allow_experimental_text_index_lazy_apply">
-  ## allow_experimental_text_index_lazy_apply
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新增设置：用于控制是否启用实验性的惰性倒排列表应用模式"}]}]} />
-
-如果设置为 true，则允许文本索引查询使用惰性倒排列表应用模式。
-
 <div id="allow_experimental_time_series_aggregate_functions">
   ## allow_experimental_time_series_aggregate_functions
 </div>
@@ -875,6 +866,18 @@ Cloud 默认值：`1`。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "用于启用 MergeTree 家族表上实验性 `UNIQUE KEY` 子句的新设置"}]}]} />
 
 允许在 MergeTree 家族引擎上创建带有 `UNIQUE KEY` 子句的表。
+
+<div id="allow_experimental_url_wildcard_from_index_pages">
+  ## allow_experimental_url_wildcard_from_index_pages
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "新增设置：通过列出 HTTP 索引页，在 `url` 表函数中启用通配符展开。"}]}]} />
+
+允许根据 HTTP 索引页为 `url()` 和 `ENGINE = URL` 进行 Experimental 通配符展开。
 
 <div id="allow_experimental_window_view">
   ## allow_experimental_window_view
@@ -1065,9 +1068,9 @@ Cloud 默认值：`1`。
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "允许在某些与时间相关的函数中使用非常量时区参数，例如 toTimeZone()、fromUnixTimestamp*()、snowflakeToDateTime*()。"}]}]} />
 
-允许在某些与时间相关的函数中使用非常量时区参数，例如 toTimeZone()、fromUnixTimestamp*()、snowflakeToDateTime*()。
-此设置仅为兼容性而保留。在 ClickHouse 中，时区是数据类型的属性，准确地说，也是列的属性。
-启用此设置会给人一种错误印象，仿佛同一列中的不同值可以具有不同的时区。
+允许在某些与时间相关的函数中使用非常量时区参数，例如 toTimeZone()、fromUnixTimestamp*()、snowflakeIDToDateTime*()。
+此设置仅为兼容性而保留。在 ClickHouse 中，时区是数据类型的属性，更准确地说，也是列的属性。
+启用此设置会造成一种错误印象，仿佛同一列中的不同值可以具有不同的时区。
 因此，请不要启用此设置。
 
 <div id="allow_nondeterministic_mutations">
@@ -1191,6 +1194,20 @@ ClickHouse 使用服务器启动时加载的此设置值。
 
 将条件从 WHERE 移至 PREWHERE 时，允许重新排序这些条件以优化过滤效果
 
+<div id="allow_replace_partition_from_empty_source">
+  ## allow_replace_partition_from_empty_source
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新增安全检查：当源表在请求的分区中没有 parts 时，`ALTER TABLE ... REPLACE PARTITION ... FROM ...` 现在会抛出异常（修复了 [#23727](https:\/\/github.com\/ClickHouse\/ClickHouse\/issues\/23727) 中静默数据丢失的问题）。将 `allow_replace_partition_from_empty_source = 1` 后，可保留之前的行为，即静默删除目标分区。"}]}]} />
+
+当源表在该分区中没有 parts 时，允许 `ALTER TABLE ... REPLACE PARTITION ... FROM ...` 静默删除目标分区。
+
+默认情况下不允许这样做：如果源表在请求的分区中没有数据，`REPLACE PARTITION` 会抛出异常，因为在这种情况下，该操作实际上等同于对目标分区执行静默的 `DROP PARTITION` (目标分区的数据会被删除，但不会有任何内容替换它) ，这是意外数据丢失的常见原因 (参见 [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)) 。
+
+启用此设置可恢复之前的行为，例如当你有意使用空的源分区来清空目标分区中的数据时。若要无条件删除，建议直接改用 `ALTER TABLE ... DROP PARTITION ...`。
+
 <div id="allow_settings_after_format_in_insert">
   ## allow_settings_after_format_in_insert
 </div>
@@ -1219,9 +1236,9 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 * 0 — 不允许。
 * 1 — 允许。
 
-<Note>
-  仅当您的使用场景依赖旧语法、需要向后兼容时，才使用此设置。
-</Note>
+:::note
+仅当您的使用场景依赖旧语法、需要向后兼容时，才使用此设置。
+:::
 
 <div id="allow_simdjson">
   ## allow_simdjson
@@ -1237,7 +1254,7 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "在某些输出格式中启用 Sparse/Replicated 等特殊列表示的直接输出"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "新增一项设置，允许输出 Sparse/Replicated 等特殊列表示，而无需将其转换为普通列"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "在某些输出格式中启用 Sparse\/Replicated 等特殊列表示的直接输出"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "新增一项设置，允许输出 Sparse\/Replicated 等特殊列表示，而无需将其转换为普通列"}]}]} />
 
 允许直接输出采用 Sparse 和 Replicated 等特殊序列化类型的列，而无需将其转换为普通列表示。
 这有助于避免在格式化过程中发生不必要的数据复制。
@@ -1321,7 +1338,7 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "禁止在 MergeTree 中使用可疑的 PRIMARY KEY/ORDER BY（即 SimpleAggregateFunction）"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "禁止在 MergeTree 中使用可疑的 PRIMARY KEY\/ORDER BY（即 SimpleAggregateFunction）"}]}]} />
 
 允许在 MergeTree 中使用可疑的 `PRIMARY KEY`/`ORDER BY` (即 SimpleAggregateFunction) 。
 
@@ -1437,9 +1454,9 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 
 Cloud 默认值：`0`。
 
-<Note>
-  `alter_sync` 仅适用于 `Replicated` 和 `SharedMergeTree` 表，对非 `Replicated` 或 `Shared` 表不起作用。
-</Note>
+:::note
+`alter_sync` 仅适用于 `Replicated` 和 `SharedMergeTree` 表，对非 `Replicated` 或 `Shared` 表不起作用。
+:::
 
 <div id="alter_update_mode">
   ## alter_update_mode
@@ -1517,19 +1534,19 @@ Cloud 默认值：`0`。
 
 在 `ANY INNER|LEFT JOIN` 操作中启用 ClickHouse server 的旧版行为。
 
-<Note>
-  只有在你的使用场景依赖旧版 `JOIN` 行为时，才应出于向后兼容目的使用此设置。
-</Note>
+:::note
+只有在你的使用场景依赖旧版 `JOIN` 行为时，才应出于向后兼容目的使用此设置。
+:::
 
 启用旧版行为时：
 
-* `t1 ANY LEFT JOIN t2` 和 `t2 ANY RIGHT JOIN t1` 操作的结果不相同，因为 ClickHouse 使用的是左表到右表、多对一的表键映射逻辑。
+* `t1 ANY LEFT JOIN t2` 和 `t2 ANY RIGHT JOIN t1` 操作的结果不相同，因为 ClickHouse 使用的是从左表到右表的多对一表键映射逻辑。
 * `ANY INNER JOIN` 操作的结果会像 `SEMI LEFT JOIN` 操作一样，包含左表中的所有行。
 
 禁用旧版行为时：
 
 * `t1 ANY LEFT JOIN t2` 和 `t2 ANY RIGHT JOIN t1` 操作的结果相同，因为 ClickHouse 在 `ANY RIGHT JOIN` 操作中使用了可提供一对多键映射的逻辑。
-* `ANY INNER JOIN` 操作的结果会为左右表中的每个键各包含一行。
+* `ANY INNER JOIN` 操作的结果会为左表和右表中的每个键各包含一行。
 
 可能的值：
 
@@ -2646,10 +2663,10 @@ Cloud 默认值：`default`。
 
 默认处于禁用状态。
 
-<Note>
-  在 ClickHouse Cloud 中，服务级默认的 compatibility 设置必须由 ClickHouse Cloud Support 配置。请[提交工单](https://clickhouse.cloud/support)进行设置。
-  不过，也可以使用标准的 ClickHouse 设置机制，在用户、Role、profile、查询或 session 级别覆盖 compatibility 设置，例如在 session 中使用 `SET compatibility = '22.3'`，或在查询中使用 `SETTINGS compatibility = '22.3'`。
-</Note>
+:::note
+在 ClickHouse Cloud 中，服务级默认的 compatibility 设置必须由 ClickHouse Cloud Support 配置。请[提交工单](https://clickhouse.cloud/support)进行设置。
+不过，也可以使用标准的 ClickHouse 设置机制，在用户、Role、profile、查询或 session 级别覆盖 compatibility 设置，例如在 session 中使用 `SET compatibility = '22.3'`，或在查询中使用 `SETTINGS compatibility = '22.3'`。
+:::
 
 <div id="compatibility_ignore_auto_increment_in_create_table">
   ## compatibility_ignore_auto_increment_in_create_table
@@ -3104,8 +3121,8 @@ Cloud 默认值：`1`。
 
 可能的值：
 
-0 — 禁用。
-1 — 启用。
+* 0 — 禁用。
+* 1 — 启用。
 
 启用后，ClickHouse 会对依赖于 Replicated* 表的 materialized view 中的块执行去重。
 当插入操作因故障而重试时，此设置有助于确保 materialized view 中不会包含重复数据。
@@ -3293,7 +3310,7 @@ ENGINE = Log
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "26.5 中新增的设置，用于控制 26.3 中静默发布的 FINAL 分区裁剪行为 (https://github.com/ClickHouse/ClickHouse/pull/98242)。具有实际语义影响的变更记录在 26.3 条目下，因此 `compatibility = '26.2'` 会回退该行为；添加此条目是为了让从 26.4 升级时的 check 接受这个新引入的名称。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "控制当分区键列不在排序键中时，FINAL planner 无条件跳过分区裁剪的行为。该行为变更本身已通过 https://github.com/ClickHouse/ClickHouse/pull/98242 在 26.3 中静默发布；此条目是对此行为的追溯性文档记录，因此 `compatibility = '26.2'` 会恢复到回归前的行为（0 = 在 FINAL 之前裁剪，速度更快；1 = 延后裁剪，保证正确性）。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "26.5 中新增的设置，用于控制 26.3 中静默发布的 FINAL 分区裁剪行为 (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242)。具有实际语义影响的变更记录在 26.3 条目下，因此 `compatibility = '26.2'` 会回退该行为；添加此条目是为了让从 26.4 升级时的 check 接受这个新引入的名称。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "控制当分区键列不在排序键中时，FINAL planner 无条件跳过分区裁剪的行为。该行为变更本身已通过 https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242 在 26.3 中静默发布；此条目是对此行为的追溯性文档记录，因此 `compatibility = '26.2'` 会恢复到回归前的行为（0 = 在 FINAL 之前裁剪，速度更快；1 = 延后裁剪，保证正确性）。"}]}]} />
 
 启用时 (默认) ，对于分区键列不属于排序键的表，`FINAL` 查询会跳过分区裁剪。这是 26.3 中引入的安全正确行为：`FINAL` 可能需要对主键相同但位于不同分区中的行进行去重，而分区裁剪会静默地将这类行排除在
 去重输入之外。
@@ -3546,22 +3563,22 @@ ENGINE = Log
 
 启用/禁用在发生失败时拆分批次。
 
-有时，向远程分片发送某个批次可能会失败，原因是在后续的复杂管道中 (例如带有 `GROUP BY` 的 `MATERIALIZED VIEW`) 触发了 `Memory limit exceeded` 或类似错误。在这种情况下，重试也无济于事 (而且会导致该表的分布式发送卡住) ；但如果将该批次中的文件逐个发送，则可能成功执行 INSERT。
+有时，向远程分片发送某个批次可能会失败，原因是后续复杂管道 (例如带有 `GROUP BY` 的 `MATERIALIZED VIEW`) 导致出现 `Memory limit exceeded` 或类似错误。在这种情况下，重试无济于事 (而且会导致该表的分布式发送卡住)；但如果将该批次中的文件逐个发送，则可能成功执行 INSERT。
 
-因此，将此设置设为 `1` 后，会对这类批次禁用批处理 (即临时对失败批次禁用 `distributed_background_insert_batch`) 。
+因此，将此设置设为 `1` 后，会对这类批次禁用批处理 (即临时对失败批次禁用 `distributed_background_insert_batch`)。
 
 可能的值：
 
 * 1 — 已启用。
 * 0 — 已禁用。
 
-<Note>
-  此设置也会影响损坏的批次 (这类批次可能是由于服务器 (机器) 异常终止，且 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表引擎未启用 `fsync_after_insert`/`fsync_directories` 而产生的) 。
-</Note>
+:::note
+此设置也会影响损坏的批次 (这类批次可能是由于服务器 (机器) 异常终止，且 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表引擎未启用 `fsync_after_insert`/`fsync_directories` 而产生的)。
+:::
 
-<Note>
-  不应依赖自动批次拆分，因为这可能会影响性能。
-</Note>
+:::note
+不应依赖自动批次拆分，因为这可能会影响性能。
+:::
 
 <div id="distributed_background_insert_timeout">
   ## distributed_background_insert_timeout
@@ -3824,6 +3841,18 @@ Cloud 默认值：`20000`。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "新增设置"}]}]} />
 
 仅在 ClickHouse Cloud 中生效。表示从分布式缓存服务器接收数据的超时时间，单位为毫秒。如果在此时间间隔内未收到任何字节，则会抛出异常。
+
+<div id="distributed_cache_registry_show_certificate_and_signature">
+  ## distributed_cache_registry_show_certificate_and_signature
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新增设置，用于显示 `system.distributed_cache_registry` 中的 `certificate` 和 `signature` 列。"}]}]} />
+
+仅在 ClickHouse Cloud 中生效。显示 `system.distributed_cache_registry` 表中的 `certificate` 和 `signature` 列。默认情况下，这些列为空，以保持输出简洁；启用此设置即可查看它们。
 
 <div id="distributed_cache_send_timeout_ms">
   ## distributed_cache_send_timeout_ms
@@ -4183,6 +4212,18 @@ FORMAT PrettyCompactMonoBlock
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "新增设置：为副本序列化分布式查询计划"}]}]} />
 
 将分布式查询计划序列化，以便在副本上执行。
+
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "新增 Experimental 设置，用于指定为分布式查询租用多少个无状态工作线程。值为 0 时禁用租用。"}]}]} />
+
+用于执行此查询的无状态工作线程数量。值为 0 时，将禁用分布式执行计划的无状态工作线程租用。
 
 <div id="distributed_product_mode">
   ## distributed_product_mode
@@ -4816,9 +4857,9 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 启用或禁用在 PROJECTION 定义中使用位置参数。另请参阅 [enable&#95;positional&#95;arguments](#enable_positional_arguments) 设置。
 
-<Note>
-  这是一个专家级设置；如果你刚开始使用 ClickHouse，则不应更改它。
-</Note>
+:::note
+这是一个专家级设置；如果你刚开始使用 ClickHouse，则不应更改它。
+:::
 
 可能的值：
 
@@ -4923,12 +4964,12 @@ WHERE (_part, _part_offset) IN (
 
 如果没有启用此设置，外层查询和内层查询可能会基于不同的数据快照执行，从而导致结果不正确。
 
-<Note>
-  启用此设置后，会禁用这样一项优化：在规划阶段完成后，从快照中移除不必要的数据分区片段。
-  因此，长时间运行的查询可能会在整个耗时期间一直保留已过时的数据分区片段，从而延迟分区片段清理并增加存储压力。
+:::note
+启用此设置后，会禁用这样一项优化：在规划阶段完成后，从快照中移除不必要的数据分区片段。
+因此，长时间运行的查询可能会在整个耗时期间一直保留已过时的数据分区片段，从而延迟分区片段清理并增加存储压力。
 
-  此设置当前仅适用于 MergeTree 家族的表。
-</Note>
+此设置当前仅适用于 MergeTree 家族的表。
+:::
 
 可选值：
 
@@ -5170,6 +5211,25 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- 将设置重置为�
 将非关联 EXISTS 子查询作为标量子查询执行。与标量子查询一样，会使用缓存，并对结果进行常量折叠。
 
 Cloud 默认值：`0`。
+
+<div id="explain_query_plan_default">
+  ## explain_query_plan_default
+</div>
+
+<SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "pretty"},{"label": "从 26.7 起，`EXPLAIN PLAN` 默认采用 `actions=1, compact=1, pretty=1`。将其设置为 `legacy` 可恢复 26.7 之前的输出。"}]}]} />
+
+`EXPLAIN PLAN` 使用的默认格式。
+
+可能的值：
+
+* `pretty` (自 26.7 起为默认值) — `actions`、`compact` 和 `pretty` 默认均为 `true`，生成紧凑、美观且带有 action 注释的执行计划。
+* `legacy` — 26.7 之前的输出。
+
+在 `EXPLAIN` 语句中显式指定 `actions`、`compact` 或 `pretty` 选项 (例如，`EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) 始终会覆盖此设置。
+
+无论此设置如何，带有 `json = 1` 或 `distributed = 1` 的 `EXPLAIN PLAN` 都会保留 legacy (26.7 之前) 的默认值，除非显式设置了 `actions`、`compact` 或 `pretty`。pretty 输出无法表示 JSON 结果或按分片划分的分布式执行计划，因此这些模式只有以 legacy 形式呈现时才是正确的。
 
 <div id="external_storage_connect_timeout_sec">
   ## external_storage_connect_timeout_sec
@@ -5714,7 +5774,7 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "1"},{"label": "改进了与 MySQL DATE_FORMAT/STR_TO_DATE 的兼容性"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "1"},{"label": "改进了与 MySQL DATE_FORMAT\/STR_TO_DATE 的兼容性"}]}]} />
 
 函数 `formatDateTime` 和 `parseDateTime` 中的格式说明符 `%M` 会输出/解析月份名称，而不是分钟。
 
@@ -5744,7 +5804,7 @@ SELECT * FROM data_01515 WHERE d1 = 0 AND assumeNotNull(d1_null) = 0 SETTINGS fo
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "新增设置，用于保留 dateTrunc 函数的旧行为"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "将 dateTrunc 函数在 DateTime64/Date32 参数下的结果类型更改为 DateTime64/Date32，而不受时间单位影响，以便为负值获得正确结果"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.7"},{"label": "0"},{"label": "新增设置，用于保留 dateTrunc 函数的旧行为"}]}, {"id": "row-2","items": [{"label": "25.4"},{"label": "0"},{"label": "将 dateTrunc 函数在 DateTime64\/Date32 参数下的结果类型更改为 DateTime64\/Date32，而不受时间单位影响，以便为负值获得正确结果"}]}]} />
 
 允许更改 `dateTrunc` 函数结果类型的行为。
 
@@ -6311,9 +6371,9 @@ HTTP 发送超时时间 (以秒为单位) 。
 * 任意正整数。
 * 0 - 已禁用 (超时无限制) 。
 
-<Note>
-  仅适用于默认 profile。更改生效需要重启服务器。
-</Note>
+:::note
+仅适用于默认 profile。更改生效需要重启服务器。
+:::
 
 <div id="http_skip_not_found_url_for_globs">
   ## http_skip_not_found_url_for_globs
@@ -6816,9 +6876,9 @@ UNION、INTERSECT、EXCEPT 链中顶层的 SELECT 都会被统一处理，并受
 对于复制表，默认情况下，每个分区只有最近 100 次插入会被去重 (请参见 [replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window)、[replicated&#95;deduplication&#95;window&#95;seconds](/zh/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)) 。
 对于非复制表，请参见 [non&#95;replicated&#95;deduplication&#95;window](/zh/reference/settings/merge-tree-settings#non_replicated_deduplication_window)。
 
-<Note>
-  `insert_deduplication_token` 在分区级别生效 (与 `insert_deduplication` checksum 相同) 。多个分区可以使用相同的 `insert_deduplication_token`。
-</Note>
+:::note
+`insert_deduplication_token` 按分区跟踪，因此一次插入写入的多个分区可以携带相同的标记。没有标记时，默认的内容校验和 (`insert_deduplication_version = new_unified_hash`) 会基于整个插入块计算，因此只有当某次插入的全部数据与之前某次插入完全匹配时 (即重试) 才会被去重，而不会因为某个单独分区中的行恰好与另一次不同的插入一致而被去重。
+:::
 
 示例：
 
@@ -6831,11 +6891,11 @@ SETTINGS non_replicated_deduplication_window = 100;
 
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (1);
 
--- 下一次插入不会被去重，因为 insert_deduplication_token 不同
+-- the next insert won't be deduplicated because insert_deduplication_token is different
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test1' VALUES (1);
 
--- 下一次插入将被去重，因为 insert_deduplication_token
--- 与之前某次插入的值相同
+-- the next insert will be deduplicated because insert_deduplication_token
+-- is the same as one of the previous
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (2);
 
 SELECT * FROM test_table
@@ -6940,21 +7000,21 @@ timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
 
 <SettingsInfoBlock type="UInt64Auto" default_value="0" />
 
-<Note>
-  此设置不适用于 SharedMergeTree，更多信息请参见 [SharedMergeTree 一致性](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。
-</Note>
+:::note
+此设置不适用于 SharedMergeTree，更多信息请参见 [SharedMergeTree 一致性](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。
+:::
 
-启用仲裁写入。
+启用quorum写入。
 
-* 如果 `insert_quorum < 2`，则禁用仲裁写入。
-* 如果 `insert_quorum >= 2`，则启用仲裁写入。
-* 如果 `insert_quorum = 'auto'`，则使用多数值 (`number_of_replicas / 2 + 1`) 作为仲裁数。
+* 如果 `insert_quorum < 2`，则禁用quorum写入。
+* 如果 `insert_quorum >= 2`，则启用quorum写入。
+* 如果 `insert_quorum = 'auto'`，则使用多数值 (`number_of_replicas / 2 + 1`) 作为quorum数。
 
-仲裁写入
+quorum写入
 
 只有当 ClickHouse 在 `insert_quorum_timeout` 期间成功将数据写入 `insert_quorum` 个副本时，`INSERT` 才会成功。如果由于任何原因，成功写入的副本数未达到 `insert_quorum`，则此次写入会被视为失败，ClickHouse 会从所有已写入数据的副本中删除已插入的块。
 
-当禁用 `insert_quorum_parallel` 时，仲裁中的所有副本都是一致的，也就是说，它们都包含此前所有 `INSERT` 查询的数据 (`INSERT` 序列会被线性化) 。读取通过 `insert_quorum` 写入的数据时，如果 `insert_quorum_parallel` 已禁用，可以使用 [select&#95;sequential&#95;consistency](#select_sequential_consistency) 为 `SELECT` 查询启用顺序一致性。
+当禁用 `insert_quorum_parallel` 时，quorum中的所有副本都是一致的，也就是说，它们都包含此前所有 `INSERT` 查询的数据 (`INSERT` 序列会被线性化) 。读取通过 `insert_quorum` 写入的数据时，如果 `insert_quorum_parallel` 已禁用，可以使用 [select&#95;sequential&#95;consistency](#select_sequential_consistency) 为 `SELECT` 查询启用顺序一致性。
 
 在以下情况下，ClickHouse 会抛出异常：
 
@@ -6975,9 +7035,9 @@ timeout = min(insert_keeper_retry_max_backoff_ms, latest_timeout * 2)
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "默认使用并行 quorum 插入。相比顺序 quorum 插入，它用起来方便得多"}]}]} />
 
-<Note>
-  此设置不适用于 SharedMergeTree，更多信息请参见 [SharedMergeTree 一致性](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。
-</Note>
+:::note
+此设置不适用于 SharedMergeTree，更多信息请参见 [SharedMergeTree 一致性](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。
+:::
 
 启用或禁用 quorum `INSERT` 查询的并行执行。启用后，在先前查询尚未完成时，仍可发送额外的 `INSERT` 查询。禁用后，对同一表的额外写入将被拒绝。
 
@@ -7200,9 +7260,9 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 更改 `ANY` strictness 的 join 操作行为。
 
-<Note>
-  此设置仅适用于右表使用 [Join](/zh/reference/engines/table-engines/special/join) 表引擎的 `JOIN` 操作。
-</Note>
+:::note
+此设置仅适用于右表使用 [Join](/zh/reference/engines/table-engines/special/join) 表引擎的 `JOIN` 操作。
+:::
 
 可能的值：
 
@@ -8094,11 +8154,11 @@ log_query_views=1
 
 查询语法树的最大嵌套深度。超过该限制时，将抛出异常。
 
-<Note>
-  目前，这一项不会在解析过程中检查，而只会在查询解析完成后检查。
-  这意味着，在解析过程中可能会创建出过深的语法树，
-  但查询会失败。
-</Note>
+:::note
+目前，这一项不会在解析过程中检查，而只会在查询解析完成后检查。
+这意味着，在解析过程中可能会创建出过深的语法树，
+但查询会失败。
+:::
 
 <div id="max_ast_elements">
   ## max_ast_elements
@@ -8108,11 +8168,11 @@ log_query_views=1
 
 查询语法树中的最大元素数量。超过时会抛出异常。
 
-<Note>
-  目前不会在解析期间进行检查，而只会在查询解析完成后检查。
-  这意味着，解析期间仍可能创建出过深的语法树，
-  但查询会失败。
-</Note>
+:::note
+目前不会在解析期间进行检查，而只会在查询解析完成后检查。
+这意味着，解析期间仍可能创建出过深的语法树，
+但查询会失败。
+:::
 
 <div id="max_autoincrement_series">
   ## max_autoincrement_series
@@ -8162,12 +8222,12 @@ Cloud 默认值：每个副本内存的一半。
 * 单个 [GROUP BY](/zh/reference/statements/select/group-by) 操作可使用的最大 RAM 量 (以字节为单位) 。
 * `0` — 禁用外部内存中的 `GROUP BY`。
 
-<Note>
-  如果 GROUP BY 操作期间的内存使用量超过此阈值 (以字节为单位) ，
-  则会启用“外部聚合”模式 (将数据落盘) 。
+:::note
+如果 GROUP BY 操作期间的内存使用量超过此阈值 (以字节为单位) ，
+则会启用“外部聚合”模式 (将数据落盘) 。
 
-  建议值为可用系统内存的一半。
-</Note>
+建议值为可用系统内存的一半。
+:::
 
 <div id="max_bytes_before_external_join">
   ## max_bytes_before_external_join
@@ -8323,9 +8383,9 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退为普
 
 该限制会对每个已处理的数据块进行检查。
 
-<Note>
-  此设置在 `prefer_localhost_replica=1` 时不稳定。
-</Note>
+:::note
+此设置在 `prefer_localhost_replica=1` 时不稳定。
+:::
 
 <div id="max_bytes_to_sort">
   ## max_bytes_to_sort
@@ -8355,9 +8415,9 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退为普
 如果查询需要读取的列数超过指定数量，
 则会抛出异常。
 
-<Tip>
-  此设置可用于防止查询过于复杂。
-</Tip>
+:::tip
+此设置可用于防止查询过于复杂。
+:::
 
 `0` 表示不受限制。
 
@@ -8369,9 +8429,9 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退为普
 
 写入表时，压缩前未压缩数据块的最大大小。默认值为 1,048,576 (1 MiB) 。指定较小的块大小通常会使压缩率略有下降；但由于缓存局部性更好，压缩和解压速度会略有提升，同时内存消耗也会降低。
 
-<Note>
-  这是一个专家级设置；如果你刚开始使用 ClickHouse，不建议更改它。
-</Note>
+:::note
+这是一个专家级设置；如果你刚开始使用 ClickHouse，不建议更改它。
+:::
 
 不要将用于压缩的块 (由字节组成的一段内存) 与用于查询处理的块 (表中的一组行) 混淆。
 
@@ -8529,11 +8589,11 @@ Possible values:
 如果查询运行时间超过指定秒数，其行为将由
 `timeout_overflow_mode` 决定，默认值为 `throw`。
 
-<Note>
-  只有在数据处理过程中的特定位置才会检查是否超时并停止查询。
-  目前，在聚合状态合并期间或查询分析期间无法停止，
-  因此实际运行时间会高于此设置的值。
-</Note>
+:::note
+只有在数据处理过程中的特定位置才会检查是否超时并停止查询。
+目前，在聚合状态合并期间或查询分析期间无法停止，
+因此实际运行时间会高于此设置的值。
+:::
 
 <div id="max_execution_time_leaf">
   ## max_execution_time_leaf
@@ -8579,7 +8639,7 @@ FROM cluster(cluster, view(SELECT * FROM t)) SETTINGS max_execution_time_leaf = 
   ## max_final_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 设置带有 [FINAL](/zh/reference/statements/select/from#final-modifier) 修饰符的 `SELECT` 查询在数据读取阶段可使用的最大并行线程数。
 
@@ -9013,7 +9073,7 @@ SELECT getSetting('max_memory_usage_for_user');
   ## max_parsing_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "0"},{"label": "新增了一个单独的设置，用于控制从文件并行解析数据时的线程数"}]}]} />
 
@@ -9029,9 +9089,9 @@ SELECT getSetting('max_memory_usage_for_user');
 
 Cloud 默认值：1 TB。
 
-<Note>
-  此查询设置会覆盖对应的服务器级设置，参见 [max&#95;partition&#95;size&#95;to&#95;drop](/zh/reference/settings/server-settings/settings#max_partition_size_to_drop)
-</Note>
+:::note
+此查询设置会覆盖对应的服务器级设置，参见 [max&#95;partition&#95;size&#95;to&#95;drop](/zh/reference/settings/server-settings/settings#max_partition_size_to_drop)
+:::
 
 <div id="max_partitions_per_insert_block">
   ## max_partitions_per_insert_block
@@ -9053,16 +9113,16 @@ Cloud 默认值：1 TB。
 `max_partitions_per_insert_block`，ClickHouse 会根据 `throw_on_max_partitions_per_insert_block`
 记录警告或抛出异常。异常文本如下：
 
-> &quot;单个 INSERT 块中的分区过多 (`partitions_count` 个分区，限制为 &quot; + toString(max&#95;partitions) + &quot;) 。
+> &quot;单个 INSERT 块中的分区过多 (`partitions_count` 个分区，限制为 &quot; + toString(max&#95;partitions) + &quot;)。
 > 该限制由 &#39;max&#95;partitions&#95;per&#95;insert&#95;block&#39; 设置控制。
 > 使用大量分区是一种常见误区。这会对性能造成严重负面影响，包括 server 启动缓慢、INSERT 查询缓慢
 > 以及 SELECT 查询缓慢。对于一张表，建议分区总数控制在 1000..10000 以内。请注意，
-> 分区并不是为了加速 SELECT 查询 (ORDER BY key 足以让范围查询保持较快) 。
-> 分区是用于数据操作的 (DROP PARTITION 等) 。&quot;
+> 分区并不是为了加速 SELECT 查询 (ORDER BY key 足以让范围查询保持较快)。
+> 分区是用于数据操作的 (DROP PARTITION 等)。&quot;
 
-<Note>
-  此设置是一个安全阈值，因为使用大量分区是一种常见误区。
-</Note>
+:::note
+此设置是一个安全阈值，因为使用大量分区是一种常见误区。
+:::
 
 <div id="max_partitions_to_read">
   ## max_partitions_to_read
@@ -9079,9 +9139,9 @@ Cloud 默认值：1 TB。
 * 正整数
 * `-1` - 不限 (默认)
 
-<Note>
-  你也可以在表设置中指定 MergeTree 设置 [`max_partitions_to_read`](/zh/reference/settings/session-settings#max_partitions_to_read)。
-</Note>
+:::note
+你也可以在表设置中指定 MergeTree 设置 [`max_partitions_to_read`](/zh/reference/settings/session-settings#max_partitions_to_read)。
+:::
 
 <div id="max_parts_to_move">
   ## max_parts_to_move
@@ -9110,11 +9170,11 @@ Cloud 默认值：1 TB。
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
 由 SQL 解析器解析的查询字符串的最大字节数。
-INSERT 查询中 VALUES 子句里的数据由单独的 stream parser 处理 (其 RAM 占用为 O(1)) ，因此不受此限制影响。
+INSERT 查询中 VALUES 子句里的数据由单独的 stream 解析器 处理 (其 RAM 占用为 O(1)) ，因此不受此限制影响。
 
-<Note>
-  `max_query_size` 不能在 SQL 查询内部设置 (例如 `SELECT now() SETTINGS max_query_size=10000`) ，因为 ClickHouse 需要先分配一个 buffer 来解析查询，而该 buffer 的大小由 `max_query_size` 设置决定；因此，它必须在查询执行前完成配置。
-</Note>
+:::note
+`max_query_size` 不能在 SQL 查询内部设置 (例如 `SELECT now() SETTINGS max_query_size=10000`) ，因为 ClickHouse 需要先分配一个 缓冲区 来解析查询，而该 缓冲区 的大小由 `max_query_size` 设置决定；因此，它必须在查询执行前完成配置。
+:::
 
 <div id="max_rand_distribution_parameter">
   ## max_rand_distribution_parameter
@@ -9221,9 +9281,9 @@ INSERT 查询中 VALUES 子句里的数据由单独的 stream parser 处理 (其
 例如 LowCardinality 列的字典，以及 AggregateFunction 列的 Arena，
 因此即使结果较小，也可能超过该阈值。
 
-<Warning>
-  该设置较为底层，应谨慎使用
-</Warning>
+:::warning
+该设置较为底层，应谨慎使用
+:::
 
 <div id="max_result_rows">
   ## max_result_rows
@@ -9349,9 +9409,9 @@ Cloud 默认值：`0`。
 
 该限制会对每个已处理的数据块进行检查。
 
-<Note>
-  此设置在 `prefer_localhost_replica=1` 时属于不稳定状态。
-</Note>
+:::note
+此设置在 `prefer_localhost_replica=1` 时属于不稳定状态。
+:::
 
 <div id="max_rows_to_sort">
   ## max_rows_to_sort
@@ -9522,9 +9582,9 @@ Cloud 默认值：`0`。
 
 如果某个查询中嵌套的子查询数量超过指定值，则会抛出异常。
 
-<Tip>
-  这样可以进行合理性检查，防止集群中的用户编写过于复杂的查询。
-</Tip>
+:::tip
+这样可以进行合理性检查，防止集群中的用户编写过于复杂的查询。
+:::
 
 <div id="max_table_size_to_drop">
   ## max_table_size_to_drop
@@ -9536,9 +9596,9 @@ Cloud 默认值：`0`。
 
 Cloud 默认值：1 TB。
 
-<Note>
-  此查询设置会覆盖对应的服务器设置，参见 [max&#95;table&#95;size&#95;to&#95;drop](/zh/reference/settings/server-settings/settings#max_table_size_to_drop)
-</Note>
+:::note
+此查询设置会覆盖对应的服务器设置，参见 [max&#95;table&#95;size&#95;to&#95;drop](/zh/reference/settings/server-settings/settings#max_table_size_to_drop)
+:::
 
 <div id="max_temporary_columns">
   ## max_temporary_columns
@@ -9548,9 +9608,9 @@ Cloud 默认值：1 TB。
 
 执行查询时，包括常量列在内，同时保存在 RAM 中的临时列的最大数量。如果查询因中间计算在内存中生成的临时列数量超过指定值，则会抛出异常。
 
-<Tip>
-  此设置有助于防止查询过于复杂。
-</Tip>
+:::tip
+此设置有助于防止查询过于复杂。
+:::
 
 `0` 表示不受限制。
 
@@ -9588,15 +9648,15 @@ Cloud 默认值：1 TB。
 
 与 `max_temporary_columns` 类似，它表示执行查询时需要同时保存在 RAM 中的临时列的最大数量，但不包括常量列。
 
-<Note>
-  执行查询时经常会生成常量列，但它们几乎不消耗计算资源。
-</Note>
+:::note
+执行查询时经常会生成常量列，但它们几乎不消耗计算资源。
+:::
 
 <div id="max_threads">
   ## max_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 查询处理线程的最大数量，不包括用于从远程服务器获取数据的线程 (参见 [&#39;max&#95;distributed&#95;connections&#39;](/zh/reference/settings/session-settings#max_distributed_connections) 参数) 。
 
@@ -10041,9 +10101,9 @@ Possible values:
 
 假设写入的是一个 URL 列，类型为 String 类型 (每个值平均 60 字节) 。写入 8192 行时，平均数据量会略低于 500 KB。由于这大于 65,536，因此每个标记都会形成一个压缩块。在这种情况下，从磁盘读取单个标记范围内的数据时，不会额外解压其他数据。
 
-<Note>
-  这是一个专家级设置；如果你刚开始使用 ClickHouse，则不应更改它。
-</Note>
+:::note
+这是一个专家级设置；如果你刚开始使用 ClickHouse，则不应更改它。
+:::
 
 <div id="min_count_to_compile_aggregate_expression">
   ## min_count_to_compile_aggregate_expression
@@ -10639,6 +10699,16 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 
 * [GROUP BY 优化](/zh/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
+<div id="optimize_aggregation_in_order_limit">
+  ## optimize_aggregation_in_order_limit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "新增设置：当 `ORDER BY` 是 `GROUP BY` 排序描述的前缀时，将 `LIMIT` 下推到按顺序聚合中，以便在生成足够多的分组后提前终止。"}]}]} />
+
+启用后，当按顺序聚合生效时，会将 `LIMIT` 下推到聚合步骤中，以便在生成足够多的分组后提前结束。当 `ORDER BY` 与 `GROUP BY` 键前缀匹配时，这可以减少读取的数据量。`rows_before_limit_at_least` 报告的值可能会变小；如果需要精确计数，请使用 `exact_rows_before_limit`。
+
 <div id="optimize_aggregators_of_group_by_keys">
   ## optimize_aggregators_of_group_by_keys
 </div>
@@ -10656,6 +10726,16 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "新设置"}]}]} />
 
 在 AND 链中补全与常量的比较条件，以增强过滤能力。支持运算符 `<`、`<=`、`>`、`>=`、`=` 及其混合使用。例如，`(a < b) AND (b < c) AND (c < 5)` 将变为 `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`。
+
+<div id="optimize_and_compare_chain_max_hash_work">
+  ## optimize_and_compare_chain_max_hash_work
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "5000000"},{"label": "新增设置，用于限制 `optimize_and_compare_chain` 优化的工作量（以哈希的查询树节点数衡量），避免它在包含大量或超长比较 `AND` 事件链的查询中占据分析过程的主导。此前的值 `0`（无限制）会复现 26.7 之前的行为，即该优化不设上限，因此当 `compatibility` 设为更早版本时，仍会在没有预算限制的情况下推导传递谓词。设为 `0` 可禁用该预算。"}]}]} />
+
+在查询分析期间，为 `optimize_and_compare_chain` 优化设置的工作预算，以 `getTreeHash` 哈希的查询树节点数来衡量 (这是该优化的主要开销) 。一旦某个查询在应用该优化时哈希的节点数超过此值，后续在该查询的剩余部分中将停止应用此优化。这可以限制包含大量或超长比较 `AND` 事件链的查询的分析时间，否则该优化可能会在没有任何折叠收益的情况下主导分析过程。提前停止始终是安全的：这只会放弃一次优化，不会改变结果。设为 `0` 可禁用该预算 (无限制) 。
 
 <div id="optimize_append_index">
   ## optimize_append_index
@@ -10758,9 +10838,9 @@ SELECT * FROM test LIMIT 10 OFFSET 100;
 * [distributed&#95;push&#95;down&#95;limit](#distributed_push_down_limit)
 * [optimize&#95;skip&#95;unused&#95;shards](#optimize_skip_unused_shards)
 
-<Note>
-  目前它要求启用 `optimize_skip_unused_shards` (这是因为将来它可能会默认启用，而只有在数据通过 Distributed 表插入，即数据按照 `sharding_key` 分布时，它才能正确工作) 。
-</Note>
+:::note
+目前它要求启用 `optimize_skip_unused_shards` (这是因为将来它可能会默认启用，而只有在数据通过 Distributed 表插入，即数据按照 `sharding_key` 分布时，它才能正确工作) 。
+:::
 
 <div id="optimize_dry_run_check_part">
   ## optimize_dry_run_check_part
@@ -11114,12 +11194,12 @@ SELECT * FROM test2;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-当逻辑上等价时，将参数为 `if` 表达式的 aggregate functions 进行重写。
+当逻辑上等价时，将参数为 `if` 表达式的 聚合函数 进行重写。
 例如，`avg(if(cond, col, null))` 可以重写为 `avgOrNullIf(cond, col)`。这可能会提升性能。
 
-<Note>
-  仅在启用 analyzer (`enable_analyzer = 1`) 时支持。
-</Note>
+:::note
+仅在启用 analyzer (`enable_analyzer = 1`) 时支持。
+:::
 
 <div id="optimize_rewrite_array_exists_to_has">
   ## optimize_rewrite_array_exists_to_has
@@ -11196,9 +11276,9 @@ SELECT * FROM test2;
 
 为在 `WHERE/PREWHERE` 中包含分片键条件的 [SELECT](/zh/reference/statements/select/index) 查询启用或禁用跳过未使用分片，并启用分布式查询的相关优化 (例如按分片键进行聚合) 。
 
-<Note>
-  前提是数据按分片键进行分布，否则查询结果会不正确。
-</Note>
+:::note
+前提是数据按分片键进行分布，否则查询结果会不正确。
+:::
 
 可能的值：
 
@@ -11833,7 +11913,7 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.5"},{"label": "1"},{"label": "允许在执行从 file/url/s3 等读取数据的查询时并行处理。这可能会改变行顺序。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.5"},{"label": "1"},{"label": "允许在执行读取自 file\/url\/s3 等的数据查询时并行处理。这可能会改变行顺序。"}]}]} />
 
 对存储读取步骤的输出进行并行化。如果条件允许，可在从存储读取后立即并行执行查询处理。
 
@@ -11853,7 +11933,7 @@ parts 会在逻辑上划分为多个分段，以便在并行读取时分配给�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.11"},{"label": "1"},{"label": "增强了与 MySQL DATE_FORMAT/STR_TO_DATE 的兼容性"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.11"},{"label": "1"},{"label": "增强了与 MySQL DATE_FORMAT\/STR_TO_DATE 的兼容性"}]}]} />
 
 函数 `parseDateTime` 中的格式说明符 `%c`、`%l` 和 `%k` 可解析不带前导零的月份和小时。
 
@@ -12094,11 +12174,11 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 * 1 — 如果存在 localhost 副本，ClickHouse 始终会将查询发送到该副本。
 * 0 — ClickHouse 使用 [load&#95;balancing](#load_balancing) 设置中指定的负载均衡策略。
 
-<Note>
-  如果你在未使用 [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key) 的情况下使用了 [max&#95;parallel&#95;replicas](#max_parallel_replicas)，请禁用此设置。
-  如果设置了 [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key)，则只有在它用于包含多个分片且每个分片都有多个副本的集群时，才应禁用此设置。
-  如果它用于仅有一个分片但有多个副本的集群，禁用此设置会带来负面影响。
-</Note>
+:::note
+如果你在未使用 [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key) 的情况下使用了 [max&#95;parallel&#95;replicas](#max_parallel_replicas)，请禁用此设置。
+如果设置了 [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key)，则只有在它用于包含多个分片且每个分片都有多个副本的集群时，才应禁用此设置。
+如果它用于仅有一个分片但有多个副本的集群，禁用此设置会带来负面影响。
+:::
 
 <div id="prefer_warmed_unmerged_parts_seconds">
   ## prefer_warmed_unmerged_parts_seconds
@@ -12420,9 +12500,9 @@ a   Tuple(
 控制按序聚合这一查询计划级别优化的开关。
 仅在设置 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅应供开发人员用于调试。该设置未来可能会以不向后兼容的方式更改，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应供开发人员用于调试。该设置未来可能会以不向后不兼容的方式更改，或被移除。
+:::
 
 可能的值：
 
@@ -12495,9 +12575,9 @@ a   Tuple(
 
 控制是否在查询计划层启用查询优化。
 
-<Note>
-  这是一个专家级设置，仅应由开发人员在调试时使用。该设置未来可能会以不向后兼容的方式发生变化，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应由开发人员在调试时使用。该设置未来可能会以不向后兼容的方式发生变化，或被移除。
+:::
 
 可能的值：
 
@@ -12513,9 +12593,9 @@ a   Tuple(
 控制一项查询计划级别的优化，该优化会将表达式移到排序步骤之后执行。
 仅在设置 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅供开发人员在调试时使用。该设置未来可能会以不向后兼容的方式发生变化，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅供开发人员调试时使用。该设置未来可能会以不向后兼容的方式发生变化，或被移除。
+:::
 
 可能的值：
 
@@ -12531,9 +12611,9 @@ a   Tuple(
 控制是否启用一种查询计划级别的优化，该优化会将过滤器下推到执行计划的更下层。
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 为 1 时才生效。
 
-<Note>
-  这是一个专家级设置，仅应由开发人员用于调试。该设置今后可能会以不向后兼容的方式发生变化，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应由开发人员用于调试。该设置今后可能会以不向后兼容的方式发生变化，或被移除。
+:::
 
 可能的值：
 
@@ -12561,8 +12641,8 @@ a   Tuple(
 确定在查询计划中，join 的哪一侧应作为构建表 (也称为 inner，即在 hash join 中插入哈希表的一侧) 。此设置仅支持 `ALL` join strictness 和 `JOIN ON` clause。可能的值为：
 
 * &#39;auto&#39;：由 planner 决定使用哪张表作为构建表。
-  * &#39;false&#39;：从不交换表 (右表为构建表) 。
-  * &#39;true&#39;：始终交换表 (左表为构建表) 。
+* &#39;false&#39;：从不交换表 (右表为构建表) 。
+* &#39;true&#39;：始终交换表 (左表为构建表) 。
 
 <div id="query_plan_lift_up_array_join">
   ## query_plan_lift_up_array_join
@@ -12573,9 +12653,9 @@ a   Tuple(
 控制一项查询计划级别的优化，该优化会将 ARRAY JOIN 在执行计划中上提。
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 为 1 时才会生效。
 
-<Note>
-  这是一个专家级设置，仅应供开发人员用于调试。该设置未来可能会发生不向后兼容的变更，也可能被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应供开发人员用于调试。该设置未来可能会发生不向后兼容的变更，也可能被移除。
+:::
 
 可能的值：
 
@@ -12591,9 +12671,9 @@ a   Tuple(
 切换一项查询计划级别的优化。该优化会将查询计划中更大的子树提升到 union 中，以便进行进一步优化。
 仅在设置 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅供开发人员在调试时使用。该设置未来可能会以不向后兼容的方式发生变更，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅供开发人员在调试时使用。该设置未来可能会以不向后兼容的方式发生变更，或被移除。
+:::
 
 可能的值：
 
@@ -12641,9 +12721,9 @@ a   Tuple(
 在 EXPLAIN PLAN 查询中，达到此限制后会停止应用优化，并按原样返回查询计划。
 对于常规查询执行，如果实际优化次数超过此设置，则会抛出异常。
 
-<Note>
-  这是一个专家级设置，仅应由开发人员在调试时使用。该设置将来可能会以不向后兼容的方式发生变更，或者被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应由开发人员在调试时使用。该设置将来可能会以不向后兼容的方式发生变更，或者被移除。
+:::
 
 <div id="query_plan_max_set_size_for_projection_match">
   ## query_plan_max_set_size_for_projection_match
@@ -12676,9 +12756,9 @@ EXPLAIN PLAN 中步骤说明的最大长度。
 切换一项查询计划级别的优化，该优化会合并连续的过滤器。
 仅在设置 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅应供开发人员在调试时使用。该设置未来可能会以不向后兼容的方式更改，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应供开发人员在调试时使用。该设置未来可能会以不向后兼容的方式更改，或被移除。
+:::
 
 可能的值：
 
@@ -12727,10 +12807,11 @@ EXPLAIN PLAN 中步骤说明的最大长度。
 
 指定在查询计划优化期间要尝试哪些 JOIN 顺序算法。可用算法如下：
 
-* `greedy` - 基础贪心算法 - 速度快，但不一定能生成最佳的 JOIN 顺序
-* `dpsize` - 实现了 DPsize 算法，目前仅适用于 inner join - 会考虑所有可能的 JOIN 顺序，并找出最优方案，但对于包含大量表和 JOIN 谓词的查询，速度可能较慢
-* `dphyp` - 实现了 DPhyp (通过超图分区进行动态规划) 算法，目前仅适用于 inner join - 搜索的空间与 `dpsize` 相同，但只会枚举连通子图对，因此在稀疏 JOIN 图上生成的中间 JOIN 更少，不过代价是不考虑交叉乘积
-  可以将多个算法指定为逗号分隔的列表，例如 `dphyp,greedy`。系统会按顺序尝试它们；如果某个算法无法处理该查询 (例如由于 outer join 或存在不连通分量) ，则会回退到下一个算法。
+* &#39;greedy&#39; - 基础贪心算法 - 速度快，但不一定能生成最佳的 JOIN 顺序
+* &#39;dpsize&#39; - 实现了 DPsize 算法，目前仅适用于 inner joins - 会考虑所有可能的 JOIN 顺序，并找出最优方案，但对于包含大量表和 JOIN 谓词的查询，速度可能较慢。
+* &#39;dpsub&#39; - 实现了 DPsub 算法，同时支持 inner joins 和非 inner joins - 会考虑所有可能的 JOIN 顺序，并找出最优方案，但对于包含大量表和 JOIN 谓词的查询，速度可能较慢。
+* &#39;dphyp&#39; - 实现了 DPhyp (通过超图分区进行动态规划) 算法，目前仅适用于 inner joins - 搜索的空间与 `dpsize` 相同，但只会枚举连通子图对，因此在稀疏 JOIN 图上生成的中间 JOIN 更少，不过代价是不考虑交叉乘积
+  可以将多个算法指定为逗号分隔的列表，例如 `dphyp,greedy`。系统会按顺序尝试它们；如果某个算法无法处理该查询 (例如由于 outer joins 或存在不连通分量) ，则会回退到下一个算法。
 
 <div id="query_plan_optimize_join_order_limit">
   ## query_plan_optimize_join_order_limit
@@ -12741,7 +12822,7 @@ EXPLAIN PLAN 中步骤说明的最大长度。
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1"},{"label": "新增设置"}]}, {"id": "row-2","items": [{"label": "25.12"},{"label": "10"},{"label": "默认允许对更多表进行 JOIN 重排序"}]}]} />
 
 优化同一子查询内 JOIN 的顺序。目前仅支持非常有限的场景。
-值表示要优化的表的最大数量。
+值表示可优化的表的最大数量。
 
 <div id="query_plan_optimize_join_order_max_searched_plans">
   ## query_plan_optimize_join_order_max_searched_plans
@@ -12810,9 +12891,9 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 控制一项查询计划级别的优化，该优化会将 LIMIT 下推到执行计划的更底层。
 仅在设置 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅供开发人员在调试时使用。该设置未来可能会发生不向后兼容的变更，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅供开发人员在调试时使用。该设置未来可能会发生不向后兼容的变更，或被移除。
+:::
 
 可能的值：
 
@@ -12845,9 +12926,9 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 用于切换按序读取这一查询计划级别的优化。
 仅在设置 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅应由开发者在调试时使用。该设置未来可能会以不向后兼容的方式变更，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应由开发者在调试时使用。该设置未来可能会以不向后兼容的方式变更，或被移除。
+:::
 
 可能的值：
 
@@ -12875,9 +12956,9 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 用于启用或禁用一项查询计划级别的优化，该优化会移除冗余的 DISTINCT 步骤。
 仅在设置 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅应由开发人员在调试时使用。该设置未来可能会以不向后兼容的方式变更，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应由开发人员在调试时使用。该设置未来可能会以不向后兼容的方式变更，或被移除。
+:::
 
 可能的值：
 
@@ -12895,9 +12976,9 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 控制一项查询计划级别的优化，用于移除冗余的排序步骤，例如子查询中的排序步骤。
 仅在设置 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅供开发者用于调试。该设置未来可能会以不向后兼容的方式更改，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅供开发者用于调试。该设置未来可能会以不向后兼容的方式更改，或被移除。
+:::
 
 可能的值：
 
@@ -12915,9 +12996,9 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 用于启用或禁用一项查询计划级别的优化，该优化会尝试从查询计划的各个步骤中移除未使用的列 (包括输入列和输出列) 。
 仅在设置 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅应由开发人员用于调试。该设置未来可能会以不向后兼容的方式发生变化，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应由开发人员用于调试。该设置未来可能会以不向后兼容的方式发生变化，或被移除。
+:::
 
 可能的值：
 
@@ -12934,12 +13015,12 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.1"},{"label": "0"},{"label": "默认禁用此逻辑。"}]}]} />
 
-控制是否启用一项查询计划级别的优化：在为窗口函数进行排序时复用存储排序顺序。
+控制是否启用一项查询计划级别的优化：在为窗口函数排序时利用存储排序顺序。
 仅在设置 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 为 1 时生效。
 
-<Note>
-  这是一个专家级设置，仅供开发人员在调试时使用。该设置未来可能会以不向后兼容的方式变更，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅供开发人员用于调试。该设置未来可能会以不向后兼容的方式变更，或被移除。
+:::
 
 可能的值：
 
@@ -12952,9 +13033,9 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<Note>
-  这是一个专家级设置，仅应供开发人员在调试时使用。该设置未来可能会以不向后兼容的方式变更，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应供开发人员在调试时使用。该设置未来可能会以不向后不兼容的方式变更，或被移除。
+:::
 
 控制一项查询计划级别的优化，该优化会将过滤器拆分为表达式。
 仅在设置 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 为 1 时生效。
@@ -12980,9 +13061,9 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "用于启用一项查询计划级别的优化的新设置：当排序键仅引用连接中保留侧时，将 ORDER BY ... LIMIT n 下推到 LEFT/RIGHT 连接之前。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "用于启用一项查询计划级别的优化的新设置：当排序键仅引用JOIN中保留侧时，将 ORDER BY ... LIMIT n 下推到 LEFT\/RIGHT JOIN 之前。"}]}]} />
 
-用于切换一项查询计划级别的优化：当排序键仅引用连接 (LEFT/RIGHT) 中保留侧的列时，将 `ORDER BY ... LIMIT n` 下推到连接之前。这会限制保留侧输入在执行连接前需要产生的行数。
+用于切换一项查询计划级别的优化：当排序键仅引用JOIN (LEFT/RIGHT) 中保留侧的列时，将 `ORDER BY ... LIMIT n` 下推到JOIN之前。这会限制保留侧输入在执行 JOIN 前需要产生的行数。
 仅当设置 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 为 1 时才生效。
 
 可能的值：
@@ -13001,9 +13082,9 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
 控制是否启用一项会尝试使用向量相似度索引的查询计划级别的优化。
 仅当设置 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 为 1 时，此设置才会生效。
 
-<Note>
-  这是一个专家级设置，仅应供开发人员用于调试。该设置未来可能会发生不向后兼容的变更，或被移除。
-</Note>
+:::note
+这是一个专家级设置，仅应供开发人员用于调试。该设置未来可能会发生不向后兼容的变更，或被移除。
+:::
 
 可能的值：
 
@@ -13025,7 +13106,7 @@ JOIN 顺序优化器在放弃并回退到 `query_plan_optimize_join_order_algori
   推荐值：
 
   * 对于单个查询，建议设为 10000000 (每秒 100 次) 纳秒或更大。
-  * 对于集群级性能分析，建议设为 1000000000 (每秒一次) 。
+  * 对于集群级性能分析，建议设为 1000000000 (每秒一次)。
 
 * 0 表示关闭计时器。
 
@@ -13422,6 +13503,21 @@ Possible values:
 * `0` — 不等待。
 * 负整数 — 无限期等待。
 * 正整数 — 等待的秒数。
+
+<div id="reserve_memory">
+  ## reserve_memory
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "在查询开始前为特定工作负载预留内存的新设置。"}]}]} />
+
+用于工作负载调度。该设置指定在单台 server 上运行查询时预留的最小 RAM 量。预留通过 WORKLOAD 层级结构进行，使用的是查询设置 `workload` 的值。
+如果该工作负载没有足够的可用内存，查询将无法启动，并会保持在待处理状态，直到能够满足预留要求。
+值为 `0` 表示不预留内存。
+仅当已创建 MEMORY RESERVATION resource 时，此设置才会生效。
 
 <div id="restore_replace_external_dictionary_source_to_null">
   ## restore_replace_external_dictionary_source_to_null
@@ -13956,9 +14052,9 @@ S3Queue 的 Keeper 故障注入概率。
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<Note>
-  此设置在 SharedMergeTree 和 ReplicatedMergeTree 中的行为不同。有关 `select_sequential_consistency` 在 SharedMergeTree 中的行为的更多信息，请参阅 [SharedMergeTree 一致性](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。
-</Note>
+:::note
+此设置在 SharedMergeTree 和 ReplicatedMergeTree 中的行为不同。有关 `select_sequential_consistency` 在 SharedMergeTree 中的行为的更多信息，请参阅 [SharedMergeTree 一致性](/zh/products/cloud/features/infrastructure/shared-merge-tree#consistency)。
+:::
 
 为 `SELECT` 查询启用或禁用顺序一致性。要求禁用 `insert_quorum_parallel` (默认启用) 。
 
@@ -13969,7 +14065,7 @@ S3Queue 的 Keeper 故障注入概率。
 
 用法
 
-启用顺序一致性后，ClickHouse 只允许客户端在包含此前所有通过 `insert_quorum` 执行的 `INSERT` 查询所写入数据的副本上执行 `SELECT` 查询。如果客户端访问的是不完整的副本，ClickHouse 将抛出异常。`SELECT` 查询不会包含尚未写入 quorum 所要求副本数的数据。
+启用顺序一致性后，ClickHouse 只允许客户端在包含此前所有通过 `insert_quorum` 执行的 `INSERT` 查询所写入数据的副本上执行 `SELECT` 查询。如果客户端访问的是不完整的副本，ClickHouse 将抛出异常。`SELECT` 查询不会包含尚未写入 quorum 副本的数据。
 
 启用 `insert_quorum_parallel` 时 (默认即为启用) ，`select_sequential_consistency` 将不起作用。这是因为并行 `INSERT` 查询可能会写入不同的一组 quorum 副本，因此无法保证某一个副本一定已经接收到所有写入。
 
@@ -14102,10 +14198,10 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 1999-12-13 07:23:23.123
 ```
 
-<Warning>
-  并非所有解析 DateTime/DateTime64 的函数都会遵循 `session_timezone`。这可能会导致一些隐蔽的错误。
-  请参见下面的示例和说明。
-</Warning>
+:::warning
+并非所有解析 DateTime/DateTime64 的函数都会遵循 `session_timezone`。这可能会导致一些隐蔽的错误。
+请参见下面的示例和说明。
+:::
 
 ```sql
 CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
@@ -14462,7 +14558,7 @@ TCPHandler 发送表状态响应前的休眠时间
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "默认不允许直接对 Kafka/RabbitMQ/FileLog 执行 SELECT"}]}]} />
 
 允许直接对 Kafka、RabbitMQ、FileLog、Redis Streams、S3Queue、AzureQueue 和 NATS 引擎执行 SELECT 查询。如果存在已附加的 materialized view，即使启用此设置，也不允许执行 SELECT 查询。
-如果不存在已附加的 materialized view，启用此设置后即可读取数据。请注意，读取的数据通常会从队列中移除。为避免移除已读取的数据，应正确配置相关引擎设置。
+如果不存在已附加的 materialized view，启用此设置后即可读取数据。请注意，读取到的数据通常会从队列中移除。为避免移除已读取的数据，应正确配置相关引擎设置。
 
 <div id="stream_like_engine_insert_queue">
   ## stream_like_engine_insert_queue
@@ -14604,17 +14700,6 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 * LZ4 — 使用 [LZ4](https://en.wikipedia.org/wiki/LZ4_\(compression_algorithm\)) 压缩。
 * NONE — 不使用压缩。
 
-<div id="text_index_density_threshold">
-  ## text_index_density_threshold
-</div>
-
-<SettingsInfoBlock type="Float" default_value="0.2" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0.2"},{"label": "新增惰性倒排列表密度阈值设置"}]}]} />
-
-用于在惰性倒排列表模式中选择算法的密度阈值。
-低于该阈值：leapfrog 求交。达到或高于该阈值：穷举 bitmap。
-
 <div id="text_index_hint_max_selectivity">
   ## text_index_hint_max_selectivity
 </div>
@@ -14624,6 +14709,19 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0.2"},{"label": "新增设置"}]}]} />
 
 使用基于倒排文本索引构建的提示时，过滤器允许的最大选择性。
+
+<div id="text_index_lazy_intersection_density_threshold">
+  ## text_index_lazy_intersection_density_threshold
+</div>
+
+**别名**: `text_index_density_threshold`
+
+<SettingsInfoBlock type="Float" default_value="0.2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0.2"},{"label": "由 `text_index_density_threshold` 重命名而来（保留为别名）；在 惰性倒排列表应用模式 下选择倒排列表交集算法。"}]}]} />
+
+在 惰性倒排列表应用模式 (`text_index_posting_list_apply_mode = 'lazy'`) 下，用于选择交集算法的倒排列表密度阈值。
+低于该阈值时：使用 leapfrog 交集 (更适合稀疏倒排列表) 。达到或高于该阈值时：使用穷举 bitmap 交集 (更适合稠密倒排列表) 。
 
 <div id="text_index_like_max_postings_to_read">
   ## text_index_like_max_postings_to_read
@@ -14660,7 +14758,7 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 
 控制在文本索引查询期间如何应用倒排列表。
 &#39;materialize&#39; (默认) 会立即将倒排列表解码为 Roaring Bitmap。
-&#39;lazy&#39; 使用基于游标的按需解码 (需要 V2 索引格式以及 allow&#95;experimental&#95;text&#95;index&#95;lazy&#95;apply) 。
+&#39;lazy&#39; 使用基于游标的按需解码 (需要采用带有已序列化 codec 的索引格式) 。
 
 <div id="throw_if_no_data_to_insert">
   ## throw_if_no_data_to_insert
@@ -14691,9 +14789,9 @@ SELECT * FROM system.events WHERE event='QueryMemoryLimitExceeded';
 * `true`  - 当插入块达到 `max_partitions_per_insert_block` 时，会抛出异常。
 * `false` - 当达到 `max_partitions_per_insert_block` 时，会记录一条警告日志。
 
-<Tip>
-  如果你想了解修改 [`max_partitions_per_insert_block`](/zh/reference/settings/session-settings#max_partitions_per_insert_block) 会对用户产生什么影响，此设置会很有帮助。
-</Tip>
+:::tip
+如果你想了解修改 [`max_partitions_per_insert_block`](/zh/reference/settings/session-settings#max_partitions_per_insert_block) 会对用户产生什么影响，此设置会很有帮助。
+:::
 
 <div id="throw_on_unsupported_query_inside_transaction">
   ## throw_on_unsupported_query_inside_transaction
@@ -14951,6 +15049,16 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 * `/test/data.csv` 解析为 `https://example.com/test/data.csv`
 * `//other.com/test/data.csv` 解析为 `https://other.com/test/data.csv`
 
+<div id="url_wildcard_max_directories_to_read">
+  ## url_wildcard_max_directories_to_read
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "100000"},{"label": "新增设置，用于限制在 `url` 表函数中展开通配符时可读取的目录数量。"}]}]} />
+
+从索引页展开 URL 通配符时可遍历的最大目录数。
+
 <div id="use_async_executor_for_materialized_views">
   ## use_async_executor_for_materialized_views
 </div>
@@ -14994,10 +15102,11 @@ SELECT idx, i FROM null_in WHERE i IN (1, NULL) SETTINGS transform_null_in = 1;
 * 0 — 使用 `user[:password]@host:port#default_database` 目录格式。
 * 1 — 使用 `[shard{shard_index}[_replica{replica_index}]]` 目录格式。
 
-<Note>
-  - 当 `use_compact_format_in_distributed_parts_names=0` 时，集群定义中的更改不会应用于后台 `INSERT`。
-  - 当 `use_compact_format_in_distributed_parts_names=1` 时，调整集群定义中节点的顺序会改变 `shard_index`/`replica_index`，请留意。
-</Note>
+:::note
+
+* 当 `use_compact_format_in_distributed_parts_names=0` 时，集群定义中的更改不会应用于后台 `INSERT`。
+* 当 `use_compact_format_in_distributed_parts_names=1` 时，调整集群定义中节点的顺序会改变 `shard_index`/`replica_index`，请留意。
+  :::
 
 <div id="use_concurrency_control">
   ## use_concurrency_control
@@ -15106,9 +15215,9 @@ IN 运算符右侧集合可使用表索引进行过滤时的最大大小。该�
   ## use_legacy_to_time
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "新设置。允许用户使用旧版 toTime 函数逻辑，其行为与 toTimeWithFixedDate 相同。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "默认使用新的 `toTime` 函数（将值转换为 `Time` 数据类型），而不是旧版 `toTime`（后者仍可通过 `toTimeWithFixedDate` 使用）。"}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "新设置。允许用户使用旧版 toTime 函数逻辑，其行为与 toTimeWithFixedDate 相同。"}]}]} />
 
 启用后，可使用旧版 toTime 函数。该函数会将日期时间转换为某个固定日期，同时保留时间部分。
 否则，将使用新的 toTime 函数，它会将不同类型的数据转换为 Time 类型。
@@ -15368,7 +15477,7 @@ IN 运算符右侧集合可使用表索引进行过滤时的最大大小。该�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "文本索引现已正式可用"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1"},{"label": "默认启用"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "文本索引现已正式可用"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "默认启用"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "新增设置"}]}]} />
 
 启用在读取数据时使用数据跳过索引。
 
@@ -15456,11 +15565,11 @@ IN 运算符右侧集合可使用表索引进行过滤时的最大大小。该�
   ## use_text_index_header_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "全局启用了文本索引头部缓存。"}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "新设置"}]}]} />
 
-是否使用反序列化后的文本索引头部缓存。
+是否在内存中缓存反序列化后的文本索引头部。
 处理大量文本索引查询时，使用文本索引头部缓存可显著降低延迟并提高吞吐量。
 
 <div id="use_text_index_like_evaluation_by_dictionary_scan">
@@ -15481,18 +15590,18 @@ IN 运算符右侧集合可使用表索引进行过滤时的最大大小。该�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "新设置"}]}]} />
 
-是否使用已反序列化的文本索引倒排列表缓存。
+是否在内存中缓存已反序列化的文本索引倒排列表。
 对于大量文本索引查询，使用文本索引倒排列表缓存可显著降低延迟并提高吞吐量。
 
 <div id="use_text_index_tokens_cache">
   ## use_text_index_tokens_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "新增设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "已全局启用文本索引标记缓存。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "新增设置"}]}]} />
 
-是否使用反序列化后的文本索引标记信息缓存。
+是否在内存中缓存反序列化后的文本索引标记信息。
 处理大量文本索引查询时，使用文本索引标记缓存可显著降低延迟并提高吞吐量。
 
 <div id="use_top_k_dynamic_filtering">

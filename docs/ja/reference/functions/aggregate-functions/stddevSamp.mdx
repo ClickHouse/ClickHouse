@@ -16,10 +16,10 @@ doc_type: 'reference'
 数値データの数列の標本標準偏差を返します。
 結果は [`varSamp`](/ja/reference/functions/aggregate-functions/varSamp) の平方根になります。
 
-<Note>
-  この関数は、数値的に不安定なアルゴリズムを使用します。
-  計算で[数値安定性](https://en.wikipedia.org/wiki/Numerical_stability)が必要な場合は、[`stddevSampStable`](/ja/reference/functions/aggregate-functions/stddevSampStable) 関数を使用してください。処理は遅くなりますが、計算誤差が小さい結果が得られます。
-</Note>
+:::note
+この関数は、数値的に不安定なアルゴリズムを使用します。
+計算で[数値安定性](https://en.wikipedia.org/wiki/Numerical_stability)が必要な場合は、[`stddevSampStable`](/ja/reference/functions/aggregate-functions/stddevSampStable) 関数を使用してください。処理は遅くなりますが、計算誤差が小さい結果が得られます。
+:::
 
 **構文**
 

@@ -31,9 +31,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 عند تنفيذ `INSERT INTO SELECT`، يتلقى ClickHouse جزءًا من البيانات، ثم ① يُنشئ (على الأقل) كتلة إدراج واحدة داخل الذاكرة (لكل [مفتاح تقسيم](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key)) من البيانات المستلمة. بعد ذلك، تُرتَّب بيانات الكتلة وتُطبَّق عليها تحسينات خاصة بمحرك الجدول. ثم تُضغط البيانات وتُكتب ② إلى مساحة تخزين قاعدة البيانات على شكل جزء بيانات جديد.
 
-يؤثر حجم كتلة الإدراج في كلٍّ من [استخدام I/O لملفات القرص](https://en.wikipedia.org/wiki/Category:Disk_file_systems) واستخدام الذاكرة في ClickHouse server. تستهلك كتل الإدراج الأكبر ذاكرةً أكثر، لكنها تُنتج أجزاءً أولية أكبر وأقل عددًا. وكلما قلّ عدد الأجزاء التي يحتاج ClickHouse إلى إنشائها عند تحميل كمية كبيرة من البيانات، انخفض I/O لملفات القرص وقلت عمليات [الدمج في الخلفية المطلوبة تلقائيًا](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges).
+يؤثر حجم كتلة الإدراج في كلٍّ من [استخدام I/O لملفات القرص](https://en.wikipedia.org/wiki/Category:Disk_file_systems) واستخدام الذاكرة في خادم ClickHouse. تستهلك كتل الإدراج الأكبر ذاكرةً أكثر، لكنها تُنتج أجزاءً أولية أكبر وأقل عددًا. وكلما قلّ عدد الأجزاء التي يحتاج ClickHouse إلى إنشائها عند تحميل كمية كبيرة من البيانات، انخفض I/O لملفات القرص وقلت عمليات [الدمج في الخلفية المطلوبة تلقائيًا](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges).
 
-عند استخدام استعلام `INSERT INTO SELECT` بالاقتران مع محرك جدول تكامل أو table function، يسحب ClickHouse server البيانات:
+عند استخدام استعلام `INSERT INTO SELECT` بالاقتران مع محرك جدول تكامل أو دالة الجدول، يسحب خادم ClickHouse البيانات:
 
 <Image img="/images/integrations/data-ingestion/s3/pull.webp" size="lg" border alt="سحب البيانات من المصادر الخارجية في ClickHouse" />
 

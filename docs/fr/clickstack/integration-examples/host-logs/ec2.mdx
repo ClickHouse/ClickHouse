@@ -462,7 +462,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs d’hôte 
   ## Tableaux de bord et visualisations
 </div>
 
-Pour vous aider à commencer à surveiller les logs d’hôtes EC2 avec ClickStack, nous fournissons des visualisations essentielles avec le contexte cloud.
+Pour vous aider à commencer à surveiller les logs d’hôte EC2 avec ClickStack, nous fournissons des visualisations essentielles avec le contexte cloud.
 
 <Steps>
   <Step>
@@ -624,7 +624,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * Créez des tableaux de bord personnalisés pour la surveillance de la sécurité (tentatives SSH, utilisation de sudo, blocages du pare-feu)
 
 <div id="going-to-production">
-  ## Passage en production
+  ## Mise en production
 </div>
 
-Ce guide installe l’OpenTelemetry Collector directement sur des instances EC2, ce qui correspond au modèle recommandé en production pour la supervision au niveau de l’hôte. Pour gérer des collectors sur un grand nombre d’instances, envisagez d’utiliser des outils de gestion de configuration (Ansible, Chef, Puppet) ou l’OpenTelemetry Operator dans des environnements Kubernetes. Consultez [Envoyer des données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
+Ce guide installe l&#39;OpenTelemetry Collector directement sur des instances EC2, ce qui constitue le modèle recommandé en production pour la supervision au niveau de l&#39;hôte. Pour gérer des collecteurs sur un grand nombre d&#39;instances, envisagez d&#39;utiliser des outils de gestion de configuration (Ansible, Chef, Puppet) ou l&#39;OpenTelemetry Operator dans des environnements Kubernetes. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

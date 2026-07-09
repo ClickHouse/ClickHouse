@@ -30,13 +30,13 @@ doc_type: 'reference'
 
 否则，计算结果会舍入为最接近的 16 ms 倍数。
 
-<Note>
-  对于计算页面加载时间的分位数，该函数比 [`quantile`](/zh/reference/functions/aggregate-functions/quantile) 更高效且更准确。
-</Note>
+:::note
+对于计算页面加载时间的分位数，该函数比 [`quantile`](/zh/reference/functions/aggregate-functions/quantile) 更高效且更准确。
+:::
 
-<Note>
-  如果没有向函数传入任何值 (使用 `quantileTimingIf` 时) ，则返回 [NaN](/zh/reference/data-types/float#nan-and-inf)。这样做是为了将这些情况与结果为零的情况区分开来。有关 `NaN` 值排序的说明，请参见 [ORDER BY 子句](/zh/reference/statements/select/order-by)。
-</Note>
+:::note
+如果没有向函数传入任何值 (使用 `quantileTimingIf` 时) ，则返回 [NaN](/zh/reference/data-types/float#nan-and-inf)。这样做是为了将这些情况与结果为零的情况区分开来。有关 `NaN` 值排序的说明，请参见 [ORDER BY 子句](/zh/reference/statements/select/order-by)。
+:::
 
 **语法**
 

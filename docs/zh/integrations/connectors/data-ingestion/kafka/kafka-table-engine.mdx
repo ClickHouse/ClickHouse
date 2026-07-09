@@ -361,15 +361,15 @@ Kafka 表引擎具有至少一次 (at-least-once) 投递语义。在一些已知
 
 虽然这种用例较为少见，但也可以将 ClickHouse 数据持久化到 Kafka 中。例如，我们将手动向 Kafka 表引擎插入行。随后，同一个 Kafka 引擎会读取这些数据，其 materialized view 会将数据写入 MergeTree 表。最后，我们将演示在向 Kafka 插入数据时如何使用 materialized views，从现有 source table 中读取数据。
 
-<div id="steps">
+<div id="steps-1">
   #### 步骤
 </div>
 
 我们的初始目标如下图所示：
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="带有插入操作的 Kafka table engine 示意图" />
+<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="带有插入操作的 Kafka 表引擎 示意图" />
 
-我们假设你已按照 [Kafka to ClickHouse](#kafka-to-clickhouse) 中的步骤创建好这些表和视图，并且该 topic 中的数据已被完全消费。
+我们假设你已按照 [Kafka 到 ClickHouse](#kafka-to-clickhouse) 中的步骤创建好这些表和视图，并且该 topic 中的数据已被完全消费。
 
 <div id="1-inserting-rows-directly">
   ##### 1. 直接插入行
@@ -466,7 +466,7 @@ FROM github
 FORMAT JsonEachRow;
 ```
 
-如果你向原始的 github topic (在 [Kafka to ClickHouse](#kafka-to-clickhouse) 中创建) 插入数据，文档就会自动出现在 &quot;github&#95;clickhouse&quot; topic 中。你可以使用原生 Kafka 工具来确认这一点。例如，下面我们使用 [kcat](https://github.com/edenhill/kcat) 向由 Confluent Cloud 托管的 github topic 插入 100 行数据：
+如果你向原始的 github topic (在 [Kafka 到 ClickHouse](#kafka-to-clickhouse) 中创建) 插入数据，文档就会自动出现在 &quot;github&#95;clickhouse&quot; topic 中。你可以使用原生 Kafka 工具来确认这一点。例如，下面我们使用 [kcat](https://github.com/edenhill/kcat) 向由 Confluent Cloud 托管的 github topic 插入 100 行数据：
 
 ```sql
 head -n 10 github_all_columns.ndjson |

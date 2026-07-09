@@ -116,13 +116,13 @@ Suivez les étapes ci-dessous dans votre compte AWS :
   #### 2. Étapes à suivre dans ClickHouse Cloud
 </div>
 
-Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer le bucket externe :
+Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer le bucket externe :
 
 <Steps>
   <Step>
     ##### Modifier la sauvegarde externe
 
-    Sur la page Settings, cliquez sur « Set up external backup » :
+    Sur la page Settings, cliquez sur Set up external backup :
 
     <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Modifier la sauvegarde externe" size="lg" />
   </Step>
@@ -130,7 +130,7 @@ Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer l
   <Step>
     ##### Configurer l’ARN du rôle AWS IAM et les détails du bucket S3
 
-    Sur l’écran suivant, indiquez l’ARN du rôle AWS IAM que vous venez de créer ainsi que l’URL du bucket S3 au format suivant :
+    Sur l’écran suivant, indiquez l’ARN du rôle AWS IAM que vous venez de créer ainsi que l’URL du bucket S3 au format suivant :
 
     <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Configurer l’ARN du rôle AWS IAM et les détails du bucket S3" size="lg" />
   </Step>
@@ -138,24 +138,24 @@ Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer l
   <Step>
     ##### Enregistrer les modifications
 
-    Cliquez sur « Save External Bucket » pour enregistrer les paramètres
+    Cliquez sur « Save External Bucket » pour enregistrer les paramètres
   </Step>
 
   <Step>
     ##### Modifier la planification des sauvegardes par défaut
 
     Les sauvegardes externes seront désormais effectuées dans votre bucket selon la planification par défaut.
-    Vous pouvez également configurer la planification des sauvegardes depuis la page « Settings ».
+    Vous pouvez également configurer la planification des sauvegardes depuis la page « Settings ».
     Si une autre configuration est définie, la planification personnalisée est utilisée pour écrire les sauvegardes dans votre
-    bucket, tandis que la planification par défaut (une sauvegarde toutes les 24 heures) est utilisée pour les sauvegardes dans
+    bucket, tandis que la planification par défaut (une sauvegarde toutes les 24 heures) est utilisée pour les sauvegardes dans
     le bucket géré par ClickHouse Cloud.
   </Step>
 
   <Step>
     ##### Afficher les sauvegardes stockées dans votre bucket
 
-    La page Backups affichera ces sauvegardes stockées dans votre bucket dans un tableau distinct,
-    comme illustré ci-dessous :
+    La page Backups affichera ces sauvegardes stockées dans votre bucket dans un tableau distinct
+    comme illustré ci-dessous :
 
     <Image img="/images/cloud/manage/backups/view_backups.webp" alt="Afficher les sauvegardes stockées dans votre bucket" size="lg" />
   </Step>
@@ -177,7 +177,7 @@ Suivez les étapes ci-dessous pour restaurer des sauvegardes depuis AWS :
   <Step>
     ##### Ajouter l’ARN du service
 
-    Ajoutez l’ARN du service nouvellement créé (depuis la page des paramètres du service dans la console Cloud ClickHouse) à la stratégie d’approbation du rôle IAM. Il s’agit de la même opération que la [deuxième étape](#create-iam-role) de la section Étapes AWS ci-dessus. Cela est nécessaire pour que le nouveau service puisse accéder au bucket S3.
+    Ajoutez l’ARN du service nouvellement créé (depuis la page des paramètres du service dans la console ClickHouse Cloud) à la stratégie d’approbation du rôle IAM. Il s’agit de la même opération que la [deuxième étape](#create-iam-role) de la section Étapes AWS ci-dessus. Cela est nécessaire pour que le nouveau service puisse accéder au bucket S3.
   </Step>
 
   <Step>
@@ -438,13 +438,16 @@ Pour restaurer des sauvegardes à partir d’Azure, suivez les étapes ci-dessou
   <Step>
     ##### Créer un nouveau service de destination pour la restauration
 
-    Créez un nouveau service dans lequel restaurer la sauvegarde. À l’heure actuelle, nous prenons uniquement en charge la restauration d’une sauvegarde vers un nouveau service.
+    Créez un nouveau service dans lequel restaurer la sauvegarde. À l’heure actuelle, nous prenons uniquement en charge
+    la restauration d’une sauvegarde vers un nouveau service.
   </Step>
 
   <Step>
     ##### Obtenir la commande SQL permettant de restaurer la sauvegarde
 
-    Cliquez sur le lien `access or restore a backup` au-dessus de la liste des sauvegardes dans l’UI pour obtenir la commande SQL permettant de restaurer la sauvegarde. La commande doit ressembler à ceci, et vous pouvez sélectionner la sauvegarde appropriée dans la liste déroulante pour obtenir la commande de restauration correspondant à cette sauvegarde. Vous devrez ajouter à la commande la chaîne de connexion de votre compte de stockage Azure.
+    Cliquez sur le lien `access or restore a backup` au-dessus de la liste des sauvegardes dans l’UI pour obtenir la commande SQL permettant de restaurer la sauvegarde. La commande doit ressembler à ceci,
+    et vous pouvez sélectionner la sauvegarde appropriée dans la liste déroulante pour obtenir la
+    commande de restauration correspondant à cette sauvegarde. Vous devrez ajouter à la commande la chaîne de connexion de votre compte de stockage Azure.
 
     <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Restaurer des sauvegardes dans Azure" size="md" />
 
@@ -468,6 +471,7 @@ Pour restaurer des sauvegardes à partir d’Azure, suivez les étapes ci-dessou
   <Step>
     ##### Exécuter la commande SQL pour restaurer la sauvegarde
 
-    Exécutez la commande de restauration depuis la console SQL du service nouvellement créé afin de restaurer la sauvegarde.
+    Exécutez la commande de restauration depuis la console SQL du service nouvellement créé afin de
+    restaurer la sauvegarde.
   </Step>
 </Steps>

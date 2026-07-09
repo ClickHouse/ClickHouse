@@ -96,7 +96,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   ## أذونات قاعدة البيانات
 </div>
 
-اضبط ما يلي على مستوى الخدمات وقواعد البيانات باستخدام عبارة SQL ‏[GRANT](/ar/reference/statements/grant).
+اضبط ما يلي ضمن الخدمات وقواعد البيانات باستخدام عبارة SQL ‏[GRANT](/ar/reference/statements/grant).
 
 | Role    | Description                                                     |
 | :------ | :-------------------------------------------------------------- |
@@ -107,9 +107,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 * يمكن منح أدوار قاعدة البيانات لأدوار أخرى، مما يؤدي إلى بنية هرمية. وترث الأدوار جميع أذونات الأدوار التي تكون عضوًا فيها.
 * أدوار قاعدة البيانات خاصة بكل خدمة، ويمكن تطبيقها على عدة قواعد بيانات ضمن الخدمة نفسها.
 
-يوضح الشكل أدناه الطرق المختلفة التي يمكن بها منح مستخدم أذونات.
+يوضح الشكل أدناه الطرق المختلفة التي يمكن بها منح المستخدم أذونات.
 
-<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح مستخدم أذونات" size="md" background="black" />
+<Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح المستخدم أذونات" size="md" background="black" />
 
 <div id="initial-settings">
   ### الإعدادات الأولية
@@ -186,4 +186,4 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   ## مستخدمو المستودع
 </div>
 
-تتم مشاركة مستخدمي المستودع بين الخدمات ضمن المستودع نفسه. لمزيد من المعلومات، راجع [عناصر التحكم في الوصول إلى المستودع](/ar/products/cloud/features/infrastructure/warehouses#access-controls).
+يكون مستخدمو المستودع مشتركين بين الخدمات ضمن المستودع نفسه. لمزيد من المعلومات، راجع [ضوابط الوصول إلى المستودع](/ar/products/cloud/features/infrastructure/warehouses#access-controls).

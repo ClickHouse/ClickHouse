@@ -42,15 +42,15 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
 
 最灵活的查询类型是表查询。它是一种通用查询类型，涵盖了其他用于处理简单查询和聚合查询的查询构建器。
 
-| 字段       | 描述                                                                                                  |
-| -------- | --------------------------------------------------------------------------------------------------- |
-| 构建器模式    | 简单查询不包含 聚合 和 Group By，而聚合查询则包含这些选项。                                                                 |
-| 列        | 选中的列。可在此字段中直接输入原始 SQL，以使用函数和列别名。                                                                    |
-| 聚合       | [聚合函数](/zh/reference/functions/aggregate-functions/index)列表。支持为函数和列设置自定义值。仅在聚合模式下可见。    |
+| 字段       | 描述                                                                                                     |
+| -------- | ------------------------------------------------------------------------------------------------------ |
+| 构建器模式    | 简单查询不包含 聚合 和 Group By，而聚合查询则包含这些选项。                                                                    |
+| 列        | 选中的列。可在此字段中直接输入原始 SQL，以使用函数和列别名。                                                                       |
+| 聚合       | [聚合函数](/zh/reference/functions/aggregate-functions/index)列表。支持为函数和列设置自定义值。仅在聚合模式下可见。                   |
 | Group By | [GROUP BY](/zh/reference/statements/select/group-by) 表达式列表。仅在聚合模式下可见。                                  |
 | Order By | [ORDER BY](/zh/reference/statements/select/order-by) 表达式列表。                                            |
 | Limit    | 在查询末尾追加一条 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设为 `0`，则不会添加。有些可视化可能需要将其设为 `0` 才能显示所有数据。 |
-| 过滤器      | 应用于 `WHERE` 子句的过滤器列表。                                                                               |
+| 过滤器      | 应用于 `WHERE` 子句的过滤器列表。                                                                                  |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="聚合表查询示例" border />
 
@@ -73,7 +73,7 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
 | 字段             | 说明                                                                                        |
 | -------------- | ----------------------------------------------------------------------------------------- |
 | Use OTel       | 启用 OpenTelemetry 列。会覆盖当前选中的列，改用所选 OTel schema 版本定义的列 (同时禁用列选择) 。                          |
-| Columns        | 要添加到日志行中的额外列。此字段支持输入原始 SQL，以便使用函数和列别名。                                                    |
+| 列        | 要添加到日志行中的额外列。此字段支持输入原始 SQL，以便使用函数和列别名。                                                    |
 | Time           | 日志的主时间戳列。会显示时间类型的字段，但也允许自定义值/函数。                                                          |
 | Log Level      | 可选。日志的 *level* 或 *severity*。值通常类似于 `INFO`、`error`、`Debug` 等。                              |
 | Message        | 日志消息内容。                                                                                   |
@@ -102,7 +102,7 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
 
 * 专门的 *Time* 字段。
 * 在 Aggregate mode 下，会自动应用时间间隔宏，并对 Time 字段执行 Group By。
-* 在 Aggregate mode 下，“Columns”字段会被隐藏。
+* 在 Aggregate mode 下，“列”字段会被隐藏。
 * 会自动为 **Time** 字段添加时间范围过滤器和 Order By。
 
 <Warning>
@@ -113,16 +113,16 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
   可尝试将 `LIMIT` 子句设为 `0` 以移除它 (前提是你的数据集允许这样做) 。
 </Warning>
 
-| 字段       | 说明                                                                                                            |
-| -------- | ------------------------------------------------------------------------------------------------------------- |
-| 构建器模式    | 简单查询不包含 聚合 和 Group By，而聚合查询则包含这些选项。                                                                           |
-| Time     | 查询的主时间列。会显示时间类型的列，但也允许使用自定义值/函数。                                                                              |
-| Columns  | 选中的列。可以在此字段中输入原始 SQL，以支持函数和列别名。仅在 Simple mode 下可见。                                                            |
-| 聚合       | [聚合函数](/zh/reference/functions/aggregate-functions/index) 列表。支持为函数和列指定自定义值。仅在 Aggregate mode 下可见。 |
-| Group By | [GROUP BY](/zh/reference/statements/select/group-by) 表达式列表。仅在 Aggregate mode 下可见。                                |
-| Order By | [ORDER BY](/zh/reference/statements/select/order-by) 表达式列表。                                                      |
-| Limit    | 在查询末尾追加 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设为 `0`，则会省略；对于某些时间序列数据集，建议这样设置以显示完整的可视化。             |
-| Filters  | 将应用于 `WHERE` 子句的过滤器列表。                                                                                        |
+| 字段       | 说明                                                                                                   |
+| -------- | ---------------------------------------------------------------------------------------------------- |
+| 构建器模式    | 简单查询不包含 聚合 和 Group By，而聚合查询则包含这些选项。                                                                  |
+| Time     | 查询的主时间列。会显示时间类型的列，但也允许使用自定义值/函数。                                                                     |
+| 列  | 选中的列。可以在此字段中输入原始 SQL，以支持函数和列别名。仅在 Simple mode 下可见。                                                   |
+| 聚合       | [聚合函数](/zh/reference/functions/aggregate-functions/index) 列表。支持为函数和列指定自定义值。仅在 Aggregate mode 下可见。    |
+| Group By | [GROUP BY](/zh/reference/statements/select/group-by) 表达式列表。仅在 Aggregate mode 下可见。                    |
+| Order By | [ORDER BY](/zh/reference/statements/select/order-by) 表达式列表。                                          |
+| Limit    | 在查询末尾追加 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设为 `0`，则会省略；对于某些时间序列数据集，建议这样设置以显示完整的可视化。 |
+| Filters  | 将应用于 `WHERE` 子句的过滤器列表。                                                                               |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="时间序列查询示例" border />
 
@@ -144,37 +144,37 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
 
 链路追踪查询类型支持[数据链接](#data-links)。
 
-| 字段                    | 描述                                                                                               |
-| --------------------- | ------------------------------------------------------------------------------------------------ |
-| Trace Mode            | 将查询从 Trace Search 切换为 Trace ID 查找。                                                               |
-| Use OTel              | 启用 OpenTelemetry 列。会覆盖当前已选择的列，改用所选 OTel schema 版本定义的列 (禁用列选择) 。                                  |
-| Trace ID Column       | trace 的 ID。                                                                                      |
-| Span ID Column        | Span ID。                                                                                         |
-| Parent Span ID Column | 父 span ID。对于顶层链路追踪，这里通常为空。                                                                       |
-| Service Name Column   | 服务名称。                                                                                            |
-| Operation Name Column | 操作名称。                                                                                            |
-| Start Time Column     | trace span 的主时间列，即 span 开始的时间。                                                                   |
-| Duration Time Column  | span 的耗时。默认情况下，Grafana 要求该值为以毫秒为单位的浮点数。系统会通过 `Duration Unit` 下拉菜单自动进行转换。                         |
-| Duration Unit         | 耗时所用的时间单位。默认为纳秒。所选单位会按 Grafana 的要求转换为以毫秒为单位的浮点数。                                                 |
-| Tags Column           | Span 标签。如果未使用基于 OTel 的 schema，请排除此项，因为它要求特定的 Map 列类型。                                            |
-| Service Tags Column   | 服务标签。如果未使用基于 OTel 的 schema，请排除此项，因为它要求特定的 Map 列类型。                                               |
+| 字段                    | 描述                                                                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------------- |
+| Trace Mode            | 将查询从 Trace Search 切换为 Trace ID 查找。                                                                  |
+| Use OTel              | 启用 OpenTelemetry 列。会覆盖当前已选择的列，改用所选 OTel schema 版本定义的列 (禁用列选择) 。                                     |
+| Trace ID Column       | trace 的 ID。                                                                                         |
+| Span ID Column        | Span ID。                                                                                            |
+| Parent Span ID Column | 父 span ID。对于顶层链路追踪，这里通常为空。                                                                          |
+| Service Name Column   | 服务名称。                                                                                               |
+| Operation Name Column | 操作名称。                                                                                               |
+| Start Time Column     | trace span 的主时间列，即 span 开始的时间。                                                                      |
+| Duration Time Column  | span 的耗时。默认情况下，Grafana 要求该值为以毫秒为单位的浮点数。系统会通过 `Duration Unit` 下拉菜单自动进行转换。                            |
+| Duration Unit         | 耗时所用的时间单位。默认为纳秒。所选单位会按 Grafana 的要求转换为以毫秒为单位的浮点数。                                                    |
+| Tags Column           | Span 标签。如果未使用基于 OTel 的 schema，请排除此项，因为它要求特定的 Map 列类型。                                               |
+| Service Tags Column   | 服务标签。如果未使用基于 OTel 的 schema，请排除此项，因为它要求特定的 Map 列类型。                                                  |
 | Order By              | [ORDER BY](/zh/reference/statements/select/order-by) expressions 列表。                                |
 | Limit                 | 在查询末尾追加 [LIMIT](/zh/reference/statements/select/limit) 语句。如果设置为 `0`，则不会包含该语句，但对于大型 trace 数据集不建议这样做。 |
-| Filters               | 要应用于 `WHERE` 子句中的过滤器列表。                                                                          |
-| Trace ID              | 用于过滤的 Trace ID。仅在 Trace ID 模式下，以及打开 trace ID [数据链接](#data-links)时使用。                             |
+| Filters               | 要应用于 `WHERE` 子句中的过滤器列表。                                                                             |
+| Trace ID              | 用于过滤的 Trace ID。仅在 Trace ID 模式下，以及打开 trace ID [数据链接](#data-links)时使用。                                |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="OTel trace 查询示例" border />
 
 此查询类型在 Trace Search 模式下会以表格视图渲染数据，在 Trace ID 模式下会以 trace 面板渲染数据。
 
 <div id="sql-editor">
-  ## SQL 编辑器
+  ## SQL Editor
 </div>
 
 对于过于复杂、无法通过查询构建器处理的查询，你可以使用 SQL Editor。
 它允许你直接编写并运行原生 ClickHouse SQL，从而完全掌控查询。
 
-可通过在查询编辑器顶部选择“SQL Editor”来打开 SQL 编辑器。
+可通过在查询编辑器顶部选择“SQL Editor”来打开 SQL Editor。
 
 在此模式下，仍然可以使用[宏函数](#macros)。
 

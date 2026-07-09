@@ -94,16 +94,60 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
   ## 고객 관리형 IAM 역할
 </div>
 
-고급 보안 요구 사항이나 엄격한 컴플라이언스 정책이 있는 조직에서는 ClickHouse Cloud가 IAM 역할을 생성하도록 하는 대신 자체 IAM 역할을 제공할 수 있습니다. 이 방식을 사용하면 IAM 권한을 완전히 제어할 수 있으며, 조직의 보안 정책도 적용할 수 있습니다.
+고급 보안 요구 사항이나 엄격한 컴플라이언스 정책이 있는 조직에서는 ClickHouse Cloud가 IAM 역할을 생성하도록 하는 대신 자체 IAM 역할을 제공할 수 있습니다. 이 방식은 IAM 권한을 완전히 제어할 수 있게 해 주며, 조직의 보안 정책을 강제 적용할 수 있도록 합니다.
 
 <Info>
-  고객 관리형 IAM 역할은 비공개 프리뷰 상태입니다. 이 기능이 필요하면 ClickHouse 지원팀에 문의하여 구체적인 요구 사항과 일정에 대해 논의하십시오.
-
-  이 기능이 제공되면 다음을 수행할 수 있습니다.
-
-  * ClickHouse Cloud에서 사용할 수 있도록 사전 구성된 IAM 역할 제공
-  * 교차 계정 액세스에 사용되는 `ClickHouseManagementRole`의 IAM 관련 권한에서 쓰기 권한 제거
-  * 역할 권한과 신뢰 관계를 완전히 제어
+  고객 관리형 IAM 역할은 비공개 프리뷰 상태입니다. 아래 단계를 진행하기 전에 조직에서 이 기능을 사용할 수 있도록 ClickHouse 지원팀에 문의하십시오.
 </Info>
 
-ClickHouse Cloud가 기본적으로 생성하는 IAM 역할에 대한 자세한 내용은 [BYOC 권한 참고](/ko/products/bring-your-own-cloud/reference/privilege)를 참조하십시오.
+고객 관리형 IAM 역할을 사용하면 다음이 가능합니다.
+
+* ClickHouse Cloud가 원래 생성했을 인프라별 IAM 역할을 미리 생성합니다
+* 교차 계정 액세스에 사용되는 `ClickHouseManagementRole`에서 IAM 쓰기 권한을 제거합니다
+* 역할 권한과 신뢰 관계를 완전히 제어합니다
+
+<Steps>
+  <Step>
+    ### IAM 쓰기 권한 없이 관리 역할 구성
+
+    [초기 BYOC 설정](/ko/cloud/reference/byoc/onboarding/standard)을 수행할 때 관리 역할의 IAM 쓰기 권한을 비활성화하십시오. CloudFormation 템플릿을 사용하는 경우 `IncludeIAMWritePermissions` 매개변수를 `false`로 설정하십시오. Terraform 모듈을 사용하는 경우:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
+      include_iam_write_permissions = false
+    }
+    ```
+
+    `<version>`은 module의 [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 최신 태그로 바꾸십시오. 항상 최신 release를 사용하십시오.
+  </Step>
+
+  <Step>
+    ### 인프라별 IAM 역할 생성
+
+    각 BYOC 인프라가 Provisioning되기 전에 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) per-infra module을 사용하여 필요한 IAM 역할(EKS 파드 아이덴티티 역할, ClickHouse S3 액세스 역할, 데이터 플레인 관리 역할)을 생성하십시오.
+
+    ```hcl
+    module "clickhouse_per_infra_iam" {
+      source = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws-per-infra-iam?ref=<version>"
+
+      spoken_name = "<spoken-name-provided-by-clickhouse>"
+      region      = "<aws-region-of-the-infrastructure>"
+      external_id = "<external-id-provided-by-clickhouse>"
+    }
+    ```
+
+    `<version>`은 module의 [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases)에서 최신 태그로 바꾸십시오. 항상 최신 release를 사용하십시오.
+  </Step>
+
+  <Step>
+    ### 인프라별 역할을 최신 상태로 유지
+
+    <Warning>
+      ClickHouse는 새로운 플랫폼 기능에 필요한 역할과 권한을 주기적으로 추가합니다. ClickHouse에서 업데이트를 안내하면 최신 release의 per-infra module을 다시 적용하십시오. 오래된 버전을 사용하면 BYOC 인프라의 Provisioning 및 upgrade가 실패할 수 있습니다.
+    </Warning>
+  </Step>
+</Steps>
+
+ClickHouse Cloud가 기본적으로 생성하는 IAM 역할에 대한 자세한 내용은 [BYOC Privilege Reference](/ko/products/bring-your-own-cloud/reference/privilege)를 참조하십시오.

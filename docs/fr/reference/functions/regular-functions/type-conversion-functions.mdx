@@ -394,10 +394,10 @@ Introduit dans : v20.7.0
 
 Convertit des expressions arbitraires en chaîne de caractères à l’aide du format spécifié.
 
-<Note>
-  Si le format contient un suffixe/préfixe, il sera écrit sur chaque ligne.
-  Seuls les formats basés sur les lignes sont pris en charge par cette fonction.
-</Note>
+:::note
+Si le format contient un suffixe/préfixe, il sera écrit sur chaque ligne.
+Seuls les formats basés sur les lignes sont pris en charge par cette fonction.
+:::
 
 **Syntaxe**
 
@@ -407,12 +407,12 @@ formatRow(format, x, y, ...)
 
 **Arguments**
 
-* `format` — Format texte. Par exemple, CSV, TSV. [`String`](/fr/reference/data-types/string)
+* `format` — format de texte. Par exemple, CSV, TSV. [`String`](/fr/reference/data-types/string)
 * `x, y, ...` — Expressions. [`Any`](/fr/reference/data-types/index)
 
 **Valeur renvoyée**
 
-Une chaîne mise en forme. (pour les formats texte, elle se termine généralement par un caractère de saut de ligne). [`String`](/fr/reference/data-types/string)
+Une chaîne formatée. (pour les formats texte, elle se termine généralement par un caractère de saut de ligne). [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -586,9 +586,9 @@ Convertit un timestamp Unix en nanosecondes en une valeur [`DateTime64`](/fr/ref
 
 La valeur d’entrée est traitée comme un timestamp Unix avec une précision en nanosecondes (nombre de nanosecondes écoulées depuis 1970-01-01 00:00:00 UTC).
 
-<Note>
-  Veuillez noter que la valeur d’entrée est traitée comme un timestamp UTC, et non selon son fuseau horaire.
-</Note>
+:::note
+Veuillez noter que la valeur d’entrée est traitée comme un timestamp UTC, et non selon son fuseau horaire.
+:::
 
 **Syntaxe**
 
@@ -2672,7 +2672,7 @@ toBFloat16('42.7'):          42.5
 
 Introduite dans : v1.1.0
 
-Convertit une valeur d&#39;entrée de type String en une valeur de type BFloat16.
+Convertit une valeur d’entrée de type String en une valeur de type BFloat16.
 Si la chaîne ne représente pas une valeur à virgule flottante, la fonction renvoie NULL.
 
 Arguments pris en charge :
@@ -2684,9 +2684,9 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales.
 * Valeurs numériques.
 
-<Note>
-  La fonction autorise une perte de précision silencieuse lors de la conversion depuis la représentation sous forme de chaîne.
-</Note>
+:::note
+La fonction autorise une perte de précision silencieuse lors de la conversion depuis la représentation sous forme de chaîne.
+:::
 
 Voir aussi :
 
@@ -2741,9 +2741,9 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations String de valeurs binaires et hexadécimales.
 * Valeurs numériques.
 
-<Note>
-  La fonction autorise une perte de précision silencieuse lors de la conversion depuis une représentation String.
-</Note>
+:::note
+La fonction autorise une perte de précision silencieuse lors de la conversion depuis une représentation String.
+:::
 
 Voir aussi :
 
@@ -3193,11 +3193,11 @@ Introduit dans : v1.1.0
 
 Convertit une valeur d&#39;entrée en type [DateTime](/fr/reference/data-types/datetime).
 
-<Note>
-  Si `expr` est un nombre, il est interprété comme le nombre de secondes écoulées depuis le début de l&#39;époque Unix (c&#39;est-à-dire comme un timestamp Unix).
-  Si `expr` est une [String](/fr/reference/data-types/string), elle peut être interprétée soit comme un timestamp Unix, soit comme la représentation sous forme de chaîne d&#39;une date / date avec heure.
-  Par conséquent, l&#39;analyse des représentations sous forme de chaîne de nombres courts (jusqu&#39;à 4 chiffres) est explicitement désactivée en raison de cette ambiguïté. Par exemple, la chaîne `'1999'` peut représenter soit une année (une représentation sous forme de chaîne incomplète de Date / DateTime), soit un timestamp Unix. Les chaînes numériques plus longues sont autorisées.
-</Note>
+:::note
+Si `expr` est un nombre, il est interprété comme le nombre de secondes écoulées depuis le début de l&#39;époque Unix (c&#39;est-à-dire comme un timestamp Unix).
+Si `expr` est une [String](/fr/reference/data-types/string), elle peut être interprétée soit comme un timestamp Unix, soit comme la représentation sous forme de chaîne d&#39;une date / date avec heure.
+Par conséquent, l&#39;analyse des représentations sous forme de chaîne de nombres courts (jusqu&#39;à 4 chiffres) est explicitement désactivée en raison de cette ambiguïté. Par exemple, la chaîne `'1999'` peut représenter soit une année (une représentation sous forme de chaîne incomplète de Date / DateTime), soit un timestamp Unix. Les chaînes numériques plus longues sont autorisées.
+:::
 
 **Syntaxe**
 
@@ -3630,17 +3630,17 @@ Arguments non pris en charge :
 * Valeurs Float* `NaN` et `Inf`, ou leurs représentations sous forme de chaîne (insensible à la casse).
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toDecimal128('0xc0fe', 1);`.
 
-<Note>
-  Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les bornes de `Decimal128` :`(-1*10^(38 - S), 1*10^(38 - S))`.
-  Les chiffres excédentaires de la partie fractionnaire sont ignorés (sans arrondi).
-  Les chiffres excédentaires de la partie entière entraîneront une exception.
-</Note>
+:::note
+Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les bornes de `Decimal128` :`(-1*10^(38 - S), 1*10^(38 - S))`.
+Les chiffres excédentaires de la partie fractionnaire sont ignorés (sans arrondi).
+Les chiffres excédentaires de la partie entière entraîneront une exception.
+:::
 
-<Warning>
-  Les conversions tronquent les chiffres supplémentaires et peuvent se comporter de manière inattendue avec des entrées Float32/Float64, car les opérations sont effectuées à l&#39;aide d&#39;instructions en virgule flottante.
-  Par exemple : `toDecimal128(1.15, 2)` est égal à `1.14` parce que 1.15 * 100 en virgule flottante vaut 114.99.
-  Vous pouvez utiliser une entrée de type String afin que les opérations utilisent le type entier sous-jacent : `toDecimal128('1.15', 2) = 1.15`
-</Warning>
+:::warning
+Les conversions tronquent les chiffres supplémentaires et peuvent se comporter de manière inattendue avec des entrées Float32/Float64, car les opérations sont effectuées à l&#39;aide d&#39;instructions en virgule flottante.
+Par exemple : `toDecimal128(1.15, 2)` est égal à `1.14` parce que 1.15 * 100 en virgule flottante vaut 114.99.
+Vous pouvez utiliser une entrée de type String afin que les opérations utilisent le type entier sous-jacent : `toDecimal128('1.15', 2) = 1.15`
+:::
 
 **Syntaxe**
 
@@ -3800,9 +3800,9 @@ Arguments non pris en charge (renvoient `0`) :
 * Valeurs ou représentations sous forme de chaîne des valeurs Float* `NaN` et `Inf` (insensible à la casse).
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales.
 
-<Note>
-  Si la valeur d’entrée dépasse les limites de `Decimal128` :`(-1*10^(38 - S), 1*10^(38 - S))`, la fonction renvoie `0`.
-</Note>
+:::note
+Si la valeur d’entrée dépasse les limites de `Decimal128` :`(-1*10^(38 - S), 1*10^(38 - S))`, la fonction renvoie `0`.
+:::
 
 **Syntaxe**
 
@@ -3851,17 +3851,17 @@ Arguments non pris en charge :
 * Valeurs ou représentations sous forme de chaîne de valeurs Float* `NaN` et `Inf` (insensible à la casse).
 * Représentations sous forme de chaîne de valeurs en binaire et en hexadécimal, par exemple `SELECT toDecimal256('0xc0fe', 1);`.
 
-<Note>
-  Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les bornes de `Decimal256` : `(-1*10^(76 - S), 1*10^(76 - S))`.
-  Les chiffres en trop dans la partie fractionnaire sont ignorés (sans arrondi).
-  Les chiffres en trop dans la partie entière entraîneront une exception.
-</Note>
+:::note
+Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les bornes de `Decimal256` : `(-1*10^(76 - S), 1*10^(76 - S))`.
+Les chiffres en trop dans la partie fractionnaire sont ignorés (sans arrondi).
+Les chiffres en trop dans la partie entière entraîneront une exception.
+:::
 
-<Warning>
-  Les conversions tronquent les chiffres supplémentaires et peuvent se comporter de manière inattendue avec des entrées Float32/Float64, car les opérations sont effectuées à l’aide d’instructions en virgule flottante.
-  Par exemple : `toDecimal256(1.15, 2)` est égal à `1.14`, car 1.15 * 100 en virgule flottante donne 114.99.
-  Vous pouvez utiliser une entrée de type String afin que les opérations utilisent le type entier sous-jacent : `toDecimal256('1.15', 2) = 1.15`
-</Warning>
+:::warning
+Les conversions tronquent les chiffres supplémentaires et peuvent se comporter de manière inattendue avec des entrées Float32/Float64, car les opérations sont effectuées à l’aide d’instructions en virgule flottante.
+Par exemple : `toDecimal256(1.15, 2)` est égal à `1.14`, car 1.15 * 100 en virgule flottante donne 114.99.
+Vous pouvez utiliser une entrée de type String afin que les opérations utilisent le type entier sous-jacent : `toDecimal256('1.15', 2) = 1.15`
+:::
 
 **Syntaxe**
 
@@ -4021,9 +4021,9 @@ Arguments non pris en charge (renvoient `0`) :
 * Valeurs ou représentations sous forme de chaîne de caractères de valeurs Float* `NaN` et `Inf` (insensible à la casse).
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales.
 
-<Note>
-  Si la valeur d’entrée dépasse les limites de `Decimal256` : `(-1*10^(76 - S), 1*10^(76 - S))`, la fonction renvoie `0`.
-</Note>
+:::note
+Si la valeur d’entrée dépasse les limites de `Decimal256` : `(-1*10^(76 - S), 1*10^(76 - S))`, la fonction renvoie `0`.
+:::
 
 Voir aussi :
 
@@ -4078,17 +4078,17 @@ Arguments non pris en charge :
 * Valeurs ou représentations sous forme de chaîne des valeurs Float* `NaN` et `Inf` (insensible à la casse).
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toDecimal32('0xc0fe', 1);`.
 
-<Note>
-  Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les limites de `Decimal32` :`(-1*10^(9 - S), 1*10^(9 - S))`.
-  Les chiffres en trop dans la partie fractionnaire sont supprimés (sans arrondi).
-  Les chiffres en trop dans la partie entière entraînent une exception.
-</Note>
+:::note
+Un dépassement de capacité peut se produire si la valeur de `expr` dépasse les limites de `Decimal32` :`(-1*10^(9 - S), 1*10^(9 - S))`.
+Les chiffres en trop dans la partie fractionnaire sont supprimés (sans arrondi).
+Les chiffres en trop dans la partie entière entraînent une exception.
+:::
 
-<Warning>
-  Les conversions suppriment les chiffres en trop et peuvent produire un résultat inattendu avec des entrées Float32/Float64, car les opérations sont effectuées à l’aide d’instructions en virgule flottante.
-  Par exemple : `toDecimal32(1.15, 2)` est égal à `1.14` parce que 1.15 * 100 en virgule flottante vaut 114.99.
-  Vous pouvez utiliser une entrée String afin que les opérations utilisent le type entier sous-jacent : `toDecimal32('1.15', 2) = 1.15`
-</Warning>
+:::warning
+Les conversions suppriment les chiffres en trop et peuvent produire un résultat inattendu avec des entrées Float32/Float64, car les opérations sont effectuées à l’aide d’instructions en virgule flottante.
+Par exemple : `toDecimal32(1.15, 2)` est égal à `1.14` parce que 1.15 * 100 en virgule flottante vaut 114.99.
+Vous pouvez utiliser une entrée String afin que les opérations utilisent le type entier sous-jacent : `toDecimal32('1.15', 2) = 1.15`
+:::
 
 **Syntaxe**
 
@@ -4248,9 +4248,9 @@ Arguments non pris en charge (renvoient `0`) :
 * Valeurs Float* `NaN` et `Inf`, ou leurs représentations sous forme de chaîne (insensible à la casse).
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales.
 
-<Note>
-  Si la valeur d&#39;entrée dépasse les limites de `Decimal32` :`(-1*10^(9 - S), 1*10^(9 - S))`, la fonction renvoie `0`.
-</Note>
+:::note
+Si la valeur d&#39;entrée dépasse les limites de `Decimal32` :`(-1*10^(9 - S), 1*10^(9 - S))`, la fonction renvoie `0`.
+:::
 
 **Syntaxe**
 
@@ -4300,17 +4300,17 @@ Arguments non pris en charge :
 * Valeurs ou représentations sous forme de chaîne des valeurs Float* `NaN` et `Inf` (insensible à la casse).
 * Représentations sous forme de chaîne de valeurs binaires ou hexadécimales, par ex. `SELECT toDecimal64('0xc0fe', 1);`.
 
-<Note>
-  Un dépassement peut se produire si la valeur de `expr` dépasse les limites de `Decimal64` :`(-1*10^(18 - S), 1*10^(18 - S))`.
-  Les chiffres en trop dans la partie fractionnaire sont ignorés (sans arrondi).
-  Les chiffres en trop dans la partie entière entraînent une exception.
-</Note>
+:::note
+Un dépassement peut se produire si la valeur de `expr` dépasse les limites de `Decimal64` :`(-1*10^(18 - S), 1*10^(18 - S))`.
+Les chiffres en trop dans la partie fractionnaire sont ignorés (sans arrondi).
+Les chiffres en trop dans la partie entière entraînent une exception.
+:::
 
-<Warning>
-  Les conversions suppriment les chiffres en trop et peuvent produire des résultats inattendus avec des entrées Float32/Float64, car les opérations sont effectuées à l’aide d’instructions en virgule flottante.
-  Par exemple : `toDecimal64(1.15, 2)` est égal à `1.14` parce que 1.15 * 100 en virgule flottante vaut 114.99.
-  Vous pouvez utiliser une entrée String pour que les opérations utilisent le type entier sous-jacent : `toDecimal64('1.15', 2) = 1.15`
-</Warning>
+:::warning
+Les conversions suppriment les chiffres en trop et peuvent produire des résultats inattendus avec des entrées Float32/Float64, car les opérations sont effectuées à l’aide d’instructions en virgule flottante.
+Par exemple : `toDecimal64(1.15, 2)` est égal à `1.14` parce que 1.15 * 100 en virgule flottante vaut 114.99.
+Vous pouvez utiliser une entrée String pour que les opérations utilisent le type entier sous-jacent : `toDecimal64('1.15', 2) = 1.15`
+:::
 
 **Syntaxe**
 
@@ -4470,9 +4470,9 @@ Arguments non pris en charge (renvoient `0`) :
 * Valeurs ou représentations sous forme de chaîne des valeurs Float* `NaN` et `Inf` (insensible à la casse).
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales.
 
-<Note>
-  Si la valeur d&#39;entrée dépasse les limites de `Decimal64` : `(-1*10^(18 - S), 1*10^(18 - S))`, la fonction renvoie `0`.
-</Note>
+:::note
+Si la valeur d&#39;entrée dépasse les limites de `Decimal64` : `(-1*10^(18 - S), 1*10^(18 - S))`, la fonction renvoie `0`.
+:::
 
 Voir aussi :
 
@@ -5062,10 +5062,10 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs de type Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toInt128('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de Int128, le résultat déborde par excès ou par défaut.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de Int128, le résultat déborde par excès ou par défaut.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -5170,10 +5170,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt128OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int128](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat se produit, par valeur supérieure ou inférieure.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int128](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat se produit, par valeur supérieure ou inférieure.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -5283,15 +5283,15 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt16('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les bornes de [Int16](/fr/reference/data-types/int-uint), un dépassement inférieur ou supérieur se produit dans le résultat.
-  Cela n&#39;est pas considéré comme une erreur.
-  Par exemple : `SELECT toInt16(32768) == -32768;`.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat se produit dans le résultat.
+Cela n&#39;est pas considéré comme une erreur.
+Par exemple : `SELECT toInt16(32768) == -32768;`.
+:::
 
-<Note>
-  La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), c&#39;est-à-dire qu&#39;elle tronque les chiffres après la virgule.
-</Note>
+:::note
+La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), c&#39;est-à-dire qu&#39;elle tronque les chiffres après la virgule.
+:::
 
 Voir aussi :
 
@@ -5396,10 +5396,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaînes de caractères de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaînes de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt16OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), un dépassement de capacité ou sous-dépassement du résultat se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), le résultat peut déborder.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -5456,10 +5456,10 @@ Arguments non pris en charge (renvoient `0`) :
 * représentation sous forme de chaîne de caractères de valeurs Float*, y compris `NaN` et `Inf`.
 * représentation sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt16OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité ou sous-dépassement.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int16](/fr/reference/data-types/int-uint), le résultat peut déborder.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -5519,10 +5519,10 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toInt256('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites d&#39;Int256, le résultat déborde.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites d&#39;Int256, le résultat déborde.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -5627,10 +5627,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de caractères de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt256OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int256](/fr/reference/data-types/int-uint), un dépassement de capacité ou un sous-dépassement du résultat se produit.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int256](/fr/reference/data-types/int-uint), le résultat peut déborder.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -5740,15 +5740,15 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt32('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), le résultat déborde, par excès ou par défaut.
-  Cela n&#39;est pas considéré comme une erreur.
-  Par exemple : `SELECT toInt32(2147483648) == -2147483648;`
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), le résultat déborde, par excès ou par défaut.
+Cela n&#39;est pas considéré comme une erreur.
+Par exemple : `SELECT toInt32(2147483648) == -2147483648;`
+:::
 
-<Note>
-  La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque la partie fractionnaire des nombres.
-</Note>
+:::note
+La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque la partie fractionnaire des nombres.
+:::
 
 Voir aussi :
 
@@ -5853,10 +5853,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * représentation sous forme de chaîne de caractères de valeurs Float*, y compris `NaN` et `Inf`.
 * représentation sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt32OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat, par excès ou par défaut, se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), le résultat peut déborder.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -5913,10 +5913,10 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de caractères de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt32OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur en entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat, par excès ou par défaut, se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur en entrée ne peut pas être représentée dans les limites de [Int32](/fr/reference/data-types/int-uint), le résultat peut déborder.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -5975,15 +5975,15 @@ Arguments non pris en charge :
 * représentation sous forme de chaîne de caractères de valeurs Float*, y compris `NaN` et `Inf`.
 * représentation sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toInt64('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int64](/fr/reference/data-types/int-uint), le résultat déborde.
-  Cela n&#39;est pas considéré comme une erreur.
-  Par exemple : `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int64](/fr/reference/data-types/int-uint), le résultat déborde.
+Cela n&#39;est pas considéré comme une erreur.
+Par exemple : `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
+:::
 
-<Note>
-  La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque la partie fractionnaire des nombres.
-</Note>
+:::note
+La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque la partie fractionnaire des nombres.
+:::
 
 Voir aussi :
 
@@ -6088,10 +6088,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt64OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int64](/fr/reference/data-types/int-uint), un dépassement de capacité ou sous-dépassement du résultat se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int64](/fr/reference/data-types/int-uint), un dépassement de capacité ou sous-dépassement du résultat se produit.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -6201,15 +6201,15 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toInt8('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans l&#39;intervalle de [Int8](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité ou sous-dépassement.
-  Cela n&#39;est pas considéré comme une erreur.
-  Par exemple : `SELECT toInt8(128) == -128;`.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans l&#39;intervalle de [Int8](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité ou sous-dépassement.
+Cela n&#39;est pas considéré comme une erreur.
+Par exemple : `SELECT toInt8(128) == -128;`.
+:::
 
-<Note>
-  La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque la partie fractionnaire des nombres.
-</Note>
+:::note
+La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque la partie fractionnaire des nombres.
+:::
 
 Voir aussi :
 
@@ -6314,10 +6314,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt8OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int8](/fr/reference/data-types/int-uint), il se produit un dépassement de capacité ou sous-dépassement.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [Int8](/fr/reference/data-types/int-uint), il se produit un dépassement de capacité ou sous-dépassement.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -6374,10 +6374,10 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toInt8OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int8](/fr/reference/data-types/int-uint), un dépassement de capacité ou sous-dépassement du résultat se produit.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [Int8](/fr/reference/data-types/int-uint), un dépassement de capacité ou un sous-dépassement du résultat se produit.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -6932,10 +6932,10 @@ Introduit dans : v18.12.0
 
 Convertit l&#39;argument d&#39;entrée en une version [LowCardinality](/fr/reference/data-types/lowcardinality) du même type de données.
 
-<Tip>
-  Pour convertir le type de données `LowCardinality` en type de données classique, utilisez la fonction [CAST](#CAST).
-  Par exemple : `CAST(x AS String)`.
-</Tip>
+:::tip
+Pour convertir le type de données `LowCardinality` en type de données classique, utilisez la fonction [CAST](#CAST).
+Par exemple : `CAST(x AS String)`.
+:::
 
 **Syntaxe**
 
@@ -7061,7 +7061,7 @@ SELECT
 Introduit dans : v1.1.0
 
 Convertit une valeur d’entrée au type [Time](/fr/reference/data-types/time).
-Prend en charge la conversion à partir de String, FixedString, DateTime ou de types numériques représentant le nombre de secondes écoulées depuis minuit.
+Prend en charge la conversion à partir de String, FixedString, DateTime, DateTime64 ou de types numériques représentant le nombre de secondes écoulées depuis minuit.
 
 **Syntaxe**
 
@@ -7071,7 +7071,7 @@ toTime(x)
 
 **Arguments**
 
-* `x` — Valeur d’entrée à convertir. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
+* `x` — Valeur d’entrée à convertir. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`DateTime`](/fr/reference/data-types/datetime) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
 
 **Valeur renvoyée**
 
@@ -7079,10 +7079,12 @@ Renvoie la valeur convertie. [`Time`](/fr/reference/data-types/time)
 
 **Exemples**
 
-**Conversion de String en Time**
+**Conversion de DateTime64 en Time**
 
 ```sql title=Query
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 ```
 
 ```response title=Response
@@ -7092,6 +7094,8 @@ SELECT toTime('14:30:25')
 **Conversion de DateTime en Time**
 
 ```sql title=Query
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7099,10 +7103,12 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**Conversion d&#39;un entier en Time**
+**Conversion d&#39;un entier (secondes depuis l&#39;epoch) en Time**
 
 ```sql title=Query
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
 ```
 
 ```response title=Response
@@ -7113,32 +7119,34 @@ SELECT toTime(52225)
   ## toTime64
 </div>
 
-introduit dans : v25.6.0
+Introduit dans : v25.6.0
 
-Convertit une valeur d&#39;entrée en [Time64](/fr/reference/data-types/time64).
-Prend en charge la conversion depuis String, FixedString, DateTime64 ou des types numériques représentant des microsecondes écoulées depuis minuit.
-Offre une précision à la microseconde pour les valeurs temporelles.
+Convertit une valeur d’entrée au type [Time64](/fr/reference/data-types/time64).
+Prend en charge la conversion à partir de String, FixedString, DateTime64 ou de types numériques représentant le nombre de secondes écoulées depuis minuit.
+Fournit une précision à la sous-seconde pour les valeurs de temps, jusqu’à `scale` chiffres fractionnaires.
 
 **Syntaxe**
 
 ```sql
-toTime64(x)
+toTime64(x, scale)
 ```
 
 **Arguments**
 
-* `x` — Valeur d&#39;entrée à convertir. [`String`](/fr/reference/data-types/string) or [`FixedString`](/fr/reference/data-types/fixedstring) or [`DateTime64`](/fr/reference/data-types/datetime64) or [`(U)Int*`](/fr/reference/data-types/int-uint) or [`Float*`](/fr/reference/data-types/float)
+* `x` — valeur d’entrée à convertir. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`DateTime64`](/fr/reference/data-types/datetime64) ou [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float)
+* `scale` — précision (nombre de chiffres fractionnaires, `0`–`9`) du `Time64` obtenu. [`(U)Int*`](/fr/reference/data-types/int-uint)
 
 **Valeur renvoyée**
 
-Renvoie la valeur d&#39;entrée convertie avec une précision à la microseconde. [`Time64(6)`](/fr/reference/data-types/time64)
+Renvoie la valeur convertie avec la précision `scale` demandée. [`Time64`](/fr/reference/data-types/time64)
 
 **Exemples**
 
-**Conversion de `String` en `Time64`**
+**Conversion de String en Time64**
 
 ```sql title=Query
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
 ```
 
 ```response title=Response
@@ -7148,17 +7156,19 @@ SELECT toTime64('14:30:25.123456')
 **Conversion de DateTime64 en Time64**
 
 ```sql title=Query
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**Conversion d’un entier en Time64**
+**Conversion d’un Float (secondes depuis minuit) en Time64**
 
 ```sql title=Query
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
 ```
 
 ```response title=Response
@@ -7343,10 +7353,10 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toUInt128('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans la plage de UInt128, le résultat produit un dépassement de capacité supérieur ou inférieur.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans la plage de UInt128, le résultat produit un dépassement de capacité supérieur ou inférieur.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -7451,10 +7461,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt128OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt128`](/fr/reference/data-types/int-uint), un dépassement de capacité (overflow ou underflow) du résultat se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt128`](/fr/reference/data-types/int-uint), un dépassement de capacité inférieur ou supérieur du résultat se produit.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -7511,10 +7521,10 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de caractères de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par exemple `SELECT toUInt128OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt128`](/fr/reference/data-types/int-uint), un dépassement de capacité du résultat se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt128`](/fr/reference/data-types/int-uint), un dépassement de capacité inférieur ou supérieur du résultat se produit.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -7573,15 +7583,15 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt16('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), un dépassement de capacité inférieur ou supérieur se produit dans le résultat.
-  Cela n&#39;est pas considéré comme une erreur.
-  Par exemple : `SELECT toUInt16(65536) == 0;`.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), un dépassement de capacité inférieur ou supérieur se produit dans le résultat.
+Cela n&#39;est pas considéré comme une erreur.
+Par exemple : `SELECT toUInt16(65536) == 0;`.
+:::
 
-<Note>
-  La fonction utilise [l&#39;arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque les chiffres après la virgule.
-</Note>
+:::note
+La fonction utilise [l&#39;arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque les chiffres après la virgule.
+:::
 
 Voir aussi :
 
@@ -7686,10 +7696,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toUInt16OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), un dépassement de capacité (overflow ou underflow) se produit dans le résultat.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), un dépassement de capacité (dépassement de capacité inférieur ou supérieur) se produit dans le résultat.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -7746,10 +7756,10 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt16OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), il se produit un dépassement de capacité par excès ou par défaut du résultat.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt16`](/fr/reference/data-types/int-uint), il se produit un dépassement de capacité par excès ou par défaut du résultat.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -7767,7 +7777,7 @@ toUInt16OrZero(x)
 
 * `x` — Une représentation sous forme de chaîne d’un nombre. [`String`](/fr/reference/data-types/string)
 
-**Valeur de retour**
+**Valeur renvoyée**
 
 Renvoie une valeur de type UInt16, ou `0` si la conversion échoue. [`UInt16`](/fr/reference/data-types/int-uint)
 
@@ -7809,10 +7819,10 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs de type Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt256('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les bornes de UInt256, le résultat déborde par excès ou par défaut.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les bornes de UInt256, le résultat présente un dépassement de capacité par excès ou par défaut.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -7917,10 +7927,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt256OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt256`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut se produit.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt256`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut se produit.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -7977,10 +7987,10 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt256OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt256`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut se produit dans le résultat.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt256`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut se produit dans le résultat.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -8039,15 +8049,15 @@ Arguments non pris en charge :
 * Les représentations sous forme de chaîne de caractères de valeurs Float*, y compris `NaN` et `Inf`.
 * Les représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par ex. `SELECT toUInt32('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans la plage de [`UInt32`](/fr/reference/data-types/int-uint), le résultat déborde ou sous-déborde.
-  Cela n&#39;est pas considéré comme une erreur.
-  Par exemple : `SELECT toUInt32(4294967296) == 0;`
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans la plage de [`UInt32`](/fr/reference/data-types/int-uint), le résultat présente un dépassement de capacité par excès ou par défaut.
+Cela n&#39;est pas considéré comme une erreur.
+Par exemple : `SELECT toUInt32(4294967296) == 0;`
+:::
 
-<Note>
-  La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque la partie fractionnaire des nombres.
-</Note>
+:::note
+La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque la partie fractionnaire des nombres.
+:::
 
 Voir aussi :
 
@@ -8152,10 +8162,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toUInt32OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt32`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt32`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -8212,10 +8222,10 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt32OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt32`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt32`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut se produit.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -8274,15 +8284,15 @@ Types non pris en charge :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt64('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), le résultat fait l&#39;objet d&#39;un dépassement supérieur ou inférieur.
-  Cela n&#39;est pas considéré comme une erreur.
-  Par exemple : `SELECT toUInt64(18446744073709551616) == 0;`
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), le résultat fait l&#39;objet d&#39;un dépassement de capacité par excès ou par défaut.
+Cela n&#39;est pas considéré comme une erreur.
+Par exemple : `SELECT toUInt64(18446744073709551616) == 0;`
+:::
 
-<Note>
-  La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque les chiffres fractionnaires des nombres.
-</Note>
+:::note
+La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque les chiffres fractionnaires des nombres.
+:::
 
 Voir aussi :
 
@@ -8387,10 +8397,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par ex. `SELECT toUInt64OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité, par excès ou par défaut.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), le résultat subit un dépassement de capacité par excès ou par défaut.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -8447,10 +8457,10 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt64OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), il se produit un dépassement de capacité par excès ou par défaut du résultat.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt64`](/fr/reference/data-types/int-uint), il se produit un dépassement de capacité par excès ou par défaut du résultat.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -8509,15 +8519,15 @@ Arguments non pris en charge :
 * Représentations sous forme de chaîne de valeurs Float*, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt8('0xc0fe');`.
 
-<Note>
-  Si la valeur d&#39;entrée ne peut pas être représentée dans la plage de [UInt8](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-  Par exemple : `SELECT toUInt8(256) == 0;`.
-</Note>
+:::note
+Si la valeur d&#39;entrée ne peut pas être représentée dans la plage de [UInt8](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
+Cela n&#39;est pas considéré comme une erreur.
+Par exemple : `SELECT toUInt8(256) == 0;`.
+:::
 
-<Note>
-  La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque les chiffres fractionnaires des nombres.
-</Note>
+:::note
+La fonction utilise l&#39;[arrondi vers zéro](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ce qui signifie qu&#39;elle tronque les chiffres fractionnaires des nombres.
+:::
 
 Voir aussi :
 
@@ -8622,10 +8632,10 @@ Arguments non pris en charge (renvoient `NULL`) :
 * Représentations sous forme de chaîne de caractères de valeurs Float* ordinaires, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de caractères de valeurs binaires et hexadécimales, par ex. `SELECT toUInt8OrNull('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt8`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
-  Cela n&#39;est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt8`](/fr/reference/data-types/int-uint), un dépassement de capacité par excès ou par défaut du résultat se produit.
+Cela n&#39;est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -8682,10 +8692,10 @@ Arguments non pris en charge (renvoient `0`) :
 * Représentations sous forme de chaîne de valeurs Float* ordinaires, y compris `NaN` et `Inf`.
 * Représentations sous forme de chaîne de valeurs binaires et hexadécimales, par exemple `SELECT toUInt8OrZero('0xc0fe');`.
 
-<Note>
-  Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt8`](/fr/reference/data-types/int-uint), un dépassement de capacité (par excès ou par défaut) du résultat se produit.
-  Cela n’est pas considéré comme une erreur.
-</Note>
+:::note
+Si la valeur d’entrée ne peut pas être représentée dans les limites de [`UInt8`](/fr/reference/data-types/int-uint), un dépassement de capacité (par excès ou par défaut) du résultat se produit.
+Cela n’est pas considéré comme une erreur.
+:::
 
 Voir aussi :
 
@@ -8819,9 +8829,9 @@ Introduit dans : v20.5.0
 Convertit un [`DateTime64`](/fr/reference/data-types/datetime64) en une valeur [`Int64`](/fr/reference/data-types/int-uint) avec une précision fixe à la microseconde.
 La valeur d&#39;entrée est mise à l&#39;échelle de manière appropriée en fonction de sa précision.
 
-<Note>
-  La valeur de sortie est relative à l&#39;UTC, et non au fuseau horaire de la valeur d&#39;entrée.
-</Note>
+:::note
+La valeur de sortie est relative à l&#39;UTC, et non au fuseau horaire de la valeur d&#39;entrée.
+:::
 
 **Syntaxe**
 
@@ -8835,7 +8845,7 @@ toUnixTimestamp64Micro(value)
 
 **Valeur renvoyée**
 
-Renvoie un horodatage Unix en microsecondes. [`Int64`](/fr/reference/data-types/int-uint)
+Renvoie un timestamp Unix en microsecondes. [`Int64`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
@@ -8861,9 +8871,9 @@ Introduit dans : v20.5.0
 Convertit un [`DateTime64`](/fr/reference/data-types/datetime64) en une valeur [`Int64`](/fr/reference/data-types/int-uint) avec une précision fixe à la milliseconde.
 La valeur d&#39;entrée est mise à l&#39;échelle à la hausse ou à la baisse selon sa précision.
 
-<Note>
-  La valeur de sortie est relative à l&#39;UTC, et non au fuseau horaire de la valeur d&#39;entrée.
-</Note>
+:::note
+La valeur de sortie est relative à l&#39;UTC, et non au fuseau horaire de la valeur d&#39;entrée.
+:::
 
 **Syntaxe**
 
@@ -8903,9 +8913,9 @@ Introduit dans : v20.5.0
 Convertit un [`DateTime64`](/fr/reference/data-types/datetime64) en une valeur [`Int64`](/fr/reference/functions/regular-functions/type-conversion-functions#toInt64) avec une précision fixe en nanosecondes.
 La valeur d&#39;entrée est mise à l&#39;échelle à la hausse ou à la baisse selon sa précision.
 
-<Note>
-  La valeur de sortie est relative à l&#39;UTC, et non au fuseau horaire de la valeur d&#39;entrée.
-</Note>
+:::note
+La valeur de sortie est relative à l&#39;UTC, et non au fuseau horaire de la valeur d&#39;entrée.
+:::
 
 **Syntaxe**
 
@@ -8945,9 +8955,9 @@ Introduit dans : v24.12.0
 Convertit un [`DateTime64`](/fr/reference/data-types/datetime64) en valeur [`Int64`](/fr/reference/data-types/int-uint) avec une précision fixe à la seconde.
 La valeur d’entrée est mise à l’échelle vers le haut ou vers le bas selon sa précision.
 
-<Note>
-  La valeur de sortie est relative à l’UTC, et non au fuseau horaire de la valeur d’entrée.
-</Note>
+:::note
+La valeur de sortie est relative à l’UTC, et non au fuseau horaire de la valeur d’entrée.
+:::
 
 **Syntaxe**
 

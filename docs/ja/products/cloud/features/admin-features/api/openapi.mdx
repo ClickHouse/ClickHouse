@@ -15,13 +15,13 @@ ClickHouse Cloud では、OpenAPI を利用した API が提供されており�
   このドキュメントでは ClickHouse Cloud API を扱います。データベースの API エンドポイントについては、[Cloud Endpoints API](/ja/products/cloud/guides/sql-console/query-endpoints) を参照してください。
 </Note>
 
-1. 左側のメニューにある **API Keys** タブから、API キーを作成および管理できます。
+1. 左側のメニューにある **API キー** タブから、API キーを作成および管理できます。
 
-<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API Keys タブ" border />
+<Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API キー タブ" border />
 
-2. **API Keys** ページを開くと、最初は以下のように最初の API キーを作成するための案内が表示されます。最初のキーを作成すると、右上に表示される `New API Key` ボタンから新しいキーを作成できるようになります。
+2. **API キー** ページを開くと、最初は以下のように最初の API キーを作成するための案内が表示されます。最初のキーを作成すると、右上に表示される `New API Key` ボタンから新しいキーを作成できるようになります。
 
-<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API Keys ページ" border />
+<Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API キー ページ" border />
 
 3. API キーを作成するには、キー名、キーの権限、有効期限を指定し、`Generate API Key` をクリックします。
 
@@ -52,7 +52,7 @@ $ KEY_SECRET=mykeysecret
 $ curl --user $KEY_ID:$KEY_SECRET https://api.clickhouse.cloud/v1/organizations
 ```
 
-6. **API Keys** ページに戻ると、キー名、Key ID の末尾 4 文字、権限、ステータス、有効期限、作成者が表示されます。この画面から、キー名、権限、有効期限を編集できます。また、キーの無効化や削除もこの画面から行えます。
+6. **API キー** ページに戻ると、キー名、Key ID の末尾 4 文字、権限、ステータス、有効期限、作成者が表示されます。この画面から、キー名、権限、有効期限を編集できます。また、キーの無効化や削除もこの画面から行えます。
 
 <br />
 

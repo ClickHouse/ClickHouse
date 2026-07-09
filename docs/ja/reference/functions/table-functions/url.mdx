@@ -9,13 +9,9 @@ doc_type: 'reference'
 import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import CloudNotSupportedBadge from "/snippets/ja/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-<div id="url-table-function">
-  # url テーブル関数
-</div>
-
 `url` 関数は、指定された `フォーマット` と `構造` を使用して `URL` からテーブルを作成します。
 
-`url` 関数は、[URL](/ja/reference/engines/table-engines/special/url) テーブル内のデータに対する `SELECT` および `INSERT` クエリで使用できます。
+`url` 関数は、[URL](/ja/reference/engines/table-engines/special/url) テーブルのデータに対する `SELECT` クエリおよび `INSERT` クエリで使用できます。
 
 <div id="syntax">
   ## 構文
@@ -66,6 +62,32 @@ SELECT * FROM test_table;
 
 `{ }` 内のパターンは、分片のセットを生成したり、フェイルオーバー先のアドレスを指定したりするために使用されます。サポートされているパターンの種類と例については、[remote](/ja/reference/functions/table-functions/remote#globs-in-addresses) 関数の説明を参照してください。
 パターン内の文字 `|` は、フェイルオーバー先のアドレスを指定するために使用されます。これらは、パターンに記載された順序どおりに順番に試行されます。生成されるアドレス数は、[glob&#95;expansion&#95;max&#95;elements](/ja/reference/settings/session-settings#glob_expansion_max_elements) 設定によって制限されます。
+URL パスでの glob 構文 (`*`、`{a,b}`、`{N..M}`、`**` など) については、[パス内の globs](/ja/reference/functions/table-functions/file#globs-in-path) を参照してください。なお、`?` は URL ではクエリ文字列の開始を表すため、パス部分ではワイルドカードとして使用できません。
+
+<div id="wildcards-with-http-index-pages">
+  ## HTTPインデックスページでのワイルドカード
+</div>
+
+`url` および `URL` テーブルエンジンでは、ClickHouse は HTTP インデックスページ (HTML または平文) を取得し、レスポンスボディから URL を抽出することでワイルドカードを展開できます。これにより、サーバーがディレクトリ一覧を公開している場合は、`/**/` のようなパターンを使用できます。
+
+注意:
+
+* 相対 URL は、インデックスページの URL を基準に解決されます。
+* `URL` テンプレートは、インデックスページを取得する前に展開されます。これには、カンマ区切りおよび数値範囲の分片展開と、パス部分の外側にある `|` フェイルオーバーオプションが含まれます。
+* パス部分の内側にある `|` フェイルオーバーパターンは、HTTP インデックスページ展開ではサポートされていません。
+* ワイルドカードの照合は、URL のパス部分に適用されます。
+* 一覧に含まれる URL にすでにクエリ文字列またはフラグメントが含まれている場合は、ソース URL のものよりそちらが優先されます。含まれていない場合は、ソース URL のクエリ文字列とフラグメントが使用されます。
+* 空の一覧も許可されます。インデックスページに対する HTTP エラー (例: 404) は例外を発生させます。
+* インデックスページの最大サイズは、[max&#95;http&#95;index&#95;page&#95;size](/ja/reference/settings/server-settings/settings#max_http_index_page_size) によって制限されます。
+* 再帰的な展開中に読み取るディレクトリの最大数は、[url&#95;wildcard&#95;max&#95;directories&#95;to&#95;read](/ja/reference/settings/session-settings#url_wildcard_max_directories_to_read) によって制限されます。
+
+例:
+
+```sql
+SELECT count()
+FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
+SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+```
 
 <div id="virtual-columns">
   ## 仮想カラム

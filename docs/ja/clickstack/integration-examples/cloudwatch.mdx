@@ -62,7 +62,7 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
 
     <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
 
-    これを環境変数として保存します。
+    これを環境変数として保存します:
 
     ```bash
     export CLICKSTACK_API_KEY="your-api-key-here"
@@ -77,13 +77,13 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     **AWS SSO ユーザー向け (ほとんどの組織に推奨) :**
 
     ```bash
-    # SSOにログイン
+    # Login to SSO
     aws sso login --profile YOUR_PROFILE_NAME
 
-    # 認証情報を環境変数にエクスポート
+    # Export credentials to environment variables
     eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
 
-    # 認証情報が正しく機能するか確認
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -96,7 +96,7 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
     export AWS_REGION="us-east-1"
 
-    # 認証情報が正しく機能するか確認する
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -321,7 +321,7 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
   ## デモデータセット
 </div>
 
-本番の AWS 環境を設定する前に CloudWatch Logs インテグレーションを試したいユーザー向けに、複数の AWS サービスにまたがる実際の運用に近いパターンを示す、事前生成済みログを含むサンプルデータセットを用意しています。
+本番の AWS 環境を構成する前に CloudWatch Logs インテグレーションを試したいユーザー向けに、複数の AWS サービスにまたがる実際の運用に近いパターンを示す、事前生成済みのログを含むサンプルデータセットを提供しています。
 
 <Steps>
   <Step>
@@ -331,7 +331,7 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
     ```
 
-    このデータセットには、複数のサービスの 24 時間分の CloudWatch Logs が含まれています。
+    このデータセットには、複数のサービスから取得した 24 時間分の CloudWatch Logs が含まれています。
 
     * **Lambda functions**: 支払い処理、注文管理、認証
     * **ECS services**: レート制限とタイムアウトを伴う API ゲートウェイ
@@ -374,7 +374,7 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     3. 時間範囲を **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** に設定します
     4. `cloudwatch-demo` を検索するか、`LogAttributes['source'] = 'cloudwatch-demo'` でフィルタリングします
 
-    複数の CloudWatch Logs のロググループからのログが表示されるはずです。
+    複数の CloudWatchロググループ からのログが表示されるはずです。
 
     <Image img="/images/clickstack/cloudwatch/demo-search-view.webp" alt="デモ検索ビュー" />
 
@@ -558,9 +558,9 @@ groups:
 * インジェスト量を減らすため、ノイズの多いロググループを collector の設定から削除する
 
 <div id="going-to-production">
-  ## 本番環境での運用
+  ## 本番環境向け
 </div>
 
-このガイドでは、テスト目的で OpenTelemetry Collector を Docker Compose を使ってローカルで実行する方法を紹介します。本番環境にデプロイする場合は、アクセスキーの管理を不要にするため、AWS にアクセスできるインフラストラクチャ (IAMロールを使用する EC2、IRSA を使用する EKS、またはタスクロールを使用する ECS) 上で collector を実行してください。レイテンシーとコストを削減するため、collector は CloudWatch ロググループと同じ AWS リージョンにデプロイしてください。
+このガイドでは、テスト目的で Docker Compose を使用して OpenTelemetry Collector をローカルで実行する方法を説明します。本番環境へのデプロイでは、アクセスキーの管理を不要にするため、AWS にアクセスできるインフラストラクチャ上で collector を実行してください (IAM ロールを使用する EC2、IRSA を使用する EKS、またはタスクロールを使用する ECS) 。レイテンシーとコストを抑えるため、CloudWatchロググループ と同じ AWS リージョンに collectors をデプロイしてください。
 
-本番環境向けのデプロイメントパターンと collector の設定例については、[OpenTelemetry を使用した取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+本番環境向けのデプロイパターンと collector の設定例については、[OpenTelemetry による取り込み](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

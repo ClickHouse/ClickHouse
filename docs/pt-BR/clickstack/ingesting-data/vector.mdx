@@ -158,7 +158,7 @@ O único requisito estrito do ClickStack, seja em uma implantação open source 
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        Crie uma tabela para seus dados. Ela deve corresponder ao esquema de saída dos seus dados. O exemplo abaixo considera uma estrutura clássica do Nginx. Ajuste conforme seus dados, seguindo as [boas práticas de esquema](/pt-BR/concepts/best-practices/select-data-type). **Recomendamos fortemente** que você se familiarize com o [conceito de chaves primárias](/pt-BR/concepts/core-concepts/primary-indexes), selecionando sua chave primária com base nas diretrizes descritas [aqui](/pt-BR/clickstack/managing/performance-tuning#choosing-a-primary-key).
+        Crie uma tabela para seus dados. Ela deve corresponder ao esquema de saída dos seus dados. O exemplo abaixo pressupõe uma estrutura clássica do Nginx. Ajuste conforme seus dados, seguindo as [boas práticas de esquema](/pt-BR/concepts/best-practices/select-data-type). **Recomendamos fortemente** que você se familiarize com o [conceito de chaves primárias](/pt-BR/concepts/core-concepts/primary-indexes), selecionando sua chave primária com base nas diretrizes descritas [aqui](/pt-BR/clickstack/managing/performance-tuning#choosing-a-primary-key).
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -183,7 +183,7 @@ O único requisito estrito do ClickStack, seja em uma implantação open source 
         <Info>
           **Chave primária do Nginx**
 
-          A chave primária acima pressupõe padrões típicos de acesso na UI do ClickStack para logs do Nginx, mas pode precisar de ajustes dependendo da sua carga de trabalho em ambientes de produção.
+          A chave primária acima considera padrões de acesso típicos na UI do ClickStack para logs do Nginx, mas talvez precise ser ajustada de acordo com a carga de trabalho no ambiente de produção.
         </Info>
       </Step>
 
@@ -253,7 +253,7 @@ O único requisito estrito do ClickStack, seja em uma implantação open source 
 
         Acesse a visualização de logs para explorar os dados e começar a usar o ClickStack.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="logs do Nginx no ClickStack" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Logs do Nginx no ClickStack" size="lg" />
       </Step>
     </Steps>
   </Tab>
@@ -346,7 +346,7 @@ Para um exemplo mais completo, usamos a seguir um **arquivo de log do Nginx**.
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # Formato DateTime compatível com ClickHouse
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -465,7 +465,7 @@ Para um exemplo mais completo, usamos a seguir um **arquivo de log do Nginx**.
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        Crie uma tabela para seus dados.
+        Crie uma tabela para os seus dados.
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -490,7 +490,7 @@ Para um exemplo mais completo, usamos a seguir um **arquivo de log do Nginx**.
         <Info>
           **Chave primária do Nginx**
 
-          A chave primária acima considera padrões de acesso típicos na UI do ClickStack para logs do Nginx, mas talvez precise ser ajustada de acordo com a sua carga de trabalho em ambientes de produção.
+          A chave primária acima pressupõe padrões típicos de acesso na UI do ClickStack para logs do Nginx, mas talvez precise ser ajustada conforme a carga de trabalho em ambientes de produção.
         </Info>
       </Step>
 
@@ -518,7 +518,7 @@ Para um exemplo mais completo, usamos a seguir um **arquivo de log do Nginx**.
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # Formato DateTime compatível com ClickHouse
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -583,7 +583,7 @@ Para um exemplo mais completo, usamos a seguir um **arquivo de log do Nginx**.
         )
         ```
 
-        Isso reconstrói a linha de log a partir dos campos estruturados.
+        Isso recompõe a linha de log com base nos campos estruturados.
 
         Para outras opções, consulte a [referência de configuração](/pt-BR/clickstack/managing/config).
       </Step>
@@ -599,7 +599,7 @@ Para um exemplo mais completo, usamos a seguir um **arquivo de log do Nginx**.
       <Step>
         ### Explore os dados
 
-        Navegue até a visualização de busca de `October 20th, 2025` para explorar os dados e começar a usar o ClickStack.
+        Navegue até a tela de pesquisa em `20 de outubro de 2025` para explorar os dados e começar a usar o ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Interface do HyperDX" size="lg" />
       </Step>

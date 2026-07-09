@@ -469,16 +469,16 @@ SELECT URLHash('https://www.clickhouse.com/docs', 1);
 文字列パラメーターには CityHash アルゴリズムを使用し、その他のデータ型のパラメーターには実装固有の高速な非暗号学的ハッシュ関数を使用します。
 この関数は、最終結果を得るために CityHash コンビネータを使用します。
 
-<Info>
-  Google は、CityHash が ClickHouse に追加された後でそのアルゴリズムを変更しました。
-  つまり、ClickHouse の cityHash64 と Google のオリジナルの CityHash は、現在では異なる結果を生成します。
-  ClickHouse の cityHash64 は CityHash v1.0.2 に対応しています。
-</Info>
+:::info
+Google は、CityHash が ClickHouse に追加された後でそのアルゴリズムを変更しました。
+つまり、ClickHouse の cityHash64 と Google のオリジナルの CityHash は、現在では異なる結果を生成します。
+ClickHouse の cityHash64 は CityHash v1.0.2 に対応しています。
+:::
 
-<Note>
-  計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対して同一になる場合があります。
-  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と、それに対応する `Array(Tuple(key, value))` 型に影響します。
-</Note>
+:::note
+計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対して同一になる場合があります。
+これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と、それに対応する `Array(Tuple(key, value))` 型に影響します。
+:::
 
 **構文**
 
@@ -542,14 +542,14 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
 
 `Fingerprint64` メソッドを使用して、64 ビットの [FarmHash](https://github.com/google/farmhash) 値を生成します。
 
-<Tip>
-  安定して移植性のある値が必要な場合は、[`farmHash64`](#farmHash64) より `farmFingerprint64` を推奨します。
-</Tip>
+:::tip
+安定して移植性のある値が必要な場合は、[`farmHash64`](#farmHash64) より `farmFingerprint64` を推奨します。
+:::
 
-<Note>
-  計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対しては同一になる場合があります。
-  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、および同じデータを持つ `Map` と対応する `Array(Tuple(key, value))` 型に当てはまります。
-</Note>
+:::note
+計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対しては同一になる場合があります。
+これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、および同じデータを持つ `Map` と対応する `Array(Tuple(key, value))` 型に当てはまります。
+:::
 
 **構文**
 
@@ -587,14 +587,14 @@ SELECT farmFingerprint64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 
 
 `Hash64` メソッドを使用して、64 ビットの [FarmHash](https://github.com/google/farmhash) を生成します。
 
-<Tip>
-  安定性と移植性が必要な場合は、[`farmFingerprint64`](#farmFingerprint64) の使用を推奨します。
-</Tip>
+:::tip
+安定性と移植性が必要な場合は、[`farmFingerprint64`](#farmFingerprint64) の使用を推奨します。
+:::
 
-<Note>
-  計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対しては同一になる場合があります。
-  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と対応する `Array(Tuple(key, value))` 型に当てはまります。
-</Note>
+:::note
+計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対しては同一になる場合があります。
+これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と対応する `Array(Tuple(key, value))` 型に当てはまります。
+:::
 
 **構文**
 
@@ -719,10 +719,10 @@ SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
 これは、符号ビットを 0 にした [`JavaHash`](#javaHash) にすぎません。
 この関数は、3.0 より前の [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) で使用されています。
 
-<Warning>
-  このハッシュ関数は低速です。
-  このアルゴリズムがすでに別のシステムで使用されており、同じ結果を計算する必要がある場合にのみ使用してください。
-</Warning>
+:::caution
+このハッシュ関数は低速です。
+このアルゴリズムがすでに別のシステムで使用されており、同じ結果を計算する必要がある場合にのみ使用してください。
+:::
 
 **構文**
 
@@ -876,15 +876,15 @@ SELECT intHash64(42);
 * [Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
 * [Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
 
-<Warning>
-  このハッシュ関数は低速です。
-  このアルゴリズムがすでに別のシステムで使われており、同じ結果を計算する必要がある場合にのみ使用してください。
-</Warning>
+:::caution
+このハッシュ関数は低速です。
+このアルゴリズムがすでに別のシステムで使われており、同じ結果を計算する必要がある場合にのみ使用してください。
+:::
 
-<Note>
-  Java では符号付き整数のハッシュしか計算できません。
-  そのため、符号なし整数のハッシュを計算する場合は、適切な符号付き ClickHouse 型に CAST する必要があります。
-</Note>
+:::note
+Java では符号付き整数のハッシュしか計算できません。
+そのため、符号なし整数のハッシュを計算する場合は、適切な符号付き ClickHouse 型に CAST する必要があります。
+:::
 
 **構文**
 
@@ -1122,10 +1122,10 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 
 64 ビットの[MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/)ハッシュ値を生成します。
 
-<Note>
-  計算されたハッシュ値は、引数の型が異なっていても、入力値が同じであれば一致する場合があります。
-  たとえば、サイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの`Tuple`、同じデータを持つ`Map`と対応する`Array(Tuple(key, value))`型で、このケースが発生することがあります。
-</Note>
+:::note
+計算されたハッシュ値は、引数の型が異なっていても、入力値が同じであれば一致する場合があります。
+たとえば、サイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの`Tuple`、同じデータを持つ`Map`と対応する`Array(Tuple(key, value))`型で、このケースが発生することがあります。
+:::
 
 **構文**
 
@@ -1163,10 +1163,10 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 
 入力値の [MurmurHash2](https://github.com/aappleby/smhasher) ハッシュを計算します。
 
-<Note>
-  計算されたハッシュ値は、同じ入力値であっても引数の型が異なれば一致する場合があります。
-  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と、それに対応する `Array(Tuple(key, value))` 型などに当てはまります。
-</Note>
+:::note
+計算されたハッシュ値は、同じ入力値であっても引数の型が異なれば一致する場合があります。
+これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と、それに対応する `Array(Tuple(key, value))` 型などに当てはまります。
+:::
 
 **構文**
 
@@ -1204,10 +1204,10 @@ SELECT murmurHash2_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 入力値の [MurmurHash2](https://github.com/aappleby/smhasher) ハッシュを計算します。
 
-<Note>
-  計算されたハッシュ値は、同じ入力値であっても、引数の型が異なれば同じになる場合があります。
-  たとえば、サイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、`Map` と、同じデータを持つ対応する `Array(Tuple(key, value))` 型でこのことが当てはまります。
-</Note>
+:::note
+計算されたハッシュ値は、同じ入力値であっても、引数の型が異なれば同じになる場合があります。
+たとえば、サイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、`Map` と、同じデータを持つ対応する `Array(Tuple(key, value))` 型でこのことが当てはまります。
+:::
 
 **構文**
 
@@ -1281,10 +1281,10 @@ SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 
 [MurmurHash3](https://github.com/aappleby/smhasher) のハッシュ値を生成します。
 
-<Note>
-  計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対して同一になる場合があります。
-  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と、それに対応する `Array(Tuple(key, value))` 型に当てはまります。
-</Note>
+:::note
+計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対して同一になる場合があります。
+これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、同じデータを持つ `Map` と、それに対応する `Array(Tuple(key, value))` 型に当てはまります。
+:::
 
 **構文**
 
@@ -1322,10 +1322,10 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 入力値の [MurmurHash3](https://github.com/aappleby/smhasher) ハッシュを計算します。
 
-<Note>
-  計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対して同一になる場合があります。
-  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、`Map` と同じデータを持つ対応する `Array(Tuple(key, value))` 型などに当てはまります。
-</Note>
+:::note
+計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対して同一になる場合があります。
+これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの `Tuple`、`Map` と同じデータを持つ対応する `Array(Tuple(key, value))` 型などに当てはまります。
+:::
 
 **構文**
 
@@ -1851,13 +1851,11 @@ SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 
 [`sipHash64`](#sipHash64) と同様ですが、128 ビットのハッシュ値を生成します。つまり、最終的な xor-folding の状態は 128 ビットまで処理されます。
 
-<Tip>
-  **新規プロジェクトでは sipHash128Reference を使用してください**
-
-  この 128 ビット版はリファレンス実装とは異なり、より弱い実装です。
-  このバージョンが存在するのは、これが書かれた当時、SipHash には公式の 128 ビット拡張機能が存在しなかったためです。
-  新規プロジェクトでは [`sipHash128Reference`](#sipHash128Reference) の使用を推奨します。
-</Tip>
+:::tip 新規プロジェクトでは sipHash128Reference を使用してください
+この 128 ビット版はリファレンス実装とは異なり、より弱い実装です。
+このバージョンが存在するのは、これが書かれた当時、SipHash には公式の 128 ビット拡張機能が存在しなかったためです。
+新規プロジェクトでは [`sipHash128Reference`](#sipHash128Reference) の使用を推奨します。
+:::
 
 **構文**
 
@@ -1895,13 +1893,11 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 
 固定のキーを使用する代わりに、明示的なキー引数を受け取る点を除き、[`sipHash128`](#sipHash128) と同じです。
 
-<Tip>
-  **新しいプロジェクトでは sipHash128ReferenceKeyed を使用してください**
-
-  この 128 ビット版はリファレンス実装とは異なり、強度も低くなっています。
-  このバージョンが存在するのは、これが実装された当時、SipHash に公式の 128 ビット拡張がなかったためです。
-  新しいプロジェクトでは、[`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed) を使用することをおすすめします。
-</Tip>
+:::tip 新しいプロジェクトでは sipHash128ReferenceKeyed を使用してください
+この 128 ビット版はリファレンス実装とは異なり、強度も低くなっています。
+このバージョンが存在するのは、これが実装された当時、SipHash に公式の 128 ビット拡張がなかったためです。
+新しいプロジェクトでは、[`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed) を使用することをおすすめします。
+:::
 
 **構文**
 
@@ -2022,10 +2018,10 @@ SELECT hex(sipHash128Reference('foo', '', 3));
 2. 先ほど計算したハッシュ値と3つ目の入力パラメータのハッシュを、同様の方法でハッシュ化します。
 3. この計算を、元の入力に含まれる残りすべてのハッシュ値に対して繰り返します。
 
-<Note>
-  計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対しては同一になる場合があります。
-  これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの`Tuple`、同じデータを持つ`Map`と、それに対応する`Array(Tuple(key, value))`型などに当てはまります。
-</Note>
+:::note
+計算されたハッシュ値は、引数の型が異なっていても、同じ入力値に対しては同一になる場合があります。
+これは、たとえばサイズの異なる整数型、同じデータを持つ名前付きおよび名前なしの`Tuple`、同じデータを持つ`Map`と、それに対応する`Array(Tuple(key, value))`型などに当てはまります。
+:::
 
 **構文**
 

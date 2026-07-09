@@ -15,11 +15,12 @@ Introduit dans : v1.1.0
 
 Calcule le nombre approximatif de valeurs d’argument distinctes à l’aide de l’algorithme [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
-<Warning>
-  Nous ne recommandons pas d’utiliser cette fonction. Dans la plupart des cas, utilisez la fonction [uniq](/fr/reference/functions/aggregate-functions/uniq) ou [uniqCombined](/fr/reference/functions/aggregate-functions/uniqCombined).
-</Warning>
+:::warning
+Nous ne recommandons pas d’utiliser cette fonction. Dans la plupart des cas, utilisez la fonction [uniq](/fr/reference/functions/aggregate-functions/uniq) ou [uniqCombined](/fr/reference/functions/aggregate-functions/uniqCombined).
+:::
 
-<Accordion title="Détails d’implémentation">
+<details>
+  <summary>Détails d’implémentation</summary>
   Cette fonction calcule un hachage pour tous les paramètres de l’agrégat, puis l’utilise pour les calculs.
   Elle utilise l’algorithme HyperLogLog pour estimer le nombre de valeurs d’argument distinctes.
 
@@ -30,7 +31,7 @@ Calcule le nombre approximatif de valeurs d’argument distinctes à l’aide de
   À partir de 100M, l’erreur d’estimation augmente, et la fonction renvoie des résultats très imprécis pour les jeux de données à cardinalité extrêmement élevée (1B+ éléments).
 
   Fournit un résultat déterministe (il ne dépend pas de l’ordre de traitement de la requête).
-</Accordion>
+</details>
 
 **Syntaxe**
 

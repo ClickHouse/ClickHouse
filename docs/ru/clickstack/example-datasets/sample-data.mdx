@@ -42,7 +42,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # или
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
@@ -69,13 +69,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         done
         ```
 
-        Это имитирует отправку данных из источников логов, трасс и метрик OTLP в OTel collector. В рабочей среде такими источниками могут быть клиентские библиотеки для разных языков или даже другие OTel collector.
+        Это имитирует отправку данных в OTel collector из OTLP-источников логов, трассировок и метрик. В рабочей среде такими источниками могут быть клиентские библиотеки разных языков или даже другие экземпляры OTel collector.
 
-        Вернувшись к представлению `Search`, вы должны увидеть, что данные начали загружаться (если данные не отображаются, установите временной диапазон `Last 1 hour`):
+        Вернувшись к представлению `Search`, вы должны увидеть, что данные начали загружаться (измените временной диапазон на `Last 1 hour`, если данные не отображаются):
 
         <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="Поиск HyperDX" size="lg" />
 
-        Загрузка данных займет несколько минут. Дождитесь ее завершения, прежде чем переходить к следующим шагам.
+        Загрузка данных займет несколько минут. Прежде чем переходить к следующим шагам, дождитесь ее завершения.
       </Step>
 
       <Step>
@@ -109,9 +109,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       </Step>
 
       <Step>
-        ### Explore: трассировки
+        ### Просмотр трассировок
 
-        Перейдите на вкладку `Trace`, чтобы увидеть полную распределённую трассировку.
+        Перейдите на вкладку `Trace`, чтобы увидеть полную распределенную трассировку.
 
         <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Трассировка сеанса" size="lg" />
 
@@ -119,15 +119,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
         <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Спан" size="lg" />
 
-        Выберите вкладку `Column Values` и прокрутите вниз. Видно, что проблема связана с переполнением кэша.
+        Выберите вкладку `Column Values` и прокрутите вниз. Мы видим, что проблема связана с переполнением кэша.
 
         <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Значения столбцов" size="lg" />
 
-        Прокрутив вверх и вернувшись к трассировке, мы видим, что журналы коррелируются со спаном благодаря ранее заданной конфигурации. Они дают дополнительный контекст.
+        Если прокрутить вверх и вернуться к трассировке, видно, что журналы коррелируются со спаном благодаря выполненной ранее настройке. Это дает дополнительный контекст.
 
-        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Коррелированный журнал" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Скоррелированный журнал" size="lg" />
 
-        Мы установили, что в платёжном сервисе переполняется кэш, из-за чего платежи не могут завершиться.
+        Мы установили, что в сервисе Payment заполняется кэш, из-за чего платежи не могут завершиться.
       </Step>
 
       <Step>
@@ -143,11 +143,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       </Step>
 
       <Step>
-        ### Метрики графика
+        ### Метрики диаграммы
 
-        Хотя в код явно внесли ошибку, мы можем использовать метрики, чтобы подтвердить размер кэша. Перейдите в представление `Chart Explorer`.
+        Хотя в коде явно была внесена ошибка, мы можем использовать метрики, чтобы проверить размер кэша. Перейдите в представление `Chart Explorer`.
 
-        Выберите `Metrics` в качестве источника данных. В конструкторе графиков постройте `Maximum` для `visa_validation_cache.size (Gauge)` и нажмите кнопку `play`. До достижения максимального размера кэш явно увеличивался, после чего начали появляться ошибки.
+        Выберите `Metrics` в качестве источника данных. Настройте диаграмму в конструкторе так, чтобы построить `Maximum` для `visa_validation_cache.size (Gauge)`, и нажмите кнопку play. До достижения максимального размера кэш явно рос, после чего начали возникать ошибки.
 
         <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Метрики" size="lg" />
       </Step>
@@ -184,11 +184,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # или
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
-        Этот файл содержит примеры журналов, метрик и трассировок из нашего публичного [демо-приложения OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) — простого интернет-магазина на микросервисах. Скопируйте этот файл в любой выбранный вами каталог.
+        Этот файл содержит примеры журналов, метрик и трассировок из нашего публичного [демо-приложения OpenTelemetry](https://github.com/ClickHouse/opentelemetry-demo) — простого интернет-магазина на микросервисах. Скопируйте этот файл в любой каталог по вашему выбору.
       </Step>
 
       <Step>
@@ -199,7 +199,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         Сначала экспортируйте API-ключ, скопированный выше.
 
         ```shell
-        # экспорт API key
+        # export API key
         export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
         ```
 

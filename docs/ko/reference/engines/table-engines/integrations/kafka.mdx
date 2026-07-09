@@ -68,7 +68,8 @@ SETTINGS
 선택 매개변수:
 
 * `kafka_security_protocol` - 브로커와 통신하는 데 사용하는 프로토콜입니다. 가능한 값: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-* `kafka_sasl_mechanism` - 인증에 사용할 SASL 메커니즘입니다. 가능한 값: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_mechanism` - 인증에 사용할 SASL 메커니즘입니다. 가능한 값: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+* `kafka_aws_region` - MSK IAM 인증에 사용할 AWS 리전입니다. 지정하지 않으면 broker 주소에서 자동 감지됩니다. 리전 정보가 포함되지 않은 PrivateLink aliases 또는 사용자 지정 DNS hostnames를 사용할 때는 명시적으로 지정하십시오. 기본값: 비어 있음(자동 감지).
 * `kafka_sasl_username` - `PLAIN` 및 `SASL-SCRAM-..` 메커니즘에서 사용할 SASL username입니다.
 * `kafka_sasl_password` - `PLAIN` 및 `SASL-SCRAM-..` 메커니즘에서 사용하는 SASL 비밀번호입니다.
 * `kafka_schema` — 포맷에 스키마 정의가 필요한 경우 반드시 사용해야 하는 매개변수입니다. 예를 들어, [Cap&#39;n Proto](https://capnproto.org/)에서는 스키마 파일의 경로와 루트 `schema.capnp:Message` 객체 이름을 지정해야 합니다.
@@ -247,6 +248,116 @@ GraphiteMergeTree와 마찬가지로 Kafka 엔진은 ClickHouse 구성 파일을
 ```
 
 사용 가능한 구성 옵션 목록은 [librdkafka 구성 참고](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)를 참조하십시오. ClickHouse 구성에서는 점(`.`) 대신 밑줄(`_`)을 사용하십시오. 예를 들어 `check.crcs=true`는 `<check_crcs>true</check_crcs>`로 작성됩니다.
+
+<div id="kafka-aws-msk-iam">
+  ### AWS MSK IAM 인증
+</div>
+
+<Note>
+  AWS MSK IAM 인증을 사용하려면 ClickHouse가 AWS S3 지원이 활성화된 상태로 빌드되어 있어야 합니다.
+</Note>
+
+AWS MSK는 IAM 기반 인증을 지원하므로, 별도의 사용자 이름과 비밀번호를 관리하지 않고 AWS 자격 증명을 사용해 Kafka 클러스터에 연결할 수 있습니다.
+
+**기본 설정:**
+
+테이블 설정(table settings)에서 `kafka_sasl_mechanism = 'AWS_MSK_IAM'`을 설정합니다:
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+AWS 리전은 패턴 매칭을 사용해 broker endpoint에서 자동으로 추출됩니다:
+
+* Provisioned MSK: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+* Serverless MSK: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+* VPC 엔드포인트: `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**AWS 자격 증명:**
+
+자격 증명은 해당 파일이 있으면 항상 `~/.aws/credentials` 및 `~/.aws/config`(AWS profile 파일)에서 로드됩니다. EC2 instance profile, 환경 변수(`AWS_ACCESS_KEY_ID` 등), ECS 작업 역할 및 기타 자동 자격 증명 소스도 사용하도록 설정하려면 서버 구성에 다음을 추가하십시오:
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+이 설정은 서버 관리자만 설정할 수 있습니다. 기본값: `false`.
+
+**PrivateLink 및 사용자 지정 DNS:**
+
+리전 정보가 포함되지 않은 PrivateLink 별칭이나 사용자 지정 DNS 호스트명을 사용하는 경우 AWS 리전을 명시적으로 지정하십시오:
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**IAM 권한:**
+
+컨슈머 권한(메시지 읽기용):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+프로듀서 권한(메시지 쓰기):
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 <div id="kafka-kerberos-support">
   ### Kerberos 지원

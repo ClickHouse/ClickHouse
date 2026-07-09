@@ -30,6 +30,10 @@ Introduit dans : v20.1.0
 
 Renvoie le nom de domaine pleinement qualifié du serveur ClickHouse.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -174,6 +178,10 @@ Introduite dans : v25.11.0
 Si l’utilisateur de la session a été remplacé à l’aide de la commande EXECUTE AS, cette fonction renvoie le nom de l’utilisateur d’origine ayant servi à l’authentification et à la création de la session.
 Alias : authUser()
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -284,6 +292,10 @@ Introduit dans : v1.1.0
 Renvoie un numéro de séquence monotone croissant du [bloc](/fr/resources/develop-contribute/introduction/architecture#block) contenant la ligne.
 Le numéro de bloc renvoyé est mis à jour au mieux, c’est-à-dire qu’il peut ne pas être parfaitement exact.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -343,6 +355,10 @@ Introduit dans : v20.3.0
 
 Renvoie la taille non compressée en octets d’un bloc de valeurs sur disque.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -379,6 +395,10 @@ Introduit dans : v1.1.0
 
 Dans ClickHouse, les requêtes sont traitées par [blocs](/fr/resources/develop-contribute/introduction/architecture#block) (fragments).
 Cette fonction renvoie la taille (nombre de lignes) du bloc sur lequel elle est appelée.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -423,6 +443,10 @@ Renvoie l’ID de build généré par un compilateur pour le binaire du serveur 
 Si elle est exécutée dans le contexte d’une table distribuée, cette fonction génère une colonne ordinaire avec des valeurs propres à chaque shard.
 Sinon, elle renvoie une valeur constante.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -435,7 +459,7 @@ buildId()
 
 **Valeur renvoyée**
 
-Renvoie l’ID du build. [`String`](/fr/reference/data-types/string)
+Renvoie l’ID de build. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -541,6 +565,10 @@ communiquent via une interface HTTP. Par défaut, le port `9012` est utilisé. U
 
 Consultez [Training and applying models](https://catboost.ai/docs/features/training.html#training) pour savoir comment entraîner des modèles catboost à partir d’un jeu de données d’entraînement.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -582,8 +610,8 @@ des plages OKLab habituelles, le résultat est défini par l’implémentation.
 OKLab utilise trois composantes :
 
 * L : luminosité perceptuelle (généralement dans l’intervalle [0..1])
-  * a : axe d’opposition vert-rouge
-  * b : axe d’opposition bleu-jaune
+* a : axe d’opposition vert-rouge
+* b : axe d’opposition bleu-jaune
 
 Les composantes a et b ne sont théoriquement pas bornées, mais en pratique elles se situent entre -0.4 et 0.4.
 OKLab est conçu pour être perceptuellement uniforme
@@ -593,7 +621,7 @@ La conversion est conçue pour être l’inverse de colorSRGBToOKLAB et se compo
 des étapes suivantes :
 
 1. Conversion d’OKLab vers sRGB linéaire.
-   2) Conversion de sRGB linéaire vers sRGB encodé avec gamma.
+2. Conversion de sRGB linéaire vers sRGB encodé avec gamma.
 
 L’argument gamma facultatif spécifie l’exposant utilisé lors de la conversion de sRGB linéaire
 vers des valeurs RGB encodées avec gamma. S’il n’est pas spécifié, une valeur gamma par défaut est utilisée
@@ -654,17 +682,17 @@ Convertit une couleur de l’espace colorimétrique perceptuellement uniforme **
 
 Si `L` est hors de la plage `[0...1]`, si `C` est négatif, ou si `H` est hors de la plage `[0...360]`, le résultat est défini par l’implémentation.
 
-<Note>
-  **OKLCH** est une version cylindrique de l’espace colorimétrique OKLab.
-  Ses trois coordonnées sont `L` (la clarté dans la plage `[0...1]`), `C` (chroma `>= 0`) et `H` (teinte en degrés dans `[0...360]`).
-  OKLab/OKLCH est conçu pour être perceptuellement uniforme tout en restant peu coûteux en calcul.
-</Note>
+:::note
+**OKLCH** est une version cylindrique de l’espace colorimétrique OKLab.
+Ses trois coordonnées sont `L` (la clarté dans la plage `[0...1]`), `C` (chroma `>= 0`) et `H` (teinte en degrés dans `[0...360]`).
+OKLab/OKLCH est conçu pour être perceptuellement uniforme tout en restant peu coûteux en calcul.
+:::
 
 La conversion est l’inverse de [`colorSRGBToOKLCH`](#colorSRGBToOKLCH) :
 
 1. D’OKLCH vers OKLab.
-   2) D’OKLab vers sRGB linéaire
-   3) De sRGB linéaire vers sRGB
+2. D’OKLab vers sRGB linéaire
+3. De sRGB linéaire vers sRGB
 
 Le second argument `gamma` est utilisé à la dernière étape.
 
@@ -720,18 +748,18 @@ Introduit dans : v26.2.0
 
 Convertit une couleur codée dans l’espace colorimétrique **sRGB** en espace colorimétrique **OKLAB**, perceptuellement uniforme.
 
-Si un canal d’entrée est en dehors de `[0...255]` ou si la valeur de gamma n’est pas positive, le comportement dépend de l’implémentation.
+Si un canal d’entrée est en dehors de `[0...255]` ou si la valeur de gamma n’est pas positive, le comportement est défini par l’implémentation.
 
-<Note>
-  **OKLAB** est un espace colorimétrique perceptuellement uniforme.
-  Ses trois coordonnées sont `L` (la clarté dans la plage `[0...1]`), `a (Green-Red axis)` et `b (Blue-Yellow axis)`.
-  OKLab est conçu pour être perceptuellement uniforme tout en restant peu coûteux en calcul.
-</Note>
+:::note
+**OKLAB** est un espace colorimétrique perceptuellement uniforme.
+Ses trois coordonnées sont `L` (la clarté dans la plage `[0...1]`), `a (Green-Red axis)` et `b (Blue-Yellow axis)`.
+OKLab est conçu pour être perceptuellement uniforme tout en restant peu coûteux en calcul.
+:::
 
 La conversion se déroule en deux étapes :
 
 1. sRGB vers sRGB linéaire
-   2) sRGB linéaire vers OKLab
+2. sRGB linéaire vers OKLab
 
 **Syntaxe**
 
@@ -772,17 +800,17 @@ Convertit une couleur encodée dans l’espace colorimétrique **sRGB** en espac
 
 Si un canal d’entrée est hors de `[0...255]` ou si la valeur de gamma n’est pas positive, le comportement est défini par l’implémentation.
 
-<Note>
-  **OKLCH** est une version cylindrique de l’espace colorimétrique OKLab.
-  Ses trois coordonnées sont `L` (la clarté dans l’intervalle `[0...1]`), `C` (la chroma `>= 0`) et `H` (la teinte, en degrés, dans `[0...360]`).
-  OKLab/OKLCH est conçu pour être perceptuellement uniforme tout en restant peu coûteux en calcul.
-</Note>
+:::note
+**OKLCH** est une version cylindrique de l’espace colorimétrique OKLab.
+Ses trois coordonnées sont `L` (la clarté dans l’intervalle `[0...1]`), `C` (la chroma `>= 0`) et `H` (la teinte, en degrés, dans `[0...360]`).
+OKLab/OKLCH est conçu pour être perceptuellement uniforme tout en restant peu coûteux en calcul.
+:::
 
 La conversion se déroule en trois étapes :
 
 1. sRGB vers sRGB linéaire
-   2) sRGB linéaire vers OKLab
-   3) OKLab vers OKLCH.
+2. sRGB linéaire vers OKLab
+3. OKLab vers OKLCH.
 
 Pour obtenir des références de couleurs dans l’espace OKLCH et voir leur correspondance avec les couleurs sRGB, veuillez consulter [https://OKLCH.com/](https://OKLCH.com/).
 
@@ -826,6 +854,10 @@ Cette fonction est particulièrement utile dans les scénarios de débogage.
 Elle a été créée pour assurer la compatibilité avec la fonction `CONNECTION_ID` de MySQL.
 Elle n’est généralement pas utilisée dans les requêtes de production.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -862,20 +894,20 @@ Introduit dans : v20.8.0
 
 Renvoyer le nombre de chiffres décimaux nécessaires pour représenter une valeur.
 
-<Note>
-  Cette fonction tient compte de l’échelle des valeurs décimales, c’est-à-dire qu’elle calcule le résultat à partir du type entier sous-jacent, soit `(value * scale)`.
+:::note
+Cette fonction tient compte de l’échelle des valeurs décimales, c’est-à-dire qu’elle calcule le résultat à partir du type entier sous-jacent, soit `(value * scale)`.
 
-  Par exemple :
+Par exemple :
 
-  * `countDigits(42) = 2`
-  * `countDigits(42.000) = 5`
-  * `countDigits(0.04200) = 4`
-</Note>
+* `countDigits(42) = 2`
+* `countDigits(42.000) = 5`
+* `countDigits(0.04200) = 4`
+  :::
 
-<Tip>
-  Vous pouvez vérifier le débordement de `Decimal64` avec `countDigits(x) > 18`,
-  bien que cela soit plus lent que [`isDecimalOverflow`](#isDecimalOverflow).
-</Tip>
+:::tip
+Vous pouvez vérifier le débordement de `Decimal64` avec `countDigits(x) > 18`,
+bien que cela soit plus lent que [`isDecimalOverflow`](#isDecimalOverflow).
+:::
 
 **Syntaxe**
 
@@ -917,6 +949,10 @@ Renvoie le nom de la base de données courante.
 Utile dans les paramètres de moteur de table des requêtes `CREATE TABLE`, lorsque vous devez spécifier la base de données.
 
 Voir aussi l’[instruction `SET`](/fr/reference/statements/use).
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -968,6 +1004,10 @@ Introduit dans : v21.9.0
 
 Renvoie un tableau des profils de paramètres de l’utilisateur courant.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1004,6 +1044,10 @@ Introduit dans : v25.2.0
 
 Renvoie l’ID de la requête en cours.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1038,7 +1082,11 @@ SELECT currentQueryID();
 
 Introduit dans : v21.9.0
 
-Renvoie un Array contenant les rôles attribués à l’utilisateur courant.
+Renvoie un tableau contenant les rôles attribués à l’utilisateur courant.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -1084,6 +1132,10 @@ Utilisez plutôt `currentDatabase`.
 
 Voir aussi l’[instruction `SET`](/fr/reference/statements/use).
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1096,7 +1148,7 @@ currentSchemas(bool)
 
 * `bool` — Une valeur booléenne, qui est ignorée. [`Bool`](/fr/reference/data-types/boolean)
 
-**Valeur de retour**
+**Valeur renvoyée**
 
 Renvoie un tableau à un seul élément contenant le nom de la base de données courante. [`Array(String)`](/fr/reference/data-types/array)
 
@@ -1122,6 +1174,10 @@ Introduit dans : v20.1.0
 
 Renvoie le nom de l’utilisateur courant.
 Dans le cas d’une requête distribuée, le nom de l’utilisateur qui a initié la requête est renvoyé.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -1173,6 +1229,10 @@ Introduit dans : v21.9.0
 
 Renvoie un tableau contenant les noms des profils de paramètres par défaut de l’utilisateur courant.
 
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1208,6 +1268,10 @@ SELECT defaultProfiles();
 Introduit dans : v21.9.0
 
 Renvoie un tableau des rôles par défaut de l’utilisateur courant.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -1342,6 +1406,10 @@ Introduit dans : v22.11.0
 
 Renvoie la valeur de `display_name` dans [config](/fr/concepts/features/configuration/server-config/configuration-files) ou, si elle n’est pas définie, le nom de domaine pleinement qualifié (FQDN) du serveur.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1377,6 +1445,10 @@ SELECT displayName();
 Introduit dans : v1.1.0
 
 Affiche une description détaillée de la structure interne d’une colonne et de son type de données.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -1414,6 +1486,10 @@ Introduit dans : v21.9.0
 
 Renvoie un tableau contenant les noms des profils de paramètres activés pour l’utilisateur courant.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1449,6 +1525,10 @@ SELECT enabledProfiles();
 Introduit dans : v21.9.0
 
 Renvoie un tableau des rôles activés pour l’utilisateur courant.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -1526,6 +1606,10 @@ Le contenu du fichier n&#39;est pas interprété.
 
 Voir aussi la fonction de table [`file`](/fr/reference/functions/table-functions/file).
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1549,9 +1633,6 @@ Renvoie le contenu du fichier sous forme de chaîne de caractères. [`String`](/
 INSERT INTO table SELECT file('a.txt'), file('b.txt');
 ```
 
-```response title=Response
-```
-
 <div id="filesystemAvailable">
   ## filesystemAvailable
 </div>
@@ -1560,6 +1641,10 @@ Introduit dans : v20.1.0
 
 Renvoie la quantité d’espace libre dans le système de fichiers qui héberge le stockage persistant de la base de données.
 La valeur renvoyée est toujours inférieure à l’espace libre total ([`filesystemUnreserved`](/fr/reference/functions/regular-functions/other-functions#filesystemUnreserved)), car une partie de cet espace est réservée au système d’exploitation.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -1598,6 +1683,10 @@ Introduit dans : v20.1.0
 Renvoie la capacité du système de fichiers en octets.
 Nécessite que le [path](/fr/reference/settings/server-settings/settings#path) vers le répertoire de données soit configuré.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1635,6 +1724,10 @@ Introduit dans : v22.12.0
 Renvoie la quantité totale d’espace libre sur le système de fichiers qui héberge le stockage persistant de la base de données (anciennement `filesystemFree`).
 Voir aussi [`filesystemAvailable`](#filesystemAvailable).
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1643,7 +1736,7 @@ filesystemUnreserved([disk_name])
 
 **Arguments**
 
-* `disk_name` — Facultatif. Nom du disque pour lequel trouver la quantité totale d’espace libre. S’il est omis, le disque `default` est utilisé. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
+* `disk_name` — Facultatif. Nom du disque pour lequel trouver la quantité totale d’espace libre. S’il est omis, le disque par défaut est utilisé. [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring)
 
 **Valeur renvoyée**
 
@@ -1702,6 +1795,7 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
 **Combiné à initializeAggregation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -2228,9 +2322,6 @@ La chaîne de requête fuzzée [`String`](/fr/reference/data-types/string)
 SET allow_fuzz_query_functions = 1; SELECT fuzzQuery('SELECT 1');
 ```
 
-```response title=Response
-```
-
 <div id="generateRandomStructure">
   ## generateRandomStructure
 </div>
@@ -2238,6 +2329,10 @@ SET allow_fuzz_query_functions = 1; SELECT fuzzQuery('SELECT 1');
 Introduit dans : v23.5.0
 
 Génère une structure de table aléatoire au format `column1_name column1_type, column2_name column2_type, ...`.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2276,7 +2371,7 @@ SELECT generateRandomStructure(1)
 c1 Map(UInt256, UInt16)
 ```
 
-**avec la seed spécifiée**
+**avec la graine spécifiée**
 
 ```sql title=Query
 SELECT generateRandomStructure(NULL, 33)
@@ -2296,6 +2391,10 @@ Génère et renvoie des nombres séquentiels à partir de la valeur précédente
 Cette fonction prend un argument de type String — un identifiant de série — ainsi qu’une valeur initiale facultative.
 Le serveur doit être configuré avec Keeper.
 Les séries sont stockées dans des nœuds Keeper sous le chemin, qui peut être configuré via [`series_keeper_path`](/fr/reference/settings/server-settings/settings#series_keeper_path) dans la configuration du serveur.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2385,18 +2484,26 @@ SELECT generateSerialID('id2', 100)
 Introduit dans : v24.5.0
 
 Renvoie la valeur d&#39;un en-tête HTTP.
-S&#39;il n&#39;existe pas d&#39;en-tête de ce type ou si la requête actuelle n&#39;est pas effectuée via l&#39;interface HTTP, la fonction renvoie une chaîne vide.
-Certains en-têtes HTTP (par ex. `Authentication` et `X-ClickHouse-*`) sont soumis à des restrictions.
+S&#39;il n&#39;existe pas d&#39;en-tête de ce type ou si la requête en cours n&#39;est pas effectuée via l&#39;interface HTTP, la fonction renvoie une chaîne vide.
+Certains en-têtes HTTP (par ex., `Authentication` et `X-ClickHouse-*`) sont soumis à des restrictions.
 
-<Info>
-  **Le paramètre `allow_get_client_http_header` est requis**
+:::note Le paramètre `allow_get_client_http_header` est requis
+La fonction nécessite que le paramètre `allow_get_client_http_header` soit activé.
+Ce paramètre n&#39;est pas activé par défaut pour des raisons de sécurité, car certains en-têtes, tels que `Cookie`, peuvent contenir des informations sensibles.
+:::
 
-  La fonction nécessite que le paramètre `allow_get_client_http_header` soit activé.
-  Ce paramètre n&#39;est pas activé par défaut pour des raisons de sécurité, car certains en-têtes, tels que `Cookie`, peuvent contenir des informations sensibles.
-</Info>
-
-Pour cette fonction, les en-têtes HTTP sont sensibles à la casse.
+Les en-têtes HTTP sont sensibles à la casse pour cette fonction.
 Si la fonction est utilisée dans le contexte d&#39;une requête distribuée, elle ne renvoie un résultat non vide que sur le nœud initiateur.
+
+`getClientHTTPHeader` lit les en-têtes de la requête en cours ; elle ne renvoie donc une valeur non vide que lorsque la requête est envoyée via l&#39;interface HTTP.
+Par exemple, fournissez l&#39;en-tête dans la requête et relisez-le via HTTP :
+
+```bash
+echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
+    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
+```
+
+La commande ci-dessus renvoie `application/x-www-form-urlencoded`.
 
 **Syntaxe**
 
@@ -2417,13 +2524,10 @@ Renvoie la valeur de l’en-tête. [`String`](/fr/reference/data-types/string)
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT getClientHTTPHeader('Content-Type');
-```
-
-```response title=Response
-┌─getClientHTTPHeader('Content-Type')─┐
-│ application/x-www-form-urlencoded   │
-└─────────────────────────────────────┘
+-- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
+-- no request headers, so the function returns an empty string. See the description above
+-- for an HTTP example that returns the actual header value.
+SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1
 ```
 
 <div id="getMacro">
@@ -2435,6 +2539,10 @@ Introduit dans : v20.1.0
 Renvoie la valeur d’une macro du fichier de configuration du serveur.
 Les macros sont définies dans la section [`<macros>`](/fr/reference/settings/server-settings/settings#macros) du fichier de configuration et peuvent être utilisées pour distinguer les serveurs à l’aide de noms explicites, même si leurs noms d’hôte sont complexes.
 Si la fonction est exécutée dans le contexte d’une table distribuée, elle génère une colonne normale avec des valeurs correspondant à chaque fragment.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2508,6 +2616,10 @@ Introduit dans : v25.6.0
 
 Renvoie la valeur actuelle d’un paramètre MergeTree.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -2543,6 +2655,10 @@ SELECT getMergeTreeSetting('index_granularity');
 Introduit dans : v21.11.0
 
 Renvoie une chaîne de caractères contenant la version du noyau du système d’exploitation.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2580,6 +2696,10 @@ Introduit dans : v21.10.0
 
 Renvoie le numéro de port du serveur pour un protocole donné.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -2616,6 +2736,10 @@ Introduit dans : v25.6.0
 
 Renvoie la valeur actuellement définie pour le paramètre serveur indiqué.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -2651,6 +2775,10 @@ SELECT getServerSetting('allow_use_jemalloc_memory');
 Introduit dans : v20.7.0
 
 Renvoie la valeur actuelle d’un paramètre.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2692,6 +2820,10 @@ SELECT getSetting('enable_analyzer');
 Introduit dans : v24.10.0
 
 Renvoie la valeur actuelle d’un paramètre, ou la valeur par défaut spécifiée dans le deuxième argument si le paramètre n’est pas défini dans le profil actuel.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2790,9 +2922,6 @@ getSubcolumn(nested_value, subcolumn_name)
 SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')
 ```
 
-```response title=Response
-```
-
 <div id="getTypeSerializationStreams">
   ## getTypeSerializationStreams
 </div>
@@ -2881,6 +3010,10 @@ Introduit dans : v1.1.0
 Vérifie si une colonne spécifique existe dans une table d’une base de données.
 Pour les éléments d’une structure de données imbriquée, la fonction vérifie l’existence d’une colonne.
 Pour la structure de données imbriquée elle-même, la fonction renvoie `0`.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3008,6 +3141,10 @@ Renvoie le nom de l’hôte sur lequel cette fonction a été exécutée.
 Si la fonction s’exécute sur un serveur distant (traitement distribué), le nom du serveur distant est renvoyé.
 Si la fonction s’exécute dans le contexte d’une table distribuée, elle génère une colonne normale avec des valeurs correspondant à chaque shard.
 Sinon, elle produit une valeur constante.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3192,7 +3329,9 @@ Lors de l’analyse de l’index, on suppose que l’argument de cette fonction 
 Cela vous permet de sélectionner des données dans des plages d’index à l’aide de la condition correspondante, mais sans filtrage supplémentaire sur cette condition.
 L’index de ClickHouse est sparse, et l’utilisation de `indexHint` renverra plus de données que si vous spécifiez directement la même condition.
 
-<Accordion title="Explication">
+<details>
+  <summary>Explication</summary>
+
   Lorsque vous exécutez :
 
   ```sql
@@ -3222,7 +3361,7 @@ L’index de ClickHouse est sparse, et l’utilisation de `indexHint` renverra p
   * Quelles granules ma condition sélectionne-t-elle ?
   * Combien de lignes y a-t-il dans ces granules ?
   * Mon index est-il utilisé efficacement ?
-</Accordion>
+</details>
 
 Remarque : il n’est pas possible d’optimiser une requête avec la fonction `indexHint`. La fonction `indexHint` n’optimise pas la requête, car elle ne fournit aucune information supplémentaire pour l’analyse de la requête. Mettre une expression à l’intérieur de la fonction `indexHint` n’est en aucun cas préférable à ne pas utiliser la fonction `indexHint`. La fonction `indexHint` ne peut être utilisée qu’à des fins d’introspection et de débogage, et n’améliore pas les performances. Si vous voyez `indexHint` utilisé par quelqu’un d’autre que les contributeurs de ClickHouse, il s’agit probablement d’une erreur et vous devriez le supprimer.
 
@@ -3268,6 +3407,10 @@ D’autres paramètres d’une requête peuvent être extraits du champ `initial
 
 Contrairement à la fonction [`queryID`](/fr/reference/functions/regular-functions/other-functions#queryID), `initialQueryID` renvoie les mêmes résultats sur différents shards.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -3308,6 +3451,10 @@ Introduit dans : v25.4.0
 
 Renvoie l&#39;heure de début de la requête initiale en cours.
 `initialQueryStartTime` renvoie les mêmes résultats sur différents shards.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3406,6 +3553,10 @@ Indique si l’argument est une expression constante.
 Une expression constante est une expression dont le résultat est connu lors de l’analyse de la requête, c’est-à-dire avant l’exécution.
 Par exemple, les expressions construites à partir de [littéraux](/fr/reference/syntax#literals) sont des expressions constantes.
 Cette fonction est principalement destinée au développement, au débogage et à la démonstration.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3523,9 +3674,13 @@ Introduit dans : v18.16.0
 Permet d’extraire des données d’une table de la même manière que depuis un dictionnaire.
 Récupère des données à partir de tables Join à l’aide de la clé de jointure spécifiée.
 
-<Note>
-  Prend uniquement en charge les tables créées avec l’`ENGINE = Join(ANY, LEFT, <join_keys>)` [instruction](/fr/reference/engines/table-engines/special/join).
-</Note>
+:::note
+Prend uniquement en charge les tables créées avec l’`ENGINE = Join(ANY, LEFT, <join_keys>)` [instruction](/fr/reference/engines/table-engines/special/join).
+:::
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3598,9 +3753,13 @@ Permet d’extraire des données d’une table de la même manière que depuis u
 Récupère des données depuis des tables Join à l’aide de la clé de jointure spécifiée.
 Contrairement à [`joinGet`](#joinGet), renvoie `NULL` lorsque la clé est absente.
 
-<Note>
-  Prend uniquement en charge les tables créées avec l’[instruction](/fr/reference/engines/table-engines/special/join) `ENGINE = Join(ANY, LEFT, <join_keys>)`.
-</Note>
+:::note
+Prend uniquement en charge les tables créées avec l’[instruction](/fr/reference/engines/table-engines/special/join) `ENGINE = Join(ANY, LEFT, <join_keys>)`.
+:::
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3642,6 +3801,10 @@ SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.
 Introduit dans : v18.12.0
 
 Renvoie la position d’une valeur dans le dictionnaire d’une colonne [LowCardinality](/fr/reference/data-types/lowcardinality). Les positions commencent à 1. Comme LowCardinality utilise des dictionnaires propres à chaque part, cette fonction peut renvoyer des positions différentes pour une même valeur selon les parts.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3699,6 +3862,10 @@ Introduit dans : v18.12.0
 Renvoyer les valeurs du dictionnaire d’une colonne [LowCardinality](/fr/reference/data-types/lowcardinality).
 Si le bloc est plus petit ou plus grand que la taille du dictionnaire, le résultat sera tronqué ou complété avec des valeurs par défaut.
 Comme LowCardinality utilise des dictionnaires par part, cette fonction peut renvoyer des valeurs de dictionnaire différentes d’une part à l’autre.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3907,6 +4074,7 @@ Renvoie une valeur au décalage spécifié, ou la valeur par défaut si elle est
 **Exemple d’utilisation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 ```
 
@@ -3928,6 +4096,7 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 **Avec une valeur par défaut**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 ```
 
@@ -4103,7 +4272,7 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 
 Introduit dans : v26.4.0
 
-Masque une requête SQL en remplaçant les identifiants par des mots aléatoires et les littéraux par des valeurs aléatoires, tout en préservant la structure de la requête.
+Obfusque une requête SQL en remplaçant les identifiants par des mots aléatoires et les littéraux par des valeurs aléatoires, tout en préservant la structure de la requête.
 
 Cette fonction est utile pour anonymiser les requêtes avant de les consigner dans les logs ou de les partager à des fins de débogage.
 Des lignes différentes produiront des résultats masqués différents, même pour la même requête en entrée, ce qui aide
@@ -4118,6 +4287,10 @@ Fonctionnalités :
 * Remplace les littéraux numériques et textuels par des valeurs aléatoires
 * Préserve la structure globale de la requête et la syntaxe SQL
 * Produit des résultats différents pour des lignes différentes
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -4439,9 +4612,9 @@ Introduit dans : v21.4.0
 
 Calcule l’[identifiant de partition](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
 
-<Note>
-  Cette fonction est lente et ne doit pas être utilisée sur un grand nombre de lignes.
-</Note>
+:::note
+Cette fonction est lente et ne doit pas être utilisée sur un grand nombre de lignes.
+:::
 
 **Syntaxe**
 
@@ -4502,6 +4675,10 @@ Les autres paramètres d’une requête peuvent être extraits du champ `query_i
 
 Contrairement à la fonction [`initialQueryID`](#initialQueryID), `queryID` peut renvoyer des résultats différents selon les shards.
 
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -4542,6 +4719,10 @@ Introduit dans : v22.7.0
 
 Renvoie la révision actuelle du serveur ClickHouse.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -4577,6 +4758,10 @@ SELECT revision()
 Introduit dans : v1.1.0
 
 Renvoie un numéro de ligne unique pour chaque ligne traitée.
+
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -4640,6 +4825,10 @@ Pour chaque [bloc](/fr/resources/develop-contribute/introduction/architecture#bl
 
 Le numéro renvoyé commence à 0 pour chaque bloc.
 
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -4699,13 +4888,11 @@ Introduit dans : v1.1.0
 
 Accumule les états d&#39;une fonction d&#39;agrégation pour chaque ligne d&#39;un bloc de données.
 
-<Warning>
-  **Obsolète**
-
-  L&#39;état est réinitialisé pour chaque nouveau bloc de données.
-  En raison de ce comportement sujet aux erreurs, cette fonction est obsolète ; il est recommandé d&#39;utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
-  Vous pouvez utiliser le paramètre [`allow_deprecated_error_prone_window_functions`](/fr/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) pour autoriser l&#39;utilisation de cette fonction.
-</Warning>
+:::warning Obsolète
+L&#39;état est réinitialisé pour chaque nouveau bloc de données.
+En raison de ce comportement sujet aux erreurs, cette fonction est obsolète ; il est recommandé d&#39;utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
+Vous pouvez utiliser le paramètre [`allow_deprecated_error_prone_window_functions`](/fr/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) pour autoriser l&#39;utilisation de cette fonction.
+:::
 
 **Syntaxe**
 
@@ -4727,6 +4914,7 @@ Renvoie le résultat accumulé pour chaque ligne. [`Any`](/fr/reference/data-typ
 **Exemple d’utilisation avec initializeAggregation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -4757,20 +4945,16 @@ L’heure de début est incluse dans l’événement, tandis que l’heure de fi
 Les colonnes contenant l’heure de début et l’heure de fin doivent être du même type de données.
 La fonction calcule le nombre total d’événements actifs (simultanés) pour chaque heure de début d’événement.
 
-<Tip>
-  **Prérequis**
+:::tip Prérequis
+Les événements doivent être triés par heure de début dans l’ordre croissant.
+Si cette condition n’est pas respectée, la fonction génère une exception.
+Chaque bloc de données est traité séparément.
+Si des événements provenant de différents blocs de données se chevauchent, ils ne peuvent pas être traités correctement.
+:::
 
-  Les événements doivent être triés par heure de début dans l’ordre croissant.
-  Si cette condition n’est pas respectée, la fonction génère une exception.
-  Chaque bloc de données est traité séparément.
-  Si des événements provenant de différents blocs de données se chevauchent, ils ne peuvent pas être traités correctement.
-</Tip>
-
-<Warning>
-  **Obsolète**
-
-  Il est recommandé d’utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
-</Warning>
+:::warning Obsolète
+Il est recommandé d’utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
+:::
 
 **Syntaxe**
 
@@ -4813,15 +4997,13 @@ Introduit dans : v1.1.0
 Calcule la différence entre les valeurs de deux lignes consécutives dans le bloc de données.
 Renvoie `0` pour la première ligne, puis, pour les lignes suivantes, la différence par rapport à la ligne précédente.
 
-<Warning>
-  **Obsolète**
+:::warning Obsolète
+Renvoie uniquement les différences à l’intérieur du bloc de données en cours de traitement.
+En raison de ce comportement sujet aux erreurs, cette fonction est obsolète.
+Il est recommandé d’utiliser à la place les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
 
-  Renvoie uniquement les différences à l’intérieur du bloc de données en cours de traitement.
-  En raison de ce comportement sujet aux erreurs, cette fonction est obsolète.
-  Il est recommandé d’utiliser à la place les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
-
-  Vous pouvez utiliser le paramètre [`allow_deprecated_error_prone_window_functions`](/fr/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) pour autoriser l’utilisation de cette fonction.
-</Warning>
+Vous pouvez utiliser le paramètre [`allow_deprecated_error_prone_window_functions`](/fr/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) pour autoriser l’utilisation de cette fonction.
+:::
 
 Le résultat de la fonction dépend des blocs de données concernés et de l’ordre des données dans le bloc.
 L’ordre des lignes lors du calcul de `runningDifference()` peut différer de l’ordre des lignes renvoyées à l’utilisateur.
@@ -4848,6 +5030,23 @@ Renvoie la différence entre des valeurs consécutives, avec 0 pour la première
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
+
+CREATE TABLE events
+(
+    EventID UInt32,
+    EventDate Date,
+    EventTime DateTime
+)
+ENGINE = Memory;
+
+INSERT INTO events VALUES
+    (1106, '2025-11-24', '2025-11-24 00:00:04'),
+    (1107, '2025-11-24', '2025-11-24 00:00:05'),
+    (1108, '2025-11-24', '2025-11-24 00:00:05'),
+    (1109, '2025-11-24', '2025-11-24 00:00:09'),
+    (1110, '2025-11-24', '2025-11-24 00:00:10');
+
 SELECT
     EventID,
     EventTime,
@@ -4859,7 +5058,7 @@ FROM
         EventTime
     FROM events
     WHERE EventDate = '2025-11-24'
-    ORDER BY EventTime ASC
+    ORDER BY EventTime ASC, EventID ASC
     LIMIT 5
 );
 ```
@@ -4877,6 +5076,7 @@ FROM
 **Exemple d’impact de la taille des blocs**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifference(number + 1) AS diff
@@ -4901,15 +5101,13 @@ Introduit dans : v1.1.0
 
 Calcule la différence entre les valeurs de lignes consécutives dans un bloc de données, mais contrairement à [`runningDifference`](#runningDifference), cette fonction renvoie la valeur réelle de la première ligne au lieu de `0`.
 
-<Warning>
-  **Obsolète**
+:::warning Obsolète
+Renvoie uniquement les différences à l’intérieur du bloc de données en cours de traitement.
+En raison de ce comportement propice aux erreurs, cette fonction est obsolète.
+Il est recommandé d’utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
 
-  Renvoie uniquement les différences à l’intérieur du bloc de données en cours de traitement.
-  En raison de ce comportement propice aux erreurs, cette fonction est obsolète.
-  Il est recommandé d’utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
-
-  Vous pouvez utiliser le paramètre `allow_deprecated_error_prone_window_functions` pour autoriser l’utilisation de cette fonction.
-</Warning>
+Vous pouvez utiliser le paramètre `allow_deprecated_error_prone_window_functions` pour autoriser l’utilisation de cette fonction.
+:::
 
 **Syntaxe**
 
@@ -4930,6 +5128,7 @@ Renvoie la différence entre valeurs consécutives ; pour la première ligne, re
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifferenceStartingWithFirstValue(number) AS diff
@@ -4954,6 +5153,10 @@ Introduit dans : v20.1.0
 
 Renvoie l’UUID (v4) aléatoire et unique généré au premier démarrage du serveur.
 Cet UUID est conservé, c’est-à-dire que les deuxième, troisième, etc. démarrages du serveur renvoient le même UUID.
+
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -4991,6 +5194,10 @@ Introduit dans : v21.9.0
 
 Renvoyer le nombre total de shards pour une requête distribuée.
 Si une requête n&#39;est pas distribuée, la valeur constante `0` est renvoyée.
+
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -5033,6 +5240,10 @@ Introduit dans : v21.9.0
 Renvoie l’indice du shard qui traite une partie des données dans une requête distribuée.
 Les indices commencent à `1`.
 Si une requête n’est pas distribuée, la valeur constante `0` est renvoyée.
+
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -5116,9 +5327,9 @@ Cependant, elle peut s’avérer utile dans les scénarios suivants :
 2. **Débogage** : si vous devez examiner l’état du système ou l’exécution d’une requête à un moment précis, vous pouvez utiliser `sleep()` pour introduire une pause, ce qui vous permet d’inspecter ou de collecter des informations pertinentes.
 3. **Simulation** : dans certains cas, vous pouvez vouloir simuler des situations réelles où des délais ou des pauses se produisent, comme la latence réseau ou des dépendances à des systèmes externes.
 
-<Warning>
-  Il est important d’utiliser la fonction `sleep()` avec discernement et uniquement lorsque cela est nécessaire, car elle peut affecter les performances globales et la réactivité de votre système ClickHouse.
-</Warning>
+:::warning
+Il est important d’utiliser la fonction `sleep()` avec discernement et uniquement lorsque cela est nécessaire, car elle peut affecter les performances globales et la réactivité de votre système ClickHouse.
+:::
 
 Pour des raisons de sécurité, la fonction ne peut être exécutée que dans le profil utilisateur par défaut (avec `allow_sleep` activé).
 
@@ -5168,9 +5379,9 @@ Elle permet de simuler des délais ou d’introduire des pauses dans le traiteme
 2. **Débogage** : si vous devez examiner l’état du système ou l’exécution d’une requête pour chaque ligne traitée, vous pouvez utiliser `sleepEachRow()` pour introduire des pauses et ainsi inspecter le système ou recueillir les informations pertinentes.
 3. **Simulation** : dans certains cas, vous pouvez vouloir reproduire des scénarios réels dans lesquels des délais ou des pauses surviennent pour chaque ligne traitée, par exemple lors d’interactions avec des systèmes externes ou en présence de latences réseau.
 
-<Warning>
-  Comme pour la fonction `sleep()`, il est important d’utiliser `sleepEachRow()` avec discernement et uniquement lorsque nécessaire, car elle peut affecter de manière significative les performances globales et la réactivité de votre système ClickHouse, en particulier avec des jeux de résultats volumineux.
-</Warning>
+:::warning
+Comme pour la fonction `sleep()`, il est important d’utiliser `sleepEachRow()` avec discernement et uniquement lorsque nécessaire, car elle peut affecter de manière significative les performances globales et la réactivité de votre système ClickHouse, en particulier avec des jeux de résultats volumineux.
+:::
 
 **Syntaxe**
 
@@ -5296,6 +5507,10 @@ Renvoie le numéro du port TCP de l’[interface native](/fr/concepts/features/i
 Si elle est exécutée dans le contexte d’une table distribuée, cette fonction génère une colonne ordinaire avec des valeurs propres à chaque shard.
 Sinon, elle produit une valeur constante.
 
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -5370,6 +5585,10 @@ Introduit dans : v1.1.0
 
 Renvoie le nom interne du type de données de la valeur donnée.
 Contrairement à la fonction [`toTypeName`](#toTypeName), le type de données renvoyé peut inclure des colonnes d’encapsulation internes telles que `Const` et `LowCardinality`.
+
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -5483,18 +5702,22 @@ Introduit dans : v22.6.0
 
 Renvoie l’ID d’une transaction.
 
-<Note>
-  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales.
-  Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre [configuration](/fr/concepts/features/configuration/server-config/configuration-files) :
+:::note
+Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales.
+Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre [configuration](/fr/concepts/features/configuration/server-config/configuration-files) :
 
-  ```xml
-  <clickhouse>
-      <allow_experimental_transactions>1</allow_experimental_transactions>
-  </clickhouse>
-  ```
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
 
-  Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
-</Note>
+Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+:::
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -5541,19 +5764,19 @@ Introduit dans : v22.6.0
 
 <CloudNotSupportedBadge />
 
-Renvoie l’instantané le plus récent (Commit Sequence Number) d’une [transaction](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) disponible à la lecture.
+Renvoie l’instantané le plus récent (Commit Sequence Number) d’une [transaction](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) disponible en lecture.
 
-<Note>
-  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
+:::note
+Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
 
-  ```xml
-  <clickhouse>
-      <allow_experimental_transactions>1</allow_experimental_transactions>
-  </clickhouse>
-  ```
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
 
-  Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
-</Note>
+Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+:::
 
 **Syntaxe**
 
@@ -5597,17 +5820,17 @@ Introduit dans : v22.6.0
 
 Renvoie l’instantané le plus ancien (Commit Sequence Number) visible par une [transaction](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) en cours.
 
-<Note>
-  Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
+:::note
+Cette fonction fait partie d’un ensemble de fonctionnalités expérimentales. Activez la prise en charge expérimentale des transactions en ajoutant ce paramètre à votre configuration :
 
-  ```xml
-  <clickhouse>
-      <allow_experimental_transactions>1</allow_experimental_transactions>
-  </clickhouse>
-  ```
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
 
-  Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
-</Note>
+Pour plus d’informations, consultez la page [Prise en charge des transactions (ACID)](/fr/concepts/features/operations/insert/transactions#transactions-commit-and-rollback).
+:::
 
 **Syntaxe**
 
@@ -5850,6 +6073,10 @@ Renvoie la durée de fonctionnement du serveur en secondes.
 Si elle est exécutée dans le contexte d&#39;une table distribuée, cette fonction génère une colonne normale avec des valeurs propres à chaque shard.
 Sinon, elle renvoie une valeur constante.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -5972,6 +6199,10 @@ Renvoie la version actuelle de ClickHouse sous la forme d’une chaîne au forma
 Si elle est exécutée dans le contexte d’une table distribuée, cette fonction génère une colonne normale avec des valeurs propres à chaque shard.
 Sinon, elle renvoie une valeur constante.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -6045,6 +6276,10 @@ SELECT visibleWidth(NULL)
 Introduite dans : v21.11.0
 
 Renvoie la durée de fonctionnement de la session ZooKeeper actuelle, en secondes.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 

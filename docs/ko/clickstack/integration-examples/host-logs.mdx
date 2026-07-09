@@ -40,13 +40,13 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     먼저 시스템에서 syslog 파일이 생성되고 있는지 확인하십시오:
 
     ```bash
-    # syslog 파일 존재 여부 확인 (Linux)
+    # Check if syslog files exist (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # macOS의 경우
+    # Or on macOS
     ls -la /var/log/system.log
 
-    # 최근 항목 확인
+    # View recent entries
     tail -20 /var/log/syslog
     ```
 
@@ -219,14 +219,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 기존 구성 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 기타 환경 변수 ...
+          # ... other environment variables ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... 기타 볼륨 ...
+          # ... other volumes ...
     ```
 
     ##### 옵션 2: Docker Run(올인원 이미지)
@@ -515,4 +515,4 @@ tail -5 /var/log/system.log
   ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드는 빠른 설정을 위해 ClickStack에 기본 제공되는 OpenTelemetry Collector를 기반으로 합니다. 프로덕션 배포에서는 자체 OTel collector를 실행하고 데이터를 ClickStack의 OTLP endpoint로 전송하는 것을 권장합니다. 프로덕션 환경용 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+이 가이드는 빠른 설정을 위해 ClickStack에 내장된 OpenTelemetry Collector를 기반으로 합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

@@ -153,7 +153,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 
             ### بدء تشغيل collector
 
-            يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors)
+            يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors-existing)
 
             للبدء بسرعة، انسخ أمر Docker الموضّح وشغّله.
 
@@ -313,7 +313,7 @@ import ProviderSelection from '/snippets/ar/clickstack/_select_provider.mdx';
 2. انتقل إلى **Settings** → **SQL Console Access**
 3. عيّن مستوى الأذونات المناسب لكل مستخدم:
    * **Service Admin → Full Access** - مطلوب لتمكين التنبيهات
-   * **Service Read Only → Read Only** - يمكنه عرض بيانات observability وإنشاء dashboards
+   * **Service Read Only → Read Only** - يمكنه عرض بيانات observability وإنشاء لوحات المعلومات
    * **No access** - لا يمكنه الوصول إلى HyperDX
 
 <Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud للقراءة فقط" size="md" />

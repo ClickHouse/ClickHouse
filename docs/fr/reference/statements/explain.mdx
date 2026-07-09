@@ -24,7 +24,7 @@ picture-in-picture"
 Syntaxe :
 
 ```sql
-EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE | WHATIF] [setting = value, ...]
     [
       SELECT ... |
       tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
@@ -39,22 +39,23 @@ EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM nu
 ```
 
 ```sql
+Output: sum(number)
+
 Union
-  Expression (Projection)
-    Expression (Before ORDER BY and SELECT)
-      Aggregating
-        Expression (Before GROUP BY)
-          SettingQuotaAndLimits (Set limits and quota after reading from storage)
-            ReadFromStorage (SystemNumbers)
-  Expression (Projection)
-    MergingSorted (Merge sorted streams for ORDER BY)
-      MergeSorting (Merge sorted blocks for ORDER BY)
-        PartialSorting (Sort each block for ORDER BY)
-          Expression (Before ORDER BY and SELECT)
-            Aggregating
-              Expression (Before GROUP BY)
-                SettingQuotaAndLimits (Set limits and quota after reading from storage)
-                  ReadFromStorage (SystemNumbers)
+├──Aggregating
+│  │  Keys:
+│  │  Aggregates: sum(number)
+│  │  Skip merging: 0
+│  └──ReadFromSystemNumbers
+│        Output: number
+└──Sorting (Sorting for ORDER BY)
+   │  Sort description: sum(number) ASC
+   └──Aggregating
+      │  Keys:
+      │  Aggregates: sum(number)
+      │  Skip merging: 0
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 <div id="explain-types">
@@ -193,39 +194,49 @@ Paramètres :
 * `description` — Affiche la description de l’étape. Par défaut : 1.
 * `indexes` — Affiche les index utilisés, le nombre de parts filtrées et le nombre de granules filtrés pour chaque index appliqué. Par défaut : 0. Pris en charge pour les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). À partir de ClickHouse &gt;= v25.9, cette instruction ne produit un résultat pertinent que lorsqu’elle est utilisée avec `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
 * `projections` — Affiche toutes les projections analysées et leur effet sur le filtrage au niveau des parts en fonction des conditions sur la clé primaire de la projection. Pour chaque projection, cette section inclut des statistiques comme le nombre de parts, de lignes, de marks et de plages évaluées à l’aide de la clé primaire de la projection. Elle indique également combien de parts de données ont été ignorées grâce à ce filtrage, sans lecture depuis la projection elle-même. Le champ `description` permet de déterminer si une projection a réellement été utilisée pour la lecture ou seulement analysée pour le filtrage. Par défaut : 0. Pris en charge pour les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
-* `actions` — Affiche des informations détaillées sur les actions de l’étape. Par défaut : 0.
+* `actions` — Affiche des informations détaillées sur les actions de l’étape. Par défaut : 1.
 * `sorting` — Affiche la description du tri pour chaque étape du plan produisant une sortie triée. Par défaut : 0.
 * `keep_logical_steps` — Conserve les étapes logiques du plan pour les jointures au lieu de les convertir en implémentations physiques de jointure. Par défaut : 0.
 * `json` — Affiche les étapes du plan de requête sous la forme d’une ligne au format [JSON](/fr/reference/formats/JSON/JSON). Par défaut : 0. Il est recommandé d’utiliser le format [TabSeparatedRaw (TSVRaw)](/fr/reference/formats/TabSeparated/TabSeparatedRaw) pour éviter les séquences d’échappement inutiles.
 * `input_headers` — Affiche les en-têtes d’entrée pour l’étape. Par défaut : 0. Utile principalement aux développeurs pour le Débogage des problèmes liés à une incompatibilité entre les en-têtes d’entrée et de sortie.
 * `column_structure` — Affiche également la structure des colonnes dans les en-têtes, en plus de leur nom et de leur type. Par défaut : 0. Utile principalement aux développeurs pour le Débogage des problèmes liés à une incompatibilité entre les en-têtes d’entrée et de sortie.
-* `distributed` — Affiche les plans de requête exécutés sur des nœuds distants pour les tables distribuées ou les répliques parallèles. Par défaut : 0.
-* `compact` — Lorsqu’il est activé, masque dans le plan les étapes d’expression et les informations détaillées sur les actions (entrées, fonctions, alias et positions de sortie). N’a d’effet que lorsque actions = 1. Par défaut : 0.
-* `pretty` — Affiche l’arborescence du plan à l’aide de caractères de dessin de lignes (├──, └──, │) au lieu de l’indentation, afin de visualiser la hiérarchie. Formate également les propriétés des étapes de jointure de manière intégrée. Par défaut : 0.
+* `distributed` — Affiche les plans de requête exécutés sur des nœuds distants pour les tables distribuées ou les répliques parallèles. N’est pas pris en charge avec `json`. Par défaut : 0.
+* `compact` — Lorsqu’il est activé, masque dans le plan les étapes d’expression et les informations détaillées sur les actions (entrées, fonctions, alias et positions de sortie). N’a d’effet que lorsque `actions = 1`. Par défaut : 1.
+* `pretty` — Affiche l’arborescence du plan à l’aide de caractères de dessin de lignes (├──, └──, │) au lieu de l’indentation, afin de visualiser la hiérarchie. Formate également les propriétés des étapes de jointure de manière intégrée. Par défaut : 1.
 
-Lorsque `json=1`, les noms des étapes contiennent un suffixe supplémentaire avec un identifiant d’étape unique.
+<Note>
+  Par défaut, `explain_query_plan_default = 'pretty'`, donc `actions`, `compact` et `pretty` sont initialisés à `1` et le plan est affiché sous une forme compacte, soignée et annotée avec les actions. Le fait de spécifier explicitement l’une de ces options dans l’instruction `EXPLAIN` (par exemple, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) remplace toujours la valeur par défaut.
+
+  Avant ClickHouse 26.7, les valeurs par défaut de `actions`, `compact` et `pretty` étaient `0`. Vous pouvez toujours obtenir cette sortie en définissant `explain_query_plan_default = 'legacy'` (globalement ou dans `SETTINGS` par requête), ou en définissant `compatibility` sur n’importe quelle version antérieure à `26.7`.
+
+  Les options `json` et `distributed` n’activent pas les valeurs par défaut de `pretty` (`actions`, `compact` et `pretty`), même lorsque `explain_query_plan_default = 'pretty'`. Pour inclure les détails des actions dans leur sortie, définissez manuellement `actions = 1`.
+</Note>
 
 Exemple :
 
 ```sql
-EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4  LIMIT 1;
 ```
 
 ```sql
-Union
-  Expression (Projection)
-  Expression (Before ORDER BY and SELECT)
-    Aggregating
-      Expression (Before GROUP BY)
-        SettingQuotaAndLimits (Set limits and quota after reading from storage)
-          ReadFromStorage (SystemNumbers)
+Output: sum(number)
+
+Limit (preliminary LIMIT)
+│  Limit 1
+│  Offset 0
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──ReadFromSystemNumbers
+         Output: number
 ```
 
 <Note>
   L’estimation du coût des étapes et de la requête n’est pas prise en charge.
 </Note>
 
-Lorsque `json = 1`, le plan de requête est représenté au format JSON. Chaque nœud est un dictionnaire qui contient toujours les clés `Node Type` et `Plans`. `Node Type` est une chaîne de caractères contenant le nom d’une étape. `Plans` est un tableau contenant la description des étapes enfants. D’autres clés facultatives peuvent être ajoutées selon le type de nœud et les paramètres.
+Lorsque `json = 1`, le plan de requête est représenté au format JSON. Chaque nœud est un dictionnaire qui possède toujours les clés `Node Type`, `Node Id` et `Plans`. `Node Type` est une chaîne contenant le nom de l’étape, et `Node Id` est un identifiant d’étape unique (le nom de l’étape avec un suffixe numérique, par ex. `Union_10`). `Plans` est un tableau contenant les descriptions des étapes enfants. D’autres clés facultatives peuvent être ajoutées selon le type de nœud et les paramètres.
 
 Exemple :
 
@@ -370,18 +381,18 @@ Exemple :
 ]
 ```
 
-Avec `projections` = 1, la clé `Projections` est ajoutée. Elle contient un tableau des projections analysées. Chaque projection est décrite au format JSON avec les clés suivantes :
+Avec `projections` = 1, la clé `Projections` est ajoutée. Elle contient un tableau de projections analysées. Chaque projection est décrite en JSON avec les clés suivantes :
 
 * `Name` — Le nom de la projection.
-* `Condition` — La condition sur la clé primaire de la projection utilisée.
-* `Description` — La description de la façon dont la projection est utilisée (par ex. filtrage au niveau des parts).
-* `Selected Parts` — Nombre de parts sélectionnées par la projection.
-* `Selected Marks` — Nombre de marks sélectionnées.
+* `Condition` — La condition de clé primaire utilisée pour la projection.
+* `Description` — La description de l’utilisation de la projection (par ex. filtrage au niveau des parties).
+* `Selected Parts` — Nombre de parties sélectionnées par la projection.
+* `Selected Marks` — Nombre de marques sélectionnées.
 * `Selected Ranges` — Nombre de plages sélectionnées.
 * `Selected Rows` — Nombre de lignes sélectionnées.
-* `Filtered Parts` — Nombre de parts ignorées en raison du filtrage au niveau des parts.
+* `Filtered Parts` — Nombre de parties ignorées en raison du filtrage au niveau des parties.
 
-Exemple :
+Exemple :
 
 ```json
 "Node Type": "ReadFromMergeTree",
@@ -470,24 +481,39 @@ EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
 ]
 ```
 
-Avec `compact = 1`, chaque étape `Expression` est supprimée. Par ailleurs, si `actions = 1` est défini, les lignes `Actions` et `Positions` sont masquées, ne laissant que les descriptions des étapes :
+Avec `compact = 0` et `actions = 1`, les étapes `Expression` sont visibles, accompagnées d&#39;informations détaillées sur les expressions :
 
 ```sql
-EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+EXPLAIN actions = 1, compact = 0 SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
 ```
 
 ```text
-Aggregating
-Keys: modulo(__table1.number, 4_UInt8)
-Aggregates:
-    sum(__table1.number)
-      Function: sum(UInt64) → UInt64
-      Arguments: __table1.number
-Skip merging: 0
-  ReadFromSystemNumbers
+Output: sum(number)
+
+Expression ((Project names + Projection))
+│  Actions: INPUT : 0 -> sum(__table1.number) UInt64 : 0
+│           INPUT :: 1 -> modulo(__table1.number, 4_UInt8) UInt8 : 1
+│           ALIAS sum(__table1.number) :: 0 -> sum(number) UInt64 : 2
+│  Positions: 2
+└──Aggregating
+   │  Keys: number MOD 4
+   │  Aggregates: sum(number)
+   │  Skip merging: 0
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      │  Actions: INPUT : 0 -> number UInt64 : 0
+      │           COLUMN Const(UInt8) -> 4_UInt8 UInt8 : 1
+      │           ALIAS number :: 0 -> __table1.number UInt64 : 2
+      │           FUNCTION modulo(__table1.number : 2, 4_UInt8 :: 1) -> modulo(__table1.number, 4_UInt8) UInt8 : 0
+      │  Positions: 0 2
+      └──ReadFromSystemNumbers
+            Output: number
 ```
 
 Avec `distributed` = 1, la sortie inclut non seulement le plan de requête local, mais également les plans de requête qui seront exécutés sur les nœuds distants. Cela s&#39;avère utile pour analyser et déboguer les requêtes distribuées.
+
+<Note>
+  `distributed` est affiché uniquement sous la forme `legacy` (non-`pretty`), car la sortie `pretty` n’intègre pas les plans des segments distants dans l’arbre du plan. Pour cette raison, l’activation de `distributed` désactive automatiquement les options par défaut de `pretty` (`actions`, `compact` et `pretty`), quelle que soit la valeur de `explain_query_plan_default`. Vous pouvez toujours définir `actions=1` manuellement. L’option `distributed` n’est pas non plus prise en charge avec `json`.
+</Note>
 
 Exemple avec une table distribuée :
 
@@ -533,15 +559,15 @@ Dans les deux exemples, le plan de requête affiche le flux d&#39;exécution com
 
 Avec `pretty` = 1, l&#39;arbre du plan est affiché à l&#39;aide de caractères de tracé plutôt que par indentation, et des informations supplémentaires sont affichées pour les étapes clés :
 
-* Les **colonnes de sortie de la query** sont affichées en haut du plan.
-* Les **expressions** dans les filtres, les clés d’agrégation, les descriptions de tri et les fonctions de fenêtre sont affichées dans une notation de type SQL lisible par l’humain (par ex. `a + 1 > 5` au lieu de `greater(plus(a, 1), 5)`). Les préfixes internes des identifiants de colonne (tels que `__table1.`) sont supprimés pour plus de clarté.
+* Les **colonnes de sortie de la requête** sont affichées en haut du plan.
+* Les **expressions** dans les filtres, les clés d’agrégation, les descriptions de tri et les fonctions de fenêtre sont affichées dans une notation SQL lisible par l’humain (par ex. `a + 1 > 5` au lieu de `greater(plus(a, 1), 5)`). Les préfixes internes des identifiants de colonnes (tels que `__table1.`) sont supprimés pour plus de clarté.
 * Les **étapes source** (telles que `ReadFromMergeTree`) affichent leurs colonnes de sortie.
 * Les **étapes de filtre** affichent la condition de filtre en notation SQL. Lorsque des filtres de jointure à l’exécution sont présents, ils sont affichés séparément.
 * Les **étapes d’agrégation** affichent les clés et les fonctions d’agrégation avec leurs arguments (par ex. `sum(c)`, `count()`).
-* Les **ensembles `IN`** issus de littéraux de tuple affichent leurs valeurs (tronquées pour les grands ensembles), les ensembles basés sur des sous-requêtes sont étiquetés `subquery1`, `subquery2`, etc., et les ensembles provenant de tables utilisant le moteur `Set` affichent le nom de la table.
+* Les **ensembles IN** issus de littéraux `Tuple` affichent leurs valeurs (tronquées pour les grands ensembles), les ensembles basés sur des sous-requêtes sont libellés `subquery1`, `subquery2`, etc., et les ensembles provenant de tables utilisant le moteur `Set` affichent le nom de la table.
 * Les **étapes de jointure** affichent la relation de jointure à l’aide d’une notation mathématique, le nombre estimé de lignes du résultat,
-  ainsi que les colonnes de sortie provenant du côté gauche ou du côté droit. Les symboles suivants sont utilisés pour
-  représenter les différents types de jointure :
+  et quelles colonnes de sortie proviennent du côté gauche ou du côté droit. Les symboles suivants sont utilisés pour
+  représenter les différents types de JOIN :
 
 | Symbole                | Type de jointure     |
 | ---------------------- | -------------------- |
@@ -561,18 +587,7 @@ lorsque les statistiques de table sont disponibles.
 
 L’option `pretty` fonctionne bien avec `compact = 1`, qui masque les étapes `Expression` et les informations détaillées sur les actions, ce qui rend le plan plus lisible.
 
-```sql
-EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
-```
-
-```text
-Expression ((Project names + Projection))
-└──Aggregating
-   └──Expression ((Before GROUP BY + Change column names to column identifiers))
-      └──ReadFromSystemNumbers
-```
-
-Un exemple plus détaillé avec des jointures :
+Un exemple détaillé avec des jointures :
 
 ```sql
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
@@ -585,24 +600,28 @@ SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
 ```
 
 ```text
-Output: id, value, t2.id, t2.value
+Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
 │  Result rows: 100
+│  Join conditions: id = id
 │  Output:
 │    Left:  id, value
 │    Right: id, value
-│  Join conditions: id = id
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
 │     Output: id, value
-└──ReadFromMergeTree (default.t2)
-      Read type: Default
-      Parts: 1 | Granules: 1
-      Output: id, value
+│     Runtime filters: RF1(id, id from default.t2)
+└──BuildRuntimeFilter (Build runtime join filter on id)
+   │  Filter id: RF1
+   │  Source table: default.t2
+   └──ReadFromMergeTree (default.t2)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: id, value
 ```
 
 <div id="explain-pipeline">
@@ -672,6 +691,122 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 │ default  │ ttt   │     1 │  128 │     8 │
 └──────────┴───────┴───────┴──────┴───────┘
 ```
+
+<div id="explain-whatif">
+  ### EXPLAIN WHATIF
+</div>
+
+Estime le bénéfice qu’un index de saut hypothétique apporterait à une requête `SELECT`, *sans* matérialiser l’index sur le disque. Définissez un ou plusieurs candidats avec [`CREATE HYPOTHETICAL INDEX`](/fr/reference/statements/hypothetical-index#create-hypothetical-index), puis exécutez `EXPLAIN WHATIF SELECT ...` pour voir, pour chaque candidat : son applicabilité, le nombre estimé de marks lus, le volume estimé en octets et le taux d’exclusion.
+
+**Syntaxe**
+
+```sql
+EXPLAIN WHATIF [empirical = 0] SELECT ...
+```
+
+**Paramètres**
+
+* `empirical` — `1` (par défaut) exécute l’index en mémoire sur les granules élaguées par rapport à la référence afin de mesurer le taux d’exclusion (une borne supérieure). `0` ignore cette voie. Dans tous les cas, si `empirical` ne produit pas de résultat (désactivé, ou si l’index ne peut pas être évalué en mémoire), l’estimateur se rabat sur les [statistiques de colonne](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), puis, en dernier recours, sur un résumé limité à l’applicabilité si aucune des deux options n’est disponible.
+
+**Sortie**
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       db.t
+  parts:       1
+  marks:       100
+  est_bytes:   1.50 MiB             (only when the query reads rows)
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    15.00 KiB           (only when baseline bytes are known)
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical | statistical | applicability_only
+  empirical_status: ok | unsupported | disabled
+  sampled_parts:    50 / 100        (only when source = empirical)
+  sampled_marks:    50 / 100        (only when source = empirical)
+  elapsed_us:       631             (only when source = empirical)
+```
+
+* `source` — indique comment l’estimation a été obtenue.
+  * `empirical` : l’index a été construit en mémoire sur les granules conservés après l’élagage de référence, puis les granules que l’index permettrait d’ignorer ont été comptés. Il s’agit d’une borne supérieure — voir les limites dans [`CREATE HYPOTHETICAL INDEX`](/fr/reference/statements/hypothetical-index#limitations).
+  * `statistical` : dérivée des statistiques de colonnes. Utilisée lorsque l’estimation empirique est désactivée (`empirical = 0`) ou n’a pas pu produire de résultat, et que des statistiques de colonnes sont définies sur les colonnes concernées.
+  * `applicability_only` : l’index s’applique au prédicat, mais ni l’estimation empirique ni l’estimation statistique n’ont produit de résultat (par ex. `empirical = 0` et aucune statistique de colonnes définie). Indique `skip_ratio: 0.0%` comme borne prudente.
+* `sampled_parts` / `sampled_marks` — `<baseline-pruned> / <total in the table>`. Indique quelle fraction de la table reste après l’élagage par la PK, la partition et les index existants, c.-à-d. l’entrée de l’index hypothétique.
+* `est_bytes` — estimation du nombre d’octets lus, dérivée de la taille moyenne des lignes de la table ; elle est donc approximative et varie selon le stockage et la compression. La ligne de référence n’apparaît que lorsque la requête lit des lignes ; la ligne par candidat n’apparaît que lorsque l’estimation de référence des octets est connue.
+
+Le paramètre est écrit en intégré entre `WHATIF` et `SELECT` — il n’y a pas de mot-clé `SETTINGS` (comme pour les autres variantes de `EXPLAIN`, qui acceptent leurs options de cette manière).
+
+Si aucun index hypothétique n’est défini pour la table, `EXPLAIN WHATIF` indique `status: not_applicable` avec une suggestion d’en créer un.
+
+**Exemple empirique**
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 100;
+
+INSERT INTO t SELECT number, number FROM numbers(10000);
+
+CREATE HYPOTHETICAL INDEX idx_b ON t (b) TYPE minmax GRANULARITY 1;
+
+EXPLAIN WHATIF SELECT * FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  est_bytes:   85.52 KiB
+
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    875.00 B
+  skip_ratio:   99.0%
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+```
+
+Le `minmax` hypothétique réduirait 100 marks à 1 — `skip_ratio: 99.0%`. (`est_bytes` est une estimation basée sur la taille moyenne des lignes, donc la valeur exacte peut varier.)
+
+**Exemple statistique**
+
+Les [statistiques de colonne](/fr/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) sont désactivées par défaut. Pour utiliser le chemin `statistical`, définissez-les d’abord sur les colonnes concernées, puis attendez que la mutation de matérialisation se termine :
+
+```sql
+ALTER TABLE t ADD STATISTICS b TYPE TDigest;
+ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
+```
+
+Désactivez ensuite le chemin empirique afin que l’estimateur revienne aux statistiques de colonne :
+
+```sql
+EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
+```
+
+```text
+With idx_b (minmax, hypothetical):
+  status:       applicable
+  marks:        1
+  est_bytes:    1.66 KiB
+  skip_ratio:   99.9%
+
+Estimation:
+  source:           statistical
+  empirical_status: disabled
+```
+
+Le nombre provient de la sélectivité des statistiques de colonne pour `b < 10` (environ 10 lignes sur 10 000) et est indiqué comme borne supérieure de `skip_ratio`. Il n’y a ni `sampled_parts` ni `sampled_marks` — aucune donnée n’a été lue.
+
+Si aucun des deux mécanismes n’est disponible (par ex. `empirical = 0` et aucune statistique de colonne définie), l’estimateur indique `source: applicability_only` ainsi qu’un `skip_ratio: 0.0%` conservateur.
 
 <div id="explain-table-override">
   ### EXPLAIN TABLE OVERRIDE

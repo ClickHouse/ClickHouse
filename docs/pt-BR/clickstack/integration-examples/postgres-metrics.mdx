@@ -235,7 +235,7 @@ Para ajudar você a começar a monitorar o PostgreSQL com o ClickStack, fornecem
     <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="Dashboard de métricas do PostgreSQL" />
 
     <Note>
-      Para o demo dataset, defina o intervalo de tempo como **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (ajuste conforme o seu timezone local). Por padrão, o dashboard importado não terá um intervalo de tempo definido.
+      Para o conjunto de dados de demonstração, defina o intervalo de tempo como **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (ajuste conforme o seu timezone local). Por padrão, o dashboard importado não terá um intervalo de tempo definido.
     </Note>
   </Step>
 </Steps>
@@ -301,7 +301,7 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 * Monitore várias instâncias do PostgreSQL duplicando a configuração do receiver com endpoints e nomes de serviço diferentes
 
 <div id="going-to-production">
-  ## Indo para produção
+  ## Em produção
 </div>
 
-Este guia utiliza o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para ver a configuração de produção.
+Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados ao endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

@@ -58,7 +58,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
         필요하면 접두사 또는 접미사 기준으로 필터링할 수 있도록 패턴에 `object.key` 조건을 추가할 수 있습니다. 추가하는 경우 ClickPipe에 설정한 경로와 일치해야 합니다.
 
-        **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 **Use execution role (recommended)**은 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
+        **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 &#42;&#42;Use execution role (recommended)&#42;&#42;은 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
 
         <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="EventBridge 규칙 대상으로 SQS 큐 설정" size="lg" border />
 
@@ -198,7 +198,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     **2.** **Incoming data**에서 **Continuous ingestion**을 켭니다. 수집 모드로 **Any order**를 선택하고, 버킷에 연결된 큐의 **SQS queue URL**을 입력합니다.
 
-    **3.** **Parse information**에서 대상 테이블의 **정렬 키(Sorting key)**를 정의합니다. 매핑된 스키마를 필요에 맞게 조정한 다음, ClickPipes 데이터베이스 사용자에 대한 역할을 구성합니다.
+    **3.** **Parse information**에서 대상 테이블의 &#42;&#42;정렬 키(Sorting key)&#42;&#42;를 정의합니다. 매핑된 스키마를 필요에 맞게 조정한 다음, ClickPipes 데이터베이스 사용자에 대한 역할을 구성합니다.
 
     **4.** 구성을 검토한 후 **Create ClickPipe**를 클릭합니다. ClickPipes는 먼저 버킷을 초기 스캔하여 지정된 경로와 일치하는 기존 파일을 모두 로드한 다음, 큐에 새 `ObjectCreated:*` 이벤트가 도착하면 파일 처리를 시작합니다.
   </Step>

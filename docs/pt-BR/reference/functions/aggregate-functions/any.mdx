@@ -15,9 +15,9 @@ Introduzido em: v1.1.0
 
 Seleciona o primeiro valor encontrado em uma coluna.
 
-<Warning>
-  Como uma consulta pode ser executada em qualquer ordem, o resultado desta função é não determinístico. Se você precisar de um resultado arbitrário, mas determinístico, use as funções min ou max.
-</Warning>
+:::warning
+Como uma consulta pode ser executada em qualquer ordem, o resultado desta função é não determinístico. Se você precisar de um resultado arbitrário, mas determinístico, use as funções min ou max.
+:::
 
 Por padrão, a função nunca retorna NULL, ou seja, ignora valores NULL na coluna de entrada.
 No entanto, se a função for usada com o modificador `RESPECT NULLS`, ela retorna o primeiro valor lido, independentemente de ser NULL ou não.
@@ -31,11 +31,11 @@ Quando uma consulta `SELECT` tem a cláusula `GROUP BY` ou pelo menos uma funç�
 Em outras palavras, cada coluna selecionada da tabela deve ser usada nas chaves ou dentro de funções de agregação.
 Para obter um comportamento semelhante ao do MySQL, você pode colocar as outras colunas na função de agregação `any`.
 
-<Note>
-  O tipo de retorno da função é o mesmo da entrada, exceto por LowCardinality, que é descartado.
-  Isso significa que, se não houver linhas na entrada, ela retornará o valor padrão desse tipo (0 para inteiros ou Null para uma coluna Nullable()).
-  Você pode usar o combinador -OrNull para modificar esse comportamento.
-</Note>
+:::note
+O tipo de retorno da função é o mesmo da entrada, exceto por LowCardinality, que é descartado.
+Isso significa que, se não houver linhas na entrada, ela retornará o valor padrão desse tipo (0 para inteiros ou Null para uma coluna Nullable()).
+Você pode usar o combinador -OrNull para modificar esse comportamento.
+:::
 
 **Sintaxe**
 

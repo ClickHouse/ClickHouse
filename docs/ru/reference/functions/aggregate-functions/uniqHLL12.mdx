@@ -16,11 +16,12 @@ doc_type: 'reference'
 
 Вычисляет приблизительное количество различных значений аргумента с использованием алгоритма [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
-<Warning>
-  Мы не рекомендуем использовать эту функцию. В большинстве случаев используйте [uniq](/ru/reference/functions/aggregate-functions/uniq) или [uniqCombined](/ru/reference/functions/aggregate-functions/uniqCombined).
-</Warning>
+:::warning
+Мы не рекомендуем использовать эту функцию. В большинстве случаев используйте [uniq](/ru/reference/functions/aggregate-functions/uniq) или [uniqCombined](/ru/reference/functions/aggregate-functions/uniqCombined).
+:::
 
-<Accordion title="Подробности реализации">
+<details>
+  <summary>Подробности реализации</summary>
   Эта функция вычисляет хеш для всех параметров агрегатной функции, а затем использует его в дальнейших вычислениях.
   Для приблизительной оценки количества различных значений аргумента используется алгоритм HyperLogLog.
 
@@ -31,7 +32,7 @@ doc_type: 'reference'
   Начиная с 100M ошибка оценки возрастает, и для наборов данных с чрезвычайно высокой мощностью (1B+ элементов) функция будет возвращать очень неточные результаты.
 
   Возвращает детерминированный результат (не зависит от порядка обработки запроса).
-</Accordion>
+</details>
 
 **Синтаксис**
 

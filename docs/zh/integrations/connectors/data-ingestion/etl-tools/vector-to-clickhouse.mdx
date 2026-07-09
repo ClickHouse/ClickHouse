@@ -163,7 +163,7 @@ ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://
 
     在查看最终的 `CREATE MATERIALIZED VIEW` 命令之前，让我们先了解几个用于清理数据的函数。
     例如，`RequestMethod` 的值为 `"GET`，其中包含一个多余的双引号。
-    您可以使用 [`trimBoth` (别名 `trim`) ](/zh/reference/functions/regular-functions/string-functions#trimBoth) 函数去除该双引号：
+    您可以使用 [`trimBoth` (别名 `trim`)](/zh/reference/functions/regular-functions/string-functions#trimBoth) 函数去除该双引号：
 
     ```sql
     SELECT trim(LEADING '"' FROM '"GET')

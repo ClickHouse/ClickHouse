@@ -46,7 +46,7 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
 
     <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
 
-    5. Définissez-la comme variable d&#39;environnement :
+    5. Définissez-la comme variable d&#39;environnement :
 
     ```bash
     export CLICKSTACK_API_KEY=your-api-key-here
@@ -56,7 +56,7 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
   <Step>
     #### Vérifier que le journal systemd est actif
 
-    Assurez-vous que votre système utilise systemd et dispose de journaux journalctl :
+    Assurez-vous que votre système utilise systemd et dispose de journaux journalctl :
 
     ```bash
     # Vérifier la version de systemd
@@ -69,7 +69,7 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
     journalctl --disk-usage
     ```
 
-    Si le journal est stocké uniquement en mémoire, activez le stockage persistant :
+    Si le journal est stocké uniquement en mémoire, activez le stockage persistant :
 
     ```bash
     sudo mkdir -p /var/log/journal
@@ -81,7 +81,7 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
   <Step>
     #### Créer la configuration de l&#39;OpenTelemetry Collector
 
-    Créez un fichier de configuration pour l&#39;OpenTelemetry Collector :
+    Créez un fichier de configuration pour l&#39;OpenTelemetry Collector :
 
     ```yaml
     cat > otel-config.yaml << 'EOF'
@@ -144,7 +144,7 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
       Pour les déploiements conteneurisés, vous pouvez soit installer le collector directement sur l&#39;hôte, soit créer une image personnalisée avec les utilitaires systemd. Consultez la [section de dépannage](#journalctl-not-found) pour plus de détails.
     </Note>
 
-    Cet exemple montre comment déployer l&#39;OTel Collector aux côtés de ClickStack :
+    Cet exemple montre comment déployer l&#39;OTel Collector aux côtés de ClickStack :
 
     ```yaml
     services:
@@ -178,7 +178,7 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
         driver: bridge
     ```
 
-    Démarrez les services :
+    Démarrez les services :
 
     ```bash
     docker compose up -d
@@ -188,7 +188,7 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
   <Step>
     #### Vérifier les logs dans HyperDX
 
-    Une fois la configuration en place, connectez-vous à HyperDX et vérifiez que les logs arrivent bien :
+    Une fois la configuration en place, connectez-vous à HyperDX et vérifiez que les logs arrivent bien :
 
     1. Accédez à la vue Search
     2. Définissez la source sur Logs
@@ -391,15 +391,15 @@ otelcol-contrib --config=otel-config.yaml
 * Filtrez sur des unités systemd spécifiques pour réduire le bruit et vous concentrer sur les services essentiels
 
 <div id="going-to-production">
-  ## Mise en production
+  ## Passage en production
 </div>
 
-Ce guide utilise un OpenTelemetry Collector distinct pour lire les logs `systemd` et les envoyer à l’endpoint OTLP de ClickStack, ce qui constitue l’architecture recommandée en production.
+Ce guide utilise un OpenTelemetry Collector distinct pour lire les logs systemd et les envoyer au point de terminaison OTLP de ClickStack, ce qui constitue l’approche recommandée en production.
 
-Pour les environnements de production avec plusieurs hôtes, envisagez :
+Pour les environnements de production comportant plusieurs hôtes, envisagez :
 
 * de déployer le collector sous forme de DaemonSet dans Kubernetes
-* d’exécuter le collector en tant que service `systemd` sur chaque hôte
-* de recourir à l’OpenTelemetry Operator pour automatiser le déploiement
+* d’exécuter le collector en tant que service systemd sur chaque hôte
+* d’utiliser l’OpenTelemetry Operator pour automatiser le déploiement
 
-Consultez [Ingesting with OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour connaître les modèles de déploiement en production.
+Consultez [Ingesting with OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour découvrir les approches de déploiement en production.

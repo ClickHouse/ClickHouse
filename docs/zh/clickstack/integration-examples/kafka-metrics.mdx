@@ -77,7 +77,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... 其他 Kafka 配置
+          # ... other Kafka configuration
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -196,10 +196,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     要产生一些活动并填充更多指标：
 
     ```bash
-    # 创建测试 topic
+    # Create a test topic
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # 发送测试消息
+    # Send test messages
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -432,11 +432,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * 通过添加具有唯一 `kafka.broker.id` 资源属性的额外 JMX Metric Gatherer 实例，监控多个 Kafka 消息代理
 
 <div id="going-to-production">
-  ## 用于生产环境
+  ## 投入生产环境
 </div>
 
 本指南将指标直接从 JMX Metric Gatherer 发送到 ClickStack 的 OTLP 端点，这种方式很适合测试和小规模部署。
 
-对于生产环境，建议将您自己的 OpenTelemetry Collector 以 agent 形式部署，用于接收来自 JMX Exporter 的指标并将其转发到 ClickStack。这样可以提供批次处理能力、弹性以及集中式配置管理。
+对于生产环境，请将您自己的 OpenTelemetry Collector 作为 agent 进行部署，用于接收来自 JMX Exporter 的指标并将其转发到 ClickStack。这样可以实现批处理、增强弹性，并集中管理配置。
 
-有关生产环境的部署模式和 collector 配置示例，请参见 [使用 OpenTelemetry 摄取](/zh/clickstack/ingesting-data/opentelemetry)。
+有关生产环境的部署模式和 collector 配置示例，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。

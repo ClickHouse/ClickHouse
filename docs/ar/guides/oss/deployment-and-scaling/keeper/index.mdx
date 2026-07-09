@@ -501,13 +501,13 @@ SYSTEM STOP MERGES;
 
 1. أوقف استيعاب البيانات إلى جميع عقد ClickHouse.
 
-2. أوقف جميع المهام التي تعمل في الخلفية على جميع عقد ClickHouse (راجع [أعلاه](#pre-migration-preparation)).
+2. أوقف جميع المهام الخلفية على جميع عقد ClickHouse (راجع [أعلاه](#pre-migration-preparation)).
 
 3. أوقف جميع عقد ZooKeeper.
 
 4. اختياري، لكنه مُوصى به: حدِّد العقدة القائدة في ZooKeeper، ثم شغّلها وأوقفها مرة أخرى. يُجبر ذلك ZooKeeper على كتابة لقطة متسقة على القرص قبل التحويل.
 
-5. شغّل `clickhouse-keeper-converter` على العقدة القائدة. إذا كان لديك الملف التنفيذي الكامل لـ ClickHouse مثبّتًا، فاستخدم الأمر الفرعي `keeper-converter` بدلًا من ذلك (`clickhouse keeper-converter`). إذا لم يكن أيٌّ منهما متاحًا، [نزّل الملف التنفيذي](/getting-started/quick-start/oss#install-clickhouse).
+5. شغّل `clickhouse-keeper-converter` على العقدة القائدة. إذا كان لديك الملف التنفيذي الكامل لـ ClickHouse مثبّتًا، فاستخدم الأمر الفرعي `keeper-converter` بدلًا من ذلك (`clickhouse keeper-converter`). إذا لم يكن أيٌّ منهما متاحًا، [نزّل الملف التنفيذي](/ar/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl).
 
 ```bash
 clickhouse-keeper-converter \
@@ -524,7 +524,7 @@ clickhouse-keeper-converter \
 
 9. قارِن المقاييس بخط الأساس قبل الترحيل للتحقق من الاتساق.
 
-10. استأنف المهام التي تعمل في الخلفية، وأعد تشغيل استيعاب البيانات.
+10. استأنف المهام الخلفية، وأعد تشغيل استيعاب البيانات.
 
 <div id="consolidating-multiple-zookeeper-clusters">
   #### دمج عدة عناقيد ZooKeeper

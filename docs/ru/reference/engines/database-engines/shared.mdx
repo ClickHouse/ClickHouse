@@ -1,5 +1,5 @@
 ---
-description: 'Страница, описывающая движок базы данных `Shared`, доступный в ClickHouse Cloud'
+description: 'Страница с описанием движка базы данных `Shared`, доступного в ClickHouse Cloud'
 sidebarTitle: 'Shared'
 slug: /engines/database-engines/shared
 title: 'Shared'
@@ -9,10 +9,6 @@ doc_type: 'reference'
 import CloudOnlyBadge from "/snippets/ru/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
 
 <CloudOnlyBadge />
-
-<div id="shared-database-engine">
-  # Движок базы данных Shared
-</div>
 
 Движок базы данных `Shared` работает совместно с Shared Catalog и управляет базами данных, в таблицах которых используются движки таблиц без сохранения состояния, такие как [`SharedMergeTree`](/ru/products/cloud/features/infrastructure/shared-merge-tree).
 Такие движки таблиц не записывают постоянное состояние на диск и совместимы с динамически масштабируемыми вычислительными средами.

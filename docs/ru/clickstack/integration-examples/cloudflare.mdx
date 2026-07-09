@@ -161,7 +161,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
   ## Демо-набор данных
 </div>
 
-Для пользователей, которые хотят протестировать интеграцию перед настройкой рабочего Cloudflare Logpush, мы предоставляем демо-набор данных с реалистичными журналами HTTP-запросов.
+Для пользователей, которые хотят протестировать интеграцию перед настройкой продакшн Cloudflare Logpush, мы предоставляем демо-набор данных с реалистичными журналами HTTP-запросов.
 
 <Steps>
   <Step>
@@ -183,7 +183,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) экспор
   <Step>
     #### Настройте источник данных HyperDX
 
-    Следуйте [шагам настройки источника данных](#configure-source), чтобы создать источник HyperDX, указывающий на таблицу `cloudflare_http_logs`. Если вы уже настроили источник в разделе с рабочей интеграцией, этот шаг не нужен.
+    Следуйте [шагам настройки источника данных](#configure-source), чтобы создать источник HyperDX, указывающий на таблицу `cloudflare_http_logs`. Если вы уже настроили источник в разделе с продакшн интеграцией, этот шаг не нужен.
   </Step>
 
   <Step>
@@ -278,9 +278,9 @@ SELECT count() FROM cloudflare_http_logs;
 * Создайте дополнительные панели мониторинга для конкретных задач (производительность API, оптимизация кэша, географический анализ трафика)
 
 <div id="going-to-production">
-  ## Переход к промышленной эксплуатации
+  ## Переход в продакшн
 </div>
 
-В этом руководстве показано, как выполнять приём журналов Cloudflare с использованием общедоступного демо-набора данных. Для промышленных развертываний настройте Cloudflare Logpush на запись в собственный S3 бакет и настройте ClickPipes с [аутентификацией на основе ролей IAM](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely) для безопасного доступа. Чтобы сократить затраты на хранение и объём ингестии, выбирайте только нужные вам [поля Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/). Включите в Logpush ежедневные подпапки для более удобной организации файлов и используйте `**/*` в шаблоне пути ClickPipes, чтобы охватить все подкаталоги.
+В этом руководстве показано, как выполнять ингестию журналов Cloudflare с использованием общедоступного демо-набора данных. Для развертываний в продакшне настройте Cloudflare Logpush на запись в собственный S3 бакет и настройте ClickPipes с [аутентификацией на основе роли IAM](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely) для безопасного доступа. Выбирайте только нужные вам [поля Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/), чтобы сократить затраты на хранилище и объём ингестии. Включите в Logpush ежедневные подпапки для более удобной организации файлов и используйте `**/*` в шаблоне пути ClickPipes, чтобы охватывать вложенные подкаталоги.
 
-Дополнительные параметры конфигурации, включая [неупорядоченную ингестию на основе SQS](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) для обработки дозагрузок и файлов, поступивших не по порядку, см. в [документации по S3 ClickPipes](/ru/integrations/clickpipes/object-storage/amazon-s3/overview).
+Дополнительные параметры конфигурации, включая [неупорядоченную ингестию на основе SQS](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) для обработки дозагрузок и файлов, поступающих не по порядку, см. в [документации по S3 ClickPipes](/ru/integrations/clickpipes/object-storage/amazon-s3/overview).

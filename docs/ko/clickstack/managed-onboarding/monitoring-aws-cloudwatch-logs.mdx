@@ -28,7 +28,7 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
     다음이 필요합니다:
 
     * 하나 이상의 CloudWatch 로그 그룹과 아래에 명시된 IAM 권한이 있는 자격 증명을 갖춘 **AWS 계정**
-    * **Docker**가 설치되어 있고, AWS API에 액세스할 수 있으며, ClickStack collector로 나가는 네트워크 액세스가 가능한 호스트. 일반적으로 이는 로그 그룹과 동일한 AWS 계정 및 리전에 있는 EC2 인스턴스입니다.
+    * **Docker**가 설치되어 있고, AWS API에 액세스할 수 있으며, ClickStack collector로의 아웃바운드 네트워크 액세스가 가능한 호스트. 일반적으로 이는 로그 그룹과 동일한 AWS 계정 및 리전에 있는 EC2 인스턴스입니다.
     * 이 호스트에서 연결할 수 있는 ClickStack collector의 **OTLP endpoint**. 동일한 머신에서 Docker로 실행 중이라면 `http://host.docker.internal:4318`을 사용하십시오([CloudWatch receiver 구성](#configure-receiver)의 안내 참조). 원격 collector의 경우 전체 URL(예: `https://otel.example.com:4318`)을 사용하십시오.
     * ClickStack collector에 설정한 `OTLP_AUTH_TOKEN` 값. 보안 설정을 하지 않았다면 아래 구성에서 `authorization` 헤더를 제거할 수 있습니다.
   </Step>

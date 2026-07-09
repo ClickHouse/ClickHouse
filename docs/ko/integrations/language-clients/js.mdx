@@ -12,7 +12,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
-import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse에 연결하기 위한 공식 JS 클라이언트입니다.
 이 클라이언트는 TypeScript로 작성되었으며, 클라이언트 공개 API에 대한 타입 정보를 제공합니다.
@@ -157,13 +156,13 @@ const client = createClient({
   #### Node.js 전용 구성 매개변수
 </div>
 
-| 설정                                                                             | 설명                                          | 기본값    | 관련 항목                                                                                                          |
-| ------------------------------------------------------------------------------ | ------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------- |
-| **max&#95;open&#95;connections**?: number                                      | 호스트당 허용되는 최대 소켓 연결 수입니다.                    | `10`   | -                                                                                                              |
-| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`       | TLS 인증서를 구성합니다.                             | -      | [TLS 문서](/ko/integrations/language-clients/js#tls-certificates-nodejs-only)                                       |
-| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }` | -                                           | -      | [Keep alive 문서](/ko/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                        |
-| **http&#95;agent**?: http.Agent | https.Agent <br /><ExperimentalBadge />      | 클라이언트용 사용자 지정 HTTP 에이전트입니다.                 | -      | [HTTP agent 문서](/ko/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)             |
-| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><ExperimentalBadge />    | 기본 인증 자격 증명을 사용해 `Authorization` 헤더를 설정합니다. | `true` | [HTTP agent 문서에서 이 설정의 사용법](/ko/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
+| 설정                                                                                                           | 설명                                          | 기본값    | 관련 항목                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------- | ------ | -------------------------------------------------------------------------------------------------------------- |
+| **max&#95;open&#95;connections**?: number                                                                    | 호스트당 허용되는 최대 소켓 연결 수입니다.                    | `10`   | -                                                                                                              |
+| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`                                     | TLS 인증서를 구성합니다.                             | -      | [TLS 문서](/ko/integrations/language-clients/js#tls-certificates-nodejs-only)                                       |
+| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }`                               | -                                           | -      | [Keep alive 문서](/ko/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                        |
+| **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">Experimental</Badge>   | 클라이언트용 사용자 지정 HTTP 에이전트입니다.                 | -      | [HTTP 에이전트 문서](/ko/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)             |
+| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">Experimental</Badge> | 기본 인증 자격 증명을 사용해 `Authorization` 헤더를 설정합니다. | `true` | [HTTP 에이전트 문서에서 이 설정의 사용법](/ko/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
 
 <div id="url-configuration">
   ### URL 구성

@@ -102,7 +102,7 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
           자체 배포판을 사용하는 경우 해당 배포판에 ClickHouse exporter가 포함되어 있는지 확인하십시오. upstream [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib)에는 이미 포함되어 있습니다.
         </Info>
 
-        아래는 ClickStack UI에서 예상하는 receivers, processors, pipelines와 함께 ClickHouse exporter를 사용하는 예시 구성입니다. 이 구성은 세션 리플레이(`rrweb`) 라우팅 경로를 포함해 ClickStack 배포판의 동작과 일치합니다. 위에서 생성한 `hyperdx_ingest` 사용자의 자격 증명으로 `<clickhouse_cloud_endpoint>` 및 `<your_password_here>`를 바꾸십시오.
+        아래는 ClickStack UI에서 예상하는 receivers, processors, pipelines와 함께 ClickHouse exporter를 사용하는 예시 구성입니다. 이 구성은 세션 리플레이(`rrweb`) 라우팅 경로를 포함해 ClickStack 배포판의 동작과 일치합니다. 위에서 생성한 `hyperdx_ingest` 사용자의 자격 증명으로 `<clickhouse_cloud_endpoint>` 및 `<your_password_here>`를 바꾸십시오:
 
         ```yaml
         receivers:
@@ -353,11 +353,11 @@ import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.
 </Steps>
 
 <div id="further-reading">
-  ## 추가로 읽어보기
+  ## 추가 읽을거리
 </div>
 
 * [Kubernetes 모니터링](/ko/clickstack/managed-onboarding/monitoring-kubernetes): 클러스터에서 로그, 인프라 메트릭, Kubernetes 이벤트를 수집합니다.
-* [AWS CloudWatch 로그 모니터링](/ko/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch 수신기를 통해 CloudWatch 로그를 전달합니다.
-* [Managed ClickStack 튜닝](/ko/clickstack/managed-onboarding/tuning-clickstack-schema): 쿼리 성능과 스토리지 효율성을 높일 수 있도록 스키마를 조정합니다.
-* [collector 보안 강화](/ko/clickstack/ingesting-data/collector#securing-the-collector): OTLP 엔드포인트에 TLS를 적용하고 최소 권한의 수집 사용자를 구성합니다.
-* [프로덕션 전환](/ko/clickstack/managing/production): 프로덕션 전환 시 권장 사항을 확인합니다.
+* [AWS CloudWatch 로그 모니터링](/ko/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch receiver를 통해 CloudWatch 로그를 전달합니다.
+* [Managed ClickStack 튜닝](/ko/clickstack/managed-onboarding/tuning-clickstack-schema): 쿼리 성능과 스토리지 효율성을 높이도록 스키마를 조정합니다.
+* [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector): OTLP endpoint에 TLS를 적용하고 최소 권한 수집 사용자를 구성합니다.
+* [프로덕션 환경으로 전환](/ko/clickstack/managing/production): 프로덕션 환경으로 전환할 때의 권장 사항을 확인합니다.

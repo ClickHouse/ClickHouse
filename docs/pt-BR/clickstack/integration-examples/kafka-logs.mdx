@@ -39,9 +39,9 @@ Se você quiser testar a integração de logs do Kafka antes de configurar seu p
     O Kafka usa Log4j e grava os logs no diretório especificado pela propriedade do sistema `kafka.logs.dir` ou pela variável de ambiente `LOG_DIR`. Verifique onde seu arquivo de log está localizado:
 
     ```bash
-    # Localizações padrão
-    ls $KAFKA_HOME/logs/      # Apache Kafka padrão (padrão: <install-dir>/logs/)
-    ls /var/log/kafka/        # Instalações via pacote RPM/DEB
+    # Default locations
+    ls $KAFKA_HOME/logs/      # Standard Apache Kafka (defaults to <install-dir>/logs/)
+    ls /var/log/kafka/        # RPM/DEB package installations
     ```
 
     Principais arquivos de log do Kafka:
@@ -73,8 +73,8 @@ Se você quiser testar a integração de logs do Kafka antes de configurar seu p
       filelog/kafka:
         include:
           - /var/log/kafka/server.log
-          - /var/log/kafka/controller.log  # opcional, só existe se o log4j estiver configurado com appenders de arquivo separados
-          - /var/log/kafka/state-change.log  # opcional, mesmo caso acima
+          - /var/log/kafka/controller.log  # optional, only exists if log4j is configured with separate file appenders
+          - /var/log/kafka/state-change.log  # optional, same as above
         start_at: beginning
         multiline:
           line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
@@ -298,7 +298,7 @@ Teste a integração de logs do Kafka com um conjunto de dados de amostra pré-g
   <Step>
     #### O dashboard será criado com todas as visualizações pré-configuradas
 
-    Para o dataset de demonstração, defina o intervalo de tempo para incluir **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+    Para o conjunto de dados de demonstração, defina o intervalo de tempo para incluir **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Dashboard de exemplo de logs do Kafka" />
   </Step>
@@ -340,4 +340,4 @@ Se a sua instalação do Kafka usar um padrão personalizado do Log4j, ajuste a 
   ## Colocando em produção
 </div>
 
-Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

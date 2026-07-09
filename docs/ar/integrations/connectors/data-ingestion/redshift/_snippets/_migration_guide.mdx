@@ -14,7 +14,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 من منظور مثيل ClickHouse، يمكنك إما:
 
-1. **[PUSH](#push-data-from-redshift-to-clickhouse)** دفع البيانات إلى ClickHouse باستخدام أداة أو خدمة ETL/ELT من جهة خارجية
+1. **[إرسال](#push-data-from-redshift-to-clickhouse)** دفع البيانات إلى ClickHouse باستخدام أداة أو خدمة ETL/ELT من جهة خارجية
 
 2. **[PULL](#pull-data-from-redshift-to-clickhouse)** سحب البيانات من Redshift بالاستفادة من ClickHouse JDBC Bridge
 
@@ -216,8 +216,8 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 * خطوتان في العملية (تفريغ البيانات من Redshift ثم تحميلها إلى ClickHouse).
 
-<div id="tutorial">
-  ### البرنامج التعليمي
+<div id="tutorial-1">
+  ### دليل عملي
 </div>
 
 <Steps>
@@ -280,7 +280,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ```
 
     <Note>
-      يستخدم هذا المثال CSV كتنسيق وسيط. ومع ذلك، بالنسبة إلى أحمال العمل في بيئات الإنتاج، نوصي باستخدام Apache Parquet باعتباره الخيار الأفضل لعمليات الترحيل الكبيرة، لأنه يدعم الضغط ويمكن أن يوفّر بعض تكاليف التخزين مع تقليل أوقات النقل. (افتراضيًا، تُضغط كل مجموعة صفوف باستخدام SNAPPY). كما يستفيد ClickHouse من الطبيعة العمودية لـ Parquet لتسريع إدخال البيانات.
+      يستخدم هذا المثال CSV كتنسيق وسيط. ومع ذلك، بالنسبة إلى أحمال العمل في بيئات الإنتاج، نوصي باستخدام Apache Parquet باعتباره الخيار الأفضل لعمليات الترحيل الكبيرة، لأنه يدعم الضغط ويمكن أن يوفّر بعض تكاليف التخزين مع تقليل أوقات النقل. (افتراضيًا، تُضغط كل مجموعة صفوف باستخدام SNAPPY). كما يستفيد ClickHouse من الطبيعة العمودية لـ Parquet لتسريع استيعاب البيانات.
     </Note>
   </Step>
 </Steps>

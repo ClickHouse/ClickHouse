@@ -16,7 +16,7 @@ Da perspectiva da instância do ClickHouse, você pode:
 
 2. **[extrair](#pull-data-from-redshift-to-clickhouse)** extrair dados do Redshift com a ajuda da ClickHouse JDBC Bridge
 
-3. **[pivotar](#pivot-data-from-redshift-to-clickhouse-using-s3)** usar armazenamento de objetos S3 com uma lógica de &quot;descarregar e depois carregar&quot;
+3. **[pivotar](#pivot-data-from-redshift-to-clickhouse-using-s3)** usar armazenamento de objetos do S3 com uma lógica de &quot;descarregar e depois carregar&quot;
 
 <Note>
   Usamos o Redshift como fonte de dados neste tutorial. No entanto, as abordagens de migração apresentadas aqui não se limitam ao Redshift, e etapas semelhantes podem ser adaptadas para qualquer fonte de dados compatível.
@@ -51,7 +51,7 @@ No cenário de envio, a ideia é usar uma ferramenta ou serviço de terceiros (s
 
 No cenário de extração, a ideia é usar a ClickHouse JDBC Bridge para se conectar diretamente a um cluster do Redshift a partir de uma instância do ClickHouse e executar consultas `INSERT INTO ... SELECT`:
 
-<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="extrair do Redshift para o ClickHouse" />
+<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="extração do Redshift para o ClickHouse" />
 
 <div id="pros-1">
   ### Prós
@@ -214,7 +214,7 @@ Neste cenário, exportamos os dados para o S3 em um formato intermediário e, em
 
 * Duas etapas no processo (exportar do Redshift e depois carregar no ClickHouse).
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### Tutorial
 </div>
 
@@ -278,7 +278,7 @@ Neste cenário, exportamos os dados para o S3 em um formato intermediário e, em
     ```
 
     <Note>
-      Este exemplo usou CSV como formato de pivot. No entanto, para cargas de trabalho de produção, recomendamos Apache Parquet como a melhor opção para grandes migrações, já que ele oferece compressão e pode reduzir custos de armazenamento, além de diminuir os tempos de transferência. (Por padrão, cada row group é comprimido com SNAPPY.) O ClickHouse também aproveita a organização colunar do Parquet para acelerar a ingestão de dados.
+      Este exemplo usou CSV como formato de pivotação. No entanto, para cargas de trabalho de produção, recomendamos Apache Parquet como a melhor opção para grandes migrações, já que ele oferece compressão e pode reduzir custos de armazenamento, além de diminuir os tempos de transferência. (Por padrão, cada row group é comprimido com SNAPPY.) O ClickHouse também aproveita a organização colunar do Parquet para acelerar a ingestão de dados.
     </Note>
   </Step>
 </Steps>

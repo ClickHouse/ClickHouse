@@ -1502,9 +1502,9 @@ Introduzido em: v24.1.0
 Retorna a representação ASCII (algoritmo ToASCII) de um nome de domínio de acordo com o mecanismo [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA).
 A string de entrada deve estar codificada em UTF e ser convertível em uma string ASCII; caso contrário, uma exceção é gerada.
 
-<Note>
-  Nenhuma decodificação de porcentagem nem remoção de tabulações, espaços ou caracteres de controle é realizada.
-</Note>
+:::note
+Nenhuma decodificação de porcentagem nem remoção de tabulações, espaços ou caracteres de controle é realizada.
+:::
 
 **Sintaxe**
 
@@ -1543,10 +1543,10 @@ Introduzido na versão: v23.7.0
 Converte a primeira letra de cada palavra em maiúscula e o restante em minúsculas.
 As palavras são sequências de caracteres alfanuméricos separadas por caracteres não alfanuméricos.
 
-<Note>
-  Como `initcap` converte apenas a primeira letra de cada palavra em maiúscula, você pode observar um comportamento inesperado em palavras que contêm apóstrofos ou letras maiúsculas.
-  Esse comportamento é conhecido e, no momento, não há planos para corrigi-lo.
-</Note>
+:::note
+Como `initcap` converte apenas a primeira letra de cada palavra em maiúscula, você pode observar um comportamento inesperado em palavras que contêm apóstrofos ou letras maiúsculas.
+Esse comportamento é conhecido e, no momento, não há planos para corrigi-lo.
+:::
 
 **Sintaxe**
 
@@ -1598,10 +1598,10 @@ Assim como [`initcap`](#initcap), `initcapUTF8` converte a primeira letra de cad
 Pressupõe que a string contenha texto válido codificado em UTF-8.
 Se essa suposição for violada, nenhuma exceção é lançada e o resultado é indefinido.
 
-<Note>
-  Esta função não detecta o idioma; por exemplo, no turco, o resultado pode não estar exatamente correto (i/İ vs. i/I).
-  Se o comprimento da sequência de bytes em UTF-8 for diferente entre as versões em maiúsculas e minúsculas de um ponto de código, o resultado poderá estar incorreto para esse ponto de código.
-</Note>
+:::note
+Esta função não detecta o idioma; por exemplo, no turco, o resultado pode não estar exatamente correto (i/İ vs. i/I).
+Se o comprimento da sequência de bytes em UTF-8 for diferente entre as versões em maiúsculas e minúsculas de um ponto de código, o resultado poderá estar incorreto para esse ponto de código.
+:::
 
 **Sintaxe**
 
@@ -1611,7 +1611,7 @@ initcapUTF8(s)
 
 **Argumentos**
 
-* `s` — Texto de entrada. [`String`](/pt-BR/reference/data-types/string)
+* `s` — string de entrada. [`String`](/pt-BR/reference/data-types/string)
 
 **Valor retornado**
 
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2212,8 +2209,8 @@ Retorna a forma normalizada em NFKC da string UTF-8. [`String`](/pt-BR/reference
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Caracteres de números em círculo
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converte para 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ Retorna a forma normalizada em NFKD da string UTF-8. [`String`](/pt-BR/reference
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subscrito 2 + O + sobrescrito 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converte para H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3440,10 +3437,10 @@ A contagem de pontos de código começa em `1`, de acordo com a seguinte lógica
 
 Um argumento opcional, `length`, especifica o número máximo de pontos de código que a substring retornada pode ter.
 
-<Note>
-  Esta função pressupõe que a string contém texto válido codificado em UTF-8.
-  Se essa suposição for violada, nenhuma exceção será lançada, e o resultado será indefinido.
-</Note>
+:::note
+Esta função pressupõe que a string contém texto válido codificado em UTF-8.
+Se essa suposição for violada, nenhuma exceção será lançada, e o resultado será indefinido.
+:::
 
 **Sintaxe**
 
@@ -3896,10 +3893,10 @@ Introduzido em: v1.1.0
 Converte uma string em maiúsculas, assumindo que a string contém texto válido codificado em UTF-8.
 Se essa suposição não for atendida, nenhuma exceção será lançada e o resultado será indefinido.
 
-<Note>
-  Esta função não detecta o idioma; por exemplo, para o turco, o resultado pode não estar exatamente correto (i/İ vs. i/I).
-  Se o comprimento da sequência de bytes UTF-8 for diferente entre as formas maiúscula e minúscula de um ponto de código (como `ẞ` e `ß`), o resultado pode estar incorreto para esse ponto de código.
-</Note>
+:::note
+Esta função não detecta o idioma; por exemplo, para o turco, o resultado pode não estar exatamente correto (i/İ vs. i/I).
+Se o comprimento da sequência de bytes UTF-8 for diferente entre as formas maiúscula e minúscula de um ponto de código (como `ẞ` e `ß`), o resultado pode estar incorreto para esse ponto de código.
+:::
 
 **Sintaxe**
 

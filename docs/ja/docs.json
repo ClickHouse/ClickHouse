@@ -13,14 +13,14 @@
           "item": "はじめに",
           "pages": [
             {
-              "group": "はじめる",
+              "group": "はじめに",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
                 "ja/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
-                  "group": "概要",
+                  "group": "はじめに",
                   "pages": [
                     "ja/get-started/about/intro",
                     "ja/get-started/about/why-clickhouse-is-so-fast",
@@ -44,7 +44,7 @@
             },
             {
               "expanded": true,
-              "group": "Setup",
+              "group": "セットアップ",
               "icon": "/images/menu-icon-gear.svg",
               "pages": [
                 "ja/get-started/setup/cloud",
@@ -104,7 +104,7 @@
                   ]
                 },
                 {
-                  "group": "Web・ソーシャルアナリティクス",
+                  "group": "Web・ソーシャル分析",
                   "pages": [
                     "ja/get-started/sample-datasets/amazon-reviews",
                     "ja/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -116,7 +116,7 @@
                   ]
                 },
                 {
-                  "group": "Geo・位置情報",
+                  "group": "Geoと位置情報",
                   "pages": [
                     "ja/get-started/sample-datasets/cell-towers",
                     "ja/get-started/sample-datasets/foursquare-os-places",
@@ -124,7 +124,7 @@
                   ]
                 },
                 {
-                  "group": "時系列・センサー",
+                  "group": "時系列とセンサー",
                   "pages": [
                     "ja/get-started/sample-datasets/environmental-sensors",
                     "ja/get-started/sample-datasets/noaa",
@@ -133,7 +133,7 @@
                   ]
                 },
                 {
-                  "group": "公的記録・オープンデータ",
+                  "group": "公的記録とオープンデータ",
                   "pages": [
                     "ja/get-started/sample-datasets/covid19",
                     "ja/get-started/sample-datasets/menus",
@@ -237,7 +237,7 @@
             },
             {
               "expanded": true,
-              "group": "ClickHouse の概念",
+              "group": "ClickHouseの基本概念",
               "pages": [
                 {
                   "group": "materialized view",
@@ -249,7 +249,7 @@
                   "root": "ja/concepts/features/materialized-views/index"
                 },
                 {
-                  "group": "辞書",
+                  "group": "Dictionaries",
                   "pages": [
                     "ja/concepts/features/dictionaries/best-practices"
                   ],
@@ -278,7 +278,7 @@
                       ]
                     },
                     {
-                      "group": "スキッピング索引",
+                      "group": "スキッピングインデックス",
                       "pages": [
                         "ja/concepts/features/performance/skip-indexes/skipping-indexes",
                         "ja/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -300,7 +300,7 @@
                   "group": "操作",
                   "pages": [
                     {
-                      "group": "INSERT",
+                      "group": "挿入",
                       "pages": [
                         "ja/concepts/features/operations/insert/inserting-data",
                         "ja/concepts/features/operations/insert/asyncinserts",
@@ -311,13 +311,13 @@
                       ]
                     },
                     {
-                      "group": "SELECT",
+                      "group": "選択",
                       "pages": [
                         "ja/concepts/features/operations/select/joining-tables"
                       ]
                     },
                     {
-                      "group": "UPDATE",
+                      "group": "更新",
                       "pages": [
                         "ja/concepts/features/operations/update/overview",
                         "ja/concepts/features/operations/update/on-fly-mutations",
@@ -326,7 +326,7 @@
                       "root": "ja/concepts/features/operations/update/index"
                     },
                     {
-                      "group": "DELETE",
+                      "group": "削除",
                       "pages": [
                         "ja/concepts/features/operations/delete/overview",
                         "ja/concepts/features/operations/delete/delete-mutations",
@@ -340,7 +340,7 @@
                   ]
                 },
                 {
-                  "group": "構成",
+                  "group": "設定",
                   "pages": [
                     {
                       "group": "設定",
@@ -447,7 +447,7 @@
                     "ja/concepts/features/interfaces/schema-inference",
                     "ja/concepts/features/interfaces/web-terminal",
                     {
-                      "group": "サードパーティークライアント",
+                      "group": "サードパーティ製クライアント",
                       "pages": [],
                       "root": "ja/concepts/features/interfaces/third-party/index"
                     }
@@ -498,7 +498,7 @@
         {
           "groups": [
             {
-              "group": "ClickHouse ガイド",
+              "group": "ClickHouseガイド",
               "pages": [
                 {
                   "group": "データフォーマット",
@@ -558,7 +558,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Aggregate combinator の例",
+                  "group": "集約コンビネータの例",
                   "pages": [
                     "ja/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
                     "ja/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -590,7 +590,7 @@
                 },
                 "ja/guides/oss/update",
                 {
-                  "group": "OSS ベストプラクティス",
+                  "group": "OSSベストプラクティス",
                   "pages": [
                     "ja/guides/oss/best-practices/sizing-and-hardware-recommendations",
                     "ja/guides/oss/best-practices/tips"
@@ -665,7 +665,7 @@
                     "ja/guides/use-cases/observability/cloud-monitoring",
                     "ja/guides/use-cases/observability/self-managed-monitoring",
                     {
-                      "group": "自分で構築する",
+                      "group": "独自構築",
                       "pages": [
                         "ja/guides/use-cases/observability/build-your-own/introduction",
                         "ja/guides/use-cases/observability/build-your-own/schema-design",
@@ -981,7 +981,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "日付と時刻の型",
+                  "group": "日付と時刻型",
                   "pages": [
                     "ja/reference/data-types/date",
                     "ja/reference/data-types/date32",
@@ -1028,7 +1028,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "特殊用途の型",
+                  "group": "特殊型",
                   "pages": [
                     "ja/reference/data-types/uuid",
                     "ja/reference/data-types/enum",
@@ -1039,7 +1039,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "集約関数型",
+                  "group": "集計関数型",
                   "pages": [
                     "ja/reference/data-types/aggregatefunction",
                     "ja/reference/data-types/simpleaggregatefunction"
@@ -1109,7 +1109,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "ログファミリー",
+                      "group": "Log ファミリー",
                       "pages": [
                         "ja/reference/engines/table-engines/log-family/log",
                         "ja/reference/engines/table-engines/log-family/stripelog",
@@ -1128,7 +1128,6 @@
                         "ja/reference/engines/table-engines/mergetree-family/collapsingmergetree",
                         "ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key",
                         "ja/reference/engines/table-engines/mergetree-family/graphitemergetree",
-                        "ja/reference/engines/table-engines/mergetree-family/invertedindexes",
                         "ja/reference/engines/table-engines/mergetree-family/replacingmergetree",
                         "ja/reference/engines/table-engines/mergetree-family/replication",
                         "ja/reference/engines/table-engines/mergetree-family/summingmergetree",
@@ -2017,7 +2016,7 @@
                   ]
                 },
                 {
-                  "group": "Cloud リファレンス",
+                  "group": "Cloudリファレンス",
                   "pages": [
                     "ja/products/cloud/reference/service-uptime",
                     "ja/products/cloud/reference/account-close",
@@ -2110,7 +2109,7 @@
                         "ja/products/cloud/guides/backups/configurable-backups",
                         {
                           "expanded": false,
-                          "group": "独自バックアップの利用",
+                          "group": "バックアップの持ち込み",
                           "pages": [
                             "ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                             "ja/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -2218,7 +2217,175 @@
                 },
                 {
                   "group": "API リファレンス",
-                  "openapi": "https://api.clickhouse.cloud/v1"
+                  "openapi": "https://api.clickhouse.cloud/v1",
+                  "pages": [
+                    {
+                      "group": "組織",
+                      "pages": [
+                        "ja/GET /v1/organizations",
+                        "ja/GET /v1/organizations/{organizationId}",
+                        "ja/PATCH /v1/organizations/{organizationId}",
+                        "ja/GET /v1/organizations/{organizationId}/activities",
+                        "ja/GET /v1/organizations/{organizationId}/activities/{activityId}",
+                        "ja/GET /v1/organizations/{organizationId}/privateEndpointConfig",
+                        "ja/POST /v1/organizations/{organizationId}/byocInfrastructure",
+                        "ja/DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        "ja/PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        {
+                          "group": "請求",
+                          "pages": [
+                            "ja/GET /v1/organizations/{organizationId}/usageCost"
+                          ]
+                        },
+                        {
+                          "group": "ユーザー管理",
+                          "pages": [
+                            "ja/GET /v1/organizations/{organizationId}/members",
+                            "ja/GET /v1/organizations/{organizationId}/members/{userId}",
+                            "ja/PATCH /v1/organizations/{organizationId}/members/{userId}",
+                            "ja/DELETE /v1/organizations/{organizationId}/members/{userId}",
+                            "ja/GET /v1/organizations/{organizationId}/invitations",
+                            "ja/POST /v1/organizations/{organizationId}/invitations",
+                            "ja/GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+                            "ja/DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+                          ]
+                        },
+                        {
+                          "group": "ロール管理",
+                          "pages": [
+                            "ja/GET /v1/organizations/{organizationId}/roles",
+                            "ja/POST /v1/organizations/{organizationId}/roles",
+                            "ja/GET /v1/organizations/{organizationId}/roles/{roleId}",
+                            "ja/PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+                            "ja/DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "サービス",
+                      "pages": [
+                        "ja/GET /v1/organizations/{organizationId}/services",
+                        "ja/POST /v1/organizations/{organizationId}/services",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ja/POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/scaling",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+                        "ja/POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ja/POST /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ja/PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        {
+                          "group": "Backup",
+                          "pages": [
+                            "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+                            "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+                            "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ja/POST /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/backupBucket"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "OpenAPI",
+                      "pages": [
+                        "ja/GET /v1/organizations/{organizationId}/keys",
+                        "ja/POST /v1/organizations/{organizationId}/keys",
+                        "ja/GET /v1/organizations/{organizationId}/keys/{keyId}",
+                        "ja/PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+                        "ja/DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+                      ]
+                    },
+                    {
+                      "group": "Prometheus",
+                      "pages": [
+                        "ja/GET /v1/organizations/{organizationId}/prometheus",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+                        "ja/GET /v1/organizations/{organizationId}/postgres/prometheus",
+                        "ja/GET /v1/organizations/{organizationId}/postgres/{postgresId}/prometheus"
+                      ]
+                    },
+                    {
+                      "group": "ClickPipes",
+                      "pages": [
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "ja/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "ja/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "ja/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "ja/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+                      ]
+                    },
+                    {
+                      "group": "ClickStack",
+                      "pages": [
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "ja/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ja/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "ja/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ja/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ja/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "ja/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks"
+                      ],
+                      "tag": "Beta"
+                    },
+                    {
+                      "group": "Postgres",
+                      "pages": [
+                        "ja/POST /v1/organizations/{organizationId}/postgres",
+                        "ja/GET /v1/organizations/{organizationId}/postgres",
+                        "ja/GET /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ja/DELETE /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ja/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "ja/GET /v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates",
+                        "ja/POST /v1/organizations/{organizationId}/postgres/{postgresId}/restoredService",
+                        "ja/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/password",
+                        "ja/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/state",
+                        "ja/POST /v1/organizations/{organizationId}/postgres/{postgresId}/readReplica",
+                        "ja/GET /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ja/POST /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ja/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "ja/GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
+                        "ja/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
+                        "ja/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}"
+                      ],
+                      "tag": "Beta"
+                    }
+                  ]
                 }
               ]
             },
@@ -2306,6 +2473,14 @@
                 "ja/products/managed-postgres/read-replicas",
                 "ja/products/managed-postgres/backup-and-restore",
                 "ja/products/managed-postgres/extensions",
+                {
+                  "group": "pg_clickhouse",
+                  "pages": [
+                    "ja/products/managed-postgres/extensions/pg_clickhouse/reference",
+                    "ja/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+                  ],
+                  "root": "ja/products/managed-postgres/extensions/pg_clickhouse/introduction"
+                },
                 "ja/products/managed-postgres/upgrades",
                 "ja/products/managed-postgres/openapi",
                 "ja/products/managed-postgres/terraform"
@@ -2544,7 +2719,7 @@
                       "root": "ja/clickstack/integration-examples/index"
                     },
                     {
-                      "group": "各言語向け SDKs",
+                      "group": "各言語向け SDK",
                       "pages": [
                         "ja/clickstack/ingesting-data/sdks/browser",
                         "ja/clickstack/ingesting-data/sdks/nodejs",
@@ -2588,7 +2763,7 @@
             },
             {
               "expanded": true,
-              "group": "インテグレーション パートナー",
+              "group": "インテグレーションパートナー",
               "pages": [
                 "ja/clickstack/integration-partners/bindplane",
                 "ja/clickstack/integration-partners/odigos"
@@ -2644,7 +2819,7 @@
               "root": "ja/products/chdb/index"
             },
             {
-              "group": "言語インテグレーション",
+              "group": "各言語向けインテグレーション",
               "pages": [
                 "ja/products/chdb/install/python",
                 "ja/products/chdb/install/nodejs",
@@ -2770,7 +2945,7 @@
               ]
             },
             {
-              "group": "ハウツー ガイド",
+              "group": "ハウツーガイド",
               "icon": "wrench",
               "pages": [
                 "ja/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual",
@@ -2833,9 +3008,11 @@
           "groups": [
             {
               "group": "オブジェクトストレージ向け ClickPipes",
+              "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
               "pages": [
                 {
                   "group": "Amazon S3",
+                  "icon": "/images/integrations/logos/amazon_s3_logo.svg",
                   "pages": [
                     "ja/integrations/clickpipes/object-storage/amazon-s3/overview",
                     "ja/integrations/clickpipes/object-storage/amazon-s3/get-started",
@@ -2844,6 +3021,7 @@
                 },
                 {
                   "group": "Google Cloud Storage",
+                  "icon": "/images/integrations/logos/gcs.svg",
                   "pages": [
                     "ja/integrations/clickpipes/object-storage/google-cloud-storage/overview",
                     "ja/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
@@ -2852,6 +3030,7 @@
                 },
                 {
                   "group": "Azure Blob Storage",
+                  "icon": "/images/integrations/logos/azureblobstorage.svg",
                   "pages": [
                     "ja/integrations/clickpipes/object-storage/azure-blob-storage/overview",
                     "ja/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
@@ -2862,6 +3041,7 @@
             },
             {
               "group": "Postgres 向け ClickPipes",
+              "icon": "/images/integrations/logos/postgresql.svg",
               "pages": [
                 "ja/integrations/clickpipes/postgres/deduplication",
                 "ja/integrations/clickpipes/postgres/ordering-keys",
@@ -2887,7 +3067,7 @@
                   ]
                 },
                 {
-                  "group": "ログソース",
+                  "group": "ソース",
                   "pages": [
                     "ja/integrations/clickpipes/postgres/source/alloydb",
                     "ja/integrations/clickpipes/postgres/source/rds",
@@ -2907,6 +3087,7 @@
             },
             {
               "group": "Kafka 向け ClickPipes",
+              "icon": "/images/integrations/logos/kafka.svg",
               "pages": [
                 "ja/integrations/clickpipes/kafka/create-kafka-clickpipe",
                 "ja/integrations/clickpipes/kafka/schema-registries",
@@ -2918,6 +3099,7 @@
             },
             {
               "group": "Kinesis 向け ClickPipes",
+              "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
               "pages": [
                 "ja/integrations/clickpipes/kinesis/overview",
                 "ja/integrations/clickpipes/kinesis/auth"
@@ -2926,6 +3108,7 @@
             },
             {
               "group": "GCP Pub/Sub 向け ClickPipes",
+              "icon": "/images/integrations/logos/google_pubsub.svg",
               "pages": [
                 "ja/integrations/clickpipes/pubsub/overview",
                 "ja/integrations/clickpipes/pubsub/auth"
@@ -2934,6 +3117,7 @@
             },
             {
               "group": "MySQL 向け ClickPipes",
+              "icon": "/images/integrations/logos/mysql.svg",
               "pages": [
                 "ja/integrations/clickpipes/mysql/faq",
                 "ja/integrations/clickpipes/mysql/datatypes",
@@ -2953,7 +3137,7 @@
                   ]
                 },
                 {
-                  "group": "ログソース",
+                  "group": "ソース",
                   "pages": [
                     "ja/integrations/clickpipes/mysql/source/rds",
                     "ja/integrations/clickpipes/mysql/source/aurora",
@@ -2969,6 +3153,7 @@
             },
             {
               "group": "MongoDB 向け ClickPipes",
+              "icon": "/images/integrations/logos/mongodb.svg",
               "pages": [
                 "ja/integrations/clickpipes/mongodb/datatypes",
                 "ja/integrations/clickpipes/mongodb/quickstart",
@@ -2987,7 +3172,7 @@
                   ]
                 },
                 {
-                  "group": "ログソース",
+                  "group": "ソース",
                   "pages": [
                     "ja/integrations/clickpipes/mongodb/source/atlas",
                     "ja/integrations/clickpipes/mongodb/source/generic",
@@ -2999,6 +3184,7 @@
             },
             {
               "group": "BigQuery 向け ClickPipes",
+              "icon": "/images/logo-bigquery.svg",
               "pages": [
                 "ja/integrations/clickpipes/bigquery/overview",
                 "ja/integrations/clickpipes/bigquery/get-started"
@@ -3006,6 +3192,7 @@
             },
             {
               "group": "プログラムによるアクセス",
+              "icon": "code",
               "pages": [
                 "ja/integrations/clickpipes/programmatic-access/openapi",
                 "ja/integrations/clickpipes/programmatic-access/terraform"
@@ -3013,6 +3200,7 @@
             },
             {
               "group": "その他",
+              "icon": "ellipsis",
               "pages": [
                 "ja/integrations/clickpipes/aws-privatelink",
                 "ja/integrations/clickpipes/dynamodb",
@@ -3111,7 +3299,7 @@
             }
           ],
           "icon": "/images/icons/icon-language-clients.svg",
-          "item": "言語別クライアント"
+          "item": "各言語向けクライアント"
         },
         {
           "groups": [
@@ -3158,7 +3346,7 @@
             },
             {
               "expanded": true,
-              "group": "データの可視化",
+              "group": "データ可視化",
               "pages": [
                 {
                   "expanded": false,
@@ -3218,6 +3406,7 @@
               "group": "データ取り込み",
               "pages": [
                 "ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
+                "ja/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
                 "ja/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
                 {
                   "expanded": false,
@@ -3252,7 +3441,7 @@
                     "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates",
                     {
                       "expanded": false,
-                      "group": "Dataflow テンプレート",
+                      "group": "Dataflowテンプレート",
                       "pages": [
                         "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse",
                         "ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse"
@@ -3355,7 +3544,7 @@
               "group": "ナレッジベース",
               "pages": [
                 {
-                  "group": "パフォーマンスと最適化",
+                  "group": "パフォーマンス & 最適化",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
                     "ja/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -3387,7 +3576,7 @@
                   ]
                 },
                 {
-                  "group": "データのインポートとエクスポート",
+                  "group": "データのインポート & エクスポート",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
                     "ja/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -3407,7 +3596,7 @@
                   ]
                 },
                 {
-                  "group": "構成と設定",
+                  "group": "構成 & 設定",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
                     "ja/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
@@ -3419,7 +3608,7 @@
                   ]
                 },
                 {
-                  "group": "インテグレーションとクライアントライブラリ",
+                  "group": "インテグレーション & クライアントライブラリ",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/integrations/node-js-example",
                     "ja/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -3431,7 +3620,7 @@
                   ]
                 },
                 {
-                  "group": "トラブルシューティングとエラー",
+                  "group": "トラブルシューティング & エラー",
                   "pages": [
                     "ja/resources/support-center/troubleshooting/troubleshooting",
                     "ja/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
@@ -3445,7 +3634,7 @@
                   "root": "ja/resources/support-center/troubleshooting/index"
                 },
                 {
-                  "group": "テーブルとスキーマ",
+                  "group": "テーブル & スキーマ",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/tables-schema/add-column",
                     "ja/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -3457,7 +3646,7 @@
                   ]
                 },
                 {
-                  "group": "クエリとSQL",
+                  "group": "クエリ & SQL",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
                     "ja/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -3471,7 +3660,7 @@
                   ]
                 },
                 {
-                  "group": "materialized view とプロジェクション",
+                  "group": "materialized view & プロジェクション",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
                     "ja/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -3480,7 +3669,7 @@
                   ]
                 },
                 {
-                  "group": "監視とデバッグ",
+                  "group": "監視 & デバッグ",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
                     "ja/resources/support-center/knowledge-base/monitoring-debugging/generate-har-file",
@@ -3494,7 +3683,7 @@
                   ]
                 },
                 {
-                  "group": "セキュリティとアクセス制御",
+                  "group": "セキュリティ & アクセス制御",
                   "pages": [
                     "ja/resources/support-center/knowledge-base/security/check-users-roles",
                     "ja/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -3529,7 +3718,7 @@
                   "group": "一般・よくある質問",
                   "pages": [
                     {
-                      "group": "一般",
+                      "group": "全般",
                       "pages": [
                         "ja/resources/support-center/knowledge-base/general-faqs/columnar-database",
                         "ja/resources/support-center/knowledge-base/general-faqs/concurrency",
@@ -3569,7 +3758,7 @@
                       "root": "ja/resources/support-center/knowledge-base/integrations/index"
                     },
                     {
-                      "group": "操作",
+                      "group": "運用",
                       "pages": [
                         "ja/resources/support-center/knowledge-base/tables-schema/delete-old-data",
                         "ja/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
@@ -3633,7 +3822,7 @@
               ]
             },
             {
-              "group": "貢献",
+              "group": "コントリビューション",
               "pages": [
                 "ja/resources/develop-contribute/contribute/tests",
                 "ja/resources/develop-contribute/contribute/continuous-integration",
@@ -3662,7 +3851,7 @@
             }
           ],
           "icon": "/images/icons/icon-contribute.svg",
-          "item": "開発・貢献",
+          "item": "開発とコントリビューション",
           "root": "ja/resources/develop-contribute/index"
         },
         {
@@ -3682,7 +3871,7 @@
                 },
                 "ja/resources/changelogs/cloud/release-status",
                 {
-                  "group": "Cloudデータベースのリリース履歴",
+                  "group": "Cloudデータベースのリリース変更履歴",
                   "pages": [
                     "ja/resources/changelogs/cloud/release-notes/26_02",
                     "ja/resources/changelogs/cloud/release-notes/25_12",
@@ -3729,7 +3918,6 @@
               "group": "ClickHouseについて",
               "pages": [
                 "ja/resources/about/adopters",
-                "ja/resources/about/cloud",
                 "ja/resources/about/support"
               ],
               "root": "ja/resources/about/index"

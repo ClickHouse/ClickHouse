@@ -30,7 +30,7 @@ ClickPipe の設定を開始するには、**Replicate data in ClickHouse** を�
 
     レプリケーション設定を入力します。
 
-    * **Integration name**: この ClickPipe の名前
+    * **インテグレーション名**: この ClickPipe の名前
     * **ClickHouse service**: 既存の ClickHouse Cloud サービスを選択するか、新しく作成します
     * **Postgres database**: レプリケーション元のソースデータベース
     * **Replication method**: 次のいずれかを選択します。
@@ -48,9 +48,9 @@ ClickPipe の設定を開始するには、**Replicate data in ClickHouse** を�
 
     データのレプリケーション方法を細かく調整します。
 
-    * **Sync interval (seconds)**: Postgres から変更を取得する間隔 (デフォルト: 60)
+    * **同期間隔 (seconds)**: Postgres から変更を取得する間隔 (デフォルト: 60)
     * **Parallel threads for initial load**: 初期スナップショット時に使用するスレッド数 (デフォルト: 4)
-    * **Pull batch size**: レプリケーション中にバッチごとに取得する行数 (デフォルト: 100000)
+    * **Pull バッチサイズ**: レプリケーション中にバッチごとに取得する行数 (デフォルト: 100000)
     * **Snapshot number of rows per partition**: 初期スナップショット時のパーティションごとの行数 (デフォルト: 100000)
     * **Snapshot number of tables in parallel**: 同時にスナップショットを取得するテーブル数 (デフォルト: 1)
 

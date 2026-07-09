@@ -1,0 +1,40 @@
+---
+description: 'Documentación de SETTINGS PROFILE'
+sidebar_label: 'SETTINGS PROFILE'
+sidebar_position: 43
+slug: /sql-reference/statements/create/settings-profile
+title: 'CREATE SETTINGS PROFILE'
+doc_type: 'referencia'
+---
+
+Crea [perfiles de configuración](../../../guides/sre/user-management/index.md#settings-profiles-management) que pueden asignarse a un usuario o a un rol.
+
+Sintaxis:
+
+```sql
+CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] 
+    [ON CLUSTER cluster_name]
+    [IN access_storage_type]
+    [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | INHERIT 'profile_name'] [,...]
+    [TO {{role1 | user1 [, role2 | user2 ...]} | NONE | ALL | ALL EXCEPT {role1 | user1 [, role2 | user2 ...]}}]
+```
+
+La cláusula `ON CLUSTER` permite crear perfiles de configuración en un clúster; consulta [DDL distribuido](../../../sql-reference/distributed-ddl.md).
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+Crear un usuario:
+
+```sql
+CREATE USER robin IDENTIFIED BY 'password';
+```
+
+Cree el perfil de configuración `max_memory_usage_profile` con un valor y restricciones para la configuración `max_memory_usage` y asígnelo al usuario `robin`:
+
+```sql
+CREATE
+SETTINGS PROFILE max_memory_usage_profile SETTINGS max_memory_usage = 100000001 MIN 90000000 MAX 110000000
+TO robin
+```

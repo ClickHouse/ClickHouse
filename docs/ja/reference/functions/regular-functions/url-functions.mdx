@@ -1098,9 +1098,6 @@ firstSignificantSubdomain(url)
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 ```
 
-```response title=Response
-```
-
 <div id="firstSignificantSubdomainCustomRFC">
   ## firstSignificantSubdomainCustom
 </div>
@@ -1530,16 +1527,17 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 
 URL からトップレベルドメインを抽出します。
 
-<Note>
-  URL はプロトコルの有無にかかわらず指定できます。
-  例:
+:::note
+URL はプロトコルの有無にかかわらず指定できます。
+例:
 
-  ```text
-  svn+ssh://some.svn-hosting.com:80/repo/trunk
-  some.svn-hosting.com:80/repo/trunk
-  https://clickhouse.com/time/
-  ```
-</Note>
+```text
+svn+ssh://some.svn-hosting.com:80/repo/trunk
+some.svn-hosting.com:80/repo/trunk
+https://clickhouse.com/time/
+```
+
+:::
 
 **構文**
 

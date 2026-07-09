@@ -42,7 +42,8 @@ ClickHouse поддерживает чтение и запись в этих ф�
 | `DOUBLE`                                | [Float64](/ru/reference/data-types/float)                                                                    | `FLOAT64`                   |
 | `DATE32`                                | [Date32](/ru/reference/data-types/date32)                                                                    | `UINT16`                    |
 | `DATE64`                                | [DateTime](/ru/reference/data-types/datetime)                                                                | `UINT32`                    |
-| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/ru/reference/data-types/datetime64)                                                            | `TIMESTAMP`                 |
+| `TIMESTAMP`                             | [DateTime64](/ru/reference/data-types/datetime64)                                                            | `TIMESTAMP`                 |
+| `TIME32`, `TIME64`                      | [Time64](/ru/reference/data-types/time64)                                                                    | `TIME32`, `TIME64`          |
 | `STRING`, `BINARY`                      | [String](/ru/reference/data-types/string)                                                                    | `BINARY`                    |
 | `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ru/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`         |
 | `DECIMAL`                               | [Decimal](/ru/reference/data-types/decimal)                                                                  | `DECIMAL`                   |
@@ -67,7 +68,7 @@ ClickHouse поддерживает чтение и запись в этих ф�
 * `UUID`
 * `ENUM`.
 
-Типы данных столбцов таблицы ClickHouse не обязательно должны совпадать с соответствующими полями данных Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с приведённой выше таблицей, а затем [преобразует](/ru/reference/functions/regular-functions/type-conversion-functions#CAST) данные в тип данных, заданный для столбца таблицы ClickHouse.
+Типы данных столбцов таблицы ClickHouse не обязаны совпадать с типами данных соответствующих полей Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](/ru/reference/functions/regular-functions/type-conversion-functions#CAST) данные к типу данных, заданному для столбца таблицы ClickHouse.
 
 <div id="example-usage">
   ## Пример использования

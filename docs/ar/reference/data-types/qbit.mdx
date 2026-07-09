@@ -16,7 +16,7 @@ doc_type: 'reference'
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – نوع كل عنصر من عناصر المتجه. الأنواع المسموح بها هي `BFloat16` و`Float32` و`Float64`
+* `element_type` – نوع كل عنصر من عناصر المتجه. الأنواع المسموح بها هي `Int8` و`BFloat16` و`Float32` و`Float64`
 * `dimension` – بُعد كل متجه
 
 <div id="creating-qbit">
@@ -63,6 +63,28 @@ SELECT * FROM vectors ORDER BY id;
 
 يمكن أيضًا إجراء التحويل بشكل صريح باستخدام `CAST`، على سبيل المثال `CAST(embedding AS QBit(Float32, 8))`.
 
+<div id="converting-qbit-to-arrays">
+  ## تحويل QBit إلى مصفوفات
+</div>
+
+تعيد عملية التحويل العكسي بناء المتجه الأصلي انطلاقًا من التمثيل المنقول على مستوى البت، لذا فإن تحويل `QBit` إلى `Array` يعيد القيم المخزنة. وهذا هو عكس [تحويل المصفوفات إلى `QBit`](#converting-arrays-to-qbit):
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::Array(Float32) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+تستخدم المصفوفة المُعاد إنشاؤها نوع العنصر الخاص بـ `QBit`، ثم تُحوَّل عناصرها بعد ذلك إلى نوع عنصر المصفوفة المطلوب. لذلك، يعمل أيضًا `cast` يغيّر نوع العنصر أيضًا، مثل التحويل من `QBit(Float32, N)` إلى `Array(Float64)`.
+
+تكون دورة التحويل `Array` -&gt; `QBit` -&gt; `Array` بلا فقدان بالنسبة إلى `Int8` و`Float32` و`Float64`. أما `BFloat16`، فهو يطابق تحويلًا مباشرًا إلى `BFloat16` — والفقد الوحيد في الدقة هو دقة `BFloat16` نفسها.
+
+عندما لا تكون قيمة `dimension` مضاعفًا للعدد 8، تُحذف عناصر الحشو اللاحقة الموجودة في التمثيل الداخلي، لذلك تكون النتيجة دائمًا مكوّنة من `dimension` عنصرًا بالضبط.
+
 <div id="qbit-subcolumns">
   ## الأعمدة الفرعية لـ QBit
 </div>
@@ -85,6 +107,7 @@ SELECT bin(vec.1) FROM test;
 
 يعتمد عدد الأعمدة الفرعية المتاحة على نوع العنصر:
 
+* `Int8`: 8 أعمدة فرعية (1-8)
 * `BFloat16`: 16 عمودًا فرعيًا (1-16)
 * `Float32`: 32 عمودًا فرعيًا (1-32)
 * `Float64`: 64 عمودًا فرعيًا (1-64)
@@ -97,3 +120,4 @@ SELECT bin(vec.1) FROM test;
 
 * [`L2DistanceTransposed`](/ar/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](/ar/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)
+* [`dotProductTransposed`](/ar/reference/functions/regular-functions/distance-functions#dotProductTransposed)

@@ -764,12 +764,12 @@ La arquitectura del clúster que va a configurar se muestra a continuación:
   ## Conclusión
 </div>
 
-La ventaja de esta topología de clúster con 2 segmentos y 2 réplicas es que proporciona tanto escalabilidad como tolerancia a fallos.
-Los datos se distribuyen entre hosts independientes, lo que reduce los requisitos de almacenamiento y de E/S por nodo, mientras que las consultas se procesan en paralelo en ambos segmentos para mejorar el rendimiento y la eficiencia de memoria.
-Lo más importante es que el clúster puede tolerar la pérdida de un nodo y seguir respondiendo consultas sin interrupciones, ya que cada segmento dispone de una réplica de respaldo en otro nodo.
+La ventaja de esta topología de clúster con 2 segmentos y 2 réplicas es que ofrece tanto escalabilidad como tolerancia a fallos.
+Los datos se distribuyen entre hosts distintos, lo que reduce los requisitos de almacenamiento y de E/S por nodo, mientras que las consultas se procesan en paralelo en ambos segmentos para mejorar el rendimiento y el uso de memoria.
+Lo más importante es que el clúster puede tolerar la pérdida de un nodo y seguir atendiendo consultas sin interrupciones, ya que cada segmento tiene una réplica de respaldo disponible en otro nodo.
 
 La principal desventaja de esta topología de clúster es el mayor consumo de almacenamiento: requiere el doble de capacidad de almacenamiento que una configuración sin réplicas, ya que cada segmento está duplicado.
-Además, aunque el clúster puede soportar el fallo de un único nodo, la pérdida simultánea de dos nodos puede dejarlo inoperativo, según qué nodos fallen y cómo se distribuyan los segmentos.
-Esta topología ofrece un equilibrio entre disponibilidad y coste, por lo que resulta adecuada para entornos de producción en los que se requiere cierto grado de tolerancia a fallos sin asumir el coste de factores de replicación más altos.
+Además, aunque el clúster puede sobrevivir al fallo de un solo nodo, la pérdida simultánea de dos nodos puede dejarlo inoperativo, según qué nodos fallen y cómo se distribuyan los segmentos.
+Esta topología logra un equilibrio entre disponibilidad y coste, por lo que resulta adecuada para entornos de producción en los que se requiere cierto nivel de tolerancia a fallos sin asumir el coste de factores de replicación más altos.
 
-Para saber cómo ClickHouse Cloud procesa las consultas y ofrece tanto escalabilidad como tolerancia a fallos, consulte la sección [&quot;Réplicas paralelas&quot;](/es/products/cloud/features/infrastructure/parallel-replicas).
+Para saber cómo ClickHouse Cloud procesa las consultas, ofreciendo tanto escalabilidad como tolerancia a fallos, consulte la sección [&quot;Réplicas paralelas&quot;](/es/products/cloud/features/infrastructure/parallel-replicas).

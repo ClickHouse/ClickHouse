@@ -60,7 +60,7 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
 
     #### Module Terraform alternatif
 
-    Si vous préférez utiliser Terraform plutôt que CloudFormation, utilisez le module suivant :
+    Si vous préférez utiliser Terraform plutôt que CloudFormation, utilisez le module suivant :
 
     ```hcl
     module "clickhouse_onboarding" {
@@ -74,13 +74,13 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
   <Step>
     ### Configurez l’infrastructure BYOC
 
-    Dans la console ClickHouse Cloud, configurez les éléments suivants lors de la mise en place d’une nouvelle infrastructure :
+    Dans la console ClickHouse Cloud, configurez les éléments suivants lors de la mise en place d’une nouvelle infrastructure :
 
-    1. Sous **Configuration du VPC**, sélectionnez **Utiliser un VPC existant**.
-    2. Saisissez votre **ID de VPC** (par ex. `vpc-0bb751a5b888ad123`).
-    3. Saisissez les **ID des sous-réseaux privés** pour les 3 sous-réseaux que vous avez configurés précédemment.
-    4. Si nécessaire, saisissez également les **ID des sous-réseaux publics** si votre configuration requiert des équilibreurs de charge exposés publiquement.
-    5. Cliquez sur **Configurer l’infrastructure** pour lancer le provisionnement.
+    1. Sous **VPC configuration**, sélectionnez **Use existing VPC**.
+    2. Saisissez votre **VPC ID** (par ex. `vpc-0bb751a5b888ad123`).
+    3. Saisissez les **Private subnet IDs** pour les 3 sous-réseaux que vous avez configurés précédemment.
+    4. Si nécessaire, saisissez également les **Public subnet IDs** si votre configuration requiert des équilibreurs de charge exposés publiquement.
+    5. Cliquez sur **Set up Infrastructure** pour lancer le provisionnement.
 
     <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="UI de configuration BYOC de ClickHouse Cloud avec Use existing VPC sélectionné" />
 
@@ -97,13 +97,57 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
 Pour les organisations ayant des exigences de sécurité avancées ou des politiques de conformité strictes, vous pouvez fournir vos propres rôles IAM au lieu de laisser ClickHouse Cloud les créer. Cette approche vous donne un contrôle total sur les permissions IAM et vous permet d’appliquer les politiques de sécurité de votre organisation.
 
 <Info>
-  Les rôles IAM gérés par le client sont en aperçu privé. Si vous avez besoin de cette fonctionnalité, contactez ClickHouse Support pour discuter de vos exigences spécifiques et du calendrier.
-
-  Lorsqu’elle sera disponible, cette fonctionnalité vous permettra de :
-
-  * Fournir des rôles IAM préconfigurés que ClickHouse Cloud pourra utiliser
-  * Supprimer les permissions d’écriture sur les permissions liées à IAM pour `ClickHouseManagementRole`, utilisé pour l’accès entre comptes
-  * Garder un contrôle total sur les permissions des rôles et les relations de confiance
+  Les rôles IAM gérés par le client sont en private preview. Contactez ClickHouse Support pour activer cette fonctionnalité pour votre organisation avant de suivre les étapes ci-dessous.
 </Info>
 
-Pour en savoir plus sur les rôles IAM que ClickHouse Cloud crée par défaut, consultez la [Référence des privilèges BYOC](/fr/products/bring-your-own-cloud/reference/privilege).
+Avec des rôles IAM gérés par le client, vous :
+
+* Créez à l’avance les rôles IAM propres à chaque infrastructure que ClickHouse Cloud créerait autrement
+* Supprimez les permissions d’écriture IAM du `ClickHouseManagementRole` utilisé pour l’accès inter-comptes
+* Conservez un contrôle total sur les permissions des rôles et les relations d’approbation
+
+<Steps>
+  <Step>
+    ### Configurer le rôle de gestion sans permissions d’écriture IAM
+
+    Lors de la [configuration initiale de BYOC](/fr/cloud/reference/byoc/onboarding/standard), désactivez les permissions d’écriture IAM sur le rôle de gestion. Avec le CloudFormation template, définissez le paramètre `IncludeIAMWritePermissions` sur `false`. Avec le module Terraform :
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
+      include_iam_write_permissions = false
+    }
+    ```
+
+    Remplacez `<version>` par le tag le plus récent de la [page des releases](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) du module — utilisez toujours la dernière release.
+  </Step>
+
+  <Step>
+    ### Créer les rôles IAM propres à chaque infrastructure
+
+    Avant que chaque infrastructure BYOC soit provisionnée, créez les rôles IAM requis (rôles d’identité de pod EKS, rôle d’accès ClickHouse S3 et rôle de gestion du plan de données) avec le module par infrastructure [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) :
+
+    ```hcl
+    module "clickhouse_per_infra_iam" {
+      source = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws-per-infra-iam?ref=<version>"
+
+      spoken_name = "<spoken-name-provided-by-clickhouse>"
+      region      = "<aws-region-of-the-infrastructure>"
+      external_id = "<external-id-provided-by-clickhouse>"
+    }
+    ```
+
+    Remplacez `<version>` par le tag le plus récent de la [page des releases](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) du module — utilisez toujours la dernière release.
+  </Step>
+
+  <Step>
+    ### Maintenir à jour les rôles propres à chaque infrastructure
+
+    <Warning>
+      ClickHouse ajoute régulièrement des rôles et des permissions requis par les nouvelles fonctionnalités de la plateforme. Lorsque ClickHouse vous informe d’une mise à jour, réappliquez le module par infrastructure avec la dernière release — l’utilisation d’une version obsolète peut entraîner l’échec du provisionnement et des mises à niveau de votre infrastructure BYOC.
+    </Warning>
+  </Step>
+</Steps>
+
+Pour plus d’informations sur les rôles IAM que ClickHouse Cloud crée par défaut, consultez la [référence des privilèges BYOC](/fr/products/bring-your-own-cloud/reference/privilege).

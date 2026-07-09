@@ -114,10 +114,10 @@ Póngase en contacto con el soporte de ClickHouse para habilitar el balanceador 
   #### Paso 2 Crear una conexión de peering
 </div>
 
-1. Vaya al panel de VPC en la cuenta BYOC de ClickHouse.
+1. Vaya al VPC Dashboard de la cuenta BYOC de ClickHouse.
 2. Seleccione Peering Connections.
 3. Haga clic en Create Peering Connection
-4. Establezca VPC Requester como el ID de la VPC de ClickHouse.
+4. Establezca VPC Requester como el ID de ClickHouse VPC.
 5. Establezca VPC Accepter como el ID de la VPC de destino. (Seleccione otra cuenta si corresponde)
 6. Haga clic en Create Peering Connection.
 
@@ -145,12 +145,12 @@ Ve a la cuenta de peering; en la página (VPC -&gt; Peering connections -&gt; Ac
 
 En la cuenta BYOC de ClickHouse,
 
-1. Seleccione Route Tables en el panel de VPC.
+1. Seleccione Route Tables en VPC Dashboard.
 2. Busque el ID de la VPC de ClickHouse. Edite cada tabla de enrutamiento asociada a las subredes privadas.
 3. Haga clic en el botón Edit en la pestaña Routes.
 4. Haga clic en Add another route.
 5. Introduzca el rango CIDR de la VPC de destino en Destination.
-6. Seleccione “Peering Connection” y el ID de la conexión de emparejamiento en Target.
+6. Seleccione “Peering Connection” y el ID de la conexión de peering en Target.
 
 <br />
 
@@ -164,7 +164,7 @@ En la cuenta BYOC de ClickHouse,
 
 En la cuenta de AWS del peering,
 
-1. Seleccione Route Tables en el panel de VPC.
+1. Seleccione Route Tables en el VPC Dashboard.
 2. Busque el ID de la VPC de destino.
 3. Haga clic en el botón Edit en la pestaña Routes.
 4. Haga clic en Add another route.

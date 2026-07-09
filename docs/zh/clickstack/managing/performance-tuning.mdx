@@ -971,7 +971,7 @@ ORDER BY t;
   ### 替代方案
 </div>
 
-如果你需要多个排序键，PROJECTION 并非唯一选择。可根据运维约束以及你希望 ClickStack 如何路由查询，考虑以下方案：
+如果你需要多个排序键，projection 并不是唯一的选择。请根据运维限制以及你希望 ClickStack 如何路由查询，考虑以下方案：
 
 * 将 OpenTelemetry collector 配置为写入两个具有不同 `ORDER BY` 键的表，并为每个表分别创建 ClickStack 数据源。
-* 创建一个作为复制管道的 materialized view，即将 materialized view 挂接到主表上，把原始行写入一个具有不同排序键的辅助表中 (这是一种反规范化或路由模式) 。然后为该目标表创建数据源。示例见[此处](/zh/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)。
+* 将 materialized view 用作复制管道，即把一个 materialized view 附加到主表上，将原始行写入一个具有不同排序键的辅助表中 (这是一种反规范化或路由模式) 。然后为这个目标表创建一个数据源。示例可参见[这里](/zh/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation)。

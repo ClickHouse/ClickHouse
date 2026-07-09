@@ -138,14 +138,14 @@ Se quiser testar a integração antes de configurar o seu próprio ambiente, voc
     ```yaml
     services:
       clickstack:
-        # ... configuração existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... outras variáveis de ambiente ...
+          # ... other environment variables ...
         volumes:
           - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/nginx:/var/log/nginx:ro
-          # ... outros volumes ...
+          # ... other volumes ...
     ```
 
     ##### Opção 2: Docker Run (Imagem all-in-one)
@@ -377,7 +377,7 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
 * Crie [dashboards](/pt-BR/clickstack/features/dashboards/overview) adicionais para casos de uso específicos (monitoramento de APIs, eventos de segurança)
 
 <div id="going-to-production">
-  ## Colocando em produção
+  ## Em produção
 </div>
 
 Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

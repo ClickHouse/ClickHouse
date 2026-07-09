@@ -91,7 +91,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 </div>
 
 <Tip>
-  يدعم MySQL ClickPipe أيضًا النسخ المتماثل من دون وضع GTID. ومع ذلك، يُوصى بتمكين وضع GTID لتحسين الأداء وتسهيل استكشاف الأخطاء وإصلاحها.
+  يدعم MySQL ClickPipe أيضًا النسخ المتماثل دون وضع GTID. ومع ذلك، يُوصى بتمكين وضع GTID لتحسين الأداء وتسهيل استكشاف الأخطاء وإصلاحها.
 </Tip>
 
 تُعد [Global Transaction Identifiers (GTIDs)](https://dev.mysql.com/doc/refman/8.0/en/replication-gtids.html) معرّفات فريدة تُسنَد إلى كل معاملة تم تثبيتها في MySQL. وهي تُبسّط النسخ المتماثل لـ binlog وتجعل استكشاف الأخطاء وإصلاحها أكثر سهولة. **نوصي** بتمكين وضع GTID، بحيث يتمكن MySQL ClickPipe من استخدام النسخ المتماثل المستند إلى GTID.
@@ -155,7 +155,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 للاتصال بمثيل Aurora MySQL الخاص بك عبر شبكة خاصة، يمكنك استخدام AWS PrivateLink. اتبع [دليل إعداد AWS PrivateLink لـ ClickPipes](/ar/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) لإعداد الاتصال.
 
 <div id="whats-next">
-  ## ما التالي؟
+  ## ما الخطوة التالية؟
 </div>
 
-الآن، بعد أن أصبح مثيل Amazon Aurora MySQL الخاص بك مُعَدًّا للنسخ المتماثل عبر binlog ومتصلًا بشكل آمن بـ ClickHouse Cloud، يمكنك [إنشاء أول MySQL ClickPipe لك](/ar/integrations/clickpipes/mysql/index#create-your-clickpipe). للاطلاع على الأسئلة الشائعة حول MySQL CDC، راجع [صفحة الأسئلة الشائعة لـ MySQL](/ar/integrations/clickpipes/mysql/faq).
+الآن بعد تهيئة مثيل Amazon Aurora MySQL لديك لإجراء النسخ المتماثل عبر `binlog` والاتصال الآمن بـ ClickHouse Cloud، يمكنك [إنشاء أول MySQL ClickPipe لديك](/ar/integrations/clickpipes/mysql/index#create-your-clickpipe). وللاطلاع على الأسئلة الشائعة حول MySQL CDC، راجع [صفحة الأسئلة الشائعة الخاصة بـ MySQL](/ar/integrations/clickpipes/mysql/faq).

@@ -49,13 +49,13 @@ Abre la [consola de ClickHouse Cloud](https://clickhouse.cloud) y selecciona tu 
 
 <Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Tarjeta del servicio de Managed Postgres en la lista de servicios de ClickHouse Cloud" size="lg" border />
 
-En la barra lateral izquierda, haz clic en **fuente de datos**.
+En la barra lateral izquierda, haz clic en **fuentes de datos**.
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada fuente de datos en la barra lateral del servicio de Managed Postgres" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Entrada fuentes de datos en la barra lateral del servicio de Managed Postgres" size="lg" border />
 
 Haz clic en **Start import**.
 
-<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Página de fuente de datos con el botón Start import" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Página de fuentes de datos con el botón Start import" size="lg" border />
 
 Completa los detalles de conexión de tu base de datos PostgreSQL de origen: host, puerto, nombre de usuario, contraseña y nombre de la base de datos. Habilita **TLS** si la base de datos de origen lo requiere.
 
@@ -155,7 +155,7 @@ Después de crear la migración, la verás en **Fuentes de datos** con el estado
 
 <Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Lista de fuentes de datos que muestra una migración en ejecución" size="lg" border />
 
-Haz clic en la migración para abrir la vista de detalles. La pestaña **Tablas** muestra el progreso de la carga inicial de cada tabla, incluidas las filas procesadas, las particiones y el tiempo medio por partición. La pestaña **Métricas** muestra la latencia de replicación y el rendimiento una vez que se inicia CDC.
+Haz clic en la migración para abrir la vista de detalles. La pestaña **Tablas** muestra el progreso de la carga inicial de cada tabla, incluidas las filas procesadas, las particiones y el tiempo medio por partición. La pestaña **Métricas** muestra el retraso de replicación y el rendimiento una vez que se inicia CDC.
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Vista de detalles de la migración que muestra estadísticas de la carga inicial por tabla" size="lg" border />
 
@@ -223,9 +223,9 @@ SELECT pg_drop_replication_slot('<slot_name>');
 ```
 
 <div id="next-steps">
-  ## Siguientes pasos
+  ## Próximos pasos
 </div>
 
 * [Guía de inicio rápido de Managed Postgres](/es/products/managed-postgres/quickstart)
 * [Detalles de conexión de Managed Postgres](/es/products/managed-postgres/connection)
-* [FAQ de ClickPipes para Postgres](/es/integrations/clickpipes/postgres/faq)
+* [Preguntas frecuentes sobre Postgres en ClickPipes](/es/integrations/clickpipes/postgres/faq)

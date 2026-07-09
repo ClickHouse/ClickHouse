@@ -1289,7 +1289,7 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
   ### QBit
 </div>
 
-`QBit` 是一种向量类型，可在不同精度级别下实现高效查找。它在内部以转置格式存储。在线上传输时，QBit 只是由底层元素类型 (`Float32`、`Float64` 或 `BFloat16`) 组成的 `Array`。用于存储的位转置优化是在服务端完成的，而不是在 RowBinary 协议中完成的。
+`QBit` 是一种向量类型，可在不同精度级别下实现高效查找。它在内部以转置格式存储。在传输格式中，QBit 只是由底层元素类型 (`Int8`、`Float32`、`Float64` 或 `BFloat16`) 组成的 `Array`。用于存储的位转置优化是在服务端完成的，而不是在 RowBinary 协议中完成的。
 
 语法：
 
@@ -1297,13 +1297,13 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 QBit(element_type, dimension)
 ```
 
-其中，`element_type` 为 `Float32`、`Float64` 或 `BFloat16`，`dimension` 为固定的向量维度。
+其中，`element_type` 为 `Int8`、`Float32`、`Float64` 或 `BFloat16`，`dimension` 为固定的向量维度。
 
 传输格式：与 `Array(element_type)` 完全相同：
 
 ```text
-// LEB128 长度
-// 后跟 `length` 个 `element_type` 类型的元素
+// LEB128 length
+// followed by `length` elements of `element_type`
 ```
 
 `QBit(Float32, 4)` 对 `[1.0, 2.0, 3.0, 4.0]` 的编码示例：
@@ -1313,11 +1313,11 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 ```
 
 ```text
-0x04,                   // LEB128 - 数组有 4 个元素
-0x00, 0x00, 0x80, 0x3F, // 1.0 的 Float32 表示
-0x00, 0x00, 0x00, 0x40, // 2.0 的 Float32 表示
-0x00, 0x00, 0x40, 0x40, // 3.0 的 Float32 表示
-0x00, 0x00, 0x80, 0x40, // 4.0 的 Float32 表示
+0x04,                   // LEB128 - array has 4 elements
+0x00, 0x00, 0x80, 0x3F, // 1.0 as Float32
+0x00, 0x00, 0x00, 0x40, // 2.0 as Float32
+0x00, 0x00, 0x40, 0x40, // 3.0 as Float32
+0x00, 0x00, 0x80, 0x40, // 4.0 as Float32
 ```
 
 <div id="format-settings">

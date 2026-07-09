@@ -50,8 +50,8 @@ ClickHouse Cloud에는 외부 PostgreSQL 데이터베이스를 Managed Postgres 
 
 수집 방법을 선택합니다:
 
-* **Initial load + CDC** — 기존 데이터를 복사한 다음, 이후 변경 사항도 계속 대상에 동기화합니다.
-* **Initial load only** — 1회성 복사이며, 이후 복제는 수행하지 않습니다.
+* **초기 적재 + CDC** — 기존 데이터를 복사한 다음, 이후 변경 사항도 계속 대상에 동기화합니다.
+* **초기 적재 only** — 1회성 복사이며, 이후 복제는 수행하지 않습니다.
 * **CDC only** — 초기 복사를 건너뛰고 이 시점부터 발생하는 새 변경 사항만 복제합니다.
 
 <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="1단계: 수집 방법 옵션이 있는 원본 데이터베이스 연결 양식" size="lg" border />

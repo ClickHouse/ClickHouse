@@ -1,0 +1,19 @@
+---
+description: 'توثيق صيغة MySQLWire'
+keywords: ['MySQLWire']
+slug: /interfaces/formats/MySQLWire
+title: 'MySQLWire'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

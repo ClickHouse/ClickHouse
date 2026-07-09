@@ -394,10 +394,10 @@ Introduzido em: v20.7.0
 
 Converte expressões arbitrárias em uma string usando o formato especificado.
 
-<Note>
-  Se o formato contiver um sufixo/prefixo, ele será gravado em cada linha.
-  Somente formatos por linha são compatíveis com esta função.
-</Note>
+:::note
+Se o formato contiver um sufixo/prefixo, ele será gravado em cada linha.
+Somente formatos por linha são compatíveis com esta função.
+:::
 
 **Sintaxe**
 
@@ -586,9 +586,9 @@ Converte um timestamp Unix em nanossegundos em um valor [`DateTime64`](/pt-BR/re
 
 O valor de entrada é tratado como um timestamp Unix com precisão de nanossegundos (número de nanossegundos desde 1970-01-01 00:00:00 UTC).
 
-<Note>
-  Observe que o valor de entrada é tratado como um timestamp em UTC, e não com o fuso horário do valor de entrada.
-</Note>
+:::note
+Observe que o valor de entrada é tratado como um timestamp em UTC, e não com o fuso horário do valor de entrada.
+:::
 
 **Sintaxe**
 
@@ -2684,9 +2684,9 @@ Argumentos não suportados (retornam `NULL`):
 * Representações em String de valores binários e hexadecimais.
 * Valores numéricos.
 
-<Note>
-  A função permite perda silenciosa de precisão ao converter a representação em String.
-</Note>
+:::note
+A função permite perda silenciosa de precisão ao converter a representação em String.
+:::
 
 Veja também:
 
@@ -2712,9 +2712,9 @@ Retorna um valor brain-float de 16 bits ou `NULL`. [`BFloat16`](/pt-BR/reference
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT toBFloat16OrNull('0x5E'), -- argumentos sem suporte
-       toBFloat16OrNull('12.3'), -- uso típico
-       toBFloat16OrNull('12.3456789') -- perda silenciosa de precisão
+SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
+       toBFloat16OrNull('12.3'), -- typical use
+       toBFloat16OrNull('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -2741,9 +2741,9 @@ Argumentos não suportados (retornam `0`):
 * Representações String de valores binários e hexadecimais.
 * Valores numéricos.
 
-<Note>
-  A função permite perda silenciosa de precisão ao converter a partir da representação String.
-</Note>
+:::note
+A função permite perda silenciosa de precisão ao converter a partir da representação String.
+:::
 
 Veja também:
 
@@ -2769,9 +2769,9 @@ Retorna um valor brain-float de 16 bits; caso contrário, `0`. [`BFloat16`](/pt-
 **Exemplo de uso**
 
 ```sql title=Query
-SELECT toBFloat16OrZero('0x5E'), -- argumentos sem suporte
-       toBFloat16OrZero('12.3'), -- uso comum
-       toBFloat16OrZero('12.3456789') -- perda silenciosa de precisão
+SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
+       toBFloat16OrZero('12.3'), -- typical use
+       toBFloat16OrZero('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -3193,11 +3193,11 @@ Introduzido em: v1.1.0
 
 Converte um valor de entrada para o tipo [DateTime](/pt-BR/reference/data-types/datetime).
 
-<Note>
-  Se `expr` for um número, ele será interpretado como o número de segundos desde o início da epoch Unix (como timestamp Unix).
-  Se `expr` for uma [String](/pt-BR/reference/data-types/string), ela poderá ser interpretada como um timestamp Unix ou como uma representação em string de data / data com hora.
-  Assim, o parsing de representações em string de números curtos (até 4 dígitos) é explicitamente desabilitado devido à ambiguidade; por exemplo, uma string `'1999'` pode ser tanto um ano (uma representação em string incompleta de Date / DateTime) quanto um timestamp Unix. Strings numéricas mais longas são permitidas.
-</Note>
+:::note
+Se `expr` for um número, ele será interpretado como o número de segundos desde o início da epoch Unix (como timestamp Unix).
+Se `expr` for uma [String](/pt-BR/reference/data-types/string), ela poderá ser interpretada como um timestamp Unix ou como uma representação em string de data / data com hora.
+Assim, o parsing de representações em string de números curtos (até 4 dígitos) é explicitamente desabilitado devido à ambiguidade; por exemplo, uma string `'1999'` pode ser tanto um ano (uma representação em string incompleta de Date / DateTime) quanto um timestamp Unix. Strings numéricas mais longas são permitidas.
+:::
 
 **Sintaxe**
 
@@ -3224,7 +3224,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toDateTime('2025-01-01 00:00:00'): 2025-01-01 00:00:00
 toDateTime(1735689600, 'UTC'):     2025-01-01 00:00:00
@@ -3630,17 +3630,17 @@ Argumentos não compatíveis:
 * Valores ou representações em string de valores Float* `NaN` e `Inf` (sem distinção entre maiúsculas e minúsculas).
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toDecimal128('0xc0fe', 1);`.
 
-<Note>
-  Pode ocorrer overflow se o valor de `expr` exceder os limites de `Decimal128`: `(-1*10^(38 - S), 1*10^(38 - S))`.
-  Dígitos excedentes na parte fracionária são descartados (não arredondados).
-  Dígitos excedentes na parte inteira resultarão em uma exceção.
-</Note>
+:::note
+Pode ocorrer overflow se o valor de `expr` exceder os limites de `Decimal128`: `(-1*10^(38 - S), 1*10^(38 - S))`.
+Dígitos excedentes na parte fracionária são descartados (não arredondados).
+Dígitos excedentes na parte inteira resultarão em uma exceção.
+:::
 
-<Warning>
-  As conversões descartam dígitos excedentes e podem se comportar de forma inesperada ao trabalhar com entradas Float32/Float64, pois as operações são realizadas usando instruções de ponto flutuante.
-  Por exemplo: `toDecimal128(1.15, 2)` é igual a `1.14` porque 1.15 * 100 em ponto flutuante é 114.99.
-  Você pode usar uma entrada String para que as operações usem o tipo inteiro subjacente: `toDecimal128('1.15', 2) = 1.15`
-</Warning>
+:::warning
+As conversões descartam dígitos excedentes e podem se comportar de forma inesperada ao trabalhar com entradas Float32/Float64, pois as operações são realizadas usando instruções de ponto flutuante.
+Por exemplo: `toDecimal128(1.15, 2)` é igual a `1.14` porque 1.15 * 100 em ponto flutuante é 114.99.
+Você pode usar uma entrada String para que as operações usem o tipo inteiro subjacente: `toDecimal128('1.15', 2) = 1.15`
+:::
 
 **Sintaxe**
 
@@ -3670,7 +3670,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 a:      99
 type_a: Decimal(38, 1)
@@ -3800,9 +3800,9 @@ Argumentos sem suporte (retornam `0`):
 * Valores ou representações em string de valores Float* `NaN` e `Inf` (sem diferenciar maiúsculas de minúsculas).
 * Representações em string de valores binários e hexadecimais.
 
-<Note>
-  Se o valor de entrada exceder os limites de `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`, a função retornará `0`.
-</Note>
+:::note
+Se o valor de entrada exceder os limites de `Decimal128`:`(-1*10^(38 - S), 1*10^(38 - S))`, a função retornará `0`.
+:::
 
 **Sintaxe**
 
@@ -3851,17 +3851,17 @@ Argumentos não aceitos:
 * Valores ou representações em string dos valores Float* `NaN` e `Inf` (sem diferenciar maiúsculas de minúsculas).
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toDecimal256('0xc0fe', 1);`.
 
-<Note>
-  Pode ocorrer overflow se o valor de `expr` exceder os limites de `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`.
-  Dígitos excedentes na parte fracionária são descartados (não arredondados).
-  Dígitos excedentes na parte inteira gerarão uma exceção.
-</Note>
+:::note
+Pode ocorrer overflow se o valor de `expr` exceder os limites de `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`.
+Dígitos excedentes na parte fracionária são descartados (não arredondados).
+Dígitos excedentes na parte inteira gerarão uma exceção.
+:::
 
-<Warning>
-  As conversões descartam dígitos extras e podem se comportar de maneira inesperada ao trabalhar com entradas Float32/Float64, já que as operações são realizadas com instruções de ponto flutuante.
-  Por exemplo: `toDecimal256(1.15, 2)` é igual a `1.14` porque 1.15 * 100 em ponto flutuante é 114.99.
-  Você pode usar uma entrada String para que as operações usem o tipo inteiro subjacente: `toDecimal256('1.15', 2) = 1.15`
-</Warning>
+:::warning
+As conversões descartam dígitos extras e podem se comportar de maneira inesperada ao trabalhar com entradas Float32/Float64, já que as operações são realizadas com instruções de ponto flutuante.
+Por exemplo: `toDecimal256(1.15, 2)` é igual a `1.14` porque 1.15 * 100 em ponto flutuante é 114.99.
+Você pode usar uma entrada String para que as operações usem o tipo inteiro subjacente: `toDecimal256('1.15', 2) = 1.15`
+:::
 
 **Sintaxe**
 
@@ -3891,7 +3891,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 a:      99
 type_a: Decimal(76, 1)
@@ -4021,9 +4021,9 @@ Argumentos não suportados (retornam `0`):
 * Valores ou representações em string de valores Float* `NaN` e `Inf` (sem diferenciar maiúsculas de minúsculas).
 * Representações em string de valores binários e hexadecimais.
 
-<Note>
-  Se o valor de entrada exceder os limites de `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`, a função retorna `0`.
-</Note>
+:::note
+Se o valor de entrada exceder os limites de `Decimal256`:`(-1*10^(76 - S), 1*10^(76 - S))`, a função retorna `0`.
+:::
 
 Veja também:
 
@@ -4078,17 +4078,17 @@ Argumentos sem suporte:
 * Valores ou representações em string dos valores Float* `NaN` e `Inf` (sem diferenciar maiúsculas de minúsculas).
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toDecimal32('0xc0fe', 1);`.
 
-<Note>
-  Pode haver overflow se o valor de `expr` exceder os limites de `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
-  Dígitos excedentes na parte fracionária são descartados (não arredondados).
-  Dígitos excedentes na parte inteira causarão uma exceção.
-</Note>
+:::note
+Pode haver overflow se o valor de `expr` exceder os limites de `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`.
+Dígitos excedentes na parte fracionária são descartados (não arredondados).
+Dígitos excedentes na parte inteira causarão uma exceção.
+:::
 
-<Warning>
-  As conversões descartam dígitos excedentes e podem se comportar de forma inesperada ao trabalhar com entradas Float32/Float64, pois as operações são realizadas usando instruções de ponto flutuante.
-  Por exemplo: `toDecimal32(1.15, 2)` é igual a `1.14` porque 1.15 * 100 em ponto flutuante é 114.99.
-  Você pode usar uma entrada String para que as operações usem o tipo inteiro subjacente: `toDecimal32('1.15', 2) = 1.15`
-</Warning>
+:::warning
+As conversões descartam dígitos excedentes e podem se comportar de forma inesperada ao trabalhar com entradas Float32/Float64, pois as operações são realizadas usando instruções de ponto flutuante.
+Por exemplo: `toDecimal32(1.15, 2)` é igual a `1.14` porque 1.15 * 100 em ponto flutuante é 114.99.
+Você pode usar uma entrada String para que as operações usem o tipo inteiro subjacente: `toDecimal32('1.15', 2) = 1.15`
+:::
 
 **Sintaxe**
 
@@ -4118,7 +4118,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 a:      2
 type_a: Decimal(9, 1)
@@ -4248,9 +4248,9 @@ Argumentos sem suporte (retornam `0`):
 * Valores ou representações em string de valores `NaN` e `Inf` do tipo Float* (sem diferenciar maiúsculas de minúsculas).
 * Representações em string de valores binários e hexadecimais.
 
-<Note>
-  Se o valor de entrada exceder os limites de `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`, a função retorna `0`.
-</Note>
+:::note
+Se o valor de entrada exceder os limites de `Decimal32`:`(-1*10^(9 - S), 1*10^(9 - S))`, a função retorna `0`.
+:::
 
 **Sintaxe**
 
@@ -4300,17 +4300,17 @@ Argumentos não aceitos:
 * Valores ou representações em string dos valores Float* `NaN` e `Inf` (sem diferenciar maiúsculas de minúsculas).
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toDecimal64('0xc0fe', 1);`.
 
-<Note>
-  Pode ocorrer overflow se o valor de `expr` exceder os limites de `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
-  Dígitos em excesso na parte fracionária são descartados (não arredondados).
-  Dígitos em excesso na parte inteira causarão uma exceção.
-</Note>
+:::note
+Pode ocorrer overflow se o valor de `expr` exceder os limites de `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`.
+Dígitos em excesso na parte fracionária são descartados (não arredondados).
+Dígitos em excesso na parte inteira causarão uma exceção.
+:::
 
-<Warning>
-  As conversões descartam dígitos extras e podem se comportar de forma inesperada ao trabalhar com entradas Float32/Float64, pois as operações são realizadas com instruções de ponto flutuante.
-  Por exemplo: `toDecimal64(1.15, 2)` é igual a `1.14` porque 1.15 * 100 em ponto flutuante é 114.99.
-  Você pode usar uma entrada String para que as operações usem o tipo inteiro subjacente: `toDecimal64('1.15', 2) = 1.15`
-</Warning>
+:::warning
+As conversões descartam dígitos extras e podem se comportar de forma inesperada ao trabalhar com entradas Float32/Float64, pois as operações são realizadas com instruções de ponto flutuante.
+Por exemplo: `toDecimal64(1.15, 2)` é igual a `1.14` porque 1.15 * 100 em ponto flutuante é 114.99.
+Você pode usar uma entrada String para que as operações usem o tipo inteiro subjacente: `toDecimal64('1.15', 2) = 1.15`
+:::
 
 **Sintaxe**
 
@@ -4340,7 +4340,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 a:      2.0
 type_a: Decimal(18, 1)
@@ -4470,9 +4470,9 @@ Argumentos não suportados (retornam `0`):
 * Valores ou representações textuais de valores Float* `NaN` e `Inf` (sem distinguir maiúsculas de minúsculas).
 * Representações textuais de valores binários e hexadecimais.
 
-<Note>
-  Se o valor de entrada exceder os limites de `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`, a função retorna `0`.
-</Note>
+:::note
+Se o valor de entrada exceder os limites de `Decimal64`:`(-1*10^(18 - S), 1*10^(18 - S))`, a função retorna `0`.
+:::
 
 Veja também:
 
@@ -5062,10 +5062,10 @@ Argumentos não compatíveis:
 * Representações em string de valores do tipo Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt128('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de Int128, o resultado sofrerá overflow ou underflow.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de Int128, o resultado sofrerá overflow ou underflow.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -5100,7 +5100,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt128(-128):   -128
 toInt128(-128.8): -128
@@ -5170,10 +5170,10 @@ Argumentos não aceitos (retornam `NULL`):
 * Representações de string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações de string de valores binários e hexadecimais, por exemplo, `SELECT toInt128OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int128](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int128](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -5207,7 +5207,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt128OrNull('-128'): -128
 toInt128OrNull('abc'):  \N
@@ -5283,15 +5283,15 @@ Argumentos não suportados:
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt16('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int16](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-  Por exemplo: `SELECT toInt16(32768) == -32768;`.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int16](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+Por exemplo: `SELECT toInt16(32768) == -32768;`.
+:::
 
-<Note>
-  A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
-</Note>
+:::note
+A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
+:::
 
 Veja também:
 
@@ -5326,7 +5326,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt16(-16):    -16
 toInt16(-16.16): -16
@@ -5396,10 +5396,10 @@ Argumentos não compatíveis (retornam `NULL`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt16OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int16](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int16](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -5433,7 +5433,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt16OrNull('-16'): -16
 toInt16OrNull('abc'): \N
@@ -5456,10 +5456,10 @@ Argumentos incompatíveis (retornam `0`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt16OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int16](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int16](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -5493,7 +5493,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt16OrZero('16'): 16
 toInt16OrZero('abc'): 0
@@ -5519,10 +5519,10 @@ Argumentos não suportados:
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt256('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de Int256, o resultado terá overflow ou underflow.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de Int256, o resultado terá overflow ou underflow.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -5557,7 +5557,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt256(-256):     -256
 toInt256(-256.256): -256
@@ -5627,10 +5627,10 @@ Argumentos não suportados (retornam `NULL`):
 * representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt256OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int256](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow do resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int256](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow do resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -5664,7 +5664,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt256OrNull('-256'): -256
 toInt256OrNull('abc'):  \N
@@ -5740,15 +5740,15 @@ Argumentos não compatíveis:
 * representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt32('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int32](/pt-BR/reference/data-types/int-uint), o resultado sofrerá overflow ou underflow.
-  Isso não é considerado um erro.
-  Por exemplo: `SELECT toInt32(2147483648) == -2147483648;`
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int32](/pt-BR/reference/data-types/int-uint), o resultado sofrerá overflow ou underflow.
+Isso não é considerado um erro.
+Por exemplo: `SELECT toInt32(2147483648) == -2147483648;`
+:::
 
-<Note>
-  A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), o que significa que ela trunca os dígitos fracionários dos números.
-</Note>
+:::note
+A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), o que significa que ela trunca os dígitos fracionários dos números.
+:::
 
 Veja também:
 
@@ -5783,7 +5783,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt32(-32):    -32
 toInt32(-32.32): -32
@@ -5853,10 +5853,10 @@ Argumentos não aceitos (retornam `NULL`):
 * representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt32OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int32](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int32](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -5890,7 +5890,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt32OrNull('-32'): -32
 toInt32OrNull('abc'): \N
@@ -5913,10 +5913,10 @@ Argumentos não aceitos (retornam `0`):
 * representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt32OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado nos limites de [Int32](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado nos limites de [Int32](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -5950,7 +5950,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt32OrZero('32'): 32
 toInt32OrZero('abc'): 0
@@ -5975,15 +5975,15 @@ Argumentos não compatíveis:
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo: `SELECT toInt64('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int64](/pt-BR/reference/data-types/int-uint), o resultado terá overflow ou underflow.
-  Isso não é considerado um erro.
-  Por exemplo: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int64](/pt-BR/reference/data-types/int-uint), o resultado terá overflow ou underflow.
+Isso não é considerado um erro.
+Por exemplo: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
+:::
 
-<Note>
-  A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
-</Note>
+:::note
+A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
+:::
 
 Veja também:
 
@@ -6088,10 +6088,10 @@ Argumentos não suportados (retornam `NULL`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt64OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int64](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int64](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -6125,7 +6125,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt64OrNull('-64'): -64
 toInt64OrNull('abc'): \N
@@ -6201,15 +6201,15 @@ Argumentos não compatíveis:
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt8('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int8](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-  Por exemplo: `SELECT toInt8(128) == -128;`.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int8](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+Por exemplo: `SELECT toInt8(128) == -128;`.
+:::
 
-<Note>
-  A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
-</Note>
+:::note
+A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
+:::
 
 Veja também:
 
@@ -6244,7 +6244,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt8(-8):   -8
 toInt8(-8.8): -8
@@ -6314,10 +6314,10 @@ Argumentos não suportados (retornam `NULL`):
 * Representações de string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações de string de valores binários e hexadecimais, por exemplo, `SELECT toInt8OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int8](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int8](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -6351,7 +6351,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt8OrNull('-8'):  -8
 toInt8OrNull('abc'): \N
@@ -6374,10 +6374,10 @@ Argumentos não compatíveis (retornam `0`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toInt8OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [Int8](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [Int8](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -6411,7 +6411,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toInt8OrZero('8'): 8
 toInt8OrZero('abc'): 0
@@ -6932,10 +6932,10 @@ Introduzido em: v18.12.0
 
 Converte o argumento de entrada para a versão [LowCardinality](/pt-BR/reference/data-types/lowcardinality) do mesmo tipo de dado.
 
-<Tip>
-  Para converter do tipo de dado `LowCardinality` para um tipo de dado regular, use a função [CAST](#CAST).
-  Por exemplo: `CAST(x AS String)`.
-</Tip>
+:::tip
+Para converter do tipo de dado `LowCardinality` para um tipo de dado regular, use a função [CAST](#CAST).
+Por exemplo: `CAST(x AS String)`.
+:::
 
 **Sintaxe**
 
@@ -7061,7 +7061,7 @@ SELECT
 Introduzido em: v1.1.0
 
 Converte um valor de entrada para o tipo [Time](/pt-BR/reference/data-types/time).
-Suporta conversão de String, FixedString, DateTime ou tipos numéricos que representam segundos desde a meia-noite.
+Suporta conversão de String, FixedString, DateTime, DateTime64 ou tipos numéricos que representam segundos desde a meia-noite.
 
 **Sintaxe**
 
@@ -7071,7 +7071,7 @@ toTime(x)
 
 **Argumentos**
 
-* `x` — Valor de entrada a converter. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `x` — Valor de entrada a converter. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 
 **Valor retornado**
 
@@ -7079,10 +7079,12 @@ Retorna o valor convertido. [`Time`](/pt-BR/reference/data-types/time)
 
 **Exemplos**
 
-**Conversão de String em Time**
+**Conversão de DateTime64 para Time**
 
 ```sql title=Query
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 ```
 
 ```response title=Response
@@ -7092,6 +7094,8 @@ SELECT toTime('14:30:25')
 **Conversão de DateTime para Time**
 
 ```sql title=Query
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7099,10 +7103,12 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**Conversão de inteiro em Time**
+**Conversão de inteiro (segundos desde epoch) em Time**
 
 ```sql title=Query
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
 ```
 
 ```response title=Response
@@ -7116,29 +7122,31 @@ SELECT toTime(52225)
 Introduzido em: v25.6.0
 
 Converte um valor de entrada para o tipo [Time64](/pt-BR/reference/data-types/time64).
-Oferece suporte à conversão de String, FixedString, DateTime64 ou tipos numéricos que representam microssegundos desde a meia-noite.
-Fornece precisão de microssegundos para valores de hora.
+Oferece suporte à conversão de String, FixedString, DateTime64 ou tipos numéricos que representam segundos desde a meia-noite.
+Fornece precisão de frações de segundo para valores de tempo, com até `scale` dígitos fracionários.
 
 **Sintaxe**
 
 ```sql
-toTime64(x)
+toTime64(x, scale)
 ```
 
 **Argumentos**
 
-* `x` — Valor de entrada a ser convertido. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `x` — Valor de entrada para conversão. [`String`](/pt-BR/reference/data-types/string) ou [`FixedString`](/pt-BR/reference/data-types/fixedstring) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64) ou [`(U)Int*`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
+* `scale` — Precisão (número de dígitos fracionários, `0`–`9`) do `Time64` resultante. [`(U)Int*`](/pt-BR/reference/data-types/int-uint)
 
 **Valor retornado**
 
-Retorna o valor de entrada convertido com precisão de microssegundos. [`Time64(6)`](/pt-BR/reference/data-types/time64)
+Retorna o valor convertido com o `scale` especificado. [`Time64`](/pt-BR/reference/data-types/time64)
 
 **Exemplos**
 
-**Conversão de String em Time64**
+**Conversão de String para Time64**
 
 ```sql title=Query
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
 ```
 
 ```response title=Response
@@ -7148,17 +7156,19 @@ SELECT toTime64('14:30:25.123456')
 **Conversão de DateTime64 para Time64**
 
 ```sql title=Query
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**Conversão de inteiro para Time64**
+**Conversão de Float (segundos após a meia-noite) para Time64**
 
 ```sql title=Query
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
 ```
 
 ```response title=Response
@@ -7343,10 +7353,10 @@ Argumentos não aceitos:
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt128('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de UInt128, ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de UInt128, ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -7381,7 +7391,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt128(128):   128
 toUInt128(128.8): 128
@@ -7451,10 +7461,10 @@ Argumentos não suportados (retornam `NULL`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt128OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado nos limites de [`UInt128`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado nos limites de [`UInt128`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -7488,7 +7498,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt128OrNull('128'): 128
 toUInt128OrNull('abc'): \N
@@ -7511,10 +7521,10 @@ Argumentos não compatíveis (retornam `0`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt128OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado nos limites de [`UInt128`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado nos limites de [`UInt128`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -7548,7 +7558,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt128OrZero('128'): 128
 toUInt128OrZero('abc'): 0
@@ -7573,15 +7583,15 @@ Argumentos não suportados:
 * Representações em string de valores do tipo Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo: `SELECT toUInt16('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt16`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-  Por exemplo: `SELECT toUInt16(65536) == 0;`.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt16`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+Por exemplo: `SELECT toUInt16(65536) == 0;`.
+:::
 
-<Note>
-  A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
-</Note>
+:::note
+A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
+:::
 
 Veja também:
 
@@ -7616,7 +7626,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt16(16):    16
 toUInt16(16.16): 16
@@ -7686,10 +7696,10 @@ Argumentos não compatíveis (retornam `NULL`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt16OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt16`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt16`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -7723,7 +7733,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt16OrNull('16'):  16
 toUInt16OrNull('abc'): \N
@@ -7746,10 +7756,10 @@ Argumentos não suportados (retornam `0`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt16OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt16`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt16`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -7783,7 +7793,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt16OrZero('16'):  16
 toUInt16OrZero('abc'): 0
@@ -7809,10 +7819,10 @@ Argumentos não suportados:
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt256('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de UInt256, ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de UInt256, ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -7847,7 +7857,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt256(256):     256
 toUInt256(256.256): 256
@@ -7917,10 +7927,10 @@ Argumentos não compatíveis (retornam `NULL`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt256OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt256`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt256`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -7954,7 +7964,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt256OrNull('256'): 256
 toUInt256OrNull('abc'): \N
@@ -7977,10 +7987,10 @@ Argumentos não suportados (retornam `0`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt256OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt256`](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt256`](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -8014,7 +8024,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt256OrZero('256'): 256
 toUInt256OrZero('abc'): 0
@@ -8039,15 +8049,15 @@ Argumentos não suportados:
 * Representações de string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações de string de valores binários e hexadecimais, por exemplo, `SELECT toUInt32('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt32`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-  Por exemplo: `SELECT toUInt32(4294967296) == 0;`
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt32`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+Por exemplo: `SELECT toUInt32(4294967296) == 0;`
+:::
 
-<Note>
-  A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), o que significa que ela trunca os dígitos fracionários dos números.
-</Note>
+:::note
+A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), o que significa que ela trunca os dígitos fracionários dos números.
+:::
 
 Veja também:
 
@@ -8082,7 +8092,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt32(32):    32
 toUInt32(32.32): 32
@@ -8152,10 +8162,10 @@ Argumentos não compatíveis (retornam `NULL`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt32OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt32`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt32`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -8189,7 +8199,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt32OrNull('32'):  32
 toUInt32OrNull('abc'): \N
@@ -8212,10 +8222,10 @@ Argumentos não aceitos (retornam `0`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt32OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt32`](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt32`](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -8249,7 +8259,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt32OrZero('32'):  32
 toUInt32OrZero('abc'): 0
@@ -8274,15 +8284,15 @@ Tipos não suportados:
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt64('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt64`](/pt-BR/reference/data-types/int-uint), o resultado sofrerá overflow ou underflow.
-  Isso não é considerado um erro.
-  Por exemplo: `SELECT toUInt64(18446744073709551616) == 0;`
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt64`](/pt-BR/reference/data-types/int-uint), o resultado sofrerá overflow ou underflow.
+Isso não é considerado um erro.
+Por exemplo: `SELECT toUInt64(18446744073709551616) == 0;`
+:::
 
-<Note>
-  A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
-</Note>
+:::note
+A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
+:::
 
 Veja também:
 
@@ -8317,7 +8327,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt64(64):    64
 toUInt64(64.64): 64
@@ -8387,10 +8397,10 @@ Argumentos não suportados (retornam `NULL`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt64OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt64`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt64`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -8424,7 +8434,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt64OrNull('64'):  64
 toUInt64OrNull('abc'): \N
@@ -8447,10 +8457,10 @@ Argumentos não compatíveis (retornam `0`):
 * Representações em string de valores Float*, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt64OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt64`](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow do resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt64`](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow do resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -8484,7 +8494,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt64OrZero('64'):  64
 toUInt64OrZero('abc'): 0
@@ -8509,15 +8519,15 @@ Argumentos não aceitos:
 * Representações textuais de valores Float*, incluindo `NaN` e `Inf`.
 * Representações textuais de valores binários e hexadecimais, por exemplo, `SELECT toUInt8('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [UInt8](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-  Por exemplo: `SELECT toUInt8(256) == 0;`.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [UInt8](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+Por exemplo: `SELECT toUInt8(256) == 0;`.
+:::
 
-<Note>
-  A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
-</Note>
+:::note
+A função usa [arredondamento em direção a zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero), ou seja, trunca os dígitos fracionários dos números.
+:::
 
 Veja também:
 
@@ -8552,7 +8562,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt8(8):   8
 toUInt8(8.8): 8
@@ -8622,10 +8632,10 @@ Argumentos não suportados (retornam `NULL`):
 * Representações em string de valores Float* convencionais, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo: `SELECT toUInt8OrNull('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt8`](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt8`](/pt-BR/reference/data-types/int-uint), ocorrerá overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -8659,7 +8669,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt8OrNull('42'):  42
 toUInt8OrNull('abc'): \N
@@ -8682,10 +8692,10 @@ Argumentos sem suporte (retornam `0`):
 * Representações em string de valores Float* comuns, incluindo `NaN` e `Inf`.
 * Representações em string de valores binários e hexadecimais, por exemplo, `SELECT toUInt8OrZero('0xc0fe');`.
 
-<Note>
-  Se o valor de entrada não puder ser representado dentro dos limites de [`UInt8`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
-  Isso não é considerado um erro.
-</Note>
+:::note
+Se o valor de entrada não puder ser representado dentro dos limites de [`UInt8`](/pt-BR/reference/data-types/int-uint), ocorre overflow ou underflow no resultado.
+Isso não é considerado um erro.
+:::
 
 Veja também:
 
@@ -8719,7 +8729,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toUInt8OrZero('-8'):  0
 toUInt8OrZero('abc'): 0
@@ -8819,9 +8829,9 @@ Introduzido em: v20.5.0
 Converte um [`DateTime64`](/pt-BR/reference/data-types/datetime64) em um valor [`Int64`](/pt-BR/reference/data-types/int-uint) com precisão fixa de microssegundos.
 O valor de entrada é ampliado ou reduzido conforme necessário, dependendo da sua precisão.
 
-<Note>
-  O valor de saída é relativo a UTC, não ao fuso horário do valor de entrada.
-</Note>
+:::note
+O valor de saída é relativo a UTC, não ao fuso horário do valor de entrada.
+:::
 
 **Sintaxe**
 
@@ -8861,9 +8871,9 @@ Introduzido em: v20.5.0
 Converte um [`DateTime64`](/pt-BR/reference/data-types/datetime64) em um valor [`Int64`](/pt-BR/reference/data-types/int-uint) com precisão fixa de milissegundos.
 O valor de entrada é ajustado para mais ou para menos conforme necessário, dependendo da sua precisão.
 
-<Note>
-  O valor de saída é relativo a UTC, não ao fuso horário do valor de entrada.
-</Note>
+:::note
+O valor de saída é relativo a UTC, não ao fuso horário do valor de entrada.
+:::
 
 **Sintaxe**
 
@@ -8903,9 +8913,9 @@ Introduzido em: v20.5.0
 Converte um [`DateTime64`](/pt-BR/reference/data-types/datetime64) em um valor [`Int64`](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toInt64) com precisão fixa em nanossegundos.
 O valor de entrada é ajustado para mais ou para menos conforme necessário, dependendo da sua precisão.
 
-<Note>
-  O valor de saída é relativo a UTC, não ao fuso horário do valor de entrada.
-</Note>
+:::note
+O valor de saída é relativo a UTC, não ao fuso horário do valor de entrada.
+:::
 
 **Sintaxe**
 
@@ -8945,9 +8955,9 @@ Introduzido na versão: v24.12.0
 Converte um [`DateTime64`](/pt-BR/reference/data-types/datetime64) em um valor [`Int64`](/pt-BR/reference/data-types/int-uint) com precisão fixa de segundos.
 O valor de entrada é ajustado para mais ou para menos conforme necessário, dependendo da sua precisão.
 
-<Note>
-  O valor de saída é relativo a UTC, não ao fuso horário do valor de entrada.
-</Note>
+:::note
+O valor de saída é relativo a UTC, não ao fuso horário do valor de entrada.
+:::
 
 **Sintaxe**
 

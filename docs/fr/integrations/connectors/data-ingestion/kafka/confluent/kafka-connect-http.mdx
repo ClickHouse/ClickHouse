@@ -83,7 +83,7 @@ Configurez le HTTP Sink Connector :
   * `Auth password` - mot de passe ClickHouse
 
 <Note>
-  Cette URL HTTP est source d&#39;erreurs. Assurez-vous que l&#39;échappement est correct pour éviter tout problème.
+  Cette URL HTTP est source d&#39;erreurs. Assurez-vous que l&#39;échappement est précis pour éviter tout problème.
 </Note>
 
 <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="Interface Confluent Cloud montrant les paramètres d'authentification du connecteur HTTP Sink" border />
@@ -91,14 +91,14 @@ Configurez le HTTP Sink Connector :
 <br />
 
 * Configuration
-  * `Input Kafka record value format` - Cela dépend de vos données source, mais dans la plupart des cas, il s&#39;agit de JSON ou d&#39;Avro. Nous partons de l&#39;hypothèse de `JSON` dans les paramètres suivants.
+  * `Input Kafka record value format`Cela dépend de vos données source, mais dans la plupart des cas, il s&#39;agit de JSON ou d&#39;Avro. Nous partons de l&#39;hypothèse de `JSON` dans les paramètres suivants.
   * Dans la section `advanced configurations` :
     * `HTTP Request Method` - Définir sur POST
     * `Request Body Format` - json
     * `Batch batch size` - Conformément aux recommandations de ClickHouse, définissez cette valeur sur **au moins 1000**.
     * `Batch json as array` - true
     * `Retry on HTTP codes` - 400-500, mais adaptez selon vos besoins ; par exemple, cela peut changer si vous avez un proxy HTTP devant ClickHouse.
-    * `Maximum Reties` - la valeur par défaut (10) convient, mais n&#39;hésitez pas à l&#39;ajuster pour renforcer la stratégie de nouvelle tentative.
+    * `Maximum Reties` - la valeur par défaut (10) convient, mais n&#39;hésitez pas à l&#39;ajuster pour rendre les tentatives de nouvelle exécution plus robustes.
 
 <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="Interface Confluent Cloud montrant les options de configuration avancée du connecteur HTTP Sink" border />
 

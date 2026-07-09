@@ -212,6 +212,20 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="ダッシュボードの編集" size="lg" />
 
+<div id="tile-display-settings">
+  ### タイルの表示設定
+</div>
+
+各タイルには、値の表示方法を制御するための **Display Settings** ドロワーがあります。タイルエディタで **Display Settings** をクリックすると開けます。利用できるオプションは、可視化の種類によって異なります。
+
+Number タイルでは **Background chart** を表示できます。これは値の背後に描かれるトレンドのスパークラインで、選択した time range における推移をひと目で確認できます。SLO や error-budget タイルでは、現在の値だけでなく、その値がどう推移しているかも重要になるため、特に便利です。
+
+Number タイルを選択した状態で **Display Settings** を開き、**Background chart** を **Line** または **Area** に設定します (無効にする場合は **None**) 。このスパークラインは、タイルのクエリを time-bucketed した結果から生成されるため、追加の設定は不要です。既定ではタイルの色を引き継ぎますが、特定のパレット色を使いたい場合は **Background color** を設定して上書きできます。
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Background chart が Area に設定された Number タイルの Display Settings ドロワー" size="lg" />
+
+Background chart は、query-builder の Number タイルに適用されます。Raw SQL の Number タイルは、bucket 化できる time dimension を持たない単一の値しか返さないため、このオプションは表示されますが無効になっています。
+
 <div id="dashboard-listing-search">
   ## ダッシュボード - 一覧と検索
 </div>
@@ -270,7 +284,7 @@ HyperDX の **Chart Explorer** インターフェイスでは、メトリクス�
   </Step>
 
   <Step>
-    ### &#x20;(任意) フィルタ値をデフォルトとして保存する
+    ### (任意) フィルタ値をデフォルトとして保存する
 
     フィルタの選択をダッシュボードのデフォルトとして保持するには、ダッシュボードメニューから **Save Query &amp; Filters as Default** を選択します。以後、ダッシュボードは選択したフィルタが適用された状態で常に開きます。リセットするには、同じメニューから **Remove Default Query &amp; Filters** を選択します。
 

@@ -47,10 +47,10 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     На экземпляре EC2 убедитесь, что служба метаданных доступна:
 
     ```bash
-    # Получить токен метаданных (IMDSv2)
+    # Get metadata token (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # Проверить метаданные инстанса
+    # Verify instance metadata
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -73,15 +73,15 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Убедитесь, что ваш инстанс EC2 записывает файлы syslog:
 
     ```bash
-    # Экземпляры Ubuntu
+    # Ubuntu instances
     ls -la /var/log/syslog
 
-    # Экземпляры Amazon Linux / RHEL
+    # Amazon Linux / RHEL instances
     ls -la /var/log/messages
 
-    # Просмотр последних записей
+    # View recent entries
     tail -20 /var/log/syslog
-    # или
+    # or
     tail -20 /var/log/messages
     ```
   </Step>
@@ -92,14 +92,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Установите дистрибутив OpenTelemetry Collector Contrib на своем экземпляре EC2:
 
     ```bash
-    # Скачать последний релиз
+    # Download the latest release
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # Распаковать и установить
+    # Extract and install
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # Проверить установку
+    # Verify installation
     otelcol-contrib --version
     ```
   </Step>
@@ -366,7 +366,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
             value: "ec2-demo"
 
     processors:
-      # Имитация метаданных EC2 для демонстрации (реальный инстанс EC2 не нужен)
+      # Simulate EC2 metadata for demo (no real EC2 instance required)
       resource:
         attributes:
           - key: service.name
@@ -624,7 +624,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * Создавайте пользовательские панели мониторинга для мониторинга безопасности (попытки SSH, использование sudo, блокировки межсетевым экраном)
 
 <div id="going-to-production">
-  ## Переход в промышленную эксплуатацию
+  ## Переход в продакшн
 </div>
 
-В этом руководстве OpenTelemetry Collector устанавливается непосредственно на экземпляры EC2, что является рекомендуемым для продакшена вариантом мониторинга на уровне хоста. Для управления коллекторами на множестве экземпляров рассмотрите возможность использования инструментов управления конфигурацией (Ansible, Chef, Puppet) или OpenTelemetry Operator в средах Kubernetes. Сведения о конфигурации для продакшена см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве OpenTelemetry Collector устанавливается непосредственно на экземпляры EC2, что является рекомендуемым вариантом для мониторинга на уровне хоста в продакшн-среде. Для управления коллекторами на множестве экземпляров рассмотрите возможность использования инструментов управления конфигурацией (Ansible, Chef, Puppet) или OpenTelemetry Operator в средах Kubernetes. См. раздел [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) с конфигурацией для продакшн-среды.

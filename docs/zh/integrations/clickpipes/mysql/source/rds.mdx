@@ -21,14 +21,14 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 二进制日志是一组日志文件，记录了对 MySQL 服务器实例所做的数据更改；而进行复制则需要这些二进制日志文件。要在 RDS MySQL 中配置二进制日志保留，您必须先[启用二进制日志记录](#enable-binlog-logging)，并[延长 binlog 保留时间间隔](#binlog-retention-interval)。
 
 <div id="enable-binlog-logging">
-  ### 1. 通过自动备份启用二进制日志
+  ### 1. 通过自动备份启用二进制日志记录
 </div>
 
 自动备份功能决定 MySQL 是否启用二进制日志。你可以在 RDS 控制台中依次进入 **Modify** &gt; **Additional configuration** &gt; **Backup**，然后选中 **Enable automated backups** 复选框 (如果尚未选中) ，为实例配置自动备份。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="在 RDS 中启用自动备份" size="lg" border />
 
-我们建议根据复制使用场景，将 **备份保留期** 设置为一个相对较长的值。
+我们建议根据复制用例，将 **备份保留期** 设置为一个相对较长的值。
 
 <div id="binlog-retention-interval">
   ### 2. 增加 binlog 保留时间间隔
@@ -159,7 +159,7 @@ Amazon RDS for MySQL 5.7、8.0 和 8.4 版本支持基于 GTID 的复制。要�
 若要通过私有网络连接到您的 RDS 实例，可以使用 AWS PrivateLink。请按照 [ClickPipes 的 AWS PrivateLink 设置指南](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) 配置连接。
 
 <div id="next-steps">
-  ## 后续步骤
+  ## 下一步
 </div>
 
-现在，您的 Amazon RDS MySQL 实例已完成 binlog 复制配置，并已安全连接到 ClickHouse Cloud，您可以[创建您的第一个 MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index#create-your-clickpipe)。如需了解 MySQL CDC 的常见问题，请参阅 [MySQL 常见问题页面](/zh/integrations/clickpipes/mysql/faq)。
+现在，您的亚马逊 RDS MySQL 实例已完成 binlog 复制配置，并已与 ClickHouse Cloud 建立安全连接，您可以[创建第一个 MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index#create-your-clickpipe)。如需了解有关 MySQL CDC 的常见问题，请参见 [MySQL 常见问题页面](/zh/integrations/clickpipes/mysql/faq)。

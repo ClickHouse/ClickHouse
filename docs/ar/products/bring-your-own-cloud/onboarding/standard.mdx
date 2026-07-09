@@ -51,7 +51,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step>
     ### إعداد الحساب/المشروع/الاشتراك
 
-    يمكن تنفيذ إعداد BYOC الأولي باستخدام [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)، أو [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)، أو [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). يؤدي ذلك إلى إنشاء هوية عالية الامتيازات (IAM role/service account/service principal)، ما يتيح لوحدات التحكم الخاصة بـ BYOC من ClickHouse Cloud إدارة بنيتك التحتية.
+    يمكن تنفيذ إعداد BYOC الأولي باستخدام [CloudFormation template (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)، أو [Terraform module (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)، أو [Terraform module (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). يؤدي ذلك إلى إنشاء هوية عالية الامتيازات (دور IAM/حساب خدمة/service principal)، ما يتيح لوحدات التحكم الخاصة بـ BYOC من ClickHouse Cloud إدارة بنيتك التحتية.
 
     <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
 
@@ -99,6 +99,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 أثناء إنشاء الخدمة، ستُهيّئ الخيارات التالية:
 
 * **اسم الخدمة**: أدخل اسمًا واضحًا ووصفيًا لخدمة ClickHouse الخاصة بك.
-* **البنية التحتية لـ BYOC**: حدّد بيئة BYOC، بما في ذلك الحساب السحابي والمنطقة، التي ستعمل فيها خدمتك.
-* **تهيئة الموارد**: اختر مقدار CPU والذاكرة المخصصَين للنسخ المتماثلة في ClickHouse.
+* **البنية التحتية لـ BYOC**: حدّد بيئة BYOC، بما في ذلك الحساب السحابي والمنطقة التي ستعمل فيها خدمتك.
+* **تهيئة الموارد**: اختر مقدار CPU والذاكرة المخصصَين لنسخ ClickHouse المتماثلة.
 * **عدد النسخ المتماثلة**: حدّد عدد النسخ المتماثلة لتعزيز التوافر العالي.

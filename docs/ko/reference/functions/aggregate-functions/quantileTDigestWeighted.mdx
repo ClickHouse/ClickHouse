@@ -27,10 +27,10 @@ State 크기 대비 정밀도 비율 측면에서는 이 함수가 `quantile`보
 하나의 쿼리에서 서로 다른 수준의 여러 `quantile*` 함수를 사용하면 내부 상태가 결합되지 않습니다(즉, 쿼리가 가능했던 것보다 비효율적으로 동작합니다).
 이 경우 [`quantiles`](/ko/reference/functions/aggregate-functions/quantiles#quantiles) 함수를 사용하십시오.
 
-<Note>
-  `quantileTDigestWeighted`는 [매우 작은 데이터 세트에는 권장되지 않으며](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275), 상당한 오류를 초래할 수 있습니다.
-  이 경우 대신 [`quantileTDigest`](/ko/reference/functions/aggregate-functions/quantileTDigest) 사용을 고려하십시오.
-</Note>
+:::note
+`quantileTDigestWeighted`는 [매우 작은 데이터 세트에는 권장되지 않으며](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275), 상당한 오류를 초래할 수 있습니다.
+이 경우 대신 [`quantileTDigest`](/ko/reference/functions/aggregate-functions/quantileTDigest) 사용을 고려하십시오.
+:::
 
 **구문**
 

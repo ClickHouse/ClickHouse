@@ -283,6 +283,37 @@ doc_type: 'reference'
   ```
 </Accordion>
 
+<div id="passing-keys">
+  ## Передача ключей в функции словаря
+</div>
+
+Аргумент ключа (`id_expr`) в таких функциях, как `dictGet`, `dictGetOrDefault`, `dictGetOrNull` и `dictHas`, зависит от ключа словаря:
+
+* Для словаря с **простым ключом** (`UInt64`) передайте значение ключа напрямую:
+
+```sql
+SELECT dictGet('simple_key_dictionary', 'attr_name', toUInt64(1));
+```
+
+* Для словаря с **составным ключом**, включающим более одного атрибута, передайте значения ключа в виде кортежа:
+
+```sql
+SELECT dictGet('complex_key_dictionary', 'attr_name', ('value_for_field1', 42));
+```
+
+* Когда **составной ключ состоит из одного атрибута**, значение ключа можно передавать напрямую, не оборачивая его в `tuple`. Оба следующих варианта допустимы и эквивалентны:
+
+```sql
+SELECT dictGet('complex_key_dictionary', 'attr_name', 'key');
+SELECT dictGet('complex_key_dictionary', 'attr_name', tuple('key'));
+```
+
+Это также относится к словарям `ip_trie`, у которых ключом служит один атрибут. IP-адрес для поиска можно передать напрямую:
+
+```sql
+SELECT dictGet('ip_trie_dictionary', 'attr_name', toIPv4('202.79.32.10'));
+```
+
 {/* 
   Внутреннее содержимое приведённых ниже тегов при сборке фреймворка документации заменяется на 
   документацию, сгенерированную из system.functions. Пожалуйста, не изменяйте и не удаляйте эти теги.
@@ -299,6 +330,10 @@ doc_type: 'reference'
 
 Возвращает значения из словаря.
 
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -309,7 +344,7 @@ dictGet('dict_name', attr_names, id_expr)
 
 * `dict_name` — Имя словаря. [`String`](/ru/reference/data-types/string)
 * `attr_names` — Имя столбца словаря или кортеж имён столбцов. [`String`](/ru/reference/data-types/string) или [`Tuple(String)`](/ru/reference/data-types/tuple)
-* `id_expr` — Значение ключа. Выражение, возвращающее UInt64/Tuple(T). [`UInt64`](/ru/reference/data-types/int-uint) или [`Tuple(T)`](/ru/reference/data-types/tuple)
+* `id_expr` — Значение ключа. Для словаря с простым ключом — выражение, возвращающее значение `UInt64`. Для словаря с составным ключом — выражение, возвращающее кортеж значений ключа. Если составной ключ состоит из одного атрибута, его значение можно передать напрямую, не оборачивая в `tuple`. [`UInt64`](/ru/reference/data-types/int-uint) или [`Tuple(T)`](/ru/reference/data-types/tuple)
 
 **Возвращаемое значение**
 
@@ -321,6 +356,9 @@ dictGet('dict_name', attr_names, id_expr)
 **Получение одного атрибута**
 
 ```sql title=Query
+CREATE TABLE ext_dict_test_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO ext_dict_test_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_test (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'ext_dict_test_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
 ```
 
@@ -331,6 +369,9 @@ SELECT dictGet('ext_dict_test', 'c1', toUInt64(1)) AS val
 **Несколько атрибутов**
 
 ```sql title=Query
+CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT
     dictGet('ext_dict_mult', ('c1','c2'), number + 1) AS val,
     toTypeName(val) AS type
@@ -358,9 +399,13 @@ LIMIT 3;
 
 Добавленный в: v23.5.0
 
-Возвращает значения атрибутов всех узлов, совпавших с каждым ключом в [словаре с древовидной структурой регулярных выражений](/ru/reference/statements/create/dictionary/layouts/regexp-tree).
+Возвращает значения атрибутов всех узлов, совпавших с каждым ключом в [словаре дерева регулярных выражений](/ru/reference/statements/create/dictionary/layouts/regexp-tree).
 
 За исключением того, что эта функция возвращает значения типа `Array(T)` вместо `T`, она ведёт себя аналогично [`dictGet`](#dictGet).
+
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -373,17 +418,16 @@ dictGetAll(dict_name, attr_names, id_expr[, limit])
 * `dict_name` — Имя словаря. [`String`](/ru/reference/data-types/string)
 * `attr_names` — Имя столбца словаря или кортеж имён столбцов. [`String`](/ru/reference/data-types/string) или [`Tuple(String)`](/ru/reference/data-types/tuple)
 * `id_expr` — Значение ключа. Выражение, возвращающее значение типа ключа словаря или значение кортежа (в зависимости от конфигурации словаря). [`Expression`](/ru/reference/data-types/special-data-types/expression) или [`Tuple(T)`](/ru/reference/data-types/tuple)
-* `limit` — Необязательно. Максимальная длина каждого возвращаемого массива значений. При усечении дочерние узлы имеют приоритет над родительскими; в остальных случаях соблюдается заданный порядок элементов в словаре `regexp tree`. Если не указано, длина массива не ограничена. [`UInt*`](/ru/reference/data-types/int-uint)
+* `limit` — Необязательно. Максимальная длина каждого возвращаемого массива значений. При усечении дочерние узлы имеют приоритет над родительскими; в остальных случаях соблюдается заданный порядок элементов в словаре дерева регулярных выражений. Если не указано, длина массива не ограничена. [`UInt*`](/ru/reference/data-types/int-uint)
 
 **Возвращаемое значение**
 
 Возвращает массив значений атрибутов словаря, соответствующих `id_expr`, для каждого атрибута, указанного в `attr_names`.
 Если в словаре нет ключа, соответствующего `id_expr`, возвращается пустой массив.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
-</Note>
-
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
+:::
 [`Array(T)`](/ru/reference/data-types/array)
 
 **Примеры**
@@ -391,6 +435,13 @@ dictGetAll(dict_name, attr_names, id_expr[, limit])
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE regexp_os (id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)) ENGINE = Memory;
+INSERT INTO regexp_os VALUES
+    (1, 0, 'Linux',      ['os_replacement'], ['Linux']),
+    (2, 1, 'Android',    ['os_replacement'], ['Android']),
+    (3, 2, 'Android 1',  ['os_replacement'], ['Android']),
+    (4, 3, 'Android 12', ['os_replacement'], ['Android']);
+CREATE DICTIONARY regexp_tree (regexp String, os_replacement String DEFAULT 'Other') PRIMARY KEY regexp SOURCE(CLICKHOUSE(TABLE 'regexp_os' DB currentDatabase())) LIFETIME(MIN 0 MAX 0) LAYOUT(REGEXP_TREE);
 SELECT
     'Mozilla/5.0 (Linux; Android 12; SM-G998B) Mobile Safari/537.36' AS user_agent,
 
@@ -415,6 +466,10 @@ SELECT
 
 Возвращает дочерние элементы первого уровня в виде массива индексов. Это преобразование, обратное [dictGetHierarchy](#dictGetHierarchy).
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -435,6 +490,9 @@ dictGetChildren(dict_name, key)
 **Получение дочерних элементов первого уровня из словаря**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetChildren('hierarchical_dictionary', 2);
 ```
 
@@ -451,6 +509,10 @@ SELECT dictGetChildren('hierarchical_dictionary', 2);
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип `Date` независимо от конфигурации словаря.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -469,15 +531,18 @@ dictGetDate(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2020-01-01');
+CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetDate('all_types_dict', 'Date_value', 1)
 ```
 
@@ -494,6 +559,10 @@ SELECT dictGetDate('all_types_dict', 'Date_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `Date` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -513,19 +582,22 @@ dictGetDateOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, Date_value Date) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15');
+CREATE DICTIONARY all_types_dict (id UInt32, Date_value Date) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetDate('all_types_dict', 'Date_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию
+-- for key which does not exist, returns the provided default value
 SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01-01'));
 ```
 
@@ -546,6 +618,10 @@ SELECT dictGetDateOrDefault('all_types_dict', 'Date_value', 999, toDate('1970-01
 
 Преобразует значение атрибута словаря в тип данных `DateTime` вне зависимости от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -563,15 +639,18 @@ dictGetDateTime(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает содержимое элемента `<null_value>`, указанное для этого атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
+CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
 ```
 
@@ -588,6 +667,10 @@ SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `DateTime` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -607,19 +690,22 @@ dictGetDateTimeOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не удаётся разобрать значение атрибута или оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не удаётся разобрать значение атрибута или оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, DateTime_value DateTime) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2024-01-15 10:30:00');
+CREATE DICTIONARY all_types_dict (id UInt32, DateTime_value DateTime) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetDateTime('all_types_dict', 'DateTime_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию
+-- for key which does not exist, returns the provided default value
 SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateTime('1970-01-01 00:00:00'));
 ```
 
@@ -639,6 +725,10 @@ SELECT dictGetDateTimeOrDefault('all_types_dict', 'DateTime_value', 999, toDateT
 Добавленный в: v21.4.0
 
 Возвращает всех потомков, как если бы функция [`dictGetChildren`](#dictGetChildren) рекурсивно применялась `level` раз.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -661,14 +751,17 @@ dictGetDescendants(dict_name, key, level)
 **Получение дочерних элементов первого уровня словаря**
 
 ```sql title=Query
--- рассмотрим следующий иерархический словарь:
--- 0 (Корень)
--- └── 1 (Уровень 1 - Узел 1)
---     ├── 2 (Уровень 2 - Узел 2)
---     │   ├── 4 (Уровень 3 - Узел 4)
---     │   └── 5 (Уровень 3 - Узел 5)
---     └── 3 (Уровень 2 - Узел 3)
---         └── 6 (Уровень 3 - Узел 6)
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- consider the following hierarchical dictionary:
+-- 0 (Root)
+-- └── 1 (Level 1 - Node 1)
+--     ├── 2 (Level 2 - Node 2)
+--     │   ├── 4 (Level 3 - Node 4)
+--     │   └── 5 (Level 3 - Node 5)
+--     └── 3 (Level 2 - Node 3)
+--         └── 6 (Level 3 - Node 6)
 
 SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
 ```
@@ -687,6 +780,10 @@ SELECT dictGetDescendants('hierarchical_dictionary', 0, 2)
 
 Преобразует значение атрибута словаря в тип данных `Float32` вне зависимости от конфигурации словаря.
 
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -704,15 +801,18 @@ dictGetFloat32(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае — содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если это значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если это значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -123.123);
+CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 ```
 
@@ -729,6 +829,10 @@ SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `Float32` независимо от конфигурации словаря или возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -748,19 +852,22 @@ dictGetFloat32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 или значение, переданное в параметре `default_value_expr`, если такого ключа в словаре нет.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, Float32_value Float32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 123.45);
+CREATE DICTIONARY all_types_dict (id UInt32, Float32_value Float32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetFloat32('all_types_dict', 'Float32_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (-1.0)
+-- for key which does not exist, returns the provided default value (-1.0)
 SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
 ```
 
@@ -781,6 +888,10 @@ SELECT dictGetFloat32OrDefault('all_types_dict', 'Float32_value', 999, -1.0);
 
 Преобразует значение атрибута словаря в тип `Float64` независимо от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -798,15 +909,18 @@ dictGetFloat64(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не удаётся разобрать значение атрибута или оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не удаётся разобрать значение атрибута или оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -123.123);
+CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
 ```
 
@@ -823,6 +937,10 @@ SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `Float64` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -842,19 +960,22 @@ dictGetFloat64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если это значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если это значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, Float64_value Float64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 987654.123456);
+CREATE DICTIONARY all_types_dict (id UInt32, Float64_value Float64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetFloat64('all_types_dict', 'Float64_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (nan)
+-- for key which does not exist, returns the provided default value (nan)
 SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
 ```
 
@@ -874,6 +995,10 @@ SELECT dictGetFloat64OrDefault('all_types_dict', 'Float64_value', 999, nan);
 Добавленный в: v1.1.0
 
 Создает массив, содержащий всех предков ключа в [иерархическом словаре](/ru/reference/statements/create/dictionary/layouts/hierarchical#hierarchical-dictionaries).
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -895,6 +1020,9 @@ dictGetHierarchy(dict_name, key)
 **Получение иерархии для ключа**
 
 ```sql title=Query
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 ```
 
@@ -911,6 +1039,10 @@ SELECT dictGetHierarchy('hierarchical_dictionary', 5)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `IPv4` независимо от конфигурации словаря.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -929,15 +1061,18 @@ dictGetIPv4(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 или содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '192.168.0.1');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 ```
 
@@ -954,6 +1089,10 @@ SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1)
 Добавленный в: v23.1.0
 
 Преобразует значение атрибута словаря в тип данных `IPv4` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция недетерминированна: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -973,19 +1112,22 @@ dictGetIPv4OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не удаётся разобрать значение атрибута или оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не удаётся разобрать значение атрибута или оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, IPv4_value IPv4) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '192.168.0.1');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv4_value IPv4) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetIPv4('all_types_dict', 'IPv4_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию
+-- for key which does not exist, returns the provided default value
 SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0'));
 ```
 
@@ -1006,6 +1148,10 @@ SELECT dictGetIPv4OrDefault('all_types_dict', 'IPv4_value', 999, toIPv4('0.0.0.0
 
 Преобразует значение атрибута словаря в тип данных `IPv6` вне зависимости от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1023,15 +1169,18 @@ dictGetIPv6(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае возвращает содержимое элемента `<null_value>`, указанное для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
 ```
 
@@ -1048,6 +1197,10 @@ SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1)
 Добавленный в: v23.1.0
 
 Преобразует значение атрибута словаря в тип данных `IPv6` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1067,19 +1220,22 @@ dictGetIPv6OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря для `id_expr`,
 в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, IPv6_value IPv6) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '2001:db8:85a3::8a2e:370:7334');
+CREATE DICTIONARY all_types_dict (id UInt32, IPv6_value IPv6) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetIPv6('all_types_dict', 'IPv6_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию
+-- for key which does not exist, returns the provided default value
 SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
 ```
 
@@ -1100,6 +1256,10 @@ SELECT dictGetIPv6OrDefault('all_types_dict', 'IPv6_value', 999, '::1'::IPv6);
 
 Преобразует значение атрибута словаря в тип данных `Int16` вне зависимости от конфигурации словаря.
 
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1117,15 +1277,18 @@ dictGetInt16(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает содержимое элемента `<null_value>`, указанное для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -5000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
 ```
 
@@ -1142,6 +1305,10 @@ SELECT dictGetInt16('all_types_dict', 'Int16_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `Int16` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1161,19 +1328,22 @@ dictGetInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, Int16_value Int16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -5000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int16_value Int16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetInt16('all_types_dict', 'Int16_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (-1)
+-- for key which does not exist, returns the provided default value (-1)
 SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
 ```
 
@@ -1194,6 +1364,10 @@ SELECT dictGetInt16OrDefault('all_types_dict', 'Int16_value', 999, -1);
 
 Преобразует значение атрибута словаря в тип данных `Int32` вне зависимости от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1209,17 +1383,20 @@ dictGetInt32(dict_name, attr_name, id_expr)
 **Возвращаемое значение**
 
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
-иначе возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
+в противном случае возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 ```
 
@@ -1236,6 +1413,10 @@ SELECT dictGetInt32('all_types_dict', 'Int32_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `Int32` независимо от конфигурации словаря или, если ключ не найден, возвращает указанное значение по умолчанию.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1255,19 +1436,22 @@ dictGetInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 иначе возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, Int32_value Int32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, Int32_value Int32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetInt32('all_types_dict', 'Int32_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (-1)
+-- for key which does not exist, returns the provided default value (-1)
 SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
 ```
 
@@ -1288,6 +1472,10 @@ SELECT dictGetInt32OrDefault('all_types_dict', 'Int32_value', 999, -1);
 
 Преобразует значение атрибута словаря к типу данных `Int64` независимо от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1305,15 +1493,18 @@ dictGetInt64(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 иначе возвращает содержимое элемента `<null_value>`, заданного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
 ```
 
@@ -1330,6 +1521,10 @@ SELECT dictGetInt64('all_types_dict', 'Int64_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `Int64` вне зависимости от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1348,19 +1543,22 @@ dictGetInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 
 Возвращает значение атрибута словаря, соответствующее `id_expr`; в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, Int64_value Int64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -9223372036854775808);
+CREATE DICTIONARY all_types_dict (id UInt32, Int64_value Int64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetInt64('all_types_dict', 'Int64_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (-1)
+-- for key which does not exist, returns the provided default value (-1)
 SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
 ```
 
@@ -1381,6 +1579,10 @@ SELECT dictGetInt64OrDefault('all_types_dict', 'Int64_value', 999, -1);
 
 Преобразует значение атрибута словаря к типу данных `Int8` независимо от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1398,15 +1600,18 @@ dictGetInt8(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает содержимое элемента `<null_value>`, заданного для этого атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если это значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если это значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -100);
+CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 ```
 
@@ -1423,6 +1628,10 @@ SELECT dictGetInt8('all_types_dict', 'Int8_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `Int8` независимо от конфигурации словаря или возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1442,19 +1651,22 @@ dictGetInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае — значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не удаётся разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не удаётся разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, Int8_value Int8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, -100);
+CREATE DICTIONARY all_types_dict (id UInt32, Int8_value Int8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetInt8('all_types_dict', 'Int8_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (-1)
+-- for key which does not exist, returns the provided default value (-1)
 SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
 ```
 
@@ -1480,6 +1692,10 @@ SELECT dictGetInt8OrDefault('all_types_dict', 'Int8_value', 999, -1);
 Кэш не сохраняется между запросами. При достижении лимита записи вытесняются по LRU.
 Это наиболее эффективно для больших словарей, когда входные данные имеют низкую кардинальность, а рабочий набор помещается в кэш. Установите `0`, чтобы отключить кэширование.
 
+:::note
+Эта функция недетерминированна: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1501,12 +1717,15 @@ dictGetKeys('dict_name', 'attr_name', value_expr)
 **Пример использования**
 
 ```sql title=Query
-SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') AS ids;
+CREATE TABLE task_priority_source (task_id UInt64, priority_level String) ENGINE = Memory;
+INSERT INTO task_priority_source VALUES (1, 'low'), (2, 'high'), (3, 'medium'), (4, 'high');
+CREATE DICTIONARY task_id_to_priority_dictionary (task_id UInt64, priority_level String) PRIMARY KEY task_id SOURCE(CLICKHOUSE(TABLE 'task_priority_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 0 MAX 0);
+SELECT arraySort(dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high')) AS ids;
 ```
 
 ```response title=Response
 ┌─ids───┐
-│ [4,2] │
+│ [2,4] │
 └───────┘
 ```
 
@@ -1518,6 +1737,10 @@ SELECT dictGetKeys('task_id_to_priority_dictionary', 'priority_level', 'high') A
 
 Возвращает значения из словаря; если ключ не найден, используется значение по умолчанию.
 
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1528,7 +1751,7 @@ dictGetOrDefault('dict_name', attr_names, id_expr, default_value)
 
 * `dict_name` — Имя словаря. [`String`](/ru/reference/data-types/string)
 * `attr_names` — Имя столбца словаря или кортеж имён столбцов. [`String`](/ru/reference/data-types/string) или [`Tuple(String)`](/ru/reference/data-types/tuple)
-* `id_expr` — Значение ключа. Выражение, возвращающее UInt64/Tuple(T). [`UInt64`](/ru/reference/data-types/int-uint) или [`Tuple(T)`](/ru/reference/data-types/tuple)
+* `id_expr` — Значение ключа. Для словаря с простым ключом — выражение, возвращающее значение `UInt64`. Для словаря с составным ключом — выражение, возвращающее кортеж значений ключа. Если составной ключ состоит из одного атрибута, его значение можно передать напрямую, без обёртывания в `tuple`. [`UInt64`](/ru/reference/data-types/int-uint) или [`Tuple(T)`](/ru/reference/data-types/tuple)
 * `default_value` — Значение по умолчанию, возвращаемое, если ключ не найден. Тип должен совпадать с типом данных атрибута.
 
 **Возвращаемое значение**
@@ -1541,6 +1764,9 @@ dictGetOrDefault('dict_name', attr_names, id_expr, default_value)
 **Получение значения с возвратом значения по умолчанию**
 
 ```sql title=Query
+CREATE TABLE dict_mult_source (id UInt32, c1 UInt32, c2 String) ENGINE = Memory;
+INSERT INTO dict_mult_source VALUES (1, 1, '1'), (2, 2, '2'), (3, 3, '3');
+CREATE DICTIONARY ext_dict_mult (id UInt32, c1 UInt32, c2 String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'dict_mult_source' DB currentDatabase())) LAYOUT(FLAT()) LIFETIME(MIN 0 MAX 0);
 SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
 ```
 
@@ -1555,6 +1781,10 @@ SELECT dictGetOrDefault('ext_dict_mult', 'c1', toUInt64(999), 0) AS val
 Добавленный в: v21.4.0
 
 Возвращает значения из словаря; если ключ не найден, возвращает NULL.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1576,6 +1806,11 @@ dictGetOrNull('dict_name', 'attr_name', id_expr)
 **Пример использования словаря с диапазонным ключом**
 
 ```sql title=Query
+CREATE TABLE range_key_dictionary_source_table (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) ENGINE = TinyLog();
+INSERT INTO range_key_dictionary_source_table VALUES(1, toDate('2019-05-20'), toDate('2019-05-20'), 'First', 'First');
+INSERT INTO range_key_dictionary_source_table VALUES(2, toDate('2019-05-20'), toDate('2019-05-20'), 'Second', NULL);
+INSERT INTO range_key_dictionary_source_table VALUES(3, toDate('2019-05-20'), toDate('2019-05-20'), 'Third', 'Third');
+CREATE DICTIONARY range_key_dictionary (key UInt64, start_date Date, end_date Date, value String, value_nullable Nullable(String)) PRIMARY KEY key SOURCE(CLICKHOUSE(TABLE 'range_key_dictionary_source_table' DB currentDatabase())) LIFETIME(MIN 1 MAX 1000) LAYOUT(RANGE_HASHED()) RANGE(MIN start_date MAX end_date);
 SELECT
     (number, toDate('2019-05-20')),
     dictGetOrNull('range_key_dictionary', 'value', number, toDate('2019-05-20')),
@@ -1598,6 +1833,10 @@ FROM system.numbers LIMIT 5 FORMAT TabSeparated;
 
 Преобразует значение атрибута словаря в тип данных `String` вне зависимости от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1615,15 +1854,18 @@ dictGetString(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае — содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 'test string');
+CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetString('all_types_dict', 'String_value', 1)
 ```
 
@@ -1640,6 +1882,10 @@ SELECT dictGetString('all_types_dict', 'String_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `String` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1659,19 +1905,22 @@ dictGetStringOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае — значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, String_value String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 'test string');
+CREATE DICTIONARY all_types_dict (id UInt32, String_value String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetString('all_types_dict', 'String_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию
+-- for key which does not exist, returns the provided default value
 SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
 ```
 
@@ -1692,6 +1941,10 @@ SELECT dictGetStringOrDefault('all_types_dict', 'String_value', 999, 'default');
 
 Преобразует значение атрибута словаря в тип данных `UInt16` независимо от конфигурации словаря.
 
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1709,15 +1962,18 @@ dictGetUInt16(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает содержимое элемента `<null_value>`, заданное для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 5000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 ```
 
@@ -1734,6 +1990,10 @@ SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `UInt16` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1753,19 +2013,22 @@ dictGetUInt16OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае — значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, UInt16_value UInt16) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 5000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt16_value UInt16) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUInt16('all_types_dict', 'UInt16_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
 ```
 
@@ -1786,6 +2049,10 @@ SELECT dictGetUInt16OrDefault('all_types_dict', 'UInt16_value', 999, 0);
 
 Преобразует значение атрибута словаря в тип `UInt32` независимо от конфигурации словаря.
 
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1803,15 +2070,18 @@ dictGetUInt32(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 иначе возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
 ```
 
@@ -1828,6 +2098,10 @@ SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `UInt32` независимо от конфигурации словаря или, если ключ не найден, возвращает указанное значение по умолчанию.
+
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1847,19 +2121,22 @@ dictGetUInt32OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, UInt32_value UInt32) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 1000000);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt32_value UInt32) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUInt32('all_types_dict', 'UInt32_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
 ```
 
@@ -1880,6 +2157,10 @@ SELECT dictGetUInt32OrDefault('all_types_dict', 'UInt32_value', 999, 0);
 
 Преобразует значение атрибута словаря в тип `UInt64` независимо от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1897,15 +2178,18 @@ dictGetUInt64(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае — содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 ```
 
@@ -1922,6 +2206,10 @@ SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `UInt64` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -1941,19 +2229,22 @@ dictGetUInt64OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`.
 В противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, UInt64_value UInt64) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 9223372036854775807);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt64_value UInt64) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUInt64('all_types_dict', 'UInt64_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (0)
+-- for key which does not exist, returns the provideddefault value (0)
 SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 ```
 
@@ -1974,6 +2265,10 @@ SELECT dictGetUInt64OrDefault('all_types_dict', 'UInt64_value', 999, 0);
 
 Преобразует значение атрибута словаря в тип данных `UInt8` независимо от конфигурации словаря.
 
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1984,22 +2279,25 @@ dictGetUInt8(dict_name, attr_name, id_expr)
 
 * `dict_name` — Имя словаря. [`String`](/ru/reference/data-types/string)
 * `attr_name` — Имя столбца словаря. [`String`](/ru/reference/data-types/string) или [`Tuple(String)`](/ru/reference/data-types/tuple)
-* `id_expr` — Значение ключа. Выражение, возвращающее значение типа ключа словаря или кортеж (в зависимости от конфигурации словаря). [`Expression`](/ru/reference/data-types/special-data-types/expression) или [`Tuple(T)`](/ru/reference/data-types/tuple)
+* `id_expr` — Значение ключа. Выражение, возвращающее значение типа ключа словаря или значение кортежа (в зависимости от конфигурации словаря). [`Expression`](/ru/reference/data-types/special-data-types/expression) или [`Tuple(T)`](/ru/reference/data-types/tuple)
 
 **Возвращаемое значение**
 
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае возвращает содержимое элемента `<null_value>`, указанного для атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 100);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 ```
 
@@ -2016,6 +2314,10 @@ SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `UInt8` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -2035,19 +2337,22 @@ dictGetUInt8OrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 в противном случае возвращает значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, UInt8_value UInt8) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, 100);
+CREATE DICTIONARY all_types_dict (id UInt32, UInt8_value UInt8) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUInt8('all_types_dict', 'UInt8_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию (0)
+-- for key which does not exist, returns the provided default value (0)
 SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
 ```
 
@@ -2068,6 +2373,10 @@ SELECT dictGetUInt8OrDefault('all_types_dict', 'UInt8_value', 999, 0);
 
 Преобразует значение атрибута словаря в тип данных `UUID` вне зависимости от конфигурации словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -2085,15 +2394,18 @@ dictGetUUID(dict_name, attr_name, id_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`;
 в противном случае возвращает содержимое элемента `<null_value>`, указанного для этого атрибута в конфигурации словаря.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если оно не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
+CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '123e4567-e89b-12d3-a456-426614174000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 ```
 
@@ -2110,6 +2422,10 @@ SELECT dictGetUUID('all_types_dict', 'UUID_value', 1)
 Добавленный в: v1.1.0
 
 Преобразует значение атрибута словаря в тип данных `UUID` независимо от конфигурации словаря либо возвращает указанное значение по умолчанию, если ключ не найден.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -2129,19 +2445,22 @@ dictGetUUIDOrDefault(dict_name, attr_name, id_expr, default_value_expr)
 Возвращает значение атрибута словаря, соответствующее `id_expr`,
 либо значение, переданное в параметре `default_value_expr`.
 
-<Note>
-  ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
-</Note>
+:::note
+ClickHouse генерирует исключение, если не может разобрать значение атрибута или если значение не соответствует типу данных атрибута.
+:::
 
 **Примеры**
 
 **Пример использования**
 
 ```sql title=Query
--- для ключа, который существует
+CREATE TABLE all_types_test (id UInt32, UUID_value UUID) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO all_types_test VALUES (1, '550e8400-e29b-41d4-a716-446655440000');
+CREATE DICTIONARY all_types_dict (id UInt32, UUID_value UUID) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'all_types_test' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- for key which exists
 SELECT dictGetUUID('all_types_dict', 'UUID_value', 1);
 
--- для ключа, которого не существует, возвращает указанное значение по умолчанию
+-- for key which does not exist, returns the provided default value
 SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-0000-0000-000000000000'::UUID);
 ```
 
@@ -2161,6 +2480,10 @@ SELECT dictGetUUIDOrDefault('all_types_dict', 'UUID_value', 999, '00000000-0000-
 Добавленный в: v1.1.0
 
 Проверяет, содержится ли ключ в словаре.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -2182,14 +2505,17 @@ dictHas('dict_name', id_expr)
 **Проверка наличия ключа в словаре**
 
 ```sql title=Query
--- рассмотрим следующий иерархический словарь:
--- 0 (Корень)
--- └── 1 (Уровень 1 - Узел 1)
---     ├── 2 (Уровень 2 - Узел 2)
---     │   ├── 4 (Уровень 3 - Узел 4)
---     │   └── 5 (Уровень 3 - Узел 5)
---     └── 3 (Уровень 2 - Узел 3)
---         └── 6 (Уровень 3 - Узел 6)
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- consider the following hierarchical dictionary:
+-- 0 (Root)
+-- └── 1 (Level 1 - Node 1)
+--     ├── 2 (Level 2 - Node 2)
+--     │   ├── 4 (Level 3 - Node 4)
+--     │   └── 5 (Level 3 - Node 5)
+--     └── 3 (Level 2 - Node 3)
+--         └── 6 (Level 3 - Node 6)
 
 SELECT dictHas('hierarchical_dictionary', 2);
 SELECT dictHas('hierarchical_dictionary', 7);
@@ -2212,6 +2538,10 @@ SELECT dictHas('hierarchical_dictionary', 7);
 
 Проверяет предка ключа по всей иерархической цепочке словаря.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -2233,11 +2563,14 @@ dictIsIn(dict_name, child_id_expr, ancestor_id_expr)
 **Проверка иерархической зависимости**
 
 ```sql title=Query
--- допустимая иерархия
-SELECT dictIsIn('hierarchical_dictionary', 6, 3)
+CREATE TABLE hierarchy_source (id UInt64, parent_id UInt64, name String) ENGINE = Memory;
+INSERT INTO hierarchy_source VALUES (0, 0, 'Root'), (1, 0, 'Level 1 - Node 1'), (2, 1, 'Level 2 - Node 2'), (3, 1, 'Level 2 - Node 3'), (4, 2, 'Level 3 - Node 4'), (5, 2, 'Level 3 - Node 5'), (6, 3, 'Level 3 - Node 6');
+CREATE DICTIONARY hierarchical_dictionary (id UInt64, parent_id UInt64 HIERARCHICAL, name String) PRIMARY KEY id SOURCE(CLICKHOUSE(TABLE 'hierarchy_source' DB currentDatabase())) LAYOUT(HASHED()) LIFETIME(MIN 300 MAX 600);
+-- valid hierarchy
+SELECT dictIsIn('hierarchical_dictionary', 6, 3);
 
--- недопустимая иерархия
-SELECT dictIsIn('hierarchical_dictionary', 3, 5)
+-- invalid hierarchy
+SELECT dictIsIn('hierarchical_dictionary', 3, 5);
 ```
 
 ```response title=Response

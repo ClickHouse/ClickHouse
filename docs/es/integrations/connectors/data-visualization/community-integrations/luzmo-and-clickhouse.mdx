@@ -30,9 +30,9 @@ Se le pedirá que proporcione un **host**, **nombre de usuario** y **contraseña
 <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Formulario de configuración de conexión de Luzmo que muestra campos para el host, el nombre de usuario y la contraseña de ClickHouse" border />
 
 * **Host**: es el host en el que está expuesta su base de datos de ClickHouse. Tenga en cuenta que aquí solo se permite `https` para transferir datos de forma segura a través de la red. La estructura de la URL del host debe ser: `https://url-to-clickhouse-db:port/database`
-  De forma predeterminada, el complemento se conectará a la base de datos &#39;default&#39; y al puerto 443. Si especifica una base de datos después de &#39;/&#39;, puede configurar a qué base de datos conectarse.
-* **Username**: el nombre de usuario que se utilizará para conectarse a su clúster de ClickHouse.
-* **Password**: la contraseña para conectarse a su clúster de ClickHouse
+  De forma predeterminada, el plugin se conectará a la base de datos &#39;default&#39; y al puerto 443. Si especifica una base de datos después de &#39;/&#39;, puede configurar a qué base de datos conectarse.
+* **nombre de usuario**: el nombre de usuario que se utilizará para conectarse a su clúster de ClickHouse.
+* **contraseña**: la contraseña para conectarse a su clúster de ClickHouse
 
 Consulte los ejemplos de nuestra documentación para desarrolladores para saber cómo [crear una conexión a ClickHouse](https://developer.luzmo.com/api/createAccount?exampleSection=AccountCreateClickhouseRequestBody) a través de nuestra API.
 
@@ -44,7 +44,7 @@ Una vez que hayas conectado ClickHouse, puedes añadir conjuntos de datos como s
 
 Para saber cómo añadir conjuntos de datos con nuestra API, consulta [este ejemplo en la documentación para desarrolladores](https://developer.luzmo.com/api/createDataprovider?exampleSection=DataproviderCreateClickhouseRequestBody).
 
-Ahora ya puedes usar tus conjuntos de datos para crear dashboards atractivos (integrados) o incluso impulsar un analista de datos con IA ([Luzmo IQ](https://luzmo.com/iq)) capaz de responder las preguntas de tus clientes.
+Ahora ya puedes usar tus conjuntos de datos para crear dashboards atractivos (embebidos) o incluso impulsar un analista de datos con IA ([Luzmo IQ](https://luzmo.com/iq)) capaz de responder las preguntas de tus clientes.
 
 <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Ejemplo de dashboard de Luzmo que muestra múltiples visualizaciones de datos de ClickHouse" border />
 

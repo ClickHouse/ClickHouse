@@ -247,6 +247,15 @@ WHERE oid = 'postgres_table'::regclass;
 レプリケーションには一意の consumer 識別子を使用します。デフォルトは `0` です。
 `1` に設定すると、同じ `PostgreSQL` テーブルを参照する複数の `MaterializedPostgreSQL` テーブルを設定できます。
 
+<div id="materialized-postgresql-use-extended-date-and-time-types">
+  ### `materialized_postgresql_use_extended_date_and_time_types`
+</div>
+
+PostgreSQL の `date` および `timestamp`/`timestamptz` 型を、これらの PostgreSQL 型よりも広い値範囲をカバーする ClickHouse の `Date32` および `DateTime64` にマッピングします。デフォルト: `1`。
+`0` に設定すると、代わりにより範囲の狭い `Date` および `DateTime` 型が使用されます (それらの範囲外の値や、秒未満の精度を持つ値は表現できません) 。
+
+この設定が制御するのは、ネストされたテーブルの作成時に型推論によって選択されるカラム型のみであるため、`CREATE DATABASE` の時点で指定する必要があります。その後に `ALTER DATABASE ... MODIFY SETTING` で変更することはできません (すでに作成されたネストされたテーブルは固定のカラム型を保持するため、このような変更は拒否されます) 。変更するには、データベースを再作成してください。カラム型が明示的に宣言される `MaterializedPostgreSQL` テーブルエンジンには適用されません。
+
 <div id="notes">
   ## 注記
 </div>
@@ -311,13 +320,13 @@ WHERE oid = 'postgres_table'::regclass;
   ### 必要な権限
 </div>
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- 作成権限。
+1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- 作成権限。
 
-2. [CREATE&#95;REPLICATION&#95;SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- レプリケーション権限。
+2. [CREATE&#95;REPLICATION&#95;SLOT](https://www.postgresql.org/docs/10/protocol-replication.html#PROTOCOL-REPLICATION-CREATE-SLOT) -- レプリケーション権限。
 
-3. [pg&#95;drop&#95;replication&#95;slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- レプリケーション権限、またはスーパーユーザー権限。
+3. [pg&#95;drop&#95;replication&#95;slot](https://www.postgresql.org/docs/9.5/functions-admin.html#FUNCTIONS-REPLICATION) -- レプリケーション権限、またはスーパーユーザー権限。
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- publication の所有者 (MaterializedPostgreSQL エンジン自体の `username`) 。
+4. [DROP PUBLICATION](https://www.postgresql.org/docs/10/sql-droppublication.html) -- publication の所有者 (MaterializedPostgreSQL エンジン自体の `username`) 。
 
 `2` と `3` のコマンドを実行せず、これらの権限を持たずに済ませることも可能です。設定 `materialized_postgresql_replication_slot` と `materialized_postgresql_snapshot` を使用してください。ただし、十分に注意してください。
 

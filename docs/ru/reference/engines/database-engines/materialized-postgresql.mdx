@@ -247,6 +247,15 @@ WHERE oid = 'postgres_table'::regclass;
 Использовать уникальный идентификатор consumer&#39;а репликации. Значение по умолчанию: `0`.
 Если установить `1`, можно настроить несколько таблиц `MaterializedPostgreSQL`, указывающих на одну и ту же таблицу `PostgreSQL`.
 
+<div id="materialized-postgresql-use-extended-date-and-time-types">
+  ### `materialized_postgresql_use_extended_date_and_time_types`
+</div>
+
+Сопоставляет типы PostgreSQL `date` и `timestamp`/`timestamptz` с типами ClickHouse `Date32` и `DateTime64`, которые поддерживают более широкий диапазон значений, чем типы PostgreSQL. Значение по умолчанию: `1`.
+Если задано значение `0`, вместо них используются более узкие типы `Date` и `DateTime` (значения вне их диапазона или с точностью до долей секунды представить невозможно).
+
+Этот параметр влияет только на типы столбцов, которые вывод типов выбирает при создании вложенных таблиц, поэтому его необходимо указывать при выполнении `CREATE DATABASE`. Позже его нельзя изменить с помощью `ALTER DATABASE ... MODIFY SETTING` (уже созданные вложенные таблицы сохраняют свои фиксированные типы столбцов, и такая попытка изменения отклоняется); чтобы изменить его, пересоздайте базу данных. Он не применяется к движку таблицы `MaterializedPostgreSQL`, где типы столбцов задаются явно.
+
 <div id="notes">
   ## Примечания
 </div>
@@ -311,13 +320,13 @@ WHERE oid = 'postgres_table'::regclass;
   ### Необходимые разрешения
 </div>
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- право на выполнение запроса CREATE.
+1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- привилегия на выполнение запроса CREATE.
 
-2. [CREATE&#95;REPLICATION&#95;SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- привилегия репликации.
+2. [CREATE&#95;REPLICATION&#95;SLOT](https://www.postgresql.org/docs/10/protocol-replication.html#PROTOCOL-REPLICATION-CREATE-SLOT) -- привилегия репликации.
 
-3. [pg&#95;drop&#95;replication&#95;slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- привилегия репликации или права суперпользователя.
+3. [pg&#95;drop&#95;replication&#95;slot](https://www.postgresql.org/docs/9.5/functions-admin.html#FUNCTIONS-REPLICATION) -- привилегия репликации или права суперпользователя.
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- владелец публикации (`username` в самом движке MaterializedPostgreSQL).
+4. [DROP PUBLICATION](https://www.postgresql.org/docs/10/sql-droppublication.html) -- владелец публикации (`username` в самом движке MaterializedPostgreSQL).
 
 Можно избежать выполнения команд `2` и `3` и обойтись без этих разрешений. Используйте настройки `materialized_postgresql_replication_slot` и `materialized_postgresql_snapshot`. Но с большой осторожностью.
 

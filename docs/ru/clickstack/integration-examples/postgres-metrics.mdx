@@ -215,7 +215,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### Импортируйте преднастроенную панель мониторинга
+    #### Импортируйте преднастроенный дашборд
 
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
@@ -301,7 +301,7 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 * Отслеживайте несколько экземпляров PostgreSQL, дублируя конфигурацию приёмника с разными конечными точками и именами сервисов
 
 <div id="going-to-production">
-  ## Переход к промышленной эксплуатации
+  ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для промышленного развертывания мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для конфигурации промышленного развертывания.
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для настройки продакшн-конфигурации.

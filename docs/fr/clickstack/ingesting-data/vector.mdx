@@ -158,7 +158,7 @@ La seule exigence stricte de ClickStack, qu’il s’agisse d’un déploiement 
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        Créez une table pour vos données. Celle-ci doit correspondre au schéma de sortie de celles-ci. L’exemple ci-dessous part du principe d’une structure Nginx classique. Adaptez-la à vos données, en respectant les [bonnes pratiques relatives au schéma](/fr/concepts/best-practices/select-data-type). Nous vous **recommandons vivement** de vous familiariser avec le [concept des clés primaires](/fr/concepts/core-concepts/primary-indexes) et de choisir votre clé primaire en suivant les recommandations présentées [ici](/fr/clickstack/managing/performance-tuning#choosing-a-primary-key).
+        Créez une table pour vos données. Celle-ci doit correspondre au schéma de sortie de vos données. L’exemple ci-dessous repose sur une structure Nginx classique. Adaptez-la à vos données, en respectant les [bonnes pratiques relatives aux schémas](/fr/concepts/best-practices/select-data-type). Nous **vous recommandons vivement** de vous familiariser avec le [concept des clés primaires](/fr/concepts/core-concepts/primary-indexes), en choisissant votre clé primaire selon les recommandations décrites [ici](/fr/clickstack/managing/performance-tuning#choosing-a-primary-key).
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -183,7 +183,7 @@ La seule exigence stricte de ClickStack, qu’il s’agisse d’un déploiement 
         <Info>
           **Clé primaire Nginx**
 
-          La clé primaire ci-dessus est basée sur les schémas d’accès typiques dans la ClickStack UI pour les logs Nginx, mais elle devra შესაძლოა être ajustée en fonction de votre charge de travail dans des environnements de production.
+          La clé primaire ci-dessus correspond aux modes d’accès typiques dans ClickStack UI pour les logs Nginx, mais il peut être nécessaire de l’adapter selon votre charge de travail en production.
         </Info>
       </Step>
 
@@ -251,9 +251,9 @@ La seule exigence stricte de ClickStack, qu’il s’agisse d’un déploiement 
       <Step>
         ### Explorer les données
 
-        Accédez à la vue Logs pour explorer les données et commencer à utiliser ClickStack.
+        Accédez à la vue des logs pour explorer les données et commencer à utiliser ClickStack.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Logs Nginx dans ClickStack" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Logs Nginx dans CLickStack" size="lg" />
       </Step>
     </Steps>
   </Tab>
@@ -445,7 +445,7 @@ Pour un exemple plus complet, nous utilisons ci-dessous un **fichier journal de 
       </Step>
 
       <Step>
-        ### Télécharger le jeu de données d’exemple
+        ### Téléchargez les données d’exemple
 
         <VectorSampleData />
       </Step>
@@ -490,7 +490,7 @@ Pour un exemple plus complet, nous utilisons ci-dessous un **fichier journal de 
         <Info>
           **Clé primaire Nginx**
 
-          La clé primaire ci-dessus correspond aux schémas d’accès typiques dans l’interface ClickStack pour les logs Nginx, mais elle შეიძლება devoir être ajustée en fonction de votre charge de travail dans les environnements de production.
+          La clé primaire ci-dessus correspond aux modes d’accès typiques dans ClickStack UI pour les logs Nginx, mais elle devra peut-être être ajustée en fonction de votre charge de travail en production.
         </Info>
       </Step>
 
@@ -583,9 +583,9 @@ Pour un exemple plus complet, nous utilisons ci-dessous un **fichier journal de 
         )
         ```
 
-        Cette opération reconstitue la ligne de log à partir des champs structurés.
+        Cela reconstitue la ligne de journal à partir des champs structurés.
 
-        Pour connaître les autres options possibles, consultez la [référence de configuration](/fr/clickstack/managing/config).
+        Pour les autres options disponibles, consultez la [référence de configuration](/fr/clickstack/managing/config).
       </Step>
 
       <Step>

@@ -94,7 +94,7 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
   ### 选项 1：ClickHouse Cloud 控制台
 </div>
 
-在 ClickHouse Cloud 控制台中，打开要通过 Private Service Connect 连接的服务，然后打开 **设置** 菜单。点击 **设置专用终结点** 按钮。记下 **服务名称** (`endpointServiceId`) 和 **DNS 名称** (`privateDnsHostname`) ，后续步骤中会用到它们。
+在 ClickHouse Cloud 控制台中，打开要通过 Private Service Connect 连接的服务，然后打开 **设置** 菜单。点击 **设置专用终结点** 按钮。记下 **服务名称** (`endpointServiceId`) 和 **DNS 名称** (`privateDnsHostname`)，后续步骤中会用到它们。
 
 <Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="lg" alt="专用终结点" border />
 

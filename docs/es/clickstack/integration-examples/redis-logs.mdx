@@ -50,20 +50,20 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
     Si Redis está enviando los logs a stdout, configúralo para que los escriba en un archivo actualizando `redis.conf`:
 
     ```bash
-    # Registrar en archivo en lugar de stdout
+    # Log to file instead of stdout
     logfile /var/log/redis/redis-server.log
 
-    # Establecer nivel de registro (opciones: debug, verbose, notice, warning)
+    # Set log level (options: debug, verbose, notice, warning)
     loglevel notice
     ```
 
     Después de cambiar la configuración, reinicie Redis:
 
     ```bash
-    # Para systemd
+    # For systemd
     sudo systemctl restart redis
 
-    # Para Docker
+    # For Docker
     docker restart <redis-container>
     ```
   </Step>
@@ -142,14 +142,14 @@ Si desea probar la integración de Redis antes de configurar su propio entorno, 
     ```yaml
     services:
       clickstack:
-        # ... configuración existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... otras variables de entorno ...
+          # ... other environment variables ...
         volumes:
           - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/redis:/var/log/redis:ro
-          # ... otros volúmenes ...
+          # ... other volumes ...
     ```
 
     ##### Opción 2: Docker Run (imagen todo en uno)
@@ -281,7 +281,7 @@ Para los usuarios que quieran probar la integración de Redis antes de configura
 </Steps>
 
 <div id="dashboards">
-  ## Paneles y visualización
+  ## Dashboards y visualización
 </div>
 
 Para ayudarle a empezar a monitorizar Redis con ClickStack, proporcionamos visualizaciones esenciales para logs de Redis.
@@ -417,7 +417,7 @@ Si tus logs de Redis tienen un formato distinto, es posible que debas ajustar el
 * Crea [dashboards](/es/clickstack/features/dashboards/overview) adicionales para casos de uso específicos (monitorización de API, eventos de seguridad)
 
 <div id="going-to-production">
-  ## Puesta en producción
+  ## Paso a producción
 </div>
 
-Esta guía se basa en el OpenTelemetry Collector integrado de ClickStack para ofrecer una configuración rápida. Para implementaciones de producción, recomendamos ejecutar tu propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulta [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver la configuración de producción.
+Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para ofrecer una configuración rápida. Para implementaciones de producción, recomendamos ejecutar una instancia propia del OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver la configuración de producción.

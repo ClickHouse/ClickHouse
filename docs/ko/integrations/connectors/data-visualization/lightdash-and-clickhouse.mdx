@@ -113,24 +113,24 @@ Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플�
   </Step>
 
   <Step>
-    ### 테이블에서 데이터 쿼리하기
+    ### 테이블에서 데이터 쿌리하기
 
     dbt 프로젝트를 Lightdash에 연결하고 동기화하면 **테이블**(또는 &quot;explores&quot;)에서 직접 데이터를 탐색할 수 있습니다.
     각 테이블은 하나의 dbt 모델을 나타내며, YAML에서 정의한 메트릭과 차원을 포함합니다.
 
-    **Explore** 페이지는 5개의 주요 영역으로 구성됩니다.
+    **Explore** 페이지는 5개의 주요 영역으로 구성됩니다:
 
-    1. **차원 및 메트릭** — 선택한 테이블에서 사용할 수 있는 모든 필드
-    2. **필터** — 쿼리에서 반환되는 데이터를 제한합니다
-    3. **차트** — 쿼리 결과를 시각화합니다
-    4. **결과** — ClickHouse 데이터베이스에서 반환된 원시 데이터를 확인합니다
-    5. **SQL** — 결과를 생성한 SQL 쿼리를 확인합니다
+    1. **Dimensions and Metrics** — 선택한 테이블에서 사용할 수 있는 모든 필드
+    2. **Filters** — 쿼리에서 반환되는 데이터를 제한합니다
+    3. **Chart** — 쿼리 결과를 시각화합니다
+    4. **Results** — ClickHouse 데이터베이스에서 반환된 원시 데이터를 확인합니다
+    5. **SQL** — 결과를 생성한 생성된 SQL 쿼리를 확인합니다
 
     <Image size="lg" img="/images/integrations/data-visualization/lightdash_04.webp" alt="차원, 필터, 차트, 결과, SQL이 표시된 Lightdash Explore 화면" border />
 
     여기에서는 필드를 끌어다 놓고, 필터를 추가하고, 테이블, 막대 차트, 시계열 등의 시각화로 전환하면서 대화형으로 쿼리를 만들고 조정할 수 있습니다.
 
-    explore와 테이블에서 쿼리하는 방법을 더 자세히 알아보려면 다음 문서를 참조하십시오.
+    explore와 테이블에서 쿼리하는 방법을 더 자세히 알아보려면 다음 문서를 참조하십시오:
     [테이블과 Explore 페이지 소개 → Lightdash Docs](https://docs.lightdash.com/get-started/exploring-data/using-explores#an-intro-to-tables-and-the-explore-page?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
 
     ***
@@ -164,7 +164,7 @@ Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플�
     ### Ask AI: dbt 기반 셀프서비스 분석
 
     Lightdash의 **AI Agents**를 사용하면 데이터를 진정한 셀프서비스 방식으로 탐색할 수 있습니다.
-    쿼리를 작성하는 대신 *“월간 매출 성장률은 어땠나요?”*처럼 자연어로 질문하기만 하면 됩니다. 그러면 AI Agent가 정확성과 일관성을 보장하기 위해 dbt에서 정의한 메트릭과 모델을 참조하여 적절한 시각화를 자동으로 생성합니다.
+    쿼리를 작성하는 대신 &#42;“월간 매출 성장률은 어땠나요?”&#42;처럼 자연어로 질문하기만 하면 됩니다. 그러면 AI Agent가 정확성과 일관성을 보장하기 위해 dbt에서 정의한 메트릭과 모델을 참조하여 적절한 시각화를 자동으로 생성합니다.
 
     이는 dbt에서 사용하는 것과 동일한 시맨틱 레이어를 기반으로 하므로 모든 답변에 거버넌스가 적용되고, 설명 가능하며, 빠르게 제공됩니다. 이 모든 기능은 ClickHouse를 기반으로 합니다.
 

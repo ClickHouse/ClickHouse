@@ -42,16 +42,16 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### ClickStack API key を取得する
+    #### ClickStack API キー を取得する
 
-    ClickStack の OTLP エンドポイントにトレースを送信するための API key です。
+    ClickStack の OTLP エンドポイントにトレースを送信するための API キー です。
 
     1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
     2. 必要に応じてアカウントを作成するか、ログインします
     3. **Team Settings → API Keys** に移動します
-    4. **インジェスト API key** をコピーします
+    4. **インジェスト API キー** をコピーします
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API キー" />
   </Step>
 
   <Step>
@@ -126,18 +126,18 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### ClickStack API key を取得する
+    #### ClickStack API キー を取得する
 
-    トレースを ClickStack の OTLP エンドポイントに送信するには、API key が必要です。
+    トレースを ClickStack の OTLP エンドポイントに送信するには、API キー が必要です。
 
     1. ClickStack の URL (例: http://localhost:8080) で HyperDX を開きます
     2. 必要に応じてアカウントを作成するか、ログインします
     3. **Team Settings → API Keys** に移動します
-    4. **インジェスト API key** をコピーします
+    4. **インジェスト API キー** をコピーします
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API キー" />
 
-    API key を環境変数として設定します。
+    API キー を環境変数として設定します。
 
     ```bash
     export CLICKSTACK_API_KEY=your-api-key-here
@@ -201,12 +201,12 @@ Node.js アプリケーションのパフォーマンス監視をすぐに始め
   </Step>
 
   <Step>
-    #### すべての可視化が事前設定された状態でダッシュボードが作成されます
+    #### すべての可視化があらかじめ設定された状態でダッシュボードが作成されます
 
     <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Example dashboard" />
 
     <Note>
-      デモデータセットを使用する場合は、時間範囲を **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されていません。
+      デモデータセットでは、時間範囲を **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されません。
     </Note>
   </Step>
 </Steps>
@@ -263,9 +263,9 @@ OTLP エンドポイントに正常に接続できるはずです。
 * 特定のユースケース (API の監視、セキュリティイベント) 向けに追加のダッシュボードを作成します
 
 <div id="going-to-production">
-  ## 本番環境での運用
+  ## 本番環境への移行
 </div>
 
-このガイドでは、トレースを ClickStack の OTLP エンドポイントへ直接送信する HyperDX SDK を使用します。これは、開発、テスト、小規模～中規模の本番環境での運用に適しています。
+このガイドでは、トレースを ClickStack の OTLPエンドポイントに直接送信する HyperDX SDK を使用します。これは、開発、テスト、および小規模から中規模の本番環境へのデプロイに適しています。
 より大規模な本番環境で運用する場合や、テレメトリーデータをより細かく制御する必要がある場合は、独自の OpenTelemetry Collector をエージェントとしてデプロイすることを検討してください。
-本番環境向けのデプロイパターンや collector の設定例については、[OpenTelemetry で取り込む](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+本番環境向けのデプロイパターンと collector の設定例については、[OpenTelemetry を使用した取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

@@ -174,9 +174,9 @@ Possible values:
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "新增设置：控制与 Confluent Schema Registry 通信时，遇到瞬时故障（传输超时、连接被拒绝、DNS 错误、HTTP 5xx/408/429）时的最大重试次数。设置为 0 可禁用重试。`compatibility = '26.5'` 会保留之前的行为（不重试）。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "新增设置：控制与 Confluent Schema Registry 通信时，遇到瞬时故障（传输超时、连接被拒绝、DNS 错误、HTTP 5xx\/408\/429）时的最大重试次数。设置为 0 可禁用重试。`compatibility = '26.5'` 会保留之前的行为（不重试）。"}]}]} />
 
-对于 AvroConfluent 格式：与 Confluent Schema Registry 通信时，如果遇到瞬时故障 (传输超时、连接被拒绝、DNS 错误、HTTP 5xx/408/429) ，最大重试次数。设置为 0 可禁用重试。允许的最大值为 20。schema 验证错误 (HTTP 409、格式错误的 Avro JSON) 不会重试。
+对于 AvroConfluent 格式：与 Confluent Schema Registry 通信时遇到瞬时故障 (传输超时、连接被拒绝、DNS 错误、HTTP 5xx/408/429) 时的最大重试次数。设置为 0 可禁用重试。允许的最大值为 20。Schema 验证错误 (HTTP 409、格式错误的 Avro JSON) 不会重试。
 
 <div id="format_avro_schema_registry_receive_timeout">
   ## format_avro_schema_registry_receive_timeout
@@ -371,6 +371,22 @@ Possible values:
 
 * 0 — 已禁用。
 * 1 — 已启用。
+
+<div id="format_geojson_validate_geometry">
+  ## format_geojson_validate_geometry
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "用于控制 GeoJSON 格式在读取和写入时是否强制执行 RFC 7946 几何有效性（每条 line 和 Ring 的最小点数、Ring 闭合、非空多重几何）的新设置"}]}]} />
+
+控制 `GeoJSON` 格式是否在读写两个方向上强制执行 RFC 7946 的几何有效性。
+
+启用时 (默认) ，违反 GeoJSON 形态规则的几何将被拒绝：少于两个 Point 的 `LineString` (或 `MultiLineString` 中的一条 line) ；少于四个 Point，或首尾 Point 不一致 (即 Ring 未闭合) 的 `Polygon` 或 `MultiPolygon` 的 Ring；以及空的 `MultiLineString`、`Polygon` 或 `MultiPolygon`。这同时适用于读取和写入 (读取时，此类文档会被拒绝；写入时，此类 ClickHouse 值会被拒绝，而不是生成一个会被输入格式拒绝的文档) 。
+
+禁用时，将不再强制执行这些形态规则：这类几何会按原样读取和写入，因此退化几何也可以完整往返，但写出的文档可能不是有效的 GeoJSON。
+
+此校验仅针对结构：只检查点数和 Ring 是否闭合。它不会检查形态在几何上的正确性——不会强制要求 Ring 方向 (右手法则 / winding order) ，并且会接受结构上有效但几何上退化的几何，例如面积为零的 Polygon、自相交的 Ring，或孔位于外环之外的 Polygon。无论此设置是否启用，非有限坐标 (`NaN`、`Inf`) 都会被拒绝，因为它们无法表示为 JSON 数值。
 
 <div id="format_json_object_each_row_column_for_object_name">
   ## format_json_object_each_row_column_for_object_name
@@ -659,9 +675,9 @@ ClickHouse 就可以只读取所需的字节范围，并减少内存占用。
 
 启用此选项后，如果连接意外关闭，缓冲区中的剩余数据将继续被解析和处理，而不会被视为错误
 
-<Note>
-  启用此选项会禁用并行解析，并且无法进行去重
-</Note>
+:::note
+启用此选项会禁用并行解析，并且无法进行去重
+:::
 
 <div id="input_format_csv_allow_cr_end_of_line">
   ## input_format_csv_allow_cr_end_of_line
@@ -730,6 +746,16 @@ ClickHouse 就可以只读取所需的字节范围，并减少内存占用。
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 将 CSV 格式中插入的枚举值按枚举索引处理
+
+<div id="input_format_csv_missing_nullable_as_empty_string">
+  ## input_format_csv_missing_nullable_as_empty_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "新增设置：将 CSV 中 `Nullable(String)` 的缺失值读取为空字符串，而不是 NULL。"}]}]} />
+
+控制在 CSV 中如何将缺失值读取为 `Nullable(String)`。缺失值指的是逗号之间、之前或之后未被引号包围的空白内容。如果启用此设置，则无论 `input_format_csv_empty_as_default` 的值是什么，`Nullable(String)` 的缺失值都会被解释为空 `String`，而不是 NULL。
 
 <div id="input_format_csv_skip_first_lines">
   ## input_format_csv_skip_first_lines
@@ -828,9 +854,9 @@ ClickHouse 就可以只读取所需的字节范围，并减少内存占用。
 
 执行 `INSERT` 查询时，会用相应列的默认值替换被省略的输入列值。此选项适用于 [JSONEachRow](/zh/reference/formats/JSON/JSONEachRow) (以及其他 JSON 格式) 、[CSV](/zh/reference/formats/CSV/CSV)、[TabSeparated](/zh/reference/formats/TabSeparated/TabSeparated)、[TSKV](/zh/reference/formats/TabSeparated/TSKV)、[Parquet](/zh/reference/formats/Parquet/Parquet)、[Arrow](/zh/reference/formats/Arrow/Arrow)、[Avro](/zh/reference/formats/Avro/Avro)、[ORC](/zh/reference/formats/ORC)、[Native](/zh/reference/formats/Native) 格式，以及带有 `WithNames`/`WithNamesAndTypes` 后缀的格式。
 
-<Note>
-  启用此选项后，扩展的表元数据会从服务端发送到客户端。这会额外消耗服务端的计算资源，并可能降低性能。
-</Note>
+:::note
+启用此选项后，扩展的表元数据会从服务端发送到客户端。这会额外消耗服务端的计算资源，并可能降低性能。
+:::
 
 可能的值：
 
@@ -1282,17 +1308,17 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "用于限制 输入格式 在发出块之前最长等待时间（毫秒）的新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "用于限制输入格式在发出块之前最长等待时间（毫秒）的新设置"}]}]} />
 
-限制在基于行的输入 format 中，解析期间发出块前的最长等待时间 (以毫秒为单位) 。0 表示不限制。
+限制在基于行的输入格式中，解析期间发出块前的最长等待时间 (以毫秒为单位) 。0 表示不限制。
 
-<Note>
-  该选项仅在启用 `input_format_connection_handling` 时生效。设置该值还会禁用并行解析，并导致无法去重。
-</Note>
+:::note
+该选项仅在启用 `input_format_connection_handling` 时生效。设置该值还会禁用并行解析，并导致无法去重。
+:::
 
-<Note>
-  对于流式 insert，你还必须设置 `min_insert_block_size_rows=0` 和 `min_insert_block_size_bytes=0`。否则，已解析的块仍可能在块 squashing 阶段累积在内存中，直到达到这些阈值，从而无法及时插入。
-</Note>
+:::note
+对于流式 insert，你还必须设置 `min_insert_block_size_rows=0` 和 `min_insert_block_size_bytes=0`。否则，已解析的块仍可能在块 squashing 阶段累积在内存中，直到达到这些阈值，从而无法及时插入。
+:::
 
 **Example：将 Wikipedia 的最近更改流式写入 ClickHouse**
 
@@ -1496,9 +1522,9 @@ ORC 行读取器使用的时区名称，默认时区为 GMT。
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "读取 Parquet 文件时，会根据 WHERE/PREWHERE 表达式以及 Parquet 元数据中的 bloom filter 跳过整个行组。"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "读取 Parquet 文件时，会根据 WHERE/PREWHERE 表达式以及 Parquet 元数据中的 bloom filter 跳过整个行组。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "读取 Parquet 文件时，会根据 WHERE/PREWHERE 表达式以及 Parquet 元数据中的布隆过滤器跳过整个行组。"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "读取 Parquet 文件时，会根据 WHERE/PREWHERE 表达式以及 Parquet 元数据中的布隆过滤器跳过整个行组。"}]}]} />
 
-读取 Parquet 文件时，会根据 WHERE 表达式以及 Parquet 元数据中的 bloom filter 跳过整个行组。
+读取 Parquet 文件时，会根据 WHERE 表达式以及 Parquet 元数据中的布隆过滤器跳过整个行组。
 
 <div id="input_format_parquet_case_insensitive_column_matching">
   ## input_format_parquet_case_insensitive_column_matching
@@ -1863,11 +1889,11 @@ Parquet reader 输出的平均块大小 (字节)
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "20.5"},{"label": "1"},{"label": "启用对带有 WithNames/WithNamesAndTypes 后缀格式的名称表头的使用"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "20.5"},{"label": "1"},{"label": "启用对带有 WithNames/WithNamesAndTypes 后缀的格式使用名称请求头"}]}]} />
 
 启用或禁用在插入数据时检查列顺序。
 
-为提高 insert 性能，如果你确定输入数据的列顺序与目标表一致，建议禁用此检查。
+为提高插入性能，如果你确定输入数据的列顺序与目标表一致，建议禁用此检查。
 
 支持的格式：
 
@@ -2029,7 +2055,7 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse 允许在 String 类型中存储任意二进制数据，而该类型通常用于存储 UTF-8。Parquet/ORC/Arrow 的 String 仅支持 UTF-8。因此，你可以为 ClickHouse 的 String 类型选择使用 Arrow 的哪种数据类型——String 或 Binary。虽然 Binary 在语义和兼容性方面更准确，但默认使用 String 在大多数情况下更符合用户预期。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse 允许在 String 类型中存储任意二进制数据，而该类型通常用于存储 UTF-8。Parquet\/ORC\/Arrow 的 String 仅支持 UTF-8。因此，你可以为 ClickHouse 的 String 类型选择使用 Arrow 的哪种数据类型——String 或 Binary。虽然 Binary 在语义和兼容性方面更准确，但默认使用 String 在大多数情况下更符合用户预期。"}]}]} />
 
 对 String 列使用 Arrow String 类型，而不是 Binary
 
@@ -2158,6 +2184,18 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 如果将其设为 true，CSV 格式中的行尾将使用 \r\n 而不是 \n。
+
+<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
+  ## output_format_csv_header_serialize_tuple_into_separate_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "新设置。当启用 output_format_csv_serialize_tuple_into_separate_columns 时，CSVWithNames\/CSVWithNamesAndTypes 的表头现在会将 Tuple 列展平为其叶子字段，使表头宽度与数据一致。设为 false 可恢复此前的单名称表头。"}]}]} />
+
+当启用 [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](#output_format_csv_serialize_tuple_into_separate_columns) 时，`CSVWithNames` 和 `CSVWithNamesAndTypes` 的表头行会将每个 Tuple 列展平为其叶子字段 (点式名称，如 `t.a`、`t.b`，以及叶子类型名称) ，因此表头中的列数与数据相同。对于 `CustomSeparated*`，只有在 `format_custom_escaping_rule = 'CSV'` 且 `format_custom_field_delimiter` 是与 `format_csv_delimiter` 相同的单个字符时，才会进行这种展平；否则 (例如使用默认的制表符分隔符，或 `format_custom_field_delimiter = '|'`) 表头将保持未展平状态，从而继续与数据匹配。将其设为 `0` 可保留此前的行为，即表头保留单个顶层 Tuple 名称和类型。
+
+注意：当 `input_format_with_names_use_header = 1` 时，扁平化后的表头不会按名称读回为 Tuple。要将这类数据读回到 Tuple 中，可以在输出时将此设置设为 `0`，或者在读取时使用 `input_format_with_names_use_header = 0` (对于 `*WithNamesAndTypes` 格式 `CSVWithNamesAndTypes` 和 `CustomSeparatedWithNamesAndTypes`，还需同时设置 `input_format_with_types_use_header = 0`，否则扁平化后的类型行会与单个顶层 Tuple 输入字段进行校验，并因此被拒绝) 。
 
 <div id="output_format_csv_serialize_tuple_into_separate_columns">
   ## output_format_csv_serialize_tuple_into_separate_columns
@@ -2569,7 +2607,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "为 Native 输出格式新增扁平化 Dynamic/JSON 序列化"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "为 Native 输出格式新增扁平化 Dynamic\/JSON 序列化"}]}]} />
 
 以扁平化格式写入 [JSON](/zh/reference/data-types/newjson) 和 [Dynamic](/zh/reference/data-types/dynamic) 列的数据 (将所有类型/路径作为单独的子列) 。
 
@@ -2599,7 +2637,7 @@ ORC 输出格式中压缩块的大小，单位为字节。
 
 <SettingsInfoBlock type="ORCCompression" default_value="zstd" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet/ORC/Arrow 支持多种压缩方法，包括 lz4 和 zstd。ClickHouse 支持所有这些压缩方法。某些支持较弱的工具（如 'duckdb'）不支持速度更快的 `lz4` 压缩方法，因此我们默认设置为 zstd。"}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "默认在 ORC 输出格式中使用 lz4 压缩"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet\/ORC\/Arrow 支持多种压缩方法，包括 lz4 和 zstd。ClickHouse 支持所有这些压缩方法。某些支持较弱的工具（如 'duckdb'）不支持速度更快的 `lz4` 压缩方法，因此我们默认设置为 zstd。"}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "默认在 ORC 输出格式中使用 lz4 压缩"}]}]} />
 
 ORC 输出格式的压缩方法。支持的编解码器：lz4、snappy、zlib、zstd、none (不压缩)
 
@@ -2800,7 +2838,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse 允许在 String 类型中存储任意二进制数据，而该类型通常用于 UTF-8 数据。Parquet/ORC/Arrow 的 String 只支持 UTF-8。因此，你可以为 ClickHouse 的 String 类型选择使用哪种 Arrow 数据类型——String 或 Binary。虽然 Binary 在语义上更准确、兼容性也更好，但默认使用 String 在大多数情况下更符合用户预期。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse 允许在 String 类型中存储任意二进制数据，而该类型通常用于 UTF-8 数据。Parquet\/ORC\/Arrow 的 String 只支持 UTF-8。因此，你可以为 ClickHouse 的 String 类型选择使用哪种 Arrow 数据类型——String 或 Binary。虽然 Binary 在语义上更准确、兼容性也更好，但默认使用 String 在大多数情况下更符合用户预期。"}]}]} />
 
 对 String 列使用 Parquet String 类型，而不是 Binary。
 
@@ -3184,7 +3222,7 @@ Pretty 格式 的最大行数限制。
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "如果为 true，则将 ' 转义为 ''；否则使用 \' 进行引用"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "如果为 true，则将 ' 转义为 ''；否则使用 \\' 进行引用"}]}]} />
 
 如果为 true，则将 &#39; 转义为 &#39;&#39;；否则使用 &#92;&#39; 进行引用
 
@@ -3228,9 +3266,9 @@ y   Nullable(String)
 z   IPv4
 ```
 
-<Note>
-  如果 `schema_inference_hints` 的格式不正确，或者存在拼写错误、数据类型错误等问题……整个 `schema_inference_hints` 都会被忽略。
-</Note>
+:::note
+如果 `schema_inference_hints` 的格式不正确，或者存在拼写错误、数据类型错误等问题……整个 schema&#95;inference&#95;hints 都会被忽略。
+:::
 
 <div id="schema_inference_make_columns_nullable">
   ## schema_inference_make_columns_nullable

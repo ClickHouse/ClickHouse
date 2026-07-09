@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'materialized view 소개'
 title: '첫 materialized view 만들기'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['실시간 분석', '데이터 웨어하우징']
 products: ['Cloud']
 description: 'ClickHouse에서 materialized view를 사용해 쿼리 결과를 다른 정렬 순서로 미리 계산해 저장하고, 프라이머리 키(primary key)에 포함되지 않은 컬럼에서도 빠르게 조회하는 방법을 알아봅니다.'
 ---
@@ -203,7 +203,7 @@ MergeTree 빠른 시작에서는 테이블이 `(postcode, addr1, addr2)`를 기�
 
 ## 다음 단계
 
-이 빠른 시작에서는 원본 테이블을 수정하지 않고도 town 기준으로 빠르게 조회할 수 있도록, 정렬 순서가 다른 영국 부동산 거래 데이터를 저장하는 materialized view를 만들었습니다. 또한 MV가 insert trigger처럼 동작하며, 기존 데이터는 수동으로 백필해야 하고, 그에 따른 대가로 추가 디스크 공간이 필요하다는 점을 배웠습니다.
+이 빠른 시작에서는 원본 테이블을 수정하지 않고도 town 기준으로 빠르게 조회할 수 있도록, 정렬 순서가 다른 영국 부동산 거래 데이터를 저장하는 materialized view를 만들었습니다. 또한 MV가 삽입 트리거처럼 동작하며, 기존 데이터는 수동으로 백필해야 하고, 그에 따른 대가로 추가 디스크 공간이 필요하다는 점을 배웠습니다.
 
 다음 빠른 시작도 확인해 보세요:
 

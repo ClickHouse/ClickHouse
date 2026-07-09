@@ -16,8 +16,8 @@ doc_type: 'reference'
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – 各ベクトル要素の型。指定できる型は `BFloat16`、`Float32`、`Float64` です
-* `dimension` – 各ベクトルの要素数
+* `element_type` – 各ベクトル要素の型。指定できる型は `Int8`、`BFloat16`、`Float32`、`Float64` です
+* `dimension` – 各ベクトルの次元数
 
 <div id="creating-qbit">
   ## QBit の作成
@@ -63,6 +63,28 @@ SELECT * FROM vectors ORDER BY id;
 
 この変換は、`CAST` を使って明示的に行うこともできます。たとえば、`CAST(embedding AS QBit(Float32, 8))` のように指定します。
 
+<div id="converting-qbit-to-arrays">
+  ## QBit を Array に変換する
+</div>
+
+逆方向の変換では、ビット転置された表現から元のベクトルを再構築するため、`QBit` を `Array` に CAST すると格納されている値が返されます。これは [Array を `QBit` に変換する](#converting-arrays-to-qbit) の逆です。
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::Array(Float32) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+再構成された配列では `QBit` の要素型が使用され、その後、各要素は指定された配列の要素型に変換されます。したがって、`QBit(Float32, N)` から `Array(Float64)` のように要素型も変更するキャストも可能です。
+
+`Array` -&gt; `QBit` -&gt; `Array` のラウンドトリップは、`Int8`、`Float32`、`Float64` では情報損失なしで行えます。`BFloat16` の場合は、`BFloat16` への直接変換と同じ結果になり、失われる精度は `BFloat16` 自体に起因するものだけです。
+
+`dimension` が 8 の倍数でない場合、内部表現に含まれる末尾のパディング要素は取り除かれるため、結果には常にちょうど `dimension` 個の要素が含まれます。
+
 <div id="qbit-subcolumns">
   ## QBit サブカラム
 </div>
@@ -85,6 +107,7 @@ SELECT bin(vec.1) FROM test;
 
 アクセス可能なサブカラム数は、要素型によって異なります。
 
+* `Int8`: 8 個のサブカラム (1-8)
 * `BFloat16`: 16 個のサブカラム (1-16)
 * `Float32`: 32 個のサブカラム (1-32)
 * `Float64`: 64 個のサブカラム (1-64)
@@ -97,3 +120,4 @@ SELECT bin(vec.1) FROM test;
 
 * [`L2DistanceTransposed`](/ja/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](/ja/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)
+* [`dotProductTransposed`](/ja/reference/functions/regular-functions/distance-functions#dotProductTransposed)

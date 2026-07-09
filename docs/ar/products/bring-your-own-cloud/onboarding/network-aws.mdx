@@ -27,7 +27,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## إعداد ربط VPC النظيري
 </div>
 
-لإنشاء VPC peering أو حذفه لـ ClickHouse BYOC، اتبع الخطوات التالية:
+لإنشاء ربط VPC النظيري أو حذفه لـ ClickHouse BYOC، اتبع الخطوات التالية:
 
 <Steps>
   <Step>
@@ -35,7 +35,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     1. انتقل إلى VPC Dashboard في حساب ClickHouse BYOC.
     2. اختر Peering Connections.
-    3. انقر على Create Peering Connection.
+    3. انقر على Create Peering Connection
     4. اضبط VPC Requester على ClickHouse VPC ID.
     5. اضبط VPC Accepter على معرّف VPC المستهدف. (اختر حسابًا آخر إذا كان ذلك ينطبق)
     6. انقر على Create Peering Connection.
@@ -46,7 +46,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step>
     ### قبول طلب peering connection
 
-    انتقل إلى حساب الربط النظيري، ومن الصفحة (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) يمكن للعميل الموافقة على طلب VPC peering هذا.
+    انتقل إلى حساب الربط النظيري، ومن الصفحة (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) يمكن للعميل الموافقة على طلب ربط VPC النظيري هذا.
 
     <Image img="/images/cloud/reference/byoc-vpcpeering-2.webp" size="lg" alt="BYOC قبول peering connection" border />
   </Step>
@@ -97,7 +97,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * **نقطة النهاية العامة**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 * **نقطة النهاية الخاصة**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 
-اختياريًا، بعد التحقق من أن الربط النظيري يعمل، يمكنك طلب إزالة موازن الحمل العام لـ ClickHouse BYOC.
+اختياريًا، بعد التحقق من أن ربط VPC النظيري يعمل، يمكنك طلب إزالة موازن الحمل العام لـ ClickHouse BYOC.
 
 <div id="setup-privatelink">
   ## إعداد PrivateLink
@@ -126,10 +126,10 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/cloud/reference/byoc-privatelink-1.webp" size="lg" alt="نقطة نهاية خدمة BYOC PrivateLink" border />
 
     2. **إنشاء نقطة نهاية VPC**:
-       * انتقل إلى AWS VPC Console ← Endpoints ← Create Endpoint
+       * انتقل إلى AWS VPC Console → Endpoints → Create Endpoint
        * اختر &quot;Find service by name&quot; وأدخل اسم Endpoint Service الذي زوّدك به ClickHouse Support
        * اختر VPC الخاص بك وحدد الشبكات الفرعية (يوصى بواحدة لكل availability zone)
-       * **مهم**: فعّل &quot;Private DNS names&quot; لـ نقطة النهاية—فهذا مطلوب لكي تعمل DNS resolution بشكل صحيح
+       * **مهم**: فعّل &quot;Private DNS names&quot; لـ نقطة النهاية—فهذا مطلوب لكي تعمل حل أسماء DNS بشكل صحيح
        * اختر مجموعة الأمان لـ نقطة النهاية أو أنشئ واحدة
        * انقر على &quot;Create Endpoint&quot;
 
@@ -137,7 +137,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       **متطلبات DNS**:
 
       * فعّل &quot;Private DNS names&quot; عند إنشاء نقطة نهاية VPC
-      * تأكد من تفعيل &quot;DNS Hostnames&quot; في VPC الخاص بك (VPC Settings ← DNS resolution وDNS hostnames)
+      * تأكد من تفعيل &quot;DNS Hostnames&quot; في VPC الخاص بك (VPC Settings → DNS resolution وDNS hostnames)
 
       هذه الإعدادات مطلوبة لكي يعمل PrivateLink DNS بشكل صحيح.
     </Warning>
@@ -176,7 +176,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
     * **PrivateLink endpoint**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
 
-    ستقوم DNS resolution داخل VPC الخاص بك تلقائيًا بتوجيه حركة المرور عبر نقطة نهاية PrivateLink عند استخدام تنسيق النطاق الفرعي `vpce`.
+    ستقوم حل أسماء DNS داخل VPC الخاص بك تلقائيًا بتوجيه حركة المرور عبر نقطة نهاية PrivateLink عند استخدام تنسيق النطاق الفرعي `vpce`.
   </Step>
 </Steps>
 

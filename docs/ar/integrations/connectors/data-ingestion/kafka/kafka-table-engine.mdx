@@ -361,7 +361,7 @@ LIMIT 10;
 
 على الرغم من أن هذا يُعد حالة استخدام أقل شيوعًا، يمكن أيضًا الاحتفاظ ببيانات ClickHouse في Kafka. على سبيل المثال، سنُدرج الصفوف يدويًا في محرك جدول Kafka. سيقرأ محرك Kafka نفسه هذه البيانات، ثم يضعها عرضه المادي في جدول MergeTree. وأخيرًا، نوضّح كيفية استخدام العروض المادية مع عمليات الإدراج إلى Kafka لقراءة الجداول من الجداول المصدر الموجودة.
 
-<div id="steps">
+<div id="steps-1">
   #### الخطوات
 </div>
 
@@ -500,14 +500,14 @@ wc -l
 </div>
 
 <div id="working-with-clickhouse-clusters">
-  #### العمل مع عناقيد ClickHouse
+  #### العمل مع عنقود ClickHouse
 </div>
 
 من خلال مجموعات مستهلكي Kafka، يمكن لعدة مثيلات من ClickHouse القراءة من topic نفسه. ويُعيَّن كل مستهلك إلى partition واحد من topic بنسبة 1:1. عند توسيع استهلاك ClickHouse باستخدام محرك جدول Kafka، ضع في اعتبارك أن العدد الإجمالي للمستهلكين داخل العنقود لا يمكن أن يتجاوز عدد partitions في topic. لذلك، احرص مسبقًا على تهيئة تقسيم topic بالشكل المناسب.
 
 يمكن أيضًا تهيئة عدة مثيلات من ClickHouse للقراءة من topic واحد باستخدام معرّف مجموعة المستهلكين نفسه، والذي يُحدَّد عند إنشاء محرك جدول Kafka. وبذلك، سيقرأ كل مثيل من partition واحد أو أكثر، مع إدراج المقاطع في الجدول الهدف المحلي الخاص به. ويمكن بعد ذلك تهيئة الجداول الهدف لاستخدام ReplicatedMergeTree للتعامل مع تكرار البيانات. يتيح هذا النهج توسيع قراءات Kafka بالتوازي مع عنقود ClickHouse، شريطة توفّر عدد كافٍ من partitions Kafka.
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="مخطط محرك جدول Kafka مع تجمعات ClickHouse" />
+<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="مخطط محرك جدول Kafka مع عنقود ClickHouse" />
 
 <div id="tuning-performance">
   #### ضبط الأداء

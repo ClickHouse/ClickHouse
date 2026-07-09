@@ -28,7 +28,7 @@ Una tabla de resumen con una fila por servicio responde a la pregunta &quot;¿qu
   <Step>
     ### Crear el dashboard de detalle
 
-    Crea un dashboard llamado `Service Detail` y añade un [filtro personalizado](/es/clickstack/features/dashboards/overview#custom-filters) con la expresión `ServiceName` en tu fuente de traces. El filtro a nivel de dashboard limita cada tile a un único servicio, por lo que los tiles no tienen que fijar un servicio en sus queries. Añade las vistas por servicio que quieras: métricas clave RED (solicitudes, errores, duración P95), un chart de percentiles de latencia (P50, P95, P99), la tasa de solicitudes a lo largo del tiempo y un desglose por endpoint agrupado por `SpanName`.
+    Crea un dashboard llamado `Service Detail` y añade un [filtro personalizado](/es/clickstack/features/dashboards/overview#custom-filters) con la expresión `ServiceName` en tu fuente de traza. El filtro a nivel de dashboard limita cada tile a un único servicio, por lo que los tiles no tienen que fijar un servicio en sus queries. Añade las vistas por servicio que quieras: métricas clave RED (solicitudes, errores, duración P95), un chart de percentiles de latencia (P50, P95, P99), la tasa de solicitudes a lo largo del tiempo y un desglose por endpoint agrupado por `SpanName`.
 
     Guarda primero este dashboard para poder seleccionarlo como destino en el siguiente paso.
   </Step>
@@ -36,7 +36,7 @@ Una tabla de resumen con una fila por servicio responde a la pregunta &quot;¿qu
   <Step>
     ### Crear el inventario de servicios
 
-    En un dashboard de resumen, añade un tile de **Table** en tu fuente de traces agrupado por `ServiceName`. Asígnale las columnas RED que puntúan cada servicio, cada una como una serie con alias:
+    En un dashboard de resumen, añade un tile de **Table** en tu fuente de traza agrupado por `ServiceName`. Asígnale las columnas RED que puntúan cada servicio, cada una como una serie con alias:
 
     * `Requests`: recuento de spans (tasa).
     * `Errors`: recuento de spans con estado de error.
@@ -69,7 +69,7 @@ Una tabla de resumen con una fila por servicio responde a la pregunta &quot;¿qu
   <Step>
     ### Hacer clic en una fila
 
-    Al pasar el cursor sobre una fila, se muestra un enlace en el borde derecho de la tabla, con una indicación que describe la acción (`Open dashboard \"Service Detail\"`). Al hacer clic en la fila, se abre el dashboard `Service Detail` con su filtro `Service` establecido en el valor seleccionado, de modo que cada tile (las métricas clave RED, los percentiles de latencia y el desglose por endpoint) queda limitado a ese único servicio con un solo clic.
+    Al pasar el cursor sobre una fila, se muestra un enlace en el borde derecho de la tabla, con una indicación que describe la acción (`Open dashboard "Service Detail"`). Al hacer clic en la fila, se abre el dashboard `Service Detail` con su filtro `Service` establecido en el valor seleccionado, de modo que cada tile (las métricas clave RED, los percentiles de latencia y el desglose por endpoint) queda limitado a ese único servicio con un solo clic.
 
     <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Dashboard Service Detail después de hacer clic en una fila, con el filtro Service establecido en el servicio seleccionado y las métricas clave RED, los percentiles de latencia y el desglose por endpoint limitados a ese servicio" size="lg" />
   </Step>
@@ -117,10 +117,10 @@ Las acciones al hacer clic en una fila se configuran en el propio tile de tabla;
 El panel lateral ofrece tres acciones:
 
 * **Default**: el comportamiento predeterminado. Al hacer clic en una fila, se abre la página de Búsqueda, filtrada por los valores de las columnas group-by de la fila y el intervalo de tiempo seleccionado. Esto es lo que obtienes cuando no se configura ninguna acción personalizada.
-* **Search**: envía el clic a la página de Búsqueda de una fuente que elijas.
+* **Búsqueda**: envía el clic a la página de Búsqueda de una fuente que elijas.
 * **Dashboard**: envía el clic a otro dashboard de tu equipo.
 
-Para **Search** y **Dashboard**, eliges a dónde lleva el clic y defines con plantillas los filtros que se trasladan:
+Para **Búsqueda** y **Dashboard**, eliges a dónde lleva el clic y defines con plantillas los filtros que se trasladan:
 
 * **Destination**: elige una fuente o un dashboard concretos, o selecciona **Template** e introduce una plantilla de [Handlebars](https://handlebarsjs.com/) cuyo nombre coincida con el de una fuente o dashboard disponible. Elegir un destino concreto lo fija por ID. Es la opción recomendada para un único destino fijo: resiste cambios de nombre y la exportación e importación de dashboards, y en el caso de un dashboard completa previamente los filtros declarados en el destino. Usa **Template** cuando el destino deba variar según la fila, haciendo referencia a una columna de la fila para elegirlo (por ejemplo, `Errors-{{ServiceName}}`).
 * **Filters**: haz clic en **Add filter** y proporciona una **Expression** (una columna o expresión en el destino, por ejemplo `ServiceName`) y una **Template** para su valor (por ejemplo `{{ServiceName}}`). Las plantillas hacen referencia a las columnas de la fila seleccionada mediante `{{columnName}}` (consulta la nota de abajo sobre qué columnas están disponibles). Cada filtro se convierte en el destino en una condición `expression IN (value)`, y los filtros que comparten una misma expresión se combinan. Cuando el destino es un dashboard, el panel lateral completa previamente un filtro vacío por cada filtro que ese dashboard ya declara, para que solo tengas que rellenar las plantillas.

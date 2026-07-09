@@ -1289,7 +1289,7 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
   ### QBit
 </div>
 
-`QBit` es un tipo de vector para realizar consultas eficientes con distintos niveles de precisión. Internamente, se almacena en un formato transpuesto. A nivel de protocolo, QBit es simplemente un `Array` del tipo de elemento subyacente (`Float32`, `Float64` o `BFloat16`). La optimización de transposición de bits para el almacenamiento se realiza en el servidor, no en el protocolo RowBinary.
+`QBit` es un tipo de vector para realizar consultas eficientes con distintos niveles de precisión. Internamente, se almacena en un formato transpuesto. A nivel de protocolo, QBit es simplemente un `Array` del tipo de elemento subyacente (`Int8`, `Float32`, `Float64` o `BFloat16`). La optimización de transposición de bits para el almacenamiento se realiza en el servidor, no en el protocolo RowBinary.
 
 Sintaxis:
 
@@ -1297,13 +1297,13 @@ Sintaxis:
 QBit(element_type, dimension)
 ```
 
-Donde `element_type` es `Float32`, `Float64` o `BFloat16`, y `dimension` es la dimensión fija del vector.
+Donde `element_type` es `Int8`, `Float32`, `Float64` o `BFloat16`, y `dimension` es la dimensión fija del vector.
 
-Formato de transmisión: idéntico a `Array(element_type)`:
+wire format: idéntico a `Array(element_type)`:
 
 ```text
-// longitud LEB128
-// seguido de `length` elementos de `element_type`
+// LEB128 length
+// followed by `length` elements of `element_type`
 ```
 
 Ejemplo de codificación de `QBit(Float32, 4)` que contiene `[1.0, 2.0, 3.0, 4.0]`:
@@ -1313,11 +1313,11 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 ```
 
 ```text
-0x04,                   // LEB128 - el array tiene 4 elementos
-0x00, 0x00, 0x80, 0x3F, // 1.0 como Float32
-0x00, 0x00, 0x00, 0x40, // 2.0 como Float32
-0x00, 0x00, 0x40, 0x40, // 3.0 como Float32
-0x00, 0x00, 0x80, 0x40, // 4.0 como Float32
+0x04,                   // LEB128 - array has 4 elements
+0x00, 0x00, 0x80, 0x3F, // 1.0 as Float32
+0x00, 0x00, 0x00, 0x40, // 2.0 as Float32
+0x00, 0x00, 0x40, 0x40, // 3.0 as Float32
+0x00, 0x00, 0x80, 0x40, // 4.0 as Float32
 ```
 
 <div id="format-settings">

@@ -16,7 +16,7 @@ ClickHouse 인스턴스 기준으로는 다음 중 하나를 선택할 수 있�
 
 2. **[PULL](#pull-data-from-redshift-to-clickhouse)** ClickHouse JDBC Bridge를 활용해 Redshift에서 데이터를 가져옵니다
 
-3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** S3 객체 스토리지를 사용해 &quot;언로드 후 로드&quot; 방식으로 데이터를 이동합니다
+3. **[피벗](#pivot-data-from-redshift-to-clickhouse-using-s3)** S3 객체 스토리지를 사용해 &quot;언로드 후 로드&quot; 방식으로 데이터를 이동합니다
 
 <Note>
   이 튜토리얼에서는 데이터 소스로 Redshift를 사용했습니다. 하지만 여기서 소개하는 마이그레이션 방식은 Redshift에만 국한되지 않으며, 호환되는 모든 데이터 소스에도 유사하게 적용할 수 있습니다.
@@ -49,7 +49,7 @@ Push 시나리오에서는 타사 도구나 서비스(사용자 지정 코드 �
   ## Redshift에서 ClickHouse로 데이터 가져오기
 </div>
 
-Pull 시나리오에서는 ClickHouse JDBC Bridge를 사용하여 ClickHouse 인스턴스에서 Redshift 클러스터에 직접 연결한 뒤 `INSERT INTO ... SELECT` 쿼리를 수행합니다:
+Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스턴스에서 Redshift 클러스터에 직접 연결하고 `INSERT INTO ... SELECT` 쿼리를 수행합니다:
 
 <Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="Redshift에서 ClickHouse로 PULL" />
 
@@ -214,7 +214,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 사용하여 ClickHouse 인
 
 * 프로세스가 2단계로 진행됩니다(Redshift에서 언로드한 후 ClickHouse로 로드).
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### 튜토리얼
 </div>
 

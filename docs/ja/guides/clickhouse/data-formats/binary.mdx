@@ -17,14 +17,14 @@ ClickHouse は複数のバイナリ形式をサポートしており、これに
   ## ClickHouseNative フォーマットでのエクスポート
 </div>
 
-ClickHouseノード間でデータをエクスポートおよびインポートする際に最も効率的なデータフォーマットは、[Native](/ja/reference/formats/Native)フォーマットです。エクスポートは`INTO OUTFILE`句を使用して行います。
+ClickHouseノード間でデータをエクスポートおよびインポートする際に最も効率的なデータフォーマットは、[Native フォーマット](/ja/reference/formats/Native)フォーマットです。エクスポートは`INTO OUTFILE`句を使用して行います。
 
 ```sql
 SELECT * FROM some_data
 INTO OUTFILE 'data.clickhouse' FORMAT Native
 ```
 
-これにより、[data.clickhouse](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.clickhouse) ファイルがNative フォーマットで作成されます。
+これにより、[data.clickhouse](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.clickhouse) ファイルがNative フォーマット フォーマットで作成されます。
 
 <div id="importing-from-a-native-format">
   ### Native フォーマット からのインポート

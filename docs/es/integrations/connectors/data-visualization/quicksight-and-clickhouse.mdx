@@ -113,53 +113,53 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 ```
 
 <div id="connecting-quicksight-to-clickhouse">
-  ## Conectar QuickSight a ClickHouse
+  ## Conectar QuickSight con ClickHouse
 </div>
 
-Antes que nada, ve a [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), navega hasta Datasets y haz clic en &quot;New dataset&quot;:
+En primer lugar, ve a [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), navega hasta Datasets y haz clic en &quot;New dataset&quot;:
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_01.webp" alt="Panel de Amazon QuickSight que muestra el botón New dataset en la sección Datasets" border />
 
 <br />
 
-Busca el conector oficial de MySQL incluido con QuickSight (llamado simplemente **MySQL**):
+Busca el conector oficial de MySQL incluido en QuickSight (llamado simplemente **MySQL**):
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="Pantalla de selección de fuente de datos de QuickSight con MySQL resaltado en los resultados de búsqueda" border />
-
-<br />
-
-Especifica los detalles de tu conexión. Ten en cuenta que el puerto de la interfaz MySQL es 9004 de forma predeterminada,
-y puede ser diferente según la configuración del servidor.
-
-<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="Formulario de configuración de conexión MySQL en QuickSight con campos de hostname, puerto, base de datos y credenciales" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="Pantalla de selección de origen de datos de QuickSight con MySQL resaltado en los resultados de búsqueda" border />
 
 <br />
 
-Ahora tienes dos opciones para obtener los datos desde ClickHouse. Primero, puedes seleccionar una tabla de la lista:
+Especifica los detalles de la conexión. Ten en cuenta que el puerto de la interfaz MySQL es 9004 de forma predeterminada
+y puede ser distinto según la configuración del servidor.
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="Interfaz de selección de tablas de QuickSight que muestra las tablas de la base de datos disponibles desde ClickHouse" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="Formulario de configuración de la conexión MySQL de QuickSight con campos para hostname, puerto, base de datos y credenciales" border />
+
+<br />
+
+Ahora tienes dos opciones para obtener los datos de ClickHouse. Primero, puedes seleccionar una tabla de la lista:
+
+<Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="Interfaz de selección de tablas de QuickSight que muestra las tablas de la base de datos disponibles en ClickHouse" border />
 
 <br />
 
 Como alternativa, puedes especificar una consulta SQL personalizada para obtener tus datos:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="Editor de consultas SQL personalizadas de QuickSight para obtener datos desde ClickHouse" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="Editor de consulta SQL personalizada de QuickSight para obtener datos de ClickHouse" border />
 
 <br />
 
-Al hacer clic en &quot;Edit/Preview data&quot;, deberías poder ver la estructura de la tabla detectada o ajustar tu consulta SQL personalizada, si así decidiste acceder a los datos:
+Al hacer clic en &quot;Edit/Preview data&quot;, deberías poder ver la estructura de la tabla detectada o ajustar tu consulta SQL personalizada, si decidiste acceder a los datos de ese modo:
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="Vista previa de datos de QuickSight que muestra la estructura de la tabla con columnas y datos de muestra" border />
 
 <br />
 
-Asegúrate de tener seleccionado el modo &quot;Direct Query&quot; en la esquina inferior izquierda de la interfaz de usuario:
+Asegúrate de tener seleccionado el modo &quot;Direct Query&quot; en la esquina inferior izquierda de la UI:
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="Interfaz de QuickSight con la opción del modo Direct Query resaltada en la esquina inferior" border />
 
 <br />
 
-Ahora puedes continuar publicando tu conjunto de datos y creando una nueva visualización.
+Ahora puedes continuar publicando tu dataset y creando una nueva visualización.
 
 <div id="known-limitations">
   ## Limitaciones conocidas

@@ -25,10 +25,10 @@ O ClickStack pode aproveitar [visões materializadas incrementais (IMV)](/pt-BR/
 </Note>
 
 <div id="what-are-incremental-materialized-views">
-  ## O que são views materializadas incrementais
+  ## O que são visões materializadas incrementais
 </div>
 
-Views materializadas incrementais permitem transferir o custo de computação do momento da consulta para o momento da inserção, resultando em consultas `SELECT` significativamente mais rápidas.
+Visões materializadas incrementais permitem transferir o custo de computação do momento da consulta para o momento da inserção, resultando em consultas `SELECT` significativamente mais rápidas.
 
 Ao contrário de bancos de dados transacionais como o Postgres, uma visão materializada no ClickHouse não é um snapshot armazenado. Em vez disso, ela funciona como um trigger que executa uma consulta sobre blocos de dados à medida que eles são inseridos em uma tabela de origem. A saída dessa consulta é gravada em uma tabela de destino separada. À medida que dados adicionais são inseridos, novos resultados parciais são anexados e mesclados à tabela de destino. O resultado mesclado equivale a executar a agregação sobre todo o conjunto de dados original.
 
@@ -38,7 +38,7 @@ As visões materializadas no ClickHouse são atualizadas continuamente à medida
 
 <Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de visão materializada" />
 
-Views materializadas incrementais computam apenas as alterações na visão à medida que novos dados chegam, transferindo a computação para o momento da inserção. Como o ClickHouse é altamente otimizado para ingestão, o custo incremental de manter a visão para cada bloco inserido é pequeno em relação à economia obtida durante a execução das consultas. O custo de computar a agregação é amortizado ao longo das inserções, em vez de ser pago repetidamente a cada leitura. Portanto, consultar os resultados pré-agregados é muito menos custoso do que recomputá-los, resultando em menor custo operacional e desempenho quase em tempo real para visualizações que consomem esses dados, mesmo em escala de petabytes.
+Visões materializadas incrementais computam apenas as alterações na visão à medida que novos dados chegam, transferindo a computação para o momento da inserção. Como o ClickHouse é altamente otimizado para ingestão, o custo incremental de manter a visão para cada bloco inserido é pequeno em relação à economia obtida durante a execução das consultas. O custo de computar a agregação é amortizado ao longo das inserções, em vez de ser pago repetidamente a cada leitura. Portanto, consultar os resultados pré-agregados é muito menos custoso do que recomputá-los, resultando em menor custo operacional e desempenho quase em tempo real para visualizações que consomem esses dados, mesmo em escala de petabytes.
 
 Esse modelo difere fundamentalmente de sistemas que recompõem visões inteiras a cada atualização ou dependem de atualizações agendadas. Para uma explicação mais aprofundada de como visões materializadas funcionam e como criá-las, consulte o guia indicado acima.
 
@@ -55,7 +55,7 @@ Cada visão materializada introduz uma sobrecarga adicional no momento da inser�
 </Note>
 
 Antes de prosseguir, recomendamos que você se familiarize mais a fundo com visões materializadas no ClickHouse.
-Consulte nosso guia sobre [Views materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para mais detalhes.
+Consulte nosso guia sobre [Visões materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) para mais detalhes.
 
 <div id="selecting-visualizatons-for-acceleration">
   ## Selecionando visualizações para aceleração
@@ -271,8 +271,8 @@ As visões materializadas devem ser registradas na **fonte** do HyperDX que corr
     Especifique a data mínima para a qual a visão materializada contém dados. Isso representa o timestamp mais antigo disponível na visão e, em geral, corresponde ao momento em que a visão foi criada, supondo que a ingestão tenha sido contínua.
 
     <Note>
-      As visões materializadas **não passam por backfill automaticamente** quando são criadas, portanto conterão apenas linhas geradas a partir de dados inseridos após a criação.
-      Um guia completo sobre backfilling de visões materializadas pode ser encontrado em [&quot;Carga retroativa de dados.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
+      As visões materializadas **não são preenchidas retroativamente automaticamente** quando são criadas, portanto conterão apenas linhas geradas a partir de dados inseridos após a criação.
+      Um guia completo sobre preenchimento retroativo de visões materializadas pode ser encontrado em [&quot;Carga retroativa de dados.&quot;](/pt-BR/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
     <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="Selecionar tempo mínimo" />
@@ -299,7 +299,7 @@ Depois que uma visão materializada é registrada, ela é usada automaticamente 
   ### Verificando a aceleração em dashboards e visualizações
 </div>
 
-É importante lembrar que visões materializadas incrementais contêm apenas dados inseridos **depois que a visão materializada foi criada**. Elas não recebem backfill automaticamente, o que as mantém leves e baratas de manter. Por esse motivo, os usuários precisam especificar explicitamente o intervalo de tempo válido de uma visão materializada ao registrá-la.
+É importante lembrar que visões materializadas incrementais contêm apenas dados inseridos **depois que a visão materializada foi criada**. Elas não são preenchidas retroativamente automaticamente, o que as mantém leves e baratas de manter. Por esse motivo, os usuários precisam especificar explicitamente o intervalo de tempo válido de uma visão materializada ao registrá-la.
 
 <Note>
   O ClickStack só usará uma visão materializada se o timestamp mínimo dela for menor ou igual ao início do intervalo de tempo da consulta, garantindo que a visão materializada contenha todos os dados necessários. Embora as consultas sejam divididas internamente em subconsultas com base em tempo, as visões materializadas são aplicadas à consulta inteira ou não são aplicadas. Melhorias futuras podem permitir o uso seletivo de visões materializadas em subconsultas elegíveis.

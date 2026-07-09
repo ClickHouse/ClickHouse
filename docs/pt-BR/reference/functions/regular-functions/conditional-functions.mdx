@@ -326,14 +326,12 @@ Retorna o maior valor entre os argumentos.
 Argumentos `NULL` são ignorados.
 
 * Para arrays, retorna o array lexicograficamente maior.
-* Para tipos `DateTime`, o tipo do resultado é promovido ao maior tipo (por exemplo, `DateTime64` se combinado com `DateTime32`).
+* Para tipos `DateTime`, o tipo do resultado é promovido para o tipo mais amplo (por exemplo, `DateTime64` se combinado com `DateTime32`).
 
-<Info>
-  **Use a configuração `least_greatest_legacy_null_behavior` para alterar o comportamento de `NULL`**
-
-  A versão [24.12](/pt-BR/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduziu uma alteração incompatível com versões anteriores, de modo que os valores `NULL` são ignorados, enquanto antes a função retornava `NULL` se um dos argumentos fosse `NULL`.
-  Para manter o comportamento anterior, defina a configuração `least_greatest_legacy_null_behavior` (padrão: `false`) como `true`.
-</Info>
+:::note Use a configuração `least_greatest_legacy_null_behavior` para alterar o comportamento de `NULL`
+A versão [24.12](/pt-BR/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduziu uma mudança incompatível com versões anteriores, de modo que os valores `NULL` são ignorados, enquanto antes a função retornava `NULL` se um dos argumentos fosse `NULL`.
+Para manter o comportamento anterior, defina a configuração `least_greatest_legacy_null_behavior` (padrão: `false`) como `true`.
+:::
 
 **Sintaxe**
 
@@ -343,19 +341,19 @@ greatest(x1[, x2, ...])
 
 **Argumentos**
 
-* `x1[, x2, ...]` — Um ou mais valores a serem comparados. Todos os argumentos devem ser de tipos comparáveis. [`Any`](/pt-BR/reference/data-types/index)
+* `x1[, x2, ...]` — Um ou mais valores para comparar. Todos os argumentos devem ser de tipos comparáveis. [`Any`](/pt-BR/reference/data-types/index)
 
 **Valor retornado**
 
-Retorna o maior valor entre os argumentos, promovido ao maior tipo compatível. [`Any`](/pt-BR/reference/data-types/index)
+Retorna o maior valor entre os argumentos, promovido para o maior tipo compatível. [`Any`](/pt-BR/reference/data-types/index)
 
 **Exemplos**
 
 **Tipos numéricos**
 
 ```sql title=Query
-SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -379,13 +377,13 @@ SELECT greatest(['hello'], ['there'], ['world']);
 **Tipos de DateTime**
 
 ```sql title=Query
-SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─greatest(toD⋯(now(), 3))─┐
-│  2025-05-28 15:50:53.000 │
+┌─greatest(toD⋯0.000', 3))─┐
+│  2025-01-02 12:00:00.000 │
 └──────────────────────────┘
 ```
 
@@ -453,12 +451,10 @@ Argumentos `NULL` são ignorados.
 * Para arrays, retorna o array lexicograficamente menor.
 * Para tipos DateTime, o tipo do resultado é promovido para o maior tipo (por exemplo, DateTime64 se combinado com DateTime32).
 
-<Info>
-  **Use a configuração `least_greatest_legacy_null_behavior` para alterar o comportamento de `NULL`**
-
-  A versão [24.12](/pt-BR/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduziu uma alteração incompatível com versões anteriores, de modo que os valores `NULL` são ignorados, enquanto antes a função retornava `NULL` se um dos argumentos fosse `NULL`.
-  Para manter o comportamento anterior, defina a configuração `least_greatest_legacy_null_behavior` (padrão: `false`) como `true`.
-</Info>
+:::note Use a configuração `least_greatest_legacy_null_behavior` para alterar o comportamento de `NULL`
+A versão [24.12](/pt-BR/resources/changelogs/oss/2024#a-id2412a-clickhouse-release-2412-2024-12-19) introduziu uma alteração incompatível com versões anteriores, de modo que os valores `NULL` são ignorados, enquanto antes a função retornava `NULL` se um dos argumentos fosse `NULL`.
+Para manter o comportamento anterior, defina a configuração `least_greatest_legacy_null_behavior` (padrão: `false`) como `true`.
+:::
 
 **Sintaxe**
 
@@ -479,8 +475,8 @@ Retorna o menor valor entre os argumentos, promovido para o maior tipo compatív
 **Tipos numéricos**
 
 ```sql title=Query
-SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 -- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
+SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
 ```
 
 ```response title=Response
@@ -504,13 +500,13 @@ SELECT least(['hello'], ['there'], ['world']);
 **Tipos de DateTime**
 
 ```sql title=Query
-SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
+SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─least(toDate⋯(now(), 3))─┐
-│  2025-05-27 15:55:20.000 │
+┌─least(toDate⋯0.000', 3))─┐
+│  2025-01-01 12:00:00.000 │
 └──────────────────────────┘
 ```
 

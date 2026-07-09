@@ -97,7 +97,7 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... outras configurações ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
@@ -113,13 +113,13 @@ Esta seção aborda como configurar suas funções AWS Lambda existentes para en
     Adicione estas variáveis de ambiente à sua função do Lambda:
 
     ```bash
-    # Obrigatório: endpoint OTLP do ClickStack
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # Opcional: cabeçalhos de autenticação
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # Opcional: nome do serviço (padrão: nome da função Lambda)
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 

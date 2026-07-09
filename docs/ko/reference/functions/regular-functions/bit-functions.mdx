@@ -93,10 +93,10 @@ bitCount(x)
 
 `x`에서 값이 1인 비트의 개수를 반환합니다. [`UInt8`](/ko/reference/data-types/int-uint).
 
-<Note>
-  이 함수는 입력 값을 더 큰 타입으로 변환하지 않습니다([sign extension](https://en.wikipedia.org/wiki/Sign_extension)).
-  예를 들어, `bitCount(toUInt8(-1)) = 8`입니다.
-</Note>
+:::note
+이 함수는 입력 값을 더 큰 타입으로 변환하지 않습니다([sign extension](https://en.wikipedia.org/wiki/Sign_extension)).
+예를 들어, `bitCount(toUInt8(-1)) = 8`입니다.
+:::
 
 **예시**
 
@@ -471,7 +471,6 @@ bitSlice(s, offset[, length])
   시작 비트 위치(1부터 시작하는 인덱스)입니다.
 * 양수 값: 문자열의 시작부터 셉니다.
 * 음수 값: 문자열의 끝부터 셉니다.
-
   [`(U)Int8/16/32/64`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
 * `length` —
   선택 사항입니다. 추출할 비트 수입니다.

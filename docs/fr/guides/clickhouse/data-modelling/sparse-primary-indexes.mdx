@@ -311,7 +311,7 @@ Les lignes insérées sont stockées sur disque dans l&#39;ordre lexicographique
   ClickHouse permet d&#39;insérer plusieurs lignes avec des valeurs identiques dans les colonnes de la clé primaire. Dans ce cas (voir les lignes 1 et 2 dans le schéma ci-dessous), l&#39;ordre final est déterminé par la clé de tri spécifiée, et donc par la valeur de la colonne `EventTime`.
 </Note>
 
-ClickHouse est un <a href="/fr/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">système de gestion de base de données orienté colonnes</a>. Comme le montre le schéma ci-dessous :
+ClickHouse est un <a href="/fr/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">système de gestion de base de données orienté colonnes</a>. Comme le montre le schéma ci-dessous :
 
 * dans la représentation sur disque, il y a un seul fichier de données (*.bin) par colonne de table, dans lequel toutes les valeurs de cette colonne sont stockées au format <a href="/fr/get-started/about/distinctive-features#data-compression" target="_blank">compressé</a>, et
 * les 8,87 millions de lignes sont stockées sur disque dans l&#39;ordre lexicographique croissant des colonnes de la clé primaire (et des colonnes supplémentaires de la clé de tri), c&#39;est-à-dire ici
@@ -386,7 +386,7 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
 <Note>
   * Pour les tables avec [granularité d’index adaptative](/fr/resources/changelogs/oss/2019#experimental-features-1), une marque « finale » supplémentaire est également stockée dans l’index primaire, afin d’enregistrer les valeurs des colonnes de clé primaire de la dernière ligne de la table. Cependant, comme nous avons désactivé la granularité d’index adaptative (afin de simplifier les explications de ce guide et de rendre les schémas ainsi que les résultats reproductibles), l’index de notre table d’exemple n’inclut pas cette marque finale.
 
-  * Le fichier d’index primaire est entièrement chargé en mémoire vive. Si sa taille dépasse l’espace mémoire libre disponible, ClickHouse génère une erreur.
+  * Le fichier d’index primaire est entièrement chargé en mémoire principale. Si sa taille dépasse l’espace mémoire libre disponible, ClickHouse génère une erreur.
 </Note>
 
 <Accordion title="Inspection du contenu de l’index primaire">
@@ -429,7 +429,7 @@ Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de
       renvoie
 
       `240923, http://showtopics.html%3...<br/>
-            4073710, http://mk.ru&pos=3_0`
+                  4073710, http://mk.ru&pos=3_0`
 
       <li>Obtenir le dernier index mark</li>
       `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`
@@ -602,7 +602,7 @@ Le schéma suivant montre les trois fichiers de marks `UserID.mrk`, `URL.mrk` et
 
 <Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="Index primaires clairsemés 05" />
 
-Nous avons vu que l’index primaire est un fichier tableau plat non compressé (primary.idx), contenant des marques d’index numérotées à partir de 0.
+Nous avons vu que l’index primaire est un fichier tableau plat non compressé (primary.idx), contenant des index marks numérotées à partir de 0.
 
 De la même manière, un fichier de marks est lui aussi un fichier tableau plat non compressé (*.mrk) contenant des marques numérotées à partir de 0.
 
@@ -760,7 +760,7 @@ Ce qui suit illustre le fonctionnement de l’<a href="https://github.com/ClickH
 
 * une requête qui recherche des lignes avec la valeur URL = &quot;W3&quot;.
 * une version abstraite de notre table hits avec des valeurs simplifiées pour UserID et URL.
-* la même clé primaire composée (UserID, URL) pour l’index. Cela signifie que les lignes sont d’abord triées par valeurs UserID. Les lignes ayant la même valeur UserID sont ensuite triées par URL.
+* la même clé primaire composée (UserID, URL) pour l’index. Cela signifie que les lignes sont d’abord triées selon les valeurs de UserID. Les lignes ayant la même valeur UserID sont ensuite triées par URL.
 * une taille de granule de deux, c’est-à-dire que chaque granule contient deux lignes.
 
 Dans les schémas ci-dessous, nous avons marqué en orange les valeurs des colonnes de clé de la première ligne de table pour chaque granule..
@@ -1185,7 +1185,7 @@ Processed 319.49 thousand rows, 1
 1.38 MB (11.05 million rows/s., 393.58 MB/s.)
 ```
 
-Comme, en pratique, la table cachée (et son index primaire) créée par la projection est identique à la [table secondaire que nous avons créée explicitement](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), la requête est donc exécutée exactement de la même manière qu’avec la table créée explicitement.
+Comme, en pratique, la table masquée (et son index primaire) créée par la projection est identique à la [table secondaire que nous avons créée explicitement](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), la requête est donc exécutée exactement de la même manière qu’avec la table créée explicitement.
 
 Le journal de trace correspondant dans le fichier journal du serveur ClickHouse confirme que ClickHouse effectue une recherche binaire sur les marques d’index :
 

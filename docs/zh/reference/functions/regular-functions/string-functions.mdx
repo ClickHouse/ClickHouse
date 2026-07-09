@@ -1502,9 +1502,9 @@ SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')
 根据 [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) 机制，返回域名的 ASCII 表示形式 (ToASCII 算法) 。
 输入字符串必须采用 UTF 编码，且能够转换为 ASCII 字符串，否则将抛出异常。
 
-<Note>
-  不会执行百分号解码，也不会去除制表符、空格或控制字符。
-</Note>
+:::note
+不会执行百分号解码，也不会去除制表符、空格或控制字符。
+:::
 
 **语法**
 
@@ -1543,10 +1543,10 @@ Introduced in: v23.7.0
 将每个单词的首字母转换为大写，其余字母转换为小写。
 单词是由非字母数字字符分隔的字母数字字符序列。
 
-<Note>
-  由于 `initcap` 只会将每个单词的首字母转换为大写，因此对于包含撇号或大写字母的单词，结果可能不符合预期。
-  这是已知行为，目前暂无修复计划。
-</Note>
+:::note
+由于 `initcap` 只会将每个单词的首字母转换为大写，因此对于包含撇号或大写字母的单词，结果可能不符合预期。
+这是已知行为，目前暂无修复计划。
+:::
 
 **Syntax**
 
@@ -1598,10 +1598,10 @@ SELECT initcap('John''s cat won''t eat.');
 假定该字符串包含有效的 UTF-8 编码文本。
 如果不满足这一假设，不会抛出异常，结果未定义。
 
-<Note>
-  此函数不会检测语言，例如对于土耳其语，结果可能并不完全正确 (i/İ 与 i/I) 。
-  如果某个码点的大写和小写形式对应的 UTF-8 字节序列长度不同，则该码点的结果可能不正确。
-</Note>
+:::note
+此函数不会检测语言，例如对于土耳其语，结果可能并不完全正确 (i/İ 与 i/I) 。
+如果某个码点的大写和小写形式对应的 UTF-8 字节序列长度不同，则该码点的结果可能不正确。
+:::
 
 **语法**
 
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2190,7 +2187,7 @@ SELECT
 
 首次引入于：v21.11.0
 
-按照 [NFKC 规范化结果](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms) 对 UTF-8 字符串进行规范化。
+按照 [NFKC 规范化形式](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms) 对 UTF-8 字符串进行规范化。
 
 **语法**
 
@@ -2204,7 +2201,7 @@ normalizeUTF8NFKC(str)
 
 **返回值**
 
-返回 UTF-8 字符串的 NFKC 规范化结果。[`String`](/zh/reference/data-types/string)
+返回 UTF-8 字符串的 NFKC 规范化形式。[`String`](/zh/reference/data-types/string)
 
 **示例**
 
@@ -2212,8 +2209,8 @@ normalizeUTF8NFKC(str)
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- 带圆圈的数字字符
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- 转换为 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ normalizeUTF8NFKD(str)
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + 下标 2 + O + 上标 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- 转换为 H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3440,10 +3437,10 @@ Introduced in: v1.1.0
 
 可选参数 `length` 指定返回子串可包含的最大码点数。
 
-<Note>
-  该函数假定字符串包含有效的 UTF-8 编码文本。
-  如果这一假设不成立，不会抛出异常，结果未定义。
-</Note>
+:::note
+该函数假定字符串包含有效的 UTF-8 编码文本。
+如果这一假设不成立，不会抛出异常，结果未定义。
+:::
 
 **Syntax**
 
@@ -3896,10 +3893,10 @@ SELECT upper('clickhouse')
 将字符串转换为大写，前提是字符串包含有效的 UTF-8 编码文本。
 如果不满足此前提，也不会抛出异常，结果未定义。
 
-<Note>
-  此函数不会检测语言，例如对于土耳其语，结果可能并不完全正确 (i/İ 与 i/I) 。
-  如果某个代码点的大写和小写形式的 UTF-8 字节序列长度不同 (例如 `ẞ` 和 `ß`) ，则该代码点的转换结果可能不正确。
-</Note>
+:::note
+此函数不会检测语言，例如对于土耳其语，结果可能并不完全正确 (i/İ 与 i/I) 。
+如果某个代码点的大写和小写形式的 UTF-8 字节序列长度不同 (例如 `ẞ` 和 `ß`) ，则该代码点的转换结果可能不正确。
+:::
 
 **语法**
 

@@ -764,12 +764,12 @@ L’architecture du cluster que vous allez configurer est illustrée ci-dessous�
   ## Conclusion
 </div>
 
-L’avantage de cette topologie de cluster avec 2 shards et 2 répliques est qu’elle offre à la fois la montée en charge et la tolérance aux pannes.
-Les données sont réparties sur des hôtes distincts, ce qui réduit les besoins en stockage et en E/S par nœud, tandis que les requêtes sont traitées en parallèle sur les deux shards afin d’améliorer les performances et l’efficacité mémoire.
-Point crucial, le cluster peut tolérer la perte d’un nœud et continuer à répondre aux requêtes sans interruption, car chaque shard dispose d’une réplique de secours sur un autre nœud.
+L’avantage de cette topologie de cluster avec 2 shards et 2 répliques est qu’elle offre à la fois passage à l’échelle et tolérance aux pannes.
+Les données sont réparties sur des hôtes distincts, ce qui réduit les besoins en stockage et en E/S par nœud, tandis que les requêtes sont traitées en parallèle sur les deux shards afin d’améliorer les performances et l’efficience mémoire.
+Point essentiel : le cluster peut tolérer la perte d’un nœud et continuer à traiter les requêtes sans interruption, car chaque shard dispose d’une réplique de secours sur un autre nœud.
 
-Le principal inconvénient de cette topologie de cluster est le surcoût de stockage : elle nécessite une capacité de stockage deux fois supérieure à celle d’une configuration sans répliques, puisque chaque shard est dupliqué.
-De plus, même si le cluster peut survivre à la défaillance d’un seul nœud, la perte simultanée de deux nœuds peut le rendre inopérant, selon les nœuds concernés et la manière dont les shards sont répartis.
-Cette topologie offre un compromis entre disponibilité et coût, ce qui la rend adaptée aux environnements de production où un certain niveau de tolérance aux pannes est requis, sans le coût de facteurs de réplication plus élevés.
+Le principal inconvénient de cette topologie de cluster est le surcoût de stockage : elle nécessite deux fois plus de capacité de stockage qu’une configuration sans répliques, puisque chaque shard est dupliqué.
+De plus, même si le cluster peut survivre à la défaillance d’un seul nœud, la perte simultanée de deux nœuds peut le rendre inutilisable, selon les nœuds concernés et la manière dont les shards sont répartis.
+Cette topologie offre un compromis entre disponibilité et coût, ce qui la rend adaptée aux environnements de production où un certain niveau de tolérance aux pannes est nécessaire sans le coût de facteurs de réplication plus élevés.
 
-Pour savoir comment ClickHouse Cloud traite les requêtes, en offrant à la fois montée en charge et tolérance aux pannes, consultez la section [&quot;Répliques parallèles&quot;](/fr/products/cloud/features/infrastructure/parallel-replicas).
+Pour découvrir comment ClickHouse Cloud traite les requêtes, en offrant à la fois passage à l’échelle et tolérance aux pannes, consultez la section [&quot;Répliques parallèles&quot;](/fr/products/cloud/features/infrastructure/parallel-replicas).

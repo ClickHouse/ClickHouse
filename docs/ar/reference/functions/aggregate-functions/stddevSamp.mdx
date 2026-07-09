@@ -16,10 +16,10 @@ doc_type: 'reference'
 تعيد الانحراف المعياري للعينة لتسلسل من البيانات الرقمية.
 النتيجة تساوي الجذر التربيعي لـ [`varSamp`](/ar/reference/functions/aggregate-functions/varSamp).
 
-<Note>
-  تستخدم هذه الدالة خوارزمية غير مستقرة عدديًا.
-  إذا كنت بحاجة إلى [استقرار عددي](https://en.wikipedia.org/wiki/Numerical_stability) في الحسابات، فاستخدم الدالة [`stddevSampStable`](/ar/reference/functions/aggregate-functions/stddevSampStable). تعمل هذه الدالة ببطء أكبر، لكنها توفر خطأً حسابيًا أقل.
-</Note>
+:::note
+تستخدم هذه الدالة خوارزمية غير مستقرة عدديًا.
+إذا كنت بحاجة إلى [استقرار عددي](https://en.wikipedia.org/wiki/Numerical_stability) في الحسابات، فاستخدم الدالة [`stddevSampStable`](/ar/reference/functions/aggregate-functions/stddevSampStable). تعمل هذه الدالة ببطء أكبر، لكنها توفر خطأً حسابيًا أقل.
+:::
 
 **البنية**
 

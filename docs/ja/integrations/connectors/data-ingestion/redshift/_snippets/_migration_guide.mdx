@@ -28,7 +28,7 @@ ClickHouse インスタンスの観点では、次のいずれかの方法を選
   ## Push で Redshift から ClickHouse にデータを送る
 </div>
 
-Push シナリオでは、サードパーティ製のツールやサービス (カスタムコード、または [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) を利用して、データを ClickHouse インスタンスに送信します。たとえば、[Airbyte](https://www.airbyte.com/) のようなソフトウェアを使用すると、Redshift インスタンスをソース、ClickHouse を宛先として、両者の間でデータを移動できます ([Airbyte のインテグレーションガイドをご覧ください](/ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse)) 。
+Push シナリオでは、サードパーティ製のツールやサービス (カスタムコード、または [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) を利用して、データを ClickHouse インスタンスに送信します。たとえば、[Airbyte](https://www.airbyte.com/) のようなソフトウェアを使用すると、Redshift インスタンスをソース、ClickHouse を宛先として、両者の間でデータを移動できます ([Airbyte のインテグレーションガイドをご覧ください](/ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
 <Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="PUSH Redshift から ClickHouse" />
 
@@ -51,7 +51,7 @@ Push シナリオでは、サードパーティ製のツールやサービス (�
   ## Redshift から ClickHouse へデータを Pull する
 </div>
 
-Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse インスタンスから Redshift クラスターに直接接続し、`INSERT INTO ... SELECT` クエリを実行します。
+Pull シナリオでは、ClickHouse JDBC Bridge を利用して、ClickHouse インスタンスから Redshift クラスターに直接接続し、`INSERT INTO ... SELECT` クエリを実行します。
 
 <Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="Redshift から ClickHouse への PULL" />
 
@@ -216,7 +216,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して ClickHouse イ�
 
 * プロセスが 2 段階あります (Redshift からアンロードして、ClickHouse にロードする) 。
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### チュートリアル
 </div>
 

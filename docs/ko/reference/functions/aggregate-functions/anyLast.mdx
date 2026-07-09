@@ -15,10 +15,10 @@ doc_type: 'reference'
 
 컬럼에서 마지막으로 처리된 값을 선택합니다.
 
-<Warning>
-  쿼리는 임의의 순서로 실행될 수 있으므로 이 함수의 결과는 결정적이지 않습니다.
-  임의의 값이지만 결정적인 결과가 필요하면 [min](/ko/reference/functions/aggregate-functions/min) 또는 [max](/ko/reference/functions/aggregate-functions/max) 함수를 사용하십시오.
-</Warning>
+:::warning
+쿼리는 임의의 순서로 실행될 수 있으므로 이 함수의 결과는 결정적이지 않습니다.
+임의의 값이지만 결정적인 결과가 필요하면 [min](/ko/reference/functions/aggregate-functions/min) 또는 [max](/ko/reference/functions/aggregate-functions/max) 함수를 사용하십시오.
+:::
 
 기본적으로 이 함수는 NULL을 반환하지 않으며, 즉 입력 컬럼의 NULL 값을 무시합니다.
 하지만 이 함수를 `RESPECT NULLS` 수정자와 함께 사용하면 NULL 여부와 관계없이 마지막으로 읽은 값을 반환합니다.

@@ -77,7 +77,7 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... その他のKafka設定
+          # ... other Kafka configuration
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -196,10 +196,10 @@ OpenTelemetry JMX Metric Gatherer コンテナーを実行してメトリクス�
     アクティビティを発生させて、さらに多くのメトリクスを表示するには:
 
     ```bash
-    # テストトピックを作成する
+    # Create a test topic
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # テストメッセージを送信する
+    # Send test messages
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -432,11 +432,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * 一意の`kafka.broker.id` resource attributeを持つJMX Metric Gathererインスタンスを追加して、複数のKafkaブローカーを監視します
 
 <div id="going-to-production">
-  ## 本番環境への移行
+  ## 本番環境に向けて
 </div>
 
-このガイドでは、JMX Metric Gatherer から ClickStack の OTLPエンドポイントへメトリクスを直接送信します。これは、テストや小規模なデプロイメントには適しています。
+このガイドでは、JMX Metric Gatherer から ClickStack の OTLPエンドポイントに直接メトリクスを送信します。これは、テストや小規模な導入には適しています。
 
-本番環境では、独自の OpenTelemetry Collector を agent としてデプロイし、JMX Exporter からメトリクスを受信して ClickStack に転送してください。これにより、バッチ処理、耐障害性、一元的な設定管理が可能になります。
+本番環境では、独自の OpenTelemetry Collector をエージェントとしてデプロイし、JMX エクスポーター からメトリクスを受信して ClickStack に転送してください。これにより、バッチ処理、耐障害性、一元的な設定管理が可能になります。
 
-本番環境向けのデプロイメントパターンや collector の設定例については、[OpenTelemetry による取り込み](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+本番環境向けのデプロイパターンや collector の設定例については、[OpenTelemetry で取り込む](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

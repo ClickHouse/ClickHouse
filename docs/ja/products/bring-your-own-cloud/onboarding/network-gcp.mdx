@@ -27,7 +27,7 @@ VPC ピアリング と Private Service Connect の両方に共通して必要�
   ## VPC ピアリングを設定する
 </div>
 
-事前に [GCP VPC peering 機能](https://docs.cloud.google.com/vpc/docs/vpc-peering)を確認し、VPC ピアリングの制限事項 (たとえば、ピアリングされた VPC ネットワーク間ではサブネットの IP 範囲を重複させることはできません) に注意してください。ClickHouse BYOC では、ピアリング経由で ClickHouseサービス へのネットワーク接続を可能にするために、プライベートロードバランサーを使用します。
+事前に [GCP VPC ピアリング 機能](https://docs.cloud.google.com/vpc/docs/vpc-peering)を確認し、VPC ピアリングの制限事項 (たとえば、ピアリングされた VPC ネットワーク間ではサブネットの IP 範囲を重複させることはできません) に注意してください。ClickHouse BYOC では、ピアリング経由で ClickHouseサービス へのネットワーク接続を可能にするために、プライベートロードバランサーを使用します。
 
 ClickHouse BYOC の VPC ピアリングを作成または削除するには、次の手順に従ってください。
 

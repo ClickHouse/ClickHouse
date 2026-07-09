@@ -15,9 +15,9 @@ Introduite dans : v1.1.0
 
 Sélectionne la première valeur rencontrée d’une colonne.
 
-<Warning>
-  Comme une requête peut être exécutée dans un ordre arbitraire, le résultat de cette fonction est non déterministe. Si vous avez besoin d’un résultat arbitraire mais déterministe, utilisez les fonctions min ou max.
-</Warning>
+:::warning
+Comme une requête peut être exécutée dans un ordre arbitraire, le résultat de cette fonction est non déterministe. Si vous avez besoin d’un résultat arbitraire mais déterministe, utilisez les fonctions min ou max.
+:::
 
 Par défaut, la fonction ne renvoie jamais `NULL`, c’est-à-dire qu’elle ignore les valeurs `NULL` dans la colonne d’entrée.
 Cependant, si la fonction est utilisée avec le modificateur `RESPECT NULLS`, elle renvoie la première valeur lue, qu’elle soit `NULL` ou non.
@@ -31,11 +31,11 @@ Lorsqu’une requête `SELECT` comporte la clause `GROUP BY` ou au moins une fon
 Autrement dit, chaque colonne sélectionnée dans la table doit être utilisée soit dans les clés, soit à l’intérieur de fonctions d’agrégation.
 Pour obtenir un comportement semblable à celui de MySQL, vous pouvez placer les autres colonnes dans la fonction d’agrégation `any`.
 
-<Note>
-  Le type de retour de la fonction est le même que celui de l’entrée, sauf pour LowCardinality, qui est supprimé.
-  Cela signifie que si aucune ligne n’est fournie en entrée, elle renverra la valeur par défaut de ce type (0 pour les entiers, ou Null pour une colonne Nullable()).
-  Vous pouvez utiliser le combinateur -OrNull pour modifier ce comportement.
-</Note>
+:::note
+Le type de retour de la fonction est le même que celui de l’entrée, sauf pour LowCardinality, qui est supprimé.
+Cela signifie que si aucune ligne n’est fournie en entrée, elle renverra la valeur par défaut de ce type (0 pour les entiers, ou Null pour une colonne Nullable()).
+Vous pouvez utiliser le combinateur -OrNull pour modifier ce comportement.
+:::
 
 **Syntaxe**
 

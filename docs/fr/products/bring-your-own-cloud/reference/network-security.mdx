@@ -50,13 +50,13 @@ Tailscale crée un tunnel réseau privé et chiffré entre le plan de contrôle 
 
 <Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
 
-Pour chaque service ou point de terminaison devant être accessible via Tailscale, ClickHouse BYOC déploie :
+Pour chaque service ou point de terminaison qui doit être accessible via Tailscale, ClickHouse BYOC déploie :
 
 1. **Enregistrement de l’adresse tailnet** : chaque point de terminaison enregistre une adresse tailnet unique (par ex., `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com` pour le serveur d’API Kubernetes)
 
 2. **Conteneur d’agent Tailscale** : un conteneur d’agent Tailscale s’exécute dans votre cluster EKS et se charge de :
    * Se connecter au serveur de coordination Tailscale
-   * Enregistrer les services afin qu’ils puissent être découverts
+   * Enregistrer les services afin de les rendre détectables
    * Coordonner la configuration réseau avec les pods Nginx
 
 3. **Pod Nginx** : un pod Nginx qui :

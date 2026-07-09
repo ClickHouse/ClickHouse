@@ -1,7 +1,7 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Журнал изменений ClickHouse Cloud — 2026'
+title: 'Журнал изменений Cloud — 2026'
 description: 'Журнал изменений ClickHouse Cloud с описанием нововведений в каждом релизе ClickHouse Cloud'
 doc_type: 'changelog'
 keywords: ['журнал изменений', 'примечания к релизу', 'обновления', 'новые возможности', 'изменения в Cloud']
@@ -9,7 +9,39 @@ keywords: ['журнал изменений', 'примечания к рели�
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-Помимо этого журнала изменений ClickHouse Cloud, см. также страницу [Совместимость с Cloud](/ru/products/cloud/guides/cloud-compatibility).
+В дополнение к этому журналу изменений ClickHouse Cloud см. также страницу [Cloud Compatibility](/ru/products/cloud/guides/cloud-compatibility).
+
+<Update label="30 июня 2026">
+  В обновления этой недели входят новые возможности обсервабилити для Postgres и внутренних компонентов ClickHouse, расширенные возможности управления ClickPipes, включая доставку Kafka exactly-once, а также несколько дополнений платформы: Azure Marketplace BYOC, официальный провайдер Airflow и обновления ClickHouse Agents.
+
+  ### Доставка Kafka exactly-once в ClickPipes
+
+  Теперь вы можете включить доставку exactly-once для импорта из Kafka прямо в потоке импорта [ClickPipes](/ru/integrations/clickpipes/kafka/index); та же возможность доступна и через публичный API для программной настройки.
+
+  ### Унифицированные элементы управления TLS для источников CDC
+
+  Активация TLS и уровни проверки теперь унифицированы для всех источников CDC. Конечные точки OpenAPI для создания и обновления передают поля `postgres_skip_cert_verification`, `postgres_disable_tls` и `mongo_skip_cert_verification`, чтобы вы могли управлять обработкой сертификатов через API.
+
+  ### Базы данных Replicated возвращаются в селектор ClickPipes
+
+  Базы данных Replicated снова можно выбирать в селекторе пункта назначения ClickPipes.
+
+  ### Обновления ClickHouse Agents (публичная бета-версия)
+
+  [ClickHouse Agents](/ru/products/cloud/features/ai-ml/agents/index) теперь поддерживает Chat Projects для организации диалогов, индикатор использования контекста с отображением расхода токенов и окна контекста, Skills, созданные агентом, а также встроенные Skills с лучшими практиками ClickHouse. Этот релиз также включает улучшения настроек, навигации, горячих клавиш и закрепления.
+
+  ### ClickHouse BYOC в Azure Marketplace
+
+  ClickHouse [Собственное облако](/ru/products/cloud/guides/infrastructure/deployment-options/byoc/overview) теперь представлен в Azure Marketplace, что позволяет клиентам приобретать его через private offer и развертывать BYOC с оплатой через их аккаунт Azure. На стороне платформы добавлена поддержка биллинга для листингов Azure BYOC в маркетплейсе и идентификаторов продуктов.
+
+  ### Официальный провайдер ClickHouse для Airflow
+
+  Официальный провайдер Apache Airflow для ClickHouse теперь доступен на PyPI и указан в реестре Airflow, заменяя устаревший плагин сообщества для передачи данных в ClickHouse и из него.
+
+  ### Улучшения видимости биллинга и маркетплейса
+
+  Биллинг теперь включает таблицу истории кредитов в режиме самообслуживания, сводку по предоплате с отображением использованных и истекших сумм, а также поддержку электронной почты GCP MPPO.
+</Update>
 
 <Update label="3 июня 2026 года">
   Неделя Open House 2026 ознаменовалась волной анонсов, направленных на запуск ClickHouse там, где хранятся ваши данные, и на интеграцию агентных рабочих процессов с поддержкой ИИ в платформу.

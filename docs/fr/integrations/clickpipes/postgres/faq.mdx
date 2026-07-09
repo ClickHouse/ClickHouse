@@ -436,7 +436,7 @@ Si votre chargement initial s’est terminé sans erreur, mais qu’il manque de
 * Qu’il n’existe pas de politiques de lignes côté ClickHouse susceptibles de filtrer certaines lignes.
 
 <div id="failover-slot">
-  ### ClickPipe peut-il créer un slot de réplication avec le basculement activé ?
+  ### ClickPipe peut-il créer un slot de réplication avec le basculement activé ?
 </div>
 
 Oui. Pour un Postgres ClickPipe dont le mode de réplication est défini sur CDC ou Snapshot + CDC, vous pouvez demander à ClickPipes de créer un slot de réplication avec le basculement activé en activant le commutateur ci-dessous dans la section `Advanced Settings` lors de la création du ClickPipe. Notez que votre version de Postgres doit être 17 ou supérieure pour utiliser cette fonctionnalité.

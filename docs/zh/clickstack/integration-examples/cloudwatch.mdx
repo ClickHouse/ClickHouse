@@ -77,13 +77,13 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     **对于 AWS SSO 用户 (建议大多数组织使用) ：**
 
     ```bash
-    # 登录 SSO
+    # Login to SSO
     aws sso login --profile YOUR_PROFILE_NAME
 
-    # 将凭证导出为环境变量
+    # Export credentials to environment variables
     eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
 
-    # 验证凭证是否有效
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -96,7 +96,7 @@ AWS CloudWatch 是一项用于监控 AWS 资源和应用程序的服务。虽然
     export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
     export AWS_REGION="us-east-1"
 
-    # 验证凭证是否有效
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -561,6 +561,6 @@ groups:
   ## 投入生产环境
 </div>
 
-本指南演示了如何使用 Docker Compose 在本地运行 OpenTelemetry Collector 进行测试。对于生产部署，请在具有 AWS 访问权限的基础设施上运行采集器 (例如带 IAM 角色的 EC2、带 IRSA 的 EKS，或带任务角色的 ECS) ，以免管理访问密钥。将采集器部署在与您的 CloudWatch 日志组相同的 AWS 区域中，以降低延迟和成本。
+本指南演示如何使用 Docker Compose 在本地运行 OpenTelemetry Collector 进行测试。对于生产环境部署，建议在具备 AWS 访问权限的基础设施上运行采集器 (例如具有 IAM 角色的 EC2、使用 IRSA 的 EKS，或使用任务角色的 ECS) ，以避免管理访问密钥。将采集器部署在与 CloudWatch 日志组相同的 AWS 区域，以降低延迟和成本。
 
-有关生产部署模式和采集器配置示例，请参阅 [使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。
+有关生产环境部署模式和采集器配置示例，请参阅 [使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。

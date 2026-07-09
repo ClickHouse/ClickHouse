@@ -365,11 +365,11 @@ ClickHouse에서 더 높은 전달 보장이 필요한 경우 [쿼럼 기반 삽
   #### 단계
 </div>
 
-초기 목표는 다음 그림으로 설명하는 것이 가장 적절합니다:
+초기 목표는 다음 그림에서 가장 잘 드러납니다:
 
 <Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="삽입이 포함된 Kafka 테이블 엔진 다이어그램" />
 
-[Kafka to ClickHouse](#kafka-to-clickhouse) 단계에서 테이블과 뷰를 생성했으며, 토픽이 완전히 소비된 상태라고 가정합니다.
+[Kafka to ClickHouse](#kafka-to-clickhouse)의 단계에 따라 테이블과 뷰를 생성했으며, 토픽이 완전히 소비된 상태라고 가정합니다.
 
 <div id="1-inserting-rows-directly">
   ##### 1. 행을 직접 삽입
@@ -503,7 +503,7 @@ wc -l
   #### ClickHouse 클러스터 사용하기
 </div>
 
-Kafka 컨슈머 그룹을 통해 여러 ClickHouse 인스턴스가 동일한 토픽을 읽도록 구성할 수 있습니다. 각 consumer는 토픽 파티션에 1:1로 매핑되어 할당됩니다. Kafka 테이블 엔진을 사용해 ClickHouse 수집을 스케일링할 때는 클러스터 내 전체 consumer 수가 토픽의 파티션 수를 초과할 수 없다는 점을 고려해야 합니다. 따라서 토픽의 파티셔닝이 사전에 적절히 구성되어 있어야 합니다.
+Kafka 컨슈머 그룹을 통해 여러 ClickHouse 인스턴스가 동일한 토픽을 읽도록 구성할 수 있습니다. 각 컨슈머는 토픽 파티션에 1:1로 매핑되어 할당됩니다. Kafka 테이블 엔진을 사용해 ClickHouse 수집을 스케일링할 때는 클러스터 내 전체 컨슈머 수가 토픽의 파티션 수를 초과할 수 없다는 점을 고려해야 합니다. 따라서 토픽의 파티셔닝이 사전에 적절히 구성되어 있어야 합니다.
 
 여러 ClickHouse 인스턴스가 동일한 컨슈머 그룹 id를 사용해 하나의 토픽을 읽도록 구성할 수 있으며, 이는 Kafka 테이블 엔진 생성 시 지정합니다. 따라서 각 인스턴스는 하나 이상의 파티션에서 읽어 로컬 대상 테이블에 세그먼트를 삽입합니다. 이어서 대상 테이블은 데이터 중복을 처리하도록 ReplicatedMergeTree를 사용하도록 구성할 수 있습니다. 이 방식은 Kafka 파티션이 충분하다면 ClickHouse 클러스터에 맞춰 Kafka 읽기를 스케일링할 수 있게 해줍니다.
 

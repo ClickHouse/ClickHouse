@@ -16,10 +16,10 @@ doc_type: 'reference'
 对连续行之间的算术差值进行求和。
 如果差值为负，则会被忽略。
 
-<Tip>
-  要使此函数正常工作，底层数据必须已排序。
-  如果你想在 [materialized view](/zh/reference/statements/create/view#materialized-view) 中使用此函数，通常应改用 [`deltaSumTimestamp`](/zh/reference/functions/aggregate-functions/deltaSumTimestamp) 函数。
-</Tip>
+:::tip
+要使此函数正常工作，底层数据必须已排序。
+如果你想在 [materialized view](/zh/reference/statements/create/view#materialized-view) 中使用此函数，通常应改用 [`deltaSumTimestamp`](/zh/reference/functions/aggregate-functions/deltaSumTimestamp) 函数。
+:::
 
 另请参见：
 

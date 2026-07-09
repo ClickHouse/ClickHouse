@@ -34,12 +34,10 @@ No entanto, a consulta `SELECT count(nullable_column) FROM table` pode ser otimi
 Com `optimize_functions_to_subcolumns = 1`, a função lê apenas a subcoluna [`null`](/pt-BR/reference/data-types/nullable#finding-null), em vez de ler e processar todos os dados da coluna.
 A consulta `SELECT count(n) FROM table` é transformada em `SELECT sum(NOT n.null) FROM table`.
 
-<Tip>
-  **Melhorando o desempenho de COUNT(DISTINCT expr)**
-
-  Se a sua consulta `COUNT(DISTINCT expr)` estiver lenta, considere adicionar uma cláusula [`GROUP BY`](/pt-BR/reference/statements/select/group-by), pois isso melhora a paralelização.
-  Você também pode usar uma [projection](/pt-BR/reference/statements/alter/projection) para criar um índice na coluna de destino usada com `COUNT(DISTINCT target_col)`.
-</Tip>
+:::tip Melhorando o desempenho de COUNT(DISTINCT expr)
+Se a sua consulta `COUNT(DISTINCT expr)` estiver lenta, considere adicionar uma cláusula [`GROUP BY`](/pt-BR/reference/statements/select/group-by), pois isso melhora a paralelização.
+Você também pode usar uma [projection](/pt-BR/reference/statements/alter/projection) para criar um índice na coluna de destino usada com `COUNT(DISTINCT target_col)`.
+:::
 
 **Sintaxe**
 
@@ -72,7 +70,7 @@ SELECT count() FROM t
 **Exemplo de COUNT(DISTINCT)**
 
 ```sql title=Query
--- Este exemplo mostra que `count(DISTINCT num)` é executado pela função `uniqExact` de acordo com o valor da configuração `count_distinct_implementation`.
+-- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
 SELECT count(DISTINCT num) FROM t
 ```

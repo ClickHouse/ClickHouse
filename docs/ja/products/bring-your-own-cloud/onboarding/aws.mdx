@@ -81,7 +81,7 @@ CloudFormationスタックを作成すると、Cloud Console で、S3、VPC、EK
 <br />
 
 4. S3 ゲートウェイエンドポイントを設定する
-   VPC に S3 ゲートウェイエンドポイントがまだ設定されていない場合は、VPC と Amazon S3 の間で安全かつプライベートな通信を有効にするために作成する必要があります。このエンドポイントを使用すると、ClickHouse のサービスはパブリックインターネットを経由せずに S3 へアクセスできます。設定例については、以下のスクリーンショットを参照してください。
+   VPC に S3 ゲートウェイエンドポイントがまだ設定されていない場合は、VPC と Amazon S3 の間で安全かつプライベートな通信を有効にするために、これを作成する必要があります。このエンドポイントを使用すると、ClickHouse のサービスはパブリックインターネットを経由せずに S3 へアクセスできます。設定例については、以下のスクリーンショットを参照してください。
 
 <br />
 
@@ -115,11 +115,11 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
 </div>
 
 1. ClickHouse BYOC アカウントの VPC ダッシュボードに移動します。
-2. [Peering Connections] を選択します。
-3. [Create Peering Connection] をクリックします。
+2. [ピアリング接続s] を選択します。
+3. [Create ピアリング接続] をクリックします。
 4. [VPC Requester] に ClickHouse の VPC ID を設定します。
 5. [VPC Accepter] に対象の VPC ID を設定します。 (必要に応じて別のアカウントを選択します)
-6. [Create Peering Connection] をクリックします。
+6. [Create ピアリング接続] をクリックします。
 
 <br />
 
@@ -131,7 +131,7 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
   #### ステップ 3 ピアリング接続リクエストを承認する
 </div>
 
-ピアリングアカウントに移動し、(VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) ページでこの VPC ピアリングリクエストを承認します。
+ピアリングアカウントに移動し、(VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) ページで、この VPC ピアリングリクエストを承認します。
 
 <br />
 
@@ -145,12 +145,12 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
 
 ClickHouse BYOC アカウントで、次の操作を行います。
 
-1. VPC Dashboard で Route Tables を選択します。
+1. VPC ダッシュボード で Route Tables を選択します。
 2. ClickHouse VPC ID を検索します。プライベートサブネットに関連付けられている各ルートテーブルを編集します。
 3. Routes タブの Edit ボタンをクリックします。
 4. Add another route をクリックします。
 5. Destination に、対象 VPC の CIDR 範囲を入力します。
-6. Target には「Peering Connection」とピアリング接続 ID を選択します。
+6. Target には「ピアリング接続」とピアリング接続 ID を選択します。
 
 <br />
 
@@ -169,7 +169,7 @@ ClickHouse BYOC アカウントで、次の操作を行います。
 3. Routes タブの Edit ボタンをクリックします。
 4. Add another route をクリックします。
 5. Destination に ClickHouse VPC の CIDR 範囲を入力します。
-6. Target で「Peering Connection」とピアリング接続の ID を選択します。
+6. Target で「ピアリング接続」とピアリング接続の ID を選択します。
 
 <br />
 

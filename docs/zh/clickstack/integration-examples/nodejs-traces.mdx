@@ -44,7 +44,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   <Step>
     #### 获取 ClickStack API key
 
-    需要一个用于将 trace 发送到 ClickStack OTLP 端点的 API key。
+    需要一个 API key，用于将 trace 发送到 ClickStack 的 OTLP 端点。
 
     1. 在你的 ClickStack URL 中打开 HyperDX (例如 http://localhost:8080)
     2. 如有需要，请创建账户或登录
@@ -68,7 +68,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   <Step>
     #### 生成一些流量
 
-    向你的应用程序发起请求以生成链路追踪：
+    向你的应用程序发起请求以生成 trace：
 
     ```bash
     # 简单请求
@@ -82,11 +82,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### 在 HyperDX 中验证链路追踪
+    #### 在 HyperDX 中验证 trace
 
-    配置完成后，登录 HyperDX 并确认链路追踪已正常上报。你应该会看到类似下面的内容。如果没有看到链路追踪，请尝试调整时间范围：
+    配置完成后，登录 HyperDX 并确认 trace 已正常上报。你应该会看到类似下面的内容。如果没有看到 trace，请尝试调整时间范围：
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="链路追踪搜索视图" />
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="trace 搜索视图" />
 
     点击任意一个 trace，即可查看包含 spans、耗时和 attributes 的详细视图：
 
@@ -98,13 +98,13 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   ## 演示数据集
 </div>
 
-对于希望在为生产应用接入 Node.js 链路追踪之前，先使用 ClickStack 测试 Node.js 链路追踪的用户，我们提供了一个预先生成的 Node.js 应用链路追踪样本数据集，其中包含逼真的流量模式。
+对于希望在为生产应用接入 Node.js trace 之前，先使用 ClickStack 测试 Node.js trace 的用户，我们提供了一个预先生成的 Node.js 应用 trace 样本数据集，其中包含逼真的流量模式。
 
 <Steps>
   <Step>
     #### 下载样本数据集
 
-    下载样本链路追踪文件：
+    下载样本 trace 文件：
 
     ```bash
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nodejs/nodejs-traces-sample.json
@@ -145,7 +145,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### 将链路追踪发送到 ClickStack
+    #### 将 trace 发送到 ClickStack
 
     ```bash
     curl -X POST http://localhost:4318/v1/traces \
@@ -154,24 +154,24 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       -d @nodejs-traces-sample.json
     ```
 
-    你应该会看到类似 `{"partialSuccess":{}}` 的响应，这表示链路追踪已成功发送。
+    你应该会看到类似 `{"partialSuccess":{}}` 的响应，这表示 trace 已成功发送。
   </Step>
 
   <Step>
-    #### 在 HyperDX 中验证链路追踪
+    #### 在 HyperDX 中验证 trace
 
     1. 打开 [HyperDX](http://localhost:8080/)，并登录你的账户 (你可能需要先创建账户)
-    2. 导航到 **搜索** 视图，并将 source 设置为 **链路追踪**
+    2. 导航到 **搜索** 视图，并将 source 设置为 **trace**
     3. 将时间范围设置为 **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="链路追踪搜索视图" />
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="trace 搜索视图" />
 
     <Image img="/images/clickstack/nodejs/trace-view.webp" alt="单个 trace 视图" />
 
     <Info>
       **时区显示**
 
-      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖的时间范围为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**。较宽的时间范围可确保无论你身处何地，都能看到这些演示链路追踪。看到链路追踪后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
+      HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖的时间范围为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**。较宽的时间范围可确保无论你身处何地，都能看到这些演示 trace。看到 trace 后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
   </Step>
 </Steps>
@@ -206,7 +206,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="示例仪表盘" />
 
     <Note>
-      对于演示数据集，请将时间范围设置为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (请根据你的本地时区调整) 。导入后的仪表盘默认不会指定时间范围。
+      对于演示数据集，请将时间范围设置为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (请根据你的本地时区调整)。导入后的仪表盘默认不会指定时间范围。
     </Note>
   </Step>
 </Steps>
@@ -266,6 +266,6 @@ curl -v http://localhost:4318/v1/traces
   ## 投入生产环境
 </div>
 
-本指南使用 HyperDX SDK，可将链路追踪直接发送到 ClickStack 的 OTLP 端点。这种方式非常适合开发、测试以及中小规模的生产部署。
-对于更大规模的生产环境，或者需要对遥测数据进行更多控制时，建议部署您自己的 OpenTelemetry Collector 作为 agent。
-有关生产环境部署模式和 collector 配置示例，请参见 [使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南使用的 HyperDX SDK 会将 trace 直接发送到 ClickStack 的 OTLP 端点。这种方式非常适合开发、测试以及中小型生产部署。
+对于更大规模的生产环境，或者当您需要对遥测数据进行更多控制时，建议以 agent 方式部署您自己的 OpenTelemetry Collector。
+有关生产部署模式和 collector 配置示例，请参阅 [使用 OpenTelemetry 进行数据摄取](/zh/clickstack/ingesting-data/opentelemetry)。

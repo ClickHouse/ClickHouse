@@ -16,10 +16,10 @@ doc_type: 'reference'
 
 複数の数値範囲を受け取り、重なっている部分をすべて 1 つの連続した範囲としてまとめた場合の全長を計算します。
 
-<Note>
-  引数は同じデータ型である必要があります。
-  そうでない場合は、例外がスローされます。
-</Note>
+:::note
+引数は同じデータ型である必要があります。
+そうでない場合は、例外がスローされます。
+:::
 
 **構文**
 
@@ -34,7 +34,7 @@ intervalLengthSum(start, end)
 
 **戻り値**
 
-すべての範囲のユニオンの全長 (数値軸上のセグメント) を返します。引数の型に応じて、戻り値の型は UInt64 または Float64 になります。[`UInt64`](/ja/reference/data-types/int-uint) または [`Float64`](/ja/reference/data-types/float)
+すべての範囲のユニオンの全長 (区間) を返します。引数の型に応じて、戻り値の型は UInt64 または Float64 になります。[`UInt64`](/ja/reference/data-types/int-uint) または [`Float64`](/ja/reference/data-types/float)
 
 **使用例**
 

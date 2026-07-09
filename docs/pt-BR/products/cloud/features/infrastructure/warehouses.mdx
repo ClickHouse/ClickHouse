@@ -12,10 +12,10 @@ import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBa
 <ScalePlanFeatureBadge feature="Compute-compute separation" />
 
 <div id="what-is-compute-compute-separation">
-  ## O que é compute-compute separation?
+  ## O que é separação compute-compute?
 </div>
 
-Antes de discutir o que é compute-compute separation, é útil entender o que é um **serviço** no ClickHouse Cloud.
+Antes de discutir o que é separação compute-compute, é útil entender o que é um **serviço** no ClickHouse Cloud.
 
 Cada serviço do ClickHouse Cloud inclui:
 
@@ -29,13 +29,13 @@ Cada serviço do ClickHouse Cloud inclui:
 
 *Fig. 1 - Serviço único no ClickHouse Cloud*
 
-Em vez de ter um único serviço, você pode criar vários serviços com acesso ao mesmo armazenamento compartilhado, o que permite dedicar recursos a workloads específicos sem precisar duplicar os dados.
-Esse conceito é chamado de **compute-compute separation**.
+Em vez de ter um único serviço, você pode criar vários serviços com acesso ao mesmo armazenamento compartilhado, o que permite dedicar recursos a cargas de trabalho específicos sem precisar duplicar os dados.
+Esse conceito é chamado de **separação compute-compute**.
 
-Compute-compute separation significa que cada serviço tem seu próprio conjunto de réplicas e um endpoint, mas usa a mesma pasta de armazenamento de objetos e acessa as mesmas tabelas, views etc.
-Isso significa que você pode escolher o tamanho de compute adequado para o seu workload. Alguns workloads podem ser atendidos com apenas uma réplica pequena, enquanto outros podem exigir alta disponibilidade (HA) completa e centenas de gigabytes de memória em várias réplicas.
+Separação compute-compute significa que cada serviço tem seu próprio conjunto de réplicas e um endpoint, mas usa a mesma pasta de armazenamento de objetos e acessa as mesmas tabelas, views etc.
+Isso significa que você pode escolher o tamanho de compute adequado para a sua carga de trabalho. Algumas cargas de trabalho podem ser atendidas com apenas uma réplica pequena, enquanto outras podem exigir alta disponibilidade (HA) completa e centenas de gigabytes de memória em várias réplicas.
 
-Compute-compute separation também permite separar operações de leitura de operações de gravação para que não interfiram umas nas outras:
+Separação compute-compute também permite separar operações de leitura de operações de gravação para que não interfiram umas nas outras:
 
 <Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Separação de compute no ClickHouse Cloud" />
 
@@ -103,7 +103,7 @@ No exemplo abaixo, Alice está impedida de acessar o serviço 2 no warehouse:
 
 *Fig. 5 - Alice está impedida de acessar o serviço 2 por causa das configurações de controle de acesso à rede*
 
-As roles e grants do ClickHouse também podem ser usadas para controlar o acesso aos dados quando os usuários se conectam individualmente, em vez de usar o usuário *default*.
+As roles e grants do ClickHouse também podem ser usadas para controlar o acesso aos dados quando os usuários se conectam individualmente, em vez de usar o usuário *default*. 
 
 <div id="read-vs-read-write">
   ### Serviços read-only vs. read-write
@@ -121,7 +121,7 @@ Os serviços podem ser de um destes tipos:
   * Ainda podem exportar dados para fora (por exemplo, por meio de funções de tabela), mas não podem alterar dados dentro do ClickHouse
   * Entram em idle sem atraso, ao contrário dos serviços read-write, que podem permanecer ativos devido a merges em segundo plano.
 
-Às vezes, convém isolar workloads críticos de leitura da sobrecarga de escrita/merge tornando um serviço read-only.
+Às vezes, convém isolar cargas de trabalho críticas de leitura da sobrecarga de escrita/merge tornando um serviço read-only.
 Você pode fazer isso com o segundo serviço e quaisquer serviços adicionais que criar; no entanto, o primeiro serviço sempre será read-write, como mostrado na figura abaixo:
 
 <Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Serviços read-write e read-only em um warehouse" />
@@ -229,7 +229,7 @@ Consulte a calculadora de preços na página de [preços](https://clickhouse.com
   ### Criando um warehouse
 </div>
 
-Para criar um warehouse, você precisa criar um segundo serviço que compartilhará dados com um serviço existente. Isso pode ser feito clicando no sinal de mais em qualquer um dos serviços existentes:
+Para criar um warehouse, você precisa criar um segundo serviço que compartilhará os dados com um serviço existente. Isso pode ser feito clicando no sinal de mais em qualquer um dos serviços existentes:
 
 <Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Criando um novo serviço em um warehouse" />
 

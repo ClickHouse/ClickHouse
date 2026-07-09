@@ -16,10 +16,10 @@ doc_type: 'reference'
 计算不同参数值的近似数量。
 该函数会以确定性的方式返回结果 (即不依赖于查询处理顺序) 。
 
-<Note>
-  由于它对非 `String` 类型使用 32 位哈希，因此当基数明显大于 `UINT_MAX` 时，结果会出现非常大的误差 (在不同值达到几百亿后，误差会迅速增大) 。
-  如果基数大于 `UINT_MAX`，则应改用 [`uniqCombined64`](/zh/reference/functions/aggregate-functions/uniqCombined64)。
-</Note>
+:::note
+由于它对非 `String` 类型使用 32 位哈希，因此当基数明显大于 `UINT_MAX` 时，结果会出现非常大的误差 (在不同值达到几百亿后，误差会迅速增大) 。
+如果基数大于 `UINT_MAX`，则应改用 [`uniqCombined64`](/zh/reference/functions/aggregate-functions/uniqCombined64)。
+:::
 
 与 uniq 函数相比，uniqCombined 函数：
 
@@ -27,14 +27,15 @@ doc_type: 'reference'
 * 计算精度高数倍
 * 通常性能会略低一些。但在某些场景下，uniqCombined 的表现可能优于 uniq，例如在分布式查询中需要通过网络传输大量聚合状态时
 
-<Accordion title="实现细节">
+<details>
+  <summary>实现细节</summary>
   此函数会先对聚合中的所有参数计算哈希值 (`String` 使用 64 位哈希，其他类型使用 32 位哈希) ，然后在计算中使用该哈希值。
   它结合了三种算法：数组、哈希表，以及带误差修正表的 HyperLogLog：
 
   * 当不同元素较少时，使用数组
   * 当集合大小进一步增大时，使用哈希表
   * 当元素更多时，使用 HyperLogLog，此时会占用固定大小的内存
-</Accordion>
+</details>
 
 **语法**
 

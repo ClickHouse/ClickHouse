@@ -77,7 +77,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... 기타 Kafka 구성
+          # ... other Kafka configuration
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -196,10 +196,10 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     활동을 생성하여 더 많은 메트릭이 표시되도록 하려면:
 
     ```bash
-    # 테스트 토픽 생성
+    # Create a test topic
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # 테스트 메시지 전송
+    # Send test messages
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -432,11 +432,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * 고유한 `kafka.broker.id` resource 속성을 사용해 추가 JMX Metric Gatherer 인스턴스를 배포하여 여러 Kafka broker를 모니터링하세요
 
 <div id="going-to-production">
-  ## 프로덕션 환경으로 전환
+  ## 프로덕션 환경에서 사용하기
 </div>
 
-이 가이드는 메트릭을 JMX Metric Gatherer에서 ClickStack의 OTLP 엔드포인트로 직접 전송하며, 테스트 및 소규모 배포에는 적합합니다.
+이 가이드에서는 메트릭을 JMX Metric Gatherer에서 ClickStack의 OTLP endpoint로 직접 전송하며, 이 방식은 테스트와 소규모 배포에 적합합니다.
 
-프로덕션 환경에서는 자체 OpenTelemetry Collector를 agent로 배포하여 JMX Exporter에서 메트릭을 수신하고 ClickStack으로 전달하세요. 이를 통해 배칭, 복원력, 중앙 집중식 구성 관리의 이점을 얻을 수 있습니다.
+프로덕션 환경에서는 자체 OpenTelemetry Collector를 agent로 배포하여 JMX Exporter에서 메트릭을 수신하고 ClickStack으로 전달하십시오. 이렇게 하면 배칭, 복원력, 중앙화된 구성 관리가 가능합니다.
 
 프로덕션 배포 패턴과 collector 구성 예시는 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.

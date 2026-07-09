@@ -1,0 +1,18 @@
+---
+description: 'USE 语句文档'
+sidebar_label: 'USE'
+sidebar_position: 53
+slug: /sql-reference/statements/use
+title: 'USE 语句'
+doc_type: 'reference'
+---
+
+```sql
+USE [DATABASE] db
+```
+
+用于设置会话的当前数据库。
+
+如果在查询中未通过表名前的点号显式指定数据库，则会使用当前数据库来查找表。
+
+使用 HTTP 协议时无法执行此查询，因为没有会话这一概念。

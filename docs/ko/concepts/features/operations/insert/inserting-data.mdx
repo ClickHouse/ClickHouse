@@ -81,7 +81,7 @@ MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 
 비동기 삽입이 활성화되면 ClickHouse는 다음을 수행합니다:
 
 (1) 삽입 쿼리를 비동기적으로 수신합니다.
-(2) 먼저 쿼리 데이터를 메모리 내 버퍼에 기록합니다.
+(2) 먼저 쿼리 데이터를 인메모리 버퍼에 기록합니다.
 (3) 다음 버퍼 플러시가 발생할 때만 데이터를 정렬한 뒤 파트로 데이터베이스 스토리지에 기록합니다.
 
 버퍼가 플러시되기 전에는 동일하거나 다른 클라이언트의 다른 비동기 삽입 쿼리 데이터도 버퍼에 함께 수집될 수 있습니다.
@@ -91,7 +91,7 @@ MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 
 <Note>
   데이터가 데이터베이스 스토리지로 플러시되기 전까지는 쿼리로 조회할 수 없으며, 버퍼 플러시는 구성할 수 있습니다.
 
-  비동기 삽입 구성에 대한 전체 세부 사항은 [여기](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)에서 확인할 수 있으며, 자세한 설명은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)에서 확인할 수 있습니다.
+  비동기 삽입 구성에 대한 전체 세부 사항은 [여기](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)에서 확인할 수 있으며, 심층 분석은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)에서 확인할 수 있습니다.
 </Note>
 
 <div id="use-official-clickhouse-clients">

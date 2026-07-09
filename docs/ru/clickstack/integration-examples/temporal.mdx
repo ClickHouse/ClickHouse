@@ -130,13 +130,13 @@ Temporal предоставляет абстракцию для создания
     ```yaml
     services:
       clickstack:
-        # ... существующая конфигурация ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
         volumes:
           - ./temporal-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - ./temporal.key:/etc/otelcol-contrib/temporal.key:ro
-          # ... другие тома ...
+          # ... other volumes ...
     ```
 
     ##### Вариант 2: Docker run (образ «всё в одном»)
@@ -178,7 +178,7 @@ Temporal предоставляет абстракцию для создания
   </Step>
 
   <Step>
-    #### Импортируйте преднастроенный дашборд
+    #### Импортируйте преднастроенную панель мониторинга
 
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
@@ -299,4 +299,4 @@ docker exec <container> cat /var/log/otel-collector.log | grep -i error
   ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертывания в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Сведения о конфигурации для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурация для продакшна описана в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

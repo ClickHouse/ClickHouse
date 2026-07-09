@@ -41,14 +41,12 @@ Introducido en: v21.1.0
 
 Devuelve el número de coincidencias de una expresión regular en una cadena.
 
-<Info>
-  **Comportamiento según la versión**
+:::note Comportamiento según la versión
+El comportamiento de esta función depende de la versión de ClickHouse:
 
-  El comportamiento de esta función depende de la versión de ClickHouse:
-
-  * en las versiones &lt; v25.6, la función deja de contar en la primera coincidencia vacía, aunque el patrón la permita.
-  * en las versiones &gt;= 25.6, la función continúa ejecutándose cuando se produce una coincidencia vacía. El comportamiento heredado se puede restaurar mediante la configuración `count_matches_stop_at_empty_match = true`;
-</Info>
+* en las versiones &lt; v25.6, la función deja de contar en la primera coincidencia vacía, aunque el patrón la permita.
+* en las versiones &gt;= 25.6, la función sigue ejecutándose cuando se produce una coincidencia vacía. El comportamiento heredado se puede restaurar mediante la configuración `count_matches_stop_at_empty_match = true`;
+  :::
 
 **Sintaxis**
 
@@ -458,10 +456,10 @@ Introducido en: v25.10.0
 
 Similar a [`hasAnyTokens`](#hasAnyTokens), pero devuelve 1 si todos los tokens de la cadena o array `needle` coinciden con la cadena `input`, y 0 en caso contrario. Si `input` es una columna, devuelve todas las filas que satisfacen esta condición.
 
-<Note>
-  La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
-  Si no se define ningún índice de texto, la función realiza un barrido exhaustivo de la columna, que es varios órdenes de magnitud más lento que una búsqueda mediante índice.
-</Note>
+:::note
+La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
+Si no se define ningún índice de texto, la función realiza un barrido exhaustivo de la columna, que es varios órdenes de magnitud más lento que una búsqueda mediante índice.
+:::
 
 Antes de realizar la búsqueda, la función tokeniza
 
@@ -470,15 +468,17 @@ Antes de realizar la búsqueda, la función tokeniza
   usando el tokenizador especificado para el índice de texto.
   Si la columna no tiene definido ningún índice de texto, se usa en su lugar el tokenizador `splitByNonAlpha`.
   Si el argumento `needle` es de tipo [Array(String)](/es/reference/data-types/array), cada elemento del array se trata como un token; no se realiza ninguna tokenización adicional.
+  Si el índice de texto tiene configurada una expresión de [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional), el preprocesador se aplica a needle (si se proporciona como `String`) antes de la tokenización.
+  Si el índice de texto tiene configurada una expresión de [postprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional), el postprocesador se aplica a los tokens de needle y a los tokens de entrada (es decir, a ambos después de la tokenización).
 
 Los tokens duplicados se ignoran.
 Por ejemplo, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] se trata igual que [&#39;ClickHouse&#39;].
 
-<Note>
-  Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasAllTokens` lo aplica a `input` y, cuando `needles` es un [String](/es/reference/data-types/string), a `needles` antes de la tokenización. Cuando `needles` es un [Array(String)](/es/reference/data-types/array), sus elementos se pasan tal cual y no se les aplica el preprocesador.
-  El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
-  Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
-</Note>
+:::note
+Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasAllTokens` lo aplica a `input` y, cuando `needles` es un [String](/es/reference/data-types/string), a `needles` antes de la tokenización. Cuando `needles` es un [Array(String)](/es/reference/data-types/array), sus elementos se pasan tal cual y no se les aplica el preprocesador.
+El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
+Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
+:::
 
 **Sintaxis**
 
@@ -500,10 +500,10 @@ Devuelve 1 si todos los needles coinciden; 0 en caso contrario. [`UInt8`](/es/re
 
 **Ejemplos**
 
-**Uso básico con una aguja de tipo String**
+**Uso básico con una needle de tipo String**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -511,9 +511,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -525,7 +525,17 @@ SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
 **Especifique los needles que se buscarán TAL CUAL (sin tokenización) en un array**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -537,7 +547,17 @@ SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
 **Generar needles con la función `tokens`**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -553,12 +573,12 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
-│                                            1 │
-└──────────────────────────────────────────────┘
+┌─hasAllTokens⋯ngrams(3)')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
-**Ejemplos de uso para columnas de tipo array y map**
+**Ejemplos de uso de columnas Array y Map**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -577,12 +597,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
 **Ejemplo con una columna de tipo array**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 ```
 
@@ -595,6 +627,21 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 **Ejemplo con mapKeys**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -607,6 +654,21 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 **Ejemplo con mapValues**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -624,10 +686,10 @@ Introducido en: v25.10.0
 
 Devuelve 1 si al menos un token de la cadena o array `needle` coincide con la cadena `input`, y 0 en caso contrario. Si `input` es una columna, devuelve todas las filas que cumplen esta condición.
 
-<Note>
-  La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
-  Si no se define ningún índice de texto, la función realiza un escaneo completo de la columna, que es varios órdenes de magnitud más lento que una búsqueda en un índice.
-</Note>
+:::note
+La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
+Si no se define ningún índice de texto, la función realiza un escaneo completo de la columna, que es varios órdenes de magnitud más lento que una búsqueda en un índice.
+:::
 
 Antes de realizar la búsqueda, la función tokeniza
 
@@ -636,15 +698,17 @@ Antes de realizar la búsqueda, la función tokeniza
   usando el tokenizador especificado para el índice de texto.
   Si la columna no tiene definido ningún índice de texto, se usa en su lugar el tokenizador `splitByNonAlpha`.
   Si el argumento `needle` es de tipo [Array(String)](/es/reference/data-types/array), cada elemento del array se trata como un token; no se realiza ninguna tokenización adicional.
+  Si el índice de texto tiene configurada una expresión de [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional), el preprocesador se aplica a `needle` (si se proporciona como `String`) antes de la tokenización.
+  Si el índice de texto tiene configurada una expresión de [postprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional), el postprocesador se aplica a los tokens de `needle` y a los tokens de `input` (es decir, a ambos después de la tokenización).
 
 Los tokens duplicados se ignoran.
 Por ejemplo, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] se trata igual que [&#39;ClickHouse&#39;].
 
-<Note>
-  Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasAnyTokens` lo aplica a `input` y, cuando `needles` es un [String](/es/reference/data-types/string), a `needles` antes de la tokenización. Cuando `needles` es un [Array(String)](/es/reference/data-types/array), sus elementos se pasan tal cual y no se les aplica el preprocesador.
-  El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
-  Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
-</Note>
+:::note
+Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasAnyTokens` lo aplica a `input` y, cuando `needles` es un [String](/es/reference/data-types/string), a `needles` antes de la tokenización. Cuando `needles` es un [Array(String)](/es/reference/data-types/array), sus elementos se pasan tal cual y no se les aplica el preprocesador.
+El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
+Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
+:::
 
 **Sintaxis**
 
@@ -666,10 +730,10 @@ Devuelve `1` si hubo al menos una coincidencia. `0` en caso contrario. [`UInt8`]
 
 **Ejemplos**
 
-**Uso básico con una aguja de tipo String**
+**Uso básico con una needle de tipo String**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -677,9 +741,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -691,7 +755,17 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
 **Especifique los needles que se buscarán TAL CUAL (sin tokenización) en un array**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -703,7 +777,17 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
 **Generar needles con la función `tokens`**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -712,7 +796,7 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 └─────────┘
 ```
 
-**Ejemplos de uso para columnas de tipo array y map**
+**Ejemplos de uso de columnas de array y map**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -731,12 +815,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
 **Ejemplo con una columna de array**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 ```
 
@@ -749,6 +845,21 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **Ejemplo con mapKeys**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -761,6 +872,21 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **Ejemplo con mapValues**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -778,20 +904,20 @@ Introducido en: v26.4.0
 
 Comprueba si `input` contiene todos los tokens de `phrase` en orden consecutivo.
 
-<Note>
-  La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
-  Si no se define ningún índice de texto, la función realiza una exploración por fuerza bruta de la columna, que es varios órdenes de magnitud más lenta que una búsqueda en el índice.
-</Note>
+:::note
+La columna `input` debe tener definido un [índice de texto](/es/reference/engines/table-engines/mergetree-family/textindexes) para un rendimiento óptimo.
+Si no se define ningún índice de texto, la función realiza una exploración por fuerza bruta de la columna, que es varios órdenes de magnitud más lenta que una búsqueda en el índice.
+:::
 
 Antes de realizar la búsqueda, la función tokeniza tanto los argumentos `input` como `phrase` mediante el tokenizador especificado para el índice de texto.
 Si la columna no tiene definido ningún índice de texto, se usará en su lugar el tokenizador `splitByNonAlpha`, a menos que se proporcione un tokenizador como tercer argumento opcional.
 El argumento `tokenizer` debe ser uno de `splitByNonAlpha`, `splitByString`, `ngrams` o `asciiCJK`.
 
-<Note>
-  Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasPhrase` lo aplica tanto a `input` como a `phrase` antes de la tokenización.
-  El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
-  Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
-</Note>
+:::note
+Cuando un índice de texto define un [preprocesador](/es/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (por ejemplo, `lowerUTF8`), `hasPhrase` lo aplica tanto a `input` como a `phrase` antes de la tokenización.
+El preprocesador solo se aplica en la ruta del índice de texto, por lo que los resultados pueden diferir entre las consultas que usan el índice de texto y las que no lo usan (p. ej., `SETTINGS use_skip_indexes = 0`).
+Esta inconsistencia se tolera para mejorar la usabilidad de la búsqueda de texto completo.
+:::
 
 A diferencia de [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) y [`hasAllTokens`](#hasAllTokens), `hasPhrase` requiere que los tokens aparezcan en el mismo orden
 y sin ningún token entre medias. Por ejemplo, `hasPhrase('the quick brown fox', 'quick fox')` devuelve 0
@@ -1059,7 +1185,12 @@ SELECT hasToken('clickhouse test', 'test')
 
 Introducido en: v20.1.0
 
-Realiza una búsqueda de needle en haystack sin distinguir entre mayúsculas y minúsculas mediante el índice tokenbf&#95;v1.
+Realiza una búsqueda de subsecuencia en cadena sin distinguir entre mayúsculas y minúsculas mediante el índice tokenbf&#95;v1.
+
+:::note
+Esta función presenta ciertos inconvenientes con tokenizador no predeterminado y expresiones de preprocesamiento o posprocesamiento.
+Recomendamos usar [`hasAnyTokens`](#hasAnyTokens) y [`hasAllTokens`](#hasAllTokens) en su lugar.
+:::
 
 **Sintaxis**
 
@@ -1081,7 +1212,12 @@ hasTokenCaseInsensitive(haystack, needle)
 
 Introducido en: v23.1.0
 
-Realiza una búsqueda de needle en haystack sin distinguir entre mayúsculas y minúsculas mediante el índice tokenbf&#95;v1. Devuelve NULL si needle no tiene un formato válido.
+Realiza una búsqueda de subsecuencia en cadena sin distinguir entre mayúsculas y minúsculas mediante el índice tokenbf&#95;v1. Devuelve NULL si la subsecuencia no tiene un formato válido.
+
+:::note
+Esta función presenta ciertas limitaciones con tokenizadores no predeterminados y expresiones de preprocesamiento o posprocesamiento.
+Recomendamos usar [`hasAnyTokens`](#hasAnyTokens) y [`hasAllTokens`](#hasAllTokens) en su lugar.
+:::
 
 **Sintaxis**
 
@@ -1249,9 +1385,9 @@ No se realiza ninguna normalización Unicode automática; para ello, puede usar 
 Para hacer coincidir los caracteres literales `%`, `_` y `\` (que son metacaracteres de `LIKE`), antepóngales una barra invertida: `\%`, `\_` y `\\`.
 La barra invertida pierde su significado especial (es decir, se interpreta literalmente) si precede a un carácter distinto de `%`, `_` o `\`.
 
-<Note>
-  ClickHouse requiere que las barras invertidas en las cadenas [también se escapen](/es/reference/syntax#string), por lo que en realidad tendría que escribir `\\%`, `\\_` y `\\\\`.
-</Note>
+:::note
+ClickHouse requiere que las barras invertidas en las cadenas [también se escapen](/es/reference/syntax#string), por lo que en realidad tendría que escribir `\\%`, `\\_` y `\\\\`.
+:::
 
 Para expresiones `LIKE` de la forma `%needle%`, la función es tan rápida como la función `position`.
 Todas las demás expresiones `LIKE` se convierten internamente en una expresión regular y se ejecutan con un rendimiento similar al de la función `match`.
@@ -1340,15 +1476,13 @@ Introducido en: v18.16.0
 
 Igual que [`position`](#position), pero con los argumentos `haystack` y `locate` intercambiados.
 
-<Info>
-  **Comportamiento según la versión**
+:::note Comportamiento según la versión
+El comportamiento de esta función depende de la versión de ClickHouse:
 
-  El comportamiento de esta función depende de la versión de ClickHouse:
-
-  * en las versiones &lt; v24.3, `locate` era un alias de la función `position` y aceptaba los argumentos `(haystack, needle[, start_pos])`.
-  * en las versiones &gt;= 24.3, `locate` es una función independiente (para mejorar la compatibilidad con MySQL) y acepta los argumentos `(needle, haystack[, start_pos])`.
-    El comportamiento anterior puede restaurarse usando el ajuste `function_locate_has_mysql_compatible_argument_order = false`.
-</Info>
+* en las versiones &lt; v24.3, `locate` era un alias de la función `position` y aceptaba los argumentos `(haystack, needle[, start_pos])`.
+* en las versiones &gt;= 24.3, `locate` es una función independiente (para mejorar la compatibilidad con MySQL) y acepta los argumentos `(needle, haystack[, start_pos])`.
+  El comportamiento anterior puede restaurarse usando el ajuste `function_locate_has_mysql_compatible_argument_order = false`.
+  :::
 
 **Sintaxis**
 
@@ -1358,7 +1492,7 @@ locate(needle, haystack[, start_pos])
 
 **Argumentos**
 
-* `needle` — needle que se debe buscar. [`String`](/es/reference/data-types/string)
+* `needle` — subsecuencia que se debe buscar. [`String`](/es/reference/data-types/string)
 * `haystack` — Cadena en la que se realiza la búsqueda. [`String`](/es/reference/data-types/string) o [`Enum`](/es/reference/data-types/enum)
 * `start_pos` — Opcional. Posición (a partir de 1) en `haystack` donde comienza la búsqueda. [`UInt`](/es/reference/data-types/int-uint)
 
@@ -1501,13 +1635,13 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 
 Introducido en: v20.1.0
 
-Como [`multiMatchAny`](#multiMatchAny), pero devuelve 1 si algún patrón coincide con el haystack dentro de una [distancia de edición](https://en.wikipedia.org/wiki/Edit_distance) constante.
+Como [`multiMatchAny`](#multiMatchAny), pero devuelve 1 si algún patrón coincide con la cadena dentro de una [distancia de edición](https://en.wikipedia.org/wiki/Edit_distance) constante.
 Esta función se basa en una característica experimental de la biblioteca [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) y puede resultar lenta en determinados casos extremos.
 El rendimiento depende del valor de la distancia de edición y de los patrones utilizados, pero su coste siempre es mayor que el de las variantes no difusas.
 
-<Note>
-  La familia de funciones `multiFuzzyMatch*()` no admite expresiones regulares UTF-8 (las trata como una secuencia de bytes) debido a las restricciones de hyperscan.
-</Note>
+:::note
+La familia de funciones `multiFuzzyMatch*()` no admite expresiones regulares UTF-8 (las trata como una secuencia de bytes) debido a las restricciones de hyperscan.
+:::
 
 **Sintaxis**
 
@@ -1517,13 +1651,13 @@ multiFuzzyMatchAny(haystack, distance, [pattern1, pattern2, ..., patternN])
 
 **Argumentos**
 
-* `haystack` — haystack donde se realiza la búsqueda. [`String`](/es/reference/data-types/string)
+* `haystack` — cadena donde se realiza la búsqueda. [`String`](/es/reference/data-types/string)
 * `distance` — La distancia máxima de edición para la coincidencia difusa. [`UInt8`](/es/reference/data-types/int-uint)
 * `pattern` — Opcional. Un array de patrones con los que buscar coincidencias. [`Array(String)`](/es/reference/data-types/array)
 
 **Valor devuelto**
 
-Devuelve `1` si algún patrón coincide con el haystack dentro de la distancia de edición especificada; de lo contrario, `0`. [`UInt8`](/es/reference/data-types/int-uint)
+Devuelve `1` si algún patrón coincide con la cadena dentro de la distancia de edición especificada; de lo contrario, `0`. [`UInt8`](/es/reference/data-types/int-uint)
 
 **Ejemplos**
 

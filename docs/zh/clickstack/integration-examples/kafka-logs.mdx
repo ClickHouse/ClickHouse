@@ -39,9 +39,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     Kafka 使用 Log4j，并将日志写入由系统属性 `kafka.logs.dir` 或环境变量 `LOG_DIR` 指定的目录。请检查日志文件的位置：
 
     ```bash
-    # 默认位置
-    ls $KAFKA_HOME/logs/      # 标准 Apache Kafka（默认路径为 <install-dir>/logs/）
-    ls /var/log/kafka/        # RPM/DEB 软件包安装
+    # Default locations
+    ls $KAFKA_HOME/logs/      # Standard Apache Kafka (defaults to <install-dir>/logs/)
+    ls /var/log/kafka/        # RPM/DEB package installations
     ```
 
     Kafka 的关键日志文件：
@@ -73,8 +73,8 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       filelog/kafka:
         include:
           - /var/log/kafka/server.log
-          - /var/log/kafka/controller.log  # 可选，仅在 log4j 配置了独立文件 appender 时存在
-          - /var/log/kafka/state-change.log  # 可选，同上
+          - /var/log/kafka/controller.log  # optional, only exists if log4j is configured with separate file appenders
+          - /var/log/kafka/state-change.log  # optional, same as above
         start_at: beginning
         multiline:
           line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
@@ -181,7 +181,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   ## 演示数据集
 </div>
 
-在配置生产系统之前，先用预生成的样本数据集测试 Kafka 日志集成。
+在配置生产系统之前，先使用预生成的样本数据集测试 Kafka 日志集成。
 
 <Steps>
   <Step>
@@ -263,7 +263,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     ClickStack 运行后：
 
-    1. 打开 [HyperDX](http://localhost:8080/) 并登录账户 (你可能需要先创建一个账户)
+    1. 打开 [HyperDX](http://localhost:8080/) 并登录你的账户 (你可能需要先创建一个账户)
     2. 进入搜索视图，并将数据源设为 `Logs`
     3. 将时间范围设置为包含 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
@@ -283,7 +283,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### 导入预构建仪表盘
+    #### 导入预置仪表盘
 
     1. 打开 HyperDX，进入“仪表盘”部分。
     2. 点击右上角省略号下方的“导入仪表盘”。
@@ -337,7 +337,7 @@ tail -1 /var/log/kafka/server.log
 * 针对特定场景 (controller 事件、分区重新分配) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
 <div id="going-to-production">
-  ## 进入生产环境
+  ## 投入生产环境
 </div>
 
-本指南是在 ClickStack 内置的 OpenTelemetry Collector 基础上进行扩展，以便快速完成设置。对于生产部署，我们建议运行您自己的 OTel collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南使用 ClickStack 内置的 OpenTelemetry Collector 进行快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

@@ -88,8 +88,8 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # TLSを使用する場合はtrueに設定してください
-          # 以下のファイルは https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs の手順に従って生成されます
+          enabled: false  # Set to true if you're using TLS
+          # The files below are generated from the steps at https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#generate-logstash-certs
           # crt_file: logstash.crt
           # key_file: logstash.key
           # ca_file: ca.crt
@@ -116,29 +116,29 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
 
     <Accordion title="VRL - ECS から OTel への移行">
       ```javascript
-      # ルートレベルで無視するキーを定義する
+      # Define keys to ignore at root level
       ignored_keys = ["@metadata"]
 
-      # リソースキーのプレフィックスを定義する
+      # Define resource key prefixes
       resource_keys = ["host", "cloud", "agent", "service"]
 
-      # リソースフィールドとログレコードフィールド用に別々のオブジェクトを作成する
+      # Create separate objects for resource and log record fields
       resource_obj = {}
       log_record_obj = {}
 
-      # 無視されていないすべてのルートキーを適切なオブジェクトにコピーする
+      # Copy all non-ignored root keys to appropriate objects
       root_keys = keys(.)
       for_each(root_keys) -> |_index, key| {
           if !includes(ignored_keys, key) {
               val, err = get(., [key])
               if err == null {
-                  # これがリソースフィールドかどうかを確認する
+                  # Check if this is a resource field
                   is_resource = false
                   if includes(resource_keys, key) {
                       is_resource = true
                   }
 
-                  # 適切なオブジェクトに追加する
+                  # Add to appropriate object
                   if is_resource {
                       resource_obj = set(resource_obj, [key], val) ?? resource_obj
                   } else {
@@ -148,11 +148,11 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
           }
       }
 
-      # 両方のオブジェクトを個別にフラット化する
+      # Flatten both objects separately
       flattened_resources = flatten(resource_obj, separator: ".")
       flattened_logs = flatten(log_record_obj, separator: ".")
 
-      # リソース属性を処理する
+      # Process resource attributes
       resource_attributes = []
       resource_keys_list = keys(flattened_resources)
       for_each(resource_keys_list) -> |_index, field_key| {
@@ -170,7 +170,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
           }
       }
 
-      # ログレコード属性を処理する
+      # Process log record attributes
       log_attributes = []
       log_keys_list = keys(flattened_logs)
       for_each(log_keys_list) -> |_index, field_key| {
@@ -188,14 +188,14 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
           }
       }
 
-      # timeUnixNano 用のタイムスタンプを取得する（ナノ秒に変換）
+      # Get timestamp for timeUnixNano (convert to nanoseconds)
       timestamp_nano = if exists(.@timestamp) {
           to_unix_timestamp!(parse_timestamp!(.@timestamp, format: "%Y-%m-%dT%H:%M:%S%.3fZ"), unit: "nanoseconds")
       } else {
           to_unix_timestamp(now(), unit: "nanoseconds")
       }
 
-      # メッセージ/ボディフィールドを取得する
+      # Get message/body field
       body_value = if exists(.message) {
           to_string!(.message)
       } else if exists(.body) {
@@ -204,7 +204,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
           ""
       }
 
-      # OpenTelemetry 構造を作成する
+      # Create the OpenTelemetry structure
       . = {
           "resourceLogs": [
               {
@@ -239,10 +239,10 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
     sinks:
       otlp:
         type: opentelemetry
-        inputs: [remap_filebeat] # remapトランスフォームからイベントを受信する - 以下を参照
+        inputs: [remap_filebeat] # receives events from a remap transform - see below
         protocol:
-          type: http  # ポート4317の場合は "grpc" を使用
-          uri: http://localhost:4318/v1/logs # OTel collectorのlogsエンドポイント 
+          type: http  # Use "grpc" for port 4317
+          uri: http://localhost:4318/v1/logs # logs endpoint for the OTel collector 
           method: post
           encoding:
             codec: json
@@ -265,7 +265,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
         type: logstash
         address: 0.0.0.0:5044
         tls:
-          enabled: false  # TLSを使用する場合はtrueに設定してください
+          enabled: false  # Set to true if you're using TLS
             #crt_file: /data/elasticsearch-9.0.1/logstash/logstash.crt
             #key_file: /data/elasticsearch-9.0.1/logstash/logstash.key
             #ca_file: /data/elasticsearch-9.0.1/ca/ca.crt
@@ -282,7 +282,7 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
         type: opentelemetry
         inputs: [remap_filebeat]
         protocol:
-          type: http  # ポート4317を使用する場合は"grpc"を指定してください
+          type: http  # Use "grpc" for port 4317
           uri: http://localhost:4318/v1/logs
           method: post
           encoding:
@@ -300,19 +300,19 @@ Filebeat エージェントが Kafka にデータを送信するよう設定さ�
     既存の Filebeat インストールでは、イベントの送信先が Vector になるよう設定を変更するだけで済みます。そのためには Logstash 出力を設定する必要があります。ここでも、必要に応じて TLS を設定できます。
 
     ```yaml
-    # ------------------------------ Logstash 出力 -------------------------------
+    # ------------------------------ Logstash Output -------------------------------
     output.logstash:
-      # Logstash ホスト
+      # The Logstash hosts
       hosts: ["localhost:5044"]
 
-      # SSL はオプションです。デフォルトは無効です。
-      # HTTPS サーバー検証用のルート証明書のリスト
+      # Optional SSL. By default is off.
+      # List of root certificates for HTTPS server verifications
       #ssl.certificate_authorities: ["/etc/pki/root/ca.pem"]
 
-      # SSL クライアント認証用の証明書
+      # Certificate for SSL client authentication
       #ssl.certificate: "/etc/pki/client/cert.pem"
 
-      # クライアント証明書の秘密鍵
+      # Client Certificate Key
       #ssl.key: "/etc/pki/client/cert.key"
     ```
   </Step>
@@ -391,7 +391,7 @@ EDOT collector とともに Elastic Agent を実行するには、[Elastic の�
 
 ```yaml
 exporters:
-  # ログとメトリクスをElasticsearch Managed OTLP Inputに送信するエクスポーター
+  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:
@@ -414,7 +414,7 @@ Vector が相互 TLS を使用するように設定されており、証明書�
 
 ```yaml
 exporters:
-  # ログとメトリクスを Elasticsearch Managed OTLP Input に送信するエクスポーター
+  # Exporter to send logs and metrics to Elasticsearch Managed OTLP Input
   otlp:
     endpoint: localhost:4317
     headers:

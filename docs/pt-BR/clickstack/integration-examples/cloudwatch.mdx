@@ -77,13 +77,13 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     **Para usuários do AWS SSO (recomendado para a maioria das organizações):**
 
     ```bash
-    # Fazer login no SSO
+    # Login to SSO
     aws sso login --profile YOUR_PROFILE_NAME
 
-    # Exportar credenciais para variáveis de ambiente
+    # Export credentials to environment variables
     eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
 
-    # Verificar se as credenciais funcionam
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -96,7 +96,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
     export AWS_REGION="us-east-1"
 
-    # Verificar se as credenciais funcionam
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -318,10 +318,10 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
 </Steps>
 
 <div id="demo-dataset">
-  ## Dataset de demonstração
+  ## Conjunto de dados de demonstração
 </div>
 
-Para usuários que desejam testar a integração com o CloudWatch Logs antes de configurar o ambiente de produção na AWS, fornecemos um dataset de exemplo com logs pré-gerados que mostram padrões realistas de vários serviços da AWS.
+Para usuários que desejam testar a integração com os logs do CloudWatch antes de configurar o ambiente de produção na AWS, fornecemos um dataset de exemplo com logs pré-gerados que mostram padrões realistas de vários serviços da AWS.
 
 <Steps>
   <Step>
@@ -353,7 +353,7 @@ Para usuários que desejam testar a integração com o CloudWatch Logs antes de 
   </Step>
 
   <Step>
-    #### Importe o dataset de demonstração
+    #### Importe o conjunto de dados de demonstração
 
     ```bash
     docker exec -i clickstack clickhouse-client --query="
@@ -418,7 +418,7 @@ Para ajudar você a monitorar os logs do CloudWatch com o ClickStack, fornecemos
     <Image img="/images/clickstack/cloudwatch/logs-dashboard.webp" alt="Dashboard do CloudWatch Logs" />
 
     <Note>
-      Para o dataset de demonstração, defina o intervalo de tempo como **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo especificado.
+      Para o conjunto de dados de demonstração, defina o intervalo de tempo como **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo especificado.
     </Note>
   </Step>
 </Steps>
@@ -558,9 +558,9 @@ groups:
 * Filtre grupos de logs com muito ruído removendo-os da configuração do collector para reduzir o volume de ingestão
 
 <div id="going-to-production">
-  ## Colocando em produção
+  ## Preparando para produção
 </div>
 
-Este guia demonstra como executar o OpenTelemetry Collector localmente com Docker Compose para testes. Para implantações em produção, execute o collector em uma infraestrutura com acesso à AWS (EC2 com funções do IAM, EKS com IRSA ou ECS com funções de tarefa) para eliminar a necessidade de gerenciar chaves de acesso. Implante os collectors na mesma região da AWS que seus grupos de logs do CloudWatch para reduzir a latência e os custos.
+Este guia mostra como executar o OpenTelemetry Collector localmente com Docker Compose para testes. Para implantações em produção, execute o collector em uma infraestrutura com acesso à AWS (EC2 com IAM roles, EKS com IRSA ou ECS com task roles) para eliminar a necessidade de gerenciar chaves de acesso. Implante os collectors na mesma região da AWS que seus grupos de logs do CloudWatch para reduzir a latência e os custos.
 
 Consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para ver padrões de implantação em produção e exemplos de configuração do collector.

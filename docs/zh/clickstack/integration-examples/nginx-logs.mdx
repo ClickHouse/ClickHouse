@@ -138,14 +138,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 现有配置 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 其他环境变量 ...
+          # ... other environment variables ...
         volumes:
           - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/nginx:/var/log/nginx:ro
-          # ... 其他挂载卷 ...
+          # ... other volumes ...
     ```
 
     ##### 选项 2：Docker Run (All-in-One 镜像)
@@ -295,7 +295,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     #### 导入预构建仪表盘
 
     1. 打开 HyperDX，进入 Dashboards 部分。
-    2. 点击右上角省略号菜单下的“Import Dashboard”。
+    2. 点击右上角省略号菜单下的“导入仪表盘”。
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
 
@@ -377,7 +377,7 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
 * 针对特定场景 (API 监控、安全事件) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
 <div id="going-to-production">
-  ## 生产环境部署
+  ## 面向生产环境
 </div>
 
 本指南在 ClickStack 内置的 OpenTelemetry Collector 基础上进行了扩展，便于快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

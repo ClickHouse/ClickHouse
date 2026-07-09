@@ -26,7 +26,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </div>
 
 <Note>
-  これらの手順は、[&quot;Accessing S3 data securely&quot;](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) で説明されているセキュアな S3 の設定と似ていますが、ロールの権限には追加で必要なアクションがあります
+  これらの手順は、[&quot;Accessing S3 data securely&quot;](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) で説明されているセキュアな S3 の設定と似ていますが、ロールの権限には追加の設定が必要です
 </Note>
 
 以下の手順を AWS アカウントで実施してください。
@@ -41,7 +41,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step>
     ##### IAM ロールを作成する
 
-    AWS はロールベースの認証を使用するため、ClickHouse Cloud サービスが引き受けてこのバケットに書き込める IAM ロールを作成します。
+    AWS はロールベースの認証を使用するため、ClickHouse Cloud サービスがこのバケットに書き込めるよう、引き受け可能な IAM ロールを作成します。
 
     * a. ClickHouse Cloud サービスの設定ページにある Network security information から ARN を取得します。次のような形式です。
 
@@ -70,7 +70,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     ##### ロールの権限を更新する
 
     この ClickHouse Cloud サービスが S3 バケットに書き込めるように、このロールの権限も設定する必要があります。
-    これを行うには、このような JSON の権限ポリシーをロール用に作成します。両方の resource には、自身のバケット ARN を指定してください。
+    これを行うには、このような JSON の権限ポリシーをロール用に作成します。両方の Resource には、自身のバケット ARN を指定してください。
 
     ```json
     {

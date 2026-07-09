@@ -299,7 +299,7 @@ Une fois une vue matérialisée enregistrée, ClickStack l’utilise automatique
   ### Vérifier l&#39;accélération dans les tableaux de bord et les visualisations
 </div>
 
-Il est important de garder à l&#39;esprit que les vues matérialisées incrémentielles ne contiennent que les données insérées **après la création de la vue**. Elles ne sont pas automatiquement remplies avec les données historiques, ce qui les rend légères et peu coûteuses à maintenir. Pour cette raison, les utilisateurs doivent spécifier explicitement l&#39;intervalle de temps valide d&#39;une vue lors de son enregistrement.
+Il est important de garder à l&#39;esprit que les vues matérialisées incrémentielles ne contiennent que les données insérées **après la création de la vue**. Elles ne sont pas automatiquement rétroremplies, ce qui les rend légères et peu coûteuses à maintenir. Pour cette raison, les utilisateurs doivent spécifier explicitement l&#39;intervalle de temps valide d&#39;une vue lors de son enregistrement.
 
 <Note>
   ClickStack n&#39;utilisera une vue matérialisée que si son horodatage minimum est inférieur ou égal au début de l&#39;intervalle de temps de la requête, ce qui garantit que la vue contient toutes les données requises. Bien que les requêtes soient divisées en interne en sous-requêtes basées sur le temps, les vues matérialisées sont appliquées soit à l&#39;ensemble de la requête, soit pas du tout. De futures améliorations pourraient permettre d&#39;utiliser les vues de manière sélective pour les sous-requêtes admissibles.
@@ -314,7 +314,7 @@ ClickStack fournit des indicateurs visuels clairs pour confirmer si une vue mat�
 
 <Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="Visualisation accélérée" />
 
-2. **Inspectez les détails de l&#39;optimisation** Cliquez sur l&#39;icône en forme d&#39;éclair pour ouvrir un panneau de détails affichant :
+2. **Inspectez les détails de l&#39;optimisation**  Cliquez sur l&#39;icône en forme d&#39;éclair pour ouvrir un panneau de détails affichant :
 
 * **Vue matérialisée active** : la vue sélectionnée pour la requête, y compris son nombre estimé de lignes.
 * **Vues matérialisées ignorées** : les vues compatibles qui n&#39;ont pas été sélectionnées, ainsi que leurs tailles d&#39;analyse estimées.

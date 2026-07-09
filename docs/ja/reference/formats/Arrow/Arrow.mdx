@@ -42,7 +42,8 @@ ClickHouse はこれらのフォーマットの読み書きをサポートして
 | `DOUBLE`                                | [Float64](/ja/reference/data-types/float)                                                                    | `FLOAT64`             |
 | `DATE32`                                | [Date32](/ja/reference/data-types/date32)                                                                    | `UINT16`              |
 | `DATE64`                                | [DateTime](/ja/reference/data-types/datetime)                                                                | `UINT32`              |
-| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/ja/reference/data-types/datetime64)                                                            | `TIMESTAMP`           |
+| `TIMESTAMP`                             | [DateTime64](/ja/reference/data-types/datetime64)                                                            | `TIMESTAMP`           |
+| `TIME32`, `TIME64`                      | [Time64](/ja/reference/data-types/time64)                                                                    | `TIME32`, `TIME64`    |
 | `STRING`, `BINARY`                      | [String](/ja/reference/data-types/string)                                                                    | `BINARY`              |
 | `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ja/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`   |
 | `DECIMAL`                               | [Decimal](/ja/reference/data-types/decimal)                                                                  | `DECIMAL`             |
@@ -67,7 +68,7 @@ Array はネストでき、引数として `Nullable` 型の値を取ること�
 * `UUID`
 * `ENUM`.
 
-ClickHouseテーブルのカラムのデータ型は、対応するArrowのデータフィールドと一致している必要はありません。データを挿入する際、ClickHouseは上の表に従ってデータ型を解釈し、その後、ClickHouseテーブルのカラムに設定されたデータ型へデータを[キャスト](/ja/reference/functions/regular-functions/type-conversion-functions#CAST)します。
+ClickHouse テーブルのカラムのデータ型は、対応する Arrow のデータフィールドと一致している必要はありません。データを挿入する際、ClickHouse はまず上の表に従ってデータ型を解釈し、その後、データを ClickHouse テーブルのカラムに設定されたデータ型に [キャスト](/ja/reference/functions/regular-functions/type-conversion-functions#CAST) します。
 
 <div id="example-usage">
   ## 使用例

@@ -2,7 +2,7 @@
 title: Inserciones asíncronas
 ---
 
-Las inserciones asíncronas en ClickHouse ofrecen una potente alternativa cuando la agrupación por lotes del lado del cliente no es viable. Esto resulta especialmente valioso en cargas de trabajo de observabilidad, donde cientos o miles de agentes envían datos continuamente —logs, métricas y trazas—, a menudo en cargas útiles pequeñas y en tiempo real. Almacenar temporalmente los datos en el lado del cliente en estos entornos aumenta la complejidad, ya que requiere una cola centralizada para garantizar que se puedan enviar lotes lo bastante grandes.
+Las inserciones asíncronas en ClickHouse ofrecen una potente alternativa cuando la agrupación por lotes del lado del cliente no es viable. Esto resulta especialmente valioso en workloads de observabilidad, donde cientos o miles de agentes envían datos continuamente —logs, métricas y trazas—, a menudo en cargas útiles pequeñas y en tiempo real. Almacenar temporalmente los datos en el lado del cliente en estos entornos aumenta la complejidad, ya que requiere una cola centralizada para garantizar que se puedan enviar lotes lo bastante grandes.
 
 <Note>
   No se recomienda enviar muchos lotes pequeños en modo síncrono, ya que esto provoca la creación de muchas partes. Esto dará lugar a un rendimiento deficiente de las consultas y a errores de [&quot;too many part&quot;](/es/resources/support-center/knowledge-base/troubleshooting/exception-too-many-parts).

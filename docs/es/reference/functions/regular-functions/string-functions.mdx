@@ -1502,9 +1502,9 @@ Introducido en: v24.1.0
 Devuelve la representación ASCII (algoritmo ToASCII) de un nombre de dominio según el mecanismo [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA).
 La cadena de entrada debe estar codificada en UTF y poder convertirse en una cadena ASCII; de lo contrario, se lanza una excepción.
 
-<Note>
-  No se realiza ninguna decodificación de porcentajes ni se eliminan tabulaciones, espacios o caracteres de control.
-</Note>
+:::note
+No se realiza ninguna decodificación de porcentajes ni se eliminan tabulaciones, espacios o caracteres de control.
+:::
 
 **Sintaxis**
 
@@ -1543,10 +1543,10 @@ Introducido en: v23.7.0
 Convierte la primera letra de cada palabra en mayúscula y el resto en minúsculas.
 Las palabras son secuencias de caracteres alfanuméricos separadas por caracteres no alfanuméricos.
 
-<Note>
-  Como `initcap` solo convierte a mayúscula la primera letra de cada palabra, es posible que observe un comportamiento inesperado en palabras que contienen apóstrofos o letras mayúsculas.
-  Este es un comportamiento conocido y actualmente no está previsto corregirlo.
-</Note>
+:::note
+Como `initcap` solo convierte a mayúscula la primera letra de cada palabra, es posible que observe un comportamiento inesperado en palabras que contienen apóstrofos o letras mayúsculas.
+Este es un comportamiento conocido y actualmente no está previsto corregirlo.
+:::
 
 **Sintaxis**
 
@@ -1598,10 +1598,10 @@ Al igual que [`initcap`](#initcap), `initcapUTF8` convierte la primera letra de 
 Se asume que la cadena contiene texto válido codificado en UTF-8.
 Si no se cumple esta suposición, no se lanza ninguna excepción y el resultado no está definido.
 
-<Note>
-  Esta función no detecta el idioma; por ejemplo, para el turco, el resultado podría no ser exactamente correcto (i/İ vs. i/I).
-  Si la longitud de la secuencia de bytes UTF-8 difiere entre las formas en mayúsculas y minúsculas de un punto de código, el resultado puede ser incorrecto para ese punto de código.
-</Note>
+:::note
+Esta función no detecta el idioma; por ejemplo, para el turco, el resultado podría no ser exactamente correcto (i/İ vs. i/I).
+Si la longitud de la secuencia de bytes UTF-8 difiere entre las formas en mayúsculas y minúsculas de un punto de código, el resultado puede ser incorrecto para ese punto de código.
+:::
 
 **Sintaxis**
 
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2212,8 +2209,8 @@ Devuelve la forma NFKC normalizada de la cadena UTF-8. [`String`](/es/reference/
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Caracteres de números en círculo
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Se convierte en 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ Devuelve la forma normalizada NFKD de la cadena codificada en UTF-8. [`String`](
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subíndice 2 + O + superíndice 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Convierte a H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3440,10 +3437,10 @@ El recuento de puntos de código comienza en `1` con la siguiente lógica:
 
 Un argumento opcional, `length`, especifica el número máximo de puntos de código que puede tener la subcadena devuelta.
 
-<Note>
-  Esta función asume que la cadena contiene texto válido codificado en UTF-8.
-  Si no se cumple esta suposición, no se lanza ninguna excepción y el resultado es indefinido.
-</Note>
+:::note
+Esta función asume que la cadena contiene texto válido codificado en UTF-8.
+Si no se cumple esta suposición, no se lanza ninguna excepción y el resultado es indefinido.
+:::
 
 **Sintaxis**
 
@@ -3896,10 +3893,10 @@ Introducido en: v1.1.0
 Convierte una cadena a mayúsculas, suponiendo que contiene texto válido codificado en UTF-8.
 Si no se cumple esta condición, no se lanza ninguna excepción y el resultado es indefinido.
 
-<Note>
-  Esta función no detecta el idioma; por ejemplo, en turco, el resultado podría no ser del todo correcto (i/İ vs. i/I).
-  Si la longitud de la secuencia de bytes UTF-8 difiere entre mayúsculas y minúsculas para un punto de código (como `ẞ` y `ß`), el resultado puede ser incorrecto para ese punto de código.
-</Note>
+:::note
+Esta función no detecta el idioma; por ejemplo, en turco, el resultado podría no ser del todo correcto (i/İ vs. i/I).
+Si la longitud de la secuencia de bytes UTF-8 difiere entre mayúsculas y minúsculas para un punto de código (como `ẞ` y `ß`), el resultado puede ser incorrecto para ese punto de código.
+:::
 
 **Sintaxis**
 

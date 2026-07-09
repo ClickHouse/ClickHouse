@@ -1098,9 +1098,6 @@ firstSignificantSubdomain(url)
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 ```
 
-```response title=Response
-```
-
 <div id="firstSignificantSubdomainCustomRFC">
   ## firstSignificantSubdomainCustom
 </div>
@@ -1530,16 +1527,17 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 
 Извлекает домен верхнего уровня из URL.
 
-<Note>
-  URL можно указать как с протоколом, так и без него.
-  Например:
+:::note
+URL можно указать как с протоколом, так и без него.
+Например:
 
-  ```text
-  svn+ssh://some.svn-hosting.com:80/repo/trunk
-  some.svn-hosting.com:80/repo/trunk
-  https://clickhouse.com/time/
-  ```
-</Note>
+```text
+svn+ssh://some.svn-hosting.com:80/repo/trunk
+some.svn-hosting.com:80/repo/trunk
+https://clickhouse.com/time/
+```
+
+:::
 
 **Синтаксис**
 
@@ -1553,7 +1551,7 @@ topLevelDomain(url)
 
 **Возвращаемое значение**
 
-Возвращает имя домена, если входную строку можно разобрать как URL. В противном случае возвращает пустую строку. [`String`](/ru/reference/data-types/string)
+Возвращает доменное имя, если входную строку можно разобрать как URL. В противном случае возвращает пустую строку. [`String`](/ru/reference/data-types/string)
 
 **Примеры**
 

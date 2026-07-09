@@ -30,13 +30,13 @@ doc_type: 'reference'
 
 В противном случае результат вычисления округляется до ближайшего значения, кратного 16 мс.
 
-<Note>
-  Для вычисления квантилей времени загрузки страницы эта функция эффективнее и точнее, чем [`quantile`](/ru/reference/functions/aggregate-functions/quantile).
-</Note>
+:::note
+Для вычисления квантилей времени загрузки страницы эта функция эффективнее и точнее, чем [`quantile`](/ru/reference/functions/aggregate-functions/quantile).
+:::
 
-<Note>
-  Если в функцию не передаются значения (при использовании `quantileTimingIf`), возвращается [NaN](/ru/reference/data-types/float#nan-and-inf). Это позволяет отличать такие случаи от случаев, в которых результат равен нулю. Примечания о сортировке значений `NaN` см. в [предложении ORDER BY](/ru/reference/statements/select/order-by).
-</Note>
+:::note
+Если в функцию не передаются значения (при использовании `quantileTimingIf`), возвращается [NaN](/ru/reference/data-types/float#nan-and-inf). Это позволяет отличать такие случаи от случаев, в которых результат равен нулю. Примечания о сортировке значений `NaN` см. в [предложении ORDER BY](/ru/reference/statements/select/order-by).
+:::
 
 **Синтаксис**
 

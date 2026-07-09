@@ -17,17 +17,19 @@ Calcule le nombre approximatif de valeurs distinctes de l’argument.
 
 La fonction utilise un algorithme d’échantillonnage adaptatif. Pour l’état de calcul, la fonction utilise un échantillon pouvant contenir jusqu’à 65536 valeurs de hachage d’éléments. Cet algorithme est très précis et très efficace en termes d’utilisation du CPU. Lorsque la requête contient plusieurs de ces fonctions, l’utilisation de uniq est presque aussi rapide que celle d’autres fonctions d’agrégation.
 
-<Accordion title="Détails d’implémentation">
+<details>
+  <summary>Détails d’implémentation</summary>
+
   Cette fonction calcule un hash pour tous les paramètres de l’agrégat, puis l’utilise dans les calculs.
   Elle utilise un algorithme d’échantillonnage adaptatif.
   Pour l’état de calcul, la fonction utilise un échantillon pouvant contenir jusqu’à 65536 valeurs de hachage d’éléments.
   Cet algorithme est très précis et très efficace en termes d’utilisation du CPU.
   Lorsque la requête contient plusieurs de ces fonctions, l’utilisation de `uniq` est presque aussi rapide que celle d’autres fonctions d’agrégation.
-</Accordion>
+</details>
 
-<Tip>
-  Nous recommandons d’utiliser cette fonction plutôt que d’autres variantes dans la quasi-totalité des cas.
-</Tip>
+:::tip
+Nous recommandons d’utiliser cette fonction plutôt que d’autres variantes dans la quasi-totalité des cas.
+:::
 
 **Syntaxe**
 

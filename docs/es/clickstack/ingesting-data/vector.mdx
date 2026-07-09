@@ -158,7 +158,7 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        Cree una tabla para sus datos. Debe coincidir con el esquema de salida de sus datos. El ejemplo siguiente asume una estructura clásica de Nginx. Ajústela según sus datos, siguiendo las [buenas prácticas del esquema](/es/concepts/best-practices/select-data-type). **Recomendamos encarecidamente** que se familiarice con el [concepto de las claves primarias](/es/concepts/core-concepts/primary-indexes) y que seleccione su clave primaria en función de las directrices descritas [aquí](/es/clickstack/managing/performance-tuning#choosing-a-primary-key).
+        Cree una tabla para sus datos. Debe coincidir con el esquema de salida de estos. El ejemplo siguiente parte de una estructura clásica de Nginx. Ajústela según sus datos, siguiendo las [buenas prácticas de esquema](/es/concepts/best-practices/select-data-type). **Le recomendamos encarecidamente** que se familiarice con el [concepto de claves primarias](/es/concepts/core-concepts/primary-indexes) y que seleccione su clave primaria según las directrices descritas [aquí](/es/clickstack/managing/performance-tuning#choosing-a-primary-key).
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -183,7 +183,7 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
         <Info>
           **Clave primaria de Nginx**
 
-          La clave primaria anterior presupone patrones de acceso típicos en la UI de ClickStack para los logs de Nginx, pero puede ser necesario ajustarla según su carga de trabajo en entornos de producción.
+          La clave primaria anterior asume patrones de acceso típicos en la UI de ClickStack para los logs de Nginx, pero puede ser necesario ajustarla según su carga de trabajo en entornos de producción.
         </Info>
       </Step>
 
@@ -346,7 +346,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # Formato DateTime compatible con ClickHouse
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -490,7 +490,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         <Info>
           **Clave primaria de Nginx**
 
-          La clave primaria anterior asume patrones de acceso típicos en la UI de ClickStack para los logs de Nginx, pero puede ser necesario ajustarla en función de tu carga de trabajo en entornos de producción.
+          La clave primaria anterior se basa en patrones de acceso típicos en la UI de ClickStack para los logs de Nginx, pero puede ser necesario ajustarla en función de la carga de trabajo en entornos de producción.
         </Info>
       </Step>
 
@@ -518,7 +518,7 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # Formato DateTime compatible con ClickHouse
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -583,9 +583,9 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
         )
         ```
 
-        Esto reconstruye la línea del log a partir de los campos estructurados.
+        Esto reconstruye la línea de registro a partir de los campos estructurados.
 
-        Para ver otras opciones, consulta la [referencia de configuración](/es/clickstack/managing/config).
+        Para ver otras opciones posibles, consulta la [referencia de configuración](/es/clickstack/managing/config).
       </Step>
 
       <Step>
@@ -597,11 +597,11 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
       </Step>
 
       <Step>
-        ### Explorar los datos
+        ### Explora los datos
 
         Ve a la vista de búsqueda de `20 de octubre de 2025` para explorar los datos y empezar a usar ClickStack.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="UI de HyperDX" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Interfaz de HyperDX" size="lg" />
       </Step>
     </Steps>
   </Tab>

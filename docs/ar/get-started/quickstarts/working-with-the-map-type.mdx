@@ -14,7 +14,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">قابلية الرصد</Badge>
+  <Badge size="lg" color="blue">Observability</Badge>
   <Badge size="lg" color="orange">OSS</Badge>
 </div>
 
@@ -30,7 +30,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   ## ما الذي ستبنيه
 </div>
 
-في OpenTelemetry، يحمل كل `trace span` مجموعة من **سمات المورد** — وهي بيانات وصفية بتنسيق key-value تصف الكيان الذي أنتج بيانات telemetry (مثل اسم الخدمة، والمضيف، والمنطقة السحابية، وpod في Kubernetes، وغير ذلك). وتختلف مجموعة المفاتيح بين الخدمات والبيئات، مما يجعل نوع `Map` في ClickHouse مناسبًا لهذا الاستخدام بطبيعته: فالمفاتيح ديناميكية وخاصّة بالتطبيق، لكن أي صف معيّن لا يحتوي عادةً إلا على عدد قليل منها.
+في OpenTelemetry، يحمل كل `trace span` مجموعة من **سمات الموارد** — وهي بيانات وصفية بتنسيق مفتاح-قيمة تصف الكيان الذي أنتج بيانات telemetry (مثل اسم الخدمة، والمضيف، والمنطقة السحابية، وpod في Kubernetes، وغير ذلك). وتختلف مجموعة المفاتيح بين الخدمات والبيئات، مما يجعل نوع `Map` في ClickHouse مناسبًا لهذا الاستخدام بطبيعته: فالمفاتيح ديناميكية وخاصّة بالتطبيق، لكن أي صف معيّن لا يحتوي عادةً إلا على عدد قليل منها.
 
 في هذا الدليل السريع، ستستخدم `clickhouse-local` لتحميل بيانات trace حقيقية من OTel من ملف CSV إلى جدول يحتوي على أعمدة `Map(LowCardinality(String), String)`، وستتعلّم كيفية الاستعلام عن بيانات Map وتصفيتها وتجميعها وتحسينها.
 
@@ -136,7 +136,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     LIMIT 10;
     ```
 
-    **تحقّق مما إذا كان المفتاح موجودًا** — لا يحتوي كل `span` على بيانات Kubernetes الوصفية. استخدم `mapContains` لمعرفة أيّها يحتوي عليها:
+    **تحقّق مما إذا كان المفتاح موجودًا** â لا يحتوي كل `span` على بيانات Kubernetes الوصفية. استخدم `mapContains` لمعرفة أيّها يحتوي عليها:
 
     ```sql
     SELECT
@@ -155,7 +155,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     ORDER BY key;
     ```
 
-    **فكِّك Map إلى صفوف باستخدام ARRAY JOIN** — حوِّل كل زوج مفتاح وقيمة إلى صف مستقل، مما يفيد في إنشاء فهرس للسمات أو في تعبئة لوحات المعلومات:
+    **فكِّك Map إلى صفوف باستخدام ARRAY JOIN** — حوِّل كل زوج مفتاح-قيمة إلى صف مستقل، مما يفيد في إنشاء فهرس للسمات أو في تعبئة لوحات المعلومات:
 
     ```sql
     SELECT
@@ -181,7 +181,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
     LIMIT 10;
     ```
 
-    **اعثر على مقاطع التتبّع الخاصة بالأخطاء وسياق المورد المرتبط بها** — اجمع بين مرشحات الأعمدة العادية والوصول إلى `map`:
+    **اعثر على مقاطع التتبّع الخاصة بالأخطاء وسياق المورد المرتبط بها** â اجمع بين مرشحات الأعمدة العادية والوصول إلى `map`:
 
     ```sql
     SELECT

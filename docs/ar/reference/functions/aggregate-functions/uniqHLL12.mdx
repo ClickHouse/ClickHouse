@@ -14,15 +14,16 @@ doc_type: 'reference'
 
 أُضيف في: v1.1.0
 
-يحسب العدد التقريبي لقيم الوسائط المختلفة باستخدام خوارزمية [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
+يحسب العدد التقريبي لقيم الوسيط المختلفة باستخدام خوارزمية [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
-<Warning>
-  لا نوصي باستخدام هذه الدالة. في معظم الحالات، استخدم الدالة [uniq](/ar/reference/functions/aggregate-functions/uniq) أو [uniqCombined](/ar/reference/functions/aggregate-functions/uniqCombined).
-</Warning>
+:::warning
+لا نوصي باستخدام هذه الدالة. في معظم الحالات، استخدم الدالة [uniq](/ar/reference/functions/aggregate-functions/uniq) أو [uniqCombined](/ar/reference/functions/aggregate-functions/uniqCombined).
+:::
 
-<Accordion title="تفاصيل التنفيذ">
+<details>
+  <summary>تفاصيل التنفيذ</summary>
   تحسب هذه الدالة قيمة hash لجميع المعلمات في التجميع، ثم تستخدمها في الحساب.
-  وتستخدم خوارزمية HyperLogLog لتقدير عدد قيم الوسائط المختلفة.
+  وتستخدم خوارزمية HyperLogLog لتقدير عدد قيم الوسيط المختلفة.
 
   يُستخدم 2^12 من الخلايا ذات 5 بت.
   حجم الحالة يزيد قليلًا على 2.5 كيلوبايت.
@@ -31,7 +32,7 @@ doc_type: 'reference'
   واعتبارًا من 100M، يزداد خطأ التقدير، وستُرجع الدالة نتائج غير دقيقة جدًا لمجموعات البيانات ذات الكاردينالية العالية للغاية (1B+ عنصر).
 
   توفّر نتيجة حتمية (إذ لا تعتمد على ترتيب معالجة الاستعلام).
-</Accordion>
+</details>
 
 **الصياغة**
 
@@ -45,7 +46,7 @@ uniqHLL12(x[, ...])
 
 **القيمة المعادة**
 
-تعيد عددًا من النوع UInt64 يمثّل العدد التقريبي لقيم الوسيطات المختلفة. [`UInt64`](/ar/reference/data-types/int-uint)
+تعيد عددًا من النوع UInt64 يمثّل العدد التقريبي لقيم الوسيط المختلفة. [`UInt64`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 

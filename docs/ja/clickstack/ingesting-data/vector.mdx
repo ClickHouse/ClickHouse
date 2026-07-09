@@ -158,7 +158,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        データ用のテーブルを作成します。これは、データの出力スキーマに一致している必要があります。以下の例では、典型的な Nginx の構造を想定しています。[スキーマのベストプラクティス](/ja/concepts/best-practices/select-data-type)に従い、データに応じて適宜調整してください。[主キーの概念](/ja/concepts/core-concepts/primary-indexes)を理解したうえで、[こちら](/ja/clickstack/managing/performance-tuning#choosing-a-primary-key)に示されているガイドラインに基づいて主キーを選択することを**強く推奨**します。
+        データ用のテーブルを作成します。これはデータの出力スキーマに一致している必要があります。以下の例では、一般的な Nginx の構造を前提としています。[スキーマのベストプラクティス](/ja/concepts/best-practices/select-data-type)に従い、実際のデータに合わせて適宜調整してください。[主キーの概念](/ja/concepts/core-concepts/primary-indexes)を理解したうえで、[こちら](/ja/clickstack/managing/performance-tuning#choosing-a-primary-key)に示されているガイドラインに基づいて主キーを選択することを**強く推奨**します。
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -249,11 +249,11 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
       </Step>
 
       <Step>
-        ### データを調べる
+        ### データを確認する
 
-        ログビューに移動してデータを調べ、ClickStack を使い始めましょう。
+        ログビューに移動してデータを確認し、ClickStack の利用を開始します。
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack の Nginx ログ" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack 内の Nginx ログ" size="lg" />
       </Step>
     </Steps>
   </Tab>
@@ -346,7 +346,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouseに適したDateTimeフォーマット
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -488,9 +488,9 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
         ```
 
         <Info>
-          **Nginx 主キー**
+          **Nginxの主キー**
 
-          上記の主キーは、ClickStack UI における Nginx ログの一般的なアクセスパターンを前提としていますが、本番環境ではワークロードに応じて調整が必要になる場合があります。
+          上記の主キーは、ClickStack UIにおけるNginxログの一般的なアクセスパターンを前提としていますが、本番環境ではワークロードに応じて調整が必要になる場合があります。
         </Info>
       </Step>
 
@@ -518,7 +518,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouseに適したDateTimeフォーマット
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -599,7 +599,7 @@ ClickStack で厳密に必要なのは、オープンソース版でもマネー
       <Step>
         ### データを確認する
 
-        `2025年10月20日` の検索ビューに移動してデータを確認し、ClickStack を使い始めましょう。
+        データを確認して ClickStack の利用を始めるには、`October 20th, 2025` の Search view に移動してください。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
       </Step>

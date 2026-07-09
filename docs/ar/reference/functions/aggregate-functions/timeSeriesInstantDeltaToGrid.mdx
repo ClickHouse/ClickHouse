@@ -16,9 +16,9 @@ doc_type: 'reference'
 دالة تجميع تأخذ بيانات السلاسل الزمنية على شكل أزواج من الطوابع الزمنية والقيم، وتحسب [idelta على غرار PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#idelta) من هذه البيانات على شبكة زمنية منتظمة يحدّدها الطابع الزمني للبداية، والطابع الزمني للنهاية، و`step`.
 ولكل نقطة على الشبكة، تؤخذ العينات اللازمة لحساب `idelta` ضمن النافذة الزمنية المحددة.
 
-<Warning>
-  هذه الدالة تجريبية، ويمكن تفعيلها بضبط `allow_experimental_ts_to_grid_aggregate_function=true`.
-</Warning>
+:::warning
+هذه الدالة تجريبية، ويمكن تفعيلها بضبط `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
 
 **البنية**
 
@@ -47,6 +47,7 @@ timeSeriesInstantDeltaToGrid(start_timestamp, end_timestamp, grid_step, stalenes
 **الاستخدام الأساسي مع أزواج الطابع الزمني والقيمة المفردة**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -75,6 +76,7 @@ FROM
 **استخدام الوسيطات من نوع المصفوفة**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

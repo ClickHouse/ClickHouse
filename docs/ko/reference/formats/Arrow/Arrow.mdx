@@ -42,7 +42,8 @@ ClickHouse는 이러한 포맷의 읽기와 쓰기를 지원합니다.
 | `DOUBLE`                                | [Float64](/ko/reference/data-types/float)                                                                    | `FLOAT64`               |
 | `DATE32`                                | [Date32](/ko/reference/data-types/date32)                                                                    | `UINT16`                |
 | `DATE64`                                | [DateTime](/ko/reference/data-types/datetime)                                                                | `UINT32`                |
-| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/ko/reference/data-types/datetime64)                                                            | `TIMESTAMP`             |
+| `TIMESTAMP`                             | [DateTime64](/ko/reference/data-types/datetime64)                                                            | `TIMESTAMP`             |
+| `TIME32`, `TIME64`                      | [Time64](/ko/reference/data-types/time64)                                                                    | `TIME32`, `TIME64`      |
 | `STRING`, `BINARY`                      | [String](/ko/reference/data-types/string)                                                                    | `BINARY`                |
 | `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ko/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`     |
 | `DECIMAL`                               | [Decimal](/ko/reference/data-types/decimal)                                                                  | `DECIMAL`               |
@@ -67,7 +68,7 @@ ClickHouse는 이러한 포맷의 읽기와 쓰기를 지원합니다.
 * `UUID`
 * `ENUM`.
 
-ClickHouse 테이블 컬럼의 데이터 타입은 대응하는 Arrow 데이터 필드의 데이터 타입과 일치할 필요가 없습니다. 데이터를 삽입할 때 ClickHouse는 먼저 위 표에 따라 데이터 타입을 해석한 다음, 이를 ClickHouse 테이블 컬럼에 설정된 데이터 타입으로 [캐스팅합니다](/ko/reference/functions/regular-functions/type-conversion-functions#CAST).
+ClickHouse 테이블 컬럼의 데이터 타입은 해당 Arrow 데이터 필드와 일치할 필요가 없습니다. 데이터를 삽입할 때 ClickHouse는 먼저 위 표에 따라 데이터 타입을 해석한 다음, 데이터를 ClickHouse 테이블 컬럼에 설정된 데이터 타입으로 [CAST](/ko/reference/functions/regular-functions/type-conversion-functions#CAST)합니다.
 
 <div id="example-usage">
   ## 사용 예시
