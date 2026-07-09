@@ -361,7 +361,7 @@ void UnityCatalog::createTable(
             /// Wrap so the read path's `getFieldType(parsed, "type")` sees the descriptor under `type`.
             Poco::JSON::Object::Ptr wrapper = new Poco::JSON::Object;
             wrapper->set("type", descriptor);
-            std::ostringstream oss;
+            std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             wrapper->stringify(oss);
             type_json = oss.str();
         }
