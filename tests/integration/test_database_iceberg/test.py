@@ -2124,3 +2124,54 @@ def test_namespace_prefix_mutation_expression(started_cluster):
     )
     result = node.query(f"SELECT x FROM {CATALOG_NAME}.`{namespace}.{target}`").strip()
     assert result == "fresh", f"mutation expression resolved the wrong source: {result}"
+
+
+def test_namespace_prefix_row_policy_authorization(started_cluster):
+    """
+    Row-policy DDL under USE db.namespace must authorize the namespace-qualified
+    target for SHOW CREATE and DROP too.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_polauth_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "pol_auth_table"
+    policy = f"pol_{test_ref}"
+    user = f"user_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    use = f"USE {CATALOG_NAME}.{namespace}; "
+    node.query(use + f"CREATE ROW POLICY {policy} ON {table_name} USING 1 TO ALL")
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(f"CREATE USER {user}")
+    try:
+        node.query(f"GRANT SHOW DATABASES ON *.* TO {user}")
+        # Grants on the bare (wrong) name only: must be denied.
+        node.query(
+            f"GRANT CREATE ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES ON {CATALOG_NAME}.{table_name} TO {user}"
+        )
+        show_create = use + f"SHOW CREATE ROW POLICY {policy} ON {table_name}"
+        drop = use + f"DROP ROW POLICY {policy} ON {table_name}"
+        _, err = node.query_and_get_answer_with_error(show_create, user=user)
+        assert "ACCESS_DENIED" in err, f"SHOW CREATE: expected ACCESS_DENIED, got: {err}"
+        _, err = node.query_and_get_answer_with_error(drop, user=user)
+        assert "ACCESS_DENIED" in err, f"DROP: expected ACCESS_DENIED, got: {err}"
+
+        # Grant on the namespace-qualified target: both must pass.
+        node.query(
+            f"GRANT CREATE ROW POLICY, DROP ROW POLICY, SHOW ROW POLICIES "
+            f"ON {CATALOG_NAME}.`{namespace}.{table_name}` TO {user}"
+        )
+        out = node.query(show_create, user=user)
+        assert policy in out, f"SHOW CREATE failed with folded-name grant: {out}"
+        node.query(drop, user=user)
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
+        node.query(
+            f"DROP ROW POLICY IF EXISTS {policy} ON {CATALOG_NAME}.`{namespace}.{table_name}`"
+        )

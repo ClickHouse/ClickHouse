@@ -69,6 +69,10 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
                     "(the policy would apply to the whole database {}); specify a table "
                     "or use the database without a namespace", backQuoteIfNeed(current_db_info.database));
 
+    /// Fold the namespace prefix before authorization and ON CLUSTER shipping, so both
+    /// target the policy names that will actually be stored.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
+
     if (!query.cluster.empty())
     {
         auto required_access = getRequiredAccess();
@@ -79,9 +83,6 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     }
 
     chassert(query.names->cluster.empty());
-    /// Fold the namespace prefix before computing required access, so authorization targets
-    /// the policy names that will actually be stored.
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
     auto required_access = getRequiredAccess();
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(required_access);

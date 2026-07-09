@@ -20,13 +20,15 @@ namespace ErrorCodes
 BlockIO InterpreterMoveAccessEntityQuery::execute()
 {
     auto & query = query_ptr->as<ASTMoveAccessEntityQuery &>();
+    /// Fold the namespace prefix before authorization and ON CLUSTER shipping, so both
+    /// target the policy names that will actually be moved.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(query_ptr, getContext());
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
 
     std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)

@@ -33,13 +33,15 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
     if (query.type == AccessEntityType::MASKING_POLICY)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Masking Policies are available only in ClickHouse Cloud");
 
+    /// Fold the namespace prefix before authorization and ON CLUSTER shipping, so both
+    /// target the policy names that will actually be dropped.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
+
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(getRequiredAccess());
 
     if (!query.cluster.empty())
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
 
     auto do_drop = [&](const Strings & names, const String & storage_name)
     {

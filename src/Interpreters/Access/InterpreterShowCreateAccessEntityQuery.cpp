@@ -293,8 +293,9 @@ std::vector<AccessEntityPtr> InterpreterShowCreateAccessEntityQuery::getEntities
 {
     auto & show_query = query_ptr->as<ASTShowCreateAccessEntityQuery &>();
     const auto & access_control = getContext()->getAccessControl();
-    getContext()->checkAccess(getRequiredAccess());
+    /// Fold the namespace prefix before authorization, so it targets the shown policy names.
     show_query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
+    getContext()->checkAccess(getRequiredAccess());
     std::vector<AccessEntityPtr> entities;
 
     if (show_query.all)
