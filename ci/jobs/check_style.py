@@ -692,6 +692,17 @@ if __name__ == "__main__":
                 files=compose_files,
             )
         )
+    # Drift guard for the clickhouse/integration-images-cache preseed: its
+    # build context is only its own directory, so the image list is a committed
+    # file that must be regenerated when compose files change their images.
+    testname = "integration_images_cache"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command="python3 ci/docker/integration-images-cache/generate_images_list.py --check",
+            )
+        )
     testname = "cpp"
     if testpattern.lower() in testname.lower():
         results.append(

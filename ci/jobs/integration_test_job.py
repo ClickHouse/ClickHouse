@@ -918,6 +918,25 @@ tar -czf ./ci/tmp/logs.tar.gz \
         else:
             assert False, f"No tag found for image [{image_name}]"
 
+    # Seed the DinD image store with the stable external service images from
+    # the prebuilt clickhouse/integration-images-cache image, so the pre-fetch
+    # below finds them locally instead of pulling each from the registry. The
+    # script is fail-open: on any failure the pre-fetch pulls as before.
+    # Disabled for local runs by default (the preseed is multi-GiB); override
+    # either way with DIND_IMAGES_CACHE=1/0.
+    seed_env = os.environ.get("DIND_IMAGES_CACHE")
+    seed_enabled = seed_env == "1" if seed_env is not None else not info.is_local_run
+    if seed_enabled:
+        cache_image = "clickhouse/integration-images-cache"
+        cache_tag = info.docker_tag(cache_image)
+        if cache_tag:
+            Shell.check(
+                f"{repo_dir}/ci/jobs/scripts/seed_dind_images_cache.sh {cache_image}:{cache_tag}",
+                verbose=True,
+            )
+        else:
+            print(f"No tag found for [{cache_image}] - skip DinD image store seeding")
+
     # Pre-fetch all Docker images needed by the selected test suites.
     # This is done after IMAGES_ENV vars are set so tag resolution works correctly.
     # Fail fast here rather than discovering missing images mid-test-run.

@@ -182,6 +182,18 @@ DOCKERS = [
         depends_on=["clickhouse/test-base"],
     ),
     Docker.Config(
+        # Stable external service images for integration tests, shipped as
+        # docker-archive tarballs. Deliberately NOT chained into
+        # clickhouse/integration-tests-runner: the integration job pulls it
+        # with the nested DinD daemon at job start (fail-open, CI only), so
+        # local development never downloads the multi-GiB preseed layer. See
+        # ci/jobs/scripts/seed_dind_images_cache.sh.
+        name="clickhouse/integration-images-cache",
+        path="./ci/docker/integration-images-cache",
+        platforms=Docker.Platforms.arm_amd,
+        depends_on=["clickhouse/test-base"],
+    ),
+    Docker.Config(
         name="clickhouse/integration-test-with-unity-catalog",
         path="./ci/docker/integration/clickhouse_with_unity_catalog",
         platforms=Docker.Platforms.arm_amd,

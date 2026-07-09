@@ -1,0 +1,37 @@
+# External service images baked into clickhouse/integration-images-cache.
+# AUTO-GENERATED - do not edit by hand. Regenerate with:
+#   python3 ci/docker/integration-images-cache/generate_images_list.py --update
+# The `integration_images_cache` style check fails when this file is out of
+# sync with tests/integration/compose/*.yml.
+apache/iceberg-rest-fixture:1.10.1
+bitnamilegacy/openldap:2.6.8
+cassandra:4.0
+clickhouse/azure-storage-azurite:3.35.0
+clickhouse/jdbc-bridge:2.1.0-dirty
+clickhouse/letsencrypt-pebble-challtestsrv:2.9.0
+clickhouse/letsencrypt-pebble:2.9.0
+clickhouse/projectnessie-nessie:0.107.2
+clickhouse/ytsaurus-local:stable-24.2
+confluentinc/cp-kafka:5.2.0
+confluentinc/cp-kafka:7.9.0
+confluentinc/cp-schema-registry:5.2.0
+confluentinc/cp-zookeeper:5.2.0
+coredns/coredns:1.9.3
+dremio/dremio-oss:26.0
+lgboustc/hive_test:v2.0
+minio/mc:RELEASE.2025-04-16T18-13-26Z
+minio/minio:RELEASE.2024-07-31T05-46-26Z
+minio/minio:RELEASE.2024-09-13T20-26-02Z
+mongo:6.0
+motoserver/moto:5.1.5
+mysql:8.0
+postgres:12.2-alpine
+postgres:16
+prom/prometheus:v3.5.0
+rabbitmq:4.2.1-management-alpine
+tabulario/iceberg-rest:1.6.0
+trinodb/trino:474
+vakamo/lakekeeper:v0.9.4
+willfarrell/autoheal:1.2.0
+zookeeper:3.4.9
+zookeeper:3.6.2
