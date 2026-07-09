@@ -54,18 +54,24 @@ SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '東京') ORDER BY id;
 SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市']) ORDER BY id;
 
 -- Specifying the icu tokenizer explicitly makes the brute-force scan segment Japanese correctly, giving
--- exactly the same results as the indexed column (which infers the icu tokenizer). Each pair must match.
-SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '日本語', 'icu(''ja'')') ORDER BY id;
+-- exactly the same results as the indexed column (which infers the icu tokenizer). The locale is passed
+-- as a separate argument, e.g. icu, 'ja'. Each pair below (explicit brute-force vs inferred index) must match.
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '日本語', 'icu', 'ja') ORDER BY id;
 SELECT id FROM tab         WHERE hasAnyTokens(doc, '日本語') ORDER BY id;
 
-SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '東京', 'icu(''ja'')') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '東京', 'icu', 'ja') ORDER BY id;
 SELECT id FROM tab         WHERE hasAnyTokens(doc, '東京') ORDER BY id;
 
-SELECT id FROM tab_noindex WHERE hasAllTokens(doc, 'コンピュータのプログラミング', 'icu(''ja'')') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, 'コンピュータのプログラミング', 'icu', 'ja') ORDER BY id;
 SELECT id FROM tab         WHERE hasAllTokens(doc, 'コンピュータのプログラミング') ORDER BY id;
 
-SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市'], 'icu(''ja'')') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市'], 'icu', 'ja') ORDER BY id;
 SELECT id FROM tab         WHERE hasAllTokens(doc, ['日本', '都市']) ORDER BY id;
+
+-- The locale can also be embedded in the tokenizer string as icu('ja'); it must give the same results.
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '日本語', 'icu(''ja'')') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, 'コンピュータのプログラミング', 'icu(''ja'')') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市'], 'icu(''ja'')') ORDER BY id;
 -- { echoOff }
 
 DROP TABLE tab;
