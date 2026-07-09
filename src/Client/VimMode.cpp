@@ -6,6 +6,11 @@ namespace DB
 {
 using Replxx = replxx::Replxx;
 
+int ReplxxLineReader::vimReps() const {
+    uint64_t reps = std::max<uint64_t>(vimbuffer, 1) * std::max<uint64_t>(vimbufferinner, 1);
+    return static_cast<int>(std::min<uint64_t>(reps, 1000000));
+}
+
 void ReplxxLineReader::fixTrailingNewline(int *pos, std::string *text) {
     if (pos) {
         int length = static_cast<int>(text->length());
@@ -87,7 +92,14 @@ void ReplxxLineReader::setupVimKeybindings()
     }
 
     bindKey('i', [this](char32_t) {
-        rx.set_editing_mode(MODE_INSERT);
+        if (op) {
+            if (!flag)
+                flag = FLAG_INSIDE;
+            else
+                resetVim();
+        }
+        else
+            rx.set_editing_mode(MODE_INSERT);
     }, MODE_NORMAL);
 
     bindKey('I', [this](int &pos, std::string &text, char32_t) {
@@ -98,9 +110,17 @@ void ReplxxLineReader::setupVimKeybindings()
     }, MODE_NORMAL);
 
     bindKey('a', [this](int &pos, std::string &text, char32_t) {
-        if (pos < static_cast<int>(text.length()) && text[pos] != '\n')
-            pos++;
-        rx.set_editing_mode(MODE_INSERT);
+        if (op) {
+            if (!flag)
+                flag = FLAG_AROUND;
+            else
+                resetVim();
+        }
+        else {
+            if (pos < static_cast<int>(text.length()) && text[pos] != '\n')
+                pos++;
+            rx.set_editing_mode(MODE_INSERT);
+        }
     }, MODE_NORMAL);
 
     bindKey('A', [this](int &pos, std::string &text, char32_t) {
@@ -130,13 +150,16 @@ void ReplxxLineReader::setupVimKeybindings()
     }, MODE_NORMAL);
 
     bindKey('h', [this](int &pos, std::string &text, char32_t) {
-        if (pos > 0 && text[pos - 1] != '\n')
+        int reps = vimReps();
+        for (int rep = 0; rep < reps && pos > 0 && text[pos - 1] != '\n'; rep++)
             pos--;
         resetVim(&pos, &text);
     }, MODE_NORMAL);
 
     bindKey('l', [this](int &pos, std::string &text, char32_t) {
-        if (pos < static_cast<int>(text.length()) - 1 && text[pos] != '\n' && text[pos + 1] != '\n')
+        int length = static_cast<int>(text.length());
+        int reps = vimReps();
+        for (int rep = 0; rep < reps && pos < length - 1 && text[pos] != '\n' && text[pos + 1] != '\n'; rep++)
             pos++;
         resetVim(&pos, &text);
     }, MODE_NORMAL);
@@ -144,55 +167,67 @@ void ReplxxLineReader::setupVimKeybindings()
     bindKey('j', [this](int &pos, std::string &text, char32_t) {
         int length = static_cast<int>(text.length());
 
-        int offset = curswant;
+        int reps = vimReps();
+        for (int rep = 0; rep < reps; rep++) {
+            int prev = pos;
+            int offset = curswant;
 
-        for (int i = pos; i < length; i++) {
-            if (text[i] == '\n') {
-                for (pos = i + 1; pos < length - 1 && pos < i + offset; pos++)
-                    if (text[pos] == '\n' || text[pos + 1] == '\n')
-                        break;
-                break;
+            for (int i = pos; i < length; i++) {
+                if (text[i] == '\n') {
+                    for (pos = i + 1; pos < length - 1 && pos < i + offset; pos++)
+                        if (text[pos] == '\n' || text[pos + 1] == '\n')
+                            break;
+                    break;
+                }
             }
+            if (pos == prev)
+                break;
         }
+        /* Only clear the counts: recomputing curswant here would lose the
+         * sought-for column that j/k keep. */
+        resetVim();
     }, MODE_NORMAL);
 
     bindKey('k', [this](int &pos, std::string &text, char32_t) {
-        if (pos == 0)
-            return;
-
         int length = static_cast<int>(text.length());
-        int prev_newline;
-        for (prev_newline = pos - 1; prev_newline > 0; prev_newline--)
-            if (text[prev_newline] == '\n')
-                break;
+        int reps = vimReps();
+        for (int rep = 0; rep < reps && pos > 0; rep++) {
+            int prev_newline;
+            for (prev_newline = pos - 1; prev_newline > 0; prev_newline--)
+                if (text[prev_newline] == '\n')
+                    break;
 
-        int offset = curswant;
+            int offset = curswant;
 
-        if (prev_newline == 0) {
-            if (text[0] == '\n')
-                pos = 0;
-            return;
-        }
-
-        for (int i = prev_newline - 1; i >= 0; i--) {
-            if (text[i] == '\n' || i == 0) {
-                int no_newline = text[i] != '\n';
-                if (no_newline)
-                    offset = std::max(offset - (rx.prompt_indentation() + 1), 0);
-                for (pos = no_newline ? 0 : i + 1; pos < length - 1 && pos < i + offset; pos++)
-                    if (text[pos] == '\n' || text[pos + 1] == '\n')
-                        break;
+            if (prev_newline == 0) {
+                if (text[0] == '\n')
+                    pos = 0;
                 break;
             }
+
+            for (int i = prev_newline - 1; i >= 0; i--) {
+                if (text[i] == '\n' || i == 0) {
+                    int no_newline = text[i] != '\n';
+                    if (no_newline)
+                        offset = std::max(offset - (rx.prompt_indentation() + 1), 0);
+                    for (pos = no_newline ? 0 : i + 1; pos < length - 1 && pos < i + offset; pos++)
+                        if (text[pos] == '\n' || text[pos + 1] == '\n')
+                            break;
+                    break;
+                }
+            }
         }
+        /* Only clear the counts: recomputing curswant here would lose the
+         * sought-for column that j/k keep. */
+        resetVim();
     }, MODE_NORMAL);
 
     bindKey('0', [this](int &pos, std::string &text, char32_t) {
         int oldpos = pos;
         if (!op && vimbuffer)
-            vimbuffer *= 10;
+            vimbuffer = std::min<uint64_t>(10 * vimbuffer, 1000000);
         else if (op && vimbufferinner)
-            vimbufferinner *= 10;
+            vimbufferinner = std::min<uint64_t>(10 * vimbufferinner, 1000000);
         else {
             for (; pos > 0 && text[pos - 1] != '\n'; pos--);
             if (op) {
@@ -268,6 +303,8 @@ void ReplxxLineReader::setupVimKeybindings()
             matching = '<';
             break;
         default:
+            /* Consume the count and any pending operator. */
+            resetVim();
             return;
         }
 
@@ -284,6 +321,7 @@ void ReplxxLineReader::setupVimKeybindings()
                 break;
             }
         }
+        bool moved = pos != oldpos;
         if (op) {
             if (pos > oldpos) {
                 text.erase(oldpos, pos - oldpos + 1 - inclusivity_flip);
@@ -293,7 +331,7 @@ void ReplxxLineReader::setupVimKeybindings()
                 text.erase(pos, oldpos - pos + 1 - inclusivity_flip);
             }
         }
-        if (op == OPERATOR_C) {
+        if (op == OPERATOR_C && moved) {
             rx.set_editing_mode(MODE_INSERT);
             resetVim();
         }
@@ -323,15 +361,23 @@ void ReplxxLineReader::setupVimKeybindings()
             int oldpos = pos;
             int length = static_cast<int>(text.length());
             bool forward = find_direction == 'f' || find_direction == 't';
-            for (int i = forward ? pos + 1 : pos - 1; forward ? i < length : i >= 0; i += forward ? 1 : -1) {
-                if (text[i] == c) {
-                    pos = i;
-                    if (find_direction == 't')
-                        pos--;
-                    if (find_direction == 'T')
-                        pos++;
-                    break;
+
+            int found = text[pos] == '\n' ? -1 : pos;
+            for (int reps = vimReps(); reps > 0 && found >= 0; reps--) {
+                int i = forward ? found + 1 : found - 1;
+                for (found = -1; (forward ? i < length : i >= 0) && text[i] != '\n'; i += forward ? 1 : -1) {
+                    if (text[i] == c) {
+                        found = i;
+                        break;
+                    }
                 }
+            }
+            if (found >= 0) {
+                pos = found;
+                if (find_direction == 't')
+                    pos--;
+                if (find_direction == 'T')
+                    pos++;
             }
             bool moved = pos != oldpos;
             if (op) {
@@ -361,105 +407,151 @@ void ReplxxLineReader::setupVimKeybindings()
         }
 
         bindKey(c, [this, c](int &pos, std::string &text, char32_t) {
-            if (pos < static_cast<int>(text.length()))
-                text[pos] = c;
+            int length = static_cast<int>(text.length());
+            int reps = vimReps();
+            int count = 0;
+            while (count < reps && pos + count < length && text[pos + count] != '\n')
+                count++;
+
+            if (count == reps) {
+                for (int i = 0; i < reps; i++)
+                    text[pos + i] = c;
+                pos += reps - 1;
+            }
             rx.set_editing_mode(MODE_NORMAL);
-            resetVim();
+            resetVim(&pos, &text);
         }, MODE_REPLACE);
     }
 
     bindKey('w', [this](int &pos, std::string &text, char32_t) {
         int length = static_cast<int>(text.length());
-        int break_on_char = 0;
-        for (; pos < length - 1; pos++) {
-            if (break_on_char & 1 && iskeyword(text[pos]))
-                break;
-            if (break_on_char & 2 && !iskeyword(text[pos]) && !iswhitespace(text[pos]))
-                break;
+        int reps = vimReps();
+        for (int rep = 0; rep < reps; rep++) {
+            int prev = pos;
+            int break_on_char = 0;
+            for (; pos < length - 1; pos++) {
+                if (break_on_char & 1 && iskeyword(text[pos]))
+                    break;
+                if (break_on_char & 2 && !iskeyword(text[pos]) && !iswhitespace(text[pos]))
+                    break;
 
-            if (iswhitespace(text[pos]))
-                break_on_char = 3;
-            else if (iskeyword(text[pos]))
-                break_on_char |= 2;
-            else if (!iswhitespace(text[pos]))
-                break_on_char |= 1;
+                if (iswhitespace(text[pos]))
+                    break_on_char = 3;
+                else if (iskeyword(text[pos]))
+                    break_on_char |= 2;
+                else if (!iswhitespace(text[pos]))
+                    break_on_char |= 1;
+            }
+            if (pos == prev)
+                break;
         }
         resetVim(&pos, &text);
     }, MODE_NORMAL);
 
     bindKey('e', [this](int &pos, std::string &text, char32_t) {
         int length = static_cast<int>(text.length());
-        if (pos < length - 1)
-            pos++;
-        int break_on_char = 0;
-        for (; pos < length - 1; pos++) {
-            if (iskeyword(text[pos]))
-                break_on_char = 1;
-            else if (!iswhitespace(text[pos]))
-                break_on_char = 2;
+        int reps = vimReps();
+        for (int rep = 0; rep < reps; rep++) {
+            int prev = pos;
+            if (pos < length - 1)
+                pos++;
+            int break_on_char = 0;
+            for (; pos < length - 1; pos++) {
+                if (iskeyword(text[pos]))
+                    break_on_char = 1;
+                else if (!iswhitespace(text[pos]))
+                    break_on_char = 2;
 
-            if (break_on_char & 1 && !iskeyword(text[pos + 1]))
-                break;
-            if (break_on_char & 2 && (iswhitespace(text[pos + 1]) || iskeyword(text[pos + 1])))
+                if (break_on_char & 1 && !iskeyword(text[pos + 1]))
+                    break;
+                if (break_on_char & 2 && (iswhitespace(text[pos + 1]) || iskeyword(text[pos + 1])))
+                    break;
+            }
+            if (pos == prev)
                 break;
         }
         resetVim(&pos, &text);
     }, MODE_NORMAL);
 
     bindKey('b', [this](int &pos, std::string &text, char32_t) {
-        if (pos > 0)
-            pos--;
-        int break_on_char = 0;
-        for (; pos > 0; pos--) {
-            if (iskeyword(text[pos]))
-                break_on_char = 1;
-            else if (!iswhitespace(text[pos]))
-                break_on_char = 2;
+        int reps = vimReps();
+        for (int rep = 0; rep < reps; rep++) {
+            int prev = pos;
+            if (pos > 0)
+                pos--;
+            int break_on_char = 0;
+            for (; pos > 0; pos--) {
+                if (iskeyword(text[pos]))
+                    break_on_char = 1;
+                else if (!iswhitespace(text[pos]))
+                    break_on_char = 2;
 
-            if (break_on_char & 1 && !iskeyword(text[pos - 1]))
-                break;
-            if (break_on_char & 2 && (iswhitespace(text[pos - 1]) || iskeyword(text[pos - 1])))
+                if (break_on_char & 1 && !iskeyword(text[pos - 1]))
+                    break;
+                if (break_on_char & 2 && (iswhitespace(text[pos - 1]) || iskeyword(text[pos - 1])))
+                    break;
+            }
+            if (pos == prev)
                 break;
         }
         resetVim(&pos, &text);
     }, MODE_NORMAL);
 
     bindKey('W', [this](int &pos, std::string &text, char32_t) {
-        int break_on_char = 0;
-        for (; pos < static_cast<int>(text.length()) - 1; pos++) {
-            if (break_on_char && !iswhitespace(text[pos]))
-                break;
+        int length = static_cast<int>(text.length());
+        int reps = vimReps();
+        for (int rep = 0; rep < reps; rep++) {
+            int prev = pos;
+            int break_on_char = 0;
+            for (; pos < length - 1; pos++) {
+                if (break_on_char && !iswhitespace(text[pos]))
+                    break;
 
-            if (iswhitespace(text[pos]))
-                break_on_char = 1;
+                if (iswhitespace(text[pos]))
+                    break_on_char = 1;
+            }
+            if (pos == prev)
+                break;
         }
         resetVim(&pos, &text);
     }, MODE_NORMAL);
 
     bindKey('E', [this](int &pos, std::string &text, char32_t) {
         int length = static_cast<int>(text.length());
-        if (pos < length - 1)
-            pos++;
-        int break_on_char = 0;
-        for (; pos < length - 1; pos++) {
-            if (!iswhitespace(text[pos]))
-                break_on_char = 1;
+        int reps = vimReps();
+        for (int rep = 0; rep < reps; rep++) {
+            int prev = pos;
+            if (pos < length - 1)
+                pos++;
+            int break_on_char = 0;
+            for (; pos < length - 1; pos++) {
+                if (!iswhitespace(text[pos]))
+                    break_on_char = 1;
 
-            if (break_on_char && iswhitespace(text[pos + 1]))
+                if (break_on_char && iswhitespace(text[pos + 1]))
+                    break;
+            }
+            if (pos == prev)
                 break;
         }
         resetVim(&pos, &text);
     }, MODE_NORMAL);
 
     bindKey('B', [this](int &pos, std::string &text, char32_t) {
-        if (pos > 0)
-            pos--;
-        int break_on_char = 0;
-        for (; pos > 0; pos--) {
-            if (!iswhitespace(text[pos]))
-                break_on_char = 1;
+        int reps = vimReps();
+        for (int rep = 0; rep < reps; rep++) {
+            int prev = pos;
+            if (pos > 0)
+                pos--;
+            int break_on_char = 0;
+            for (; pos > 0; pos--) {
+                if (!iswhitespace(text[pos]))
+                    break_on_char = 1;
 
-            if (break_on_char && iswhitespace(text[pos - 1]))
+                if (break_on_char && iswhitespace(text[pos - 1]))
+                    break;
+            }
+            if (pos == prev)
                 break;
         }
         resetVim(&pos, &text);
@@ -468,13 +560,33 @@ void ReplxxLineReader::setupVimKeybindings()
     bindKey('G', [this](int &pos, std::string &text, char32_t) {
         int oldpos = pos;
         int length = static_cast<int>(text.length());
-        pos = std::max(length - 1, 0);
+        if (vimbuffer || vimbufferinner) {
+            /* A count is an absolute line number, not a repeat. */
+            int line = vimReps();
+            pos = 0;
+            for (; line > 1 && pos < length; pos++)
+                if (text[pos] == '\n')
+                    line--;
+        }
+        else
+            pos = length;
         if (op) {
-            for (; oldpos > 0 && text[oldpos - 1] != '\n'; oldpos--);
-            if (op == OPERATOR_D && oldpos > 0)
-                oldpos--;
-            text.erase(oldpos, length);
-            pos = oldpos;
+            /* Linewise: from the start of the first line of the range
+             * through the end of the last one. */
+            int start = std::min(oldpos, pos);
+            int end = std::max(oldpos, pos);
+            for (; start > 0 && text[start - 1] != '\n'; start--);
+            for (; end < length && text[end] != '\n'; end++);
+            if (op == OPERATOR_C)
+                text.erase(start, end - start);
+            else if (end < length)
+                text.erase(start, end - start + 1);
+            else {
+                if (start > 0)
+                    start--;
+                text.erase(start, end - start);
+            }
+            pos = start;
         }
         if (op == OPERATOR_C) {
             rx.set_editing_mode(MODE_INSERT);
@@ -493,9 +605,30 @@ void ReplxxLineReader::setupVimKeybindings()
         int oldpos = pos;
         int length = static_cast<int>(text.length());
         pos = 0;
+        if (vimbuffer || vimbufferinner) {
+            /* A count is an absolute line number, not a repeat. */
+            int line = vimReps();
+            for (; line > 1 && pos < length; pos++)
+                if (text[pos] == '\n')
+                    line--;
+        }
         if (op) {
-            for (; oldpos < length && text[oldpos] != '\n'; oldpos++);
-            text.erase(0, oldpos + (op == OPERATOR_D));
+            /* Linewise: from the start of the first line of the range
+             * through the end of the last one. */
+            int start = std::min(oldpos, pos);
+            int end = std::max(oldpos, pos);
+            for (; start > 0 && text[start - 1] != '\n'; start--);
+            for (; end < length && text[end] != '\n'; end++);
+            if (op == OPERATOR_C)
+                text.erase(start, end - start);
+            else if (end < length)
+                text.erase(start, end - start + 1);
+            else {
+                if (start > 0)
+                    start--;
+                text.erase(start, end - start);
+            }
+            pos = start;
         }
         if (op == OPERATOR_C) {
             rx.set_editing_mode(MODE_INSERT);
@@ -516,16 +649,20 @@ void ReplxxLineReader::setupVimKeybindings()
             op = OPERATOR_D;
         }
         else if (op == OPERATOR_D) {
-            int length = static_cast<int>(text.length());
-            for (; pos > 0 && text[pos - 1] != '\n'; pos--);
-            int end;
-            for (end = pos; end < length && text[end] != '\n'; end++);
-            if (end < length)
-                text.erase(pos, end - pos + 1);
-            else {
-                if (pos > 0)
-                    pos--;
-                text.erase(pos, end - pos);
+            int reps = vimReps();
+            for (int rep = 0; rep < reps; rep++) {
+                int length = static_cast<int>(text.length());
+                for (; pos > 0 && text[pos - 1] != '\n'; pos--);
+                int end;
+                for (end = pos; end < length && text[end] != '\n'; end++);
+                if (end < length)
+                    text.erase(pos, end - pos + 1);
+                else {
+                    if (pos > 0)
+                        pos--;
+                    text.erase(pos, end - pos);
+                    break;
+                }
             }
 
             resetVim(&pos, &text);
@@ -541,8 +678,12 @@ void ReplxxLineReader::setupVimKeybindings()
         else if (op == OPERATOR_C) {
             int length = static_cast<int>(text.length());
             for (; pos > 0 && text[pos - 1] != '\n'; pos--);
-            int end;
-            for (end = pos; end < length && text[end] != '\n'; end++);
+            int end = pos;
+            for (int reps = vimReps(); reps > 0 && end < length; reps--) {
+                for (; end < length && text[end] != '\n'; end++);
+                if (reps > 1 && end < length)
+                    end++;
+            }
             text.erase(pos, end - pos);
 
             rx.set_editing_mode(MODE_INSERT);
@@ -556,28 +697,38 @@ void ReplxxLineReader::setupVimKeybindings()
 
 
     bindKey('s', [this](int &pos, std::string &text, char32_t) {
-        if (pos < static_cast<int>(text.length()) && text[pos] != '\n') {
-            text.erase(pos, 1);
-            resetVim();
-        }
+        int length = static_cast<int>(text.length());
+        int reps = vimReps();
+        int count = 0;
+        while (count < reps && pos + count < length && text[pos + count] != '\n')
+            count++;
+        if (count > 0)
+            text.erase(pos, count);
         rx.set_editing_mode(MODE_INSERT);
+        resetVim();
     }, MODE_NORMAL);
 
     bindKey('r', [this](int &pos, std::string &text, char32_t) {
-        if (pos < static_cast<int>(text.length()) && text[pos] != '\n') {
+        /* Keep the count the replacement character handler will reset it. */
+        if (pos < static_cast<int>(text.length()) && text[pos] != '\n')
             rx.set_editing_mode(MODE_REPLACE);
+        else
             resetVim();
-        }
     }, MODE_NORMAL);
 
     bindKey('x', [this](int &pos, std::string &text, char32_t) {
-        if (pos < static_cast<int>(text.length()) && text[pos] != '\n') {
-            text.erase(pos, 1);
-            int length = static_cast<int>(text.length());
+        int length = static_cast<int>(text.length());
+        int reps = vimReps();
+        int count = 0;
+        while (count < reps && pos + count < length && text[pos + count] != '\n')
+            count++;
+        if (count > 0) {
+            text.erase(pos, count);
+            length = static_cast<int>(text.length());
             if (pos >= length)
                 pos = std::max(length - 1, 0);
-            resetVim(&pos, &text);
         }
+        resetVim(&pos, &text);
     }, MODE_NORMAL);
 
     bindKey('D', [this](int &pos, std::string &text, char32_t) {
