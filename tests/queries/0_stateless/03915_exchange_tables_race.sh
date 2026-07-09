@@ -1,11 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-random-settings, no-random-merge-tree-settings
-# no-random-settings, no-random-merge-tree-settings: this test spawns many concurrent
-# clients to race SELECT against EXCHANGE TABLES; the randomized memory/IO settings
-# (mmap reads, large buffers, page-cache injection) inflate per-client memory until the
-# OOM killer SIGKILLs background clients, whose job-control "Killed" message reaches the
-# runner as spurious stderr. The tables are ENGINE=Memory and the race is at plan time,
-# so no randomized query/MergeTree setting is relevant to what the test verifies.
+# Tags: no-ordinary-database
 
 set -e
 
@@ -40,7 +34,14 @@ probe() {
     return 0
 }
 
-# Wait for every captured background PID and fail if any probe reported a failure. A bare "wait"
+# Run one EXCHANGE TABLES swap. Its exit code is what the batch inspects: the regression only
+# exists when the schema swap actually happens between analysis and partial evaluation, so a
+# killed/reset exchange must not silently leave the batch green.
+exchange() {
+    ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES $1 AND $2" >/dev/null 2>&1
+}
+
+# Wait for every captured probe PID and fail if any probe reported a failure. A bare "wait"
 # returns 0 even when a background job exited non-zero, so the PIDs are checked one by one.
 check_pids() {
     local status=0 p
@@ -48,6 +49,20 @@ check_pids() {
         wait "$p" || status=1
     done
     return $status
+}
+
+# Wait for the captured EXCHANGE PIDs and require that at least one swap actually completed, so the
+# type drift the batch relies on was really exercised. If every exchange failed the schema never
+# swapped (or the server went down), and the batch must not pass. A single transient reset among
+# many under heavy concurrency is tolerated (as with the probes); a server crash is still caught by
+# assert_alive. This also reaps the exchange jobs before the following DROP TABLE, so a lingering
+# background exchange can no longer race the cleanup.
+assert_any_exchange() {
+    local ok=0 p
+    for p in "$@"; do
+        wait "$p" && ok=1
+    done
+    [ "$ok" = 1 ] || { echo "FAIL: no EXCHANGE TABLES swap completed in this batch (drift not exercised)" >&2; exit 1; }
 }
 
 # Unambiguous crash detector: if the type-mismatch abort fired in a debug/sanitizer build it killed
@@ -68,12 +83,13 @@ CREATE TABLE tbl_03007_1 (n Float64) ENGINE=Memory;
 CREATE TABLE tbl_03007_2 (n Int256) ENGINE=Memory;
 EOF
 
-pids=()
+pids=(); xpids=()
 for _ in {1..10}; do
     probe "SELECT n * 0.123 FROM (SELECT * FROM tbl_03007_1)" & pids+=($!)
-    ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_1 AND tbl_03007_2" 2>/dev/null &
+    exchange tbl_03007_1 tbl_03007_2 & xpids+=($!)
 done
 check_pids "${pids[@]}"
+assert_any_exchange "${xpids[@]}"
 assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
@@ -97,13 +113,14 @@ CREATE TABLE tbl_03007_3 (s String) ENGINE=Memory;
 CREATE TABLE tbl_03007_4 (s Nullable(String)) ENGINE=Memory;
 EOF
 
-pids=()
+pids=(); xpids=()
 for _ in {1..10}; do
     probe "SELECT materialize(s) FROM (SELECT * FROM tbl_03007_3)" & pids+=($!)
     probe "SELECT isNullable(s) FROM (SELECT * FROM tbl_03007_3)" & pids+=($!)
-    ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_3 AND tbl_03007_4" 2>/dev/null &
+    exchange tbl_03007_3 tbl_03007_4 & xpids+=($!)
 done
 check_pids "${pids[@]}"
+assert_any_exchange "${xpids[@]}"
 assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
@@ -130,12 +147,13 @@ CREATE TABLE tbl_03007_5 (k UInt64, w String) ENGINE=Memory;
 CREATE TABLE tbl_03007_6 (k UInt64, w Nullable(String)) ENGINE=Memory;
 EOF
 
-pids=()
+pids=(); xpids=()
 for _ in {1..10}; do
     probe "SELECT l.k FROM tbl_03007_l l ANY LEFT JOIN tbl_03007_5 r ON l.k = r.k WHERE isNullable(r.w) SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 1" & pids+=($!)
-    ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_5 AND tbl_03007_6" 2>/dev/null &
+    exchange tbl_03007_5 tbl_03007_6 & xpids+=($!)
 done
 check_pids "${pids[@]}"
+assert_any_exchange "${xpids[@]}"
 assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
