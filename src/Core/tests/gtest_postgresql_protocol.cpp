@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <Core/Defines.h>
 #include <Core/PostgreSQLProtocol.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/WriteBufferFromString.h>
+#include <Parsers/ParserPreparedStatement.h>
+#include <Parsers/parseQuery.h>
 #include <Common/Exception.h>
 
 #include <optional>
@@ -901,6 +904,62 @@ TEST(PostgreSQLProtocol, ExecuteArityMatchesPlaceholderCount)
         PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
         prepare(manager, "SELECT 1");
         EXPECT_EQ(execute(manager, {}), "SELECT 1");
+    }
+}
+
+TEST(PostgreSQLProtocol, ExecuteAcceptsNonLiteralArgumentsWithoutCrashing)
+{
+    /// `ParserExecute` accepts a general expression list, but the argument
+    /// formatting used to assume every child was an ASTLiteral and dereferenced
+    /// a null `as<ASTLiteral>()` for expressions such as `1 + 1` or `now()`,
+    /// crashing the connection. Each argument must be re-serialized into a safe
+    /// SQL fragment instead: literals keep their existing form (numbers bare,
+    /// strings quoted and escaped) and general expressions are serialized whole,
+    /// with nested string literals still quoted so injection stays impossible.
+    auto parse_args = [](const String & query)
+    {
+        ParserExecute parser;
+        ASTPtr ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        return ast->as<ASTExecute>()->arguments;
+    };
+
+    /// Non-literal expressions must parse and serialize, not crash.
+    {
+        auto args = parse_args("EXECUTE s(1 + 1)");
+        ASSERT_EQ(args.size(), 1u);
+        EXPECT_EQ(args[0], "1 + 1");
+    }
+    {
+        auto args = parse_args("EXECUTE s(now())");
+        ASSERT_EQ(args.size(), 1u);
+        EXPECT_EQ(args[0], "now()");
+    }
+    /// A negative number already parses as a single literal (not an expression).
+    {
+        auto args = parse_args("EXECUTE s(-1)");
+        ASSERT_EQ(args.size(), 1u);
+        EXPECT_EQ(args[0], "-1");
+    }
+    /// Plain literals keep their existing formatting: numbers bare, strings quoted.
+    {
+        auto args = parse_args("EXECUTE s(42, 'abc')");
+        ASSERT_EQ(args.size(), 2u);
+        EXPECT_EQ(args[0], "42");
+        EXPECT_EQ(args[1], "'abc'");
+    }
+    /// Injection stays impossible: a string argument holding SQL syntax is
+    /// serialized as a single quoted, escaped literal, never as raw SQL.
+    {
+        auto args = parse_args("EXECUTE s('1 UNION ALL SELECT secret -- ')");
+        ASSERT_EQ(args.size(), 1u);
+        EXPECT_EQ(args[0], "'1 UNION ALL SELECT secret -- '");
+    }
+    /// An expression that contains a nested string literal keeps that literal
+    /// quoted after serialization (the concat is a function, not spliced SQL).
+    {
+        auto args = parse_args("EXECUTE s(concat('a', 'b'))");
+        ASSERT_EQ(args.size(), 1u);
+        EXPECT_EQ(args[0], "concat('a', 'b')");
     }
 }
 

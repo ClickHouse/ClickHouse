@@ -1294,6 +1294,58 @@ def test_execute_requires_exact_argument_count(started_cluster):
     ch.close()
 
 
+def test_execute_accepts_non_literal_arguments(started_cluster):
+    # A simple-query EXECUTE argument may be a general expression, not only a
+    # literal (e.g. `1 + 1`, `now()`). The argument formatting used to assume
+    # every argument was a literal and dereferenced a null pointer for
+    # expressions, crashing the connection. Expressions must be serialized into a
+    # safe SQL fragment instead, and string literals inside them must stay quoted
+    # so injection remains impossible.
+    node = started_cluster.instances["node"]
+
+    def connect():
+        return psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+        )
+
+    # An arithmetic expression argument must not crash and must evaluate.
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("PREPARE expr_arith AS SELECT $1 AS v;")
+    cur.execute("EXECUTE expr_arith(1 + 1);")
+    assert cur.fetchall() == [(2,)]
+    ch.close()
+
+    # A function-call expression argument must not crash and must evaluate.
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("PREPARE expr_func AS SELECT $1 AS v;")
+    cur.execute("EXECUTE expr_func(abs(-5));")
+    assert cur.fetchall() == [(5,)]
+    ch.close()
+
+    # A negative number is a single literal and round-trips unchanged.
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("PREPARE expr_neg AS SELECT $1 AS v;")
+    cur.execute("EXECUTE expr_neg(-7);")
+    assert cur.fetchall() == [(-7,)]
+    ch.close()
+
+    # Injection stays impossible for an expression that embeds a string literal:
+    # the string is serialized as a single quoted literal, so the concat result
+    # is plain data, never spliced SQL.
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("PREPARE expr_concat AS SELECT $1 AS v;")
+    cur.execute("EXECUTE expr_concat(concat('1 UNION ALL SELECT 2', ' -- '));")
+    assert cur.fetchall() == [("1 UNION ALL SELECT 2 -- ",)]
+    ch.close()
+
+
 def test_copy_no_sql_injection(started_cluster):
     # COPY builds its SELECT/INSERT from the client-supplied table and column
     # identifiers. A malicious identifier (quoted so it survives as a single

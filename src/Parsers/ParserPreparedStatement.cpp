@@ -91,13 +91,24 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     for (size_t i = 0; i < ast_args->children.size(); ++i)
     {
-        /// Format each argument as a proper SQL literal: strings are quoted and
-        /// escaped, numbers stay bare. The arguments are later spliced into the
-        /// prepared statement body by `$N` substitution, so a raw value (e.g.
-        /// fieldToString of a string drops the quotes) would let a crafted
-        /// EXECUTE argument inject SQL.
-        const Field & value = ast_args->children[i]->as<ASTLiteral>()->value;
-        result->arguments.push_back(applyVisitor(FieldVisitorToString(), value));
+        /// Re-serialize each argument into a safe SQL fragment before it is
+        /// spliced into the prepared statement body by `$N` substitution. The
+        /// value comes from a parsed AST, so re-serialization keeps string
+        /// literals quoted and escaped and a crafted argument cannot break out
+        /// of its context to inject SQL (`fieldToString` on a raw string would
+        /// drop the quotes and allow injection).
+        const IAST & arg = *ast_args->children[i];
+        if (const auto * literal = arg.as<ASTLiteral>())
+            /// Fast path for the common case: numbers stay bare, strings are
+            /// quoted and escaped by FieldVisitorToString.
+            result->arguments.push_back(applyVisitor(FieldVisitorToString(), literal->value));
+        else
+            /// General expression such as `1 + 1` or `now()` (`-1` already parses
+            /// as a literal): serialize the whole node. Nested string literals are
+            /// still quoted and escaped, so this stays injection-safe. Previously
+            /// this code assumed every argument was an ASTLiteral and dereferenced
+            /// a null `as<ASTLiteral>()` for expressions, crashing the connection.
+            result->arguments.push_back(arg.formatWithSecretsOneLine());
     }
     if (!close_bracket.ignore(pos, expected))
         return false;
