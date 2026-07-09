@@ -94,7 +94,7 @@ logical result — they belong to the same group. Each group can have multiple *
 expressions** with different execution strategies and properties:
 
 ```
-Group #5 (customer ⋈ orders, ~5.3M rows):
+Group #5 (customer ⋈ orders, ~5.6M rows):
   Logical:
     Join(customer, orders)
     Join(orders, customer)  [swapped by JoinCommutativity rule]
@@ -184,10 +184,10 @@ Two invariants keep enforcer self-reference acyclic:
 This is similar to ClickHouse's existing `MergingAggregated` pattern but chosen by
 cost. Given `GROUP BY n_name` with 25 distinct values:
 
-- **Single-phase**: Gather 5.3M rows to 1 node, aggregate there → expensive network
-- **Two-phase**: Aggregate on each of 4 nodes first (5.3M → 25 rows per node),
+- **Single-phase**: Gather 5.6M rows to 1 node, aggregate there → expensive network
+- **Two-phase**: Aggregate on each of 4 nodes first (5.6M → 25 rows per node),
   gather 100 rows, merge → cheap network
-- **Shuffle**: Shuffle 5.3M rows by `n_name` to N nodes, aggregate per-partition →
+- **Shuffle**: Shuffle 5.6M rows by `n_name` to N nodes, aggregate per-partition →
   expensive network, no reduction before shuffle
 
 The optimizer creates all three as alternatives and compares their costs. Two-phase
@@ -214,12 +214,11 @@ four stages:
 
 The root group is optimized for `{1 node}` (the coordinator must return the final result).
 Each child group is optimized for whatever properties its parent requires. The optimizer
-works top-down, recursively optimizing each group. Cost limits are threaded through the
-tasks for future branch-and-bound pruning, but pruning is currently disabled (children
-receive an infinite limit): with partially optimized sibling groups a finite limit is not
-a sound bound and was observed to prune valid plans. The search is instead bounded by the
-task budget, which fails closed: if optimization does not finish within the budget, the
-query is rejected with a clear error rather than built from a partial memo.
+works top-down, recursively optimizing each group. The search carries no per-subtree cost
+budget: a best plan taken from a partially optimized sibling group is an upper bound, not
+a lower bound, so a budget derived from it can prune plans that would become cheapest. The search is bounded by the task budget instead, which
+fails closed: if optimization does not finish within the budget, the query is rejected
+with a clear error (naming the remaining task) rather than built from a partial memo.
 
 **Key files**: `Task.h/cpp`, `OptimizerContext.h/cpp`, `Optimizer.cpp`
 
@@ -301,6 +300,11 @@ break the exact `rows_before_limit_at_least` accounting). The sort settings of t
 query's own `SortingStep` (size limits, spill thresholds) are captured while the memo is
 built and reused when `SortingEnforcer` creates a new sort.
 
+Every costed expression is traced at test log level with its `work`/`network`/`sequential`
+breakdown, and several rules log the reason for non-obvious refusals (an unsplittable read,
+an untranslatable distribution column), so most plan choices can be reconstructed from the
+logs of one `EXPLAIN` run.
+
 **Key files**: `Cost.h/cpp`
 
 ### `best_implementations` Index
@@ -321,6 +325,8 @@ strictly weaker properties, so the acyclic base alternative stays reachable even
 cheaper enforcer covers its requirement.
 
 ### Rules
+
+The lists below use class names; `getName` log names may omit the `Implementation` suffix.
 
 **Transformation rules** (generate logically equivalent expressions):
 - `JoinCommutativity` — swaps join sides (left ↔ right) for joins where the swap is
@@ -380,10 +386,10 @@ and the join row width comes from the actual output header.
 | Aspect | Status | Notes |
 |--------|--------|-------|
 | Memo structure | Aligned | Standard groups with logical/physical expressions |
-| Property model | Aligned+ | Distribution + sorting; column equivalence sets extend basic Cascades |
+| Property model | Aligned (extended) | Distribution + sorting; column equivalence sets extend basic Cascades |
 | Rule categorization | Aligned | Transformation / implementation / enforcer separation |
 | Cost model | Aligned | 3-D (work, network, sequential) with configurable weights |
-| Branch-and-bound | Partial | Cost limits threaded through tasks; pruning currently disabled (unsound with partially optimized siblings), fail-closed task budget bounds the search |
+| Branch-and-bound | Not yet | No per-subtree cost bounds (unsound with partially optimized siblings); the fail-closed task budget bounds the search |
 | Enforcer scheduling | Aligned | `isEnforcedFor` gate + fixed-point composition |
 | Sorting as property | Aligned | Stripped from memo, enforced via composition |
 | `best_implementations` lookup | Aligned | Indexed by distribution shape |
@@ -437,9 +443,10 @@ branch-and-bound pruning as the primary bound.
 6. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
    `BuildRuntimeFilterStep` and Cascades passes it through, but Cascades does not
    create or cost runtime-filter alternatives. The single biggest gap vs StarRocks.
-7. **Join ordering in Cascades**: DPHyp for inner joins in
-   [PR #98798](https://github.com/ClickHouse/ClickHouse/pull/98798); outer/semi/anti
-   support needed.
+7. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
+   (inner joins) alongside `dpsub`, `dpsize`, and `greedy`; in an algorithm chain such as
+   `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
+   receives a single fixed order; feeding several top orders into the memo is future work.
 8. **Window function distribution**: `WindowStep` currently goes through
    `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
    that sets distribution by PARTITION BY key.
@@ -479,8 +486,8 @@ SETTINGS
 ```
 
 Database: `tpch100_auto_statistics` (SF100).
-Tables: orders 150M rows, customer 12.6M rows, nation 25 rows.
-After date filter: orders ~5.3M rows.
+Tables: orders 150M rows, customer 15M rows, nation 25 rows.
+After date filter: orders ~5.6M rows.
 
 This query exercises: shuffle join (customer ⋈ orders), broadcast join with
 `ReplicatedRead` (nation), two-phase aggregation, and sorting enforcement.
@@ -495,12 +502,12 @@ Expression (Project names)
     Expression
       Aggregating (GROUP BY n_name)
         Expression
-          JoinLogical (rows: ~5.3M)                    -- (customer ⋈ orders) ⋈ nation
-            JoinLogical (rows: ~5.3M)                  -- customer ⋈ orders
+          JoinLogical (rows: ~5.6M)                    -- (customer ⋈ orders) ⋈ nation
+            JoinLogical (rows: ~5.6M)                  -- customer ⋈ orders
               Expression
-                ReadFromMergeTree (customer)            -- 12.6M rows
+                ReadFromMergeTree (customer)            -- 15M rows
               Expression (WHERE o_orderdate range)
-                ReadFromMergeTree (orders)              -- 5.3M rows after filter
+                ReadFromMergeTree (orders)              -- 5.6M rows after filter
             Expression
               ReadFromMergeTree (nation)                -- 25 rows
 ```
@@ -522,9 +529,9 @@ Group #3:  Expression (before GROUP BY)
 Group #4:  Join (join#5 ⋈ nation)             -- inputs: #5, #10
 Group #5:  Join (customer ⋈ orders)           -- inputs: #6, #8
 Group #6:  Expression -> customer
-Group #7:  ReadFromMergeTree (customer)        -- 12.6M rows
+Group #7:  ReadFromMergeTree (customer)        -- 15M rows
 Group #8:  Expression -> orders
-Group #9:  ReadFromMergeTree (orders)          -- 5.3M rows
+Group #9:  ReadFromMergeTree (orders)          -- 5.6M rows
 Group #10: Expression -> nation
 Group #11: ReadFromMergeTree (nation)          -- 25 rows
 Group #12: Aggregating (Partial)              -- from TwoPhaseAggregation rule
@@ -544,19 +551,19 @@ For **nation** (Group #11, 25 rows):
 from shared storage) — cheaper than `ShuffleExchange` (cost 102,125) where exchange
 overhead dominates for tiny tables.
 
-For **orders** (Group #9, 5.3M rows after date filter):
+For **orders** (Group #9, 5.6M rows after date filter):
 
 | Physical Expression | Distribution | Cost |
 |---|---|---|
-| `ParallelRead` | `{4 nodes}` | 17,960,888 |
-| `ReadFromMergeTree` (local) | `{1 node}` | 71,843,551 |
-| `ShuffleExchange(o_custkey)` | `{4 nodes, by o_custkey}` | 89,904,439 |
-| `ReplicatedRead` | `{4 nodes, replicated}` | 71,843,551 |
+| `ParallelRead` | `{4 nodes}` | 19,555,900 |
+| `ReadFromMergeTree` (local) | `{1 node}` | 78,223,600 |
+| `ShuffleExchange(o_custkey)` | `{4 nodes, by o_custkey}` | 97,879,500 |
+| `ReplicatedRead` | `{4 nodes, replicated}` | 78,223,600 |
 
 `ParallelRead` at 4 nodes is cheapest (1/4 of data per node). `ShuffleExchange`
 is added by `DistributionEnforcer` when a downstream join requires a specific
 partitioning. `ReplicatedRead` is expensive for large tables (each node reads
-all 5.3M rows).
+all 5.6M rows).
 
 ### Implementation rules: join strategies
 
@@ -565,8 +572,8 @@ for both join orders are omitted):
 
 | Strategy | Distribution | Subtree Cost | Best? |
 |---|---|---|---|
-| **Shuffle HashJoin** (by custkey) | `{4 nodes}` | **2,930,003,018** | **Yes** |
-| Local HashJoin | `{1 node}` | 10,836,555,241 | |
+| **Shuffle HashJoin** (by custkey) | `{4 nodes}` | **3,069,696,580** | **Yes** |
+| Local HashJoin | `{1 node}` | 11,485,091,920 | |
 
 Shuffle wins — both tables are large. Broadcasting either side would replicate millions
 of rows. Shuffling by `custkey` sends each row to exactly one node.
@@ -575,9 +582,9 @@ For **join#5 result ⋈ nation** (Group #4):
 
 | Strategy | Distribution | Subtree Cost | Best? |
 |---|---|---|---|
-| **Broadcast HashJoin** (nation replicated) | `{4 nodes}` | **2,931,382,954** | **Yes** |
-| Shuffle HashJoin (by nationkey) | `{4 nodes}` | 3,046,181,303 | |
-| Local HashJoin | `{1 node}` | 10,847,220,977 | |
+| **Broadcast HashJoin** (nation replicated) | `{4 nodes}` | **3,072,555,585** | **Yes** |
+| Shuffle HashJoin (by nationkey) | `{4 nodes}` | 3,140,051,400 | |
+| Local HashJoin | `{1 node}` | 8,759,587,117 | |
 
 Broadcast wins — nation has 25 rows. The build side uses `ReplicatedRead` (cost 1,700)
 instead of `BroadcastExchange` — each node reads the full nation table from shared
@@ -589,13 +596,14 @@ storage, avoiding network overhead entirely.
 
 | Strategy | Distribution | Subtree Cost | Best? |
 |---|---|---|---|
-| **MergingAggregated -> GatherExchange -> Partial** | `{1 node}` | **2,932,971,999** | **Yes** |
-| Aggregating (Shuffle, by n_name) | `{4 nodes}` | 3,883,848,251 | |
+| **MergingAggregated -> GatherExchange -> Partial** | `{1 node}` | **3,074,253,216** | **Yes** |
+| Aggregating (Shuffle, by n_name) | `{4 nodes}` | 3,478,204,166 | |
 
 Two-phase wins — GROUP BY `n_name` has only 25 distinct values. Partial aggregation
-on 4 nodes reduces 5.3M rows to ~25 per node (100 total), then `GatherExchange` sends
-100 rows to one node for `MergingAggregated`. The shuffle alternative would send 5.3M
-rows through `ShuffleExchange` before aggregating.
+on 4 nodes reduces 5.6M rows to ~25 per node (100 rows cross the network in total; the
+`EXPLAIN` estimate shows the logical group result of 25), then `GatherExchange` feeds one
+node for `MergingAggregated`. The shuffle alternative would send 5.6M rows through
+`ShuffleExchange` before aggregating.
 
 ### Enforcer composition: sorting
 
@@ -607,42 +615,45 @@ composes sorting with distribution enforcers:
 3. `DistributionEnforcer` creates `GatherExchange(sorted)` from `Sort({4 nodes, sorted})`
 
 Two competing plans for `{1 node, sorted}`:
-- **Strategy A**: `Sort({1 node})` — sort locally after gather. Cost: 2,932,997,118
+- **Strategy A**: `Sort({1 node})` — sort locally after gather. Cost: 3,074,278,332
 - **Strategy B**: `GatherExchange(sorted) -> Sort({4 nodes})` — sort per node, merge-gather
 
 Strategy A wins — only 25 rows to sort after two-phase aggregation.
 
 ### Final plan
 
+`EXPLAIN pretty = 1, estimates = 1` shows the chosen plan with the per-step row estimate and
+the cumulative subtree cost, so the numbers from the sections above are visible in place:
+
 ```
-Expression (Project names)
-  Sorting (ORDER BY total_revenue DESC)           -- on 1 node, 25 rows
-    Expression
-      MergingAggregated                            -- final merge on 1 node
-        GatherExchange                             -- collect ~100 partial results
-          Aggregating (Partial, GROUP BY n_name)   -- on 4 nodes, 5.3M -> 25 rows each
-            Expression
-              JoinLogical (Broadcast HashJoin)      -- nation broadcast (25 rows)
-                JoinLogical (Shuffle HashJoin)      -- customer ⋈ orders by custkey
-                  Expression
-                    ShuffleExchange                 -- shuffle customer by custkey
-                      ReadFromMergeTree (ParallelRead customer)  -- 4-way parallel
-                  Expression
-                    ShuffleExchange                 -- shuffle orders by custkey
-                      ReadFromMergeTree (ParallelRead orders)    -- 4-way parallel
-                Expression
-                  ReadFromMergeTree (ReplicatedRead nation)      -- each node reads full table
+Expression (Project names) (rows: <unknown>, cost: <unknown>)
+└──Expression ((Before ORDER BY + Projection)) (rows: ~25.0, cost: 3074278334.9)
+   └──Sorting (rows: ~25.0, cost: 3074278332.4)                  -- on 1 node, 25 rows
+      └──MergingAggregated (rows: ~25.0, cost: 3074253216.3)     -- final merge on 1 node
+         └──GatherExchange (rows: ~25.0, cost: 3074226166.3)     -- collect ~100 partial results
+            └──Aggregating (rows: ~25.0, cost: 3074099166.3)     -- partial, 5.6M -> 25 rows per node
+               └──Expression ((Before GROUP BY + )) (rows: ~5611180.6, cost: 3072695864.9)
+                  └──JoinLogical (Broadcast HashJoin ) (rows: ~5611180.6, cost: 3072555585.4)
+                     ├──JoinLogical (Shuffle HashJoin ) (rows: ~5611180.6, cost: 3069696580.1)
+                     │  ├──Expression (rows: ~15000000.0, cost: 150475000.0)
+                     │  │  └──ShuffleExchange (rows: ~15000000.0, cost: 150100000.0)   -- by custkey
+                     │  │     └──ReadFromMergeTree (ParallelRead customer) (rows: ~15000000.0, cost: 30000000.0)
+                     │  └──Expression (WHERE) (rows: ~5587400.0, cost: 98019185.0)
+                     │     └──ShuffleExchange (rows: ~5587400.0, cost: 97879500.0)     -- by custkey
+                     │        └──ReadFromMergeTree (ParallelRead orders) (rows: ~5587400.0, cost: 19555900.0)
+                     └──Expression (rows: ~25.0, cost: 1702.5)
+                        └──ReadFromMergeTree (ReplicatedRead nation) (rows: ~25.0, cost: 1700.0)
 ```
 
-Total subtree cost: **2,932,997,120**. Optimization: **22 ms**, **574 tasks**.
+Total subtree cost: **3,074,278,335**. Optimization: **13 ms**, **444 tasks**.
 
 ### Summary of decisions
 
 | Decision | Choice | Why |
 |---|---|---|
-| customer ⋈ orders | **Shuffle** by `custkey` | Both large (12.6M, 5.3M); broadcast would replicate millions |
+| customer ⋈ orders | **Shuffle** by `custkey` | Both large (15M, 5.6M); broadcast would replicate millions |
 | result ⋈ nation | **Broadcast** with `ReplicatedRead` | 25 rows; shared storage avoids network |
-| Aggregation | **Two-phase** (partial -> gather -> merge) | 25 groups; partial agg reduces 5.3M to ~25 per node |
+| Aggregation | **Two-phase** (partial -> gather -> merge) | 25 groups; partial agg reduces 5.6M to ~25 per node |
 | Sorting | **Local** (sort after gather) | 25 rows after merge agg; trivial |
-| Orders read | **ParallelRead** (4 nodes) | Splits 5.3M across 4 nodes |
+| Orders read | **ParallelRead** (4 nodes) | Splits 5.6M across 4 nodes |
 | Nation read | **ReplicatedRead** | 25 rows; cheaper than exchange overhead |
