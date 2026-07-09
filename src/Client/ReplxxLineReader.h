@@ -54,7 +54,7 @@ private:
 
     /// Bind the vim-style normal/operator/motion keymap. Defined in VimMode.cpp.
     void setupVimKeybindings();
-    void resetVim(int pos = -1, std::string *text = nullptr);
+    void resetVim(int *pos = nullptr, std::string *text = nullptr);
     template <typename T>
     void bindKey(char32_t key, T && func, int mode);
     void recomputeCurswant(int pos, std::string &text);
@@ -115,6 +115,7 @@ private:
         MODE_INSERT,
         MODE_NORMAL,
         MODE_FIND,
+        MODE_REPLACE,
         MODE_END,
     };
 
