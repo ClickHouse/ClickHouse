@@ -17,6 +17,10 @@ static int iskeyword(unsigned char c) {
     return ('0' <= c && c <= '9') || ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == '_' || (192 <= c);
 }
 
+static int iswhitespace(unsigned char c) {
+    return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\a' || c == '\b' || c == '\r';
+}
+
 template <typename T>
 void ReplxxLineReader::bindKey(char32_t key, T && f, int mode) {
     using F = std::decay_t<T>;
@@ -48,8 +52,6 @@ void ReplxxLineReader::recomputeCurswant(int pos, std::string &text) {
 
 void ReplxxLineReader::setupVimKeybindings()
 {
-    static const char *whitespace = " \t\v\f\a\b\r";
-
     for (int i = 0; i < MODE_END; i++) {
         if (i == MODE_INSERT) {
             bindKey(Replxx::KEY::ESCAPE, [this](int &pos, std::string &text, char32_t) {
@@ -74,7 +76,7 @@ void ReplxxLineReader::setupVimKeybindings()
     bindKey('I', [this](int &pos, std::string &text, char32_t) {
         int length = static_cast<int>(text.length());
         for (; pos > 0 && text[pos - 1] != '\n'; pos--);
-        for (; pos < length - 1 && strchr(whitespace, text[pos]); pos++)
+        for (; pos < length - 1 && iswhitespace(text[pos]); pos++)
         rx.set_editing_mode(MODE_INSERT);
     }, MODE_NORMAL);
 
@@ -86,9 +88,7 @@ void ReplxxLineReader::setupVimKeybindings()
 
     bindKey('A', [this](int &pos, std::string &text, char32_t) {
         int length = static_cast<int>(text.length());
-        for (; pos < length - 1 && !strchr(whitespace, text[pos]); pos++);
-        if (pos < length)
-            pos++;
+        for (; pos < length - 1 && text[pos] != '\n'; pos++);
         rx.set_editing_mode(MODE_INSERT);
     }, MODE_NORMAL);
 
@@ -254,25 +254,37 @@ void ReplxxLineReader::setupVimKeybindings()
     }
 
     bindKey('w', [this](int &pos, std::string &text, char32_t) {
-        bool has_nonword_char = false;
+        int break_on_char = 0;
         for (; pos < static_cast<int>(text.length()) - 2; pos++) {
-            if (!iskeyword(text[pos]))
-                has_nonword_char = true;
-            if (has_nonword_char && iskeyword(text[pos]))
+            if (break_on_char & 1 && iskeyword(text[pos]))
                 break;
+            if (break_on_char & 2 && !iskeyword(text[pos]) && !iswhitespace(text[pos]))
+                break;
+
+            if (iswhitespace(text[pos]))
+                break_on_char = 3;
+            else if (iskeyword(text[pos]))
+                break_on_char |= 2;
+            else if (!iswhitespace(text[pos]))
+                break_on_char |= 1;
         }
         resetVim(pos, &text);
     }, MODE_NORMAL);
 
     bindKey('e', [this](int &pos, std::string &text, char32_t) {
         int length = static_cast<int>(text.length());
-        if (pos < length - 2)
+        if (pos < length - 1)
             pos++;
-        bool has_word_char = false;
-        for (; pos < length - 2; pos++) {
+        int break_on_char = 0;
+        for (; pos < length - 1; pos++) {
             if (iskeyword(text[pos]))
-                has_word_char = true;
-            if (has_word_char && !iskeyword(text[pos + 1]))
+                break_on_char = 1;
+            else if (!iswhitespace(text[pos]))
+                break_on_char = 2;
+
+            if (break_on_char & 1 && !iskeyword(text[pos + 1]))
+                break;
+            if (break_on_char & 2 && (iswhitespace(text[pos + 1]) || iskeyword(text[pos + 1])))
                 break;
         }
         resetVim(pos, &text);
@@ -281,11 +293,57 @@ void ReplxxLineReader::setupVimKeybindings()
     bindKey('b', [this](int &pos, std::string &text, char32_t) {
         if (pos > 0)
             pos--;
-        bool has_word_char = false;
+        int break_on_char = 0;
         for (; pos > 0; pos--) {
             if (iskeyword(text[pos]))
-                has_word_char = true;
-            if (has_word_char && !iskeyword(text[pos - 1]))
+                break_on_char = 1;
+            else if (!iswhitespace(text[pos]))
+                break_on_char = 2;
+
+            if (break_on_char & 1 && !iskeyword(text[pos - 1]))
+                break;
+            if (break_on_char & 2 && (iswhitespace(text[pos - 1]) || iskeyword(text[pos - 1])))
+                break;
+        }
+        resetVim(pos, &text);
+    }, MODE_NORMAL);
+
+    bindKey('W', [this](int &pos, std::string &text, char32_t) {
+        int break_on_char = 0;
+        for (; pos < static_cast<int>(text.length()) - 2; pos++) {
+            if (break_on_char && !iswhitespace(text[pos]))
+                break;
+
+            if (iswhitespace(text[pos]))
+                break_on_char = 1;
+        }
+        resetVim(pos, &text);
+    }, MODE_NORMAL);
+
+    bindKey('E', [this](int &pos, std::string &text, char32_t) {
+        int length = static_cast<int>(text.length());
+        if (pos < length - 1)
+            pos++;
+        int break_on_char = 0;
+        for (; pos < length - 1; pos++) {
+            if (!iswhitespace(text[pos]))
+                break_on_char = 1;
+
+            if (break_on_char && iswhitespace(text[pos + 1]))
+                break;
+        }
+        resetVim(pos, &text);
+    }, MODE_NORMAL);
+
+    bindKey('B', [this](int &pos, std::string &text, char32_t) {
+        if (pos > 0)
+            pos--;
+        int break_on_char = 0;
+        for (; pos > 0; pos--) {
+            if (!iswhitespace(text[pos]))
+                break_on_char = 1;
+
+            if (break_on_char && iswhitespace(text[pos - 1]))
                 break;
         }
         resetVim(pos, &text);
