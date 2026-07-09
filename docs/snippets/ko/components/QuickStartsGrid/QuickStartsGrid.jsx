@@ -31,17 +31,36 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const visibleProductOptions = productOptions.filter(o =>
     explorable.some(qs => (qs.products || []).includes(o.value)));
 
-  // Safely read a persisted selection from localStorage. A corrupted or
-  // hand-edited value must never throw out of a useState initializer, which
-  // would crash the whole page render — fall back to the default instead.
-  // Values not present in the options (e.g. display strings persisted by an
-  // older version of this component) are dropped. An empty selection means
-  // no filter.
-  const readStoredSelection = (key, options) => {
-    if (typeof window === 'undefined') return [];
+  // All localStorage access goes through these guards. Storage may be absent
+  // (SSR) or throw SecurityError (storage-restricted browsers or enterprise
+  // policies); persistence is optional, so a failure means "not persisted"
+  // rather than a render or effect exception that would take down the page.
+  const readStored = (key) => {
+    if (typeof window === 'undefined') return null;
     try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return [];
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  };
+  const writeStored = (key, value) => {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Storage unavailable — persistence is best-effort, so drop it.
+    }
+  };
+
+  // Read a persisted selection. A corrupted or hand-edited value must never
+  // throw out of a useState initializer, which would crash the whole page
+  // render — fall back to the default instead. Values not present in the
+  // options (e.g. display strings persisted by an older version of this
+  // component) are dropped. An empty selection means no filter.
+  const readStoredSelection = (key, options) => {
+    const raw = readStored(key);
+    if (!raw) return [];
+    try {
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
       return parsed.filter(v => options.some(o => o.value === v));
@@ -51,12 +70,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   };
 
   // State management with localStorage
-  const [searchTerm, setSearchTerm] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('quickstarts-search') || '';
-    }
-    return '';
-  });
+  const [searchTerm, setSearchTerm] = useState(() => readStored('quickstarts-search') || '');
 
   const [selectedUseCases, setSelectedUseCases] = useState(() => readStoredSelection('quickstarts-usecases', visibleUseCaseOptions));
 
@@ -65,12 +79,7 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
-  const [showFilters, setShowFilters] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('quickstarts-show-filters') !== 'false';
-    }
-    return true;
-  });
+  const [showFilters, setShowFilters] = useState(() => readStored('quickstarts-show-filters') !== 'false');
 
   // Track the lg breakpoint so the drawer can collapse left (desktop) or up
   // (mobile). Inline styles can't be responsive, so we branch on this in JS.
@@ -86,19 +95,19 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
 
   // Persist to localStorage
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-search', searchTerm);
+    writeStored('quickstarts-search', searchTerm);
   }, [searchTerm]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-usecases', JSON.stringify(selectedUseCases));
+    writeStored('quickstarts-usecases', JSON.stringify(selectedUseCases));
   }, [selectedUseCases]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-products', JSON.stringify(selectedProducts));
+    writeStored('quickstarts-products', JSON.stringify(selectedProducts));
   }, [selectedProducts]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') localStorage.setItem('quickstarts-show-filters', String(showFilters));
+    writeStored('quickstarts-show-filters', String(showFilters));
   }, [showFilters]);
 
   // Reset page when filters change
@@ -281,8 +290,8 @@ export const QuickStartsGrid = ({ quickStartsData = [], featured = [] }) => {
                 {/* Toggle button, centered on the divider line */}
                 <button
                   onClick={() => setShowFilters(prev => !prev)}
-                  aria-label={showFilters ? "16rem" : "0px"}
-                  title={showFilters ? "16rem" : "0px"}
+                  aria-label={showFilters ? "필터 숨기기" : "필터 표시"}
+                  title={showFilters ? "필터 숨기기" : "필터 표시"}
                   className="flex items-center justify-center absolute z-20 cursor-pointer rounded-full border transition-colors border-gray-300 dark:border-white/20 hover:border-black dark:hover:border-[#FAFF69] bg-white dark:bg-[#1B1B18] text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-[#FAFF69] shadow-sm"
                   style={isDesktop
                     ? { left: '100%', top: '50%', width: '28px', height: '28px', transform: 'translate(-50%, -50%)' }

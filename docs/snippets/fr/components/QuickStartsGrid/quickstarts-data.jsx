@@ -29,7 +29,7 @@ export const quickStartsData = [
   {
     "id": "create-your-first-mergetree-table",
     "title": "Créez votre première table MergeTree",
-    "description": "Découvrez le fonctionnement du principal moteur de table de ClickHouse en créant une table MergeTree, en chargeant des données britanniques sur les prix de l''immobilier et en observant comment les parts et les fusions affectent le stockage et les performances des requêtes.",
+    "description": "Découvrez le fonctionnement du principal moteur de table de ClickHouse en créant une table MergeTree, en chargeant des données britanniques sur les prix de l'immobilier et en observant comment les parts et les fusions affectent le stockage et les performances des requêtes.",
     "href": "/fr/get-started/quickstarts/create-your-first-mergetree-table",
     "useCases": [
       "all"
@@ -121,7 +121,8 @@ export const quickStartsData = [
       "data-warehousing"
     ],
     "products": [
-      "cloud"
+      "cloud",
+      "self-managed"
     ]
   },
   {
