@@ -7,7 +7,8 @@ namespace DB
 using Replxx = replxx::Replxx;
 
 void ReplxxLineReader::resetVim(int pos, std::string *text) {
-    vimbuffer = vimbufferinner = flag = op = 0;
+    vimbuffer = vimbufferinner = flag = op = motion = 0;
+    find_direction = 0;
     if (pos >= 0 && text)
         recomputeCurswant(pos, *text);
 }
@@ -62,6 +63,27 @@ void ReplxxLineReader::setupVimKeybindings()
     }
 
     bindKey('i', [this](char32_t) {
+        rx.set_editing_mode(MODE_INSERT);
+    }, MODE_NORMAL);
+
+    bindKey('I', [this](int &pos, std::string &text, char32_t) {
+        int length = static_cast<int>(text.length());
+        for (; pos > 0 && text[pos - 1] != '\n'; pos--);
+        for (; pos < length - 1 && (text[pos] == ' ' || text[pos] == '\t'); pos++)
+        rx.set_editing_mode(MODE_INSERT);
+    }, MODE_NORMAL);
+
+    bindKey('a', [this](int &pos, std::string &text, char32_t) {
+        if (pos < static_cast<int>(text.length()))
+            pos++;
+        rx.set_editing_mode(MODE_INSERT);
+    }, MODE_NORMAL);
+
+    bindKey('A', [this](int &pos, std::string &text, char32_t) {
+        int length = static_cast<int>(text.length());
+        for (; pos < length - 1 && text[pos] != '\n' && text[pos + 1] != '\n'; pos++);
+        if (pos < length)
+            pos++;
         rx.set_editing_mode(MODE_INSERT);
     }, MODE_NORMAL);
 
@@ -132,6 +154,99 @@ void ReplxxLineReader::setupVimKeybindings()
         resetVim(pos, &text);
     }, MODE_NORMAL);
 
+    bindKey('$', [this](int &pos, std::string &text, char32_t) {
+        for (; pos < static_cast<int>(text.length()) - 1 && text[pos] != '\n' && text[pos + 1] != '\n'; pos++);
+        resetVim(pos, &text);
+    }, MODE_NORMAL);
+
+    bindKey('%', [this](int &pos, std::string &text, char32_t) {
+        char paren = text[pos];
+        char matching;
+        bool opening = true;
+        switch (paren) {
+        case '(':
+            matching = ')';
+            break;
+        case ')':
+            opening = false;
+            matching = '(';
+            break;
+        case '{':
+            matching = '}';
+            break;
+        case '}':
+            opening = false;
+            matching = '{';
+            break;
+        case '[':
+            matching = ']';
+            break;
+        case ']':
+            opening = false;
+            matching = '[';
+            break;
+        case '<':
+            matching = '>';
+            break;
+        case '>':
+            opening = false;
+            matching = '<';
+            break;
+        default:
+            return;
+        }
+
+        int paren_count = 1;
+        for (int i = opening ? pos + 1 : pos - 1; opening ? i < static_cast<int>(text.length()) : i >= 0; i += opening ? 1 : -1) {
+            char c = text[i];
+            if (c == paren)
+                paren_count++;
+            else if (c == matching)
+                paren_count--;
+
+            if (paren_count == 0) {
+                pos = i;
+                break;
+            }
+        }
+        resetVim(pos, &text);
+    }, MODE_NORMAL);
+
+    bindKey('f', [this](char32_t) {
+        find_direction = 'f';
+        rx.set_editing_mode(MODE_FIND);
+    }, MODE_NORMAL);
+    bindKey('F', [this](char32_t) {
+        find_direction = 'F';
+        rx.set_editing_mode(MODE_FIND);
+    }, MODE_NORMAL);
+    bindKey('t', [this](char32_t) {
+        find_direction = 't';
+        rx.set_editing_mode(MODE_FIND);
+    }, MODE_NORMAL);
+    bindKey('T', [this](char32_t) {
+        find_direction = 'T';
+        rx.set_editing_mode(MODE_FIND);
+    }, MODE_NORMAL);
+
+    for (char c = 32; c < 127; c++) {
+        bindKey(c, [this, c](int &pos, std::string &text, char32_t) {
+            int length = static_cast<int>(text.length());
+            bool forward = find_direction == 'f' || find_direction == 't';
+            for (int i = forward ? pos + 1 : pos - 1; forward ? i < length : i >= 0; i += forward ? 1 : -1) {
+                if (text[i] == c) {
+                    pos = i;
+                    if (find_direction == 't')
+                        pos--;
+                    if (find_direction == 'T')
+                        pos++;
+                    break;
+                }
+            }
+            resetVim(pos, &text);
+            rx.set_editing_mode(MODE_NORMAL);
+        }, MODE_FIND);
+    }
 
 
 #if 0
