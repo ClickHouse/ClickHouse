@@ -6,13 +6,22 @@ namespace DB
 {
 using Replxx = replxx::Replxx;
 
-void ReplxxLineReader::resetVim(int *pos, std::string *text) {
-    vimbuffer = vimbufferinner = flag = op = motion = 0;
-    find_direction = 0;
-    int length = static_cast<int>(text->length());
+void ReplxxLineReader::fixTrailingNewline(int *pos, std::string *text) {
     if (pos) {
+        int length = static_cast<int>(text->length());
         if (*pos == length - 1 && length > 0 && (*text)[length - 1] == '\n')
             ++*pos;
+        if (*pos == length && length > 0 && (*text)[length - 1] != '\n')
+            --*pos;
+    }
+}
+
+void ReplxxLineReader::resetVim(int *pos, std::string *text) {
+    vimbuffer = vimbufferinner = flag = op = motion = 0;
+    inclusivity_flip = 0;
+    find_direction = 0;
+    if (pos) {
+        fixTrailingNewline(pos, text);
         if (text)
             recomputeCurswant(*pos, *text);
     }
@@ -99,18 +108,23 @@ void ReplxxLineReader::setupVimKeybindings()
     }, MODE_NORMAL);
 
     bindKey('v', [this](char32_t) {
-        openEditor(false);
-        /* Remove the trailing newline. */
-        auto state = rx.get_state();
-        std::string text = state.text();
-        int length = static_cast<int>(text.length());
-        if (length > 0 && text[length - 1] == '\n')
-            text.erase(length - 1, 1);
+        if (!op) {
+            openEditor(false);
+            /* Remove the trailing newline. */
+            auto state = rx.get_state();
+            std::string text = state.text();
+            int length = static_cast<int>(text.length());
+            if (length > 0 && text[length - 1] == '\n')
+                text.erase(length - 1, 1);
 
-        int pos = std::max(static_cast<int>(text.length()) - 1, 0);
-        resetVim(&pos, &text);
+            int pos = std::max(static_cast<int>(text.length()) - 1, 0);
+            resetVim(&pos, &text);
 
-        rx.set_state(Replxx::State(text.c_str(), pos));
+            rx.set_state(Replxx::State(text.c_str(), pos));
+        }
+        else {
+            inclusivity_flip = 1;
+        }
     }, MODE_NORMAL);
 
     bindKey('h', [this](int &pos, std::string &text, char32_t) {
@@ -172,9 +186,26 @@ void ReplxxLineReader::setupVimKeybindings()
     }, MODE_NORMAL);
 
     bindKey('0', [this](int &pos, std::string &text, char32_t) {
-        for (; pos > 0 && text[pos - 1] != '\n'; pos--);
-        resetVim(&pos, &text);
+        if (!op && vimbuffer)
+            vimbuffer *= 10;
+        else if (op && vimbufferinner)
+            vimbufferinner *= 10;
+        else {
+            for (; pos > 0 && text[pos - 1] != '\n'; pos--);
+            resetVim(&pos, &text);
+        }
     }, MODE_NORMAL);
+
+    for (char c = '1'; c <= '9'; c++) {
+        bindKey(c, [this](char32_t code) {
+            if (!op) {
+                vimbufferinner = 10 * vimbufferinner + (code - '0');
+            }
+            else {
+                vimbuffer = 10 * vimbuffer + (code - '0');
+            }
+        }, MODE_NORMAL);
+    }
 
     bindKey('$', [this](int &pos, std::string &text, char32_t) {
         for (; pos < static_cast<int>(text.length()) - 1 && text[pos] != '\n' && text[pos + 1] != '\n'; pos++);
@@ -253,6 +284,7 @@ void ReplxxLineReader::setupVimKeybindings()
 
     for (char c = 32; c < 127; c++) {
         bindKey(c, [this, c](int &pos, std::string &text, char32_t) {
+            int oldpos = pos;
             int length = static_cast<int>(text.length());
             bool forward = find_direction == 'f' || find_direction == 't';
             for (int i = forward ? pos + 1 : pos - 1; forward ? i < length : i >= 0; i += forward ? 1 : -1) {
@@ -263,6 +295,15 @@ void ReplxxLineReader::setupVimKeybindings()
                     if (find_direction == 'T')
                         pos++;
                     break;
+                }
+            }
+            if (op) {
+                if (pos > oldpos) {
+                    text.erase(oldpos, pos - oldpos + 1 - inclusivity_flip);
+                    pos = oldpos;
+                }
+                if (oldpos > pos) {
+                    text.erase(pos, oldpos - pos + inclusivity_flip);
                 }
             }
             resetVim(&pos, &text);
@@ -278,8 +319,9 @@ void ReplxxLineReader::setupVimKeybindings()
     }
 
     bindKey('w', [this](int &pos, std::string &text, char32_t) {
+        int length = static_cast<int>(text.length());
         int break_on_char = 0;
-        for (; pos < static_cast<int>(text.length()) - 1; pos++) {
+        for (; pos < length - 1; pos++) {
             if (break_on_char & 1 && iskeyword(text[pos]))
                 break;
             if (break_on_char & 2 && !iskeyword(text[pos]) && !iswhitespace(text[pos]))
@@ -382,6 +424,25 @@ void ReplxxLineReader::setupVimKeybindings()
 
 
 
+    bindKey('d', [this](int &pos, std::string &text, char32_t) {
+        (void)pos;
+        (void)text;
+        if (!op) {
+            op = OPERATOR_D;
+        }
+        else {
+        }
+    }, MODE_NORMAL);
+
+    bindKey('c', [this](int &pos, std::string &text, char32_t) {
+        (void)pos;
+        (void)text;
+        if (!op) {
+            op = OPERATOR_C;
+        }
+        else {
+        }
+    }, MODE_NORMAL);
 
 
 
@@ -441,6 +502,30 @@ void ReplxxLineReader::setupVimKeybindings()
         if (end > pos)
             text.erase(pos, end - pos);
         rx.set_editing_mode(MODE_INSERT);
+        resetVim(&pos, &text);
+    }, MODE_NORMAL);
+
+    bindKey('o', [this](int &pos, std::string &text, char32_t) {
+        int length = static_cast<int>(text.length());
+
+        /* pos is at the very end, beyond the trailing newline.
+         * Let's move it back.
+         */
+        if (pos > 0 && pos == length)
+            pos--;
+        for (; pos < length && text[pos] != '\n'; pos++);
+        text.insert(pos, 1, '\n');
+        pos++;
+        rx.set_editing_mode(MODE_INSERT);
+        resetVim(&pos, &text);
+    }, MODE_NORMAL);
+
+    bindKey('O', [this](int &pos, std::string &text, char32_t) {
+        for (; pos > 0 && text[pos] != '\n'; pos--);
+        text.insert(pos, 1, '\n');
+        rx.set_editing_mode(MODE_INSERT);
+        if (pos > 0 && text[pos - 1] != '\n')
+            pos++;
         resetVim(&pos, &text);
     }, MODE_NORMAL);
 

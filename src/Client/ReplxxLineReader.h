@@ -54,6 +54,7 @@ private:
 
     /// Bind the vim-style normal/operator/motion keymap. Defined in VimMode.cpp.
     void setupVimKeybindings();
+    void fixTrailingNewline(int *pos, std::string *text);
     void resetVim(int *pos = nullptr, std::string *text = nullptr);
     template <typename T>
     void bindKey(char32_t key, T && func, int mode);
@@ -110,8 +111,7 @@ private:
     /// `3w`), `vimbufferinner` the count typed after an operator (the 2 in `d2w`); the effective
     /// repeat is their product. The editing mode itself is stored in replxx (see set_editing_mode)
     /// and encodes the pending operator and motion prefix as a bitfield of the flags below.
-    enum
-    {
+    enum {
         MODE_INSERT,
         MODE_NORMAL,
         MODE_FIND,
@@ -120,17 +120,23 @@ private:
     };
 
     enum {
+        OPERATOR_C,
+        OPERATOR_D,
+    };
+
+    enum {
         FLAG_INSIDE = 0x1,
         FLAG_AROUND = 0x2,
     };
 
-    int32_t vimbuffer = 0;
-    int32_t vimbufferinner = 0;
+    uint64_t vimbuffer = 0;
+    uint64_t vimbufferinner = 0;
     int32_t flag = 0;
     char find_direction = 0;
     int32_t op = 0;
     int32_t motion = 0;
     int curswant = 0;
+    int inclusivity_flip = 0;
 };
 
 }
