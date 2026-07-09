@@ -21,7 +21,7 @@ SortDescription sortByColumn(const String & name, int direction)
 }
 
 /// A physical expression with no plan step (getName/getDescription are empty), so structural
-/// identity is decided by the output properties and the inputs — exactly the fields that
+/// identity is decided by the output properties and the inputs - exactly the fields that
 /// distinguish e.g. an ASC sort from a DESC sort, or two different distributions.
 GroupExpressionPtr exprWithSorting(const String & column, int direction)
 {

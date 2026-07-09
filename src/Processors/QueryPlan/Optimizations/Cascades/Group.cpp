@@ -77,7 +77,7 @@ void Group::updateBestImplementation(GroupExpressionPtr expression, const CostCo
     };
 
     /// Remove all known best expressions with higher cost and properties satisfied by the new expression.
-    /// Only the matching distribution-shape bucket needs checking — `isSatisfiedBy` requires
+    /// Only the matching distribution-shape bucket needs checking - `isSatisfiedBy` requires
     /// exact match on (node_count, is_replicated).
     for (auto best_it = bucket.begin(); best_it != bucket.end();)
     {

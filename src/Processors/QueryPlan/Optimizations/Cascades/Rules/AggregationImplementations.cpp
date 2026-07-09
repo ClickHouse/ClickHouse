@@ -86,7 +86,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// Partial (non-final) aggregation: create distributed implementations at each candidate
     /// node count. The output distribution is `{node_count, []}` (no column guarantee).
     /// When the parent (MergingAggregated) requires `{1 node}`, the DistributionEnforcer
-    /// bridges the gap via GatherExchange — crucially on the PARTIAL output (~25 rows) rather
+    /// bridges the gap via GatherExchange - crucially on the PARTIAL output (~25 rows) rather
     /// than the raw input (~1M rows). This produces:
     ///   ParallelRead → Expression → PartialAgg({N nodes}) → GatherExchange → MergeAgg
     /// We intentionally do NOT create a `{1 node}` variant for multi-node clusters: if one
@@ -136,7 +136,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
     /// on a multi-node cluster whenever it is applicable.
     const bool only_shuffle = memo.getEnvironment().distributed_plan_force_shuffle_aggregation && shuffle_applicable && !candidate_node_counts.empty();
 
-    /// Strategy A: Local — gather all input to one node, aggregate there.
+    /// Strategy A: Local - gather all input to one node, aggregate there.
     /// Always applicable; when the cluster has only 1 node it is also the only meaningful strategy.
     if (!only_shuffle)
     {
@@ -156,11 +156,11 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             result.push_back(local_agg);
     }
 
-    /// For a single-node cluster distributed strategies are identical to local — skip them.
+    /// For a single-node cluster distributed strategies are identical to local - skip them.
     if (candidate_node_counts.empty())
         return result;
 
-    /// Strategy B: Shuffle — input pre-distributed by group keys, each node aggregates its
+    /// Strategy B: Shuffle - input pre-distributed by group keys, each node aggregates its
     /// own partition of keys and produces a final result independently.
     /// Not applicable for global aggregations (e.g. COUNT(*)) that have no group keys.
     /// Not applicable for GROUPING SETS: `params.keys` is the union of all sets' keys,
@@ -258,7 +258,7 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
             "TwoPhaseAggregationTransformation::applyImpl: expected 1 input, got {} for expression '{}'",
             expression->inputs.size(), expression->getDescription());
 
-    /// Phase 1: partial aggregation — takes raw rows, outputs intermediate aggregate states.
+    /// Phase 1: partial aggregation - takes raw rows, outputs intermediate aggregate states.
     auto partial_step_ptr = agg_step->clone();
     auto * partial_step = dynamic_cast<AggregatingStep *>(partial_step_ptr.get());
     if (!partial_step)
@@ -268,7 +268,7 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
     partial_step->setFinal(false);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
 
-    /// Phase 2: merge aggregation — takes intermediate aggregate states from Phase 1, produces
+    /// Phase 2: merge aggregation - takes intermediate aggregate states from Phase 1, produces
     /// final results. Uses MergingAggregatedStep which natively expects intermediate state types
     /// (e.g. AggregateFunction(count)) in the input header, unlike AggregatingStep with
     /// requestOnlyMergeForAggregateProjection which adapts them to finalized types.

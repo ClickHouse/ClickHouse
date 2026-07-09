@@ -1,5 +1,7 @@
 #pragma once
 
+#include <limits>
+
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <IO/WriteBuffer.h>
@@ -15,7 +17,7 @@ namespace DB
 {
 
 using GroupId = size_t;
-constexpr GroupId INVALID_GROUP_ID = -1;
+constexpr GroupId INVALID_GROUP_ID = std::numeric_limits<GroupId>::max();
 
 class GroupExpression;
 using GroupExpressionPtr = std::shared_ptr<GroupExpression>;
@@ -25,7 +27,7 @@ struct ExpressionStatistics;
 struct ExpressionWithCost
 {
     GroupExpressionPtr expression;
-    ExpressionCost cost;         /// The cost of whole tree starting from this expression
+    ExpressionCost cost;         /// Both the expression's own cost and its whole subtree cost
 };
 
 class Group
@@ -36,9 +38,7 @@ public:
     {}
 
     void addLogicalExpression(GroupExpressionPtr group_expression);
-    /// Returns true if the expression was inserted, false if it was dropped as a structural
-    /// duplicate. Callers that schedule follow-up work should do so only for inserted
-    /// expressions, so duplicates do not consume optimizer task budget.
+    /// Returns true if the expression was inserted, false if an equal expression already exists.
     bool addPhysicalExpression(GroupExpressionPtr group_expression);
     bool isExplored() const { return is_explored; }
     void setExplored() { is_explored = true; }
@@ -48,7 +48,7 @@ public:
     void setEnforcedFor(const ExpressionProperties & required_properties);
 
     /// Tracks whether optimization for a given property set is fully complete
-    /// (all stages: explore, implement, enforce — have finished).
+    /// (all stages: explore, implement, enforce - have finished).
     bool isFullyDoneFor(const ExpressionProperties & required_properties) const;
     void setFullyDoneFor(const ExpressionProperties & required_properties);
     void updateBestImplementation(GroupExpressionPtr expression, const CostConfig & cost_config);

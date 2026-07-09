@@ -51,7 +51,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
 
     std::vector<GroupExpressionPtr> result;
 
-    /// Strategy 1: Local join — both inputs gathered to a single node.
+    /// Strategy 1: Local join - both inputs gathered to a single node.
     /// Always applicable; when cluster has only 1 node it is also the only strategy
     /// because all distributed strategies produce the same plan on a single-node cluster.
     {
@@ -68,7 +68,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
             result.push_back(local_join);
     }
 
-    /// For a single-node cluster all distributed strategies are identical to local join — skip them.
+    /// For a single-node cluster all distributed strategies are identical to local join - skip them.
     if (candidate_node_counts.empty())
         return result;
 
@@ -140,9 +140,9 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)
     {
-        /// Strategy 2: Broadcast join — left input partitioned any way across N nodes,
+        /// Strategy 2: Broadcast join - left input partitioned any way across N nodes,
         /// right input replicated to all N nodes.
-        /// Skip when the replicated (right) side can produce output rows —
+        /// Skip when the replicated (right) side can produce output rows -
         /// replicating it causes duplicate rows across nodes.
         if (!broadcast_unsafe)
         {
@@ -167,7 +167,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
                 result.push_back(broadcast_join);
         }
 
-        /// Strategy 3: Partitioned (shuffle) join — both inputs shuffled by join key columns.
+        /// Strategy 3: Partitioned (shuffle) join - both inputs shuffled by join key columns.
         /// Only applicable when the join has equi-join predicates.
         if (!equi_keys.empty())
         {
@@ -242,7 +242,7 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
 
                 if (!all_matched)
                 {
-                    /// Required columns cannot all be matched to join keys — use all equi-join keys.
+                    /// Required columns cannot all be matched to join keys - use all equi-join keys.
                     clear_keys();
                     for (const auto & key : equi_keys)
                         add_key(key);

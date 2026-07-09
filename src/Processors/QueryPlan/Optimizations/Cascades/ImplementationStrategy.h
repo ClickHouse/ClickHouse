@@ -88,7 +88,7 @@ struct ParallelReadStrategy final : IReadStrategy
 };
 
 /// Replicated read on shared storage: every node reads the full table from object storage.
-/// No network cost — data is accessed directly from S3/shared filesystem.
+/// No network cost - data is accessed directly from S3/shared filesystem.
 /// Used to satisfy `{node_count=N, is_replicated=true}` without a BroadcastExchange.
 struct ReplicatedReadStrategy final : IReadStrategy
 {

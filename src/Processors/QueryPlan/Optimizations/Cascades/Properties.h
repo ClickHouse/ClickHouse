@@ -11,9 +11,8 @@
 namespace DB
 {
 
-/// Returns {max_node_count} — the full cluster.
-/// Intermediate counts ({2, 4, 8, ...}) were explored previously but never
-/// chosen on TPC-H. Still this might be revisited in the future.
+/// Returns {max_node_count} - the full cluster. Intermediate counts are not candidates:
+/// they multiply the search space without winning on the workloads measured so far.
 inline std::vector<size_t> getCandidateNodeCounts(size_t max_node_count)
 {
     if (max_node_count <= 1)

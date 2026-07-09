@@ -35,11 +35,11 @@ constexpr auto DUMMY_JOIN_STATS_PARAM_NAME = "_internal_join_table_stat_hints";
  *   ...
  * }';
  */
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
-RelationStats getDummyStats(ContextPtr context, const String & table_name);
+RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name);
+RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
 RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name)
+RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name)
 {
     try
     {
@@ -83,11 +83,11 @@ RelationStats getDummyStats(const String & dummy_stats_str, const String & table
     }
 }
 
-RelationStats getDummyStats(ContextPtr context, const String & table_name)
+RelationStats parseTableStatsHint(ContextPtr context, const String & table_name)
 {
     const auto & query_params = context->getQueryParameters();
     if (auto it = query_params.find(DUMMY_JOIN_STATS_PARAM_NAME); it != query_params.end())
-        return getDummyStats(it->second, table_name);
+        return parseTableStatsHint(it->second, table_name);
     return {};
 }
 

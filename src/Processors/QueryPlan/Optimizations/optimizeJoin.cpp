@@ -69,8 +69,8 @@ namespace Setting
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
 }
 
-RelationStats getDummyStats(ContextPtr context, const String & table_name);
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
+RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
+RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name);
 RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
 
 namespace QueryPlanOptimizations
@@ -361,7 +361,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                 return stats;
             }
         }
-        if (auto dummy_stats = getDummyStats(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
+        if (auto dummy_stats = parseTableStatsHint(reading->getContext(), table_display_name); !dummy_stats.table_name.empty())
             return dummy_stats;
 
         ReadFromMergeTree::AnalysisResultPtr analyzed_result = nullptr;
@@ -1525,7 +1525,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
     }
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
-    query_graph_builder.context->dummy_stats = join_step->getDummyStats();
+    query_graph_builder.context->dummy_stats = join_step->parseTableStatsHint();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

@@ -165,7 +165,7 @@ public:
 
     ActionsDAG::NodeRawConstPtrs getActionsAfterJoin() const { return actions_after_join; }
 
-    std::string_view getDummyStats() const { return dummy_stats; }
+    std::string_view parseTableStatsHint() const { return dummy_stats; }
     void setDummyStats(String dummy_stats_) { dummy_stats = std::move(dummy_stats_); }
 
     bool canRemoveUnusedColumns() const override;
