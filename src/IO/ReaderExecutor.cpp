@@ -329,6 +329,11 @@ ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
 
     advanceAhead();
 
+    /// THE consumer exit: the whole serve machinery works in physical coordinates;
+    /// this one shift rebases the window to logical for the decryptor (CTR position
+    /// = payload offset) and the caller.
+    if (data_start_offset)
+        chain.shift(-static_cast<ssize_t>(data_start_offset));
     return decryptWindow(std::move(chain));
 }
 
@@ -1888,7 +1893,7 @@ size_t ReaderExecutor::serveRunAt(size_t pos_phys) const
 // comes from multiple executors. A populatable job's bytes live in its cells (the cache is
 // the buffer); what the cells cannot hold goes to the lane's bank (PHYSICAL coords, like
 // everything inside the executor - the one shift to logical happens on the consumer exit,
-// `serveFromDisplay`). The long connection coalesces the GETs across pieces.
+// `finishWindow`). The long connection coalesces the GETs across pieces.
 
 bool ReaderExecutor::clampAllowsAhead(size_t ri) const
 {
@@ -2585,8 +2590,6 @@ ChainedBuffers ReaderExecutor::serveFromDisplay(ByteRange window)
     ChainedBuffers chain = out.slice(ByteRange{window.offset, prefix_end - window.offset});
     if (!chain.empty())
         runHandedFills(ByteRange{window.offset, chain.range().size}, chain, stats);
-    if (data_start_offset)
-        chain.shift(-static_cast<ssize_t>(data_start_offset));
     return chain;
 }
 

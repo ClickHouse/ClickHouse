@@ -657,9 +657,9 @@ private:
     /// the worker's just-fetched gap as resident.
     void preparePlan(size_t position_phys, size_t coverage_ahead = 0);
 
-    /// The shared post-serve tail of `readNextWindow`: account the served window, net out the
-    /// over-read, drop the fill pin at EOF, launch the next read-ahead, and decrypt. Returns
-    /// the plaintext window.
+    /// The shared post-serve tail of `readNextWindow` and THE consumer exit: account the
+    /// served window, drop the fill pin at EOF, launch the next read-ahead, rebase the
+    /// chain from physical to logical, and decrypt. Returns the plaintext window.
     ChainedBuffers finishWindow(ChainedBuffers chain);
 
     /// The CONSUMER's serve, serve-first: try the display, and only when nothing is
@@ -807,8 +807,8 @@ private:
     /// produce for this window - the consumer reads that as this extent's EOF.
     bool pump(std::optional<size_t> ri, ByteRange window);
     /// Serve the contiguous servable prefix of `window` off the display and run the scheduled
-    /// handed fills from the served bytes; shifts to logical. The serve tail shared by the hit
-    /// step and the banked bypass step.
+    /// handed fills from the served bytes. The serve tail shared by the hit step and the
+    /// banked bypass step; physical like all serve verbs (`finishWindow` rebases to logical).
     ChainedBuffers serveFromDisplay(ByteRange window);
     void collectInFlightInto(size_t ri);
     void advanceAhead();

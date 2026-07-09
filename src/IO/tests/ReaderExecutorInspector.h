@@ -68,10 +68,11 @@ public:
     void latchEof() { ex.reached_eof = true; }
     /// Drive one serve of the cursor step at `logical_pos`, bypassing `readNextWindow`'s
     /// pre-read EOF gate - the engine runs below a latched EOF only via the machine-drain
-    /// branch, which needs an in-flight machine a unit test cannot hold still.
+    /// branch, which needs an in-flight machine a unit test cannot hold still. Returns the
+    /// raw serve output: PHYSICAL and undecrypted (`finishWindow`'s rebase is not applied).
     ChainedBuffers serveWindowAt(size_t logical_pos)
     {
-        const size_t phys = logical_pos + ex.data_start_offset;
+        const size_t phys = ex.toPhys(logical_pos);
         ex.preparePlan(phys);
         return ex.serveWindow(phys);
     }
