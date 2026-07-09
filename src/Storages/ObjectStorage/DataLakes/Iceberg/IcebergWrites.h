@@ -74,7 +74,7 @@ void generateManifestList(
     Iceberg::FileContentType content_type,
     bool use_previous_snapshots = true);
 
-class IcebergStorageSink final : public SinkToStorage
+class IcebergStorageSink : public SinkToStorage
 {
 public:
     IcebergStorageSink(

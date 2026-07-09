@@ -241,10 +241,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
             }
         }
     }
-
     context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
-
-    auto shared_cache = S3::ClientCacheRegistry::instance().getOrCreateCacheForKey(url.endpoint, url.bucket);
 
     return S3::ClientFactory::instance().create(
         client_configuration,
@@ -255,8 +252,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
         auth_settings.server_side_encryption_kms_config,
         headers,
         credentials_configuration,
-        session_token,
-        shared_cache);
+        session_token);
 }
 
 }

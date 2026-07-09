@@ -2,7 +2,6 @@
 
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
 #include <Common/KnownObjectNames.h>
 #include <Core/Settings.h>

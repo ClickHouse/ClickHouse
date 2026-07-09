@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 #include <Formats/FormatFactory.h>
-#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
 #include <Interpreters/FileCache/FileSegment.h>
 #include <Interpreters/Context.h>
@@ -111,7 +110,7 @@ struct Plan
     } partition_encoder;
 };
 
-static Plan getPlan(
+Plan getPlan(
     IcebergHistory snapshots_info,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
@@ -324,7 +323,7 @@ static void writeDataFiles(
     }
 }
 
-static void writeMetadataFiles(
+void writeMetadataFiles(
     Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
@@ -551,7 +550,7 @@ static void writeMetadataFiles(
     }
 }
 
-static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
+std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const String & table_path)
 {
     auto metadata_files = listFiles(*object_storage, table_path, "metadata", "");
     auto data_files = listFiles(*object_storage, table_path, "data", "");
@@ -562,7 +561,7 @@ static std::vector<String> getOldFiles(ObjectStoragePtr object_storage, const St
     return metadata_files;
 }
 
-static void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
+void clearOldFiles(ObjectStoragePtr object_storage, const std::vector<String> & old_files)
 {
     for (const auto & metadata_file : old_files)
     {

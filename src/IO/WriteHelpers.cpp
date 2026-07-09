@@ -2,17 +2,12 @@
 #include <base/DecomposedFloat.h>
 #include <base/hex.h>
 #include <Common/formatIPv6.h>
-#include <Common/NaNUtils.h>
 
 #include <zmij.h>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-extern const int BAD_ARGUMENTS;
-}
 
 template <typename IteratorSrc, typename IteratorDst>
 void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
@@ -28,7 +23,7 @@ void formatHex(IteratorSrc src, IteratorDst dst, size_t num_bytes)
 
 std::array<char, 36> formatUUID(const UUID & uuid)
 {
-    std::array<char, 36> dst{};
+    std::array<char, 36> dst;
     auto * dst_ptr = dst.data();
 
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
@@ -220,7 +215,7 @@ ALWAYS_INLINE inline bool tryRoundToShortest(IntType v, IntType lo, IntType hi, 
 /// and negative) confirms exact match with dragonbox output.
 NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, char * buffer)
 {
-    UInt32 bits = 0;
+    UInt32 bits;
     memcpy(&bits, &f32, sizeof(bits));
     UInt32 mantissa = bits & 0x7FFFFFu;
 
@@ -251,7 +246,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
 
     chassert(shift >= 2 && shift <= 7);
 
-    size_t result = 0;
+    size_t result;
     if (shift >= 7 && tryRoundToShortest<1000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 3 && tryRoundToShortest<100>(v, lo, hi, buffer, start, result)) return result;
     if (tryRoundToShortest<10>(v, lo, hi, buffer, start, result)) return result;
@@ -271,7 +266,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat32Rounded(Float32 f32, int16_t exp, 
 /// for Float64 (2^62 values in range).
 NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, char * buffer)
 {
-    UInt64 bits = 0;
+    UInt64 bits;
     memcpy(&bits, &f64, sizeof(bits));
     UInt64 mantissa = bits & ((1ULL << 52) - 1);
 
@@ -298,7 +293,7 @@ NO_INLINE size_t writeFloatTextFastPathFloat64Rounded(Float64 f64, int16_t exp, 
 
     chassert(shift >= 2 && shift <= 10);
 
-    size_t result = 0;
+    size_t result;
     if (shift >= 10 && tryRoundToShortest<10000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 7 && tryRoundToShortest<1000>(v, lo, hi, buffer, start, result)) return result;
     if (shift >= 3 && tryRoundToShortest<100>(v, lo, hi, buffer, start, result)) return result;
@@ -376,85 +371,4 @@ size_t writeFloatTextFastPath(T x, char * buffer)
 template size_t writeFloatTextFastPath(Float64 x, char * buffer);
 template size_t writeFloatTextFastPath(Float32 x, char * buffer);
 template size_t writeFloatTextFastPath(BFloat16 x, char * buffer);
-
-template <typename T>
-requires is_floating_point<T>
-void writeFloatText(T x, WriteBuffer & buf, const FormatSettings & settings)
-{
-    if (settings.float_precision == 0 || !isFinite(x))
-    {
-        writeFloatText(x, buf);
-        return;
-    }
-
-    using Converter = double_conversion::DoubleToStringConverter;
-    const int max_fixed_digits = Converter::kMaxFixedDigitsAfterPoint;
-    if (settings.float_precision > static_cast<UInt64>(max_fixed_digits))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Too high precision requested for Float, must not be more than {}, got {}",
-            max_fixed_digits, settings.float_precision);
-
-    /// First compute the default shortest round-trip representation.
-    /// If it already has fewer or equal decimal places than requested, use it directly
-    /// to avoid introducing floating-point artefacts from ToFixed.
-    char default_buf[64];
-    const size_t default_len = writeFloatTextFastPath(x, default_buf);
-
-    /// Count decimal places in the default representation. Scientific notation (containing 'e'/'E') gets default_decimals = -1.
-    /// It is emitted as-is only as a fallback: when ToFixed fails (magnitude too large) or rounds the value to +/-0.
-    int default_decimals = -1;
-    if (!memchr(default_buf, 'e', default_len) && !memchr(default_buf, 'E', default_len))
-    {
-        const char * dot = static_cast<const char *>(memchr(default_buf, '.', default_len));
-        default_decimals = dot ? static_cast<int>(default_buf + default_len - dot - 1) : 0;
-    }
-
-    /// For fixed-notation defaults with few enough decimal places, use them directly.
-    if (default_decimals >= 0 && default_decimals <= static_cast<int>(settings.float_precision))
-    {
-        buf.write(default_buf, default_len);
-        return;
-    }
-
-    /// Otherwise use ToFixed to produce a fixed-notation form with the requested precision.
-    /// ToFixed returns false for values with large magnitude; use the default in that case.
-    DoubleConverter<false>::BufferType buffer;
-    double_conversion::StringBuilder builder{buffer, sizeof(buffer)};
-    if (!DoubleConverter<false>::instance().ToFixed(static_cast<double>(x), static_cast<int>(settings.float_precision), &builder))
-    {
-        buf.write(default_buf, default_len);
-        return;
-    }
-
-    /// Strip trailing zeros after the decimal point (and the point itself if unneeded).
-    int len = builder.position();
-    const char * dot = static_cast<const char *>(memchr(buffer, '.', len));
-    if (dot)
-    {
-        int decimal_pos = static_cast<int>(dot - buffer);
-        while (len > decimal_pos + 1 && buffer[len - 1] == '0')
-            --len;
-        if (len == decimal_pos + 1)
-            --len;
-    }
-
-    /// For values in scientific notation (e.g. 1.23e-20) that ToFixed rounds to ±0 at
-    /// the requested precision, fall back to the default representation to avoid
-    /// silently discarding information.
-    if (default_decimals < 0)
-    {
-        int non_sign = (buffer[0] == '-') ? 1 : 0;
-        if (len - non_sign == 1 && buffer[non_sign] == '0')
-        {
-            buf.write(default_buf, default_len);
-            return;
-        }
-    }
-
-    buf.write(buffer, len);
-}
-
-template void writeFloatText(Float64 x, WriteBuffer & buf, const FormatSettings & settings);
-template void writeFloatText(Float32 x, WriteBuffer & buf, const FormatSettings & settings);
-template void writeFloatText(BFloat16 x, WriteBuffer & buf, const FormatSettings & settings);
 }

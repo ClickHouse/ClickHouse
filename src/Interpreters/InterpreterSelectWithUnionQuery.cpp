@@ -409,7 +409,6 @@ void InterpreterSelectWithUnionQuery::ignoreWithTotals()
         interpreter->ignoreWithTotals();
 }
 
-void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory);
 void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

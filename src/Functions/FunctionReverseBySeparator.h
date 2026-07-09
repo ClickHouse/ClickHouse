@@ -11,7 +11,7 @@ namespace DB
 /** reverseBySeparator(string[, separator]) - reverses the order of parts in a string separated by a separator.
   * Returns a string with parts ordered from right to left, joined by the same separator.
   */
-class FunctionReverseBySeparator final : public IFunction
+class FunctionReverseBySeparator : public IFunction
 {
 public:
     static constexpr auto name = "reverseBySeparator";

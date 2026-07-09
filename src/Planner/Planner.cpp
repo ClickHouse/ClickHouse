@@ -158,7 +158,6 @@ namespace Setting
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
-    extern const SettingsBool enable_sharding_aggregator;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -441,7 +440,7 @@ std::tuple<UInt64, Float64, bool> getLimitOffsetValue(const Field & field)
     {
         Int64 int_value = converted_value_int.safeGet<Int64>();
 
-        chassert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
+        assert(int_value < 0 && "nonnegative limit/offset values should be handled with UInt64");
 
         const UInt64 magnitude = -static_cast<UInt64>(int_value);
         return {magnitude, 0, true};
@@ -744,8 +743,7 @@ void addAggregationStep(QueryPlan & query_plan,
         std::move(group_by_sort_description),
         query_analysis_result.aggregation_should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
-        settings[Setting::force_aggregation_in_order],
-        settings[Setting::enable_sharding_aggregator]);
+        settings[Setting::force_aggregation_in_order]);
     query_plan.addStep(std::move(aggregating_step));
 }
 
@@ -990,19 +988,19 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
     const SelectQueryOptions & select_query_options,
     UsefulSets & useful_sets)
 {
-    NameSet order_by_column_names;
+    NameSet column_names_with_fill;
     SortDescription fill_description;
 
     const auto & header = query_plan.getCurrentHeader();
 
     for (const auto & description : query_analysis_result.sort_description)
     {
-        order_by_column_names.insert(description.column_name);
         if (description.with_fill)
         {
             if (!header->findByName(description.column_name))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Filling column {} is not present in the block {}", description.column_name, header->dumpNames());
             fill_description.push_back(description);
+            column_names_with_fill.insert(description.column_name);
         }
     }
 
@@ -1032,7 +1030,7 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             for (const auto * input_node : interpolate_actions_dag.getInputs())
             {
-                if (order_by_column_names.contains(input_node->result_name))
+                if (column_names_with_fill.contains(input_node->result_name))
                     continue;
 
                 interpolate_actions_dag.getOutputs().push_back(input_node);
@@ -1667,15 +1665,6 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
     const OrderedMaterializedCTEs & materialized_ctes
 )
 {
-    /// Logical plans are built for serialization to a remote node. `DelayedMaterializingCTEsStep`
-    /// is stripped on the way out (`Serialization.cpp`), and the only surviving side effect of
-    /// building it here would be to populate the shared `MaterializedCTE::plan` with a logical
-    /// (serialize-only) version that the non-logical planner pass would then reuse for local
-    /// execution and crash on. The materialization is owned by the non-logical pass; remote
-    /// nodes read from the temp storage by name.
-    if (select_query_options.build_logical_plan)
-        return;
-
     if (materialized_ctes.empty())
         return;
 
@@ -1851,7 +1840,7 @@ void addReadFromQueryResultCacheStep(
 
 }
 
-static PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
+PlannerContextPtr buildPlannerContext(const QueryTreeNodePtr & query_tree_node,
     const SelectQueryOptions & select_query_options,
     GlobalPlannerContextPtr global_planner_context)
 {
@@ -2043,7 +2032,7 @@ void Planner::buildPlanForUnionNode()
     /// Fix: add a DelayedMaterializingCTEsStep at the UNION level so that resolveMaterializingCTEs
     /// (which walks pre-order) claims the CTE here first, ensuring materialization completes before
     /// any child starts reading.
-    if (!select_query_options.only_analyze && !select_query_options.build_logical_plan)
+    if (!select_query_options.only_analyze)
     {
         auto materialized_ctes = collectMaterializedCTEs(query_tree, select_query_options);
         addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, select_query_options, materialized_ctes);
@@ -2711,3 +2700,4 @@ void Planner::addStorageLimits(const StorageLimitsList & limits)
 }
 
 }
+

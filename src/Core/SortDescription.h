@@ -46,11 +46,11 @@ struct SortColumnDescription
 {
     std::string alias;
     std::string column_name; /// The name of the column.
-    int direction{1};           /// 1 - ascending, -1 - descending.
-    int nulls_direction{1};     /// 1 - NULLs and NaNs are greater, -1 - less.
+    int direction;           /// 1 - ascending, -1 - descending.
+    int nulls_direction;     /// 1 - NULLs and NaNs are greater, -1 - less.
                              /// To achieve NULLS LAST, set it equal to direction, to achieve NULLS FIRST, set it opposite.
     std::shared_ptr<Collator> collator; /// Collator for locale-specific comparison of strings
-    bool with_fill{};
+    bool with_fill;
     FillColumnDescription fill_description;
 
     SortColumnDescription() = default;
@@ -146,17 +146,11 @@ public:
     bool compile_sort_description = false;
 
     bool hasPrefix(const SortDescription & prefix) const;
+    bool hasPrefix(const Names & prefix) const;
 };
 
 /// Returns a copy of lhs containing only the prefix of columns matching rhs's columns.
 SortDescription commonPrefix(const SortDescription & lhs, const SortDescription & rhs);
-
-/// The leading run of `description` whose column names all belong to `columns` (compared as a set) and
-/// are ordered by value. A collated column is ordered by its collation key, not by value, so equal
-/// values are not adjacent; it stops the prefix (in-order DISTINCT / LIMIT BY rely on value-adjacency).
-/// If the result has `columns.size()` entries, then `columns` -- in any order -- form such a prefix, so
-/// grouping by them yields contiguous groups.
-SortDescription getCollationAwareSortPrefixInColumns(const SortDescription & description, const Names & columns);
 
 /** Compile sort description for header_types.
   * Description is compiled only if compilation attempts to compile identical description is more than min_count_to_compile_sort_description.

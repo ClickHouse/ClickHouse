@@ -40,10 +40,10 @@ class ExtractAllImpl
 private:
     Regexps::RegexpPtr re;
     OptimizedRegularExpression::MatchVec matches;
-    size_t capture{};
+    size_t capture;
 
-    Pos pos{};
-    Pos end{};
+    Pos pos;
+    Pos end;
 public:
     static constexpr auto name = "extractAll";
     static String getName() { return name; }

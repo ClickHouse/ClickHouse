@@ -609,17 +609,17 @@ class LakeDataGenerator:
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
-                stmt = next_table_generator.generate_extra_statement(spark, table)
-                if stmt:
-                    self.run_query(spark, stmt)
+                self.run_query(
+                    spark, next_table_generator.generate_extra_statement(spark, table)
+                )
             else:
                 # Alter statements
                 next_table_generator = LakeTableGenerator.get_next_generator(
                     table.lake_format
                 )
-                stmt = next_table_generator.generate_alter_table_statements(spark, table)
-                if stmt:
-                    self.run_query(spark, stmt)
+                self.run_query(
+                    spark, next_table_generator.generate_alter_table_statements(table)
+                )
         except Exception as e:
             # If an error happens, ignore it, but log it
             traceback.print_exc()

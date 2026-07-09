@@ -16,16 +16,13 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/PreparedSets.h>
 #include <IO/WriteHelpers.h>
 #include <Planner/PlannerContext.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
-#include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/SquashingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <QueryPipeline/SizeLimits.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Analyzer/UnionNode.h>
@@ -40,15 +37,12 @@ namespace Setting
 {
     extern const SettingsDistributedProductMode distributed_product_mode;
     extern const SettingsUInt64 interactive_delay;
-    extern const SettingsUInt64 max_bytes_to_transfer;
-    extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsUInt64 min_external_table_block_size_rows;
     extern const SettingsUInt64 min_external_table_block_size_bytes;
     extern const SettingsBool parallel_replicas_prefer_local_join;
     extern const SettingsBool prefer_global_in_and_join;
     extern const SettingsBool enable_add_distinct_to_in_subqueries;
     extern const SettingsInt64 optimize_const_name_size;
-    extern const SettingsOverflowMode transfer_overflow_mode;
 }
 
 namespace ErrorCodes
@@ -459,6 +453,8 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     auto temporary_table_expression_node = std::make_shared<TableNode>(external_storage, mutable_context);
     temporary_table_expression_node->setTemporaryTableName(temporary_table_name);
 
+    auto table_out = external_storage->write({}, external_storage->getInMemoryMetadataPtr(mutable_context, false), mutable_context, /*async_insert=*/false);
+
     QueryPlanOptimizationSettings optimization_settings(mutable_context);
     BuildQueryPipelineSettings build_pipeline_settings(mutable_context);
     auto builder = query_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings);
@@ -470,33 +466,9 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     builder->resize(1);
     builder->addTransform(std::move(squashing));
 
-    /// Fill the temporary table for the `GLOBAL IN` / `GLOBAL JOIN` subquery and at the
-    /// same time enforce `max_rows_to_transfer` / `max_bytes_to_transfer` — see Issue
-    /// #103333. We reuse `CreatingSetsTransform` (the same transform the old analyzer
-    /// uses inside `DelayedCreatingSetsStep`): with `set_and_key->set` left null it
-    /// only writes the materialized rows into `external_table` and applies
-    /// `network_transfer_limits` after `materializeBlock`, raising
-    /// `SET_SIZE_LIMIT_EXCEEDED` with the `"IN/JOIN external table"` reason on
-    /// `THROW` and stopping the input on `BREAK`. This keeps the new analyzer
-    /// behaviour in lockstep with the old analyzer.
-    const auto & subquery_settings = mutable_context->getSettingsRef();
-    SizeLimits network_transfer_limits(
-        subquery_settings[Setting::max_rows_to_transfer],
-        subquery_settings[Setting::max_bytes_to_transfer],
-        subquery_settings[Setting::transfer_overflow_mode]);
-
-    auto set_and_key = std::make_shared<SetAndKey>();
-    set_and_key->external_table = external_storage;
-
-    builder->addCreatingSetsTransform(
-        std::make_shared<const Block>(Block{}),
-        std::move(set_and_key),
-        network_transfer_limits,
-        /* prepared_sets_cache = */ nullptr);
-
     auto pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
 
-    pipeline.complete(std::make_shared<EmptySink>(pipeline.getSharedHeader()));
+    pipeline.complete(std::move(table_out));
     CompletedPipelineExecutor executor(pipeline);
     if (mutable_context->hasQueryContext())
     {

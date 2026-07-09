@@ -63,7 +63,7 @@ public:
         else
         {
             Key dif;
-            size_t sum = 0;
+            size_t sum;
             if (common::subOverflow(end, begin, dif)
                 || common::addOverflow(static_cast<size_t>(dif), step, sum))
             {

@@ -37,7 +37,7 @@ CREATE NAMED COLLECTION ai_credentials AS
 | `provider` | String | — | Model provider. Supported: `'openai'`, `'anthropic'`. See note below. |
 | `endpoint` | String | — | API endpoint URL. |
 | `model` | String | — | Model name (e.g. `'gpt-4o-mini'`, `'text-embedding-3-small'`). |
-| `api_key` | String | — | Authentication key for the provider. Optional: when omitted, the auth header is not sent, which allows targeting OpenAI-compatible servers that do not require authentication. |
+| `api_key` | String | — | Authentication key for the provider. |
 | `max_tokens` | UInt64 | `1024` | Maximum number of output tokens per API call. |
 | `api_version` | String | — | API version string. Used by Anthropic (`'2023-06-01'`). |
 
@@ -51,7 +51,7 @@ All AI-related settings are listed in [Settings](/operations/settings/settings) 
 
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
-The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, potentially carrying (if specified) the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) in the server config, e.g.:
+The `endpoint` URL in an AI named collection is an outbound destination the server connects to under its own identity, carrying the named collection's `api_key` in the request headers. By default, ClickHouse permits any host. To restrict functions to a specific set of providers, configure [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) in the server config, e.g.:
 
 ```xml
 <remote_url_allow_hosts>

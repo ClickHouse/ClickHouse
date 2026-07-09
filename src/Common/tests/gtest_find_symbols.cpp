@@ -13,7 +13,7 @@ void test_find_first_not(const std::string & haystack, std::size_t expected_pos)
     ASSERT_EQ(begin + expected_pos, find_first_not_symbols<symbols...>(begin, end));
 }
 
-static void test_find_first_not(const std::string & haystack, const std::string & symbols, const std::size_t expected_pos)
+void test_find_first_not(const std::string & haystack, const std::string & symbols, const std::size_t expected_pos)
 {
     const char * begin = haystack.data();
 

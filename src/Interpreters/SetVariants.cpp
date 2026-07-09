@@ -16,9 +16,9 @@ namespace ErrorCodes
 template <typename Variant>
 void SetVariantsTemplate<Variant>::init(Type type_)
 {
-    /// Allocate before changing `type`: if make_unique throws, the object stays EMPTY
-    /// instead of having `type != EMPTY` with a null variant pointer (matches AggregatedDataVariants::init).
-    switch (type_)
+    type = type_;
+
+    switch (type)
     {
         case Type::EMPTY: break;
 
@@ -27,8 +27,6 @@ void SetVariantsTemplate<Variant>::init(Type type_)
         APPLY_FOR_SET_VARIANTS(M)
     #undef M
     }
-
-    type = type_;
 }
 
 template <typename Variant>

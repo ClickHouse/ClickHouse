@@ -285,11 +285,6 @@
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \
-    M(KeeperWatchesTriggered) \
-    M(KeeperWatchTriggeredNodeCreated) \
-    M(KeeperWatchTriggeredNodeDeleted) \
-    M(KeeperWatchTriggeredNodeDataChanged) \
-    M(KeeperWatchTriggeredNodeChildrenChanged) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
     M(KeeperSnapshotWrittenBytes) \

@@ -62,8 +62,8 @@ ReadSettings LocalObjectStorage::patchSettings(const ReadSettings & read_setting
 {
     auto modified_settings{read_settings};
     /// Other options might break assertions in AsynchronousBoundedReadBuffer.
-    modified_settings.local_fs_settings.method = LocalFSReadMethod::pread;
-    modified_settings.local_fs_settings.direct_io_threshold = 0; /// Disable.
+    modified_settings.local_fs_method = LocalFSReadMethod::pread;
+    modified_settings.direct_io_threshold = 0; /// Disable.
     return IObjectStorage::patchSettings(modified_settings);
 }
 
@@ -226,14 +226,12 @@ private:
 std::unique_ptr<ReadBufferFromFileBase> LocalObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t> read_hint,
-    bool /* use_external_buffer */,
-    bool /* restrict_seek */) const
+    std::optional<size_t> read_hint) const
 {
     LOG_TEST(log, "Read object: {}", object.remote_path);
     auto buf = createReadBufferFromFileBase(object.remote_path, patchSettings(read_settings), read_hint);
 
-    if (read_settings.remote_fs_settings.enable_blob_storage_log)
+    if (read_settings.enable_blob_storage_log_for_read_operations)
     {
         auto blob_storage_log = BlobStorageLogWriter::create(settings.disk_name);
         if (blob_storage_log)

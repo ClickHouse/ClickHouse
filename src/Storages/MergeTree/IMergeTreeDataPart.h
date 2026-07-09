@@ -3,7 +3,6 @@
 #include <atomic>
 #include <mutex>
 #include <Core/NamesAndTypes.h>
-#include <Core/UUID.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
 #include <IO/WriteSettings.h>
 #include <Storages/ColumnSize.h>
@@ -409,7 +408,7 @@ public:
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
-    int32_t metadata_version{};
+    int32_t metadata_version;
 
     /// The number of temporary projection block.
     /// It is set while rebuilding projections in merges or mutations.

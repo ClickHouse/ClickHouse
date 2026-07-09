@@ -112,7 +112,6 @@ AggregateFunctionPtr createAggregateFunctionLast2Samples(const std::string & nam
 
 }
 
-void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory)
 {
     /// timeSeriesLastTwoSamples documentation

@@ -203,7 +203,6 @@ workflow = Workflow.Config(
         "build_debug": "Build (amd_debug)",
         "build": "Build (amd_binary)",
     },
-    runs_on_label_prefix="pr-",
 )
 
 WORKFLOWS = [

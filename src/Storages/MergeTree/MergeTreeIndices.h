@@ -1,7 +1,6 @@
 #pragma once
 #include "config.h"
 
-#include <Common/Documentation.h>
 #include <Storages/IndicesDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/MergeTree/KeyCondition.h>
@@ -328,13 +327,10 @@ public:
 
     MergeTreeIndices getMany(const std::vector<IndexDescription> & indices) const;
 
-    void registerCreator(const std::string & index_type, Creator creator, Documentation documentation = {});
+    void registerCreator(const std::string & index_type, Creator creator);
     void registerValidator(const std::string & index_type, Validator validator);
 
     std::vector<String> getAllRegisteredNames() const;
-
-    /// Returns the embedded documentation for a data skipping index type (empty if none was registered).
-    Documentation getDocumentation(const std::string & index_type) const;
 
 protected:
     MergeTreeIndexFactory();
@@ -342,10 +338,8 @@ protected:
 private:
     using Creators = std::unordered_map<std::string, Creator>;
     using Validators = std::unordered_map<std::string, Validator>;
-    using Documentations = std::unordered_map<std::string, Documentation>;
     Creators creators;
     Validators validators;
-    Documentations documentations;
 };
 
 MergeTreeIndexPtr minmaxIndexCreator(const IndexDescription & index);

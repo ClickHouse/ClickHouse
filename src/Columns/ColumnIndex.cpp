@@ -2,7 +2,7 @@
 #include <Common/Exception.h>
 #include <DataTypes/NumberTraits.h>
 #include <base/demangle.h>
-#include <Common/HashTable/Hash.h>
+#include <Common/WeakHash.h>
 
 namespace DB
 {
@@ -156,7 +156,7 @@ size_t ColumnIndex::getMaxIndexForCurrentType() const
 
 size_t ColumnIndex::getIndexAt(size_t row) const
 {
-    size_t index = 0;
+    size_t index;
     auto get_index = [&](auto type)
     {
         using CurIndexType = decltype(type);
@@ -493,25 +493,24 @@ bool ColumnIndex::containsDefault() const
     return contains;
 }
 
-void ColumnIndex::computeHashInto(
-    const PaddedPODArray<UInt32> & dict_hash, size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+WeakHash32 ColumnIndex::getWeakHash(const WeakHash32 & dict_hash) const
 {
-    const UInt32 * dict_hash_data = dict_hash.data();
+    WeakHash32 hash(indexes->size());
+    auto & hash_data = hash.getData();
+    const auto & dict_hash_data = dict_hash.getData();
 
-    auto gather = [&](auto x)
+    auto update_weak_hash = [&](auto x)
     {
         using CurIndexType = decltype(x);
-        const auto & data = getIndexesData<CurIndexType>();
+        auto & data = getIndexesData<CurIndexType>();
+        auto size = data.size();
 
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const UInt32 value = dict_hash_data[data[i]];
-            UInt32 & out = hash_out[i - row_begin];
-            out = initial ? value : combineWeakHash32(value, out);
-        }
+        for (size_t i = 0; i < size; ++i)
+            hash_data[i] = dict_hash_data[data[i]];
     };
 
-    callForType(std::move(gather), size_of_type);
+    callForType(std::move(update_weak_hash), size_of_type);
+    return hash;
 }
 
 void ColumnIndex::collectSerializedValueSizes(

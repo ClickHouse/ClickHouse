@@ -95,7 +95,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict, ReadBuffer & buf, std::optional<size_t>, Arena *) const override
     {
-        [[maybe_unused]] char symbol = 0;
+        [[maybe_unused]] char symbol;
         readChar(symbol, buf);
         if (symbol != '\0')
             throw Exception(ErrorCodes::INCORRECT_DATA, "Incorrect state of aggregate function '{}', it should contain exactly one zero byte, while it is {}",

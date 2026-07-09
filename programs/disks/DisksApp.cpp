@@ -624,7 +624,6 @@ void DisksApp::runInteractive()
 }
 }
 
-int mainEntryClickHouseDisks(int argc, char ** argv);
 int mainEntryClickHouseDisks(int argc, char ** argv)
 {
     try

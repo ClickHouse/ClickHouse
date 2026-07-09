@@ -50,12 +50,16 @@ public:
     {
         const Key key;
         const size_t offset;
-        const KeyMetadataPtr key_metadata;
+        /// Weak so invalidated entries awaiting lazy removal do not pin KeyMetadata.
+        /// While Active it is kept alive by the metadata bucket.
+        const KeyMetadataWeakPtr key_metadata;
 
         std::atomic<size_t> size;
-        std::atomic<size_t> hits = 0;
 
         std::string toString(const std::string & prefix = "") const;
+
+        /// Locks `key_metadata`, throwing if it expired.
+        KeyMetadataPtr getKeyMetadata() const;
 
         enum class State
         {
@@ -349,10 +353,8 @@ public:
 
     struct UsageStat
     {
-        size_t size = 0;
-        size_t elements = 0;
-        /// Client weight for proportional cache sharing (0 if not set).
-        UInt64 weight = 0;
+        size_t size;
+        size_t elements;
     };
     virtual std::unordered_map<std::string, UsageStat> getUsageStatPerClient();
 

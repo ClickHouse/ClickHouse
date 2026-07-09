@@ -96,7 +96,7 @@ public:
             if constexpr (std::is_same_v<T, String> && is_arithmetic_v<U>)
             {
                 ReadBufferFromString in(l);
-                U parsed{};
+                U parsed;
                 readText(parsed, in);
                 return operator()(parsed, r);
             }
@@ -104,7 +104,7 @@ public:
             if constexpr (std::is_same_v<U, String> && is_arithmetic_v<T>)
             {
                 ReadBufferFromString in(r);
-                T parsed{};
+                T parsed;
                 readText(parsed, in);
                 return operator()(l, parsed);
             }
@@ -193,7 +193,7 @@ public:
             if constexpr (std::is_same_v<T, String> && is_arithmetic_v<U>)
             {
                 ReadBufferFromString in(l);
-                U parsed{};
+                U parsed;
                 readText(parsed, in);
                 return operator()(parsed, r);
             }
@@ -201,7 +201,7 @@ public:
             if constexpr (std::is_same_v<U, String> && is_arithmetic_v<T>)
             {
                 ReadBufferFromString in(r);
-                T parsed{};
+                T parsed;
                 readText(parsed, in);
                 return operator()(l, parsed);
             }

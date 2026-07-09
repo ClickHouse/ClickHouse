@@ -479,7 +479,7 @@ AsynchronousInsertQueue::pushQueryWithInlinedData(ASTPtr query, ContextPtr query
         {
             /// Concat read buffer with already extracted from insert
             /// query data and with the rest data from insert query.
-            ConcatReadBuffer::Buffers buffers;
+            std::vector<std::unique_ptr<ReadBuffer>> buffers;
             buffers.emplace_back(std::make_unique<ReadBufferFromOwnString>(bytes));
             buffers.emplace_back(std::move(read_buf));
 
@@ -571,7 +571,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         data->entries.emplace_back(entry);
         progress_future = entry->getFuture();
 
-        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
+        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data",
+            data->entries.size(), size_t(shard_num), data->size_in_bytes);
+        LOG_TEST(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
             data->entries.size(), size_t(shard_num), data->size_in_bytes, fmt::join(getInsertQueryIds(*data), ", "));
 
         bool has_enough_bytes = data->size_in_bytes >= (*key.settings)[Setting::async_insert_max_data_size];
@@ -1006,7 +1008,8 @@ try
     else
         query_scope = QueryScope::create(insert_context);
 
-    LOG_DEBUG(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
+    LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
+    LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
 
     String query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
@@ -1120,12 +1123,6 @@ try
 
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
-
-        /// Propagate the process list element to the pipeline so that the executor enables
-        /// per-processor profiling (otherwise elapsed_us and *_wait_elapsed_us stay zero in
-        /// system.processors_profile_log for async insert flushes). The normal query path does
-        /// this in executeQuery, but the flush builds and runs the pipeline directly.
-        pipeline.setProcessListElement(insert_context->getProcessListElement());
 
         query_log_elem = logQueryStart(
             query_start_time,

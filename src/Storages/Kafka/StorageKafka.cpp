@@ -598,7 +598,7 @@ size_t StorageKafka::getSchemaRegistrySkipBytes() const
 
 void StorageKafka::threadFunc(size_t idx)
 {
-    chassert(idx < tasks.size());
+    assert(idx < tasks.size());
     auto task = tasks[idx];
     std::string exception_str;
 

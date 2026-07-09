@@ -30,10 +30,10 @@ struct IcebergDataSnapshot
 using IcebergDataSnapshotPtr = std::shared_ptr<IcebergDataSnapshot>;
 struct IcebergHistoryRecord
 {
-    Int64 snapshot_id{};
-    DB::DateTime64 made_current_at{};
-    Int64 parent_id{};
-    bool is_current_ancestor{};
+    Int64 snapshot_id;
+    DB::DateTime64 made_current_at;
+    Int64 parent_id;
+    bool is_current_ancestor;
     Iceberg::IcebergPathFromMetadata manifest_list_path;
 
     Int64 added_files = 0;

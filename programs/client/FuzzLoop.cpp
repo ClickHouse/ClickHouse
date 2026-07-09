@@ -1,5 +1,3 @@
-#pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
-
 #include <Client.h>
 #include <base/scope_guard.h>
 #include <Common/CurrentThread.h>
@@ -25,11 +23,11 @@
 #include <Processors/Transforms/getSourceFromASTInsertQuery.h>
 
 #if USE_BUZZHOUSE
-#include <Client/BuzzHouse/AST/SQLProtoStr.h>
-#include <Client/BuzzHouse/Generator/FuzzConfig.h>
-#include <Client/BuzzHouse/Generator/QueryOracle.h>
-#include <Client/BuzzHouse/Generator/StatementGenerator.h>
-#include <Common/re2.h>
+#    include <Client/BuzzHouse/AST/SQLProtoStr.h>
+#    include <Client/BuzzHouse/Generator/FuzzConfig.h>
+#    include <Client/BuzzHouse/Generator/QueryOracle.h>
+#    include <Client/BuzzHouse/Generator/StatementGenerator.h>
+#    include <Common/re2.h>
 namespace BuzzHouse
 {
 extern void loadFuzzerServerSettings(const FuzzConfig & fc);
@@ -117,7 +115,9 @@ bool Client::processASTFuzzerStep(const String & query_to_execute, const ASTPtr 
     // and TOO_DEEP_RECURSION should not fail the fuzzer check.
     // Similarly, MEMORY_LIMIT_EXCEEDED means the server correctly
     // rejected an expensive query, not that it died.
-    if (have_error && (exception->code() == ErrorCodes::TOO_DEEP_RECURSION || exception->code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED))
+    if (have_error
+        && (exception->code() == ErrorCodes::TOO_DEEP_RECURSION
+            || exception->code() == ErrorCodes::MEMORY_LIMIT_EXCEEDED))
     {
         have_error = false;
         server_exception.reset();
@@ -495,18 +495,11 @@ bool Client::processWithASTFuzzer(std::string_view full_query)
 
 bool Client::processBuzzHouseQuery(const String & full_query)
 {
-    static constexpr size_t max_query_bytes = 1 << 20;
     bool server_up = true;
 
     have_error = false;
     error_code = 0;
-    if (full_query.size() > max_query_bytes)
-    {
-        have_error = true;
-        error_code = ErrorCodes::CANNOT_PARSE_TEXT;
-        LOG_WARNING(fuzz_config->log, "Skipping oversized query ({} bytes, limit {})", full_query.size(), max_query_bytes);
-    }
-    else if (!processQueryText(full_query))
+    if (!processQueryText(full_query))
     {
         have_error = true;
         error_code = ErrorCodes::CANNOT_PARSE_TEXT;
@@ -764,7 +757,6 @@ bool Client::buzzHouse()
 
                     full_query.resize(0);
                     dumpContent();
-                    full_query.resize(0);
                     BuzzHouse::SQLQueryToString(full_query, sq1);
                     fuzz_config->outf << full_query << std::endl;
                     server_up &= processBuzzHouseQuery(full_query);
@@ -860,30 +852,17 @@ bool Client::buzzHouse()
                          const auto & tbl = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(
                              test_content ? gen.attached_tables_to_compare_content : gen.attached_tables_to_test_format));
 
-                         BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::REINSERT_TABLE;
-                         const bool is_mt = tbl.get().isMergeTreeFamily();
+                         BuzzHouse::DumpOracleStrategy strategy = BuzzHouse::DumpOracleStrategy::DUMP_TABLE;
                          rg.pickWeighted(
-                             {{15 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
+                             {{20 * static_cast<uint32_t>(test_content && tbl.get().can_run_merges),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::OPTIMIZE; }},
-                              {25 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
-                              {10 * static_cast<uint32_t>(fuzz_config->enable_backups && test_content),
+                              {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::REATTACH; }},
+                              {5 * static_cast<uint32_t>(test_content),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::BACKUP_RESTORE; }},
-                              {40 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_TABLE; }},
                               {20 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_UPDATE; }},
                               {20 * static_cast<uint32_t>(test_content && tbl.get().areInsertsAppends()),
                                [&]() { strategy = BuzzHouse::DumpOracleStrategy::INSERT_COUNT; }},
-                              {10 * static_cast<uint32_t>(fuzz_config->enable_renames && test_content),
-                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::RENAME_BACK; }},
-                              {15 * static_cast<uint32_t>(test_content && is_mt),
-                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::FREEZE_UNFREEZE; }},
-                              {15 * static_cast<uint32_t>(test_content && is_mt),
-                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::MOVE_PARTITION; }},
-                              {15 * static_cast<uint32_t>(test_content && is_mt),
-                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::REPLACE_PARTITION; }},
-                              {15 * static_cast<uint32_t>(test_content), [&]() { strategy = BuzzHouse::DumpOracleStrategy::ALTER_COLUMN; }},
-                              {5 * static_cast<uint32_t>(test_content),
-                               [&]() { strategy = BuzzHouse::DumpOracleStrategy::TRUNCATE_COUNT; }},
-                              {70, [&]() { /* REINSERT_TABLE is the default */ }}});
+                              {40, [&]() { /* DUMP_TABLE is the default */ }}});
 
                          if (test_content)
                          {
@@ -924,18 +903,9 @@ bool Client::buzzHouse()
                      {
                          const auto & dict = rg.pickRandomly(
                              gen.filterCollection<BuzzHouse::SQLDictionary>(gen.attached_dictionaries_to_compare_content));
-                         BuzzHouse::SQLQuery reload;
                          runDumpReadOracle(
-                             [&]()
-                             {
-                                 qo.dumpDictionaryContent(rg, gen, dict, reload, sq1, sq2);
-                                 full_query.resize(0);
-                                 BuzzHouse::SQLQueryToString(full_query, reload);
-                                 fuzz_config->outf << full_query << std::endl;
-                                 server_up &= processBuzzHouseQuery(full_query);
-                             },
-                             [&](auto s)
-                             { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
+                             [&]() { qo.dumpDictionaryContent(rg, gen, dict, sq1, sq2); },
+                             [&](auto s) { qo.dumpObjectIntermediateSteps(rg, gen, dict, BuzzHouse::SQLObject::DICTIONARY, s, intermediate_queries); },
                              "Dump and read dictionary");
                      }},
                     {5
@@ -948,8 +918,7 @@ bool Client::buzzHouse()
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLView>(gen.attached_views_to_compare_content));
                          runDumpReadOracle(
                              [&]() { qo.dumpViewContent(rg, view, sq1, sq2); },
-                             [&](auto s)
-                             { qo.dumpObjectIntermediateSteps(rg, gen, view, BuzzHouse::SQLObject::VIEW, s, intermediate_queries); },
+                             [&](auto s) { qo.dumpObjectIntermediateSteps(rg, gen, view, BuzzHouse::SQLObject::VIEW, s, intermediate_queries); },
                              "Dump and read view");
                      }},
                     {20
@@ -1032,26 +1001,6 @@ bool Client::buzzHouse()
                     {20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles),
                      [&]()
                      {
-                         /// ARRAY JOIN oracle: ARRAY JOIN clause vs arrayJoin function
-                         qo.resetOracleValues();
-                         sq2.Clear();
-                         qo.generateArrayJoinOracleQueries(rg, gen, sq1, sq2);
-
-                         full_query.resize(0);
-                         BuzzHouse::SQLQueryToString(full_query, sq1);
-                         fuzz_config->outf << full_query << std::endl;
-                         server_up &= processBuzzHouseQuery(full_query);
-                         qo.processFirstOracleQueryResult(error_code, *external_integrations);
-
-                         full_query.resize(0);
-                         BuzzHouse::SQLQueryToString(full_query, sq2);
-                         fuzz_config->outf << full_query << std::endl;
-                         server_up &= processBuzzHouseQuery(full_query);
-                         qo.processSecondOracleQueryResult(error_code, *external_integrations, "Array join oracle");
-                     }},
-                    {20 * static_cast<uint32_t>(fuzz_config->allow_query_oracles),
-                     [&]()
-                     {
                          /// COUNT(DISTINCT col) oracle: uniqExact aggregator vs DISTINCT + COUNT
                          qo.resetOracleValues();
                          qo.generateCountDistinctFirstQuery(rg, gen, sq1);
@@ -1074,8 +1023,7 @@ bool Client::buzzHouse()
                     {30
                          * static_cast<uint32_t>(
                              fuzz_config->allow_client_restarts && fuzz_config->allow_query_oracles
-                             && gen.collectionHas<BuzzHouse::SQLPolicy>([&gen](const BuzzHouse::SQLPolicy & p)
-                                                                        { return gen.rowPolicyForOracle(p); })),
+                             && gen.collectionHas<BuzzHouse::SQLPolicy>([&gen](const BuzzHouse::SQLPolicy & p) { return gen.rowPolicyForOracle(p); })),
                      [&]()
                      {
                          /// Row policy oracle: an existing catalog row policy USING pred must be equivalent to WHERE pred.
@@ -1134,9 +1082,7 @@ bool Client::buzzHouse()
                          const uint64_t nseed = rg.nextInFullRange();
                          const auto & tbl
                              = rg.pickRandomly(gen.filterCollection<BuzzHouse::SQLTable>(gen.attached_tables_for_external_call)).get();
-                         const auto & engine = tbl.isAnyIcebergEngine()
-                             ? "iceberg"
-                             : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
+                         const auto & engine = tbl.isAnyIcebergEngine() ? "iceberg" : (tbl.isAnyDeltaLakeEngine() ? "deltalake" : (tbl.isAnyPaimonEngine() ? "paimon" : "kafka"));
                          const auto & ndname = tbl.isKafkaEngine() ? tbl.getDatabaseName() : tbl.getSparkCatalogName();
                          const auto & ntname = tbl.getBaseName(false);
                          const bool async = fuzz_config->allow_async_requests && rg.nextSmallNumber() < 4;

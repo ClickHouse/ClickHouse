@@ -1,6 +1,5 @@
 #include <Storages/System/StorageSystemOne.h>
 
-#include <Columns/ColumnConst.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypeLowCardinality.h>

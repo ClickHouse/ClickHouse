@@ -149,7 +149,7 @@ QUERY id: 0
 SELECT *
 FROM
 (
-    SELECT plus(number, 2) AS key
+    SELECT number + 2 AS key
     FROM numbers(4)
 ) AS s
 ALL FULL OUTER JOIN test AS t USING (key)
@@ -215,7 +215,7 @@ FROM test
 ORDER BY
     key ASC,
     a ASC,
-    exp(plus(key, a)) ASC
+    exp(key + a) ASC
 QUERY id: 0
   PROJECTION COLUMNS
     key UInt64
@@ -241,7 +241,7 @@ SELECT
 FROM test
 ORDER BY
     key ASC,
-    exp(plus(key, a)) ASC
+    exp(key + a) ASC
 QUERY id: 0
   PROJECTION COLUMNS
     key UInt64
@@ -367,7 +367,7 @@ FROM
 SELECT *
 FROM
 (
-    SELECT plus(number, 2) AS key
+    SELECT number + 2 AS key
     FROM numbers(4)
 ) AS s
 ALL FULL OUTER JOIN test AS t USING (key)
@@ -381,11 +381,11 @@ FROM test
 ORDER BY
     key ASC,
     a ASC,
-    exp(plus(key, a)) ASC
+    exp(key + a) ASC
 SELECT
     key,
     a
 FROM test
 ORDER BY
     key ASC,
-    exp(plus(key, a)) ASC
+    exp(key + a) ASC

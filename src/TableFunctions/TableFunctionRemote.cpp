@@ -17,7 +17,6 @@
 #include <Common/parseRemoteDescription.h>
 #include <Common/Macros.h>
 #include <Common/RemoteHostFilter.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -62,7 +61,7 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
      */
     size_t max_args = is_cluster_function ? 4 : 6;
     NamedCollectionPtr named_collection;
-    VectorWithMemoryTracking<std::pair<std::string, ASTPtr>> complex_args;
+    std::vector<std::pair<std::string, ASTPtr>> complex_args;
     if (!is_cluster_function && (named_collection = tryGetNamedCollectionWithOverrides(args, context, false, &complex_args)))
     {
         validateNamedCollection<ValidateKeysMultiset<ExternalDatabaseEqualKeysSet>>(
@@ -280,9 +279,9 @@ void TableFunctionRemote::parseArguments(const ASTPtr & ast_function, ContextPtr
     {
         /// Create new cluster from the scratch
         size_t max_addresses = context->getSettingsRef()[Setting::table_function_remote_max_addresses];
-        Strings shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
+        std::vector<String> shards = parseRemoteDescription(cluster_description, 0, cluster_description.size(), ',', max_addresses);
 
-        HostsByShard names;
+        std::vector<std::vector<String>> names;
         names.reserve(shards.size());
         for (const auto & shard : shards)
         {
@@ -343,7 +342,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
     if (cached_columns.empty())
         cached_columns = getActualTableStructure(context, is_insert_query);
 
-    chassert(cluster);
+    assert(cluster);
 
     bool has_local_shard = false;
     for (const auto & shard_info : cluster->getShardsInfo())
@@ -384,7 +383,7 @@ StoragePtr TableFunctionRemote::executeImpl(const ASTPtr & /*ast_function*/, Con
 
 ColumnsDescription TableFunctionRemote::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    chassert(cluster);
+    assert(cluster);
     return getStructureOfRemoteTable(*cluster, remote_table_id, context, remote_table_function_ptr);
 }
 

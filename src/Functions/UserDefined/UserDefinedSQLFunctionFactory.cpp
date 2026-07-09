@@ -1,8 +1,5 @@
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Common/CurrentThread.h>
-#include <Common/UnorderedSetWithMemoryTracking.h>
-#include <Common/quoteString.h>
-#include <Common/ThreadStatus.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Backups/RestorerFromBackup.h>
@@ -21,8 +18,8 @@
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Common/quoteString.h>
 
-#include <optional>
 
 namespace DB
 {
@@ -74,7 +71,7 @@ namespace
         if (!tuple_function_arguments || !tuple_function_arguments->arguments || tuple_function_arguments->name != "tuple")
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Lambda must have valid arguments");
 
-        UnorderedSetWithMemoryTracking<String> arguments;
+        std::unordered_set<String> arguments;
 
         for (const auto & argument : tuple_function_arguments->arguments->children)
         {
@@ -172,10 +169,10 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
 
     try
     {
-        auto & wasm_factory = UserDefinedWebAssemblyFunctionFactory::instance();
-        std::optional<UserDefinedWebAssemblyFunctionFactory::RegisteredFunction> wasm_function;
         if (create_function_query->as<ASTCreateWasmFunctionQuery>())
-            wasm_function = wasm_factory.prepareFunction(create_function_query, current_context->getWasmModuleManager());
+            UserDefinedWebAssemblyFunctionFactory::instance().addOrReplace(create_function_query, current_context->getWasmModuleManager());
+        else if (replace_if_exists && UserDefinedWebAssemblyFunctionFactory::instance().has(function_name))
+            UserDefinedWebAssemblyFunctionFactory::instance().dropIfExists(function_name);
 
         auto & loader = current_context->getUserDefinedSQLObjectsStorage();
         bool stored = loader.storeObject(
@@ -188,11 +185,6 @@ bool UserDefinedSQLFunctionFactory::registerFunction(const ContextMutablePtr & c
             current_context->getSettingsRef());
         if (!stored)
             return false;
-
-        if (wasm_function)
-            wasm_factory.addOrReplace(std::move(*wasm_function));
-        else if (replace_if_exists && wasm_factory.has(function_name))
-            wasm_factory.dropIfExists(function_name);
     }
     catch (Exception & exception)
     {
@@ -264,7 +256,7 @@ bool UserDefinedSQLFunctionFactory::has(const String & function_name) const
     return getContext()->getUserDefinedSQLObjectsStorage().has(function_name);
 }
 
-Strings UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
+std::vector<std::string> UserDefinedSQLFunctionFactory::getAllRegisteredNames() const
 {
     return getContext()->getUserDefinedSQLObjectsStorage().getAllObjectNames();
 }

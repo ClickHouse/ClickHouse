@@ -1,7 +1,6 @@
 #include <chrono>
 #include <variant>
 #include <Columns/ColumnTuple.h>
-#include <Common/SipHash.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -147,7 +146,7 @@ FutureSetFromTuple::FutureSetFromTuple(
 DataTypes FutureSetFromTuple::getTypes() const { return set->getElementsTypes(); }
 FutureSet::Hash FutureSetFromTuple::getHash() const { return hash; }
 
-void FutureSetFromTuple::fillSetElementsOnce() const
+void FutureSetFromTuple::fillSetElementsOnce()
 {
     callOnce(fill_set_elements_once, [this]
     {
@@ -156,69 +155,10 @@ void FutureSetFromTuple::fillSetElementsOnce() const
     });
 }
 
-Columns FutureSetFromTuple::getKeyColumns() const
+Columns FutureSetFromTuple::getKeyColumns()
 {
     fillSetElementsOnce();
     return set->getSetElements();
-}
-
-FutureSet::Hash FutureSetFromTuple::getContentHash() const
-{
-    callOnce(content_hash_once, [this] { content_hash = computeContentHash(); });
-    return content_hash;
-}
-
-Columns FutureSetFromTuple::getUniqueKeyColumns() const
-{
-    /// Apply the deduplication filter from set_key_columns without calling fillSetElementsOnce().
-    /// This avoids permanently materializing set->set_elements, which buildOrderedSetInplace
-    /// guards behind use_index_for_in_with_subqueries_max_values. The returned columns are
-    /// temporary and freed by the caller.
-    const size_t n_cols = set_key_columns.key_columns.size();
-    Columns result;
-    result.reserve(n_cols);
-    if (n_cols > 0 && set_key_columns.filter)
-    {
-        const auto & filter_data = set_key_columns.filter->getData();
-        for (const auto * col : set_key_columns.key_columns)
-            result.push_back(col->filter(filter_data, -1));
-    }
-    return result;
-}
-
-FutureSet::Hash FutureSetFromTuple::computeContentHash() const
-{
-    /// Hash the normalized elements (deduplicated, NULL-filtered, sorted by value) so that
-    /// permutations and duplicate inputs produce the same hash. Used by the aggregate
-    /// projection matcher (actionsDAGUtils.cpp) to compare IN-clause sets.
-    const DataTypes element_types = set->getElementsTypes();
-    const Columns normalized = getUniqueKeyColumns();
-    const size_t normalized_rows = normalized.empty() ? 0 : normalized[0]->size();
-
-    IColumn::Permutation perm;
-    if (!normalized.empty() && normalized_rows > 0)
-    {
-        EqualRanges ranges{{0, normalized_rows}};
-        normalized[0]->getPermutation(
-            IColumn::PermutationSortDirection::Ascending,
-            IColumn::PermutationSortStability::Stable, 0, 1, perm);
-        for (size_t i = 1; i < normalized.size(); ++i)
-            normalized[i]->updatePermutation(
-                IColumn::PermutationSortDirection::Ascending,
-                IColumn::PermutationSortStability::Stable, 0, 1, perm, ranges);
-    }
-
-    SipHash siphasher;
-    for (size_t i = 0; i < normalized.size(); ++i)
-    {
-        const auto type_name = element_types[i]->getName();
-        siphasher.update(type_name.data(), type_name.size());
-        if (!perm.empty())
-            normalized[i]->permute(perm, 0)->updateHashFast(siphasher);
-        else
-            normalized[i]->updateHashFast(siphasher);
-    }
-    return getSipHash128AsPair(siphasher);
 }
 
 SetPtr FutureSetFromTuple::buildOrderedSetInplace(const ContextPtr & context)

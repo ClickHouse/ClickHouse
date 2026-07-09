@@ -1,7 +1,6 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 #include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <Common/ObjectStorageKey.h>
 
 #if USE_AWS_S3
@@ -29,6 +28,7 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/S3/diskSettings.h>
 
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
@@ -50,6 +50,11 @@ namespace CurrentMetrics
     extern const Metric ObjectStorageS3Threads;
     extern const Metric ObjectStorageS3ThreadsActive;
     extern const Metric ObjectStorageS3ThreadsScheduled;
+}
+
+namespace DB::FailPoints
+{
+    extern const char object_storage_force_refresh_callback_success[];
 }
 
 
@@ -227,14 +232,12 @@ bool S3ObjectStorage::exists(const StoredObject & object) const
 std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
     const StoredObject & object,
     const ReadSettings & read_settings,
-    std::optional<size_t>,
-    bool use_external_buffer,
-    bool restrict_seek) const
+    std::optional<size_t>) const
 {
     auto settings_ptr = s3_settings.get();
 
     BlobStorageLogWriterPtr blob_storage_log;
-    if (read_settings.remote_fs_settings.enable_blob_storage_log)
+    if (read_settings.enable_blob_storage_log_for_read_operations)
     {
         blob_storage_log = BlobStorageLogWriter::create(disk_name);
         if (blob_storage_log)
@@ -248,10 +251,10 @@ std::unique_ptr<ReadBufferFromFileBase> S3ObjectStorage::readObject( /// NOLINT
         uri.version_id,
         settings_ptr->request_settings,
         patchSettings(read_settings),
-        use_external_buffer,
+        read_settings.remote_read_buffer_use_external_buffer,
         /* offset */0,
         /* read_until_position */0,
-        restrict_seek,
+        read_settings.remote_read_buffer_restrict_seek,
         object.bytes_size ? std::optional<size_t>(object.bytes_size) : std::nullopt,
         credentials_refresh_callback,
         std::move(blob_storage_log));
@@ -397,7 +400,7 @@ void S3ObjectStorage::removeObjectsImpl(const StoredObjects & objects, bool if_e
 
     auto blob_storage_log = BlobStorageLogWriter::create(disk_name);
     Strings local_paths_for_blob_storage_log;
-    VectorWithMemoryTracking<size_t> file_sizes_for_blob_storage_log;
+    std::vector<size_t> file_sizes_for_blob_storage_log;
     if (blob_storage_log)
     {
         local_paths_for_blob_storage_log.reserve(objects.size());
@@ -427,7 +430,7 @@ void S3ObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
     removeObjectsImpl(objects, true);
 }
 
-static void putObjectsTagOnS3(
+void putObjectsTagOnS3(
     const std::shared_ptr<const S3::Client> & s3_client,
     const String & bucket,
     const Strings & object_keys,
@@ -719,6 +722,19 @@ std::shared_ptr<const S3::Client> S3ObjectStorage::getS3StorageClient()
 std::shared_ptr<const S3::Client> S3ObjectStorage::tryGetS3StorageClient()
 {
     return client.get();
+}
+
+bool S3ObjectStorage::tryRefreshCredentialsViaCallback()
+{
+    fiu_do_on(FailPoints::object_storage_force_refresh_callback_success, { return true; });
+
+    if (!credentials_refresh_callback)
+        return false;
+    auto new_client = credentials_refresh_callback();
+    if (!new_client)
+        return false;
+    client.set(std::move(new_client));
+    return true;
 }
 }
 

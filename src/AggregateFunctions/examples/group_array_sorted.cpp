@@ -9,7 +9,6 @@
 #include <Common/ArenaAllocator.h>
 #include <Common/RadixSort.h>
 #include <Columns/ColumnArray.h>
-#include <Examples/clickhouse_examples.h>
 
 
 using namespace DB;

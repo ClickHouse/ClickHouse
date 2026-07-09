@@ -297,7 +297,8 @@ LRUFileCachePriority::iterateImpl(
             continue;
         }
 
-        auto locked_key = entry.key_metadata->tryLock();
+        auto key_metadata = entry.key_metadata.lock();
+        auto locked_key = key_metadata ? key_metadata->tryLock() : nullptr;
         if (!locked_key)
         {
             /// locked_key == nullptr means that the cache key of
@@ -614,10 +615,12 @@ bool LRUFileCachePriority::tryIncreasePriority(
     CachePriorityGuard & queue_guard,
     CacheStateGuard &)
 {
-    auto lock = queue_guard.writeLock();
+    auto lock = queue_guard.tryWriteLock();
+    if (!lock.owns_lock())
+        return false;
+
     const auto & entry = iterator.getEntry();
     chassert(entry->getState() == Entry::State::Active);
-    entry->hits += 1;
 
     auto it = dynamic_cast<const LRUFileCachePriority::LRUIterator &>(iterator).get();
     moveEvictionPosIfEqual(it, lock);
@@ -778,14 +781,8 @@ void LRUFileCachePriority::holdImpl(
 
 void LRUFileCachePriority::releaseImpl(size_t size, size_t elements)
 {
-    /// Once the atomic decrements below reach 0, `CacheUsagePerUser::snapshot`
-    /// may concurrently erase this priority and free `cache_usage_stat_guard`,
-    /// so pin it locally to keep the mutex alive until `~unique_lock`.
-    /// This lock is only needed for `OvercommitFileCachePriority::check`'s
-    /// debug consistency check; non-overcommit policies leave the guard unset.
-    auto stat_guard = cache_usage_stat_guard;
-    auto lock = stat_guard
-        ? std::optional<CacheUsageStatGuard::Lock>(stat_guard->lock())
+    auto lock = cache_usage_stat_guard
+        ? std::optional<CacheUsageStatGuard::Lock>(cache_usage_stat_guard->lock())
         : std::nullopt;
 
     state->sub(size, elements);
