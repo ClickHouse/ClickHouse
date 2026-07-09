@@ -251,3 +251,21 @@ INSERT INTO t_oc VALUES (9);
 SELECT t.c, `t.c` FROM t_oc AS t; -- { serverError UNKNOWN_IDENTIFIER }
 SELECT t.c FROM t_oc AS t;
 DROP TABLE t_oc;
+
+SELECT '--- Folded USING spelling absorbs canonical source keys in star expansion ---';
+CREATE TABLE t_using_star_l (Key Int32, a Int32) ENGINE = Memory;
+CREATE TABLE t_using_star_r (Key Int32, b Int32) ENGINE = Memory;
+INSERT INTO t_using_star_l VALUES (1, 10);
+INSERT INTO t_using_star_r VALUES (1, 20);
+SELECT * FROM t_using_star_l JOIN t_using_star_r USING (key);
+SELECT * FROM t_using_star_l JOIN t_using_star_r USING (Key);
+DROP TABLE t_using_star_l;
+DROP TABLE t_using_star_r;
+
+SELECT '--- Folded Nested prefix must not mix case-sibling families ---';
+CREATE TABLE t_nested_sib (`Items.Name` Array(String), `items.Value` Array(Int32)) ENGINE = Memory;
+INSERT INTO t_nested_sib VALUES (['a'], [1]);
+SELECT ITEMS FROM t_nested_sib; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT Items FROM t_nested_sib;
+SELECT items FROM t_nested_sib;
+DROP TABLE t_nested_sib;

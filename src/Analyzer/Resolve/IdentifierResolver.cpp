@@ -37,6 +37,8 @@
 #include <Poco/String.h>
 #include <base/scope_guard.h>
 #include <ranges>
+#include <boost/algorithm/string/join.hpp>
+#include <set>
 
 
 namespace DB
@@ -203,10 +205,47 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
     bool allow_compound = context->getSettingsRef()[Setting::analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested];
 
-    auto parts_equal = [case_insensitive_prefix](std::string_view a, std::string_view b)
+    /// `standard` mode: pick one canonical prefix before collecting, so case-sibling Nested
+    /// families (`Items.*` vs `items.*`) are never mixed. Exact spelling wins; a single folded
+    /// sibling is used; several folded siblings are ambiguous.
+    Identifier canonical_prefix = identifier;
+    if (case_insensitive_prefix)
     {
-        return case_insensitive_prefix ? Poco::icompare(a, b) == 0 : a == b;
-    };
+        auto folded_prefix_of = [&](const String & column_name) -> std::optional<String>
+        {
+            Identifier column_identifier(column_name);
+            if (column_identifier.getPartsSize() <= identifier.getPartsSize())
+                return {};
+            for (size_t p = 0; p < identifier.getPartsSize(); ++p)
+                if (Poco::icompare(identifier.getParts()[p], column_identifier.getParts()[p]) != 0)
+                    return {};
+            Strings prefix_parts(column_identifier.getParts().begin(), column_identifier.getParts().begin() + identifier.getPartsSize());
+            return boost::algorithm::join(prefix_parts, ".");
+        };
+
+        bool exact_prefix_exists = false;
+        std::set<String> folded_prefixes;
+        for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
+        {
+            if (table_expression_data.subcolumn_names.contains(column_name))
+                continue;
+            if (auto actual_prefix = folded_prefix_of(column_name))
+            {
+                if (*actual_prefix == identifier.getFullName())
+                    exact_prefix_exists = true;
+                else
+                    folded_prefixes.insert(*actual_prefix);
+            }
+        }
+        if (!exact_prefix_exists && folded_prefixes.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Identifier '{}' matches multiple Nested prefixes with different cases: '{}' and '{}'",
+                identifier.getFullName(), *folded_prefixes.begin(), *std::next(folded_prefixes.begin()));
+        if (!exact_prefix_exists && folded_prefixes.size() == 1)
+            canonical_prefix = Identifier(*folded_prefixes.begin());
+    }
+
+    auto parts_equal = [](std::string_view a, std::string_view b) { return a == b; };
 
     for (const auto & [column_name, _] : table_expression_data.column_names_and_types)
     {
@@ -215,9 +254,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 
         Identifier column_identifier(column_name);
         IdentifierView suffix(column_identifier);
-        size_t prefix_size = identifier.getPartsSize();
+        size_t prefix_size = canonical_prefix.getPartsSize();
 
-        for (const auto & part : identifier.getParts())
+        for (const auto & part : canonical_prefix.getParts())
         {
             if (suffix.empty() || !parts_equal(part, suffix.front()))
                 break;

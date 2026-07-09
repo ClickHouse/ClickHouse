@@ -2396,6 +2396,16 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveUnqualifiedMatcher(
                     matched_column_node->setAlias(join_using_column_name);
 
                     table_expression_column_names_to_skip.insert(join_using_column_name);
+                    /// A folded USING spelling (`USING (key)` over columns `Key`) differs from the
+                    /// canonical source column names — skip those too or `*` duplicates the keys.
+                    /// Only case-folded variants: the alias-compat path can bind USING to a
+                    /// projection alias whose underlying column must stay expandable.
+                    if (scope.isStandardMode())
+                        for (const auto & join_using_side_node : join_using_column_nodes)
+                            if (const auto * side_column_node = join_using_side_node->as<ColumnNode>())
+                                if (const auto & side_name = side_column_node->getColumnName();
+                                    side_name != join_using_column_name && Poco::icompare(side_name, join_using_column_name) == 0)
+                                    table_expression_column_names_to_skip.insert(side_name);
                     matched_expression_nodes_with_column_names.emplace_back(std::move(matched_column_node), join_using_column_name);
                 }
             }

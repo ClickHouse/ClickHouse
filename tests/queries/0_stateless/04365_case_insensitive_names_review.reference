@@ -92,3 +92,9 @@ SELECT 1 AS "MyAlias"
 0
 --- Backtick single-part and compound identifier are distinct cache keys ---
 9
+--- Folded USING spelling absorbs canonical source keys in star expansion ---
+1	10	20
+1	10	20
+--- Folded Nested prefix must not mix case-sibling families ---
+[('a')]
+[(1)]
