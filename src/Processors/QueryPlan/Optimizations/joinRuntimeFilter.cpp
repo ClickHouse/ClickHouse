@@ -12,6 +12,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Common/Exception.h>
@@ -178,6 +179,29 @@ static UInt64 calculateJoinFingerprint(
     return fingerprint_hash.get64();
 }
 
+/// Use the cached hash table size in hash-table-statistics as a hint for sizing the runtime filter.
+static std::optional<UInt64> getBuildSideDistinctKeys(const JoinStepLogical & join_step, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!optimization_settings.join_runtime_filter_size_from_hash_table_stats
+        || !optimization_settings.collect_hash_table_stats_during_joins)
+        return std::nullopt;
+
+    const UInt64 cache_key = join_step.getRightHashTableCacheKey();
+    if (!cache_key)
+        return std::nullopt;
+
+    const StatsCollectingParams params{
+        cache_key,
+        /*enable_=*/true,
+        optimization_settings.max_entries_for_hash_table_stats,
+        optimization_settings.max_size_to_preallocate_for_joins};
+
+    auto hint = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
+    if (!hint || hint->ht_size == 0)
+        return std::nullopt;
+    return hint->ht_size;
+}
+
 bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     /// Is this a join step?
@@ -337,6 +361,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
         }
     }
 
+    const auto distinct_keys_hint = getBuildSideDistinctKeys(*join_step, optimization_settings);
+
     /// For LEFT ANTI JOIN with multiple keys, per-column NOT IN filters combined with AND are incorrect:
     /// NOT_IN(a, set_a) AND NOT_IN(b, set_b) would incorrectly drop rows where one key is in its per-column set
     /// but the full tuple has no match in the right table.
@@ -382,7 +408,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                 optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                 optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                /*allow_to_use_not_exact_filter_=*/false);
+                /*allow_to_use_not_exact_filter_=*/false,
+                distinct_keys_hint);
             new_build_filter_node->step->setStepDescription("Build runtime join filter on key tuple", 200);
             new_build_filter_node->children = {build_filter_node};
             build_filter_node = new_build_filter_node;
@@ -446,7 +473,8 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                     optimization_settings.join_runtime_filter_pass_ratio_threshold_for_disabling,
                     optimization_settings.join_runtime_filter_blocks_to_skip_before_reenabling,
                     optimization_settings.join_runtime_bloom_filter_max_ratio_of_set_bits,
-                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain);
+                    /*allow_to_use_not_exact_filter_=*/!check_left_does_not_contain,
+                    distinct_keys_hint);
                 new_build_filter_node->step->setStepDescription(fmt::format("Build runtime join filter on {}", join_key_build_side.name), 200);
                 new_build_filter_node->children = {build_filter_node};
 

@@ -1,7 +1,11 @@
 import argparse
 
 from ci.jobs.scripts.docs.check_readonly_copies import check_readonly_copies
-from ci.jobs.scripts.docs.mintlify_docs_check import DEFAULT_CHECKS, LOCALE_CHECKS
+from ci.jobs.scripts.docs.mintlify_docs_check import (
+    DEFAULT_CHECKS,
+    LOCALE_CHECKS,
+    QUICKSTARTS_CHECK,
+)
 from ci.praktika.info import Info
 from ci.praktika.result import Result
 from ci.praktika.utils import Utils
@@ -26,6 +30,20 @@ LOCALE_CHECK_TRIGGERS = tuple(f"docs/{d}/" for d in LOCALE_DIRS) + (
     "docs/_site/redirects.json",
 )
 
+# The quickstarts check (frontmatter tags + generated explorer data freshness)
+# runs only when a PR touches a quickstarts tree, the generated data modules,
+# the generator, or the checker itself.
+QUICKSTARTS_CHECK_TRIGGERS = (
+    ("docs/get-started/quickstarts/",)
+    + tuple(f"docs/{d}/get-started/quickstarts/" for d in LOCALE_DIRS)
+    + ("docs/snippets/components/QuickStartsGrid/",)
+    + tuple(f"docs/snippets/{d}/components/QuickStartsGrid/" for d in LOCALE_DIRS)
+    + (
+        "docs/_site/scripts/update_quickstarts.py",
+        "ci/jobs/scripts/docs/quickstarts_check.py",
+    )
+)
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Mintlify Docs Check Job")
@@ -41,6 +59,16 @@ def _locale_check_should_run():
     if changed_files is None:
         return True
     return any(f.startswith(LOCALE_CHECK_TRIGGERS) for f in changed_files)
+
+
+def _quickstarts_check_should_run():
+    # Same gating idea as the locale checks: run only when the PR touches the
+    # quickstarts content or its tooling; fail open toward coverage when the
+    # changed-file list is unavailable.
+    changed_files = Info().get_changed_files()
+    if changed_files is None:
+        return True
+    return any(f.startswith(QUICKSTARTS_CHECK_TRIGGERS) for f in changed_files)
 
 
 def _readonly_copies_guard():
@@ -90,6 +118,18 @@ if __name__ == "__main__":
                         name=locale_name, command=locale_command, workdir=docs_dir
                     )
                 )
+
+    # Quickstarts check: blocking, but only when the PR touches the quickstarts
+    # trees or their tooling. Validates frontmatter tags and fails when the
+    # generated explorer data was not regenerated and committed.
+    if _quickstarts_check_should_run():
+        qs_name, qs_command = QUICKSTARTS_CHECK
+        if selected(qs_name):
+            results.append(
+                Result.from_commands_run(
+                    name=qs_name, command=qs_command, workdir=docs_dir
+                )
+            )
 
     # The read-only guard runs from the repo root (not the docs root), so keep
     # it out of the docs_dir loop above.

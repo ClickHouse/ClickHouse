@@ -613,9 +613,13 @@ html:not(.dark) .pagination-prev:hover {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    /* Small breathing room so the first nav item isn't flush against the
-       pinned search row, and so scrolled content doesn't butt the top edge. */
-    padding-top: 0.5rem;
+    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
+       scroll container's scrollbar track spans its whole padding box, so
+       padding-top would leave the scrollbar flush against — visually touching —
+       the search/Ask AI buttons. A margin pushes the scroll box itself (and
+       therefore the top of its scrollbar) down below that row, so the scrollbar
+       no longer exceeds the first nav item. */
+    margin-top: 0.5rem;
 }
 
 /* Hide the chat assistant textarea and its floating-input wrapper */
