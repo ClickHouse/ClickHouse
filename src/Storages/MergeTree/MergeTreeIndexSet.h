@@ -142,11 +142,7 @@ private:
         return actions == nullptr;
     }
 
-    /// Key columns of the index together with their granule (storage) data types. The data types
-    /// are needed at filter-DAG construction time so we can adapt the DAG when the predicate sees
-    /// a column at a different type than the granule produces (for example, when a MaterializedView
-    /// wraps the underlying storage column with a `_CAST` to a declared `Nullable` type).
-    std::unordered_map<String, DataTypePtr> key_columns;
+    std::unordered_set<String> key_columns;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
 
