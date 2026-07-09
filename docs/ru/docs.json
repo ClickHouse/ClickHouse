@@ -16,6 +16,7 @@
               "group": "Начало работы",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
+                "ru/get-started/quickstarts/home",
                 {
                   "expandable": true,
                   "expanded": true,
@@ -37,8 +38,7 @@
                   ],
                   "root": "ru/get-started/use-cases/overview"
                 },
-                "ru/get-started/about/deployment-modes",
-                "ru/get-started/quickstarts/home"
+                "ru/get-started/about/deployment-modes"
               ],
               "root": "ru/get-started/index"
             },
