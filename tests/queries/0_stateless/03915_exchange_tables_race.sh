@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-random-settings, no-random-merge-tree-settings
+
+# no-random-settings / no-random-merge-tree-settings: this is a plan-time type-drift race on
+# empty ENGINE=Memory tables, unrelated to any query or MergeTree setting. With randomization on,
+# the CI-injected settings inflate per-client memory so the many concurrent EXCHANGE/SELECT clients
+# get OOM-killed on the memory-constrained sanitizer runners, which is not what the test targets.
 
 set -e
 
@@ -12,6 +17,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # EXCHANGE TABLES swapping the column type between analysis and header computation is enough.
 # Keep the tables empty - the flaky check reruns this test many times under sanitizers, and
 # large Memory-engine inserts multiplied by that repetition exhaust the job's memory/time.
+
+# Peak concurrency is bounded to keep the memory-constrained sanitizer runners from OOM-killing the
+# clients (signal 9). Instead of launching every round at once (tens of live clickhouse-client
+# processes per batch), each batch runs in small waves: a wave starts a couple of racing queries
+# plus one EXCHANGE concurrently, then is fully awaited before the next wave. Only a handful of
+# client processes are alive at a time, while the analysis-vs-EXCHANGE race window still exists
+# within each wave; more waves recover the sampling that fewer-per-wave gives up.
+WAVES=16
 
 # Run one racing probe query and classify its outcome explicitly. The abort this PR eliminates is
 # a type-mismatch LOGICAL_ERROR ("Unexpected return type ..."). It has exactly two manifestations:
@@ -51,26 +64,19 @@ check_pids() {
     return $status
 }
 
-# Wait for the captured EXCHANGE PIDs and require that at least one swap actually completed, so the
-# type drift the batch relies on was really exercised. If every exchange failed the schema never
-# swapped (or the server went down), and the batch must not pass. A single transient reset among
-# many under heavy concurrency is tolerated (as with the probes); a server crash is still caught by
-# assert_alive. This also reaps the exchange jobs before the following DROP TABLE, so a lingering
-# background exchange can no longer race the cleanup.
-assert_any_exchange() {
-    local ok=0 p
-    for p in "$@"; do
-        wait "$p" && ok=1
-    done
-    [ "$ok" = 1 ] || { echo "FAIL: no EXCHANGE TABLES swap completed in this batch (drift not exercised)" >&2; exit 1; }
-}
-
 # Unambiguous crash detector: if the type-mismatch abort fired in a debug/sanitizer build it killed
 # the server, so a plain liveness query fails. A tolerated recoverable exception or a transient
 # reset during the race leaves the server responding, so this has no false positives.
 assert_alive() {
     ${CLICKHOUSE_CLIENT} --query "SELECT 1" >/dev/null 2>&1 \
         || { echo "FAIL: server not responding after race (partial-evaluation abort?)" >&2; exit 1; }
+}
+
+# Require that at least one EXCHANGE swap completed across the batch. If every exchange failed the
+# schema never swapped (or the server went down) and the batch must not pass. A crash is still
+# caught by assert_alive; this only guarantees the drift was exercised.
+assert_drift_exercised() {
+    [ "$1" = 1 ] || { echo "FAIL: no EXCHANGE TABLES swap completed in this batch (drift not exercised)" >&2; exit 1; }
 }
 
 # Base-type drift: swap Float64 with Int256. A strict function (arithmetic) resolved for the
@@ -83,13 +89,15 @@ CREATE TABLE tbl_03007_1 (n Float64) ENGINE=Memory;
 CREATE TABLE tbl_03007_2 (n Int256) ENGINE=Memory;
 EOF
 
-pids=(); xpids=()
-for _ in {1..10}; do
+exchanged=0
+for _ in $(seq 1 $WAVES); do
+    pids=(); xpids=()
     probe "SELECT n * 0.123 FROM (SELECT * FROM tbl_03007_1)" & pids+=($!)
     exchange tbl_03007_1 tbl_03007_2 & xpids+=($!)
+    check_pids "${pids[@]}"
+    for p in "${xpids[@]}"; do wait "$p" && exchanged=1; done
 done
-check_pids "${pids[@]}"
-assert_any_exchange "${xpids[@]}"
+assert_drift_exercised "$exchanged"
 assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
@@ -113,14 +121,16 @@ CREATE TABLE tbl_03007_3 (s String) ENGINE=Memory;
 CREATE TABLE tbl_03007_4 (s Nullable(String)) ENGINE=Memory;
 EOF
 
-pids=(); xpids=()
-for _ in {1..10}; do
+exchanged=0
+for _ in $(seq 1 $WAVES); do
+    pids=(); xpids=()
     probe "SELECT materialize(s) FROM (SELECT * FROM tbl_03007_3)" & pids+=($!)
     probe "SELECT isNullable(s) FROM (SELECT * FROM tbl_03007_3)" & pids+=($!)
     exchange tbl_03007_3 tbl_03007_4 & xpids+=($!)
+    check_pids "${pids[@]}"
+    for p in "${xpids[@]}"; do wait "$p" && exchanged=1; done
 done
-check_pids "${pids[@]}"
-assert_any_exchange "${xpids[@]}"
+assert_drift_exercised "$exchanged"
 assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
@@ -147,13 +157,15 @@ CREATE TABLE tbl_03007_5 (k UInt64, w String) ENGINE=Memory;
 CREATE TABLE tbl_03007_6 (k UInt64, w Nullable(String)) ENGINE=Memory;
 EOF
 
-pids=(); xpids=()
-for _ in {1..10}; do
+exchanged=0
+for _ in $(seq 1 $WAVES); do
+    pids=(); xpids=()
     probe "SELECT l.k FROM tbl_03007_l l ANY LEFT JOIN tbl_03007_5 r ON l.k = r.k WHERE isNullable(r.w) SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 1" & pids+=($!)
     exchange tbl_03007_5 tbl_03007_6 & xpids+=($!)
+    check_pids "${pids[@]}"
+    for p in "${xpids[@]}"; do wait "$p" && exchanged=1; done
 done
-check_pids "${pids[@]}"
-assert_any_exchange "${xpids[@]}"
+assert_drift_exercised "$exchanged"
 assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
