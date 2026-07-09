@@ -11,7 +11,5 @@ set -euo pipefail
 trap cleanup_objects EXIT
 cleanup_objects
 
-test_single_column
-test_single_column_table_grant
-test_all_columns
-test_all_columns_table_grant
+test_select_join
+test_select_union

@@ -11,7 +11,6 @@ set -euo pipefail
 trap cleanup EXIT
 setup_role_test_table
 
-test_create_role
-test_grant_role_to_role
-test_combine_privileges
-test_admin_option
+test_revoke_requires_admin_option
+test_set_role
+test_changing_default_roles_affects_new_sessions_only

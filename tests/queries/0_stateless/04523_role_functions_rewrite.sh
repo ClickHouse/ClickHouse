@@ -11,7 +11,4 @@ set -euo pipefail
 trap cleanup EXIT
 setup_role_test_table
 
-test_create_role
-test_grant_role_to_role
-test_combine_privileges
-test_admin_option
+test_function_current_roles
