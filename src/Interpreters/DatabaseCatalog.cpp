@@ -10,7 +10,6 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
-#include <Databases/DataLake/DataLakeConstants.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
@@ -928,11 +927,11 @@ std::pair<String, String> DatabaseCatalog::splitTablePrefixFromDatabaseName(cons
     if (dot_pos == 0 || dot_pos == String::npos)
         return {name, ""};
 
-    auto database = tryGetDatabase(name.substr(0, dot_pos));
-    if (!database || database->getEngineName() != DataLake::DATABASE_ENGINE_NAME)
+    String database_name = name.substr(0, dot_pos);
+    if (!isDatalakeCatalog(database_name))
         return {name, ""};
 
-    return {name.substr(0, dot_pos), name.substr(dot_pos + 1)};
+    return {database_name, name.substr(dot_pos + 1)};
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const

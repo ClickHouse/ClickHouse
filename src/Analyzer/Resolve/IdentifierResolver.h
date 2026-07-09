@@ -6,7 +6,6 @@
 #include <Core/Joins.h>
 
 #include <Interpreters/Context_fwd.h>
-#include <Storages/IStorage_fwd.h>
 
 namespace DB
 {
@@ -71,11 +70,6 @@ public:
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context);
-
-    static StoragePtr tryResolveDatalakeTable(
-        const Identifier & table_identifier,
-        const ContextPtr & context,
-        const String & current_database);
 
     /// Build a `nested(...)` FunctionNode for the given identifier prefix by combining
     /// per-field Array columns of the table expression (e.g. `loc.x`, `loc.y`).
