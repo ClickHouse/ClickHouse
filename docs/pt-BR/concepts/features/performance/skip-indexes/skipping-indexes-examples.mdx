@@ -1,0 +1,275 @@
+---
+slug: /optimize/skipping-indexes/examples
+sidebarTitle: 'Data skipping indexes - exemplos'
+description: 'Exemplos consolidados de data skipping indexes'
+title: 'Exemplos de data skipping indexes'
+doc_type: 'guide'
+keywords: ['skipping indexes', 'data skipping', 'desempenho', 'indexação', 'boas práticas']
+---
+
+Esta página reúne exemplos de data skipping indexes do ClickHouse, mostrando como declarar cada tipo, quando usá-lo e como verificar se ele está sendo aplicado. Todos os recursos funcionam com [tabelas da família MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree).
+
+**Sintaxe do índice:**
+
+```sql
+INDEX name expr TYPE type(...) [GRANULARITY N]
+```
+
+ClickHouse oferece suporte a seis tipos de skip index:
+
+| Tipo de índice                                      | Descrição                                                                    |
+| --------------------------------------------------- | ---------------------------------------------------------------------------- |
+| **minmax**                                          | Rastreia os valores mínimo e máximo em cada granule                          |
+| **set(N)**                                          | Armazena até N valores distintos por granule                                 |
+| **text**                                            | Índice invertido sobre dados de string tokenizados para busca de texto completo |
+| **bloom&#95;filter([false&#95;positive&#95;rate])** | Filtro probabilístico para verificações de existência                        |
+| **ngrambf&#95;v1**                                  | Filtro de Bloom de n-gram para buscas por substring                          |
+| **tokenbf&#95;v1**                                  | Filtro de Bloom baseado em token para busca de texto completo                   |
+
+Cada seção traz exemplos com dados de amostra e mostra como verificar o uso do índice na execução da consulta.
+
+<div id="minmax-index">
+  ## Índice MinMax
+</div>
+
+O índice`minmax` é mais adequado para predicados de intervalo em dados pouco ordenados ou em colunas correlacionadas com `ORDER BY`.
+
+```sql
+-- Definir em CREATE TABLE
+CREATE TABLE events
+(
+  ts DateTime,
+  user_id UInt64,
+  value UInt32,
+  INDEX ts_minmax ts TYPE minmax GRANULARITY 1
+)
+ENGINE=MergeTree
+ORDER BY ts;
+
+-- Ou adicionar depois e materializar
+ALTER TABLE events ADD INDEX ts_minmax ts TYPE minmax GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX ts_minmax;
+
+-- Consulta que se beneficia do índice
+SELECT count() FROM events WHERE ts >= now() - 3600;
+
+-- Verificar uso
+EXPLAIN indexes = 1
+SELECT count() FROM events WHERE ts >= now() - 3600;
+```
+
+Veja um [exemplo detalhado](/pt-BR/concepts/best-practices/using-data-skipping-indices#example) com `EXPLAIN` e poda.
+
+<div id="set-index">
+  ## Índice set
+</div>
+
+Use o índice `set` quando a cardinalidade local (por bloco) for baixa; ele não ajuda se cada bloco tiver muitos valores distintos.
+
+```sql
+ALTER TABLE events ADD INDEX user_set user_id TYPE set(100) GRANULARITY 1;
+ALTER TABLE events MATERIALIZE INDEX user_set;
+
+SELECT * FROM events WHERE user_id IN (101, 202);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE user_id IN (101, 202);
+```
+
+Um fluxo de criação/materialização e o efeito antes e depois são mostrados no [guia de operação básica](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes#basic-operation).
+
+<div id="textindex-for-full-text-search">
+  ## Índice de texto (text) para busca de texto completo
+</div>
+
+`text` é um índice invertido sobre dados de texto tokenizados.
+Foi projetado especificamente para cargas de trabalho de busca de texto completo, permitindo a consulta eficiente e determinística de tokens e termos.
+É recomendado para casos de uso de linguagem natural ou de pesquisa de texto em larga escala.
+
+Consulte [Busca de texto completo com índices de texto](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes) para mais detalhes e exemplos.
+
+```sql
+ALTER TABLE logs ADD INDEX msg_text msg TYPE text(tokenizer = splitByNonAlpha);
+ALTER TABLE logs MATERIALIZE INDEX msg_text;
+
+SELECT count() FROM logs WHERE hasAllTokens(msg, 'exception');
+```
+
+Veja [aqui](/pt-BR/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search) um exemplo mais completo de observabilidade na documentação.
+
+O índice de texto é totalmente determinístico e altamente ajustável em termos de tokenização e processamento de texto, à custa de um consumo de armazenamento um pouco maior em comparação com índices baseados em filtro de Bloom, &quot;
+
+<div id="generic-bloom-filter-scalar">
+  ## Filtro de Bloom genérico (scalar)
+</div>
+
+O índice `bloom_filter` é adequado para comparações de igualdade e pertença com `IN` do tipo &quot;agulha no palheiro&quot;. Ele aceita um parâmetro opcional, que é a taxa de falso positivo (padrão: 0.025).
+
+```sql
+ALTER TABLE events ADD INDEX value_bf value TYPE bloom_filter(0.01) GRANULARITY 3;
+ALTER TABLE events MATERIALIZE INDEX value_bf;
+
+SELECT * FROM events WHERE value IN (7, 42, 99);
+
+EXPLAIN indexes = 1
+SELECT * FROM events WHERE value IN (7, 42, 99);
+```
+
+<div id="n-gram-bloom-filter-ngrambf-v1-for-substring-search">
+  ## Filtro de Bloom de n-gramas (ngrambf_v1) para busca por substring *(Descontinuado)*
+</div>
+
+<Note>
+  O uso de índices `ngrambf_v1` para busca de texto completo foi descontinuado nas versões do ClickHouse `>= 26.2`, em favor dos índices `text` (consulte [aqui](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes) para mais detalhes).
+</Note>
+
+O índice `ngrambf_v1` divide strings em n-gramas. Ele funciona bem para consultas `LIKE '%...%'`. Ele oferece suporte a String/FixedString/Map (via mapKeys/mapValues), além de permitir ajustar o tamanho, o número de hashes e o seed. Consulte a documentação de [Filtro de Bloom de n-gramas](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) para mais detalhes.
+
+```sql
+-- Criar índice para busca de substring
+ALTER TABLE logs ADD INDEX msg_ngram msg TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_ngram;
+
+-- Busca de substring
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE msg LIKE '%timeout%';
+```
+
+[Este guia](/pt-BR/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search) mostra exemplos práticos e quando usar token vs ngram.
+
+**Funções auxiliares para otimização de parâmetros:**
+
+Os quatro parâmetros do ngrambf&#95;v1 (tamanho do n-gram, tamanho do bitmap, funções de hash, seed) afetam significativamente o desempenho e o uso de memória. Use estas funções para calcular o tamanho ideal do bitmap e a quantidade de funções de hash com base no volume esperado de n-grams e na taxa desejada de falsos positivos:
+
+```sql
+CREATE FUNCTION bfEstimateFunctions AS
+(total_grams, bits) -> round((bits / total_grams) * log(2));
+
+CREATE FUNCTION bfEstimateBmSize AS
+(total_grams, p_false) -> ceil((total_grams * log(p_false)) / log(1 / pow(2, log(2))));
+
+-- Exemplo de dimensionamento para 4300 ngrams, p_false = 0.0001
+SELECT bfEstimateBmSize(4300, 0.0001) / 8 AS size_bytes;  -- ~10304
+SELECT bfEstimateFunctions(4300, bfEstimateBmSize(4300, 0.0001)) AS k; -- ~13
+```
+
+Consulte a [documentação de referência do parâmetro](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) para obter orientações completas de ajuste fino.
+
+<div id="token-bloom-filter-tokenbf-v1-for-word-based-search">
+  ## Filtro de Bloom de token (tokenbf_v1) para busca por palavras *(Obsoleto)*
+</div>
+
+<Note>
+  O uso de índices `tokenbf_v1` para busca de texto completo está obsoleto nas versões do ClickHouse `>= 26.2`, em favor dos índices `text` (veja [aqui](/pt-BR/reference/engines/table-engines/mergetree-family/textindexes) para mais detalhes).
+</Note>
+
+Os índices `tokenbf_v1` indexam tokens separados por caracteres não alfanuméricos. Eles devem ser usados com [`hasToken`](/pt-BR/reference/functions/regular-functions/string-search-functions#hasToken), padrões de palavra com `LIKE` ou `=`/`IN`. São compatíveis com os tipos `String`/`FixedString`/`Map`.
+
+Consulte as páginas [Token filtro de Bloom](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#token-bloom-filter) e [filtro de Bloom types](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes#skip-index-types) para mais detalhes.
+
+```sql
+ALTER TABLE logs ADD INDEX msg_token lower(msg) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1;
+ALTER TABLE logs MATERIALIZE INDEX msg_token;
+
+-- Busca por palavra (case-insensitive via lower)
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+
+EXPLAIN indexes = 1
+SELECT count() FROM logs WHERE hasToken(lower(msg), 'exception');
+```
+
+Consulte exemplos de observabilidade e orientações sobre `token` versus `ngram` [aqui](/pt-BR/guides/use-cases/observability/build-your-own/schema-design#text-index-for-full-text-search).
+
+<div id="add-indexes-during-create-table-multiple-examples">
+  ## Adicione índices no CREATE TABLE (vários exemplos)
+</div>
+
+Os índices de salto também são compatíveis com expressões compostas e com os tipos `Map`/`Tuple`/`Nested`. Isso é demonstrado no exemplo abaixo:
+
+```sql
+CREATE TABLE t
+(
+  u64 UInt64,
+  s String,
+  m Map(String, String),
+
+  INDEX idx_bf u64 TYPE bloom_filter(0.01) GRANULARITY 3,
+  INDEX idx_minmax u64 TYPE minmax GRANULARITY 1,
+  INDEX idx_set u64 * length(s) TYPE set(1000) GRANULARITY 4,
+  INDEX idx_ngram s TYPE ngrambf_v1(3, 10000, 3, 7) GRANULARITY 1,
+  INDEX idx_token mapKeys(m) TYPE tokenbf_v1(10000, 7, 7) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY u64;
+```
+
+<div id="materializing-on-existing-data-and-verifying">
+  ## Materialização em dados existentes e verificação
+</div>
+
+Você pode adicionar um índice a partes de dados existentes usando `MATERIALIZE` e inspecionar a poda com `EXPLAIN` ou logs de trace, como mostrado abaixo:
+
+```sql
+ALTER TABLE t MATERIALIZE INDEX idx_bf;
+
+EXPLAIN indexes = 1
+SELECT count() FROM t WHERE u64 IN (123, 456);
+
+-- Opcional: informações detalhadas de pruning
+SET send_logs_level = 'trace';
+```
+
+Este [exemplo funcional de minmax](/pt-BR/concepts/best-practices/using-data-skipping-indices#example) demonstra a estrutura da saída do EXPLAIN e o número de podas.
+
+<div id="when-use-and-when-to-avoid">
+  ## Quando usar e quando evitar skip indexes
+</div>
+
+**Use skip indexes quando:**
+
+* Os valores do filtro são esparsos nos blocos de dados
+* Há forte correlação com as colunas `ORDER BY` ou os padrões de ingestão de dados agrupam valores semelhantes
+* Você realiza pesquisas de texto em grandes conjuntos de logs (tipos `ngrambf_v1`/`tokenbf_v1`)
+
+**Evite skip indexes quando:**
+
+* É provável que a maioria dos blocos contenha pelo menos um valor correspondente (os blocos serão lidos de qualquer maneira)
+* O filtro é aplicado a colunas de alta cardinalidade sem correlação com a ordenação dos dados
+
+<Info>
+  **Considerações importantes**
+
+  Se um valor aparecer mesmo que uma única vez em um bloco de dados, o ClickHouse precisará ler o bloco inteiro. Teste os índices com conjuntos de dados realistas e ajuste a granularidade e os parâmetros específicos do tipo com base em medições reais de desempenho.
+</Info>
+
+<div id="temporarily-ignore-or-force-indexes">
+  ## Ignorar temporariamente ou forçar índices
+</div>
+
+Desative índices específicos pelo nome em consultas individuais durante testes e solução de problemas. Também há configurações para forçar o uso de índices quando necessário. Consulte [`ignore_data_skipping_indices`](/pt-BR/reference/settings/session-settings#ignore_data_skipping_indices).
+
+```sql
+-- Ignorar um índice pelo nome
+SELECT * FROM logs
+WHERE hasToken(lower(msg), 'exception')
+SETTINGS ignore_data_skipping_indices = 'msg_token';
+```
+
+<div id="notes-and-caveats">
+  ## Notas e ressalvas
+</div>
+
+* Índices de salto são compatíveis apenas com [tabelas da família MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree); a poda ocorre no nível de grânulo/bloco.
+* Índices baseados em filtro de Bloom são probabilísticos (falsos positivos causam leituras extras, mas não fazem com que dados válidos sejam ignorados).
+* Filtros de Bloom e outros índices de salto devem ser validados com `EXPLAIN` e rastreamento; ajuste a granularidade para equilibrar a poda e o tamanho do índice.
+
+<div id="related-docs">
+  ## Documentos relacionados
+</div>
+
+* [Guia de data skipping indexes](/pt-BR/concepts/features/performance/skip-indexes/skipping-indexes)
+* [Guia de práticas recomendadas](/pt-BR/concepts/best-practices/using-data-skipping-indices)
+* [Manipulação de data skipping indexes](/pt-BR/reference/statements/alter/skipping-index)
+* [Informações sobre a tabela do sistema](/pt-BR/reference/system-tables/data_skipping_indices)

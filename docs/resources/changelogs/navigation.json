@@ -1,0 +1,58 @@
+{
+  "item": "Changelogs",
+  "icon": "/images/icons/icon-changelogs.svg",
+  "root": "resources/changelogs/cloud/2026",
+  "groups": [
+    {
+      "group": "Cloud",
+      "root": "resources/changelogs/cloud/index",
+      "pages": [
+        "resources/changelogs/cloud/2026",
+        {
+          "group": "Archive",
+          "pages": [
+            "resources/changelogs/cloud/archive/2025",
+            "resources/changelogs/cloud/archive/2024",
+            "resources/changelogs/cloud/archive/2023",
+            "resources/changelogs/cloud/archive/2022"
+          ]
+        },
+        "resources/changelogs/cloud/release-status",
+        {
+          "group": "Cloud database release changelog",
+          "root": "resources/changelogs/cloud/release-notes-index",
+          "pages": [
+            "resources/changelogs/cloud/release-notes/26_02",
+            "resources/changelogs/cloud/release-notes/25_12",
+            "resources/changelogs/cloud/release-notes/25_10",
+            "resources/changelogs/cloud/release-notes/25_08",
+            "resources/changelogs/cloud/release-notes/25_06",
+            "resources/changelogs/cloud/release-notes/25_04",
+            "resources/changelogs/cloud/release-notes/24_12",
+            "resources/changelogs/cloud/release-notes/24_10",
+            "resources/changelogs/cloud/release-notes/24_08",
+            "resources/changelogs/cloud/release-notes/24_06",
+            "resources/changelogs/cloud/release-notes/24_05",
+            "resources/changelogs/cloud/release-notes/24_02"
+          ]
+        }
+      ]
+    },
+    {
+      "group": "Self-managed",
+      "pages": [
+        "resources/changelogs/oss/2026",
+        "resources/changelogs/oss/2025",
+        "resources/changelogs/oss/2024",
+        "resources/changelogs/oss/2023",
+        "resources/changelogs/oss/2022",
+        "resources/changelogs/oss/2021",
+        "resources/changelogs/oss/2020",
+        "resources/changelogs/oss/2019",
+        "resources/changelogs/oss/2018",
+        "resources/changelogs/oss/2017",
+        "resources/changelogs/security-changelog"
+      ]
+    }
+  ]
+}

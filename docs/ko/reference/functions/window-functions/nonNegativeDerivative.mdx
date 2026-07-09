@@ -1,0 +1,89 @@
+---
+description: 'nonNegativeDerivative 윈도우 함수에 대한 문서'
+sidebarTitle: 'nonNegativeDerivative'
+slug: /sql-reference/window-functions/nonNegativeDerivative
+title: 'nonNegativeDerivative'
+doc_type: '참고'
+---
+
+`metric_column`의 `timestamp_column`에 대한 음수가 아닌 도함수를 계산합니다.
+이 함수는 표준 SQL의 일부가 아닌 ClickHouse 전용 윈도우 함수입니다.
+
+각 행의 도함수는 `timestamp_column`이 아닌 윈도우의 `ORDER BY` 절에 의해 결정되는 *윈도우 평가 순서상의 이전 행*을 기준으로 계산됩니다.
+`timestamp_column` 인수는 현재 행과 이전 행 사이의 경과 시간을 측정하는 용도로만 사용되며, 행의 정렬 순서를 결정하지 않습니다.
+
+<Warning>
+`nonNegativeDerivative`는 `timestamp_column`을 기준으로 행을 정렬하지 않으며, 정렬은 윈도우의 `ORDER BY`가 담당합니다.
+아래 공식이 적용되려면 윈도우 평가 순서에서 `timestamp_column`이 순증가해야 하므로, 일반적으로 `timestamp_column` 오름차순으로 윈도우를 정렬해야 합니다(예: `nonNegativeDerivative(metric, ts)`와 함께 `... OVER (ORDER BY ts ASC)` 사용).
+현재 행과 이전 행 사이의 경과 시간이 양수가 아닌 경우(즉, `ORDER BY timestamp_column DESC`를 사용하거나 타임스탬프가 중복된 경우), 함수는 공식 대신 해당 행에 대해 `0`을 반환합니다.
+</Warning>
+
+결과는 `INTERVAL`당 메트릭의 변화율이며, 음수 값은 `0`으로 고정됩니다.
+이 함수는 카운터(counter)와 같이 단조 증가하는 메트릭에 유용합니다. 이러한 메트릭에서 값의 감소는 실제 음수 변화율이 아닌 카운터 재설정을 의미하는 경우가 많습니다.
+
+**구문**
+
+```sql
+nonNegativeDerivative(metric_column, timestamp_column[, INTERVAL X UNITS])
+  OVER ([[PARTITION BY grouping_column] [ORDER BY sorting_column]
+        [ROWS or RANGE expression_to_bound_rows_within_the_group]] | [window_name])
+FROM table_name
+WINDOW window_name AS ([PARTITION BY grouping_column] [ORDER BY sorting_column] [ROWS or RANGE expression_to_bound_rows_within_the_group])
+```
+
+윈도우 함수 구문에 대한 자세한 내용은 [윈도우 함수 - 구문](/reference/functions/window-functions/index#syntax)을 참조하십시오.
+
+**인수**
+
+- `metric_column` — 도함수를 계산할 컬럼. [(U)Int*](/reference/data-types/int-uint) 또는 [Float*](/reference/data-types/float).
+- `timestamp_column` — 윈도우 순서에서 현재 행과 이전 행 사이의 경과 시간을 측정하는 데 사용되는 컬럼. 행의 정렬 순서를 결정하지 않으며, 정렬은 윈도우의 `ORDER BY`가 담당합니다. 일반적으로 동일한 컬럼을 사용하는 것을 권장합니다. [DateTime](/reference/data-types/datetime) 또는 [DateTime64](/reference/data-types/datetime64).
+- `INTERVAL X UNITS` — 선택 사항. 결과를 스케일링할 시간 단위. 기본값은 `INTERVAL 1 SECOND`. 고정 길이 단위(`NANOSECOND`, `MICROSECOND`, `MILLISECOND`, `SECOND`, `MINUTE`, `HOUR`, `DAY`, `WEEK`)만 지원되며, 가변 길이 단위(`MONTH`, `QUARTER`, `YEAR`)는 예외를 발생시킵니다.
+
+**반환 값**
+
+각 행의 값은 다음과 같이 계산됩니다:
+
+- 첫 번째 행: `0`
+- 이전 행 이후 경과 시간이 양수가 아닌 행(즉, $\text{timestamp}_i - \text{timestamp}_{i-1} \le 0$, 내림차순 정렬 또는 타임스탬프 중복 시 발생): `0`
+- 그 외의 경우: ${\text{metric}_i - \text{metric}_{i-1} \over \text{timestamp}_i - \text{timestamp}_{i-1}} * \text{interval}$
+
+계산된 값이 음수인 경우 `0`으로 고정됩니다. 반환 타입은 [Float64](/reference/data-types/float)입니다.
+
+**예시**
+
+다음 예시는 센서 측정값의 초당 변화율을 계산합니다.
+세 번째 행의 값이 `110`에서 `105`로 감소하므로, 해당 행의 도함수는 `0`으로 고정됩니다.
+
+```sql title="Query"
+CREATE TABLE sensor_readings
+(
+    `sensor_id` UInt32,
+    `ts`        DateTime,
+    `reading`   Float64
+)
+ENGINE = Memory;
+
+INSERT INTO sensor_readings VALUES
+    (1, '2024-01-01 00:00:00', 100),
+    (1, '2024-01-01 00:00:10', 110),
+    (1, '2024-01-01 00:00:20', 105),
+    (1, '2024-01-01 00:00:30', 130);
+```
+
+```sql title="Query"
+SELECT
+    ts,
+    reading,
+    nonNegativeDerivative(reading, ts) OVER (ORDER BY ts ASC) AS deriv_per_second
+FROM sensor_readings
+ORDER BY ts ASC;
+```
+
+```response title="Response"
+   ┌──────────────────ts─┬─reading─┬─deriv_per_second─┐
+1. │ 2024-01-01 00:00:00 │     100 │                0 │
+2. │ 2024-01-01 00:00:10 │     110 │                1 │
+3. │ 2024-01-01 00:00:20 │     105 │                0 │
+4. │ 2024-01-01 00:00:30 │     130 │              2.5 │
+   └─────────────────────┴─────────┴──────────────────┘
+```

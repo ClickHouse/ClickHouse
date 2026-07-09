@@ -6,53 +6,6 @@
 
 # ─────────────────────────── macOS platform gaps (keep skipped) ───────────────────────────
 
-# Float/double precision: on Apple arm64 'long double' == 'double', so the fast float parser cannot
-# reproduce x86/glibc results, and any result depending on extended precision (math funcs, float
-# parsing, float-derived hashes/checksums) differs. Out of scope here (precise-as-default).
-00558_parse_floats
-01037_polygon_dicts_correctness_all
-01037_polygon_dicts_correctness_fast
-01302_polygons_distance
-01720_country_intersection
-02179_degrees_radians
-02253_empty_part_checksums
-02705_projection_and_ast_optimizations_bug
-02813_float_parsing
-02815_range_dict_no_direct_join
-02951_parallel_parsing_json_compact_each_row
-03143_cte_scope
-03269_bf16
-03371_dynamic_values_parsing_templates
-03457_numeric_indexed_vector_build
-03702_geometry_functions
-03976_geometry_functions_accept_subtypes
-04402_float_parsing_corner_cases
-
-# SSD cache dictionaries: the SSD_CACHE layout is Linux/FreeBSD-only (uses O_DIRECT and Linux
-# native AIO io_submit/io_getevents); not built on macOS. Needs an I/O-layer port to enable.
-01684_ssd_cache_dictionary_simple_key
-01685_ssd_cache_dictionary_complex_key
-01875_ssd_cache_dictionary_decimal256_type
-01903_ssd_cache_dictionary_array_type
-01904_ssd_cache_dictionary_default_nullable_type
-02950_dictionary_ssd_cache_short_circuit
-03405_ssd_cache_incorrect_min_max_lifetimes_and_block_size
-
-# StorageFileLog: needs inotify (USE_FILELOG off on macOS), so the FileLog engine is not registered
-# (Unknown table engine FileLog). Needs a kqueue-based DirectoryWatcher port to enable.
-02022_storage_filelog_one_file
-02023_storage_filelog
-02025_storage_filelog_virtual_col
-02125_fix_storage_filelog
-02126_fix_filelog
-02889_file_log_save_errors
-02968_file_log_multiple_read
-03010_file_log_large_poll_batch_size
-03277_dead_letter_queue_unsupported
-03381_file_log_merge_empty
-04242_file_log_delete_recreate
-04257_file_log_rename_and_recreate
-
 # Streaming distributed exchange: the DistributedQuery/stateless-worker layer is eventfd-based and
 # Linux-only ("Stateless worker client is not enabled" / "Only Persisted exchange is supported").
 03394_distributed_shuffle_join_with_aggregation
@@ -124,6 +77,7 @@
 
 # Custom-disk static-storage behavior differs (TABLE_IS_PERMANENTLY_READ_ONLY). Worth a look.
 02454_create_table_with_custom_disk
+04498_alter_table_with_custom_disk
 
 # Flaky on macOS (failed 3/20 runs); investigate before unskipping.
 01903_http_fields
@@ -134,4 +88,5 @@
 02294_anova_cmp
 
 # Flaky on CI (stuck timeout)
+04281_sparsity_stream_skips_trivial_count
 04319_skip_unavailable_shards_mode_table_missing

@@ -1,0 +1,46 @@
+---
+sidebarTitle: 'Интеграция Apache Spark с ClickHouse'
+slug: /integrations/apache-spark
+description: 'Введение в использование Apache Spark с ClickHouse'
+keywords: ['clickhouse', 'Apache Spark', 'миграция', 'данные']
+title: 'Интеграция Apache Spark с ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+[Apache Spark](https://spark.apache.org/) — это многоязычный движок для выполнения задач data engineering, data
+science и машинного обучения на односерверных системах или в кластерах.
+
+Существует два основных способа интеграции Apache Spark с ClickHouse:
+
+1. [Коннектор Spark](/ru/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) — Spark-коннектор реализует `DataSourceV2` и самостоятельно управляет каталогом.
+   На сегодняшний день это рекомендуемый способ интеграции ClickHouse и Spark.
+2. [Spark JDBC](/ru/integrations/connectors/data-ingestion/apache-spark/spark-jdbc) — интегрируйте Spark и ClickHouse
+   с помощью [источника данных JDBC](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html).
+
+<br />
+
+Оба решения успешно протестированы и полностью совместимы с различными API, включая Java, Scala, PySpark и Spark SQL.
+
+<div id="spark-runtime-environment">
+  ### Среды выполнения Spark
+</div>
+
+<div id="standard-spark-runtime">
+  #### Стандартные среды выполнения Spark
+</div>
+
+Коннектор Spark работает без дополнительной настройки в средах, близких к стандартной среде выполнения Apache Spark, например в Amazon EMR или в развертываниях Spark на базе Kubernetes.
+
+<div id="managed-spark-platforms">
+  #### Управляемые платформы Spark
+</div>
+
+Такие платформы, как [AWS Glue](/ru/integrations/connectors/data-ingestion/AWS/glue) и [Databricks](/ru/integrations/connectors/data-ingestion/apache-spark/databricks), добавляют дополнительные абстракции и особенности, зависящие от конкретной среды.
+Хотя сама интеграция остаётся той же, для этих платформ могут потребоваться отдельные шаги по конфигурации и настройке. Подробности см. на соответствующих страницах документации.

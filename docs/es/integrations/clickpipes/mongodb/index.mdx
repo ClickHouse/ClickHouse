@@ -1,0 +1,141 @@
+---
+sidebarTitle: 'Ingesta de datos de MongoDB a ClickHouse'
+description: 'Describe cómo conectar sin problemas MongoDB con ClickHouse Cloud.'
+slug: /integrations/clickpipes/mongodb
+title: 'Ingesta de datos de MongoDB a ClickHouse (mediante CDC)'
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  La ingesta de datos desde MongoDB a ClickHouse Cloud mediante ClickPipes está en beta pública.
+</Info>
+
+<Note>
+  En la consola y la documentación de ClickHouse Cloud, &quot;tabla&quot; y &quot;colección&quot; se usan indistintamente para MongoDB.
+</Note>
+
+Puede usar ClickPipes para ingerir datos desde su base de datos de MongoDB a ClickHouse Cloud. La base de datos de MongoDB de origen puede alojarse en instalaciones propias o en la nube mediante servicios como MongoDB Atlas.
+
+Los ClickPipes de MongoDB pueden implementarse y gestionarse manualmente mediante la UI de ClickPipes, así como mediante programación con [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+Antes de empezar, debes asegurarte de que tu base de datos MongoDB esté correctamente configurada para la replicación. Los pasos de configuración dependen de cómo hayas desplegado MongoDB, así que sigue la guía correspondiente a continuación:
+
+1. [MongoDB Atlas](/es/integrations/clickpipes/mongodb/source/atlas)
+
+2. [Generic MongoDB](/es/integrations/clickpipes/mongodb/source/generic)
+
+3. [Amazon DocumentDB](/es/integrations/clickpipes/mongodb/source/documentdb)
+
+Una vez configurada tu base de datos MongoDB de origen, puedes continuar con la creación de tu ClickPipe.
+
+<div id="create-your-clickpipe">
+  ## Crea tu ClickPipe
+</div>
+
+Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún no tienes una cuenta, puedes registrarte [aquí](https://cloud.clickhouse.com/).
+
+1. En la consola de ClickHouse Cloud, ve a tu servicio de ClickHouse Cloud.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="lg" border />
+
+2. Selecciona el botón `Data Sources` en el menú lateral izquierdo y haz clic en &quot;Set up a ClickPipe&quot;.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
+
+3. Selecciona la tarjeta `MongoDB CDC`.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="Seleccionar MongoDB" size="lg" border />
+
+<div id="add-your-source-mongodb-database-connection">
+  ### Agrega la conexión a tu base de datos MongoDB de origen
+</div>
+
+4. Completa los datos de conexión de tu base de datos MongoDB de origen que configuraste en el paso de requisitos previos.
+
+<Info>
+  Antes de empezar a agregar los datos de conexión, asegúrate de haber permitido las direcciones IP de ClickPipes en las reglas de tu firewall. En la siguiente página puedes encontrar una [lista de direcciones IP de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips).
+  Para obtener más información, consulta las guías de configuración de MongoDB de origen enlazadas [al inicio de esta página](#prerequisites).
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="Completa los datos de conexión" size="lg" border />
+
+<div id="optional-set-up-ssh-tunneling">
+  #### (Opcional) Configurar la tunelización SSH
+</div>
+
+Puede especificar los detalles de la tunelización SSH si su base de datos MongoDB de origen no es accesible públicamente.
+
+1. Active el interruptor &quot;Usar tunelización SSH&quot;.
+
+2. Complete los detalles de la conexión SSH.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="Tunelización SSH" size="lg" border />
+
+3. Para usar autenticación basada en claves, haga clic en &quot;Revocar y generar par de claves&quot; para generar un nuevo par de claves y copie la clave pública generada en su servidor SSH, en `~/.ssh/authorized_keys`.
+
+4. Haga clic en &quot;Verificar conexión&quot; para verificar la conexión.
+
+<Note>
+  Asegúrese de permitir las [dirección IP de ClickPipes](/es/integrations/clickpipes/home#list-of-static-ips) en las reglas de su firewall para el host bastión SSH, de modo que ClickPipes pueda establecer el túnel SSH.
+</Note>
+
+Una vez completados los detalles de la conexión, haga clic en `Siguiente`.
+
+<div id="advanced-settings">
+  #### Configurar ajustes avanzados
+</div>
+
+Puede configurar los ajustes avanzados si es necesario. A continuación, se ofrece una breve descripción de cada ajuste:
+
+* **Intervalo de sincronización**: Es el intervalo con el que ClickPipes consultará la base de datos de origen para detectar cambios. Esto influye en el servicio de ClickHouse de destino; para los usuarios con restricciones de costos, recomendamos mantenerlo en un valor más alto (por encima de `3600`).
+* **Tamaño del lote de extracción**: El número de filas que se recuperarán en un solo lote. Este ajuste es orientativo y puede que no se respete en todos los casos.
+* **Número de tablas de la instantánea en paralelo**: Es el número de tablas que se recuperarán en paralelo durante la instantánea inicial. Resulta útil cuando tiene un gran número de tablas y desea controlar cuántas se recuperan en paralelo.
+
+<div id="configure-the-tables">
+  ### Configura las tablas
+</div>
+
+5. Aquí puedes seleccionar la base de datos de destino para tu ClickPipe. Puedes seleccionar una base de datos existente o crear una nueva.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="Selecciona la base de datos de destino" size="lg" border />
+
+6. Puedes seleccionar las tablas que quieres replicar desde la base de datos MongoDB de origen. Al seleccionar las tablas, también puedes optar por cambiarles el nombre en la base de datos de destino de ClickHouse.
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### Revisa los permisos e inicia el ClickPipe
+</div>
+
+7. Selecciona el rol &quot;Acceso completo&quot; en el menú desplegable de permisos y haz clic en &quot;Completar configuración&quot;.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Revisar permisos" size="lg" border />
+
+<div id="whats-next">
+  ## ¿Qué sigue?
+</div>
+
+Una vez que hayas configurado tu ClickPipe para replicar datos de MongoDB en ClickHouse Cloud, puedes centrarte en cómo consultar y modelar tus datos para obtener un rendimiento óptimo.
+
+<div id="caveats">
+  ## Consideraciones
+</div>
+
+Estas son algunas consideraciones que debes tener en cuenta al usar este conector:
+
+* Requerimos MongoDB versión 5.1.0 o superior.
+* Usamos la API nativa de Change Streams de MongoDB para CDC, que se basa en el oplog de MongoDB para capturar cambios en tiempo real.
+* Los documentos de MongoDB se replican en ClickHouse como JSON type de forma predeterminada. Esto permite una gestión flexible del schema y hace posible usar el amplio conjunto de operadores JSON de ClickHouse para realizar consultas y análisis. Puedes obtener más información sobre cómo consultar datos JSON [aquí](/es/reference/data-types/newjson).
+* La configuración de PrivateLink de autoservicio no está disponible actualmente. Si usas AWS y necesitas PrivateLink, ponte en contacto con db-integrations-support@clickhouse.com o crea un ticket de soporte; trabajaremos contigo para habilitarlo.

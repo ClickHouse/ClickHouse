@@ -1,0 +1,53 @@
+---
+description: 'Permet d’exécuter des requêtes sur des données stockées dans une base de données SQLite.'
+sidebarTitle: 'sqlite'
+slug: /sql-reference/table-functions/sqlite
+title: 'sqlite'
+doc_type: 'reference'
+---
+
+Permet d’exécuter des requêtes sur des données stockées dans une base de données [SQLite](/fr/reference/engines/database-engines/sqlite).
+
+<div id="syntax">
+  ## Syntaxe
+</div>
+
+```sql
+sqlite('db_path', 'table_name')
+```
+
+<div id="arguments">
+  ## Arguments
+</div>
+
+* `db_path` — Chemin d’accès à un fichier contenant une base de données SQLite. [String](/fr/reference/data-types/string).
+* `table_name` — Nom d’une table de la base de données SQLite. [String](/fr/reference/data-types/string).
+
+<div id="returned_value">
+  ## Valeur renvoyée
+</div>
+
+* Un objet de table avec les mêmes colonnes que la table `SQLite` d’origine.
+
+<div id="example">
+  ## Exemple
+</div>
+
+```sql title="Query"
+SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
+```
+
+```text title="Response"
+┌─col1──┬─col2─┐
+│ line1 │    1 │
+│ line2 │    2 │
+│ line3 │    3 │
+└───────┴──────┘
+```
+
+<div id="related">
+  ## Voir aussi
+</div>
+
+* [SQLite](/fr/reference/engines/table-engines/integrations/sqlite) moteur de table
+* [SQLite database engine](/fr/reference/engines/database-engines/sqlite) — section consacrée à la prise en charge des types de données
