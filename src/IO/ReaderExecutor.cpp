@@ -74,9 +74,8 @@ namespace DB
 ///   Schedule-driven interpreter region) -> `finishWindow`.
 /// PLAN BUILD, three spans: `preparePlan` (the epoch scheduler, in Read path),
 ///   `mergeRanges`, and `observeAndSchedule` + its extract* helpers.
-/// COLLECT, four spans: `tryCollectMachine`; the put pair `collectFillTargets` /
-///   `runPutStep`; `collectInFlightInto`; and teardown's
-///   `cancelMachine` / `drainAbandonedMachines`.
+/// COLLECT, three spans: `collectInFlightInto`; the put pair `collectFillTargets` /
+///   `runPutStep`; and teardown's `cancelMachine` / `drainAbandonedMachines`.
 /// DISPLAY read surface, two spans: the `Display` methods, plus the plan-view
 ///   hit serve `readHitFromView` they join at `Display::read`.
 /// PRODUCER: `coordinatedPrefetch` (machine fetch step) -> `fetchGapsFromSource`
@@ -250,17 +249,12 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
     const size_t position_phys = toPhys(position);
 
-    if (atEnd())
+    /// At EOF with no machine there is nothing left. A machine launched before EOF can have
+    /// its worker latch `reached_eof` via a short read on an unknown-size source while still
+    /// holding the final bytes - that last window drains through the normal serve below, and
+    /// the next call finds no machine and returns empty here.
+    if (atEnd() && !machine)
     {
-        /// A machine launched before EOF can have its worker latch `reached_eof` via a short
-        /// read on an unknown-size source while still holding the final bytes. Drain that last
-        /// window through the normal serve; the next call finds no machine and returns empty.
-        if (machine)
-        {
-            preparePlan(position_phys);
-            return finishWindow(serveWindow(position_phys));
-        }
-
         LOG_TRACE(log, "readNextWindow: EOF at position {}", position);
         /// Drop the in-flight fill pin at EOF instead of waiting for the caller to drop the
         /// `PipelineReadBuffer`; a subsequent seek-back re-establishes it.
@@ -268,8 +262,8 @@ ChainedBuffers ReaderExecutor::readNextWindow()
         return {};
     }
 
-    /// Not at EOF, so the position's window is served below. `preparePlan` no-ops at the extent
-    /// (`atExtent()`), where `serveWindow` then returns empty - the correct EOF for this extent.
+    /// `preparePlan` no-ops at the extent (`atExtent()`), where `serveWindow` then returns
+    /// empty - the correct EOF for this extent.
     preparePlan(position_phys);
     return finishWindow(serveWindow(position_phys));
 }
@@ -374,9 +368,7 @@ void ReaderExecutor::seek(size_t new_position)
     /// keeps the plan, the cursor, and the bank for any target inside the in-flight window -
     /// a backward one re-serves committed cells, which the serve reads ahead-cursor-blind.)
     read_plan = {};
-    fill_lane.attempted_end = 0;
-    fill_lane.bank = {};
-    fill_lane.bank_refused = false;
+    fill_lane.resetEpoch();
 
     advanceAhead();
 }
@@ -664,10 +656,11 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::mergeRanges(const VectorWith
     return merged;
 }
 
-// ─── Window serve path - collect (cont. at collectInFlightInto) ────────────
+// ─── Window serve path - collect ────────────────────────────────────────────
 
-bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
+void ReaderExecutor::collectInFlightInto(size_t ri)
 {
+    const auto & r = read_plan.schedule.retrieves[ri];
     /// The worker may own the connection mid-read, so the revoke/release handoff
     /// must complete before any source touch.
     auto m = std::move(machine);
@@ -682,10 +675,10 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
         /// before checking cancellation, so ~ReaderExecutor must join it before
         /// our state is freed (a throw on the unwind would otherwise drop it
         /// un-joined; see `cancelMachine`).
-        LOG_TRACE(log, "tryCollectMachine: prefetch was queued, cancelling and reading from position {}", position);
+        LOG_TRACE(log, "collect: prefetch was queued, cancelling and reading from position {}", position);
         stats.add(Stats::PrefetchCancelled);
         abandoned_machines.push_back(std::move(m));
-        return false;
+        return;
     }
 
     /// Started/finished: collect the worker's raw PHYSICAL gap bytes, then fold the
@@ -693,7 +686,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// no takeover: a one-shot fetch has nothing to take over (the GET is read to
     /// its bound, and splitting it would forfeit the request). Interruption remains
     /// the CANCEL mechanism, where the remainder is never fetched at all.
-    LOG_TRACE(log, "tryCollectMachine: waiting on prefetched [{}, {})",
+    LOG_TRACE(log, "collect: waiting on prefetched [{}, {})",
         toLogical(m->physical_window.offset), toLogical(m->physical_window.end()));
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
     collectRunner().waitReleased(*m);
@@ -739,7 +732,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// sparse assembly tripped it on seek / partial / multi-tier patterns). Uncontended windows
     /// (no sibling) keep the direct collect below.
     if (m->contended)
-        return false;
+        return;
 
     const size_t fetched_end = std::max(m->fetched_end, m->physical_window.offset);
 
@@ -748,7 +741,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
         /// An interrupted step that produced nothing degrades to the revoke path:
         /// the connection is reclaimed (above), the caller reads synchronously.
         if (m->fetched.empty() && fetched_end <= m->physical_window.offset)
-            return false;
+            return;
 
         /// A fetched prefix that cannot serve the cursor (extension-only bytes below the
         /// requested range, or a kept seek moved past it) is already in its cells (the
@@ -758,7 +751,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
         if (toLogical(fetched_end) <= position)
         {
             runPutStep(m, m->fetched);
-            return false;
+            return;
         }
         stats.add(Stats::PartialCollects);
     }
@@ -795,18 +788,43 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// The still-refused residue, sliced exactly-once per uncommitted sub-range (the put
     /// above may have landed parts of it). A bypass window has no views, so everything
     /// it fetched comes back - the bank is its transport.
+    ChainedBuffers collected;
     if (!residue.empty())
         for (const auto & still : uncommittedIn(m->writer_views, residue.range()))
-            chain.append(residue.slice(still));
+            collected.append(residue.slice(still));
 
-    /// A seek landed inside the fetched window: trim the prefix so `chain` starts at the cursor.
+    /// A seek landed inside the fetched window: trim the consumed prefix away.
     const size_t position_phys = toPhys(position);
-    if (!chain.empty() && position_phys > chain.range().offset)
+    if (!collected.empty() && position_phys > collected.range().offset)
     {
-        const size_t end = chain.range().end();
-        chain = chain.slice(ByteRange{position_phys, end - position_phys});
+        const size_t end = collected.range().end();
+        collected = collected.slice(ByteRange{position_phys, end - position_phys});
     }
-    return true;
+
+    /// A populatable retrieve's committed bytes live in its cells - the display IS its
+    /// data progress, and the serve reads them back from the cache (the cache is the
+    /// buffer). What remains is a bypass window's transport (`r.into.empty()`) or a
+    /// populating window's STILL-REFUSED residue; bank both - the bank is their only
+    /// route to the display. Refused residue also raises the launch backpressure: no
+    /// new lead until the serve consumed it.
+    if (!collected.empty())
+    {
+        if (r.into.empty())
+            fill_lane.bank.append(std::move(collected));
+        else if (!display.covers(collected.range()))
+        {
+            fill_lane.bank.append(std::move(collected));
+            fill_lane.bank_refused = true;
+        }
+    }
+    /// The lane's ahead cursor: attempted through what the fetch actually REACHED. A full
+    /// fetch (or one that saw EOF) attempted the window end to end; an interrupted or
+    /// residue-capped one stopped at `fetched_end` - its tail was never attempted and the
+    /// launcher may relaunch it.
+    fill_lane.advanceAttempted(
+        (m->reached_eof || fetched_end >= m->physical_window.end())
+            ? m->physical_window.end()
+            : fetched_end);
 }
 
 // ─── The display (cont.): plan-view hit serve ──────────────────────────────
@@ -859,7 +877,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     /// on `chassert(!is_last_holder)` - the foreground teardown cannot reset a foreign
     /// downloader).
     VectorWithMemoryTracking<ByteRange> led_misses;
-    VectorWithMemoryTracking<CacheWriter::SiblingLed> sibling_led;
+    VectorWithMemoryTracking<ByteRange> sibling_led;
     VectorWithMemoryTracking<CacheWriter::FillClaim> claims;
     for (const auto & view : m.writer_views)
     {
@@ -890,7 +908,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     size_t fetch_bound = window.end();
     if (m.inline_serve)
         for (const auto & sl : sibling_led)
-            fetch_bound = std::min(fetch_bound, sl.sub.offset);
+            fetch_bound = std::min(fetch_bound, sl.offset);
 
     /// A window byte that no fill-target writer covers cannot be deduped (no cache tier
     /// populates it): fetch it plainly. Add the window remainder (minus elected + sibling-led)
@@ -899,7 +917,7 @@ void ReaderExecutor::coordinatedPrefetch(FetchMachine & m)
     for (const auto & r : led_misses)
         elected.add(r);
     for (const auto & sl : sibling_led)
-        elected.add(sl.sub);
+        elected.add(sl);
     for (const auto & g : elected.subtract(window))
         led_misses.push_back(g);
 
@@ -1014,7 +1032,7 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
 
         /// No head/tail-extension splits: the window IS the fetch range (the cache
         /// `getOrSet` segment-aligned the miss at plan build, in `openWriteBuffers`).
-        auto blocks = allocateBlocks(pr.size, window_block_size, {});
+        auto blocks = allocateBlocks(pr.size, window_block_size);
         StatTimer src_scope(out_stats, Stats::SourceReadMicroseconds);
         ChainedBuffers source_chain = readFromSource(pr.object, pr.object_offset, std::move(blocks), file_pos,
             read_extent, lc, stop, out_stats);
@@ -1159,42 +1177,41 @@ void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterVie
         writeSliceToWriter(view.writer, window, chain, out_stats);
 }
 
+/// The committed parts of `window` within `writer`'s cell. The double subtraction is forced
+/// by `IntervalSet` exposing only `add`/`subtract`: `committed().subtract(clamped)` is the
+/// UNcommitted part of the clamp, and subtracting that from the clamp recovers the committed
+/// parts.
+static VectorWithMemoryTracking<ByteRange> committedPartsIn(const CacheWriter & writer, ByteRange window)
+{
+    const size_t lo = std::max(writer.range().offset, window.offset);
+    const size_t hi = std::min(writer.range().end(), window.end());
+    if (lo >= hi)
+        return {};
+    const ByteRange clamped{lo, hi - lo};
+    IntervalSet uncommitted;
+    for (const auto & gap : writer.committed().subtract(clamped))
+        uncommitted.add(gap);
+    return uncommitted.subtract(clamped);
+}
+
 VectorWithMemoryTracking<ByteRange> ReaderExecutor::uncommittedIn(
     const VectorWithMemoryTracking<WriterView> & views, ByteRange range)
 {
-    /// `committed().subtract(r)` yields the parts of `r` NOT in the committed set, so the
-    /// double subtraction below extracts each view's committed parts; their union subtracted
-    /// from `range` is what no cell holds.
     IntervalSet committed_union;
     for (const auto & view : views)
-    {
-        if (!view.writer)
-            continue;
-        const size_t lo = std::max(view.writer->range().offset, range.offset);
-        const size_t hi = std::min(view.writer->range().end(), range.end());
-        if (lo >= hi)
-            continue;
-        const ByteRange clamped{lo, hi - lo};
-        IntervalSet uncommitted_here;
-        for (const auto & gap : view.writer->committed().subtract(clamped))
-            uncommitted_here.add(gap);
-        for (const auto & part : uncommitted_here.subtract(clamped))
-            committed_union.add(part);
-    }
+        if (view.writer)
+            for (const auto & part : committedPartsIn(*view.writer, range))
+                committed_union.add(part);
     return committed_union.subtract(range);
 }
 
 void ReaderExecutor::recreditCommittedPrefixes(
     ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats)
 {
-    /// Before the source fetch, re-credit any committed prefix of a frozen miss that a
-    /// concurrent reader (or this plan's own write) has grown since plan-build: serve it
-    /// from the held write buffer's own `read` so only the truly-uncommitted tail drives
-    /// the fetch + `setReadUntilPosition`. Disk: a grown PARTIALLY_DOWNLOADED prefix.
-    /// Page: a self-populated complete block re-touched within the plan span
-    /// (`[CF-partial-prefix]` / `[CF-reusable]`). Held write buffers are in tier-priority
-    /// order, so the `covered` guard serves each byte from the fastest tier under the
-    /// SAME shared `covered`.
+    /// Re-credit any committed prefix of a frozen miss that a concurrent reader (or this
+    /// plan's own write) has grown since plan-build, serving it from the held write buffer's
+    /// own `read`. Held write buffers are in tier-priority order, so the `covered` guard
+    /// serves each byte from the fastest tier under the SAME shared `covered`.
     for (const auto & buf : read_plan.bufs)
     {
         if (!buf.provider)
@@ -1205,19 +1222,10 @@ void ReaderExecutor::recreditCommittedPrefixes(
         {
             if (!w.writer)
                 continue;
-            /// The committed prefix this buffer can serve from its own held segment/cells,
-            /// clamped to the window. Derive the committed sub-ranges of `w_clamped` as
-            /// `w_clamped` minus the uncommitted gaps (`committed().subtract`), since
-            /// `IntervalSet` exposes only `add`/`subtract`.
-            const size_t w_lo = std::max(w.writer->range().offset, window.offset);
-            const size_t w_hi = std::min(w.writer->range().end(), window.end());
-            if (w_lo >= w_hi)
-                continue;
-            const ByteRange w_clamped{w_lo, w_hi - w_lo};
-            IntervalSet uncommitted;
-            for (const auto & gap : w.writer->committed().subtract(w_clamped))
-                uncommitted.add(gap);
-            for (const auto & committed_part : uncommitted.subtract(w_clamped))
+            /// The committed prefix this buffer can serve from its own held segment/cells.
+            /// Disk: a grown PARTIALLY_DOWNLOADED prefix. Page: a self-populated complete
+            /// block re-touched within the plan span.
+            for (const auto & committed_part : committedPartsIn(*w.writer, window))
             {
                 auto useful = covered.subtract(committed_part);
                 if (useful.empty())
@@ -1351,22 +1359,14 @@ ChainedBuffers ReaderExecutor::readFromSource(
     return chain;
 }
 
-VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> ReaderExecutor::allocateBlocks(
-    size_t size, size_t block_size, const VectorWithMemoryTracking<size_t> & splits)
+VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> ReaderExecutor::allocateBlocks(size_t size, size_t block_size)
 {
     chassert(block_size > 0);
     VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks;
-    blocks.reserve((size + block_size - 1) / block_size + splits.size());
-
-    size_t pos = 0;
-    auto split_it = splits.begin();
-    while (pos < size)
+    blocks.reserve((size + block_size - 1) / block_size);
+    for (size_t pos = 0; pos < size; )
     {
-        while (split_it != splits.end() && *split_it <= pos)
-            ++split_it;
-
-        const size_t boundary = (split_it != splits.end()) ? std::min(*split_it, size) : size;
-        const size_t chunk = std::min(block_size, boundary - pos);
+        const size_t chunk = std::min(block_size, size - pos);
         blocks.push_back(std::make_shared<OwnedChainedBuffer>(chunk));
         pos += chunk;
     }
@@ -1953,42 +1953,6 @@ void ReaderExecutor::advanceAhead()
     }
 }
 
-void ReaderExecutor::collectInFlightInto(size_t ri)
-{
-    const auto & r = read_plan.schedule.retrieves[ri];
-    /// Keep the payload readable past the collect (the machine slot is moved out inside).
-    const auto m_ref = machine;
-    ChainedBuffers collected;
-    if (tryCollectMachine(collected))
-    {
-        /// A populatable retrieve's committed bytes live in its cells - the display IS its
-        /// data progress, and the serve reads them back from the cache (the cache is the
-        /// buffer). What comes back here is a bypass window's transport (`r.into.empty()`)
-        /// or a populating window's STILL-REFUSED residue (cache full / sibling-claimed
-        /// cells); bank both - the bank is their only route to the display. Refused residue
-        /// also raises the launch backpressure: no new lead until the serve consumed it.
-        if (!collected.empty())
-        {
-            if (r.into.empty())
-                fill_lane.bank.append(std::move(collected));
-            else if (!display.covers(collected.range()))
-            {
-                fill_lane.bank.append(std::move(collected));
-                fill_lane.bank_refused = true;
-            }
-        }
-        /// The lane's ahead cursor: attempted through what the fetch actually REACHED. A full
-        /// fetch (or one that saw EOF) attempted the window end to end; an interrupted or
-        /// residue-capped one stopped at `fetched_end` - its tail was never attempted and the
-        /// launcher may relaunch it.
-        const size_t reach = std::max(m_ref->fetched_end, m_ref->physical_window.offset);
-        fill_lane.advanceAttempted(
-            (m_ref->reached_eof || reach >= m_ref->physical_window.end())
-                ? m_ref->physical_window.end()
-                : reach);
-    }
-    /// Revoked while still queued: nothing to record - the foreground reads this window instead.
-}
 
 
 ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) const
@@ -2009,13 +1973,7 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     const auto fill_prefix_end = [&](ByteRange range)
     {
         IntervalSet cov = committedCoverage(range);
-        for (const auto & iv : fill_lane.bank.getIntervals())
-        {
-            const size_t lo = std::max(iv.offset, range.offset);
-            const size_t hi = std::min(iv.end(), range.end());
-            if (lo < hi)
-                cov.add(ByteRange{lo, hi - lo});
-        }
+        fill_lane.addBankCoverage(cov, range);
         auto gaps = cov.subtract(range);
         return gaps.empty() ? range.end() : gaps.front().offset;
     };
@@ -2040,6 +1998,49 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     return {};
 }
 
+void ReaderExecutor::interruptAndCollectMachine()
+{
+    /// Bound the stall-join: ask a still-running worker to wrap at its next tile instead
+    /// of holding the cursor for the whole remaining lead (a released one no-ops); the
+    /// un-fetched tail stays un-attempted and relaunches.
+    collectRunner().requestInterrupt(*machine);
+    collectInFlightInto(machine->retrieve_index);
+}
+
+bool ReaderExecutor::waitSiblingFills(ByteRange window)
+{
+    /// Dedup + late hits + our own leading worker's progress: wait on any cell a LIVE
+    /// writer is filling (a completed one returns immediately), bounded to the cursor
+    /// WINDOW. Bytes our committed cells do not hold (a sibling's download) are BANKED -
+    /// the bank is their only route to the display - and their cache-read credit is folded
+    /// here (the bank serve adds no counters). Bytes our own worker committed meanwhile
+    /// are dropped: the serve reads and counts them from the cells, once. A bypass gap
+    /// has no fill-target writer: no-op there. TRUE = the display can now serve the
+    /// window's first byte.
+    ChainedBuffers waited;
+    IntervalSet wait_cov = display.coverage(window);
+    display.wait(window, waited, wait_cov);
+    if (waited.empty())
+        return false;
+
+    const IntervalSet committed = committedCoverage(window);
+    ChainedBuffers sibling_bytes;
+    for (const auto & iv : waited.getIntervals())
+        for (const auto & gap : committed.subtract(iv))
+            sibling_bytes.append(waited.slice(gap));
+    if (!sibling_bytes.empty())
+    {
+        stats.add(Stats::BytesFromFilesystemCache, sibling_bytes.totalBytes());
+        fill_lane.bank.append(std::move(sibling_bytes));
+    }
+    /// Advance the ahead cursor only to the CONTIGUOUS display frontier: a waited
+    /// middle that returned short leaves a real hole, and marking it attempted would
+    /// stop the background from ever fetching it (the foreground would heal it, late).
+    const size_t contiguous = display.frontier(window);
+    fill_lane.advanceAttempted(contiguous);
+    return contiguous > window.offset;
+}
+
 bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
 {
     /// The HEAL is the first production step: a claimed-but-unreadable cursor (a raced
@@ -2060,16 +2061,12 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     /// old cell-serve's) lets it land the window instead of blocking on the whole remaining
     /// lead. A FOREIGN machine (or our own past the cursor) holds the single slot the cursor
     /// outran - free the slot.
-    const bool own_leading = machine && machineFor(ri)
+    const bool own_leading = machineFor(ri)
         && machine->physical_window.offset <= window.offset
         && window.offset < machine->physical_window.end();
     if (machine && !own_leading)
     {
-        /// Bound the stall-join: ask a still-running worker to wrap at its next tile
-        /// instead of holding the cursor for the whole remaining lead (a released one
-        /// no-ops); the un-fetched tail stays un-attempted and relaunches.
-        collectRunner().requestInterrupt(*machine);
-        collectInFlightInto(machine->retrieve_index);
+        interruptAndCollectMachine();
         return true;
     }
 
@@ -2086,49 +2083,16 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
         std::min(r.range.end(), (window.end() + tail_grid - 1) / tail_grid * tail_grid));
     const ByteRange fetch_window{fetch_lo, fetch_hi - fetch_lo};
 
-    /// 1) Dedup + late hits + our own leading worker's progress: wait on any cell a LIVE
-    ///    writer is filling (a completed one returns immediately), bounded to the cursor
-    ///    WINDOW - the grid-extended tail is not needed to serve it. Bytes our committed
-    ///    cells do not hold (a sibling's download) are BANKED - the bank is their only route
-    ///    to the display - and their cache-read credit is folded here (the bank serve adds no
-    ///    counters). Bytes our own worker committed meanwhile are dropped: the serve reads
-    ///    and counts them from the cells, once. A bypass gap has no fill-target writer:
-    ///    no-op there.
-    {
-        ChainedBuffers waited;
-        IntervalSet wait_cov = display.coverage(window);
-        Stats wait_stats;
-        display.wait(window, /*own_worker_only=*/false, waited, wait_cov, wait_stats);
-        if (!waited.empty())
-        {
-            const IntervalSet committed = committedCoverage(window);
-            ChainedBuffers sibling_bytes;
-            for (const auto & iv : waited.getIntervals())
-                for (const auto & gap : committed.subtract(iv))
-                    sibling_bytes.append(waited.slice(gap));
-            if (!sibling_bytes.empty())
-            {
-                stats.add(Stats::BytesFromFilesystemCache, sibling_bytes.totalBytes());
-                fill_lane.bank.append(std::move(sibling_bytes));
-            }
-            /// Advance the ahead cursor only to the CONTIGUOUS display frontier: a waited
-            /// middle that returned short leaves a real hole, and marking it attempted would
-            /// stop the background from ever fetching it (the foreground would heal it, late).
-            const size_t contiguous = display.frontier(window);
-            fill_lane.advanceAttempted(contiguous);
-            if (contiguous > window.offset)
-                return true;
-        }
-    }
+    /// 1) The wait step (`waitSiblingFills`) - bounded to the cursor WINDOW; the
+    ///    grid-extended tail is not needed to serve it.
+    if (waitSiblingFills(window))
+        return true;
 
     /// The wait landed nothing servable at the cursor with our own machine still in flight:
     /// the worker is done or stuck - join it (a done one's refused bytes overflow-bank here).
-    /// The interrupt bounds the join to the worker's next tile instead of the whole
-    /// remaining lead; its un-fetched tail stays un-attempted and relaunches.
     if (machine)
     {
-        collectRunner().requestInterrupt(*machine);
-        collectInFlightInto(machine->retrieve_index);
+        interruptAndCollectMachine();
         return true;
     }
 
@@ -2198,25 +2162,10 @@ IntervalSet ReaderExecutor::committedCoverage(ByteRange window_phys) const
     /// accumulates coverage - no `read`, no stats - so the serve can poll the fill front.
     IntervalSet covered;
     for (const auto & buf : read_plan.bufs)
-    {
-        if (!buf.provider)
-            continue;
         for (const auto & w : buf.writers)
-        {
-            if (!w.writer)
-                continue;
-            const size_t lo = std::max(w.writer->range().offset, window_phys.offset);
-            const size_t hi = std::min(w.writer->range().end(), window_phys.end());
-            if (lo >= hi)
-                continue;
-            const ByteRange clamped{lo, hi - lo};
-            IntervalSet uncommitted;
-            for (const auto & gap : w.writer->committed().subtract(clamped))
-                uncommitted.add(gap);
-            for (const auto & committed_part : uncommitted.subtract(clamped))
-                covered.add(committed_part);
-        }
-    }
+            if (w.writer)
+                for (const auto & part : committedPartsIn(*w.writer, window_phys))
+                    covered.add(part);
     return covered;
 }
 
@@ -2261,21 +2210,7 @@ size_t ReaderExecutor::launchProgress(size_t ri) const
 
 bool ReaderExecutor::Display::coversByte(size_t phys) const
 {
-    if (const auto & geom = ex.read_plan.geometry())
-    {
-        const auto res = geom->residentAt(phys);
-        if (res.resident() && res.entry < ex.read_plan.bufs.size() && ex.read_plan.bufs[res.entry].view)
-            return true;
-    }
-    for (const auto & buf : ex.read_plan.bufs)
-        for (const auto & w : buf.writers)
-            if (w.writer && w.writer->range().offset <= phys && phys < w.writer->range().end()
-                && w.writer->committed().subtract(ByteRange{phys, 1}).empty())
-                return true;
-    for (const auto & iv : ex.fill_lane.bank.getIntervals())
-        if (iv.offset <= phys && phys < iv.end())
-            return true;
-    return false;
+    return covers(ByteRange{phys, 1});
 }
 
 IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
@@ -2297,15 +2232,7 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
                     cov.add(ByteRange{lo, hi - lo});
             }
         }
-    /// The bank. Per-INTERVAL, not the bounding range: the bank can hold disjoint chunks
-    /// (sibling-waited pieces), and coverage must never claim a hole.
-    for (const auto & iv : ex.fill_lane.bank.getIntervals())
-    {
-        const size_t lo = std::max(iv.offset, window_phys.offset);
-        const size_t hi = std::min(iv.end(), window_phys.end());
-        if (lo < hi)
-            cov.add(ByteRange{lo, hi - lo});
-    }
+    ex.fill_lane.addBankCoverage(cov, window_phys);
     return cov;
 }
 
@@ -2410,18 +2337,10 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     }
 }
 
-void ReaderExecutor::Display::wait(
-    ByteRange window_phys, bool own_worker_only, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats)
+void ReaderExecutor::Display::wait(ByteRange window_phys, ChainedBuffers & out, IntervalSet & covered)
 {
-    const auto is_worker_target = [&](CacheWriter * w)
-    {
-        if (!ex.machine)
-            return false;
-        for (const auto & v : ex.machine->writer_views)
-            if (v.writer == w)
-                return true;
-        return false;
-    };
+    /// No cache-read credit here: the caller banks the sibling bytes and credits them once
+    /// (its own committed bytes are dropped - the serve reads and counts them from the cells).
     for (const auto & buf : ex.read_plan.bufs)
     {
         /// A page cell is filled by promotion at the serve, not downloaded - no downloader,
@@ -2430,7 +2349,7 @@ void ReaderExecutor::Display::wait(
             continue;
         for (const auto & w : buf.writers)
         {
-            if (!w.writer || (own_worker_only && !is_worker_target(w.writer.get())))
+            if (!w.writer)
                 continue;
             const size_t lo = std::max(w.writer->range().offset, window_phys.offset);
             const size_t hi = std::min(w.writer->range().end(), window_phys.end());
@@ -2443,7 +2362,6 @@ void ReaderExecutor::Display::wait(
                     continue;   /// no live writer / raced reset / short commit - the caller's fallback fetches it
                 out.append(c.slice(u));
                 covered.add(u);
-                out_stats.add(Stats::BytesFromFilesystemCache, u.size);
             }
         }
     }
@@ -2551,9 +2469,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// bank drops with the plan it served - BEFORE the empty-plan early return below, so an
     /// at-bound replan cannot leave the previous epoch's state alive (the seek fast path
     /// keeps the surviving plan, the cursor, AND the bank).
-    fill_lane.attempted_end = 0;
-    fill_lane.bank = {};
-    fill_lane.bank_refused = false;
+    fill_lane.resetEpoch();
 
     const ByteRange plan_range = boundedPlanSpan(physical_start);
     if (plan_range.size == 0)
@@ -2585,9 +2501,36 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         CacheViewPtr view;
     };
     VectorWithMemoryTracking<ProbeView> base_views;
+    /// One probe pass over `span`: every tier x object-piece, recording the views and
+    /// returning the miss-enriched end (populating tiers only).
+    bool step_misses = false;
+    const auto probe_span = [&](ByteRange span, VectorWithMemoryTracking<ProbeView> & out)
+    {
+        size_t enriched_end = span.end();
+        size_t piece_file_start = span.offset;
+        for (const auto & pr : offset_map.map(span))
+        {
+            for (size_t ci = 0; ci < caches.size(); ++ci)
+            {
+                auto v = caches[ci]->planResidencyView(
+                    pr.object, piece_file_start - pr.object_offset, ByteRange{piece_file_start, pr.size});
+                if (caches[ci]->populatesOnMiss() && !v->misses().empty())
+                {
+                    step_misses = true;
+                    for (const auto & m : v->misses())
+                        enriched_end = std::max(enriched_end, m.range.end());
+                }
+                out.push_back(ProbeView{
+                    ci, pr.object, piece_file_start - pr.object_offset,
+                    ByteRange{piece_file_start, pr.size}, std::move(v)});
+            }
+            piece_file_start += pr.size;
+        }
+        return enriched_end;
+    };
+
     ByteRange probe_range = plan_range;
     bool plan_expanded = false;
-    bool step_misses = false;
     size_t probe_steps = 0;
     {
         const size_t step_size = std::max<size_t>(std::min<size_t>(window_size, plan_range.size), 1);
@@ -2597,27 +2540,7 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         {
             ++probe_steps;
             const size_t step_end = std::min(cursor + step_size, plan_range.end());
-            const ByteRange step{cursor, step_end - cursor};
-            size_t enriched_end = step_end;
-            size_t piece_file_start = step.offset;
-            for (const auto & pr : offset_map.map(step))
-            {
-                for (size_t ci = 0; ci < caches.size(); ++ci)
-                {
-                    auto v = caches[ci]->planResidencyView(
-                        pr.object, piece_file_start - pr.object_offset, ByteRange{piece_file_start, pr.size});
-                    if (caches[ci]->populatesOnMiss() && !v->misses().empty())
-                    {
-                        step_misses = true;
-                        for (const auto & m : v->misses())
-                            enriched_end = std::max(enriched_end, m.range.end());
-                    }
-                    base_views.push_back(ProbeView{
-                        ci, pr.object, piece_file_start - pr.object_offset,
-                        ByteRange{piece_file_start, pr.size}, std::move(v)});
-                }
-                piece_file_start += pr.size;
-            }
+            const size_t enriched_end = probe_span(ByteRange{cursor, step_end - cursor}, base_views);
             /// An enrichment past the step's own end leaves the fold gap unprobed - the
             /// geometry pass must re-probe the whole enriched range.
             plan_expanded |= enriched_end > step_end;
@@ -2655,29 +2578,16 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     /// first, so `upper_hits` below prunes the slower tiers). Tiling step views are
     /// consumed as recorded (offset-ascending within a cache); an expanded plan re-probes
     /// the enriched range fresh - the step views no longer tile it.
+    VectorWithMemoryTracking<ProbeView> fresh;
+    if (reprobe_full_span)
+        probe_span(probe_range, fresh);
+    auto & probed = reprobe_full_span ? fresh : base_views;
     VectorWithMemoryTracking<ProbeView> work;
-    if (!reprobe_full_span)
-    {
-        for (size_t ci = 0; ci < caches.size(); ++ci)
-            for (auto & pv : base_views)
-                if (pv.cache_idx == ci)
-                    work.push_back(std::move(pv));
-    }
-    else
-    {
-        for (size_t ci = 0; ci < caches.size(); ++ci)
-        {
-            size_t piece_file_start = probe_range.offset;
-            for (const auto & pr : offset_map.map(probe_range))
-            {
-                const size_t object_file_offset = piece_file_start - pr.object_offset;
-                const ByteRange piece_range{piece_file_start, pr.size};
-                work.push_back(ProbeView{ci, pr.object, object_file_offset, piece_range,
-                    caches[ci]->planResidencyView(pr.object, object_file_offset, piece_range)});
-                piece_file_start += pr.size;
-            }
-        }
-    }
+    work.reserve(probed.size());
+    for (size_t ci = 0; ci < caches.size(); ++ci)
+        for (auto & pv : probed)
+            if (pv.cache_idx == ci)
+                work.push_back(std::move(pv));
 
     IntervalSet upper_hits;
     for (auto & pv : work)

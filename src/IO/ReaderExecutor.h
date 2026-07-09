@@ -279,11 +279,6 @@ private:
     {
         const std::shared_ptr<const CoverageMap> & geometry() const { return geometry_snapshot; }
 
-        /// Late-hit `CacheView`s held alive SOLELY for their destructors: the
-        /// deferred LRU bump must land AFTER the write buffers in `bufs` are
-        /// finalized. Declared BEFORE `bufs` so it is destroyed AFTER it
-        /// (members destruct in reverse declaration order).
-        VectorWithMemoryTracking<CacheViewPtr> deferred_lru_bumps;
 
         VectorWithMemoryTracking<BufEntry> bufs;
 
@@ -430,12 +425,6 @@ private:
     /// append-only prefix permanently uncommitted. Runs before any plan exists.
     ChainedBuffers fetchEncryptionHeader();
 
-    /// The collect verb. With a machine in flight for this gap: if its step
-    /// started/finished, COLLECT it (wait the release edge, reclaim its
-    /// connection, backfill, finalize) into `chain` and return true; if still
-    /// queued, revoke it and return false so the caller reads synchronously.
-    bool tryCollectMachine(ChainedBuffers & chain);
-
     /// Serve a clamped resident sub-range from a view's hit buffers, clamping
     /// each read to the buffer's live `readable()` and recording it for the
     /// deferred LRU bump. The caller checks `covers`.
@@ -516,8 +505,7 @@ private:
     /// Allocate OwnedChainedBuffers covering `size` bytes, each <= `block_size`.
     /// `splits` (sorted, relative) forces block boundaries so user-window and
     /// over-read bytes land in separate buffers, releasable independently.
-    static VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> allocateBlocks(
-        size_t size, size_t block_size, const VectorWithMemoryTracking<size_t> & splits = {});
+    static VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> allocateBlocks(size_t size, size_t block_size);
 
     // ─── Long connection ─────────────────────────────────────────────────
 
@@ -682,13 +670,10 @@ private:
         /// semantics; bank: consume-and-trim, no cache counters - the bytes were counted at
         /// fetch). Bytes are PHYSICAL (pre-decryption-shift).
         void read(ByteRange window_phys, ChainedBuffers & out, IntervalSet & covered, Stats & out_stats);
-        /// Wait on cells a LIVE writer is filling and read them: `own_worker_only` restricts to
-        /// the in-flight machine's own download targets (the read-behind serve; a cell nobody
-        /// downloads would never wake); otherwise any disk-tier writer qualifies (the contended
-        /// path: dedup on a sibling executor's download). Page cells are filled by promotion,
+        /// Wait on cells a LIVE disk-tier writer is filling and read them (dedup on our own
+        /// worker's or a sibling executor's download). Page cells are filled by promotion,
         /// not downloaded - never waited on.
-        void wait(ByteRange window_phys, bool own_worker_only, ChainedBuffers & out,
-            IntervalSet & covered, Stats & out_stats);
+        void wait(ByteRange window_phys, ChainedBuffers & out, IntervalSet & covered);
 
     private:
         /// Is `phys` servable by ANY holder - the one-byte gate that keeps an empty `read`
@@ -753,6 +738,29 @@ private:
         /// the in-memory residue). Cleared when the serve consumes the bank; reset with it.
         bool bank_refused = false;
 
+        /// New plan epoch: the ahead cursor re-derives from the fresh display truth and
+        /// the bank drops with the plan it served.
+        void resetEpoch()
+        {
+            attempted_end = 0;
+            bank = {};
+            bank_refused = false;
+        }
+
+        /// Fold the bank's coverage clamped to `window` into `cov` - per INTERVAL, never the
+        /// bounding range: the bank can hold disjoint chunks (sibling-waited pieces), and
+        /// coverage must never claim a hole.
+        void addBankCoverage(IntervalSet & cov, ByteRange window) const
+        {
+            for (const auto & iv : bank.getIntervals())
+            {
+                const size_t lo = std::max(iv.offset, window.offset);
+                const size_t hi = std::min(iv.end(), window.end());
+                if (lo < hi)
+                    cov.add(ByteRange{lo, hi - lo});
+            }
+        }
+
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     private:
         /// The exclusion guard: a same-writer concurrent write means the machine slot's
@@ -792,10 +800,20 @@ private:
     /// bounded cache-blind read as the hung-sibling last resort. FALSE = nothing left to
     /// produce for this window - the consumer reads that as this extent's EOF.
     bool pump(std::optional<size_t> ri, ByteRange window);
+    /// Pump step 1: wait on live writers over `window`, bank sibling bytes the committed
+    /// cells do not hold, advance the attempted cursor to the contiguous display frontier.
+    /// TRUE = the display can now serve the window's first byte.
+    bool waitSiblingFills(ByteRange window);
+    /// Interrupt the in-flight machine (bounds the join to its next tile) and collect it.
+    void interruptAndCollectMachine();
     /// Serve the contiguous servable prefix of `window` off the display and run the scheduled
     /// handed fills from the served bytes. The serve tail shared by the hit step and the
     /// banked bypass step; physical like all serve verbs (`finishWindow` rebases to logical).
     ChainedBuffers serveFromDisplay(ByteRange window);
+    /// THE collect verb for the in-flight machine of retrieve `ri`: a still-queued step is
+    /// revoked (the caller reads synchronously); a started/finished one is joined - reclaim
+    /// its connection, pin at the fetch frontier, put-retry the refused residue, bank what
+    /// is still homeless, and advance the lane's attempted cursor to the fetch reach.
     void collectInFlightInto(size_t ri);
     void advanceAhead();
     /// Build the machine's runner-independent fetch step (see the definition). Shared by the

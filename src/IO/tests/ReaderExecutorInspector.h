@@ -122,7 +122,7 @@ public:
         auto ranges = ex.offset_map.map(ByteRange{phys_offset, want});
         chassert(!ranges.empty());
         const auto & pr = ranges.front();
-        auto blocks = ReaderExecutor::allocateBlocks(want, ex.block_size, {});
+        auto blocks = ReaderExecutor::allocateBlocks(want, ex.block_size);
         return ex.serveFromLongConnection(ex.fill_lane.conn, pr.object_offset, std::move(blocks), phys_offset, /*stop=*/nullptr, ex.stats);
     }
 

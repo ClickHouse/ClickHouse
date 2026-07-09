@@ -80,12 +80,6 @@ PageCacheWriter::PageCacheWriter(
 {
 }
 
-bool PageCacheWriter::complete() const
-{
-    std::lock_guard lock(state_mutex);
-    return committed_ranges.subtract(range_member).empty();
-}
-
 size_t PageCacheWriter::write(ChainedBuffers data)
 {
     /// A bypass tier populates nothing - skip before any `getOrSet`.

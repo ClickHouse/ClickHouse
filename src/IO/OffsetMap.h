@@ -28,10 +28,6 @@ public:
     /// A single file range may span multiple objects.
     VectorWithMemoryTracking<ObjectRange> map(ByteRange file_range) const;
 
-    /// Find the object whose range contains `file_offset` (nullptr at/past
-    /// `totalSize`). The optional output is the object's file-level offset.
-    const StoredObject * findObjectAt(size_t file_offset, size_t * object_file_offset = nullptr) const;
-
     size_t totalSize() const { return total_size; }
 
     bool hasUnknownSize() const { return total_size == StoredObject::UnknownSize; }

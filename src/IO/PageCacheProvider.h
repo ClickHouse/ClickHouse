@@ -75,7 +75,6 @@ public:
         std::lock_guard lock(state_mutex);
         return committed_ranges;
     }
-    bool complete() const override;
     size_t write(ChainedBuffers data) override;
     ChainedBuffers read(ByteRange sub) override;
 

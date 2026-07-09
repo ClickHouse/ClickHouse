@@ -283,13 +283,6 @@ DiskCacheWriter::DiskCacheWriter(
 {
 }
 
-bool DiskCacheWriter::complete() const
-{
-    /// `committed_ranges` covers the whole aligned range iff subtracting it leaves nothing.
-    std::lock_guard lock(committed_mutex);
-    return committed_ranges.subtract(aligned_range).empty();
-}
-
 size_t DiskCacheWriter::write(ChainedBuffers data)
 {
     if (cache_settings.read_if_exists_otherwise_bypass)
@@ -453,7 +446,7 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
 
         if (segment.state() == FileSegmentState::DOWNLOADED)
         {
-            c.sibling_led.push_back({this, ByteRange{lo, hi - lo}});
+            c.sibling_led.push_back(ByteRange{lo, hi - lo});
             continue;
         }
 
@@ -468,7 +461,7 @@ CacheWriter::FillClaim DiskCacheWriter::claim(ByteRange window)
         }
         else
         {
-            c.sibling_led.push_back({this, ByteRange{lo, hi - lo}});
+            c.sibling_led.push_back(ByteRange{lo, hi - lo});
         }
     }
 

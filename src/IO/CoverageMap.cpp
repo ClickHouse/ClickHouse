@@ -29,12 +29,7 @@ size_t CoverageMap::nextGapStart(size_t from) const
 
 size_t CoverageMap::gapEnd(size_t gap_start) const
 {
-    return gapEndWithin(gap_start, plan_end);
-}
-
-size_t CoverageMap::gapEndWithin(size_t gap_start, size_t limit) const
-{
-    size_t end = limit;
+    size_t end = plan_end;
     for (const auto & entry : entries)
         for (const auto & r : entry.resident)
             if (r.offset > gap_start && r.offset < end)

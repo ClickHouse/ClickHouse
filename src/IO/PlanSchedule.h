@@ -30,15 +30,14 @@ struct PlanSchedule
     };
 
     /// The typed decomposition of the fill region (purpose x residency), one
-    /// entry per maximal segment where both are constant. `tier_entry`/`tier`
-    /// are valid only when `resident`.
+    /// entry per maximal segment where both are constant. `tier_entry` is
+    /// valid only when `resident`.
     struct TypedRange
     {
         ByteRange range;            /// physical, plan coords
         Purpose purpose = Purpose::User;
         bool resident = false;      /// true: served from a tier; false: gap (remote)
         size_t tier_entry = CoverageMap::npos;
-        CacheTier tier{};
     };
 
     /// One aligned-miss cell to populate, identified by its tier-entry index

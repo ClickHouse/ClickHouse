@@ -237,7 +237,6 @@ PlanSchedule buildSchedule(
                     .purpose = is_user ? PlanSchedule::Purpose::User : PlanSchedule::Purpose::FillOnly,
                     .resident = res.resident(),
                     .tier_entry = res.entry,
-                    .tier = res.tier,
                 });
                 pos = seg_end;
             }

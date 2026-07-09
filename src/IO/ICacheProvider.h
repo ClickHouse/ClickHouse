@@ -63,7 +63,7 @@ public:
     /// so the writer hands back a snapshot taken under its own lock.
     virtual IntervalSet committed() const = 0;
 
-    virtual bool complete() const = 0;
+    bool complete() const { return committed().subtract(range()).empty(); }
 
     /// Store the portion of `data` within `range()` minus `committed()`.
     /// Returns the bytes that newly landed; 0 for bytes outside the range,
@@ -78,7 +78,7 @@ public:
     virtual ChainedBuffers read(ByteRange sub) = 0;
 
     /// One sibling-led sub-range to serve from cache (the writer that owns it + the sub-range).
-    struct SiblingLed { CacheWriter * writer = nullptr; ByteRange sub; };
+
 
     /// The result of `claim`: the downloader roles the calling thread holds over one window,
     /// plus the window's decomposition into runs to fetch (`to_fetch` - roles won, or
@@ -121,7 +121,7 @@ public:
         }
 
         VectorWithMemoryTracking<ByteRange> to_fetch;
-        VectorWithMemoryTracking<SiblingLed> sibling_led;
+        VectorWithMemoryTracking<ByteRange> sibling_led;
         /// Completes-and-releases the newly-won roles; noexcept by construction (the
         /// provider wraps its body in try/catch). Empty when nothing was won.
         std::function<void()> release;
@@ -221,14 +221,14 @@ public:
     /// cache-aligned misses. MUST NOT mutate the cache - a fully-resident
     /// range costs only the probe. Default throws until implemented.
     virtual CacheViewPtr planResidencyView(
-        const StoredObject & object, size_t object_file_offset, ByteRange range_in_file);
+        const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) = 0;
 
     /// Open ONLY the write buffers for already-known cache-aligned miss
     /// ranges, without re-probing residency. Empty when `!populatesOnMiss()`.
     /// Default throws until implemented.
     virtual VectorWithMemoryTracking<MissEntry> openWriteBuffers(
         const StoredObject & object, size_t object_file_offset,
-        const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges);
+        const VectorWithMemoryTracking<ByteRange> & aligned_miss_ranges) = 0;
 };
 
 }

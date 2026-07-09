@@ -78,20 +78,5 @@ VectorWithMemoryTracking<OffsetMap::ObjectRange> OffsetMap::map(ByteRange file_r
     return result;
 }
 
-const StoredObject * OffsetMap::findObjectAt(size_t file_offset, size_t * object_file_offset) const
-{
-    /// Linear scan — `segments.size()` is bounded by the file's object
-    /// count, typically <= a handful even for gather-mode reads.
-    for (const auto & seg : segments)
-    {
-        if (seg.file_offset <= file_offset && file_offset < seg.file_offset + seg.size)
-        {
-            if (object_file_offset)
-                *object_file_offset = seg.file_offset;
-            return &seg.object;
-        }
-    }
-    return nullptr;
-}
 
 }
