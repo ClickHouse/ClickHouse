@@ -7742,7 +7742,7 @@ Possible values:
   - Backtick-quoted identifiers (`...`) are case-insensitive (like unquoted)
   - Expression aliases and CTE names follow the same rules
 
-Ambiguity model for column, table, and CTE lookups in `standard` mode:
+Ambiguity model for column and table lookups in `standard` mode:
   - An exact-case unquoted lookup always binds to the literal object of that name, even when
     another case variant exists. For example, with columns `Val` and `val` in the same table,
     `SELECT Val FROM t` returns `Val` and `SELECT val FROM t` returns `val`.
@@ -7752,6 +7752,10 @@ Ambiguity model for column, table, and CTE lookups in `standard` mode:
   - Built-in dual-case namespaces such as `information_schema` / `INFORMATION_SCHEMA` and their
     views (`tables`/`TABLES`, ...) are recognised as canonical aliases of one logical schema and
     are not treated as ambiguous.
+
+CTE names follow a stricter rule: defining two unquoted CTEs whose names differ only in case is
+an error. A double-quoted CTE definition pins its name to case-sensitive matching, so quoted
+case-siblings may coexist and are referenced exactly.
 
 Database names follow a stricter rule: collisions among user-defined databases that differ only
 in case are reported as ambiguous unless the lookup is double-quoted.

@@ -2853,7 +2853,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                             }
                             /// `standard` mode: an unquoted-last-part reference folds case-insensitively
                             /// against the projection-replacement targets, mirroring how
-                            /// `findReplacementExpression` matches projection columns.
+                            /// `findReplacementExpression` matches projection columns. Qualified
+                            /// references (`t.age`) are not rewritten in either mode — same as the
+                            /// exact-match behavior above.
                             if (scope.isStandardMode())
                             {
                                 const auto & quote_styles = identifier->getQuoteStyles();
