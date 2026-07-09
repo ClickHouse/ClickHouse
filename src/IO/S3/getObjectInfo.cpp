@@ -75,11 +75,12 @@ namespace
         object_info.size = static_cast<size_t>(result.GetContentLength());
         object_info.is_size_known = result.ContentLengthHasBeenSet();
         /// GCS decompressive transcoding: the object is stored as gzip, but the server decompressed it
-        /// while serving, and does not have either `Content-Encoding` or `Content-Length`
+        /// while serving, and the response includes neither `Content-Encoding` nor `Content-Length`
         /// https://docs.cloud.google.com/storage/docs/transcoding#decompressive_transcoding
         object_info.is_server_side_decompressed = result.GcsStoredContentEncodingHasBeenSet()
             && result.GetGcsStoredContentEncoding() != "identity"
-            && (!result.ContentEncodingHasBeenSet() || !result.ContentLengthHasBeenSet());
+            && !result.ContentEncodingHasBeenSet()
+            && !result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
 
