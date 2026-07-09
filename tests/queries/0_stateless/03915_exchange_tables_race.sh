@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database
+# Tags: no-ordinary-database, no-random-settings, no-random-merge-tree-settings
+# no-random-settings, no-random-merge-tree-settings: this test spawns many concurrent
+# clients to race SELECT against EXCHANGE TABLES; the randomized memory/IO settings
+# (mmap reads, large buffers, page-cache injection) inflate per-client memory until the
+# OOM killer SIGKILLs background clients, whose job-control "Killed" message reaches the
+# runner as spurious stderr. The tables are ENGINE=Memory and the race is at plan time,
+# so no randomized query/MergeTree setting is relevant to what the test verifies.
 
 set -e
 
