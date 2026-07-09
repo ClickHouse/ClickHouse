@@ -836,7 +836,7 @@ icu::BreakIterator & getThreadLocalIcuWordIterator(const String & locale)
     return *it->second;
 }
 
-/// Holds the UTF-8 `UText` currently bound to the thread-local break iterator. RAII closes it at thread exit so it is not reported as a leak.
+/// Holds the UTF-8 `UText` currently bound to the thread-local break iterator.
 struct IcuTextBinding
 {
     UText * utext = nullptr;
@@ -861,8 +861,6 @@ bool IcuTokenizer::nextInString(
 
     /// The iterator's text is (re)bound at the start of each new string (`pos == 0`); afterwards
     /// `nextInString` is called repeatedly with an increasing `pos` until the string is exhausted.
-    /// A UTF-8 `UText` is used so that break positions are native byte offsets into `data`, matching
-    /// the `token_start` / `token_length` contract.
     thread_local IcuTextBinding binding;
 
     if (pos == 0 || data != binding.data || &iterator != binding.iterator)
@@ -884,8 +882,6 @@ bool IcuTokenizer::nextInString(
     int32_t end = 0;
     while ((end = iterator.following(start)) != icu::BreakIterator::DONE)
     {
-        /// Keep only "word" segments (letters, numbers, kana, ideographs) and skip the segments that
-        /// consist of whitespace or punctuation (rule status below `UBRK_WORD_NONE_LIMIT`).
         if (iterator.getRuleStatus() >= UBRK_WORD_NONE_LIMIT)
         {
             token_start = static_cast<size_t>(start);
