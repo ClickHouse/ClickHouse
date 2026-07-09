@@ -12,6 +12,7 @@
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <boost/range/algorithm/sort.hpp>
+#include <Common/quoteString.h>
 
 
 namespace DB
@@ -20,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ACCESS_ENTITY_ALREADY_EXISTS;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -55,10 +57,21 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
 {
     const auto updated_query_ptr = removeOnClusterClauseIfNeeded(query_ptr, getContext());
     auto & query = updated_query_ptr->as<ASTCreateRowPolicyQuery &>();
-    auto required_access = getRequiredAccess();
+
+    /// Row policies have no namespace-scoped wildcard, so `ON *` under `USE db.namespace`
+    /// would silently target the whole catalog instead of the selected namespace.
+    const auto current_db_info = getContext()->getCurrentDatabaseInfo();
+    if (!current_db_info.table_prefix.empty())
+        for (const auto & full_name : query.names->full_names)
+            if (full_name.database.empty() && full_name.table_name.empty())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "CREATE ROW POLICY ON * is not supported while a namespace is selected "
+                    "(the policy would apply to the whole database {}); specify a table "
+                    "or use the database without a namespace", backQuoteIfNeed(current_db_info.database));
 
     if (!query.cluster.empty())
     {
+        auto required_access = getRequiredAccess();
         query.replaceCurrentUserTag(getContext()->getUserName());
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
@@ -66,10 +79,12 @@ BlockIO InterpreterCreateRowPolicyQuery::execute()
     }
 
     chassert(query.names->cluster.empty());
+    /// Fold the namespace prefix before computing required access, so authorization targets
+    /// the policy names that will actually be stored.
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
+    auto required_access = getRequiredAccess();
     auto & access_control = getContext()->getAccessControl();
     getContext()->checkAccess(required_access);
-
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabaseInfo());
 
     std::optional<RolesOrUsersSet> roles_from_query;
     if (query.roles)

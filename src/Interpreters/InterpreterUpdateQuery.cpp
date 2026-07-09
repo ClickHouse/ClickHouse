@@ -94,9 +94,13 @@ BlockIO InterpreterUpdateQuery::execute()
     if (getContext()->getGlobalContext()->getServerSettings()[ServerSetting::disable_insertion_and_mutation])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Update queries are prohibited");
 
-    getContext()->checkAccess(required_access);
     auto table_id = getContext()->resolveStorageID(update_query, Context::ResolveOrdinary);
     update_query.setDatabase(table_id.database_name);
+    /// Authorize the resolved table: the resolver may namespace-qualify it (DataLakeCatalog).
+    update_query.setTable(table_id.table_name);
+    required_access.clear();
+    required_access.emplace_back(AccessType::ALTER_UPDATE, table_id.database_name, table_id.table_name);
+    getContext()->checkAccess(required_access);
 
     /// First check table storage for validations.
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());

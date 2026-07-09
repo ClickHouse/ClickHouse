@@ -412,7 +412,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
 
     if (table_id)
     {
-        query_ptr->as<ASTAlterQuery &>().setDatabase(table_id.database_name);
+        /// The resolver may namespace-qualify the table (DataLakeCatalog); keep the AST in
+        /// sync so access checks and ON CLUSTER serialization target the executed table.
+        auto & alter_query = query_ptr->as<ASTAlterQuery &>();
+        alter_query.setDatabase(table_id.database_name);
+        alter_query.setTable(table_id.table_name);
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
