@@ -372,6 +372,16 @@ public:
 /// inside next() -- the pre-fix range-based skip would let the out-of-prefetch read hit the fast path
 /// and observe the uninitialized backend (violation=true); the fixed no-prefetch-in-flight-only skip
 /// keeps it under prefetch_mutex until the prefetch drains, so it never overlaps next().
+///
+/// The overlap is forced by a deterministic rendezvous, not a sleep: the prefetch's background next()
+/// parks on a latch and is released only by whichever path the reader takes, so ordering does not
+/// depend on scheduling.
+///   - Buggy (range-based) fast path: the reader reaches impl->readBigAt() while next() is still parked
+///     -> the fake records violation=true, THEN releases next(). The violation is recorded before the
+///     release, so it is observed on every run regardless of runner contention.
+///   - Fixed (no-prefetch-in-flight) path: the reader blocks on prefetch_mutex and drains the future;
+///     the before_prefetch_drain_for_test hook fires at the drain point and releases next(), so next()
+///     completes (initializing the backend) before the reader's positioned read on impl -> no violation.
 TEST_F(AsynchronousBoundedReadBufferTest, outOfPrefetchReadBigAtDoesNotRaceInFlightNext)
 {
     String contents;
@@ -393,31 +403,35 @@ TEST_F(AsynchronousBoundedReadBufferTest, outOfPrefetchReadBigAtDoesNotRaceInFli
             /* buffer_size */ 4096, /* min_bytes_for_seek */ 0,
             Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
 
+        /// Fixed-path trigger: when the reader reaches the drain point inside readBigAt() (under
+        /// prefetch_mutex, before waiting on the future), release the parked next() so it finishes and
+        /// initializes the backend before the reader's positioned read runs. The buggy fast path never
+        /// reaches this point, so this hook is not what releases next() there.
+        read_buffer.before_prefetch_drain_for_test = [&] { impl_raw->wakeNext(); };
+
         ASSERT_TRUE(read_buffer.supportsReadAt());
 
         /// Start a prefetch covering [0, 4096). Its background next() blocks in the latch, so the
-        /// prefetch stays in flight (and the backend uninitialized) while the reader below races it.
+        /// prefetch stays in flight (and the backend uninitialized) until a path-specific trigger fires.
         read_buffer.prefetch(Priority{0});
 
         /// Read well past the prefetch range: the pre-fix range-based skip would take the lock-free
-        /// fast path here and call impl->readBigAt() while next() is still pending -> violation.
+        /// fast path here and call impl->readBigAt() while next() is still parked -> violation.
         std::atomic<bool> reader_done{false};
         std::thread reader([&]
         {
             String out;
             out.resize(4096);
             read_buffer.readBigAt(out.data(), out.size(), 8192, nullptr);
+            /// Buggy-path trigger: release the still-parked next() so the iteration can finish. In the
+            /// fixed path the hook already released it and this is an idempotent no-op.
+            impl_raw->wakeNext();
             reader_done.store(true);
         });
 
-        /// Give the racing reader time to reach (and, under the fixed code, block on) readBigAt while
-        /// the prefetch is still in flight, before we let the background next() proceed.
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-
-        impl_raw->wakeNext();
-
         reader.join();
 
+        EXPECT_TRUE(reader_done.load()) << "reader thread did not complete (iteration " << iteration << ")";
         EXPECT_FALSE(violation.load())
             << "out-of-prefetch readBigAt ran while the in-flight prefetch's next() had not initialized "
                "the backend (iteration " << iteration << ")";

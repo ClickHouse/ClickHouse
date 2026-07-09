@@ -513,6 +513,9 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
         std::lock_guard lock(prefetch_mutex);
         if (prefetch_future.valid())
         {
+            if (before_prefetch_drain_for_test)
+                before_prefetch_drain_for_test();
+
             IAsynchronousReader::Result result;
             {
                 ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::AsynchronousRemoteReadWaitMicroseconds);

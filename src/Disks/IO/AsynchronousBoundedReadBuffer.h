@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <mutex>
 #include <utility>
 #include <IO/AsynchronousReader.h>
@@ -56,6 +57,12 @@ public:
 
     /// Used only for unit test.
     const ImplPtr & getImpl() { return impl; }
+
+    /// Test-only hook, invoked inside readBigAt() under prefetch_mutex right before it waits on an
+    /// in-flight prefetch's future. Lets a regression test build a deterministic rendezvous: the fixed
+    /// (drain-under-mutex) path reaches this point, while the buggy (range-skip) fast path never does.
+    /// Not for production use.
+    std::function<void()> before_prefetch_drain_for_test;
 
     /// NOTE: readBigAt() does not use the async logic of AsynchronousBoundedReadBuffer; it calls impl's
     /// (when supported), which is possible because readBigAt is asynchronous on its own. If a (small-object)
