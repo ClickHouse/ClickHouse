@@ -74,16 +74,17 @@ namespace
         ObjectInfo object_info;
         object_info.size = static_cast<size_t>(result.GetContentLength());
         object_info.is_size_known = result.ContentLengthHasBeenSet();
+        /// GCS decompressive transcoding: the object is stored as gzip, but the server decompressed it
+        /// while serving, so it removed `Content-Encoding` and cannot report the decompressed `Content-Length`.
+        object_info.is_server_side_decompressed = result.GcsStoredContentEncodingHasBeenSet()
+            && result.GetGcsStoredContentEncoding() == "gzip"
+            && !result.ContentEncodingHasBeenSet()
+            && !result.ContentLengthHasBeenSet();
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
 
         if (with_metadata)
             object_info.metadata = result.GetMetadata();
-
-        /// Detect confirmed decompressive transcoding (set by PocoHTTPClient)
-        auto it = object_info.metadata.find("ch-decompressive-transcoding");
-        if (it != object_info.metadata.end() && it->second == "true")
-            object_info.is_server_side_decompressed = true;
 
         if (with_tags && result.GetTagCount() > 0)
             object_info.tags = getObjectTags(client, bucket, key, version_id);

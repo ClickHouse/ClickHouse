@@ -133,6 +133,17 @@ void validateSupportedColumns(
     }
 }
 
+CompressionMethod chooseCompressionMethod(const ObjectInfo & object_info, const std::string & compression_hint)
+{
+    /// The server already decompressed the object while serving it (e.g. GCS decompressive
+    /// transcoding), so the compression implied by the file extension must not be applied.
+    const auto & metadata = object_info.relative_path_with_metadata.metadata;
+    if (metadata && metadata->is_server_side_decompressed)
+        return CompressionMethod::None;
+
+    return chooseCompressionMethod(object_info.getFileName(), compression_hint);
+}
+
 ASTs::iterator getFirstKeyValueArgument(ASTs & args)
 {
     ASTs::iterator first_key_value_arg_it = args.end();

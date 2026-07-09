@@ -1,4 +1,5 @@
 #pragma once
+#include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
@@ -36,6 +37,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt,
     bool allow_page_cache = true);
+
+/// Chooses the compression method for reading `object_info` by its file name, unless the server
+/// already decompressed the object while serving it (e.g. GCS decompressive transcoding).
+CompressionMethod chooseCompressionMethod(const ObjectInfo & object_info, const std::string & compression_hint);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
 std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);

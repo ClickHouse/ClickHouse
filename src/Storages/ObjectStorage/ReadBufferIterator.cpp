@@ -155,14 +155,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     auto impl
         = createReadBuffer(current_object_info->relative_path_with_metadata, object_storage, context, getLogger("ReadBufferIterator"));
 
-    auto compression_method = chooseCompressionMethod(current_object_info->getFileName(), configuration->compression_method);
-
-    if (auto metadata = current_object_info->getObjectMetadata();
-        metadata && metadata->is_server_side_decompressed && !metadata->is_size_known)
-    {
-        compression_method = CompressionMethod::None;
-    }
-
+    const auto compression_method = chooseCompressionMethod(*current_object_info, configuration->compression_method);
     const auto zstd_window = static_cast<int>(context->getSettingsRef()[Setting::zstd_window_log_max]);
 
     return wrapReadBufferWithCompressionMethod(std::move(impl), compression_method, zstd_window);
@@ -285,14 +278,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
         }
         else
         {
-            compression_method = chooseCompressionMethod(filename, configuration->compression_method);
-
-            if (auto metadata = current_object_info->getObjectMetadata();
-                metadata && metadata->is_server_side_decompressed && !metadata->is_size_known)
-            {
-                compression_method = CompressionMethod::None;
-            }
-
+            compression_method = chooseCompressionMethod(*current_object_info, configuration->compression_method);
             read_buf = createReadBuffer(
                 current_object_info->relative_path_with_metadata, object_storage, getContext(), getLogger("ReadBufferIterator"));
         }
