@@ -41,7 +41,9 @@ public:
     const OptimizationEnvironment & getEnvironment() const { return environment; }
     void setEnvironment(OptimizationEnvironment environment_) { environment = std::move(environment_); }
 
-    void setSortSettings(const SortingStep::Settings & settings)
+    /// All sorts of one query carry the same settings, so the first captured value serves the
+    /// whole search; later calls are ignored.
+    void captureSortSettings(const SortingStep::Settings & settings)
     {
         if (!environment.sort_settings)
             environment.sort_settings = settings;

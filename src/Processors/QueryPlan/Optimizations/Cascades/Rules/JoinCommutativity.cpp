@@ -4,10 +4,16 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Core/Joins.h>
 #include <Common/typeid_cast.h>
+#include <Common/Exception.h>
 #include <memory>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 class JoinCommutativity : public IOptimizationRule
 {
@@ -50,7 +56,10 @@ bool JoinCommutativity::checkPattern(GroupExpressionPtr expression, const Expres
 /// Make the same JOIN but with left and right inputs swapped
 static std::unique_ptr<JoinStepLogical> cloneSwapped(const JoinStepLogical & join_step)
 {
-    auto swapped_join_step = std::unique_ptr<JoinStepLogical>(dynamic_cast<JoinStepLogical*>(join_step.clone().release()));
+    auto clone = join_step.clone();
+    if (dynamic_cast<JoinStepLogical *>(clone.get()) == nullptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Clone of '{}' is not a JoinStepLogical", join_step.getName());
+    auto swapped_join_step = std::unique_ptr<JoinStepLogical>(static_cast<JoinStepLogical *>(clone.release()));
     swapped_join_step->swapInputs();
     return swapped_join_step;
 }

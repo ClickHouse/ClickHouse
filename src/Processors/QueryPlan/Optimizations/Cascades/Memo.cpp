@@ -4,9 +4,15 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 GroupId Memo::addGroup(GroupExpressionPtr group_expression)
 {
@@ -21,12 +27,16 @@ GroupId Memo::addGroup(GroupExpressionPtr group_expression)
 
 GroupPtr Memo::getGroup(GroupId group_id)
 {
-    return groups_by_id.at(group_id);
+    if (group_id >= groups_by_id.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No group #{} in the memo ({} groups)", group_id, groups_by_id.size());
+    return groups_by_id[group_id];
 }
 
 GroupConstPtr Memo::getGroup(GroupId group_id) const
 {
-    return groups_by_id.at(group_id);
+    if (group_id >= groups_by_id.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "No group #{} in the memo ({} groups)", group_id, groups_by_id.size());
+    return groups_by_id[group_id];
 }
 
 void Memo::dump(WriteBuffer & out) const

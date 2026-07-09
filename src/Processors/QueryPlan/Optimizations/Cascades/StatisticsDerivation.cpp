@@ -16,10 +16,16 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Common/logger_useful.h>
+#include <Common/Exception.h>
 #include <base/types.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace Setting
 {
@@ -37,11 +43,7 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     /// Pick the first logical expression to derive statistics from
     /// (all logical expressions in a group represent the same logical result)
     if (group->logical_expressions.empty())
-    {
-        LOG_WARNING(log, "Group #{} has no logical expressions", group_id);
-        group->statistics = ExpressionStatistics();
-        return;
-    }
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Group #{} has no logical expressions to derive statistics from", group_id);
 
     auto expression = group->logical_expressions.front();
     const IQueryPlanStep * plan_step = expression->getQueryPlanStep();
@@ -54,14 +56,20 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
             deriveStatistics(input.group_id);
     }
 
+    /// Returns the statistics of the expression's input #index; throws if the expression has
+    /// fewer inputs than its step type implies.
+    auto input_statistics = [&](size_t index) -> const ExpressionStatistics &
+    {
+        if (index >= expression->inputs.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Expression '{}' has {} inputs, statistics derivation needs input #{}",
+                expression->getName(), expression->inputs.size(), index);
+        return *memo.getGroup(expression->inputs[index].group_id)->statistics;
+    };
+
     /// Derive statistics based on the step type
     if (const auto * join_step = typeid_cast<const JoinStepLogical *>(plan_step))
     {
-        const auto & left_input = expression->inputs[0];
-        const auto & right_input = expression->inputs[1];
-        auto left_input_group = memo.getGroup(left_input.group_id);
-        auto right_input_group = memo.getGroup(right_input.group_id);
-        group->statistics = deriveJoinStatistics(*join_step, *left_input_group->statistics, *right_input_group->statistics);
+        group->statistics = deriveJoinStatistics(*join_step, input_statistics(0), input_statistics(1));
     }
     else if (const auto * read_step = typeid_cast<const ReadFromMergeTree *>(plan_step))
     {
@@ -69,34 +77,28 @@ void StatisticsDerivation::deriveStatistics(GroupId group_id)
     }
     else if (const auto * filter_step = typeid_cast<const FilterStep *>(plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
-        group->statistics = deriveFilterStatistics(*filter_step, *input_group->statistics);
+        group->statistics = deriveFilterStatistics(*filter_step, input_statistics(0));
     }
     else if (const auto * expression_step = typeid_cast<const ExpressionStep *>(plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
-        group->statistics = deriveExpressionStatistics(*expression_step, *input_group->statistics);
+        group->statistics = deriveExpressionStatistics(*expression_step, input_statistics(0));
     }
     else if (const auto * aggregating_step = typeid_cast<const AggregatingStep *>(plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
-        group->statistics = deriveAggregatingStatistics(*aggregating_step, *input_group->statistics);
+        group->statistics = deriveAggregatingStatistics(*aggregating_step, input_statistics(0));
     }
     else if (const auto * sorting_step = typeid_cast<const SortingStep *>(plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
-        group->statistics = deriveSortingStatistics(*sorting_step, *input_group->statistics);
+        group->statistics = deriveSortingStatistics(*sorting_step, input_statistics(0));
     }
     else if (const auto * limit_step = typeid_cast<const LimitStep *>(plan_step))
     {
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
-        group->statistics = deriveLimitStatistics(*limit_step, *input_group->statistics);
+        group->statistics = deriveLimitStatistics(*limit_step, input_statistics(0));
     }
     else if (!expression->inputs.empty())
     {
         /// By default take statistics from the first input
-        auto input_group = memo.getGroup(expression->inputs[0].group_id);
-        group->statistics = *input_group->statistics;
+        group->statistics = input_statistics(0);
     }
     else
     {
@@ -245,7 +247,7 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
         statistics.column_statistics[left_column].num_distinct_values = min_number_of_distinct_values;
         statistics.column_statistics[right_column].num_distinct_values = min_number_of_distinct_values;
 
-        /// Predicate reuses a column already seen on one side — redundant for selectivity.
+        /// Predicate reuses a column already seen on one side - redundant for selectivity.
         if (left_already_bound || right_already_bound)
         {
             LOG_TEST(log, "Predicate '{} = {}' is redundant (column already bound), skipping for selectivity",
@@ -262,7 +264,7 @@ ExpressionStatistics StatisticsDerivation::deriveJoinStatistics(
 
     statistics.estimated_row_count = left_statistics.estimated_row_count * right_statistics.estimated_row_count * join_selectivity;
 
-    /// Use the join order optimizer's cardinality as a lower bound — it handles
+    /// Use the join order optimizer's cardinality as a lower bound - it handles
     /// correlated predicates (e.g. composite FK joins) better than multiplicative independence.
     if (auto hint = join_step.getResultRowsEstimation())
     {

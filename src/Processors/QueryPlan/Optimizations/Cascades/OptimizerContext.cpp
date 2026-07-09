@@ -77,14 +77,14 @@ std::pair<GroupId, ExpressionProperties> OptimizerContext::addGroup(QueryPlan::N
     if (subplan_reference)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected CommonSubplanReferenceStep, it should be already resolved");
 
-    /// Strip a limit-less SortingStep::Full — pure sorting is a physical property, not a logical
+    /// Strip a limit-less SortingStep::Full - pure sorting is a physical property, not a logical
     /// one.  Return the child's GroupId along with the sorting as required properties, so the
     /// caller can attach them to the input link of the parent group expression.
     /// A SortingStep with a limit is a top-N (row-reducing) operator, so it is kept as an
     /// operator instead; the limit is owned by that operator, never by the sorting property.
     const auto * sorting_step = typeid_cast<const SortingStep *>(node.step.get());
     if (sorting_step)
-        memo.setSortSettings(sorting_step->getSettings());
+        memo.captureSortSettings(sorting_step->getSettings());
     if (sorting_step && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() == 0)
     {
         chassert(node.children.size() == 1);
@@ -176,7 +176,7 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
     /// Check if all inputs are fully optimized (all stages complete) and have
     /// a satisfying implementation.  A group can be fully done with no best if
     /// no rule could produce the required distribution (e.g. ReadFromSystemOne
-    /// at {N nodes}) — treat as pruned.
+    /// at {N nodes}) - treat as pruned.
     for (const auto & input : expression->inputs)
     {
         auto child_group = getGroup(input.group_id);
@@ -188,11 +188,11 @@ bool OptimizerContext::tryUpdateBestPlanDirectly(GroupExpressionPtr expression)
                 "input group #{} has no implementation for {}",
                 expression->getDescription(), expression->group_id,
                 input.group_id, input.required_properties.dump());
-            return true;  /// Unsatisfiable input — treat as pruned
+            return true;  /// Unsatisfiable input - treat as pruned
         }
     }
 
-    /// All inputs ready — compute cost directly, bypassing the OptimizeInputsTask chain.
+    /// All inputs ready - compute cost directly, bypassing the OptimizeInputsTask chain.
     deriveStatistics(expression->group_id);
     costAndUpdateBest(expression, /*prune_against_best=*/true);
     return true;

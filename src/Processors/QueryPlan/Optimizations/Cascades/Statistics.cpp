@@ -11,6 +11,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Poco/JSON/Parser.h>
 #include <Poco/JSON/Object.h>
+#include <Common/Exception.h>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -18,6 +19,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 void ExpressionStatistics::dump(WriteBuffer & out) const
 {
@@ -60,7 +66,7 @@ Float64 estimateRowWidthFromHeader(const Block & header)
     return std::max(total, MIN_ROW_WIDTH);
 }
 
-RelationStats getDummyStats(const String & dummy_stats_str, const String & table_name);
+RelationStats parseTableStatsHint(const String & dummy_stats_str, const String & table_name);
 
 /// Statistics hint can be passed in JSON as query parameter:
 ///
@@ -118,7 +124,7 @@ private:
     {
         if (!parsed_table_statistics.contains(table_name))
         {
-            parsed_table_statistics[table_name] = getDummyStats(statistics_hint_json, table_name);
+            parsed_table_statistics[table_name] = parseTableStatsHint(statistics_hint_json, table_name);
 
             /// Parse avg_row_bytes from the hint JSON
             try
@@ -133,7 +139,13 @@ private:
                         parsed_avg_row_bytes[table_name] = stat_object->getValue<Float64>("avg_row_bytes");
                 }
             }
-            catch (const Poco::Exception &) {} // NOLINT
+            catch (const Poco::Exception & e)
+            {
+                /// The other hint fields were already parsed, so a broken `avg_row_bytes` means a
+                /// malformed hint; the hint is a test knob, so make the mistake visible.
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot parse 'avg_row_bytes' for table '{}' from the statistics hint: {}", table_name, e.displayText());
+            }
         }
     }
 
