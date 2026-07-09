@@ -624,6 +624,7 @@ TEST(RemoveSettingsFromQuery, PrunesEmptySettingsAndKeepsQueryParseable)
         "SELECT sum(number) FROM numbers(100) SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw'",
         "SELECT 1 UNION ALL SELECT 2 SETTINGS max_rows_to_read = 0, max_execution_time = 0",
         "INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) SETTINGS max_rows_to_read = 0",
         "EXPLAIN SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0",
         "SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0) SETTINGS max_execution_time = 0",
     };
@@ -685,6 +686,7 @@ TEST(RemoveSettingsFromQuery, StripsResetToDefaultOverrides)
         "SELECT sum(number) FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, read_overflow_mode = DEFAULT",
         "SELECT 1 UNION ALL SELECT 2 SETTINGS max_rows_to_read = DEFAULT, max_execution_time = DEFAULT",
         "INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, read_overflow_mode = 'throw'",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) SETTINGS max_rows_to_read = DEFAULT",
         "SELECT number FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, max_threads = 4",
     };
 
@@ -753,6 +755,8 @@ TEST(RemoveSettingsFromQuery, StripsRepeatedOverrides)
         "SETTINGS max_rows_to_read = 0, max_execution_time = 0, max_rows_to_read = DEFAULT",
         "INSERT INTO t SELECT number FROM numbers(100) "
         "SETTINGS read_overflow_mode = 'throw', max_rows_to_read = 0, read_overflow_mode = DEFAULT",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) "
+        "SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT",
         "SELECT * FROM (SELECT number FROM numbers(100) "
         "SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT) SETTINGS max_execution_time = 0",
     };
@@ -940,6 +944,7 @@ TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
     const std::vector<String> queries = {
         "SELECT sum(number) FROM numbers(100) SETTINGS max_block_size = 1000000, min_insert_block_size_rows = 1000000",
         "INSERT INTO t SELECT number FROM numbers(100) SETTINGS min_insert_block_size_rows = 1000000",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) SETTINGS min_insert_block_size_rows = 1000000",
         "SELECT 1 SETTINGS max_block_size = DEFAULT, min_insert_block_size_rows = DEFAULT",
         "SELECT 1 SETTINGS min_insert_block_size_rows = 1000000, min_insert_block_size_rows = 1000000",
     };
