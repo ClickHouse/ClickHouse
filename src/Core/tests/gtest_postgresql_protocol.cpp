@@ -969,21 +969,24 @@ TEST(PostgreSQLProtocol, ExecuteZeroArityReachableThroughGrammar)
     /// `EXECUTE s()` (empty list). Previously `ParserExecute` required `(` and a
     /// non-empty argument list, so `PREPARE s AS SELECT 1` had no executable EXECUTE
     /// form even though the arity check accepted zero arguments at the AST level.
+    /// Return the owning ASTPtr so the parsed AST outlives every access below;
+    /// `ast->as<ASTExecute>()` is only a non-owning view into it.
     auto parse = [](const String & query)
     {
         ParserExecute parser;
-        ASTPtr ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-        return ast->as<ASTExecute>();
+        return parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     };
 
     {
-        const auto * execute = parse("EXECUTE s");
+        ASTPtr ast = parse("EXECUTE s");
+        const auto * execute = ast->as<ASTExecute>();
         ASSERT_TRUE(execute);
         EXPECT_EQ(execute->function_name, "s");
         EXPECT_EQ(execute->arguments.size(), 0u);
     }
     {
-        const auto * execute = parse("EXECUTE s()");
+        ASTPtr ast = parse("EXECUTE s()");
+        const auto * execute = ast->as<ASTExecute>();
         ASSERT_TRUE(execute);
         EXPECT_EQ(execute->function_name, "s");
         EXPECT_EQ(execute->arguments.size(), 0u);
