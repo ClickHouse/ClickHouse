@@ -296,27 +296,6 @@ export const IntegrationGrid = () => {
       }
       const fetchIntegrations = async () => {
         try {
-          const base = typeof window !== "undefined" && window.location.pathname.startsWith("/docs") ? "/docs" : ""
-          const fallbackResponse = await fetch(base + "https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/integrations-fallback.json", {
-            cache: "force-cache"
-          })
-
-          if (fallbackResponse.ok) {
-            const fallbackData = await fallbackResponse.json()
-            const transformedData = transformCMSData(fallbackData.data || [])
-            setIntegrations(transformedData)
-            cacheIntegrations(transformedData)
-            setError(null)
-            setLoading(false)
-            console.log("تم تحميل بيانات التكاملات الاحتياطية")
-          } else {
-            console.warn("الملف الاحتياطي غير متاح، سيتم المحاولة عبر CMS فقط")
-          }
-        } catch (fallbackErr) {
-          console.error("فشل تحميل بيانات التكاملات الاحتياطية:", fallbackErr)
-        }
-
-        try {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
             controller.abort()

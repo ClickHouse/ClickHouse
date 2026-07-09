@@ -5,6 +5,8 @@ import fnmatch
 import logging
 import math
 import os
+import socket
+import struct
 import time
 from typing import Literal
 
@@ -1110,3 +1112,183 @@ def test_mysql_dotnet_client(started_cluster):
     )
     # there is some thrash at the beggining of output, so it's better to use `in` instead of `==``
     assert reference in res
+
+
+def _com_field_list(client, table):
+    # COM_FIELD_LIST returns one ColumnDefinition41 packet per column, terminated by an EOF/OK
+    # packet. On access denial the server sends an ERR packet, which pymysql raises from read_packet().
+    # The payload is a NUL-terminated table name followed by an (empty) field wildcard.
+    client._execute_command(0x04, table + "\x00")
+    columns = []
+    packet = client._read_packet()
+    while not (packet.is_eof_packet() or packet.is_ok_packet()):
+        # ColumnDefinition41 layout: catalog, schema, table, org_table, name, org_name, ...
+        # The column name is the 5th length-encoded string.
+        for _ in range(4):
+            packet.read_length_coded_string()
+        columns.append(packet.read_length_coded_string().decode())
+        packet = client._read_packet()
+    return columns
+
+
+def test_mysql_metadata_commands_access_control(started_cluster):
+    # COM_FIELD_LIST (mysql_list_fields) and COM_INIT_DB (USE db) over the MySQL wire protocol
+    # must enforce the same access control as the equivalent SQL statements (DESCRIBE / USE).
+    node = cluster.instances["node"]
+    # The `default` user in this test's users.xml has password 123, so native queries need it.
+    creds = {"password": "123"}
+    node.query("DROP USER IF EXISTS mysql_lowpriv", settings=creds)
+    node.query(
+        "CREATE TABLE IF NOT EXISTS default.mysql_acl_employees "
+        "(id UInt64, name String, salary UInt64, ssn String) ENGINE=MergeTree ORDER BY id",
+        settings=creds,
+    )
+    node.query("CREATE USER mysql_lowpriv IDENTIFIED WITH no_password", settings=creds)
+    node.query(
+        "GRANT SELECT(id, name) ON default.mysql_acl_employees TO mysql_lowpriv",
+        settings=creds,
+    )
+
+    client = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_lowpriv",
+        password="",
+        database="default",
+        port=server_port,
+    )
+
+    # COM_FIELD_LIST on a table the user lacks SHOW COLUMNS on must be rejected (used to leak all
+    # column names regardless of column-level grants).
+    with pytest.raises(pymysql.err.MySQLError) as exc_info:
+        _com_field_list(client, "mysql_acl_employees")
+    assert "ACCESS_DENIED" in str(exc_info.value), str(exc_info.value)
+    assert "SHOW COLUMNS" in str(exc_info.value), str(exc_info.value)
+
+    # COM_INIT_DB to a database the user has no grants on must be rejected (used to switch the
+    # current database with no check, then COM_FIELD_LIST would leak system table schemas).
+    with pytest.raises(pymysql.err.MySQLError) as exc_info:
+        client.select_db("system")
+    assert "ACCESS_DENIED" in str(exc_info.value), str(exc_info.value)
+    assert "SHOW DATABASES" in str(exc_info.value), str(exc_info.value)
+
+    client.close()
+
+    # A user that is granted the table fully can still use both commands.
+    node.query(
+        "GRANT SHOW COLUMNS ON default.mysql_acl_employees TO mysql_lowpriv",
+        settings=creds,
+    )
+    granted = pymysql.connections.Connection(
+        host=started_cluster.get_instance_ip("node"),
+        user="mysql_lowpriv",
+        password="",
+        database="default",
+        port=server_port,
+    )
+    assert sorted(_com_field_list(granted, "mysql_acl_employees")) == [
+        "id",
+        "name",
+        "salary",
+        "ssn",
+    ]
+    granted.close()
+
+    node.query("DROP USER mysql_lowpriv", settings=creds)
+    node.query("DROP TABLE default.mysql_acl_employees", settings=creds)
+
+
+def _mysql_recv_packet(sock):
+    header = b""
+    while len(header) < 4:
+        chunk = sock.recv(4 - len(header))
+        if not chunk:
+            return None
+        header += chunk
+    length = header[0] | (header[1] << 8) | (header[2] << 16)
+    body = b""
+    while len(body) < length:
+        chunk = sock.recv(length - len(body))
+        if not chunk:
+            return None
+        body += chunk
+    return body
+
+
+def _mysql_send_packet(sock, seq, body):
+    length = len(body)
+    sock.sendall(bytes([length & 0xFF, (length >> 8) & 0xFF, (length >> 16) & 0xFF, seq]) + body)
+
+
+def test_mysql_handshake_database_does_not_leak_columns(started_cluster):
+    # The initial database in the MySQL handshake (CLIENT_CONNECT_WITH_DB) behaves like the
+    # connection-time database of every other protocol (native --database, HTTP database=,
+    # PostgreSQL startup): it is set without a SHOW_DATABASES check, so a connection succeeds even
+    # to a database the user cannot otherwise see (only the explicit `USE` / COM_INIT_DB statement
+    # is access-checked, matching InterpreterUseQuery). Selecting a database in the handshake must
+    # not become a way to bypass COM_FIELD_LIST access control: even when connected to `system`,
+    # COM_FIELD_LIST on a system table the user lacks SHOW COLUMNS on must still be rejected.
+    # We drive the handshake over a raw socket so we can request a database with no grants on it.
+    node = cluster.instances["node"]
+    creds = {"password": "123"}
+    node.query("DROP USER IF EXISTS mysql_handshake_lowpriv", settings=creds)
+    node.query(
+        "CREATE USER mysql_handshake_lowpriv IDENTIFIED WITH no_password", settings=creds
+    )
+
+    CLIENT_LONG_PASSWORD = 0x1
+    CLIENT_LONG_FLAG = 0x4
+    CLIENT_CONNECT_WITH_DB = 0x8
+    CLIENT_PROTOCOL_41 = 0x200
+    CLIENT_SECURE_CONNECTION = 0x8000
+    CLIENT_PLUGIN_AUTH = 0x80000
+
+    def open_handshake(database):
+        sock = socket.create_connection(
+            (started_cluster.get_instance_ip("node"), server_port), timeout=10
+        )
+        # Read and discard the server greeting.
+        assert _mysql_recv_packet(sock) is not None
+        capabilities = (
+            CLIENT_LONG_PASSWORD
+            | CLIENT_LONG_FLAG
+            | CLIENT_CONNECT_WITH_DB
+            | CLIENT_PROTOCOL_41
+            | CLIENT_SECURE_CONNECTION
+            | CLIENT_PLUGIN_AUTH
+        )
+        body = struct.pack("<I", capabilities)
+        body += struct.pack("<I", 16 * 1024 * 1024)  # max packet size
+        body += bytes([0x21])  # charset utf8_general_ci
+        body += b"\x00" * 23  # reserved
+        body += b"mysql_handshake_lowpriv\x00"
+        body += bytes([0])  # empty auth response (no_password)
+        body += database.encode() + b"\x00"
+        body += b"mysql_native_password\x00"
+        _mysql_send_packet(sock, 1, body)
+        # The handshake completes with an OK packet (no SHOW_DATABASES check on the initial db).
+        ok = _mysql_recv_packet(sock)
+        assert ok is not None and ok[0] == 0x00, ok
+        return sock
+
+    def com_field_list(sock, table):
+        # COM_FIELD_LIST (0x04): NUL-terminated table name + empty field wildcard.
+        _mysql_send_packet(sock, 0, bytes([0x04]) + table.encode() + b"\x00")
+        # On access denial the server replies with a single ERR packet (first byte 0xFF).
+        pkt = _mysql_recv_packet(sock)
+        assert pkt is not None, "connection closed instead of replying to COM_FIELD_LIST"
+        return pkt
+
+    # Connecting to `system` in the handshake succeeds (parity with other protocols).
+    sock = open_handshake("system")
+    # ... but COM_FIELD_LIST on a system table the user cannot see is still rejected: the handshake
+    # database is not a way around the COM_FIELD_LIST access check.
+    pkt = com_field_list(sock, "users")
+    assert pkt[0] == 0xFF, pkt  # ERR packet
+    assert b"ACCESS_DENIED" in pkt or b"SHOW COLUMNS" in pkt, pkt
+    sock.close()
+
+    # Connecting to `default` (the user's accessible database) also succeeds.
+    sock = open_handshake("default")
+    sock.close()
+
+    node.query("DROP USER mysql_handshake_lowpriv", settings=creds)
