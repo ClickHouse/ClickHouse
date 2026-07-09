@@ -1289,14 +1289,23 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                     std::vector<JoinActionRef *> edge;
                     for (auto & edge_it : applicable_edge)
                     {
-                        const auto & edge_sources = edge_it->getSourceRelations();
+                        /// Placement is driven by the relations that must all be present before the predicate
+                        /// is applicable: its source relations plus the null-supplying relation it is pinned
+                        /// to when it is an ON-clause conjunct of an outer join - the same rule as
+                        /// `collectJoinEdgesMask` (see the comment there). Placing a pinned conjunct by its
+                        /// sources alone would drop it from the outer join when the preserved side has
+                        /// already been joined with another relation.
+                        BitSet needed_rels = edge_it->getSourceRelations();
+                        if (auto pin_it = query_graph.outer_join_conditions.find(*edge_it); pin_it != query_graph.outer_join_conditions.end())
+                            needed_rels.set(pin_it->second);
+
                         if (connects(edge_it, left->relations, right->relations))
                         {
                             LOG_TEST(log, "Adding predicate connecting {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             has_direct_connection = true;
                             edge.push_back(edge_it);
                         }
-                        else if (edge_sources.count() == 1 && (edge_sources == left->relations || edge_sources == right->relations))
+                        else if (needed_rels.count() == 1 && (needed_rels == left->relations || needed_rels == right->relations))
                         {
                             /// A single-relation predicate is attached at the join step where its relation forms
                             /// a whole side, i.e. at the leaf join of that relation. Every join tree contains
@@ -1305,9 +1314,17 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solveDPsize()
                             LOG_TEST(log, "Adding single-relation predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             edge.push_back(edge_it);
                         }
-                        else if (edge_sources.none() && component_size == 2)
+                        else if (needed_rels.none() && component_size == 2)
                         {
                             LOG_TEST(log, "Adding constant predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
+                            edge.push_back(edge_it);
+                        }
+                        else if (areIntersecting(needed_rels, left->relations) && areIntersecting(needed_rels, right->relations))
+                        {
+                            /// A pinned conjunct spanning the split (its sources on one side, its pin on the
+                            /// other): this join is the lowest one that makes it applicable, so it belongs
+                            /// to this join's ON condition.
+                            LOG_TEST(log, "Adding pinned predicate for {} and {} : {}", left->dump(), right->dump(), edge_it->dump());
                             edge.push_back(edge_it);
                         }
                         else
