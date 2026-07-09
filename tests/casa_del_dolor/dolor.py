@@ -256,6 +256,12 @@ parser.add_argument(
     help="Add 'distributed_ddl' settings",
 )
 parser.add_argument(
+    "--without-distributed-query",
+    action="store_false",
+    dest="add_distributed_query",
+    help="Add 'distributed_query' settings",
+)
+parser.add_argument(
     "--without-shared-catalog",
     action="store_false",
     dest="add_shared_catalog",

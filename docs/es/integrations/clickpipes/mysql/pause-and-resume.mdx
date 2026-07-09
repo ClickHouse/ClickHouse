@@ -1,0 +1,51 @@
+---
+title: 'Pausar y reanudar un ClickPipe para MySQL'
+description: 'Pausar y reanudar un ClickPipe para MySQL'
+sidebarTitle: 'Pausa de tabla'
+slug: /integrations/clickpipes/mysql/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+Hay situaciones en las que puede resultar útil pausar un ClickPipe para MySQL. Por ejemplo, puede que quiera ejecutar análisis sobre los datos existentes en un estado estático. O bien, podría estar realizando actualizaciones en MySQL. A continuación se explica cómo pausar y reanudar un ClickPipe para MySQL.
+
+<div id="pause-clickpipe-steps">
+  ## Pasos para pausar un ClickPipe para MySQL
+</div>
+
+1. En la pestaña Fuente de datos, haz clic en el ClickPipe para MySQL que quieras pausar.
+2. Ve a la pestaña **Configuración**.
+3. Haz clic en el botón **Pausar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. Debería aparecer un cuadro de diálogo de confirmación. Haz clic de nuevo en **Pausar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. Ve a la pestaña **Métricas**.
+5. En unos 5 segundos (y también al actualizar la página), el estado del ClickPipe debería ser **Pausado**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Pasos para reanudar un ClickPipe para MySQL
+</div>
+
+1. En la pestaña **Fuentes de datos**, haz clic en el ClickPipe para MySQL que quieres reanudar. El estado del mirror debería ser **Pausado** al principio.
+2. Ve a la pestaña **Configuración**.
+3. Haz clic en el botón **Reanudar**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. Debería aparecer un cuadro de diálogo de confirmación. Haz clic en Reanudar de nuevo.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. Ve a la pestaña **Métricas**.
+6. En unos 5 segundos (y también al actualizar la página), el estado del ClickPipe debería ser **Running**.

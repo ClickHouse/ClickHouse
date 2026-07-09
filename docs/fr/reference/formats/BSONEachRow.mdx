@@ -1,0 +1,148 @@
+---
+alias: []
+description: 'Documentation du format BSONEachRow'
+input_format: true
+keywords: ['BSONEachRow']
+output_format: true
+slug: /interfaces/formats/BSONEachRow
+title: 'BSONEachRow'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✔      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+Le format `BSONEachRow` analyse les données comme une séquence de documents Binary JSON (BSON), sans aucun séparateur entre eux.
+Chaque ligne est représentée par un document unique, et chaque colonne par un champ unique du document BSON, avec le nom de la colonne comme clé.
+
+<div id="data-types-matching">
+  ## Correspondance des types de données
+</div>
+
+Pour la sortie, la correspondance suivante est utilisée entre les types ClickHouse et les types BSON :
+
+| Type ClickHouse                                                                         | Type BSON                                                                                                                                  |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| [Bool](/fr/reference/data-types/boolean)                                                   | `\x08` booléen                                                                                                                             |
+| [Int8/UInt8](/fr/reference/data-types/int-uint)/[Enum8](/fr/reference/data-types/enum)        | `\x10` int32                                                                                                                               |
+| [Int16/UInt16](/fr/reference/data-types/int-uint)/[Enum16](/fr/reference/data-types/enum)     | `\x10` int32                                                                                                                               |
+| [Int32](/fr/reference/data-types/int-uint)                                                 | `\x10` int32                                                                                                                               |
+| [UInt32](/fr/reference/data-types/int-uint)                                                | `\x12` int64                                                                                                                               |
+| [Int64/UInt64](/fr/reference/data-types/int-uint)                                          | `\x12` int64                                                                                                                               |
+| [Float32/Float64](/fr/reference/data-types/float)                                          | `\x01` double                                                                                                                              |
+| [Date](/fr/reference/data-types/date)/[Date32](/fr/reference/data-types/date32)               | `\x10` int32                                                                                                                               |
+| [DateTime](/fr/reference/data-types/datetime)                                              | `\x12` int64                                                                                                                               |
+| [DateTime64](/fr/reference/data-types/datetime64)                                          | `\x09` datetime                                                                                                                            |
+| [Decimal32](/fr/reference/data-types/decimal)                                              | `\x10` int32                                                                                                                               |
+| [Decimal64](/fr/reference/data-types/decimal)                                              | `\x12` int64                                                                                                                               |
+| [Decimal128](/fr/reference/data-types/decimal)                                             | `\x05` binaire, `\x00` sous-type binaire, taille = 16                                                                                      |
+| [Decimal256](/fr/reference/data-types/decimal)                                             | `\x05` binaire, `\x00` sous-type binaire, taille = 32                                                                                      |
+| [Int128/UInt128](/fr/reference/data-types/int-uint)                                        | `\x05` binaire, `\x00` sous-type binaire, taille = 16                                                                                      |
+| [Int256/UInt256](/fr/reference/data-types/int-uint)                                        | `\x05` binaire, `\x00` sous-type binaire, taille = 32                                                                                      |
+| [String](/fr/reference/data-types/string)/[FixedString](/fr/reference/data-types/fixedstring) | `\x05` binaire, `\x00` sous-type binaire ou \x02 chaîne si le paramètre output&#95;format&#95;bson&#95;string&#95;as&#95;string est activé |
+| [UUID](/fr/reference/data-types/uuid)                                                      | `\x05` binaire, `\x04` sous-type uuid, taille = 16                                                                                         |
+| [Array](/fr/reference/data-types/array)                                                    | `\x04` array                                                                                                                               |
+| [Tuple](/fr/reference/data-types/tuple)                                                    | `\x04` array                                                                                                                               |
+| [Named Tuple](/fr/reference/data-types/tuple)                                              | `\x03` document                                                                                                                            |
+| [Map](/fr/reference/data-types/map)                                                        | `\x03` document                                                                                                                            |
+| [IPv4](/fr/reference/data-types/ipv4)                                                      | `\x10` int32                                                                                                                               |
+| [IPv6](/fr/reference/data-types/ipv6)                                                      | `\x05` binaire, `\x00` sous-type binaire                                                                                                   |
+
+Pour l’entrée, la correspondance suivante est utilisée entre les types BSON et les types ClickHouse :
+
+| Type BSON                                       | Type ClickHouse                                                                                                                                                         |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `\x01` double                                   | [Float32/Float64](/fr/reference/data-types/float)                                                                                                                          |
+| `\x02` chaîne                                   | [String](/fr/reference/data-types/string)/[FixedString](/fr/reference/data-types/fixedstring)                                                                                 |
+| `\x03` document                                 | [Map](/fr/reference/data-types/map)/[Named Tuple](/fr/reference/data-types/tuple)                                                                                             |
+| `\x04` array                                    | [Array](/fr/reference/data-types/array)/[Tuple](/fr/reference/data-types/tuple)                                                                                               |
+| `\x05` binaire, `\x00` sous-type binaire        | [String](/fr/reference/data-types/string)/[FixedString](/fr/reference/data-types/fixedstring)/[IPv6](/fr/reference/data-types/ipv6)                                              |
+| `\x05` binaire, `\x02` ancien sous-type binaire | [String](/fr/reference/data-types/string)/[FixedString](/fr/reference/data-types/fixedstring)                                                                                 |
+| `\x05` binaire, `\x03` ancien sous-type uuid    | [UUID](/fr/reference/data-types/uuid)                                                                                                                                      |
+| `\x05` binaire, `\x04` sous-type uuid           | [UUID](/fr/reference/data-types/uuid)                                                                                                                                      |
+| `\x07` ObjectId                                 | [String](/fr/reference/data-types/string)/[FixedString](/fr/reference/data-types/fixedstring)                                                                                 |
+| `\x08` booléen                                  | [Bool](/fr/reference/data-types/boolean)                                                                                                                                   |
+| `\x09` datetime                                 | [DateTime64](/fr/reference/data-types/datetime64)                                                                                                                          |
+| `\x0A` valeur NULL                              | [NULL](/fr/reference/data-types/nullable)                                                                                                                                  |
+| `\x0D` code JavaScript                          | [String](/fr/reference/data-types/string)/[FixedString](/fr/reference/data-types/fixedstring)                                                                                 |
+| `\x0E` symbole                                  | [String](/fr/reference/data-types/string)/[FixedString](/fr/reference/data-types/fixedstring)                                                                                 |
+| `\x10` int32                                    | [Int32/UInt32](/fr/reference/data-types/int-uint)/[Decimal32](/fr/reference/data-types/decimal)/[IPv4](/fr/reference/data-types/ipv4)/[Enum8/Enum16](/fr/reference/data-types/enum) |
+| `\x12` int64                                    | [Int64/UInt64](/fr/reference/data-types/int-uint)/[Decimal64](/fr/reference/data-types/decimal)/[DateTime64](/fr/reference/data-types/datetime64)                                |
+
+Les autres types BSON ne sont pas pris en charge. De plus, ce format effectue des conversions entre différents types entiers.
+Par exemple, il est possible d&#39;insérer dans ClickHouse une valeur BSON `int32` en tant que [`UInt8`](/fr/reference/data-types/int-uint).
+
+Les grands entiers et les types décimaux comme `Int128`/`UInt128`/`Int256`/`UInt256`/`Decimal128`/`Decimal256` peuvent être interprétés à partir d&#39;une valeur BSON binaire avec le sous-type binaire `\x00`.
+Dans ce cas, le format vérifie que la taille des données binaires correspond à celle de la valeur attendue.
+
+<Note>
+  Ce format ne fonctionne pas correctement sur les plates-formes big-endian.
+</Note>
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+<div id="inserting-data">
+  ### Insertion de données
+</div>
+
+À l’aide d’un fichier BSON nommé `football.bson` et contenant les données suivantes :
+
+```text
+    ┌───────date─┬─season─┬─home_team─────────────┬─away_team───────────┬─home_team_goals─┬─away_team_goals─┐
+ 1. │ 2022-04-30 │   2021 │ Sutton United         │ Bradford City       │               1 │               4 │
+ 2. │ 2022-04-30 │   2021 │ Swindon Town          │ Barrow              │               2 │               1 │
+ 3. │ 2022-04-30 │   2021 │ Tranmere Rovers       │ Oldham Athletic     │               2 │               0 │
+ 4. │ 2022-05-02 │   2021 │ Port Vale             │ Newport County      │               1 │               2 │
+ 5. │ 2022-05-02 │   2021 │ Salford City          │ Mansfield Town      │               2 │               2 │
+ 6. │ 2022-05-07 │   2021 │ Barrow                │ Northampton Town    │               1 │               3 │
+ 7. │ 2022-05-07 │   2021 │ Bradford City         │ Carlisle United     │               2 │               0 │
+ 8. │ 2022-05-07 │   2021 │ Bristol Rovers        │ Scunthorpe United   │               7 │               0 │
+ 9. │ 2022-05-07 │   2021 │ Exeter City           │ Port Vale           │               0 │               1 │
+10. │ 2022-05-07 │   2021 │ Harrogate Town A.F.C. │ Sutton United       │               0 │               2 │
+11. │ 2022-05-07 │   2021 │ Hartlepool United     │ Colchester United   │               0 │               2 │
+12. │ 2022-05-07 │   2021 │ Leyton Orient         │ Tranmere Rovers     │               0 │               1 │
+13. │ 2022-05-07 │   2021 │ Mansfield Town        │ Forest Green Rovers │               2 │               2 │
+14. │ 2022-05-07 │   2021 │ Newport County        │ Rochdale            │               0 │               2 │
+15. │ 2022-05-07 │   2021 │ Oldham Athletic       │ Crawley Town        │               3 │               3 │
+16. │ 2022-05-07 │   2021 │ Stevenage Borough     │ Salford City        │               4 │               2 │
+17. │ 2022-05-07 │   2021 │ Walsall               │ Swindon Town        │               0 │               3 │
+    └────────────┴────────┴───────────────────────┴─────────────────────┴─────────────────┴─────────────────┘
+```
+
+Insérez les données :
+
+```sql
+INSERT INTO football FROM INFILE 'football.bson' FORMAT BSONEachRow;
+```
+
+<div id="reading-data">
+  ### Lecture des données
+</div>
+
+Lisez les données à l’aide du format `BSONEachRow` :
+
+```sql
+SELECT *
+FROM football INTO OUTFILE 'docs_data/bson/football.bson'
+FORMAT BSONEachRow
+```
+
+<Tip>
+  BSON est un format binaire qui ne s’affiche pas sous une forme lisible dans un terminal. Utilisez `INTO OUTFILE` pour produire des fichiers BSON.
+</Tip>
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>
+
+| Paramètre                                                                                                                                                                          | Description                                                                                                                           | Par défaut |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| [`output_format_bson_string_as_string`](/fr/reference/settings/formats#output_format_bson_string_as_string)                                                                           | Utiliser le type String de BSON au lieu de Binary pour les colonnes de type String.                                                   | `false`    |
+| [`input_format_bson_skip_fields_with_unsupported_types_in_schema_inference`](/fr/reference/settings/formats#input_format_bson_skip_fields_with_unsupported_types_in_schema_inference) | Autoriser l’omission des colonnes dont les types ne sont pas pris en charge lors de l’inférence du schéma pour le format BSONEachRow. | `false`    |

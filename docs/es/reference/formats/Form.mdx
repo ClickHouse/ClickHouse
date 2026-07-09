@@ -1,0 +1,49 @@
+---
+alias: []
+description: 'Documentación sobre el formato Form'
+input_format: true
+keywords: ['Form']
+output_format: false
+slug: /interfaces/formats/Form
+title: 'Form'
+doc_type: 'reference'
+---
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✔       | ✗      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+El formato `Form` puede utilizarse para leer un único registro en el formato `application/x-www-form-urlencoded`,
+en el que los datos tienen el formato `key1=value1&key2=value2`.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Dado un archivo `data.tmp` ubicado en la ruta `user_files` que contiene algunos datos codificados en URL:
+
+```text title="data.tmp"
+t_page=116&c.e=ls7xfkpm&c.tti.m=raf&rt.start=navigation&rt.bmr=390%2C11%2C10
+```
+
+```sql title="Query"
+SELECT * FROM file(data.tmp, Form) FORMAT vertical;
+```
+
+```response title="Response"
+Row 1:
+──────
+t_page:   116
+c.e:      ls7xfkpm
+c.tti.m:  raf
+rt.start: navigation
+rt.bmr:   390,11,10
+```
+
+<div id="format-settings">
+  ## Configuración del formato
+</div>

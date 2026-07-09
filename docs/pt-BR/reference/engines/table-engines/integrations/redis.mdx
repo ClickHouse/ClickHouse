@@ -1,0 +1,163 @@
+---
+description: 'Este motor permite integrar o ClickHouse ao Redis.'
+sidebarTitle: 'Redis'
+slug: /engines/table-engines/integrations/redis
+title: 'Motor de tabela Redis'
+doc_type: 'guide'
+---
+
+Este motor permite integrar o ClickHouse ao [Redis](https://redis.io/). Como o Redis adota o modelo chave-valor, recomendamos fortemente que ele seja consultado apenas de forma pontual, como em `where k=xx` ou `where k in (xx, xx)`.
+
+<div id="creating-a-table">
+  ## Criar uma tabela
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name
+(
+    name1 [type1],
+    name2 [type2],
+    ...
+) ENGINE = Redis({host:port[, db_index[, password[, pool_size]]] | named_collection[, option=value [,..]] })
+PRIMARY KEY(primary_key_name);
+```
+
+**Parâmetros do motor**
+
+* `host:port` — Endereço do servidor Redis; você pode ignorar a porta, e a porta padrão do Redis, 6379, será usada.
+* `db_index` — Índice do banco de dados Redis, de 0 a 15; o padrão é 0.
+* `password` — Senha do usuário; o padrão é uma string vazia.
+* `pool_size` — Tamanho máximo do pool de conexões do Redis; o padrão é 16.
+* `primary_key_name` - qualquer nome de coluna na lista de colunas.
+
+<Info>
+  **Serialização**
+
+  `PRIMARY KEY` suporta apenas uma coluna. A chave primária será serializada em formato binário como uma chave do Redis.
+  As colunas diferentes da chave primária serão serializadas em formato binário como valores do Redis, na ordem correspondente.
+</Info>
+
+Os argumentos também podem ser passados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections). Nesse caso, `host` e `port` devem ser especificados separadamente. Essa abordagem é recomendada para ambientes de produção. No momento, todos os parâmetros passados ao Redis usando coleções nomeadas são obrigatórios.
+
+<Info>
+  **Filtragem**
+
+  Consultas com `key equals` ou `in filtering` serão otimizadas para buscas de múltiplas chaves no Redis. Se as consultas não incluírem filtro pela chave, ocorrerá uma varredura completa da tabela, o que é uma operação custosa.
+</Info>
+
+<div id="usage-example">
+  ## Exemplo de uso
+</div>
+
+Crie uma tabela no ClickHouse usando o motor `Redis` com argumentos simples:
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis('redis1:6379') PRIMARY KEY(key);
+```
+
+Ou usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections):
+
+```xml
+<named_collections>
+    <redis_creds>
+        <host>localhost</host>
+        <port>6379</port>
+        <password>****</password>
+        <pool_size>16</pool_size>
+        <db_index>0</db_index>
+    </redis_creds>
+</named_collections>
+```
+
+```sql title="Query"
+CREATE TABLE redis_table
+(
+    `key` String,
+    `v1` UInt32,
+    `v2` String,
+    `v3` Float32
+)
+ENGINE = Redis(redis_creds) PRIMARY KEY(key);
+```
+
+Inserção:
+
+```sql title="Query"
+INSERT INTO redis_table VALUES('1', 1, '1', 1.0), ('2', 2, '2', 2.0);
+```
+
+```sql title="Query"
+SELECT COUNT(*) FROM redis_table;
+```
+
+```text title="Response"
+┌─count()─┐
+│       2 │
+└─────────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE key='1';
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 1   │  1 │ 1  │  1 │
+└─────┴────┴────┴────┘
+```
+
+```sql title="Query"
+SELECT * FROM redis_table WHERE v1=2;
+```
+
+```text title="Response"
+┌─key─┬─v1─┬─v2─┬─v3─┐
+│ 2   │  2 │ 2  │  2 │
+└─────┴────┴────┴────┘
+```
+
+Atualização:
+
+Observe que não é possível atualizar a chave primária.
+
+```sql title="Query"
+ALTER TABLE redis_table UPDATE v1=2 WHERE key='1';
+```
+
+Excluir:
+
+```sql title="Query"
+ALTER TABLE redis_table DELETE WHERE key='1';
+```
+
+Truncate:
+
+Executa o flush assíncrono do banco de dados do Redis. Além disso, `Truncate` também oferece suporte ao modo SYNC.
+
+```sql title="Query"
+TRUNCATE TABLE redis_table SYNC;
+```
+
+Join:
+
+Junção com outras tabelas.
+
+```sql title="Query"
+SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
+```
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+O motor Redis também oferece suporte a consultas de varredura, como `where k > xx`, mas tem algumas limitações:
+
+1. Em casos muito raros, uma consulta de varredura pode gerar chaves duplicadas durante o rehash. Veja os detalhes em [Redis Scan](https://github.com/redis/redis/blob/e4d183afd33e0b2e6e8d1c79a832f678a04a7886/src/dict.c#L1186-L1269).
+2. Durante a varredura, chaves podem ser criadas e excluídas, portanto o conjunto de dados resultante não representa um ponto válido no tempo.

@@ -315,6 +315,11 @@ bool StorageMerge::supportsPrewhere() const
     return traverseTablesUntil([](const auto & table) { return !table->supportsPrewhere(); }) == nullptr;
 }
 
+bool StorageMerge::supportsOptimizationToSubcolumns() const
+{
+    return traverseTablesUntil([](const auto & table) { return !table->supportsOptimizationToSubcolumns(); }) == nullptr;
+}
+
 bool StorageMerge::canMoveConditionsToPrewhere() const
 {
     /// NOTE: This check and the above check are used during query analysis as condition for applying
@@ -1522,7 +1527,7 @@ StorageMerge::DatabaseTablesIterators StorageMerge::DatabaseNameOrRegexp::getDat
     else
     {
         /// database_name argument is a regexp
-        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
+        auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true});
 
         for (const auto & db : databases)
         {
