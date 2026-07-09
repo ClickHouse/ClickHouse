@@ -1839,12 +1839,13 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     if (chunk == 0)
         return;
     /// Refill hysteresis: a launch costs a machine round-trip (and, on the stateless arm, its
-    /// own GET), so top the lead up in at-least-window pieces - but hold ONLY when the HORIZON
-    /// is what makes the piece small (`chunk == capacity`). A chunk bounded by the job tail or
-    /// by the extent/EOF clamp inside `boundedFetchSize` is all the read-ahead currently
-    /// allowed: the extent advances per mark-range task, so holding it would keep prefetch
-    /// permanently behind the consumer.
-    if (chunk < effectiveWindowSize(level) && chunk == capacity && base + chunk < r.range.end())
+    /// own GET), so wait for the cursor to open HALF the horizon before topping the lead up
+    /// (classic double buffering) - but hold ONLY when the HORIZON is what makes the piece
+    /// small (`chunk == capacity`). A chunk bounded by the job tail or by the extent/EOF
+    /// clamp inside `boundedFetchSize` is all the read-ahead currently allowed: the extent
+    /// advances per mark-range task, so holding it would keep prefetch permanently behind
+    /// the consumer.
+    if (chunk == capacity && capacity < fillAheadLead(level) / 2 && base + chunk < r.range.end())
         return;
 
     /// Read-ahead runs on the pool (async), committing cells progressively; the serve cursor

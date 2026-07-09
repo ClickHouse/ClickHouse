@@ -3994,20 +3994,29 @@ TEST(ReaderExecutor, DoneMachineCollectedAndLeadToppedUpBehindCursor)
 
     /// Window 2 [2000, 4000) serves from the machine's committed cells. Its finishWindow
     /// must collect the RELEASED machine although the cursor (4000) is still strictly
-    /// inside its window (end 8000), and top the lead up: the next machine starts at the
-    /// old fetch frontier and stays inside the new horizon [4000, 4000 + 6000).
+    /// inside its window (end 8000) - the empty slot proves the collect - but the top-up
+    /// is HELD: only 2000 of the horizon is open, below the half-lead refill threshold.
     auto w2 = executor.readNextWindow();
     ASSERT_EQ(w2.range().offset, 2000u);
     ASSERT_EQ(w2.range().size, 2000u);
-    ASSERT_TRUE(inspect(executor).hasInflightPrefetch()) << "released machine not collected behind the cursor";
+    ASSERT_FALSE(inspect(executor).hasInflightPrefetch()) << "released machine not collected behind the cursor";
+
+    /// Window 3 [4000, 6000) opens half the horizon (4000 of 6000): the top-up launches
+    /// at the old fetch frontier, bounded by the new horizon [6000, 6000 + 6000).
+    auto w3 = executor.readNextWindow();
+    ASSERT_EQ(w3.range().offset, 4000u);
+    ASSERT_EQ(w3.range().size, 2000u);
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch()) << "half-open horizon must top the lead up";
     EXPECT_EQ(inspect(executor).inflightPrefetchOffset(), 8000u);
-    EXPECT_LE(inspect(executor).inflightPrefetchOffset() + inspect(executor).inflightPrefetchSize(), 4000u + 6000u);
+    EXPECT_LE(inspect(executor).inflightPrefetchOffset() + inspect(executor).inflightPrefetchSize(), 6000u + 6000u);
 
     /// Drain and verify the whole payload.
     String result;
     for (const auto & node : w1.getNodes())
         result.append(node.data(), node.size);
     for (const auto & node : w2.getNodes())
+        result.append(node.data(), node.size);
+    for (const auto & node : w3.getNodes())
         result.append(node.data(), node.size);
     while (true)
     {
