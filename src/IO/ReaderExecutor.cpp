@@ -130,6 +130,7 @@ ReaderExecutor::ReaderExecutor(
     ReadContinuityTracker::Options continuity_options;
     continuity_options.bridgeable_gap = min_bytes_for_seek;
     continuity_tracker = ReadContinuityTracker(continuity_options);
+    consume_tracker = ReadContinuityTracker(continuity_options);
 }
 
 ReaderExecutor::ReaderExecutor(
@@ -270,11 +271,11 @@ ChainedBuffers ReaderExecutor::readNextWindow()
 
 void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
 {
-    /// At the read extent there is nothing left to (re)plan: `boundedPlanSpan` clamps to the
-    /// extent, so a replan would only build an empty plan (and needlessly reset the in-flight
-    /// pin). `serveWindow` then returns empty - the correct EOF for this extent; a later
-    /// `setReadExtent` re-plans from the new bound. (There is no machine to collect here either:
-    /// fetches are extent-clamped, so by the extent any machine's range is already served.)
+    /// At the read extent there is nothing to serve, so nothing to (re)plan for - a replan
+    /// here would only reset the in-flight pin. `serveWindow` returns empty - the correct
+    /// EOF for this extent; a later `setReadExtent` resumes from the new bound. (A machine
+    /// may still be in flight PAST the extent - reach-allowed read-ahead, `fetchAllowance` -
+    /// it stays held and is collected when the serve resumes.)
     if (atExtent())
         return;
 
@@ -307,6 +308,9 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
 ChainedBuffers ReaderExecutor::finishWindow(ChainedBuffers chain)
 {
     stats.add(Stats::RequestedBytes, chain.range().size);
+    /// Feed the consumption estimator with what was actually served (physical space).
+    if (chain.range().size)
+        consume_tracker.recordReadRange(chain.range().offset, chain.range().size);
     position += chain.range().size;
     LOG_TRACE(log, "readNextWindow: got {} bytes, {} nodes, position advanced to {}",
         chain.range().size, chain.getNodes().size(), position);
@@ -349,6 +353,7 @@ void ReaderExecutor::seek(size_t new_position)
     /// Feed the seek to the continuity estimator and rewind the plan-feed watermark,
     /// so the post-seek plan re-feeds its predicted reads from here.
     continuity_tracker.recordSeek(new_physical);
+    consume_tracker.recordSeek(new_physical);
     continuity_fed_end = new_physical;
 
     /// A seek away from the current frontier strands the in-flight fill segment;
@@ -1835,16 +1840,16 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     if (base >= horizon_end)
         return;
     const size_t capacity = horizon_end - base;
-    const size_t chunk = std::min(r.range.end() - base, boundedFetchSize(capacity));
+    const size_t chunk = std::min({r.range.end() - base, capacity, fetchAllowance(base)});
     if (chunk == 0)
         return;
     /// Refill hysteresis: a launch costs a machine round-trip (and, on the stateless arm, its
     /// own GET), so wait for the cursor to open HALF the horizon before topping the lead up
     /// (classic double buffering) - but hold ONLY when the HORIZON is what makes the piece
-    /// small (`chunk == capacity`). A chunk bounded by the job tail or by the extent/EOF
-    /// clamp inside `boundedFetchSize` is all the read-ahead currently allowed: the extent
-    /// advances per mark-range task, so holding it would keep prefetch permanently behind
-    /// the consumer.
+    /// small (`chunk == capacity`). A chunk bounded by the job tail or by the fetch
+    /// allowance (reach/EOF) is all the read-ahead currently allowed - the allowance grows
+    /// with the confirmed run, so holding such a piece would keep prefetch permanently
+    /// behind the consumer.
     if (chunk == capacity && capacity < fillAheadLead(level) / 2 && base + chunk < r.range.end())
         return;
 
@@ -1888,7 +1893,7 @@ void ReaderExecutor::advanceAhead()
     }
 
     const size_t position_phys = toPhys(position);
-    const size_t probe = boundedFetchSize(window_size);
+    const size_t probe = std::min(window_size, fetchAllowance(position_phys));
     if (probe == 0)
         return;
     /// The producer's look-ahead replan: demand coverage through the next ahead window
@@ -2927,15 +2932,30 @@ size_t ReaderExecutor::clampToExtent(size_t win_size) const
     return std::min(win_size, remaining);
 }
 
-size_t ReaderExecutor::boundedFetchSize(size_t want) const
+size_t ReaderExecutor::fetchAllowance(size_t phys_from) const
 {
-    /// PRODUCER-side clamp: an arbitrary fetch ask (the fill-ahead lead, the launch probe)
-    /// bounded by what exists (the known file remainder) and what may be touched (the
-    /// extent). Deliberately NOT capped at the serving horizon - the run-ahead may exceed
-    /// one window; the consumer's ceiling is `readCeiling`.
-    if (!offset_map.hasUnknownSize())
-        want = std::min(want, totalSize() - position);
-    return clampToExtent(want);
+    /// PRODUCER-side allowance: how many PHYSICAL bytes a fetch may take from `phys_from`
+    /// (a launch frontier or the cursor). Bounded by what exists (the file end) and by how
+    /// far the read is predicted to be CONSUMED: the extent (declared consumption - the
+    /// caller reads to there), extended past it by the CONSUMED run's reach, so the fill
+    /// does not stop and restart at every per-mark-range `setReadUntilPosition` advance.
+    /// The consumption estimator - NOT `boundedReach`, which extrapolates planned SOURCE
+    /// reads and always runs past the extent (the plan is extent-independent); keyed off
+    /// it, a one-granule point read would eagerly fetch the whole plan span. A sequential
+    /// scan EARNS extent-crossing prefetch from its observed run; a point read stops at
+    /// its granule's extent. A transient's extent IS the request - fetching past it would
+    /// over-read a one-shot `readBigAt`. Deliberately NOT capped at the serving horizon -
+    /// the caller applies it; the consumer's ceiling is `readCeiling`.
+    size_t bound = std::numeric_limits<size_t>::max();
+    if (!hasUnknownSize())
+        bound = toPhys(totalSize());
+    if (read_extent_end)
+    {
+        const size_t extent_phys = toPhys(*read_extent_end);
+        const size_t consumed_reach = clampReach(consume_tracker.predictedForwardLength(), toPhys(position));
+        bound = std::min(bound, is_transient ? extent_phys : std::max(extent_phys, consumed_reach));
+    }
+    return bound > phys_from ? bound - phys_from : 0;
 }
 
 }

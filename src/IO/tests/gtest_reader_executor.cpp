@@ -4029,6 +4029,141 @@ TEST(ReaderExecutor, DoneMachineCollectedAndLeadToppedUpBehindCursor)
     EXPECT_EQ(result, content);
 }
 
+TEST(ReaderExecutor, PrefetchRunsPastTheAdvancingExtent)
+{
+    /// The read extent (`setReadUntilPosition`) bounds the CONSUMER, not the producer:
+    /// where the run is predicted to continue (`fetchAllowance` = max(extent, reach)),
+    /// the fill-ahead machine crosses the extent instead of stopping and restarting at
+    /// every per-mark-range advance. The serve still EOFs at the extent; once the extent
+    /// advances, the already-fetched bytes serve with ZERO new source requests.
+    DB::ServerUUID::setRandomForUnitTests();
+
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_past_extent");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_past_extent_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    settings[DB::FileCacheSetting::max_size] = 1024 * 1024;
+    settings[DB::FileCacheSetting::max_file_segment_size] = 2000;
+    settings[DB::FileCacheSetting::boundary_alignment] = 2000;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_past_extent", settings);
+    cache->initialize();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    auto provider = std::make_shared<DB::DiskCacheProvider>(cache, cache_settings, /*query_id_=*/String{});
+
+    String content(8000, '\0');
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('a' + (i % 23));
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"extent_obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("extent_obj", "extent_obj", content.size());
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(provider);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 2000;
+    executor_options.fill_ahead_lead = 6000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, caches, executor_options);
+
+    /// The first mark range ends at 6000; the file continues to 8000.
+    executor.setReadExtent(6000);
+
+    /// Window 1 [0, 2000): the cold inline read; its finishWindow launches the machine at
+    /// the frontier. No consumed run is confirmed yet, so the first launch stays
+    /// extent-bounded: [2000, 6000), not past it.
+    auto w1 = executor.readNextWindow();
+    ASSERT_EQ(w1.range().offset, 0u);
+    ASSERT_EQ(w1.range().size, 2000u);
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch());
+    EXPECT_EQ(inspect(executor).inflightPrefetchOffset(), 2000u);
+    EXPECT_EQ(inspect(executor).inflightPrefetchOffset() + inspect(executor).inflightPrefetchSize(), 6000u)
+        << "no consumed run yet - the first launch must stop at the extent";
+
+    /// Window 2 [2000, 4000): the consumed run (4000) now predicts consumption past the
+    /// extent, so the top-up CROSSES it: [6000, 8000). The crossing is EARNED by observed
+    /// consumption, not granted by the plan.
+    for (int i = 0; i < 5000 && !inspect(executor).inflightPrefetchReleased(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_TRUE(inspect(executor).inflightPrefetchReleased());
+    auto w2 = executor.readNextWindow();
+    ASSERT_EQ(w2.range().offset, 2000u);
+    ASSERT_EQ(w2.range().size, 2000u);
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch()) << "the consumed run must earn a crossing top-up";
+    EXPECT_EQ(inspect(executor).inflightPrefetchOffset(), 6000u);
+    EXPECT_EQ(inspect(executor).inflightPrefetchOffset() + inspect(executor).inflightPrefetchSize(), 8000u)
+        << "the crossing machine covers the tail past the extent";
+
+    /// Window 3 [4000, 6000): its finishWindow collects the released crossing machine,
+    /// folding the worker's stats in. Everything the file needs from the source has now
+    /// been requested.
+    for (int i = 0; i < 5000 && !inspect(executor).inflightPrefetchReleased(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_TRUE(inspect(executor).inflightPrefetchReleased());
+    auto w3 = executor.readNextWindow();
+    ASSERT_EQ(w3.range().offset, 4000u);
+    ASSERT_EQ(w3.range().size, 2000u);
+    ASSERT_FALSE(inspect(executor).hasInflightPrefetch());
+    const size_t requests_before_advance = inspect(executor).sourceRequests();
+
+    /// The cursor sits at the extent; the serve EOFs there (empty window) - the consumer
+    /// bound is untouched by the producer's crossing.
+    String result;
+    for (const auto & node : w1.getNodes())
+        result.append(node.data(), node.size);
+    for (const auto & node : w2.getNodes())
+        result.append(node.data(), node.size);
+    for (const auto & node : w3.getNodes())
+        result.append(node.data(), node.size);
+    ASSERT_EQ(executor.getPosition(), 6000u);
+    auto at_extent = executor.readNextWindow();
+    EXPECT_TRUE(at_extent.empty()) << "the consumer still EOFs at the extent";
+
+    /// The next mark range advances the extent; the tail was already fetched by the
+    /// crossing machine, so it serves with ZERO new source requests.
+    executor.setReadExtent(8000);
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            result.append(node.data(), node.size);
+    }
+    EXPECT_EQ(result, content);
+    EXPECT_EQ(inspect(executor).sourceRequests(), requests_before_advance)
+        << "advancing the extent must not pay a new source request for already-fetched bytes";
+}
+
 TEST(ReaderExecutor, FullCacheColdReadServesRefusedBytesFromBank)
 {
     /// A cache too small for the scan: once the plan's held segments fill the budget every

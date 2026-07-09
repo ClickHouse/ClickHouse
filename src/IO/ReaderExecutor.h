@@ -748,9 +748,10 @@ private:
     /// extending the extent resumes).
     size_t clampToExtent(size_t win_size) const;
 
-    /// Trim a desired logical read size at `position` to the file end (when
-    /// known) and the read extent - the per-read analogue of `boundedPlanSpan`.
-    size_t boundedFetchSize(size_t want) const;
+    /// PRODUCER-side allowance: physical bytes a fetch may take from `phys_from`,
+    /// bounded by the file end and by `max(extent, predicted reach)` - see the
+    /// definition for the past-extent rationale.
+    size_t fetchAllowance(size_t phys_from) const;
 
     /// The advertised read extent (`setReadUntilPosition`) has been reached - no room left
     /// within it, though the file may continue. `readNextWindow` uses this (not the file end)
@@ -766,7 +767,7 @@ private:
 
     /// CONSUMER-side horizon in LOGICAL bytes: the most a serve could return from `position`
     /// right now (the file remainder, or one window when the size is unknown, clamped to the
-    /// extent); zero = the extent is exhausted. The producer's clamp is `boundedFetchSize`.
+    /// extent); zero = the extent is exhausted. The producer's bound is `fetchAllowance`.
     /// Deliberately does NOT test `reached_eof`: when EOF latches with a machine still in
     /// flight, `readNextWindow` drains that final window through `serveWindow`, which serves
     /// only while `readCeiling() > 0`.
@@ -849,6 +850,11 @@ private:
     /// Highest physical offset already fed to `continuity_tracker` from a plan, so
     /// overlapping re-plans never double-feed. Reset to the target on seek.
     size_t continuity_fed_end = 0;
+    /// CONSUMPTION-pattern estimator: unlike `continuity_tracker` (planned source reads,
+    /// sizes connections), it is fed every SERVED window and every seek, so it predicts
+    /// how far the consumer will actually go. `fetchAllowance` keys past-extent prefetch
+    /// off it.
+    ReadContinuityTracker consume_tracker;
 
     /// Logging / transient accounting.
     std::shared_ptr<ReaderExecutorLog> reader_executor_log;
