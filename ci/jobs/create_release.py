@@ -371,6 +371,13 @@ class ReleaseInfo:
         # existing release_tag; only the ref KIND distinguishes them, so the tag
         # ref is checked first and the newer-release guard runs before the rerun
         # case.
+        #
+        # release_job.py defers the patch branch version bump to the very last
+        # step (after publishing), so a rerun after any failure runs while the
+        # branch tip still equals the released commit: newer_release_exists is
+        # False and this reaches the rerun-recovery branch. The branch only moves
+        # ahead once the whole release has succeeded, when no rerun is pending.
+        # That keeps reruns recoverable without consulting release tags here.
         if Git.tag_exists(commit_ref):
             recover = True
             assert release_tag == commit_ref, (
@@ -387,11 +394,25 @@ class ReleaseInfo:
             )
         elif Git.tag_exists(release_tag):
             tagged_sha = Git.get_commit_sha(release_tag)
-            assert tagged_sha == commit_sha, (
-                f"release tag [{release_tag}] already exists at [{tagged_sha}] but "
-                f"this run targets [{commit_sha}]; refusing to re-publish a "
-                f"different commit"
-            )
+            if tagged_sha != commit_sha:
+                # The version computed from the file at this ref describes a
+                # release that already exists at a different commit. This is the
+                # stale-version-file hazard for a branch ref: the post-release
+                # version bump has not been applied to the branch, so the tip
+                # still describes an already-published release. Fail closed with
+                # an actionable message rather than assert or silently mint a
+                # colliding tag. (Detecting the wider "computed release is below
+                # the branch's latest" case would need to scan release tags,
+                # which the release job deliberately does not do — see
+                # 80c722e39ae.)
+                raise RuntimeError(
+                    f"release tag [{release_tag}] already exists at [{tagged_sha}] "
+                    f"but this run targets [{commit_sha}]. The version file at "
+                    f"[{commit_ref}] is stale (it still describes an "
+                    f"already-published release); land the post-release version "
+                    f"bump on the branch, then dispatch its tip, or pass a "
+                    f"release tag to recover an existing release."
+                )
             recover = True
         else:
             # Creating (not recovering): refuse an empty patch release, where the
@@ -608,16 +629,32 @@ class ReleaseInfo:
                 pr_labels = f"--label {Labels.RELEASE}"
                 if release_type == VersionType.LTS:
                     pr_labels += f" --label {Labels.RELEASE_LTS}"
-                Shell.check(
-                    f"gh pr create --repo {GITHUB_REPOSITORY} "
-                    f"--title 'Release pull request for branch {self.release_branch}' "
-                    f"--head {self.release_branch} {pr_labels} "
-                    "--body 'This PullRequest is a part of ClickHouse release cycle. "
-                    "It is used by CI system only. Do not perform any changes with it.'",
-                    dry_run=dry_run,
-                    strict=True,
-                    verbose=True,
+                # Rerun-safe (mirrors the version-bump PR path): a previous
+                # attempt may have already opened the release PR for this branch.
+                # Only open it if one does not already exist, so a rerun reuses it
+                # instead of failing on a duplicate `gh pr create`.
+                existing_release_pr = (
+                    "" if dry_run
+                    else GH.get_pr_url_by_branch(
+                        branch=self.release_branch, repo=GITHUB_REPOSITORY
+                    )
                 )
+                if existing_release_pr:
+                    print(
+                        f"Release PR already exists [{existing_release_pr}]"
+                        " - skipping create"
+                    )
+                else:
+                    Shell.check(
+                        f"gh pr create --repo {GITHUB_REPOSITORY} "
+                        f"--title 'Release pull request for branch {self.release_branch}' "
+                        f"--head {self.release_branch} {pr_labels} "
+                        "--body 'This PullRequest is a part of ClickHouse release cycle. "
+                        "It is used by CI system only. Do not perform any changes with it.'",
+                        dry_run=dry_run,
+                        strict=True,
+                        verbose=True,
+                    )
 
     def get_change_log_branch(self):
         return f"auto/{self.release_tag}"
