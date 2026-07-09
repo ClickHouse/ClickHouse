@@ -4112,6 +4112,52 @@ TEST(ReaderExecutor, FullCacheColdReadServesRefusedBytesFromBank)
     EXPECT_EQ(result, content) << "refused bytes must reach the consumer through the bank";
 }
 
+TEST(ReaderExecutor, PlanGrowsInWindowStepsToTheTarget)
+{
+    /// The plan is probed in `window_size` steps until the enriched span reaches the
+    /// `plan_look_ahead_max_window` target: with no cache (nothing to enrich) the steps
+    /// tile exactly and the plan ends AT the target - not at one window, not at EOF.
+    String content(64000, 'g');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", content.size());
+
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 8000;
+    executor_options.plan_look_ahead_max_window = 32000;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+
+    auto w1 = executor.readNextWindow();
+    ASSERT_EQ(w1.range().offset, 0u);
+    EXPECT_EQ(inspect(executor).planEnd(), 32000u) << "four window probes tile the plan to the target";
+}
+
+TEST(ReaderExecutor, PlanStopsAtFirstEnrichmentOvershootingTarget)
+{
+    /// "Bigger than the target is enough": the first window probe's cell-aligned
+    /// enrichment (one cold 24000-byte cell) already overshoots the 16000 target, so no
+    /// further probe steps run and the plan ends at the cell boundary past the target.
+    String content(64000, 'h');
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", content.size());
+
+    auto cache = std::make_shared<MockCacheProvider>(24000);
+
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 8000;
+    executor_options.plan_look_ahead_max_window = 16000;
+    executor_options.min_bytes_for_seek = 0;
+    ReaderExecutor executor(source, objects, {cache}, executor_options);
+
+    auto w1 = executor.readNextWindow();
+    ASSERT_EQ(w1.range().offset, 0u);
+    EXPECT_EQ(inspect(executor).planEnd(), 24000u) << "the overshooting cell fold ends the probing";
+}
+
 /// Stage-5 "stop at the first loss" under REAL FileCache contention (not the downloader-blind
 /// `MockCacheWriter`, which masked an earlier dead-work bug). A sibling on another thread holds
 /// the SECOND segment's downloader (DOWNLOADING, no committed bytes) over the same key+origin the

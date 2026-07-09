@@ -2583,42 +2583,78 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan = std::move(empty);
         return;
     }
-    /// Cell-aligned expansion: a cache reports misses SEGMENT-aligned, so a miss touching the
-    /// base request extends past it to the cell boundary. Learn that extent with a read-only
-    /// probe, then probe EVERY tier over the expanded `probe_range` below so a faster tier's
-    /// coverage of the miss tail fills the lower cell DOWN (`UpperCacheRead`) - or, covering the
-    /// whole cell, prunes the lower writer - rather than the tail being fetched from the source.
-    /// This is the "expands from segments" half of the plan window (the request being
-    /// `boundedPlanSpan`); misses are segment-bounded, so it adds at most a cell beyond the
-    /// request. Runs for a single tier too, so its writer spans the whole touched cell (the
-    /// in-flight pin attaches inside it) and its plan is cell-aligned like a multi-tier plan.
-    /// One residency probe per cache over the base request. KEEP the views: when the plan
-    /// does not expand to a cell boundary (`probe_range == plan_range`, the common aligned
-    /// case) the geometry pass below reuses them instead of probing a second time. Learn the
-    /// segment-aligned miss extent (from the populating tiers) meanwhile.
-    VectorWithMemoryTracking<CacheViewPtr> base_views;
-    ByteRange probe_range = plan_range;
+    /// ITERATIVE WINDOWED PROBE with cell-aligned enrichment: a cache reports misses
+    /// SEGMENT-aligned, so a miss touching a probe's edge extends past it to the cell
+    /// boundary. Probe ONE window, enrich it with those miss extents, and stop as soon as
+    /// the enriched end reaches the plan target (`boundedPlanSpan`, ceiling
+    /// `plan_look_ahead_max_window`) - a big cell fold can overshoot the target, which is
+    /// enough. Otherwise probe the next window AFTER the enriched end and repeat. The
+    /// target bounds the PROBING; the enrichment itself stays object-end-bounded only,
+    /// exactly as a single-step fold did - so the geometry pass below probes every tier
+    /// over the full enriched `probe_range` and a faster tier's coverage of a miss tail
+    /// fills the lower cell DOWN (`UpperCacheRead`) rather than the tail being fetched.
+    /// KEEP the step views: when no step's enrichment exceeded its probe end the views
+    /// tile `probe_range` exactly (each next step starts at the previous end) and the
+    /// geometry pass reuses them, cache-major, instead of probing a second time.
+    struct ProbeView
     {
-        size_t probe_end = plan_range.end();
-        for (auto & cache : caches)
+        size_t cache_idx;
+        StoredObject object;
+        size_t object_file_offset;
+        ByteRange piece;
+        CacheViewPtr view;
+    };
+    VectorWithMemoryTracking<ProbeView> base_views;
+    ByteRange probe_range = plan_range;
+    bool plan_expanded = false;
+    bool step_misses = false;
+    size_t probe_steps = 0;
+    {
+        const size_t step_size = std::max<size_t>(std::min<size_t>(window_size, plan_range.size), 1);
+        size_t cursor = plan_range.offset;
+        size_t probe_end = plan_range.offset;
+        while (cursor < plan_range.end())
         {
-            size_t piece_file_start = plan_range.offset;
-            for (const auto & pr : offset_map.map(plan_range))
+            ++probe_steps;
+            const size_t step_end = std::min(cursor + step_size, plan_range.end());
+            const ByteRange step{cursor, step_end - cursor};
+            size_t enriched_end = step_end;
+            size_t piece_file_start = step.offset;
+            for (const auto & pr : offset_map.map(step))
             {
-                auto v = cache->planResidencyView(
-                    pr.object, piece_file_start - pr.object_offset, ByteRange{piece_file_start, pr.size});
-                if (cache->populatesOnMiss())
-                    for (const auto & m : v->misses())
-                        probe_end = std::max(probe_end, m.range.end());
-                base_views.push_back(std::move(v));
+                for (size_t ci = 0; ci < caches.size(); ++ci)
+                {
+                    auto v = caches[ci]->planResidencyView(
+                        pr.object, piece_file_start - pr.object_offset, ByteRange{piece_file_start, pr.size});
+                    if (caches[ci]->populatesOnMiss() && !v->misses().empty())
+                    {
+                        step_misses = true;
+                        for (const auto & m : v->misses())
+                            enriched_end = std::max(enriched_end, m.range.end());
+                    }
+                    base_views.push_back(ProbeView{
+                        ci, pr.object, piece_file_start - pr.object_offset,
+                        ByteRange{piece_file_start, pr.size}, std::move(v)});
+                }
                 piece_file_start += pr.size;
             }
+            /// An enrichment past the step's own end leaves the fold gap unprobed - the
+            /// geometry pass must re-probe the whole enriched range.
+            plan_expanded |= enriched_end > step_end;
+            probe_end = std::max(probe_end, enriched_end);
+            if (probe_end >= plan_range.end())
+                break;  /// the enriched plan reached (or overshot) the target - enough
+            cursor = probe_end;
         }
         probe_range = ByteRange{plan_range.offset, probe_end - plan_range.offset};
     }
-    /// A miss straddled the base-request edge, so the geometry pass must probe the expanded
-    /// range; the kept base-request views no longer cover it and are dropped.
-    const bool plan_expanded = probe_range.end() > plan_range.end();
+    /// Cache SEGMENTATION must not depend on the probe stepping: a full-span probe merges
+    /// adjacent aligned misses into one spanning cell, while per-step views would cut them
+    /// at every step boundary (fragmenting the append-only cells the clamp orders jobs
+    /// around). So the step views are reusable only when they tile the span exactly AND no
+    /// populating tier reported a miss across MULTIPLE steps - a single step merges its own
+    /// misses, and an all-resident plan has nothing to merge.
+    const bool reprobe_full_span = plan_expanded || (step_misses && probe_steps > 1);
 
     geom->plan_end = probe_range.end();
     ReadPlan plan;
@@ -2635,52 +2671,65 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
     const size_t resident_clip_end
         = std::max(probe_range.end(), plan_range.offset + effectivePlanCeiling());
 
-    IntervalSet upper_hits;
-    size_t base_view_idx = 0;
-    for (auto & cache : caches)
+    /// The geometry consumes (cache, object, piece, view) tuples CACHE-MAJOR (fastest
+    /// first, so `upper_hits` below prunes the slower tiers). Tiling step views are
+    /// consumed as recorded (offset-ascending within a cache); an expanded plan re-probes
+    /// the enriched range fresh - the step views no longer tile it.
+    VectorWithMemoryTracking<ProbeView> work;
+    if (!reprobe_full_span)
     {
-        auto pieces = offset_map.map(probe_range);
-        size_t piece_file_start = probe_range.offset;
-        for (const auto & pr : pieces)
+        for (size_t ci = 0; ci < caches.size(); ++ci)
+            for (auto & pv : base_views)
+                if (pv.cache_idx == ci)
+                    work.push_back(std::move(pv));
+    }
+    else
+    {
+        for (size_t ci = 0; ci < caches.size(); ++ci)
         {
-            const size_t object_file_offset = piece_file_start - pr.object_offset;
-            const ByteRange piece_range{piece_file_start, pr.size};
-
-            /// Reuse the kept base-request probe when the plan did not expand; otherwise the
-            /// base views no longer cover the expanded range, so re-probe over it.
-            auto view = plan_expanded
-                ? cache->planResidencyView(pr.object, object_file_offset, piece_range)
-                : std::move(base_views[base_view_idx]);
-            ++base_view_idx;
-
-            GeometryEntry geom_entry;
-            geom_entry.tier = cache->tier();
-            geom_entry.head_align = cache->fetchHeadAlignment();
-            geom_entry.tail_align = cache->fetchTailAlignment();
-            geom_entry.whole_cell = cache->fillsWholeCell();
-            BufEntry buf_entry;
-            buf_entry.provider = cache.get();
-
-            extractResidentRuns(*view, probe_range, resident_clip_end, geom_entry);
-            extractMissesAndOpenWriters(*cache, *view, pr.object, object_file_offset, upper_hits, geom_entry, buf_entry);
-
-            /// Fold this tier's hits into `upper_hits` so the next (slower) tier prunes
-            /// against them. Read BEFORE the move below. Same-tier hits/misses are disjoint,
-            /// so this never prunes a later piece of the same tier.
-            for (const auto & r : geom_entry.resident)
-                upper_hits.add(r);
-
-            /// Drop records that are neither resident nor a populatable gap — nothing to
-            /// read or write. Otherwise keep the view (its hit read buffers pin the
-            /// resident segments) alongside the writers.
-            if (!geom_entry.resident.empty() || !geom_entry.aligned_miss.empty())
+            size_t piece_file_start = probe_range.offset;
+            for (const auto & pr : offset_map.map(probe_range))
             {
-                buf_entry.view = std::move(view);
-                geom->entries.push_back(std::move(geom_entry));
-                plan.bufs.push_back(std::move(buf_entry));
+                const size_t object_file_offset = piece_file_start - pr.object_offset;
+                const ByteRange piece_range{piece_file_start, pr.size};
+                work.push_back(ProbeView{ci, pr.object, object_file_offset, piece_range,
+                    caches[ci]->planResidencyView(pr.object, object_file_offset, piece_range)});
+                piece_file_start += pr.size;
             }
+        }
+    }
 
-            piece_file_start += pr.size;
+    IntervalSet upper_hits;
+    for (auto & pv : work)
+    {
+        auto & cache = caches[pv.cache_idx];
+        auto view = std::move(pv.view);
+
+        GeometryEntry geom_entry;
+        geom_entry.tier = cache->tier();
+        geom_entry.head_align = cache->fetchHeadAlignment();
+        geom_entry.tail_align = cache->fetchTailAlignment();
+        geom_entry.whole_cell = cache->fillsWholeCell();
+        BufEntry buf_entry;
+        buf_entry.provider = cache.get();
+
+        extractResidentRuns(*view, probe_range, resident_clip_end, geom_entry);
+        extractMissesAndOpenWriters(*cache, *view, pv.object, pv.object_file_offset, upper_hits, geom_entry, buf_entry);
+
+        /// Fold this tier's hits into `upper_hits` so the next (slower) tier prunes
+        /// against them. Read BEFORE the move below. Same-tier hits/misses are disjoint,
+        /// so this never prunes a later piece of the same tier.
+        for (const auto & r : geom_entry.resident)
+            upper_hits.add(r);
+
+        /// Drop records that are neither resident nor a populatable gap — nothing to
+        /// read or write. Otherwise keep the view (its hit read buffers pin the
+        /// resident segments) alongside the writers.
+        if (!geom_entry.resident.empty() || !geom_entry.aligned_miss.empty())
+        {
+            buf_entry.view = std::move(view);
+            geom->entries.push_back(std::move(geom_entry));
+            plan.bufs.push_back(std::move(buf_entry));
         }
     }
 
@@ -2794,10 +2843,12 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
     }
     else
     {
-        /// A fixed plan window. Independent of `read_extent_end` (which only clamps the
-        /// serve), so the plan survives mark-range advances and is reused; segment folding
-        /// then extends it to the touched cell boundaries.
-        want = ceiling;
+        /// The plan TARGET the iterative windowed probe grows toward. Independent of
+        /// `read_extent_end` (which only clamps the serve), so the plan survives
+        /// mark-range advances and is reused. An UNKNOWN-SIZE source is not planned past
+        /// one window: the probe would tile cache segments beyond the real EOF only for
+        /// the first short read to invalidate them.
+        want = offset_map.hasUnknownSize() ? std::min(window_size, ceiling) : ceiling;
     }
     /// Segment folding then extends `want` (in `observeAndSchedule`) and the same
     /// ceiling caps the result; the file end is the only natural bound below it.
