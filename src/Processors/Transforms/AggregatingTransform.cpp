@@ -847,18 +847,15 @@ AggregatingTransform::AggregatingTransform(
 
 AggregatingTransform::~AggregatingTransform() = default;
 
-void AggregatingTransform::finishConsume()
+size_t AggregatingTransform::getGeneratingStepGroup() const
 {
-    if (is_consume_finished)
-        return;
-
-    is_consume_finished = true;
-
-    auto generating_group = AggregatingStep::AggregatingStage::Grouping == static_cast<AggregatingStep::AggregatingStage>(getQueryPlanStepGroup()) ?
-        static_cast<size_t>(AggregatingStep::AggregatingStage::Merging) :
-        static_cast<size_t>(AggregatingStep::AggregatingStage::AggregatingSharded);
-
-    setQueryPlanStepGroup(generating_group);
+    /// After consumption finishes, this transform generates the child processors that perform
+    /// the merge / final part of aggregation. Those children belong to the corresponding
+    /// generating stage, not to the AggregatingTransform's own (partial) aggregation stage,
+    /// which is why we map the current group to its generating counterpart here.
+    return AggregatingStep::AggregatingStage::PartialAggregation == static_cast<AggregatingStep::AggregatingStage>(getQueryPlanStepGroup())
+        ? static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation)
+        : static_cast<size_t>(AggregatingStep::AggregatingStage::AggregatingSharded);
 }
 
 IProcessor::Status AggregatingTransform::prepare()
@@ -915,7 +912,7 @@ IProcessor::Status AggregatingTransform::prepare()
         }
 
         /// Finish data processing and create another pipe.
-        finishConsume();
+        is_consume_finished = true;
         return Status::Ready;
     }
 
@@ -963,7 +960,7 @@ IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
     connect(out, inputs.back());
     is_pipeline_created = true;
     for (auto & proc : processors)
-        proc->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
+        proc->inheritQueryPlanStepFromParent(*this, getGeneratingStepGroup());
 
     return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
 }
@@ -989,12 +986,12 @@ void AggregatingTransform::consume(Chunk chunk)
     {
         materializeChunk(chunk);
         if (!params->aggregator.mergeOnBlock(chunk.detachColumns(), num_rows, false, variants, no_more_keys, is_cancelled))
-            finishConsume();
+            is_consume_finished = true;
     }
     else
     {
         if (!params->aggregator.executeOnBlock(chunk.detachColumns(), 0, num_rows, variants, key_columns, aggregate_columns, no_more_keys))
-            finishConsume();
+            is_consume_finished = true;
     }
 }
 

@@ -103,7 +103,12 @@ bool ExecutionThreadContext::executeTask()
         /// and are not attributed to any query plan step, so there is no clock for them.
         if (const auto * step = node->processor()->getQueryPlanStep())
         {
-            clock = step_to_wall_clock_registry->find(step, group);
+            auto & cached_clock = node->cached_clock;
+            /// We will search in the registry only initially or when the group of the processor changed
+            if (!cached_clock.wall_clock_ptr || node->cached_clock.group != group)
+                cached_clock.wall_clock_ptr = step_to_wall_clock_registry->find(step, group);
+
+            clock = cached_clock.wall_clock_ptr;
             chassert(clock);
             if (clock)
                 clock->onEnter();
@@ -131,8 +136,6 @@ bool ExecutionThreadContext::executeTask()
     {
         UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
-        /// Once processor can be in two groups. See AggregatingTransform as an example
-        node->processor()->addElapsedNs(group, elapsed_ns);
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }

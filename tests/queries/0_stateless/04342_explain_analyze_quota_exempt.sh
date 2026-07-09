@@ -25,6 +25,7 @@ ${CLICKHOUSE_CLIENT} -q "CREATE QUOTA q04342 KEYED BY user_name FOR INTERVAL 100
 ${CLICKHOUSE_CLIENT} --user u04342 --send_logs_level=none -q "EXPLAIN ANALYZE SELECT dummy FROM system.one" > /dev/null 2>&1
 echo "read_rows after exempt source:"
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(read_rows) FROM system.quotas_usage WHERE quota_name = 'q04342'"
+echo "exempt query exit code: $?"
 
 # Regular source: EXPLAIN ANALYZE must charge the read_rows quota (reads 5 rows).
 ${CLICKHOUSE_CLIENT} --user u04342 --send_logs_level=none -q "EXPLAIN ANALYZE SELECT number FROM numbers(5)" > /dev/null 2>&1

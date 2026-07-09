@@ -27,6 +27,7 @@
 #include <Planner/Utils.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaAllocator.h>
+#include <Common/ProfileEvents.h>
 #include <Functions/CastOverloadResolver.h>
 
 

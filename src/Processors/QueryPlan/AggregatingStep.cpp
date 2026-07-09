@@ -181,8 +181,8 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
 std::vector<size_t> AggregatingStep::getStepGroups() const
 {
     return {
-        static_cast<size_t>(AggregatingStage::Grouping),
-        static_cast<size_t>(AggregatingStage::Merging),
+        static_cast<size_t>(AggregatingStage::PartialAggregation),
+        static_cast<size_t>(AggregatingStage::FinalAggregation),
         static_cast<size_t>(AggregatingStage::Scatter),
         static_cast<size_t>(AggregatingStage::AggregatingSharded)
     };
@@ -192,8 +192,8 @@ String AggregatingStep::getStepGroupName(size_t group) const
 {
     switch (static_cast<AggregatingStage>(group))
     {
-        case AggregatingStage::Grouping: return "grouping";
-        case AggregatingStage::Merging: return "merging";
+        case AggregatingStage::PartialAggregation: return "partial aggregation";
+        case AggregatingStage::FinalAggregation: return "final aggregation";
         case AggregatingStage::Scatter: return "scatter";
         case AggregatingStage::AggregatingSharded: return "shard aggregation";
     }
@@ -521,7 +521,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
         /// (ignoring the read-stream-reduced cap) so downstream steps can process the result in parallel.
         pipeline.resize(params.max_threads);
 
-        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
         return;
     }
 
@@ -561,6 +561,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     aggregation_in_order_max_block_bytes / new_merge_threads,
                     many_data,
                     counter++,
+                    limit_hint,
                     nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
                 );
             });
@@ -570,11 +571,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 pipeline.addSimpleTransform([&](const SharedHeader & header)
                                             { return std::make_shared<FinalizeAggregatedTransform>(header, transform_params); });
                 pipeline.resize(max_threads);
-                aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
+                aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
                 return;
             }
 
-            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
+            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
 
             auto transform = std::make_shared<FinishAggregatingInOrderTransform>(
                 pipeline.getSharedHeader(),
@@ -582,7 +583,8 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 transform_params,
                 group_by_sort_description,
                 max_block_size,
-                aggregation_in_order_max_block_bytes);
+                aggregation_in_order_max_block_bytes,
+                limit_hint);
 
             pipeline.addTransform(std::move(transform));
 
@@ -600,7 +602,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     std::make_shared<SortingAggregatedForMemoryBoundMergingTransform>(pipeline.getHeader(), pipeline.getNumStreams()));
             }
 
-            aggregating_sorted = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Merging));
+            aggregating_sorted = collector.detachProcessors(static_cast<size_t>(AggregatingStage::FinalAggregation));
         }
         else
         {
@@ -610,6 +612,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     header, transform_params,
                     sort_description_for_merging, group_by_sort_description,
                     max_block_size, aggregation_in_order_max_block_bytes,
+                    limit_hint,
                     dataflow_cache_updater);
             });
 
@@ -618,7 +621,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                 return std::make_shared<FinalizeAggregatedTransform>(header, transform_params);
             });
 
-            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
+            aggregating_in_order = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
         }
 
         return;
@@ -724,7 +727,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads, false, settings.min_outstreams_per_resize_after_split);
 
-        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
     }
     else
     {
@@ -733,7 +736,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         pipeline.resize(should_produce_results_in_order_of_bucket_number ? 1 : max_threads);
 
-        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::Grouping));
+        aggregating = collector.detachProcessors(static_cast<size_t>(AggregatingStage::PartialAggregation));
     }
 }
 
@@ -860,8 +863,8 @@ AggregatingProjectionStep::AggregatingProjectionStep(
 std::vector<size_t> AggregatingProjectionStep::getStepGroups() const
 {
     return {
-        static_cast<size_t>(AggregatingStep::AggregatingStage::Grouping),
-        static_cast<size_t>(AggregatingStep::AggregatingStage::Merging)
+        static_cast<size_t>(AggregatingStep::AggregatingStage::PartialAggregation),
+        static_cast<size_t>(AggregatingStep::AggregatingStage::FinalAggregation)
     };
 }
 
@@ -869,8 +872,8 @@ String AggregatingProjectionStep::getStepGroupName(size_t group) const
 {
     switch (static_cast<AggregatingStep::AggregatingStage>(group))
     {
-        case AggregatingStep::AggregatingStage::Grouping: return "grouping";
-        case AggregatingStep::AggregatingStage::Merging: return "merging";
+        case AggregatingStep::AggregatingStage::PartialAggregation: return "partial aggregation";
+        case AggregatingStep::AggregatingStage::FinalAggregation: return "final aggregation";
         case AggregatingStep::AggregatingStage::Scatter: [[fallthrough]];
         case AggregatingStep::AggregatingStage::AggregatingSharded: break;
     }

@@ -399,7 +399,7 @@ static void explainStep(
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const AnalyzeStepsStats * steps_to_stats= nullptr)
+    const AnalyzeStepsStats * steps_to_stats = nullptr)
 {
 
     settings.out << settings.header_prefix << step.getName();
@@ -644,11 +644,10 @@ void QueryPlan::explainPlan(
     };
 
     auto skip_expressions = [&](Node * node) -> Node * {
-
         if (steps_to_stats)
             return node;
 
-        while (settings.compact && node->step->getName() == "Expression" && !node->children.empty())
+        while (options.actions && settings.compact && node->step->getName() == "Expression" && !node->children.empty())
             node = node->children[0];
         return node;
     };

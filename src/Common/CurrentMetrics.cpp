@@ -59,6 +59,7 @@
     M(RemoteRead, "Number of read with remote reader in fly") \
     M(ReaderExecutorActive, "Number of live ReaderExecutor instances.") \
     M(ReaderExecutorChainedBufferBytes, "Bytes currently held in live ReaderExecutor chain buffers (OwnedChainedBuffer) -- live in-flight read memory, not a cumulative total.") \
+    M(ReaderExecutorLongConnections, "Number of long source connections currently held open by ReaderExecutor for sequential read optimization.") \
     M(Write, "Number of write (write, pwrite, io_getevents, etc.) syscalls in fly") \
     M(NetworkReceive, "Number of threads receiving data from network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
     M(NetworkSend, "Number of threads sending data to network. Only ClickHouse-related network interaction is included, not by 3rd party libraries.") \
@@ -174,6 +175,9 @@
     M(AsynchronousInsertThreads, "Number of threads in the AsynchronousInsert thread pool.") \
     M(AsynchronousInsertThreadsActive, "Number of threads in the AsynchronousInsert thread pool running a task.") \
     M(AsynchronousInsertThreadsScheduled, "Number of queued or active jobs in the AsynchronousInsert thread pool.") \
+    M(QueryRunnerThreads, "Number of threads in the QueryRunner thread pool.") \
+    M(QueryRunnerThreadsActive, "Number of threads in the QueryRunner thread pool running a task.") \
+    M(QueryRunnerThreadsScheduled, "Number of queued or active jobs in the QueryRunner thread pool.") \
     M(AsynchronousInsertQueueSize, "Number of pending tasks in the AsynchronousInsert queue.") \
     M(AsynchronousInsertQueueBytes, "Number of pending bytes in the AsynchronousInsert queue.") \
     M(StartupSystemTablesThreads, "Number of threads in the StartupSystemTables thread pool.") \
@@ -222,6 +226,9 @@
     M(ParallelWithQueryThreads, "Number of threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryActiveThreads, "Number of active threads in the threadpool for processing PARALLEL WITH queries.") \
     M(ParallelWithQueryScheduledThreads, "Number of queued or active jobs in the threadpool for processing PARALLEL WITH queries.") \
+    M(UDFDriverInvokerThreads, "Number of threads in thread pools servicing pipes of executable UDF driver commands.") \
+    M(UDFDriverInvokerThreadsActive, "Number of active threads in thread pools servicing pipes of executable UDF driver commands.") \
+    M(UDFDriverInvokerThreadsScheduled, "Number of queued or active jobs in thread pools servicing pipes of executable UDF driver commands.") \
     \
     M(DiskPlainRewritableAzureDirectoryMapSize, "Number of local-to-remote path entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
     M(DiskPlainRewritableAzureFileCount, "Number of file entries in the 'plain_rewritable' in-memory map for AzureObjectStorage.") \
@@ -332,6 +339,9 @@
     M(FilesystemCacheKeys, "Number of keys in filesystem cache") \
     M(FilesystemCacheOvercommitUsers, "Number of users tracked by the overcommit filesystem cache eviction policy") \
     M(FilesystemCacheReserveThreads, "Threads number trying to reserve space in cache") \
+    M(FilesystemCacheEvictionThreads, "Number of threads in the filesystem cache background eviction (removal) pool") \
+    M(FilesystemCacheEvictionThreadsActive, "Number of threads in the filesystem cache background eviction pool running a task") \
+    M(FilesystemCacheEvictionThreadsScheduled, "Number of queued or active jobs in the filesystem cache background eviction pool") \
     M(AsyncInsertCacheSize, "Number of async insert hash id in cache") \
     M(IcebergMetadataFilesCacheBytes, "Size of the Iceberg metadata cache in bytes") \
     M(IcebergMetadataFilesCacheFiles, "Number of cached files in the Iceberg metadata cache") \
@@ -353,6 +363,9 @@
     M(TextIndexHeaderCacheCells, "Number of entries in text index header cache") \
     M(TextIndexPostingsCacheBytes, "Size of the text index posting lists cache in bytes") \
     M(TextIndexPostingsCacheCells, "Number of entries in the text index posting lists cache") \
+    M(PointInPolygonCacheBytes, "Size in bytes of the cache of preprocessed constant polygons for the `pointInPolygon` function") \
+    M(PointInPolygonCacheCells, "Number of preprocessed constant polygons in the cache for the `pointInPolygon` function") \
+    M(PointInPolygonCacheSizeLimit, "Maximum size in bytes of the cache of preprocessed constant polygons for the `pointInPolygon` function (the applied value of the `point_in_polygon_cache_size` server setting)") \
     M(DNSHostsCacheBytes, "Size of the DNS hosts cache in bytes") \
     M(DNSHostsCacheSize, "Number of cached DNS hosts") \
     M(DNSAddressesCacheBytes, "Size of the DNS addresses cache in bytes") \

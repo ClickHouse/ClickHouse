@@ -1,0 +1,495 @@
+---
+sidebarTitle: 'Visão geral'
+slug: /cloud/manage/billing/overview
+title: 'Preços'
+description: 'Página de visão geral dos preços do ClickHouse Cloud'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'pricing', 'billing', 'cloud costs', 'compute pricing']
+---
+
+Para informações sobre preços, consulte a página [ClickHouse Cloud Pricing](https://clickhouse.com/pricing#pricing-calculator).
+O ClickHouse Cloud cobra com base no uso de compute, armazenamento, [transferência de dados](/pt-BR/products/cloud/reference/billing/network-data-transfer) (saída para a internet e entre regiões) e [ClickPipes](/pt-BR/integrations/clickpipes/home).
+Para entender o que pode afetar sua fatura e como gerenciar seus gastos, continue lendo.
+
+<div id="amazon-web-services-aws-example">
+  ## Exemplo da Amazon Web Services (AWS)
+</div>
+
+<Note>
+  * Os preços refletem os valores da AWS na região us-east-1.
+  * Veja [aqui](/pt-BR/products/cloud/reference/billing/network-data-transfer) as cobranças aplicáveis de transferência de dados e do ClickPipes.
+</Note>
+
+<div id="basic-from-6652-per-month">
+  ### Basic: a partir de $66.52 por mês
+</div>
+
+Ideal para: casos de uso departamentais com volumes menores de dados que não exigem garantias rígidas de confiabilidade.
+
+**Serviço do nível Basic**
+
+* 1 réplica x 8 GiB de RAM, 2 vCPU
+* 500 GB de dados comprimidos
+* 500 GB de backup dos dados
+* 10 GB de tráfego de saída para a internet pública
+* 5 GB de transferência de dados entre regiões
+
+Detalhamento de preços para este exemplo:
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>Ativo por 6 horas por dia</th>
+      <th>Ativo por 12 horas por dia</th>
+      <th>Ativo por 24 horas por dia</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Computação</td>
+      <td>$39.91</td>
+      <td>$79.83</td>
+      <td>$159.66</td>
+    </tr>
+
+    <tr>
+      <td>Armazenamento</td>
+      <td>$25.30</td>
+      <td>$25.30</td>
+      <td>$25.30</td>
+    </tr>
+
+    <tr>
+      <td>tráfego de saída para a internet pública</td>
+      <td>$1.15</td>
+      <td>$1.15</td>
+      <td>$1.15</td>
+    </tr>
+
+    <tr>
+      <td>Transferência de dados entre regiões</td>
+      <td>$0.16</td>
+      <td>$0.16</td>
+      <td>$0.16</td>
+    </tr>
+
+    <tr>
+      <td>Total</td>
+      <td>$66.52</td>
+      <td>$106.44</td>
+      <td>$186.27</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="scale-always-on-auto-scaling-from-49938-per-month">
+  ### Scale (sempre ativo, escalonamento automático): a partir de $499.38 por mês
+</div>
+
+Ideal para: cargas de trabalho que exigem SLAs mais robustos (serviços com 2 ou mais réplicas), escalabilidade e segurança avançada.
+
+**Serviço do nível Scale**
+
+* Carga de trabalho ativa ~100% do tempo
+* Limite máximo de escalonamento automático configurável para evitar custos excessivos
+* 100 GB de tráfego de saída para a internet pública
+* 10 GB de transferência de dados entre regiões
+
+Detalhamento de preços para este exemplo:
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>Exemplo 1</th>
+      <th>Exemplo 2</th>
+      <th>Exemplo 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Computação</td>
+      <td>2 réplicas x 8 GiB de RAM, 2 vCPU<br />$436.95</td>
+      <td>2 réplicas x 16 GiB de RAM, 4 vCPU<br />$873.89</td>
+      <td>3 réplicas x 16 GiB de RAM, 4 vCPU<br />$1,310.84</td>
+    </tr>
+
+    <tr>
+      <td>Armazenamento</td>
+      <td>1 TB de dados + 1 backup<br />$50.60</td>
+      <td>2 TB de dados + 1 backup<br />$101.20</td>
+      <td>3 TB de dados + 1 backup<br />$151.80</td>
+    </tr>
+
+    <tr>
+      <td>Transferência de dados de tráfego de saída para a internet pública</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+    </tr>
+
+    <tr>
+      <td>Transferência de dados entre regiões</td>
+      <td>$0.31</td>
+      <td>$0.31</td>
+      <td>$0.31</td>
+    </tr>
+
+    <tr>
+      <td>Total</td>
+      <td>$499.38</td>
+      <td>$986.92</td>
+      <td>$1,474.47</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="enterprise-starting-prices-vary">
+  ### Enterprise: os preços iniciais variam
+</div>
+
+Ideal para: implantações de grande escala e de missão crítica com requisitos rigorosos de segurança e conformidade
+
+**Serviço do nível Enterprise**
+
+* workload ativo ~100% do tempo
+* 1 TB de tráfego de saída para a internet pública
+* 500 GB de transferência de dados entre regiões
+
+<table>
+  <thead>
+    <tr>
+      <th />
+
+      <th>Exemplo 1</th>
+      <th>Exemplo 2</th>
+      <th>Exemplo 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Computação</td>
+      <td>2 réplicas x 32 GiB de RAM, 8 vCPU<br />$2,285.60</td>
+      <td>2 réplicas x 64 GiB de RAM, 16 vCPU<br />$4,571.19</td>
+      <td>2 x 120 GiB de RAM, 30 vCPU<br />$8,570.99</td>
+    </tr>
+
+    <tr>
+      <td>Armazenamento</td>
+      <td>5 TB + 1 backup<br />$253.00</td>
+      <td>10 TB + 1 backup<br />$506.00</td>
+      <td>20 TB + 1 backup<br />$1,012.00</td>
+    </tr>
+
+    <tr>
+      <td>Tráfego de saída para a internet pública</td>
+      <td>$115.20</td>
+      <td>$115.20</td>
+      <td>$115.20</td>
+    </tr>
+
+    <tr>
+      <td>Transferência de dados entre regiões</td>
+      <td>$15.60</td>
+      <td>$15.60</td>
+      <td>$15.60</td>
+    </tr>
+
+    <tr>
+      <td>Total</td>
+      <td>$2,669.40</td>
+      <td>$5,207.99</td>
+      <td>$9,713.79</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="faqs">
+  ## Perguntas frequentes
+</div>
+
+<div id="what-is-chc">
+  ### O que é um ClickHouse Credit (CHC)?
+</div>
+
+Um ClickHouse Credit é uma unidade de crédito para o uso do ClickHouse Cloud pelo Cliente, equivalente a um (1) dólar americano, aplicada com base na lista de preços publicada pela ClickHouse e vigente no momento.
+
+<Note>
+  Se sua cobrança for feita pelo Stripe, você verá na sua fatura do Stripe que 1 CHC equivale a $0.01 USD. Isso permite uma cobrança precisa no Stripe devido à limitação deles de não conseguirem cobrar quantidades fracionárias do nosso SKU padrão de 1 CHC = $1 USD.
+</Note>
+
+<div id="find-legacy-pricing">
+  ### Onde posso encontrar a tabela de preços antiga?
+</div>
+
+As informações sobre a tabela de preços antiga podem ser encontradas [aqui](https://clickhouse.com/pricing?legacy=true).
+
+<div id="how-is-compute-metered">
+  ### Como o compute é cobrado?
+</div>
+
+O ClickHouse Cloud cobra o compute por minuto, em incrementos de 8 GB de RAM.
+Os custos de compute variam de acordo com o nível, a região e o provedor de serviços em nuvem.
+
+<div id="how-is-storage-on-disk-calculated">
+  ### Como o armazenamento em disco é calculado?
+</div>
+
+O ClickHouse Cloud usa armazenamento de objetos na nuvem, e o uso é medido com base no tamanho compactado dos dados armazenados nas tabelas do ClickHouse.
+Os custos de armazenamento são os mesmos em todos os níveis e variam conforme a região e o provedor de serviços de nuvem.
+
+<div id="do-backups-count-toward-total-storage">
+  ### Os backups contam para o armazenamento total?
+</div>
+
+O armazenamento e os backups são contabilizados nos custos de armazenamento e cobrados separadamente.
+Todos os serviços terão, por padrão, um backup, com retenção de um dia.
+Os usuários que precisarem de backups adicionais podem configurá-los em [backups](/pt-BR/products/cloud/guides/backups/review-and-restore-backups), na guia de configurações do console do Cloud.
+
+<div id="how-do-i-estimate-compression">
+  ### Como estimar a compressão?
+</div>
+
+A compressão pode variar de um conjunto de dados para outro.
+O quanto ela varia depende, прежде de tudo, de quão compressíveis os dados são (número de campos com alta vs. baixa cardinalidade)
+e de como o usuário configura o esquema (usando codecs opcionais ou não, por exemplo).
+Ela pode ficar na ordem de 10x para tipos comuns de dados analíticos, mas também pode ser significativamente menor ou maior.
+Consulte a [documentação de otimização](/pt-BR/concepts/features/operations/insert/asyncinserts) para orientação e este [blog da Uber](https://www.uber.com/blog/logging/) para ver um exemplo detalhado de caso de uso de logging.
+A única maneira prática de saber com exatidão é fazer a ingestão do seu conjunto de dados no ClickHouse e comparar o tamanho do conjunto de dados com o tamanho armazenado no ClickHouse.
+
+Você pode usar a consulta:
+
+```sql title="Estimating compression"
+SELECT formatReadableSize(total_bytes) 
+FROM system.tables 
+WHERE name = <your table name>
+```
+
+<div id="what-tools-does-clickhouse-offer-to-estimate-the-cost-of-running-a-service-in-the-cloud-if-i-have-a-self-managed-deployment">
+  ### Quais ferramentas o ClickHouse oferece para estimar o custo de executar um serviço na nuvem se eu tiver uma implantação autogerenciada?
+</div>
+
+O log de consultas do ClickHouse captura [principais métricas](/pt-BR/reference/system-tables/query_log) que podem ser usadas para estimar o custo de executar uma carga de trabalho no ClickHouse Cloud.
+Para obter detalhes sobre a migração de uma implantação autogerenciada para o ClickHouse Cloud, consulte a [documentação de migração](/pt-BR/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) e entre em contato com o [suporte do ClickHouse Cloud](https://console.clickhouse.cloud/support) se tiver outras dúvidas.
+
+<div id="what-billing-options-are-available-for-clickhouse-cloud">
+  ### Quais opções de faturamento estão disponíveis para o ClickHouse Cloud?
+</div>
+
+O ClickHouse Cloud oferece as seguintes opções de faturamento:
+
+* Mensal self-service (em USD, via cartão de crédito).
+* Anual / plurianual por vendas diretas (por meio de &quot;ClickHouse Credits&quot; pré-pagos, em USD, com opções adicionais de pagamento).
+* Por meio dos marketplaces da AWS, GCP e Azure (seja no modelo pay-as-you-go (PAYG) ou com contratação via marketplace com o ClickHouse Cloud).
+
+<Note>
+  Os créditos do ClickHouse Cloud para PAYG são faturados em unidades de $0.01, o que nos permite cobrar dos clientes créditos fracionados com base no uso. Isso difere dos créditos do ClickHouse para consumo contratado, que são comprados antecipadamente em unidades inteiras de $1.
+</Note>
+
+<div id="can-i-delete-my-credit-card">
+  ### Posso excluir meu cartão de crédito?
+</div>
+
+Você não pode remover um cartão de crédito na interface de faturamento, mas pode atualizá-lo a qualquer momento. Isso ajuda a garantir que sua organização sempre tenha uma forma de pagamento válida. Se precisar remover seu cartão de crédito, entre em contato com o [suporte do ClickHouse Cloud](https://console.clickhouse.cloud/support).
+
+<div id="where-can-i-see-my-refunds">
+  ### Onde posso ver meus reembolsos?
+</div>
+
+No console do ClickHouse Cloud, acesse Organização &gt; Faturamento. A seção Reembolsos fica abaixo de Faturas e Créditos. Você precisa ser Admin da organização ou Admin de faturamento para visualizá-la.
+
+<div id="how-long-does-it-take-for-a-refund-to-appear">
+  ### Quanto tempo leva para o reembolso aparecer?
+</div>
+
+Os reembolsos aparecem assim que são processados por nós. Reembolsos no cartão de crédito podem levar mais tempo para constar na sua fatura, dependendo do seu banco.
+
+<div id="how-long-is-the-billing-cycle">
+  ### Qual é a duração do ciclo de faturamento?
+</div>
+
+O faturamento segue um ciclo mensal, e a data de início corresponde à data em que a organização do ClickHouse Cloud foi criada.
+
+<div id="committed-credits-consumed-first-with-active-payg-subscription">
+  ### Se eu tiver uma assinatura PAYG do marketplace ativa e depois assinar um contrato com compromisso, meus créditos contratados serão consumidos primeiro?
+</div>
+
+Sim. O consumo é debitado dos seguintes métodos de pagamento, nesta ordem:
+
+* Créditos contratados (pré-pagos)
+* Assinatura do marketplace (PAYG)
+* Cartão de crédito
+
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-scale-and-enterprise-services">
+  ### Quais controles o ClickHouse Cloud oferece para gerenciar custos dos serviços Scale e Enterprise?
+</div>
+
+* Clientes Trial e Annual Commit são notificados automaticamente por e-mail quando seu consumo atinge determinados limites: `50%`, `75%` e `90%`. Isso permite gerenciar o uso de forma proativa.
+* O ClickHouse Cloud permite definir um limite máximo de autoscaling para seu compute por meio do [Controle avançado de escalonamento](/pt-BR/products/cloud/features/autoscaling/overview), um fator de custo significativo para cargas de trabalho analíticas.
+* O [Controle avançado de escalonamento](/pt-BR/products/cloud/features/autoscaling/overview) permite definir limites de memória, com a opção de controlar o comportamento de pausa/estado ocioso durante períodos de inatividade.
+
+<div id="what-controls-does-clickhouse-cloud-offer-to-manage-costs-for-basic-services">
+  ### Quais controles o ClickHouse Cloud oferece para gerenciar os custos dos serviços Basic?
+</div>
+
+* O [controle avançado de escalonamento](/pt-BR/products/cloud/features/autoscaling/overview) permite controlar o comportamento de pausa/ociosidade durante períodos de inatividade. Não há suporte para ajustar a alocação de memória nos serviços Basic.
+* Observe que a configuração padrão pausa o serviço após um período de inatividade.
+
+<div id="if-i-have-multiple-services-do-i-get-an-invoice-per-service-or-a-consolidated-invoice">
+  ### Se eu tiver vários serviços, receberei uma fatura por serviço ou uma fatura consolidada?
+</div>
+
+Uma fatura consolidada é emitida para todos os serviços de uma determinada organização em um período de cobrança.
+
+<div id="if-i-add-my-credit-card-and-upgrade-before-my-trial-period-and-credits-expire-will-i-be-charged">
+  ### Se eu adicionar meu cartão de crédito e fizer o upgrade antes de meu período de teste e meus créditos expirarem, serei cobrado?
+</div>
+
+Quando um usuário passa do teste para o plano pago antes do fim do período de teste de 30 dias, mas ainda tem créditos restantes da concessão de créditos do teste,
+continuamos consumindo os créditos do teste durante o período inicial de 30 dias e, em seguida, cobramos no cartão de crédito.
+
+<div id="how-can-i-keep-track-of-my-spending">
+  ### Como posso acompanhar meus gastos?
+</div>
+
+O console do ClickHouse Cloud oferece uma visualização de uso que detalha o consumo por serviço. Essa divisão, organizada por dimensões de uso, ajuda você a entender o custo associado a cada unidade faturada.
+
+<div id="how-do-i-access-my-invoice-for-my-subscription-to-the-clickhouse-cloud-service">
+  ### Como acesso minhas faturas da minha assinatura do serviço ClickHouse Cloud?
+</div>
+
+Para assinaturas diretas com cartão de crédito:
+
+Para ver suas faturas, selecione sua organização na barra de navegação à esquerda na UI do ClickHouse Cloud e, em seguida, vá para Billing. Todas as suas faturas aparecerão na seção Invoices.
+
+Para assinaturas por meio de um marketplace de nuvem:
+
+Todas as assinaturas de marketplace são cobradas e faturadas pelo marketplace. Você pode ver sua fatura diretamente no marketplace do respectivo provedor de nuvem.
+
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### Por que as datas nos extratos de uso não correspondem à minha fatura do Marketplace?
+</div>
+
+O faturamento do AWS Marketplace segue o ciclo do mês-calendário.
+Por exemplo, para o uso entre as datas 01-Dec-2024 e 01-Jan-2025,
+uma fatura é gerada entre 3-Jan e 5-Jan-2025
+
+Os extratos de uso do ClickHouse Cloud seguem um ciclo de faturamento diferente, no qual o uso é medido
+e reportado ao longo de 30 dias a partir da data de cadastro.
+
+As datas de uso e da fatura serão diferentes se esses períodos não coincidirem. Como os extratos de uso registram o uso diário de um determinado serviço, você pode usá-los para ver o detalhamento dos custos.
+
+<div id="are-there-any-restrictions-around-the-usage-of-prepaid-credits">
+  ### Há alguma restrição quanto ao uso de créditos pré-pagos?
+</div>
+
+Os créditos pré-pagos do ClickHouse Cloud (seja diretamente com a ClickHouse ou por meio do marketplace de um provedor de nuvem)
+só podem ser utilizados durante a vigência do contrato.
+Isso significa que eles podem ser aplicados na data de aceite ou em uma data futura, e não a períodos anteriores.
+Quaisquer excedentes não cobertos por créditos pré-pagos devem ser pagos com cartão de crédito ou pelo faturamento mensal do marketplace.
+
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### Há diferença no preço do ClickHouse Cloud ao pagar pelo marketplace do provedor de nuvem ou diretamente à ClickHouse?
+</div>
+
+Não há diferença de preço entre o faturamento pelo marketplace e a contratação direta com a ClickHouse.
+Em ambos os casos, o uso do ClickHouse Cloud é contabilizado em ClickHouse Cloud Credits (CHCs),
+que são medidos da mesma forma e cobrados de acordo.
+
+<div id="how-is-compute-compute-separation-billed">
+  ### Como a separação compute-compute é cobrada?
+</div>
+
+Ao criar um novo serviço além de um já existente,
+você pode escolher se esse novo serviço deve compartilhar os mesmos dados com o serviço existente.
+Se sim, esses dois serviços passam a formar um [warehouse](/pt-BR/products/cloud/features/infrastructure/warehouses).
+Um warehouse armazena os dados uma única vez, com vários serviços de compute acessando esses dados.
+
+Como os dados são armazenados apenas uma vez, você paga por apenas uma cópia dos dados, embora vários serviços os acessem.
+Você paga por compute normalmente — não há taxas adicionais para separação compute-compute / warehouses.
+Ao aproveitar o armazenamento compartilhado nessa configuração, os usuários se beneficiam de economia de custos tanto em armazenamento quanto em backups.
+
+A separação compute-compute pode economizar uma quantidade significativa de ClickHouse Credits em alguns casos.
+Um bom exemplo é a seguinte configuração:
+
+1. Você tem jobs de ETL em execução 24 horas por dia, 7 dias por semana, ingerindo dados no serviço. Esses jobs de ETL não exigem muita memória, então podem ser executados em uma instância pequena com, por exemplo, 32 GiB de RAM.
+
+2. Um cientista de dados da mesma equipe, com necessidades de relatórios ad hoc, diz que precisa executar uma consulta que exige uma quantidade significativa de memória — 236 GiB —, mas não precisa de alta disponibilidade e pode esperar e executar a consulta novamente se a primeira tentativa falhar.
+
+Neste exemplo, você, como administrador do banco de dados, pode fazer o seguinte:
+
+1. Criar um serviço pequeno com duas réplicas de 16 GiB cada — isso atenderá aos jobs de ETL e fornecerá alta disponibilidade.
+
+2. Para o cientista de dados, você pode criar um segundo serviço no mesmo warehouse com apenas uma réplica de 236 GiB. Você pode ativar o modo ocioso para esse serviço, assim não pagará por ele quando o cientista de dados não estiver usando.
+
+Estimativa de custo (por mês) para este exemplo no **nível Scale**:
+
+* Serviço pai ativo 24 horas por dia: 2 réplicas x 16 GiB, 4 vCPU por réplica
+* Serviço filho: 1 réplica x 236 GiB, 59 vCPU por réplica
+* 3 TB de dados compactados + 1 backup
+* 100 GB de tráfego de saída para a internet pública
+* 50 GB de transferência de dados entre regiões
+
+<table class="nowrap-header">
+  <thead>
+    <tr>
+      <th />
+
+      <th><span>Serviço filho</span><br /><span>ativo 1 hora/dia</span></th>
+      <th><span>Serviço filho</span><br /><span>ativo 2 horas/dia</span></th>
+      <th><span>Serviço filho</span><br /><span>ativo 4 horas/dia</span></th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>Compute</td>
+      <td>$1,142.43</td>
+      <td>$1,410.97</td>
+      <td>$1,948.05</td>
+    </tr>
+
+    <tr>
+      <td>Armazenamento</td>
+      <td>$151.80</td>
+      <td>$151.80</td>
+      <td>$151.80</td>
+    </tr>
+
+    <tr>
+      <td>Transferência de dados de saída para a internet pública</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+      <td>$11.52</td>
+    </tr>
+
+    <tr>
+      <td>Transferência de dados entre regiões</td>
+      <td>$1.56</td>
+      <td>$1.56</td>
+      <td>$1.56</td>
+    </tr>
+
+    <tr>
+      <td>Total</td>
+      <td>$1,307.31</td>
+      <td>$1,575.85</td>
+      <td>$2,112.93</td>
+    </tr>
+  </tbody>
+</table>
+
+Sem warehouses, você teria que pagar pela quantidade de memória de que o engenheiro de dados precisa para suas consultas.
+No entanto, combinar dois serviços em um warehouse e deixar um deles em modo ocioso ajuda você a economizar.
+
+<div id="clickpipes-pricing">
+  ## Preços do ClickPipes
+</div>
+
+Para obter informações sobre a cobrança do ClickPipes, consulte a seção específica [&quot;Cobrança do ClickPipes&quot;](/pt-BR/products/cloud/reference/billing/clickpipes/index).

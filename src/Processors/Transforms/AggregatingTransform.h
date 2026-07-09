@@ -128,8 +128,7 @@ protected:
     void consume(Chunk chunk);
 
 private:
-
-    void finishConsume();
+    size_t getGeneratingStepGroup() const;
 
     /// To read the data that was flushed into the temporary data file.
     Processors processors;

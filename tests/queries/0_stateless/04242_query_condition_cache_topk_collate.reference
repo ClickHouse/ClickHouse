@@ -1,0 +1,6 @@
+0
+--- Same COLLATE locale re-runs reuse the same QCC entry
+1
+1
+--- Different COLLATE locale writes a separate entry
+2
