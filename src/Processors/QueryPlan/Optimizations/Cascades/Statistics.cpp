@@ -177,7 +177,7 @@ OptimizerStatisticsPtr createEmptyStatistics()
 
 
 /// Estimate bytes per row for a ReadFromMergeTree step using storage column sizes or output header.
-static Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step)
+Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step)
 {
     auto total_rows_opt = read_step.getStorageSnapshot()->storage.totalRows(nullptr);
     auto column_sizes = read_step.getStorageSnapshot()->storage.getColumnSizes();

@@ -40,6 +40,19 @@ bool HashJoinImplementation::checkPattern(GroupExpressionPtr expression, const E
         expression->strategy == nullptr;
 }
 
+/// A side is preserved when the join never emits rows with that side null/default-extended:
+/// its key columns are real values in every output row. Only a preserved side's key columns can
+/// be advertised as the output distribution of a shuffle join.
+static bool joinPreservesLeftSide(JoinKind kind)
+{
+    return kind == JoinKind::Inner || kind == JoinKind::Left || kind == JoinKind::Cross || kind == JoinKind::Comma;
+}
+
+static bool joinPreservesRightSide(JoinKind kind)
+{
+    return kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Cross || kind == JoinKind::Comma;
+}
+
 std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     const auto * join_step = typeid_cast<const JoinStepLogical *>(expression->getQueryPlanStep());
@@ -113,27 +126,17 @@ std::vector<GroupExpressionPtr> HashJoinImplementation::applyImpl(GroupExpressio
         return key.hash_type_name.empty() ? key.raw_type_name : key.hash_type_name;
     };
 
-    /// Broadcast replicates the right side, so it is only safe when every output row is
-    /// driven by the partitioned left side: RIGHT and FULL emit unmatched right-side rows
-    /// on every node, and PASTE pairs rows by position. JoinCommutativity can turn
-    /// RIGHT Semi/Anti/Any into LEFT, but not RIGHT ALL or FULL.
+    /// Which sides never emit unmatched null/default-extended rows: every output row carries a
+    /// real key from a preserved side. FULL preserves neither side.
     const auto join_kind = join_step->getJoinOperator().kind;
-    const bool broadcast_unsafe
-        = !(join_kind == JoinKind::Inner
-            || join_kind == JoinKind::Left
-            || join_kind == JoinKind::Cross
-            || join_kind == JoinKind::Comma);
+    const bool left_preserved = joinPreservesLeftSide(join_kind);
+    const bool right_preserved = joinPreservesRightSide(join_kind);
 
-    /// A partitioned (shuffle) join output is only guaranteed to be distributed on a side that
-    /// is always present. Outer joins emit unmatched rows whose null/default-extended key on the
-    /// non-preserved side does not equal the preserved key, so only the preserved side(s) may be
-    /// advertised as the output distribution. FULL preserves neither side, so its shuffle output
-    /// has no usable key distribution. The inputs are still shuffled by the join keys regardless,
-    /// so matching rows co-locate.
-    const bool left_preserved = join_kind == JoinKind::Inner || join_kind == JoinKind::Left
-        || join_kind == JoinKind::Cross || join_kind == JoinKind::Comma;
-    const bool right_preserved = join_kind == JoinKind::Inner || join_kind == JoinKind::Right
-        || join_kind == JoinKind::Cross || join_kind == JoinKind::Comma;
+    /// Broadcast replicates the right side, so it is only safe when every output row is driven
+    /// by the partitioned left side: RIGHT and FULL emit unmatched right-side rows on every
+    /// node, and PASTE pairs rows by position. JoinCommutativity can turn RIGHT Semi/Anti/Any
+    /// into LEFT, but not RIGHT ALL or FULL.
+    const bool broadcast_unsafe = !left_preserved;
 
     /// Enumerate distributed strategies at each candidate node count.
     for (size_t candidate_node_count : candidate_node_counts)

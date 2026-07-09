@@ -455,22 +455,7 @@ Float64 StatisticsDerivation::estimateReadBytesPerRow(const ReadFromMergeTree & 
     if (avg_row_bytes_hint)
         return *avg_row_bytes_hint;
 
-    auto total_rows_opt = read_step.getStorageSnapshot()->storage.totalRows(nullptr);
-    auto column_sizes = read_step.getStorageSnapshot()->storage.getColumnSizes();
-    if (total_rows_opt && *total_rows_opt > 0 && !column_sizes.empty())
-    {
-        Float64 total_bytes = 0;
-        for (const auto & col_name : read_step.getAllColumnNames())
-        {
-            auto it = column_sizes.find(col_name);
-            if (it != column_sizes.end())
-                total_bytes += Float64(it->second.data_uncompressed);
-        }
-        if (total_bytes > 0)
-            return total_bytes / Float64(*total_rows_opt);
-    }
-
-    return estimateRowWidthFromHeader(*read_step.getOutputHeader());
+    return estimateReadBytesPerRowFromStep(read_step);
 }
 
 }

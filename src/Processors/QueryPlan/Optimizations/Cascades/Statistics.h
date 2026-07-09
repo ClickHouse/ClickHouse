@@ -46,6 +46,11 @@ public:
 using OptimizerStatisticsPtr = std::unique_ptr<IOptimizerStatistics>;
 
 OptimizerStatisticsPtr createEmptyStatistics();
+
+class ReadFromMergeTree;
+
+/// Bytes per row of a read: storage column sizes when available, the output header otherwise.
+Float64 estimateReadBytesPerRowFromStep(const ReadFromMergeTree & read_step);
 OptimizerStatisticsPtr createStatisticsFromHint(const String & statistics_hint_json);
 
 /// Estimate average bytes per row from a step's output header using data type information.
