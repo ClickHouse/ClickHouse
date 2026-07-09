@@ -42,7 +42,7 @@ Esta guía presenta tanto ClickStack Open Source como Managed ClickStack con un 
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # o
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
@@ -69,13 +69,13 @@ Esta guía presenta tanto ClickStack Open Source como Managed ClickStack con un 
         done
         ```
 
-        Esto simula fuentes OTLP de logs, trazas y métricas que envían datos al OTel collector. En producción, estas fuentes pueden ser clientes en distintos lenguajes o incluso otros OTel collectors.
+        Esto simula fuentes OTLP de logs, trazas y métricas que envían datos al OTel collector. En producción, estas fuentes pueden ser clientes en distintos lenguajes o incluso otras instancias de OTel collector.
 
-        Al volver a la vista `Search`, deberías ver que los datos han empezado a cargarse (ajusta el marco temporal a `Last 1 hour` si los datos no aparecen):
+        Al volver a la vista `Search`, deberías ver que los datos han empezado a cargarse (ajusta el intervalo de tiempo a `Last 1 hour` si los datos no se muestran):
 
         <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="Búsqueda de HyperDX" size="lg" />
 
-        La carga de datos tardará unos minutos. Espera a que finalice antes de pasar a los siguientes pasos.
+        La carga de datos tardará unos minutos. Espera a que termine antes de continuar con los siguientes pasos.
       </Step>
 
       <Step>
@@ -113,21 +113,21 @@ Esta guía presenta tanto ClickStack Open Source como Managed ClickStack con un 
 
         Ve a la pestaña `Trace` para ver la traza distribuida completa.
 
-        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Traza de la sesión" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="Traza de sesión" size="lg" />
 
-        Desplázate hacia abajo en la traza para ver el origen del error: el span del servicio `checkout`. Selecciona el span del servicio `Payment`.
+        Desplázate por la traza hasta ver el origen del error: el span del servicio `checkout`. Selecciona el span del servicio `Payment`.
 
         <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Span" size="lg" />
 
-        Selecciona la pestaña `Column Values` y desplázate hacia abajo. Podemos ver que el problema está asociado a que la caché está llena.
+        Selecciona la pestaña `Column Values` y desplázate hacia abajo. Podemos ver que el problema está relacionado con una caché llena.
 
         <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Valores de columna" size="lg" />
 
-        Al volver a subir y regresar a la traza, podemos ver que los logs están correlacionados con el span gracias a la configuración anterior. Esto aporta más contexto.
+        Al volver hacia arriba en la traza, vemos que los logs están correlacionados con el span gracias a la configuración anterior. Esto aporta más contexto.
 
         <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Log correlacionado" size="lg" />
 
-        Hemos determinado que la caché se está llenando en el servicio de pagos, lo que impide que los pagos se completen.
+        Hemos comprobado que se está llenando una caché en el servicio `Payment`, lo que impide que los pagos se completen.
       </Step>
 
       <Step>
@@ -184,7 +184,7 @@ Esta guía presenta tanto ClickStack Open Source como Managed ClickStack con un 
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # o
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
@@ -199,7 +199,7 @@ Esta guía presenta tanto ClickStack Open Source como Managed ClickStack con un 
         Primero, exporte la API key que copió anteriormente.
 
         ```shell
-        # exportar API key
+        # export API key
         export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
         ```
 

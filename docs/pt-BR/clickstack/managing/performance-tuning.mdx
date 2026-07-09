@@ -992,7 +992,7 @@ As versões mais recentes do ClickHouse também oferecem suporte a projeções a
   ### Alternativas
 </div>
 
-Se você precisar de várias chaves de ordenação, as projeções não são a única opção. Dependendo das restrições operacionais e de como você quer que o ClickStack encaminhe as consultas, considere:
+Se você precisar de várias chaves de ordenação, as projeções não são a única opção. Dependendo das restrições operacionais e de como você quer que o ClickStack direcione as consultas, considere:
 
-* Configurar o OpenTelemetry Collector para gravar em duas tabelas com chaves `ORDER BY` diferentes e criar fontes separadas no ClickStack para cada tabela.
+* Configurar seu coletor do OpenTelemetry para gravar em duas tabelas com chaves `ORDER BY` diferentes e criar fontes separadas no ClickStack para cada tabela.
 * Criar uma visão materializada como um pipeline de cópia, ou seja, anexar uma visão materializada à tabela principal que selecione linhas brutas para uma tabela secundária com uma chave de ordenação diferente (um padrão de desnormalização ou roteamento). Crie uma fonte para essa tabela de destino. Exemplos podem ser encontrados [aqui](/pt-BR/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).

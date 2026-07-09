@@ -247,6 +247,15 @@ WHERE oid = 'postgres_table'::regclass;
 在复制中使用唯一的复制消费者标识符。默认值：`0`。
 如果设置为 `1`，则允许将多个 `MaterializedPostgreSQL` 表配置为指向同一个 `PostgreSQL` 表。
 
+<div id="materialized-postgresql-use-extended-date-and-time-types">
+  ### `materialized_postgresql_use_extended_date_and_time_types`
+</div>
+
+将 PostgreSQL 的 `date` 和 `timestamp`/`timestamptz` 类型映射到 ClickHouse 的 `Date32` 和 `DateTime64`，以覆盖 PostgreSQL 这些类型更宽的取值范围。默认值：`1`。
+如果将其设为 `0`，则改用范围更窄的 `Date` 和 `DateTime` 类型 (超出其范围的值，或带有子秒级精度的值，将无法表示) 。
+
+此设置仅控制创建嵌套表时，类型推断所选择的列类型，因此必须在 `CREATE DATABASE` 时指定。之后无法通过 `ALTER DATABASE ... MODIFY SETTING` 修改它 (已创建的嵌套表会保留其固定的列类型，因此此类更改会被拒绝) ；如需更改，只能重新创建数据库。它不适用于 `MaterializedPostgreSQL` 表引擎，因为该引擎中的列类型是显式声明的。
+
 <div id="notes">
   ## 注意事项
 </div>
@@ -311,13 +320,13 @@ WHERE oid = 'postgres_table'::regclass;
   ### 所需权限
 </div>
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- CREATE 查询权限。
+1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- CREATE 查询权限。
 
-2. [CREATE&#95;REPLICATION&#95;SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- 复制权限。
+2. [CREATE&#95;REPLICATION&#95;SLOT](https://www.postgresql.org/docs/10/protocol-replication.html#PROTOCOL-REPLICATION-CREATE-SLOT) -- 复制权限。
 
-3. [pg&#95;drop&#95;replication&#95;slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- 复制权限或超级用户权限。
+3. [pg&#95;drop&#95;replication&#95;slot](https://www.postgresql.org/docs/9.5/functions-admin.html#FUNCTIONS-REPLICATION) -- 复制权限或超级用户权限。
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- publication 的所有者 (即 MaterializedPostgreSQL engine 自身中的 `username`) 。
+4. [DROP PUBLICATION](https://www.postgresql.org/docs/10/sql-droppublication.html) -- publication 的所有者 (即 MaterializedPostgreSQL engine 自身中的 `username`) 。
 
 也可以不执行 `2` 和 `3` 命令，从而无需具备这些权限。使用设置 `materialized_postgresql_replication_slot` 和 `materialized_postgresql_snapshot` 即可。但务必格外谨慎。
 

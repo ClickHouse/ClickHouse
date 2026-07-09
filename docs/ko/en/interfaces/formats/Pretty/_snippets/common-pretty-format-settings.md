@@ -1,0 +1,18 @@
+---
+title: 공통 Pretty 형식 설정
+---
+
+{/* 참고: 이 파일은 이 파일을 가져오는 모든 파일에서 스니펫으로 사용됩니다 */ }
+
+다음 설정은 모든 `Pretty` 형식에 공통으로 적용됩니다.
+
+| Setting                                                                                                                                                            | Description                                                                                                                                                                      | Default |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| [`output_format_pretty_max_rows`](/ko/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                         | Pretty 형식의 행 수 제한입니다.                                                                                                                                                            | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/ko/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                 | Pretty 형식에서 컬럼의 모든 값에 적용할 최대 패딩 너비입니다.                                                                                                                                           | `250`   |
+| [`output_format_pretty_max_value_width`](/ko/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                           | Pretty 형식에 표시할 값의 최대 너비입니다. 이를 초과하면 잘립니다.                                                                                                                                        | `10000` |
+| [`output_format_pretty_color`](/ko/operations/settings/settings-formats.md/#output_format_pretty_color)                                                               | ANSI escape sequences를 사용해 Pretty 형식에 색상을 적용합니다.                                                                                                                                 | `true`  |
+| [`output_format_pretty_grid_charset`](/ko/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                 | 그리드 경계를 출력할 때 사용할 문자 집합입니다. 사용 가능한 문자 집합은 ASCII, UTF-8입니다.                                                                                                                       | `UTF-8` |
+| [`output_format_pretty_row_numbers`](/ko/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                   | Pretty 출력 형식에서 각 행 앞에 행 번호를 추가합니다.                                                                                                                                               | `true`  |
+| [`output_format_pretty_display_footer_column_names`](/ko/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                   | 테이블에 행이 많은 경우 푸터에 컬럼 이름을 표시합니다.                                                                                                                                                  | `true`  |
+| [`output_format_pretty_display_footer_column_names_min_rows`](/ko/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows) | [`output_format_pretty_display_footer_column_names`](/ko/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)가 활성화된 경우 푸터를 표시할 최소 행 수를 설정합니다. | `50`    |

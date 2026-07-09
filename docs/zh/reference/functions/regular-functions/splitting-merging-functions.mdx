@@ -278,9 +278,9 @@ SELECT reverseBySeparator('abcde', '')
 将由指定常量字符串 `separator` (长度必须恰好为 1 个字符) 分隔的字符串拆分为子字符串数组。
 如果分隔符出现在字符串的开头或结尾，或者存在多个连续的分隔符，则结果中可能会包含空子字符串。
 
-<Note>
-  设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
-</Note>
+:::note
+设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
+:::
 
 在以下情况下，结果中可能会包含空子字符串：
 
@@ -326,9 +326,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 
 将以空白字符和标点符号分隔的字符串拆分为子字符串数组。
 
-<Note>
-  设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
-</Note>
+:::note
+设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
+:::
 
 **语法**
 
@@ -373,9 +373,9 @@ Introduced in: v21.6.0
 * 存在多个连续的非空正则表达式匹配
 * 原始字符串为空，而正则表达式非空。
 
-<Note>
-  设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
-</Note>
+:::note
+设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
+:::
 
 **Syntax**
 
@@ -434,9 +434,9 @@ SELECT splitByRegexp('', 'abcde');
 * 存在多个连续的非空分隔符
 * 原始字符串 `s` 为空，而分隔符不为空
 
-<Note>
-  设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制：当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
-</Note>
+:::note
+设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制：当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
+:::
 
 **语法**
 
@@ -488,9 +488,9 @@ SELECT splitByString('', 'abcde');
 
 将按空白字符分隔的字符串拆分为子字符串数组。
 
-<Note>
-  设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
-</Note>
+:::note
+设置 [`splitby_max_substrings_includes_remaining_string`](/zh/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (默认值：`0`) 用于控制当参数 `max_substrings > 0` 时，是否将剩余字符串包含在结果数组的最后一个元素中。
+:::
 
 **语法**
 

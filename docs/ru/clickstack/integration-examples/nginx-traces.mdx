@@ -97,7 +97,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
                 otel_trace_context propagate;
                 otel_span_name "$request_method $uri";
                 
-                # Добавить сведения о запросе в трассы
+                # Добавить сведения о запросе в трассировки
                 otel_span_attr http.status_code $status;
                 otel_span_attr http.request.method $request_method;
                 otel_span_attr http.route $uri;
@@ -132,7 +132,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ##### Что делает эта конфигурация
 
     **Что трассируется:**
-    Каждый запрос к Nginx создает спан трассировки, в котором отображаются:
+    Каждый запрос к Nginx создаёт спан трассировки, в котором отображаются:
 
     * Метод запроса и путь
     * Код состояния HTTP
@@ -358,7 +358,7 @@ tail -f /var/log/nginx/access.log
 * Создайте дополнительные [панели мониторинга](/ru/clickstack/features/dashboards/overview) для конкретных сценариев использования (мониторинг API, события безопасности)
 
 <div id="going-to-production">
-  ## Переход в production
+  ## Переход к продакшну
 </div>
 
-В этом руководстве трассировки отправляются напрямую из модуля Nginx OpenTelemetry в конечную точку OTLP ClickStack. Для production-развертываний мы рекомендуем запускать собственный OTel Collector в роли шлюза, чтобы обеспечить батчинг и устойчивость к сбоям. Описание production-конфигурации см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве трассировки отправляются напрямую из модуля Nginx OpenTelemetry в конечную точку OTLP ClickStack. Для продакшн-развертываний мы рекомендуем запускать собственный OTel collector в роли шлюза, чтобы обеспечить пакетную отправку и отказоустойчивость. Сведения о конфигурации для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

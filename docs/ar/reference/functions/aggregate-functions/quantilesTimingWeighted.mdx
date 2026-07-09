@@ -13,9 +13,9 @@ doc_type: 'reference'
 
 استُحدث في: v1.1.0
 
-تحسب هذه الدالة عدة [كمّيات مئينية](https://en.wikipedia.org/wiki/Quantile) لتسلسل من البيانات الرقمية عند مستويات مختلفة في الوقت نفسه، وبدقة محددة، مع مراعاة وزن كل عنصر في التسلسل.
+تحسب هذه الدالة عدة [كمّات مئينية](https://en.wikipedia.org/wiki/Quantile) لتسلسل من البيانات الرقمية عند مستويات مختلفة في الوقت نفسه، وبدقة محددة، مع مراعاة وزن كل عنصر في التسلسل.
 
-تعادل هذه الدالة [`quantileTimingWeighted`](/ar/reference/functions/aggregate-functions/quantileTimingWeighted)، لكنها تتيح حساب عدة مستويات من الكمّيات المئينية في تمريرة واحدة، ما يجعلها أكثر كفاءة من استدعاء دوال الكمّيات المئينية الفردية.
+تعادل هذه الدالة [`quantileTimingWeighted`](/ar/reference/functions/aggregate-functions/quantileTimingWeighted)، لكنها تتيح حساب عدة مستويات من الكمّات المئينية في تمريرة واحدة، ما يجعلها أكثر كفاءة من استدعاء دوال الكمّات المئينية الفردية.
 
 النتيجة حتمية (أي إنها لا تعتمد على ترتيب معالجة الاستعلام). وقد حُسِّنت هذه الدالة للعمل مع التسلسلات التي تصف توزيعات مثل أزمنة تحميل صفحات الويب أو أزمنة استجابة الخادم الخلفي.
 
@@ -28,9 +28,9 @@ doc_type: 'reference'
 
 بخلاف ذلك، تُقرَّب نتيجة الحساب إلى أقرب مضاعف لـ 16 مللي ثانية.
 
-<Note>
-  عند حساب الكمّيات المئينية لزمن تحميل الصفحة، تكون هذه الدالة أكثر كفاءة ودقة من [`quantiles`](/ar/reference/functions/aggregate-functions/quantiles).
-</Note>
+:::note
+عند حساب الكمّات المئينية لزمن تحميل الصفحة، تكون هذه الدالة أكثر كفاءة ودقة من [`quantiles`](/ar/reference/functions/aggregate-functions/quantiles).
+:::
 
 **الصيغة**
 
@@ -40,7 +40,7 @@ quantilesTimingWeighted(level1, level2, ...)(expr, weight)
 
 **المعلمات**
 
-* `level` — مستويات الكوانتايل. عدد ثابت واحد أو أكثر من الأعداد ذات الفاصلة العائمة من 0 إلى 1. نوصي باستخدام قيم `level` ضمن النطاق `[0.01, 0.99]`. [`Float*`](/ar/reference/data-types/float)
+* `level` — مستويات الكمّ. عدد ثابت واحد أو أكثر من الأعداد ذات الفاصلة العائمة من 0 إلى 1. نوصي باستخدام قيم `level` ضمن النطاق `[0.01, 0.99]`. [`Float*`](/ar/reference/data-types/float)
 
 **الوسيطات**
 
@@ -49,11 +49,11 @@ quantilesTimingWeighted(level1, level2, ...)(expr, weight)
 
 **القيمة المُعادة**
 
-مصفوفة من الكوانتايلات للمستويات المحددة، وبالترتيب نفسه الذي حُدِّدت به المستويات. [`Array(Float32)`](/ar/reference/data-types/array)
+مصفوفة من الأكمام للمستويات المحددة، وبالترتيب نفسه الذي حُدِّدت به المستويات. [`Array(Float32)`](/ar/reference/data-types/array)
 
 **أمثلة**
 
-**حساب عدة كوانتايلات زمنية موزونة**
+**حساب عدة أكمام زمنية موزونة**
 
 ```sql title=Query
 SELECT quantilesTimingWeighted(0.5, 0.99)(response_time, weight) FROM t;

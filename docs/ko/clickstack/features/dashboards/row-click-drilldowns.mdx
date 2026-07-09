@@ -79,7 +79,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ## 서비스에서 해당 트레이스로 이동
 </div>
 
-때로는 다른 집계 뷰보다 원시 이벤트 자체를 확인해야 할 때가 있습니다. **검색** 작업은 클릭 시 대시보드 대신 [검색](/ko/clickstack/features/search) 페이지를 열고, 해당 행에 해당하는 로그 또는 트레이스를 이미 필터링된 상태로 표시합니다.
+때로는 다른 집계 뷰가 아니라 원시 이벤트 자체를 확인하고 싶을 때가 있습니다. **검색** 작업은 클릭 시 대시보드 대신 [검색](/ko/clickstack/features/search) 페이지를 열고, 해당 행에 해당하는 로그 또는 트레이스를 이미 필터링된 상태로 표시합니다.
 
 동일한 서비스 인벤토리 테이블에서, 행 클릭 시 상세 대시보드가 아니라 트레이스 자체가 열리도록 설정해 보겠습니다.
 
@@ -87,7 +87,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   <Step>
     ### 행 클릭 시 검색이 열리도록 설정
 
-    인벤토리 테이블에서 **Row Click Action**을 열고 **검색**을 선택합니다. 트레이스 source를 선택하십시오(로그 및 트레이스 source만 표시됩니다). 필터를 하나 추가합니다.
+    인벤토리 테이블에서 **Row Click Action**을 열고 **검색**을 선택합니다. traces 소스를 선택하십시오(로그 및 trace 소스만 표시됩니다). 필터를 하나 추가합니다.
 
     * **Expression**: `ServiceName`
     * **Template**: `{{ServiceName}}`
@@ -98,9 +98,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   <Step>
     ### 행 클릭
 
-    이제 서비스 행을 클릭하면 해당 트레이스 source의 검색 페이지가 열리고, `ServiceName = <service>`로 필터링되므로 동일한 시간 범위에서 해당 서비스의 스팬만 바로 확인할 수 있습니다.
+    이제 서비스 행을 클릭하면 해당 traces 소스의 검색 페이지가 열리고, `ServiceName = <service>`로 필터링되므로 동일한 시간 범위에서 해당 서비스의 스팬만 바로 확인할 수 있습니다.
 
-    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="행 클릭 후 트레이스 source의 검색 페이지가 열리고, 클릭한 서비스로 필터링된 상태" size="lg" />
+    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="행 클릭 후 traces 소스의 검색 페이지가 열리고, 클릭한 서비스로 필터링된 상태" size="lg" />
   </Step>
 </Steps>
 
@@ -117,19 +117,19 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이 드로어에서는 3가지 작업을 제공합니다:
 
 * **Default**: 기본 제공 동작입니다. 행을 클릭하면 해당 행의 group-by 컬럼 값과 선택한 시간 범위로 필터링된 검색 페이지가 열립니다. 사용자 지정 작업을 설정하지 않았을 때 적용되는 동작입니다.
-* **검색**: 클릭을 선택한 source의 검색 페이지로 보냅니다.
+* **검색**: 클릭을 선택한 소스의 검색 페이지로 보냅니다.
 * **Dashboard**: 클릭을 팀이 소유한 다른 대시보드로 보냅니다.
 
 **검색**와 **Dashboard**에서는 클릭이 이동할 위치를 선택하고, 함께 전달할 필터를 템플릿으로 지정합니다:
 
-* **Destination**: 특정 source 또는 대시보드를 선택하거나, **Template**를 선택한 뒤 [Handlebars](https://handlebarsjs.com/) 템플릿을 입력해 사용 가능한 source 또는 대시보드 이름에 맞추십시오. 특정 대상을 선택하면 해당 대상이 ID로 고정됩니다. 단일 고정 대상에는 이 방법을 권장합니다. 이름이 바뀌어도 유지되고, 대시보드를 내보내거나 가져온 뒤에도 유지되며, 대시보드의 경우 대상에 선언된 필터도 미리 채워집니다. 행마다 대상이 달라져야 한다면 **Template**를 사용하고, 행 컬럼을 참조해 대상을 선택하십시오(예: `Errors-{{ServiceName}}`).
+* **Destination**: 특정 소스 또는 대시보드를 선택하거나, **Template**를 선택한 뒤 [Handlebars](https://handlebarsjs.com/) 템플릿을 입력해 사용 가능한 소스 또는 대시보드 이름에 맞추십시오. 특정 대상을 선택하면 해당 대상이 ID로 고정됩니다. 단일 고정 대상에는 이 방법을 권장합니다. 이름이 바뀌어도 유지되고, 대시보드를 내보내거나 가져온 뒤에도 유지되며, 대시보드의 경우 대상에 선언된 필터도 미리 채워집니다. 행마다 대상이 달라져야 한다면 **Template**를 사용하고, 행 컬럼을 참조해 대상을 선택하십시오(예: `Errors-{{ServiceName}}`).
 * **Filters**: **Add filter**를 클릭한 다음 **Expression**(대상의 컬럼 또는 표현식, 예: `ServiceName`)과 해당 값에 대한 **Template**(예: `{{ServiceName}}`)를 입력하십시오. 템플릿은 `{{columnName}}` 형식으로 클릭한 행의 컬럼을 참조합니다(사용 가능한 컬럼은 아래 참고). 각 필터는 대상에서 `expression IN (value)` 조건으로 렌더링되며, 같은 표현식을 공유하는 필터는 머지됩니다. 대상이 대시보드인 경우, 해당 대시보드에 이미 선언된 각 필터마다 비어 있는 필터 1개가 드로어에 미리 채워지므로 템플릿만 입력하면 됩니다.
 * **WHERE** (선택 사항): 위의 개별 필터 조건에 더해 대상의 전역 필터로 렌더링되는 Handlebars 템플릿입니다. 대상이 이를 구문 분석할 수 있도록 쿼리 언어를 SQL 또는 Lucene으로 설정하십시오. 예를 들어 SQL 템플릿 `ServiceName = '{{ServiceName}}'`은 대상을 클릭한 행의 서비스로 범위를 제한합니다.
 
 <Info>
   **템플릿은 테이블의 컬럼을 참조합니다**
 
-  `{{...}}` 템플릿은 테이블 타일 자체의 컬럼, 즉 group-by 컬럼과 각 series를 이름 또는 alias 기준으로, 테이블에 표시된 그대로 해석합니다. 테이블이 선택하지 않은 기본 source의 컬럼은 참조할 수 없습니다. 클릭을 통해 값을 전달하려면 그 값이 테이블의 컬럼이어야 하므로, `{{ServiceName}}`은 `ServiceName`이 테이블의 group-by 컬럼이기 때문에 동작하며, alias가 지정된 컬럼은 해당 alias로 참조합니다. 테이블에 없는 이름을 참조하면 클릭이 실패하고 `Row has no column '<name>'`가 표시됩니다.
+  `{{...}}` 템플릿은 테이블 타일 자체의 컬럼, 즉 group-by 컬럼과 각 series를 이름 또는 alias 기준으로, 테이블에 표시된 그대로 해석합니다. 테이블이 선택하지 않은 기본 소스의 컬럼은 참조할 수 없습니다. 클릭을 통해 값을 전달하려면 그 값이 테이블의 컬럼이어야 하므로, `{{ServiceName}}`은 `ServiceName`이 테이블의 group-by 컬럼이기 때문에 동작하며, alias가 지정된 컬럼은 해당 alias로 참조합니다. 테이블에 없는 이름을 참조하면 클릭이 실패하고 `Row has no column '<name>'`가 표시됩니다.
 </Info>
 
 **Apply**를 클릭해 템플릿을 검증하십시오(ClickStack은 구문이 잘못된 템플릿을 보고합니다). 그런 다음 작업을 유지하려면 대시보드를 저장하십시오.

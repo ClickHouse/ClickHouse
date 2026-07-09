@@ -98,14 +98,14 @@ arrayAUCPR(scores, labels[, partial_offsets])
   * `higher_partitions_fp`: 更高评分分区中的负标签数量。
   * `total_positives`: 整个数据集中的正样本总数。
 
-<Note>
-  当使用 `arr_partial_offsets` 时，`arr_scores` 和 `arr_labels` 应仅包含整个数据集中的一个分区，即某个分数区间内的数据。
-  数据集应划分为连续的分区，其中每个分区都包含评分落在特定范围内的数据子集。
-  例如：
+:::note
+当使用 `arr_partial_offsets` 时，`arr_scores` 和 `arr_labels` 应仅包含整个数据集中的一个分区，即某个分数区间内的数据。
+数据集应划分为连续的分区，其中每个分区都包含评分落在特定范围内的数据子集。
+例如：
 
-  * 一个分区可以包含范围 [0, 0.5) 内的所有评分。
-  * 另一个分区可以包含范围 [0.5, 1.0] 内的评分。
-</Note>
+* 一个分区可以包含范围 [0, 0.5) 内的所有评分。
+* 另一个分区可以包含范围 [0.5, 1.0] 内的评分。
+  :::
 
 **返回值**
 
@@ -667,9 +667,9 @@ SELECT arrayDistinct([1, 2, 2, 3, 1]);
 
 返回两个数组的点积。
 
-<Note>
-  两个向量的长度必须相等。数组和 Tuple 也可以包含混合的元素类型。
-</Note>
+:::note
+两个向量的长度必须相等。数组和 Tuple 也可以包含混合的元素类型。
+:::
 
 **语法**
 
@@ -679,16 +679,17 @@ arrayDotProduct(v1, v2)
 
 **参数**
 
-* `v1` — 第一个向量。[`Array((U)Int* | Float* | Decimal)`](/zh/reference/data-types/array) 或 [`Tuple((U)Int* | Float* | Decimal)`](/zh/reference/data-types/tuple)
-* `v2` — 第二个向量。[`Array((U)Int* | Float* | Decimal)`](/zh/reference/data-types/array) 或 [`Tuple((U)Int* | Float* | Decimal)`](/zh/reference/data-types/tuple)
+* `v1` — 第一个向量。[`Array((U)Int* | Float* | BFloat16 | Decimal)`](/zh/reference/data-types/array) 或 [`Tuple((U)Int* | Float* | Decimal)`](/zh/reference/data-types/tuple)
+* `v2` — 第二个向量。[`Array((U)Int* | Float* | BFloat16 | Decimal)`](/zh/reference/data-types/array) 或 [`Tuple((U)Int* | Float* | Decimal)`](/zh/reference/data-types/tuple)
 
 **返回值**
 
 两个向量的点积。
 
-<Note>
-  返回类型由参数类型决定。如果 Array 或 Tuple 包含混合的元素类型，则结果类型为 supertype。
-</Note>
+:::note
+返回类型由参数类型决定。如果 Array 或 Tuple 包含混合的元素类型，则结果类型为 supertype。
+两个 `BFloat16` 数组会以 `Float32` 累加，并返回 `Float32` (与两个 `Float32` 数组的规则相同) 。
+:::
 
 [`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
 
@@ -724,9 +725,9 @@ SELECT dotProduct((1::UInt16, 2::UInt8, 3::Float32),(4::Int16, 5::Float32, 6::UI
 如果索引超出数组范围，则返回默认值 (数值类型返回 0，String 返回空字符串等) ，
 但非常量数组参数且索引为常量 0 的情况除外。在这种情况下，会报错 `Array indices are 1-based`。
 
-<Note>
-  ClickHouse 中的数组从 1 开始索引。
-</Note>
+:::note
+ClickHouse 中的数组从 1 开始索引。
+:::
 
 支持负索引。在这种情况下，会从末尾开始计数并选择相应的元素。例如，`arr[-1]` 表示数组中的最后一个元素。
 
@@ -797,9 +798,9 @@ SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)
 获取给定数组中索引为 `n` 的元素，其中 `n` 可以是任意整数类型。
 如果索引超出数组范围，则返回 `NULL`，而不是默认值。
 
-<Note>
-  ClickHouse 中的数组从 1 开始索引。
-</Note>
+:::note
+ClickHouse 中的数组从 1 开始索引。
+:::
 
 支持负索引。在这种情况下，会选择从末尾开始计数的对应元素。例如，`arr[-1]` 表示数组中的最后一个元素。
 
@@ -1724,6 +1725,10 @@ Introduced in: v1.1.0
 各列中的所有值都会被直接复制，但应用此函数的那一列除外；
 该列中的值会被替换为对应的数组元素值。
 
+:::note
+此函数是非确定性的：对于相同参数，它可能返回不同的结果。
+:::
+
 **语法**
 
 ```sql
@@ -1759,7 +1764,7 @@ SELECT arrayJoin([1, 2, 3] AS src) AS dst, 'Hello', src
 **arrayJoin 会影响查询的各个部分**
 
 ```sql title=Query
--- arrayJoin 函数会影响查询的各个部分，包括 WHERE 子句。注意结果是 2，尽管子查询只返回了 1 行。
+-- The arrayJoin function affects all sections of the query, including the WHERE section. Notice the result 2, even though the subquery returned 1 row.
 
 SELECT sum(1) AS impressions
 FROM
@@ -1778,7 +1783,7 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 **多个 arrayJoin 函数的用法**
 
 ```sql title=Query
-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
 SELECT
     sum(1) AS impressions,
@@ -1793,30 +1798,33 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    city,
+    browser
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           2 │ Istanbul │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
 │           1 │ Bobruisk │ Firefox │
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
 **优化导致的非预期结果**
 
 ```sql title=Query
--- 由于优化，对同一表达式多次使用 arrayJoin 可能得不到预期结果。
--- 在这种情况下，可以考虑给重复的数组表达式附加一些不会影响 join 结果的额外操作。
-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+-- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
+-- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
+-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
-    /* arrayJoin(dice) as second_throw */ -- 从技术上说这样写是正确的，但会让结果集为空
-    arrayJoin(arrayConcat(dice, [])) as second_throw -- 有意改写表达式，以强制重新计算
+    /* arrayJoin(dice) as second_throw */ -- is technically correct, but will annihilate result set
+    arrayJoin(arrayConcat(dice, [])) as second_throw -- intentionally changed expression to force re-evaluation
 FROM (
     SELECT [1, 2, 3, 4, 5, 6] as dice
 );
@@ -1866,8 +1874,8 @@ FROM (
 **使用 ARRAY JOIN 语法**
 
 ```sql title=Query
--- 请注意下方 `SELECT` 查询中的 ARRAY JOIN 语法，这种写法提供了更多可能性。
--- ARRAY JOIN 允许你一次性转换多个元素个数相同的数组。
+-- Note the ARRAY JOIN syntax in the `SELECT` query below, which provides broader possibilities.
+-- ARRAY JOIN allows you to convert multiple arrays with the same number of elements at a time.
 
 SELECT
     sum(1) AS impressions,
@@ -1885,20 +1893,23 @@ ARRAY JOIN
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
 **使用 Tuple**
 
 ```sql title=Query
--- 也可以使用 Tuple
+-- You can also use Tuple
 
 SELECT
     sum(1) AS impressions,
@@ -1913,13 +1924,16 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -2311,9 +2325,13 @@ SELECT arrayNormalizedGini([0.9, 0.3, 0.8, 0.7],[6, 1, 0, 2]);
 
 此函数与 `arrayReverseSort` 相同，但额外提供了一个 `limit` 参数，以支持部分排序。
 
-<Tip>
-  如需仅保留已排序的元素，请使用 `arrayResize`。
-</Tip>
+:::tip
+如需仅保留已排序的元素，请使用 `arrayResize`。
+:::
+
+:::note
+此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+:::
 
 **语法**
 
@@ -2395,11 +2413,15 @@ SELECT arrayPartialReverseSort((x, y) -> -y, 1, [0, 1, 2], [1, 2, 3]) as res
 子集。其余的 `(limit..n]` 部分包含不在 `[1..limit]` 范围内的元素，顺序未定义。
 `limit` 的取值应在 `[1..n]` 范围内。超出该范围的值等同于执行完整的 `arrayShuffle`：
 
-<Note>
-  此函数不会将常量物化。
+:::note
+此函数不会将常量物化。
 
-  `limit` 的取值应在 `[1..N]` 范围内。超出该范围的值等同于执行完整的 [`arrayShuffle`](#arrayShuffle)。
-</Note>
+`limit` 的取值应在 `[1..N]` 范围内。超出该范围的值等同于执行完整的 [`arrayShuffle`](#arrayShuffle)。
+:::
+
+:::note
+此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+:::
 
 **语法**
 
@@ -2488,9 +2510,13 @@ SELECT arrayPartialShuffle(materialize([1, 2, 3, 4]), 2, 42), arrayPartialShuffl
 
 此函数与 `arraySort` 相同，但额外提供了 `limit` 参数，可进行部分排序。
 
-<Tip>
-  如需仅保留已排序的元素，请使用 `arrayResize`。
-</Tip>
+:::tip
+如需仅保留已排序的元素，请使用 `arrayResize`。
+:::
+
+:::note
+此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+:::
 
 **语法**
 
@@ -2698,13 +2724,14 @@ arrayPushBack(arr, x)
 * `x` —
 * 要添加到数组末尾的单个值。[`Array(T)`](/zh/reference/data-types/array)。
 
-<Note>
-  - 只有数值才能添加到数值数组中，只有字符串才能添加到字符串数组中。
-  - 添加数值时，ClickHouse 会根据数组的数据类型自动设置 `x` 的类型。
-  - 可以为 `NULL`。该函数会向数组中添加一个 `NULL` 元素，并将数组元素的类型转换为 `Nullable`。
+:::note
 
-  有关 ClickHouse 中数据类型的更多信息，请参见 [数据类型](/zh/reference/data-types/index)。
-</Note>
+* 只有数值才能添加到数值数组中，只有字符串才能添加到字符串数组中。
+* 添加数值时，ClickHouse 会根据数组的数据类型自动设置 `x` 的类型。
+* 可以为 `NULL`。该函数会向数组中添加一个 `NULL` 元素，并将数组元素的类型转换为 `Nullable`。
+
+有关 ClickHouse 中数据类型的更多信息，请参见 [数据类型](/zh/reference/data-types/index)。
+:::
 
 **返回值**
 
@@ -2741,13 +2768,14 @@ arrayPushFront(arr, x)
 * `arr` — 要在末尾添加值 `x` 的数组。[`Array(T)`](/zh/reference/data-types/array)。- `x` —
 * 要添加到数组开头的单个值。[`Array(T)`](/zh/reference/data-types/array)。
 
-<Note>
-  - 只有数值才能添加到数值数组中，只有字符串才能添加到字符串数组中。
-  - 添加数值时，ClickHouse 会根据数组的数据类型自动设置 `x` 的类型。
-  - 可以为 `NULL`。该函数会向数组中添加一个 `NULL` 元素，并将数组元素的类型转换为 `Nullable`。
+:::note
 
-  有关 ClickHouse 中数据类型的更多信息，请参见 [数据类型](/zh/reference/data-types/index)。
-</Note>
+* 只有数值才能添加到数值数组中，只有字符串才能添加到字符串数组中。
+* 添加数值时，ClickHouse 会根据数组的数据类型自动设置 `x` 的类型。
+* 可以为 `NULL`。该函数会向数组中添加一个 `NULL` 元素，并将数组元素的类型转换为 `Nullable`。
+
+有关 ClickHouse 中数据类型的更多信息，请参见 [数据类型](/zh/reference/data-types/index)。
+:::
 
 **返回值**
 
@@ -2792,20 +2820,20 @@ arrayROCAUC(scores, labels[, scale[, partial_offsets]])
 * `labels` — 样本标签，通常正样本为 1，负样本为 0。[`Array((U)Int*)`](/zh/reference/data-types/array) 或 [`枚举`](/zh/reference/data-types/enum)
 * `scale` — 可选。决定是否返回归一化后的面积。如果为 false，则返回 TP (真正例) × FP (假正例) 曲线下的面积。默认值：true。[`Bool`](/zh/reference/data-types/boolean)
 * `partial_offsets` —
-* 一个包含四个非负整数的数组，用于计算 ROC 曲线下的部分面积 (相当于 ROC 空间中的一个垂直带) ，而不是整个 AUC。此选项适用于 ROC AUC 的分布式计算。该数组必须包含以下元素 [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]。[`Array`](/zh/reference/data-types/array) (元素为非负 [`Integer`](/zh/reference/data-types/int-uint)) 。可选。
+* 一个包含四个非负整数的数组，用于计算 ROC 曲线下的部分面积 (相当于 ROC 空间中的一个垂直带)，而不是整个 AUC。此选项适用于 ROC AUC 的分布式计算。该数组必须包含以下元素 [`higher_partitions_tp`, `higher_partitions_fp`, `total_positives`, `total_negatives`]。[`Array`](/zh/reference/data-types/array) (元素为非负 [`Integer`](/zh/reference/data-types/int-uint)) 。可选。
   * `higher_partitions_tp`: 更高评分分区中的正标签数量。
   * `higher_partitions_fp`: 更高评分分区中的负标签数量。
   * `total_positives`: 整个数据集中的正样本总数。
   * `total_negatives`: 整个数据集中的负样本总数。
 
-<Note>
-  当使用 `arr_partial_offsets` 时，`arr_scores` 和 `arr_labels` 应仅包含整个数据集中的一个分区，即某个分数区间内的数据。
-  数据集应划分为连续分区，每个分区都包含分数落在特定范围内的数据子集。
-  例如：
+:::note
+当使用 `arr_partial_offsets` 时，`arr_scores` 和 `arr_labels` 应仅包含整个数据集中的一个分区，即某个分数区间内的数据。
+数据集应划分为连续分区，每个分区都包含分数落在特定范围内的数据子集。
+例如：
 
-  * 一个分区可以包含范围 [0, 0.5) 内的所有分数。
-  * 另一个分区可以包含范围 [0.5, 1.0] 内的分数。
-</Note>
+* 一个分区可以包含范围 [0, 0.5) 内的所有分数。
+* 另一个分区可以包含范围 [0.5, 1.0] 内的分数。
+  :::
 
 **返回值**
 
@@ -2830,6 +2858,10 @@ SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 引入版本：v23.10.0
 
 返回输入数组中随机选取的 `samples` 个元素组成的子集。如果 `samples` 超过输入数组的大小，则样本数会限制为数组大小，也就是说会返回数组中的所有元素，但不保证其顺序。该函数既可处理扁平数组，也可处理嵌套数组。
+
+:::note
+此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
+:::
 
 **语法**
 
@@ -3080,9 +3112,9 @@ SELECT arrayResize([1], 3, NULL);
 
 将给定数组中元素的顺序反转。
 
-<Note>
-  函数 `reverse(arr)` 具有相同的功能，但除了 Array 类型外，还可用于其他数据类型。
-</Note>
+:::note
+函数 `reverse(arr)` 具有相同的功能，但除了 Array 类型外，还可用于其他数据类型。
+:::
 
 **语法**
 
@@ -3496,9 +3528,13 @@ SELECT arrayShingles([1, 2, 3, 4], 3) as res;
 返回一个与原始数组大小相同、元素顺序已被打乱的数组。
 元素会以这样的方式重新排序：这些元素的每一种可能排列出现的概率都相同。
 
-<Note>
-  此函数不会物化常量。
-</Note>
+:::note
+此函数不会物化常量。
+:::
+
+:::note
+此函数是非确定性的：对于相同的参数，可能返回不同的结果。
+:::
 
 **语法**
 
@@ -3768,11 +3804,11 @@ SELECT arraySum(x, y -> x+y, [1, 1, 1, 1], [1, 1, 1, 1]);
 
 接受多个数组，并返回一个包含未出现在所有源数组中的元素的数组。结果仅包含唯一值。
 
-<Note>
-  *两个以上集合*的对称差在[数学上定义](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)为：
-  由所有出现在奇数个输入集合中的元素组成的集合。
-  相比之下，函数 `arraySymmetricDifference` 只是返回未出现在所有输入集合中的输入元素集合。
-</Note>
+:::note
+*两个以上集合*的对称差在[数学上定义](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)为：
+由所有出现在奇数个输入集合中的元素组成的集合。
+相比之下，函数 `arraySymmetricDifference` 只是返回未出现在所有输入集合中的输入元素集合。
+:::
 
 **语法**
 
@@ -3997,18 +4033,18 @@ Introduced in：v1.1.0
 传入单个参数时，计算数组中不同元素的个数。
 传入多个参数时，计算多个数组中对应位置元素组成的不同 **元组** 的个数。
 
-例如，`SELECT arrayUniq([1,2], [3,4], [5,6])` 会形成以下 Tuple：
+例如，`SELECT arrayUniq([1,2], [3,4], [5,6])` 会形成以下 元组：
 
 * 位置 1：(1,3,5)
 * 位置 2：(2,4,6)
 
-然后再统计唯一 Tuple 的个数。本例中结果为 `2`。
+然后再统计唯一 元组 的个数。本例中结果为 `2`。
 
 所有传入的数组长度必须相同。
 
-<Tip>
-  如果你想获取数组中唯一元素的列表，可以使用 `arrayReduce('groupUniqArray', arr)`。
-</Tip>
+:::tip
+如果你想获取数组中唯一元素的列表，可以使用 `arrayReduce('groupUniqArray', arr)`。
+:::
 
 **Syntax**
 
@@ -4019,11 +4055,11 @@ arrayUniq(arr1[, arr2, ..., arrN])
 **参数**
 
 * `arr1` — 用于统计不同元素数量的数组。[`Array(T)`](/zh/reference/data-types/array)
-* `[, arr2, ..., arrN]` — 可选。附加数组，用于统计多个数组中对应位置元素组成的不同 Tuple 的数量。[`Array(T)`](/zh/reference/data-types/array)
+* `[, arr2, ..., arrN]` — 可选。附加数组，用于统计多个数组中对应位置元素组成的不同 元组 的数量。[`Array(T)`](/zh/reference/data-types/array)
 
 **返回值**
 
-如果只有一个参数，则返回不同元素的数量。如果有多个参数，则返回由各数组对应位置元素组成的不同 Tuple 的数量。
+如果只有一个参数，则返回不同元素的数量。如果有多个参数，则返回由各数组对应位置元素组成的不同 元组 的数量。
 [`UInt32`](/zh/reference/data-types/int-uint)
 
 **示例**
@@ -4198,9 +4234,9 @@ SELECT countEqual([1, 2, NULL, NULL], NULL)
 
 如果数组不包含任何元素，则视为空数组。
 
-<Note>
-  启用 [`optimize_functions_to_subcolumns` setting](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 后可对此进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT empty(arr) FROM TABLE;` 会转换为 `SELECT arr.size0 = 0 FROM TABLE;`。
-</Note>
+:::note
+启用 [`optimize_functions_to_subcolumns` setting](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 后可对此进行优化。将 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT empty(arr) FROM TABLE;` 会转换为 `SELECT arr.size0 = 0 FROM TABLE;`。
+:::
 
 该函数也适用于 String 或 UUID。
 
@@ -4257,7 +4293,7 @@ emptyArrayDate()
 **用法示例**
 
 ```sql title=Query
-SELECT emptyArrayDate
+SELECT emptyArrayDate()
 ```
 
 ```response title=Response
@@ -4291,7 +4327,7 @@ emptyArrayDateTime()
 **使用示例**
 
 ```sql title=Query
-SELECT emptyArrayDateTime
+SELECT emptyArrayDateTime()
 ```
 
 ```response title=Response
@@ -4325,7 +4361,7 @@ emptyArrayFloat32()
 **使用示例**
 
 ```sql title=Query
-SELECT emptyArrayFloat32
+SELECT emptyArrayFloat32()
 ```
 
 ```response title=Response
@@ -4359,7 +4395,7 @@ emptyArrayFloat64()
 **使用示例**
 
 ```sql title=Query
-SELECT emptyArrayFloat64
+SELECT emptyArrayFloat64()
 ```
 
 ```response title=Response
@@ -4393,7 +4429,7 @@ emptyArrayInt16()
 **用法示例**
 
 ```sql title=Query
-SELECT emptyArrayInt16
+SELECT emptyArrayInt16()
 ```
 
 ```response title=Response
@@ -4427,7 +4463,7 @@ emptyArrayInt32()
 **使用示例**
 
 ```sql title=Query
-SELECT emptyArrayInt32
+SELECT emptyArrayInt32()
 ```
 
 ```response title=Response
@@ -4461,7 +4497,7 @@ emptyArrayInt64()
 **用法示例**
 
 ```sql title=Query
-SELECT emptyArrayInt64
+SELECT emptyArrayInt64()
 ```
 
 ```response title=Response
@@ -4495,7 +4531,7 @@ emptyArrayInt8()
 **使用示例**
 
 ```sql title=Query
-SELECT emptyArrayInt8
+SELECT emptyArrayInt8()
 ```
 
 ```response title=Response
@@ -4529,7 +4565,7 @@ emptyArrayString()
 **用法示例**
 
 ```sql title=Query
-SELECT emptyArrayString
+SELECT emptyArrayString()
 ```
 
 ```response title=Response
@@ -4609,7 +4645,7 @@ emptyArrayUInt16()
 **用法示例**
 
 ```sql title=Query
-SELECT emptyArrayUInt16
+SELECT emptyArrayUInt16()
 ```
 
 ```response title=Response
@@ -4643,7 +4679,7 @@ emptyArrayUInt32()
 **用法示例**
 
 ```sql title=Query
-SELECT emptyArrayUInt32
+SELECT emptyArrayUInt32()
 ```
 
 ```response title=Response
@@ -4677,7 +4713,7 @@ emptyArrayUInt64()
 **用法示例**
 
 ```sql title=Query
-SELECT emptyArrayUInt64
+SELECT emptyArrayUInt64()
 ```
 
 ```response title=Response
@@ -4711,7 +4747,7 @@ emptyArrayUInt8()
 **使用示例**
 
 ```sql title=Query
-SELECT emptyArrayUInt8
+SELECT emptyArrayUInt8()
 ```
 
 ```response title=Response
@@ -5134,10 +5170,10 @@ SELECT indexOf([1, 3, NULL, NULL], NULL)
 如果数组中包含值为 &#39;x&#39; 的元素，则返回第一个此类元素的索引 (从 `1` 开始) 。
 如果数组不包含要查找的值，函数将返回 `0`。
 
-<Note>
-  与 `indexOf` 函数不同，此函数假定数组已按
-  升序排列。如果数组未排序，则结果未定义。
-</Note>
+:::note
+与 `indexOf` 函数不同，此函数假定数组已按
+升序排列。如果数组未排序，则结果未定义。
+:::
 
 **语法**
 
@@ -5166,78 +5202,6 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 5
 ```
 
-<div id="kql_array_sort_asc">
-  ## kql_array_sort_asc
-</div>
-
-引入版本：v23.10.0
-
-按升序对一个或多个数组进行排序。第一个数组会被排序，后续数组会按第一个数组排序后的顺序重新排列。NULL 值会排在末尾。这是一个 KQL (Kusto 查询语言) 兼容函数。
-
-**语法**
-
-```sql
-kql_array_sort_asc(array1[, array2, ..., nulls_last])
-```
-
-**参数**
-
-* `array1` — 要排序的数组。[`Array(T)`](/zh/reference/data-types/array)
-* `array2` — 可选。会按照 `array1` 的排序顺序重新排列的其他数组。[`Array(T)`](/zh/reference/data-types/array)
-* `nulls_last` — 可选。布尔值，指示是否将 null 放在最后。默认为 true。[`UInt8`](/zh/reference/data-types/int-uint)
-
-**返回值**
-
-返回一个由按升序排序的数组组成的 Tuple。[`Tuple(Array, ...)`](/zh/reference/data-types/tuple)
-
-**示例**
-
-**基本用法**
-
-```sql title=Query
-SELECT kql_array_sort_asc([3, 1, 2])
-```
-
-```response title=Response
-([1, 2, 3])
-```
-
-<div id="kql_array_sort_desc">
-  ## kql_array_sort_desc
-</div>
-
-引入版本：v23.10.0
-
-将一个或多个数组按降序排序。第一个数组会被排序，后续数组会按第一个数组的排序结果重新排列。空值会放在末尾。这是一个 KQL (Kusto 查询语言) 兼容函数。
-
-**语法**
-
-```sql
-kql_array_sort_desc(array1[, array2, ..., nulls_last])
-```
-
-**参数**
-
-* `array1` — 要排序的数组。[`Array(T)`](/zh/reference/data-types/array)
-* `array2` — 可选的附加数组，会根据 array1 的排序顺序重新排序。[`Array(T)`](/zh/reference/data-types/array)
-* `nulls_last` — 可选布尔值，用于指示是否将 null 排在最后。默认值为 true。[`UInt8`](/zh/reference/data-types/int-uint)
-
-**返回值**
-
-返回按降序排序的数组 Tuple。[`Tuple(Array, ...)`](/zh/reference/data-types/tuple)
-
-**示例**
-
-**基本用法**
-
-```sql title=Query
-SELECT kql_array_sort_desc([3, 1, 2])
-```
-
-```response title=Response
-([3, 2, 1])
-```
-
 <div id="length">
   ## length
 </div>
@@ -5248,7 +5212,8 @@ Introduced in：v1.1.0
 
 * 对于 String 或 FixedString 参数：计算字符串中的字节数。
 * 对于 Array 参数：计算数组中的元素数量。
-* 如果应用于 FixedString 参数，该函数是一个常量表达式。
+* 对于 QBit 参数：计算向量的维度。
+* 如果应用于 FixedString 或 QBit 参数，该函数是一个常量表达式。
 
 请注意，字符串中的字节数不等于 Unicode“码点”的数量，也不等于 Unicode“字素簇”的数量
 (也就是我们通常所说的“字符”) ，也不等于字符串的可见宽度。
@@ -5265,11 +5230,11 @@ length(x)
 
 **参数**
 
-* `x` — 要计算其字节数 (对于 String/FixedString) 或元素个数 (对于 Array) 的值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Array(T)`](/zh/reference/data-types/array)
+* `x` — 要计算其字节数 (对于 String/FixedString)、元素个数 (对于 Array) 或维度 (对于 QBit) 的值。[`String`](/zh/reference/data-types/string) 或 [`FixedString`](/zh/reference/data-types/fixedstring) 或 [`Array(T)`](/zh/reference/data-types/array) 或 [`QBit`](/zh/reference/data-types/qbit)
 
 **返回值**
 
-返回 String/FixedString `x` 的字节数，或数组 `x` 的元素个数。[`UInt64`](/zh/reference/data-types/int-uint)
+返回 String/FixedString `x` 的字节数、数组 `x` 的元素个数，或 QBit `x` 的维度。[`UInt64`](/zh/reference/data-types/int-uint)
 
 **示例**
 
@@ -5291,6 +5256,16 @@ SELECT length(['Hello', 'world'])
 
 ```response title=Response
 2
+```
+
+**QBit 示例**
+
+```sql title=Query
+SELECT length([0, 0, 0, 0, 0, 0, 0, 0]::QBit(Float32, 8))
+```
+
+```response title=Response
+8
 ```
 
 **constexpr 示例**
@@ -5345,9 +5320,9 @@ SELECT 'ábc' AS str, length(str), lengthUTF8(str)
 
 如果数组至少包含一个元素，则视为非空。
 
-<Note>
-  可通过启用 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 设置进行优化。当 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT notEmpty(arr) FROM table` 会转换为 `SELECT arr.size0 != 0 FROM TABLE`。
-</Note>
+:::note
+可通过启用 [`optimize_functions_to_subcolumns`](/zh/reference/settings/session-settings#optimize_functions_to_subcolumns) 设置进行优化。当 `optimize_functions_to_subcolumns = 1` 时，该函数只会读取 [size0](/zh/reference/data-types/array#array-size) 子列，而不是读取并处理整个数组列。查询 `SELECT notEmpty(arr) FROM table` 会转换为 `SELECT arr.size0 != 0 FROM TABLE`。
+:::
 
 该函数也适用于 String 或 UUID。
 
@@ -5375,6 +5350,82 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="randomHadamardTransform">
+  ## randomHadamardTransform
+</div>
+
+引入版本：v26.7.0
+
+对浮点向量应用随机化的 Hadamard 变换：`y = (1/sqrt(k)) * (H * D * x)`，其中
+`D` 是一个对角矩阵，其确定性的 +/-1 符号由 `seed` 选定，`H` 是 Walsh-Hadamard
+矩阵，输入会通过零填充补齐到 `m`，即其长度的下一个 2 的幂。
+
+该变换是一种正交的、**保持范数不变的**旋转，可将向量的能量均匀分散到各个坐标上，
+使各坐标上的分布近似高斯分布，且与数据本身无关。它适合作为标量量化前的预处理步骤；在截断时，
+还可作为 Johnson-Lindenstrauss / subsampled-randomized-Hadamard (SRHT) 随机投影使用。
+
+当输入长度为 `2^k * m` 且 `m` 属于 `{12, 20}` 时 (这些阶数存在 Hadamard 矩阵，例如
+`768 = 64 * 12`、`1536 = 128 * 12`、`3072 = 256 * 12`、`2560 = 128 * 20`) ，将使用精确的 Kronecker
+变换 `H_(2^k) (x) H_m`，而不是进行填充，因此输出将保持与输入相同的维度，而不是扩展到下一个 2 的幂。
+其他所有长度都会通过零填充补齐到 `m`，即下一个 2 的幂。
+
+结果的元素类型与输入相同；空输入数组会返回空数组。
+
+* `seed` (可选，默认为 `0`) ：选择符号模式；相同的 seed 始终会产生相同的
+  变换。
+* `output_dims` (可选，默认为变换长度) ：仅保留前 `output_dims`
+  个坐标。`1/sqrt(output_dims)` 缩放会在完整变换时保持结果范数不变，
+  并在截断时在期望意义上保持范数不变。其值不得超过变换
+  长度 (即下一个 2 的幂，或者在精确 Kronecker 情况下为输入长度) 。
+
+**语法**
+
+```sql
+randomHadamardTransform(vector[, seed[, output_dims]])
+```
+
+**参数**
+
+* `vector` — 要变换的向量。[`Array(BFloat16)`](/zh/reference/data-types/array) 或 [`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Float64)`](/zh/reference/data-types/array)
+* `seed` — 可选。用于生成确定性 +/-1 符号的种子 (默认值为 0) 。[`UInt*`](/zh/reference/data-types/int-uint)
+* `output_dims` — 可选。将结果截断为指定数量的前导坐标 (默认值：完整变换长度；对于精确的 Kronecker 维度，等于输入长度；否则为下一个 2 的幂) 。[`UInt*`](/zh/reference/data-types/int-uint)
+
+**返回值**
+
+变换后的向量 (元素类型与输入相同) 。其长度即变换长度：对于精确的 Kronecker 维度，为输入长度；否则为补齐到下一个 2 的幂后的输入长度；也可选择截断为 output&#95;dims。[`Array(BFloat16)`](/zh/reference/data-types/array) 或 [`Array(Float32)`](/zh/reference/data-types/array) 或 [`Array(Float64)`](/zh/reference/data-types/array)
+
+**示例**
+
+**完整变换 (长度补齐到 2 的幂)&#x20;**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32)))
+```
+
+```response title=Response
+4
+```
+
+**范数保持不变**
+
+```sql title=Query
+SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30, 4)
+```
+
+```response title=Response
+0
+```
+
+**截断为 3 维的投影**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))
+```
+
+```response title=Response
+3
 ```
 
 <div id="range">

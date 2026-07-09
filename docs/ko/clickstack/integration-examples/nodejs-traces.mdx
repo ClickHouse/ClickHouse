@@ -29,7 +29,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   ##### 사전 요구사항
 </div>
 
-* OTLP 엔드포인트(포트 4317/4318)에 접근할 수 있도록 실행 중인 ClickStack 인스턴스
+* OTLP 엔드포인트(포트 4317/4318)에 접근할 수 있는 실행 중인 ClickStack 인스턴스
 * 기존 Node.js 애플리케이션(Node.js 14 이상)
 * npm 또는 yarn 패키지 관리자
 * ClickStack 호스트명 또는 IP 주소
@@ -42,7 +42,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### ClickStack API Key 가져오기
+    #### ClickStack API key 가져오기
 
     ClickStack의 OTLP 엔드포인트로 트레이스를 전송하는 데 필요한 API Key입니다.
 
@@ -84,11 +84,11 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   <Step>
     #### HyperDX에서 트레이스 확인
 
-    구성이 완료되면 HyperDX에 로그인하여 트레이스가 수집되는지 확인합니다. 다음과 비슷한 화면이 표시됩니다. 트레이스가 보이지 않으면 시간 범위를 조정해 보십시오:
+    구성이 완료되면 HyperDX에 로그인하여 트레이스가 수집되고 있는지 확인합니다. 다음과 비슷한 화면이 표시됩니다. 트레이스가 보이지 않으면 시간 범위를 조정해 보십시오:
 
     <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Traces search view" />
 
-    아무 트레이스나 클릭하면 스팬, 타이밍, 속성이 포함된 상세 보기를 확인할 수 있습니다:
+    아무 trace나 클릭하면 스팬, 타이밍, 속성이 포함된 상세 보기를 확인할 수 있습니다:
 
     <Image img="/images/clickstack/nodejs/trace-view.webp" alt="Individual trace view" />
   </Step>
@@ -133,7 +133,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     1. ClickStack URL에서 HyperDX를 엽니다(예: http://localhost:8080)
     2. 필요하면 계정을 생성하거나 로그인합니다
     3. **Team Settings → API Keys**로 이동합니다
-    4. **수집 API key**를 복사합니다
+    4. **수집 API Key**를 복사합니다
 
     <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
 
@@ -164,14 +164,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     2. **검색** 보기로 이동한 뒤 source를 **Traces**로 설정합니다
     3. 시간 범위를 **2025-10-25 13:00:00 - 2025-10-28 13:00:00**으로 설정합니다
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="트레이스 검색 보기" />
+    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Traces search view" />
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="개별 트레이스 보기" />
+    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="Individual trace view" />
 
     <Info>
       **시간대 표시**
 
-      HyperDX는 브라우저의 로컬 시간대로 timestamp를 표시합니다. 데모 데이터는 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** 범위에 걸쳐 있습니다. 넓은 시간 범위를 지정하면 위치와 관계없이 데모 트레이스를 확인할 수 있습니다. 트레이스가 표시되면 더 명확하게 시각화할 수 있도록 범위를 24시간으로 좁힐 수 있습니다.
+      HyperDX는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터는 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** 범위에 걸쳐 있습니다. 넓은 시간 범위를 지정하면 위치와 관계없이 데모 트레이스를 확인할 수 있습니다. 트레이스가 표시되면 더 명확하게 시각화할 수 있도록 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
   </Step>
 </Steps>
@@ -263,9 +263,9 @@ OTLP 엔드포인트에 성공적으로 연결되어야 합니다.
 * 특정 사용 사례(API 모니터링, 보안 이벤트)용 추가 대시보드를 만드세요
 
 <div id="going-to-production">
-  ## 프로덕션 환경으로 전환
+  ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드는 트레이스를 ClickStack의 OTLP 엔드포인트로 직접 전송하는 HyperDX SDK를 사용합니다. 이 방식은 개발, 테스트, 그리고 소규모에서 중간 규모의 프로덕션 배포에 적합합니다.
-더 큰 프로덕션 환경에서 운영하거나 텔레메트리 데이터를 더 세밀하게 제어해야 한다면, 자체 OpenTelemetry Collector를 agent로 배포하는 방안을 고려하십시오.
+이 가이드에서는 트레이스를 ClickStack의 OTLP 엔드포인트로 직접 전송하는 HyperDX SDK를 사용합니다. 이 방식은 개발, 테스트 및 소규모에서 중간 규모의 프로덕션 배포에 적합합니다.
+더 큰 규모의 프로덕션 환경을 운영하거나 텔레메트리 데이터를 추가로 제어해야 하는 경우에는 자체 OpenTelemetry Collector를 에이전트로 배포하는 것을 고려하십시오.
 프로덕션 배포 패턴과 collector 구성 예시는 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.

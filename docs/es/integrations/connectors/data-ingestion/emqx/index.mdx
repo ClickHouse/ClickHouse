@@ -41,7 +41,7 @@ Durante esta configuración, implementamos la instancia de ClickHouse en AWS, en
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_1.webp" size="sm" border alt="Interfaz de implementación del servicio de ClickHouse Cloud que muestra la selección de la región de AWS" />
 
-Durante el proceso de configuración, también deberá prestar atención a la configuración de la conexión. En este tutorial, elegimos &quot;Anywhere&quot;, pero si solicita una ubicación específica, deberá añadir a la whitelist la dirección IP del [gateway NAT](https://docs.emqx.com/en/cloud/latest/vas/nat-gateway.html) obtenida de su implementación de EMQX Cloud.
+Durante el proceso de configuración, también deberá prestar atención a la configuración de la conexión. En este tutorial, elegimos &quot;Anywhere&quot;, pero si solicita una ubicación específica, deberá añadir a la lista de permitidos la dirección IP del [gateway NAT](https://docs.emqx.com/en/cloud/latest/vas/nat-gateway.html) obtenida de su implementación de EMQX Cloud.
 
 <Image img="/images/integrations/data-ingestion/emqx/clickhouse_cloud_2.webp" size="sm" border alt="Configuración de conexión de ClickHouse Cloud que muestra la configuración de acceso por IP" />
 
@@ -236,13 +236,13 @@ Simularemos datos de temperatura y humedad y los enviaremos a EMQX Cloud a trav�
 
 Puede usar cualquier cliente o SDK de MQTT para publicar el mensaje. En este tutorial, usaremos [MQTT X](https://mqttx.app/), una aplicación cliente de MQTT fácil de usar proporcionada por EMQ.
 
-<Image img="/images/integrations/data-ingestion/emqx/mqttx-overview.webp" size="lg" border alt="Vista general de MQTTX que muestra la interfaz del cliente" />
+<Image img="/images/integrations/data-ingestion/emqx/mqttx-overview.webp" size="lg" border alt="MQTTX Overview que muestra la interfaz del cliente" />
 
 Haga clic en &quot;New Connection&quot; en MQTTX y complete el formulario de conexión:
 
 * Name: nombre de la conexión. Use el que prefiera.
-* Host: la dirección de conexión del broker MQTT. Puede obtenerla en la página de vista general de EMQX Cloud.
-* Port: el puerto de conexión del broker MQTT. Puede obtenerlo en la página de vista general de EMQX Cloud.
+* Host: la dirección de conexión del broker MQTT. Puede obtenerla en la página Overview de EMQX Cloud.
+* Port: el puerto de conexión del broker MQTT. Puede obtenerlo en la página Overview de EMQX Cloud.
 * Username/Password: use las credenciales creadas anteriormente, que en este tutorial deberían ser `emqx` y `xxxxxx`.
 
 <Image img="/images/integrations/data-ingestion/emqx/mqttx-new.webp" size="lg" border alt="Formulario de configuración de New Connection de MQTTX con los detalles de conexión" />

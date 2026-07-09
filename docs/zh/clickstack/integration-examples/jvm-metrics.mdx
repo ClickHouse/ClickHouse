@@ -311,9 +311,9 @@ echo $OTEL_METRICS_EXPORTER
 * 探索[其他 ClickStack 集成](/zh/clickstack/integration-examples/index)，整合你的可观测性数据
 
 <div id="going-to-production">
-  ## 进入生产环境
+  ## 面向生产环境
 </div>
 
-本指南演示如何为本地测试配置 OpenTelemetry Java agent。对于生产环境中的部署，建议将 agent JAR 包含在容器镜像中，并通过环境变量进行配置，以便更易于管理。对于拥有大量 JVM 实例的大型环境，建议部署集中式 OpenTelemetry Collector，对来自多个应用的指标进行批次处理和转发，而不是直接发送到 ClickStack。
+本指南演示如何为本地测试配置 OpenTelemetry Java agent。对于生产部署，建议将该 agent 的 JAR 包包含在容器镜像中，并通过环境变量进行配置，以便于管理。对于拥有大量 JVM 实例的大型环境，建议部署集中式 OpenTelemetry Collector，对来自多个应用的指标进行批次处理并转发，而不是直接发送到 ClickStack。
 
-有关生产环境部署模式和 collector 配置示例，请参阅[使用 OpenTelemetry 进行摄取](/zh/clickstack/ingesting-data/opentelemetry)。
+有关生产部署模式和 Collector 配置示例，请参阅[使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。

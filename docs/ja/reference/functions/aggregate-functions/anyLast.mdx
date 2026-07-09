@@ -15,10 +15,10 @@ doc_type: 'reference'
 
 カラム内で最後に現れた値を選択します。
 
-<Warning>
-  クエリは任意の順序で実行される可能性があるため、この関数の結果は非決定論的です。
-  任意ではあるものの決定論的な結果が必要な場合は、関数 [min](/ja/reference/functions/aggregate-functions/min) または [max](/ja/reference/functions/aggregate-functions/max) を使用してください。
-</Warning>
+:::warning
+クエリは任意の順序で実行される可能性があるため、この関数の結果は非決定論的です。
+任意ではあるものの決定論的な結果が必要な場合は、関数 [min](/ja/reference/functions/aggregate-functions/min) または [max](/ja/reference/functions/aggregate-functions/max) を使用してください。
+:::
 
 デフォルトでは、この関数が NULL を返すことはなく、つまり入力カラム内の NULL 値は無視されます。
 ただし、この関数を `RESPECT NULLS` 修飾子付きで使用すると、NULL かどうかに関係なく、最後に読み取られた値を返します。

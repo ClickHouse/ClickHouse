@@ -12,7 +12,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
-import ExperimentalBadge from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 O cliente JS oficial para se conectar ao ClickHouse.
 O cliente é escrito em TypeScript e fornece tipos para a API pública do cliente.
@@ -157,13 +156,13 @@ Ao criar uma instância do cliente, as seguintes configurações de conexão pod
   #### Parâmetros de configuração específicos do Node.js
 </div>
 
-| Configuração                                                                   | Descrição                                                                     | Valor padrão | Veja também                                                                                                                                |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| **max&#95;open&#95;connections**?: number                                      | Número máximo de sockets conectados permitidos por host.                      | `10`         | -                                                                                                                                          |
-| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`       | Configura certificados TLS.                                                   | -            | [documentação de TLS](/pt-BR/integrations/language-clients/js#tls-certificates-nodejs-only)                                                      |
-| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }` | -                                                                             | -            | [documentação do Keep Alive](/pt-BR/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                                       |
-| **http&#95;agent**?: http.Agent | https.Agent <br /><ExperimentalBadge />      | Agente HTTP personalizado para o cliente.                                     | -            | [documentação do agente HTTP](/pt-BR/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)                           |
-| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><ExperimentalBadge />    | Define o cabeçalho `Authorization` com as credenciais de autenticação básica. | `true`       | [uso desta configuração na documentação do agente HTTP](/pt-BR/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
+| Configuração                                                                                                 | Descrição                                                                     | Valor padrão | Veja também                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| **max&#95;open&#95;connections**?: number                                                                    | Número máximo de sockets conectados permitidos por host.                      | `10`         | -                                                                                                                                          |
+| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`                                     | Configura certificados TLS.                                                   | -            | [documentação de TLS](/pt-BR/integrations/language-clients/js#tls-certificates-nodejs-only)                                                      |
+| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }`                               | -                                                                             | -            | [documentação do Keep Alive](/pt-BR/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                                       |
+| **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">Experimental</Badge>   | Agente HTTP personalizado para o cliente.                                     | -            | [documentação do agente HTTP](/pt-BR/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)                           |
+| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">Experimental</Badge> | Define o cabeçalho `Authorization` com as credenciais de autenticação básica. | `true`       | [uso desta configuração na documentação do agente HTTP](/pt-BR/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
 
 <div id="url-configuration">
   ### Configuração de URL

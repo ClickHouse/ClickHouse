@@ -47,10 +47,10 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     EC2 인스턴스에서 메타데이터 서비스에 액세스할 수 있는지 확인합니다:
 
     ```bash
-    # 메타데이터 토큰 가져오기 (IMDSv2)
+    # Get metadata token (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # 인스턴스 메타데이터 확인
+    # Verify instance metadata
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -73,15 +73,15 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     EC2 인스턴스에 syslog 파일이 기록되고 있는지 확인합니다:
 
     ```bash
-    # Ubuntu 인스턴스
+    # Ubuntu instances
     ls -la /var/log/syslog
 
-    # Amazon Linux / RHEL 인스턴스
+    # Amazon Linux / RHEL instances
     ls -la /var/log/messages
 
-    # 최근 항목 확인
+    # View recent entries
     tail -20 /var/log/syslog
-    # 또는
+    # or
     tail -20 /var/log/messages
     ```
   </Step>
@@ -92,14 +92,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     EC2 인스턴스에 OpenTelemetry Collector Contrib 배포판을 설치하세요:
 
     ```bash
-    # 최신 릴리스 다운로드
+    # Download the latest release
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # 압축 해제 및 설치
+    # Extract and install
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # 설치 확인
+    # Verify installation
     otelcol-contrib --version
     ```
   </Step>
@@ -366,7 +366,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
             value: "ec2-demo"
 
     processors:
-      # 데모용 EC2 메타데이터 시뮬레이션 (실제 EC2 인스턴스 불필요)
+      # Simulate EC2 metadata for demo (no real EC2 instance required)
       resource:
         attributes:
           - key: service.name
@@ -627,4 +627,4 @@ sudo journalctl -u otelcol-contrib -n 50
   ## 프로덕션 환경으로 전환
 </div>
 
-이 가이드는 호스트 수준 모니터링에 권장되는 프로덕션 배포 방식으로, OpenTelemetry Collector를 EC2 인스턴스에 직접 설치합니다. 여러 인스턴스에 걸쳐 collector를 관리하려면 구성 관리 도구(Ansible, Chef, Puppet) 또는 Kubernetes 환경의 OpenTelemetry Operator 사용을 고려하십시오. 프로덕션 구성에 대해서는 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+이 가이드에서는 호스트 수준 모니터링에 권장되는 프로덕션 패턴으로 OpenTelemetry Collector를 EC2 인스턴스에 직접 설치합니다. 여러 인스턴스에 걸쳐 collector를 관리하려면 구성 관리 도구(Ansible, Chef, Puppet) 또는 Kubernetes 환경의 OpenTelemetry Operator 사용을 고려하십시오. 프로덕션 구성에 대해서는 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

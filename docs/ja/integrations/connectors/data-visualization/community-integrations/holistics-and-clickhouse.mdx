@@ -33,10 +33,10 @@ ClickHouse を Holistics に接続すると、コードベースのセマンテ�
 専用ユーザーには、クエリ対象のテーブルに対する`SELECT`権限に加え、`system`テーブルに対する権限 (スキーマ検出用) も必要です。
 
 ```sql
--- 例: 特定のデータベースへの読み取りアクセスを付与する
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- システムメタデータへのアクセスを付与する
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 
@@ -72,7 +72,7 @@ GRANT SELECT ON system.* TO holistics_user;
   </Step>
 
   <Step>
-    ## Holistics で data source を追加する
+    ## Holistics で データソース を追加する
 
     1. Holistics で **Settings → データソース** に移動します。
 
@@ -80,7 +80,7 @@ GRANT SELECT ON system.* TO holistics_user;
 
     2. **New Data Source** をクリックし、**ClickHouse** を選択します。
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="新しい data source の一覧から ClickHouse を選択する" border />
+       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="新しい データソース の一覧から ClickHouse を選択する" border />
 
     3. ステップ 1 で確認した情報をフォームに入力します。
 

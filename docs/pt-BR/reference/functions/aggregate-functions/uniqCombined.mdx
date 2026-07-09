@@ -16,10 +16,10 @@ Introduzido em: v1.1.0
 Calcula o número aproximado de valores de argumento distintos.
 Fornece o resultado de forma determinística (não depende da ordem de processamento da consulta).
 
-<Note>
-  Como usa um hash de 32 bits para tipos diferentes de `String`, o resultado terá um erro muito alto para cardinalidades significativamente maiores que `UINT_MAX` (o erro aumentará rapidamente após algumas dezenas de bilhões de valores distintos).
-  Se as cardinalidades forem maiores que `UINT_MAX`, use [`uniqCombined64`](/pt-BR/reference/functions/aggregate-functions/uniqCombined64).
-</Note>
+:::note
+Como usa um hash de 32 bits para tipos diferentes de `String`, o resultado terá um erro muito alto para cardinalidades significativamente maiores que `UINT_MAX` (o erro aumentará rapidamente após algumas dezenas de bilhões de valores distintos).
+Se as cardinalidades forem maiores que `UINT_MAX`, use [`uniqCombined64`](/pt-BR/reference/functions/aggregate-functions/uniqCombined64).
+:::
 
 Em comparação com a função uniq, a função uniqCombined:
 
@@ -27,14 +27,15 @@ Em comparação com a função uniq, a função uniqCombined:
 * Calcula com precisão várias vezes maior
 * Em geral, tem desempenho ligeiramente inferior. Em alguns cenários, uniqCombined pode ter desempenho melhor que uniq, por exemplo, com consultas distribuídas que transmitem um grande número de estados de agregação pela rede
 
-<Accordion title="Detalhes de implementação">
+<details>
+  <summary>Detalhes de implementação</summary>
   Esta função calcula um hash (hash de 64 bits para String e de 32 bits nos demais casos) para todos os parâmetros da agregação e, em seguida, o usa nos cálculos.
   Ela usa uma combinação de três algoritmos: array, tabela hash e HyperLogLog com uma tabela de correção de erros:
 
   * Para um pequeno número de elementos distintos, é usado um array
   * Quando o tamanho do conjunto aumenta, é usada uma tabela hash
   * Para um número maior de elementos, é usado HyperLogLog, que ocupará uma quantidade fixa de memória
-</Accordion>
+</details>
 
 **Sintaxe**
 

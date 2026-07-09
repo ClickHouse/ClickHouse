@@ -88,11 +88,11 @@ ClickHouse BYOC の VPC ピアリングを作成または削除するには、�
 
     ***
 
-    これで、ピアリングされた VPC から ClickHouseサービスにアクセスできるようになります。
+    これで、ピアリングされた VPC から ClickHouse サービスにアクセスできるようになります。
   </Step>
 </Steps>
 
-ClickHouse にプライベートにアクセスするために、ユーザーのピアリングされた VPC から安全に接続できるよう、プライベートロードバランサーとエンドポイントがプロビジョニングされます。プライベート エンドポイントは、パブリックエンドポイントの形式に `-private` 接尾辞を付けたものです。例:
+ClickHouse にプライベートにアクセスするために、ユーザーのピアリングされた VPC から安全に接続できるよう、プライベートロードバランサーとエンドポイントがプロビジョニングされます。プライベート エンドポイントは、パブリックエンドポイントの形式に `-private` 接尾辞を付けたものです。たとえば、次のとおりです。
 
 * **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
 * **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
@@ -121,14 +121,14 @@ AWS PrivateLink を使用すると、VPC ピアリング やインターネッ�
 
     1. **Endpoint Service Name を取得する**:
        * ClickHouse Support から Endpoint Service name が提供されます
-       * AWS VPC Console の「Endpoint Services」でも確認できます (service name で絞り込むか、ClickHouse services を探してください) 
+       * AWS VPC Console の「Endpoint Services」でも確認できます (service name で絞り込むか、ClickHouse services を探してください)
 
     <Image img="/images/cloud/reference/byoc-privatelink-1.webp" size="lg" alt="BYOC PrivateLink Service Endpoint" border />
 
     2. **VPC エンドポイントを作成する**:
        * AWS VPC Console → Endpoints → Create Endpoint に移動します
        * 「Find service by name」を選択し、ClickHouse Support から提供された Endpoint Service name を入力します
-       * VPC を選択し、サブネットを選択します (アベイラビリティゾーンごとに 1 つを推奨) 
+       * VPC を選択し、サブネットを選択します (アベイラビリティゾーンごとに 1 つを推奨)
        * **重要**: エンドポイントで「Private DNS names」を有効にしてください。これは DNS 名前解決を正しく機能させるために必要です
        * エンドポイント用のセキュリティグループを選択または作成します
        * 「Create Endpoint」をクリックします
@@ -137,7 +137,7 @@ AWS PrivateLink を使用すると、VPC ピアリング やインターネッ�
       **DNS 要件**:
 
       * VPC エンドポイントの作成時に「Private DNS names」を有効にしてください
-      * VPC で「DNS Hostnames」が有効になっていることを確認してください (VPC Settings → DNS resolution and DNS hostnames) 
+      * VPC で「DNS Hostnames」が有効になっていることを確認してください (VPC Settings → DNS resolution and DNS hostnames)
 
       これらの設定は、PrivateLink DNS を正しく機能させるために必要です。
     </Warning>
@@ -158,7 +158,7 @@ AWS PrivateLink を使用すると、VPC ピアリング やインターネッ�
     1. **Endpoint ID を取得する**:
        * AWS VPC Console で Endpoints に移動します
        * 新しく作成したエンドポイントを選択します
-       * Endpoint ID をコピーします (`vpce-xxxxxxxxxxxxxxxxx` のような形式です) 
+       * Endpoint ID をコピーします (`vpce-xxxxxxxxxxxxxxxxx` のような形式です)
 
     2. **ClickHouse Support に連絡する**:
        * Endpoint ID を ClickHouse Support に提供します

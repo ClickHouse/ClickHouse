@@ -49,19 +49,19 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     `postgresql.conf` に以下の設定を追加または変更します。
 
     ```conf
-    # CSVロギングに必要
+    # Required for CSV logging
     logging_collector = on
     log_destination = 'csvlog'
 
-    # 推奨: 接続のロギング
+    # Recommended: Connection logging
     log_connections = on
     log_disconnections = on
 
-    # オプション: 監視ニーズに応じて調整
-    #log_min_duration_statement = 1000  # 1秒以上かかるクエリをログに記録
-    #log_statement = 'ddl'               # DDLステートメントをログに記録 (CREATE, ALTER, DROP)
-    #log_checkpoints = on                # チェックポイントのアクティビティをログに記録
-    #log_lock_waits = on                 # ロック競合をログに記録
+    # Optional: Tune based on your monitoring needs
+    #log_min_duration_statement = 1000  # Log queries taking more than 1 second
+    #log_statement = 'ddl'               # Log DDL statements (CREATE, ALTER, DROP)
+    #log_checkpoints = on                # Log checkpoint activity
+    #log_lock_waits = on                 # Log lock contention
     ```
 
     <Note>
@@ -71,17 +71,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     これらの変更を行ったら、PostgreSQL を再起動してください:
 
     ```bash
-    # systemdの場合
+    # For systemd
     sudo systemctl restart postgresql
 
-    # Dockerの場合
+    # For Docker
     docker restart 
     ```
 
     ログが出力されていることを確認します:
 
     ```bash
-    # Linuxのデフォルトログの場所
+    # Default log location on Linux
     tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
 
     # macOS Homebrew
@@ -100,7 +100,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     receivers:
       filelog/postgres:
         include:
-          - /var/lib/postgresql/*/main/log/postgresql-*.csv # PostgreSQLのインストール環境に合わせて変更してください
+          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Adjust to match your PostgreSQL installation
         start_at: end
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
@@ -169,14 +169,14 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 既存の設定 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... その他の環境変数 ...
+          # ... other environment variables ...
         volumes:
           - ./postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/lib/postgresql:/var/lib/postgresql:ro
-          # ... その他のボリューム ...
+          # ... other volumes ...
     ```
 
     ##### オプション 2: Docker Run (オールインワン イメージ)
@@ -405,4 +405,4 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
   ## 本番環境への移行
 </div>
 
-このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を使用します。本番環境でデプロイする場合は、独自の OTel Collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector を拡張しています。本番環境でデプロイする場合は、独自の OTel collector を実行し、ClickStack の OTLP エンドポイントにデータを送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

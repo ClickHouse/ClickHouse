@@ -794,7 +794,7 @@ WHERE id > (SELECT max(id) FROM imdb_dbt.actor_summary) OR updated_at > (SELECT 
 
 ClickHouse는 그동안 비동기 [뮤테이션](/ko/reference/statements/alter/index) 형태로만 업데이트와 삭제를 제한적으로 지원해 왔습니다. 이는 IO 사용량이 매우 클 수 있으므로 일반적으로 피하는 것이 좋습니다.
 
-ClickHouse 22.8에서는 [경량한 삭제](/ko/reference/statements/delete)가 도입되었고, ClickHouse 25.7에서는 [경량 업데이트](/ko/reference/statements/update)가 도입되었습니다. 이러한 기능의 도입으로 비동기적으로 구체화되더라도 단일 업데이트 쿼리로 인한 변경 사항은 사용자 관점에서 즉시 반영됩니다.
+ClickHouse 22.8에서는 [경량한 삭제](/ko/reference/statements/delete)가 도입되었고, ClickHouse 25.7에서는 [경량 업데이트](/ko/reference/statements/update)가 도입되었습니다. 이러한 기능이 도입되면서 비동기적으로 구체화되더라도 단일 업데이트 쿼리로 인한 변경 사항은 사용자 관점에서 즉시 반영됩니다.
 
 이 모드는 모델에서 `incremental_strategy` 매개변수로 구성할 수 있습니다. 즉,
 

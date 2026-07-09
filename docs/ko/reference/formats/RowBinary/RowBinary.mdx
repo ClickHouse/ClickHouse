@@ -1289,7 +1289,7 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
   ### QBit
 </div>
 
-`QBit`은 다양한 수준의 정밀도로 효율적인 조회를 지원하는 벡터 타입입니다. 내부적으로는 전치된 포맷으로 저장됩니다. 전송 시 QBit은 단순히 기반 요소 타입(`Float32`, `Float64` 또는 `BFloat16`)의 `배열`입니다. 저장을 위한 비트 전치 최적화는 RowBinary 프로토콜이 아니라 server 측에서 수행됩니다.
+`QBit`은 다양한 수준의 정밀도로 효율적인 조회를 지원하는 벡터 타입입니다. 내부적으로는 전치된 포맷으로 저장됩니다. 전송 시 QBit은 단순히 기반 요소 타입(`Int8`, `Float32`, `Float64` 또는 `BFloat16`)의 `배열`입니다. 저장을 위한 비트 전치 최적화는 RowBinary 프로토콜이 아니라 server 측에서 수행됩니다.
 
 구문:
 
@@ -1297,13 +1297,13 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 QBit(element_type, dimension)
 ```
 
-여기서 `element_type`은 `Float32`, `Float64` 또는 `BFloat16`이고, `dimension`은 고정된 벡터 차원입니다.
+여기서 `element_type`은 `Int8`, `Float32`, `Float64` 또는 `BFloat16`이고, `dimension`은 고정된 벡터 차원입니다.
 
 wire 형식: `Array(element_type)`와 동일합니다:
 
 ```text
-// LEB128 길이
-// 이후 `element_type` 타입의 요소 `length`개가 이어집니다
+// LEB128 length
+// followed by `length` elements of `element_type`
 ```
 
 `QBit(Float32, 4)`로 `[1.0, 2.0, 3.0, 4.0]`를 인코딩한 예시는 다음과 같습니다:
@@ -1313,11 +1313,11 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 ```
 
 ```text
-0x04,                   // LEB128 - 배열에 4개의 요소가 있음
-0x00, 0x00, 0x80, 0x3F, // Float32로 표현한 1.0
-0x00, 0x00, 0x00, 0x40, // Float32로 표현한 2.0
-0x00, 0x00, 0x40, 0x40, // Float32로 표현한 3.0
-0x00, 0x00, 0x80, 0x40, // Float32로 표현한 4.0
+0x04,                   // LEB128 - array has 4 elements
+0x00, 0x00, 0x80, 0x3F, // 1.0 as Float32
+0x00, 0x00, 0x00, 0x40, // 2.0 as Float32
+0x00, 0x00, 0x40, 0x40, // 3.0 as Float32
+0x00, 0x00, 0x80, 0x40, // 4.0 as Float32
 ```
 
 <div id="format-settings">

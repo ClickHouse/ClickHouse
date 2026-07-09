@@ -1502,9 +1502,9 @@ Introduit dans : v24.1.0
 Renvoie la représentation ASCII (algorithme ToASCII) d&#39;un nom de domaine conformément au mécanisme [Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA).
 La chaîne d&#39;entrée doit être encodée en UTF et pouvoir être convertie en chaîne ASCII, sinon une exception est levée.
 
-<Note>
-  Aucun décodage des pourcentages ni aucune suppression des tabulations, espaces ou caractères de contrôle n&#39;est effectué.
-</Note>
+:::note
+Aucun décodage des pourcentages ni aucune suppression des tabulations, espaces ou caractères de contrôle n&#39;est effectué.
+:::
 
 **Syntaxe**
 
@@ -1543,10 +1543,10 @@ Introduit dans : v23.7.0
 Convertit la première lettre de chaque mot en majuscule et les autres en minuscules.
 Les mots sont des séquences de caractères alphanumériques séparées par des caractères non alphanumériques.
 
-<Note>
-  Comme `initcap` convertit uniquement la première lettre de chaque mot en majuscule, vous pouvez constater un comportement inattendu avec les mots contenant des apostrophes ou des lettres majuscules.
-  Il s&#39;agit d&#39;un comportement connu, et il n&#39;est actuellement pas prévu de le corriger.
-</Note>
+:::note
+Comme `initcap` convertit uniquement la première lettre de chaque mot en majuscule, vous pouvez constater un comportement inattendu avec les mots contenant des apostrophes ou des lettres majuscules.
+Il s&#39;agit d&#39;un comportement connu, et il n&#39;est actuellement pas prévu de le corriger.
+:::
 
 **Syntaxe**
 
@@ -1596,12 +1596,12 @@ Introduit dans : v23.7.0
 
 Comme [`initcap`](#initcap), `initcapUTF8` convertit la première lettre de chaque mot en majuscule et le reste en minuscules.
 Suppose que la chaîne contient un texte encodé en UTF-8 valide.
-Si cette hypothèse n&#39;est pas respectée, aucune exception n&#39;est levée et le résultat n&#39;est pas défini.
+Si cette hypothèse n&#39;est pas respectée, aucune exception n&#39;est levée et le résultat est indéfini.
 
-<Note>
-  Cette fonction ne détecte pas la langue ; par exemple, pour le turc, le résultat peut ne pas être tout à fait correct (i/İ vs. i/I).
-  Si la longueur de la séquence d&#39;octets UTF-8 diffère entre les formes en majuscules et en minuscules d&#39;un point de code, le résultat peut être incorrect pour ce point de code.
-</Note>
+:::note
+Cette fonction ne détecte pas la langue ; par exemple, pour le turc, le résultat peut ne pas être tout à fait correct (i/İ vs. i/I).
+Si la longueur de la séquence d&#39;octets UTF-8 diffère entre les formes en majuscules et en minuscules d&#39;un point de code, le résultat peut être incorrect pour ce point de code.
+:::
 
 **Syntaxe**
 
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2190,7 +2187,7 @@ SELECT
 
 Introduit dans : v21.11.0
 
-Normalise une chaîne en UTF-8 selon la [forme de normalisation NFKC](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
+Normalise une chaîne UTF-8 selon la [forme de normalisation NFKC](https://en.wikipedia.org/wiki/Unicode_equivalence#Normal_forms).
 
 **Syntaxe**
 
@@ -2204,7 +2201,7 @@ normalizeUTF8NFKC(str)
 
 **Valeur renvoyée**
 
-Renvoie la forme normalisée NFKC de la chaîne en UTF-8. [`String`](/fr/reference/data-types/string)
+Renvoie la forme normalisée NFKC de la chaîne UTF-8. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
@@ -2212,8 +2209,8 @@ Renvoie la forme normalisée NFKC de la chaîne en UTF-8. [`String`](/fr/referen
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- Circled number characters
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- Converts to 1 2 3
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ Renvoie la forme normalisée NFKD de la chaîne UTF-8. [`String`](/fr/reference/
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + subscript 2 + O + superscript 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- Converts to H 2 O 2
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3440,10 +3437,10 @@ Le comptage des points de code commence à `1`, selon la logique suivante :
 
 Un argument facultatif `length` spécifie le nombre maximal de points de code que la sous-chaîne renvoyée peut contenir.
 
-<Note>
-  Cette fonction suppose que la chaîne contient du texte valide encodé en UTF-8.
-  Si cette hypothèse n&#39;est pas respectée, aucune exception n&#39;est levée et le résultat est indéfini.
-</Note>
+:::note
+Cette fonction suppose que la chaîne contient du texte valide encodé en UTF-8.
+Si cette hypothèse n&#39;est pas respectée, aucune exception n&#39;est levée et le résultat est indéfini.
+:::
 
 **Syntaxe**
 
@@ -3893,13 +3890,13 @@ SELECT upper('clickhouse')
 
 Introduit dans : v1.1.0
 
-Convertit une chaîne en majuscules, en supposant qu’elle contient du texte UTF-8 valide.
+Convertit une chaîne en majuscules, en supposant qu’elle contient du texte encodé en UTF-8 valide.
 Si cette hypothèse n’est pas respectée, aucune exception n’est levée et le résultat est indéfini.
 
-<Note>
-  Cette fonction ne détecte pas la langue ; par exemple, pour le turc, le résultat peut ne pas être parfaitement correct (i/İ vs. i/I).
-  Si la longueur de la séquence d’octets UTF-8 diffère entre la forme majuscule et la forme minuscule d’un point de code (comme `ẞ` et `ß`), le résultat peut être incorrect pour ce point de code.
-</Note>
+:::note
+Cette fonction ne détecte pas la langue ; par exemple, pour le turc, le résultat peut ne pas être parfaitement correct (i/İ vs. i/I).
+Si la longueur de la séquence d’octets UTF-8 diffère entre la forme majuscule et la forme minuscule d’un point de code (comme `ẞ` et `ß`), le résultat peut être incorrect pour ce point de code.
+:::
 
 **Syntaxe**
 

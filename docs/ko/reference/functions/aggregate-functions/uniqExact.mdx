@@ -15,11 +15,11 @@ doc_type: '참고'
 
 서로 다른 인수 값의 정확한 개수를 계산합니다.
 
-<Warning>
-  `uniqExact` 함수는 `uniq`보다 더 많은 메모리를 사용합니다. 서로 다른 값의 수가 늘어날수록 상태(state)의 크기가 제한 없이 증가하기 때문입니다.
-  정확한 결과가 반드시 필요한 경우에만 `uniqExact` 함수를 사용하십시오.
-  그 외에는 [`uniq`](/ko/reference/functions/aggregate-functions/uniq) 함수를 사용하십시오.
-</Warning>
+:::warning
+`uniqExact` 함수는 `uniq`보다 더 많은 메모리를 사용합니다. 서로 다른 값의 수가 늘어날수록 상태(state)의 크기가 제한 없이 증가하기 때문입니다.
+정확한 결과가 반드시 필요한 경우에만 `uniqExact` 함수를 사용하십시오.
+그 외에는 [`uniq`](/ko/reference/functions/aggregate-functions/uniq) 함수를 사용하십시오.
+:::
 
 **구문**
 

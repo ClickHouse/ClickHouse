@@ -183,6 +183,10 @@ Si le tag copié n’est pas présent dans `src_group`, la fonction le supprime 
 La fonction reproduit la logique de copie des modificateurs prometheus
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers).
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -228,6 +232,10 @@ Si certains des tags copiés ne sont pas présents dans `src_group`, la fonction
 La fonction reproduit la logique de copie des modificateurs Prometheus
 [group left/group right](https://prometheus.io/docs/prometheus/latest/querying/operators/#group-modifiers).
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -269,6 +277,10 @@ Introduit dans : v26.1.0
 
 Extrait la valeur d’un tag spécifié dans le groupe. Renvoie NULL si le tag est introuvable.
 Voir aussi la fonction [timeSeriesGroupToTags()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -359,6 +371,10 @@ Renvoie une clé d’échantillonnage `UInt64` stable dérivée des tags d’un 
 La valeur est déterministe : des tags d’entrée identiques produisent toujours la même clé.
 Elle est conçue pour être utilisée comme clé de tri pour des opérateurs d’échantillonnage tels que `limitk` et `limit_ratio`.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -396,6 +412,10 @@ Introduite dans : v26.1.0
 
 Renvoie les noms et les valeurs des tags associés à un groupe spécifié.
 Voir aussi la fonction [timeSeriesTagsToGroup()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesTagsToGroup).
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -441,6 +461,10 @@ Introduit dans : v26.1.0
 Renvoie les noms et les valeurs des tags associés à l’identifiant spécifié d’une série temporelle.
 Voir aussi la fonction [timeSeriesStoreTags()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -483,6 +507,10 @@ Introduit dans : v25.8.0
 
 Renvoie les tags associés à l’identifiant spécifié d’une série temporelle.
 Voir aussi la fonction [timeSeriesStoreTags()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesStoreTags).
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -528,6 +556,10 @@ La fonction insère un séparateur entre les valeurs concaténées et renvoie un
 avec le tag `dest_tag` défini sur la valeur concaténée.
 Cette fonction reproduit la logique de la fonction Prometheus
 [label&#95;join()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_join).
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -614,6 +646,10 @@ Supprime tous les tags d’un groupe de tags, à l’exception de ceux spécifi�
 Voir aussi la fonction [timeSeriesRemoveTag()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveTags()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags).
 
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -655,6 +691,10 @@ Supprime un tag donné d’un groupe de tags.
 S’il n’existe pas de tag correspondant dans le groupe, celui-ci est renvoyé inchangé.
 Voir aussi la fonction [timeSeriesRemoveTags()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTags),
 [timeSeriesRemoveAllTagsExcept()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
+
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -702,6 +742,10 @@ Si certains des tags spécifiés ne sont pas présents dans le groupe de tags, l
 Voir aussi la fonction [timeSeriesRemoveTag()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveTag),
 [timeSeriesRemoveAllTagsExcept()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesRemoveAllTagsExcept).
 
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -746,6 +790,10 @@ En cas de correspondance, la valeur du tag `dest_tag` dans le groupe renvoyé se
 ainsi que les tags d&#39;origine de l&#39;entrée.
 Cette fonction reproduit la logique de la fonction Prometheus
 [label&#95;replace()](https://prometheus.io/docs/prometheus/latest/querying/functions/#label_replace).
+
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -833,10 +881,14 @@ SELECT 8374283493092 AS id,
 
 Introduit dans : v26.1.0
 
-Renvoyer un groupe de tags associé aux tags spécifiés.
+Renvoie un groupe de tags associé aux tags spécifiés.
 Si le même groupe de tags est trouvé plusieurs fois lors de l&#39;exécution de la requête, la fonction renvoie le même groupe.
 Pour un ensemble vide de tags, la fonction renvoie toujours 0.
 Voir aussi la fonction [timeSeriesGroupToTags()](/fr/reference/functions/regular-functions/time-series-functions#timeSeriesGroupToTags).
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -885,6 +937,10 @@ Si la `condition` est fausse, la fonction renvoie `0`.
 Cette fonction est similaire à [throwIf()](/fr/reference/functions/regular-functions/other-functions#throwIf),
 mais utilise un code d’erreur différent et présente le message d’erreur différemment.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -920,9 +976,6 @@ SELECT timeSeriesTagsToGroup(tags) AS group
 FROM test
 GROUP BY group
 HAVING timeSeriesThrowDuplicateSeriesIf(count() > 1, group) = 0;  -- Throws exception "Multiple series have the same tags {'__name__': 'up'}"
-```
-
-```response title=Response
 ```
 
 {/*AUTOGENERATED_END*/}

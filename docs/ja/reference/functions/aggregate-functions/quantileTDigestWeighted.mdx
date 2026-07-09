@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 導入バージョン: v20.1.0
 
-[t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) アルゴリズムを使用して、数値データの[分位点](https://en.wikipedia.org/wiki/Quantile)を近似的に計算します。
+[t-digest](https://github.com/tdunning/t-digest/blob/master/docs/t-digest-paper/histo.pdf) アルゴリズムを使用して、数値データ列の[分位点](https://en.wikipedia.org/wiki/Quantile)を近似的に計算します。
 この関数は、数列の各要素の重みを考慮します。
 
 最大誤差は 1% です。
@@ -27,10 +27,10 @@ State のサイズと精度の比率という点では、この関数は `quanti
 1 つのクエリ内で異なる levels を持つ複数の `quantile*` 関数を使用すると、内部状態は結合されません (つまり、クエリは本来可能なほど効率的には動作しません) 。
 この場合は、[`quantiles`](/ja/reference/functions/aggregate-functions/quantiles#quantiles) 関数を使用してください。
 
-<Note>
-  `quantileTDigestWeighted` を[ごく小さなデータセットに使用することは推奨されず](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275)、大きな誤差が生じる可能性があります。
-  この場合は、代わりに [`quantileTDigest`](/ja/reference/functions/aggregate-functions/quantileTDigest) の使用を検討してください。
-</Note>
+:::note
+`quantileTDigestWeighted` を[ごく小さなデータセットに使用することは推奨されず](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275)、大きな誤差が生じる可能性があります。
+この場合は、代わりに [`quantileTDigest`](/ja/reference/functions/aggregate-functions/quantileTDigest) の使用を検討してください。
+:::
 
 **構文**
 

@@ -328,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("تم إلغاء طلب CMS بسبب انتهاء المهلة، جارٍ استخدام البيانات الاحتياطية")
+              console.log("تم إلغاء طلب CMS بسبب انتهاء المهلة")
             } else {
               console.error("خطأ في تحميل التكاملات من CMS:", cmsErr.message)
             }

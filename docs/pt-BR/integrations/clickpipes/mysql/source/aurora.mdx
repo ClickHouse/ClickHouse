@@ -21,10 +21,10 @@ Este guia passo a passo mostra como configurar o Amazon Aurora MySQL para replic
 O log binário é um conjunto de arquivos de log que contém informações sobre alterações de dados feitas em uma instância de servidor MySQL, e esses arquivos são necessários para a replicação. Para configurar a retenção do log binário no Aurora MySQL, você deve [habilitar o binary logging](#enable-binlog-logging) e [aumentar o intervalo de retenção do binlog](#binlog-retention-interval).
 
 <div id="enable-binlog-logging">
-  ### 1. Ative o log binário por meio de backup automatizado
+  ### 1. Ative o registro em log binário por meio de backup automatizado
 </div>
 
-O recurso de backups automatizados determina se o log binário está ativado ou desativado no MySQL. Os backups automatizados podem ser configurados para sua instância no RDS Console acessando **Modify** &gt; **Additional configuration** &gt; **Backup** e marcando a caixa de seleção **Enable automated backups** (caso ainda não esteja marcada).
+O recurso de backups automatizados determina se o registro em log binário está ativado ou desativado no MySQL. Os backups automatizados podem ser configurados para sua instância no RDS Console acessando **Modify** &gt; **Additional configuration** &gt; **Backup** e marcando a caixa de seleção **Enable automated backups** (caso ainda não esteja marcada).
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Ativando backups automatizados no Aurora" size="lg" border />
 
@@ -158,4 +158,4 @@ Para se conectar à sua instância do Aurora MySQL por uma rede privada, você p
   ## O que vem a seguir?
 </div>
 
-Agora que sua instância do Amazon Aurora MySQL está configurada para replicação via binlog e conectada com segurança ao ClickHouse Cloud, você pode [criar seu primeiro ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index#create-your-clickpipe). Para dúvidas comuns sobre CDC do MySQL, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).
+Agora que sua instância do Amazon Aurora MySQL está configurada para replicação via binlog e se conecta com segurança ao ClickHouse Cloud, você pode [criar seu primeiro ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index#create-your-clickpipe). Para perguntas frequentes sobre MySQL CDC, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).

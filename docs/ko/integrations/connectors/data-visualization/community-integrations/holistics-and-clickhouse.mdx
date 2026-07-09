@@ -33,10 +33,10 @@ ClickHouse를 Holistics에 연결하면 팀은 코드 기반 시맨틱 레이어
 전용 사용자는 쿼리할 테이블과 `system` 테이블(스키마 감지용)에 대한 `SELECT` 권한이 필요합니다.
 
 ```sql
--- 예시: 특정 데이터베이스에 읽기 권한 부여
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- 시스템 메타데이터 접근 권한 부여
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 

@@ -465,20 +465,20 @@ SELECT URLHash('https://www.clickhouse.com/docs', 1);
 
 64비트 [CityHash](https://github.com/google/cityhash) 해시 값을 생성합니다.
 
-빠른 비암호화 해시 함수입니다.
-문자열 매개변수에는 CityHash 알고리즘을 사용하고, 다른 데이터 타입의 매개변수에는 구현별 빠른 비암호화 해시 함수를 사용합니다.
+빠른 비암호학적 해시 함수입니다.
+문자열 매개변수에는 CityHash 알고리즘을 사용하고, 다른 데이터 타입의 매개변수에는 구현별 빠른 비암호학적 해시 함수를 사용합니다.
 이 함수는 최종 결과를 얻기 위해 CityHash combinator를 사용합니다.
 
-<Info>
-  Google은 CityHash가 ClickHouse에 추가된 후 CityHash 알고리즘을 변경했습니다.
-  다시 말해, ClickHouse의 cityHash64와 Google의 원본 CityHash는 이제 서로 다른 결과를 생성합니다.
-  ClickHouse의 cityHash64는 CityHash v1.0.2에 해당합니다.
-</Info>
+:::info
+Google은 CityHash가 ClickHouse에 추가된 후 CityHash 알고리즘을 변경했습니다.
+다시 말해, ClickHouse의 cityHash64와 Google의 원본 CityHash는 이제 서로 다른 결과를 생성합니다.
+ClickHouse의 cityHash64는 CityHash v1.0.2에 해당합니다.
+:::
 
-<Note>
-  계산된 해시 값은 인수 타입이 다르더라도 입력값이 같으면 동일할 수 있습니다.
-  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입에 이런 현상이 발생할 수 있습니다.
-</Note>
+:::note
+계산된 해시 값은 인수 타입이 다르더라도 입력값이 같으면 동일할 수 있습니다.
+예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입에 이런 현상이 발생할 수 있습니다.
+:::
 
 **구문**
 
@@ -542,14 +542,14 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
 
 `Fingerprint64` 메서드를 사용해 64비트 [FarmHash](https://github.com/google/farmhash) 값을 생성합니다.
 
-<Tip>
-  더 안정적이고 이식성 있는 값이 필요하다면 [`farmHash64`](#farmHash64)보다 `farmFingerprint64`를 사용하는 것이 좋습니다.
-</Tip>
+:::tip
+더 안정적이고 이식성 있는 값이 필요하다면 [`farmHash64`](#farmHash64)보다 `farmFingerprint64`를 사용하는 것이 좋습니다.
+:::
 
-<Note>
-  계산된 해시 값은 인수 타입이 서로 달라도 동일한 입력 값에 대해 같을 수 있습니다.
-  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
-</Note>
+:::note
+계산된 해시 값은 인수 타입이 서로 달라도 동일한 입력 값에 대해 같을 수 있습니다.
+예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
+:::
 
 **구문**
 
@@ -587,14 +587,14 @@ SELECT farmFingerprint64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 
 
 `Hash64` 메서드를 사용해 64비트 [FarmHash](https://github.com/google/farmhash)를 생성합니다.
 
-<Tip>
-  안정적이고 이식성 있는 값을 위해서는 [`farmFingerprint64`](#farmFingerprint64)를 사용하는 것이 좋습니다.
-</Tip>
+:::tip
+안정적이고 이식성 있는 값을 위해서는 [`farmFingerprint64`](#farmFingerprint64)를 사용하는 것이 좋습니다.
+:::
 
-<Note>
-  계산된 해시 값은 인수 타입이 서로 달라도 입력 값이 같으면 동일할 수 있습니다.
-  예를 들면 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
-</Note>
+:::note
+계산된 해시 값은 인수 타입이 서로 달라도 입력 값이 같으면 동일할 수 있습니다.
+예를 들면 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
+:::
 
 **구문**
 
@@ -719,10 +719,10 @@ SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
 이는 부호 비트를 0으로 설정한 [`JavaHash`](#javaHash)와 동일합니다.
 이 함수는 3.0 이전 버전의 [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive)에서 사용됩니다.
 
-<Warning>
-  이 해시 함수는 성능이 좋지 않습니다.
-  이 알고리즘이 이미 다른 시스템에서 사용되고 있어 동일한 결과를 계산해야 할 때만 사용하십시오.
-</Warning>
+:::caution
+이 해시 함수는 성능이 좋지 않습니다.
+이 알고리즘이 이미 다른 시스템에서 사용되고 있어 동일한 결과를 계산해야 할 때만 사용하십시오.
+:::
 
 **구문**
 
@@ -876,15 +876,15 @@ SELECT intHash64(42);
 * [Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
 * [Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
 
-<Warning>
-  이 해시 함수는 성능이 좋지 않습니다.
-  이 알고리즘이 이미 다른 시스템에서 사용 중이고 동일한 결과를 계산해야 할 때에만 사용하십시오.
-</Warning>
+:::caution
+이 해시 함수는 성능이 좋지 않습니다.
+이 알고리즘이 이미 다른 시스템에서 사용 중이고 동일한 결과를 계산해야 할 때에만 사용하십시오.
+:::
 
-<Note>
-  Java는 부호 있는 정수의 해시 계산만 지원합니다.
-  따라서 부호 없는 정수의 해시를 계산하려면 적절한 부호 있는 ClickHouse 타입으로 캐스팅해야 합니다.
-</Note>
+:::note
+Java는 부호 있는 정수의 해시 계산만 지원합니다.
+따라서 부호 없는 정수의 해시를 계산하려면 적절한 부호 있는 ClickHouse 타입으로 캐스팅해야 합니다.
+:::
 
 **구문**
 
@@ -1122,10 +1122,10 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 
 64비트 [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) 해시 값을 생성합니다.
 
-<Note>
-  계산된 해시 값은 인수 타입이 서로 달라도 입력값이 같으면 동일할 수 있습니다.
-  예를 들어 크기가 서로 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 이에 해당합니다.
-</Note>
+:::note
+계산된 해시 값은 인수 타입이 서로 달라도 입력값이 같으면 동일할 수 있습니다.
+예를 들어 크기가 서로 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 이에 해당합니다.
+:::
 
 **구문**
 
@@ -1163,10 +1163,10 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
 
 입력 값의 [MurmurHash2](https://github.com/aappleby/smhasher) 해시를 계산합니다.
 
-<Note>
-  계산된 해시 값은 인수 타입이 다르더라도 동일한 입력 값에 대해 같을 수 있습니다.
-  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
-</Note>
+:::note
+계산된 해시 값은 인수 타입이 다르더라도 동일한 입력 값에 대해 같을 수 있습니다.
+예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 여기에 해당합니다.
+:::
 
 **구문**
 
@@ -1204,10 +1204,10 @@ SELECT murmurHash2_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 입력 값의 [MurmurHash2](https://github.com/aappleby/smhasher) 해시를 계산합니다.
 
-<Note>
-  서로 다른 인수 타입에서 동일한 입력 값에 대해 계산된 해시 값이 같을 수 있습니다.
-  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입에서 이런 일이 발생할 수 있습니다.
-</Note>
+:::note
+서로 다른 인수 타입에서 동일한 입력 값에 대해 계산된 해시 값이 같을 수 있습니다.
+예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 그리고 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입에서 이런 일이 발생할 수 있습니다.
+:::
 
 **구문**
 
@@ -1281,10 +1281,10 @@ SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 
 [MurmurHash3](https://github.com/aappleby/smhasher) 해시 값을 생성합니다.
 
-<Note>
-  계산된 해시 값은 인수 타입이 서로 다르더라도 입력 값이 같으면 동일할 수 있습니다.
-  이는 예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 그에 대응하는 `Array(Tuple(key, value))` 타입에 해당합니다.
-</Note>
+:::note
+계산된 해시 값은 인수 타입이 서로 다르더라도 입력 값이 같으면 동일할 수 있습니다.
+이는 예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 그에 대응하는 `Array(Tuple(key, value))` 타입에 해당합니다.
+:::
 
 **구문**
 
@@ -1322,10 +1322,10 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 입력값의 [MurmurHash3](https://github.com/aappleby/smhasher) 해시를 계산합니다.
 
-<Note>
-  계산된 해시 값은 인수 타입이 서로 달라도 입력값이 같으면 동일할 수 있습니다.
-  예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 이에 해당합니다.
-</Note>
+:::note
+계산된 해시 값은 인수 타입이 서로 달라도 입력값이 같으면 동일할 수 있습니다.
+예를 들어 크기가 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 이에 해당합니다.
+:::
 
 **구문**
 
@@ -1851,13 +1851,11 @@ SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 
 [`sipHash64`](#sipHash64)와 유사하지만 128비트 해시 값을 생성합니다. 즉, 최종 xor-folding 단계가 128비트까지 수행됩니다.
 
-<Tip>
-  **새 프로젝트에서는 sipHash128Reference를 사용하세요**
-
-  이 128비트 변형은 참조 구현과 다르며 더 취약합니다.
-  이 버전은 작성 당시 SipHash에 공식적인 128비트 확장이 없었기 때문에 존재합니다.
-  새 프로젝트에서는 [`sipHash128Reference`](#sipHash128Reference) 사용을 권장합니다.
-</Tip>
+:::tip 새 프로젝트에서는 sipHash128Reference를 사용하세요
+이 128비트 변형은 참조 구현과 다르며 더 취약합니다.
+이 버전은 작성 당시 SipHash에 공식적인 128비트 확장이 없었기 때문에 존재합니다.
+새 프로젝트에서는 [`sipHash128Reference`](#sipHash128Reference) 사용을 권장합니다.
+:::
 
 **구문**
 
@@ -1895,13 +1893,11 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 
 고정 키를 사용하는 대신 명시적으로 키 인수를 받는다는 점만 제외하면 [`sipHash128`](#sipHash128)과 동일합니다.
 
-<Tip>
-  **새 프로젝트에서는 sipHash128ReferenceKeyed를 사용하세요**
-
-  이 128비트 변형은 참조 구현과 다르며 더 취약합니다.
-  이 버전이 존재하는 이유는 작성 당시 SipHash에 대한 공식적인 128비트 확장이 없었기 때문입니다.
-  새 프로젝트에서는 [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed)를 사용하는 것이 좋습니다.
-</Tip>
+:::tip 새 프로젝트에서는 sipHash128ReferenceKeyed를 사용하세요
+이 128비트 변형은 참조 구현과 다르며 더 취약합니다.
+이 버전이 존재하는 이유는 작성 당시 SipHash에 대한 공식적인 128비트 확장이 없었기 때문입니다.
+새 프로젝트에서는 [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed)를 사용하는 것이 좋습니다.
+:::
 
 **구문**
 
@@ -2022,10 +2018,10 @@ SELECT hex(sipHash128Reference('foo', '', 3));
 2. 앞서 계산한 해시 값과 세 번째 입력 매개변수의 해시를 같은 방식으로 해시합니다.
 3. 이 계산을 원래 입력의 나머지 모든 해시 값에 대해 반복합니다.
 
-<Note>
-  계산된 해시 값은 인수 타입이 서로 달라도 입력 값이 같으면 동일할 수 있습니다.
-  예를 들어 크기가 서로 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 이에 해당합니다.
-</Note>
+:::note
+계산된 해시 값은 인수 타입이 서로 달라도 입력 값이 같으면 동일할 수 있습니다.
+예를 들어 크기가 서로 다른 정수 타입, 동일한 데이터를 가진 이름 있는 `Tuple`과 이름 없는 `Tuple`, 동일한 데이터를 가진 `Map`과 이에 대응하는 `Array(Tuple(key, value))` 타입이 이에 해당합니다.
+:::
 
 **구문**
 

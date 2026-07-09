@@ -402,7 +402,7 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
 * Configurez `log_min_duration_statement` pour identifier les requêtes lentes en fonction de vos exigences de performance
 
 <div id="going-to-production">
-  ## Passage en production
+  ## Passer en production
 </div>
 
-Ce guide s’appuie sur l’OTel Collecteur intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous recommandons d’exécuter votre propre OTel Collecteur et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Sending OpenTelemetry data](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
+Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers le point de terminaison OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.

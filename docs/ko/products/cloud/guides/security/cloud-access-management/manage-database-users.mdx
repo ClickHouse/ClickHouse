@@ -97,9 +97,9 @@ ClickHouse Cloud 데이터베이스 사용자에 SSH 인증을 설정하는 방�
 
 SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데이터베이스에서 다음 항목을 구성하십시오.
 
-| 역할     | 설명                                                        |
-| :----- | :-------------------------------------------------------- |
-| 기본     | 서비스에 대한 전체 관리자 액세스                                        |
+| 역할     | 설명                                                           |
+| :----- | :----------------------------------------------------------- |
+| 기본     | 서비스에 대한 전체 관리자 액세스                                           |
 | 사용자 지정 | SQL [`GRANT`](/ko/reference/statements/grant) 문을 사용하여 구성하십시오 |
 
 * 데이터베이스 역할은 누적됩니다. 즉, 사용자가 두 역할의 구성원인 경우 두 역할 중 더 높은 수준의 액세스 권한이 부여됩니다. 역할을 추가해도 기존 액세스 권한이 사라지지 않습니다.
@@ -182,7 +182,7 @@ SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데
 </Steps>
 
 <div id="warehouse-users">
-  ## 웨어하우스 사용자
+  ## Warehouse 사용자
 </div>
 
-웨어하우스 사용자는 동일한 웨어하우스 내의 서비스 간에 공유됩니다. 자세한 내용은 [웨어하우스 액세스 제어](/ko/products/cloud/features/infrastructure/warehouses#access-controls)를 참조하십시오.
+Warehouse 사용자는 동일한 warehouse 내의 서비스 전반에서 공유됩니다. 자세한 내용은 [warehouse의 액세스 제어](/ko/products/cloud/features/infrastructure/warehouses#access-controls)를 참조하십시오.

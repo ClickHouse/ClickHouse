@@ -284,7 +284,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   ## لوحات المعلومات والتصورات
 </div>
 
-لمساعدتك على البدء في مراقبة Nginx باستخدام ClickStack، نوفر مرئيات أساسية لسجلات Nginx.
+لمساعدتك على البدء في مراقبة Nginx باستخدام ClickStack، نوفر تصورات أساسية لسجلات Nginx.
 
 <Steps>
   <Step>
@@ -305,7 +305,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### ستُنشأ لوحة المعلومات مع تهيئة جميع المرئيات مسبقًا
+    #### ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا
 
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** (مع تعديله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا بشكل افتراضي.
@@ -380,4 +380,4 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يبني هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطّلاع على إعدادات بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

@@ -981,7 +981,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 除了本地块设备外，ClickHouse 还支持以下存储类型：
 
 * [`s3` 用于 S3 和 MinIO](#table_engine-mergetree-s3)
-* [`gcs` 用于 GCS](/zh/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` 用于 GCS](/zh/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` 用于 Azure Blob 存储](/zh/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` 用于 HDFS](/zh/reference/engines/table-engines/integrations/hdfs)
 * [`web` 用于从 Web 进行只读访问](/zh/concepts/features/configuration/server-config/storing-data#web-storage)

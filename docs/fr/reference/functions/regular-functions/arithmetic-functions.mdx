@@ -264,9 +264,9 @@ Introduit dans : v1.1.0
 Calcule le quotient de deux valeurs `a` et `b`. Le type de résultat est toujours [Float64](/fr/reference/data-types/float).
 La division entière est assurée par la fonction `intDiv`.
 
-<Note>
-  La division par `0` renvoie `inf`, `-inf` ou `nan`.
-</Note>
+:::note
+La division par `0` renvoie `inf`, `-inf` ou `nan`.
+:::
 
 **Syntaxe**
 
@@ -313,10 +313,10 @@ Introduit dans : v22.12.0
 Effectue la division de deux valeurs décimales. La valeur résultante sera de type [Decimal256](/fr/reference/data-types/decimal).
 L’échelle du résultat peut être explicitement spécifiée à l’aide de l’argument `result_scale` (const Integer dans l’intervalle `[0, 76]`). Si elle n’est pas spécifiée, l’échelle du résultat correspond à l’échelle maximale des arguments fournis.
 
-<Note>
-  Cette fonction est nettement plus lente que `divide`.
-  Si vous n’avez pas réellement besoin d’une précision contrôlée et/ou d’un calcul rapide, envisagez d’utiliser [divide](#divide).
-</Note>
+:::note
+Cette fonction est nettement plus lente que `divide`.
+Si vous n’avez pas réellement besoin d’une précision contrôlée et/ou d’un calcul rapide, envisagez d’utiliser [divide](#divide).
+:::
 
 **Syntaxe**
 
@@ -404,7 +404,7 @@ Introduit dans : v1.1.0
 
 Renvoie le plus grand commun diviseur de deux valeurs, a et b.
 
-Une exception est levée en cas de division par zéro ou lorsqu&#39;un nombre négatif minimal est divisé par moins un.
+Une exception est levée en cas de division par zéro ou lorsqu&#39;un plus petit nombre négatif est divisé par moins un.
 
 **Syntaxe**
 
@@ -1047,8 +1047,9 @@ SELECT moduloLegacy(10, 3)
 
 Introduit dans : v25.5.0
 
-Calcule le reste de la division de `a` par `b`. Comme la fonction `modulo`, sauf que `moduloOrNull` renvoie NULL
-si l&#39;argument de droite est 0.
+Calcule le reste de la division de `a` par `b`. Comme la fonction `modulo`, sauf que `moduloOrNull` renvoie `NULL`
+lorsque l&#39;opération lèverait sinon une exception en virgule flottante. Pour les arguments en virgule flottante, cela se produit uniquement lorsque le
+diviseur est `0` ; pour les arguments entiers, cela couvre également la valeur négative minimale modulo `-1` (par ex. `-128 % -1` pour `Int8`).
 
 **Syntaxe**
 
@@ -1065,7 +1066,8 @@ moduloOrNull(x, y)
 
 **Valeur renvoyée**
 
-Renvoie le reste de la division de `x` par `y`, ou `NULL` si le diviseur est égal à zéro.
+Renvoie le reste de la division de `x` par `y`, ou `NULL` lorsque l&#39;opération entraînerait une exception en virgule flottante :
+lorsque le diviseur est égal à zéro, ou, pour des arguments entiers, lors du calcul de la valeur négative minimale modulo `-1`.
 
 **Exemples**
 
@@ -1073,6 +1075,16 @@ Renvoie le reste de la division de `x` par `y`, ou `NULL` si le diviseur est ég
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**moduloOrNull de l’entier négatif minimal par -1**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1159,10 +1171,10 @@ Introduit dans : v22.12.0
 Effectue la multiplication de deux nombres décimaux. La valeur de résultat est de type [Decimal256](/fr/reference/data-types/decimal).
 La scale du résultat peut être spécifiée explicitement à l’aide de l’argument `result_scale` (constante entière dans l’intervalle `[0, 76]`). Si elle n’est pas spécifiée, la scale du résultat correspond à la scale maximale des arguments fournis.
 
-<Note>
-  Ces fonctions sont nettement plus lentes que `multiply`.
-  Si vous n’avez pas réellement besoin d’une précision contrôlée et/ou d’un calcul rapide, envisagez d’utiliser [multiply](#multiply)
-</Note>
+:::note
+Ces fonctions sont nettement plus lentes que `multiply`.
+Si vous n’avez pas réellement besoin d’une précision contrôlée et/ou d’un calcul rapide, envisagez d’utiliser [multiply](#multiply)
+:::
 
 **Syntaxe**
 
@@ -1368,8 +1380,9 @@ SELECT positiveModulo(-1, 10)
 
 Introduit dans : v25.5.0
 
-Calcule le reste de la division de `a` par `b`. Similaire à la fonction `positiveModulo`, à ceci près que `positiveModuloOrNull` renvoie NULL
-si l&#39;argument de droite est 0.
+Calcule le reste de la division de `a` par `b`. Similaire à la fonction `positiveModulo`, à ceci près que `positiveModuloOrNull` renvoie `NULL`
+lorsque l&#39;opération provoquerait autrement une exception en virgule flottante. Pour les arguments à virgule flottante, cela se produit uniquement lorsque le
+diviseur est `0` ; pour les arguments entiers, cela couvre également la valeur négative minimale modulo `-1` (par exemple `-128 % -1` pour `Int8`).
 
 **Syntaxe**
 
@@ -1386,14 +1399,25 @@ positiveModuloOrNull(x, y)
 **Valeur renvoyée**
 
 Renvoie la différence entre `x` et le plus grand entier inférieur ou égal à
-`x` divisible par `y`, `null` si le diviseur est égal à zéro.
+`x` divisible par `y`, ou `NULL` lorsque l’opération lèverait une exception en virgule flottante : lorsque le diviseur est égal à zéro ou,
+pour les arguments entiers, lors du calcul de la valeur négative minimale modulo `-1`.
 
 **Exemples**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull par zéro**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**positiveModuloOrNull du plus petit entier négatif par -1**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response

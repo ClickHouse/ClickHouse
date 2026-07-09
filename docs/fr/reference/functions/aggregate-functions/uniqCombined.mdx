@@ -16,10 +16,10 @@ Introduit dans : v1.1.0
 Calcule le nombre approximatif de valeurs d’argument distinctes.
 Le résultat est déterministe (il ne dépend pas de l’ordre de traitement de la requête).
 
-<Note>
-  Comme cette fonction utilise un hachage sur 32 bits pour les types autres que `String`, le résultat présentera une erreur très élevée pour des cardinalités nettement supérieures à `UINT_MAX` (l’erreur augmentera rapidement au-delà de quelques dizaines de milliards de valeurs distinctes).
-  Si les cardinalités dépassent `UINT_MAX`, vous devez utiliser [`uniqCombined64`](/fr/reference/functions/aggregate-functions/uniqCombined64) à la place.
-</Note>
+:::note
+Comme cette fonction utilise un hachage sur 32 bits pour les types autres que `String`, le résultat présentera une erreur très élevée pour des cardinalités nettement supérieures à `UINT_MAX` (l’erreur augmentera rapidement au-delà de quelques dizaines de milliards de valeurs distinctes).
+Si les cardinalités dépassent `UINT_MAX`, vous devez utiliser [`uniqCombined64`](/fr/reference/functions/aggregate-functions/uniqCombined64) à la place.
+:::
 
 Par rapport à la fonction uniq, la fonction uniqCombined :
 
@@ -27,14 +27,15 @@ Par rapport à la fonction uniq, la fonction uniqCombined :
 * Offre une précision plusieurs fois supérieure
 * Présente généralement des performances légèrement inférieures. Dans certains cas, uniqCombined peut être plus performant que uniq, par exemple avec des requêtes distribuées qui transmettent un grand nombre d’états d’agrégation sur le réseau
 
-<Accordion title="Détails d’implémentation">
+<details>
+  <summary>Détails d’implémentation</summary>
   Cette fonction calcule un hachage (sur 64 bits pour `String`, sinon sur 32 bits) pour tous les paramètres de l’agrégat, puis l’utilise dans les calculs.
   Elle combine trois algorithmes : tableau, table de hachage et HyperLogLog avec une table de correction des erreurs :
 
   * Pour un petit nombre d’éléments distincts, un tableau est utilisé
   * Lorsque la taille de l’ensemble augmente, une table de hachage est utilisée
   * Pour un plus grand nombre d’éléments, HyperLogLog est utilisé, ce qui occupe une quantité fixe de mémoire
-</Accordion>
+</details>
 
 **Syntaxe**
 

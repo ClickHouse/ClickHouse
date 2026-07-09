@@ -1,0 +1,19 @@
+---
+description: 'وثائق تنسيق PostgreSQLWire'
+keywords: ['PostgreSQLWire']
+slug: /interfaces/formats/PostgreSQLWire
+title: 'PostgreSQLWire'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## الوصف
+</div>
+
+<div id="example-usage">
+  ## مثال على الاستخدام
+</div>
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>

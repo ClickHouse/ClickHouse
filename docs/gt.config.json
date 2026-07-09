@@ -6,11 +6,79 @@
       "mdx": true
     },
     "mintlify": {
-      "inferTitleFromFilename": true
+      "inferTitleFromFilename": true,
+      "openapi": {
+        "files": [
+          "./ar/_specs/cloud-openapi.json",
+          "./ar/_specs/hyperdx-openapi.json",
+          "./es/_specs/cloud-openapi.json",
+          "./es/_specs/hyperdx-openapi.json",
+          "./fr/_specs/cloud-openapi.json",
+          "./fr/_specs/hyperdx-openapi.json",
+          "./ja/_specs/cloud-openapi.json",
+          "./ja/_specs/hyperdx-openapi.json",
+          "./ko/_specs/cloud-openapi.json",
+          "./ko/_specs/hyperdx-openapi.json",
+          "./pt-BR/_specs/cloud-openapi.json",
+          "./pt-BR/_specs/hyperdx-openapi.json",
+          "./ru/_specs/cloud-openapi.json",
+          "./ru/_specs/hyperdx-openapi.json",
+          "./zh/_specs/cloud-openapi.json",
+          "./zh/_specs/hyperdx-openapi.json"
+        ]
+      }
     },
     "jsonSchema": {
       "./docs.json": {
         "preset": "mintlify-hide-default"
+      },
+      "./ar/_specs/cloud-openapi.json": {
+        "preset": "openapi"
+      },
+      "./ar/_specs/hyperdx-openapi.json": {
+        "preset": "openapi"
+      },
+      "./es/_specs/cloud-openapi.json": {
+        "preset": "openapi"
+      },
+      "./es/_specs/hyperdx-openapi.json": {
+        "preset": "openapi"
+      },
+      "./fr/_specs/cloud-openapi.json": {
+        "preset": "openapi"
+      },
+      "./fr/_specs/hyperdx-openapi.json": {
+        "preset": "openapi"
+      },
+      "./ja/_specs/cloud-openapi.json": {
+        "preset": "openapi"
+      },
+      "./ja/_specs/hyperdx-openapi.json": {
+        "preset": "openapi"
+      },
+      "./ko/_specs/cloud-openapi.json": {
+        "preset": "openapi"
+      },
+      "./ko/_specs/hyperdx-openapi.json": {
+        "preset": "openapi"
+      },
+      "./pt-BR/_specs/cloud-openapi.json": {
+        "preset": "openapi"
+      },
+      "./pt-BR/_specs/hyperdx-openapi.json": {
+        "preset": "openapi"
+      },
+      "./ru/_specs/cloud-openapi.json": {
+        "preset": "openapi"
+      },
+      "./ru/_specs/hyperdx-openapi.json": {
+        "preset": "openapi"
+      },
+      "./zh/_specs/cloud-openapi.json": {
+        "preset": "openapi"
+      },
+      "./zh/_specs/hyperdx-openapi.json": {
+        "preset": "openapi"
       }
     },
     "docsUrlPattern": "/[locale]",
@@ -26,7 +94,89 @@
   "files": {
     "json": {
       "include": [
-        "./docs.json"
+        "./docs.json",
+        "./ar/_specs/cloud-openapi.json",
+        "./ar/_specs/hyperdx-openapi.json",
+        "./es/_specs/cloud-openapi.json",
+        "./es/_specs/hyperdx-openapi.json",
+        "./fr/_specs/cloud-openapi.json",
+        "./fr/_specs/hyperdx-openapi.json",
+        "./ja/_specs/cloud-openapi.json",
+        "./ja/_specs/hyperdx-openapi.json",
+        "./ko/_specs/cloud-openapi.json",
+        "./ko/_specs/hyperdx-openapi.json",
+        "./pt-BR/_specs/cloud-openapi.json",
+        "./pt-BR/_specs/hyperdx-openapi.json",
+        "./ru/_specs/cloud-openapi.json",
+        "./ru/_specs/hyperdx-openapi.json",
+        "./zh/_specs/cloud-openapi.json",
+        "./zh/_specs/hyperdx-openapi.json"
+      ],
+      "transform": [
+        {
+          "match": "^ar/_specs/cloud-openapi.json$",
+          "replace": "{locale}/ar/_specs/cloud-openapi.json"
+        },
+        {
+          "match": "^ar/_specs/hyperdx-openapi.json$",
+          "replace": "{locale}/ar/_specs/hyperdx-openapi.json"
+        },
+        {
+          "match": "^es/_specs/cloud-openapi.json$",
+          "replace": "{locale}/es/_specs/cloud-openapi.json"
+        },
+        {
+          "match": "^es/_specs/hyperdx-openapi.json$",
+          "replace": "{locale}/es/_specs/hyperdx-openapi.json"
+        },
+        {
+          "match": "^fr/_specs/cloud-openapi.json$",
+          "replace": "{locale}/fr/_specs/cloud-openapi.json"
+        },
+        {
+          "match": "^fr/_specs/hyperdx-openapi.json$",
+          "replace": "{locale}/fr/_specs/hyperdx-openapi.json"
+        },
+        {
+          "match": "^ja/_specs/cloud-openapi.json$",
+          "replace": "{locale}/ja/_specs/cloud-openapi.json"
+        },
+        {
+          "match": "^ja/_specs/hyperdx-openapi.json$",
+          "replace": "{locale}/ja/_specs/hyperdx-openapi.json"
+        },
+        {
+          "match": "^ko/_specs/cloud-openapi.json$",
+          "replace": "{locale}/ko/_specs/cloud-openapi.json"
+        },
+        {
+          "match": "^ko/_specs/hyperdx-openapi.json$",
+          "replace": "{locale}/ko/_specs/hyperdx-openapi.json"
+        },
+        {
+          "match": "^pt-BR/_specs/cloud-openapi.json$",
+          "replace": "{locale}/pt-BR/_specs/cloud-openapi.json"
+        },
+        {
+          "match": "^pt-BR/_specs/hyperdx-openapi.json$",
+          "replace": "{locale}/pt-BR/_specs/hyperdx-openapi.json"
+        },
+        {
+          "match": "^ru/_specs/cloud-openapi.json$",
+          "replace": "{locale}/ru/_specs/cloud-openapi.json"
+        },
+        {
+          "match": "^ru/_specs/hyperdx-openapi.json$",
+          "replace": "{locale}/ru/_specs/hyperdx-openapi.json"
+        },
+        {
+          "match": "^zh/_specs/cloud-openapi.json$",
+          "replace": "{locale}/zh/_specs/cloud-openapi.json"
+        },
+        {
+          "match": "^zh/_specs/hyperdx-openapi.json$",
+          "replace": "{locale}/zh/_specs/hyperdx-openapi.json"
+        }
       ]
     },
     "js": {

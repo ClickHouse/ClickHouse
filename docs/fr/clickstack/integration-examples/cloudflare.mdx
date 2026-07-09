@@ -194,7 +194,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration avant de configurer
     -- Doit renvoyer 5000
     ```
 
-    Accédez à la vue **Search** dans HyperDX, sélectionnez la source **Cloudflare Logs** et définissez la plage horaire sur **2026-02-23 00:00:00 - 2026-02-26 00:00:00**.
+    Accédez à la vue **Search** dans HyperDX, sélectionnez la source **Cloudflare Logs** et définissez l’intervalle de temps sur **2026-02-23 00:00:00 - 2026-02-26 00:00:00**.
 
     Vous devriez voir des entrées de logs avec des résumés de requêtes, des attributs Cloudflare interrogeables et des niveaux de gravité basés sur les codes d’état HTTP.
 
@@ -205,7 +205,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration avant de configurer
     <Info>
       **Affichage du fuseau horaire**
 
-      HyperDX affiche les timestamps dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**. Cette plage horaire étendue vous permet de voir les logs de démonstration quel que soit votre emplacement. Une fois les logs affichés, vous pouvez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
+      HyperDX affiche les timestamps dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**. Cet intervalle de temps étendu vous permet de voir les logs de démonstration quel que soit votre emplacement. Une fois les logs affichés, vous pouvez réduire l’intervalle à une période de 24 heures pour obtenir des visualisations plus claires.
     </Info>
   </Step>
 </Steps>
@@ -237,7 +237,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration avant de configurer
     <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="Exemple de tableau de bord" />
 
     <Note>
-      Pour le jeu de données de démonstration, réglez la plage horaire sur **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** (à adapter à votre fuseau horaire local). Le tableau de bord importé n&#39;inclut pas de plage horaire par défaut.
+      Pour le jeu de données de démonstration, réglez l’intervalle de temps sur **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** (à adapter à votre fuseau horaire local). Le tableau de bord importé n&#39;inclut pas d’intervalle de temps par défaut.
     </Note>
   </Step>
 </Steps>
@@ -278,9 +278,9 @@ Si les données sont bien dans ClickHouse mais ne s&#39;affichent pas dans Hyper
 * Créez des tableaux de bord supplémentaires pour des cas d’usage spécifiques (performances des API, optimisation du cache, analyse géographique du trafic)
 
 <div id="going-to-production">
-  ## Passer en production
+  ## Passage en production
 </div>
 
-Ce guide montre comment ingérer des logs Cloudflare à l’aide d’un jeu de données de démonstration public. Pour les déploiements de production, configurez Cloudflare Logpush pour écrire dans votre propre bucket S3 et configurez ClickPipes avec une [authentification basée sur les rôles IAM](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) afin de sécuriser l’accès. Sélectionnez uniquement les [champs Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) dont vous avez besoin afin de réduire les coûts de stockage et le volume d’ingestion. Activez les sous-dossiers quotidiens dans Logpush pour mieux organiser les fichiers, et utilisez `**/*` dans le motif de chemin ClickPipes pour inclure les sous-répertoires.
+Ce guide montre comment ingérer des logs Cloudflare à l’aide d’un jeu de données de démonstration public. Pour les déploiements en production, configurez Cloudflare Logpush pour écrire dans votre propre bucket S3 et configurez ClickPipes avec une [authentification basée sur les rôles IAM](/fr/products/cloud/guides/data-sources/accessing-s3-data-securely) afin de sécuriser l’accès. Sélectionnez uniquement les [champs Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) dont vous avez besoin afin de réduire les coûts de stockage et le volume d’ingestion. Activez les sous-dossiers quotidiens dans Logpush pour mieux organiser les fichiers, et utilisez `**/*` dans le modèle de chemin ClickPipes pour faire correspondre les fichiers dans tous les sous-répertoires.
 
-Consultez la [documentation S3 ClickPipes](/fr/integrations/clickpipes/object-storage/amazon-s3/overview) pour découvrir les options de configuration avancées, notamment l’[ingestion non ordonnée basée sur SQS](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order), utile pour gérer les chargements historiques et les fichiers arrivant dans le désordre.
+Consultez la [documentation S3 ClickPipes](/fr/integrations/clickpipes/object-storage/amazon-s3/overview) pour les options de configuration avancées, notamment l’[ingestion non ordonnée basée sur SQS](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order), utile pour gérer les reprises de données historiques et les fichiers arrivant dans le désordre.

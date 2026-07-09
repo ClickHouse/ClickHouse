@@ -20,23 +20,24 @@ C’est la même chose que [`uniqCombined`](/fr/reference/functions/aggregate-fu
 
 Cette fonction fournit un résultat déterministe (il ne dépend pas de l’ordre de traitement de la requête).
 
-<Note>
-  Puisqu’elle utilise un hachage 64 bits pour tous les types, le résultat ne souffre pas d’une erreur très élevée pour des cardinalités nettement supérieures à `UINT_MAX`, contrairement à [`uniqCombined`](/fr/reference/functions/aggregate-functions/uniqCombined), qui utilise un hachage 32 bits pour les types non-String.
-</Note>
+:::note
+Puisqu’elle utilise un hachage 64 bits pour tous les types, le résultat ne souffre pas d’une erreur très élevée pour des cardinalités nettement supérieures à `UINT_MAX`, contrairement à [`uniqCombined`](/fr/reference/functions/aggregate-functions/uniqCombined), qui utilise un hachage 32 bits pour les types non-String.
+:::
 
 Comparée à la fonction [uniq](/fr/reference/functions/aggregate-functions/uniq), la fonction uniqCombined64 :
 
 * Consomme plusieurs fois moins de mémoire
 * Offre une précision plusieurs fois supérieure
 
-<Accordion title="Détails d’implémentation">
+<details>
+  <summary>Détails d’implémentation</summary>
   Cette fonction calcule un hachage 64 bits pour tous les types de données et pour tous les paramètres de l’agrégat, puis l’utilise dans les calculs.
   Elle repose sur une combinaison de trois algorithmes : tableau, table de hachage et [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog), avec une table de correction d’erreur :
 
   * Pour un petit nombre d’éléments distincts, un tableau est utilisé
   * Lorsque la taille de l’ensemble augmente, une table de hachage est utilisée
   * Pour un plus grand nombre d’éléments, HyperLogLog est utilisé, ce qui occupe une quantité fixe de mémoire
-</Accordion>
+</details>
 
 **Syntaxe**
 

@@ -469,16 +469,16 @@ Il s’agit d’une fonction de hachage rapide non cryptographique.
 Elle utilise l’algorithme CityHash pour les paramètres de type chaîne, et une fonction de hachage rapide non cryptographique propre à l’implémentation pour les paramètres d’autres types de données.
 La fonction utilise le combinator CityHash pour obtenir les résultats finaux.
 
-<Info>
-  Google a modifié l’algorithme de CityHash après son ajout à ClickHouse.
-  Autrement dit, cityHash64 de ClickHouse et le CityHash upstream de Google produisent désormais des résultats différents.
-  Le cityHash64 de ClickHouse correspond à CityHash v1.0.2.
-</Info>
+:::info
+Google a modifié l’algorithme de CityHash après son ajout à ClickHouse.
+Autrement dit, cityHash64 de ClickHouse et le CityHash upstream de Google produisent désormais des résultats différents.
+Le cityHash64 de ClickHouse correspond à CityHash v1.0.2.
+:::
 
-<Note>
-  Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’argument différents.
-  Cela concerne par exemple des types entiers de tailles différentes, des `Tuple` nommés et non nommés contenant les mêmes données, `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
-</Note>
+:::note
+Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’argument différents.
+Cela concerne par exemple des types entiers de tailles différentes, des `Tuple` nommés et non nommés contenant les mêmes données, `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
+:::
 
 **Syntaxe**
 
@@ -542,14 +542,14 @@ Introduit dans : v20.12.0
 
 Produit une valeur [FarmHash](https://github.com/google/farmhash) sur 64 bits à l’aide de la méthode `Fingerprint64`.
 
-<Tip>
-  `farmFingerprint64` est à privilégier pour obtenir une valeur stable et portable plutôt que [`farmHash64`](#farmHash64).
-</Tip>
+:::tip
+`farmFingerprint64` est à privilégier pour obtenir une valeur stable et portable plutôt que [`farmHash64`](#farmHash64).
+:::
 
-<Note>
-  Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’arguments différents.
-  Cela concerne par exemple des types entiers de tailles différentes, des `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type correspondant `Array(Tuple(key, value))` contenant les mêmes données.
-</Note>
+:::note
+Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’arguments différents.
+Cela concerne par exemple des types entiers de tailles différentes, des `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type correspondant `Array(Tuple(key, value))` contenant les mêmes données.
+:::
 
 **Syntaxe**
 
@@ -587,14 +587,14 @@ Introduit dans : v1.1.0
 
 Produit un [FarmHash](https://github.com/google/farmhash) 64 bits à l’aide de la méthode `Hash64`.
 
-<Tip>
-  [`farmFingerprint64`](#farmFingerprint64) est recommandé pour obtenir une valeur stable et portable.
-</Tip>
+:::tip
+[`farmFingerprint64`](#farmFingerprint64) est recommandé pour obtenir une valeur stable et portable.
+:::
 
-<Note>
-  Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’argument différents.
-  Cela concerne par exemple les types entiers de tailles différentes, les `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
-</Note>
+:::note
+Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’argument différents.
+Cela concerne par exemple les types entiers de tailles différentes, les `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
+:::
 
 **Syntaxe**
 
@@ -719,10 +719,10 @@ Calcule un &quot;HiveHash&quot; à partir d&#39;une chaîne de caractères.
 Il s&#39;agit simplement de [`JavaHash`](#javaHash) dont les bits de signe sont mis à zéro.
 Cette fonction est utilisée dans [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) pour les versions antérieures à 3.0.
 
-<Warning>
-  Cette fonction de hachage est peu performante.
-  Utilisez-la uniquement si cet algorithme est déjà utilisé dans un autre système et que vous devez obtenir le même résultat.
-</Warning>
+:::caution
+Cette fonction de hachage est peu performante.
+Utilisez-la uniquement si cet algorithme est déjà utilisé dans un autre système et que vous devez obtenir le même résultat.
+:::
 
 **Syntaxe**
 
@@ -876,15 +876,15 @@ Calcule JavaHash à partir de :
 * [Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
 * [Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
 
-<Warning>
-  Cette fonction de hachage est peu performante.
-  Utilisez-la uniquement si cet algorithme est déjà utilisé dans un autre système et que vous devez obtenir le même résultat.
-</Warning>
+:::caution
+Cette fonction de hachage est peu performante.
+Utilisez-la uniquement si cet algorithme est déjà utilisé dans un autre système et que vous devez obtenir le même résultat.
+:::
 
-<Note>
-  Java ne prend en charge que le calcul du hachage d&#39;entiers signés.
-  Donc, si vous souhaitez calculer le hachage d&#39;entiers non signés, vous devez les convertir vers les types signés ClickHouse appropriés.
-</Note>
+:::note
+Java ne prend en charge que le calcul du hachage d&#39;entiers signés,
+donc, si vous souhaitez calculer le hachage d&#39;entiers non signés, vous devez les convertir vers les types signés ClickHouse appropriés.
+:::
 
 **Syntaxe**
 
@@ -1122,10 +1122,10 @@ Introduit dans : v1.1.0
 
 Produit une valeur de hachage [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) de 64 bits.
 
-<Note>
-  Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée de types d’arguments différents.
-  Cela concerne, par exemple, des types entiers de tailles différentes, des `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
-</Note>
+:::note
+Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée de types d’arguments différents.
+Cela concerne, par exemple, des types entiers de tailles différentes, des `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
+:::
 
 **Syntaxe**
 
@@ -1163,10 +1163,10 @@ Introduit dans : v18.5.0
 
 Calcule le hachage [MurmurHash2](https://github.com/aappleby/smhasher) de la valeur d’entrée.
 
-<Note>
-  Les valeurs de hachage calculées peuvent être identiques pour des valeurs d’entrée identiques mais de types d’argument différents.
-  Cela concerne par exemple les types entiers de tailles différentes, les `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
-</Note>
+:::note
+Les valeurs de hachage calculées peuvent être identiques pour des valeurs d’entrée identiques mais de types d’argument différents.
+Cela concerne par exemple les types entiers de tailles différentes, les `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
+:::
 
 **Syntaxe**
 
@@ -1204,10 +1204,10 @@ Introduit dans : v18.10.0
 
 Calcule le hachage [MurmurHash2](https://github.com/aappleby/smhasher) de la valeur d’entrée.
 
-<Note>
-  Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée, même si les types d’arguments diffèrent.
-  Cela concerne par exemple les types entiers de tailles différentes, les `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
-</Note>
+:::note
+Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée, même si les types d’arguments diffèrent.
+Cela concerne par exemple les types entiers de tailles différentes, les `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
+:::
 
 **Syntaxe**
 
@@ -1281,10 +1281,10 @@ Introduit dans : v18.10.0
 
 Produit une valeur de hachage [MurmurHash3](https://github.com/aappleby/smhasher).
 
-<Note>
-  Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’argument différents.
-  Cela concerne par exemple des types entiers de tailles différentes, des `Tuple` nommés et non nommés avec les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant avec les mêmes données.
-</Note>
+:::note
+Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’argument différents.
+Cela concerne par exemple des types entiers de tailles différentes, des `Tuple` nommés et non nommés avec les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant avec les mêmes données.
+:::
 
 **Syntaxe**
 
@@ -1322,10 +1322,10 @@ Introduit dans : v18.10.0
 
 Calcule le hachage [MurmurHash3](https://github.com/aappleby/smhasher) de la valeur d’entrée.
 
-<Note>
-  Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée de types d’argument différents.
-  Cela concerne, par exemple, des types entiers de tailles différentes, des `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
-</Note>
+:::note
+Les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée de types d’argument différents.
+Cela concerne, par exemple, des types entiers de tailles différentes, des `Tuple` nommés et non nommés contenant les mêmes données, ainsi que `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
+:::
 
 **Syntaxe**
 
@@ -1851,13 +1851,11 @@ Introduit dans : v1.1.0
 
 Comme [`sipHash64`](#sipHash64), mais produit une valeur de hachage sur 128 bits, c.-à-d. que l’état final de réduction par xor est calculé jusqu’à 128 bits.
 
-<Tip>
-  **utilisez sipHash128Reference pour les nouveaux projets**
-
-  Cette variante 128 bits diffère de l’implémentation de référence et est moins robuste.
-  Cette version existe car, au moment de son écriture, il n’existait pas encore d’extension officielle 128 bits pour SipHash.
-  Pour les nouveaux projets, il est recommandé d’utiliser [`sipHash128Reference`](#sipHash128Reference).
-</Tip>
+:::tip utilisez sipHash128Reference pour les nouveaux projets
+Cette variante 128 bits diffère de l’implémentation de référence et est moins robuste.
+Cette version existe car, au moment de son écriture, il n’existait pas encore d’extension officielle 128 bits pour SipHash.
+Pour les nouveaux projets, il est recommandé d’utiliser [`sipHash128Reference`](#sipHash128Reference).
+:::
 
 **Syntaxe**
 
@@ -1893,15 +1891,13 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 
 Introduit dans : v23.2.0
 
-Identique à [`sipHash128`](#sipHash128), mais accepte en plus une clé explicite en argument au lieu d’utiliser une clé fixe.
+Identique à [`sipHash128`](#sipHash128), mais accepte en plus une clé explicite comme argument au lieu d’utiliser une clé fixe.
 
-<Tip>
-  **utilisez sipHash128ReferenceKeyed pour les nouveaux projets**
-
-  Cette variante 128 bits diffère de l’implémentation de référence et est moins robuste.
-  Cette version existe parce que, au moment de sa création, il n’existait pas d’extension officielle 128 bits pour SipHash.
-  Les nouveaux projets devraient probablement utiliser [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed).
-</Tip>
+:::tip utilisez sipHash128ReferenceKeyed pour les nouveaux projets
+Cette variante 128 bits diffère de l’implémentation de référence et est moins robuste.
+Cette version existe parce que, au moment de sa création, il n’existait pas d’extension officielle 128 bits pour SipHash.
+Les nouveaux projets devraient probablement utiliser [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed).
+:::
 
 **Syntaxe**
 
@@ -2022,10 +2018,10 @@ Elle combine ensuite ces hachages selon l’algorithme suivant :
 2. La valeur de hachage calculée précédemment et le hachage du troisième paramètre d’entrée sont hachés de la même manière.
 3. Ce calcul est répété pour toutes les autres valeurs de hachage de l’entrée d’origine.
 
-<Note>
-  les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’argument différents.
-  Cela concerne par exemple les types entiers de tailles différentes, les `Tuple` nommés et non nommés contenant les mêmes données, `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
-</Note>
+:::note
+les valeurs de hachage calculées peuvent être identiques pour les mêmes valeurs d’entrée avec des types d’argument différents.
+Cela concerne par exemple les types entiers de tailles différentes, les `Tuple` nommés et non nommés contenant les mêmes données, `Map` et le type `Array(Tuple(key, value))` correspondant contenant les mêmes données.
+:::
 
 **Syntaxe**
 

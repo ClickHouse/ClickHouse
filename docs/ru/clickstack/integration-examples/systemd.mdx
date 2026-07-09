@@ -219,7 +219,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### Создайте конфигурацию демо-коллектора
+    #### Создайте конфигурацию демо-collector
 
     Создайте файл конфигурации для демо:
 
@@ -308,7 +308,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### Импортируйте преднастроенный дашборд
+    #### Импортируйте преднастроенную панель мониторинга
 
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
@@ -391,15 +391,15 @@ otelcol-contrib --config=otel-config.yaml
 * Фильтруйте по конкретным юнитам systemd, чтобы уменьшить шум и сосредоточиться на важных сервисах
 
 <div id="going-to-production">
-  ## Выход в продакшн
+  ## Переход в продакшн
 </div>
 
-В этом руководстве используется отдельный OpenTelemetry Collector для чтения журналов systemd и отправки их в конечную точку OTLP ClickStack — это рекомендуемый вариант для продакшна.
+В этом руководстве используется отдельный OpenTelemetry Collector для чтения журналов systemd и отправки их в конечную точку OTLP ClickStack — это рекомендуемый вариант для продакшн-среды.
 
 Для продакшн-сред с несколькими хостами рассмотрите следующие варианты:
 
-* Развертывание коллектора в виде ДемонСет в Kubernetes
-* Запуск коллектора как сервиса systemd на каждом хосте
-* Использование OpenTelemetry Operator для автоматического развертывания
+* Развертывание collector как ДемонСет в Kubernetes
+* Запуск collector как сервиса systemd на каждом хосте
+* Использование OpenTelemetry Operator для автоматизированного развертывания
 
-Сведения о шаблонах развертывания для продакшна см. в разделе [Приём данных через OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+См. [Приём данных с OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), чтобы ознакомиться с шаблонами развертывания для продакшн-среды.

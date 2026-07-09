@@ -42,7 +42,8 @@ doc_type: 'مرجع'
 | `DOUBLE`                                | [Float64](/ar/reference/data-types/float)                                                                    | `FLOAT64`                   |
 | `DATE32`                                | [Date32](/ar/reference/data-types/date32)                                                                    | `UINT16`                    |
 | `DATE64`                                | [DateTime](/ar/reference/data-types/datetime)                                                                | `UINT32`                    |
-| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/ar/reference/data-types/datetime64)                                                            | `TIMESTAMP`                 |
+| `TIMESTAMP`                             | [DateTime64](/ar/reference/data-types/datetime64)                                                            | `TIMESTAMP`                 |
+| `TIME32`, `TIME64`                      | [Time64](/ar/reference/data-types/time64)                                                                    | `TIME32`, `TIME64`          |
 | `STRING`, `BINARY`                      | [String](/ar/reference/data-types/string)                                                                    | `BINARY`                    |
 | `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/ar/reference/data-types/fixedstring)                                                          | `FIXED_SIZE_BINARY`         |
 | `DECIMAL`                               | [Decimal](/ar/reference/data-types/decimal)                                                                  | `DECIMAL`                   |
@@ -67,7 +68,7 @@ doc_type: 'مرجع'
 * `UUID`
 * `ENUM`.
 
-ليس من الضروري أن تتطابق أنواع البيانات في أعمدة جدول ClickHouse مع حقول بيانات Arrow المقابلة. عند إدراج البيانات، يفسّر ClickHouse أنواع البيانات وفقًا للجدول أعلاه ثم [يحوّل](/ar/reference/functions/regular-functions/type-conversion-functions#CAST) البيانات إلى نوع البيانات المحدَّد لعمود جدول ClickHouse.
+لا يلزم أن تتطابق أنواع بيانات أعمدة جدول ClickHouse مع حقول بيانات Arrow المقابلة. عند إدراج البيانات، يفسّر ClickHouse أنواع البيانات وفقًا للجدول أعلاه، ثم [يحوّل](/ar/reference/functions/regular-functions/type-conversion-functions#CAST) البيانات إلى نوع البيانات المحدد لعمود جدول ClickHouse.
 
 <div id="example-usage">
   ## مثال للاستخدام

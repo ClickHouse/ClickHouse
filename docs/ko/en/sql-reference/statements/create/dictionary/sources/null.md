@@ -1,0 +1,24 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources/null
+title: 'Null 딕셔너리 소스'
+sidebar_position: 14
+sidebar_label: 'Null'
+description: '테스트용으로 ClickHouse에서 Null(비어 있는) 딕셔너리 소스를 구성합니다.'
+doc_type: 'reference'
+---
+
+더미(빈) 딕셔너리를 생성하는 데 사용할 수 있는 특수한 소스입니다.
+더미 딕셔너리는 테스트용으로, 또는 데이터 노드와 쿼리 노드가 분리되어 있으며 분산 테이블을 사용하는 구성에서 유용할 수 있습니다.
+
+```sql
+CREATE DICTIONARY null_dict (
+    id              UInt64,
+    val             UInt8,
+    default_val     UInt8 DEFAULT 123,
+    nullable_val    Nullable(UInt8)
+)
+PRIMARY KEY id
+SOURCE(NULL())
+LAYOUT(FLAT())
+LIFETIME(0);
+```

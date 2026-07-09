@@ -16,7 +16,7 @@ doc_type: 'reference'
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – 각 벡터 요소의 타입입니다. 허용되는 타입은 `BFloat16`, `Float32`, `Float64`입니다
+* `element_type` – 각 벡터 요소의 타입입니다. 허용되는 타입은 `Int8`, `BFloat16`, `Float32`, `Float64`입니다
 * `dimension` – 각 벡터를 구성하는 요소의 수입니다
 
 <div id="creating-qbit">
@@ -63,6 +63,28 @@ SELECT * FROM vectors ORDER BY id;
 
 이 변환은 `CAST`를 사용해 명시적으로 수행할 수도 있습니다. 예를 들어 `CAST(embedding AS QBit(Float32, 8))`와 같습니다.
 
+<div id="converting-qbit-to-arrays">
+  ## QBit를 배열로 변환하기
+</div>
+
+역변환은 비트 전치 표현에서 원래 벡터를 복원하므로, `QBit`를 `Array`로 캐스팅하면 저장된 값이 반환됩니다. 이는 [배열을 `QBit`로 변환하기](#converting-arrays-to-qbit)의 역과정입니다:
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::Array(Float32) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+재구성된 배열은 `QBit`의 타입을 사용한 뒤, 각 요소를 요청된 배열 타입으로 변환합니다. 따라서 `QBit(Float32, N)`에서 `Array(Float64)`로처럼 타입까지 변경하는 cast도 동작합니다.
+
+`Array` -&gt; `QBit` -&gt; `Array` 왕복 변환은 `Int8`, `Float32`, `Float64`에서는 손실이 없습니다. `BFloat16`의 경우 `BFloat16`로 직접 변환한 결과와 일치하며, 손실되는 정밀도는 `BFloat16` 자체의 정밀도뿐입니다.
+
+`차원`이 8의 배수가 아니면 내부 표현에 포함된 후행 패딩 요소가 삭제되므로, 결과에는 항상 정확히 `차원`개의 요소만 포함됩니다.
+
 <div id="qbit-subcolumns">
   ## QBit 서브컬럼
 </div>
@@ -83,8 +105,9 @@ SELECT bin(vec.1) FROM test;
 └───────────────────────────┘
 ```
 
-접근 가능한 서브컬럼 수는 요소 타입에 따라 달라집니다:
+접근 가능한 서브컬럼 수는 타입에 따라 달라집니다:
 
+* `Int8`: 8개 서브컬럼 (1-8)
 * `BFloat16`: 16개 서브컬럼 (1-16)
 * `Float32`: 32개 서브컬럼 (1-32)
 * `Float64`: 64개 서브컬럼 (1-64)
@@ -97,3 +120,4 @@ SELECT bin(vec.1) FROM test;
 
 * [`L2DistanceTransposed`](/ko/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](/ko/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)
+* [`dotProductTransposed`](/ko/reference/functions/regular-functions/distance-functions#dotProductTransposed)

@@ -27,7 +27,7 @@ VPC peering 및 Private Service Connect에 공통으로 필요한 단계입니�
   ## VPC peering 설정
 </div>
 
-[GCP VPC peering 기능](https://docs.cloud.google.com/vpc/docs/vpc-peering)을 미리 숙지하고, VPC peering의 제한 사항(예: 피어링된 VPC 네트워크 간에는 서브넷 IP 범위가 서로 겹치면 안 됨)도 확인하십시오. ClickHouse BYOC는 피어링을 통해 ClickHouse 서비스에 네트워크로 연결할 수 있도록 프라이빗 로드 밸런서를 사용합니다.
+[GCP VPC peering 기능](https://docs.cloud.google.com/vpc/docs/vpc-peering)을 미리 숙지하고, VPC peering의 제한 사항(예: 피어링된 VPC 네트워크 간에 서브넷 IP 범위가 겹치면 안 됨)도 확인하십시오. ClickHouse BYOC는 피어링을 통해 ClickHouse 서비스에 네트워크로 연결할 수 있도록 프라이빗 로드 밸런서를 사용합니다.
 
 ClickHouse BYOC의 VPC peering을 생성하거나 삭제하려면 다음 단계를 따르십시오.
 
@@ -62,10 +62,10 @@ ClickHouse BYOC의 VPC peering을 생성하거나 삭제하려면 다음 단계�
   <Step>
     ### peering connection을 통해 ClickHouse 서비스에 접근
 
-    ClickHouse에 비공개로 접근할 수 있도록, 사용자의 피어링된 VPC에서 안전하게 연결할 수 있는 프라이빗 로드 밸런서와 endpoint가 프로비저닝됩니다. private endpoint는 공개 endpoint 형식을 따르며 `-private` 접미사가 추가됩니다. 예시는 다음과 같습니다.
+    ClickHouse에 비공개로 접근할 수 있도록, 사용자의 피어링된 VPC에서 안전하게 연결할 수 있는 프라이빗 로드 밸런서와 endpoint가 프로비저닝됩니다. Private endpoint는 public endpoint 형식을 따르며 `-private` 접미사가 추가됩니다. 예시는 다음과 같습니다.
 
-    * **공개 endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
-    * **비공개 endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
+    * **Public endpoint**: `h5ju65kv87.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
+    * **Private endpoint**: `h5ju65kv87-private.mhp0y4dmph.us-east1.gcp.byoc.clickhouse.cloud`
   </Step>
 </Steps>
 

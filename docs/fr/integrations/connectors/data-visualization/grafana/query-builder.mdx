@@ -37,63 +37,63 @@ Le paramètre *Type de requête* modifie la disposition du générateur de requ�
 Le type de requête détermine également le panneau utilisé pour visualiser les données.
 
 <div id="table">
-  ### Tableau
+  ### Table
 </div>
 
 Le type de requête le plus flexible est la requête de type tableau. Il s’agit d’une option générique qui regroupe les autres constructeurs de requêtes conçus pour gérer les requêtes simples et les requêtes d’agrégation.
 
-| Champ        | Description                                                                                                                                                                                                                                                          |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Builder Mode | Les requêtes simples n’incluent pas Aggregates ni Group By, tandis que les requêtes d’agrégation incluent ces options.                                                                                                                                               |
-| Columns      | Les colonnes sélectionnées. Vous pouvez saisir du Raw SQL dans ce champ pour utiliser des fonctions et définir des alias de colonnes.                                                                                                                                |
+| Champ        | Description                                                                                                                                                                                                                                                             |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Builder Mode | Les requêtes simples n’incluent pas Aggregates ni Group By, tandis que les requêtes d’agrégation incluent ces options.                                                                                                                                                  |
+| Columns      | Les colonnes sélectionnées. Vous pouvez saisir du Raw SQL dans ce champ pour utiliser des fonctions et définir des alias de colonnes.                                                                                                                                   |
 | Aggregates   | Une liste de [aggregate functions](/fr/reference/functions/aggregate-functions/index). Permet de définir des valeurs personnalisées pour la fonction et la colonne. Visible uniquement en mode Aggregate.                                                               |
 | Group By     | Une liste d’expressions [GROUP BY](/fr/reference/statements/select/group-by). Visible uniquement en mode Aggregate.                                                                                                                                                     |
 | Order By     | Une liste d’expressions [ORDER BY](/fr/reference/statements/select/order-by).                                                                                                                                                                                           |
 | Limit        | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. Si cette valeur est définie sur `0`, elle est exclue. Certaines visualizations peuvent nécessiter que cette valeur soit définie sur `0` pour afficher toutes les données. |
-| Filters      | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                                                                             |
+| Filters      | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                                                                                |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Exemple de requête de tableau agrégée" border />
 
 Ce type de requête affiche les données sous forme de tableau.
 
 <div id="logs">
-  ### Journaux
+  ### Logs
 </div>
 
-Le type de requête logs propose un query builder axé sur l&#39;interrogation des données de logs.
-Des valeurs par défaut peuvent être configurées dans la [configuration des logs](/fr/integrations/connectors/data-visualization/grafana/config#logs) de la source de données afin de précharger le query builder avec une base de données/table et des colonnes par défaut.
-OpenTelemetry peut également être activé pour sélectionner automatiquement les colonnes en fonction d&#39;une version de schéma.
+Le type de requête logs propose un constructeur de requêtes axé sur l’interrogation des données de logs.
+Des valeurs par défaut peuvent être configurées dans la [configuration des logs](/fr/integrations/connectors/data-visualization/grafana/config#logs) de la source de données afin de précharger le constructeur de requêtes avec une base de données/table et des colonnes par défaut.
+OpenTelemetry peut également être activé pour sélectionner automatiquement les colonnes en fonction d’une version du schéma.
 
-Les filtres **Time** et **Level** sont ajoutés par défaut, ainsi qu&#39;un Order By sur la colonne Time.
+Les filtres **Time** et **Level** sont ajoutés par défaut, ainsi qu’un Order By sur la colonne Time.
 Ces filtres sont liés à leurs champs respectifs et se mettront à jour lorsque les colonnes seront modifiées.
-Le filtre **Level** est exclu du SQL par défaut ; il est activé dès que vous remplacez l&#39;option `IS ANYTHING`.
+Le filtre **Level** est exclu du SQL par défaut ; il est activé dès que vous remplacez l’option `IS ANYTHING`.
 
 Le type de requête logs prend en charge les [liens de données](#data-links).
 
-| Champ             | Description                                                                                                                                                                                                           |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Use OTel          | Active les colonnes OpenTelemetry. Remplace les colonnes sélectionnées par celles définies par la version du schéma OTel choisie (désactive la sélection de colonnes).                                                |
-| Colonnes          | Colonnes supplémentaires à ajouter aux lignes de log. Vous pouvez saisir du Raw SQL dans ce champ pour utiliser des fonctions et le column aliasing.                                                                  |
-| Time              | Colonne timestamp principale du log. Affiche les types temporels, mais permet aussi des valeurs/fonctions personnalisées.                                                                                             |
-| Niveau de log     | Facultatif. Le *niveau* ou la *sévérité* du log. Les valeurs ressemblent généralement à `INFO`, `error`, `Debug`, etc.                                                                                                |
-| Message           | Contenu du message de log.                                                                                                                                                                                            |
-| Order By          | Une liste d&#39;expressions [ORDER BY](/fr/reference/statements/select/order-by).                                                                                                                                        |
-| Limite            | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. Si elle est définie sur `0`, elle sera exclue, mais cela n&#39;est pas recommandé pour les grands jeux de données de logs. |
-| Filtres           | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                              |
-| Filtre de message | Champ de saisie permettant de filtrer facilement les logs avec un `LIKE %value%`. Exclu lorsque le champ est vide.                                                                                                    |
+| Champ             | Description                                                                                                                                                                                                          |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Use OTel          | Active les colonnes OpenTelemetry. Remplace les colonnes sélectionnées par celles définies par la version du schéma OTel choisie (désactive la sélection de colonnes).                                               |
+| Colonnes          | Colonnes supplémentaires à ajouter aux lignes de log. Vous pouvez saisir du Raw SQL dans ce champ pour utiliser des fonctions et le column aliasing.                                                                 |
+| Time              | Colonne timestamp principale du log. Affiche les types temporels, mais permet aussi des valeurs/fonctions personnalisées.                                                                                            |
+| Niveau de log     | Facultatif. Le *niveau* ou la *sévérité* du log. Les valeurs ressemblent généralement à `INFO`, `error`, `Debug`, etc.                                                                                               |
+| Message           | Contenu du message de log.                                                                                                                                                                                           |
+| Order By          | Une liste d’expressions [ORDER BY](/fr/reference/statements/select/order-by).                                                                                                                                        |
+| Limite            | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. Si elle est définie sur `0`, elle sera exclue, mais cela n’est pas recommandé pour les grands jeux de données de logs. |
+| Filtres           | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                             |
+| Filtre de message | Champ de saisie permettant de filtrer facilement les logs avec un `LIKE %value%`. Exclu lorsque le champ est vide.                                                                                                   |
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Exemple de requête de logs OTel" border />
 
 <br />
 
-Ce type de requête affiche les données dans le panneau de logs, avec un panneau d&#39;histogramme des logs en haut.
+Ce type de requête affiche les données dans le panneau de logs, avec un panneau d’histogramme des logs en haut.
 
 Les colonnes supplémentaires sélectionnées dans la requête peuvent être consultées dans la ligne de log développée :
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Exemple de champs supplémentaires dans une requête de logs" border />
 
 <div id="time-series">
-  ### Séries temporelles
+  ### Time Series
 </div>
 
 Le type de requête de séries temporelles est similaire à [table](#table), mais se concentre sur les données de séries temporelles.
@@ -117,7 +117,7 @@ Les deux vues sont globalement identiques, avec toutefois les différences notab
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Builder Mode | Les requêtes simples excluent Aggregates et Group By, tandis que les requêtes d’agrégation incluent ces options.                                                                                                                                      |
 | Time         | La colonne temporelle principale de la requête. Affiche les types apparentés au temps, mais autorise également des valeurs/fonctions personnalisées.                                                                                                  |
-| Columns      | Les colonnes sélectionnées. Il est possible de saisir du Raw SQL dans ce champ pour utiliser des fonctions et le column aliasing. Visible uniquement en Simple mode.                                                                                  |
+| Columns      | Les colonnes sélectionnées. Il est possible de saisir du Raw SQL dans ce champ pour utiliser des fonctions et des alias de colonnes. Visible uniquement en Simple mode.                                                                               |
 | Aggregates   | Une liste de [aggregate functions](/fr/reference/functions/aggregate-functions/index). Permet de définir des valeurs personnalisées pour la fonction et la colonne. Visible uniquement en Aggregate mode.                                                |
 | Group By     | Une liste d’expressions [GROUP BY](/fr/reference/statements/select/group-by). Visible uniquement en Aggregate mode.                                                                                                                                      |
 | Order By     | Une liste d’expressions [ORDER BY](/fr/reference/statements/select/order-by).                                                                                                                                                                            |
@@ -132,9 +132,9 @@ Ce type de requête affichera les données dans le panneau de séries temporelle
   ### Traces
 </div>
 
-Le type de requête de trace propose un générateur de requêtes pour rechercher et afficher facilement des traces.
+Le type de requête de trace propose un constructeur de requêtes pour rechercher et afficher facilement des traces.
 Il est conçu pour les données OpenTelemetry, mais il est possible de sélectionner des colonnes pour afficher des traces à partir d&#39;un autre schéma.
-Des valeurs par défaut peuvent être configurées dans la [configuration des traces](/fr/integrations/connectors/data-visualization/grafana/config#traces) de la source de données afin de précharger le générateur de requêtes avec une base de données/table et des colonnes par défaut. Si des valeurs par défaut sont configurées, la sélection des colonnes sera réduite par défaut.
+Des valeurs par défaut peuvent être configurées dans la [configuration des traces](/fr/integrations/connectors/data-visualization/grafana/config#traces) de la source de données afin de précharger le constructeur de requêtes avec une base de données/table et des colonnes par défaut. Si des valeurs par défaut sont configurées, la sélection des colonnes sera réduite par défaut.
 OpenTelemetry peut également être activé pour sélectionner automatiquement les colonnes en fonction d&#39;une version de schéma.
 
 Des filtres par défaut sont ajoutés afin de n&#39;afficher que les spans de premier niveau.
@@ -171,7 +171,7 @@ Ce type de requête affichera les données dans la vue tableau pour le mode Trac
   ## SQL Editor
 </div>
 
-Pour les requêtes trop complexes pour le query builder, vous pouvez utiliser le SQL Editor.
+Pour les requêtes trop complexes pour le constructeur de requêtes, vous pouvez utiliser le SQL Editor.
 Il vous donne un contrôle total sur la requête en vous permettant d’écrire et d’exécuter directement du ClickHouse SQL.
 
 Le SQL Editor peut être ouvert en sélectionnant &quot;SQL Editor&quot; en haut de l’éditeur de requêtes.
@@ -217,7 +217,7 @@ En incluant une colonne d’ID de trace, les liens &quot;**View Trace**&quot; et
   ### Fonctionnalités de liaison
 </div>
 
-Avec les data links en place, vous pouvez ouvrir des traces et des logs à l’aide du trace ID fourni.
+Avec les liens de données, vous pouvez ouvrir des traces et des logs à l’aide du trace ID fourni.
 
 &quot;**View Trace**&quot; ouvre un panneau fractionné contenant la trace, et &quot;**View Logs**&quot; ouvre une requête de logs filtrée sur le trace ID.
 Si vous cliquez sur le lien depuis un dashboard plutôt que depuis la vue Explore, il s’ouvrira dans un nouvel onglet de la vue Explore.
@@ -227,7 +227,7 @@ Il est nécessaire de configurer des valeurs par défaut pour les [logs](/fr/int
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Exemple d’affichage d’une trace (panneau de droite) à partir d’une requête de logs (panneau de gauche)
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Exemple de liaison avec des data links" border />
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Exemple de liaison avec des liens de données" border />
 </div>
 
 <div id="macros">

@@ -310,19 +310,19 @@ Testez l’intégration MongoDB avec un jeu de données d’exemple pré-génér
     #### Importer un tableau de bord préconfiguré
 
     1. Ouvrez HyperDX et accédez à la section tableaux de bord.
-    2. Cliquez sur &quot;Import Dashboard&quot; dans l&#39;angle supérieur droit, dans le menu à trois points.
+    2. Cliquez sur &quot;Import Dashboard&quot; dans l’angle supérieur droit, dans le menu à trois points.
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Importer un tableau de bord" />
 
     3. Téléversez le fichier mongodb-logs-dashboard.json, puis cliquez sur &quot;Finish import&quot;.
 
-    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Terminer l'importation du tableau de bord des logs MongoDB" />
+    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Terminer l’importation du tableau de bord des logs MongoDB" />
   </Step>
 
   <Step>
     #### Le tableau de bord sera créé avec toutes les visualisations préconfigurées
 
-    Pour le jeu de données de démonstration, définissez l&#39;intervalle de temps de manière à inclure **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
+    Pour le jeu de données de démonstration, définissez l’intervalle de temps de manière à inclure **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
     <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="Tableau de bord des logs MongoDB" />
   </Step>
@@ -368,7 +368,7 @@ Si la sortie n’est pas un JSON valide, il se peut que votre version de MongoDB
 * Créez des [tableaux de bord](/fr/clickstack/features/dashboards/overview) supplémentaires pour des cas d’utilisation spécifiques (surveillance d’un Replica Set, suivi des connexions)
 
 <div id="going-to-production">
-  ## Mise en production
+  ## Passage en production
 </div>
 
-Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une configuration rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers le point de terminaison OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.
+Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons de déployer votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

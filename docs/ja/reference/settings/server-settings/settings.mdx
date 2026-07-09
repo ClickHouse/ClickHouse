@@ -10,6 +10,10 @@ doc_type: 'reference'
 import SystemLogParameters from '/snippets/ja/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 
+<div id="server-settings">
+  # サーバー設定
+</div>
+
 このセクションでは、サーバー設定について説明します。これらの設定は、
 セッションレベルまたはクエリレベルでは変更できません。
 
@@ -79,6 +83,12 @@ SQL コマンドで作成されたユーザーおよびロールの設定を Cli
 
 <SettingsInfoBlock type="UInt64" default_value="16777215" changeable_without_restart="No" />groupArray 関数における配列要素の最大サイズ (バイト単位) 。この制限はシリアライゼーション時にチェックされ、state サイズが大きくなりすぎるのを防ぐのに役立ちます。
 
+<div id="allow_experimental_executable_udf_drivers">
+  ## allow_experimental_executable_udf_drivers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />`user_defined_executable_function_drivers_config` で宣言された、実行可能なユーザー定義関数向けドライバーの実験的サポートを有効にします。ドライバーは、`CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` で指定されたユーザーコードスニペットを、実行可能な UDF として動作する実行ファイルに変換します。
+
 <div id="allow_experimental_webassembly_udf">
   ## allow_experimental_webassembly_udf
 </div>
@@ -105,9 +115,9 @@ SQL コマンドで作成されたユーザーおよびロールの設定を Cli
 
 これは、すべての `EXPERIMENTAL` / `BETA` 機能に `readonly` 制約を設定するのと同等です。
 
-<Note>
-  値が `0` の場合は、すべての設定を変更できます。
-</Note>
+:::note
+値が `0` の場合は、すべての設定を変更できます。
+:::
 
 <div id="allow_impersonate_user">
   ## allow_impersonate_user
@@ -334,11 +344,11 @@ proxy 経由で接続するクライアントの認証には、送信元アド�
 
 たとえば、この比率が 2 で、[`background_pool_size`](/ja/reference/settings/server-settings/settings#background_pool_size) が 16 に設定されている場合、ClickHouse は 32 個のバックグラウンドマージを同時実行できます。これは、バックグラウンド処理を中断して後回しにできるためです。これにより、小規模なマージの実行優先度を高くできます。
 
-<Note>
-  この比率は実行時には増やすことしかできません。小さくするにはサーバーを再起動する必要があります。
+:::note
+この比率は実行時には増やすことしかできません。小さくするにはサーバーを再起動する必要があります。
 
-  [`background_pool_size`](/ja/reference/settings/server-settings/settings#background_pool_size) 設定と同様に、後方互換性のため、[`background_merges_mutations_concurrency_ratio`](/ja/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) は `default` プロファイルから適用できます。
-</Note>
+[`background_pool_size`](/ja/reference/settings/server-settings/settings#background_pool_size) 設定と同様に、後方互換性のため、[`background_merges_mutations_concurrency_ratio`](/ja/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) は `default` プロファイルから適用できます。
+:::
 
 <div id="background_merges_mutations_scheduling_policy">
   ## background_merges_mutations_scheduling_policy
@@ -376,16 +386,17 @@ proxy 経由で接続するクライアントの認証には、送信元アド�
 
 MergeTree エンジンを使用するテーブルで、バックグラウンドのマージおよびミューテーションを実行するスレッド数を設定します。
 
-<Note>
-  * 後方互換性のため、この設定は ClickHouse server の起動時に `default` プロファイル設定から適用することもできます。
-  * 実行時に増やせるのはスレッド数のみです。
-  * スレッド数を減らすにはサーバーを再起動する必要があります。
-  * この設定を調整することで、CPU とディスクの負荷を管理できます。
-</Note>
+:::note
 
-<Danger>
-  プールサイズを小さくすると、使用する CPU リソースとディスク リソースは少なくなりますが、バックグラウンドプロセスの進行が遅くなり、最終的にクエリパフォーマンスに影響する可能性があります。
-</Danger>
+* 後方互換性のため、この設定は ClickHouse server の起動時に `default` プロファイル設定から適用することもできます。
+* 実行時に増やせるのはスレッド数のみです。
+* スレッド数を減らすにはサーバーを再起動する必要があります。
+* この設定を調整することで、CPU とディスクの負荷を管理できます。
+  :::
+
+:::danger
+プールサイズを小さくすると、使用する CPU リソースとディスク リソースは少なくなりますが、バックグラウンドプロセスの進行が遅くなり、最終的にクエリパフォーマンスに影響する可能性があります。
+:::
 
 変更する前に、次のような関連する MergeTree 設定も確認してください。
 
@@ -398,6 +409,12 @@ MergeTree エンジンを使用するテーブルで、バックグラウンド�
 ```xml
 <background_pool_size>16</background_pool_size>
 ```
+
+<div id="background_schedule_pool_initial_size">
+  ## background_schedule_pool_initial_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />各 background schedule pool に最初に割り当てられるワーカースレッド数。各プールは、必要に応じて、現在のワーカー数で足りなくなると設定された上限 (`background_schedule_pool_size` など) まで段階的に拡張されます。値を小さくすると、起動時のオーバーヘッドとアイドル状態のスレッド数を抑えられます。値を大きくすると、負荷の高いサーバーで最初のタスクのスケジューリングレイテンシをなくせます。
 
 <div id="background_schedule_pool_log">
   ## background_schedule_pool_log
@@ -430,7 +447,7 @@ MergeTree エンジンを使用するテーブルで、バックグラウンド�
   ## background_schedule_pool_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="増加のみ" />レプリケートテーブル、Kafkaストリーミング、DNS cacheの更新などの軽量な定期処理を継続的に実行するために使用されるスレッドの最大数。
+<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="増加のみ" />レプリケートテーブル、Kafkaストリーミング、DNS cacheの更新などの軽量な定期処理を実行するために使用されるスレッド数の上限。スレッドは必要に応じてこの上限まで遅延的に生成されるため、バックグラウンド負荷が軽いサーバーでは、この数よりはるかに少ないスレッドしか使用されません。
 
 <div id="backup_log">
   ## backup_log
@@ -530,9 +547,9 @@ MergeTree エンジンを使用するテーブルで、バックグラウンド�
 
 Backups I/O スレッドプール にスケジュールできるジョブの最大数です。現在の S3 バックアップのロジック上、このキューは無制限のままにしておくことを推奨します。
 
-<Note>
-  `0` の値 (デフォルト) は無制限を意味します。
-</Note>
+:::note
+`0` の値 (デフォルト) は無制限を意味します。
+:::
 
 <div id="bcrypt_workfactor">
   ## bcrypt_workfactor
@@ -676,6 +693,18 @@ cgroup オブザーバーを無効にするには、この値を `0` に設定�
 </compression>
 ```
 
+<div id="concurrent_threads_lazy_allocation">
+  ## concurrent_threads_lazy_allocation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />
+
+CPUスロットをクエリにどのように割り当てるかを制御します。
+
+`true` の場合 (デフォルト) 、クエリは 1 つの CPUスロットで開始し、そのパイプラインが実際により多くの並列化可能な処理を生成したときにのみ、scheduler に追加のスロットを要求します。これにより、クエリが最大 `max_threads` 個のスロットを予約していても、実際にはその一部しか使用せず、他の同時実行クエリを圧迫してしまう状況を回避できます。これは、Concurrency 制御と、workload 向けのプリエンプティブな CPU scheduler の両方に適用されます。
+
+`false` の場合、クエリは開始時に `max_threads` 個のスロットをすべてまとめて要求します。
+
 <div id="concurrent_threads_scheduler">
   ## concurrent_threads_scheduler
 </div>
@@ -698,9 +727,9 @@ cgroup オブザーバーを無効にするには、この値を `0` に設定�
 
 リモートサーバーからのデータ取得に使用するスレッドを除き、すべてのクエリで実行可能なクエリ処理スレッドの最大数です。これはハードリミットではありません。上限に達した場合でも、各クエリには実行用として少なくとも1つのスレッドが割り当てられます。実行中にさらに多くのスレッドが利用可能になれば、クエリは必要な数までスレッド数を増やすことができます。
 
-<Note>
-  `0` (デフォルト) は無制限を意味します。
-</Note>
+:::note
+`0` (デフォルト) は無制限を意味します。
+:::
 
 <div id="concurrent_threads_soft_limit_ratio_to_cores">
   ## concurrent_threads_soft_limit_ratio_to_cores
@@ -904,9 +933,9 @@ CPU リソース (MASTER THREAD と WORKER THREAD) のワークロードスケ�
 `store/` ディレクトリ内の不要物をクリーンアップするタスクのパラメータです。
 このタスクの実行周期を設定します。
 
-<Note>
-  `0` は「実行しない」ことを意味します。デフォルト値は 1 日です。
-</Note>
+:::note
+`0` は「実行しない」ことを意味します。デフォルト値は 1 日です。
+:::
 
 <div id="database_catalog_unused_dir_hide_timeout_sec">
   ## database_catalog_unused_dir_hide_timeout_sec
@@ -920,9 +949,9 @@ CPU リソース (MASTER THREAD と WORKER THREAD) のワークロードスケ�
 すべてのアクセス権を削除してそのディレクトリを「隠し」ます。これは、clickhouse-server が
 `store/` 内に存在することを想定していないディレクトリにも適用されます。
 
-<Note>
-  値が `0` の場合は「即時」を意味します。
-</Note>
+:::note
+値が `0` の場合は「即時」を意味します。
+:::
 
 <div id="database_catalog_unused_dir_rm_timeout_sec">
   ## database_catalog_unused_dir_rm_timeout_sec
@@ -938,9 +967,9 @@ clickhouse-server で使用されていないサブディレクトリがあり�
 これは、clickhouse-server が `store/` 内に存在することを
 想定していないディレクトリにも適用されます。
 
-<Note>
-  `0` は「never」を意味します。デフォルト値は 30 日に相当します。
-</Note>
+:::note
+`0` は「never」を意味します。デフォルト値は 30 日に相当します。
+:::
 
 <div id="database_replicated_allow_detach_permanently">
   ## database_replicated_allow_detach_permanently
@@ -1078,10 +1107,10 @@ Dictionary の遅延読み込み。
 * `true` の場合、各 Dictionary は初回使用時に読み込まれます。読み込みに失敗した場合、その Dictionary を使用している関数は例外をスローします。
 * `false` の場合、サーバーは起動時にすべての Dictionary を読み込みます。
 
-<Note>
-  サーバーは、接続を受け付ける前に、起動時にすべての Dictionary の読み込みが完了するまで待機します
-  (例外: [`wait_dictionaries_load_at_startup`](/ja/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) が `false` に設定されている場合) 。
-</Note>
+:::note
+サーバーは、接続を受け付ける前に、起動時にすべての Dictionary の読み込みが完了するまで待機します
+(例外: [`wait_dictionaries_load_at_startup`](/ja/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) が `false` に設定されている場合)。
+:::
 
 **例**
 
@@ -1163,7 +1192,7 @@ IP アドレス、ドメイン、サブドメイン、および完全にバイ�
   ## disk_connections_rcvbuf
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />ディスク (S3、Azure、GCS) 接続の SO&#95;RCVBUF オプションのサイズです。0 より大きい値を設定すると、受信バッファに対するカーネルの TCP 自動調整を無効にして、この値で上書きします。0 = カーネルのデフォルト (自動調整) 。注: この設定を 0 に戻しても、自動調整が復元されるのは新規に作成される接続のみです。既存のプール接続は、再作成されるまで固定のバッファサイズを維持します。
+<SettingsInfoBlock type="UInt64" default_value="204800" changeable_without_restart="Yes" />ディスク (S3、Azure、GCS) 接続の SO&#95;RCVBUF オプションのサイズです。デフォルト値は 204800 (200 KB) です。オブジェクトストレージへは同一 Region 内からアクセスされ、帯域幅遅延積は 100 KB を大きく下回るため、小さい上限値でも最大のスループットを得られ、そうしない場合にカーネルの自動調整によって割り当てられるソケットごとの複数 MiB のバッファを回避できます。代わりに受信バッファに対してカーネルの TCP 自動調整を使用するには、0 に設定します。注: この設定を 0 に戻しても、自動調整が復元されるのは新規に作成される接続のみです。既存のプールされた接続は、再作成されるまで固定のバッファサイズを維持します。
 
 <div id="disk_connections_sndbuf">
   ## disk_connections_sndbuf
@@ -1371,6 +1400,21 @@ hostname の DNS cache の更新でこの回数だけ連続して失敗すると
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />分散キャッシュの drop に使用される スレッドプール の queue のサイズ。
 
+<div id="dynamic_user_defined_executable_functions_path">
+  ## dynamic_user_defined_executable_functions_path
+</div>
+
+<SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="No" />
+
+ドライバーによって動的に作成された実行可能 UDF の設定ファイルを保存するためのディレクトリです (`CREATE FUNCTION ... ENGINE = DriverName(...)` を参照) 。
+サーバーの再起動時には、このディレクトリ内の設定ファイルがスキャンされ、対応する UDF がドライバーを再度呼び出すことなく読み込まれます。
+
+**例**
+
+```xml
+<dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+```
+
 <div id="enable_azure_sdk_logging">
   ## enable_azure_sdk_logging
 </div>
@@ -1532,9 +1576,9 @@ error の履歴収集 [`system.error_log`](/ja/reference/system-tables/error_log
 
 入力のパース用スレッドプールでスケジュールできるジョブの最大数です。
 
-<Note>
-  `0` は無制限を意味します。
-</Note>
+:::note
+`0` は無制限を意味します。
+:::
 
 <div id="format_schema_path">
   ## format_schema_path
@@ -1715,28 +1759,16 @@ HSTS の有効期間 (秒) 。
 新しい http ハンドラーを追加するには、新しい `<rule>` を追加するだけです。
 ルールは定義された順に上から順に評価され、
 最初に一致したルールのハンドラーが実行されます。
-一致条件を持たないルール (`handler` のみ) はすべてのリクエストに一致します。ルールは順番に評価されるため、
-そのようなルールは最後に配置するフォールバックとしてのみ有用です。
 
-以下の設定はサブタグで構成できます (`handler` を除き、これらのサブタグはすべて任意です):
+以下の設定はサブタグで構成できます:
 
-| Sub-tags             | Definition                                                                                                                                                            |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `url`                | リクエスト URL パスを照合します。照合時にはクエリ文字列は無視されます                                                                                                                                 |
-| `url_prefix`         | リクエスト URL パスをベースパスに対して照合します。対象はパス自体、またはパスセグメント境界でその配下にあるものです (例: &#39;/api/v1&#39; は /api/v1、/api/v1/、/api/v1/write には一致しますが、/api/v1beta には一致しません)。照合時にはクエリ文字列は無視されます |
-| `url_regexp`         | リクエスト URL パスを正規表現に対して照合します。照合時にはクエリ文字列は無視されます                                                                                                                         |
-| `full_url`           | 完全なリクエスト URL `scheme://host:port/path` を照合します。照合時にはクエリ文字列は無視され、host は接続の IP アドレスです (`Host` ヘッダーではありません)                                                               |
-| `full_url_prefix`    | 完全なリクエスト URL `scheme://host:port/path` をベース URL `scheme://host:port/base_path` に対して、パスセグメント境界で照合します (`url_prefix` を参照)。照合時にはクエリ文字列は無視されます                             |
-| `full_url_regexp`    | 完全なリクエスト URL `scheme://host:port/path` を正規表現に対して照合します。照合時にはクエリ文字列は無視されます                                                                                              |
-| `methods`            | リクエストメソッドを照合するには、カンマ区切りで複数のメソッドを指定できます                                                                                                                                |
-| `headers`            | リクエストヘッダーを照合するには、各子要素を照合します (子要素名はヘッダー名です)                                                                                                                            |
-| `headers_regexp`     | `headers` と同様ですが、各子要素の値を正規表現に対して照合します                                                                                                                                 |
-| `empty_query_string` | URL にクエリ文字列が含まれていないことを確認します                                                                                                                                           |
-| `handler`            | リクエストハンドラー (必須)                                                                                                                                                       |
-
-<Note>
-  `url_regexp`、`full_url_regexp`、`headers_regexp` の代わりに、`url`、`full_url`、`headers` で `regex:` プレフィックスを使って正規表現を書くこともできます (例: `<url>regex:/api/.*</url>`)。これは後方互換性のため引き続きサポートされていますが、廃止された方法です。専用の `url_regexp`、`full_url_regexp`、`headers_regexp` サブタグを優先してください。
-</Note>
+| Sub-tags             | Definition                                                                        |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `url`                | リクエスト URL を照合するには、`regex:` プレフィックスを使って正規表現照合を使用できます (任意)                          |
+| `methods`            | リクエストメソッドを照合するには、カンマ区切りで複数のメソッドを指定できます (任意)                                       |
+| `headers`            | リクエストヘッダーを照合するには、各子要素を照合します (子要素名はヘッダー名です)。`regex:` プレフィックスを使って正規表現照合を使用できます (任意) |
+| `handler`            | リクエストハンドラー                                                                        |
+| `empty_query_string` | URL にクエリ文字列が含まれていないことを確認します                                                       |
 
 `handler` には以下の設定があり、サブタグで構成できます:
 
@@ -1909,9 +1941,9 @@ ClickHouse HTTP(s) サーバーにアクセスした際にデフォルトで表�
 
 true の場合、ClickHouse は `CREATE VIEW` クエリ内の空の SQL security ステートメントにデフォルト値を書き込みません。
 
-<Note>
-  この設定が必要なのは移行期間中のみであり、24.4 で廃止される予定です
-</Note>
+:::note
+この設定が必要なのは移行期間中のみであり、24.4 で廃止される予定です
+:::
 
 <div id="include_from">
   ## include_from
@@ -1949,11 +1981,12 @@ substitution を記述したファイルへのパスです。XML と YAML の両
 
 マークキャッシュの最大サイズ。
 
-<Note>
-  `0` は無効を意味します。
+:::note
 
-  この設定は実行時に変更でき、変更は即座に反映されます。
-</Note>
+`0` は無効を意味します。
+
+この設定は実行時に変更でき、変更は即座に反映されます。
+:::
 
 <div id="index_mark_cache_size_ratio">
   ## index_mark_cache_size_ratio
@@ -1975,11 +2008,11 @@ substitution を記述したファイルへのパスです。XML と YAML の両
 
 `MergeTree` の索引の非圧縮 block 用 cache の最大サイズ。
 
-<Note>
-  値 `0` は無効を意味します。
+:::note
+値 `0` は無効を意味します。
 
-  この設定は実行時に変更でき、変更はすぐに反映されます。
-</Note>
+この設定は実行時に変更でき、変更はすぐに反映されます。
+:::
 
 <div id="index_uncompressed_cache_size_ratio">
   ## index_uncompressed_cache_size_ratio
@@ -1991,15 +2024,19 @@ substitution を記述したファイルへのパスです。XML と YAML の両
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="compatible_double_hashes" changeable_without_restart="No" />
+<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="new_unified_hash" changeable_without_restart="No" />
 
 この設定により、同期 INSERT と非同期 INSERT でまったく別々かつ非透過的な方法で挿入の重複排除を行うコードバージョンから、同期 INSERT と非同期 INSERT をまたいで挿入データを重複排除できるコードバージョンへ移行できます。
 値 `old_separate_hashes` は、ClickHouse が同期 INSERT と非同期 INSERT で異なる重複排除ハッシュを使用することを意味します (従来どおり) 。
-移行を開始する予定がない場合は、この値をデフォルト値として使用する必要があります。
+この値は、意図的に移行を開始していないインスタンス向けに、移行前の従来の動作を維持します。現在では推奨されるデフォルト値ではありません。
 値 `compatible_double_hashes` は、ClickHouse が 2 つの重複排除ハッシュを使用することを意味します。1 つは同期または非同期 INSERT 用の従来のハッシュで、もう 1 つはすべての INSERT 用の新しいハッシュです。この値は、既存のインスタンスを新しい動作へ安全に移行するために使用する必要があります。
 移行中に同期 INSERT または非同期 INSERT が失われないようにするため、この値はしばらくの間有効にしておく必要があります (`replicated_deduplication_window` および `non_replicated_deduplication_window` 設定を参照) 。
 最後に、値 `new_unified_hash` は、ClickHouse が同期 INSERT と非同期 INSERT に対して新しい重複排除ハッシュを使用することを意味します。この値は、新しい ClickHouse インスタンス、またはすでにしばらく `compatible_double_hashes` を使用しているインスタンスで有効にできます。
-移行を安全に 2 段階で完了するため、デフォルト値はまず `compatible_double_hashes` に設定され、その後、将来の ClickHouse バージョンで `new_unified_hash` に変更される予定です。
+`new_unified_hash` では、重複排除ハッシュは挿入された block 全体を対象とするため、INSERT が重複排除されるのは、そのデータ全体が以前の INSERT (再試行) と一致する場合のみであり、個々のパーティション単位ではありません。
+`new_unified_hash` では非同期 INSERT も統一ハッシュを使用し、同期の重複排除ウィンドウ (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`) を共有します。`*_for_async_inserts` のウィンドウ設定が適用されるのは、従来の `old_separate_hashes` / `compatible_double_hashes` パスだけです。
+デフォルト値は、移行の 1 つの段階では `compatible_double_hashes` でしたが、現在は `new_unified_hash` であり、これにより移行は安全に 2 段階で完了します。
+`old_separate_hashes` から直接アップグレードしたインスタンスは、統一ハッシュに切り替える前に、最も長い関連する重複排除ウィンドウ (同期ウィンドウ `replicated_deduplication_window` / `replicated_deduplication_window_seconds`、非同期 INSERT を使用している場合はデフォルトで 1 週間となる非同期ウィンドウ `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts`、および `non_replicated_deduplication_window`) が経過するまで `compatible_double_hashes` で実行する必要があります。そうしないと、アップグレード前の id は古い `blocks` / `async_blocks` directories に保持されたままとなり、統一ハッシュからは参照されないため、それらの再試行が新しい INSERT として受け入れられて重複が発生する可能性があります。
+非同期 INSERT では、`new_unified_hash` への切り替え時に注意点があります。`compatible_double_hashes` では、重複排除の対象期間は実質的に非同期ウィンドウ全体に及びます (`async_blocks` の id がその期間保持されるため) が、`new_unified_hash` は `deduplication_hashes` のみを参照し (同期ウィンドウの間だけ保持されます) 、そのため同期ウィンドウより古い非同期 INSERT は、待機後であっても切り替え後に再び受け入れられる可能性があります。非同期ワークロードを切り替える前に、`replicated_deduplication_window` / `replicated_deduplication_window_seconds` を非同期ウィンドウまで引き上げてその状態で非同期ウィンドウ全体にわたって実行するか、非同期 INSERT を非同期ウィンドウの間停止するか、または `compatible_double_hashes` を維持してください。
 
 <div id="interserver_http_credentials">
   ## interserver_http_credentials
@@ -2142,9 +2179,9 @@ Keeper を使用している場合は、同じ制限が異なる Keeper イン�
 
 I/O thread pool にスケジュールできるジョブの最大数。
 
-<Note>
-  `0` は無制限を意味します。
-</Note>
+:::note
+`0` は無制限を意味します。
+:::
 
 <div id="jemalloc_collect_global_profile_samples_in_trace_log">
   ## jemalloc_collect_global_profile_samples_in_trace_log
@@ -2212,7 +2249,7 @@ ClickHouse が HTTP プロトコルでの受信リクエストを待機し、接
 **例**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>30</keep_alive_timeout>
 ```
 
 <div id="keeper_hosts">
@@ -2726,9 +2763,9 @@ Startup level は、サーバー起動時のルートロガーのレベルを設
 
 マーク用 mark cache の最大サイズ ([`MergeTree`](/ja/reference/engines/table-engines/mergetree-family/index) ファミリーのテーブルの索引) 。
 
-<Note>
-  この設定は実行時に変更でき、変更は即座に反映されます。
-</Note>
+:::note
+この設定は実行時に変更でき、変更は即座に反映されます。
+:::
 
 <div id="mark_cache_size_ratio">
   ## mark_cache_size_ratio
@@ -2752,9 +2789,9 @@ Startup level は、サーバー起動時のルートロガーのレベルを設
 この設定を変更しても、既存のユーザーには影響しません。この設定で指定された上限を超える認証関連の CREATE/ALTER クエリは失敗します。
 認証に関係しない CREATE/ALTER クエリは成功します。
 
-<Note>
-  `0` は無制限を意味します。
-</Note>
+:::note
+`0` は無制限を意味します。
+:::
 
 <div id="max_backup_bandwidth_for_server">
   ## max_backup_bandwidth_for_server
@@ -2782,9 +2819,9 @@ Startup level は、サーバー起動時のルートロガーのレベルを設
 
 ベクトル索引の構築に使用するスレッドの最大数です。
 
-<Note>
-  値 `0` は、すべてのコアを意味します。
-</Note>
+:::note
+値 `0` は、すべてのコアを意味します。
+:::
 
 <div id="max_concurrent_insert_queries">
   ## max_concurrent_insert_queries
@@ -2794,11 +2831,12 @@ Startup level は、サーバー起動時のルートロガーのレベルを設
 
 同時実行される insert クエリの総数の上限です。
 
-<Note>
-  `0` (デフォルト) は無制限を意味します。
+:::note
 
-  この設定は実行時に変更でき、変更は即座に反映されます。すでに実行中のクエリには影響しません。
-</Note>
+`0` (デフォルト) は無制限を意味します。
+
+この設定は実行時に変更でき、変更は即座に反映されます。すでに実行中のクエリには影響しません。
+:::
 
 <div id="max_concurrent_queries">
   ## max_concurrent_queries
@@ -2814,11 +2852,12 @@ Startup level は、サーバー起動時のルートロガーのレベルを設
 * [`max_concurrent_select_queries`](/ja/reference/settings/server-settings/settings#max_concurrent_select_queries)
 * [`max_concurrent_queries_for_all_users`](/ja/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-<Note>
-  `0` (デフォルト) は無制限を意味します。
+:::note
 
-  この設定は実行中に変更でき、即座に反映されます。すでに実行中のクエリには影響しません。
-</Note>
+`0` (デフォルト) は無制限を意味します。
+
+この設定は実行中に変更でき、即座に反映されます。すでに実行中のクエリには影響しません。
+:::
 
 <div id="max_concurrent_select_queries">
   ## max_concurrent_select_queries
@@ -2828,11 +2867,12 @@ Startup level は、サーバー起動時のルートロガーのレベルを設
 
 同時実行される SELECT クエリの総数の上限。
 
-<Note>
-  `0` (デフォルト) は無制限を意味します。
+:::note
 
-  この設定は実行時に変更でき、すぐに反映されます。すでに実行中のクエリには影響しません。
-</Note>
+`0` (デフォルト) は無制限を意味します。
+
+この設定は実行時に変更でき、すぐに反映されます。すでに実行中のクエリには影響しません。
+:::
 
 <div id="max_connections">
   ## max_connections
@@ -2881,9 +2921,9 @@ Dictionary の数がこの値を超えると、サーバーは例外をスロー
 * Replicated
 * Lazy
 
-<Note>
-  値が `0` の場合は、制限はありません。
-</Note>
+:::note
+値が `0` の場合は、制限はありません。
+:::
 
 **例**
 
@@ -2951,6 +2991,17 @@ Dictionary の数がこの値を超えると、サーバーは例外をスロー
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />同時に保持できる軽量スナップショットの最大数です。0 は無制限を意味します。スナップショット数がこの上限に達すると、新しいスナップショットを作成しようとした際に例外が発生します。
 
+<div id="max_http_index_page_size">
+  ## max_http_index_page_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
+
+HTTP 経由でディレクトリ一覧を表示する際に使用される、HTTP インデックスページのレスポンスの最大サイズです。
+レスポンスがこの制限を超えると、クエリはエラーになります。
+
+デフォルト: `10485760` (10 MiB)。
+
 <div id="max_io_thread_pool_free_size">
   ## max_io_thread_pool_free_size
 </div>
@@ -2989,9 +3040,9 @@ ClickHouse server が接続を閉じるまでに、1 つの keep-alive 接続を
 
 ローカル読み取りの最大速度を、1 秒あたりのバイト数で指定します。
 
-<Note>
-  値 `0` は無制限を意味します。
-</Note>
+:::note
+値 `0` は無制限を意味します。
+:::
 
 <div id="max_local_write_bandwidth_for_server">
   ## max_local_write_bandwidth_for_server
@@ -3001,9 +3052,9 @@ ClickHouse server が接続を閉じるまでに、1 つの keep-alive 接続を
 
 ローカルへの書き込みの最大速度 (1秒あたりのバイト数) 。
 
-<Note>
-  `0` は無制限を意味します。
-</Note>
+:::note
+`0` は無制限を意味します。
+:::
 
 <div id="max_materialized_views_count_for_table">
   ## max_materialized_views_count_for_table
@@ -3013,9 +3064,9 @@ ClickHouse server が接続を閉じるまでに、1 つの keep-alive 接続を
 
 テーブルにアタッチされている materialized view の数の上限です。
 
-<Note>
-  ここで考慮されるのは直接依存するビューのみで、あるビューの上に別のビューを作成するケースは考慮されません。
-</Note>
+:::note
+ここで考慮されるのは直接依存するビューのみで、あるビューの上に別のビューを作成するケースは考慮されません。
+:::
 
 <div id="max_merges_bandwidth_for_server">
   ## max_merges_bandwidth_for_server
@@ -3035,11 +3086,11 @@ ClickHouse server が接続を閉じるまでに、1 つの keep-alive 接続を
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
-named collections の数がこの値を超えると、サーバーは例外をスローします。
+named collection の数がこの値を超えると、サーバーは例外をスローします。
 
-<Note>
-  値が `0` の場合は、制限なしを意味します。
-</Note>
+:::note
+値が `0` の場合は、制限なしを意味します。
+:::
 
 **例**
 
@@ -3069,9 +3120,9 @@ named collection の数が指定した値を超えると、ClickHouse server は
 
 同時に開けるファイルの最大数です。
 
-<Note>
-  getrlimit() 関数が正しくない値を返すため、macOS ではこのオプションを使用することを推奨します。
-</Note>
+:::note
+getrlimit() 関数が正しくない値を返すため、macOS ではこのオプションを使用することを推奨します。
+:::
 
 <div id="max_os_cpu_wait_time_ratio_to_drop_connection">
   ## max_os_cpu_wait_time_ratio_to_drop_connection
@@ -3113,11 +3164,11 @@ named collection の数が指定した値を超えると、ClickHouse server は
 [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルのサイズが [`max_partition_size_to_drop`](#max_partition_size_to_drop) (バイト単位) を超える場合、[DROP PARTITION](/ja/reference/statements/alter/partition#drop-partitionpart) クエリを使用してパーティションを削除することはできません。
 この設定は、ClickHouse server を再起動しなくても適用できます。この制限を無効にする別の方法として、`<clickhouse-path>/flags/force_drop_table` ファイルを作成することもできます。
 
-<Note>
-  値 `0` は、パーティションを制限なく削除できることを意味します。
+:::note
+値 `0` は、パーティションを制限なく削除できることを意味します。
 
-  この制限は drop table および truncate table には適用されません。詳細は [max&#95;table&#95;size&#95;to&#95;drop](/ja/reference/settings/session-settings#max_table_size_to_drop) を参照してください
-</Note>
+この制限は drop table および truncate table には適用されません。詳細は [max&#95;table&#95;size&#95;to&#95;drop](/ja/reference/settings/session-settings#max_table_size_to_drop) を参照してください
+:::
 
 **例**
 
@@ -3159,6 +3210,14 @@ named collection の数が指定した値を超えると、ClickHouse server は
 <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
 ```
 
+<div id="max_per_cpu_untracked_memory">
+  ## max_per_cpu_untracked_memory
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Yes" />
+
+1 つの CPU 上で実行されるすべてのスレッドが、memory tracker に書き出される前に一度に保持できる未追跡メモリの上限 (バイト単位) 。`max_untracked_memory` が単一スレッドを制限するのに対し、こちらは CPU ごとの合計を制限するため、多数のスレッドがスレッドごとの許容量を積み上げてサーバー全体で大きな overcommit を引き起こすことを防ぎます。したがって、未追跡メモリの総量はおおよそ `number_of_cpus * max_per_cpu_untracked_memory` によって制限されます。値を `0` にすると CPU ごとの制限は無効になり (スレッドごとの `max_untracked_memory` のみが適用されます) 。Linux のみ。
+
 <div id="max_prefixes_deserialization_thread_pool_free_size">
   ## max_prefixes_deserialization_thread_pool_free_size
 </div>
@@ -3183,9 +3242,9 @@ ClickHouse は、MergeTree の wide パーツでファイルプレフィック�
 
 読み取り時のネットワーク経由のデータ転送速度の上限 (バイト/秒) 。
 
-<Note>
-  `0` (デフォルト) は無制限を意味します。
-</Note>
+:::note
+`0` (デフォルト) は無制限を意味します。
+:::
 
 <div id="max_remote_write_network_bandwidth_for_server">
   ## max_remote_write_network_bandwidth_for_server
@@ -3195,9 +3254,9 @@ ClickHouse は、MergeTree の wide パーツでファイルプレフィック�
 
 書き込み時の、ネットワーク経由のデータ転送の最大速度 (1秒あたりのバイト数) 。
 
-<Note>
-  `0` (デフォルト) は無制限を意味します。
-</Note>
+:::note
+`0` (デフォルト) は無制限を意味します。
+:::
 
 <div id="max_replicated_fetches_network_bandwidth_for_server">
   ## max_replicated_fetches_network_bandwidth_for_server
@@ -3226,9 +3285,9 @@ ClickHouse は、MergeTree の wide パーツでファイルプレフィック�
 * Replicated
 * Lazy
 
-<Note>
-  値が `0` の場合は、制限がないことを意味します。
-</Note>
+:::note
+値が `0` の場合は、制限がないことを意味します。
+:::
 
 **例**
 
@@ -3244,9 +3303,9 @@ ClickHouse は、MergeTree の wide パーツでファイルプレフィック�
 
 サーバーが使用できるメモリの最大量を、バイト単位で表したものです。
 
-<Note>
-  サーバーの最大メモリ使用量は、`max_server_memory_usage_to_ram_ratio` の設定によってさらに制限されます。
-</Note>
+:::note
+サーバーの最大メモリ使用量は、`max_server_memory_usage_to_ram_ratio` の設定によってさらに制限されます。
+:::
 
 特殊なケースとして、値 `0` (デフォルト) は、サーバーが利用可能なすべてのメモリを使用できることを意味します (`max_server_memory_usage_to_ram_ratio` による追加の制限を除く) 。
 
@@ -3270,9 +3329,9 @@ RAM とスワップが少ないホストでは、[`max_server_memory_usage_to_ra
 
 比率を `0` に設定すると、起動時の上限制限と実行時の調整の両方が無効になります。実行時の調整は、非 Linux システムおよびこの設定を公開していない `clickhouse-keeper` では no-op です。静的な起動時/再読み込み時の制限は維持しつつ、実行時の調整 (以前のバージョンの動作) を無効にするには、`memory_worker_dynamic_hard_limit` を `0` に設定してください。
 
-<Note>
-  server の最大メモリ消費量は、さらに `max_server_memory_usage` 設定によって制限されます。
-</Note>
+:::note
+server の最大メモリ消費量は、さらに `max_server_memory_usage` 設定によって制限されます。
+:::
 
 <div id="max_session_timeout">
   ## max_session_timeout
@@ -3320,9 +3379,9 @@ RAM とスワップが少ないホストでは、[`max_server_memory_usage_to_ra
 * Replicated
 * Lazy
 
-<Note>
-  `0` は制限なしを意味します。
-</Note>
+:::note
+`0` は制限なしを意味します。
+:::
 
 **例**
 
@@ -3354,11 +3413,11 @@ RAM とスワップが少ないホストでは、[`max_server_memory_usage_to_ra
 
 [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルのサイズが `max_table_size_to_drop` (バイト単位) を超える場合、[`DROP`](/ja/reference/statements/drop) クエリまたは [`TRUNCATE`](/ja/reference/statements/truncate) クエリでは削除できません。
 
-<Note>
-  値が `0` の場合は、すべてのテーブルを制限なく削除できます。
+:::note
+値が `0` の場合は、すべてのテーブルを制限なく削除できます。
 
-  この設定の適用に ClickHouse server の再起動は不要です。制限を無効にする別の方法として、`<clickhouse-path>/flags/force_drop_table` ファイルを作成することもできます。
-</Note>
+この設定の適用に ClickHouse server の再起動は不要です。制限を無効にする別の方法として、`<clickhouse-path>/flags/force_drop_table` ファイルを作成することもできます。
+:::
 
 **例**
 
@@ -3375,9 +3434,9 @@ RAM とスワップが少ないホストでは、[`max_server_memory_usage_to_ra
 外部集約、JOIN、またはソートで使用できるディスク容量の上限です。
 この上限を超えるクエリは、例外が発生して失敗します。
 
-<Note>
-  `0` は無制限を意味します。
-</Note>
+:::note
+`0` は無制限を意味します。
+:::
 
 関連項目:
 
@@ -3433,9 +3492,9 @@ ClickHouse は、クエリの処理にグローバルスレッドプールのス
 * Replicated
 * Lazy
 
-<Note>
-  値が `0` の場合は、制限がないことを意味します。
-</Note>
+:::note
+値が `0` の場合は、制限がないことを意味します。
+:::
 
 **例**
 
@@ -3466,23 +3525,24 @@ ClickHouse は、クエリの処理にグローバルスレッドプールのス
 同時に待機できるクエリ総数の上限です。
 待機中のクエリは、必要なテーブルが非同期に読み込まれている間、実行がブロックされます ([`async_load_databases`](/ja/reference/settings/server-settings/settings#async_load_databases) を参照) 。
 
-<Note>
-  以下の設定で制御される上限を確認する際、待機中のクエリはカウントされません。
+:::note
+以下の設定で制御される上限を確認する際、待機中のクエリはカウントされません。
 
-  * [`max_concurrent_queries`](/ja/reference/settings/server-settings/settings#max_concurrent_queries)
-  * [`max_concurrent_insert_queries`](/ja/reference/settings/server-settings/settings#max_concurrent_insert_queries)
-  * [`max_concurrent_select_queries`](/ja/reference/settings/server-settings/settings#max_concurrent_select_queries)
-  * [`max_concurrent_queries_for_user`](/ja/reference/settings/session-settings#max_concurrent_queries_for_user)
-  * [`max_concurrent_queries_for_all_users`](/ja/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+* [`max_concurrent_queries`](/ja/reference/settings/server-settings/settings#max_concurrent_queries)
+* [`max_concurrent_insert_queries`](/ja/reference/settings/server-settings/settings#max_concurrent_insert_queries)
+* [`max_concurrent_select_queries`](/ja/reference/settings/server-settings/settings#max_concurrent_select_queries)
+* [`max_concurrent_queries_for_user`](/ja/reference/settings/session-settings#max_concurrent_queries_for_user)
+* [`max_concurrent_queries_for_all_users`](/ja/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-  これは、サーバーの起動直後にこれらの上限に達してしまうことを避けるための補正です。
-</Note>
+これは、サーバーの起動直後にこれらの上限に達してしまうことを避けるための補正です。
+:::
 
-<Note>
-  `0` (デフォルト) は無制限を意味します。
+:::note
 
-  この設定は実行時に変更でき、変更は即座に反映されます。すでに実行中のクエリには影響しません。
-</Note>
+`0` (デフォルト) は無制限を意味します。
+
+この設定は実行時に変更でき、変更は即座に反映されます。すでに実行中のクエリには影響しません。
+:::
 
 <div id="max_zookeeper_pooled_connections">
   ## max_zookeeper_pooled_connections
@@ -3546,6 +3606,29 @@ ClickHouse server で使用可能なメモリに対する、jemalloc のダー�
 
 ClickHouse server で利用可能なメモリに対する、jemalloc のパージ実行のしきい値比率です。総メモリ使用量がこの比率を超えると、バックグラウンドメモリワーカー はダーティページのパージを強制的に実行します。0 に設定すると、総メモリに基づく強制パージは無効になります。
 
+<div id="memory_worker_rss_speculative_reserve_ratio">
+  ## memory_worker_rss_speculative_reserve_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="No" />
+
+各 `MemoryWorker` ティックで、観測された RSS に加えて、
+`ratio * min(resident - previous_resident, resident - tracked)` を追加で
+予約します。これは、次のティックでも前回と同じ量だけ増加する可能性があるという
+前提に基づくものです (`resident - previous_resident` は直前のティックにおける
+RSS の増加量です) 。この増加量は `resident - tracked` で上限が設定されます。
+これは、グローバルmemory trackerから見えない RSS の部分であり、すでに追跡
+されている増加分は通常のハードリミットチェックで処理されるためです。この予約は、
+グローバルなハードリミットチェックが `MemoryTracker::allocImpl` を介して参照する
+`rss` カウンターに適用されるため、外挿値が `max_server_memory_usage` を超えると、
+その後の割り当てではカーネルの OOM-killer が作動する前に
+`MEMORY_LIMIT_EXCEEDED` 例外が送出されます。値を `0` にするとこの推測は無効化され
+(`rss = resident` に戻ります) 、デフォルト値 `1` では次の間隔に備えて
+増加分 1 回分のヘッドルームを予約します。サニタイザ (`ASan`、`UBSan`、`MSan`、
+`TSan`) 下では、デフォルト値は `0` です。これは、`resident - tracked`
+のギャップがトラッカーの記帳遅延ではなく、主にサニタイザのシャドー領域や
+ランタイムのオーバーヘッドによって生じるためです。
+
 <div id="memory_worker_use_cgroup">
   ## memory_worker_use_cgroup
 </div>
@@ -3589,9 +3672,9 @@ ClickHouse server で利用可能なメモリに対する、jemalloc のパー�
 マージおよびミューテーション操作の実行に使用できる RAM 量の上限を設定します。
 ClickHouse が設定された上限に達すると、新しいバックグラウンドのマージまたはミューテーション操作はスケジュールされなくなりますが、すでにスケジュールされているタスクの実行は継続されます。
 
-<Note>
-  値 `0` は無制限を意味します。
-</Note>
+:::note
+値 `0` は無制限を意味します。
+:::
 
 **例**
 
@@ -3686,9 +3769,9 @@ ClickHouse 自身の大きなバッファ — カラムデータ、ハッシュ�
 
 起動後に `<mlockall>` を実行し、初回クエリのレイテンシを低減するとともに、高い I/O 負荷時に ClickHouse 実行可能ファイルがページアウトされるのを防ぎます。
 
-<Note>
-  このオプションを有効にすることを推奨しますが、起動時間が最大で数秒延びます。この設定は &quot;CAP&#95;IPC&#95;LOCK&quot; ケーパビリティがなければ機能しないことに注意してください。
-</Note>
+:::note
+このオプションを有効にすることを推奨しますが、起動時間が最大で数秒延びます。この設定は &quot;CAP&#95;IPC&#95;LOCK&quot; ケーパビリティがなければ機能しないことに注意してください。
+:::
 
 **例**
 
@@ -3715,11 +3798,11 @@ ClickHouse 自身の大きなバッファ — カラムデータ、ハッシュ�
 * `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` in [`system.metrics`](/ja/reference/system-tables/metrics), [`system.metric_log`](/ja/reference/system-tables/metric_log)
 * `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` in [`system.events`](/ja/reference/system-tables/events), [`system.processes`](/ja/reference/system-tables/processes), [`system.query_log`](/ja/reference/system-tables/query_log), [`system.query_thread_log`](/ja/reference/system-tables/query_thread_log), [`system.query_views_log`](/ja/reference/system-tables/query_views_log)
 
-<Note>
-  マップされたファイル内のデータ量はメモリを直接消費せず、クエリやサーバーの memory usage にも計上されません。これは、このメモリが OSのページキャッシュと同様に破棄できるためです。cache は、MergeTree family のテーブルで古いパーツが削除されると自動的にドロップされ (ファイルはクローズされます) 、`SYSTEM DROP MMAP CACHE` クエリで手動でドロップすることもできます。
+:::note
+マップされたファイル内のデータ量はメモリを直接消費せず、クエリやサーバーの memory usage にも計上されません。これは、このメモリが OSのページキャッシュと同様に破棄できるためです。cache は、MergeTree family のテーブルで古いパーツが削除されると自動的にドロップされ (ファイルはクローズされます) 、`SYSTEM DROP MMAP CACHE` クエリで手動でドロップすることもできます。
 
-  この設定は runtime に変更でき、すぐに反映されます。
-</Note>
+この設定は runtime に変更でき、すぐに反映されます。
+:::
 
 <div id="mutation_workload">
   ## mutation_workload
@@ -4319,15 +4402,37 @@ shared merge tree のパーツキラースレッドのクリーンアップに�
 
 データが格納されているディレクトリへのパスです。
 
-<Note>
-  末尾のスラッシュは必須です。
-</Note>
+:::note
+末尾のスラッシュは必須です。
+:::
 
 **例**
 
 ```xml
 <path>/var/lib/clickhouse/</path>
 ```
+
+<div id="per_cpu_untracked_memory_thread_buffer">
+  ## per_cpu_untracked_memory_thread_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
+
+各スレッドが、共有の CPU ごとの予算を更新せずに保持できる未追跡メモリ量 (バイト単位) 。これは、小さな割り当てに対する CPU ごとの管理コストを償却するためのもので、最悪の場合には `max_per_cpu_untracked_memory * number_of_cpus` に上乗せされる余裕分となります。値を `0` にすると、この余裕分はなくなります。つまり、すべての割り当てで共有の CPU ごとのカウンターが更新されます (最も正確ですが、競合は増えます) 。Linux のみ。
+
+<div id="point_in_polygon_cache_size">
+  ## point_in_polygon_cache_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
+
+定数の Polygon 引数を持つ関数 `pointInPolygon` で使用される、前処理済み Polygon の cache の最大サイズをバイト単位で指定します。
+上限を超えたエントリは、最後に使用された時点が最も古いものから順に追い出されます。
+これを `0` に設定すると cache は無効になります。つまり、cache 済みのすべての Polygon が追い出され、その後の各クエリでは定数 Polygon が毎回あらためて前処理されます。
+この cache は、[`SYSTEM DROP POINT IN POLYGON CACHE`](/ja/reference/statements/system#drop-point-in-polygon-cache) クエリを使うことで、この上限を変更しなくても手動でクリアできます。
+:::note
+この設定は実行時に変更でき、即座に反映されます。
+:::
 
 <div id="postgresql_port">
   ## postgresql_port
@@ -4372,9 +4477,9 @@ PostgreSQL プロトコルでクライアントと通信するためのポート
 
 プレフィックスのデシリアライゼーション用 Thread pool にスケジュールできるジョブの最大数です。
 
-<Note>
-  `0` は無制限を意味します。
-</Note>
+:::note
+`0` は無制限を意味します。
+:::
 
 <div id="prepare_system_log_tables_on_startup">
   ## prepare_system_log_tables_on_startup
@@ -4697,13 +4802,12 @@ ClickHouse は、リクエストのプロトコルに対して最も優先度の
   ## query_condition_cache_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="はい" />
+<SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Yes" />
 
 クエリ条件キャッシュの最大サイズ。
-
-<Note>
-  この設定は実行時に変更でき、変更は即座に反映されます。
-</Note>
+:::note
+この設定は実行時に変更でき、変更は即座に反映されます。
+:::
 
 <div id="query_condition_cache_size_ratio">
   ## query_condition_cache_size_ratio
@@ -4872,9 +4976,9 @@ ClickHouse は、リクエストのプロトコルに対して最も優先度の
 
 huge pages を使用して、マシンコード (&quot;text&quot;) 向けのメモリを再割り当てする設定です。
 
-<Note>
-  この機能はまだかなり実験的です。
-</Note>
+:::note
+この機能はまだかなり実験的です。
+:::
 
 **例**
 
@@ -5061,6 +5165,12 @@ ClickHouse コア開発チームにクラッシュレポートを送信するた
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />true に設定すると、スタックトレース内にアドレスを表示します
+
+<div id="show_license_expiration_warnings">
+  ## show_license_expiration_warnings
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Yes" />system.warnings に、今後のライセンス有効期限切れに関する警告を表示します
 
 <div id="shutdown_wait_backups_and_restores">
   ## shutdown_wait_backups_and_restores
@@ -5293,11 +5403,11 @@ true に設定すると、特定のエンジンでテーブルを作成するに
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
-バックグラウンドプール で非同期の load job を実行する thread の数を設定します。バックグラウンドプール は、server の起動後、table を待機しているクエリがない場合に、table を非同期に loading するために使用されます。table が多数ある場合は、バックグラウンドプール の thread 数を少なくしておくと有効です。これにより、同時実行のクエリ実行のための CPU resource を確保できます。
+バックグラウンドプール で非同期の ロードジョブ を実行する thread の数を設定します。バックグラウンドプール は、server の起動後、table を待機しているクエリがない場合に、table を非同期に loading するために使用されます。table が多数ある場合は、バックグラウンドプール の thread 数を少なくしておくと有効です。これにより、同時実行のクエリ実行のための CPU resource を確保できます。
 
-<Note>
-  値が `0` の場合、利用可能なすべての CPU が使用されます。
-</Note>
+:::note
+値が `0` の場合、利用可能なすべての CPU が使用されます。
+:::
 
 <div id="tables_loader_foreground_pool_size">
   ## tables_loader_foreground_pool_size
@@ -5307,9 +5417,9 @@ true に設定すると、特定のエンジンでテーブルを作成するに
 
 フォアグラウンドプールでロードジョブを実行するスレッド数を設定します。フォアグラウンドプールは、サーバーがポートでの待ち受けを開始する前にテーブルを同期的にロードする場合と、待機対象となっているテーブルをロードする場合に使用されます。フォアグラウンドプールはバックグラウンドプールよりも優先度が高くなっています。つまり、フォアグラウンドプールでジョブが実行中の間は、バックグラウンドプールではどのジョブも開始されません。
 
-<Note>
-  `0` は、利用可能なすべての CPU を使用することを意味します。
-</Note>
+:::note
+`0` は、利用可能なすべての CPU を使用することを意味します。
+:::
 
 <div id="tcp_close_connection_after_queries_num">
   ## tcp_close_connection_after_queries_num
@@ -5367,15 +5477,15 @@ TCPプロトコルを介してクライアントと通信するためのポー�
 このセクションでは、type が `cache` のディスク名を指定する必要があります。
 この場合、cache と一時データは同じ領域を共有し、一時データを作成するためにディスク cache が追い出されることがあります。
 
-<Note>
-  一時データの保存先を設定するには、`tmp_path`、`tmp_policy`、`temporary_data_in_cache` のうち 1 つだけを使用できます。
-</Note>
+:::note
+一時データの保存先を設定するには、`tmp_path`、`tmp_policy`、`temporary_data_in_cache` のうち 1 つだけを使用できます。
+:::
 
 **例**
 
 `local_disk` の cache と一時データは、どちらも `tiny_local_cache` によって管理される filesystem 上の `/tiny_local_cache` に保存されます。
 
-```xml highlight={9-16,20}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5384,6 +5494,7 @@ TCPプロトコルを介してクライアントと通信するためのポー�
 <path>/local_disk/</path>
 </local_disk>
 
+<!-- highlight-start -->
 <tiny_local_cache>
 <type>cache</type>
 <disk>local_disk</disk>
@@ -5392,10 +5503,13 @@ TCPプロトコルを介してクライアントと通信するためのポー�
 <max_file_segment_size>1M</max_file_segment_size>
 <cache_on_write_operations>1</cache_on_write_operations>
 </tiny_local_cache>
+<!-- highlight-end -->
 </disks>
 </storage_configuration>
 
+<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5423,9 +5537,9 @@ TCPプロトコルを介してクライアントと通信するためのポー�
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />テキスト索引ヘッダーキャッシュのサイズです。0 は無効を意味します。
 
-<Note>
-  この設定は実行時に変更でき、変更は即座に反映されます。
-</Note>
+:::note
+この設定は実行時に変更でき、変更は即座に反映されます。
+:::
 
 <div id="text_index_header_cache_size_ratio">
   ## text_index_header_cache_size_ratio
@@ -5449,11 +5563,11 @@ TCPプロトコルを介してクライアントと通信するためのポー�
   ## text_index_postings_cache_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />テキスト索引の posting lists 用 cache のサイズです。0 は無効を意味します。
+<SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />テキスト索引の ポスティングリスト 用 cache のサイズです。0 は無効を意味します。
 
-<Note>
-  この設定は実行時に変更でき、変更はすぐに反映されます。
-</Note>
+:::note
+この設定は実行時に変更でき、変更はすぐに反映されます。
+:::
 
 <div id="text_index_postings_cache_size_ratio">
   ## text_index_postings_cache_size_ratio
@@ -5479,9 +5593,9 @@ TCPプロトコルを介してクライアントと通信するためのポー�
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />テキスト索引トークン用cacheのサイズ。0 は無効を意味します。
 
-<Note>
-  この設定は実行時に変更でき、変更は即座に反映されます。
-</Note>
+:::note
+この設定は実行時に変更でき、変更は即座に反映されます。
+:::
 
 <div id="text_index_tokens_cache_size_ratio">
   ## text_index_tokens_cache_size_ratio
@@ -5530,9 +5644,9 @@ TCPプロトコルを介してクライアントと通信するためのポー�
 
 グローバルスレッドプールでスケジュールできるジョブの最大数です。キューサイズを増やすと、メモリ使用量も増加します。この値は [`max_thread_pool_size`](/ja/reference/settings/server-settings/settings#max_thread_pool_size) と同じにしておくことを推奨します。
 
-<Note>
-  `0` は無制限を意味します。
-</Note>
+:::note
+`0` は無制限を意味します。
+:::
 
 **例**
 
@@ -5625,10 +5739,11 @@ UTC のタイムゾーンまたは地理的な場所を表す IANA 識別子 (�
 
 大規模なクエリの処理に伴う一時データを保存するための、ローカルファイルシステム上のパスです。
 
-<Note>
-  * 一時データストレージの設定に使用できるオプションは、tmp&#95;path、tmp&#95;policy、temporary&#95;data&#95;in&#95;cache のいずれか1つだけです。
-  * 末尾のスラッシュは必須です。
-</Note>
+:::note
+
+* 一時データストレージの設定に使用できるオプションは、tmp&#95;path、tmp&#95;policy、temporary&#95;data&#95;in&#95;cache のいずれか1つだけです。
+* 末尾のスラッシュは必須です。
+  :::
 
 **例**
 
@@ -5642,27 +5757,28 @@ UTC のタイムゾーンまたは地理的な場所を表す IANA 識別子 (�
 
 一時データ用ストレージのポリシーです。`tmp` プレフィックスを持つすべてのファイルは、起動時に削除されます。
 
-<Note>
-  `tmp_policy` にオブジェクトストレージを使用する場合の推奨事項:
+:::note
+`tmp_policy` にオブジェクトストレージを使用する場合の推奨事項:
 
-  * 各サーバーで個別の `bucket:path` を使用する
-  * `metadata_type=plain` を使用する
-  * この bucket に対して有効期限 (TTL) を設定することも検討してください
-</Note>
+* 各サーバーで個別の `bucket:path` を使用する
+* `metadata_type=plain` を使用する
+* この bucket に対して有効期限 (TTL) を設定することも検討してください
+  :::
 
-<Note>
-  * 一時データストレージの設定に使用できるオプションは、`tmp_path`、`tmp_policy`、`temporary_data_in_cache` のいずれか 1 つだけです。
-  * `move_factor`、`keep_free_space_bytes`、`max_data_part_size_bytes` は無視されます。
-  * ポリシーには *ちょうど 1 つのボリューム* が必要です
+:::note
 
-  詳細については、[MergeTree テーブルエンジン](/ja/reference/engines/table-engines/mergetree-family/mergetree) のドキュメントを参照してください。
-</Note>
+* 一時データストレージの設定に使用できるオプションは、`tmp_path`、`tmp_policy`、`temporary_data_in_cache` のいずれか 1 つだけです。
+* `move_factor`、`keep_free_space_bytes`、`max_data_part_size_bytes` は無視されます。
+* ポリシーには *ちょうど 1 つのボリューム* が必要です
+
+詳細については、[MergeTree テーブルエンジン](/ja/reference/engines/table-engines/mergetree-family/mergetree) のドキュメントを参照してください。
+:::
 
 **例**
 
 `/disk1` がいっぱいになると、一時データは `/disk2` に格納されます。
 
-```xml highlight={13-20,24}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5675,6 +5791,7 @@ UTC のタイムゾーンまたは地理的な場所を表す IANA 識別子 (�
 </disks>
 
 <policies>
+<!-- highlight-start -->
 <tmp_two_disks>
 <volumes>
 <main>
@@ -5683,10 +5800,13 @@ UTC のタイムゾーンまたは地理的な場所を表す IANA 識別子 (�
 </main>
 </volumes>
 </tmp_two_disks>
+<!-- highlight-end -->
 </policies>
 </storage_configuration>
 
+<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5796,17 +5916,35 @@ server には共有 cache が 1 つあります。メモリは必要に応じて
 
 非圧縮 cache は、非常に短いクエリで有利になる場合があります。
 
-<Note>
-  `0` は無効を意味します。
+:::note
+`0` は無効を意味します。
 
-  この setting は runtime に変更でき、即座に反映されます。
-</Note>
+この setting は runtime に変更でき、即座に反映されます。
+:::
 
 <div id="uncompressed_cache_size_ratio">
   ## uncompressed_cache_size_ratio
 </div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />非圧縮 cache における protected queue (SLRU ポリシーの場合) のサイズが、cache の総サイズに占める割合です。
+
+<div id="unique_key_bitmap_cache_policy">
+  ## unique_key_bitmap_cache_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />UNIQUE KEY の削除ビットマップキャッシュ policy 名 (SLRU または LRU) 。
+
+<div id="unique_key_bitmap_cache_size_bytes">
+  ## unique_key_bitmap_cache_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />UNIQUE KEY のパートごとの削除ビットマップキャッシュに対するインプロセス cache の最大サイズ (バイト単位) 。cache を無効にするには 0 に設定します。
+
+<div id="unique_key_bitmap_cache_size_ratio">
+  ## unique_key_bitmap_cache_size_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="No" />UNIQUE KEY の削除ビットマップキャッシュにおける 保護キュー (SLRU policy の場合) のサイズが、cache 全体のサイズに占める割合です。
 
 <div id="unique_key_index_cache_policy">
   ## unique_key_index_cache_policy
@@ -6083,9 +6221,9 @@ ClickHouse Cloud でのみ利用できます。有効にすると、`system.*_lo
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Yes" />ベクトル類似度索引用cacheのサイズです。0 は無効を意味します。
 
-<Note>
-  この設定は実行時に変更でき、即座に反映されます。
-</Note>
+:::note
+この設定は実行時に変更でき、即座に反映されます。
+:::
 
 <div id="vector_similarity_index_cache_size_ratio">
   ## vector_similarity_index_cache_size_ratio
@@ -6185,16 +6323,14 @@ ClickHouse が [ZooKeeper](http://zookeeper.apache.org/) クラスターと連�
 
 また、ZooKeeper ノードの選択アルゴリズムを指定できる `zookeeper_load_balancing` 設定 (任意) もあります。
 
-| Algorithm Name                   | Description                                                                            |
-| -------------------------------- | -------------------------------------------------------------------------------------- |
-| `random`                         | ZooKeeper ノードのいずれか 1 つをランダムに選択します。                                                     |
-| `in_order`                       | 最初の ZooKeeper ノードを選択し、利用できない場合は 2 番目、その次は 3 番目というように選択します。                             |
-| `nearest_hostname`               | server の hostname に最も近い hostname を持つ ZooKeeper ノードを選択します。hostname は名前のプレフィックスで比較されます。  |
-| `hostname_levenshtein_distance`  | nearest&#95;hostname と同様ですが、hostname をレーベンシュタイン距離で比較します。                               |
-| `hostname_longest_common_prefix` | nearest&#95;hostname と同様ですが、server の hostname と最長共通プレフィックスを共有する hostname を持つノードを優先します。 |
-| `hostname_longest_common_suffix` | nearest&#95;hostname と同様ですが、server の hostname と最長共通接尾辞を共有する hostname を持つノードを優先します。     |
-| `first_or_random`                | 最初の ZooKeeper ノードを選択し、利用できない場合は残りの ZooKeeper ノードから 1 つをランダムに選択します。                     |
-| `round_robin`                    | 最初の ZooKeeper ノードを選択し、再接続が発生した場合は次のノードを選択します。                                          |
+| Algorithm Name                  | Description                                                                           |
+| ------------------------------- | ------------------------------------------------------------------------------------- |
+| `random`                        | ZooKeeper ノードのいずれか 1 つをランダムに選択します。                                                    |
+| `in_order`                      | 最初の ZooKeeper ノードを選択し、利用できない場合は 2 番目、その次は 3 番目というように選択します。                            |
+| `nearest_hostname`              | server の hostname に最も近い hostname を持つ ZooKeeper ノードを選択します。hostname は名前のプレフィックスで比較されます。 |
+| `hostname_levenshtein_distance` | nearest&#95;hostname と同様ですが、hostname をレーベンシュタイン距離で比較します。                              |
+| `first_or_random`               | 最初の ZooKeeper ノードを選択し、利用できない場合は残りの ZooKeeper ノードから 1 つをランダムに選択します。                    |
+| `round_robin`                   | 最初の ZooKeeper ノードを選択し、再接続が発生した場合は次のノードを選択します。                                         |
 
 **設定例**
 
@@ -6214,7 +6350,7 @@ ClickHouse が [ZooKeeper](http://zookeeper.apache.org/) クラスターと連�
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / hostname_longest_common_prefix / hostname_longest_common_suffix / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
     <!-- Optional. Enable 64-bit transaction IDs. -->
     <use_xid_64>false</use_xid_64>

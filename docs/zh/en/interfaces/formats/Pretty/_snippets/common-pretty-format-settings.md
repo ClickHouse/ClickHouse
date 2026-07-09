@@ -1,0 +1,18 @@
+---
+title: 常见 Pretty 格式设置
+---
+
+{/* 注意：此文件用作所有导入它的文件中的代码片段 */ }
+
+以下设置是所有 `Pretty` 格式通用的：
+
+| 设置                                                                                                                                                                 | 描述                                                                                                                                                                 | 默认值     |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| [`output_format_pretty_max_rows`](/zh/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                         | Pretty 格式的最大行数。                                                                                                                                                    | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/zh/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                 | Pretty 格式中，列内所有值填充后的最大宽度。                                                                                                                                          | `250`   |
+| [`output_format_pretty_max_value_width`](/zh/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                           | Pretty 格式中显示的值的最大宽度。如果超过该宽度，则会被截断。                                                                                                                                 | `10000` |
+| [`output_format_pretty_color`](/zh/operations/settings/settings-formats.md/#output_format_pretty_color)                                                               | 在 Pretty 格式中使用 ANSI Escape sequences 显示颜色。                                                                                                                         | `true`  |
+| [`output_format_pretty_grid_charset`](/zh/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                 | 用于打印网格边框的字符集。可用字符集：ASCII、UTF-8。                                                                                                                                    | `UTF-8` |
+| [`output_format_pretty_row_numbers`](/zh/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                   | 在 Pretty 输出格式中为每一行添加行号。                                                                                                                                            | `true`  |
+| [`output_format_pretty_display_footer_column_names`](/zh/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                   | 如果表包含很多行，则在页脚中显示列名。                                                                                                                                                | `true`  |
+| [`output_format_pretty_display_footer_column_names_min_rows`](/zh/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows) | 设置在启用 [`output_format_pretty_display_footer_column_names`](/zh/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) 时显示页脚的最小行数。 | `50`    |

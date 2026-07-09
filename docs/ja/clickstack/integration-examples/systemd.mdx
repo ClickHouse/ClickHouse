@@ -190,7 +190,7 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
 
     設定後、HyperDX にログインしてログが取り込まれていることを確認します。
 
-    1. Search view に移動します
+    1. Searchビュー に移動します
     2. source を Logs に設定します
     3. `service.name:systemd-logs` でフィルタします
     4. `unit`、`priority`、`MESSAGE`、`_HOSTNAME` などのフィールドを含む構造化されたログエントリが表示されるはずです
@@ -205,7 +205,7 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
   ## デモデータセット
 </div>
 
-本番環境を設定する前に systemdログのインテグレーションを試したいユーザー向けに、実際に近いパターンを含む、事前生成済みの systemdログのサンプルデータセットを提供しています。
+本番環境を構成する前に systemd ログ のインテグレーションを試したいユーザー向けに、実際の傾向に近いパターンを含む、事前生成済みの systemd ログ のサンプルデータセットを提供しています。
 
 <Steps>
   <Step>
@@ -394,12 +394,12 @@ otelcol-contrib --config=otel-config.yaml
   ## 本番環境への移行
 </div>
 
-このガイドでは、systemd ログを読み取り、ClickStack の OTLP エンドポイントに送信するために、別の OpenTelemetry Collector を使用します。これは、本番環境で推奨される構成です。
+このガイドでは、systemd ログを読み取って ClickStack の OTLP エンドポイントに送信するために、別個の OpenTelemetry Collector を使用します。これは、本番環境で推奨される構成パターンです。
 
-複数ホストの本番環境では、次を検討してください。
+複数のホストがある本番環境では、次を検討してください。
 
 * Kubernetes で collector をデーモンセットとしてデプロイする
 * 各ホストで collector を systemd サービスとして実行する
-* 自動デプロイに OpenTelemetry Operator を使用する
+* 自動デプロイのために OpenTelemetry Operator を使用する
 
-本番環境向けのデプロイパターンについては、[OpenTelemetry で取り込む](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+本番環境向けのデプロイパターンについては、[OpenTelemetry を使用した取り込み](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

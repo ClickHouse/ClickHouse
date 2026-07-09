@@ -35,14 +35,14 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
       <Step>
         ### Baixe os dados de exemplo
 
-        Para carregar dados de exemplo na UI, baixe o arquivo a seguir:
+        Para preencher a UI com dados de exemplo, baixe o arquivo a seguir:
 
         [Dados de exemplo](https://storage.googleapis.com/hyperdx/sample.tar.gz)
 
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # ou
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
@@ -52,7 +52,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
       <Step>
         ### Carregar dados de exemplo
 
-        Para carregar esses dados, basta enviá-los para o endpoint HTTP do OTel collector implantado.
+        Para carregar esses dados, basta enviá-los ao endpoint HTTP do coletor OpenTelemetry (OTel) implantado.
 
         Execute o comando a seguir para enviar os dados ao OTel collector:
 
@@ -69,7 +69,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         done
         ```
 
-        Isso simula fontes OTLP de logs, traces e métricas enviando dados para o OTel collector. Em produção, essas fontes podem ser clientes de diferentes linguagens ou até mesmo outros OTel collectors.
+        Isso simula fontes OTLP de logs, traces e metrics enviando dados para o OTel collector. Em produção, essas fontes podem ser clientes para linguagens específicas ou até mesmo outros OTel collectors.
 
         Ao voltar para a visualização `Busca`, você deverá ver que os dados começaram a carregar (ajuste o período para `Last 1 hour` se os dados não aparecerem):
 
@@ -109,7 +109,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
       </Step>
 
       <Step>
-        ### Explorar traces
+        ### Explore traces
 
         Navegue até a aba `Trace` para ver o trace distribuído completo.
 
@@ -123,11 +123,11 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
 
         <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="Valores da coluna" size="lg" />
 
-        Ao rolar de volta para cima e retornar ao trace, podemos ver que os logs estão correlacionados com o span, graças à configuração anterior. Eles fornecem mais contexto.
+        Ao subir de volta no trace, podemos ver que os logs estão correlacionados com o span, graças à configuração anterior. Eles fornecem mais contexto.
 
         <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="Log correlacionado" size="lg" />
 
-        Concluímos que um cache está ficando cheio no serviço de pagamento, o que está impedindo a conclusão dos pagamentos.
+        Identificamos que um cache está ficando cheio no serviço de pagamento, o que está impedindo a conclusão dos pagamentos.
       </Step>
 
       <Step>
@@ -145,9 +145,9 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
       <Step>
         ### Métricas do gráfico
 
-        Embora um erro tenha sido claramente introduzido no código, podemos usar métricas para confirmar o tamanho do cache. Navegue até a visualização `Chart Explorer`.
+        Embora um erro tenha sido claramente inserido no código, podemos usar métricas para confirmar o tamanho do cache. Navegue até a visualização `Chart Explorer`.
 
-        Selecione `Metrics` como a fonte de dados. Complete o construtor de gráficos para plotar o `Maximum` de `visa_validation_cache.size (Gauge)` e pressione o botão `play`. O cache vinha claramente aumentando antes de atingir um tamanho máximo, após o que erros passaram a ser gerados.
+        Selecione `Metrics` como a fonte de dados. Complete o construtor de gráficos para plotar o `Maximum` de `visa_validation_cache.size (Gauge)` e pressione o botão play. O cache estava claramente aumentando até atingir um tamanho máximo, após o qual erros passaram a ser gerados.
 
         <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="Métricas" size="lg" />
       </Step>
@@ -184,7 +184,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # ou
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
@@ -199,7 +199,7 @@ Este guia demonstra o ClickStack Open Source e o Managed ClickStack usando um co
         Primeiro, exporte a chave de API copiada acima.
 
         ```shell
-        # exportar API key
+        # export API key
         export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
         ```
 

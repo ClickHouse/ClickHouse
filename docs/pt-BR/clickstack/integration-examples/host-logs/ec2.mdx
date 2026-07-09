@@ -47,10 +47,10 @@ Se você quiser testar a integração de logs de host da EC2 antes de configurar
     A partir da sua instância EC2, verifique se o serviço de metadados está acessível:
 
     ```bash
-    # Obter token de metadados (IMDSv2)
+    # Get metadata token (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # Verificar metadados da instância
+    # Verify instance metadata
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -73,15 +73,15 @@ Se você quiser testar a integração de logs de host da EC2 antes de configurar
     Verifique se a sua instância EC2 está gravando os arquivos de syslog:
 
     ```bash
-    # Instâncias Ubuntu
+    # Ubuntu instances
     ls -la /var/log/syslog
 
-    # Instâncias Amazon Linux / RHEL
+    # Amazon Linux / RHEL instances
     ls -la /var/log/messages
 
-    # Ver entradas recentes
+    # View recent entries
     tail -20 /var/log/syslog
-    # ou
+    # or
     tail -20 /var/log/messages
     ```
   </Step>
@@ -92,14 +92,14 @@ Se você quiser testar a integração de logs de host da EC2 antes de configurar
     Instale a distribuição Contrib do OpenTelemetry Collector na instância EC2:
 
     ```bash
-    # Baixe o lançamento mais recente
+    # Download the latest release
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # Extraia e instale
+    # Extract and install
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # Verifique a instalação
+    # Verify installation
     otelcol-contrib --version
     ```
   </Step>
@@ -366,7 +366,7 @@ Para quem quiser testar a integração de logs de host do EC2 antes de configura
             value: "ec2-demo"
 
     processors:
-      # Simula metadados do EC2 para demonstração (nenhuma instância EC2 real é necessária)
+      # Simulate EC2 metadata for demo (no real EC2 instance required)
       resource:
         attributes:
           - key: service.name
@@ -624,7 +624,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * Crie dashboards personalizados para monitoramento de segurança (tentativas de SSH, uso de sudo, bloqueios de firewall)
 
 <div id="going-to-production">
-  ## Preparando para produção
+  ## Colocando em produção
 </div>
 
-Este guia instala o OpenTelemetry Collector diretamente em instâncias EC2, o que é a abordagem recomendada em produção para monitoramento em nível de host. Para gerenciar coletores em várias instâncias, considere usar ferramentas de gerenciamento de configuração (Ansible, Chef, Puppet) ou o OpenTelemetry Operator em ambientes Kubernetes. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+Este guia instala o OpenTelemetry Collector diretamente em instâncias EC2, que é o padrão de produção recomendado para monitoramento no nível do host. Para gerenciar coletores em várias instâncias, considere usar ferramentas de gerenciamento de configuração (Ansible, Chef, Puppet) ou o OpenTelemetry Operator em ambientes Kubernetes. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

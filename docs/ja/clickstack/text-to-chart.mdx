@@ -70,7 +70,7 @@ Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anth
   <Step>
     ### データソースを選択する
 
-    可視化したいデータソースを選択します。たとえば **Logs**、**Traces**、**Metrics** などです。
+    可視化したいデータソースを選択します。たとえば **ログ**、**トレース**、**メトリクス** などです。
 
     <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
   </Step>
@@ -109,7 +109,7 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 
 <Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="接続を作成" />
 
-続いて、各ログソース — **Logs**、**Traces**、**Metrics**、**Sessions** — が `otel_v2` データベースを使用するように変更します。ログソースの設定方法の詳細については、[リモートのデモデータセットガイド](/ja/clickstack/example-datasets/remote-demo-data)を参照してください。
+続いて、各ログソース — **ログ**、**トレース**、**メトリクス**、**Sessions** — が `otel_v2` データベースを使用するように変更します。ログソースの設定方法の詳細については、[リモートのデモデータセットガイド](/ja/clickstack/example-datasets/remote-demo-data)を参照してください。
 
 接続したら、**Chart Explorer** を開き、利用可能なログ、トレース、メトリクスに対してプロンプトを試してみてください。
 
@@ -141,6 +141,6 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 </div>
 
 * [テキストからチャートへ: ClickStack でよりすばやく可視化する方法](https://clickhouse.com/blog/text-to-charts-faster-way-to-visualize-clickstack) — この機能を紹介するブログ記事
-* [ダッシュボードと可視化](/ja/clickstack/features/dashboards/overview) — Chart Explorer を使ったチャートの手動作成
-* [検索](/ja/clickstack/features/search) — 全文検索とプロパティ検索の構文
-* [設定](/ja/clickstack/managing/config) — ClickStack のすべての環境変数
+* [ダッシュボードと可視化](/ja/clickstack/features/dashboards/overview) — Chart Explorer を使った手動でのチャート作成
+* [Search](/ja/clickstack/features/search) — 全文検索とプロパティ検索の構文
+* [Configuration](/ja/clickstack/managing/config) — ClickStack のすべての環境変数

@@ -1,0 +1,15 @@
+---
+title: Настройки формата Common Row Binary
+---
+
+{/* Примечание: этот фрагмент используется повторно во всех файлах, в которые он импортируется */ }
+
+Следующие настройки являются общими для всех форматов типа `RowBinary`.
+
+| Настройка                                                                                                                              | Описание                                                                                                                                                                                                                                                    | По умолчанию |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| [`format_binary_max_string_size`](/ru/operations/settings/settings-formats.md/#format_binary_max_string_size)                             | Максимально допустимый размер String в формате RowBinary.                                                                                                                                                                                                   | `1GiB`       |
+| [`output_format_binary_encode_types_in_binary_format`](/ru/operations/settings/formats#input_format_binary_decode_types_in_binary_format) | Позволяет записывать типы в заголовке с использованием [`двоичного кодирования`](/ru/sql-reference/data-types/data-types-binary-encoding.md) вместо строк с именами типов в выходном формате [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md). | `false`      |
+| [`input_format_binary_decode_types_in_binary_format`](/ru/operations/settings/formats#input_format_binary_decode_types_in_binary_format)  | Позволяет считывать типы в заголовке с использованием [`двоичного кодирования`](/ru/sql-reference/data-types/data-types-binary-encoding.md) вместо строк с именами типов во входном формате [`RowBinaryWithNamesAndTypes`](../RowBinaryWithNamesAndTypes.md).  | `false`      |
+| [`output_format_binary_write_json_as_string`](/ru/operations/settings/settings-formats.md/#output_format_binary_write_json_as_string)     | Позволяет записывать значения типа данных [`JSON`](/ru/sql-reference/data-types/newjson.md) как значения `JSON` типа [String](/ru/sql-reference/data-types/string.md) в выходном формате [`RowBinary`](../RowBinary.md).                                          | `false`      |
+| [`input_format_binary_read_json_as_string`](/ru/operations/settings/settings-formats.md/#input_format_binary_read_json_as_string)         | Позволяет считывать значения типа данных [`JSON`](/ru/sql-reference/data-types/newjson.md) как значения `JSON` типа [String](/ru/sql-reference/data-types/string.md) во входном формате [`RowBinary`](../RowBinary.md).                                           | `false`      |

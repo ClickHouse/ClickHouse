@@ -41,9 +41,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step>
     ##### 创建 IAM 角色
 
-    AWS 使用基于角色的身份验证，因此请创建一个 IAM 角色，使 ClickHouse Cloud 服务能够承担该角色并写入此 S3 存储桶。
+    AWS 使用基于角色的身份验证，因此请创建一个 IAM 角色，使 ClickHouse Cloud 服务能够 assume 该角色，以便写入此 S3 存储桶。
 
-    * a. 在 ClickHouse Cloud 服务设置页面的 Network security 信息 下获取 ARN，格式类似如下：
+    * a. 在 ClickHouse Cloud 服务设置页面的 Network security 信息下获取 ARN，格式类似如下：
 
     <Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
 
@@ -70,7 +70,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     ##### 更新角色权限
 
     你还需要为此角色设置权限，以便该 ClickHouse Cloud 服务能够写入 S3 存储桶。
-    具体做法是为该角色创建一条权限策略，JSON 可参考如下，并将其中两处 Resource 替换为你的 S3 存储桶 ARN。
+    具体做法是为该角色创建一条权限策略，JSON 可参考如下，并将其中两处 Resource 替换为你的存储桶 ARN。
 
     ```json
     {
@@ -128,11 +128,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step>
-    ##### 配置 AWS IAM Role ARN 和 S3 存储桶 详细信息
+    ##### 配置 AWS IAM Role ARN 和 S3 存储桶详细信息
 
-    在下一页中，填写你刚刚创建的 AWS IAM Role ARN，以及采用以下格式的 S3 存储桶 URL：
+    在下一页中，填写你刚刚创建的 AWS IAM Role ARN，以及以下格式的 S3 存储桶 URL：
 
-    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="配置 AWS IAM Role ARN 和 S3 存储桶 详细信息" size="lg" />
+    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="配置 AWS IAM Role ARN 和 S3 存储桶详细信息" size="lg" />
   </Step>
 
   <Step>
@@ -321,7 +321,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step>
     ##### 获取用于恢复备份的 SQL 命令
 
-    在 UI 中，点击备份列表上方的 `access or restore a backup` 链接，以获取用于恢复备份的 SQL 命令。该命令应类似如下，
+    在 UI 中，点击备份列表上方的 `访问或恢复备份` 链接，以获取用于恢复备份的 SQL 命令。该命令应类似如下，
     你也可以从下拉列表中选择相应的备份，以获取该特定备份的恢复
     命令。你需要将你的秘密访问密钥
     添加到该命令中：
@@ -409,13 +409,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step>
     ##### 保存外部存储桶
 
-    点击 `Save External Bucket` 保存这些设置
+    点击 `Save External Bucket` 以保存这些设置
   </Step>
 
   <Step>
     ##### 修改默认备份计划
 
-    之后，外部备份将按默认计划写入您的存储桶。您也可以在 `Settings` 页面配置备份计划。如果配置了不同的计划，则会按自定义计划将备份写入您的存储桶，而默认计划 (每 24 小时备份一次) 仍用于 ClickHouse Cloud 自有存储桶中的备份。
+    此后，外部备份将按默认计划写入您的存储桶。您也可以在 `Settings` 页面配置备份计划。如果配置了不同的计划，则会按自定义计划将备份写入您的存储桶，而默认计划 (每 24 小时备份一次) 仍用于 ClickHouse Cloud 拥有的存储桶中的备份。
   </Step>
 
   <Step>
@@ -435,7 +435,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Steps>
   <Step>
-    ##### 创建新的服务作为恢复目标
+    ##### 创建用于恢复的新服务
 
     创建一个新的服务，作为备份的恢复目标。目前，我们仅支持将备份恢复到新服务中。
   </Step>
@@ -443,10 +443,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step>
     ##### 获取用于恢复备份的 SQL 命令
 
-    在 UI 中，点击备份列表上方的 `access or restore a backup` 链接，获取用于恢复备份的 SQL 命令。该命令应类似于
-    下面这样，你还可以从下拉菜单中选择相应的备份，以获取该特定备份的
-    恢复命令。你需要将 Azure 存储账户连接字符串
-    添加到该命令中。
+    在 UI 中，点击备份列表上方的 `访问或恢复备份` 链接，获取用于恢复备份的 SQL 命令。该命令应类似于下面这样，你还可以从下拉菜单中选择相应的备份，以获取该特定备份的恢复命令。你需要将 Azure 存储账户连接字符串添加到该命令中。
 
     <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="在 Azure 中恢复备份" size="md" />
 
@@ -459,7 +456,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     <Tip>
       **ASYNC 命令**
 
-      对于恢复命令，在执行大型恢复时，你也可以选择在末尾添加 `ASYNC` 命令。
+      对于 Restore 命令，在执行大型恢复时，你也可以选择在末尾添加 `ASYNC` 命令。
       这样可使恢复操作异步进行，因此即使连接中断，恢复也会继续运行。
       需要特别注意的是，ASYNC 命令会立即返回成功状态。
       但这并不意味着恢复已经成功。
@@ -470,7 +467,6 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step>
     ##### 运行 SQL 命令以恢复备份
 
-    在新创建服务的 SQL 控制台中运行恢复命令，以
-    恢复该备份。
+    在新创建服务的 SQL 控制台中运行恢复命令，以恢复该备份。
   </Step>
 </Steps>

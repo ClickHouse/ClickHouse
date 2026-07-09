@@ -88,7 +88,7 @@ Para integrar seu código do Glue ao ClickHouse, você pode usar nosso Spark con
           .config("spark.sql.catalog.clickhouse.user", "default")
           .config("spark.sql.catalog.clickhouse.password", "<your-password>")
           .config("spark.sql.catalog.clickhouse.database", "default")
-          // para ClickHouse Cloud
+          // for ClickHouse cloud
           .config("spark.sql.catalog.clickhouse.option.ssl", "true")
           .config("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
           .getOrCreate
@@ -121,10 +121,10 @@ Para integrar seu código do Glue ao ClickHouse, você pode usar nosso Spark con
           .schema(schema)
           .csv(url)
 
-        // Gravar no ClickHouse
+        // Write to ClickHouse
         df.writeTo("clickhouse.default.cell_towers").append()
 
-        // Ler do ClickHouse
+        // Read from ClickHouse
         val dfRead = spark.sql("select * from clickhouse.default.cell_towers")
         Job.commit()
       }
@@ -161,18 +161,18 @@ Para integrar seu código do Glue ao ClickHouse, você pode usar nosso Spark con
     spark.conf.set("spark.sql.catalog.clickhouse.database", "default")
     spark.conf.set("spark.clickhouse.write.format", "json")
     spark.conf.set("spark.clickhouse.read.format", "arrow")
-    # para ClickHouse Cloud
+    # for ClickHouse cloud
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl", "true")
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
 
-    # Criar DataFrame
+    # Create DataFrame
     data = [Row(id=11, name="John"), Row(id=12, name="Doe")]
     df = spark.createDataFrame(data)
 
-    # Gravar DataFrame no ClickHouse
+    # Write DataFrame to ClickHouse
     df.writeTo("clickhouse.default.example_table").append()
 
-    # Ler DataFrame do ClickHouse
+    # Read DataFrame from ClickHouse
     df_read = spark.sql("select * from clickhouse.default.example_table")
     logger.info(str(df.take(10)))
 
@@ -181,4 +181,3 @@ Para integrar seu código do Glue ao ClickHouse, você pode usar nosso Spark con
   </Tab>
 </Tabs>
 
-Para mais detalhes, consulte a nossa [documentação do Spark](/pt-BR/integrations/connectors/data-ingestion/apache-spark/index).

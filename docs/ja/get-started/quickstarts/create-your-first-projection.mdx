@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'PROJECTIONの概要'
 title: '初めてのPROJECTIONを作成する'
-useCases: ['Real-time analytics', 'Data warehousing']
+useCases: ['リアルタイム分析', 'データウェアハウジング']
 products: ['Cloud']
 description: 'ClickHouse でPROJECTIONを使用して、同じテーブル内にデータの別のソート済みコピーを格納し、主キーに含まれないカラムに対する高速なルックアップを可能にする方法を学びます。'
 ---
@@ -15,7 +15,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 <BackToQuickstarts />
 
 <div className="mt-2 flex flex-wrap gap-2">
-  <Badge size="lg" color="blue">リアルタイムアナリティクス</Badge>
+  <Badge size="lg" color="blue">リアルタイム分析</Badge>
   <Badge size="lg" color="blue">データウェアハウジング</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
@@ -213,7 +213,7 @@ MergeTree のクイックスタートでは、テーブルが `(postcode, addr1,
 
 ## 次のステップ
 
-このクイックスタートでは、`uk_price_paid` に `(town, date)` でソートされたデータを格納するPROJECTIONを追加し、別のテーブルを作成せずに town による高速なルックアップを可能にしました。また、PROJECTIONはクエリオプティマイザによって透過的に選択され、ミューテーションとの同期が保たれ、ディスク容量を消費する代わりに読み取り性能を向上させることを学びました。
+このクイックスタートでは、`uk_price_paid` に `(town, date)` でソートされたデータを格納するPROJECTIONを追加し、別のテーブルを作成せずに town による高速なルックアップを可能にしました。また、PROJECTIONはクエリオプティマイザによって透過的に選択され、mutationとの同期が保たれ、ディスク容量を消費する代わりに読み取り性能を向上させることを学びました。
 
 次に、以下のクイックスタートもご覧ください。
 

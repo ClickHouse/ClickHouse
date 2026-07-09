@@ -30,6 +30,10 @@ import DeprecatedBadge from "/snippets/ja/components/DeprecatedBadge/DeprecatedB
 
 ClickHouseサーバーの完全修飾ドメイン名を返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
+:::
+
 **構文**
 
 ```sql
@@ -174,6 +178,10 @@ SELECT MACStringToOUI('00:50:56:12:34:56') AS oui;
 セッションユーザーが `EXECUTE AS` コマンドで切り替えられている場合、この関数は、認証とセッションの作成に使われた元のユーザー名を返します。
 別名: authUser()
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -284,6 +292,10 @@ ORDER BY h ASC
 その行を含む[ブロック](/ja/resources/develop-contribute/introduction/architecture#block)の単調増加するシーケンス番号を返します。
 返される ブロック 番号はベストエフォートで更新されるため、完全に正確でない場合があります。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -343,6 +355,10 @@ FROM
 
 ディスク上にある値ブロックの非圧縮サイズを、バイト単位で返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対しても、異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -379,6 +395,10 @@ SELECT blockSerializedSize(maxState(1)) AS x;
 
 ClickHouse では、クエリは [ブロック](/ja/resources/develop-contribute/introduction/architecture#block) (chunk) 単位で処理されます。
 この関数は、呼び出し対象のブロックのサイズ (行数) を返します。
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -422,6 +442,10 @@ FROM system.numbers LIMIT 5
 実行中の ClickHouseサーバー バイナリについて、コンパイラが生成したビルド ID を返します。
 分散テーブルのコンテキストで実行した場合、この関数は各分片に対応する値を持つ通常のカラムを返します。
 それ以外の場合は、定数値を返します。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -541,6 +565,10 @@ HTTPインターフェイスを使用して通信します。デフォルトで�
 
 トレーニングデータセットから CatBoost モデルを学習する方法については、[モデルの学習と適用](https://catboost.ai/docs/features/training.html#training) を参照してください。
 
+:::note
+この関数は非決定論的であり、同じ引数に対しても異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -582,22 +610,22 @@ SELECT catboostEvaluate('/root/occupy.bin', Temperature, Humidity, Light, CO2, H
 OKLab は 3 つの部分を使用します。
 
 * L: 知覚的な明度 (通常は [0..1] の範囲)
-  * a: 緑-赤の対立軸
-  * b: 青-黄の対立軸
+* a: 緑-赤の対立軸
+* b: 青-黄の対立軸
 
 a および b の部分は理論上は無制限ですが、実際には -0.4 から 0.4 の範囲に収まります。
 OKLab は、コンピュートコストを低く抑えつつ、
-知覚的に一様になるよう設計されています。
+知覚的に均一になるよう設計されています。
 
 この変換は colorSRGBToOKLAB の逆変換となることを意図しており、
 次の段階で構成されます。
 
 1. OKLab から Linear sRGB への変換。
-   2) Linear sRGB からガンマエンコードされた sRGB への変換。
+2. Linear sRGB からガンマエンコードされた sRGB への変換。
 
 オプションの gamma 引数は、Linear
-sRGB からガンマエンコードされた RGB 値への変換時に使用する指数を指定します。指定しない場合は、colorSRGBToOKLAB との一貫性を保つため、
-既定の gamma 値が使用されます。
+sRGB からガンマエンコードされた RGB 値への変換時に使用する指数を指定します。指定しない場合は、
+colorSRGBToOKLAB との一貫性を保つため、既定の gamma 値が使用されます。
 
 OKLab 色空間とその sRGB との関係の詳細については、https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/color&#95;value/oklab
 を参照してください。
@@ -654,17 +682,17 @@ SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
 
 `L` が範囲 `[0...1]` 外にある場合、`C` が負の場合、または `H` が範囲 `[0...360]` 外にある場合、結果は実装依存です。
 
-<Note>
-  **OKLCH** は、OKLab 色空間の円筒座標表現です。
-  3 つの座標は、`L` (範囲 `[0...1]` の明度) 、`C` (彩度 `>= 0`) 、`H` (`[0...360]` の範囲の度数による色相) です。
-  OKLab/OKLCH は、知覚的に均一でありながら、計算コストを低く抑えられるよう設計されています。
-</Note>
+:::note
+**OKLCH** は、OKLab 色空間の円筒座標表現です。
+3 つの座標は、`L` (範囲 `[0...1]` の明度) 、`C` (彩度 `>= 0`) 、`H` (`[0...360]` の範囲の度数による色相) です。
+OKLab/OKLCH は、知覚的に均一でありながら、計算コストを低く抑えられるよう設計されています。
+:::
 
 この変換は [`colorSRGBToOKLCH`](#colorSRGBToOKLCH) の逆変換です。
 
 1. OKLCH から OKLab へ。
-   2) OKLab から Linear sRGB へ
-   3) Linear sRGB から sRGB へ
+2. OKLab から Linear sRGB へ
+3. Linear sRGB から sRGB へ
 
 2 番目の引数 gamma は最後の段階で使用されます。
 
@@ -722,16 +750,16 @@ SELECT tuple(toUInt8(t.1), toUInt8(t.2), toUInt8(t.3)) AS RGB;
 
 いずれかの入力チャネルが `[0...255]` の範囲外にある場合、またはガンマ値が 0 以下の場合の動作は実装依存です。
 
-<Note>
-  **OKLAB** は知覚的に均一な色空間です。
-  その 3 つの座標は、`L` (`[0...1]` の範囲の明度) 、`a（緑-赤軸）`、`b（青-黄軸）` です。
-  OKLab は、計算コストを抑えつつ知覚的に均一になるよう設計されています。
-</Note>
+:::note
+**OKLAB** は知覚的に均一な色空間です。
+その 3 つの座標は、`L` (`[0...1]` の範囲の明度) 、`a（緑-赤軸）`、`b（青-黄軸）` です。
+OKLab は、計算コストを抑えつつ知覚的に均一になるよう設計されています。
+:::
 
 変換は次の 2 段階で行われます。
 
 1. sRGB から Linear sRGB
-   2) Linear sRGB から OKLab
+2. Linear sRGB から OKLab
 
 **構文**
 
@@ -768,21 +796,21 @@ SELECT colorSRGBToOKLAB((128, 64, 32), 2.2) AS lab;
 
 導入バージョン: v25.7.0
 
-**sRGB** 色空間でエンコードされた色を、知覚的に一様な **OKLCH** 色空間に変換します。
+**sRGB** 色空間でエンコードされた色を、知覚的に均一な **OKLCH** 色空間に変換します。
 
 いずれかの入力チャネルが `[0...255]` の範囲外であるか、ガンマ値が 0 以下の場合の動作は実装依存です。
 
-<Note>
-  **OKLCH** は、OKLab 色空間の円筒座標表現です。
-  その 3 つの座標は、`L` (`[0...1]` の範囲の明度) 、`C` (`>= 0` の彩度) 、`H` (`[0...360]` の範囲の度数で表した色相) です。
-  OKLab/OKLCH は、計算コストを抑えつつ知覚的に一様になるよう設計されています。
-</Note>
+:::note
+**OKLCH** は、OKLab 色空間の円筒座標表現です。
+その 3 つの座標は、`L` (`[0...1]` の範囲の明度) 、`C` (`>= 0` の彩度) 、`H` (`[0...360]` の範囲の度数で表した色相) です。
+OKLab/OKLCH は、計算コストを抑えつつ知覚的に均一になるよう設計されています。
+:::
 
 変換は次の 3 段階で行われます。
 
 1. sRGB から Linear sRGB
-   2) Linear sRGB から OKLab
-   3) OKLab から OKLCH。
+2. Linear sRGB から OKLab
+3. OKLab から OKLCH。
 
 OKLCH 空間における色の参考例と、それらが sRGB の色にどう対応するかについては、[https://OKLCH.com/](https://OKLCH.com/) を参照してください。
 
@@ -826,6 +854,10 @@ SELECT colorSRGBToOKLCH((128, 64, 32), 2.2) AS lch;
 これは、MySQL の `CONNECTION_ID` 関数との互換性を保つために作成されました。
 通常、本番環境のクエリでは使用されません。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -862,20 +894,20 @@ SELECT connectionId();
 
 値の表現に必要な10進数の桁数を返します。
 
-<Note>
-  この関数は10進数値の scale を考慮します。つまり、基になる整数型 `(value * scale)` に対して結果を計算します。
+:::note
+この関数は10進数値の scale を考慮します。つまり、基になる整数型 `(value * scale)` に対して結果を計算します。
 
-  例:
+例:
 
-  * `countDigits(42) = 2`
-  * `countDigits(42.000) = 5`
-  * `countDigits(0.04200) = 4`
-</Note>
+* `countDigits(42) = 2`
+* `countDigits(42.000) = 5`
+* `countDigits(0.04200) = 4`
+  :::
 
-<Tip>
-  `Decimal64` の overflow は `countDigits(x) > 18` で確認できますが、
-  [`isDecimalOverflow`](#isDecimalOverflow) を使用するより低速です。
-</Tip>
+:::tip
+`Decimal64` の overflow は `countDigits(x) > 18` で確認できますが、
+[`isDecimalOverflow`](#isDecimalOverflow) を使用するより低速です。
+:::
 
 **構文**
 
@@ -917,6 +949,10 @@ SELECT countDigits(toDecimal32(1, 9)), countDigits(toDecimal32(-1, 9)),
 データベースを指定する必要がある `CREATE TABLE` クエリのテーブルエンジンパラメータで便利です。
 
 [`SET`ステートメント](/ja/reference/statements/use) も参照してください。
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -968,6 +1004,10 @@ SELECT CURRENT_DATABASE
 
 現在のユーザーに設定されている設定プロファイルの配列を返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対しても、異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -1004,6 +1044,10 @@ SELECT currentProfiles();
 
 現在の Query id を返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -1039,6 +1083,10 @@ SELECT currentQueryID();
 導入バージョン: v21.9.0
 
 現在のユーザーに付与されているロールの配列を返します。
+
+:::note
+この関数は非決定論的です。同じ引数に対して、異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -1084,6 +1132,10 @@ SELECT currentRoles();
 
 [`SET` ステートメント](/ja/reference/statements/use) も参照してください。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -1122,6 +1174,10 @@ SELECT currentSchemas(true)
 
 現在のユーザー名を返します。
 分散クエリの場合は、クエリを開始したユーザー名が返されます。
+
+:::note
+この関数は非決定論的です。同じ引数に対して、異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -1173,6 +1229,10 @@ SELECT CURRENT_USER
 
 現在のユーザーに対するデフォルトの設定プロファイル名の配列を返します。
 
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -1208,6 +1268,10 @@ SELECT defaultProfiles();
 導入バージョン: v21.9.0
 
 現在のユーザーに設定されているデフォルトロールの配列を返します。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -1342,6 +1406,10 @@ SELECT defaultValueOfTypeName('Nullable(Int8)');
 
 [config](/ja/concepts/features/configuration/server-config/configuration-files) の `display_name` の値を返します。設定されていない場合は、サーバーの完全修飾ドメイン名 (FQDN) を返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -1377,6 +1445,10 @@ SELECT displayName();
 導入バージョン: v1.1.0
 
 カラムの内部構造とそのデータ型について、詳細な説明を出力します。
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -1414,6 +1486,10 @@ SELECT dumpColumnStructure(CAST('2018-01-01 01:02:03', 'DateTime'));
 
 現在のユーザーで有効な設定プロファイル名の配列を返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -1449,6 +1525,10 @@ SELECT enabledProfiles();
 導入バージョン: v21.9.0
 
 現在のユーザーで有効になっているロールの配列を返します。
+
+:::note
+この関数は非決定論的であり、同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -1526,6 +1606,10 @@ SELECT errorCodeToName(252);
 
 [`file`](/ja/reference/functions/table-functions/file) テーブル関数も参照してください。
 
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -1549,9 +1633,6 @@ file(path[, default])
 INSERT INTO table SELECT file('a.txt'), file('b.txt');
 ```
 
-```response title=Response
-```
-
 <div id="filesystemAvailable">
   ## filesystemAvailable
 </div>
@@ -1560,6 +1641,10 @@ INSERT INTO table SELECT file('a.txt'), file('b.txt');
 
 データベースの永続化先があるファイルシステムの空き容量を返します。
 オペレーティングシステム用に一部の領域が予約されているため、戻り値は常に合計の空き容量 ([`filesystemUnreserved`](/ja/reference/functions/regular-functions/other-functions#filesystemUnreserved)) よりも小さくなります。
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -1598,6 +1683,10 @@ SELECT formatReadableSize(filesystemAvailable()) AS "Available space";
 ファイルシステムの容量をバイト単位で返します。
 データディレクトリへの [path](/ja/reference/settings/server-settings/settings#path) を設定しておく必要があります。
 
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返す場合があります。
+:::
+
 **構文**
 
 ```sql
@@ -1634,6 +1723,10 @@ SELECT formatReadableSize(filesystemCapacity()) AS "Capacity";
 
 データベースの永続化ストレージをホストするファイルシステム上の空き領域の総量を返します (以前の名前は `filesystemFree`) 。
 関連項目: [`filesystemAvailable`](#filesystemAvailable)。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -1702,6 +1795,7 @@ SELECT finalizeAggregation(arrayReduce('maxState', [1, 2, 3]));
 **initializeAggregation と併用**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -2228,9 +2322,6 @@ fuzzQuery(query)
 SET allow_fuzz_query_functions = 1; SELECT fuzzQuery('SELECT 1');
 ```
 
-```response title=Response
-```
-
 <div id="generateRandomStructure">
   ## generateRandomStructure
 </div>
@@ -2238,6 +2329,10 @@ SET allow_fuzz_query_functions = 1; SELECT fuzzQuery('SELECT 1');
 導入バージョン: v23.5.0
 
 `column1_name column1_type, column2_name column2_type, ...` の形式でランダムなテーブルの構造を生成します。
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -2296,6 +2391,10 @@ c1 DateTime, c2 Enum8('c2V0' = 0, 'c2V1' = 1, 'c2V2' = 2, 'c2V3' = 3), c3 LowCar
 この関数は、文字列の引数 (シリーズ識別子) と、省略可能な開始値を受け取ります。
 サーバーは Keeper を使用するように設定する必要があります。
 シリーズはパス配下の Keeper ノードに保存され、このパスはサーバー設定の [`series_keeper_path`](/ja/reference/settings/server-settings/settings#series_keeper_path) で設定できます。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -2384,19 +2483,27 @@ SELECT generateSerialID('id2', 100)
 
 導入バージョン: v24.5.0
 
-HTTPヘッダーの値を取得します。
-該当するヘッダーが存在しない場合、または現在のリクエストが HTTPインターフェイス 経由で実行されていない場合、この関数は空文字列を返します。
-一部の HTTPヘッダー (例: `Authentication` および `X-ClickHouse-*`) は制限されています。
+HTTP ヘッダーの値を取得します。
+該当するヘッダーが存在しない場合、または現在のリクエストが HTTP インターフェイス経由で実行されていない場合、この関数は空文字列を返します。
+一部の HTTP ヘッダー (例: `Authentication` および `X-ClickHouse-*`) には制限があります。
 
-<Info>
-  **Setting `allow_get_client_http_header` が必要です**
+:::note `allow_get_client_http_header` 設定が必要です
+この関数を使用するには、設定 `allow_get_client_http_header` を有効にする必要があります。
+`Cookie` などの一部のヘッダーには機密情報が含まれる可能性があるため、セキュリティ上の理由からこの設定はデフォルトで無効になっています。
+:::
 
-  この関数を使用するには、setting `allow_get_client_http_header` を有効にする必要があります。
-  `Cookie` などの一部のヘッダーに機微な情報が含まれる可能性があるため、セキュリティ上の理由から、この setting はデフォルトでは有効になっていません。
-</Info>
+この関数では、HTTP ヘッダーの大文字と小文字が区別されます。
+この関数を分散クエリ内で使用した場合、空でない結果を返すのはイニシエーターノード上のみです。
 
-この関数では、HTTPヘッダーは大文字と小文字が区別されます。
-分散クエリのコンテキストでこの関数を使用した場合、空でない結果が返されるのはイニシエーター ノード上のみです。
+`getClientHTTPHeader` は現在のリクエストのヘッダーを読み取るため、クエリが HTTP インターフェイス経由で送信された場合にのみ空でない値を返します。
+たとえば、リクエストにヘッダーを付与し、HTTP 経由でその値を読み取れます。
+
+```bash
+echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
+    curl 'http://localhost:8123/' --data-binary @- -H 'Content-Type: application/x-www-form-urlencoded'
+```
+
+上記のコマンドを実行すると、`application/x-www-form-urlencoded` が返されます。
 
 **構文**
 
@@ -2406,7 +2513,7 @@ getClientHTTPHeader(name)
 
 **引数**
 
-* `name` — HTTP ヘッダーの名前。[`String`](/ja/reference/data-types/string)
+* `name` — HTTP ヘッダー名。[`String`](/ja/reference/data-types/string)
 
 **戻り値**
 
@@ -2417,13 +2524,10 @@ getClientHTTPHeader(name)
 **使用例**
 
 ```sql title=Query
-SELECT getClientHTTPHeader('Content-Type');
-```
-
-```response title=Response
-┌─getClientHTTPHeader('Content-Type')─┐
-│ application/x-www-form-urlencoded   │
-└─────────────────────────────────────┘
+-- Over a non-HTTP interface (such as `clickhouse-client` or `clickhouse-local`) there are
+-- no request headers, so the function returns an empty string. See the description above
+-- for an HTTP example that returns the actual header value.
+SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1
 ```
 
 <div id="getMacro">
@@ -2434,7 +2538,11 @@ SELECT getClientHTTPHeader('Content-Type');
 
 サーバー設定ファイルからマクロの値を返します。
 マクロは設定ファイルの[`<macros>`](/ja/reference/settings/server-settings/settings#macros)セクションで定義され、ホスト名が複雑な場合でも、わかりやすい名前でサーバーを識別するために使用できます。
-この関数を分散テーブル上で実行すると、各分片に対応する値を持つ通常のカラムが生成されます。
+この関数を分散テーブルのコンテキストで実行すると、各分片に対応する値を持つ通常のカラムが生成されます。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -2508,6 +2616,10 @@ SELECT getMaxTableNameLengthForDatabase('default');
 
 MergeTree設定の現在の値を返します。
 
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -2543,6 +2655,10 @@ SELECT getMergeTreeSetting('index_granularity');
 導入バージョン: v21.11.0
 
 OS カーネルのバージョンを含む文字列を返します。
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -2580,6 +2696,10 @@ SELECT getOSKernelVersion();
 
 指定したプロトコルのサーバーのポート番号を返します。
 
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -2616,6 +2736,10 @@ SELECT getServerPort('tcp_port');
 
 サーバー設定の名前を指定すると、現在設定されている値を返します。
 
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -2651,6 +2775,10 @@ SELECT getServerSetting('allow_use_jemalloc_memory');
 導入バージョン: v20.7.0
 
 設定の現在の値を返します。
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -2692,6 +2820,10 @@ SELECT getSetting('enable_analyzer');
 導入バージョン: v24.10.0
 
 設定の現在の値を返します。現在のプロファイルでその設定が指定されていない場合は、2 番目の引数で指定されたデフォルト値を返します。
+
+:::note
+この関数は非決定論的です。同じ引数でも、異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -2790,9 +2922,6 @@ getSubcolumn(nested_value, subcolumn_name)
 SELECT getSubcolumn(array_col, 'size0'), getSubcolumn(tuple_col, 'elem_name')
 ```
 
-```response title=Response
-```
-
 <div id="getTypeSerializationStreams">
   ## getTypeSerializationStreams
 </div>
@@ -2881,6 +3010,10 @@ SELECT globalVariable('max_allowed_packet')
 データベース内のテーブルに特定のカラムが存在するかどうかを確認します。
 ネストされたデータ構造内の要素については、この関数はカラムの存在を確認します。
 ネストされたデータ構造そのものに対しては、この関数は `0` を返します。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -3008,6 +3141,10 @@ SELECT highlightQuery('SELECT 1')
 関数がリモートサーバー上で実行される場合 (分散処理) 、そのリモートサーバー名が返されます。
 関数が分散テーブルのコンテキストで実行される場合は、各分片に対応する値を持つ通常のカラムを生成します。
 それ以外の場合は、定数値を返します。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -3192,7 +3329,9 @@ SELECT ignore(0, 'ClickHouse', NULL)
 これにより、対応する条件に基づいて索引範囲内のデータを選択できますが、その条件による追加の絞り込みは行われません。
 ClickHouse の索引はスパースであるため、`indexHint` を使用すると、同じ条件を直接指定した場合よりも多くのデータが返されます。
 
-<Accordion title="説明">
+<details>
+  <summary>説明</summary>
+
   次を実行すると:
 
   ```sql
@@ -3222,7 +3361,7 @@ ClickHouse の索引はスパースであるため、`indexHint` を使用する
   * 自分の条件はどのグラニュールを選択しているか
   * それらのグラニュールには何行あるか
   * 自分の索引は効果的に使われているか
-</Accordion>
+</details>
 
 注: `indexHint` 関数を使ってクエリを最適化することはできません。`indexHint` 関数はクエリ解析に追加情報を与えないため、クエリを最適化しません。`indexHint` 関数の中に式を入れても、`indexHint` 関数を使わない場合と比べて何ら有利ではありません。`indexHint` 関数は内部診断とデバッグの目的でのみ使用でき、パフォーマンスを改善するものではありません。ClickHouse のコントリビューター以外が `indexHint` を使っているのを見かけた場合、それはおそらく誤りなので削除すべきです。
 
@@ -3268,6 +3407,10 @@ SELECT FlightDate AS k, count() FROM ontime WHERE indexHint(k = '2025-09-15') GR
 
 [`queryID`](/ja/reference/functions/regular-functions/other-functions#queryID) 関数とは異なり、`initialQueryID` は異なる分片でも同じ結果を返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対しても異なる結果を返す場合があります。
+:::
+
 **構文**
 
 ```sql
@@ -3308,6 +3451,10 @@ SELECT count(DISTINCT t) FROM (SELECT initialQueryID() AS t FROM remote('127.0.0
 
 初期クエリの開始時刻を返します。
 `initialQueryStartTime` は、異なる分片でも同じ結果を返します。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -3406,6 +3553,10 @@ SELECT finalizeAggregation(state), toTypeName(state) FROM (SELECT initializeAggr
 定数式とは、その結果がクエリ分析中、つまり実行前に確定している式です。
 たとえば、[リテラル](/ja/reference/syntax#literals)からなる式は定数式です。
 この関数は主に、開発、デバッグ、デモンストレーションを目的としています。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -3523,9 +3674,13 @@ SELECT isDecimalOverflow(toDecimal32(1000000000, 0), 9),
 Dictionary と同様に、テーブルからデータを取得できます。
 指定した結合キーを使って Join テーブルからデータを取得します。
 
-<Note>
-  `ENGINE = Join(ANY, LEFT, <join_keys>)` [ステートメント](/ja/reference/engines/table-engines/special/join) で作成されたテーブルのみサポートしています。
-</Note>
+:::note
+`ENGINE = Join(ANY, LEFT, <join_keys>)` [ステートメント](/ja/reference/engines/table-engines/special/join) で作成されたテーブルのみサポートしています。
+:::
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -3598,9 +3753,13 @@ Dictionary と同様の方法で、テーブルからデータを取得できま
 指定した結合キーを使用して Join テーブルからデータを取得します。
 [`joinGet`](#joinGet) とは異なり、キーが存在しない場合は `NULL` を返します。
 
-<Note>
-  `ENGINE = Join(ANY, LEFT, <join_keys>)` [ステートメント](/ja/reference/engines/table-engines/special/join) で作成されたテーブルのみサポートします。
-</Note>
+:::note
+`ENGINE = Join(ANY, LEFT, <join_keys>)` [ステートメント](/ja/reference/engines/table-engines/special/join) で作成されたテーブルのみサポートします。
+:::
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -3641,7 +3800,11 @@ SELECT joinGetOrNull(db_test.id_val, 'val', toUInt32(1)), joinGetOrNull(db_test.
 
 導入バージョン: v18.12.0
 
-[LowCardinality](/ja/reference/data-types/lowcardinality) カラムの辞書内での値の位置を返します。位置は 1 から始まります。LowCardinality ではパーツごとに辞書が作成されるため、この関数はパーツが異なると同じ値に対しても異なる位置を返す場合があります。
+[LowCardinality](/ja/reference/data-types/lowcardinality) カラムのDictionary内での値の位置を返します。位置は 1 から始まります。LowCardinality ではパーツごとにDictionaryが作成されるため、この関数はパーツが異なると同じ値に対しても異なる位置を返す場合があります。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -3655,7 +3818,7 @@ lowCardinalityIndices(col)
 
 **戻り値**
 
-現在のパートの Dictionary 内における値の位置。[`UInt64`](/ja/reference/data-types/int-uint)
+現在のパーツの Dictionary 内における値の位置。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -3665,7 +3828,7 @@ lowCardinalityIndices(col)
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
--- 2つのパーツを作成する:
+-- create two parts:
 
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
@@ -3696,9 +3859,13 @@ SELECT s, lowCardinalityIndices(s) FROM test;
 
 導入バージョン: v18.12.0
 
-[LowCardinality](/ja/reference/data-types/lowcardinality) カラムの辞書値を返します。
-ブロックが辞書サイズより小さい、または大きい場合、結果は切り詰められるか、デフォルト値で拡張されます。
-LowCardinality はパーツごとに辞書を持つため、この関数はパーツによって異なる辞書値を返す場合があります。
+[LowCardinality](/ja/reference/data-types/lowcardinality) カラムのDictionary値を返します。
+ブロックがDictionaryサイズより小さい、または大きい場合、結果は切り詰められるか、デフォルト値で拡張されます。
+LowCardinality はパーツごとにDictionaryを持つため、この関数はパーツによって異なるDictionary値を返す場合があります。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -3712,7 +3879,7 @@ lowCardinalityKeys(col)
 
 **戻り値**
 
-辞書キーを返します。[`UInt64`](/ja/reference/data-types/int-uint)
+Dictionaryキーを返します。[`UInt64`](/ja/reference/data-types/int-uint)
 
 **例**
 
@@ -3722,7 +3889,7 @@ lowCardinalityKeys(col)
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (s LowCardinality(String)) ENGINE = Memory;
 
--- 2つのパーツを作成する:
+-- create two parts:
 
 INSERT INTO test VALUES ('ab'), ('cd'), ('ab'), ('ab'), ('df');
 INSERT INTO test VALUES ('ef'), ('cd'), ('ab'), ('cd'), ('ef');
@@ -3907,6 +4074,7 @@ neighbor(column, offset[, default_value])
 **使用例**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 ```
 
@@ -3928,6 +4096,7 @@ SELECT number, neighbor(number, 2) FROM system.numbers LIMIT 10;
 **デフォルト値あり**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT number, neighbor(number, 2, 999) FROM system.numbers LIMIT 10;
 ```
 
@@ -4118,6 +4287,10 @@ SELECT normalizedQueryHashKeepNames('SELECT 1 AS `xyz123`') != normalizedQueryHa
 * 数値リテラルと文字列リテラルをランダムな値に置き換えます
 * クエリ全体の構造と SQL 構文を保持します
 * 行ごとに異なる結果を生成します
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -4439,9 +4612,9 @@ SELECT parseTimeDelta('1yr2mo')
 
 [パーティション ID](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key)を計算します。
 
-<Note>
-  この関数は低速なため、大量の行に対しては呼び出さないでください。
-</Note>
+:::note
+この関数は低速なため、大量の行に対しては呼び出さないでください。
+:::
 
 **構文**
 
@@ -4502,6 +4675,10 @@ SELECT i, j, partitionId(i), _partition_id FROM tab ORDER BY i, j;
 
 [`initialQueryID`](#initialQueryID) 関数とは異なり、`queryID` は分片ごとに異なる結果を返す場合があります。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -4542,6 +4719,10 @@ SELECT count(DISTINCT t) FROM (SELECT queryID() AS t FROM remote('127.0.0.{1..3}
 
 現在の ClickHouse server のリビジョン番号を返します。
 
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -4577,6 +4758,10 @@ SELECT revision()
 導入バージョン: v1.1.0
 
 処理される各行に対して一意の行番号を返します。
+
+:::note
+この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -4640,6 +4825,10 @@ SETTINGS max_block_size = 2
 
 返される番号は、各ブロックごとに 0 から始まります。
 
+:::note
+この関数は非決定論的です。同じ引数に対して、異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -4699,13 +4888,11 @@ FROM
 
 データブロックの各行について、集約関数の状態を累積します。
 
-<Warning>
-  **非推奨**
-
-  状態は新しいデータブロックごとにリセットされます。
-  この挙動は誤りを招きやすいため、この関数は非推奨となっており、代わりに[ウィンドウ関数](/ja/reference/functions/window-functions/index)を使用することを推奨します。
-  この関数の使用を許可するには、設定[`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings#allow_deprecated_error_prone_window_functions)を使用できます。
-</Warning>
+:::warning 非推奨
+状態は新しいデータブロックごとにリセットされます。
+この挙動は誤りを招きやすいため、この関数は非推奨となっており、代わりに[ウィンドウ関数](/ja/reference/functions/window-functions/index)を使用することを推奨します。
+この関数の使用を許可するには、設定[`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings#allow_deprecated_error_prone_window_functions)を使用できます。
+:::
 
 **構文**
 
@@ -4727,6 +4914,7 @@ runningAccumulate(agg_state[, grouping])
 **initializeAggregation を使用した使用例**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 WITH initializeAggregation('sumState', number) AS one_row_sum_state
 SELECT
     number,
@@ -4757,20 +4945,16 @@ FROM numbers(5);
 開始時刻と終了時刻のカラムは、同じデータ型である必要があります。
 この関数は、各イベントの開始時刻ごとに、アクティブな (同時実行中の) イベントの総数を計算します。
 
-<Tip>
-  **要件**
+:::tip 要件
+イベントは開始時刻の昇順で並んでいる必要があります。
+この要件に違反すると、関数は例外をスローします。
+各データブロックは個別に処理されます。
+異なるデータブロックに属するイベントが重なっている場合、正しく処理できません。
+:::
 
-  イベントは開始時刻の昇順で並んでいる必要があります。
-  この要件に違反すると、関数は例外をスローします。
-  各データブロックは個別に処理されます。
-  異なるデータブロックに属するイベントが重なっている場合、正しく処理できません。
-</Tip>
-
-<Warning>
-  **非推奨**
-
-  代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
-</Warning>
+:::warning 非推奨
+代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
+:::
 
 **構文**
 
@@ -4813,15 +4997,13 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 データブロック内で連続する2つの行の値の差を計算します。
 最初の行には `0` を返し、2 行目以降は直前の行との差を返します。
 
-<Warning>
-  **非推奨**
+:::warning 非推奨
+現在処理中のデータブロック内の差分しか返しません。
+この挙動は誤りを招きやすいため、この関数は非推奨です。
+代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
 
-  現在処理中のデータブロック内の差分しか返しません。
-  この挙動は誤りを招きやすいため、この関数は非推奨です。
-  代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
-
-  この関数の使用を許可するには、設定 [`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) を使用できます。
-</Warning>
+この関数の使用を許可するには、設定 [`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings#allow_deprecated_error_prone_window_functions) を使用できます。
+:::
 
 この関数の結果は、対象となるデータブロックと、そのブロック内でのデータの順序に依存します。
 `runningDifference()` の計算時の行の順序は、ユーザーに返される行の順序と異なる場合があります。
@@ -4848,6 +5030,23 @@ runningDifference(x)
 **使用例**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
+
+CREATE TABLE events
+(
+    EventID UInt32,
+    EventDate Date,
+    EventTime DateTime
+)
+ENGINE = Memory;
+
+INSERT INTO events VALUES
+    (1106, '2025-11-24', '2025-11-24 00:00:04'),
+    (1107, '2025-11-24', '2025-11-24 00:00:05'),
+    (1108, '2025-11-24', '2025-11-24 00:00:05'),
+    (1109, '2025-11-24', '2025-11-24 00:00:09'),
+    (1110, '2025-11-24', '2025-11-24 00:00:10');
+
 SELECT
     EventID,
     EventTime,
@@ -4859,7 +5058,7 @@ FROM
         EventTime
     FROM events
     WHERE EventDate = '2025-11-24'
-    ORDER BY EventTime ASC
+    ORDER BY EventTime ASC, EventID ASC
     LIMIT 5
 );
 ```
@@ -4877,6 +5076,7 @@ FROM
 **ブロックサイズの影響の例**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifference(number + 1) AS diff
@@ -4901,15 +5101,13 @@ WHERE diff != 1;
 
 データブロック内で連続する行の値の差を計算しますが、[`runningDifference`](#runningDifference) とは異なり、最初の行については `0` ではなく実際の値を返します。
 
-<Warning>
-  **非推奨**
+:::warning 非推奨
+現在処理中のデータブロック内の差分しか返しません。
+この挙動はエラーを招きやすいため、この関数は非推奨です。
+代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
 
-  現在処理中のデータブロック内の差分しか返しません。
-  この挙動はエラーを招きやすいため、この関数は非推奨です。
-  代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
-
-  この関数の使用を許可するには、設定 `allow_deprecated_error_prone_window_functions` を使用できます。
-</Warning>
+この関数の使用を許可するには、設定 `allow_deprecated_error_prone_window_functions` を使用できます。
+:::
 
 **構文**
 
@@ -4930,6 +5128,7 @@ runningDifferenceStartingWithFirstValue(x)
 **使用例**
 
 ```sql title=Query
+SET allow_deprecated_error_prone_window_functions = 1;
 SELECT
     number,
     runningDifferenceStartingWithFirstValue(number) AS diff
@@ -4954,6 +5153,10 @@ FROM numbers(5);
 
 server の初回起動時に生成される、ランダムで一意な UUID (v4) を返します。
 この UUID は永続化されるため、2 回目、3 回目以降に server を起動しても、同じ UUID が返されます。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -4992,6 +5195,10 @@ SELECT serverUUID();
 分散クエリにおける分片の総数を返します。
 クエリが分散されていない場合は、定数値 `0` が返されます。
 
+:::note
+この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -5011,7 +5218,7 @@ shardCount()
 **使用例**
 
 ```sql title=Query
--- shardCount()も示している上記のshardNum()の例を参照してください。
+-- See shardNum() example above which also demonstrates shardCount()
 CREATE TABLE shard_count_example (dummy UInt8)
 ENGINE=Distributed(test_cluster_two_shards_localhost, system, one, dummy);
 SELECT shardCount() FROM shard_count_example;
@@ -5033,6 +5240,10 @@ SELECT shardCount() FROM shard_count_example;
 分散クエリでデータの一部を処理する分片の番号を返します。
 番号は `1` から始まります。
 クエリが分散クエリでない場合は、定数値 `0` が返されます。
+
+:::note
+この関数は非決定論的です。同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -5116,9 +5327,9 @@ SELECT showCertificate() FORMAT LineAsString;
 2. **デバッグ**: 特定の時点におけるシステムの状態やクエリの実行状況を確認する必要がある場合は、`sleep()` を使って一時停止を入れることで、関連情報を調査または収集できます。
 3. **シミュレーション**: ネットワークレイテンシーや外部システムへの依存関係など、遅延や一時停止が発生する実際の状況をシミュレートしたい場合があります。
 
-<Warning>
-  `sleep()` 関数は、ClickHouse システム全体のパフォーマンスや応答性に影響を及ぼすおそれがあるため、本当に必要な場合にのみ慎重に使用することが重要です。
-</Warning>
+:::warning
+`sleep()` 関数は、ClickHouse システム全体のパフォーマンスや応答性に影響を及ぼすおそれがあるため、本当に必要な場合にのみ慎重に使用することが重要です。
+:::
 
 セキュリティ上の理由により、この関数を実行できるのは、デフォルトのユーザープロファイル (`allow_sleep` が有効な場合) のみです。
 
@@ -5141,8 +5352,8 @@ sleep(seconds)
 **使用例**
 
 ```sql title=Query
--- このクエリは完了するまで2秒間一時停止します。
--- この間、結果は返されず、クエリはハングまたは応答なしの状態に見えます。
+-- This query will pause for 2 seconds before completing.
+-- During this time, no results will be returned, and the query will appear to be hanging or unresponsive.
 SELECT sleep(2);
 ```
 
@@ -5150,7 +5361,7 @@ SELECT sleep(2);
 ┌─sleep(2)─┐
 │        0 │
 └──────────┘
-1 行 in set. Elapsed: 2.012 sec.
+1 row in set. Elapsed: 2.012 sec.
 ```
 
 <div id="sleepEachRow">
@@ -5168,9 +5379,9 @@ SELECT sleep(2);
 2. **デバッグ**: 処理される各行について、システムの状態やクエリの実行状況を確認する必要がある場合は、`sleepEachRow()` で一時停止を入れることで、関連情報を調査したり収集したりできます。
 3. **シミュレーション**: 場合によっては、外部システムやネットワーク遅延を扱うケースのように、処理される各行ごとに遅延や一時停止が発生する実運用に近い状況をシミュレートしたいことがあります。
 
-<Warning>
-  `sleep()` 関数と同様に、`sleepEachRow()` は必要な場合にのみ慎重に使用することが重要です。特に大きな結果セットを扱う場合、ClickHouse システム全体の性能や応答性に大きな影響を与える可能性があります。
-</Warning>
+:::warning
+`sleep()` 関数と同様に、`sleepEachRow()` は必要な場合にのみ慎重に使用することが重要です。特に大きな結果セットを扱う場合、ClickHouse システム全体の性能や応答性に大きな影響を与える可能性があります。
+:::
 
 **構文**
 
@@ -5191,7 +5402,7 @@ sleepEachRow(seconds)
 **使用例**
 
 ```sql title=Query
--- 出力は遅延し、各行の間に0.5秒の停止が入ります。
+-- The output will be delayed, with a 0.5-second pause between each row.
 SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
 ```
 
@@ -5296,6 +5507,10 @@ message MessageName
 分散テーブルに対して実行された場合、この関数は各分片に対応する値を持つ通常のカラムを生成します。
 それ以外の場合は、定数値を返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対しても異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -5370,6 +5585,10 @@ Code: 395. DB::Exception: Received from localhost:9000. DB::Exception: Too many.
 
 指定された値のデータ型の内部名を返します。
 関数 [`toTypeName`](#toTypeName) とは異なり、返されるデータ型には `Const` や `LowCardinality` などの内部ラッパーのカラムが含まれる場合があります。
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -5483,18 +5702,22 @@ SELECT tokenizeQuery('SELECT 1')
 
 トランザクションの ID を返します。
 
-<Note>
-  この関数は実験的機能の一部です。
-  実験的なトランザクションサポートを有効にするには、次の設定を [設定](/ja/concepts/features/configuration/server-config/configuration-files) に追加してください。
+:::note
+この関数は実験的機能の一部です。
+実験的なトランザクションサポートを有効にするには、次の設定を [設定](/ja/concepts/features/configuration/server-config/configuration-files) に追加してください。
 
-  ```xml
-  <clickhouse>
-      <allow_experimental_transactions>1</allow_experimental_transactions>
-  </clickhouse>
-  ```
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
 
-  詳しくは、[Transactional (ACID) support](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) のページを参照してください。
-</Note>
+詳しくは、[Transactional (ACID) support](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) のページを参照してください。
+:::
+
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
 
 **構文**
 
@@ -5543,17 +5766,17 @@ ROLLBACK;
 
 読み取りに利用可能な[トランザクション](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)の最新のスナップショット (Commit Sequence Number) を返します。
 
-<Note>
-  この関数は実験的な機能群の一部です。実験的なトランザクションサポートを有効にするには、設定に次の項目を追加してください。
+:::note
+この関数は実験的な機能群の一部です。実験的なトランザクションサポートを有効にするには、設定に次の項目を追加してください。
 
-  ```xml
-  <clickhouse>
-      <allow_experimental_transactions>1</allow_experimental_transactions>
-  </clickhouse>
-  ```
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
 
-  詳細については、[Transactional (ACID) support](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)のページを参照してください。
-</Note>
+詳細については、[Transactional (ACID) support](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)のページを参照してください。
+:::
 
 **構文**
 
@@ -5597,17 +5820,17 @@ ROLLBACK;
 
 実行中の[トランザクション](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)から参照可能な、最も古いスナップショット (Commit Sequence Number) を返します。
 
-<Note>
-  この関数は実験的機能セットの一部です。以下の設定を構成に追加して、実験的なトランザクションサポートを有効にしてください。
+:::note
+この関数は実験的機能セットの一部です。以下の設定を構成に追加して、実験的なトランザクションサポートを有効にしてください。
 
-  ```xml
-  <clickhouse>
-      <allow_experimental_transactions>1</allow_experimental_transactions>
-  </clickhouse>
-  ```
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
 
-  詳細は、[Transactional (ACID) support](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) のページを参照してください。
-</Note>
+詳細は、[Transactional (ACID) support](/ja/concepts/features/operations/insert/transactions#transactions-commit-and-rollback) のページを参照してください。
+:::
 
 **構文**
 
@@ -5850,6 +6073,10 @@ FROM
 分散テーブルに対して実行すると、この関数は各分片に対応する値を持つ通常のカラムを生成します。
 それ以外の場合は、定数値を生成します。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -5972,6 +6199,10 @@ ClickHouse の現在のバージョンを、`major_version.minor_version.patch_v
 分散テーブル上で実行された場合、この関数は各分片に対応する値を持つ通常のカラムを生成します。
 それ以外の場合は、定数値を返します。
 
+:::note
+この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
+:::
+
 **構文**
 
 ```sql
@@ -6045,6 +6276,10 @@ SELECT visibleWidth(NULL)
 導入バージョン: v21.11.0
 
 現在のZooKeeperセッションの稼働時間を秒単位で返します。
+
+:::note
+この関数は非決定論的なため、同じ引数でも異なる結果を返すことがあります。
+:::
 
 **構文**
 

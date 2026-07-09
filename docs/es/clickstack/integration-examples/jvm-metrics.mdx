@@ -311,9 +311,9 @@ Asegúrese de estar usando la última versión estable del agente (actualmente, 
 * Explora [otras integraciones de ClickStack](/es/clickstack/integration-examples/index) para unificar tus datos de observabilidad
 
 <div id="going-to-production">
-  ## Paso a producción
+  ## Pasar a producción
 </div>
 
-Esta guía muestra cómo configurar el agente de Java de OpenTelemetry para pruebas locales. Para las implementaciones en producción, incluya el JAR del agente en las imágenes de sus contenedores y configúrelo mediante variables de entorno para facilitar la administración. En entornos más grandes con muchas instancias de JVM, implemente un OpenTelemetry Collector centralizado para agrupar en lotes y reenviar métricas de varias aplicaciones, en lugar de enviarlas directamente a ClickStack.
+Esta guía muestra cómo configurar el agente de Java de OpenTelemetry para pruebas locales. Para implementaciones en producción, incluya el JAR del agente en sus imágenes de contenedor y configúrelo mediante variables de entorno para facilitar la administración. En entornos más grandes con muchas instancias de JVM, despliegue un OpenTelemetry Collector centralizado para agrupar y reenviar métricas de varias aplicaciones, en lugar de enviarlas directamente a ClickStack.
 
-Consulte [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver patrones de implementación en producción y ejemplos de configuración del collector.
+Consulte [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para conocer patrones de implementación en producción y ejemplos de configuración del collector.

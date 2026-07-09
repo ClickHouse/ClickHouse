@@ -93,10 +93,10 @@ bitCount(x)
 
 `x` のうち、1 に設定されているビットの数を返します。[`UInt8`](/ja/reference/data-types/int-uint)。
 
-<Note>
-  この関数は、入力値をより大きい型に変換しません ([符号拡張](https://en.wikipedia.org/wiki/Sign_extension)) 。
-  例: `bitCount(toUInt8(-1)) = 8`。
-</Note>
+:::note
+この関数は、入力値をより大きい型に変換しません ([符号拡張](https://en.wikipedia.org/wiki/Sign_extension)) 。
+例: `bitCount(toUInt8(-1)) = 8`。
+:::
 
 **例**
 

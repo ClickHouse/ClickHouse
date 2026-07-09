@@ -138,14 +138,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 기존 구성 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 기타 환경 변수 ...
+          # ... other environment variables ...
         volumes:
           - ./nginx-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/nginx:/var/log/nginx:ro
-          # ... 기타 볼륨 ...
+          # ... other volumes ...
     ```
 
     ##### 옵션 2: Docker Run (올인원 이미지)
@@ -208,7 +208,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   <Step>
     #### 테스트용 collector 구성 생성
 
-    다음 내용으로 `nginx-demo.yaml` 파일을 생성하세요:
+    다음 구성으로 `nginx-demo.yaml` 파일을 생성하세요:
 
     ```yaml
     cat > nginx-demo.yaml << 'EOF'
@@ -377,7 +377,7 @@ docker exec `<container>` cat /etc/otel/supervisor-data/agent.log
 * 특정 사용 사례(API 모니터링, 보안 이벤트)를 위한 추가 [대시보드](/ko/clickstack/features/dashboards/overview)를 만드세요
 
 <div id="going-to-production">
-  ## 프로덕션 환경으로 전환
+  ## 운영 환경으로 전환하기
 </div>
 
-이 가이드는 빠른 설정을 위해 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장해 사용합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+이 가이드는 빠르게 설정할 수 있도록 ClickStack에 내장된 OpenTelemetry Collector를 활용합니다. 운영 환경에 배포하는 경우 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 운영 환경 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

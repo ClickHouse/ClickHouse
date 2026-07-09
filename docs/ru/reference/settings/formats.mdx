@@ -174,7 +174,7 @@ INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "Новая настройка, задающая максимальное количество повторных попыток при временных сбоях (транспортные тайм-ауты, отказ в подключении, ошибки DNS, HTTP 5xx/408/429) при взаимодействии с Confluent Schema Registry. Установите 0, чтобы отключить повторные попытки. Предыдущее поведение (без повторных попыток) сохраняется при `compatibility = '26.5'`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "Новая настройка, задающая максимальное количество повторных попыток при временных сбоях (транспортные тайм-ауты, отказ в подключении, ошибки DNS, HTTP 5xx\/408\/429) при взаимодействии с Confluent Schema Registry. Установите 0, чтобы отключить повторные попытки. Предыдущее поведение (без повторных попыток) сохраняется при `compatibility = '26.5'`."}]}]} />
 
 Для формата AvroConfluent: максимальное количество повторных попыток при временных сбоях при взаимодействии с Confluent Schema Registry (транспортные тайм-ауты, отказ в подключении, ошибки DNS, HTTP 5xx/408/429). Установите 0, чтобы отключить повторные попытки. Максимально допустимое значение — 20. Для ошибок проверки схемы (HTTP 409, некорректный Avro JSON) повторные попытки не выполняются.
 
@@ -373,6 +373,22 @@ table functions и словарей.
 
 * 0 — Отключено.
 * 1 — Включено.
+
+<div id="format_geojson_validate_geometry">
+  ## format_geojson_validate_geometry
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Новая настройка, которая определяет, проверяет ли формат GeoJSON корректность геометрии по RFC 7946 (минимальное число точек в линии и кольце, замкнутость кольца, непустые мультигеометрии) при чтении и записи"}]}]} />
+
+Определяет, проверяет ли формат `GeoJSON` корректность геометрии по RFC 7946 при чтении и записи.
+
+Когда включено (по умолчанию), геометрия, нарушающая правила GeoJSON для геометрических объектов, отклоняется: `LineString` (или линия из `MultiLineString`) с менее чем двумя точками; кольцо `Polygon` или `MultiPolygon` с менее чем четырьмя точками либо с различающимися первой и последней точками (незамкнутое кольцо); а также пустой `MultiLineString`, `Polygon` или `MultiPolygon`. Это действует и при чтении (такой документ отклоняется), и при записи (такое значение ClickHouse отклоняется вместо создания документа, который входной формат отклонил бы при чтении).
+
+Когда отключено, эти правила не проверяются: такие геометрии читаются и записываются как есть, поэтому вырожденные геометрии проходят цикл чтения и записи без изменений, но записанный документ может не быть корректным GeoJSON.
+
+Проверка носит только структурный характер: она проверяет число точек и замкнутость кольца. Геометрическая корректность формы не проверяется — ориентация кольца (правило правой руки / порядок обхода) не контролируется, и структурно корректные, но геометрически вырожденные объекты допускаются, например полигон нулевой площади, самопересекающееся кольцо или полигон, чьи отверстия находятся вне внешнего кольца. Неконечные значения координат (`NaN`, `Inf`) всегда отклоняются независимо от этой настройки, поскольку их нельзя представить числами JSON.
 
 <div id="format_json_object_each_row_column_for_object_name">
   ## format_json_object_each_row_column_for_object_name
@@ -661,9 +677,9 @@ ClickHouse может читать только нужные диапазоны 
 
 Если эта опция включена и соединение неожиданно закрывается, все оставшиеся в буфере данные будут разобраны и обработаны, а не считаться ошибкой
 
-<Note>
-  Включение этой опции отключает параллельный разбор и делает дедупликацию невозможной
-</Note>
+:::note
+Включение этой опции отключает параллельный разбор и делает дедупликацию невозможной
+:::
 
 <div id="input_format_csv_allow_cr_end_of_line">
   ## input_format_csv_allow_cr_end_of_line
@@ -732,6 +748,16 @@ ClickHouse может читать только нужные диапазоны 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Рассматривать вставляемые значения enum в форматах CSV как индексы enum
+
+<div id="input_format_csv_missing_nullable_as_empty_string">
+  ## input_format_csv_missing_nullable_as_empty_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Новая настройка для чтения отсутствующего значения `Nullable(String)` из CSV как пустой строки вместо NULL."}]}]} />
+
+Управляет тем, как значение `Nullable(String)` считывается из отсутствующего значения в CSV. Отсутствующее значение — это пустое место между запятыми, перед запятой или после неё, не заключённое в кавычки. Если эта настройка включена, то независимо от значения `input_format_csv_empty_as_default` отсутствующее значение `Nullable(String)` будет интерпретироваться как пустая `String`, а не как NULL.
 
 <div id="input_format_csv_skip_first_lines">
   ## input_format_csv_skip_first_lines
@@ -828,11 +854,11 @@ ClickHouse может читать только нужные диапазоны 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "19.12"},{"label": "1"},{"label": "Включить вычисление сложных выражений по умолчанию для пропущенных полей в некоторых форматах ввода, поскольку это соответствует ожидаемому поведению"}]}]} />
 
-При выполнении запросов `INSERT` пропущенные значения входных столбцов заменяются значениями по умолчанию соответствующих столбцов. Этот параметр применяется к форматам [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow) (и другим JSON-форматам), [CSV](/ru/reference/formats/CSV/CSV), [TabSeparated](/ru/reference/formats/TabSeparated/TabSeparated), [TSKV](/ru/reference/formats/TabSeparated/TSKV), [Parquet](/ru/reference/formats/Parquet/Parquet), [Arrow](/ru/reference/formats/Arrow/Arrow), [Avro](/ru/reference/formats/Avro/Avro), [ORC](/ru/reference/formats/ORC), [Native](/ru/reference/formats/Native), а также к форматам с суффиксами `WithNames`/`WithNamesAndTypes`.
+При выполнении запросов `INSERT` пропущенные значения входных столбцов заменяются значениями по умолчанию соответствующих столбцов. Этот параметр применяется к форматам [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow) (и другим JSON-форматам), [CSV](/ru/reference/formats/CSV/CSV), [TabSeparated](/ru/reference/formats/TabSeparated/TabSeparated), [TSKV](/ru/reference/formats/TabSeparated/TSKV), [Parquet](/ru/reference/formats/Parquet/Parquet), [Arrow](/ru/reference/formats/Arrow/Arrow), [Avro](/ru/reference/formats/Avro/Avro), [ORC](/ru/reference/formats/ORC), [Native](/ru/reference/formats/Native) форматам, а также форматам с суффиксами `WithNames`/`WithNamesAndTypes`.
 
-<Note>
-  Когда этот параметр включен, с сервера клиенту отправляются расширенные метаданные таблицы. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
-</Note>
+:::note
+Когда этот параметр включен, с сервера клиенту отправляются расширенные метаданные таблицы. Это требует дополнительных вычислительных ресурсов на сервере и может снизить производительность.
+:::
 
 Возможные значения:
 
@@ -1287,15 +1313,15 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "0"},{"label": "Новая настройка, ограничивающая максимальное время ожидания в миллисекундах перед выдачей блока входным форматом"}]}]} />
 
-Ограничивает максимальное время ожидания в миллисекундах перед выдачей блока при разборе данных в построчных входных форматах. `0` означает отсутствие ограничения.
+Ограничивает максимальное время ожидания в миллисекундах перед выдачей блока при разборе данных во входных форматах на основе строк. `0` означает отсутствие ограничения.
 
-<Note>
-  Этот параметр работает только при включенном `input_format_connection_handling`. Установка значения также отключает параллельный разбор и делает дедупликацию невозможной.
-</Note>
+:::note
+Этот параметр работает только при включенном `input_format_connection_handling`. Установка значения также отключает параллельный разбор и делает дедупликацию невозможной.
+:::
 
-<Note>
-  Для стриминговых вставок также необходимо задать `min_insert_block_size_rows=0` и `min_insert_block_size_bytes=0`. В противном случае разобранные блоки все равно могут накапливаться в памяти на этапе укрупнения блоков до достижения этих порогов, что мешает своевременной вставке.
-</Note>
+:::note
+Для стриминговых вставок также необходимо задать `min_insert_block_size_rows=0` и `min_insert_block_size_bytes=0`. В противном случае разобранные блоки все равно могут накапливаться в памяти на этапе укрупнения блоков до достижения этих порогов, что мешает своевременной вставке.
+:::
 
 **Пример: стриминг недавних изменений из Википедии в ClickHouse**
 
@@ -1499,9 +1525,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE/PREWHERE и bloom filter в метаданных Parquet."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE/PREWHERE и bloom filter в метаданных Parquet."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE/PREWHERE и bloom-фильтр в метаданных Parquet."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE/PREWHERE и bloom-фильтр в метаданных Parquet."}]}]} />
 
-При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE и bloom filter в метаданных Parquet.
+При чтении файлов Parquet пропускать целые группы строк по выражениям WHERE и bloom-фильтр в метаданных Parquet.
 
 <div id="input_format_parquet_case_insensitive_column_matching">
   ## input_format_parquet_case_insensitive_column_matching
@@ -2032,7 +2058,7 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе String, который обычно содержит UTF-8. Типы String в Parquet/ORC/Arrow поддерживают только UTF-8. Поэтому вы можете выбрать, какой тип данных Arrow использовать для типа String в ClickHouse — String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев соответствует ожиданиям пользователей."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе String, который обычно содержит UTF-8. Типы String в Parquet\/ORC\/Arrow поддерживают только UTF-8. Поэтому вы можете выбрать, какой тип данных Arrow использовать для типа String в ClickHouse — String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев соответствует ожиданиям пользователей."}]}]} />
 
 Использовать тип Arrow String вместо Binary для столбцов String
 
@@ -2161,6 +2187,18 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если задано значение true, в формате CSV в качестве окончания строки будет использоваться \r\n вместо \n.
+
+<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
+  ## output_format_csv_header_serialize_tuple_into_separate_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Новая настройка. Когда включен output_format_csv_serialize_tuple_into_separate_columns, заголовок CSVWithNames\/CSVWithNamesAndTypes теперь разворачивает столбцы Tuple в их листовые поля, чтобы число столбцов в заголовке совпадало с данными. Установите false, чтобы вернуть прежний заголовок с одним именем."}]}]} />
+
+Когда включен [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](#output_format_csv_serialize_tuple_into_separate_columns), строки заголовка `CSVWithNames` и `CSVWithNamesAndTypes` разворачивают каждый столбец Tuple в его листовые поля (имена с точечной нотацией, такие как `t.a`, `t.b`, и имена листовых типов), так что в заголовке столько же столбцов, сколько и в данных. Для `CustomSeparated*` такое разворачивание применяется только при `format_custom_escaping_rule = 'CSV'`, когда `format_custom_field_delimiter` состоит из одного символа и равен `format_csv_delimiter`; в противном случае (например, если используется разделитель табуляции по умолчанию или `format_custom_field_delimiter = '|'`) заголовок остается неразвернутым, чтобы по-прежнему соответствовать данным. Установите значение `0`, чтобы сохранить прежнее поведение, при котором в заголовке остается одно имя и один тип Tuple верхнего уровня.
+
+Примечание: при `input_format_with_names_use_header = 1` развернутый заголовок не считывается обратно в Tuple по имени. Чтобы прочитать такие данные обратно в Tuple, либо установите для этой настройки значение `0` при выводе, либо читайте с `input_format_with_names_use_header = 0` (а для форматов `*WithNamesAndTypes` — `CSVWithNamesAndTypes` и `CustomSeparatedWithNamesAndTypes` — также `input_format_with_types_use_header = 0`, поскольку иначе развернутая строка типов проверяется на соответствие единственному входному полю Tuple верхнего уровня и отклоняется).
 
 <div id="output_format_csv_serialize_tuple_into_separate_columns">
   ## output_format_csv_serialize_tuple_into_separate_columns
@@ -2572,7 +2610,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Добавлена поддержка плоской сериализации Dynamic/JSON в формате Native"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Добавлена поддержка плоской сериализации Dynamic\/JSON в формате Native"}]}]} />
 
 Записывает данные столбцов [JSON](/ru/reference/data-types/newjson) и [Dynamic](/ru/reference/data-types/dynamic) в плоском формате (все типы и пути представлены как отдельные подстолбцы).
 
@@ -2630,7 +2668,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе данных String, который обычно содержит данные в UTF-8. Типы String в Parquet/ORC/Arrow поддерживают только UTF-8. Поэтому вы можете выбрать, какой тип данных Arrow использовать для типа данных String в ClickHouse — String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев соответствует ожиданиям пользователей."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе данных String, который обычно содержит данные в UTF-8. Типы String в Parquet\/ORC\/Arrow поддерживают только UTF-8. Поэтому вы можете выбрать, какой тип данных Arrow использовать для типа данных String в ClickHouse — String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев соответствует ожиданиям пользователей."}]}]} />
 
 Использовать тип ORC String вместо Binary для столбцов String
 
@@ -2803,7 +2841,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе String, который обычно содержит UTF-8. Строки в Parquet/ORC/Arrow поддерживают только UTF-8. Поэтому для типа String в ClickHouse можно выбрать, какой тип данных Arrow использовать: String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев лучше соответствует ожиданиям пользователей."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse допускает произвольные бинарные данные в типе String, который обычно содержит UTF-8. Тип String в Parquet\/ORC\/Arrow поддерживает только UTF-8. Поэтому для типа String в ClickHouse можно выбрать, какой тип данных Arrow использовать: String или Binary. Хотя Binary был бы более корректным и совместимым вариантом, использование String по умолчанию в большинстве случаев лучше соответствует ожиданиям пользователей."}]}]} />
 
 Использовать тип Parquet String вместо Binary для столбцов String.
 
@@ -3187,7 +3225,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Если значение равно true, экранирует ' как '', в противном случае используется \'"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Если значение равно true, экранирует ' как '', в противном случае используется \\'"}]}]} />
 
 Если значение равно true, экранирует &#39; как &#39;&#39;, в противном случае используется &#92;&#39;
 
@@ -3231,9 +3269,9 @@ y   Nullable(String)
 z   IPv4
 ```
 
-<Note>
-  Если `schema_inference_hints` отформатирован неправильно или содержит опечатку, неверный тип данных и т. п., то schema&#95;inference&#95;hints будет полностью проигнорирован.
-</Note>
+:::note
+Если `schema_inference_hints` отформатирован неправильно или содержит опечатку, неверный тип данных и т. п., то schema&#95;inference&#95;hints будет полностью проигнорирован.
+:::
 
 <div id="schema_inference_make_columns_nullable">
   ## schema_inference_make_columns_nullable

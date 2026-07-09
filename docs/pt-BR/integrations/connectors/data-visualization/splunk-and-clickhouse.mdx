@@ -77,7 +77,7 @@ Depois de confirmar que o DB Connect App está instalado, adicione o caminho `ja
   ## Configure o JDBC para o ClickHouse
 </div>
 
-Baixe o [arquivo JAR do driver JDBC do ClickHouse](https://github.com/ClickHouse/clickhouse-java/releases/) e copie-o para a pasta DB Connect Drivers em:
+Baixe o [arquivo JAR do ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java/releases/) e copie-o para a pasta DB Connect Drivers em:
 
 ```bash
 $SPLUNK_HOME/etc/apps/splunk_app_db_connect/drivers
@@ -90,7 +90,7 @@ Para garantir que todas as dependências necessárias estejam disponíveis para 
 - clickhouse-jdbc-<VERSION>-all-dependencies.jar (if VERSION >= 0.9.0)
 ```
 
-Em seguida, você deve editar a configuração dos tipos de conexão em `$SPLUNK_HOME/etc/apps/splunk_app_db_connect/local/db_connection_types.conf` para adicionar os detalhes da classe do driver JDBC do ClickHouse. Adicione a seguinte seção a `db_connection_types.conf`:
+Em seguida, você deve editar a configuração dos tipos de conexão em `$SPLUNK_HOME/etc/apps/splunk_app_db_connect/local/db_connection_types.conf` para adicionar os detalhes da classe do ClickHouse JDBC driver. Adicione a seguinte seção a `db_connection_types.conf`:
 
 ```text
 [ClickHouse]

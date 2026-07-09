@@ -47,9 +47,9 @@ HyperDX는 스택의 다른 구성 요소와 독립적으로 사용할 수 있�
 
     HyperDX UI에 액세스하려면 [http://localhost:8080](http://localhost:8080)에 접속하세요.
 
-    요구 사항을 충족하는 사용자 이름과 비밀번호를 입력하여 사용자를 생성하세요.
+    요구 사항을 충족하는 username과 password를 입력하여 사용자를 생성하세요.
 
-    `Create`를 클릭하면 연결 정보를 입력하라는 메시지가 표시됩니다.
+    `Create`를 클릭하면 connection details를 입력하라는 메시지가 표시됩니다.
 
     <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
   </Step>
@@ -59,14 +59,14 @@ HyperDX는 스택의 다른 구성 요소와 독립적으로 사용할 수 있�
 
     자체 외부 ClickHouse 클러스터(예: ClickHouse Cloud)에 연결하세요.
 
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="HyperDX 로그인" size="md" />
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="HyperDX Login" size="md" />
 
-    source를 생성하라는 메시지가 표시되면 모든 기본값을 유지하고 `Table` 필드에 `otel_logs` 값을 입력하세요. 나머지 설정은 모두 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
+    source를 생성하라는 메시지가 표시되면 모든 기본값을 유지하고 `Table` 필드에 `otel_logs` 값을 입력하세요. 나머지 설정은 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
 
     <Info>
       **source 생성**
 
-      source를 생성하려면 ClickHouse에 테이블(table)이 있어야 합니다. 데이터가 없다면 테이블을 생성할 수 있도록 ClickStack OpenTelemetry collector를 배포하는 것을 권장합니다.
+      source를 생성하려면 ClickHouse에 테이블이 있어야 합니다. 데이터가 없다면 테이블을 생성할 수 있도록 ClickStack OpenTelemetry collector를 배포하는 것을 권장합니다.
     </Info>
   </Step>
 </Steps>

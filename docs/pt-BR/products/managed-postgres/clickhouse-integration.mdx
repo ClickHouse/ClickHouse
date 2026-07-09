@@ -33,18 +33,18 @@ Clique em **Replicate data in ClickHouse** para começar a configurar seu ClickP
     * **Integration name**: Um nome para este ClickPipe
     * **serviço ClickHouse**: Selecione um serviço do ClickHouse Cloud existente ou crie um novo
     * **Postgres database**: O banco de dados de origem a partir do qual replicar
-    * **Replication method**: Escolha uma das opções:
+    * **Replication method**: Escolha uma das:
       * **Initial load + CDC**: Importe os dados existentes e mantenha as tabelas atualizadas com novas alterações (recomendado)
       * **Initial load only**: Snapshot único dos dados existentes, sem atualizações contínuas
       * **CDC only**: Ignore o snapshot inicial e capture apenas novas alterações daqui em diante
 
     <Image img="/images/managed-postgres/replication-service-step.webp" alt="Configuração do serviço de replicação mostrando nome da integração, serviço de destino e opções de método de replicação" size="md" border />
 
-    Clique em **Next** para continuar.
+    Click **Next** to proceed.
   </Step>
 
   <Step>
-    ## Configure as opções de replicação
+    ## Configure replication settings
 
     Ajuste como os dados são replicados:
 
@@ -56,7 +56,7 @@ Clique em **Replicate data in ClickHouse** para começar a configurar seu ClickP
 
     <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="Etapa de configurações de replicação mostrando intervalo de sincronização, threads em paralelo, tamanho do batch de extração e opções de configuração de snapshot" size="md" border />
 
-    Clique em **Next** para continuar.
+    Click **Next** to proceed.
   </Step>
 
   <Step>
@@ -67,13 +67,13 @@ Clique em **Replicate data in ClickHouse** para começar a configurar seu ClickP
     * **Destination database**: Selecione um banco de dados ClickHouse existente ou crie um novo
     * **Prefix default destination table names with schema name**: Adiciona o schema do Postgres como prefixo para evitar conflitos de nomenclatura
     * **Preserve NULL values from source**: Mantém os valores NULL em vez de convertê-los em valores padrão
-    * **Remove deleted rows during merges**: Para tabelas [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree), remove fisicamente as linhas excluídas durante os merges em segundo plano
+    * **Remove deleted rows during merges**: Para [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree) tables, remove fisicamente as linhas excluídas durante os merges em segundo plano
 
     Expanda os schemas e selecione tabelas individuais para replicar. Você também pode personalizar os nomes das tabelas de destino e as configurações de coluna.
 
     <Image img="/images/managed-postgres/select-tables-step.webp" alt="Etapa de seleção de tabelas mostrando a seleção do banco de dados, as opções de replicação e o seletor de tabelas agrupado por schema" size="md" border />
 
-    Clique em **Replicate data to ClickHouse** para iniciar a replicação.
+    Click **Replicate data to ClickHouse** to start the replication.
   </Step>
 
   <Step>

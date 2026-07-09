@@ -278,9 +278,9 @@ SELECT count() FROM cloudflare_http_logs;
 * 为特定用例创建更多仪表盘 (API 性能、缓存优化、地域流量分析)
 
 <div id="going-to-production">
-  ## 生产环境配置
+  ## 生产环境部署
 </div>
 
-本指南演示了如何使用公开的演示数据集摄取 Cloudflare 日志。对于生产环境部署，请配置 Cloudflare Logpush，将数据写入您自己的 S3 存储桶，并结合 [基于 IAM 角色的身份验证](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely) 配置 ClickPipes，以确保访问安全。仅选择所需的 [Logpush 字段](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)，以降低存储成本和摄取量。在 Logpush 中启用按天划分的子文件夹，以便更好地组织文件，并在 ClickPipes 路径模式中使用 `**/*` 来匹配各级子目录中的文件。
+本指南演示如何使用公开的演示数据集摄取 Cloudflare 日志。对于生产环境部署，请将 Cloudflare Logpush 配置为写入您自己的 S3 存储桶，并通过 [基于 IAM role 的身份验证](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely) 配置 ClickPipes 以确保安全访问。仅选择所需的 [Logpush 字段](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)，以降低存储成本和摄取量。在 Logpush 中启用按日分组的子文件夹，以便更好地组织文件，并在 ClickPipes 路径模式中使用 `**/*` 以匹配各级子目录中的文件。
 
-有关高级配置选项 (包括用于处理历史回填和乱序文件的 [基于 SQS 的无序摄取](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order)) ，请参阅 [S3 ClickPipes 文档](/zh/integrations/clickpipes/object-storage/amazon-s3/overview)。
+有关高级配置选项 (包括用于处理回填和乱序文件的[基于 SQS 的无序摄取](/zh/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order)) ，请参阅 [S3 ClickPipes 文档](/zh/integrations/clickpipes/object-storage/amazon-s3/overview)。

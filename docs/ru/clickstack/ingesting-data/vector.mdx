@@ -132,9 +132,9 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       </Step>
 
       <Step>
-        ### Просмотр данных
+        ### Просмотрите данные
 
-        Перейдите в представление журналов, чтобы изучить данные и начать работу с ClickStack.
+        Перейдите в представление журналов, чтобы просмотреть данные и начать работу с ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Журналы Nginx в ClickStack" size="lg" />
       </Step>
@@ -158,7 +158,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
         CREATE DATABASE IF NOT EXISTS logs
         ```
 
-        Создайте таблицу для ваших данных. Она должна соответствовать схеме выходных данных. В примере ниже используется классическая структура Nginx. При необходимости адаптируйте её под свои данные, соблюдая [рекомендации по выбору схемы](/ru/concepts/best-practices/select-data-type). Мы **настоятельно рекомендуем** ознакомиться с [концепцией первичных ключей](/ru/concepts/core-concepts/primary-indexes) и выбирать первичный ключ в соответствии с рекомендациями, изложенными [здесь](/ru/clickstack/managing/performance-tuning#choosing-a-primary-key).
+        Создайте таблицу для своих данных. Она должна соответствовать выходной схеме данных. В примере ниже используется классическая структура Nginx. При необходимости адаптируйте её под свои данные, следуя [рекомендациям по работе со схемой](/ru/concepts/best-practices/select-data-type). Мы **настоятельно рекомендуем** ознакомиться с [концепцией первичных ключей](/ru/concepts/core-concepts/primary-indexes) и выбрать первичный ключ на основе рекомендаций, изложенных [здесь](/ru/clickstack/managing/performance-tuning#choosing-a-primary-key).
 
         ```sql
         CREATE TABLE logs.nginx_logs
@@ -183,7 +183,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
         <Info>
           **Первичный ключ Nginx**
 
-          Указанный выше первичный ключ рассчитан на типичные сценарии доступа к журналам Nginx в интерфейсе ClickStack, но в рабочей среде его может потребоваться скорректировать с учетом вашей рабочей нагрузки.
+          Приведённый выше первичный ключ рассчитан на типичные сценарии работы с журналами Nginx в интерфейсе ClickStack, но в продакшене его может потребоваться скорректировать в зависимости от вашей рабочей нагрузки.
         </Info>
       </Step>
 
@@ -249,9 +249,9 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       </Step>
 
       <Step>
-        ### Просмотрите данные
+        ### Просмотр данных
 
-        Перейдите в представление журналов, чтобы просмотреть данные и начать работу с ClickStack.
+        Перейдите в представление журналов, чтобы изучить данные и начать работу с ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Журналы Nginx в ClickStack" size="lg" />
       </Step>
@@ -346,7 +346,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # Формат DateTime, совместимый с ClickHouse
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -427,7 +427,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step>
         ### Просмотрите данные
 
-        Перейдите в режим поиска за `October 20th, 2025`, чтобы просмотреть данные и начать работу с ClickStack.
+        Перейдите в представление поиска за `October 20th, 2025`, чтобы просмотреть данные и начать работу с ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Интерфейс HyperDX" size="lg" />
       </Step>
@@ -435,7 +435,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
   </Tab>
 
   <Tab title="ClickStack с открытым исходным кодом">
-    В этом руководстве предполагается, что вы уже настроили ClickStack с открытым исходным кодом согласно [руководству по началу работы](/ru/clickstack/getting-started/oss).
+    В этом руководстве предполагается, что вы уже настроили ClickStack с открытым исходным кодом согласно [руководству «Начало работы»](/ru/clickstack/getting-started/oss).
 
     <Steps>
       <Step>
@@ -490,7 +490,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
         <Info>
           **Первичный ключ Nginx**
 
-          Указанный выше первичный ключ рассчитан на типичные сценарии доступа к журналам Nginx в интерфейсе ClickStack, но в рабочей среде его может потребоваться скорректировать с учётом вашей рабочей нагрузки.
+          Приведённый выше первичный ключ рассчитан на типичные сценарии доступа к журналам Nginx в интерфейсе ClickStack, но в производственной среде его может потребоваться скорректировать с учётом вашей рабочей нагрузки.
         </Info>
       </Step>
 
@@ -518,7 +518,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # Формат DateTime, совместимый с ClickHouse
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -583,9 +583,9 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
         )
         ```
 
-        Это восстанавливает строку лога из структурированных полей.
+        Это позволяет восстановить строку лога из структурированных полей.
 
-        Описание других возможных вариантов см. в [справочнике по конфигурации](/ru/clickstack/managing/config).
+        Другие возможные варианты см. в [справочнике по конфигурации](/ru/clickstack/managing/config).
       </Step>
 
       <Step>
@@ -599,7 +599,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step>
         ### Просмотрите данные
 
-        Перейдите в представление поиска за `October 20th, 2025`, чтобы просмотреть данные и начать работу с ClickStack.
+        Перейдите в режим поиска за `October 20th, 2025`, чтобы просмотреть данные и начать работу с ClickStack.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Интерфейс HyperDX" size="lg" />
       </Step>

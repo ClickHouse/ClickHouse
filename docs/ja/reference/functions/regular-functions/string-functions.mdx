@@ -1499,12 +1499,12 @@ SELECT idnaDecode('xn--strae-oqa.xn--mnchen-3ya.de')
 
 導入バージョン: v24.1.0
 
-[Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) の仕組みに従い、ドメイン名の ASCII 表現 (ToASCII アルゴリズム) を返します。
+[Internationalized Domain Names in Applications](https://en.wikipedia.org/wiki/Internationalized_domain_name#Internationalizing_Domain_Names_in_Applications) (IDNA) の方式に従い、ドメイン名の ASCII 表現 (ToASCII アルゴリズム) を返します。
 入力文字列は UTF エンコードされており、ASCII 文字列に変換可能である必要があります。そうでない場合は例外がスローされます。
 
-<Note>
-  パーセントデコードや、タブ、スペース、制御文字のトリミングは行われません。
-</Note>
+:::note
+パーセントデコードや、タブ、スペース、制御文字のトリミングは行われません。
+:::
 
 **構文**
 
@@ -1518,7 +1518,7 @@ idnaEncode(s)
 
 **戻り値**
 
-入力値に対する IDNA の仕組みに従い、入力文字列の ASCII 表現を返します。[`String`](/ja/reference/data-types/string)
+入力値に対する IDNA 方式に従い、入力文字列の ASCII 表現を返します。[`String`](/ja/reference/data-types/string)
 
 **例**
 
@@ -1543,10 +1543,10 @@ SELECT idnaEncode('straße.münchen.de')
 各単語の先頭文字を大文字に、それ以外の文字を小文字に変換します。
 単語は、英数字以外の文字で区切られた英数字の連続です。
 
-<Note>
-  `initcap` は各単語の先頭文字のみを大文字に変換するため、アポストロフィや大文字を含む単語では想定どおりにならない場合があります。
-  これは既知の動作であり、現時点で修正する予定はありません。
-</Note>
+:::note
+`initcap` は各単語の先頭文字のみを大文字に変換するため、アポストロフィや大文字を含む単語では想定どおりにならない場合があります。
+これは既知の動作であり、現時点で修正する予定はありません。
+:::
 
 **構文**
 
@@ -1598,10 +1598,10 @@ SELECT initcap('John''s cat won''t eat.');
 文字列には、有効な UTF-8 でエンコードされたテキストが含まれていることを前提としています。
 この前提が満たされない場合でも例外は送出されず、結果は未定義です。
 
-<Note>
-  この関数は言語を判別しません。たとえば、トルコ語では結果が完全に正しくならない場合があります (i/İ と i/I) 。
-  UTF-8 バイト列の長さが、あるコードポイントの大文字と小文字で異なる場合、そのコードポイントでは結果が正しくならない可能性があります。
-</Note>
+:::note
+この関数は言語を判別しません。たとえば、トルコ語では結果が完全に正しくならない場合があります (i/İ と i/I) 。
+UTF-8 バイト列の長さが、あるコードポイントの大文字と小文字で異なる場合、そのコードポイントでは結果が正しくならない可能性があります。
+:::
 
 **構文**
 
@@ -1659,9 +1659,6 @@ isValidASCII(str)
 
 ```sql title=Query
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
-```
-
-```response title=Response
 ```
 
 <div id="isValidUTF8">
@@ -2212,8 +2209,8 @@ UTF-8 文字列を NFKC で正規化した形式を返します。 [`String`](/j
 
 ```sql title=Query
 SELECT
-    '① ② ③' AS original,                            -- 丸囲み数字
-    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized;  -- 1 2 3 に変換される
+    '① ② ③' AS original,                           -- Circled number characters
+    normalizeUTF8NFKC('① ② ③') AS nfkc_normalized  -- Converts to 1 2 3
 ```
 
 ```response title=Response
@@ -2289,8 +2286,8 @@ UTF-8 文字列を NFKD で正規化した形式を返します。 [`String`](/j
 
 ```sql title=Query
 SELECT
-    'H₂O²' AS original,                            -- H + 下付き文字 2 + O + 上付き文字 2
-    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized;  -- H 2 O 2 に変換
+    'H₂O²' AS original,                           -- H + subscript 2 + O + superscript 2
+    normalizeUTF8NFKD('H₂O²') AS nfkd_normalized  -- Converts to H 2 O 2
 ```
 
 ```response title=Response
@@ -3439,10 +3436,10 @@ www.straßen-in-europa
 
 省略可能な引数 `length` は、返される部分文字列に含められるコードポイント数の最大値を指定します。
 
-<Note>
-  この関数は、文字列に有効な UTF-8 でエンコードされたテキストが含まれていることを前提としています。
-  この前提が満たされない場合でも、例外はスローされず、結果は未定義です。
-</Note>
+:::note
+この関数は、文字列に有効な UTF-8 でエンコードされたテキストが含まれていることを前提としています。
+この前提が満たされない場合でも、例外はスローされず、結果は未定義です。
+:::
 
 **構文**
 
@@ -3895,10 +3892,10 @@ SELECT upper('clickhouse')
 文字列が有効な UTF-8 でエンコードされたテキストを含むものと仮定して、その文字列を大文字に変換します。
 この前提が満たされない場合でも例外はスローされず、結果は未定義です。
 
-<Note>
-  この関数は言語を判別しないため、たとえばトルコ語では結果が完全に正確にならない場合があります (i/İ と i/I など) 。
-  UTF-8 のバイト列の長さが、あるコードポイントの大文字と小文字で異なる場合 (`ẞ` と `ß` など) 、そのコードポイントについては結果が正しくない可能性があります。
-</Note>
+:::note
+この関数は言語を判別しないため、たとえばトルコ語では結果が完全に正確にならない場合があります (i/İ と i/I など) 。
+UTF-8 のバイト列の長さが、あるコードポイントの大文字と小文字で異なる場合 (`ẞ` と `ß` など) 、そのコードポイントについては結果が正しくない可能性があります。
+:::
 
 **構文**
 
@@ -3912,7 +3909,7 @@ upperUTF8(s)
 
 **戻り値**
 
-String型の値。[`String`](/ja/reference/data-types/string)
+String データ型の値。[`String`](/ja/reference/data-types/string)
 
 **例**
 

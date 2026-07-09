@@ -198,15 +198,17 @@ Taille maximale du bloc, en octets, accumulé lors de l’agrégation selon l’
 
 Nombre de threads à utiliser pour fusionner les résultats intermédiaires d’agrégation en mode économe en mémoire. Plus cette valeur est élevée, plus la mémoire consommée est importante. 0 signifie : identique à &#39;max&#95;threads&#39;.
 
-<div id="ai_function_credentials">
-  ## ai_function_credentials
+<div id="ai_function_embedding_default_credentials">
+  ## ai_function_embedding_default_credentials
 </div>
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "Nouveau paramètre"}]}]} />
+<SettingsInfoBlock type="String" default_value="" />
 
-Nom de la collection nommée utilisée par les fonctions d’IA pour les identifiants du fournisseur et la configuration (`provider`, `endpoint`, `model`, `api_key` facultative, etc.). Lorsqu’elle est vide, une exception est levée.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "Nouveau paramètre"}]}]} />
+
+Nom de la collection nommée utilisée par `aiEmbed` lorsque l’appel ne transmet pas `credentials` dans sa map de paramètres. Une valeur vide signifie qu’il n’y a pas de valeur par défaut : ces appels doivent transmettre `credentials` explicitement. Ce paramètre est distinct de `ai_function_text_default_credentials`, car l’endpoint et le modèle d’embedding diffèrent de ceux d’un chat.
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -295,6 +297,18 @@ Délai d’expiration, en secondes, des requêtes HTTP individuelles effectuées
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "Nouveau paramètre"}]}]} />
 
 Délai initial, en millisecondes, avant la première nouvelle tentative d’une requête d’API vers une fonction d’IA ayant échoué. Le délai double à chaque tentative suivante (backoff exponentiel). Par exemple, avec les paramètres par défaut : 1000ms, 2000ms, 4000ms.
+
+<div id="ai_function_text_default_credentials">
+  ## ai_function_text_default_credentials
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "Nouveau paramètre"}]}]} />
+
+Nom de la collection nommée utilisée par les fonctions d’IA textuelles (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) lorsque l’appel ne transmet pas `credentials` dans sa map de paramètres. Une valeur vide signifie qu’il n’y a pas de valeur par défaut : ces appels doivent transmettre `credentials` explicitement. Un endpoint et un modèle de chat-completions étant différents de ceux utilisés pour les embeddings, ce paramètre est distinct de `ai_function_embedding_default_credentials`.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error
@@ -406,19 +420,6 @@ Autorise la création de bases de données avec le moteur Ordinary déprécié
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "Autoriser l'utilisation de fonctions de fenêtre obsolètes propices aux erreurs (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)"}]}]} />
 
 Autoriser l&#39;utilisation de fonctions de fenêtre obsolètes propices aux erreurs (neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)
-
-<div id="allow_deprecated_snowflake_conversion_functions">
-  ## allow_deprecated_snowflake_conversion_functions
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "Désactive les fonctions obsolètes snowflakeToDateTime[64] et dateTime[64]ToSnowflake."}]}]} />
-
-Les fonctions `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake` et `dateTime64ToSnowflake` sont obsolètes et désactivées par défaut.
-Veuillez utiliser les fonctions `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID` et `dateTime64ToSnowflakeID` à la place.
-
-Pour réactiver les fonctions obsolètes (par exemple pendant une période de transition), définissez ce paramètre sur `true`.
 
 <div id="allow_deprecated_syntax_for_merge_tree">
   ## allow_deprecated_syntax_for_merge_tree
@@ -618,13 +619,15 @@ Autorise l’implémentation expérimentale de delta-kernel-rs.
   ## allow_experimental_delta_lake_writes
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
+
+**Alias** : `allow_delta_lake_writes`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Les écritures Delta Lake sont passées en bêta."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "Nouveau paramètre."}]}]} />
 
-Active la fonctionnalité d’écriture de delta-kernel.
+Active la fonctionnalité d’écriture avec delta-kernel.
 
 <div id="allow_experimental_expire_snapshots">
   ## allow_experimental_expire_snapshots
@@ -823,18 +826,6 @@ Active le transpileur SQL polyglotte ; il convertit le SQL de plus de 30 dialect
 
 Active PRQL, une alternative à SQL.
 
-<div id="allow_experimental_text_index_lazy_apply">
-  ## allow_experimental_text_index_lazy_apply
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer le mode expérimental d'application différée de la posting list"}]}]} />
-
-Si cette option est définie sur true, elle permet d&#39;utiliser le mode d&#39;application différée de la posting list pour les requêtes d&#39;index de texte.
-
 <div id="allow_experimental_time_series_aggregate_functions">
   ## allow_experimental_time_series_aggregate_functions
 </div>
@@ -875,6 +866,18 @@ Permet de créer des tables avec le moteur de table [TimeSeries](/fr/reference/e
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "Nouveau paramètre pour activer la clause expérimentale UNIQUE KEY sur les tables de la famille MergeTree"}]}]} />
 
 Permet de créer des tables avec la clause `UNIQUE KEY` sur les moteurs de la famille MergeTree.
+
+<div id="allow_experimental_url_wildcard_from_index_pages">
+  ## allow_experimental_url_wildcard_from_index_pages
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer l’expansion des caractères génériques dans la fonction de table `url` en énumérant les pages d’index HTTP."}]}]} />
+
+Autorise l’expansion expérimentale des caractères génériques pour `url()` et `ENGINE = URL` à partir de pages d’index HTTP.
 
 <div id="allow_experimental_window_view">
   ## allow_experimental_window_view
@@ -1065,7 +1068,7 @@ Autorise l’exécution d’opérations ALTER qui modifient non seulement les m�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "Autoriser les arguments de fuseau horaire non constants dans certaines fonctions liées à l’heure, comme toTimeZone(), fromUnixTimestamp*() et snowflakeToDateTime*()."}]}]} />
 
-Autorise les arguments de fuseau horaire non constants dans certaines fonctions liées à l’heure, comme toTimeZone(), fromUnixTimestamp*() et snowflakeToDateTime*().
+Autorise les arguments de fuseau horaire non constants dans certaines fonctions liées à l’heure, comme toTimeZone(), fromUnixTimestamp*() et snowflakeIDToDateTime*().
 Ce paramètre existe uniquement pour des raisons de compatibilité. Dans ClickHouse, le fuseau horaire est une propriété du type de données et, par conséquent, de la colonne.
 L’activation de ce paramètre donne à tort l’impression que différentes valeurs d’une même colonne peuvent avoir des fuseaux horaires différents.
 N’activez donc pas ce paramètre.
@@ -1186,6 +1189,20 @@ Lorsque ce paramètre est défini sur `false` (valeur par défaut), `RANK` et `D
 
 Lors du déplacement des conditions de WHERE vers PREWHERE, autoriser leur réordonnancement pour optimiser le filtrage
 
+<div id="allow_replace_partition_from_empty_source">
+  ## allow_replace_partition_from_empty_source
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nouveau contrôle de sécurité : `ALTER TABLE ... REPLACE PARTITION ... FROM ...` lève désormais une exception lorsque la table source ne contient aucune part dans la partition demandée (corrige la perte silencieuse de données dans [#23727](https:\/\/github.com\/ClickHouse\/ClickHouse\/issues\/23727)). L’ancien comportement, qui supprimait silencieusement la partition de destination, est conservé si `allow_replace_partition_from_empty_source = 1`."}]}]} />
+
+Autorise `ALTER TABLE ... REPLACE PARTITION ... FROM ...` à supprimer silencieusement la partition de destination lorsque la source ne contient aucune part dans cette partition.
+
+Par défaut, cela n’est pas autorisé : `REPLACE PARTITION` à partir d’une source qui ne contient aucune donnée dans la partition demandée lève une exception, car dans ce cas l’opération revient en pratique à exécuter un `DROP PARTITION` silencieux sur la destination (les données de destination sont supprimées et rien ne les remplace), ce qui est une cause fréquente de perte de données accidentelle (voir [#23727](https://github.com/ClickHouse/ClickHouse/issues/23727)).
+
+Activez ce paramètre pour rétablir l’ancien comportement, par exemple si vous utilisez volontairement une partition source vide pour effacer les données de destination. Pour une suppression inconditionnelle, préférez `ALTER TABLE ... DROP PARTITION ...`.
+
 <div id="allow_settings_after_format_in_insert">
   ## allow_settings_after_format_in_insert
 </div>
@@ -1214,9 +1231,9 @@ Valeurs possibles :
 * 0 — Interdire.
 * 1 — Autoriser.
 
-<Note>
-  Utilisez ce paramètre uniquement pour assurer la rétrocompatibilité si vos cas d’usage dépendent de l’ancienne syntaxe.
-</Note>
+:::note
+Utilisez ce paramètre uniquement pour assurer la rétrocompatibilité si vos cas d’usage dépendent de l’ancienne syntaxe.
+:::
 
 <div id="allow_simdjson">
   ## allow_simdjson
@@ -1232,7 +1249,7 @@ Permet d&#39;utiliser la bibliothèque simdjson dans les fonctions &#39;JSON*&#3
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Activer la sortie directe des représentations spéciales de colonnes comme Sparse/Replicated dans certains formats de sortie"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Ajouter un paramètre pour autoriser la sortie des représentations spéciales de colonnes comme Sparse/Replicated sans les convertir en colonnes complètes"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "Activer la sortie directe des représentations spéciales de colonnes comme Sparse\/Replicated dans certains formats de sortie"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Ajouter un paramètre pour autoriser la sortie des représentations spéciales de colonnes comme Sparse\/Replicated sans les convertir en colonnes complètes"}]}]} />
 
 Permet de produire des colonnes avec des modes de sérialisation spéciaux comme Sparse et Replicated sans les convertir en représentation complète de colonne.
 Cela permet d&#39;éviter des copies de données inutiles lors du formatage.
@@ -1316,9 +1333,9 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Interdire les PRIMARY KEY/ORDER BY jugés suspects pour MergeTree (c.-à-d. SimpleAggregateFunction)"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "0"},{"label": "Interdire les PRIMARY KEY/ORDER BY suspects pour MergeTree (c.-à-d. SimpleAggregateFunction)"}]}]} />
 
-Autoriser les `PRIMARY KEY`/`ORDER BY` jugés suspects pour MergeTree (c.-à-d. SimpleAggregateFunction).
+Autoriser les `PRIMARY KEY`/`ORDER BY` suspects pour MergeTree (c.-à-d. SimpleAggregateFunction).
 
 <div id="allow_suspicious_ttl_expressions">
   ## allow_suspicious_ttl_expressions
@@ -1432,9 +1449,9 @@ Valeurs possibles :
 
 Valeur par défaut dans Cloud : `0`.
 
-<Note>
-  `alter_sync` s’applique uniquement aux tables `Replicated` et `SharedMergeTree` ; ce paramètre est sans effet sur les tables non `Replicated` ou `Shared`.
-</Note>
+:::note
+`alter_sync` s’applique uniquement aux tables `Replicated` et `SharedMergeTree` ; ce paramètre est sans effet sur les tables non `Replicated` ou `Shared`.
+:::
 
 <div id="alter_update_mode">
   ## alter_update_mode
@@ -1512,13 +1529,13 @@ Lorsqu’il est activé, l’analyseur remplace les vues ordinaires (non matéri
 
 Active le comportement legacy du serveur ClickHouse pour les opérations `ANY INNER|LEFT JOIN`.
 
-<Note>
-  Utilisez ce paramètre uniquement pour la rétrocompatibilité si vos cas d’usage dépendent du comportement legacy de `JOIN`.
-</Note>
+:::note
+Utilisez ce paramètre uniquement pour la rétrocompatibilité si vos cas d’usage dépendent du comportement legacy de `JOIN`.
+:::
 
 Lorsque le comportement legacy est activé :
 
-* Les résultats des opérations `t1 ANY LEFT JOIN t2` et `t2 ANY RIGHT JOIN t1` ne sont pas identiques, car ClickHouse utilise une logique de correspondance des clés de table de gauche à droite, de plusieurs vers une.
+* Les résultats des opérations `t1 ANY LEFT JOIN t2` et `t2 ANY RIGHT JOIN t1` ne sont pas identiques, car ClickHouse utilise une logique de correspondance des clés des tables de gauche à droite, de plusieurs vers une.
 * Les résultats des opérations `ANY INNER JOIN` contiennent toutes les lignes de la table de gauche, comme dans les opérations `SEMI LEFT JOIN`.
 
 Lorsque le comportement legacy est désactivé :
@@ -2295,9 +2312,9 @@ Taille maximale des données d’un nœud [Zoo]Keeper lors de la sauvegarde
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1000"},{"label": "Paramètre de Aws::Client::RetryStrategy, Aws::Client gère lui-même les tentatives de nouvelle exécution, 0 signifie aucune tentative. S’applique uniquement à la sauvegarde/restauration."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1000"},{"label": "Paramètre pour Aws::Client::RetryStrategy, Aws::Client gère lui-même les tentatives, 0 signifie aucune tentative. S’applique uniquement à la sauvegarde\/restauration."}]}]} />
 
-Paramètre de Aws::Client::RetryStrategy, Aws::Client gère lui-même les tentatives de nouvelle exécution, 0 signifie aucune tentative. S’applique uniquement à la sauvegarde/restauration.
+Paramètre pour Aws::Client::RetryStrategy, Aws::Client gère lui-même les tentatives, 0 signifie aucune tentative. S’applique uniquement à la sauvegarde/restauration.
 
 <div id="backup_restore_s3_retry_initial_backoff_ms">
   ## backup_restore_s3_retry_initial_backoff_ms
@@ -2642,10 +2659,10 @@ Ce paramètre prend comme valeur un numéro de version de ClickHouse sous forme 
 
 Désactivé par défaut.
 
-<Note>
-  Dans ClickHouse Cloud, le paramètre de compatibilité par défaut au niveau du service doit être défini par le support ClickHouse Cloud. Veuillez [ouvrir un ticket](https://clickhouse.cloud/support) pour le faire configurer.
-  Toutefois, le paramètre `compatibility` peut être redéfini au niveau de l’utilisateur, du rôle, du profil, de la query ou de la session à l’aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '22.3'` dans une session ou `SETTINGS compatibility = '22.3'` dans une query.
-</Note>
+:::note
+Dans ClickHouse Cloud, le paramètre de compatibilité par défaut au niveau du service doit être défini par le support ClickHouse Cloud. Veuillez [ouvrir un ticket](https://clickhouse.cloud/support) pour le faire configurer.
+Toutefois, le paramètre `compatibility` peut être redéfini au niveau de l’utilisateur, du rôle, du profil, de la query ou de la session à l’aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '22.3'` dans une session ou `SETTINGS compatibility = '22.3'` dans une query.
+:::
 
 <div id="compatibility_ignore_auto_increment_in_create_table">
   ## compatibility_ignore_auto_increment_in_create_table
@@ -3100,8 +3117,8 @@ Active ou désactive la vérification de déduplication pour les vues matériali
 
 Valeurs possibles :
 
-0 — Désactivé.
-1 — Activé.
+* 0 — Désactivé.
+* 1 — Activé.
 
 Lorsqu’il est activé, ClickHouse effectue la déduplication des blocs dans les vues matérialisées qui dépendent de tables Replicated*.
 Ce paramètre est utile pour garantir que les vues matérialisées ne contiennent pas de doublons lorsque l’opération d’insertion est retentée à la suite d’un échec.
@@ -3289,7 +3306,7 @@ La valeur par défaut est `CURRENT_USER`.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Paramètre ajouté dans la version 26.5 pour contrôler le comportement d’élagage des partitions avec `FINAL`, introduit discrètement dans la version 26.3 (https://github.com/ClickHouse/ClickHouse/pull/98242). Le changement sémantique significatif est enregistré dans le bloc 26.3 afin que `compatibility = '26.2'` le rétablisse ; cette entrée existe pour que la vérification de mise à niveau depuis 26.4 accepte ce nom nouvellement introduit."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "Contrôle la désactivation inconditionnelle, par le planner de `FINAL`, de l’élagage des partitions lorsque la colonne de clé de partition ne fait pas partie de la clé de tri. Le changement de comportement lui-même a été introduit discrètement dans la version 26.3 via https://github.com/ClickHouse/ClickHouse/pull/98242 ; cette entrée le documente rétroactivement afin que `compatibility = '26.2'` rétablisse le comportement antérieur à la régression (0 = élagage avant `FINAL`, rapide ; 1 = report de l’élagage, sans risque pour la correction)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Paramètre ajouté dans la version 26.5 pour contrôler le comportement d’élagage des partitions avec `FINAL`, introduit discrètement dans la version 26.3 (https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242). Le changement sémantique significatif est enregistré dans le bloc 26.3 afin que `compatibility = '26.2'` le rétablisse ; cette entrée existe pour que la vérification de mise à niveau depuis 26.4 accepte ce nom nouvellement introduit."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "Contrôle la désactivation inconditionnelle, par le planner de `FINAL`, de l’élagage des partitions lorsque la colonne de clé de partition ne fait pas partie de la clé de tri. Le changement de comportement lui-même a été introduit discrètement dans la version 26.3 via https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242 ; cette entrée le documente rétroactivement afin que `compatibility = '26.2'` rétablisse le comportement antérieur à la régression (0 = élagage avant `FINAL`, rapide ; 1 = report de l’élagage, sans risque pour la correction)."}]}]} />
 
 Lorsqu’il est activé (par défaut), l’élagage des partitions est ignoré pour les requêtes `FINAL` sur les tables dont les
 colonnes de clé de partition ne font pas partie de la clé de tri. Il s’agit du comportement sans risque pour la correction
@@ -3546,24 +3563,24 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Active ou désactive le fractionnement des batches en cas d’échec.
+Active ou désactive le fractionnement des lots en cas d’échec.
 
-Il peut arriver que l’envoi d’un batch donné vers le shard distant échoue à cause d’un pipeline en aval complexe (par ex. `MATERIALIZED VIEW` avec `GROUP BY`), en raison de `Memory limit exceeded` ou d’erreurs similaires. Dans ce cas, réessayer ne servira à rien (et bloquera les envois distribués pour la table), tandis que l’envoi des fichiers de ce batch un par un peut permettre à `INSERT` de réussir.
+Il peut arriver que l’envoi d’un lot donné vers le shard distant échoue à cause d’un pipeline en aval complexe (par ex. `MATERIALIZED VIEW` avec `GROUP BY`), en raison de `Memory limit exceeded` ou d’erreurs similaires. Dans ce cas, réessayer ne servira à rien (et bloquera les envois distribués pour la table), tandis que l’envoi des fichiers de ce lot un par un peut permettre à `INSERT` de réussir.
 
-Ainsi, définir ce paramètre sur `1` désactive le batching pour ces batches (c.-à-d. désactive temporairement `distributed_background_insert_batch` pour les batches en échec).
+Ainsi, définir ce paramètre sur `1` désactive le batching pour ces lots (c.-à-d. désactive temporairement `distributed_background_insert_batch` pour les lots en échec).
 
 Valeurs possibles :
 
 * 1 — Activé.
 * 0 — Désactivé.
 
-<Note>
-  Ce paramètre affecte également les batches corrompus (qui peuvent apparaître à la suite d’un arrêt anormal du serveur (machine) et de l’absence de `fsync_after_insert`/`fsync_directories` pour le moteur de table [Distributed](/fr/reference/engines/table-engines/special/distributed)).
-</Note>
+:::note
+Ce paramètre affecte également les lots corrompus (qui peuvent apparaître à la suite d’un arrêt anormal du serveur (machine) et de l’absence de `fsync_after_insert`/`fsync_directories` pour le moteur de table [Distributed](/fr/reference/engines/table-engines/special/distributed)).
+:::
 
-<Note>
-  Vous ne devez pas vous reposer sur le fractionnement automatique des batches, car cela peut nuire aux performances.
-</Note>
+:::note
+Vous ne devez pas vous reposer sur le fractionnement automatique des lots, car cela peut nuire aux performances.
+:::
 
 <div id="distributed_background_insert_timeout">
   ## distributed_background_insert_timeout
@@ -3826,6 +3843,18 @@ Valeur par défaut dans Cloud : `20000`.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "Nouveau paramètre"}]}]} />
 
 N’a d’effet que dans ClickHouse Cloud. Délai d’attente, en millisecondes, pour recevoir des données du serveur cache distribué. Si aucun octet n’est reçu pendant cet intervalle, une exception est levée.
+
+<div id="distributed_cache_registry_show_certificate_and_signature">
+  ## distributed_cache_registry_show_certificate_and_signature
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nouveau paramètre permettant d’afficher les colonnes `certificate` et `signature` dans `system.distributed_cache_registry`."}]}]} />
+
+N’a d’effet que dans ClickHouse Cloud. Affiche les colonnes `certificate` et `signature` dans la table `system.distributed_cache_registry`. Par défaut, ces colonnes sont vides afin de conserver une sortie compacte ; activez ce paramètre pour les examiner.
 
 <div id="distributed_cache_send_timeout_ms">
   ## distributed_cache_send_timeout_ms
@@ -4185,6 +4214,18 @@ Supprime les échanges inutiles dans le plan de requête distribuée. Désactive
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nouveau paramètre permettant de sérialiser le plan de requête distribué pour les répliques"}]}]} />
 
 Sérialise le plan de requête distribué pour l’exécuter sur les répliques.
+
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "Nouveau paramètre expérimental définissant le nombre de workers sans état à réserver pour une requête distribuée. Zéro désactive cette réservation."}]}]} />
+
+Nombre de workers sans état qui seront utilisés pour exécuter cette requête. Zéro désactive la réservation de workers sans état pour les plans distribués.
 
 <div id="distributed_product_mode">
   ## distributed_product_mode
@@ -4818,9 +4859,9 @@ Résultat :
 
 Active ou désactive la prise en charge des arguments positionnels dans les définitions de PROJECTION. Voir aussi le paramètre [enable&#95;positional&#95;arguments](#enable_positional_arguments).
 
-<Note>
-  Il s&#39;agit d&#39;un paramètre de niveau expert, et vous ne devriez pas le modifier si vous débutez avec ClickHouse.
-</Note>
+:::note
+Il s&#39;agit d&#39;un paramètre de niveau expert, et vous ne devriez pas le modifier si vous débutez avec ClickHouse.
+:::
 
 Valeurs possibles :
 
@@ -4910,7 +4951,7 @@ Valeurs possibles :
 Si ce paramètre est activé, toutes les sous-requêtes d’une même requête partageront le même StorageSnapshot pour chaque table.
 Cela garantit une vue cohérente des données dans l’ensemble de la requête, même si la même table est utilisée plusieurs fois.
 
-Ce paramètre est nécessaire pour les requêtes où la cohérence interne des data parts est importante. Exemple :
+Ce paramètre est nécessaire pour les requêtes où la cohérence interne des parties de données est importante. Exemple :
 
 ```sql
 SELECT
@@ -4925,12 +4966,12 @@ WHERE (_part, _part_offset) IN (
 
 Sans ce paramètre, la requête externe et la requête interne peuvent s’exécuter sur des snapshots de données différents, ce qui peut entraîner des résultats incorrects.
 
-<Note>
-  L’activation de ce paramètre désactive l’optimisation qui supprime des snapshots les parties de données inutiles une fois l’étape de planification terminée.
-  Par conséquent, les requêtes de longue durée peuvent conserver des parties obsolètes pendant toute leur exécution, ce qui retarde le nettoyage des parties et accroît la pression sur le stockage.
+:::note
+L’activation de ce paramètre désactive l’optimisation qui supprime des snapshots les parties de données inutiles une fois l’étape de planification terminée.
+Par conséquent, les requêtes de longue durée peuvent conserver des parties obsolètes pendant toute leur exécution, ce qui retarde le nettoyage des parties et accroît la pression sur le stockage.
 
-  Ce paramètre s’applique actuellement uniquement aux tables de la famille MergeTree.
-</Note>
+Ce paramètre s’applique actuellement uniquement aux tables de la famille MergeTree.
+:::
 
 Valeurs possibles :
 
@@ -5173,6 +5214,25 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 Exécute les sous-requêtes `EXISTS` non corrélées comme des sous-requêtes scalaires. Comme pour les sous-requêtes scalaires, le cache est utilisé et le pliage de constantes s&#39;applique au résultat.
 
 Valeur par défaut dans Cloud : `0`.
+
+<div id="explain_query_plan_default">
+  ## explain_query_plan_default
+</div>
+
+<SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "pretty"},{"label": "À partir de la version 26.7, `EXPLAIN PLAN` utilise par défaut `actions=1, compact=1, pretty=1`. Définissez cette valeur sur `legacy` pour restaurer la sortie antérieure à la version 26.7."}]}]} />
+
+Format par défaut utilisé par `EXPLAIN PLAN`.
+
+Valeurs possibles :
+
+* `pretty` (par défaut depuis la version 26.7) — `actions`, `compact` et `pretty` prennent par défaut la valeur `true`, ce qui produit un plan compact, lisible et annoté avec les actions.
+* `legacy` — sortie antérieure à la version 26.7.
+
+Le fait de spécifier explicitement les options `actions`, `compact` ou `pretty` dans l’instruction `EXPLAIN` (par exemple, `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) l’emporte toujours sur ce paramètre.
+
+`EXPLAIN PLAN` avec `json = 1` ou `distributed = 1` conserve les valeurs par défaut de `legacy` (antérieures à la version 26.7), quel que soit ce paramètre, sauf si `actions`, `compact` ou `pretty` sont définis explicitement. La sortie `pretty` ne peut pas représenter les résultats JSON ni les plans distribués par shard ; ces modes ne sont donc correctement rendus que sous la forme `legacy`.
 
 <div id="external_storage_connect_timeout_sec">
   ## external_storage_connect_timeout_sec
@@ -6314,9 +6374,9 @@ Valeurs possibles :
 * Tout nombre entier positif.
 * 0 - Désactivé (délai d&#39;expiration infini).
 
-<Note>
-  Cela s&#39;applique uniquement au profil par défaut. Un redémarrage du serveur est nécessaire pour que les modifications prennent effet.
-</Note>
+:::note
+Cela s&#39;applique uniquement au profil par défaut. Un redémarrage du serveur est nécessaire pour que les modifications prennent effet.
+:::
 
 <div id="http_skip_not_found_url_for_globs">
   ## http_skip_not_found_url_for_globs
@@ -6819,9 +6879,9 @@ Valeurs possibles :
 Pour les tables répliquées, par défaut, seules les 100 insertions les plus récentes de chaque partition sont dédupliquées (voir [replicated&#95;deduplication&#95;window](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/fr/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds)).
 Pour les tables non répliquées, voir [non&#95;replicated&#95;deduplication&#95;window](/fr/reference/settings/merge-tree-settings#non_replicated_deduplication_window).
 
-<Note>
-  `insert_deduplication_token` fonctionne au niveau de la partition (comme la somme de contrôle `insert_deduplication`). Plusieurs partitions peuvent avoir le même `insert_deduplication_token`.
-</Note>
+:::note
+`insert_deduplication_token` est suivi par partition, de sorte que plusieurs partitions écrites par une seule insertion peuvent porter le même jeton. Sans jeton, la somme de contrôle de contenu par défaut (`insert_deduplication_version = new_unified_hash`) est calculée sur l&#39;ensemble du bloc inséré, de sorte qu&#39;une insertion n&#39;est dédupliquée que lorsque l&#39;intégralité de ses données correspond à une insertion précédente (une nouvelle tentative), et non lorsqu&#39;il se trouve que les lignes d&#39;une seule partition coïncident avec une insertion différente.
+:::
 
 Exemple :
 
@@ -6943,9 +7003,9 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="UInt64Auto" default_value="0" />
 
-<Note>
-  Ce paramètre ne s’applique pas à SharedMergeTree, voir [la cohérence de SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency) pour plus d’informations.
-</Note>
+:::note
+Ce paramètre ne s’applique pas à SharedMergeTree, voir [la cohérence de SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency) pour plus d’informations.
+:::
 
 Active les écritures avec quorum.
 
@@ -6978,11 +7038,11 @@ Voir aussi :
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "Utilise par défaut les insertions avec quorum parallèles. Elles sont nettement plus pratiques que les insertions avec quorum séquentielles"}]}]} />
 
-<Note>
-  Ce paramètre ne s&#39;applique pas à SharedMergeTree. Pour plus d&#39;informations, voir [cohérence de SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency).
-</Note>
+:::note
+Ce paramètre ne s’applique pas à SharedMergeTree. Pour plus d’informations, voir [cohérence de SharedMergeTree](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency).
+:::
 
-Active ou désactive le parallélisme pour les requêtes `INSERT` avec quorum. S&#39;il est activé, des requêtes `INSERT` supplémentaires peuvent être envoyées avant la fin des requêtes précédentes. S&#39;il est désactivé, les écritures supplémentaires dans la même table seront rejetées.
+Active ou désactive le parallélisme pour les requêtes `INSERT` avec quorum. S’il est activé, des requêtes `INSERT` supplémentaires peuvent être envoyées avant la fin des requêtes précédentes. S’il est désactivé, les écritures supplémentaires dans la même table seront rejetées.
 
 Valeurs possibles :
 
@@ -7203,9 +7263,9 @@ Identique à `direct,hash`, c.-à-d. essayer d&#39;utiliser direct join puis has
 
 Modifie le comportement des opérations de jointure avec la strictness `ANY`.
 
-<Note>
-  Ce paramètre s’applique uniquement aux opérations `JOIN` avec des tables utilisant le moteur [Join](/fr/reference/engines/table-engines/special/join).
-</Note>
+:::note
+Ce paramètre s’applique uniquement aux opérations `JOIN` avec des tables utilisant le moteur [Join](/fr/reference/engines/table-engines/special/join).
+:::
 
 Valeurs possibles :
 
@@ -8098,11 +8158,11 @@ Nombre maximal d’analyses réalisées par l’interpréteur.
 
 La profondeur maximale d’imbrication de l’arbre syntaxique d’une requête. Si cette limite est dépassée, une exception est levée.
 
-<Note>
-  À l’heure actuelle, cette profondeur n’est pas contrôlée lors de l’analyse syntaxique, mais seulement après l’analyse de la requête.
-  Cela signifie qu’un arbre syntaxique trop profond peut être créé pendant l’analyse syntaxique,
-  mais la requête échouera.
-</Note>
+:::note
+À l’heure actuelle, cette profondeur n’est pas contrôlée lors de l’analyse syntaxique, mais seulement après l’analyse de la requête.
+Cela signifie qu’un arbre syntaxique trop profond peut être créé pendant l’analyse syntaxique,
+mais la requête échouera.
+:::
 
 <div id="max_ast_elements">
   ## max_ast_elements
@@ -8112,11 +8172,11 @@ La profondeur maximale d’imbrication de l’arbre syntaxique d’une requête.
 
 Le nombre maximal d’éléments dans l’arbre syntaxique d’une requête. Si cette limite est dépassée, une exception est levée.
 
-<Note>
-  À l’heure actuelle, cette limite n’est pas vérifiée lors de l’analyse syntaxique, mais seulement après l’analyse de la requête.
-  Cela signifie qu’un arbre syntaxique trop profond peut être créé pendant l’analyse syntaxique,
-  mais que la requête échouera.
-</Note>
+:::note
+À l’heure actuelle, cette limite n’est pas vérifiée lors de l’analyse syntaxique, mais seulement après l’analyse de la requête.
+Cela signifie qu’un arbre syntaxique trop profond peut être créé pendant l’analyse syntaxique,
+mais que la requête échouera.
+:::
 
 <div id="max_autoincrement_series">
   ## max_autoincrement_series
@@ -8166,12 +8226,12 @@ Valeurs possibles :
 * Volume maximal de RAM (en octets) pouvant être utilisé par une seule opération [GROUP BY](/fr/reference/statements/select/group-by).
 * `0` — `GROUP BY` en mémoire externe désactivé.
 
-<Note>
-  Si l&#39;utilisation de la mémoire lors des opérations GROUP BY dépasse ce seuil en octets,
-  activez le mode d&#39;« agrégation externe » (écriture des données intermédiaires sur le disque).
+:::note
+Si l&#39;utilisation de la mémoire lors des opérations GROUP BY dépasse ce seuil en octets,
+activez le mode d&#39;« agrégation externe » (écriture des données intermédiaires sur le disque).
 
-  La valeur recommandée est la moitié de la mémoire système disponible.
-</Note>
+La valeur recommandée est la moitié de la mémoire système disponible.
+:::
 
 <div id="max_bytes_before_external_join">
   ## max_bytes_before_external_join
@@ -8329,9 +8389,9 @@ nœuds feuille liront au maximum 100 octets.
 
 La restriction est vérifiée pour chaque fragment de données traité.
 
-<Note>
-  Ce paramètre est instable avec `prefer_localhost_replica=1`.
-</Note>
+:::note
+Ce paramètre est instable avec `prefer_localhost_replica=1`.
+:::
 
 <div id="max_bytes_to_sort">
   ## max_bytes_to_sort
@@ -8362,9 +8422,9 @@ Le nombre maximal de colonnes pouvant être lues dans une table lors d&#39;une s
 Si une requête nécessite de lire plus de colonnes que le nombre spécifié, une exception
 est levée.
 
-<Tip>
-  Ce paramètre est utile pour éviter les requêtes trop complexes.
-</Tip>
+:::tip
+Ce paramètre est utile pour éviter les requêtes trop complexes.
+:::
 
 La valeur `0` signifie qu&#39;il n&#39;y a pas de limite.
 
@@ -8376,9 +8436,9 @@ La valeur `0` signifie qu&#39;il n&#39;y a pas de limite.
 
 La taille maximale des blocs de données non compressées avant leur compression pour l’écriture dans une table. Par défaut, 1 048 576 (1 MiB). Indiquer une taille de bloc plus petite entraîne généralement une légère baisse du taux de compression ; la vitesse de compression et de décompression augmente légèrement grâce à une meilleure localité du cache, et la consommation de mémoire diminue.
 
-<Note>
-  Il s’agit d’un paramètre de niveau expert, et vous ne devriez pas le modifier si vous débutez avec ClickHouse.
-</Note>
+:::note
+Il s’agit d’un paramètre de niveau expert, et vous ne devriez pas le modifier si vous débutez avec ClickHouse.
+:::
 
 Ne confondez pas les blocs utilisés pour la compression (un fragment de mémoire constitué d’octets) avec les blocs utilisés pour le traitement des requêtes (un ensemble de lignes d’une table).
 
@@ -8537,11 +8597,11 @@ sur 0, ClickHouse utilisera le temps écoulé comme base pour `max_execution_tim
 Si le temps d’exécution de la requête dépasse le nombre de secondes spécifié, le comportement est
 déterminé par `timeout_overflow_mode`, qui est défini par défaut sur `throw`.
 
-<Note>
-  Le délai d’expiration n’est vérifié, et la requête ne peut donc s’arrêter, qu’à certains points précis du traitement des données.
-  Actuellement, elle ne peut pas s’arrêter pendant la fusion des états d’agrégation ni pendant l’analyse de la requête,
-  et le temps d’exécution réel sera supérieur à la valeur de ce paramètre.
-</Note>
+:::note
+Le délai d’expiration n’est vérifié, et la requête ne peut donc s’arrêter, qu’à certains points précis du traitement des données.
+Actuellement, elle ne peut pas s’arrêter pendant la fusion des états d’agrégation ni pendant l’analyse de la requête,
+et le temps d’exécution réel sera supérieur à la valeur de ce paramètre.
+:::
 
 <div id="max_execution_time_leaf">
   ## max_execution_time_leaf
@@ -8588,7 +8648,7 @@ Nombre de tentatives pour récupérer une partition depuis un autre hôte.
   ## max_final_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 Définit le nombre maximal de threads parallèles pour la phase de lecture des données de la requête `SELECT` avec le modificateur [FINAL](/fr/reference/statements/select/from#final-modifier).
 
@@ -9022,7 +9082,7 @@ Valeurs possibles :
   ## max_parsing_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "0"},{"label": "Ajout d’un paramètre distinct pour contrôler le nombre de threads utilisés pour l’analyse en parallèle des fichiers"}]}]} />
 
@@ -9034,13 +9094,13 @@ Le nombre maximal de threads utilisés pour analyser les données dans les forma
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" />
 
-Limitation de la suppression de partitions à l&#39;exécution de la requête. La valeur `0` signifie que vous pouvez supprimer des partitions sans aucune restriction.
+Limitation de la suppression de partitions à l’exécution de la requête. La valeur `0` signifie que vous pouvez supprimer des partitions sans aucune restriction.
 
 Valeur par défaut Cloud : 1 TB.
 
-<Note>
-  Ce paramètre de requête remplace le paramètre serveur équivalent, voir [max&#95;partition&#95;size&#95;to&#95;drop](/fr/reference/settings/server-settings/settings#max_partition_size_to_drop)
-</Note>
+:::note
+Ce paramètre de requête remplace le paramètre serveur équivalent, voir [max&#95;partition&#95;size&#95;to&#95;drop](/fr/reference/settings/server-settings/settings#max_partition_size_to_drop)
+:::
 
 <div id="max_partitions_per_insert_block">
   ## max_partitions_per_insert_block
@@ -9073,9 +9133,9 @@ le texte suivant :
 > les requêtes SELECT (la clé ORDER BY suffit à rendre les requêtes par plage rapides).
 > Les partitions sont destinées à la manipulation des données (DROP PARTITION, etc.).&quot;
 
-<Note>
-  Ce paramètre constitue un seuil de sécurité, car l’utilisation d’un grand nombre de partitions est une erreur de conception fréquente.
-</Note>
+:::note
+Ce paramètre constitue un seuil de sécurité, car l’utilisation d’un grand nombre de partitions est une erreur de conception fréquente.
+:::
 
 <div id="max_partitions_to_read">
   ## max_partitions_to_read
@@ -9092,9 +9152,9 @@ Valeurs possibles :
 * Entier positif
 * `-1` - illimité (par défaut)
 
-<Note>
-  Vous pouvez également spécifier le paramètre MergeTree [`max_partitions_to_read`](/fr/reference/settings/session-settings#max_partitions_to_read) dans les paramètres de la table.
-</Note>
+:::note
+Vous pouvez également spécifier le paramètre MergeTree [`max_partitions_to_read`](/fr/reference/settings/session-settings#max_partitions_to_read) dans les paramètres de la table.
+:::
 
 <div id="max_parts_to_move">
   ## max_parts_to_move
@@ -9125,9 +9185,9 @@ Si le nombre de lignes à lire depuis l’index de projection est inférieur ou 
 Nombre maximal d’octets d’une query string analysée par le parseur SQL.
 Les données de la clause VALUES des requêtes INSERT sont traitées par un parseur de flux distinct (qui consomme O(1) de RAM) et ne sont pas affectées par cette restriction.
 
-<Note>
-  `max_query_size` ne peut pas être défini dans une requête SQL (par ex., `SELECT now() SETTINGS max_query_size=10000`) car ClickHouse doit allouer un buffer pour analyser la requête, et la taille de ce buffer est déterminée par le paramètre `max_query_size`, qui doit être configuré avant l’exécution de la requête.
-</Note>
+:::note
+`max_query_size` ne peut pas être défini dans une requête SQL (par ex., `SELECT now() SETTINGS max_query_size=10000`) car ClickHouse doit allouer un tampon pour analyser la requête, et la taille de ce tampon est déterminée par le paramètre `max_query_size`, qui doit être configuré avant l’exécution de la requête.
+:::
 
 <div id="max_rand_distribution_parameter">
   ## max_rand_distribution_parameter
@@ -9234,9 +9294,9 @@ Même si la taille du résultat est faible, il peut faire référence à des str
 comme des dictionnaires de colonnes LowCardinality et des Arenas de colonnes AggregateFunction ;
 le seuil peut donc être dépassé malgré la faible taille du résultat.
 
-<Warning>
-  Ce paramètre est de bas niveau et doit être utilisé avec précaution
-</Warning>
+:::warning
+Ce paramètre est de bas niveau et doit être utilisé avec précaution
+:::
 
 <div id="max_result_rows">
   ## max_result_rows
@@ -9358,9 +9418,9 @@ Par exemple, un cluster se compose de 2 shards, et chaque shard contient une tab
 
 La restriction est vérifiée pour chaque fragment de données traité.
 
-<Note>
-  Ce paramètre est instable avec `prefer_localhost_replica=1`.
-</Note>
+:::note
+Ce paramètre est instable avec `prefer_localhost_replica=1`.
+:::
 
 <div id="max_rows_to_sort">
   ## max_rows_to_sort
@@ -9533,10 +9593,10 @@ Permet d’utiliser plus de sources que de threads afin de répartir le travail 
 Si une requête comporte plus que le nombre spécifié de sous-requêtes imbriquées, une
 exception est levée.
 
-<Tip>
-  Cela permet d’effectuer une vérification de cohérence afin d’empêcher les utilisateurs de votre
-  cluster d’écrire des requêtes excessivement complexes.
-</Tip>
+:::tip
+Cela permet d’effectuer une vérification de cohérence afin d’empêcher les utilisateurs de votre
+cluster d’écrire des requêtes excessivement complexes.
+:::
 
 <div id="max_table_size_to_drop">
   ## max_table_size_to_drop
@@ -9548,9 +9608,9 @@ Restriction sur la suppression de tables au moment de l’exécution de la requ�
 
 Valeur par défaut dans Cloud : 1 TB.
 
-<Note>
-  Ce paramètre de requête remplace le paramètre de serveur équivalent. Voir [max&#95;table&#95;size&#95;to&#95;drop](/fr/reference/settings/server-settings/settings#max_table_size_to_drop)
-</Note>
+:::note
+Ce paramètre de requête remplace le paramètre de serveur équivalent, voir [max&#95;table&#95;size&#95;to&#95;drop](/fr/reference/settings/server-settings/settings#max_table_size_to_drop)
+:::
 
 <div id="max_temporary_columns">
   ## max_temporary_columns
@@ -9563,9 +9623,9 @@ lors de l&#39;exécution d&#39;une requête, y compris les colonnes constantes. 
 de colonnes temporaires que le nombre spécifié à la suite d&#39;un calcul
 intermédiaire, une exception est levée.
 
-<Tip>
-  Ce paramètre est utile pour éviter les requêtes trop complexes.
-</Tip>
+:::tip
+Ce paramètre est utile pour éviter les requêtes trop complexes.
+:::
 
 La valeur `0` signifie qu&#39;il n&#39;y a pas de limite.
 
@@ -9604,15 +9664,15 @@ Valeurs possibles :
 
 Comme `max_temporary_columns`, il s&#39;agit du nombre maximal de colonnes temporaires à conserver simultanément en RAM lors de l&#39;exécution d&#39;une requête, sans compter les colonnes constantes.
 
-<Note>
-  Des colonnes constantes sont assez fréquemment générées lors de l&#39;exécution d&#39;une requête, mais elles ne nécessitent pratiquement aucune ressource de calcul.
-</Note>
+:::note
+Des colonnes constantes sont assez fréquemment générées lors de l&#39;exécution d&#39;une requête, mais elles ne nécessitent pratiquement aucune ressource de calcul.
+:::
 
 <div id="max_threads">
   ## max_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 Le nombre maximal de threads de traitement des requêtes, à l&#39;exclusion des threads utilisés pour récupérer des données depuis des serveurs distants (voir le paramètre [&#39;max&#95;distributed&#95;connections&#39;](/fr/reference/settings/session-settings#max_distributed_connections)).
 
@@ -9624,7 +9684,7 @@ Par exemple, si le nombre nécessaire d&#39;entrées se trouve dans chaque bloc 
 Plus la valeur de `max_threads` est faible, moins la mémoire consommée est importante.
 
 Par défaut, le paramètre `max_threads` correspond au nombre de threads matériels (nombre de cœurs CPU) disponibles pour ClickHouse.
-Cas particulier : pour les processeurs x86 disposant de moins de 32 cœurs CPU et du SMT (par ex. Intel HyperThreading), ClickHouse utilise par défaut le nombre de cœurs logiques (= 2 x le nombre de cœurs physiques).
+Cas particulier : pour les processeurs x86 disposant de moins de 32 cœurs CPU et du SMT (par ex. Intel HyperThreading), ClickHouse utilise par défaut le nombre de cœurs logiques (= 2 x le nombre de cœurs physiques).
 
 Sans SMT (par ex. Intel HyperThreading), cela correspond au nombre de cœurs CPU.
 
@@ -10047,19 +10107,19 @@ Taille minimale, en octets, du fragment que chaque thread analysera en parallèl
 
 <SettingsInfoBlock type="UInt64" default_value="65536" />
 
-Pour les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Afin de réduire la latence du traitement des requêtes, un bloc est compressé lors de l’écriture du repère suivant si sa taille est au moins égale à `min_compress_block_size`. Par défaut, 65 536.
+Pour les tables [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Afin de réduire la latence du traitement des requêtes, un bloc est compressé lors de l’écriture de la marque suivante si sa taille est au moins égale à `min_compress_block_size`. Par défaut, 65 536.
 
-La taille réelle du bloc, si les données non compressées sont inférieures à `max_compress_block_size`, n’est inférieure ni à cette valeur, ni au volume de données correspondant à un repère.
+La taille réelle du bloc, si les données non compressées sont inférieures à `max_compress_block_size`, n’est inférieure ni à cette valeur, ni au volume de données correspondant à une marque.
 
 Prenons un exemple. Supposons que `index_granularity` ait été défini sur 8192 lors de la création de la table.
 
-Nous écrivons une colonne de type UInt32 (4 octets par valeur). Lors de l’écriture de 8192 lignes, cela représente un total de 32 Ko de données. Comme min&#95;compress&#95;block&#95;size = 65 536, un bloc compressé sera formé tous les deux repères.
+Nous écrivons une colonne de type UInt32 (4 octets par valeur). Lors de l’écriture de 8192 lignes, cela représente un total de 32 Ko de données. Comme min&#95;compress&#95;block&#95;size = 65 536, un bloc compressé sera formé toutes les deux marques.
 
-Nous écrivons une colonne URL de type String (taille moyenne de 60 octets par valeur). Lors de l’écriture de 8192 lignes, cela représente en moyenne un peu moins de 500 Ko de données. Comme cette valeur dépasse 65 536, un bloc compressé sera formé pour chaque repère. Dans ce cas, lors de la lecture des données sur le disque dans la plage d’un seul repère, aucune donnée supplémentaire ne devra être décompressée.
+Nous écrivons une colonne URL de type String (taille moyenne de 60 octets par valeur). Lors de l’écriture de 8192 lignes, cela représente en moyenne un peu moins de 500 Ko de données. Comme cette valeur dépasse 65 536, un bloc compressé sera formé pour chaque marque. Dans ce cas, lors de la lecture des données sur le disque dans la plage d’une seule marque, aucune donnée supplémentaire ne devra être décompressée.
 
-<Note>
-  Il s’agit d’un paramètre destiné aux utilisateurs expérimentés, et vous ne devriez pas le modifier si vous débutez avec ClickHouse.
-</Note>
+:::note
+Il s’agit d’un paramètre destiné aux utilisateurs expérimentés, et vous ne devriez pas le modifier si vous débutez avec ClickHouse.
+:::
 
 <div id="min_count_to_compile_aggregate_expression">
   ## min_count_to_compile_aggregate_expression
@@ -10655,6 +10715,16 @@ Valeurs possibles :
 
 * [Optimisation de GROUP BY](/fr/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
+<div id="optimize_aggregation_in_order_limit">
+  ## optimize_aggregation_in_order_limit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nouveau paramètre permettant d'appliquer `LIMIT` à l'aggregation-in-order afin d'autoriser un arrêt anticipé lorsque `ORDER BY` est un préfixe de la description de tri de `GROUP BY`."}]}]} />
+
+Lorsqu&#39;il est activé et que l&#39;aggregation-in-order est active, ce paramètre applique `LIMIT` à l&#39;étape d&#39;agrégation afin de permettre un arrêt anticipé une fois qu&#39;un nombre suffisant de groupes a été produit. Cela réduit la quantité de données lues lorsque `ORDER BY` correspond au préfixe de la clé `GROUP BY`. La valeur renvoyée par `rows_before_limit_at_least` peut être réduite ; utilisez `exact_rows_before_limit` si des décomptes exacts sont nécessaires.
+
 <div id="optimize_aggregators_of_group_by_keys">
   ## optimize_aggregators_of_group_by_keys
 </div>
@@ -10672,6 +10742,16 @@ Valeurs possibles :
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "Nouveau paramètre"}]}]} />
 
 Propage les comparaisons avec des constantes dans les chaînes AND afin d&#39;améliorer les capacités de filtrage. Prend en charge les opérateurs `<`, `<=`, `>`, `>=`, `=` ainsi que leurs combinaisons. Par exemple, `(a < b) AND (b < c) AND (c < 5)` deviendrait `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`.
+
+<div id="optimize_and_compare_chain_max_hash_work">
+  ## optimize_and_compare_chain_max_hash_work
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "5000000"},{"label": "Nouveau paramètre qui limite le travail de l’optimisation `optimize_and_compare_chain` (mesuré en nœuds de l’arbre de requête hachés) afin qu’elle ne monopolise pas l’analyse des requêtes comportant un très grand nombre de chaînes `AND` de comparaisons, ou des chaînes `AND` très longues. La valeur précédente `0` (illimitée) reproduit le comportement antérieur à la version 26.7, où l’optimisation n’était pas plafonnée. Ainsi, lorsque `compatibility` est défini sur une version antérieure, des prédicats transitifs continuent d’être dérivés sans budget. Définissez la valeur sur `0` pour désactiver le budget."}]}]} />
+
+Budget de travail de l’optimisation `optimize_and_compare_chain` lors de l’analyse des requêtes, mesuré par le nombre de nœuds de l’arbre de requête hachés par `getTreeHash` (le coût dominant de cette optimisation). Une fois qu’une requête a haché plus de ce nombre de nœuds pendant l’application de l’optimisation, celle-ci cesse d’être appliquée pour le reste de la requête. Cela limite le temps d’analyse des requêtes comportant un très grand nombre de chaînes `AND` de comparaisons, ou des chaînes `AND` très longues, pour lesquelles l’optimisation pourrait sinon monopoliser l’analyse sans rien simplifier. Cet arrêt anticipé est toujours sûr : il renonce seulement à une optimisation et ne modifie jamais les résultats. Définissez la valeur sur `0` pour désactiver le budget (illimité).
 
 <div id="optimize_append_index">
   ## optimize_append_index
@@ -10774,9 +10854,9 @@ Voir aussi :
 * [distributed&#95;push&#95;down&#95;limit](#distributed_push_down_limit)
 * [optimize&#95;skip&#95;unused&#95;shards](#optimize_skip_unused_shards)
 
-<Note>
-  À l’heure actuelle, ce réglage nécessite `optimize_skip_unused_shards` (la raison est qu’il pourrait un jour être activé par défaut et ne fonctionner correctement que si les données ont été insérées via une table Distributed, c’est-à-dire si elles sont distribuées selon `sharding_key`).
-</Note>
+:::note
+À l’heure actuelle, ce réglage nécessite `optimize_skip_unused_shards` (la raison est qu’il pourrait un jour être activé par défaut et ne fonctionner correctement que si les données ont été insérées via une table Distributed, c’est-à-dire si elles sont distribuées selon `sharding_key`).
+:::
 
 <div id="optimize_dry_run_check_part">
   ## optimize_dry_run_check_part
@@ -11133,9 +11213,9 @@ Si ce paramètre est défini sur true, les alias seront pris en compte dans WHER
 Réécrit les fonctions d’agrégation dont l’argument est une expression if, lorsqu’elles sont logiquement équivalentes.
 Par exemple, `avg(if(cond, col, null))` peut être réécrit en `avgOrNullIf(cond, col)`. Cela peut améliorer les performances.
 
-<Note>
-  Pris en charge uniquement avec l’analyseur (`enable_analyzer = 1`).
-</Note>
+:::note
+Pris en charge uniquement avec l’analyseur (`enable_analyzer = 1`).
+:::
 
 <div id="optimize_rewrite_array_exists_to_has">
   ## optimize_rewrite_array_exists_to_has
@@ -11212,9 +11292,9 @@ Valeurs possibles :
 
 Active ou désactive l’omission des shards inutilisés pour les requêtes [SELECT](/fr/reference/statements/select/index) qui comportent une condition sur la clé de sharding dans `WHERE/PREWHERE`, et active les optimisations associées pour les requêtes distribuées (par exemple, l’agrégation par clé de sharding).
 
-<Note>
-  Suppose que les données sont distribuées selon la clé de sharding ; sinon, la requête renvoie un résultat incorrect.
-</Note>
+:::note
+Suppose que les données sont distribuées selon la clé de sharding ; sinon, la requête renvoie un résultat incorrect.
+:::
 
 Valeurs possibles :
 
@@ -11591,10 +11671,10 @@ Le premier est utilisé lorsque nous savons que la taille de la table de droite 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Nouveau paramètre permettant d'activer le traitement en parallèle des lignes non jointes dans les JOIN RIGHT/FULL avec l'algorithme parallel_hash."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Nouveau paramètre permettant d'activer le traitement en parallèle des lignes non jointes dans les JOIN RIGHT\/FULL avec l'algorithme parallel_hash."}]}]} />
 
 Autorise plusieurs threads à traiter en parallèle les lignes non jointes de la table de droite lors des JOIN RIGHT et FULL.
-Cela peut accélérer la phase de traitement des lignes non jointes lors de l&#39;utilisation de l&#39;algorithme de jointure `parallel_hash` avec de grandes tables.
+Cela peut accélérer la phase des lignes non jointes lors de l&#39;utilisation de l&#39;algorithme de jointure `parallel_hash` avec de grandes tables.
 Lorsqu&#39;il est désactivé, les lignes non jointes sont traitées par un seul thread.
 
 <div id="parallel_replica_offset">
@@ -11869,7 +11949,7 @@ Le spécificateur de format &#39;%e&#39; dans la fonction &#39;parseDateTime&#39
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.11"},{"label": "1"},{"label": "Compatibilité améliorée avec MySQL DATE_FORMAT/STR_TO_DATE"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "23.11"},{"label": "1"},{"label": "Compatibilité améliorée avec MySQL DATE_FORMAT\/STR_TO_DATE"}]}]} />
 
 Les spécificateurs de format &#39;%c&#39;, &#39;%l&#39; et &#39;%k&#39; de la fonction &#39;parseDateTime&#39; analysent les mois et les heures sans zéro non significatif.
 
@@ -12110,11 +12190,11 @@ Valeurs possibles :
 * 1 — ClickHouse envoie toujours une requête à la réplique localhost si elle existe.
 * 0 — ClickHouse utilise la stratégie d’équilibrage spécifiée par le paramètre [load&#95;balancing](#load_balancing).
 
-<Note>
-  Désactivez ce paramètre si vous utilisez [max&#95;parallel&#95;replicas](#max_parallel_replicas) sans [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key).
-  Si [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key) est défini, désactivez ce paramètre uniquement s’il est utilisé sur un cluster comportant plusieurs shards avec plusieurs répliques.
-  S’il est utilisé sur un cluster comportant un seul shard et plusieurs répliques, la désactivation de ce paramètre aura des effets négatifs.
-</Note>
+:::note
+Désactivez ce paramètre si vous utilisez [max&#95;parallel&#95;replicas](#max_parallel_replicas) sans [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key).
+Si [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key) est défini, désactivez ce paramètre uniquement s’il est utilisé sur un cluster comportant plusieurs shards avec plusieurs répliques.
+S’il est utilisé sur un cluster comportant un seul shard et plusieurs répliques, la désactivation de ce paramètre aura des effets négatifs.
+:::
 
 <div id="prefer_warmed_unmerged_parts_seconds">
   ## prefer_warmed_unmerged_parts_seconds
@@ -12436,9 +12516,9 @@ Valeur par défaut : -1
 Active ou désactive l’optimisation d’agrégation en ordre au niveau du plan de requête.
 Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s’agit d’un paramètre de niveau expert qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer ultérieurement de manière non rétrocompatible, ou être supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre de niveau expert qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer ultérieurement de manière non rétrocompatible, ou être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12511,9 +12591,9 @@ Activer le multithreading une fois les fonctions de fenêtre évaluées afin de 
 
 Active ou désactive l’optimisation des requêtes au niveau du plan de requête.
 
-<Note>
-  Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre pourra, à l’avenir, être modifié de manière non rétrocompatible ou supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre pourra, à l’avenir, être modifié de manière non rétrocompatible ou supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12529,9 +12609,9 @@ Valeurs possibles :
 Active ou désactive une optimisation au niveau du plan de requête qui déplace les expressions après les opérations de tri.
 N’a d’effet que si le paramètre [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) est défini sur 1.
 
-<Note>
-  Il s’agit d’un paramètre destiné aux experts, qui ne doit être utilisé pour le débogage que par les développeurs. Ce paramètre pourra évoluer ultérieurement de manière non rétrocompatible, voire être supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé pour le débogage que par les développeurs. Ce paramètre pourra évoluer ultérieurement de manière non rétrocompatible, voire être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12547,9 +12627,9 @@ Valeurs possibles :
 Active ou désactive une optimisation au niveau du plan de requête qui pousse les filtres vers le bas dans le plan d&#39;exécution.
 N&#39;a d&#39;effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s&#39;agit d&#39;un paramètre destiné aux experts, qui ne doit être utilisé par les développeurs qu&#39;à des fins de débogage. Ce paramètre peut être modifié ultérieurement de manière non rétrocompatible, voire supprimé.
-</Note>
+:::note
+Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu&#39;à des fins de débogage. Ce paramètre peut être modifié ultérieurement de manière non rétrocompatible, voire supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12577,8 +12657,8 @@ Applique le sharding aux JOIN si les clés de jointure contiennent un préfixe d
 Détermine quel côté de la jointure doit servir de table de build (également appelée table interne, c&#39;est-à-dire celle insérée dans la table de hachage pour une jointure par hachage) dans le plan de requête. Ce paramètre n&#39;est pris en charge que pour la strictness de jointure `ALL` avec la clause `JOIN ON`. Les valeurs possibles sont :
 
 * &#39;auto&#39; : laisser le planificateur décider quelle table utiliser comme table de build.
-  * &#39;false&#39; : ne jamais permuter les tables (la table de droite est la table de build).
-  * &#39;true&#39; : toujours permuter les tables (la table de gauche est la table de build).
+* &#39;false&#39; : ne jamais permuter les tables (la table de droite est la table de build).
+* &#39;true&#39; : toujours permuter les tables (la table de gauche est la table de build).
 
 <div id="query_plan_lift_up_array_join">
   ## query_plan_lift_up_array_join
@@ -12589,9 +12669,9 @@ Détermine quel côté de la jointure doit servir de table de build (également 
 Active ou désactive une optimisation au niveau du plan de requête qui remonte les ARRAY JOIN dans le plan d’exécution.
 Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s’agit d’un paramètre de niveau expert qui ne doit être utilisé à des fins de débogage que par les développeurs. Ce paramètre pourra, à l’avenir, changer de manière incompatible avec les versions précédentes ou être supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts qui ne doit être utilisé à des fins de débogage que par les développeurs. Ce paramètre pourra, à l’avenir, changer de manière non rétrocompatible avec les versions précédentes ou être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12607,9 +12687,9 @@ Valeurs possibles :
 Active ou désactive une optimisation au niveau du plan de requête qui déplace des sous-arbres plus importants du plan de requête vers union afin de permettre d’autres optimisations.
 Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer ultérieurement de manière non rétrocompatible, voire être supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer ultérieurement de manière non rétrocompatible, voire être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12657,9 +12737,9 @@ Utile pour éviter des temps d’optimisation trop longs pour les requêtes comp
 Avec la requête EXPLAIN PLAN, l’application des optimisations s’arrête une fois cette limite atteinte et le plan est renvoyé tel quel.
 Lors de l’exécution normale d’une requête, si le nombre réel d’optimisations dépasse ce paramètre, une exception est levée.
 
-<Note>
-  Il s’agit d’un paramètre destiné aux experts, qui ne doit être utilisé pour le débogage que par les développeurs. Ce paramètre peut évoluer à l’avenir de manière non rétrocompatible, voire être supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé pour le débogage que par les développeurs. Ce paramètre peut évoluer à l’avenir de manière non rétrocompatible, voire être supprimé.
+:::
 
 <div id="query_plan_max_set_size_for_projection_match">
   ## query_plan_max_set_size_for_projection_match
@@ -12692,9 +12772,9 @@ Longueur maximale de la description d&#39;une étape dans EXPLAIN PLAN.
 Active une optimisation au niveau du plan de requête qui fusionne les filtres consécutifs.
 N&#39;a d&#39;effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé à des fins de débogage que par les développeurs. Ce paramètre pourra, à l&#39;avenir, être modifié de manière incompatible avec les versions précédentes ou être supprimé.
-</Note>
+:::note
+Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé à des fins de débogage que par les développeurs. Ce paramètre pourra, à l&#39;avenir, être modifié de manière non rétrocompatible avec les versions précédentes ou être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12743,9 +12823,10 @@ Contrôle le nombre minimal de colonnes de payload du côté gauche nécessaire 
 
 Spécifie quels algorithmes d’ordre des jointures des JOIN essayer lors de l’optimisation du plan de requête. Les algorithmes suivants sont disponibles :
 
-* `greedy` - algorithme glouton simple - fonctionne rapidement, mais peut ne pas produire le meilleur ordre de jointure
-* `dpsize` - implémente l’algorithme DPsize, actuellement uniquement pour les jointures internes - examine tous les ordres de jointure possibles et trouve le meilleur, mais peut être lent pour les requêtes comportant de nombreuses tables et de nombreux prédicats de jointure
-* `dphyp` - implémente l’algorithme DPhyp (programmation dynamique via partitionnement d’hypergraphe), actuellement uniquement pour les jointures internes - explore le même espace de recherche que `dpsize`, mais n’énumère que les paires de sous-graphes connectés, ce qui génère moins de jointures intermédiaires sur des graphes de jointure clairsemés, au prix de ne pas prendre en compte les produits cartésiens
+* &#39;greedy&#39; - algorithme glouton simple - fonctionne rapidement, mais peut ne pas produire le meilleur ordre de jointure
+* &#39;dpsize&#39; - implémente l’algorithme DPsize, actuellement uniquement pour les jointures internes - examine tous les ordres de jointure possibles et trouve le meilleur, mais peut être lent pour les requêtes comportant de nombreuses tables et de nombreux prédicats de jointure.
+* &#39;dpsub&#39; - implémente l’algorithme DPsub, qui prend en charge à la fois les jointures internes et les jointures non internes - examine tous les ordres de jointure possibles et trouve le meilleur, mais peut être lent pour les requêtes comportant de nombreuses tables et de nombreux prédicats de jointure.
+* &#39;dphyp&#39; - implémente l’algorithme DPhyp (programmation dynamique via partitionnement d’hypergraphe), actuellement uniquement pour les jointures internes - explore le même espace de recherche que `dpsize`, mais n’énumère que les paires de sous-graphes connectés, ce qui génère moins de jointures intermédiaires sur des graphes de jointure clairsemés, au prix de ne pas prendre en compte les produits cartésiens
   Plusieurs algorithmes peuvent être spécifiés sous forme de liste séparée par des virgules, par exemple `dphyp,greedy`. Ils sont essayés dans l’ordre ; si un algorithme ne peut pas traiter la requête (par exemple en raison de jointures externes ou de composants déconnectés), le suivant est utilisé comme solution de repli.
 
 <div id="query_plan_optimize_join_order_limit">
@@ -12826,9 +12907,9 @@ Autoriser le déplacement du filtre vers l&#39;expression PREWHERE pour les mote
 Active ou désactive une optimisation au niveau du plan de requête qui pousse les clauses LIMIT vers le bas dans le plan d’exécution.
 N’a d’effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s’agit d’un paramètre de niveau expert, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer à l’avenir de manière non rétrocompatible, voire être supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut évoluer à l’avenir de manière non rétrocompatible, voire être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12861,9 +12942,9 @@ Valeurs possibles :
 Active ou désactive l’optimisation de lecture dans l’ordre au niveau du plan de requête.
 Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) est défini à 1.
 
-<Note>
-  Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs que pour le débogage. Ce paramètre pourra à l’avenir être modifié de manière non rétrocompatible ou supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs que pour le débogage. Ce paramètre pourra à l’avenir être modifié de manière non rétrocompatible ou supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12891,9 +12972,9 @@ Préserve la lecture dans l’ordre depuis la table de gauche dans les opératio
 Active ou désactive une optimisation au niveau du plan de requête qui supprime les étapes DISTINCT redondantes.
 Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s’agit d’un paramètre de niveau expert qui ne devrait être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre pourra à l’avenir évoluer de manière non rétrocompatible ou être supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts qui ne devrait être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre pourra à l’avenir évoluer de manière non rétrocompatible ou être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12911,9 +12992,9 @@ Valeurs possibles :
 Active ou désactive une optimisation au niveau du plan de requête qui supprime les étapes de tri redondantes, par exemple dans les sous-requêtes.
 Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s&#39;agit d&#39;un paramètre destiné aux experts, qui ne doit être utilisé par les développeurs que pour le débogage. Ce paramètre pourra changer ultérieurement de manière non rétrocompatible ou être supprimé.
-</Note>
+:::note
+Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs que pour le débogage. Ce paramètre pourra changer ultérieurement de manière non rétrocompatible ou être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12931,9 +13012,9 @@ Valeurs possibles :
 Active ou désactive une optimisation au niveau du plan de requête visant à supprimer les colonnes inutilisées (colonnes d’entrée comme de sortie) des étapes du plan de requête.
 N’a d’effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut changer ultérieurement de manière non rétrocompatible, voire être supprimé.
-</Note>
+:::note
+Il s’agit d’un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu’à des fins de débogage. Ce paramètre peut changer ultérieurement de manière non rétrocompatible, voire être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12953,9 +13034,9 @@ Valeurs possibles :
 Active ou désactive une optimisation au niveau du plan de requête qui s&#39;appuie sur l&#39;ordre de tri du stockage lors du tri pour les fonctions de fenêtre.
 Ne prend effet que si le paramètre [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s&#39;agit d&#39;un paramètre de niveau expert qui ne doit être utilisé par les développeurs qu&#39;à des fins de débogage. Ce paramètre pourra évoluer à l&#39;avenir de manière non rétrocompatible, voire être supprimé.
-</Note>
+:::note
+Il s&#39;agit d&#39;un paramètre réservé aux experts qui ne doit être utilisé par les développeurs qu&#39;à des fins de débogage. Ce paramètre pourra évoluer à l&#39;avenir de manière non rétrocompatible, voire être supprimé.
+:::
 
 Valeurs possibles :
 
@@ -12968,9 +13049,9 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<Note>
-  Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu&#39;à des fins de débogage. Ce paramètre peut être modifié ultérieurement de façon non rétrocompatible, voire supprimé.
-</Note>
+:::note
+Il s&#39;agit d&#39;un paramètre réservé aux experts, qui ne doit être utilisé par les développeurs qu&#39;à des fins de débogage. Ce paramètre peut être modifié ultérieurement de façon non rétrocompatible, voire supprimé.
+:::
 
 Active ou désactive une optimisation au niveau du plan de requête qui scinde les filtres en expressions.
 N&#39;a d&#39;effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) vaut 1.
@@ -12996,9 +13077,9 @@ Permet d’ajouter une indication (prédicat supplémentaire) au filtrage géné
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nouveau paramètre permettant d’activer une optimisation au niveau du plan de requête, qui propage ORDER BY ... LIMIT n à travers une jointure LEFT/RIGHT lorsque la clé de tri ne référence que le côté préservé."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "Nouveau paramètre permettant d’activer une optimisation au niveau du plan de requête, qui pousse ORDER BY ... LIMIT n à travers une jointure LEFT\/RIGHT lorsque la clé de tri ne référence que le côté préservé."}]}]} />
 
-Active ou désactive une optimisation au niveau du plan de requête qui propage `ORDER BY ... LIMIT n` à travers une jointure lorsque la clé de tri ne référence que les colonnes du côté préservé par la jointure (LEFT/RIGHT). Limite le nombre de lignes que l’entrée du côté préservé doit produire avant la jointure.
+Active ou désactive une optimisation au niveau du plan de requête qui pousse `ORDER BY ... LIMIT n` à travers une jointure lorsque la clé de tri ne référence que les colonnes du côté préservé par la jointure (LEFT/RIGHT). Limite le nombre de lignes que l’entrée du côté préservé doit produire avant la jointure.
 Ne prend effet que si le paramètre [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) vaut 1.
 
 Valeurs possibles :
@@ -13017,9 +13098,9 @@ Valeurs possibles :
 Active ou désactive une optimisation au niveau du plan de requête qui tente d&#39;utiliser l&#39;index de similarité vectorielle.
 N&#39;a d&#39;effet que si le paramètre [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) vaut 1.
 
-<Note>
-  Il s&#39;agit d&#39;un paramètre de niveau expert qui ne doit être utilisé que par les développeurs à des fins de débogage. Ce paramètre pourra, à l&#39;avenir, être modifié de manière non rétrocompatible ou supprimé.
-</Note>
+:::note
+Il s&#39;agit d&#39;un paramètre réservé aux experts qui ne doit être utilisé que par les développeurs à des fins de débogage. Ce paramètre pourra, à l&#39;avenir, être modifié de manière non rétrocompatible ou supprimé.
+:::
 
 Valeurs possibles :
 
@@ -13438,6 +13519,21 @@ Valeurs possibles :
 * `0` — Ne pas attendre.
 * Entier négatif — Attendre indéfiniment.
 * Entier positif — Nombre de secondes à attendre.
+
+<div id="reserve_memory">
+  ## reserve_memory
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant de réserver de la mémoire pour un workload spécifique avant le démarrage d'une requête."}]}]} />
+
+Utilisé dans l’ordonnancement des workloads. Quantité minimale de RAM réservée à l’exécution d’une requête sur un seul serveur. La réservation est effectuée dans la hiérarchie WORKLOAD à l’aide de la valeur du paramètre de requête `workload`.
+Si le workload ne dispose pas d’assez de mémoire, une requête ne démarre pas et reste en attente jusqu’à ce que la réservation puisse être honorée.
+Une valeur de `0` signifie qu’aucune réservation n’est effectuée.
+Ce paramètre ne prend effet que si la ressource MEMORY RESERVATION est créée.
 
 <div id="restore_replace_external_dictionary_source_to_null">
   ## restore_replace_external_dictionary_source_to_null
@@ -13972,9 +14068,9 @@ Active l’algorithme de filtrage en bloc pour les indices. Il est supposé êtr
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<Note>
-  Ce paramètre n’a pas le même comportement avec SharedMergeTree et ReplicatedMergeTree. Voir [SharedMergeTree consistency](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency) pour plus d’informations sur le comportement de `select_sequential_consistency` dans SharedMergeTree.
-</Note>
+:::note
+Ce paramètre n’a pas le même comportement avec SharedMergeTree et ReplicatedMergeTree. Voir [SharedMergeTree consistency](/fr/products/cloud/features/infrastructure/shared-merge-tree#consistency) pour plus d’informations sur le comportement de `select_sequential_consistency` dans SharedMergeTree.
+:::
 
 Active ou désactive la cohérence séquentielle pour les requêtes `SELECT`. Nécessite que `insert_quorum_parallel` soit désactivé (il est activé par défaut).
 
@@ -14118,10 +14214,10 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 1999-12-13 07:23:23.123
 ```
 
-<Warning>
-  Certaines fonctions qui analysent DateTime/DateTime64 ne respectent pas `session_timezone`. Cela peut entraîner des erreurs subtiles.
-  Voir l&#39;exemple et l&#39;explication ci-dessous.
-</Warning>
+:::warning
+Certaines fonctions qui analysent DateTime/DateTime64 ne respectent pas `session_timezone`. Cela peut entraîner des erreurs subtiles.
+Voir l&#39;exemple et l&#39;explication ci-dessous.
+:::
 
 ```sql
 CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
@@ -14474,7 +14570,7 @@ Plus la valeur est faible, plus les données sont vidées fréquemment dans la t
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "Ne pas autoriser par défaut les requêtes SELECT directes pour Kafka/RabbitMQ/FileLog"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.12"},{"label": "0"},{"label": "Ne pas autoriser par défaut les requêtes SELECT directes pour Kafka\/RabbitMQ\/FileLog"}]}]} />
 
 Autorise les requêtes SELECT directes pour les moteurs Kafka, RabbitMQ, FileLog, Redis Streams, S3Queue, AzureQueue et NATS. S&#39;il existe des vues matérialisées attachées, la requête SELECT n&#39;est pas autorisée, même si ce paramètre est activé.
 S&#39;il n&#39;existe pas de vues matérialisées attachées, l&#39;activation de ce paramètre permet de lire les données. Gardez à l&#39;esprit qu&#39;en général, les données lues sont supprimées de la file d&#39;attente. Pour éviter leur suppression, les paramètres du moteur concerné doivent être configurés correctement.
@@ -14619,17 +14715,6 @@ Valeurs possibles :
 * LZ4 — La compression [LZ4](https://en.wikipedia.org/wiki/LZ4_\(compression_algorithm\)) est appliquée.
 * NONE — Aucune compression n’est appliquée.
 
-<div id="text_index_density_threshold">
-  ## text_index_density_threshold
-</div>
-
-<SettingsInfoBlock type="Float" default_value="0.2" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0.2"},{"label": "Nouveau paramètre pour le seuil de densité des lazy posting lists"}]}]} />
-
-Seuil de densité pour la sélection de l’algorithme en mode lazy posting list.
-En dessous du seuil : intersection leapfrog. À partir du seuil : bitmap par force brute.
-
 <div id="text_index_hint_max_selectivity">
   ## text_index_hint_max_selectivity
 </div>
@@ -14639,6 +14724,19 @@ En dessous du seuil : intersection leapfrog. À partir du seuil : bitmap par for
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0.2"},{"label": "Nouveau paramètre"}]}]} />
 
 Sélectivité maximale du filtre permettant d&#39;utiliser l&#39;indice construit à partir de l&#39;index de texte inversé.
+
+<div id="text_index_lazy_intersection_density_threshold">
+  ## text_index_lazy_intersection_density_threshold
+</div>
+
+**Alias** : `text_index_density_threshold`
+
+<SettingsInfoBlock type="Float" default_value="0.2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0.2"},{"label": "Anciennement `text_index_density_threshold` (conservé comme alias) ; sélectionne l’algorithme d’intersection des listes de postings en mode d’application lazy des listes de postings."}]}]} />
+
+Seuil de densité des listes de postings qui sélectionne l’algorithme d’intersection en mode d’application lazy des listes de postings (`text_index_posting_list_apply_mode = 'lazy'`).
+En dessous du seuil : intersection leapfrog (privilégie les listes de postings clairsemées). À partir du seuil : intersection bitmap en brute-force (privilégie les listes de postings denses).
 
 <div id="text_index_like_max_postings_to_read">
   ## text_index_like_max_postings_to_read
@@ -14671,11 +14769,11 @@ Nécessite que `use_text_index_like_evaluation_by_dictionary_scan` soit activé.
 
 <SettingsInfoBlock type="TextIndexPostingListApplyMode" default_value="materialize" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "materialize"},{"label": "Nouveau paramètre pour le mode lazy d’application des posting lists"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "materialize"},{"label": "Nouveau paramètre pour le mode lazy d’application des listes de postings"}]}]} />
 
-Contrôle la façon dont les posting lists sont appliquées lors des requêtes sur l’index de texte.
-&#39;materialize&#39; (par défaut) décode immédiatement les posting lists en Roaring Bitmaps.
-&#39;lazy&#39; utilise un décodage à la demande basé sur un curseur (nécessite le format d’index V2 et allow&#95;experimental&#95;text&#95;index&#95;lazy&#95;apply).
+Contrôle la façon dont les listes de postings sont appliquées lors des requêtes sur l’index de texte.
+&#39;materialize&#39; (par défaut) décode immédiatement les listes de postings en Roaring Bitmaps.
+&#39;lazy&#39; utilise un décodage à la demande basé sur un curseur (nécessite un format d’index avec un codec sérialisé).
 
 <div id="throw_if_no_data_to_insert">
   ## throw_if_no_data_to_insert
@@ -14706,9 +14804,9 @@ Valeurs possibles :
 * `true`  - Lorsqu’un bloc d’insertion atteint `max_partitions_per_insert_block`, une exception est levée.
 * `false` - Consigne un avertissement lorsque `max_partitions_per_insert_block` est atteint.
 
-<Tip>
-  Cela peut être utile si vous cherchez à comprendre l’impact sur les utilisateurs lors de la modification de [`max_partitions_per_insert_block`](/fr/reference/settings/session-settings#max_partitions_per_insert_block).
-</Tip>
+:::tip
+Cela peut être utile si vous cherchez à comprendre l’impact sur les utilisateurs lors de la modification de [`max_partitions_per_insert_block`](/fr/reference/settings/session-settings#max_partitions_per_insert_block).
+:::
 
 <div id="throw_on_unsupported_query_inside_transaction">
   ## throw_on_unsupported_query_inside_transaction
@@ -14969,6 +15067,16 @@ Par exemple, si `url_base` vaut `https://example.com/def/`, alors :
 * `/test/data.csv` est résolu en `https://example.com/test/data.csv`
 * `//other.com/test/data.csv` est résolu en `https://other.com/test/data.csv`
 
+<div id="url_wildcard_max_directories_to_read">
+  ## url_wildcard_max_directories_to_read
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "100000"},{"label": "Nouveau paramètre limitant le nombre de répertoires lus lors de l’expansion des caractères génériques dans la fonction de table `url`."}]}]} />
+
+Nombre maximal de répertoires pouvant être parcourus lors de l’expansion des caractères génériques d’URL à partir des pages d’index.
+
 <div id="use_async_executor_for_materialized_views">
   ## use_async_executor_for_materialized_views
 </div>
@@ -15012,10 +15120,11 @@ Valeurs possibles :
 * 0 — Utilise le format de répertoire `user[:password]@host:port#default_database`.
 * 1 — Utilise le format de répertoire `[shard{shard_index}[_replica{replica_index}]]`.
 
-<Note>
-  - avec `use_compact_format_in_distributed_parts_names=0`, les modifications de la définition du cluster ne seront pas appliquées aux INSERT en arrière-plan.
-  - avec `use_compact_format_in_distributed_parts_names=1`, modifier l’ordre des nœuds dans la définition du cluster changera `shard_index`/`replica_index` ; soyez donc vigilant.
-</Note>
+:::note
+
+* avec `use_compact_format_in_distributed_parts_names=0`, les modifications de la définition du cluster ne seront pas appliquées aux INSERT en arrière-plan.
+* avec `use_compact_format_in_distributed_parts_names=1`, modifier l’ordre des nœuds dans la définition du cluster changera `shard_index`/`replica_index` ; soyez donc vigilant.
+  :::
 
 <div id="use_concurrency_control">
   ## use_concurrency_control
@@ -15124,11 +15233,11 @@ prédicat déterministe pour le côté cible.
   ## use_legacy_to_time
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "Nouveau paramètre. Permet à l'utilisateur d'utiliser l'ancienne logique de la fonction toTime, qui se comporte comme toTimeWithFixedDate."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Utilise par défaut la nouvelle fonction `toTime` (qui convertit les valeurs en type de données `Time`) au lieu de la fonction legacy `toTime` (qui reste disponible sous le nom `toTimeWithFixedDate`)."}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "Nouveau paramètre. Permet à l'utilisateur d'utiliser l'ancienne logique de la fonction toTime, qui se comporte comme toTimeWithFixedDate."}]}]} />
 
-Lorsqu&#39;il est activé, ce paramètre permet d&#39;utiliser l&#39;ancienne fonction toTime, qui convertit une date avec heure en une date fixe donnée, tout en conservant l&#39;heure.
+Lorsqu&#39;il est activé, ce paramètre permet d&#39;utiliser la fonction legacy toTime, qui convertit une date avec heure en une date fixe donnée, tout en conservant l&#39;heure.
 Sinon, une nouvelle fonction toTime est utilisée, qui convertit différents types de données en type Time.
 L&#39;ancienne fonction legacy reste également accessible sans condition sous le nom toTimeWithFixedDate.
 
@@ -15386,7 +15495,7 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "L’index de texte est désormais GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1"},{"label": "Activé par défaut"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "L’index de texte est désormais GA"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "Activé par défaut"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
 Active l’utilisation des index de saut de données pendant la lecture des données.
 
@@ -15474,11 +15583,11 @@ Utilise la structure de la table d’insertion au lieu de l’inférence de sch�
   ## use_text_index_header_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Cache de l’en-tête de l’index de texte activé globalement."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Indique s’il faut utiliser un cache de l’en-tête désérialisé de l’index de texte.
+Indique s’il faut mettre en cache en mémoire les en-têtes désérialisés de l’index de texte.
 L’utilisation du cache de l’en-tête de l’index de texte peut réduire considérablement la latence et augmenter le débit lors du traitement d’un grand nombre de requêtes sur l’index de texte.
 
 <div id="use_text_index_like_evaluation_by_dictionary_scan">
@@ -15499,18 +15608,18 @@ Permet d’évaluer les requêtes LIKE/ILIKE en analysant le dictionnaire de l�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Indique s’il faut utiliser un cache des listes de postings désérialisées de l’index de texte.
+Indique s’il faut mettre en cache en mémoire les listes de postings désérialisées de l’index de texte.
 L’utilisation du cache des listes de postings de l’index de texte peut réduire considérablement la latence et augmenter le débit lors de l’exécution d’un grand nombre de requêtes sur l’index de texte.
 
 <div id="use_text_index_tokens_cache">
   ## use_text_index_tokens_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "A activé globalement le cache des jetons de l’index de texte."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
-Indique s’il faut utiliser un cache d’informations désérialisées sur les jetons de l’index de texte.
+Indique s’il faut mettre en cache en mémoire des informations désérialisées sur les jetons de l’index de texte.
 L’utilisation du cache des jetons de l’index de texte peut réduire considérablement la latence et augmenter le débit lors de l’exécution d’un grand nombre de requêtes sur l’index de texte.
 
 <div id="use_top_k_dynamic_filtering">

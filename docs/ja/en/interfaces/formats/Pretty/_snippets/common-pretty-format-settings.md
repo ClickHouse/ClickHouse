@@ -1,0 +1,18 @@
+---
+title: Prettyフォーマットの一般的な設定
+---
+
+{/* 注: このファイルをインポートするすべてのファイルで、このファイルはスニペットとして使用されます */ }
+
+以下の設定は、すべての`Pretty`フォーマットに共通です。
+
+| 設定                                                                                                                                                                 | 説明                                                                                                                                                                           | デフォルト   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| [`output_format_pretty_max_rows`](/ja/operations/settings/settings-formats.md/#output_format_pretty_max_rows)                                                         | Prettyフォーマットの最大行数です。                                                                                                                                                         | `10000` |
+| [`output_format_pretty_max_column_pad_width`](/ja/operations/settings/settings-formats.md/#output_format_pretty_max_column_pad_width)                                 | Prettyフォーマットで、カラム内のすべての値に適用するパディング幅の最大値です。                                                                                                                                   | `250`   |
+| [`output_format_pretty_max_value_width`](/ja/operations/settings/settings-formats.md/#output_format_pretty_max_value_width)                                           | Prettyフォーマットで表示する値の最大幅です。これを超える値は切り詰められます。                                                                                                                                   | `10000` |
+| [`output_format_pretty_color`](/ja/operations/settings/settings-formats.md/#output_format_pretty_color)                                                               | Prettyフォーマットで色を付けるためにANSI escape sequencesを使用します。                                                                                                                            | `true`  |
+| [`output_format_pretty_grid_charset`](/ja/operations/settings/settings-formats.md/#output_format_pretty_grid_charset)                                                 | 罫線の表示に使用する文字セットです。使用可能な文字セット: ASCII, UTF-8。                                                                                                                                  | `UTF-8` |
+| [`output_format_pretty_row_numbers`](/ja/operations/settings/settings-formats.md/#output_format_pretty_row_numbers)                                                   | Pretty出力フォーマットで各行の前に行番号を追加します。                                                                                                                                               | `true`  |
+| [`output_format_pretty_display_footer_column_names`](/ja/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names)                   | テーブルに多くの行が含まれる場合、フッターにカラム名を表示します。                                                                                                                                            | `true`  |
+| [`output_format_pretty_display_footer_column_names_min_rows`](/ja/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names_min_rows) | [`output_format_pretty_display_footer_column_names`](/ja/operations/settings/settings-formats.md/#output_format_pretty_display_footer_column_names) が有効な場合にフッターを表示する最小行数を設定します。 | `50`    |

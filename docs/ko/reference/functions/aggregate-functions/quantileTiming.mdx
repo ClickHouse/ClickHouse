@@ -30,13 +30,13 @@ doc_type: '참고'
 
 그렇지 않으면 계산 결과는 가장 가까운 16ms 배수로 반올림됩니다.
 
-<Note>
-  페이지 로딩 시간의 분위수를 계산할 때 이 함수는 [`quantile`](/ko/reference/functions/aggregate-functions/quantile)보다 더 효율적이고 정확합니다.
-</Note>
+:::note
+페이지 로딩 시간의 분위수를 계산할 때 이 함수는 [`quantile`](/ko/reference/functions/aggregate-functions/quantile)보다 더 효율적이고 정확합니다.
+:::
 
-<Note>
-  함수에 전달된 값이 없으면(`quantileTimingIf`를 사용하는 경우) [NaN](/ko/reference/data-types/float#nan-and-inf)이 반환됩니다. 이는 이런 경우를 결과가 0이 되는 경우와 구분하기 위한 것입니다. `NaN` 값 정렬에 관한 참고 사항은 [ORDER BY 절](/ko/reference/statements/select/order-by)을 참조하십시오.
-</Note>
+:::note
+함수에 전달된 값이 없으면(`quantileTimingIf`를 사용하는 경우) [NaN](/ko/reference/data-types/float#nan-and-inf)이 반환됩니다. 이는 이런 경우를 결과가 0이 되는 경우와 구분하기 위한 것입니다. `NaN` 값 정렬에 관한 참고 사항은 [ORDER BY 절](/ko/reference/statements/select/order-by)을 참조하십시오.
+:::
 
 **구문**
 

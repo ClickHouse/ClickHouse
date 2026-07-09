@@ -130,13 +130,13 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
     ```yaml
     services:
       clickstack:
-        # ... 现有配置 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
         volumes:
           - ./temporal-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - ./temporal.key:/etc/otelcol-contrib/temporal.key:ro
-          # ... 其他卷 ...
+          # ... other volumes ...
     ```
 
     ##### 选项 2：Docker run (一体化镜像)
@@ -170,18 +170,18 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
   ## 仪表盘和可视化
 </div>
 
-为帮助你开始使用 ClickStack 监控 Temporal Cloud，我们提供了一些用于 Temporal 指标的示例可视化。
+为帮助你开始使用 ClickStack 监控 Temporal Cloud，我们提供了一些 Temporal 指标的示例可视化。
 
 <Steps>
   <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/temporal-metrics-dashboard.json'} download="temporal-metrics-dashboard.json" eventName="docs.temporal_metrics_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
   </Step>
 
   <Step>
     #### 导入预构建仪表盘
 
-    1. 打开 HyperDX，并进入“仪表盘”部分
-    2. 点击右上角省略号菜单中的 **导入仪表盘**
+    1. 打开 HyperDX 并导航到“仪表盘”部分
+    2. 点击右上角省略号菜单下的 **导入仪表盘**
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
 
@@ -193,7 +193,7 @@ Temporal 提供了一个抽象层，用于构建从简单到复杂且具备弹�
   <Step>
     #### 查看仪表盘
 
-    系统会创建该仪表盘，并预先配置好所有可视化：
+    该仪表盘会创建完成，并预先配置好所有可视化：
 
     <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Temporal 指标仪表盘" />
   </Step>
@@ -296,7 +296,7 @@ docker exec <container> cat /var/log/otel-collector.log | grep -i error
 * 通过复制 receiver 配置并为其指定不同的端点和服务名称，监控多个 Temporal Cloud 账户
 
 <div id="going-to-production">
-  ## 用于生产环境
+  ## 面向生产环境
 </div>
 
-本指南在 ClickStack 内置的 OpenTelemetry Collector 基础上进行了扩展，便于快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南利用 ClickStack 内置的 OpenTelemetry Collector 实现快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

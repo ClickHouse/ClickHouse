@@ -1,0 +1,117 @@
+---
+description: 'As exclusões leves simplificam a remoção de dados do banco de dados.'
+keywords: ['delete']
+sidebar_label: 'DELETE'
+sidebar_position: 36
+slug: /sql-reference/statements/delete
+title: 'A instrução de `DELETE` leve'
+doc_type: 'reference'
+---
+
+A instrução de exclusão leve remove linhas da tabela `[db.]table` que correspondem à expressão `expr`. Ela está disponível apenas para a família *MergeTree de engines de tabela.
+
+```sql
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+```
+
+É chamado de &quot;exclusão leve&quot; em contraste com o comando [ALTER TABLE ... DELETE](/pt-BR/sql-reference/statements/alter/delete), que é uma operação pesada.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+```sql
+-- Deletes all rows from the `hits` table where the `Title` column contains the text `hello`
+DELETE FROM hits WHERE Title LIKE '%hello%';
+```
+
+<div id="lightweight-delete-does-not-delete-data-immediately">
+  ## A exclusão leve não exclui dados imediatamente
+</div>
+
+A exclusão leve é implementada como uma [mutação](/pt-BR/sql-reference/statements/alter#mutations) que marca linhas como excluídas, mas não as exclui fisicamente de imediato.
+
+Por padrão, instruções `DELETE` esperam até que a marcação das linhas como excluídas seja concluída antes de retornar. Isso pode levar bastante tempo se o volume de dados for grande. Como alternativa, você pode executá-la de forma assíncrona em segundo plano usando a configuração [`lightweight_deletes_sync`](/pt-BR/operations/settings/settings#lightweight_deletes_sync). Se ela estiver desabilitada, a instrução `DELETE` retornará imediatamente, mas os dados ainda poderão ficar visíveis para consultas até que a mutação em segundo plano seja concluída.
+
+A mutação não exclui fisicamente as linhas marcadas como excluídas; isso só acontecerá durante o próximo merge. Como resultado, é possível que, por um período não especificado, os dados não sejam realmente excluídos do armazenamento e fiquem apenas marcados como excluídos.
+
+Se você precisa garantir que seus dados sejam excluídos do armazenamento em um prazo previsível, considere usar a configuração de tabela [`min_age_to_force_merge_seconds`](/pt-BR/operations/settings/merge-tree-settings#min_age_to_force_merge_seconds). Outra opção é usar o comando [ALTER TABLE ... DELETE](/pt-BR/sql-reference/statements/alter/delete). Observe que excluir dados com `ALTER TABLE ... DELETE` pode consumir recursos significativos, pois recria todas as partes afetadas.
+
+<div id="deleting-large-amounts-of-data">
+  ## Excluindo grandes volumes de dados
+</div>
+
+Exclusões em grande volume podem afetar negativamente o desempenho do ClickHouse. Se você estiver tentando excluir todas as linhas de uma tabela, considere usar o comando [`TRUNCATE TABLE`](/pt-BR/sql-reference/statements/truncate).
+
+Se você espera fazer exclusões frequentes, considere usar uma [chave de particionamento personalizada](/pt-BR/engines/table-engines/mergetree-family/custom-partitioning-key). Assim, você poderá usar o comando [`ALTER TABLE ... DROP PARTITION`](/pt-BR/sql-reference/statements/alter/partition#drop-partitionpart) para remover rapidamente todas as linhas associadas a essa partição.
+
+<div id="limitations-of-lightweight-delete">
+  ## Limitações da exclusão leve
+</div>
+
+<div id="lightweight-deletes-with-projections">
+  ### `DELETE`s leves com projeções
+</div>
+
+Por padrão, `DELETE` não funciona em tabelas com projeções. Isso acontece porque linhas de uma projeção podem ser afetadas por uma operação `DELETE`. No entanto, há uma [configuração do MergeTree](/pt-BR/operations/settings/merge-tree-settings) `lightweight_mutation_projection_mode` para alterar esse comportamento.
+
+<div id="performance-considerations-when-using-lightweight-delete">
+  ## Considerações de desempenho ao usar exclusão leve
+</div>
+
+**Excluir grandes volumes de dados com a instrução exclusão leve pode afetar negativamente o desempenho de consultas `SELECT`.**
+
+Os itens a seguir também podem afetar negativamente o desempenho de exclusão leve:
+
+* Uma condição `WHERE` complexa em uma consulta `DELETE`.
+* Se a fila de mutações estiver cheia de muitas outras mutações, isso pode levar a problemas de desempenho, pois todas as mutações em uma tabela são executadas sequencialmente.
+* A tabela afetada tem um número muito grande de partes de dados.
+* Ter muitos dados em partes compactas. Em uma parte Compact, todas as colunas são armazenadas em um único arquivo.
+
+<div id="delete-permissions">
+  ## Permissões para DELETE
+</div>
+
+`DELETE` requer o privilégio `ALTER DELETE`. Para habilitar instruções `DELETE` em uma tabela específica para um determinado usuário, execute o comando a seguir:
+
+```sql
+GRANT ALTER DELETE ON db.table to username;
+```
+
+<div id="how-lightweight-deletes-work-internally-in-clickhouse">
+  ## Como os DELETEs leves funcionam internamente no ClickHouse
+</div>
+
+1. **Uma &quot;máscara&quot; é aplicada às linhas afetadas**
+
+   Quando uma consulta `DELETE FROM table ...` é executada, o ClickHouse grava uma máscara em que cada linha é marcada como &quot;existente&quot; ou &quot;excluída&quot;. Essas linhas &quot;excluídas&quot; são omitidas das consultas subsequentes. No entanto, as linhas só são realmente removidas depois, em merges subsequentes. Gravar essa máscara é muito mais leve do que o que é feito por uma consulta `ALTER TABLE ... DELETE`.
+
+   A máscara é implementada como uma coluna de sistema oculta `_row_exists` que armazena `True` para todas as linhas visíveis e `False` para as excluídas. Essa coluna só está presente em uma parte se algumas linhas dessa parte tiverem sido excluídas. Essa coluna não existe quando uma parte tem todos os valores iguais a `True`.
+
+2. **As consultas `SELECT` são transformadas para incluir a máscara**
+
+   Quando uma coluna com máscara é usada em uma consulta, a consulta `SELECT ... FROM table WHERE condition` é internamente estendida com o predicado sobre `_row_exists` e transformada em:
+
+   ```sql
+   SELECT ... FROM table PREWHERE _row_exists WHERE condition
+   ```
+
+   Em tempo de execução, a coluna `_row_exists` é lida para determinar quais linhas não devem ser retornadas. Se houver muitas linhas excluídas, o ClickHouse poderá determinar quais grânulos podem ser totalmente ignorados ao ler o restante das colunas.
+
+3. **As consultas `DELETE` são transformadas em consultas `ALTER TABLE ... UPDATE`**
+
+   O `DELETE FROM table WHERE condition` é traduzido em uma mutação `ALTER TABLE table UPDATE _row_exists = 0 WHERE condition`.
+
+   Internamente, essa mutação é executada em duas etapas:
+
+   1. Um comando `SELECT count() FROM table WHERE condition` é executado para cada parte individual a fim de determinar se a parte foi afetada.
+
+   2. Com base nos comandos acima, as partes afetadas sofrem a mutação, e hardlinks são criados para as partes não afetadas. No caso de partes wide, a coluna `_row_exists` de cada linha é atualizada, e os arquivos de todas as outras colunas recebem hardlinks. Para partes compact, todas as colunas são regravadas porque ficam armazenadas juntas em um único arquivo.
+
+   Pelas etapas acima, podemos ver que a exclusão leve que usa a técnica de mascaramento melhora o desempenho em relação ao `ALTER TABLE ... DELETE` tradicional porque não regrava os arquivos de todas as colunas das partes afetadas.
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Como gerenciar atualizações e exclusões no ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)

@@ -29,13 +29,13 @@ doc_type: 'reference'
 
 وإلا، تُقرَّب نتيجة الحساب إلى أقرب مضاعف لـ 16 ms.
 
-<Note>
-  عند حساب كمّيات زمن تحميل الصفحة، تكون هذه الدالة أكثر كفاءة ودقة من [`quantile`](/ar/reference/functions/aggregate-functions/quantile).
-</Note>
+:::note
+عند حساب كمّيات زمن تحميل الصفحة، تكون هذه الدالة أكثر كفاءة ودقة من [`quantile`](/ar/reference/functions/aggregate-functions/quantile).
+:::
 
-<Note>
-  إذا لم تُمرَّر أي قيم إلى الدالة (عند استخدام `quantileTimingIf`)، فستُعاد [NaN](/ar/reference/data-types/float#nan-and-inf). والغرض من ذلك هو التمييز بين هذه الحالات والحالات التي تكون نتيجتها صفرًا. راجع [بند ORDER BY](/ar/reference/statements/select/order-by) للاطلاع على ملاحظات حول فرز قيم `NaN`.
-</Note>
+:::note
+إذا لم تُمرَّر أي قيم إلى الدالة (عند استخدام `quantileTimingIf`)، فستُعاد [NaN](/ar/reference/data-types/float#nan-and-inf). والغرض من ذلك هو التمييز بين هذه الحالات والحالات التي تكون نتيجتها صفرًا. راجع [بند ORDER BY](/ar/reference/statements/select/order-by) للاطلاع على ملاحظات حول فرز قيم `NaN`.
+:::
 
 **الصيغة**
 
@@ -47,7 +47,7 @@ quantileTimingWeighted(level)(expr, weight)
 
 **المعلمات**
 
-* `level` — اختياري. مستوى الكمي. عدد ثابت بفاصلة عائمة من 0 إلى 1. نوصي باستخدام قيمة `level` ضمن النطاق `[0.01, 0.99]`. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
+* `level` — اختياري. مستوى الكمّ. عدد ثابت بفاصلة عائمة من 0 إلى 1. نوصي باستخدام قيمة `level` ضمن النطاق `[0.01, 0.99]`. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
 
 **الوسيطات**
 
@@ -56,11 +56,11 @@ quantileTimingWeighted(level)(expr, weight)
 
 **القيمة المعادة**
 
-الكمي عند المستوى المحدد. [`Float32`](/ar/reference/data-types/float)
+الكمّ عند المستوى المحدد. [`Float32`](/ar/reference/data-types/float)
 
 **أمثلة**
 
-**حساب كمي زمني موزون**
+**حساب كمّ زمني موزون**
 
 ```sql title=Query
 CREATE TABLE t (response_time UInt32, weight UInt32) ENGINE = Memory;

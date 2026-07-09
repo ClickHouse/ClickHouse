@@ -13,7 +13,7 @@ doc_type: 'reference'
 
 導入バージョン: v1.1.0
 
-指定された精度で、数値データの数列の[分位点](https://en.wikipedia.org/wiki/Quantile)を計算します。
+指定された精度で、数値データ列の[分位点](https://en.wikipedia.org/wiki/Quantile)を計算します。
 
 結果は決定論的です (クエリ処理の順序に依存しません) 。
 この関数は、Web ページの読み込み時間やバックエンドの応答時間のような分布を表す数列を扱うために最適化されています。
@@ -30,13 +30,13 @@ doc_type: 'reference'
 
 それ以外の場合、計算結果は 16 ms 単位に丸められます。
 
-<Note>
-  ページの読み込み時間の分位点を計算する場合、この関数は [`quantile`](/ja/reference/functions/aggregate-functions/quantile) よりも効率的で、精度も高くなります。
-</Note>
+:::note
+ページの読み込み時間の分位点を計算する場合、この関数は [`quantile`](/ja/reference/functions/aggregate-functions/quantile) よりも効率的で、精度も高くなります。
+:::
 
-<Note>
-  関数に値が渡されない場合 (`quantileTimingIf` の使用時) は、[NaN](/ja/reference/data-types/float#nan-and-inf) が返されます。これは、そのようなケースを結果が 0 になるケースと区別するためです。`NaN` 値のソートに関する注意事項については、[ORDER BY 句](/ja/reference/statements/select/order-by) を参照してください。
-</Note>
+:::note
+関数に値が渡されない場合 (`quantileTimingIf` の使用時) は、[NaN](/ja/reference/data-types/float#nan-and-inf) が返されます。これは、そのようなケースを結果が 0 になるケースと区別するためです。`NaN` 値のソートに関する注意事項については、[ORDER BY 句](/ja/reference/statements/select/order-by) を参照してください。
+:::
 
 **構文**
 

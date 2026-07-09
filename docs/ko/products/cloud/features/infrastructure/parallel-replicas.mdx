@@ -177,7 +177,7 @@ Keeper 클러스터는 메타데이터에 대한 단일 기준점을
   ### 동적 조정
 </div>
 
-꼬리 지연 시간 문제를 해결하기 위해 동적 조정을 추가했습니다. 즉,
+테일 지연 시간 문제를 해결하기 위해 동적 조정을 추가했습니다. 즉,
 모든 그래뉼을 한 번의 요청으로 레플리카에 보내는 대신, 각 레플리카가
 코디네이터에 새로운 작업(처리할 그래뉼 집합)을 요청할 수 있습니다.
 코디네이터는 수신한 announcement를 바탕으로 레플리카에 그래뉼 집합을 할당합니다.
@@ -491,7 +491,7 @@ FORMAT TSV;
 
 <Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="parallel_replica 없이 EXPLAIN" />
 
-이제 parallel replica를 사용한 경우입니다:
+이제 병렬 레플리카를 사용한 경우입니다:
 
 ```sql title="EXPLAIN PIPELINE (with parallel replica)"
 EXPLAIN PIPELINE graph = 1, compact = 0 

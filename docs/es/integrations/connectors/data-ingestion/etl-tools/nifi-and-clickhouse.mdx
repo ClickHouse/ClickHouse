@@ -95,10 +95,10 @@ import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintaine
 
     2. En la sección &quot;Properties&quot; del procesador `​ExecuteSQL`, introduce los siguientes valores
 
-       | Propiedad                           | Valor                        | Observación                                                  |
-       | ----------------------------------- | ---------------------------- | ------------------------------------------------------------ |
-       | Database Connection Pooling Service | ClickHouse JDBC              | Selecciona el Controller Service configurado para ClickHouse |
-       | SQL select query                    | SELECT * FROM system.metrics | Introduce aquí tu consulta                                   |
+       | Propiedad                           | Valor                            | Observación                                                  |
+       | ----------------------------------- | -------------------------------- | ------------------------------------------------------------ |
+       | Database Connection Pooling Service | ClickHouse JDBC                  | Selecciona el Controller Service configurado para ClickHouse |
+       | SQL select query                    | SELECT &#42; FROM system.metrics | Introduce aquí tu consulta                                   |
 
     3. Inicia el procesador `​​ExecuteSQL`
 

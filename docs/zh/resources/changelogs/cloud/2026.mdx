@@ -3,13 +3,45 @@ slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud 更新日志 - 2026'
 description: 'ClickHouse Cloud 更新日志，介绍每个 ClickHouse Cloud 版本中的新增内容'
-doc_type: '更新日志'
-keywords: ['更新日志', '发布说明', '更新', '新功能', 'Cloud 变更']
+doc_type: 'changelog'
+keywords: ['更新日志', '发行说明', '更新', '新功能', 'Cloud 变更']
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-除这份 ClickHouse Cloud 更新日志外，另请参阅 [Cloud 兼容性](/zh/products/cloud/guides/cloud-compatibility) 页面。
+除了这份 ClickHouse Cloud 更新日志外，请参阅 [Cloud Compatibility](/zh/products/cloud/guides/cloud-compatibility) 页面。
+
+<Update label="2026 年 6 月 30 日">
+  本周更新包括面向 Postgres 和 ClickHouse 内部机制的新增可观测性功能、扩展后的 ClickPipes 控制能力 (包括 Kafka 恰好一次投递) ，以及多项平台新增内容：Azure Marketplace BYOC、官方 Airflow 提供商和 ClickHouse 智能体更新。
+
+  ### ClickPipes 中的 Kafka 恰好一次投递
+
+  您现在可以直接在 [ClickPipes](/zh/integrations/clickpipes/kafka/index) 导入流程中为 Kafka 导入启用恰好一次投递，并且相同选项也已通过公开 API 提供，以便进行程序化配置。
+
+  ### CDC 源的统一 TLS 控制
+
+  现在，各 CDC 源的 TLS 启用和验证级别已保持一致。OpenAPI 的 create 和 update 端点会传递 `postgres_skip_cert_verification`、`postgres_disable_tls` 和 `mongo_skip_cert_verification` 字段，因此您可以通过 API 管理证书处理。
+
+  ### Replicated 数据库重新出现在 ClickPipes 选择器中
+
+  Replicated 数据库现已再次可在 ClickPipes 目标端选择器中选择。
+
+  ### ClickHouse 智能体更新 (公开测试版)
+
+  [ClickHouse Agents](/zh/products/cloud/features/ai-ml/agents/index) 现已支持使用 Chat Projects 组织会话、显示 token 和上下文窗口用量的上下文使用量指示器、由智能体编写的技能，以及内置的 ClickHouse 最佳实践技能。此版本还包含对设置、导航、快捷键和固定功能的改进。
+
+  ### Azure Marketplace 上的 ClickHouse BYOC
+
+  ClickHouse [自备 Cloud](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 现已上架 Azure Marketplace，客户可通过专属报价购买，并部署通过其 Azure 账户计费的 BYOC。平台侧还新增了对 Azure BYOC Marketplace 列表和产品 ID 的计费支持。
+
+  ### 官方 ClickHouse Airflow 提供商
+
+  ClickHouse 的官方 Apache Airflow 提供商现已在 PyPI 上可用，并列入 Airflow 注册表，替代对旧版社区插件的依赖，以便在 ClickHouse 与其他系统之间路由数据。
+
+  ### 计费可见性和 Marketplace 改进
+
+  计费现已包含自助式信用额度历史记录表、显示已使用和已过期金额的预付费摘要，以及 GCP MPPO 电子邮件支持。
+</Update>
 
 <Update label="2026年6月3日">
   Open House 2026 周迎来了一波新发布，重点围绕两大主题：在数据所在之处运行 ClickHouse，以及将智能体驱动的 AI 辅助工作流引入平台。

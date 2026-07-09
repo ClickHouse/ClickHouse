@@ -12,16 +12,16 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp" size="md" alt="Redshift에서 ClickHouse로 마이그레이션하는 옵션" />
 
-ClickHouse 인스턴스 관점에서는 다음 3가지 방법을 사용할 수 있습니다.
+ClickHouse 인스턴스 관점에서는 다음과 같은 방법을 사용할 수 있습니다.
 
-1. 서드파티 ETL/ELT 도구 또는 서비스를 사용해 데이터를 ClickHouse로 **[PUSH](#push-data-from-redshift-to-clickhouse)**
+1. **[PUSH](#push-data-from-redshift-to-clickhouse)** 서드파티 ETL/ELT 도구 또는 서비스를 사용해 데이터를 ClickHouse로 전송
 
-2. ClickHouse JDBC Bridge를 활용해 Redshift에서 데이터를 **[가져오기](#pull-data-from-redshift-to-clickhouse)**
+2. **[PULL](#pull-data-from-redshift-to-clickhouse)** ClickHouse JDBC Bridge를 활용해 Redshift에서 데이터 가져오기
 
-3. S3 객체 스토리지를 사용해 &quot;언로드 후 로드&quot; 방식으로 **[피벗](#pivot-data-from-redshift-to-clickhouse-using-s3)**
+3. **[피벗](#pivot-data-from-redshift-to-clickhouse-using-s3)** S3 객체 스토리지를 사용해 &quot;언로드 후 로드&quot; 방식 적용
 
 <Note>
-  이 튜토리얼에서는 Redshift를 데이터 소스로 사용했습니다. 하지만 여기서 소개하는 마이그레이션 방식은 Redshift에만 한정되지 않으며, 호환되는 모든 데이터 소스에도 비슷한 단계를 적용할 수 있습니다.
+  이 튜토리얼에서는 Redshift를 데이터 소스로 사용했습니다. 하지만 여기서 소개하는 마이그레이션 방식은 Redshift에만 국한되지 않으며, 호환되는 모든 데이터 소스에도 유사한 단계를 적용할 수 있습니다.
 </Note>
 
 <div id="push-data-from-redshift-to-clickhouse">
@@ -216,7 +216,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
 
 * Redshift에서 언로드한 뒤 ClickHouse에 로드하는 두 단계가 필요합니다.
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### 튜토리얼
 </div>
 
@@ -280,7 +280,7 @@ Pull 시나리오에서는 ClickHouse JDBC Bridge를 활용해 ClickHouse 인스
     ```
 
     <Note>
-      이 예시에서는 CSV를 피벗 포맷으로 사용했습니다. 하지만 운영 워크로드에서는 압축을 지원하므로 전송 시간을 줄이고 스토리지 비용도 절감할 수 있어, 대규모 마이그레이션에 Apache Parquet를 권장합니다. (기본적으로 각 row group은 SNAPPY를 사용해 압축됩니다.) 또한 ClickHouse는 Parquet의 컬럼 지향 구조를 활용해 데이터 수집 속도를 높입니다.
+      이 예시에서는 CSV를 피벗 포맷으로 사용했습니다. 하지만 운영 워크로드에서는 압축을 지원하므로 전송 시간을 줄이고 스토리지 비용도 절감할 수 있어, 대규모 마이그레이션에는 Apache Parquet를 가장 적합한 옵션으로 권장합니다. (기본적으로 각 row group은 SNAPPY를 사용해 압축됩니다.) 또한 ClickHouse는 Parquet의 컬럼 지향 구조를 활용해 데이터 수집 속도를 높입니다.
     </Note>
   </Step>
 </Steps>

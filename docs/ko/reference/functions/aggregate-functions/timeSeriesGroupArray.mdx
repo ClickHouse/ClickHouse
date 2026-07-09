@@ -15,9 +15,9 @@ doc_type: 'reference'
 
 타임스탬프 기준으로 시계열 데이터를 오름차순으로 정렬합니다.
 
-<Note>
-  이 함수는 실험적 기능이므로 `allow_experimental_ts_to_grid_aggregate_function=true`를 설정하여 활성화하십시오.
-</Note>
+:::note
+이 함수는 실험적 기능이므로 `allow_experimental_ts_to_grid_aggregate_function=true`를 설정하여 활성화하십시오.
+:::
 
 **구문**
 
@@ -39,6 +39,7 @@ timeSeriesGroupArray(timestamp, value)
 **개별 값을 사용한 기본 사용법**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -61,6 +62,7 @@ FROM
 **동일한 크기의 배열로 여러 개의 타임스탬프와 값을 전달하기**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

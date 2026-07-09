@@ -83,7 +83,7 @@ HTTP Sink コネクタを設定します。
   * `Auth password` - ClickHouse のパスワード
 
 <Note>
-  この HTTP Url は指定を誤りやすいため、問題を避けるにはエスケープを正確に行ってください。
+  この HTTP Url は誤りが生じやすいため、問題を避けるにはエスケープを正確に行ってください。
 </Note>
 
 <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="HTTP Sink コネクタの認証設定を示す Confluent Cloud のインターフェイス" border />
@@ -91,7 +91,7 @@ HTTP Sink コネクタを設定します。
 <br />
 
 * 設定
-  * `Input Kafka record value format` - ソースデータによって異なりますが、多くの場合は JSON または Avro です。以下の設定では `JSON` を前提とします。
+  * `Input Kafka record value format`ソースデータによって異なりますが、多くの場合は JSON または Avro です。以下の設定では `JSON` を前提とします。
   * `advanced configurations` セクション内:
     * `HTTP Request Method` - POST に設定します
     * `Request Body Format` - json

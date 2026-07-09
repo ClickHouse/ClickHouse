@@ -29,17 +29,17 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 * カラム単位でデータを圧縮できる。
 
 <div id="row-oriented-vs-column-oriented-databases">
-  ## 行指向データベースと列指向データベースの比較
+  ## 行指向データベースとカラム指向データベースの比較
 </div>
 
-以下は、レポート作成時における従来の行指向システムと列指向データベースの違いを示した図です。
+以下は、レポート作成時における従来の行指向システムとカラム指向データベースの違いを示した図です。
 
 **従来の行指向**
 
 <Image img="/images/row-oriented.webp" alt="従来の行指向データベースの格納方法を示す図" size="md" />
 
-**カラム指向**
+**列指向**
 
-<Image img="/images/column-oriented.webp" alt="カラム指向データベースの格納方法を示す図" size="md" />
+<Image img="/images/column-oriented.webp" alt="列指向データベースの格納方法を示す図" size="md" />
 
 列指向データベースは、分析アプリケーションに適した選択肢です。テーブルに必要になるかもしれない多数のカラムをあらかじめ持たせておいても、読み取りクエリの実行時に未使用のカラム分のコストを負担せずに済むためです (従来の OLTP データベースでは、データはカラム単位ではなく行単位で格納されるため、クエリ時にすべてのデータを読み取ります) 。カラム指向データベースはビッグデータ処理やデータウェアハウジング向けに設計されており、多くの場合、低コストなハードウェアで構成された分散クラスターを使ってネイティブにスケールし、スループットを向上させます。ClickHouse では、[distributed](/ja/reference/engines/table-engines/special/distributed) テーブルと [replicated](/ja/reference/engines/table-engines/mergetree-family/replication) テーブルを組み合わせることで、これを実現しています。

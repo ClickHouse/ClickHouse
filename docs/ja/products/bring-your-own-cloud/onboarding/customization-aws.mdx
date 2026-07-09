@@ -91,19 +91,63 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
 </Steps>
 
 <div id="customer-managed-iam-roles">
-  ## 顧客管理の IAM ロール
+  ## 顧客管理 IAM ロール
 </div>
 
-高度なセキュリティ要件や厳格なコンプライアンス ポリシーがある組織では、ClickHouse Cloud に IAM ロールを作成させる代わりに、お客様自身で IAM ロールを用意できます。この方法により、IAM 権限を完全に制御でき、組織のセキュリティポリシーを適用できます。
+高度なセキュリティ要件や厳格なコンプライアンスポリシーがある組織では、ClickHouse Cloud に IAM ロールを作成させる代わりに、独自の IAM ロールを指定できます。この方法では、IAM 権限を完全に制御でき、組織のセキュリティポリシーを適用できます。
 
 <Info>
-  顧客管理の IAM ロールはプライベートプレビューです。この機能が必要な場合は、ClickHouse Support に連絡して、具体的な要件と導入時期についてご相談ください。
-
-  提供開始後、この機能では次のことが可能になります。
-
-  * ClickHouse Cloud が使用する事前設定済みの IAM ロールを提供する
-  * クロスアカウントアクセスに使用される `ClickHouseManagementRole` について、IAM 関連の権限から書き込み権限を削除する
-  * ロール権限と信頼関係を引き続き完全に制御する
+  顧客管理 IAM ロールはプライベートプレビューです。以下の手順を実行する前に、この機能を組織で有効にするため、ClickHouse Support にお問い合わせください。
 </Info>
+
+顧客管理 IAM ロールを使用すると、次のことが可能になります。
+
+* ClickHouse Cloud が通常作成するインフラストラクチャごとの IAM ロールを事前に作成する
+* クロスアカウントアクセスに使用する `ClickHouseManagementRole` から IAM の書き込み権限を削除する
+* ロールの権限と信頼関係を完全に管理する
+
+<Steps>
+  <Step>
+    ### IAM の書き込み権限なしで管理ロールを設定する
+
+    [初回の BYOC セットアップ](/ja/cloud/reference/byoc/onboarding/standard)を実行する際は、管理ロールの IAM 書き込み権限を無効にします。CloudFormation template では、`IncludeIAMWritePermissions` パラメータを `false` に設定します。Terraform module の場合は次のとおりです。
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source                        = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws?ref=<version>"
+      external_id                   = "<external-id-provided-by-clickhouse>"
+      include_iam_write_permissions = false
+    }
+    ```
+
+    `<version>` は、module の [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) にある最新のタグに置き換えてください。必ず最新のリリースを使用してください。
+  </Step>
+
+  <Step>
+    ### インフラストラクチャごとの IAM ロールを作成する
+
+    各 BYOC インフラストラクチャがプロビジョニングされる前に、[terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) の per-infra module を使用して、必要な IAM ロール (EKS pod identity roles、ClickHouse S3 access role、data-plane management role) を作成します。
+
+    ```hcl
+    module "clickhouse_per_infra_iam" {
+      source = "github.com/ClickHouse/terraform-byoc-onboarding.git//modules/aws-per-infra-iam?ref=<version>"
+
+      spoken_name = "<spoken-name-provided-by-clickhouse>"
+      region      = "<aws-region-of-the-infrastructure>"
+      external_id = "<external-id-provided-by-clickhouse>"
+    }
+    ```
+
+    `<version>` は、module の [releases page](https://github.com/ClickHouse/terraform-byoc-onboarding/releases) にある最新のタグに置き換えてください。必ず最新のリリースを使用してください。
+  </Step>
+
+  <Step>
+    ### インフラストラクチャごとのロールを最新の状態に保つ
+
+    <Warning>
+      ClickHouse では、新しいプラットフォーム機能に必要なロールや権限が定期的に追加されます。ClickHouse から更新通知を受けたら、最新リリースの per-infra module を再適用してください。古いバージョンを使用していると、BYOC インフラストラクチャの Provisioning や Upgrades が失敗する可能性があります。
+    </Warning>
+  </Step>
+</Steps>
 
 ClickHouse Cloud がデフォルトで作成する IAM ロールについては、[BYOC Privilege Reference](/ja/products/bring-your-own-cloud/reference/privilege) を参照してください。

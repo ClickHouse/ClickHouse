@@ -18,7 +18,7 @@ Do ponto de vista da instância do ClickHouse, é possível:
 
 2. **[EXTRAIR](#pull-data-from-redshift-to-clickhouse)** dados do Redshift por meio do ClickHouse JDBC Bridge
 
-3. **[PIVOTAR](#pivot-data-from-redshift-to-clickhouse-using-s3)** usando o armazenamento de objetos S3 com uma lógica de &quot;descarregar e depois carregar&quot;
+3. **[PIVOTAR](#pivot-data-from-redshift-to-clickhouse-using-s3)** usando o armazenamento de objetos do S3 com uma lógica de &quot;descarregar e depois carregar&quot;
 
 <Note>
   Usamos o Redshift como fonte de dados neste tutorial. No entanto, as abordagens de migração apresentadas aqui não são exclusivas do Redshift, e etapas semelhantes podem ser adaptadas para qualquer fonte de dados compatível.
@@ -53,7 +53,7 @@ No cenário de envio, a ideia é usar uma ferramenta ou serviço de terceiros (s
 
 No cenário de extração, a ideia é usar o ClickHouse JDBC Bridge para se conectar diretamente a um cluster do Redshift a partir de uma instância do ClickHouse e executar consultas `INSERT INTO ... SELECT`:
 
-<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="extrair do Redshift para o ClickHouse" />
+<Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="Extrair do Redshift para o ClickHouse" />
 
 <div id="pros-1">
   ### Vantagens
@@ -216,7 +216,7 @@ Neste cenário, exportamos os dados para o S3 em um formato intermediário para 
 
 * Duas etapas no processo (extrair do Redshift e depois carregar no ClickHouse).
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### Tutorial
 </div>
 

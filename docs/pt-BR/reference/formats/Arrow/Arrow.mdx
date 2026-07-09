@@ -42,7 +42,8 @@ A tabela abaixo mostra os tipos de dados compatíveis e como eles correspondem a
 | `DOUBLE`                                | [Float64](/pt-BR/reference/data-types/float)                                                                         | `FLOAT64`                     |
 | `DATE32`                                | [Date32](/pt-BR/reference/data-types/date32)                                                                         | `UINT16`                      |
 | `DATE64`                                | [DateTime](/pt-BR/reference/data-types/datetime)                                                                     | `UINT32`                      |
-| `TIMESTAMP`, `TIME32`, `TIME64`         | [DateTime64](/pt-BR/reference/data-types/datetime64)                                                                 | `TIMESTAMP`                   |
+| `TIMESTAMP`                             | [DateTime64](/pt-BR/reference/data-types/datetime64)                                                                 | `TIMESTAMP`                   |
+| `TIME32`, `TIME64`                      | [Time64](/pt-BR/reference/data-types/time64)                                                                         | `TIME32`, `TIME64`            |
 | `STRING`, `BINARY`                      | [String](/pt-BR/reference/data-types/string)                                                                         | `BINARY`                      |
 | `STRING`, `BINARY`, `FIXED_SIZE_BINARY` | [FixedString](/pt-BR/reference/data-types/fixedstring)                                                               | `FIXED_SIZE_BINARY`           |
 | `DECIMAL`                               | [Decimal](/pt-BR/reference/data-types/decimal)                                                                       | `DECIMAL`                     |
@@ -67,7 +68,7 @@ Tipos de dados Arrow sem suporte:
 * `UUID`
 * `ENUM`.
 
-Os tipos de dados das colunas da tabela do ClickHouse não precisam corresponder aos campos de dados correspondentes do Arrow. Ao inserir dados, o ClickHouse interpreta os tipos de dados de acordo com a tabela acima e depois [aplica CAST](/pt-BR/reference/functions/regular-functions/type-conversion-functions#CAST) aos dados para convertê-los para o tipo de dado definido para a coluna da tabela do ClickHouse.
+Os tipos de dados das colunas das tabelas do ClickHouse não precisam corresponder aos campos de dados Arrow correspondentes. Ao inserir dados, o ClickHouse interpreta os tipos de dados de acordo com a tabela acima e depois [converte](/pt-BR/reference/functions/regular-functions/type-conversion-functions#CAST) os dados para o tipo de dado definido para a coluna da tabela do ClickHouse.
 
 <div id="example-usage">
   ## Exemplo de uso

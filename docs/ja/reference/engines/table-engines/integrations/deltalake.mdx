@@ -122,7 +122,7 @@ Delta Lake テーブルを作成するには、そのテーブルがあらかじ
 Delta Lake テーブルエンジンを使用してテーブルを作成したら、次のようにデータを挿入できます。
 
 ```sql
-SET allow_experimental_delta_lake_writes = 1;
+SET allow_delta_lake_writes = 1;
 
 INSERT INTO deltalake(id, firstname, lastname, gender, age)
 VALUES (1, 'John', 'Smith', 'M', 32);
@@ -131,6 +131,8 @@ VALUES (1, 'John', 'Smith', 'M', 32);
 <Note>
   テーブルエンジンを使った書き込みは、delta kernel 経由でのみサポートされています。
   Azure への書き込みはまだサポートされていませんが、S3 と GCS ではサポートされています。
+
+  Delta Lake への書き込みはベータ機能であり、`SET allow_delta_lake_writes = 1` で有効にする必要があります (バージョン 26.7 以降で利用可能です。以前のバージョンでは `SET allow_experimental_delta_lake_writes = 1` を使用してください) 。
 </Note>
 
 <div id="data-cache">

@@ -67,13 +67,13 @@ ORDER BY tuple()
   #### 4. Configurar HTTP Sink
 </div>
 
-Cree un topic de Kafka y una instancia de HTTP Sink Connector:
+Cree un topic de Kafka y una instancia de conector HTTP Sink:
 
 <Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="Interfaz de Confluent Cloud que muestra cómo crear un conector HTTP Sink" border />
 
 <br />
 
-Configure HTTP Sink Connector:
+Configure el conector HTTP Sink:
 
 * Indique el nombre del topic que creó
 * Autenticación
@@ -83,7 +83,7 @@ Configure HTTP Sink Connector:
   * `Auth password` - contraseña de ClickHouse
 
 <Note>
-  Esta HTTP Url es propensa a errores. Asegúrese de que el escape sea preciso para evitar problemas.
+  Esta HTTP Url es propensa a errores. Asegúrese de que el escaping sea preciso para evitar problemas.
 </Note>
 
 <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="Interfaz de Confluent Cloud que muestra la configuración de autenticación para el conector HTTP Sink" border />
@@ -93,12 +93,12 @@ Configure HTTP Sink Connector:
 * Configuración
   * `Input Kafka record value format` Depende de los datos de origen, pero en la mayoría de los casos será JSON o Avro. En la siguiente configuración asumimos `JSON`.
   * En la sección `advanced configurations`:
-    * `HTTP Request Method` - Establézcalo como POST
+    * `HTTP Request Method` - Establézcalo en POST
     * `Request Body Format` - json
     * `Batch batch size` - Según las recomendaciones de ClickHouse, establézcalo en **al menos 1000**.
     * `Batch json as array` - true
     * `Retry on HTTP codes` - 400-500, pero adáptelo según sea necesario; por ejemplo, esto puede cambiar si tiene un proxy HTTP delante de ClickHouse.
-    * `Maximum Reties` - el valor predeterminado (10) es adecuado, pero no dude en ajustarlo para hacer los reintentos más robustos.
+    * `Maximum Reties` - el valor predeterminado (10) es adecuado, pero no dude en ajustarlo para lograr reintentos más robustos.
 
 <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="Interfaz de Confluent Cloud que muestra opciones de configuración avanzada para el conector HTTP Sink" border />
 

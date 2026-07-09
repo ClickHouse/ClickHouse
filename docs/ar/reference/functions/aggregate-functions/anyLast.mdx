@@ -15,10 +15,10 @@ doc_type: 'reference'
 
 تُرجِع آخر قيمة تمت مصادفتها في عمود.
 
-<Warning>
-  نظرًا إلى أن الاستعلام قد يُنفَّذ بترتيب غير محدد، فإن نتيجة هذه الدالة غير حتمية.
-  إذا كنت بحاجة إلى نتيجة عشوائية ولكن حتمية، فاستخدم الدالتين [min](/ar/reference/functions/aggregate-functions/min) أو [max](/ar/reference/functions/aggregate-functions/max).
-</Warning>
+:::warning
+نظرًا إلى أن الاستعلام قد يُنفَّذ بترتيب غير محدد، فإن نتيجة هذه الدالة غير حتمية.
+إذا كنت بحاجة إلى نتيجة عشوائية ولكن حتمية، فاستخدم الدالتين [min](/ar/reference/functions/aggregate-functions/min) أو [max](/ar/reference/functions/aggregate-functions/max).
+:::
 
 بشكل افتراضي، لا تُرجِع الدالة NULL أبدًا، أي إنها تتجاهل قيم NULL في عمود الإدخال.
 ومع ذلك، إذا استُخدمت الدالة مع المُعدِّل `RESPECT NULLS`، فإنها تُرجِع آخر قيمة تمت مصادفتها سواء كانت NULL أم لا.

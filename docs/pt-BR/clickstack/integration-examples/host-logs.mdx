@@ -40,13 +40,13 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     Primeiro, verifique se o seu sistema está gravando arquivos de syslog:
 
     ```bash
-    # Verificar se os arquivos syslog existem (Linux)
+    # Check if syslog files exist (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # Ou no macOS
+    # Or on macOS
     ls -la /var/log/system.log
 
-    # Visualizar entradas recentes
+    # View recent entries
     tail -20 /var/log/syslog
     ```
 
@@ -219,14 +219,14 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
     ```yaml
     services:
       clickstack:
-        # ... configuração existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... outras variáveis de ambiente ...
+          # ... other environment variables ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... outros volumes ...
+          # ... other volumes ...
     ```
 
     ##### Opção 2: Docker Run (imagem all-in-one)
@@ -264,7 +264,7 @@ Se você quiser testar a integração de log do host antes de configurar seu pr�
 </Steps>
 
 <div id="demo-dataset">
-  ## dataset de demonstração
+  ## Dataset de demonstração
 </div>
 
 Para usuários que desejam testar a integração de logs do host antes de configurar seus sistemas de produção, fornecemos um conjunto de dados de exemplo com logs de sistema pré-gerados e padrões realistas.
@@ -369,7 +369,7 @@ Para usuários que desejam testar a integração de logs do host antes de config
     <Info>
       **Exibição de fuso horário**
 
-      O HyperDX exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração cobrem o período de **2025-11-11 00:00:00 a 2025-11-12 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você poderá restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
+      O HyperDX exibe os timestamps no fuso horário local do seu navegador. Os dados de demonstração cobrem o período de **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você poderá restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
     </Info>
   </Step>
 </Steps>
@@ -411,7 +411,7 @@ Para ajudar você a começar a monitorar logs do host com o ClickStack, fornecem
     * Principais unidades do systemd que geram logs
     * Atividade de login via SSH (bem-sucedidos vs. falhos)
     * Atividade do firewall (bloqueado vs. permitido)
-    * Eventos de segurança (logins com falha, banimentos, bloqueios)
+    * Eventos de segurança (logins com falha, banimentos e bloqueios)
     * Atividade de reinicialização de serviços
 
     <Note>
@@ -512,7 +512,7 @@ Se o formato não corresponder, selecione a guia de configuração adequada na s
 * Crie dashboards personalizados para monitoramento de segurança (tentativas de SSH, uso de sudo, bloqueios de firewall)
 
 <div id="going-to-production">
-  ## Colocando em produção
+  ## Preparando para produção
 </div>
 
-Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+Este guia utiliza o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

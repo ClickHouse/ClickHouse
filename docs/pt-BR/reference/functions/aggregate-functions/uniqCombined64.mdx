@@ -20,23 +20,24 @@ Calcula o número aproximado de valores de argumento distintos.
 
 Esta função fornece o resultado de forma determinística (não depende da ordem de processamento da consulta).
 
-<Note>
-  Como usa hash de 64 bits para todos os tipos, o resultado não apresenta erro muito alto para cardinalidades significativamente maiores que `UINT_MAX`, como acontece com [`uniqCombined`](/pt-BR/reference/functions/aggregate-functions/uniqCombined), que usa um hash de 32 bits para tipos que não são String.
-</Note>
+:::note
+Como usa hash de 64 bits para todos os tipos, o resultado não apresenta erro muito alto para cardinalidades significativamente maiores que `UINT_MAX`, como acontece com [`uniqCombined`](/pt-BR/reference/functions/aggregate-functions/uniqCombined), que usa um hash de 32 bits para tipos que não são String.
+:::
 
 Em comparação com a função [uniq](/pt-BR/reference/functions/aggregate-functions/uniq), a função uniqCombined64:
 
 * Consome várias vezes menos memória
 * Calcula com precisão várias vezes maior
 
-<Accordion title="Detalhes de implementação">
+<details>
+  <summary>Detalhes de implementação</summary>
   Esta função calcula um hash de 64 bits para todos os tipos de dados de todos os parâmetros da agregação e, em seguida, o usa nos cálculos.
   Ela usa uma combinação de três algoritmos: array, tabela hash e [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) com uma tabela de correção de erros:
 
   * Para um pequeno número de elementos distintos, usa-se um array
   * Quando o tamanho do conjunto é maior, usa-se uma tabela hash
   * Para um número maior de elementos, usa-se HyperLogLog, que ocupará uma quantidade fixa de memória
-</Accordion>
+</details>
 
 **Sintaxe**
 
@@ -74,19 +75,19 @@ SELECT uniqCombined64(number) FROM numbers(1e10);
 **Comparação com uniqCombined**
 
 ```sql title=Query
--- uniqCombined64 com conjunto de dados grande
+-- uniqCombined64 with large dataset
 SELECT uniqCombined64(number) FROM numbers(1e10);
 
--- uniqCombined com o mesmo conjunto de dados apresenta aproximação ruim
+-- uniqCombined with same dataset shows poor approximation
 SELECT uniqCombined(number) FROM numbers(1e10);
 ```
 
 ```response title=Response
 ┌─uniqCombined64(number)─┐
-│             9998568925 │ -- 10,00 bilhões
+│             9998568925 │ -- 10.00 billion
 └────────────────────────┘
 ┌─uniqCombined(number)─┐
-│           5545308725 │ -- 5,55 bilhões
+│           5545308725 │ -- 5.55 billion
 └──────────────────────┘
 ```
 

@@ -54,7 +54,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### تحقّق من أن سجل systemd قيد التشغيل
+    #### تحقّق من أن journal systemd قيد التشغيل
 
     تأكد من أن نظامك يستخدم systemd وأن سجلات journal متوفرة:
 
@@ -271,7 +271,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     ```
 
     <Note>
-      يستخدم العرض التجريبي receiver ‏`filelog` مع سجلات نصية بدلًا من `journald` لتجنّب الحاجة إلى `journalctl` داخل الحاوية.
+      يستخدم العرض التجريبي receiver `filelog` مع سجلات نصية بدلًا من `journald` لتجنّب الحاجة إلى `journalctl` داخل الحاوية.
     </Note>
   </Step>
 
@@ -281,7 +281,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     بعد تشغيل ClickStack:
 
     1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك
-    2. انتقل إلى واجهة Search واضبط source على `Logs`
+    2. انتقل إلى Search view واضبط source على `Logs`
     3. اضبط النطاق الزمني على **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
     <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="عرض البحث في السجلات" />
@@ -394,12 +394,12 @@ otelcol-contrib --config=otel-config.yaml
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يستخدم هذا الدليل OpenTelemetry Collector منفصلًا لقراءة سجلات systemd وإرسالها إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهذا هو النمط الموصى به لبيئات الإنتاج.
+يستخدم هذا الدليل OpenTelemetry Collector منفصلًا لقراءة سجلات systemd وإرسالها إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهذا هو النهج الموصى به في بيئات الإنتاج.
 
 بالنسبة إلى بيئات الإنتاج التي تضم عدة مضيفين، ضع في اعتبارك ما يلي:
 
-* نشر collector كمجموعة خفيّات في Kubernetes
-* تشغيل collector كخدمة systemd على كل مضيف
+* نشر المجمّع كمجموعة تشغيل على كل عقدة (DaemonSet) في Kubernetes
+* تشغيل المجمّع كخدمة systemd على كل مضيف
 * استخدام OpenTelemetry Operator للنشر الآلي
 
-راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطّلاع على أنماط النشر المخصّصة لبيئات الإنتاج.
+راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئات الإنتاج.

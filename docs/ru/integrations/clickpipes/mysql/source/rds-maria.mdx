@@ -34,7 +34,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в RDS" size="lg" border />
 
-Рекомендуется установить срок хранения резервных копий достаточно большим — в зависимости от сценария репликации.
+Рекомендуется установить достаточно большой срок хранения резервных копий — в зависимости от сценария репликации.
 
 <div id="binlog-retention-hours-rds">
   ### 2. Срок хранения binlog в часах
@@ -128,7 +128,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение inbound rules для указанной выше группы безопасности" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
-  ### Частный доступ через AWS PrivateLink
+  ### Доступ через частную сеть с помощью AWS PrivateLink
 </div>
 
-Чтобы подключиться к вашему экземпляру RDS по частной сети, можно использовать AWS PrivateLink. Чтобы настроить подключение, следуйте нашему [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).
+Чтобы подключиться к вашему экземпляру RDS через частную сеть, можно использовать AWS PrivateLink. Чтобы настроить подключение, воспользуйтесь нашим [руководством по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes).

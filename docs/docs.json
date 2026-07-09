@@ -31,6 +31,11 @@
   "fonts": {
     "family": "Inter"
   },
+  "integrations": {
+    "clarity": {
+      "projectId": "xgummrwgj9"
+    }
+  },
   "interaction": {
     "drilldown": false
   },
@@ -2395,7 +2400,6 @@
                           },
                           {
                             "group": "ClickStack",
-                            "tag": "Beta",
                             "pages": [
                               "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
                               "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
@@ -2409,11 +2413,11 @@
                               "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
                               "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
                               "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks"
-                            ]
+                            ],
+                            "tag": "Beta"
                           },
                           {
                             "group": "Postgres",
-                            "tag": "Beta",
                             "pages": [
                               "POST /v1/organizations/{organizationId}/postgres",
                               "GET /v1/organizations/{organizationId}/postgres",
@@ -2431,7 +2435,8 @@
                               "GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
                               "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
                               "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}"
-                            ]
+                            ],
+                            "tag": "Beta"
                           }
                         ]
                       }
@@ -4013,7 +4018,9 @@
       }
     ]
   },
-  "redirects": { "$ref": "./_site/redirects.json" },
+  "redirects": {
+    "$ref": "./_site/redirects.json"
+  },
   "scripts": [
     {
       "src": "/_site/customizations/scroll-reset.js"
@@ -4048,11 +4055,6 @@
   ],
   "styling": {
     "eyebrows": "breadcrumbs"
-  },
-  "integrations": {
-    "clarity": {
-      "projectId": "xgummrwgj9"
-    }
   },
   "theme": "maple"
 }

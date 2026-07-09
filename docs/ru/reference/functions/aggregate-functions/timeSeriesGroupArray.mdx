@@ -15,9 +15,9 @@ doc_type: 'reference'
 
 Сортирует данные временных рядов по временной метке в порядке возрастания.
 
-<Note>
-  Эта функция является экспериментальной. Чтобы включить её, установите `allow_experimental_ts_to_grid_aggregate_function=true`.
-</Note>
+:::note
+Эта функция является экспериментальной. Чтобы включить её, установите `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
 
 **Синтаксис**
 
@@ -39,6 +39,7 @@ timeSeriesGroupArray(timestamp, value)
 **Базовое использование с отдельными значениями**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -61,6 +62,7 @@ FROM
 **Передача нескольких наборов временных меток и значений в виде массивов одинаковой длины**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

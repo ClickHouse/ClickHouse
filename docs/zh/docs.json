@@ -44,7 +44,7 @@
             },
             {
               "expanded": true,
-              "group": "部署与配置",
+              "group": "设置",
               "icon": "/images/menu-icon-gear.svg",
               "pages": [
                 "zh/get-started/setup/cloud",
@@ -62,7 +62,7 @@
                       ]
                     },
                     {
-                      "group": "生产环境服务器",
+                      "group": "生产服务器",
                       "pages": [
                         "zh/get-started/setup/self-managed/debian-ubuntu",
                         "zh/get-started/setup/self-managed/redhat",
@@ -104,7 +104,7 @@
                   ]
                 },
                 {
-                  "group": "Web 与社交媒体分析",
+                  "group": "Web 与社交分析",
                   "pages": [
                     "zh/get-started/sample-datasets/amazon-reviews",
                     "zh/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -133,7 +133,7 @@
                   ]
                 },
                 {
-                  "group": "公开记录与开放数据",
+                  "group": "公共记录与开放数据",
                   "pages": [
                     "zh/get-started/sample-datasets/covid19",
                     "zh/get-started/sample-datasets/menus",
@@ -198,7 +198,7 @@
                   ]
                 },
                 {
-                  "group": "OSS 到 Cloud",
+                  "group": "从 OSS 到 Cloud",
                   "pages": [
                     "zh/get-started/migrate/oss-to-cloud/clickhouse-to-cloud"
                   ]
@@ -278,7 +278,7 @@
                       ]
                     },
                     {
-                      "group": "数据跳过索引",
+                      "group": "跳过索引",
                       "pages": [
                         "zh/concepts/features/performance/skip-indexes/skipping-indexes",
                         "zh/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -412,7 +412,7 @@
                   "root": "zh/concepts/features/security/index"
                 },
                 {
-                  "group": "备份与恢复",
+                  "group": "Backup 和恢复",
                   "pages": [
                     "zh/concepts/features/backup-restore/overview",
                     "zh/concepts/features/backup-restore/local-disk",
@@ -428,7 +428,7 @@
                     "zh/concepts/features/interfaces/cli",
                     "zh/concepts/features/interfaces/client",
                     {
-                      "group": "驱动程序与接口",
+                      "group": "驱动程序和接口",
                       "pages": [
                         "zh/concepts/features/interfaces/http",
                         "zh/concepts/features/interfaces/tcp",
@@ -548,7 +548,7 @@
                   "root": "zh/guides/clickhouse/data-modelling/index"
                 },
                 {
-                  "group": "性能与监控",
+                  "group": "性能和监控",
                   "pages": [
                     "zh/guides/clickhouse/performance-and-monitoring/query-optimization",
                     "zh/guides/clickhouse/performance-and-monitoring/analyzer",
@@ -558,7 +558,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "聚合函数组合器示例",
+                  "group": "聚合组合器示例",
                   "pages": [
                     "zh/guides/clickhouse/examples/aggregate-function-combinators/anyIf",
                     "zh/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf",
@@ -598,7 +598,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "部署与扩缩容",
+                  "group": "部署和扩缩容",
                   "pages": [
                     "zh/guides/oss/deployment-and-scaling/terminology",
                     "zh/guides/oss/deployment-and-scaling/shards",
@@ -680,10 +680,10 @@
                   "root": "zh/guides/use-cases/observability/index"
                 },
                 {
-                  "group": "数据仓储",
+                  "group": "数据仓库",
                   "pages": [
                     {
-                      "group": "入门",
+                      "group": "快速开始",
                       "pages": [
                         "zh/guides/use-cases/data-warehousing/getting-started/querying-directly",
                         "zh/guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
@@ -767,13 +767,13 @@
         },
         {
           "icon": "/images/icons/icon-reference.svg",
-          "item": "参考文档",
+          "item": "参考",
           "pages": [
             "zh/reference/home",
             {
               "expandable": true,
               "expanded": true,
-              "group": "SQL 参考文档",
+              "group": "SQL 参考",
               "pages": [
                 "zh/reference/syntax",
                 {
@@ -830,7 +830,7 @@
                             "zh/reference/statements/create/dictionary/lifetime",
                             {
                               "expanded": false,
-                              "group": "布局方式",
+                              "group": "布局",
                               "pages": [
                                 "zh/reference/statements/create/dictionary/layouts/flat",
                                 "zh/reference/statements/create/dictionary/layouts/hashed",
@@ -973,7 +973,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "String 类型",
+                  "group": "字符串类型",
                   "pages": [
                     "zh/reference/data-types/string",
                     "zh/reference/data-types/fixedstring"
@@ -1128,7 +1128,6 @@
                         "zh/reference/engines/table-engines/mergetree-family/collapsingmergetree",
                         "zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key",
                         "zh/reference/engines/table-engines/mergetree-family/graphitemergetree",
-                        "zh/reference/engines/table-engines/mergetree-family/invertedindexes",
                         "zh/reference/engines/table-engines/mergetree-family/replacingmergetree",
                         "zh/reference/engines/table-engines/mergetree-family/replication",
                         "zh/reference/engines/table-engines/mergetree-family/summingmergetree",
@@ -1263,7 +1262,7 @@
                     "zh/reference/functions/aggregate-functions/parametric-functions",
                     {
                       "expanded": false,
-                      "group": "参考文档",
+                      "group": "参考",
                       "pages": [
                         "zh/reference/functions/aggregate-functions/reference-index",
                         "zh/reference/functions/aggregate-functions/aggThrow",
@@ -1938,7 +1937,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "管理员",
+                      "group": "Admin",
                       "pages": [
                         {
                           "group": "Cloud API",
@@ -2175,7 +2174,7 @@
                             "zh/products/cloud/guides/security/connectivity/setting-ip-filters",
                             {
                               "expanded": false,
-                              "group": "私有网络",
+                              "group": "私有网络连接",
                               "pages": [
                                 "zh/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                                 "zh/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
@@ -2218,7 +2217,175 @@
                 },
                 {
                   "group": "API 参考文档",
-                  "openapi": "https://api.clickhouse.cloud/v1"
+                  "openapi": "https://api.clickhouse.cloud/v1",
+                  "pages": [
+                    {
+                      "group": "组织",
+                      "pages": [
+                        "zh/GET /v1/organizations",
+                        "zh/GET /v1/organizations/{organizationId}",
+                        "zh/PATCH /v1/organizations/{organizationId}",
+                        "zh/GET /v1/organizations/{organizationId}/activities",
+                        "zh/GET /v1/organizations/{organizationId}/activities/{activityId}",
+                        "zh/GET /v1/organizations/{organizationId}/privateEndpointConfig",
+                        "zh/POST /v1/organizations/{organizationId}/byocInfrastructure",
+                        "zh/DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        "zh/PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        {
+                          "group": "计费",
+                          "pages": [
+                            "zh/GET /v1/organizations/{organizationId}/usageCost"
+                          ]
+                        },
+                        {
+                          "group": "用户管理",
+                          "pages": [
+                            "zh/GET /v1/organizations/{organizationId}/members",
+                            "zh/GET /v1/organizations/{organizationId}/members/{userId}",
+                            "zh/PATCH /v1/organizations/{organizationId}/members/{userId}",
+                            "zh/DELETE /v1/organizations/{organizationId}/members/{userId}",
+                            "zh/GET /v1/organizations/{organizationId}/invitations",
+                            "zh/POST /v1/organizations/{organizationId}/invitations",
+                            "zh/GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+                            "zh/DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+                          ]
+                        },
+                        {
+                          "group": "角色管理",
+                          "pages": [
+                            "zh/GET /v1/organizations/{organizationId}/roles",
+                            "zh/POST /v1/organizations/{organizationId}/roles",
+                            "zh/GET /v1/organizations/{organizationId}/roles/{roleId}",
+                            "zh/PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+                            "zh/DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "服务",
+                      "pages": [
+                        "zh/GET /v1/organizations/{organizationId}/services",
+                        "zh/POST /v1/organizations/{organizationId}/services",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "zh/POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/scaling",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+                        "zh/POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "zh/POST /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "zh/PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        {
+                          "group": "Backup",
+                          "pages": [
+                            "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+                            "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+                            "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "zh/POST /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/backupBucket"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "OpenAPI",
+                      "pages": [
+                        "zh/GET /v1/organizations/{organizationId}/keys",
+                        "zh/POST /v1/organizations/{organizationId}/keys",
+                        "zh/GET /v1/organizations/{organizationId}/keys/{keyId}",
+                        "zh/PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+                        "zh/DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+                      ]
+                    },
+                    {
+                      "group": "Prometheus",
+                      "pages": [
+                        "zh/GET /v1/organizations/{organizationId}/prometheus",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+                        "zh/GET /v1/organizations/{organizationId}/postgres/prometheus",
+                        "zh/GET /v1/organizations/{organizationId}/postgres/{postgresId}/prometheus"
+                      ]
+                    },
+                    {
+                      "group": "ClickPipes",
+                      "pages": [
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "zh/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "zh/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "zh/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "zh/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+                      ]
+                    },
+                    {
+                      "group": "ClickStack",
+                      "pages": [
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "zh/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "zh/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "zh/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "zh/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "zh/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "zh/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks"
+                      ],
+                      "tag": "Beta"
+                    },
+                    {
+                      "group": "Postgres",
+                      "pages": [
+                        "zh/POST /v1/organizations/{organizationId}/postgres",
+                        "zh/GET /v1/organizations/{organizationId}/postgres",
+                        "zh/GET /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "zh/DELETE /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "zh/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "zh/GET /v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates",
+                        "zh/POST /v1/organizations/{organizationId}/postgres/{postgresId}/restoredService",
+                        "zh/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/password",
+                        "zh/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/state",
+                        "zh/POST /v1/organizations/{organizationId}/postgres/{postgresId}/readReplica",
+                        "zh/GET /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "zh/POST /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "zh/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "zh/GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
+                        "zh/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
+                        "zh/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}"
+                      ],
+                      "tag": "Beta"
+                    }
+                  ]
                 }
               ]
             },
@@ -2294,7 +2461,7 @@
               ]
             },
             {
-              "group": "功能特性",
+              "group": "功能",
               "pages": [
                 "zh/products/managed-postgres/connection",
                 "zh/products/managed-postgres/settings",
@@ -2306,6 +2473,14 @@
                 "zh/products/managed-postgres/read-replicas",
                 "zh/products/managed-postgres/backup-and-restore",
                 "zh/products/managed-postgres/extensions",
+                {
+                  "group": "pg_clickhouse",
+                  "pages": [
+                    "zh/products/managed-postgres/extensions/pg_clickhouse/reference",
+                    "zh/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+                  ],
+                  "root": "zh/products/managed-postgres/extensions/pg_clickhouse/introduction"
+                },
                 "zh/products/managed-postgres/upgrades",
                 "zh/products/managed-postgres/openapi",
                 "zh/products/managed-postgres/terraform"
@@ -2373,7 +2548,7 @@
               "pages": [
                 {
                   "expanded": true,
-                  "group": "开始使用",
+                  "group": "快速开始",
                   "pages": [
                     "zh/clickstack/getting-started/managed",
                     "zh/clickstack/getting-started/oss"
@@ -2405,7 +2580,7 @@
                   "group": "部署",
                   "pages": [
                     {
-                      "group": "开源",
+                      "group": "开源版",
                       "pages": [
                         "zh/clickstack/deployment/all-in-one",
                         {
@@ -2503,7 +2678,7 @@
               "group": "指南",
               "pages": [
                 {
-                  "group": "数据摄取",
+                  "group": "摄取数据",
                   "pages": [
                     "zh/clickstack/ingesting-data/overview",
                     "zh/clickstack/ingesting-data/opentelemetry",
@@ -2616,7 +2791,7 @@
         {
           "groups": [
             {
-              "group": "入门",
+              "group": "开始使用",
               "pages": [
                 "zh/products/agentic-data-stack/overview",
                 "zh/products/agentic-data-stack/docker-setup"
@@ -2637,7 +2812,7 @@
         {
           "groups": [
             {
-              "group": "入门",
+              "group": "开始使用",
               "pages": [
                 "zh/products/chdb/getting-started"
               ],
@@ -2791,7 +2966,7 @@
               ]
             },
             {
-              "group": "参考文档",
+              "group": "参考",
               "icon": "book",
               "pages": [
                 "zh/products/clickhouse-private/reference/breaking-changes",
@@ -2824,7 +2999,7 @@
     {
       "menu": [
         {
-          "item": "生态系统",
+          "item": "生态",
           "pages": [
             "zh/integrations/home"
           ]
@@ -2833,9 +3008,11 @@
           "groups": [
             {
               "group": "ClickPipes for Object Storage",
+              "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
               "pages": [
                 {
                   "group": "亚马逊 S3",
+                  "icon": "/images/integrations/logos/amazon_s3_logo.svg",
                   "pages": [
                     "zh/integrations/clickpipes/object-storage/amazon-s3/overview",
                     "zh/integrations/clickpipes/object-storage/amazon-s3/get-started",
@@ -2844,6 +3021,7 @@
                 },
                 {
                   "group": "Google Cloud Storage",
+                  "icon": "/images/integrations/logos/gcs.svg",
                   "pages": [
                     "zh/integrations/clickpipes/object-storage/google-cloud-storage/overview",
                     "zh/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
@@ -2852,6 +3030,7 @@
                 },
                 {
                   "group": "Azure Blob 存储",
+                  "icon": "/images/integrations/logos/azureblobstorage.svg",
                   "pages": [
                     "zh/integrations/clickpipes/object-storage/azure-blob-storage/overview",
                     "zh/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
@@ -2862,6 +3041,7 @@
             },
             {
               "group": "ClickPipes for Postgres",
+              "icon": "/images/integrations/logos/postgresql.svg",
               "pages": [
                 "zh/integrations/clickpipes/postgres/deduplication",
                 "zh/integrations/clickpipes/postgres/ordering-keys",
@@ -2907,6 +3087,7 @@
             },
             {
               "group": "ClickPipes for Kafka",
+              "icon": "/images/integrations/logos/kafka.svg",
               "pages": [
                 "zh/integrations/clickpipes/kafka/create-kafka-clickpipe",
                 "zh/integrations/clickpipes/kafka/schema-registries",
@@ -2918,6 +3099,7 @@
             },
             {
               "group": "ClickPipes for Kinesis",
+              "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
               "pages": [
                 "zh/integrations/clickpipes/kinesis/overview",
                 "zh/integrations/clickpipes/kinesis/auth"
@@ -2926,6 +3108,7 @@
             },
             {
               "group": "ClickPipes for GCP Pub/Sub",
+              "icon": "/images/integrations/logos/google_pubsub.svg",
               "pages": [
                 "zh/integrations/clickpipes/pubsub/overview",
                 "zh/integrations/clickpipes/pubsub/auth"
@@ -2934,6 +3117,7 @@
             },
             {
               "group": "ClickPipes for MySQL",
+              "icon": "/images/integrations/logos/mysql.svg",
               "pages": [
                 "zh/integrations/clickpipes/mysql/faq",
                 "zh/integrations/clickpipes/mysql/datatypes",
@@ -2969,6 +3153,7 @@
             },
             {
               "group": "ClickPipes for MongoDB",
+              "icon": "/images/integrations/logos/mongodb.svg",
               "pages": [
                 "zh/integrations/clickpipes/mongodb/datatypes",
                 "zh/integrations/clickpipes/mongodb/quickstart",
@@ -2999,6 +3184,7 @@
             },
             {
               "group": "ClickPipes for BigQuery",
+              "icon": "/images/logo-bigquery.svg",
               "pages": [
                 "zh/integrations/clickpipes/bigquery/overview",
                 "zh/integrations/clickpipes/bigquery/get-started"
@@ -3006,6 +3192,7 @@
             },
             {
               "group": "程序化访问",
+              "icon": "code",
               "pages": [
                 "zh/integrations/clickpipes/programmatic-access/openapi",
                 "zh/integrations/clickpipes/programmatic-access/terraform"
@@ -3013,6 +3200,7 @@
             },
             {
               "group": "其他",
+              "icon": "ellipsis",
               "pages": [
                 "zh/integrations/clickpipes/aws-privatelink",
                 "zh/integrations/clickpipes/dynamodb",
@@ -3111,7 +3299,7 @@
             }
           ],
           "icon": "/images/icons/icon-language-clients.svg",
-          "item": "语言客户端"
+          "item": "多语言客户端"
         },
         {
           "groups": [
@@ -3218,6 +3406,7 @@
               "group": "数据摄取",
               "pages": [
                 "zh/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
+                "zh/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
                 "zh/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
                 {
                   "expanded": false,
@@ -3515,7 +3704,7 @@
                   ]
                 },
                 {
-                  "group": "安装与设置",
+                  "group": "设置和安装",
                   "pages": [
                     "zh/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
                     "zh/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
@@ -3526,7 +3715,7 @@
                   ]
                 },
                 {
-                  "group": "常规与常见问题",
+                  "group": "常规与 FAQ",
                   "pages": [
                     {
                       "group": "常规",
@@ -3569,7 +3758,7 @@
                       "root": "zh/resources/support-center/knowledge-base/integrations/index"
                     },
                     {
-                      "group": "操作",
+                      "group": "运维",
                       "pages": [
                         "zh/resources/support-center/knowledge-base/tables-schema/delete-old-data",
                         "zh/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
@@ -3582,7 +3771,7 @@
                   "root": "zh/resources/support-center/knowledge-base/general-faqs/faq-index"
                 },
                 {
-                  "group": "提示与技巧",
+                  "group": "技巧与窍门",
                   "pages": [
                     "zh/resources/support-center/tips-and-tricks/community-wisdom",
                     "zh/resources/support-center/tips-and-tricks/cost-optimization",
@@ -3729,7 +3918,6 @@
               "group": "关于 ClickHouse",
               "pages": [
                 "zh/resources/about/adopters",
-                "zh/resources/about/cloud",
                 "zh/resources/about/support"
               ],
               "root": "zh/resources/about/index"

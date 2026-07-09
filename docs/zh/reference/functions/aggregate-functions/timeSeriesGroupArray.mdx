@@ -15,9 +15,9 @@ doc_type: 'reference'
 
 按时间戳升序对时间序列数据进行排序。
 
-<Note>
-  此函数为实验性功能，请通过设置 `allow_experimental_ts_to_grid_aggregate_function=true` 启用。
-</Note>
+:::note
+此函数为实验性功能，请通过设置 `allow_experimental_ts_to_grid_aggregate_function=true` 启用。
+:::
 
 **语法**
 
@@ -39,6 +39,7 @@ timeSeriesGroupArray(timestamp, value)
 **单个值的基本用法**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values
@@ -61,6 +62,7 @@ FROM
 **将多个时间戳样本和值以等长数组的形式传递**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     [110, 120, 130, 140, 140, 100]::Array(UInt32) AS timestamps,
     [1, 6, 8, 17, 19, 5]::Array(Float32) AS values

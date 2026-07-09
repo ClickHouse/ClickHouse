@@ -1,0 +1,105 @@
+---
+alias: []
+description: 'Documentación sobre el formato Pretty'
+input_format: false
+keywords: ['Pretty']
+output_format: true
+slug: /interfaces/formats/Pretty
+title: 'Pretty'
+doc_type: 'reference'
+---
+
+import PrettyFormatSettings from './_snippets/common-pretty-format-settings.md';
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✗       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+El formato `Pretty` muestra los datos como tablas con caracteres Unicode,
+utilizando secuencias de escape ANSI para mostrar colores en la terminal.
+Se dibuja una cuadrícula completa de la tabla, y cada fila ocupa dos líneas en la terminal.
+Cada bloque de resultados se muestra como una tabla independiente.
+Esto es necesario para que los bloques puedan mostrarse sin usar un búfer para los resultados (sería necesario usarlo para precalcular el ancho visible de todos los valores).
+
+[NULL](/es/sql-reference/syntax.md) se muestra como `ᴺᵁᴸᴸ`.
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+Ejemplo (para el formato [`PrettyCompact`](./PrettyCompact.md)):
+
+```sql title="Query"
+SELECT * FROM t_null
+```
+
+```response title="Response"
+┌─x─┬────y─┐
+│ 1 │ ᴺᵁᴸᴸ │
+└───┴──────┘
+```
+
+En ninguno de los formatos `Pretty` se aplican secuencias de escape a las filas. A continuación se muestra un ejemplo del formato [`PrettyCompact`](./PrettyCompact.md):
+
+```sql title="Query"
+SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+```
+
+```response title="Response"
+┌─Escaping_test────────────────────────┐
+│ String with 'quotes' and      character │
+└──────────────────────────────────────┘
+```
+
+Para evitar volcar demasiados datos en el terminal, solo se imprimen las primeras `10,000` filas.
+Si el número de filas es mayor o igual que `10,000`, se imprime el mensaje &quot;Showed first 10 000&quot;.
+
+:::note
+Este formato solo es adecuado para mostrar el resultado de una consulta, pero no para analizar datos.
+:::
+
+El formato Pretty admite la salida de valores totales (al usar `WITH TOTALS`) y valores extremos (cuando &#39;extremes&#39; está establecido en 1).
+En estos casos, los valores totales y los valores extremos se muestran después de los datos principales, en tablas independientes.
+Esto se muestra en el siguiente ejemplo, que usa el formato [`PrettyCompact`](./PrettyCompact.md):
+
+```sql title="Query"
+SELECT EventDate, count() AS c 
+FROM test.hits 
+GROUP BY EventDate 
+WITH TOTALS 
+ORDER BY EventDate 
+FORMAT PrettyCompact
+```
+
+```response title="Response"
+┌──EventDate─┬───────c─┐
+│ 2014-03-17 │ 1406958 │
+│ 2014-03-18 │ 1383658 │
+│ 2014-03-19 │ 1405797 │
+│ 2014-03-20 │ 1353623 │
+│ 2014-03-21 │ 1245779 │
+│ 2014-03-22 │ 1031592 │
+│ 2014-03-23 │ 1046491 │
+└────────────┴─────────┘
+
+Totals:
+┌──EventDate─┬───────c─┐
+│ 1970-01-01 │ 8873898 │
+└────────────┴─────────┘
+
+Extremes:
+┌──EventDate─┬───────c─┐
+│ 2014-03-17 │ 1031592 │
+│ 2014-03-23 │ 1406958 │
+└────────────┴─────────┘
+```
+
+<div id="format-settings">
+  ## Configuración de formato
+</div>
+
+<PrettyFormatSettings />

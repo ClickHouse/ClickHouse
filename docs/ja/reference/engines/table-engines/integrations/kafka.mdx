@@ -67,7 +67,8 @@ SETTINGS
 パラメータ:
 
 * `kafka_security_protocol` - ブローカーと通信する際に使用するプロトコル。設定可能な値: `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`。
-* `kafka_sasl_mechanism` - 認証に使用する SASL メカニズム。設定可能な値: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_mechanism` - 認証に使用する SASL メカニズム。設定可能な値: `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+* `kafka_aws_region` - MSK IAM 認証に使用する AWS リージョン。指定しない場合は broker アドレスから自動検出されます。リージョン情報を含まない PrivateLink の別名またはカスタム DNS ホスト名を使用する場合は、明示的に指定してください。デフォルト: 空 (自動検出)。
 * `kafka_sasl_username` - `PLAIN` および `SASL-SCRAM-..` メカニズムで使用する SASL ユーザー名。
 * `kafka_sasl_password` - `PLAIN` および `SASL-SCRAM-..` メカニズムで使用する SASL パスワード。
 * `kafka_schema` — フォーマットでスキーマ定義が必要な場合に指定しなければならないパラメータです。たとえば、[Cap&#39;n Proto](https://capnproto.org/) では、スキーマファイルへのパスとルート `schema.capnp:Message` オブジェクト名が必要です。
@@ -246,6 +247,116 @@ GraphiteMergeTree と同様に、Kafka エンジンでは ClickHouse の設定�
 ```
 
 利用可能な設定オプションの一覧については、[librdkafka の設定リファレンス](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)を参照してください。ClickHouse の設定では、ドットの代わりにアンダースコア (`_`) を使用してください。たとえば、`check.crcs=true` は `<check_crcs>true</check_crcs>` となります。
+
+<div id="kafka-aws-msk-iam">
+  ### AWS MSK IAM 認証
+</div>
+
+<Note>
+  AWS MSK IAM 認証を利用するには、ClickHouse が AWS S3 サポートを有効にしてビルドされている必要があります。
+</Note>
+
+AWS MSK は IAM ベースの認証をサポートしており、個別のユーザー名やパスワードを管理する代わりに、AWS 認証情報を使用して Kafka クラスターに接続できます。
+
+**基本設定:**
+
+テーブル設定で `kafka_sasl_mechanism = 'AWS_MSK_IAM'` を設定します。
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+AWS リージョンは、パターンマッチングを使用してブローカーエンドポイントから自動的に抽出されます:
+
+* Provisioned MSK: `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+* Serverless MSK: `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+* VPC Endpoint: `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**AWS 認証情報:**
+
+認証情報は、`~/.aws/credentials` と `~/.aws/config` (AWS プロファイルファイル) が存在する場合、常にそこから読み込まれます。さらに、EC2 インスタンスプロファイル、環境変数 (`AWS_ACCESS_KEY_ID` など) 、ECS タスクロール、その他の自動的な認証情報ソースも有効にするには、サーバー設定に次を追加します:
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+この設定を構成できるのは、サーバー管理者のみです。デフォルト: `false`。
+
+**PrivateLink とカスタム DNS:**
+
+リージョン情報を含まない PrivateLink の別名またはカスタム DNS ホスト名を使用する場合は、AWS リージョンを明示的に指定してください。
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**IAM 権限:**
+
+コンシューマー権限 (メッセージの読み取り用) :
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+プロデューサーの権限 (メッセージ書き込み用) :
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 <div id="kafka-kerberos-support">
   ### Kerberos サポート

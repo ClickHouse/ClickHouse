@@ -301,7 +301,7 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
 * 서로 다른 엔드포인트와 서비스 이름으로 수신기 구성을 복제해 여러 PostgreSQL 인스턴스를 모니터링하세요
 
 <div id="going-to-production">
-  ## 프로덕션 환경으로 전환
+  ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드는 빠른 설정을 위해 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장해 사용합니다. 프로덕션 환경에 배포할 때는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 환경 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+이 가이드는 ClickStack에 기본 제공되는 OpenTelemetry Collector를 빠르게 설정할 수 있도록 확장한 것입니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

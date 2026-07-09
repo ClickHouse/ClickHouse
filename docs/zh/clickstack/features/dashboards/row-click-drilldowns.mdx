@@ -69,7 +69,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step>
     ### 点击一行
 
-    将鼠标悬停在某一行上时，表格右侧边缘会显示一个链接入口，并附带说明该操作的提示 (`Open dashboard \"Service Detail\"`) 。点击该行会打开 `Service Detail` 仪表盘，并将其中的 `Service` 过滤器设置为被点击的值，因此所有卡片 (RED 关键指标、延迟百分位数、各端点明细) 都会在一次点击后重新限定到该服务。
+    将鼠标悬停在某一行上时，表格右侧边缘会显示一个链接入口，并附带说明该操作的提示 (`Open dashboard "Service Detail"`) 。点击该行会打开 `Service Detail` 仪表盘，并将其中的 `Service` 过滤器设置为被点击的值，因此所有卡片 (RED 关键指标、延迟百分位数、各端点明细) 都会在一次点击后重新限定到该服务。
 
     <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="在点击某一行后显示的 Service Detail 仪表盘，其中 Service 过滤器已设置为被点击的服务，RED 关键指标、延迟百分位数以及各端点明细都已限定到该服务" size="lg" />
   </Step>
@@ -117,10 +117,10 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 侧边抽屉提供三种操作：
 
 * **Default**：内置行为。点击某一行会打开**搜索**页面，并按该行的 group-by 列值和所选时间范围进行过滤。这就是未设置自定义操作时的默认行为。
-* **Search**：将点击发送到你选择的数据源的**搜索**页面。
+* **搜索**：将点击发送到你选择的数据源的**搜索**页面。
 * **Dashboard**：将点击发送到你团队拥有的另一个仪表盘。
 
-对于 **Search** 和 **Dashboard**，你需要选择点击后的落点，并为传递过去的过滤器配置模板：
+对于 **搜索** 和 **Dashboard**，你需要选择点击后的落点，并为传递过去的过滤器配置模板：
 
 * **Destination**：选择一个特定的数据源或仪表盘，或者选择 **Template** 并输入一个 [Handlebars](https://handlebarsjs.com/) 模板，按名称匹配可用的数据源或仪表盘。选择特定目标会通过 ID 将其固定。对于单一固定目标，建议优先使用这种方式：它在重命名以及仪表盘导出、导入后仍然有效；对于仪表盘，它还会预填目标端已声明的过滤器。如果目标需要根据每一行动态变化，则使用 **Template**，通过引用某个行列来决定目标 (例如 `Errors-{{ServiceName}}`) 。
 * **Filters**：点击 **Add filter**，然后提供一个 **Expression** (目标端上的某个列或表达式，例如 `ServiceName`) 以及该值对应的 **Template** (例如 `{{ServiceName}}`) 。模板通过 `{{columnName}}` 引用被点击行的列 (哪些列可用，请参见下方说明) 。每个过滤器都会在目标端渲染为一个 `expression IN (value)` 条件，具有相同表达式的过滤器会被合并。当目标端是仪表盘时，侧边抽屉会为该仪表盘已声明的每个过滤器预填一个空过滤器，因此你只需填写模板即可。

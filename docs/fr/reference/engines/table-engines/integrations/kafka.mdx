@@ -67,7 +67,8 @@ Paramètres requis :
 Paramètres facultatifs :
 
 * `kafka_security_protocol` - Protocole utilisé pour communiquer avec les brokers. Valeurs possibles : `plaintext`, `ssl`, `sasl_plaintext`, `sasl_ssl`.
-* `kafka_sasl_mechanism` - Mécanisme SASL à utiliser pour l’authentification. Valeurs possibles : `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`.
+* `kafka_sasl_mechanism` - Mécanisme SASL à utiliser pour l’authentification. Valeurs possibles : `GSSAPI`, `PLAIN`, `SCRAM-SHA-256`, `SCRAM-SHA-512`, `OAUTHBEARER`, `AWS_MSK_IAM`.
+* `kafka_aws_region` - Région AWS pour l’authentification MSK IAM. Détectée automatiquement à partir de l’adresse du broker si elle n’est pas spécifiée. Spécifiez-la explicitement lors de l’utilisation d’alias PrivateLink ou de noms d’hôte DNS personnalisés qui ne contiennent pas d’informations de région. Par défaut : vide (détection automatique).
 * `kafka_sasl_username` - Nom d’utilisateur SASL à utiliser avec les mécanismes `PLAIN` et `SASL-SCRAM-..`.
 * `kafka_sasl_password` - Mot de passe SASL à utiliser avec les mécanismes `PLAIN` et `SASL-SCRAM-..`.
 * `kafka_schema` — Paramètre à utiliser si le format nécessite une définition de schéma. Par exemple, [Cap&#39;n Proto](https://capnproto.org/) requiert le chemin vers le fichier de schéma ainsi que le nom de l’objet racine `schema.capnp:Message`.
@@ -246,6 +247,116 @@ Comme pour GraphiteMergeTree, le moteur Kafka prend en charge une configuration 
 ```
 
 Pour obtenir la liste des options de configuration possibles, consultez la [référence de configuration de librdkafka](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md). Dans la configuration de ClickHouse, utilisez le caractère de soulignement (`_`) à la place d’un point. Par exemple, `check.crcs=true` deviendra `<check_crcs>true</check_crcs>`.
+
+<div id="kafka-aws-msk-iam">
+  ### Authentification IAM pour AWS MSK
+</div>
+
+<Note>
+  L&#39;authentification IAM pour AWS MSK nécessite que ClickHouse soit compilé avec la prise en charge de S3 activée.
+</Note>
+
+AWS MSK prend en charge l&#39;authentification basée sur IAM, ce qui permet de se connecter à des clusters Kafka à l&#39;aide d&#39;identifiants AWS au lieu de gérer des noms d&#39;utilisateur et mots de passe distincts.
+
+**Configuration de base :**
+
+Définissez `kafka_sasl_mechanism = 'AWS_MSK_IAM'` dans les paramètres de votre table :
+
+```sql
+CREATE TABLE msk_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'b-1.mycluster.kafka.us-east-1.amazonaws.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM';
+```
+
+La région AWS est automatiquement extraite de l’endpoint du broker par correspondance de motifs :
+
+* MSK provisionné : `b-X.cluster.kafka.<region>.amazonaws.com:9098`
+* MSK serverless : `boot-X.kafka-serverless.<region>.amazonaws.com:9098`
+* VPC Endpoint : `vpce-X.kafka.<region>.vpce.amazonaws.com:9098`
+
+**Identifiants AWS :**
+
+Les identifiants sont toujours chargés depuis `~/.aws/credentials` et `~/.aws/config` (fichiers de profil AWS) lorsqu’ils sont présents. Pour activer aussi les profils d’instance EC2, les variables d’environnement (`AWS_ACCESS_KEY_ID`, etc.), les rôles de tâche ECS et les autres sources automatiques d’identifiants, ajoutez ce qui suit à votre configuration du serveur :
+
+```xml
+<kafka>
+  <use_environment_credentials>true</use_environment_credentials>
+</kafka>
+```
+
+Ce paramètre ne peut être configuré que par les administrateurs du serveur. Valeur par défaut : `false`.
+
+**PrivateLink et DNS personnalisé :**
+
+Lorsque vous utilisez des alias PrivateLink ou des noms d’hôte DNS personnalisés qui ne contiennent pas d’informations sur la région, indiquez explicitement la région AWS :
+
+```sql
+CREATE TABLE msk_privatelink_queue (
+    timestamp UInt64,
+    level String,
+    message String
+) ENGINE = Kafka()
+SETTINGS
+    kafka_broker_list = 'my-privatelink-alias.internal.example.com:9098',
+    kafka_topic_list = 'my-topic',
+    kafka_group_name = 'my-group',
+    kafka_format = 'JSONEachRow',
+    kafka_sasl_mechanism = 'AWS_MSK_IAM',
+    kafka_aws_region = 'us-east-1';
+```
+
+**Autorisations IAM :**
+
+Autorisations du consommateur (pour lire les messages) :
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:ReadData",
+      "kafka-cluster:AlterGroup",
+      "kafka-cluster:DescribeGroup"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:group/CLUSTER_NAME/CONSUMER_GROUP/*"
+    ]
+  }]
+}
+```
+
+Autorisations du producteur (pour écrire des messages) :
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": [
+      "kafka-cluster:Connect",
+      "kafka-cluster:DescribeTopic",
+      "kafka-cluster:WriteData"
+    ],
+    "Resource": [
+      "arn:aws:kafka:REGION:ACCOUNT:cluster/CLUSTER_NAME/*",
+      "arn:aws:kafka:REGION:ACCOUNT:topic/CLUSTER_NAME/TOPIC_NAME/*"
+    ]
+  }]
+}
+```
 
 <div id="kafka-kerberos-support">
   ### Prise en charge de Kerberos

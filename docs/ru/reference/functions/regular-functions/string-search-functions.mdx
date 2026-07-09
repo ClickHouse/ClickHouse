@@ -41,14 +41,12 @@ doc_type: 'reference'
 
 Возвращает количество совпадений регулярного выражения в строке.
 
-<Info>
-  **Поведение зависит от версии**
+:::note Поведение зависит от версии
+Поведение этой функции зависит от версии ClickHouse:
 
-  Поведение этой функции зависит от версии ClickHouse:
-
-  * в версиях &lt; v25.6 функция прекращает подсчёт на первом пустом совпадении, даже если шаблон регулярного выражения его допускает.
-  * в версиях &gt;= 25.6 функция продолжает работу при возникновении пустого совпадения. Прежнее поведение можно восстановить с помощью настройки `count_matches_stop_at_empty_match = true`;
-</Info>
+* в версиях &lt; v25.6 функция прекращает подсчёт на первом пустом совпадении, даже если шаблон регулярного выражения его допускает.
+* в версиях &gt;= 25.6 функция продолжает работу при возникновении пустого совпадения. Прежнее поведение можно восстановить с помощью настройки `count_matches_stop_at_empty_match = true`;
+  :::
 
 **Синтаксис**
 
@@ -458,10 +456,10 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 Аналогично [`hasAnyTokens`](#hasAnyTokens), но возвращает 1, если все токены строки или массива `needle` совпадают со строкой `input`, и 0 в противном случае. Если `input` является столбцом, возвращает все строки, удовлетворяющие этому условию.
 
-<Note>
-  Для столбца `input` должен быть определён [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes) для достижения оптимальной производительности.
-  Если текстовый индекс не определён, функция выполняет полное сканирование столбца, которое на порядки медленнее, чем поиск по индексу.
-</Note>
+:::note
+Для столбца `input` должен быть определён [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes) для достижения оптимальной производительности.
+Если текстовый индекс не определён, функция выполняет полное сканирование столбца, которое на порядки медленнее, чем поиск по индексу.
+:::
 
 Перед поиском функция токенизирует
 
@@ -470,15 +468,17 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   с использованием токенизатора, указанного для текстового индекса.
   Если для столбца не задан текстовый индекс, вместо него используется токенизатор `splitByNonAlpha`.
   Если аргумент `needle` имеет тип [Array(String)](/ru/reference/data-types/array), каждый элемент массива рассматривается как токен — дополнительная токенизация не выполняется.
+  Если для текстового индекса настроено выражение [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional), предобработчик применяется к `needle` (если он задан как `String`) перед токенизацией.
+  Если для текстового индекса настроено выражение [постпроцессор](/ru/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional), постпроцессор применяется к токенам `needle` и токенам `input` (то есть к обоим после токенизации).
 
 Повторяющиеся токены игнорируются.
 Например, needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] обрабатывается так же, как [&#39;ClickHouse&#39;].
 
-<Note>
-  Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasAllTokens` применяет его к `input` и, если `needles` имеет тип [String](/ru/reference/data-types/string), к `needles` перед токенизацией. Когда `needles` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы передаются как есть, и предобработчик к ним не применяется.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Эта несогласованность допускается для повышения удобства полнотекстового поиска.
-</Note>
+:::note
+Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasAllTokens` применяет его к `input` и, если `needles` имеет тип [String](/ru/reference/data-types/string), к `needles` перед токенизацией. Когда `needles` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы передаются как есть, и предобработчик к ним не применяется.
+Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
+Эта несогласованность допускается для повышения удобства полнотекстового поиска.
+:::
 
 **Синтаксис**
 
@@ -496,14 +496,14 @@ hasAllTokens(input, needles)
 
 **Возвращаемое значение**
 
-Возвращает 1, если все искомые подстроки найдены, иначе 0. [`UInt8`](/ru/reference/data-types/int-uint)
+Возвращает 1, если все токены найдены, иначе 0. [`UInt8`](/ru/reference/data-types/int-uint)
 
 **Примеры**
 
-**Базовое использование со строковой подстрокой для поиска**
+**Базовое использование со строковым токеном**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -511,9 +511,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -522,10 +522,20 @@ SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Укажите искомые подстроки в массиве как есть (без токенизации)**
+**Укажите токены в массиве как есть (без токенизации)**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -534,10 +544,20 @@ SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**Генерация искомых подстрок с помощью функции `tokens`**
+**Генерация needles с помощью функции `tokens`**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -546,19 +566,19 @@ SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString'
 └─────────┘
 ```
 
-**Использование пользовательского токенизатора через 3-й аргумент**
+**Используйте пользовательский токенизатор через 3-й аргумент**
 
 ```sql title=Query
 SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
-│                                            1 │
-└──────────────────────────────────────────────┘
+┌─hasAllTokens⋯ngrams(3)')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
-**Примеры использования для столбцов типа array и map**
+**Примеры использования столбцов Array и Map**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -577,12 +597,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
 **Пример со столбцом типа Array**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 ```
 
@@ -592,9 +624,24 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 └─────────┘
 ```
 
-**Пример с `mapKeys`**
+**Пример с mapKeys**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -604,9 +651,24 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 └─────────┘
 ```
 
-**Пример с mapValues**
+**Пример использования mapValues**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -624,10 +686,10 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 Возвращает 1, если хотя бы один токен из строки или массива `needle` совпадает со строкой `input`, и 0 в противном случае. Если `input` является столбцом, возвращает все строки, удовлетворяющие данному условию.
 
-<Note>
-  Для оптимальной производительности для столбца `input` следует определить [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes).
-  Если текстовый индекс не определён, функция выполняет полное сканирование столбца, которое на порядки медленнее, чем поиск по индексу.
-</Note>
+:::note
+Для оптимальной производительности для столбца `input` следует определить [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes).
+Если текстовый индекс не определён, функция выполняет полное сканирование столбца, которое на порядки медленнее, чем поиск по индексу.
+:::
 
 Перед поиском функция токенизирует
 
@@ -636,15 +698,17 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
   с использованием токенизатора, указанного для текстового индекса.
   Если для столбца не определён текстовый индекс, вместо него используется токенизатор `splitByNonAlpha`.
   Если аргумент `needle` имеет тип [Array(String)](/ru/reference/data-types/array), каждый элемент массива обрабатывается как токен — дополнительная токенизация не выполняется.
+  Если для текстового индекса настроено выражение [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional), предобработчик применяется к `needle` (если он задан как `String`) перед токенизацией.
+  Если для текстового индекса настроено выражение [постпроцессор](/ru/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional), постпроцессор применяется к токенам `needle` и `input` (то есть к обоим после токенизации).
 
 Повторяющиеся токены игнорируются.
 Например, [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] обрабатывается так же, как [&#39;ClickHouse&#39;].
 
-<Note>
-  Если для текстового индекса определён [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasAnyTokens` применяет его к `input` и, если `needles` имеет тип [String](/ru/reference/data-types/string), к `needles` перед токенизацией. Если `needles` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы передаются как есть, и предобработчик к ним не применяется.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Такая несогласованность допускается для повышения удобства полнотекстового поиска.
-</Note>
+:::note
+Если для текстового индекса определён [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasAnyTokens` применяет его к `input` и, если `needles` имеет тип [String](/ru/reference/data-types/string), к `needles` перед токенизацией. Если `needles` имеет тип [Array(String)](/ru/reference/data-types/array), его элементы передаются как есть, и предобработчик к ним не применяется.
+Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
+Такая несогласованность допускается для повышения удобства полнотекстового поиска.
+:::
 
 **Синтаксис**
 
@@ -666,10 +730,10 @@ hasAnyTokens(input, needles)
 
 **Примеры**
 
-**Базовое использование со строковым needle**
+**Базовое использование со строковым токеном**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -677,9 +741,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -688,10 +752,20 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
 └─────────┘
 ```
 
-**Укажите искомые подстроки (needle) в массиве как есть, без токенизации (AS-IS)**
+**Укажите токены в массиве как есть, без токенизации (AS-IS)**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -700,10 +774,20 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**Генерация искомых подстрок с помощью функции `tokens`**
+**Сгенерируйте токены с помощью функции `tokens`**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -712,7 +796,7 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 └─────────┘
 ```
 
-**Примеры использования для столбцов типа array и map**
+**Примеры использования столбцов типов Array и Map**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -731,12 +815,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
 **Пример со столбцом типа Array**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 ```
 
@@ -749,6 +845,21 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **Пример с использованием mapKeys**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -761,6 +872,21 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **Пример с `mapValues`**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -778,20 +904,20 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 Проверяет, содержит ли `input` все токены из `phrase`, идущие подряд.
 
-<Note>
-  Для столбца `input` для оптимальной производительности должен быть определен [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes).
-  Если текстовый индекс не определен, функция выполняет полное сканирование столбца, которое на порядки медленнее, чем поиск по индексу.
-</Note>
+:::note
+Для столбца `input` для оптимальной производительности должен быть определен [текстовый индекс](/ru/reference/engines/table-engines/mergetree-family/textindexes).
+Если текстовый индекс не определен, функция выполняет полное сканирование столбца, которое на порядки медленнее, чем поиск по индексу.
+:::
 
 Перед поиском функция токенизирует аргументы `input` и `phrase` с помощью токенизатора, указанного для текстового индекса.
 Если для столбца не определен текстовый индекс, вместо него используется токенизатор `splitByNonAlpha` — если только токенизатор не передан как необязательный третий аргумент.
 Аргумент токенизатора должен быть одним из следующих: `splitByNonAlpha`, `splitByString`, `ngrams` или `asciiCJK`.
 
-<Note>
-  Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasPhrase` применяет его к `input` и `phrase` перед токенизацией.
-  Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
-  Эта несогласованность допускается для повышения удобства полнотекстового поиска.
-</Note>
+:::note
+Когда текстовый индекс определяет [предобработчик](/ru/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (например, `lowerUTF8`), `hasPhrase` применяет его к `input` и `phrase` перед токенизацией.
+Предобработчик применяется только при использовании текстового индекса, поэтому результаты могут различаться между запросами, использующими текстовый индекс, и запросами, которые его не используют (например, `SETTINGS use_skip_indexes = 0`).
+Эта несогласованность допускается для повышения удобства полнотекстового поиска.
+:::
 
 В отличие от [`hasToken`](#hasToken), [`hasAnyTokens`](#hasAnyTokens) и [`hasAllTokens`](#hasAllTokens), `hasPhrase` требует, чтобы токены шли в том же порядке
 и без каких-либо токенов между ними. Например, `hasPhrase('the quick brown fox', 'quick fox')` возвращает 0,
@@ -1061,6 +1187,11 @@ SELECT hasToken('clickhouse test', 'test')
 
 Выполняет регистронезависимый поиск needle в haystack с использованием индекса tokenbf&#95;v1.
 
+:::note
+У этой функции есть определённые особенности при использовании нестандартных токенизаторов и выражений предобработки или постобработки.
+Вместо неё рекомендуется использовать [`hasAnyTokens`](#hasAnyTokens) и [`hasAllTokens`](#hasAllTokens).
+:::
+
 **Синтаксис**
 
 ```sql
@@ -1082,6 +1213,11 @@ hasTokenCaseInsensitive(haystack, needle)
 Добавленный в: v23.1.0
 
 Выполняет регистронезависимый поиск needle в haystack с использованием индекса tokenbf&#95;v1. Возвращает NULL, если needle некорректно сформирован.
+
+:::note
+У этой функции есть определённые особенности при использовании нестандартных токенизаторов, а также выражения предобработки или постобработки.
+Вместо неё рекомендуется использовать [`hasAnyTokens`](#hasAnyTokens) и [`hasAllTokens`](#hasAllTokens).
+:::
 
 **Синтаксис**
 
@@ -1249,9 +1385,9 @@ SELECT ilike('ClickHouse', '%house%');
 Чтобы сопоставлять литеральные `%`, `_` и `\` (которые являются метасимволами `LIKE`), поставьте перед ними обратную косую черту: `\%`, `\_` и `\\`.
 Обратная косая черта теряет своё специальное значение (то есть интерпретируется буквально), если стоит перед символом, отличным от `%`, `_` или `\`.
 
-<Note>
-  В ClickHouse обратные косые черты в строках также нужно экранировать [в соответствии с синтаксисом строк](/ru/reference/syntax#string), поэтому фактически нужно писать `\\%`, `\\_` и `\\\\`.
-</Note>
+:::note
+В ClickHouse обратные косые черты в строках также нужно экранировать [в соответствии с синтаксисом строк](/ru/reference/syntax#string), поэтому фактически нужно писать `\\%`, `\\_` и `\\\\`.
+:::
 
 Для выражений `LIKE` вида `%needle%` функция работает так же быстро, как функция `position`.
 Все остальные выражения `LIKE` внутренне преобразуются в регулярное выражение и выполняются с производительностью, аналогичной функции `match`.
@@ -1340,15 +1476,13 @@ SELECT '50%off' LIKE '50#%off' ESCAPE '#';
 
 То же, что и [`position`](#position), но аргументы `haystack` и `locate` поменяны местами.
 
-<Info>
-  **Поведение зависит от версии**
+:::note Поведение зависит от версии
+Поведение этой функции зависит от версии ClickHouse:
 
-  Поведение этой функции зависит от версии ClickHouse:
-
-  * в версиях &lt; v24.3 `locate` был псевдонимом функции `position` и принимал аргументы `(haystack, needle[, start_pos])`.
-  * в версиях &gt;= 24.3 `locate` — отдельная функция (для лучшей совместимости с MySQL) и принимает аргументы `(needle, haystack[, start_pos])`.
-    Предыдущее поведение можно восстановить с помощью настройки `function_locate_has_mysql_compatible_argument_order = false`.
-</Info>
+* в версиях &lt; v24.3 `locate` был псевдонимом функции `position` и принимал аргументы `(haystack, needle[, start_pos])`.
+* в версиях &gt;= 24.3 `locate` — отдельная функция (для лучшей совместимости с MySQL) и принимает аргументы `(needle, haystack[, start_pos])`.
+  Предыдущее поведение можно восстановить с помощью настройки `function_locate_has_mysql_compatible_argument_order = false`.
+  :::
 
 **Синтаксис**
 
@@ -1505,9 +1639,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 Эта функция использует экспериментальную возможность библиотеки [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) и в некоторых пограничных случаях может работать медленно.
 Производительность зависит от значения расстояния редактирования и используемых шаблонов регулярного выражения, но по сравнению с вариантами без нечёткого сопоставления она всегда ниже.
 
-<Note>
-  Семейство функций `multiFuzzyMatch*()` не поддерживает регулярные выражения UTF-8 (они обрабатываются как последовательность байтов) из-за ограничений hyperscan.
-</Note>
+:::note
+Семейство функций `multiFuzzyMatch*()` не поддерживает регулярные выражения UTF-8 (они обрабатываются как последовательность байтов) из-за ограничений hyperscan.
+:::
 
 **Синтаксис**
 

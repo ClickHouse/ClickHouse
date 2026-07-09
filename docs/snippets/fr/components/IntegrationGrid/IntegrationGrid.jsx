@@ -170,22 +170,22 @@ export const IntegrationGrid = () => {
 
   function getSectionDescription(type) {
     const descriptions = {
-      ClickPipes: "ClickPipes est un moteur d'intégration qui simplifie l'ingestion de volumes massifs de données provenant de sources variées en quelques clics.",
-      "Data ingestion": "Optimisez vos pipelines de données avec ClickHouse ! Des intégrations transparentes garantissent une ingestion efficace et optimisent l'analytique en temps réel.",
-      "Data visualization": "Donnez vie à vos données ! Les intégrations ClickHouse enrichissent la visualisation, rendant les insights plus clairs et exploitables.",
-      "SQL client": "Accédez aux bases de données ClickHouse et interrogez-les à l'aide d'outils et d'interfaces SQL familiers.",
-      "Language client": "Développez dans votre environnement habituel ! Les intégrations de clients de langage ClickHouse facilitent l'accès aux données dans de nombreux langages de programmation.",
-      "AI/ML": "Exploitez ClickHouse pour vos charges de travail d'apprentissage automatique et d'IA grâce à des outils et frameworks ML intégrés.",
-      "Data management": "Gérez, surveillez et optimisez vos données ClickHouse avec des outils de gestion spécialisés.",
-      "Data integration": "Intégrez ClickHouse à votre infrastructure de données et à vos flux de travail existants.",
-      "Security governance": "Mettez en œuvre des cadres de sécurité et de gouvernance pour votre environnement ClickHouse."
+      ClickPipes: "ClickPipes is an integration engine that makes ingesting massive volumes of data from a diverse set of sources as simple as clicking a few buttons.",
+      "Data ingestion": "Streamline your data pipelines with ClickHouse! Seamless integrations ensure efficient ingestion, optimizing real-time analytics.",
+      "Data visualization": "Illuminate your data stories! ClickHouse integrations enhance visualization, making insights more vivid & actionable.",
+      "SQL client": "Access and query ClickHouse databases using familiar SQL client tools and interfaces.",
+      "Language client": "Code in your comfort zone! ClickHouse's language client integrations make data access fluent across multiple programming languages.",
+      "AI/ML": "Leverage ClickHouse for machine learning and AI workloads with integrated ML tools and frameworks.",
+      "Data management": "Manage, monitor, and optimize your ClickHouse data with specialized management tools.",
+      "Data integration": "Integrate ClickHouse with your existing data infrastructure and workflows.",
+      "Security governance": "Implement security and governance frameworks for your ClickHouse environment."
     }
-    return descriptions[type] || "Intégrez ClickHouse à des outils et services spécialisés."
+    return descriptions[type] || "Integrate ClickHouse with specialized tools and services."
   }
 
-  // Fonction de rendu simple (pas un composant) pour que les cartes soient réconciliées par clé
-  // plutôt que remontées à chaque rendu d'IntegrationGrid. isDark est transmis depuis l'unique
-  // appel useDarkMode() au niveau supérieur.
+  // Plain render function (not a component) so cards reconcile by key instead of
+  // remounting on every IntegrationGrid render. isDark is passed in from the single
+  // top-level useDarkMode() call.
   function renderIntegrationCard(integration, isDark, key) {
     const getNavigationLink = (docsLink, slug) => {
       if (!docsLink) {
@@ -209,7 +209,7 @@ export const IntegrationGrid = () => {
 
     const linkTo = getNavigationLink(integration.docsLink, integration.slug)
 
-    // Les liens externes pointent en dehors de la documentation (pas vers clickhouse.com/docs)
+    // External links point outside the docs (not to clickhouse.com/docs)
     const isExternalLink = linkTo.startsWith("http") && !linkTo.includes("clickhouse.com/docs")
 
     return (
@@ -282,10 +282,9 @@ export const IntegrationGrid = () => {
   }
 
   function useCMSIntegrations() {
-    // Mintlify recharge l'intégralité du sous-arbre de contenu lors d'un changement de thème, ce qui
-    // afficherait à nouveau l'état "Chargement…" et déclencherait une nouvelle requête. L'état est
-    // initialisé depuis un cache inter-remontages sur window afin que les cartes s'affichent instantanément ;
-    // l'effet actualise tout de même les données en arrière-plan.
+    // Mintlify remounts the whole content subtree on a theme toggle, which would
+    // otherwise re-show the "Loading…" state and refetch. Seed state from a cross-remount
+    // cache on window so cards render instantly; the effect still refreshes in the background.
     const cached = (typeof window !== "undefined" && window.__chIntegrationsCache) || null
     const [integrations, setIntegrations] = useState(cached || [])
     const [loading, setLoading] = useState(!cached)
@@ -300,7 +299,7 @@ export const IntegrationGrid = () => {
           const controller = new AbortController()
           const timeoutId = setTimeout(() => {
             controller.abort()
-            console.log("La requête CMS a expiré après 8 secondes")
+            console.log("CMS request timed out after 8 seconds")
           }, 8000)
 
           const response = await fetch(
@@ -316,7 +315,7 @@ export const IntegrationGrid = () => {
           clearTimeout(timeoutId)
 
           if (!response.ok) {
-            throw new Error(`Erreur HTTP ! statut : ${response.status}`)
+            throw new Error(`HTTP error! status: ${response.status}`)
           }
 
           const data = await response.json()
@@ -325,18 +324,18 @@ export const IntegrationGrid = () => {
           setIntegrations(transformedData)
           cacheIntegrations(transformedData)
           setError(null)
-          console.log("Mise à jour réussie avec les données CMS récentes")
+          console.log("Successfully updated with fresh CMS data")
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("La requête CMS a été annulée en raison d'un délai d'attente dépassé, utilisation des données de secours")
+              console.log("La requête CMS a été annulée en raison d'un délai d'attente dépassé")
             } else {
-              console.error("Erreur lors du chargement des intégrations depuis le CMS :", cmsErr.message)
+              console.error("Error loading integrations from CMS:", cmsErr.message)
             }
           }
 
           if (integrations.length === 0) {
-            setError("Impossible de charger les intégrations. Veuillez actualiser la page.")
+            setError("Unable to load integrations. Please try refreshing the page.")
           }
         } finally {
           setLoading(false)
@@ -507,7 +506,7 @@ export const IntegrationGrid = () => {
   if (loading) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-600 dark:text-gray-400">Chargement des intégrations...</p>
+        <p className="text-gray-600 dark:text-gray-400">Loading integrations...</p>
       </div>
     )
   }
@@ -515,8 +514,8 @@ export const IntegrationGrid = () => {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-600 dark:text-red-400">Échec du chargement des intégrations : {error}</p>
-        <p className="text-gray-600 dark:text-gray-400">Veuillez actualiser la page.</p>
+        <p className="text-red-600 dark:text-red-400">Failed to load integrations: {error}</p>
+        <p className="text-gray-600 dark:text-gray-400">Please try refreshing the page.</p>
       </div>
     )
   }
@@ -524,7 +523,7 @@ export const IntegrationGrid = () => {
   if (integrations.length === 0) {
     return (
       <div className="text-center py-12">
-        <p className="text-gray-600 dark:text-gray-400">Aucune intégration trouvée.</p>
+        <p className="text-gray-600 dark:text-gray-400">No integrations found.</p>
       </div>
     )
   }
@@ -671,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              Tous les niveaux
+              All tiers
             </button>
             {integrationTiers.map((tier) => (
               <button

@@ -15,7 +15,7 @@ Introduit dans : v1.1.0
 
 Calcule simultanément plusieurs [quantiles](https://en.wikipedia.org/wiki/Quantile) d’une séquence de données numériques à différents niveaux, avec une précision déterminée, en tenant compte du poids de chaque élément de la séquence.
 
-Cette fonction est équivalente à [`quantileTimingWeighted`](/fr/reference/functions/aggregate-functions/quantileTimingWeighted), mais elle permet de calculer plusieurs niveaux de quantile en un seul passage, ce qui est plus efficace que d’appeler des fonctions de quantile séparées.
+Cette fonction est équivalente à [`quantileTimingWeighted`](/fr/reference/functions/aggregate-functions/quantileTimingWeighted), mais elle permet de calculer plusieurs niveaux de quantile en un seul passage, ce qui est plus efficace que d’appeler des fonctions de quantile distinctes.
 
 Le résultat est déterministe (il ne dépend pas de l’ordre de traitement des requêtes). La fonction est optimisée pour traiter des séquences décrivant des distributions telles que les temps de chargement des pages web ou les temps de réponse du backend.
 
@@ -28,9 +28,9 @@ Le calcul est précis si :
 
 Sinon, le résultat du calcul est arrondi au multiple de 16 ms le plus proche.
 
-<Note>
-  Pour calculer les quantiles du temps de chargement des pages, cette fonction est plus efficace et plus précise que [`quantiles`](/fr/reference/functions/aggregate-functions/quantiles).
-</Note>
+:::note
+Pour calculer les quantiles du temps de chargement des pages, cette fonction est plus efficace et plus précise que [`quantiles`](/fr/reference/functions/aggregate-functions/quantiles).
+:::
 
 **Syntaxe**
 

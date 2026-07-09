@@ -39,9 +39,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Kafka использует Log4j и записывает журналы в каталог, указанный в системном свойстве `kafka.logs.dir` или переменной окружения `LOG_DIR`. Проверьте расположение файла журнала:
 
     ```bash
-    # Расположение по умолчанию
-    ls $KAFKA_HOME/logs/      # Стандартный Apache Kafka (по умолчанию <install-dir>/logs/)
-    ls /var/log/kafka/        # Установка из пакетов RPM/DEB
+    # Default locations
+    ls $KAFKA_HOME/logs/      # Standard Apache Kafka (defaults to <install-dir>/logs/)
+    ls /var/log/kafka/        # RPM/DEB package installations
     ```
 
     Основные файлы журнала Kafka:
@@ -73,8 +73,8 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       filelog/kafka:
         include:
           - /var/log/kafka/server.log
-          - /var/log/kafka/controller.log  # необязательно, существует только если log4j настроен с отдельными файловыми аппендерами
-          - /var/log/kafka/state-change.log  # необязательно, аналогично вышесказанному
+          - /var/log/kafka/controller.log  # optional, only exists if log4j is configured with separate file appenders
+          - /var/log/kafka/state-change.log  # optional, same as above
         start_at: beginning
         multiline:
           line_start_pattern: '^\[\d{4}-\d{2}-\d{2}'
@@ -285,7 +285,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   <Step>
     #### Импорт преднастроенного дашборда
 
-    1. Откройте HyperDX и перейдите в раздел Dashboards.
+    1. Откройте HyperDX и перейдите в раздел панелей мониторинга.
     2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Импорт панели мониторинга" />
@@ -340,4 +340,4 @@ tail -1 /var/log/kafka/server.log
   ## Переход в продакшн
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для настройки конфигурации продакшна.
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Конфигурация для продакшна описана в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

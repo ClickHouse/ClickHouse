@@ -33,10 +33,10 @@ Antes de se conectar, certifique-se de ter o seguinte:
 O usuário dedicado precisa de privilégios de `SELECT` nas tabelas que você deseja consultar, bem como nas tabelas `system` (para detecção de esquema).
 
 ```sql
--- Exemplo: Conceder acesso de leitura a um banco de dados específico
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- Conceder acesso aos metadados do sistema
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 
@@ -74,11 +74,11 @@ GRANT SELECT ON system.* TO holistics_user;
   <Step>
     ## Adicione uma fonte de dados no Holistics
 
-    1. No Holistics, vá para **Settings → Data Sources**.
+    1. No Holistics, vá para **Settings → fontes de dados**.
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Navegando até Data Sources nas configurações do Holistics" border />
+       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Navegando até fontes de dados nas configurações do Holistics" border />
 
-    2. Clique em **New Data Source** e selecione **ClickHouse**.
+    2. Clique em **Nova fonte de dados** e selecione **ClickHouse**.
 
        <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="Selecionando ClickHouse na lista de novas fontes de dados" border />
 

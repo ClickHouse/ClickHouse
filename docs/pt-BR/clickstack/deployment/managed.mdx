@@ -153,7 +153,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 
             ### Iniciar um collector
 
-            O texto a seguir parte do uso recomendado da **distribuição ClickStack do OpenTelemetry Collector**, que inclui processamento adicional e é otimizada especificamente para o ClickHouse Cloud. Se você quiser usar seu próprio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors)
+            O texto a seguir parte do uso recomendado da **distribuição ClickStack do OpenTelemetry Collector**, que inclui processamento adicional e é otimizada especificamente para o ClickHouse Cloud. Se você quiser usar seu próprio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors-existing)
 
             Para começar rapidamente, copie e execute o comando Docker mostrado.
 
@@ -309,7 +309,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
   ### Concedendo acesso ao Managed ClickStack
 </div>
 
-1. Navegue até seu serviço no console do ClickHouse Cloud
+1. Acesse seu serviço no console do ClickHouse Cloud
 2. Vá para **Configurações** → **Acesso ao SQL Console**
 3. Defina o nível de permissão apropriado para cada usuário:
    * **Service Admin → Full Access** - Necessário para habilitar alertas
@@ -321,7 +321,7 @@ O guia a seguir pressupõe que você já criou um serviço do ClickHouse Cloud. 
 <Warning>
   **Alertas exigem acesso de administrador**
 
-  Para habilitar alertas, pelo menos um usuário com permissões de **Service Admin** (mapeadas para **Full Access** no menu suspenso de Acesso ao SQL Console) precisa fazer login no HyperDX pelo menos uma vez. Isso provisiona um usuário dedicado no banco de dados para executar as consultas de alerta.
+  Para habilitar alertas, pelo menos um usuário com permissões de **Service Admin** (mapeadas para **Full Access** no menu suspenso de Acesso ao SQL Console) deve fazer login no HyperDX pelo menos uma vez. Isso provisiona um usuário dedicado no banco de dados para executar as consultas de alerta.
 </Warning>
 
 <div id="clickstack-read-only-compute">

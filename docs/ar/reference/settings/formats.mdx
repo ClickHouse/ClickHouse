@@ -174,9 +174,9 @@ INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "إعداد جديد يحدّد الحد الأقصى لعدد مرات إعادة المحاولة عند حدوث إخفاقات عابرة (مهلات النقل، رفض الاتصال، أخطاء DNS، HTTP 5xx/408/429) عند التواصل مع Confluent Schema Registry. اضبطه على 0 لتعطيل إعادة المحاولة. يتم الحفاظ على السلوك السابق (من دون إعادة محاولات) بواسطة `compatibility = '26.5'`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "إعداد جديد يحدّد الحد الأقصى لعدد مرات إعادة المحاولة عند حدوث إخفاقات عابرة (مهلات النقل، رفض الاتصال، أخطاء DNS، HTTP 5xx\/408\/429) عند التواصل مع Confluent Schema Registry. اضبطه على 0 لتعطيل إعادة المحاولة. يتم الحفاظ على السلوك السابق (من دون إعادة محاولات) بواسطة `compatibility = '26.5'`."}]}]} />
 
-بالنسبة إلى تنسيق AvroConfluent: الحد الأقصى لعدد مرات إعادة المحاولة عند حدوث إخفاقات عابرة عند التواصل مع Confluent Schema Registry (مهلات النقل، رفض الاتصال، أخطاء DNS، HTTP 5xx/408/429). اضبطه على 0 لتعطيل إعادة المحاولة. الحد الأقصى المسموح به هو 20. لا تتم إعادة المحاولة في أخطاء التحقق من المخطط (HTTP 409، ‏Avro JSON غير صالح البنية).
+بالنسبة إلى تنسيق AvroConfluent: الحد الأقصى لعدد مرات إعادة المحاولة عند حدوث إخفاقات عابرة عند التواصل مع Confluent Schema Registry (مهلات النقل، رفض الاتصال، أخطاء DNS، HTTP 5xx/408/429). اضبطه على 0 لتعطيل إعادة المحاولة. الحد الأقصى المسموح به هو 20. لا تُعاد المحاولة عند حدوث أخطاء في التحقق من المخطط (HTTP 409، ‏Avro JSON غير صالح البنية).
 
 <div id="format_avro_schema_registry_receive_timeout">
   ## format_avro_schema_registry_receive_timeout
@@ -372,6 +372,22 @@ INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -
 
 * 0 — معطّل.
 * 1 — مفعّل.
+
+<div id="format_geojson_validate_geometry">
+  ## format_geojson_validate_geometry
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "إعداد جديد يتحكم في ما إذا كانت صيغة GeoJSON تفرض التحقق من صلاحية الأشكال الهندسية وفق RFC 7946 (الحد الأدنى لعدد النقاط لكل خط وحلقة، وإغلاق الحلقة، وعدم فراغ الأشكال الهندسية المتعددة) عند القراءة والكتابة"}]}]} />
+
+يتحكم هذا الإعداد في ما إذا كانت صيغة `GeoJSON` تفرض التحقق من صلاحية الأشكال الهندسية وفق RFC 7946، في الاتجاهين.
+
+عند التمكين (افتراضيًا)، يُرفَض أي شكل هندسي يخالف قواعد أشكال GeoJSON: `LineString` (أو خط داخل `MultiLineString`) يحتوي على أقل من نقطتين؛ أو حلقة في `Polygon` أو `MultiPolygon` تحتوي على أقل من أربع نقاط أو تختلف فيها النقطة الأولى عن الأخيرة (أي حلقة غير مغلقة)؛ أو `MultiLineString` أو `Polygon` أو `MultiPolygon` فارغ. وينطبق ذلك عند القراءة (فيُرفَض مثل هذا المستند) وعند الكتابة أيضًا (فتُرفَض قيمة ClickHouse هذه بدلًا من إنتاج مستند سترفضه صيغة الإدخال عند قراءته).
+
+عند التعطيل، لا تُفرَض قواعد الشكل هذه: فتُقرأ هذه الأشكال الهندسية كما هي وتُكتب كما هي، وبذلك يمكن للأشكال الهندسية المنحلة أن تمر ذهابًا وإيابًا، لكن قد لا يكون المستند الناتج GeoJSON صالحًا.
+
+التحقق هنا بنيوي فقط: فهو يفحص عدد النقاط وإغلاق الحلقة. ولا يتحقق من الصحة الهندسية الفعلية للشكل — فلا يُفرَض اتجاه الحلقة (قاعدة اليد اليمنى / ترتيب الالتفاف)، وتُقبَل الأشكال الهندسية الصالحة بنيويًا لكنها منحلة هندسيًا، مثل مضلع مساحته صفر، أو حلقة ذات تقاطع ذاتي، أو مضلع تقع ثقوبه خارج حلقته الخارجية. وتُرفَض الإحداثيات غير المنتهية (`NaN` و`Inf`) دائمًا بغض النظر عن هذا الإعداد، لأنه لا يمكن تمثيلها كأرقام JSON.
 
 <div id="format_json_object_each_row_column_for_object_name">
   ## format_json_object_each_row_column_for_object_name
@@ -660,9 +676,9 @@ INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -
 
 عند تمكين هذا الخيار، إذا انقطع الاتصال بشكل غير متوقع، فسيجري تحليل أي بيانات متبقية في المخزن المؤقت ومعالجتها بدلًا من اعتبارها خطأ
 
-<Note>
-  يؤدي تمكين هذا الخيار إلى تعطيل التحليل المتوازي ويجعل إزالة التكرار غير ممكنة
-</Note>
+:::note
+يؤدي تمكين هذا الخيار إلى تعطيل التحليل المتوازي ويجعل إزالة التكرار غير ممكنة
+:::
 
 <div id="input_format_csv_allow_cr_end_of_line">
   ## input_format_csv_allow_cr_end_of_line
@@ -731,6 +747,16 @@ INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 اعتبار قيم enum المُدرجة في تنسيقات CSV على أنها فهارس enum
+
+<div id="input_format_csv_missing_nullable_as_empty_string">
+  ## input_format_csv_missing_nullable_as_empty_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لقراءة القيمة المفقودة من `Nullable(String)` في CSV كسلسلة فارغة بدلًا من NULL."}]}]} />
+
+يتحكم هذا الإعداد في كيفية قراءة `Nullable(String)` عند وجود قيمة مفقودة في CSV. والقيمة المفقودة هي فراغ بين الفواصل أو قبلها أو بعدها، من دون أن تكون محاطة بعلامات اقتباس. إذا كان هذا الإعداد مُمكّنًا، فبغض النظر عن قيمة `input_format_csv_empty_as_default`، ستُفسَّر القيمة المفقودة لـ `Nullable(String)` على أنها `String` فارغة، وليس NULL.
 
 <div id="input_format_csv_skip_first_lines">
   ## input_format_csv_skip_first_lines
@@ -825,13 +851,13 @@ INSERT INTO tab SETTINGS check_conversion_from_numbers_to_enum = 1 VALUES (4); -
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "19.12"},{"label": "1"},{"label": "تمكين احتساب تعبيرات القيم الافتراضية المعقّدة للحقول المُهملة في بعض تنسيقات الإدخال، لأن هذا هو السلوك المتوقَّع"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "19.12"},{"label": "1"},{"label": "تمكين احتساب تعبيرات القيم الافتراضية المعقّدة للحقول المُغفلة في بعض تنسيقات الإدخال، لأن هذا هو السلوك المتوقَّع"}]}]} />
 
 عند تنفيذ استعلامات `INSERT`، تُستبدل قيم أعمدة الإدخال المُهملة بالقيم الافتراضية للأعمدة المقابلة. ينطبق هذا الخيار على تنسيقات [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow) (وتنسيقات JSON الأخرى)، و[CSV](/ar/reference/formats/CSV/CSV)، و[TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated)، و[TSKV](/ar/reference/formats/TabSeparated/TSKV)، و[Parquet](/ar/reference/formats/Parquet/Parquet)، و[Arrow](/ar/reference/formats/Arrow/Arrow)، و[Avro](/ar/reference/formats/Avro/Avro)، و[ORC](/ar/reference/formats/ORC)، و[Native](/ar/reference/formats/Native)، والتنسيقات ذات اللواحق `WithNames`/`WithNamesAndTypes`.
 
-<Note>
-  عند تفعيل هذا الخيار، تُرسَل بيانات تعريف الجدول الموسَّعة من الخادم إلى العميل. ويستهلك ذلك موارد حوسبة إضافية على الخادم، وقد يؤثر سلبًا في الأداء.
-</Note>
+:::note
+عند تفعيل هذا الخيار، تُرسَل بيانات تعريف الجدول الموسَّعة من الخادم إلى العميل. ويستهلك ذلك موارد حوسبة إضافية على الخادم، وقد يؤثر سلبًا في الأداء.
+:::
 
 القيم الممكنة:
 
@@ -1288,13 +1314,13 @@ DESC format(JSONEachRow, '{"obj" : {"a" : 42, "b" : "Hello"}}, {"obj" : {"a" : 4
 
 يحدّد الحد الأقصى لوقت الانتظار، بالمللي ثانية، قبل إصدار كتلة بيانات أثناء التحليل في تنسيقات الإدخال المعتمدة على الصفوف. وتعني القيمة 0 عدم وجود حد.
 
-<Note>
-  لا يعمل هذا الخيار إلا إذا كان `input_format_connection_handling` مفعّلًا. كما أن تعيين قيمة له يعطّل التحليل المتوازي ويجعل deduplication غير ممكن.
-</Note>
+:::note
+لا يعمل هذا الخيار إلا إذا كان `input_format_connection_handling` مفعّلًا. كما أن تعيين قيمة له يعطّل التحليل المتوازي ويجعل deduplication غير ممكن.
+:::
 
-<Note>
-  بالنسبة إلى inserts المتدفقة، يجب أيضًا تعيين `min_insert_block_size_rows=0` و `min_insert_block_size_bytes=0`. وإلا فقد تستمر كتل البيانات التي تم تحليلها في التراكم في الذاكرة خلال مرحلة squashing للكتل إلى أن يتم بلوغ تلك thresholds، مما يمنع تنفيذ inserts في الوقت المناسب.
-</Note>
+:::note
+بالنسبة إلى inserts المتدفقة، يجب أيضًا تعيين `min_insert_block_size_rows=0` و `min_insert_block_size_bytes=0`. وإلا فقد تستمر كتل البيانات التي تم تحليلها في التراكم في الذاكرة خلال مرحلة squashing للكتل إلى أن يتم بلوغ تلك thresholds، مما يمنع تنفيذ inserts في الوقت المناسب.
+:::
 
 **مثال: بث أحدث تغييرات Wikipedia إلى ClickHouse**
 
@@ -1498,9 +1524,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "عند قراءة ملفات Parquet، يتم تخطي مجموعات الصفوف بأكملها استنادًا إلى تعبيري WHERE/PREWHERE ومرشح bloom filter في البيانات الوصفية لـ Parquet."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "عند قراءة ملفات Parquet، يتم تخطي مجموعات الصفوف بأكملها استنادًا إلى تعبيري WHERE/PREWHERE ومرشح bloom filter في البيانات الوصفية لـ Parquet."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "عند قراءة ملفات Parquet، يتم تخطي مجموعات الصفوف بأكملها استنادًا إلى تعبيري WHERE/PREWHERE ومرشح بلوم في البيانات الوصفية لـ Parquet."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "عند قراءة ملفات Parquet، يتم تخطي مجموعات الصفوف بأكملها استنادًا إلى تعبيري WHERE/PREWHERE ومرشح بلوم في البيانات الوصفية لـ Parquet."}]}]} />
 
-عند قراءة ملفات Parquet، يتم تخطي مجموعات الصفوف بأكملها استنادًا إلى تعبير WHERE ومرشح bloom filter في البيانات الوصفية لـ Parquet.
+عند قراءة ملفات Parquet، يتم تخطي مجموعات الصفوف بأكملها استنادًا إلى تعبير WHERE ومرشح بلوم في البيانات الوصفية لـ Parquet.
 
 <div id="input_format_parquet_case_insensitive_column_matching">
   ## input_format_parquet_case_insensitive_column_matching
@@ -1758,9 +1784,9 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "محاولة استنتاج النوع [`Variant`](/reference/data-types/variant) في تنسيقات النص عند وجود أكثر من نوع محتمل لعناصر العمود/المصفوفة"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.9"},{"label": "0"},{"label": "محاولة استنتاج النوع Variant في التنسيقات النصية عند وجود أكثر من نوع محتمل لعناصر العمود/المصفوفة"}]}]} />
 
-إذا كان مُمكّنًا، فسيحاول ClickHouse استنتاج النوع [`Variant`](/ar/reference/data-types/variant) ضمن استنتاج المخطط لتنسيقات النص عندما يكون هناك أكثر من نوع محتمل لعناصر العمود/المصفوفة.
+إذا كان مُمكّنًا، فسيحاول ClickHouse استنتاج النوع [`Variant`](/ar/reference/data-types/variant) ضمن استنتاج المخطط للتنسيقات النصية عندما يكون هناك أكثر من نوع محتمل لعناصر العمود/المصفوفة.
 
 القيم الممكنة:
 
@@ -2031,7 +2057,7 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "يسمح ClickHouse باستخدام بيانات ثنائية عشوائية في نوع البيانات String، الذي يكون عادةً بتشفير UTF-8. ولا تدعم Strings في Parquet/ORC/Arrow سوى UTF-8. لذلك يمكنك اختيار نوع بيانات Arrow الذي سيُستخدم مع نوع البيانات String في ClickHouse: String أو Binary. ومع أن Binary أدق وأكثر توافقًا، فإن استخدام String افتراضيًا يتوافق مع توقعات المستخدمين في معظم الحالات."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "يسمح ClickHouse باستخدام بيانات ثنائية عشوائية في نوع البيانات String، الذي يكون عادةً بتشفير UTF-8. ولا تدعم Strings في Parquet\/ORC\/Arrow سوى UTF-8. لذلك يمكنك اختيار نوع بيانات Arrow الذي سيُستخدم مع نوع البيانات String في ClickHouse: String أو Binary. ومع أن Binary أدق وأكثر توافقًا، فإن استخدام String افتراضيًا يتوافق مع توقعات المستخدمين في معظم الحالات."}]}]} />
 
 استخدم نوع Arrow String بدلًا من Binary لأعمدة String
 
@@ -2160,6 +2186,18 @@ curl -sS --globoff -H 'Accept: application/json' --no-buffer \
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 إذا ضُبطت القيمة على true، فستكون نهاية السطر في تنسيق CSV هي \r\n بدلًا من \n.
+
+<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
+  ## output_format_csv_header_serialize_tuple_into_separate_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "إعداد جديد. عند تمكين output_format_csv_serialize_tuple_into_separate_columns، تُبسَّط الآن ترويسة CSVWithNames\/CSVWithNamesAndTypes أعمدة Tuple إلى حقولها الطرفية بحيث يطابق عدد أعمدة الترويسة البيانات. اضبطه على false لاستعادة الترويسة السابقة ذات الاسم الواحد."}]}]} />
+
+عند تمكين [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](#output_format_csv_serialize_tuple_into_separate_columns)، تُبسِّط صفوف الترويسة في `CSVWithNames` و`CSVWithNamesAndTypes` كل عمود Tuple إلى حقوله الطرفية (أسماء منقوطة مثل `t.a` و`t.b`، وأسماء الأنواع الطرفية)، بحيث يكون في الترويسة العدد نفسه من الأعمدة الموجودة في البيانات. بالنسبة إلى `CustomSeparated*`، لا ينطبق هذا التبسيط إلا عندما تكون `format_custom_escaping_rule = 'CSV'` و`format_custom_field_delimiter` محرفًا واحدًا يساوي `format_csv_delimiter`؛ وإلا (على سبيل المثال، محدِّد tab الافتراضي أو `format_custom_field_delimiter = '|'`) تبقى الترويسة غير مبسطة بحيث تظل مطابقة للبيانات. اضبطه على `0` للإبقاء على السلوك السابق، حيث تحتفظ الترويسة باسم Tuple الأعلى المفرد ونوعه.
+
+ملاحظة: لا يُعاد قراءة الترويسة المبسطة إلى Tuple بالاسم عندما تكون `input_format_with_names_use_header = 1`. لقراءة مثل هذه البيانات مرة أخرى إلى Tuple، اضبط هذا الإعداد على `0` عند الإخراج، أو اقرأ باستخدام `input_format_with_names_use_header = 0` (وبالنسبة إلى تنسيقات `*WithNamesAndTypes`، أي `CSVWithNamesAndTypes` و`CustomSeparatedWithNamesAndTypes`، اضبط أيضًا `input_format_with_types_use_header = 0`، لأن صف الأنواع المبسط سيُتحقق منه بخلاف ذلك مقابل حقل الإدخال الأعلى المفرد من Tuple وسيُرفض).
 
 <div id="output_format_csv_serialize_tuple_into_separate_columns">
   ## output_format_csv_serialize_tuple_into_separate_columns
@@ -2571,7 +2609,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "إضافة عمليات التسلسل المسطحة لـ Dynamic/JSON إلى Native format"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "إضافة عمليات التسلسل المسطحة لـ Dynamic/JSON إلى صيغة الإخراج Native"}]}]} />
 
 اكتب بيانات أعمدة [JSON](/ar/reference/data-types/newjson) و[Dynamic](/ar/reference/data-types/dynamic) بتنسيق مسطّح (جميع الأنواع/المسارات كأعمدة فرعية منفصلة).
 
@@ -2629,7 +2667,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "يتيح ClickHouse استخدام بيانات ثنائية عشوائية في نوع البيانات String، والذي يكون عادةً UTF-8. لا تدعم السلاسل في Parquet/ORC/Arrow سوى UTF-8. لذلك يمكنك اختيار نوع بيانات Arrow الذي سيُستخدم مع نوع البيانات String في ClickHouse — String أو Binary. ورغم أن Binary أدق وأكثر توافقًا، فإن استخدام String افتراضيًا يتوافق مع توقعات المستخدمين في معظم الحالات."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "يتيح ClickHouse استخدام بيانات ثنائية عشوائية في نوع البيانات String، والذي يكون عادةً بترميز UTF-8. لا تدعم سلاسل Parquet/ORC/Arrow سوى UTF-8. لذلك يمكنك اختيار نوع بيانات Arrow الذي سيُستخدم مع نوع البيانات String في ClickHouse — String أو Binary. ورغم أن Binary أكثر دقةً وتوافقًا، فإن استخدام String افتراضيًا يتوافق مع توقعات المستخدمين في معظم الحالات."}]}]} />
 
 استخدم نوع ORC String بدلًا من Binary لأعمدة String
 
@@ -2702,7 +2740,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "تدعم Parquet/ORC/Arrow العديد من طرق الضغط، بما في ذلك lz4 وzstd. ويدعم ClickHouse جميع طرق الضغط هذه. تفتقر بعض الأدوات الأقل كفاءة، مثل 'duckdb'، إلى دعم طريقة الضغط الأسرع `lz4`، لذلك نعيّن zstd كخيار افتراضي."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4"},{"label": "استخدام ضغط lz4 افتراضيًا في تنسيق إخراج Parquet"}]}]} />
 
-طريقة الضغط لتنسيق إخراج Parquet. codecs المدعومة: snappy وlz4 وbrotli وzstd وgzip وnone (غير مضغوط)
+طريقة الضغط لتنسيق إخراج Parquet. خوارزميات الضغط المدعومة: snappy وlz4 وbrotli وzstd وgzip وnone (غير مضغوط)
 
 <div id="output_format_parquet_data_page_size">
   ## output_format_parquet_data_page_size
@@ -3186,9 +3224,9 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "إذا كانت القيمة true، فسيتم إفلات ' باستخدام ''، وإلا فستُقتبس باستخدام \'"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "إذا كانت القيمة true، فسيتم إفلات ' باستخدام ''، وإلا فستُقتبس باستخدام \\'"}]}]} />
 
-إذا كانت القيمة true، فسيتم إفلات &#39; باستخدام &#39;&#39;، وإلا فستُقتبس باستخدام &#92;&#39;
+إذا كانت القيمة true، فسيتم إفلات &#39; باستخدام &#39;&#39;، وإلا فستُقتبس باستخدام &#92;&#92;&#39;
 
 <div id="output_format_write_statistics">
   ## output_format_write_statistics
@@ -3230,9 +3268,9 @@ y   Nullable(String)
 z   IPv4
 ```
 
-<Note>
-  إذا لم يكن `schema_inference_hints` مُنسَّقًا بشكل صحيح، أو إذا احتوى على خطأ مطبعي أو نوع بيانات غير صحيح، وما إلى ذلك... فسيتم تجاهل `schema&#95;inference&#95;hints` بالكامل.
-</Note>
+:::note
+إذا لم يكن `schema_inference_hints` مُنسَّقًا بشكل صحيح، أو إذا احتوى على خطأ مطبعي أو نوع بيانات غير صحيح، وما إلى ذلك... فسيتم تجاهل `schema&#95;inference&#95;hints` بالكامل.
+:::
 
 <div id="schema_inference_make_columns_nullable">
   ## schema_inference_make_columns_nullable

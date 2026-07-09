@@ -50,20 +50,20 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     如果 Redis 将日志输出到 stdout，可通过修改 `redis.conf` 将其配置为写入文件：
 
     ```bash
-    # 记录到文件而非标准输出
+    # Log to file instead of stdout
     logfile /var/log/redis/redis-server.log
 
-    # 设置日志级别（选项：debug、verbose、notice、warning）
+    # Set log level (options: debug, verbose, notice, warning)
     loglevel notice
     ```
 
     更改配置后，重新启动 Redis：
 
     ```bash
-    # 对于 systemd
+    # For systemd
     sudo systemctl restart redis
 
-    # 对于 Docker
+    # For Docker
     docker restart <redis-container>
     ```
   </Step>
@@ -142,14 +142,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 现有配置 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 其他环境变量 ...
+          # ... other environment variables ...
         volumes:
           - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/redis:/var/log/redis:ro
-          # ... 其他挂载卷 ...
+          # ... other volumes ...
     ```
 
     ##### 选项 2：Docker Run (一体化镜像)
@@ -417,7 +417,7 @@ tail -5 /var/log/redis/redis-server.log
 * 针对特定用例 (API 监控、安全事件) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
 <div id="going-to-production">
-  ## 生产环境部署
+  ## 投入生产环境
 </div>
 
-本指南使用 ClickStack 内置的 OpenTelemetry Collector 进行快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南基于 ClickStack 内置的 OpenTelemetry Collector，帮助您快速完成设置。对于生产环境部署，我们建议自行运行 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

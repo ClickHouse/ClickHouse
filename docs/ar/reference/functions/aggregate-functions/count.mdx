@@ -34,12 +34,10 @@ doc_type: 'reference'
 وعند ضبط `optimize_functions_to_subcolumns = 1`، تقرأ الدالة العمود الفرعي [`null`](/ar/reference/data-types/nullable#finding-null) فقط بدلًا من قراءة بيانات العمود كاملةً ومعالجتها.
 ويتحول الاستعلام `SELECT count(n) FROM table` إلى `SELECT sum(NOT n.null) FROM table`.
 
-<Tip>
-  **تحسين أداء COUNT(DISTINCT expr)**
-
-  إذا كان استعلام `COUNT(DISTINCT expr)` بطيئًا، ففكّر في إضافة عبارة [`GROUP BY`](/ar/reference/statements/select/group-by)، لأن ذلك يحسّن التوازي.
-  ويمكنك أيضًا استخدام [projection](/ar/reference/statements/alter/projection) لإنشاء فهرس على العمود المستهدف المستخدم مع `COUNT(DISTINCT target_col)`.
-</Tip>
+:::tip تحسين أداء COUNT(DISTINCT expr)
+إذا كان استعلام `COUNT(DISTINCT expr)` بطيئًا، ففكّر في إضافة عبارة [`GROUP BY`](/ar/reference/statements/select/group-by)، لأن ذلك يحسّن التوازي.
+ويمكنك أيضًا استخدام [projection](/ar/reference/statements/alter/projection) لإنشاء فهرس على العمود المستهدف المستخدم مع `COUNT(DISTINCT target_col)`.
+:::
 
 **الصياغة**
 

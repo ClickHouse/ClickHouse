@@ -17,9 +17,9 @@ doc_type: 'reference'
 最小値に等しい `val` を持つ行が複数ある場合、対応する `arg` と `val` のうちどれが返されるかは決定論的ではありません。
 `arg` と `min` はどちらも [集約関数](/ja/reference/functions/aggregate-functions/index) として動作し、処理中はともに [`Null` をスキップ](/ja/reference/functions/aggregate-functions/index#null-processing) し、`Null` でない値が存在する場合は `Null` でない値を返します。
 
-<Note>
-  `argMin` との唯一の違いは、`argAndMin` が引数と値の両方を返すことです。
-</Note>
+:::note
+`argMin` との唯一の違いは、`argAndMin` が引数と値の両方を返すことです。
+:::
 
 **関連項目**
 

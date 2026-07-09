@@ -34,12 +34,10 @@ Cependant, la requête `SELECT count(nullable_column) FROM table` peut être opt
 Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la sous-colonne [`null`](/fr/reference/data-types/nullable#finding-null) au lieu de lire et traiter l&#39;ensemble des données de la colonne.
 La requête `SELECT count(n) FROM table` est transformée en `SELECT sum(NOT n.null) FROM table`.
 
-<Tip>
-  **Améliorer les performances de COUNT(DISTINCT expr)**
-
-  Si votre requête `COUNT(DISTINCT expr)` est lente, envisagez d&#39;ajouter une clause [`GROUP BY`](/fr/reference/statements/select/group-by), car cela améliore la parallélisation.
-  Vous pouvez également utiliser une [projection](/fr/reference/statements/alter/projection) pour créer un index sur la colonne cible utilisée avec `COUNT(DISTINCT target_col)`.
-</Tip>
+:::tip Améliorer les performances de COUNT(DISTINCT expr)
+Si votre requête `COUNT(DISTINCT expr)` est lente, envisagez d&#39;ajouter une clause [`GROUP BY`](/fr/reference/statements/select/group-by), car cela améliore la parallélisation.
+Vous pouvez également utiliser une [projection](/fr/reference/statements/alter/projection) pour créer un index sur la colonne cible utilisée avec `COUNT(DISTINCT target_col)`.
+:::
 
 **Syntaxe**
 

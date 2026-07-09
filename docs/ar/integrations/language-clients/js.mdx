@@ -12,10 +12,9 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
-import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 عميل JS الرسمي للاتصال بـ ClickHouse.
-العميل مكتوب بلغة TypeScript ويوفر تعريفات نوعية للواجهة البرمجية العامة للعميل.
+العميل مكتوب بلغة TypeScript ويوفر تعريفات نوعية لواجهة برمجة تطبيقات العميل العامة.
 
 لا يتضمن أي تبعيات، وهو مُحسَّن لتحقيق أقصى أداء، وقد اختُبر مع إصدارات وتهيئات مختلفة من ClickHouse (عقدة واحدة محلية، وعنقود محلي، وClickHouse Cloud).
 
@@ -157,13 +156,13 @@ const client = createClient({
   #### معلمات الإعداد الخاصة بـ Node.js
 </div>
 
-| الإعداد                                                                        | الوصف                                                                 | القيمة الافتراضية | انظر أيضًا                                                                                                                   |
-| ------------------------------------------------------------------------------ | --------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **max&#95;open&#95;connections**?: number                                      | الحد الأقصى لعدد المقابس المتصلة المسموح بها لكل مضيف.                | `10`              | -                                                                                                                            |
-| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`       | إعداد شهادات TLS.                                                     | -                 | [وثائق TLS](/ar/integrations/language-clients/js#tls-certificates-nodejs-only)                                                  |
-| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }` | -                                                                     | -                 | [وثائق Keep Alive](/ar/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                                   |
-| **http&#95;agent**?: http.Agent | https.Agent <br /><ExperimentalBadge />      | HTTP agent مخصّص للعميل.                                              | -                 | [وثائق HTTP agent](/ar/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)                        |
-| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><ExperimentalBadge />    | يضبط ترويسة `Authorization` باستخدام بيانات اعتماد المصادقة الأساسية. | `true`            | [استخدام هذا الإعداد في وثائق HTTP agent](/ar/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
+| الإعداد                                                                                                | الوصف                                                                 | القيمة الافتراضية | انظر أيضًا                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **max&#95;open&#95;connections**?: number                                                              | الحد الأقصى لعدد المقابس المتصلة المسموح بها لكل مضيف.                | `10`              | -                                                                                                                            |
+| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`                               | إعداد شهادات TLS.                                                     | -                 | [وثائق TLS](/ar/integrations/language-clients/js#tls-certificates-nodejs-only)                                                  |
+| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }`                         | -                                                                     | -                 | [وثائق Keep Alive](/ar/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                                   |
+| **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">تجريبي</Badge>   | HTTP agent مخصّص للعميل.                                              | -                 | [وثائق HTTP agent](/ar/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)                        |
+| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">تجريبي</Badge> | يضبط ترويسة `Authorization` باستخدام بيانات اعتماد المصادقة الأساسية. | `true`            | [استخدام هذا الإعداد في وثائق HTTP agent](/ar/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
 
 <div id="url-configuration">
   ### إعداد URL

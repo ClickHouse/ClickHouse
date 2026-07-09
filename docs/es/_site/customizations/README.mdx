@@ -16,14 +16,15 @@ Consulta la documentación de Mintlify sobre [scripts personalizados](https://ww
 </div>
 
 * `ask-ai-button.js` — ajusta el estilo y el comportamiento del botón Ask-AI.
-* `cookie-banner.js` — inserta y gestiona el banner de consentimiento de cookies.
 * `custom-footer.js` — renderiza el pie de página personalizado del sitio (`#ch-custom-footer`).
 * `inkeep-init.js` — reemplaza la búsqueda nativa de Mintlify (⌘K / barra de búsqueda de la barra de navegación) por el modal de búsqueda de Inkeep. Solo para búsquedas; el chat con IA sigue en Kapa.
 * `kapa-init.js` — inicializa el widget RAG de Kapa.ai.
 * `navbar-cta.js` — añade el CTA &quot;Comenzar&quot; a la barra de navegación.
+* `raise-issue-link.js` — redirige el enlace de comentarios predeterminado &quot;Raise issue&quot; de Mintlify al formulario de issue de documentación del repositorio (`.github/ISSUE_TEMPLATE/60_documentation-issue.yaml`), rellenando previamente la ruta de la página actual.
+* `scroll-reset.js` — restaura el desplazamiento al inicio en la navegación hacia adelante del lado del client, que Next.js omite cuando hay configurado un banner de announcement. Deja intactos atrás/adelante (`popstate`) para que el navegador/router pueda restaurar la posición anterior, y se desplaza hasta el ancla en los enlaces hash entre páginas.
+* `tab-nav.js` — conecta las tabs de navegación superior de escritorio (Home / Database / Solutions / Integrations) con sus URL de destino, manteniendo la navegación dentro de la configuración regional y la ruta base activas.
 * `clickhouse-sql-lexer-wasm.js` — expone el lexer SQL de ClickHouse (`src/Parsers/Lexer.cpp` compilado a WebAssembly) como una variable global en base64. Instantánea de ClickHouse `programs/server/play.html`; vuelve a extraerlo si cambian el lexer upstream o la lista de palabras clave.
 * `clickhouse-sql-highlight.js` — vuelve a resaltar los bloques de código `language="sql"` usando el lexer WASM (colores nativos de ClickHouse, a juego con play.html / clickhouse-client) en lugar de Shiki. Debe cargarse después de `clickhouse-sql-lexer-wasm.js`. Los demás lenguajes se dejan tal como los renderizó Shiki.
-* `quickstart-back-link.js` — en las páginas de guía de inicio rápido, reubica la insignia autogenerada &quot;Todas las guías de inicio rápido&quot; desde la parte superior del cuerpo hasta el encabezado, encima del título (posición de las migas de pan).
 
 Para añadir un script nuevo, agrega una entrada
 `{ "src": "/_site/customizations/<name>.js" }`

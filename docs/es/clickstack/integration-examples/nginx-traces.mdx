@@ -125,7 +125,7 @@ Si quieres probar la integración antes de configurar tu propio entorno, puedes 
 
     <Note>
       * **El puerto 4317** es el endpoint gRPC que utiliza el módulo de Nginx
-      * **otel&#95;service&#95;name** debe describir claramente tu instancia de Nginx (por ejemplo, &quot;api-gateway&quot; o &quot;frontend-proxy&quot;)
+      * **otel&#95;service&#95;name** debe describir claramente tu instancia de Nginx (por ejemplo, &quot;api-gateway&quot;, &quot;frontend-proxy&quot;)
       * Cambia **otel&#95;service&#95;name** para que coincida con tu entorno y sea más fácil identificarlo en HyperDX
     </Note>
 
@@ -172,7 +172,7 @@ Si quieres probar la integración antes de configurar tu propio entorno, puedes 
   ## Conjunto de datos de demostración
 </div>
 
-Para los usuarios que quieran probar la integración de trazas de nginx antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos de ejemplo con Nginx Traces pregeneradas y patrones de tráfico realistas.
+Para los usuarios que quieran probar la integración de trazas de nginx antes de configurar sus sistemas de producción, proporcionamos un conjunto de datos de ejemplo con trazas de Nginx pregeneradas y patrones de tráfico realistas.
 
 <Steps>
   <Step>
@@ -239,7 +239,7 @@ Para los usuarios que quieran probar la integración de trazas de nginx antes de
     <Info>
       **En ejecución en localhost**
 
-      Esta demostración asume que ClickStack se está ejecutando localmente en `localhost:4318`. Para instancias remotas, sustituye `localhost` por el hostname de tu ClickStack.
+      Esta demostración asume que ClickStack se está ejecutando localmente en `localhost:4318`. Para instancias remotas, sustituye `localhost` por el nombre de host de tu ClickStack.
     </Info>
 
     Deberías ver una respuesta como `{"partialSuccess":{}}`, lo que indica que las trazas se enviaron correctamente. Las 1.000 trazas se ingestarán en ClickStack.
@@ -292,7 +292,7 @@ Para ayudarte a empezar a monitorizar trazas con ClickStack, proporcionamos visu
     #### El dashboard se creará con todas las visualizaciones ya configuradas.
 
     <Note>
-      Para el demo dataset, establece el rango de tiempo en **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (ajústalo según tu zona horaria local). Por defecto, el dashboard importado no tendrá ningún rango de tiempo especificado.
+      Para el conjunto de datos de demostración, establece el rango de tiempo en **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (ajústalo según tu zona horaria local). Por defecto, el dashboard importado no tendrá ningún rango de tiempo especificado.
     </Note>
 
     <Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="Dashboard de ejemplo" />
@@ -358,7 +358,7 @@ tail -f /var/log/nginx/access.log
 * Crea [dashboards](/es/clickstack/features/dashboards/overview) adicionales para casos de uso específicos (monitorización de API, eventos de seguridad)
 
 <div id="going-to-production">
-  ## Paso a producción
+  ## Pasar a producción
 </div>
 
-Esta guía envía trazas directamente desde el módulo de OpenTelemetry de Nginx al endpoint OTLP de ClickStack. Para implementaciones en producción, recomendamos ejecutar tu propio OTel collector como gateway para proporcionar procesamiento por lotes y resiliencia. Consulta [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía envía trazas directamente desde el módulo OpenTelemetry de Nginx al endpoint de OTLP de ClickStack. Para implementaciones en producción, recomendamos ejecutar un OTel collector propio como gateway para disponer de procesamiento por lotes y resiliencia. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.

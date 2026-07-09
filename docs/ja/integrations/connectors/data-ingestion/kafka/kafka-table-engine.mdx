@@ -361,7 +361,7 @@ ClickHouse でより高い配信保証が必要な場合は、[クォーラム�
 
 比較的まれなユースケースではありますが、ClickHouse のデータを Kafka に永続化することもできます。たとえば、ここでは Kafka テーブルエンジンに手動で行を insert します。このデータは同じ Kafka エンジンによって読み取られ、その materialized view によってデータが MergeTree テーブルに格納されます。最後に、既存の source table からテーブルを読み取るために、Kafka への insert で materialized view を適用する方法を示します。
 
-<div id="steps">
+<div id="steps-1">
   #### 手順
 </div>
 

@@ -247,6 +247,15 @@ WHERE oid = 'postgres_table'::regclass;
 복제에 고유한 consumer 식별자를 사용합니다. 기본값: `0`입니다.
 `1`로 설정하면 동일한 `PostgreSQL` 테이블을 가리키는 여러 `MaterializedPostgreSQL` 테이블을 설정할 수 있습니다.
 
+<div id="materialized-postgresql-use-extended-date-and-time-types">
+  ### `materialized_postgresql_use_extended_date_and_time_types`
+</div>
+
+PostgreSQL `date` 및 `timestamp`/`timestamptz` 타입을, PostgreSQL 타입보다 더 넓은 값 범위를 지원하는 ClickHouse `Date32` 및 `DateTime64`로 매핑합니다. 기본값은 `1`입니다.
+`0`으로 설정하면 대신 더 좁은 범위의 `Date` 및 `DateTime` 타입이 사용됩니다(해당 범위를 벗어나거나 초 미만 정밀도를 가진 값은 표현할 수 없습니다).
+
+이 설정은 중첩 테이블 생성 시 타입 추론(type inference)으로 선택되는 컬럼 타입만 제어하므로, `CREATE DATABASE` 시점에 지정해야 합니다. 이후에는 `ALTER DATABASE ... MODIFY SETTING`으로 변경할 수 없습니다(이미 생성된 중첩 테이블은 고정된 컬럼 타입을 유지하므로, 이러한 변경은 거부됩니다). 변경하려면 데이터베이스를 다시 생성하십시오. 컬럼 타입을 명시적으로 선언하는 `MaterializedPostgreSQL` 테이블 엔진에는 적용되지 않습니다.
+
 <div id="notes">
   ## 참고
 </div>
@@ -311,13 +320,13 @@ WHERE oid = 'postgres_table'::regclass;
   ### 필요한 권한
 </div>
 
-1. [CREATE PUBLICATION](https://postgrespro.ru/docs/postgresql/14/sql-createpublication) -- 쿼리 생성 권한.
+1. [CREATE PUBLICATION](https://www.postgresql.org/docs/14/sql-createpublication.html) -- 쿼리 생성 권한.
 
-2. [CREATE&#95;REPLICATION&#95;SLOT](https://postgrespro.ru/docs/postgrespro/10/protocol-replication#PROTOCOL-REPLICATION-CREATE-SLOT) -- 복제 권한.
+2. [CREATE&#95;REPLICATION&#95;SLOT](https://www.postgresql.org/docs/10/protocol-replication.html#PROTOCOL-REPLICATION-CREATE-SLOT) -- 복제 권한.
 
-3. [pg&#95;drop&#95;replication&#95;slot](https://postgrespro.ru/docs/postgrespro/9.5/functions-admin#functions-replication) -- 복제 권한 또는 superuser 권한.
+3. [pg&#95;drop&#95;replication&#95;slot](https://www.postgresql.org/docs/9.5/functions-admin.html#FUNCTIONS-REPLICATION) -- 복제 권한 또는 superuser 권한.
 
-4. [DROP PUBLICATION](https://postgrespro.ru/docs/postgresql/10/sql-droppublication) -- publication의 소유자(MaterializedPostgreSQL engine 자체의 `username`).
+4. [DROP PUBLICATION](https://www.postgresql.org/docs/10/sql-droppublication.html) -- publication의 소유자(MaterializedPostgreSQL 엔진 자체의 `username`).
 
 `2` 및 `3` 명령을 실행하지 않고 해당 권한 없이도 진행할 수 있습니다. `materialized_postgresql_replication_slot` 및 `materialized_postgresql_snapshot` 설정을 사용하십시오. 단, 매우 주의해서 사용해야 합니다.
 

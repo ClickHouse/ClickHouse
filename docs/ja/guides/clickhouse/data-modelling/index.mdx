@@ -8,11 +8,15 @@ doc_type: 'landing-page'
 
 このセクションでは、ClickHouse におけるデータモデリングを扱っており、以下のトピックが含まれます。
 
-| Page                                                                             | Description                                                                              |
-| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| [スキーマ設計](/ja/guides/clickhouse/data-modelling/schema-design)                        | クエリ、データ更新、レイテンシ、データ量などの要素を考慮しながら、最適なパフォーマンスを得るための ClickHouse のスキーマ設計について説明します。           |
-| [Dictionary](/ja/concepts/features/dictionaries/index)                              | クエリパフォーマンスの向上やデータの拡充に役立つ Dictionary の定義方法と使い方を説明します。                                     |
-| [materialized view](/ja/concepts/features/materialized-views/index)                 | ClickHouse における materialized view とリフレッシュ可能なマテリアライズドビューに関する情報です。                         |
-| [プロジェクション](/ja/concepts/features/projections/projections)                           | ClickHouse のプロジェクションに関する情報です。                                                            |
-| [データ圧縮](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | ClickHouse のさまざまな圧縮モードと、特定のデータ型やワークロードに適した圧縮方式を選んで、データストレージとクエリパフォーマンスを最適化する方法について説明します。 |
-| [データの非正規化](/ja/guides/clickhouse/data-modelling/denormalization)                    | 関連データを 1 つのテーブルに格納することでクエリパフォーマンスの向上を目指す、ClickHouse で用いられる非正規化アプローチについて説明します。            |
+| Page                                                                                                   | Description                                                                              |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| [スキーマ設計](/ja/guides/clickhouse/data-modelling/schema-design)                                              | クエリ、データ更新、レイテンシ、データ量などの要素を考慮しながら、最適なパフォーマンスを得るための ClickHouse のスキーマ設計について説明します。           |
+| [スパースプライマリインデックス](/ja/guides/clickhouse/data-modelling/sparse-primary-indexes)                            | ClickHouse のプライマリインデックスを実践的に紹介します。                                                       |
+| [データの非正規化](/ja/guides/clickhouse/data-modelling/denormalization)                                          | 関連データを 1 つのテーブルに格納することでクエリパフォーマンスの向上を目指す、ClickHouse で用いられる非正規化アプローチについて説明します。            |
+| [データのバックフィル](/ja/guides/clickhouse/data-modelling/backfilling)                                            | ClickHouse テーブルへのデータのバックフィルを効率的に行うための手法です。                                               |
+| [Merge table function](/ja/guides/clickhouse/data-modelling/merge-table-function)                         | Merge table function を使用して、複数のテーブルを 1 つとしてクエリする方法です。                                     |
+| [ストアドプロシージャとプリペアドステートメント](/ja/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements) | ClickHouse におけるストアドプロシージャとクエリパラメータについて説明します。                                             |
+| [テストデータの生成](/ja/guides/clickhouse/data-modelling/generating-test-data)                                    | ClickHouse でランダムなテストデータを生成する方法です。                                                        |
+| [データ圧縮](/ja/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)                       | ClickHouse のさまざまな圧縮モードと、特定のデータ型やワークロードに適した圧縮方式を選んで、データストレージとクエリパフォーマンスを最適化する方法について説明します。 |
+| [配列の操作](/ja/guides/clickhouse/working-with-arrays)                                                        | ClickHouse で配列を扱う方法です。                                                                   |
+| [JOIN の操作](/ja/guides/clickhouse/working-with-joins)                                                      | ClickHouse で JOIN を扱う方法です。                                                               |

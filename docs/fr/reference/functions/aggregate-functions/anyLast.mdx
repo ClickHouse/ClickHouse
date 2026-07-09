@@ -13,12 +13,12 @@ doc_type: 'reference'
 
 Introduit dans : v1.1.0
 
-Sélectionne la dernière valeur rencontrée dans une colonne.
+Renvoie la dernière valeur rencontrée dans une colonne.
 
-<Warning>
-  Comme une query peut être exécutée dans un ordre arbitraire, le résultat de cette fonction est non déterministe.
-  Si vous avez besoin d’un résultat arbitraire mais déterministe, utilisez les fonctions [min](/fr/reference/functions/aggregate-functions/min) ou [max](/fr/reference/functions/aggregate-functions/max).
-</Warning>
+:::warning
+Comme une query peut être exécutée dans un ordre arbitraire, le résultat de cette fonction est non déterministe.
+Si vous avez besoin d’un résultat arbitraire mais déterministe, utilisez les fonctions [min](/fr/reference/functions/aggregate-functions/min) ou [max](/fr/reference/functions/aggregate-functions/max).
+:::
 
 Par défaut, la fonction ne renvoie jamais NULL, c’est-à-dire qu’elle ignore les valeurs NULL dans la colonne d’entrée.
 Cependant, si la fonction est utilisée avec le modificateur `RESPECT NULLS`, elle renvoie la dernière valeur lue, qu’elle soit NULL ou non.

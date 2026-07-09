@@ -361,7 +361,7 @@ Vous pouvez avoir besoin d’[insertions avec quorum](/fr/reference/settings/ses
 
 Bien qu’il s’agisse d’un cas d’utilisation plus rare, les données de ClickHouse peuvent également être stockées dans Kafka. Par exemple, nous allons insérer manuellement des lignes dans une table utilisant le moteur Kafka. Ces données seront lues par ce même moteur Kafka, dont la vue matérialisée placera les données dans une table MergeTree. Enfin, nous montrons comment utiliser des vues matérialisées avec des insertions dans Kafka pour alimenter des tables à partir de tables sources existantes.
 
-<div id="steps">
+<div id="steps-1">
   #### Étapes
 </div>
 
@@ -503,9 +503,9 @@ Bien qu’il s’agisse d’un exemple complexe, cela illustre la puissance des 
   #### Utiliser des clusters ClickHouse
 </div>
 
-Grâce aux groupes de consommateurs Kafka, plusieurs instances ClickHouse peuvent lire à partir d’un même topic. Chaque consumer est affecté à une partition du topic dans une correspondance 1:1. Lorsque vous faites évoluer la consommation de ClickHouse à l’aide du moteur de table Kafka, gardez à l’esprit que le nombre total de consumers au sein d’un cluster ne peut pas dépasser le nombre de partitions du topic. Assurez-vous donc au préalable que le partitionnement du topic est correctement configuré.
+Grâce aux groupes de consommateurs Kafka, plusieurs instances ClickHouse peuvent lire à partir d’un même topic. Chaque consommateur est affecté à une partition du topic dans une correspondance 1:1. Lorsque vous faites évoluer la consommation de ClickHouse à l’aide du moteur de table Kafka, gardez à l’esprit que le nombre total de consommateurs au sein d’un cluster ne peut pas dépasser le nombre de partitions du topic. Assurez-vous donc au préalable que le partitionnement du topic est correctement configuré.
 
-Plusieurs instances ClickHouse peuvent être configurées pour lire à partir d’un topic avec le même identifiant de groupe de consumers, spécifié lors de la création du moteur de table Kafka. Chaque instance lira donc une ou plusieurs partitions et insérera des segments dans sa table cible locale. Les tables cibles peuvent ensuite être configurées pour utiliser ReplicatedMergeTree afin de gérer la duplication des données. Cette approche permet de faire évoluer les lectures Kafka avec le cluster ClickHouse, à condition de disposer d’un nombre suffisant de partitions Kafka.
+Plusieurs instances ClickHouse peuvent être configurées pour lire à partir d’un topic avec le même identifiant de groupe de consommateurs, spécifié lors de la création du moteur de table Kafka. Chaque instance lira donc une ou plusieurs partitions et insérera des segments dans sa table cible locale. Les tables cibles peuvent ensuite être configurées pour utiliser ReplicatedMergeTree afin de gérer la duplication des données. Cette approche permet de faire évoluer les lectures Kafka avec le cluster ClickHouse, à condition de disposer d’un nombre suffisant de partitions Kafka.
 
 <Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="Schéma du moteur de table Kafka avec des clusters ClickHouse" />
 

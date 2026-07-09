@@ -391,7 +391,7 @@ digraph
 
 <Image img="/images/guides/developer/analyzer4.webp" alt="مخرجات الرسم البياني المضغوط" size="md" />
 
-لماذا لا يقرأ ClickHouse من الجدول باستخدام مؤشرات ترابط متعددة؟ لنجرب إضافة المزيد من البيانات إلى جدولنا:
+لماذا لا يقرأ ClickHouse من الجدول باستخدام خيوط متعددة؟ لنجرب إضافة المزيد من البيانات إلى جدولنا:
 
 ```sql
 INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,

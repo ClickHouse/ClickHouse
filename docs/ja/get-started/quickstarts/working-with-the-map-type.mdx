@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Map 型の利用'
 title: 'ClickHouse での Map 型の利用'
-useCases: ['Observability']
+useCases: ['オブザーバビリティ']
 products: ['OSS']
 description: 'OTel の リソース属性 を実例に、ClickHouse で動的なキー・バリュー データを保存、クエリ、集計するための Map 型の使い方を学びます。'
 ---
@@ -233,7 +233,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
     GROUP BY ServiceName;
     ```
 
-    `-Map` 接尾辞は任意の aggregate function と組み合わせて使えるため、`minMap`、`maxMap`、`avgMap` も同様に簡単に使用できます：
+    `-Map` 接尾辞は任意の集約関数と組み合わせて使えるため、`minMap`、`maxMap`、`avgMap` も同様に簡単に使えます：
 
     ```sql
     SELECT
@@ -284,7 +284,7 @@ OpenTelemetry では、すべてのトレーススパンに **リソース属性
 * **ブラケット構文** (`map['key']`) は値にアクセスする最も一般的な方法ですが、線形走査になる点には注意してください。キーが数十個の map であれば問題ありませんが、数百個になると最適とはいえません。
 * **マテリアライズドカラム** は有効な手段です。map のキーが頻繁にフィルタ条件の対象になる場合は、それを実カラムに昇格させることで、索引付きの列指向アクセスが可能になります。
 * **`mapContains`, `mapKeys`, `mapValues`, `mapFilter`** と `ARRAY JOIN` を使えば、SQL の中だけで map データを調べたり変換したりできる、豊富な手段が得られます。
-* **`-Map` aggregate combinator** (`sumMap`, `avgMap`, `maxMap` など) は、行をまたいで各キーを個別に集計します。キー集合を事前に把握していなくても OTel メトリクスのカウンターを集約するのに最適で、ほかの combinator と組み合わせることもできます (たとえば `sumMapIf`) 。
+* **`-Map` aggregate combinator** (`sumMap`, `avgMap`, `maxMap` など) は、行をまたいで各キーを個別に集計します。キー集合を事前に把握していなくても OTel メトリクスのカウンターを集約するのに最適で、ほかの集約関数コンビネータと組み合わせることもできます (たとえば `sumMapIf`) 。
 
 ## 次のステップ
 

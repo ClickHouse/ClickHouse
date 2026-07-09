@@ -198,15 +198,17 @@ SELECT SUM(-1), MAX(0) FROM system.one WHERE 0;
 
 메모리 효율 모드에서 중간 집계 결과를 머지하는 데 사용할 스레드 수입니다. 값이 클수록 메모리 사용량이 늘어납니다. 0은 &#39;max&#95;threads&#39;와 동일합니다.
 
-<div id="ai_function_credentials">
-  ## ai_function_credentials
+<div id="ai_function_embedding_default_credentials">
+  ## ai_function_embedding_default_credentials
 </div>
 
 <ExperimentalBadge />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "새로운 설정"}]}]} />
+<SettingsInfoBlock type="String" default_value="" />
 
-AI 함수가 provider 자격 증명 및 구성(`provider`, `endpoint`, `model`, 선택적 `api_key` 등)에 사용할 명명된 컬렉션의 이름입니다. 비어 있으면 예외가 발생합니다.
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "새로운 설정"}]}]} />
+
+호출 시 매개변수 맵에 `credentials`를 전달하지 않으면, `aiEmbed`는 이 명명된 컬렉션의 이름을 사용합니다. 비어 있으면 기본값이 없다는 뜻이며, 이러한 호출에서는 `credentials`를 명시적으로 전달해야 합니다. 임베딩 endpoint와 모델은 chat용 endpoint 및 모델과 다르므로 `ai_function_text_default_credentials`와 분리되어 있습니다.
 
 <div id="ai_function_embedding_max_batch_size">
   ## ai_function_embedding_max_batch_size
@@ -295,6 +297,18 @@ AI 함수가 수행하는 개별 HTTP 요청(AI chat completions 및 embedding A
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "새로운 설정"}]}]} />
 
 실패한 AI 함수 API 요청을 처음 재시도하기 전의 초기 지연 시간(밀리초)입니다. 이후 재시도할 때마다 지연 시간은 2배로 증가합니다(지수 백오프). 예를 들어, 기본 설정에서는 1000ms, 2000ms, 4000ms입니다.
+
+<div id="ai_function_text_default_credentials">
+  ## ai_function_text_default_credentials
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="String" default_value="" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": ""},{"label": "새로운 설정"}]}]} />
+
+호출 시 매개변수 맵에 `credentials`를 전달하지 않은 경우, 텍스트 AI 함수(`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`)가 사용하는 명명된 컬렉션의 이름입니다. 비어 있으면 기본값이 없다는 뜻이며, 이런 호출에서는 `credentials`를 명시적으로 전달해야 합니다. chat-completions endpoint와 모델은 임베딩용 endpoint 및 모델과 다르므로, 이 설정은 `ai_function_embedding_default_credentials`와 별개입니다.
 
 <div id="ai_function_throw_on_error">
   ## ai_function_throw_on_error
@@ -406,19 +420,6 @@ true로 설정된 경우 사용자가 DDL 쿼리를 실행할 수 있습니다.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.5"},{"label": "0"},{"label": "지원 중단 예정이며 오류가 발생하기 쉬운 윈도우 함수(neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)의 사용을 허용합니다"}]}]} />
 
 지원 중단 예정이며 오류가 발생하기 쉬운 윈도우 함수(neighbor, runningAccumulate, runningDifferenceStartingWithFirstValue, runningDifference)의 사용을 허용합니다
-
-<div id="allow_deprecated_snowflake_conversion_functions">
-  ## allow_deprecated_snowflake_conversion_functions
-</div>
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.6"},{"label": "0"},{"label": "더 이상 권장되지 않는 함수 snowflakeToDateTime[64] 및 dateTime[64]ToSnowflake를 비활성화했습니다."}]}]} />
-
-함수 `snowflakeToDateTime`, `snowflakeToDateTime64`, `dateTimeToSnowflake`, `dateTime64ToSnowflake`는 더 이상 권장되지 않으며 기본적으로 비활성화되어 있습니다.
-대신 `snowflakeIDToDateTime`, `snowflakeIDToDateTime64`, `dateTimeToSnowflakeID`, `dateTime64ToSnowflakeID` 함수를 사용하십시오.
-
-더 이상 권장되지 않는 함수를 다시 활성화하려면(예: 전환 기간 중) 이 설정을 `true`로 지정하십시오.
 
 <div id="allow_deprecated_syntax_for_merge_tree">
   ## allow_deprecated_syntax_for_merge_tree
@@ -618,11 +619,13 @@ Cloud 기본값: `1`.
   ## allow_experimental_delta_lake_writes
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
+
+**별칭**: `allow_delta_lake_writes`
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Delta Lake 쓰기가 베타 단계로 전환되었습니다."}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "0"},{"label": "새 설정입니다."}]}]} />
 
 delta-kernel 쓰기 기능을 활성화합니다.
 
@@ -823,18 +826,6 @@ polyglot SQL 트랜스파일러를 활성화합니다. 30개 이상의 방언(My
 
 SQL의 대안인 PRQL을 활성화합니다.
 
-<div id="allow_experimental_text_index_lazy_apply">
-  ## allow_experimental_text_index_lazy_apply
-</div>
-
-<ExperimentalBadge />
-
-<SettingsInfoBlock type="Bool" default_value="0" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "실험적인 지연 포스팅 리스트 적용 모드를 활성화하는 새로운 설정"}]}]} />
-
-true로 설정하면 텍스트 인덱스 쿼리에서 지연 포스팅 리스트 적용 모드를 사용할 수 있습니다.
-
 <div id="allow_experimental_time_series_aggregate_functions">
   ## allow_experimental_time_series_aggregate_functions
 </div>
@@ -875,6 +866,18 @@ Prometheus와 유사한 시계열 리샘플링, rate 및 delta 계산을 위한 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0"},{"label": "MergeTree 계열 테이블에서 실험적인 `UNIQUE KEY` 절 사용을 제어하는 새로운 설정"}]}]} />
 
 MergeTree 계열 엔진에서 `UNIQUE KEY` 절이 포함된 테이블을 생성할 수 있도록 합니다.
+
+<div id="allow_experimental_url_wildcard_from_index_pages">
+  ## allow_experimental_url_wildcard_from_index_pages
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "HTTP 인덱스 페이지를 나열해 `url` 테이블 함수에서 와일드카드를 확장할 수 있도록 하는 새로운 설정입니다."}]}]} />
+
+HTTP 인덱스 페이지를 사용해 `url()` 및 `ENGINE = URL`에서 와일드카드를 실험적으로 확장할 수 있게 합니다.
 
 <div id="allow_experimental_window_view">
   ## allow_experimental_window_view
@@ -1065,7 +1068,7 @@ Iceberg에 `insert` 쿼리를 실행하도록 허용합니다.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "23.4"},{"label": "0"},{"label": "toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()와 같은 특정 시간 관련 함수에서 상수가 아닌 시간대 인수를 허용합니다."}]}]} />
 
-toTimeZone(), fromUnixTimestamp*(), snowflakeToDateTime*()와 같은 특정 시간 관련 함수에서 상수가 아닌 시간대 인수를 허용합니다.
+toTimeZone(), fromUnixTimestamp*(), snowflakeIDToDateTime*()와 같은 특정 시간 관련 함수에서 상수가 아닌 시간대 인수를 허용합니다.
 이 설정은 호환성을 위해서만 존재합니다. ClickHouse에서 시간대는 데이터 타입, 즉 컬럼의 속성입니다.
 이 설정을 활성화하면 하나의 컬럼 안에서 서로 다른 값이 서로 다른 시간대를 가질 수 있다는 잘못된 인상을 줄 수 있습니다.
 따라서 이 설정은 활성화하지 마십시오.
@@ -1191,6 +1194,20 @@ SQL 표준에 따르면 `RANK` 및 `DENSE_RANK`는 인수를 받지 않습니다
 
 조건을 WHERE에서 PREWHERE로 이동할 때, 필터링 최적화를 위해 조건의 순서를 재정렬할 수 있습니다
 
+<div id="allow_replace_partition_from_empty_source">
+  ## allow_replace_partition_from_empty_source
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "새로운 안전성 검사: 이제 `ALTER TABLE ... REPLACE PARTITION ... FROM ...`는 원본 테이블의 요청한 파티션에 파트가 없으면 예외를 발생시킵니다([#23727](https:\/\/github.com\/ClickHouse\/ClickHouse\/issues\/23727)의 조용한 데이터 손실 문제 수정). 이전 동작인 대상 파티션을 조용히 삭제하는 방식은 `allow_replace_partition_from_empty_source = 1`을 설정하면 유지됩니다."}]}]} />
+
+원본의 해당 파티션에 파트가 없을 때 `ALTER TABLE ... REPLACE PARTITION ... FROM ...`가 대상 파티션을 조용히 삭제하도록 허용합니다.
+
+기본적으로는 허용되지 않습니다. 요청한 파티션에 데이터가 없는 원본에서 `REPLACE PARTITION`을 수행하면 예외가 발생합니다. 이 경우 작업은 사실상 대상에 대한 조용한 `DROP PARTITION`이 되기 때문입니다(대상 데이터는 삭제되고 이를 대체할 데이터는 없음). 이는 실수로 인한 데이터 손실의 흔한 원인입니다([#23727](https://github.com/ClickHouse/ClickHouse/issues/23727) 참고).
+
+예를 들어 비어 있는 원본 파티션을 의도적으로 사용해 대상 데이터를 비우는 경우, 이 설정을 활성화하여 이전 동작을 복원할 수 있습니다. 조건 없이 삭제하려면 대신 `ALTER TABLE ... DROP PARTITION ...`을 사용하는 것이 좋습니다.
+
 <div id="allow_settings_after_format_in_insert">
   ## allow_settings_after_format_in_insert
 </div>
@@ -1219,9 +1236,9 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 * 0 — 허용하지 않습니다.
 * 1 — 허용합니다.
 
-<Note>
-  사용 사례가 이전 구문에 의존하는 경우에만 이전 버전과의 호환성을 위해 이 설정을 사용하세요.
-</Note>
+:::note
+사용 사례가 이전 구문에 의존하는 경우에만 이전 버전과의 호환성을 위해 이 설정을 사용하세요.
+:::
 
 <div id="allow_simdjson">
   ## allow_simdjson
@@ -1237,7 +1254,7 @@ AVX2 명령어를 사용할 수 있는 경우 &#39;JSON*&#39; 함수에서 simdj
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "일부 출력 형식에서 Sparse/Replicated와 같은 특수 컬럼 표현을 직접 출력할 수 있도록 활성화합니다"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Sparse/Replicated와 같은 특수 컬럼 표현을 완전한 컬럼 표현으로 변환하지 않고 출력할 수 있도록 하는 설정을 추가합니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "1"},{"label": "일부 출력 형식에서 Sparse\/Replicated와 같은 특수 컬럼 표현을 직접 출력할 수 있도록 활성화합니다"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Sparse\/Replicated와 같은 특수 컬럼 표현을 완전한 컬럼 표현으로 변환하지 않고 출력할 수 있도록 하는 설정을 추가합니다"}]}]} />
 
 Sparse 및 Replicated와 같은 특수 직렬화 종류를 사용하는 컬럼을 완전한 컬럼 표현으로 변환하지 않고 출력할 수 있도록 합니다.
 이렇게 하면 formatting 중 불필요한 데이터 복사를 줄이는 데 도움이 됩니다.
@@ -1351,7 +1368,7 @@ GROUP BY 키로 [Variant](/ko/reference/data-types/variant) 및 [Dynamic](/ko/re
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "기본적으로 ORDER BY 키에서 Variant/Dynamic 타입을 허용하지 않습니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "기본적으로 ORDER BY 키에서 Variant\/Dynamic 타입을 허용하지 않습니다"}]}]} />
 
 ORDER BY 키에서 [Variant](/ko/reference/data-types/variant) 및 [Dynamic](/ko/reference/data-types/dynamic) 타입의 사용 허용 여부를 제어합니다.
 
@@ -1437,9 +1454,9 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 
 Cloud 기본값: `0`.
 
-<Note>
-  `alter_sync`는 `Replicated` 및 `SharedMergeTree` 테이블에만 적용되며, `Replicated` 또는 `Shared`가 아닌 테이블에 대해서는 아무런 동작도 하지 않습니다.
-</Note>
+:::note
+`alter_sync`는 `Replicated` 및 `SharedMergeTree` 테이블에만 적용되며, `Replicated` 또는 `Shared`가 아닌 테이블에 대해서는 아무런 동작도 하지 않습니다.
+:::
 
 <div id="alter_update_mode">
   ## alter_update_mode
@@ -1515,11 +1532,11 @@ JOIN USING의 식별자를 projection에서 해석하도록 강제합니다(예�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "19.14"},{"label": "0"},{"label": "불일치를 방지하기 위해 기본적으로 ANY RIGHT 및 ANY FULL JOIN을 비활성화합니다"}]}]} />
 
-`ANY INNER|LEFT JOIN` 연산에서 ClickHouse 서버의 기존 동작 방식을 활성화합니다.
+`ANY INNER|LEFT JOIN` 연산에서 ClickHouse 서버의 기존 방식 방식을 활성화합니다.
 
-<Note>
-  사용 사례가 기존 `JOIN` 동작에 의존하는 경우에만 하위 호환성을 위해 이 설정을 사용하십시오.
-</Note>
+:::note
+사용 사례가 기존 `JOIN` 동작에 의존하는 경우에만 하위 호환성을 위해 이 설정을 사용하십시오.
+:::
 
 기존 방식이 활성화되면 다음과 같습니다:
 
@@ -2300,9 +2317,9 @@ Cloud 기본값: `60000`.
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1000"},{"label": "Aws::Client::RetryStrategy용 설정입니다. Aws::Client는 자체적으로 재시도하며, 0은 재시도를 수행하지 않음을 의미합니다. 이 설정은 백업/복원에만 적용됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1000"},{"label": "Aws::Client::RetryStrategy에 대한 설정입니다. Aws::Client는 자체적으로 재시도하며, 0은 재시도하지 않음을 의미합니다. 이 설정은 백업\/복원에만 적용됩니다."}]}]} />
 
-Aws::Client::RetryStrategy용 설정입니다. Aws::Client는 자체적으로 재시도하며, 0은 재시도를 수행하지 않음을 의미합니다. 이 설정은 백업/복원에만 적용됩니다.
+Aws::Client::RetryStrategy에 대한 설정입니다. Aws::Client는 자체적으로 재시도하며, 0은 재시도하지 않음을 의미합니다. 이 설정은 백업/복원에만 적용됩니다.
 
 <div id="backup_restore_s3_retry_initial_backoff_ms">
   ## backup_restore_s3_retry_initial_backoff_ms
@@ -2648,10 +2665,10 @@ CLUSTER TABLE FUNCTION을 실행할 때 데이터를 작업으로 어떻게 나�
 
 기본값은 비활성화입니다.
 
-<Note>
-  ClickHouse Cloud에서는 서비스 수준의 기본 호환성 설정을 ClickHouse Cloud Support에서 설정해야 합니다. 설정이 필요하면 [지원 케이스를 제출하세요](https://clickhouse.cloud/support).
-  하지만 호환성 설정은 세션에서 `SET compatibility = '22.3'`를 사용하거나 쿼리에서 `SETTINGS compatibility = '22.3'`를 사용하는 등 표준 ClickHouse 설정 메커니즘을 통해 사용자, 역할(Role), 프로필(profile), 쿼리 또는 세션(session) 수준에서 재정의할 수 있습니다.
-</Note>
+:::note
+ClickHouse Cloud에서는 서비스 수준의 기본 호환성 설정을 ClickHouse Cloud Support에서 설정해야 합니다. 설정이 필요하면 [지원 케이스를 제출하세요](https://clickhouse.cloud/support).
+하지만 호환성 설정은 세션에서 `SET compatibility = '22.3'`를 사용하거나 쿼리에서 `SETTINGS compatibility = '22.3'`를 사용하는 등 표준 ClickHouse 설정 메커니즘을 통해 사용자, 역할(Role), 프로필(profile), 쿼리 또는 세션(session) 수준에서 재정의할 수 있습니다.
+:::
 
 <div id="compatibility_ignore_auto_increment_in_create_table">
   ## compatibility_ignore_auto_increment_in_create_table
@@ -3106,8 +3123,8 @@ Decimal 산술/비교 연산의 오버플로우를 검사합니다
 
 가능한 값:
 
-0 — 비활성화.
-1 — 활성화.
+* 0 — 비활성화.
+* 1 — 활성화.
 
 활성화하면 ClickHouse는 복제된 테이블에 종속된 materialized view에서 블록 중복 제거를 수행합니다.
 이 설정은 장애로 인해 삽입 작업을 재시도할 때 materialized view에 중복 데이터가 포함되지 않도록 하는 데 유용합니다.
@@ -3295,11 +3312,11 @@ ENGINE = Log
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "26.3에서 별도 공지 없이 적용된 FINAL 파티션 프루닝 동작(https://github.com/ClickHouse/ClickHouse/pull/98242)을 제어하기 위해 26.5에 새로 추가된 설정입니다. 의미 있는 동작 변경은 26.3 블록에 기록되어 있으므로 `compatibility = '26.2'`를 사용하면 되돌릴 수 있습니다. 이 항목은 26.4에서 업그레이드할 때 검사에서 새로 도입된 설정 이름을 허용하도록 하기 위해 존재합니다."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "파티션 키 컬럼이 정렬 키(sorting key)에 포함되지 않을 때 FINAL 플래너가 파티션 프루닝을 무조건 건너뛰는 동작을 제어합니다. 동작 변경 자체는 https://github.com/ClickHouse/ClickHouse/pull/98242를 통해 26.3에 별도 공지 없이 적용되었으며, 이 항목은 이를 사후 문서화하여 `compatibility = '26.2'`에서 회귀 이전 동작을 복원할 수 있도록 합니다 (0 = FINAL 전에 프루닝, 빠름; 1 = 프루닝 지연, 정확성 보장)."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "26.3에서 별도 공지 없이 적용된 FINAL 파티션 프루닝 동작(https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242)을 제어하기 위해 26.5에 새로 추가된 설정입니다. 의미 있는 동작 변경은 26.3 블록에 기록되어 있으므로 `compatibility = '26.2'`를 사용하면 되돌릴 수 있습니다. 이 항목은 26.4에서 업그레이드할 때 검사에서 새로 도입된 설정 이름을 허용하도록 하기 위해 존재합니다."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "1"},{"label": "파티션 키 컬럼이 정렬 키(sorting key)에 포함되지 않을 때 FINAL 플래너가 파티션 프루닝을 무조건 건너뛰는 동작을 제어합니다. 동작 변경 자체는 https:\/\/github.com\/ClickHouse\/ClickHouse\/pull\/98242를 통해 26.3에 별도 공지 없이 적용되었으며, 이 항목은 이를 사후 문서화하여 `compatibility = '26.2'`에서 회귀 이전 동작을 복원할 수 있도록 합니다 (0 = FINAL 전에 프루닝, 빠름; 1 = 프루닝 지연, 정확성 보장)."}]}]} />
 
-활성화되면(기본값) 파티션 키 컬럼이 정렬 키의 일부가 아닌 테이블의 `FINAL` 쿼리에서는 파티션 프루닝이 적용되지 않습니다. 이는 26.3에서 도입된, 정확성을 보장하는 동작입니다. `FINAL`은 동일한 기본 키(primary key)를 공유하지만 서로 다른 파티션에 있는 행을 중복 제거해야 할 수 있으며, 파티션 프루닝이 적용되면 이런 행이 중복 제거 입력에서 조용히 제외될 수 있습니다.
+활성화되면(기본값) 파티션 키 컬럼이 정렬 키의 일부가 아닌 테이블의 `FINAL` 쿼리에서는 파티션 프루닝이 적용되지 않습니다. 이는 26.3에서 도입된, 정확성을 보장하는 동작입니다. `FINAL`은 동일한 프라이머리 키(primary key)를 공유하지만 서로 다른 파티션에 있는 행을 중복 제거해야 할 수 있으며, 파티션 프루닝이 적용되면 이런 행이 중복 제거 입력에서 조용히 제외될 수 있습니다.
 
-비활성화되면 `FINAL`을 사용하더라도 파티션 프루닝이 적용되어 26.3 이전 동작으로 되돌아갑니다. 이는 파티션 컬럼에 대한 `WHERE` 프레디케이트가 있는 쿼리에서 훨씬 더 빠를 수 있지만, 동일한 기본 키를 가진 행이 서로 다른 파티션에 존재할 수 없을 때만 올바릅니다. 예를 들어, 삽입 시점에 파티션 컬럼이 설정되고 이후에는 절대 변경되지 않는 이벤트 로그 테이블이 이에 해당합니다.
+비활성화되면 `FINAL`을 사용하더라도 파티션 프루닝이 적용되어 26.3 이전 동작으로 되돌아갑니다. 이는 파티션 컬럼에 대한 `WHERE` 프레디케이트가 있는 쿼리에서 훨씬 더 빠를 수 있지만, 동일한 프라이머리 키를 가진 행이 서로 다른 파티션에 존재할 수 없을 때만 올바릅니다. 예를 들어, 삽입 시점에 파티션 컬럼이 설정되고 이후에는 절대 변경되지 않는 이벤트 로그 테이블이 이에 해당합니다.
 
 이 설정은 파티션 키 컬럼이 정렬 키에 포함되지 않은 파티션 테이블에만 영향을 미치며, 그 외의 테이블에는 항상 파티션 프루닝이 적용됩니다.
 
@@ -3554,13 +3571,13 @@ true로 설정하면 DESCRIBE 쿼리 결과에 컬럼 이름과 타입만 포함
 * 1 — 활성화됨.
 * 0 — 비활성화됨.
 
-<Note>
-  이 설정은 손상된 배치에도 영향을 미칩니다(비정상적인 server(머신) 종료가 발생하고 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블 엔진에 `fsync_after_insert`/`fsync_directories`가 설정되지 않은 경우 이러한 배치가 나타날 수 있습니다).
-</Note>
+:::note
+이 설정은 손상된 배치에도 영향을 미칩니다(비정상적인 server(머신) 종료가 발생하고 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블 엔진에 `fsync_after_insert`/`fsync_directories`가 없는 경우 이러한 배치가 생길 수 있습니다).
+:::
 
-<Note>
-  이 기능은 성능에 악영향을 줄 수 있으므로 자동 배치 분할에 의존하지 마십시오.
-</Note>
+:::note
+이 기능은 성능에 악영향을 줄 수 있으므로 자동 배치 분할에 의존하지 마십시오.
+:::
 
 <div id="distributed_background_insert_timeout">
   ## distributed_background_insert_timeout
@@ -3823,6 +3840,18 @@ Cloud 기본값: `20000`.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "3000"},{"label": "새로운 설정"}]}]} />
 
 ClickHouse Cloud에서만 적용됩니다. Distributed Cache 서버에서 데이터를 수신할 때의 타임아웃이며, 단위는 밀리초입니다. 이 인터벌 동안 바이트를 전혀 수신하지 못하면 예외가 발생합니다.
+
+<div id="distributed_cache_registry_show_certificate_and_signature">
+  ## distributed_cache_registry_show_certificate_and_signature
+</div>
+
+<CloudOnlyBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "`system.distributed_cache_registry`의 `certificate` 및 `signature` 컬럼을 표시하는 새로운 설정입니다."}]}]} />
+
+ClickHouse Cloud에서만 적용됩니다. `system.distributed_cache_registry` 테이블에 `certificate` 및 `signature` 컬럼을 표시합니다. 기본적으로는 출력이 간결하게 유지되도록 이 컬럼이 비어 있으며, 확인하려면 이 설정을 활성화하십시오.
 
 <div id="distributed_cache_send_timeout_ms">
   ## distributed_cache_send_timeout_ms
@@ -4182,6 +4211,18 @@ SharedMergeTree가 아닌 엔진(Cloud 전용 엔진)에서도 distributed index
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "레플리카에서 실행하기 위해 분산 계획을 직렬화하는 새로운 설정"}]}]} />
 
 레플리카에서 실행하기 위해 분산 쿼리 계획을 직렬화합니다.
+
+<div id="distributed_plan_workers_num">
+  ## distributed_plan_workers_num
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0"},{"label": "분산 쿼리에 대해 임대할 stateless worker 수를 지정하는 새로운 실험적 설정입니다. 0이면 임대를 비활성화합니다."}]}]} />
+
+이 쿼리를 실행하는 데 사용할 stateless worker 수입니다. 0이면 분산 계획에 대한 stateless worker 임대를 비활성화합니다.
 
 <div id="distributed_product_mode">
   ## distributed_product_mode
@@ -4814,9 +4855,9 @@ SELECT * FROM positional_arguments ORDER BY 2,3;
 
 PROJECTION 정의에서 위치 인수 지원을 활성화하거나 비활성화합니다. 관련 설정인 [enable&#95;positional&#95;arguments](#enable_positional_arguments)도 참조하십시오.
 
-<Note>
-  이 설정은 전문가 수준의 설정이므로 ClickHouse를 막 시작했다면 변경하지 않는 것이 좋습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정이므로 ClickHouse를 막 시작했다면 변경하지 않는 것이 좋습니다.
+:::
 
 가능한 값:
 
@@ -4921,12 +4962,12 @@ WHERE (_part, _part_offset) IN (
 
 이 설정을 사용하지 않으면 외부 쿼리와 내부 쿼리가 서로 다른 데이터 스냅샷을 기준으로 동작할 수 있어 잘못된 결과가 발생할 수 있습니다.
 
-<Note>
-  이 설정을 활성화하면 계획 단계가 끝난 뒤 스냅샷에서 불필요한 데이터 파트를 제거하는 최적화가 비활성화됩니다.
-  그 결과, 오래 실행되는 쿼리가 실행되는 전체 동안 더 이상 사용되지 않는 파트를 계속 참조할 수 있으므로, 파트 정리가 지연되고 스토리지 부담이 커질 수 있습니다.
+:::note
+이 설정을 활성화하면 계획 단계가 끝난 뒤 스냅샷에서 불필요한 데이터 파트를 제거하는 최적화가 비활성화됩니다.
+그 결과, 오래 실행되는 쿼리가 실행되는 전체 동안 더 이상 사용되지 않는 파트를 계속 참조할 수 있으므로, 파트 정리가 지연되고 스토리지 부담이 커질 수 있습니다.
 
-  이 설정은 현재 MergeTree 엔진 계열의 테이블에만 적용됩니다.
-</Note>
+이 설정은 현재 MergeTree 엔진 계열의 테이블에만 적용됩니다.
+:::
 
 가능한 값:
 
@@ -5169,6 +5210,25 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- 설정을 기본값
 비상관 EXISTS 서브쿼리를 스칼라 서브쿼리로 실행합니다. 스칼라 서브쿼리와 마찬가지로 캐시가 사용되며, 결과에 상수 폴딩이 적용됩니다.
 
 Cloud 기본값: `0`.
+
+<div id="explain_query_plan_default">
+  ## explain_query_plan_default
+</div>
+
+<SettingsInfoBlock type="ExplainQueryPlanDefault" default_value="pretty" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "pretty"},{"label": "26.7부터 `EXPLAIN PLAN`의 기본값은 `actions=1, compact=1, pretty=1`입니다. 26.7 이전 출력으로 복원하려면 이 값을 `legacy`로 설정하십시오."}]}]} />
+
+`EXPLAIN PLAN`에 사용되는 기본 포맷입니다.
+
+가능한 값:
+
+* `pretty` (26.7부터 기본값) — `actions`, `compact`, `pretty`의 기본값이 `true`로 설정되어, 간결하고 보기 좋은 형식의 action 정보가 포함된 계획을 생성합니다.
+* `legacy` — 26.7 이전 출력입니다.
+
+`EXPLAIN` 문에서 `actions`, `compact`, `pretty` 옵션을 명시적으로 지정하면(예: `EXPLAIN actions = 0, compact = 0, pretty = 0 SELECT ...`) 항상 이 설정을 재정의합니다.
+
+`json = 1` 또는 `distributed = 1`을 사용하는 `EXPLAIN PLAN`은 이 설정과 관계없이, `actions`, `compact`, `pretty`를 명시적으로 설정하지 않는 한 `legacy`(26.7 이전) 기본값을 유지합니다. pretty 출력은 JSON 결과나 세그먼트별 분산 계획을 표현할 수 없으므로, 이러한 모드는 `legacy` 형식으로만 올바르게 렌더링됩니다.
 
 <div id="external_storage_connect_timeout_sec">
   ## external_storage_connect_timeout_sec
@@ -5677,7 +5737,7 @@ DROP 쿼리 시 데이터를 재귀적으로 삭제합니다. &#39;Directory not
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "0"},{"label": "MySQL DATE_FORMAT/STR_TO_DATE와의 호환성이 개선되었습니다"}]}]} />
 
-함수 `formatDateTime`의 포매터 &#39;%e&#39;는 한 자리 수 일을 앞에 공백 한 칸을 붙여 출력합니다. 예를 들어 &#39;2&#39;가 아니라 &#39; 2&#39;로 출력됩니다.
+함수 `formatDateTime`의 Formatter &#39;%e&#39;는 한 자리 수 날짜를 앞에 공백 한 칸을 넣어 출력합니다. 예를 들어 &#39;2&#39;가 아니라 &#39; 2&#39;로 출력됩니다.
 
 <div id="formatdatetime_f_prints_scale_number_of_digits">
   ## formatdatetime_f_prints_scale_number_of_digits
@@ -6310,9 +6370,9 @@ HTTP 전송 timeout입니다(초 단위).
 * 모든 양의 정수.
 * 0 - 비활성화됨(무한 timeout).
 
-<Note>
-  default profile에만 적용됩니다. 변경 사항을 적용하려면 서버를 재시작해야 합니다.
-</Note>
+:::note
+default profile에만 적용됩니다. 변경 사항을 적용하려면 서버를 재시작해야 합니다.
+:::
 
 <div id="http_skip_not_found_url_for_globs">
   ## http_skip_not_found_url_for_globs
@@ -6336,7 +6396,7 @@ HTTP&#95;NOT&#95;FOUND 오류가 발생한 글롭 패턴의 URL은 건너뜁니�
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "포맷 전반의 일관성을 위해 변경됨"}]}, {"id": "row-2","items": [{"label": "23.9"},{"label": "1"},{"label": "HTTP streaming에서 예외 발생 시 유효한 JSON/XML을 출력합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "포맷 전반의 일관성을 위해 변경됨"}]}, {"id": "row-2","items": [{"label": "23.9"},{"label": "1"},{"label": "HTTP streaming에서 예외 발생 시 유효한 JSON\/XML을 출력합니다."}]}]} />
 
 유효한 출력이 생성되도록 예외도 출력 형식에 맞춰 작성합니다. JSON 및 XML 포맷에서 작동합니다.
 
@@ -6815,9 +6875,9 @@ UNION, INTERSECT, EXCEPT 연쇄의 최상위 수준 SELECT는 괄호로 어떻�
 복제된 테이블에서는 기본적으로 각 파티션에 대해 가장 최근의 100개 삽입만 중복 제거됩니다([replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window), [replicated&#95;deduplication&#95;window&#95;seconds](/ko/reference/settings/merge-tree-settings#replicated_deduplication_window_seconds) 참조).
 복제되지 않은 테이블은 [non&#95;replicated&#95;deduplication&#95;window](/ko/reference/settings/merge-tree-settings#non_replicated_deduplication_window)를 참조하십시오.
 
-<Note>
-  `insert_deduplication_token`은 파티션 수준에서 작동합니다(`insert_deduplication` checksum과 동일). 여러 파티션에서 동일한 `insert_deduplication_token`을 사용할 수 있습니다.
-</Note>
+:::note
+`insert_deduplication_token`은 파티션별로 추적되므로, 하나의 삽입으로 기록되는 여러 파티션이 동일한 토큰을 가질 수 있습니다. 토큰이 없으면 기본 콘텐츠 checksum(`insert_deduplication_version = new_unified_hash`)이 삽입된 전체 블록에 대해 계산되므로, 전체 데이터가 이전 삽입(재시도)과 완전히 일치하는 경우에만 해당 삽입이 중복 제거되며, 단일 파티션의 행이 우연히 다른 삽입과 일치하는 경우에는 중복 제거되지 않습니다.
+:::
 
 예시:
 
@@ -6830,11 +6890,11 @@ SETTINGS non_replicated_deduplication_window = 100;
 
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (1);
 
--- insert_deduplication_token이 다르므로 다음 삽입은 중복 제거되지 않습니다
+-- the next insert won't be deduplicated because insert_deduplication_token is different
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test1' VALUES (1);
 
--- insert_deduplication_token이 이전 삽입 중 하나와 동일하므로
--- 다음 삽입은 중복 제거됩니다
+-- the next insert will be deduplicated because insert_deduplication_token
+-- is the same as one of the previous
 INSERT INTO test_table SETTINGS insert_deduplication_token = 'test' VALUES (2);
 
 SELECT * FROM test_table
@@ -6938,9 +6998,9 @@ INSERT 쿼리 실행 중 실패한 Keeper 요청을 재시도할 때의 최대 t
 
 <SettingsInfoBlock type="UInt64Auto" default_value="0" />
 
-<Note>
-  이 설정은 SharedMergeTree에는 적용되지 않습니다. 자세한 내용은 [SharedMergeTree 일관성](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency)을 참조하십시오.
-</Note>
+:::note
+이 설정은 SharedMergeTree에는 적용되지 않습니다. 자세한 내용은 [SharedMergeTree 일관성](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency)을 참조하십시오.
+:::
 
 쿼럼 쓰기를 활성화합니다.
 
@@ -6971,13 +7031,13 @@ ClickHouse는 다음 경우 예외를 발생시킵니다.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "기본적으로 병렬 quorum 삽입을 사용합니다. 이는 순차 quorum 삽입보다 훨씬 편리합니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "21.1"},{"label": "1"},{"label": "기본적으로 병렬 쿼럼 삽입을 사용합니다. 이는 순차 쿼럼 삽입보다 훨씬 편리합니다"}]}]} />
 
-<Note>
-  이 설정은 SharedMergeTree에는 적용되지 않습니다. 자세한 내용은 [SharedMergeTree 일관성](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency)을 참조하십시오.
-</Note>
+:::note
+이 설정은 SharedMergeTree에는 적용되지 않습니다. 자세한 내용은 [SharedMergeTree 일관성](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency)을 참조하십시오.
+:::
 
-quorum `INSERT` 쿼리의 병렬 처리를 활성화하거나 비활성화합니다. 활성화하면 이전 쿼리가 아직 완료되지 않았더라도 추가 `INSERT` 쿼리를 보낼 수 있습니다. 비활성화하면 동일한 테이블에 대한 추가 쓰기가 거부됩니다.
+쿼럼 `INSERT` 쿼리의 병렬 처리를 활성화하거나 비활성화합니다. 활성화하면 이전 쿼리가 아직 완료되지 않았더라도 추가 `INSERT` 쿼리를 보낼 수 있습니다. 비활성화하면 동일한 테이블에 대한 추가 쓰기가 거부됩니다.
 
 가능한 값:
 
@@ -7198,9 +7258,9 @@ ClickHouse는 가능하면 항상 `partial_merge` 조인을 사용하고, 그렇
 
 `ANY` 엄격성을 사용하는 `JOIN` 작업의 동작을 변경합니다.
 
-<Note>
-  이 설정은 [Join](/ko/reference/engines/table-engines/special/join) 테이블 엔진을 사용하는 `JOIN` 작업에만 적용됩니다.
-</Note>
+:::note
+이 설정은 [Join](/ko/reference/engines/table-engines/special/join) 테이블 엔진을 사용하는 `JOIN` 작업에만 적용됩니다.
+:::
 
 가능한 값:
 
@@ -8093,11 +8153,11 @@ false로 설정되어 있고 `parallel_view_processing`이 활성화된 경우, 
 
 쿼리 구문 트리의 최대 중첩 깊이입니다. 이 값을 초과하면 예외가 발생합니다.
 
-<Note>
-  현재는 구문 분석 중에는 검사하지 않고, 쿼리 구문 분석이 끝난 후에만 검사합니다.
-  즉, 구문 분석 중에 지나치게 깊은 구문 트리가 생성될 수 있지만,
-  쿼리는 실패합니다.
-</Note>
+:::note
+현재는 구문 분석 중에는 검사하지 않고, 쿼리 구문 분석이 끝난 후에만 검사합니다.
+즉, 구문 분석 중에 지나치게 깊은 구문 트리가 생성될 수 있지만,
+쿼리는 실패합니다.
+:::
 
 <div id="max_ast_elements">
   ## max_ast_elements
@@ -8107,11 +8167,11 @@ false로 설정되어 있고 `parallel_view_processing`이 활성화된 경우, 
 
 쿼리 구문 트리의 최대 요소 수입니다. 이 값을 초과하면 예외가 발생합니다.
 
-<Note>
-  현재는 파싱 중에는 이를 검사하지 않고, 쿼리 파싱이 끝난 후에만 검사합니다.
-  즉, 파싱 중에 지나치게 깊은 구문 트리가 생성될 수 있지만,
-  쿼리는 실패합니다.
-</Note>
+:::note
+현재는 파싱 중에는 이를 검사하지 않고, 쿼리 파싱이 끝난 후에만 검사합니다.
+즉, 파싱 중에 지나치게 깊은 구문 트리가 생성될 수 있지만,
+쿼리는 실패합니다.
+:::
 
 <div id="max_autoincrement_series">
   ## max_autoincrement_series
@@ -8161,12 +8221,12 @@ Cloud 기본값: 레플리카당 메모리 용량의 절반입니다.
 * 단일 [GROUP BY](/ko/reference/statements/select/group-by) 작업에서 사용할 수 있는 최대 RAM 용량(바이트)입니다.
 * `0` — 외부 메모리의 `GROUP BY`가 비활성화됩니다.
 
-<Note>
-  GROUP BY 작업 중 메모리 사용량이 이 바이트 단위 임계값을 초과하면
-  &#39;외부 집계&#39; 모드가 활성화됩니다(데이터를 디스크에 spill).
+:::note
+GROUP BY 작업 중 메모리 사용량이 이 바이트 단위 임계값을 초과하면
+&#39;외부 집계&#39; 모드가 활성화됩니다(데이터를 디스크에 스필).
 
-  권장 값은 사용 가능한 시스템 메모리의 절반입니다.
-</Note>
+권장 값은 사용 가능한 시스템 메모리의 절반입니다.
+:::
 
 <div id="max_bytes_before_external_join">
   ## max_bytes_before_external_join
@@ -8327,9 +8387,9 @@ IN 절의 Set에서 사용하는 최대 바이트 수(비압축 데이터 기준
 
 이 제한은 처리되는 각 데이터 청크에 대해 검사됩니다.
 
-<Note>
-  이 설정은 `prefer_localhost_replica=1`과 함께 사용할 때 불안정합니다.
-</Note>
+:::note
+이 설정은 `prefer_localhost_replica=1`과 함께 사용할 때 불안정합니다.
+:::
 
 <div id="max_bytes_to_sort">
   ## max_bytes_to_sort
@@ -8359,9 +8419,9 @@ GLOBAL IN/JOIN 절이 실행될 때 원격 서버로 전달되거나 임시 테�
 쿼리에서 지정된 수보다 더 많은 컬럼을 읽어야 하면 예외가
 발생합니다.
 
-<Tip>
-  이 설정은 지나치게 복잡한 쿼리를 방지하는 데 유용합니다.
-</Tip>
+:::tip
+이 설정은 지나치게 복잡한 쿼리를 방지하는 데 유용합니다.
+:::
 
 `0` 값은 제한이 없음을 의미합니다.
 
@@ -8371,11 +8431,11 @@ GLOBAL IN/JOIN 절이 실행될 때 원격 서버로 전달되거나 임시 테�
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
-테이블에 쓰기 전에 데이터를 압축할 때, 비압축 데이터 블록의 최대 크기를 지정합니다. 기본값은 1,048,576(1 MiB)입니다. 더 작은 블록 크기를 지정하면 일반적으로 압축률은 약간 낮아지지만, 캐시 지역성 덕분에 압축 및 압축 해제 속도는 약간 빨라지고 메모리 사용량은 줄어듭니다.
+테이블에 쓰기 전에 데이터를 압축할 때, 비압축 데이터 블록의 최대 크기를 지정합니다. 기본값은 1,048,576(1 MiB)입니다. 더 작은 블록 크기를 지정하면 일반적으로 압축률은 약간 낮아지지만, cache 지역성 덕분에 압축 및 압축 해제 속도는 약간 빨라지고 메모리 사용량은 줄어듭니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정이므로 ClickHouse를 막 사용하기 시작한 단계라면 변경하지 않는 것이 좋습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정이므로 ClickHouse를 막 사용하기 시작한 단계라면 변경하지 않는 것이 좋습니다.
+:::
 
 압축용 블록(바이트로 구성된 메모리 청크)과 쿼리 처리용 블록(테이블의 행 집합)을 혼동하지 마십시오.
 
@@ -8521,18 +8581,18 @@ Cloud 기본값: `1000`.
 최대 쿼리 실행 시간(초)입니다.
 
 `max_execution_time` 매개변수는 다소 이해하기 어려울 수 있습니다.
-이 매개변수는 현재 쿼리 실행 속도를 기준으로 한 보간값에 따라 동작합니다.
+이 매개변수는 현재 쿌리 실행 속도를 기준으로 한 보간값에 따라 동작합니다.
 (이 동작은 [`timeout_before_checking_execution_speed`](/ko/reference/settings/session-settings#timeout_before_checking_execution_speed)로 제어됩니다.)
 
 예상 실행 시간이 지정된 `max_execution_time`를 초과하면 ClickHouse가 쿼리를 중단합니다. 기본적으로 `timeout_before_checking_execution_speed`는 10초로 설정되어 있습니다. 즉, 쿼리가 10초 동안 실행된 후부터 ClickHouse가 전체 실행 시간을 추정하기 시작합니다. 예를 들어 `max_execution_time`를 3600초(1시간)로 설정한 경우, 예상 시간이 이 3600초 제한을 초과하면 ClickHouse가 쿼리를 종료합니다. `timeout_before_checking_execution_speed`를 0으로 설정하면 ClickHouse는 `max_execution_time`의 기준으로 실제 경과 시간을 사용합니다.
 
 쿼리 런타임이 지정된 초 수를 초과하면 동작은 `timeout_overflow_mode`에 따라 결정되며, 기본값은 `throw`입니다.
 
-<Note>
-  타임아웃은 데이터 처리 중 지정된 지점에서만 확인되므로, 쿼리도 그 지점에서만 중지될 수 있습니다.
-  현재는 집계 상태를 병합하는 중이나 쿼리 분석 중에는 중지할 수 없으므로,
-  실제 실행 시간은 이 설정값보다 길어질 수 있습니다.
-</Note>
+:::note
+타임아웃은 데이터 처리 중 지정된 지점에서만 확인되므로, 쿼리도 그 지점에서만 중지될 수 있습니다.
+현재는 집계 상태를 병합하는 중이나 쿼리 분석 중에는 중지할 수 없으므로,
+실제 실행 시간은 이 설정값보다 길어질 수 있습니다.
+:::
 
 <div id="max_execution_time_leaf">
   ## max_execution_time_leaf
@@ -8578,13 +8638,13 @@ alias와 별표(*)를 확장한 후 쿼리 구문 트리의 최대 크기(노드
   ## max_final_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 [FINAL](/ko/reference/statements/select/from#final-modifier) 수정자가 적용된 `SELECT` 쿼리의 데이터 읽기 단계에서 사용할 병렬 스레드의 최대 개수를 설정합니다.
 
 가능한 값:
 
-* 양의 정수
+* 양의 정수.
 * 0 또는 1 — 비활성화됩니다. `SELECT` 쿼리는 단일 스레드로 실행됩니다.
 
 <div id="max_http_get_redirects">
@@ -9011,7 +9071,7 @@ SELECT getSetting('max_memory_usage_for_user');
   ## max_parsing_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.4"},{"label": "0"},{"label": "파일의 병렬 파싱에 사용할 스레드 수를 제어하는 별도 설정 추가"}]}]} />
 
@@ -9027,9 +9087,9 @@ SELECT getSetting('max_memory_usage_for_user');
 
 Cloud 기본값: 1 TB.
 
-<Note>
-  이 쿼리 설정은 해당 서버 설정 값을 재정의합니다. [max&#95;partition&#95;size&#95;to&#95;drop](/ko/reference/settings/server-settings/settings#max_partition_size_to_drop)를 참조하십시오.
-</Note>
+:::note
+이 쿼리 설정은 해당 서버 설정 값을 재정의합니다. [max&#95;partition&#95;size&#95;to&#95;drop](/ko/reference/settings/server-settings/settings#max_partition_size_to_drop)를 참조하십시오.
+:::
 
 <div id="max_partitions_per_insert_block">
   ## max_partitions_per_insert_block
@@ -9061,9 +9121,9 @@ Cloud 기본값: 1 TB.
 > (범위 쿼리를 빠르게 만드는 데는 ORDER BY key로 충분합니다).
 > 파티션은 데이터 조작(DROP PARTITION 등)을 위한 것입니다.&quot;
 
-<Note>
-  많은 수의 파티션을 사용하는 것은 흔한 오해이므로, 이 설정은 안전 임계값입니다.
-</Note>
+:::note
+많은 수의 파티션을 사용하는 것은 흔한 오해이므로, 이 설정은 안전 임계값입니다.
+:::
 
 <div id="max_partitions_to_read">
   ## max_partitions_to_read
@@ -9080,9 +9140,9 @@ Cloud 기본값: 1 TB.
 * 양의 정수
 * `-1` - 무제한(기본값)
 
-<Note>
-  테이블 설정에서도 MergeTree 설정 [`max_partitions_to_read`](/ko/reference/settings/session-settings#max_partitions_to_read)를 지정할 수 있습니다.
-</Note>
+:::note
+테이블 설정에서도 MergeTree 설정 [`max_partitions_to_read`](/ko/reference/settings/session-settings#max_partitions_to_read)를 지정할 수 있습니다.
+:::
 
 <div id="max_parts_to_move">
   ## max_parts_to_move
@@ -9110,12 +9170,12 @@ Cloud 기본값: 1 TB.
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
-SQL parser가 파싱할 수 있는 쿌리 문자열의 최대 바이트 수입니다.
-INSERT 쿼리의 VALUES 절에 있는 데이터는 별도의 stream parser(O(1) RAM 사용)로 처리되므로 이 제한의 적용을 받지 않습니다.
+SQL 파서가 파싱할 수 있는 쿌리 문자열의 최대 바이트 수입니다.
+INSERT 쿼리의 VALUES 절에 있는 데이터는 별도의 stream 파서(O(1) RAM 사용)로 처리되므로 이 제한의 적용을 받지 않습니다.
 
-<Note>
-  `max_query_size`는 SQL 쿼리 내에서 설정할 수 없습니다(예: `SELECT now() SETTINGS max_query_size=10000`). ClickHouse는 쿼리를 파싱하기 위해 버퍼를 할당해야 하며, 이 버퍼의 크기는 `max_query_size` 설정에 따라 결정됩니다. 그리고 이 설정은 쿼리가 실행되기 전에 미리 구성되어 있어야 합니다.
-</Note>
+:::note
+`max_query_size`는 SQL 쿼리 내에서 설정할 수 없습니다(예: `SELECT now() SETTINGS max_query_size=10000`). ClickHouse는 쿼리를 파싱하기 위해 버퍼를 할당해야 하며, 이 버퍼의 크기는 `max_query_size` 설정에 따라 결정됩니다. 그리고 이 설정은 쿼리가 실행되기 전에 미리 구성되어 있어야 합니다.
+:::
 
 <div id="max_rand_distribution_parameter">
   ## max_rand_distribution_parameter
@@ -9222,9 +9282,9 @@ local filesystem에서 읽을 때 사용하는 버퍼의 최대 크기입니다.
 예를 들어 LowCardinality 컬럼의 딕셔너리와 AggregateFunction 컬럼의 Arena가 이에 해당하므로,
 결과 크기가 작아도 임계값을 초과할 수 있습니다.
 
-<Warning>
-  이 설정은 상당히 저수준이므로 주의해서 사용해야 합니다
-</Warning>
+:::warning
+이 설정은 상당히 저수준이므로 주의해서 사용해야 합니다
+:::
 
 <div id="max_result_rows">
   ## max_result_rows
@@ -9347,11 +9407,11 @@ GROUP BY 수행 중 집계에서 지정된 개수보다 많은
 
 예를 들어, 클러스터가 2개의 세그먼트로 구성되어 있고 각 세그먼트에 100개의 행이 있는 테이블이 있다고 가정합니다. `max_rows_to_read=150` 설정으로 두 테이블의 모든 데이터를 읽도록 한 분산 쿼리는 전체 행 수가 200행이므로 실패합니다. `max_rows_to_read_leaf=150`인 쿼리는 리프 노드가 최대 100행만 읽으므로 성공합니다.
 
-이 제한은 처리되는 각 데이터 청크에 대해 검사됩니다.
+이 제한은 처리된 각 데이터 청크에 대해 검사됩니다.
 
-<Note>
-  이 설정은 `prefer_localhost_replica=1`과 함께 사용할 때 안정적이지 않습니다.
-</Note>
+:::note
+이 설정은 `prefer_localhost_replica=1`과 함께 사용할 때 안정적이지 않습니다.
+:::
 
 <div id="max_rows_to_sort">
   ## max_rows_to_sort
@@ -9524,10 +9584,10 @@ Merge 테이블에서 읽을 때 더 많은 스트림을 요청합니다. 스트
 쿼리에 지정된 개수보다 많은 중첩 서브쿼리가 있으면 예외를
 발생시킵니다.
 
-<Tip>
-  이 설정을 사용하면 클러스터 사용자가 지나치게 복잡한 쿼리를 작성하지
-  않도록 보호하는 안전장치를 둘 수 있습니다.
-</Tip>
+:::tip
+이 설정을 사용하면 클러스터 사용자가 지나치게 복잡한 쿼리를 작성하지
+않도록 보호하는 안전장치를 둘 수 있습니다.
+:::
 
 <div id="max_table_size_to_drop">
   ## max_table_size_to_drop
@@ -9539,9 +9599,9 @@ Merge 테이블에서 읽을 때 더 많은 스트림을 요청합니다. 스트
 
 Cloud 기본값: 1 TB.
 
-<Note>
-  이 쿼리 설정은 해당 server 설정을 덮어씁니다. [max&#95;table&#95;size&#95;to&#95;drop](/ko/reference/settings/server-settings/settings#max_table_size_to_drop)를 참조하십시오.
-</Note>
+:::note
+이 쿼리 설정은 해당 서버 설정을 덮어씁니다. [max&#95;table&#95;size&#95;to&#95;drop](/ko/reference/settings/server-settings/settings#max_table_size_to_drop)를 참조하십시오.
+:::
 
 <div id="max_temporary_columns">
   ## max_temporary_columns
@@ -9553,9 +9613,9 @@ Cloud 기본값: 1 TB.
 중간 계산 결과로 메모리에 생성되는 임시 컬럼 수가 지정한 개수를 초과하면
 예외가 발생합니다.
 
-<Tip>
-  이 설정은 지나치게 복잡한 쿼리를 방지하는 데 유용합니다.
-</Tip>
+:::tip
+이 설정은 지나치게 복잡한 쿼리를 방지하는 데 유용합니다.
+:::
 
 `0`은 제한이 없음을 의미합니다.
 
@@ -9593,15 +9653,15 @@ Cloud 기본값: 1 TB.
 
 `max_temporary_columns`와 마찬가지로, 쿼리 실행 시 동시에 RAM에 유지해야 하는 임시 컬럼의 최대 개수입니다. 단, 상수 컬럼은 제외합니다.
 
-<Note>
-  상수 컬럼은 쿼리 실행 중 매우 자주 생성되지만, 계산 리소스를 거의 사용하지 않습니다.
-</Note>
+:::note
+상수 컬럼은 쿼리 실행 중 매우 자주 생성되지만, 계산 리소스를 거의 사용하지 않습니다.
+:::
 
 <div id="max_threads">
   ## max_threads
 </div>
 
-<SettingsInfoBlock type="MaxThreads" default_value="'auto(N)'" />
+<SettingsInfoBlock type="MaxThreads" default_value="auto(N)" />
 
 원격 서버에서 데이터를 가져오는 스레드([&#39;max&#95;distributed&#95;connections&#39;](/ko/reference/settings/session-settings#max_distributed_connections) 매개변수 참고)를 제외한, 쿼리 처리에 사용되는 최대 스레드 수입니다.
 
@@ -10046,9 +10106,9 @@ UInt32 유형의 컬럼(값당 4바이트)을 기록한다고 가정합니다. 8
 
 String 유형의 URL 컬럼(값당 평균 크기 60바이트)을 기록한다고 가정합니다. 8192개 행을 기록하면 평균적으로 500KB보다 약간 작은 데이터가 됩니다. 이는 65,536보다 크므로 각 마크마다 압축 블록이 하나 생성됩니다. 이 경우 디스크에서 단일 마크 범위의 데이터를 읽을 때는 추가 데이터를 압축 해제하지 않습니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정이므로, ClickHouse를 막 시작한 단계라면 변경하지 마십시오.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정이므로, ClickHouse를 막 시작한 단계라면 변경하지 마십시오.
+:::
 
 <div id="min_count_to_compile_aggregate_expression">
   ## min_count_to_compile_aggregate_expression
@@ -10644,6 +10704,16 @@ processor의 OpenTelemetry 스팬을 수집합니다.
 
 * [GROUP BY optimization](/ko/reference/statements/select/group-by#group-by-optimization-depending-on-table-sorting-key)
 
+<div id="optimize_aggregation_in_order_limit">
+  ## optimize_aggregation_in_order_limit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "`ORDER BY`가 `GROUP BY` 정렬 기준의 접두사일 때, 충분한 그룹이 생성되면 조기에 종료할 수 있도록 `LIMIT`을 aggregation-in-order에 적용하는 새로운 설정입니다."}]}]} />
+
+활성화되어 있고 순서 기반 집계가 사용 중이면, 충분한 그룹이 생성된 뒤 조기에 종료할 수 있도록 `LIMIT`을 집계 단계에 적용합니다. 이렇게 하면 `ORDER BY`가 `GROUP BY` 키 접두사와 일치할 때 읽는 데이터 양을 줄일 수 있습니다. `rows_before_limit_at_least`에 보고되는 값이 줄어들 수 있으므로, 정확한 개수가 필요하면 `exact_rows_before_limit`를 사용하십시오.
+
 <div id="optimize_aggregators_of_group_by_keys">
   ## optimize_aggregators_of_group_by_keys
 </div>
@@ -10661,6 +10731,16 @@ SELECT 절에서 GROUP BY 키에 대한 min/max/any/anyLast 집계 함수를 제
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.2"},{"label": "1"},{"label": "새로운 설정"}]}]} />
 
 필터링 성능을 높이기 위해 AND 체인에 상수 비교를 추가합니다. `<`, `<=`, `>`, `>=`, `=` 연산자와 이들의 혼합을 지원합니다. 예를 들어 `(a < b) AND (b < c) AND (c < 5)`는 `(a < b) AND (b < c) AND (c < 5) AND (b < 5) AND (a < 5)`가 됩니다.
+
+<div id="optimize_and_compare_chain_max_hash_work">
+  ## optimize_and_compare_chain_max_hash_work
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="5000000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "5000000"},{"label": "비교 `AND` 체인이 매우 많거나 매우 큰 쿼리를 분석할 때 `optimize_and_compare_chain` 최적화가 과도한 비중을 차지하지 않도록, 이 최적화의 작업량(해시된 쿼리 트리 노드 수 기준)에 상한을 두는 새로운 설정입니다. 이전 값인 `0`(무제한)은 이 최적화에 상한이 없던 26.7 이전 동작을 재현하므로, `compatibility`를 더 이른 버전으로 설정하면 예산 제한 없이 전이 프레디케이트를 계속 도출합니다. 예산을 비활성화하려면 `0`으로 설정하십시오."}]}]} />
+
+쿼리 분석 중 `optimize_and_compare_chain` 최적화에 사용할 작업 예산으로, `getTreeHash`가 해시한 쿼리 트리 노드 수(이 최적화에서 가장 큰 비용)로 측정합니다. 최적화를 적용하는 동안 쿼리에서 해시한 노드 수가 이 값을 초과하면, 해당 쿼리의 나머지 부분에는 이 최적화를 더 이상 적용하지 않습니다. 이렇게 하면 비교 `AND` 체인이 매우 많거나 매우 큰 쿼리에서, 아무것도 접지(folding)하지 않으면서도 이 최적화가 분석 시간의 대부분을 차지할 수 있는 경우 분석 시간을 제한할 수 있습니다. 일찍 중단해도 항상 안전합니다. 단지 최적화를 생략할 뿐이며 결과는 절대 바뀌지 않습니다. 예산을 비활성화하려면 `0`으로 설정하십시오(무제한).
 
 <div id="optimize_append_index">
   ## optimize_append_index
@@ -10763,9 +10843,9 @@ DISTINCT에 포함된 일부 컬럼이 정렬 순서의 접두사를 이루는 �
 * [distributed&#95;push&#95;down&#95;limit](#distributed_push_down_limit)
 * [optimize&#95;skip&#95;unused&#95;shards](#optimize_skip_unused_shards)
 
-<Note>
-  현재는 `optimize_skip_unused_shards`가 필요합니다. 이는 향후 기본적으로 활성화될 수 있기 때문이며, 이 경우 데이터가 분산 테이블(Distributed table)을 통해 삽입되어 `sharding_key`에 따라 분산된 경우에만 올바르게 동작합니다.
-</Note>
+:::note
+현재는 `optimize_skip_unused_shards`가 필요합니다. 이는 향후 기본적으로 활성화될 수 있기 때문이며, 이 경우 데이터가 분산 테이블(Distributed table)을 통해 삽입되어 `sharding_key`에 따라 분산된 경우에만 올바르게 동작합니다.
+:::
 
 <div id="optimize_dry_run_check_part">
   ## optimize_dry_run_check_part
@@ -11122,9 +11202,9 @@ true로 설정하면 WHERE/GROUP BY/ORDER BY에서 별칭을 적용하며, 파�
 논리적으로 동등한 경우, 인수로 `if` 표현식을 사용하는 집계 함수를 재작성합니다.
 예를 들어 `avg(if(cond, col, null))`는 `avgOrNullIf(cond, col)`로 재작성할 수 있습니다. 성능 향상에 도움이 될 수 있습니다.
 
-<Note>
-  분석기(`enable_analyzer = 1`)를 사용할 때만 지원됩니다.
-</Note>
+:::note
+분석기(`enable_analyzer = 1`)를 사용할 때만 지원됩니다.
+:::
 
 <div id="optimize_rewrite_array_exists_to_has">
   ## optimize_rewrite_array_exists_to_has
@@ -11201,9 +11281,9 @@ Possible values:
 
 `WHERE/PREWHERE`에 세그먼트 분할 키 조건이 있는 [SELECT](/ko/reference/statements/select/index) 쿼리에서 사용되지 않는 세그먼트를 스키핑할지 여부를 설정하며, 분산 쿼리 관련 최적화(예: 세그먼트 분할 키 기준 집계)도 활성화합니다.
 
-<Note>
-  데이터가 세그먼트 분할 키를 기준으로 분산되어 있다고 가정합니다. 그렇지 않으면 쿼리 결과가 올바르지 않을 수 있습니다.
-</Note>
+:::note
+데이터가 세그먼트 분할 키를 기준으로 분산되어 있다고 가정합니다. 그렇지 않으면 쿼리 결과가 올바르지 않을 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12099,11 +12179,11 @@ SELECT avg(number) AS number, max(number) FROM numbers(10);
 * 1 — localhost 레플리카가 있으면 ClickHouse는 항상 해당 레플리카로 쿼리를 보냅니다.
 * 0 — ClickHouse는 [load&#95;balancing](#load_balancing) 설정에 지정된 밸런싱 전략을 사용합니다.
 
-<Note>
-  [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key) 없이 [max&#95;parallel&#95;replicas](#max_parallel_replicas)를 사용하는 경우 이 설정을 비활성화하십시오.
-  [parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key)가 설정된 경우에는 여러 세그먼트에 여러 레플리카가 포함된 클러스터에서 사용할 때만 이 설정을 비활성화하십시오.
-  단일 세그먼트와 여러 레플리카가 있는 클러스터에서 사용하는 경우 이 설정을 비활성화하면 부정적인 영향이 있습니다.
-</Note>
+:::note
+[parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key) 없이 [max&#95;parallel&#95;replicas](#max_parallel_replicas)를 사용하는 경우 이 설정을 비활성화하십시오.
+[parallel&#95;replicas&#95;custom&#95;key](#parallel_replicas_custom_key)가 설정된 경우에는 여러 세그먼트에 여러 레플리카가 포함된 클러스터에서 사용할 때만 이 설정을 비활성화하십시오.
+단일 세그먼트와 여러 레플리카가 있는 클러스터에서 사용하는 경우 이 설정을 비활성화하면 부정적인 영향이 있습니다.
+:::
 
 <div id="prefer_warmed_unmerged_parts_seconds">
   ## prefer_warmed_unmerged_parts_seconds
@@ -12425,9 +12505,9 @@ Possible values:
 순서 기반 집계에 대한 쿼리 계획 수준 최적화를 켜거나 끕니다.
 설정 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations)이 1인 경우에만 적용됩니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정으로, 개발자가 디버깅할 때만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정으로, 개발자가 디버깅할 때만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12498,11 +12578,11 @@ JOIN 이후의 필터가 일치하지 않은 행 또는 일치한 행에 대해 
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-쿼리 계획(query plan) 수준의 쿼리 최적화를 켜거나 끕니다.
+쿼리 계획(쿼리 계획) 수준의 쿼리 최적화를 켜거나 끕니다.
 
-<Note>
-  이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가용 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12518,9 +12598,9 @@ JOIN 이후의 필터가 일치하지 않은 행 또는 일치한 행에 대해 
 정렬 단계 뒤로 표현식을 이동하는 쿼리 계획 수준 최적화를 켜거나 끕니다.
 설정 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations)의 값이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12536,9 +12616,9 @@ JOIN 이후의 필터가 일치하지 않은 행 또는 일치한 행에 대해 
 실행 계획에서 필터를 더 아래 단계로 내리는 쿼리 계획 수준의 최적화 기능을 켜거나 끕니다.
 이 설정은 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 값이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12563,11 +12643,11 @@ JOIN 이후의 필터가 일치하지 않은 행 또는 일치한 행에 대해 
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "auto"},{"label": "새 설정입니다. 이전에는 항상 오른쪽 테이블이 선택되었습니다."}]}]} />
 
-쿼리 계획에서 조인의 어느 쪽을 빌드 테이블(build table, 내부 테이블이라고도 하며 해시 조인용 해시 테이블에 삽입되는 테이블)로 사용할지 결정합니다. 이 설정은 `JOIN ON` 절을 사용하는 `ALL` 조인 엄격성에서만 지원됩니다. 가능한 값은 다음과 같습니다:
+쿼리 계획에서 조인의 어느 쪽을 빌드 테이블(build table, inner라고도 하며 해시 조인 시 해시 테이블에 삽입되는 테이블)로 사용할지 결정합니다. 이 설정은 `JOIN ON` 절을 사용하는 `ALL` 조인 엄격성에서만 지원됩니다. 가능한 값은 다음과 같습니다:
 
-* &#39;auto&#39;: 플래너가 빌드 테이블로 사용할 테이블을 결정합니다.
-  * &#39;false&#39;: 테이블을 스왑하지 않습니다(오른쪽 테이블이 빌드 테이블입니다).
-  * &#39;true&#39;: 항상 테이블을 스왑합니다(왼쪽 테이블이 빌드 테이블입니다).
+* &#39;auto&#39;: 플래너가 어느 테이블을 빌드 테이블로 사용할지 결정합니다.
+* &#39;false&#39;: 테이블을 스왑하지 않습니다(오른쪽 테이블이 빌드 테이블입니다).
+* &#39;true&#39;: 항상 테이블을 스왑합니다(왼쪽 테이블이 빌드 테이블입니다).
 
 <div id="query_plan_lift_up_array_join">
   ## query_plan_lift_up_array_join
@@ -12578,9 +12658,9 @@ JOIN 이후의 필터가 일치하지 않은 행 또는 일치한 행에 대해 
 실행 계획에서 ARRAY JOIN을 상위로 끌어올리는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 설정이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12596,9 +12676,9 @@ JOIN 이후의 필터가 일치하지 않은 행 또는 일치한 행에 대해 
 추가 최적화를 가능하게 하기 위해 쿼리 계획의 더 큰 하위 트리를 union으로 이동하는 쿼리 계획 수준 최적화를 켜거나 끕니다.
 이 설정은 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations)이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정으로, 개발자가 디버깅 목적으로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정으로, 개발자가 디버깅 목적으로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12641,14 +12721,14 @@ minmax 스킵 인덱스와 동적 임계값 필터링을 사용한 TopK 최적�
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
-쿼리 계획(query plan)에 적용되는 최적화의 총 개수를 제한합니다. [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 설정을 참조하십시오.
+쿼리 계획(쿼리 계획)에 적용되는 최적화의 총 개수를 제한합니다. [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 설정을 참조하십시오.
 복잡한 쿼리에서 최적화 시간이 지나치게 길어지는 것을 방지하는 데 유용합니다.
 EXPLAIN PLAN 쿼리에서는 이 한도에 도달하면 최적화 적용을 중지하고 계획을 있는 그대로 반환합니다.
 일반 쿼리 실행에서 실제 최적화 횟수가 이 설정을 초과하면 예외가 발생합니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정이므로 개발자가 debugging 목적으로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정이므로 개발자가 디버깅 목적으로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::.
 
 <div id="query_plan_max_set_size_for_projection_match">
   ## query_plan_max_set_size_for_projection_match
@@ -12681,9 +12761,9 @@ EXPLAIN PLAN에서 단계 설명의 최대 길이입니다.
 연속된 필터를 머지하는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
 설정 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations)의 값이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정으로, 개발자가 디버깅 목적으로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정으로, 개발자가 디버깅 목적으로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12732,9 +12812,10 @@ JOIN에서 지연 인덱싱 최적화를 활성화하는 데 필요한 왼쪽 �
 
 쿼리 계획 최적화 중에 시도할 JOIN 순서 알고리즘을 지정합니다. 사용할 수 있는 알고리즘은 다음과 같습니다.
 
-* `greedy` - 기본 그리디 알고리즘으로, 빠르게 동작하지만 최적의 조인 순서를 찾지 못할 수 있습니다
-* `dpsize` - 현재는 inner 조인에 대해서만 DPsize 알고리즘을 구현하며, 가능한 모든 조인 순서를 고려해 가장 최적인 순서를 찾지만 테이블과 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다
-* `dphyp` - 현재는 inner 조인에 대해서만 DPhyp(Dynamic Programming via Hypergraph Partitioning) 알고리즘을 구현하며, `dpsize`와 동일한 탐색 공간을 살펴보되 연결된 부분 그래프 쌍만 열거하므로 희소 조인 그래프에서는 중간 조인을 더 적게 생성하는 대신 교차 곱은 고려하지 않습니다
+* &#39;greedy&#39; - 기본 그리디 알고리즘으로, 빠르게 동작하지만 최적의 조인 순서를 찾지 못할 수 있습니다
+* &#39;dpsize&#39; - 현재는 inner 조인에 대해서만 DPsize 알고리즘을 구현하며, 가능한 모든 조인 순서를 고려해 가장 최적인 순서를 찾지만 테이블과 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다.
+* &#39;dpsub&#39; - inner 조인과 non-inner 조인을 모두 지원하는 DPsub 알고리즘을 구현하며, 가능한 모든 조인 순서를 고려해 가장 최적인 순서를 찾지만 테이블과 조인 프레디케이트가 많은 쿼리에서는 느릴 수 있습니다.
+* &#39;dphyp&#39; - 현재는 inner 조인에 대해서만 DPhyp(Dynamic Programming via Hypergraph Partitioning) 알고리즘을 구현하며, `dpsize`와 동일한 탐색 공간을 살펴보되 연결된 부분 그래프 쌍만 열거하므로 희소 조인 그래프에서는 중간 조인을 더 적게 생성하는 대신 교차 곱은 고려하지 않습니다
   여러 알고리즘을 쉼표로 구분된 목록으로 지정할 수 있습니다. 예를 들어 `dphyp,greedy`와 같습니다. 알고리즘은 순서대로 시도되며, 어떤 알고리즘이 쿼리를 처리할 수 없으면(예: outer 조인 또는 연결되지 않은 구성 요소 때문) 다음 알고리즘이 폴백으로 사용됩니다.
 
 <div id="query_plan_optimize_join_order_limit">
@@ -12815,9 +12896,9 @@ lazy materialization 최적화에 쿼리 계획을 사용합니다.
 실행 계획에서 LIMIT를 더 아래 단계로 내리는 쿼리 계획 수준 최적화를 켜거나 끕니다.
 이 설정은 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations) 값이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정이며, 개발자가 디버깅 용도로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정이며, 개발자가 디버깅 용도로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 Possible values:
 
@@ -12850,9 +12931,9 @@ Possible values:
 읽기 순서 유지 최적화에 대한 쿼리 계획 수준 최적화를 켜거나 끕니다.
 설정 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations)의 값이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 개발자가 디버깅 용도로만 사용해야 하는 전문가 수준 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 개발자가 디버깅 용도로만 사용해야 하는 전문가 수준 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12880,9 +12961,9 @@ Possible values:
 불필요한 DISTINCT 단계를 제거하는 쿼리 계획 수준 최적화를 켜거나 끕니다.
 이 설정은 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) 값이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정으로, 개발자가 디버깅 용도로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정으로, 개발자가 디버깅 용도로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12900,9 +12981,9 @@ Possible values:
 중복된 정렬 단계를 제거하는 쿼리 계획 수준의 최적화를 활성화하거나 비활성화합니다. 예를 들어 서브쿼리에서 사용됩니다.
 설정 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations)이 1인 경우에만 적용됩니다.
 
-<Note>
-  이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12920,9 +13001,9 @@ Possible values:
 쿼리 계획 단계에서 사용되지 않는 컬럼(입력 컬럼과 출력 컬럼 모두)을 제거하려는 쿼리 계획 수준 최적화를 켜거나 끕니다.
 이 설정은 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations)가 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 전문가 수준의 설정이므로 개발자가 디버깅할 때만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정이므로 개발자가 디버깅할 때만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12942,9 +13023,9 @@ Possible values:
 윈도우 함수 정렬 시 스토리지 정렬을 사용하는 쿼리 계획 수준 최적화를 켜거나 끕니다.
 이 설정은 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations)이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 개발자가 디버깅 용도로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 개발자가 디버깅 용도로만 사용해야 하는 전문가 수준의 설정입니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -12957,9 +13038,9 @@ Possible values:
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<Note>
-  이 설정은 전문가 수준의 설정으로, 개발자가 디버깅 목적으로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 전문가 수준의 설정으로, 개발자가 디버깅 목적으로만 사용해야 합니다. 이 설정은 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 필터를 표현식으로 분할하는 쿼리 계획 수준의 최적화를 켜거나 끕니다.
 설정 [query&#95;plan&#95;enable&#95;optimizations](#query_plan_enable_optimizations)의 값이 1일 때만 적용됩니다.
@@ -13006,9 +13087,9 @@ Possible values:
 벡터 유사성 인덱스를 사용하도록 시도하는 쿼리 계획 수준 최적화를 켜거나 끕니다.
 이 설정은 [`query_plan_enable_optimizations`](#query_plan_enable_optimizations)이 1일 때만 적용됩니다.
 
-<Note>
-  이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
-</Note>
+:::note
+이 설정은 개발자가 디버깅할 때만 사용해야 하는 전문가 수준의 설정입니다. 향후 하위 호환되지 않는 방식으로 변경되거나 제거될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -13030,7 +13111,7 @@ Possible values:
   권장 값:
 
   * 단일 쿼리의 경우 10000000(초당 100회)나노초 이상
-  * cluster 전체 프로파일링의 경우 1000000000(초당 1회)
+  * 클러스터 전체 프로파일링의 경우 1000000000(초당 1회)
 
 * 타이머를 끄려면 0으로 설정합니다.
 
@@ -13427,6 +13508,21 @@ Possible values:
 * `0` — 기다리지 않습니다.
 * 음의 정수 — 무제한으로 기다립니다.
 * 양의 정수 — 기다릴 시간(초)입니다.
+
+<div id="reserve_memory">
+  ## reserve_memory
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "쿼리를 시작하기 전에 특정 워크로드를 위해 메모리를 예약하는 새로운 설정입니다."}]}]} />
+
+워크로드 스케줄링에 사용됩니다. 단일 server에서 쿼리를 실행하는 데 사용할 수 있도록 예약되는 최소 RAM 용량입니다. 예약은 `workload` 쿼리 설정 값을 사용해 WORKLOAD 계층 구조를 통해 수행됩니다.
+워크로드에 사용할 수 있는 메모리가 충분하지 않으면 쿼리는 시작되지 않으며, 예약이 충족될 때까지 pending 상태로 대기합니다.
+값이 `0`이면 예약하지 않음을 의미합니다.
+이 설정은 MEMORY RESERVATION resource가 생성된 경우에만 적용됩니다.
 
 <div id="restore_replace_external_dictionary_source_to_null">
   ## restore_replace_external_dictionary_source_to_null
@@ -13960,9 +14056,9 @@ URL 테이블 함수를 사용할 때 스키마 추론 시 캐시를 사용합�
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-<Note>
-  이 설정은 SharedMergeTree와 ReplicatedMergeTree에서 동작 방식이 다릅니다. SharedMergeTree에서 `select_sequential_consistency`가 어떻게 동작하는지에 대한 자세한 내용은 [SharedMergeTree 일관성](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency)을 참조하십시오.
-</Note>
+:::note
+이 설정은 SharedMergeTree와 ReplicatedMergeTree에서 동작 방식이 다릅니다. SharedMergeTree에서 `select_sequential_consistency`가 어떻게 동작하는지에 대한 자세한 내용은 [SharedMergeTree 일관성](/ko/products/cloud/features/infrastructure/shared-merge-tree#consistency)을 참조하십시오.
+:::
 
 `SELECT` 쿼리에 대해 순차 일관성을 활성화하거나 비활성화합니다. `insert_quorum_parallel`은 비활성화되어 있어야 합니다(기본적으로 활성화됨).
 
@@ -14106,10 +14202,10 @@ SELECT toDateTime64(toDateTime64('1999-12-12 23:23:23.123', 3), 3, 'Europe/Zuric
 1999-12-13 07:23:23.123
 ```
 
-<Warning>
-  DateTime/DateTime64를 parse하는 모든 함수가 `session_timezone`를 따르는 것은 아닙니다. 이로 인해 미묘한 오류가 발생할 수 있습니다.
-  다음 예시와 설명을 참조하십시오.
-</Warning>
+:::warning
+DateTime/DateTime64를 parse하는 모든 함수가 `session_timezone`를 따르는 것은 아닙니다. 이로 인해 미묘한 오류가 발생할 수 있습니다.
+다음 예시와 설명을 참조하십시오.
+:::
 
 ```sql
 CREATE TABLE test_tz (`d` DateTime('UTC')) ENGINE = Memory AS SELECT toDateTime('2000-01-01 00:00:00', 'UTC');
@@ -14608,17 +14704,6 @@ temporary files 쓰기 작업에 사용되는 버퍼 크기입니다. 버퍼 크
 * LZ4 — [LZ4](https://en.wikipedia.org/wiki/LZ4_\(compression_algorithm\)) 압축이 적용됩니다.
 * NONE — 압축이 적용되지 않습니다.
 
-<div id="text_index_density_threshold">
-  ## text_index_density_threshold
-</div>
-
-<SettingsInfoBlock type="Float" default_value="0.2" />
-
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "0.2"},{"label": "지연 포스팅 리스트 밀도 임계값을 위한 새로운 설정"}]}]} />
-
-지연 포스팅 리스트 모드에서 알고리즘을 선택하기 위한 밀도 임계값입니다.
-임계값 미만: leapfrog 교집합 방식. 임계값 이상: brute-force 비트맵 방식.
-
 <div id="text_index_hint_max_selectivity">
   ## text_index_hint_max_selectivity
 </div>
@@ -14628,6 +14713,19 @@ temporary files 쓰기 작업에 사용되는 버퍼 크기입니다. 버퍼 크
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "0.2"},{"label": "새로운 설정"}]}]} />
 
 역텍스트 인덱스에서 생성된 힌트를 사용할 수 있는 필터의 최대 선택도입니다.
+
+<div id="text_index_lazy_intersection_density_threshold">
+  ## text_index_lazy_intersection_density_threshold
+</div>
+
+**별칭**: `text_index_density_threshold`
+
+<SettingsInfoBlock type="Float" default_value="0.2" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0.2"},{"label": "`text_index_density_threshold`에서 이름이 변경되었으며(별칭으로 유지), 지연 포스팅 리스트 적용 모드에서 포스팅 리스트 교집합 알고리즘을 선택합니다."}]}]} />
+
+지연 포스팅 리스트 적용 모드(`text_index_posting_list_apply_mode = 'lazy'`)에서 사용할 교집합 알고리즘을 선택하는 포스팅 리스트 밀도 임계값입니다.
+임계값 미만: leapfrog 교집합(희소 포스팅 리스트에 유리). 임계값 이상: 무차별 대입 비트맵 교집합(밀집 포스팅 리스트에 유리).
 
 <div id="text_index_like_max_postings_to_read">
   ## text_index_like_max_postings_to_read
@@ -14664,7 +14762,7 @@ temporary files 쓰기 작업에 사용되는 버퍼 크기입니다. 버퍼 크
 
 텍스트 인덱스 쿼리 실행 시 포스팅 리스트를 적용하는 방식을 제어합니다.
 &#39;materialize&#39; (기본값)는 포스팅 리스트를 Roaring Bitmap으로 즉시 디코딩합니다.
-&#39;lazy&#39;는 커서 기반 온디맨드 디코딩을 사용합니다(V2 인덱스 포맷 및 allow&#95;experimental&#95;text&#95;index&#95;lazy&#95;apply 필요).
+&#39;lazy&#39;는 커서 기반 온디맨드 디코딩을 사용합니다(직렬화된 코덱이 있는 인덱스 포맷 필요).
 
 <div id="throw_if_no_data_to_insert">
   ## throw_if_no_data_to_insert
@@ -14695,9 +14793,9 @@ temporary files 쓰기 작업에 사용되는 버퍼 크기입니다. 버퍼 크
 * `true`  - 삽입 블록이 `max_partitions_per_insert_block`에 도달하면 예외가 발생합니다.
 * `false` - `max_partitions_per_insert_block`에 도달하면 경고를 로그에 기록합니다.
 
-<Tip>
-  [`max_partitions_per_insert_block`](/ko/reference/settings/session-settings#max_partitions_per_insert_block)을 변경할 때 사용자에게 어떤 영향이 있는지 파악하는 데 유용할 수 있습니다.
-</Tip>
+:::tip
+[`max_partitions_per_insert_block`](/ko/reference/settings/session-settings#max_partitions_per_insert_block)을 변경할 때 사용자에게 어떤 영향이 있는지 파악하는 데 유용할 수 있습니다.
+:::
 
 <div id="throw_on_unsupported_query_inside_transaction">
   ## throw_on_unsupported_query_inside_transaction
@@ -14957,6 +15055,16 @@ true이면 update를 실행하기 전에 파트 집합이 최신 버전으로 �
 * `/test/data.csv`는 `https://example.com/test/data.csv`로 해석됩니다
 * `//other.com/test/data.csv`는 `https://other.com/test/data.csv`로 해석됩니다
 
+<div id="url_wildcard_max_directories_to_read">
+  ## url_wildcard_max_directories_to_read
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="100000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "100000"},{"label": "`url` 테이블 함수에서 와일드카드를 확장할 때 읽는 디렉터리 수를 제한하는 새로운 설정."}]}]} />
+
+인덱스 페이지에서 URL 와일드카드를 확장할 때 순회할 수 있는 디렉터리의 최대 개수입니다.
+
 <div id="use_async_executor_for_materialized_views">
   ## use_async_executor_for_materialized_views
 </div>
@@ -15000,10 +15108,11 @@ DateTime 문자열 값을 해석할 때 server 시간대를 따르는 대신 클
 * 0 — `user[:password]@host:port#default_database` 디렉터리 포맷을 사용합니다.
 * 1 — `[shard{shard_index}[_replica{replica_index}]]` 디렉터리 포맷을 사용합니다.
 
-<Note>
-  - `use_compact_format_in_distributed_parts_names=0`을 사용하면 클러스터 정의의 변경 사항이 백그라운드 INSERT에 적용되지 않습니다.
-  - `use_compact_format_in_distributed_parts_names=1`을 사용하면 클러스터 정의에서 노드 순서를 변경할 경우 `shard_index`/`replica_index`가 바뀌므로 주의하십시오.
-</Note>
+:::note
+
+* `use_compact_format_in_distributed_parts_names=0`을 사용하면 클러스터 정의의 변경 사항이 백그라운드 INSERT에 적용되지 않습니다.
+* `use_compact_format_in_distributed_parts_names=1`을 사용하면 클러스터 정의에서 노드 순서를 변경할 경우 `shard_index`/`replica_index`가 바뀌므로 주의하십시오.
+  :::
 
 <div id="use_concurrency_control">
   ## use_concurrency_control
@@ -15112,9 +15221,9 @@ JOIN 조건에서 OR로 연결된 부분을 해당 입력 측으로 푸시다운
   ## use_legacy_to_time
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="1" />
+<SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "1"},{"label": "새 설정입니다. 사용자가 기존 `toTime` 함수 로직을 사용할 수 있게 하며, 이 로직은 `toTimeWithFixedDate`처럼 동작합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "기존 `toTime` 대신 새로운 `toTime` 함수(`Time` 데이터 타입으로 값 변환)를 기본으로 사용합니다. 기존 `toTime`은 계속 `toTimeWithFixedDate`로 사용할 수 있습니다."}]}, {"id": "row-2","items": [{"label": "25.6"},{"label": "1"},{"label": "새 설정입니다. 사용자가 기존 `toTime` 함수 로직을 사용할 수 있게 하며, 이 로직은 `toTimeWithFixedDate`처럼 동작합니다."}]}]} />
 
 활성화하면 기존 `toTime` 함수를 사용할 수 있습니다. 이 함수는 시간을 유지하면서 시간이 포함된 날짜 값을 특정 고정 날짜로 변환합니다.
 활성화하지 않으면 서로 다른 유형의 데이터를 `Time` 유형으로 변환하는 새로운 `toTime` 함수를 사용합니다.
@@ -15374,11 +15483,11 @@ FINAL 수정자와 함께 쿼리를 실행할 때 스킵 인덱스를 사용할�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "텍스트 인덱스가 이제 일반 제공됩니다"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "1"},{"label": "기본적으로 활성화"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "텍스트 인덱스가 이제 일반 제공됩니다"}]}, {"id": "row-2","items": [{"label": "26.1"},{"label": "0"},{"label": "기본적으로 활성화"}]}, {"id": "row-3","items": [{"label": "25.9"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
 데이터를 읽는 동안 데이터 스키핑 인덱스 사용을 활성화합니다.
 
-활성화하면 쿼리 실행이 시작되기 전에 미리 분석하는 대신, 각 데이터 granule을 읽는 시점에 스킵 인덱스를 동적으로 평가합니다. 이렇게 하면 쿼리 시작 지연 시간을 줄일 수 있습니다.
+활성화하면 쿼리 실행이 시작되기 전에 미리 분석하는 대신, 각 데이터 그래뉼을 읽는 시점에 스킵 인덱스를 동적으로 평가합니다. 이렇게 하면 쿼리 시작 지연 시간을 줄일 수 있습니다.
 
 가능한 값:
 
@@ -15462,12 +15571,12 @@ FINAL 수정자와 함께 쿼리를 실행할 때 스킵 인덱스를 사용할�
   ## use_text_index_header_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "텍스트 인덱스 header cache를 전역적으로 활성화했습니다."}]}, {"id": "row-2","items": [{"label": "25.11"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-역직렬화된 text index header 캐시를 사용할지 여부입니다.
-text index header cache를 사용하면 많은 수의 text index 쿼리를 처리할 때 지연 시간을 크게 줄이고 처리량을 높일 수 있습니다.
+역직렬화된 텍스트 인덱스 header를 메모리에 캐시할지 여부입니다.
+텍스트 인덱스 header cache를 사용하면 많은 수의 텍스트 인덱스 쿼리를 처리할 때 지연 시간을 크게 줄이고 처리량을 높일 수 있습니다.
 
 <div id="use_text_index_like_evaluation_by_dictionary_scan">
   ## use_text_index_like_evaluation_by_dictionary_scan
@@ -15487,19 +15596,19 @@ text index header cache를 사용하면 많은 수의 text index 쿼리를 처�
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.11"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-역직렬화된 텍스트 인덱스 포스팅 리스트 캐시 사용 여부입니다.
+역직렬화된 텍스트 인덱스 포스팅 리스트를 메모리에 캐시할지 여부입니다.
 텍스트 인덱스 포스팅 캐시를 사용하면 다수의 텍스트 인덱스 쿼리를 처리할 때 지연 시간을 크게 줄이고 처리량을 높일 수 있습니다.
 
 <div id="use_text_index_tokens_cache">
   ## use_text_index_tokens_cache
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "텍스트 인덱스 tokens cache를 전역으로 활성화했습니다."}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "새로운 설정"}]}]} />
 
-역직렬화된 text index token info 캐시를 사용할지 여부입니다.
-text index tokens cache를 사용하면 다수의 text index 쿼리를 처리할 때 지연 시간을 크게 줄이고 처리량을 높일 수 있습니다.
+역직렬화된 텍스트 인덱스 token info를 메모리에 캐시할지 여부입니다.
+텍스트 인덱스 tokens cache를 사용하면 다수의 텍스트 인덱스 쿼리를 처리할 때 지연 시간을 크게 줄이고 처리량을 높일 수 있습니다.
 
 <div id="use_top_k_dynamic_filtering">
   ## use_top_k_dynamic_filtering

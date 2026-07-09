@@ -263,9 +263,9 @@ SELECT byteSwap(123294967295)
 두 값 `a`와 `b`의 몫을 계산합니다. 결과 타입은 항상 [Float64](/ko/reference/data-types/float)입니다.
 정수 나눗셈에는 `intDiv` 함수를 사용합니다.
 
-<Note>
-  `0`으로 나누면 `inf`, `-inf` 또는 `nan`이 반환됩니다.
-</Note>
+:::note
+`0`으로 나누면 `inf`, `-inf` 또는 `nan`이 반환됩니다.
+:::
 
 **구문**
 
@@ -312,10 +312,10 @@ inf
 두 개의 Decimal 값에 대해 나눗셈을 수행합니다. 결과 값은 [Decimal256](/ko/reference/data-types/decimal) 타입입니다.
 결과 스케일은 `result_scale` 인수(const Integer, 범위 `[0, 76]`)로 명시적으로 지정할 수 있습니다. 지정하지 않으면 결과 스케일은 주어진 인수 중 최댓값이 됩니다.
 
-<Note>
-  이 함수는 일반적인 `divide`보다 훨씬 느리게 동작합니다.
-  정밀도를 제어할 필요가 없거나 빠른 계산이 필요하다면 [divide](#divide) 사용을 고려하십시오.
-</Note>
+:::note
+이 함수는 일반적인 `divide`보다 훨씬 느리게 동작합니다.
+정밀도를 제어할 필요가 없거나 빠른 계산이 필요하다면 [divide](#divide) 사용을 고려하십시오.
+:::
 
 **구문**
 
@@ -1046,7 +1046,8 @@ SELECT moduloLegacy(10, 3)
 
 도입 버전: v25.5.0
 
-`a`를 `b`로 나눌 때의 나머지를 계산합니다. 함수 `modulo`와 유사하지만, `moduloOrNull`은 오른쪽 인수가 0이면 NULL을 반환합니다.
+`a`를 `b`로 나눌 때의 나머지를 계산합니다. 함수 `modulo`와 유사하지만, `moduloOrNull`은 연산 시 부동소수점 예외가 발생하는 경우 `NULL`을 반환합니다.
+부동소수점 인수의 경우 이는 제수가 `0`일 때만 발생합니다. 정수 인수의 경우에는 최소 음수 값을 `-1`로 나눈 나머지까지 추가로 포함합니다(예: `Int8`의 `-128 % -1`).
 
 **구문**
 
@@ -1063,7 +1064,8 @@ moduloOrNull(x, y)
 
 **반환 값**
 
-`x`를 `y`로 나눈 나머지를 반환합니다. 제수가 0이면 null을 반환합니다.
+연산으로 인해 부동소수점 예외가 발생하는 경우 `NULL`을 반환하고, 그렇지 않으면 `x`를 `y`로 나눈 나머지를 반환합니다.
+즉, 제수가 0이거나, 정수 인수의 경우 최소 음수 값을 `-1`로 modulo 연산할 때입니다.
 
 **예시**
 
@@ -1071,6 +1073,16 @@ moduloOrNull(x, y)
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**최소 음수 정수를 -1로 나눌 때의 moduloOrNull**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1157,10 +1169,10 @@ SELECT multiply(5,5)
 두 개의 decimal 값에 대해 곱셈을 수행합니다. 결과 값의 유형은 [Decimal256](/ko/reference/data-types/decimal)입니다.
 결과 스케일은 `result_scale` 인수(범위 `[0, 76]`의 상수 Integer)로 명시적으로 지정할 수 있습니다. 지정하지 않으면 결과 스케일은 주어진 인수 중 최대 스케일이 됩니다.
 
-<Note>
-  이 함수들은 일반적인 `multiply`보다 훨씬 느리게 동작합니다.
-  정밀도를 제어할 필요가 없거나 빠른 계산이 필요하다면 [multiply](#multiply) 사용을 고려하십시오.
-</Note>
+:::note
+이 함수들은 일반적인 `multiply`보다 훨씬 느리게 동작합니다.
+정밀도를 제어할 필요가 없거나 빠른 계산이 필요하다면 [multiply](#multiply) 사용을 고려하십시오.
+:::
 
 **구문**
 
@@ -1365,7 +1377,8 @@ SELECT positiveModulo(-1, 10)
 
 도입 버전: v25.5.0
 
-`a`를 `b`로 나눌 때의 나머지를 계산합니다. 함수 `positiveModulo`와 유사하지만, `positiveModuloOrNull`은 오른쪽 인수가 0이면 NULL을 반환합니다.
+`a`를 `b`로 나눌 때의 나머지를 계산합니다. 함수 `positiveModulo`와 유사하지만, `positiveModuloOrNull`은 연산 시 부동소수점 예외가 발생하는 경우 `NULL`을 반환합니다.
+부동소수점 인수에서는 제수가 `0`일 때만 이런 일이 발생합니다. 정수 인수에서는 여기에 더해 최소 음수 값을 `-1`로 나눈 modulo도 포함됩니다(예: `Int8`의 `-128 % -1`).
 
 **구문**
 
@@ -1381,14 +1394,24 @@ positiveModuloOrNull(x, y)
 
 **반환 값**
 
-`x`에서 `y`로 나누어떨어지는 `x` 이하의 가장 큰 정수를 뺀 값을 반환합니다. 제수가 0이면 `null`을 반환합니다.
+`x`에서 `y`로 나누어떨어지는 `x` 이하의 가장 큰 정수를 뺀 값을 반환합니다. 또는 연산 중 부동소수점 예외가 발생하는 경우 `NULL`을 반환합니다. 즉, 제수가 0이거나, 정수 인수의 경우 최소 음수 값을 `-1`로 modulo 연산할 때입니다.
 
 **예시**
 
-**positiveModuloOrNull**
+**0으로 나누는 positiveModuloOrNull**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**최소 음의 정수를 -1로 나눌 때의 positiveModuloOrNull**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response

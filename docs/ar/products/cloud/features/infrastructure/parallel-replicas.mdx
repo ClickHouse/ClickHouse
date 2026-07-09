@@ -174,8 +174,8 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 
 <ol className="docs-ordered-list">
   <li>
-    يُرسَل الاستعلام من العميل إلى إحدى العُقد بعد مروره عبر
-    موازن التحميل. وتصبح هذه العقدة المنسّق لهذا الاستعلام.
+    يُرسَل الاستعلام من العميل إلى إحدى العُقد بعد مروره عبر موازن
+    التحميل. وتصبح هذه العقدة المنسّق لهذا الاستعلام.
   </li>
 
   <li>
@@ -508,7 +508,7 @@ WHERE type='type3'
 GROUP BY toYear(timestamp) LIMIT 10
 ```
 
-لنلقِ نظرة على مسار تنفيذ الاستعلام بدون استخدام parallel replica:
+لنلقِ نظرة على مسار تنفيذ الاستعلام بدون استخدام النسخة المتماثلة المتوازية:
 
 ```sql title="EXPLAIN PIPELINE (without parallel replica)"
 EXPLAIN PIPELINE graph = 1, compact = 0 
@@ -521,7 +521,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN بدون parallel_replica" />
+<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN بدون النسخة_المتماثلة_المتوازية" />
 
 والآن مع النسخ المتماثلة المتوازية:
 
@@ -536,4 +536,4 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN باستخدام parallel_replica" />
+<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN باستخدام النسخة_المتماثلة_المتوازية" />

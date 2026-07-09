@@ -281,6 +281,6 @@ SELECT count() FROM cloudflare_http_logs;
   ## 本番環境への移行
 </div>
 
-このガイドでは、公開されているデモデータセットを使用して Cloudflare ログを取り込む方法を説明します。本番環境では、Cloudflare Logpush がご自身の S3 バケットに書き込むように設定し、安全にアクセスできるよう [IAM ロールベースの認証](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を使用して ClickPipes を設定してください。ストレージコストとインジェスト量を抑えるため、必要な [Logpush フィールド](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) のみを選択してください。ファイルを整理しやすくするために Logpush で日次サブフォルダを有効にし、ClickPipes のパスパターンでは `**/*` を使用してサブディレクトリをまたいで一致させます。
+このガイドでは、公開デモデータセットを使用して Cloudflare ログを取り込む方法を紹介します。本番環境にデプロイする場合は、Cloudflare Logpush が独自の S3 バケットに書き込むよう設定し、安全にアクセスするために [IAM ロールベース認証](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) を使用して ClickPipes を構成してください。ストレージコストとインジェスト量を抑えるため、必要な [Logpush フィールド](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) のみを選択してください。ファイル整理をしやすくするために Logpush で日次サブフォルダを有効にし、サブディレクトリ配下のファイルにも一致させるため、ClickPipes のパスパターンで `**/*` を使用してください。
 
 バックフィルや順不同のファイルに対応する [SQS ベースの順不同インジェスト](/ja/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) を含む高度な設定オプションについては、[S3 ClickPipes ドキュメント](/ja/integrations/clickpipes/object-storage/amazon-s3/overview) を参照してください。

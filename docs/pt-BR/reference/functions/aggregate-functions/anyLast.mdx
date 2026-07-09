@@ -15,13 +15,13 @@ Introduzido na versão: v1.1.0
 
 Seleciona o último valor encontrado em uma coluna.
 
-<Warning>
-  Como uma consulta pode ser executada em ordem arbitrária, o resultado desta função é não determinístico.
-  Se você precisar de um resultado arbitrário, mas determinístico, use as funções [min](/pt-BR/reference/functions/aggregate-functions/min) ou [max](/pt-BR/reference/functions/aggregate-functions/max).
-</Warning>
+:::warning
+Como uma consulta pode ser executada em ordem arbitrária, o resultado desta função é não determinístico.
+Se você precisar de um resultado arbitrário, mas determinístico, use as funções [min](/pt-BR/reference/functions/aggregate-functions/min) ou [max](/pt-BR/reference/functions/aggregate-functions/max).
+:::
 
 Por padrão, a função nunca retorna NULL, ou seja, ignora valores NULL na coluna de entrada.
-No entanto, se a função for usada com o modificador `RESPECT NULLS`, ela retornará o último valor lido, independentemente de ser NULL ou não.
+No entanto, se a função for usada com o modificador `RESPECT NULLS`, ela retorna o último valor lido, independentemente de ser NULL ou não.
 
 **Sintaxe**
 

@@ -49,19 +49,19 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     `postgresql.conf`에 다음 설정을 추가하거나 수정하십시오:
 
     ```conf
-    # CSV 로깅에 필요한 설정
+    # Required for CSV logging
     logging_collector = on
     log_destination = 'csvlog'
 
-    # 권장: 연결 로깅
+    # Recommended: Connection logging
     log_connections = on
     log_disconnections = on
 
-    # 선택 사항: 모니터링 요구 사항에 따라 조정
-    #log_min_duration_statement = 1000  # 1초 이상 소요되는 쿼리 로깅
-    #log_statement = 'ddl'               # DDL SQL 문 로깅 (CREATE, ALTER, DROP)
-    #log_checkpoints = on                # 체크포인트 활동 로깅
-    #log_lock_waits = on                 # 잠금 경합 로깅
+    # Optional: Tune based on your monitoring needs
+    #log_min_duration_statement = 1000  # Log queries taking more than 1 second
+    #log_statement = 'ddl'               # Log DDL statements (CREATE, ALTER, DROP)
+    #log_checkpoints = on                # Log checkpoint activity
+    #log_lock_waits = on                 # Log lock contention
     ```
 
     <Note>
@@ -71,17 +71,17 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     이렇게 변경한 후 PostgreSQL을 다시 시작하십시오:
 
     ```bash
-    # systemd의 경우
+    # For systemd
     sudo systemctl restart postgresql
 
-    # Docker의 경우
+    # For Docker
     docker restart 
     ```
 
     로그가 기록되고 있는지 확인하세요:
 
     ```bash
-    # Linux 기본 로그 위치
+    # Default log location on Linux
     tail -f /var/lib/postgresql/{version}/main/log/postgresql-*.log
 
     # macOS Homebrew
@@ -100,7 +100,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     receivers:
       filelog/postgres:
         include:
-          - /var/lib/postgresql/*/main/log/postgresql-*.csv # PostgreSQL 설치 경로에 맞게 수정하세요
+          - /var/lib/postgresql/*/main/log/postgresql-*.csv # Adjust to match your PostgreSQL installation
         start_at: end
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
@@ -169,14 +169,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 기존 구성 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 기타 환경 변수 ...
+          # ... other environment variables ...
         volumes:
           - ./postgres-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/lib/postgresql:/var/lib/postgresql:ro
-          # ... 기타 볼륨 ...
+          # ... other volumes ...
     ```
 
     ##### 옵션 2: Docker Run (올인원 이미지)
@@ -214,7 +214,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="demo-dataset">
-  ## 데모 데이터세트
+  ## 데모 데이터셋
 </div>
 
 프로덕션 시스템을 구성하기 전에 PostgreSQL 로그 통합을 테스트하려는 사용자를 위해, 실제 패턴과 유사하게 미리 생성된 PostgreSQL 로그 샘플 데이터셋을 제공합니다.
@@ -345,7 +345,7 @@ ClickStack으로 PostgreSQL 로그 모니터링을 시작할 수 있도록, Post
     <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="로그 대시보드" />
 
     <Note>
-      데모 데이터세트의 경우 시간 범위를 **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되지 않습니다.
+      데모 데이터셋의 경우 시간 범위를 **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되지 않습니다.
     </Note>
   </Step>
 </Steps>
@@ -405,4 +405,4 @@ docker exec <container> cat /tmp/postgres-demo/postgresql.log | wc -l
   ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드는 빠른 설정을 위해 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장해 사용합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+이 가이드는 빠르게 설정할 수 있도록 ClickStack에 내장된 OpenTelemetry Collector를 확장합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션용 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

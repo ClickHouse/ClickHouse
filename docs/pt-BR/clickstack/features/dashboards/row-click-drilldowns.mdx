@@ -28,7 +28,7 @@ Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot
   <Step>
     ### Crie o dashboard de detalhes
 
-    Crie um dashboard chamado `Service Detail` e adicione um [filtro personalizado](/pt-BR/clickstack/features/dashboards/overview#custom-filters) com a expressão `ServiceName` na sua source de traces. O filtro no nível do dashboard redefine o escopo de cada tile para um único serviço, para que os próprios tiles não fixem um serviço nas consultas. Adicione as visualizações por serviço que você quiser: indicadores RED principais (requisições, erros, duração P95), um gráfico de percentis de latência (P50, P95, P99), taxa de requisições ao longo do tempo e um detalhamento por endpoint agrupado por `SpanName`.
+    Crie um dashboard chamado `Service Detail` e adicione um [filtro personalizado](/pt-BR/clickstack/features/dashboards/overview#custom-filters) com a expressão `ServiceName` na sua fonte de traces. O filtro no nível do dashboard redefine o escopo de cada tile para um único serviço, para que os próprios tiles não fixem um serviço nas consultas. Adicione as visualizações por serviço que você quiser: indicadores RED principais (requisições, erros, duração P95), um gráfico de percentis de latência (P50, P95, P99), taxa de requisições ao longo do tempo e um detalhamento por endpoint agrupado por `SpanName`.
 
     Salve esse dashboard primeiro para poder selecioná-lo como destino na próxima etapa.
   </Step>
@@ -36,7 +36,7 @@ Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot
   <Step>
     ### Crie o inventário de serviços
 
-    Em um dashboard de visão geral, adicione um tile de **Table** na sua source de traces agrupado por `ServiceName`. Dê a ele as colunas RED que avaliam cada serviço, cada uma como uma série com alias:
+    Em um dashboard de visão geral, adicione um tile de **Table** na sua fonte de traces agrupado por `ServiceName`. Dê a ele as colunas RED que avaliam cada serviço, cada uma como uma série com alias:
 
     * `Requests`: contagem de spans (taxa).
     * `Errors`: contagem de spans com status de erro.
@@ -69,7 +69,7 @@ Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot
   <Step>
     ### Clique em uma linha
 
-    Ao passar o mouse sobre uma linha, aparece um link na borda direita da tabela, com uma dica descrevendo a ação (`Open dashboard "Service Detail"`). Clicar na linha abre o dashboard `Service Detail` com o filtro `Service` definido com o valor clicado, para que cada tile (os indicadores RED principais, os percentis de latência, o detalhamento por endpoint) seja reescopado para aquele único serviço com um único clique.
+    Ao passar o mouse sobre uma linha, aparece um link na borda direita da tabela, com uma dica descrevendo a ação (`Open dashboard \"Service Detail\"`). Clicar na linha abre o dashboard `Service Detail` com o filtro `Service` definido com o valor clicado, para que cada tile (os indicadores RED principais, os percentis de latência, o detalhamento por endpoint) seja reescopado para aquele único serviço com um único clique.
 
     <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Dashboard Service Detail após um clique em uma linha, com o filtro Service definido para o serviço clicado e os indicadores RED principais, percentis de latência e detalhamento por endpoint todos restritos a ele" size="lg" />
   </Step>
@@ -98,7 +98,7 @@ Partindo da mesma tabela de inventário de serviços, direcione o clique da linh
   <Step>
     ### Clique em uma linha
 
-    Ao clicar em uma linha de serviço, a página Busca agora é aberta nessa fonte de traces, filtrada por `ServiceName = <service>`, para que você veja os spans apenas desse serviço no mesmo intervalo de tempo.
+    Ao clicar em uma linha de serviço, a página Busca é aberta nessa fonte de traces, filtrada por `ServiceName = <service>`, para que você veja os spans apenas desse serviço no mesmo intervalo de tempo.
 
     <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="Página Busca aberta na fonte de traces após um clique na linha, filtrada para o serviço clicado" size="lg" />
   </Step>

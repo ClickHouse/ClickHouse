@@ -278,9 +278,9 @@ Introduit dans : v1.1.0
 Divise une chaîne, séparée par la chaîne constante spécifiée `separator` composée d&#39;exactement un caractère, en un tableau de sous-chaînes.
 Des sous-chaînes vides peuvent être renvoyées si le séparateur apparaît au début ou à la fin de la chaîne, ou s&#39;il y a plusieurs séparateurs consécutifs.
 
-<Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau résultant lorsque l&#39;argument `max_substrings > 0`.
-</Note>
+:::note
+Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau résultant lorsque l&#39;argument `max_substrings > 0`.
+:::
 
 Des sous-chaînes vides peuvent être renvoyées dans les cas suivants :
 
@@ -302,7 +302,7 @@ splitByChar(separator, s[, max_substrings])
 
 **Valeur renvoyée**
 
-Retourne un tableau des sous-chaînes sélectionnées. [`Array(String)`](/fr/reference/data-types/array)
+Renvoie un tableau des sous-chaînes sélectionnées. [`Array(String)`](/fr/reference/data-types/array)
 
 **Exemples**
 
@@ -326,9 +326,9 @@ Introduit dans : v21.9.0
 
 Découpe une chaîne délimitée par des caractères d’espacement et de ponctuation en un tableau de sous-chaînes.
 
-<Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
-</Note>
+:::note
+Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
+:::
 
 **Syntaxe**
 
@@ -373,9 +373,9 @@ Des sous-chaînes vides peuvent être produites lorsque :
 * plusieurs correspondances non vides avec l’expression régulière se suivent
 * la chaîne d’origine est vide alors que l’expression régulière ne l’est pas.
 
-<Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
-</Note>
+:::note
+Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
+:::
 
 **Syntaxe**
 
@@ -434,9 +434,9 @@ Des sous-chaînes vides peuvent être produites lorsque :
 * Plusieurs séparateurs non vides se suivent
 * La chaîne d’origine `s` est vide alors que le séparateur ne l’est pas
 
-<Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
-</Note>
+:::note
+Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si la chaîne restante est incluse dans le dernier élément du tableau de résultats lorsque l’argument `max_substrings > 0`.
+:::
 
 **Syntaxe**
 
@@ -488,9 +488,9 @@ Introduit dans : v21.9.0
 
 Découpe une chaîne délimitée par des caractères d’espacement en un tableau de sous-chaînes.
 
-<Note>
-  Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau résultant lorsque l’argument `max_substrings > 0`.
-</Note>
+:::note
+Le paramètre [`splitby_max_substrings_includes_remaining_string`](/fr/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (par défaut : `0`) détermine si le reste de la chaîne est inclus dans le dernier élément du tableau résultant lorsque l’argument `max_substrings > 0`.
+:::
 
 **Syntaxe**
 

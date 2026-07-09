@@ -21,10 +21,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Бинарный лог — это набор файлов журналов, содержащих информацию об изменениях данных, внесённых в экземпляр сервера MySQL, а файлы бинарного лога необходимы для репликации. Чтобы настроить хранение бинарных логов в Aurora MySQL, необходимо [включить бинарное логирование](#enable-binlog-logging) и [увеличить интервал хранения binlog](#binlog-retention-interval).
 
 <div id="enable-binlog-logging">
-  ### 1. Включите бинарное логирование через автоматические резервные копии
+  ### 1. Включите бинарное логирование через автоматическое резервное копирование
 </div>
 
-Функция автоматического резервного копирования определяет, включено ли бинарное логирование в MySQL. Автоматическое резервное копирование можно настроить для вашего экземпляра в RDS Console: перейдите в **Modify** &gt; **Additional configuration** &gt; **Backup** и установите флажок **Enable automated backups** (если он ещё не установлен).
+Функция автоматического резервного копирования определяет, включено ли бинарное логирование в MySQL. Автоматическое резервное копирование можно настроить для вашего экземпляра в RDS Console, перейдя в **Modify** &gt; **Additional configuration** &gt; **Backup** и установив флажок **Enable automated backups** (если он ещё не установлен).
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Включение автоматического резервного копирования в Aurora" size="lg" border />
 
@@ -158,4 +158,4 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
   ## Что дальше?
 </div>
 
-Теперь, когда ваш экземпляр Amazon Aurora MySQL настроен для репликации binlog и безопасно подключён к ClickHouse Cloud, вы можете [создать свой первый MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index#create-your-clickpipe). Ответы на распространённые вопросы о CDC в MySQL см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
+Теперь, когда ваш экземпляр Amazon Aurora MySQL настроен для репликации через binlog и безопасно подключён к ClickHouse Cloud, вы можете [создать свой первый MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index#create-your-clickpipe). Ответы на распространённые вопросы по MySQL CDC см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).

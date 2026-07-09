@@ -97,9 +97,9 @@ ClickHouse Cloud のデータベースユーザーに SSH 認証を設定する�
 
 SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用して、サービスおよびデータベースで以下を設定します。
 
-| Role  | Description                                              |
-| :---- | :------------------------------------------------------- |
-| デフォルト | サービスに対する完全な管理アクセス                                        |
+| Role  | Description                                                 |
+| :---- | :---------------------------------------------------------- |
+| デフォルト | サービスに対する完全な管理アクセス                                           |
 | カスタム  | SQLの[`GRANT`](/ja/reference/statements/grant)ステートメントを使用して設定 |
 
 * データベースロールは加算的です。つまり、ユーザーが2つのロールのメンバーである場合、そのユーザーにはその2つのロールのうち、より広いアクセス権が適用されます。ロールを追加してもアクセス権が失われることはありません。
@@ -182,7 +182,7 @@ SQLの[GRANT](/ja/reference/statements/grant)ステートメントを使用し�
 </Steps>
 
 <div id="warehouse-users">
-  ## ウェアハウスユーザー
+  ## Warehouse ユーザー
 </div>
 
-ウェアハウスユーザーは、同じウェアハウス内の各サービス間で共有されます。詳細については、[ウェアハウスのアクセス制御](/ja/products/cloud/features/infrastructure/warehouses#access-controls)を参照してください。
+Warehouse ユーザーは、同じ Warehouse 内のサービス間で共有されます。詳しくは、[Warehouse のアクセス制御](/ja/products/cloud/features/infrastructure/warehouses#access-controls)を参照してください。

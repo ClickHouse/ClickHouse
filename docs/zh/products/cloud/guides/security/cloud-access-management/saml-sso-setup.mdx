@@ -87,7 +87,7 @@ ClickHouse Cloud 支持通过安全断言标记语言 (SAML) 进行单点登录 
     在您的 DNS 提供商处创建一条 TXT 记录。将 `TXT record name` 复制到 DNS 提供商的 TXT 记录 Name 字段中。将 `Value` 复制到 DNS 提供商的 Content 字段中。点击 `Verify and Finish` 完成该过程。
 
     <Note>
-      DNS 记录更新并完成验证可能需要几分钟。您可以先离开设置页面，稍后再回来继续完成该过程，无需重新开始。
+      DNS 记录更新并完成验证可能需要几分钟。您可以先离开设置页面，稍后再回来继续完成该过程，无需重新开始。该验证值自首次生成起 48 小时内有效。
     </Note>
 
     <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="验证您的域名" force />
@@ -285,7 +285,7 @@ Azure (Microsoft) SAML 也称为 Azure Active Directory (AD) 或 Microsoft Entra
 
      | Field                                      | Value                                                           |
      | ------------------------------------------ | --------------------------------------------------------------- |
-     | Identifier (Entity ID)                     | 从控制台复制 Service Provider Entity ID                                           |
+     | Identifier (Entity ID)                     | 从控制台复制 Service Provider Entity ID                               |
      | Reply URL (Assertion Consumer Service URL) | 从控制台复制 Single Sign-On URL                                       |
      | Sign on URL                                | `https://console.clickhouse.cloud/?connection={organizationid}` |
      | Relay State                                | 留空                                                              |

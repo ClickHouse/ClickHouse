@@ -55,13 +55,13 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
     curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v2.22.0/opentelemetry-javaagent.jar
     ```
 
-    Isso baixa o agent para o diretório atual. Você pode colocá-lo onde fizer mais sentido para sua implantação (por exemplo, `/opt/opentelemetry/` ou ao lado do JAR da sua aplicação).
+    Isso baixa o agente para o diretório atual. Você pode colocá-lo onde fizer mais sentido para sua implantação (por exemplo, `/opt/opentelemetry/` ou ao lado do JAR da sua aplicação).
   </Step>
 
   <Step>
     #### Configure os argumentos de inicialização da JVM
 
-    Adicione o Java agent ao comando de inicialização da JVM. O agent coleta automaticamente métricas da JVM e as envia ao ClickStack.
+    Adicione o Java agent ao comando de inicialização da JVM. O agente coleta automaticamente métricas da JVM e as envia ao ClickStack.
 
     ##### Opção 1: Flags de linha de comando
 
@@ -79,7 +79,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
 
     **Substitua o seguinte:**
 
-    * `opentelemetry-javaagent.jar` → Caminho completo para o JAR do agent (por exemplo, `/opt/opentelemetry/opentelemetry-javaagent.jar`)
+    * `opentelemetry-javaagent.jar` → Caminho completo para o JAR do agente (por exemplo, `/opt/opentelemetry/opentelemetry-javaagent.jar`)
     * `my-java-app` → Um nome descritivo para o seu serviço (por exemplo, `payment-service`, `user-api`)
     * `YOUR_API_KEY` → Sua API key do ClickStack obtida na etapa anterior
     * `my-application.jar` → Nome do arquivo JAR da sua aplicação
@@ -104,7 +104,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
 
     **Substitua o seguinte:**
 
-    * `opentelemetry-javaagent.jar` → Caminho completo para o JAR do agent
+    * `opentelemetry-javaagent.jar` → Caminho completo para o JAR do agente
     * `my-java-app` → Nome do seu serviço
     * `YOUR_API_KEY` → Sua API key do ClickStack
     * `http://localhost:4318` → Endpoint do seu ClickStack
@@ -124,7 +124,7 @@ Se quiser testar a integração antes de configurar seu ambiente de produção, 
   <Step>
     #### Verifique as métricas no HyperDX
 
-    Depois que sua aplicação estiver em execução com o agent, verifique se as métricas estão chegando ao ClickStack:
+    Depois que sua aplicação estiver em execução com o agente, verifique se as métricas estão chegando ao ClickStack:
 
     1. Abra o HyperDX em http://localhost:8080 (ou na URL do seu ClickStack)
     2. Acesse **Chart Explorer**
@@ -311,9 +311,9 @@ Verifique se você está usando a versão estável mais recente do agente (atual
 * Explore [outras integrações do ClickStack](/pt-BR/clickstack/integration-examples/index) para unificar seus dados de observabilidade
 
 <div id="going-to-production">
-  ## Colocando em produção
+  ## Indo para produção
 </div>
 
-Este guia demonstra como configurar o agente Java do OpenTelemetry para testes locais. Para implantações em produção, inclua o JAR do agente nas imagens de contêiner e faça a configuração por meio de variáveis de ambiente para facilitar o gerenciamento. Em ambientes maiores, com muitas instâncias de JVM, implante um OpenTelemetry Collector centralizado para agrupar em lotes e encaminhar métricas de vários aplicativos, em vez de enviá-las diretamente ao ClickStack.
+Este guia demonstra como configurar o agente Java do OpenTelemetry para testes locais. Para implantações em produção, inclua o JAR do agente nas imagens de contêiner e configure-o por meio de variáveis de ambiente para facilitar o gerenciamento. Para ambientes maiores com muitas instâncias de JVM, implante um OpenTelemetry Collector centralizado para agrupar em lotes e encaminhar métricas de várias aplicações, em vez de enviá-las diretamente ao ClickStack.
 
 Consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para ver padrões de implantação em produção e exemplos de configuração do coletor.

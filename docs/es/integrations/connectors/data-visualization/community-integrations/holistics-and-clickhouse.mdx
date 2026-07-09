@@ -33,10 +33,10 @@ Antes de conectarte, asegúrate de tener lo siguiente:
 El usuario dedicado necesita privilegios `SELECT` sobre las tablas que quiera consultar, así como sobre las tablas `system` (para detectar el esquema).
 
 ```sql
--- Ejemplo: Otorgar acceso de lectura a una base de datos específica
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- Otorgar acceso a los metadatos del sistema
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 

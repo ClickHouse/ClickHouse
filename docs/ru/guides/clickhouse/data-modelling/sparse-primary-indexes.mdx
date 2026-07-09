@@ -311,7 +311,7 @@ bytes_on_disk:               207.07 MiB
   ClickHouse позволяет вставлять несколько строк с одинаковыми значениями в столбцах первичного ключа. В этом случае (см. строку 1 и строку 2 на диаграмме ниже) итоговый порядок определяется указанным ключом сортировки и, следовательно, значением столбца `EventTime`.
 </Note>
 
-ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-column-oriented-dbms" target="_blank">столбцовая система управления базами данных</a>. Как показано на диаграмме ниже,
+ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-column-oriented-database-management-system" target="_blank">столбцовая система управления базами данных</a>. Как показано на диаграмме ниже,
 
 * в представлении на диске для каждого столбца таблицы существует отдельный файл данных (*.bin), в котором все значения этого столбца хранятся в <a href="/ru/get-started/about/distinctive-features#data-compression" target="_blank">сжатом</a> формате, и
 * 8,87 миллиона строк хранятся на диске в лексикографическом порядке по возрастанию по столбцам первичного ключа (и дополнительным столбцам ключа сортировки), то есть в данном случае
@@ -429,7 +429,7 @@ ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-c
       возвращает
 
       `240923, http://showtopics.html%3...<br/>
-                  4073710, http://mk.ru&pos=3_0`
+                        4073710, http://mk.ru&pos=3_0`
 
       <li>Получить последнюю метку индекса</li>
       `SELECT UserID, URL FROM file('primary-hits_UserID_URL.idx', 'RowBinary', 'UserID UInt32, URL String')<br/>LIMIT 1082, 1;`

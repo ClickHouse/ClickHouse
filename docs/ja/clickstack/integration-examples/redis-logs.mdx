@@ -50,20 +50,20 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     Redis が stdout にログを出力している場合は、`redis.conf` を更新してファイルに書き込むように設定します:
 
     ```bash
-    # stdoutの代わりにファイルへログを出力する
+    # Log to file instead of stdout
     logfile /var/log/redis/redis-server.log
 
-    # ログレベルを設定する（オプション: debug, verbose, notice, warning）
+    # Set log level (options: debug, verbose, notice, warning)
     loglevel notice
     ```
 
     設定を変更したら、Redis を再起動します。
 
     ```bash
-    # systemdの場合
+    # For systemd
     sudo systemctl restart redis
 
-    # Dockerの場合
+    # For Docker
     docker restart <redis-container>
     ```
   </Step>
@@ -142,14 +142,14 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 既存の設定 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... その他の環境変数 ...
+          # ... other environment variables ...
         volumes:
           - ./redis-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/redis:/var/log/redis:ro
-          # ... その他のボリューム ...
+          # ... other volumes ...
     ```
 
     ##### オプション 2: Docker Run (オールインワン イメージ)
@@ -420,4 +420,4 @@ Redis ログのフォーマットが異なる場合は、`regex_parser` オペ�
   ## 本番環境への移行
 </div>
 
-このガイドでは、迅速にセットアップできるよう、ClickStack に組み込まれている OpenTelemetry Collector を使用します。本番環境でのデプロイには、独自の OTel Collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。
+このガイドでは、ClickStack に組み込まれた OpenTelemetry Collector を使って、すばやくセットアップできるようにしています。本番環境へのデプロイでは、ご自身で OTel Collector を運用し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry)を参照してください。

@@ -16,9 +16,9 @@ import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-s
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
 
-    {props.provider === 's3' && <S3DataSource />}
+    {props.provider === "s3" && <S3DataSource />}
 
-    {props.provider === 'gcs' && <GCSSDataSource />}
+    {props.provider === "gcs" && <GCSSDataSource />}
   </Step>
 
   <Step>
@@ -26,9 +26,9 @@ import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-s
 
     **1.** Para configurar un nuevo ClickPipe, debe indicar cómo conectarse a su servicio de almacenamiento de objetos y autenticarse en él.
 
-    {props.provider === 's3' && <S3Connection />}
+    {props.provider === "s3" && <S3Connection />}
 
-    {props.provider === 'gcs' && <GCSConnection />}
+    {props.provider === "gcs" && <GCSConnection />}
 
     **2.** Haga clic en **Incoming data**. ClickPipes obtendrá los metadatos de su bucket para el siguiente paso.
   </Step>
@@ -62,7 +62,7 @@ import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-s
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Usar una tabla existente" size="lg" border />
 
     <Info>
-      También puede asignar [columnas virtuales](/es/reference/functions/table-functions/s3#virtual-columns), como `_path` o `_size`, a campos.
+      Puede también asignar [columnas virtuales](/es/reference/functions/table-functions/s3#virtual-columns), como `_path` o `_size`, a campos.
     </Info>
   </Step>
 
@@ -73,7 +73,7 @@ import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-s
 
     **Permisos:** ClickPipes creará un usuario dedicado para escribir datos en una tabla de destino. Puede seleccionar un rol para este usuario interno usando un rol personalizado o uno de los roles predefinidos:
 
-    * `Full access`: con acceso completo al clúster. Es obligatorio si usa una vista materializada o un Diccionario con la tabla de destino.
+    * `Full access`: con acceso completo al clúster. Es obligatorio si usa una vista materializada o Dictionary con la tabla de destino.
     * `Only destination table`: solo con permisos `INSERT` sobre la tabla de destino.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permisos" size="lg" border />

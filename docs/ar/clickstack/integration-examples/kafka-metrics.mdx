@@ -435,8 +435,8 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يرسل هذا الدليل المقاييس مباشرةً من JMX Metric Gatherer إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهو مناسب للاختبار وعمليات النشر الصغيرة.
+يرسل هذا الدليل المقاييس مباشرةً من JMX Metric Gatherer إلى نقطة نهاية OTLP الخاصة بـ ClickStack، وهو ما يناسب الاختبار وعمليات النشر الصغيرة.
 
-في بيئات الإنتاج، انشر OpenTelemetry Collector الخاص بك كعامل لاستقبال المقاييس من JMX Exporter وتمريرها إلى ClickStack. يوفّر ذلك المعالجة على دفعات، والمرونة، وإدارة التهيئة المركزية.
+بالنسبة إلى بيئات الإنتاج، انشر OpenTelemetry Collector الخاص بك بوصفه agent لتلقّي المقاييس من JMX Exporter وإعادة توجيهها إلى ClickStack. يوفّر ذلك التجميع الدفعي، والمرونة، والإدارة المركزية للتهيئة.
 
-راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة على تهيئة الجامع.
+راجع [إدخال البيانات باستخدام OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على أنماط النشر في بيئة الإنتاج وأمثلة على تهيئة collector.

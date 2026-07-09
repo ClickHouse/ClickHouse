@@ -64,7 +64,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
     <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="Permisos" size="lg" border />
 
-    **3.** Para cada tabla seleccionada, asegúrate de definir una clave de ordenación personalizada en **Advanced settings** &gt; **Use a custom clave de ordenación**. En el futuro, la clave de ordenación se inferirá automáticamente a partir de las claves de clustering o partición existentes en la base de datos de origen.
+    **3.** Para cada tabla seleccionada, asegúrate de definir una clave de ordenación personalizada en **Advanced settings** &gt; **Use a custom sorting key**. En el futuro, la clave de ordenación se inferirá automáticamente a partir de las claves de clustering o partición existentes en la base de datos de origen.
 
     <Warning>
       **Debes** definir una [clave de ordenación](/es/concepts/best-practices/choosing-a-primary-key) para las tablas replicadas con el fin de optimizar el rendimiento de las consultas en ClickHouse. De lo contrario, la clave de ordenación se establecerá como `tuple()`, lo que significa que no se creará ningún índice primario y ClickHouse realizará escaneos completos de la tabla en todas las consultas sobre ella.

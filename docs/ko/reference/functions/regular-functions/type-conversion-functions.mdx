@@ -394,10 +394,10 @@ SELECT accurateCastOrNull('abc', 'UInt32')
 
 지정한 포맷을 사용해 임의의 표현식을 문자열로 변환합니다.
 
-<Note>
-  포맷에 suffix/prefix가 포함되어 있으면 각 행마다 기록됩니다.
-  이 함수는 행 기반 포맷만 지원합니다.
-</Note>
+:::note
+포맷에 suffix/prefix가 포함되어 있으면 각 행마다 기록됩니다.
+이 함수는 행 기반 포맷만 지원합니다.
+:::
 
 **구문**
 
@@ -586,9 +586,9 @@ SELECT fromUnixTimestamp64Milli(1640995200123)
 
 입력 값은 나노초 정밀도의 Unix timestamp(1970-01-01 00:00:00 UTC 이후 경과한 나노초 수)로 간주됩니다.
 
-<Note>
-  입력 값은 입력 값에 지정된 시간대가 아니라 UTC timestamp로 간주된다는 점에 유의하십시오.
-</Note>
+:::note
+입력 값은 입력 값에 지정된 시간대가 아니라 UTC timestamp로 간주된다는 점에 유의하십시오.
+:::
 
 **구문**
 
@@ -2684,9 +2684,9 @@ String 입력값을 BFloat16 유형의 값으로 변환합니다.
 * 2진수 및 16진수 값의 문자열 표현.
 * 숫자 값.
 
-<Note>
-  이 함수는 문자열 표현에서 변환할 때 정밀도가 일부 손실되어도 오류를 발생시키지 않습니다.
-</Note>
+:::note
+이 함수는 문자열 표현에서 변환할 때 정밀도가 일부 손실되어도 오류를 발생시키지 않습니다.
+:::
 
 관련 항목:
 
@@ -2712,9 +2712,9 @@ toBFloat16OrNull(x)
 **사용 예시**
 
 ```sql title=Query
-SELECT toBFloat16OrNull('0x5E'), -- 지원되지 않는 인수
-       toBFloat16OrNull('12.3'), -- 일반적인 사용 예
-       toBFloat16OrNull('12.3456789') -- 정밀도 손실이 발생해도 별도 알림 없음
+SELECT toBFloat16OrNull('0x5E'), -- unsupported arguments
+       toBFloat16OrNull('12.3'), -- typical use
+       toBFloat16OrNull('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -2738,12 +2738,12 @@ String 입력값을 BFloat16 유형의 값으로 변환합니다.
 
 지원되지 않는 인수(`0` 반환):
 
-* binary 및 hexadecimal 값의 문자열 표현.
+* 2진수 및 16진수 값의 문자열 표현.
 * 숫자 값.
 
-<Note>
-  이 함수는 문자열 표현에서 변환하는 과정에서 정밀도가 소리 없이 손실되는 것을 허용합니다.
-</Note>
+:::note
+이 함수는 문자열 표현에서 변환하는 과정에서 정밀도가 일부 손실되어도 오류를 발생시키지 않음을 허용합니다.
+:::
 
 관련 항목:
 
@@ -2769,9 +2769,9 @@ toBFloat16OrZero(x)
 **사용 예시**
 
 ```sql title=Query
-SELECT toBFloat16OrZero('0x5E'), -- 지원되지 않는 인수
-       toBFloat16OrZero('12.3'), -- 일반적인 사용
-       toBFloat16OrZero('12.3456789') -- 정밀도가 조용히 손실됨
+SELECT toBFloat16OrZero('0x5E'), -- unsupported arguments
+       toBFloat16OrZero('12.3'), -- typical use
+       toBFloat16OrZero('12.3456789') -- silent loss of precision
 ```
 
 ```response title=Response
@@ -3193,11 +3193,11 @@ SELECT toDateOrZero('2025-12-30'), toDateOrZero('')
 
 입력 값을 [DateTime](/ko/reference/data-types/datetime) 타입으로 변환합니다.
 
-<Note>
-  `expr`이 숫자이면 Unix epoch 시작 시점부터 경과한 초 수(Unix timestamp)로 해석됩니다.
-  `expr`이 [String](/ko/reference/data-types/string)이면 Unix timestamp로 해석되거나 날짜 또는 날짜/시간의 문자열 표현으로 해석될 수 있습니다.
-  따라서 짧은 숫자 문자열 표현(최대 4자리)은 모호성을 피하기 위해 명시적으로 비활성화되어 있습니다. 예를 들어 문자열 `'1999'`는 연도(Date / DateTime의 불완전한 문자열 표현)일 수도 있고 Unix timestamp일 수도 있습니다. 더 긴 숫자 문자열은 허용됩니다.
-</Note>
+:::note
+`expr`이 숫자이면 Unix epoch 시작 시점부터 경과한 초 수(Unix timestamp)로 해석됩니다.
+`expr`이 [String](/ko/reference/data-types/string)이면 Unix timestamp로 해석되거나 날짜 또는 날짜/시간의 문자열 표현으로 해석될 수 있습니다.
+따라서 짧은 숫자 문자열 표현(최대 4자리)은 모호성 때문에 명시적으로 파싱되지 않도록 되어 있습니다. 예를 들어 문자열 `'1999'`는 연도(Date / DateTime의 불완전한 문자열 표현)일 수도 있고 Unix timestamp일 수도 있습니다. 더 긴 숫자 문자열은 허용됩니다.
+:::
 
 **구문**
 
@@ -3628,19 +3628,19 @@ Introduced in: v18.12.0
 지원되지 않는 인수:
 
 * Float* 값 `NaN` 및 `Inf` 또는 이를 문자열로 표현한 값(대소문자 구분 없음)
-* 이진수 및 16진수 값을 문자열로 표현한 값. 예: `SELECT toDecimal128('0xc0fe', 1);`
+* 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toDecimal128('0xc0fe', 1);`
 
-<Note>
-  `expr`의 값이 `Decimal128`의 범위 `(-1*10^(38 - S), 1*10^(38 - S))`를 초과하면 오버플로우가 발생할 수 있습니다.
-  소수 부분의 초과 자릿수는 버려지며(반올림되지 않음),
-  정수 부분의 초과 자릿수는 예외를 발생시킵니다.
-</Note>
+:::note
+`expr`의 값이 `Decimal128`의 범위 `(-1*10^(38 - S), 1*10^(38 - S))`를 초과하면 오버플로우가 발생할 수 있습니다.
+소수 부분의 초과 자릿수는 버려지며(반올림되지 않음),
+정수 부분의 초과 자릿수는 예외를 발생시킵니다.
+:::
 
-<Warning>
-  변환 시 추가 자릿수는 잘려 나가며, 연산이 부동소수점 명령으로 수행되므로 Float32/Float64 입력을 사용할 때 예상과 다르게 동작할 수 있습니다.
-  예를 들어 `toDecimal128(1.15, 2)`는 `1.14`와 같습니다. 부동소수점에서는 1.15 * 100이 114.99이기 때문입니다.
-  연산에 내부 정수 타입이 사용되도록 String 입력을 사용할 수 있습니다: `toDecimal128('1.15', 2) = 1.15`
-</Warning>
+:::warning
+변환 시 추가 자릿수는 잘려 나가며, 연산이 부동소수점 명령으로 수행되므로 Float32/Float64 입력을 사용할 때 예상과 다르게 동작할 수 있습니다.
+예를 들어 `toDecimal128(1.15, 2)`는 `1.14`와 같습니다. 부동소수점에서는 1.15 * 100이 114.99이기 때문입니다.
+연산에 내부 정수 타입이 사용되도록 String 입력을 사용할 수 있습니다: `toDecimal128('1.15', 2) = 1.15`
+:::
 
 **구문**
 
@@ -3670,7 +3670,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-행 1:
+Row 1:
 ──────
 a:      99
 type_a: Decimal(38, 1)
@@ -3798,11 +3798,11 @@ SELECT toDecimal128OrNull('42.7', 2), toDecimal128OrNull('invalid', 2)
 지원되지 않는 인수(`0` 반환):
 
 * Float* 값 `NaN` 및 `Inf`의 값 또는 문자열 표현(대소문자 구분 없음).
-* binary 및 hexadecimal 값의 문자열 표현.
+* 2진수 및 16진수 값의 문자열 표현.
 
-<Note>
-  입력값이 `Decimal128`의 범위 `(-1*10^(38 - S), 1*10^(38 - S))`를 벗어나면 함수는 `0`을 반환합니다.
-</Note>
+:::note
+입력값이 `Decimal128`의 범위 `(-1*10^(38 - S), 1*10^(38 - S))`를 벗어나면 함수는 `0`을 반환합니다.
+:::
 
 **구문**
 
@@ -3848,20 +3848,20 @@ Introduced in: v20.8.0
 
 지원되지 않는 인수:
 
-* Float* 값 `NaN` 및 `Inf`의 값 또는 문자열 표현(대소문자 구분 없음).
-* binary 및 hexadecimal 값의 문자열 표현. 예: `SELECT toDecimal256('0xc0fe', 1);`.
+* `NaN` 및 `Inf` Float* 값 또는 그 문자열 표현(대소문자 구분 없음).
+* 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toDecimal256('0xc0fe', 1);`.
 
-<Note>
-  `expr`의 값이 `Decimal256`의 범위 `(-1*10^(76 - S), 1*10^(76 - S))`를 초과하면 오버플로우가 발생할 수 있습니다.
-  소수 부분의 초과 자릿수는 버려지며 반올림되지 않습니다.
-  정수 부분의 초과 자릿수는 예외를 발생시킵니다.
-</Note>
+:::note
+`expr`의 값이 `Decimal256`의 범위 `(-1*10^(76 - S), 1*10^(76 - S))`를 초과하면 오버플로우가 발생할 수 있습니다.
+소수 부분의 초과 자릿수는 버려지며 반올림되지 않습니다.
+정수 부분의 초과 자릿수는 예외를 발생시킵니다.
+:::
 
-<Warning>
-  변환 시 추가 자릿수는 버려지며, 연산이 부동소수점 명령으로 수행되므로 Float32/Float64 입력을 사용할 때 예상치 못한 방식으로 동작할 수 있습니다.
-  예를 들어 `toDecimal256(1.15, 2)`는 `1.14`와 같습니다. 이는 부동소수점에서 1.15 * 100이 114.99이기 때문입니다.
-  연산에 내부 정수 타입이 사용되도록 하려면 String 입력을 사용할 수 있습니다: `toDecimal256('1.15', 2) = 1.15`
-</Warning>
+:::warning
+변환 시 추가 자릿수는 버려지며, 연산이 부동소수점 명령을 사용해 수행되므로 Float32/Float64 입력으로 작업할 때 예상치 못한 방식으로 동작할 수 있습니다.
+예를 들어 `toDecimal256(1.15, 2)`는 `1.14`와 같습니다. 이는 부동소수점에서 1.15 * 100이 114.99이기 때문입니다.
+연산에 내부 정수 타입이 사용되도록 하려면 String 타입 입력을 사용할 수 있습니다: `toDecimal256('1.15', 2) = 1.15`
+:::
 
 **구문**
 
@@ -4019,11 +4019,11 @@ SELECT toDecimal256OrNull('42.7', 2), toDecimal256OrNull('invalid', 2)
 지원되지 않는 인수(`0` 반환):
 
 * Float* 값 `NaN` 및 `Inf` 또는 그 문자열 표현(대소문자 구분 없음).
-* binary 및 hexadecimal 값의 문자열 표현.
+* 2진수 및 16진수 값의 문자열 표현.
 
-<Note>
-  입력 값이 `Decimal256`의 범위 `(-1*10^(76 - S), 1*10^(76 - S))`를 벗어나면 함수는 `0`을 반환합니다.
-</Note>
+:::note
+입력 값이 `Decimal256`의 범위 `(-1*10^(76 - S), 1*10^(76 - S))`를 벗어나면 함수는 `0`을 반환합니다.
+:::
 
 관련 항목:
 
@@ -4078,17 +4078,17 @@ SELECT toDecimal256OrZero('42.7', 2), toDecimal256OrZero('invalid', 2)
 * Float* 값 `NaN` 및 `Inf`의 값 또는 문자열 표현(대소문자 구분 없음).
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toDecimal32('0xc0fe', 1);`.
 
-<Note>
-  `expr`의 값이 `Decimal32`의 범위 `(-1*10^(9 - S), 1*10^(9 - S))`를 초과하면 오버플로우가 발생할 수 있습니다.
-  소수 부분의 초과 자릿수는 버려지며(반올림되지 않음),
-  정수 부분의 초과 자릿수는 예외를 발생시킵니다.
-</Note>
+:::note
+`expr`의 값이 `Decimal32`의 범위 `(-1*10^(9 - S), 1*10^(9 - S))`를 초과하면 오버플로우가 발생할 수 있습니다.
+소수 부분의 초과 자릿수는 버려지며(반올림되지 않음),
+정수 부분의 초과 자릿수는 예외를 발생시킵니다.
+:::
 
-<Warning>
-  변환 시 추가 자릿수는 제거되며, 연산이 부동소수점 명령으로 수행되므로 Float32/Float64 입력을 처리할 때 예상과 다르게 동작할 수 있습니다.
-  예를 들어 `toDecimal32(1.15, 2)`는 `1.14`와 같습니다. 부동소수점에서 1.15 * 100은 114.99이기 때문입니다.
-  기본 정수 타입을 사용해 연산하도록 String 입력을 사용할 수 있습니다: `toDecimal32('1.15', 2) = 1.15`
-</Warning>
+:::warning
+변환 시 추가 자릿수는 제거되며, 연산이 부동소수점 명령으로 수행되므로 Float32/Float64 입력을 처리할 때 예상과 다르게 동작할 수 있습니다.
+예를 들어 `toDecimal32(1.15, 2)`는 `1.14`와 같습니다. 부동소수점에서 1.15 * 100은 114.99이기 때문입니다.
+기본 정수 타입을 사용해 연산하도록 String 입력을 사용할 수 있습니다: `toDecimal32('1.15', 2) = 1.15`
+:::
 
 **구문**
 
@@ -4245,12 +4245,12 @@ SELECT toDecimal32OrNull('42.7', 2), toDecimal32OrNull('invalid', 2)
 
 지원되지 않는 인수(`0` 반환):
 
-* Float* 값 `NaN` 및 `Inf`의 값 또는 문자열 표현(case-insensitive)
-* binary 및 hexadecimal 값의 문자열 표현
+* Float* 값 `NaN` 및 `Inf`의 값 또는 문자열 표현(대소문자 구분 없음)
+* 2진수 및 16진수 값의 문자열 표현
 
-<Note>
-  입력 값이 `Decimal32`의 범위 `(-1*10^(9 - S), 1*10^(9 - S))`를 벗어나면 함수는 `0`을 반환합니다.
-</Note>
+:::note
+입력 값이 `Decimal32`의 범위 `(-1*10^(9 - S), 1*10^(9 - S))`를 벗어나면 함수는 `0`을 반환합니다.
+:::
 
 **구문**
 
@@ -4298,19 +4298,19 @@ SELECT toDecimal32OrZero('42.7', 2), toDecimal32OrZero('invalid', 2)
 지원되지 않는 인수:
 
 * Float* 값 `NaN` 및 `Inf`의 값 또는 문자열 표현(대소문자 구분 없음).
-* binary 및 16진수 값의 문자열 표현. 예: `SELECT toDecimal64('0xc0fe', 1);`.
+* 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toDecimal64('0xc0fe', 1);`.
 
-<Note>
-  `expr`의 값이 `Decimal64`의 범위 `(-1*10^(18 - S), 1*10^(18 - S))`를 초과하면 오버플로우가 발생할 수 있습니다.
-  소수부의 초과 자릿수는 버려지며(반올림되지 않음),
-  정수부의 초과 자릿수는 예외를 발생시킵니다.
-</Note>
+:::note
+`expr`의 값이 `Decimal64`의 범위 `(-1*10^(18 - S), 1*10^(18 - S))`를 초과하면 오버플로우가 발생할 수 있습니다.
+소수부의 초과 자릿수는 버려지며(반올림되지 않음).
+정수부의 초과 자릿수는 예외를 발생시킵니다.
+:::
 
-<Warning>
-  변환 시 초과 자릿수는 삭제되며, 연산이 부동소수점 명령으로 수행되므로 Float32/Float64 입력을 처리할 때 예상과 다르게 동작할 수 있습니다.
-  예를 들어 `toDecimal64(1.15, 2)`는 `1.14`와 같습니다. 부동소수점에서 1.15 * 100은 114.99가 되기 때문입니다.
-  연산이 내부 정수 타입을 사용하도록 하려면 String 입력을 사용할 수 있습니다: `toDecimal64('1.15', 2) = 1.15`
-</Warning>
+:::warning
+변환 시 초과 자릿수는 삭제되며, 연산이 부동소수점 명령으로 수행되므로 Float32/Float64 입력을 처리할 때 예상과 다르게 동작할 수 있습니다.
+예를 들어 `toDecimal64(1.15, 2)`는 `1.14`와 같습니다. 부동소수점에서 1.15 * 100은 114.99가 되기 때문입니다.
+연산이 내부 정수 타입을 사용하도록 하려면 String 입력을 사용할 수 있습니다: `toDecimal64('1.15', 2) = 1.15`
+:::
 
 **구문**
 
@@ -4340,7 +4340,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-행 1:
+Row 1:
 ──────
 a:      2.0
 type_a: Decimal(18, 1)
@@ -4470,9 +4470,9 @@ SELECT toDecimal64OrNull('42.7', 2), toDecimal64OrNull('invalid', 2)
 * Float* 타입 값 `NaN` 및 `Inf` 또는 해당 값의 문자열 표현(대소문자 구분 없음).
 * 2진수 및 16진수 값의 문자열 표현.
 
-<Note>
-  입력 값이 `Decimal64`의 범위 `(-1*10^(18 - S), 1*10^(18 - S))`를 초과하면 함수는 `0`을 반환합니다.
-</Note>
+:::note
+입력 값이 `Decimal64`의 범위 `(-1*10^(18 - S), 1*10^(18 - S))`를 초과하면 함수는 `0`을 반환합니다.
+:::
 
 관련 항목:
 
@@ -5062,10 +5062,10 @@ toFloat64OrZero('abc'):  0
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toInt128('0xc0fe');`.
 
-<Note>
-  입력 값을 Int128 범위 내에서 표현할 수 없으면 결과가 오버플로우 또는 언더플로우될 수 있습니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 Int128 범위 내에서 표현할 수 없으면 결과가 오버플로우 또는 언더플로우될 수 있습니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -5170,10 +5170,10 @@ SELECT toInt128OrDefault('abc', CAST('-1', 'Int128'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toInt128OrNull('0xc0fe');`).
 
-<Note>
-  입력값을 [Int128](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값을 [Int128](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -5283,15 +5283,15 @@ SELECT toInt128OrZero('abc')
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toInt16('0xc0fe');`.
 
-<Note>
-  입력 값을 [Int16](/ko/reference/data-types/int-uint)의 범위 내로 표현할 수 없으면 결과에서 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-  예: `SELECT toInt16(32768) == -32768;`.
-</Note>
+:::note
+입력 값을 [Int16](/ko/reference/data-types/int-uint)의 범위 내로 표현할 수 없으면 결과에서 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+예: `SELECT toInt16(32768) == -32768;`.
+:::
 
-<Note>
-  이 함수는 [0을 향한 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)을 사용하므로 숫자의 소수 자릿수를 잘라냅니다.
-</Note>
+:::note
+이 함수는 [0을 향한 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)을 사용하므로 숫자의 소수 자릿수를 잘라냅니다.
+:::
 
 관련 항목:
 
@@ -5307,7 +5307,7 @@ toInt16(expr)
 
 **인수**
 
-* `expr` — 숫자 또는 숫자를 문자열로 표현한 값을 반환하는 표현식입니다. [`Expression`](/ko/reference/data-types/special-data-types/expression)
+* `expr` — 숫자 또는 숫자를 문자열로 표현한 값을 반환하는 표현식입니다. [`표현식`](/ko/reference/data-types/special-data-types/expression)
 
 **반환 값**
 
@@ -5396,10 +5396,10 @@ SELECT toInt16OrDefault('abc', CAST('-1', 'Int16'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toInt16OrNull('0xc0fe');`.
 
-<Note>
-  입력값을 [Int16](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에서 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값을 [Int16](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에서 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -5456,10 +5456,10 @@ toInt16OrNull('abc'): \N
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 형식.
 * 2진수 및 16진수 값의 문자열 형식. 예: `SELECT toInt16OrZero('0xc0fe');`.
 
-<Note>
-  입력 값을 [Int16](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [Int16](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -5507,7 +5507,7 @@ toInt16OrZero('abc'): 0
 
 입력 값을 [Int256](/ko/reference/data-types/int-uint) 타입의 값으로 변환합니다.
 오류가 발생한 경우 예외를 발생시킵니다.
-이 함수는 0 방향으로 버림을 수행하므로 숫자의 소수 자릿수를 잘라냅니다.
+이 함수는 0을 향한 반올림을 수행하므로 숫자의 소수 자릿수를 잘라냅니다.
 
 지원되는 인수:
 
@@ -5519,10 +5519,10 @@ toInt16OrZero('abc'): 0
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toInt256('0xc0fe');`).
 
-<Note>
-  입력 값을 Int256 범위 내에 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 Int256 범위 내에 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -5627,10 +5627,10 @@ SELECT toInt256OrDefault('abc', CAST('-1', 'Int256'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toInt256OrNull('0xc0fe');`.
 
-<Note>
-  입력값을 [Int256](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값을 [Int256](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -5664,7 +5664,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-행 1:
+Row 1:
 ──────
 toInt256OrNull('-256'): -256
 toInt256OrNull('abc'):  \N
@@ -5740,15 +5740,15 @@ SELECT toInt256OrZero('abc')
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toInt32('0xc0fe');`).
 
-<Note>
-  입력값을 [Int32](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과는 오버플로우 또는 언더플로우될 수 있습니다.
-  이는 오류로 간주되지 않습니다.
-  예시: `SELECT toInt32(2147483648) == -2147483648;`
-</Note>
+:::note
+입력값을 [Int32](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과는 오버플로우 또는 언더플로우될 수 있습니다.
+이는 오류로 간주되지 않습니다.
+예시: `SELECT toInt32(2147483648) == -2147483648;`
+:::
 
-<Note>
-  이 함수는 [0을 향한 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)를 사용하므로 숫자의 소수 자릿수를 버립니다.
-</Note>
+:::note
+이 함수는 [0을 향한 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)를 사용하므로 숫자의 소수 자릿수를 버립니다.
+:::
 
 관련 항목:
 
@@ -5853,10 +5853,10 @@ SELECT toInt32OrDefault('abc', CAST('-1', 'Int32'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toInt32OrNull('0xc0fe');`).
 
-<Note>
-  입력값을 [Int32](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없는 경우 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값을 [Int32](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없는 경우 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -5890,7 +5890,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-행 1:
+Row 1:
 ──────
 toInt32OrNull('-32'): -32
 toInt32OrNull('abc'): \N
@@ -5913,10 +5913,10 @@ toInt32OrNull('abc'): \N
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toInt32OrZero('0xc0fe');`).
 
-<Note>
-  입력값을 [Int32](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값을 [Int32](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -5975,15 +5975,15 @@ toInt32OrZero('abc'): 0
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toInt64('0xc0fe');`.
 
-<Note>
-  입력 값을 [Int64](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-  예시: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
-</Note>
+:::note
+입력 값을 [Int64](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+예시: `SELECT toInt64(9223372036854775808) == -9223372036854775808;`
+:::
 
-<Note>
-  이 함수는 [0을 향한 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)을 사용하므로 숫자의 소수 자릿수를 잘라냅니다.
-</Note>
+:::note
+이 함수는 [0을 향한 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)을 사용하므로 숫자의 소수 자릿수를 잘라냅니다.
+:::
 
 관련 항목:
 
@@ -6088,10 +6088,10 @@ SELECT toInt64OrDefault('abc', CAST('-1', 'Int64'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toInt64OrNull('0xc0fe');`.
 
-<Note>
-  입력값을 [Int64](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값을 [Int64](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -6201,15 +6201,15 @@ Introduced in: v1.1.0
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toInt8('0xc0fe');`).
 
-<Note>
-  입력값을 [Int8](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-  예시: `SELECT toInt8(128) == -128;`.
-</Note>
+:::note
+입력값을 [Int8](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+예시: `SELECT toInt8(128) == -128;`.
+:::
 
-<Note>
-  이 함수는 [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) 방식을 사용하므로 숫자의 소수 자릿수를 버립니다.
-</Note>
+:::note
+이 함수는 [rounding towards zero](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) 방식을 사용하므로 숫자의 소수 자릿수를 버립니다.
+:::
 
 관련 항목:
 
@@ -6244,7 +6244,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-행 1:
+Row 1:
 ──────
 toInt8(-8):   -8
 toInt8(-8.8): -8
@@ -6314,10 +6314,10 @@ SELECT toInt8OrDefault('abc', CAST('-1', 'Int8'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toInt8OrNull('0xc0fe');`).
 
-<Note>
-  입력값을 [Int8](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값을 [Int8](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -6337,7 +6337,7 @@ toInt8OrNull(x)
 
 **반환 값**
 
-`Int8` 유형의 값을 반환합니다. 변환에 실패하면 `NULL`을 반환합니다. [`Int8`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
+`Int8` 타입의 값을 반환합니다. 변환에 실패하면 `NULL`을 반환합니다. [`Int8`](/ko/reference/data-types/int-uint) 또는 [`NULL`](/ko/reference/syntax#null)
 
 **예시**
 
@@ -6351,7 +6351,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-행 1:
+Row 1:
 ──────
 toInt8OrNull('-8'):  -8
 toInt8OrNull('abc'): \N
@@ -6372,12 +6372,12 @@ toInt8OrNull('abc'): \N
 지원되지 않는 인수(`0` 반환):
 
 * `NaN` 및 `Inf`를 포함한 Float* 값을 문자열로 표현한 값.
-* 2진수 및 16진수 값을 문자열로 표현한 값. 예: `SELECT toInt8OrZero('0xc0fe');`.
+* 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toInt8OrZero('0xc0fe');`.
 
-<Note>
-  입력 값을 [Int8](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [Int8](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -6932,10 +6932,10 @@ SELECT date + interval_to_year AS result
 
 입력 인수를 동일한 데이터 타입의 [LowCardinality](/ko/reference/data-types/lowcardinality) 버전으로 변환합니다.
 
-<Tip>
-  `LowCardinality` 데이터 타입을 일반 데이터 타입으로 변환하려면 [CAST](#CAST) 함수를 사용하십시오.
-  예시: `CAST(x AS String)`.
-</Tip>
+:::tip
+`LowCardinality` 데이터 타입을 일반 데이터 타입으로 변환하려면 [CAST](#CAST) 함수를 사용하십시오.
+예시: `CAST(x AS String)`.
+:::
 
 **구문**
 
@@ -7060,8 +7060,8 @@ SELECT
 
 도입 버전: v1.1.0
 
-입력 값을 [Time](/ko/reference/data-types/time) 유형으로 변환합니다.
-String, FixedString, DateTime 또는 자정 이후 경과한 초를 나타내는 숫자 타입에서 변환할 수 있습니다.
+입력 값을 [Time](/ko/reference/data-types/time) 타입으로 변환합니다.
+String, FixedString, DateTime, DateTime64 또는 자정 이후 경과한 초를 나타내는 숫자 타입에서 변환할 수 있습니다.
 
 **구문**
 
@@ -7071,7 +7071,7 @@ toTime(x)
 
 **인수**
 
-* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
+* `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`DateTime`](/ko/reference/data-types/datetime) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
 
 **반환 값**
 
@@ -7079,10 +7079,12 @@ toTime(x)
 
 **예시**
 
-**String을 Time으로 변환**
+**DateTime64를 Time으로 변환**
 
 ```sql title=Query
-SELECT toTime('14:30:25')
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime64('2025-04-15 14:30:25.123', 3))
 ```
 
 ```response title=Response
@@ -7092,6 +7094,8 @@ SELECT toTime('14:30:25')
 **DateTime을 Time으로 변환**
 
 ```sql title=Query
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
 SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 ```
 
@@ -7099,10 +7103,12 @@ SELECT toTime(toDateTime('2025-04-15 14:30:25'))
 14:30:25
 ```
 
-**정수를 Time으로 변환**
+**정수(epoch 기준 초)를 Time으로 변환**
 
 ```sql title=Query
-SELECT toTime(52225)
+SET enable_time_time64_type = 1;
+SET use_legacy_to_time = 0;
+SELECT toTime(toDateTime(52225, 'UTC'))
 ```
 
 ```response title=Response
@@ -7116,29 +7122,31 @@ SELECT toTime(52225)
 도입 버전: v25.6.0
 
 입력 값을 [Time64](/ko/reference/data-types/time64) 타입으로 변환합니다.
-String, FixedString, DateTime64 또는 자정 이후 경과한 마이크로초를 나타내는 숫자 타입에서 변환할 수 있습니다.
-시간 값에 마이크로초 정밀도를 제공합니다.
+String, FixedString, DateTime64 또는 자정 이후 경과한 초를 나타내는 숫자 타입에서 변환할 수 있습니다.
+시간 값에 대해 최대 `scale`자리의 소수 자릿수까지 초 미만 정밀도를 지원합니다.
 
 **구문**
 
 ```sql
-toTime64(x)
+toTime64(x, scale)
 ```
 
 **인수**
 
 * `x` — 변환할 입력 값입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring) 또는 [`DateTime64`](/ko/reference/data-types/datetime64) 또는 [`(U)Int*`](/ko/reference/data-types/int-uint) 또는 [`Float*`](/ko/reference/data-types/float)
+* `scale` — 결과 `Time64`의 정밀도(소수 자릿수, `0`–`9`)입니다. [`(U)Int*`](/ko/reference/data-types/int-uint)
 
 **반환 값**
 
-마이크로초 정밀도의 변환된 입력 값을 반환합니다. [`Time64(6)`](/ko/reference/data-types/time64)
+지정한 `scale`로 변환된 값을 반환합니다. [`Time64`](/ko/reference/data-types/time64)
 
 **예시**
 
-**String에서 Time64로 변환**
+**String을 Time64로 변환**
 
 ```sql title=Query
-SELECT toTime64('14:30:25.123456')
+SET enable_time_time64_type = 1;
+SELECT toTime64('14:30:25.123456', 6)
 ```
 
 ```response title=Response
@@ -7148,17 +7156,19 @@ SELECT toTime64('14:30:25.123456')
 **DateTime64에서 Time64로 변환**
 
 ```sql title=Query
-SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6))
+SET enable_time_time64_type = 1;
+SELECT toTime64(toDateTime64('2025-04-15 14:30:25.123456', 6), 6)
 ```
 
 ```response title=Response
 14:30:25.123456
 ```
 
-**정수를 Time64로 변환하기**
+**Float(자정 이후 경과한 초)를 Time64로 변환**
 
 ```sql title=Query
-SELECT toTime64(52225123456)
+SET enable_time_time64_type = 1;
+SELECT toTime64(52225.123456, 6)
 ```
 
 ```response title=Response
@@ -7329,24 +7339,24 @@ SELECT toTimeOrZero('12:30:45'), toTimeOrZero('invalid')
 
 도입 버전: v1.1.0
 
-입력 값을 [`UInt128`](/ko/reference/functions/regular-functions/type-conversion-functions#toUInt128) 유형의 값으로 변환합니다.
+입력 값을 [`UInt128`](/ko/reference/functions/regular-functions/type-conversion-functions#toUInt128) 타입의 값으로 변환합니다.
 오류가 발생하면 예외를 발생시킵니다.
 이 함수는 0 쪽으로 반올림을 수행하므로 숫자의 소수 자릿수는 잘려 나갑니다.
 
 지원되는 인수:
 
-* (U)Int* 유형의 값 또는 문자열 표현.
-* Float* 유형의 값.
+* (U)Int* 타입의 값 또는 문자열 표현.
+* Float* 타입의 값.
 
 지원되지 않는 인수:
 
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt128('0xc0fe');`.
 
-<Note>
-  입력 값을 UInt128의 범위 내에서 표현할 수 없으면 결과가 오버플로우 또는 언더플로우될 수 있습니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 UInt128의 범위 내에서 표현할 수 없으면 결과가 오버플로우 또는 언더플로우될 수 있습니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -7451,10 +7461,10 @@ SELECT toUInt128OrDefault('abc', CAST('0', 'UInt128'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt128OrNull('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt128`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt128`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -7511,10 +7521,10 @@ toUInt128OrNull('abc'): \N
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt128OrZero('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt128`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt128`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -7548,7 +7558,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-행 1:
+Row 1:
 ──────
 toUInt128OrZero('128'): 128
 toUInt128OrZero('abc'): 0
@@ -7573,15 +7583,15 @@ toUInt128OrZero('abc'): 0
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt16('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt16`](/ko/reference/data-types/int-uint) 범위로 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-  예: `SELECT toUInt16(65536) == 0;`.
-</Note>
+:::note
+입력 값을 [`UInt16`](/ko/reference/data-types/int-uint) 범위로 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+예: `SELECT toUInt16(65536) == 0;`.
+:::
 
-<Note>
-  이 함수는 [0 쪽으로 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) 방식을 사용하므로 숫자의 소수 자릿수를 버립니다.
-</Note>
+:::note
+이 함수는 [0 쪽으로 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero) 방식을 사용하므로 숫자의 소수 자릿수를 버립니다.
+:::
 
 관련 항목:
 
@@ -7686,10 +7696,10 @@ v1.1.0에 도입됨
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toUInt16OrNull('0xc0fe');`).
 
-<Note>
-  입력값이 [`UInt16`](/ko/reference/data-types/int-uint)의 범위 내에서 표현될 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값이 [`UInt16`](/ko/reference/data-types/int-uint)의 범위 내에서 표현될 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -7746,10 +7756,10 @@ toUInt16OrNull('abc'): \N
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt16OrZero('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt16`](/ko/reference/data-types/int-uint)의 범위 안에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt16`](/ko/reference/data-types/int-uint)의 범위 안에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -7809,10 +7819,10 @@ toUInt16OrZero('abc'): 0
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toUInt256('0xc0fe');`).
 
-<Note>
-  입력 값을 UInt256 범위 내에서 표현할 수 없으면 결과에서 오버플로 또는 언더플로가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 UInt256 범위 내에서 표현할 수 없으면 결과에서 오버플로 또는 언더플로가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -7917,10 +7927,10 @@ SELECT toUInt256OrDefault('abc', CAST('0', 'UInt256'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt256OrNull('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt256`](/ko/reference/data-types/int-uint)의 범위 내 값으로 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt256`](/ko/reference/data-types/int-uint)의 범위 내 값으로 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -7977,10 +7987,10 @@ toUInt256OrNull('abc'): \N
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현입니다.
 * 2진수 및 16진수 값의 문자열 표현입니다. 예: `SELECT toUInt256OrZero('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt256`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없는 경우 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt256`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없는 경우 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -8039,15 +8049,15 @@ v1.1.0에서 도입되었습니다.
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현
 * 2진수 및 16진수 값의 문자열 표현(예: `SELECT toUInt32('0xc0fe');`)
 
-<Note>
-  입력값을 [`UInt32`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과가 오버플로 또는 언더플로될 수 있습니다.
-  이는 오류로 간주되지 않습니다.
-  예: `SELECT toUInt32(4294967296) == 0;`
-</Note>
+:::note
+입력값을 [`UInt32`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과가 오버플로되거나 언더플로될 수 있습니다.
+이는 오류로 간주되지 않습니다.
+예: `SELECT toUInt32(4294967296) == 0;`
+:::
 
-<Note>
-  이 함수는 [0 방향으로 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)를 사용하므로 숫자의 소수 자릿수는 버려집니다.
-</Note>
+:::note
+이 함수는 [0 방향으로 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)을 사용하므로 숫자의 소수 자릿수는 버려집니다.
+:::
 
 관련 항목:
 
@@ -8141,7 +8151,7 @@ SELECT toUInt32OrDefault('abc', CAST('0', 'UInt32'))
 
 도입 버전: v1.1.0
 
-[`toUInt32`](#toUInt32)와 마찬가지로, 이 함수는 입력 값을 [`UInt32`](/ko/reference/data-types/int-uint) 타입의 값으로 변환하지만 오류 시 `NULL`을 반환합니다.
+[`toUInt32`](#toUInt32)와 마찬가지로, 이 함수는 입력 값을 [`UInt32`](/ko/reference/data-types/int-uint) 타입의 값으로 변환하지만 오류가 발생하면 `NULL`을 반환합니다.
 
 지원되는 인수:
 
@@ -8152,10 +8162,10 @@ SELECT toUInt32OrDefault('abc', CAST('0', 'UInt32'))
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt32OrNull('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt32`](/ko/reference/data-types/int-uint) 범위 내에 표현할 수 없는 경우, 결과에서 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt32`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없는 경우 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -8212,10 +8222,10 @@ toUInt32OrNull('abc'): \N
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt32OrZero('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt32`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt32`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -8274,15 +8284,15 @@ toUInt32OrZero('abc'): 0
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt64('0xc0fe');`.
 
-<Note>
-  입력값을 [`UInt64`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로 또는 언더플로가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-  예시: `SELECT toUInt64(18446744073709551616) == 0;`
-</Note>
+:::note
+입력값을 [`UInt64`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로 또는 언더플로가 발생합니다.
+이는 오류로 간주되지 않습니다.
+예시: `SELECT toUInt64(18446744073709551616) == 0;`
+:::
 
-<Note>
-  이 함수는 [0 방향으로 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)를 사용하므로 숫자의 소수 자릿수를 버립니다.
-</Note>
+:::note
+이 함수는 [0 방향으로 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)를 사용하므로 숫자의 소수 자릿수를 버립니다.
+:::
 
 관련 항목:
 
@@ -8380,17 +8390,17 @@ SELECT toUInt64OrDefault('abc', CAST('0', 'UInt64'))
 
 지원되는 인수:
 
-* (U)Int*의 문자열 형식.
+* (U)Int*의 문자열 표현.
 
 지원되지 않는 인수(`NULL` 반환):
 
-* `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 형식.
-* 이진수 및 16진수 값의 문자열 형식. 예: `SELECT toUInt64OrNull('0xc0fe');`.
+* `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
+* 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt64OrNull('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt64`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt64`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -8447,10 +8457,10 @@ toUInt64OrNull('abc'): \N
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt64OrZero('0xc0fe');`.
 
-<Note>
-  입력값을 [`UInt64`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력값을 [`UInt64`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -8484,7 +8494,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-행 1:
+Row 1:
 ──────
 toUInt64OrZero('64'):  64
 toUInt64OrZero('abc'): 0
@@ -8509,15 +8519,15 @@ toUInt64OrZero('abc'): 0
 * `NaN` 및 `Inf`를 포함한 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt8('0xc0fe');`.
 
-<Note>
-  입력값을 [UInt8](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-  예: `SELECT toUInt8(256) == 0;`.
-</Note>
+:::note
+입력값을 [UInt8](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+예: `SELECT toUInt8(256) == 0;`.
+:::
 
-<Note>
-  이 함수는 [0 방향으로 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)를 사용하므로 숫자의 소수 자릿수를 버립니다.
-</Note>
+:::note
+이 함수는 [0 방향으로 반올림](https://en.wikipedia.org/wiki/Rounding#Rounding_towards_zero)을 사용하므로 숫자의 소수 자릿수를 버립니다.
+:::
 
 관련 항목:
 
@@ -8622,10 +8632,10 @@ SELECT toUInt8OrDefault('abc', CAST('0', 'UInt8'))
 * `NaN` 및 `Inf`를 포함한 일반 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt8OrNull('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt8`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt8`](/ko/reference/data-types/int-uint) 범위 내에서 표현할 수 없으면 결과에 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -8682,10 +8692,10 @@ toUInt8OrNull('abc'): \N
 * `NaN` 및 `Inf`를 포함한 일반 Float* 값의 문자열 표현.
 * 2진수 및 16진수 값의 문자열 표현. 예: `SELECT toUInt8OrZero('0xc0fe');`.
 
-<Note>
-  입력 값을 [`UInt8`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에서 오버플로우 또는 언더플로우가 발생합니다.
-  이는 오류로 간주되지 않습니다.
-</Note>
+:::note
+입력 값을 [`UInt8`](/ko/reference/data-types/int-uint)의 범위 내에서 표현할 수 없으면 결과에서 오버플로우 또는 언더플로우가 발생합니다.
+이는 오류로 간주되지 않습니다.
+:::
 
 관련 항목:
 
@@ -8819,9 +8829,9 @@ SELECT
 [`DateTime64`](/ko/reference/data-types/datetime64)를 고정된 마이크로초 정밀도의 [`Int64`](/ko/reference/data-types/int-uint) 값으로 변환합니다.
 입력 값은 정밀도에 따라 적절히 확대되거나 축소됩니다.
 
-<Note>
-  출력 값은 입력 값의 시간대가 아니라 UTC를 기준으로 합니다.
-</Note>
+:::note
+출력 값은 입력 값의 시간대가 아니라 UTC를 기준으로 합니다.
+:::
 
 **구문**
 
@@ -8861,9 +8871,9 @@ SELECT toUnixTimestamp64Micro(dt64);
 [`DateTime64`](/ko/reference/data-types/datetime64)를 고정된 밀리초 정밀도를 가진 [`Int64`](/ko/reference/data-types/int-uint) 값으로 변환합니다.
 입력 값은 정밀도에 따라 적절히 확대되거나 축소됩니다.
 
-<Note>
-  출력 값은 입력 값의 시간대가 아니라 UTC를 기준으로 합니다.
-</Note>
+:::note
+출력 값은 입력 값의 시간대가 아니라 UTC를 기준으로 합니다.
+:::
 
 **구문**
 
@@ -8903,9 +8913,9 @@ SELECT toUnixTimestamp64Milli(dt64);
 [`DateTime64`](/ko/reference/data-types/datetime64)를 고정된 나노초 정밀도의 [`Int64`](/ko/reference/functions/regular-functions/type-conversion-functions#toInt64) 값으로 변환합니다.
 입력 값은 정밀도에 따라 적절히 확대되거나 축소됩니다.
 
-<Note>
-  출력 값은 입력 값의 시간대가 아니라 UTC를 기준으로 합니다.
-</Note>
+:::note
+출력 값은 입력 값의 시간대가 아니라 UTC를 기준으로 합니다.
+:::
 
 **구문**
 
@@ -8945,9 +8955,9 @@ SELECT toUnixTimestamp64Nano(dt64);
 [`DateTime64`](/ko/reference/data-types/datetime64)를 초 단위의 고정 정밀도를 갖는 [`Int64`](/ko/reference/data-types/int-uint) 값으로 변환합니다.
 입력 값은 정밀도에 따라 적절히 스케일업 또는 스케일다운됩니다.
 
-<Note>
-  출력 값은 입력 값의 시간대가 아니라 UTC를 기준으로 합니다.
-</Note>
+:::note
+출력 값은 입력 값의 시간대가 아니라 UTC를 기준으로 합니다.
+:::
 
 **구문**
 

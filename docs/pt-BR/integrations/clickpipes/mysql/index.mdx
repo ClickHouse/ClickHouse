@@ -13,6 +13,7 @@ integration:
 import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
+import ChangingTLSSettings from '/snippets/pt-BR/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
 
@@ -75,11 +76,17 @@ Certifique-se de estar conectado à sua conta do ClickHouse Cloud. Se você aind
 4. Preencha os detalhes da conexão com o banco de dados MySQL de origem que você configurou na etapa de pré-requisitos.
 
 <Info>
-  Antes de começar a adicionar os detalhes da conexão, certifique-se de ter incluído os endereços IP do ClickPipes na lista de permissões das regras do seu firewall. Na página a seguir, você pode encontrar uma [lista de endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips).
+  Antes de começar a adicionar os detalhes da conexão, certifique-se de ter adicionado os endereços IP do ClickPipes à lista de permissões das regras do seu firewall. Na página a seguir, você pode encontrar uma [lista de endereços IP do ClickPipes](/pt-BR/integrations/clickpipes/home#list-of-static-ips).
   Para mais informações, consulte os guias de configuração do MySQL de origem com link [no topo desta página](#prerequisites).
 </Info>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="Preencha os detalhes da conexão" size="lg" border />
+
+<div id="optional-changing-tls-settings">
+  #### (Opcional) Alterar as configurações de TLS
+</div>
+
+<ChangingTLSSettings />
 
 <div id="optional-set-up-ssh-tunneling">
   #### (Opcional) Configure o túnel SSH

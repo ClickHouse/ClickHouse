@@ -97,7 +97,7 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... другие настройки ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
@@ -113,13 +113,13 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
     Добавьте эти переменные окружения в функцию Lambda:
 
     ```bash
-    # Обязательно: конечная точка OTLP ClickStack
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # Необязательно: заголовки аутентификации
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # Необязательно: имя сервиса (по умолчанию — имя лямбда-функции)
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 

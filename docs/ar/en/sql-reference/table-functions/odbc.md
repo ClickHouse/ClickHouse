@@ -1,0 +1,122 @@
+---
+description: 'يُرجع جدولًا متصلًا عبر ODBC.'
+sidebar_label: 'odbc'
+sidebar_position: 150
+slug: /sql-reference/table-functions/odbc
+title: 'odbc'
+doc_type: 'reference'
+---
+
+يُرجع جدولًا متصلًا عبر [ODBC](https://en.wikipedia.org/wiki/Open_Database_Connectivity).
+
+<div id="syntax">
+  ## البنية
+</div>
+
+```sql
+odbc(datasource, external_database, external_table)
+odbc(datasource, external_table)
+odbc(named_collection)
+```
+
+<div id="arguments">
+  ## الوسيطات
+</div>
+
+| الوسيطة             | الوصف                                                   |
+| ------------------- | ------------------------------------------------------- |
+| `datasource`        | اسم القسم الذي يتضمن إعدادات الاتصال في ملف `odbc.ini`. |
+| `external_database` | اسم قاعدة بيانات في نظام إدارة قواعد بيانات خارجي.      |
+| `external_table`    | اسم جدول في `external_database`.                        |
+
+يمكن أيضًا تمرير هذه المعلمات باستخدام [المجموعات المسماة](/ar/operations/named-collections.md).
+
+لتنفيذ اتصالات ODBC بأمان، يستخدم ClickHouse برنامجًا منفصلًا هو `clickhouse-odbc-bridge`. وإذا جرى تحميل برنامج تشغيل ODBC مباشرةً من `clickhouse-server`، فقد تؤدي مشكلات برنامج التشغيل إلى تعطل خادم ClickHouse. ويشغّل ClickHouse تلقائيًا `clickhouse-odbc-bridge` عند الحاجة إليه. ويُثبَّت برنامج جسر ODBC من الحزمة نفسها التي تتضمن `clickhouse-server`.
+
+تُحوَّل الحقول ذات القيم `NULL` من الجدول الخارجي إلى القيم الافتراضية لنوع البيانات الأساسي. على سبيل المثال، إذا كان نوع حقل في جدول MySQL بعيد هو `INT NULL`، فسيُحوَّل إلى 0 (وهي القيمة الافتراضية لنوع البيانات `Int32` في ClickHouse).
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+**الحصول على البيانات من تثبيت MySQL المحلي عبر ODBC**
+
+تم التحقق من هذا المثال على Ubuntu Linux 18.04 وMySQL server 5.7.
+
+تأكد من تثبيت unixODBC وMySQL Connector.
+
+افتراضيًا (إذا تم التثبيت من الحزم)، يبدأ ClickHouse التشغيل بالمستخدم `clickhouse`. لذلك، تحتاج إلى إنشاء هذا المستخدم وتهيئته على MySQL server.
+
+```bash
+$ sudo mysql
+```
+
+```sql
+mysql> CREATE USER 'clickhouse'@'localhost' IDENTIFIED BY 'clickhouse';
+mysql> GRANT ALL PRIVILEGES ON *.* TO 'clickhouse'@'clickhouse' WITH GRANT OPTION;
+```
+
+ثم قم بتكوين الاتصال في `/etc/odbc.ini`.
+
+```bash
+$ cat /etc/odbc.ini
+[mysqlconn]
+DRIVER = /usr/local/lib/libmyodbc5w.so
+SERVER = 127.0.0.1
+PORT = 3306
+DATABASE = test
+USERNAME = clickhouse
+PASSWORD = clickhouse
+```
+
+يمكنك التحقق من الاتصال باستخدام الأداة `isql` من حزمة تثبيت unixODBC.
+
+```bash
+$ isql -v mysqlconn
++-------------------------+
+| Connected!                            |
+|                                       |
+...
+```
+
+جدول في MySQL:
+
+```text
+mysql> CREATE TABLE `test`.`test` (
+    ->   `int_id` INT NOT NULL AUTO_INCREMENT,
+    ->   `int_nullable` INT NULL DEFAULT NULL,
+    ->   `float` FLOAT NOT NULL,
+    ->   `float_nullable` FLOAT NULL DEFAULT NULL,
+    ->   PRIMARY KEY (`int_id`));
+Query OK, 0 rows affected (0,09 sec)
+
+mysql> insert into test (`int_id`, `float`) VALUES (1,2);
+Query OK, 1 row affected (0,00 sec)
+
+mysql> select * from test;
++------+----------+-----+----------+
+| int_id | int_nullable | float | float_nullable |
++------+----------+-----+----------+
+|      1 |         NULL |     2 |           NULL |
++------+----------+-----+----------+
+1 row in set (0,00 sec)
+```
+
+جلب البيانات من جدول MySQL في ClickHouse:
+
+```sql
+SELECT * FROM odbc('DSN=mysqlconn', 'test', 'test')
+```
+
+```text
+┌─int_id─┬─int_nullable─┬─float─┬─float_nullable─┐
+│      1 │            0 │     2 │              0 │
+└────────┴──────────────┴───────┴────────────────┘
+```
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [قواميس ODBC](/ar/sql-reference/statements/create/dictionary/sources/odbc)
+* [محرك جدول ODBC](/ar/engines/table-engines/integrations/odbc).

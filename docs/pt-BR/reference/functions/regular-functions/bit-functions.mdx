@@ -93,10 +93,10 @@ bitCount(x)
 
 Retorna o número de bits com valor um em `x`. [`UInt8`](/pt-BR/reference/data-types/int-uint).
 
-<Note>
-  A função não converte o valor de entrada para um tipo maior ([extensão de sinal](https://en.wikipedia.org/wiki/Sign_extension)).
-  Por exemplo: `bitCount(toUInt8(-1)) = 8`.
-</Note>
+:::note
+A função não converte o valor de entrada para um tipo maior ([extensão de sinal](https://en.wikipedia.org/wiki/Sign_extension)).
+Por exemplo: `bitCount(toUInt8(-1)) = 8`.
+:::
 
 **Exemplos**
 
@@ -471,7 +471,6 @@ bitSlice(s, offset[, length])
   Retorna a posição inicial do bit (indexação baseada em 1).
 * Valores positivos: contam a partir do início da string.
 * Valores negativos: contam a partir do fim da string.
-
   [`(U)Int8/16/32/64`](/pt-BR/reference/data-types/int-uint) ou [`Float*`](/pt-BR/reference/data-types/float)
 * `length` —
   Opcional. O número de bits a extrair.

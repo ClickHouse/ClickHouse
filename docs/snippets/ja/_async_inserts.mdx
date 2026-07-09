@@ -24,7 +24,7 @@ ClickHouse の非同期挿入は、クライアント側でのバッチ処理が
 
 最初に到達したしきい値でフラッシュがトリガーされます。
 
-このバッチ処理はクライアントからは見えず、ClickHouse が複数のソースからの INSERT トラフィックを効率的にマージするのに役立ちます。ただし、フラッシュが発生するまでは、そのデータをクエリすることはできません。重要なのは、INSERT の shape と settings の組み合わせごとに複数のバッファが存在し、クラスターではノードごとにバッファが維持されることです。これにより、マルチテナント環境全体で細かな制御が可能になります。それ以外の INSERT の仕組みは、[synchronous inserts](/ja/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default) で説明されているものと同一です。
+このバッチ処理はクライアントからは見えず、ClickHouse が複数のソースからの INSERT トラフィックを効率的にマージするのに役立ちます。ただし、フラッシュが発生するまでは、そのデータをクエリすることはできません。重要なのは、INSERT の shape と settings の組み合わせごとに複数のバッファが存在し、クラスターではノードごとにバッファが維持されることです。これにより、マルチテナント環境全体で細かな制御が可能になります。それ以外の INSERT の仕組みは、[同期挿入](/ja/concepts/best-practices/selecting-an-insert-strategy#synchronous-inserts-by-default) で説明されているものと同一です。
 
 <div id="choosing-a-return-mode">
   ### 戻りモードの選択

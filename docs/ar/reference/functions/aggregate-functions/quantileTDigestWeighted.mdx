@@ -28,10 +28,10 @@ doc_type: 'reference'
 عند استخدام عدة دوال `quantile*` بمستويات مختلفة في استعلام واحد، لا تُدمج الحالات الداخلية (أي إن الاستعلام يعمل بكفاءة أقل مما يمكن أن يعمل به).
 في هذه الحالة، استخدم الدالة [`quantiles`](/ar/reference/functions/aggregate-functions/quantiles#quantiles).
 
-<Note>
-  لا يُنصح باستخدام `quantileTDigestWeighted` [مع مجموعات البيانات الصغيرة جدًا](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275)، إذ قد يؤدي ذلك إلى خطأ كبير.
-  في هذه الحالة، فكّر في استخدام [`quantileTDigest`](/ar/reference/functions/aggregate-functions/quantileTDigest) بدلًا منه.
-</Note>
+:::note
+لا يُنصح باستخدام `quantileTDigestWeighted` [مع مجموعات البيانات الصغيرة جدًا](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275)، إذ قد يؤدي ذلك إلى خطأ كبير.
+في هذه الحالة، فكّر في استخدام [`quantileTDigest`](/ar/reference/functions/aggregate-functions/quantileTDigest) بدلًا منه.
+:::
 
 **الصيغة**
 
@@ -43,7 +43,7 @@ quantileTDigestWeighted(level)(expr, weight)
 
 **المعلمات**
 
-* `level` — اختياري. مستوى الكَمّي. عدد ثابت بفاصلة عائمة من 0 إلى 1. نوصي باستخدام قيمة `level` ضمن النطاق `[0.01, 0.99]`. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
+* `level` — اختياري. مستوى quantile. عدد ثابت بفاصلة عائمة من 0 إلى 1. نوصي باستخدام قيمة `level` ضمن النطاق `[0.01, 0.99]`. القيمة الافتراضية: 0.5. عند `level=0.5` تحسب الدالة الوسيط. [`Float*`](/ar/reference/data-types/float)
 
 **الوسيطات**
 
@@ -52,11 +52,11 @@ quantileTDigestWeighted(level)(expr, weight)
 
 **القيمة المعادة**
 
-الكَمّي التقريبي للمستوى المحدد. [`Float64`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
+quantile التقريبي للمستوى المحدد. [`Float64`](/ar/reference/data-types/float) أو [`Date`](/ar/reference/data-types/date) أو [`DateTime`](/ar/reference/data-types/datetime)
 
 **أمثلة**
 
-**حساب الكَمّي المُرجّح باستخدام t-digest**
+**حساب quantile المُرجّح باستخدام t-digest**
 
 ```sql title=Query
 SELECT quantileTDigestWeighted(number, 1) FROM numbers(10);
