@@ -1813,12 +1813,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     if (!create.isTemporary() && !create.database)
-    {
         create.setDatabase(current_database);
-        /// USE db.namespace: an unqualified new table belongs to the selected namespace.
-        if (!current_database_info.table_prefix.empty() && create.table)
-            create.setTable(current_database_info.table_prefix + "." + create.getTable());
-    }
 
     if (create.targets)
         create.targets->setCurrentDatabase(current_database_info);
@@ -2653,6 +2648,17 @@ BlockIO InterpreterCreateQuery::execute()
     auto & create = query_ptr->as<ASTCreateQuery &>();
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
+
+    /// USE db.namespace: an unqualified new table and unqualified view targets belong to the
+    /// selected namespace. Fold before the access check (and before ON CLUSTER shipping) so
+    /// authorization targets the same names the query will create.
+    if (const auto database_info = getContext()->getCurrentDatabaseInfo(); !database_info.table_prefix.empty())
+    {
+        if (!create.isTemporary() && !create.database && create.table)
+            create.setTable(database_info.table_prefix + "." + create.getTable());
+        if (create.targets)
+            create.targets->setCurrentDatabase(database_info);
+    }
 
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
