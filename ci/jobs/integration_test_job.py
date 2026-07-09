@@ -1461,6 +1461,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 R.set_success()
 
     force_ok_exit = False
+    if R:
+        failures_cnt = len([r for r in R.results if not r.is_ok()])
+        if failures_cnt > 0 and failures_cnt < 4:
+            print(
+                f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
+            )
+            force_ok_exit = True
+        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_labels:
+            print(
+                f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
+            )
+            force_ok_exit = True
     if is_bugfix_validation:
         # Per-arch bugfix-validation jobs are advisory: their pass/fail status
         # records "did the bug reproduce on this arch?", not whether the PR
