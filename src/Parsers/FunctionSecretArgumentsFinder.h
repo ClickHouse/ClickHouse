@@ -1068,6 +1068,9 @@ protected:
     /// a secret visible). Mirrors the "hide all named arguments" handling used for ambiguous XDBC collections.
     void findS3NamedCollectionSecretArguments(size_t start = 0)
     {
+        /// `extra_credentials(...)` can be passed as an override alongside a named collection.
+        maskS3ExtraCredentials();
+
         ssize_t min_idx = -1;
         ssize_t max_idx = -1;
         for (const auto & key : s3_secret_keys)
