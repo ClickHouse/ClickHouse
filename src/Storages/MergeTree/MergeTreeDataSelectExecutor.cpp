@@ -2266,6 +2266,16 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
         /// In case when SELECT's predicate defines a single continuous interval of keys,
         /// we can use binary search algorithm to find the left and right endpoint key marks of such interval.
         /// The returned value is the minimum range of marks, containing all keys for which KeyCondition holds
+        ///
+        /// There may be several input ranges (query condition cache trimming, per-replica mark
+        /// segments), but the index rows of their marks still form one globally sorted key
+        /// sequence, so a single left+right binary search over the *local* mark numbers (a mark's
+        /// ordinal within the concatenated input ranges, the numbering IndexMarkTranslator uses
+        /// for the loaded index rows) finds the interval; the local interval is then sliced back
+        /// into absolute mark ranges. The rows in the gaps between input ranges are not analyzed:
+        /// a probe interval spanning a gap can only over-approximate, so a match falling entirely
+        /// inside a gap may keep, per side, one input-range granule adjacent to the gap (gap marks
+        /// themselves never enter the result - it is sliced from the input ranges).
 
         res.search_algorithm = MarkRanges::SearchAlgorithm::BinarySearch;
         ProfileEvents::increment(ProfileEvents::IndexBinarySearchAlgorithm);
@@ -2273,117 +2283,149 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 
         size_t steps = 0;
 
-        for (const auto & part_range : part_with_ranges.ranges)
+        /// Local marks [0, input_marks_count) enumerate the marks of the input ranges left to
+        /// right; local mark input_marks_count maps to the exclusive end of the last range
+        /// (a valid probe bound: its index row is loaded, or it equals marks_count).
+        const auto & input_ranges = part_with_ranges.ranges;
+        std::vector<size_t> local_base(input_ranges.size());
+        size_t input_marks_count = 0;
+        for (size_t i = 0; i < input_ranges.size(); ++i)
         {
-            MarkRange result_range{};
+            local_base[i] = input_marks_count;
+            input_marks_count += input_ranges[i].getNumberOfMarks();
+        }
 
-            /// Invariant: !check_in_range(part_range.begin..searched_left).can_be_true
-            ///             check_in_range(part_range.begin..searched_right).can_be_true
-            /// (part_range.end + 1 is a sentinel out-of-bounds index, such that by definition
-            ///  check_in_range(x..part_range.end+1).can_be_true is true. The binary search will never
-            ///  actually call check_in_range with this out-of-bounds index.)
-            /// If the condition is not true anywhere, we'll end up with searched_left == part_range.end.
-            size_t searched_left = part_range.begin;
-            size_t searched_right = part_range.end + 1;
+        auto to_absolute_mark = [&](size_t local_mark) -> size_t
+        {
+            if (local_mark == input_marks_count)
+                return input_ranges.back().end;
+            if (input_ranges.size() == 1)
+                return input_ranges.front().begin + local_mark;
+            const size_t i = std::upper_bound(local_base.begin(), local_base.end(), local_mark) - local_base.begin() - 1;
+            return input_ranges[i].begin + (local_mark - local_base[i]);
+        };
+
+        size_t local_result_begin = 0;
+        size_t local_result_end = 0;
+        if (input_marks_count != 0)
+        {
+            /// Invariant: !check_in_range(mark(0)..mark(searched_left)).can_be_true
+            ///             check_in_range(mark(0)..mark(searched_right)).can_be_true
+            /// (input_marks_count + 1 is a sentinel local mark, such that by definition
+            ///  check_in_range(x..mark(input_marks_count+1)).can_be_true is true. The binary
+            ///  search will never actually probe this out-of-bounds local mark.)
+            /// If the condition is not true anywhere, we'll end up with searched_left == input_marks_count.
+            size_t searched_left = 0;
+            size_t searched_right = input_marks_count + 1;
 
             while (searched_left + 1 < searched_right)
             {
                 const size_t middle = (searched_left + searched_right) / 2;
-                /// Anchored at the range start, not mark 0: with a partially-loaded index mark 0
-                /// may not be in memory, and for a sorted key the range start is a tighter bound
-                /// (and the mirror of the right search, which anchors at part_range.end).
-                MarkRange range(part_range.begin, middle);
+                /// Anchored at the first input mark, not mark 0: with a partially-loaded index
+                /// mark 0 may not be in memory, and for a sorted key it is a tighter bound.
+                MarkRange range(to_absolute_mark(0), to_absolute_mark(middle));
                 if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
                     searched_right = middle;
                 else
                     searched_left = middle;
                 ++steps;
             }
-            result_range.begin = searched_left;
-            LOG_TRACE(log, "Found (LEFT) boundary mark: {}", searched_left);
+            local_result_begin = searched_left;
+            LOG_TRACE(log, "Found (LEFT) boundary mark: {}", to_absolute_mark(local_result_begin));
 
-            /// Invariant:  check_in_range(searched_left..part_range.end).can_be_true
-            ///            !check_in_range(searched_right..part_range.end).can_be_true
-            /// (Except if searched_left was initially already equal to part_range.end.)
-            searched_right = part_range.end;
+            /// Invariant:  check_in_range(mark(searched_left)..mark(input_marks_count)).can_be_true
+            ///            !check_in_range(mark(searched_right)..mark(input_marks_count)).can_be_true
+            /// (Except if searched_left was initially already equal to input_marks_count.)
+            searched_right = input_marks_count;
             while (searched_left + 1 < searched_right)
             {
                 const size_t middle = (searched_left + searched_right) / 2;
-                MarkRange range(middle, part_range.end);
+                MarkRange range(to_absolute_mark(middle), to_absolute_mark(input_marks_count));
                 if (check_in_range(range, BoolMask::consider_only_can_be_true).can_be_true)
                     searched_left = middle;
                 else
                     searched_right = middle;
                 ++steps;
             }
-            result_range.end = searched_right;
-            LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", searched_right);
+            local_result_end = searched_right;
+            LOG_TRACE(log, "Found (RIGHT) boundary mark: {}", to_absolute_mark(local_result_end));
+        }
 
-            if (result_range.begin < result_range.end)
+        /// Slice the local interval back into per-input-range mark ranges. The probes of the
+        /// exactness refinement below never span a gap (each slice is contiguous), so they only
+        /// consider rows the input ranges cover.
+        for (size_t i = 0; i < input_ranges.size(); ++i)
+        {
+            const size_t slice_begin = std::max(local_result_begin, local_base[i]);
+            const size_t slice_end = std::min(local_result_end, local_base[i] + input_ranges[i].getNumberOfMarks());
+            if (slice_begin >= slice_end)
+                continue;
+
+            MarkRange result_range(
+                input_ranges[i].begin + (slice_begin - local_base[i]),
+                input_ranges[i].begin + (slice_end - local_base[i]));
+            res.emplace_back(result_range);
+
+            if (exact_ranges)
             {
-                res.emplace_back(result_range);
+                auto result_exact_range = result_range;
+                if (result_exact_range.begin < result_exact_range.end &&
+                    check_in_range({result_exact_range.begin, result_exact_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
+                    ++result_exact_range.begin;
 
-                if (exact_ranges)
+                if (result_exact_range.begin < result_exact_range.end &&
+                    check_in_range({result_exact_range.end - 1, result_exact_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
+                    --result_exact_range.end;
+
+                if (result_exact_range.begin < result_exact_range.end)
                 {
-                    auto result_exact_range = result_range;
-                    if (result_exact_range.begin < result_exact_range.end &&
-                        check_in_range({result_exact_range.begin, result_exact_range.begin + 1}, BoolMask::consider_only_can_be_false).can_be_false)
-                        ++result_exact_range.begin;
-
-                    if (result_exact_range.begin < result_exact_range.end &&
-                        check_in_range({result_exact_range.end - 1, result_exact_range.end}, BoolMask::consider_only_can_be_false).can_be_false)
-                        --result_exact_range.end;
-
-                    if (result_exact_range.begin < result_exact_range.end)
+                    if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
                     {
-                        if (check_in_range(result_exact_range, BoolMask::consider_only_can_be_false).can_be_false)
-                        {
-                            /// key_condition.matchesExactContinuousRange returned true, but the
-                            /// range doesn't seem to be continuous. Something's broken - most likely a
-                            /// function reported inaccurate monotonicity (see the issue below).
-                            ///
-                            /// Log every participating condition (the key condition as well as the optional
-                            /// _part_offset and total-offset conditions), the part and the offending mark ranges
-                            /// before throwing, so the occurrence (typically found by a stress test or the fuzzer)
-                            /// is actionable. check_in_range combines all useful conditions, so any of them could
-                            /// be the culprit - in particular, a bad _part_offset / total-offset condition can trip
-                            /// this branch while the primary key_condition is empty or unrelated.
-                            /// The thrown message is deliberately kept constant: CI derives the failure's name
-                            /// from the exception's format string, so the details go to the log instead of the
-                            /// message to keep failures grouped under a single stable name.
-                            /// TODO: Remove the #ifndef and always throw after
-                            ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+                        /// key_condition.matchesExactContinuousRange returned true, but the
+                        /// range doesn't seem to be continuous. Something's broken - most likely a
+                        /// function reported inaccurate monotonicity (see the issue below).
+                        ///
+                        /// Log every participating condition (the key condition as well as the optional
+                        /// _part_offset and total-offset conditions), the part and the offending mark ranges
+                        /// before throwing, so the occurrence (typically found by a stress test or the fuzzer)
+                        /// is actionable. check_in_range combines all useful conditions, so any of them could
+                        /// be the culprit - in particular, a bad _part_offset / total-offset condition can trip
+                        /// this branch while the primary key_condition is empty or unrelated.
+                        /// The thrown message is deliberately kept constant: CI derives the failure's name
+                        /// from the exception's format string, so the details go to the log instead of the
+                        /// message to keep failures grouped under a single stable name.
+                        /// TODO: Remove the #ifndef and always throw after
+                        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
 #ifndef NDEBUG
-                            auto describe_condition = [](const KeyCondition & condition)
-                            {
-                                return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
-                            };
-
-                            String conditions_description = fmt::format(
-                                "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
-                            if (part_offset_condition_useful)
-                                conditions_description += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
-                            if (total_offset_condition_useful)
-                                conditions_description += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
-
-                            LOG_ERROR(
-                                log,
-                                "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
-                                "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
-                                "not exactly continuous. This is most likely caused by a function reporting inaccurate "
-                                "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
-                                "Participating conditions: {}",
-                                result_range.begin, result_range.end,
-                                result_exact_range.begin, result_exact_range.end,
-                                part_name,
-                                conditions_description);
-                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
-#endif
-                        }
-                        else
+                        auto describe_condition = [](const KeyCondition & condition)
                         {
-                            exact_ranges->emplace_back(std::move(result_exact_range));
-                        }
+                            return fmt::format("(relaxed: {}): {}", condition.isRelaxed(), condition.toString());
+                        };
+
+                        String conditions_description = fmt::format(
+                            "key condition (useful: {}) {}", key_condition_useful, describe_condition(key_condition));
+                        if (part_offset_condition_useful)
+                            conditions_description += fmt::format("; part offset condition {}", describe_condition(*part_offset_condition));
+                        if (total_offset_condition_useful)
+                            conditions_description += fmt::format("; total offset condition {}", describe_condition(*total_offset_condition));
+
+                        LOG_ERROR(
+                            log,
+                            "Inconsistent KeyCondition behavior: matchesExactContinuousRange() reported an exact "
+                            "continuous range, but the mark range [{}, {}) (exact subrange [{}, {})) of part {} is "
+                            "not exactly continuous. This is most likely caused by a function reporting inaccurate "
+                            "monotonicity (see https://github.com/ClickHouse/ClickHouse/issues/90461). "
+                            "Participating conditions: {}",
+                            result_range.begin, result_range.end,
+                            result_exact_range.begin, result_exact_range.end,
+                            part_name,
+                            conditions_description);
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Inconsistent KeyCondition behavior");
+#endif
+                    }
+                    else
+                    {
+                        exact_ranges->emplace_back(std::move(result_exact_range));
                     }
                 }
             }
