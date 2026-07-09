@@ -21,7 +21,7 @@ ${CLICKHOUSE_CLIENT} --query "
     )
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
-             enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only', enable_block_offset_column = 0,
+             enable_block_number_column = 0, enable_block_offset_column = 0,
              replace_long_file_name_to_hash = 0, ratio_of_defaults_for_sparse_serialization = 1;
 "
 
@@ -80,7 +80,7 @@ ${CLICKHOUSE_CLIENT} --query "
     )
     ENGINE = MergeTree ORDER BY id
     SETTINGS min_rows_for_wide_part = 1, min_bytes_for_wide_part = 1,
-             enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only', enable_block_offset_column = 0,
+             enable_block_number_column = 0, enable_block_offset_column = 0,
              replace_long_file_name_to_hash = 0, ratio_of_defaults_for_sparse_serialization = 1;
 "
 

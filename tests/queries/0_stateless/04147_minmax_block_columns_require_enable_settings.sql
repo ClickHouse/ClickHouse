@@ -15,11 +15,11 @@ CREATE TABLE t (id UInt64) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1, part_minmax_index_columns = 'with_block_number_offset';
 
 -- ALTER that disables both columns while the setting is `with_block_number_offset` must fail
-ALTER TABLE t MODIFY SETTING enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only', enable_block_offset_column = 0; -- { serverError BAD_ARGUMENTS }
+ALTER TABLE t MODIFY SETTING enable_block_number_column = 0, enable_block_offset_column = 0; -- { serverError BAD_ARGUMENTS }
 
 -- ALTER that drops the setting back to `partition_key_only` is fine even with both columns off
 ALTER TABLE t MODIFY SETTING part_minmax_index_columns = 'partition_key_only';
-ALTER TABLE t MODIFY SETTING enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only', enable_block_offset_column = 0;
+ALTER TABLE t MODIFY SETTING enable_block_number_column = 0, enable_block_offset_column = 0;
 
 DROP TABLE IF EXISTS t SYNC;
 

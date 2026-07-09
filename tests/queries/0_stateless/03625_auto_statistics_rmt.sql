@@ -17,7 +17,7 @@ CREATE TABLE test_table
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/test_table', '1')
 ORDER BY id
 SETTINGS
-    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
+    enable_block_number_column = 0,
     enable_block_offset_column = 0,
     auto_statistics_types = 'uniq,minmax',
     merge_max_block_size = 8192; -- prevent extreme per-block values injected by the test harness from making the merge time out

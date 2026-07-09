@@ -23,7 +23,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.t_merge_proj (key UInt64, value String)
     ENGINE = MergeTree ORDER BY key
     SETTINGS index_granularity = 64,
-        enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
+        enable_block_number_column = 0,
         enable_block_offset_column = 0
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES ${CLICKHOUSE_DATABASE}.t_merge_proj"
@@ -67,7 +67,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.t_rebuild_proj (key UInt64, value String)
     ENGINE = ReplacingMergeTree ORDER BY key
     SETTINGS index_granularity = 64,
-        enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
+        enable_block_number_column = 0,
         enable_block_offset_column = 0,
         deduplicate_merge_projection_mode = 'rebuild'
 "
@@ -112,7 +112,7 @@ ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${CLICKHOUSE_DATABASE}.t_materialize_proj (key UInt64, value String)
     ENGINE = MergeTree ORDER BY key
     SETTINGS index_granularity = 64,
-        enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
+        enable_block_number_column = 0,
         enable_block_offset_column = 0
 "
 ${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES ${CLICKHOUSE_DATABASE}.t_materialize_proj"

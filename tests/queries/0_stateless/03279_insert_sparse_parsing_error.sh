@@ -9,7 +9,7 @@ $CLICKHOUSE_CLIENT --query "
 
     CREATE TABLE t_insert_sparse_columns (a UInt64, b UInt64, c UInt64)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only', enable_block_offset_column = 0;
+    SETTINGS ratio_of_defaults_for_sparse_serialization = 0.5, enable_block_number_column = 0, enable_block_offset_column = 0;
 
     SYSTEM STOP MERGES t_insert_sparse_columns;
 "

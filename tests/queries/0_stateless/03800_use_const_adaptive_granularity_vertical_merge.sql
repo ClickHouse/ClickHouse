@@ -14,7 +14,7 @@ SETTINGS
     min_bytes_for_wide_part = 0,
     use_const_adaptive_granularity = 1,
     enable_index_granularity_compression = 1,
-    enable_block_number_column = 0, part_minmax_index_columns = 'partition_key_only',
+    enable_block_number_column = 0,
     enable_block_offset_column = 0,
     auto_statistics_types = '',
     vertical_merge_algorithm_min_rows_to_activate = 0,
