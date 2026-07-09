@@ -1,0 +1,130 @@
+---
+description: 'Набор данных и запросы Join Order Benchmark (JOB).'
+sidebarTitle: 'JOB'
+slug: /getting-started/example-datasets/job
+title: 'Join Order Benchmark (JOB)'
+doc_type: 'guide'
+keywords: ['демонстрационный набор данных', 'JOB', 'join order benchmark', 'бенчмарк', 'тестирование производительности', 'оптимизатор запросов', 'порядок JOIN']
+---
+
+Join Order Benchmark (JOB) нагружает оптимизатор запросов 113 аналитическими запросами к реальному, сильно коррелированному набору данных (снимку IMDb). С момента своего появления бенчмарк JOB стал фактическим стандартом для оценки производительности оптимизаторов запросов реляционных баз данных, включая оценку мощности и оптимизацию порядка JOIN. В отличие от синтетических бенчмарков, предполагающих равномерные и независимые данные, JOB использует реальные данные с перекосами и корреляциями, что делает его сложным тестом для оптимизации порядка JOIN и оценки мощности.
+
+Набор данных содержит около 74 миллионов строк в 21 таблице и занимает в ClickHouse около 1,15 GiB в сжатом виде.
+
+113 запросов организованы в 33 семейства (`1`–`33`). Запросы внутри одного семейства (`a`, `b`, `c`, ...) имеют один и тот же граф JOIN, но различаются предикатами отбора.
+
+**Ссылки**
+
+* [Насколько хороши оптимизаторы запросов на самом деле?](https://www.vldb.org/pvldb/vol9/p204-leis.pdf) (Leis et al., VLDB 2015)
+* Репозиторий [Join Order Benchmark](https://github.com/gregrahn/join-order-benchmark)
+
+<div id="creating-tables">
+  ## Создание таблиц
+</div>
+
+Набор данных JOB — это снимок IMDb, содержащий 21 таблицу. Определения таблиц доступны в [`init_cloud.sql`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/init_cloud.sql) в репозитории ClickHouse.
+
+В каждой таблице используется движок [`MergeTree`](/ru/engines/table-engines/mergetree-family/mergetree) с сортировкой по столбцу первичного ключа `id`, что соответствует исходной схеме PostgreSQL, где в каждой таблице объявлен `id integer NOT NULL PRIMARY KEY`. Столбцы PostgreSQL, допускающие NULL, сопоставляются с типами `Nullable(...)`.
+
+Создайте таблицы:
+
+```bash
+curl -O https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/tests/benchmarks/job/init_cloud.sql
+clickhouse client --query "CREATE DATABASE IF NOT EXISTS job"
+clickhouse client --database job --queries-file init_cloud.sql
+```
+
+<div id="loading-the-data">
+  ## Загрузка данных
+</div>
+
+Данные берутся из исходного снимка IMDb, используемого в JOB, и распространяются по одному CSV-файлу на таблицу (`aka_name.csv`, `title.csv`, ...).
+В этих CSV используется семантика PostgreSQL `COPY` с `ESCAPE '\'`: символ обратной косой черты экранирует кавычку только внутри поля в кавычках, а вне кавычек обратная косая черта считается обычным символом.
+ClickHouse ожидает CSV в формате RFC 4180 (удвоенные кавычки, без экранирования обратной косой чертой), поэтому файлы сначала нужно перекодировать.
+
+[`convert_csv.py`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/convert_csv.py) выполняет это преобразование.
+Он читает исходный CSV из stdin и записывает стандартный CSV в stdout, удваивая вложенные кавычки и сохраняя пустые поля без кавычек (которые ClickHouse сопоставляет с `NULL` для столбцов `Nullable`).
+
+Чтобы создать таблицы из исходных CSV:
+
+* Создайте таблицы (см. выше).
+* Скачайте набор данных IMDb в виде файла `imdb.tgz`, следуя инструкциям из репозитория Join Order Benchmark.
+* Преобразуйте и импортируйте данные:
+
+```bash
+set -euo pipefail
+
+for table in aka_name aka_title cast_info char_name comp_cast_type company_name \
+             company_type complete_cast info_type keyword kind_type link_type \
+             movie_companies movie_info movie_info_idx movie_keyword movie_link \
+             name person_info role_type title; do
+    echo "Loading ${table} ..."
+    python3 convert_csv.py < "${table}.csv" > "${table}.clean.csv"
+    clickhouse client --database job --query "INSERT INTO ${table} FORMAT CSV" < "${table}.clean.csv"
+done
+```
+
+После заполнения таблиц их можно экспортировать в Parquet, чтобы ускорить последующий повторный импорт, например:
+`clickhouse client --database job --query "SELECT * FROM title ORDER BY id FORMAT Parquet" > title.parquet`.
+
+Подробные размеры таблиц:
+
+| Table                  | размер (в строках) | размер (в сжатом виде в ClickHouse) |
+| ---------------------- | ------------------ | ----------------------------------- |
+| aka&#95;name           | 901,343            | 31.86 MiB                           |
+| aka&#95;title          | 361,472            | 14.32 MiB                           |
+| cast&#95;info          | 36,244,344         | 296.25 MiB                          |
+| char&#95;name          | 3,140,339          | 107.95 MiB                          |
+| comp&#95;cast&#95;type | 4                  | 132.00 B                            |
+| company&#95;name       | 234,997            | 8.38 MiB                            |
+| company&#95;type       | 4                  | 162.00 B                            |
+| complete&#95;cast      | 135,086            | 748.80 KiB                          |
+| info&#95;type          | 113                | 1.25 KiB                            |
+| keyword                | 134,170            | 1.88 MiB                            |
+| kind&#95;type          | 7                  | 177.00 B                            |
+| link&#95;type          | 18                 | 284.00 B                            |
+| movie&#95;companies    | 2,609,129          | 21.20 MiB                           |
+| movie&#95;info         | 14,835,720         | 300.46 MiB                          |
+| movie&#95;info&#95;idx | 1,380,035          | 8.01 MiB                            |
+| movie&#95;keyword      | 4,523,930          | 21.06 MiB                           |
+| movie&#95;link         | 29,997             | 178.21 KiB                          |
+| name                   | 4,167,491          | 131.16 MiB                          |
+| person&#95;info        | 2,963,664          | 154.12 MiB                          |
+| role&#95;type          | 12                 | 246.00 B                            |
+| title                  | 2,528,312          | 78.04 MiB                           |
+| **Итого**              | **74,190,187**     | **1.15 GiB**                        |
+
+(Размеры в сжатом виде в ClickHouse взяты из `system.tables.total_bytes` и рассчитаны на основе приведённых выше определений таблиц.)
+
+<div id="queries">
+  ## Запросы
+</div>
+
+113 JOB-запросов можно найти [здесь](https://github.com/ClickHouse/ClickHouse/tree/master/tests/benchmarks/job/queries) в репозитории ClickHouse.
+Настройки, используемые для их запуска, находятся в [`settings.json`](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/settings.json).
+Сведения об известных проблемах и примечания к отдельным запросам см. в [README](https://github.com/ClickHouse/ClickHouse/blob/master/tests/benchmarks/job/README.md).
+
+В запросах таблицы указаны по именам, поэтому запускайте их в базе данных `job` (например, с помощью `clickhouse client --database job`).
+
+Пример запроса (`1a`):
+
+```sql
+SELECT MIN(mc.note) AS production_note,
+       MIN(t.title) AS movie_title,
+       MIN(t.production_year) AS movie_year
+FROM company_type AS ct,
+     info_type AS it,
+     movie_companies AS mc,
+     movie_info_idx AS mi_idx,
+     title AS t
+WHERE ct.kind = 'production companies'
+  AND it.info = 'top 250 rank'
+  AND mc.note NOT LIKE '%(as Metro-Goldwyn-Mayer Pictures)%'
+  AND (mc.note LIKE '%(co-production)%'
+       OR mc.note LIKE '%(presents)%')
+  AND ct.id = mc.company_type_id
+  AND t.id = mc.movie_id
+  AND t.id = mi_idx.movie_id
+  AND mc.movie_id = mi_idx.movie_id
+  AND it.id = mi_idx.info_type_id;
+```

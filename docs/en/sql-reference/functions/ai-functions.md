@@ -23,30 +23,22 @@ All functions are sharing a common infrastructure that provides:
 
 ## Configuration {#configuration}
 
-AI functions resolve provider credentials and configuration from a [**named collection**](/operations/named-collections). To set a named collection to use for credentials, use the [`ai_function_credentials`](/operations/settings/settings#ai_function_credentials) setting.
+AI functions reference a **named collection** that stores provider credentials and configuration. Different named collections can be created and used for different functions or functions calls. For example you may want to define a different named collection to use with the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) vs the `aiEmbed` function, which require different endpoints and usually use different models.
 
-Example statement to create a named collection with provider credentials:
+Example statement to create a named collection with provider credentials, one with a chat endpoint and another with an embedding endpoint:
 ```sql
-CREATE NAMED COLLECTION my_ai_credentials AS
+CREATE NAMED COLLECTION ai_text_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
+
+CREATE NAMED COLLECTION ai_embedding_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/embeddings',
+    model = 'text-embedding-3-small',
+    api_key = 'sk-...';
 ```
-
-Select the collection with the `ai_function_credentials` setting, for the session or for a single query:
-```sql
--- For the session:
-SET allow_experimental_ai_functions = 1;
-SET ai_function_credentials = 'my_ai_credentials';
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
-
--- Or for a single query:
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
-SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
-```
-
-When `ai_function_credentials` is empty (the default), an exception is raised.
 
 ### Named collection parameters {#named-collection-parameters}
 
@@ -63,42 +55,47 @@ When `ai_function_credentials` is empty (the default), an exception is raised.
 Any OpenAI-compatible API (e.g. vLLM, Ollama, LiteLLM) can be used by setting `provider = 'openai'` and pointing the `endpoint` to your service.
 :::
 
+### Selecting credentials {#selecting-credentials}
+
+A function resolves the named collection to use from, in order:
+
+1. the `credentials` key of its parameter map, when present;
+2. otherwise the applicable default-credentials setting:
+   - [`ai_function_text_default_credentials`](/operations/settings/settings#ai_function_text_default_credentials) for the text functions (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`);
+   - [`ai_function_embedding_default_credentials`](/operations/settings/settings#ai_function_embedding_default_credentials) for `aiEmbed`.
+
+If neither is set, the call fails. The text and embedding functions use separate default settings because a chat-completions endpoint and model differ from an embeddings one.
+
+```sql
+SET ai_function_text_default_credentials = 'ai_text_credentials';
+
+-- Uses ai_text_credentials from the setting:
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
+
+-- Overrides the default for this call:
+SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+### Parameter map {#parameter-map}
+
+Each function accepts an optional trailing `Map(String, String)` of parameters. All values are strings (quote numbers, e.g. `'0.2'`). Unknown keys are rejected. A key that is present overrides the corresponding named-collection value; a key that is absent falls back to the named collection (for `model`/`max_tokens`) or the built-in default.
+
+The following parameters are common to all the AI functions:
+
+| Key | Description |
+|-----|-------------|
+| `credentials` | Named collection to use (see above). |
+| `model` | Overrides the collection's `model`. |
+
+Individual functions accept additional, function-specific parameters (such as `max_tokens`, `temperature`, `system_prompt`, `instructions`, and `dimensions`). See each function's reference below for the parameters it accepts and their defaults.
+
+```sql
+SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
+```
+
 ### Query-level settings {#query-level-settings}
 
-Which named collection to use is controlled by the [`ai_function_credentials`](/operations/settings/settings#ai_function_credentials) setting. Other AI-related settings are listed in [Settings](/operations/settings/settings) under the `ai_function_` prefix.
-
-### Use in `DEFAULT` and `MATERIALIZED` columns {#default-and-materialized-columns}
-
-The `ai_function_credentials` setting is read when the default expression is evaluated, NOT when the column is defined. The collection name is not stored in the column definition:
-
-```sql
-CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
--- The stored default is `aiEmbed(doc)`; no collection is captured.
-```
-
-Evaluating the expression requires three things: `allow_experimental_ai_functions` and `ai_function_credentials` must be set, and the evaluating user must hold `GRANT NAMED COLLECTION` on the collection (resolving the credentials runs a `NAMED COLLECTION` access check). Any of them missing raises an exception (`SUPPORT_IS_DISABLED`, an empty-credentials error, or `ACCESS_DENIED`).
-
-A `DEFAULT` column is evaluated at `INSERT`, so both settings must be set in the inserting session or query:
-
-```sql
-GRANT NAMED COLLECTION ON my_ai_credentials TO user;
-SET allow_experimental_ai_functions = 1;
-SET ai_function_credentials = 'my_ai_credentials';
-INSERT INTO t (id, doc) VALUES (1, 'hello');
-```
-
-To make such tables insertable without setting these per session, set both in a [settings profile](/operations/settings/settings-profiles):
-
-```xml
-<profiles>
-    <default>
-        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
-        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
-    </default>
-</profiles>
-```
-
-A `MATERIALIZED` column is computed at `INSERT` like a `DEFAULT` column, and is also recomputed by mutations such as `ALTER TABLE ... MATERIALIZE COLUMN`. Mutations run outside a user session and do not inherit a query's `SETTINGS` clause, but they do inherit settings from a settings profile. Set both settings in a settings profile, and grant `NAMED COLLECTION` to the table owner, for mutation-driven recomputation to succeed.
+All AI-related settings are listed in [Settings](/operations/settings/settings) under the `ai_function_` prefix.
 
 ### Restricting endpoint hosts {#restricting-endpoint-hosts}
 
@@ -112,6 +109,17 @@ The `endpoint` URL in an AI named collection is an outbound destination the serv
 ```
 
 Note that this setting is server-wide and applies to all HTTP-using features.
+
+### Transport security (HTTP vs HTTPS) {#transport-security}
+
+The transport is determined solely by the scheme of the `endpoint` URL. There is no application-level encryption of the request payload; the protection of data in transit depends entirely on the scheme:
+
+- `https://` — the connection uses TLS. The request body (input text, prompts) and the `api_key` in the request headers are encrypted in transit, and the provider's certificate is validated. Use this for any remote provider.
+- `http://` — the connection is **not encrypted**. The request body and the `api_key` are sent in cleartext. Only use this for a trusted provider on a private network (e.g. a local `vLLM` or `Ollama` instance).
+
+AI functions do not force HTTPS: an `http://` endpoint is accepted and sends data unencrypted. There is currently no server-side setting that rejects cleartext AI endpoints — [`remote_url_allow_hosts`](/operations/server-configuration-parameters/settings#remote_url_allow_hosts) restricts the destination host only and does not inspect the URL scheme, so an `http://` endpoint to an allowed host still passes. To ensure encrypted transport, configure named collections with `https://` endpoints.
+
+Note that in either case the provider receives the input data in cleartext after TLS termination; TLS protects the data only on the network path between the server and the provider.
 
 ## Supported providers {#supported-providers}
 

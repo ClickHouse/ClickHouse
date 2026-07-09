@@ -1,0 +1,117 @@
+---
+slug: /cloud/marketplace/marketplace-billing
+title: '마켓플레이스 청구'
+description: 'AWS, GCP 및 Azure 마켓플레이스를 통해 ClickHouse Cloud를 구독합니다.'
+keywords: ['aws', 'azure', 'gcp', 'google cloud', 'marketplace', '청구']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+AWS, GCP, Azure 마켓플레이스를 통해 ClickHouse Cloud를 구독할 수 있습니다. 이를 통해 기존 클라우드 제공업체의 청구 체계로 ClickHouse Cloud 비용을 결제할 수 있습니다.
+
+마켓플레이스를 통해 종량제(PAYG)를 선택하거나 ClickHouse Cloud와 약정 계약을 체결할 수 있습니다. 청구는 클라우드 제공업체에서 처리되며, 모든 클라우드 서비스에 대해 하나의 인보이스를 받게 됩니다.
+
+* [AWS Marketplace PAYG](/ko/products/cloud/reference/billing/marketplace/aws-marketplace-payg)
+* [AWS Marketplace Committed Contract](/ko/products/cloud/reference/billing/marketplace/aws-marketplace-committed)
+* [GCP Marketplace PAYG](/ko/products/cloud/reference/billing/marketplace/gcp-marketplace-payg)
+* [GCP Marketplace Committed Contract](/ko/products/cloud/reference/billing/marketplace/gcp-marketplace-committed)
+* [Azure Marketplace PAYG](/ko/products/cloud/reference/billing/marketplace/azure-marketplace-payg)
+* [Azure Marketplace Committed Contract](/ko/products/cloud/reference/billing/marketplace/azure-marketplace-committed)
+
+<div id="faqs">
+  ## 자주 묻는 질문
+</div>
+
+<div id="how-can-i-verify-that-my-organization-is-connected-to-marketplace-billing">
+  ### 조직이 마켓플레이스 청구에 연결되어 있는지 어떻게 확인할 수 있습니까?​
+</div>
+
+ClickHouse Cloud 콘솔에서 **청구**로 이동하십시오. **결제 세부 정보** 섹션에서 마켓플레이스 이름과 링크를 확인할 수 있습니다.
+
+<div id="i-am-an-existing-clickhouse-cloud-user-what-happens-when-i-subscribe-to-clickhouse-cloud-via-aws--gcp--azure-marketplace">
+  ### 기존 ClickHouse Cloud 사용자입니다. AWS / GCP / Azure 마켓플레이스를 통해 ClickHouse Cloud를 구독하면 어떻게 됩니까?​
+</div>
+
+클라우드 제공업체 마켓플레이스에서 ClickHouse Cloud를 신청하는 과정은 2단계로 이루어집니다:
+
+1. 먼저 클라우드 제공업체의 마켓플레이스 포털에서 ClickHouse Cloud를 &quot;구독&quot;합니다. 구독을 완료한 후 &quot;Pay Now&quot; 또는 &quot;Manage on Provider&quot;(마켓플레이스에 따라 다름)를 클릭합니다. 그러면 ClickHouse Cloud로 리디렉션됩니다.
+2. ClickHouse Cloud에서 새 계정을 등록하거나 기존 계정으로 로그인합니다. 어느 경우든 마켓플레이스 청구에 연결된 새 ClickHouse Cloud 조직이 생성됩니다.
+
+참고: 이전에 ClickHouse Cloud에 가입할 때 생성된 기존 서비스 및 조직은 그대로 유지되며, 마켓플레이스 청구에는 연결되지 않습니다. ClickHouse Cloud에서는 동일한 계정으로 여러 조직을 관리할 수 있으며, 각 조직마다 서로 다른 청구 방식을 사용할 수 있습니다.
+
+ClickHouse Cloud 콘솔의 왼쪽 하단 메뉴에서 조직을 전환할 수 있습니다.
+
+<div id="i-am-an-existing-clickhouse-cloud-user-what-should-i-do-if-i-want-my-existing-services-to-be-billed-via-marketplace">
+  ### 기존 ClickHouse Cloud 사용자입니다. 기존 서비스 요금을 마켓플레이스를 통해 청구하려면 어떻게 해야 합니까?​
+</div>
+
+클라우드 제공업체 마켓플레이스를 통해 ClickHouse Cloud를 구독해야 합니다. 마켓플레이스에서 구독을 완료한 후 ClickHouse Cloud로 리디렉션되면, 기존 ClickHouse Cloud 조직을 마켓플레이스 청구에 연결할 수 있는 옵션이 제공됩니다. 그 시점부터 기존 리소스는 마켓플레이스를 통해 청구됩니다.
+
+<Image img="/images/cloud/manage/billing/marketplace/marketplace_signup_and_org_linking.webp" size="md" alt="마켓플레이스 가입 및 조직 연결" border />
+
+조직의 청구 페이지에서 청구가 현재 마켓플레이스에 연결되어 있는지 확인할 수 있습니다. 문제가 발생하면 [ClickHouse Cloud 지원팀](https://clickhouse.com/support/program)에 문의하십시오.
+
+<Note>
+  이전에 ClickHouse Cloud에 가입하면서 생성된 기존 서비스와 조직은 그대로 유지되며, 마켓플레이스 청구에는 연결되지 않습니다.
+</Note>
+
+<div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-how-can-i-unsubscribe">
+  ### 마켓플레이스 사용자로 ClickHouse Cloud를 구독했습니다. 구독을 어떻게 해지할 수 있습니까?​
+</div>
+
+ClickHouse Cloud 사용을 중단하고 기존의 ClickHouse Cloud 서비스를 모두 삭제하면 됩니다. 구독은 계속 활성 상태로 유지되지만, ClickHouse Cloud에는 정기 요금이 없으므로 비용이 청구되지 않습니다.
+
+구독을 해지하려면 클라우드 제공업체 콘솔로 이동하여 해당 구독의 갱신을 취소하세요.
+
+<div id="i-subscribed-to-clickhouse-cloud-as-a-marketplace-user-and-then-unsubscribed-now-i-want-to-subscribe-back-what-is-the-process">
+  ### 마켓플레이스 사용자로 ClickHouse Cloud를 구독했다가 구독을 취소했습니다. 이제 다시 구독하려면 어떤 절차를 거쳐야 하나요?​
+</div>
+
+이 경우에는 일반적인 절차대로 ClickHouse Cloud를 다시 구독하십시오(마켓플레이스를 통해 ClickHouse Cloud를 구독하는 섹션 참조).
+
+* AWS 마켓플레이스의 경우 새 ClickHouse Cloud 조직이 생성되어 마켓플레이스에 연결됩니다.
+* GCP 마켓플레이스의 경우 기존 조직이 다시 활성화됩니다.
+
+마켓플레이스 조직을 다시 활성화하는 데 문제가 있으면 [ClickHouse 지원팀](https://clickhouse.com/support/program)로 문의하십시오.
+
+<div id="how-do-i-access-my-invoice-for-my-marketplace-subscription-to-the-clickhouse-cloud-service">
+  ### ClickHouse Cloud 서비스용 마켓플레이스 구독의 인보이스는 어떻게 확인합니까?​
+</div>
+
+* [AWS 청구 Console](https://us-east-1.console.aws.amazon.com/billing/home)
+* [GCP 마켓플레이스 주문](https://console.cloud.google.com/marketplace/orders) (구독에 사용한 청구 계정을 선택합니다)
+
+<div id="why-do-the-dates-on-the-usage-statements-not-match-my-marketplace-invoice">
+  ### 사용량 명세서의 날짜가 Marketplace 인보이스와 일치하지 않는 이유는 무엇인가요?​
+</div>
+
+Marketplace 청구는 달력 기준의 월별 주기를 따릅니다. 예를 들어, 12월 1일부터 1월 1일까지의 사용량에 대해서는 1월 3일부터 1월 5일 사이에 인보이스가 생성됩니다.
+
+ClickHouse Cloud 사용량 명세서는 이와 다른 청구 주기를 따르며, 가입일부터 30일 동안의 사용량을 기준으로 측정 및 보고됩니다.
+
+이 날짜들이 서로 다르면 사용량 명세서의 날짜와 인보이스 날짜도 달라집니다. 사용량 명세서는 특정 서비스의 일별 사용량을 추적하므로, 비용 상세 내역은 명세서를 통해 확인할 수 있습니다.
+
+<div id="where-can-i-find-general-billing-information">
+  ### 일반적인 청구 정보는 어디에서 찾을 수 있나요​?
+</div>
+
+자세한 내용은 [청구 개요 페이지](/ko/products/cloud/reference/billing/index)를 참조하십시오.
+
+<div id="is-there-a-difference-in-clickhouse-cloud-pricing-whether-paying-through-the-cloud-provider-marketplace-or-directly-to-clickhouse">
+  ### 클라우드 제공업체 마켓플레이스를 통해 청구하든 ClickHouse에 직접 결제하든 ClickHouse Cloud 가격에 차이가 있습니까?
+</div>
+
+마켓플레이스를 통한 청구와 ClickHouse에 직접 가입하는 경우 사이에는 가격 차이가 없습니다. 어느 경우든 ClickHouse Cloud 사용량은 ClickHouse Cloud Credits(CHCs) 기준으로 추적되며, 동일한 방식으로 계량되어 그에 따라 청구됩니다.
+
+<div id="multiple-organizations-to-bill-to-single-cloud-marketplace-account">
+  ### 여러 ClickHouse 조직의 사용 요금을 단일 cloud 마켓플레이스 청구 계정(AWS, GCP 또는 Azure)에 청구되도록 설정할 수 있습니까?
+</div>
+
+예. 여러 ClickHouse 조직이 동일한 cloud 마켓플레이스 청구 계정(AWS, GCP 또는 Azure)에 후불로 사용 요금이 청구되도록 구성할 수 있습니다. 다만 선불 제보는 기본적으로 조직 간에 공유되지 않습니다. 조직 간에 제보를 공유해야 하는 경우 [ClickHouse 지원팀](https://clickhouse.com/support/program)로 문의하십시오.
+
+<div id="automatically-move-to-PAYG-when-running-out-of-credit">
+  ### ClickHouse 조직의 청구가 클라우드 마켓플레이스 사용 약정 계약을 통해 이루어지는 경우, 제보을 모두 소진하면 자동으로 PAYG 청구로 전환됩니까?
+</div>
+
+마켓플레이스 사용 약정 계약이 활성 상태이고 제보을 모두 소진한 경우, 조직은 자동으로 PAYG 청구로 전환됩니다. 다만 기존 계약이 만료되면 새 마켓플레이스 계약을 조직에 연결하거나, 신용카드를 통한 직접 청구로 조직을 전환해야 합니다.

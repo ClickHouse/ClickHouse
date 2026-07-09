@@ -1,0 +1,87 @@
+---
+sidebarTitle: 'Fivetran'
+slug: /integrations/fivetran
+description: '使用 Fivetran 将来自任何来源的数据导入 ClickHouse Cloud，并自动创建 schema、执行去重以及启用历史模式（SCD Type 2）。'
+title: 'Fivetran 与 ClickHouse Cloud'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse-fivetran-destination'
+keywords: ['fivetran', '数据迁移', 'etl', 'ClickHouse 目标端', '自动化数据平台', '历史模式', 'SCD Type 2']
+---
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<div id="overview">
+  ## 概述
+</div>
+
+[Fivetran](https://www.fivetran.com) 是一个自动化数据移动平台，可在您的云数据平台之间以及与其之间双向移动数据。
+
+支持将 [ClickHouse Cloud](https://clickhouse.com/cloud) 作为 [Fivetran 目标端](https://fivetran.com/docs/destinations/clickhouse)，让您能够将来自各种来源的数据加载到 ClickHouse。开源版 ClickHouse 不支持作为目标端。
+
+该目标端连接器由 ClickHouse 和 Fivetran 共同开发和维护。源代码可在 [GitHub](https://github.com/ClickHouse/clickhouse-fivetran-destination) 上获取。
+
+<Note>
+  [ClickHouse Cloud 目标端](https://fivetran.com/docs/destinations/clickhouse) 目前处于 **Beta** 阶段，但我们正在努力尽快使其正式可用。
+</Note>
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/sWe5JHW3lAs"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="key-features">
+  ## 主要特性
+</div>
+
+* **兼容 ClickHouse Cloud**：可将您的 ClickHouse Cloud 数据库用作 Fivetran 的目标端。
+* **SaaS 部署模型**：由 Fivetran 全权托管，无需自行管理基础设施。
+* **历史模式 (SCD Type 2)&#x20;**：保留所有记录版本的完整历史，便于进行时间点分析和审计追踪。
+* **可配置的批次大小**：您可以通过在 JSON 配置文件中调整写入、查询、变更和硬删除的批次大小，使 Fivetran 更好地适配您的具体用例。
+
+<div id="limitations">
+  ## 限制
+</div>
+
+* 目前尚不支持 schema 迁移，但我们正在推进这项工作。
+* 不支持添加、删除或修改主键列。
+* 不支持在 `CREATE TABLE` 语句中指定自定义 ClickHouse 设置。
+* 尚未完全支持基于角色的授权。连接器的授权检查仅会查询直接授予用户的授权。请改用[直接授权](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting#role-based-grants)。
+
+<div id="related-pages">
+  ## 相关页面
+</div>
+
+* [技术参考](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/reference)：类型映射、表引擎、元数据列以及高级配置
+* [故障排查与最佳实践](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/troubleshooting)：常见错误、优化建议以及调试查询
+* [GitHub 上的 ClickHouse Fivetran 目标端](https://github.com/ClickHouse/clickhouse-fivetran-destination)
+
+<div id="setup-guide">
+  ## 设置指南
+</div>
+
+* 如果你在查找配置和一般性技术细节，请参阅[技术参考](/zh/integrations/connectors/data-ingestion/etl-tools/fivetran/reference)。
+* 如需更全面的说明，请查看 Fivetran 文档中的[设置指南](https://fivetran.com/docs/destinations/clickhouse/setup-guide)。
+
+<div id="contact-us">
+  ## 联系与支持
+</div>
+
+ClickHouse Fivetran 目标端采用分工协作的负责模式：
+
+* **ClickHouse** 负责开发和维护目标端连接器代码。
+* **Fivetran** 托管该连接器，并负责数据传输、管道调度以及源连接器。
+
+Fivetran 和 ClickHouse 都为 Fivetran ClickHouse 目标端提供支持。对于一般咨询，我们建议联系 Fivetran，因为他们更熟悉 Fivetran 平台。对于任何 ClickHouse 相关的问题或故障，我们的支持团队也很乐意提供帮助。请创建一个[支持工单](/zh/resources/about/support)来提问或报告问题。

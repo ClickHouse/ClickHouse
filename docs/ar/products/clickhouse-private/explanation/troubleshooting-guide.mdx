@@ -1,0 +1,564 @@
+---
+noindex: true
+title: "دليل استكشاف الأخطاء وإصلاحها"
+sidebarTitle: "استكشاف الأخطاء وإصلاحها"
+description: "يجمع هذا الدليل المشكلات الشائعة وأعراضها وأسبابها المحتملة وخطوات حلّها في عمليات نشر ClickHouse Private."
+---
+
+يجمع هذا الدليل المشكلات الشائعة وأعراضها وأسبابها المحتملة وخطوات حلّها في عمليات نشر ClickHouse Private. ويعرض كل قسم العناصر بالترتيب التالي: العَرَض، والسبب، والحل.
+
+***
+
+<div id="operator-issues">
+  ## مشكلات المشغّل
+</div>
+
+<div id="cr-changes-not-being-applied">
+  ### عدم تطبيق تغييرات CR
+</div>
+
+**العَرَض:** لا تتم مواءمة التغييرات التي أُجريت على ClickHouseCluster CR أو تطبيقها على العنقود لفترة طويلة.
+
+**السبب:** أحد ثلاثة أسباب شائعة:
+
+1. المشغّل نفسه في حالة إعادة تشغيل متكررة بسبب التعطل.
+2. جرابات ClickHouse ‏(Keeper أو خادم) في حالة إعادة تشغيل متكررة بسبب التعطل، مما يمنع المواءمة.
+3. توجد تعليق توضيحي باسم `clickhouse.com/skip-reconcile` على CR، ما يوجّه المشغّل إلى تخطي المواءمة بالكامل.
+
+**الحل:**
+
+1. تحقّق من سجلات المشغّل بحثًا عن حالات تعطل أو أخطاء:
+
+   ```bash
+   kubectl logs -f -n clickhouse-operator-system <operator-pod-name>
+   ```
+
+2. تحقّق من جرابات Keeper وخادم بحثًا عن حالات إعادة التشغيل المتكررة بسبب التعطل:
+
+   ```bash
+   kubectl get pods -n <namespace>
+   kubectl logs <pod-name> -n <namespace>
+   ```
+
+3. تحقّق من وجود تعليق توضيحي ‏skip-reconcile على CR:
+
+   ```bash
+   kubectl get clickhousecluster <cluster-name> -n <namespace> -o yaml | grep skip-reconcile
+   ```
+
+   إذا كانت موجودة ولم تعد مطلوبة، فأزلها:
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile-
+   ```
+
+***
+
+<div id="how-to-drop-a-server-replica">
+  ### كيفية إزالة نسخة متماثلة من الخادم
+</div>
+
+**العَرَض:** تحتاج إلى إزالة نسخة متماثلة محددة من العنقود من دون تقليص الحجم (خفض العدد المطلوب للنسخ المتماثلة).
+
+**السبب:** النسخة المتماثلة غير سليمة، أو عالقة، أو تحتاج إلى إزالتها يدويًا لسبب ما.
+
+**الحل:**
+
+1. **أضف التعليق التوضيحي skip-reconcile** لمنع المشغّل من التدخل:
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile=remove-replica
+   ```
+
+   تأكّد من أن المشغّل قد رصد ذلك عبر التحقق من السجلات والبحث عن:
+
+   ```text
+   Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation"
+   ```
+
+2. **أزل النسخة المتماثلة من ReplicaStateMap.** افحص أولًا الخريطة الحالية:
+
+   ```bash
+   kubectl get clickhousecluster <cluster-name> -n <namespace> -o json | jq .status.replicaStateMap
+   ```
+
+   ثم عدّل المورد الفرعي `status` لإزالة إدخال النسخة المتماثلة المستهدفة:
+
+   ```ini
+   EDITOR=vim kubectl edit clickhousecluster <cluster-name> -n <namespace> --subresource=status
+   ```
+
+3. **احذف StatefulSet** الخاص بالنسخة المتماثلة:
+
+   ```bash
+   kubectl delete sts <replica-statefulset-name> -n <namespace>
+   ```
+
+   انتظر حتى يتوقف البود بعد حذف StatefulSet.
+
+4. **أزل التعليق التوضيحي skip-reconcile:**
+
+   ```bash
+   kubectl annotate clickhousecluster <cluster-name> -n <namespace> clickhouse.com/skip-reconcile-
+   ```
+
+   سيُنشئ المشغّل نسخة متماثلة جديدة وينظّف النسخة المتماثلة التي تمت إزالتها من ClickHouse.
+
+5. **تحقّق** عبر تسجيل الدخول إلى عنقود ClickHouse والتأكد من إزالة النسخة المتماثلة القديمة. إذا كانت أي عقود إيجار تحتفظ بها النسخة المتماثلة لم تنتهِ بعد، فسيُعيد المشغّل محاولة الإزالة. ينبغي أن تكتمل عملية التنظيف خلال 5 دقائق.
+
+***
+
+<div id="server-pod-hanging-on-termination">
+  ### تعلّق جراب الخادم أثناء الإنهاء
+</div>
+
+**العَرَض:** تبقى جرابات الخادم في حالة `Terminating` لفترة طويلة:
+
+```text
+NAME                            READY   STATUS        RESTARTS   AGE
+c-navy-wl-64-server-gbwmanx-0   1/2     Terminating   0          3m25s
+c-navy-wl-64-server-pxb9mde-0   1/2     Terminating   0          3m25s
+```
+
+**السبب:** قبل الإيقاف، تُشغِّل كبسولات الخادم خطاف PreStop لتفريغ الاتصالات والانتظار حتى تكتمل الطلبات قيد التشغيل. إذا كانت هناك استعلامات طويلة التشغيل أو اتصالات نشطة، فستظل الكبسولة في حالة الإنهاء.
+
+**الحل:**
+
+1. تحقّق من سجل خطاف PreStop لمعرفة ما الذي ينتظره الخطاف بالتحديد:
+
+   ```bash
+   kubectl exec <pod-name> -- cat /var/log/clickhouse-server/prestop.log
+   ```
+
+2. تحقّق من سجلات الخادم بحثًا عن رسائل السجل الخاصة بالإشارات المستلَمة، والتي توضّح حالة عملية إيقاف التشغيل.
+
+***
+
+<div id="multiple-clickhouseclusters-in-the-same-namespace">
+  ### عدة ClickHouseClusters في مساحة الاسم نفسها
+</div>
+
+**العَرَض:** سلوك غير متوقع أثناء المواءمة، أو تعديل الموارد أو حذفها على نحو غير متوقع، أو تأرجح المشغّل بين حالات العنقود.
+
+**السبب:** يوجد أكثر من مورد مخصص `ClickHouseCluster` في مساحة الاسم نفسها. يفترض المشغّل وجود `ClickHouseCluster` واحد فقط لكل مساحة اسم، ولا يمكنه إجراء المواءمة بشكل صحيح عندما تتشارك عدة مثيلات مساحة اسم واحدة.
+
+**الحل:**
+
+1. تحقّق من عدد موارد `ClickHouseCluster` الموجودة في مساحة الاسم:
+
+   ```bash
+   kubectl get clickhouseclusters -n <namespace>
+   ```
+
+2. إذا وُجد أكثر من مورد واحد، فانقل العناقيد الإضافية إلى مساحات أسماء خاصة بها. يجب أن يكون كل `ClickHouseCluster` هو المثيل الوحيد في مساحة الاسم الخاصة به.
+
+3. ينشئ مخطط Helm ‏`onprem-clickhouse-cluster` مورد `ResourceQuota` افتراضيًا لمنع هذه الحالة. تحقّق من وجود الحصة:
+
+   ```bash
+   kubectl get resourcequota -n <namespace>
+   ```
+
+   إذا كانت الحصة غير موجودة، فتأكّد من ضبط `resourceQuota.enabled` على `true` (القيمة الافتراضية) في قيم Helm الخاصة بك.
+
+***
+
+<div id="cr-not-in-healthy-running-state">
+  ### ‏CR ليس في حالة `Running` سليمة
+</div>
+
+**العَرَض:** يُظهر ClickHouseCluster CR حالةً غير `Running`، أو أن الجرابات يُعاد تشغيلها.
+
+**السبب:** قد تمنع مشكلات متعددة الوصول إلى حالة سليمة، مثل الجرابات التي تدخل في حالة crashlooping، أو قيود الموارد، أو أخطاء الإعداد، أو إخفاقات الجدولة.
+
+**الحل:**
+
+1. تحقّق من حالة العنقود عبر جميع مساحات الأسماء:
+
+   ```bash
+   kubectl get clickhouseclusters -A
+   ```
+
+2. اعرض وصف الجراب الذي به المشكلة للحصول على الحالة التفصيلية والأحداث:
+
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   ```
+
+3. تحقّق من السجلات الخاصة بالحاوية التي أُنهِيت سابقًا:
+
+   ```bash
+   kubectl logs -p <pod-name> -n <namespace>
+   ```
+
+4. تحقّق من أحداث مساحة الاسم لمعرفة مشكلات الجدولة أو الموارد:
+
+   ```bash
+   kubectl get events -n <namespace>
+   ```
+
+***
+
+<div id="clickhouse-server-issues">
+  ## مشكلات خادم ClickHouse
+</div>
+
+<div id="crashlooping-server-pods">
+  ### جرابات الخادم التي تدخل في حلقة تعطل متكرر
+</div>
+
+**العَرَض:** جرابات خادم ClickHouse في حالة `CrashLoopBackOff`.
+
+**السبب:** تتعطل عملية خادم ClickHouse عند بدء التشغيل أو بعده بوقت قصير. قد يحدث ذلك بسبب أخطاء في التهيئة، أو تلف البيانات، أو ضغط الذاكرة، أو إنهاء Kubernetes لها بسبب نفاد الذاكرة (OOM).
+
+**الحل:**
+
+1. تحقّق من سجلات جراب خادم ClickHouse لمعرفة سبب التعطل:
+
+   ```bash
+   kubectl logs <pod-name> -n <namespace>
+   kubectl logs -p <pod-name> -n <namespace>
+   ```
+
+2. إذا كان التعطل ناتجًا عن ضغط الذاكرة أو عن إنهاء initiated by Kubernetes, فتحقّق من أحداث Kubernetes:
+
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   kubectl get events -n <namespace>
+   ```
+
+***
+
+<div id="data-losscorruption-clickhousebrokenpartdetectedonselect">
+  ### فقدان/تلف البيانات (ClickHouseBrokenPartDetectedOnSelect)
+</div>
+
+**العَرَض:** يصدر التنبيه `ClickHouseBrokenPartDetectedOnSelect`، أو تفشل استعلامات SELECT مع أخطاء `POTENTIALLY_BROKEN_DATA_PART`.
+
+**السبب:** فشلت قراءة جزء بيانات SMT بسبب خطأ غير قابل لإعادة المحاولة. ويُطرَح الاستثناء `POTENTIALLY_BROKEN_DATA_PART` عند اكتشاف جزء بيانات تالف أثناء عملية SELECT.
+
+**الحل:**
+
+1. **افحص السجلات** بحثًا عن الاستثناء `POTENTIALLY_BROKEN_DATA_PART`. وإذا لم تجده في السجلات، فتحقق أيضًا من `system.errors`.
+
+2. **حدّد أجزاء البيانات المفقودة.** نفّذ استعلامًا على `system.replicas` للعثور على الجداول المتأثرة:
+
+   ```sql
+   SELECT
+       database,
+       table,
+       lost_part_count AS value
+   FROM system.replicas
+   WHERE value > 0
+   ```
+
+3. **اعثر على السجلات المرتبطة بالأجزاء المفقودة.** تحقّق من `/var/log/clickhouse-server/` على الـ جراب (استخدم `zgrep` للسجلات المؤرشفة)، أو نفّذ استعلامًا على `system.text_log`:
+
+   ```sql
+   SELECT
+       hostName(),
+       event_time,
+       logger_name,
+       message
+   FROM clusterAllReplicas(default, system.text_log)
+   WHERE message_format_string = 'Part {} is lost forever.'
+   ORDER BY hostName(), event_time
+   ```
+
+   أضف شرطًا على نطاق `event_time` لتسريع الاستعلام.
+
+4. **افهم تاريخ الأجزاء المفقودة.** اختر اسم جزء مفقود واعثر على جميع السجلات المرتبطة به:
+
+   ```sql
+   SELECT
+       event_time,
+       message
+   FROM system.text_log
+   WHERE message LIKE '%<part name>%' AND hostName() = '<host where lost forever log was created>'
+   ORDER BY event_time ASC
+   ```
+
+   ركّز على رسائل السجل *التي تسبق* `Part * is lost forever`. أما الرسائل التي تأتي بعد تلك النقطة فهي غير ذات صلة (فأي جزء &quot;تم العثور عليه&quot; هو في الواقع بديل فارغ).
+
+5. **تحقق من الإيجابيات الكاذبة:**
+
+6. تحقّق مما إذا كان للجدول TTL، وما إذا كان ينبغي حذف الجزء المفقود على أي حال.
+
+7. تحقّق من `system.query_log` بحثًا عن استعلامات TRUNCATE أو DROP PARTITION التي كان ينبغي أن تُسقط الأجزاء المفقودة.
+
+8. **استقصاء إضافي:**
+
+9. إذا كان الجزء قد تم فصله باعتباره تالفًا، فحدّد سبب تلفه.
+
+10. إذا رأيت `The specified key does not exist`، فابحث في جميع السجلات باستخدام اسم blob لمعرفة متى ولماذا تمت إزالته. وتحقّق أيضًا من رسائل السجل المتعلقة بأقفال zero-copy.
+
+11. تواصل مع ClickHouse Support وأرسل ما توصلت إليه.
+
+***
+
+<div id="table-replicas-read-only-clickhousetablereplicasreadonly">
+  ### نسخ الجداول المتماثلة في وضع القراءة فقط (ClickHouseTableReplicasReadOnly)
+</div>
+
+**العَرَض:** يُطلق التنبيه `ClickHouseTableReplicasReadOnly`، أو تفشل عمليات الكتابة إلى الجداول لأنها في وضع القراءة فقط.
+
+**السبب:** بقي أحد الجداول في وضع القراءة فقط لمدة ساعة واحدة على الأقل. ولا يشمل ذلك الجداول الموجودة في قاعدتَي البيانات `*_broken_replicated_tables` و `*_broken_tables`. وقد ينتج ذلك عن عملية `DROP` لم تكتمل بشكل سليم، أو عن مشكلة في الاتصال بـ Keeper.
+
+**الحل:**
+
+1. **تحقّق مما إذا كانت لا تزال هناك جداول في وضع القراءة فقط** في العنقود:
+
+   ```sql
+   SELECT
+     dateDiff('second', readonly_start_time, now()) AS readonly_duration_seconds,
+     database,
+     table,
+     hostname()
+   FROM clusterAllReplicas(default, system.replicas)
+   WHERE is_readonly = 1
+   ```
+
+2. **تحرَّ عن السبب.** يشير وجود جداول في وضع القراءة فقط عادةً إلى أنه جرى تنفيذ `StorageSharedMergeTree::shutdown` لكن كائن التخزين ظل موجودًا. ابحث في السجلات النصية باستخدام اسم الجدول بوصفه اسم `logger`.
+
+3. **حاول إعادة تشغيل النسخة المتماثلة** لكل جدول متأثر:
+
+   ```sql
+   SYSTEM RESTART REPLICA <database>.<table>
+   ```
+
+   يمكنك الحصول على أسماء الجداول من الاستعلام في الخطوة 1. أحيانًا تكون المشكلة بسيطة، وتؤدي إعادة التشغيل إلى حلها.
+
+4. إذا استمرت المشكلة، فتحقّق من سجلات Keeper بحثًا عن مشكلات محتملة في الاتصال أو التنسيق.
+
+***
+
+<div id="replica-already-exists-clickhousereplicaalreadyexists">
+  ### النسخة المتماثلة موجودة بالفعل (ClickHouseReplicaAlreadyExists)
+</div>
+
+**العَرَض:** يتم تفعيل تنبيه `ClickHouseReplicaAlreadyExists`، أو يفشل إنشاء النسخة المتماثلة مع ظهور الخطأ `REPLICA_ALREADY_EXISTS`.
+
+**السبب:** تعذّر إنشاء جدول مُكرَّر (SMT أو RMT) لأن نسخة متماثلة موجودة مسبقًا مرتبطة بالفعل بمسار ZooKeeper. ومن غير المرجّح أن يكون السبب خطأ من المستخدم (إذ إن إعادة استخدام UUID صراحةً أصبحت الآن محظورة عبر `database_replicated_allow_explicit_uuid`). والأرجح أن هذه مشكلة في قاعدة البيانات Replicated أو Shared Catalog.
+
+**الحل:**
+
+تواصل مع ClickHouse Support. والأرجح أن هذه مشكلة تتطلب تحقيقًا من فريق الهندسة.
+
+***
+
+<div id="cannot-write-to-file-descriptor-clickhousecannotwritetofiledescriptor">
+  ### يتعذر الكتابة إلى واصف الملف (ClickHouseCannotWriteToFileDescriptor)
+</div>
+
+**العَرَض:** يُطلَق التنبيه `ClickHouseCannotWriteToFileDescriptor`، أو تظهر أخطاء مثل `CANNOT_WRITE_TO_FILE_DESCRIPTOR` أو `no space left on device` في السجلات.
+
+**السبب:** قرص التخزين المؤقت ممتلئ. يُثار الاستثناء عندما لا تتوفر مساحة كافية لإدخال جديد في التخزين المؤقت أو لمعالجة البيانات الخارجية (مثل التجميع الخارجي وعمليات الربط الخارجية). وقد يرجع ذلك إلى سوء تهيئة، حيث أُنشئ القرص بمساحة أقل من المطلوبة في تهيئة CR.
+
+**الحل:**
+
+1. **تحقق أولًا من المشكلة المعروفة في `partial_merge`.** هناك خلل معروف في تتبع استخدام قرص التخزين المؤقت عند تحديد إعداد الاستعلام `join_algorithm = 'partial_merge'`. تحقق مما إذا كان هذا الإعداد قيد الاستخدام.
+
+2. **اتصل بالجراب:**
+
+   ```bash
+   kubectl exec -n <namespace> -it <pod> -- /bin/bash
+   ```
+
+3. **تحقق من الحجم الفعلي للقرص:**
+
+   ```text
+   df -h
+   ```
+
+4. **تحقق من حجم قرص التخزين المؤقت المطلوب** في ClickHouse:
+
+   ```sql
+   SELECT path, max_size FROM system.filesystem_cache_settings
+   ```
+
+   لاحظ أن عدة ذواكر مؤقتة (مثل `s3diskWithCache` و`diskPlainRewritableForSystemTablesWithCache`) قد تشترك في المسار نفسه (`/mnt/clickhouse-cache/sharedS3DiskCache`).
+
+5. **قارن بين الحجم الفعلي والمطلوب:**
+
+6. إذا كان الحجم الفعلي للقرص أصغر من المطلوب، فالمشكلة ناتجة عن سوء تهيئة. تواصل مع فريق Data Plane Operator.
+
+7. إذا كان حجم القرص كافيًا، فمن المرجح أن يكون هناك خلل في تتبع استخدام قرص التخزين المؤقت. حقق في ذلك عبر `system.filesystem_cache`.
+
+***
+
+<div id="storage-and-infrastructure-issues">
+  ## مشكلات التخزين والبنية التحتية
+</div>
+
+<div id="zone-details-could-not-be-found-for-any-pv">
+  ### تعذّر العثور على تفاصيل المنطقة لأي PV
+</div>
+
+**العَرَض:** تُظهر سجلات ClickHouse Operator الخطأ `zone details couldn't be found for any PV`، ولا يمكن إكمال عملية المواءمة.
+
+**السبب:** يتوقع المشغّل أن تُملأ تلقائيًا أُلف العقد المراعية للطوبولوجيا على PersistentVolumes باستخدام الوسم `topology.kubernetes.io/zone`. وعادةً ما تتولى هذه المهمة موفّرات وحدات التخزين المراعية للطوبولوجيا (مثل AWS EBS). لكن في بعض Cloud Providers (مثل IBM) أو في البيئات المحلية، لا يُملأ هذا الوسم تلقائيًا أو تُستخدم وسوم غير قياسية.
+
+**الحل:**
+
+1. **أضف `allowedTopologies` إلى `StorageClass` لديك** لضمان إنشاء وحدات التخزين مع أُلف العقد الصحيحة:
+
+   ```yaml
+   apiVersion: storage.k8s.io/v1
+   kind: StorageClass
+   metadata:
+     name: local-nvme-sc
+   allowVolumeExpansion: true
+   parameters:
+     path: /nvme/disk
+   provisioner: rancher.io/local-path
+   reclaimPolicy: Delete
+   volumeBindingMode: WaitForFirstConsumer
+   allowedTopologies:
+     - matchLabelExpressions:
+         - key: topology.kubernetes.io/zone
+           values:
+             - <your_cluster_name>-keeper
+             - <your_host_1>
+             - <your_host_2>
+             - <your_host_3>
+         - key: directpv.min.io/zone
+           values:
+             - default
+   ```
+
+2. **إذا كانت تُستخدم وسوم غير قياسية** للطوبولوجيا، فاضبط الخاصية `additionalZoneLabelRegexes` في المشغّل. على سبيل المثال، عند استخدام مخطط Helm، اضبط قيمة Helm ‏`operator.additionalZoneLabelRegexes` على تعبير نمطي يطابق وسومك (مثل `directpv.*zone`).
+
+***
+
+<div id="nvme-disk-questions">
+  ### أسئلة حول قرص NVMe
+</div>
+
+**العَرَض:** عدم الوضوح بشأن ما إذا كانت المثيلات المزوّدة بأقراص NVMe مطلوبة، أو وجود تساؤلات حول استخدام مساحة تخزين بديلة لقرص التخزين المؤقت.
+
+**السبب:** يعمل قرص NVMe بوصفه وحدة تخزين مؤقتة للبيانات القادمة من S3 (أو من تخزين كائنات مماثل). ويقوم المشغّل بتركيبه في جرابات خادم ClickHouse ويُعدّه كقرص تخزين مؤقت لـS3:
+
+```yaml
+s3diskWithCache:
+    type: cache
+    disk: s3disk
+    path: /mnt/clickhouse-cache/sharedS3DiskCache
+    max_size:
+    '@from_env': CONFIG_DISK_CACHE_SIZE
+    cache_on_write_operations: 1
+```
+
+مع SharedMergeTree، لا يخزّن ClickHouse البيانات محليًا. ولا توجد الذاكرة المؤقتة إلا لتحسين أداء الاستعلامات.
+
+**الحل:**
+
+يمكن استخدام أجهزة تخزين أخرى (مثل AWS EBS) بدلًا من NVMe. عند القيام بذلك، اضبط ما يلي:
+
+1. تأكد من إرفاق الأقراص بالمثيلات المستخدمة لجرابات Kubernetes الخاصة بخادم ClickHouse.
+2. عدّل قالب التشغيل ليعكس التغييرات في بنية الأقراص. لا يزال بإمكانك إنشاء قرص RAID وتهيئته بتنسيق ext4 أو xfs، ولكن استخدم الأدوات المناسبة (مثل `lsblk`) لسرد الأجهزة.
+3. إذا لم تكن الأقراص مُركّبة على `/nvme/disk`، فاضبط `hostPathBaseDirectory` في مخطط Helm الخاص بـ ClickHouseCluster على نقطة التركيب الفعلية.
+
+لاحظ أن خيارات التخزين البديلة قد تؤثر في أداء الاستعلامات.
+
+***
+
+<div id="configuration-issues">
+  ## مشكلات الإعداد
+</div>
+
+<div id="loadbalancertype-field-behavior">
+  ### سلوك الحقل `loadBalancerType`
+</div>
+
+**العَرَض:** لا يؤدي تعيين الحقل `loadBalancerType` في ClickHouseCluster CRD إلى إنشاء تعليقات توضيحية لموازن التحميل على الـ Service.
+
+**السبب:** لا يضيف الحقل `loadBalancerType` تعليقات توضيحية لموازن التحميل إلى الـ Service الخاصة بعنقود ClickHouse. لا يدعم ClickHouse Operator إنشاء موازن تحميل لعنقود ClickHouse. ولا يكون لهذا الحقل فائدة إلا في ClickHouse Cloud، حيث يُستخدم للمساعدة في إنشاء المستخدمين من أجل Cloud SQL Console.
+
+**الحل:**
+
+لا يلزم اتخاذ أي إجراء ما لم تكن تعمل في ClickHouse Cloud. وإذا كنت بحاجة إلى موازن تحميل لعنقود ClickHouse، فقم بتهيئته بشكل منفصل باستخدام التعليقات التوضيحية والإعدادات القياسية الخاصة بـ Kubernetes Service، وخارج ClickHouseCluster CRD.
+
+***
+
+<div id="diagnostic-commands-quick-reference">
+  ## مرجع سريع لأوامر التشخيص
+</div>
+
+<div id="cluster-status">
+  ### حالة العنقود
+</div>
+
+```bash
+kubectl get clickhouseclusters -A
+```
+
+<div id="operator-logs">
+  ### سجلات المُشغِّل
+</div>
+
+```bash
+kubectl logs -f -n clickhouse-operator-system <operator-pod-name>
+```
+
+<div id="pod-events-and-details">
+  ### أحداث الجراب وتفاصيله
+</div>
+
+```bash
+kubectl describe pod <pod-name> -n <namespace>
+kubectl get events -n <namespace>
+```
+
+<div id="previous-container-logs-after-a-crash">
+  ### سجلات الحاوية السابقة (بعد تعطلها)
+</div>
+
+```bash
+kubectl logs -p <pod-name> -n <namespace>
+```
+
+<div id="replica-state-map">
+  ### خريطة حالة النسخة المتماثلة
+</div>
+
+```bash
+kubectl get clickhousecluster <cluster-name> -n <namespace> -o json | jq .status.replicaStateMap
+```
+
+<div id="replication-queue-size-per-table-sql">
+  ### حجم قائمة انتظار النسخ المتماثل لكل جدول (SQL)
+</div>
+
+```sql
+SELECT
+    concat(database, '.', table),
+    count()
+FROM system.replication_queue
+GROUP BY
+    database,
+    table
+```
+
+خيار بديل باستخدام `system.replicas`:
+
+```sql
+SELECT
+    concat(database, '.', table),
+    queue_size
+FROM system.replicas
+```
+
+<div id="replication-queue-oldest-entry-per-table-sql">
+  ### أقدم عنصر في قائمة انتظار النسخ المتماثل لكل جدول (SQL)
+</div>
+
+أطلِق تنبيهًا إذا كان عمر أقدم عنصر يتجاوز يومًا واحدًا.
+
+```sql
+SELECT
+    concat(database, '.', table),
+    min(create_time)
+FROM system.replication_queue
+GROUP BY
+    database,
+    table
+```

@@ -15,10 +15,8 @@ TYPED_TEST(CoordinationTest, TestSystemNodeModify)
     using namespace Coordination;
     int64_t zxid{0};
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     // On INIT we abort when a system path is modified
     this->keeper_context->setServerState(KeeperContext::Phase::RUNNING);
@@ -52,10 +50,8 @@ TYPED_TEST(CoordinationTest, TestCheckNotExistsRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -130,10 +126,8 @@ TYPED_TEST(CoordinationTest, TestDeterministicPreprocess)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     static constexpr int64_t initial_zxid = 100;
 
@@ -217,10 +211,8 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -390,10 +382,8 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveInMultiRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
     int zxid = 0;
@@ -602,10 +592,8 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveWatches)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
     int zxid = 0;
@@ -710,10 +698,8 @@ TYPED_TEST(CoordinationTest, TestRemoveRecursiveAcls)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
     int zxid = 0;
@@ -774,10 +760,8 @@ TYPED_TEST(CoordinationTest, TestListRequestTypes)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -823,7 +807,7 @@ TYPED_TEST(CoordinationTest, TestListRequestTypes)
 
     const auto get_children = [&](const auto list_request_type)
     {
-        const auto list_request = std::make_shared<ZooKeeperFilteredListRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         int new_zxid = ++zxid;
         list_request->path = std::string{parentNodePath(test_path)};
         list_request->list_request_type = list_request_type;
@@ -863,10 +847,8 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -901,7 +883,7 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     const auto get_children_with_options = [&](const auto & path, bool with_stat, bool with_data)
     {
         int new_zxid = ++zxid;
-        const auto list_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = path;
         list_request->list_request_type = ListRequestType::ALL;
         list_request->with_stat = with_stat;
@@ -1047,7 +1029,7 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     {
         SCOPED_TRACE("Non-existent path");
         int new_zxid = ++zxid;
-        const auto list_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = "/nonexistent";
         list_request->list_request_type = ListRequestType::ALL;
         list_request->with_stat = true;
@@ -1065,10 +1047,8 @@ TYPED_TEST(CoordinationTest, TestUncommittedStateBasicCrud)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -1188,10 +1168,8 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -1201,7 +1179,7 @@ TYPED_TEST(CoordinationTest, TestBlockACL)
     static constexpr std::string_view new_digest = "antonio:test";
 
     static constexpr int64_t session_id = 42;
-    storage.committed_session_and_auth[session_id].push_back(KeeperStorageBase::AuthID{.scheme = "digest", .id = std::string{digest}});
+    storage.committed_session_and_auth[session_id].push_back(KeeperStorage::AuthID{.scheme = "digest", .id = std::string{digest}});
     {
         static constexpr std::string_view path = "/test";
 
@@ -1259,10 +1237,8 @@ TYPED_TEST(CoordinationTest, TestMultiWatches)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -1359,10 +1335,8 @@ TYPED_TEST(CoordinationTest, TestCheckStat)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -1446,10 +1420,8 @@ TYPED_TEST(CoordinationTest, TestTryRemove)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -1551,10 +1523,8 @@ TYPED_TEST(CoordinationTest, TestListRecursiveRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb4");
-    this->setRocksDBDirectory("./rocksdb4");
 
     Storage storage{500, "", this->keeper_context};
 
@@ -1739,10 +1709,8 @@ TYPED_TEST(CoordinationTest, TestListRecursiveInMultiRequest)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
     int zxid = 0;
@@ -1811,10 +1779,8 @@ TYPED_TEST(CoordinationTest, TestListRecursiveAcls)
     using namespace DB;
     using namespace Coordination;
 
-    using Storage = typename TestFixture::Storage;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
 
     Storage storage{500, "", this->keeper_context};
     int zxid = 0;
@@ -1864,10 +1830,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeExpiry)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -1914,10 +1877,7 @@ TYPED_TEST(CoordinationTest, TestTTLNodeSetRefreshesUncommittedDestroyTime)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -1969,10 +1929,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCVersionCheckPreventsStaleRemoval)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -2022,10 +1979,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCDoesNotRemoveRecreatedNode)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -2097,10 +2051,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCNoOpDoesNotFireDeleteWatch)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -2164,10 +2115,7 @@ TYPED_TEST(CoordinationTest, TestTTLGCRemovalFiresDeleteWatch)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -2227,10 +2175,7 @@ TYPED_TEST(CoordinationTest, TestCreateTTLRejectsInvalidValues)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -2261,10 +2206,7 @@ TYPED_TEST(CoordinationTest, TestCreateTTLAndEphemeralDoesNotLeakEphemeral)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -2290,10 +2232,7 @@ TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
 {
     using namespace DB;
     using namespace Coordination;
-    using Storage = typename TestFixture::Storage;
-
-    ChangelogDirTest rocks("./rocksdb");
-    this->setRocksDBDirectory("./rocksdb");
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
 
     Storage storage{500, "", this->keeper_context};
     int64_t zxid = 0;
@@ -2336,6 +2275,33 @@ TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
     ASSERT_NE(uncommitted, nullptr);
     ASSERT_TRUE(uncommitted->stats.isTTL());
     EXPECT_EQ(uncommitted->stats.destroyTime(), original_destroy_time);
+}
+
+TYPED_TEST(CoordinationTest, TestCreate2ResponseDataLength)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+
+    const std::string data = "hello-create2";
+
+    auto request = std::make_shared<ZooKeeperCreateRequest>();
+    request->path = "/node";
+    request->data = data;
+    request->include_stats = true;
+
+    storage.preprocessRequest(request, 1, 0, ++zxid);
+    auto responses = storage.processRequest(request, 1, zxid);
+
+    ASSERT_EQ(responses.size(), 1u);
+    ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    ASSERT_EQ(responses[0].response->getOpNum(), OpNum::Create2);
+
+    const auto & create2_response = dynamic_cast<const ZooKeeperCreate2Response &>(*responses[0].response);
+    EXPECT_EQ(create2_response.zstat.dataLength, static_cast<int32_t>(data.size()));
 }
 
 #endif

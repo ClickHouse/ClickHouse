@@ -110,6 +110,56 @@ std::pair<ColumnsWithTypeAndName, bool> getFunctionArguments(const ActionsDAG::N
     return { std::move(arguments), all_const };
 }
 
+void tryFoldFunctionToConstant(
+    ActionsDAG::Node & node,
+    const ColumnsWithTypeAndName & arguments,
+    bool all_const,
+    bool best_effort)
+{
+    /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
+    if (!node.function_base->isSuitableForConstantFolding())
+        return;
+
+    ColumnPtr column;
+    try
+    {
+        if (all_const)
+        {
+            size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
+            column = node.function->execute(arguments, node.result_type, num_rows, true);
+        }
+        else
+        {
+            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
+        }
+    }
+    catch (const Exception &)
+    {
+        if (!best_effort)
+            throw;
+        return;
+    }
+
+    if (column && !columnMatchesType(*column, *node.result_type))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Unexpected return type from {}. Expected {}. Got {}",
+            node.function->getName(),
+            node.result_type->getName(),
+            column->getName());
+
+    /// If the result is not a constant, just in case, we will consider the result as unknown.
+    if (const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr)
+    {
+        /// Functions may produce a ColumnConst sized to match the input block; in DAG nodes
+        /// the size is meaningless and we keep them at zero.
+        if (!column_const->empty())
+            node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
+        else
+            node.column = column_const->getPtr();
+    }
+}
+
 bool isConstantFromScalarSubquery(const ActionsDAG::Node * node)
 {
     std::stack<const ActionsDAG::Node *> stack;
@@ -465,40 +515,7 @@ const ActionsDAG::Node & ActionsDAG::addFunctionImpl(
     node.result_type = result_type;
     node.function = node.function_base->prepare(arguments);
 
-    /// If all arguments are constants, and function is suitable to be executed in 'prepare' stage - execute function.
-    if (node.function_base->isSuitableForConstantFolding())
-    {
-        ColumnPtr column;
-
-        if (all_const)
-        {
-            size_t num_rows = arguments.empty() ? 0 : arguments.front().column->size();
-            column = node.function->execute(arguments, node.result_type, num_rows, true);
-        }
-        else
-        {
-            column = node.function_base->getConstantResultForNonConstArguments(arguments, node.result_type);
-        }
-
-        if (column && !columnMatchesType(*column, *node.result_type))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Unexpected return type from {}. Expected {}. Got {}",
-                node.function->getName(),
-                node.result_type->getName(),
-                column->getName());
-
-        /// If the result is not a constant, just in case, we will consider the result as unknown.
-        if (const auto * column_const = column ? typeid_cast<const ColumnConst *>(column.get()) : nullptr)
-        {
-            /// Functions may produce a ColumnConst sized to match the input block; in DAG nodes
-            /// the size is meaningless and we keep them at zero.
-            if (!column_const->empty())
-                node.column = ColumnConst::create(column_const->getDataColumnPtr(), 0);
-            else
-                node.column = column_const->getPtr();
-        }
-    }
+    tryFoldFunctionToConstant(node, arguments, all_const, /*best_effort=*/false);
 
     if (result_name.empty())
     {
@@ -715,7 +732,7 @@ bool ActionsDAG::removeUnusedActions(const Names & required_names, bool allow_re
     return false;
 }
 
-bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding)
+bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_constant_folding, bool evaluate_constants)
 {
     std::unordered_set<const Node *> used_inputs;
     if (!allow_remove_inputs)
@@ -723,10 +740,10 @@ bool ActionsDAG::removeUnusedActions(bool allow_remove_inputs, bool allow_consta
         for (const auto * input : inputs)
             used_inputs.insert(input);
     }
-    return removeUnusedActions(used_inputs, allow_constant_folding);
+    return removeUnusedActions(used_inputs, allow_constant_folding, evaluate_constants);
 }
 
-bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding)
+bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & used_inputs, bool allow_constant_folding, bool evaluate_constants)
 {
     NodeRawConstPtrs roots;
     roots.reserve(outputs.size() + used_inputs.size());
@@ -805,6 +822,14 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
                             break;
                         }
                     }
+                }
+
+                /// Best-effort evaluation of functions whose children have become constant.
+                if (evaluate_constants && node->type == ActionsDAG::ActionType::FUNCTION && !node->column)
+                {
+                    auto [arguments, all_const] = getFunctionArguments(node->children);
+                    node->function = node->function_base->prepare(arguments);
+                    tryFoldFunctionToConstant(*node, arguments, all_const, /*best_effort=*/true);
                 }
 
                 /// Constant folding.
@@ -1213,6 +1238,32 @@ ActionsDAG ActionsDAG::cloneSubDAG(const NodeRawConstPtrs & outputs, NodeMapping
         actions.outputs.push_back(copy_map[output]);
 
     return actions;
+}
+
+void ActionsDAG::substitute(const std::unordered_map<const Node *, ColumnWithTypeAndName> & substitutions)
+{
+    if (substitutions.empty())
+        return;
+
+    /// Replace each matched node in-place with a constant COLUMN node.
+    for (auto & node : nodes)
+    {
+        auto it = substitutions.find(&node);
+        if (it == substitutions.end())
+            continue;
+
+        const auto & replacement = it->second;
+        chassert(replacement.column && isColumnConst(*replacement.column));
+        chassert(replacement.type->equals(*node.result_type));
+
+        node.type = ActionType::COLUMN;
+        node.column = typeid_cast<const ColumnConst *>(replacement.column.get())->getPtr();
+        node.result_type = replacement.type;
+        node.children.clear();
+        node.function = nullptr;
+        node.function_base = nullptr;
+        node.is_deterministic_constant = true;
+    }
 }
 
 static ColumnWithTypeAndName executeActionForPartialResult(
@@ -2987,6 +3038,34 @@ ConjunctionNodes getConjunctionNodes(ActionsDAG::Node * predicate, std::unordere
     return conjunction;
 }
 
+/// Returns true if the conjunct's sub-DAG reaches at least one node from allowed_nodes.
+/// Used to detect a conjunct that depends on no allowed input of a JOIN side (e.g. a pure
+/// constant like `1` or a folded `NULL`). Such a conjunct must not be pushed to a disabled
+/// (non-preserved) side: it would be evaluated on that side's input before the join, and the
+/// non-matched rows the OUTER join fabricates would not be constrained by it.
+bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const std::unordered_set<const ActionsDAG::Node *> & allowed_nodes)
+{
+    std::stack<const ActionsDAG::Node *> stack;
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    stack.push(conjunct);
+    visited.insert(conjunct);
+    while (!stack.empty())
+    {
+        const auto * node = stack.top();
+        stack.pop();
+
+        if (allowed_nodes.contains(node))
+            return true;
+
+        for (const auto * child : node->children)
+        {
+            if (visited.insert(child).second)
+                stack.push(child);
+        }
+    }
+    return false;
+}
+
 ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPtrs & nodes)
 {
     ColumnsWithTypeAndName arguments;
@@ -3241,6 +3320,43 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     auto left_stream_push_down_conjunctions = getConjunctionNodes(predicate, left_stream_allowed_nodes, false);
     auto right_stream_push_down_conjunctions = getConjunctionNodes(predicate, right_stream_allowed_nodes, false);
     auto both_streams_push_down_conjunctions = getConjunctionNodes(predicate, both_streams_allowed_nodes, false);
+
+    /// getConjunctionNodes() classifies a conjunct as pushable to a side when all of its inputs are
+    /// allowed inputs of that side. A conjunct with no inputs (a pure constant such as a literal `1`
+    /// or a folded `NULL`) satisfies this trivially, so it is classified as pushable to EVERY side,
+    /// including a side that is disabled for push-down. A side is disabled exactly when its allowed
+    /// input set is empty, which is how the non-preserved side of an OUTER join is modeled. Pushing a
+    /// constant to a non-preserved side and dropping it from the post-join filter is wrong: a falsy or
+    /// NULL constant filters out that side's input, the OUTER join then fabricates non-matched rows
+    /// with the side's columns defaulted, and those rows escape the now constant-free post-join filter.
+    /// Move such no-input conjuncts back to the post-join filter, where they correctly constrain every
+    /// output row. This is applied only to a disabled side: pushing a constant to an enabled (preserved)
+    /// side is equivalent to keeping it in the post-join filter and is the intended push-down behaviour,
+    /// so the classification for enabled sides is left intact.
+    auto keep_conjuncts_depending_on_allowed_input = [](ConjunctionNodes & conjunctions, const std::unordered_set<const Node *> & allowed_nodes)
+    {
+        NodeRawConstPtrs kept;
+        for (const auto * conjunct : conjunctions.allowed)
+        {
+            if (conjunctDependsOnAllowedInput(conjunct, allowed_nodes))
+                kept.push_back(conjunct);
+            else
+                conjunctions.rejected.push_back(conjunct);
+        }
+        conjunctions.allowed = std::move(kept);
+    };
+
+    const bool left_stream_push_down_enabled = !left_stream_allowed_nodes.empty();
+    const bool right_stream_push_down_enabled = !right_stream_allowed_nodes.empty();
+
+    if (!left_stream_push_down_enabled)
+        keep_conjuncts_depending_on_allowed_input(left_stream_push_down_conjunctions, left_stream_allowed_nodes);
+    if (!right_stream_push_down_enabled)
+        keep_conjuncts_depending_on_allowed_input(right_stream_push_down_conjunctions, right_stream_allowed_nodes);
+    /// A both-streams conjunct is pushed to BOTH sides, so a no-input conjunct here is unsafe if
+    /// EITHER side is disabled.
+    if (!left_stream_push_down_enabled || !right_stream_push_down_enabled)
+        keep_conjuncts_depending_on_allowed_input(both_streams_push_down_conjunctions, both_streams_allowed_nodes);
 
     NodeRawConstPtrs left_stream_allowed_conjunctions = std::move(left_stream_push_down_conjunctions.allowed);
     NodeRawConstPtrs right_stream_allowed_conjunctions = std::move(right_stream_push_down_conjunctions.allowed);

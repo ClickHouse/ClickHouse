@@ -1,0 +1,288 @@
+---
+sidebarTitle: '쿼리 빌더'
+slug: /integrations/grafana/query-builder
+description: 'ClickHouse Grafana 플러그인에서 쿼리 빌더 사용'
+title: '쿼리 빌더'
+doc_type: 'guide'
+keywords: ['grafana', '쿼리 빌더', '시각화', '대시보드', '플러그인']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
+쿼리 빌더는 간단한 쿼리에는 편리하지만, 복잡한 쿼리에는 [SQL Editor](#sql-editor)를 사용해야 합니다.
+
+쿼리 빌더의 모든 쿼리에는 [쿼리 유형](#query-types)이 있으며, 최소 1개의 컬럼을 선택해야 합니다.
+
+사용 가능한 쿼리 유형은 다음과 같습니다.
+
+* [테이블](#table): 데이터를 테이블 포맷으로 표시하는 가장 단순한 쿼리 유형입니다. 집계 함수를 포함한 단순한 쿼리와 복잡한 쿼리 모두에 두루 적합합니다.
+* [로그](#logs): 로그용 쿼리를 작성하는 데 최적화되어 있습니다. [기본 설정이 적용된](/ko/integrations/connectors/data-visualization/grafana/config#logs) Explore 뷰에서 가장 효과적입니다.
+* [시계열](#time-series): 시계열 쿼리를 작성할 때 가장 적합합니다. 전용 시간 컬럼을 선택하고 집계 함수를 추가할 수 있습니다.
+* [트레이스](#traces): 트레이스를 검색하고 조회하는 데 최적화되어 있습니다. [기본 설정이 적용된](/ko/integrations/connectors/data-visualization/grafana/config#traces) Explore 뷰에서 가장 효과적입니다.
+* [SQL Editor](#sql-editor): 쿼리를 완전히 제어해야 할 때 SQL Editor를 사용할 수 있습니다. 이 모드에서는 모든 SQL 쿼리를 실행할 수 있습니다.
+
+<div id="query-types">
+  ## 쿼리 유형
+</div>
+
+*Query Type* 설정은 현재 작성 중인 쿼리 유형에 맞게 쿼리 빌더의 레이아웃을 변경합니다.
+또한 쿼리 유형에 따라 데이터를 시각화할 때 사용할 패널도 결정됩니다.
+
+<div id="table">
+  ### 테이블
+</div>
+
+가장 유연한 쿼리 유형은 테이블 쿼리입니다. 이는 단순 쿼리와 집계 쿼리를 처리하도록 설계된 다른 쿼리 빌더를 모두 포괄하는 유형입니다.
+
+| 필드           | 설명                                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| Builder Mode | 단순 쿼리에서는 Aggregates와 Group By를 제외하며, 집계 쿼리에서는 이러한 옵션이 포함됩니다.                                                                        |
+| Columns      | 선택한 컬럼입니다. 함수와 컬럼 별칭을 사용할 수 있도록 이 필드에 Raw SQL을 직접 입력할 수 있습니다.                                                                       |
+| Aggregates   | [집계 함수](/ko/reference/functions/aggregate-functions/index) 목록입니다. 함수와 컬럼에 사용자 지정 값을 지정할 수 있습니다. Aggregate 모드에서만 표시됩니다.                 |
+| Group By     | [GROUP BY](/ko/reference/statements/select/group-by) 표현식 목록입니다. Aggregate 모드에서만 표시됩니다.                                                 |
+| Order By     | [ORDER BY](/ko/reference/statements/select/order-by) 표현식 목록입니다.                                                                        |
+| Limit        | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) SQL 문을 추가합니다. `0`으로 설정하면 제외됩니다. 일부 시각화에서는 모든 데이터를 표시하려면 이 값을 `0`으로 설정해야 할 수 있습니다. |
+| Filters      | `WHERE` 절에 적용할 필터 목록입니다.                                                                                                            |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="집계 테이블 쿼리 예시" border />
+
+이 쿼리 유형은 데이터를 테이블로 표시합니다.
+
+<div id="logs">
+  ### 로그
+</div>
+
+로그 쿼리 유형은 로그 데이터 쿼리에 특화된 쿼리 빌더를 제공합니다.
+기본값은 데이터 소스의 [로그 구성](/ko/integrations/connectors/data-visualization/grafana/config#logs)에서 설정할 수 있으며, 이를 통해 쿼리 빌더를 기본 데이터베이스/테이블과 컬럼으로 미리 채울 수 있습니다.
+또한 OpenTelemetry를 활성화하면 스키마 버전에 따라 컬럼을 자동으로 선택할 수 있습니다.
+
+기본적으로 **Time** 및 **Level** 필터가 추가되며, **Time** 컬럼에 대한 ORDER BY도 함께 추가됩니다.
+이 필터는 각각 해당 필드와 연결되어 있으며, 컬럼이 변경되면 함께 업데이트됩니다.
+기본적으로 **Level** 필터는 SQL에서 제외되며, `IS ANYTHING` 옵션을 다른 값으로 변경하면 활성화됩니다.
+
+로그 쿼리 유형은 [데이터 링크](#data-links)를 지원합니다.
+
+| Field          | Description                                                                                                |
+| -------------- | ---------------------------------------------------------------------------------------------------------- |
+| Use OTel       | OpenTelemetry 컬럼을 활성화합니다. 선택한 OTel 스키마 버전에서 정의된 컬럼을 사용하도록 현재 선택된 컬럼을 덮어씁니다(컬럼 선택 비활성화).                    |
+| Columns        | 로그 행에 추가할 컬럼입니다. 함수와 컬럼 alias를 사용할 수 있도록 이 필드에 Raw SQL을 입력할 수 있습니다.                                        |
+| Time           | 로그의 기본 timestamp 컬럼입니다. 시간 관련 타입이 표시되며, 사용자 지정 값/함수도 허용됩니다.                                                |
+| Log Level      | 선택 사항입니다. 로그의 *level* 또는 *severity*입니다. 값은 일반적으로 `INFO`, `error`, `Debug` 등입니다.                            |
+| Message        | 로그 메시지 내용입니다.                                                                                              |
+| Order By       | [ORDER BY](/ko/reference/statements/select/order-by) 표현식 목록입니다.                                               |
+| Limit          | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) SQL 문을 추가합니다. `0`으로 설정하면 제외되지만, 대규모 로그 데이터셋에는 권장되지 않습니다. |
+| Filters        | `WHERE` 절에 적용할 필터 목록입니다.                                                                                   |
+| Message Filter | `LIKE %value%`를 사용해 로그를 편리하게 필터링할 수 있는 텍스트 입력란입니다. 입력이 비어 있으면 제외됩니다.                                       |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="OTel 로그 쿼리 예시" border />
+
+<br />
+
+이 쿼리 유형은 데이터를 로그 패널에 렌더링하고, 상단에는 로그 히스토그램 패널도 함께 표시합니다.
+
+쿼리에서 선택한 추가 컬럼은 확장된 로그 행에서 확인할 수 있습니다:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="로그 쿼리의 추가 필드 예시" border />
+
+<div id="time-series">
+  ### 시계열
+</div>
+
+시계열 쿼리 유형은 [table](#table)과 비슷하지만, 시계열 데이터에 더 중점을 둡니다.
+
+두 뷰는 대부분 동일하지만, 다음과 같은 눈에 띄는 차이점이 있습니다:
+
+* 전용 *Time* 필드가 있습니다.
+* Aggregate 모드에서는 Time 필드에 대한 Group By와 함께 시간 인터벌 매크로가 자동으로 적용됩니다.
+* Aggregate 모드에서는 &quot;Columns&quot; 필드가 숨겨집니다.
+* **Time** 필드에는 시간 범위 필터와 Order By가 자동으로 추가됩니다.
+
+<Warning>
+  **시각화에 데이터가 누락되어 있습니까?**
+
+  경우에 따라 시계열 패널이 잘린 것처럼 보일 수 있는데, 이는 limit의 기본값이 `1000`이기 때문입니다.
+
+  `LIMIT` 절을 `0`으로 설정해 제거해 보십시오(데이터셋에서 허용하는 경우).
+</Warning>
+
+| 필드           | 설명                                                                                                                    |
+| ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| Builder Mode | Simple 쿼리에는 Aggregates와 Group By가 제외되고, 집계 쿼리에는 이러한 옵션이 포함됩니다.                                                        |
+| Time         | 쿼리의 기본 시간 컬럼입니다. 시간 관련 타입이 표시되지만, 사용자 지정 값이나 함수도 사용할 수 있습니다.                                                          |
+| Columns      | 선택한 컬럼입니다. 함수와 컬럼 별칭 지정을 위해 이 필드에 Raw SQL을 입력할 수 있습니다. Simple 모드에서만 표시됩니다.                                            |
+| Aggregates   | [집계 함수](/ko/reference/functions/aggregate-functions/index) 목록입니다. 함수와 컬럼에 사용자 지정 값을 사용할 수 있습니다. Aggregate 모드에서만 표시됩니다.   |
+| Group By     | [GROUP BY](/ko/reference/statements/select/group-by) 표현식 목록입니다. Aggregate 모드에서만 표시됩니다.                                   |
+| Order By     | [ORDER BY](/ko/reference/statements/select/order-by) 표현식 목록입니다.                                                          |
+| Limit        | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) 문을 추가합니다. `0`으로 설정하면 제외되며, 전체 시각화를 표시하기 위해 일부 시계열 데이터셋에서는 이를 권장합니다. |
+| Filters      | `WHERE` 절에 적용할 필터 목록입니다.                                                                                              |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="시계열 쿼리 예시" border />
+
+이 쿼리 유형은 데이터를 시계열 패널로 표시합니다.
+
+<div id="traces">
+  ### 트레이스
+</div>
+
+트레이스 쿼리 유형은 트레이스를 쉽게 검색하고 확인할 수 있도록 쿼리 빌더를 제공합니다.
+이 기능은 OpenTelemetry 데이터용으로 설계되었지만, 다른 스키마의 트레이스를 표시하도록 컬럼을 선택할 수도 있습니다.
+기본값은 데이터 소스의 [트레이스 구성](/ko/integrations/connectors/data-visualization/grafana/config#traces)에서 설정할 수 있으며, 이를 통해 쿼리 빌더를 기본 데이터베이스/테이블 및 컬럼으로 미리 채울 수 있습니다. 기본값이 설정되어 있으면 컬럼 선택은 기본적으로 접힌 상태로 표시됩니다.
+또한 OpenTelemetry를 활성화하여 스키마 버전에 따라 컬럼을 자동 선택할 수도 있습니다.
+
+기본 필터는 최상위 스팬만 표시하도록 추가됩니다.
+Time 및 Duration Time 컬럼에 대한 ORDER BY도 함께 포함됩니다.
+이 필터는 각각 해당 필드에 연결되어 있으므로, 컬럼이 변경되면 함께 업데이트됩니다.
+**Service Name** 필터는 기본적으로 SQL에서 제외되며, `IS ANYTHING` 옵션이 아닌 다른 값으로 변경하면 활성화됩니다.
+
+트레이스 쿼리 유형은 [데이터 링크](#data-links)를 지원합니다.
+
+| 필드                    | 설명                                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Trace Mode            | 쿼리를 Trace Search에서 Trace ID lookup으로 변경합니다.                                                                  |
+| Use OTel              | OpenTelemetry 컬럼을 활성화합니다. 선택한 OTel 스키마 버전에 정의된 컬럼을 사용하도록 선택된 컬럼을 덮어씁니다(컬럼 선택 비활성화).                          |
+| Trace ID Column       | 트레이스의 ID입니다.                                                                                                 |
+| Span ID Column        | 스팬 ID입니다.                                                                                                    |
+| Parent Span ID Column | 부모 스팬 ID입니다. 일반적으로 최상위 트레이스에서는 비어 있습니다.                                                                      |
+| Service Name Column   | 서비스 이름입니다.                                                                                                   |
+| Operation Name Column | 작업 이름입니다.                                                                                                    |
+| Start Time Column     | 트레이스 스팬의 프라이머리 시간 컬럼입니다. 스팬이 시작된 시점입니다.                                                                      |
+| Duration Time Column  | 스팬의 지속 시간입니다. 기본적으로 Grafana는 이를 밀리초 단위의 부동소수점 값으로 기대합니다. `Duration Unit` 드롭다운을 통해 변환이 자동으로 적용됩니다.            |
+| Duration Unit         | 지속 시간에 사용되는 시간 단위입니다. 기본값은 나노초입니다. 선택한 단위는 Grafana 요구사항에 맞게 밀리초 단위의 부동소수점 값으로 변환됩니다.                         |
+| Tags Column           | 스팬 태그입니다. 특정 Map 컬럼 유형이 필요하므로 OTel 기반 스키마를 사용하지 않는 경우 제외하십시오.                                                |
+| Service Tags Column   | 서비스 태그입니다. 특정 Map 컬럼 유형이 필요하므로 OTel 기반 스키마를 사용하지 않는 경우 제외하십시오.                                               |
+| Order By              | [ORDER BY](/ko/reference/statements/select/order-by) 표현식 목록입니다.                                                 |
+| Limit                 | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) SQL 문을 추가합니다. `0`으로 설정하면 제외되지만, 대규모 트레이스 데이터셋에는 권장되지 않습니다. |
+| Filters               | `WHERE` 절에 적용할 필터 목록입니다.                                                                                     |
+| Trace ID              | 필터링할 트레이스 ID입니다. Trace ID 모드에서만 사용되며, 트레이스 ID [데이터 링크](#data-links)를 열 때도 사용됩니다.                             |
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="예시 OTel 트레이스 쿼리" border />
+
+이 쿼리 유형은 Trace Search 모드에서는 데이터를 테이블 뷰로, Trace ID 모드에서는 트레이스 패널로 표시합니다.
+
+<div id="sql-editor">
+  ## SQL Editor
+</div>
+
+쿼리 빌더로 처리하기에 너무 복잡한 쿼리의 경우 SQL Editor를 사용할 수 있습니다.
+이 모드에서는 ClickHouse SQL을 직접 작성하고 실행할 수 있어 쿼리를 완전히 제어할 수 있습니다.
+
+쿼리 편집기 상단에서 &quot;SQL Editor&quot;를 선택하면 SQL Editor를 열 수 있습니다.
+
+이 모드에서도 [매크로 함수](#macros)를 사용할 수 있습니다.
+
+쿼리에 가장 적합한 시각화를 표시하도록 쿼리 유형을 전환할 수 있습니다.
+이 전환은 대시보드 보기에도 영향을 주며, 특히 시계열 데이터에서 두드러집니다.
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="raw SQL 쿼리 예시" border />
+
+<div id="data-links">
+  ## 데이터 링크
+</div>
+
+Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)를 사용해 새 쿼리로 연결할 수 있습니다.
+이 기능은 트레이스를 로그에 연결하고, 반대로 로그에서 트레이스로 연결할 수 있도록 ClickHouse 플러그인에서 활성화되어 있습니다. [데이터 소스 구성](/ko/integrations/connectors/data-visualization/grafana/config#opentelemetry)에서 로그와 트레이스 모두에 대해 OpenTelemetry를 구성하면 가장 효과적으로 작동합니다.
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
+  테이블의 트레이스 링크 예시
+
+  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="테이블의 트레이스 링크" border />
+</div>
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  로그의 트레이스 링크 예시
+
+  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="로그의 트레이스 링크" border />
+</div>
+
+<div id="how-to-make-a-data-link">
+  ### 데이터 링크 만들기
+</div>
+
+쿼리에서 `traceID`라는 이름의 컬럼을 선택하면 데이터 링크를 만들 수 있습니다. 이 이름은 대소문자를 구분하지 않으며, &quot;ID&quot; 앞에 밑줄을 추가하는 것도 허용됩니다. 예시: `traceId`, `TraceId`, `TRACE_ID`, `tracE_iD`는 모두 유효한 이름입니다.
+
+[로그](#logs) 또는 [트레이스](#traces) 쿼리에서 OpenTelemetry가 활성화되어 있으면 트레이스 ID 컬럼이 자동으로 포함됩니다.
+
+트레이스 ID 컬럼을 포함하면 데이터에 &quot;**트레이스 보기**&quot; 및 &quot;**로그 보기**&quot; 링크가 추가됩니다.
+
+<div id="linking-abilities">
+  ### 링크 기능
+</div>
+
+데이터 링크가 있으면 제공된 트레이스 ID를 사용해 트레이스와 로그를 열 수 있습니다.
+
+&quot;**트레이스 보기**&quot;를 클릭하면 트레이스가 분할 패널로 열리고, &quot;**로그 보기**&quot;를 클릭하면 트레이스 ID로 필터링된 로그 쿼리가 열립니다.
+링크를 Explore 뷰가 아니라 대시보드에서 클릭한 경우에는 Explore 뷰의 새 탭에서 링크가 열립니다.
+
+쿼리 유형을 서로 전환할 때(로그에서 트레이스로, 트레이스에서 로그로) [logs](/ko/integrations/connectors/data-visualization/grafana/config#logs)와 [traces](/ko/integrations/connectors/data-visualization/grafana/config#traces) 모두에 대한 기본값이 구성되어 있어야 합니다. 동일한 쿼리 유형의 링크를 열 때는 쿼리를 그대로 복사하면 되므로 기본값이 필요하지 않습니다.
+
+<div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
+  로그 쿼리(왼쪽 패널)에서 트레이스(오른쪽 패널)를 보는 예시
+
+  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="데이터 링크 연결 예시" border />
+</div>
+
+<div id="macros">
+  ## 매크로
+</div>
+
+매크로는 쿼리에 동적 SQL을 추가하는 간단한 방법입니다.
+쿼리가 ClickHouse 서버로 전송되기 전에 플러그인이 매크로를 확장하여 전체 표현식으로 대체합니다.
+
+SQL Editor와 Query Builder에서 작성한 쿼리 모두 매크로를 사용할 수 있습니다.
+
+<div id="using-macros">
+  ### 매크로 사용
+</div>
+
+매크로는 쿼리의 어느 위치에든 포함할 수 있으며, 필요에 따라 여러 번 사용할 수도 있습니다.
+
+다음은 `$__timeFilter` 매크로 사용 예시입니다:
+
+입력:
+
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE $__timeFilter(log_time)
+```
+
+최종 쿼리 결과:
+
+```sql
+SELECT log_time, log_message
+FROM logs
+WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
+```
+
+이 예시에서는 Grafana 대시보드의 시간 범위가 `log_time` 컬럼에 적용됩니다.
+
+플러그인은 중괄호 `{}`를 사용하는 표기법도 지원합니다. [매개변수](/ko/reference/syntax#defining-and-using-query-parameters) 내에서 쿼리가 필요한 경우 이 표기법을 사용하세요.
+
+<div id="list-of-macros">
+  ### 매크로 목록
+</div>
+
+다음은 플러그인에서 사용할 수 있는 모든 매크로 목록입니다.
+
+| 매크로                                          | 설명                                                                                                     | 출력 예시                                                                                                             |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `$__dateFilter(columnName)`                  | 제공된 컬럼에 대해 Grafana 패널의 시간 범위를 기준으로 [Date](/ko/reference/data-types/date) 타입의 시간 범위 필터로 대체됩니다.             | `columnName >= toDate('2022-10-21') AND columnName <= toDate('2022-10-23')`                                       |
+| `$__timeFilter(columnName)`                  | 제공된 컬럼에 대해 Grafana 패널의 시간 범위를 기준으로 [DateTime](/ko/reference/data-types/datetime) 타입의 시간 범위 필터로 대체됩니다.     | `columnName >= toDateTime(1415792726) AND time <= toDateTime(1447328726)`                                         |
+| `$__timeFilter_ms(columnName)`               | 제공된 컬럼에 대해 Grafana 패널의 시간 범위를 기준으로 [DateTime64](/ko/reference/data-types/datetime64) 타입의 시간 범위 필터로 대체됩니다. | `columnName >= fromUnixTimestamp64Milli(1415792726123) AND columnName <= fromUnixTimestamp64Milli(1447328726456)` |
+| `$__dateTimeFilter(dateColumn, timeColumn)`  | 별도의 Date 컬럼과 DateTime 컬럼을 사용해 `$__dateFilter()`와 `$__timeFilter()`를 결합한 축약형입니다. 별칭은 `$__dt()`입니다.      | `$__dateFilter(dateColumn) AND $__timeFilter(timeColumn)`                                                         |
+| `$__fromTime`                                | Grafana 패널 범위의 시작 시간이 [DateTime](/ko/reference/data-types/datetime)으로 캐스팅된 값으로 대체됩니다.                     | `toDateTime(1415792726)`                                                                                          |
+| `$__fromTime_ms`                             | 패널 범위의 시작 시간이 [DateTime64](/ko/reference/data-types/datetime64)로 캐스팅된 값으로 대체됩니다.                          | `fromUnixTimestamp64Milli(1415792726123)`                                                                         |
+| `$__toTime`                                  | Grafana 패널 범위의 종료 시간이 [DateTime](/ko/reference/data-types/datetime)으로 캐스팅된 값으로 대체됩니다.                     | `toDateTime(1447328726)`                                                                                          |
+| `$__toTime_ms`                               | 패널 범위의 종료 시간이 [DateTime64](/ko/reference/data-types/datetime64)로 캐스팅된 값으로 대체됩니다.                          | `fromUnixTimestamp64Milli(1447328726456)`                                                                         |
+| `$__timeInterval(columnName)`                | 초 단위 윈도우 크기를 기준으로 인터벌을 계산하는 함수로 대체됩니다.                                                                 | `toStartOfInterval(toDateTime(columnName), INTERVAL 20 second)`                                                   |
+| `$__timeInterval_ms(columnName)`             | 밀리초 단위 윈도우 크기를 기준으로 인터벌을 계산하는 함수로 대체됩니다.                                                               | `toStartOfInterval(toDateTime64(columnName, 3), INTERVAL 20 millisecond)`                                         |
+| `$__interval_s`                              | 대시보드 인터벌의 초 단위 값으로 대체됩니다.                                                                              | `20`                                                                                                              |
+| `$__conditionalAll(condition, $templateVar)` | 두 번째 매개변수의 템플릿 변수가 모든 값을 선택하지 않으면 첫 번째 매개변수로 대체됩니다. 템플릿 변수가 모든 값을 선택하면 1=1로 대체됩니다.                     | `condition` or `1=1`                                                                                              |

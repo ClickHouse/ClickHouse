@@ -1,0 +1,43 @@
+---
+title: Autenticación y bucket en GCS
+---
+
+<Accordion title="Crear buckets de GCS y una clave HMAC">
+  ### ch_bucket_us_east1
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-1.webp" alt="Creación de un bucket de GCS en US East 1" border />
+
+  ### ch_bucket_us_east4
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-bucket-2.webp" alt="Creación de un bucket de GCS en US East 4" border />
+
+  ### Generar una clave de acceso
+
+  ### Crear una clave HMAC y un secreto para una cuenta de servicio
+
+  Abra **Cloud Storage &gt; Settings &gt; Interoperability** y elija una **Access key** existente o **CREATE A KEY FOR A SERVICE ACCOUNT**. Esta guía describe el proceso para crear una clave nueva para una cuenta de servicio nueva.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-a-service-account-key.webp" alt="Generación de una clave HMAC para una cuenta de servicio en GCS" border />
+
+  ### Agregar una nueva cuenta de servicio
+
+  Si este proyecto no tiene ninguna cuenta de servicio existente, haga clic en **CREATE NEW ACCOUNT**.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-0.webp" alt="Adición de una nueva cuenta de servicio en GCS" border />
+
+  La creación de la cuenta de servicio consta de tres pasos; en el primero, asigne a la cuenta un nombre, un ID y una descripción significativos.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-a.webp" alt="Definición de un nuevo nombre e ID de cuenta de servicio en GCS" border />
+
+  En el cuadro de diálogo de configuración de Interoperability, se recomienda el rol de IAM **Storage Object Admin**; selecciónelo en el segundo paso.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-2.webp" alt="Selección del rol de IAM Storage Object Admin en GCS" border />
+
+  El tercer paso es opcional y no se utiliza en esta guía. Puede permitir que los usuarios tengan estos privilegios según sus políticas.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-create-service-account-3.webp" alt="Configuración de ajustes adicionales para la nueva cuenta de servicio en GCS" border />
+
+  Se mostrará la clave HMAC de la cuenta de servicio. Guarde esta información, ya que se utilizará en la configuración de ClickHouse.
+
+  <Image size="md" img="/images/integrations/data-ingestion/s3/GCS-guide-key.webp" alt="Recuperación de la clave HMAC generada para GCS" border />
+</Accordion>

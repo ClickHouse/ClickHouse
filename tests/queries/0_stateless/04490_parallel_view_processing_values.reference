@@ -1,0 +1,4 @@
+pvp_test_parallel_select	parallel
+pvp_test_parallel_values	parallel
+pvp_test_serial_select	serial
+pvp_test_serial_values	serial
