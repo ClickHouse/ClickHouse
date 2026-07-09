@@ -510,6 +510,11 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
         || !settings[Setting::optimize_trivial_count_with_sparsity_filter])
         return false;
 
+    /// The rewrite produces a `ReadFromPreparedSource` leaf that the Cascades optimizer cannot
+    /// clone; a distributed plan counts the rows with a distributed read instead.
+    if (settings[Setting::make_distributed_plan] && settings[Setting::enable_cascades_optimizer])
+        return false;
+
     const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
     if (!storage->supportsTrivialCountOptimization(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
