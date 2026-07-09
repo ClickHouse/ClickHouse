@@ -183,6 +183,7 @@ def started_cluster():
                 "configs/backups.xml",
                 "configs/cluster.xml",
                 "configs/text_log.xml",
+                "configs/mysql_port.xml",
             ],
             user_configs=[],
             stay_alive=True,
@@ -1797,3 +1798,47 @@ def test_namespace_prefix_materialized_view_target(started_cluster):
     finally:
         node.query(f"DROP VIEW IF EXISTS {mv}")
         node.query(f"DROP TABLE IF EXISTS {src_table}")
+
+
+def test_namespace_prefix_mysql_field_list(started_cluster):
+    """
+    COM_FIELD_LIST over the MySQL protocol must honor the namespace selected by a
+    default database of the form "catalog.namespace".
+    """
+    import pymysql
+
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_fieldlist_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "fieldlist_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    conn = pymysql.connect(
+        host=started_cluster.get_instance_ip("node1"),
+        port=9004,
+        user="default",
+        password="",
+        database=f"{CATALOG_NAME}.{namespace}",
+    )
+    try:
+        # COM_FIELD_LIST (0x04): table name, NUL, wildcard.
+        conn._execute_command(4, table_name.encode() + b"\x00")
+        columns = []
+        while True:
+            packet = conn._read_packet()
+            if packet.is_eof_packet():
+                break
+            # Column definition: catalog (lenenc "def"), schema, table, org_table, name, ...
+            data = packet.get_all_data()
+            columns.append(data)
+        assert len(columns) >= 2, f"expected column definitions, got {len(columns)} packets"
+        joined = b"".join(columns)
+        assert b"id" in joined and b"data" in joined, f"unexpected field list: {joined[:200]!r}"
+    finally:
+        conn.close()
