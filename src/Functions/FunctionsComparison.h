@@ -1316,8 +1316,33 @@ public:
             || (arguments[0]->equals(*arguments[1]))))
         {
             if (!tryGetLeastSupertype(arguments))
+            {
+                /// Arrays with elements types bigger than 32 bits (e.g. `Array(Int64)` vs
+                /// `Array(UInt64)`, or `Array(Int256)` vs `Array(UInt256)`) can still be compared
+                /// element-wise using the accurate scalar comparison, exactly like tuples.
+                const auto * left_array = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+                const auto * right_array = checkAndGetDataType<DataTypeArray>(arguments[1].get());
+                if (left_array && right_array)
+                {
+                    auto element_comparison = std::make_shared<FunctionToOverloadResolverAdaptor>(
+                        std::make_shared<FunctionComparison<Op, Name>>(params));
+                    ColumnsWithTypeAndName element_args{
+                        {nullptr, left_array->getNestedType(), ""},
+                        {nullptr, right_array->getNestedType(), ""}};
+                    /// Throws ILLEGAL_TYPE_OF_ARGUMENT if the element types are not comparable.
+                    DataTypePtr element_result_type = element_comparison->build(element_args)->getResultType();
+
+                    /// Supported only when the element comparison produces a non-Nullable result
+                    /// (covers the mixed signed/unsigned integer case). Nullable/Nothing element
+                    /// results keep the previous behavior (throw below), as before this change.
+                    if (!element_result_type->isNullable() && !element_result_type->onlyNull()
+                        && !isNothing(element_result_type))
+                        return std::make_shared<DataTypeUInt8>();
+                }
+
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal types of arguments ({}, {})"
                     " of function {}", backQuote(arguments[0]->getName()), backQuote(arguments[1]->getName()), backQuote(getName()));
+            }
         }
 
         bool both_tuples = left_tuple && right_tuple;
