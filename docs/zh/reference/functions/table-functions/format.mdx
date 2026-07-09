@@ -1,0 +1,100 @@
+---
+description: '根据指定的输入格式解析参数中的数据。如果未指定 structure 参数，则会从数据中提取。'
+slug: /sql-reference/table-functions/format
+sidebarTitle: 'format'
+title: 'format'
+doc_type: 'reference'
+---
+
+根据指定的输入格式解析参数中的数据。如果未指定 structure 参数，则会从数据中提取。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+format(format_name, [structure], data)
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+* `format_name` — 数据的[格式](/zh/reference/formats/index)。
+* `structure` - 表结构。可选。格式为 `column1_name column1_type, column2_name column2_type, ...`。
+* `data` — 字符串字面量或返回包含指定格式数据的字符串的常量表达式
+
+<div id="returned_value">
+  ## 返回值
+</div>
+
+一个表，包含根据指定格式以及指定或提取的结构，从 `data` 参数解析出的数据。
+
+<div id="examples">
+  ## 示例
+</div>
+
+不使用 `structure` 参数时：
+
+```sql title="Query"
+SELECT * FROM format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌───b─┬─a─────┐
+│ 111 │ Hello │
+│ 123 │ World │
+│ 112 │ Hello │
+│ 124 │ World │
+└─────┴───────┘
+```
+
+```sql title="Query"
+DESC format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ b    │ Nullable(Float64) │              │                    │         │                  │                │
+│ a    │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+使用 `structure` 参数：
+
+```sql title="Query"
+SELECT * FROM format(JSONEachRow, 'a String, b UInt32',
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌─a─────┬───b─┐
+│ Hello │ 111 │
+│ World │ 123 │
+│ Hello │ 112 │
+│ World │ 124 │
+└───────┴─────┘
+```
+
+<div id="related">
+  ## 相关内容
+</div>
+
+* [格式](/zh/reference/formats/index)

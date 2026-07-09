@@ -1,0 +1,123 @@
+---
+description: 'ClickHouse의 SSH 인터페이스 문서'
+keywords: ['client', 'ssh', 'putty']
+sidebarTitle: 'SSH 인터페이스'
+slug: /interfaces/ssh
+title: 'PTY를 사용하는 SSH 인터페이스'
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<ExperimentalBadge />
+
+<CloudNotSupportedBadge />
+
+<div id="preface">
+  ## 서문
+</div>
+
+ClickHouse 서버는 SSH 프로토콜을 통해 서버 자체에 직접 연결할 수 있습니다. 모든 클라이언트를 사용할 수 있습니다.
+
+[SSH 키로 인증되는 데이터베이스 사용자](/ko/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys)를 생성한 후:
+
+```sql
+CREATE USER abcuser IDENTIFIED WITH ssh_key BY KEY '<REDACTED>' TYPE 'ssh-ed25519';
+```
+
+이 키를 사용해 ClickHouse 서버에 연결할 수 있습니다. 연결하면 clickhouse-client의 대화형 세션이 실행되는 의사 터미널(PTY)이 열립니다.
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022
+ClickHouse embedded version 25.1.1.1.
+
+ip-10-1-13-116.us-west-2.compute.internal :) SELECT 1;
+
+SELECT 1
+
+Query id: cdd91b7f-215b-4537-b7df-86d19bf63f64
+
+   ┌─1─┐
+1. │ 1 │
+   └───┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+SSH를 통한 명령 실행(비대화형 모드)도 지원됩니다:
+
+```bash
+> ssh -i ~/test_ssh/id_ed25519 abcuser@localhost -p 9022 "select 1"
+1
+```
+
+<div id="server-configuration">
+  ## 서버 구성
+</div>
+
+SSH 서버 기능을 활성화하려면 `config.xml`에서 다음 섹션의 주석을 해제하거나, 해당 섹션을 추가해야 합니다:
+
+```xml
+<tcp_ssh_port>9022</tcp_ssh_port>
+<ssh_server>
+   <host_rsa_key>path-to-the-key</host_rsa_key>
+   <!--host_ecdsa_key>path-to-the-key</host_ecdsa_key-->
+   <!--host_ed25519_key>path-to-the-key</host_ed25519_key-->
+</ssh_server>
+```
+
+호스트 키는 SSH 프로토콜의 필수 구성 요소입니다. 이 키의 공개 키는 클라이언트 측의 `~/.ssh/known_hosts` 파일에 저장되며, 일반적으로 중간자 공격(man-in-the-middle attack)을 방지하는 데 사용됩니다. 서버에 처음 연결하면 아래와 같은 메시지가 표시됩니다.
+
+```shell
+The authenticity of host '[localhost]:9022 ([127.0.0.1]:9022)' can't be established.
+RSA key fingerprint is SHA256:3qxVlJKMr/PEKw/hfeg06HAK451Tt0eenhwqQvh58Do.
+This key is not known by any other names
+Are you sure you want to continue connecting (yes/no/[fingerprint])?
+```
+
+이는 실제로 다음을 의미합니다: &quot;이 호스트의 공개 키를 저장하고 계속 연결하시겠습니까?&quot;.
+
+옵션을 지정하면 SSH 클라이언트가 호스트를 검증하지 않도록 설정할 수 있습니다:
+
+```bash
+ssh -o "StrictHostKeyChecking no" user@host
+```
+
+<div id="configuring-embedded-client">
+  ## 내장 클라이언트 구성
+</div>
+
+일반 `clickhouse-client`와 비슷하게 내장 클라이언트에 옵션을 전달할 수 있지만, 몇 가지 제한이 있습니다.
+SSH 프로토콜을 사용하므로 대상 호스트에 매개변수를 전달하는 유일한 방법은 환경 변수를 사용하는 것입니다.
+
+예를 들어 `format`은 다음과 같이 설정할 수 있습니다:
+
+```bash
+> ssh -o SetEnv="format=Pretty" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```
+
+이 방법으로 모든 사용자 수준 설정을 변경할 수 있으며, 추가로 일반적인 `clickhouse-client` 옵션도 대부분 전달할 수 있습니다(이 구성에서 의미가 없는 옵션은 제외).
+
+중요:
+
+`query` 옵션과 SSH 명령을 모두 전달하면, 후자는 실행할 쿼리 목록에 추가됩니다:
+
+```bash
+ubuntu ip-10-1-13-116@~$ ssh -o SetEnv="format=Pretty query=\"SELECT 2;\"" -i ~/test_ssh/id_ed25519  abcuser@localhost -p 9022 "SELECT 1"
+   ┏━━━┓
+   ┃ 2 ┃
+   ┡━━━┩
+1. │ 2 │
+   └───┘
+   ┏━━━┓
+   ┃ 1 ┃
+   ┡━━━┩
+1. │ 1 │
+   └───┘
+```

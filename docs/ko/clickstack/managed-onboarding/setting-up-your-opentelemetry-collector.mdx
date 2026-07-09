@@ -1,0 +1,440 @@
+---
+slug: /use-cases/observability/clickstack/setting-up-your-opentelemetry-collector
+title: 'OpenTelemetry Collector 설정하기'
+description: 'Managed ClickStack용 OpenTelemetry Collector 설정하기'
+doc_type: 'guide'
+keywords: ['clickstack', 'opentelemetry', 'collector', 'managed', 'observability', 'gateway', 'telemetrygen']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+import GatherCredentials from '/snippets/ko/clickstack/_gather_credentials.mdx';
+import CreateIngestionUser from '/snippets/ko/clickstack/_create_ingestion_user.mdx';
+import ConfirmInUI from '/snippets/ko/clickstack/_confirm_in_ui.mdx';
+
+이 가이드는 기존 Managed ClickStack 서비스에 OpenTelemetry collector를 배포하거나 기존 collector를 조정한 후, 데이터가 실제로 흐르는지 확인하는 방법을 안내합니다.
+
+<AgentPrompt
+  prompt="curl을 사용해 다음 파일을 다운로드하고, 읽은 뒤, 안내에 따르십시오: https://clickhouse.com/docs/skills/clickstack-otel-collector/SKILL.md"
+  description="에이전트가 ClickStack OpenTelemetry collector 설정을 대신 수행합니다. Claude Code, Cursor, Codex 및 기타 코딩 에이전트에서 사용할 수 있습니다."
+  outline={[
+"clickhousectl이 없으면 설치하고 인증합니다(ClickHouse Cloud API Key를 요청합니다 — 채팅에 붙여 넣거나 직접 로그인 명령을 실행하십시오).",
+"대상 ClickHouse Cloud 서비스 ID 또는 이름을 확인한 다음 HTTPS 엔드포인트를 가져옵니다.",
+"서비스에 hyperdx_ingest SQL 사용자를 생성합니다(강력한 password를 생성하거나 제공한 값을 사용합니다).",
+"서비스를 가리키도록 ClickStack OpenTelemetry collector를 Docker에서 로컬로 실행합니다.",
+"짧은 synthetic logs, traces, metrics를 collector를 통해 전송해 파이프라인이 정상적으로 작동하는지 확인합니다.",
+"데이터가 otel 데이터베이스에 적재되었는지 확인하고, 확인에 사용할 수 있는 ClickStack UI URL을 제공합니다."
+]}
+/>
+
+collector는 **gateway**로 실행됩니다. 즉, 애플리케이션, SDK, agent collector가 데이터를 전송하는 단일 OTLP 엔드포인트입니다. gateway는 이벤트를 batch로 묶고, 구성한 processing을 적용한 다음, [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)를 통해 ClickHouse에 기록합니다. 이 패턴을 사용하면 수집 로직을 application code에서 분리할 수 있고, 데이터를 생성하는 workload와 별개로 수집 규모를 확장할 수 있습니다. gateway 역할과 agent 역할의 차이에 관한 배경 설명은 [Collector roles](/ko/clickstack/ingesting-data/collector#collector-roles)를 참조하십시오.
+
+<Info>
+  **기존 collector**
+
+  기존 OpenTelemetry collector를 사용 중이라면, 이미 **gateway** 역할로 구성되어 있다고 가정합니다. **agent** 역할의 collector를 재구성하는 용도로는 이 과정을 권장하지 않습니다.
+</Info>
+
+현재 상황에 맞는 탭을 선택하십시오:
+
+<Tabs>
+  <Tab title="collector가 없습니다">
+    <Steps>
+      <Step>
+        ## 자격 증명 준비하기
+
+        <GatherCredentials />
+      </Step>
+
+      <Step>
+        ## 수집용 사용자 생성
+
+        <CreateIngestionUser />
+      </Step>
+
+      <Step>
+        ## collector 배포
+
+        Managed ClickStack용으로 미리 구성된 **OpenTelemetry collector의 ClickStack 배포판**을 배포합니다. 아래 예시에서는 단순화를 위해 collector를 로컬에서 실행하고, 같은 머신에서 테스트용 텔레메트리를 생성합니다.
+
+        <Note>
+          실제 운영 환경에서는 일반적으로 collector를 Kubernetes 클러스터 또는 OpenTelemetry SDKs, 에이전트, 기타 collector에서 접근할 수 있는 가상 머신에 배포합니다. 이렇게 하면 환경 전반의 텔레메트리를 중앙에서 수집하여 ClickStack으로 전달할 수 있습니다.
+        </Note>
+
+        collector로 데이터를 전송하는 클라이언트를 인증할 공유 시크릿을 선택한 다음, 연결 정보와 `hyperdx_ingest` USER에 사용할 비밀번호와 함께 export하십시오:
+
+        ```shell
+        export CLICKHOUSE_ENDPOINT=<HTTPS_ENDPOINT>
+        export CLICKHOUSE_USER=hyperdx_ingest
+        export CLICKHOUSE_PASSWORD=ClickH0u3eRocks123!
+        export OTLP_AUTH_TOKEN="a-strong-shared-secret"
+        ```
+
+        ClickStack OTel collector를 실행하십시오:
+
+        ```shell
+        docker run -d \
+          -e OTLP_AUTH_TOKEN=${OTLP_AUTH_TOKEN} \
+          -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+          -e CLICKHOUSE_USER=${CLICKHOUSE_USER} \
+          -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+          -e HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=otel \
+          -p 4317:4317 \
+          -p 4318:4318 \
+          clickhouse/clickstack-otel-collector:latest
+        ```
+
+        collector는 이제 `4317` 포트에서 OTLP gRPC를, `4318` 포트에서 OTLP HTTP를 노출합니다. 애플리케이션, SDKs 및 agent collector는 요청 header에 `authorization: $OTLP_AUTH_TOKEN`을 포함하여 이 포트로 전송해야 합니다.
+
+        <Info>
+          **프로덕션 배포**
+
+          프로덕션 환경에서는 OTLP endpoint에 TLS를 활성화할 것을 권장합니다. [collector 보안 설정](/ko/clickstack/ingesting-data/collector#securing-the-collector)을 참조하십시오.
+        </Info>
+      </Step>
+
+      <Step>
+        ## 엔드포인트 확인
+
+        전체 파이프라인이 정상적으로 동작하는지 확인하기 위해 collector에 합성 트래픽을 생성합니다. 여기서는 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)을 사용합니다. 이는 OpenTelemetry Collector Contrib 생성기로, OTLP 로그, 트레이스, 메트릭을 전송하며 서비스, 심각도, 스팬 상태, 메트릭 타입에 따라 데이터를 구성할 수 있는 flag를 제공합니다.
+
+        Docker image로 실행하세요(별도 설치 불필요). 아래 명령어를 간결하게 유지하기 위해 간단한 wrapper를 정의하십시오. `--add-host`를 사용하면 컨테이너가 host에서 수신 대기 중인 collector에 접근할 수 있습니다.
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=host.docker.internal:4317
+        ```
+
+        또는 Go를 사용하여 바이너리를 설치하고 `localhost`를 대상으로 지정하십시오:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        export OTEL_ENDPOINT=localhost:4317
+        ```
+
+        <Info>
+          **예상되는 내용**
+
+          각 `tg` 실행은 약 20초 동안 계속되며(`--duration 20s`로 설정), 그동안 Verbose 로그가 계속 출력됩니다. 이는 정상입니다. 각 실행은 20초가 지나면 자동으로 종료됩니다. 아래 로그만으로도 파이프라인을 확인하기에 충분하며, 선택 사항인 더 풍부한 세트는 실행을 몇 차례 더 추가로 수행하므로 몇 분 정도 더 걸립니다.
+        </Info>
+
+        각 명령에서 달라지는 부분(service, severity, status, attributes)만 지정할 수 있도록 작은 `tg` 헬퍼를 정의합니다:
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 20s "$@"; }
+        ```
+
+        여러 서비스에 걸쳐 심각도를 현실적으로 혼합하여 로그를 전송합니다. 단일한 균등 오류 스트림이 아닌, 대부분 정보성 메시지에 경고와 오류가 섞인 형태입니다:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        로그만으로도 엔드포인트가 정상 작동하는지 확인할 수 있습니다. 더 풍부한 데모 데이터세트, 멀티 서비스 Service Map, 다양한 메트릭 유형의 차트를 확인하려면 아래 명령어도 펼쳐서 실행하십시오. 이 명령어들은 `tg` 헬퍼를 재사용하므로 동일한 셸에서 실행하십시오.
+
+        <Accordion title="더 상세한 텔레메트리 생성(선택 사항)">
+          여러 정상 서비스와 실패하는 종속성 1개에서 여러 스팬으로 구성된 trace를 전송하십시오. 그러면 Service Map이 대부분 정상이고 오류가 발생하는 서비스 1개가 포함된 현실적인 형태로 표시되며, 오류 뷰에도 계속 데이터가 채워집니다:
+
+          ```shell
+          # Healthy services: the bulk of the traffic, all spans Ok
+          for svc in frontend checkout cart; do
+            tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+              --otlp-attributes 'deployment.environment="production"' \
+              --telemetry-attributes "http.route=\"/$svc\""
+          done
+
+          # One slow dependency returning errors
+          tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes 'http.route="/charge"'
+          ```
+
+          차트에 카운터, 게이지, 분포가 모두 표시되도록 일반적인 3가지 유형의 메트릭을 전송합니다:
+
+          ```shell
+          tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+          tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+          tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+          ```
+
+          좀 더 다양하게 구성하려면 서비스 두어 개를 더 추가하고 지수 히스토그램도 추가하세요:
+
+          ```shell
+          tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' --telemetry-attributes 'http.route="/catalog"'
+          tg traces  --service inventory --child-spans 2 --span-duration 220ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="staging"'   --telemetry-attributes 'http.route="/inventory"'
+          tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-name db.query.duration
+          ```
+        </Accordion>
+
+        전체 플래그 목록 및 다양한 변형 옵션은 [telemetrygen을 활용한 합성 데이터](/ko/clickstack/example-datasets/telemetrygen)를 참조하십시오.
+      </Step>
+
+      <Step>
+        ## ClickStack UI에서 확인하기
+
+        <ConfirmInUI />
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="collector를 가지고 있습니다">
+    <Steps>
+      <Step>
+        ## 자격 증명을 준비하세요
+
+        <GatherCredentials />
+      </Step>
+
+      <Step>
+        ## 수집용 사용자 생성
+
+        <CreateIngestionUser />
+      </Step>
+
+      <Step>
+        ## collector 구성을 조정하세요
+
+        기존 collector 구성을 확장하여 [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter)를 통해 Managed ClickStack에 쓰도록 합니다.
+
+        <Info>
+          **ClickHouse exporter 필요**
+
+          자체 배포판을 사용하는 경우 ClickHouse exporter가 포함되어 있는지 확인하십시오. upstream [contrib 이미지](https://github.com/open-telemetry/opentelemetry-collector-contrib)에는 이미 포함되어 있습니다.
+        </Info>
+
+        아래는 ClickStack UI에서 필요로 하는 수신기, processors, pipelines와 함께 ClickHouse exporter를 사용하는 예시 구성입니다. 세션 리플레이(`rrweb`) 라우팅 경로를 포함해 ClickStack 배포판의 동작과 일치합니다. 위에서 생성한 `hyperdx_ingest` 사용자의 자격 증명으로 `<clickhouse_cloud_endpoint>` 및 `<your_password_here>`를 바꾸십시오:
+
+        ```yaml
+        receivers:
+          otlp/hyperdx:
+            protocols:
+              grpc:
+                include_metadata: true
+                endpoint: "0.0.0.0:4317"
+              http:
+                cors:
+                  allowed_origins: ["*"]
+                  allowed_headers: ["*"]
+                include_metadata: true
+                endpoint: "0.0.0.0:4318"
+
+        processors:
+          batch:
+          memory_limiter:
+            # 80% of maximum memory up to 2G, adjust for low memory environments
+            limit_mib: 1500
+            # 25% of limit up to 2G, adjust for low memory environments
+            spike_limit_mib: 512
+            check_interval: 5s
+
+        connectors:
+          routing/logs:
+            default_pipelines: [logs/out-default]
+            error_mode: ignore
+            table:
+              - context: log
+                statement: route() where IsMatch(attributes["rr-web.event"], ".*")
+                pipelines: [logs/out-rrweb]
+
+        exporters:
+          clickhouse:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+          clickhouse/rrweb:
+            database: otel
+            endpoint: <clickhouse_cloud_endpoint>
+            username: hyperdx_ingest
+            password: <your_password_here>
+            ttl: 720h
+            logs_table_name: hyperdx_sessions
+            timeout: 5s
+            retry_on_failure:
+              enabled: true
+              initial_interval: 5s
+              max_interval: 30s
+              max_elapsed_time: 300s
+
+        service:
+          pipelines:
+            traces:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            metrics:
+              receivers: [otlp/hyperdx]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/in:
+              receivers: [otlp/hyperdx]
+              exporters: [routing/logs]
+            logs/out-default:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse]
+            logs/out-rrweb:
+              receivers: [routing/logs]
+              processors: [memory_limiter, batch]
+              exporters: [clickhouse/rrweb]
+        ```
+
+        참고할 몇 가지 사항은 다음과 같습니다.
+
+        * `otlp/hyperdx` 수신기는 gRPC(`4317`)와 HTTP(`4318`)를 모두 수신합니다. 애플리케이션과 에이전트는 collector 호스트의 이 포트를 대상으로 해야 합니다.
+        * `clickhouse` exporter는 로그, trace, 메트릭을 `otel` 데이터베이스에 기록하며, 이는 ClickStack UI가 기대하는 레이아웃과 일치합니다. `clickhouse/rrweb` exporter는 `routing/logs` connector를 통해 `otel.hyperdx_sessions`로 라우팅된 세션 리플레이 이벤트를 처리합니다.
+        * OTLP 수신기의 인증은 기존 설정에 맡겨집니다. 수집 토큰을 요구해야 하는 경우 collector [확장 기능](https://opentelemetry.io/docs/collector/configuration/#extensions)(예: `bearertokenauth`) 또는 TLS를 적용한 리버스 프록시를 통해 구성하십시오.
+
+        새 구성으로 collector를 다시 로드하십시오. 그러면 애플리케이션, SDK, 에이전트 collector는 설정에서 요구하는 인증 헤더를 포함해 collector가 노출하는 OTLP 엔드포인트로 전송해야 합니다.
+
+        Managed ClickStack에 맞춰 OpenTelemetry collector를 구성하는 방법에 대한 자세한 내용은 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.
+      </Step>
+
+      <Step>
+        ## 엔드포인트 확인
+
+        전체 파이프라인이 정상적으로 동작하는지 확인하기 위해 collector에 합성 트래픽을 생성합니다. 여기서는 [`telemetrygen`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/cmd/telemetrygen)을 사용합니다. 이는 OpenTelemetry Collector Contrib 생성기로, OTLP 로그, 트레이스, 메트릭을 전송하며 서비스, 심각도, 스팬 상태, 메트릭 타입에 따라 데이터를 구성할 수 있는 flag를 제공합니다.
+
+        Docker image에서 실행하세요(별도 설치 불필요). `<your-collector-host>`를 collector가 수신 대기 중인 host로 교체하고, `authorization` header(또는 대체 인증 방법)를 collector가 요구하는 값으로 설정하세요:
+
+        ```shell
+        telemetrygen() {
+          docker run --rm --add-host=host.docker.internal:host-gateway \
+            ghcr.io/open-telemetry/opentelemetry-collector-contrib/telemetrygen:latest "$@"
+        }
+        export OTEL_ENDPOINT=<your-collector-host>:4317
+        export OTLP_AUTH_TOKEN=<your-auth-token>
+        ```
+
+        또는 Go를 사용하여 바이너리를 설치하십시오:
+
+        ```shell
+        go install github.com/open-telemetry/opentelemetry-collector-contrib/cmd/telemetrygen@latest
+        ```
+
+        <Info>
+          **예상되는 내용**
+
+          각 `tg` 실행은 약 20초 동안 지속되며(`--duration 20s`로 설정), 그동안 계속 verbose 로그를 스트리밍합니다. 이는 정상입니다. 각 실행은 20초가 지나면 자동으로 종료됩니다. 아래 로그만으로도 파이프라인을 확인하기에 충분하며, 선택적으로 더 자세한 세트를 실행하면 몇 차례 더 수행되므로 몇 분 정도 걸립니다.
+        </Info>
+
+        각 명령에서 달라지는 부분(service, severity, status, attributes)만 지정할 수 있도록 작은 `tg` 헬퍼를 정의합니다:
+
+        ```shell
+        tg() { local signal=$1; shift; telemetrygen "$signal" \
+          --otlp-endpoint ${OTEL_ENDPOINT} --otlp-insecure \
+          --otlp-header "authorization=\"${OTLP_AUTH_TOKEN}\"" \
+          --rate 5 --duration 20s "$@"; }
+        ```
+
+        여러 서비스에 걸쳐 현실적인 심각도 조합으로 로그를 전송합니다. 균일한 오류 스트림 대신, 대부분 정보성 메시지로 구성하되 경고와 오류도 포함합니다:
+
+        ```shell
+        tg logs --service frontend --severity-text Info  --severity-number 9  --body "GET /api/products 200" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="GET"' --telemetry-attributes 'http.status_code="200"'
+        tg logs --service checkout --severity-text Warn  --severity-number 13 --body "retrying payment authorization" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.method="POST"'
+        tg logs --service payment  --severity-text Error --severity-number 17 --body "payment gateway timeout" \
+          --otlp-attributes 'deployment.environment="production"' \
+          --telemetry-attributes 'http.status_code="500"'
+        ```
+
+        로그만으로도 엔드포인트가 정상 작동하는지 확인할 수 있습니다. 더 풍부한 데모 데이터세트, 멀티 서비스 Service Map, 다양한 메트릭 타입의 차트를 확인하려면 아래 명령어도 펼쳐서 실행하십시오. 이 명령어들은 `tg` 헬퍼를 재사용하므로 동일한 셸에서 실행하십시오.
+
+        <Accordion title="더 자세한 진단 데이터 생성(선택 사항)">
+          여러 개의 정상 서비스와 하나의 장애가 발생한 종속성에서 여러 스팬으로 이루어진 트레이스를 전송하세요. 그러면 Service Map에 대부분은 정상이고 하나의 서비스만 오류가 있는 현실적인 형태가 반영되며, 오류 뷰도 계속 채워집니다:
+
+          ```shell
+          # Healthy services: the bulk of the traffic, all spans Ok
+          for svc in frontend checkout cart; do
+            tg traces --service "$svc" --child-spans 3 --span-duration 80ms --status-code Ok \
+              --otlp-attributes 'deployment.environment="production"' \
+              --telemetry-attributes "http.route=\"/$svc\""
+          done
+
+          # One slow dependency returning errors
+          tg traces --service payment --child-spans 3 --span-duration 450ms --span-links 1 --status-code Error \
+            --otlp-attributes 'deployment.environment="production"' \
+            --telemetry-attributes 'http.route="/charge"'
+          ```
+
+          세 가지 일반적인 유형의 메트릭을 전송하여 차트에 Counter, Gauge, Distribution이 모두 표시되도록 합니다:
+
+          ```shell
+          tg metrics --service frontend --metric-type Sum       --otlp-metric-name http.server.requests --aggregation-temporality cumulative
+          tg metrics --service frontend --metric-type Gauge     --otlp-metric-name system.memory.usage
+          tg metrics --service payment  --metric-type Histogram --otlp-metric-name http.server.duration
+          ```
+
+          구성을 더욱 다양하게 하려면 서비스를 두어 개 더 추가하고 지수 히스토그램도 추가합니다:
+
+          ```shell
+          tg traces  --service catalog   --child-spans 2 --span-duration 60ms  --status-code Ok \
+            --otlp-attributes 'deployment.environment="production"' --telemetry-attributes 'http.route="/catalog"'
+          tg traces  --service inventory --child-spans 2 --span-duration 220ms --status-code Ok \
+            --otlp-attributes 'deployment.environment="staging"'   --telemetry-attributes 'http.route="/inventory"'
+          tg metrics --service payment   --metric-type ExponentialHistogram --otlp-metric-name db.query.duration
+          ```
+        </Accordion>
+
+        전체 플래그 목록과 다양한 변형 옵션은 [telemetrygen을 사용한 합성 데이터](/ko/clickstack/example-datasets/telemetrygen)를 참조하십시오.
+      </Step>
+
+      <Step>
+        ## ClickStack UI에서 확인하기
+
+        <ConfirmInUI />
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+<div id="next-steps">
+  ## 다음 단계: 자체 데이터 전송
+</div>
+
+위의 합성 버스트는 파이프라인이 작동한다는 점만 보여줍니다. 실제 telemetry 전송을 시작하려면 [ClickStack SDKs](/ko/clickstack/ingesting-data/sdks/index)를 사용해 자체 서비스를 계측하세요. 이 SDK는 Node.js, Python, Go, Java 및 기타 언어용 instrumentation을 제공하며, 방금 확인한 collector 엔드포인트로 OTLP를 내보냅니다. 전체 과정을 보여주는 예시는 [애플리케이션 계측](/ko/clickstack/managed-onboarding/instrument-application)을 따르십시오.
+
+애플리케이션 코드가 아니라 인프라에서 수집하려면 다음을 참조하십시오.
+
+* [Kubernetes 모니터링](/ko/clickstack/managed-onboarding/monitoring-kubernetes): cluster에서 logs, 인프라 메트릭, Kubernetes 이벤트를 수집합니다.
+* [AWS CloudWatch logs 모니터링](/ko/clickstack/managed-onboarding/monitoring-aws-cloudwatch-logs): OpenTelemetry CloudWatch 수신기를 통해 CloudWatch logs를 전달합니다.
+
+<div id="further-reading">
+  ## 추가 참고 자료
+</div>
+
+이 가이드는 가장 단순한 형태의 단일 collector 인스턴스를 설명합니다. 다음 단계는 [OpenTelemetry collector 참고](/ko/clickstack/ingesting-data/collector)에서 확인할 수 있습니다.
+
+* upstream OpenTelemetry Helm 차트와 ClickStack collector image를 사용해 [Kubernetes에 collector 배포하기](/ko/clickstack/ingesting-data/collector#configuring-the-collector)
+* OTLP 엔드포인트에 TLS를 적용하고 최소 권한 수집 사용자를 구성해 [collector 보안 설정하기](/ko/clickstack/ingesting-data/collector#securing-the-collector)
+* gateway에서 이벤트 [처리, 필터링, 보강하기](/ko/clickstack/ingesting-data/collector#processing-filtering-transforming-enriching)
+* 사용자 지정 수신기, processors, 파이프라인를 사용해 [collector 구성 확장하기](/ko/clickstack/ingesting-data/collector#extending-collector-config)
+* 예상 처리량에 맞춰 gateway 및 agent 배포에 필요한 [리소스 추정하기](/ko/clickstack/ingesting-data/collector#estimating-resources)
+* [production 환경으로 전환하기](/ko/clickstack/managing/production)

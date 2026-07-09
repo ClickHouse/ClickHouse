@@ -1,0 +1,198 @@
+---
+sidebarTitle: 'Fonctions définies par l’utilisateur'
+slug: /cloud/features/user-defined-functions
+title: 'Fonctions définies par l’utilisateur dans Cloud'
+description: 'Ajoutez vos propres fonctions Python exécutables dans Cloud'
+doc_type: 'guide'
+keywords: ['fonction définie par l’utilisateur', 'UDF']
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+Les fonctions définies par l’utilisateur (UDF) permettent d’étendre le comportement de ClickHouse au-delà de ce que permettent les plus de mille [fonctions](/fr/reference/functions/regular-functions/regular-functions-index) intégrées.
+
+Dans ClickHouse Cloud, il existe deux façons de créer des fonctions définies par l’utilisateur :
+
+1. À l’aide de SQL
+2. À l’aide de l’UI et de votre propre code (Public Beta)
+
+<div id="sql-udfs">
+  ## Fonctions SQL définies par l’utilisateur
+</div>
+
+Les UDF SQL peuvent être créées à l’aide de l’instruction [`CREATE FUNCTION`](/fr/reference/statements/create/function) à partir d’une expression lambda.
+
+Dans cet exemple, nous allons créer une simple fonction exécutable définie par l’utilisateur, `isBusinessHours`.
+La fonction vérifiera si un timestamp donné correspond aux heures ouvrées habituelles et renverra true si c’est le cas, sinon false.
+
+1. Connectez-vous à Cloud Console et ouvrez la console SQL
+2. Écrivez la SQL query suivante pour créer la fonction `isBusinessHours` :
+
+```sql
+CREATE FUNCTION isBusinessHours AS (ts) ->
+toDayOfWeek(ts) BETWEEN 1 AND 5
+AND toHour(ts) BETWEEN 9 AND 17;
+```
+
+3. Exécutez ce qui suit pour tester l’UDF que vous venez de créer :
+
+```sql
+SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+```
+
+Vous devriez obtenir le résultat suivant :
+
+```response
+1   0
+```
+
+4. Vous pouvez utiliser la commande `DROP FUNCTION` pour supprimer l’UDF que vous venez de créer :
+
+```sql
+DROP FUNCTION isBusinessHours
+```
+
+<Warning>
+  **Important**
+
+  Les UDFs dans ClickHouse Cloud **n’héritent pas des paramètres définis au niveau de l’utilisateur**. Elles s’exécutent avec les paramètres système par défaut.
+</Warning>
+
+Cela signifie :
+
+* Les paramètres de session (définis via l’instruction `SET`) ne sont pas transmis au contexte d’exécution des UDFs
+* Les paramètres du profil utilisateur ne sont pas hérités par les UDFs
+* Les paramètres au niveau de la requête ne s’appliquent pas lors de l’exécution des UDFs
+
+<div id="ui-udfs">
+  ## Fonctions définies par l&#39;utilisateur créées via l&#39;UI
+</div>
+
+<BetaBadge />
+
+ClickHouse Cloud offre une interface de configuration dans l&#39;UI pour créer des fonctions définies par l&#39;utilisateur.
+
+Dans cet exemple, nous allons créer la même fonction définie par l&#39;utilisateur exécutable simple, `isBusinessHours`, qui vérifie si un timestamp donné se situe dans les heures ouvrées habituelles.
+Nous l&#39;avons précédemment créée en SQL, mais cette fois, nous allons la créer en Python et la configurer via l&#39;UI.
+
+<Steps>
+  <Step>
+    ### Créer le fichier Python
+
+    Créez un nouveau fichier `main.py` localement :
+
+    ```python
+    cat > main.py << 'EOF'
+    import sys
+    from datetime import datetime
+
+    for line in sys.stdin:
+        ts = datetime.fromisoformat(line.strip())
+        result = 1 if (0 <= ts.weekday() <= 4 and 9 <= ts.hour <= 17) else 0
+        print(result)
+        sys.stdout.flush()
+    EOF
+    ```
+
+    Si votre script Python importe des paquets tiers, indiquez-les dans un fichier `requirements.txt`, et ClickHouse Cloud les installera pour vous. Vous pouvez aussi inclure directement les dépendances dans l’archive ZIP, mais vous devrez alors fournir les paquets mis en cache pour les deux architectures CPU ; `requirements.txt` reste donc la solution la plus simple. Par exemple :
+
+    ```text
+    requests>=2.28.0
+    numpy>=1.23.0
+    ```
+
+    <Note>
+      ClickHouse Cloud s’attend à trouver `main.py` dans l’archive zip que vous téléverserez via l’UI à l’étape suivante.
+      Si vous donnez un autre nom au fichier, une erreur se produira.
+    </Note>
+  </Step>
+
+  <Step>
+    ### Dépendances regroupées et fichiers locaux
+
+    Pour inclure les paquets de dépendances et tout autre fichier local (par exemple, des fichiers wheel, des fichiers de configuration ou des fichiers de données), placez-les dans le même répertoire que `main.py` et `requirements.txt`. Lorsque vous créez l’archive ZIP, incluez tous les fichiers :
+
+    ```bash
+    zip is_business_hours.zip main.py requirements.txt
+    ```
+
+    Vous pouvez référencer, dans votre code Python, le répertoire de base du chemin local inclus en utilisant `os.path.dirname(os.path.abspath(__file__))`. Cela renvoie le chemin absolu du répertoire où se trouve votre `main.py` dans l’archive ZIP, ce qui vous permet d’accéder aux autres fichiers inclus :
+
+    ```python
+    import os
+
+    # Get the base directory of the bundled files
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config_path = os.path.join(base_dir, 'config.json')
+    ```
+
+    Cela est utile lorsque vous devez :
+
+    * Accéder aux fichiers de configuration inclus avec votre UDF
+    * Charger des packages wheel pour des dépendances personnalisées
+    * Référencer des scripts supplémentaires ou des fichiers de données
+
+    Compressez maintenant le fichier en archive ZIP :
+
+    ```bash
+    zip is_business_hours.zip main.py
+    ```
+
+    <Warning>
+      **Les liens symboliques ne sont pas autorisés**
+
+      ClickHouse Cloud rejette les archives UDF qui contiennent des liens symboliques. Assurez-vous que votre archive ZIP ne contient que des fichiers et répertoires ordinaires — les téléversements contenant des liens symboliques échoueront lors de la validation.
+    </Warning>
+  </Step>
+
+  <Step>
+    ### Créer une UDF via l’UI
+
+    1. Depuis la page d’accueil de la console Cloud, cliquez sur le nom de votre organisation dans le menu en bas à gauche.
+    2. Sélectionnez **Fonctions définies par l’utilisateur** dans le menu.
+    3. Sur la page des fonctions définies par l’utilisateur, cliquez sur **Configurer une UDF**. Un panneau de configuration s’ouvre sur la droite de l’écran.
+    4. Saisissez un nom de fonction. Pour cet exemple, utilisez `isBusinessHours`.
+    5. Sélectionnez un type de fonction, **Executable pool** ou **Executable** :
+       * **Executable pool** : un pool de processus persistants est maintenu, et un processus est prélevé dans ce pool pour effectuer les lectures.
+       * **Executable** : le script s’exécute à chaque requête.
+    6. Pour cet exemple, utilisez les paramètres par défaut. Pour obtenir la liste complète des paramètres de configuration, consultez [Executable user-defined functions](/fr/reference/functions/regular-functions/udf#executable-user-defined-functions).
+    7. Cliquez sur **Parcourir le fichier** pour téléverser le fichier `.zip` créé au début de ce tutoriel.
+    8. Ajoutez un nouvel argument. Pour cet exemple, ajoutez un argument `timestamp` de type `DateTime`.
+    9. Sélectionnez un type de retour. Pour cet exemple, sélectionnez `Bool`.
+    10. Cliquez sur **Créer une UDF**. Une boîte de dialogue affiche l’état actuel du build.
+        * En cas de problème, l’état devient **error**.
+        * Sinon, l’état passe de **building** à **provisioning**. Votre service doit être actif pour terminer le provisionnement. Si votre service est inactif, cliquez sur **Réveiller le service** dans le panneau **Détails de l’UDF** à côté du nom du service.
+        * Une fois l’opération terminée, l’état devient **deployed**.
+  </Step>
+
+  <Step>
+    ### Testez votre UDF
+
+    1. revenez à la page d’accueil de la SQL Console en cliquant sur **Settings - return to your service view** dans le coin supérieur gauche de la page
+    2. cliquez sur **SQL Console** dans le menu de gauche
+    3. saisissez la requête suivante :
+
+    ```sql
+    SELECT isBusinessHours('2026-03-20 10:00:00'::DateTime), isBusinessHours('2026-03-20 23:00:00'::DateTime);
+    ```
+
+    Vous devriez obtenir le résultat suivant :
+
+    ```response
+    true    false
+    ```
+  </Step>
+
+  <Step>
+    ### Créer une nouvelle version
+
+    Pour modifier le code d’une UDF, créez une nouvelle version. Le panneau **Edit** sert uniquement à gérer les services auxquels une UDF est affectée ; y téléverser un fichier ne remplacera pas le code déployé.
+
+    1. Depuis la page d’accueil de la console Cloud, cliquez sur le nom de votre organisation dans le menu en bas à gauche.
+    2. Sélectionnez **User-defined functions** dans le menu.
+    3. Cliquez sur les trois points sous **Actions** pour la UDF `isBusinessHours`, puis sur **Create new version**
+    4. Téléversez un fichier zip contenant le code modifié, ou modifiez les paramètres, puis cliquez sur **Create new version**
+
+    Vous avez ajouté avec succès votre première fonction définie par l’utilisateur via l’UI, confirmé qu’elle s’exécute et vu comment en créer une nouvelle version si nécessaire.
+  </Step>
+</Steps>

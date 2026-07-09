@@ -1,0 +1,75 @@
+---
+alias: []
+description: 'JSONAsObject フォーマットに関するドキュメント'
+input_format: true
+keywords: ['JSONAsObject']
+output_format: false
+slug: /interfaces/formats/JSONAsObject
+title: 'JSONAsObject'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 説明
+</div>
+
+このフォーマットでは、1 つの JSON object は 1 つの [JSON](/ja/reference/data-types/newjson) 値として解釈されます。入力に複数の JSON object が含まれている場合 (カンマ区切り) 、それぞれが別個の行として解釈されます。入力データが `[]` で囲まれている場合は、JSON の Array として解釈されます。
+
+このフォーマットを解析できるのは、[JSON](/ja/reference/data-types/newjson) 型の単一のフィールドを持つテーブルに限られます。残りのカラムは [`DEFAULT`](/ja/reference/statements/create/table#default) または [`MATERIALIZED`](/ja/reference/statements/create/view#materialized-view) に設定する必要があります。
+
+<div id="example-usage">
+  ## 使用例
+</div>
+
+<div id="basic-example">
+  ### 基本例
+</div>
+
+```sql title="Query"
+CREATE TABLE json_as_object (json JSON) ENGINE = Memory;
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_object FORMAT JSONEachRow;
+```
+
+```response title="Response"
+{"json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
+{"json":{}}
+{"json":{"any json stucture":"1"}}
+```
+
+<div id="an-array-of-json-objects">
+  ### JSON object を含む Array
+</div>
+
+```sql title="Query"
+CREATE TABLE json_square_brackets (field JSON) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsObject [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+SELECT * FROM json_square_brackets FORMAT JSONEachRow;
+```
+
+```response title="Response"
+{"field":{"id":"1","name":"name1"}}
+{"field":{"id":"2","name":"name2"}}
+```
+
+<div id="columns-with-default-values">
+  ### デフォルト値のあるカラム
+</div>
+
+```sql title="Query"
+CREATE TABLE json_as_object (json JSON, time DateTime MATERIALIZED now()) ENGINE = Memory;
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"foo":{"bar":{"x":"y"},"baz":1}};
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {};
+INSERT INTO json_as_object (json) FORMAT JSONAsObject {"any json stucture":1}
+SELECT time, json FROM json_as_object FORMAT JSONEachRow
+```
+
+```response title="Response"
+{"time":"2024-09-16 12:18:10","json":{}}
+{"time":"2024-09-16 12:18:13","json":{"any json stucture":"1"}}
+{"time":"2024-09-16 12:18:08","json":{"foo":{"bar":{"x":"y"},"baz":"1"}}}
+```
+
+<div id="format-settings">
+  ## フォーマット設定
+</div>

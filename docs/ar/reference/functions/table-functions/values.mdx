@@ -1,0 +1,243 @@
+---
+description: 'ينشئ مساحة تخزين مؤقتة تملأ الأعمدة بالقيم.'
+keywords: ['values', 'دالة جدول']
+sidebarTitle: 'values'
+slug: /sql-reference/table-functions/values
+title: 'values'
+doc_type: 'مرجع'
+---
+
+تتيح لك دالة الجدول `Values` إنشاء مساحة تخزين مؤقتة تُملأ
+أعمدتها بالقيم. وهي مفيدة للاختبارات السريعة أو لإنشاء بيانات تجريبية.
+
+<Note>
+  الدالة Values غير حساسة لحالة الأحرف؛ أي إن `VALUES` و`values` كلاهما صالح.
+</Note>
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+الصيغة الأساسية لدالة الجدول `VALUES` هي:
+
+```sql
+VALUES([structure,] values...)
+```
+
+يُستخدم عادةً على النحو التالي:
+
+```sql
+VALUES(
+    ['column1_name Type1, column2_name Type2, ...'],
+    (value1_row1, value2_row1, ...),
+    (value1_row2, value2_row2, ...),
+    ...
+)
+```
+
+<div id="arguments">
+  ## الوسائط
+</div>
+
+* `column1_name Type1, ...` (اختياري). [String](/ar/reference/data-types/string)
+  يحدّد أسماء الأعمدة وأنواعها. إذا أُهمِل هذا الوسيط، فستُسمّى الأعمدة
+  `c1` و`c2` وهكذا.
+* `(value1_row1, value2_row1)`. [Tuples](/ar/reference/data-types/tuple)
+  تحتوي على قيم من أي نوع.
+
+<Note>
+  يمكن أيضًا استبدال الـ tuples المفصولة بفواصل بقيم مفردة. في هذه الحالة،
+  يُتعامل مع كل قيمة على أنها صف جديد. راجع قسم [الأمثلة](#examples) لمزيد من
+  التفاصيل.
+</Note>
+
+<div id="returned-value">
+  ## القيمة المُعادة
+</div>
+
+* يُرجِع جدولًا مؤقتًا يحتوي على القيم المُمرَّرة.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+```sql title="Query"
+SELECT *
+FROM VALUES(
+    'person String, place String',
+    ('Noah', 'Paris'),
+    ('Emma', 'Tokyo'),
+    ('Liam', 'Sydney'),
+    ('Olivia', 'Berlin'),
+    ('Ilya', 'London'),
+    ('Sophia', 'London'),
+    ('Jackson', 'Madrid'),
+    ('Alexey', 'Amsterdam'),
+    ('Mason', 'Venice'),
+    ('Isabella', 'Prague')
+)
+```
+
+```response title="Response"
+    ┌─person───┬─place─────┐
+ 1. │ Noah     │ Paris     │
+ 2. │ Emma     │ Tokyo     │
+ 3. │ Liam     │ Sydney    │
+ 4. │ Olivia   │ Berlin    │
+ 5. │ Ilya     │ London    │
+ 6. │ Sophia   │ London    │
+ 7. │ Jackson  │ Madrid    │
+ 8. │ Alexey   │ Amsterdam │
+ 9. │ Mason    │ Venice    │
+10. │ Isabella │ Prague    │
+    └──────────┴───────────┘
+```
+
+يمكن أيضًا استخدام `VALUES` مع قيم مفردة بدلًا من tuples. على سبيل المثال:
+
+```sql title="Query"
+SELECT *
+FROM VALUES(
+    'person String',
+    'Noah',
+    'Emma',
+    'Liam',
+    'Olivia',
+    'Ilya',
+    'Sophia',
+    'Jackson',
+    'Alexey',
+    'Mason',
+    'Isabella'
+)
+```
+
+```response title="Response"
+    ┌─person───┐
+ 1. │ Noah     │
+ 2. │ Emma     │
+ 3. │ Liam     │
+ 4. │ Olivia   │
+ 5. │ Ilya     │
+ 6. │ Sophia   │
+ 7. │ Jackson  │
+ 8. │ Alexey   │
+ 9. │ Mason    │
+10. │ Isabella │
+    └──────────┘
+```
+
+أو من دون تحديد مواصفات صف (`'column1_name Type1, column2_name Type2, ...'`
+في [الصيغة](#syntax))، وفي هذه الحالة تُسمّى الأعمدة تلقائيًا.
+
+على سبيل المثال:
+
+```sql title="Query"
+-- tuples as values
+SELECT *
+FROM VALUES(
+    ('Noah', 'Paris'),
+    ('Emma', 'Tokyo'),
+    ('Liam', 'Sydney'),
+    ('Olivia', 'Berlin'),
+    ('Ilya', 'London'),
+    ('Sophia', 'London'),
+    ('Jackson', 'Madrid'),
+    ('Alexey', 'Amsterdam'),
+    ('Mason', 'Venice'),
+    ('Isabella', 'Prague')
+)
+```
+
+```response title="Response"
+    ┌─c1───────┬─c2────────┐
+ 1. │ Noah     │ Paris     │
+ 2. │ Emma     │ Tokyo     │
+ 3. │ Liam     │ Sydney    │
+ 4. │ Olivia   │ Berlin    │
+ 5. │ Ilya     │ London    │
+ 6. │ Sophia   │ London    │
+ 7. │ Jackson  │ Madrid    │
+ 8. │ Alexey   │ Amsterdam │
+ 9. │ Mason    │ Venice    │
+10. │ Isabella │ Prague    │
+    └──────────┴───────────┘
+```
+
+```sql title="Query"
+-- single values
+SELECT *
+FROM VALUES(
+    'Noah',
+    'Emma',
+    'Liam',
+    'Olivia',
+    'Ilya',
+    'Sophia',
+    'Jackson',
+    'Alexey',
+    'Mason',
+    'Isabella'
+)
+```
+
+```response title="Response"
+    ┌─c1───────┐
+ 1. │ Noah     │
+ 2. │ Emma     │
+ 3. │ Liam     │
+ 4. │ Olivia   │
+ 5. │ Ilya     │
+ 6. │ Sophia   │
+ 7. │ Jackson  │
+ 8. │ Alexey   │
+ 9. │ Mason    │
+10. │ Isabella │
+    └──────────┘
+```
+
+<div id="sql-standard-values-clause">
+  ## عبارة VALUES القياسية في SQL
+</div>
+
+اعتبارًا من الإصدار 26.3، يدعم ClickHouse أيضًا عبارة `VALUES` القياسية في SQL كتعبير جدول
+ضمن `FROM`، كما في PostgreSQL وMySQL وDuckDB وSQL Server. وتُعاد كتابة
+هذه الصيغة داخليًا لاستخدام دالة الجدول `values` الموضحة أعلاه.
+
+```sql title="Query"
+SELECT * FROM (VALUES (1, 'a'), (2, 'b'), (3, 'c')) AS t(id, val);
+```
+
+```response title="Response"
+┌─id─┬─val─┐
+│  1 │ a   │
+│  2 │ b   │
+│  3 │ c   │
+└────┴─────┘
+```
+
+يمكن استخدامه ضمن CTEs:
+
+```sql title="Query"
+WITH cte AS (SELECT * FROM (VALUES (1, 'one'), (2, 'two')) AS t(id, name))
+SELECT * FROM cte;
+```
+
+وفي عمليات JOIN:
+
+```sql title="Query"
+SELECT t1.id, t1.val, t2.val2
+FROM (VALUES (1, 'a'), (2, 'b')) AS t1(id, val)
+JOIN (VALUES (1, 'x'), (2, 'y')) AS t2(id, val2) ON t1.id = t2.id;
+```
+
+<Note>
+  تتبع الأسماء المستعارة للأعمدة بعد `AS t(col1, col2, ...)` الصيغة القياسية في SQL
+  لتسمية أعمدة الجداول المشتقة. وإذا أُهملت، تُسمّى الأعمدة `c1` و`c2` وهكذا.
+</Note>
+
+<div id="see-also">
+  ## راجع أيضًا
+</div>
+
+* [تنسيق Values](/ar/reference/formats/Values)
