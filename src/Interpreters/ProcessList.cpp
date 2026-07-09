@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
+#include <Common/StackTrace.h>
 #include <Common/ThreadStatus.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
@@ -631,7 +632,12 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
                 additional_error_part = fmt::format("elapsed {} ms, ", static_cast<double>(elapsed_ns) / 1000000ULL);
 
             if (cancel_reason == CancelReason::TIMEOUT)
+            {
+                LOG_ERROR(getLogger("QueryStatus"), "Throwing TIMEOUT_EXCEEDED. Stack:\n {}", StackTrace().toString());
                 throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded: {}maximum: {} ms", additional_error_part, max_execution_time_ms);
+            }
+
+            LOG_ERROR(getLogger("QueryStatus"), "Throwing QUERY_WAS_CANCELLED. Stack:\n {}", StackTrace().toString());
             throwQueryWasCancelled();
         }
     }
