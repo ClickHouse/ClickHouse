@@ -59,6 +59,7 @@ private:
     template <typename T>
     void bindKey(char32_t key, T && func, int mode);
     void recomputeCurswant(int pos, std::string &text);
+    int vimReps() const;
 
     /// Whether the text cursor is at the very end of the input (where as-you-type hints render).
     bool isCursorAtEndOfInput();
