@@ -37,10 +37,10 @@ struct ReaderExecutorFetchMachine : MachineBase
     /// Out-of-line: initializes `inflight_gauge` (metric symbol is in the .cpp).
     ReaderExecutorFetchMachine();
 
-    /// The PHYSICAL cache-aligned window the fetch step reads
-    /// (`fetchWindowAt` widened); collect backfills the caches over it. The
-    /// LOGICAL requested range (the space `position` works in) is this shifted
-    /// down by `data_start_offset`.
+    /// The PHYSICAL cache-aligned window the fetch step reads (`fetchWindowAt`
+    /// widened), committing cells per tile as it goes. The LOGICAL requested
+    /// range (the space `position` works in) is this shifted down by
+    /// `data_start_offset`.
     ByteRange physical_window;
     /// The plan's memory-pressure level, snapshotted at launch - the only
     /// geometry field the worker reads (sizes the fetch block / suppresses

@@ -288,14 +288,11 @@ void ReaderExecutor::preparePlan(size_t position_phys, size_t coverage_ahead)
     if (machine && at_plan_end)
         collectInFlightInto(machine->retrieve_index);
 
-    /// The consumer (`coverage_ahead == 0`) re-plans only once the plan is fully consumed -
-    /// the cursor fell before `plan_start`, or reached `plan_end` and the plan does not
-    /// already run to EOF: a plan is used to its end before a rebuild. The producer
-    /// (`coverage_ahead > 0`) re-plans as soon as coverage falls short of the next ahead
-    /// window - its launch needs scheduled jobs AHEAD of the cursor, and the post-collect
-    /// gap here is the one instant a mid-plan replan is legal. Never replan while a machine
-    /// is in flight: it would re-probe residency and could see the worker's just-fetched
-    /// gap as resident. The per-plan pressure level is sampled once inside `observeAndSchedule`.
+    /// The consumer/producer role split is the declaration's contract; the mechanics here:
+    /// the post-collect gap above is the ONE instant a mid-plan replan is legal, a replan
+    /// never runs while a machine is in flight (it would re-probe residency and could see
+    /// the worker's just-fetched gap as resident), and the per-plan pressure level is
+    /// sampled once inside `observeAndSchedule`.
     const bool want_replan = coverage_ahead
         ? (!read_plan.geometry() || !read_plan.geometry()->covers(ByteRange{position_phys, coverage_ahead}))
         : (!read_plan.geometry()
@@ -684,8 +681,8 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     /// Started/finished: collect the worker's raw PHYSICAL gap bytes, then fold the
     /// machine-local source I/O into `this->stats`. Collect WAITS at the barrier -
     /// no takeover: a one-shot fetch has nothing to take over (the GET is read to
-    /// its bound, and splitting it would forfeit the request). Interruption remains
-    /// the CANCEL mechanism, where the remainder is never fetched at all.
+    /// its bound, and splitting it would forfeit the request); a stall-join interrupts
+    /// first, so the wait is bounded by one tile.
     LOG_TRACE(log, "collect: waiting on prefetched [{}, {})",
         toLogical(m->physical_window.offset), toLogical(m->physical_window.end()));
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
@@ -1025,8 +1022,7 @@ ChainedBuffers ReaderExecutor::fetchGapsFromSource(ByteRange physical_window, bo
         /// FOREGROUND context (`may_open_long`: the foreground itself and INLINE machines, which
         /// run on the serve thread) - the foreground stays the sole opener; a pool worker
         /// carries what its launch gave it. The policy operates on the lane's slot, which for
-        /// every foreground caller IS `lc` - the old borrow/hand-back dance is gone with the
-        /// machine-carried foreground connections.
+        /// every foreground caller IS `lc`.
         if (may_open_long)
             openLongConnectionIfWarranted(pr.object, pr.object_offset, file_pos, out_stats);
 
@@ -1704,10 +1700,8 @@ bool ReaderExecutor::clampAllowsAhead(size_t ri) const
     /// handed) - would only be refused at the frontier and discarded. Hold the AHEAD launch
     /// until everything in the target cells below the launch position is committed or lies
     /// in the job's OWN fetch runs (its refused or pending bytes were never a reason to
-    /// hold - the serve banks them). The deleted deps graph ordered nothing here: same-cell
-    /// gaps FOLD into one Remote (the fill closure spans the merged miss run), so its
-    /// Remote-vs-Remote edges never fired, and the down-fill ordering was unrepresentable -
-    /// the old code launched the tail run early and paid a refused GET. The PUMP is exempt:
+    /// hold - the serve banks them; same-cell gaps FOLD into one Remote, so no
+    /// Remote-vs-Remote ordering exists). The PUMP is exempt:
     /// demand production heals through the bank; only the ahead anchor waits. A hold is
     /// BOUNDED by the held job's own consumption: the pump advances the launch high-water
     /// past every served window regardless of refusals, so the scan retires the job even
@@ -2022,9 +2016,8 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     const auto & r = read_plan.schedule.retrieves[ri];
 
     /// Join an in-flight machine first - EXCEPT our own machine still LEADING this window:
-    /// its worker commits cells progressively, so the WAIT below (window-bounded, like the
-    /// old cell-serve's) lets it land the window instead of blocking on the whole remaining
-    /// lead. A FOREIGN machine (or our own past the cursor) holds the single slot the cursor
+    /// its worker commits cells progressively, so the window-bounded WAIT below lets it
+    /// land the window instead of blocking on the whole remaining lead. A FOREIGN machine (or our own past the cursor) holds the single slot the cursor
     /// outran - free the slot.
     const bool own_leading = machineFor(ri)
         && machine->physical_window.offset <= window.offset
@@ -2036,9 +2029,8 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
     }
 
     /// The piece extends to the job's fetch grids, clamped into its range (cell-fill
-    /// granularity; identity for a bypass job - its grids are 1). Known bounded divergence
-    /// from the old per-tier-clamped geometry query: the head can reach across a same-tier
-    /// resident run the per-tier clamp stopped at - at most one grid cell, cache-served when
+    /// granularity; identity for a bypass job - its grids are 1). The grid head can reach
+    /// across a same-tier resident run - at most one grid cell, cache-served when
     /// resident, once per plan.
     const size_t head_grid = std::max<size_t>(r.fetch_head_grid, 1);
     const size_t tail_grid = std::max<size_t>(r.fetch_tail_grid, 1);
@@ -2101,8 +2093,7 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
 
     /// 3) Last resort - the wait-timeout escape hatch: a sibling leader hung mid-download, so
     ///    the wait returned short AND our election still loses (the segment keeps a foreign
-    ///    downloader). Bounded to one window, only on this rare path (the old assembler's
-    ///    loser-tail).
+    ///    downloader). Bounded to one window, only on this rare path.
     return bankDirectRead(window);
 }
 
@@ -2636,8 +2627,6 @@ void ReaderExecutor::observeAndSchedule(size_t physical_start)
         read_plan.schedule.retrieves.begin(), read_plan.schedule.retrieves.end(),
         [](const auto & r) { return r.source == PlanSchedule::Source::Remote; });
 
-    /// Allocate the per-job status sidecar (the bank) 1:1 with the schedule's jobs.
-
     LOG_TRACE(log, "observeAndSchedule: planned [{}, {}), {} entries, {} retrieves",
         read_plan.geometry()->plan_start, read_plan.geometry()->plan_end,
         read_plan.geometry()->entries.size(), read_plan.schedule.retrieves.size());
@@ -2744,7 +2733,7 @@ void ReaderExecutor::extractMissesAndOpenWriters(
 
     /// The cache-aligned gaps this tier lacks, UNCLAMPED to the plan span (only
     /// object-end-clamped inside the provider), so the aligned extent drives both the
-    /// fetch and the over-read bound (`[CF-overread]`). PRUNE any cell fully covered by a
+    /// fetch and the over-read bound. PRUNE any cell fully covered by a
     /// faster tier (`upper_hits`): the data already lives upstream, so this tier needs no
     /// writer for it. Open the held write buffers over the survivors now
     /// (`[CF-plan-rebuild]`): one `getOrSet` per range, owned for the plan's life, so

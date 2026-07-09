@@ -17,11 +17,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/Logger.h>
 #include <Common/MemoryPressureMonitor.h>
-#include <Common/Stopwatch.h>
 #include <Common/VectorWithMemoryTracking.h>
-#include <Common/DequeWithMemoryTracking.h>
 #include <base/types.h>
-#include <array>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -266,11 +263,6 @@ private:
         CacheViewPtr view;
         VectorWithMemoryTracking<MissEntry> writers;
     };
-
-    /// Per-retrieve runtime status for the schedule-driven interpreter: only what CANNOT be
-    /// derived from the display or the machine slot ("is a machine in flight for ri" =
-    /// `machineFor(ri)`; the serve gates on display coverage, never on a phase). 1:1 with
-
 
     /// One look-ahead plan, the SOURCE OF TRUTH for the current read: the
     /// immutable geometry snapshot plus the held buffers. FOREGROUND-PRIVATE.
@@ -536,8 +528,6 @@ private:
     ///   - `coverage_ahead > 0` (`advanceAhead`): replan when coverage does not reach
     ///     `position_phys + coverage_ahead`, so the ahead launch always has scheduled jobs -
     ///     the producer's deliberately pre-emptive look-ahead extension.
-    /// Never replans while a machine is in flight - that would re-probe residency and could see
-    /// the worker's just-fetched gap as resident.
     void preparePlan(size_t position_phys, size_t coverage_ahead = 0);
 
     /// The shared post-serve tail of `readNextWindow` and THE consumer exit: account the
@@ -774,14 +764,12 @@ private:
         return reached_eof || position >= totalSize();
     }
 
-    /// The per-call read ceiling in LOGICAL bytes: bytes remaining to the read extent, or one
-    /// window when the source size is unknown. `> 0` iff there is room to read at the cursor.
-    /// (Was the `to_read` parameter.) Deliberately does NOT test `reached_eof`: when EOF latches
-    /// with a machine still in flight, `readNextWindow`'s `atEnd()` branch drains that final
-    /// window through `serveWindow`, which serves only while `readCeiling() > 0`.
-    /// CONSUMER-side horizon: the most a serve could return from `position` right now (the
-    /// file remainder, or one window when the size is unknown, clamped to the extent).
-    /// Zero = the extent is exhausted. The producer's clamp is `boundedFetchSize`.
+    /// CONSUMER-side horizon in LOGICAL bytes: the most a serve could return from `position`
+    /// right now (the file remainder, or one window when the size is unknown, clamped to the
+    /// extent); zero = the extent is exhausted. The producer's clamp is `boundedFetchSize`.
+    /// Deliberately does NOT test `reached_eof`: when EOF latches with a machine still in
+    /// flight, `readNextWindow` drains that final window through `serveWindow`, which serves
+    /// only while `readCeiling() > 0`.
     size_t readCeiling() const
     {
         return offset_map.hasUnknownSize() ? clampToExtent(window_size) : clampToExtent(totalSize() - position);

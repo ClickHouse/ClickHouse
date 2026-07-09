@@ -791,8 +791,7 @@ CacheViewPtr DiskCacheProvider::planResidencyView(
         add_miss_obj(cursor, req_obj_end);
 
     /// Align each raw miss to the cache boundary (clamped to the object end) and
-    /// merge adjacent/overlapping aligned ranges in a single pass (alignment folded
-    /// IN, not a separate `alignToCaches`). The raw misses already arrive in
+    /// merge adjacent/overlapping aligned ranges in a single pass. The raw misses already arrive in
     /// ascending offset order from the forward segment walk (`cursor` advances
     /// monotonically), and `roundDownToMultiple` is monotonic, so the aligned
     /// offsets are non-decreasing — no separate sort is needed. Merge in

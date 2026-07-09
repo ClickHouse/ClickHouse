@@ -3469,7 +3469,7 @@ namespace
         CacheTier tier() const override { return CacheTier::FilesystemCache; }
 
         /// Read-only probe: record the access (the executor calls this both at plan
-        /// build and in `serveLateHits`, so a cold window logs two per-object passes)
+        /// build, so a cold window logs per-object passes)
         /// and report the whole range as one writer-null miss.
         CacheViewPtr planResidencyView(
             const StoredObject & object, size_t object_file_offset, ByteRange range_in_file) override
