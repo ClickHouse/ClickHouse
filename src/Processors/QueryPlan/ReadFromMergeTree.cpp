@@ -3454,10 +3454,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     if (analyzed_result_ptr)
         analysis_result_copy = std::make_shared<AnalysisResult>(*analyzed_result_ptr);
 
-    /// Deep-copy the filter DAGs that plan optimizations (e.g. tryRemoveUnusedColumns) mutate in place.
-    /// query_info is copied by value, but prewhere_info / row_level_filter are shared_ptrs, so without
-    /// this the clone would share the same PrewhereInfo/FilterDAGInfo and re-optimizing one plan would
-    /// corrupt the other (see DirectJoinMergeTreeEntity, which clones and re-optimizes lookup_plan).
+    /// Filter DAGs can be modified by optimizations.
     SelectQueryInfo query_info_copy = query_info;
     if (query_info_copy.prewhere_info)
         query_info_copy.prewhere_info = std::make_shared<PrewhereInfo>(query_info_copy.prewhere_info->clone());
