@@ -50,6 +50,7 @@ class TaskToHostMap : public boost::noncopyable
 {
 public:
     TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
+    ~TaskToHostMap();
 
     const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
     const UnorderedMapWithMemoryTracking<String, WorkerAddress> & getTaskHosts() const { return task_hosts; }

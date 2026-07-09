@@ -1056,6 +1056,8 @@ size_t getDistributedWorkerCount(ContextPtr context)
     return getDistributedWorkerHostnames(context).size();
 }
 
+TaskToHostMap::~TaskToHostMap() = default;
+
 void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 {
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))

@@ -11,9 +11,9 @@ SET use_statistics = 0;
 
 DROP TABLE IF EXISTS test;
 
--- No materialized statistics: the asserted plans depend on the unstatted row estimates.
-CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple()
-  SETTINGS auto_statistics_types = '';
+-- auto_statistics_types='' pins out randomized column statistics: with them, the row-count
+-- estimator flips the distributed join from Shuffle to Scatter and changes the plan shape.
+CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types='';
 
 INSERT INTO test SELECT 'path_' || number::String, 'en', number FROM numbers(5);
 INSERT INTO test SELECT 'path_' || (number%3)::String, 'de', number%4 FROM numbers(10);
