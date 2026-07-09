@@ -424,8 +424,6 @@ static void writeMetadataFiles(
             0,
             history_record.snapshot_id,
             history_record.made_current_at.value,
-            /// The replayed history is filtered (non-append records are skipped), so a
-            /// record's parent may be legitimately absent from the rebuilt `snapshots`.
             /* tolerate_missing_parent_snapshot */ true);
 
         new_snapshots.push_back(new_snapshot);

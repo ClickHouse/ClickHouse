@@ -44,7 +44,7 @@ Poco::JSON::Object::Ptr makeMinimalV2Metadata()
     return metadata;
 }
 
-void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1)
+void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id = -1, bool tolerate_missing_parent_snapshot = false)
 {
     FileNamesGenerator generator("s3://bucket/table", /*use_uuid_in_metadata=*/ false, CompressionMethod::None, "Parquet");
     generator.setVersion(1);
@@ -58,7 +58,10 @@ void appendSnapshot(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id =
         /*added_files_size=*/ 100,
         /*num_partitions=*/ 1,
         /*added_delete_files=*/ 0,
-        /*num_deleted_rows=*/ 0);
+        /*num_deleted_rows=*/ 0,
+        /*user_defined_snapshot_id=*/ std::nullopt,
+        /*user_defined_timestamp=*/ std::nullopt,
+        tolerate_missing_parent_snapshot);
 }
 
 void expectAppendRejectsUnresolvableParent(Poco::JSON::Object::Ptr metadata, Int64 parent_snapshot_id)
@@ -159,6 +162,20 @@ TEST(IcebergMetadataGenerator, ThrowsWhenParentSnapshotEntryPrunedFromSnapshotsA
     /// The array stays non-empty, but the live parent id points at no entry in it.
     const auto first_snapshot_id = metadata->getValue<Int64>(Iceberg::f_current_snapshot_id);
     expectAppendRejectsUnresolvableParent(metadata, first_snapshot_id + 1);
+}
+
+/// Compaction replays a filtered history where a record's parent may be a legitimately
+/// skipped snapshot; `tolerate_missing_parent_snapshot` keeps such appends committing,
+/// with the summary totals restarting from the appended deltas.
+TEST(IcebergMetadataGenerator, ToleratesUnresolvableParentWhenRequested)
+{
+    auto metadata = makeMinimalV2Metadata();
+    metadata->set(Iceberg::f_current_snapshot_id, 42);
+    EXPECT_NO_THROW(appendSnapshot(metadata, /*parent_snapshot_id=*/ 42, /*tolerate_missing_parent_snapshot=*/ true));
+
+    const auto snapshot = metadata->getArray(Iceberg::f_snapshots)->getObject(0);
+    EXPECT_EQ(snapshot->getValue<Int64>(Iceberg::f_parent_snapshot_id), 42);
+    EXPECT_EQ(snapshot->getObject(Iceberg::f_summary)->getValue<String>(Iceberg::f_total_records), "1");
 }
 
 #endif
