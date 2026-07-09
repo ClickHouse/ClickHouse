@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-encrypted-storage, no-parallel
+# Tags: no-ordinary-database, no-parallel
 #
 # A tx INSERT paused before its CSN znode is written (part `Active`, `creation_csn = 0`)
 # is covered by a non-tx TRUNCATE. Must fail with `SERIALIZATION_ERROR` instead of

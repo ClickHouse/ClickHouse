@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-ordinary-database, no-encrypted-storage, no-parallel
+# Tags: no-ordinary-database, no-parallel
 #
 # Multi-part variant of 04241. A non-tx TRUNCATE covers two parts; only the second
 # has an in-flight tx creator. Without the preflight in `addNewPartAndRemoveCovered`,

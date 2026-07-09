@@ -5844,6 +5844,22 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
 
+    /// Non-tx path: check upfront that no part has an in-flight tx creator.
+    /// A mid-loop throw in the per-part `removeOldPart` below would otherwise leave
+    /// earlier parts already stamped with `removal_tid = NonTransactionalTID` on disk --
+    /// silently invisible and not undone by any rollback path.
+    if (!txn)
+    {
+        for (const auto & part : remove)
+        {
+            auto info = part->version->getInfo();
+            if (!info.creation_csn && !info.creation_tid.isNonTransactional())
+                throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                    "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                    part->version->getObjectName(), info.creation_tid);
+        }
+    }
+
     for (const DataPartPtr & part : remove)
     {
         if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
@@ -9279,10 +9295,13 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         std::vector<DataPartsVector> covered_parts_for_commit;
         covered_parts_for_commit.reserve(precommitted_parts.size());
 
-        /// Track covered parts locked by non-transactional operations for cleanup on failure.
-        /// For transactional operations, MergeTreeTransaction rollback handles unlocking.
-        DataPartsVector locked_parts_to_cleanup;
+        std::vector<DataPartPtr> covering_parts;
+        covering_parts.reserve(precommitted_parts.size());
 
+        /// Collect covered sets, and check upfront that no covered part has an in-flight tx
+        /// creator. Bailing here (before any removal metadata is written to disk) prevents
+        /// partial stamps that would silently orphan committed data if a later precommit's
+        /// covered set contains an uncommitted creator.
         for (const auto & part : precommitted_parts)
         {
             DataPartPtr covering_part;
@@ -9308,17 +9327,32 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
             }
 
-            /// Call addNewPartAndRemoveCovered only if there's no covering part.
-            /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
-            if (!covering_part)
+            if (!txn && !covering_part)
             {
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-                /// Track successfully locked parts for cleanup in case a later iteration fails.
-                if (!txn)
-                    locked_parts_to_cleanup.insert(locked_parts_to_cleanup.end(), covered_parts.begin(), covered_parts.end());
+                for (const auto & c : covered_parts)
+                {
+                    auto info = c->version->getInfo();
+                    if (!info.creation_csn && !info.creation_tid.isNonTransactional())
+                        throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                            "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                            c->version->getObjectName(), info.creation_tid);
+                }
             }
 
+            covering_parts.push_back(std::move(covering_part));
             covered_parts_for_commit.push_back(std::move(covered_parts));
+        }
+
+        /// Stamp the removals. Skip when a covering part exists -- NOEXCEPT_SCOPE below
+        /// marks the precommitted part obsolete instead.
+        {
+            size_t idx = 0;
+            for (const auto & part : precommitted_parts)
+            {
+                if (!covering_parts[idx])
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts_for_commit[idx], txn);
+                ++idx;
+            }
         }
 
 
