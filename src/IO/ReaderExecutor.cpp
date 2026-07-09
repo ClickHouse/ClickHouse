@@ -74,8 +74,8 @@ namespace DB
 ///   Schedule-driven interpreter region) -> `finishWindow`.
 /// PLAN BUILD, three spans: `preparePlan` (the epoch scheduler, in Read path),
 ///   `mergeRanges`, and `observeAndSchedule` + its extract* helpers.
-/// COLLECT, four spans: `tryCollectMachine`; the put trio `collectFillTargets` /
-///   `runPutStep` / `foldPutResult`; `collectInFlightInto`; and teardown's
+/// COLLECT, four spans: `tryCollectMachine`; the put pair `collectFillTargets` /
+///   `runPutStep`; `collectInFlightInto`; and teardown's
 ///   `cancelMachine` / `drainAbandonedMachines`.
 /// DISPLAY read surface, two spans: the `Display` methods, plus the plan-view
 ///   hit serve `readHitFromView` they join at `Display::read`.
@@ -1619,20 +1619,19 @@ void ReaderExecutor::runPutStep(std::shared_ptr<FetchMachine> m, const ChainedBu
 {
     /// `writer_views` were recorded at LAUNCH (`collectFillTargets`): NON-OWNING views of this
     /// window's fill-target writers in the shared `read_plan.bufs`, written in place on THIS
-    /// read thread. Runs AFTER the collect pinned at the fetch frontier.
+    /// read thread, inline at collect - the machine's own counters were already folded there,
+    /// so the fill accounts straight into the executor `stats`. Runs AFTER the collect pinned
+    /// at the fetch frontier. A failed fill is logged, never thrown: a read must not fail
+    /// because cache population did.
     if (m->writer_views.empty())
         return;  /// nothing to fill for this window
 
-    m->fill_chain = assembled;
-
-    /// Run the fill inline on the read thread - no deferral. A failed fill is logged in
-    /// `foldPutResult`, never thrown: a read must not fail because cache population did.
     try
     {
-        const size_t fill_end = m->fill_chain.empty()
+        const size_t fill_end = assembled.empty()
             ? m->physical_window.offset
-            : std::min(m->physical_window.end(), m->fill_chain.range().end());
-        pushChainToWriters(m->writer_views, m->physical_window, m->fill_chain, m->stats);
+            : std::min(m->physical_window.end(), assembled.range().end());
+        pushChainToWriters(m->writer_views, m->physical_window, assembled, stats);
         /// Pin the partial segment under the just-written frontier (the lane's slot):
         /// the collect pinned BEFORE this fill landed, so a fresh segment was not pinnable
         /// there. A `readBigAt` transient reads its bounded extent once and is destroyed,
@@ -1644,34 +1643,16 @@ void ReaderExecutor::runPutStep(std::shared_ptr<FetchMachine> m, const ChainedBu
                 if (view.writer && fill_end >= view.writer->range().offset && fill_end < view.writer->range().end())
                     if (auto pin = view.writer->pin(fill_end))
                     {
-                        /// The put runs inline at collect on the serve thread, so the pin goes
-                        /// straight to the lane's slot - no staging in the machine.
                         fill_lane.pin = std::move(pin);
                         break;
                     }
             }
-        m->fill_chain = {};
     }
     catch (...)
     {
-        m->failure = std::current_exception();
-    }
-    foldPutResult(*m);
-}
-
-void ReaderExecutor::foldPutResult(FetchMachine & m)
-{
-    /// The put wrote the shared `read_plan.bufs` writers in place (it held only
-    /// non-owning views), so nothing comes home - just fold the pin, stats, and phase.
-
-    /// A failed put is logged, never thrown - a read must not fail because
-    /// cache population failed.
-    if (m.failure)
-    {
         stats.add(Stats::PutFailed);
-        tryLogException(m.failure, log, "Cache fill failed", LogsLevel::debug);
+        tryLogCurrentException(log, "Cache fill failed");
     }
-    stats += m.stats;
 }
 
 void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers & bytes, Stats & out_stats)
@@ -2948,28 +2929,37 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     }
     else
     {
-        /// Already running: interrupt it, then JOIN it before abandoning. The worker writes the
-        /// shared `read_plan.bufs` writers (its led segments) on the pool thread, so the
-        /// foreground must NOT free the plan (the caller re-plans / drops the extent / seeks
+        /// Already running: interrupt it, then JOIN it before tearing anything down. The worker
+        /// writes the shared `read_plan.bufs` writers (its led segments) on the pool thread, so
+        /// the foreground must NOT free the plan (the caller re-plans / drops the extent / seeks
         /// right after this) until the worker has finished and completed every elected segment -
         /// else the writer dtor aborts on a leaked DOWNLOADING segment
         /// (`chassert(!is_last_holder)`) or the worker writes into freed memory. The interrupt
-        /// makes the worker wrap at its next block, so the wait is bounded. Stats are folded at
-        /// the reap (the machine is stashed finished; `drainAbandonedMachines` reaps it).
+        /// makes the worker wrap at its next block, so the wait is bounded.
         stats.add(Stats::PrefetchDiscardedRunning);
         collectRunner().requestInterrupt(*m);
         collectRunner().waitReleased(*m);
-        /// The carried connection is forfeited: it dies with the machine, UNACCOUNTED - the
-        /// joined handle makes the abandoned-list drain early-erase it before its accounting
-        /// block (a pre-existing gap; the queued-cancel path is the one that reclaims). No
-        /// longer LENT: the lane may open a fresh one.
+        if (m->failure)
+            tryLogException(m->failure, log, "Cancelled prefetch task threw", LogsLevel::debug);
+        /// Reconcile the joined machine HERE: its fetch really happened, so fold the stats,
+        /// attribute the issued bytes to wasted (the chain is never collected), and account
+        /// the forfeited long connection on this query-attached thread (left to the machine's
+        /// shared_ptr, a detached owner would leak `DiskConnectionsReset` off-query). Never
+        /// drain - this is reachable from the noexcept destructor. No longer LENT: the lane
+        /// may open a fresh one.
+        stats += m->stats;
+        stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));
+        accountLongConnectionDrop(m->long_conn, /*at_eof=*/m->reached_eof, stats);
+        m->long_conn.reset();
         fill_lane.conn_lent = false;
-        abandoned_machines.push_back(std::move(m));
     }
 }
 
 void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
 {
+    /// Only QUEUED-REVOKED machines are stashed (`tryCancelQueued` won): their stats are
+    /// zero and their connection was reclaimed at the revoke, so the reap is just the join
+    /// - the pool's no-op pickup must resolve before the executor state is freed.
     abandoned_machines.erase(
         std::remove_if(abandoned_machines.begin(), abandoned_machines.end(),
             [this, wait_finished](std::shared_ptr<FetchMachine> & m)
@@ -2983,20 +2973,6 @@ void ReaderExecutor::drainAbandonedMachines(bool wait_finished)
                 m->current_step->get();
                 if (m->failure)
                     tryLogException(m->failure, log, "Cancelled prefetch task threw", LogsLevel::debug);
-                /// Reconcile the reaped machine: its fetch really happened, so
-                /// merge the stats and attribute the issued bytes to wasted (the
-                /// chain is never collected). A REVOKED machine no-ops every term:
-                /// its stats are zero.
-                stats += m->stats;
-                stats.add(Stats::PrefetchWastedSourceBytes, m->stats.get(Stats::PrefetchIssuedSourceBytes));
-                /// Account the still-incomplete long connection and destroy it HERE, on
-                /// the query-attached reaping thread, so its pool reset/expire events are
-                /// attributed to this query: left to the machine's shared_ptr, the prefetch
-                /// worker can win the last reference and free it after detaching, leaking
-                /// `DiskConnectionsReset` off-query. Never drain (as `dropLongConnection` does) - this
-                /// is reachable from the noexcept destructor.
-                accountLongConnectionDrop(m->long_conn, /*at_eof=*/m->reached_eof, stats);
-                m->long_conn.reset();
                 return true;
             }),
         abandoned_machines.end());

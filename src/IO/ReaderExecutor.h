@@ -347,10 +347,10 @@ private:
         /// soft-cancelled machine must not race `setReadExtent`.
         std::optional<size_t> extent_snapshot;
         /// The schedule retrieve this machine fulfills (index into the launch-time plan's
-        /// `schedule.retrieves`). Set at launch; read live by `machineFor`
-        /// (is a machine running for this retrieve) and `foldPutResult` (marks the retrieve
-        /// Done). Meaningful only while this machine is the live in-flight handle of that
-        /// plan; the re-plan barrier (`chassert(!machine)`) guarantees none straddles a rebuild.
+        /// `schedule.retrieves`). Set at launch; read live by `machineFor` (is a machine
+        /// running for this retrieve). Meaningful only while this machine is the live
+        /// in-flight handle of that plan; the re-plan barrier (`chassert(!machine)`)
+        /// guarantees none straddles a rebuild.
         size_t retrieve_index = 0;
         /// The long source connection CARRIED by this machine: moved in from the
         /// foreground at launch (a machine never opens one itself - the foreground is
@@ -371,13 +371,11 @@ private:
         /// independent of what `fetched` retains - the pin and the attempted accounting
         /// anchor here. `physical_window.offset` when nothing was fetched.
         size_t fetched_end = 0;
-        /// The fill step's inputs: NON-OWNING views of the writers this fill targets
+        /// The fill step's targets: NON-OWNING views of the writers this fill writes
         /// (the schedule's fill targets overlapping the window). The writers stay in the
         /// shared `read_plan.bufs`; the fill runs inline on the read thread, so referencing
-        /// them in place is race-free. `fill_chain` is the assembled window (refcounted
-        /// nodes shared with the served slice).
+        /// them in place is race-free.
         VectorWithMemoryTracking<WriterView> writer_views;
-        ChainedBuffers fill_chain;
         /// Set by the worker when a SIBLING is downloading some segment (this worker lost the
         /// election): it skipped fetching those, so `fetched` has holes there. At collect the
         /// foreground revokes to the synchronous path (which re-elects/waits on the sibling-led
@@ -598,7 +596,6 @@ private:
     /// After the inline fill: fold the segment pin and stats in, and mark the retrieve
     /// `Done` once its whole job is fetched (logging a failed step - never the client's
     /// error).
-    void foldPutResult(FetchMachine & m);
 
     /// Run the scheduled HANDED fill jobs overlapping the just-served range - the Fill kinds
     /// whose INPUT is the served bytes (their dependency is the serve's output, so they are
