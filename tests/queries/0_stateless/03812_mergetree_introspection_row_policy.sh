@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 
-# Test that `mergeTreeIndex` enforces the source table's row policy, including when the
-# primary key is a subcolumn (e.g. `t.a`) that is normalized to its parent storage column
-# (`t`) for the access check. A row policy on the parent column or on a sibling subcolumn
-# must block the read; otherwise a user with only `GRANT SELECT(t)` could read granule-level
-# primary key values for rows the policy is supposed to hide.
+# Test that `mergeTreeIndex` enforces the source table's row policy. This introspection exposes
+# granule-level primary key values (and, with marks, per-column mark offsets) for every row, including
+# rows a row policy is supposed to hide. So ANY effective (present and not always-true) row policy on
+# the source table must block the read, regardless of which columns the policy predicate references.
+# Only the parent-column SELECT grant is given, to also cover the subcolumn-to-parent access-check
+# mapping for the primary key `t.a`.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -46,31 +47,33 @@ function check_access()
     fi
 }
 
+function check_with_policy()
+{
+    # $1 = row policy USING expression, $2 = query to run as the restricted user.
+    $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p_03812 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING $1 TO $user_name;"
+    check_access "$2"
+    $CLICKHOUSE_CLIENT -q "DROP ROW POLICY p_03812 ON $CLICKHOUSE_DATABASE.tab;"
+}
+
+query="SELECT t.a FROM mergeTreeIndex(currentDatabase(), tab)"
+
 # Baseline: parent-column grant, no row policy -> allowed.
-check_access "SELECT t.a FROM mergeTreeIndex(currentDatabase(), tab)"
+check_access "$query"
 
-# Regression: a row policy on a sibling subcolumn (`t.secret`) of the same tuple column.
-# The primary key requires `t.a`; both `t.secret` and `t.a` map to the parent storage column
-# `t`, so reading granule key values would leak rows the policy should hide. Before the fix
-# the raw names differed (`t.secret` != `t.a`) and the policy was silently bypassed.
-$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p1_03812 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING t.secret < 105 TO $user_name;"
-check_access "SELECT t.a FROM mergeTreeIndex(currentDatabase(), tab)"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY p1_03812 ON $CLICKHOUSE_DATABASE.tab;"
+# Any effective row policy blocks the read, whatever column its predicate references:
+#  - an unrelated column (`v`) that does not overlap the exposed index columns,
+check_with_policy "v < 5" "$query"
+#  - the whole parent column `t`,
+check_with_policy "toString(t) != ''" "$query"
+#  - the exact primary key subcolumn `t.a`,
+check_with_policy "t.a < 5" "$query"
+#  - a sibling subcolumn `t.secret` of the same tuple column,
+check_with_policy "t.secret < 105" "$query"
+#  - an always-false filter that references no column at all (hides every row).
+check_with_policy "0" "$query"
 
-# A row policy that references the whole parent column `t` is also denied.
-$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p2_03812 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING toString(t) != '' TO $user_name;"
-check_access "SELECT t.a FROM mergeTreeIndex(currentDatabase(), tab)"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY p2_03812 ON $CLICKHOUSE_DATABASE.tab;"
-
-# A row policy on the exact primary key subcolumn (`t.a`) is denied.
-$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p3_03812 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING t.a < 5 TO $user_name;"
-check_access "SELECT t.a FROM mergeTreeIndex(currentDatabase(), tab)"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY p3_03812 ON $CLICKHOUSE_DATABASE.tab;"
-
-# A row policy on an unrelated column (`v`) does not touch the index columns -> allowed.
-$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p4_03812 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING v < 5 TO $user_name;"
-check_access "SELECT t.a FROM mergeTreeIndex(currentDatabase(), tab)"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY p4_03812 ON $CLICKHOUSE_DATABASE.tab;"
+# An always-true policy hides nothing, so it must NOT block the read.
+check_with_policy "1" "$query"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS tab;

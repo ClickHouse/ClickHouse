@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/EnabledRowPolicies.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -40,6 +41,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int INDEX_NOT_USED;
     extern const int NOT_IMPLEMENTED;
 }
@@ -207,10 +209,23 @@ WhatIfIndexEstimator::IndexResult evaluateIndex(
     /// current grants, a grant revoked since CREATE should deny the estimate.
     /// Resolve subcolumns against the table's schema so a grant on a parent column covers them.
     auto storage_metadata = read_step->getStorageMetadata();
+    auto storage_id = data.getStorageID();
     context->checkAccess(
         AccessType::SELECT,
-        data.getStorageID(),
+        storage_id,
         storage_metadata->getColumns().getColumnNamesInStorageForAccessCheck(index_helper->getColumnsRequiredForIndexCalc()));
+
+    /// The estimate (skip ratio) is derived from every row, including rows a row policy is supposed to
+    /// hide, so a user could infer the distribution of hidden rows from it. Column-level `SELECT` grants
+    /// do not cover this, so reject the estimate whenever the source table has an effective (present and
+    /// not always-true) row policy.
+    auto row_policy_filter = context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot use `EXPLAIN WHATIF` because a row policy is defined on table {}: it would expose an "
+            "index estimate derived from rows that the row policy hides",
+            storage_id.getNameForLogs());
 
     /// TODO(yariks5s): text indexes need a tokenized block layout the empirical pipeline doesn't build
     /// also, add a whitelist index types so the logic will not be broken by a new type

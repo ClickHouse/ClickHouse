@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Test that `mergeTreeTextIndex` enforces the source table's row policy. The text index is derived from
+# the source columns of every row, including rows a row policy is supposed to hide, so reading its tokens
+# could leak their contents. So ANY effective (present and not always-true) row policy on the source
+# table must block the read, regardless of which columns the policy predicate references.
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -45,33 +50,33 @@ function check_access()
     fi
 }
 
+function check_with_policy()
+{
+    # $1 = row policy USING expression, $2 = query to run as the restricted user.
+    $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p_04504 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING $1 TO $user_name;"
+    check_access "$2"
+    $CLICKHOUSE_CLIENT -q "DROP ROW POLICY p_04504 ON $CLICKHOUSE_DATABASE.tab;"
+}
+
+query="SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_ab)"
+
 # Baseline: full SELECT grant and no row policy -> allowed.
-check_access "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_ab)"
+check_access "$query"
 
-# Regression: a row policy that references the whole parent column `json`, while the index is
-# built on the subcolumn `json.a.b`. Both map to the storage column `json`, so reading the index
-# would expose tokens for rows the policy should hide and must be denied.
-$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p0_04504 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING toString(json) != '' TO $user_name;"
-check_access "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_ab)"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY p0_04504 ON $CLICKHOUSE_DATABASE.tab;"
+# Any effective row policy blocks the read, whatever column its predicate references:
+#  - an unrelated column (`other`) that does not overlap the index columns,
+check_with_policy "other = 'row1'" "$query"
+#  - the whole parent column `json` (the index is built on the subcolumn `json.a.b`),
+check_with_policy "toString(json) != ''" "$query"
+#  - the exact index subcolumn `json.a.b`,
+check_with_policy "json.a.b::String = 'hello'" "$query"
+#  - a sibling subcolumn `json.flag` of the same JSON column,
+check_with_policy "json.flag::String = 'keep'" "$query"
+#  - an always-false filter that references no column at all (hides every row).
+check_with_policy "0" "$query"
 
-# Regression: a row policy on a sibling subcolumn (`json.flag`) of the same JSON column.
-# The index requires `json.a.b`; both `json.flag` and `json.a.b` map to the parent storage
-# column `json`, so reading the index would expose tokens for rows the policy should hide.
-# Before the fix the raw names differed (`json.flag` != `json.a.b`) and the policy was bypassed.
-$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p1_04504 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING json.flag::String = 'keep' TO $user_name;"
-check_access "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_ab)"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY p1_04504 ON $CLICKHOUSE_DATABASE.tab;"
-
-# A row policy on the exact index subcolumn (`json.a.b`) is also denied.
-$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p2_04504 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING json.a.b::String = 'hello' TO $user_name;"
-check_access "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_ab)"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY p2_04504 ON $CLICKHOUSE_DATABASE.tab;"
-
-# A row policy on an unrelated column (`other`) does not touch the index columns -> allowed.
-$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY p3_04504 ON $CLICKHOUSE_DATABASE.tab FOR SELECT USING other = 'row1' TO $user_name;"
-check_access "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_ab)"
-$CLICKHOUSE_CLIENT -q "DROP ROW POLICY p3_04504 ON $CLICKHOUSE_DATABASE.tab;"
+# An always-true policy hides nothing, so it must NOT block the read.
+check_with_policy "1" "$query"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS tab;
