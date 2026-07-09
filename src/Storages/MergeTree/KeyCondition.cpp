@@ -399,21 +399,17 @@ bool mirrorInequalityDirection(std::string & func_name)
     return false;
 }
 
-/// This rewrites `const <op> key_expr` into the equivalent `key_expr <op'> const` form
-/// that atom building expects. It returns false when no equivalent form exists: the
-/// constant of a pattern function is not a comparable value, so for example
-/// `'p' LIKE key` cannot become a key range.
+/// This rewrites `const <op> key_expr` into the equivalent `key_expr <op'> const` form that atom
+/// building expects. Only the six comparison operators can be mirrored: the inequalities swap
+/// direction and the equalities are symmetric. For every other function there is no equivalent
+/// form — the constant of a pattern function is not a comparable value (for example, `'p' LIKE key`
+/// cannot become a key range) — so this is an allowlist and returns false for anything else.
 bool mirrorComparisonForSwappedArguments(std::string & func_name)
 {
     if (mirrorInequalityDirection(func_name))
         return true;
 
-    /// Some comparisons are not symmetric when swapping the constant and the key expression.
-    if (func_name == "like" || func_name == "notLike" || func_name == "ilike" || func_name == "notILike" || func_name == "startsWith"
-        || func_name == "startsWithUTF8" || func_name == "match")
-        return false;
-
-    return true;
+    return func_name == "equals" || func_name == "notEquals";
 }
 
 /// A strict comparison does not survive a relaxed constant: after the constant has been
