@@ -1687,3 +1687,42 @@ def test_namespace_prefix_row_policies(started_cluster):
         node.query(use + f"DROP ROW POLICY IF EXISTS {policy} ON {table_name}")
     remaining = node.query(f"SHOW ROW POLICIES ON {CATALOG_NAME}.`{namespace}.{table_name}`")
     assert policy not in remaining, f"policy not dropped: {remaining}"
+
+
+def test_namespace_prefix_show_columns_and_reconnect(started_cluster):
+    """
+    SHOW COLUMNS/INDEXES must honor the namespace (bare and dotted forms), and a
+    client default database "catalog.namespace" must survive a fresh connection.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_showcols_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "showcols_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    # Bare name under the USE prefix.
+    cols = node.query(
+        f"USE {CATALOG_NAME}.{namespace}; SHOW COLUMNS FROM {table_name}"
+    )
+    assert "id" in cols and "data" in cols, f"SHOW COLUMNS lost the namespace: {cols}"
+
+    # Dotted form without USE.
+    cols_dotted = node.query(f"SHOW COLUMNS FROM {CATALOG_NAME}.{namespace}.{table_name}")
+    assert "id" in cols_dotted and "data" in cols_dotted, f"dotted SHOW COLUMNS failed: {cols_dotted}"
+
+    # A fresh connection with default database "catalog.namespace" (as persisted by
+    # clients after USE) must resolve bare names in the namespace.
+    count = int(
+        node.query(
+            f"SELECT count() FROM {table_name}",
+            database=f"{CATALOG_NAME}.{namespace}",
+        )
+    )
+    assert count == 2, f"default-database handshake lost the namespace: {count}"
