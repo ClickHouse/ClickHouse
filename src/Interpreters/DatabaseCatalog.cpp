@@ -10,6 +10,7 @@
 #include <Databases/DatabaseMemory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include <Disks/IDisk.h>
 #include <IO/ReadHelpers.h>
 #include <IO/SharedThreadPools.h>
@@ -916,6 +917,22 @@ bool DatabaseCatalog::isDatabaseExist(std::string_view database_name) const
     chassert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
     return databases.contains(database_name);
+}
+
+std::pair<String, String> DatabaseCatalog::splitTablePrefixFromDatabaseName(const String & name) const
+{
+    if (name.empty() || isDatabaseExist(name))
+        return {name, ""};
+
+    auto dot_pos = name.find('.');
+    if (dot_pos == 0 || dot_pos == String::npos)
+        return {name, ""};
+
+    auto database = tryGetDatabase(name.substr(0, dot_pos));
+    if (!database || database->getEngineName() != DataLake::DATABASE_ENGINE_NAME)
+        return {name, ""};
+
+    return {name.substr(0, dot_pos), name.substr(dot_pos + 1)};
 }
 
 Databases DatabaseCatalog::getDatabases(GetDatabasesOptions options) const

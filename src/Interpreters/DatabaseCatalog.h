@@ -154,6 +154,11 @@ public:
     DatabasePtr getDatabase(const UUID & uuid) const;
     DatabasePtr tryGetDatabase(const UUID & uuid) const;
     bool isDatabaseExist(std::string_view database_name) const;
+
+    /// For "db.namespace" where `db` is a DataLakeCatalog database and no database with the
+    /// full dotted name exists, returns {"db", "namespace"} — the namespace becomes a prefix
+    /// for unqualified table names (see `USE db.namespace`). Otherwise returns {name, ""}.
+    std::pair<String, String> splitTablePrefixFromDatabaseName(const String & name) const;
     /// Datalake catalogs are implemented at `IDatabase` level in ClickHouse.
     /// In general case Datalake catalog is a remote service which contains iceberg/delta tables.
     /// Sometimes this service charges money for requests. With this flag we explicitly protect ourselves
