@@ -1,0 +1,11 @@
+=== tuple child: SELECT(a) authorizes a.b ===
+11
+=== tuple child: SELECT(`a.b`) does not authorize a.b ===
+ACCESS_DENIED
+=== real child: SELECT(`a.b`) authorizes a.b ===
+22
+=== real child: SELECT(a) does not authorize a.b ===
+ACCESS_DENIED
+=== both children: correct per-child grants ===
+11
+22
