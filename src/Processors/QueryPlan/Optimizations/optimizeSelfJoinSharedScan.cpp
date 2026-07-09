@@ -79,6 +79,12 @@ void tryOptimizeSelfJoinSharedScan(
     if (!settings.optimize_self_join_shared_scan)
         return;
 
+    /// The rewrite introduces `CommonSubplanStep` / `CommonSubplanReferenceStep` (later lowered to
+    /// buffer steps) that carry runtime state and do not support plan serialization, so under
+    /// distributed planning the plan would fail `assertFragmentSerializable`.
+    if (settings.make_distributed_plan)
+        return;
+
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
     if (!join_step || node.children.size() != 2)
         return;
