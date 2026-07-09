@@ -49,3 +49,35 @@ DROP ROW POLICY 03500_p_clash ON 03500_t2;
 
 DROP TABLE 03500_m2;
 DROP TABLE 03500_t2;
+
+-- The filter actions must not leak the raw policy predicate (e.g. greater(a, 1)) into the stream:
+-- the post-filter outputs are the source columns plus the helper alias only. Without that, with
+-- query_plan_enable_optimizations = 0 (which skips the unused-column pruning that would otherwise
+-- drop it) a single table leaks the synthetic column, and a Merge over children with different
+-- policies fails in Pipe::unitePipes on mismatched headers.
+DROP TABLE IF EXISTS 03500_t3;
+DROP TABLE IF EXISTS 03500_t4;
+DROP TABLE IF EXISTS 03500_m3;
+
+CREATE TABLE 03500_t3 (a Int32, flag UInt8) ENGINE = MergeTree ORDER BY a;
+INSERT INTO 03500_t3 VALUES (1, 1), (2, 0), (3, 1), (4, 0);
+CREATE TABLE 03500_t4 (a Int32, flag UInt8) ENGINE = MergeTree ORDER BY a;
+INSERT INTO 03500_t4 VALUES (1, 1), (2, 0), (3, 1), (4, 0);
+CREATE TABLE 03500_m3 AS 03500_t3 ENGINE = Merge(currentDatabase(), '03500_t3|03500_t4');
+
+CREATE ROW POLICY 03500_p_expr3 ON 03500_t3 USING a > 1 AS PERMISSIVE TO ALL;
+CREATE ROW POLICY 03500_p_flag4 ON 03500_t4 USING flag AS PERMISSIVE TO ALL;
+SELECT 'no optimizations, different policies per child';
+SELECT * FROM 03500_m3 ORDER BY a, flag SETTINGS query_plan_enable_optimizations = 0;
+SELECT 'no optimizations, single column';
+SELECT a FROM 03500_m3 ORDER BY a, flag SETTINGS query_plan_enable_optimizations = 0;
+-- The raw predicate (greater(a, 1)) must not survive past the row-policy filter into the child
+-- stream, even with plan optimizations disabled; only the source columns pass through.
+SELECT 'no leaked predicate column in the plan';
+SELECT count() FROM (EXPLAIN header = 1 SELECT * FROM 03500_m3 SETTINGS query_plan_enable_optimizations = 0) WHERE explain ILIKE '%greater(a, 1)%';
+DROP ROW POLICY 03500_p_expr3 ON 03500_t3;
+DROP ROW POLICY 03500_p_flag4 ON 03500_t4;
+
+DROP TABLE 03500_m3;
+DROP TABLE 03500_t4;
+DROP TABLE 03500_t3;

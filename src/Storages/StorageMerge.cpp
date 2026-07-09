@@ -1367,18 +1367,16 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
 
     actions_dag = expression_analyzer.getActionsDAG(false /* add_aliases */, false /* project_result */);
 
-    /// The row-policy filter column is removed from the stream after filtering, so it must be a
-    /// dedicated column that does not coincide with a data column. When the policy expression is a
-    /// bare existing column (e.g. USING flag) its result column is one of the input columns, so
-    /// wrap it in a uniquely-named alias; removing that alias then leaves the data columns intact.
-    /// (Deriving the name as "output columns minus input columns" used to raise a logical error in
-    /// this case, because the diff was empty.)
+    /// The filter column is dropped from the stream after filtering, so it must be a dedicated
+    /// column that does not coincide with a data column. Wrap the policy predicate in a
+    /// uniquely-named alias and make the post-filter outputs exactly the source columns plus that
+    /// alias. Dropping the alias then leaves the data columns intact, and no synthetic predicate
+    /// output (e.g. greater(a, 1) for "USING a > 1") leaks downstream. See commit message.
     const auto & filter_node = actions_dag.findInOutputs(expr->getColumnName());
 
-    /// The alias name must be unique not only against the current DAG outputs, but also against the
-    /// child table's real columns: a source table may legitimately have a column named
-    /// __row_policy_filter, and on SELECT * it flows into the same block as the alias, so a clash
-    /// would make Block::insert throw on the duplicate name.
+    /// The alias name must be unique against the current DAG outputs and against the child table's
+    /// real columns: a source table may legitimately have a column named __row_policy_filter, and
+    /// on SELECT * it flows into the same block as the alias, so a clash makes Block::insert throw.
     NameSet reserved_names;
     for (const auto & column : needed_columns)
         reserved_names.insert(column.name);
@@ -1388,7 +1386,16 @@ ReadFromMerge::RowPolicyData::RowPolicyData(RowPolicyFilterPtr row_policy_filter
         filter_column_name = "__row_policy_filter_" + std::to_string(i);
 
     const auto & alias_node = actions_dag.addAlias(filter_node, filter_column_name);
-    actions_dag.getOutputs().push_back(&alias_node);
+
+    /// Keep only the source (input) columns and the alias as outputs. This drops the raw predicate
+    /// output regardless of query_plan_enable_optimizations, so a single table does not leak it and
+    /// a Merge over children with different policies keeps matching headers in Pipe::unitePipes.
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+    for (const auto * output : actions_dag.getOutputs())
+        if (output->type == ActionsDAG::ActionType::INPUT)
+            new_outputs.push_back(output);
+    new_outputs.push_back(&alias_node);
+    actions_dag.getOutputs() = std::move(new_outputs);
 
     filter_actions = std::make_shared<ExpressionActions>(actions_dag.clone(), ExpressionActionsSettings(local_context, CompileExpressions::yes));
 }
