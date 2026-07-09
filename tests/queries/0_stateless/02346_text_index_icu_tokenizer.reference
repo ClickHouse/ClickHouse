@@ -1,0 +1,21 @@
+-- The has*Tokens functions must use the same tokenizer as the index, passed via function-call syntax.
+
+-- { echoOn }
+-- A Latin token embedded in Japanese text (deterministic segmentation).
+SELECT id FROM tab WHERE hasAnyTokens(doc, 'ClickHouse', 'icu(''ja'')') ORDER BY id;
+3
+-- Single Japanese dictionary words.
+SELECT id FROM tab WHERE hasAnyTokens(doc, '日本語', 'icu(''ja'')') ORDER BY id;
+1
+SELECT id FROM tab WHERE hasAnyTokens(doc, '東京', 'icu(''ja'')') ORDER BY id;
+4
+-- hasAnyTokens with multiple needles: match if any token is present.
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['日本語', '東京'], 'icu(''ja'')') ORDER BY id;
+1
+4
+-- hasAllTokens: all needle tokens must be present in the same row.
+SELECT id FROM tab WHERE hasAllTokens(doc, ['日本', '都市'], 'icu(''ja'')') ORDER BY id;
+4
+SELECT id FROM tab WHERE hasAllTokens(doc, ['日本語', '東京'], 'icu(''ja'')') ORDER BY id;
+-- A token that is not present in any row.
+SELECT id FROM tab WHERE hasAnyTokens(doc, '存在しない', 'icu(''ja'')') ORDER BY id;
