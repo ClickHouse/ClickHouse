@@ -202,7 +202,7 @@ BEGIN TRANSACTION;
 INSERT INTO db_insert_returning_tx.t_insert_returning_tx
 SELECT number + 10 FROM numbers(3)
 RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx); -- { serverError UNKNOWN_IDENTIFIER }
--- Failure handling aborts the explicit transaction in this path; no explicit ROLLBACK is required.
+ROLLBACK;
 SELECT count() FROM db_insert_returning_tx.t_insert_returning_tx;
 
 DROP DATABASE db_insert_returning_tx;
