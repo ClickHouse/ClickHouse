@@ -55,3 +55,12 @@ SELECT
     toDateTime64OrNull('2018', 3, 'UTC') IS NOT NULL,
     toDateTime64OrNull('1234', 3, 'UTC') IS NOT NULL
 "
+
+# Multi-column row format (optimistic path, >= 19 bytes): a 4-digit field must stop at the field
+# delimiter, not read a tab as a date separator and consume the following columns. Plain DateTime
+# rejects the 4-digit field in the same path.
+DATA_MC="${CLICKHOUSE_TMP}/multicol_dt64_${CLICKHOUSE_DATABASE}.tsv"
+printf '1234\t12\t30\t99999999\n' > "$DATA_MC"
+${CLICKHOUSE_LOCAL} -q "SELECT a = toDateTime64('1234', 2, 'UTC') AND b = 12 AND c = 30 AND d = 99999999 FROM file('${DATA_MC}', TSV, 'a DateTime64(2, \'UTC\'), b UInt32, c UInt32, d UInt32') SETTINGS date_time_input_format='basic', cast_string_to_date_time_mode='basic'"
+${CLICKHOUSE_LOCAL} --query "SELECT a FROM file('${DATA_MC}', TSV, 'a DateTime(\'UTC\'), b UInt32, c UInt32, d UInt32') SETTINGS date_time_input_format='basic'" 2>&1 | grep -qE "CANNOT_PARSE" && echo "plain DateTime rejects 4-digit field" || echo "plain DateTime FAIL"
+rm -f "$DATA_MC"

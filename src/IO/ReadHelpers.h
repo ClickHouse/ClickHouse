@@ -921,7 +921,12 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
         }
     }
 
-    if (!(s[4] == s[7] && (s[4] < '0' || s[4] > '9')))
+    /// Mirror the fallback: only a plausible date delimiter (the same one at positions 4 and 7) starts a
+    /// broken-down date. A field delimiter such as a tab must not be treated as a date separator, otherwise
+    /// a 4-digit field in a row format would be parsed across the following columns.
+    const bool may_be_date = s[4] == '-' || s[4] == '/' || s[4] == '.'
+        || (allowed_date_delimiters != nullptr && isSymbolIn(s[4], allowed_date_delimiters));
+    if (!(s[4] == s[7] && may_be_date))
     {
         /// Not a YYYY-MM-DD date, so it is a unix timestamp, possibly with a fractional part that is handled by the caller.
 
@@ -935,6 +940,19 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
                 return ReturnType(false);
+        }
+
+        /// A DateTime needs at least a 5-digit unix timestamp; a shorter one (4 digits then a non-digit) is
+        /// too ambiguous and was rejected before. Small timestamps are supported for DateTime64 only.
+        if constexpr (!dt64_mode)
+        {
+            if (!isNumericASCII(s[4]))
+            {
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                else
+                    return ReturnType(false);
+            }
         }
 
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
