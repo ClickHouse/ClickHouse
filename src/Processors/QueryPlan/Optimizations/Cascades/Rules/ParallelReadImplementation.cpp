@@ -19,7 +19,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-/// Splits a table read across N nodes — each node reads 1/N of the data.
+/// Splits a table read across N nodes - each node reads 1/N of the data.
 /// Satisfies `{node_count=N, is_replicated=false}`.
 class ParallelReadImplementation : public IOptimizationRule
 {
@@ -66,7 +66,11 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
     /// into one bucket per node gets no parallel implementation and stays local.
     const size_t actual_buckets = parallel_read_step->setupDistributedReadBuckets(node_count, ReadFromMergeTree::max_distributed_read_buckets);
     if (actual_buckets != node_count)
+    {
+        LOG_TEST(getLogger("ParallelRead"), "No parallel read for '{}': the read splits into {} buckets instead of {}",
+            read_step->getStepDescription(), actual_buckets, node_count);
         return {};
+    }
     parallel_read_step->setStepDescription(fmt::format("ParallelRead {}", read_step->getStepDescription()), 200);
 
     GroupExpressionPtr parallel_read_expression = std::make_shared<GroupExpression>(*expression);
@@ -85,7 +89,7 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
 }
 
 /// Replicated read on shared storage: every node reads the full table directly from
-/// object storage (S3).  No `setDistributedRead` — each node reads all data.
+/// object storage (S3).  No `setDistributedRead` - each node reads all data.
 /// Satisfies `{node_count=N, is_replicated=true}` without a `BroadcastExchange`,
 /// eliminating network transfer for dimension tables in broadcast joins.
 class ReplicatedReadImplementation : public IOptimizationRule
@@ -115,7 +119,7 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
     LOG_TEST(getLogger("ReplicatedRead"), "Creating replicated read for '{}' at {} nodes",
         read_step->getStepDescription(), node_count);
 
-    /// Clone the read step without calling setDistributedRead — each node reads the full table.
+    /// Clone the read step without calling setDistributedRead - each node reads the full table.
     auto replicated_read_step_ptr = read_step->clone();
     auto * replicated_read_step = typeid_cast<ReadFromMergeTree *>(replicated_read_step_ptr.get());
     if (!replicated_read_step)

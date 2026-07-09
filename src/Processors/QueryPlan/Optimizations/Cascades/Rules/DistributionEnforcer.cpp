@@ -1,5 +1,6 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -22,7 +23,7 @@ namespace ErrorCodes
 /// Produces self-referential enforcer expressions that bridge distribution gaps.
 /// Each enforcer expression lives in the same group as the source expression; its
 /// single input points back to the same group with normalized properties (node_count,
-/// is_replicated, and sorting where needed) as the requirement — this lets the optimizer
+/// is_replicated, and sorting where needed) as the requirement - this lets the optimizer
 /// pick the cheapest source with that distribution shape.  The optimizer recursively
 /// satisfies this self-referential input through the normal task mechanism, enabling
 /// natural enforcer composition (e.g. Sort + Gather compose into Strategy A without
@@ -155,7 +156,11 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
         /// the replica count. Do not emit this invalid plan; the keyed requirement is satisfied
         /// from a non-replicated implementation of the same group instead.
         if (expression->properties.distribution.is_replicated && expression->properties.distribution.node_count > 1)
+        {
+            LOG_TEST(getLogger("DistributionEnforcer"), "No shuffle from replicated '{}': it would multiply rows by the replica count",
+                expression->getName());
             return result;
+        }
 
         Names shuffle_columns;
         for (const auto & distribution_column : required_properties.distribution.columns)
@@ -173,7 +178,11 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             }
             /// None of the equivalents survive in the input: this shuffle cannot be built.
             if (chosen_column.empty())
+            {
+                LOG_TEST(getLogger("DistributionEnforcer"), "No shuffle for '{}': no equivalent of a required distribution column is in the input header",
+                    expression->getName());
                 return result;
+            }
             shuffle_columns.push_back(chosen_column);
         }
 

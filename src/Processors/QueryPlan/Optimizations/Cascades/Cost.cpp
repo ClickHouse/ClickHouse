@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/ImplementationStrategy.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -307,6 +308,11 @@ Cost estimateOperatorCost(const CostInputs & inputs, const IImplementationStrate
     return {};
 }
 
+String Cost::dump(const CostConfig & config) const
+{
+    return fmt::format("work={} network={} sequential={} total={}", work, network, sequential, total(config));
+}
+
 ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
 {
     auto group = memo.getGroup(expression->group_id);
@@ -391,11 +397,17 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
     {
         total_cost.subtree_cost = Cost::infinity();
         total_cost.buildable = false;
+        LOG_TEST(log, "Cost of '{}': unbuildable, an input has no implementation for its required properties",
+            expression->getName());
         return total_cost;
     }
     for (const auto & selected : selected_inputs)
         total_cost.subtree_cost += selected.cost.subtree_cost;
 
+    LOG_TEST(log, "Cost of '{}': local {}; subtree {}",
+        expression->getName(),
+        total_cost.cost.dump(memo.getEnvironment().cost_config),
+        total_cost.subtree_cost.dump(memo.getEnvironment().cost_config));
     return total_cost;
 }
 

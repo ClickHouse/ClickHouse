@@ -20,11 +20,10 @@ namespace DB
 ///   replicated data  (`is_replicated = true`):  each node processes all -- no division
 ///
 /// Three dimensions:
-///   - `work`: rows or bytes processed, divided by parallelism (merges old cpu + io).
-///     NOTE: the unit is currently operator-dependent — scan and materialization terms are
-///     in bytes while probe/sort terms count rows — so `work_weight` compares mixed units.
-///     Unit normalization is planned; until then treat cross-operator `work` ratios as
-///     approximate.
+///   - `work`: rows or bytes processed, divided by parallelism (covers both CPU and I/O).
+///     NOTE: the unit is operator-dependent - scan and materialization terms are in bytes
+///     while probe/sort terms count rows - so `work_weight` compares mixed units and
+///     cross-operator `work` ratios are approximate. TODO: normalize the units.
 ///   - `network`: bytes transferred over the network between nodes
 ///   - `sequential`: single-threaded phases (hash table builds, merge cursors) that
 ///     cannot be parallelized within a node.  Its weight relative to `work_weight`
@@ -32,7 +31,8 @@ namespace DB
 ///     mixed `work` units above).
 ///
 /// Broadcast vs shuffle differentiation:
-///   - sequential: broadcast = `right_rows * 2` (full HT), shuffle = `right_rows * 2 / N`
+///   - sequential: broadcast builds the full hash table on every node
+///     (`right_rows * hash_table_build_factor`), shuffle builds 1/N of it per node
 ///   - network:    both modeled by their respective Exchange children
 ///
 /// Configurable at query time via `SET param__internal_cascades_cost_config = '<json>'`.
@@ -46,7 +46,10 @@ struct CostConfig
     /// Per-operator constants of the model. The defaults are the model; overrides are for experiments.
     Float64 expression_cost_per_row = 0.1;   /// Expressions and filters do little work per row.
     Float64 hash_table_build_factor = 2.0;   /// A hash table insert costs about two probes.
-    Float64 unknown_leaf_cost = 100500;      /// Source steps the model knows nothing about.
+    /// Source steps the model knows nothing about. Large enough to dominate typical plans, so
+    /// an unknown leaf is avoided when a modeled alternative exists, but finite, so a plan that
+    /// has to contain one can still be built.
+    Float64 unknown_leaf_cost = 100500;
     Float64 funnel_sequential_cost_per_row = 1.0; /// Gather/scatter push every row through one stream endpoint.
     Float64 merge_sequential_cost_per_row = 1.0;  /// N-way merge of sorted streams advances one cursor at a time.
 
@@ -90,6 +93,8 @@ struct Cost
         sequential += other.sequential;
         return *this;
     }
+
+    String dump(const CostConfig & config) const;
 };
 
 struct ExpressionCost

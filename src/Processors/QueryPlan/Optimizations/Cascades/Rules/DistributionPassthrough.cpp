@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Rule.h>
+#include <Common/logger_useful.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
@@ -40,7 +41,7 @@ static String traceColumnToInput(const ActionsDAG & dag, const String & output_n
 }
 
 /// Translate distribution column names through an ActionsDAG to input names.
-/// Returns false if any column set becomes empty (all computed — reject passthrough).
+/// Returns false if any column set becomes empty (all computed - reject passthrough).
 static bool translateDistributionColumns(const ActionsDAG & dag, std::vector<NameSet> & columns)
 {
     for (auto & column_set : columns)
@@ -55,10 +56,10 @@ static bool translateDistributionColumns(const ActionsDAG & dag, std::vector<Nam
             }
             else if (!dag.tryFindInOutputs(name))
             {
-                /// Not in DAG outputs — may be a passthrough input column. Keep it.
+                /// Not in DAG outputs - may be a passthrough input column. Keep it.
                 translated.insert(name);
             }
-            /// else: computed by this step (FUNCTION) — not present in input. Drop it.
+            /// else: computed by this step (FUNCTION) - not present in input. Drop it.
         }
         if (translated.empty())
             return false;
@@ -80,11 +81,11 @@ static bool translateSortDescription(const ActionsDAG & dag, SortDescription & s
         }
         else if (!dag.tryFindInOutputs(col_desc.column_name))
         {
-            /// Not in DAG outputs — may be a passthrough input column. Keep it.
+            /// Not in DAG outputs - may be a passthrough input column. Keep it.
         }
         else
         {
-            /// Computed by this step (FUNCTION) — can't translate to input.
+            /// Computed by this step (FUNCTION) - can't translate to input.
             return false;
         }
     }
@@ -239,7 +240,11 @@ private:
             {
                 const ActionsDAG * dag = tryGetActionsDAG(implementation_expression->plan_step.get());
                 if (dag && !translateDistributionColumns(*dag, input_props.distribution.columns))
+                {
+                    LOG_TEST(getLogger("DistributionPassthrough"), "No passthrough for '{}': a distribution column does not map through the step",
+                        implementation_expression->getName());
                     return nullptr;
+                }
             }
 
             implementation_expression->properties.distribution = distribution;
