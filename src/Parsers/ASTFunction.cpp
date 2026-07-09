@@ -809,6 +809,26 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
 
             if (!settings.show_secrets)
             {
+                /// A nested secret map like `headers(..)` / `extra_credentials(..)` has its values
+                /// hidden but its keys kept. Checked before the secret-span branch below because such a
+                /// map can itself fall inside a named span, where it must not be formatted as `key = ...`.
+                const ASTFunction * function = argument->as<ASTFunction>();
+                if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
+                {
+                    /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
+                    ostr << function->name << "(";
+                    for (size_t j = 0; j < function->arguments->children.size(); ++j)
+                    {
+                        if (j != 0)
+                            ostr << ", ";
+                        auto inner_arg = function->arguments->children[j];
+                        if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
+                            inner_arg->format(ostr, settings, state, nested_dont_need_parens);
+                    }
+                    ostr << ")";
+                    continue;
+                }
+
                 if (secret_arguments.start <= i && i < secret_arguments.start + secret_arguments.count)
                 {
                     if (secret_arguments.are_named)
@@ -836,23 +856,6 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     }
                     if (size <= secret_arguments.start + secret_arguments.count && !secret_arguments.are_named)
                         break; /// All other arguments should also be hidden.
-                    continue;
-                }
-
-                const ASTFunction * function = argument->as<ASTFunction>();
-                if (function && function->arguments && std::count(secret_arguments.nested_maps.begin(), secret_arguments.nested_maps.end(), function->name) != 0)
-                {
-                    /// headers('foo' = '[HIDDEN]', 'bar' = '[HIDDEN]')
-                    ostr << function->name << "(";
-                    for (size_t j = 0; j < function->arguments->children.size(); ++j)
-                    {
-                        if (j != 0)
-                            ostr << ", ";
-                        auto inner_arg = function->arguments->children[j];
-                        if (!formatNamedArgWithHiddenValue(inner_arg.get(), ostr, settings, state, nested_dont_need_parens))
-                            inner_arg->format(ostr, settings, state, nested_dont_need_parens);
-                    }
-                    ostr << ")";
                     continue;
                 }
             }

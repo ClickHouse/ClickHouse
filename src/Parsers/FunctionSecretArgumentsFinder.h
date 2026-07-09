@@ -976,7 +976,12 @@ protected:
             else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
                 replacement += "'" + arg_value + "'";
             else
-                return; /// Cannot reconstruct an argument; do not emit a wrong masked form.
+            {
+                /// Fail closed: an argument we cannot reconstruct safely (e.g. an unsupported tail like
+                /// `headers(..)`, or a non-literal expression) must not be emitted verbatim. Hide it.
+                replacement += "'[HIDDEN]'";
+                has_secret = true;
+            }
         }
         replacement += ")";
 
