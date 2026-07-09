@@ -12,6 +12,7 @@
 #include <Disks/IDisk.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <IO/WriteBufferFromFileBase.h>
+#include <IO/CompressionMethod.h>
 #include <base/defines.h>
 
 #include <algorithm>
@@ -25,10 +26,27 @@ namespace DB::CoordinationSetting
 {
     extern const CoordinationSettingsUInt64 file_block_size;
     extern const CoordinationSettingsUInt64 sorted_file_uncompressed_size;
+    extern const CoordinationSettingsUInt64 file_block_group_compressed_size;
 }
 
 namespace Coordination::Storage
 {
+
+AppendWriteBuffer::AppendWriteBuffer(WriteBuffer * out_) : WriteBuffer(out_->position(), out_->available()), out(out_) {}
+
+void AppendWriteBuffer::nextImpl()
+{
+    flush();
+    out->next();
+    set(out->position(), out->available());
+}
+
+void AppendWriteBuffer::finalizeImpl()
+{
+    flush();
+}
+
+AppendWriteBuffer::~AppendWriteBuffer() = default;
 
 SortedRun::SortedRun(uint32_t min_file_seqno_, uint32_t max_file_seqno_)
     : min_file_seqno(min_file_seqno_)
@@ -90,22 +108,29 @@ void SortedRun::listChildrenNames(
 }
 
 SortedRunWriter::SortedRunWriter(SortedRunPtr sorted_run_, StorageState * storage_)
-    : storage(storage_)
-    , target_block_size(storage_->keeper_context->getCoordinationSettings()[DB::CoordinationSetting::file_block_size])
-    , target_file_uncompressed_size(storage_->keeper_context->getCoordinationSettings()[DB::CoordinationSetting::sorted_file_uncompressed_size])
-    , sorted_run(std::move(sorted_run_))
+    : sorted_run(std::move(sorted_run_)), storage(storage_)
 {
+    const auto & settings = storage_->keeper_context->getCoordinationSettings();
+    target_block_size = settings[DB::CoordinationSetting::file_block_size];
+    target_block_group_compressed_size = settings[DB::CoordinationSetting::file_block_group_compressed_size];
+    target_file_uncompressed_size = settings[DB::CoordinationSetting::sorted_file_uncompressed_size];
 }
 
 SortedRunWriter::~SortedRunWriter()
 {
+    if (compressed_writer)
+    {
+        compressed_writer->cancel();
+        compressed_writer.reset();
+    }
+
     if (file_writer)
     {
         file_writer->cancel();
         file_writer.reset();
     }
 
-    /// (No explicit cleanup for incomplete files on exception: unpublished files still have
+    /// (No need to explicitly delete incomplete files on exception: unpublished files still have
     ///  delete_when_destroyed == true and enqueue their own deletion in ~SortedFile.)
 }
 
@@ -173,9 +198,10 @@ void SortedRunWriter::finishBlock()
     info.min_path = block_min_path;
     block_max_path.ptr = file->arena.insert(block_max_path.ptr, block_max_path.len);
     info.max_path = block_max_path;
+    info.block_size = block->size;
     info.data.store(block);
 
-    file->total_block_size += block->size;
+    file->total_block_size += info.block_size;
 
     if (storage->memory_only)
     {
@@ -187,10 +213,54 @@ void SortedRunWriter::finishBlock()
         chassert(storage->block_cache);
         storage->block_cache->insertProbationary(BlockCacheKey {.file_id = file->file_id, .block_idx = block_idx}, block);
 
-        /// TODO: Add `block` to block group, finishGroup() if group got big enough.
+        if (!compressed_writer)
+        {
+            group_start_block_idx = block_idx;
+            group_offset_in_file = file_writer->count();
+
+            /// We want to target a compressed rather than uncompressed group size, to control size
+            /// of file reads (e.g. for S3 we want to read in chunks of a few hundred KB).
+            /// So here we make sure we flush data to the compressor (which writes it to output file)
+            /// frequently enough to not go very far over the threshold.
+            size_t buf_size = std::min(size_t(DB::DBMS_DEFAULT_BUFFER_SIZE), target_block_group_compressed_size / 2);
+
+            file_appender.emplace(file_writer.get());
+            compressed_writer = DB::wrapWriteBufferWithCompressionMethod(
+                &*file_appender, DB::CompressionMethod::Zstd,
+                /*level=*/ 3, /*zstd_window_log=*/ 0,
+                buf_size);
+        }
+
+        info.offset_in_group = compressed_writer->count();
+
+        compressed_writer->write(block->data(), block->size);
+
+        file_appender->flush();
+        if (file_writer->count() - group_offset_in_file > target_block_group_compressed_size)
+            finishGroup();
     }
 
     block.reset();
+}
+
+void SortedRunWriter::finishGroup()
+{
+    if (!compressed_writer)
+        return;
+
+    compressed_writer->finalize();
+    compressed_writer.reset();
+    file_appender.reset();
+
+    size_t group_compressed_size = file_writer->count() - group_offset_in_file;
+    chassert(group_compressed_size > 0);
+
+    for (size_t block_idx = group_start_block_idx; block_idx < file->blocks.size(); ++block_idx)
+    {
+        auto & info = file->blocks[block_idx];
+        info.group_offset_in_file = group_offset_in_file;
+        info.group_compressed_size = group_compressed_size;
+    }
 }
 
 void SortedRunWriter::finishFile()
@@ -198,25 +268,19 @@ void SortedRunWriter::finishFile()
     if (!file)
         return;
 
-    /// Note: this is required because finishFileIfBigEnough() must make all appended nodes visible
-    /// in sorted_run when returning true. Merge relies on this when publishing partial results.
     finishBlock();
+    finishGroup();
 
     if (!storage->memory_only)
     {
-        /// TODO: Write file footer.
+        /// TODO: Write file footer, if we want files to be usable after restart.
+
+        file->file_size = file_writer->count();
 
         file_writer->finalize();
         file_writer.reset();
 
-        /// Open the file for reading. All block loads are positioned reads (readBigAt) on this
-        /// buffer; they may run in parallel.
-        file->read_buffer = storage->disk->readFile(file->file_path, storage->read_settings, /*read_hint*/ {});
-        if (!file->read_buffer->supportsReadAt())
-            throw DB::Exception(
-                DB::ErrorCodes::LOGICAL_ERROR,
-                "Keeper data disk '{}' doesn't support positioned reads for file {} (but the check on startup passed)",
-                storage->disk->getName(), file->file_path);
+        file->prepareReadBuffer(storage);
     }
 
     chassert(!file->blocks.empty()); // a file is created only when a node is appended

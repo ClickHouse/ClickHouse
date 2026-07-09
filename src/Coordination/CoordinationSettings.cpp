@@ -77,6 +77,7 @@ namespace ErrorCodes
     DECLARE(UInt64, uncommitted_memtable_size, 16 * 1024 * 1024, "LSMT: rotate the uncommitted-state memtable when it exceeds this many bytes.", HOT_RELOAD) \
     DECLARE(UInt64, memtable_block_size, 32 * 1024, "LSMT: target size of memtable blocks, in bytes.", HOT_RELOAD) \
     DECLARE(UInt64, file_block_size, 32 * 1024, "LSMT: target size of blocks in files, in bytes.", HOT_RELOAD) \
+    DECLARE(UInt64, file_block_group_compressed_size, 512 * 1024, "LSMT: target size of compressed group of blocks that are read together.", HOT_RELOAD) \
     DECLARE(UInt64, sorted_file_uncompressed_size, 32 * 1024 * 1024, "LSMT: target uncompressed size of a single file within a sorted run, in bytes.", HOT_RELOAD) \
     DECLARE(UInt64, flush_threads, 2, "LSMT: number of background threads flushing memtables to files.", 0) \
     DECLARE(UInt64, merge_threads, 3, "LSMT: number of background threads merging files.", 0) \
