@@ -155,6 +155,7 @@ private:
         MODE_NORMAL,
         MODE_FIND,
         MODE_REPLACE,
+        MODE_G,
         MODE_END,
     };
 
@@ -173,7 +174,6 @@ private:
     int32_t flag = 0;
     char find_direction = 0;
     int32_t op = 0;
-    int32_t motion = 0;
     int curswant = 0;
     int inclusivity_flip = 0;
 };
