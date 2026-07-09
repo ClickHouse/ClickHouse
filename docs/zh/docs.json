@@ -3105,7 +3105,6 @@
               "group": "第三方客户端",
               "icon": "users",
               "pages": [
-                "zh/integrations/language-clients/third-party/moose-olap",
                 "zh/integrations/language-clients/third-party/client-libraries"
               ]
             }

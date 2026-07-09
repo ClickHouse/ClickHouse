@@ -3105,7 +3105,6 @@
               "group": "Clients tiers",
               "icon": "users",
               "pages": [
-                "fr/integrations/language-clients/third-party/moose-olap",
                 "fr/integrations/language-clients/third-party/client-libraries"
               ]
             }

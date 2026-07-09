@@ -4797,7 +4797,11 @@
   },
   {
     "source": "/interfaces/third-party/moose-olap",
-    "destination": "/integrations/language-clients/third-party/moose-olap"
+    "destination": "/integrations"
+  },
+  {
+    "source": "/integrations/language-clients/third-party/moose-olap",
+    "destination": "/integrations"
   },
   {
     "source": "/interfaces/third-party/proxy",
@@ -9641,7 +9645,11 @@
   },
   {
     "source": "/jp/interfaces/third-party/moose-olap",
-    "destination": "/ja/integrations/language-clients/third-party/moose-olap"
+    "destination": "/ja/integrations"
+  },
+  {
+    "source": "/ja/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ja/integrations"
   },
   {
     "source": "/jp/interfaces/third-party/proxy",
@@ -20229,7 +20237,11 @@
   },
   {
     "source": "/ko/interfaces/third-party/moose-olap",
-    "destination": "/ko/integrations/language-clients/third-party/moose-olap"
+    "destination": "/ko/integrations"
+  },
+  {
+    "source": "/ko/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ko/integrations"
   },
   {
     "source": "/ko/interfaces/third-party/proxy",
@@ -32341,7 +32353,11 @@
   },
   {
     "source": "/ru/interfaces/third-party/moose-olap",
-    "destination": "/ru/integrations/language-clients/third-party/moose-olap"
+    "destination": "/ru/integrations"
+  },
+  {
+    "source": "/ru/integrations/language-clients/third-party/moose-olap",
+    "destination": "/ru/integrations"
   },
   {
     "source": "/ru/interfaces/third-party/proxy",
@@ -45905,7 +45921,11 @@
   },
   {
     "source": "/zh/interfaces/third-party/moose-olap",
-    "destination": "/zh/integrations/language-clients/third-party/moose-olap"
+    "destination": "/zh/integrations"
+  },
+  {
+    "source": "/zh/integrations/language-clients/third-party/moose-olap",
+    "destination": "/zh/integrations"
   },
   {
     "source": "/zh/interfaces/third-party/proxy",
