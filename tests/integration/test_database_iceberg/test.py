@@ -1939,3 +1939,46 @@ def test_namespace_prefix_row_policy_any_table_rejected(started_cluster):
         f"expected rejection of ON * under a namespace, got: {err}"
     )
     node.query(f"DROP ROW POLICY IF EXISTS {policy} ON {CATALOG_NAME}.*")
+
+
+def test_namespace_prefix_create_authorization(started_cluster):
+    """
+    CREATE TABLE under USE db.namespace must authorize the namespace-qualified
+    name, not the bare one.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_createauth_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "create_auth_table"
+    user = f"user_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    create = (
+        f"USE {CATALOG_NAME}.{namespace}; "
+        f"CREATE TABLE {table_name} (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}') "
+        f"SETTINGS write_full_path_in_iceberg_metadata = 1"
+    )
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(f"CREATE USER {user}")
+    try:
+        node.query(f"GRANT SHOW DATABASES ON *.* TO {user}")
+        node.query(f"GRANT S3 ON *.* TO {user}")
+        # Grant on the bare (wrong) name only: must be denied.
+        node.query(f"GRANT CREATE TABLE ON {CATALOG_NAME}.{table_name} TO {user}")
+        _, err = node.query_and_get_answer_with_error(create, user=user)
+        assert "ACCESS_DENIED" in err, f"expected ACCESS_DENIED with bare-name grant, got: {err}"
+
+        # Grant on the namespace-qualified name: creation must be authorized.
+        node.query(f"GRANT CREATE TABLE ON {CATALOG_NAME}.`{namespace}.{table_name}` TO {user}")
+        node.query(create, user=user)
+        full_name = f"{CATALOG_NAME}.`{namespace}.{table_name}`"
+        assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
+        node.query(f"DROP TABLE {full_name}")
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
