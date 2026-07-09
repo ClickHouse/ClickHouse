@@ -633,7 +633,7 @@ HiveFiles StorageHive::collectHiveFilesFromPartition(
 
     if (prune_level >= PruneLevel::Partition)
     {
-        std::vector<Range> ranges;
+        Ranges ranges;
         ranges.reserve(partition_names.size());
         for (size_t i = 0; i < partition_names.size(); ++i)
             ranges.emplace_back(fields[i]);
@@ -996,8 +996,13 @@ HiveFiles StorageHive::collectHiveFiles(
         auto file_infos = listDirectory(hive_table_metadata->getTable()->sd.location, hive_table_metadata, fs);
         for (const auto & file_info : file_infos)
         {
+            /// Capture `file_info` by value: `file_infos` is scoped to this `else` block and is destroyed
+            /// at the closing brace below, before the `pool.wait()` that joins the tasks - a task still
+            /// running (or queued) at that point would otherwise read a dangling reference into the freed
+            /// vector. `partitions` in the branch above is a function-scope local and outlives `pool.wait`,
+            /// so its `[&]` capture of `partition` is safe and left unchanged.
             pool.scheduleOrThrowOnError(
-                [&]()
+                [&, file_info]()
                 {
                     auto hive_file = getHiveFileIfNeeded(file_info, {}, filter_actions_dag, hive_table_metadata, context_, prune_level);
                     if (hive_file)

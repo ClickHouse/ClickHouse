@@ -361,7 +361,9 @@ private:
         {
             const size_t index = index_column->getUInt(0);
 
-            if (index > 0 && index <= qbit.getElementSize())
+            /// The tuple holds element_size bit planes per stride group, grouped as [group][bit]. Index N (1-based) addresses
+            /// bit plane (N-1) % element_size of stride group (N-1) / element_size.
+            if (index > 0 && index <= qbit.getElementSize() * qbit.getNumStrides())
                 return {index - 1};
 
             if (argument_size == 2)

@@ -1,0 +1,43 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/direct
+title: 'direct 딕셔너리 레이아웃'
+sidebarTitle: 'direct'
+description: '캐싱 없이 소스에 직접 쿼리하는 딕셔너리 레이아웃입니다.'
+doc_type: '참고'
+---
+
+<div id="direct">
+  ## direct
+</div>
+
+딕셔너리는 메모리에 저장되지 않으며, 요청을 처리할 때 소스에 직접 접근합니다.
+
+딕셔너리 키는 [UInt64](/ko/reference/data-types/int-uint) 타입입니다.
+
+로컬 파일을 제외한 모든 유형의 [소스](/ko/reference/statements/create/dictionary/sources/overview#dictionary-sources)를 지원합니다.
+
+구성 예시:
+
+<Tabs>
+  <Tab title="DDL">
+    ```sql
+    LAYOUT(DIRECT())
+    ```
+  </Tab>
+
+  <Tab title="설정 파일">
+    ```xml
+    <layout>
+      <direct />
+    </layout>
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+<div id="complex_key_direct">
+  ## complex_key_direct
+</div>
+
+이 저장소 유형은 복합 [키](/ko/reference/statements/create/dictionary/attributes#composite-key)에서 사용됩니다. `direct`와 유사합니다.

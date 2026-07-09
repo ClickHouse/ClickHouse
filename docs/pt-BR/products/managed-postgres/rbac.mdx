@@ -1,0 +1,57 @@
+---
+slug: /cloud/managed-postgres/rbac
+sidebarTitle: 'RBAC'
+title: 'RBAC do Managed Postgres'
+description: 'Saiba mais sobre o Controle de Acesso Baseado em Funções (RBAC) no ClickHouse Managed Postgres'
+keywords: ['RBAC do Managed Postgres', 'controle de acesso', 'roles', 'privilégios', 'permissões']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
+
+O ClickHouse Cloud oferece suporte ao Controle de Acesso Baseado em Funções (RBAC) para serviços do Managed Postgres. Você pode criar funções personalizadas com permissões específicas e atribuí-las aos membros da organização para controlar quem pode visualizar ou gerenciar seus serviços Postgres.
+
+<div id="available-permissions">
+  ## Permissões disponíveis
+</div>
+
+Atualmente, o Managed Postgres oferece suporte a duas permissões:
+
+| Permissão                        | Descrição                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------ |
+| **Visualizar serviços Postgres** | Permite que um usuário visualize o serviço Postgres e seus detalhes.           |
+| **Gerenciar serviços Postgres**  | Permite que um usuário modifique, redimensione e configure o serviço Postgres. |
+
+A criação de um novo serviço Postgres exige a permissão existente **Organization manage**. As permissões acima se aplicam apenas aos serviços existentes.
+
+<Note>
+  Permissões mais granulares estarão disponíveis em um lançamento futuro.
+</Note>
+
+<div id="creating-a-custom-role">
+  ## Criando uma função personalizada
+</div>
+
+1. Clique no nome da sua organização na barra lateral esquerda e selecione **Usuários e funções**.
+
+<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Menu Usuários e funções" size="md" border />
+
+2. Vá para a guia **Roles** e clique em **Create role**.
+3. Insira um nome para a função, clique em **+ Allow** e selecione **Serviço Postgres** na lista de entidades.
+
+<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Selecionando a entidade Serviço Postgres" size="md" border />
+
+4. Escolha o serviço Postgres ao qual a função se aplicará e selecione as permissões a serem concedidas.
+
+<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="Configurando permissões do Postgres em uma função" size="md" border />
+
+5. Clique em **Create role** para salvar.
+
+<div id="assigning-a-role">
+  ## Atribuindo uma função
+</div>
+
+Depois de criar a função, atribua-a aos usuários na aba **Usuários** da mesma página **Usuários e funções**. Um usuário pode ter várias funções, e elas podem ser combinadas para compor exatamente o perfil de acesso de que você precisa.

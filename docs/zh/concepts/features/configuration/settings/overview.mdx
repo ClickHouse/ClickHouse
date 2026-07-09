@@ -1,0 +1,63 @@
+---
+description: '设置概览页。'
+slug: /operations/settings/overview
+title: '设置概览'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概览
+</div>
+
+<Note>
+  基于 XML 的 Settings Profiles 和[配置文件](/zh/concepts/features/configuration/server-config/configuration-files)当前不支持
+  ClickHouse Cloud。要为您的 ClickHouse Cloud
+  服务指定设置，必须使用[通过 SQL 管理的 Settings Profiles](/zh/concepts/features/security/access-rights#settings-profiles-management)。
+</Note>
+
+ClickHouse 设置主要分为以下几组：
+
+* 全局服务器设置
+* 会话设置
+* 查询设置
+* 后台操作设置
+
+全局设置默认生效，除非在更细粒度的层级中被覆盖。会话设置可以通过 profile、用户配置和 SET 命令指定。查询设置可以通过 SETTINGS 子句提供，并应用于单条查询。后台操作设置适用于变更、合并以及其他可能在后台异步执行的操作。
+
+<div id="see-non-default-settings">
+  ## 查看非默认设置
+</div>
+
+要查看哪些设置已偏离默认值，可以查询
+`system.settings` 表：
+
+```sql
+SELECT name, value FROM system.settings WHERE changed
+```
+
+如果所有设置都未更改默认值，那么 ClickHouse 将
+不会返回任何内容。
+
+要查看某个特定设置的值，可以在查询中指定该设置的 `name`：
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'max_threads'
+```
+
+将返回类似如下的内容：
+
+```response
+┌─name────────┬─value─────┐
+│ max_threads │ 'auto(8)' │
+└─────────────┴───────────┘
+
+1 行于 set 中。Elapsed: 0.002 sec.
+```
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+* 请参阅[全局服务器设置](/zh/reference/settings/server-settings/settings)，进一步了解如何在全局服务器级别配置您的 ClickHouse server。
+* 请参阅[会话设置](/zh/concepts/features/configuration/settings/settings-query-level)，进一步了解如何在会话级别配置您的 ClickHouse server。
+* 请参阅[上下文层级](/zh/resources/develop-contribute/introduction/architecture#context)，进一步了解 ClickHouse 的配置处理机制。

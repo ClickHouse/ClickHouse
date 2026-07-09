@@ -13,6 +13,7 @@
 #include <Common/logger_useful.h>
 #include <Common/memory.h>
 #include <Common/setThreadName.h>
+#include <Common/PerCPUMemory.h>
 
 #include <Poco/Logger.h>
 
@@ -116,6 +117,9 @@ ThreadStatus::ThreadStatus()
     last_rusage = std::make_unique<RUsageCounters>();
 
     memory_tracker.setDescription("Thread");
+    /// memory_tracker is already parented to total_memory_tracker, so a thread that never attaches
+    /// to a group still honors total_memory_tracker_sample_probability.
+    resolveMemorySampleConfig();
     log = getLogger("ThreadStatus");
 
     current_thread = this;
@@ -241,6 +245,9 @@ LogsLevel ThreadStatus::getClientLogsLevel() const
 
 void ThreadStatus::flushUntrackedMemory()
 {
+    /// The deferred bytes our contribution accounted for are about to be tracked, so remove it.
+    per_cpu_memory.release(per_cpu_untracked_memory);
+
     if (untracked_memory == 0)
         return;
 
@@ -258,6 +265,15 @@ bool ThreadStatus::isQueryCanceled() const
     if (local_data.query_is_canceled_predicate)
         return local_data.query_is_canceled_predicate();
     return false;
+}
+
+void ThreadStatus::throwIfQueryCanceled() const
+{
+    if (!thread_group)
+        return;
+
+    if (local_data.throw_if_query_canceled_predicate)
+        local_data.throw_if_query_canceled_predicate();
 }
 
 size_t ThreadStatus::getNextPlanStepIndex() const

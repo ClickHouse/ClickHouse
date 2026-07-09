@@ -1,0 +1,42 @@
+---
+sidebarTitle: '이미지 생성'
+slug: /cloud/features/ai-ml/agents/builder/image-generation
+title: '이미지 생성'
+description: 'ClickHouse Agents에서 이미지 생성 및 편집'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', '이미지 생성', 'DALL-E', 'Flux', 'Stable Diffusion']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge />
+
+이미지 생성 기능을 사용하면 에이전트가 텍스트 프롬프트를 바탕으로 새 이미지를 생성하거나 사용자가 업로드한 이미지를 편집할 수 있습니다. 에이전트는 요청된 내용과 주어진 정보를 바탕으로 생성과 편집 중 적절한 방식을 선택합니다.
+
+<div id="enable-it">
+  ## 이미지 생성 활성화
+</div>
+
+이미지 생성은 Agent Builder의 **Add Tools** 모달에서 추가합니다(**Capabilities** 섹션이 아님). Agent Builder 패널 하단에서 **Add Tools**를 클릭한 다음, 이미지 모델 도구 중 하나를 추가하십시오. 예를 들어 **OpenAI Image Tools**, **DALL-E-3**, **Stable Diffusion**이 있습니다. 에이전트는 요청에 따라 적절한 도구를 선택하며, 지침에서 특정 도구만 사용하도록 제한할 수도 있습니다.
+
+<Image img="/images/cloud/agent-builder/tools-modal.webp" alt="OpenAI Image Tools, DALL-E-3, Stable Diffusion을 포함한 이미지 모델 통합과 기타 서드파티 도구가 표시된 Agent Tools 모달" size="md" />
+
+<div id="generation">
+  ## 생성
+</div>
+
+사용자가 이미지를 요청하면 에이전트는 프롬프트와 함께 생성 도구를 호출하고, 생성된 이미지를 인라인으로 반환합니다. 에이전트는 동일한 대화에서 해당 이미지를 설명하거나 재사용할 수 있도록 Context에 해당 이미지에 대한 참조를 유지합니다.
+
+<div id="editing">
+  ## 편집
+</div>
+
+사용자가 이미지를 업로드한 뒤 수정을 요청하면 — 색상을 바꾸거나, 객체를 추가하거나, 구도를 확장하는 등 — 에이전트는 도구의 편집 변형을 호출합니다. 출력은 요청에 따라 해당 영역을 대체하거나 원본을 확장합니다.
+
+<div id="notes">
+  ## 참고 사항
+</div>
+
+* 생성된 이미지는 자동으로 별도의 비전 분석에 사용되지 않습니다. 에이전트가 이미지를 *해석*해야 하는 경우, 사용자가 업로드한 이미지와 함께 [비전](/ko/products/cloud/features/ai-ml/agents/builder/vision)을 사용하세요.
+* provider의 콘텐츠 정책이 적용됩니다. provider 정책을 위반하는 프롬프트는 이미지가 아니라 오류를 반환합니다.
