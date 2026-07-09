@@ -69,6 +69,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool allow_experimental_delta_kernel_rs;
+    extern const SettingsBool allow_experimental_delta_lake_writes;
     extern const SettingsInt64 delta_lake_snapshot_version;
     extern const SettingsInt64 delta_lake_snapshot_start_version;
     extern const SettingsInt64 delta_lake_snapshot_end_version;
@@ -760,7 +761,9 @@ void DeltaLakeMetadata::createInitial(
 
         /// For catalog databases (e.g. Unity) register the new table so it is visible via the catalog,
         /// mirroring `IcebergMetadata::createInitial`. Physical columns must match the `_delta_log` schema.
-        if (catalog)
+        /// Gated on writes too: without them `createTable` above wrote no `_delta_log`, so there is
+        /// nothing to register.
+        if (catalog && local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
         {
             const auto location = configuration_ptr->getRawPath().path;
             Poco::JSON::Object::Ptr metadata_content = new Poco::JSON::Object;

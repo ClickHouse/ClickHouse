@@ -9,6 +9,7 @@
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
 #include <Common/checkStackSize.h>
+#include <IO/HTTPCommon.h>
 #include <IO/ReadHelpers.h>
 #include <IO/Operators.h>
 #include <Core/NamesAndTypes.h>
@@ -424,6 +425,14 @@ bool UnityCatalog::existsTable(const std::string & schema_name, const std::strin
         if (hasValueAndItsNotNone("name", object) && object->get("name").extract<String>() == table_name)
             return true;
         return false;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        /// Unity returns 404 for a table that does not exist; treat that as "does not exist" instead
+        /// of an error (e.g. the existence check `InterpreterCreateQuery` runs before CREATE TABLE).
+        if (e.getHTTPStatus() == Poco::Net::HTTPResponse::HTTP_NOT_FOUND)
+            return false;
+        throw;
     }
     catch (DB::Exception & e)
     {

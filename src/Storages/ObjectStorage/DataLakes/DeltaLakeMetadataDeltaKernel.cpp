@@ -732,6 +732,12 @@ void DeltaLakeMetadataDeltaKernel::createTable(
     if (!configuration_ptr)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to create Delta table, but storage configuration is expired");
 
+    /// A fresh CREATE writes the initial commit, so it requires delta lake writes. When off, do not
+    /// touch remote storage here -- stay lazy like attach/read (avoids connecting for a definition-only
+    /// CREATE, e.g. against an unreachable location; a fresh location then surfaces on first query).
+    if (!local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
+        return;
+
     /// If a `_delta_log` already exists, attach to the existing table instead of creating (any entry,
     /// including a checkpoint-only log). Duplicate table names are rejected by `IDatabase::createTable`.
     const auto data_path = configuration_ptr->getRawPath().path;
@@ -740,13 +746,6 @@ void DeltaLakeMetadataDeltaKernel::createTable(
         LOG_DEBUG(log, "Delta table already exists at `{}`; attaching to it without creating", data_path);
         return;
     }
-
-    /// Creating a brand-new Delta table writes the initial commit, which is a write
-    /// operation and therefore requires delta lake writes to be enabled.
-    if (!local_context->getSettingsRef()[Setting::allow_experimental_delta_lake_writes])
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "To enable delta lake writes (including CREATE TABLE), use allow_experimental_delta_lake_writes = 1");
 
     /// Qualify: a member function `getKernelHelper()` shadows the free
     /// function inside this class's static methods.
