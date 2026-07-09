@@ -275,7 +275,8 @@ void optimizeTreeSecondPass(
         {
             if (optimization_settings.enable_join_runtime_filters)
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
-            if (optimization_settings.lift_predicate_across_join)
+            /// Without PK re-analysis the lifted filter can never prune, so the lift is pointless
+            if (optimization_settings.lift_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
             {
                 if (tryLiftPredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0)
                 {
@@ -288,18 +289,15 @@ void optimizeTreeSecondPass(
                     /// selection rerun against the rebuilt `indexes`).
                     /// Inner traversal needs its own stack: `traverseQueryPlan` starts with
                     /// `stack.clear()`, which would corrupt the outer walk's stack.
-                    if (optimization_settings.query_plan_optimize_primary_key)
+                    Stack inner_stack;
+                    for (auto * child : frame_node.children)
                     {
-                        Stack inner_stack;
-                        for (auto * child : frame_node.children)
+                        traverseQueryPlan(inner_stack, *child, [&](auto & fn)
                         {
-                            traverseQueryPlan(inner_stack, *child, [&](auto & fn)
-                            {
-                                if (auto * mt = typeid_cast<ReadFromMergeTree *>(fn.step.get()))
-                                    mt->invalidateIndexes();
-                            });
-                            traverseQueryPlan(inner_stack, *child, [&](auto &) { optimizePrimaryKeyConditionAndLimit(inner_stack); });
-                        }
+                            if (auto * mt = typeid_cast<ReadFromMergeTree *>(fn.step.get()))
+                                mt->invalidateIndexes();
+                        });
+                        traverseQueryPlan(inner_stack, *child, [&](auto &) { optimizePrimaryKeyConditionAndLimit(inner_stack); });
                     }
                 }
             }

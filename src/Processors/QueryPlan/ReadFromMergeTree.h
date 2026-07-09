@@ -446,6 +446,8 @@ public:
 
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
+    /// FINAL-aware partition-pruning suppression; valid after deferFiltersAfterFinalIfNeeded
+    bool getSkipPartitionPruning() const { return skip_partition_pruning; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
     bool getEnableVerticalFinal() const { return enable_vertical_final; }
 

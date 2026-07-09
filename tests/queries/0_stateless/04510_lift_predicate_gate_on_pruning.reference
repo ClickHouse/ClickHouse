@@ -1,0 +1,14 @@
+pk target	2
+plain target	1
+partition target	2
+skip index target	2
+final partition target	1
+final opt-out partition target	2
+mixed conjunction lifted atom	2
+mixed conjunction skipped atom	1
+unusable atom only	0
+plain correctness	0
+partition correctness	0
+skip index correctness	0
+mixed correctness	0
+final correctness	0

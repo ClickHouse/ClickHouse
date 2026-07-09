@@ -47,13 +47,92 @@ const FilterStep * findFilterBelow(const QueryPlan::Node * node)
     return found ? typeid_cast<const FilterStep *>(found->step.get()) : nullptr;
 }
 
-/// Lifting only helps when the target side eventually feeds a MergeTree primary key
-bool targetReachesIndexedSource(const QueryPlan::Node * node)
+struct IndexedTarget
 {
-    return walkDown(node, [](const auto * n)
+    ReadFromMergeTree * reading = nullptr;
+    /// Expression DAGs between the join child and the read step, top to bottom
+    std::vector<const ActionsDAG *> expression_dags;
+};
+
+/// Find the MergeTree read step the lifted filter would eventually prune, together with the
+/// expression chain the filter is composed through (mirrors optimizePrimaryKeyConditionAndLimit)
+std::optional<IndexedTarget> findIndexedTarget(const QueryPlan::Node * node)
+{
+    IndexedTarget target;
+    while (node)
     {
-        return typeid_cast<const ReadFromMergeTree *>(n->step.get()) != nullptr;
-    }) != nullptr;
+        if (auto * reading = typeid_cast<ReadFromMergeTree *>(node->step.get()))
+        {
+            target.reading = reading;
+            return target;
+        }
+        if (const auto * expression = typeid_cast<const ExpressionStep *>(node->step.get()))
+        {
+            /// Index analysis does not compose filters through arrayJoin, so pruning cannot happen
+            if (expression->getExpression().hasArrayJoin())
+                return {};
+            target.expression_dags.push_back(&expression->getExpression());
+        }
+        else if (!typeid_cast<const FilterStep *>(node->step.get()))
+        {
+            return {};
+        }
+        if (node->children.size() != 1)
+            return {};
+        node = node->children.front();
+    }
+    return {};
+}
+
+/// The lift pays off only when the copied predicate can prune data on the target side;
+/// otherwise it is a redundant per-row filter over rows the JOIN would drop anyway.
+/// Mirror the real index analysis: compose the candidate through the expression chain
+/// down to the read step and run the same buildIndexes the storage uses.
+bool liftedPredicateHelpsPruning(ActionsDAG candidate_dag, const IndexedTarget & target)
+{
+    const std::string filter_name = candidate_dag.getOutputs().front()->result_name;
+    for (const auto * expression_dag : target.expression_dags)
+        candidate_dag = ActionsDAG::merge(expression_dag->clone(), std::move(candidate_dag));
+
+    const auto * predicate = candidate_dag.tryFindInOutputs(filter_name);
+    if (!predicate)
+        return false;
+    /// buildIndexes reads the predicate from the first output
+    candidate_dag.getOutputs() = {predicate};
+
+    auto & reading = *target.reading;
+    /// FINAL can suppress partition pruning (rows with the same sorting key may span parts);
+    /// mirror that decision, otherwise a partition-key conjunct looks useful but never prunes
+    reading.deferFiltersAfterFinalIfNeeded();
+    std::optional<ReadFromMergeTree::Indexes> indexes;
+    ReadFromMergeTree::buildIndexes(
+        indexes,
+        &candidate_dag,
+        reading.getMergeTreeData(),
+        reading.getParts(),
+        /*vector_search_parameters=*/std::nullopt,
+        /*top_k_filter_info=*/std::nullopt,
+        reading.getContext(),
+        reading.getQueryInfo(),
+        reading.getStorageMetadata(),
+        reading.getSkipPartitionPruning());
+    if (!indexes)
+        return false;
+
+    if (!indexes->key_condition->generateUnsubstituted().alwaysUnknownOrTrue())
+        return true;
+    if (indexes->partition_pruner && !indexes->partition_pruner->isUseless())
+        return true;
+    if (indexes->minmax_idx_condition && !indexes->minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
+        return true;
+    if (!indexes->skip_indexes.useful_indices.empty())
+        return true;
+    /// pruning by _part / _partition_id and _part_offset virtual columns
+    if (indexes->part_values.has_value())
+        return true;
+    if (indexes->part_offset_condition || indexes->total_offset_condition)
+        return true;
+    return false;
 }
 
 /// result_names of conjunct atoms already present in target filter, for dedup against lift candidates
@@ -127,7 +206,8 @@ size_t tryLiftSide(
     QueryPlan::Nodes & nodes)
 {
     auto * target_root = join_node->children[target_idx];
-    if (!targetReachesIndexedSource(target_root))
+    auto indexed_target = findIndexedTarget(target_root);
+    if (!indexed_target)
         return 0;
     if (!source_filter)
         return 0;
@@ -144,8 +224,15 @@ size_t tryLiftSide(
     ActionsDAG::NodeRawConstPtrs liftable;
     for (const auto * atom : ActionsDAG::extractConjunctionAtoms(filter_root))
     {
-        if (atomSubstitutable(atom, filter_level_sub))
-            liftable.push_back(atom);
+        if (!atomSubstitutable(atom, filter_level_sub))
+            continue;
+        /// Lift the atom only if it actually prunes on the target (PK, partition, skip index, ...)
+        auto candidate_dag = ActionsDAG::buildFilterActionsDAG({atom}, filter_level_sub, /*single_output_condition_node=*/true);
+        if (!candidate_dag || candidate_dag->getOutputs().size() != 1)
+            continue;
+        if (!liftedPredicateHelpsPruning(std::move(*candidate_dag), *indexed_target))
+            continue;
+        liftable.push_back(atom);
     }
     if (liftable.empty())
         return 0;
