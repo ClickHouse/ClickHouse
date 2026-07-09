@@ -942,7 +942,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
+            compression_method = chooseCompressionMethod(*object_info, configuration->compression_method);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata, object_storage, context_, log, std::nullopt, !headers_requested);
         }

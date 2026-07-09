@@ -1,4 +1,5 @@
 #pragma once
+#include <IO/CompressionMethod.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
@@ -36,6 +37,8 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     const LoggerPtr & log,
     const std::optional<ReadSettings> & read_settings = std::nullopt,
     bool allow_page_cache = true);
+
+CompressionMethod chooseCompressionMethod(const ObjectInfo & object_info, const std::string & compression_hint);
 
 ASTs::iterator getFirstKeyValueArgument(ASTs & args);
 std::unordered_map<std::string, Field> parseKeyValueArguments(const ASTs & function_args, ContextPtr context);
