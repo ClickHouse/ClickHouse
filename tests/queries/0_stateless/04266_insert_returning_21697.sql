@@ -5,8 +5,7 @@ SET async_insert = 0;
 -- Parser regression for backward-incompatible `RETURNING` keyword behavior:
 -- implicit alias is rejected, explicit aliasing stays allowed.
 SELECT 'returning keyword parsing';
--- { serverError SYNTAX_ERROR }
-SELECT 1 returning;
+SELECT formatQuerySingleLine('SELECT 1 returning'); -- { serverError SYNTAX_ERROR }
 SELECT 1 AS returning;
 SELECT 1 AS `returning`;
 
