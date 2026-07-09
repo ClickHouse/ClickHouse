@@ -1885,13 +1885,13 @@ Disable DETACH PARTITION query for zero copy replication.
     DECLARE(Bool, disable_fetch_partition_for_zero_copy_replication, true, R"(
 Disable FETCH PARTITION query for zero copy replication.
 )", 0) \
-    DECLARE_WITH_ALIAS(Bool, enable_block_number_column, true, R"(
+    DECLARE_WITH_ALIAS(Bool, enable_block_number_column, false, R"(
 Enable persisting column _block_number for each row.
 )", 0, allow_experimental_block_number_column) \
-    DECLARE(Bool, enable_block_offset_column, true, R"(
+    DECLARE(Bool, enable_block_offset_column, false, R"(
 Persists virtual column `_block_offset` on merges.
 )", 0) \
-    DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET, R"(
+    DECLARE(MergeTreePartMinMaxIndexColumns, part_minmax_index_columns, MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY, R"(
 Selects which columns the per-part min-max index covers. Each value enables an additional group of columns on top of the previous one.
 
 Possible values:
