@@ -102,6 +102,7 @@ namespace Setting
     extern const SettingsUInt64 join_runtime_bloom_filter_hash_functions;
     extern const SettingsUInt64 join_runtime_filter_blocks_to_skip_before_reenabling;
     extern const SettingsUInt64 join_runtime_filter_exact_values_limit;
+    extern const SettingsBool join_runtime_filter_size_from_hash_table_stats;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_limit_for_vector_search_queries;
     extern const SettingsUInt64 max_rows_to_transfer;
@@ -132,6 +133,7 @@ namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
     extern const int INVALID_SETTING_VALUE;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
@@ -216,6 +218,15 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
 
     make_distributed_plan = from[Setting::make_distributed_plan];
 
+    /// make_distributed_plan is incompatible with parallel replicas, including the automatic
+    /// heuristic: its plan switching and statistics collection interfere with the distributed plan.
+    if (make_distributed_plan
+        && (from[Setting::allow_experimental_parallel_reading_from_replicas] > 0
+            || from[Setting::automatic_parallel_replicas_mode] != 0))
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support parallel replicas, "
+            "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
+
     /// The implicit count/minmax projection counts a whole part from metadata; a distributed read
     /// buckets the part, so the projection would be counted once per bucket and multiply the result.
     /// Disable it for distributed plans (also forced off when a worker re-optimizes a fragment).
@@ -286,6 +297,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_pass_ratio_threshold_for_disabling = from[Setting::join_runtime_filter_pass_ratio_threshold_for_disabling];
     join_runtime_filter_blocks_to_skip_before_reenabling = from[Setting::join_runtime_filter_blocks_to_skip_before_reenabling];
     join_runtime_bloom_filter_max_ratio_of_set_bits = from[Setting::join_runtime_bloom_filter_max_ratio_of_set_bits];
+    join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
     if (query_plan_optimize_join_order_algorithm.empty())

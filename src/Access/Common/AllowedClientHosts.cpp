@@ -371,7 +371,7 @@ void AllowedClientHosts::addLikePattern(const String & pattern)
         local_host = true;
     else if ((pattern == "%") || (pattern == "0.0.0.0/0") || (pattern == "::/0"))
         any_host = true;
-    else if (boost::range::find(like_patterns, pattern) == name_regexps.end())
+    else if (boost::range::find(like_patterns, pattern) == like_patterns.end())
         like_patterns.push_back(pattern);
 }
 

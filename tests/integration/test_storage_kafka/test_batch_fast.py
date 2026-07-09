@@ -1090,9 +1090,9 @@ def test_librdkafka_compression(kafka_cluster, create_query_generator, log_line)
 
         2020.12.10 09:59:56.831507 [ 20 ] {} <Error> void DB::StorageKafka::threadFunc(size_t): Code: 27. DB::Exception: Cannot parse input: expected '"' before: 'foo"}': (while reading the value of key value): (at row 1)
 
-    To trigger this regression there should duplicated messages
+    To trigger this regression there should be duplicated messages
 
-    Orignal reproducer is:
+    Original reproducer is:
     $ gcc --version |& fgrep gcc
     gcc (GCC) 10.2.0
     $ yes foobarbaz | fold -w 80 | head -n10 >| in-…

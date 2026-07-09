@@ -218,6 +218,14 @@ html:not(.ch-navbar-revealed) #navbar-transition-maple:not(.ch-navbar-ready) {
     border-radius: 4px;
 }
 
+/* The code-block container carries Mintlify's own `rounded-2xl` utility,
+   which outranks the non-!important rule above — so its border rendered at
+   16px while the inner code surface (forced to 4px further down) did not.
+   Force the container to match. */
+.code-block {
+    border-radius: 4px !important;
+}
+
 /* Mintlify's built-in `rounded-t-2xl` (12px) on the accordion summary doesn't
    match the 4px override above on the surrounding `details.accordion`, so on
    hover the summary's wider corner curve produces a visible gap inside the
@@ -605,9 +613,13 @@ html:not(.dark) .pagination-prev:hover {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
-    /* Small breathing room so the first nav item isn't flush against the
-       pinned search row, and so scrolled content doesn't butt the top edge. */
-    padding-top: 0.5rem;
+    /* Gap below the pinned search + Ask AI row. Use margin, not padding: the
+       scroll container's scrollbar track spans its whole padding box, so
+       padding-top would leave the scrollbar flush against — visually touching —
+       the search/Ask AI buttons. A margin pushes the scroll box itself (and
+       therefore the top of its scrollbar) down below that row, so the scrollbar
+       no longer exceeds the first nav item. */
+    margin-top: 0.5rem;
 }
 
 /* Hide the chat assistant textarea and its floating-input wrapper */
@@ -2045,7 +2057,9 @@ h5#sidebar-title {
    data-current-path is set by Mintlify via a blocking <head> script, so this
    fires before any browser paint — preventing the sidebar flash on load. */
 html[data-current-path="/"] #sidebar,
+html[data-current-path="/ar"] #sidebar,
 html[data-current-path="/es"] #sidebar,
+html[data-current-path="/fr"] #sidebar,
 html[data-current-path="/ja"] #sidebar,
 html[data-current-path="/ko"] #sidebar,
 html[data-current-path="/pt-BR"] #sidebar,
@@ -2057,7 +2071,9 @@ html.ch-homepage #sidebar {
 
 /* Navbar: full width when sidebar is hidden */
 html[data-current-path="/"] #navbar-transition-maple,
+html[data-current-path="/ar"] #navbar-transition-maple,
 html[data-current-path="/es"] #navbar-transition-maple,
+html[data-current-path="/fr"] #navbar-transition-maple,
 html[data-current-path="/ja"] #navbar-transition-maple,
 html[data-current-path="/ko"] #navbar-transition-maple,
 html[data-current-path="/pt-BR"] #navbar-transition-maple,
@@ -2074,6 +2090,14 @@ html.ch-homepage #navbar-transition-maple {
 }
 
 /* Stretch content to use the full viewport on homepage */
+/* #content-area caps the prose column at 768px below the xl breakpoint and
+   leaves it left-aligned (xl:min-w-full lifts the cap only at >=1280px). The
+   homepage has no prose column — its cards span the full padded width — so
+   without this the content sits left with a growing gap on the right between
+   ~800px and 1280px. */
+html.ch-homepage #content-area {
+    max-width: none !important;
+}
 @media (min-width: 1024px) {
     html.ch-homepage #content-container {
         margin-left: 0 !important;
@@ -2608,33 +2632,47 @@ div:has(> img[src*="cloudfront.net/flags/"]) {
    Banner Styling
    ============================================ */
 
-/* Light mode: black background, white text, yellow link */
-html:not(.dark) #banner {
-    background-color: #1a1a1a !important;
-    color: #ffffff !important;
-}
+/* Mintlify paints the banner text via `[&_*]:text-white/95!`, an `!important`
+   utility that lives in Tailwind's `@layer utilities`. For `!important`
+   declarations the cascade reverses layer order and treats un-layered styles
+   as the lowest-priority (implicit final) layer, so an un-layered override —
+   however specific — always loses to that utility and the text stays white.
+   Declaring these rules inside `@layer components` (ordered before `utilities`)
+   makes our `!important` win, so the banner text takes the colors below. */
+@layer components {
+    /* Light mode: black background, white text, yellow link */
+    html:not(.dark) #banner {
+        background-color: #1a1a1a !important;
+        color: #ffffff !important;
+    }
 
-html:not(.dark) #banner a {
-    color: #FAFF69 !important;
-    font-weight: 700 !important;
-}
+    html:not(.dark) #banner *,
+    html:not(.dark) #banner p {
+        color: #ffffff !important;
+    }
 
-/* Dark mode: yellow background, black text, white link */
-html.dark #banner,
-:is(.dark) #banner {
-    background-color: #FAFF69 !important;
-    color: #1a1a1a !important;
-}
+    html:not(.dark) #banner a {
+        color: #FAFF69 !important;
+        font-weight: 700 !important;
+    }
 
-html.dark #banner *,
-:is(.dark) #banner * {
-    color: #1a1a1a !important;
-}
+    /* Dark mode: yellow background, black text, black link */
+    html.dark #banner,
+    :is(.dark) #banner {
+        background-color: #FAFF69 !important;
+        color: #1a1a1a !important;
+    }
 
-html.dark #banner a,
-:is(.dark) #banner a {
-    color: #1a1a1a !important;
-    font-weight: 700 !important;
+    html.dark #banner *,
+    :is(.dark) #banner * {
+        color: #1a1a1a !important;
+    }
+
+    html.dark #banner a,
+    :is(.dark) #banner a {
+        color: #1a1a1a !important;
+        font-weight: 700 !important;
+    }
 }
 
 /* ============================================
@@ -2653,6 +2691,16 @@ html:not(.dark) .card a {
 
 .goal-card-link:hover span {
     text-decoration: underline;
+}
+
+/* External goal-card links: the arrow rotates to point up-right on hover,
+   hinting that the link leaves the docs site */
+.goal-card-link .ch-external-arrow {
+    transition: transform 0.15s ease;
+}
+
+.goal-card-link:hover .ch-external-arrow {
+    transform: rotate(-45deg);
 }
 
 /* ============================================

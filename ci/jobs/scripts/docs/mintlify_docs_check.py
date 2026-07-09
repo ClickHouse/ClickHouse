@@ -104,6 +104,18 @@ LOCALE_COMPONENTS_CHECK = (
 )
 LOCALE_CHECKS = [LOCALE_LINKS_CHECK, LOCALE_COMPONENTS_CHECK]
 
+# Quickstarts-only check, kept out of DEFAULT_CHECKS: the Praktika job runs it
+# only when a PR touches the quickstarts trees, the generator, or the checker.
+# Validates the quickstart pages' `useCases`/`products` frontmatter against the
+# allowed tag sets and fails if the generated explorer data
+# (snippets/[<locale>/]components/QuickStartsGrid/quickstarts-data.jsx and the
+# in-page badge blocks) was not regenerated and committed after a frontmatter
+# change. Authoring guide: docs/get-started/quickstarts/README.md.
+QUICKSTARTS_CHECK = (
+    "Check quickstarts",
+    "python3 ../ci/jobs/scripts/docs/quickstarts_check.py .",
+)
+
 
 def run(cmd, **kw):
     print("+ " + " ".join(shlex.quote(c) for c in cmd), flush=True)
