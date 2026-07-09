@@ -9,8 +9,6 @@ SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_morton SELECT number % 8, intDiv(number, 8), number % 4 FROM numbers(64);
 -- Ranges over space-filling curve arguments.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_morton WHERE x BETWEEN 2 AND 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 20
 PrimaryKey
 Keys:
 Condition: (mortonEncode(x, y) has args in [2, 3] × (-Inf, +Inf))
@@ -22,8 +20,6 @@ SELECT count() FROM test_morton WHERE x BETWEEN 2 AND 3 SETTINGS force_primary_k
 SELECT count() FROM test_morton WHERE x BETWEEN 2 AND 3 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 16
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_morton WHERE y BETWEEN 2 AND 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 18
 PrimaryKey
 Keys:
 Condition: (mortonEncode(x, y) has args in (-Inf, +Inf) × [2, 3])
@@ -36,8 +32,6 @@ SELECT count() FROM test_morton WHERE y BETWEEN 2 AND 3 SETTINGS use_primary_key
 16
 -- Conjunction over both curve arguments folds into one hyperrectangle.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_morton WHERE x BETWEEN 2 AND 3 AND y BETWEEN 2 AND 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 5
 PrimaryKey
 Keys:
 Condition: (mortonEncode(x, y) has args in [2, 3] × [2, 3])
@@ -50,8 +44,6 @@ SELECT count() FROM test_morton WHERE x BETWEEN 2 AND 3 AND y BETWEEN 2 AND 3 SE
 4
 -- Curve argument predicate combined with a plain key column predicate.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_morton WHERE x = 2 AND z = 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 18
 PrimaryKey
 Keys:
 Condition: and((z in [2, 2]), (mortonEncode(x, y) has args in [2, 2] × (-Inf, +Inf)))
@@ -64,8 +56,6 @@ SELECT count() FROM test_morton WHERE x = 2 AND z = 2 SETTINGS use_primary_key =
 8
 -- Disjunction over curve arguments.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_morton WHERE x < 2 OR y < 2) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 31
 PrimaryKey
 Keys:
 Condition: or((mortonEncode(x, y) has args in (-Inf, +Inf) × (-Inf, 1]), (mortonEncode(x, y) has args in (-Inf, 1] × (-Inf, +Inf)))
@@ -81,8 +71,6 @@ ORDER BY hilbertEncode(x, y)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_hilbert SELECT number % 8, intDiv(number, 8) FROM numbers(64);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_hilbert WHERE x BETWEEN 2 AND 3 AND y BETWEEN 2 AND 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 5
 PrimaryKey
 Keys:
 Condition: (hilbertEncode(x, y) has args in [2, 3] × [2, 3])
@@ -99,8 +87,6 @@ ORDER BY (x, y)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_polygon SELECT number % 10, intDiv(number, 10), number % 2 FROM numbers(100);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_polygon WHERE pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)])) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 48
 PrimaryKey
 Keys:
 Condition: pointInPolygon((x, y), [(0, 0), (0, 2), (5, 8), (8, 4), (0, 0)])
@@ -113,8 +99,6 @@ SELECT count() FROM test_polygon WHERE pointInPolygon((x, y), [(0, 0), (8, 4), (
 31
 -- Polygon with holes: holes are ignored for index analysis but applied by the filter.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_polygon WHERE pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)], [(2, 2), (3, 2), (3, 3), (2, 3)])) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 48
 PrimaryKey
 Keys:
 Condition: pointInPolygon((x, y), [(0, 0), (0, 2), (5, 8), (8, 4), (0, 0)])
@@ -127,8 +111,6 @@ SELECT count() FROM test_polygon WHERE pointInPolygon((x, y), [(0, 0), (8, 4), (
 30
 -- Polygon predicate combined with a prunable key range.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_polygon WHERE pointInPolygon((x, y), [(0, 0), (8, 4), (5, 8), (0, 2)]) AND x < 3) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 14
 PrimaryKey
 Keys:
 Condition: and((x in (-Inf, 2]), pointInPolygon((x, y), [(0, 0), (0, 2), (5, 8), (8, 4), (0, 0)]))

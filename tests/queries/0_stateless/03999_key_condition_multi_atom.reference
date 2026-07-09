@@ -7,8 +7,6 @@ SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_multi_atom SELECT toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(24 * 40);
 -- A range on ts constrains all three key columns.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_multi_atom WHERE ts >= toDateTime('2026-01-10 00:00:00', 'UTC') AND ts < toDateTime('2026-01-11 00:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 25
 PrimaryKey
 Keys:
 Condition: and(and((toDate(ts) in (-Inf, 20464]), and((toYYYYMM(ts) in (-Inf, 202601]), (ts in (-Inf, 1768089599]))), and((toDate(ts) in [20463, +Inf)), and((toYYYYMM(ts) in [202601, +Inf)), (ts in [1768003200, +Inf)))))
@@ -19,8 +17,6 @@ SELECT count() FROM test_multi_atom WHERE ts >= toDateTime('2026-01-10 00:00:00'
 24
 -- IN over ts with values spanning two months.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_multi_atom WHERE ts IN (toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-01-10 01:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 7
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 3-element set), and((toYYYYMM(ts) in 3-element set), (ts in 3-element set)))
@@ -31,8 +27,6 @@ SELECT count() FROM test_multi_atom WHERE ts IN (toDateTime('2026-01-10 00:00:00
 3
 -- has(const_array, ts).
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_multi_atom WHERE has([toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC')], ts)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 6
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
@@ -43,8 +37,6 @@ SELECT count() FROM test_multi_atom WHERE has([toDateTime('2026-01-10 00:00:00',
 2
 -- Direct IN over a key expression.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_multi_atom WHERE toDate(ts) IN (toDate('2026-01-10'), toDate('2026-02-05'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 51
 PrimaryKey
 Keys:
 Condition: (toDate(ts) in 2-element set)
@@ -55,8 +47,6 @@ SELECT count() FROM test_multi_atom WHERE toDate(ts) IN (toDate('2026-01-10'), t
 48
 -- IN with Date-typed constants against the DateTime column.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_multi_atom WHERE ts IN (toDate('2026-01-10'), toDate('2026-02-05'))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 6
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set)))
@@ -69,8 +59,6 @@ SELECT count() FROM test_multi_atom WHERE ts IN (toDate('2026-01-10'), toDate('2
 2
 -- Disjunction mixing the transformed IN, a range, has and an equality.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_multi_atom WHERE ts IN (toDate('2026-01-10'), toDate('2026-02-05')) OR ts <= toDateTime('2026-01-10 00:00:00', 'UTC') OR has([toDateTime('2026-01-10 00:00:00', 'UTC'), toDateTime('2026-02-05 00:00:00', 'UTC')], ts) OR ts = toDateTime('2026-01-10 00:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 221
 PrimaryKey
 Keys:
 Condition: or(and((toDate(ts) in [20463, 20463]), and((toYYYYMM(ts) in [202601, 202601]), (ts in [1768003200, 1768003200]))), or(and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set))), or(and((toDate(ts) in (-Inf, 20463]), and((toYYYYMM(ts) in (-Inf, 202601]), (ts in (-Inf, 1768003200]))), and((toDate(ts) in 2-element set), and((toYYYYMM(ts) in 2-element set), (ts in 2-element set))))))

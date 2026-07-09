@@ -12,8 +12,8 @@ ORDER BY (toString(x), x)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_injective SELECT intDiv(number, 4) FROM numbers(24);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_injective WHERE NOT has([1], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-│            Condition: or(not((toString(x) in 1-element set)), not((x in 1-element set)))
-│            Granules: 21/24
+Condition: or(not((toString(x) in 1-element set)), not((x in 1-element set)))
+Granules: 21/24
 SELECT count() FROM test_injective WHERE NOT has([1], x);
 20
 SELECT count() FROM test_injective WHERE NOT has([1], x) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
@@ -21,16 +21,16 @@ SELECT count() FROM test_injective WHERE NOT has([1], x) SETTINGS use_primary_ke
 -- `NOT IN` is a complement-producing leaf (`notIn` is in `no_relaxed_atom_functions`), so the
 -- wrapped pass does not run for it at all: only the direct atom is built.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_injective WHERE x NOT IN (1)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-│            Condition: (x notIn 1-element set)
-│            Granules: 21/24
+Condition: (x notIn 1-element set)
+Granules: 21/24
 SELECT count() FROM test_injective WHERE x NOT IN (1);
 20
 SELECT count() FROM test_injective WHERE x NOT IN (1) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 20
 -- Positive membership keeps pruning as before.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_injective WHERE has([1], x)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-│            Condition: and((toString(x) in 1-element set), (x in 1-element set))
-│            Granules: 5/24
+Condition: and((toString(x) in 1-element set), (x in 1-element set))
+Granules: 5/24
 SELECT count() FROM test_injective WHERE has([1], x);
 4
 SELECT count() FROM test_injective WHERE has([1], x) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;

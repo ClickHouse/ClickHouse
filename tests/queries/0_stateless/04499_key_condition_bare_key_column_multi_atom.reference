@@ -11,8 +11,8 @@ ORDER BY (flag, toDate(ts), ts)
 SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_bare_direct SELECT number % 2, toDateTime('2026-01-01 00:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(96);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_direct WHERE flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-│            Condition: (flag not in [0, 0])
-│            Granules: 25/48
+Condition: (flag not in [0, 0])
+Granules: 25/48
 SELECT count() FROM test_bare_direct WHERE flag SETTINGS force_primary_key = 1;
 48
 SELECT count() FROM test_bare_direct WHERE flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
@@ -27,8 +27,8 @@ SELECT count() FROM test_bare_direct WHERE flag AND ts >= toDateTime('2026-01-03
 24
 -- The negation inverts the atoms.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_direct WHERE NOT flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-│            Condition: not((flag not in [0, 0]))
-│            Granules: 24/48
+Condition: not((flag not in [0, 0]))
+Granules: 24/48
 SELECT count() FROM test_bare_direct WHERE NOT flag SETTINGS force_primary_key = 1;
 48
 SELECT count() FROM test_bare_direct WHERE NOT flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
@@ -108,8 +108,8 @@ ORDER BY (flag, x)
 SETTINGS index_granularity = 2, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_bare_lc SELECT number % 2, number FROM numbers(96);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_bare_lc WHERE flag) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-│            Condition: (flag not in [0, 0])
-│            Granules: 25/48
+Condition: (flag not in [0, 0])
+Granules: 25/48
 SELECT count() FROM test_bare_lc WHERE flag SETTINGS force_primary_key = 1;
 48
 SELECT count() FROM test_bare_lc WHERE flag SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;

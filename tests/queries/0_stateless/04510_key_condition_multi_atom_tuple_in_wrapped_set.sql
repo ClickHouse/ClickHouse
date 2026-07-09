@@ -1,5 +1,4 @@
--- Tags: no-random-settings, no-random-merge-tree-settings
--- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
+SET explain_query_plan_default = 'legacy';
 
 -- { echo }
 

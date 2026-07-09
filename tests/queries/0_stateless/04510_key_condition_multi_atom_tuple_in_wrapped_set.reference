@@ -26,8 +26,8 @@ SELECT count() FROM test_tuple_in WHERE (s, x) IN (('b', 5), ('d', 14)) SETTINGS
 2
 -- NOT IN must not build the relaxed wrapped atoms and must not prune wrongly.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_tuple_in WHERE (s, x) NOT IN (('b', 5))) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
-│            Condition: ((s, x) notIn 1-element set)
-│            Granules: 24/24
+Condition: ((s, x) notIn 1-element set)
+Granules: 24/24
 SELECT count() FROM test_tuple_in WHERE (s, x) NOT IN (('b', 5));
 23
 SELECT count() FROM test_tuple_in WHERE (s, x) NOT IN (('b', 5)) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;

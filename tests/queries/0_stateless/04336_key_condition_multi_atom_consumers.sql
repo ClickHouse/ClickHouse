@@ -1,6 +1,7 @@
--- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-fasttest
 -- no-fasttest: Parquet is not available in fasttest.
--- no-random-settings, no-random-merge-tree-settings: EXPLAIN output may differ with random settings.
+
+SET explain_query_plan_default = 'legacy';
 
 -- { echo }
 

@@ -10,9 +10,6 @@ ORDER BY id
 SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_skip_mm SELECT number, toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(24);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_skip_mm WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Skip%' OR explain LIKE '%Name%';
-│  Keys:
-│  Skip merging: 0
-Parts: 1 | Granules: 1
 PrimaryKey
 Condition: true
 Parts: 1/1
@@ -27,9 +24,6 @@ SELECT count() FROM test_skip_mm WHERE ts = toDateTime('2026-03-02 06:00:00', 'U
 SELECT count() FROM test_skip_mm WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_skip_mm WHERE ts > toDateTime('2026-03-04 00:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Skip%' OR explain LIKE '%Name%';
-│  Keys:
-│  Skip merging: 0
-Parts: 1 | Granules: 3
 PrimaryKey
 Condition: true
 Parts: 1/1
@@ -68,9 +62,6 @@ ORDER BY id
 SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_skip_set SELECT number, char(97 + number % 8) FROM numbers(32);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_skip_set WHERE s = 'c') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%' OR explain LIKE '%Skip%' OR explain LIKE '%Name%';
-│  Keys:
-│  Skip merging: 0
-Parts: 1 | Granules: 4
 PrimaryKey
 Condition: true
 Parts: 1/1

@@ -17,8 +17,6 @@ ORDER BY (toDate(ts), cityHash64(ts))
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_det_multi SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(12);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_multi WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 2
 PrimaryKey
 Keys:
 Condition: and((cityHash64(ts) in [5771977039523260380, 5771977039523260380]), (toDate(ts) in [20514, 20514]))
@@ -28,8 +26,6 @@ Search Algorithm: binary search
 SELECT count() FROM test_det_multi WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC') SETTINGS force_primary_key = 1;
 1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_multi WHERE ts != toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 12
 PrimaryKey
 Keys:
 Condition: and((cityHash64(ts) not in [5771977039523260380, 5771977039523260380]), (toDate(ts) not in [20514, 20514]))
@@ -46,8 +42,6 @@ ORDER BY concat(s, '_x')
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_det_injective VALUES ('a'), ('b'), ('c');
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_injective WHERE s = 'a') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 1
 PrimaryKey
 Keys:
 Condition: (concat(s, \'_x\') in [\'a_x\', \'a_x\'])
@@ -57,8 +51,6 @@ Search Algorithm: binary search
 SELECT count() FROM test_det_injective WHERE s = 'a' SETTINGS force_primary_key = 1;
 1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_injective WHERE s != 'a') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 3
 PrimaryKey
 Keys:
 Condition: (concat(s, \'_x\') not in [\'a_x\', \'a_x\'])
@@ -75,8 +67,6 @@ ORDER BY toUUID(s)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_det_throwing VALUES ('00000000-0000-0000-0000-000000000001'), ('00000000-0000-0000-0000-000000000002');
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_throwing WHERE s = '00000000-0000-0000-0000-000000000001') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 1
 PrimaryKey
 Keys:
 Condition: (toUUID(s) in [\'00000000-0000-0000-0000-000000000001\', \'00000000-0000-0000-0000-000000000001\'])
@@ -86,8 +76,6 @@ Search Algorithm: binary search
 SELECT count() FROM test_det_throwing WHERE s = '00000000-0000-0000-0000-000000000001' SETTINGS force_primary_key = 1;
 1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_throwing WHERE s = 'not-a-uuid') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 2
 PrimaryKey
 Condition: true
 Parts: 1/1
@@ -103,8 +91,6 @@ ORDER BY (sqrt(c0), c0)
 SETTINGS allow_suspicious_indices = 1, index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_det_nan SELECT number - 50 FROM numbers(100);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_nan WHERE c0 = -30) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 52
 PrimaryKey
 Keys:
 Condition: (c0 in [-30, -30])
@@ -116,8 +102,6 @@ SELECT count() FROM test_det_nan WHERE c0 = -30 SETTINGS force_primary_key = 1;
 SELECT count() FROM test_det_nan WHERE c0 = -30 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_nan WHERE c0 = 25) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 2
 PrimaryKey
 Keys:
 Condition: and((sqrt(c0) in [5., 5.]), (c0 in [25, 25]))
@@ -134,8 +118,6 @@ ORDER BY intDiv(x, 10)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_det_intdiv SELECT number FROM numbers(100);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_intdiv WHERE x = 55) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 11
 PrimaryKey
 Keys:
 Condition: (intDiv(x, 10) in [5, 5])
@@ -147,8 +129,6 @@ SELECT count() FROM test_det_intdiv WHERE x = 55 SETTINGS force_primary_key = 1;
 SELECT count() FROM test_det_intdiv WHERE x = 55 SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 1
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_intdiv WHERE x != 55) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 100
 PrimaryKey
 Keys:
 Condition: (intDiv(x, 10) not in [5, 5])
@@ -165,8 +145,6 @@ ORDER BY (toDate(ts) AS d, ts)
 SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO test_det_alias SELECT toDateTime('2026-03-01 00:00:00', 'UTC') + INTERVAL intDiv(number, 4) DAY + INTERVAL (number % 4) * 6 HOUR FROM numbers(12);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_alias WHERE ts = toDateTime('2026-03-02 06:00:00', 'UTC')) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 2
 PrimaryKey
 Keys:
 Condition: and((toDate(ts) in [20514, 20514]), (ts in [1772431200, 1772431200]))
@@ -184,8 +162,6 @@ ORDER BY k
 SETTINGS index_granularity = 1;
 INSERT INTO test_det_modulo_legacy SELECT number FROM numbers(32);
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_det_modulo_legacy WHERE k % 16 = 3 SETTINGS optimize_trivial_count_query = 0) WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
-│  Keys:
-Parts: 1 | Granules: 2
 Min-Max
 Condition: true
 Parts: 16/16
