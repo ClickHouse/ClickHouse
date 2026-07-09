@@ -15,11 +15,6 @@ class IDisk;
 using DiskPtr = std::shared_ptr<IDisk>;
 }
 
-/// White-box unit tests that inspect StorageState internals (befriended inside StorageState).
-class KeeperStorage_BackgroundFlushAndMerge_Test;
-class KeeperStorage_SnapshotWriter_Test;
-class KeeperStorage_WriteThrottling_Test;
-
 namespace Coordination::Storage
 {
 
@@ -29,16 +24,6 @@ struct BackgroundWork;
 /// flushes and merges.
 struct StorageState
 {
-private:
-    /// Internal collaborators that operate directly on this storage's committed state.
-    friend struct BackgroundWork;
-    friend struct SortedRunWriter;
-    friend struct SnapshotWriterNodeStream;
-    /// White-box unit tests.
-    friend class ::KeeperStorage_BackgroundFlushAndMerge_Test;
-    friend class ::KeeperStorage_SnapshotWriter_Test;
-    friend class ::KeeperStorage_WriteThrottling_Test;
-
     struct UncommittedMemtable
     {
         MemtablePtr memtable;
@@ -103,7 +88,6 @@ private:
     /// How long to sleep before each write, in microseconds.
     std::atomic<int64_t> write_throttling_us{};
 
-public:
     explicit StorageState(DB::KeeperContextPtr keeper_context_, DB::SharedMutex * storage_mutex_);
     ~StorageState(); // calls shutdown()
 
@@ -166,7 +150,8 @@ public:
     ///       memtable can only list children of one node at a time, and also uncommitted state may
     ///       remove children (which may've been listed as part of SortedFile scan).
 
-private:
+    /// ========== Private methods ==========
+
     /// Call when memtables or sorted runs were added or removed, with storage_mutex held.
     void recalculateWriteThrottling();
 

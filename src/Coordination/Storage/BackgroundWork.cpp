@@ -238,25 +238,30 @@ void BackgroundWork::flushThread()
         /// will publish our run).
         {
             std::lock_guard lock(mutex);
-            std::lock_guard storage_lock(*storage->storage_mutex);
 
-            flushed_files[memtable->file_seqno] = new_run;
-
-            while (!flushed_files.empty())
             {
-                const uint32_t seqno = flushed_files.begin()->first;
-                chassert(!storage->immutable_memtables.empty());
-                chassert(seqno >= storage->immutable_memtables[0]->file_seqno);
-                if (seqno != storage->immutable_memtables[0]->file_seqno)
-                    break; // previous memtable not flushed yet
-                storage->sorted_runs.push_back(flushed_files.begin()->second);
-                storage->immutable_memtables.erase(storage->immutable_memtables.begin());
-                flushed_files.erase(flushed_files.begin());
-                flushes_in_progress.erase(seqno);
-                storage->recalculateWriteThrottling();
+                std::lock_guard storage_lock(*storage->storage_mutex);
 
-                maybeStartMerge();
+                flushed_files[memtable->file_seqno] = new_run;
+
+                while (!flushed_files.empty())
+                {
+                    const uint32_t seqno = flushed_files.begin()->first;
+                    chassert(!storage->immutable_memtables.empty());
+                    chassert(seqno >= storage->immutable_memtables[0]->file_seqno);
+                    if (seqno != storage->immutable_memtables[0]->file_seqno)
+                        break; // previous memtable not flushed yet
+                    storage->sorted_runs.push_back(flushed_files.begin()->second);
+                    storage->immutable_memtables.erase(storage->immutable_memtables.begin());
+                    flushed_files.erase(flushed_files.begin());
+                    flushes_in_progress.erase(seqno);
+                    storage->recalculateWriteThrottling();
+
+                    maybeStartMerge();
+                }
             }
+
+            /// TODO: Write manifest file, if we want files to be usable after restart.
         }
     }
 }
@@ -413,27 +418,31 @@ void BackgroundWork::mergeThread()
                 /// Publish the updated input and output files.
                 {
                     std::lock_guard lock(mutex);
-                    std::lock_guard storage_lock(*storage->storage_mutex);
-                    auto & runs = storage->sorted_runs;
-
-                    /// Find the range of runs relevant to this merge.
-                    size_t start_idx = 0;
-                    while (start_idx < runs.size() && runs[start_idx]->min_file_seqno < output_run->min_file_seqno)
-                        ++start_idx;
-                    chassert(start_idx < runs.size());
-                    size_t end_idx = start_idx;
-                    while (end_idx < runs.size() && runs[end_idx]->max_file_seqno <= output_run->max_file_seqno)
                     {
-                        chassert(merges_in_progress.contains(runs[end_idx]->min_file_seqno));
-                        ++end_idx;
+                        std::lock_guard storage_lock(*storage->storage_mutex);
+                        auto & runs = storage->sorted_runs;
+
+                        /// Find the range of runs relevant to this merge.
+                        size_t start_idx = 0;
+                        while (start_idx < runs.size() && runs[start_idx]->min_file_seqno < output_run->min_file_seqno)
+                            ++start_idx;
+                        chassert(start_idx < runs.size());
+                        size_t end_idx = start_idx;
+                        while (end_idx < runs.size() && runs[end_idx]->max_file_seqno <= output_run->max_file_seqno)
+                        {
+                            chassert(merges_in_progress.contains(runs[end_idx]->min_file_seqno));
+                            ++end_idx;
+                        }
+                        chassert(end_idx > start_idx);
+
+                        /// Replace the whole range with to_publish.
+                        runs.erase(runs.begin() + start_idx, runs.begin() + end_idx);
+                        runs.insert(runs.begin() + start_idx, to_publish.begin(), to_publish.end());
+
+                        storage->recalculateWriteThrottling();
                     }
-                    chassert(end_idx > start_idx);
 
-                    /// Replace the whole range with to_publish.
-                    runs.erase(runs.begin() + start_idx, runs.begin() + end_idx);
-                    runs.insert(runs.begin() + start_idx, to_publish.begin(), to_publish.end());
-
-                    storage->recalculateWriteThrottling();
+                    /// TODO: Write manifest file, if we want files to be usable after restart.
                 }
 
                 /// Evict newly obsolete files from block cache and mark them for deletion from disk.

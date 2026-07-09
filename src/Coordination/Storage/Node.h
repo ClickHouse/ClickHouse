@@ -127,7 +127,7 @@ struct BlockData
     /// Deserializes the block header and assigns fields. Call after writing the block data
     /// (that presumably comes from file) to `data()` and assigning `size` and
     /// `serialization_version` (which is not stored per block, only in file header).
-    void readHeader();
+    void parseHeader();
 
     /// Make a copy with capacity = size.
     BlockPtr copyAndShrinkToFit() const;

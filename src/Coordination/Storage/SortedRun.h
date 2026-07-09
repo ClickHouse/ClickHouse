@@ -6,7 +6,7 @@
 
 namespace DB
 {
-class WriteBufferFromFileBase;
+class WriteBuffer;
 }
 
 namespace Coordination::Storage
@@ -74,24 +74,29 @@ private:
 
 struct StorageState;
 
+/// WriteBuffer wrapper that just passes data through to a given other WriteBuffer, without calling
+/// destructor or finalize() on it. (Because for some reason compressing WriteBuffer implementations
+/// insist on calling finalize() on the target buffer even if it's passed by plain pointer.)
+class AppendWriteBuffer : public DB::WriteBuffer
+{
+public:
+    WriteBuffer * out = nullptr;
+
+    explicit AppendWriteBuffer(WriteBuffer * out_);
+    void nextImpl() override;
+
+    void flush() { out->position() = position(); }
+
+    void finalizeImpl() override;
+    ~AppendWriteBuffer() override;
+};
+
 /// Writes to a series of files and to block cache. Used by flushes and merges.
 /// Output files have `delete_when_destroyed = true`; the caller should set it to false when
 /// publishing a finished file.
 struct SortedRunWriter
 {
-    StorageState * storage = nullptr;
-    size_t target_block_size = 0;
-    size_t target_file_uncompressed_size = 0;
-
     SortedRunPtr sorted_run;
-
-    SortedFilePtr file; // not added to sorted_run yet
-    std::unique_ptr<DB::WriteBufferFromFileBase> file_writer; // writes to `file`; null in memory-only mode
-
-    BlockPtr block; // not added to `file` yet
-    NodePath block_min_path;
-    NodePath block_max_path;
-    std::string block_max_path_buf;
 
     SortedRunWriter(SortedRunPtr sorted_run_, StorageState * storage_);
     ~SortedRunWriter();
@@ -113,7 +118,32 @@ struct SortedRunWriter
     SortedRunPtr finish();
 
 private:
+    StorageState * storage = nullptr;
+    size_t target_block_size = 0;
+    size_t target_block_group_compressed_size = 0;
+    size_t target_file_uncompressed_size = 0;
+
+    /// Current file, not added to sorted_run yet.
+    SortedFilePtr file;
+
+    /// Current block, not added to `file` yet.
+    BlockPtr block;
+    NodePath block_min_path;
+    NodePath block_max_path;
+    std::string block_max_path_buf;
+
+    /// Current group of blocks. New `compressed_writer` is created for each group.
+    /// Its blocks were added to `file` and were written to `compressed_writer`, but
+    /// `group_compressed_size` is not known yet.
+    std::optional<AppendWriteBuffer> file_appender; // awful adapter to make ZstdDeflatingWriteBuffer work
+    std::unique_ptr<DB::WriteBuffer> compressed_writer;
+    size_t group_start_block_idx = 0;
+    size_t group_offset_in_file = 0;
+
+    std::unique_ptr<DB::WriteBuffer> file_writer; // writes to `file`; null in memory-only mode
+
     void finishBlock();
+    void finishGroup();
     void finishFile();
 };
 

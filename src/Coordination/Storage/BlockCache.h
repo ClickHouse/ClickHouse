@@ -27,16 +27,18 @@ struct BlockCacheWeightFunction
     size_t operator()(const BlockPtr & block) const;
 };
 
-/// TODO: Make it auto-resize to use most available memory, like PageCache (hopefully reusing the
-///       autoresize code).
+/// TODO: Make it auto-resize to use most available memory, like PageCache (hopefully reusing code).
 class BlockCache
 {
 public:
     explicit BlockCache(size_t max_size_in_bytes);
 
-    /// Gets the block from cache; if it's not there, calls load_func, caches the result and
-    /// returns it. Concurrent calls with the same key call load_func only once.
-    BlockPtr getOrSet(BlockCacheKey key, std::function<BlockPtr()> load_func);
+    BlockPtr get(BlockCacheKey key);
+
+    /// If the block is not in cache, calls the function to load a group of blocks, then adds these
+    /// blocks to cache. Does everything under a per-block-group lock to avoid loading the same
+    /// group multiple times concurrently. Caller should first call `get` for fast path on cache hit.
+    BlockPtr getBlockOrLoadGroup(BlockCacheKey key, uint32_t group_start_block_idx, std::function<std::vector<BlockPtr>()> load_func);
 
     /// Add a block into the middle of LRU list, or something like that.
     /// If lots of unneeded blocks are added like this, it won't flush out the whole cache.
@@ -52,6 +54,8 @@ private:
     /// (BlockData ends up double-refcounted as shared_ptr<BlockPtr> because CacheBase always uses
     ///  shared_ptr. That's fine, this CacheBase is not touched very often.)
     DB::CacheBase<uint64_t, BlockPtr, DefaultHash<uint64_t>, BlockCacheWeightFunction> cache;
+
+    std::vector<std::mutex> striped_mutex{512};
 };
 
 }

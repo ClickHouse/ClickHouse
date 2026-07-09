@@ -12,6 +12,8 @@
 namespace Coordination::Storage
 {
 
+struct StorageState;
+
 struct FileDeleteQueue;
 using FileDeleteQueuePtr = std::shared_ptr<FileDeleteQueue>;
 
@@ -29,6 +31,13 @@ struct SortedFile
         ///  boundary where consecutive nodes have the shortest common prefix, within some range of
         ///  allowed block sizes).)
         NodePath max_path;
+
+        uint32_t block_size = 0;
+
+        /// Information about a group of consecutive blocks that are compressed and read together.
+        size_t group_offset_in_file = 0;
+        size_t group_compressed_size = 0;
+        size_t offset_in_group = 0;
 
         /// If in block cache or in pinned_blocks.
         mutable BlockWeakPtrWithSpinlock data;
@@ -69,14 +78,6 @@ struct SortedFile
     /// and are instead owned by this array to always stay in memory.
     std::vector<BlockPtr> pinned_blocks;
 
-    /// TODO: In file, blocks would be grouped, each group compressed (zstd?) and read together.
-    ///       Because we probably want smaller blocks for BlockData's delta compression than for
-    ///       file IO, at least on S3.
-    ///       Another std::vector here would list block groups and their offsets in file.
-    ///       When reading a group of blocks, put them all in BlockCache; if already in cache, leave
-    ///       it and point `data` to the old copy, to avoid invalidating BlockWeakRef-s in
-    ///       NodeRefCache unnecessarily.
-
     /// TODO: Bloom filter of nodes with at least one child.
     /// TODO: Consider storing children index.
 
@@ -90,6 +91,9 @@ struct SortedFile
     BlockPtr getBlockCoveringPath(NodePath path, BlockCache * block_cache) const;
     void listChildrenNames(NodePath range_start, NodePath range_end, ChildrenSet2 & out, DB::Arena & arena, BlockCache * block_cache) const;
 
+    /// Assigns `read_buffer`. Must be called before first call to any of the read methods above.
+    void prepareReadBuffer(StorageState * storage);
+
     /// Hint to the block cache that this file's blocks are no longer needed, e.g. the file was
     /// removed from the visible set and is pending deletion from disk.
     /// (This is not fully reliable as some reader thread may still hold a SortedFilePtr to this
@@ -100,7 +104,7 @@ struct SortedFile
 private:
     static uint32_t generateFileId();
 
-    BlockPtr loadBlock(uint32_t block_idx) const;
+    std::vector<BlockPtr> loadBlockGroup(uint32_t start_block_idx) const;
 };
 using SortedFilePtr = std::shared_ptr<SortedFile>;
 

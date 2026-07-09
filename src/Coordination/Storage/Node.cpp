@@ -143,7 +143,7 @@ BlockPtr BlockData::copyAndShrinkToFit() const
     return new_block;
 }
 
-void BlockData::readHeader()
+void BlockData::parseHeader()
 {
     /// serialization_version is stored in the file header, not per block, and assigned by the caller.
     if (serialization_version == 0)
