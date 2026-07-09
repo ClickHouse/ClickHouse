@@ -1,5 +1,9 @@
 [
   {
+    "source": "/en/:path*",
+    "destination": "/:path*"
+  },
+  {
     "source": "/about",
     "destination": "/resources/about"
   },
@@ -745,6 +749,10 @@
   },
   {
     "source": "/cloud/manage/api/services-api-reference",
+    "destination": "/api-reference/organization/get-list-of-available-organizations"
+  },
+  {
+    "source": "/cloud/manage/api/swagger",
     "destination": "/api-reference/organization/get-list-of-available-organizations"
   },
   {
@@ -1710,10 +1718,6 @@
   {
     "source": "/dictionary/best-practices",
     "destination": "/concepts/features/dictionaries/best-practices"
-  },
-  {
-    "source": "/docs/en/cloud/manage/service-types",
-    "destination": "/products/cloud/features/cloud-tiers"
   },
   {
     "source": "/engines",

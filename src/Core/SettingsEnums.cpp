@@ -298,6 +298,10 @@ IMPLEMENT_SETTING_ENUM(ObjectStorageQueueBucketingMode, ErrorCodes::BAD_ARGUMENT
      {"partition", ObjectStorageQueueBucketingMode::PARTITION},
      {"PARTITION", ObjectStorageQueueBucketingMode::PARTITION}})
 
+IMPLEMENT_SETTING_ENUM(QueryRunnerMode, ErrorCodes::BAD_ARGUMENTS,
+    {{"synchronous", QueryRunnerMode::SYNCHRONOUS},
+     {"asynchronous", QueryRunnerMode::ASYNCHRONOUS}})
+
 IMPLEMENT_SETTING_ENUM(ExternalCommandStderrReaction, ErrorCodes::BAD_ARGUMENTS,
     {{"none", ExternalCommandStderrReaction::NONE},
      {"log", ExternalCommandStderrReaction::LOG},
@@ -501,11 +505,6 @@ IMPLEMENT_SETTING_ENUM(DeduplicateInsertMode, ErrorCodes::BAD_ARGUMENTS,
     {{"backward_compatible_choice", DeduplicateInsertMode::BACKWARD_COMPATIBLE_CHOICE},
      {"enable", DeduplicateInsertMode::ENABLE},
      {"disable", DeduplicateInsertMode::DISABLE}})
-
-IMPLEMENT_SETTING_ENUM(InsertDeduplicationVersions, ErrorCodes::BAD_ARGUMENTS,
-    {{"old_separate_hashes", InsertDeduplicationVersions::OLD_SEPARATE_HASHES},
-     {"compatible_double_hashes", InsertDeduplicationVersions::COMPATIBLE_DOUBLE_HASHES},
-     {"new_unified_hash", InsertDeduplicationVersions::NEW_UNIFIED_HASHES}})
 
 IMPLEMENT_SETTING_ENUM(JemallocProfileFormat, ErrorCodes::BAD_ARGUMENTS,
     {{"raw", JemallocProfileFormat::Raw},

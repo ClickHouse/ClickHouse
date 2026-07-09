@@ -39,6 +39,8 @@
 #include <deque>
 #include <iterator>
 #include <thread>
+#include <tuple>
+#include <utility>
 
 using namespace DB;
 
@@ -332,7 +334,8 @@ ConcurrentHashJoin::ConcurrentHashJoin(
                         /*use_two_level_maps*/ true);
                     inner_hash_join->data->setMaxJoinedBlockRows(table_join->maxJoinedBlockRows());
                     inner_hash_join->data->setMaxJoinedBlockBytes(table_join->maxJoinedBlockBytes());
-                    inner_hash_join->total_bytes.store(inner_hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
+                    inner_hash_join->local_total_bytes = inner_hash_join->data->getTotalByteCount();
+                    global_total_bytes.fetch_add(inner_hash_join->local_total_bytes, std::memory_order_relaxed);
                     hash_joins[i] = std::move(inner_hash_join);
                 });
         }
@@ -596,13 +599,15 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 hash_join->data->captureMemoryUsageBaseline();
             hash_join->buffered_rows += dispatched_block.rows();
             hash_join->buffered_bytes += dispatched_block.allocatedBytes();
-            /// Keep the slot's lock-free `total_rows`/`total_bytes` snapshots covering the parked
-            /// blocks (on top of the empty-map baseline stored by the constructor), so the early
-            /// `max_bytes_in_join` guard below and the spill checks of the wrapping
-            /// `SpillingHashJoin` see the deferred build's footprint. The replay re-stores the
-            /// snapshots from the real maps.
-            hash_join->total_rows.fetch_add(dispatched_block.rows(), std::memory_order_relaxed);
-            hash_join->total_bytes.fetch_add(dispatched_block.allocatedBytes(), std::memory_order_relaxed);
+            /// Keep the slot's `local_total_rows`/`local_total_bytes` snapshots (and their global
+            /// mirrors) covering the parked blocks (on top of the empty-map baseline stored by the
+            /// constructor), so the early `max_bytes_in_join` guard below and the spill checks of the
+            /// wrapping `SpillingHashJoin` see the deferred build's footprint. The replay re-points
+            /// the snapshots at the real maps.
+            hash_join->local_total_rows += dispatched_block.rows();
+            hash_join->local_total_bytes += dispatched_block.allocatedBytes();
+            global_total_rows.fetch_add(dispatched_block.rows(), std::memory_order_relaxed);
+            global_total_bytes.fetch_add(dispatched_block.allocatedBytes(), std::memory_order_relaxed);
             hash_join->buffered_blocks.emplace_back(std::move(dispatched_block));
         }
         /// Deferred key-byte publication for the skip path (see the comment above the dispatch): the
@@ -651,6 +656,9 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
         }
     }
 
+    size_t post_join_total_rows = 0;
+    size_t post_join_total_bytes = 0;
+
     while (blocks_left > 0)
     {
         bool made_progress = false;
@@ -679,9 +687,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
                 auto [block, selector] = std::move(dispatched_block).detachData();
                 bool limit_exceeded = !hash_join->data->addBlockToJoin(block, std::move(selector), check_limits);
 
-                /// Update the snapshot of total rows and bytes for the current join instance
-                hash_join->total_rows.store(hash_join->data->getTotalRowCount(), std::memory_order_relaxed);
-                hash_join->total_bytes.store(hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
+                std::tie(post_join_total_rows, post_join_total_bytes) = updateTotalRowsAndBytesUnlocked(hash_join);
 
                 dispatched_block = {};
                 blocks_left--;
@@ -698,7 +704,7 @@ bool ConcurrentHashJoin::addBlockToJoin(const Block & right_block_, bool check_l
     }
 
     if (check_limits && table_join->sizeLimits().hasLimits())
-        return table_join->sizeLimits().check(getTotalRowCount(), getTotalByteCount(), "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
+        return table_join->sizeLimits().check(post_join_total_rows, post_join_total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
     return true;
 }
 
@@ -815,24 +821,18 @@ const Block & ConcurrentHashJoin::getTotals() const
 
 size_t ConcurrentHashJoin::getTotalRowCount() const
 {
-    size_t res = 0;
     /// A slot's rows live in exactly one place at a time: parked in the deferred-build buffer, or in
-    /// the hash map after the replay (or released to GraceHashJoin). The per-slot snapshot tracks
-    /// whichever place currently holds them (the buffering loop adds parked blocks, the replay
-    /// re-stores from the real maps), so the lock-free sum never double-counts.
-    for (const auto & hash_join : hash_joins)
-        res += hash_join->total_rows.load(std::memory_order_relaxed);
-    return res;
+    /// the hash map after the replay (or released to GraceHashJoin). The per-slot snapshots mirrored
+    /// into this global counter track whichever place currently holds them (the buffering loop adds
+    /// parked blocks, the replay re-points at the real maps), so the counter never double-counts.
+    return global_total_rows.load(std::memory_order_relaxed);
 }
 
 size_t ConcurrentHashJoin::getTotalByteCount() const
 {
-    size_t res = 0;
-    /// See `getTotalRowCount`: the snapshots include a deferred build still parked in memory, so the
+    /// See `getTotalRowCount`: the counter includes a deferred build still parked in memory, so the
     /// wrapping `SpillingHashJoin` sees the real footprint and can trigger a spill.
-    for (const auto & hash_join : hash_joins)
-        res += hash_join->total_bytes.load(std::memory_order_relaxed);
-    return res;
+    return global_total_bytes.load(std::memory_order_relaxed);
 }
 
 void ConcurrentHashJoin::feedDistinctKeyEstimator(const std::vector<UInt64> & block_key_hashes)
@@ -1321,6 +1321,40 @@ ScatteredBlocks ConcurrentHashJoin::dispatchBlock(
                                   : scatterBlocksByCopying(num_shards, selector, from_block);
 }
 
+std::pair<size_t, size_t> ConcurrentHashJoin::updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join)
+{
+    /// Update total rows for the current hash join instance and for the overall concurrent hash join
+    const size_t rows_delta = hash_join->data->getTotalRowCount() - hash_join->local_total_rows;
+    const size_t updated_global_rows = global_total_rows.fetch_add(rows_delta, std::memory_order_relaxed) + rows_delta;
+    hash_join->local_total_rows += rows_delta;
+
+    /// Update total bytes for the current hash join instance and for the overall concurrent hash join, taking
+    /// into account that bytes could shrink
+    const size_t updated_local_bytes = hash_join->data->getTotalByteCount();
+    size_t updated_global_bytes = 0;
+    if (updated_local_bytes >= hash_join->local_total_bytes)
+    {
+        const size_t bytes_delta = updated_local_bytes - hash_join->local_total_bytes;
+        updated_global_bytes = global_total_bytes.fetch_add(bytes_delta, std::memory_order_relaxed) + bytes_delta;
+    }
+    else
+    {
+        const size_t bytes_delta = hash_join->local_total_bytes - updated_local_bytes;
+        updated_global_bytes = global_total_bytes.fetch_sub(bytes_delta, std::memory_order_relaxed) - bytes_delta;
+    }
+    hash_join->local_total_bytes = updated_local_bytes;
+    return {updated_global_rows, updated_global_bytes};
+}
+
+void ConcurrentHashJoin::resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join)
+{
+    /// Reset global and local total rows and bytes
+    global_total_rows.fetch_sub(hash_join->local_total_rows, std::memory_order_relaxed);
+    global_total_bytes.fetch_sub(hash_join->local_total_bytes, std::memory_order_relaxed);
+    hash_join->local_total_rows = 0;
+    hash_join->local_total_bytes = 0;
+}
+
 BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
 {
     chassert(slot_idx < hash_joins.size());
@@ -1339,17 +1373,15 @@ BlocksList ConcurrentHashJoin::releaseSlotBlocks(size_t slot_idx)
             blocks.emplace_back(std::move(scattered_block).getSourceBlock());
         }
         hash_join->clearBuffers();
-        /// The released blocks are accounted by their new owner from here on; zero the lock-free
-        /// snapshots like the released-map path below does.
-        hash_join->total_rows.store(0, std::memory_order_relaxed);
-        hash_join->total_bytes.store(0, std::memory_order_relaxed);
+        /// The released blocks are accounted by their new owner from here on; zero the local
+        /// snapshots (and back them out of the global counters) like the released-map path below does.
+        resetTotalRowsAndBytesUnlocked(hash_join);
         return blocks;
     }
 
     if (!hash_join->data || !hash_join->data->getJoinedData())
         return {};
-    hash_join->total_rows.store(0, std::memory_order_relaxed);
-    hash_join->total_bytes.store(0, std::memory_order_relaxed);
+    resetTotalRowsAndBytesUnlocked(hash_join);
     return hash_join->data->releaseJoinedBlocks(/*restructure=*/ false);
 }
 
@@ -1431,11 +1463,14 @@ void ConcurrentHashJoin::onBuildPhaseFinish()
                         hash_join->data->shrinkStoredBlocksToFit(total_bytes);
 
                         /// The rows now live in the real maps, and `clearBuffers` above zeroed the
-                        /// buffered counters, so re-point the lock-free snapshots at the maps (after
-                        /// the shrink, which can reduce the byte count). The exact
-                        /// `deferred_limits_check_requested` check below reads these.
-                        hash_join->total_rows.store(hash_join->data->getTotalRowCount(), std::memory_order_relaxed);
-                        hash_join->total_bytes.store(hash_join->data->getTotalByteCount(), std::memory_order_relaxed);
+                        /// buffered counters, so re-point the local snapshots (and the global
+                        /// counters, by delta) at the maps (after the shrink, which can reduce the
+                        /// byte count): back out the buffered contribution and re-read the real maps.
+                        /// No lock is needed - the build phase is over, so nothing else touches the
+                        /// slot; the global counters are atomic across the parallel replay tasks. The
+                        /// exact `deferred_limits_check_requested` check below reads these.
+                        resetTotalRowsAndBytesUnlocked(hash_join);
+                        updateTotalRowsAndBytesUnlocked(hash_join);
                     });
             }
             pool->wait();

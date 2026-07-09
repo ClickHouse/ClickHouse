@@ -135,20 +135,20 @@ public:
         /// slot's hash map is reserved to the estimated distinct-key count (see `NdvShard`) and the
         /// blocks are replayed, so the map is filled with few or no rehashes. Only used when
         /// `deferred_build` is set (no statistics hint).
-        /// `buffered_rows`/`buffered_bytes` keep the `total_rows`/`total_bytes` snapshots accurate while
-        /// the data is parked here (the buffering loop adds each buffered block to the snapshots), and
-        /// `getProjectedTotalByteCount` projects the size of the maps the replay would build on top of
-        /// them, so the wrapping `SpillingHashJoin` can still decide to spill. On a spill the buffered
-        /// blocks are handed to `GraceHashJoin` directly (see `releaseSlotBlocks`), without ever
-        /// building the in-memory map.
+        /// `buffered_rows`/`buffered_bytes` keep the `local_total_rows`/`local_total_bytes` snapshots
+        /// (and their global mirrors) accurate while the data is parked here (the buffering loop adds
+        /// each buffered block to the snapshots), and `getProjectedTotalByteCount` projects the size of
+        /// the maps the replay would build on top of them, so the wrapping `SpillingHashJoin` can still
+        /// decide to spill. On a spill the buffered blocks are handed to `GraceHashJoin` directly (see
+        /// `releaseSlotBlocks`), without ever building the in-memory map.
         VectorWithMemoryTracking<ScatteredBlock> buffered_blocks;
         size_t buffered_rows = 0;
         size_t buffered_bytes = 0;
 
         /// Empty the parked deferred build as one unit, once its blocks have left the buffer - either
         /// replayed into the map (`onBuildPhaseFinish`) or handed to `GraceHashJoin` (`releaseSlotBlocks`).
-        /// The caller owns re-pointing the `total_rows`/`total_bytes` snapshots at the real maps
-        /// (replay) or zero (handover).
+        /// The caller owns re-pointing the `local_total_rows`/`local_total_bytes` snapshots (and their
+        /// global mirrors) at the real maps (replay) or zero (handover).
         void clearBuffers()
         {
             buffered_blocks.clear();
@@ -157,12 +157,13 @@ public:
             buffered_bytes = 0;
         }
 
-        /// Snapshot of the total rows and bytes held by the hash join. This is updated during
-        /// `addBlockToJoin` and is used to track the whole join state without locking. During a
+        /// Snapshot of the total rows and bytes held locally by the hash join. This is updated during
+        /// `addBlockToJoin` (under `mutex`) and is used to track the join state; the global mirrors
+        /// (`global_total_rows`/`global_total_bytes`) are updated in lockstep by delta. During a
         /// deferred build it includes the buffered blocks (`buffered_rows`/`buffered_bytes`); the
-        /// replay in `onBuildPhaseFinish` re-stores it from the real maps.
-        std::atomic<size_t> total_rows{0};
-        std::atomic<size_t> total_bytes{0};
+        /// replay in `onBuildPhaseFinish` re-points it at the real maps.
+        size_t local_total_rows = 0;
+        size_t local_total_bytes = 0;
     };
 
     friend class NotJoinedHash;
@@ -204,6 +205,13 @@ private:
 
     std::mutex totals_mutex;
     Block totals;
+
+    /// Snapshot of the total rows and bytes held globally by the concurrent hash join (the sum of the
+    /// per-slot `local_total_rows`/`local_total_bytes`, maintained by delta under the per-slot locks).
+    /// This is updated during `addBlockToJoin` and is used to track the join state. During a deferred
+    /// build it includes the buffered blocks, so the wrapping `SpillingHashJoin` sees the real footprint.
+    std::atomic<size_t> global_total_rows{0};
+    std::atomic<size_t> global_total_bytes{0};
 
     /// Distinct-key estimation for the deferred build. Each `addBlockToJoin` caller feeds the scatter
     /// hashes of its whole source block into ONE shard, chosen round-robin, taking that shard's lock
@@ -254,6 +262,14 @@ private:
         std::vector<UInt64> * out_block_key_hashes = nullptr,
         std::vector<UInt8> * out_has_kept_row = nullptr,
         std::vector<UInt8> * out_insertable_row = nullptr);
+
+    /// Refresh a slot's `local_total_rows`/`local_total_bytes` from its real maps and mirror the delta
+    /// into the global counters; returns the updated global totals. Must be called with the slot's
+    /// `mutex` held (or when no concurrent access to the slot is possible).
+    std::pair<size_t, size_t> updateTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
+    /// Zero a slot's local totals and subtract them from the global counters (the slot's data is
+    /// accounted by its new owner from here on). Same locking contract as above.
+    void resetTotalRowsAndBytesUnlocked(std::shared_ptr<InternalHashJoin> & hash_join);
 };
 
 }

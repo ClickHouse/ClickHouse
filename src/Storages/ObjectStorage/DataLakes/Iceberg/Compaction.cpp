@@ -587,9 +587,7 @@ static void writeMetadataFiles(
     }
 
     {
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
-        std::string json_representation = removeEscapedSlashes(oss.str());
+        std::string json_representation = stringifyJSON(metadata_object, 4);
 
         auto buffer_metadata = object_storage->writeObject(
             StoredObject(path_resolver.resolve(generated_metadata_info.path)),
