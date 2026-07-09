@@ -7,18 +7,20 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# The abort this test targets happens in ActionsDAG::updateHeader -> evaluatePartialResult
+# (input_rows_count 0/1) during query planning, so it does not need any rows: a concurrent
+# EXCHANGE TABLES swapping the column type between analysis and header computation is enough.
+# Keep the tables empty - the flaky check reruns this test many times under sanitizers, and
+# large Memory-engine inserts multiplied by that repetition exhaust the job's memory/time.
+
+# Base-type drift: swap Float64 with Int256. A strict function (arithmetic) resolved for the
+# pre-EXCHANGE type would trip a LOGICAL_ERROR when handed the drifted type during partial
+# evaluation, aborting the server in debug/sanitizer builds.
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE IF EXISTS tbl_03007_1;
 DROP TABLE IF EXISTS tbl_03007_2;
 CREATE TABLE tbl_03007_1 (n Float64) ENGINE=Memory;
 CREATE TABLE tbl_03007_2 (n Int256) ENGINE=Memory;
--- Insert rows so the SELECT reads non-empty chunks: this exercises the runtime
--- ExpressionActions execution path (function->execute on real data), not only the
--- header/partial-result path. A running SELECT keeps the storage snapshot resolved at
--- analysis time, so EXCHANGE cannot feed the function a drifted type at runtime; once the
--- exchange settles, a fresh query re-resolves and reports a clean ILLEGAL_TYPE_OF_ARGUMENT.
-INSERT INTO tbl_03007_1 SELECT number * 0.5 FROM numbers(100000);
-INSERT INTO tbl_03007_2 SELECT number FROM numbers(100000);
 EOF
 
 for _ in {1..10}; do
@@ -44,8 +46,6 @@ DROP TABLE IF EXISTS tbl_03007_3;
 DROP TABLE IF EXISTS tbl_03007_4;
 CREATE TABLE tbl_03007_3 (s String) ENGINE=Memory;
 CREATE TABLE tbl_03007_4 (s Nullable(String)) ENGINE=Memory;
-INSERT INTO tbl_03007_3 SELECT toString(number) FROM numbers(100000);
-INSERT INTO tbl_03007_4 SELECT toString(number) FROM numbers(100000);
 EOF
 
 for _ in {1..10}; do
