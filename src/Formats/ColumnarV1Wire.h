@@ -1438,8 +1438,18 @@ inline MutableColumnPtr readColumnFromDesc(
         throw Exception(ErrorCodes::INCORRECT_DATA, "COLUMNAR_V1: unsupported output ColType {}", raw_type);
     }
 
-    if (is_const && num_rows > 0)
+    if (is_const)
+    {
+        // rows_to_dec is unconditionally 1 for a const column (the wire always stores exactly
+        // one value for COL_IS_CONST, regardless of the frame's actual row count), so `col`
+        // above was decoded as a 1-element column even when num_rows == 0. Returning it as-is
+        // here would hand back a 1-row column for what must be a 0-row result, violating the
+        // caller's row-count invariant (e.g. Chunk requires every column to have the same
+        // number of rows as the chunk itself).
+        if (num_rows == 0)
+            return col->cloneEmpty();
         return ColumnConst::create(std::move(col), num_rows);
+    }
     return col;
 }
 

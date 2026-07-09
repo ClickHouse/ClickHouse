@@ -1477,3 +1477,36 @@ TEST(ColumnBinary, FrameValidatorRejectsNullOffsetInsideHeader)
     ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
     EXPECT_THROW(input.read(), DB::Exception);
 }
+
+// ── Zero-row ColumnConst chunks must round-trip to a genuinely empty chunk ────
+//
+// buildColDescriptor always stores exactly 1 value for a const column (COL_IS_CONST),
+// regardless of the frame's row count, so the decoder's raw column is a 1-element
+// column even when num_rows == 0. Without special-casing num_rows == 0 in
+// readColumnFromDesc, that 1-element column would be returned as-is instead of an
+// empty one, giving the chunk a column whose size() doesn't match its own row count.
+
+TEST(ColumnBinary, ZeroRowConstColumnRoundTrip)
+{
+    DataTypes types = {std::make_shared<DataTypeInt32>()};
+    auto inner_col = ColumnInt32::create();
+    inner_col->insert(42);
+    auto inner_ptr = ColumnPtr(std::move(inner_col));
+    auto col = ColumnConst::create(inner_ptr, 0);
+    Block header;
+    header.insert(ColumnWithTypeAndName{std::move(col), types[0], "col0"});
+
+    WriteBufferFromOwnString obuf;
+    {
+        ColumnBinaryOutputFormat output(obuf, std::make_shared<const Block>(header));
+        output.write(header);
+    }
+    obuf.finalize();
+
+    ReadBufferFromString rb{obuf.str()};
+    ColumnBinaryInputFormat input(rb, header, RowInputFormatParams{}, FormatSettings{});
+    auto chunk = input.read();
+    ASSERT_EQ(chunk.getNumColumns(), 1u);
+    ASSERT_EQ(chunk.getNumRows(), 0u);
+    EXPECT_EQ(chunk.getColumns()[0]->size(), 0u);
+}
