@@ -459,8 +459,11 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     ComFieldList packet;
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
-    String database = session_context->getCurrentDatabase();
-    StoragePtr table_ptr = DatabaseCatalog::instance().getTable({database, packet.table}, session_context);
+    /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
+    /// (a default database "db.namespace" selects a namespace for unqualified table names).
+    auto storage_id = session_context->resolveStorageID({"", packet.table}, Context::ResolveOrdinary);
+    const String & database = storage_id.database_name;
+    StoragePtr table_ptr = DatabaseCatalog::instance().getTable(storage_id, session_context);
     auto metadata_snapshot = table_ptr->getInMemoryMetadataPtr(session_context, false);
     for (const NameAndTypePair & column : metadata_snapshot->getColumns().getAll())
     {
