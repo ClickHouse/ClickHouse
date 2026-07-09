@@ -635,7 +635,9 @@ The on-wire value encoding differs between the two framings, so a client must se
 
 **Below v54487.** The value is a `SettingFieldCustom` dump (`Field::dump()`), i.e. the quoted SQL representation. A `String`-typed parameter is sent single-quoted: the value for `{name:String}` is `'Alice'`.
 
-**At v54487+ (`RAW_QUERY_PARAMETERS`).** The value is the raw text-escaped form, consumed by `deserializeTextEscaped` on the server (`_request_body` uses `deserializeWholeText`). A `String`-typed parameter is sent unquoted: the value for `{name:String}` is `Alice`, not `'Alice'` (sending `'Alice'` substitutes the quotes into the string). This matches what a `SET param_name = 'Alice'` statement produces: the client parser strips the surrounding quotes before transport.
+**At v54487+ (`RAW_QUERY_PARAMETERS`).** The client sends the parameter value bytes verbatim. It does not re-escape them: `SET param_name = 'Alice'` reaches the wire as the raw bytes `Alice` (the client parser strips the surrounding SQL quotes), so a client must send `Alice`, not `'Alice'` (sending `'Alice'` substitutes the quotes into the `String`).
+
+The server then reads each value with `deserializeTextEscaped` (`_request_body` uses `deserializeWholeText`). Because the sender does not escape but the reader un-escapes, values containing escape-sensitive bytes are not represented portably on this path: a raw backslash begins an escape sequence (`a\b` is read as `a` + backspace), and a raw tab or newline terminates the value (`a\tb` and `a\nb` fail with `BAD_QUERY_PARAMETER`). This is not specific to `RAW_QUERY_PARAMETERS`: the below-v54487 encoding un-quotes the `SettingFieldCustom` dump back to the same raw bytes before the same `deserializeTextEscaped` step, so both framings share this behavior. A client that needs such bytes in a `String` value must avoid raw tab/newline/backslash in the parameter text.
 :::
 
 ### Data (packet type 1 server→client, packet type 2 client→server) {#data}
