@@ -1345,12 +1345,16 @@ def test_execute_rejects_non_literal_arguments(started_cluster):
     # Rejection avoids the wrong answer entirely.
     assert rejected("PREPARE expr_prec AS SELECT $1 * 10 AS v;", "EXECUTE expr_prec(1 + 1);")
 
-    # A negative number is a single literal and round-trips unchanged.
+    # A negative number is a single literal and round-trips unchanged. `SELECT
+    # -7` infers Int8, which maps to the PostgreSQL "char" OID (18, a text type),
+    # so the driver decodes the value as the string "-7"; a positive literal
+    # infers UInt8 -> INT2 and decodes as an int. That result-type mapping is
+    # orthogonal to this test: assert on the numeric VALUE, not the wire type.
     ch = connect()
     cur = ch.cursor()
     cur.execute("PREPARE expr_neg AS SELECT $1 AS v;")
     cur.execute("EXECUTE expr_neg(-7);")
-    assert cur.fetchall() == [(-7,)]
+    assert [(int(v),) for (v,) in cur.fetchall()] == [(-7,)]
     ch.close()
 
 
