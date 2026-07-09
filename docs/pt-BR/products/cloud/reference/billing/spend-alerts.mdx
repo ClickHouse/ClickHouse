@@ -1,0 +1,78 @@
+---
+sidebarTitle: 'Alertas de gastos'
+slug: /cloud/manage/billing/spend-alerts
+title: 'Configurar alertas de gastos da organização'
+description: 'Configure alertas de gastos para monitorar o uso do ClickHouse Cloud em relação a limites definidos em um período de faturamento.'
+keywords: ['faturamento', 'alertas de gastos', 'limites de uso', 'notificações', 'monitoramento de custos', 'faturamento da organização']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Os alertas de gastos notificam você quando o uso da sua organização atinge os limites configurados em um período de faturamento, para que você possa evitar cobranças inesperadas. Eles apenas enviam notificações; para limites que acionam o faturamento automático, consulte [Limites de pagamento](/pt-BR/products/cloud/reference/billing/payment-thresholds).
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Você precisa ter a função **Organization Admin** ou **Billing Admin** para configurar e visualizar alertas de gastos.
+
+<div id="how-spend-alerts-work">
+  ## Como os alertas de gastos funcionam
+</div>
+
+* Os alertas se baseiam no uso bruto ao longo de um período de faturamento e são redefinidos no início de cada novo ciclo.
+* Os alertas são disparados a cada hora, com base no uso bruto calculado naquele momento; portanto, um alerta só é disparado depois que um limite é excedido.
+
+<Info>
+  **Os alertas de gastos não limitam o uso**
+
+  Atingir 100% do seu alerta de gastos não restringe nem limita seu uso — os gastos continuam se acumulando além do limite de 100%.
+</Info>
+
+<div id="set-up-spend-alert">
+  ## Configurar um alerta de gastos
+</div>
+
+<Steps>
+  <Step>
+    ### Abra a caixa de diálogo de alertas de gastos
+
+    1. Acesse **Organization &gt; Billing** no console do ClickHouse Cloud.
+    2. Clique em **Actions &gt; Add spend alerts**.
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Página Billing com o menu Actions aberto e Add spend alerts em destaque" size="lg" />
+  </Step>
+
+  <Step>
+    ### Configure e salve o alerta
+
+    1. Insira um valor de alerta de gastos em dólares ou créditos por período de faturamento.
+    2. Selecione seus canais de notificação: **Email**, **UI** e/ou **Slack**.
+    3. Clique em **Save**.
+
+    <Image img="/images/cloud/reference/billing/spend-alerts-config.webp" alt="Caixa de diálogo de alertas de gastos da organização com limite de gastos, alertas automáticos de limite e canais de notificação" size="md" />
+  </Step>
+</Steps>
+
+<div id="threshold-alerts">
+  ## Alertas automáticos por limite
+</div>
+
+Três alertas são criados e acionados automaticamente com base no valor configurado para o alerta de gastos:
+
+| Limite   | Acionamento                     | Exemplo (alerta de $10) |
+| -------- | ------------------------------- | ----------------------- |
+| **50%**  | Metade do gasto atingida        | $5                      |
+| **75%**  | Três quartos do gasto atingidos | $7.50                   |
+| **100%** | Gasto total atingido            | $10                     |
+
+<div id="notification-channels">
+  ## Canais de notificação
+</div>
+
+| Canal     | Descrição                                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------- |
+| **Email** | Envia alertas para o endereço de e-mail configurado. Clique no ícone de edição para alterar o destinatário. |
+| **UI**    | Exibe alertas no console do ClickHouse Cloud.                                                               |
+| **Slack** | Envia alertas para um canal do Slack. Clique no ícone de edição para configurar.                            |

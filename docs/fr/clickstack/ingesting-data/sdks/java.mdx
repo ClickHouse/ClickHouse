@@ -1,0 +1,89 @@
+---
+slug: /use-cases/observability/clickstack/sdks/java
+description: 'SDK Java pour ClickStack - La stack d’observability ClickHouse'
+title: 'Java'
+doc_type: 'guide'
+keywords: ['SDK Java ClickStack', 'Java OpenTelemetry ClickStack', 'SDK d’observability Java', 'intégration Java ClickStack', 'monitoring des applications Java']
+---
+
+ClickStack utilise le standard OpenTelemetry pour collecter les données de télémétrie (logs et
+traces). Les traces sont générées automatiquement via l’instrumentation automatique ; une
+instrumentation manuelle n’est donc pas nécessaire pour tirer parti du tracing.
+
+**Ce guide intègre :**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ Logs</td>
+      <td className="pe-2">✅ Metrics</td>
+      <td className="pe-2">✅ Traces</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="getting-started">
+  ## Prise en main
+</div>
+
+<Note>
+  Pour le moment, l’intégration n’est compatible qu’avec **Java 8+**
+</Note>
+
+<div id="download-opentelemetry-java-agent">
+  ### Télécharger l’agent Java OpenTelemetry
+</div>
+
+Téléchargez [`opentelemetry-javaagent.jar`](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)
+et placez le fichier JAR dans le répertoire de votre choix. Le fichier JAR contient l’agent
+et les bibliothèques d’instrumentation. Vous pouvez aussi utiliser la commande suivante pour
+télécharger l’agent :
+
+```shell
+curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
+```
+
+<div id="configure-environment-variables">
+  ### Configurer les variables d’environnement
+</div>
+
+Ensuite, vous devez configurer les variables d’environnement suivantes dans votre shell pour envoyer la télémétrie à ClickStack via l’OpenTelemetry Collector :
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    ```shell
+    export JAVA_TOOL_OPTIONS="-javaagent:PATH/TO/opentelemetry-javaagent.jar" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    ```
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ```shell
+    export JAVA_TOOL_OPTIONS="-javaagent:PATH/TO/opentelemetry-javaagent.jar" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>' \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    ```
+  </Tab>
+</Tabs>
+
+*La variable d’environnement `OTEL_SERVICE_NAME` sert à identifier votre service dans l’application HyperDX ; vous pouvez lui donner le nom de votre choix.*
+
+La variable d’environnement `OTEL_EXPORTER_OTLP_HEADERS` contient la clé API disponible dans l’application HyperDX, sous `Team Settings → API Keys`.
+
+<div id="run-the-application-with-otel-java-agent">
+  ### Exécutez l’application avec l’agent Java OpenTelemetry
+</div>
+
+```shell
+java -jar target/<APPLICATION_JAR_FILE>
+```
+
+<br />
+
+Pour en savoir plus sur l’instrumentation Java d’OpenTelemetry, consultez : [https://opentelemetry.io/docs/instrumentation/java/](https://opentelemetry.io/docs/instrumentation/java/)

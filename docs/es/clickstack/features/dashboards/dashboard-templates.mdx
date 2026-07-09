@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/dashboard-templates
+title: 'Plantillas de dashboards'
+sidebarTitle: 'Plantillas de dashboards'
+description: 'Importación de plantillas de dashboards predefinidas en ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'dashboards', 'plantillas', 'importación', 'observabilidad']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+ClickStack incluye una biblioteca de plantillas de dashboards preconfigurados que le ofrecen visibilidad inmediata de las métricas comunes de infraestructura y aplicaciones.
+
+<div id="browsing-templates">
+  ## Explorar las plantillas disponibles
+</div>
+
+Para explorar la biblioteca integrada de plantillas, ve a **Dashboards** y haz clic en **Browse dashboard templates**.
+
+<Image img="/images/use-cases/observability/browse-dashboard-template.webp" alt="Botón Browse Dashboard Templates" size="lg" />
+
+Esto abre la galería de plantillas, donde se organizan por categoría. Haz clic en **Import** para iniciar el proceso de importación de esa plantilla.
+
+<Image img="/images/use-cases/observability/dashboard-template-gallery.webp" alt="Galería de plantillas de dashboard" size="lg" />
+
+<div id="importing-a-template">
+  ## Importar una plantilla
+</div>
+
+Para importar una plantilla, debes configurar una fuente de datos para cada visualización del dashboard. Selecciona una fuente de datos en el menú desplegable de cada visualización y, luego, haz clic en `Finish Import`.
+
+<Image img="/images/use-cases/observability/import-dashboard-template.webp" alt="Importación de una plantilla de dashboard" size="lg" />
+
+<div id="pre-built-templates">
+  ## Plantillas predefinidas
+</div>
+
+<div id="otel-runtime-metrics">
+  ### Métricas de runtime de OTel
+</div>
+
+Las plantillas integradas de OTel Runtime Metrics están diseñadas para aplicaciones instrumentadas con [métricas de runtime de OpenTelemetry](https://opentelemetry.io/docs/specs/semconv/runtime/).
+
+| Template                    | Description                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **.NET Runtime Metrics**    | Colecciones del GC, tamaño del heap, uso del thread pool y recuento de ensamblados para aplicaciones .NET                |
+| **Go Runtime Metrics**      | Recuento de goroutines, tiempos de pausa del GC, uso del heap y estadísticas de memoria para aplicaciones Go             |
+| **JVM Runtime Metrics**     | Memoria del heap y fuera del heap, duración del GC, recuento de hilos y carga de clases para aplicaciones basadas en JVM |
+| **Node.js Runtime Metrics** | Latencia del bucle de eventos, uso del heap, utilización de CPU y memoria de V8 para aplicaciones Node.js                |
+
+Notas:
+
+* Cada plantilla está configurada con un [filtro personalizado](/es/clickstack/features/dashboards/overview#custom-filters) para servicios cuyo atributo de recurso [`telemetry.sdk.language`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/telemetry/#telemetry-sdk-language) coincide con el runtime del dashboard.
+  * Los entornos con esquemas personalizados para las tablas de métricas de ClickHouse pueden necesitar ajustar este filtro para consultar las columnas correctas de Service Name y Resource Attributes.
+  * En entornos de alto volumen, los tiempos de carga del filtro pueden reducirse [materializando](/es/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes) la columna `ResourceAttributes['telemetry.sdk.language']`.
+* Las plantillas hacen referencia a las Convenciones Semánticas de OTel vigentes en el momento de su publicación y se actualizan periódicamente conforme se actualiza la especificación de OTel. En el caso de servicios instrumentados con SDKs de OTel más antiguos, puede ser necesario [editar](/es/clickstack/features/dashboards/overview#dashboards-editing-visualizations) las visualizaciones para que apunten a nombres de métricas anteriores.

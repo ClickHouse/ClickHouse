@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/MergeTreeFinalMerge.h>
 #include <Processors/QueryPlan/PartsSplitter.h>
 #include <Storages/MergeTree/ParallelReplicasReadingCoordinator.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
@@ -83,6 +84,8 @@ struct TopKFilterInfo
 
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
+
+/// `DistributedReadBucket` and `buildDistributedFinalPipe` live in `MergeTreeFinalMerge.h`.
 
 /// This step is created to read from MergeTree* table.
 /// For now, it takes a list of parts and creates source from it.
@@ -286,7 +289,7 @@ public:
 
     struct Indexes
     {
-        explicit Indexes(KeyCondition key_condition_)
+        explicit Indexes(ConditionTemplate<KeyCondition>::Ptr key_condition_)
             : key_condition(std::move(key_condition_))
             , use_skip_indexes(false)
             , use_skip_indexes_for_disjunctions(false)
@@ -294,12 +297,12 @@ public:
             , use_skip_indexes_on_data_read(false)
         {}
 
-        KeyCondition key_condition;
-        std::optional<KeyCondition> key_condition_rpn_template; /// skeleton of the key condition without resolved columns
+        ConditionTemplate<KeyCondition>::Ptr key_condition;
+        ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template; /// skeleton of the key condition without resolved columns
+        ConditionTemplate<KeyCondition>::Ptr minmax_idx_condition;
+        ConditionTemplate<KeyCondition>::Ptr part_offset_condition;
+        ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
         std::optional<PartitionPruner> partition_pruner;
-        std::optional<KeyCondition> minmax_idx_condition;
-        std::optional<KeyCondition> part_offset_condition;
-        std::optional<KeyCondition> total_offset_condition;
         UsefulSkipIndexes skip_indexes;
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
@@ -405,8 +408,15 @@ public:
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
     void setDistributedRead(size_t bucket_count);
-    /// Parts (by name) every worker buckets over, so the partition is identical across replicas.
-    void setDistributedReadParts(Names part_names);
+    /// Splits the analyzed marks into up to `target_buckets` distributed-read buckets and records them. A
+    /// non-FINAL read is sliced into contiguous mark-balanced buckets; a FINAL read is split into
+    /// primary-key-range layers (one merge per layer, per partition when FINAL does not merge across
+    /// partitions). Returns the bucket count, or 0 (read serially) when a FINAL read cannot be range-split
+    /// (SAMPLE, unsafe or mixed-order primary key, a single layer) or the split exceeds `max_total_buckets`.
+    size_t setupDistributedReadBuckets(size_t target_buckets, size_t max_total_buckets);
+    /// Serializes each bucket (its marks, the merge flag, and a merge layer's borders + index) into a
+    /// per-bucket blob shipped as the `read_bucket` task parameter; empty unless this is a distributed read.
+    std::vector<String> serializeDistributedReadBuckets() const;
     /// Makes a list of shards to read in parallel in distributed query plan
     Strings getShardsForDistributedRead() const;
 
@@ -427,6 +437,24 @@ public:
     const FilterDAGInfoPtr & getDeferredRowLevelFilter() const { return deferred_row_level_filter; }
     const PrewhereInfoPtr & getDeferredPrewhereInfo() const { return deferred_prewhere_info; }
     size_t getDistributedReadBucketCount() const { return distributed_read_bucket_count; }
+    bool getEnableVerticalFinal() const { return enable_vertical_final; }
+
+    /// Whether a FINAL read must merge parts within each partition independently instead of globally
+    /// (the `do_not_merge_across_partitions_select_final` rule, which may also be decided automatically).
+    bool doNotMergePartsAcrossPartitionsFinal() const;
+
+    /// The computed SAMPLE filter (predicate over the sampling key) when this read uses sampling, else empty.
+    /// A distributed read ships it to the worker, which reapplies it after reading parts like the local path.
+    std::optional<FilterDAGInfo> getSamplingFilter() const;
+
+    /// Throws if this is a bucketed distributed read using a feature it cannot reproduce from pinned
+    /// marks (read-in-order, deferred FINAL filters, a projection, or direct text index tasks).
+    void verifyBucketedReadSupported() const;
+
+    /// Whether this read can be split into distributed read buckets. False when it uses a feature a
+    /// bucketed read cannot reproduce on the receiving node (read-in-order, deferred FINAL filters,
+    /// a projection, or direct text index tasks); such a read stays serial.
+    bool supportsBucketedRead() const;
 
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
@@ -506,7 +534,10 @@ private:
         Names required_columns,
         PoolSettings pool_settings,
         ReadType read_type,
-        UInt64 limit);
+        UInt64 limit,
+        /// Index of this split when reading in-order with parallel replicas; nullopt means
+        /// a single pool reads the whole table (no splitting).
+        std::optional<size_t> split_index = std::nullopt);
 
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
@@ -543,8 +574,6 @@ private:
         std::optional<ActionsDAG> & out_projection,
         const InputOrderInfoPtr & input_order_info);
 
-    bool doNotMergePartsAcrossPartitionsFinal() const;
-
     Pipe spreadMarkRangesAmongStreamsFinal(
         RangesInDataParts && parts,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -552,6 +581,15 @@ private:
         const Names & origin_column_names,
         const Names & column_names,
         std::optional<ActionsDAG> & out_projection);
+
+    /// Reads non-intersecting primary-key ranges (each owned by a single deduplicated part) without a
+    /// merge, applying only the filter the merge would have applied (drop negative-sign rows for
+    /// `Collapsing`, `is_deleted` rows for `Replacing` with an is-deleted column; other engines need none).
+    Pipe readNonIntersectingWithEngineFilter(
+        RangesInDataParts && parts,
+        const MergeTreeIndexBuildContextPtr & index_build_context,
+        size_t num_streams,
+        const Names & origin_column_names);
 
     ReadFromMergeTree::AnalysisResult & getAnalysisResultImpl() const;
     const ReadFromMergeTree::AnalysisResult & getAnalysisResult() const { return getAnalysisResultImpl(); }
@@ -563,6 +601,7 @@ private:
     void updateSortDescription();
 
     bool isParallelReplicasLocalPlanForInitiator() const;
+    bool isParallelReplicasLocalPlanForFollower() const;
     bool supportsSkipIndexesOnDataRead() const;
 
     mutable AnalysisResultPtr analyzed_result_ptr;
@@ -584,17 +623,16 @@ private:
 
     std::optional<TopKFilterInfo> top_k_filter_info;
     ProjectionIndexReadDescription projection_index_read_desc;
-    /// This is set when this step is part of a distributed query plan and it will be executed in a distributed manner.
-    /// "bucket_id" task parameter will be used to determine what part of the data to read.
+    /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
+    /// `read_bucket` parameter.
     size_t distributed_read_bucket_count = 0;
-    /// Coordinator-selected parts a distributed-read worker buckets over. Empty otherwise.
-    Names distributed_read_part_names;
+    /// Initiator side: every virtual bucket across all tasks; `serializeDistributedReadBuckets` groups
+    /// `distributed_read_lanes_per_task` of them into each task's `read_bucket` parameter. Empty on a worker.
+    std::vector<DistributedReadBucket> distributed_read_buckets;
+    size_t distributed_read_lanes_per_task = 1;
+    /// Worker side: the virtual buckets (lanes) of this worker's task, filled from its `read_bucket`
+    /// parameter. A FINAL worker builds one merge/non-merge pipe per lane and unites them.
+    std::vector<DistributedReadBucket> distributed_read_task_buckets;
 };
-/// Filter the mark ranges for a single part's worth of ranges for a specific bucket.
-/// `effective_bucket_index` is updated in-place so that consecutive calls across multiple parts
-/// maintain even distribution — small ranges that cannot be split do not all fall into bucket 0.
-/// NOTE: For distributed queries on full replicas, all reader nodes must receive the same
-///       `parts_with_ranges` list so that `effective_bucket_index` advances identically.
-MarkRanges filterMarkRangesForBucket(const MarkRanges & ranges, size_t & effective_bucket_index, size_t total_buckets);
 
 }

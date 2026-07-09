@@ -1,0 +1,65 @@
+---
+description: 'El motor de tabla GenerateRandom produce datos aleatorios para el esquema
+  de tabla dado.'
+sidebarTitle: 'GenerateRandom'
+slug: /engines/table-engines/special/generate
+title: 'Motor de tabla GenerateRandom'
+doc_type: 'reference'
+---
+
+El motor de tabla GenerateRandom produce datos aleatorios para el esquema de tabla dado.
+
+Ejemplos de uso:
+
+* Úselo en pruebas para rellenar una tabla grande de forma reproducible.
+* Genere entradas aleatorias para pruebas de fuzzing.
+
+<div id="usage-in-clickhouse-server">
+  ## Uso en ClickHouse Server
+</div>
+
+```sql
+ENGINE = GenerateRandom([random_seed [,max_string_length [,max_array_length]]])
+```
+
+Los parámetros `max_array_length` y `max_string_length` especifican, respectivamente, la longitud máxima de todas las
+columnas Array o Map y de las cadenas en los datos generados.
+
+El motor de tabla Generate solo admite consultas `SELECT`.
+
+Admite todos los [tipos de datos](/es/reference/data-types/index) que pueden almacenarse en una tabla, excepto `AggregateFunction`.
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+**1.** Configure la tabla `generate_engine_table`:
+
+```sql
+CREATE TABLE generate_engine_table (name String, value UInt32) ENGINE = GenerateRandom(1, 5, 3)
+```
+
+**2.** Consulta los datos:
+
+```sql
+SELECT * FROM generate_engine_table LIMIT 3
+```
+
+```text
+┌─name─┬──────value─┐
+│ c4xJ │ 1412771199 │
+│ r    │ 1791099446 │
+│ 7#$  │  124312908 │
+└──────┴────────────┘
+```
+
+<div id="details-of-implementation">
+  ## Detalles de la implementación
+</div>
+
+* No es compatible:
+  * `ALTER`
+  * `SELECT ... SAMPLE`
+  * `INSERT`
+  * Índices
+  * Replicación

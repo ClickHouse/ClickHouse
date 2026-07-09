@@ -320,7 +320,6 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     ARM_ASAN_UBSAN = "arm_asan_ubsan"
     ARM_TSAN = "arm_tsan"
     ARM_MSAN = "arm_msan"
-    ARM_UBSAN = "arm_ubsan"
     LLVM_COVERAGE_BUILD = "llvm_coverage_build"
     PER_TEST_COVERAGE = "amd_llvm_coverage_per_test"
     AMD_COVERAGE = "amd_coverage"
@@ -431,7 +430,6 @@ class ArtifactNames:
     CH_ARM_ASAN_UBSAN = "CH_ARM_ASAN_UBSAN"
     CH_ARM_TSAN = "CH_ARM_TSAN"
     CH_ARM_MSAN = "CH_ARM_MSAN"
-    CH_ARM_UBSAN = "CH_ARM_UBSAN"
 
     CH_COV_BIN = "CH_COV_BIN"
     CH_ARM_BINARY = "CH_ARM_BIN"
@@ -464,7 +462,6 @@ class ArtifactNames:
     DEB_ARM_ASAN_UBSAN = "DEB_ARM_ASAN_UBSAN"
     DEB_ARM_TSAN = "DEB_ARM_TSAN"
     DEB_ARM_MSAN = "DEB_ARM_MSAN"
-    DEB_ARM_UBSAN = "DEB_ARM_UBSAN"
 
     RPM_AMD_RELEASE = "RPM_AMD_RELEASE"
     RPM_ARM_RELEASE = "RPM_ARM_RELEASE"
@@ -537,7 +534,6 @@ BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_ARM_ASAN_UBSAN,
     ArtifactNames.CH_ARM_TSAN,
     ArtifactNames.CH_ARM_MSAN,
-    ArtifactNames.CH_ARM_UBSAN,
 ]
 
 
@@ -561,7 +557,6 @@ class ArtifactConfigs:
             ArtifactNames.CH_ARM_ASAN_UBSAN,
             ArtifactNames.CH_ARM_TSAN,
             ArtifactNames.CH_ARM_MSAN,
-            ArtifactNames.CH_ARM_UBSAN,
             ArtifactNames.CH_COV_BIN,
             ArtifactNames.CH_ARM_BINARY,
             ArtifactNames.CH_TIDY_BIN,
@@ -583,6 +578,13 @@ class ArtifactConfigs:
         path=[
             "./*.profdata",
         ],
+        # The coverage merge (llvm-profdata) runs non-blocking and can produce no
+        # .profdata (e.g. it crashes on a corrupt .profraw). A missing batch is
+        # tolerated by the downstream LLVM Coverage aggregation, which globs
+        # whatever .profdata files exist, so a missing file must not redden a
+        # coverage job whose tests all passed. Marking the artifact optional lets
+        # the runner skip a missing file with a warning instead of erroring.
+        optional=True,
     ).parametrize(names=LLVM_ARTIFACTS_LIST)
 
     llvm_coverage_info_file = Artifact.Config(
@@ -606,7 +608,6 @@ class ArtifactConfigs:
             ArtifactNames.DEB_ARM_ASAN_UBSAN,
             ArtifactNames.DEB_ARM_TSAN,
             ArtifactNames.DEB_ARM_MSAN,
-            ArtifactNames.DEB_ARM_UBSAN,
         ]
     )
     clickhouse_rpms = Artifact.Config(

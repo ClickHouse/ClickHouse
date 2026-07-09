@@ -1,0 +1,15 @@
+---
+slug: /faq/operations/multi-region-replication
+title: 'ClickHouse 是否支持跨区域复制？'
+toc_hidden: true
+toc_priority: 30
+description: '本页解答 ClickHouse 是否支持跨区域复制'
+doc_type: 'reference'
+keywords: ['跨区域', '复制', '地理分布式', '分布式系统', '数据同步']
+---
+
+简短的答案是“支持”。不过，我们建议将所有区域/数据中心之间的延迟保持在两位数毫秒以内，否则由于写入需要经过分布式共识协议，写入性能会受到影响。例如，美国东西海岸之间的复制通常可以正常工作，但美国与欧洲之间通常不行。
+
+在配置方面，它与单区域复制没有区别，只需将副本部署在不同位置的主机上即可。
+
+如需了解更多信息，请参阅[有关数据复制的完整文章](/zh/reference/engines/table-engines/mergetree-family/replication)。
