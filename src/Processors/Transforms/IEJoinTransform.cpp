@@ -1,15 +1,18 @@
 #include <algorithm>
 #include <bit>
 #include <optional>
+#include <type_traits>
 
 #include <base/defines.h>
 #include <base/sort.h>
 
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Processors/Transforms/IEJoinTransform.h>
+#include <Common/NaNUtils.h>
 #include <Common/iota.h>
 
 namespace DB
@@ -25,6 +28,98 @@ static bool isInequalityOperator(JoinConditionOperator op)
 {
     return op == JoinConditionOperator::Less || op == JoinConditionOperator::LessOrEquals
         || op == JoinConditionOperator::Greater || op == JoinConditionOperator::GreaterOrEquals;
+}
+
+namespace
+{
+
+/// The fixed-width key fast path encodes a condition's key values once into UInt64 values whose
+/// unsigned order reproduces the column's `compareAt(..., nan_direction_hint = 1)` order exactly,
+/// including equality (the L1 merge tie policy and the frontier's non-strict comparisons depend
+/// on it). The hot loops then compare plain integers instead of calling the virtual comparator.
+
+/// Everything whose order is its underlying signed integer's order (signed integers, Date32,
+/// DateTime64, Decimal32/64, Enum8/16): offset the sign bit so the unsigned order matches.
+UInt64 encodeSignedKey(Int64 value)
+{
+    return static_cast<UInt64>(value) ^ (UInt64(1) << 63);
+}
+
+/// `compareAt` with nan_direction_hint = 1 treats every NaN, of either sign, as equal to other
+/// NaNs and greater than all numbers, and -0.0 as equal to +0.0. The plain total-order bit trick
+/// preserves neither (a negative NaN would sort below -inf), so every NaN maps to the greatest
+/// encoding and -0.0 is canonicalized to +0.0 before the trick.
+UInt64 encodeFloatKey(Float64 value)
+{
+    if (isNaN(value))
+        return ~UInt64(0);
+    UInt64 bits = std::bit_cast<UInt64>(value == 0.0 ? 0.0 : value);
+    return bits & (UInt64(1) << 63) ? ~bits : bits | (UInt64(1) << 63);
+}
+
+UInt64 encodeFloatKey(Float32 value)
+{
+    if (isNaN(value))
+        return ~UInt64(0);
+    UInt32 bits = std::bit_cast<UInt32>(value == 0.0f ? 0.0f : value);
+    return bits & (UInt32(1) << 31) ? ~bits : bits | (UInt32(1) << 31);
+}
+
+template <typename T>
+UInt64 encodeKeyValue(T value)
+{
+    if constexpr (std::is_floating_point_v<T>)
+        return encodeFloatKey(value);
+    else if constexpr (is_decimal<T>)
+        return encodeSignedKey(value.value);
+    else if constexpr (std::is_signed_v<T>)
+        return encodeSignedKey(value);
+    else
+        return static_cast<UInt64>(value);
+}
+
+/// Append the column's keys, encoded and XOR-ed with `flip_mask` (all-ones folds a descending
+/// sort direction into the unsigned order). The dispatch is on the column type: the order the
+/// encoding must reproduce is the column's own `compareAt`, so it covers exactly the types
+/// stored in these columns (integers, Date/DateTime/Enum/Bool over them, floats, Decimal32/64,
+/// DateTime64). Nullable encodes its nested column: rows with NULL keys never enter the union,
+/// so their cells are never read and need no sentinel. Returns false when the column has no
+/// fixed-width encoding (the caller then keeps the generic comparator).
+bool tryAppendEncodedKeys(const IColumn & column, UInt64 flip_mask, PaddedPODArray<UInt64> & out)
+{
+    const IColumn * data_column = &column;
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_column))
+        data_column = &nullable->getNestedColumn();
+
+    auto try_column_type = [&]<typename ColumnType>()
+    {
+        const auto * concrete = checkAndGetColumn<ColumnType>(data_column);
+        if (!concrete)
+            return false;
+
+        const auto & data = concrete->getData();
+        const size_t old_size = out.size();
+        out.resize(old_size + data.size());
+        for (size_t i = 0; i < data.size(); ++i)
+            out[old_size + i] = encodeKeyValue(data[i]) ^ flip_mask;
+        return true;
+    };
+
+    return try_column_type.operator()<ColumnUInt8>()
+        || try_column_type.operator()<ColumnUInt16>()
+        || try_column_type.operator()<ColumnUInt32>()
+        || try_column_type.operator()<ColumnUInt64>()
+        || try_column_type.operator()<ColumnInt8>()
+        || try_column_type.operator()<ColumnInt16>()
+        || try_column_type.operator()<ColumnInt32>()
+        || try_column_type.operator()<ColumnInt64>()
+        || try_column_type.operator()<ColumnFloat32>()
+        || try_column_type.operator()<ColumnFloat64>()
+        || try_column_type.operator()<ColumnDecimal<Decimal32>>()
+        || try_column_type.operator()<ColumnDecimal<Decimal64>>()
+        || try_column_type.operator()<ColumnDecimal<DateTime64>>();
+}
+
 }
 
 const char * toString(IEJoinKind kind)
@@ -269,6 +364,42 @@ void IEJoinAlgorithm::buildJoinState()
     const bool l1_descending = op1 == JoinConditionOperator::Greater || op1 == JoinConditionOperator::GreaterOrEquals;
     const bool op1_strict = op1 == JoinConditionOperator::Less || op1 == JoinConditionOperator::Greater;
 
+    const auto op2 = conditions[1].op;
+    const bool l2_descending = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::LessOrEquals;
+
+    /// Encoded fixed-width keys per condition, in union-entry order ([left rows..., right rows...])
+    /// with the L1/L2 direction folded in, so every hot-loop comparison is a plain `enc[a] < enc[b]`.
+    /// An empty array means the condition's type has no encoding and the generic comparator runs;
+    /// the two conditions decide independently.
+    const std::array<UInt64, 2> direction_mask = {l1_descending ? ~UInt64(0) : 0, l2_descending ? ~UInt64(0) : 0};
+    std::array<PaddedPODArray<UInt64>, 2> encoded_keys;
+    for (size_t key_index = 0; key_index < 2; ++key_index)
+    {
+        auto & encoded = encoded_keys[key_index];
+        encoded.reserve(num_side_rows[0] + num_side_rows[1]);
+        for (size_t side = 0; side < 2; ++side)
+        {
+            const auto & key = key_columns[key_index].bySide(side);
+            /// The side may read one column in both conditions (the `BETWEEN` shape): derive the
+            /// second encoding from the first instead of encoding the column twice.
+            if (key_index == 1 && key == key_columns[0].bySide(side) && !encoded_keys[0].empty())
+            {
+                const UInt64 reorient = direction_mask[0] ^ direction_mask[1];
+                const size_t offset = side ? num_side_rows[0] : 0;
+                const size_t old_size = encoded.size();
+                encoded.resize(old_size + num_side_rows[side]);
+                for (size_t row = 0; row < num_side_rows[side]; ++row)
+                    encoded[old_size + row] = encoded_keys[0][offset + row] ^ reorient;
+                continue;
+            }
+            if (!tryAppendEncodedKeys(*key, direction_mask[key_index], encoded))
+            {
+                encoded = {};
+                break;
+            }
+        }
+    }
+
     /// The L1 order: the first condition's keys in the direction of the operator family, with
     /// ties resolved on the origin side so that for every left entry its own L1 position is the
     /// exact scan boundary. For a loose condition equal-keyed right entries must land at higher
@@ -322,26 +453,36 @@ void IEJoinAlgorithm::buildJoinState()
             cursor[side] += step;
             skip_invalid(side);
         };
-        while (in_range(0) && in_range(1))
+        /// On equal keys a loose condition pulls the left entry first, a strict one the right.
+        auto merge_sides = [&](auto && take_left_first)
         {
-            int cmp = compareKeysAt(0, cursor[0], num_side_rows[0] + cursor[1]);
-            if (l1_descending)
-                cmp = -cmp;
-            /// On equal keys a loose condition pulls the left entry first, a strict one the right.
-            bool take_left = cmp != 0 ? cmp < 0 : !op1_strict;
-            take(take_left ? 0 : 1);
+            while (in_range(0) && in_range(1))
+                take(take_left_first() ? 0 : 1);
+            while (in_range(0))
+                take(0);
+            while (in_range(1))
+                take(1);
+        };
+        if (!encoded_keys[0].empty())
+        {
+            merge_sides([&]
+            {
+                UInt64 left_key = encoded_keys[0][cursor[0]];
+                UInt64 right_key = encoded_keys[0][num_side_rows[0] + cursor[1]];
+                return left_key != right_key ? left_key < right_key : !op1_strict;
+            });
         }
-        while (in_range(0))
-            take(0);
-        while (in_range(1))
-            take(1);
+        else
+        {
+            merge_sides([&]
+            {
+                int cmp = compareKeysAt(0, cursor[0], num_side_rows[0] + cursor[1]);
+                if (l1_descending)
+                    cmp = -cmp;
+                return cmp != 0 ? cmp < 0 : !op1_strict;
+            });
+        }
         chassert(out == n_union);
-
-#ifndef NDEBUG
-        /// The merge must produce exactly an order the comparator sort would accept.
-        for (size_t pos = 1; pos < n_union; ++pos)
-            chassert(!l1_order_less(l1_union[pos], l1_union[pos - 1]));
-#endif
     }
     else
     {
@@ -354,8 +495,29 @@ void IEJoinAlgorithm::buildJoinState()
                     l1_union[out++] = offset + row;
         }
         chassert(out == n_union);
-        ::sort(l1_union.begin(), l1_union.end(), l1_order_less);
+        if (!encoded_keys[0].empty())
+        {
+            ::sort(l1_union.begin(), l1_union.end(), [&](UInt64 a, UInt64 b)
+            {
+                if (encoded_keys[0][a] != encoded_keys[0][b])
+                    return encoded_keys[0][a] < encoded_keys[0][b];
+                bool a_from_left = a < num_side_rows[0];
+                bool b_from_left = b < num_side_rows[0];
+                if (a_from_left != b_from_left)
+                    return op1_strict ? b_from_left : a_from_left;
+                return false;
+            });
+        }
+        else
+            ::sort(l1_union.begin(), l1_union.end(), l1_order_less);
     }
+
+#ifndef NDEBUG
+    /// Both L1 build paths must produce exactly an order the generic comparator accepts; with
+    /// encoded keys this cross-validates the encoding against `compareAt`.
+    for (size_t pos = 1; pos < n_union; ++pos)
+        chassert(!l1_order_less(l1_union[pos], l1_union[pos - 1]));
+#endif
 
     li.resize(n_union);
     for (size_t pos = 0; pos < n_union; ++pos)
@@ -368,9 +530,6 @@ void IEJoinAlgorithm::buildJoinState()
             li[pos] = -(static_cast<Int64>(entry - num_side_rows[0]) + 1);
     }
 
-    const auto op2 = conditions[1].op;
-    const bool l2_descending = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::LessOrEquals;
-
     /// L2: L1 positions ordered by the second condition's keys, so that every entry satisfies
     /// the condition with respect to all entries after it. No tie-break is needed: the frontier
     /// advances by comparing values, so the order within a run of equal keys is irrelevant.
@@ -379,6 +538,15 @@ void IEJoinAlgorithm::buildJoinState()
         int cmp = compareKeysAt(1, l1_union[pos_a], l1_union[pos_b]);
         return l2_descending ? cmp > 0 : cmp < 0;
     };
+
+    /// The encoded second-condition keys gathered by L1 position, so the L2 sort comparator
+    /// needs no union-entry resolution at all.
+    if (!encoded_keys[1].empty())
+    {
+        l2_keys_by_position.resize(n_union);
+        for (size_t pos = 0; pos < n_union; ++pos)
+            l2_keys_by_position[pos] = encoded_keys[1][l1_union[pos]];
+    }
 
     permutation.resize(n_union);
     /// The side whose entries are already in L2 order within L1 order: it reads the same column
@@ -394,48 +562,57 @@ void IEJoinAlgorithm::buildJoinState()
             in_order_side = 1;
     }
 
-    if (in_order_side)
+    auto build_l2_order = [&](auto && less)
     {
-        /// Build L2 by sorting only the other side's entries by the second key and merging the
-        /// two runs, instead of sorting the whole union.
-        const bool in_order_from_left = *in_order_side == 0;
-        PaddedPODArray<UInt64> sorted_positions;
-        sorted_positions.reserve(num_valid_rows[1 - *in_order_side]);
-        size_t num_in_order = 0;
-        for (size_t pos = 0; pos < n_union; ++pos)
+        if (in_order_side)
         {
-            if ((li[pos] > 0) == in_order_from_left)
-                permutation[num_in_order++] = pos;
-            else
-                sorted_positions.push_back(pos);
-        }
-        chassert(num_in_order == num_valid_rows[*in_order_side]);
-        ::sort(sorted_positions.begin(), sorted_positions.end(), l2_order_less);
+            /// Build L2 by sorting only the other side's entries by the second key and merging the
+            /// two runs, instead of sorting the whole union.
+            const bool in_order_from_left = *in_order_side == 0;
+            PaddedPODArray<UInt64> sorted_positions;
+            sorted_positions.reserve(num_valid_rows[1 - *in_order_side]);
+            size_t num_in_order = 0;
+            for (size_t pos = 0; pos < n_union; ++pos)
+            {
+                if ((li[pos] > 0) == in_order_from_left)
+                    permutation[num_in_order++] = pos;
+                else
+                    sorted_positions.push_back(pos);
+            }
+            chassert(num_in_order == num_valid_rows[*in_order_side]);
+            ::sort(sorted_positions.begin(), sorted_positions.end(), less);
 
-        /// Merge the two runs in place from the back; a prefix of the in-order run that is never
-        /// displaced stays where it is.
-        size_t in_order_remaining = num_in_order;
-        size_t sorted_remaining = sorted_positions.size();
-        size_t write = n_union;
-        while (in_order_remaining > 0 && sorted_remaining > 0)
-        {
-            if (l2_order_less(permutation[in_order_remaining - 1], sorted_positions[sorted_remaining - 1]))
+            /// Merge the two runs in place from the back; a prefix of the in-order run that is never
+            /// displaced stays where it is.
+            size_t in_order_remaining = num_in_order;
+            size_t sorted_remaining = sorted_positions.size();
+            size_t write = n_union;
+            while (in_order_remaining > 0 && sorted_remaining > 0)
+            {
+                if (less(permutation[in_order_remaining - 1], sorted_positions[sorted_remaining - 1]))
+                    permutation[--write] = sorted_positions[--sorted_remaining];
+                else
+                    permutation[--write] = permutation[--in_order_remaining];
+            }
+            while (sorted_remaining > 0)
                 permutation[--write] = sorted_positions[--sorted_remaining];
-            else
-                permutation[--write] = permutation[--in_order_remaining];
+            chassert(write == in_order_remaining);
         }
-        while (sorted_remaining > 0)
-            permutation[--write] = sorted_positions[--sorted_remaining];
-        chassert(write == in_order_remaining);
-    }
+        else
+        {
+            iota(permutation.data(), n_union, UInt64(0));
+            ::sort(permutation.begin(), permutation.end(), less);
+        }
+    };
+
+    if (!l2_keys_by_position.empty())
+        build_l2_order([&](UInt64 pos_a, UInt64 pos_b) { return l2_keys_by_position[pos_a] < l2_keys_by_position[pos_b]; });
     else
-    {
-        iota(permutation.data(), n_union, UInt64(0));
-        ::sort(permutation.begin(), permutation.end(), l2_order_less);
-    }
+        build_l2_order(l2_order_less);
 
 #ifndef NDEBUG
-    /// Both L2 build paths must produce an order the general comparator accepts.
+    /// Both L2 build paths must produce an order the general comparator accepts; with encoded
+    /// keys this cross-validates the encoding against `compareAt`.
     for (size_t i = 1; i < n_union; ++i)
         chassert(!l2_order_less(permutation[i], permutation[i - 1]));
 #endif
@@ -505,13 +682,32 @@ bool IEJoinAlgorithm::nextLeftRow()
             continue;
         }
 
-        while (frontier < n_union && frontierAdvances(frontier, l2_cursor))
+        auto advance_frontier_while = [&](auto && qualifies)
         {
-            UInt64 frontier_pos = permutation[frontier];
-            /// Mark right-side entries only, so that a row can never match same-side rows.
-            if (li[frontier_pos] < 0)
-                setBit(frontier_pos);
-            ++frontier;
+            while (frontier < n_union && qualifies(frontier))
+            {
+                UInt64 frontier_pos = permutation[frontier];
+                /// Mark right-side entries only, so that a row can never match same-side rows.
+                if (li[frontier_pos] < 0)
+                    setBit(frontier_pos);
+                ++frontier;
+            }
+        };
+        if (!l2_keys_by_position.empty())
+        {
+            /// An entry qualifies when its key sorts before the current entry's in the L2 order,
+            /// non-strictly for a loose condition; the encoding reproduces equality exactly.
+            const auto op2 = conditions[1].op;
+            const bool op2_strict = op2 == JoinConditionOperator::Less || op2 == JoinConditionOperator::Greater;
+            const UInt64 current_key = l2_keys_by_position[pos];
+            if (op2_strict)
+                advance_frontier_while([&](size_t from) { return l2_keys_by_position[permutation[from]] < current_key; });
+            else
+                advance_frontier_while([&](size_t from) { return l2_keys_by_position[permutation[from]] <= current_key; });
+        }
+        else
+        {
+            advance_frontier_while([&](size_t from) { return frontierAdvances(from, l2_cursor); });
         }
         /// The frontier is monotone and never exceeds the union size.
         chassert(frontier <= n_union);

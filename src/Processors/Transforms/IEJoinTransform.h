@@ -78,7 +78,10 @@ private:
     /// the bit array.
     void buildJoinState();
 
-    /// Compare key values (key_index: 0 for L1 keys, 1 for L2 keys) of two union entries.
+    /// Compare key values (key_index: 0 for L1 keys, 1 for L2 keys) of two union entries via the
+    /// generic virtual comparator. This is the reference implementation: the encoded fixed-width
+    /// fast path must reproduce its order exactly, all debug checks run against it, and it serves
+    /// the types that have no encoding.
     int compareKeysAt(size_t key_index, size_t union_a, size_t union_b) const;
 
     /// Whether the frontier should advance past L2 entry `l2_from` while processing L2 entry `l2_current`,
@@ -179,6 +182,11 @@ private:
     PaddedPODArray<UInt64> permutation;
     /// Union entry of each L2 entry (== l1_union[permutation[i]], denormalized for key comparisons).
     PaddedPODArray<UInt64> l2_union;
+    /// Second-condition keys encoded into fixed-width values whose unsigned order is the L2 order,
+    /// indexed by L1 position (the frontier reaches them through the `permutation` entry it
+    /// loads for bit-marking anyway); empty when the condition's type has no encoding
+    /// (the frontier then falls back to `compareAt`).
+    PaddedPODArray<UInt64> l2_keys_by_position;
     /// One bit per L1 position, set for right-side entries that passed the frontier.
     PaddedPODArray<UInt64> bit_array;
     /// One past the highest set bit; lets scans stop instead of walking empty words to the end.
