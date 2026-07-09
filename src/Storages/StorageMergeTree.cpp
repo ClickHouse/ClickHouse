@@ -212,7 +212,7 @@ StorageMergeTree::StorageMergeTree(
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
 
-    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isStaticStorage())
+    if (mode < LoadingStrictnessLevel::ATTACH && !getDataPartsForInternalUsage().empty() && !isTableReadonly())
         throw Exception(ErrorCodes::INCORRECT_DATA,
                         "Data directory for table already containing data parts - probably "
                         "it was unclean DROP table or manual intervention. "
@@ -229,8 +229,8 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    /// Do not schedule any background jobs if current storage has static data files.
-    if (isStaticStorage())
+    /// Do not schedule any background jobs if the table is read-only.
+    if (isTableReadonly())
         return;
 
     clearEmptyParts();
@@ -1501,8 +1501,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
     TableLockHolder & /* table_lock_holder */,
     std::unique_lock<std::mutex> & lock,
     const MergeTreeTransactionPtr & txn,
-    bool optimize_skip_merged_partitions,
-    bool readonly)
+    bool optimize_skip_merged_partitions)
 {
     /// Merges are disabled for UNIQUE KEY tables: a background merge can outdate
     /// a DELETE's target part between part-resolution and marker publish (the
@@ -1588,8 +1587,7 @@ std::expected<MergeMutateSelectedEntryPtr, SelectMergeFailure> StorageMergeTree:
                 /*merge_with_ttl_allowed=*/merge_with_ttl_allowed,
                 /*aggressive=*/aggressive,
                 /*range_filter_=*/nullptr,
-                /*storage_id_=*/getStorageID(),
-                /*readonly_=*/readonly
+                /*storage_id_=*/getStorageID()
             ),
             /*partitions_hint=*/std::nullopt);
 
@@ -1995,7 +1993,8 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
     if (shutdown_called)
         return false;
 
-    chassert(!isStaticStorage());
+    if (isTableReadonly())
+        return false;
 
     FailPointInjection::pauseFailPoint(FailPoints::mt_merge_selecting_task_pause_when_scheduled);
 
@@ -2029,29 +2028,14 @@ bool StorageMergeTree::scheduleDataProcessingJob(BackgroundJobsAssignee & assign
         if (merger_mutator.merges_blocker.isCancelled())
             return false;
 
-        /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-        /// performs no modifications on disk and wastes no background CPU: no merges (regular, recompression,
-        /// or TTL), mutations, or part moves run on it. Tables with a TTL are never marked read-only (see
-        /// `SystemLog::prepareTable`), so skipping TTL merges here cannot strand expired data.
-        ///
-        /// Sample the setting here, under `currently_processing_in_background_mutex` and immediately before
-        /// selecting background work, so the window against a concurrent `ALTER ... MODIFY SETTING
-        /// table_readonly = 1` is as small as possible. Suppressing already in-flight background work is
-        /// best-effort: an operation whose selection started just before the setting was published may still
-        /// complete once. That is harmless - the table is abandoned after rotation, the result is correct,
-        /// and explicit user modifications are always rejected synchronously (`assertNotReadonly` for
-        /// writes/mutations/OPTIMIZE, and the `table_readonly` gate in `MergeTreeData::alterPartition` for
-        /// partition commands).
-        const bool table_is_readonly = (*getSettings())[MergeTreeSetting::table_readonly];
-
         {
-            if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn, /*optimize_skip_merged_partitions=*/false, /*readonly=*/table_is_readonly))
+            if (auto merge_select_result = selectPartsToMerge(metadata_snapshot, false, {}, false, shared_lock, lock, txn))
                 merge_entry = std::move(merge_select_result.value());
             else
                 LOG_TRACE(LogFrequencyLimiter(log.load(), 300), "Didn't start merge: {}", merge_select_result.error().explanation.text);
         }
 
-        if (!merge_entry && !table_is_readonly && !current_mutations_by_version.empty())
+        if (!merge_entry && !current_mutations_by_version.empty())
         {
             PreformattedMessage out_reason;
             mutate_entry = selectPartsToMutate(metadata_snapshot, out_reason, shared_lock, lock);
@@ -3583,11 +3567,14 @@ PreparedSetsCachePtr StorageMergeTree::getPreparedSetsCache(Int64 mutation_id)
     return cache;
 }
 
+bool StorageMergeTree::isTableReadonly() const
+{
+    return isStaticStorage() || (*getSettings())[MergeTreeSetting::table_readonly];
+}
+
 void StorageMergeTree::assertNotReadonly() const
 {
-    if (isStaticStorage())
-        throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
-    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    if (isTableReadonly())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode");
 }
 
