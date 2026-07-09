@@ -66,6 +66,14 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->getAnalyzedResult() && reading->getAnalyzedResult()->readFromProjection())
         return false;
 
+    /// A distributed read (make_distributed_plan) was already turned into a sharded read by an
+    /// earlier optimization pass. A projection match would replace this single read with a Union of
+    /// the surviving-parts read and the projection read, and only one branch carries the sharded
+    /// flag -> the branches expose different shard lists and makeDistributedPlan asserts on the
+    /// mismatch. Keep the read whole; the projection optimization is a no-op for distributed reads.
+    if (reading->getDistributedReadBucketCount() > 0)
+        return false;
+
     if (reading->isQueryWithFinal())
         return false;
 

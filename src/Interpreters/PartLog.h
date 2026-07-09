@@ -10,11 +10,6 @@
 #include <Storages/MergeTree/MergeType.h>
 
 
-namespace ProfileEvents
-{
-    class Counters;
-}
-
 namespace DB
 {
 

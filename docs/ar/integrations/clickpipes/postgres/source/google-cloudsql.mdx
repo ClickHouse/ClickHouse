@@ -1,0 +1,118 @@
+---
+sidebarTitle: 'Google Cloud SQL'
+description: 'إعداد مثيل Postgres على Google Cloud SQL كمصدر لـ ClickPipes'
+slug: /integrations/clickpipes/postgres/source/google-cloudsql
+title: 'دليل إعداد مصدر Postgres على Google Cloud SQL'
+doc_type: 'guide'
+keywords: ['google cloud sql', 'postgres', 'clickpipes', 'فك الترميز المنطقي', 'جدار الحماية']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Info>
+  إذا كنت تستخدم أحد المزوّدين المدعومين (في الشريط الجانبي)، يُرجى الرجوع إلى الدليل الخاص بهذا المزوّد.
+</Info>
+
+<div id="supported-postgres-versions">
+  ## إصدارات Postgres المدعومة
+</div>
+
+Postgres 12 فما بعده
+
+<div id="enable-logical-replication">
+  ## فعِّل النسخ المتماثل المنطقي
+</div>
+
+**لا تحتاج** إلى اتباع الخطوات أدناه إذا كان الإعداد `cloudsql. logical_decoding` مفعّلًا. في معظم الحالات، يكون هذا الإعداد مُعدًّا مسبقًا إذا كنت تُجري الترحيل من أداة أخرى لتكرار البيانات.
+
+1. انقر على زر **Edit** في صفحة النظرة العامة.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp" alt="زر Edit في Cloud SQL Postgres" size="lg" border />
+
+2. انتقل إلى Flags وغيّر `cloudsql.logical_decoding` إلى on. سيتطلب هذا التغيير إعادة تشغيل خادم Postgres.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp" alt="غيّر cloudsql.logical_decoding إلى on" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp" alt="أعد تشغيل الخادم" size="lg" border />
+
+<div id="creating-clickpipes-user-and-granting-permissions">
+  ## إنشاء مستخدم ClickPipes ومنح الأذونات
+</div>
+
+اتصل بـ Cloud SQL Postgres باستخدام المستخدم admin، ثم نفّذ الأوامر التالية:
+
+1. أنشئ مستخدمًا مخصصًا لـ ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. امنح المستخدم الذي أنشأته في الخطوة السابقة وصولًا للقراءة فقط على مستوى schema. يوضّح المثال التالي الأذونات الخاصة بـ schema ‏`public`. كرّر هذه الأوامر لكل schema يحتوي على جداول تريد نسخها متماثلًا:
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. امنح المستخدم امتيازات النسخ المتماثل:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. أنشئ [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) يتضمن الجداول التي تريد نسخها متماثلًا. نوصي بشدة بأن تقتصر الـ publication على الجداول التي تحتاج إليها فقط لتجنّب الأعباء الإضافية على الأداء.
+
+<Warning>
+  يجب أن يحتوي أي table مُدرج في الـ publication إما على **مفتاح أساسي** معرّف، *أو* أن تكون **هوية النسخة المتماثلة** له مضبوطة على `FULL`. راجع [الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) للحصول على إرشادات حول تحديد النطاق.
+</Warning>
+
+* لإنشاء publication لجداول محددة:
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * لإنشاء publication لجميع الجداول في schema محدد:
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+ستحتوي الـ publication المسماة `clickpipes` على مجموعة أحداث التغيير الناتجة عن الجداول المحددة، وستُستخدم لاحقًا لاستقبال تدفق النسخ المتماثل.
+
+[//]: # "TODO Add SSH Tunneling"
+
+<div id="add-clickpipes-ips-to-firewall">
+  ## أضف عناوين IP الخاصة بـ ClickPipes إلى جدار الحماية
+</div>
+
+يرجى اتباع الخطوات التالية لإضافة عناوين IP الخاصة بـ ClickPipes إلى شبكتك.
+
+<Note>
+  إذا كنت تستخدم SSH Tunneling، فأنت بحاجة إلى إضافة [عناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) إلى قواعد جدار الحماية الخاصة بخادم القفز/Bastion.
+</Note>
+
+1. انتقل إلى قسم **Connections**
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp" alt="قسم Connections في Cloud SQL" size="lg" border />
+
+2. انتقل إلى القسم الفرعي Networking
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="القسم الفرعي Networking في Cloud SQL" size="lg" border />
+
+3. أضف [عناوين IP العامة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips)
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="أضف شبكات ClickPipes إلى جدار الحماية" size="lg" border />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp" alt="تمت إضافة شبكات ClickPipes إلى جدار الحماية" size="lg" border />
+
+<div id="whats-next">
+  ## ما الخطوة التالية؟
+</div>
+
+يمكنك الآن [إنشاء ClickPipe الخاص بك](/ar/integrations/clickpipes/postgres/index) والبدء في إدخال البيانات من مثيل Postgres الخاص بك إلى ClickHouse Cloud.
+احرص على تدوين تفاصيل الاتصال التي استخدمتها أثناء إعداد مثيل Postgres الخاص بك، إذ ستحتاج إليها خلال عملية إنشاء ClickPipe.

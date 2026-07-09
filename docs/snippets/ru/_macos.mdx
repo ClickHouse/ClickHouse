@@ -1,0 +1,122 @@
+---
+title: macOS
+---
+
+import Recommendations from '/snippets/ru/recommendations.mdx';
+
+<div id="install-clickhouse-using-homebrew">
+  # Установка ClickHouse с помощью Homebrew
+</div>
+
+<Warning>
+  Установка с использованием формул Homebrew теперь считается устаревшей и будет отключена 2026-09-01.
+  Вместо этого мы рекомендуем использовать метод [быстрой установки](/ru/get-started/setup/self-managed/quick-install), который работает на любой платформе.
+</Warning>
+
+<Steps>
+  <Step>
+    ## Ознакомьтесь с рекомендациями
+
+    <Recommendations />
+  </Step>
+
+  <Step>
+    ## Установка с помощью формулы сообщества Homebrew
+
+    Чтобы установить ClickHouse на macOS с помощью [Homebrew](https://brew.sh/), можно использовать
+    [формулу сообщества Homebrew](https://formulae.brew.sh/cask/clickhouse) для ClickHouse.
+
+    ```bash
+    brew install --cask clickhouse
+    ```
+  </Step>
+
+  <Step>
+    ## Устранение ошибки developer verification error в macOS
+
+    Если вы устанавливаете ClickHouse с помощью `brew`, вы можете столкнуться с ошибкой macOS.
+    По умолчанию macOS не запускает приложения или инструменты, созданные разработчиком, которого не удаётся проверить.
+
+    При попытке выполнить любую команду `clickhouse` вы можете увидеть такую ошибку:
+
+    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="Диалог ошибки проверки разработчика в macOS" border />
+
+    Чтобы обойти эту ошибку проверки, нужно удалить приложение из quarantine bin macOS: либо найти соответствующий параметр в окне System Settings, либо воспользоваться терминалом, либо переустановить ClickHouse.
+
+    ### Через системные настройки
+
+    Самый простой способ удалить исполняемый файл `clickhouse` из quarantine bin:
+
+    1. Откройте **System Settings**.
+
+    2. Перейдите в раздел **Privacy &amp; Security**:
+
+       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="Стандартный вид настроек Privacy & Security в macOS" border />
+
+    3. Прокрутите окно вниз, чтобы найти сообщение &#95;&quot;clickhouse-macos-aarch64&quot; was blocked from use because it isn&#39;t from an identified developer&quot;.
+
+    4. Нажмите **Allow Anyway**.
+
+       <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Настройки Privacy & Security в macOS с кнопкой Allow Anyway" border />
+
+    5. Введите пароль пользователя macOS.
+
+    После этого вы сможете выполнять команды `clickhouse` в терминале.
+
+    ### Через терминал
+
+    Иногда нажатие кнопки `Allow Anyway` не решает проблему — в этом случае можно выполнить те же действия через командную строку.
+    Или, возможно, вы просто предпочитаете работать в командной строке!
+
+    Сначала выясните, куда Homebrew установил исполняемый файл `clickhouse`:
+
+    ```shell
+    which clickhouse
+    ```
+
+    Команда должна вывести что-то вроде:
+
+    ```shell
+    /opt/homebrew/bin/clickhouse
+    ```
+
+    Удалите `clickhouse` из quarantine bin, выполнив `xattr -d com.apple.quarantine`, а затем указав path из предыдущей команды:
+
+    ```shell
+    xattr -d com.apple.quarantine /opt/homebrew/bin/clickhouse
+    ```
+
+    После этого вы сможете запустить исполняемый файл `clickhouse`:
+
+    ```shell
+    clickhouse
+    ```
+
+    Вывод будет примерно таким:
+
+    ```bash
+    Use one of the following commands:
+    clickhouse local [args]
+    clickhouse client [args]
+    clickhouse benchmark [args]
+    ```
+  </Step>
+
+  <Step>
+    ## Устранение проблемы переустановкой ClickHouse
+
+    У Brew есть параметр командной строки, который позволяет не помещать установленные бинарные файлы в quarantine.
+
+    Сначала удалите ClickHouse:
+
+    ```shell
+    brew uninstall clickhouse
+    ```
+
+    Затем переустановите ClickHouse с параметром `--no-quarantine`:
+
+    ```shell
+    brew install --no-quarantine clickhouse
+    ```
+  </Step>
+</Steps>

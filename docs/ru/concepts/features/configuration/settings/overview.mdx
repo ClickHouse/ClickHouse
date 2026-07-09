@@ -1,0 +1,65 @@
+---
+description: 'Страница с обзором настроек.'
+slug: /operations/settings/overview
+title: 'Обзор настроек'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## Обзор
+</div>
+
+<Note>
+  Профили настроек в формате XML и [файлы конфигурации](/ru/concepts/features/configuration/server-config/configuration-files) в настоящее время не
+  поддерживаются в ClickHouse Cloud. Чтобы задать настройки для вашего сервиса ClickHouse Cloud, необходимо использовать [профили настроек на основе SQL](/ru/concepts/features/security/access-rights#settings-profiles-management).
+</Note>
+
+Существуют следующие основные группы настроек ClickHouse:
+
+* Глобальные настройки сервера
+* Настройки сеанса
+* Настройки запроса
+* Настройки фоновых операций
+
+Глобальные настройки применяются по умолчанию, если не переопределены на более низких уровнях. Настройки сеанса можно задавать с помощью профилей, пользовательской конфигурации и команд SET. Настройки запроса можно передавать через предложение SETTINGS; они применяются к отдельным запросам. Настройки фоновых операций применяются к мутациям, слияниям и, возможно, другим операциям, выполняемым асинхронно в фоновом режиме.
+
+<div id="see-non-default-settings">
+  ## Просмотр настроек, отличающихся от значений по умолчанию
+</div>
+
+Чтобы посмотреть, какие настройки отличаются от значений по умолчанию, можно выполнить запрос к таблице
+`system.settings`:
+
+```sql
+SELECT name, value FROM system.settings WHERE changed
+```
+
+Если ни один параметр не отличается от значения по умолчанию, ClickHouse
+ничего не вернёт.
+
+Чтобы проверить значение конкретного параметра, можно указать `name`
+параметра в запросе:
+
+```sql
+SELECT name, value FROM system.settings WHERE name = 'max_threads'
+```
+
+В результате получится примерно следующее:
+
+```response
+┌─name────────┬─value─────┐
+│ max_threads │ 'auto(8)' │
+└─────────────┴───────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+<div id="further-reading">
+  ## Дополнительные материалы
+</div>
+
+* См. [глобальные настройки сервера](/ru/reference/settings/server-settings/settings), чтобы узнать больше о настройке
+  сервера ClickHouse на глобальном уровне.
+* См. [настройки сеанса](/ru/concepts/features/configuration/settings/settings-query-level), чтобы узнать больше о настройке сервера ClickHouse
+  на уровне сеанса.
+* См. [иерархию контекста](/ru/resources/develop-contribute/introduction/architecture#context), чтобы узнать больше об обработке конфигурации в ClickHouse.

@@ -1,0 +1,26 @@
+---
+sidebarTitle: 'Java runner'
+slug: /integrations/google-dataflow/java-runner
+description: 'Vous pouvez ingérer des données dans ClickHouse avec le runner Java de Google Dataflow'
+title: 'Dataflow Java runner'
+doc_type: 'guide'
+keywords: ['Dataflow Java runner', 'Google Dataflow ClickHouse', 'Apache Beam Java ClickHouse', 'ClickHouseIO connector']
+---
+
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Le Dataflow Java runner vous permet d’exécuter des pipelines Apache Beam personnalisés sur le service Dataflow de Google Cloud. Cette approche offre une flexibilité maximale et se prête bien aux workflows ETL avancés.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+1. **Implémentation du pipeline**
+   Pour utiliser le Java runner, vous devez implémenter votre pipeline Beam à l’aide de `ClickHouseIO`, notre connecteur Apache Beam officiel. Pour obtenir des exemples de code et des instructions d’utilisation de `ClickHouseIO`, consultez [ClickHouse Apache Beam](/fr/integrations/connectors/data-ingestion/etl-tools/apache-beam).
+
+2. **Déploiement**
+   Une fois votre pipeline implémenté et configuré, vous pouvez le déployer sur Dataflow à l’aide des outils de déploiement de Google Cloud. Des instructions complètes de déploiement sont disponibles dans la [documentation Google Cloud Dataflow - Java Pipeline](https://cloud.google.com/dataflow/docs/quickstarts/create-pipeline-java).
+
+**Remarque** : cette approche suppose une bonne maîtrise du framework Beam et du développement. Si vous préférez une solution sans code, envisagez d’utiliser les [modèles prédéfinis de ClickHouse](/fr/integrations/connectors/data-ingestion/GCP/google-dataflow/templates).

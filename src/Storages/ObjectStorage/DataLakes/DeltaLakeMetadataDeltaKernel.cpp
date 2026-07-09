@@ -37,6 +37,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace FailPoints
@@ -625,15 +626,25 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "To enable delta lake writes, use allow_experimental_delta_lake_writes = 1");
+            "Delta Lake writes are a Beta feature disabled by default. "
+            "To enable them, set allow_delta_lake_writes = 1");
     }
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());
     auto snapshot = getTableSnapshot(snapshot_version);
     Names partition_columns = snapshot->getPartitionColumns();
 
+    /// Reject column-mapped tables (snapshot exposes physical names): the writer emits logical
+    /// names, not the required physical field names/ids. TODO: support it (delta-kernel-rs#1124).
+    if (!snapshot->getPhysicalNamesMap().empty())
+    {
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Writing to DeltaLake tables with column mapping enabled is not supported");
+    }
+
     auto delta_transaction = std::make_shared<DeltaLake::WriteTransaction>(kernel_helper);
-    delta_transaction->create();
+    delta_transaction->create(partition_columns, snapshot->getTableSchema());
 
     if (partition_columns.empty())
     {

@@ -1,0 +1,35 @@
+---
+title: Как устранить сбои приёма после выхода ClickHouse 23.9?
+description: "Узнайте, как устранить сбои приёма, вызванные более строгой проверкой привилегий, введённой в ClickHouse 23.9 для таблиц, использующих `async_inserts`. Обновите привилегии, чтобы устранить ошибки."
+date: 2022-11-17
+tags: ['Ошибки и исключения']
+keywords: ['GRANT', 'Ошибки прав доступа']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="resolving-ingest-failures-after-clickhouse-239-release">
+  ## Устранение сбоев приёма после релиза ClickHouse 23.9
+</div>
+
+Основная причина этих ошибок, связанных с разрешениями, установлена: она заключается в более строгой проверке привилегий в новом релизе для [`async_inserts`](/ru/concepts/features/operations/insert/asyncinserts).
+
+Чтобы устранить эту проблему, необходимо обновить привилегии, иначе ваш сервис не будет работать. Проверьте сообщение об ошибке, в котором указаны отсутствующие привилегии, и вручную добавьте их. Для таблиц, использующих `async_inserts`, потребуются дополнительные привилегии `SELECT` или `dictGet`.
+
+<div id="add-necessary-grants-to-affected-tables-and-dictionaries">
+  ## Добавьте необходимые привилегии GRANT для затронутых таблиц и словарей
+</div>
+
+```
+-- Добавить разрешения grant SELECT
+GRANT SELECT ON mydb.insertTable TO insert_role WITH GRANT OPTION
+
+-- Добавить разрешения grant dictGet
+GRANT dictGet ON mydb.insertDictionary TO insert_role
+```
+
+Чтобы узнать больше о команде `GRANT`, см. [эту страницу](/ru/reference/statements/grant).
+
+Если вы не можете внести это изменение, обратитесь в [ClickHouse Support](https://clickhouse.com/support/program) за помощью.

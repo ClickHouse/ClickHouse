@@ -1,0 +1,501 @@
+---
+title: 'التعامل مع تنسيقات JSON الأخرى'
+slug: /integrations/data-formats/json/other-formats
+description: 'التعامل مع تنسيقات JSON الأخرى'
+sidebarTitle: 'التعامل مع التنسيقات الأخرى'
+keywords: ['json', 'تنسيقات', 'تنسيقات JSON']
+doc_type: 'guide'
+---
+
+تفترض الأمثلة السابقة الخاصة بتحميل بيانات JSON استخدام [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow) (`NDJSON`). يقرأ هذا التنسيق المفاتيح في كل سطر JSON باعتبارها أعمدة. على سبيل المثال:
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+LIMIT 5
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8   │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+5 rows in set. Elapsed: 0.449 sec.
+```
+
+مع أن هذا هو عمومًا التنسيق الأكثر شيوعًا لملفات JSON، فستصادف تنسيقات أخرى، أو قد تحتاج إلى قراءة JSON ككائن واحد.
+
+نوفّر أدناه أمثلة على قراءة JSON وتحميله بتنسيقات شائعة أخرى.
+
+<div id="reading-json-as-an-object">
+  ## قراءة JSON ككائن
+</div>
+
+تُظهر أمثلتنا السابقة كيف يقرأ `JSONEachRow` تنسيق newline-delimited JSON، بحيث يُقرأ كل سطر ككائن منفصل يُربَط بصف في جدول، ويُربَط كل مفتاح بعمود. وهذا مثالي في الحالات التي تكون فيها بنية JSON معروفة ويكون لكل عمود نوع واحد فقط.
+
+في المقابل، يتعامل `JSONAsObject` مع كل سطر على أنه كائن `JSON` واحد ويخزّنه في عمود واحد من النوع [`JSON`](/ar/reference/data-types/newjson)، مما يجعله أنسب لحمولات JSON المتداخلة وللحالات التي تكون فيها المفاتيح ديناميكية وقد تحتمل أكثر من نوع واحد.
+
+استخدم `JSONEachRow` لعمليات الإدراج على مستوى الصفوف، و[`JSONAsObject`](/ar/reference/formats/JSON/JSONAsObject) عند تخزين بيانات JSON مرنة أو ديناميكية.
+
+قارن المثال أعلاه بالاستعلام التالي، الذي يقرأ البيانات نفسها على أنها كائن JSON واحد لكل سطر:
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+LIMIT 5
+```
+
+```response
+┌─json─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.338 sec.
+```
+
+يُعد `JSONAsObject` مفيدًا لإدراج صفوف في جدول باستخدام عمود واحد من نوع كائن JSON، على سبيل المثال.
+
+```sql
+CREATE TABLE pypi
+(
+    `json` JSON
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO pypi SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONAsObject)
+LIMIT 5;
+
+SELECT *
+FROM pypi
+LIMIT 2;
+```
+
+```response
+┌─json─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+│ {"country_code":"CN","date":"2022-11-15","installer":"bandersnatch","project":"clickhouse-connect","python_minor":"","system":"","type":"bdist_wheel","version":"0.2.8"} │
+└──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+قد يكون التنسيق `JSONAsObject` مفيدًا أيضًا لقراءة JSON مفصول بأسطر جديدة في الحالات التي تكون فيها بنية الكائنات غير متسقة. على سبيل المثال، إذا كان نوع أحد المفاتيح يختلف بين الصفوف (فقد يكون أحيانًا سلسلة نصية، وفي أحيان أخرى كائنًا). في مثل هذه الحالات، لا يستطيع ClickHouse استنتاج مخطط ثابت باستخدام `JSONEachRow`، بينما يتيح `JSONAsObject` إدخال البيانات دون فرض قيود صارمة على الأنواع، مع تخزين كل صف JSON كاملًا في عمود واحد. على سبيل المثال، لاحظ كيف يفشل `JSONEachRow` في المثال التالي:
+
+```sql
+SELECT count()
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONEachRow')
+```
+
+```response
+Elapsed: 1.198 sec.
+
+Received exception from server (version 24.12.1):
+Code: 636. DB::Exception: Received from sql-clickhouse.clickhouse.com:9440. DB::Exception: The table structure cannot be extracted from a JSONEachRow format file. Error:
+Code: 117. DB::Exception: JSON objects have ambiguous data: in some objects path 'record.subject' has type 'String' and in some - 'Tuple(`$type` String, cid String, uri String)'. You can enable setting input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects to use String type for path 'record.subject'. (INCORRECT_DATA) (version 24.12.1.18239 (official build))
+To increase the maximum number of rows/bytes to read for structure determination, use setting input_format_max_rows_to_read_for_schema_inference/input_format_max_bytes_to_read_for_schema_inference.
+You can specify the structure manually: (in file/uri bluesky/file_0001.json.gz). (CANNOT_EXTRACT_TABLE_STRUCTURE)
+```
+
+في المقابل، يمكن استخدام `JSONAsObject` في هذه الحالة، لأن النوع `JSON` يدعم أنواعًا متعددة للعمود الفرعي نفسه.
+
+```sql
+SELECT count()
+FROM s3('https://clickhouse-public-datasets.s3.amazonaws.com/bluesky/file_0001.json.gz', 'JSONAsObject')
+```
+
+```response
+┌─count()─┐
+│ 1000000 │
+└─────────┘
+
+1 row in set. Elapsed: 0.480 sec. Processed 1.00 million rows, 256.00 B (2.08 million rows/s., 533.76 B/s.)
+```
+
+<div id="array-of-json-objects">
+  ## مصفوفة من كائنات JSON
+</div>
+
+من أكثر أشكال بيانات JSON شيوعًا أن تكون هناك قائمة من كائنات JSON ضمن مصفوفة JSON، كما في [هذا المثال](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json):
+
+```bash
+> cat list.json
+[
+  {
+    "path": "Akiba_Hebrew_Academy",
+    "month": "2017-08-01",
+    "hits": 241
+  },
+  {
+    "path": "Aegithina_tiphia",
+    "month": "2018-02-01",
+    "hits": 34
+  },
+  ...
+]
+```
+
+لننشئ جدولًا لهذا النوع من البيانات:
+
+```sql
+CREATE TABLE sometable
+(
+    `path` String,
+    `month` Date,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY tuple(month, path)
+```
+
+لاستيراد قائمة من كائنات JSON، يمكن استخدام تنسيق [`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow) (لإدراج البيانات من ملف [list.json](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json)):
+
+```sql
+INSERT INTO sometable
+FROM INFILE 'list.json'
+FORMAT JSONEachRow
+```
+
+استخدمنا عبارة [FROM INFILE](/ar/reference/statements/insert-into#inserting-data-from-a-file) لتحميل البيانات من الملف المحلي، ويمكننا ملاحظة أن الاستيراد قد نجح:
+
+```sql
+SELECT *
+FROM sometable
+```
+
+```response
+┌─path──────────────────────┬──────month─┬─hits─┐
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │    1 │
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │  241 │
+│ Aegithina_tiphia          │ 2018-02-01 │   34 │
+└───────────────────────────┴────────────┴──────┘
+```
+
+<div id="json-object-keys">
+  ## مفاتيح كائنات JSON
+</div>
+
+في بعض الحالات، يمكن ترميز قائمة من كائنات JSON كخصائص للكائن بدلًا من عناصر في المصفوفة (راجع [objects.json](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/objects.json) للاطلاع على مثال):
+
+```bash
+cat objects.json
+```
+
+```response
+{
+  "a": {
+    "path":"April_25,_2017",
+    "month":"2018-01-01",
+    "hits":2
+  },
+  "b": {
+    "path":"Akahori_Station",
+    "month":"2016-06-01",
+    "hits":11
+  },
+  ...
+}
+```
+
+يمكن لـ ClickHouse تحميل بيانات من هذا النوع باستخدام تنسيق [`JSONObjectEachRow`](/ar/reference/formats/JSON/JSONObjectEachRow):
+
+```sql
+INSERT INTO sometable FROM INFILE 'objects.json' FORMAT JSONObjectEachRow;
+SELECT * FROM sometable;
+```
+
+```response
+┌─path────────────┬──────month─┬─hits─┐
+│ Abducens_palsy  │ 2016-05-01 │   28 │
+│ Akahori_Station │ 2016-06-01 │   11 │
+│ April_25,_2017  │ 2018-01-01 │    2 │
+└─────────────────┴────────────┴──────┘
+```
+
+<div id="specifying-parent-object-key-values">
+  ### تحديد قيم مفاتيح الكائن الأب
+</div>
+
+لنفترض أننا نريد أيضًا حفظ القيم الموجودة في مفاتيح الكائن الأب داخل الجدول. في هذه الحالة، يمكننا استخدام [الخيار التالي](/ar/reference/settings/formats#format_json_object_each_row_column_for_object_name) لتحديد اسم العمود الذي نريد حفظ قيم المفاتيح فيه:
+
+```sql
+SET format_json_object_each_row_column_for_object_name = 'id'
+```
+
+الآن، يمكننا التحقق من البيانات التي ستُحمَّل من ملف JSON الأصلي باستخدام الدالة [`file()`](/ar/reference/functions/regular-functions/files#file):
+
+```sql
+SELECT * FROM file('objects.json', JSONObjectEachRow)
+```
+
+```response
+┌─id─┬─path────────────┬──────month─┬─hits─┐
+│ a  │ April_25,_2017  │ 2018-01-01 │    2 │
+│ b  │ Akahori_Station │ 2016-06-01 │   11 │
+│ c  │ Abducens_palsy  │ 2016-05-01 │   28 │
+└────┴─────────────────┴────────────┴──────┘
+```
+
+لاحظ كيف تمّت تعبئة العمود `id` بقيم المفاتيح على نحو صحيح.
+
+<div id="json-arrays">
+  ## مصفوفات JSON
+</div>
+
+أحيانًا، لتوفير المساحة، تُرمَّز ملفات JSON على هيئة مصفوفات بدلًا من كائنات. في هذه الحالة، نتعامل مع [قائمة من مصفوفات JSON](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/arrays.jsonl):
+
+```bash
+cat arrays.json
+```
+
+```response
+["Akiba_Hebrew_Academy", "2017-08-01", 241],
+["Aegithina_tiphia", "2018-02-01", 34],
+["1971-72_Utah_Stars_season", "2016-10-01", 1]
+```
+
+في هذه الحالة، سيحمّل ClickHouse هذه البيانات ويُسنِد كل قيمة إلى العمود المقابل وفقًا لترتيبها في المصفوفة. نستخدم التنسيق [`JSONCompactEachRow`](/ar/reference/formats/JSON/JSONCompactEachRow) لهذا الغرض:
+
+```sql
+SELECT * FROM sometable
+```
+
+```response
+┌─c1────────────────────────┬─────────c2─┬──c3─┐
+│ Akiba_Hebrew_Academy      │ 2017-08-01 │ 241 │
+│ Aegithina_tiphia          │ 2018-02-01 │  34 │
+│ 1971-72_Utah_Stars_season │ 2016-10-01 │   1 │
+└───────────────────────────┴────────────┴─────┘
+```
+
+<div id="importing-individual-columns-from-json-arrays">
+  ### استيراد أعمدة منفردة من مصفوفات JSON
+</div>
+
+في بعض الحالات، يمكن ترميز البيانات على مستوى الأعمدة بدلًا من الصفوف. في هذه الحالة، يحتوي كائن JSON رئيسي على أعمدة تتضمن قيمًا. ألقِ نظرة على [الملف التالي](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/columns.json):
+
+```bash
+cat columns.json
+```
+
+```response
+{
+  "path": ["2007_Copa_America", "Car_dealerships_in_the_USA", "Dihydromyricetin_reductase"],
+  "month": ["2016-07-01", "2015-07-01", "2015-07-01"],
+  "hits": [178, 11, 1]
+}
+```
+
+يستخدم ClickHouse تنسيق [`JSONColumns`](/ar/reference/formats/JSON/JSONColumns) لتحليل البيانات المُنسَّقة كما يلي:
+
+```sql
+SELECT * FROM file('columns.json', JSONColumns)
+```
+
+```response
+┌─path───────────────────────┬──────month─┬─hits─┐
+│ 2007_Copa_America          │ 2016-07-01 │  178 │
+│ Car_dealerships_in_the_USA │ 2015-07-01 │   11 │
+│ Dihydromyricetin_reductase │ 2015-07-01 │    1 │
+└────────────────────────────┴────────────┴──────┘
+```
+
+كما يُدعَم أيضًا تنسيق أكثر إحكامًا عند التعامل مع [مصفوفة من الأعمدة](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/columns-array.json) بدلًا من كائن، باستخدام تنسيق [`JSONCompactColumns`](/ar/reference/formats/JSON/JSONCompactColumns):
+
+```sql
+SELECT * FROM file('columns-array.json', JSONCompactColumns)
+```
+
+```response
+┌─c1──────────────┬─────────c2─┬─c3─┐
+│ Heidenrod       │ 2017-01-01 │ 10 │
+│ Arthur_Henrique │ 2016-11-01 │ 12 │
+│ Alan_Ebnother   │ 2015-11-01 │ 66 │
+└─────────────────┴────────────┴────┘
+```
+
+<div id="saving-json-objects-instead-of-parsing">
+  ## حفظ كائنات JSON بدلًا من تحليلها
+</div>
+
+قد تكون هناك حالات ترغب فيها في حفظ كائنات JSON في عمود `String` واحد (أو `JSON`) بدلًا من تحليلها. وقد يكون ذلك مفيدًا عند التعامل مع قائمة من كائنات JSON ذات بُنى مختلفة. لنأخذ [هذا الملف](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/custom.json) على سبيل المثال، حيث لدينا عدة كائنات JSON مختلفة داخل قائمة رئيسية:
+
+```bash
+cat custom.json
+```
+
+```response
+[
+  {"name": "Joe", "age": 99, "type": "person"},
+  {"url": "/my.post.MD", "hits": 1263, "type": "post"},
+  {"message": "Warning on disk usage", "type": "log"}
+]
+```
+
+نريد حفظ كائنات JSON الأصلية في الجدول التالي:
+
+```sql
+CREATE TABLE events
+(
+    `data` String
+)
+ENGINE = MergeTree
+ORDER BY ()
+```
+
+يمكننا الآن تحميل البيانات من الملف إلى هذا الجدول باستخدام التنسيق [`JSONAsString`](/ar/reference/formats/JSON/JSONAsString) للاحتفاظ بكائنات JSON بدلًا من تحليلها:
+
+```sql
+INSERT INTO events (data)
+FROM INFILE 'custom.json'
+FORMAT JSONAsString
+```
+
+ويمكننا استخدام [دوال JSON](/ar/reference/functions/regular-functions/json-functions) للاستعلام عن الكائنات المحفوظة:
+
+```sql
+SELECT
+    JSONExtractString(data, 'type') AS type,
+    data
+FROM events
+```
+
+```response
+┌─type───┬─data─────────────────────────────────────────────────┐
+│ person │ {"name": "Joe", "age": 99, "type": "person"}         │
+│ post   │ {"url": "/my.post.MD", "hits": 1263, "type": "post"} │
+│ log    │ {"message": "Warning on disk usage", "type": "log"}  │
+└────────┴──────────────────────────────────────────────────────┘
+```
+
+لاحظ أن `JSONAsString` يعمل بكفاءة تامة في الحالات التي تكون فيها الملفات منسّقة بحيث يحتوي كل سطر على كائن JSON واحد (ويُستخدم ذلك عادةً مع التنسيق `JSONEachRow`).
+
+<div id="schema-for-nested-objects">
+  ## مخطط الكائنات المتداخلة
+</div>
+
+في الحالات التي نتعامل فيها مع [كائنات JSON المتداخلة](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json)، يمكننا أيضًا تحديد مخطط صريح واستخدام الأنواع المعقدة ([`Array`](/ar/reference/data-types/array)، [`JSON`](/ar/guides/clickhouse/data-formats/json/intro) أو [`Tuple`](/ar/reference/data-types/tuple)) لتحميل البيانات:
+
+```sql
+SELECT *
+FROM file('list-nested.json', JSONEachRow, 'page Tuple(path String, title String, owner_id UInt16), month Date, hits UInt32')
+LIMIT 1
+```
+
+```response
+┌─page───────────────────────────────────────────────┬──────month─┬─hits─┐
+│ ('Akiba_Hebrew_Academy','Akiba Hebrew Academy',12) │ 2017-08-01 │  241 │
+└────────────────────────────────────────────────────┴────────────┴──────┘
+```
+
+<div id="accessing-nested-json-objects">
+  ## الوصول إلى كائنات JSON المتداخلة
+</div>
+
+يمكن الإشارة إلى [مفاتيح JSON المتداخلة](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list-nested.json) عبر تفعيل [خيار الإعدادات التالي](/ar/reference/settings/formats#input_format_import_nested_json):
+
+```sql
+SET input_format_import_nested_json = 1
+```
+
+يتيح لنا هذا الإشارة إلى مفاتيح كائنات JSON المتداخلة باستخدام ترميز النقطة (وتذكّر إحاطتها بعلامات الـbacktick لكي يعمل ذلك):
+
+```sql
+SELECT *
+FROM file('list-nested.json', JSONEachRow, '`page.owner_id` UInt32, `page.title` String, month Date, hits UInt32')
+LIMIT 1
+```
+
+```results
+┌─page.owner_id─┬─page.title───────────┬──────month─┬─hits─┐
+│            12 │ Akiba Hebrew Academy │ 2017-08-01 │  241 │
+└───────────────┴──────────────────────┴────────────┴──────┘
+```
+
+بهذه الطريقة، يمكننا تسطيح كائنات JSON المتداخلة أو استخدام بعض القيم الموجودة داخلها لحفظها في أعمدة منفصلة.
+
+<div id="skipping-unknown-columns">
+  ## تجاهل الأعمدة غير المعروفة
+</div>
+
+بشكل افتراضي، يتجاهل ClickHouse الأعمدة غير المعروفة عند استيراد بيانات JSON. لنجرب استيراد الملف الأصلي إلى الجدول من دون العمود `month`:
+
+```sql
+CREATE TABLE shorttable
+(
+    `path` String,
+    `hits` UInt32
+)
+ENGINE = MergeTree
+ORDER BY path
+```
+
+لا يزال بإمكاننا إدراج [بيانات JSON الأصلية](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/list.json) ذات الأعمدة الثلاثة في هذا الجدول:
+
+```sql
+INSERT INTO shorttable FROM INFILE 'list.json' FORMAT JSONEachRow;
+SELECT * FROM shorttable
+```
+
+```response
+┌─path──────────────────────┬─hits─┐
+│ 1971-72_Utah_Stars_season │    1 │
+│ Aegithina_tiphia          │   34 │
+│ Akiba_Hebrew_Academy      │  241 │
+└───────────────────────────┴──────┘
+```
+
+سيتجاهل ClickHouse الأعمدة غير المعروفة أثناء الاستيراد. يمكن إيقاف هذا السلوك باستخدام خيار الإعدادات ‏[input&#95;format&#95;skip&#95;unknown&#95;fields](/ar/reference/settings/formats#input_format_skip_unknown_fields):
+
+```sql
+SET input_format_skip_unknown_fields = 0;
+INSERT INTO shorttable FROM INFILE 'list.json' FORMAT JSONEachRow;
+```
+
+```response
+Ok.
+Exception on client:
+Code: 117. DB::Exception: Unknown field found while parsing JSONEachRow format: month: (in file/uri /data/clickhouse/user_files/list.json): (at row 1)
+```
+
+سيرمي ClickHouse استثناءات في حال عدم اتساق بنية JSON وبنية أعمدة الجدول.
+
+<div id="bson">
+  ## BSON
+</div>
+
+يتيح ClickHouse تصدير البيانات إلى ملفات مُشفَّرة بتنسيق [BSON](https://bsonspec.org/) واستيرادها منها. يُستخدم هذا التنسيق في بعض نظم إدارة قواعد البيانات، مثل [MongoDB](https://github.com/mongodb/mongo).
+
+لاستيراد بيانات BSON، نستخدم تنسيق [BSONEachRow](/ar/reference/formats/BSONEachRow). لنستورد البيانات من [ملف BSON هذا](https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/data.bson):
+
+```sql
+SELECT * FROM file('data.bson', BSONEachRow)
+```
+
+```response
+┌─path──────────────────────┬─month─┬─hits─┐
+│ Bob_Dolman                │ 17106 │  245 │
+│ 1-krona                   │ 17167 │    4 │
+│ Ahmadabad-e_Kalij-e_Sofla │ 17167 │    3 │
+└───────────────────────────┴───────┴──────┘
+```
+
+يمكننا أيضًا التصدير إلى ملفات BSON بالصيغة نفسها:
+
+```sql
+SELECT *
+FROM sometable
+INTO OUTFILE 'out.bson'
+FORMAT BSONEachRow
+```
+
+بعد ذلك، سيتم تصدير بياناتنا إلى الملف `out.bson`.

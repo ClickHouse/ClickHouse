@@ -1,0 +1,68 @@
+---
+alias: []
+description: 'توثيق تنسيق MsgPack'
+input_format: true
+keywords: ['MsgPack']
+output_format: true
+slug: /interfaces/formats/MsgPack
+title: 'MsgPack'
+doc_type: 'مرجع'
+---
+
+| الإدخال | الإخراج | الاسم المستعار |
+| ------- | ------- | -------------- |
+| ✔       | ✔       |                |
+
+<div id="description">
+  ## الوصف
+</div>
+
+يدعم ClickHouse قراءة ملفات البيانات بتنسيق [MessagePack](https://msgpack.org/) وكتابتها.
+
+<div id="data-types-matching">
+  ## مطابقة أنواع البيانات
+</div>
+
+| نوع البيانات في MessagePack (`INSERT`)                             | نوع البيانات في ClickHouse                                                    | نوع البيانات في MessagePack (`SELECT`) |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------- | -------------------------------------- |
+| `uint N`, `positive fixint`                                        | [`UIntN`](/ar/reference/data-types/int-uint)                                     | `uint N`                               |
+| `int N`, `negative fixint`                                         | [`IntN`](/ar/reference/data-types/int-uint)                                      | `int N`                                |
+| `bool`                                                             | [`UInt8`](/ar/reference/data-types/int-uint)                                     | `uint 8`                               |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`String`](/ar/reference/data-types/string)                                      | `bin 8`, `bin 16`, `bin 32`            |
+| `fixstr`, `str 8`, `str 16`, `str 32`, `bin 8`, `bin 16`, `bin 32` | [`FixedString`](/ar/reference/data-types/fixedstring)                            | `bin 8`, `bin 16`, `bin 32`            |
+| `float 32`                                                         | [`Float32`](/ar/reference/data-types/float)                                      | `float 32`                             |
+| `float 64`                                                         | [`Float64`](/ar/reference/data-types/float)                                      | `float 64`                             |
+| `uint 16`                                                          | [`Date`](/ar/reference/data-types/date)                                          | `uint 16`                              |
+| `int 32`                                                           | [`Date32`](/ar/reference/data-types/date32)                                      | `int 32`                               |
+| `uint 32`                                                          | [`DateTime`](/ar/reference/data-types/datetime)                                  | `uint 32`                              |
+| `uint 64`                                                          | [`DateTime64`](/ar/reference/data-types/datetime)                                | `uint 64`                              |
+| `fixarray`, `array 16`, `array 32`                                 | [`Array`](/ar/reference/data-types/array)/[`Tuple`](/ar/reference/data-types/tuple) | `fixarray`, `array 16`, `array 32`     |
+| `fixmap`, `map 16`, `map 32`                                       | [`Map`](/ar/reference/data-types/map)                                            | `fixmap`, `map 16`, `map 32`           |
+| `uint 32`                                                          | [`IPv4`](/ar/reference/data-types/ipv4)                                          | `uint 32`                              |
+| `bin 8`                                                            | [`String`](/ar/reference/data-types/string)                                      | `bin 8`                                |
+| `int 8`                                                            | [`Enum8`](/ar/reference/data-types/enum)                                         | `int 8`                                |
+| `bin 8`                                                            | [`(U)Int128`/`(U)Int256`](/ar/reference/data-types/int-uint)                     | `bin 8`                                |
+| `int 32`                                                           | [`Decimal32`](/ar/reference/data-types/decimal)                                  | `int 32`                               |
+| `int 64`                                                           | [`Decimal64`](/ar/reference/data-types/decimal)                                  | `int 64`                               |
+| `bin 8`                                                            | [`Decimal128`/`Decimal256`](/ar/reference/data-types/decimal)                    | `bin 8 `                               |
+
+<div id="example-usage">
+  ## مثال للاستخدام
+</div>
+
+الكتابة إلى ملف &quot;.msgpk&quot;:
+
+```sql
+$ clickhouse-client --query="CREATE TABLE msgpack (array Array(UInt8)) ENGINE = Memory;"
+$ clickhouse-client --query="INSERT INTO msgpack VALUES ([0, 1, 2, 3, 42, 253, 254, 255]), ([255, 254, 253, 42, 3, 2, 1, 0])";
+$ clickhouse-client --query="SELECT * FROM msgpack FORMAT MsgPack" > tmp_msgpack.msgpk;
+```
+
+<div id="format-settings">
+  ## إعدادات التنسيق
+</div>
+
+| الإعداد                                                                                                              | الوصف                                                                                 | الافتراضي |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | --------- |
+| [`input_format_msgpack_number_of_columns`](/ar/reference/settings/formats#input_format_msgpack_number_of_columns)       | عدد الأعمدة في بيانات MsgPack المُدخلة. يُستخدم لاستنتاج المخطط تلقائيًا من البيانات. | `0`       |
+| [`output_format_msgpack_uuid_representation`](/ar/reference/settings/formats#output_format_msgpack_uuid_representation) | كيفية إخراج UUID بتنسيق MsgPack.                                                      | `EXT`     |

@@ -1,0 +1,164 @@
+---
+sidebarTitle: 'Шифрование данных'
+slug: /cloud/security/cmek
+title: 'Шифрование данных'
+description: 'Подробнее о шифровании данных в ClickHouse Cloud'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'шифрование', 'CMEK', 'опрос ключа KMS']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="storage-encryption">
+  ## Шифрование на уровне хранилища
+</div>
+
+В ClickHouse Cloud по умолчанию включено шифрование при хранении с использованием ключей AES-256 под управлением облачного провайдера. Подробнее см.:
+
+* [Шифрование на стороне сервера AWS для S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingServerSideEncryption.html)
+* [Шифрование при хранении по умолчанию в GCP](https://cloud.google.com/docs/security/encryption/default-encryption)
+* [Шифрование хранилища Azure для данных при хранении](https://learn.microsoft.com/en-us/azure/storage/common/storage-service-encryption)
+
+<div id="database-encryption">
+  ## Шифрование на уровне базы данных
+</div>
+
+<EnterprisePlanFeatureBadge feature="Enhanced Encryption" />
+
+Данные в состоянии покоя по умолчанию шифруются с помощью ключей AES-256, управляемых облачным провайдером. Клиенты могут включить прозрачное шифрование данных (TDE), чтобы обеспечить дополнительный уровень защиты данных сервиса, или предоставить собственный ключ для использования Customer Managed Encryption Keys (CMEK) в своем сервисе.
+
+Усиленное шифрование в настоящее время доступно для сервисов в AWS и GCP. Поддержка Azure появится в ближайшее время.
+
+<div id="transparent-data-encryption-tde">
+  ### Прозрачное шифрование данных (TDE)
+</div>
+
+TDE необходимо включить при создании сервиса. Для существующих сервисов включить шифрование после создания нельзя. После включения TDE его уже нельзя отключить. Все данные в сервисе останутся зашифрованными. Если вы захотите отключить TDE после его включения, потребуется создать новый сервис и перенести данные в него.
+
+1. Выберите `Create new service`
+2. Укажите имя сервиса
+3. Выберите AWS или GCP в качестве облачного провайдера и нужный регион в раскрывающемся списке
+4. Откройте раскрывающийся список Enterprise features и включите Enable Transparent Data Encryption (TDE)
+5. Нажмите Create service
+
+<div id="customer-managed-encryption-keys-cmek">
+  ### Ключи шифрования, управляемые клиентом (CMEK)
+</div>
+
+<Warning>
+  Удаление ключа KMS, используемого для шифрования сервиса ClickHouse Cloud, приведет к остановке сервиса, а его данные, как и существующие резервные копии, станет невозможно восстановить. Чтобы избежать случайной потери данных при ротации ключей, рекомендуется некоторое время сохранять старые ключи KMS перед их удалением.
+</Warning>
+
+После шифрования сервиса с помощью TDE клиенты могут обновить ключ, чтобы включить CMEK. После обновления настройки TDE сервис автоматически перезапустится. В ходе этого процесса старый ключ KMS расшифровывает ключ шифрования данных (DEK), а новый ключ KMS заново шифрует DEK. Это гарантирует, что после перезапуска сервис будет использовать новый ключ KMS для операций шифрования. Этот процесс может занять несколько минут.
+
+<Accordion title="Включение CMEK с помощью AWS KMS">
+  1. В ClickHouse Cloud выберите зашифрованный сервис
+
+  2. Слева нажмите Settings
+
+  3. В нижней части экрана разверните раздел Network security information
+
+  4. Скопируйте Encryption role ID (AWS) или Encryption Service Account (GCP) — это понадобится на одном из следующих шагов
+
+  5. [Создайте ключ KMS для AWS](https://docs.aws.amazon.com/kms/latest/developerguide/create-keys.html)
+
+  6. Нажмите на ключ
+
+  7. Обновите политику ключа AWS следующим образом:
+
+     ```json
+     {
+         "Sid": "Allow ClickHouse Access",
+         "Effect": "Allow",
+         "Principal": {
+             "AWS": [ "Encryption role ID " ]
+         },
+         "Action": [
+             "kms:Encrypt",
+             "kms:Decrypt",
+             "kms:ReEncrypt*",
+             "kms:DescribeKey"
+         ],
+         "Resource": "*"
+     }
+     ```
+
+  8. Сохраните политику ключа
+
+  9. Скопируйте ARN ключа
+
+  10. Вернитесь в ClickHouse Cloud и вставьте ARN ключа в раздел прозрачное шифрование данных в Settings сервиса
+
+  11. Сохраните изменения
+</Accordion>
+
+<Accordion title="Включение CMEK с помощью GCP KMS">
+  1. В ClickHouse Cloud выберите зашифрованный сервис
+  2. Слева нажмите Settings
+  3. В нижней части экрана разверните раздел Network security information
+  4. Скопируйте Encryption Service Account (GCP) — это понадобится на одном из следующих шагов
+  5. [Создайте ключ KMS для GCP](https://cloud.google.com/kms/docs/create-key)
+  6. Нажмите на ключ
+  7. Предоставьте GCP Encryption Service Account, скопированному на шаге 4, следующие разрешения.
+     * Cloud KMS CryptoKey Encrypter/Decrypter
+     * Cloud KMS Viewer
+  8. Сохраните разрешения ключа
+  9. Скопируйте путь к ресурсу ключа
+  10. Вернитесь в ClickHouse Cloud и вставьте путь к ресурсу ключа в раздел прозрачное шифрование данных в Settings сервиса
+  11. Сохраните изменения
+</Accordion>
+
+<Accordion title="Включение CMEK с помощью Azure KMS">
+  1. В ClickHouse Cloud выберите зашифрованный сервис
+  2. Нажмите `Settings` слева
+  3. В нижней части экрана разверните `Network security information`
+  4. Скопируйте `Cross Tenant App Client ID` — он понадобится на следующем шаге
+  5. Войдите в свою подписку Azure и выполните следующую команду в Azure CLI, чтобы создать новый service principal; замените `{azure_cross_tenant_app_client_id}` на значение, скопированное на предыдущем шаге
+     `az ad sp create --id {azure_cross_tenant_app_client_id}`
+  6. Скопируйте `Name` созданного service principal — он понадобится на одном из следующих шагов
+  7. [Создайте Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/quick-create-portal)
+  8. [Создайте ключ в Azure Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/keys/quick-create-portal)
+  9. Для ключа в Key Vault выберите слева `Access control (IAM)`
+  10. В верхнем меню выберите `Role assignments`
+  11. Нажмите `Add`, затем в верхнем меню выберите `Add role assignment`
+  12. Выберите роль `Key Vault Crypto User`, затем нажмите `Next`
+  13. Оставьте значения по умолчанию на экране `Add role assignment` и нажмите `+Select members`
+  14. Вставьте имя service principal, скопированное на шаге 6 (оно начинается с CH-TDE), выберите этот service principal и нажмите `Select`
+  15. Нажмите `Next`, затем `Review + assign`
+  16. Вернитесь в свой Azure Key Vault и скопируйте следующие значения:
+      * На странице Overview скопируйте свой Vault URI
+      * На странице Overview скопируйте свой Directory ID
+      * На странице Keys скопируйте Name своего ключа
+  17. Вернитесь к настройкам своего сервиса в ClickHouse Cloud и вставьте значения из шага 16 в следующие поля:
+      * Key ID &gt; вставьте Name своего ключа
+      * Key Vault URI &gt; вставьте свой Vault URI
+      * Key Tenant ID &gt; вставьте свой Directory ID
+  18. Нажмите Rotate KMS, подождите несколько минут, так как это приведет к поэтапному перезапуску, и убедитесь, что ваш сервис работает
+</Accordion>
+
+<div id="key-rotation">
+  #### Ротация ключа
+</div>
+
+После настройки CMEK выполните ротацию ключа, следуя описанным выше инструкциям по созданию нового ключа KMS и предоставлению разрешений. Затем вернитесь к настройкам сервиса, вставьте новый ARN (AWS), Key Resource Path (GCP) или Key Name (Azure) и сохраните настройки. Чтобы применить новый ключ, сервис будет перезапущен.
+
+<div id="kms-key-poller">
+  #### Опрос ключа KMS
+</div>
+
+При использовании CMEK действительность указанного ключа KMS проверяется каждые 10 минут. Если доступ к ключу KMS станет недоступен, сервис ClickHouse будет остановлен. Чтобы возобновить работу сервиса, восстановите доступ к ключу KMS, следуя инструкциям из этого руководства, а затем перезапустите сервис.
+
+<div id="backup-and-restore">
+  ### Резервное копирование и восстановление
+</div>
+
+Резервные копии шифруются тем же ключом, что и соответствующий сервис. При восстановлении зашифрованной резервной копии создается зашифрованный экземпляр, использующий тот же ключ KMS, что и исходный экземпляр. При необходимости после восстановления можно выполнить ротацию ключа KMS; подробнее см. в разделе [Ротация ключа](#key-rotation).
+
+<div id="performance">
+  ## Производительность
+</div>
+
+Для шифрования и защиты данных используется встроенная в ClickHouse [возможность Virtual File System for Data Encryption](/ru/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system). В этой возможности используется алгоритм `AES_256_CTR`; ожидаемое снижение производительности составляет 5–15% в зависимости от рабочей нагрузки:
+
+<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Снижение производительности CMEK" />

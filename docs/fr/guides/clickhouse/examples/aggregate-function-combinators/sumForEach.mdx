@@ -1,0 +1,60 @@
+---
+slug: '/examples/aggregate-function-combinators/sumForEach'
+title: 'sumForEach'
+description: 'Exemple d’utilisation de la fonction d’agrégation sumForEach'
+keywords: ['sum', 'ForEach', 'combinateur', 'exemples', 'sumForEach']
+sidebarTitle: 'sumForEach'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/fr/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`ForEach`](/fr/reference/functions/aggregate-functions/combinators#-foreach)
+peut être appliqué à la fonction d&#39;agrégation [`sum`](/fr/reference/functions/aggregate-functions/sum) pour la transformer d&#39;une fonction d&#39;agrégation
+qui opère sur les valeurs des lignes en une fonction d&#39;agrégation qui opère sur des
+colonnes de type Array, en appliquant l&#39;agrégation à chaque élément du tableau à travers l&#39;ensemble des lignes.
+
+<div id="example-usage">
+  ## Exemple d&#39;utilisation
+</div>
+
+Pour cet exemple, nous utiliserons le jeu de données `hits` disponible dans notre [playground SQL](https://sql.clickhouse.com/).
+
+La table `hits` contient une colonne appelée `isMobile` de type UInt8, qui peut valoir
+`0` pour ordinateur de bureau ou `1` pour mobile :
+
+<RunnableCode>
+  ```sql
+  SELECT EventTime, IsMobile FROM metrica.hits ORDER BY rand() LIMIT 10
+  ```
+</RunnableCode>
+
+Nous utiliserons le combinateur d’agrégation `sumForEach` pour analyser comment le
+trafic entre ordinateur de bureau et mobile varie selon l’heure de la journée. Cliquez sur le bouton play
+ci-dessous pour exécuter la query de manière interactive :
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toHour(EventTime) AS hour_of_day,
+      -- Utiliser sumForEach pour compter les visites sur ordinateur de bureau et sur mobile en une seule passe
+      sumForEach([
+          IsMobile = 0, -- Visites sur ordinateur de bureau (IsMobile = 0)
+          IsMobile = 1  -- Visites sur mobile (IsMobile = 1)
+      ]) AS device_counts
+  FROM metrica.hits
+  GROUP BY hour_of_day
+  ORDER BY hour_of_day;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`sum`](/fr/reference/functions/aggregate-functions/sum)
+* [combinateur `ForEach`](/fr/reference/functions/aggregate-functions/combinators#-foreach)

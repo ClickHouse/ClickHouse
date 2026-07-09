@@ -1,0 +1,27 @@
+---
+title: ClickHouse で誤った設定を無視する方法
+description: "`skip_check_for_incorrect_settings` オプションを使用して、ユーザーレベルの設定が誤って指定されていても ClickHouse を起動できるようにする方法を紹介します。"
+date: 2023-03-01
+tags: ['設定']
+keywords: ['誤った設定を無視']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="ignoring-incorrect-settings-in-clickhouse">
+  ## ClickHouse で誤った設定を無視する
+</div>
+
+ユーザーレベルの設定が誤った場所に指定されていると、server は起動せず、例外メッセージがログに出力されます。ただし、`skip_check_for_incorrect_settings` 設定を使用すれば、ClickHouse に誤った設定を無視させることができます。
+
+以下を `config.xml` に追加します。
+
+```xml
+<skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>
+```
+
+<Note>
+  ユーザーレベルの設定は、特定のユーザープロファイルについては `users.xml` の `<profile>` セクション内に指定する必要があります (デフォルト設定の場合は `<default>` に指定します) 。
+</Note>

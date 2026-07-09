@@ -31,6 +31,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/JSONBuilder.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerSwitcher.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/Stopwatch.h>
 #include <Common/assert_cast.h>
@@ -192,13 +193,13 @@ DB::DataTypes calculateAggregateStateTypes(const DB::Block & header, const DB::A
     return types;
 }
 
-std::vector<DB::ColumnNumbers> calculateAggregatesPositions(const DB::Block & header, const DB::Aggregator::Params & params)
+DB::ColumnNumbersList calculateAggregatesPositions(const DB::Block & header, const DB::Aggregator::Params & params)
 {
     /// Only used in the execute path.
     if (params.only_merge)
         return {};
 
-    std::vector<DB::ColumnNumbers> positions;
+    DB::ColumnNumbersList positions;
     positions.reserve(params.aggregates_size);
     for (const auto & aggregate : params.aggregates)
     {
@@ -218,8 +219,9 @@ concept HasPrefetchMemberFunc = requires
 
 size_t getMinBytesForPrefetch()
 {
-    /// 4 is empirical constant.
-    return 4 * getL2CacheSize();
+    /// Enable prefetch once the hash table no longer fits in L2; below that it
+    /// is cache resident and prefetching is pure overhead.
+    return getL2CacheSize();
 }
 
 UInt64 & getCountState(DB::AggregateDataPtr __restrict place) /// NOLINT(readability-non-const-parameter)
@@ -632,7 +634,13 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
           CurrentMetrics::AggregatorThreadsScheduled,
           params.max_threads))
 {
+    /// The execute path measures memory usage via a dedicated Thread-level tracker created under the
+    /// current query tracker.
+    // The merge path can't use this because it recieves pre-allocated state that can not be covered by
+    // the memory tracker, so it falls back to the delta in query memory.
     memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
+    if (!params.only_merge)
+        memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -1535,7 +1543,12 @@ void Aggregator::prepareAggregateInstructions(
                 && aggregate_columns[i][j]->getNumberOfDefaultRows() == 0)
                 allow_sparse_arguments = false;
 
-            auto full_column = allow_sparse_arguments
+            /// Keep the column sparse only when it is a top-level ColumnSparse: the sparse add()
+            /// path (addBatchSparse) works on a literal ColumnSparse. A column that is dense at the
+            /// top level but contains sparse subcolumns (e.g. a Tuple with a sparse element) takes
+            /// the regular add() path, where a function may assume dense leaves, so it must be fully
+            /// materialized. recursiveRemoveSparse() is a no-op when there is nothing sparse to strip.
+            auto full_column = (allow_sparse_arguments && aggregate_columns[i][j]->isSparse())
                 ? aggregate_columns[i][j]->getPtr()
                 : recursiveRemoveSparse(aggregate_columns[i][j]->getPtr());
 
@@ -1587,6 +1600,14 @@ bool Aggregator::executeOnBlock(Columns columns,
     AggregateColumns & aggregate_columns,
     bool & no_more_keys) const
 {
+    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
+    /// and query memory trackers, and accounts for the aggregation state across all threads.
+    const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
+        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
+    if (use_own_tracker)
+        memory_tracker_switcher.emplace(memory_tracker.get());
+
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
 
@@ -1673,7 +1694,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
-    auto result_size_bytes = current_memory_usage - memory_usage_before_aggregation;
+    Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
 
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
@@ -1916,19 +1937,19 @@ void Aggregator::writeToTemporaryFileImpl(
     for (size_t i = 0; i < params.aggregates_size; ++i)
         header.insert({aggregate_state_types[i]->createColumn(), aggregate_state_types[i], params.aggregates[i].column_name});
 
-    auto to_block = [&](const AggregatedChunk & agg_chunk)
+    auto to_block = [&](AggregatedChunk && agg_chunk)
     {
         Block block = header.cloneEmpty();
-        block.setColumns(agg_chunk.chunk.getColumns());
         block.info.bucket_num = agg_chunk.bucket_num;
         block.info.is_overflows = agg_chunk.is_overflows;
+        block.setColumns(agg_chunk.chunk.detachColumns());
         return block;
     };
 
     for (UInt32 bucket = 0; bucket < Method::Data::NUM_BUCKETS; ++bucket)
     {
         auto agg_chunk = convertOneBucketToChunk(data_variants, method, data_variants.aggregates_pool, false, bucket);
-        auto block = to_block(agg_chunk);
+        auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
     }
@@ -1936,7 +1957,7 @@ void Aggregator::writeToTemporaryFileImpl(
     if (params.overflow_row)
     {
         auto agg_chunk = prepareChunkAndFillWithoutKey(data_variants, false, true);
-        auto block = to_block(agg_chunk);
+        auto block = to_block(std::move(agg_chunk));
         out->write(block);
         update_max_sizes(block);
     }

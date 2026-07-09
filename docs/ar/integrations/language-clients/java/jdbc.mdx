@@ -1,0 +1,1318 @@
+---
+sidebarTitle: 'JDBC'
+keywords: ['clickhouse', 'java', 'jdbc', 'driver', 'integrate']
+description: 'برنامج تشغيل JDBC لـ ClickHouse'
+slug: /integrations/language-clients/java/jdbc
+title: 'برنامج تشغيل JDBC'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTableWrapper.jsx";
+
+<View title="v0.8+">
+  <Note>
+    ينفّذ `clickhouse-jdbc` واجهة JDBC القياسية باستخدام أحدث عميل Java.
+    نوصي باستخدام أحدث عميل Java مباشرةً إذا كانت الأولوية القصوى للأداء أو للوصول المباشر.
+  </Note>
+
+  ## متطلبات البيئة
+
+  * [OpenJDK](https://openjdk.java.net) الإصدار &gt;= 8
+
+  ### الإعداد
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-jdbc</artifactId>
+          <version>0.9.8</version>
+          <classifier>all</classifier>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation("com.clickhouse:clickhouse-jdbc:0.9.8:all")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      implementation 'com.clickhouse:clickhouse-jdbc:0.9.8:all'
+      ```
+    </Tab>
+  </Tabs>
+
+  إذا كنت تستخدم JDBC driver ضمن تطبيق يستلزم إضافة ملف jar إلى classpath، فستحتاج إلى تنزيل ملف jar من:
+
+  * [Maven Central](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc) ثم أضِفه إلى `classpath`
+    * بدءًا من الإصدار `0.9.4`، تتوفر الحزمة https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc-all
+    * استخدم اللاحقة `all` للحصول على ملف jar يتضمن جميع التبعيات المدمجة.
+  * أو من repository الرسمي [هنا](https://github.com/ClickHouse/clickhouse-java/releases)
+
+  ## الإعداد
+
+  **فئة برنامج التشغيل**: `com.clickhouse.jdbc.ClickHouseDriver`
+
+  <Note>
+    `com.clickhouse.jdbc.ClickHouseDriver` هي فئة واجهة للإصدارين الجديد والقديم من JDBC. وتستخدم تنفيذ JDBC الجديد افتراضيًا.
+    يمكنك استخدام تنفيذ JDBC القديم من خلال تعيين خاصية **system** ‏`clickhouse.jdbc.v1` إلى `true`. ويجب تعيين هذه الخاصية قبل استدعاء
+    فئة Driver.
+
+    والطريقة البديلة للتبديل بين الإصدارين هي استخدام فئات Driver الخاصة بكل إصدار مباشرةً:
+
+    * `com.clickhouse.jdbc.Driver` هو تنفيذ JDBC الجديد (V2).
+    * `com.clickhouse.jdbc.DriverV1` هو تنفيذ JDBC القديم (V1).
+  </Note>
+
+  **صياغة URL**: `jdbc:(ch|clickhouse)[:<protocol>]://endpoint[:port][/<database>][?param1=value1&param2=value2][#tag1,tag2,...]`، على سبيل المثال:
+
+  * `jdbc:clickhouse:http://localhost:8123`
+  * `jdbc:clickhouse:https://localhost:8443?ssl=true`
+
+  ثمة بعض الأمور الجديرة بالملاحظة حول صياغة URL:
+
+  * يُسمح بوجود نقطة نهاية **واحدة فقط** في URL
+  * يجب تحديد البروتوكول إذا لم يكن البروتوكول الافتراضي، وهو &#39;HTTP&#39;
+  * يجب تحديد المنفذ إذا لم يكن المنفذ الافتراضي &#39;8123&#39;
+  * لا يستنتج المُشغِّل البروتوكول من المنفذ، لذا يجب تحديده صراحةً
+  * لا تكون المعلَمة `ssl` مطلوبة عند تحديد البروتوكول.
+
+  ### خصائص الاتصال
+
+  تُعرَّف معاملات الإعداد الرئيسية في [Java client](/ar/integrations/language-clients/java/client#client-configuration)، وينبغي تمريرها كما هي إلى driver. يمتلك driver بعض الخصائص الخاصة به التي لا تندرج ضمن إعداد client، وهي مُدرجة أدناه.
+
+  **خصائص برنامج التشغيل**:
+
+  | الخاصية                             | القيمة الافتراضية | الوصف                                                                                                                                                                     |
+  | ----------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `disable_frameworks_detection`      | `true`            | تعطيل اكتشاف أطر العمل لـ User-Agent                                                                                                                                      |
+  | `jdbc_ignore_unsupported_values`    | `false`           | يتجاهل `SQLFeatureNotSupportedException` عندما لا يؤثر ذلك في عمل برنامج التشغيل                                                                                          |
+  | `clickhouse.jdbc.v1`                | `false`           | استخدام تطبيق JDBC الأقدم بدلًا من JDBC الجديد                                                                                                                            |
+  | `default_query_settings`            | `null`            | يسمح بتمرير إعدادات الاستعلام الافتراضية مع عمليات الاستعلام                                                                                                              |
+  | `jdbc_resultset_auto_close`         | `true`            | يُغلق `ResultSet` تلقائيًا عند إغلاق `Statement`                                                                                                                          |
+  | `beta.row_binary_for_simple_insert` | `false`           | استخدم تنفيذ `PreparedStatement` المعتمد على كاتب `RowBinary`. يعمل فقط مع استعلامات `INSERT INTO ... VALUES`.                                                            |
+  | `jdbc_resultset_auto_close`         | `true`            | يُغلَق `ResultSet` تلقائيًا عند إغلاق `Statement`                                                                                                                         |
+  | `jdbc_use_max_result_rows`          | `false`           | يتيح استخدام خاصية الخادم `max_result_rows` لتقييد عدد الصفوف التي يعيدها الاستعلام. عند تفعيله، يتجاوز وضع overflow الذي عيّنه المستخدم. راجع JavaDoc لمزيد من التفاصيل. |
+  | `jdbc_sql_parser`                   | `JAVACC`          | يحدّد محلل SQL الذي سيُستخدم. الخيارات: `ANTLR4`، `ANTLR4_PARAMS_PARSER`، `JAVACC`.                                                                                       |
+  | `remember_last_set_roles`           | `true`            | تذكّر آخر الأدوار المعيّنة للاتصال.                                                                                                                                       |
+
+  <Info>
+    **إعدادات الخادم**
+
+    يجب أن تبدأ جميع إعدادات الخادم بالبادئة `clickhouse_setting_` (كما في [تهيئة](/ar/integrations/language-clients/java/client#server-settings) العميل).
+
+    ```java
+    Properties config = new Properties();
+    config.setProperty("user", "default");
+    config.setProperty("password", getPassword());
+
+    // set server setting
+    config.put(ClientConfigProperties.serverSetting("allow_experimental_time_time64_type"), "1");
+
+    Connection conn = Driver.connect("jdbc:ch:http://localhost:8123/", config);
+    ```
+  </Info>
+
+  **مثال على الإعداد**:
+
+  ```java
+  Properties properties = new Properties();
+  properties.setProperty("user", "default");
+  properties.setProperty("password", getPassword());
+  properties.setProperty("client_name", "my-app-01"); // when http protocol is used it will be `http_user_agent` in the query log but not `client_name`.
+
+  Connection conn = Driver.connect("jdbc:ch:http://localhost:8123/", properties);
+  ```
+
+  وهو ما يعادل URL الخاص بـ JDBC التالي:
+
+  ```sql
+  jdbc:ch:http://localhost:8123/?user=default&password=password&client_name=my-app-01 
+  // credentials shoud be passed in `Properties`. Here it is just for example.
+  ```
+
+  ملاحظة: لا حاجة إلى ترميز URL لـ JDBC URL أو الخصائص، إذ سيُجرى ترميزها تلقائيًا.
+
+  **ملفات تعريف للقراءة فقط**
+
+  نتجنب عمدًا إضافة الإعدادات الافتراضية إلى خصائص الاتصال تفاديًا للمشكلات المرتبطة بملفات التعريف للقراءة فقط.
+  غير أن بعض المستخدمين يحتاجون إلى تمرير إعدادات التنسيق (على سبيل المثال لقراءة JSON بوصفه String)، ونوصي في هذه الحالة باستخدام ملف التعريف `readonly=2`.
+  اطّلع على مزيد من المعلومات حول ملفات التعريف للقراءة فقط [هنا](/ar/concepts/features/configuration/settings/constraints-on-settings#read-only).
+
+  ### تعريف العميل
+
+  ثمة طريقتان لتحديد التطبيق الذي أنشأ الطلب: ضبط `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` عبر
+  خصائص الاتصال، أو استخدام الأسلوب `java.sql.Connection#setClientInfo(String name, String value)`.
+
+  ```java showLineNumbers
+  Properties properties = new Properties();
+  properties.setProperty(ClientConfigProperties.CLIENT_NAME.getKey(), "my-app-01");
+  Connection conn = Driver.connect("jdbc:ch:http://localhost:8123/", properties);
+  ```
+
+  ```java showLineNumbers
+  conn.setClientInfo(com.clickhouse.jdbc.ClientInfoProperties.APPLICATION_NAME.getKey(), "my-app-01");
+  ```
+
+  كلتا الطريقتين ستُفضيان إلى القيمة التالية لـ `http_user_agent` في سجل الاستعلام:
+
+  ```
+  my-app-01/1.0 jdbc-v2/0.9.7 clickhouse-java-v2/0.9.6 (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
+  ```
+
+  **ملاحظة:** نوصي باستخدام تنسيق `app_name/version` للخاصية `client_name` لأنه يُساعد في التعرف على التطبيق في سجل الاستعلامات.
+
+  ### تحديد العملية
+
+  يُنشئ JDBC driver معرّف `query_id` لكل عملية (يُضمَّن حاليًا في استثناءات الخادم).
+
+  لتعيين `log_comment` لعملية ما، استخدم الـ method `com.clickhouse.jdbc.StatementImpl#getLocalSettings`. يستلزم ذلك تحويل `Statement` أو `PreparedStatement` إلى النوع `com.clickhouse.jdbc.StatementImpl` أولاً.
+
+  ```java showLineNumbers
+  StatementImpl stmt = (StatementImpl) conn.createStatement();
+  stmt.getLocalSettings().logComment("some-comment");
+  ```
+
+  **ملاحظة:** يعمل هذا الأسلوب مع حالات الاستخدام أحادية الخيط للعبارة، لأن `localSettings` مشترك بين الخيوط.
+
+  ## أنواع البيانات المدعومة
+
+  يدعم JDBC driver نفس تنسيقات البيانات التي يدعمها [Java client](/ar/integrations/language-clients/java/index#supported-data-types) الأساسي.
+
+  ### تعيين أنواع JDBC
+
+  ينطبق التعيين التالي على:
+
+  * `ResultSet#getObject(columnIndex)` - تُعيد الطريقة كائنًا من فئة Java المقابلة. (`Int8` -&gt; `java.lang.Byte`, `Int16` -&gt; `java.lang.Short`, إلخ.)
+  * `ResultSetMetaData#getColumnType(columnIndex)` - تُعيد الطريقة نوع JDBC المقابل. (`Int8` -&gt; `java.lang.Byte`, `Int16` -&gt; `java.lang.Short`, إلخ.)
+
+  ثمة بعض الطرق لتغيير التعيين:
+
+  * `ResultSet#getObject(columnIndex, class)` - ستحاول هذه الطريقة تحويل القيمة إلى النوع `class`. توجد بعض القيود على هذا التحويل. راجع كل قسم للاطلاع على التفاصيل.
+
+  **الأنواع الرقمية**
+
+  | نوع ClickHouse | نوع JDBC | فئة Java             |
+  | -------------- | -------- | -------------------- |
+  | Int8           | TINYINT  | java.lang.Byte       |
+  | Int16          | SMALLINT | java.lang.Short      |
+  | Int32          | INTEGER  | java.lang.Integer    |
+  | Int64          | BIGINT   | java.lang.Long       |
+  | Int128         | NUMERIC  | java.math.BigInteger |
+  | Int256         | NUMERIC  | java.math.BigInteger |
+  | UInt8          | SMALLINT | java.lang.Short      |
+  | UInt16         | INTEGER  | java.lang.Integer    |
+  | UInt32         | BIGINT   | java.lang.Long       |
+  | UInt64         | NUMERIC  | java.math.BigInteger |
+  | UInt128        | NUMERIC  | java.math.BigInteger |
+  | UInt256        | NUMERIC  | java.math.BigInteger |
+  | Float32        | FLOAT    | java.lang.Float      |
+  | Float64        | DOUBLE   | java.lang.Double     |
+  | Decimal32      | DECIMAL  | java.math.BigDecimal |
+  | Decimal64      | DECIMAL  | java.math.BigDecimal |
+  | Decimal128     | DECIMAL  | java.math.BigDecimal |
+  | Decimal256     | DECIMAL  | java.math.BigDecimal |
+  | Bool           | BOOLEAN  | java.lang.Boolean    |
+
+  * الأنواع الرقمية قابلة للتحويل فيما بينها. لذا يمكن الحصول على `Int8` بصيغة `Float64` والعكس صحيح.:
+    * سيُرجع `rs.getObject(1, Float64.class)` قيمة `Float64` من `Int8` column.
+    * سيُرجع `rs.getLong(1)` قيمة `Long` من `Int8` column.
+    * يمكن أن يُرجع `rs.getByte(1)` قيمة `Byte` من `Int16` column إذا كانت ضمن نطاق `Byte`.
+  * لا يُنصح بالتحويل من نوع أوسع إلى نوع أضيق بسبب خطر تلف البيانات.
+  * يتعامل النوع `Bool` أيضًا على أنه عدد.
+  * يمكن قراءة جميع الأنواع العددية على أنها `java.lang.String`.
+  * توجد مشكلة عند تخزين `Float.MAX_VALUE` في Java بوصفه `Float` (https://github.com/ClickHouse/clickhouse-java/issues/809). ويؤدي حفظ القيمة نفسها بوصفها `Double` إلى حل هذه المشكلة.
+
+  **أنواع String**
+
+  | نوع ClickHouse | نوع JDBC | فئة Java         |
+  | -------------- | -------- | ---------------- |
+  | String         | VARCHAR  | java.lang.String |
+  | FixedString    | VARCHAR  | java.lang.String |
+
+  * لا يمكن قراءة `String` إلا باعتباره `java.lang.String` أو `byte[]`.
+  * تُقرأ `FixedString` كما هي، وتُحشى بأصفار حتى يصل طولها إلى طول العمود. (على سبيل المثال، ستُقرأ `FixedString(10)` للقيمة `'John'` على أنها `'John\0\0\0\0\0\0\0\0\0'`.)
+
+  **أنواع Enum**
+
+  | نوع ClickHouse | نوع JDBC | فئة Java         |
+  | -------------- | -------- | ---------------- |
+  | Enum8          | VARCHAR  | java.lang.String |
+  | Enum16         | VARCHAR  | java.lang.String |
+
+  * يُعيَّن `Enum8` و`Enum16` إلى `java.lang.String` افتراضيًا.
+  * يمكن قراءة قيم Enum كقيم رقمية باستخدام دالة getter المخصّصة أو الدالة `getObject(columnIndex, Integer.class)`.
+  * يُعيَّن `Enum16` داخليًا إلى short، ويُعيَّن `Enum8` إلى byte. ويجب تجنّب قراءة `Enum16` على أنه byte بسبب خطر تلف البيانات.
+  * يمكن تعيين قيم Enum كسلسلة نصية أو كقيمة رقمية في `PreparedStatement`.
+
+  **أنواع التاريخ/الوقت**
+
+  | نوع ClickHouse | نوع JDBC  | فئة Java           |
+  | -------------- | --------- | ------------------ |
+  | Date           | DATE      | java.sql.Date      |
+  | Date32         | DATE      | java.sql.Date      |
+  | DateTime       | TIMESTAMP | java.sql.Timestamp |
+  | DateTime64     | TIMESTAMP | java.sql.Timestamp |
+  | Time           | TIME      | java.sql.Time      |
+  | Time64         | TIME      | java.sql.Time      |
+
+  * تُطابَق أنواع `Date / Time` مع أنواع `java.sql` لتحسين التوافق مع JDBC. ومع ذلك، يمكن أيضًا الحصول على `java.time.LocalDate` و`java.time.LocalDateTime` و`java.time.LocalTime` باستخدام `ResultSet#getObject(columnIndex, Class<T>)` مع تمرير الفئة المقابلة بوصفها الوسيط الثاني.
+    * ستُعيد `rs.getObject(1, java.time.LocalDate.class)` القيمة `java.time.LocalDate` من العمود `Date`.
+    * ستُعيد `rs.getObject(1, java.time.LocalDateTime.class)` القيمة `java.time.LocalDateTime` من العمود `DateTime`.
+    * ستُعيد `rs.getObject(1, java.time.LocalTime.class)` القيمة `java.time.LocalTime` من العمود `Time`.
+  * لا تتأثر `Date` و`Date32` و`Time` و`Time64` بالمنطقة الزمنية للخادم.
+  * يتأثر `DateTime` و`DateTime64` بالمنطقة الزمنية للخادم أو بالمنطقة الزمنية للجلسة.
+  * يمكن استرجاع `DateTime` و`DateTime64` كـ `ZonedDateTime` باستخدام `getObject(colIndex, ZonedDateTime.class)`.
+
+  **الأنواع المتداخلة**
+
+  | نوع ClickHouse | نوع JDBC | صنف Java                  |
+  | -------------- | -------- | ------------------------- |
+  | Array          | ARRAY    | java.sql.Array            |
+  | Tuple          | OTHER    | com.clickhouse.data.Tuple |
+  | Map            | OTHER    | java.util.Map             |
+  | Nested         | ARRAY    | java.sql.Array            |
+
+  * يُعيَّن `Array` إلى `java.sql.Array` افتراضيًا لضمان التوافق مع JDBC. ويُجرى ذلك أيضًا لتوفير مزيد من المعلومات عن قيمة المصفوفة المُعادة. وهذا مفيد في استدلال النوع.
+  * يوفّر `Array` التابع `getResultSet()` لإرجاع `java.sql.ResultSet` بالمحتوى نفسه الموجود في المصفوفة الأصلية.
+  * لا ينبغي قراءة أنواع المجموعات باعتبارها `java.lang.String` لأن هذه ليست طريقة صالحة لتمثيل البيانات (على سبيل المثال: لا تُوضَع قيم السلاسل النصية بين علامتَي اقتباس في المصفوفة).
+  * يُعيَّن `Map` إلى `OTHER` لأن القيمة لا يمكن قراءتها إلا باستخدام الطريقة `getObject(columnIndex, Class<T>)`.
+    * لا يُعَدّ `Map` من نوع `java.sql.Struct` لأنه لا يحتوي على أعمدة مُسمّاة.
+  * يتم تمثيل `Tuple` على شكل `Object[]` لأنه قد يحتوي على أنواع مختلفة، كما أن استخدام `List` غير صالح.
+  * يمكن قراءة `Tuple` باعتباره `Array` باستخدام الطريقة `getObject(columnIndex, Array.class)`. في هذه الحالة، ستُعيد `Array#baseTypeName` تعريف العمود `Tuple`.
+
+  **بيانات وصفية لنوع عنصر المصفوفة**
+
+  تُعيد `Array.getBaseTypeName()` اسم نوع العنصر في ClickHouse؛ وتُعيد `Array.getBaseType()` رمز نوع JDBC.
+  يحتفظ JDBC V2 بتوقيعات النوع الكاملة (أنواع المُغلِّف، ومعاملات النوع) التي يحذفها V1.
+
+  قواعد التعيين العامة للمصفوفات هي:
+
+  | نوع ClickHouse                             | `getBaseTypeName()`                           | `getBaseType()`                    |
+  | ------------------------------------------ | --------------------------------------------- | ---------------------------------- |
+  | `Array(<نوع بدائي>)`                       | `<النوع الأوّلي>`                             | `<نوع JDBC البدائي>`               |
+  | `Array(<Parameterized Type>(<N>))`         | `<نوع ذو معلمات>(<N>)`                        | `<نوع JDBC للنوع الأساسي>`         |
+  | `Array(Nullable(<Type>))`                  | `Nullable(<Type>)`                            | `<نوع JDBC لـ Type الداخلي>`       |
+  | `Array(LowCardinality(<Type>))`            | `LowCardinality(<Type>)`                      | `<نوع JDBC لـ Type الداخلي>`       |
+  | `Array(Array(...(<Type>)))`                | `<Type>` (العنصر الداخلي الأعمق)              | `<نوع JDBC للعنصر الداخلي الأعمق>` |
+  | `Array(Tuple(...))`                        | `Tuple(...)` (التعريف الكامل)                 | `OTHER`                            |
+  | `Array(Enum8(...))` / `Array(Enum16(...))` | `Enum8(...)` / `Enum16(...)` (التعريف كاملاً) | `VARCHAR`                          |
+
+  ملاحظات حول القواعد أعلاه:
+
+  * يتم الاحتفاظ بالأنواع المغلِّفة (`Nullable`, `LowCardinality`) في `getBaseTypeName()`، لكن `getBaseType()` يُرجِع رمز JDBC للنوع الداخلي.
+  * تُسطَّح المصفوفات المتداخلة في البيانات الوصفية: يُرجِع `getBaseTypeName()` نوع العنصر الأعمق غير المصفوفي، وليس العنصر الفرعي المباشر.
+  * تحتفظ الأنواع ذات المعلمات (`FixedString(N)`، والتعريفات الكاملة لـ `Enum`/`Tuple`) بمعلماتها في `getBaseTypeName()`.
+
+  **أمثلة:**
+
+  | نوع ClickHouse (مثال)                                                      | `getBaseTypeName()`                                                 | `getBaseType()` |
+  | -------------------------------------------------------------------------- | ------------------------------------------------------------------- | --------------- |
+  | Array(Int8)                                                                | Int8                                                                | TINYINT         |
+  | Array(Int16)                                                               | Int16                                                               | SMALLINT        |
+  | Array(Int32)                                                               | Int32                                                               | INTEGER         |
+  | Array(Int64)                                                               | Int64                                                               | BIGINT          |
+  | Array(UInt8)                                                               | UInt8                                                               | SMALLINT        |
+  | Array(UInt16)                                                              | UInt16                                                              | INTEGER         |
+  | Array(UInt32)                                                              | UInt32                                                              | BIGINT          |
+  | Array(UInt64)                                                              | UInt64                                                              | NUMERIC         |
+  | Array(Float32)                                                             | Float32                                                             | FLOAT           |
+  | Array(Float64)                                                             | Float64                                                             | DOUBLE          |
+  | Array(String)                                                              | String                                                              | VARCHAR         |
+  | Array(FixedString(8))                                                      | FixedString(8)                                                      | VARCHAR         |
+  | Array(Bool)                                                                | Bool                                                                | BOOLEAN         |
+  | Array(Date)                                                                | Date                                                                | DATE            |
+  | Array(DateTime)                                                            | DateTime                                                            | TIMESTAMP       |
+  | Array(UUID)                                                                | UUID                                                                | OTHER           |
+  | Array(Nullable(Int32))                                                     | Nullable(Int32)                                                     | INTEGER         |
+  | Array(Nullable(String))                                                    | Nullable(String)                                                    | VARCHAR         |
+  | Array(LowCardinality(String))                                              | LowCardinality(String)                                              | VARCHAR         |
+  | Array(LowCardinality(Nullable(String)))                                    | LowCardinality(Nullable(String))                                    | VARCHAR         |
+  | Array(Array(Int32))                                                        | Int32                                                               | INTEGER         |
+  | Array(Array(Array(String)))                                                | String                                                              | VARCHAR         |
+  | Array(Tuple(name String, val Int32))                                       | Tuple(name String, val Int32)                                       | أخرى            |
+  | Array(Enum8(&#39;alpha&#39; = 1, &#39;beta&#39; = 2, &#39;gamma&#39; = 3)) | Enum8(&#39;alpha&#39; = 1, &#39;beta&#39; = 2, &#39;gamma&#39; = 3) | VARCHAR         |
+
+  * في V2، تحتفظ `getBaseTypeName()` بتوقيع النوع الكامل، بما في ذلك أنواع التغليف (`Nullable` و`LowCardinality`) ومعلّمات النوع (`FixedString(8)` وتعريفات `Enum` و`Tuple` الكاملة). أما V1 فيُزيل هذه ويُرجع اسم النوع الأساسي فقط.
+  * تستخدم مصفوفات `Tuple` القيمة `OTHER (1111)` في V2 بدلًا من `STRUCT (2002)` لأن Tuple في ClickHouse تتضمن حقولًا مسمّاة، وهو ما لا يدعمه `java.sql.Struct`.
+  * تستخدم مصفوفات `UUID` القيمة `OTHER (1111)` في V2، بما يتوافق مع تعيين `UUID` القياسي.
+  * تُعيَّن قيم `Enum` إلى `VARCHAR` — إذ تُحدَّد عناصر enum باسمها النصي بغضّ النظر عن ترميزها الرقمي الأساسي.
+
+  **كتابة Arrays**
+
+  استخدم `java.sql.Connection#createArrayOf` لإنشاء كائن `java.sql.Array`. صُمِّم هذا الكائن لتوحيد التعامل مع المصفوفات عبر قواعد البيانات المختلفة.
+  يُعدّ الاتصال ضروريًا لتمرير الإعدادات إلى أسلوب المصنع الخاص بـ Array.
+
+  تقبل الطريقة وسيطَين:
+
+  * `typeName` - اسم نوع عناصر المصفوفة. على سبيل المثال `Array(Int32)` -&gt; `"Int32"`.
+  * `elements` - عناصر المصفوفة نفسها. على سبيل المثال `[[1, 2, 3], [4, 5, 6]]` -&gt; `new Integer[][] {{1, 2, 3}, {4, 5, 6}}`.
+
+  يمكن تمثيل Tuple على هيئة `Object[]` أو `java.sql.Struct` (راجع كيفية كتابة Tuples أدناه).
+
+  **مثال**
+
+  ```java
+  try (Connection conn = ...) {
+      Array array = conn.createArrayOf("Int32", new Integer[][] {{1, 2, 3}, {4, 5, 6}});
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (arr) VALUES (?)")) {
+          ps.setArray(1, array);
+          ps.executeUpdate();
+      }
+  }
+  ```
+
+  **قراءة المصفوفات**
+
+  استخدم `ResultSet#getArray(columnIndex)` لقراءة كائن `Array`. يمكن استخدام هذا الكائن للوصول إلى مصفوفة بأي عمق تداخل.
+  يمكن استخدام الأسلوب `Array#getResultSet()` لقراءة عناصر المصفوفة بطريقة أكثر توحيدًا من خلال `java.sql.ResultSet`، وهو مفيد
+  عندما يكون النوع الدقيق لعناصر المصفوفة غير معروف.
+
+  **مثال**
+
+  ```java
+  try (Connection conn = ...) {
+      try (PreparedStatement ps = conn.prepareStatement("SELECT ?::Array(Int32)")) {
+          ps.setArray(1, array);
+          try (ResultSet rs = ps.executeQuery()) {
+              while (rs.next()) {
+                  Array array = rs.getArray(1);
+
+                  Object[] arr = (Object[]) array;
+                  Arrays.stream(arr).forEach(this::handleArrayElement);
+
+                  // or by using `ResultSet`
+                  ResultSet resultSet = array.getResultSet();
+                  while (resultSet.next()) {
+                      // ...
+                  }
+              }
+          }
+      } 
+  }
+  ```
+
+  **كتابة Tuples**
+
+  يتم تعيين Tuples إلى كائن `com.clickhouse.data.Tuple` وينبغي كتابتها بوصفها هذا الكائن عبر استدعاء الأسلوب `setObject(columnIndex, tuple)`.
+  يمكن استخدام كائن `java.sql.Struct` لكتابة tuples لتحقيق قدر أكبر من قابلية النقل.
+
+  **مثال**
+
+  ```java
+  try (Connection conn = ...) {
+      Tuple tuple = new Tuple(1, "test", LocalDate.parse("2026-03-02"));
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (tuple) VALUES (?)")) {
+          ps.setObject(1, tuple);
+          ps.executeUpdate();
+      }
+  }
+
+  try (Connection conn = ...) {
+      Struct struct = conn.createStruct("Tuple(Int32, String, Date)", new Object[] {1, "test", LocalDate.parse("2026-03-02")});
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (tuple) VALUES (?)")) {
+          ps.setStruct(1, struct);
+          ps.executeUpdate();
+      }
+  }
+  ```
+
+  **قراءة Tuples**
+
+  ستُعيد الدالة `getObject(columnIndex)` القيمة `Object[]`. يمكن قراءة Tuples بوصفها `java.sql.Array` باستخدام الدالة `getObject(columnIndex, Array.class)`.
+
+  **مثال**
+
+  ```java
+  try (Connection conn = ...) {
+      try (PreparedStatement stmt = conn.prepareStatement("SELECT ?::Tuple(String, Int32, Date)")) {
+          Array tuple = conn.createArrayOf("Tuple(String, Int32, Date)",  new Object[]{"test", 123, LocalDate.parse("2026-03-02")});
+          stmt.setObject(1, tuple);
+          try (ResultSet rs = stmt.executeQuery()) {
+              rs.next();
+              Array dbTuple = rs.getArray(1);
+              Assert.assertEquals(dbTuple, tuple);
+              Object arr = rs.getObject(1);
+              Assert.assertEquals(arr, tuple.getArray());
+          }
+      }
+  }
+
+  ```
+
+  **كتابة الخرائط**
+
+  لا يمكن كتابة Map إلا على شكل كائن `java.collections.Map`، إذ يستلزم هذا النوع أزواج مفتاح-قيمة (لا يدعم `java.sql.Struct` أزواج مفتاح-قيمة).
+
+  **مثال**
+
+  ```java
+  try (Connection conn = ...) {
+      Map<String, Integer> map = new HashMap<>();
+      map.put("key1", 1);
+      map.put("key2", 2);
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (map) VALUES (?)")) {
+          ps.setObject(1, map);
+          ps.executeUpdate();
+      }
+  }
+  ```
+
+  **قراءة الخرائط**
+
+  يمكن قراءة Map كـ `java.collections.Map` object باستخدام method‏ `getObject(columnIndex, Map.class)`.
+
+  **مثال**
+
+  ```java
+  try (Connection conn = ...) {
+      try (PreparedStatement ps = conn.prepareStatement("SELECT ?::Map(String, Int32)")) {
+          ps.setStruct(1, struct);
+          try (ResultSet rs = ps.executeQuery()) {
+              while (rs.next()) {
+                  Map<String, Integer> map = rs.getObject(1, Map.class);
+                  // ...
+              }
+          }
+      }
+  }
+  ```
+
+  **كتابة Nested**
+
+  استخدم `java.sql.Connection#createStruct` لإنشاء كائن `java.sql.Struct`. صُمِّم هذا الكائن لتوحيد التعامل مع البنى المتداخلة عبر قواعد البيانات المختلفة.
+  يلزم توفر الاتصال لتمرير الإعدادات إلى دالة المصنع الخاصة بـ Struct.
+
+  تقبل الدالة وسيطَين:
+
+  * `typeName` - اسم نوع العناصر المتداخلة. على سبيل المثال `Nested(Tuple(Int32, String))` -&gt; `"Nested(Tuple(Int32, String))"`.
+  * `elements` - العناصر المتداخلة نفسها. على سبيل المثال `[1, 'test']` -&gt; `new Object[] {1, 'test'}`.
+
+  **مثال**
+
+  ```java
+  try (Connection conn = ...) {
+      Struct struct = conn.createStruct("Nested(Tuple(Int32, String))", new Object[] {1, 'test'});
+      try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable (nested) VALUES (?)")) {
+          ps.setStruct(1, struct);
+          ps.executeUpdate();
+      }
+  }
+  ```
+
+  **قراءة Nested**
+
+  استخدم `ResultSet#getStruct(columnIndex, StructDescriptor)` لقراءة كائن `Nested`. يمكن استخدام الكائن للوصول إلى العناصر المتداخلة بأي مستوى من مستويات التداخل.
+  يمكن استخدام الدالة `Struct#getResultSet()` لقراءة العناصر المتداخلة بأسلوب أكثر توحيدًا عبر `java.sql.ResultSet`، وهو مفيد
+  عندما يكون النوع الدقيق للعناصر المتداخلة غير معروف.
+
+  **مثال**
+
+  ```java
+  try (Connection conn = ...) {
+      try (PreparedStatement ps = conn.prepareStatement("SELECT ?::Nested(Tuple(Int32, String))")) {
+          ps.setStruct(1, struct);
+          try (ResultSet rs = ps.executeQuery()) {
+              while (rs.next()) {
+                  Struct struct = rs.getStruct(1);
+                  Object[] tuple = (Object[]) struct;
+                  Arrays.stream(tuple).forEach(this::handleTupleElement);
+
+                  // or by using `ResultSet`
+                  ResultSet resultSet = struct.getResultSet();
+                  while (resultSet.next()) {
+                      // ...
+                  }
+              }
+          }
+      }
+  }
+  ```
+
+  **أنواع Geo**
+
+  | نوع بيانات ClickHouse | نوع JDBC | فئة Java                                       |
+  | --------------------- | -------- | ---------------------------------------------- |
+  | Point                 | OTHER    | double[]                               |
+  | Ring                  | OTHER    | double[][]                     |
+  | Polygon               | OTHER    | double[][][]           |
+  | MultiPolygon          | OTHER    | double[][][][] |
+
+  **أنواع Nullable وLowCardinality**
+
+  * `Nullable` و `LowCardinality` نوعان خاصّان يغلّفان أنواعًا أخرى.
+  * يؤثّر `Nullable` على كيفية إرجاع أسماء الأنواع في `ResultSetMetaData`
+
+  **الأنواع الخاصة**
+
+  | نوع ClickHouse          | نوع JDBC        | صنف Java              |
+  | ----------------------- | --------------- | --------------------- |
+  | UUID                    | OTHER           | java.util.UUID        |
+  | IPv4                    | OTHER           | java.net.Inet4Address |
+  | IPv6                    | OTHER           | java.net.Inet6Address |
+  | JSON                    | OTHER           | java.lang.String      |
+  | AggregateFunction       | OTHER           | (التمثيل الثنائي)     |
+  | SimpleAggregateFunction | (النوع المغلّف) | (الصنف المُغلِّف)     |
+
+  * لا يُعد `UUID` نوعًا قياسيًا في JDBC. لكنه جزء من JDK. بشكل افتراضي، يُعاد `java.util.UUID` من الطريقة `getObject()`.
+  * يمكن قراءة `UUID` وكتابته على هيئة `String` باستخدام الطريقة `getObject(columnIndex, String.class)`.
+  * لا يُعد `IPv4` و`IPv6` نوعين قياسيين في JDBC. لكنهما جزء من JDK. بشكل افتراضي، يُعاد `java.net.Inet4Address` و`java.net.Inet6Address` من الطريقة `getObject()`.
+  * يمكن قراءة `IPv4` و`IPv6` وكتابتهما على هيئة `String` باستخدام الطريقة `getObject(columnIndex, String.class)`.
+
+  **نوع JSON**
+
+  يُعيَّن JSON type إلى `Map<String, Object>` افتراضيًا، حيث تكون مفاتيح JSON object هي keys وقيم JSON object هي values.
+  على سبيل المثال:
+
+  ```json
+  {
+      "key1": "value1",
+      "key2": ["value2", "value3"]
+      "key3": {
+          "key4": "value4",
+          "key5": "value5"
+      }
+  }
+  ```
+
+  سيتم تعيينه إلى:
+
+  ```java
+  Map<String, Object> map = new HashMap<>();
+  map.put("key1", "value1");
+  map.put("key2", Arrays.asList("value2", "value3"));
+  map.put("key3", new HashMap<String, Object>() {{
+      put("key4", "value4");
+      put("key5", "value5");
+  }});
+  ```
+
+  ثمة خيار أكثر ملاءمةً لقراءة JSON بوصفه String عبر تمرير إعداد الخادم `jdbc_read_json_as_string=true` إلى خصائص الاتصال.
+  يجعل هذا الـ driver يُعيد قيم JSON بوصفها String، ويمكن استخدامها لتحليل البيانات باستخدام أي مكتبة JSON.
+
+  ```java
+  Properties properties = new Properties();
+  properties.setProperty(
+                  ClientConfigProperties.serverSetting(ServerSettings.OUTPUT_FORMAT_BINARY_WRITE_JSON_AS_STRING),
+                  "1");
+  try (Connection conn = DriverManager.getConnection(url, properties)) {
+       try (ResultSet rs = stmt.executeQuery("SELECT * FROM test_json ORDER BY order")) {
+          while (rs.next()) {
+              String json = rs.getString("json");
+              // ...
+          }
+      }
+  }
+  ```
+
+  بدءًا من الإصدار 25.8 من ClickHouse، لم تعد الأرقام مُقتبسةً بشكل افتراضي. بالنسبة للإصدارات الأقدم، يمكنك تعطيل الاقتباس عبر تمرير إعدادات الخادم إلى خصائص الاتصال:
+
+  ```java
+  Properties properties = new Properties();
+  properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_64bit_integers"), "0");
+  properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_64bit_floats"), "0");
+  properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
+  ```
+
+  ### التعامل مع التواريخ والأوقات والمناطق الزمنية
+
+  يُرجى الاطلاع على [دليل التاريخ والوقت](/ar/integrations/language-clients/java/date-time-guide) الذي يشرح الأخطاء الشائعة ومنطق عمل الـ driver عند التعامل مع قيم التاريخ والوقت والـ timestamps.
+
+  ## إنشاء اتصال
+
+  ```java
+  String url = "jdbc:ch://my-server:8123/system";
+
+  Properties properties = new Properties();
+  DataSource dataSource = new DataSource(url, properties);//DataSource or DriverManager are the main entry points
+  try (Connection conn = dataSource.getConnection()) {
+  ... // do something with the connection
+  ```
+
+  ## توفير بيانات الاعتماد والإعدادات
+
+  ```java showLineNumbers
+  String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
+
+  Properties info = new Properties();
+  info.put("user", "default");
+  info.put("password", "password");
+  info.put("database", "some_db");
+
+  //Creating a connection with DataSource
+  DataSource dataSource = new DataSource(url, info);
+  try (Connection conn = dataSource.getConnection()) {
+  ... // do something with the connection
+  }
+
+  //Alternate approach using the DriverManager
+  try (Connection conn = DriverManager.getConnection(url, info)) {
+  ... // do something with the connection
+  }
+  ```
+
+  ## عبارة بسيطة
+
+  ```java showLineNumbers
+
+  try (Connection conn = dataSource.getConnection(...);
+      Statement stmt = conn.createStatement()) {
+      ResultSet rs = stmt.executeQuery("select * from numbers(50000)");
+      while(rs.next()) {
+          // ...
+      }
+  }
+  ```
+
+  ## إدراج
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
+      ps.setString(1, "test"); // id
+      ps.setObject(2, LocalDateTime.now()); // timestamp
+      ps.addBatch();
+      ...
+      ps.executeBatch(); // stream everything on-hand into ClickHouse
+  }
+  ```
+
+  ## `HikariCP`
+
+  ```java showLineNumbers
+  // connection pooling won't help much in terms of performance,
+  // because the underlying implementation has its own pool.
+  // for example: HttpURLConnection has a pool for sockets
+  HikariConfig poolConfig = new HikariConfig();
+  poolConfig.setConnectionTimeout(5000L);
+  poolConfig.setMaximumPoolSize(20);
+  poolConfig.setMaxLifetime(300_000L);
+  poolConfig.setDataSource(new ClickHouseDataSource(url, properties));
+
+  try (HikariDataSource ds = new HikariDataSource(poolConfig);
+       Connection conn = ds.getConnection();
+       Statement s = conn.createStatement();
+       ResultSet rs = s.executeQuery("SELECT * FROM system.numbers LIMIT 3")) {
+      while (rs.next()) {
+          // handle row
+          log.info("Integer: {}, String: {}", rs.getInt(1), rs.getString(1));//Same column but different types
+      }
+  }
+  ```
+
+  ## مزيد من المعلومات
+
+  لمزيد من المعلومات، راجع [مستودع GitHub](https://github.com/ClickHouse/clickhouse-java) الخاص بنا و[وثائق Java Client](/ar/integrations/language-clients/java/client).
+
+  ## استكشاف الأخطاء وإصلاحها
+
+  ### التسجيل
+
+  يستخدم برنامج التشغيل [slf4j](https://www.slf4j.org/) للتسجيل، وسيستخدم أول تطبيق متاح على `classpath`.
+
+  ### حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة
+
+  عند تنفيذ عمليات إدراج كبيرة في ClickHouse ذات أوقات تنفيذ طويلة، قد تواجه أخطاء انتهاء مهلة JDBC مثل:
+
+  ```plaintext
+  Caused by: java.sql.SQLException: Read timed out, server myHostname [uri=https://hostname.aws.clickhouse.cloud:8443]
+  ```
+
+  قد تُعطّل هذه الأخطاء عملية إدراج البيانات وتؤثر على استقرار النظام. لمعالجة هذه المشكلة، قد تحتاج إلى ضبط بعض إعدادات المهلة الزمنية في نظام تشغيل العميل.
+
+  #### Mac OS
+
+  على نظام Mac OS، يمكن تعديل الإعدادات التالية لحل المشكلة:
+
+  * `net.inet.tcp.keepidle`: 60000
+  * `net.inet.tcp.keepintvl`: 45000
+  * `net.inet.tcp.keepinit`: 45000
+  * `net.inet.tcp.keepcnt`: 8
+  * `net.inet.tcp.always_keepalive`: 1
+
+  #### Linux
+
+  على Linux، قد لا تكفي الإعدادات المكافئة وحدها لحل المشكلة. ويعود ذلك إلى الاختلافات في طريقة تعامل Linux مع إعدادات keep-alive للمقبس، مما يستوجب اتخاذ خطوات إضافية. اتبع الخطوات التالية:
+
+  1. عدّل معلمات نواة Linux التالية في `/etc/sysctl.conf` أو في ملف تهيئة ذي صلة:
+
+  * `net.inet.tcp.keepidle`: 60000
+  * `net.inet.tcp.keepintvl`: 45000
+  * `net.inet.tcp.keepinit`: 45000
+  * `net.inet.tcp.keepcnt`: 8
+  * `net.inet.tcp.always_keepalive`: 1
+  * `net.ipv4.tcp_keepalive_intvl`: 75
+  * `net.ipv4.tcp_keepalive_probes`: 9
+  * `net.ipv4.tcp_keepalive_time`: 60 (قد ترغب في خفض هذه القيمة من القيمة الافتراضية البالغة 300 ثانية)
+
+  2. بعد تعديل معلمات النواة، طبِّق التغييرات عن طريق تشغيل الأمر التالي:
+
+  ```shell
+  sudo sysctl -p
+  ```
+
+  بعد ضبط هذه الإعدادات، تحتاج إلى التأكد من أن الـ client لديك يُفعّل خيار Keep Alive على الـ socket:
+
+  ```java
+  properties.setProperty("socket_keepalive", "true");
+  ```
+
+  ## دليل الترحيل
+
+  ### التغييرات الرئيسية
+
+  | الميزة                                   | V1 (الإصدار القديم) | V2 (الإصدار الجديد)              |
+  | ---------------------------------------- | ------------------- | -------------------------------- |
+  | دعم المعاملات                            | مدعوم جزئيًا        | غير مدعوم                        |
+  | إعادة تسمية أعمدة الاستجابة              | مدعوم جزئيًا        | غير مدعوم                        |
+  | تعليمات SQL متعددة                       | غير مدعوم           | غير مسموح به                     |
+  | المعاملات المُسمّاة                      | مدعوم               | غير مدعوم (ليس ضمن مواصفات JDBC) |
+  | البيانات المتدفقة مع `PreparedStatement` | مدعوم               | غير مدعوم                        |
+
+  * صُمم JDBC V2 ليكون أخف، وأزيلت منه بعض الميزات.
+    * البيانات المتدفقة غير مدعومة في JDBC V2 لأنها ليست جزءًا من مواصفة JDBC ولا من Java.
+  * يتطلب JDBC V2 إعدادًا صريحًا. لا توجد إعدادات افتراضية للتجاوز التلقائي.
+    * يجب تحديد البروتوكول في عنوان URL. لا يتم اكتشاف البروتوكول ضمنيًا بالاعتماد على أرقام المنافذ.
+
+  ### تغييرات الإعداد
+
+  يوجد نوعان فقط من أنواع enum:
+
+  * `com.clickhouse.jdbc.DriverProperties` - خصائص التهيئة الخاصة ببرنامج التشغيل.
+  * `com.clickhouse.client.api.ClientConfigProperties` - خصائص تهيئة العميل. التغييرات على تهيئة العميل
+    موضحة في [وثائق Java Client](/ar/integrations/language-clients/java/client#migration_from_v1_config).
+
+  يتم تحليل خصائص الاتصال على النحو التالي:
+
+  * يُحلَّل URL أولًا لاستخراج الخصائص. وتتجاوز هذه الخصائص جميع الخصائص الأخرى.
+  * لا تُمرَّر خصائص برنامج التشغيل إلى العميل.
+  * تُستخرَج نقاط النهاية (`host` و`port` و`protocol`) من URL.
+
+  مثال:
+
+  ```java
+  String url = "jdbc:ch://my-server:8443/default?" +
+              "jdbc_ignore_unsupported_values=true&" +
+              "socket_rcvbuf=800000";
+
+  Properties properties = new Properties();
+  properties.setProperty("socket_rcvbuf", "900000");
+  try (Connection conn = DriverManager.getConnection(url, properties)) {
+      // Connection will use socket_rcvbuf=800000 and jdbc_ignore_unsupported_values=true
+      // Endpoints: my-server:8443 protocol: http (not secure)
+      // Database: default
+  }
+  ```
+
+  ### تغييرات أنواع البيانات
+
+  **الأنواع الرقمية**
+
+  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)       | نوع JDBC ‏(V1) | فئة Java ‏(V1)                            |
+  | -------------- | -------------------- | -------------- | -------------------- | -------------- | ----------------------------------------- |
+  | Int8           | ✅                    | TINYINT        | java.lang.Byte       | TINYINT        | java.lang.Byte                            |
+  | Int16          | ✅                    | SMALLINT       | java.lang.Short      | SMALLINT       | java.lang.Short                           |
+  | Int32          | ✅                    | INTEGER        | java.lang.Integer    | INTEGER        | java.lang.Integer                         |
+  | Int64          | ✅                    | BIGINT         | java.lang.Long       | BIGINT         | java.lang.Long                            |
+  | Int128         | ✅                    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | Int256         | ✅                    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | UInt8          | ❌                    | SMALLINT       | java.lang.Short      | SMALLINT       | com.clickhouse.data.value.UnsignedByte    |
+  | UInt16         | ❌                    | INTEGER        | java.lang.Integer    | INTEGER        | com.clickhouse.data.value.UnsignedShort   |
+  | UInt32         | ❌                    | BIGINT         | java.lang.Long       | BIGINT         | com.clickhouse.data.value.UnsignedInteger |
+  | UInt64         | ❌                    | NUMERIC        | java.math.BigInteger | NUMERIC        | com.clickhouse.data.value.UnsignedLong    |
+  | UInt128        | ✅                    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | UInt256        | ✅                    | NUMERIC        | java.math.BigInteger | NUMERIC        | java.math.BigInteger                      |
+  | Float32        | ✅                    | FLOAT          | java.lang.Float      | FLOAT          | java.lang.Float                           |
+  | Float64        | ✅                    | DOUBLE         | java.lang.Double     | DOUBLE         | java.lang.Double                          |
+  | Decimal32      | ✅                    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal64      | ✅                    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal128     | ✅                    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Decimal256     | ✅                    | DECIMAL        | java.math.BigDecimal | DECIMAL        | java.math.BigDecimal                      |
+  | Bool           | ✅                    | BOOLEAN        | java.lang.Boolean    | BOOLEAN        | java.lang.Boolean                         |
+
+  * أكبر اختلاف هو أن الأنواع غير الموقَّعة تُحوَّل إلى أنواع Java لتحسين قابلية النقل.
+
+  **أنواع السلاسل النصية**
+
+  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | صنف Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)   |
+  | -------------- | ------------ | -------------- | ---------------- | -------------- | ---------------- |
+  | String         | ✅            | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | FixedString    | ✅            | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+
+  * تتم قراءة `FixedString` كما هي في كلا الإصدارين. على سبيل المثال، ستُقرأ `FixedString(10)` للقيمة `'John'` على أنها `'John\0\0\0\0\0\0\0\0\0'`.
+  * عند استخدام `PreparedStatement#setBytes`، سيتم تحويله إلى `unhex('<hex_string>')` ثم تُقرأ القيمة كنوع `String`.
+  * تُخزَّن السلاسل النصية بترميز UTF-8.
+
+  **أنواع التاريخ/الوقت**
+
+  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)     | نوع JDBC ‏(V1)                  | صنف Java ‏(V1)           |
+  | -------------- | ------------ | -------------- | ------------------ | ------------------------------- | ------------------------ |
+  | Date           | ❌            | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | Date32         | ❌            | DATE           | java.sql.Date      | DATE                            | java.time.LocalDate      |
+  | DateTime       | ❌            | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | DateTime64     | ❌            | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
+  | Time           | ✅            | TIME           | java.sql.Time      | نوع جديد/غير مدعوم              | نوع جديد/غير مدعوم       |
+  | Time64         | ✅            | TIME           | java.sql.Time      | نوع جديد/غير مدعوم              | نوع جديد/غير مدعوم       |
+
+  * يقتصر دعم `Time` و`Time64` في V2 على كونهما نوعين جديدين.
+  * يُحوَّل `DateTime` و`DateTime64` إلى `java.sql.Timestamp` لتحقيق توافق أفضل مع JDBC.
+
+  **أنواع Enum**
+
+  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)   |
+  | -------------- | -------------------- | -------------- | ---------------- | -------------- | ---------------- |
+  | Enum           | ✅                    | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
+  | Enum8          | ✅                    | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
+  | Enum16         | ✅                    | VARCHAR        | java.lang.String | OTHER          | java.lang.String |
+
+  **الأنواع المتداخلة**
+
+  | نوع ClickHouse | متوافق مع V1 | نوع JDBC ‏(V2)  | فئة Java ‏(V2)   | نوع JDBC ‏(V1) | فئة Java ‏(V1)                             |
+  | -------------- | ------------ | --------------- | ---------------- | -------------- | ------------------------------------------ |
+  | مصفوفة         | ❌            | ARRAY           | java.sql.Array   | ARRAY          | Object[] أو مصفوفة من أنواع بدائية |
+  | Tuple          | ❌            | OTHER           | Object[] | STRUCT         | java.sql.Struct                            |
+  | Map            | ❌            | JAVA&#95;OBJECT | java.util.Map    | STRUCT         | java.util.Map                              |
+  | Nested         | ❌            | ARRAY           | java.sql.Array   | STRUCT         | java.sql.Struct                            |
+
+  * في V2، يُعيَّن `Array` إلى `java.sql.Array` افتراضيًا لضمان التوافق مع JDBC. ويُجرى ذلك أيضًا لتوفير معلومات إضافية عن قيمة المصفوفة المُعادة. وهذا مفيد في type inference.
+  * في V2، يطبّق `Array` الطريقة `getResultSet()` لإرجاع `java.sql.ResultSet` بالمحتوى نفسه الموجود في المصفوفة الأصلية.
+  * يستخدم V1 `STRUCT` مع `Map`، لكنه يعيد دائمًا الكائن `java.util.Map`. ويعالج V2 ذلك من خلال تعيين `Map` إلى `JAVA_OBJECT`.
+  * يستخدم V1 `STRUCT` مع `Tuple`، لكنه يعيد دائمًا الكائن `List<Object>`. ويُعيّن V2 `Tuple` إلى `OTHER` ويعيد `Object[]` افتراضيًا.
+  * يقدّم V2 ‏`com.clickhouse.data.Tuple#Tuple` لكتابة قيم tuple. وهذا يسهّل تحديد ما إذا كانت القيمة tuple أم مصفوفة.
+  * لا يمكن استخدام `PreparedStatement#setBytes` و`ResultSet#getBytes` مع أنواع المجموعات. فقد صُمّمت هاتان الطريقتان للعمل مع السلاسل الثنائية.
+  * عادةً ما يُستخدم `java.sql.Array` لكتابة أنواع `Array` وقراءتها. ويوفّر JDBC driver دعمًا كاملًا لذلك.
+  * في V2، يُعيَّن `Nested` إلى `Array` ويعرضه كمصفوفة من tuples.
+  * يوفّر V2 دعمًا جزئيًا لـ `java.sql.Struct` لأنه يشبه جدًا النوع `Array` ولا يدعم key-value pairs. ويمكن استخدام `Struct` لكتابة قيم `Tuple`.
+
+  **أنواع Geo**
+
+  | نوع ClickHouse | متوافق مع الإصدار V1 | نوع JDBC ‏(V2) | فئة Java ‏(V2)                                 | نوع JDBC ‏(V1) | فئة Java (V1)                                  |
+  | -------------- | -------------------- | -------------- | ---------------------------------------------- | -------------- | ---------------------------------------------- |
+  | Point          | ✅                    | OTHER          | double[]                               | OTHER          | double[]                               |
+  | Ring           | ✅                    | OTHER          | double[][]                     | OTHER          | double[][]                     |
+  | Polygon        | ✅                    | OTHER          | double[][][]           | OTHER          | double[][][]           |
+  | MultiPolygon   | ✅                    | OTHER          | double[][][][] | OTHER          | double[][][][] |
+
+  **أنواع Nullable وLowCardinality**
+
+  * `Nullable` و`LowCardinality` نوعان خاصّان يغلّفان أنواعًا أخرى.
+  * لا تطرأ أي تغييرات على هذين النوعين في V2.
+
+  **الأنواع الخاصة**
+
+  | نوع ClickHouse          | متوافق مع V1 | نوع JDBC ‏(V2)    | فئة Java ‏(V2)        | نوع JDBC ‏(V1)    | فئة Java ‏(V1)        |
+  | ----------------------- | ------------ | ----------------- | --------------------- | ----------------- | --------------------- |
+  | JSON                    | ❌            | OTHER             | java.lang.String      | غير مدعوم         | غير مدعوم             |
+  | AggregateFunction       | ✅            | OTHER             | (التمثيل الثنائي)     | OTHER             | (التمثيل الثنائي)     |
+  | SimpleAggregateFunction | ✅            | (النوع المُغلَّف) | (الفئة المُغلَّفة)    | (النوع المُغلَّف) | (الفئة المُغلَّفة)    |
+  | UUID                    | ✅            | OTHER             | java.util.UUID        | VARCHAR           | java.util.UUID        |
+  | IPv4                    | ✅            | OTHER             | java.net.Inet4Address | VARCHAR           | java.net.Inet4Address |
+  | IPv6                    | ✅            | OTHER             | java.net.Inet6Address | VARCHAR           | java.net.Inet6Address |
+  | Dynamic                 | ❌            | OTHER             | java.Object           | غير مدعوم         | غير مدعوم             |
+  | Variant                 | ❌            | OTHER             | java.Object           | غير مدعوم         | غير مدعوم             |
+
+  * يستخدم V1 النوع `VARCHAR` مع `UUID`، لكنه يعيد دائمًا الكائن `java.util.UUID`. ويعالج V2 هذا الأمر من خلال تعيين `UUID` إلى `OTHER`، ثم يعيد الكائن `java.util.UUID`.
+  * يستخدم V1 النوع `VARCHAR` مع `IPv4` و`IPv6`، لكنه يعيد دائمًا الكائنين `java.net.Inet4Address` و`java.net.Inet6Address`. ويعالج V2 هذا الأمر من خلال تعيين `IPv4` و`IPv6` إلى `OTHER`، ثم يعيد الكائنين `java.net.Inet4Address` و`java.net.Inet6Address`.
+  * `Dynamic` و`Variant` نوعان جديدان في V2. ولا يدعمهما V1.
+  * يعتمد `JSON` على النوع `Dynamic`. لذلك فهو مدعوم فقط في V2.
+  * يمكن قراءة قيم `IPv4` و`IPv6` على هيئة `byte[]` باستخدام الدالة `getBytes(columnIndex)`. ومع ذلك، يُوصى باستخدام الفئات المخصّصة لهذه الأنواع.
+  * لا يدعم V2 قراءة عنوان IP على أنه من القيم العددية، لأن التحويل مُنفَّذ بصورة أفضل في فئات `InetAddress`.
+
+  ### تغييرات البيانات الوصفية لقاعدة البيانات
+
+  * يستخدم V2 المصطلح `Schema` فقط لتسمية قواعد البيانات. أما المصطلح `Catalog` فمحجوز للاستخدام المستقبلي.
+  * يعيد V2 القيمة `false` لكل من `DatabaseMetaData.supportsTransactions()` و`DatabaseMetaData.supportsSavepoints()`. سيتغير ذلك في الإصدارات القادمة.
+  * في `DatabaseMetaData.getTypeInfo()`، يُرجِع العمودان `LITERAL_PREFIX` و`LITERAL_SUFFIX` الآن القيمة `null` لأنواع البيانات التي لا يُتوقع أن تحتوي على بادئات أو لاحقات (مثل الأنواع الرقمية).
+    في V1، كانت هذه الأعمدة تُرجِع قيماً غير `null` لهذه الأنواع. ينبغي استخدام هذه الأعمدة عند إنشاء استعلامات SQL لوضع القيم الحرفية بين علامتي اقتباس بشكل صحيح وفقاً لنوع بياناتها.
+</View>
+
+<View title="v0.7.x">
+  يُنفِّذ `clickhouse-jdbc` واجهة JDBC القياسية. فبوصفه مبنيًا فوق [clickhouse-client](/ar/integrations/connectors/sql-clients/sql-console)، يوفر ميزات إضافية كتعيين الأنواع المخصصة، ودعم المعاملات، وعبارات `UPDATE` و`DELETE` المتزامنة القياسية وغيرها؛ مما يجعله سهل الاستخدام مع التطبيقات والأدوات القديمة.
+
+  <Note>
+    يستخدم أحدث إصدار من JDBC ‏(0.7.2) ‏Client-V1
+  </Note>
+
+  واجهة برمجة تطبيقات `clickhouse-jdbc` متزامنة، وتنطوي بشكل عام على تكاليف إضافية أعلى (كتحليل SQL وتعيين الأنواع/تحويلها وغير ذلك). يُنصح باستخدام [clickhouse-client](/ar/integrations/connectors/sql-clients/sql-console) حين يكون الأداء أولويةً قصوى، أو إذا كنت تفضّل طريقة أكثر مباشرةً للوصول إلى ClickHouse.
+
+  ## متطلبات البيئة
+
+  * [OpenJDK](https://openjdk.java.net) الإصدار 8 أو أحدث
+
+  ### الإعداد
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc */}
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-jdbc</artifactId>
+          <version>0.7.2</version>
+          {/* استخدم ملف JAR شاملًا جميع التبعيات، وغيّر classifier إلى http للحصول على ملف JAR أصغر */}
+          <classifier>shaded-all</classifier>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      // استخدم ملف JAR شاملًا جميع التبعيات، وغيّر classifier إلى http للحصول على ملف JAR أصغر
+      implementation("com.clickhouse:clickhouse-jdbc:0.7.2:shaded-all")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc
+      // استخدم ملف JAR شاملًا جميع التبعيات، وغيّر classifier إلى http للحصول على ملف JAR أصغر
+      implementation 'com.clickhouse:clickhouse-jdbc:0.7.2:shaded-all'
+      ```
+    </Tab>
+  </Tabs>
+
+  منذ الإصدار `0.5.0`، نستخدم Apache HTTP Client المُضمَّن مع Client. نظرًا لعدم وجود إصدار مشترك من الحزمة، تحتاج إلى إضافة logger كتبعية.
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      {/* https://mvnrepository.com/artifact/org.slf4j/slf4j-api */}
+      <dependency>
+          <groupId>org.slf4j</groupId>
+          <artifactId>slf4j-api</artifactId>
+          <version>2.0.16</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+      implementation("org.slf4j:slf4j-api:2.0.16")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/org.slf4j/slf4j-api
+      implementation 'org.slf4j:slf4j-api:2.0.16'
+      ```
+    </Tab>
+  </Tabs>
+
+  ## الإعداد
+
+  **فئة برنامج التشغيل**: `com.clickhouse.jdbc.ClickHouseDriver`
+
+  **صياغة URL**: `jdbc:(ch|clickhouse)[:<protocol>]://endpoint1[,endpoint2,...][/<database>][?param1=value1&param2=value2][#tag1,tag2,...]`، على سبيل المثال:
+
+  * `jdbc:ch://localhost` يعادل `jdbc:clickhouse:http://localhost:8123`
+  * `jdbc:ch:https://localhost` يعادل `jdbc:clickhouse:http://localhost:8443?ssl=true&sslmode=STRICT`
+  * `jdbc:ch:grpc://localhost` يعادل `jdbc:clickhouse:grpc://localhost:9100`
+
+  **خصائص الاتصال**:
+
+  | الخاصية                    | القيمة الافتراضية | الوصف                                                                                                                                                                                                                                                                                                                                                                                                          |
+  | -------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `continueBatchOnError`     | `false`           | ما إذا كان ينبغي متابعة معالجة الدفعات عند حدوث خطأ                                                                                                                                                                                                                                                                                                                                                            |
+  | `createDatabaseIfNotExist` | `false`           | ما إذا كان ينبغي إنشاء قاعدة البيانات إذا لم تكن موجودة                                                                                                                                                                                                                                                                                                                                                        |
+  | `custom_http_headers`      |                   | ترويسات HTTP مخصّصة مفصولة بفواصل، على سبيل المثال: `User-Agent=client1,X-Gateway-Id=123`                                                                                                                                                                                                                                                                                                                      |
+  | `custom_http_params`       |                   | معلمات استعلام HTTP مخصّصة مفصولة بفواصل، على سبيل المثال: `extremes=0,max_result_rows=100`                                                                                                                                                                                                                                                                                                                    |
+  | `nullAsDefault`            | `0`               | `0` - التعامل مع قيمة null كما هي، مع إطلاق استثناء عند إدراج null في عمود غير قابل للقيم null؛ `1` - التعامل مع قيمة null كما هي، مع تعطيل التحقق من null عند الإدراج؛ `2` - استبدال null بالقيمة الافتراضية لنوع البيانات المقابل لكلٍّ من query وinsert                                                                                                                                                     |
+  | `jdbcCompliance`           | `true`            | ما إذا كان سيتم دعم عمليتَي UPDATE/DELETE القياسيتين المتزامنتين والمعاملة الوهمية                                                                                                                                                                                                                                                                                                                             |
+  | `typeMappings`             |                   | خصّص التعيين بين نوع بيانات ClickHouse وصنف Java، مما سيؤثر على نتيجة كلٍّ من [`getColumnType()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSetMetaData.html#getColumnType-int-) و[`getObject(Class<>?>`)](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-java.lang.String-java.lang.Class-). على سبيل المثال: `UInt128=java.lang.String,UInt256=java.lang.String` |
+  | `wrapperObject`            | `false`           | ما إذا كان يجب أن تُعيد [`getObject()`](https://docs.oracle.com/javase/8/docs/api/java/sql/ResultSet.html#getObject-int-) ‎java.sql.Array / java.sql.Struct‎ عند استخدام Array / Tuple.                                                                                                                                                                                                                        |
+
+  ملاحظة: يُرجى الرجوع إلى [إعدادات JDBC الخاصة](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java) لمزيد من المعلومات.
+
+  ## أنواع البيانات المدعومة
+
+  يدعم JDBC driver نفس تنسيقات البيانات التي تدعمها مكتبة العميل.
+
+  <Note>
+    * AggregatedFunction - :warning: لا يدعم `SELECT * FROM table ...`
+    * Decimal - استخدم `SET output_format_decimal_trailing_zeros=1` في 21.9+ لضمان الاتساق
+    * Enum - يمكن التعامل معه كسلسلة نصية وكعدد صحيح
+    * UInt64 - يُعيَّن إلى `long` (في client-v1)
+  </Note>
+
+  ## إنشاء اتصال
+
+  ```java
+  String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
+
+  Properties properties = new Properties();
+
+  ClickHouseDataSource dataSource = new ClickHouseDataSource(url, properties);
+  try (Connection conn = dataSource.getConnection("default", "password");
+      Statement stmt = conn.createStatement()) {
+  }
+  ```
+
+  ## عبارة بسيطة
+
+  ```java showLineNumbers
+
+  try (Connection conn = dataSource.getConnection(...);
+      Statement stmt = conn.createStatement()) {
+      ResultSet rs = stmt.executeQuery("select * from numbers(50000)");
+      while(rs.next()) {
+          // ...
+      }
+  }
+  ```
+
+  ## إدراج
+
+  <Note>
+    * استخدم `PreparedStatement` بدلًا من `Statement`
+  </Note>
+
+  إنها أسهل في الاستخدام، لكن أداؤها أبطأ مقارنةً بدالة input (انظر أدناه):
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement("insert into mytable(* except (description))")) {
+      ps.setString(1, "test"); // id
+      ps.setObject(2, LocalDateTime.now()); // timestamp
+      ps.addBatch(); // parameters will be write into buffered stream immediately in binary format
+      ...
+      ps.executeBatch(); // stream everything on-hand into ClickHouse
+  }
+  ```
+
+  ### مع دالة الجدول `input`
+
+  خيار يتميز بخصائص أداء ممتازة:
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement(
+      "insert into mytable select col1, col2 from input('col1 String, col2 DateTime64(3), col3 Int32')")) {
+      // The column definition will be parsed so the driver knows there are 3 parameters: col1, col2 and col3
+      ps.setString(1, "test"); // col1
+      ps.setObject(2, LocalDateTime.now()); // col2, setTimestamp is slow and not recommended
+      ps.setInt(3, 123); // col3
+      ps.addBatch(); // parameters will be write into buffered stream immediately in binary format
+      ...
+      ps.executeBatch(); // stream everything on-hand into ClickHouse
+  }
+  ```
+
+  * [توثيق الدالة input](/ar/reference/functions/table-functions/input) متى أمكن
+
+  ### الإدراج باستخدام العناصر النائبة
+
+  يُوصى بهذا الخيار فقط للإدراجات الصغيرة، إذ يستلزم تعبير SQL طويلاً (يُحلَّل على جانب العميل ويستهلك CPU &amp; Memory):
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement("insert into mytable values(trim(?),?,?)")) {
+      ps.setString(1, "test"); // id
+      ps.setObject(2, LocalDateTime.now()); // timestamp
+      ps.setString(3, null); // description
+      ps.addBatch(); // append parameters to the query
+      ...
+      ps.executeBatch(); // issue the composed query: insert into mytable values(...)(...)...(...)
+  }
+  ```
+
+  ## التعامل مع DateTime والمناطق الزمنية
+
+  يُرجى استخدام `java.time.LocalDateTime` أو `java.time.OffsetDateTime` بدلاً من `java.sql.Timestamp`، و`java.time.LocalDate` بدلاً من `java.sql.Date`.
+
+  ```java showLineNumbers
+  try (PreparedStatement ps = conn.prepareStatement("select date_time from mytable where date_time > ?")) {
+      ps.setObject(2, LocalDateTime.now());
+      ResultSet rs = ps.executeQuery();
+      while(rs.next()) {
+          LocalDateTime dateTime = (LocalDateTime) rs.getObject(1);
+      }
+      ...
+  }
+  ```
+
+  ## التعامل مع `AggregateFunction`
+
+  <Note>
+    لا تُدعَم القراءة الثنائية المباشرة لحالة `AggregateFunction` إلا في `groupBitmap`. بالنسبة إلى دوال التجميع الأخرى (`min` و`max` و`avg` وما إلى ذلك)، استخدِم مُعدِّلات `-Merge` في الاستعلام الخاص بك (على سبيل المثال، `SELECT minMerge(min_state) FROM ...`) لفكّ حالة التجميع على جانب الخادم وإرجاع قيمة عادية.
+  </Note>
+
+  ```java showLineNumbers
+  // batch insert using input function
+  try (ClickHouseConnection conn = newConnection(props);
+          Statement s = conn.createStatement();
+          PreparedStatement stmt = conn.prepareStatement(
+                  "insert into test_batch_input select id, name, value from input('id Int32, name Nullable(String), desc Nullable(String), value AggregateFunction(groupBitmap, UInt32)')")) {
+      s.execute("drop table if exists test_batch_input;"
+              + "create table test_batch_input(id Int32, name Nullable(String), value AggregateFunction(groupBitmap, UInt32))engine=Memory");
+      Object[][] objs = new Object[][] {
+              new Object[] { 1, "a", "aaaaa", ClickHouseBitmap.wrap(1, 2, 3, 4, 5) },
+              new Object[] { 2, "b", null, ClickHouseBitmap.wrap(6, 7, 8, 9, 10) },
+              new Object[] { 3, null, "33333", ClickHouseBitmap.wrap(11, 12, 13) }
+      };
+      for (Object[] v : objs) {
+          stmt.setInt(1, (int) v[0]);
+          stmt.setString(2, (String) v[1]);
+          stmt.setString(3, (String) v[2]);
+          stmt.setObject(4, v[3]);
+          stmt.addBatch();
+      }
+      int[] results = stmt.executeBatch();
+      ...
+  }
+
+  // use bitmap as query parameter
+  try (PreparedStatement stmt = conn.prepareStatement(
+      "SELECT bitmapContains(my_bitmap, toUInt32(1)) as v1, bitmapContains(my_bitmap, toUInt32(2)) as v2 from {tt 'ext_table'}")) {
+      stmt.setObject(1, ClickHouseExternalTable.builder().name("ext_table")
+              .columns("my_bitmap AggregateFunction(groupBitmap,UInt32)").format(ClickHouseFormat.RowBinary)
+              .content(new ByteArrayInputStream(ClickHouseBitmap.wrap(1, 3, 5).toBytes()))
+              .asTempTable()
+              .build());
+      ResultSet rs = stmt.executeQuery();
+      Assert.assertTrue(rs.next());
+      Assert.assertEquals(rs.getInt(1), 1);
+      Assert.assertEquals(rs.getInt(2), 0);
+      Assert.assertFalse(rs.next());
+  }
+  ```
+
+  <br />
+
+  ## تهيئة مكتبة HTTP
+
+  يدعم موصّل JDBC الخاص بـ ClickHouse ثلاث مكتبات HTTP: [`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html)، و[`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html)، و[Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/).
+
+  <Note>
+    `HttpClient` مدعوم فقط في JDK 11 أو الإصدارات الأحدث.
+  </Note>
+
+  يستخدم JDBC driver المكتبة `HttpClient` افتراضيًا. يمكنك تغيير مكتبة HTTP التي يستخدمها ClickHouse JDBC connector من خلال ضبط الخاصية التالية:
+
+  ```java
+  properties.setProperty("http_connection_provider", "APACHE_HTTP_CLIENT");
+  ```
+
+  فيما يلي قائمة كاملة بالقيم المقابلة:
+
+  | قيمة الخاصية                | مكتبة HTTP          |
+  | --------------------------- | ------------------- |
+  | HTTP&#95;CLIENT             | `HttpClient`        |
+  | HTTP&#95;URL&#95;CONNECTION | `HttpURLConnection` |
+  | APACHE&#95;HTTP&#95;CLIENT  | أباتشي `HttpClient` |
+
+  <br />
+
+  ## الاتصال بـ ClickHouse عبر SSL
+
+  لإنشاء اتصال JDBC آمن بـ ClickHouse عبر SSL، تحتاج إلى ضبط خصائص JDBC لتشمل معاملات SSL. يتضمن ذلك عادةً تحديد خصائص SSL مثل `sslmode` و`sslrootcert` في JDBC URL أو كائن الخصائص.
+
+  ## خصائص SSL
+
+  | الاسم                | القيمة الافتراضية | القيم الاختيارية | الوصف                                                                     |
+  | -------------------- | ----------------- | ---------------- | ------------------------------------------------------------------------- |
+  | `ssl`                | false             | true, false      | ما إذا كان سيتم تمكين SSL/TLS للاتصال                                     |
+  | `sslmode`            | strict            | strict, none     | ما إذا كان يجب التحقق من شهادة SSL/TLS                                    |
+  | `sslrootcert`        |                   |                  | مسار شهادات الجذر لـ SSL/TLS                                              |
+  | `sslcert`            |                   |                  | مسار شهادة SSL/TLS                                                        |
+  | `sslkey`             |                   |                  | مفتاح RSA بتنسيق PKCS#8                                                   |
+  | `key_store_type`     |                   | JKS، PKCS12      | يحدّد نوع ملف `KeyStore`/`TrustStore` أو صيغته                            |
+  | `trust_store`        |                   |                  | مسار ملف `TrustStore`                                                     |
+  | `key_store_password` |                   |                  | كلمة المرور المطلوبة للوصول إلى ملف `KeyStore` المحدد في تهيئة `KeyStore` |
+
+  تضمن هذه الخصائص تواصل تطبيق Java الخاص بك مع خادم ClickHouse عبر اتصال مشفَّر، مما يعزز أمان البيانات أثناء النقل.
+
+  ```java showLineNumbers
+    String url = "jdbc:ch://your-server:8443/system";
+
+    Properties properties = new Properties();
+    properties.setProperty("ssl", "true");
+    properties.setProperty("sslmode", "strict"); // NONE to trust all servers; STRICT for trusted only
+    properties.setProperty("sslrootcert", "/mine.crt");
+    try (Connection con = DriverManager
+            .getConnection(url, properties)) {
+
+        try (PreparedStatement stmt = con.prepareStatement(
+
+            // place your code here
+
+        }
+    }
+  ```
+
+  ## حل مشكلة انتهاء مهلة JDBC عند عمليات الإدراج الكبيرة
+
+  عند تنفيذ عمليات إدراج كبيرة في ClickHouse ذات أوقات تنفيذ طويلة، قد تواجه أخطاء انتهاء مهلة JDBC مثل:
+
+  ```plaintext
+  Caused by: java.sql.SQLException: Read timed out, server myHostname [uri=https://hostname.aws.clickhouse.cloud:8443]
+  ```
+
+  قد تُعطّل هذه الأخطاء عملية إدراج البيانات وتؤثر على استقرار النظام. لمعالجة هذه المشكلة، يلزمك ضبط بعض إعدادات المهلة الزمنية في نظام تشغيل العميل.
+
+  ### Mac OS
+
+  على نظام Mac OS، يمكن تعديل الإعدادات التالية لحل المشكلة:
+
+  * `net.inet.tcp.keepidle`: 60000
+  * `net.inet.tcp.keepintvl`: 45000
+  * `net.inet.tcp.keepinit`: 45000
+  * `net.inet.tcp.keepcnt`: 8
+  * `net.inet.tcp.always_keepalive`: 1
+
+  ### Linux
+
+  على Linux، قد لا تكفي الإعدادات المكافئة وحدها لحل المشكلة. إذ تستلزم الاختلافات في طريقة تعامل Linux مع إعدادات keep-alive للمقبس اتخاذ خطوات إضافية. اتبع الخطوات التالية:
+
+  1. عدِّل معلمات نواة Linux التالية في `/etc/sysctl.conf` أو في ملف تكوين ذي صلة:
+
+  * `net.inet.tcp.keepidle`: 60000
+  * `net.inet.tcp.keepintvl`: 45000
+  * `net.inet.tcp.keepinit`: 45000
+  * `net.inet.tcp.keepcnt`: 8
+  * `net.inet.tcp.always_keepalive`: 1
+  * `net.ipv4.tcp_keepalive_intvl`: 75
+  * `net.ipv4.tcp_keepalive_probes`: 9
+  * `net.ipv4.tcp_keepalive_time`: 60 (قد ترغب في خفض هذه القيمة من القيمة الافتراضية البالغة 300 ثانية)
+
+  2. بعد تعديل معلمات النواة، طبِّق التغييرات عن طريق تشغيل الأمر التالي:
+
+  ```shell
+  sudo sysctl -p
+  ```
+
+  بعد ضبط هذه الإعدادات، تأكد من أن العميل لديك يُفعّل خيار Keep Alive على الـ socket:
+
+  ```java
+  properties.setProperty("socket_keepalive", "true");
+  ```
+
+  <Note>
+    حاليًا، يجب استخدام مكتبة Apache HTTP Client عند ضبط `socket keep-alive`، لأن مكتبتي عميل HTTP الأخريين اللتين يدعمهما `clickhouse-java` لا تسمحان بضبط خيارات socket. للاطلاع على دليل مفصل، راجع [تهيئة مكتبة HTTP](#v07-configuring-http-library).
+  </Note>
+
+  بدلاً من ذلك، يمكنك إضافة المعاملات المكافئة إلى JDBC URL.
+
+  المهلة الافتراضية لـ socket والاتصال في JDBC driver هي 30 ثانية. يمكن زيادة هذه المهلة لدعم عمليات إدراج البيانات الكبيرة. استخدم الأسلوب `options` على `ClickHouseClient` مع خياري `SOCKET_TIMEOUT` و`CONNECTION_TIMEOUT` كما هو محدد في `ClickHouseClientOption`:
+
+  ```java showLineNumbers
+  final int MS_12H = 12 * 60 * 60 * 1000; // 12 h in ms
+  final String sql = "insert into table_a (c1, c2, c3) select c1, c2, c3 from table_b;";
+
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP)) {
+      client.read(servers).write()
+          .option(ClickHouseClientOption.SOCKET_TIMEOUT, MS_12H)
+          .option(ClickHouseClientOption.CONNECTION_TIMEOUT, MS_12H)
+          .query(sql)
+          .executeAndWait();
+  }
+  ```
+</View>
