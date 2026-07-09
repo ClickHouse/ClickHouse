@@ -54,6 +54,8 @@ source duplicate settings keep trailing precedence
 10
 source query global settings are rejected
 0
+source query cache settings are rejected
+0
 nested source query global settings are rejected
 0
 trailing settings do not affect returning planning

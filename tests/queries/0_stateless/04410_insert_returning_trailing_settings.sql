@@ -128,6 +128,15 @@ SETTINGS max_execution_time = 1; -- { serverError NOT_IMPLEMENTED }
 
 SELECT count() FROM t_ret_settings;
 
+-- Source-side query-cache settings are also rejected (otherwise they are silently ignored on INSERT).
+SELECT 'source query cache settings are rejected';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings SELECT 1
+RETURNING (SELECT count() FROM t_ret_settings)
+SETTINGS use_query_cache = 1; -- { serverError NOT_IMPLEMENTED }
+
+SELECT count() FROM t_ret_settings;
+
 -- Unsupported source settings must also be rejected when nested in source subqueries.
 SELECT 'nested source query global settings are rejected';
 TRUNCATE TABLE t_ret_settings;

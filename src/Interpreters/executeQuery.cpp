@@ -289,6 +289,11 @@ static void rejectUnsupportedSourceInsertReturningSettings(const ASTPtr & source
         "reserve_memory",
         "temporary_files_codec",
         "temporary_files_buffer_size",
+        "use_query_cache",
+        "enable_reads_from_query_cache",
+        "enable_writes_to_query_cache",
+        "query_cache_nondeterministic_function_handling",
+        "query_cache_system_table_handling",
         "profile",
     };
 
