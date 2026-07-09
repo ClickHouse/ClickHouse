@@ -861,10 +861,12 @@ TEST(ReaderExecutor, SeekWithoutPoolDoesNotCrash)
 
 TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
 {
-    /// Read-ahead is speculative, so the prefetch window tracks memory pressure: it
-    /// uses the full synchronous window at Normal/Elevated and is suppressed at
-    /// High/Critical. Uses the stateless path (a present-but-zero-capacity
-    /// long_connection_limit, so no slot is acquired) so the window read is observable.
+    /// Read-ahead is speculative, so it tracks memory pressure: suppressed entirely at
+    /// High/Critical. At Normal/Elevated the ASK is no longer window-gated for a bypass
+    /// bottom (the worker's one-window residue cap self-limits the fetch instead), so the
+    /// machine window spans the plan remainder - EOF-bounded here. Uses the stateless path
+    /// (a present-but-zero-capacity long_connection_limit, so no slot is acquired) so the
+    /// window read is observable.
     struct Reading { size_t sync_window; bool scheduled; size_t prefetch_window; };
     auto measure = [](double pressure) -> Reading
     {
@@ -892,11 +894,13 @@ TEST(ReaderExecutor, PrefetchWindowRespondsToMemoryPressure)
 
     const Reading normal = measure(0.50);
     EXPECT_TRUE(normal.scheduled);
-    EXPECT_EQ(normal.prefetch_window, normal.sync_window) << "Normal: prefetch uses the full synchronous window";
+    EXPECT_EQ(normal.prefetch_window, (1u << 20) - normal.sync_window)
+        << "Normal: the ask spans the file remainder";
 
     const Reading elevated = measure(0.80);
     EXPECT_TRUE(elevated.scheduled);
-    EXPECT_EQ(elevated.prefetch_window, elevated.sync_window) << "Elevated: prefetch uses the full synchronous window";
+    EXPECT_EQ(elevated.prefetch_window, (1u << 20) - elevated.sync_window)
+        << "Elevated: the ask spans the (pressure-shrunk) remainder";
 
     const Reading high = measure(0.92);
     EXPECT_FALSE(high.scheduled) << "High pressure: prefetch suppressed";
@@ -4018,6 +4022,94 @@ TEST(ReaderExecutor, DoneMachineCollectedAndLeadToppedUpBehindCursor)
             result.append(node.data(), node.size);
     }
     EXPECT_EQ(result, content);
+}
+
+TEST(ReaderExecutor, FullCacheColdReadServesRefusedBytesFromBank)
+{
+    /// A cache too small for the scan: once the plan's held segments fill the budget every
+    /// further write is refused. The worker retains only that refused residue (capped at one
+    /// window) and stops the lead early; the collect banks it; the serve delivers it from the
+    /// bank - the read must produce every byte regardless of the cache being full. The
+    /// launcher still ASKS the full lead: the residue cap, not a tier gate, limits the fetch.
+    DB::ServerUUID::setRandomForUnitTests();
+
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_full_cache");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_full_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    /// Room for TWO segments; the plan holds its segments (non-releasable), so from the
+    /// third segment on every reserve fails - a deterministic full cache.
+    settings[DB::FileCacheSetting::max_size] = 4000;
+    settings[DB::FileCacheSetting::max_file_segment_size] = 2000;
+    settings[DB::FileCacheSetting::boundary_alignment] = 2000;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_full_cache", settings);
+    cache->initialize();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 100;
+    auto provider = std::make_shared<DB::DiskCacheProvider>(cache, cache_settings, /*query_id_=*/String{});
+
+    String content(16000, '\0');
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('0' + (i % 61));
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"full_obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("full_obj", "full_obj", content.size());
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(provider);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 2000;
+    executor_options.fill_ahead_lead = 6000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, caches, executor_options);
+
+    auto w1 = executor.readNextWindow();
+    ASSERT_EQ(w1.range().offset, 0u);
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch());
+    EXPECT_EQ(inspect(executor).inflightPrefetchSize(), 6000u)
+        << "the full lead is asked even with the cache full - the residue cap limits the fetch, not a tier gate";
+
+    String result;
+    for (const auto & node : w1.getNodes())
+        result.append(node.data(), node.size);
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            result.append(node.data(), node.size);
+    }
+    EXPECT_EQ(result, content) << "refused bytes must reach the consumer through the bank";
 }
 
 /// Stage-5 "stop at the first loss" under REAL FileCache contention (not the downloader-blind

@@ -124,12 +124,12 @@ public:
     static constexpr size_t DEFAULT_LONG_CONNECTION_OPEN_RANGE = 8 * 1024 * 1024; /// 8 MiB
     static constexpr size_t DEFAULT_LONG_CONNECTION_MAX_BOUND = 128 * 1024 * 1024; /// 128 MiB
     /// How far the in-order fill front runs AHEAD of the serve cursor (the cache-as-buffer
-    /// lead): the single in-flight machine fetches up to this much into a disk (`FilesystemCache`)
-    /// bottom tier, committing cells progressively, while the serve reads the committed prefix.
-    /// Held cheaply on disk, so it is flat. Only a disk bottom tier exposes the partial-prefix
-    /// read + frontier wait the run-ahead needs; a page-cache-only or bypass read stays one
-    /// window. Distinct from the plan window (the geometry/pin horizon).
-    static constexpr size_t DEFAULT_FILL_AHEAD_LEAD = 16 * 1024 * 1024;     /// 16 MiB (disk-backed bottom, flat)
+    /// lead): the single in-flight machine fetches up to this much into the cells, committing
+    /// progressively, while the serve reads the committed prefix. Cursor-anchored (`launchRetrieve`
+    /// launches only inside `[cursor, cursor + lead)`) and self-limited by cell acceptance: a
+    /// bottom that takes nothing stops the worker at one window of retained residue
+    /// (`coordinatedPrefetch`). Distinct from the plan window (the geometry/pin horizon).
+    static constexpr size_t DEFAULT_FILL_AHEAD_LEAD = 16 * 1024 * 1024;     /// 16 MiB
 
     /// Everything configurable beyond the data path itself: the executor is
     /// fully wired at construction, there are no post-construction setters.
@@ -362,8 +362,16 @@ private:
         std::optional<LongConnection> long_conn;
         Stats stats;
         bool reached_eof = false;
-        /// The fetch step's product: raw PHYSICAL source bytes (short at EOF).
+        /// The fetch step's RESIDUE: raw PHYSICAL source bytes no cell accepted (a refused
+        /// write, a sibling-claimed cell; a bypass window retains everything). Bytes the
+        /// worker committed per tile live in the cells and are NOT held here - the serve
+        /// reads them from the display. Capped at one (pressure-scaled) window by the
+        /// fetch step: when nothing commits, the lead stops instead of ballooning in memory.
         ChainedBuffers fetched;
+        /// The PHYSICAL frontier the fetch actually reached (end of the last fetched run),
+        /// independent of what `fetched` retains - the pin and the attempted accounting
+        /// anchor here. `physical_window.offset` when nothing was fetched.
+        size_t fetched_end = 0;
         /// The fill step's inputs: NON-OWNING views of the writers this fill targets
         /// (the schedule's fill targets overlapping the window). The writers stay in the
         /// shared `read_plan.bufs`; the fill runs inline on the read thread, so referencing
@@ -436,13 +444,6 @@ private:
     /// deferred LRU bump. The caller checks `covers`.
     static ChainedBuffers readHitFromView(CacheView & view, ByteRange clamped);
 
-    /// A read-only fastest-tier-first sweep over the ranges still uncovered
-    /// after the plan's held buffers: a sibling reader / promotion may have
-    /// populated a gap since plan-build. Each fresh view moves into
-    /// `read_plan.deferred_lru_bumps`; its writers are ignored. Run BEFORE the
-    /// source backfill.
-    void serveLateHits(ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats);
-
     // ─── Gap fetch + backfill ────────────────────────────────────────────
 
     /// PURE source fetch: read the WHOLE `physical_window` from the source as
@@ -465,33 +466,16 @@ private:
     /// over the window's fill-target `writer_views`, fetch the LED runs from the source via
     /// the machine's own connection, and write+complete them INLINE on this thread (the
     /// downloader contract). Segments a sibling leads are SKIPPED and flagged via
-    /// `m.contended` so the foreground revokes to the sync path at collect. Sets `m.fetched`
-    /// to the led bytes (sparse - holes where a sibling leads). With no contention the worker
-    /// leads the whole window, so this fetches it all, exactly like `fetchGapsFromSource`.
+    /// `m.contended` so the foreground revokes to the sync path at collect. Retains in
+    /// `m.fetched` ONLY the residue no cell accepted (see the field doc), capped at one
+    /// window; `m.fetched_end` records the fetch frontier.
     void coordinatedPrefetch(FetchMachine & m);
 
-    /// Shared assembly tail of both gap paths, run AFTER
-    /// `recreditCommittedPrefixes` + `serveLateHits`: append `source_bytes`
-    /// for the still-uncovered gaps into `result` (offset order, clamped to
-    /// what the source delivered), and optionally push into the held write
-    /// buffers.
-    void assembleAndWriteBack(
-        ByteRange fetch_window, const ChainedBuffers & source_bytes,
-        ChainedBuffers & result, IntervalSet & covered, bool push_to_writers, Stats & out_stats);
-
-    /// Shared tail of an assembled window: re-point the Strategy-A pin
-    /// (the lane's `pin`) to the partial segment under `pin_frontier`
-    /// (cleared at EOF), then slice `result` to `slice_window` and enforce the
-    /// single-contiguous-run-from-the-window-start guarantee.
-    ChainedBuffers finalizeAssembledWindow(ByteRange slice_window, size_t pin_frontier, ChainedBuffers & result, bool eof_latch);
-
-    /// Push the assembled `result`'s miss bytes into the plan's held write
-    /// buffers, fire-and-forget: a short/zero landing affects only the byte
-    /// counter, never `result`. Writes only the writers the plan SCHEDULE
-    /// designates as fill targets for this window, so a faster tier never
-    /// receives slack bytes (`isScheduledFillTarget`). The SYNCHRONOUS write
-    /// side; a machine collect runs the same work at collect.
-    void pushAssembledToWriteBuffers(ByteRange physical_window, const ChainedBuffers & result, Stats & out_stats);
+    /// Sub-ranges of `range` not committed in ANY of the `views`' cells - the bytes that
+    /// would be lost if dropped from memory. With no views (a bypass window) the whole
+    /// `range` is uncommitted.
+    static VectorWithMemoryTracking<ByteRange> uncommittedIn(
+        const VectorWithMemoryTracking<WriterView> & views, ByteRange range);
 
     /// The per-writer-list body shared by the put step and the parked-inline
     /// write: write `chain ∩ writer-range ∩ window` into each (already
@@ -767,6 +751,12 @@ private:
         /// identity carries nothing. Plan-epoch scoped, reset with the ahead cursor.
         ChainedBuffers bank;
 
+        /// FULL-CACHE BACKPRESSURE: raised when a collect banked the still-refused residue
+        /// of a POPULATING window (the cells took nothing - cache full or sibling-claimed);
+        /// while it holds bytes the launcher runs no new lead (more fetch would only grow
+        /// the in-memory residue). Cleared when the serve consumes the bank; reset with it.
+        bool bank_refused = false;
+
 #if defined(DEBUG_OR_SANITIZER_BUILD)
     private:
         /// The exclusion guard: a same-writer concurrent write means the machine slot's
@@ -912,10 +902,9 @@ private:
     /// speculative, so once memory is tight it stops entirely.
     bool prefetchEnabled(MemoryPressureLevel level) const;
 
-    /// How far the in-order fill front runs ahead of the serve cursor: the bottom populatable
-    /// tier's lead. A disk-backed (`FilesystemCache`) bottom is flat (`fill_ahead_lead`); a
-    /// RAM-backed (`PageCache`-only) bottom or a bypass gap cannot serve a prefix ahead, so the
-    /// lead stays one (pressure-scaled) effective window.
+    /// How far the in-order fill front runs ahead of the serve cursor: one uniform lead
+    /// (`fill_ahead_lead`), self-limited by cell acceptance - a bottom that accepts nothing
+    /// hits the worker's one-window residue cap and stops (see `coordinatedPrefetch`).
     size_t fillAheadLead(MemoryPressureLevel level) const;
 
     /// Shrink `win_size` so the read does not pass `read_extent_end`.
