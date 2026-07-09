@@ -253,8 +253,20 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecFPC(*this);
     registerCodecGCD(*this);
     registerCodecALP(*this);
+#if USE_IGUANA
+    registerCodecIguana(*this);
+#endif
 
+#if USE_IGUANA
+    /// FIXME (performance testing only — DO NOT MERGE): the default compression method is set to the
+    /// experimental Iguana codec so that every column without an explicit CODEC is compressed with it,
+    /// to measure its impact across the whole CI performance suite. The production default is LZ4.
+    /// Build the AST directly (instead of get("Iguana", {})) because the by-name lookup upper-cases
+    /// the family name, and this codec is registered case-sensitively as "Iguana".
+    default_codec = get(makeASTFunction("CODEC", make_intrusive<ASTIdentifier>("Iguana")), {});
+#else
     default_codec = get("LZ4", {});
+#endif
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()

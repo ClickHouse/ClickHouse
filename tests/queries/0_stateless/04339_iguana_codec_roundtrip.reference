@@ -1,0 +1,14 @@
+-- experimental gate (allow_experimental_codecs defaults to 0)
+-- system.codecs
+Iguana	1	1	1
+-- String round-trip (skewed -> ANS, random -> raw fallback, plus edge cases)
+45000
+45000
+0
+1
+-- Numeric round-trip with plain Iguana and Delta+Iguana
+0
+1	1	1
+-- Nullable and FixedString round-trip
+0
+1
