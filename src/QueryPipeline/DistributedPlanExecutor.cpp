@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <condition_variable>
 #include <future>
 #include <memory>
@@ -12,6 +14,10 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <QueryPipeline/DistributedPlanExecutor.h>
+#if CLICKHOUSE_CLOUD
+#include <Server/StatelessWorker/StatelessWorkersProvider.h>
+#include <Server/StatelessWorker/StatelessWorkerAllocation.h>
+#endif
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <QueryPipeline/printPipeline.h>
@@ -78,6 +84,9 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool distributed_plan_execute_locally;
+#if CLICKHOUSE_CLOUD
+    extern const SettingsUInt64 distributed_plan_workers_num;
+#endif
 }
 
 namespace ErrorCodes
@@ -722,7 +731,7 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
 
         pipeline.setProcessListElement(context->getProcessListElement());
 
-        pipeline.setProgressCallback(progress_callback);
+        pipeline.setProgressCallback(progress_callback ? progress_callback : context->getProgressCallback());
 
         CompletedPipelineExecutor executor(pipeline);
         if (is_cancelled)
@@ -978,6 +987,10 @@ UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_str
 
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
 {
+    /// Local execution runs every stage in-process over in-memory exchanges and
+    /// never dials a worker, so it needs no hosts and must not lease any.
+    if (context_->getSettingsRef()[Setting::distributed_plan_execute_locally])
+        return;
     fillWorkerAddresses(context_);
 
     /// Cap the host list to match the node count the optimizer planned for.
@@ -1062,6 +1075,28 @@ void TaskToHostMap::fillWorkerAddresses(ContextPtr context)
 {
     if (!context->getConfigRef().getBool("stateless_worker_client.enabled", false))
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Stateless worker client is not enabled in configuration");
+
+#if CLICKHOUSE_CLOUD
+    /// When the discovery service is configured it is the only source of
+    /// workers — the statically configured cluster/host is never used as a
+    /// fallback, so the two can never be mixed. Discovery takes precedence when
+    /// both are present.
+    if (context->getConfigRef().has("stateless_worker_client.discovery_service"))
+    {
+        const auto workers_num = context->getSettingsRef()[Setting::distributed_plan_workers_num];
+        if (workers_num == 0)
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Stateless worker discovery is configured but `distributed_plan_workers_num` is 0; "
+                "set it to a positive value to lease workers from the discovery service");
+        auto provider = context->getStatelessWorkersProvider();
+        worker_allocation = provider->allocate(workers_num);
+        for (const auto & endpoint : worker_allocation->getEndpoints())
+            worker_addresses.push_back(resolveWorkerAddress(endpoint.host, endpoint.port, 0, context));
+        if (worker_addresses.empty())
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "No stateless workers available from the discovery service");
+        return;
+    }
+#endif
 
     String cluster_name = context->getConfigRef().getString("stateless_worker_client.cluster", "");
     if (!cluster_name.empty())

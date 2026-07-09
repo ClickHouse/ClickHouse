@@ -1,10 +1,15 @@
 #pragma once
 
+#include "config.h"
+
 #include <Processors/Chunk.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <IO/Progress.h>
+#if CLICKHOUSE_CLOUD
+#include <Server/StatelessWorker/StatelessWorkerAllocation_fwd.h>
+#endif
 
 #include <Common/DequeWithMemoryTracking.h>
 #include <Common/SettingsChanges.h>
@@ -50,6 +55,7 @@ class TaskToHostMap : public boost::noncopyable
 {
 public:
     TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_);
+    /// Out-of-line so the `worker_allocation` deleter is instantiated where `StatelessWorkerAllocation` is complete.
     ~TaskToHostMap();
 
     const VectorWithMemoryTracking<WorkerAddress> & getWorkerAddresses() const { return worker_addresses; }
@@ -63,6 +69,9 @@ private:
     VectorWithMemoryTracking<WorkerAddress> worker_addresses;
     UnorderedMapWithMemoryTracking<String, WorkerAddress> task_hosts;
     UnorderedMapWithMemoryTracking<String, StreamSourceAddress> exchange_stream_source_hosts;
+#if CLICKHOUSE_CLOUD
+    StatelessWorkerAllocationPtr worker_allocation;  /// Keeps leased workers alive for the query lifetime
+#endif
 };
 
 using TaskToHostMapPtr = std::shared_ptr<const TaskToHostMap>;
