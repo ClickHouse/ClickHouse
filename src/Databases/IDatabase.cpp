@@ -53,50 +53,24 @@ StoragePtr IDatabase::getTable(const String & name, ContextPtr context) const
 
 String IDatabase::tryResolveTableNameCaseInsensitive(const String & name, ContextPtr context) const
 {
-    /// Remote / data-lake databases (PostgreSQL, MySQL, DataLake, ...) do not participate in
-    /// case-insensitive resolution at all. The outer lookup path already performs an exact-name
-    /// probe; an additional probe here would double the remote round trips for every reference
-    /// against such a database, and the catalog scan below is even more expensive.
-    /// Documented under the `case_insensitive_names` setting (`Scope:` section): a typo against a
-    /// remote table surfaces as `UNKNOWN_TABLE` — this is the deliberate trade-off.
+    /// Remote / data-lake databases (PostgreSQL, MySQL, DataLake, ...) do not participate: extra
+    /// probes double remote round trips. Documented under the `case_insensitive_names` setting.
     if (isRemoteDatabase())
         return {};
 
     /// Prefer the narrow exact-name lookup first: `getTablesIterator` may enumerate the entire
-    /// catalog, which is more expensive than a single `tryGetTable` probe. The case-insensitive
-    /// scan only fires when the exact lookup misses.
-    /// This is what makes `information_schema.tables` work in standard mode — the database
-    /// contains both `tables` and `TABLES`, but a literal lookup of `tables` matches `tables`
-    /// exactly and avoids the otherwise-ambiguous case-insensitive scan.
+    /// catalog. The case-insensitive scan below only fires when the exact lookup misses.
     if (tryGetTable(name, context))
         return name;
 
-    /// `information_schema` (and its uppercase twin) intentionally expose each predefined view in
-    /// two cases (`tables` and `TABLES`, etc.). Settings documentation promises those pairs are
-    /// canonical aliases of one logical view, so a mixed-case lookup like `TaBlEs` must resolve to
-    /// one of them rather than throw on the otherwise-ambiguous case-insensitive scan.
+    /// `information_schema` and its uppercase twin expose each predefined view in two cases
+    /// (`tables` and `TABLES`); resolve a mixed-case lookup to the schema's canonical case.
+    const String & db_name = getDatabaseName();
+    if (db_name == "information_schema" || db_name == "INFORMATION_SCHEMA")
     {
-        const String & db_name = getDatabaseName();
-        const bool is_info_schema_lower = db_name == "information_schema";
-        const bool is_info_schema_upper = db_name == "INFORMATION_SCHEMA";
-        if (is_info_schema_lower || is_info_schema_upper)
-        {
-            static constexpr std::string_view predefined_views[] = {
-                "schemata", "tables", "views", "columns",
-                "key_column_usage", "referential_constraints", "statistics",
-                "character_sets", "collations", "engines",
-            };
-            const String lowered_name = Poco::toLower(name);
-            for (const auto view : predefined_views)
-            {
-                if (lowered_name != view)
-                    continue;
-                /// Canonical view name: lowercase variant for the lowercase schema, uppercase for the uppercase one.
-                String canonical = is_info_schema_upper ? Poco::toUpper(name) : Poco::toLower(name);
-                if (tryGetTable(canonical, context))
-                    return canonical;
-            }
-        }
+        String canonical = db_name == "INFORMATION_SCHEMA" ? Poco::toUpper(name) : Poco::toLower(name);
+        if (tryGetTable(canonical, context))
+            return canonical;
     }
 
     String found_name;

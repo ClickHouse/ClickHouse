@@ -1,5 +1,7 @@
 #include <Parsers/ASTIdentifier.h>
 
+#include <algorithm>
+
 #include <Common/SipHash.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -103,13 +105,8 @@ void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
     /// so include only the per-part double-quote flag in the AST hash. Backticks are kept out of the hash
     /// because the formatter does not preserve them in the round-trip — including them would create a
     /// spurious hash mismatch between the original AST and its reparsed form.
-    bool any_double_quoted = false;
-    for (auto style : quote_styles)
-        if (style == IdentifierQuoteStyle::DoubleQuote)
-        {
-            any_double_quoted = true;
-            break;
-        }
+    const bool any_double_quoted = std::any_of(
+        quote_styles.begin(), quote_styles.end(), [](auto style) { return style == IdentifierQuoteStyle::DoubleQuote; });
     if (any_double_quoted)
     {
         hash_state.update(quote_styles.size());
@@ -136,10 +133,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
     /// quoting policy (which avoids spurious backticks in the output for plain identifiers).
     auto format_element = [&](const String & elem_name, IdentifierQuoteStyle quote)
     {
-        /// Hoist the optional out of the `if` condition: `to_write` borrows from
-        /// `special_delimiter_and_identifier->second`, so the optional must outlive its use.
-        auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name);
-        if (special_delimiter_and_identifier)
+        if (auto special_delimiter_and_identifier = ParserCompoundIdentifier::splitSpecialDelimiterAndIdentifierIfAny(elem_name))
         {
             ostr << special_delimiter_and_identifier->first;
             if (quote == IdentifierQuoteStyle::DoubleQuote)
@@ -152,7 +146,7 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
         if (quote == IdentifierQuoteStyle::DoubleQuote)
             writeDoubleQuotedString(elem_name, ostr);
         else
-            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);  /// no copy on the common path
+            settings.writeIdentifier(ostr, elem_name, /*ambiguous=*/false);
     };
 
     if (compound())

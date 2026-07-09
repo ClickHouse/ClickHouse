@@ -80,3 +80,10 @@ String
 1
 --- Quoted projection alias survives AST round-trip ---
 SELECT 1 AS "MyAlias"
+--- Recursive CTE quoted columns stay pinned in recursive term ---
+1
+2
+3
+1
+2
+3

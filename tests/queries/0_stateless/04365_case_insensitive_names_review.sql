@@ -228,3 +228,10 @@ WITH MyCte AS (SELECT 1 AS x) SELECT mycte.* FROM MyCte;
 SELECT '--- Quoted projection alias survives AST round-trip ---';
 -- Query-tree -> AST conversion must re-emit the double quoting so the pin survives reparse.
 SELECT explain FROM viewExplain('EXPLAIN QUERY TREE', 'run_passes = 1, dump_ast = 1', (SELECT 1 AS "MyAlias")) WHERE explain LIKE '%AS "MyAlias"%';
+
+SELECT '--- Recursive CTE quoted columns stay pinned in recursive term ---';
+-- The self-reference temp table carries per-column quote pins from the CTE column list / seed aliases.
+WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte; -- { serverError UNKNOWN_IDENTIFIER }
+WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte ORDER BY "MyCol";
+WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte; -- { serverError UNKNOWN_IDENTIFIER }
+WITH RECURSIVE cte AS (SELECT 1 AS MyCol UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte ORDER BY MyCol;

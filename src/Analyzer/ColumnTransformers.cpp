@@ -1,9 +1,9 @@
 #include <Analyzer/ColumnTransformers.h>
 
 #include <algorithm>
-#include <limits>
+#include <optional>
 
-#include <Poco/String.h>
+#include <boost/algorithm/string/join.hpp>
 
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -127,39 +127,18 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
 namespace
 {
 
-/// Flatten parsed identifier parts into the dot-joined full name.
-String joinParts(const std::vector<String> & parts)
-{
-    String result;
-    for (const auto & part : parts)
-    {
-        if (!result.empty())
-            result += '.';
-        result += part;
-    }
-    return result;
-}
-
 Names joinAllParts(const std::vector<std::vector<String>> & targets)
 {
     Names result;
     result.reserve(targets.size());
     for (const auto & parts : targets)
-        result.push_back(joinParts(parts));
+        result.push_back(boost::algorithm::join(parts, "."));
     return result;
 }
 
-/// Compare two name parts, folding case unless the target part was double-quoted.
-bool partsEqualWithQuote(std::string_view target_part, std::string_view column_part, bool target_part_quoted)
-{
-    return identifierPartsEqual(target_part, column_part, /*case_insensitive=*/ !target_part_quoted);
-}
-
 /// Quote-aware, per-part comparison of a structured transformer target against a column name.
-/// The target side uses its PARSED parts (a single part may contain dots, so the flattened name
-/// is never re-split). A single-part target compares against the whole column name; a multi-part
-/// target splits the column name on '.' (legitimate on the column side, where dots separate
-/// nested/subcolumn components).
+/// A single-part target (whose text may contain dots) compares against the whole column name;
+/// a multi-part target splits the column name on '.'.
 bool targetMatchesColumnName(
     const std::vector<String> & target_parts,
     const std::vector<bool> & target_parts_double_quoted,
@@ -168,7 +147,7 @@ bool targetMatchesColumnName(
     auto part_quoted = [&](size_t p) { return p < target_parts_double_quoted.size() && target_parts_double_quoted[p]; };
 
     if (target_parts.size() == 1)
-        return partsEqualWithQuote(target_parts[0], column_name, part_quoted(0));
+        return identifierPartsEqual(target_parts[0], column_name, /*case_insensitive=*/ !part_quoted(0));
 
     Identifier column_identifier(column_name);
     const auto & column_parts = column_identifier.getParts();
@@ -176,9 +155,65 @@ bool targetMatchesColumnName(
         return false;
 
     for (size_t p = 0; p < target_parts.size(); ++p)
-        if (!partsEqualWithQuote(target_parts[p], column_parts[p], part_quoted(p)))
+        if (!identifierPartsEqual(target_parts[p], column_parts[p], /*case_insensitive=*/ !part_quoted(p)))
             return false;
     return true;
+}
+
+/// `standard`-mode scan: unquoted target parts fold case-insensitively, double-quoted parts stay
+/// exact; distinct targets folding to the same name are ambiguous (mirrors the column/alias rule).
+std::optional<size_t> findTargetMatchStandardMode(
+    const std::vector<std::vector<String>> & target_parts,
+    const std::vector<std::vector<bool>> & target_parts_double_quoted,
+    const Names & target_names,
+    const std::string & name,
+    std::string_view ambiguity_message_format)
+{
+    static const std::vector<bool> no_quotes;
+    std::optional<size_t> matched_index;
+    for (size_t i = 0, n = target_parts.size(); i < n; ++i)
+    {
+        const auto & per_part_quote = i < target_parts_double_quoted.size() ? target_parts_double_quoted[i] : no_quotes;
+        if (!targetMatchesColumnName(target_parts[i], per_part_quote, name))
+            continue;
+
+        if (matched_index && target_names[*matched_index] != target_names[i])
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER, fmt::runtime(ambiguity_message_format),
+                name, target_names[*matched_index], target_names[i]);
+        matched_index = i;
+    }
+    return matched_index;
+}
+
+/// Mix quote bits / part structure into the hash only when they deviate from the common case
+/// (all unquoted, single-part), so plain targets keep the old hash and `a.b` differs from `` `a.b` ``.
+void updateTargetsHash(
+    IQueryTreeNode::HashState & hash_state,
+    const std::vector<std::vector<String>> & target_parts,
+    const std::vector<std::vector<bool>> & target_parts_double_quoted)
+{
+    const bool any_quoted = std::any_of(
+        target_parts_double_quoted.begin(),
+        target_parts_double_quoted.end(),
+        [](const auto & per_part) { return std::any_of(per_part.begin(), per_part.end(), [](bool b) { return b; }); });
+    if (any_quoted)
+    {
+        hash_state.update(target_parts_double_quoted.size());
+        for (const auto & per_part : target_parts_double_quoted)
+        {
+            hash_state.update(per_part.size());
+            for (bool b : per_part)
+                hash_state.update(static_cast<uint8_t>(b));
+        }
+    }
+
+    const bool any_compound = std::any_of(
+        target_parts.begin(), target_parts.end(), [](const auto & parts) { return parts.size() > 1; });
+    if (any_compound)
+    {
+        for (const auto & parts : target_parts)
+            hash_state.update(parts.size());
+    }
 }
 
 }
@@ -222,31 +257,14 @@ bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_na
     if (!standard_mode)
         return false;
 
-    /// `standard` mode: unquoted target parts fold case-insensitively; double-quoted parts stay
-    /// exact. Multiple distinct targets that fold to the same column are ambiguous — mirror the
-    /// column/alias/REPLACE rule rather than silently picking the first.
-    size_t matched_index = std::numeric_limits<size_t>::max();
-    for (size_t i = 0, n = target_parts.size(); i < n; ++i)
-    {
-        const auto & per_part_quote
-            = i < target_parts_double_quoted.size() ? target_parts_double_quoted[i] : std::vector<bool>{};
-        if (!targetMatchesColumnName(target_parts[i], per_part_quote, column_name))
-            continue;
+    auto matched_index = findTargetMatchStandardMode(target_parts, target_parts_double_quoted, except_column_names, column_name,
+        "EXCEPT column transformer target for column '{}' is ambiguous: matches multiple targets with different cases: '{}' and '{}'");
+    if (!matched_index)
+        return false;
 
-        if (matched_index != std::numeric_limits<size_t>::max()
-            && except_column_names[matched_index] != except_column_names[i])
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "EXCEPT column transformer target for column '{}' is ambiguous: matches multiple targets with different cases: '{}' and '{}'",
-                column_name, except_column_names[matched_index], except_column_names[i]);
-        matched_index = i;
-    }
-    if (matched_index != std::numeric_limits<size_t>::max())
-    {
-        if (matched_target)
-            *matched_target = except_column_names[matched_index];
-        return true;
-    }
-    return false;
+    if (matched_target)
+        *matched_target = except_column_names[*matched_index];
+    return true;
 }
 
 const char * toString(ExceptColumnTransformerType type)
@@ -319,33 +337,7 @@ void ExceptColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState &
         hash_state.update(column_name);
     }
 
-    /// Mix in per-part quote bits only when at least one part was quoted so the hash stays stable
-    /// for the common (unquoted) case.
-    const bool any_quoted = std::any_of(
-        target_parts_double_quoted.begin(),
-        target_parts_double_quoted.end(),
-        [](const auto & per_part) { return std::any_of(per_part.begin(), per_part.end(), [](bool b) { return b; }); });
-    if (any_quoted)
-    {
-        hash_state.update(target_parts_double_quoted.size());
-        for (const auto & per_part : target_parts_double_quoted)
-        {
-            hash_state.update(per_part.size());
-            for (bool b : per_part)
-                hash_state.update(static_cast<uint8_t>(b));
-        }
-    }
-
-    /// Mix in the part structure only when some target is compound, so the common single-part
-    /// case keeps the flattened-name hash (compound `a.b` and single-part `` `a.b` `` flatten
-    /// identically but must not share a hash).
-    const bool any_compound = std::any_of(
-        target_parts.begin(), target_parts.end(), [](const auto & parts) { return parts.size() > 1; });
-    if (any_compound)
-    {
-        for (const auto & parts : target_parts)
-            hash_state.update(parts.size());
-    }
+    updateTargetsHash(hash_state, target_parts, target_parts_double_quoted);
 
     if (column_matcher)
     {
@@ -409,7 +401,7 @@ ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Rep
 
     for (const auto & replacement : replacements_)
     {
-        String full_name = joinParts(replacement.parts);
+        String full_name = boost::algorithm::join(replacement.parts, ".");
         auto [_, inserted] = replacement_names_set.emplace(full_name);
 
         if (!inserted)
@@ -435,30 +427,15 @@ QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const s
         return getReplacements().getNodes()[replacement_index];
     }
 
-    /// `standard` mode: match per parsed part — unquoted parts fold, double-quoted parts stay
-    /// exact. Multiple targets that fold to the same lookup are ambiguous — mirror the
-    /// column/alias rule.
     if (standard_mode)
     {
-        size_t matched_index = std::numeric_limits<size_t>::max();
-        for (size_t i = 0, n = target_parts.size(); i < n; ++i)
-        {
-            const auto & per_part_quote
-                = i < target_parts_double_quoted.size() ? target_parts_double_quoted[i] : std::vector<bool>{};
-            if (!targetMatchesColumnName(target_parts[i], per_part_quote, expression_name))
-                continue;
-
-            if (matched_index != std::numeric_limits<size_t>::max() && replacements_names[matched_index] != replacements_names[i])
-                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                    "REPLACE column transformer target '{}' is ambiguous: matches multiple replacements with different cases: '{}' and '{}'",
-                    expression_name, replacements_names[matched_index], replacements_names[i]);
-            matched_index = i;
-        }
-        if (matched_index != std::numeric_limits<size_t>::max())
+        auto matched_index = findTargetMatchStandardMode(target_parts, target_parts_double_quoted, replacements_names, expression_name,
+            "REPLACE column transformer target '{}' is ambiguous: matches multiple replacements with different cases: '{}' and '{}'");
+        if (matched_index)
         {
             if (matched_target)
-                *matched_target = replacements_names[matched_index];
-            return getReplacements().getNodes()[matched_index];
+                *matched_target = replacements_names[*matched_index];
+            return getReplacements().getNodes()[*matched_index];
         }
     }
 
@@ -511,30 +488,7 @@ void ReplaceColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState 
         hash_state.update(replacement_name);
     }
 
-    const bool any_quoted = std::any_of(
-        target_parts_double_quoted.begin(),
-        target_parts_double_quoted.end(),
-        [](const auto & per_part) { return std::any_of(per_part.begin(), per_part.end(), [](bool b) { return b; }); });
-    if (any_quoted)
-    {
-        hash_state.update(target_parts_double_quoted.size());
-        for (const auto & per_part : target_parts_double_quoted)
-        {
-            hash_state.update(per_part.size());
-            for (bool b : per_part)
-                hash_state.update(static_cast<uint8_t>(b));
-        }
-    }
-
-    /// Mix in the part structure only when some target is compound, so the common single-part
-    /// case keeps the flattened-name hash.
-    const bool any_compound = std::any_of(
-        target_parts.begin(), target_parts.end(), [](const auto & parts) { return parts.size() > 1; });
-    if (any_compound)
-    {
-        for (const auto & parts : target_parts)
-            hash_state.update(parts.size());
-    }
+    updateTargetsHash(hash_state, target_parts, target_parts_double_quoted);
 }
 
 QueryTreeNodePtr ReplaceColumnTransformerNode::cloneImpl() const

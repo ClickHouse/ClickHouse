@@ -625,21 +625,13 @@ QueryTreeNodePtr QueryTreeBuilder::buildInterpolateList(const ASTPtr & interpola
     for (auto & expression : expression_list_typed.children)
     {
         const auto & interpolate_element = expression->as<const ASTInterpolateElement &>();
-        /// Preserve `INTERPOLATE ("Col" AS ...)` case-sensitivity: the double-quoted target is one
-        /// parsed part (its text may contain dots, e.g. `"a.b"`), so it must NOT go through the
-        /// full-name Identifier constructor, which would re-split it on dots and misalign the
-        /// single-element quote vector. Unquoted targets keep the historical splitting behavior.
-        std::shared_ptr<IdentifierNode> expression_to_interpolate;
+        /// A double-quoted target is one parsed part (its text may contain dots, e.g. `"a.b"`), so it
+        /// must not go through the full-name Identifier constructor, which would re-split it on dots.
+        auto expression_to_interpolate = std::make_shared<IdentifierNode>(interpolate_element.column_is_double_quoted
+            ? Identifier(std::vector<std::string>{interpolate_element.column})
+            : Identifier(interpolate_element.column));
         if (interpolate_element.column_is_double_quoted)
-        {
-            expression_to_interpolate = std::make_shared<IdentifierNode>(
-                Identifier(std::vector<std::string>{interpolate_element.column}));
             expression_to_interpolate->setQuoteStyles({IdentifierQuoteStyle::DoubleQuote});
-        }
-        else
-        {
-            expression_to_interpolate = std::make_shared<IdentifierNode>(Identifier(interpolate_element.column));
-        }
         auto interpolate_expression = buildExpression(interpolate_element.expr, context);
         auto interpolate_node = std::make_shared<InterpolateNode>(std::move(expression_to_interpolate), std::move(interpolate_expression));
 

@@ -4,7 +4,6 @@
 #include <Analyzer/Resolve/IdentifierLookup.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Poco/String.h>
-#include <base/defines.h>
 
 namespace DB
 {
@@ -43,7 +42,6 @@ struct ScopeAliases
             case IdentifierLookupContext::FUNCTION: return alias_name_to_lambda_node;
             case IdentifierLookupContext::TABLE_EXPRESSION: return alias_name_to_table_expression_node;
         }
-        UNREACHABLE();
     }
 
     std::unordered_map<std::string, std::vector<std::string>> & getLowercaseAliasMap(IdentifierLookupContext lookup_context)
@@ -54,7 +52,6 @@ struct ScopeAliases
             case IdentifierLookupContext::FUNCTION: return lowercase_lambda_alias_to_originals;
             case IdentifierLookupContext::TABLE_EXPRESSION: return lowercase_table_alias_to_originals;
         }
-        UNREACHABLE();
     }
 
     enum class FindOption
@@ -70,7 +67,6 @@ struct ScopeAliases
             case FindOption::FIRST_NAME: return identifier.front();
             case FindOption::FULL_NAME: return identifier.getFullName();
         }
-        UNREACHABLE();
     }
 
     QueryTreeNodePtr * find(const IdentifierLookup & lookup, FindOption find_option)
@@ -132,13 +128,6 @@ struct ScopeAliases
         return &alias_it->second;
     }
 
-    void registerAliasCaseInsensitive(const std::string & alias_name, IdentifierLookupContext lookup_context)
-    {
-        auto & lowercase_map = getLowercaseAliasMap(lookup_context);
-        String lower_name = Poco::toLower(alias_name);
-        lowercase_map[lower_name].push_back(alias_name);
-    }
-
     /// Insert into the primary alias map and (when `register_for_case_insensitive_lookup` is true) the lowercase index.
     /// Returns true if the primary insert added a new entry; the lowercase index is updated only on a successful
     /// primary insert so duplicate aliases never cause spurious "ambiguous" findCaseInsensitive results.
@@ -151,7 +140,7 @@ struct ScopeAliases
         auto & alias_map = getAliasMap(lookup_context);
         auto [_, inserted] = alias_map.emplace(alias_name, std::move(node));
         if (inserted && register_for_case_insensitive_lookup)
-            registerAliasCaseInsensitive(alias_name, lookup_context);
+            getLowercaseAliasMap(lookup_context)[Poco::toLower(alias_name)].push_back(alias_name);
         return inserted;
     }
 };

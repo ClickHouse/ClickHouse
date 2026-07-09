@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Analyzer/HashUtils.h>
+#include <Core/Names.h>
 #include <Storages/IStorage_fwd.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/TableLockHolder.h>
@@ -94,6 +95,19 @@ public:
         return temporary_table_name;
     }
 
+    /// Column names pinned to case-sensitive matching in `standard` mode (double-quoted
+    /// definitions, e.g. a recursive CTE column list `WITH RECURSIVE cte("MyCol")`).
+    const Names & getCaseSensitiveColumnNames() const
+    {
+        return case_sensitive_column_names;
+    }
+
+    /// `names` must be sorted so comparison and hashing stay deterministic.
+    void setCaseSensitiveColumnNames(Names names)
+    {
+        case_sensitive_column_names = std::move(names);
+    }
+
     /// Set temporary table name
     void setTemporaryTableName(std::string temporary_table_name_value)
     {
@@ -170,6 +184,7 @@ private:
     StorageSnapshotPtr storage_snapshot;
     std::optional<TableExpressionModifiers> table_expression_modifiers;
     std::string temporary_table_name;
+    Names case_sensitive_column_names;
     MaterializedCTEPtr materialized_cte;
 
     static constexpr size_t materialized_cte_subquery_index = 0;

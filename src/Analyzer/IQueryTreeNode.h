@@ -205,8 +205,7 @@ public:
     void removeAlias()
     {
         alias = {};
-        /// The quote flag has no meaning without an alias and could otherwise leak through
-        /// equality, format, and serialization paths.
+        /// The quote flag has no meaning without an alias and could otherwise leak through equality.
         alias_is_double_quoted = false;
     }
 

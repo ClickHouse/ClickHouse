@@ -2678,16 +2678,8 @@ std::shared_ptr<TemporaryTableHolder> Context::findExternalTable(const String & 
 
 String Context::tryResolveExternalTableNameCaseInsensitive(const String & table_name) const
 {
-    if (isGlobalContext())
-        return {};
-
-    /// Mirror `resolveStorageIDImpl`: walk current → query_context → session_context so a temporary
-    /// table registered higher up the chain (most common: session_context) is reachable from a
-    /// query_context that has no temp tables of its own. Within a single context, prefer an
-    /// exact-case match over case-insensitive matches. Crucially, **stop at the first context that
-    /// has any match**: a nearer fuzzy match must shadow a farther exact match, just like the
-    /// case-sensitive path does. Otherwise a session-context exact `temp` would override a nearer
-    /// query-context `Temp`.
+    /// Mirror `resolveStorageIDImpl`: walk current → query → session context; within one context an
+    /// exact match wins, and the first context with any match wins (nearer fuzzy shadows farther exact).
     auto scan_one = [&](const Context * ctx) -> String
     {
         SharedLockGuard lock(ctx->mutex);
@@ -2699,7 +2691,7 @@ String Context::tryResolveExternalTableNameCaseInsensitive(const String & table_
         {
             if (Poco::icompare(name, table_name) != 0)
                 continue;
-            if (!resolved.empty() && resolved != name)
+            if (!resolved.empty())
                 throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                     "Temporary table '{}' is ambiguous: matches multiple temporary tables with different cases: '{}' and '{}'",
                     table_name, resolved, name);

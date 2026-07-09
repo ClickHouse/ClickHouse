@@ -19,9 +19,7 @@ InterpolateNode::InterpolateNode(std::shared_ptr<IdentifierNode> expression_, Qu
         expression_name = expression_->getIdentifier().getFullName();
         /// Capture the original double-quote bit now: once the child is resolved into a ColumnNode
         /// it no longer carries `quote_styles`, so a later `toASTImpl` cannot recover it.
-        const auto & quote_styles = expression_->getQuoteStyles();
-        expression_is_double_quoted
-            = !quote_styles.empty() && quote_styles.front() == IdentifierQuoteStyle::DoubleQuote;
+        expression_is_double_quoted = expression_->isPartDoubleQuoted(0);
     }
 
     children[expression_child_index] = std::move(expression_);

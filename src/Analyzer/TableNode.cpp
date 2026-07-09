@@ -152,7 +152,8 @@ bool TableNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
     const auto & rhs_typed = assert_cast<const TableNode &>(rhs);
     if (storage_id != rhs_typed.storage_id
         || table_expression_modifiers != rhs_typed.table_expression_modifiers
-        || temporary_table_name != rhs_typed.temporary_table_name)
+        || temporary_table_name != rhs_typed.temporary_table_name
+        || case_sensitive_column_names != rhs_typed.case_sensitive_column_names)
         return false;
 
     /// Parameterized views: two calls with different argument values share the same `StorageID` but
@@ -187,6 +188,16 @@ void TableNode::updateTreeHashImpl(HashState & state, CompareOptions) const
         state.update(full_name);
     }
 
+    if (!case_sensitive_column_names.empty())
+    {
+        state.update(case_sensitive_column_names.size());
+        for (const auto & name : case_sensitive_column_names)
+        {
+            state.update(name.size());
+            state.update(name);
+        }
+    }
+
     if (table_expression_modifiers)
         table_expression_modifiers->updateTreeHash(state);
 
@@ -201,6 +212,7 @@ QueryTreeNodePtr TableNode::cloneImpl() const
     auto result_table_node = std::make_shared<TableNode>(storage, storage_id, storage_lock, storage_snapshot);
     result_table_node->table_expression_modifiers = table_expression_modifiers;
     result_table_node->temporary_table_name = temporary_table_name;
+    result_table_node->case_sensitive_column_names = case_sensitive_column_names;
 
     result_table_node->materialized_cte = materialized_cte;
 

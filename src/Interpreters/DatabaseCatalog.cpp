@@ -22,7 +22,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageMemory.h>
-#include <Poco/DirectoryIterator.h>
 #include <Poco/String.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
@@ -95,7 +94,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsCaseInsensitiveNames case_insensitive_names;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
@@ -670,8 +668,7 @@ void DatabaseCatalog::attachDatabase(const String & database_name, const Databas
     if (!database->isRemoteDatabase())
         databases_without_remote.emplace(database_name, database);
 
-    String lowercase_name = Poco::toLower(database_name);
-    lowercase_db_to_original_names[lowercase_name].insert(database_name);
+    lowercase_db_to_original_names[Poco::toLower(database_name)].insert(database_name);
 
     NOEXCEPT_SCOPE({
         UUID db_uuid = database->getUUID();
@@ -700,10 +697,8 @@ DatabasePtr DatabaseCatalog::detachDatabase(ContextPtr local_context, const Stri
             databases.erase(database_name);
 
             /// Update case-insensitive lookup map
-            String lowercase_name = Poco::toLower(database_name);
-            if (auto lower_it = lowercase_db_to_original_names.find(lowercase_name); lower_it != lowercase_db_to_original_names.end())
+            if (auto lower_it = lowercase_db_to_original_names.find(Poco::toLower(database_name)); lower_it != lowercase_db_to_original_names.end())
             {
-                // removal from unord_set is O(1)
                 lower_it->second.erase(database_name);
                 if (lower_it->second.empty())
                     lowercase_db_to_original_names.erase(lower_it);
@@ -810,8 +805,7 @@ void DatabaseCatalog::updateDatabaseName(const String & old_name, const String &
 
     /// Keep the case-insensitive lookup map in sync so resolution after `RENAME DATABASE`
     /// no longer points to the old name and finds the new one.
-    String old_lowercase_name = Poco::toLower(old_name);
-    if (auto lower_it = lowercase_db_to_original_names.find(old_lowercase_name); lower_it != lowercase_db_to_original_names.end())
+    if (auto lower_it = lowercase_db_to_original_names.find(Poco::toLower(old_name)); lower_it != lowercase_db_to_original_names.end())
     {
         lower_it->second.erase(old_name);
         if (lower_it->second.empty())
@@ -951,10 +945,8 @@ String DatabaseCatalog::tryResolveDatabaseNameCaseInsensitive(std::string_view d
     chassert(!database_name.empty());
     std::lock_guard lock{databases_mutex};
 
-    /// use precomputed map for lookup
-    String lowercase_name = Poco::toLower(String(database_name));
-    auto it = lowercase_db_to_original_names.find(lowercase_name);
-    if (it == lowercase_db_to_original_names.end() || it->second.empty())
+    auto it = lowercase_db_to_original_names.find(Poco::toLower(String(database_name)));
+    if (it == lowercase_db_to_original_names.end())
         return {};
 
     if (it->second.size() > 1)

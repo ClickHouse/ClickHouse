@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 
-#include <Common/Exception.h>
 #include <Common/BinStringDecodeHelper.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
@@ -350,9 +349,7 @@ bool ParserIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
     if (pos->type == TokenType::BareWord)
     {
-        auto identifier = make_intrusive<ASTIdentifier>(String(pos->begin, pos->end));
-        identifier->setQuoteStyle(IdentifierQuoteStyle::None);
-        node = std::move(identifier);
+        node = make_intrusive<ASTIdentifier>(String(pos->begin, pos->end));
         ++pos;
         return true;
     }
@@ -552,6 +549,11 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     UUID uuid = UUIDHelpers::Nil;
     bool has_uuid_clause = false;
 
+    /// Keep `quote_styles` only when some part is actually quoted — the canonical form for
+    /// all-unquoted identifiers is an empty vector (avoids a heap allocation per identifier).
+    const bool any_part_quoted = std::any_of(
+        quote_styles.begin(), quote_styles.end(), [](auto style) { return style != IdentifierQuoteStyle::None; });
+
     if (table_name_with_optional_uuid)
     {
         if (parts.size() > 2)
@@ -567,10 +569,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
             has_uuid_clause = true;
         }
 
-        /// Keep `quote_styles` only when some part is actually quoted — the canonical form for
-        /// all-unquoted identifiers is an empty vector (avoids a heap allocation per identifier).
-        const bool any_part_quoted = std::any_of(
-            quote_styles.begin(), quote_styles.end(), [](auto style) { return style != IdentifierQuoteStyle::None; });
         if (parts.size() == 1) node = make_intrusive<ASTTableIdentifier>(parts[0], std::move(params));
         else node = make_intrusive<ASTTableIdentifier>(parts[0], parts[1], std::move(params));
         node->as<ASTTableIdentifier>()->uuid = uuid;
@@ -580,8 +578,6 @@ bool ParserCompoundIdentifier::parseImpl(Pos & pos, ASTPtr & node, Expected & ex
     }
     else
     {
-        const bool any_part_quoted = std::any_of(
-            quote_styles.begin(), quote_styles.end(), [](auto style) { return style != IdentifierQuoteStyle::None; });
         auto identifier = make_intrusive<ASTIdentifier>(std::move(parts), false, std::move(params));
         if (any_part_quoted)
             identifier->setQuoteStyles(std::move(quote_styles));

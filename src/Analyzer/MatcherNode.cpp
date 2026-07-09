@@ -1,6 +1,6 @@
 #include <Analyzer/MatcherNode.h>
 
-#include <Poco/String.h>
+#include <algorithm>
 
 #include <Common/assert_cast.h>
 #include <Common/SipHash.h>
@@ -145,10 +145,10 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standar
     /// Per-part comparison: unquoted parts match case-insensitively, double-quoted parts must match
     /// exactly. So `COLUMNS(data."Name")` matches `Data.Name` (`data` folds; `"Name"` stays exact).
     Identifier column_identifier(column_name);
+    const auto & column_parts = column_identifier.getParts();
     for (size_t i = 0; i < columns_identifiers.size(); ++i)
     {
         const auto & matcher_parts = columns_identifiers[i].getParts();
-        const auto & column_parts = column_identifier.getParts();
         if (matcher_parts.size() != column_parts.size())
             continue;
 
@@ -156,15 +156,10 @@ bool MatcherNode::isMatchingColumn(const std::string & column_name, bool standar
             ? columns_identifiers_quote_styles[i] : std::vector<IdentifierQuoteStyle>{};
 
         bool all_parts_match = true;
-        for (size_t p = 0; p < matcher_parts.size(); ++p)
+        for (size_t p = 0; p < matcher_parts.size() && all_parts_match; ++p)
         {
             const bool part_quoted = p < matcher_quotes.size() && matcher_quotes[p] == IdentifierQuoteStyle::DoubleQuote;
-            const bool match = identifierPartsEqual(matcher_parts[p], column_parts[p], /*case_insensitive=*/ !part_quoted);
-            if (!match)
-            {
-                all_parts_match = false;
-                break;
-            }
+            all_parts_match = identifierPartsEqual(matcher_parts[p], column_parts[p], /*case_insensitive=*/ !part_quoted);
         }
         if (all_parts_match)
             return true;
@@ -231,18 +226,11 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) con
     hash_state.update(qualified_identifier_full_name.size());
     hash_state.update(qualified_identifier_full_name);
 
-    /// Mix in qualifier quote styles only when at least one part was actually double-quoted.
-    /// Backticks are not preserved by the formatter, so including them would diverge the hash
-    /// between the original tree and a reparsed copy on the remote side (same shape of bug as
-    /// `IdentifierNode::updateTreeHashImpl` — see commit b65a03641a7). Encode only the per-part
-    /// double-quote bit; for plain `T.*` / `\`T\`.*` the previous hash is preserved.
-    bool any_qualifier_double_quoted = false;
-    for (auto style : qualified_identifier_quote_styles)
-        if (style == IdentifierQuoteStyle::DoubleQuote)
-        {
-            any_qualifier_double_quoted = true;
-            break;
-        }
+    /// Mix in only per-part double-quote bits, and only when one is set: backticks do not survive
+    /// format/reparse (same shape of bug as in `IdentifierNode`, commit b65a03641a7), and all-unquoted keeps the old hash.
+    const bool any_qualifier_double_quoted = std::any_of(
+        qualified_identifier_quote_styles.begin(), qualified_identifier_quote_styles.end(),
+        [](auto style) { return style == IdentifierQuoteStyle::DoubleQuote; });
     if (any_qualifier_double_quoted)
     {
         hash_state.update(qualified_identifier_quote_styles.size());
@@ -258,18 +246,12 @@ void MatcherNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) con
     }
 
     /// Same rule for per-argument quote styles: only DoubleQuote is observable through format.
-    bool any_arg_double_quoted = false;
-    for (const auto & arg_quotes : columns_identifiers_quote_styles)
-    {
-        for (auto style : arg_quotes)
-            if (style == IdentifierQuoteStyle::DoubleQuote)
-            {
-                any_arg_double_quoted = true;
-                break;
-            }
-        if (any_arg_double_quoted)
-            break;
-    }
+    const bool any_arg_double_quoted = std::any_of(
+        columns_identifiers_quote_styles.begin(), columns_identifiers_quote_styles.end(),
+        [](const auto & arg_quotes)
+        {
+            return std::any_of(arg_quotes.begin(), arg_quotes.end(), [](auto style) { return style == IdentifierQuoteStyle::DoubleQuote; });
+        });
     if (any_arg_double_quoted)
     {
         hash_state.update(columns_identifiers_quote_styles.size());

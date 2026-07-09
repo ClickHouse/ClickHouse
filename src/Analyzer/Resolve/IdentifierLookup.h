@@ -29,7 +29,6 @@ inline const char * toString(IdentifierLookupContext identifier_lookup_context)
         case IdentifierLookupContext::FUNCTION: return "FUNCTION";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "TABLE_EXPRESSION";
     }
-    UNREACHABLE();
 }
 
 inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_context)
@@ -40,7 +39,6 @@ inline const char * toStringLowercase(IdentifierLookupContext identifier_lookup_
         case IdentifierLookupContext::FUNCTION: return "function";
         case IdentifierLookupContext::TABLE_EXPRESSION: return "table expression";
     }
-    UNREACHABLE();
 }
 
 /** Structure that represent identifier lookup during query analysis.
@@ -51,11 +49,9 @@ struct IdentifierLookup
     Identifier identifier;
     IdentifierLookupContext lookup_context;
     ASTPtr original_ast_node = nullptr;
-    /// Per-part double-quote tracking for compound identifiers like "db".table
+    /// Per-part double-quote tracking for compound identifiers like "db".table.
+    /// The default member initializer keeps two-element aggregate init warning-free.
     std::vector<bool> is_part_double_quoted = {};
-
-    IdentifierLookup(Identifier identifier_, IdentifierLookupContext lookup_context_)
-        : identifier(std::move(identifier_)), lookup_context(lookup_context_) {}
 
     bool isExpressionLookup() const
     {
@@ -84,10 +80,8 @@ struct IdentifierLookup
         return std::find(is_part_double_quoted.begin(), is_part_double_quoted.end(), true) != is_part_double_quoted.end();
     }
 
-    /// Fill the per-part quote flags from parser-side quote styles. The canonical form for
-    /// an all-unquoted identifier is an EMPTY vector — building an explicit all-false vector
-    /// would create resolve-cache keys that never match the empty-vector keys produced
-    /// everywhere else (operator== and the hash compare the raw vector).
+    /// Fill per-part quote flags from parser-side quote styles. All-unquoted canonicalizes to an EMPTY
+    /// vector — an explicit all-false vector would form resolve-cache keys that never match the empty form.
     void setQuoteFlagsFrom(const std::vector<IdentifierQuoteStyle> & styles)
     {
         is_part_double_quoted.clear();
@@ -123,6 +117,20 @@ struct IdentifierLookup
     bool isLastPartCaseInsensitive(bool standard_mode) const
     {
         return standard_mode && !isLastPartDoubleQuoted();
+    }
+
+    /// True when in standard mode and no part from `first_part` onward is double-quoted,
+    /// i.e. the whole tail of the identifier participates in case-insensitive matching.
+    bool arePartsCaseInsensitiveFrom(size_t first_part, bool standard_mode) const
+    {
+        if (!standard_mode)
+            return false;
+        for (size_t i = first_part; i < identifier.getPartsSize(); ++i)
+        {
+            if (isPartDoubleQuoted(i))
+                return false;
+        }
+        return true;
     }
 
     String dump() const
@@ -183,7 +191,6 @@ inline const char * toString(IdentifierResolvePlace resolved_identifier_place)
         case IdentifierResolvePlace::DATABASE_CATALOG: return "DATABASE_CATALOG";
         case IdentifierResolvePlace::NILADIC_FUNCTION: return "NILADIC_FUNCTION";
     }
-    UNREACHABLE();
 }
 
 struct IdentifierResolveScope;

@@ -463,21 +463,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             else
             {
                 const bool standard_mode = scope.isStandardMode();
-                /// Each part is case-insensitive only if NOT double-quoted; quote-style info is available on the IdentifierNode.
-                bool database_name_case_insensitive = false;
-                bool table_name_case_insensitive = false;
-                if (standard_mode)
-                {
-                    if (parts_size == 2)
-                    {
-                        database_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(0);
-                        table_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(1);
-                    }
-                    else if (parts_size == 1)
-                    {
-                        table_name_case_insensitive = !first_argument_identifier.isPartDoubleQuoted(0);
-                    }
-                }
+                /// Each part is case-insensitive only if NOT double-quoted (parts_size is pre-validated to 1..2).
+                const bool database_name_case_insensitive = standard_mode && parts_size == 2 && !first_argument_identifier.isPartDoubleQuoted(0);
+                const bool table_name_case_insensitive = standard_mode && !first_argument_identifier.isPartDoubleQuoted(parts_size - 1);
                 auto table_node = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
                     identifier, scope.context, database_name_case_insensitive, table_name_case_insensitive).resolved_identifier;
                 if (!table_node)
@@ -495,18 +483,8 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                         identifier.getFullName(),
                         scope.scope_node->formatASTForErrorMessage());
 
-                /// In `standard` mode, substitute the canonical storage name resolved by the analyzer
-                /// when the actual lookup folded case-insensitively (so the resolved table name
-                /// differs from the user's spelling). Without this, `joinGet(myjoin, ...)` against
-                /// an actual `Join` table `MyJoin` would pass analyzer validation in `standard` mode
-                /// and then fail at function overload resolution because `FunctionJoinGet::getJoin`
-                /// does an exact `context->resolveStorageID` lookup. Don't substitute in default mode
-                /// (or when the names already match) — the analyzer here can't see temporary tables,
-                /// so always-substituting would steer `joinGet('03775_join', ...)` away from a
-                /// session temporary `03775_join` to a same-named regular table. For temporary
-                /// tables, substitute the user-visible name (`getTemporaryTableName`) rather than
-                /// the storage's internal `_tmp_<id>` name: `FunctionJoinGet::getJoin` reparses the
-                /// string and looks up via `Context::resolveStorageID`, which expects the visible name.
+                /// Only in `standard` mode, substitute the canonical storage name (user-visible name for temporary
+                /// tables) so the exact `resolveStorageID` lookup in `FunctionJoinGet::getJoin` finds the table.
                 if (standard_mode)
                 {
                     String candidate;

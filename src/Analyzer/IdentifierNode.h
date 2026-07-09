@@ -48,18 +48,6 @@ public:
         quote_styles = std::move(styles);
     }
 
-    IdentifierQuoteStyle getQuoteStyleAt(size_t index) const
-    {
-        return index < quote_styles.size() ? quote_styles[index] : IdentifierQuoteStyle::None;
-    }
-
-    void setQuoteStyle(IdentifierQuoteStyle style)
-    {
-        if (quote_styles.empty())
-            quote_styles.resize(!identifier.getParts().empty() ? identifier.getParts().size() : 1, IdentifierQuoteStyle::None);
-        quote_styles[0] = style;
-    }
-
     bool isPartDoubleQuoted(size_t index) const
     {
         return index < quote_styles.size() && quote_styles[index] == IdentifierQuoteStyle::DoubleQuote;

@@ -100,11 +100,8 @@ struct AnalysisTableExpressionData
     {
         ensureColumnMembershipSetsArePopulated();
         const auto & full_name = identifier_view.getFullName();
-        if (column_names.contains(full_name))
-            return true;
-        if (use_case_insensitive)
-            return hasColumnCaseInsensitive(full_name);
-        return false;
+        return column_names.contains(full_name)
+            || (use_case_insensitive && lowercase_column_name_to_original_names.contains(Poco::toLower(String(full_name))));
     }
 
     bool canBindIdentifier(IdentifierView identifier_view, bool use_case_insensitive = false) const
@@ -149,12 +146,6 @@ struct AnalysisTableExpressionData
                 "Identifier '{}' is ambiguous: matches multiple columns with different cases: {}. In scope {}",
                 identifier_name, fmt::join(it->second, ", "), get_scope_description());
         return node_map.find(it->second.front());
-    }
-
-    bool hasColumnCaseInsensitive(std::string_view identifier_name) const
-    {
-        String lower_name = Poco::toLower(String(identifier_name));
-        return lowercase_column_name_to_original_names.contains(lower_name);
     }
 
     [[maybe_unused]] void dump(WriteBuffer & buffer) const

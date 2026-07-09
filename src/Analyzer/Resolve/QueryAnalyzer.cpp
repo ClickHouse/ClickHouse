@@ -293,8 +293,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
 
             if (node_type == QueryTreeNodeType::LIST)
             {
-                const bool standard_mode = scope.isStandardMode();
-                QueryExpressionsAliasVisitor visitor(scope.aliases, standard_mode);
+                QueryExpressionsAliasVisitor visitor(scope.aliases, scope.isStandardMode());
                 visitor.visit(node);
                 resolveExpressionNodeList(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
             }
@@ -305,8 +304,7 @@ void QueryAnalyzer::resolve(QueryTreeNodePtr & node, const QueryTreeNodePtr & ta
         }
         case QueryTreeNodeType::TABLE_FUNCTION:
         {
-            const bool standard_mode = scope.isStandardMode();
-            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, standard_mode);
+            QueryExpressionsAliasVisitor expressions_alias_visitor(scope.aliases, scope.isStandardMode());
             resolveTableFunction(node, scope, expressions_alias_visitor, false /*nested_table_function*/);
             break;
         }
@@ -1309,9 +1307,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         if (identifier_lookup.isExpressionLookup())
         {
             /// Fold the suffix case-insensitively when in `standard` mode and every suffix part was unquoted.
-            bool suffix_case_insensitive = standard_mode;
-            for (size_t p = 1; p < identifier_lookup.identifier.getPartsSize() && suffix_case_insensitive; ++p)
-                suffix_case_insensitive = !identifier_lookup.isPartDoubleQuoted(p);
+            const bool suffix_case_insensitive = identifier_lookup.arePartsCaseInsensitiveFrom(1, standard_mode);
             if (auto resolved_identifier = identifier_resolver.tryResolveIdentifierFromCompoundExpression(
                 identifier_lookup.identifier,
                 1 /*identifier_bind_size*/,
@@ -1883,15 +1879,9 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
     IdentifierResolveScope & scope)
 {
     /// A double-quoted qualifier (e.g. `"T".*`) pins the matched columns to their canonical case
-    /// in `standard` mode, so the USING-side comparison must stay exact; otherwise we would
-    /// re-resolve the matcher against a differently-cased USING key.
-    bool qualifier_pins_case_sensitive = false;
-    for (auto style : qualifier_quote_styles)
-        if (style == IdentifierQuoteStyle::DoubleQuote)
-        {
-            qualifier_pins_case_sensitive = true;
-            break;
-        }
+    /// in `standard` mode, so the USING-side comparison must stay exact.
+    const bool qualifier_pins_case_sensitive
+        = std::find(qualifier_quote_styles.begin(), qualifier_quote_styles.end(), IdentifierQuoteStyle::DoubleQuote) != qualifier_quote_styles.end();
 
     auto * nearest_query_scope = scope.getNearestQueryScope();
     auto * nearest_query_scope_query_node = nearest_query_scope ? nearest_query_scope->scope_node->as<QueryNode>() : nullptr;
@@ -1983,9 +1973,7 @@ void QueryAnalyzer::updateMatchedColumnsFromJoinUsing(
                 auto & join_using_column_node = join_using_node->as<ColumnNode &>();
                 const auto & join_using_column_name = join_using_column_node.getColumnName();
 
-                const bool names_match = case_insensitive_compare
-                    ? Poco::icompare(matched_column_name, join_using_column_name) == 0
-                    : matched_column_name == join_using_column_name;
+                const bool names_match = identifierPartsEqual(matched_column_name, join_using_column_name, case_insensitive_compare);
 
                 const auto & join_using_column_nodes_list = join_using_column_node.getExpressionOrThrow()->as<ListNode &>();
                 const auto & join_using_column_nodes = join_using_column_nodes_list.getNodes();
@@ -2054,17 +2042,9 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     /// Propagate the qualifier's per-part quote styles so that resolution in `standard` mode
     /// honours `"T".*` vs `T.*` (the former stays case-sensitive).
     const auto & qualifier_quote_styles = matcher_node_typed.getQualifiedIdentifierQuoteStyles();
-    auto build_quote_flags = [&]
-    {
-        std::vector<bool> flags;
-        flags.reserve(qualifier_quote_styles.size());
-        for (auto style : qualifier_quote_styles)
-            flags.push_back(style == IdentifierQuoteStyle::DoubleQuote);
-        return flags;
-    };
 
     auto expression_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::EXPRESSION};
-    expression_identifier_lookup.is_part_double_quoted = build_quote_flags();
+    expression_identifier_lookup.setQuoteFlagsFrom(qualifier_quote_styles);
     auto expression_identifier_resolve_result = tryResolveIdentifier(expression_identifier_lookup, scope);
     auto expression_query_tree_node = expression_identifier_resolve_result.resolved_identifier;
 
@@ -2129,7 +2109,7 @@ QueryAnalyzer::QueryTreeNodesWithNames QueryAnalyzer::resolveQualifiedMatcher(Qu
     identifier_resolve_settings.allow_to_check_database_catalog = false;
 
     auto table_identifier_lookup = IdentifierLookup{matcher_node_typed.getQualifiedIdentifier(), IdentifierLookupContext::TABLE_EXPRESSION};
-    table_identifier_lookup.is_part_double_quoted = build_quote_flags();
+    table_identifier_lookup.setQuoteFlagsFrom(qualifier_quote_styles);
     auto table_identifier_resolve_result = tryResolveIdentifier(table_identifier_lookup, scope, identifier_resolve_settings);
     auto table_expression_node = table_identifier_resolve_result.resolved_identifier;
 
@@ -3198,8 +3178,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
             scope.scope_node->formatASTForErrorMessage());
 
     /// Initialize aliases in lambda scope
-    const bool standard_mode = scope.isStandardMode();
-    QueryExpressionsAliasVisitor visitor(scope.aliases, standard_mode);
+    QueryExpressionsAliasVisitor visitor(scope.aliases, scope.isStandardMode());
     visitor.visit(lambda_to_resolve.getExpression());
 
     /** Replace lambda arguments with new arguments.
@@ -3219,10 +3198,7 @@ ProjectionNames QueryAnalyzer::resolveLambda(const QueryTreeNodePtr & lambda_nod
         const auto & lambda_argument_name = lambda_argument_identifier ? lambda_argument_identifier->getIdentifier().getFullName()
                                                                        : lambda_argument_column->getColumnName();
         /// Track quote style so a quoted lambda argument stays case-sensitive in standard mode.
-        const bool lambda_argument_is_double_quoted = lambda_argument_identifier
-            ? (!lambda_argument_identifier->getQuoteStyles().empty()
-               && lambda_argument_identifier->getQuoteStyles().front() == IdentifierQuoteStyle::DoubleQuote)
-            : false;
+        const bool lambda_argument_is_double_quoted = lambda_argument_identifier && lambda_argument_identifier->isPartDoubleQuoted(0);
 
         bool has_expression_node = scope.aliases.alias_name_to_expression_node.contains(lambda_argument_name);
         bool has_alias_node = scope.aliases.alias_name_to_lambda_node.contains(lambda_argument_name);
@@ -4212,9 +4188,7 @@ void QueryAnalyzer::resolveInterpolateColumnsNodeList(QueryTreeNodePtr & interpo
         /// it must stay case-sensitive in `standard` mode, so it is registered only in the case-sensitive
         /// expression-argument map, not in the lowercase index.
         const auto * interpolate_target_identifier = interpolate_node_typed.getExpression()->as<IdentifierNode>();
-        const bool interpolate_target_is_double_quoted = interpolate_target_identifier
-            && !interpolate_target_identifier->getQuoteStyles().empty()
-            && interpolate_target_identifier->getQuoteStyles().front() == IdentifierQuoteStyle::DoubleQuote;
+        const bool interpolate_target_is_double_quoted = interpolate_target_identifier && interpolate_target_identifier->isPartDoubleQuoted(0);
 
         resolveExpressionNode(interpolate_node_typed.getExpression(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
@@ -4641,7 +4615,13 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
     /// projection aliases and projection-override aliases stay case-sensitive — collect them so
     /// `enableStandardMode` keeps them out of the lowercase index.
     if (scope.isStandardMode())
-        table_expression_data.enableStandardMode(collectCaseSensitiveProjectionNames(query_node, union_node));
+    {
+        auto case_sensitive_columns = collectCaseSensitiveProjectionNames(query_node, union_node);
+        if (table_node)
+            case_sensitive_columns.insert(
+                table_node->getCaseSensitiveColumnNames().begin(), table_node->getCaseSensitiveColumnNames().end());
+        table_expression_data.enableStandardMode(std::move(case_sensitive_columns));
+    }
 
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
     {
@@ -5639,13 +5619,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
               * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
               */
             /// Capture the USING identifier's quote style for use in alias-matching below.
-            bool using_identifier_any_double_quoted = false;
-            for (auto style : identifier_node->getQuoteStyles())
-                if (style == IdentifierQuoteStyle::DoubleQuote)
-                {
-                    using_identifier_any_double_quoted = true;
-                    break;
-                }
+            const auto & using_identifier_quote_styles = identifier_node->getQuoteStyles();
+            const bool using_identifier_any_double_quoted
+                = std::find(using_identifier_quote_styles.begin(), using_identifier_quote_styles.end(), IdentifierQuoteStyle::DoubleQuote) != using_identifier_quote_styles.end();
             const bool using_identifier_case_insensitive = standard_mode && !using_identifier_any_double_quoted;
 
             auto try_resolve_identifier_from_query_projection = [this, using_identifier_case_insensitive](
@@ -6450,8 +6426,7 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     /// and the original parent-scope entries are restored after the join tree visit.
     auto transitive_lowercase_table_aliases = std::move(scope.aliases.lowercase_table_alias_to_originals);
 
-    const bool standard_mode_for_table_aliases = scope.isStandardMode();
-    TableExpressionsAliasVisitor table_expressions_visitor(scope, standard_mode_for_table_aliases);
+    TableExpressionsAliasVisitor table_expressions_visitor(scope, standard_mode);
     table_expressions_visitor.visit(query_node_typed.getJoinTree());
 
     TableFunctionsWithClusterAlternativesVisitor table_function_visitor;
@@ -6790,6 +6765,17 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
 
             recursive_cte_table_node = std::make_shared<TableNode>(temporary_table_storage, non_recursive_query_mutable_context);
             recursive_cte_table_node->setTemporaryTableName(union_node_typed.getCTEName());
+
+            /// Quoted CTE column-list names and seed projection aliases stay case-sensitive when
+            /// the recursive term resolves this self-reference table in `standard` mode.
+            if (scope.isStandardMode())
+            {
+                auto pinned = collectCaseSensitiveProjectionNames(
+                    non_recursive_query->as<QueryNode>(), non_recursive_query->as<UnionNode>());
+                Names pinned_sorted(pinned.begin(), pinned.end());
+                std::sort(pinned_sorted.begin(), pinned_sorted.end());
+                recursive_cte_table_node->setCaseSensitiveColumnNames(std::move(pinned_sorted));
+            }
 
             for (size_t i = 1; i < queries_nodes.size(); ++i)
             {
