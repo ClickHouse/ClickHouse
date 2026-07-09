@@ -157,6 +157,15 @@ void DistinctSortedTransform::transform(Chunk & chunk)
     /// Just go to the next block if there isn't any new record in the current one.
     if (!has_new_data)
     {
+        if (isCancelled())
+            stopReading();
+        chunk.clear();
+        return;
+    }
+
+    if (isCancelled())
+    {
+        stopReading();
         chunk.clear();
         return;
     }
@@ -216,6 +225,12 @@ bool DistinctSortedTransform::buildFilter(
 
         for (size_t i = run_begin; i < run_end; ++i)
         {
+            if ((i & 0xFFF) == 0 && isCancelled())
+            {
+                std::fill(filter.begin() + i, filter.end(), 0);
+                return false;
+            }
+
             const auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
             if (emplace_result.isInserted())
                 has_new_data = true;
