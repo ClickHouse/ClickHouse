@@ -944,19 +944,6 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 return ReturnType(false);
         }
 
-        /// A DateTime needs at least a 5-digit unix timestamp; a shorter one (4 digits then a non-digit) is
-        /// too ambiguous and was rejected before. Small timestamps are supported for DateTime64 only.
-        if constexpr (!dt64_mode)
-        {
-            if (!isNumericASCII(s[4]))
-            {
-                if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
-                else
-                    return ReturnType(false);
-            }
-        }
-
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
         return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
     }

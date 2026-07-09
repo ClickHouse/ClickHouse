@@ -1676,17 +1676,6 @@ ReturnType readDateTimeTextFallback(
 
         if (!is_date)
         {
-            /// A bare 4-digit value is a valid small unix timestamp only for DateTime64; for DateTime it is
-            /// too short and was rejected before, so keep DateTime strict. The small-timestamp support this
-            /// change adds is DateTime64-only (matching the PR scope).
-            if constexpr (!dt64_mode)
-            {
-                if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
-                else
-                    return false;
-            }
-
             datetime = 0;
             for (const char * digit_pos = s; digit_pos < s_pos; ++digit_pos)
                 datetime = datetime * 10 + *digit_pos - '0';
@@ -1849,19 +1838,6 @@ ReturnType readDateTimeTextFallback(
                 throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
             else
                 return false;
-        }
-
-        /// A DateTime needs at least a 5-digit unix timestamp; a shorter one is too ambiguous and was
-        /// rejected before. Small timestamps are supported for DateTime64 only.
-        if constexpr (!dt64_mode)
-        {
-            if (s_pos - s <= 4)
-            {
-                if constexpr (throw_exception)
-                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
-                else
-                    return false;
-            }
         }
 
         /// A unix timestamp. Not very efficient.
