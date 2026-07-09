@@ -6,8 +6,9 @@
 # Usage:
 #   seed_dind_images_cache.sh clickhouse/clickhouse-integration-test:TAG
 #
-# The cache image ships the service images as docker-archive tarballs under
-# /preseed (see ci/docker/integration-images-cache/). They are `docker load`ed
+# The cache image ships the service images as zstd-compressed docker-archive
+# tarballs under /preseed (see ci/docker/integration-images-cache/; docker load
+# auto-detects the compression). They are `docker load`ed
 # into whatever data-root the nested daemon runs on - normally the
 # clickhouse_integration_tests_volume, which persists per runner host, so the
 # whole seeding runs once per host per cache tag (a marker image records

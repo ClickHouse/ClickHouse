@@ -1,7 +1,7 @@
 #!/bin/bash
 # Fetches every image listed in $1 (one reference per line, # comments allowed)
-# into docker-archive tarballs under $2 and writes $2/index.txt with the tar
-# file names. Runs inside the clickhouse/clickhouse-integration-test image build,
+# into zstd-compressed docker-archive tarballs under $2 and writes
+# $2/index.txt with the archive file names. Runs inside the clickhouse/clickhouse-integration-test image build,
 # where no docker daemon is available, so skopeo fetches the images
 # daemon-less.
 #
@@ -50,8 +50,13 @@ while read -r image; do
         if out=$(skopeo --override-os linux --override-arch "$arch" copy \
                 "${src_args[@]}" "$src_prefix$path" \
                 "docker-archive:$tar_path:$image" 2>&1); then
-            echo "$safe.tar" >> "$out_dir/index.txt"
-            du -h "$tar_path"
+            # Compress each archive immediately (docker load auto-detects zstd):
+            # the whole set is ~15+ GiB uncompressed, and the style-checker
+            # builders this image is built on have small disks - keep the peak
+            # at compressed-total plus one uncompressed archive.
+            zstd -q -T0 --rm "$tar_path"
+            echo "$safe.tar.zst" >> "$out_dir/index.txt"
+            du -h "$tar_path.zst"
             continue 2
         fi
         # Arch-specific image - not a failure for this platform.

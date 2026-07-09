@@ -20,7 +20,7 @@ FROM clickhouse/test-base:$FROM_TAG AS builder
 ARG TARGETARCH
 
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends skopeo \
+    && apt-get install --yes --no-install-recommends skopeo zstd \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
