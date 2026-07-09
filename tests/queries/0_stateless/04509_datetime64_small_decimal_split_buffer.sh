@@ -44,3 +44,14 @@ SELECT
     toDateTime64OrNull(toFixedString('.5', 20), 3, 'UTC') IS NOT NULL
         AND toDateTime64OrNull(toFixedString('.5', 20), 3, 'UTC') = toDateTime64(toFixedString('.5', 20), 3, 'UTC')
 "
+
+# Small-timestamp support is DateTime64-only: plain DateTime stays strict and rejects a short integer
+# that has no unambiguous meaning, while DateTime64 accepts it.
+${CLICKHOUSE_LOCAL} -q "
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
+SELECT
+    toDateTimeOrNull('2018', 'UTC') IS NULL,
+    toDateTimeOrNull('1234', 'UTC') IS NULL,
+    toDateTime64OrNull('2018', 3, 'UTC') IS NOT NULL,
+    toDateTime64OrNull('1234', 3, 'UTC') IS NOT NULL
+"
