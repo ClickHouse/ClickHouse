@@ -122,7 +122,7 @@ public:
     void drop() override;
 
     bool storesDataOnDisk() const override { return data_volume != nullptr; }
-    bool hasUnreplicatedLocalDataStorage() const override { return false; }
+    bool hasReplicatedLocalDataStorage() const override { return true; }
     Strings getDataPaths() const override;
 
     ActionLock getActionLock(StorageActionBlockType type) override;

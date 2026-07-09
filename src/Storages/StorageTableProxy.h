@@ -71,7 +71,7 @@ public:
     bool storesDataOnDisk() const override { return true; }
     // This is mostly defensive, because it is better not to load table just to see
     // if it's really stores something locally
-    bool hasUnreplicatedLocalDataStorage() const override { return true; }
+    bool hasReplicatedLocalDataStorage() const override { return false; }
     StoragePolicyPtr getStoragePolicy() const override { return nullptr; }
     bool isView() const override { return false; }
 

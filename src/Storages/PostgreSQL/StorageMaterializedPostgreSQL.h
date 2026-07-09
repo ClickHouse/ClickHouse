@@ -83,7 +83,7 @@ public:
         std::unique_ptr<MaterializedPostgreSQLSettings> replication_settings);
 
     String getName() const override { return "MaterializedPostgreSQL"; }
-    bool hasUnreplicatedLocalDataStorage() const override { return true; }
+    bool hasReplicatedLocalDataStorage() const override { return false; }
 
     void shutdown(bool is_drop) override;
 
