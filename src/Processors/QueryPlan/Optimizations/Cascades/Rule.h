@@ -8,6 +8,12 @@ namespace DB
 {
 
 class Memo;
+class IQueryPlanStep;
+
+/// A Full sort with a limit is a top-N: it reduces rows, so it stays in the memo as an operator
+/// (a limit-less Full sort is stripped into a sorting property). Only a Full sort takes unsorted
+/// input; FinishSorting/MergingSorted need ordered input, which no rule provides.
+bool isTopNSort(const IQueryPlanStep & step);
 
 class IOptimizationRule
 {

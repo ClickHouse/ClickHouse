@@ -35,8 +35,9 @@ public:
             || typeid_cast<const JoinStepLogical *>(step) != nullptr
             || typeid_cast<const ReadFromMergeTree *>(step) != nullptr)
             return false;
-        /// A top-N sort (Full sort with a limit) is handled by `SortImplementation`.
-        if (const auto * sorting_step = typeid_cast<const SortingStep *>(step); sorting_step && sorting_step->getLimit() > 0)
+        /// A top-N sort is handled by `SortImplementation`; any other sort left in the memo
+        /// gets the single-node default.
+        if (isTopNSort(*step))
             return false;
         /// Distribution-passthrough steps handled by `DistributionPassthrough`.
         if (typeid_cast<const ExpressionStep *>(step) != nullptr

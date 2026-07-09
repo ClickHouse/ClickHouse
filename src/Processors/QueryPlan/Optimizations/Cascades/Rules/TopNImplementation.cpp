@@ -34,10 +34,7 @@ public:
     String getName() const override { return "SortImplementation"; }
     bool checkPattern(GroupExpressionPtr expression, const ExpressionProperties & /*required_properties*/, const Memo & /*memo*/) const override
     {
-        const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
-        /// Only a Full sort treats its input as raw and unsorted; FinishSorting/MergingSorted
-        /// require ordered input, which these implementations do not preserve.
-        return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() > 0;
+        return isTopNSort(*expression->getQueryPlanStep());
     }
     Promise getPromise() const override { return 5000; }
     bool isTransformation() const override { return false; }
@@ -102,11 +99,8 @@ public:
         /// walk that collects those counters, so the query would report fewer rows.
         if (memo.getEnvironment().exact_rows_before_limit)
             return false;
-        const auto * sorting_step = typeid_cast<const SortingStep *>(expression->getQueryPlanStep());
-        /// Only a Full sort treats its input as raw and unsorted (see SortImplementation).
         /// Skip the partial we create ourselves (it carries PartialTopNStrategy).
-        return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full
-            && sorting_step->getLimit() > 0 && expression->strategy == nullptr;
+        return isTopNSort(*expression->getQueryPlanStep()) && expression->strategy == nullptr;
     }
     Promise getPromise() const override { return 5000; }
     bool isTransformation() const override { return true; }
