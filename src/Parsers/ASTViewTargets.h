@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Parsers/IAST.h>
+#include <Interpreters/Context_fwd.h>
 #include <Interpreters/StorageID.h>
 #include <Core/UUID.h>
 
@@ -93,6 +94,7 @@ public:
 
     /// Replaces an empty database in the StorageID of the target table with a specified database.
     void setCurrentDatabase(const String & current_database);
+    void setCurrentDatabase(const CurrentDatabaseInfo & current_database);
 
     /// Sets the UUID of the target table, if it's inner.
     /// The UUID is calculated automatically and can be seen for example after "TO INNER UUID" in a statement like

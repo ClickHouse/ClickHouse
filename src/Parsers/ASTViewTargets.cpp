@@ -80,6 +80,21 @@ void ASTViewTargets::setCurrentDatabase(const String & current_database)
     }
 }
 
+void ASTViewTargets::setCurrentDatabase(const CurrentDatabaseInfo & current_database)
+{
+    for (auto & target : targets)
+    {
+        auto & table_id = target.table_id;
+        if (!table_id.table_name.empty() && table_id.database_name.empty())
+        {
+            table_id.database_name = current_database.database;
+            /// USE db.namespace: an unqualified target is the namespace-qualified table.
+            if (!current_database.table_prefix.empty())
+                table_id.table_name = current_database.table_prefix + "." + table_id.table_name;
+        }
+    }
+}
+
 void ASTViewTargets::setInnerUUID(ViewTarget::Kind kind, const UUID & inner_uuid_)
 {
     for (auto & target : targets)

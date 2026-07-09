@@ -1816,7 +1816,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         create.setDatabase(current_database);
 
     if (create.targets)
-        create.targets->setCurrentDatabase(current_database);
+        create.targets->setCurrentDatabase(current_database_info);
 
     if (create.select && create.isView())
     {
