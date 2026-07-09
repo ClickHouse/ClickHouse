@@ -382,6 +382,17 @@ TEST(BackupInfo, NormalizedStringUsesFrozenS3NamedCollection)
     EXPECT_NE(first.toNormalizedString(context), third.toNormalizedString(context));
 }
 
+TEST(BackupInfo, NormalizedStringUsesFrozenS3NamedCollectionWithoutContext)
+{
+    auto first = BackupInfo::fromString("S3(collection, 'backup')");
+    auto second = BackupInfo::fromString("S3(collection, 'backup/')");
+
+    first.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
+    second.frozen_named_collection = makeNamedCollection({{"url", "s3://bucket/base"}});
+
+    EXPECT_EQ(first.toNormalizedString(ContextPtr{}), second.toNormalizedString(ContextPtr{}));
+}
+
 #if USE_AWS_S3
 TEST(BackupInfo, NormalizedStringUsesS3BackupPathJoinSemantics)
 {
@@ -423,6 +434,16 @@ TEST(BackupInfo, NormalizedStringRejectsInvalidBackupEngineShapes)
         Exception);
     EXPECT_THROW((void)BackupInfo::fromString("File(collection, 'path')").toNormalizedString(context), Exception);
     EXPECT_THROW((void)BackupInfo::fromString("Disk('backups')").toNormalizedString(), Exception);
+    EXPECT_THROW((void)BackupInfo::fromString("Memory()").toNormalizedString(), Exception);
+    EXPECT_THROW((void)BackupInfo::fromString("Memory(collection)").toNormalizedString(context), Exception);
+    EXPECT_THROW((void)BackupInfo::fromString("Null('x')").toNormalizedString(), Exception);
+    EXPECT_THROW((void)BackupInfo::fromString("Unknown('x')").toNormalizedString(), Exception);
+}
+
+TEST(BackupInfo, NormalizedStringSupportsMemoryAndNullEngines)
+{
+    EXPECT_EQ(BackupInfo::fromString("Memory('backup')").toNormalizedString(), "Memory(6:backup)");
+    EXPECT_EQ(BackupInfo::fromString("Null()").toNormalizedString(), "Null()");
 }
 
 #if USE_AWS_S3
