@@ -262,10 +262,13 @@ assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary
 $CLICKHOUSE_CLIENT --query "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name}"
 assert_has "$(error_as_user "SELECT a FROM table1_04510")" "it's necessary to have the grant SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510"
 assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
-$CLICKHOUSE_CLIENT --query "GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name}"
+$CLICKHOUSE_CLIENT --query "
+    GRANT SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name};
+    GRANT SELECT(b) ON ${CLICKHOUSE_DATABASE}.table1_04510 TO ${user_name};
+"
 [ "$(query_as_user "SELECT a FROM table1_04510")" = $'xxx\nzzz' ]
 [ "$(query_as_user "SELECT count() FROM table1_04510")" = "2" ]
-$CLICKHOUSE_CLIENT --query "REVOKE SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510 FROM ${user_name}"
+$CLICKHOUSE_CLIENT --query "REVOKE SELECT ON ${CLICKHOUSE_DATABASE}.table1_04510 FROM ${user_name}"
 assert_has "$(error_as_user "SELECT a FROM table1_04510")" "it's necessary to have the grant SELECT(a) ON ${CLICKHOUSE_DATABASE}.table1_04510"
 assert_has "$(error_as_user "SELECT count() FROM table1_04510")" "it's necessary to have the grant SELECT for at least one column on ${CLICKHOUSE_DATABASE}.table1_04510"
 echo "OK"

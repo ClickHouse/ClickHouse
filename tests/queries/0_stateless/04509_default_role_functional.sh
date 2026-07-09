@@ -6,9 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-user_name="user_04509_default"
-role_x="role_x_04509_default"
-role_y="role_y_04509_default"
+user_name="user_04509_${CLICKHOUSE_DATABASE}"
+role_x="role_x_04509_${CLICKHOUSE_DATABASE}"
+role_y="role_y_04509_${CLICKHOUSE_DATABASE}"
 
 cleanup()
 {
@@ -21,7 +21,19 @@ cleanup()
 show_current_roles()
 {
     $CLICKHOUSE_CLIENT --user "${user_name}" --query "
-        SHOW CURRENT ROLES
+        SELECT
+            groupArray(replaceOne(role_name, '_${CLICKHOUSE_DATABASE}', '_test')),
+            groupArray(with_admin_option),
+            groupArray(is_default)
+        FROM
+        (
+            SELECT
+                role_name,
+                with_admin_option,
+                is_default
+            FROM system.current_roles
+            ORDER BY role_name
+        )
     "
 }
 
