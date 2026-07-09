@@ -22,7 +22,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
 
-static std::optional<DataTypePtr> tryGetNormalizedStateTypeWithoutIfFilter(const AggregateFunctionPtr & nested_function, const DataTypes & arguments)
+static std::optional<DataTypePtr> tryGetNormalizedStateTypeWithoutIfFilter(const AggregateFunctionPtr & nested_function)
 {
     const auto nested_normalized_state = nested_function->getNormalizedStateType();
     const auto & nested_aggregate_state = assert_cast<const DataTypeAggregateFunction &>(*nested_normalized_state);
@@ -30,10 +30,7 @@ static std::optional<DataTypePtr> tryGetNormalizedStateTypeWithoutIfFilter(const
     if (nested_aggregate_state.getFunctionName() != AggregateFunctionGroupBloomFilterData::name)
         return std::nullopt;
 
-    DataTypes normalized_arguments;
-    normalized_arguments.reserve(arguments.size() - 1);
-    for (size_t i = 0; i + 1 < arguments.size(); ++i)
-        normalized_arguments.emplace_back(arguments[i]->getNormalizedType());
+    const auto normalized_arguments = nested_aggregate_state.getArgumentsDataTypes();
 
     AggregateFunctionProperties properties;
     return std::make_shared<DataTypeAggregateFunction>(
@@ -132,7 +129,7 @@ public:
 
     DataTypePtr getNormalizedStateType() const override
     {
-        if (auto normalized_state_type = tryGetNormalizedStateTypeWithoutIfFilter(this->nested_function, this->argument_types))
+        if (auto normalized_state_type = tryGetNormalizedStateTypeWithoutIfFilter(this->nested_function))
             return *normalized_state_type;
 
         return Base::getNormalizedStateType();
@@ -304,7 +301,7 @@ public:
 
     DataTypePtr getNormalizedStateType() const override
     {
-        if (auto normalized_state_type = tryGetNormalizedStateTypeWithoutIfFilter(this->nested_function, this->argument_types))
+        if (auto normalized_state_type = tryGetNormalizedStateTypeWithoutIfFilter(this->nested_function))
             return *normalized_state_type;
 
         return AggregateFunctionNullBase<
