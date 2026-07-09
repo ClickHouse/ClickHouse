@@ -1,0 +1,19 @@
+---
+slug: /managing-data/delete_mutations
+sidebarTitle: 'طفرات الحذف'
+title: 'طفرات الحذف'
+hide_title: false
+description: 'صفحة تصف طفرات الحذف - استعلامات ALTER التي تعدّل بيانات الجدول عبر الحذف'
+keywords: ['طفرات الحذف', 'ALTER TABLE DELETE', 'طفرات البيانات', 'إعادة كتابة أجزاء البيانات', 'ReplacingMergeTree']
+doc_type: 'مرجع'
+---
+
+تشير طفرات الحذف إلى استعلامات `ALTER` التي تعدّل بيانات الجدول عبر الحذف. وأشهرها استعلامات مثل `ALTER TABLE DELETE` وغيرها. ويؤدي تنفيذ مثل هذه الاستعلامات إلى إنشاء إصدارات مُطفَّرة جديدة من أجزاء البيانات. وهذا يعني أن مثل هذه العبارات ستؤدي إلى إعادة كتابة أجزاء البيانات بالكامل لكل البيانات التي أُدرجت قبل الطفرة، ما يترتب عليه عدد كبير من طلبات الكتابة.
+
+<Info>
+  في عمليات الحذف، يمكنك تجنب هذا العدد الكبير من طلبات الكتابة باستخدام محركات جداول متخصصة مثل [ReplacingMergeTree](/ar/concepts/features/operations/update/replacing-merge-tree) أو [CollapsingMergeTree](/ar/reference/engines/table-engines/mergetree-family/collapsingmergetree) بدلًا من محرك جدول MergeTree الافتراضي.
+</Info>
+
+import DeleteMutations from '/snippets/ar/delete.mdx';
+
+<DeleteMutations />

@@ -42,7 +42,14 @@ void registerDictionarySourceCassandra(DictionarySourceFactory & factory)
         "Dictionary source of type `cassandra` is disabled because ClickHouse was built without cassandra support.");
 #endif
     };
-    factory.registerSource("cassandra", create_table_source);
+    factory.registerSource("cassandra", create_table_source, Documentation{
+        .description = "Reads dictionary data from a table in an Apache Cassandra cluster."
+#if !USE_CASSANDRA
+            " Currently unavailable, because this ClickHouse build does not include Cassandra support."
+#endif
+        ,
+        .syntax = "SOURCE(CASSANDRA(host 'host' port 9042 keyspace 'keyspace' column_family 'table'))",
+        .related = {}});
 }
 
 }

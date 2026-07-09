@@ -52,6 +52,7 @@ ClickHouse Inc does **not** maintain the libraries listed below and hasn't done 
 - [node-clickhouse-orm](https://github.com/zimv/node-clickhouse-orm)
 - [clickhouse-ts](https://github.com/bytadaniel/clickhouse-ts)
 - [clickcache](https://github.com/bytadaniel/clickcache)
+- [ck-orm](https://github.com/MunMunMiao/ck-orm)
 ### Perl {#perl}
 - [perl-DBD-ClickHouse](https://github.com/elcamlost/perl-DBD-ClickHouse)
 - [HTTP-ClickHouse](https://metacpan.org/release/HTTP-ClickHouse)

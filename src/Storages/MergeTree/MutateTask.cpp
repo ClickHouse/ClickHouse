@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MutateTask.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Columns/ColumnConst.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
@@ -34,6 +35,7 @@
 #include <Storages/MergeTree/MergeProjectionPartsTask.h>
 #include <Storages/MergeTree/MergeTreeDataMergerMutator.h>
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
@@ -83,7 +85,9 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsBool exclude_deleted_rows_for_part_size_in_merge;
     extern const MergeTreeSettingsLightweightMutationProjectionMode lightweight_mutation_projection_mode;
+    extern const MergeTreeSettingsUInt64 packed_skip_index_max_bytes;
     extern const MergeTreeSettingsBool materialize_ttl_recalculate_only;
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool ttl_only_drop_parts;
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
@@ -100,6 +104,7 @@ namespace FailPoints
 {
     extern const char mt_mutate_task_pause_in_prepare[];
     extern const char merge_task_projection_stage_pause[];
+    extern const char mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc[];
 }
 
 namespace ErrorCodes
@@ -118,6 +123,12 @@ enum class ExecuteTTLType : uint8_t
 
 namespace MutationHelpers
 {
+
+/// Placeholder substream that `getColumnsForNewDataPart` records for a column that will be written
+/// later by the mutation and is therefore not yet present in the part. It is not a real stream and
+/// must never be resolved against the source part's checksums (a part may happen to contain a real
+/// column whose name collides with this sentinel).
+static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
 
 static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
 {
@@ -140,6 +151,36 @@ static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & dat
             if (column && column->type->hasDynamicSubcolumns())
                 return true;
         }
+    }
+
+    return false;
+}
+
+/// Wide parts written before `columns_substreams.txt` was introduced (in 25.8) can contain a column
+/// with a dynamic structure (`Dynamic`, `JSON`, ...) whose data-dependent substreams (`variant_discr`,
+/// the variant element streams, ...) are not recorded anywhere we can enumerate without a
+/// deserialization state. State-less `serialization->enumerateStreams` stops after `dynamic_structure`
+/// for such a column (see `getStreamCounts`), so a partial mutation cannot account for all of its
+/// streams and could leave one neither rewritten nor hardlinked into the new part. To stay safe we
+/// rewrite the whole part in that case (the resulting part gets a `columns_substreams.txt`, so later
+/// mutations can take the partial path again). The file is also discarded when found corrupted, which
+/// lands here too.
+///
+/// The guard is `hasDynamicStructure`, not the broader `hasDynamicSubcolumns`: only a data-dependent
+/// dynamic structure (`Dynamic`, `JSON`) makes state-less enumeration incomplete. A plain `Map` (and a
+/// plain `Variant`) reports `hasDynamicSubcolumns` too, but its serialization enumerates all physical
+/// streams without a column/state, so forcing a full rewrite for it would be needless (it would turn a
+/// cheap single-column mutation of an old part into a rewrite of all the `Map` data).
+static bool hasDynamicColumnsWithoutRecordedSubstreams(const MergeTreeData::DataPartPtr & data_part)
+{
+    if (!isWidePart(data_part))
+        return false;
+
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
+    for (const auto & column : data_part->getColumns())
+    {
+        if (column.type->hasDynamicStructure() && !columns_substreams.tryGetColumnSubstreams(column.name))
+            return true;
     }
 
     return false;
@@ -203,7 +244,8 @@ static void splitAndModifyMutationCommands(
     auto part_columns = part->getColumnsDescription();
     const auto & table_columns = metadata_snapshot->getColumns();
 
-    if (haveMutationsOfDynamicColumns(part, commands) || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
+    if (haveMutationsOfDynamicColumns(part, commands) || hasDynamicColumnsWithoutRecordedSubstreams(part)
+        || !isWidePart(part) || !isFullPartStorage(part->getDataPartStorage()))
     {
         NameSet mutated_columns;
         NameSet dropped_columns;
@@ -704,37 +746,39 @@ getColumnsForNewDataPart(
         }
     }
 
+    SerializationInfo::Settings source_part_serialization_settings = SerializationInfo::Settings
+    {
+        static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+        false,
+        (*source_part->storage.getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+        serialization_infos.getSettings().version,
+        serialization_infos.getSettings().string_serialization_version,
+        serialization_infos.getSettings().nullable_serialization_version,
+        serialization_infos.getSettings().map_serialization_version,
+        serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
+    };
+    SerializationInfo::Settings storage_serialization_settings = SerializationInfo::Settings
+    {
+        static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
+        false,
+        (*source_part->storage.getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
+        (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
+        (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+    };
+
     SerializationInfo::Settings settings;
+
     /// If mutations doesn't affect all columns we must use serialization info settings from source part,
     /// because data files of some columns might be copied without actual serialization, so changes in serialization
     /// settings will not be applied for them (for example, new serialization versions for data types).
     if (!affects_all_columns)
-    {
-        settings = SerializationInfo::Settings
-        {
-            static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
-            false,
-            serialization_infos.getSettings().version,
-            serialization_infos.getSettings().string_serialization_version,
-            serialization_infos.getSettings().nullable_serialization_version,
-            serialization_infos.getSettings().map_serialization_version,
-            serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
-        };
-    }
+        settings = source_part_serialization_settings;
     /// Otherwise use fresh settings from storage.
     else
-    {
-        settings = SerializationInfo::Settings
-        {
-            static_cast<double>((*source_part->storage.getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
-            false,
-            (*source_part->storage.getSettings())[MergeTreeSetting::serialization_info_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::string_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
-            (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
-        };
-    }
+        settings = storage_serialization_settings;
 
     SerializationInfoByName new_serialization_infos(settings);
     for (const auto & [name, old_info] : serialization_infos)
@@ -772,6 +816,23 @@ getColumnsForNewDataPart(
         new_serialization_infos.emplace(new_name, std::move(new_info));
     }
 
+    /// Column mutations preserve source part serialization settings even when they differ from storage defaults,
+    /// and in this case mutated columns are explicitly added to serialization infos to prevent storage serialization
+    /// inheritance
+    bool materialize_updated_column_serialization_infos = !affects_all_columns
+        && source_part_serialization_settings != storage_serialization_settings;
+
+    if (materialize_updated_column_serialization_infos)
+    {
+        for (const auto & column : updated_header.getNamesAndTypesList())
+        {
+            if (!storage_columns_set.contains(column.name) || removed_columns.contains(column.name) || new_serialization_infos.contains(column.name))
+                continue;
+
+            new_serialization_infos.emplace(column.name, column.type->createSerializationInfo(settings));
+        }
+    }
+
     /// In compact parts we read all columns, because they all stored in a single file
     if (!isWidePart(source_part) || !isFullPartStorage(source_part->getDataPartStorage()))
         return {updated_header.getNamesAndTypesList(), new_serialization_infos, {}};
@@ -806,7 +867,7 @@ getColumnsForNewDataPart(
             if (fill_columns_substreams)
             {
                 new_columns_substreams.addColumn(it->name);
-                new_columns_substreams.addSubstreamToLastColumn("dummy");
+                new_columns_substreams.addSubstreamToLastColumn(NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER);
             }
 
             ++it;
@@ -863,8 +924,12 @@ getColumnsForNewDataPart(
                 else
                 {
 
-                    if (was_removed)
-                    { /// DROP COLUMN xxx, RENAME COLUMN yyy TO xxx
+                    if (renamed_columns_to_from.contains(it->name))
+                    {
+                        /// Another column is renamed into this name; take its type from the
+                        /// renamed-from column, not from the same-named source column that is
+                        /// being renamed away (DROP xxx + RENAME yyy TO xxx, or the swap
+                        /// RENAME xxx TO zzz + RENAME yyy TO xxx).
                         auto renamed_from = renamed_columns_to_from.at(it->name);
                         auto maybe_name_and_type = source_columns.tryGetByName(renamed_from);
                         if (!maybe_name_and_type)
@@ -960,9 +1025,31 @@ static std::unordered_map<String, size_t> getStreamCounts(
     const Names & column_names)
 {
     std::unordered_map<String, size_t> stream_counts;
+    const auto & columns_substreams = data_part->getColumnsSubstreams();
 
     for (const auto & column_name : column_names)
     {
+        /// When columns_substreams.txt is available, prefer its recorded substreams over
+        /// enumerateStreams. The file is the ground truth of what streams exist on disk, and
+        /// for columns with a data-dependent dynamic structure (Dynamic, JSON) a state-less
+        /// enumerateStreams is incomplete: it stops after `dynamic_structure` and never reports
+        /// data-dependent substreams like `variant_discr`.
+        const auto * recorded_substreams = columns_substreams.tryGetColumnSubstreams(column_name);
+
+        /// A not-yet-written column in a new part carries only a single placeholder substream
+        /// (see getColumnsForNewDataPart). It has no real streams on disk yet, so we fall back
+        /// to enumerateStreams to preserve correct shared-stream accounting for regular columns
+        /// (e.g. Nested array sizes).
+        if (recorded_substreams && !(recorded_substreams->size() == 1 && (*recorded_substreams)[0] == NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER))
+        {
+            for (const auto & substream : *recorded_substreams)
+            {
+                if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, ".bin", source_part_checksums))
+                    ++stream_counts[*stream_name];
+            }
+            continue;
+        }
+
         if (auto serialization = data_part->tryGetSerialization(column_name))
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
@@ -989,21 +1076,33 @@ static NameSet collectFilesToSkip(
     const std::set<MergeTreeIndexPtr> & indices_to_drop,
     const String & mrk_extension,
     const std::vector<ProjectionDescriptionRawPtr> & projections_to_skip,
-    const NameSet & updated_columns_in_patches)
+    const NameSet & updated_columns_in_patches,
+    bool packed_skip_index_archive_dirty)
 {
     NameSet files_to_skip = source_part->getFileNamesWithoutChecksums();
 
     /// Do not hardlink this file because it's always rewritten at the end of mutation.
     files_to_skip.insert(IMergeTreeDataPart::SERIALIZATION_FILE_NAME);
 
-    auto skip_index = [&files_to_skip, &mrk_extension](const MergeTreeIndexPtr & index)
+    auto skip_index = [&files_to_skip, &mrk_extension, &source_part](const MergeTreeIndexPtr & index)
     {
-        auto index_substreams = index->getSubstreams();
-
-        for (const auto & index_substream : index_substreams)
+        /// The substream may live on disk under either its logical name (skp_idx_<name>) or a
+        /// hash of it when replace_long_file_name_to_hash kicks in for long / case-insensitive
+        /// names. Resolve the actual stored name against source checksums so the hardlink loop
+        /// really skips both shapes; otherwise the old per-file substream survives in the new
+        /// part without a matching checksum entry and CHECK TABLE fails.
+        for (const auto & index_substream : index->getSubstreams())
         {
-            files_to_skip.insert(index->getFileName() + index_substream.suffix + index_substream.extension);
-            files_to_skip.insert(index->getFileName() + index_substream.suffix + mrk_extension);
+            const String stream_name = index->getFileName() + index_substream.suffix;
+            const String logical_data = stream_name + index_substream.extension;
+            const String logical_mrk = stream_name + mrk_extension;
+            files_to_skip.insert(logical_data);
+            files_to_skip.insert(logical_mrk);
+
+            if (auto hashed_data = IMergeTreeDataPart::getStreamNameOrHash(stream_name, index_substream.extension, source_part->checksums))
+                files_to_skip.insert(*hashed_data + index_substream.extension);
+            if (auto hashed_mrk = IMergeTreeDataPart::getStreamNameOrHash(stream_name, mrk_extension, source_part->checksums))
+                files_to_skip.insert(*hashed_mrk + mrk_extension);
         }
     };
 
@@ -1011,6 +1110,13 @@ static NameSet collectFilesToSkip(
         skip_index(index);
     for (const auto & index : indices_to_drop)
         skip_index(index);
+
+    /// The packed skip-index archive bundles multiple indices into one file. Hardlinking it would
+    /// carry along data of indices we're about to recalculate or drop. updateIndicesToRecalculateAndDrop
+    /// already added every surviving archive-contained index to indices_to_recalc when this flag
+    /// is true, so the new writer rebuilds the archive from scratch.
+    if (packed_skip_index_archive_dirty)
+        files_to_skip.insert(String(SKIP_INDICES_PACKED_FILENAME));
 
     for (const auto & projection : projections_to_skip)
         files_to_skip.insert(projection->getDirectoryName());
@@ -1349,6 +1455,7 @@ static void finalizeMutatedPart(
         written_files.push_back(std::move(out_comp));
     }
 
+    if (!new_data_part->storage.storesMetadataVersionInPartAttributes())
     {
         auto out_metadata = new_data_part->getDataPartStorage().writeFile(IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, 4096, context->getWriteSettings());
         DB::writeText(metadata_snapshot->getMetadataVersion(), *out_metadata);
@@ -1469,6 +1576,20 @@ struct MutationContext
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
+    /// True iff at least one index that currently lives inside the source part's skp_idx.packed
+    /// is being recomputed or dropped. When set, the mutation rebuilds the archive (writer side)
+    /// and stops hardlinking the source's archive (see collectFilesToSkip).
+    bool packed_skip_index_archive_dirty = false;
+    /// Exact in-archive virtual filenames belonging to indices listed in indices_to_drop_names.
+    /// Built by probing the source archive across known substream/extension patterns so the filter
+    /// step removes only those files (and not unrelated entries that share a name prefix).
+    NameSet dropped_skip_index_archive_file_names;
+    /// Exact in-archive virtual filenames belonging to surviving (not dropped, not recalc'd)
+    /// indices that live in the source archive. The writer pre-loads them into its in-memory
+    /// PackedFilesWriter before the first block is written so the new archive contains both
+    /// the freshly recomputed entries and the preserved ones, without hardlinking (and risking
+    /// truncating) the source's skp_idx.packed inode.
+    NameSet preserved_skip_index_archive_file_names;
     ColumnsStatistics stats_to_recalc;
     std::set<ProjectionDescriptionRawPtr> projections_to_recalc;
     NameSet files_to_skip;
@@ -1889,6 +2010,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             auto merge_task = std::make_unique<MergeTextIndexesTask>(
                 std::move(segments),
                 ctx->new_data_part,
+                (*ctx->mutate_entry)->rows_written,
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
@@ -2041,6 +2163,10 @@ private:
         bool is_full_wide_part = is_full_part_storage && isWidePart(ctx->new_data_part);
         const auto & indices = ctx->metadata_snapshot->getSecondaryIndices();
 
+        /// Source skp_idx.packed bundles several indices into one file: hardlinking it would
+        /// inherit data for every contained index, including ones we're about to drop or that
+        /// were rebuilt elsewhere. Force every surviving in-archive index to be recomputed so
+        /// the writer rebuilds skp_idx.packed from scratch.
         MergeTreeIndices skip_indices;
         for (const auto & idx : indices)
         {
@@ -2050,15 +2176,24 @@ private:
             if (ctx->indices_to_drop_names.contains(idx.name))
                 continue;
 
+            auto index_ptr = MergeTreeIndexFactory::instance().get(ctx->metadata_snapshot, idx, *ctx->data->getSettings());
+
+            /// Inert indices (a removed index type kept only for attach compatibility) have no data
+            /// on disk and cannot be recomputed: skip them entirely so the rewrite does not try to
+            /// aggregate them and there is nothing to hardlink.
+            if (index_ptr->isInert())
+                continue;
+
             /// For packed part we need to recalculate all indices because they are stored inside packed parts format
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
-                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot));
+                || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
+                || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr);
 
             if (need_recalculate)
             {
-                skip_indices.push_back(MergeTreeIndexFactory::instance().get(idx));
+                skip_indices.push_back(std::move(index_ptr));
             }
             else
             {
@@ -2450,11 +2585,28 @@ private:
         (*ctx->mutate_entry)->columns_written = ctx->storage_columns.size() - ctx->updated_header.columns();
 
         ctx->new_data_part->checksums = ctx->source_part->checksums;
+
+        /// When the archive will not be hardlinked from source (packed_skip_index_archive_dirty),
+        /// the inherited skp_idx.packed entry must not survive untouched into the new part's
+        /// checksums: it points at a file that may not exist in the new part. Drop it up front;
+        /// filterPackedSkipIndicesArchiveTo (drop-only path) or the writer (any other path)
+        /// re-adds the entry with the correct size/hash if a fresh archive is produced, and if
+        /// neither path produces one (e.g. ALTER UPDATE that moves the part fully to per-file
+        /// layout) the new part legitimately has no archive at all.
+        if (ctx->packed_skip_index_archive_dirty)
+            ctx->new_data_part->checksums.remove(String(SKIP_INDICES_PACKED_FILENAME));
+
         /// We weed to remove checksums for dropped indices
-        for (const auto & index : ctx->indices_to_drop)
+        /// Strip any inherited per-substream skip-index checksum entries for indices that are
+        /// either being dropped (no replacement) or recomputed (writer will repopulate, with a
+        /// potentially different layout). Skipping this for recalc'd indices is fine when the
+        /// new layout still uses the same per-file names because the writer overwrites the
+        /// entry in-place, but breaks when the layout changes (per-file -> packed): in that
+        /// case the writer never touches the per-file checksum and the stale entry would point
+        /// at a file that doesn't exist in the new part.
+        auto remove_per_substream_checksums = [&](const MergeTreeIndexPtr & index)
         {
-            auto index_substreams = index->getSubstreams();
-            for (const auto & index_substream : index_substreams)
+            for (const auto & index_substream : index->getSubstreams())
             {
                 String stream_name = index->getFileName() + index_substream.suffix;
 
@@ -2467,6 +2619,47 @@ private:
                 if (actual_mark_stream_name)
                     ctx->new_data_part->checksums.remove(*actual_mark_stream_name + ctx->mrk_extension);
             }
+        };
+
+        for (const auto & index : ctx->indices_to_drop)
+            remove_per_substream_checksums(index);
+        for (const auto & index : ctx->indices_to_recalc)
+            remove_per_substream_checksums(index);
+        for (const auto & index : ctx->text_indices_to_recalc)
+            remove_per_substream_checksums(index);
+
+        /// When DROP INDEX targets an index that lives inside skp_idx.packed there is no
+        /// mutations pipeline (DROP INDEX commands never produce one), so no writer will
+        /// rebuild the archive. We've already excluded the source archive from the hardlink
+        /// loop above (files_to_skip), so the new part would be left without one. Rewrite the
+        /// archive here by copying the surviving virtual files from source's archive into a
+        /// fresh skp_idx.packed; if every entry belongs to a dropped index, skip the write so
+        /// the new part has no archive at all.
+        if (ctx->packed_skip_index_archive_dirty && !ctx->mutating_pipeline_builder.initialized())
+        {
+            if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage()))
+            {
+                disk_storage->filterPackedSkipIndicesArchiveTo(
+                    ctx->dropped_skip_index_archive_file_names,
+                    ctx->new_data_part->getDataPartStorage(),
+                    ctx->context->getWriteSettings(),
+                    ctx->context->getReadSettings(),
+                    ctx->new_data_part->checksums,
+                    ctx->need_sync);
+            }
+        }
+        else if (!ctx->packed_skip_index_archive_dirty)
+        {
+            /// The archive is unchanged, so it is hardlinked into the new part (collectFilesToSkip
+            /// only excludes skp_idx.packed when packed_skip_index_archive_dirty). On object-storage
+            /// disks with a non-fake transaction the hardlink isn't committed until the part
+            /// transaction commits, which happens after finalizeMutatedPart. With
+            /// columns_and_secondary_indices_sizes_lazy_calculation=0 the eager size accounting runs
+            /// before that commit; seed the new storage's reader from the source archive index so it
+            /// can resolve packed virtual files. Mirrors filterPackedSkipIndicesArchiveTo and
+            /// fillSkipIndicesChecksums.
+            if (auto * new_disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&ctx->new_data_part->getDataPartStorage()))
+                new_disk_storage->seedSkipIndicesPackedReaderFrom(ctx->source_part->getDataPartStorage());
         }
 
         ctx->compression_codec = ctx->source_part->default_codec;
@@ -2528,6 +2721,20 @@ private:
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr));
 
+            /// Carry surviving in-archive entries that aren't being recomputed into the writer's
+            /// PackedFilesWriter before any block lands. Without this, the new archive would
+            /// contain only the freshly-computed indices (writer side) and lose every preserved
+            /// substream; CHECK TABLE still passes because the inherited skp_idx.packed checksum
+            /// is removed above, but queries lose the index.
+            if (!ctx->preserved_skip_index_archive_file_names.empty())
+            {
+                if (const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&ctx->source_part->getDataPartStorage()))
+                {
+                    auto out_typed = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
+                    out_typed->preloadPackedSkipIndicesArchive(*source_disk_storage, ctx->preserved_skip_index_archive_file_names);
+                }
+            }
+
             ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
             ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
             /// Is calculated inside MergeProgressCallback.
@@ -2551,6 +2758,36 @@ private:
             out_mut->finalizeIndexGranularity();
             auto changed_checksums = out_mut->fillChecksums(ctx->new_data_part, ctx->new_data_part->checksums);
             ctx->new_data_part->checksums.add(std::move(changed_checksums));
+
+            /// Add checksums of projection parts that were rebuilt during this mutation.
+            /// `MergedColumnOnlyOutputStream::fillChecksums` no longer adds them because that addition
+            /// is redundant during vertical merge (`MergedBlockOutputStream::finalizePartAsync` adds
+            /// them later). For mutations there is no such later step, so add them here.
+            for (const auto & [projection_name, projection_part] : ctx->new_data_part->getProjectionParts())
+            {
+                if (projection_part->checksums.empty())
+                    continue;
+                ctx->new_data_part->checksums.addFile(
+                    projection_name + ".proj",
+                    projection_part->checksums.getTotalSizeOnDisk(),
+                    projection_part->checksums.getTotalChecksumUInt128());
+            }
+
+            /// Remove orphan `<name>.proj` checksum entries inherited from the source part.
+            /// Such an entry points at a directory missing from the new part, so the projection
+            /// is marked broken on the next consistency-checking load (server startup or `ATTACH`).
+            /// An inherited entry is an orphan when both hold:
+            ///   1. the directory was not hardlinked into the new part, and
+            ///   2. the rebuild produced no projection part (zero-row rebuild, or drop/throw mode).
+            /// A projection that was rebuilt above is in `getProjectionParts()`, so this loop and the
+            /// one above operate on disjoint sets and never fight over the same checksum entry.
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
+            {
+                const auto projection_file = projection.getDirectoryName();
+                if (ctx->files_to_skip.contains(projection_file)
+                    && !ctx->new_data_part->getProjectionParts().contains(projection.name))
+                    ctx->new_data_part->checksums.files.erase(projection_file);
+            }
 
             auto new_columns_substreams = ctx->new_data_part->getColumnsSubstreams();
             if (!new_columns_substreams.empty())
@@ -2801,8 +3038,12 @@ static bool canSkipConversionToNullable(const MergeTreeDataPartPtr & part, const
         return false;
 
     /// We need to rewrite statistics because they have different serialization with nullable type.
+    /// `column_desc` can be `nullptr` if the column was concurrently dropped from the metadata
+    /// snapshot used here (mutation commands and metadata can drift apart under concurrent ALTERs).
+    /// Skip this optimization in that case; the normal mutation path will surface the error.
     const auto * column_desc = metadata_snapshot->getColumns().tryGet(command.column_name);
-    if (!column_desc->statistics.empty())
+    fiu_do_on(FailPoints::mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc, { column_desc = nullptr; });
+    if (!column_desc || !column_desc->statistics.empty())
         return false;
 
     return true;
@@ -2863,11 +3104,22 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
 
+    /// DROP INDEX commands do not go through the mutations interpreter (they live in
+    /// for_file_renames), so ctx->indices_to_drop_names (normally filled by the interpreter) is
+    /// empty when DROP INDEX is the only command. Pull DROP_INDEX targets out of commands_for_part
+    /// here so the rest of this function (and downstream files_to_skip / archive-filter logic)
+    /// can rely on indices_to_drop_names as the single source of truth.
+    for (const auto & cmd : ctx->commands_for_part)
+    {
+        if (cmd.type == MutationCommand::Type::DROP_INDEX)
+            ctx->indices_to_drop_names.insert(cmd.column_name);
+    }
+
     for (const auto & index : indices)
     {
         if (ctx->indices_to_drop_names.contains(index.name))
         {
-            ctx->indices_to_drop.insert(index_factory.get(index));
+            ctx->indices_to_drop.insert(index_factory.get(metadata_snapshot, index, *ctx->data->getSettings()));
             continue;
         }
 
@@ -2877,7 +3129,13 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
         if (need_recalculate)
         {
             bool inserted = false;
-            auto index_ptr = index_factory.get(index);
+            auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
+
+            /// Inert indices (a removed index type kept only for attach compatibility) have no data
+            /// and cannot be recomputed. Carry them forward untouched instead of aggregating them,
+            /// otherwise the mutation loops forever failing to build the index.
+            if (index_ptr->isInert())
+                continue;
 
             if (dynamic_cast<const MergeTreeIndexText *>(index_ptr.get()))
                 inserted = ctx->text_indices_to_recalc.insert(index_ptr).second;
@@ -2889,6 +3147,99 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 ASTPtr expr_list = index.expression_list_ast->clone();
                 for (const auto & expr : expr_list->children)
                     indices_recalc_expr_list->children.push_back(expr->clone());
+            }
+        }
+    }
+
+    /// The packed skip-index archive is a single file holding several indices' data. If at least
+    /// one index inside the archive is being recomputed or dropped, we cannot preserve a subset
+    /// of the archive by hardlinking it: the new writer must rewrite skp_idx.packed from scratch
+    /// and therefore needs every surviving index that lives inside the archive in indices_to_recalc.
+    /// On the other hand, a mutation that only touches per-file indices (or materializes a brand
+    /// new index that isn't packed) leaves the archive untouched.
+    const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
+
+    if (source_disk_storage)
+    {
+        /// DROP INDEX removes the index from metadata before the mutation runs, so ctx->indices_to_drop
+        /// (set of shared_ptr keyed off current metadata) stays empty here. Probe the source archive
+        /// directly for each dropped name across the union of substream/extension patterns used by
+        /// all skip-index types. This both detects archive_dirty for drop-only mutations and yields
+        /// the exact in-archive filenames the filter must remove (avoiding a prefix collision when
+        /// two indices share a getIndexFileName prefix, e.g. "a" and "a.b" with escape_index_filenames=0).
+        static const std::array<String, 3> known_substream_suffixes = {"", ".dct", ".pst"};
+        static const std::array<String, 2> known_index_extensions = {".idx2", ".idx"};
+        const bool escape_filenames = ctx->metadata_snapshot->escape_index_filenames;
+
+        for (const auto & idx_name : ctx->indices_to_drop_names)
+        {
+            const String idx_file_name = getIndexFileName(idx_name, escape_filenames);
+            for (const auto & sub : known_substream_suffixes)
+            {
+                for (const auto & ext : known_index_extensions)
+                {
+                    const String candidate = idx_file_name + sub + ext;
+                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(candidate))
+                        ctx->dropped_skip_index_archive_file_names.insert(candidate);
+                }
+                const String mrk_candidate = idx_file_name + sub + ctx->mrk_extension;
+                if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk_candidate))
+                    ctx->dropped_skip_index_archive_file_names.insert(mrk_candidate);
+            }
+        }
+
+        /// archive_dirty: source's skp_idx.packed cannot be hardlinked into the new part,
+        /// either because a virtual file inside it is being dropped / recomputed, OR because the
+        /// writer in the new part may produce a fresh archive on its own and would otherwise
+        /// truncate the source's inode. The second case fires when packing is enabled in the
+        /// current settings and the mutation will run at least one packable skip-index
+        /// aggregator (text indices are never packed; see MergeTreeDataPartWriterOnDisk::
+        /// initSkipIndices). The writer creates skp_idx.packed lazily on the first substream
+        /// that decides to pack, which can happen even if no source-archive member is in the
+        /// recalc set (e.g. the threshold was raised and a per-file source index now fits
+        /// inside the archive).
+        const bool source_has_archive = source_disk_storage->hasSkipIndicesPackedArchive();
+        const bool writer_can_open_archive =
+            (*ctx->data->getSettings())[MergeTreeSetting::packed_skip_index_max_bytes] > 0
+            && !ctx->indices_to_recalc.empty();
+
+        bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
+            || (source_has_archive && writer_can_open_archive);
+        if (!archive_dirty)
+            for (const auto & idx : ctx->indices_to_recalc)
+                if (source_part->isSkipIndexInPackedArchive(*idx)) { archive_dirty = true; break; }
+
+        if (archive_dirty)
+        {
+            ctx->packed_skip_index_archive_dirty = true;
+
+            /// Collect exact in-archive filenames for every surviving (not dropped, not
+            /// recalc'd) index that lives inside the source archive. The writer will pre-load
+            /// these bytes into its PackedFilesWriter so the new archive contains them without
+            /// needing the index's columns in the mutation pipeline (which only carries the
+            /// columns the interpreter chose to read).
+            NameSet already_in_recalc;
+            for (const auto & p : ctx->indices_to_recalc) already_in_recalc.insert(p->index.name);
+            for (const auto & p : ctx->text_indices_to_recalc) already_in_recalc.insert(p->index.name);
+
+            for (const auto & index : indices)
+            {
+                if (ctx->indices_to_drop_names.contains(index.name))
+                    continue;
+                if (already_in_recalc.contains(index.name))
+                    continue;
+
+                auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
+                const String file_name = index_ptr->getFileName();
+                for (const auto & sub : index_ptr->getSubstreams())
+                {
+                    const String data = file_name + sub.suffix + sub.extension;
+                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(data))
+                        ctx->preserved_skip_index_archive_file_names.insert(data);
+                    const String mrk = file_name + sub.suffix + ctx->mrk_extension;
+                    if (source_disk_storage->isFileInPackedSkipIndicesArchive(mrk))
+                        ctx->preserved_skip_index_archive_file_names.insert(mrk);
+                }
             }
         }
     }
@@ -2938,7 +3289,11 @@ bool MutateTask::prepare()
     };
 
     auto mutations_snapshot = ctx->data->getMutationsSnapshot(params);
-    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context);
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(ctx->source_part, mutations_snapshot, ctx->context
+#if CLICKHOUSE_CLOUD
+        , nullptr
+#endif
+    );
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
@@ -3192,6 +3547,7 @@ bool MutateTask::prepare()
     /// Also currently mutations of types with dynamic subcolumns in Wide part are possible only by
     /// rewriting the whole part.
     if (MutationHelpers::haveMutationsOfDynamicColumns(ctx->source_part, ctx->commands_for_part)
+        || MutationHelpers::hasDynamicColumnsWithoutRecordedSubstreams(ctx->source_part)
         || !isWidePart(ctx->source_part)
         || !isFullPartStorage(ctx->source_part->getDataPartStorage())
         || (ctx->interpreter && ctx->interpreter->isAffectingAllColumns()))
@@ -3250,7 +3606,8 @@ bool MutateTask::prepare()
             ctx->indices_to_drop,
             ctx->mrk_extension,
             projections_to_skip,
-            updated_columns_in_patches);
+            updated_columns_in_patches,
+            ctx->packed_skip_index_archive_dirty);
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(
             ctx->metadata_snapshot,

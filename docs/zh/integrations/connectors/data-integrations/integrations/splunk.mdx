@@ -1,0 +1,103 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/audit-splunk
+keywords: ['ClickHouse', 'Splunk', '审计', '云']
+description: '将 ClickHouse Cloud 审计日志存入 Splunk。'
+title: '将 ClickHouse Cloud 审计日志存入 Splunk'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Splunk](https://www.splunk.com/) 是一个数据分析和监控平台。
+
+此附加组件可将 [ClickHouse Cloud 审计日志](/zh/products/cloud/reference/security/audit-logging) 存储到 Splunk 中。它使用 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 下载审计日志。
+
+此附加组件仅包含一个 模块化输入，不提供额外的 UI。
+
+<div id="installation">
+  # 安装
+</div>
+
+<div id="for-splunk-enterprise">
+  ## 适用于 Splunk Enterprise
+</div>
+
+从 [Splunkbase](https://splunkbase.splunk.com/app/7709) 下载用于 Splunk 的 ClickHouse Cloud Audit Add-on。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_001.webp" size="lg" alt="显示 ClickHouse Cloud Audit Add-on for Splunk 下载页面的 Splunkbase 网站" border />
+
+在 Splunk Enterprise 中，转到 Apps -&gt; Manage，然后点击 Install app from file。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_002.webp" size="lg" alt="显示带有 Install app from file 选项的 Apps 管理页面的 Splunk Enterprise 界面" border />
+
+选择从 Splunkbase 下载的归档文件，然后点击 Upload。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_003.webp" size="lg" alt="用于上传 ClickHouse 插件的 Splunk 应用安装对话框" border />
+
+如果一切顺利，你现在应该可以看到 ClickHouse 审计日志应用已安装。否则，请查看 Splunkd 日志中的错误信息。
+
+<div id="modular-input-configuration">
+  # 模块化输入配置
+</div>
+
+要配置模块化输入，首先需要准备好 ClickHouse Cloud 部署中的以下信息：
+
+* 组织 ID
+* 一个 Admin [API 密钥](/zh/products/cloud/features/admin-features/api/openapi)
+
+<div id="getting-information-from-clickhouse-cloud">
+  ## 从 ClickHouse Cloud 获取信息
+</div>
+
+登录 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud/)。
+
+进入 Organization -&gt; Organization details，在此处复制 Organization ID。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_004.webp" size="lg" alt="显示包含 Organization ID 的 Organization details 页面的 ClickHouse Cloud 控制台" border />
+
+然后，在左侧菜单中进入 API Keys。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_005.webp" size="lg" alt="显示左侧导航菜单中 API Keys 部分的 ClickHouse Cloud 控制台" border />
+
+创建一个 API 密钥，为其指定一个有意义的名称，并选择 `Admin` 权限。点击 Generate API Key。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_006.webp" size="lg" alt="显示已选择 Admin 权限的 API 密钥创建界面的 ClickHouse Cloud 控制台" border />
+
+将 API 密钥和密钥妥善保存到安全的地方。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_007.webp" size="lg" alt="显示需保存的已生成 API 密钥和密钥的 ClickHouse Cloud 控制台" border />
+
+<div id="configure-data-input-in-splunk">
+  ## 在 Splunk 中配置数据输入
+</div>
+
+回到 Splunk，导航到 Settings -&gt; Data inputs。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_008.webp" size="lg" alt="显示带有 Data inputs 选项的 Settings 菜单的 Splunk 界面" border />
+
+选择 ClickHouse Cloud 审计日志数据输入。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_009.webp" size="lg" alt="显示 ClickHouse Cloud 审计日志选项的 Splunk Data inputs 页面" border />
+
+点击“New”以配置一个新的数据输入实例。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_010.webp" size="lg" alt="用于配置新的 ClickHouse Cloud 审计日志数据输入的 Splunk 界面" border />
+
+输入完所有信息后，点击 Next。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_011.webp" size="lg" alt="已完成 ClickHouse 数据输入设置的 Splunk 配置页面" border />
+
+数据输入已配置完成，现在可以开始浏览审计日志了。
+
+<div id="usage">
+  # 用法
+</div>
+
+模块化输入会将数据存储到 Splunk 中。要查看这些数据，可以使用 Splunk 的通用搜索视图。
+
+<Image img="/images/integrations/tools/data-integration/splunk/splunk_012.webp" size="lg" alt="显示 ClickHouse 审计日志数据的 Splunk 搜索界面" border />

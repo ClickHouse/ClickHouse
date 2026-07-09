@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'Overview'
+slug: /integrations/azure-data-factory/overview
+description: 'Bringing Azure Data into ClickHouse - Overview'
+keywords: ['azure data factory', 'azure', 'microsoft', 'data']
+title: 'Bringing Azure Data into ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import ClickHouseSupportedBadge from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge/>
+
+Microsoft Azure offers a wide range of tools to store, transform, and analyze
+data. However, in many scenarios, ClickHouse can provide significantly better
+performance for low-latency querying and processing of huge datasets. In
+addition, ClickHouse's columnar storage and compression can greatly reduce the
+cost of querying large volumes of analytical data compared to general-purpose
+Azure databases.
+
+In this section of the docs, we will explore two ways to ingest data from Microsoft Azure
+into ClickHouse:
+
+| Method                                                                     | Description                                                                                                                                                                                                          |
+|----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [Using the `azureBlobStorage` Table Function](/integrations/connectors/data-ingestion/azure/azure-data-factory/using-azureblobstorage) | Involves using ClickHouse's [`azureBlobStorage` Table Function](/reference/functions/table-functions/azureBlobStorage) to transfer data directly from Azure Blob Storage.                       |
+| [Using the ClickHouse HTTP interface](/integrations/connectors/data-ingestion/azure/azure-data-factory/using-http-interface)           | Uses the [ClickHouse HTTP interface](/concepts/features/interfaces/http) as a data source within Azure Data Factory, allowing you to copy data or use it in data flow activities as part of your pipelines. |

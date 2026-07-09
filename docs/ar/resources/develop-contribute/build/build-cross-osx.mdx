@@ -1,0 +1,63 @@
+---
+description: 'دليل للبناء المتقاطع لـ ClickHouse من Linux إلى أنظمة macOS'
+sidebarTitle: 'البناء على Linux لصالح macOS'
+slug: /development/build-cross-osx
+title: 'البناء على Linux لصالح macOS'
+doc_type: 'guide'
+---
+
+ينطبق هذا على الحالة التي يكون لديك فيها جهاز Linux وتريد استخدامه لبناء الملف التنفيذي `clickhouse` بحيث يعمل على OS X.
+وتتمثل حالة الاستخدام الرئيسية في عمليات تحقّق التكامل المستمر التي تعمل على أجهزة Linux.
+إذا كنت تريد بناء ClickHouse مباشرةً على macOS، فانتقل إلى [تعليمات البناء الأصلية](/ar/resources/develop-contribute/build/build-osx).
+
+يعتمد البناء المتقاطع لنظام macOS على [تعليمات البناء](/ar/resources/develop-contribute/build/build)، لذا اتبعها أولًا.
+
+تقدّم الأقسام التالية شرحًا تفصيليًا لبناء ClickHouse لنظام macOS بمعمارية `x86_64`.
+إذا كنت تستهدف معمارية ARM، فما عليك سوى استبدال جميع مواضع `x86_64` بـ `aarch64`.
+على سبيل المثال، استبدل `x86_64-apple-darwin` بـ `aarch64-apple-darwin` في جميع الخطوات.
+
+<div id="install-cross-compilation-toolset">
+  ## تثبيت مجموعة أدوات الترجمة المتقاطعة
+</div>
+
+لنتذكّر المسار الذي ثبّتْنا فيه `cctools` على أنه `${CCTOOLS}`
+
+```bash
+mkdir ~/cctools
+export CCTOOLS=$(cd ~/cctools && pwd)
+cd ${CCTOOLS}
+
+git clone https://github.com/tpoechtrager/apple-libtapi.git
+cd apple-libtapi
+git checkout 15dfc2a8c9a2a89d06ff227560a69f5265b692f9
+INSTALLPREFIX=${CCTOOLS} ./build.sh
+./install.sh
+cd ..
+
+git clone https://github.com/tpoechtrager/cctools-port.git
+cd cctools-port/cctools
+git checkout 2a3e1c2a6ff54a30f898b70cfb9ba1692a55fad7
+./configure --prefix=$(readlink -f ${CCTOOLS}) --with-libtapi=$(readlink -f ${CCTOOLS}) --target=x86_64-apple-darwin
+make install
+```
+
+كذلك، نحتاج إلى تنزيل حزمة تطوير البرامج (SDK) الخاصة بـ macOS X إلى شجرة العمل.
+
+```bash
+cd ClickHouse/cmake/toolchain/darwin-x86_64
+curl -L 'https://github.com/phracker/MacOSX-SDKs/releases/download/11.3/MacOSX11.0.sdk.tar.xz' | tar xJ --strip-components=1
+```
+
+<div id="build-clickhouse">
+  ## تجميع ClickHouse
+</div>
+
+```bash
+cd ClickHouse
+mkdir build-darwin
+cd build-darwin
+cmake -DCMAKE_AR:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ar -DCMAKE_INSTALL_NAME_TOOL=${CCTOOLS}/bin/x86_64-apple-darwin-install_name_tool -DCMAKE_RANLIB:FILEPATH=${CCTOOLS}/bin/x86_64-apple-darwin-ranlib -DLINKER_NAME=${CCTOOLS}/bin/x86_64-apple-darwin-ld -DCMAKE_TOOLCHAIN_FILE=cmake/darwin/toolchain-x86_64.cmake ..
+ninja
+```
+
+سيكون الملف التنفيذي الناتج بصيغة Mach-O، ولن يمكن تشغيله على Linux.

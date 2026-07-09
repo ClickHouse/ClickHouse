@@ -1,0 +1,167 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/schema/map-vs-json
+description: '在 ClickStack 中，何时应为属性使用 Map 类型而非 JSON 类型'
+sidebarTitle: 'Map 与 JSON 类型'
+title: 'ClickStack 中的 Map 与 JSON 类型'
+doc_type: '参考'
+keywords: ['clickstack', 'json', 'map', '属性', 'schema', '可观测性']
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+ClickStack 的[默认 schema](/zh/clickstack/ingesting-data/schemas)会将 resource、scope、日志和 span attribute 存储为 `Map(LowCardinality(String), String)` 列。ClickHouse 也支持强类型的 [`JSON` 类型](/zh/reference/formats/JSON/JSON)，而 ClickStack 也提供了可用其替代 `Map` 的 Beta 支持。
+
+**对于典型的可观测性工作负载，我们建议保留[默认的基于 `Map` 的 schema](/zh/clickstack/ingesting-data/schemas)。** `JSON` 类型适用于想在 attribute 键集合较小且稳定的工作负载上评估它的用户，但它并不是通用场景下推荐的 schema。
+
+<div id="why-map">
+  ## 为什么推荐默认使用 Map
+</div>
+
+可观测性数据主要由各种属性构成，例如资源属性、作用域属性，以及 span 和日志属性。这些属性集合通常规模大、基数高，并且以高吞吐量摄取。为这些属性选择何种 schema，是决定摄取成本和存储布局的关键因素。
+
+`Map(LowCardinality(String), String)` 将键和值存储在同一结构中。`Map` 过去的主要劣势是：读取单个键时，必须读取整个 map 列。如今这一点已经改变：ClickHouse 现在支持[分桶 map 序列化](/zh/reference/data-types/map#bucketed-map-serialization)，可将 map 拆分为多个桶，使查询只需读取所需的桶。再结合 map 键和值上的[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)——这也是 [ClickStack 默认 schema](/zh/clickstack/ingesting-data/schemas) 的配置方式——`Map` 就能在读取时同时具备良好的选择性和高性能，而且新增键时无需付出任何额外的摄取代价。
+
+在实际使用中，这意味着：
+
+* **随着键数量增长，摄取成本依然稳定。** 新增属性键不会改变磁盘上的列布局，也不会创建新的列文件。摄取成本受数据量限制，而非键的基数影响。
+* **不会出现元数据膨胀。** 磁盘上的列文件数量不会随着唯一属性键数量的增加而增加。
+* **可通过索引进行选择性查找。** map 键和值上的文本索引支持点查找，无需扫描每一行。
+* **在高吞吐量下表现可预测。** Map 能够处理突发的、无 schema 的属性集合——这在 tracing 和日志中很常见——且不会产生按键计算的额外开销。
+
+<div id="why-not-json">
+  ## 为什么默认不使用 JSON
+</div>
+
+`JSON` 类型采用了不同的思路：在写入时，ClickHouse 会为它看到的每个路径动态创建一个专用的强类型子列。在读取时，这很有吸引力，因为只会读取所请求的子列，类型得以保留，也不需要在查询时进行类型转换。
+
+代价则体现在摄取时。创建和管理大量动态子列会带来写入时开销以及更高的元数据复杂度。对于可观测性工作负载而言，这类工作负载通常具有规模很大或高度动态的属性集合，以及很高的摄取吞吐量，因此这类开销相当显著。[`max_dynamic_paths`](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns) 限制可以通过将额外路径落入共享列来控制影响，但访问共享列比访问专用子列更慢，这会削弱当初使用 JSON 的读取时优势。
+
+随着 bucketed map serialization 消除了 `Map` 在读取时的大部分历史开销，对于典型的可观测性工作负载来说，`JSON` 的读取时优势已经不足以抵消其摄取时成本。
+
+<div id="when-to-consider-json">
+  ## 何时仍可考虑 JSON
+</div>
+
+当*以下所有条件*都满足时，JSON 类型可能是一个合理的选择：
+
+* 你的 attribute 键集合**较小且稳定**，也就是说，不会出现成千上万个唯一键，而且很少有新键出现。
+* 相对于 attribute 的基数，摄取吞吐量**不高**。
+* 你希望对 attribute 进行**强类型访问**，无需在查询时进行类型转换 (数值保持为数值，布尔值保持为布尔值) 。
+* 你愿意在 ClickStack 中使用一项 **Beta 功能**，并接受相关集成后续可能发生变化。
+
+如果这些条件未能全部满足，请继续使用[默认的基于 `Map` 的 schema](/zh/clickstack/ingesting-data/schemas)。
+
+<div id="beta-status">
+  ## Beta 状态
+</div>
+
+<BetaBadge />
+
+<Warning>
+  **Beta 功能，尚未准备好用于生产环境**
+
+  **ClickStack** 中对 JSON 类型的支持是一项 **Beta 功能**。虽然 JSON 类型本身在 ClickHouse 25.3+ 中已可用于生产环境，但其在 ClickStack 中的集成仍在积极开发中，可能存在一些限制、今后发生变化，或包含缺陷。
+</Warning>
+
+从 `2.0.4` 版本起，ClickStack 开始提供对 JSON 类型的 Beta 支持。
+
+<div id="enabling-json-support">
+  ## 启用 JSON 支持
+</div>
+
+如需使用 JSON 类型的 schema，而不是[默认基于 `Map` 的 schema](/zh/clickstack/ingesting-data/schemas)，请设置以下环境变量。
+
+| 变量                                                              | 设置位置                    | 用途                                            |
+| --------------------------------------------------------------- | ----------------------- | --------------------------------------------- |
+| `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` | OTel collector          | 在 ClickHouse 中使用 JSON 类型创建 schema。            |
+| `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`                         | HyperDX (ClickStack UI) | 使应用层能够查询 JSON 类型的 schema。仅适用于 ClickStack 开源版。 |
+
+<div id="managed-clickstack">
+  ### 托管 ClickStack
+</div>
+
+要在托管 ClickStack 中启用 JSON 支持，请在配置 collector 之前联系 support@clickhouse.com。还需要在 ClickHouse Cloud 的 ClickStack UI (HyperDX) 中启用此功能。
+
+在 collector 中设置 `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'`。例如：
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="oss-clickstack">
+  ### 开源 ClickStack
+</div>
+
+在任何包含 collector 的部署中，将 `OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json'` 设置为启用，并在 HyperDX 应用层中设置 `BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true`，以便其能够查询 JSON 类型的 schema。
+
+例如：
+
+```shell
+docker run -e OTEL_AGENT_FEATURE_GATE_ARG='--feature-gates=clickhouse.json' -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} -e CLICKHOUSE_USER=default -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} -p 8080:8080 -p 4317:4317 -p 4318:4318 clickhouse/clickstack-otel-collector:latest
+```
+
+<div id="migrating-from-map-to-json">
+  ## 从基于 Map 的 schema 迁移到 JSON
+</div>
+
+<Warning>
+  **向后兼容性**
+
+  [JSON 类型](/zh/reference/formats/JSON/JSON)与现有的基于 Map 的 schema **不向后兼容**。启用此功能会使用 `JSON` 类型创建新表，并且需要手动迁移数据。
+</Warning>
+
+如需从[默认的基于 Map 的 schema](/zh/clickstack/ingesting-data/schemas)迁移，请按以下步骤操作：
+
+<Steps>
+  <Step>
+    ### 停止 OTel collector
+  </Step>
+
+  <Step>
+    ### 重命名现有表并更新数据源
+
+    重命名现有表，并更新 HyperDX 中的数据源。
+
+    例如：
+
+    ```sql
+    RENAME TABLE otel_logs TO otel_logs_map;
+    RENAME TABLE otel_metrics TO otel_metrics_map;
+    ```
+  </Step>
+
+  <Step>
+    ### 部署 collector
+
+    部署 collector，并设置 `OTEL_AGENT_FEATURE_GATE_ARG`。
+  </Step>
+
+  <Step>
+    ### 重启 HyperDX 容器以启用 JSON schema 支持
+
+    ```shell
+    export BETA_CH_OTEL_JSON_SCHEMA_ENABLED=true
+    ```
+  </Step>
+
+  <Step>
+    ### 创建新的数据源
+
+    在 HyperDX 中创建指向 JSON 表的新数据源。
+  </Step>
+</Steps>
+
+<div id="migrating-existing-data">
+  ### 迁移现有数据 (可选)
+</div>
+
+要将旧数据迁移到新的 JSON 表中，请执行以下操作：
+
+```sql
+INSERT INTO otel_logs SELECT * FROM otel_logs_map;
+INSERT INTO otel_metrics SELECT * FROM otel_metrics_map;
+```
+
+<Warning>
+  仅建议用于小于约 100 亿行的数据集。此前使用 Map 类型 存储的数据无法保留类型精度 (所有值都是字符串) 。因此，在这些旧数据因时效过期而被淘汰之前，它们在新的 schema 中都会显示为字符串，这就需要前端进行一些类型转换。新数据的类型将通过 JSON 类型 保留下来。
+</Warning>

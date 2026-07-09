@@ -3,6 +3,7 @@
 #include <Functions/FunctionHelpers.h>
 #include <Columns/ColumnString.h>
 #include <Common/NaNUtils.h>
+#include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypeString.h>
 #include <IO/WriteBufferFromVector.h>
 #include <IO/WriteHelpers.h>
@@ -15,8 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int CANNOT_PRINT_FLOAT_OR_DOUBLE_NUMBER;
-extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int BAD_ARGUMENTS;
 }
 
@@ -49,38 +48,19 @@ public:
 
     size_t getNumberOfArguments() const override { return 0; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        if (arguments.empty())
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be at least 1.",
-                            getName(), arguments.size());
+        FunctionArgumentDescriptors mandatory_args{
+            {"value", static_cast<FunctionArgumentDescriptor::TypeValidator>(
+                +[](const IDataType & type) { return isNumber(type) || isInterval(type); }), nullptr, "Number or Interval"},
+        };
 
-        if (arguments.size() > 3)
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-                            "Number of arguments for function {} doesn't match: passed {}, should be 1, 2 or 3.",
-                            getName(), arguments.size());
+        FunctionArgumentDescriptors optional_args{
+            {"maximum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+            {"minimum_unit", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isStringOrFixedString), nullptr, "String or FixedString"},
+        };
 
-        const IDataType & type = *arguments[0];
-
-        if (!isNumber(type))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time delta", type.getName());
-
-        if (arguments.size() >= 2)
-        {
-            const auto * maximum_unit_arg = arguments[1].get();
-            if (!isStringOrFixedString(maximum_unit_arg))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument maximum_unit of function {}",
-                                maximum_unit_arg->getName(), getName());
-
-            if (arguments.size() == 3)
-            {
-                const auto * minimum_unit_arg = arguments[2].get();
-                if (!isStringOrFixedString(minimum_unit_arg))
-                    throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument minimum_unit of function {}",
-                                    minimum_unit_arg->getName(), getName());
-            }
-        }
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         return std::make_shared<DataTypeString>();
     }
@@ -149,11 +129,13 @@ public:
         offsets_to.resize(input_rows_count);
 
         WriteBufferFromVector<ColumnString::Chars> buf_to(data_to);
+        const auto * interval_type = checkAndGetDataType<DataTypeInterval>(arguments[0].type.get());
+        Float64 seconds_in_interval = interval_type ? interval_type->getKind().toSeconds() : 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             /// Virtual call is Ok (negligible comparing to the rest of calculations).
-            Float64 value = arguments[0].column->getFloat64(i);
+            Float64 value = interval_type ? arguments[0].column->getFloat64(i) * seconds_in_interval : arguments[0].column->getFloat64(i);
 
             if (!isFinite(value))
             {
@@ -362,13 +344,15 @@ private:
 REGISTER_FUNCTION(FormatReadableTimeDelta)
 {
     FunctionDocumentation::Description description = R"(
-Given a time interval (delta) in seconds, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
+Given a time interval (delta) in seconds or an `INTERVAL` expression, this function returns a time delta with year/month/day/hour/minute/second/millisecond/microsecond/nanosecond as a string.
 
 This function accepts any numeric type as input, but internally it casts them to `Float64`. Results might be suboptimal with large values.
+
+When an `INTERVAL` expression is passed, its value is converted to seconds. Interval units of `MONTH` and greater (`MONTH`, `QUARTER`, `YEAR`) are not supported as they don't represent a fixed-sized interval in seconds.
     )";
     FunctionDocumentation::Syntax syntax = "formatReadableTimeDelta(column[, maximum_unit, minimum_unit])";
     FunctionDocumentation::Arguments arguments = {
-        {"column", "A column with a numeric time delta.", {"Float64"}},
+        {"column", "A column with a numeric time delta, or an `INTERVAL` expression. Interval units of `MONTH` and greater are not supported.", {"Float64", "Interval"}},
         {"maximum_unit", "Optional. Maximum unit to show. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. Default value: `years`.", {"const String"}},
         {"minimum_unit", "Optional. Minimum unit to show. All smaller units are truncated. Acceptable values: `nanoseconds`, `microseconds`, `milliseconds`, `seconds`, `minutes`, `hours`, `days`, `months`, `years`. If explicitly specified value is bigger than `maximum_unit`, an exception will be thrown. Default value: `seconds` if `maximum_unit` is `seconds` or bigger, `nanoseconds` otherwise.", {"const String"}}
     };
@@ -401,6 +385,16 @@ SELECT
 │      12345 │ 205 minutes and 45 seconds                                      │
 │  432546534 │ 7209108 minutes and 54 seconds                                  │
 └────────────┴─────────────────────────────────────────────────────────────────┘
+        )"
+    },
+    {
+        "With an INTERVAL expression", R"(
+SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
+        )",
+        R"(
+┌─time_delta─────────────────────────┐
+│ 3 hours, 25 minutes and 45 seconds │
+└────────────────────────────────────┘
         )"
     }
     };

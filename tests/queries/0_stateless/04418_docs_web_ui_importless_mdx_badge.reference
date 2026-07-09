@@ -1,0 +1,5 @@
+ClickHouse <span class="accent">Reference</span>
+const MDX_COMPONENTS = [
+'ExperimentalBadge', 'BetaBadge', 'DeprecatedBadge',
+const components = new Set(MDX_COMPONENTS);
+1

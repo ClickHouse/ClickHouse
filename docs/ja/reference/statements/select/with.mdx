@@ -1,0 +1,560 @@
+---
+description: 'WITH 句に関するドキュメント'
+sidebarTitle: 'WITH'
+slug: /sql-reference/statements/select/with
+title: 'WITH 句'
+doc_type: 'reference'
+---
+
+ClickHouse は、共通テーブル式 ([CTE](https://en.wikipedia.org/wiki/Hierarchical_and_recursive_queries_in_SQL)) 、共通スカラ式、再帰クエリをサポートしています。
+
+<div id="common-table-expressions">
+  ## 共通テーブル式
+</div>
+
+共通テーブル式は、名前付きのサブクエリを表します。
+テーブル式を使用できる `SELECT` クエリ内の任意の場所で、名前を使って参照できます。
+名前付きサブクエリは、現在のクエリのスコープ内、または子サブクエリのスコープ内で、名前を使って参照できます。
+
+`SELECT` クエリ内で共通テーブル式を参照すると、CTE が明示的にマテリアライズされていない限り、常にその定義元のサブクエリに置き換えられます ([Materialized Common Table Expressions](#materialized-common-table-expressions) を参照) 。
+再帰は、識別子解決の処理で現在の CTE を見えなくすることで防止されます。
+
+CTE は、呼び出されたすべての箇所で同じ結果になることを保証しない点に注意してください。これは、使用されるたびにクエリが再実行されるためです。
+
+<div id="common-table-expressions-syntax">
+  ### 構文
+</div>
+
+```sql
+WITH <identifier> AS [MATERIALIZED] <subquery expression>
+```
+
+<div id="common-table-expressions-example">
+  ### 例
+</div>
+
+サブクエリが再実行されるケースの例:
+
+```sql
+WITH cte_numbers AS
+(
+    SELECT
+        num
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
+)
+SELECT
+    count()
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers)
+```
+
+CTE がコードの一部ではなく、結果そのものを正確に受け渡すのであれば、常に `1000000` が表示されるはずです
+
+しかし、`cte_numbers` を 2 回参照しているため、そのたびに乱数が生成され、結果として `280501, 392454, 261636, 196227` など、毎回異なる値が表示されます...
+
+<div id="materialized-common-table-expressions">
+  ## マテリアライズド共通テーブル式
+</div>
+
+デフォルトでは、ClickHouse は CTE のサブクエリを参照箇所ごとにインライン展開し、参照のたびに再実行します。
+`MATERIALIZED` キーワードを追加すると、ClickHouse は CTE のサブクエリを **一度だけ** 実行し、その結果を一時テーブルに格納して、以降のすべての参照でそのテーブルを使用します。
+これは、同じ CTE が 1 つのクエリ内で複数回参照される場合 (たとえば自己結合や複数の `IN` サブクエリ) に特に有用です。元の計算が一度しか行われないためです。
+
+<Note>
+  マテリアライズド CTE は **実験的** な機能です。
+  利用するには、[アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) が必要であり、設定 `enable_materialized_cte` も有効になっている必要があります。
+</Note>
+
+<div id="common-table-expressions-syntax">
+  ### 構文
+</div>
+
+```sql
+WITH <identifier> AS MATERIALIZED (<subquery>)
+SELECT ...
+```
+
+<div id="materialized-cte-when-to-use">
+  ### マテリアライズド CTEを使用する場面
+</div>
+
+マテリアライズド CTEが特に有効なのは、次のような場合です。
+
+* 1つのクエリ内で同じCTEが**複数回**参照される場合。
+  `MATERIALIZED` を使用しないと、参照のたびにサブクエリがそれぞれ再実行されます。
+* CTEに `generateRandom` のような**非決定論的**関数が含まれている場合。
+  マテリアライズすることで、すべての参照で同じデータを参照できます。
+* CTEに、繰り返し実行すべきでない**高コストな計算** (集計、JOIN、大規模スキャン) が含まれている場合。
+
+<Tip>
+  マテリアライズド CTEが1回しか参照されない場合、ClickHouse は不要なオーバーヘッドを避けるため、自動的に通常のサブクエリとしてインライン展開します。
+</Tip>
+
+<div id="common-table-expressions-example">
+  ### 例
+</div>
+
+**例 1:** マテリアライズド CTEに対する自己結合
+
+`MATERIALIZED` がない場合、JOIN の両側でそれぞれ独立にサブクエリが実行されます。
+`MATERIALIZED` がある場合、テーブルは一度だけスキャンされ、JOIN の両側は同じ一時テーブルを読み取ります。
+
+```sql
+SET enable_materialized_cte = 1;
+
+CREATE TABLE users (uid Int16, name String, age Int16) ENGINE = Memory;
+INSERT INTO users VALUES (1231, 'John', 33), (6666, 'Ksenia', 48), (8888, 'Alice', 50);
+
+WITH
+    a AS MATERIALIZED (SELECT * FROM users WHERE name = 'Alice')
+SELECT count() FROM a AS l JOIN a AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       1 │
+└─────────┘
+```
+
+**例 2:** 非決定論的関数で決定論的な結果を得る
+
+通常の CTE で `generateRandom` を使うと、参照するたびに異なる結果になります。
+CTE をマテリアライズすると、一貫した結果が得られます:
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH cte_numbers AS MATERIALIZED
+(
+    SELECT num
+    FROM generateRandom('num UInt64', NULL)
+    LIMIT 1000000
+)
+SELECT count()
+FROM cte_numbers
+WHERE num IN (SELECT num FROM cte_numbers);
+```
+
+どちらの参照も同じ実体化済みデータを読み取るため、結果は常に `1000000` になります。
+
+**例 3:** 実体化された CTE のチェーン
+
+実体化された CTE は、別の実体化された CTE を参照できます。
+ClickHouse は依存関係を解決し、それらを正しい順序で実体化します。
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH
+    a AS MATERIALIZED (SELECT uid, name FROM users),
+    b AS MATERIALIZED (SELECT uid FROM a)
+SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+CTE の定義順は問いません — 前方参照が可能です：
+
+```sql
+SET enable_materialized_cte = 1;
+
+WITH
+    b AS MATERIALIZED (SELECT uid FROM a),
+    a AS MATERIALIZED (SELECT uid FROM users)
+SELECT count() FROM b AS l LEFT SEMI JOIN b AS r ON l.uid = r.uid;
+```
+
+```response
+┌─count()─┐
+│       3 │
+└─────────┘
+```
+
+<div id="materialized-cte-restrictions">
+  ### 制限事項
+</div>
+
+* **実験的な設定が必要**: 設定 `enable_materialized_cte` を有効にする必要があります。
+* **アナライザが必要**: マテリアライズド CTE は、[アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) が有効な場合にのみ動作します (`enable_analyzer = 1`) 。
+* **`RECURSIVE` では未サポート**: `MATERIALIZED` キーワードと `RECURSIVE` キーワードを組み合わせることはできず、`UNSUPPORTED_METHOD` 例外が発生します。
+* **相関 CTE は使用不可**: マテリアライズド CTE では、外側のクエリスコープのカラムを参照できません。
+
+<div id="common-scalar-expressions">
+  ## 共通スカラ式
+</div>
+
+ClickHouse では、`WITH` 句で任意のスカラ式に別名を定義できます。
+共通スカラ式は、クエリ内のどの場所からでも参照できます。
+
+<Note>
+  共通スカラ式が定数リテラル以外を参照している場合、その式によって [自由変数](https://en.wikipedia.org/wiki/Free_variables_and_bound_variables) が生じることがあります。
+  ClickHouse はあらゆる識別子を可能な限り最も近いスコープで解決するため、名前の衝突があると、自由変数が意図しないエンティティを参照したり、相関サブクエリにつながったりする場合があります。
+  式中の識別子解決をより予測しやすくするには、使用するすべての識別子を束縛した [ラムダ関数](/ja/reference/functions/regular-functions/overview#arrow-operator-and-lambda) として CSE を定義することを推奨します (これは [アナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) が有効な場合にのみ可能です) 。
+</Note>
+
+<div id="common-table-expressions-syntax">
+  ### 構文
+</div>
+
+```sql
+WITH <expression> AS <identifier>
+```
+
+<div id="common-table-expressions-example">
+  ### 例
+</div>
+
+**例 1:** 定数式を&quot;変数&quot;として使う
+
+```sql
+WITH '2019-08-01 15:23:00' AS ts_upper_bound
+SELECT *
+FROM hits
+WHERE
+    EventDate = toDate(ts_upper_bound) AND
+    EventTime <= ts_upper_bound;
+```
+
+**例 2:** 高階関数を使って識別子の範囲を限定する
+
+```sql
+WITH
+    '.txt' as extension,
+    (id, extension) -> concat(lower(id), extension) AS gen_name
+SELECT gen_name('test', '.sql') as file_name;
+```
+
+```response
+   ┌─file_name─┐
+1. │ test.sql  │
+   └───────────┘
+```
+
+**例 3:** 高階関数で自由変数を使用する
+
+次のクエリ例は、束縛されていない識別子が、最も近いスコープ内のエンティティに解決されることを示しています。
+ここでは、`extension` は `gen_name` ラムダ関数の本体内では束縛されていません。
+`extension` は `generated_names` の定義および使用のスコープでは共通スカラ式として `'.txt'` に定義されていますが、`generated_names` サブクエリ内で利用可能であるため、テーブル `extension_list` のカラムとして解決されます。
+
+```sql
+CREATE TABLE extension_list
+(
+    extension String
+)
+ORDER BY extension
+AS SELECT '.sql';
+
+WITH
+    '.txt' as extension,
+    generated_names as (
+        WITH
+            (id) -> concat(lower(id), extension) AS gen_name
+        SELECT gen_name('test') as file_name FROM extension_list
+    )
+SELECT file_name FROM generated_names;
+```
+
+```response
+   ┌─file_name─┐
+1. │ test.sql  │
+   └───────────┘
+```
+
+**例 4:** `SELECT`句のカラムリストから `sum(bytes)` 式の結果を除外する
+
+```sql
+WITH sum(bytes) AS s
+SELECT
+    formatReadableSize(s),
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY s;
+```
+
+**例 5:** スカラーサブクエリの結果を使用する
+
+```sql
+/* この例は最も大きなテーブルのTOP 10を返します */
+WITH
+    (
+        SELECT sum(bytes)
+        FROM system.parts
+        WHERE active
+    ) AS total_disk_usage
+SELECT
+    (sum(bytes) / total_disk_usage) * 100 AS table_disk_usage,
+    table
+FROM system.parts
+GROUP BY table
+ORDER BY table_disk_usage DESC
+LIMIT 10;
+```
+
+**例 6:** サブクエリで式を再利用する
+
+```sql
+WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
+SELECT * FROM test1;
+```
+
+<div id="recursive-queries">
+  ## 再帰クエリ
+</div>
+
+オプションの`RECURSIVE`修飾子を使うと、WITHクエリ内でそのクエリ自身の出力を参照できます。例:
+
+**例:** 1 から 100 までの整数の合計
+
+```sql
+WITH RECURSIVE test_table AS (
+    SELECT 1 AS number
+UNION ALL
+    SELECT number + 1 FROM test_table WHERE number < 100
+)
+SELECT sum(number) FROM test_table;
+```
+
+```text
+┌─sum(number)─┐
+│        5050 │
+└─────────────┘
+```
+
+<Note>
+  再帰 CTE は、バージョン **`24.3`** で導入された [クエリアナライザ](/ja/guides/clickhouse/performance-and-monitoring/analyzer) に依存しています。**`24.3+`** を使用していて **`(UNKNOWN_TABLE)`** または **`(UNSUPPORTED_METHOD)`** 例外が発生する場合は、インスタンス、ロール、またはプロファイルでアナライザが無効になっている可能性があります。アナライザを有効にするには、設定 **`allow_experimental_analyzer`** を有効にするか、**`compatibility`** 設定をより新しいバージョンに更新してください。
+  バージョン `24.8` 以降、アナライザは正式機能となり、設定 `allow_experimental_analyzer` は `enable_analyzer` に名称変更されました。
+</Note>
+
+再帰 `WITH` クエリの一般的な形式は、常に非再帰項、続いて `UNION ALL`、その後に再帰項が続く形です。このうち、クエリ自身の出力への参照を含められるのは再帰項だけです。再帰 CTE クエリは次のように実行されます。
+
+1. 非再帰項を評価します。非再帰項クエリの結果を一時的な作業テーブルに格納します。
+2. 作業テーブルが空でない限り、次の手順を繰り返します。
+   1. 再帰項を評価し、再帰的な自己参照を作業テーブルの現在の内容に置き換えます。再帰項クエリの結果を一時的な中間テーブルに格納します。
+   2. 作業テーブルの内容を中間テーブルの内容で置き換え、その後、中間テーブルを空にします。
+
+再帰クエリは通常、階層データや木構造データを扱うために使用されます。たとえば、木の走査を行うクエリを記述できます。
+
+**例:** 木の走査
+
+まず、木構造のテーブルを作成します。
+
+```sql
+DROP TABLE IF EXISTS tree;
+CREATE TABLE tree
+(
+    id UInt64,
+    parent_id Nullable(UInt64),
+    data String
+) ENGINE = MergeTree ORDER BY id;
+
+INSERT INTO tree VALUES (0, NULL, 'ROOT'), (1, 0, 'Child_1'), (2, 0, 'Child_2'), (3, 1, 'Child_1_1');
+```
+
+次のようなクエリを使って、それらの木構造を走査できます。
+
+**例:** 木構造の走査
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree;
+```
+
+```text
+┌─id─┬─parent_id─┬─data──────┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │
+│  1 │         0 │ Child_1   │
+│  2 │         0 │ Child_2   │
+│  3 │         1 │ Child_1_1 │
+└────┴───────────┴───────────┘
+```
+
+<div id="search-order">
+  ### 検索順序
+</div>
+
+深さ優先の順序を作成するには、各結果行について、これまでに訪問した行の Array を計算します。
+
+**例:** 木構造の深さ優先走査順
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data, [t.id] AS path
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data, arrayConcat(path, [t.id])
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree ORDER BY path;
+```
+
+```text
+┌─id─┬─parent_id─┬─data──────┬─path────┐
+│  0 │      ᴺᵁᴸᴸ │ ROOT      │ [0]     │
+│  1 │         0 │ Child_1   │ [0,1]   │
+│  3 │         1 │ Child_1_1 │ [0,1,3] │
+│  2 │         0 │ Child_2   │ [0,2]   │
+└────┴───────────┴───────────┴─────────┘
+```
+
+幅優先の順序を作るには、探索の深さを追跡するカラムを追加するのが一般的です。
+
+**例:** 木構造の幅優先走査順
+
+```sql
+WITH RECURSIVE search_tree AS (
+    SELECT id, parent_id, data, [t.id] AS path, toUInt64(0) AS depth
+    FROM tree t
+    WHERE t.id = 0
+UNION ALL
+    SELECT t.id, t.parent_id, t.data, arrayConcat(path, [t.id]), depth + 1
+    FROM tree t, search_tree st
+    WHERE t.parent_id = st.id
+)
+SELECT * FROM search_tree ORDER BY depth;
+```
+
+```text
+┌─id─┬─link─┬─data──────┬─path────┬─depth─┐
+│  0 │ ᴺᵁᴸᴸ │ ROOT      │ [0]     │     0 │
+│  1 │    0 │ Child_1   │ [0,1]   │     1 │
+│  2 │    0 │ Child_2   │ [0,2]   │     1 │
+│  3 │    1 │ Child_1_1 │ [0,1,3] │     2 │
+└────┴──────┴───────────┴─────────┴───────┘
+```
+
+<div id="cycle-detection">
+  ### サイクル検出
+</div>
+
+まず、グラフ用のテーブルを作成します。
+
+```sql
+DROP TABLE IF EXISTS graph;
+CREATE TABLE graph
+(
+    from UInt64,
+    to UInt64,
+    label String
+) ENGINE = MergeTree ORDER BY (from, to);
+
+INSERT INTO graph VALUES (1, 2, '1 -> 2'), (1, 3, '1 -> 3'), (2, 3, '2 -> 3'), (1, 4, '1 -> 4'), (4, 5, '4 -> 5');
+```
+
+このグラフは、次のようなクエリでたどることができます。
+
+**例:** サイクル検出なしのグラフ走査
+
+```sql
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label FROM graph g
+    UNION ALL
+    SELECT g.from, g.to, g.label
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to
+)
+SELECT DISTINCT * FROM search_graph ORDER BY from;
+```
+
+```text
+┌─from─┬─to─┬─label──┐
+│    1 │  4 │ 1 -> 4 │
+│    1 │  2 │ 1 -> 2 │
+│    1 │  3 │ 1 -> 3 │
+│    2 │  3 │ 2 -> 3 │
+│    4 │  5 │ 4 -> 5 │
+└──────┴────┴────────┘
+```
+
+ただし、そのグラフに閉路を追加すると、先ほどのクエリは `Maximum recursive CTE evaluation depth` エラーで失敗します。
+
+```sql
+INSERT INTO graph VALUES (5, 1, '5 -> 1');
+
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label FROM graph g
+UNION ALL
+    SELECT g.from, g.to, g.label
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to
+)
+SELECT DISTINCT * FROM search_graph ORDER BY from;
+```
+
+```text
+Code: 306. DB::Exception: Received from localhost:9000. DB::Exception: Maximum recursive CTE evaluation depth (1000) exceeded, during evaluation of search_graph AS (SELECT from, to, label FROM graph AS g UNION ALL SELECT g.from, g.to, g.label FROM graph AS g, search_graph AS sg WHERE g.from = sg.to). Consider raising max_recursive_cte_evaluation_depth setting.: While executing RecursiveCTESource. (TOO_DEEP_RECURSION)
+```
+
+循環を処理する標準的な方法は、すでに訪問したノードの配列を計算することです。
+
+**例:** 循環検出付きのグラフ走査
+
+```sql
+WITH RECURSIVE search_graph AS (
+    SELECT from, to, label, false AS is_cycle, [tuple(g.from, g.to)] AS path FROM graph g
+UNION ALL
+    SELECT g.from, g.to, g.label, has(path, tuple(g.from, g.to)), arrayConcat(sg.path, [tuple(g.from, g.to)])
+    FROM graph g, search_graph sg
+    WHERE g.from = sg.to AND NOT is_cycle
+)
+SELECT * FROM search_graph WHERE is_cycle ORDER BY from;
+```
+
+```text
+┌─from─┬─to─┬─label──┬─is_cycle─┬─path──────────────────────┐
+│    1 │  4 │ 1 -> 4 │ true     │ [(1,4),(4,5),(5,1),(1,4)] │
+│    4 │  5 │ 4 -> 5 │ true     │ [(4,5),(5,1),(1,4),(4,5)] │
+│    5 │  1 │ 5 -> 1 │ true     │ [(5,1),(1,4),(4,5),(5,1)] │
+└──────┴────┴────────┴──────────┴───────────────────────────┘
+```
+
+<div id="infinite-queries">
+  ### 無限クエリ
+</div>
+
+外側のクエリで `LIMIT` を使用する場合は、無限再帰 CTE クエリも使用できます。
+
+**例:** 無限再帰 CTE クエリ
+
+```sql
+WITH RECURSIVE test_table AS (
+    SELECT 1 AS number
+UNION ALL
+    SELECT number + 1 FROM test_table
+)
+SELECT sum(number) FROM (SELECT number FROM test_table LIMIT 100);
+```
+
+```text
+┌─sum(number)─┐
+│        5050 │
+└─────────────┘
+```
+
+<div id="trailing-comma">
+  ## 末尾のカンマ
+</div>
+
+`WITH`句では、最後の要素の後にもカンマを付けられます。
+
+```sql
+WITH
+    (SELECT sum(number) FROM numbers(10)) AS total,
+    total * 2 AS doubled,
+SELECT total, doubled;
+```

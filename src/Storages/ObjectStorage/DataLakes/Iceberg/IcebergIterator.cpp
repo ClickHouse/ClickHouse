@@ -190,7 +190,6 @@ std::optional<ProcessedManifestFileEntryPtr> SingleThreadIcebergKeysIterator::ne
             current_manifest_file_iterator = Iceberg::ManifestFileIterator::create(
                 manifest_file_cacheable_part.deserializer,
                 manifest_list_entry.manifest_file_path,
-                persistent_components.format_version,
                 persistent_components.path_resolver,
                 *persistent_components.schema_processor,
                 manifest_list_entry.added_sequence_number,

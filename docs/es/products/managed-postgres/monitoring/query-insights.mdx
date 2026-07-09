@@ -1,0 +1,260 @@
+---
+slug: /cloud/managed-postgres/monitoring/query-insights
+sidebarTitle: 'Query insights'
+title: 'Query insights de Postgres'
+description: 'Telemetría por sentencia para Managed Postgres: todos los patrones de consulta que ejecuta tu base de datos, ordenados por impacto, con los contadores de diagnóstico que explican por qué cada uno es lento'
+keywords: ['managed postgres', 'query insights', 'pg_stat_ch', 'consultas lentas', 'latencia p99', 'patrones de consulta', 'rendimiento de postgres', 'bloques temporales', 'workers en paralelo', 'wal']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
+
+Query Insights captura la telemetría por sentencia de tu instancia de
+[Managed Postgres](/es/products/managed-postgres/overview) y clasifica cada patrón de consulta
+según su impacto, para que puedas pasar de &quot;el p99 está aumentando&quot; a &quot;este patrón
+se está volcando a disco&quot; sin salir de la Cloud Console.
+
+Los datos provienen de [`pg_stat_ch`](https://github.com/clickhouse/pg_stat_ch),
+la extensión de Postgres de código abierto que transmite contadores por sentencia a
+ClickHouse Cloud. La telemetría se normaliza dentro de Postgres antes de salir
+de la base de datos: se eliminan los literales y se sustituyen por marcadores de posición, de modo que los
+valores exactos que consultas nunca entran en el flujo de telemetría.
+
+<div id="open">
+  ## Abra Query insights
+</div>
+
+Abra su instancia de Managed Postgres en la Cloud Console y haga clic en
+**Query insights** en la barra lateral izquierda. La página se divide en cuatro
+secciones, en el orden en que realmente las usaría:
+
+* Un **Overview** que permite ver el estado general de la base de datos en una sola pantalla.
+* Una tabla de **Slow patterns** que clasifica cada patrón de consulta que su base de datos
+  ha ejecutado, ordenada según lo que sospeche.
+* Un panel de **Recent queries** que muestra las ejecuciones individuales en orden cronológico inverso.
+* Un **panel lateral de detalles** que agrega todos los contadores de un mismo patrón.
+
+Use el selector de **Time period** en la parte superior para alternar entre los últimos 15
+minutos, la última hora, el último día, la última semana o el último mes. El tamaño del bucket de agregación se ajusta
+automáticamente: buckets de 1 minuto para los últimos 15 minutos o la última hora,
+de 5 minutos para el último día y de 1 hora para la última semana o el último mes, para que los
+gráficos sigan respondiendo con fluidez.
+
+<div id="overview">
+  ## Overview
+</div>
+
+El Overview es una cuadrícula de 3×2 con seis paneles:
+
+| Panel                           | Qué muestra                                                                                                                                                 |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Consultas/s**                 | Volumen de consultas normalizado como una tasa en la ventana seleccionada.                                                                                  |
+| **Latencia de consultas**       | Media, p50, p95 y p99 en un solo gráfico, para que puedas ver cuándo la cola se aleja de la mediana.                                                        |
+| **Desglose de operaciones**     | Un gráfico de anillo con la proporción real de operaciones `SELECT`, `INSERT`, `UPDATE` y otras que componen la carga de trabajo.                           |
+| **Filas devueltas / afectadas** | Total de filas que la carga de trabajo movió durante la ventana.                                                                                            |
+| **Tasa de aciertos del búfer**  | Un gráfico de anillo que compara los bloques compartidos encontrados en caché con los bloques compartidos leídos, con el tiempo total de CPU en la leyenda. |
+| **Errores**                     | Recuento total de errores, desglosado a lo largo del tiempo.                                                                                                |
+
+Una sola pantalla te indica si la base de datos está en buen estado. Una instancia en buen estado
+tiene un patrón reconocible: una tasa de aciertos del búfer por encima del 90 %, un volumen de consultas
+que evoluciona con el tráfico de la aplicación, una tasa de errores estable o nula, y latencias
+percentilares que se mantienen muy próximas entre sí.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="Overview de Query Insights que muestra las seis tarjetas de estadísticas: consultas por segundo, percentiles de latencia de consultas, gráfico de anillo del desglose de operaciones, gráfico de áreas de filas devueltas, gráfico de anillo de la tasa de aciertos del búfer al 95,2 % y gráfico de columnas de errores" size="lg" border />
+
+<div id="slow-patterns">
+  ## Slow patterns
+</div>
+
+Cuando el resumen apunta a problemas, la tabla de patrones es donde
+empieza la investigación. Una fila por cada patrón de consulta normalizado, con los
+literales eliminados para que las ejecuciones de la misma sentencia queden agrupadas en
+la misma fila.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="Tabla de patrones de consultas lentas que muestra una fila por cada consulta normalizada con las columnas Base de datos, Usuario, Operación, Llamadas, Errores, Latencia media, P95, Latencia máxima, Tiempo de ejecución total, Filas devueltas y Aciertos en caché" size="lg" border />
+
+<div id="sort">
+  ### Ordena por lo que sospeches
+</div>
+
+La tabla se ordena de forma predeterminada por **Tiempo de ejecución total** en orden descendente. Cuando la ordenas de esta
+forma, el primer patrón suele ser la respuesta a &quot;¿qué es lo que más me
+cuesta?&quot;. Puede que no sea el patrón más lento por sí solo. Una consulta que se ejecuta
+ocho millones de veces al día en doce milisegundos puede importar más que
+una que se ejecutó una sola vez en tres segundos.
+
+Cada ordenación te da una perspectiva distinta:
+
+* **Tiempo de ejecución total** — donde la base de datos empleó más tiempo de reloj.
+* **Tiempo de CPU** — patrones intensivos en cómputo.
+* **Llamadas** — patrones de alta frecuencia.
+* **Errores** — fallos repetidos.
+* **Latencia prom. / P50 / P95 / P99 / máx.** — casos atípicos, por percentil.
+* **Filas devueltas**, **Bloques leídos**, **Bloques en caché**, **Bytes de WAL** —
+  patrones que movieron la mayor cantidad de datos a través del motor, la caché o
+  el registro de escritura anticipada.
+
+Haz clic en el botón **Columnas** para mostrar u ocultar columnas adicionales.
+La tabla de patrones muestra 19 columnas en total, incluido el desglose por percentiles,
+la proporción de aciertos de caché y el tiempo de CPU por patrón.
+
+<div id="filters">
+  ### Limita la tabla
+</div>
+
+Filtra la tabla según la parte de tu carga de trabajo que estés
+investigando:
+
+* **Base de datos**
+* **Usuario**
+* **Operación** (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, …)
+* **Aplicación** — el `application_name` de la cadena de conexión
+
+&quot;Muéstrame solo lo que hace el servicio de pedidos en la base de datos `sales`&quot;
+se convierte en dos menús desplegables. Los valores de filtro se rellenan automáticamente a partir de lo que tu
+instancia ha ejecutado realmente.
+
+<div id="recent-queries">
+  ## Recent queries
+</div>
+
+Debajo de la tabla de patrones, el panel de **Recent queries** muestra las
+ejecuciones individuales en orden cronológico inverso: una fila por cada
+instrucción ejecutada, no una fila por patrón. Úsalo cuando quieras ver el flujo de eventos
+sin procesar en lugar de un agregado; por ejemplo, para comprobar puntualmente que una corrección
+se aplicó o para encontrar el momento exacto en que se produjo un error.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-recent-queries.webp" alt="Tabla de Recent queries con menús desplegables de filtro de Database, User, Operation y Application, y columnas para Time, Operation, Query, Duration, Rows, Database, User y Blks read" size="lg" border />
+
+Las columnas predeterminadas son Time, Operation, Query, Duration, Rows,
+Database, User y Blks read. Abre el selector de **columnas** para ver
+Application, Blks hit, CPU user, CPU sys y PID. La tabla admite
+los mismos filtros de Database, User, Operation y Application que la
+tabla de patrones, y se puede ordenar por Time, Duration, Rows, Blks read y
+CPU time.
+
+Haz clic en cualquier fila para abrir el mismo panel lateral de detalles que en la tabla de patrones,
+acotado al patrón de esa única ejecución.
+
+<div id="detail">
+  ## Panel lateral de detalles
+</div>
+
+Haz clic en cualquier fila de la tabla de patrones o consultas recientes y el panel lateral de **detalles de la consulta** se abre a la derecha. El panel lateral toma cada ejecución
+de ese patrón dentro del intervalo de tiempo seleccionado y agrega los
+contadores que explican por qué es lenta.
+
+El panel lateral es un único panel desplazable con cinco secciones:
+
+* **Patrón de consulta** — el SQL normalizado con los literales reemplazados por `$1`,
+  `$2`, … y un botón para copiar al portapapeles.
+* **Uso agregado de recursos** — una cuadrícula de 13 tarjetas de estadísticas que cubren el total de
+  llamadas, latencia prom./P95/P99/máx., tiempo total de ejecución, filas devueltas, tasa de aciertos en caché,
+  bloques leídos, bloques encontrados en caché, tiempo de CPU, bytes de WAL y errores.
+* **Contexto de la consulta** — la base de datos, el usuario, la operación y la aplicación
+  de la que procede este patrón.
+* **Ejecuciones destacadas** — errores, ejecuciones inusualmente lentas y
+  ejecuciones con resultados grandes, mostradas antes de la lista completa de ejecuciones recientes.
+* **Ejecuciones recientes** — las ejecuciones individuales del mismo patrón,
+  con contadores por ejecución.
+
+<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="Panel lateral de detalles de la consulta que muestra el bloque de código de Patrón de consulta y la cuadrícula de Uso agregado de recursos con trece tarjetas de estadísticas, incluidas llamadas totales, percentiles de latencia, tiempo total de ejecución, filas devueltas, tasa de aciertos en caché, bloques leídos, bloques encontrados en caché, tiempo de CPU, bytes de WAL y errores" size="md" border />
+
+<Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="Continuación del panel lateral de detalles de la consulta, que muestra la sección Contexto de la consulta con base de datos, usuario, operación y aplicación, y una tarjeta de Ejecuciones recientes con timestamp, estado OK, rol del servidor, ID del host y contadores por ejecución de duración, filas, aciertos en caché, CPU, bloques compartidos leídos y bloques compartidos encontrados en caché" size="md" border />
+
+<div id="counters">
+  ### Contadores por ejecución
+</div>
+
+Al expandir una ejecución reciente, verás los contadores que muestran con precisión en qué
+se fue el tiempo:
+
+* **Bloques compartidos** — las lecturas y los aciertos se muestran siempre; las escrituras y los bloques sucios
+  se muestran cuando no son cero.
+* **Operaciones con bloques locales y temporales** — si las operaciones con bloques temporales son distintas de cero, significa que una ordenación o una operación hash
+  se volcó a disco.
+* **Tiempo de lectura / escritura** — tiempo de E/S, separado del tiempo de CPU.
+* **Tiempo de CPU** — usuario y sistema, por separado.
+* **Workers en paralelo** — planificados frente a los realmente iniciados.
+* **JIT** — tiempo total de compilación JIT y cantidad de funciones.
+* **WAL** — bytes y número de registros.
+
+Todo lo necesario para diagnosticar un patrón lento está en un solo lugar, en una sola
+pantalla.
+
+<div id="api">
+  ## API de Query insights
+</div>
+
+La misma telemetría está disponible mediante programación a través de
+[ClickHouse Cloud OpenAPI](/es/products/managed-postgres/openapi#query-insights).
+La tabla [Slow patterns](#slow-patterns) se corresponde con el
+endpoint
+[list slow query patterns](/es/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternsGetList),
+y el [panel lateral de detalles](#detail) se corresponde con el
+endpoint
+[get slow query pattern](/es/api-reference/organization/get-list-of-available-organizations#tag/Postgres/operation/slowQueryPatternGet),
+que devuelve las métricas agregadas de un patrón junto con sus
+ejecuciones recientes.
+
+<div id="how-it-works">
+  ## Cómo funciona
+</div>
+
+<div id="how-normalized">
+  ### Normalizado en Postgres, antes de pasar por la red
+</div>
+
+`pg_stat_ch` se engancha a la fase de análisis sintáctico, sustituye cada literal por un
+marcador de posición (`$1`, `$2`, …) y almacena en caché el patrón resultante en una
+LRU por backend indexada por `queryid`. Cuando el ejecutor termina la
+sentencia, ese patrón almacenado en caché es lo que se adjunta al evento. La
+sentencia exacta con valores nunca sale de la base de datos.
+
+<div id="how-overhead">
+  ### Sin interferir con la base de datos
+</div>
+
+El productor añade aproximadamente un 3 % de sobrecarga por sentencia. La ruta de encolado
+usa un try-lock no bloqueante sobre un búfer circular en memoria compartida. Bajo
+carga, la extensión descarta eventos y los contabiliza con un contador, en lugar de
+aplicar contrapresión a Postgres.
+
+<div id="how-raw-events">
+  ### Eventos sin procesar, no agregados
+</div>
+
+`pg_stat_ch` emite un evento sin procesar por cada sentencia ejecutada (de nivel superior y
+anidada), según el muestreo aplicado. Cada percentil, ranking y desglose
+en la UI es una consulta de ClickHouse sobre el mismo flujo de eventos.
+
+<div id="how-engine">
+  ### El mismo motor que usan nuestros clientes
+</div>
+
+El backend de Insights es [ClickHouse Cloud](/es/products/cloud/getting-started/intro).
+La telemetría por consulta de una instancia de Postgres con mucha actividad genera millones de filas
+al día; la compresión columnar hace que sea económico conservar durante meses los detalles de cada ejecución,
+y las agregaciones en menos de un segundo sobre miles de millones de filas mantienen la
+UI interactiva mientras exploras datos de una semana o de un mes.
+
+<div id="how-open-source">
+  ### Código abierto
+</div>
+
+`pg_stat_ch` se distribuye bajo Apache 2.0. Ejecútalo con cualquier Postgres y envíalo a cualquier
+ClickHouse. El código fuente y los issues están en
+[github.com/clickhouse/pg&#95;stat&#95;ch](https://github.com/clickhouse/pg_stat_ch).
+
+<div id="related">
+  ## Páginas relacionadas
+</div>
+
+* [Panel de monitoreo](/es/products/managed-postgres/monitoring/dashboard) — gráficos integrados de recursos y actividad
+* [Endpoint de Prometheus](/es/products/managed-postgres/monitoring/prometheus) — recopila métricas a nivel de host en tu propia pila de observabilidad
+* [Managed Postgres OpenAPI](/es/products/managed-postgres/openapi#query-insights) — consulta patrones lentos y ejecuciones recientes de forma programática
+* [Extensiones](/es/products/managed-postgres/extensions) — las extensiones disponibles en las instancias de Managed Postgres
+* [`pg_stat_ch` en GitHub](https://github.com/clickhouse/pg_stat_ch) — la extensión de código abierto que potencia Query Insights

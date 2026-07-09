@@ -4,13 +4,12 @@ import os
 import random
 import uuid
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 import pyarrow as pa
 import pytest
-import urllib3
 import pytz
-from datetime import datetime, timedelta
-from minio import Minio
+from datetime import timedelta
 from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.schema import Schema
@@ -29,7 +28,7 @@ from pyiceberg.types import (
     DecimalType,
 )
 
-from helpers.cluster import ClickHouseCluster, ClickHouseInstance
+from helpers.cluster import ClickHouseCluster
 from helpers.mock_servers import start_mock_servers
 
 import boto3
@@ -206,6 +205,13 @@ def create_clickhouse_glue_database(
         "region": "us-east-1",
     }
 
+    # The Glue catalog API client is subject to the server-managed credential restriction. Unless the session
+    # opts in via `s3_allow_server_credentials_in_user_queries`, the creator must pass explicit catalog
+    # credentials instead of falling back to the server's AWS identity (moto accepts any non-empty values).
+    if not query_settings.get("s3_allow_server_credentials_in_user_queries"):
+        settings["aws_access_key_id"] = minio_access_key
+        settings["aws_secret_access_key"] = minio_secret_key
+
     settings.update(additional_settings)
 
     credential_args = f",'{minio_access_key}', '{minio_secret_key}'" if with_credentials else ""
@@ -219,6 +225,7 @@ SETTINGS {",".join((k+"="+repr(v) for k, v in settings.items()))}
         settings={
             "allow_database_glue_catalog": 1,
             "write_full_path_in_iceberg_metadata": 1,
+            **query_settings,
         },
     )
 
@@ -292,6 +299,21 @@ def started_cluster():
         cluster.shutdown()
 
 
+@pytest.fixture(autouse=True)
+def clean_catalog(started_cluster):
+    # All tests share one module-scoped Glue catalog. Listing operations such as
+    # SHOW TABLES enumerate every namespace and make one sequential Glue call per
+    # namespace, so leftover namespaces from earlier tests make these calls grow
+    # unbounded and eventually exceed query timeouts. Drop everything each test
+    # created so the catalog stays bounded to the running test.
+    yield
+    catalog = load_catalog_impl(started_cluster)
+    for namespace in catalog.list_namespaces():
+        for table in catalog.list_tables(namespace):
+            catalog.drop_table(table)
+        catalog.drop_namespace(namespace)
+
+
 def test_no_secrets_in_logs(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -307,6 +329,10 @@ def test_no_secrets_in_logs(started_cluster):
         "warehouse": "test",
         "storage_endpoint": "http://minio1:9001/warehouse-glue",
         "region": "us-east-1",
+        # The Glue catalog API client is restricted; pass explicit catalog credentials instead of relying on
+        # the server's AWS identity (moto accepts any non-empty values).
+        "aws_access_key_id": minio_access_key,
+        "aws_secret_access_key": minio_secret_key,
     }
 
     qid_db = uuid.uuid4().hex
@@ -596,7 +622,7 @@ def test_empty_table(started_cluster):
     catalog = load_catalog_impl(started_cluster)
     catalog.create_namespace(root_namespace)
 
-    table = create_table(catalog, root_namespace, table_name)
+    create_table(catalog, root_namespace, table_name)
 
     create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
     assert len(node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`")) == 0
@@ -707,6 +733,75 @@ def test_create(started_cluster):
     create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String)")
     node.query(f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES ('AAPL');", settings={"allow_insert_into_iceberg": 1, 'write_full_path_in_iceberg_metadata': 1})
     assert node.query(f"SELECT * FROM {CATALOG_NAME}.`{root_namespace}.{table_name}`") == "AAPL\n"
+
+
+def test_schema_evolution(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_schema_evolution_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+
+    node.query(f"ALTER TABLE {table_ref} ADD COLUMN z Nullable(String);", settings=write_settings)
+    assert "z" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings) == "123\t1\t\\N\n"
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('456', 2, 'hello');", settings=write_settings)
+    assert (
+        node.query(f"SELECT x, y, z FROM {table_ref} ORDER BY ALL", settings=write_settings)
+        == "123\t1\t\\N\n456\t2\thello\n"
+    )
+
+    node.query(f"ALTER TABLE {table_ref} RENAME COLUMN z TO w;", settings=write_settings)
+    assert "w" in node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    assert (
+        node.query(f"SELECT x, y, w FROM {table_ref} ORDER BY ALL", settings=write_settings)
+        == "123\t1\t\\N\n456\t2\thello\n"
+    )
+
+
+def test_writes_schema_evolution_concurrent_add_columns(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_writes_schema_evolution_concurrent_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+    table_ref = f"{CATALOG_NAME}.`{root_namespace}.{table_name}`"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_glue_table(started_cluster, node, root_namespace, table_name, "(x String, y Int32)")
+
+    node.query(f"INSERT INTO {table_ref} VALUES ('123', 1);", settings=write_settings)
+
+    num_columns = 10
+
+    def add_column(idx):
+        node.query(
+            f"ALTER TABLE {table_ref} ADD COLUMN col_{idx} Nullable(String);",
+            settings=write_settings,
+        )
+
+    with ThreadPoolExecutor(max_workers=num_columns) as executor:
+        list(executor.map(add_column, range(num_columns)))
+
+    description = node.query(f"DESCRIBE TABLE {table_ref}", settings=write_settings)
+    for idx in range(num_columns):
+        assert f"col_{idx}" in description, f"col_{idx} missing from:\n{description}"
+
+    columns = [line.split("\t")[0] for line in description.strip().split("\n")]
+    assert sorted(columns) == sorted(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
+
+    select_cols = ", ".join(["x", "y"] + [f"col_{idx}" for idx in range(num_columns)])
+    expected = "123\t1" + "\t\\N" * num_columns + "\n"
+    assert node.query(f"SELECT {select_cols} FROM {table_ref} ORDER BY ALL", settings=write_settings) == expected
 
 
 def test_drop_table(started_cluster):
@@ -829,8 +924,84 @@ def test_show_tables_optimization(started_cluster):
         f"Get table information for table {root_namespace}.{table_name}"
     )
 
-    node.query(f"SYSTEM ENABLE FAILPOINT lightweight_show_tables")
+    node.query("SYSTEM ENABLE FAILPOINT lightweight_show_tables")
     node.query(f"SHOW TABLES FROM {CATALOG_NAME}", timeout=5)
+
+
+def test_typo_hint_does_not_trigger_heavyweight_fetch(started_cluster):
+    """
+    Regression test for the high-memory typo-hint path on a DataLake (Glue) database.
+
+    When a query references a table that does not exist, the UNKNOWN_TABLE error
+    path builds a "maybe you meant ...?" suggestion through
+    TableNameHints -> getAllRegisteredNames -> IDatabase::getAllTableNames. Before
+    this fix DatabaseDataLake did not override getAllTableNames, so the base
+    implementation iterated getTablesIterator and fetched per-table metadata from
+    the catalog (one heavyweight S3 read per table). With many tables this hint
+    lookup alone could exhaust the server's memory. The fix overrides
+    getAllTableNames to return getCatalog()->getTables() (table names only).
+
+    INSERT resolves its target table through the throwing DatabaseCatalog::getTable
+    overload independently of the analyzer, so it deterministically drives the
+    hint path. show_data_lake_catalogs_in_system_tables=1 is required: otherwise
+    getAllRegisteredNames short-circuits for remote databases and getAllTableNames
+    is never reached, so the override would not be exercised at all.
+
+    Signal: the log line emitted once per table inside
+    DatabaseDataLake::getTablesIterator. Counting it scoped to this namespace
+    makes the measurement exact and immune to other tables in the catalog. A
+    global S3GetObject counter is deliberately NOT used: catalog metadata is
+    cached across queries, so a repeated heavyweight iteration issues no new S3
+    GET requests even though it still walks every table.
+
+    Pre-fix the marker fires once per table (N). With the fix it stays at 0.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_hint_heavy_{uuid.uuid4().hex[:8]}"
+    namespace = f"{test_ref}_ns"
+    N = 20
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    try:
+        for i in range(N):
+            tbl = create_table(catalog, namespace, f"{test_ref}_t{i:02d}")
+            tbl.append(generate_arrow_data(1))
+
+        create_clickhouse_glue_database(started_cluster, node, CATALOG_NAME)
+
+        # Emitted once per table inside DatabaseDataLake::getTablesIterator. If the
+        # message is ever rephrased, update this marker.
+        marker = f"Get table information for table {namespace}."
+        baseline = int(node.count_in_log(marker).strip())
+
+        # Reference a non-existent table; this must raise UNKNOWN_TABLE and on the
+        # way build the typo hint that walks getAllTableNames.
+        error = node.query_and_get_error(
+            f"INSERT INTO {CATALOG_NAME}.`{namespace}.does_not_exist` VALUES (1)",
+            settings={"show_data_lake_catalogs_in_system_tables": 1},
+        )
+        assert "UNKNOWN_TABLE" in error or "does not exist" in error, (
+            f"Expected an UNKNOWN_TABLE error for a non-existent table, got: {error}"
+        )
+
+        fetches = int(node.count_in_log(marker).strip()) - baseline
+        assert fetches == 0, (
+            f"The typo-hint lookup for a non-existent table triggered {fetches} "
+            f"per-table metadata fetches (expected 0; the namespace has {N} tables). "
+            f"DatabaseDataLake.getAllTableNames is falling through to "
+            f"IDatabase::getAllTableNames -> getTablesIterator instead of using "
+            f"getCatalog()->getTables() directly."
+        )
+    finally:
+        try:
+            for i in range(N):
+                catalog.drop_table(f"{namespace}.{test_ref}_t{i:02d}")
+            catalog.drop_namespace(namespace)
+        except Exception:
+            pass
+
 
 def test_table_without_metadata_location(started_cluster):
     """
@@ -959,7 +1130,7 @@ def test_check_database(started_cluster):
 
     try:
         node.query(
-            f"SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
         )
     
         assert "fault when checking database" in node.query_and_get_error(
@@ -967,7 +1138,7 @@ def test_check_database(started_cluster):
         )
     finally:
         node.query(
-            f"SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
+            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
         )
 
 def test_sts_smoke(started_cluster):
@@ -1005,7 +1176,7 @@ def test_sts_smoke(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "wrongsession",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1031,11 +1202,88 @@ def test_sts_smoke(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
         },
-        query_settings={},
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
     # Query should succeed with correct session name
+    result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
+    assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
+
+    # Cleanup
+    node.query(f"DROP DATABASE IF EXISTS {db_name_fail} SYNC")
+    node.query(f"DROP DATABASE IF EXISTS {db_name_success} SYNC")
+
+
+def test_sts_external_id(started_cluster):
+    """Test that `aws_external_id` reaches the STS AssumeRole request from the
+    Glue catalog database engine. The mock STS only vends working credentials
+    when the supplied ExternalId matches, so the negative case fails purely on
+    the external id (the role session name is correct in both cases)."""
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_sts_external_id_{uuid.uuid4()}"
+    table_name = f"{test_ref}_table"
+    root_namespace = f"{test_ref}_namespace"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(root_namespace)
+
+    schema = Schema(
+        NestedField(field_id=1, name="id", field_type=StringType(), required=False),
+        NestedField(field_id=2, name="value", field_type=DoubleType(), required=False),
+    )
+    table = create_table(catalog, root_namespace, table_name, schema, PartitionSpec(), DEFAULT_SORT_ORDER, dir=table_name)
+
+    data = [
+        {"id": "row1", "value": 10.0},
+        {"id": "row2", "value": 20.0},
+        {"id": "row3", "value": 30.0},
+    ]
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    # Negative: correct role session name but wrong external id - should fail.
+    db_name_fail = f"db_fail_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_fail,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+            "aws_external_id": "wrong_external_id",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+
+    try:
+        result = node.query(
+            f"SELECT sum(value) FROM {db_name_fail}.`{root_namespace}.{table_name}` "
+            f"SETTINGS s3_max_single_read_retries = 1, s3_retry_attempts = 1, s3_request_timeout_ms = 1000"
+        )
+        assert False, f"Expected query to fail with wrong external id but got result: {result}"
+    except Exception as e:
+        error_str = str(e)
+        assert "403" in error_str or "Failed to get object info" in error_str or "HTTP response code: 403" in error_str, \
+            f"Expected 403 error but got: {error_str}"
+
+    # Positive: correct role session name and external id - should succeed.
+    db_name_success = f"db_success_{test_ref.replace('-', '_')}"
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name_success,
+        additional_settings={
+            "aws_role_arn": "arn::role",
+            "aws_role_session_name": "miniorole",
+            "aws_external_id": "miniexternalid",
+        },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+        with_credentials=False,
+    )
+
     result = node.query(f"SELECT sum(value) FROM {db_name_success}.`{root_namespace}.{table_name}`")
     assert result.strip() == "60", f"Expected sum to be 60 but got: {result}"
 
@@ -1093,6 +1341,7 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
             "aws_role_arn": "arn::role",
             "aws_role_session_name": "miniorole",
         },
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
         with_credentials=False,
     )
 
@@ -1156,3 +1405,73 @@ def test_sts_credential_refresh_on_expired_token(started_cluster):
     )
 
     node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_unavailable_after_restart_under_restriction(started_cluster):
+    # A Glue `DataLakeCatalog` whose catalog credentials are server-managed (no explicit keys -> resolved from
+    # the server environment) is created under the per-session opt-in. After a restart it is reloaded under the
+    # default restriction (`s3_allow_server_credentials_in_user_queries = 0`); the server must still start, but
+    # the catalog is left unavailable (governed by `s3_load_table_anonymously_if_credentials_restricted`) rather
+    # than silently reusing the server identity or aborting startup.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_server_cred_restart_{uuid.uuid4().hex}"
+
+    create_clickhouse_glue_database(
+        started_cluster,
+        node,
+        db_name,
+        with_credentials=False,
+        query_settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+    # Works while the creating session allows server-managed credentials for the catalog.
+    node.query(
+        f"SHOW TABLES FROM {db_name}",
+        settings={"s3_allow_server_credentials_in_user_queries": 1},
+    )
+
+    node.restart_clickhouse()
+
+    # The server starts even though the catalog can no longer resolve its (server-managed) credentials.
+    assert node.query("SELECT 1").strip() == "1"
+    # Reloaded under the default restriction, the catalog is unavailable. Querying a table goes through the
+    # catalog client (`getCatalog`) and reports the restriction, rather than silently reusing the server
+    # identity. (`SHOW TABLES` intentionally swallows catalog errors so `system.tables` does not fail, so it
+    # is not a reliable probe here.)
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_glue_catalog_user_attach_under_restriction_is_rejected(started_cluster):
+    # A user ATTACH DATABASE of a catalog that resolves server-managed credentials must stay fail-closed for a
+    # restricted user. The catalog is built lazily (on first access, not at ATTACH), so the ATTACH itself
+    # succeeds but the database is inaccessible: the first query against it is refused because the catalog
+    # resolves server-managed credentials that are restricted for user queries.
+    node = started_cluster.instances["node1"]
+    db_name = f"glue_user_attach_{uuid.uuid4().hex}"
+    allow = {"s3_allow_server_credentials_in_user_queries": 1}
+
+    create_clickhouse_glue_database(
+        started_cluster, node, db_name, with_credentials=False, query_settings=allow
+    )
+    node.query(f"DETACH DATABASE {db_name}")
+
+    # Re-attaching as a user query under the default restriction succeeds (lazy), but the database is
+    # fail-closed: accessing a table goes through the catalog client (`getCatalog`), which resolves the
+    # restricted server credentials and is refused. (`SHOW TABLES` intentionally swallows catalog errors, so it
+    # is not a reliable probe.)
+    node.query(f"ATTACH DATABASE {db_name}")
+    error = node.query_and_get_error(f"SELECT * FROM {db_name}.`unavailable.table`")
+    assert (
+        "ACCESS_DENIED" in error
+        or "server-managed" in error
+        or "s3_allow_server_credentials_in_user_queries" in error
+    ), error
+
+    # With the opt-in the database is usable again, so it can be cleaned up.
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC", settings=allow)

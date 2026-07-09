@@ -1,0 +1,162 @@
+---
+sidebarTitle: 'إدخال البيانات من Postgres إلى ClickHouse'
+description: 'اربط Postgres لديك بـ ClickHouse Cloud بسهولة.'
+slug: /integrations/clickpipes/postgres
+title: 'إدخال البيانات من Postgres إلى ClickHouse (باستخدام CDC)'
+keywords: ['PostgreSQL', 'ClickPipes', 'CDC', 'التقاط تغييرات البيانات', 'النسخ المتماثل لقاعدة البيانات']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يمكنك استخدام ClickPipes لاستيراد البيانات من قاعدة بيانات Postgres المصدر لديك إلى ClickHouse Cloud. ويمكن استضافة قاعدة بيانات Postgres المصدر ضمن بنيتك التحتية المحلية أو في السحابة، بما في ذلك Amazon RDS وGoogle Cloud SQL وAzure Database for Postgres وSupabase وغيرها.
+
+يمكن نشر Postgres ClickPipes وإدارتها يدويًا باستخدام واجهة مستخدم ClickPipes، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+للبدء، عليك أولاً التأكد من أن قاعدة بيانات Postgres لديك مُعدّة بشكل صحيح. وبناءً على مثيل Postgres المصدر الذي تستخدمه، يمكنك اتباع أيٍّ من الأدلة التالية:
+
+1. [Amazon RDS Postgres](/ar/integrations/clickpipes/postgres/source/rds)
+
+2. [Amazon Aurora Postgres](/ar/integrations/clickpipes/postgres/source/aurora)
+
+3. [Supabase Postgres](/ar/integrations/clickpipes/postgres/source/supabase)
+
+4. [Google Cloud SQL Postgres](/ar/integrations/clickpipes/postgres/source/google-cloudsql)
+
+5. [Azure Flexible Server for Postgres](/ar/integrations/clickpipes/postgres/source/azure-flexible-server-postgres)
+
+6. [Neon Postgres](/ar/integrations/clickpipes/postgres/source/neon-postgres)
+
+7. [Crunchy Bridge Postgres](/ar/integrations/clickpipes/postgres/source/crunchy-postgres)
+
+8. [مصدر Postgres عام](/ar/integrations/clickpipes/postgres/source/generic)، إذا كنت تستخدم أي موفّر Postgres آخر أو مثيلاً ذاتي الاستضافة.
+
+9. [TimescaleDB](/ar/integrations/clickpipes/postgres/source/timescale)، إذا كنت تستخدم امتداد TimescaleDB على خدمة مُدارة أو مثيلاً ذاتي الاستضافة.
+
+<Warning>
+  وكلاء Postgres مثل PgBouncer وRDS Proxy وSupabase Pooler وغيرها غير مدعومين في النسخ المتماثل المعتمد على CDC. يُرجى التأكد من عدم استخدامها عند إعداد ClickPipes، واستخدام تفاصيل الاتصال الخاصة بقاعدة بيانات Postgres الفعلية بدلاً منها.
+</Warning>
+
+بمجرد إعداد قاعدة بيانات Postgres المصدر، يمكنك متابعة إنشاء ClickPipe.
+
+<div id="creating-your-clickpipe">
+  ## إنشاء ClickPipe الخاص بك
+</div>
+
+تأكد من أنك مسجّل الدخول إلى حسابك في ClickHouse Cloud. إذا لم يكن لديك حساب بعد، يمكنك التسجيل [هنا](https://cloud.clickhouse.com/).
+
+[//]: # "   TODO update image here"
+
+1. في ClickHouse Cloud console، انتقل إلى خدمة ClickHouse Cloud الخاصة بك.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
+
+2. حدِّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;Set up a ClickPipe&quot;
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد الواردات" size="lg" border />
+
+3. حدِّد مربع `Postgres CDC`
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="تحديد Postgres" size="lg" border />
+
+<div id="adding-your-source-postgres-database-connection">
+  ### إضافة تفاصيل اتصال قاعدة بيانات Postgres المصدر
+</div>
+
+4. أدخل تفاصيل الاتصال لقاعدة بيانات Postgres المصدر التي أعددتها في خطوة المتطلبات الأساسية.
+
+<Info>
+  قبل البدء في إضافة تفاصيل الاتصال، تأكد من أنك أدرجت عناوين IP الخاصة بـ ClickPipes ضمن قواعد جدار الحماية المسموح بها. يمكنك العثور على قائمة عناوين IP الخاصة بـ ClickPipes [هنا](/ar/integrations/clickpipes/home#list-of-static-ips).
+  لمزيد من المعلومات، راجع أدلة إعداد Postgres المصدر المشار إليها في [أعلى هذه الصفحة](#prerequisites).
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="أدخل تفاصيل الاتصال" size="lg" border />
+
+<div id="optional-setting-up-aws-private-link">
+  #### (اختياري) إعداد AWS Private Link
+</div>
+
+يمكنك استخدام AWS Private Link للاتصال بقاعدة بيانات Postgres المصدر إذا كانت مستضافة على AWS. ويكون ذلك مفيدًا إذا كنت
+ترغب في الحفاظ على خصوصية نقل البيانات.
+يمكنك اتباع [دليل الإعداد لإعداد الاتصال](/ar/integrations/clickpipes/aws-privatelink).
+
+<div id="optional-setting-up-ssh-tunneling">
+  #### (اختياري) إعداد نفق SSH
+</div>
+
+يمكنك تحديد تفاصيل نفق SSH إذا كانت قاعدة بيانات Postgres المصدر غير متاحة للوصول العام.
+
+1. فعِّل مفتاح التبديل &quot;استخدام نفق SSH&quot;.
+
+2. أدخِل تفاصيل اتصال SSH.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="نفق SSH" size="lg" border />
+
+3. لاستخدام المصادقة بالمفتاح، انقر على &quot;إلغاء وإنشاء زوج مفاتيح&quot; لإنشاء زوج مفاتيح جديد، ثم انسخ المفتاح العام الذي تم إنشاؤه إلى خادم SSH ضمن `~/.ssh/authorized_keys`.
+
+4. انقر على &quot;التحقق من الاتصال&quot; للتحقق من الاتصال.
+
+<Note>
+  تأكد من السماح لـ [عنوان IP الخاص بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips) في قواعد جدار الحماية الخاصة بمضيف bastion الخاص بـ SSH، حتى يتمكن ClickPipes من إنشاء نفق SSH.
+</Note>
+
+بعد إدخال تفاصيل الاتصال، انقر على &quot;التالي&quot;.
+
+<div id="configuring-the-replication-settings">
+  ### تكوين إعدادات النسخ المتماثل
+</div>
+
+5. تأكد من اختيار replication slot من القائمة المنسدلة التي أنشأتها في خطوة المتطلبات الأساسية.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="اختيار replication slot" size="lg" border />
+
+<div id="advanced-settings">
+  #### الإعدادات المتقدمة
+</div>
+
+يمكنك تهيئة الإعدادات المتقدمة عند الحاجة. يرد أدناه وصف موجز لكل إعداد:
+
+* **فاصل المزامنة**: هو الفاصل الزمني الذي ستقوم عنده ClickPipes باستطلاع قاعدة البيانات المصدر بحثًا عن التغييرات. ولهذا الإعداد تأثير على خدمة ClickHouse الوجهة، لذا نوصي المستخدمين الحريصين على التكلفة بالإبقاء على هذه القيمة مرتفعة (أكثر من `3600`).
+* **الخيوط المتوازية للتحميل الأولي**: هذا هو عدد العاملين بالتوازي الذين سيُستخدمون لجلب اللقطة الأولية. ويكون هذا مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد العاملين بالتوازي المستخدمين لجلب اللقطة الأولية. هذا الإعداد يكون لكل جدول.
+* **حجم دفعة السحب**: عدد الصفوف التي سيتم جلبها في دفعة واحدة. هذا إعداد يُطبَّق على أساس أفضل جهد، وقد لا يُلتزم به في جميع الحالات.
+* **عدد الصفوف لكل قسم في اللقطة**: هذا هو عدد الصفوف التي سيتم جلبها في كل قسم أثناء اللقطة الأولية. ويكون هذا مفيدًا عندما يكون لديك عدد كبير من الصفوف في جداولك وتريد التحكم في عدد الصفوف التي يتم جلبها في كل قسم.
+* **عدد الجداول في اللقطة بالتوازي**: هذا هو عدد الجداول التي سيتم جلبها بالتوازي أثناء اللقطة الأولية. ويكون هذا مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد الجداول التي يتم جلبها بالتوازي.
+
+<div id="configuring-the-tables">
+  ### إعداد الجداول
+</div>
+
+6. هنا يمكنك تحديد قاعدة البيانات الوجهة لـ ClickPipe الخاص بك. يمكنك إما اختيار قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="اختيار قاعدة البيانات الوجهة" size="lg" border />
+
+7. يمكنك تحديد الجداول التي تريد نسخها من قاعدة بيانات Postgres المصدر. وأثناء تحديد الجداول، يمكنك أيضًا اختيار إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة، وكذلك استبعاد أعمدة معيّنة.
+
+<Warning>
+  إذا كنت تحدد مفتاح الترتيب في ClickHouse بشكل مختلف عن المفتاح الأساسي في Postgres، فلا تنسَ قراءة جميع [الاعتبارات](/ar/integrations/clickpipes/postgres/ordering-keys) المتعلقة بذلك
+</Warning>
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### راجع الأذونات وابدأ ClickPipe
+</div>
+
+8. اختر دور &quot;وصول كامل&quot; من القائمة المنسدلة للأذونات، ثم انقر على &quot;إكمال الإعداد&quot;.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الأذونات" size="lg" border />
+
+<div id="whats-next">
+  ## ما التالي؟
+</div>
+
+بمجرد إعداد ClickPipe لنسخ البيانات من PostgreSQL إلى ClickHouse Cloud، يمكنك التركيز على كيفية الاستعلام عن بياناتك ونمذجتها لتحقيق أفضل أداء. راجع [دليل الترحيل](/ar/get-started/migrate/postgres/overview) لتحديد الاستراتيجية الأنسب لمتطلباتك، وكذلك صفحتي [استراتيجيات إزالة التكرار (باستخدام CDC)](/ar/integrations/clickpipes/postgres/deduplication) و[مفاتيح الترتيب](/ar/integrations/clickpipes/postgres/ordering-keys) للاطلاع على أفضل الممارسات لأحمال عمل CDC.
+
+للاطلاع على الأسئلة الشائعة حول PostgreSQL CDC واستكشاف الأخطاء وإصلاحها، راجع [صفحة الأسئلة الشائعة حول Postgres](/ar/integrations/clickpipes/postgres/faq).

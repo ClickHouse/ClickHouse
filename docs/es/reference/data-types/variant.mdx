@@ -1,0 +1,615 @@
+---
+description: 'Documentación del tipo Variant en ClickHouse'
+sidebarTitle: 'Variant(T1, T2, ...)'
+slug: /sql-reference/data-types/variant
+title: 'Variant(T1, T2, ...)'
+doc_type: 'reference'
+---
+
+Este tipo representa una unión de otros tipos de datos. El tipo `Variant(T1, T2, ..., TN)` significa que cada fila de este tipo
+tiene un valor de tipo `T1`, `T2`, ... `TN` o ninguno de ellos (valor `NULL`).
+
+El orden de los tipos anidados no importa: Variant(T1, T2) = Variant(T2, T1).
+Los tipos anidados pueden ser tipos arbitrarios, excepto los tipos Nullable(...), LowCardinality(Nullable(...)) y Variant(...).
+
+<Note>
+  No se recomienda usar tipos similares como variantes (por ejemplo, distintos tipos numéricos como `Variant(UInt32, Int64)` o distintos tipos de fecha como `Variant(Date, DateTime)`),
+  porque trabajar con valores de esos tipos puede dar lugar a ambigüedades. De forma predeterminada, crear ese tipo `Variant` generará una excepción, pero puede habilitarse mediante la configuración `allow_suspicious_variant_types`
+</Note>
+
+<div id="creating-variant">
+  ## Creación de Variant
+</div>
+
+Uso del tipo `Variant` en la definición de una columna de una tabla:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT v FROM test;
+```
+
+```text
+┌─v─────────────┐
+│ ᴺᵁᴸᴸ          │
+│ 42            │
+│ Hello, World! │
+│ [1,2,3]       │
+└───────────────┘
+```
+
+Uso de CAST con columnas normales:
+
+```sql
+SELECT toTypeName(variant) AS type_name, 'Hello, World!'::Variant(UInt64, String, Array(UInt64)) as variant;
+```
+
+```text
+┌─type_name──────────────────────────────┬─variant───────┐
+│ Variant(Array(UInt64), String, UInt64) │ Hello, World! │
+└────────────────────────────────────────┴───────────────┘
+```
+
+Uso de las funciones `if/multiIf` cuando los argumentos no tienen un tipo común (para ello, debe estar habilitada la configuración `use_variant_as_common_type`):
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT if(number % 2, number, range(number)) as variant FROM numbers(5);
+```
+
+```text
+┌─variant───┐
+│ []        │
+│ 1         │
+│ [0,1]     │
+│ 3         │
+│ [0,1,2,3] │
+└───────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT multiIf((number % 4) = 0, 42, (number % 4) = 1, [1, 2, 3], (number % 4) = 2, 'Hello, World!', NULL) AS variant FROM numbers(4);
+```
+
+```text
+┌─variant───────┐
+│ 42            │
+│ [1,2,3]       │
+│ Hello, World! │
+│ ᴺᵁᴸᴸ          │
+└───────────────┘
+```
+
+Uso de las funciones &#39;array/map&#39; cuando los elementos del array/los valores del map no tienen un tipo común (para ello, la configuración `use_variant_as_common_type` debe estar habilitada):
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT array(range(number), number, 'str_' || toString(number)) as array_of_variants FROM numbers(3);
+```
+
+```text
+┌─array_of_variants─┐
+│ [[],0,'str_0']    │
+│ [[0],1,'str_1']   │
+│ [[0,1],2,'str_2'] │
+└───────────────────┘
+```
+
+```sql
+SET use_variant_as_common_type = 1;
+SELECT map('a', range(number), 'b', number, 'c', 'str_' || toString(number)) as map_of_variants FROM numbers(3);
+```
+
+```text
+┌─map_of_variants───────────────┐
+│ {'a':[],'b':0,'c':'str_0'}    │
+│ {'a':[0],'b':1,'c':'str_1'}   │
+│ {'a':[0,1],'b':2,'c':'str_2'} │
+└───────────────────────────────┘
+```
+
+<div id="reading-variant-nested-types-as-subcolumns">
+  ## Lectura de tipos Variant anidados como subcolumnas
+</div>
+
+El tipo Variant admite leer un único tipo anidado de una columna Variant usando el nombre del tipo como subcolumna.
+Por lo tanto, si tiene la columna `variant Variant(T1, T2, T3)`, puede leer una subcolumna de tipo `T2` con la sintaxis `variant.T2`;
+esta subcolumna tendrá el tipo `Nullable(T2)` si `T2` puede estar dentro de `Nullable`, y `T2` en caso contrario. Esta subcolumna
+tendrá el mismo tamaño que la columna Variant original y contendrá valores `NULL` (o valores vacíos si `T2` no puede estar dentro de `Nullable`)
+en todas las filas en las que la columna Variant original no tenga el tipo `T2`.
+
+Las subcolumnas de Variant también se pueden leer usando la función `variantElement(variant_column, type_name)`.
+
+Ejemplos:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT v, v.String, v.UInt64, v.`Array(UInt64)` FROM test;
+```
+
+```text
+┌─v─────────────┬─v.String──────┬─v.UInt64─┬─v.Array(UInt64)─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ          │     ᴺᵁᴸᴸ │ []              │
+│ 42            │ ᴺᵁᴸᴸ          │       42 │ []              │
+│ Hello, World! │ Hello, World! │     ᴺᵁᴸᴸ │ []              │
+│ [1,2,3]       │ ᴺᵁᴸᴸ          │     ᴺᵁᴸᴸ │ [1,2,3]         │
+└───────────────┴───────────────┴──────────┴─────────────────┘
+```
+
+```sql
+SELECT toTypeName(v.String), toTypeName(v.UInt64), toTypeName(v.`Array(UInt64)`) FROM test LIMIT 1;
+```
+
+```text
+┌─toTypeName(v.String)─┬─toTypeName(v.UInt64)─┬─toTypeName(v.Array(UInt64))─┐
+│ Nullable(String)     │ Nullable(UInt64)     │ Array(UInt64)               │
+└──────────────────────┴──────────────────────┴─────────────────────────────┘
+```
+
+```sql
+SELECT v, variantElement(v, 'String'), variantElement(v, 'UInt64'), variantElement(v, 'Array(UInt64)') FROM test;
+```
+
+```text
+┌─v─────────────┬─variantElement(v, 'String')─┬─variantElement(v, 'UInt64')─┬─variantElement(v, 'Array(UInt64)')─┐
+│ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ []                                 │
+│ 42            │ ᴺᵁᴸᴸ                        │                          42 │ []                                 │
+│ Hello, World! │ Hello, World!               │                        ᴺᵁᴸᴸ │ []                                 │
+│ [1,2,3]       │ ᴺᵁᴸᴸ                        │                        ᴺᵁᴸᴸ │ [1,2,3]                            │
+└───────────────┴─────────────────────────────┴─────────────────────────────┴────────────────────────────────────┘
+```
+
+Para saber qué variante se almacena en cada fila, se puede usar la función `variantType(variant_column)`. Devuelve un `Enum` con el nombre del tipo de variante para cada fila (o `'None'` si la fila es `NULL`).
+
+Ejemplo:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String, Array(UInt64))) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('Hello, World!'), ([1, 2, 3]);
+SELECT variantType(v) FROM test;
+```
+
+```text
+┌─variantType(v)─┐
+│ None           │
+│ UInt64         │
+│ String         │
+│ Array(UInt64)  │
+└────────────────┘
+```
+
+```sql
+SELECT toTypeName(variantType(v)) FROM test LIMIT 1;
+```
+
+```text
+┌─toTypeName(variantType(v))──────────────────────────────────────────┐
+│ Enum8('None' = -1, 'Array(UInt64)' = 0, 'String' = 1, 'UInt64' = 2) │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="conversion-between-a-variant-column-and-other-columns">
+  ## Conversión entre una columna Variant y otras columnas
+</div>
+
+Hay 4 conversiones posibles que pueden realizarse con una columna `Variant`.
+
+<div id="converting-a-string-column-to-a-variant-column">
+  ### Conversión de una columna `String` a una columna `Variant`
+</div>
+
+La conversión de `String` a `Variant` se realiza analizando un valor de tipo `Variant` a partir de la cadena:
+
+```sql
+SELECT '42'::Variant(String, UInt64) AS variant, variantType(variant) AS variant_type
+```
+
+```text
+┌─variant─┬─variant_type─┐
+│ 42      │ UInt64       │
+└─────────┴──────────────┘
+```
+
+```sql
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt64) │
+└─────────┴───────────────┘
+```
+
+````sql
+SELECT CAST(map('key1', '42', 'key2', 'true', 'key3', '2020-01-01'), 'Map(String, Variant(UInt64, Bool, Date))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types```
+````
+
+```text
+┌─map_of_variants─────────────────────────────┬─map_of_variant_types──────────────────────────┐
+│ {'key1':42,'key2':true,'key3':'2020-01-01'} │ {'key1':'UInt64','key2':'Bool','key3':'Date'} │
+└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+```
+
+Para desactivar el análisis sintáctico durante la conversión de `String` a `Variant`, puede desactivar la opción `cast_string_to_dynamic_use_inference`:
+
+```sql
+SET cast_string_to_variant_use_inference = 0;
+SELECT '[1, 2, 3]'::Variant(String, Array(UInt64)) as variant, variantType(variant) as variant_type
+```
+
+```text
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
+```
+
+<div id="converting-an-ordinary-column-to-a-variant-column">
+  ### Convertir una columna ordinaria en una columna Variant
+</div>
+
+Es posible convertir una columna ordinaria de tipo `T` en una columna `Variant` que contenga ese tipo:
+
+```sql
+SELECT toTypeName(variant) AS type_name, [1,2,3]::Array(UInt64)::Variant(UInt64, String, Array(UInt64)) as variant, variantType(variant) as variant_name
+```
+
+```text
+┌─type_name──────────────────────────────┬─variant─┬─variant_name──┐
+│ Variant(Array(UInt64), String, UInt64) │ [1,2,3] │ Array(UInt64) │
+└────────────────────────────────────────┴─────────┴───────────────┘
+```
+
+Nota: la conversión desde el tipo `String` siempre se realiza mediante análisis sintáctico; si necesita convertir una columna `String` a la variante `String` de un `Variant` sin realizar ese análisis, puede hacer lo siguiente:
+
+```sql
+SELECT '[1, 2, 3]'::Variant(String)::Variant(String, Array(UInt64), UInt64) as variant, variantType(variant) as variant_type
+```
+
+```sql
+┌─variant───┬─variant_type─┐
+│ [1, 2, 3] │ String       │
+└───────────┴──────────────┘
+```
+
+<div id="converting-a-variant-column-to-an-ordinary-column">
+  ### Conversión de una columna Variant en una columna ordinaria
+</div>
+
+Es posible convertir una columna `Variant` en una columna ordinaria. En este caso, todas las variantes anidadas se convertirán al tipo de destino:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String)) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('42.42');
+SELECT v::Nullable(Float64) FROM test;
+```
+
+```text
+┌─CAST(v, 'Nullable(Float64)')─┐
+│                         ᴺᵁᴸᴸ │
+│                           42 │
+│                        42.42 │
+└──────────────────────────────┘
+```
+
+<div id="converting-a-variant-to-another-variant">
+  ### Conversión de un `Variant` a otro `Variant`
+</div>
+
+Es posible convertir una columna `Variant` en otra columna `Variant`, pero solo si la columna `Variant` de destino contiene todos los tipos anidados de la columna `Variant` original:
+
+```sql
+CREATE TABLE test (v Variant(UInt64, String)) ENGINE = Memory;
+INSERT INTO test VALUES (NULL), (42), ('String');
+SELECT v::Variant(UInt64, String, Array(UInt64)) FROM test;
+```
+
+```text
+┌─CAST(v, 'Variant(UInt64, String, Array(UInt64))')─┐
+│ ᴺᵁᴸᴸ                                              │
+│ 42                                                │
+│ String                                            │
+└───────────────────────────────────────────────────┘
+```
+
+<div id="reading-variant-type-from-the-data">
+  ## Lectura del tipo Variant a partir de los datos
+</div>
+
+Todos los formatos de texto (TSV, CSV, CustomSeparated, Values, JSONEachRow, etc.) admiten la lectura del tipo `Variant`. Durante el análisis de los datos, ClickHouse intenta insertar el valor en el tipo de variante más adecuado.
+
+Ejemplo:
+
+```sql
+SELECT
+    v,
+    variantElement(v, 'String') AS str,
+    variantElement(v, 'UInt64') AS num,
+    variantElement(v, 'Float64') AS float,
+    variantElement(v, 'DateTime') AS date,
+    variantElement(v, 'Array(UInt64)') AS arr
+FROM format(JSONEachRow, 'v Variant(String, UInt64, Float64, DateTime, Array(UInt64))', $$
+{"v" : "Hello, World!"},
+{"v" : 42},
+{"v" : 42.42},
+{"v" : "2020-01-01 00:00:00"},
+{"v" : [1, 2, 3]}
+$$)
+```
+
+```text
+┌─v───────────────────┬─str───────────┬──num─┬─float─┬────────────────date─┬─arr─────┐
+│ Hello, World!       │ Hello, World! │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ []      │
+│ 42                  │ ᴺᵁᴸᴸ          │   42 │  ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ []      │
+│ 42.42               │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │ 42.42 │                ᴺᵁᴸᴸ │ []      │
+│ 2020-01-01 00:00:00 │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │ 2020-01-01 00:00:00 │ []      │
+│ [1,2,3]             │ ᴺᵁᴸᴸ          │ ᴺᵁᴸᴸ │  ᴺᵁᴸᴸ │                ᴺᵁᴸᴸ │ [1,2,3] │
+└─────────────────────┴───────────────┴──────┴───────┴─────────────────────┴─────────┘
+```
+
+<div id="comparing-values-of-variant-data">
+  ## Comparación de valores del tipo Variant
+</div>
+
+Los valores de tipo `Variant` solo pueden compararse con valores del mismo tipo `Variant`.
+
+De forma predeterminada, los operadores de comparación usan la [implementación predeterminada para Variant](#functions-with-variant-arguments),
+aplicando la comparación a cada tipo variante por separado. Esto puede deshabilitarse mediante la configuración `use_variant_default_implementation_for_comparisons = 0`
+para usar las reglas nativas de comparación de `Variant` que se describen a continuación. **Nota**: `ORDER BY` siempre usa la comparación nativa.
+
+**Reglas nativas de comparación de `Variant`:**
+
+El resultado del operador `<` para los valores `v1` con tipo subyacente `T1` y `v2` con tipo subyacente `T2` de un tipo `Variant(..., T1, ... T2, ...)` se define de la siguiente manera:
+
+* Si `T1 = T2 = T`, el resultado será `v1.T < v2.T` (se compararán los valores subyacentes).
+* Si `T1 != T2`, el resultado será `T1 < T2` (se compararán los nombres de tipo).
+
+Ejemplos:
+
+```sql
+SET allow_suspicious_types_in_order_by = 1;
+CREATE TABLE test (v1 Variant(String, UInt64, Array(UInt32)), v2 Variant(String, UInt64, Array(UInt32))) ENGINE=Memory;
+INSERT INTO test VALUES (42, 42), (42, 43), (42, 'abc'), (42, [1, 2, 3]), (42, []), (42, NULL);
+```
+
+```sql
+SELECT v2, variantType(v2) AS v2_type FROM test ORDER BY v2;
+```
+
+```text
+┌─v2──────┬─v2_type───────┐
+│ []      │ Array(UInt32) │
+│ [1,2,3] │ Array(UInt32) │
+│ abc     │ String        │
+│ 42      │ UInt64        │
+│ 43      │ UInt64        │
+│ ᴺᵁᴸᴸ    │ None          │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT v1, variantType(v1) AS v1_type, v2, variantType(v2) AS v2_type, v1 = v2, v1 < v2, v1 > v2 FROM test;
+```
+
+```text
+┌─v1─┬─v1_type─┬─v2──────┬─v2_type───────┬─equals(v1, v2)─┬─less(v1, v2)─┬─greater(v1, v2)─┐
+│ 42 │ UInt64  │ 42      │ UInt64        │              1 │            0 │               0 │
+│ 42 │ UInt64  │ 43      │ UInt64        │              0 │            1 │               0 │
+│ 42 │ UInt64  │ abc     │ String        │              0 │            0 │               1 │
+│ 42 │ UInt64  │ [1,2,3] │ Array(UInt32) │              0 │            0 │               1 │
+│ 42 │ UInt64  │ []      │ Array(UInt32) │              0 │            0 │               1 │
+│ 42 │ UInt64  │ ᴺᵁᴸᴸ    │ None          │              0 │            1 │               0 │
+└────┴─────────┴─────────┴───────────────┴────────────────┴──────────────┴─────────────────┘
+
+```
+
+Si necesita encontrar la fila con un valor `Variant` específico, puede hacer una de las siguientes opciones:
+
+* Convertir el valor al tipo `Variant` correspondiente:
+
+```sql
+SELECT * FROM test WHERE v2 == [1,2,3]::Array(UInt32)::Variant(String, UInt64, Array(UInt32));
+```
+
+```text
+┌─v1─┬─v2──────┐
+│ 42 │ [1,2,3] │
+└────┴─────────┘
+```
+
+* Compare la subcolumna `Variant` con el tipo requerido:
+
+```sql
+SELECT * FROM test WHERE v2.`Array(UInt32)` == [1,2,3] -- o usando variantElement(v2, 'Array(UInt32)')
+```
+
+```text
+┌─v1─┬─v2──────┐
+│ 42 │ [1,2,3] │
+└────┴─────────┘
+```
+
+A veces puede ser útil hacer una comprobación adicional del tipo Variant, ya que las subcolumnas de tipos complejos como `Array/Map/Tuple` no pueden estar dentro de `Nullable` y tendrán valores predeterminados en lugar de `NULL` en las filas con tipos distintos:
+
+```sql
+SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE v2.`Array(UInt32)` == [];
+```
+
+```text
+┌─v2───┬─v2.Array(UInt32)─┬─variantType(v2)─┐
+│ 42   │ []               │ UInt64          │
+│ 43   │ []               │ UInt64          │
+│ abc  │ []               │ String          │
+│ []   │ []               │ Array(UInt32)   │
+│ ᴺᵁᴸᴸ │ []               │ None            │
+└──────┴──────────────────┴─────────────────┘
+```
+
+```sql
+SELECT v2, v2.`Array(UInt32)`, variantType(v2) FROM test WHERE variantType(v2) == 'Array(UInt32)' AND v2.`Array(UInt32)` == [];
+```
+
+```text
+┌─v2─┬─v2.Array(UInt32)─┬─variantType(v2)─┐
+│ [] │ []               │ Array(UInt32)   │
+└────┴──────────────────┴─────────────────┘
+```
+
+**Nota:** los valores de variantes con distintos tipos numéricos se consideran variantes diferentes y no se comparan entre sí; en su lugar, se comparan sus nombres de tipo.
+
+Ejemplo:
+
+```sql
+SET allow_suspicious_variant_types = 1;
+CREATE TABLE test (v Variant(UInt32, Int64)) ENGINE=Memory;
+INSERT INTO test VALUES (1::UInt32), (1::Int64), (100::UInt32), (100::Int64);
+SELECT v, variantType(v) FROM test ORDER by v;
+```
+
+```text
+┌─v───┬─variantType(v)─┐
+│ 1   │ Int64          │
+│ 100 │ Int64          │
+│ 1   │ UInt32         │
+│ 100 │ UInt32         │
+└─────┴────────────────┘
+```
+
+**Nota**: de forma predeterminada, el tipo `Variant` no está permitido en las claves `GROUP BY`/`ORDER BY`; si desea usarlo, tenga en cuenta su regla especial de comparación y habilite las opciones `allow_suspicious_types_in_group_by`/`allow_suspicious_types_in_order_by`.
+
+<div id="jsonextract-functions-with-variant">
+  ## Funciones JSONExtract con Variant
+</div>
+
+Todas las funciones `JSONExtract*` admiten el tipo `Variant`:
+
+```sql
+SELECT JSONExtract('{"a" : [1, 2, 3]}', 'a', 'Variant(UInt32, String, Array(UInt32))') AS variant, variantType(variant) AS variant_type;
+```
+
+```text
+┌─variant─┬─variant_type──┐
+│ [1,2,3] │ Array(UInt32) │
+└─────────┴───────────────┘
+```
+
+```sql
+SELECT JSONExtract('{"obj" : {"a" : 42, "b" : "Hello", "c" : [1,2,3]}}', 'obj', 'Map(String, Variant(UInt32, String, Array(UInt32)))') AS map_of_variants, mapApply((k, v) -> (k, variantType(v)), map_of_variants) AS map_of_variant_types
+```
+
+```text
+┌─map_of_variants──────────────────┬─map_of_variant_types────────────────────────────┐
+│ {'a':42,'b':'Hello','c':[1,2,3]} │ {'a':'UInt32','b':'String','c':'Array(UInt32)'} │
+└──────────────────────────────────┴─────────────────────────────────────────────────┘
+```
+
+```sql
+SELECT JSONExtractKeysAndValues('{"a" : 42, "b" : "Hello", "c" : [1,2,3]}', 'Variant(UInt32, String, Array(UInt32))') AS variants, arrayMap(x -> (x.1, variantType(x.2)), variants) AS variant_types
+```
+
+```text
+┌─variants───────────────────────────────┬─variant_types─────────────────────────────────────────┐
+│ [('a',42),('b','Hello'),('c',[1,2,3])] │ [('a','UInt32'),('b','String'),('c','Array(UInt32)')] │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────┘
+```
+
+<div id="functions-with-variant-arguments">
+  ## Funciones con argumentos de tipo Variant
+</div>
+
+La mayoría de las funciones de ClickHouse admiten automáticamente argumentos del tipo `Variant` mediante una **implementación predeterminada para Variant**.
+A partir de la versión `26.1`, cuando una función que no maneja explícitamente tipos Variant recibe una columna Variant, ClickHouse:
+
+1. Extrae cada tipo Variant de la columna Variant
+2. Ejecuta la función por separado para cada tipo Variant
+3. Combina los resultados de forma adecuada según los tipos de resultado
+
+Esto permite usar funciones normales con columnas Variant sin necesidad de un manejo especial.
+
+**Ejemplo:**
+
+```sql
+CREATE TABLE test (v Variant(UInt32, String)) ENGINE = Memory;
+INSERT INTO test VALUES (42), ('hello'), (NULL);
+SELECT *, toTypeName(v) FROM test WHERE v = 42;
+```
+
+```text
+   ┌─v──┬─toTypeName(v)───────────┐
+1. │ 42 │ Variant(String, UInt32) │
+   └────┴─────────────────────────┘
+```
+
+El operador de comparación se aplica automáticamente a cada tipo Variant por separado, lo que permite filtrar por columnas Variant.
+
+**Comportamiento del tipo de resultado:**
+
+El tipo de resultado depende de lo que la función devuelva para cada Variant:
+
+* **Tipos de resultado diferentes**: `Variant(T1, T2, ...)`
+
+  ```sql
+  CREATE TABLE test2 (v Variant(UInt64, Float64)) ENGINE = Memory;
+  INSERT INTO test2 VALUES (42::UInt64), (42.42);
+  SELECT v + 1 AS result, toTypeName(result) FROM test2;
+  ```
+
+  ```text
+  ┌─result─┬─toTypeName(plus(v, 1))──┐
+  │     43 │ Variant(Float64, UInt64) │
+  │  43.42 │ Variant(Float64, UInt64) │
+  └────────┴─────────────────────────┘
+  ```
+
+* **Incompatibilidad de tipos**: `NULL` para variantes incompatibles
+
+  ```sql
+  CREATE TABLE test3 (v Variant(Array(UInt32), UInt32)) ENGINE = Memory;
+  INSERT INTO test3 VALUES ([1,2,3]), (42);
+  SELECT v + 10 AS result, toTypeName(result) FROM test3;
+  ```
+
+  ```text
+  ┌─result─┬─toTypeName(plus(v, 10))─┐
+  │   ᴺᵁᴸᴸ │ Nullable(UInt64)        │
+  │     52 │ Nullable(UInt64)        │
+  └────────┴─────────────────────────┘
+  ```
+
+<Note>
+  **Manejo de errores:** Cuando una función no puede procesar un tipo Variant, solo se capturan los errores relacionados con tipos (ILLEGAL&#95;TYPE&#95;OF&#95;ARGUMENT,
+  TYPE&#95;MISMATCH, CANNOT&#95;CONVERT&#95;TYPE, NO&#95;COMMON&#95;TYPE) y el resultado es NULL para esas filas. Otros errores, como
+  la división por cero o la falta de memoria, se generan normalmente para evitar ocultar silenciosamente problemas reales.
+</Note>
+
+<div id="variant-type-mismatch-behavior">
+  ### Comportamiento ante incompatibilidades de tipos
+</div>
+
+La configuración `variant_throw_on_type_mismatch` controla lo que ocurre cuando se aplica una función a una columna `Variant` y el tipo real almacenado en una fila es incompatible con la función:
+
+* `true` (predeterminado) — genera una excepción (`ILLEGAL_TYPE_OF_ARGUMENT`) en la primera fila incompatible.
+* `false` — devuelve `NULL` para las filas incompatibles y conserva el resultado para las filas compatibles.
+
+**Ejemplo:**
+
+```sql
+CREATE TABLE test (v Variant(String, UInt64)) ENGINE = Memory;
+INSERT INTO test VALUES ('hello'), (42), ('foo');
+
+-- Por defecto (lanza excepción en caso de incompatibilidad): length() no acepta UInt64, por lo que la consulta lanza una excepción.
+SELECT length(v) FROM test;  -- lanza ILLEGAL_TYPE_OF_ARGUMENT
+
+-- Con la excepción deshabilitada: las filas incompatibles devuelven NULL.
+SET variant_throw_on_type_mismatch = false;
+SELECT v, length(v) FROM test ORDER BY v::String NULLS LAST;
+```
+
+```text
+┌─v─────┬─length(v)─┐
+│ foo   │         3 │
+│ hello │         5 │
+│ 42    │      ᴺᵁᴸᴸ │
+└───────┴───────────┘
+```
