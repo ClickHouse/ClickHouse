@@ -1726,3 +1726,68 @@ def test_namespace_prefix_show_columns_and_reconnect(started_cluster):
         )
     )
     assert count == 2, f"default-database handshake lost the namespace: {count}"
+
+
+def test_namespace_two_part_in_non_select_queries(started_cluster):
+    """
+    Under USE catalog (no namespace), `namespace.table` must resolve in the shared
+    storage resolver too: EXISTS/DESCRIBE/SHOW CREATE/INSERT, not just SELECT.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_twopart_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "twopart_test_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    iceberg_table = create_table(catalog, namespace, table_name)
+    iceberg_table.append(pa.Table.from_pylist([generate_record() for _ in range(2)]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    use = f"USE {CATALOG_NAME}; "
+    assert node.query(use + f"EXISTS TABLE {namespace}.{table_name}").strip() == "1"
+
+    describe = node.query(use + f"DESCRIBE TABLE {namespace}.{table_name}")
+    assert "id" in describe and "data" in describe, f"DESCRIBE failed: {describe}"
+
+    show_create = node.query(use + f"SHOW CREATE TABLE {namespace}.{table_name}")
+    assert f"`{namespace}.{table_name}`" in show_create, f"SHOW CREATE failed: {show_create}"
+
+    count = int(node.query(use + f"SELECT count() FROM {namespace}.{table_name}"))
+    assert count == 2
+
+
+def test_namespace_prefix_materialized_view_target(started_cluster):
+    """
+    An unqualified TO target of a materialized view under USE db.namespace must be
+    stored namespace-qualified.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_mvtarget_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "mv_target_table"
+    mv = f"default.mv_{test_ref}"
+    src_table = f"default.src_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"CREATE TABLE {src_table} (id Float64, data String) ENGINE = Memory")
+    try:
+        node.query(
+            f"USE {CATALOG_NAME}.{namespace}; "
+            f"CREATE MATERIALIZED VIEW {mv} TO {table_name} AS SELECT id, data FROM {src_table}"
+        )
+        show_create = node.query(f"SHOW CREATE TABLE {mv}")
+        assert (
+            f"`{namespace}.{table_name}`" in show_create
+        ), f"MV target is not namespace-qualified: {show_create}"
+    finally:
+        node.query(f"DROP VIEW IF EXISTS {mv}")
+        node.query(f"DROP TABLE IF EXISTS {src_table}")
