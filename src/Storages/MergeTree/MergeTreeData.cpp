@@ -5288,43 +5288,21 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
             continue;
 
         const auto entry_path = fs::path(relative_data_path) / name;
-        bool is_temporary_directory = false;
-        /// These root directories are the same recovery-only temporary prefixes
-        /// that `clearOldTemporaryDirectories` removes on startup.
-        for (const auto & prefix : ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY)
-        {
-            if (std::string_view(name).starts_with(prefix) && disk->existsDirectory(entry_path))
-            {
-                is_temporary_directory = true;
-                break;
-            }
-        }
-
-        if (is_temporary_directory)
-            continue;
-
-        /// `tmp_mutation_*.txt` is a not-yet-committed mutation file; `loadMutations` removes it.
-        if (startsWith(name, "tmp_mutation_") && endsWith(name, ".txt") && disk->existsFile(entry_path))
-            continue;
-
-        /// `moving/` can conflict with later part moves before startup recovery has a chance to
-        /// clean it up. Keep rejecting it until storage-policy disk initialization is authoritative
-        /// on actual disk use. See #109823.
-        if (name == MOVING_DIR_NAME)
-            return true;
-
         if (name == DETACHED_DIR_NAME)
         {
             /// `detached/` is removed recursively on `DROP TABLE`, so accept it only when empty.
-            if (!disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+            if (!disk->existsDirectory(entry_path))
                 return true;
 
-            if (!disk->isDirectoryEmpty(fs::path(relative_data_path) / DETACHED_DIR_NAME))
+            if (!disk->isDirectoryEmpty(entry_path))
                 return true;
 
             continue;
         }
 
+        /// Recovery-only entries like `tmp_`, `delete_tmp_`, `tmp-fetch_`, `tmp_mutation_`,
+        /// and `moving/` are not cleaned before `changeSettings` publishes the new policy.
+        /// They can conflict with later writes, merges, mutations, or moves. See #109823.
         return true;
     }
 
