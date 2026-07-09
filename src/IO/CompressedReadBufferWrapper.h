@@ -22,6 +22,13 @@ public:
 
     void prefetch(Priority priority) override { in->prefetch(priority); }
 
+    bool poll(size_t timeout_microseconds) override
+    {
+        if (hasPendingData())
+            return true;
+        return in->poll(timeout_microseconds);
+    }
+
 protected:
     std::unique_ptr<ReadBuffer> in;
 };

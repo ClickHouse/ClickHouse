@@ -1,0 +1,364 @@
+---
+slug: /use-cases/observability/clickstack/integrations/nginx-traces
+title: 'مراقبة تتبعات Nginx عبر ClickStack'
+sidebarTitle: 'تتبعات Nginx'
+description: 'مراقبة تتبعات Nginx عبر ClickStack'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Nginx', 'التتبعات', 'otel']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **باختصار**
+
+  التقط التتبعات الموزعة من Nginx في ClickStack باستخدام وحدة OpenTelemetry لـ Nginx. يتضمن مجموعة بيانات تجريبية ولوحة معلومات جاهزة.
+</Info>
+
+<div id="existing-nginx">
+  ## التكامل مع Nginx الحالي
+</div>
+
+يتناول هذا القسم كيفية إضافة التتبّع الموزّع إلى تثبيت Nginx الحالي لديك، وذلك عبر تثبيت وحدة OpenTelemetry وتهيئتها لإرسال التتبعات إلى ClickStack.
+إذا كنت ترغب في اختبار هذا التكامل قبل تهيئة إعدادك الحالي، فيمكنك استخدام إعدادنا المهيّأ مسبقًا والبيانات النموذجية في [القسم التالي](/ar/clickstack/integration-examples/nginx-traces#demo-dataset).
+
+<div id="prerequisites">
+  ##### المتطلبات الأساسية
+</div>
+
+* مثيل ClickStack قيد التشغيل مع إمكانية الوصول إلى نقاط نهاية OTLP (المنافذ 4317/4318)
+* تثبيت Nginx مسبقًا (الإصدار 1.18 أو أحدث)
+* صلاحيات root أو sudo لتعديل إعدادات Nginx
+* اسم المضيف أو عنوان IP الخاص بـ ClickStack
+
+<Steps>
+  <Step>
+    #### تثبيت وحدة OpenTelemetry لـ Nginx
+
+    أسهل طريقة لإضافة التتبّع إلى Nginx هي استخدام صورة Nginx الرسمية التي تتضمن دعم OpenTelemetry بشكل مدمج.
+
+    ##### استخدام الصورة nginx:otel
+
+    استبدل صورة Nginx الحالية بالإصدار المفعّل لـ OpenTelemetry:
+
+    ```yaml
+    # في ملف docker-compose.yml أو Dockerfile
+    image: nginx:1.27-otel
+    ```
+
+    تتضمن هذه الصورة `ngx_otel_module.so` مثبتًا مسبقًا وجاهزًا للاستخدام.
+
+    <Note>
+      إذا كنت تشغّل Nginx خارج Docker، فارجع إلى [توثيق OpenTelemetry Nginx](https://github.com/open-telemetry/opentelemetry-cpp-contrib/tree/main/instrumentation/nginx) للحصول على تعليمات التثبيت اليدوي.
+    </Note>
+  </Step>
+
+  <Step>
+    #### إعداد Nginx لإرسال التتبعات إلى ClickStack
+
+    أضف إعدادات OpenTelemetry إلى ملف `nginx.conf`. تُحمّل هذه الإعدادات الوحدة وتوجّه التتبعات إلى نقطة نهاية OTLP الخاصة بـ ClickStack.
+
+    أولًا، احصل على مفتاح API الخاص بك:
+
+    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack
+    2. انتقل إلى Settings → API Keys
+    3. انسخ **Ingestion API Key** الخاصة بك
+    4. عيّنها كمتغير بيئة: `export CLICKSTACK_API_KEY=your-api-key-here`
+
+    أضف ما يلي إلى `nginx.conf`:
+
+    ```yaml
+    load_module modules/ngx_otel_module.so;
+
+    events {
+        worker_connections 1024;
+    }
+
+    http {
+        # إعداد exporter الخاص بـ OpenTelemetry
+        otel_exporter {
+            endpoint <clickstack-host>:4317;
+            header authorization ${CLICKSTACK_API_KEY};
+        }
+        
+        # اسم الخدمة للتعرّف على مثيل Nginx هذا
+        otel_service_name "nginx-proxy";
+        
+        # تمكين التتبّع
+        otel_trace on;
+        
+        server {
+            listen 80;
+            
+            location / {
+                # تمكين التتبّع لهذا المسار
+                otel_trace_context propagate;
+                otel_span_name "$request_method $uri";
+                
+                # إضافة تفاصيل الطلب إلى التتبعات
+                otel_span_attr http.status_code $status;
+                otel_span_attr http.request.method $request_method;
+                otel_span_attr http.route $uri;
+                
+                # إعداد الوكيل أو التطبيق الحالي لديك
+                proxy_pass http://your-backend;
+            }
+        }
+    }
+    ```
+
+    إذا كنت تشغّل Nginx داخل Docker، فمرّر متغير البيئة إلى الحاوية:
+
+    ```yaml
+    services:
+      nginx:
+        image: nginx:1.27-otel
+        environment:
+          - CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
+        volumes:
+          - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    ```
+
+    استبدل `<clickstack-host>` باسم المضيف أو عنوان IP الخاص بمثيل ClickStack لديك.
+
+    <Note>
+      * **المنفذ 4317** هو نقطة نهاية gRPC التي تستخدمها وحدة Nginx
+      * يجب أن يكون **otel&#95;service&#95;name** اسمًا وصفيًا لمثيل Nginx لديك (مثل &quot;api-gateway&quot; أو &quot;frontend-proxy&quot;)
+      * غيّر **otel&#95;service&#95;name** ليتوافق مع بيئتك لتسهيل التعرف عليه داخل HyperDX
+    </Note>
+
+    ##### فهم الإعدادات
+
+    **ما الذي يتم تتبّعه:**
+    ينشئ كل طلب إلى Nginx trace span يوضّح:
+
+    * طريقة الطلب والمسار
+    * رمز حالة HTTP
+    * مدة الطلب
+    * الطابع الزمني
+
+    **سمات span:**
+    تضيف توجيهات `otel_span_attr` بيانات وصفية إلى كل trace، ما يتيح لك تصفية الطلبات وتحليلها في HyperDX حسب رمز الحالة والطريقة والمسار وغير ذلك.
+
+    بعد إجراء هذه التغييرات، اختبر إعداد Nginx:
+
+    ```bash
+    nginx -t
+    ```
+
+    إذا نجح الاختبار، فأعد تحميل Nginx:
+
+    ```bash
+    # لـ Docker
+    docker-compose restart nginx
+
+    # لـ systemd
+    sudo systemctl reload nginx
+    ```
+  </Step>
+
+  <Step>
+    #### التحقق من التتبعات في HyperDX
+
+    بعد إتمام الإعداد، سجّل الدخول إلى HyperDX وتحقق من تدفّق التتبعات. من المفترض أن ترى شيئًا مشابهًا لما يلي. وإذا لم تظهر أي تتبعات، فجرّب تعديل النطاق الزمني:
+
+    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="عرض التتبعات" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## مجموعة بيانات تجريبية
+</div>
+
+للمستخدمين الذين يريدون اختبار تكامل تتبعات nginx قبل تهيئة أنظمتهم الإنتاجية، نوفر مجموعة بيانات نموذجية لتتبعات Nginx مُولَّدة مسبقًا بأنماط حركة مرور واقعية.
+
+<Steps>
+  <Step>
+    #### ابدأ ClickStack
+
+    إذا لم يكن ClickStack قيد التشغيل لديك بعد، فابدأه باستخدام:
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    انتظر حوالي 30 ثانية حتى يكتمل تشغيل ClickStack وتهيئته قبل المتابعة.
+
+    * المنفذ 8080: واجهة HyperDX على الويب
+    * المنفذ 4317: نقطة نهاية OTLP gRPC (تستخدمها وحدة nginx)
+    * المنفذ 4318: نقطة نهاية OTLP HTTP (تُستخدم للتتبعات التجريبية)
+  </Step>
+
+  <Step>
+    #### نزّل مجموعة البيانات النموذجية
+
+    نزّل ملف التتبعات النموذجي وحدّث الطوابع الزمنية إلى الوقت الحالي:
+
+    ```bash
+    # نزّل التتبعات
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/nginx-traces-sample.json
+    ```
+
+    تتضمن مجموعة البيانات:
+
+    * 1,000 span تتبع بتوقيتات واقعية
+    * 9 نقاط نهاية مختلفة مع أنماط حركة مرور متنوعة
+    * معدل نجاح ~93%‏ (200)، وأخطاء عميل ~3%‏ (404)، وأخطاء خادم ~4%‏ (500)
+    * أزمنة استجابة تتراوح من 10ms إلى 800ms
+    * الحفاظ على أنماط حركة المرور الأصلية مع ترحيلها إلى الوقت الحالي
+  </Step>
+
+  <Step>
+    #### أرسل التتبعات إلى ClickStack
+
+    اضبط مفتاح API الخاص بك كمتغير بيئة (إذا لم يكن مضبوطًا بالفعل):
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+
+    **احصل على مفتاح API الخاص بك:**
+
+    1. افتح HyperDX على عنوان URL الخاص بـ ClickStack
+    2. انتقل إلى Settings → API Keys
+    3. انسخ **Ingestion API Key** الخاص بك
+
+    ثم أرسل التتبعات إلى ClickStack:
+
+    ```bash
+    curl -X POST http://localhost:4318/v1/traces \
+      -H "Content-Type: application/json" \
+      -H "Authorization: $CLICKSTACK_API_KEY" \
+      -d @nginx-traces-sample.json
+    ```
+
+    <Info>
+      **التشغيل على localhost**
+
+      يفترض هذا العرض التجريبي أن ClickStack يعمل محليًا على `localhost:4318`. بالنسبة إلى المثيلات البعيدة، استبدل `localhost` باسم المضيف الخاص بـ ClickStack.
+    </Info>
+
+    يجب أن ترى استجابة مثل `{"partialSuccess":{}}`، ما يشير إلى أنه تم إرسال التتبعات بنجاح. وسيتم إدخال جميع التتبعات البالغ عددها 1,000 إلى ClickStack.
+  </Step>
+
+  <Step>
+    #### تحقّق من التتبعات في HyperDX
+
+    1. افتح [HyperDX](http://localhost:8080/) وسجّل الدخول إلى حسابك (قد تحتاج إلى إنشاء حساب أولًا)
+    2. انتقل إلى عرض Search واضبط المصدر على `Traces`
+    3. اضبط النطاق الزمني على **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
+
+    إليك ما ينبغي أن تراه في عرض Search لديك:
+
+    <Info>
+      **عرض المنطقة الزمنية**
+
+      يعرض HyperDX الطوابع الزمنية وفقًا للمنطقة الزمنية المحلية في متصفحك. تمتد البيانات التجريبية عبر **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. ويضمن النطاق الزمني الواسع ظهور التتبعات التجريبية لك بغض النظر عن موقعك. وبعد ظهور التتبعات، يمكنك تضييق النطاق إلى فترة 24 ساعة للحصول على تصورات أوضح.
+    </Info>
+
+    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="عرض التتبعات" />
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## لوحات المعلومات والمرئيات
+</div>
+
+لمساعدتك على بدء مراقبة التتبعات باستخدام ClickStack، نوفر مرئيات أساسية لبيانات التتبّع.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/nginx-traces-dashboard.json'} download="nginx-traces-dashboard.json" eventName="docs.nginx_traces_monitoring.dashboard_download">تنزيل</TrackedLink> إعداد لوحة المعلومات
+  </Step>
+
+  <Step>
+    #### استيراد لوحة المعلومات الجاهزة مسبقًا
+
+    1. افتح HyperDX وانتقل إلى قسم Dashboards.
+    2. انقر على &quot;Import Dashboard&quot; في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث.
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="استيراد لوحة معلومات" />
+
+    3. ارفع ملف nginx-trace-dashboard.json ثم انقر على إتمام الاستيراد.
+
+    <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="إتمام الاستيراد" />
+  </Step>
+
+  <Step>
+    #### سيتم إنشاء لوحة المعلومات مع تهيئة جميع المرئيات مسبقًا.
+
+    <Note>
+      بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.
+    </Note>
+
+    <Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="لوحة معلومات نموذجية" />
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+<div id="no-traces">
+  ### عدم ظهور أي تتبعات في HyperDX
+</div>
+
+**تحقّق من أن وحدة nginx مُحمّلة:**
+
+```bash
+nginx -V 2>&1 | grep otel
+```
+
+يجب أن ترى إشارات إلى وحدة OpenTelemetry.
+
+**تحقّق من الاتصال بالشبكة:**
+
+```bash
+telnet <clickstack-host> 4317
+```
+
+يُفترض أن يتصل هذا بنجاح بنقطة نهاية OTLP gRPC.
+
+**تأكّد من ضبط مفتاح API:**
+
+```bash
+echo $CLICKSTACK_API_KEY
+```
+
+يجب أن يظهر مفتاح API الخاص بك (وألا يكون فارغًا).
+
+**تحقّق من سجلات أخطاء nginx:**
+
+```bash
+# For Docker
+docker logs <nginx-container> 2>&1 | grep -i otel
+
+# For systemd
+sudo tail -f /var/log/nginx/error.log | grep -i otel
+```
+
+ابحث عن الأخطاء المتعلقة بـOpenTelemetry.
+
+**تحقّق من أن nginx يستقبل الطلبات:**
+
+```bash
+# Check access logs to confirm traffic
+tail -f /var/log/nginx/access.log
+```
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+* قم بإعداد [التنبيهات](/ar/clickstack/features/alerts) للمقاييس المهمة (معدلات الخطأ، عتبات زمن الاستجابة)
+* أنشئ [لوحات معلومات](/ar/clickstack/features/dashboards/overview) إضافية لحالات استخدام محددة (مراقبة واجهات API، أحداث الأمان)
+
+<div id="going-to-production">
+  ## الانتقال إلى بيئة الإنتاج
+</div>
+
+يرسل هذا الدليل التتبعات مباشرةً من وحدة OpenTelemetry الخاصة بـ Nginx إلى نقطة نهاية OTLP الخاصة بـ ClickStack. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector خاص بك كبوابة لتوفير التجميع على دفعات والمرونة. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

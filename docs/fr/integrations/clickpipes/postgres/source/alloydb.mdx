@@ -1,0 +1,151 @@
+---
+sidebarTitle: 'AlloyDB Postgres'
+description: 'Configurer une instance AlloyDB Postgres comme source pour ClickPipes'
+slug: /integrations/clickpipes/postgres/source/alloydb
+title: 'Guide de configuration d’une source AlloyDB Postgres'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="supported-versions">
+  ## Versions prises en charge
+</div>
+
+Pour transférer les données de votre instance AlloyDB vers ClickHouse Cloud à l’aide de ClickPipes, votre instance doit être configurée pour la **réplication logique**. Cette fonctionnalité est prise en charge **à partir d’AlloyDB version 14**.
+
+<div id="enable-logical-replication">
+  ## Activer la réplication logique
+</div>
+
+Pour vérifier si la réplication logique est activée sur votre instance AlloyDB, exécutez la requête suivante sur votre instance primaire :
+
+```sql
+SHOW  wal_level;
+```
+
+Si le résultat est `logical`, la réplication logique est déjà activée et vous pouvez passer à l’[étape suivante](#create-a-clickpipes-user-and-manage-replication-permissions). Si le résultat est `replica`, vous devez définir les flags [`alloydb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) et [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) sur `on` sur l’instance primaire.
+
+<Warning>
+  Comme indiqué dans la [documentation des flags AlloyDB](https://cloud.google.com/alloydb/docs/reference/alloydb-flags), la modification des flags qui activent la réplication logique nécessite un redémarrage de l’instance primaire.
+</Warning>
+
+Pour activer ces flags :
+
+1. Dans Google Cloud Console, accédez à la page AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters). Dans le menu **Actions** de votre instance primaire, cliquez sur **Edit**.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="Modifier la configuration de l’instance primaire" size="lg" border />
+
+2. Faites défiler la page jusqu’à **Advanced configuration options** et développez la section. Sous **Flags**, cliquez sur **Add a database flag**.
+
+   * Ajoutez le flag [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) et définissez sa valeur sur `on`
+   * Ajoutez le flag [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) et définissez sa valeur sur `on`
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="Définir les flags allowdb.enable_pglogical et alloydb.logical_decoding sur on" size="lg" border />
+
+3. Cliquez sur **Update instance** pour enregistrer les modifications de configuration. Il est important de noter que cette action **déclenche un redémarrage de l’instance primaire.**
+
+4. Une fois que l’état de l’instance passe de `Updating` à `Ready`, exécutez la requête suivante sur votre instance primaire pour vérifier que la réplication logique est activée :
+
+   ```sql
+   SHOW  wal_level;
+   ```
+
+   Le résultat doit être `logical`.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="Vérifier que la réplication logique est activée" size="lg" border />
+
+<div id="create-a-clickpipes-user-and-manage-replication-permissions">
+  ## Créer un utilisateur ClickPipes et gérer les privilèges de réplication
+</div>
+
+Connectez-vous à votre instance AlloyDB en tant qu’administrateur et exécutez les commandes suivantes :
+
+1. Créez un utilisateur dédié pour ClickPipes :
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Accordez à l’utilisateur créé à l’étape précédente un accès en lecture seule au niveau du schéma. L’exemple suivant montre les privilèges pour le schéma `public`. Répétez ces commandes pour chaque schéma contenant des tables que vous souhaitez répliquer :
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. Accordez à l’utilisateur les privilèges de réplication :
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Créez une [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) incluant les tables que vous souhaitez répliquer. Nous vous recommandons vivement de n’inclure dans la publication que les tables nécessaires afin d’éviter tout surcoût en termes de performances.
+
+<Warning>
+  Toute table incluse dans la publication doit soit avoir une **clé primaire** définie, *soit* avoir sa **replica identity** configurée sur `FULL`. Consultez la [FAQ Postgres](/fr/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) pour obtenir des conseils sur la définition du périmètre.
+</Warning>
+
+* Pour créer une publication pour des tables spécifiques :
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * Pour créer une publication pour toutes les tables d’un schéma spécifique :
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+La publication `clickpipes` contiendra l’ensemble des événements de modification générés par les tables spécifiées, et sera ensuite utilisée pour ingérer le flux de réplication.
+
+<div id="configure-network-access">
+  ## Configurer l’accès réseau
+</div>
+
+<Note>
+  ClickPipes ne prend pas en charge les connexions Private Service Connect (PSC). Si vous n’autorisez pas l’accès public à votre instance AlloyDB, vous pouvez [utiliser un tunnel SSH](#configure-network-access) pour vous connecter en toute sécurité. PSC sera pris en charge à l’avenir.
+</Note>
+
+Vous devez ensuite autoriser les connexions à votre instance AlloyDB depuis ClickPipes.
+
+<Tabs>
+  <Tab title="Autoriser les IP de ClickPipes">
+    1. Dans la Google Cloud Console, accédez à la page AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters). Sélectionnez votre instance primaire pour ouvrir la page **Overview**.
+
+    2. Faites défiler la page jusqu’à **Instances in your cluster** et cliquez sur **Edit primary**.
+
+    3. Cochez la case **Enable Public IP** pour autoriser les connexions à l’instance via l’internet public. Sous **Authorized external networks**, saisissez la [liste des adresses IP statiques de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips) pour la région dans laquelle votre service est déployé.
+
+       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="Configurer le réseau pour un accès public avec une liste d’autorisation d’IP" size="lg" border />
+
+    <Note>
+      AlloyDB attend que les adresses soient indiquées en [notation CIDR](https://cloud.google.com/alloydb/docs/connection-overview#public-ip). Vous pouvez adapter la liste fournie des adresses IP statiques de ClickPipes à cette notation en ajoutant `/32` à chaque adresse.
+    </Note>
+
+    4. Sous **Network Security**, sélectionnez **Require SSL Encryption (default)** (si ce n’est pas déjà fait).
+
+    5. Cliquez sur **Update instance** pour enregistrer les modifications de la configuration de sécurité réseau.
+  </Tab>
+
+  <Tab title="Utiliser un tunnel SSH">
+    Si vous n’autorisez pas l’accès public à votre instance AlloyDB, vous devez d’abord configurer un hôte bastion SSH afin d’établir un tunnel sécurisé pour votre connexion. Pour configurer un hôte bastion SSH sur Google Cloud Platform :
+
+    1. Créez et démarrez une instance Google Compute Engine (GCE) en suivant la [documentation officielle](https://cloud.google.com/compute/docs/instances/create-start-instance).
+       * Assurez-vous que l’instance GCE se trouve dans le même réseau privé virtuel (VPC) que votre instance AlloyDB.
+       * Assurez-vous que l’instance GCE dispose d’une [adresse IP publique statique](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-external-ip-address). Vous utiliserez cette adresse IP pour connecter ClickPipes à votre hôte bastion SSH.
+
+    2. Mettez à jour les règles de pare-feu de l’hôte bastion SSH afin d’autoriser le trafic provenant de la [liste des adresses IP statiques de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips) pour la région dans laquelle votre service est déployé.
+
+    3. Mettez à jour les règles de pare-feu d’AlloyDB afin d’autoriser le trafic provenant de l’hôte bastion SSH.
+  </Tab>
+</Tabs>
+
+<div id="whats-next">
+  ## Et maintenant ?
+</div>
+
+Vous pouvez maintenant [créer votre ClickPipe](/fr/integrations/clickpipes/postgres/index) et commencer à ingérer des données de votre instance Postgres dans ClickHouse Cloud.
+Veillez à noter les informations de connexion utilisées lors de la configuration de votre instance Postgres, car vous en aurez besoin pendant le processus de création du ClickPipe.

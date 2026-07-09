@@ -1,0 +1,707 @@
+---
+description: 'Документация по EXPLAIN'
+sidebarTitle: 'EXPLAIN'
+slug: /sql-reference/statements/explain
+title: 'Оператор EXPLAIN'
+doc_type: 'reference'
+---
+
+Показывает план выполнения оператора SQL.
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/hP6G2Nlz_cA"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+Синтаксис:
+
+```sql
+EXPLAIN [AST | SYNTAX | QUERY TREE | PLAN | PIPELINE | ESTIMATE | TABLE OVERRIDE] [setting = value, ...]
+    [
+      SELECT ... |
+      tableFunction(...) [COLUMNS (...)] [ORDER BY ...] [PARTITION BY ...] [PRIMARY KEY] [SAMPLE BY ...] [TTL ...]
+    ]
+    [FORMAT ...]
+```
+
+Пример:
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) UNION ALL SELECT sum(number) FROM numbers(10) ORDER BY sum(number) ASC FORMAT TSV;
+```
+
+```sql
+Union
+  Expression (Projection)
+    Expression (Before ORDER BY and SELECT)
+      Aggregating
+        Expression (Before GROUP BY)
+          SettingQuotaAndLimits (Set limits and quota after reading from storage)
+            ReadFromStorage (SystemNumbers)
+  Expression (Projection)
+    MergingSorted (Merge sorted streams for ORDER BY)
+      MergeSorting (Merge sorted blocks for ORDER BY)
+        PartialSorting (Sort each block for ORDER BY)
+          Expression (Before ORDER BY and SELECT)
+            Aggregating
+              Expression (Before GROUP BY)
+                SettingQuotaAndLimits (Set limits and quota after reading from storage)
+                  ReadFromStorage (SystemNumbers)
+```
+
+<div id="explain-types">
+  ## Типы EXPLAIN
+</div>
+
+* `AST` — Абстрактное синтаксическое дерево.
+* `SYNTAX` — Текст запроса после оптимизаций на уровне AST.
+* `QUERY TREE` — Дерево запроса после оптимизаций на уровне Query Tree.
+* `PLAN` — План выполнения запроса.
+* `PIPELINE` — Конвейер выполнения запроса.
+
+<div id="explain-ast">
+  ### EXPLAIN AST
+</div>
+
+Выводит AST запроса. Поддерживает все типы запросов, а не только `SELECT`.
+
+Настройки:
+
+* `graph` – Выводит AST в виде графа, описанного на языке описания графов [DOT](https://en.wikipedia.org/wiki/DOT_\(graph_description_language\)). По умолчанию: 0.
+
+Примеры:
+
+```sql
+EXPLAIN AST SELECT 1;
+```
+
+```sql
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 1)
+   ExpressionList (children 1)
+    Literal UInt64_1
+```
+
+```sql
+EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
+```
+
+```sql
+  explain
+  AlterQuery  t1 (children 1)
+   ExpressionList (children 1)
+    AlterCommand 27 (children 1)
+     Function equals (children 1)
+      ExpressionList (children 2)
+       Identifier date
+       Function today (children 1)
+        ExpressionList
+```
+
+<div id="explain-syntax">
+  ### EXPLAIN SYNTAX
+</div>
+
+Показывает абстрактное синтаксическое дерево (AST) запроса после синтаксического анализа.
+
+Для этого запрос разбирается, строятся AST запроса и дерево запроса, при необходимости запускаются анализатор запросов и оптимизационные проходы, после чего дерево запроса преобразуется обратно в AST запроса.
+
+Настройки:
+
+* `oneline` – Выводить запрос в одну строку. По умолчанию: `0`.
+* `run_query_tree_passes` – Выполнять проходы по дереву запроса перед выводом дерева запроса. По умолчанию: `0`.
+* `query_tree_passes` – Если задано `run_query_tree_passes`, указывает, сколько проходов выполнить. Если `query_tree_passes` не указано, выполняются все проходы.
+
+Примеры:
+
+```sql title="Query"
+EXPLAIN SYNTAX SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+```sql title="Response"
+SELECT *
+FROM system.numbers AS a, system.numbers AS b, system.numbers AS c
+WHERE (a.number = b.number) AND (b.number = c.number)
+```
+
+С параметром `run_query_tree_passes`:
+
+```sql title="Query"
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT * FROM system.numbers AS a, system.numbers AS b, system.numbers AS c WHERE a.number = b.number AND b.number = c.number;
+```
+
+```sql title="Response"
+SELECT
+    __table1.number AS `a.number`,
+    __table2.number AS `b.number`,
+    __table3.number AS `c.number`
+FROM system.numbers AS __table1
+ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
+ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
+```
+
+<div id="explain-query-tree">
+  ### EXPLAIN QUERY TREE
+</div>
+
+Настройки:
+
+* `run_passes` — Выполнить все проходы по дереву запроса перед его выводом. По умолчанию: `1`.
+* `dump_passes` — Вывести информацию об использованных проходах по дереву запроса перед выводом дерева запроса. По умолчанию: `0`.
+* `passes` — Указывает, сколько проходов по дереву запроса выполнить. Если задано значение `-1`, выполняются все проходы по дереву запроса. По умолчанию: `-1`.
+* `dump_tree` — Показать дерево запроса. По умолчанию: `1`.
+* `dump_ast` — Показать AST запроса, сгенерированное из дерева запроса. По умолчанию: `0`.
+
+Пример:
+
+```sql
+EXPLAIN QUERY TREE SELECT id, value FROM test_table;
+```
+
+```sql
+QUERY id: 0
+  PROJECTION COLUMNS
+    id UInt64
+    value String
+  PROJECTION
+    LIST id: 1, nodes: 2
+      COLUMN id: 2, column_name: id, result_type: UInt64, source_id: 3
+      COLUMN id: 4, column_name: value, result_type: String, source_id: 3
+  JOIN TREE
+    TABLE id: 3, table_name: default.test_table
+```
+
+<div id="explain-plan">
+  ### EXPLAIN PLAN
+</div>
+
+Выводит шаги плана запроса.
+
+Настройки:
+
+* `optimize` — Управляет тем, применять ли оптимизации плана запроса перед его отображением. Значение по умолчанию: 1.
+* `header` — Выводит заголовок для шага. Значение по умолчанию: 0.
+* `description` — Выводит описание шага. Значение по умолчанию: 1.
+* `indexes` — Показывает используемые индексы, количество отфильтрованных частей и количество отфильтрованных гранул для каждого применённого индекса. Значение по умолчанию: 0. Поддерживается для таблиц [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree). Начиная с ClickHouse &gt;= v25.9, этот оператор показывает осмысленный результат только при использовании с `SETTINGS use_query_condition_cache = 0, use_skip_indexes_on_data_read = 0`.
+* `projections` — Показывает все проанализированные проекции и их влияние на фильтрацию на уровне частей на основе условий по первичному ключу проекции. Для каждой проекции в этом разделе приводится статистика, включая количество частей, строк, меток и диапазонов, оценённых с использованием первичного ключа проекции. Также показывается, сколько частей данных было пропущено благодаря этой фильтрации без чтения из самой проекции. Была ли проекция действительно использована для чтения или только проанализирована для фильтрации, можно определить по полю `description`. Значение по умолчанию: 0. Поддерживается для таблиц [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
+* `actions` — Выводит подробную информацию о действиях шага. Значение по умолчанию: 0.
+* `sorting` — Выводит описание сортировки для каждого шага плана, который формирует отсортированный вывод. Значение по умолчанию: 0.
+* `keep_logical_steps` — Сохраняет логические шаги плана для JOIN вместо преобразования их в физические реализации JOIN. Значение по умолчанию: 0.
+* `json` — Выводит шаги плана запроса как строку в формате [JSON](/ru/reference/formats/JSON/JSON). Значение по умолчанию: 0. Чтобы избежать лишнего экранирования, рекомендуется использовать формат [TabSeparatedRaw (TSVRaw)](/ru/reference/formats/TabSeparated/TabSeparatedRaw).
+* `input_headers` — Выводит входные заголовки для шага. Значение по умолчанию: 0. В основном полезно только разработчикам для отладки проблем, связанных с несоответствием входных и выходных заголовков.
+* `column_structure` — Также выводит структуру столбцов в заголовках помимо их имени и типа. Значение по умолчанию: 0. В основном полезно только разработчикам для отладки проблем, связанных с несоответствием входных и выходных заголовков.
+* `distributed` — Показывает планы запроса, выполняемые на удалённых узлах для distributed таблиц или параллельных реплик. Значение по умолчанию: 0.
+* `compact` — Если включено, скрывает из плана шаги выражений и подробную информацию о действиях (входы, функции, псевдонимы и позиции вывода). Действует только при `actions = 1`. Значение по умолчанию: 0.
+* `pretty` — Выводит дерево плана с использованием символов построения линий (├──, └──, │) вместо отступов для наглядного отображения иерархии. Также форматирует свойства шага JOIN в одну строку. Значение по умолчанию: 0.
+
+Когда `json=1`, имена шагов будут содержать дополнительный суффикс с уникальным идентификатором шага.
+
+Пример:
+
+```sql
+EXPLAIN SELECT sum(number) FROM numbers(10) GROUP BY number % 4;
+```
+
+```sql
+Union
+  Expression (Projection)
+  Expression (Before ORDER BY and SELECT)
+    Aggregating
+      Expression (Before GROUP BY)
+        SettingQuotaAndLimits (Set limits and quota after reading from storage)
+          ReadFromStorage (SystemNumbers)
+```
+
+<Note>
+  Оценка стоимости шагов и запроса не поддерживается.
+</Note>
+
+Если `json = 1`, план запроса представляется в формате JSON. Каждый узел — это словарь, который всегда содержит ключи `Node Type` и `Plans`. `Node Type` — это строка с именем шага. `Plans` — это массив с описаниями дочерних шагов. В зависимости от типа узла и настроек также могут добавляться другие необязательные ключи.
+
+Пример:
+
+```sql
+EXPLAIN json = 1, description = 0 SELECT 1 UNION ALL SELECT 2 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Union",
+      "Node Id": "Union_10",
+      "Plans": [
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_13",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_0"
+            }
+          ]
+        },
+        {
+          "Node Type": "Expression",
+          "Node Id": "Expression_16",
+          "Plans": [
+            {
+              "Node Type": "ReadFromStorage",
+              "Node Id": "ReadFromStorage_4"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+При `description` = 1 к шагу добавляется ключ `Description`:
+
+```json
+{
+  "Node Type": "ReadFromStorage",
+  "Description": "SystemOne"
+}
+```
+
+При `header` = 1 в шаг добавляется ключ `Header` в виде массива столбцов.
+
+Пример:
+
+```sql
+EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Header": [
+        {
+          "Name": "1",
+          "Type": "UInt8"
+        },
+        {
+          "Name": "plus(2, dummy)",
+          "Type": "UInt16"
+        }
+      ],
+      "Plans": [
+        {
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0",
+          "Header": [
+            {
+              "Name": "dummy",
+              "Type": "UInt8"
+            }
+          ]
+        }
+      ]
+    }
+  }
+]
+```
+
+При `indexes` = 1 добавляется ключ `Indexes`. Он содержит массив использованных индексов. Каждый индекс описывается в формате JSON с ключом `Type` (строка `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` или `Skip`) и следующими необязательными ключами:
+
+* `Name` — имя индекса (в настоящее время используется только для индексов `Skip`).
+* `Keys` — массив столбцов, используемых индексом.
+* `Condition` — используемое условие.
+* `Description` — описание индекса (в настоящее время используется только для индексов `Skip`).
+* `Parts` — количество частей после/до применения индекса.
+* `Granules` — количество гранул после/до применения индекса.
+* `Ranges` — количество диапазонов гранул после применения индекса.
+
+Пример:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Indexes": [
+  {
+    "Type": "Partition Min-Max",
+    "Keys": ["y"],
+    "Condition": "(y in [1, +inf))",
+    "Parts": 4/5,
+    "Granules": 11/12
+  },
+  {
+    "Type": "Partition",
+    "Keys": ["y", "bitAnd(z, 3)"],
+    "Condition": "and((bitAnd(z, 3) not in [1, 1]), and((y in [1, +inf)), (bitAnd(z, 3) not in [1, 1])))",
+    "Parts": 3/4,
+    "Granules": 10/11
+  },
+  {
+    "Type": "PrimaryKey",
+    "Keys": ["x", "y"],
+    "Condition": "and((x in [11, +inf)), (y in [1, +inf)))",
+    "Parts": 2/3,
+    "Granules": 6/10,
+    "Search Algorithm": "generic exclusion search"
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_minmax",
+    "Description": "minmax GRANULARITY 2",
+    "Parts": 1/2,
+    "Granules": 2/6
+  },
+  {
+    "Type": "Skip",
+    "Name": "t_set",
+    "Description": "set GRANULARITY 2",
+    "": 1/1,
+    "Granules": 1/2
+  }
+]
+```
+
+При `projections` = 1 добавляется ключ `Projections`. Он содержит массив проанализированных проекций. Каждая проекция описывается в формате JSON со следующими ключами:
+
+* `Name` — Имя проекции.
+* `Condition` — Используемое условие по первичному ключу проекции.
+* `Description` — Описание использования проекции (например, фильтрация на уровне частей).
+* `Selected Parts` — Количество частей, выбранных проекцией.
+* `Selected Marks` — Количество выбранных меток.
+* `Selected Ranges` — Количество выбранных диапазонов.
+* `Selected Rows` — Количество выбранных строк.
+* `Filtered Parts` — Количество частей, пропущенных из-за фильтрации на уровне частей.
+
+Пример:
+
+```json
+"Node Type": "ReadFromMergeTree",
+"Projections": [
+  {
+    "Name": "region_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(region in ['us_west', 'us_west'])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 3,
+    "Selected Marks": 3,
+    "Selected Ranges": 3,
+    "Selected Rows": 3,
+    "Filtered Parts": 2
+  },
+  {
+    "Name": "user_id_proj",
+    "Description": "Projection has been analyzed and is used for part-level filtering",
+    "Condition": "(user_id in [107, 107])",
+    "Search Algorithm": "binary search",
+    "Selected Parts": 1,
+    "Selected Marks": 1,
+    "Selected Ranges": 1,
+    "Selected Rows": 1,
+    "Filtered Parts": 2
+  }
+]
+```
+
+При `actions` = 1 добавляемые ключи зависят от типа шага.
+
+Пример:
+
+```sql
+EXPLAIN json = 1, actions = 1, description = 0 SELECT 1 FORMAT TSVRaw;
+```
+
+```json
+[
+  {
+    "Plan": {
+      "Node Type": "Expression",
+      "Node Id": "Expression_5",
+      "Expression": {
+        "Inputs": [
+          {
+            "Name": "dummy",
+            "Type": "UInt8"
+          }
+        ],
+        "Actions": [
+          {
+            "Node Type": "INPUT",
+            "Result Type": "UInt8",
+            "Result Name": "dummy",
+            "Arguments": [0],
+            "Removed Arguments": [0],
+            "Result": 0
+          },
+          {
+            "Node Type": "COLUMN",
+            "Result Type": "UInt8",
+            "Result Name": "1",
+            "Column": "Const(UInt8)",
+            "Arguments": [],
+            "Removed Arguments": [],
+            "Result": 1
+          }
+        ],
+        "Outputs": [
+          {
+            "Name": "1",
+            "Type": "UInt8"
+          }
+        ],
+        "Positions": [1]
+      },
+      "Plans": [
+        {
+          "Node Type": "ReadFromStorage",
+          "Node Id": "ReadFromStorage_0"
+        }
+      ]
+    }
+  }
+]
+```
+
+При `compact = 1` каждый шаг `Expression` удаляется. Кроме того, если задано `actions = 1`, строки `Actions` и `Positions` скрываются, оставляя только описания шагов:
+
+```sql
+EXPLAIN actions = 1, compact = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Aggregating
+Keys: modulo(__table1.number, 4_UInt8)
+Aggregates:
+    sum(__table1.number)
+      Function: sum(UInt64) → UInt64
+      Arguments: __table1.number
+Skip merging: 0
+  ReadFromSystemNumbers
+```
+
+При `distributed` = 1 вывод включает не только локальный план запроса, но и планы запросов, которые будут выполняться на удалённых узлах. Это полезно для анализа и отладки распределённых запросов.
+
+Пример с distributed таблицей:
+
+```sql
+EXPLAIN distributed=1 SELECT * FROM remote('127.0.0.{1,2}', numbers(2)) WHERE number = 1;
+```
+
+```sql
+Union
+  Expression ((Project names + (Projection + (Change column names to column identifiers + (Project names + Projection)))))
+    Filter ((WHERE + Change column names to column identifiers))
+      ReadFromSystemNumbers
+  Expression ((Project names + (Projection + Change column names to column identifiers)))
+    ReadFromRemote (Read from remote replica)
+      Expression ((Project names + Projection))
+        Filter ((WHERE + Change column names to column identifiers))
+          ReadFromSystemNumbers
+```
+
+Пример с параллельными репликами:
+
+```sql
+SET enable_parallel_replicas = 2, max_parallel_replicas = 2, cluster_for_parallel_replicas = 'default';
+
+EXPLAIN distributed=1 SELECT sum(number) FROM test_table GROUP BY number % 4;
+```
+
+```sql
+Expression ((Project names + Projection))
+  MergingAggregated
+    Union
+      Aggregating
+        Expression ((Before GROUP BY + Change column names to column identifiers))
+          ReadFromMergeTree (default.test_table)
+      ReadFromRemoteParallelReplicas
+        BlocksMarshalling
+          Aggregating
+            Expression ((Before GROUP BY + Change column names to column identifiers))
+              ReadFromMergeTree (default.test_table)
+```
+
+В обоих примерах план запроса отображает полный поток выполнения, включая локальные и удалённые этапы.
+
+При `pretty` = 1 дерево плана отображается с использованием символов псевдографики вместо отступов, а для ключевых шагов показывается дополнительная информация:
+
+* **Выходные столбцы запроса** выводятся в верхней части плана.
+* **Выражения** в фильтрах, ключах агрегации, описаниях сортировки и оконных функциях отображаются в понятной SQL-подобной нотации (например, `a + 1 > 5` вместо `greater(plus(a, 1), 5)`). Для наглядности внутренние префиксы идентификаторов столбцов (например, `__table1.`) удаляются.
+* **Шаги источника** (например, `ReadFromMergeTree`) показывают свои выходные столбцы.
+* **Шаги фильтрации** показывают условие фильтрации в SQL-нотации. Если присутствуют runtime-фильтры JOIN, они отображаются отдельно.
+* **Шаги агрегации** показывают ключи и агрегатные функции с их аргументами (например, `sum(c)`, `count()`).
+* **Множества `IN`** из литералов Tuple показывают свои значения (для больших множеств — в усечённом виде), множества на основе подзапросов помечаются как `subquery1`, `subquery2` и т. д., а множества из таблиц с движком `Set` показывают имя таблицы.
+* **Шаги JOIN** показывают отношение JOIN в математической нотации, оценочное количество строк в результате,
+  а также то, какие выходные столбцы приходят с левой и с правой стороны. Для
+  обозначения разных типов JOIN используются следующие символы:
+
+| Символ                 | Тип JOIN        |
+| ---------------------- | --------------- |
+| `⋈`                    | Inner JOIN      |
+| `⟕`                    | Left JOIN       |
+| `⟖`                    | Right JOIN      |
+| `⟗`                    | Full JOIN       |
+| `⋉`                    | Left Semi JOIN  |
+| `⋊`                    | Right Semi JOIN |
+| `⋉` with strikethrough | Left Anti JOIN  |
+| `⋊` with strikethrough | Right Anti JOIN |
+| `×`                    | Cross JOIN      |
+
+Например, `t1 ⟕ t2` означает Left JOIN между таблицами `t1` и `t2`.
+Число в скобках после имени таблицы (например, `t1[100]`) указывает на оценочное количество строк,
+если доступна статистика таблицы.
+
+Параметр `pretty` хорошо работает вместе с `compact = 1`, который скрывает шаги `Expression` и подробную информацию о действиях, делая план более удобным для чтения.
+
+```sql
+EXPLAIN pretty = 1 SELECT sum(number) FROM numbers(10) GROUP BY number % 4 FORMAT Raw;
+```
+
+```text
+Expression ((Project names + Projection))
+└──Aggregating
+   └──Expression ((Before GROUP BY + Change column names to column identifiers))
+      └──ReadFromSystemNumbers
+```
+
+Более подробный пример с JOIN:
+
+```sql
+CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
+INSERT INTO t2 SELECT number, toString(number) FROM numbers(100);
+
+EXPLAIN actions = 1, compact = 1, pretty = 1
+SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id FORMAT Raw;
+```
+
+```text
+Output: id, value, t2.id, t2.value
+
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Result rows: 100
+│  Output:
+│    Left:  id, value
+│    Right: id, value
+│  Join conditions: id = id
+├──ReadFromMergeTree (default.t1)
+│     Read type: Default
+│     Parts: 1 | Granules: 1
+│     Output: id, value
+└──ReadFromMergeTree (default.t2)
+      Read type: Default
+      Parts: 1 | Granules: 1
+      Output: id, value
+```
+
+<div id="explain-pipeline">
+  ### EXPLAIN PIPELINE
+</div>
+
+Настройки:
+
+* `header` — Выводит заголовок для каждого выходного порта. По умолчанию: 0.
+* `graph` — Выводит граф, описанный на языке описания графов [DOT](https://en.wikipedia.org/wiki/DOT_\(graph_description_language\)). По умолчанию: 0.
+* `compact` — Выводит граф в компактном режиме, если включена настройка `graph`. По умолчанию: 1.
+* `compact_repeated_processor_chains` — Объединяет соседние повторяющиеся цепочки процессоров в текстовом выводе, показывая одну копию цепочки с числом повторений. Это может упростить чтение параллельных конвейеров, когда одна и та же цепочка встречается много раз, например при JOIN. На вывод графа это не влияет. По умолчанию: 0.
+
+```text
+Resize 16 → 1
+  FillingRightJoinSide          │
+    SimpleSquashingTransform    │ × 16
+      Resize 1 → 16
+```
+
+Если `compact=0` и `graph=1`, имена процессоров будут содержать дополнительный суффикс с уникальным идентификатором процессора.
+
+Пример:
+
+```sql
+EXPLAIN PIPELINE SELECT sum(number) FROM numbers_mt(100000) GROUP BY number % 4;
+```
+
+```sql
+(Union)
+(Expression)
+ExpressionTransform
+  (Expression)
+  ExpressionTransform
+    (Aggregating)
+    Resize 2 → 1
+      AggregatingTransform × 2
+        (Expression)
+        ExpressionTransform × 2
+          (SettingQuotaAndLimits)
+            (ReadFromStorage)
+            NumbersRange × 2 0 → 1
+```
+
+<div id="explain-estimate">
+  ### EXPLAIN ESTIMATE
+</div>
+
+Показывает оценочное количество строк, меток и частей, которые будут прочитаны из таблиц при обработке запроса. Работает с таблицами семейства [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree).
+
+**Пример**
+
+Создание таблицы:
+
+```sql title="Query"
+CREATE TABLE ttt (i Int64) ENGINE = MergeTree() ORDER BY i SETTINGS index_granularity = 16, write_final_mark = 0;
+INSERT INTO ttt SELECT number FROM numbers(128);
+OPTIMIZE TABLE ttt;
+```
+
+```sql title="Query"
+EXPLAIN ESTIMATE SELECT * FROM ttt;
+```
+
+```text title="Response"
+┌─database─┬─table─┬─parts─┬─rows─┬─marks─┐
+│ default  │ ttt   │     1 │  128 │     8 │
+└──────────┴───────┴───────┴──────┴───────┘
+```
+
+<div id="explain-table-override">
+  ### EXPLAIN TABLE OVERRIDE
+</div>
+
+Показывает результат переопределения таблицы в схеме таблицы, к которой обращаются через табличную функцию.
+Также выполняет проверку и генерирует исключение, если такое переопределение привело бы к какой-либо ошибке.
+
+**Пример**
+
+Предположим, у вас есть удалённая таблица MySQL следующего вида:
+
+```sql title="Query"
+CREATE TABLE db.tbl (
+    id INT PRIMARY KEY,
+    created DATETIME DEFAULT now()
+)
+```
+
+```sql title="Query"
+EXPLAIN TABLE OVERRIDE mysql('127.0.0.1:3306', 'db', 'tbl', 'root', 'clickhouse')
+PARTITION BY toYYYYMM(assumeNotNull(created))
+```
+
+```text title="Response"
+┌─explain─────────────────────────────────────────────────┐
+│ PARTITION BY uses columns: `created` Nullable(DateTime) │
+└─────────────────────────────────────────────────────────┘
+```
+
+<Note>
+  Проверка не является исчерпывающей, поэтому успешный запрос не гарантирует, что переопределение не приведёт к проблемам.
+</Note>

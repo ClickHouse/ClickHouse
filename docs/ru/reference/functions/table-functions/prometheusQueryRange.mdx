@@ -1,0 +1,93 @@
+---
+description: 'Вычисляет запрос Prometheus, используя данные из таблицы TimeSeries.'
+sidebarTitle: 'prometheusQueryRange'
+slug: /sql-reference/table-functions/prometheusQueryRange
+title: 'prometheusQueryRange'
+doc_type: 'reference'
+---
+
+Вычисляет запрос Prometheus, используя данные из таблицы TimeSeries в заданном диапазоне моментов вычисления.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+prometheusQueryRange('db_name', 'time_series_table', 'promql_query', start_time, end_time, step)
+prometheusQueryRange(db_name.time_series_table, 'promql_query', start_time, end_time, step)
+prometheusQueryRange('time_series_table', 'promql_query', start_time, end_time, step)
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `db_name` - Имя базы данных, в которой находится таблица TimeSeries.
+* `time_series_table` - Имя таблицы TimeSeries.
+* `promql_query` - Запрос, записанный в [синтаксисе PromQL](https://prometheus.io/docs/prometheus/latest/querying/basics/).
+* `start_time` - Время начала интервала вычисления.
+* `end_time` - Время окончания интервала вычисления.
+* `step` - Шаг, с которым перебирается время вычисления от `start_time` до `end_time` (включительно).
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Функция может возвращать разные столбцы в зависимости от типа результата запроса, переданного в параметр `promql_query`:
+
+| Тип результата | Возвращаемые столбцы                                                                      | Пример                                              |
+| -------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| vector         | tags Array(Tuple(String, String)), timestamp TimestampType, value ValueType               | prometheusQuery(mytable, &#39;up&#39;)              |
+| matrix         | tags Array(Tuple(String, String)), time&#95;series Array(Tuple(TimestampType, ValueType)) | prometheusQuery(mytable, &#39;up[1m]&#39;)          |
+| scalar         | scalar ValueType                                                                          | prometheusQuery(mytable, &#39;1h30m&#39;)           |
+| string         | string String                                                                             | prometheusQuery(mytable, &#39;&quot;abc&quot;&#39;) |
+
+<div id="supported-promql-features">
+  ## Поддерживаемые возможности PromQL
+</div>
+
+<div id="selectors">
+  ### Селекторы
+</div>
+
+Мгновенные селекторы, селекторы диапазона, сопоставители меток (`=`, `!=`, `=~`, `!~`), модификаторы offset, модификаторы временной метки `@` и подзапросы.
+
+<div id="functions">
+  ### Функции
+</div>
+
+| Категория          | Функции                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| Диапазон           | `rate`, `irate`, `delta`, `idelta`, `last_over_time`                                             |
+| Математические     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`                |
+| Тригонометрические | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`   |
+| Дата и время       | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
+| Тип                | `scalar`, `vector`                                                                               |
+| Гистограмма        | `histogram_quantile`                                                                             |
+| Другое             | `time`, `pi`                                                                                     |
+
+**Note**: `histogram_quantile` использует линейную интерполяцию для классических бакетов гистограммы (определяемых по метке `le`). Нативные гистограммы пока не поддерживаются, а аргумент `phi` (уровень квантиля) сейчас должен быть константным скаляром — выражения, меняющиеся от шага к шагу, такие как `histogram_quantile(time() / 1000, ...)`, отклоняются с ошибкой `NOT_IMPLEMENTED`.
+
+<div id="operators">
+  ### Операторы
+</div>
+
+Все бинарные арифметические (`+`, `-`, `*`, `/`, `%`, `^`), сравнительные (`==`, `!=`, `<`, `>`, `<=`, `>=` с необязательным `bool`) и логические (`and`, `or`, `unless`) операторы с модификаторами `on()`/`ignoring()` и `group_left()`/`group_right()`.
+
+Унарные операторы `+` и `-`.
+
+<div id="aggregation-operators">
+  ### Операторы агрегации
+</div>
+
+`sum`, `avg`, `min`, `max`, `count`, `stddev`, `stdvar`, `group`, `quantile`, `topk`, `bottomk`, `limitk` — с необязательными модификаторами `by()` и `without()`.
+
+Пока не поддерживается: `count_values`.
+
+<div id="example">
+  ## Пример
+</div>
+
+```sql
+SELECT * FROM prometheusQueryRange(mytable, 'rate(http_requests{job="prometheus"}[10m])[1h:10m]', now() - INTERVAL 10 MINUTES, now(), INTERVAL 1 MINUTE)
+```

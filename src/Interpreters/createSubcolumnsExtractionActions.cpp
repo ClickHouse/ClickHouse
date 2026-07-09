@@ -1,4 +1,5 @@
 #include <Interpreters/createSubcolumnsExtractionActions.h>
+#include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeString.h>
@@ -39,11 +40,9 @@ ActionsDAG createSubcolumnsExtractionActions(const Block & available_columns, co
 
             /// Create the second argument of getSubcolumn function with string
             /// containing subcolumn name and add it to the ActionsDAG.
-            ColumnWithTypeAndName subcolumn_name_arg;
-            subcolumn_name_arg.name = subcolumn_name;
-            subcolumn_name_arg.type = std::make_shared<DataTypeString>();
-            subcolumn_name_arg.column = subcolumn_name_arg.type->createColumnConst(1, subcolumn_name);
-            const auto & subcolumn_name_arg_node = extract_subcolumns_dag.addColumn(std::move(subcolumn_name_arg));
+            auto subcolumn_name_type = std::make_shared<DataTypeString>();
+            auto subcolumn_name_column = subcolumn_name_type->createColumnConst(0, subcolumn_name);
+            const auto & subcolumn_name_arg_node = extract_subcolumns_dag.addColumn(std::move(subcolumn_name_column), std::move(subcolumn_name_type), std::string(subcolumn_name));
 
             /// Create and add getSubcolumn function
             auto get_subcolumn_function = FunctionFactory::instance().get("getSubcolumn", context);

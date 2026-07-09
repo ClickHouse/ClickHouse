@@ -75,7 +75,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
-    extern const SettingsBool allow_experimental_query_deduplication;
     extern const SettingsDouble async_insert_busy_timeout_decrease_rate;
     extern const SettingsDouble async_insert_busy_timeout_increase_rate;
     extern const SettingsMilliseconds async_insert_busy_timeout_min_ms;
@@ -95,11 +94,6 @@ namespace Setting
     extern const SettingsString parallel_replicas_custom_key;
     extern const SettingsUInt64 parallel_replicas_custom_key_range_lower;
     extern const SettingsUInt64 parallel_replica_offset;
-}
-
-namespace ServerSetting
-{
-    extern const ServerSettingsInsertDeduplicationVersions insert_deduplication_version;
 }
 
 namespace ErrorCodes
@@ -124,12 +118,18 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
     const std::optional<UUID> & user_id_,
     const std::vector<UUID> & current_roles_,
+    const String & current_user_,
+    const String & initial_user_,
+    const String & authenticated_user_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
     , query_str(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
+    , current_user(current_user_)
+    , initial_user(initial_user_)
+    , authenticated_user(authenticated_user_)
     , settings(std::make_unique<Settings>(settings_))
     , data_kind(data_kind_)
 {
@@ -147,6 +147,13 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
         }
     }
 
+    /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
+    /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
+    for (const String & identity_field : {current_user, initial_user, authenticated_user})
+    {
+        siphash.update(identity_field.size());
+        siphash.update(identity_field);
+    }
 
     setting_changes = settings->changes();
     for (auto it = setting_changes.begin(); it != setting_changes.end();)
@@ -172,6 +179,9 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
     query_str = other.query_str;
     user_id = other.user_id;
     current_roles = other.current_roles;
+    current_user = other.current_user;
+    initial_user = other.initial_user;
+    authenticated_user = other.authenticated_user;
     settings = std::make_unique<Settings>(*other.settings);
     data_kind = other.data_kind;
     hash = other.hash;
@@ -187,6 +197,9 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
         query_str = other.query_str;
         user_id = other.user_id;
         current_roles = other.current_roles;
+        current_user = other.current_user;
+        initial_user = other.initial_user;
+        authenticated_user = other.authenticated_user;
         settings = std::make_unique<Settings>(*other.settings);
         data_kind = other.data_kind;
         hash = other.hash;
@@ -398,10 +411,11 @@ void AsynchronousInsertQueue::preprocessInsertQuery(const ASTPtr & query, const 
         /* async_insert */ false);
 
     auto table = interpreter.getTable(insert_query);
+    const auto metadata_snapshot = table->getInMemoryMetadataPtr(query_context, false);
     auto sample_block = InterpreterInsertQuery::getSampleBlock(
         insert_query,
         table,
-        table->getInMemoryMetadataPtr(query_context, false),
+        metadata_snapshot,
         query_context,
         /* no_destination */false,
         insert_context->getSettingsRef()[Setting::insert_allow_materialized_columns]);
@@ -533,7 +547,16 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
     if (insert_query.format == "Values")
         entry->query_parameters = query_context->getQueryParameters();
 
-    InsertQuery key{query, query_context->getUserID(), query_context->getCurrentRoles(), settings, data_kind};
+    const auto & client_info = query_context->getClientInfo();
+    InsertQuery key{
+        query,
+        query_context->getUserID(),
+        query_context->getCurrentRoles(),
+        client_info.current_user,
+        client_info.initial_user,
+        client_info.authenticated_user,
+        settings,
+        data_kind};
     InsertDataPtr data_to_process;
     std::future<ResultProgress> progress_future;
 
@@ -571,7 +594,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         data->entries.emplace_back(entry);
         progress_future = entry->getFuture();
 
-        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
+        LOG_TRACE(log, "Have {} pending inserts in shard {} with total {} bytes of data",
+            data->entries.size(), size_t(shard_num), data->size_in_bytes);
+        LOG_TEST(log, "Have {} pending inserts in shard {} with total {} bytes of data for the async insert queries '{}'",
             data->entries.size(), size_t(shard_num), data->size_in_bytes, fmt::join(getInsertQueryIds(*data), ", "));
 
         bool has_enough_bytes = data->size_in_bytes >= (*key.settings)[Setting::async_insert_max_data_size];
@@ -978,6 +1003,14 @@ try
         insert_context->setCurrentRoles(key.current_roles);
     }
 
+    /// Context::setUser only restores the access-control identity, not the ClientInfo user
+    /// names. Restore them from the originating query so currentUser()/user()/
+    /// authenticatedUser() and the materialized views triggered by the flush observe the
+    /// inserting user instead of an empty string.
+    insert_context->setCurrentUserName(key.current_user);
+    insert_context->setInitialUserName(key.initial_user);
+    insert_context->setAuthenticatedUserName(key.authenticated_user);
+
     insert_context->setSettings(*key.settings);
 
     /// Set initial_query_id, because it's used in InterpreterInsertQuery for table lock.
@@ -1006,10 +1039,18 @@ try
     else
         query_scope = QueryScope::create(insert_context);
 
-    LOG_DEBUG(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
+    LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
+    LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
 
     String query_for_logging = serializeQuery(*key.query, insert_context->getSettingsRef()[Setting::log_queries_cut_to_length]);
     UInt64 normalized_query_hash = normalizedQueryHash(query_for_logging, false);
+
+    /// Make the hash available to the parts of the insert that account `NORMALIZED_QUERY_HASH` quotas
+    /// but do not otherwise have it: the `WRITTEN_BYTES` pre-check in `InterpreterInsertQuery` and the
+    /// `CountingTransform` built from this context. The normal query path does this in `executeQuery`,
+    /// but async insert flushes build the interpreter directly, so without this every async insert
+    /// pattern would charge `WRITTEN_BYTES` to hash `0` and share a single bucket.
+    insert_context->setNormalizedQueryHash(normalized_query_hash);
 
     /// We add it to the process list so
     /// a) it appears in system.processes
@@ -1121,6 +1162,12 @@ try
         pipeline = interpreter->execute().pipeline;
         chassert(pipeline.pushing());
 
+        /// Propagate the process list element to the pipeline so that the executor enables
+        /// per-processor profiling (otherwise elapsed_us and *_wait_elapsed_us stay zero in
+        /// system.processors_profile_log for async insert flushes). The normal query path does
+        /// this in executeQuery, but the flush builds and runs the pipeline directly.
+        pipeline.setProcessListElement(insert_context->getProcessListElement());
+
         query_log_elem = logQueryStart(
             query_start_time,
             insert_context,
@@ -1130,13 +1177,14 @@ try
             pipeline,
             interpreter.get(),
             internal,
+            /*log_as_internal=*/ internal,
             query_database,
             query_table,
             async_insert);
     }
     catch (...)
     {
-        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal);
+        logExceptionBeforeStart(query_for_logging, normalized_query_hash, insert_context, key.query, query_span, start_watch.elapsedMilliseconds(), internal, /*log_as_internal=*/ internal);
 
         if (async_insert_log)
         {
@@ -1162,7 +1210,7 @@ try
         queue_shard_flush_time_history.updateWithCurrentTime();
 
         LOG_DEBUG(log, "Asynchronous insert query logQueryFinish query_kind '{}', 'query_id {}'", query_log_elem.query_kind, query_log_elem.client_info.current_query_id);
-        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal);
+        logQueryFinish(query_log_elem, insert_context, key.query, std::move(pileline_), /*pulling_pipeline=*/false, query_span, QueryResultCacheUsage::None, internal, /*log_as_internal=*/ internal);
 
         /// Finish entries (and notify waiting clients) after logging,
         /// so that SYSTEM FLUSH LOGS issued right after the async insert
@@ -1211,7 +1259,7 @@ try
     catch (...)
     {
         bool log_error = true;
-        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, log_error);
+        logQueryException(query_log_elem, insert_context, start_watch, key.query, query_span, internal, /*log_as_internal=*/ internal, log_error);
         if (!log_elements.empty())
         {
             auto exception = getCurrentExceptionMessage(false);
@@ -1282,9 +1330,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         data->entries.size(),
         std::move(adding_defaults_transform));
 
-    auto deduplication_info = DeduplicationInfo::create(
-        /*async_insert=*/true,
-        insert_context->getServerSettings()[ServerSetting::insert_deduplication_version].value);
+    auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
 
     for (const auto & entry : data->entries)
     {
@@ -1327,9 +1373,7 @@ Chunk AsynchronousInsertQueue::processPreprocessedEntries(
     LogFunc && add_to_async_insert_log)
 {
     size_t total_rows = 0;
-    auto deduplication_info = DeduplicationInfo::create(
-        /*async_insert=*/true,
-        context_->getServerSettings()[ServerSetting::insert_deduplication_version].value);
+    auto deduplication_info = DeduplicationInfo::create(/*async_insert=*/true);
     auto result_columns = header.cloneEmptyColumns();
 
     for (const auto & entry : data->entries)

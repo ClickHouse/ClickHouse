@@ -1,0 +1,300 @@
+---
+slug: /use-cases/data-lake/nessie-catalog
+sidebarTitle: 'Nessie Catalog'
+title: 'Nessie Catalog'
+description: '本指南将逐步介绍如何使用 ClickHouse 和 Nessie Catalog 查询
+ 您的数据。'
+keywords: ['Nessie', 'REST', '事务型', '数据湖', 'Iceberg', '类似 Git']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge />
+
+<Note>
+  与 Nessie Catalog 的集成仅适用于 Iceberg 表。
+  此集成同时支持 AWS S3 和其他云存储提供商。
+</Note>
+
+ClickHouse 支持与多个目录 (Unity、Glue、REST、Polaris 等) 集成。本指南将逐步介绍如何使用 ClickHouse 和 [Nessie](https://projectnessie.org/) 目录查询您的数据。
+
+Nessie 是一个面向数据湖的开源事务目录，提供：
+
+* **受 Git 启发的** 数据版本控制，支持分支和提交
+* **跨表事务** 和可见性保证
+* **REST API**，符合 Iceberg REST catalog 规范
+* **开放数据湖** 方法，支持 Hive、Spark、Dremio、Trino 等
+* **适用于生产环境的** Docker 或 Kubernetes 部署
+
+<Note>
+  由于此功能处于 Experimental 阶段，您需要通过以下命令启用：
+  `SET allow_experimental_database_iceberg = 1;`
+</Note>
+
+<div id="local-development-setup">
+  ## 本地开发环境设置
+</div>
+
+对于本地开发和测试，你可以使用容器化的 Nessie 配置。这种方式非常适合用于学习、原型设计和开发环境。
+
+<div id="local-prerequisites">
+  ### 前置条件
+</div>
+
+1. **Docker and Docker Compose**：确保已安装 Docker，且其正在运行
+2. **示例设置**：你可以使用官方的 Nessie docker-compose 配置
+
+<div id="setting-up-local-nessie-catalog">
+  ### 配置本地 Nessie Catalog
+</div>
+
+你可以使用官方的 [Nessie docker-compose setup](https://projectnessie.org/guides/setting-up/)，它提供了一个包含 Nessie、内存版本存储以及用于对象存储的 MinIO 在内的完整环境。
+
+**步骤 1：** 创建一个新文件夹来运行此示例，然后创建一个名为 `docker-compose.yml` 的文件，内容如下：
+
+```yaml
+version: '3.8'
+
+services:
+  nessie:
+    image: ghcr.io/projectnessie/nessie:latest
+    ports:
+      - "19120:19120"
+    environment:
+      - nessie.version.store.type=IN_MEMORY
+      - nessie.catalog.default-warehouse=warehouse
+      - nessie.catalog.warehouses.warehouse.location=s3://my-bucket/
+      - nessie.catalog.service.s3.default-options.endpoint=http://minio:9000/
+      - nessie.catalog.service.s3.default-options.access-key=urn:nessie-secret:quarkus:nessie.catalog.secrets.access-key
+      - nessie.catalog.service.s3.default-options.path-style-access=true
+      - nessie.catalog.service.s3.default-options.auth-type=STATIC
+      - nessie.catalog.secrets.access-key.name=admin
+      - nessie.catalog.secrets.access-key.secret=password
+      - nessie.catalog.service.s3.default-options.region=us-east-1
+      - nessie.server.authentication.enabled=false
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - iceberg_net
+
+  minio:
+    image: quay.io/minio/minio
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_REGION=us-east-1
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    entrypoint: >
+      /bin/sh -c "
+      minio server /data --console-address ':9001' &
+      sleep 10;
+      mc alias set myminio http://localhost:9000 admin password;
+      mc mb myminio/my-bucket --ignore-existing;
+      tail -f /dev/null"
+    networks:
+      - iceberg_net
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:head
+    container_name: nessie-clickhouse
+    user: '0:0'  # 确保 root 权限
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/data_import:/var/lib/clickhouse/data_import  # 挂载数据集文件夹
+    networks:
+      - iceberg_net
+    environment:
+      - CLICKHOUSE_DB=default
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DO_NOT_CHOWN=1
+      - CLICKHOUSE_PASSWORD=
+    depends_on:
+      nessie:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+volumes:
+  clickhouse_data:
+
+networks:
+  iceberg_net:
+    driver: bridge
+```
+
+**步骤 2：**运行以下命令以启动相关服务：
+
+```bash
+docker compose up -d
+```
+
+**步骤 3：** 等待所有服务准备就绪。你可以查看日志：
+
+```bash
+docker-compose logs -f
+```
+
+<Note>
+  Nessie 配置使用内存中的版本存储，并且要求先将样本数据加载到 Iceberg 表中。在尝试通过 ClickHouse 查询这些表之前，请确保环境已完成这些表的创建并已填充数据。
+</Note>
+
+<div id="connecting-to-local-nessie-catalog">
+  ### 连接到本地 Nessie Catalog
+</div>
+
+连接到您的 ClickHouse 容器：
+
+```bash
+docker exec -it nessie-clickhouse clickhouse-client
+```
+
+然后创建与 Nessie Catalog 的数据库连接：
+
+```sql
+SET allow_experimental_database_iceberg = 1;
+
+CREATE DATABASE demo
+ENGINE = DataLakeCatalog('http://nessie:19120/iceberg', 'admin', 'password')
+SETTINGS catalog_type = 'rest', storage_endpoint = 'http://minio:9002/my-bucket', warehouse = 'warehouse'
+```
+
+<div id="querying-nessie-catalog-tables-using-clickhouse">
+  ## 使用 ClickHouse 查询 Nessie Catalog 中的表
+</div>
+
+现在连接已建立，您可以开始通过 Nessie Catalog 执行查询。例如：
+
+```sql
+USE demo;
+
+SHOW TABLES;
+```
+
+如果你的环境中包含示例数据 (例如出租车数据集) ，你应该会看到如下表：
+
+```response
+┌─name──────────┐
+│ default.taxis │
+└───────────────┘
+```
+
+<Note>
+  如果你没有看到任何表，通常说明：
+
+  1. 环境尚未创建示例表
+  2. Nessie Catalog 服务尚未完全初始化
+  3. 示例数据加载过程尚未完成
+
+  你可以查看 Nessie 日志，了解 catalog 的活动情况：
+
+  ```bash
+  docker-compose logs nessie
+  ```
+</Note>
+
+要查询表 (如果可用) ：
+
+```sql
+SELECT count(*) FROM `default.taxis`;
+```
+
+```response
+┌─count()─┐
+│ 2171187 │
+└─────────┘
+```
+
+<Info>
+  **必须使用反引号**
+
+  必须使用反引号，因为 ClickHouse 不支持使用多个命名空间。
+</Info>
+
+要查看该表的 DDL：
+
+```sql
+SHOW CREATE TABLE `default.taxis`;
+```
+
+```response
+┌─statement─────────────────────────────────────────────────────────────────────────────────────┐
+│ CREATE TABLE demo.`default.taxis`                                                             │
+│ (                                                                                             │
+│     `VendorID` Nullable(Int64),                                                               │
+│     `tpep_pickup_datetime` Nullable(DateTime64(6)),                                           │
+│     `tpep_dropoff_datetime` Nullable(DateTime64(6)),                                          │
+│     `passenger_count` Nullable(Float64),                                                      │
+│     `trip_distance` Nullable(Float64),                                                        │
+│     `RatecodeID` Nullable(Float64),                                                           │
+│     `store_and_fwd_flag` Nullable(String),                                                    │
+│     `PULocationID` Nullable(Int64),                                                           │
+│     `DOLocationID` Nullable(Int64),                                                           │
+│     `payment_type` Nullable(Int64),                                                           │
+│     `fare_amount` Nullable(Float64),                                                          │
+│     `extra` Nullable(Float64),                                                                │
+│     `mta_tax` Nullable(Float64),                                                              │
+│     `tip_amount` Nullable(Float64),                                                           │
+│     `tolls_amount` Nullable(Float64),                                                         │
+│     `improvement_surcharge` Nullable(Float64),                                                │
+│     `total_amount` Nullable(Float64),                                                         │
+│     `congestion_surcharge` Nullable(Float64),                                                 │
+│     `airport_fee` Nullable(Float64)                                                           │
+│ )                                                                                             │
+│ ENGINE = Iceberg('http://localhost:9002/my-bucket/default/taxis/', 'admin', '[HIDDEN]')      │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="loading-data-from-your-data-lake-into-clickhouse">
+  ## 将您的数据湖中的数据加载到 ClickHouse
+</div>
+
+如果您需要将 Nessie Catalog 中的数据加载到 ClickHouse，请先创建一个本地 ClickHouse 表：
+
+```sql
+CREATE TABLE taxis
+(
+    `VendorID` Int64,
+    `tpep_pickup_datetime` DateTime64(6),
+    `tpep_dropoff_datetime` DateTime64(6),
+    `passenger_count` Float64,
+    `trip_distance` Float64,
+    `RatecodeID` Float64,
+    `store_and_fwd_flag` String,
+    `PULocationID` Int64,
+    `DOLocationID` Int64,
+    `payment_type` Int64,
+    `fare_amount` Float64,
+    `extra` Float64,
+    `mta_tax` Float64,
+    `tip_amount` Float64,
+    `tolls_amount` Float64,
+    `improvement_surcharge` Float64,
+    `total_amount` Float64,
+    `congestion_surcharge` Float64,
+    `airport_fee` Float64
+)
+ENGINE = MergeTree()
+PARTITION BY toYYYYMM(tpep_pickup_datetime)
+ORDER BY (VendorID, tpep_pickup_datetime, PULocationID, DOLocationID);
+```
+
+然后通过 `INSERT INTO SELECT` 从您的 Nessie Catalog 表中导入数据：
+
+```sql
+INSERT INTO taxis 
+SELECT * FROM demo.`default.taxis`;
+```

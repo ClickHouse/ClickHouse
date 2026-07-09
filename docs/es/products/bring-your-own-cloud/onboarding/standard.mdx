@@ -1,0 +1,104 @@
+---
+title: 'Onboarding estándar'
+slug: /cloud/reference/byoc/onboarding/standard
+sidebarTitle: 'Proceso estándar'
+keywords: ['BYOC', 'nube', 'bring your own cloud', 'onboarding']
+description: 'Implemente ClickHouse en su propia infraestructura en la nube'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="what-is-standard-onboarding">
+  ## ¿Qué es el onboarding estándar?
+</div>
+
+**El onboarding estándar** es el flujo de trabajo guiado predeterminado para implementar ClickHouse en tu propia cuenta en la nube mediante BYOC. En este enfoque, ClickHouse Cloud aprovisiona todos los recursos principales en la nube necesarios para tu implementación, como la VPC/VNet, las subredes, los grupos de seguridad, el clúster de Kubernetes (EKS/GKE/AKS) y los roles de IAM/cuentas de servicio/entidades de servicio necesarios, dentro de tu cuenta de AWS, proyecto de GCP o suscripción de Azure. Esto garantiza una configuración coherente y segura, y minimiza los pasos manuales que debe realizar tu equipo.
+
+Con el onboarding estándar, simplemente proporcionas una cuenta de AWS, un proyecto de GCP o una suscripción de Azure dedicados, y ejecutas una pila inicial (mediante CloudFormation o Terraform) para crear los permisos mínimos y la relación de confianza necesarios para que ClickHouse Cloud orqueste la configuración posterior. Todos los pasos posteriores, incluido el aprovisionamiento de la infraestructura y el lanzamiento del servicio, se gestionan a través de la consola web de ClickHouse Cloud.
+
+Se recomienda encarecidamente a los clientes preparar una cuenta de AWS, un proyecto de GCP o una suscripción de Azure **dedicados** para alojar la implementación BYOC de ClickHouse, a fin de garantizar un mejor aislamiento en términos de permisos y recursos. ClickHouse implementará un conjunto dedicado de recursos en la nube (VPC/VNet, clúster de Kubernetes, roles de IAM/cuentas de servicio/entidades de servicio, buckets de almacenamiento de objetos, etc.) en tu cuenta.
+
+Si necesitas una configuración más personalizada (por ejemplo, implementar en una VPC existente), consulta la documentación de [Customized Onboarding](/es/products/bring-your-own-cloud/onboarding/customization-aws).
+
+<Note>
+  Un onboarding BYOC estándar tarda aproximadamente entre 45 y 90 minutos de principio a fin, medidos desde el momento en que se inician los pasos de CloudFormation o Terraform hasta que el primer servicio de ClickHouse queda accesible.
+</Note>
+
+<div id="request-access">
+  ## Solicitar acceso
+</div>
+
+Para iniciar el proceso de onboarding, [contáctenos](https://clickhouse.com/cloud/bring-your-own-cloud). Nuestro equipo le guiará a lo largo de los requisitos de BYOC, le ayudará a seleccionar las opciones de implementación más adecuadas y añadirá su cuenta a la lista de acceso autorizado.
+
+<div id="onboarding-process">
+  ## Onboarding
+</div>
+
+<div id="prepare-an-aws-account">
+  ### Prepara una cuenta de AWS, un proyecto de GCP o una suscripción de Azure
+</div>
+
+Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure en tu organización.
+
+<Steps>
+  <Step>
+    ### Elige un proveedor de Cloud
+
+    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC choose CSP" background="black" />
+  </Step>
+
+  <Step>
+    ### Configuración de la cuenta, el proyecto o la suscripción
+
+    La configuración inicial de BYOC puede realizarse con una [plantilla de CloudFormation (AWS)](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml), un [módulo de Terraform (GCP)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) o un [módulo de Terraform (Azure)](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure). Esto crea una identidad con privilegios elevados (rol de IAM/cuenta de servicio/entidad de servicio), lo que permite a los controladores de BYOC de ClickHouse Cloud administrar tu infraestructura.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="BYOC initialize account" background="black" />
+
+    <Note>
+      Los buckets de almacenamiento, la VPC/VNet, el clúster de Kubernetes y los recursos de cómputo necesarios para ejecutar ClickHouse no se incluyen en esta configuración inicial. Se aprovisionarán en el siguiente paso.
+    </Note>
+
+    #### Módulo alternativo de Terraform para AWS
+
+    Si prefieres usar Terraform en lugar de CloudFormation para implementaciones en AWS, también ofrecemos un [módulo de Terraform para AWS](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz).
+
+    Uso:
+
+    ```hcl
+    module "clickhouse_onboarding" {
+      source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+      byoc_env = "production"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ### Configura la infraestructura de BYOC
+
+    Se te pedirá que configures la infraestructura, incluidos los buckets de almacenamiento de objetos, la VPC/VNet y el clúster de Kubernetes, desde la consola de ClickHouse Cloud. Hay ciertas configuraciones que deben definirse en esta etapa, ya que no podrán cambiarse más adelante. En concreto:
+
+    * **Región**: Todas las **regiones públicas** incluidas en nuestra documentación de [regiones compatibles](/es/products/cloud/reference/supported-regions) están disponibles para implementaciones de BYOC. Actualmente, las regiones privadas no son compatibles.
+
+    * **Rango CIDR de la VPC/VNet**: De forma predeterminada, usamos `10.0.0.0/16` para el rango CIDR de la VPC (AWS/GCP) o la VNet (Azure) de BYOC. Si planeas usar peering de VPC/VNet con otra cuenta, asegúrate de que los rangos CIDR no se superpongan. Asigna un rango CIDR adecuado para BYOC, con un tamaño mínimo de `/23` para admitir las workloads necesarias.
+
+    * **Zonas de disponibilidad**: Si planeas usar peering de VPC, alinear las zonas de disponibilidad entre las cuentas de origen y de BYOC puede ayudar a reducir los costos del tráfico entre zonas. Por ejemplo, en AWS, los sufijos de las zonas de disponibilidad (`a`, `b`, `c`) pueden representar distintos ID de zonas físicas según la cuenta. Consulta la [guía de AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) para obtener más detalles.
+
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC set up infrastructure" background="black" />
+  </Step>
+</Steps>
+
+<div id="create-clickhouse-service">
+  ### Crea tu primer servicio de ClickHouse BYOC
+</div>
+
+Una vez aprovisionada tu infraestructura BYOC, ya puedes lanzar tu primer servicio de ClickHouse. Abre la consola de ClickHouse Cloud, selecciona tu entorno BYOC y sigue las indicaciones para crear un nuevo servicio.
+
+<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC crear nuevo servicio" />
+
+Durante la creación del servicio, configurarás las siguientes opciones:
+
+* **Service name**: Introduce un nombre claro y descriptivo para tu servicio de ClickHouse.
+* **BYOC infrastructure**: Selecciona el entorno BYOC, incluida la cuenta en la nube y la región, donde se ejecutará tu servicio.
+* **Resource configuration**: Elige la cantidad de CPU y memoria asignada a tus réplicas de ClickHouse.
+* **Replica count**: Establece el número de réplicas para mejorar la alta disponibilidad.

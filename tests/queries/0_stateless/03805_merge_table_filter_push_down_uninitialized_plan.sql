@@ -1,4 +1,5 @@
 -- Test case for fix: QueryPlan was not initialized error when pushing down filter to Merge table
+SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;

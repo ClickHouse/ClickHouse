@@ -1,0 +1,52 @@
+---
+position: 1
+slug: /clickhouse-operator/overview
+title: 'ClickHouse Operator'
+keywords: ['kubernetes']
+description: 'ClickHouse Operator の概要ページ。Kubernetes 上で ClickHouse クラスターおよび ClickHouse Keeper クラスターのデプロイ、設定、管理を自動化する Kubernetes オペレーターです。'
+doc_type: 'guide'
+sidebarTitle: '概要'
+---
+
+ClickHouse Operator は、Kubernetes 上で ClickHouse クラスターおよび ClickHouse Keeper クラスターのデプロイ、設定、管理を自動化する Kubernetes オペレーターです。
+カスタムリソースを通じて宣言的なクラスター管理を実現し、高可用性の ClickHouse デプロイメントを簡単に作成できます。
+
+この Operator は、スケーリング、アップグレード、設定管理を含む ClickHouse クラスターのライフサイクル全体を管理します。
+
+<div id="features">
+  ## 機能
+</div>
+
+* **ClickHouseクラスター管理**: ClickHouseクラスターの作成と管理
+* **ClickHouse Keeperインテグレーション**: 分散協調のためのClickHouse Keeperクラスターを標準でサポート
+* **ストレージのプロビジョニング**: ストレージクラスを選択できる、カスタマイズ可能なPersistentVolumeClaim
+* **高可用性**: ClickHouseおよびKeeperクラスター向けの耐障害性インストール
+* **セキュリティ**: クラスター通信を保護するためのTLS/SSL対応を含む、組み込みのセキュリティ機能
+* **監視**: オブザーバビリティのためのPrometheusメトリクスとのインテグレーション
+
+<div id="installation">
+  ## インストール
+</div>
+
+ご希望のインストール方法を選択してください。
+
+* [マニフェストによるインストール](/ja/products/kubernetes-operator/install/kubectl) - kubectl/kustomize を使用してインストール
+* [Helm によるインストール](/ja/products/kubernetes-operator/install/helm) - Helm チャートを使用してインストール
+* [Operator Lifecycle Manager (OLM) によるインストール](/ja/products/kubernetes-operator/install/olm) - OLM を使用してインストール
+
+<div id="guides">
+  ## ガイド
+</div>
+
+* **[はじめに](/ja/products/kubernetes-operator/guides/introduction)** - ClickHouse Operator の概念の概要
+* **[設定ガイド](/ja/products/kubernetes-operator/guides/configuration)** - ClickHouse と Keeper クラスターを設定する
+* **[監視](/ja/products/kubernetes-operator/guides/monitoring)** - オペレーター の Prometheus メトリクスとヘルスプローブ
+* **[スケーリング](/ja/products/kubernetes-operator/guides/scaling)** - レプリカ、分片、Keeper クォーラムをスケールする
+* **[TLS で保護する](/ja/products/kubernetes-operator/guides/tls)** - cert-manager を使用してクラスターをエンドツーエンドで暗号化する
+* **[ネットワークポリシー](/ja/products/kubernetes-operator/guides/network-policies)** - オペレーターのメトリクスおよび webhook エンドポイントへのアクセスを制限する
+
+<div id="reference">
+  ## リファレンス
+</div>
+
+* **[API リファレンス](/ja/products/kubernetes-operator/reference/api-reference)** - カスタムリソースの完全な API ドキュメント

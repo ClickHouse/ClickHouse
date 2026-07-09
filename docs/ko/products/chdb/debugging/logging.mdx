@@ -1,0 +1,399 @@
+---
+title: 'DataStore 로깅'
+sidebarTitle: '로깅'
+slug: /chdb/debugging/logging
+description: '디버깅 및 모니터링을 위한 DataStore 로깅을 구성합니다'
+keywords: ['chdb', 'datastore', '로깅', '디버깅', '로그', '수준']
+doc_type: '참고'
+---
+
+DataStore는 Python의 표준 로깅 모듈을 사용합니다. 이 가이드에서는 디버깅을 위한 로깅 구성 방법을 설명합니다.
+
+<div id="quick-start">
+  ## 빠른 시작
+</div>
+
+```python
+from pathlib import Path
+Path("data.csv").write_text("""\
+name,age,city,salary,department
+Alice,25,NYC,55000,Engineering
+Bob,30,LA,65000,Product
+Charlie,35,NYC,80000,Engineering
+Diana,28,SF,70000,Design
+Eve,42,NYC,95000,Product
+""")
+
+from chdb import datastore as pd
+from chdb.datastore.config import config
+
+# 디버그 로깅 활성화
+config.enable_debug()
+
+# 이제 모든 작업의 세부 정보가 로깅됩니다
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).to_df()
+```
+
+<div id="levels">
+  ## 로그 레벨
+</div>
+
+| 수준         | 값  | 설명                  |
+| ---------- | -- | ------------------- |
+| `DEBUG`    | 10 | debugging을 위한 상세 정보 |
+| `INFO`     | 20 | 일반적인 운영 정보          |
+| `WARNING`  | 30 | 경고 메시지(기본값)         |
+| `ERROR`    | 40 | 오류 메시지              |
+| `CRITICAL` | 50 | 치명적인 장애             |
+
+<div id="setting-level">
+  ## 로그 레벨 설정
+</div>
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# 표준 로깅 수준 사용
+config.set_log_level(logging.DEBUG)
+config.set_log_level(logging.INFO)
+config.set_log_level(logging.WARNING)  # 기본값
+config.set_log_level(logging.ERROR)
+
+# 빠른 프리셋 사용
+config.enable_debug()  # DEBUG 수준 + 상세 포맷 설정
+```
+
+<div id="format">
+  ## 로그 포맷
+</div>
+
+<div id="simple">
+  ### 간단한 포맷(기본값)
+</div>
+
+```python title="Query"
+config.set_log_format("simple")
+```
+
+```text title="Response"
+DEBUG - Executing SQL query
+DEBUG - Cache miss for key abc123
+```
+
+<div id="verbose">
+  ### 상세 포맷
+</div>
+
+```python title="Query"
+config.set_log_format("verbose")
+```
+
+```text title="Response"
+2024-01-15 10:30:45.123 DEBUG datastore.core - Executing SQL query
+2024-01-15 10:30:45.456 DEBUG datastore.cache - Cache miss for key abc123
+```
+
+***
+
+<div id="what-logged">
+  ## 로그에 기록되는 내용
+</div>
+
+<div id="debug-logged">
+  ### DEBUG 수준
+</div>
+
+* 생성된 SQL 쿼리
+* 실행 엔진 선택
+* 캐시 작업(적중/미스)
+* 작업 소요 시간
+* 데이터 소스 정보
+
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - SQL: SELECT * FROM file('data.csv', 'CSVWithNames') WHERE age > 25
+DEBUG - Using engine: chdb
+DEBUG - Execution time: 0.089s
+DEBUG - Cache: Storing result (key: abc123)
+```
+
+<div id="info-logged">
+  ### INFO 수준
+</div>
+
+* 주요 작업 완료 사항
+* 구성 변경
+* 데이터 소스 연결
+
+```text
+INFO - Loaded 1,000,000 rows from data.csv
+INFO - Execution engine set to: chdb
+INFO - Connected to MySQL: localhost:3306/mydb
+```
+
+<div id="warning-logged">
+  ### WARNING 수준
+</div>
+
+* 더 이상 권장되지 않는 기능 사용
+* 성능 경고
+* 치명적이지 않은 문제
+
+```text
+WARNING - Large result set (>1M rows) may cause memory issues
+WARNING - Cache TTL exceeded, re-executing query
+WARNING - Column 'date' has mixed types, using string
+```
+
+<div id="error-logged">
+  ### ERROR 수준
+</div>
+
+* 쿼리 실행 오류
+* 연결 오류
+* 데이터 변환 오류
+
+```text
+ERROR - Failed to execute SQL: syntax error near 'FORM'
+ERROR - Connection to MySQL failed: timeout
+ERROR - Cannot convert column 'price' to float
+```
+
+***
+
+<div id="custom">
+  ## 사용자 지정 로깅 구성
+</div>
+
+<div id="python-logging">
+  ### Python 로깅 사용
+</div>
+
+```python
+import logging
+
+# 루트 로거 구성
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('datastore.log'),
+        logging.StreamHandler()
+    ]
+)
+
+# DataStore 로거 가져오기
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.setLevel(logging.DEBUG)
+```
+
+<div id="log-file">
+  ### 로그를 파일에 기록
+</div>
+
+```python
+import logging
+
+# 파일 핸들러 생성
+file_handler = logging.FileHandler('datastore_debug.log')
+file_handler.setLevel(logging.DEBUG)
+file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+))
+
+# DataStore 로거에 추가
+ds_logger = logging.getLogger('chdb.datastore')
+ds_logger.addHandler(file_handler)
+```
+
+<div id="suppress">
+  ### 로깅 비활성화
+</div>
+
+```python
+import logging
+
+# 모든 DataStore 로그 억제
+logging.getLogger('chdb.datastore').setLevel(logging.CRITICAL)
+
+# 또는 구성 사용
+config.set_log_level(logging.CRITICAL)
+```
+
+***
+
+<div id="scenarios">
+  ## 디버깅 시나리오
+</div>
+
+<div id="debug-sql">
+  ### SQL 생성 디버깅
+</div>
+
+```python
+config.enable_debug()
+
+ds = pd.read_csv("data.csv")
+result = ds.filter(ds['age'] > 25).groupby('city').sum()
+```
+
+로그 출력:
+
+```text
+DEBUG - Creating DataStore from file 'data.csv'
+DEBUG - Building filter: age > 25
+DEBUG - Building groupby: city
+DEBUG - Building aggregation: sum
+DEBUG - Generated SQL:
+        SELECT city, SUM(*) 
+        FROM file('data.csv', 'CSVWithNames')
+        WHERE age > 25
+        GROUP BY city
+```
+
+<div id="debug-engine">
+  ### 엔진 선택 디버깅
+</div>
+
+```python
+config.enable_debug()
+
+result = ds.filter(ds['x'] > 10).apply(custom_func)
+```
+
+로그 출력:
+
+```text
+DEBUG - filter: selecting engine (eligible: chdb, pandas)
+DEBUG - filter: using chdb (SQL-compatible)
+DEBUG - apply: selecting engine (eligible: pandas)
+DEBUG - apply: using pandas (custom function)
+```
+
+<div id="debug-cache">
+  ### 캐시 작업 디버깅
+</div>
+
+```python
+config.enable_debug()
+
+# 첫 번째 실행
+result1 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - 쿼리 해시 abc123 캐시 미스
+# DEBUG - 쿼리 실행 중...
+# DEBUG - 결과 캐싱 중 (key: abc123, size: 1.2MB)
+
+# 두 번째 실행 (동일 쿼리)
+result2 = ds.filter(ds['age'] > 25).to_df()
+# DEBUG - 쿼리 해시 abc123 캐시 히트
+# DEBUG - 캐시된 결과 반환
+```
+
+<div id="debug-performance">
+  ### 성능 문제 진단
+</div>
+
+```python
+config.enable_debug()
+config.enable_profiling()
+
+# 각 작업의 소요 시간이 로그에 표시됩니다
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .to_df()
+)
+```
+
+로그 출력:
+
+```text
+DEBUG - filter: 0.002ms
+DEBUG - groupby: 0.001ms
+DEBUG - agg: 0.003ms
+DEBUG - SQL generation: 0.012ms
+DEBUG - SQL execution: 89.456ms  <- 주요 시간 소요 구간
+DEBUG - Result conversion: 2.345ms
+```
+
+***
+
+<div id="production">
+  ## 운영 환경 구성
+</div>
+
+<div id="recommended">
+  ### 권장 설정
+</div>
+
+```python
+import logging
+from chdb.datastore.config import config
+
+# 프로덕션: 최소 로깅
+config.set_log_level(logging.WARNING)
+config.set_log_format("simple")
+config.set_profiling_enabled(False)
+```
+
+<div id="rotation">
+  ### 로그 순환
+</div>
+
+```python
+import logging
+from logging.handlers import RotatingFileHandler
+
+# 순환 파일 핸들러 생성
+handler = RotatingFileHandler(
+    'datastore.log',
+    maxBytes=10*1024*1024,  # 10MB
+    backupCount=5
+)
+handler.setLevel(logging.WARNING)
+
+# DataStore 로거에 추가
+logging.getLogger('chdb.datastore').addHandler(handler)
+```
+
+***
+
+<div id="env-vars">
+  ## 환경 변수
+</div>
+
+환경 변수를 사용해 로깅을 구성할 수도 있습니다:
+
+```bash
+# 로그 레벨 설정
+export CHDB_LOG_LEVEL=DEBUG
+
+# 로그 포맷 설정
+export CHDB_LOG_FORMAT=verbose
+```
+
+```python
+import os
+import logging
+
+# 환경 변수에서 읽기
+log_level = os.environ.get('CHDB_LOG_LEVEL', 'WARNING')
+config.set_log_level(getattr(logging, log_level))
+```
+
+***
+
+<div id="summary">
+  ## 요약
+</div>
+
+| 작업        | 명령                                       |
+| --------- | ---------------------------------------- |
+| 디버그 활성화   | `config.enable_debug()`                  |
+| 수준 설정     | `config.set_log_level(logging.DEBUG)`    |
+| 포맷 설정     | `config.set_log_format("verbose")`       |
+| 파일에 로그 기록 | Python 로깅 핸들러 사용                         |
+| 로그 억제     | `config.set_log_level(logging.CRITICAL)` |

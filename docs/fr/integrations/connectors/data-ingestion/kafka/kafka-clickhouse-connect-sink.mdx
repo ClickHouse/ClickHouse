@@ -1,0 +1,1161 @@
+---
+sidebarTitle: 'ClickHouse Kafka Connect Sink'
+slug: /integrations/kafka/clickhouse-kafka-connect-sink
+description: 'Le connecteur Kafka officiel de ClickHouse.'
+title: 'ClickHouse Kafka Connect Sink'
+doc_type: 'guide'
+keywords: ['ClickHouse Kafka Connect Sink', 'connecteur Kafka ClickHouse', 'connecteur officiel ClickHouse', 'intégration Kafka ClickHouse']
+---
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+<Note>
+  Si vous avez besoin d’aide, veuillez [ouvrir une issue dans le repository](https://github.com/ClickHouse/clickhouse-kafka-connect/issues) ou poser votre question sur le [Slack public de ClickHouse](https://clickhouse.com/slack).
+</Note>
+
+**ClickHouse Kafka Connect Sink** est le connecteur Kafka qui achemine les données d’un topic Kafka vers une table ClickHouse.
+
+<div id="license">
+  ### Licence
+</div>
+
+Le Kafka Connector Sink est distribué sous licence [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+
+<div id="requirements-for-the-environment">
+  ### Prérequis de l&#39;environnement
+</div>
+
+Le framework [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) v2.7 ou une version ultérieure doit être installé dans l&#39;environnement.
+
+<div id="version-compatibility-matrix">
+  ### Matrice de compatibilité des versions
+</div>
+
+| Version de ClickHouse Kafka Connect | Version de ClickHouse | Kafka Connect | Confluent Platform |
+| ----------------------------------- | --------------------- | ------------- | ------------------ |
+| 1.0.0                               | &gt; 23.3             | &gt; 2.7      | &gt; 6.1           |
+
+<div id="main-features">
+  ### Principales fonctionnalités
+</div>
+
+* Livré avec une sémantique exactly-once prête à l&#39;emploi. Il repose sur une nouvelle fonctionnalité du cœur de ClickHouse appelée [KeeperMap](https://github.com/ClickHouse/ClickHouse/pull/39976) (utilisée comme magasin d&#39;état par le connecteur) et permet une architecture minimaliste.
+* Prise en charge des magasins d&#39;état tiers : utilise actuellement par défaut le stockage en mémoire, mais peut aussi utiliser KeeperMap (Redis sera bientôt ajouté).
+* Intégration au cœur : développée, maintenue et prise en charge par ClickHouse.
+* Testé en continu sur [ClickHouse Cloud](https://clickhouse.com/cloud).
+* Insertions de données avec ou sans schéma déclaré.
+* Prise en charge de tous les types de données de ClickHouse.
+
+<div id="installation-instructions">
+  ### Instructions d’installation
+</div>
+
+<div id="gather-your-connection-details">
+  #### Rassemblez vos informations de connexion
+</div>
+
+<ConnectionDetails />
+
+<div id="general-installation-instructions">
+  #### Instructions générales d&#39;installation
+</div>
+
+Le connecteur est distribué sous la forme d&#39;un unique fichier JAR contenant tous les fichiers de classes nécessaires à l&#39;exécution du plugin.
+
+Pour installer le plugin, suivez les étapes suivantes :
+
+* Téléchargez une archive ZIP contenant le fichier JAR du connecteur depuis la page [Releases](https://github.com/ClickHouse/clickhouse-kafka-connect/releases) du dépôt ClickHouse Kafka Connect Sink.
+* Extrayez le contenu du fichier ZIP et copiez-le à l&#39;emplacement souhaité.
+* Ajoutez à la configuration [plugin.path](https://kafka.apache.org/documentation/#connectconfigs_plugin.path) de votre fichier de propriétés Connect le chemin du répertoire du plugin, afin que Confluent Platform puisse le trouver.
+* Indiquez dans la config le nom du topic, le hostname de l&#39;instance ClickHouse et le mot de passe.
+
+```yml
+connector.class=com.clickhouse.kafka.connect.ClickHouseSinkConnector
+tasks.max=1
+topics=<topic_name>
+ssl=true
+jdbcConnectionProperties=?sslmode=STRICT
+security.protocol=SSL
+hostname=<hostname>
+database=<database_name>
+password=<password>
+ssl.truststore.location=/tmp/kafka.client.truststore.jks
+port=8443
+value.converter.schemas.enable=false
+value.converter=org.apache.kafka.connect.json.JsonConverter
+exactlyOnce=true
+username=default
+schemas.enable=false
+```
+
+* Redémarrez Confluent Platform.
+* Si vous utilisez Confluent Platform, connectez-vous à l’UI du Confluent Control Center pour vérifier que le ClickHouse Sink figure dans la liste des connecteurs disponibles.
+
+<div id="configuration-options">
+  ### Options de configuration
+</div>
+
+Pour connecter le ClickHouse Sink au serveur ClickHouse, vous devez fournir :
+
+* les informations de connexion : nom d’hôte (**obligatoire**) et port (facultatif)
+* les identifiants utilisateur : mot de passe (**obligatoire**) et nom d’utilisateur (facultatif)
+* la classe du connecteur : `com.clickhouse.kafka.connect.ClickHouseSinkConnector` (**obligatoire**)
+* topics ou topics.regex : les topics Kafka à interroger ; les noms de topic doivent correspondre aux noms de table (**obligatoire**)
+* les convertisseurs de clé et de valeur : à définir selon le type de données de votre topic. Obligatoire s’ils ne sont pas déjà définis dans la configuration du worker.
+
+Le tableau complet des options de configuration :
+
+| Nom de la propriété                                    | Description                                                                                                                                                                                                                                                                                                                                                            | Valeur par défaut                                        |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `hostname` (obligatoire)                               | Le nom d’hôte ou l’adresse IP du serveur                                                                                                                                                                                                                                                                                                                               | N/A                                                      |
+| `port`                                                 | Le port ClickHouse : la valeur par défaut est 8443 (pour HTTPS dans le Cloud), mais pour HTTP (la valeur par défaut pour les déploiements self-hosted), utilisez 8123                                                                                                                                                                                                  | `8443`                                                   |
+| `ssl`                                                  | Active la connexion SSL à ClickHouse                                                                                                                                                                                                                                                                                                                                   | `true`                                                   |
+| `jdbcConnectionProperties`                             | Propriétés de connexion lors de la connexion à ClickHouse. Doivent commencer par `?` et être séparées par `&` entre chaque `param=value`                                                                                                                                                                                                                               | `""`                                                     |
+| `username`                                             | Nom d’utilisateur de la base de données ClickHouse                                                                                                                                                                                                                                                                                                                     | `default`                                                |
+| `password` (obligatoire)                               | Mot de passe de la base de données ClickHouse                                                                                                                                                                                                                                                                                                                          | N/A                                                      |
+| `database`                                             | Nom de la base de données ClickHouse                                                                                                                                                                                                                                                                                                                                   | `default`                                                |
+| `connector.class` (obligatoire)                        | Classe du connecteur (à définir explicitement et à conserver comme valeur par défaut)                                                                                                                                                                                                                                                                                  | `"com.clickhouse.kafka.connect.ClickHouseSinkConnector"` |
+| `tasks.max`                                            | Nombre de tâches du connecteur                                                                                                                                                                                                                                                                                                                                         | `"1"`                                                    |
+| `errors.retry.timeout`                                 | Durée maximale de nouvelle tentative de Kafka Connect, en millisecondes. `0` pour aucune nouvelle tentative. `-1` pour un nombre infini de nouvelles tentatives. La valeur recommandée est supérieure à &quot;10000&quot; ms (10 secondes)  Délai d’expiration                                                                                                         | `"0"`                                                    |
+| `exactlyOnce`                                          | Activation d’Exactly Once                                                                                                                                                                                                                                                                                                                                              | `"false"`                                                |
+| `topics` (Obligatoire)                                 | Topics Kafka à interroger : les noms des topics doivent correspondre aux noms des tables                                                                                                                                                                                                                                                                               | `""`                                                     |
+| `key.converter` (Obligatoire* - Voir la description)   | À définir selon les types de vos clés. Obligatoire ici si vous transmettez des clés (et qu’elles ne sont pas définies dans la config du worker).                                                                                                                                                                                                                       | `"org.apache.kafka.connect.storage.StringConverter"`     |
+| `value.converter` (Obligatoire* - voir la description) | À définir selon le type de données de votre topic. Formats pris en charge : JSON, String, Avro ou Protobuf. Obligatoire ici si non défini dans la config du worker.                                                                                                                                                                                                    | `"org.apache.kafka.connect.json.JsonConverter"`          |
+| `value.converter.schemas.enable`                       | Prise en charge du schéma par le convertisseur de valeur du connecteur                                                                                                                                                                                                                                                                                                 | `"false"`                                                |
+| `errors.tolerance`                                     | Tolérance aux erreurs du connecteur. Valeurs prises en charge : none, all                                                                                                                                                                                                                                                                                              | `"none"`                                                 |
+| `errors.deadletterqueue.topic.name`                    | Si cette option est définie (avec errors.tolerance=all), une DLQ sera utilisée pour les lots ayant échoué (voir [Dépannage](#troubleshooting))                                                                                                                                                                                                                         | `""`                                                     |
+| `errors.deadletterqueue.context.headers.enable`        | Ajoute des headers supplémentaires pour la DLQ                                                                                                                                                                                                                                                                                                                         | `""`                                                     |
+| `clickhouseSettings`                                   | Liste de paramètres ClickHouse séparés par des virgules (par ex. &quot;insert&#95;quorum=2, etc...&quot;)                                                                                                                                                                                                                                                              | `""`                                                     |
+| `topic2TableMap`                                       | Liste séparée par des virgules qui associe les noms de topic aux noms de table (par ex. &quot;topic1=table1, topic2=table2, etc...&quot;)                                                                                                                                                                                                                              | `""`                                                     |
+| `tableRefreshInterval`                                 | Durée (en secondes) avant l’actualisation du cache de définition de table                                                                                                                                                                                                                                                                                              | `0`                                                      |
+| `keeperOnCluster`                                      | Permet de configurer le paramètre ON CLUSTER pour les instances auto-hébergées (par ex. `ON CLUSTER clusterNameInConfigFileDefinition`) pour la table connect&#95;state exactly-once (voir [Requêtes DDL distribuées](/fr/reference/statements/distributed-ddl)                                                                                                           | `""`                                                     |
+| `bypassRowBinary`                                      | Permet de désactiver l’utilisation de RowBinary et RowBinaryWithDefaults pour les données basées sur un schéma (Avro, Protobuf, etc.) ; à utiliser uniquement lorsque les données comportent des colonnes manquantes et que Nullable/Default n’est pas acceptable                                                                                                      | `"false"`                                                |
+| `dateTimeFormats`                                      | Formats de date et d’heure utilisés pour l’analyse des champs DateTime64 du schéma, séparés par `;` (par exemple, `someDateField=yyyy-MM-dd HH:mm:ss.SSSSSSSSS;someOtherDateField=yyyy-MM-dd HH:mm:ss`).                                                                                                                                                               | `""`                                                     |
+| `tolerateStateMismatch`                                | Permet au connecteur d&#39;écarter des enregistrements &quot;antérieurs&quot; à l&#39;offset actuel stocké dans AFTER&#95;PROCESSING (par ex. si l&#39;offset 5 est envoyé et que l&#39;offset 250 est le dernier offset enregistré). À utiliser pour rétablir l&#39;ingestion après une défaillance, puis à remettre sur `"false"` une fois l&#39;opération terminée. | `"false"`                                                |
+| `ignorePartitionsWhenBatching`                         | Ignore la partition lors de la collecte des messages pour `insert` (mais uniquement si `exactlyOnce` vaut `false`). Remarque sur les performances : plus il y a de tâches de connector, moins il y a de partitions Kafka attribuées par tâche — les gains peuvent donc être décroissants.                                                                              | `"false"`                                                |
+| `bufferCount` (depuis la version v1.3.6)               | Nombre d’enregistrements à conserver en mémoire tampon avant leur écriture dans ClickHouse. `0` désactive la mise en mémoire tampon interne. La mise en mémoire tampon n’est pas prise en charge avec `exactlyOnce=true`.                                                                                                                                              | `"0"`                                                    |
+| `bufferFlushTime` (à partir de la v1.3.6)              | Temps maximal, en millisecondes, pendant lequel les enregistrements sont conservés en mémoire tampon avant leur écriture lorsque `exactlyOnce=false`. `0` désactive l&#39;écriture déclenchée par le temps. La valeur par défaut est `0`. Requis uniquement pour un seuil basé sur le temps. N&#39;a d&#39;effet que lorsque `bufferCount > 0`.                        | `"0"`                                                    |
+| `reportInsertedOffsets` (à partir de la v1.3.6)        | Permet à `preCommit` de ne renvoyer que les offsets insérés avec succès (au lieu de `currentOffsets`) lorsque `exactlyOnce=false`. Cela ne s&#39;applique pas lorsque `ignorePartitionsWhenBatching=true`, cas dans lequel `currentOffsets` est toujours renvoyé.                                                                                                      | `"false"`                                                |
+
+<div id="target-tables">
+  ### Tables cibles
+</div>
+
+ClickHouse Connect Sink lit les messages des topics Kafka et les écrit dans les tables appropriées. ClickHouse Connect Sink écrit les données dans des tables existantes. Veuillez vous assurer qu&#39;une table cible avec un schéma adapté a été créée dans ClickHouse avant de commencer à y insérer des données.
+
+Chaque topic nécessite une table cible dédiée dans ClickHouse. Le nom de la table cible doit correspondre au nom du topic source.
+
+<div id="pre-processing">
+  ### Prétraitement
+</div>
+
+Si vous devez transformer les messages sortants avant leur envoi à ClickHouse Kafka Connect
+Sink, utilisez les [transformations Kafka Connect](https://docs.confluent.io/platform/current/connect/transforms/overview.html).
+
+<div id="supported-data-types">
+  ### Types de données pris en charge
+</div>
+
+**Avec un schéma déclaré :**
+
+| Kafka Connect Type                      | Type ClickHouse                | Pris en charge | Primitif |
+| --------------------------------------- | ------------------------------ | -------------- | -------- |
+| STRING                                  | String                         | ✅              | Oui      |
+| STRING                                  | JSON. Voir ci-dessous (1)      | ✅              | Oui      |
+| INT8                                    | Int8                           | ✅              | Oui      |
+| INT16                                   | Int16                          | ✅              | Oui      |
+| INT32                                   | Int32                          | ✅              | Oui      |
+| INT64                                   | Int64                          | ✅              | Oui      |
+| FLOAT32                                 | Float32                        | ✅              | Oui      |
+| FLOAT64                                 | Float64                        | ✅              | Oui      |
+| BOOLEAN                                 | Boolean                        | ✅              | Oui      |
+| ARRAY                                   | Array(T)                       | ✅              | Non      |
+| MAP                                     | Map(Primitive, T)              | ✅              | Non      |
+| STRUCT                                  | Variant(T1, T2, ...)           | ✅              | Non      |
+| STRUCT                                  | Tuple(a T1, b T2, ...)         | ✅              | Non      |
+| STRUCT                                  | Nested(a T1, b T2, ...)        | ✅              | Non      |
+| STRUCT                                  | JSON. Voir ci-dessous (1), (2) | ✅              | Non      |
+| BYTES                                   | String                         | ✅              | Non      |
+| org.apache.kafka.connect.data.Time      | Int64 / DateTime64             | ✅              | Non      |
+| org.apache.kafka.connect.data.Timestamp | Int32 / Date32                 | ✅              | Non      |
+| org.apache.kafka.connect.data.Decimal   | Decimal                        | ✅              | Non      |
+
+* (1) - JSON est pris en charge uniquement lorsque les paramètres ClickHouse incluent `input_format_binary_read_json_as_string=1`. Cela fonctionne uniquement avec la famille de formats RowBinary, et ce paramètre affecte toutes les colonnes de la requête d&#39;insertion ; elles doivent donc toutes être de type chaîne. Dans ce cas, le connecteur convertit STRUCT en chaîne JSON.
+
+* (2) - Lorsqu&#39;une struct contient des unions comme `oneof`, le convertisseur doit être configuré pour NE PAS ajouter de préfixe/suffixe aux noms de champs. Il existe le paramètre `generate.index.for.unions=false` [pour `ProtobufConverter`](https://docs.confluent.io/platform/current/schema-registry/connect.html#protobuf).
+
+**Sans schéma déclaré :**
+
+Un enregistrement est converti en JSON et envoyé à ClickHouse comme valeur au format [JSONEachRow](/fr/reference/formats/JSON/JSONEachRow).
+
+<div id="configuration-recipes">
+  ### Exemples de configuration
+</div>
+
+Voici quelques exemples de configuration courants pour vous aider à démarrer rapidement.
+
+<div id="basic-configuration">
+  #### Configuration de base
+</div>
+
+La configuration minimale pour démarrer : elle suppose que vous exécutez Kafka Connect en mode distribué, qu’un serveur ClickHouse s’exécute sur `localhost:8443` avec SSL activé, et que les données sont au format JSON sans schéma.
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    "tasks.max": "1",
+    "consumer.override.max.poll.records": "5000",
+    "consumer.override.max.partition.fetch.bytes": "5242880",
+    "database": "default",
+    "errors.retry.timeout": "60000",
+    "exactlyOnce": "false",
+    "hostname": "localhost",
+    "port": "8443",
+    "ssl": "true",
+    "jdbcConnectionProperties": "?ssl=true&sslmode=strict",
+    "username": "default",
+    "password": "<PASSWORD>",
+    "topics": "<TOPIC_NAME>",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "clickhouseSettings": ""
+  }
+}
+```
+
+<Note>
+  La configuration du connecteur ci-dessus exige d’activer les client overrides dans la configuration de votre worker via `connector.client.config.override.policy=All`. Pour en savoir plus, consultez la [documentation de Kafka Connect](https://docs.confluent.io/platform/current/connect/references/allconfigs.html#override-the-worker-configuration).
+</Note>
+
+<div id="basic-configuration-with-multiple-topics">
+  #### Configuration de base avec plusieurs topics
+</div>
+
+Le connecteur peut consommer des données à partir de plusieurs topics
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    ...
+    "topics": "SAMPLE_TOPIC, ANOTHER_TOPIC, YET_ANOTHER_TOPIC",
+    ...
+  }
+}
+```
+
+<div id="basic-configuration-with-dlq">
+  #### Configuration de base avec DLQ
+</div>
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    ...
+    "errors.tolerance": "all",
+    "errors.deadletterqueue.topic.name": "<DLQ_TOPIC>",
+    "errors.deadletterqueue.context.headers.enable": "true",
+  }
+}
+```
+
+<div id="using-with-different-data-formats">
+  #### Utilisation de différents formats de données
+</div>
+
+<div id="avro-schema-support">
+  ##### Prise en charge du schéma Avro
+</div>
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    ...
+    "value.converter": "io.confluent.connect.avro.AvroConverter",
+    "value.converter.schema.registry.url": "<SCHEMA_REGISTRY_HOST>:<PORT>",
+    "value.converter.schemas.enable": "true",
+  }
+}
+```
+
+<div id="avro-type-mapping">
+  ###### Correspondance des types Avro
+</div>
+
+La correspondance de types ci-dessous est définie par `io.confluent.connect.avro.AvroConverter`, l’implémentation officielle de sérialisation/désérialisation Avro de Kafka Connect. Consultez la [documentation](https://docs.confluent.io/platform/current/connect/userguide.html#avro) de Kafka Connect pour plus d’informations sur la logique de conversion avancée.
+
+✅ : Pris en charge
+
+❌ : Non pris en charge
+
+️⚠️ : Partiellement pris en charge
+
+| Type Avro | Type Kafka Connect | Pris en charge | Notes                                                                                                                                                                                                                                                                                                    |
+| --------- | ------------------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| null      | *N/A*              | ❌              | Non pris en charge comme type autonome, mais peut être utilisé dans des unions                                                                                                                                                                                                                           |
+| boolean   | BOOLEAN            | ✅              |                                                                                                                                                                                                                                                                                                          |
+| int       | INT8/INT16/INT32   | ✅              | Correspond à INT32 par défaut. Correspond à INT8 si le schéma possède la propriété `connect.type=int8` (de même pour INT16 si `connect.type=int16`)                                                                                                                                                      |
+| long      | INT64              | ✅              |                                                                                                                                                                                                                                                                                                          |
+| float     | FLOAT32            | ✅              |                                                                                                                                                                                                                                                                                                          |
+| double    | FLOAT64            | ✅              |                                                                                                                                                                                                                                                                                                          |
+| bytes     | BYTES              | ✅              |                                                                                                                                                                                                                                                                                                          |
+| string    | STRING             | ✅              |                                                                                                                                                                                                                                                                                                          |
+| record    | STRUCT             | ✅              |                                                                                                                                                                                                                                                                                                          |
+| enum      | STRING             | ✅              |                                                                                                                                                                                                                                                                                                          |
+| array     | ARRAY/MAP          | ✅              | Correspond à ARRAY par défaut. Correspond à MAP si le champ a été initialement construit via `AvroData.fromConnectSchema` ([source](https://github.com/confluentinc/schema-registry/blob/174907bfc0d9424e8d02e788f450f4afcdda1750/avro-data/src/main/java/io/confluent/connect/avro/AvroData.java#L943)) |
+| map       | MAP                | ✅              |                                                                                                                                                                                                                                                                                                          |
+| union     | STRUCT/`<T>`       | ⚠️             | Correspond à STRUCT par défaut. Correspond au type singleton `T` dans la définition de l’union si `flatten.singleton.unions=true` (voir la [documentation](https://docs.confluent.io/cloud/current/connectors/reference/connector-configuration.html#value-converter-flatten-singleton-unions))          |
+| fixed     | BYTES              | ⚠️             | Le type logique `decimal` pour `fixed` n’est pas pris en charge (voir ci-dessous)                                                                                                                                                                                                                        |
+
+Reportez-vous à [Types de données pris en charge](#supported-data-types) pour la correspondance entre les types Kafka Connect et les types ClickHouse.
+
+<div id="unsupported-avro-schemas">
+  ###### Schémas Avro non pris en charge
+</div>
+
+Les schémas Avro suivants ne sont pas pris en charge par le connecteur :
+
+* type logique `decimal` de type fixed
+
+```json
+{"name": "decimal_18_4", "type": "fixed", "size": 8, "logicalType": "decimal", "precision": 18, "scale": 4}
+```
+
+* unions Nullable
+
+```json
+{"name": "mixed_union", "type": ["null", "string", "int"], "default": null}
+```
+
+* unions d’enregistrements
+
+```json
+{
+  "name": "record_union",
+  "type": [
+    {
+      "type": "record",
+      "name": "TypeA",
+      "fields": [
+        {
+          "name": "label",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "type": "record",
+      "name": "TypeB",
+      "fields": [
+        {
+          "name": "count",
+          "type": "int"
+        }
+      ]
+    }
+  ]
+}
+```
+
+<div id="protobuf-schema-support">
+  ##### Prise en charge du schéma Protobuf
+</div>
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    ...
+    "value.converter": "io.confluent.connect.protobuf.ProtobufConverter",
+    "value.converter.schema.registry.url": "<SCHEMA_REGISTRY_HOST>:<PORT>",
+    "value.converter.schemas.enable": "true",
+  }
+}
+```
+
+Veuillez noter : si vous rencontrez des problèmes de classes manquantes, tous les environnements n’incluent pas le convertisseur Protobuf et vous devrez peut-être utiliser une autre version du fichier JAR fournie avec les dépendances.
+
+<div id="proto-type-mapping">
+  ###### Correspondance des types Protobuf
+</div>
+
+La correspondance ci-dessous est définie par `io.confluent.connect.protobuf.ProtobufConverter`, l’implémentation officielle de sérialisation/désérialisation Protobuf pour Kafka Connect. Consultez la [documentation](https://docs.confluent.io/platform/current/connect/userguide.html#json-schema-and-protobuf) de Kafka Connect pour plus d’informations sur la logique de conversion.
+
+✅ : Pris en charge
+
+❌ : Non pris en charge
+
+️⚠️ : Partiellement pris en charge
+
+| Type Protobuf                           | Type Kafka Connect                      | Pris en charge | Notes                                                                                                                                                                                   |
+| --------------------------------------- | --------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| double                                  | FLOAT64                                 | ✅              |                                                                                                                                                                                         |
+| float                                   | FLOAT32                                 | ✅              |                                                                                                                                                                                         |
+| int32                                   | INT8/INT16/INT32                        | ✅              | INT32 par défaut. Devient INT8 si le schéma inclut l’option `connect.type=int8` (de même pour INT16 si `connect.type=int16`)                                                            |
+| sint32                                  | INT8/INT16/INT32                        | ✅              | INT32 par défaut. Devient INT8 si le schéma inclut l’option `connect.type=int8` (de même pour INT16 si `connect.type=int16`)                                                            |
+| sfixed32                                | INT8/INT16/INT32                        | ✅              | INT32 par défaut. Devient INT8 si le schéma inclut l’option `connect.type=int8` (de même pour INT16 si `connect.type=int16`)                                                            |
+| uint32                                  | INT64                                   | ✅              |                                                                                                                                                                                         |
+| fixed32                                 | INT64                                   | ✅              |                                                                                                                                                                                         |
+| int64                                   | INT64                                   | ✅              |                                                                                                                                                                                         |
+| uint64                                  | INT64                                   | ✅              |                                                                                                                                                                                         |
+| sint64                                  | INT64                                   | ✅              |                                                                                                                                                                                         |
+| fixed64                                 | INT64                                   | ✅              |                                                                                                                                                                                         |
+| sfixed64                                | INT64                                   | ✅              |                                                                                                                                                                                         |
+| bool                                    | BOOLEAN                                 | ✅              |                                                                                                                                                                                         |
+| string                                  | STRING                                  | ✅              |                                                                                                                                                                                         |
+| bytes                                   | BYTES                                   | ✅              |                                                                                                                                                                                         |
+| enum                                    | INT32/STRING                            | ✅              | STRING par défaut. Devient INT32 si `int.for.enums=true` (voir la [documentation du schema registry](https://docs.confluent.io/platform/current/schema-registry/connect.html#protobuf)) |
+| message                                 | STRUCT                                  | ⚠️             | Voir la section ci-dessous sur les schémas non pris en charge                                                                                                                           |
+| repeated T (where T is not a map entry) | ARRAY                                   | ✅              |                                                                                                                                                                                         |
+| `map<K, V>`                             | MAP                                     | ✅              |                                                                                                                                                                                         |
+| oneof                                   | STRUCT                                  | ⚠️             | Voir la section ci-dessous sur la traduction de oneof vers un schéma ClickHouse                                                                                                         |
+| google.protobuf.DoubleValue             | FLOAT64                                 | ✅              |                                                                                                                                                                                         |
+| google.protobuf.FloatValue              | FLOAT32                                 | ✅              |                                                                                                                                                                                         |
+| google.protobuf.Int64Value              | INT64                                   | ✅              |                                                                                                                                                                                         |
+| google.protobuf.UInt64Value             | INT64                                   | ✅              |                                                                                                                                                                                         |
+| google.protobuf.UInt32Value             | INT64                                   | ✅              |                                                                                                                                                                                         |
+| google.protobuf.Int32Value              | INT32                                   | ✅              |                                                                                                                                                                                         |
+| google.protobuf.BoolValue               | BOOLEAN                                 | ✅              |                                                                                                                                                                                         |
+| google.protobuf.StringValue             | STRING                                  | ✅              |                                                                                                                                                                                         |
+| google.protobuf.BytesValue              | BYTES                                   | ✅              |                                                                                                                                                                                         |
+| google.protobuf.Timestamp               | org.apache.kafka.connect.data.Timestamp | ✅              |                                                                                                                                                                                         |
+| google.type.Date                        | org.apache.kafka.connect.data.Date      | ✅              |                                                                                                                                                                                         |
+| google.type.TimeOfDay                   | org.apache.kafka.connect.data.Time      | ✅              |                                                                                                                                                                                         |
+
+Reportez-vous à [Types de données pris en charge](#supported-data-types) pour la correspondance entre les types Kafka Connect et les types ClickHouse.
+
+<div id="oneof-translation">
+  ###### Remarque sur la traduction des champs `oneof` en colonnes ClickHouse
+</div>
+
+Le connecteur ne prend pas en charge la traduction des unions Protobuf (`oneof`) vers le type Variant de ClickHouse. Indiquez plutôt les champs `oneof` séparément comme des champs nullable dans le schéma de votre table ClickHouse.
+
+Par exemple :
+
+```protobuf
+syntax = "proto3";
+
+package com.clickhouse.kafka.connect.proto.test;
+
+message StringIntUnion {
+  oneof mixed {
+    string mixed_string = 2;
+    int32 mixed_int = 3;
+  }
+}
+
+```
+
+se traduit par la définition de la table ClickHouse suivante :
+
+```sql
+CREATE TABLE IF NOT EXISTS `StringIntUnion`
+(
+    mixed_string Nullable(String),
+    mixed_int Nullable(Int32)
+) ENGINE = ...;
+```
+
+<div id="unsupported-proto-schemas">
+  ###### Schémas Protobuf non pris en charge
+</div>
+
+Les schémas Protobuf suivants ne sont pas pris en charge par le connecteur :
+
+* unions multi-messages (**avant la version 26.1 de CH**)
+
+```protobuf
+syntax = "proto3";
+
+package com.clickhouse.kafka.connect.proto.test;
+
+message TwoRecords {
+  oneof payload {
+    TypeA type_a = 2;
+    TypeB type_b = 3;
+  }
+
+  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported
+  message TypeA {
+    string label = 1;
+  }
+
+  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported
+  message TypeB {
+    int32 count = 1;
+  }
+}
+```
+
+À partir de la version 26.1 de CH, ce schéma est pris en charge si `allow_experimental_nullable_tuple_type=1` (voir [cette page de la documentation](/fr/reference/settings/session-settings#allow_experimental_nullable_tuple_type)).
+
+<div id="json-schema-support">
+  ##### Prise en charge des schémas JSON
+</div>
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    ...
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  }
+}
+```
+
+<div id="string-support">
+  ##### Prise en charge de String
+</div>
+
+Le connecteur prend en charge le convertisseur String avec différents formats ClickHouse : [JSON](/fr/reference/formats/JSON/JSONEachRow), [CSV](/fr/reference/formats/CSV/CSV) et [TSV](/fr/reference/formats/TabSeparated/TabSeparated).
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    ...
+    "value.converter": "org.apache.kafka.connect.storage.StringConverter",
+    "customInsertFormat": "true",
+    "insertFormat": "CSV"
+  }
+}
+```
+
+<div id="internal-buffering">
+  ### Mise en mémoire tampon interne
+</div>
+
+La mise en mémoire tampon interne permet à la tâche sink d’accumuler des enregistrements issus de plusieurs appels à `poll()` et de les envoyer à ClickHouse sous forme de batches plus volumineux. Cela peut améliorer le débit dans les workloads où chaque interrogation produit de nombreux petits batches par partition.
+
+Comportement clé :
+
+* `bufferCount` contrôle le nombre d’enregistrements mis en mémoire tampon avant leur envoi.
+* `bufferFlushTime` définit le temps d’attente maximal (en millisecondes) avant l’envoi des enregistrements mis en mémoire tampon.
+* `bufferFlushTime` n’a d’effet que lorsque `bufferCount > 0`.
+* `bufferCount=0` et `bufferFlushTime=0` laissent la mise en mémoire tampon désactivée (comportement par défaut).
+* La mise en mémoire tampon n’est pas prise en charge lorsque `exactlyOnce=true`.
+
+Pourquoi la mise en mémoire tampon est incompatible avec le mode exactly-once :
+La mise en mémoire tampon modifie les limites des batches, ce qui perturbe la déduplication des blocs dans ClickHouse ainsi que la machine à états des offsets du connecteur.
+Pour corriger cela, désactivez soit le mode exactly-once avec `exactlyOnce=false` dans la config de votre connecteur, soit la mise en mémoire tampon avec `bufferCount=0`.
+
+Exemple :
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    ...
+    "exactlyOnce": "false",
+    "bufferCount": "5000",
+    "bufferFlushTime": "2000"
+  }
+}
+```
+
+<div id="logging">
+  ### Journalisation
+</div>
+
+La journalisation est fournie automatiquement par la plateforme Kafka Connect.
+La destination et le format des logs peuvent être configurés via le [fichier de configuration](https://docs.confluent.io/platform/current/connect/logging.html#log4j-properties-file) de Kafka Connect.
+
+Si vous utilisez Confluent Platform, vous pouvez consulter les logs en exécutant une commande CLI :
+
+```bash
+confluent local services connect log
+```
+
+Pour en savoir plus, consultez le [tutoriel](https://docs.confluent.io/platform/current/connect/logging.html).
+
+<div id="monitoring">
+  ### Supervision
+</div>
+
+ClickHouse Kafka Connect expose des métriques d’exécution via [Java Management Extensions (JMX)](https://www.oracle.com/technical-resources/articles/javase/jmx.html). JMX est activé par défaut dans Kafka Connector.
+
+<div id="clickhouse-specific-metrics">
+  #### Métriques spécifiques à ClickHouse
+</div>
+
+Le connecteur expose des métriques personnalisées via le nom MBean suivant :
+
+```java
+com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
+```
+
+| Nom de la métrique     | Type | Description                                                                                                             |
+| ---------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------- |
+| `receivedRecords`      | long | Nombre total d’enregistrements reçus.                                                                                   |
+| `recordProcessingTime` | long | Temps total, en nanosecondes, consacré au regroupement et à la conversion des enregistrements en une structure unifiée. |
+| `taskProcessingTime`   | long | Temps total, en nanosecondes, consacré au traitement et à l’insertion des données dans ClickHouse.                      |
+
+<div id="kafka-producer-consumer-metrics">
+  #### Métriques des producteurs et consommateurs Kafka
+</div>
+
+Le connecteur expose les métriques standard des producteurs et consommateurs Kafka, qui donnent de la visibilité sur le flux de données, le débit et les performances.
+
+**Métriques au niveau du topic :**
+
+* `records-sent-total` : Nombre total d’enregistrements envoyés au topic
+* `bytes-sent-total` : Nombre total d’octets envoyés au topic
+* `record-send-rate` : Taux moyen d’enregistrements envoyés par seconde
+* `byte-rate` : Nombre moyen d’octets envoyés par seconde
+* `compression-rate` : Ratio de compression obtenu
+
+**Métriques au niveau de la partition :**
+
+* `records-sent-total` : Nombre total d’enregistrements envoyés à la partition
+* `bytes-sent-total` : Nombre total d’octets envoyés à la partition
+* `records-lag` : Lag actuel de la partition
+* `records-lead` : Avance actuelle de la partition
+* `replica-fetch-lag` : Informations de lag des répliques
+
+**Métriques de connexion au niveau du nœud :**
+
+* `connection-creation-total` : Nombre total de connexions créées vers le nœud Kafka
+* `connection-close-total` : Nombre total de connexions fermées
+* `request-total` : Nombre total de requêtes envoyées au nœud
+* `response-total` : Nombre total de réponses reçues du nœud
+* `request-rate` : Taux moyen de requêtes par seconde
+* `response-rate` : Taux moyen de réponses par seconde
+
+Ces métriques aident à surveiller :
+
+* **Débit** : Suivre les débits d’ingestion des données
+* **Lag** : Identifier les goulots d’étranglement et les retards de traitement
+* **Compression** : Mesurer l’efficacité de la compression des données
+* **État des connexions** : Surveiller la connectivité réseau et la stabilité
+
+<div id="kafka-connect-framework-metrics">
+  #### Métriques du Kafka Connect Framework
+</div>
+
+Le connecteur s’intègre au Kafka Connect Framework et expose des métriques sur le cycle de vie des tâches et le suivi des erreurs.
+
+**Métriques d’état des tâches :**
+
+* `task-count` : Nombre total de tâches dans le connecteur
+* `running-task-count` : Nombre de tâches actuellement en cours d’exécution
+* `paused-task-count` : Nombre de tâches actuellement en pause
+* `failed-task-count` : Nombre de tâches en échec
+* `destroyed-task-count` : Nombre de tâches détruites
+* `unassigned-task-count` : Nombre de tâches non attribuées
+
+Les valeurs d’état des tâches incluent : `running`, `paused`, `failed`, `destroyed`, `unassigned`
+
+**Métriques d’erreur :**
+
+* `deadletterqueue-produce-failures` : Nombre d’écritures dans la DLQ ayant échoué
+* `deadletterqueue-produce-requests` : Nombre total de tentatives d’écriture dans la DLQ
+* `last-error-timestamp` : Horodatage de la dernière erreur
+* `records-skip-total` : Nombre total d’enregistrements ignorés en raison d’erreurs
+* `records-retry-total` : Nombre total d’enregistrements ayant fait l’objet d’une nouvelle tentative
+* `errors-total` : Nombre total d’erreurs rencontrées
+
+**Métriques de performance :**
+
+* `offset-commit-failures` : Nombre d’échecs de commit des offsets
+* `offset-commit-avg-time-ms` : Temps moyen des commits d’offset
+* `offset-commit-max-time-ms` : Temps maximal des commits d’offset
+* `put-batch-avg-time-ms` : Temps moyen de traitement d’un batch
+* `put-batch-max-time-ms` : Temps maximal de traitement d’un batch
+* `source-record-poll-total` : Nombre total d’enregistrements récupérés
+
+<div id="monitoring-best-practices">
+  #### Bonnes pratiques de supervision
+</div>
+
+1. **Surveillez le consumer lag** : suivez `records-lag` par partition afin d’identifier les goulots d’étranglement du traitement
+2. **Suivez les taux d’erreur** : surveillez `errors-total` et `records-skip-total` pour détecter les problèmes de qualité des données
+3. **Vérifiez l’état des tâches** : surveillez les métriques d’état des tâches pour vous assurer qu’elles s’exécutent correctement
+4. **Mesurez le débit** : utilisez `records-send-rate` et `byte-rate` pour suivre les performances d’ingestion
+5. **Surveillez l’état des connexions** : vérifiez les métriques de connexion au niveau des nœuds afin de détecter d’éventuels problèmes réseau
+6. **Suivez l’efficacité de la compression** : utilisez `compression-rate` pour optimiser le transfert de données
+
+Pour des définitions détaillées des métriques JMX et de l’intégration avec Prometheus, consultez le fichier de configuration [jmx-export-connector.yml](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/jmx-export-connector.yml).
+
+<div id="limitations">
+  ### Limitations
+</div>
+
+* Les suppressions ne sont pas prises en charge.
+* La taille du lot est héritée des propriétés du consommateur Kafka.
+* Lorsque vous utilisez KeeperMap pour exactly-once et que l&#39;offset est modifié ou réinitialisé à une valeur antérieure, vous devez supprimer le contenu de KeeperMap pour ce topic spécifique. (Consultez le guide de dépannage ci-dessous pour plus de détails)
+
+<div id="tuning-performance">
+  ### Réglage des performances et optimisation du débit
+</div>
+
+Cette section présente des stratégies de réglage des performances pour le ClickHouse Kafka Connect Sink. Le réglage des performances est essentiel lorsque vous traitez des cas d’usage à haut débit ou que vous devez optimiser l’utilisation des ressources et minimiser la latence.
+
+<div id="when-is-performance-tuning-needed">
+  #### Quand l’optimisation des performances est-elle nécessaire ?
+</div>
+
+L’optimisation des performances est généralement nécessaire dans les cas suivants :
+
+* **Charges de travail à haut débit** : lorsque vous traitez des millions d’événements par seconde depuis des topics Kafka
+* **Consumer lag** : lorsque votre connecteur ne parvient pas à suivre le rythme de production des données, ce qui entraîne un décalage croissant
+* **Contraintes de ressources** : lorsque vous devez optimiser l’utilisation du CPU, de la mémoire ou du réseau
+* **Topics multiples** : lorsque vous consommez simultanément plusieurs topics à fort volume
+* **Petites tailles de message** : lorsque vous traitez de nombreux petits messages qui bénéficieraient d’un regroupement côté serveur par lots
+
+L’optimisation des performances n’est **généralement PAS nécessaire** lorsque :
+
+* Vous traitez des volumes faibles à modérés (&lt; 10 000 messages/seconde)
+* Le consumer lag est stable et acceptable pour votre cas d’usage
+* Les paramètres par défaut du connecteur répondent déjà à vos exigences de débit
+* Votre cluster ClickHouse peut facilement absorber la charge entrante
+
+<div id="understanding-the-data-flow">
+  #### Comprendre le flux des données
+</div>
+
+Avant tout réglage, il est important de comprendre comment les données circulent dans le connecteur :
+
+1. **Kafka Connect Framework** récupère en arrière-plan les messages des topics Kafka
+2. **Le connecteur interroge** le tampon interne du framework pour récupérer les messages
+3. **Le connecteur regroupe en lots** les messages selon la taille du poll
+4. **ClickHouse reçoit** l’insertion par lot via HTTP/S
+5. **ClickHouse traite** l’insertion (de manière synchrone ou asynchrone)
+
+Les performances peuvent être optimisées à chacune de ces étapes.
+
+<div id="connect-fetch-vs-connector-poll">
+  #### Réglage de la taille des lots dans Kafka Connect
+</div>
+
+Le premier niveau d’optimisation consiste à contrôler la quantité de données que le connecteur reçoit de Kafka à chaque lot.
+
+<div id="fetch-settings">
+  ##### Paramètres de récupération
+</div>
+
+Kafka Connect (le framework) récupère les messages des topics Kafka en arrière-plan, indépendamment du connecteur :
+
+* **`fetch.min.bytes`** : quantité minimale de données avant que le framework ne transmette les valeurs au connecteur (par défaut : 1 octet)
+* **`fetch.max.bytes`** : quantité maximale de données à récupérer dans une seule requête (par défaut : 52428800 / 50 MB)
+* **`fetch.max.wait.ms`** : temps d’attente maximal avant le renvoi des données si `fetch.min.bytes` n’est pas atteint (par défaut : 500 ms)
+
+<Note>
+  Sur Confluent Cloud, l’ajustement de ces paramètres nécessite l’ouverture d’un ticket de support via Confluent Cloud.
+</Note>
+
+<div id="poll-settings">
+  ##### Paramètres de poll
+</div>
+
+Le connecteur effectue des polls pour récupérer les messages depuis le tampon du framework :
+
+* **`max.poll.records`** : Nombre maximal d’enregistrements renvoyés lors d’une seule opération de poll (par défaut : 500)
+* **`max.partition.fetch.bytes`** : Quantité maximale de données par partition (par défaut : 1048576 / 1 MB)
+
+<Note>
+  Sur Confluent Cloud, la modification de ces paramètres nécessite l’ouverture d’un ticket de support via Confluent Cloud.
+</Note>
+
+<div id="recommended-batch-settings">
+  ##### Paramètres recommandés pour un débit élevé
+</div>
+
+Pour des performances optimales avec ClickHouse, privilégiez des lots plus importants :
+
+```properties
+# Increase the number of records per poll
+consumer.override.max.poll.records=5000
+
+# Increase the partition fetch size (5 MB)
+consumer.override.max.partition.fetch.bytes=5242880
+
+# Optional: Increase minimum fetch size to wait for more data (1 MB)
+consumer.override.fetch.min.bytes=1048576
+
+# Optional: Reduce wait time if latency is critical
+consumer.override.fetch.max.wait.ms=300
+```
+
+<Note>
+  Les propriétés ci-dessus nécessitent d’activer les client overrides dans la configuration de votre worker via `connector.client.config.override.policy=All`. Consultez la [documentation Kafka Connect](https://docs.confluent.io/platform/current/connect/references/allconfigs.html#override-the-worker-configuration) pour plus d’informations.
+</Note>
+
+**Important** : les paramètres de récupération de Kafka Connect portent sur des données compressées, tandis que ClickHouse reçoit des données non compressées. Ajustez ces paramètres en fonction de votre ratio de compression.
+
+**Compromis** :
+
+* **Lots plus volumineux** = meilleures performances d’ingestion dans ClickHouse, moins de parts, moins de surcharge
+* **Lots plus volumineux** = utilisation mémoire plus élevée, augmentation potentielle de la latence de bout en bout
+* **Lots trop volumineux** = risque de dépassement de délai, d’erreurs OutOfMemory ou de dépassement de `max.poll.interval.ms`
+
+Plus de détails : [documentation Confluent](https://docs.confluent.io/platform/current/connect/references/allconfigs.html#override-the-worker-configuration) | [documentation Kafka](https://kafka.apache.org/documentation/#consumerconfigs)
+
+<div id="asynchronous-inserts">
+  #### Insertions asynchrones
+</div>
+
+Les insertions asynchrones sont particulièrement utiles lorsque le connecteur envoie des lots relativement petits ou lorsque vous souhaitez optimiser davantage l’ingestion en confiant à ClickHouse la gestion du traitement par lots.
+
+<div id="when-to-use-async-inserts">
+  ##### Quand utiliser les insertions asynchrones
+</div>
+
+Envisagez d’activer les insertions asynchrones dans les cas suivants :
+
+* **Nombreux petits lots** : votre connecteur envoie fréquemment de petits lots (&lt; 1000 lignes par lot)
+* **Concurrence élevée** : plusieurs tâches du connecteur écrivent dans la même table
+* **Déploiement distribué** : vous exécutez de nombreuses instances du connecteur sur différents hôtes
+* **Surcoût lié à la création de parts** : vous rencontrez des erreurs « too many parts »
+* **Charge de travail mixte** : vous combinez une ingestion en temps réel avec des charges liées aux requêtes
+
+N’utilisez **PAS** les insertions asynchrones dans les cas suivants :
+
+* Vous envoyez déjà de grands lots (&gt; 10,000 lignes par lot) à une fréquence maîtrisée
+* Vous avez besoin d’une visibilité immédiate des données (les requêtes doivent voir les données instantanément)
+* La sémantique d’exactement une fois avec `wait_for_async_insert=0` est incompatible avec vos exigences
+* Votre cas d’usage peut plutôt tirer parti d’améliorations du batching côté client
+
+<div id="how-async-inserts-work">
+  ##### Fonctionnement de l’insertion asynchrone
+</div>
+
+Avec l’insertion asynchrone activée, ClickHouse :
+
+1. Reçoit la requête d’insertion du connecteur
+2. Écrit les données dans un tampon en mémoire (au lieu de les écrire immédiatement sur le disque)
+3. Renvoie une confirmation de succès au connecteur (si `wait_for_async_insert=0`)
+4. Vide le tampon sur le disque lorsqu’une de ces conditions est remplie :
+   * Le tampon atteint `async_insert_max_data_size` (par défaut : 100 MB)
+   * `async_insert_busy_timeout_ms` millisecondes se sont écoulées depuis le premier insert (par défaut : 1000 ms)
+   * Le nombre maximal de requêtes accumulées est atteint (`async_insert_max_query_number`, par défaut : 100)
+
+Cela réduit considérablement le nombre de parts créées et améliore le débit global.
+
+<div id="enabling-async-inserts">
+  ##### Activer les async inserts
+</div>
+
+Ajoutez les paramètres des async inserts au paramètre de configuration `clickhouseSettings` :
+
+```json
+{
+  "name": "clickhouse-connect",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    ...
+    "clickhouseSettings": "async_insert=1,wait_for_async_insert=1"
+  }
+}
+```
+
+**Paramètres clés** :
+
+* **`async_insert=1`** : Active les insertions asynchrones
+* **`wait_for_async_insert=1`** (recommandé) : Le connecteur attend que les données soient écrites dans le stockage ClickHouse avant d’envoyer un accusé de réception. Cela garantit la livraison.
+* **`wait_for_async_insert=0`** : Le connecteur envoie immédiatement un accusé de réception après la mise en mémoire tampon. Les performances sont meilleures, mais les données peuvent être perdues en cas de plantage du serveur avant leur écriture sur le stockage.
+
+<div id="tuning-async-inserts">
+  ##### Réglage du comportement des async insert
+</div>
+
+Vous pouvez affiner le comportement de flush des async insert :
+
+```json
+"clickhouseSettings": "async_insert=1,wait_for_async_insert=1,async_insert_max_data_size=104857600,async_insert_busy_timeout_ms=1000"
+```
+
+Paramètres de réglage courants :
+
+* **`async_insert_max_data_size`** (par défaut : 104857600 / 100 MB) : Taille maximale du tampon avant vidage
+* **`async_insert_busy_timeout_ms`** (par défaut : 1000) : Temps maximal (ms) avant vidage
+* **`async_insert_stale_timeout_ms`** (par défaut : 0) : Temps (ms) écoulé depuis la dernière insertion avant vidage
+* **`async_insert_max_query_number`** (par défaut : 100) : Nombre maximal de requêtes avant vidage
+
+**Compromis** :
+
+* **Avantages** : Moins de parts, meilleures performances de fusion, surcharge CPU réduite, débit amélioré en cas de forte concurrence
+* **Considérations** : Les données ne peuvent pas être interrogées immédiatement, latence de bout en bout légèrement plus élevée
+* **Risques** : Perte de données en cas de plantage du serveur si `wait_for_async_insert=0`, risque de pression sur la mémoire avec de grands tampons
+
+<div id="async-inserts-with-exactly-once">
+  ##### Insertion asynchrone avec une garantie d&#39;exactly-once
+</div>
+
+Lorsque vous utilisez `exactlyOnce=true` avec l’insertion asynchrone :
+
+```json
+{
+  "config": {
+    "exactlyOnce": "true",
+    "clickhouseSettings": "async_insert=1,wait_for_async_insert=1"
+  }
+}
+```
+
+**Important** : utilisez toujours `wait_for_async_insert=1` avec exactly-once afin de garantir que les commits d’offsets n’ont lieu qu’une fois les données persistées.
+
+Pour plus d’informations sur l’insertion asynchrone, consultez la [documentation ClickHouse sur l’insertion asynchrone](/fr/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts).
+
+<div id="connector-parallelism">
+  #### Parallélisme du connecteur
+</div>
+
+Augmentez le parallélisme pour améliorer le débit :
+
+<div id="tasks-per-connector">
+  ##### Tâches par connecteur
+</div>
+
+```json
+"tasks.max": "4"
+```
+
+Chaque tâche traite un sous-ensemble des partitions du topic. Plus de tâches = plus de parallélisme, mais :
+
+* Nombre maximal de tâches réellement efficaces = nombre de partitions du topic
+* Chaque tâche maintient sa propre connexion à ClickHouse
+* Plus de tâches = plus de surcoût et un risque accru de contention sur les ressources
+
+**Recommandation** : commencez avec `tasks.max` égal au nombre de partitions du topic, puis ajustez en fonction des métriques de CPU et de débit.
+
+<div id="ignoring-partitions">
+  ##### Ignorer les partitions lors du regroupement en lots
+</div>
+
+Par défaut, le connecteur regroupe les messages en lots par partition. Pour un débit plus élevé, vous pouvez regrouper les lots sur plusieurs partitions :
+
+```json
+"ignorePartitionsWhenBatching": "true"
+```
+
+** Avertissement** : à utiliser uniquement lorsque `exactlyOnce=false`. Ce paramètre peut améliorer le débit en créant des lots plus volumineux, mais supprime les garanties d’ordre par partition.
+
+<div id="multiple-high-throughput-topics">
+  #### Plusieurs topics à haut débit
+</div>
+
+Si votre connecteur est configuré pour s’abonner à plusieurs topics, que vous utilisez `topic2TableMap` pour associer les topics aux tables et que vous rencontrez un goulot d’étranglement lors des insertions, entraînant un consumer lag, envisagez plutôt de créer un connecteur par topic.
+
+La principale raison est qu’actuellement, les lots sont insérés dans chaque table [en série](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/578ac07e8be1a920aaa3b26e49183595c3edd04b/src/main/java/com/clickhouse/kafka/connect/sink/ProxySinkTask.java#L95-L100).
+
+**Recommandation** : pour plusieurs topics à fort volume, déployez une instance de connecteur par topic afin de maximiser le débit des insertions en parallèle.
+
+<div id="table-engine-considerations">
+  #### Considérations relatives au moteur de table ClickHouse
+</div>
+
+Choisissez le moteur de table ClickHouse adapté à votre cas d’utilisation :
+
+* **`MergeTree`** : idéal pour la plupart des cas d’utilisation, offre un bon équilibre entre les performances de requête et d’insertion
+* **`ReplicatedMergeTree`** : requis pour la haute disponibilité, ajoute une surcharge liée à la réplication
+* **`*MergeTree` avec un `ORDER BY` approprié** : optimisez en fonction de vos modèles de requêtes
+
+**Paramètres à prendre en compte** :
+
+```sql
+CREATE TABLE my_table (...)
+ENGINE = MergeTree()
+ORDER BY (timestamp, id)
+SETTINGS 
+    -- Increase max insert threads for parallel part writing
+    max_insert_threads = 4,
+    -- Allow inserts with quorum for reliability (ReplicatedMergeTree)
+    insert_quorum = 2
+```
+
+Pour les paramètres d’insertion au niveau du connecteur :
+
+```json
+"clickhouseSettings": "insert_quorum=2,insert_quorum_timeout=60000"
+```
+
+<div id="connection-pooling">
+  #### Pool de connexions et délais d’expiration
+</div>
+
+Le connecteur maintient des connexions HTTP avec ClickHouse. Ajustez les délais d’expiration pour les réseaux à forte latence :
+
+```json
+"clickhouseSettings": "socket_timeout=300000,connection_timeout=30000"
+```
+
+* **`socket_timeout`** (par défaut : 30000 ms) : Temps maximal pour les opérations de lecture
+* **`connection_timeout`** (par défaut : 10000 ms) : Temps maximal pour établir une connexion
+
+Augmentez ces valeurs si vous rencontrez des erreurs de délai d’attente avec des lots volumineux.
+
+<div id="monitoring-performance">
+  #### Surveillance et dépannage des performances
+</div>
+
+Surveillez ces métriques clés :
+
+1. **Consumer lag** : utilisez les outils de monitoring Kafka pour suivre le lag par partition
+2. **Métriques du connecteur** : surveillez `receivedRecords`, `recordProcessingTime`, `taskProcessingTime` via JMX (voir [Monitoring](#monitoring))
+3. **Métriques ClickHouse** :
+   * `system.asynchronous_inserts` : surveillez l’utilisation du buffer des insertions asynchrones
+   * `system.parts` : surveillez le nombre de parts pour détecter les problèmes de fusion
+   * `system.merges` : surveillez les fusions actives
+   * `system.events` : suivez `InsertedRows`, `InsertedBytes`, `FailedInsertQuery`
+
+**Problèmes de performances courants** :
+
+| Symptôme                           | Cause possible                             | Solution                                                                    |
+| ---------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------- |
+| Consumer lag élevé                 | Lots trop petits                           | Augmentez `max.poll.records`, activez les insertions asynchrones            |
+| Erreurs &quot;Too many parts&quot; | Insertions fréquentes de petite taille     | Activez les insertions asynchrones, augmentez la taille des lots            |
+| Erreurs de timeout                 | Taille de lot trop importante, réseau lent | Réduisez la taille des lots, augmentez `socket_timeout`, vérifiez le réseau |
+| Utilisation CPU élevée             | Trop de petites parts                      | Activez les insertions asynchrones, augmentez les paramètres de fusion      |
+| Erreurs OutOfMemory                | Taille de lot trop importante              | Réduisez `max.poll.records`, `max.partition.fetch.bytes`                    |
+| Charge des tâches inégale          | Répartition inégale des partitions         | Rééquilibrez les partitions ou ajustez `tasks.max`                          |
+
+<div id="performance-best-practices">
+  #### Résumé des bonnes pratiques
+</div>
+
+1. **Commencez par les valeurs par défaut**, puis mesurez et ajustez en fonction des performances réelles
+2. **Privilégiez des lots plus volumineux** : visez 10,000-100,000 lignes par insertion lorsque c’est possible
+3. **Utilisez l’insertion asynchrone** lorsque vous envoyez de nombreux petits lots ou en cas de forte concurrence
+4. **Utilisez toujours `wait_for_async_insert=1`** avec une sémantique exactly-once
+5. **Effectuez une mise à l’échelle horizontale** : augmentez `tasks.max` jusqu’au nombre de partitions
+6. **Un connecteur par topic à fort volume** pour un débit maximal
+7. **Surveillez en continu** : suivez le consumer lag, le nombre de parts et l’activité de merge
+8. **Testez de manière approfondie** : testez toujours les changements de configuration sous une charge réaliste avant un déploiement en production
+
+<div id="example-high-throughput">
+  #### Exemple : configuration à haut débit
+</div>
+
+Voici un exemple complet optimisé pour un débit élevé :
+
+```json
+{
+  "name": "clickhouse-high-throughput",
+  "config": {
+    "connector.class": "com.clickhouse.kafka.connect.ClickHouseSinkConnector",
+    "tasks.max": "8",
+    
+    "topics": "high_volume_topic",
+    "hostname": "my-clickhouse-host.cloud",
+    "port": "8443",
+    "database": "default",
+    "username": "default",
+    "password": "<PASSWORD>",
+    "ssl": "true",
+    
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    
+    "exactlyOnce": "false",
+    "ignorePartitionsWhenBatching": "true",
+    
+    "consumer.override.max.poll.records": "10000",
+    "consumer.override.max.partition.fetch.bytes": "5242880",
+    "consumer.override.fetch.min.bytes": "1048576",
+    "consumer.override.fetch.max.wait.ms": "500",
+    
+    "clickhouseSettings": "async_insert=1,wait_for_async_insert=1,async_insert_max_data_size=16777216,async_insert_busy_timeout_ms=1000,socket_timeout=300000"
+  }
+}
+```
+
+<Note>
+  La configuration du connecteur ci-dessus exige que vous activiez les client overrides dans la configuration de votre worker via `connector.client.config.override.policy=All`. Consultez la [documentation de Kafka Connect](https://docs.confluent.io/platform/current/connect/references/allconfigs.html#override-the-worker-configuration) pour plus d’informations.
+</Note>
+
+**Cette configuration** :
+
+* Traite jusqu’à 10 000 enregistrements par poll
+* Regroupe les données de plusieurs partitions en lots pour des inserts plus volumineux
+* Utilise l’insertion asynchrone avec un buffer de 16 Mo
+* Exécute 8 tasks en parallèle (à aligner sur votre nombre de partitions)
+* Optimisée pour le débit plutôt que pour un ordre strict
+
+<div id="troubleshooting">
+  ### Dépannage
+</div>
+
+<div id="state-mismatch-for-topic-sometopic-partition-0">
+  #### &quot;Incohérence d’état pour le topic `[someTopic]` partition `[0]`&quot;
+</div>
+
+Cela se produit lorsque l’offset stocké dans KeeperMap est différent de celui stocké dans Kafka, généralement lorsqu’un topic a été supprimé
+ou que l’offset a été modifié manuellement.
+Pour corriger cela, vous devez supprimer les anciennes valeurs stockées pour ce topic + cette partition :
+
+```sql
+-- First, identify the database used to store the data.
+SELECT * FROM [database].connect_state
+
+-- Identify the key that matches the topic and partition.
+ALTER TABLE [database].connect_state DELETE WHERE key = [keyname]
+```
+
+<Note>
+  Cet ajustement peut avoir des conséquences sur la sémantique exactly-once.
+</Note>
+
+<div id="what-errors-will-the-connector-retry">
+  #### &quot;Quelles erreurs le connecteur retentera-t-il ?&quot;
+</div>
+
+À l&#39;heure actuelle, l&#39;accent est mis sur l&#39;identification des erreurs transitoires pouvant faire l&#39;objet d&#39;une nouvelle tentative, notamment :
+
+* `ClickHouseException` - Il s&#39;agit d&#39;une exception générique pouvant être levée par ClickHouse.
+  Elle est généralement levée lorsque le serveur est surchargé, et les codes d&#39;erreur suivants sont considérés comme particulièrement transitoires :
+  * 3 - UNEXPECTED&#95;END&#95;OF&#95;FILE
+  * 107 - FILE&#95;DOESNT&#95;EXIST
+  * 159 - TIMEOUT&#95;EXCEEDED
+  * 164 - READONLY
+  * 202 - TOO&#95;MANY&#95;SIMULTANEOUS&#95;QUERIES
+  * 203 - NO&#95;FREE&#95;CONNECTION
+  * 209 - SOCKET&#95;TIMEOUT
+  * 210 - NETWORK&#95;ERROR
+  * 241 - MEMORY&#95;LIMIT&#95;EXCEEDED
+  * 242 - TABLE&#95;IS&#95;READ&#95;ONLY
+  * 252 - TOO&#95;MANY&#95;PARTS
+  * 285 - TOO&#95;FEW&#95;LIVE&#95;REPLICAS
+  * 319 - UNKNOWN&#95;STATUS&#95;OF&#95;INSERT
+  * 425 - SYSTEM&#95;ERROR
+  * 999 - KEEPER&#95;EXCEPTION
+* `SocketTimeoutException` - Cette exception est levée lorsque le délai d&#39;attente du socket est dépassé.
+* `UnknownHostException` - Cette exception est levée lorsque l&#39;hôte ne peut pas être résolu.
+* `IOException` - Cette exception est levée en cas de problème réseau.
+
+<div id="all-my-data-is-blankzeroes">
+  #### &quot;Toutes mes données sont vides/à zéro&quot;
+</div>
+
+Il est probable que les champs de vos données ne correspondent pas à ceux de la table - c’est particulièrement fréquent avec le CDC (et le format Debezium).
+Une solution courante consiste à ajouter la transformation `flatten` à la configuration de votre connecteur :
+
+```properties
+transforms=flatten
+transforms.flatten.type=org.apache.kafka.connect.transforms.Flatten$Value
+transforms.flatten.delimiter=_
+```
+
+Cela transformera vos données d’un JSON imbriqué en un JSON aplati (en utilisant `_` comme délimiteur). Les champs de la table suivront alors le format &quot;field1&#95;field2&#95;field3&quot; (par ex. &quot;before&#95;id&quot;, &quot;after&#95;id&quot;, etc.).
+
+<div id="i-want-to-use-my-kafka-keys-in-clickhouse">
+  #### &quot;Je veux utiliser mes clés Kafka dans ClickHouse&quot;
+</div>
+
+Par défaut, les clés Kafka ne sont pas stockées dans le champ `value`, mais vous pouvez utiliser la transformation `KeyToValue` pour déplacer la clé dans le champ `value` (sous le nouveau nom de champ `_key`) :
+
+```properties
+transforms=keyToValue
+transforms.keyToValue.type=com.clickhouse.kafka.connect.transforms.KeyToValue
+transforms.keyToValue.field=_key
+```

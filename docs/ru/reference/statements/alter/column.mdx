@@ -1,0 +1,398 @@
+---
+description: 'Документация по COLUMN'
+sidebarTitle: 'COLUMN'
+slug: /sql-reference/statements/alter/column
+title: 'Операции со столбцами'
+doc_type: 'reference'
+---
+
+Набор запросов, позволяющих изменять структуру таблицы.
+
+Синтаксис:
+
+```sql
+ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COMMENT|{MODIFY|ALTER}|MATERIALIZE COLUMN ...
+```
+
+В запросе укажите список из одного или нескольких действий, разделённых запятыми.
+Каждое действие — операция над столбцом.
+
+Поддерживаются следующие действия:
+
+* [ADD COLUMN](#add-column) — Добавляет новый столбец в таблицу.
+* [DROP COLUMN](#drop-column) — Удаляет столбец.
+* [RENAME COLUMN](#rename-column) — Переименовывает существующий столбец.
+* [CLEAR COLUMN](#clear-column) — Сбрасывает значения столбца.
+* [COMMENT COLUMN](#comment-column) — Добавляет к столбцу текстовый комментарий.
+* [MODIFY COLUMN](#modify-column) — Изменяет тип столбца, выражение по умолчанию, TTL и настройки столбца.
+* [MODIFY COLUMN REMOVE](#modify-column-remove) — Удаляет одно из свойств столбца.
+* [MODIFY COLUMN MODIFY SETTING](#modify-column-modify-setting) — Изменяет настройки столбца.
+* [MODIFY COLUMN RESET SETTING](#modify-column-reset-setting) — Сбрасывает настройки столбца.
+* [MODIFY COLUMN ADD ENUM VALUES](#modify-column-add-enum-values) — Добавляет новые значения в Enum.
+* [MATERIALIZE COLUMN](#materialize-column) — Материализует столбец в частях, где он отсутствует.
+  Эти действия подробно описаны ниже.
+
+<div id="add-column">
+  ## ADD COLUMN
+</div>
+
+```sql
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
+```
+
+Добавляет в таблицу новый столбец с указанными `name`, `type`, [`codec`](/ru/reference/statements/create/table#column_compression_codec) и `default_expr` (см. раздел [Выражения по умолчанию](/ru/reference/statements/create/table#default_values)).
+
+Если указано условие `IF NOT EXISTS`, запрос не вернёт ошибку, если столбец уже существует. Если указать `AFTER name_after` (имя другого столбца), столбец будет добавлен после него в списке столбцов таблицы. Если вы хотите добавить столбец в начало таблицы, используйте условие `FIRST`. В противном случае столбец добавляется в конец таблицы. В цепочке действий `name_after` может быть именем столбца, добавленного одним из предыдущих действий.
+
+Добавление столбца лишь изменяет структуру таблицы, не выполняя никаких действий с данными. После `ALTER` данные на диске не появляются. Если при чтении из таблицы для столбца отсутствуют данные, он заполняется значениями по умолчанию (путём вычисления выражения по умолчанию, если оно задано, либо с использованием нулей или пустых строк). Столбец появляется на диске после слияния частей данных (см. [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree)).
+
+Такой подход позволяет мгновенно выполнить запрос `ALTER`, не увеличивая объём старых данных.
+
+Пример:
+
+```sql
+ALTER TABLE alter_test ADD COLUMN Added1 UInt32 FIRST;
+ALTER TABLE alter_test ADD COLUMN Added2 UInt32 AFTER NestedColumn;
+ALTER TABLE alter_test ADD COLUMN Added3 UInt32 AFTER ToDrop;
+DESC alter_test FORMAT TSV;
+```
+
+```text
+Added1  UInt32
+CounterID       UInt32
+StartDate       Date
+UserID  UInt32
+VisitID UInt32
+NestedColumn.A  Array(UInt8)
+NestedColumn.S  Array(String)
+Added2  UInt32
+ToDrop  UInt32
+Added3  UInt32
+```
+
+<div id="drop-column">
+  ## DROP COLUMN
+</div>
+
+```sql
+DROP COLUMN [IF EXISTS] name
+```
+
+Удаляет столбец с именем `name`. Если указано условие `IF EXISTS`, запрос не вернёт ошибку, если такого столбца не существует.
+
+Удаляет данные из файловой системы. Поскольку при этом удаляются файлы целиком, запрос выполняется почти мгновенно.
+
+<Tip>
+  Нельзя удалить столбец, если на него ссылается [materialized view](/ru/reference/statements/create/view). В противном случае будет возвращена ошибка.
+</Tip>
+
+Пример:
+
+```sql
+ALTER TABLE visits DROP COLUMN browser
+```
+
+<div id="rename-column">
+  ## RENAME COLUMN
+</div>
+
+```sql
+RENAME COLUMN [IF EXISTS] name to new_name
+```
+
+Переименовывает столбец `name` в `new_name`. Если указано `IF EXISTS`, запрос не вернёт ошибку, если столбец не существует. Поскольку переименование не затрагивает сами данные, запрос выполняется почти мгновенно.
+
+**ПРИМЕЧАНИЕ**: Столбцы, указанные в ключевом выражении таблицы (либо в `ORDER BY`, либо в `PRIMARY KEY`), нельзя переименовывать. Попытка изменить эти столбцы приведёт к `SQL Error [524]`.
+
+Пример:
+
+```sql
+ALTER TABLE visits RENAME COLUMN webBrowser TO browser
+```
+
+<div id="clear-column">
+  ## CLEAR COLUMN
+</div>
+
+```sql
+CLEAR COLUMN [IF EXISTS] name IN PARTITION partition_name
+```
+
+Сбрасывает все данные в столбце для указанной партиции. Подробнее о том, как задать имя партиции, см. в разделе [Как задать выражение партиционирования](/ru/reference/statements/alter/partition#how-to-set-partition-expression).
+
+Если указано условие IF EXISTS, запрос не вернёт ошибку, если столбец не существует.
+
+Пример:
+
+```sql
+ALTER TABLE visits CLEAR COLUMN browser IN PARTITION tuple()
+```
+
+<div id="comment-column">
+  ## COMMENT COLUMN
+</div>
+
+```sql
+COMMENT COLUMN [IF EXISTS] name 'Text comment'
+```
+
+Добавляет комментарий к столбцу. Если указано условие IF EXISTS, запрос не вернёт ошибку, если столбец не существует.
+
+У каждого столбца может быть только один комментарий. Если для столбца уже задан комментарий, новый комментарий заменит предыдущий.
+
+Комментарии хранятся в столбце `comment_expression`, который возвращает запрос [DESCRIBE TABLE](/ru/reference/statements/describe-table).
+
+Пример:
+
+```sql
+ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used for accessing the site.'
+```
+
+<div id="modify-column">
+  ## MODIFY COLUMN
+</div>
+
+```sql
+MODIFY COLUMN [IF EXISTS] name
+    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
+ALTER COLUMN [IF EXISTS] name
+    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
+    | ADD ENUM VALUES ( 'name' [= number] [, ...] )
+```
+
+Этот запрос изменяет свойства столбца `name`:
+
+* Тип
+
+* Выражение по умолчанию
+
+* Кодек сжатия
+
+* TTL
+
+* Настройки на уровне столбца
+
+* Значения Enum для типов Enum/Enum8/Enum16
+
+Примеры изменения кодеков сжатия столбцов см. в разделе [Column Compression Codecs](/ru/reference/statements/create/table#column_compression_codec).
+
+Примеры изменения TTL столбцов см. в разделе [Column TTL](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl).
+
+Примеры изменения настроек на уровне столбца см. в разделе [Column-level Settings](/ru/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings).
+
+Если указано условие `IF EXISTS`, запрос не вернёт ошибку, если столбец отсутствует.
+
+При изменении типа значения преобразуются так, как если бы к ним были применены функции [toType](/ru/reference/functions/regular-functions/type-conversion-functions). Если изменяется только выражение по умолчанию, запрос не выполняет никаких сложных операций и завершается почти мгновенно.
+
+Пример:
+
+```sql
+ALTER TABLE visits MODIFY COLUMN browser Array(String)
+```
+
+Изменение типа столбца — единственное сложное действие: при этом меняется содержимое файлов с данными. Для больших таблиц это может занять много времени.
+
+Запрос также может изменять порядок столбцов с помощью предложения `FIRST | AFTER`, см. описание [ADD COLUMN](#add-column), но в этом случае указание типа столбца обязательно.
+
+Пример:
+
+```sql
+CREATE TABLE users (
+    c1 Int16,
+    c2 String
+) ENGINE = MergeTree
+ORDER BY c1;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
+
+ALTER TABLE users MODIFY COLUMN c2 String FIRST;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c2   │ String │
+│ c1   │ Int16  │
+└──────┴────────┴
+
+ALTER TABLE users ALTER COLUMN c2 TYPE String AFTER c1;
+
+DESCRIBE users;
+┌─name─┬─type───┬
+│ c1   │ Int16  │
+│ c2   │ String │
+└──────┴────────┴
+```
+
+Запрос `ALTER` является атомарным. Для таблиц MergeTree он также выполняется без блокировок.
+
+Запрос `ALTER` на изменение столбцов реплицируется. Инструкции сохраняются в ZooKeeper, после чего каждая реплика применяет их. Все запросы `ALTER` выполняются в одном и том же порядке. Запрос ждёт завершения соответствующих действий на других репликах. Однако запрос на изменение столбцов в реплицируемой таблице может быть прерван, а все действия будут выполнены асинхронно.
+
+<Note>
+  Будьте осторожны при изменении столбца Nullable на Non-Nullable. Убедитесь, что в нём нет значений NULL, иначе это вызовет проблемы при чтении. В таком случае можно прервать мутацию и вернуть столбцу тип Nullable.
+</Note>
+
+<div id="modify-column-remove">
+  ## MODIFY COLUMN REMOVE
+</div>
+
+Удаляет одно из свойств столбца: `DEFAULT`, `ALIAS`, `MATERIALIZED`, `CODEC`, `COMMENT`, `TTL`, `SETTINGS`.
+
+Синтаксис:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name REMOVE property;
+```
+
+**Пример**
+
+Удалите TTL:
+
+```sql
+ALTER TABLE table_with_ttl MODIFY COLUMN column_ttl REMOVE TTL;
+```
+
+**См. также**
+
+* [REMOVE TTL](/ru/reference/statements/alter/ttl).
+
+<div id="modify-column-modify-setting">
+  ## MODIFY COLUMN MODIFY SETTING
+</div>
+
+Изменяет настройку столбца.
+
+Синтаксис:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING name=value,...;
+```
+
+**Пример**
+
+Измените значение `max_compress_block_size` для столбца на `1MB`:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name MODIFY SETTING max_compress_block_size = 1048576;
+```
+
+<div id="modify-column-reset-setting">
+  ## MODIFY COLUMN RESET SETTING
+</div>
+
+Сбрасывает настройку столбца, а также удаляет объявление этой настройки из выражения столбца в CREATE-запросе таблицы.
+
+Синтаксис:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING name,...;
+```
+
+**Пример**
+
+Сбросьте настройку столбца `max_compress_block_size` до значения по умолчанию:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN column_name RESET SETTING max_compress_block_size;
+```
+
+<div id="modify-column-add-enum-values">
+  ## MODIFY COLUMN ADD ENUM VALUES
+</div>
+
+Добавляет новые значения в столбец типа `Enum`, `Enum8`, `Enum16`, `Nullable(Enum)`, `Nullable(Enum8)` или `Nullable(Enum16)`
+
+Синтаксис:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('EnumName' [= number], ...);
+```
+
+**Пример**
+
+Добавьте в столбец `enum_column_name` два значения:
+
+```sql
+ALTER TABLE table_name MODIFY COLUMN enum_column_name ADD ENUM VALUES ('Hundred' = 100, 'HundredOne');
+```
+
+<div id="materialize-column">
+  ## MATERIALIZE COLUMN
+</div>
+
+Материализует столбец с выражением для значения `DEFAULT` или `MATERIALIZED`. При добавлении материализованного столбца с помощью `ALTER TABLE table_name ADD COLUMN column_name MATERIALIZED` существующие строки без материализованных значений автоматически не заполняются. Оператор `MATERIALIZE COLUMN` можно использовать, чтобы перезаписать существующие данные столбца после добавления или обновления выражения `DEFAULT` или `MATERIALIZED` (при этом обновляются только метаданные, а существующие данные не изменяются). Обратите внимание, что материализация столбца, входящего в ключ сортировки, — недопустимая операция, поскольку она может нарушить порядок сортировки.
+Реализовано как [мутация](/ru/reference/statements/alter/index#mutations).
+
+Для столбцов с новым или обновлённым выражением значения `MATERIALIZED` перезаписываются все существующие строки.
+
+Для столбцов с новым или обновлённым выражением значения `DEFAULT` поведение зависит от версии ClickHouse:
+
+* В ClickHouse &lt; v24.2 перезаписываются все существующие строки.
+* ClickHouse &gt;= v24.2 различает, было ли значение в столбце с выражением значения `DEFAULT` явно указано при вставке строки или нет, то есть вычислено на основе выражения значения `DEFAULT`. Если значение было указано явно, ClickHouse оставляет его без изменений. Если значение было вычислено, ClickHouse изменяет его на новое или обновлённое выражение значения `MATERIALIZED`.
+
+Синтаксис:
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] MATERIALIZE COLUMN col [IN PARTITION partition | IN PARTITION ID 'partition_id'];
+```
+
+* Если вы укажете PARTITION, будет материализован столбец только для указанной партиции.
+
+**Пример**
+
+```sql
+DROP TABLE IF EXISTS tmp;
+SET mutations_sync = 2;
+CREATE TABLE tmp (x Int64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY tuple();
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5;
+ALTER TABLE tmp ADD COLUMN s String MATERIALIZED toString(x);
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM (select x,s from tmp order by x);
+
+┌─groupArray(x)─┬─groupArray(s)─────────┐
+│ [0,1,2,3,4]   │ ['0','1','2','3','4'] │
+└───────────────┴───────────────────────┘
+
+ALTER TABLE tmp MODIFY COLUMN s String MATERIALIZED toString(round(100/x));
+
+INSERT INTO tmp SELECT * FROM system.numbers LIMIT 5,5;
+
+SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)──────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['0','1','2','3','4','20','17','14','12','11'] │
+└───────────────────────┴────────────────────────────────────────────────┘
+
+ALTER TABLE tmp MATERIALIZE COLUMN s;
+
+SELECT groupArray(x), groupArray(s) FROM tmp;
+
+┌─groupArray(x)─────────┬─groupArray(s)─────────────────────────────────────────┐
+│ [0,1,2,3,4,5,6,7,8,9] │ ['inf','100','50','33','25','20','17','14','12','11'] │
+└───────────────────────┴───────────────────────────────────────────────────────┘
+```
+
+**См. также**
+
+* [MATERIALIZED](/ru/reference/statements/create/view#materialized-view).
+
+<div id="limitations">
+  ## Ограничения
+</div>
+
+Запрос `ALTER` позволяет создавать и удалять отдельные элементы (столбцы) во вложенных структурах данных, но не целые вложенные структуры данных. Чтобы добавить вложенную структуру данных, можно добавить столбцы с именем вида `name.nested_name` и типом `Array(T)`. Вложенная структура данных эквивалентна нескольким столбцам типа Array, имя которых имеет одинаковый префикс до точки.
+
+Переименование столбцов с точками в именах поддерживается лишь частично. Точки зарезервированы для доступа к подстолбцам [Nested](/ru/reference/data-types/nested-data-structures/index), поэтому префикс (имя родительского элемента) должен оставаться неизменным. Менять можно только суффикс (имя подстолбца). Например, `a.b` можно переименовать в `a.c`, но переименовать `a.b` в `b.d` нельзя, поскольку при этом изменяется родительский префикс Nested.
+
+Удаление столбцов из первичного ключа или ключа выборки (столбцов, используемых в выражении `ENGINE`) не поддерживается. Изменение типа столбцов, входящих в первичный ключ, возможно только в том случае, если оно не приводит к изменению данных (например, можно добавлять значения в Enum или менять тип с `DateTime` на `UInt32`).
+
+Если возможностей запроса `ALTER` недостаточно для внесения нужных изменений в таблицу, можно создать новую таблицу, скопировать в неё данные с помощью запроса [INSERT SELECT](/ru/reference/statements/insert-into#inserting-the-results-of-select), затем поменять таблицы местами с помощью запроса [RENAME](/ru/reference/statements/rename#rename-table) и удалить старую таблицу.
+
+Запрос `ALTER` блокирует все чтения и записи для таблицы. Иными словами, если в момент выполнения запроса `ALTER` уже выполняется длительный `SELECT`, запрос `ALTER` будет ждать его завершения. В то же время все новые запросы к той же таблице будут ждать, пока выполняется этот `ALTER`.
+
+Для таблиц, которые сами не хранят данные (например, [Merge](/ru/reference/statements/alter/index) и [Distributed](/ru/reference/statements/alter/index)), `ALTER` только изменяет структуру таблицы и не меняет структуру подчинённых таблиц. Например, при выполнении `ALTER` для таблицы `Distributed` вам также потребуется выполнить `ALTER` для таблиц на всех удалённых серверах.

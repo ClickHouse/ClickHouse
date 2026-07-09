@@ -1,0 +1,100 @@
+---
+slug: /sql-reference/statements/create/dictionary/sources
+title: 'Dictionary Sources'
+sidebarTitle: 'Overview'
+doc_type: 'reference'
+description: 'Dictionary source types configuration'
+---
+
+import CloudDetails from '/snippets/_snippet_dictionary_in_cloud.mdx';
+import CloudNotSupportedBadge from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+## Syntax {#dictionary-sources}
+
+<CloudDetails />
+
+A dictionary can be connected to ClickHouse from many different sources.
+The source is configured in the `source` section for configuration file and using the `SOURCE` clause for DDL statement.
+
+<Tabs>
+<Tab title="DDL">
+
+```sql
+CREATE DICTIONARY dict_name (...)
+...
+SOURCE(SOURCE_TYPE(param1 val1 ... paramN valN)) -- Source configuration
+...
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml
+<clickhouse>
+  <dictionary>
+    ...
+    <source>
+      <source_type>
+        <!-- Source configuration -->
+      </source_type>
+    </source>
+    ...
+  </dictionary>
+  ...
+</clickhouse>
+```
+
+</Tab>
+</Tabs>
+
+<br/>
+
+## Supported dictionary sources {#supported-dictionary-sources}
+
+The following source types (`SOURCE_TYPE`/`source_type`) are available:
+
+- [Local file](/reference/statements/create/dictionary/sources/local-file)
+- [Executable File](/reference/statements/create/dictionary/sources/executable-file)
+- [Executable Pool](/reference/statements/create/dictionary/sources/executable-pool)
+- [HTTP(S)](/reference/statements/create/dictionary/sources/http)
+- DBMS
+  - [ODBC](/reference/statements/create/dictionary/sources/odbc)
+  - [MySQL](/reference/statements/create/dictionary/sources/mysql)
+  - [ClickHouse](/reference/statements/create/dictionary/sources/clickhouse)
+  - [MongoDB](/reference/statements/create/dictionary/sources/mongodb)
+  - [Redis](/reference/statements/create/dictionary/sources/redis)
+  - [Cassandra](/reference/statements/create/dictionary/sources/cassandra)
+  - [PostgreSQL](/reference/statements/create/dictionary/sources/postgresql)
+  - [YTsaurus](/reference/statements/create/dictionary/sources/ytsaurus)
+- [YAMLRegExpTree](/reference/statements/create/dictionary/sources/yamlregexptree)
+- [Null](/reference/statements/create/dictionary/sources/null)
+
+For source types [Local file](/reference/statements/create/dictionary/sources/local-file), [Executable file](/reference/statements/create/dictionary/sources/executable-file), [HTTP(s)](/reference/statements/create/dictionary/sources/http), [ClickHouse](/reference/statements/create/dictionary/sources/clickhouse)
+optional settings are available:
+
+<Tabs>
+<Tab title="DDL">
+
+```sql highlight={2}
+SOURCE(FILE(path './user_files/os.tsv' format 'TabSeparated'))
+SETTINGS(format_csv_allow_single_quotes = 0)
+```
+
+</Tab>
+<Tab title="Configuration file">
+
+```xml highlight={7}
+<source>
+  <file>
+    <path>/opt/dictionaries/os.tsv</path>
+    <format>TabSeparated</format>
+  </file>
+  <settings>
+      <format_csv_allow_single_quotes>0</format_csv_allow_single_quotes>
+  </settings>
+</source>
+```
+
+</Tab>
+</Tabs>

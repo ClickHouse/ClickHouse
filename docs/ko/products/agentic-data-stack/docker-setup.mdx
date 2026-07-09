@@ -1,0 +1,155 @@
+---
+sidebarTitle: 'Docker 설정'
+title: 'Docker Compose로 에이전트형 데이터 스택 설정하기'
+description: 'Docker Compose로 전체 에이전트형 데이터 스택(ClickHouse, LibreChat, MCP 서버, Langfuse)을 실행합니다'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'docker compose', 'setup', 'LibreChat', 'MCP', 'Langfuse']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행하면 첫 로그인 직후부터 데이터에 관해 질문할 수 있습니다. `docker compose up` 명령 한 번으로 [LibreChat](/ko/products/agentic-data-stack/components/librechat), [ClickHouse MCP 서버](/ko/products/agentic-data-stack/components/mcp-server), [ClickHouse](/ko/get-started/setup/install), 그리고 관측성을 위한 [Langfuse](/ko/products/agentic-data-stack/components/langfuse)를 모두 실행할 수 있습니다.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* Compose 플러그인(Compose v2 이상)이 포함된 **Docker**.
+* 리포지토리를 클론하기 위한 **Git**.
+* 모델 제공업체 API Key(OpenAI, Anthropic 또는 Google 등). 에이전트가 질문에 답하려면 모델이 필요하므로 설정 중에 키를 제공하거나 첫 번째 채팅 전에 LibreChat UI에서 추가하십시오.
+
+<div id="stand-up-the-stack">
+  ## 스택 실행하기
+</div>
+
+<Steps>
+  <Step title="리포지토리 복제">
+    ```bash
+    git clone https://github.com/ClickHouse/agentic-data-stack
+    cd agentic-data-stack
+    ```
+
+    이 리포지토리에는 최상위 `docker-compose.yml`이 포함되어 있으므로, 명령 하나로 전체 스택을 실행할 수 있습니다. 전체 서비스 목록은 [아키텍처](#how-it-is-wired)를 참조하십시오.
+  </Step>
+
+  <Step title="데모 Setup 스크립트 실행">
+    ```bash
+    ./scripts/prepare-demo.sh
+    ```
+
+    이 스크립트는 각 서비스의 자격 증명이 포함된 `.env` 파일을 생성한 다음, 선택한 provider의 API Key를 구성할 수 있는 대화형 메뉴를 표시합니다. 이 키는 `.env` 파일에 직접 설정할 수도 있습니다. 건너뛴 provider는 모두 `user_provided`로 유지되므로, 대신 LibreChat UI에서 직접 키를 추가할 수 있습니다.
+
+    처음 시작할 때 스택은 `.env`를 기반으로 관리자 사용자를 생성합니다. 기본 로그인 정보는 `admin@admin.com` / `password`입니다.
+
+    <Accordion title="직접 로그인 자격 증명 설정">
+      `prepare-demo.sh`를 실행하기 전에 다음 변수를 지정해 `generate-env.sh`를 실행하십시오:
+
+      ```bash
+      USER_EMAIL="you@example.com" USER_PASSWORD="supersecret" USER_NAME="YourName" ./scripts/generate-env.sh
+      ```
+
+      그러면 `prepare-demo.sh`는 기존 `.env`를 감지하고 바로 API Key 구성으로 이동합니다.
+    </Accordion>
+  </Step>
+
+  <Step title="백그라운드에서 서비스 시작">
+    ```bash
+    docker compose up -d
+    ```
+
+    시작 순서는 자동으로 처리됩니다. LibreChat은 MCP 서버가 정상 상태가 된 뒤에만 시작되므로, 처음 열 때부터 ClickHouse 연결이 준비되어 있습니다.
+  </Step>
+
+  <Step title="LibreChat 열기 및 로그인">
+    스택이 실행되면 브라우저에서 다음 서비스에 접속할 수 있습니다:
+
+    * **LibreChat** (채팅 UI) — [http://localhost:3080](http://localhost:3080)
+    * **Langfuse** (관측성) — [http://localhost:3000](http://localhost:3000)
+    * **Admin Panel** (브라우저 기반 LibreChat 구성) — [http://localhost:3081](http://localhost:3081)
+    * **MinIO console** (객체 스토리지, 자격 증명은 `.env`에 있음) — [http://localhost:9091](http://localhost:9091)
+
+    `.env` 파일의 관리자 자격 증명을 사용해 LibreChat에 로그인하십시오.
+  </Step>
+
+  <Step title="모델 선택">
+    기본적으로 모델이 선택되어 있습니다. 변경하려면 모델 셀렉터를 열고 사용할 모델을 선택하십시오.
+
+    <Image img="/images/agentic-data-stack/select-model.webp" alt="왼쪽 상단에 있는 LibreChat 모델 셀렉터에 기본 모델과 「Select a model」 툴팁이 표시된 모습" size="md" />
+
+    Setup 중에 provider 키를 설정하지 않았다면 UI에서 추가하십시오.
+
+    <Accordion title="UI에서 provider 키 설정">
+      모델 셀렉터를 열고 provider 옆의 **Set API Key**를 클릭하십시오.
+
+      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Anthropic provider 옆에 Set API Key 버튼이 표시된 LibreChat 모델 셀렉터" size="md" />
+
+      대화 상자에 키를 붙여넣고 **Submit**을 클릭하십시오. 만료 시간을 설정하거나, 키가 만료되지 않도록 유지할 수 있습니다.
+
+      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="만료 드롭다운, Key 필드, Submit 및 Revoke 버튼이 있는 Anthropic용 Set API Key 대화 상자" size="md" />
+    </Accordion>
+  </Step>
+
+  <Step title="MCP 서버 선택">
+    이 스택은 LibreChat의 `librechat.yaml`에 MCP 서버를 미리 구성해 둡니다. 메시지 컴포저에서 **MCP Servers**를 클릭하고 **ClickHouse-Local**을 선택하십시오.
+
+    ClickHouse Cloud 서비스를 사용하려면 **ClickHouse-Cloud**를 대신 선택하십시오.
+
+    {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
+
+    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="LibreChat 컴포저에서 MCP Servers 메뉴가 열려 있으며, 녹색 연결 점이 있는 ClickHouse-Local과 ClickHouse-Cloud가 표시된 모습" size="md" />
+  </Step>
+
+  <Step title="첫 번째 질문하기">
+    예를 들면 다음과 같습니다:
+
+    > 사용 가능한 데이터베이스와 테이블은 무엇이며, 가장 큰 테이블에는 몇 개의 행이 있습니까?
+
+    에이전트는 MCP 서버의 도구를 사용해 데이터베이스와 테이블을 나열하고, ClickHouse에 읽기 전용 쿼리를 실행한 뒤, 결과를 바탕으로 답변을 구성합니다. SQL을 직접 작성할 필요는 없습니다.
+
+    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="ClickHouse-Local MCP 도구를 호출해 예시 질문에 답변하고, 사용 가능한 데이터베이스와 테이블을 나열하는 LibreChat" size="md" />
+  </Step>
+</Steps>
+
+<div id="stop-or-reset">
+  ## 스택 중지 또는 재설정
+</div>
+
+삭제하지 않고 서비스를 중지합니다:
+
+```bash
+docker compose down
+```
+
+모든 컨테이너를 종료하고 깨끗한 상태에서 다시 시작할 수 있도록 모든 볼륨을 삭제하려면 stack 재설정 스크립트를 사용하십시오:
+
+```bash
+./scripts/reset-all.sh
+```
+
+<div id="how-it-is-wired">
+  ## 아키텍처
+</div>
+
+`docker-compose.yml`은 4개의 Compose 파일을 포함하는 간단한 엔트리포인트입니다:
+
+| Compose file                 | 정의 내용                                                       |
+| ---------------------------- | ----------------------------------------------------------- |
+| `langfuse-compose.yml`       | Langfuse 및 관련 서비스(ClickHouse, PostgreSQL, Redis, MinIO)     |
+| `clickhouse-mcp-compose.yml` | ClickHouse MCP 서버                                           |
+| `librechat-compose.yml`      | LibreChat 및 관련 서비스(MongoDB, Meilisearch, pgvector, RAG API) |
+| `admin-panel-compose.yml`    | LibreChat 관리자 패널                                            |
+
+단일 명령으로 시작할 수 있는 이유는 다음 두 가지입니다:
+
+* **헬스 체크와 시작 순서.** Compose는 헬스 체크를 사용해 시작 순서를 조정합니다. MCP 서버는 ClickHouse가 준비될 때까지 기다리고, LibreChat은 MCP 서버가 준비될 때까지 기다립니다.
+* **공유 환경 파일.** `.env`에는 각 서비스의 자격 증명과 연결 값이 들어 있으며, 서비스들이 서로 통신할 수 있도록 일관되게 설정됩니다. 예를 들어 MCP 서버는 `.env`의 ClickHouse 자격 증명을 사용해 ClickHouse에 연결합니다. LibreChat에는 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_BASE_URL`이 제공되므로 모든 실행이 기본적으로 Langfuse에 추적됩니다.
+
+ClickHouse는 이 스택에서 두 가지 역할을 합니다. Langfuse의 스토리지 백엔드이면서, 동시에 에이전트가 MCP 서버를 통해 쿼리하는 데이터베이스이기도 합니다.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* 스택의 각 구성 요소가 어떤 역할을 하는지 살펴보십시오: [ClickHouse MCP 서버](/ko/products/agentic-data-stack/components/mcp-server), [LibreChat](/ko/products/agentic-data-stack/components/librechat), [Langfuse](/ko/products/agentic-data-stack/components/langfuse).
+* 스택이 전체적으로 어떻게 구성되는지는 [개요](/ko/products/agentic-data-stack/overview)에서 확인하십시오.
+* 아무것도 설치하지 않고 공개 데이터셋으로 스택을 사용해 보려면 호스팅 데모인 [AgentHouse](https://llm.clickhouse.com)를 사용하십시오.

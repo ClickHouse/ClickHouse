@@ -1,0 +1,142 @@
+---
+slug: /use-cases/observability/clickstack/sdks/react-native
+description: 'ClickStack용 React Native SDK - ClickHouse 관측성 스택'
+title: 'React Native'
+doc_type: 'guide'
+keywords: ['ClickStack', 'SDK', '로깅', '통합', '애플리케이션 모니터링']
+---
+
+ClickStack React Native SDK를 사용하면 React Native
+애플리케이션을 계측하여 ClickStack으로 이벤트를 전송할 수 있습니다. 이를 통해 단일 타임라인에서 모바일 네트워크
+요청과 예외를 백엔드 이벤트와 함께 확인할 수 있습니다.
+
+이 가이드에서 통합하는 항목은 다음과 같습니다:
+
+* **XHR/Fetch 요청**
+
+<div id="getting-started">
+  ## 시작하기
+</div>
+
+<div id="install-via-npm">
+  ### NPM으로 설치
+</div>
+
+다음 명령을 사용하여 [ClickStack React Native 패키지](https://www.npmjs.com/package/@hyperdx/otel-react-native)를 설치하십시오.
+
+```shell
+npm install @hyperdx/otel-react-native
+```
+
+<div id="initialize-clickstack">
+  ### ClickStack 초기화
+</div>
+
+앱 수명 주기 초기에 가능한 한 빨리 라이브러리를 초기화하세요:
+
+```javascript
+import { HyperDXRum } from '@hyperdx/otel-react-native';
+
+HyperDXRum.init({
+  url: 'http://your-otel-collector:4318',
+  service: 'my-rn-app',
+  apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStack의 경우 생략
+  tracePropagationTargets: [/api.myapp.domain/i], // 프론트엔드에서 백엔드 요청까지 traces를 연결하려면 설정하세요
+});
+```
+
+<div id="attach-user-information-metadata">
+  ### 사용자 정보 또는 메타데이터 첨부(선택 사항)
+</div>
+
+사용자 정보를 첨부하면 HyperDX에서 세션과 이벤트를 검색하거나 필터링할 수
+있습니다. 이는 클라이언트 세션 중 어느 시점에서나 호출할 수 있습니다. 현재
+클라이언트 세션과 호출 이후 전송되는 모든 이벤트는 사용자 정보와 연결됩니다.
+
+`userEmail`, `userName`, `teamName`은 세션 UI에 해당 값을 표시하는 데 사용되며,
+생략할 수도 있습니다. 그 외의 추가 값도 지정할 수 있으며 이벤트를 검색하는 데
+사용할 수 있습니다.
+
+```javascript
+HyperDXRum.setGlobalAttributes({
+  userId: user.id,
+  userEmail: user.email,
+  userName: user.name,
+  teamName: user.team.name,
+  // 기타 사용자 정의 속성...
+});
+```
+
+<div id="instrument-lower-versions">
+  ### 하위 버전 계측
+</div>
+
+0.68 미만 버전의 React Native에서 실행되는 애플리케이션을 계측하려면
+`metro.config.js` 파일을 수정하여 metro가 브라우저 전용
+패키지를 강제로 사용하도록 설정하십시오. 예시는 다음과 같습니다:
+
+```javascript
+const defaultResolver = require('metro-resolver');
+
+module.exports = {
+  resolver: {
+    resolveRequest: (context, realModuleName, platform, moduleName) => {
+      const resolved = defaultResolver.resolve(
+        {
+          ...context,
+          resolveRequest: null,
+        },
+        moduleName,
+        platform,
+      );
+
+      if (
+        resolved.type === 'sourceFile' &&
+        resolved.filePath.includes('@opentelemetry')
+      ) {
+        resolved.filePath = resolved.filePath.replace(
+          'platform\\node',
+          'platform\\browser',
+        );
+        return resolved;
+      }
+
+      return resolved;
+    },
+  },
+  transformer: {
+    getTransformOptions: async () => ({
+      transform: {
+        experimentalImportSupport: false,
+        inlineRequires: true,
+      },
+    }),
+  },
+};
+```
+
+<div id="view-navigation">
+  ## 화면 내비게이션
+</div>
+
+[react-navigation](https://github.com/react-navigation/react-navigation) 버전 5와 6이 지원됩니다.
+
+다음 예시는 내비게이션 계측을 설정하는 방법을 보여줍니다.
+
+```javascript
+import { startNavigationTracking } from '@hyperdx/otel-react-native';
+
+export default function App() {
+  const navigationRef = useNavigationContainerRef();
+  return (
+    <NavigationContainer
+      ref={navigationRef}
+      onReady={() => {
+        startNavigationTracking(navigationRef);
+      }}
+    >
+      <Stack.Navigator>...</Stack.Navigator>
+    </NavigationContainer>
+  );
+}
+```

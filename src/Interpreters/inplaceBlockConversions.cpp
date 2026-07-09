@@ -374,19 +374,19 @@ static std::unordered_map<String, ColumnPtr> collectOffsetsColumns(
 
 static ColumnPtr createColumnWithDefaultValue(const IDataType & data_type, const String & subcolumn_name, size_t num_rows)
 {
-    auto column = data_type.createColumnConstWithDefaultValue(num_rows);
+    auto const_column = data_type.createColumnConstWithDefaultValue(num_rows);
 
     /// We must turn a constant column into a full column because the interpreter could infer
     /// that it is constant everywhere but in some blocks (from other parts) it can be a full column.
 
     if (subcolumn_name.empty())
-        return column->convertToFullColumnIfConst();
+        return const_column->convertToFullColumnIfConst();
 
     /// Firstly get subcolumn from const column and then replicate.
-    column = assert_cast<const ColumnConst &>(*column).getDataColumnPtr();
-    column = data_type.getSubcolumn(subcolumn_name, column);
+    ColumnPtr data_column = const_column->getDataColumnPtr();
+    data_column = data_type.getSubcolumn(subcolumn_name, data_column);
 
-    return ColumnConst::create(std::move(column), num_rows)->convertToFullColumnIfConst();
+    return ColumnConst::create(std::move(data_column), num_rows)->convertToFullColumnIfConst();
 }
 
 static bool hasDefault(const StorageSnapshotPtr & storage_snapshot, const NameAndTypePair & column)
@@ -495,10 +495,17 @@ void fillMissingColumns(
             Names tuple_elements;
             SerializationPtr serialization = IDataType::getSerialization(*requested_column);
 
-            /// For Nested columns collect names of tuple elements and skip them while getting the base type of array.
-            IDataType::forEachSubcolumn([&](const auto & path, const auto &, const auto &)
+            /// Collect names of tuple elements on the path to the requested subcolumn, so they are skipped while
+            /// getting the base type of array. Elements below the requested subcolumn belong to its own value type
+            /// and must be kept, otherwise the Tuple wrapper is lost.
+            const auto & requested_subcolumn_name = requested_column->getSubcolumnName();
+            IDataType::forEachSubcolumn([&](const auto & path, const auto & subcolumn_name, const auto &)
             {
-                if (path.back().type == ISerialization::Substream::TupleElement)
+                if (path.back().type != ISerialization::Substream::TupleElement)
+                    return;
+
+                if (subcolumn_name == requested_subcolumn_name
+                    || requested_subcolumn_name.starts_with(subcolumn_name + "."))
                     tuple_elements.push_back(path.back().name_of_substream);
             }, ISerialization::SubstreamData(serialization));
 

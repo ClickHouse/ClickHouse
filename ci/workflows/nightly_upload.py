@@ -11,6 +11,7 @@ workflow = Workflow.Config(
             name="Upload clickhousectl",
             command="python3 ./ci/jobs/upload_clickhousectl.py",
             runs_on=RunnerLabels.STYLE_CHECK_ARM,
+            enable_gh_auth=True,
         )
     ],
     secrets=SECRETS,
