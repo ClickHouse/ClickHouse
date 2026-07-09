@@ -3030,7 +3030,7 @@ void InterpreterSelectQuery::executeAggregation(
     else
         group_by_info = nullptr;
 
-    if (!group_by_info && settings[Setting::force_aggregation_in_order])
+    if (!group_by_info && settings[Setting::force_aggregation_in_order] && !query_analyzer->useGroupingSetKey())
     {
         group_by_sort_description = getSortDescriptionFromGroupBy(getSelectQuery());
         sort_description_for_merging = group_by_sort_description;
