@@ -141,9 +141,10 @@ struct IdentifierLookup
 
 inline bool operator==(const IdentifierLookup & lhs, const IdentifierLookup & rhs)
 {
-    /// Include per-part quote info so the identifier-resolve cache cannot serve an unquoted
-    /// case-insensitive hit to a later double-quoted (case-sensitive) lookup of the same text.
-    return lhs.identifier.getFullName() == rhs.identifier.getFullName()
+    /// Compare parts (not the joined full name) so lookups with identical text but different
+    /// part boundaries (`\`t.c\`` vs `t.c`) stay distinct cache keys, and include per-part quote
+    /// info so an unquoted case-insensitive hit is never served to a double-quoted lookup.
+    return lhs.identifier.getParts() == rhs.identifier.getParts()
         && lhs.lookup_context == rhs.lookup_context
         && lhs.is_part_double_quoted == rhs.is_part_double_quoted;
 }
@@ -159,6 +160,9 @@ struct IdentifierLookupHash
     {
         size_t h = std::hash<std::string>()(identifier_lookup.identifier.getFullName())
             ^ static_cast<uint8_t>(identifier_lookup.lookup_context);
+        /// Mix per-part sizes so identical text with different part boundaries hashes apart.
+        for (const auto & part : identifier_lookup.identifier.getParts())
+            h = (h * 31) ^ part.size();
         for (bool quoted : identifier_lookup.is_part_double_quoted)
             h = (h * 31) ^ static_cast<size_t>(quoted);
         return h;

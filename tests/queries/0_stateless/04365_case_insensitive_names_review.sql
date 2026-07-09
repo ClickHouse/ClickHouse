@@ -243,3 +243,11 @@ SELECT * REPLACE (0 AS age) FROM t_replace_quote WHERE "age" = 0; -- { serverErr
 SELECT * REPLACE (0 AS age) FROM t_replace_quote WHERE age = 0;
 SELECT * REPLACE (0 AS age) FROM t_replace_quote WHERE "Age" = 0;
 DROP TABLE t_replace_quote;
+
+SELECT '--- Backtick single-part and compound identifier are distinct cache keys ---';
+-- Same text `t.c`, different part boundaries: the resolve cache must not conflate them.
+CREATE TABLE t_oc (c Int32) ENGINE = Memory;
+INSERT INTO t_oc VALUES (9);
+SELECT t.c, `t.c` FROM t_oc AS t; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT t.c FROM t_oc AS t;
+DROP TABLE t_oc;

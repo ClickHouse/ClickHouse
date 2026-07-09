@@ -90,3 +90,5 @@ SELECT 1 AS "MyAlias"
 --- Quoted folded spelling must not match a REPLACE target ---
 0
 0
+--- Backtick single-part and compound identifier are distinct cache keys ---
+9
