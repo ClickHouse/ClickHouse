@@ -179,6 +179,50 @@ bool ColumnTuple::isDefaultAt(size_t n) const
     return true;
 }
 
+UInt64 ColumnTuple::getNumberOfDefaultRows() const
+{
+    /// Avoid the O(rows * tuple_size) per-row virtual `isDefaultAt` calls of the
+    /// IColumnHelper default: query each element's non-default rows once and union them
+    /// in a bitmap.
+    const size_t num_rows = size();
+    if (num_rows == 0)
+        return 0;
+    if (columns.empty())
+        return num_rows;
+
+    PaddedPODArray<UInt8> non_default_anywhere;
+    non_default_anywhere.resize_fill(num_rows);
+    size_t num_non_default = 0;
+
+    for (const auto & column : columns)
+    {
+        if (num_non_default == num_rows)
+            break;
+
+        const size_t num_defaults_in_column = column->getNumberOfDefaultRows();
+        if (num_defaults_in_column == num_rows)
+            continue;
+        if (num_defaults_in_column == 0)
+        {
+            std::memset(non_default_anywhere.data(), 1, num_rows);
+            num_non_default = num_rows;
+            break;
+        }
+
+        IColumn::Offsets non_default_indices;
+        column->getIndicesOfNonDefaultRows(non_default_indices, /*from=*/0, /*limit=*/0);
+        for (UInt64 idx : non_default_indices)
+        {
+            if (!non_default_anywhere[idx])
+            {
+                non_default_anywhere[idx] = 1;
+                ++num_non_default;
+            }
+        }
+    }
+    return num_rows - num_non_default;
+}
+
 std::string_view ColumnTuple::getDataAt(size_t) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDataAt is not supported for {}", getName());
