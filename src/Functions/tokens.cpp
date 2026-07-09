@@ -66,6 +66,10 @@ std::unique_ptr<ITokenizer> createTokenizer(const ColumnsWithTypeAndName & argum
         {
             params.push_back(col->getUInt(0));
         }
+        else if (which_type.isString())
+        {
+            params.push_back(String(col->getDataAt(0)));
+        }
         else
         {
             const ColumnArray * col_separators = checkAndGetColumn<ColumnArray>(col.get());
@@ -253,6 +257,8 @@ public:
                     optional_args.emplace_back("ngrams", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isUInt8), isColumnConst, "const UInt8");
                 else if (tokenizer == SplitByStringTokenizer::getExternalName())
                     optional_args.emplace_back("separators", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isArray), isColumnConst, "const Array");
+                else if (tokenizer == IcuTokenizer::getExternalName())
+                    optional_args.emplace_back("locale", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), isColumnConst, "const String");
             }
             else if (arguments.size() == 4 || arguments.size() == 5)
             {
