@@ -631,7 +631,11 @@ Query parameters, for parameterized queries like `SELECT {x:UInt64}`. The encodi
 The old Setting-based encoding routed each parameter through a `Settings` object on the client. When a parameter name collided with a builtin setting name (or an alias), that path normalized the value (for example `max_threads=0` was rewritten to `auto(N)`) and alias-resolved the name, corrupting or losing the parameter (issue #85768). The raw `(name, value)` pairs never touch a `SettingField`, so the parameter text is transported verbatim.
 
 :::note
-The parameter value is the SQL representation of the value, not a raw literal. String-typed parameters must be passed already single-quoted (for example, the value for `{name:String}` is `'Alice'`, not `Alice`); otherwise the server's value parser rejects them. This applies to both encodings.
+The on-wire value encoding differs between the two framings, so a client must send the right form for the negotiated version.
+
+**Below v54487.** The value is a `SettingFieldCustom` dump (`Field::dump()`), i.e. the quoted SQL representation. A `String`-typed parameter is sent single-quoted: the value for `{name:String}` is `'Alice'`.
+
+**At v54487+ (`RAW_QUERY_PARAMETERS`).** The value is the raw text-escaped form, consumed by `deserializeTextEscaped` on the server (`_request_body` uses `deserializeWholeText`). A `String`-typed parameter is sent unquoted: the value for `{name:String}` is `Alice`, not `'Alice'` (sending `'Alice'` substitutes the quotes into the string). This matches what a `SET param_name = 'Alice'` statement produces: the client parser strips the surrounding quotes before transport.
 :::
 
 ### Data (packet type 1 server→client, packet type 2 client→server) {#data}
