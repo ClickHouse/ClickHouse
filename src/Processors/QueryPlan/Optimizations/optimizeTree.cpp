@@ -187,6 +187,7 @@ void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPl
 bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
 void checkDistributedReadSupported(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
+void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
@@ -330,6 +331,10 @@ void optimizeTreeSecondPass(
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     if (optimization_settings.make_distributed_plan)
         checkDistributedReadSupported(root);
+    /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
+    /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
+    if (optimization_settings.make_distributed_plan)
+        validateDistributedPlanBucketCounts(optimization_settings);
     const bool make_distributed_plan = optimization_settings.make_distributed_plan;
     /// Cascades runs only when both settings are on (see below); `enable_cascades_optimizer`
     /// alone (with make_distributed_plan = 0) keeps the normal single-node optimizer.
