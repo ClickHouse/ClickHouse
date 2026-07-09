@@ -1813,7 +1813,12 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     }
 
     if (!create.isTemporary() && !create.database)
+    {
         create.setDatabase(current_database);
+        /// USE db.namespace: an unqualified new table belongs to the selected namespace.
+        if (!current_database_info.table_prefix.empty() && create.table)
+            create.setTable(current_database_info.table_prefix + "." + create.getTable());
+    }
 
     if (create.targets)
         create.targets->setCurrentDatabase(current_database_info);

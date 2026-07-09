@@ -164,7 +164,17 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
             return executeToTemporaryTable(table_id.getTableName(), query.kind);
-        query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
+        /// Resolve through the shared resolver: applies the `USE db.namespace` prefix.
+        table_id = context_->resolveStorageID(StorageID(query), Context::ResolveCurrentDatabase);
+        query.setDatabase(table_id.database_name);
+        query.setTable(table_id.table_name);
+    }
+    else
+    {
+        /// `USE catalog; DROP TABLE namespace.table` — resolve namespace qualifiers too.
+        table_id = context_->resolveStorageID(table_id, Context::ResolveGlobal);
+        query.setDatabase(table_id.database_name);
+        query.setTable(table_id.table_name);
     }
 
     if (query.isTemporary())
