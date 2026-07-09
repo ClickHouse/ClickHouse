@@ -78,7 +78,7 @@ namespace
         /// while serving, and does not have either `Content-Encoding` or `Content-Length`
         /// https://docs.cloud.google.com/storage/docs/transcoding#decompressive_transcoding
         object_info.is_server_side_decompressed = result.GcsStoredContentEncodingHasBeenSet()
-            && result.GetGcsStoredContentEncoding() == "gzip"
+            && result.GetGcsStoredContentEncoding() != "identity"
             && (!result.ContentEncodingHasBeenSet() || !result.ContentLengthHasBeenSet());
         object_info.last_modification_time = result.GetLastModified().Seconds();
         object_info.etag = result.GetETag();
