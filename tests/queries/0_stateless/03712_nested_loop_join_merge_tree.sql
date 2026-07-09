@@ -87,6 +87,13 @@ SELECT count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute))
 FROM events AS t0 LEFT JOIN attributes AS t1 ON t1.OtherId = t0.Idu32n
 SETTINGS log_comment = '03712_nested_loop_join_merge_tree_full_scan';
 
+-- PREWHERE on the direct-join right table: the pushed-down filter becomes a shared PrewhereInfo
+-- on the MergeTree lookup plan, which is cloned and re-optimized on every lookup. Column pruning
+-- (query_plan_remove_unused_columns) must not corrupt the shared PrewhereInfo across clones.
+SELECT count(), countIf(t1.Attribute != ''), sum(sipHash64(t1.Attribute))
+FROM events AS t0 INNER JOIN attributes AS t1 ON t1.EventId = t0.Idlcn PREWHERE t1.Attribute != ''
+SETTINGS query_plan_remove_unused_columns = 1;
+
 SYSTEM FLUSH LOGS system.query_log;
 
 SELECT
