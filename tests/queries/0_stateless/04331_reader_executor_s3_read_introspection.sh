@@ -42,8 +42,10 @@ $CLICKHOUSE_CLIENT "${RE_SETTINGS[@]}" --query_id "$COLD_ID" \
 # touched, leaving window/segment boundary tails uncached; re-reading them here
 # opens source connections whose gap-bridging and drain-tail bytes count as
 # bytes_from_source. Absorb those tails now so the asserted warm scan below sees
-# zero gaps and opens no source connection at all.
-$CLICKHOUSE_CLIENT "${RE_SETTINGS[@]}" \
+# zero gaps and opens no source connection at all. Prefetch OFF: the absorber must
+# not read ahead of itself - a lead cancelled at its query end would leave a fresh
+# partial cell as a NEW tail for the warm scan.
+$CLICKHOUSE_CLIENT --use_reader_executor=1 --remote_filesystem_read_prefetch=0 \
     --query "SELECT count() FROM t_re_s3_introspect WHERE NOT ignore(c2, c4) FORMAT Null"
 
 # Warm scan: same columns, now served from the filesystem cache.

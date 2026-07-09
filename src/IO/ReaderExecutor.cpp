@@ -735,9 +735,14 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     if (interrupted)
     {
         /// An interrupted step that produced nothing degrades to the revoke path:
-        /// the connection is reclaimed (above), the caller reads synchronously.
+        /// the connection is reclaimed (above), the caller reads synchronously. Account
+        /// it like a queued revoke - the read-ahead ran but delivered nothing - so every
+        /// launched machine lands in exactly one of Hits/PartialCollects/Cancelled.
         if (m->fetched.empty() && fetched_end <= m->physical_window.offset)
+        {
+            stats.add(Stats::PrefetchCancelled);
             return;
+        }
 
         /// A fetched prefix that cannot serve the cursor (extension-only bytes below the
         /// requested range, or a kept seek moved past it) is already in its cells (the
@@ -1829,13 +1834,17 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     const size_t horizon_end = toPhys(position) + fillAheadLead(level);
     if (base >= horizon_end)
         return;
-    const size_t chunk = std::min(r.range.end() - base, boundedFetchSize(horizon_end - base));
+    const size_t capacity = horizon_end - base;
+    const size_t chunk = std::min(r.range.end() - base, boundedFetchSize(capacity));
     if (chunk == 0)
         return;
     /// Refill hysteresis: a launch costs a machine round-trip (and, on the stateless arm, its
-    /// own GET), so top the lead up in at-least-window pieces - except the job tail, which is
-    /// whatever remains.
-    if (base + chunk < r.range.end() && chunk < effectiveWindowSize(level))
+    /// own GET), so top the lead up in at-least-window pieces - but hold ONLY when the HORIZON
+    /// is what makes the piece small (`chunk == capacity`). A chunk bounded by the job tail or
+    /// by the extent/EOF clamp inside `boundedFetchSize` is all the read-ahead currently
+    /// allowed: the extent advances per mark-range task, so holding it would keep prefetch
+    /// permanently behind the consumer.
+    if (chunk < effectiveWindowSize(level) && chunk == capacity && base + chunk < r.range.end())
         return;
 
     /// Read-ahead runs on the pool (async), committing cells progressively; the serve cursor

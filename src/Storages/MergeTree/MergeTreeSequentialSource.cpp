@@ -158,6 +158,13 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     if (read_with_direct_io)
         read_settings.local_fs_settings.direct_io_threshold = 1;
 
+    /// A compact-part merge reads all columns per granule, hopping BACKWARD between column
+    /// streams within each stripe; the executor's forward-only long connection and chain
+    /// rewind miss those hops and reopen per hop, multiplying requests over the legacy
+    /// buffered stream. Merges/mutations read through the legacy path until the executor
+    /// handles the pattern.
+    read_settings.reader_executor.enabled = false;
+
     /// Configure throttling
     switch (type)
     {
