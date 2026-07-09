@@ -1064,13 +1064,11 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
             "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
-            # query-bearing threads first: on a timeout the wedged query is
-            # what matters, idle pool threads are noise. Within each group the
-            # newest threads first (thread_id DESC) — system.stack_trace has no
-            # timestamp, and TIDs are assigned monotonically, so the highest
-            # TID is the best-effort "last thread" (only approximate: TIDs are
-            # reused after a thread exits).
-            "ORDER BY query_id <> '' DESC, host, thread_id DESC "
+            # Surface threads currently executing a query (query_id <> '')
+            # first so the trimmed stdout preview leads with them on a
+            # timeout; all other threads still follow, and the full dump is
+            # attached as a log file, so nothing is dropped.
+            "ORDER BY query_id <> '' DESC, host, thread_id "
             'FORMAT Vertical"'
         )
     elif args.shared_catalog:
@@ -1081,13 +1079,11 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
             "FROM clusterAllReplicas('test_cluster_shared_catalog', 'system.stack_trace') "
-            # query-bearing threads first: on a timeout the wedged query is
-            # what matters, idle pool threads are noise. Within each group the
-            # newest threads first (thread_id DESC) — system.stack_trace has no
-            # timestamp, and TIDs are assigned monotonically, so the highest
-            # TID is the best-effort "last thread" (only approximate: TIDs are
-            # reused after a thread exits).
-            "ORDER BY query_id <> '' DESC, host, thread_id DESC "
+            # Surface threads currently executing a query (query_id <> '')
+            # first so the trimmed stdout preview leads with them on a
+            # timeout; all other threads still follow, and the full dump is
+            # attached as a log file, so nothing is dropped.
+            "ORDER BY query_id <> '' DESC, host, thread_id "
             'FORMAT Vertical"'
         )
     else:
@@ -1096,10 +1092,10 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "\"SELECT thread_name, thread_id, query_id, trace, arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
-            # query-bearing threads first (idle pool threads are noise on a
-            # timeout), newest threads next (thread_id DESC, best-effort "last
-            # thread" — no timestamp exists and TIDs are reused).
-            "FROM system.stack_trace ORDER BY query_id <> '' DESC, thread_id DESC "
+            # Surface threads currently executing a query (query_id <> '')
+            # first so the trimmed stdout preview leads with them; all other
+            # threads still follow, and the full dump is attached as a log.
+            "FROM system.stack_trace ORDER BY query_id <> '' DESC, thread_id "
             'FORMAT Vertical"'
         )
 
