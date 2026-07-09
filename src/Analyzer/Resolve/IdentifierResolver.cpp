@@ -1642,7 +1642,34 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
             auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
             if (left_resolved_column.getColumnName() == right_resolved_column.getColumnName())
+            {
                 using_column_node_it = join_using_column_name_to_column_node.find(left_resolved_column.getColumnName());
+            }
+            else if (scope.isStandardMode()
+                && Poco::icompare(left_resolved_column.getColumnName(), right_resolved_column.getColumnName()) == 0)
+            {
+                /// Folded USING key: the sides resolved to case-sibling physical columns. Use the
+                /// USING entry whose per-side participants are exactly the resolved columns — a
+                /// mere case-sibling of the key (distinct column) must keep its own resolution.
+                for (auto it = join_using_column_name_to_column_node.begin(); it != join_using_column_name_to_column_node.end(); ++it)
+                {
+                    if (Poco::icompare(it->first, left_resolved_column.getColumnName()) != 0)
+                        continue;
+                    const auto & participants = it->second->as<ColumnNode &>().getExpressionOrThrow()->as<ListNode &>().getNodes();
+                    if (participants.size() != 2)
+                        continue;
+                    const auto * left_participant = participants[0]->as<ColumnNode>();
+                    const auto * right_participant = participants[1]->as<ColumnNode>();
+                    if (!left_participant || !right_participant
+                        || left_participant->getColumnName() != left_resolved_column.getColumnName()
+                        || right_participant->getColumnName() != right_resolved_column.getColumnName()
+                        || left_participant->getColumnSource() != left_resolved_column.getColumnSource()
+                        || right_participant->getColumnSource() != right_resolved_column.getColumnSource())
+                        continue;
+                    using_column_node_it = it;
+                    break;
+                }
+            }
         }
         else
         {

@@ -113,6 +113,14 @@ void ASTIdentifier::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases
         for (auto style : quote_styles)
             hash_state.update(static_cast<uint8_t>(style == IdentifierQuoteStyle::DoubleQuote));
     }
+    /// Part boundaries are semantic: compound `t.c` and single-part `\`t.c\`` resolve differently,
+    /// and this hash keys the query result cache. Mix per-part sizes for compound identifiers.
+    if (name_parts.size() > 1)
+    {
+        hash_state.update(name_parts.size());
+        for (const auto & part : name_parts)
+            hash_state.update(part.size());
+    }
 }
 
 const String & ASTIdentifier::name() const

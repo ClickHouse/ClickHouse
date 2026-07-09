@@ -246,6 +246,7 @@ namespace
 /// a single folded match is canonicalized in place, several folded matches are ambiguous.
 void canonicalizeTargetsImpl(
     Names & targets,
+    std::vector<Strings> & target_parts,
     const std::vector<std::vector<bool>> & target_parts_double_quoted,
     const Names & visible_column_names)
 {
@@ -267,7 +268,13 @@ void canonicalizeTargetsImpl(
                 "Column transformer target '{}' is ambiguous: matches columns with different cases: '{}' and '{}'",
                 target, folded_matches[0], folded_matches[1]);
         if (folded_matches.size() == 1)
+        {
             target = folded_matches.front();
+            /// Keep the parsed parts consistent: clone rebuilds names from parts, and equality
+            /// compares parts, so hash/equality/clone must all see the canonical spelling.
+            if (i < target_parts.size() && target_parts[i].size() == 1)
+                target_parts[i][0] = target;
+        }
     }
 }
 
@@ -453,12 +460,12 @@ ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Rep
 
 void ExceptColumnTransformerNode::canonicalizeColumnTargets(const Names & visible_column_names)
 {
-    canonicalizeTargetsImpl(except_column_names, target_parts_double_quoted, visible_column_names);
+    canonicalizeTargetsImpl(except_column_names, target_parts, target_parts_double_quoted, visible_column_names);
 }
 
 void ReplaceColumnTransformerNode::canonicalizeColumnTargets(const Names & visible_column_names)
 {
-    canonicalizeTargetsImpl(replacements_names, target_parts_double_quoted, visible_column_names);
+    canonicalizeTargetsImpl(replacements_names, target_parts, target_parts_double_quoted, visible_column_names);
 }
 
 QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const std::string & expression_name, bool standard_mode, std::string * matched_target)

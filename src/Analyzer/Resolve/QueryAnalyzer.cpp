@@ -5569,6 +5569,27 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 "NATURAL JOIN: cannot determine columns of right table expression in {}",
                 join_node_typed.formatASTForErrorMessage());
 
+        /// Case-sensitivity pins (double-quoted projection aliases / CTE columns) from both
+        /// sides. A pinned column is one omitted from its side's lowercase fold index.
+        NameSet pinned_columns;
+        if (scope.isStandardMode())
+        {
+            for (const auto & side : {join_node_typed.getLeftTableExpression(), join_node_typed.getRightTableExpression()})
+            {
+                auto side_data_it = scope.table_expression_node_to_data.find(side);
+                if (side_data_it == scope.table_expression_node_to_data.end() || !side_data_it->second.standard_mode)
+                    continue;
+                const auto & side_data = side_data_it->second;
+                for (const auto & [column_name, _] : side_data.column_names_and_types)
+                {
+                    auto bucket = side_data.lowercase_column_name_to_original_names.find(Poco::toLower(column_name));
+                    if (bucket == side_data.lowercase_column_name_to_original_names.end()
+                        || std::find(bucket->second.begin(), bucket->second.end(), column_name) == bucket->second.end())
+                        pinned_columns.insert(column_name);
+                }
+            }
+        }
+
         QueryTreeNodes using_nodes;
         NameSet seen;
         for (const auto & col_name : left_cols)
@@ -5584,24 +5605,34 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             }
             else if (scope.isStandardMode() && !seen.contains(col_name))
             {
-                /// `standard` mode: fold the intersection like an unquoted USING key. Exact pairs
-                /// are preferred (an exact left sibling of the folded right column wins the class);
-                /// several folded right matches are ambiguous.
+                /// `standard` mode: fold the intersection like an unquoted USING key. Pinned
+                /// (double-quoted definition) columns on either side never fold; exact pairs win
+                /// the class; several folded matches or left case-siblings are ambiguous.
+                if (pinned_columns.contains(col_name))
+                    continue;
                 Names folded_rights;
                 for (const auto & right_col : right_cols)
-                    if (right_col.find('.') == std::string::npos && Poco::icompare(right_col, col_name) == 0)
+                    if (right_col.find('.') == std::string::npos && !pinned_columns.contains(right_col)
+                        && Poco::icompare(right_col, col_name) == 0)
                         folded_rights.push_back(right_col);
+                if (folded_rights.empty())
+                    continue;
                 if (folded_rights.size() > 1)
                     throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                         "NATURAL JOIN common column '{}' is ambiguous: matches right-side columns with different cases: '{}' and '{}'. In scope {}",
                         col_name, folded_rights[0], folded_rights[1],
                         join_node_typed.formatASTForErrorMessage());
-                if (folded_rights.size() == 1
-                    && std::find(left_cols.begin(), left_cols.end(), folded_rights.front()) == left_cols.end())
-                {
-                    seen.insert(col_name);
-                    using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
-                }
+                if (std::find(left_cols.begin(), left_cols.end(), folded_rights.front()) != left_cols.end())
+                    continue;  /// exact pair covers the class
+                for (const auto & left_sibling : left_cols)
+                    if (left_sibling != col_name && left_sibling.find('.') == std::string::npos
+                        && Poco::icompare(left_sibling, col_name) == 0)
+                        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                            "NATURAL JOIN common column '{}' is ambiguous: left-side case-siblings '{}' and '{}' both match right-side column '{}'. In scope {}",
+                            col_name, col_name, left_sibling, folded_rights.front(),
+                            join_node_typed.formatASTForErrorMessage());
+                seen.insert(col_name);
+                using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
             }
         }
 
@@ -6500,6 +6531,14 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
 
     NamesAndTypes projection_columns;
 
+    /// Alias quote flags must be captured before resolution: identifier projections are
+    /// replaced by resolved nodes, which keep the alias name but can lose the quote bit.
+    std::unordered_map<std::string, bool> projection_alias_to_quoted;
+    if (scope.isStandardMode())
+        for (const auto & projection_node : query_node_typed.getProjection().getNodes())
+            if (projection_node->hasAlias())
+                projection_alias_to_quoted[projection_node->getAlias()] = projection_node->isAliasDoubleQuoted();
+
     if (!scope.group_by_use_nulls)
     {
         projection_columns = resolveProjectionExpressionNodeList(query_node_typed.getProjectionNode(), scope);
@@ -6627,9 +6666,13 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         std::vector<bool> projection_quoted_flags;
         projection_quoted_flags.reserve(projection_nodes_list.size());
         bool any_quoted_projection_alias = false;
-        for (const auto & projection_node : projection_nodes_list)
+        for (size_t i = 0; i < projection_nodes_list.size(); ++i)
         {
-            const bool quoted = projection_node->hasAlias() && projection_node->isAliasDoubleQuoted();
+            const auto & projection_node = projection_nodes_list[i];
+            bool quoted = projection_node->hasAlias() && projection_node->isAliasDoubleQuoted();
+            if (!quoted && i < projection_columns.size())
+                if (auto it = projection_alias_to_quoted.find(projection_columns[i].name); it != projection_alias_to_quoted.end())
+                    quoted = it->second;
             any_quoted_projection_alias |= quoted;
             projection_quoted_flags.push_back(quoted);
         }

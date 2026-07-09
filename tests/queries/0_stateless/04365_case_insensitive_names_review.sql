@@ -288,3 +288,26 @@ INSERT INTO t_nat_r VALUES (1, 100), (3, 300);
 SELECT * FROM t_nat_l NATURAL JOIN t_nat_r ORDER BY ALL;
 DROP TABLE t_nat_l;
 DROP TABLE t_nat_r;
+
+SELECT '--- Folded USING key merges case-sibling physical columns ---';
+CREATE TABLE t_us_l (Key Int32, a Int32) ENGINE = Memory;
+CREATE TABLE t_us_r (key Int64, b Int32) ENGINE = Memory;
+INSERT INTO t_us_l VALUES (1, 10);
+INSERT INTO t_us_r VALUES (2, 100);
+SELECT key, toTypeName(key) FROM t_us_l FULL JOIN t_us_r USING (key) ORDER BY ALL;
+DROP TABLE t_us_l;
+DROP TABLE t_us_r;
+
+SELECT '--- Quoted alias survives identifier projection resolution ---';
+SELECT mixed FROM (SELECT x AS "MiXeD" FROM (SELECT 1 AS x)); -- { serverError UNKNOWN_IDENTIFIER }
+SELECT "MiXeD" FROM (SELECT x AS "MiXeD" FROM (SELECT 1 AS x));
+
+SELECT '--- NATURAL JOIN respects quoted alias pins and sibling ambiguity ---';
+CREATE TABLE t_nat2 (key Int32, b Int32) ENGINE = Memory;
+INSERT INTO t_nat2 VALUES (1, 100);
+SELECT * FROM (SELECT 1 AS "KEY", 2 AS a) AS sq NATURAL JOIN t_nat2;
+CREATE TABLE t_nat_sib (Key Int32, KEY Int32, a Int32) ENGINE = Memory;
+INSERT INTO t_nat_sib VALUES (1, 5, 10);
+SELECT * FROM t_nat_sib NATURAL JOIN t_nat2; -- { serverError AMBIGUOUS_IDENTIFIER }
+DROP TABLE t_nat_sib;
+DROP TABLE t_nat2;

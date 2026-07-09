@@ -104,3 +104,10 @@ SELECT 1 AS "MyAlias"
 0	2
 --- NATURAL JOIN folds common columns ---
 1	10	100
+--- Folded USING key merges case-sibling physical columns ---
+1	Int64
+2	Int64
+--- Quoted alias survives identifier projection resolution ---
+1
+--- NATURAL JOIN respects quoted alias pins and sibling ambiguity ---
+1	2	1	100
