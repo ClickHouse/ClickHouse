@@ -939,6 +939,29 @@ protected:
                 }
             }
 
+            /// Nested `extra_credentials(k = v, ...)` map: reconstruct with every value hidden.
+            if (auto extra_credentials_func = arg->getFunction();
+                extra_credentials_func && extra_credentials_func->name() == "extra_credentials" && extra_credentials_func->hasArguments())
+            {
+                replacement += "extra_credentials(";
+                const auto & cred_args = *extra_credentials_func->arguments;
+                for (size_t j = 0; j < cred_args.size(); ++j)
+                {
+                    if (j > 0)
+                        replacement += ", ";
+                    String cred_key;
+                    auto cred_kv = cred_args.at(j)->getFunction();
+                    if (cred_kv && cred_kv->name() == "equals" && cred_kv->hasArguments() && cred_kv->arguments->size() == 2
+                        && cred_kv->arguments->at(0)->tryGetString(&cred_key, /* allow_identifier= */ true))
+                        replacement += cred_key + " = '[HIDDEN]'";
+                    else
+                        return; /// Cannot reconstruct an argument; do not emit a wrong masked form.
+                }
+                replacement += ")";
+                has_secret = true;
+                continue;
+            }
+
             /// Positional argument. In the explicit-key form the secret is at position 2.
             if (!is_named_collection && i == 2)
             {

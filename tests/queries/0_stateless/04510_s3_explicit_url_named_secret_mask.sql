@@ -32,12 +32,17 @@ BACKUP TABLE nonexistent_04510 TO S3('url', 'ak', 'sk',
                  google_adc_refresh_token = 'ADCREFRESHTOKEN',
                  extra_credentials(external_id = 'EXTERNALIDSECRET')); -- { serverError BAD_ARGUMENTS }
 
+-- Backup database engine reconstructs the nested S3 destination; extra_credentials must be masked.
+CREATE DATABASE db_04510 ENGINE = Backup('', S3('url', 'ak', 'sk',
+                 extra_credentials(external_id = 'EXTERNALIDSECRET'))); -- { serverError BAD_ARGUMENTS }
+
 SYSTEM FLUSH LOGS query_log;
 -- Assert each explicit-url form is individually logged and masked, and that no form leaks any secret.
 SELECT
     countIf(query LIKE 'SELECT % FROM s3(%' AND query LIKE '%[HIDDEN]%') > 0 AS s3_masked,
     countIf(query LIKE 'BACKUP %' AND query LIKE '%[HIDDEN]%') > 0 AS backup_masked,
-    countIf((query LIKE 'SELECT % FROM s3(%' OR query LIKE 'BACKUP %')
+    countIf(query LIKE 'CREATE DATABASE%Backup%' AND query LIKE '%[HIDDEN]%') > 0 AS backup_db_masked,
+    countIf((query LIKE 'SELECT % FROM s3(%' OR query LIKE 'BACKUP %' OR query LIKE 'CREATE DATABASE%Backup%')
          AND (query LIKE '%SESSIONTOKENSECRET%' OR query LIKE '%ADCCLIENTSECRET%'
            OR query LIKE '%ADCREFRESHTOKEN%' OR query LIKE '%EXTERNALIDSECRET%')) AS leaked
 FROM system.query_log
