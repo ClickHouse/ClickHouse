@@ -22,7 +22,7 @@ struct ScanDescend
     QueryPlan::Node * rmt_parent;
     QueryPlan::Node * rmt_node;
 
-    ReadFromMergeTree * rmt_step() const { return typeid_cast<ReadFromMergeTree *>(rmt_node->step.get()); }
+    ReadFromMergeTree * getReadFromMergeTreeStep() const { return typeid_cast<ReadFromMergeTree *>(rmt_node->step.get()); }
 };
 
 std::optional<ScanDescend> findReadFromMergeTree(QueryPlan::Node * node)
@@ -86,8 +86,8 @@ void tryOptimizeSelfJoinSharedScan(
     if (!left_scan || !right_scan)
         return;
 
-    auto * rmt_l = left_scan->rmt_step();
-    auto * rmt_r = right_scan->rmt_step();
+    auto * rmt_l = left_scan->getReadFromMergeTreeStep();
+    auto * rmt_r = right_scan->getReadFromMergeTreeStep();
 
     if (rmt_l->getStorageID().uuid != rmt_r->getStorageID().uuid)
         return;
