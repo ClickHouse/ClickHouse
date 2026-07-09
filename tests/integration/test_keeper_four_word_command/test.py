@@ -278,7 +278,7 @@ def test_cmd_conf(started_cluster):
     assert result["latest_logs_cache_size_threshold"] == "1073741824"
     assert result["commit_logs_cache_size_threshold"] == "524288000"
 
-    assert result["log_readahead_enabled"] == "false"
+    assert result["log_readahead_enabled"] == "true"
     assert result["log_readahead_window_bytes"] == "67108864"
     assert result["log_readahead_max_peer_readers"] == "8"
     assert result["log_readahead_eviction_timeout_ms"] == "30000"
