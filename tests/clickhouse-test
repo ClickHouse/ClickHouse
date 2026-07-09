@@ -1064,12 +1064,7 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
             "FROM clusterAllReplicas('test_cluster_database_replicated', 'system.stack_trace') "
-            # Surface threads currently executing a query (query_id <> '')
-            # first so the trimmed stdout preview leads with them on a
-            # timeout; all other threads still follow, and the full dump is
-            # attached as a log file, so nothing is dropped.
-            "ORDER BY query_id <> '' DESC, host, thread_id "
-            'FORMAT Vertical"'
+            'ORDER BY host, thread_id FORMAT Vertical"'
         )
     elif args.shared_catalog:
         msg = (
@@ -1079,12 +1074,7 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
             "FROM clusterAllReplicas('test_cluster_shared_catalog', 'system.stack_trace') "
-            # Surface threads currently executing a query (query_id <> '')
-            # first so the trimmed stdout preview leads with them on a
-            # timeout; all other threads still follow, and the full dump is
-            # attached as a log file, so nothing is dropped.
-            "ORDER BY query_id <> '' DESC, host, thread_id "
-            'FORMAT Vertical"'
+            'ORDER BY host, thread_id FORMAT Vertical"'
         )
     else:
         msg = (
@@ -1092,11 +1082,7 @@ def get_stacktraces_from_clickhouse(args, timeout: float = 30):
             "\"SELECT thread_name, thread_id, query_id, trace, arrayStringConcat(arrayMap(x, y -> concat(x, ': ', y), "
             "arrayMap(x -> addressToLine(x), trace), "
             "arrayMap(x -> demangle(addressToSymbol(x)), trace)), '\n') as trace_str "
-            # Surface threads currently executing a query (query_id <> '')
-            # first so the trimmed stdout preview leads with them; all other
-            # threads still follow, and the full dump is attached as a log.
-            "FROM system.stack_trace ORDER BY query_id <> '' DESC, thread_id "
-            'FORMAT Vertical"'
+            'FROM system.stack_trace FORMAT Vertical"'
         )
 
     # Bound the dump so timeout_handler / hung-check callers cannot wedge
