@@ -17,7 +17,7 @@ class QueryConditionCache;
   * The expression is evaluated and result chunks contain only the filtered rows.
   * If remove_filter_column is true, remove filter column from block.
   */
-class FilterTransform : public ISimpleTransform
+class FilterTransform final : public ISimpleTransform
 {
 public:
     FilterTransform(

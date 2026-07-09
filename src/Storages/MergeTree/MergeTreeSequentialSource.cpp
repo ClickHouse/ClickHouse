@@ -49,7 +49,7 @@ namespace MergeTreeSetting
 /// NOTE:
 ///  It doesn't filter out rows that are deleted with lightweight deletes.
 ///  Use createMergeTreeSequentialSource filter out those rows.
-class MergeTreeSequentialSource : public ISource
+class MergeTreeSequentialSource final : public ISource
 {
 public:
     MergeTreeSequentialSource(
@@ -148,15 +148,15 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
 
     const auto & context = storage.getContext();
     ReadSettings read_settings = context->getReadSettings();
-    read_settings.read_from_filesystem_cache_if_exists_otherwise_bypass_cache
+    read_settings.filesystem_cache_settings.read_if_exists_otherwise_bypass
         = read_settings.distributed_cache_settings.read_if_exists_otherwise_bypass
         = !(*storage.getSettings())[MergeTreeSetting::force_read_through_cache_for_merges];
 
     /// It does not make sense to use pthread_threadpool for background merges/mutations
     /// And also to preserve backward compatibility
-    read_settings.local_fs_method = LocalFSReadMethod::pread;
+    read_settings.local_fs_settings.method = LocalFSReadMethod::pread;
     if (read_with_direct_io)
-        read_settings.direct_io_threshold = 1;
+        read_settings.local_fs_settings.direct_io_threshold = 1;
 
     /// Configure throttling
     switch (type)
@@ -192,7 +192,10 @@ MergeTreeSequentialSource::MergeTreeSequentialSource(
     MergeTreeRangeReader range_reader(readers.main.get(), {}, nullptr, counters, true, readers.main->canReadIncompleteGranules());
     readers_chain = MergeTreeReadersChain{{std::move(range_reader)}, readers.patches};
 
-    updateRowsToRead(0);
+    /// Reading may start at a non-zero mark, so track the actual first mark
+    if (!mark_ranges.empty())
+        current_mark = mark_ranges.front().begin;
+    updateRowsToRead(current_mark);
 }
 
 void MergeTreeSequentialSource::updateRowsToRead(size_t mark_number)
@@ -248,9 +251,10 @@ try
         {
             chassert(read_task_info->merged_part_offsets->isFinalized());
 
-            result_column = result_column->convertToFullColumnIfSparse();
-            auto & column = result_column->assumeMutableRef();
-            auto & offset_data = assert_cast<ColumnUInt64 &>(column).getData();
+            /// Use `IColumn::mutate` instead of `assumeMutableRef` so the column is cloned
+            /// when it is shared. Mutating a shared column in place is a copy-on-write violation.
+            auto mutable_column = IColumn::mutate(result_column->convertToFullColumnIfSparse());
+            auto & offset_data = assert_cast<ColumnUInt64 &>(*mutable_column).getData();
             if (read_task_info->merged_part_offsets->isMappingEnabled())
             {
                 for (auto & offset : offset_data)
@@ -261,8 +265,14 @@ try
                 for (auto & offset : offset_data)
                     offset += read_task_info->part_starting_offset_in_query;
             }
+            result_column = std::move(mutable_column);
         }
-        result_column->assumeMutableRef().shrinkToFit();
+
+        /// `shrinkToFit` reallocates the column's data. Go through `IColumn::mutate` so a shared
+        /// column is cloned first: mutating a column still referenced elsewhere is a use-after-free hazard.
+        auto mutable_column = IColumn::mutate(std::move(result_column));
+        mutable_column->shrinkToFit();
+        result_column = std::move(mutable_column);
     }
 
     auto result = Chunk(std::move(result_columns), read_result.num_rows);
@@ -339,7 +349,7 @@ Pipe createMergeTreeSequentialSource(
 
     if (info->alter_conversions->hasPatches())
     {
-        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals().withSubcolumns();
+        auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader).withSubcolumns();
         auto all_read_columns = info->task_columns.getAllColumnNames();
         auto all_read_columns_list = storage_snapshot->getColumnsByNames(options, all_read_columns);
         info->patch_parts = info->alter_conversions->getPatchesForColumns(all_read_columns_list, need_to_filter_deleted_rows);
@@ -430,7 +440,7 @@ public:
         {
             const auto & primary_key = storage_snapshot->metadata->getPrimaryKey();
             const Names & primary_key_column_names = primary_key.column_names;
-            ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context);
+            ActionsDAGWithInversionPushDown filter_dag(filter->getOutputs().front(), context, /* boolean_context */ true);
             KeyCondition key_condition(filter_dag, context, primary_key_column_names, primary_key.expression);
             LOG_DEBUG(log, "Key condition: {}", key_condition.toString());
 
@@ -439,9 +449,10 @@ public:
                     data_part,
                     metadata_snapshot,
                     key_condition,
-                    /*part_offset_condition=*/{},
-                    /*total_offset_condition=*/{},
+                    /*part_offset_condition=*/nullptr,
+                    /*total_offset_condition=*/nullptr,
                     /*exact_ranges=*/nullptr,
+                    /*pk_to_minmax_slot=*/nullptr,
                     context->getSettingsRef(),
                     log);
 

@@ -5,7 +5,7 @@
 namespace DB
 {
 
-class FunctionArrayEnumerateDenseRanked : public FunctionArrayEnumerateRankedExtended<FunctionArrayEnumerateDenseRanked>
+class FunctionArrayEnumerateDenseRanked final : public FunctionArrayEnumerateRankedExtended<FunctionArrayEnumerateDenseRanked>
 {
     using Base = FunctionArrayEnumerateRankedExtended<FunctionArrayEnumerateDenseRanked>;
 

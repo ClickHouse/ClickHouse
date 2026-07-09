@@ -1,0 +1,1156 @@
+---
+position: 2
+slug: /clickhouse-operator/guides/configuration
+title: دليل تهيئة ClickHouse Operator
+keywords: ['kubernetes']
+description: 'يوضح هذا الدليل كيفية تهيئة مجموعات ClickHouse وKeeper باستخدام ClickHouse Operator.'
+doc_type: 'guide'
+---
+
+يوضح هذا الدليل كيفية تهيئة مجموعات ClickHouse وKeeper باستخدام المشغّل.
+
+<div id="clickhousecluster-configuration">
+  ## إعداد ClickHouseCluster
+</div>
+
+<div id="basic-configuration">
+  ### الإعداد الأساسي
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  replicas: 3           # Number of replicas per shard
+  shards: 2             # Number of shards
+  keeperClusterRef:
+    name: my-keeper     # Reference to KeeperCluster
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+```
+
+<div id="replicas-and-shards">
+  ### النسخ المتماثلة والشظايا
+</div>
+
+* **النسخ المتماثلة**: عدد مثيلات ClickHouse لكل شظية (لتحقيق التوفّر العالي)
+* **الشظايا**: عدد التقسيمات الأفقية (لأغراض التوسّع)
+
+```yaml
+spec:
+  replicas: 3  # Default: 3
+  shards: 2    # Default: 1
+```
+
+سيُنشئ عنقود يحتوي على `replicas: 3` و`shards: 2` ما مجموعه 6 كبسولات لـ ClickHouse.
+
+<div id="keeper-integration">
+  ### تكامل Keeper
+</div>
+
+يجب أن يشير كل عنقود ClickHouse إلى KeeperCluster من أجل التنسيق:
+
+```yaml
+spec:
+  keeperClusterRef:
+    name: my-keeper
+    # namespace: keeper-system  # Optional, defaults to the ClickHouseCluster namespace
+```
+
+عند تعيين `keeperClusterRef.namespace`، يجب على المشغِّل مراقبة مساحتي الاسم كلتيهما. وإذا كان `WATCH_NAMESPACE` مُعدًّا، فأدرِج مساحتي الاسم الخاصتين بـ ClickHouse وKeeper في تلك القائمة.
+
+<div id="keepercluster-configuration">
+  ## إعداد KeeperCluster
+</div>
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: my-keeper
+spec:
+  replicas: 3  # Must be odd: 1, 3, 5, 7, 9, 11, 13, or 15
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 5Gi
+```
+
+<div id="storage-configuration">
+  ## تهيئة التخزين
+</div>
+
+قم بتهيئة التخزين الدائم باستخدام `dataVolumeClaimSpec`، وهو
+`PersistentVolumeClaimSpec` قياسي في Kubernetes. يحوّله المُشغِّل إلى PersistentVolumeClaim لكل نسخة متماثلة
+يتم ربطه على مسار البيانات `/var/lib/clickhouse`:
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd  # Optional: consider your storage class based on the installed CSI
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+<Note>
+  لا يمكن للمُشغِّل تعديل PVC موجود إلا إذا كانت StorageClass الأساسية تدعم توسيع وحدة التخزين.
+</Note>
+
+يغطي الدليل المخصّص
+[للتخزين ووحدات التخزين](/ar/products/kubernetes-operator/guides/storage)
+إرفاق أقراص إضافية ضمن تهيئة متعددة الأقراص (JBOD)، والتشغيل من دون
+وحدة تخزين دائمة، وتوسيع السعة، وسياسات التخزين المخصّصة، والقواعد التي تحدد ما لا يمكن
+تغييره بعد الإنشاء.
+
+## نطاق العنقود
+
+يحدِّد `spec.clusterDomain` لاحقة DNS في Kubernetes التي يستخدمها المشغِّل عند إنشاء
+أسماء المضيفين المؤهلة بالكامل للكبسولات التي يكتبها في
+إعدادات خادم ClickHouse. وتكون القيمة الافتراضية هي `cluster.local`، وهو موجود في كلٍّ من
+`ClickHouseCluster` و`KeeperCluster`.
+
+```yaml
+spec:
+  clusterDomain: cluster.local   # default; override only for a custom domain
+```
+
+يصل المُشغِّل إلى كل جراب عبر الخدمة عديمة الرأس بالصيغة التالية:
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. وينتقل هذا اللاحقة إلى
+جزأين من التهيئة المُولَّدة:
+
+* في `ClickHouseCluster`، تُستخدم قيمتها في أسماء مضيفات النسخ المتماثلة ضمن
+  `remote_servers` (للاستعلامات بين النسخ المتماثلة واستعلامات `Distributed`).
+* في `KeeperCluster`، تُستخدَم قيمتها لبناء أسماء مضيفات عقد Keeper التي
+  يستخدمها ClickHouse لأغراض التنسيق.
+
+<Note>
+  لا تُجرِ override لهذا إلا إذا كان `kubelet` في عنقودك يعمل باستخدام `--cluster-domain`
+  مختلف عن `cluster.local`. إذا لم تتطابق القيمة مع نطاق العنقود الفعلي،
+  فلن يتمكن ClickHouse من حل أسماء مضيفات Keeper والنسخ المتماثلة، مما يؤدي إلى فشل التنسيق
+  واستعلامات `Distributed` مع ظهور أخطاء في حل أسماء DNS. اضبط **القيمة نفسها** على
+  `ClickHouseCluster` و`KeeperCluster` الذي يشير إليه.
+</Note>
+
+<div id="multi-disk-jbod-storage">
+  ### تخزين متعدد الأقراص (JBOD)
+</div>
+
+يقوم `additionalVolumeClaimTemplates` بإرفاق أقراص إضافية بكل نسخة متماثلة في ClickHouse، بالإضافة إلى `dataVolumeClaimSpec` الأساسي المطلوب لاستخدامها.
+يمثل كل عنصر قالب PVC — أي `metadata.name` مع `spec` الخاص بـ PVC.
+تُعالَج الأقراص بالطريقة نفسها تمامًا مثل قرص البيانات الأساسي — على هيئة `volumeClaimTemplates` في StatefulSet — لذلك تنشئ وحدة تحكم StatefulSet ملف PVC واحدًا لكل نسخة متماثلة وتحتفظ به، بالاسم `<name>-<statefulset>-0`.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+يربط المشغّل كل وحدة تخزين إضافية عند `/var/lib/clickhouse/disks/<name>` ويضيفها إلى إعداد تخزين يُنشئه ClickHouse.
+تتحول الشرطات في الاسم إلى شرطات سفلية في معرّف القرص في ClickHouse، بينما يحتفظ مسار الربط بالاسم الأصلي.
+
+يوضع قرص البيانات الأساسي وكل قرص إضافي في وحدة تخزين واحدة ضمن سياسة التخزين `default`، بحيث يوزّع ClickHouse أجزاء البيانات الجديدة عليها جميعًا بالتناوب.
+وتكون السعة القابلة للاستخدام هي مجموع جميع الأقراص، كما أن كل جدول لا يعيّن `storage_policy` خاصًا به (بما في ذلك جداول `system.*`) يستخدم هذه المجموعة الموحّدة.
+
+<Note>
+  يجب أن تتطابق أسماء PVC مع `^[a-z]([-a-z0-9]*[a-z0-9])?$`، وألا تتعارض مع اسم وحدة تخزين البيانات الأساسية.
+  وكما هو الحال مع قرص البيانات الأساسي، فإن مجموعة الأقراص الإضافية تكون ثابتة عند الإنشاء: تُرفَض إضافة إدخالات أو إزالتها أو إعادة تسميتها بعد الإنشاء.
+  يتم الاحتفاظ بـ PVCs الإضافية عند حذف العنقود، تمامًا مثل قرص البيانات الأساسي.
+  يمكن توسيع حجم التخزين في إدخال موجود إذا كانت StorageClass تدعم التوسعة.
+</Note>
+
+<div id="cluster-domain">
+  ## نطاق DNS للعنقود
+</div>
+
+يضبط `spec.clusterDomain` لاحقة DNS في Kubernetes التي يستخدمها المشغّل عند إنشاء
+أسماء المضيفات المؤهلة بالكامل للبودات التي يكتبها في تهيئة خادم ClickHouse.
+وتكون القيمة الافتراضية هي `cluster.local`، وهو متاح في كلٍّ من
+`ClickHouseCluster` و`KeeperCluster`.
+
+```yaml
+spec:
+  clusterDomain: cluster.local   # default; override only for a custom domain
+```
+
+يصل المشغّل إلى كل حاوية عبر خدمة عديمة الرأس بالشكل التالي:
+`<pod>.<headless-service>.<namespace>.svc.<clusterDomain>`. وينعكس هذا اللاحقة على
+جزأين من الإعدادات المُولَّدة:
+
+* في `ClickHouseCluster`، تُستخدم قيمته في أسماء مضيفات النسخ المتماثلة ضمن
+  `remote_servers` (بين النسخ المتماثلة واستعلامات `Distributed`).
+* في `KeeperCluster`، تُستخدم قيمته لتكوين أسماء مضيفات عقد Keeper التي
+  يستخدمها ClickHouse للتنسيق.
+
+<Note>
+  لا تُجرِ override لهذا إلا إذا كان `kubelet` في عنقودك يعمل باستخدام `--cluster-domain`
+  مختلف عن `cluster.local`. إذا لم تتطابق القيمة مع نطاق العنقود الفعلي،
+  فلن يتمكن ClickHouse من استيفاء أسماء مضيفات Keeper والنسخ المتماثلة — وسيفشل التنسيق
+  واستعلامات `Distributed` بسبب أخطاء في استيفاء DNS. اضبط **القيمة نفسها** على
+  `ClickHouseCluster` و`KeeperCluster` الذي يشير إليه.
+</Note>
+
+<div id="pod-configuration">
+  ## إعدادات الكبسولة
+</div>
+
+<div id="automatic-topology-spread-and-affinity">
+  ### التوزيع الطوبولوجي والتقارب التلقائيان
+</div>
+
+وزّع الكبسولات عبر مناطق التوافر:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+```
+
+<Note>
+  تأكد من أن عنقود Kubernetes لديك يضم عددًا كافيًا من العقد عبر مناطق مختلفة لاستيفاء قيود التوزيع.
+</Note>
+
+<div id="manual-configuration">
+  ### الإعداد اليدوي
+</div>
+
+يمكن تحديد قواعد مخصّصة لتقارب/تنافر الجرابات وقيود توزيع الطوبولوجيا.
+
+```yaml
+spec:
+  podTemplate:
+    affinity:
+      <your-affinity-rules-here>
+    topologySpreadConstraints:
+      <your-topology-spread-constraints-here>
+```
+
+<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencepodtemplatespec-for-all-supported-pod-template-options">
+  ### راجع [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#podtemplatespec) للاطلاع على جميع الخيارات المدعومة لقوالب الـ Pod.
+</div>
+
+<div id="pod-disruption-budgets">
+  ## ميزانيات تعطيل الكبسولات
+</div>
+
+ينشئ المشغّل مورد [PodDisruptionBudget](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) ‏(PDB) لكل عنقود، بحيث لا تتسبب الاضطرابات الطوعية — مثل تفريغ العقد، وعمليات الترقية المتدرجة، وعمليات الإخلاء التي ينفذها المُوسّع التلقائي — في إسقاط عدد كافٍ من الكبسولات بما يؤدي إلى فقدان quorum أو الإخلال بالتوافر.
+
+بالنسبة إلى عناقيد ClickHouse التي تضم أكثر من شظية واحدة، **يتم إنشاء PDB واحدة لكل شظية** حتى لا يُحتسب الاضطراب في شظية واحدة ضمن شظية أخرى.
+
+<div id="pdb-defaults">
+  ### القيم الافتراضية
+</div>
+
+يحدّد المشغّل قيماً افتراضية آمنة بناءً على حجم العنقود، بحيث توفّر عملية `apply` الجديدة بالفعل حماية من فقدان النصاب بالخطأ.
+
+| المورد              | البنية                                       | قيمة PDB الافتراضية                                                                                                                                             |
+| ------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickHouseCluster` | `replicas: 1` (شظية أحادية النسخة المتماثلة) | `maxUnavailable: 1` — يُسمح بالتعطيل في عنقود أحادي العقدة حتى لا يتم حظر تفريغ العقدة                                                                          |
+| `ClickHouseCluster` | `replicas: 2+` (شظية متعددة النسخ المتماثلة) | `minAvailable: 1` — يجب أن تظل نسخة متماثلة واحدة على الأقل لكل شظية قيد التشغيل                                                                               |
+| `KeeperCluster`     | `replicas: 1`                                | `maxUnavailable: 1` — يُسمح بالتعطيل في عنقود أحادي العقدة حتى لا يتم حظر تفريغ العقدة                                                                          |
+| `KeeperCluster`     | `replicas: 3+`                               | `maxUnavailable: replicas/2` — يحافظ على quorum الخاص بـ RAFT في عنقود `2F+1` (يمكن لـ 3 نسخ متماثلة تحمّل تعطل نسخة واحدة، ويمكن لـ 5 نسخ متماثلة تحمّل تعطل نسختين) |
+
+بالنسبة إلى ClickHouseCluster مكوّن من 3 شظايا مع `replicas: 3`، ينشئ المشغّل ثلاثة PDBs، واحداً لكل شظية، بحيث يكون لكل منها `minAvailable: 1`.
+
+<div id="pdb-overrides">
+  ### تجاوز القيم الافتراضية
+</div>
+
+استخدم `spec.podDisruptionBudget` لتجاوز `minAvailable` **أو** `maxUnavailable` (واحد منهما فقط):
+
+```yaml
+spec:
+  replicas: 3
+  shards: 2
+  podDisruptionBudget:
+    minAvailable: 2   # keep at least 2 of 3 replicas in every shard up during a disruption
+```
+
+أو بصيغة `maxUnavailable`، مع نسبة مئوية:
+
+```yaml
+spec:
+  replicas: 5
+  podDisruptionBudget:
+    maxUnavailable: 40%
+```
+
+<Warning>
+  يُرفَض تعيين كلٍّ من `minAvailable` و`maxUnavailable` بواسطة الويب هوك الخاص بالتحقق. اختر أحدهما — فحتى Kubernetes نفسه لا يسمح باستخدامهما معًا.
+</Warning>
+
+يمكنك أيضًا تمرير الحقل [`unhealthyPodEvictionPolicy`](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/#unhealthy-pod-eviction-policy) إلى PDB الذي يتم إنشاؤه — ويكون ذلك مفيدًا عندما تحتاج إلى السماح بإخلاء الكبسولات التي لا تزال في حالة `NotReady`:
+
+```yaml
+spec:
+  podDisruptionBudget:
+    minAvailable: 2
+    unhealthyPodEvictionPolicy: AlwaysAllow
+```
+
+<div id="pdb-policies">
+  ### السياسات
+</div>
+
+يتيح لك `spec.podDisruptionBudget.policy` اختيار **مدى صرامة** إدارة المشغّل لـ PDBs:
+
+| Policy              | Behavior                                                                                                                                                          |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Enabled` (default) | ينشئ المشغّل PDB ويحدّثه في كل عملية مواءمة. هذا هو الإعداد الافتراضي الآمن لبيئات الإنتاج.                                                                       |
+| `Disabled`          | لا ينشئ المشغّل أي PDBs، ويقوم **بحذف** أي PDBs موجودة تحمل labels مطابقة. يفيد ذلك في عناقيد التطوير التي ينبغي فيها السماح بكل تعطيل طوعي.                      |
+| `Ignored`           | لا ينشئ المشغّل PDBs ولا يحذفها. وتُترك PDBs الموجودة كما هي. استخدم هذا الخيار عندما يتولى نظام آخر (مثل policy admission أو أداة GitOps) إدارة PDBs نيابةً عنك. |
+
+مثال — عطّل إدارة PDB بالكامل على عنقود تطوير:
+
+```yaml
+spec:
+  podDisruptionBudget:
+    policy: Disabled
+```
+
+مثال — احتفِظ بـ PDB الذي أنشأته يدويًا بجوار العنقود وامنع المشغّل من التعامل معه:
+
+```yaml
+spec:
+  podDisruptionBudget:
+    policy: Ignored
+```
+
+<div id="pdb-cluster-wide-disable">
+  ### التعطيل على مستوى العنقود بالكامل
+</div>
+
+يمكن أيضًا تعطيل إدارة PDB على مستوى العنقود بالكامل عبر متغير البيئة `ENABLE_PDB` الخاص بالمشغّل. عند ضبط `ENABLE_PDB=false`، يتجاوز المشغّل خطوة التسوية الخاصة بـ PDB لكل **ClickHouseCluster** و**KeeperCluster**، بغض النظر عن `spec.podDisruptionBudget.policy` الخاصة بهما، و**لا يراقب** موارد `PodDisruptionBudget` مطلقًا. لذلك، لا يحتاج ServiceAccount الخاص بالمشغّل إلى أذونات RBAC على `poddisruptionbudgets.policy/v1`، وهو ما يفيد عند تشغيل المشغّل باستخدام ServiceAccount مقيّد يستبعد تلك الأذونات عمدًا.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: ENABLE_PDB
+  value: "false"
+```
+
+هذا مخصّص للبيئات التي تعتمد سياسات التعطيل الخاصة بها (مثلًا عبر Gatekeeper / Kyverno) ولا تريد أي تدخّل من المشغّل على الإطلاق.
+
+<div id="container-configuration">
+  ## تكوين الحاوية
+</div>
+
+<div id="custom-image">
+  ### صورة حاوية مخصّصة
+</div>
+
+استخدم صورة حاوية محددة لـ ClickHouse:
+
+```yaml
+spec:
+  containerTemplate:
+    image:
+      repository: clickhouse/clickhouse-server
+      tag: "25.12"
+    imagePullPolicy: IfNotPresent
+```
+
+<div id="container-resources">
+  ### موارد الحاويات
+</div>
+
+اضبط CPU والذاكرة لحاويات ClickHouse:
+
+```yaml
+# default values
+spec:
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1"
+        memory: "512Mi"
+```
+
+<div id="environment-variables">
+  ### متغيرات البيئة
+</div>
+
+أضِف متغيرات بيئة مخصّصة:
+
+```yaml
+spec:
+  containerTemplate:
+    env:
+    - name: CUSTOM_ENV_VAR
+      value: "1"
+```
+
+<div id="volume-mounts">
+  ### ربط وحدات التخزين
+</div>
+
+أضف عمليات ربط إضافية لوحدات التخزين:
+
+```yaml
+spec:
+  containerTemplate:
+    volumeMounts:
+    - name: custom-config
+      mountPath: /etc/clickhouse-server/config.d/custom.xml
+      subPath: custom.xml
+```
+
+<Note>
+  يُسمح بتحديد عدة عمليات ربط لوحدات التخزين إلى `mountPath` نفسه.
+  سينشئ المشغّل وحدة تخزين من نوع `projected` تضم جميع عمليات الربط المحددة.
+</Note>
+
+<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
+  ### راجع [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#containertemplatespec) للاطلاع على جميع خيارات قوالب الحاويات المدعومة.
+</div>
+
+<div id="tls-ssl-configuration">
+  ## إعدادات TLS/SSL
+</div>
+
+<div id="configure-secure-endpoints">
+  ### تهيئة نقاط نهاية آمنة
+</div>
+
+مرّر مرجعًا إلى Kubernetes Secret يحتوي على شهادات TLS لتمكين نقاط النهاية الآمنة
+
+```yaml
+spec:
+  settings:
+    tls:
+      enabled: true
+      required: true # Insecure ports are disabled if set
+      serverCertSecret:
+        name: <certificate-secret-name>
+```
+
+<div id="ssl-certificate-secret-format">
+  ### تنسيق Secret الخاص بشهادة SSL
+</div>
+
+من المتوقع أن يحتوي Secret على زوج الشهادة والمفتاح الخاص بالخادم:
+
+* `tls.crt` - شهادة الخادم بترميز PEM
+* `tls.key` - المفتاح الخاص بترميز PEM
+
+<Note>
+  يتوافق هذا التنسيق مع الشهادات التي يُنشئها cert-manager.
+</Note>
+
+<div id="clickhouse-keeper-communication-over-tls">
+  ### اتصال ClickHouse-Keeper عبر TLS
+</div>
+
+إذا كان TLS مفعّلًا في KeeperCluster، فسيستخدم ClickHouseCluster اتصالًا آمنًا بعُقد Keeper تلقائيًا.
+
+يتحقق ClickHouseCluster من شهادات عُقد Keeper باستخدام مخزن الثقة في النظام، بالإضافة إلى أي `caBundle` تقوم بتهيئته.
+
+للثقة في CA خاصة (على سبيل المثال، CA موقعة ذاتيًا أو داخلية)، قدّم مرجعًا إلى حزمة CA مخصصة:
+
+```yaml
+spec:
+    settings:
+        tls:
+          caBundle:
+            name: <ca-certificate-secret-name>
+            key: <ca-certificate-key>
+```
+
+<div id="external-secret">
+  ## External Secret
+</div>
+
+ينشئ المشغّل افتراضيًا مورد Secret ويتولى إدارته، ويحتوي هذا المورد على بيانات الاعتماد الداخلية للعنقود (كلمة مرور الاتصال بين الخوادم، وكلمة مرور الإدارة، وهوية Keeper، وسرّ العنقود، ومفتاح named-collections). ويحمل هذا الـ Secret اسم العنقود ويقع ضمن مساحة اسم العنقود.
+
+إذا كنت تريد إدارة بيانات الاعتماد هذه بنفسك — على سبيل المثال، بتوفيرها من HashiCorp Vault أو AWS Secrets Manager أو [External Secrets Operator](https://external-secrets.io/) — فاجعل المشغّل يشير إلى Secret موجود مسبقًا باستخدام `spec.externalSecret`:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  keeperClusterRef:
+    name: sample
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 10Gi
+  externalSecret:
+    name: my-clickhouse-credentials
+    policy: Observe
+```
+
+<Note>
+  يجب أن يكون كائن Secret المشار إليه موجودًا في **مساحة الاسم نفسها** الخاصة بـ ClickHouseCluster. ولا يحذف المُشغِّل مطلقًا أي كائن Secret لم يُنشئه.
+</Note>
+
+<div id="external-secret-required-keys">
+  ### المفاتيح المطلوبة
+</div>
+
+يجب أن يحتوي Secret على المفاتيح التالية:
+
+| المفتاح                 | التنسيق                                                             | متى يكون مطلوبًا             |
+| ----------------------- | ------------------------------------------------------------------- | ---------------------------- |
+| `interserver-password`  | كلمة مرور بنص واضح                                                  | دائمًا                       |
+| `management-password`   | كلمة مرور بنص واضح                                                  | دائمًا                       |
+| `keeper-identity`       | `clickhouse:<password>`                                             | دائمًا                       |
+| `cluster-secret`        | كلمة مرور بنص واضح                                                  | دائمًا                       |
+| `named-collections-key` | مفتاح AES بترميز سداسي عشري بطول 16 بايت (32 محرفًا سداسيًا عشريًا) | فقط في ClickHouse `>= 25.12` |
+
+يكون Secret الكامل كما يلي:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-clickhouse-credentials
+  namespace: sample
+type: Opaque
+stringData:
+  interserver-password: "a-strong-random-password"
+  management-password: "another-strong-password"
+  keeper-identity: "clickhouse:keeper-auth-password"
+  cluster-secret: "cluster-internal-secret"
+  named-collections-key: "0123456789abcdef0123456789abcdef"   # 32 hex chars = 16 bytes
+```
+
+<div id="external-secret-policy">
+  ### السياسة: المراقبة مقابل الإدارة
+</div>
+
+يتحكم `spec.externalSecret.policy` في كيفية تعامل المشغّل مع المفاتيح المطلوبة الناقصة:
+
+| السياسة               | السلوك عند غياب المفاتيح                                                                                                                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Observe` (الافتراضي) | تُعلَّق التسوية حتى يصبح كل مفتاح مطلوب موجودًا. ويُبلّغ المشغّل عن كل مفتاح ناقص — وتلميح التنسيق الخاص به — عبر الحالة `ExternalSecretValid` (بالسبب `ExternalSecretInvalid`) وحدث `Warning`.                          |
+| `Manage`              | **يُولِّد** المشغّل أي مفاتيح مطلوبة ناقصة ويكتبها مجددًا إلى كائن Secret نفسه. وهذا مفيد للتهيئة الأولية: أنشئ كائن Secret فارغًا، ودَع المشغّل يملؤه، ثم شدِّد الوصول اختياريًا. ومع ذلك، لا يحذف المشغّل كائن Secret مطلقًا. |
+
+<Note>
+  حتى مع `policy: Manage` يجب أن يكون كائن Secret موجودًا بالفعل في مساحة الاسم — فالمشغّل لا ينشئ كائن Secret نفسه مطلقًا، بل يكتب فقط المفاتيح المُولَّدة إلى كائن موجود. وإذا كان كائن Secret المُشار إليه غير موجود، فتُعلَّق التسوية بسبب `ExternalSecretNotFound` بغض النظر عن السياسة.
+</Note>
+
+اختر `Observe` عندما يكون النظام الخارجي (Vault أو ESO أو sealed-secrets أو GitOps) هو مصدر الحقيقة وتريد أن يُخفق المشغّل بوضوح عند وجود خطأ في الإعداد. واختر `Manage` عندما تريد تهيئة أولية مكتفية ذاتيًا، مع الاحتفاظ بملكية كائن Secret نفسه (على سبيل المثال، لأخذ نسخة احتياطية منه).
+
+<div id="external-secret-status">
+  ### شرط الحالة واستكشاف الأخطاء وإصلاحها
+</div>
+
+يعرض المشغِّل شرط `ExternalSecretValid` ضمن `ClickHouseCluster.status.conditions`. افحصه عندما يبدو أن عملية التسوية عالقة:
+
+```bash
+# Plain kubectl — works out of the box
+kubectl describe clickhousecluster sample | sed -n '/Conditions:/,$p'
+
+# Same data as YAML
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+
+# Pretty-printed JSON (requires jq)
+kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
+```
+
+الأسباب المحتملة:
+
+| `reason`                 | المعنى                                                                                                                     | الإصلاح                                               |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `ExternalSecretNotFound` | كائن Secret المشار إليه غير موجود في مساحة الاسم.                                                                          | أنشئ كائن Secret، أو صحّح `spec.externalSecret.name`. |
+| `ExternalSecretInvalid`  | كائن Secret موجود، لكنه يفتقر إلى المفاتيح المطلوبة (فقط مع `Observe`). تسرد الرسالة كل مفتاح مفقود مع التنسيق المتوقع له. | أضف المفاتيح المفقودة، أو بدّل إلى `policy: Manage`.  |
+| `ExternalSecretValid`    | جميع المفاتيح المطلوبة موجودة، والمشغّل يستخدم كائن Secret.                                                                | —                                                     |
+
+يعيد المشغّل إدراج عملية التسوية في قائمة الانتظار ما دام كائن Secret غير صالح، لذا بمجرد إضافة المفاتيح المفقودة ستلتقطها عملية التسوية التالية تلقائيًا — ولا حاجة إلى إعادة تشغيل الـ pods.
+
+<Note>
+  تعتمد مجموعة المفاتيح المطلوبة على إصدار ClickHouse المستخدم حاليًا. لا يتم التحقق من `named-collections-key` إلا بعد أن يكتشف فحص الإصدار الخاص بالمشغّل ClickHouse `25.12` أو أحدث. في الإصدارات الأقدم، قد لا يكون هذا المفتاح موجودًا في كائن Secret.
+</Note>
+
+<div id="additional-ports">
+  ## منافذ إضافية
+</div>
+
+يكشف المشغّل مجموعة ثابتة من المنافذ على كل Pod لـ ClickHouse وعلى الخدمة عديمة الرأس الخاصة به: `8123` لـ HTTP، و`9000` لـ native، و`9009` للاتصال بين الخوادم، و`9001` للإدارة، و`9363` لمقاييس Prometheus، بالإضافة إلى منافذ TLS البديلة `8443`/`9440` عند تمكين TLS. لجعل ClickHouse يستمع إلى بروتوكولات إضافية — مثل MySQL أو PostgreSQL أو gRPC أو أي منفذ مخصّص — عرِّفها في `spec.additionalPorts`:
+
+```yaml
+spec:
+  additionalPorts:
+    - name: mysql
+      port: 9004
+    - name: postgres
+      port: 9005
+    - name: grpc
+      port: 9100
+```
+
+يضيف المشغّل هذه المنافذ إلى `containerPorts` الخاصة بالـ Pod وإلى الخدمة عديمة الرأس. ويمكن العثور على المثال الكامل في [`examples/custom_protocols.yaml`](https://github.com/ClickHouse/clickhouse-operator/blob/main/examples/custom_protocols.yaml).
+
+<Warning>
+  يفتح `additionalPorts` المنافذ على مستوى Kubernetes فقط. لكنه **لا** يهيّئ خادم ClickHouse للاستماع عليها. ويجب أيضًا تمكين البروتوكول المقابل في `spec.settings.extraConfig.protocols`. وبدون ذلك، سيكون المنفذ مفتوحًا على الـ Service، لكن لن يستجيب أي شيء داخل الـ Pod.
+</Warning>
+
+<div id="additional-ports-mysql-example">
+  ### مثال متكامل: MySQL wire protocol
+</div>
+
+لإتاحة ClickHouse عبر MySQL wire protocol على المنفذ `9004`:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 1
+  keeperClusterRef:
+    name: sample
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 2Gi
+
+  # 1) Open the port on the Pod and the headless Service.
+  additionalPorts:
+    - name: mysql
+      port: 9004
+
+  # 2) Tell ClickHouse server to actually listen on it.
+  settings:
+    extraConfig:
+      protocols:
+        mysql:
+          type: mysql
+          port: 9004
+          description: "MySQL wire protocol"
+```
+
+بعد تطبيق ذلك، تحقّق من داخل الكتلة:
+
+```bash
+kubectl exec sample-clickhouse-0-0-0 -- \
+  clickhouse-client --port 9004 --query "SELECT 1"
+```
+
+<div id="additional-ports-constraints">
+  ### قيود الحقول
+</div>
+
+| الحقل  | القاعدة                                                                                                                                    |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name` | يجب أن يطابق النمط `DNS_LABEL` ‏`^[a-z]([-a-z0-9]*[a-z0-9])?$`، على ألا يتجاوز 63 حرفًا. ويُفرض التفرد بواسطة CRD باستخدام مفتاح list-map. |
+| `port` | عدد صحيح ضمن `[1, 65535]`. يرفض `webhook` أرقام المنافذ المكررة داخل القائمة.                                                              |
+
+<div id="additional-ports-reserved">
+  ### المنافذ والأسماء المحجوزة
+</div>
+
+يرفض الـ webhook الخاص بالتحقق إدخالات `additionalPorts` التي قد تتعارض مع المنافذ التي يستخدمها المشغّل نفسه. جميع المنافذ المرتبطة بـ TLS محجوزة **دون قيد أو شرط** حتى لا يؤدي تبديل `spec.settings.tls.enabled` لاحقًا إلى تعطيل عنقود كان صالحًا سابقًا.
+
+| المنفذ | محجوز لـ          |
+| ------ | ----------------- |
+| `8123` | HTTP              |
+| `8443` | HTTPS             |
+| `9000` | TCP الأصلي        |
+| `9440` | TLS الأصلي        |
+| `9009` | بين الخوادم       |
+| `9001` | الإدارة           |
+| `9363` | مقاييس Prometheus |
+
+تُرفض أيضًا الأسماء التالية — فهي معرّفات المشغّل الداخلية لأنواع البروتوكولات (وليست الأسماء المستعارة المفهومة للبشر):
+
+| الاسم         |
+| ------------- |
+| `http`        |
+| `http-secure` |
+| `tcp`         |
+| `tcp-secure`  |
+| `interserver` |
+| `management`  |
+| `prometheus`  |
+
+ينتج عن الطلب المرفوض خطأ مثل:
+
+```
+spec.additionalPorts[0].port: 8123 is reserved for the operator-managed HTTP port
+spec.additionalPorts[0].name: "http" is reserved by the operator
+```
+
+<div id="version-probe-and-upgrade-channel">
+  ## فحص الإصدار وقناة الترقية
+</div>
+
+ينفّذ المشغّل مهمتين مستقلتين تتعلقان بإصدارات العنقود:
+
+1. **الإبلاغ عن الإصدار** — بالنسبة إلى `ClickHouseCluster`، يشغّل مورد Kubernetes `Job` صورة الحاوية مرة واحدة لاكتشاف إصدار ClickHouse قيد التشغيل؛ وبالنسبة إلى `KeeperCluster`، يقرأ المشغّل الإصدار الذي يبلّغ به الخادم من النسخ المتماثلة قيد التشغيل. ويُسجَّل الإصدار المكتشف في `.status.version` وتستخدمه خطوات التسوية الأخرى (على سبيل المثال، لا يكون مفتاح named-collections الخاص بـ `External Secret` مطلوبًا إلا بدءًا من ClickHouse `25.12`).
+2. **قناة الترقية** — تحقّق دوري من موجز إصدارات ClickHouse العام (`https://clickhouse.com/data/version_date.tsv`). ويبلّغ المشغغّل عمّا إذا كان إصدار أحدث متاحًا عبر شرط الحالة `VersionUpgraded`. وهو لا يرقّي العنقود من تلقاء نفسه مطلقًا — فالمستخدم هو من يتحكّم في وسم الصورة.
+
+<div id="upgrade-channel-choosing">
+  ### اختيار قناة الترقية
+</div>
+
+يحدِّد `spec.upgradeChannel` مجموعة الإصدارات الصادرة من المشروع الأصلي التي يقارن بها المشغّل. ويوجد الحقل نفسه في كلٍّ من `ClickHouseCluster` و`KeeperCluster`.
+
+```yaml
+spec:
+  upgradeChannel: lts   # or "stable", or "25.8", or omitted
+```
+
+القيم المسموح بها (التي يتحقق منها CRD باستخدام النمط `^(lts|stable|\d+\.\d+)?$`):
+
+| القيمة                            | السلوك                                                                                                                                                                                   |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| *empty* (default)                 | لا يقترح المُشغِّل إلا التحديثات **الثانوية** ضمن خط `major.minor` الرئيسي/الثانوي الجاري تشغيله حاليًا. وسيُبلَّغ العنقود الذي يعمل على `25.8.3.1` بوجود `25.8.4.x`، ولكن ليس `25.9.x`. |
+| `stable`                          | يتتبع قناة `stable` في المصدر الأصلي — أي أحدث إصدار تضع عليه ClickHouse Inc. علامة الاستقرار ضمن خط الإصدار الرئيسي. ويتلقى ترقيات رئيسية في وقت أبكر من قناة `lts`.                    |
+| `lts`                             | يتتبع قناة `lts` في المصدر الأصلي — أي إصدارات الدعم طويل الأمد. ويتلقى ترقيات رئيسية بوتيرة أقل، مع فترات دعم أطول.                                                                     |
+| `25.8` (or any `<major>.<minor>`) | يثبّت القناة على خط `major.minor` محدد. ولا تُقترح ترقيات رئيسية تتجاوزه حتى إذا كان هناك إصدار أحدث متاح في المصدر الأصلي.                                                              |
+
+في بيئات الإنتاج، يُفضَّل عمومًا تثبيت القناة على قيمة `<major>.<minor>` صريحة (مثل `25.8`). فهذا يقيّد العنقود بخط الإصدار الرئيسي المقصود، ويتيح للمُشغِّل إظهار تحذير `WrongReleaseChannel` إذا انجرفت أي نسخة متماثلة، لسبب ما، إلى إصدار رئيسي مختلف — وهو أمر يكتسب أهمية خاصة عندما يُشار إلى الصورة بواسطة digest (`@sha256:...`) بدلًا من tag مقروء بشريًا. أما القيمة الافتراضية الفارغة فهي مناسبة لعناقيد التطوير حيث لا تكون القفزات بين الإصدارات الرئيسية مصدر قلق.
+
+<div id="version-status-conditions">
+  ### شروط الحالة
+</div>
+
+يكشف الشرطان التاليان نتيجة الـ فحص وفحص الترقية:
+
+| الشرط             | السبب                  | المعنى                                                                                                                                                                                                                                                                                                       |
+| ----------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `VersionInSync`   | `VersionMatch`         | تُبلّغ جميع النسخ المتماثلة عن الإصدار نفسه                                                                                                                                                                                                                                                                  |
+| `VersionInSync`   | `VersionMismatch`      | تعمل النسخ المتماثلة بإصدارات مختلفة. يُحجب هذا السبب أثناء ترقية متدرجة مخططة. ويظهر عادةً عند تثبيت وسم صورة قابل للتغيير (مثل `latest` أو إصدار رئيسي/فرعي مجرد مثل `26.3`) بينما يكون الـ registry الأساسي قد تغيّر بين عمليات السحب، فتستقر نسخ متماثلة مختلفة على إصدارات فرعية مختلفة ضمن الوسم نفسه. |
+| `VersionInSync`   | `VersionPending`       | لم تكتمل بعد مهمة فحص الإصدار، أو لم يُرصَد بعد إصدار أي نسخة متماثلة من Keeper                                                                                                                                                                                                                            |
+| `VersionInSync`   | `VersionProbeFailed`   | فشلت مهمة فحص الخاصة بـ ClickHouse؛ لذلك لا يستطيع المشغّل تحديد الإصدار قيد التشغيل                                                                                                                                                                                                                  |
+| `VersionUpgraded` | `UpToDate`             | يعمل العنقود بأحدث إصدار متاح في القناة المحددة                                                                                                                                                                                                                                                              |
+| `VersionUpgraded` | `MinorUpdateAvailable` | يتوفر إصدار فرعي أحدث ضمن خط `major.minor` نفسه                                                                                                                                                                                                                                                              |
+| `VersionUpgraded` | `MajorUpdateAvailable` | يتوفر `major.minor` أحدث ضمن القناة المختارة                                                                                                                                                                                                                                                                 |
+| `VersionUpgraded` | `VersionOutdated`      | الإصدار قيد التشغيل قديم ولم يعد يتلقى إصلاحات من القناة المحددة — ويحدث ذلك عادةً لأن الخط الرئيسي أُزيل من `lts` أو `stable` في المصدر الرئيسي                                                                                                                                                             |
+| `VersionUpgraded` | `WrongReleaseChannel`  | الصورة قيد التشغيل لا تنتمي إلى `upgradeChannel` المحدد. Example: عنقود يعمل بالإصدار `26.5` مع `upgradeChannel: lts`، لأن `26.5` ليس جزءًا من خط `lts` في المصدر الرئيسي.                                                                                                                                   |
+| `VersionUpgraded` | `UpgradeCheckFailed`   | تعذّر على المشغّل الوصول إلى موجز الإصدارات من المصدر الرئيسي                                                                                                                                                                                                                                           |
+
+افحصها باستخدام:
+
+```bash
+kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
+```
+
+<div id="version-probe-template">
+  ### تجاوز `Job` فحص الإصدار
+</div>
+
+ينطبق هذا على `ClickHouseCluster` فقط. لم يعد `KeeperCluster` يشغّل `Job` لفحص الإصدار — إذ تُقرأ نسخته مباشرةً من نسخ Keeper المتماثلة العاملة — لذلك فإن `spec.versionProbeTemplate` مهمل ولا يكون له أي تأثير هناك.
+
+يُنَفَّذ الفحص باعتباره `Job` عاديًا في Kubernetes. إذا كانت في عنقودك سياسات قبول تتطلب قيم `Tolerations` محددة، أو محددات عُقد، أو سياقات أمان، أو إذا كنت تريد تقييد مدة بقاء مهام الفحص المكتملة، فتجاوز القالب عبر `spec.versionProbeTemplate`:
+
+```yaml
+spec:
+  versionProbeTemplate:
+    spec:
+      ttlSecondsAfterFinished: 600   # delete completed probe Jobs 10 minutes after completion
+      template:
+        spec:
+          nodeSelector:
+            kubernetes.io/arch: amd64
+          tolerations:
+            - key: dedicated
+              operator: Equal
+              value: clickhouse
+              effect: NoSchedule
+          containers:
+            - name: version-probe
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+```
+
+اسم الحاوية `version-probe` هو الاسم الافتراضي للمشغّل — إذ إن الإدخال ضمن `containers:` يطابقه بالاسم، لذا يُجري المشغّل دمجًا عميقًا للحقول التي يوفّرها المستخدم فوق القيم الافتراضية.
+
+<div id="version-operator-flags">
+  ### عناصر تحكم على مستوى المشغّل
+</div>
+
+يتحكم خياران في مدير المشغّل بحلقة التحقق من الترقية على مستوى عام:
+
+| Flag                              | Default | Effect                                                                                                                            |
+| --------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--version-update-interval`       | `24h`   | عدد المرات التي يعيد فيها المشغّل جلب قائمة الإصدارات من المصدر الأصلي                                                            |
+| `--disable-version-update-checks` | `false` | يعطّل أداة التحقق من الترقية بالكامل. ولا يتم تعيين الحالة `VersionUpgraded`، كما لا يُنشأ أي مرور HTTP صادر إلى `clickhouse.com` |
+
+اضبط `--disable-version-update-checks=true` في البيئات المعزولة عن الشبكة أو عندما لا يكون مسموحًا بخروج الحركة إلى `clickhouse.com`.
+
+<div id="clickhouse-settings">
+  ## إعدادات ClickHouse
+</div>
+
+<div id="default-user-password">
+  ### كلمة مرور المستخدم `default`
+</div>
+
+يضبط `spec.settings.defaultUserPassword` كلمة مرور المستخدم المضمّن `default`.
+وفّر القيمة من مفتاح في Secret (مستحسن) أو في ConfigMap
+تنشئه، بدلًا من تضمينها مباشرةً داخل CR:
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password   # default; see "Password types" below
+      secret:                  # exactly one of secret or configMap
+        name: clickhouse-password   # name of the Secret/ConfigMap
+        key: password               # the key inside it, not the password value
+```
+
+حدِّد واحدًا فقط من `secret` أو `configMap`، على أن يشتمل أيٌّ منهما على كلٍّ من `name` (الكائن)
+و`key` (الإدخال الذي يحتوي على كلمة المرور).
+
+<div id="password-types">
+  #### أنواع كلمات المرور
+</div>
+
+يُحدِّد `passwordType` كيفية تفسير ClickHouse للقيمة. وتكون قيمته الافتراضية
+`password` (نص صريح)؛ أما البدائل فهي صيغ مُجزَّأة مثل
+`password_sha256_hex` و `password_double_sha1_hex`. ويُفضَّل استخدام نوع مُجزَّأ حتى لا
+يُخزَّن النص الصريح مطلقًا. راجع
+[إعدادات مستخدمي ClickHouse](https://clickhouse.com/docs/operations/settings/settings-users#user-namepassword)
+للاطلاع على القائمة الكاملة.
+
+<div id="default-password-secret-example">
+  #### مثال كامل باستخدام Secret
+</div>
+
+أنشئ Secret، ثم أشِر إلى مفتاحه:
+
+```bash
+kubectl create secret generic clickhouse-password \
+  --from-literal=password='your-secure-password'
+```
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password
+      secret:
+        name: clickhouse-password
+        key: password
+```
+
+<Note>
+  عند استخدام `passwordType: password`، يُضبط `clickhouse-client` داخل الكبسولة
+  باستخدام كلمة المرور هذه، مما يكون مفيدًا عند تصحيح الأخطاء.
+</Note>
+
+بالنسبة إلى كلمة مرور مُجزّأة، خزّن قيمة التجزئة بدلًا من النص غير المشفّر:
+
+```bash
+echo -n 'your-secure-password' | sha256sum   # use the hex digest as the value
+kubectl create secret generic clickhouse-password \
+  --from-literal=password='<sha256-hex-digest>'
+```
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      secret:
+        name: clickhouse-password
+        key: password
+```
+
+<div id="using-configmap-for-user-passwords">
+  #### استخدام ConfigMap
+</div>
+
+يعمل ConfigMap بالطريقة نفسها، لكن محتوياته ليست محمية
+كما في Secret.
+استخدمه فقط للقيم غير الحساسة أو للقيم التي جرى تجزئتها بالفعل، مثل
+بصمة `password_sha256_hex`:
+
+```yaml
+spec:
+  settings:
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      configMap:
+        name: clickhouse-config
+        key: default_password
+```
+
+<Note>
+  لا تضع كلمة مرور غير مشفّرة في ConfigMap. استخدم Secret لأي قيمة غير مشفّرة
+  (`passwordType: password`).
+</Note>
+
+<div id="custom-users-in-configuration">
+  ### مستخدمون مخصّصون في التهيئة
+</div>
+
+قم بتهيئة مستخدمين إضافيين في ملفات التهيئة.
+
+أنشئ ConfigMap وSecret للمستخدم:
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: user-config
+data:
+  reader.yaml: |
+    users:
+      reader:
+        password:
+          - '@from_env': READER_PASSWORD
+        profile: default
+        grants:
+          - query: "GRANT SELECT ON *.*"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: reader-password
+data:
+  password: "c2VjcmV0LXBhc3N3b3Jk"  # base64("secret-password")
+
+```
+
+أضِف تهيئة مخصّصة إلى ClickHouseCluster:
+
+```yaml
+spec:
+  podTemplate:
+    volumes:
+      - name: reader-user
+        configMap:
+          name: user-config
+  containerTemplate:
+    env:
+      - name: READER_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: reader-password
+            key: password
+    volumeMounts:
+      - mountPath: /etc/clickhouse-server/users.d/
+        name: reader-user
+        readOnly: true
+```
+
+<div id="database-sync">
+  ### مزامنة قاعدة البيانات
+</div>
+
+فعِّل المزامنة التلقائية لقاعدة البيانات للنسخ المتماثلة الجديدة:
+
+```yaml
+spec:
+  settings:
+    enableDatabaseSync: true  # Default: true
+```
+
+عند التفعيل، يزامن المُشغِّل جداول Replicated وجداول التكامل مع النسخ المتماثلة الجديدة.
+
+<div id="server-logging">
+  ### تسجيل الخادم
+</div>
+
+اضبط سجل خادم ClickHouse عبر `spec.settings.logger`. كل حقل اختياري وله قيمة افتراضية آمنة، لذا فإن أي عنقود لا تُجري عليه أي تعديل يسجّل بالفعل عند مستوى `trace` في كلٍّ من وحدة تحكم الحاوية وملف سجل خاضع للتدوير على القرص.
+
+```yaml
+spec:
+  settings:
+    logger:
+      logToFile: true   # Default: true. Set false to log only to the console
+      jsonLogs: false   # Default: false. Set true for structured JSON log lines
+      level: trace      # Default: trace
+      size: 1000M       # Default: 1000M. Rotate a log file once it reaches this size
+      count: 50         # Default: 50. Number of rotated files to keep
+```
+
+| الحقل       | الافتراضي | الوصف                                                                                                                                |
+| ----------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `logToFile` | `true`    | عندما تكون القيمة `false`، يزيل المشغّل أهداف الملفات، ولا يرسل الخادم السجلات إلا إلى وحدة تحكم الحاوية.                            |
+| `jsonLogs`  | `false`   | عندما تكون القيمة `true`، يضيف المشغّل `formatting.type: json` بحيث يكون كل سطر كائن JSON.                                           |
+| `level`     | `trace`   | مستوى تفصيل السجلات. إحدى القيم التالية: `test`، `trace`، `debug`، `information`، `notice`، `warning`، `error`، `critical`، `fatal`. |
+| `size`      | `1000M`   | الحجم الأقصى لملف سجل واحد قبل التدوير.                                                                                              |
+| `count`     | `50`      | عدد ملفات السجل المُدوَّرة التي يحتفظ بها الخادم.                                                                                    |
+
+يُبقي المشغّل التسجيل إلى وحدة التحكم مفعّلًا دائمًا لكي يعمل `kubectl logs`، ويضيف التسجيل إلى الملف فوق ذلك عندما تكون `logToFile` بقيمة `true`. وينتج عن عنقود بالإعدادات الافتراضية كتلة `logger` التالية:
+
+```yaml
+logger:
+  console: true
+  level: trace
+  log: /var/log/clickhouse-server/clickhouse-server.log
+  errorlog: /var/log/clickhouse-server/clickhouse-server.err.log
+  size: 1000M
+  count: 50
+```
+
+ينطبق مقطع `spec.settings.logger` نفسه على `KeeperCluster`؛ لكن المشغّل يكتب ملفاته في هذه الحالة ضمن `/var/log/clickhouse-keeper/`.
+
+<Note>
+  يظل التسجيل إلى الطرفية مفعّلًا بغضّ النظر عن `logToFile`، لذا يواصل `kubectl logs` العمل حتى عند تعطيل التسجيل إلى ملف. اضبط `jsonLogs: true` عند إرسال السجلات إلى مخزن سجلات منظَّم يحلّل JSON.
+</Note>
+
+<div id="custom-configuration">
+  ## إعداد مخصص
+</div>
+
+<div id="embedded-extra-configuration">
+  ### تهيئة إضافية مضمنة
+</div>
+
+بدلًا من ربط ملفات تهيئة مخصّصة، يمكنك تحديد خيارات تهيئة إضافية لـ ClickHouse مباشرةً.
+
+أضف تهيئة مخصّصة لـ ClickHouse باستخدام `extraConfig`:
+
+```yaml
+spec:
+  settings:
+    extraConfig:
+      background_pool_size: 20
+```
+
+<div id="useful-links">
+  #### روابط مفيدة:
+</div>
+
+* [أمثلة لتهيئة YAML](/ar/concepts/features/configuration/server-config/configuration-files#example-1)
+* [جميع إعدادات الخادم](/ar/reference/settings/server-settings/settings)
+
+<div id="embedded-extra-users-configuration">
+  ### إعدادات المستخدمين الإضافيين المضمّنة
+</div>
+
+يمكنك أيضًا تحديد إعدادات إضافية لمستخدمي ClickHouse باستخدام `extraUsersConfig`. ويُفيد ذلك في تعريف المستخدمين وملفات التعريف والحصص والامتيازات مباشرةً ضمن مواصفات العنقود.
+
+```yaml
+spec:
+  settings:
+    extraUsersConfig:
+      users:
+        analyst:
+          password:
+            - '@from_env': ANALYST_PASSWORD
+          profile: "readonly"
+          quota: "default"
+      profiles:
+        readonly:
+          readonly: 1
+          max_memory_usage: 10000000000
+      quotas:
+        default:
+          interval:
+            duration: 3600
+            queries: 1000
+            errors: 100
+```
+
+<Note>
+  يتم تخزين `extraUsersConfig` في كائن ConfigMap ضمن k8s. تجنّب وضع الأسرار هناك بصيغة نصية مكشوفة.
+</Note>
+
+<div id="see-documentationconceptsfeaturesconfigurationsettingssettings-users-for-all-supported-clickhouse-users-configuration-options">
+  #### راجع [الوثائق](/ar/concepts/features/configuration/settings/settings-users) للاطلاع على جميع خيارات إعداد مستخدمي ClickHouse المدعومة.
+</div>
+
+<div id="configuration-example">
+  ### مثال على التهيئة
+</div>
+
+مثال كامل للتهيئة:
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: sample
+spec:
+  replicas: 3
+  dataVolumeClaimSpec:
+    storageClassName: <storage-class-name>
+    resources:
+      requests:
+        storage: 10Gi
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "2"
+        memory: "4Gi"
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: <keeper-certificate-secret>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: default-user-password
+data:
+  # secret-password
+  password: "..." # sha256 hex of the password
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  dataVolumeClaimSpec:
+    storageClassName: <storage-class-name>
+    resources:
+      requests:
+        storage: 200Gi
+  keeperClusterRef:
+    name: sample
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    nodeHostnameKey: kubernetes.io/hostname
+  settings:
+    tls:
+      enabled: true
+      required: true
+      serverCertSecret:
+        name: clickhouse-cert
+    defaultUserPassword:
+      passwordType: password_sha256_hex
+      configMap:
+        key: password
+        name: default-password
+```

@@ -1,13 +1,13 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/ColumnCompressed.h>
+#include <Columns/findEqualRangeEndAssumeSorted.h>
 
 #include <IO/WriteHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
-#include <Common/WeakHash.h>
 #include <Common/assert_cast.h>
 #include <base/memcmpSmall.h>
 #include <Common/memcpySmall.h>
@@ -64,7 +64,7 @@ void ColumnFixedString::getValueNameImpl(WriteBufferFromOwnString & name_buf, si
 
 bool ColumnFixedString::isDefaultAt(size_t index) const
 {
-    assert(index < size());
+    chassert(index < size());
     return memoryIsZero(chars.data() + index * n, 0, n);
 }
 
@@ -147,29 +147,64 @@ void ColumnFixedString::updateHashWithValue(size_t index, SipHash & hash) const
     hash.update(reinterpret_cast<const char *>(&chars[n * index]), n);
 }
 
-WeakHash32 ColumnFixedString::getWeakHash32() const
+void ColumnFixedString::updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const
 {
-    auto s = size();
-    WeakHash32 hash(s);
+    hash.update(reinterpret_cast<const char *>(&chars[n * begin]), n * (end - begin));
+}
 
-    const UInt8 * pos = chars.data();
-    UInt32 * hash_data = hash.getData().data();
-
-    for (size_t row = 0; row < s; ++row)
+void ColumnFixedString::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
+{
+    /// The per-row hash seeds with `WEAK_HASH32_INITIAL_VALUE` (mixing the width in, so rows of
+    /// different widths never collide) and combines the finalized hash via `combineWeakHash32`.
+    /// CRC32C is a hardware dependency chain with no packed form, so a plain scalar loop is used.
+    /// See IColumn::computeHashInto.
+    const UInt8 * pos = chars.data() + row_begin * n;
+    for (size_t row = row_begin; row < row_end; ++row)
     {
-        *hash_data = ::updateWeakHash32(pos, n, *hash_data);
-
+        const UInt32 h = ::updateWeakHash32(pos, n, WEAK_HASH32_INITIAL_VALUE);
+        UInt32 & out = hash_out[row - row_begin];
+        out = initial ? h : combineWeakHash32(h, out);
         pos += n;
-        ++hash_data;
     }
-
-    return hash;
 }
 
 void ColumnFixedString::updateHashFast(SipHash & hash) const
 {
     hash.update(n);
     hash.update(reinterpret_cast<const char *>(chars.data()), size() * n);
+}
+
+Int64 ColumnFixedString::compareTrackAt(size_t p1, size_t p2, const IColumn & rhs_, int /*nan_direction_hint*/) const
+{
+    const ColumnFixedString & rhs = assert_cast<const ColumnFixedString &>(rhs_);
+    chassert(this->n == rhs.n);
+
+    const auto * lhs_data = chars.data() + p1 * n;
+    const auto * rhs_data = rhs.chars.data() + p2 * n;
+
+    Int64 res = memcmpSmallAllowOverflow15(lhs_data, rhs_data, n);
+
+    if (res < 0)
+    {
+        const auto * lhs_end = chars.data() + chars.size();
+        lhs_data += n;
+        while (lhs_data < lhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) < 0))
+        {
+            --res;
+            lhs_data += n;
+        }
+    }
+    else if (res > 0)
+    {
+        const auto * rhs_end = rhs.chars.data() + rhs.chars.size();
+        rhs_data += n;
+        while (rhs_data < rhs_end && (memcmpSmallAllowOverflow15(lhs_data, rhs_data, n) > 0))
+        {
+            ++res;
+            rhs_data += n;
+        }
+    }
+    return res;
 }
 
 #if USE_EMBEDDED_COMPILER
@@ -228,6 +263,19 @@ void ColumnFixedString::getPermutation(IColumn::PermutationSortDirection directi
         getPermutationImpl(limit, res, ComparatorDescendingUnstable(*this), DefaultSort(), DefaultPartialSort());
     else if (direction == IColumn::PermutationSortDirection::Descending && stability == IColumn::PermutationSortStability::Stable)
         getPermutationImpl(limit, res, ComparatorDescendingStable(*this), DefaultSort(), DefaultPartialSort());
+}
+
+size_t ColumnFixedString::getEqualRangeEndAssumeSorted(size_t begin, size_t end, int /*nan_direction_hint*/) const
+{
+    if (begin >= end)
+        return begin;
+
+    const UInt8 * ref = chars.data() + begin * n;
+    auto equals = [&](size_t i) { return 0 == memcmpSmallAllowOverflow15(chars.data() + i * n, ref, n); };
+
+    /// A fixed-size memcmp is cheap, so use a longer linear probe (the default is 8).
+    static constexpr size_t linear_probe = 16;
+    return findEqualRangeEndAssumeSorted(begin, end, linear_probe, equals);
 }
 
 void ColumnFixedString::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -455,7 +503,7 @@ ColumnPtr ColumnFixedString::index(const IColumn & indexes, size_t limit) const
 template <typename Type>
 ColumnPtr ColumnFixedString::indexImpl(const PaddedPODArray<Type> & indexes, size_t limit) const
 {
-    assert(limit <= indexes.size());
+    chassert(limit <= indexes.size());
     if (limit == 0)
         return ColumnFixedString::create(n);
 

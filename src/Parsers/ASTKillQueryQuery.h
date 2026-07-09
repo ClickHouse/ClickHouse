@@ -25,11 +25,12 @@ public:
     ASTPtr clone() const override
     {
         auto clone = make_intrusive<ASTKillQueryQuery>(*this);
+        clone->children.clear();
+
         if (where_expression)
-        {
-            clone->where_expression = where_expression->clone();
-            clone->children = {clone->where_expression};
-        }
+            clone->set(clone->where_expression, where_expression->clone());
+
+        cloneOutputOptions(*clone);
 
         return clone;
     }

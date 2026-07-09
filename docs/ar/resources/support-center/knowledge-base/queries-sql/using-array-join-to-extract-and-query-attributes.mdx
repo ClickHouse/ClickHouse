@@ -1,0 +1,148 @@
+---
+title: كيفية استخدام ARRAY JOIN لاستخراج السمات المتغيرة والاستعلام عنها باستخدام مفاتيح وقيم Map
+description: "مثال بسيط يوضح كيفية استخدام ARRAY JOIN لاستخراج السمات المتغيرة والاستعلام عنها باستخدام مفاتيح وقيم Map"
+date: 2024-06-21
+tags: ['الدوال']
+keywords: ['arrayJoin']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="question">
+  ## السؤال
+</div>
+
+إذا كانت لدي سمات متغيرة في عمود من نوع Map، فكيف يمكنني استخراجها واستخدامها في الاستعلامات؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+هذا مثال بسيط على استخراج المفاتيح والقيم من حقل `attributes` المتغير.
+ستؤدي هذه الطريقة إلى إنشاء ما يبدو أنه صفوف مكررة من كل صف في الجدول المصدر/الخام. ومع ذلك، وبما أن المفاتيح والقيم تُستخرج، فيمكن وضعها ضمن المفتاح الأساسي أو ضمن فهرس ثانوي، مثل `bloom filter`.
+
+في هذا المثال، لدينا أساسًا مصدر ينشئ جدول مقاييس، وفيه عدة سمات يمكن أن تنطبق ضمن حقل `attributes` الذي يحتوي على خرائط. إذا كانت هناك سمات ستكون موجودة دائمًا في السجلات، فمن الأفضل استخراجها إلى أعمدة مستقلة وتعبئتها.
+
+يجب أن تتمكن ببساطة من النسخ واللصق لمعرفة شكل المخرجات وما الذي يفعله العرض المادي في هذه الحالة.
+
+أنشئ قاعدة بيانات تجريبية:
+
+```
+create database db1;
+```
+
+أنشئ الجدول الأوّلي الذي سيحتوي على الصفوف والسمات:
+
+```
+create table db1.table1_metric_map
+(
+  id UInt32,
+  timestamp DateTime,
+  metric_name String,
+  metric_value Int32,
+  attributes Map(String, String)
+)
+engine = MergeTree()
+order by timestamp;
+```
+
+أدرِج صفوفًا تجريبية في الجدول. وقد جُعل حجم العينة صغيرًا عمدًا حتى تتمكن، عند إنشاء العرض المادي، من رؤية كيف تتضاعف الصفوف لكل سمة.
+
+```
+insert into db1.table1_metric_map
+VALUES
+(1, '2023-09-20 00:01:00', 'ABC', 10, {'env':'prod','app':'app1','server':'server1'}),
+(2, '2023-09-20 00:01:00', 'ABC', 20,{'env':'prod','app':'app2','server':'server1','dc':'dc1'}),
+(3, '2023-09-20 00:01:00', 'ABC', 30,{'env':'qa','app':'app1','server':'server1'}),
+(4, '2023-09-20 00:01:00', 'ABC', 40,{'env':'qa','app':'app2','server':'server1','dc':'dc1'}),
+(5, '2023-09-20 00:01:00', 'DEF', 50,{'env':'prod','app':'app1','server':'server2'}),
+(6, '2023-09-20 00:01:00', 'DEF', 60, {'env':'prod','app':'app2','server':'server1'}),
+(7, '2023-09-20 00:01:00', 'DEF', 70,{'env':'qa','app':'app1','server':'server1'}),
+(8, '2023-09-20 00:01:00', 'DEF', 80,{'env':'qa','app':'app2','server':'server1'}),
+(9, '2023-09-20 00:02:00', 'ABC', 90,{'env':'prod','app':'app1','server':'server1'}),
+(10, '2023-09-20 00:02:00', 'ABC', 100,{'env':'prod','app':'app1','server':'server2'}),
+(11, '2023-09-20 00:02:00', 'ABC', 110,{'env':'qa','app':'app1','server':'server1'}),
+(12, '2023-09-20 00:02:00', 'ABC', 120,{'env':'qa','app':'app1','server':'server1'}),
+(13, '2023-09-20 00:02:00', 'DEF', 130,{'env':'prod','app':'app1','server':'server1'}),
+(14, '2023-09-20 00:02:00', 'DEF', 140,{'env':'prod','app':'app2','server':'server1','dc':'dc1'}),
+(15, '2023-09-20 00:02:00', 'DEF', 150,{'env':'qa','app':'app1','server':'server2'}),
+(16, '2023-09-20 00:02:00', 'DEF', 160,{'env':'qa','app':'app1','server':'server1','dc':'dc1'}),
+(17, '2023-09-20 00:03:00', 'ABC', 170,{'env':'prod','app':'app1','server':'server1'}),
+(18, '2023-09-20 00:03:00', 'ABC', 180,{'env':'prod','app':'app1','server':'server1'}),
+(19, '2023-09-20 00:03:00', 'ABC', 190,{'env':'qa','app':'app1','server':'server1'}),
+(20, '2023-09-20 00:03:00', 'ABC', 200,{'env':'qa','app':'app1','server':'server2'}),
+(21, '2023-09-20 00:03:00', 'DEF', 210,{'env':'prod','app':'app1','server':'server1'}),
+(22, '2023-09-20 00:03:00', 'DEF', 220,{'env':'prod','app':'app1','server':'server1'}),
+(23, '2023-09-20 00:03:00', 'DEF', 230,{'env':'qa','app':'app1','server':'server1'}),
+(24, '2023-09-20 00:03:00', 'DEF', 240,{'env':'qa','app':'app1','server':'server1'});
+```
+
+يمكننا بعد ذلك إنشاء عرض مادي باستخدام ARRAY JOIN بحيث يمكنه استخراج السمات من الـ Map إلى عمودَي keys و values.  وللتوضيح، في المثال أدناه، يُستخدَم جدول ضمني (مع الأمر POPULATE، وجدول أساسي مثل `.inner.{uuid}...` ).  ومع ذلك، فإن أفضل الممارسات الموصى بها هي استخدام جدول صريح، بحيث تُعرِّف الجدول أولًا، ثم تُنشئ فوقه عرضًا ماديًا باستخدام الأمر `TO` بدلًا من ذلك.
+
+```
+CREATE MATERIALIZED VIEW db1.table1_metric_map_mv
+ORDER BY id
+POPULATE AS
+select 
+  *, 
+  attributes.keys as attribute_keys, 
+  attributes.values as attribute_values
+from db1.table1_metric_map
+array join attributes
+where notEmpty(attributes.keys);
+```
+
+سيحتوي الجدول الجديد على عدد أكبر من الصفوف، مع استخراج المفاتيح فيه، كما يلي:
+
+```
+SELECT *
+FROM db1.table1_metric_map_mv
+LIMIT 5
+
+Query id: b7384381-53af-4e3e-bc54-871f61c033a6
+
+┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┬─attributes───────────┬─attribute_keys─┬─attribute_values─┐
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('env','prod')       │ env            │ prod             │
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('app','app1')       │ app            │ app1             │
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │ ('server','server1') │ server         │ server1          │
+│  2 │ 2023-09-20 00:01:00 │ ABC         │           20 │ ('env','prod')       │ env            │ prod             │
+│  2 │ 2023-09-20 00:01:00 │ ABC         │           20 │ ('app','app2')       │ app            │ app2             │
+└────┴─────────────────────┴─────────────┴──────────────┴──────────────────────┴────────────────┴──────────────────┘
+```
+
+من هنا، وللاستعلام عن الصفوف التي تتضمن سمات معيّنة، يمكنك تنفيذ شيء على النحو التالي:
+
+```
+SELECT
+    t1_app.id AS id,
+    timestamp,
+    metric_name,
+    metric_value
+FROM
+(
+    SELECT *
+    FROM db1.table1_metric_map_mv
+    WHERE (attribute_keys = 'app') AND (attribute_values = 'app1') AND (metric_name = 'ABC')
+) AS t1_app
+INNER JOIN
+(
+    SELECT *
+    FROM db1.table1_metric_map_mv
+    WHERE (attribute_keys = 'server') AND (attribute_values = 'server1')
+) AS t2_server ON t1_app.id = t2_server.id
+
+Query id: 72ce7f19-b02a-4b6e-81e7-a955f257436d
+
+┌─id─┬───────────timestamp─┬─metric_name─┬─metric_value─┐
+│  1 │ 2023-09-20 00:01:00 │ ABC         │           10 │
+│  3 │ 2023-09-20 00:01:00 │ ABC         │           30 │
+│  9 │ 2023-09-20 00:02:00 │ ABC         │           90 │
+│ 11 │ 2023-09-20 00:02:00 │ ABC         │          110 │
+│ 12 │ 2023-09-20 00:02:00 │ ABC         │          120 │
+│ 17 │ 2023-09-20 00:03:00 │ ABC         │          170 │
+│ 18 │ 2023-09-20 00:03:00 │ ABC         │          180 │
+│ 19 │ 2023-09-20 00:03:00 │ ABC         │          190 │
+└────┴─────────────────────┴─────────────┴──────────────┘
+```

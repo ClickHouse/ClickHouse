@@ -11,7 +11,7 @@ namespace DB
 namespace
 {
 
-class FunctionLowCardinalityKeys: public IFunction
+class FunctionLowCardinalityKeys final : public IFunction
 {
 public:
     static constexpr auto name = "lowCardinalityKeys";

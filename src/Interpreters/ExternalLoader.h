@@ -74,8 +74,8 @@ public:
         LoadablePtr object;
         TimePoint loading_start_time;
         TimePoint last_successful_update_time;
-        size_t error_count;
-        Duration loading_duration;
+        size_t error_count{};
+        Duration loading_duration{};
         std::exception_ptr exception;
         std::shared_ptr<const ObjectConfig> config;
     };
@@ -104,6 +104,8 @@ public:
 
     /// Sets settings for periodic updates.
     void enablePeriodicUpdates(bool enable);
+
+    void joinLoadingThreads();
 
     /// Returns the status of the object.
     /// If the object has not been loaded yet then the function returns Status::NOT_LOADED.
@@ -214,7 +216,12 @@ public:
     void reloadConfig(const String & repository_name, const String & path) const;
 
 protected:
-    virtual LoadableMutablePtr createObject(const String & name, const Poco::Util::AbstractConfiguration & config, const String & key_in_config, const String & repository_name) const = 0;
+    virtual LoadableMutablePtr createObject(
+        const String & name,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & key_in_config,
+        const String & repository_name,
+        const String & config_file_path) const = 0;
 
     /// Returns whether the object must be reloaded after a specified change in its configuration.
     virtual bool doesConfigChangeRequiresReloadingObject(const Poco::Util::AbstractConfiguration & /* old_config */, const String & /* old_key_in_config */,

@@ -1,0 +1,9 @@
+after first create	1
+after replace, populated	1
+after inserts following replace	1
+after inserts following replace	2
+after inserts following replace	3
+after second replace and insert	1
+after second replace and insert	2
+after second replace and insert	3
+after second replace and insert	4

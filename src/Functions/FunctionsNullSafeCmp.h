@@ -1,9 +1,9 @@
 #pragma once
+#include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsComparison.h>
-#include <Columns/ColumnNullable.h>
 #include <Common/quoteString.h>
 #include <Columns/ColumnVariant.h>
 #include <Columns/ColumnDynamic.h>
@@ -28,7 +28,7 @@ template <
     NullSafeCmpMode cmp_mode,                                   // Null-safe mode (Equal or NotEqual)
     template <typename, typename > class CompareOp,             // EqualsOp / NotEqualsOp
     typename CompareName>                                       // NameEquals / NameNotEquals
-class FunctionsNullSafeCmp : public IFunction
+class FunctionsNullSafeCmp final : public IFunction
 {
 private:
     const ComparisonParams params;

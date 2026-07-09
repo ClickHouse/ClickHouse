@@ -146,11 +146,19 @@ void SerializationObjectSharedData::enumerateStreams(
             else
                 addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructure);
 
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
-            addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
+            /// When deserialize state is present, it means the whole shared data will be read
+            /// via deserializeBinaryBulkWithMultipleStreams, which only uses Structure + Copy streams.
+            /// Per-bucket Data/PathsMarks/Substreams/SubstreamsMarks/PathsSubstreamsMetadata are only
+            /// needed when writing or reading individual paths via SerializationObjectSharedDataPath (separate class).
+            /// Skip them to avoid unnecessary mark file loads and file opens during prefetching.
+            if (!shared_data_state)
+            {
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataData);
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsMarks);
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreams);
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataSubstreamsMarks);
+                addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataPathsSubstreamsMetadata);
+            }
 
             if (settings.use_specialized_prefixes_and_suffixes_substreams)
                 addSubstreamAndCallCallback(settings.path, callback, Substream::ObjectSharedDataStructureSuffix);
@@ -882,7 +890,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 auto & path_info = path_to_info[requested_path];
                 /// Seek to the start of the substreams list for this path.
                 settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_mark);
-                size_t num_substreams;
+                size_t num_substreams = 0;
                 readVarUInt(num_substreams, *paths_substreams_stream);
                 path_info.substreams.reserve(num_substreams);
                 for (size_t i = 0; i != num_substreams; ++i)
@@ -911,7 +919,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsInfosGranules> Serialization
                 settings.seek_stream_to_mark_callback(settings.path, path_info.substreams_marks_mark);
                 for (size_t i = 0; i != path_info.substreams.size(); ++i)
                 {
-                    MarkInCompressedFile substream_mark;
+                    MarkInCompressedFile substream_mark{};
                     readBinaryLittleEndian(substream_mark.offset_in_compressed_file, *paths_substreams_marks_stream);
                     readBinaryLittleEndian(substream_mark.offset_in_decompressed_block, *paths_substreams_marks_stream);
                     path_info.substream_to_mark[path_info.substreams[i]] = substream_mark;
@@ -1091,7 +1099,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
     }
     else if (serialization_version.value == SerializationVersion::MAP_WITH_BUCKETS)
     {
-        std::vector<ColumnPtr> shared_data_buckets(buckets);
+        Columns shared_data_buckets(buckets);
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
             settings.path.push_back(Substream::Bucket);
@@ -1201,7 +1209,7 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 if (!paths_substreams_stream)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Got empty stream for object shared data paths substreams");
 
-                size_t num_substreams;
+                size_t num_substreams = 0;
                 size_t total_number_of_substreams = 0;
                 for (size_t i = 0; i != structure_granule.num_paths; ++i)
                 {

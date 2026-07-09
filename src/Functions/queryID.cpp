@@ -1,3 +1,4 @@
+#include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -7,7 +8,7 @@
 
 namespace DB
 {
-class FunctionQueryID : public IFunction
+class FunctionQueryID final : public IFunction
 {
     const String query_id;
 

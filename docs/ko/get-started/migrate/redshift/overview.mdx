@@ -1,0 +1,63 @@
+---
+sidebarTitle: '개요'
+slug: /migrations/redshift-overview
+description: 'Amazon Redshift에서 ClickHouse로 마이그레이션'
+keywords: ['Redshift']
+title: 'ClickHouse Cloud와 Amazon Redshift 비교'
+doc_type: 'guide'
+---
+
+> 이 문서는 Amazon
+> Redshift에서 ClickHouse로 데이터 마이그레이션을 시작하기 위한 개요를 제공합니다.
+
+<div id="introduction">
+  ## 소개
+</div>
+
+Amazon Redshift는 구조화된 데이터와 반정형 데이터에 대한 보고 및
+분석 기능을 제공하는 클라우드 데이터 웨어하우스입니다. ClickHouse와
+유사한 컬럼 지향 데이터베이스 원칙을 기반으로 대규모 데이터 세트의
+분석 워크로드를 처리하도록 설계되었습니다. AWS 서비스의 일부인 만큼,
+AWS 사용자가 분석 데이터 요구 사항을 해결할 때 기본적으로 가장 먼저
+고려하는 솔루션인 경우가 많습니다.
+
+Amazon 생태계와 긴밀하게 통합되어 있어 기존 AWS 사용자에게는
+매력적이지만, 실시간 분석 애플리케이션을 구동하기 위해 Redshift를
+도입한 사용자는 곧 이 목적에 더 최적화된 솔루션이 필요하다는 점을
+깨닫게 됩니다. 그 결과, 더 뛰어난 쿼리 성능과 데이터 압축의 이점을
+얻기 위해 기존 Redshift 워크로드를 대체하거나, 기존 워크로드와 함께
+배포되는 &quot;가속 계층&quot;으로 활용하는 방식으로 ClickHouse를 선택하는
+사용자가 점점 늘고 있습니다.
+
+<div id="clickhouse-vs-redshift">
+  ## ClickHouse vs Redshift
+</div>
+
+AWS 생태계에 크게 의존하는 사용자에게 데이터 웨어하우징 요구 사항이 생기면 Redshift는
+자연스러운 선택지입니다. Redshift는 이 중요한 측면에서
+ClickHouse와 다릅니다. 즉, 복잡한 보고 및 분석 쿼리가 필요한 데이터
+웨어하우징 워크로드에 맞춰 엔진을 최적화합니다.
+하지만 모든 배포 모드에서 아래 두 가지 제약 때문에
+Redshift를 실시간 분석 워크로드에 사용하기는 어렵습니다.
+
+* Redshift는 [각 쿼리 실행 계획마다 코드를 컴파일합니다](https://docs.aws.amazon.com/redshift/latest/dg/c-query-performance.html).
+  이로 인해 쿼리를 처음 실행할 때 상당한 오버헤드가 발생합니다. 이 오버헤드는
+  쿼리 패턴을 예측할 수 있고 컴파일된 실행 계획을
+  쿼리 캐시에 저장할 수 있을 때는 감수할 만합니다. 그러나 이는
+  쿼리가 가변적인 대화형 애플리케이션에서는 문제가 됩니다. Redshift가 이
+  코드 컴파일 캐시를 활용할 수 있는 경우에도
+  대부분의 쿼리에서는 ClickHouse가 더 빠릅니다. [&quot;ClickBench&quot;](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|Rf\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-)를 참고하십시오.
+* Redshift는 [모든 큐에서 동시성을 50으로 제한합니다](https://docs.aws.amazon.com/redshift/latest/dg/c_workload_mngmt_classification.html).
+  이는 BI에는 충분할 수 있지만 동시성이 매우 높은
+  분석 애플리케이션에는 적합하지 않습니다.
+
+반면 ClickHouse도 복잡한 분석 쿼리에 사용할 수 있지만,
+애플리케이션을 구동하거나
+웨어하우스 가속 계층으로 동작하는 실시간 분석 워크로드에 최적화되어 있습니다. 그 결과, Redshift 사용자는 일반적으로
+다음과 같은 이유로 Redshift를 ClickHouse로 대체하거나 ClickHouse를 함께 도입합니다.
+
+| Advantage         | Description                                                                                                                                                                                                                         |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **더 낮은 쿼리 지연 시간** | ClickHouse는 높은 동시성과 스트리밍 삽입이 있는 환경에서도 다양한 쿼리 패턴에 대해 더 낮은 쿼리 지연 시간을 제공합니다. 대화형 사용자 대상 분석에서는 캐시 미스가 불가피하지만, 그런 경우에도 ClickHouse는 쿼리를 빠르게 처리할 수 있습니다.                                                                                   |
+| **더 높은 동시 쿼리 한도** | ClickHouse는 동시 쿼리에 대해 훨씬 더 높은 한도를 제공하며, 이는 실시간 애플리케이션 경험에 매우 중요합니다. ClickHouse에서는 자가 관리형이든 Cloud이든 각 서비스에 대해 애플리케이션에 필요한 동시성을 확보할 수 있도록 컴퓨트 할당을 확장할 수 있습니다. 허용되는 쿼리 동시성 수준은 ClickHouse에서 구성할 수 있으며, ClickHouse Cloud의 기본값은 1000입니다. |
+| **더 뛰어난 데이터 압축**  | ClickHouse는 더 뛰어난 데이터 압축을 제공하므로 전체 스토리지를 줄여 비용을 절감하거나, 같은 비용으로 더 많은 데이터를 저장하여 데이터에서 더 많은 실시간 인사이트를 얻을 수 있습니다. 아래의 &quot;ClickHouse vs Redshift 스토리지 효율성&quot;을 참고하십시오.                                                              |

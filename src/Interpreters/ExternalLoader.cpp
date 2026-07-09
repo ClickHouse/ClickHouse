@@ -15,6 +15,7 @@
 #include <Common/randomSeed.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/setThreadName.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 
 namespace DB
@@ -402,8 +403,18 @@ public:
     {
         std::unique_lock lock{mutex};
         infos.clear(); /// We clear this map to tell the threads that we don't want any load results anymore.
+        joinLoadingThreads(lock);
+    }
 
-        /// Wait for all the threads to finish.
+    void joinLoadingThreads()
+    {
+        std::unique_lock lock{mutex};
+        joinLoadingThreads(lock);
+    }
+
+private:
+    void joinLoadingThreads(std::unique_lock<std::mutex> & lock)
+    {
         while (!loading_threads.empty())
         {
             auto it = loading_threads.begin();
@@ -415,6 +426,8 @@ public:
             lock.lock();
         }
     }
+
+public:
 
     using ObjectConfigsPtr = LoadablesConfigReader::ObjectConfigsPtr;
 
@@ -1377,6 +1390,11 @@ void ExternalLoader::enablePeriodicUpdates(bool enable_)
     periodic_updater->enable(enable_);
 }
 
+void ExternalLoader::joinLoadingThreads()
+{
+    loading_dispatcher->joinLoadingThreads();
+}
+
 bool ExternalLoader::hasLoadedObjects() const
 {
     return loading_dispatcher->hasLoadedObjects();
@@ -1566,7 +1584,7 @@ ExternalLoader::LoadableMutablePtr ExternalLoader::createOrCloneObject(
     if (previous_version)
         return previous_version->clone();
 
-    return createObject(name, *config.config, config.key_in_config, config.repository_name);
+    return createObject(name, *config.config, config.key_in_config, config.repository_name, config.path);
 }
 
 template ExternalLoader::LoadablePtr ExternalLoader::getLoadResult<ExternalLoader::LoadablePtr>(const String &) const;

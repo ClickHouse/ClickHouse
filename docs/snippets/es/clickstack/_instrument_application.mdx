@@ -1,0 +1,133 @@
+---
+title: Instrumentar una aplicación
+---
+
+<Steps>
+  <Step>
+    ## Clona y ejecuta la aplicación
+
+    Clona el repositorio, instala las dependencias y crea el archivo `.env`:
+
+    ```bash
+    git clone https://github.com/ClickHouse/hn-news-analyzer.git
+    cd hn-news-analyzer
+    npm install
+    cp .env.example .env
+    ```
+
+    La fuente de datos de ClickHouse usa de forma predeterminada el clúster demo público y de solo lectura, por lo que la aplicación funciona sin necesidad de configuración adicional. Iníciala:
+
+    ```bash
+    ./run.sh
+    ```
+
+    Abre [http://localhost:5001](http://localhost:5001). Verás un selector de año, estadísticas resumidas, un gráfico de actividad, tablas de usuarios y dominios principales, y un cuadro de búsqueda. Explora la aplicación: cambia de año y profundiza en las historias.
+
+    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="La aplicación HackerNews Analyzer ejecutándose localmente" />
+
+    En este punto, la aplicación se está ejecutando, pero aún no está instrumentada. ClickStack no muestra datos: está esperando telemetría. Este es el estado &quot;anterior&quot;.
+  </Step>
+
+  <Step>
+    ## Obtén los detalles de conexión
+
+    La aplicación necesita dos valores para conectarse al colector:
+
+    * `OTEL_EXPORTER_OTLP_ENDPOINT`: el endpoint de OTLP que expone tu colector (normalmente el puerto `4318` para OTLP sobre HTTP).
+    * `OTEL_EXPORTER_OTLP_HEADERS`: el encabezado de autorización que contiene tu token de ingestión, con el formato `authorization=<token>`.
+
+    Abre `.env` y configúralos:
+
+    ```bash
+    OTEL_SERVICE_NAME=hn-analyzer-api
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://<your-collector-endpoint>:4318
+    OTEL_EXPORTER_OTLP_HEADERS=authorization=<your-ingestion-token>
+    ```
+
+    El SDK usa `OTEL_EXPORTER_OTLP_HEADERS` para establecer el encabezado de autorización para las tres señales: trazas, métricas y logs. Si el collector se ejecuta localmente y no exige autenticación, puedes dejar el valor vacío (`OTEL_EXPORTER_OTLP_HEADERS=authorization=`), pero la variable debe estar presente; el SDK omite por completo la inicialización si no está definida o si está completamente vacía.
+  </Step>
+
+  <Step>
+    ## Instrumentar la aplicación
+
+    La instrumentación consta de tres partes: instalar los SDKs, cambiar el comando de inicio y habilitar el SDK para navegador. Nada de esto cambia la lógica de negocio de la aplicación.
+
+    ### Instalar los SDKs
+
+    Instala los SDKs de OpenTelemetry tanto para backend como para navegador:
+
+    ```bash
+    npm install @hyperdx/node-opentelemetry @hyperdx/browser
+    ```
+
+    ### Usa la CLI de opentelemetry-instrument
+
+    La aplicación se inicia con `run.sh`, que tiene dos líneas `exec` al final: una activa y otra comentada. Cambia cuál de ellas está activa para que Node se ejecute a través de `opentelemetry-instrument`:
+
+    ```diff
+     # BEFORE: plain node, no instrumentation, collector stays silent:
+    -exec node scripts/entrypoint.js
+    +# exec node scripts/entrypoint.js
+
+     # AFTER: same source, wrapped by opentelemetry-instrument CLI.
+    -# exec npx opentelemetry-instrument scripts/entrypoint.js
+    +exec npx opentelemetry-instrument scripts/entrypoint.js
+    ```
+
+    Ese es todo el cambio en el backend. La autoinstrumentación se carga mediante `opentelemetry-instrument` al iniciar el proceso.
+
+    ### Habilita el SDK para navegador
+
+    Para capturar trazas distribuidas (del navegador al backend) y repeticiones de sesión, habilita el SDK para navegador en `src/web/telemetry.ts`. Descomenta la importación y el bloque `HyperDX.init({...})`:
+
+    ```javascript
+    import HyperDX from '@hyperdx/browser';
+
+    export function initTelemetry(): void {
+      HyperDX.init({
+        url: __OTLP_ENDPOINT__,
+        apiKey: __OTLP_AUTH_TOKEN__,
+        service: 'hn-analyzer-web',
+        tracePropagationTargets: [/localhost:5001/i, /\/api\//i],
+        consoleCapture: true,
+        advancedNetworkCapture: true,
+      });
+    }
+    ```
+
+    No se requiere editar `.env` adicionalmente. `__OTLP_ENDPOINT__` y `__OTLP_AUTH_TOKEN__` son constantes de tiempo de compilación inyectadas por `vite.config.ts`: el endpoint es `OTEL_EXPORTER_OTLP_ENDPOINT` y el token se obtiene de `OTEL_EXPORTER_OTLP_HEADERS`, los mismos valores que usa el backend.
+
+    <Warning>
+      El token de ingestión está integrado en el bundle público del navegador y cualquiera puede verlo al inspeccionar la pestaña Network.
+    </Warning>
+  </Step>
+
+  <Step>
+    ## Generar tráfico y ver la telemetría
+
+    Reinicia la aplicación para que el nuevo comando de inicio y el paquete del navegador recién compilado surtan efecto:
+
+    ```bash
+    # Ctrl-C the previous run, then:
+    ./run.sh
+    ```
+
+    Recarga la pestaña del navegador para que Vite sirva el bundle actualizado; luego recarga la aplicación unas cuantas veces, cambia de año y haz clic en las historias para generar tráfico.
+
+    Abre la UI de ClickStack:
+
+    1. Ve a **Búsqueda** y filtra por los últimos 5 minutos. Los logs de `hn-analyzer-api` empezarán a aparecer.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs de ClickStack" />
+
+    2. Haz clic en una petición y sube por la traza. Verás el span del handler de Express, un span HTTP hijo que apunta al clúster de ClickHouse con la duración real de la red, y registros de `console.log` correlacionados en la misma traza.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces de ClickStack" />
+
+    3. Abre **Session Replay** para reproducir un video de una sesión del navegador por el que puedes desplazarte, sincronizado con la cronología de la traza.
+
+    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sesiones de ClickStack" />
+
+    Los logs, las métricas, las trazas y las repeticiones de sesión aparecen en la misma UI, comparten el mismo lenguaje de consulta y se correlacionan automáticamente.
+  </Step>
+</Steps>

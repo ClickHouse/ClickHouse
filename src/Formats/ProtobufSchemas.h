@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include <base/types.h>
 #include <boost/noncopyable.hpp>
+#include <Common/SipHash.h>
 
 
 namespace google
@@ -41,6 +42,8 @@ public:
         No,
         // Return descriptor for a message with a user-provided name one level
         // below a top-level message with the hardcoded name "Envelope".
+        // If no "Envelope" message exists, the top-level message type
+        // specified in format_schema is used directly.
         // Example: In protobuf schema
         //   message Envelope {
         //     message MessageType {
@@ -81,7 +84,28 @@ public:
     getMessageTypeForFormatSchema(const FormatSchemaInfo & info, WithEnvelope with_envelope, const String & google_protos_path);
 
 private:
-    std::unordered_map<String, std::shared_ptr<ImporterWithSourceTree>> importers;
+    struct ImporterKey
+    {
+        String schema_directory;
+        String schema_path;
+        WithEnvelope with_envelope;
+
+        bool operator==(const ImporterKey & other) const = default;
+    };
+
+    struct ImporterKeyHash
+    {
+        size_t operator()(const ImporterKey & key) const
+        {
+            SipHash hash;
+            hash.update(key.schema_directory);
+            hash.update(key.schema_path);
+            hash.update(key.with_envelope);
+            return hash.get64();
+        }
+    };
+
+    std::unordered_map<ImporterKey, std::shared_ptr<ImporterWithSourceTree>, ImporterKeyHash> importers;
     std::mutex mutex;
 };
 

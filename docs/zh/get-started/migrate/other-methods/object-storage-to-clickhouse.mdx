@@ -1,0 +1,28 @@
+---
+title: '将数据从云对象存储迁移到 ClickHouse Cloud'
+description: '将对象存储中的数据迁移到 ClickHouse Cloud'
+keywords: ['对象存储', 'S3', 'Azure Blob', 'GCS', '迁移']
+slug: /integrations/migration/object-storage-to-clickhouse
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<Image img="/images/integrations/migration/object-storage-01.webp" size="md" alt="迁移自管理 ClickHouse" />
+
+如果你将云对象存储用作数据湖，并希望将这些数据导入 ClickHouse Cloud，
+或者你当前的数据库系统能够直接将数据导出到云对象存储，那么你可以使用以下某个
+表函数，将存储在云对象存储中的数据迁移到 ClickHouse Cloud 表中：
+
+* [s3](/zh/reference/functions/table-functions/s3) 或 [s3Cluster](/zh/reference/functions/table-functions/s3Cluster)
+* [gcs](/zh/reference/functions/table-functions/gcs)
+* [azureBlobStorage](/zh/reference/functions/table-functions/azureBlobStorage)
+
+如果你当前的数据库系统无法直接将数据导出到云对象存储，你可以使用[第三方 ETL/ELT 工具](/zh/get-started/migrate/other-methods/etl-tool-to-clickhouse)或 [clickhouse-local](/zh/get-started/migrate/other-methods/clickhouse-local-etl) 将数据
+从当前数据库系统移动到云对象存储中，以便在第二步中将这些数据迁移到 ClickHouse Cloud 表中。
+
+尽管这是一个两步流程 (先将数据导出到云对象存储，再加载到 ClickHouse) ，但它的优势在于，得益于 [ClickHouse Cloud 对云对象存储高并行读取的强大支持](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)，
+这一方案可扩展到 PB 级数据量。
+此外，你还可以利用 [Parquet](/zh/reference/formats/Parquet/Parquet) 这类功能完善且支持压缩的格式。
+
+这里有一篇包含具体代码示例的[博客文章](https://clickhouse.com/blog/getting-data-into-clickhouse-part-3-s3)，展示了如何使用 S3 将数据导入 ClickHouse Cloud。

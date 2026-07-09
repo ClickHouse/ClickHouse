@@ -4,8 +4,6 @@ import pytest
 
 from helpers.iceberg_utils import (
     check_schema_and_data,
-    get_uuid_str,
-    get_creation_expression,
     execute_spark_query_general,
     get_creation_expression,
     get_uuid_str

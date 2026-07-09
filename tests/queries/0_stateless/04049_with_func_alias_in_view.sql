@@ -1,4 +1,3 @@
--- Tags: no-parallel
 -- Test: WITH function-expression alias used in IN inside CREATE VIEW
 -- https://github.com/ClickHouse/ClickHouse/issues/99308
 

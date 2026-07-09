@@ -37,7 +37,7 @@ try
     , manifest_file_path(manifest_file_path_)
 {
     auto manifest_file_reader
-        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer));
+        = std::make_unique<avro::DataFileReaderBase>(std::make_unique<AvroInputStreamReadBufferAdapter>(*buffer), MAX_AVRO_SCHEMA_DEPTH);
 
     avro::NodePtr root_node = manifest_file_reader->dataSchema().root();
     auto data_type = AvroSchemaReader::avroNodeToDataType(root_node);
@@ -84,20 +84,29 @@ TypeIndex AvroForIcebergDeserializer::getTypeForPath(const std::string & path) c
 Int64 AvroForIcebergDeserializer::getFormatVersionFromManifestFileMetadata() const
 {
     auto format_version_value = tryGetAvroMetadataValue("format-version");
-    if (!format_version_value.has_value())
-        return 1;
-    try
+    if (format_version_value.has_value())
     {
-        return std::stoi(format_version_value.value());
+        try
+        {
+            return std::stoi(format_version_value.value());
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
+                manifest_file_path,
+                e.what());
+        }
     }
-    catch (const std::exception & e)
-    {
-        throw Exception(
-            ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
-            "Cannot read iceberg table format version from Iceberg avro manifest file '{}': {}",
-            manifest_file_path,
-            e.what());
-    }
+
+    /// Older ClickHouse versions wrote both manifest lists and manifest files without the
+    /// `format-version` Avro metadata key, so we fall back to schema-based detection: the
+    /// `sequence_number` field appears at the top level of v2 manifest lists and v2
+    /// manifest entries, but is absent from their v1 counterparts.
+    if (hasPath(f_sequence_number))
+        return 2;
+    return 1;
 }
 
 
@@ -230,6 +239,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
             sort_order_id = sort_order_id_value.safeGet<Int32>();
     }
 
+    const auto record_count = getValueFromRowByName(row_index, c_data_file_record_count, TypeIndex::Int64).safeGet<Int64>();
+    const auto file_size_in_bytes = getValueFromRowByName(row_index, c_data_file_file_size_in_bytes, TypeIndex::Int64).safeGet<Int64>();
+
     switch (content_type)
     {
         case FileContentType::DATA: {
@@ -247,7 +259,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
                 /*equality_ids*/ std::nullopt,
-                sort_order_id);
+                sort_order_id,
+                record_count,
+                file_size_in_bytes);
         }
         case FileContentType::POSITION_DELETE: {
             /// reference_file_path can be absent in schema for some reason, though it is present in specification: https://iceberg.apache.org/spec/#manifests
@@ -292,7 +306,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 lower_reference_data_file_path,
                 upper_reference_data_file_path,
                 /*equality_ids*/ std::nullopt,
-                /*sort_order_id = */ std::nullopt);
+                /*sort_order_id = */ std::nullopt,
+                record_count,
+                file_size_in_bytes);
         }
         case FileContentType::EQUALITY_DELETE: {
             std::vector<Int32> equality_ids;
@@ -321,7 +337,9 @@ ParsedManifestFileEntryPtr AvroForIcebergDeserializer::createParsedManifestFileE
                 /*lower_reference_data_file_path_ = */ std::nullopt,
                 /*upper_reference_data_file_path_ = */ std::nullopt,
                 equality_ids,
-                /*sort_order_id = */ std::nullopt);
+                /*sort_order_id = */ std::nullopt,
+                record_count,
+                file_size_in_bytes);
         }
     }
 }

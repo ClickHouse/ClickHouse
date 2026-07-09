@@ -4,6 +4,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
 $CLICKHOUSE_CLIENT -q "select x + 1 from (select y + 2 as x from (select dummy + 3 as y)) settings query_plan_max_optimizations_to_apply = 1" 2>&1 |
      grep -o "Too many optimizations applied to query plan"
 
@@ -216,7 +217,7 @@ echo "> filter is pushed down before CreatingSets"
 $CLICKHOUSE_CLIENT -q "
     explain select number from (
         select number from numbers(5) where number in (select 1 + number from numbers(3))
-    ) where number != 2 settings enable_optimize_predicate_expression=0" |
+    ) where number != 2 settings enable_optimize_predicate_expression=0, query_plan_merge_filters=1" |
     grep -o "CreatingSets\|Filter"
 $CLICKHOUSE_CLIENT -q "
     select number from (

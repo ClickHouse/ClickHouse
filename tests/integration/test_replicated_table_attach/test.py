@@ -80,8 +80,17 @@ def test_startup_with_small_bg_pool_partitioned(started_cluster):
         assert_values()
 
     # check that we activate it in the end
+    #
+    # Bound each attempt with `timeout=` so the retry loop can actually fire.
+    # Without it, the first attempt blocks in `subprocess.wait` for
+    # `DEFAULT_QUERY_TIMEOUT` (600s) when the table is still recovering after
+    # fault injection (single background-schedule thread + 0.001 ZK fault
+    # probability + sanitizer overhead), and pytest's 900s test-level timeout
+    # fires before the retry loop can execute even once. With `timeout=15`,
+    # the loop can do up to ~20 attempts within the budget.
     node.query_with_retry(
         "INSERT INTO replicated_table_partitioned VALUES(20, 30)",
         retry_count=20,
         sleep_time=3,
+        timeout=15,
     )

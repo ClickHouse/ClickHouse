@@ -7,8 +7,6 @@ title: 'Continuous Integration (CI)'
 doc_type: 'reference'
 ---
 
-# Continuous Integration (CI)
-
 When you submit a pull request, some automated checks are ran for your code by the ClickHouse [continuous integration (CI) system](tests.md#test-automation).
 This happens after a repository maintainer (someone from ClickHouse team) has screened your code and added the `can be tested` label to your pull request.
 The results of the checks are listed on the GitHub pull request page as described in the [GitHub checks documentation](https://docs.github.com/en/github/collaborating-with-issues-and-pull-requests/about-status-checks).
@@ -63,19 +61,34 @@ After all checks have been started, it changes status to 'success'.
 
 ## Style check {#style-check}
 
-Performs various style checks on the code base.
-
-Basic checks in the Style Check job:
+Performs various style checks on the code base. Each sub-check below corresponds to a `testname` in [`ci/jobs/check_style.py`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/check_style.py) and can be run individually with `--test <name>` (see below).
 
 ##### cpp {#cpp}
-Performs simple regex-based code style checks using the [`ci/jobs/scripts/check_style/check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh) script (which can also be run locally).  
-If it fails, fix the style issues according to the [code style guide](style.md).
+Regex-based C++ style checks via [`check_cpp.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/check_cpp.sh). If it fails, fix the issues according to the [code style guide](style.md).
 
-##### codespell, aspell {#codespell}
-Check for grammatical mistakes and typos.
+##### whitespace_check {#whitespace-check}
+Flags double spaces after commas in C++ that are not part of column alignment.
 
-##### mypy {#mypy}
-Performs static type checking for Python code.
+##### catch_all {#catch-all}
+Forbids `catch (...)` outside of destructors, `main`, and fuzzer entry points where swallowing an unknown exception is unsafe.
+
+##### yamllint {#yamllint}
+Lints YAML workflow files under `.github/` using `.yamllint`.
+
+##### xmllint {#xmllint}
+Validates XML files under `tests/` and `programs/`.
+
+##### functional_tests_check {#functional-tests-check}
+Checks stateless tests: queries filtering on `event_date` must use `>= yesterday()` rather than `today()` (to avoid flakiness around midnight), and test file names must not contain `fail`.
+
+##### test_numbers_check {#test-numbers-check}
+Flags large gaps in stateless test numbering (`tests/queries/0_stateless/<NNNNN>_*`).
+
+##### symlinks {#symlinks}
+Detects broken symlinks in the repository.
+
+##### various {#various}
+Miscellaneous repository checks via [`various_checks.sh`](https://github.com/ClickHouse/ClickHouse/blob/master/ci/jobs/scripts/check_style/various_checks.sh): queries on `system.query_log` / `system.parts` / etc. must filter by `currentDatabase`, `Replicated*MergeTree` ZooKeeper paths must include a per-test prefix, integration test directories must have `__init__.py`, no UTF BOMs, no executable bits on source/data files, no `:latest` tags on third-party docker-compose images, and more.
 
 ### Running the style check job locally {#running-style-check-locally}
 

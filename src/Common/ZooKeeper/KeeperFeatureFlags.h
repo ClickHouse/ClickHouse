@@ -29,6 +29,8 @@ enum class KeeperFeatureFlag : size_t
     CREATE_WITH_STATS,
     TRY_REMOVE,
     LIST_WITH_STAT_AND_DATA,
+    GET_CHILDREN_RECURSIVE,
+    CREATE_TTL,
 };
 
 class KeeperFeatureFlags

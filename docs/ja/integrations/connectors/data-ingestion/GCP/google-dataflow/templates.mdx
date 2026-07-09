@@ -1,0 +1,37 @@
+---
+sidebarTitle: 'テンプレート'
+slug: /integrations/google-dataflow/templates
+description: 'Google Dataflow テンプレートを使用して、ClickHouse にデータを取り込めます'
+title: 'Google Dataflow テンプレート'
+doc_type: 'guide'
+keywords: ['google dataflow', 'gcp', 'データパイプライン', 'テンプレート', 'バッチ処理']
+---
+
+import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+Google Dataflow テンプレート を使用すると、カスタムコードを記述することなく、事前構築済みですぐに使えるデータパイプラインを簡単に実行できます。これらの テンプレート は、一般的なデータ処理タスクを簡素化するよう設計されており、[Apache Beam](https://beam.apache.org/) を使用して構築されています。また、`ClickHouseIO` などのコネクタを活用することで、ClickHouse データベースとシームレスに連携できます。これらの テンプレート を Google Dataflow 上で実行すれば、最小限の労力で、拡張性の高い分散データ処理を実現できます。
+
+<div id="why-use-dataflow-templates">
+  ## Dataflow テンプレート を使う理由
+</div>
+
+* **使いやすさ**: テンプレート には特定のユースケース向けに事前設定されたパイプラインが用意されているため、コードを書く必要がありません。
+* **拡張性**: Dataflow により、パイプラインを効率的にスケールさせ、大量のデータを分散処理できます。
+* **コスト効率**: 使用したリソースに対してのみ料金が発生し、パイプラインの実行コストも最適化できます。
+
+<div id="how-to-run-dataflow-templates">
+  ## Dataflow templates の実行方法
+</div>
+
+現時点では、ClickHouse の公式テンプレートは Google Cloud Console、CLI、または Dataflow REST API から利用できます。
+詳しい手順については、[Google Dataflow Run Pipeline From a Template Guide](https://cloud.google.com/dataflow/docs/templates/provided-templates) を参照してください。
+
+<div id="list-of-clickhouse-templates">
+  ## ClickHouse テンプレート の一覧
+</div>
+
+* [BigQuery から ClickHouse へ](/ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/bigquery-to-clickhouse)
+* [Pub/Sub から ClickHouse へ](/ja/integrations/connectors/data-ingestion/GCP/google-dataflow/templates/pubsub-to-clickhouse)
+* [GCS から ClickHouse へ](https://github.com/ClickHouse/DataflowTemplates/issues/3) (近日公開予定！)

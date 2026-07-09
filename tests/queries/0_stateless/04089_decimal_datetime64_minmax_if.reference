@@ -1,0 +1,20 @@
+Decimal32 minIf/maxIf
+1	49
+Decimal64 minIf/maxIf
+1	49
+DateTime64 minIf/maxIf
+1970-01-01 00:00:11.000000	1970-01-01 00:00:49.000000
+Nullable Decimal32 min/max
+-49	50
+Nullable Decimal64 min/max
+-49	50
+Nullable DateTime64 min/max
+1970-01-01 00:00:01.000000	1970-01-01 00:01:38.000000
+Decimal32 argMinIf/argMaxIf
+51	99
+Decimal64 argMinIf/argMaxIf
+51	99
+DateTime64 argMinIf/argMaxIf
+11	49
+Nullable Decimal32 argMin/argMax
+1	100

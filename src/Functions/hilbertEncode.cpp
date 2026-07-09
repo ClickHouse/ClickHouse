@@ -1,4 +1,5 @@
 #include <optional>
+#include <Columns/ColumnsNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/hilbertEncode2DLUT.h>
 
@@ -13,7 +14,7 @@ namespace ErrorCodes
 }
 
 
-class FunctionHilbertEncode : public FunctionSpaceFillingCurveEncode
+class FunctionHilbertEncode final : public FunctionSpaceFillingCurveEncode
 {
 public:
     static constexpr auto name = "hilbertEncode";
@@ -31,23 +32,22 @@ public:
 
         size_t num_dimensions = arguments.size();
         size_t vector_start_index = 0;
-        const auto * const_col = typeid_cast<const ColumnConst *>(arguments[0].column.get());
-        const ColumnTuple * mask;
-        if (const_col)
-            mask = typeid_cast<const ColumnTuple *>(const_col->getDataColumnPtr().get());
-        else
-            mask = typeid_cast<const ColumnTuple *>(arguments[0].column.get());
+        auto mask = extractRangeMask(arguments);
         if (mask)
         {
-            num_dimensions = mask->tupleSize();
+            num_dimensions = mask.tupleSize();
             vector_start_index = 1;
-            for (size_t i = 0; i < num_dimensions; i++)
+            const size_t rows_to_check = mask.is_const ? 1 : input_rows_count;
+            for (size_t row = 0; row < rows_to_check; ++row)
             {
-                auto ratio = mask->getColumn(i).getUInt(0);
-                if (ratio > 32)
-                    throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
-                                    "Illegal argument {} of function {}, should be a number in range 0-32",
-                                    arguments[0].column->getName(), getName());
+                for (size_t i = 0; i < num_dimensions; ++i)
+                {
+                    auto ratio = mask.read(i, row);
+                    if (ratio > 32)
+                        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+                                        "Illegal argument {} of function {}, should be a number in range 0-32",
+                                        arguments[0].column->getName(), getName());
+                }
             }
         }
 
@@ -55,10 +55,10 @@ public:
         ColumnUInt64::Container & vec_res = col_res->getData();
         vec_res.resize(input_rows_count);
 
-        const auto expand = [mask](const UInt64 value, const UInt8 column_num)
+        const auto expand = [&mask](const size_t row, const UInt64 value, const UInt8 column_num) -> UInt64
         {
             if (mask)
-                return value << mask->getColumn(column_num).getUInt(0);
+                return value << mask.read(column_num, row);
             return value;
         };
 
@@ -67,7 +67,7 @@ public:
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
-                vec_res[i] = expand(col0->getUInt(i), 0);
+                vec_res[i] = expand(i, col0->getUInt(i), 0);
             }
             return col_res;
         }
@@ -78,8 +78,8 @@ public:
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 vec_res[i] = FunctionHilbertEncode2DWIthLookupTableImpl<3>::encode(
-                    expand(col0->getUInt(i), 0),
-                    expand(col1->getUInt(i), 1));
+                    expand(i, col0->getUInt(i), 0),
+                    expand(i, col1->getUInt(i), 1));
             }
             return col_res;
         }

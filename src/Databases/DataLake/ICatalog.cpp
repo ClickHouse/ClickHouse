@@ -1,11 +1,16 @@
 #include <Databases/DataLake/ICatalog.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
 #include <Poco/String.h>
 
+#include <algorithm>
 #include <filesystem>
+#include <iterator>
+#include <tuple>
 
 #include <Common/FailPoint.h>
+#include <Poco/URI.h>
 
 namespace DB::ErrorCodes
 {
@@ -118,6 +123,7 @@ void TableMetadata::setLocation(const std::string & location_)
         /// Azure ABFSS format: extract container (before @) and account (after @)
         bucket = bucket_part.substr(0, at_pos);
         azure_account_with_suffix = bucket_part.substr(at_pos + 1);
+
         LOG_TEST(getLogger("TableMetadata"),
                  "Parsed Azure location - container: {}, account: {}, path: {}",
                  bucket, azure_account_with_suffix, path);
@@ -138,12 +144,12 @@ std::string TableMetadata::getLocation() const
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
 
     if (!endpoint.empty())
-        return constructLocation(endpoint);
+        return constructLocation(endpoint, DB::S3UriStyle::AUTO);
 
     return std::filesystem::path(location_without_path) / path;
 }
 
-std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_) const
+std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_, DB::S3UriStyle uri_style) const
 {
     if (!with_location)
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Data location was not requested");
@@ -151,10 +157,10 @@ std::string TableMetadata::getLocationWithEndpoint(const std::string & endpoint_
     if (endpoint_.empty())
         throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Passed endpoint is empty");
 
-    return constructLocation(endpoint_);
+    return constructLocation(endpoint_, uri_style);
 }
 
-std::string TableMetadata::constructLocation(const std::string & endpoint_) const
+std::string TableMetadata::constructLocation(const std::string & endpoint_, DB::S3UriStyle uri_style) const
 {
     std::string location = endpoint_;
     if (location.ends_with('/'))
@@ -165,14 +171,38 @@ std::string TableMetadata::constructLocation(const std::string & endpoint_) cons
     /// The bucket variable contains the container name for Azure.
     if (!azure_account_with_suffix.empty())
     {
-        /// Azure storage - endpoint should be https://<account>.dfs.core.windows.net
-        /// Construct the full URL with container and path
-        if (location.ends_with(bucket))
+        if (!force_add_bucket && location.find("/" + bucket) != std::string::npos)
             return std::filesystem::path(location) / path / "";
         return std::filesystem::path(location) / bucket / path / "";
     }
 
-    if (location.ends_with(bucket))
+    if (uri_style == DB::S3UriStyle::VIRTUAL_HOSTED)
+    {
+        /// Virtual-hosted style: embed the bucket name in the hostname.
+        /// Transform https://endpoint.com[:port] -> https://bucket.endpoint.com[:port]/path/
+        /// If the endpoint hostname already starts with the bucket (already virtual-hosted), don't add it again.
+        Poco::URI endpoint_uri(location);
+        const std::string & host = endpoint_uri.getHost();
+        if (!host.starts_with(bucket + "."))
+            endpoint_uri.setHost(bucket + "." + host);
+        std::string vhosted_base = endpoint_uri.toString();
+        if (vhosted_base.ends_with('/'))
+            vhosted_base.pop_back();
+        return std::filesystem::path(vhosted_base) / path / "";
+    }
+
+    if (uri_style == DB::S3UriStyle::PATH)
+    {
+        Poco::URI endpoint_uri(location);
+        if (endpoint_uri.getHost().starts_with(bucket + "."))
+            throw DB::Exception(
+                DB::ErrorCodes::BAD_ARGUMENTS,
+                "Cannot use PATH addressing style with endpoint '{}': "
+                "the hostname already embeds bucket '{}' in virtual-hosted form",
+                endpoint_uri.getHost(), bucket);
+    }
+
+    if (!force_add_bucket && location.ends_with(bucket))
         return std::filesystem::path(location) / path / "";
     return std::filesystem::path(location) / bucket / path / "";
 }
@@ -263,7 +293,7 @@ std::string TableMetadata::getMetadataLocation(const std::string & iceberg_metad
 
         if (metadata_location.starts_with(data_location))
         {
-            size_t remove_slash = metadata_location[data_location.size()] == '/' ? 1 : 0;
+            size_t remove_slash = (metadata_location.size() > data_location.size() && metadata_location[data_location.size()] == '/') ? 1 : 0;
             metadata_location = metadata_location.substr(data_location.size() + remove_slash);
         }
     }
@@ -279,8 +309,58 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     changes.emplace_back("region", region);
     changes.emplace_back("aws_role_arn", aws_role_arn);
     changes.emplace_back("aws_role_session_name", aws_role_session_name);
+    changes.emplace_back("aws_external_id", aws_external_id);
 
     return changes;
+}
+
+DB::Names ICatalog::getTables(const TableNameFilter & filter) const
+{
+    switch (filter.kind)
+    {
+        case TableNameFilter::Kind::All:
+            return getTables();
+
+        case TableNameFilter::Kind::Equals:
+        {
+            /// `name = 'ns.table'` -> list only namespace `ns`; the outer filter keeps the exact row.
+            const auto pos = filter.value.rfind('.');
+            if (pos == std::string::npos)
+                return getTables();
+            return listTablesInNamespaceDirect(filter.value.substr(0, pos));
+        }
+
+        case TableNameFilter::Kind::Like:
+        {
+            /// Every table name matching `pattern` must start with the pattern's
+            /// fixed prefix — the literal part before the first LIKE wildcard
+            /// (`%`/`_`) — extracted here the same way `KeyCondition` prunes ranges.
+            /// A namespace `N` can hold such a table (full name `N + "." + <...>`)
+            /// only if `N + "."` and the fixed prefix are consistent, i.e. one is a
+            /// prefix of the other. This never rejects a namespace `LIKE` could match
+            /// (the fixed prefix is a *necessary* prefix of any match), so no
+            /// `system.tables` row is dropped; a looser match only costs an extra
+            /// table listing.
+            const String fixed_prefix = std::get<0>(extractFixedPrefixFromLikePattern(filter.value, /*requires_perfect_prefix*/ false));
+
+            /// A leading wildcard (e.g. `%foo%`) yields an empty prefix, so we must list all namespaces and tables.
+            /// Calling getTables() is better as its parallel.
+            if (fixed_prefix.empty())
+                return getTables();
+
+            DB::Names result;
+            for (const auto & namespace_name : getNamespaces())
+            {
+                const std::string namespace_prefix = namespace_name + ".";
+                if (!startsWith(namespace_prefix, fixed_prefix) && !startsWith(fixed_prefix, namespace_prefix))
+                    continue;
+                auto tables = listTablesInNamespaceDirect(namespace_name);
+                std::move(tables.begin(), tables.end(), std::back_inserter(result));
+            }
+            return result;
+        }
+    }
+    return {};
 }
 
 void ICatalog::createTable(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*metadata_content*/) const
@@ -291,6 +371,16 @@ void ICatalog::createTable(const String & /*namespace_name*/, const String & /*t
 bool ICatalog::updateMetadata(const String & /*namespace_name*/, const String & /*table_name*/, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr /*new_snapshot*/) const
 {
     throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateMetadata is not implemented");
+}
+
+bool ICatalog::updateSchema(
+    const String & /*namespace_name*/,
+    const String & /*table_name*/,
+    const String & /*new_metadata_path*/,
+    Poco::JSON::Object::Ptr /*new_schema*/,
+    Int32 /*previous_schema_id*/) const
+{
+    throw DB::Exception(DB::ErrorCodes::NOT_IMPLEMENTED, "updateSchema is not implemented");
 }
 
 void ICatalog::dropTable(const String & /*namespace_name*/, const String & /*table_name*/) const

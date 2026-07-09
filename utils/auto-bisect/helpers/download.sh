@@ -31,7 +31,7 @@ fi
 # Build Basic Auth header from CH_CI_USER + CH_CI_PASSWORD (validated in bisect.sh)
 BASIC_AUTH_HEADER=""
 if [[ "${PRIVATE:-false}" == "true" ]]; then
-  BASIC_AUTH_HEADER="Authorization: Basic $(echo -n "${CH_CI_USER}:${CH_CI_PASSWORD}" | base64 -w0)"
+  BASIC_AUTH_HEADER="Authorization: Basic $(printf '%s' "${CH_CI_USER}:${CH_CI_PASSWORD}" | base64 | tr -d '\n')"
 fi
 
 function try_download() {
