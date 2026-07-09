@@ -169,11 +169,11 @@ void AsynchronousBoundedReadBuffer::prefetch(Priority priority)
         prefetch_buffer.resize(buffer_size);
 
     prefetch_future = readAsync(prefetch_buffer.data(), buffer_size, priority);
-    /// Publish the range this prefetch reads ([file_offset_of_buffer_end, +buffer_size)) so a concurrent
-    /// readBigAt() can decide, lock-free, whether its requested range could be served from the prefetch.
-    /// An over-estimate is safe (readBigAt rechecks under the mutex); the read may be shortened by
-    /// read_until_position or EOF but never extends past this end.
-    prefetch_estimated_end.store(file_offset_of_buffer_end + buffer_size, std::memory_order_relaxed);
+    /// Publish (release) that a prefetch is now in flight so a concurrent readBigAt() sees it and takes
+    /// the mutex instead of the lock-free fast path (its background impl->next() must not race a
+    /// positioned read on impl). The value is the estimated end offset ([file_offset_of_buffer_end,
+    /// +buffer_size)); it is only used as a nonzero in-flight marker, so an over-estimate is harmless.
+    prefetch_estimated_end.store(file_offset_of_buffer_end + buffer_size, std::memory_order_release);
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetches);
 }
 
@@ -261,7 +261,7 @@ bool AsynchronousBoundedReadBuffer::nextImpl()
         }
 
         prefetch_future = {};
-        prefetch_estimated_end.store(0, std::memory_order_relaxed);
+        prefetch_estimated_end.store(0, std::memory_order_release);
         prefetch_buffer.swap(memory);
 
         if (enable_prefetches_log)
@@ -455,7 +455,7 @@ void AsynchronousBoundedReadBuffer::resetPrefetch(FilesystemPrefetchState state)
 
     auto result = prefetch_future.get();
     prefetch_future = {};
-    prefetch_estimated_end.store(0, std::memory_order_relaxed);
+    prefetch_estimated_end.store(0, std::memory_order_release);
     last_prefetch_info = {};
 
     ProfileEvents::increment(ProfileEvents::RemoteFSPrefetchedBytes, result.size);
@@ -489,15 +489,22 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
     /// prefetch under `prefetch_mutex`: exactly one thread consumes it, and the others block until the
     /// drain (including the in-flight read against `impl`) completes, after which everyone reads directly.
     ///
-    /// The prefetch only ever covers [<some begin>, prefetch_estimated_end). A request whose start is at
-    /// or past that end can never be served from the prefetch buffer, so it skips the mutex entirely and
-    /// reads straight from impl. impl->readBigAt() operates on its own independent state and is safe to
-    /// run concurrently with both other readBigAt()s and the sequential read the in-flight prefetch
-    /// performs (see SeekableReadBuffer readBigAt contract). This restores concurrency for the common
-    /// out-of-prefetch positioned reads. The lock-free read is racy but safe: an over-estimate at worst
-    /// takes the mutex and rechecks the future under it, an under-estimate (0 = already consumed) at worst
-    /// reads from impl instead of copying from the prefetch buffer.
-    if (range_begin >= prefetch_estimated_end.load(std::memory_order_relaxed))
+    /// Fast path: when no prefetch is in flight we can skip the mutex and read straight from impl,
+    /// because impl->readBigAt() is contractually safe to run concurrently with other readBigAt()s.
+    /// We must NOT skip the mutex merely because the requested range is outside the prefetch: the
+    /// in-flight prefetch reads through impl via impl->next() on a background thread (see
+    /// ThreadPoolRemoteFSReader::submit, which defers the read to the pool), and the SeekableReadBuffer
+    /// contract forbids running readBigAt() in parallel with next() on the same object. Some backends
+    /// even initialize lazily on that background read (e.g. ReadBufferFromAzureBlobStorage creates its
+    /// blob_client inside initialize() from nextImpl()), so a positioned read racing the prefetch could
+    /// dereference an uninitialized member. `prefetch_estimated_end` is 0 exactly when no prefetch is in
+    /// flight (never issued, or already drained). It is published (nonzero) at prefetch() and reset to 0
+    /// only after the future has been consumed, i.e. after the background next() has completed. Reading
+    /// it acquire-ordered against those release-ordered stores guarantees that observing 0 happens-after
+    /// the background read finished, so the fast-path impl->readBigAt() runs with no concurrent next().
+    /// This is transient: a Parquet RandomRead storm has a single initial prefetch; once one reader
+    /// drains it under the mutex, every subsequent positioned read takes this lock-free path.
+    if (prefetch_estimated_end.load(std::memory_order_acquire) == 0)
         return impl->readBigAt(to, n, range_begin, progress_callback);
 
     size_t from_prefetch = 0;
@@ -513,7 +520,7 @@ size_t AsynchronousBoundedReadBuffer::readBigAt(char * to, size_t n, size_t rang
                 result = prefetch_future.get();
             }
             prefetch_future = {};
-            prefetch_estimated_end.store(0, std::memory_order_relaxed);
+            prefetch_estimated_end.store(0, std::memory_order_release);
             last_prefetch_info = {};
 
             const size_t prefetched_bytes = result.size - result.offset;

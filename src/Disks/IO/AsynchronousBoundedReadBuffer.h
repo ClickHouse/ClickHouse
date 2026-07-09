@@ -95,13 +95,15 @@ private:
     /// threads deref a moved-from future's null shared state (SIGSEGV), and the in-flight prefetch
     /// read against `impl` could run concurrently with a positioned read on `impl`.
     mutable std::mutex prefetch_mutex;
-    /// Estimated end offset of the in-flight prefetch, published at prefetch() time (the prefetch reads
-    /// [file_offset_of_buffer_end, prefetch_estimated_end)). Read lock-free in readBigAt() to skip
-    /// prefetch_mutex when the requested range starts at or after it, i.e. cannot be served from the
-    /// prefetch buffer: such a positioned read goes straight to impl (whose readBigAt is independent of
-    /// the sequential read the prefetch performs) and needs no serialization. 0 means no prefetch was
-    /// ever issued. A stale/racy read is safe: a false miss just reads from impl, a false hit still
-    /// takes the mutex and rechecks prefetch_future under it.
+    /// Nonzero exactly while a prefetch is in flight; holds the estimated end offset of that prefetch
+    /// ([file_offset_of_buffer_end, prefetch_estimated_end)). Published (release) at prefetch() and reset
+    /// to 0 (release) only after the prefetch future has been consumed, i.e. after the background
+    /// impl->next() has finished. readBigAt() reads it (acquire) to take a lock-free fast path when it is
+    /// 0: no prefetch is in flight, so impl->readBigAt() cannot race the prefetch's background next() on
+    /// impl (which the SeekableReadBuffer contract forbids, and which would null-deref lazily-initialized
+    /// backends such as ReadBufferFromAzureBlobStorage). We deliberately do NOT skip the mutex based on
+    /// the requested range being outside [begin, prefetch_estimated_end): while the prefetch is in flight
+    /// its background next() runs against impl, so any positioned read on impl must serialize with it.
     /// mutable: reset from the const readBigAt() when it consumes the prefetch.
     mutable std::atomic<size_t> prefetch_estimated_end{0};
 
