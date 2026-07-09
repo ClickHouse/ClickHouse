@@ -37,13 +37,16 @@ namespace
     void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
-        const size_t expected_arguments = 1;
 
-        if (arguments.size() != expected_arguments && !(isRoundFunction(function_name) && arguments.size() == 2))
+        /// `round` optionally accepts a second `to_nearest` argument; every other math function is unary.
+        const bool round_function = isRoundFunction(function_name);
+        const bool valid_arity = arguments.size() == 1 || (round_function && arguments.size() == 2);
+
+        if (!valid_arity)
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
                             "Function '{}' expects {} arguments, but was called with {} arguments",
-                            function_name, expected_arguments, arguments.size());
+                            function_name, round_function ? "1 or 2" : "1", arguments.size());
         }
 
         const auto & argument = arguments[0];
