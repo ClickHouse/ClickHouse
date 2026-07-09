@@ -1758,6 +1758,12 @@ def test_namespace_two_part_in_non_select_queries(started_cluster):
     count = int(node.query(use + f"SELECT count() FROM {namespace}.{table_name}"))
     assert count == 2
 
+    cols = node.query(use + f"SHOW COLUMNS FROM {namespace}.{table_name}")
+    assert "id" in cols and "data" in cols, f"two-part SHOW COLUMNS failed: {cols}"
+
+    # Iceberg tables expose no data-skipping indices; success without error is enough.
+    node.query(use + f"SHOW INDEXES FROM {namespace}.{table_name}")
+
 
 def test_namespace_prefix_materialized_view_target(started_cluster):
     """
