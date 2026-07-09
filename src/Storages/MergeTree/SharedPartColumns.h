@@ -8,6 +8,7 @@
 #include <Common/SharedMutex.h>
 #include <base/defines.h>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -131,6 +132,12 @@ public:
     /// equal content yet.
     std::shared_ptr<const ColumnsSubstreams> internColumnsSubstreams(const ColumnsSubstreams & substreams) const;
 
+    /// Reclamation hook, called when a part returns its bundle reference (i.e. when interned
+    /// pieces may have just died): sweeps the expired entries of the nested caches, gated so the
+    /// cost stays amortized O(1) per release. Without it, a table that stops creating parts but
+    /// keeps deleting them (TTL, retention) would pin the dead entries until the next insertion.
+    void onPartRelease() const;
+
     /// The bundle installed in parts before `setColumns` is called (and in parts that never store
     /// columns). Not interned in any cache.
     static const std::shared_ptr<const SharedPartColumns> & getEmpty();
@@ -147,12 +154,13 @@ private:
     struct SerializationGroupKey
     {
         UInt32 column_position = 0;
-        /// Distinguishes "no serialization info entry, built from the map settings"
-        /// from an entry with an empty kinds encoding.
-        bool has_info = false;
-        /// Serialized recursive kind stacks (empty when `has_info` is false).
+        /// The effective serialized recursive kind stacks: the entry's when the column has a
+        /// serialization info entry, the precomputed all-default encoding of the column's type
+        /// otherwise. An entry that only carries default kinds therefore gets the same key as no
+        /// entry at all, so old parts written without `serialization.json` share the groups of
+        /// newer parts whose columns are simply not sparse.
         String kinds;
-        /// The entry settings, or the map settings when `has_info` is false.
+        /// The entry settings, or the map settings when there is no entry.
         SerializationInfoSettings settings;
 
         bool operator==(const SerializationGroupKey & other) const = default;
@@ -178,22 +186,24 @@ private:
     /// group cache can be probed before building anything.
     std::vector<SerializationGroupKey> buildSerializationGroupKeys(const SerializationInfoByName & infos) const;
 
-    /// Everything `buildSerializations` reads from the infos besides the column list:
-    /// the serialization kinds and the settings, but not the per-part `SerializationInfo::Data`.
-    /// The kinds are captured with `SerializationInfo::serialializeKindStackBinary`, which encodes
-    /// the whole recursive structure (e.g. `SerializationInfoTuple` includes the kind stack of
-    /// every element) — the top-level kind stack alone is not enough: two parts can have identical
-    /// top-level kinds while a tuple element is sparse in one and dense in the other.
+    /// Everything the whole serializations object depends on besides the column list:
+    /// the effective serialization kinds and settings of every column, but not the per-part
+    /// `SerializationInfo::Data`. The kinds are captured with
+    /// `SerializationInfo::serialializeKindStackBinary`, which encodes the whole recursive
+    /// structure (e.g. `SerializationInfoTuple` includes the kind stack of every element) — the
+    /// top-level kind stack alone is not enough: two parts can have identical top-level kinds
+    /// while a tuple element is sparse in one and dense in the other. The kinds are recorded per
+    /// column position in the bundle order (default-normalized as in `SerializationGroupKey`), so
+    /// the key carries no column names.
     struct SerializationsCacheKey
     {
         SerializationInfoSettings settings;
-        /// The name and the serialized recursive kind stacks of every column with a serialization
-        /// info entry, in map order, framed unambiguously into a single string (see
-        /// `buildSerializationsCacheKey`) so that building and comparing a key does one string
-        /// allocation instead of two per column.
-        String names_and_kinds;
-        /// The settings of each entry, in the same order.
-        std::vector<SerializationInfoSettings> per_entry_settings;
+        /// The effective kind encodings of every column, in bundle order, length-suffix framed
+        /// into a single string.
+        String kinds;
+        /// The (position, settings) of the entries whose settings differ from the map settings.
+        /// Almost always empty.
+        std::vector<std::pair<UInt32, SerializationInfoSettings>> settings_overrides;
 
         bool operator==(const SerializationsCacheKey & other) const = default;
     };
@@ -203,7 +213,7 @@ private:
         size_t operator()(const SerializationsCacheKey & key) const noexcept;
     };
 
-    static SerializationsCacheKey buildSerializationsCacheKey(const SerializationInfoByName & infos);
+    SerializationsCacheKey buildSerializationsCacheKey(const SerializationInfoByName & infos) const;
 
     mutable SharedMutex serializations_cache_mutex;
     mutable std::unordered_map<SerializationsCacheKey, std::weak_ptr<const PartSerializations>, SerializationsCacheKeyHash>
@@ -237,6 +247,15 @@ private:
         substream_entries_cache TSA_GUARDED_BY(substreams_cache_mutex);
     mutable size_t substream_entries_size_after_sweep TSA_GUARDED_BY(substreams_cache_mutex) = 0;
     mutable AggregatedMetrics::GlobalSum substream_entries_metric_handle;
+
+    /// The all-default recursive kind encoding of each column's type, in bundle order: the
+    /// effective kind encoding of a column with no serialization info entry (see
+    /// `SerializationGroupKey`). Computed once per bundle.
+    const std::vector<String> default_kind_encodings;
+
+    /// See `onPartRelease`.
+    mutable std::atomic<UInt64> releases_since_sweep{0};
+    mutable std::atomic<UInt64> release_sweep_threshold{64};
 };
 
 using SharedPartColumnsPtr = std::shared_ptr<const SharedPartColumns>;

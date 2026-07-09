@@ -43,18 +43,40 @@ SharedPartColumns::NameToNumber buildColumnPositions(const NamesAndTypesList & c
     return positions;
 }
 
-/// Amortized cleanup of expired entries: they are erased only when the map has doubled since the
-/// last sweep, so the cost stays O(1) per insertion and the map size stays within a constant
-/// factor of the number of live entries.
+/// The recursive kind encoding of an all-default serialization info of each column's type.
+/// It depends only on the type structure (the settings do not affect the encoded bytes).
+std::vector<String> buildDefaultKindEncodings(const NamesAndTypesList & columns)
+{
+    std::vector<String> encodings;
+    encodings.reserve(columns.size());
+    for (const auto & column : columns)
+    {
+        WriteBufferFromOwnString out;
+        column.type->createSerializationInfo({})->serialializeKindStackBinary(out);
+        encodings.push_back(std::move(out.str()));
+    }
+    return encodings;
+}
+
+template <typename Cache>
+size_t eraseExpiredEntries(Cache & cache, AggregatedMetrics::GlobalSum & metric)
+{
+    size_t erased = std::erase_if(cache, [](const auto & entry) { return entry.second.expired(); });
+    metric.sub(erased);
+    return cache.size();
+}
+
+/// Amortized cleanup of expired entries on insertion: they are erased only when the map has
+/// doubled since the last sweep, so the cost stays O(1) per insertion and the map size stays
+/// within a constant factor of the number of live entries. Expiration without insertion is
+/// handled by `onPartRelease`.
 template <typename Cache>
 void sweepExpiredEntries(Cache & cache, size_t & size_after_sweep, AggregatedMetrics::GlobalSum & metric)
 {
     if (cache.size() < std::max<size_t>(16, size_after_sweep * 2))
         return;
 
-    size_t erased = std::erase_if(cache, [](const auto & entry) { return entry.second.expired(); });
-    metric.sub(erased);
-    size_after_sweep = cache.size();
+    size_after_sweep = eraseExpiredEntries(cache, metric);
 }
 
 }
@@ -71,6 +93,7 @@ SharedPartColumns::SharedPartColumns(
     , serialization_groups_metric_handle(CurrentMetrics::SharedPartSerializationGroupsCacheSize)
     , substreams_cache_metric_handle(CurrentMetrics::SharedPartColumnsSubstreamsCacheSize)
     , substream_entries_metric_handle(CurrentMetrics::SharedPartColumnSubstreamsEntriesCacheSize)
+    , default_kind_encodings(buildDefaultKindEncodings(columns))
 {
 }
 
@@ -103,11 +126,11 @@ std::vector<SharedPartColumns::SerializationGroupKey> SharedPartColumns::buildSe
         key.column_position = position;
         if (it == infos.end())
         {
+            key.kinds = default_kind_encodings[position];
             key.settings = infos.getSettings();
         }
         else
         {
-            key.has_info = true;
             key.settings = it->second->getSettings();
             WriteBufferFromOwnString kinds;
             it->second->serialializeKindStackBinary(kinds);
@@ -149,32 +172,36 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
     return group;
 }
 
-SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializationsCacheKey(const SerializationInfoByName & infos)
+SharedPartColumns::SerializationsCacheKey SharedPartColumns::buildSerializationsCacheKey(const SerializationInfoByName & infos) const
 {
     SerializationsCacheKey key{infos.getSettings(), {}, {}};
-    key.per_entry_settings.reserve(infos.size());
 
-    size_t names_size = 0;
-    for (const auto & [column_name, _] : infos)
-        names_size += column_name.size();
-
-    /// The kind stacks are one byte per column in the common case; the estimate avoids most of
+    /// The kind encodings are one byte per column in the common case; the estimate avoids most of
     /// the buffer growth reallocations without over-reserving much.
-    key.names_and_kinds.reserve(names_size + infos.size() * 8);
+    key.kinds.reserve(columns.size() * 4);
 
     {
-        WriteBufferFromString out(key.names_and_kinds, AppendModeTag{});
+        WriteBufferFromString out(key.kinds, AppendModeTag{});
 
-        /// The infos map is ordered by column name, so the key is deterministic. The name is
-        /// length-prefixed and the kind stacks (whose serialized length is unknown upfront) are
-        /// length-suffixed, which keeps the encoding injective without a per-column buffer.
-        for (const auto & [column_name, info] : infos)
+        /// One effective encoding per column, in bundle order (see SerializationsCacheKey).
+        /// The kind stacks (whose serialized length is unknown upfront) are length-suffixed,
+        /// which keeps the framing injective without a per-column buffer.
+        UInt32 position = 0;
+        for (const auto & column : columns)
         {
-            writeStringBinary(column_name, out);
             size_t offset = out.count();
-            info->serialializeKindStackBinary(out);
+            if (auto it = infos.find(column.name); it != infos.end())
+            {
+                it->second->serialializeKindStackBinary(out);
+                if (!(it->second->getSettings() == key.settings))
+                    key.settings_overrides.emplace_back(position, it->second->getSettings());
+            }
+            else
+            {
+                out.write(default_kind_encodings[position].data(), default_kind_encodings[position].size());
+            }
             writeVarUInt(out.count() - offset, out);
-            key.per_entry_settings.push_back(info->getSettings());
+            ++position;
         }
 
         out.finalize();
@@ -189,7 +216,6 @@ size_t SharedPartColumns::SerializationGroupKeyHash::operator()(const Serializat
     XXH_INLINE_XXH3_64bits_reset(&state);
 
     XXH_INLINE_XXH3_64bits_update(&state, &key.column_position, sizeof(key.column_position));
-    XXH_INLINE_XXH3_64bits_update(&state, &key.has_info, sizeof(key.has_info));
     XXH_INLINE_XXH3_64bits_update(&state, key.kinds.data(), key.kinds.size());
 
     SipHash settings_hash;
@@ -202,9 +228,9 @@ size_t SharedPartColumns::SerializationGroupKeyHash::operator()(const Serializat
 
 size_t SharedPartColumns::SerializationsCacheKeyHash::operator()(const SerializationsCacheKey & key) const noexcept
 {
-    /// XXH3 instead of the more usual SipHash: this runs on the part loading path over one entry
-    /// per column with a serialization info, and XXH3 is several times faster (the hash only keys
-    /// an in-memory cache, so it does not need to be cryptographic or stable across versions).
+    /// XXH3 instead of the more usual SipHash: this runs on the part loading path over one
+    /// encoding per column, and XXH3 is several times faster (the hash only keys an in-memory
+    /// cache, so it does not need to be cryptographic or stable across versions).
     /// The settings go through their `updateHash` so that new fields are picked up automatically;
     /// a stale hash could only miss sharing between equal keys, never share between unequal ones
     /// (equality compares the full key).
@@ -213,12 +239,15 @@ size_t SharedPartColumns::SerializationsCacheKeyHash::operator()(const Serializa
 
     SipHash settings_hash;
     key.settings.updateHash(settings_hash);
-    for (const auto & entry_settings : key.per_entry_settings)
-        entry_settings.updateHash(settings_hash);
+    for (const auto & [position, override_settings] : key.settings_overrides)
+    {
+        settings_hash.update(position);
+        override_settings.updateHash(settings_hash);
+    }
     UInt64 settings_hash_value = settings_hash.get64();
     XXH_INLINE_XXH3_64bits_update(&state, &settings_hash_value, sizeof(settings_hash_value));
 
-    XXH_INLINE_XXH3_64bits_update(&state, key.names_and_kinds.data(), key.names_and_kinds.size());
+    XXH_INLINE_XXH3_64bits_update(&state, key.kinds.data(), key.kinds.size());
 
     return XXH_INLINE_XXH3_64bits_digest(&state);
 }
@@ -440,6 +469,40 @@ std::shared_ptr<const ColumnsSubstreams> SharedPartColumns::internColumnsSubstre
     substreams_cache_metric_handle.add(1);
     sweepExpiredEntries(substreams_cache, substreams_cache_size_after_sweep, substreams_cache_metric_handle);
     return built;
+}
+
+void SharedPartColumns::onPartRelease() const
+{
+    /// A part just returned its bundle reference, so interned pieces may have expired. Sweep once
+    /// enough releases accumulated to amortize the cost: the threshold tracks the number of live
+    /// entries after the last sweep, so a mass eviction pays O(entries) of sweeping per O(entries)
+    /// of releases and a quiescent table reclaims its dead entries after a bounded number of part
+    /// removals instead of holding them until the next insertion.
+    if (releases_since_sweep.fetch_add(1, std::memory_order_relaxed) + 1 < release_sweep_threshold.load(std::memory_order_relaxed))
+        return;
+
+    releases_since_sweep.store(0, std::memory_order_relaxed);
+
+    size_t live_entries = 0;
+
+    {
+        std::lock_guard lock(serializations_cache_mutex);
+        live_entries += eraseExpiredEntries(serializations_cache, serializations_cache_metric_handle);
+        serializations_cache_size_after_sweep = serializations_cache.size();
+        live_entries += eraseExpiredEntries(serialization_groups_cache, serialization_groups_metric_handle);
+        serialization_groups_size_after_sweep = serialization_groups_cache.size();
+        std::erase_if(serialization_name_slots_cache, [](const auto & entry) { return entry.second.expired(); });
+    }
+
+    {
+        std::lock_guard lock(substreams_cache_mutex);
+        live_entries += eraseExpiredEntries(substreams_cache, substreams_cache_metric_handle);
+        substreams_cache_size_after_sweep = substreams_cache.size();
+        live_entries += eraseExpiredEntries(substream_entries_cache, substream_entries_metric_handle);
+        substream_entries_size_after_sweep = substream_entries_cache.size();
+    }
+
+    release_sweep_threshold.store(std::max<UInt64>(64, live_entries), std::memory_order_relaxed);
 }
 
 const SharedPartColumnsPtr & SharedPartColumns::getEmpty()

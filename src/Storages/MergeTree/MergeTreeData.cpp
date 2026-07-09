@@ -11681,6 +11681,11 @@ SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const Name
 
 void MergeTreeData::releaseSharedPartColumns(SharedPartColumnsPtr shared_part_columns) const
 {
+    /// The releasing part's interned pieces may have just died: give the bundle's nested caches
+    /// a chance to reclaim expired entries (amortized, see `onPartRelease`). Before the cache
+    /// lock: the sweep takes the bundle's own locks.
+    shared_part_columns->onPartRelease();
+
     /// Destroy the bundle outside the lock if this release ends up evicting the entry.
     SharedPartColumnsPtr victim;
 
