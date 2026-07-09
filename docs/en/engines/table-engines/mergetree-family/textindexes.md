@@ -80,6 +80,7 @@ CREATE TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | icu(locale)
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -115,6 +116,7 @@ ALTER TABLE table
                                 tokenizer = splitByNonAlpha
                                             | splitByString[(S)]
                                             | asciiCJK
+                                            | icu(locale)
                                             | ngrams[(N)]
                                             | sparseGrams[(min_length[, max_length[, min_cutoff_length]])]
                                             | array
@@ -151,6 +153,9 @@ ALTER TABLE table DROP INDEX text_idx;
   Note that each string can consist of multiple characters (`', '` in the example).
   The default separator list, if not specified explicitly (for example, `tokenizer = splitByString`), is a single whitespace `[' ']`.
 - `asciiCJK` splits strings into tokens using Unicode word boundary rules (similar to [Unicode Text Segmentation (UAX #29)](https://unicode.org/reports/tr29/)). ASCII alphanumeric characters and underscores form tokens with connectors (ASCII `:` for letters, `.` and `'` for same-type characters). Non-ASCII Unicode characters, including [CJK](https://en.wikipedia.org/wiki/CJK_characters) characters, become single-character tokens.
+- `icu(locale)` splits strings into word tokens using the [ICU](https://icu.unicode.org/) library's word `BreakIterator`. It performs locale-aware Unicode word segmentation (UAX #29 plus dictionary-based breaking), so, unlike `asciiCJK`, it can split languages that do not use whitespace between words (for example Chinese, Japanese, and Thai) into meaningful multi-character words.
+  The locale is a mandatory parameter, for example `tokenizer = icu('ja')` for Japanese or `tokenizer = icu('zh')` for Chinese. There is no default locale.
+  This tokenizer is only available if ClickHouse was built with ICU support.
 - `ngrams(N)` splits strings into equally large `N`-grams (see function [ngrams](/sql-reference/functions/splitting-merging-functions.md/#ngrams)).
   The ngram length can be specified using an optional integer parameter between 1 and 8, for example, `tokenizer = ngrams(3)`.
   The default ngram size, if not specified explicitly (for example, `tokenizer = ngrams`), is 3.
@@ -187,6 +192,7 @@ SELECT tokens('abc def', 'ngrams', 3);
 *Working with non-ASCII inputs.*
 Text indexes can be built on top of text data in any language and character set.
 For non-ASCII text, the `asciiCJK` tokenizer is recommended as it correctly handles Unicode word boundaries including CJK characters.
+For languages that do not separate words by whitespace (for example Chinese, Japanese, or Thai), the `icu(locale)` tokenizer produces meaningful multi-character word tokens via ICU's locale-aware, dictionary-based word segmentation.
 :::
 
 **Preprocessor argument (optional)**. The preprocessor refers to an expression which is applied to the input string before tokenization.
