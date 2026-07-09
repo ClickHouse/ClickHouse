@@ -1720,7 +1720,6 @@ protected:
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
 
-    bool hasParseableDetachedParts(const DiskPtr & disk) const;
     void validateFormatVersion(const DiskPtr & disk) const;
     bool containsTableDataOnNewDisk(const DiskPtr & disk) const;
 

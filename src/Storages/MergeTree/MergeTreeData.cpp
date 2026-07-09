@@ -5240,21 +5240,6 @@ MergeTreeDataPartBuilder MergeTreeData::getDataPartBuilder(
     return MergeTreeDataPartBuilder(*this, name, volume, relative_data_path, part_dir, read_settings_);
 }
 
-bool MergeTreeData::hasParseableDetachedParts(const DiskPtr & disk) const
-{
-    const auto detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
-    if (disk->isDirectoryEmpty(detached_path))
-        return false;
-
-    for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
-    {
-        if (DetachedPartInfo::parseDetachedPartName(disk, it->name(), format_version).valid_name)
-            return true;
-    }
-
-    return false;
-}
-
 void MergeTreeData::validateFormatVersion(const DiskPtr & disk) const
 {
     const auto format_version_path = fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME;
@@ -5330,11 +5315,11 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
 
         if (name == DETACHED_DIR_NAME)
         {
-            /// `detached/` is safe only as a directory without attachable detached parts.
+            /// `detached/` is removed recursively on `DROP TABLE`, so accept it only when empty.
             if (!disk->existsDirectory(fs::path(relative_data_path) / DETACHED_DIR_NAME))
                 return true;
 
-            if (hasParseableDetachedParts(disk))
+            if (!disk->isDirectoryEmpty(fs::path(relative_data_path) / DETACHED_DIR_NAME))
                 return true;
 
             continue;

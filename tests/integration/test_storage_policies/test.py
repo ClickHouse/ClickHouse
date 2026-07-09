@@ -44,7 +44,6 @@ def test_storage_policy_configuration_change(started_cluster):
 def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
     ignored_contents = (
         "mkdir -p {disk2_data_path}/detached "
-        "{disk2_data_path}/detached/not_a_part "
         "{disk2_data_path}/tmp_1_1_0 "
         "{disk2_data_path}/delete_tmp_all_0_0_0 "
         "{disk2_data_path}/tmp-fetch_1_1_0 && "
@@ -96,6 +95,7 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         ("test_delete_tmp_directory", "mkdir -p {disk2_data_path}/delete_tmp_all_0_0_0"),
         ("test_tmp_fetch_directory", "mkdir -p {disk2_data_path}/tmp-fetch_1_1_0"),
         ("test_tmp_mutation_file", "mkdir -p {disk2_data_path} && touch {disk2_data_path}/tmp_mutation_1.txt"),
+        ("test_empty_detached_directory", "mkdir -p {disk2_data_path}/detached"),
     ]:
         check_case(table_name, command)
 
@@ -114,6 +114,7 @@ def test_alter_storage_policy_with_existing_disk_contents(started_cluster):
         ),
         ("test_unknown_root_entry", "mkdir -p {disk2_data_path}/not_a_part", "already contain data", True),
         ("test_temporary_file", "touch {disk2_data_path}/tmp_not_a_directory", "already contain data", True),
+        ("test_detached_non_part", "mkdir -p {disk2_data_path}/detached/not_a_part", "already contain data", True),
         ("test_moving_directory", "mkdir -p {disk2_data_path}/moving/all_0_0_0", "already contain data", True),
         ("test_moving_file", "mkdir -p {disk2_data_path}/moving && touch {disk2_data_path}/moving/not_a_part", "already contain data", True),
         ("test_moving_non_part_directory", "mkdir -p {disk2_data_path}/moving/not_a_part", "already contain data", True),
