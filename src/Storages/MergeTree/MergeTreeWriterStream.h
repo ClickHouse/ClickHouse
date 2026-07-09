@@ -92,6 +92,9 @@ struct MergeTreeWriterStream
     void addToChecksums(MergeTreeDataPartChecksums & checksums, bool is_compressed);
     MarkInCompressedFile getCurrentMark() const;
 
+    /// Uncompressed bytes fed into the data compressor (as addToChecksums records). Valid after preFinalize.
+    size_t getDataUncompressedSize() const { return compressed_hashing.count(); }
+
     /// True iff this stream was wired through size-adaptive wrappers AND both data and marks
     /// stayed under the spill threshold (i.e. they are inside the packed archive). When false,
     /// at least one of them was spilled to a standalone on-disk file, and per-file checksum
