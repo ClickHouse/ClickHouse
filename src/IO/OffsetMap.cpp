@@ -24,7 +24,7 @@ void OffsetMap::build(const StoredObjects & objects)
         {
             /// Unknown-size objects (S3 `HEAD` without `Content-Length`,
             /// `stat()` failure on local disk) can only appear ALONE — we
-            /// can't compute logical offsets for objects that follow an
+            /// can't compute file offsets for objects that follow an
             /// unknown-size one. In practice the only caller passing
             /// `UnknownSize` is `StorageObjectStorageSource`, which always
             /// reads single objects.
@@ -36,7 +36,7 @@ void OffsetMap::build(const StoredObjects & objects)
             segments.push_back(Segment{
                 .object = obj,
                 .object_offset = 0,
-                .logical_offset = 0,
+                .file_offset = 0,
                 .size = StoredObject::UnknownSize,
             });
             return;
@@ -44,31 +44,31 @@ void OffsetMap::build(const StoredObjects & objects)
         segments.push_back(Segment{
             .object = obj,
             .object_offset = 0,
-            .logical_offset = total_size,
+            .file_offset = total_size,
             .size = obj.bytes_size,
         });
         total_size += obj.bytes_size;
     }
 }
 
-VectorWithMemoryTracking<OffsetMap::PhysicalRange> OffsetMap::map(ByteRange logical_range) const
+VectorWithMemoryTracking<OffsetMap::ObjectRange> OffsetMap::map(ByteRange file_range) const
 {
-    VectorWithMemoryTracking<PhysicalRange> result;
+    VectorWithMemoryTracking<ObjectRange> result;
 
     for (const auto & seg : segments)
     {
-        size_t seg_start = seg.logical_offset;
+        size_t seg_start = seg.file_offset;
         size_t seg_end = seg_start + seg.size;
-        size_t req_end = logical_range.end();
+        size_t req_end = file_range.end();
 
-        if (seg_end <= logical_range.offset || seg_start >= req_end)
+        if (seg_end <= file_range.offset || seg_start >= req_end)
             continue;
 
-        size_t overlap_start = std::max(seg_start, logical_range.offset);
+        size_t overlap_start = std::max(seg_start, file_range.offset);
         size_t overlap_end = std::min(seg_end, req_end);
         size_t offset_in_object = seg.object_offset + (overlap_start - seg_start);
 
-        result.push_back(PhysicalRange{
+        result.push_back(ObjectRange{
             .object = seg.object,
             .object_offset = offset_in_object,
             .size = overlap_end - overlap_start,
@@ -78,16 +78,16 @@ VectorWithMemoryTracking<OffsetMap::PhysicalRange> OffsetMap::map(ByteRange logi
     return result;
 }
 
-const StoredObject * OffsetMap::findObjectAt(size_t logical_offset, size_t * object_file_offset) const
+const StoredObject * OffsetMap::findObjectAt(size_t file_offset, size_t * object_file_offset) const
 {
     /// Linear scan — `segments.size()` is bounded by the file's object
     /// count, typically <= a handful even for gather-mode reads.
     for (const auto & seg : segments)
     {
-        if (seg.logical_offset <= logical_offset && logical_offset < seg.logical_offset + seg.size)
+        if (seg.file_offset <= file_offset && file_offset < seg.file_offset + seg.size)
         {
             if (object_file_offset)
-                *object_file_offset = seg.logical_offset;
+                *object_file_offset = seg.file_offset;
             return &seg.object;
         }
     }

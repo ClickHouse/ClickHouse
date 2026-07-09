@@ -51,12 +51,12 @@ public:
     /// state the wait-bank and overflow-bank paths produce - including a HOLEY bank, whose
     /// production trigger (a sibling-led wait returning short between two served cells) needs
     /// a cross-executor race - so a test can pin the display's frontier/read agreement on it.
-    void bankBytes(size_t logical_offset, std::string_view bytes)
+    void bankBytes(size_t file_pos, std::string_view bytes)
     {
         auto buf = std::make_shared<OwnedChainedBuffer>(bytes.size());
         std::memcpy(buf->data(), bytes.data(), bytes.size());
         ChainedBuffers chunk;
-        chunk.append(ChainedBufferNode{buf, 0, bytes.size(), logical_offset});
+        chunk.append(ChainedBufferNode{buf, 0, bytes.size(), file_pos});
         ex.fill_lane.bank.append(std::move(chunk));
     }
     const VectorWithMemoryTracking<ByteRange> & bankIntervals() const

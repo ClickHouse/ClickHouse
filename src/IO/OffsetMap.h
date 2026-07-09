@@ -8,26 +8,29 @@
 namespace DB
 {
 
-/// Maps logical file offsets to (object, offset-within-object).
+/// Maps FILE offsets (the executor's physical, header-inclusive space) to
+/// (object, offset-within-object): a "file" is the concatenation of its
+/// stored objects. Encryption is invisible here — the payload/header split
+/// (logical vs physical) is the executor's business, above this map.
 class OffsetMap
 {
 public:
-    struct PhysicalRange
+    struct ObjectRange
     {
         StoredObject object;
         size_t object_offset = 0;
         size_t size = 0;
     };
 
-    /// Objects are concatenated in their input order to form the logical file.
+    /// Objects are concatenated in their input order to form the file.
     void build(const StoredObjects & objects);
 
-    /// A single logical range may span multiple objects.
-    VectorWithMemoryTracking<PhysicalRange> map(ByteRange logical_range) const;
+    /// A single file range may span multiple objects.
+    VectorWithMemoryTracking<ObjectRange> map(ByteRange file_range) const;
 
-    /// Find the object whose range contains `logical_offset` (nullptr at/past
+    /// Find the object whose range contains `file_offset` (nullptr at/past
     /// `totalSize`). The optional output is the object's file-level offset.
-    const StoredObject * findObjectAt(size_t logical_offset, size_t * object_file_offset = nullptr) const;
+    const StoredObject * findObjectAt(size_t file_offset, size_t * object_file_offset = nullptr) const;
 
     size_t totalSize() const { return total_size; }
 
@@ -38,7 +41,7 @@ private:
     {
         StoredObject object;
         size_t object_offset = 0;
-        size_t logical_offset = 0;
+        size_t file_offset = 0;
         size_t size = 0;
     };
 

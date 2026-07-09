@@ -71,7 +71,7 @@ ChainedBuffers::Span ChainedBuffers::peek() const
     return Span{
         const_cast<char *>(n.data()) + front_offset,
         n.size - front_offset,
-        n.logical_offset + front_offset,
+        n.offset + front_offset,
     };
 }
 
@@ -95,7 +95,7 @@ void ChainedBuffers::advance(size_t bytes)
     /// Work from an absolute position, not by popping the front node's physical size: that
     /// is what drops an overlapping node sitting entirely behind the cursor (so it is never
     /// re-served). Clamp the delta, not `cur + bytes`, to avoid overflow.
-    const size_t cur = nodes.front().logical_offset + front_offset;
+    const size_t cur = nodes.front().offset + front_offset;
     const size_t new_position = cur + std::min(bytes, range().end() - cur);
     consumed_pos = new_position;
 
@@ -108,11 +108,11 @@ void ChainedBuffers::advance(size_t bytes)
         intervals.front().offset = new_position;
     }
 
-    while (!nodes.empty() && nodes.front().logical_offset + nodes.front().size <= new_position)
+    while (!nodes.empty() && nodes.front().offset + nodes.front().size <= new_position)
         nodes.pop_front();
 
-    front_offset = (!nodes.empty() && new_position > nodes.front().logical_offset)
-        ? new_position - nodes.front().logical_offset
+    front_offset = (!nodes.empty() && new_position > nodes.front().offset)
+        ? new_position - nodes.front().offset
         : 0;
 }
 
@@ -121,17 +121,17 @@ bool ChainedBuffers::tryRewind(size_t new_position)
     if (nodes.empty())
         return false;
 
-    /// Lowest reachable byte is the ORIGINAL front start (`logical_offset`, not
+    /// Lowest reachable byte is the ORIGINAL front start (`offset`, not
     /// `+ front_offset`) so a backward rewind into the buffer works; highest is the
     /// merged-coverage end (`nodes` are sorted by start, so a later node can end earlier).
-    const size_t reachable_lo = nodes.front().logical_offset;
+    const size_t reachable_lo = nodes.front().offset;
     const size_t reachable_hi = range().end();
     if (new_position < reachable_lo || new_position > reachable_hi)
         return false;
 
     const ChainedBufferNode & front = nodes.front();
-    const size_t front_end = front.logical_offset + front.size;
-    const size_t cur = front.logical_offset + front_offset;
+    const size_t front_end = front.offset + front.size;
+    const size_t cur = front.offset + front_offset;
 
     if (new_position < front_end)
     {
@@ -144,7 +144,7 @@ bool ChainedBuffers::tryRewind(size_t new_position)
         else
         {
             extendIntervalsFront(cur - new_position);
-            front_offset = new_position - front.logical_offset;
+            front_offset = new_position - front.offset;
             consumed_pos = new_position;
         }
         return true;
@@ -155,9 +155,9 @@ bool ChainedBuffers::tryRewind(size_t new_position)
     for (size_t i = 1; i < nodes.size(); ++i)
     {
         const ChainedBufferNode & node = nodes[i];
-        if (new_position < node.logical_offset)
+        if (new_position < node.offset)
             return false;
-        if (new_position < node.logical_offset + node.size)
+        if (new_position < node.offset + node.size)
         {
             advance(new_position - cur);
             return true;
@@ -205,21 +205,21 @@ void ChainedBuffers::append(ChainedBufferNode node)
     /// straddling it. This keeps consumed bytes from being re-covered and keeps `front_offset`
     /// applying to the front node. A fresh chain has `consumed_pos == 0`, so out-of-order
     /// appends are unaffected.
-    if (node.logical_offset + node.size <= consumed_pos)
+    if (node.offset + node.size <= consumed_pos)
         return;
-    if (node.logical_offset < consumed_pos)
+    if (node.offset < consumed_pos)
     {
-        const size_t trim = consumed_pos - node.logical_offset;
+        const size_t trim = consumed_pos - node.offset;
         node.buffer_offset += trim;
         node.size -= trim;
-        node.logical_offset = consumed_pos;
+        node.offset = consumed_pos;
     }
 
-    /// Insert into `nodes` keeping the sort by logical_offset (stable on tie:
+    /// Insert into `nodes` keeping the sort by offset (stable on tie:
     /// equal-offset nodes keep insertion order).
     ByteRange node_range = node.range();
-    auto it = std::upper_bound(nodes.begin(), nodes.end(), node.logical_offset,
-        [](size_t v, const ChainedBufferNode & n) { return v < n.logical_offset; });
+    auto it = std::upper_bound(nodes.begin(), nodes.end(), node.offset,
+        [](size_t v, const ChainedBufferNode & n) { return v < n.offset; });
     nodes.insert(it, std::move(node));
     mergeInterval(node_range);
 }
@@ -230,7 +230,7 @@ void ChainedBuffers::append(ChainedBuffers && other)
         return;
 
     /// A partially-consumed `other` keeps its consumed prefix in the front node
-    /// (at the original `logical_offset`), while its intervals already start past
+    /// (at the original `offset`), while its intervals already start past
     /// it - splicing the raw node would let `peek` resurrect those bytes that
     /// `range`/`covers` report as gone. Normalize to the live range first; `slice`
     /// trims the consumed prefix and yields `front_offset == 0`.
@@ -270,7 +270,7 @@ ChainedBuffers ChainedBuffers::slice(ByteRange req) const
     {
         size_t effective_buffer_offset = node.buffer_offset;
         size_t effective_size = node.size;
-        size_t effective_logical = node.logical_offset;
+        size_t effective_logical = node.offset;
         if (effective_logical < cursor)
         {
             const size_t skip = cursor - effective_logical;
@@ -300,7 +300,7 @@ ChainedBuffers ChainedBuffers::slice(ByteRange req) const
         sliced.buffer = node.buffer;
         sliced.buffer_offset = effective_buffer_offset + trim_front;
         sliced.size = overlap_end - overlap_start;
-        sliced.logical_offset = overlap_start;
+        sliced.offset = overlap_start;
         appended_end = overlap_end;
         /// Go through `append` so intervals on the result are maintained.
         result.append(std::move(sliced));
@@ -353,7 +353,7 @@ bool ChainedBuffers::covers(ByteRange req) const
 void ChainedBuffers::shift(ssize_t delta)
 {
     for (auto & node : nodes)
-        node.logical_offset = static_cast<size_t>(static_cast<ssize_t>(node.logical_offset) + delta);
+        node.offset = static_cast<size_t>(static_cast<ssize_t>(node.offset) + delta);
     for (auto & iv : intervals)
         iv.offset = static_cast<size_t>(static_cast<ssize_t>(iv.offset) + delta);
     /// `consumed_pos` is a logical coordinate too; re-base it (clamped at 0 so a fresh
@@ -373,14 +373,14 @@ size_t ChainedBuffers::copyTo(char * dst, ByteRange req) const
         unique_bytes += iv.size;
     chassert(unique_bytes == totalBytes());
 #endif
-    /// Nodes are sorted by logical_offset (invariant). The first node's
+    /// Nodes are sorted by offset (invariant). The first node's
     /// `front_offset` bytes are already consumed — they're not part of
     /// the reachable bytes and `covers(req)` must have ruled them out.
     size_t written = 0;
     bool first = true;
     for (const auto & n : nodes)
     {
-        size_t node_logical = n.logical_offset;
+        size_t node_logical = n.offset;
         size_t node_buffer_off = n.buffer_offset;
         size_t node_size = n.size;
         if (first)

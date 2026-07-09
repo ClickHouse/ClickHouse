@@ -31,7 +31,7 @@ size_t readIntoBlock(ReadBuffer & buf, char * dest, size_t chunk)
 }
 
 ChainedBuffers LongConnection::readInto(
-    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t logical_offset,
+    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t file_pos,
     const MachineBase * stop)
 {
     ChainedBuffers chain;
@@ -51,7 +51,7 @@ ChainedBuffers LongConnection::readInto(
                 saw_eof = true;
             break;
         }
-        chain.append(ChainedBufferNode{block, 0, got, logical_offset + total_read});
+        chain.append(ChainedBufferNode{block, 0, got, file_pos + total_read});
         total_read += got;
     }
     current_position += total_read;

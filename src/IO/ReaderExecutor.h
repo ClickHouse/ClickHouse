@@ -393,6 +393,20 @@ private:
     /// size, 0 when there is no encryption / no SSL).
     bool needsDecryption() const { return data_start_offset > 0; }
 
+    /// The ONLY logical<->physical converters. Everything inside the executor
+    /// (plan, schedule, display, machines, the lane bank) is PHYSICAL
+    /// (header-inclusive file coords); the consumer API (`position`,
+    /// `read_extent_end`, `totalSize`, served windows) is LOGICAL (payload
+    /// coords). Cross exactly here - raw `+/- data_start_offset` elsewhere is
+    /// a bug. No byte below the header ever reaches a logical consumer, so a
+    /// physical value smaller than the header is corrupt input, not a case.
+    size_t toPhys(size_t logical) const { return logical + data_start_offset; }
+    size_t toLogical(size_t phys) const
+    {
+        chassert(phys >= data_start_offset);
+        return phys - data_start_offset;
+    }
+
     /// Return a plaintext copy of `cipher` (or `cipher` unchanged when there is
     /// nothing to decrypt). Each node is copied into a fresh `OwnedChainedBuffer`
     /// and decrypted at its `logical_offset` - never in place, since the served
@@ -514,7 +528,7 @@ private:
     /// no data are released. `stop` (nullable) is the drain's interrupt point.
     ChainedBuffers readFromSource(
         const StoredObject & object, size_t offset,
-        VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t logical_offset,
+        VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t file_pos,
         std::optional<size_t> read_extent, std::optional<LongConnection> * lc,
         const MachineBase * stop, Stats & out_stats);
 
@@ -575,7 +589,7 @@ private:
     /// (over-read), `readInto` the blocks, then release the connection at its bound.
     ChainedBuffers serveFromLongConnection(std::optional<LongConnection> & conn, size_t offset,
         VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks,
-        size_t logical_offset, const MachineBase * stop, Stats & out_stats) const;
+        size_t file_pos, const MachineBase * stop, Stats & out_stats) const;
 
     /// Close `conn`: drain a small tail, account a still-incomplete drop, reset.
     void dropLongConnection(std::optional<LongConnection> & conn, Stats & out_stats) const;

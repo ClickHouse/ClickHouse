@@ -71,7 +71,7 @@ struct LongConnection
     /// Read the pre-allocated `blocks` off the open stream into a ChainedBuffers,
     /// advancing the frontier; `stop` (nullable) is polled between blocks.
     ChainedBuffers readInto(VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks,
-        size_t logical_offset, const MachineBase * stop);
+        size_t file_pos, const MachineBase * stop);
     /// Discard up to `gap` bytes so the frontier advances over an already-cached
     /// hole (over-read; the request is saved). Returns bytes skipped (< `gap`
     /// only at EOF).

@@ -249,7 +249,7 @@ ChainedBuffers ReaderExecutor::readNextWindow()
     /// prefetch waits) - the executor's direct contribution to query read latency.
     StatTimer work_timer(stats, Stats::WorkMicroseconds);
 
-    const size_t position_phys = position + data_start_offset;
+    const size_t position_phys = toPhys(position);
 
     if (atEnd())
     {
@@ -337,8 +337,8 @@ void ReaderExecutor::seek(size_t new_position)
     LOG_DEBUG(log, "seek to {}, current position={}", new_position, position);
 
     /// The machine's requested LOGICAL range is its `physical_window` shifted by the header.
-    const size_t requested_logical_offset = machine ? machine->physical_window.offset - data_start_offset : 0;
-    const size_t requested_logical_end = machine ? machine->physical_window.end() - data_start_offset : 0;
+    const size_t requested_logical_offset = machine ? toLogical(machine->physical_window.offset) : 0;
+    const size_t requested_logical_end = machine ? toLogical(machine->physical_window.end()) : 0;
     if (machine
         && new_position >= requested_logical_offset
         && new_position < requested_logical_end)
@@ -351,7 +351,7 @@ void ReaderExecutor::seek(size_t new_position)
 
     cancelMachine(/*cancelled=*/true);
 
-    const size_t new_physical = new_position + data_start_offset;
+    const size_t new_physical = toPhys(new_position);
     /// Feed the seek to the continuity estimator and rewind the plan-feed watermark,
     /// so the post-seek plan re-feeds its predicted reads from here.
     continuity_tracker.recordSeek(new_physical);
@@ -609,8 +609,8 @@ ChainedBuffers ReaderExecutor::decryptWindow(ChainedBuffers && cipher)
     {
         auto block = std::make_shared<OwnedChainedBuffer>(node.size);
         std::memcpy(block->data(), node.data(), node.size);
-        decryptInPlace(block->data(), node.size, node.logical_offset);
-        plain.append(ChainedBufferNode{block, 0, node.size, node.logical_offset});
+        decryptInPlace(block->data(), node.size, node.offset);
+        plain.append(ChainedBufferNode{block, 0, node.size, node.offset});
     }
     return plain;
 }
@@ -689,7 +689,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// its bound, and splitting it would forfeit the request). Interruption remains
     /// the CANCEL mechanism, where the remainder is never fetched at all.
     LOG_TRACE(log, "tryCollectMachine: waiting on prefetched [{}, {})",
-        m->physical_window.offset - data_start_offset, m->physical_window.end() - data_start_offset);
+        toLogical(m->physical_window.offset), toLogical(m->physical_window.end()));
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
     collectRunner().waitReleased(*m);
 
@@ -753,7 +753,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
         /// caches - the fetch already paid for it - and then the caller reads
         /// synchronously: serving an empty window here would read as a false EOF
         /// upstream.
-        const size_t fetched_logical_end = m->fetched.range().end() - data_start_offset;
+        const size_t fetched_logical_end = toLogical(m->fetched.range().end());
         if (fetched_logical_end <= position)
         {
             ChainedBuffers assembled;
@@ -809,7 +809,7 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     runPutStep(std::move(m), result);
 
     /// A seek landed inside the fetched window: trim the prefix so `chain` starts at the cursor.
-    const size_t position_phys = position + data_start_offset;
+    const size_t position_phys = toPhys(position);
     if (!chain.empty() && position_phys > chain.range().offset)
     {
         const size_t end = chain.range().end();
@@ -1384,7 +1384,7 @@ void ReaderExecutor::recreditCommittedPrefixes(
 
 ChainedBuffers ReaderExecutor::readFromSource(
     const StoredObject & object, size_t offset,
-    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t logical_offset,
+    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t file_pos,
     std::optional<size_t> read_extent, std::optional<LongConnection> * lc,
     const MachineBase * stop, Stats & out_stats)
 {
@@ -1404,7 +1404,7 @@ ChainedBuffers ReaderExecutor::readFromSource(
     {
         if ((*lc)->servesObject(object.remote_path)
             && (*lc)->canContinue(offset, want, min_bytes_for_seek))
-            return serveFromLongConnection(*lc, offset, std::move(blocks), logical_offset, stop, out_stats);
+            return serveFromLongConnection(*lc, offset, std::move(blocks), file_pos, stop, out_stats);
         /// The read is forward-continuable from `offset` but CROSSES the channel bound. Serve the
         /// prefix up to `read_until` from the held connection - it drains exactly to its bound and
         /// releases clean - then read the remainder from a fresh GET below (the same request a
@@ -1426,10 +1426,10 @@ ChainedBuffers ReaderExecutor::readFromSource(
                 VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> suffix;
                 for (size_t i = 0; i < blocks.size(); ++i)
                     (i < n ? prefix : suffix).push_back(std::move(blocks[i]));
-                head = serveFromLongConnection(*lc, offset, std::move(prefix), logical_offset, stop, out_stats);
+                head = serveFromLongConnection(*lc, offset, std::move(prefix), file_pos, stop, out_stats);
                 if (*lc)
                     return head;   /// EOF before the bound: the read ends here
-                logical_offset += prefix_bytes;
+                file_pos += prefix_bytes;
                 offset += prefix_span;   /// == read_until; continue with the suffix below
                 want -= prefix_bytes;
                 blocks = std::move(suffix);
@@ -1477,7 +1477,7 @@ ChainedBuffers ReaderExecutor::readFromSource(
             break;
         }
 
-        chain.append(ChainedBufferNode{block, 0, got, logical_offset + total_read});
+        chain.append(ChainedBufferNode{block, 0, got, file_pos + total_read});
         total_read += got;
     }
 
@@ -1535,7 +1535,7 @@ size_t ReaderExecutor::clampReach(size_t reach, size_t phys_off) const
     /// size is known (an unknown-size object has no end to clamp against).
     size_t end = phys_off + reach;
     if (!hasUnknownSize())
-        end = std::min(end, totalSize() + data_start_offset);
+        end = std::min(end, toPhys(totalSize()));
     return end;
 }
 
@@ -1585,7 +1585,7 @@ bool ReaderExecutor::shouldOpenLongConnection(size_t phys_off) const
     /// clamp back to the extent (a reverse/scattered pattern, or a run walled off by a near wide
     /// cached run, stays short). When no extent is advertised, fall back to one window.
     const size_t boundary = read_extent_end
-        ? (*read_extent_end + data_start_offset)
+        ? toPhys(*read_extent_end)
         : (phys_off + effectiveWindowSize(level));
     return boundedReach(phys_off) > boundary;
 }
@@ -1611,7 +1611,7 @@ size_t ReaderExecutor::longConnectionBound(const StoredObject & object, size_t o
         ? std::numeric_limits<size_t>::max()
         : object_base + object.bytes_size;
     const size_t extent = read_extent_end
-        ? std::min<size_t>(*read_extent_end + data_start_offset, object_end)
+        ? std::min<size_t>(toPhys(*read_extent_end), object_end)
         : object_end;
     const size_t reach = boundedReach(phys_offset);
     size_t phys_bound = std::max(extent, reach);
@@ -1680,7 +1680,7 @@ void ReaderExecutor::openLongConnection(std::optional<LongConnection> & conn, co
 }
 
 ChainedBuffers ReaderExecutor::serveFromLongConnection(std::optional<LongConnection> & conn, size_t offset,
-    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t logical_offset,
+    VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks, size_t file_pos,
     const MachineBase * stop, Stats & out_stats) const
 {
     /// Precondition: the caller has checked `servesObject` + `canContinue`.
@@ -1693,7 +1693,7 @@ ChainedBuffers ReaderExecutor::serveFromLongConnection(std::optional<LongConnect
     }
     /// The served bytes are counted as `BytesFromSource` by the caller (the returned
     /// chain), as on the one-shot path.
-    ChainedBuffers chain = conn->readInto(std::move(blocks), logical_offset, stop);
+    ChainedBuffers chain = conn->readInto(std::move(blocks), file_pos, stop);
     out_stats.add(Stats::LongConnectionHits);
     out_stats.add(Stats::LongConnectionBytes, chain.totalBytes());
     releaseLongAtBound(conn);
@@ -2044,7 +2044,7 @@ void ReaderExecutor::advanceAhead()
     /// serve waits on it), so by the time it reaches the window end the collect does not block.
     if (machine)
     {
-        const size_t cursor_phys = position + data_start_offset;
+        const size_t cursor_phys = toPhys(position);
         if (!atEnd() && cursor_phys < machine->physical_window.end())
             return;  /// still filling ahead of the cursor
         collectInFlightInto(machine->retrieve_index);
@@ -2053,7 +2053,7 @@ void ReaderExecutor::advanceAhead()
         return;
     drainAbandonedMachines();
 
-    const size_t position_phys = position + data_start_offset;
+    const size_t position_phys = toPhys(position);
     const size_t probe = boundedFetchSize(window_size);
     if (probe == 0)
         return;
@@ -2892,7 +2892,7 @@ ByteRange ReaderExecutor::boundedPlanSpan(size_t physical_start) const
         /// boundaries, but the base does NOT inflate to `window_size` when the request
         /// is smaller.
         chassert(read_extent_end);
-        const size_t physical_extent_end = *read_extent_end + data_start_offset;
+        const size_t physical_extent_end = toPhys(*read_extent_end);
         if (physical_start >= physical_extent_end)
             return ByteRange{physical_start, 0};
         want = std::min(physical_extent_end - physical_start, ceiling);
@@ -2984,7 +2984,7 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     /// (`setReadExtent`), or a seek re-plans and rebuilds it (see `seek`).
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})",
-        m->physical_window.offset - data_start_offset, m->physical_window.end() - data_start_offset);
+        toLogical(m->physical_window.offset), toLogical(m->physical_window.end()));
 
     if (collectRunner().tryCancelQueued(*m))
     {

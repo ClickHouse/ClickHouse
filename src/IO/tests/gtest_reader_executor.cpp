@@ -1337,7 +1337,7 @@ TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
             .buffer = buf,
             .buffer_offset = 0,
             .size = header_str.size(),
-            .logical_offset = 0,
+            .offset = 0,
         });
     }
 
@@ -2554,7 +2554,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsConnectionToRequest)
 TEST(ReaderExecutor, ReadBigAtBoundsLongConnectionOnEncryptedFile)
 {
     /// Encrypted readBigAt over the live path. Inside readFromSource the
-    /// `logical_offset` parameter is a physical (header-inclusive) offset, so the
+    /// `file_pos` parameter is a physical (header-inclusive) offset, so the
     /// live-connection bound must be in object-local physical coordinates and
     /// include data_start_offset. A bound short by data_start_offset truncates the
     /// read and throws CANNOT_READ_ALL_DATA - this is the regression test for that
@@ -2888,7 +2888,7 @@ TEST(ReaderExecutor, UnknownSizeZeroByteTerminalRead)
 TEST(ReaderExecutor, UnknownSizeMultiObjectRejected)
 {
     /// Multi-object pipelines need each object's `bytes_size` to compute
-    /// the cumulative `logical_offset`. With an unknown size we can't.
+    /// the cumulative `file_offset`. With an unknown size we can't.
     /// `OffsetMap::build` rejects the combination outright.
     auto source = std::make_shared<MemorySourceReader>(
         std::unordered_map<String, String>{
