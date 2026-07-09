@@ -43,17 +43,21 @@ The function can returns different columns depending on the result type of the q
 
 Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offset modifiers, `@` timestamp modifiers, and subqueries.
 
+Every selector must contain at least one matcher that does not match the empty label value. A selector built only from empty-matching matchers, such as `{job=~".*"}`, is rejected with the error `vector selector must contain at least one non-empty matcher`. To select all series, use `{__name__=~".+"}`.
+
 ### Functions {#functions}
 
 | Category | Functions |
 |----------|-----------|
 | Range    | `rate`, `irate`, `delta`, `idelta`, `last_over_time` |
-| Math     | `abs`, `sgn`, `floor`, `ceil`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg` |
+| Math     | `abs`, `sgn`, `floor`, `ceil`, `round`, `sqrt`, `exp`, `ln`, `log2`, `log10`, `rad`, `deg`, `clamp`, `clamp_min`, `clamp_max` |
 | Trig     | `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` |
 | DateTime | `day_of_week`, `day_of_month`, `days_in_month`, `day_of_year`, `minute`, `hour`, `month`, `year` |
 | Type     | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other    | `time`, `pi` |
+| Other    | `time`, `timestamp`, `pi` |
+
+**Note**: `round` accepts an optional second argument `to_nearest` (default `1`) and rounds each value to the nearest multiple of it. The `DateTime` functions may be called without an argument, in which case they operate on the evaluation timestamp (equivalent to passing `time()`).
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not yet supported, and the `phi` (quantile level) argument must currently be a constant scalar — expressions that vary per step such as `histogram_quantile(time() / 1000, ...)` are rejected with a `NOT_IMPLEMENTED` error.
 
