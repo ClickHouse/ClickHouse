@@ -142,19 +142,21 @@ static void addConvertingExpression(QueryPlan & plan, const SharedHeader & expec
 }
 
 /// Clone the shared immutable plan_step and apply the strategy-based description.
-/// Join strategies share the logical step, so the description is formatted here.
-/// Other strategies (aggregation, read) set descriptions during rule application.
+/// Join and replicated-subplan strategies share the logical step, so the description is
+/// formatted here. Other strategies (aggregation, read) set descriptions during rule
+/// application.
 static QueryPlanStepPtr cloneStepForBestPlan(const GroupExpression & expression)
 {
     auto step = expression.getQueryPlanStep()->clone();
-    if (const auto * join_strategy = dynamic_cast<const IJoinStrategy *>(expression.strategy.get()))
+    if (dynamic_cast<const IJoinStrategy *>(expression.strategy.get()) != nullptr
+        || dynamic_cast<const ReplicatedSubplanStrategy *>(expression.strategy.get()) != nullptr)
     {
         const auto & suffix = expression.description_suffix;
         const auto & original = expression.getQueryPlanStep()->getStepDescription();
         if (suffix.empty())
-            step->setStepDescription(fmt::format("{} {}", join_strategy->getName(), original), 200);
+            step->setStepDescription(fmt::format("{} {}", expression.strategy->getName(), original), 200);
         else
-            step->setStepDescription(fmt::format("{} {} {}", join_strategy->getName(), suffix, original), 200);
+            step->setStepDescription(fmt::format("{} {} {}", expression.strategy->getName(), suffix, original), 200);
     }
     return step;
 }

@@ -79,6 +79,17 @@ struct PartialTopNStrategy final : IImplementationStrategy
     String getName() const override { return "PartialTopN"; }
 };
 
+/// --- Replicated subplan ---
+
+/// A step run identically on every node over replicated inputs.  Satisfies
+/// {node_count=N, is_replicated=true} without a BroadcastExchange.  No cost function:
+/// replicated expressions get parallelism 1.0, so the default per-step formulas already
+/// charge the full work each node does.
+struct ReplicatedSubplanStrategy final : IImplementationStrategy
+{
+    String getName() const override { return "Replicated"; }
+};
+
 /// --- Read strategies ---
 
 struct ParallelReadStrategy final : IReadStrategy
