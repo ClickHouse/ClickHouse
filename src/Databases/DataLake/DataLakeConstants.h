@@ -27,9 +27,10 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
     /// AWS credentials
     {"aws_access_key_id", DEFAULT_MASKING_RULE},
     {"aws_secret_access_key", DEFAULT_MASKING_RULE},
+    {"storage_aws_access_key_id", DEFAULT_MASKING_RULE},
+    {"storage_aws_secret_access_key", DEFAULT_MASKING_RULE},
     /// OneLake credentials
     {"onelake_client_secret", DEFAULT_MASKING_RULE},
-    {"onelake_bearer_token", DEFAULT_MASKING_RULE},
     /// Google credentials
     {"google_adc_client_secret", DEFAULT_MASKING_RULE},
     {"google_adc_refresh_token", DEFAULT_MASKING_RULE},

@@ -12,7 +12,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
-import ExperimentalBadge from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 The official JS client for connecting to ClickHouse.
 The client is written in TypeScript and provides typings for the client public API.
@@ -143,8 +142,8 @@ When creating a client instance, the following connection settings can be adjust
 | **max_open_connections**?: number                                          | A maximum number of connected sockets to allow per host.    | `10`          | -                                                                                                    |
 | **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`   | Configure TLS certificates.                                 | -             | [TLS docs](/integrations/language-clients/js#tls-certificates-nodejs-only)                                                     |
 | **keep_alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }` | -                                                           | -             | [Keep Alive docs](/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                                      |
-| **http_agent**?: http.Agent \| https.Agent <br/><ExperimentalBadge/>       | Custom HTTP agent for the client.                           | -             | [HTTP agent docs](/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)                           |
-| **set_basic_auth_header**?: boolean <br/><ExperimentalBadge/>              | Set the `Authorization` header with basic auth credentials. | `true`        | [this setting usage in the HTTP agent docs](/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
+| **http_agent**?: http.Agent \| https.Agent <br/><Badge color="green" icon="flask">Experimental</Badge>       | Custom HTTP agent for the client.                           | -             | [HTTP agent docs](/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)                           |
+| **set_basic_auth_header**?: boolean <br/><Badge color="green" icon="flask">Experimental</Badge>              | Set the `Authorization` header with basic auth credentials. | `true`        | [this setting usage in the HTTP agent docs](/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
 
 ### URL configuration {#url-configuration}
 

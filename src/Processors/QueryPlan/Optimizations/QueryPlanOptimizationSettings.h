@@ -61,6 +61,7 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    bool merge_expression_into_join;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
@@ -182,6 +183,7 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
     UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
+    bool join_runtime_filter_size_from_hash_table_stats = false;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
