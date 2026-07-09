@@ -1,3 +1,4 @@
+#include <atomic>
 #include <limits>
 
 #include <Columns/ColumnNullable.h>
@@ -715,7 +716,7 @@ void MergeJoin::mergeInMemoryRightBlocks()
     }
 
     if (merge_watch)
-        build_sort_time_ns.fetch_add(merge_watch->elapsedNanoseconds(), std::memory_order_relaxed);
+        build_sort_time_ns += merge_watch->elapsedNanoseconds();
 }
 
 void MergeJoin::mergeFlushedRightBlocks()
@@ -738,9 +739,9 @@ void MergeJoin::mergeFlushedRightBlocks()
 
     if (collect_stats)
     {
-        build_sort_time_ns.fetch_add(merge_watch->elapsedNanoseconds(), std::memory_order_relaxed);
+        build_sort_time_ns += merge_watch->elapsedNanoseconds();
         if (auto tmp_data = table_join->getTempDataOnDisk())
-            right_spilled_bytes.store(tmp_data->currentCompressedSize(), std::memory_order_relaxed);
+            right_spilled_bytes = tmp_data->currentCompressedSize();
     }
 
     /// Get memory limit or approximate it from row limit and bytes per row factor
@@ -794,7 +795,7 @@ bool MergeJoin::addBlockToJoin(const Block & src_block, bool)
         sort_watch.emplace();
     sortBlock(block, right_sort_description);
     if (sort_watch)
-        build_sort_time_ns.fetch_add(sort_watch->elapsedNanoseconds(), std::memory_order_relaxed);
+        build_sort_time_ns += sort_watch->elapsedNanoseconds();
 
     return saveRightBlock(std::move(block));
 }
@@ -919,8 +920,14 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
         starting_right_block = continuation.right_block;
         not_processed.reset();
     }
+    else
+    {
+        /// Count the block rows only when we are processing it for the first time
+        total_left_rows.fetch_add(block.rows(), std::memory_order_relaxed);
+    }
 
     bool with_left_inequals = (is_left && !is_semi_join) || is_full;
+    size_t matched_rows = 0;
     if (with_left_inequals)
     {
         for (size_t i = starting_right_block; i < right_blocks_count; ++i)
@@ -943,8 +950,9 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
             /// Use skip_right as ref. It would be updated in join.
             RightBlockInfo right_block(loadRightBlock<in_memory>(i), i, skip_right, used_rows_bitmap.get());
 
-            if (!leftJoin<is_all>(left_cursor, block, right_block, left_columns, right_columns, left_key_tail))
+            if (!leftJoin<is_all>(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows))
             {
+                matched_left_rows.fetch_add(matched_rows, std::memory_order_relaxed);
                 not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
                                                    left_cursor.position(), left_key_tail, skip_right, i);
                 return;
@@ -981,21 +989,24 @@ void MergeJoin::joinSortedBlock(Block & block, std::optional<NotProcessed> & not
 
             if constexpr (is_all)
             {
-                if (!allInnerJoin(left_cursor, block, right_block, left_columns, right_columns, left_key_tail))
+                if (!allInnerJoin(left_cursor, block, right_block, left_columns, right_columns, left_key_tail, matched_rows))
                 {
+                    matched_left_rows.fetch_add(matched_rows, std::memory_order_relaxed);
                     not_processed = extraBlock<is_all>(block, std::move(left_columns), std::move(right_columns),
                                                        left_cursor.position(), left_key_tail, skip_right, i);
                     return;
                 }
             }
             else
-                semiLeftJoin(left_cursor, block, right_block, left_columns, right_columns);
+                semiLeftJoin(left_cursor, block, right_block, left_columns, right_columns, matched_rows);
+
         }
 
         left_cursor.nextN(left_key_tail);
         changeLeftColumns(block, std::move(left_columns));
         addRightColumns(block, std::move(right_columns));
     }
+    matched_left_rows.fetch_add(matched_rows, std::memory_order_relaxed);
 }
 
 static size_t maxRangeRows(size_t current_rows, size_t max_rows)
@@ -1009,7 +1020,7 @@ static size_t maxRangeRows(size_t current_rows, size_t max_rows)
 
 template <bool is_all>
 bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                         MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
+                         MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1037,6 +1048,9 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 
         if (range.empty())
             break;
+
+        if (left_unequal_position <= range.left_start)
+            matched_rows += range.left_length;
 
         if constexpr (is_all)
         {
@@ -1073,7 +1087,7 @@ bool MergeJoin::leftJoin(MergeJoinCursor & left_cursor, const Block & left_block
 }
 
 bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail)
+                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1087,9 +1101,15 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
 
     while (!left_cursor.atEnd() && !right_cursor.atEnd())
     {
+        size_t starting_position = left_cursor.position() + left_key_tail;
+        left_key_tail = 0;
         MergeJoinEqualRange range = left_cursor.getNextEqualRange(right_cursor);
+
         if (range.empty())
             break;
+
+        if (starting_position <= range.left_start)
+            matched_rows += range.left_length;
 
         right_block_info.setUsed(range.right_start, range.right_length);
 
@@ -1099,6 +1119,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
         {
             right_cursor.nextN(range.right_length);
             right_block_info.skip = right_cursor.position();
+            left_key_tail = range.left_length;
             return false;
         }
 
@@ -1117,7 +1138,7 @@ bool MergeJoin::allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_b
 }
 
 bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const RightBlockInfo & right_block_info,
-                             MutableColumns & left_columns, MutableColumns & right_columns)
+                             MutableColumns & left_columns, MutableColumns & right_columns, size_t & matched_rows)
 {
     const Block & right_block = *right_block_info.block;
     MergeJoinCursor right_cursor(right_block, right_merge_description);
@@ -1131,6 +1152,7 @@ bool MergeJoin::semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_b
         if (range.empty())
             break;
 
+        matched_rows += range.left_length;
         joinEquals<false>(left_block, r_columns_to_add, left_columns, right_columns, range, 0);
 
         right_cursor.nextN(range.right_length);
@@ -1304,13 +1326,14 @@ StepAnalyzeInfo MergeJoin::getAnalyzedInternalStats(size_t group) const
             internal_stats.emplace_back("right blocks", getRightBlocksCount(), StepMetric::Format::Quantity);
             internal_stats.emplace_back("storage", std::string(in_memory ? "in-memory" : "external"), StepMetric::Format::Raw);
             if (!in_memory)
-                internal_stats.emplace_back("right spilled", right_spilled_bytes.load(std::memory_order_relaxed), StepMetric::Format::Bytes);
-            internal_stats.emplace_back("sort time", build_sort_time_ns.load(std::memory_order_relaxed), StepMetric::Format::Time);
+                internal_stats.emplace_back("right spilled", right_spilled_bytes, StepMetric::Format::Bytes);
+            internal_stats.emplace_back("sort time", build_sort_time_ns, StepMetric::Format::Time);
             break;
         }
         case JoinStage::Probe:
         {
             internal_stats.emplace_back("sort time", probe_sort_time_ns.load(std::memory_order_relaxed), StepMetric::Format::Time);
+            appendJoinMatchStats(internal_stats, {total_left_rows.load(std::memory_order_relaxed), matched_left_rows.load(std::memory_order_relaxed)});
             break;
         }
         case JoinStage::Default:

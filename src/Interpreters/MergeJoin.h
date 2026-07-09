@@ -125,9 +125,12 @@ private:
     const size_t max_files_to_merge;
     const bool collect_stats;
 
-    std::atomic<UInt64> build_sort_time_ns{0};
+    /// Build side is single threaded that is why these variables are non-atomic
+    UInt64 build_sort_time_ns = 0;
+    UInt64 right_spilled_bytes = 0;
     std::atomic<UInt64> probe_sort_time_ns{0};
-    std::atomic<UInt64> right_spilled_bytes{0};
+    std::atomic<UInt64> total_left_rows{0};
+    std::atomic<UInt64> matched_left_rows{0};
 
     Names lowcard_right_keys;
 
@@ -166,11 +169,11 @@ private:
 
     template <bool is_all> /// ALL or ANY
     bool leftJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
     bool semiLeftJoin(MergeJoinCursor & left_cursor, const Block & left_block, const RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & matched_rows);
     bool allInnerJoin(MergeJoinCursor & left_cursor, const Block & left_block, RightBlockInfo & right_block_info,
-                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail);
+                  MutableColumns & left_columns, MutableColumns & right_columns, size_t & left_key_tail, size_t & matched_rows);
 
     Block modifyRightBlock(const Block & src_block) const;
     bool saveRightBlock(Block && block);

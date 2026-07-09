@@ -14,8 +14,6 @@
 #include <Processors/Transforms/ColumnPermuteTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
-#include <Processors/QueryPlan/StepPortStats.h>
-#include <base/defines.h>
 #include <fmt/format.h>
 
 namespace DB
@@ -228,32 +226,9 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
     return joined_pipeline;
 }
 
-StepAnalyzeInfo JoinStep::getAnalyzedInternalStats(size_t group, const std::vector<IProcessor *> processors) const
+StepAnalyzeInfo JoinStep::getAnalyzedInternalStats(size_t group, const std::vector<IProcessor *> /*processors*/) const
 {
-    StepAnalyzeInfo internal_stats = join->getAnalyzedInternalStats(group);
-
-    const BoundaryInputRows boundary_rows = boundaryInputRows(this, processors);
-
-    switch (static_cast<JoinStage>(group))
-    {
-        case JoinStage::Build:
-            chassert(boundary_rows.second_port_rows == 0);
-            internal_stats.emplace_back("right rows read", boundary_rows.first_port_rows, StepMetric::Format::Quantity);
-            break;
-        case JoinStage::Probe:
-            chassert(boundary_rows.second_port_rows == 0);
-            internal_stats.emplace_back("left rows read", boundary_rows.first_port_rows, StepMetric::Format::Quantity);
-            break;
-        case JoinStage::Default:
-            /// Only a YShaped join streams the right side across a boundary port; a filled join such
-            /// as DirectKeyValueJoin looks it up internally, so second_port_rows stays 0.
-            chassert(boundary_rows.second_port_rows == 0 || join->pipelineType() == JoinPipelineType::YShaped);
-            internal_stats.emplace_back("left rows read", boundary_rows.first_port_rows, StepMetric::Format::Quantity);
-            internal_stats.emplace_back("right rows read", boundary_rows.second_port_rows, StepMetric::Format::Quantity);
-            break;
-    }
-
-    return internal_stats;
+    return join->getAnalyzedInternalStats(group);
 }
 
 

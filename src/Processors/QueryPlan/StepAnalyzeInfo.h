@@ -28,7 +28,8 @@ struct JoinMatchStats
 
 inline void appendJoinMatchStats(StepAnalyzeInfo & info, const JoinMatchStats & stats)
 {
-    info.emplace_back("matched rows", stats.matched_left_rows, StepMetric::Format::Quantity);
+    info.emplace_back("left rows", stats.total_left_rows, StepMetric::Format::Quantity);
+    info.emplace_back("matched left rows", stats.matched_left_rows, StepMetric::Format::Quantity);
     const double match_rate = stats.total_left_rows
         ? 100.0 * static_cast<double>(stats.matched_left_rows) / static_cast<double>(stats.total_left_rows)
         : 0.0;
