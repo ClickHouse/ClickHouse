@@ -7,8 +7,10 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/PeekableReadBuffer.h>
 #include <IO/parseDateTimeBestEffort.h>
 #include <Common/assert_cast.h>
+#include <base/scope_guard.h>
 
 namespace DB
 {
@@ -195,7 +197,8 @@ void SerializationDateTime64::serializeTextJSON(const IColumn & column, size_t r
     writeChar('"', ostr);
 }
 
-/// Dispatches on the first character so at most one checkString() is attempted, since checkString() does not roll back on a partial mismatch.
+/// checkString() consumes matched bytes even on a partial mismatch, so the caller must roll back
+/// (via a PeekableReadBuffer checkpoint) on a false return before trying anything else.
 static bool checkISODatePrefix(ReadBuffer & istr)
 {
     if (istr.eof())
@@ -256,6 +259,37 @@ static ReturnType deserializeISODateJSON(
     return ReturnType(true);
 }
 
+/// Handles the non-quoted JSON cases: a bare integer timestamp, or the mongodb shell syntax
+/// ISODate("...") / new ISODate("..."). Uses PeekableReadBuffer so a malformed near-miss like
+/// "ISODate123" rolls back instead of falling through to integer parsing on "123".
+template <typename ReturnType>
+static ReturnType deserializeNonQuotedJSON(
+    DateTime64 & x, UInt32 scale, ReadBuffer & istr, const FormatSettings & settings,
+    const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
+{
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+
+    PeekableReadBuffer peekable_buf(istr, true);
+    peekable_buf.setCheckpoint();
+    SCOPE_EXIT(peekable_buf.dropCheckpoint());
+
+    if (checkISODatePrefix(peekable_buf))
+    {
+        if constexpr (throw_exception)
+            deserializeISODateJSON<void>(x, scale, peekable_buf, settings, time_zone, utc_time_zone);
+        else if (!deserializeISODateJSON<bool>(x, scale, peekable_buf, settings, time_zone, utc_time_zone))
+            return ReturnType(false);
+        return ReturnType(true);
+    }
+
+    peekable_buf.rollbackToCheckpoint();
+    if constexpr (throw_exception)
+        readIntText(x, peekable_buf);
+    else if (!tryReadIntText(x, peekable_buf))
+        return ReturnType(false);
+    return ReturnType(true);
+}
+
 void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     DateTime64 x = 0;
@@ -264,15 +298,9 @@ void SerializationDateTime64::deserializeTextJSON(IColumn & column, ReadBuffer &
         readText(x, scale, istr, settings, time_zone, utc_time_zone);
         assertChar('"', istr);
     }
-    /// Not valid JSON but accept it as mongodb shell syntax to parse inner string
-    /// Case: ISODate("2024-05-29T23:16:12.256")
-    else if (checkISODatePrefix(istr))
-    {
-        deserializeISODateJSON<void>(x, scale, istr, settings, time_zone, utc_time_zone);
-    }
     else
     {
-        readIntText(x, istr);
+        deserializeNonQuotedJSON<void>(x, scale, istr, settings, time_zone, utc_time_zone);
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
 }
@@ -285,17 +313,9 @@ bool SerializationDateTime64::tryDeserializeTextJSON(IColumn & column, ReadBuffe
         if (!tryReadText(x, scale, istr, settings, time_zone, utc_time_zone) || !checkChar('"', istr))
             return false;
     }
-    /// Not valid JSON but accept it as mongodb shell syntax to parse inner string
-    /// Case: ISODate("2024-05-29T23:16:12.256")
-    else if (checkISODatePrefix(istr))
+    else if (!deserializeNonQuotedJSON<bool>(x, scale, istr, settings, time_zone, utc_time_zone))
     {
-        if (!deserializeISODateJSON<bool>(x, scale, istr, settings, time_zone, utc_time_zone))
-            return false;
-    }
-    else
-    {
-        if (!tryReadIntText(x, istr))
-            return false;
+        return false;
     }
     assert_cast<ColumnType &>(column).getData().push_back(x);
     return true;
