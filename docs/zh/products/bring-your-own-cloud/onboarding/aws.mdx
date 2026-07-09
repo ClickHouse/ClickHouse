@@ -1,0 +1,303 @@
+---
+title: 'AWS 的 BYOC 入门引导'
+slug: /cloud/reference/byoc/onboarding/aws
+sidebarTitle: 'AWS 的 BYOC 入门引导'
+keywords: ['BYOC', '云', '自有云', 'AWS']
+description: '在您自有的云基础设施上部署 ClickHouse'
+doc_type: 'reference'
+---
+
+<div id="onboarding-process">
+  ## 入门引导流程
+</div>
+
+客户可以通过[联系我们](https://clickhouse.com/cloud/bring-your-own-cloud)来启动入门引导流程。客户需要拥有一个专用的 AWS 账户，并明确将使用哪个区域。目前，我们仅允许用户在 ClickHouse Cloud 支持的区域中启动 BYOC 服务。
+
+<div id="prepare-an-aws-account">
+  ### 准备 AWS 账户
+</div>
+
+建议客户准备一个专用的 AWS 账户来托管 ClickHouse BYOC 部署，以实现更好的隔离。不过，也可以使用共享账户和现有 VPC。详见下方的 *设置 BYOC 基础设施*。
+
+有了该账户以及初始组织管理员邮箱后，您就可以联系 ClickHouse 支持团队。
+
+<div id="initialize-byoc-setup">
+  ### 初始化 BYOC 设置
+</div>
+
+初始 BYOC 设置可以通过 CloudFormation 模板或 Terraform 模块完成。这两种方式都会创建相同的 IAM role，使来自 ClickHouse Cloud 的 BYOC 控制器能够管理您的基础设施。请注意，运行 ClickHouse 所需的 S3、VPC 和计算资源不包含在此次初始设置中。
+
+<div id="cloudformation-template">
+  #### CloudFormation 模板
+</div>
+
+[BYOC CloudFormation 模板](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc.yaml)
+
+<div id="terraform-module">
+  #### Terraform 模块
+</div>
+
+[BYOC Terraform 模块](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz)
+
+```hcl
+module "clickhouse_onboarding" {
+  source   = "https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz"
+  byoc_env = "production"
+}
+```
+
+<div id="set-up-byoc-infrastructure">
+  ### 设置 BYOC 基础设施
+</div>
+
+创建 CloudFormation 堆栈后，系统会提示你在 Cloud Console 中设置基础设施，包括 S3、VPC 和 EKS 集群。某些配置必须在此阶段确定，因为后续无法更改。具体包括：
+
+* **你要使用的区域**：你可以从我们为 ClickHouse Cloud 提供的任一[公共区域](/zh/products/cloud/reference/supported-regions)中选择。
+* **BYOC 的 VPC CIDR 范围**：默认情况下，BYOC VPC 的 CIDR 范围使用 `10.0.0.0/16`。如果你计划与其他账户建立 VPC 对等连接，请确保 CIDR 范围不重叠。请为 BYOC 分配合适的 CIDR 范围，最小为 `/22`，以容纳所需的工作负载。
+* **BYOC VPC 的可用区**：如果你计划使用 VPC 对等连接，使源账户与 BYOC 账户的可用区保持一致，有助于降低跨可用区流量成本。在 AWS 中，可用区后缀 (`a, b, c`) 在不同账户中可能对应不同的物理可用区 ID。详见 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
+
+<div id="customer-managed-vpc">
+  #### 客户自管 VPC
+</div>
+
+默认情况下，ClickHouse Cloud 会为您的 BYOC 部署预配一个专用 VPC，以实现更好的隔离。不过，您也可以使用自己账户中现有的 VPC。这需要进行特定配置，并且必须通过 ClickHouse 支持团队 协调完成。
+
+**配置现有 VPC**
+
+1. 在 3 个不同的可用区中，至少分配 3 个私有子网供 ClickHouse Cloud 使用。
+2. 确保每个子网的最小 CIDR 范围为 `/23` (例如 10.0.0.0/23) ，以便为 ClickHouse 部署提供充足的 IP 地址。
+3. 为每个子网添加标签 `kubernetes.io/role/internal-elb=1`，以便正确配置负载均衡器。
+
+<br />
+
+<img src="/images/cloud/reference/byoc-subnet-1.webp" alt="BYOC VPC 子网" />
+
+<br />
+
+<br />
+
+<img src="/images/cloud/reference/byoc-subnet-2.webp" alt="BYOC VPC 子网标签" />
+
+<br />
+
+4. 配置 S3 Gateway 端点
+   如果您的 VPC 尚未配置 S3 Gateway 端点，则需要创建一个，以便在您的 VPC 与 Amazon S3 之间建立安全的私有通信。通过该端点，您的 ClickHouse 服务无需经过公共互联网即可访问 S3。示例配置请参见下方截图。
+
+<br />
+
+<img src="/images/cloud/reference/byoc-s3-endpoint.webp" alt="BYOC S3 端点" />
+
+<br />
+
+**联系 ClickHouse 支持团队**
+请使用以下信息创建支持工单：
+
+* 您的 AWS 账户 ID
+* 您希望部署该服务的 AWS 区域
+* 您的 VPC ID
+* 您为 ClickHouse 分配的私有子网 ID
+* 这些子网所在的可用区
+
+<div id="optional-setup-vpc-peering">
+  ### 可选：配置 VPC 对等连接
+</div>
+
+如需为 ClickHouse BYOC 创建或删除 VPC 对等连接，请按以下步骤操作：
+
+<div id="step-1-enable-private-load-balancer-for-clickhouse-byoc">
+  #### 步骤 1：为 ClickHouse BYOC 启用私有负载均衡器
+</div>
+
+请联系 ClickHouse 支持团队，启用私有负载均衡器。
+
+<div id="step-2-create-a-peering-connection">
+  #### 第 2 步：创建对等连接
+</div>
+
+1. 在 ClickHouse BYOC 账户中进入 VPC 仪表板。
+2. 选择 Peering Connections。
+3. 点击 Create Peering Connection。
+4. 将 VPC Requester 设置为 ClickHouse VPC ID。
+5. 将 VPC Accepter 设置为目标 VPC ID。 (如适用，选择另一个账户。)
+6. 点击 Create Peering Connection。
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-1.webp" alt="BYOC 创建对等连接" />
+
+<br />
+
+<div id="step-3-accept-the-peering-connection-request">
+  #### 步骤 3 接受对等连接请求
+</div>
+
+前往对等账户，在 (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) 页面，客户即可批准此 VPC 对等连接请求。
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-2.webp" alt="BYOC 接受对等连接" />
+
+<br />
+
+<div id="step-4-add-destination-to-clickhouse-vpc-route-tables">
+  #### 步骤 4 将目标端添加到 ClickHouse VPC 路由表中
+</div>
+
+在 ClickHouse BYOC 账户中：
+
+1. 在 VPC 仪表板中选择 Route Tables。
+2. 搜索 ClickHouse VPC ID，然后编辑关联到私有子网的每个路由表。
+3. 在 Routes 选项卡下，点击 Edit 按钮。
+4. 点击 Add another route。
+5. 在 Destination 中输入目标 VPC 的 CIDR 范围。
+6. 在 Target 中选择“Peering Connection”以及对应的对等连接 ID。
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-3.webp" alt="BYOC 添加路由表" />
+
+<br />
+
+<div id="step-5-add-destination-to-the-target-vpc-route-tables">
+  #### 步骤 5 将目标路由添加到目标 VPC 的路由表中
+</div>
+
+在建立对等连接的 AWS 账户中，
+
+1. 在 VPC 仪表板中选择 Route Tables。
+2. 搜索目标 VPC ID。
+3. 在 Routes 选项卡下点击 Edit 按钮。
+4. 点击 Add another route。
+5. 在 Destination 中输入 ClickHouse VPC 的 CIDR 范围。
+6. 在 Target 中选择“Peering Connection”以及该对等连接的 ID。
+
+<br />
+
+<img src="/images/cloud/reference/byoc-vpcpeering-4.webp" alt="BYOC 添加路由表" />
+
+<br />
+
+<div id="step-6-edit-security-group-to-allow-peered-vpc-access">
+  #### 第 6 步：编辑安全组 (Security Group) ，允许来自对等 VPC 的访问
+</div>
+
+在 ClickHouse BYOC 账户中，您需要更新安全组 (Security Group) 设置，以允许来自对等 VPC 的流量。请联系 ClickHouse 支持团队，申请添加入站规则，并将您的对等 VPC 的 CIDR 范围包含在内。
+
+***
+
+现在应该已可从对等 VPC 访问 ClickHouse 服务。
+
+要以私有方式访问 ClickHouse，系统会预配一个私有负载均衡器和端点，以便从用户的对等 VPC 安全连接。私有端点遵循公共端点的格式，并带有 `-private` 后缀。例如：
+
+* **公共端点**：`h5ju65kv87.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+* **私有端点**：`h5ju65kv87-private.mhp0y4dmph.us-west-2.aws.byoc.clickhouse.cloud`
+
+可选：在确认对等连接正常工作后，您可以申请移除 ClickHouse BYOC 的公共负载均衡器。
+
+<div id="upgrade-process">
+  ## 升级流程
+</div>
+
+我们会定期升级软件，包括升级 ClickHouse 数据库版本、ClickHouse Operator、EKS 及其他组件。
+
+虽然我们力求实现无缝升级 (例如滚动升级和重启) ，但某些升级 (如 ClickHouse 版本变更和 EKS 节点升级) 仍可能影响服务。客户可以指定维护窗口 (例如每周二凌晨 1:00 (PDT) ) ，以确保此类升级仅在预定时间内进行。
+
+<Note>
+  维护窗口不适用于安全修复和漏洞修复。这类更新会作为计划外升级处理，我们会及时沟通，协调合适的时间，并尽量将对业务运行的影响降至最低。
+</Note>
+
+<div id="cloudformation-iam-roles">
+  ## CloudFormation IAM 角色
+</div>
+
+<div id="bootstrap-iam-role">
+  ### 引导 IAM 角色
+</div>
+
+引导 IAM 角色需要具备以下权限：
+
+* **EC2 和 VPC 操作**：用于设置 VPC 和 EKS 集群。
+* **S3 操作 (例如 `s3:CreateBucket`)&#x20;**：用于为 ClickHouse BYOC 存储创建 bucket。
+* **`route53:*` 权限**：外部 DNS 需要此权限才能在 Route 53 中配置记录。
+* **IAM 操作 (例如 `iam:CreatePolicy`)&#x20;**：控制器需要此权限来创建额外的角色 (详见下一节) 。
+* **EKS 操作**：仅限名称以 `clickhouse-cloud` 为前缀的资源。
+
+<div id="additional-iam-roles-created-by-the-controller">
+  ### 控制器创建的其他 IAM 角色
+</div>
+
+除了通过 CloudFormation 创建的 `ClickHouseManagementRole` 之外，控制器还会创建几个额外的角色。
+
+这些角色由运行在客户 EKS 集群中的应用程序承担：
+
+* **状态导出器 Role**
+  * 用于向 ClickHouse Cloud 报告服务健康信息的 ClickHouse 组件。
+  * 需要具备向 ClickHouse Cloud 拥有的 SQS 队列写入的权限。
+* **Load-Balancer Controller**
+  * 标准的 AWS 负载均衡器控制器。
+  * 用于管理 ClickHouse 服务存储卷的 EBS CSI 控制器。
+* **External-DNS**
+  * 将 DNS 配置同步到 Route 53。
+* **Cert-Manager**
+  * 为 BYOC 服务域名预配 TLS 证书。
+* **Cluster Autoscaler**
+  * 根据需要调整节点组大小。
+
+**K8s-control-plane** 和 **k8s-worker** 角色则由 AWS EKS 服务承担。
+
+最后，**`data-plane-mgmt`** 允许 ClickHouse Cloud 控制平面组件对必要的自定义资源进行调谐，例如 `ClickHouseCluster` 和 Istio Virtual Service/Gateway。
+
+<div id="network-boundaries">
+  ## 网络边界
+</div>
+
+本节介绍客户 BYOC VPC 的不同入站和出站网络流量：
+
+* **入站**：进入客户 BYOC VPC 的流量。
+* **出站**：从客户 BYOC VPC 发出并发送到外部目标端的流量。
+* **公共**：可通过公共互联网访问的网络端点。
+* **私有**：只能通过私有连接访问的网络端点，例如 VPC 对等连接、VPC Private Link 或 Tailscale。
+
+**Istio 入口部署在 AWS NLB 后方，用于接收 ClickHouse 客户端流量。**
+
+*入站，公共 (也可以是私有)&#x20;*
+
+Istio 入口网关负责终止 TLS。证书由 CertManager 通过 Let&#39;s Encrypt 签发，并以 secret 的形式存储在 EKS 集群中。由于 Istio 和 ClickHouse 位于同一 VPC 内，它们之间的流量由 [AWS 加密](https://docs.aws.amazon.com/whitepapers/latest/logical-separation/encrypting-data-at-rest-and--in-transit.html#:~:text=All%20network%20traffic%20between%20AWS,supported%20Amazon%20EC2%20instance%20types)。
+
+默认情况下，入口可通过公网访问，并使用 IP allow list 进行过滤。客户可以配置 VPC 对等连接，将其设为私有并禁用公网连接。我们强烈建议设置 [IP 过滤器](/zh/products/cloud/guides/security/connectivity/setting-ip-filters) 来限制访问。
+
+<div id="troubleshooting-access">
+  ### 故障排查访问
+</div>
+
+*入站，公共 (也可为私有)&#x20;*
+
+ClickHouse Cloud 工程师需要通过 Tailscale 获得故障排查访问权限。对于 BYOC 部署，会为他们临时配发基于证书的身份验证凭据。
+
+<div id="billing-scraper">
+  ### 计费抓取器
+</div>
+
+*出站，私有*
+
+计费抓取器从 ClickHouse 收集计费数据，并将其发送到 ClickHouse Cloud 拥有的 S3 存储桶。
+
+它以 sidecar 形式与 ClickHouse server 容器一同运行，定期抓取 CPU 和内存指标。同一区域内的请求会通过 VPC 网关服务端点进行路由。
+
+<div id="alerts">
+  ### 告警
+</div>
+
+*出站、公共*
+
+AlertManager 已配置为在客户的 ClickHouse 集群处于不健康状态时，将告警发送到 ClickHouse Cloud。
+
+指标和日志都存储在客户的 BYOC VPC 内。日志目前存储在 EBS 本地卷中。后续更新中，日志将存储在 LogHouse 中，它是 BYOC VPC 内的一项 ClickHouse 服务。指标使用 Prometheus 和 Thanos 技术栈，并存储在 BYOC VPC 本地。
+
+<div id="service-state">
+  ### 服务状态
+</div>
+
+*出站*
+
+状态导出器会将 ClickHouse 服务状态信息发送到由 ClickHouse Cloud 管理的 SQS。

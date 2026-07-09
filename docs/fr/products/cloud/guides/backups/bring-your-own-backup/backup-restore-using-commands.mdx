@@ -1,0 +1,224 @@
+---
+sidebarTitle: 'Sauvegarder ou restaurer à l’aide de commandes'
+slug: /cloud/manage/backups/backup-restore-via-commands
+title: 'Effectuer une sauvegarde ou restaurer une sauvegarde à l’aide de commandes'
+description: 'Page décrivant comment effectuer une sauvegarde ou restaurer une sauvegarde avec votre propre bucket à l’aide de commandes'
+doc_type: 'guide'
+keywords: ['sauvegardes', 'reprise après sinistre', 'protection des données', 'restauration', 'fonctionnalités Cloud']
+---
+
+Vous pouvez utiliser les commandes `BACKUP` et `RESTORE` pour exporter des sauvegardes vers leurs buckets,
+en plus d’effectuer des sauvegardes ou des restaurations [via l’interface utilisateur](/fr/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui).
+Les commandes pour les trois CSP sont fournies dans ce guide.
+
+<div id="requirements">
+  ## Exigences
+</div>
+
+Vous aurez besoin des informations suivantes pour exporter/restaurer des sauvegardes vers le bucket de stockage de votre propre CSP :
+
+<Tabs>
+  <Tab title="AWS">
+    1. Point de terminaison S3 AWS, au format : `s3://<bucket_name>.s3.amazonaws.com/<optional_directory>`
+       Par exemple : `s3://testchbackups.s3.amazonaws.com/`
+       Où :
+       * `testchbackups` est le nom du bucket S3 vers lequel exporter les sauvegardes.
+       * `backups` est un sous-répertoire facultatif.
+    2. Clé d’accès AWS et secret AWS. L’authentification basée sur un rôle AWS est également prise en charge et peut être utilisée à la place de la clé d’accès AWS et du secret AWS, comme décrit dans la section ci-dessus.
+
+    <br />
+  </Tab>
+
+  <Tab title="GCP">
+    1. Point de terminaison GCS, au format : `https://storage.googleapis.com/<bucket_name>/`
+    2. Clé HMAC d’accès et secret HMAC.
+
+    <br />
+  </Tab>
+
+  <Tab title="Azure">
+    1. Chaîne de connexion au stockage Azure.
+    2. Nom du conteneur Azure dans le compte de stockage.
+    3. Blob Azure dans le conteneur.
+
+    <br />
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_db">
+  ## Sauvegarde / restauration d’une base de données spécifique
+</div>
+
+Nous montrons ici la sauvegarde et la restauration d’une *seule* base de données.
+Consultez le [récapitulatif des commandes de sauvegarde](/fr/concepts/features/backup-restore/overview#command-summary) pour les commandes de sauvegarde complète et de restauration.
+
+<div id="aws-s3-bucket">
+  ### AWS S3
+</div>
+
+<Tabs>
+  <Tab title="SAUVEGARDE">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+
+    Ici, `uuid` est un identifiant unique utilisé pour distinguer un ensemble de sauvegardes.
+
+    <Note>
+      Vous devrez utiliser un uuid différent pour chaque nouvelle sauvegarde dans ce sous-répertoire, sinon vous obtiendrez l’erreur `BACKUP_ALREADY_EXISTS`.
+      Par exemple, si vous effectuez des sauvegardes quotidiennes, vous devrez utiliser un nouvel uuid chaque jour.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTAURATION">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://testchbackups.s3.amazonaws.com/<uuid>',
+      '<key id>',
+      '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="google-cloud-storage">
+  ### Google Cloud Storage (GCS)
+</div>
+
+<Tabs>
+  <Tab title="SAUVEGARDE">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+
+    Ici, `uuid` est un identifiant unique servant à identifier la sauvegarde.
+
+    <Note>
+      Vous devrez utiliser un `uuid` différent pour chaque nouvelle sauvegarde dans ce sous-répertoire, sinon vous obtiendrez une erreur `BACKUP_ALREADY_EXISTS`.
+      Par exemple, si vous effectuez des sauvegardes quotidiennes, vous devrez utiliser un nouvel `uuid` chaque jour.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTAURATION">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM S3(
+      'https://storage.googleapis.com/<bucket>/<uuid>',
+      '<hmac-key>',
+      '<hmac-secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="azure-blob-storage">
+  ### Azure Blob Storage
+</div>
+
+<Tabs>
+  <Tab title="SAUVEGARDE">
+    ```sql
+    BACKUP DATABASE test_backups 
+    TO AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<>'
+    )
+    ```
+
+    Ici, `uuid` est un identifiant unique utilisé pour identifier la sauvegarde.
+
+    <Note>
+      Vous devez utiliser un `uuid` différent pour chaque nouvelle sauvegarde dans ce sous-répertoire, sinon vous obtiendrez l’erreur `BACKUP_ALREADY_EXISTS`.
+      Par exemple, si vous effectuez des sauvegardes quotidiennes, vous devrez utiliser un nouvel `uuid` chaque jour.
+    </Note>
+  </Tab>
+
+  <Tab title="RESTAURATION">
+    ```sql
+    RESTORE DATABASE test_backups
+    FROM AzureBlobStorage(
+      '<AzureBlobStorage endpoint connection string>',
+      '<container>',
+      '<blob>/<uuid>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backup_restore_entire_service">
+  ## Sauvegarde / restauration de l’ensemble du service
+</div>
+
+Pour sauvegarder l’ensemble du service, utilisez les commandes ci-dessous.
+Cette sauvegarde contiendra toutes les données utilisateur ainsi que les données système associées aux entités créées, aux profils de paramètres, aux politiques de rôle, aux quotas et aux fonctions.
+Les exemples ci-dessous utilisent AWS S3.
+Vous pouvez également utiliser ces commandes avec la syntaxe décrite ci-dessus pour effectuer des sauvegardes sur GCS et Azure Blob storage.
+
+<Tabs>
+  <Tab title="SAUVEGARDE">
+    ```sql
+    BACKUP 
+        TABLE system.users,
+        TABLE system.roles,
+        TABLE system.settings_profiles,
+        TABLE system.row_policies,
+        TABLE system.quotas,
+        TABLE system.functions,
+        ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+    TO S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+
+    où `uuid` est un identifiant unique servant à identifier la sauvegarde.
+  </Tab>
+
+  <Tab title="RESTAURATION">
+    ```sql
+    RESTORE ALL EXCEPT TABLES system.users, system.roles
+    FROM S3(
+        'https://testchbackups.s3.amazonaws.com/<uuid>',
+        '<key id>',
+        '<key secret>'
+    )
+    ```
+  </Tab>
+</Tabs>
+
+<div id="backups-faq">
+  ## FAQ
+</div>
+
+<Accordion title="Que deviennent les sauvegardes dans mon stockage d’objets dans le cloud ? Sont-elles supprimées par ClickHouse à un moment donné ?">
+  Nous vous permettons d’exporter des sauvegardes vers votre bucket, mais nous ne les supprimons ni ne les nettoyons une fois qu’elles y sont écrites. Vous êtes responsable de la gestion du cycle de vie des sauvegardes dans votre bucket, notamment de leur suppression, de leur archivage si nécessaire, ou de leur déplacement vers un stockage moins coûteux afin d’optimiser le coût global.
+</Accordion>
+
+<Accordion title="Que devient le processus de restauration si je déplace certaines sauvegardes existantes vers un autre emplacement ?">
+  Si des sauvegardes sont déplacées vers un autre emplacement, la commande de restauration devra être mise à jour pour pointer vers le nouvel emplacement où elles sont stockées.
+</Accordion>
+
+<Accordion title="Que se passe-t-il si je modifie les identifiants requis pour accéder au stockage d’objets ?">
+  Vous devrez mettre à jour dans l’UI les identifiants modifiés afin que les sauvegardes puissent de nouveau s’effectuer correctement.
+</Accordion>
+
+<Accordion title="Que se passe-t-il si je change l’emplacement vers lequel exporter mes sauvegardes externes ?">
+  Vous devrez mettre à jour ce nouvel emplacement dans l’UI, et les sauvegardes commenceront à être effectuées vers ce nouvel emplacement. Les anciennes sauvegardes resteront à leur emplacement d’origine.
+</Accordion>
+
+<Accordion title="Comment désactiver les sauvegardes externes sur un service pour lequel je les ai activées ?">
+  Pour désactiver les sauvegardes externes pour un service, accédez à l’écran des paramètres du service, puis cliquez sur Change external backup. Dans l’écran suivant, cliquez sur Remove setup pour désactiver les sauvegardes externes pour le service.
+</Accordion>

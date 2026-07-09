@@ -1,0 +1,156 @@
+---
+description: 'リモートのPostgreSQLサーバー上のデータベースに接続できます。'
+sidebarTitle: 'PostgreSQL'
+slug: /engines/database-engines/postgresql
+title: 'PostgreSQL'
+doc_type: 'guide'
+---
+
+リモートの[PostgreSQL](https://www.postgresql.org)サーバー上のデータベースに接続できます。ClickHouseとPostgreSQLの間でデータをやり取りするための読み取りおよび書き込み操作 (`SELECT` および `INSERT` クエリ) をサポートします。
+
+`SHOW TABLES` および `DESCRIBE TABLE` クエリを使用して、リモートのPostgreSQLにあるテーブル一覧とテーブル構造にリアルタイムでアクセスできます。
+
+テーブル構造の変更 (`ALTER TABLE ... ADD|DROP COLUMN`) をサポートします。`use_table_cache` パラメータ (下記のエンジンパラメータを参照) が `1` に設定されている場合、テーブル構造はキャッシュされ、変更されているかどうかは確認されませんが、`DETACH` および `ATTACH` クエリで更新できます。
+
+<div id="creating-a-database">
+  ## データベースの作成
+</div>
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+```
+
+**エンジンパラメータ**
+
+* `host:port` — PostgreSQL サーバーのアドレス。
+* `database` — リモートデータベース名。
+* `user` — PostgreSQL ユーザー。
+* `password` — ユーザーのパスワード。
+* `schema` — PostgreSQL スキーマ。
+* `use_table_cache` — データベーステーブルの構造をキャッシュするかどうかを指定します。省略可。デフォルト値: `0`。
+
+<div id="data_types-support">
+  ## データ型の対応
+</div>
+
+| PostgreSQL       | ClickHouse                                          |
+| ---------------- | --------------------------------------------------- |
+| DATE             | [Date](/ja/reference/data-types/date)                  |
+| TIMESTAMP        | [DateTime](/ja/reference/data-types/datetime)          |
+| REAL             | [Float32](/ja/reference/data-types/float)              |
+| DOUBLE           | [Float64](/ja/reference/data-types/float)              |
+| DECIMAL, NUMERIC | [Decimal](/ja/reference/data-types/decimal) (以下の注を参照)  |
+| SMALLINT         | [Int16](/ja/reference/data-types/int-uint)             |
+| INTEGER          | [Int32](/ja/reference/data-types/int-uint)             |
+| BIGINT           | [Int64](/ja/reference/data-types/int-uint)             |
+| SERIAL           | [UInt32](/ja/reference/data-types/int-uint)            |
+| BIGSERIAL        | [UInt64](/ja/reference/data-types/int-uint)            |
+| TEXT, CHAR       | [String](/ja/reference/data-types/string)              |
+| INTEGER          | Nullable([Int32](/ja/reference/data-types/int-uint))   |
+| ARRAY            | [Array](/ja/reference/data-types/array)                |
+
+<Note>
+  精度 `p` が 76 (`Decimal256` でサポートされる最大値) を超える PostgreSQL の `numeric(p, 0)` — たとえば、256 ビット整数の保存によく使われる `numeric(78, 0)` — は、`Decimal` ではなく [`Int256`](/ja/reference/data-types/int-uint) にマッピングされます。`Int256` の範囲に収まらない値はエラーとして拒否されます。
+</Note>
+
+<div id="examples-of-use">
+  ## 使用例
+</div>
+
+PostgreSQL サーバーとデータをやり取りする ClickHouse のデータベース：
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+```
+
+```sql
+SHOW DATABASES;
+```
+
+```text
+┌─name──────────┐
+│ default       │
+│ test_database │
+│ system        │
+└───────────────┘
+```
+
+```sql
+SHOW TABLES FROM test_database;
+```
+
+```text
+┌─name───────┐
+│ test_table │
+└────────────┘
+```
+
+PostgreSQLのテーブルからデータを読み取る:
+
+```sql
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─id─┬─value─┐
+│  1 │     2 │
+└────┴───────┘
+```
+
+PostgreSQLテーブルへのデータ書き込み:
+
+```sql
+INSERT INTO test_database.test_table VALUES (3,4);
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```
+
+PostgreSQL でテーブル構造が変更された場合を考えてみましょう：
+
+```sql
+postgre> ALTER TABLE test_table ADD COLUMN data Text
+```
+
+データベースの作成時に `use_table_cache` パラメータが `1` に設定されていたため、ClickHouse のテーブル構造はキャッシュされており、変更されませんでした。
+
+```sql
+DESCRIBE TABLE test_database.test_table;
+```
+
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+└────────┴───────────────────┘
+```
+
+テーブルをデタッチして再度アタッチすると、構造が更新されました：
+
+```sql
+DETACH TABLE test_database.test_table;
+ATTACH TABLE test_database.test_table;
+DESCRIBE TABLE test_database.test_table;
+```
+
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+│ data   │ Nullable(String)  │
+└────────┴───────────────────┘
+```
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* ブログ: [ClickHouse と PostgreSQL - データの世界で最高の組み合わせ - 第1部](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+* ブログ: [ClickHouse と PostgreSQL - データの世界で最高の組み合わせ - 第2部](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

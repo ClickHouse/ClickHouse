@@ -1,0 +1,220 @@
+---
+title: 'Использование Grafana и ClickHouse для обсервабилити'
+description: 'Использование Grafana и ClickHouse для обсервабилити'
+slug: /observability/grafana
+keywords: ['Обсервабилити', 'журналы', 'трассировки', 'метрики', 'OpenTelemetry', 'Grafana', 'OTel']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Grafana — предпочтительный инструмент визуализации данных обсервабилити в ClickHouse. Это обеспечивается официальным плагином ClickHouse для Grafana. Инструкции по установке можно найти [здесь](/ru/integrations/connectors/data-visualization/grafana/index).
+
+V4 плагина делает журналы и трассировки полноценной частью нового конструктора запросов. Это сводит к минимуму необходимость для SRE писать SQL-запросы и упрощает SQL-ориентированную обсервабилити, развивая этот новый подход.
+Одной из важных частей этой работы стало то, что OpenTelemetry (OTel) был положен в основу плагина, поскольку мы считаем, что именно он станет фундаментом SQL-ориентированной обсервабилити в ближайшие годы и определит, как будут собираться данные.
+
+<div id="open-telemetry-integration">
+  ## Интеграция OpenTelemetry
+</div>
+
+При настройке источника данных ClickHouse в Grafana плагин позволяет указать базу данных и таблицу по умолчанию для журналов и трассировок, а также соответствует ли схема этих таблиц схеме OTel. Благодаря этому плагин может возвращать столбцы, необходимые для корректного отображения журналов и трассировок в Grafana. Если вы изменили стандартную схему OTel и хотите использовать собственные имена столбцов, их можно указать. Если же используются стандартные имена столбцов OTel для таких столбцов, как время (`Timestamp`), уровень журнала (`SeverityText`) или тело сообщения (`Body`), ничего менять не потребуется.
+
+<Info>
+  **HTTP или Native**
+
+  Вы можете подключить Grafana к ClickHouse через HTTP-протокол или собственный протокол Native. Последний дает небольшое преимущество в производительности, которое в запросах агрегации, выполняемых пользователями Grafana, скорее всего будет незаметно. В то же время HTTP-протокол обычно проще проксировать и анализировать.
+</Info>
+
+Для корректного отображения журналов в конфигурации Logs требуются столбцы времени, уровня журнала и сообщения.
+
+Конфигурация Traces немного сложнее (полный список [здесь](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). Эти обязательные столбцы нужны, чтобы абстрагировать последующие запросы, формирующие полный профиль трассировки. Эти запросы предполагают, что данные структурированы аналогично OTel, поэтому пользователям, которые существенно отклоняются от стандартной схемы, потребуется использовать представления, чтобы воспользоваться этой возможностью.
+
+<Image img="/images/use-cases/observability/observability-15.webp" alt="Конфигурация коннектора" size="sm" />
+
+После настройки вы можете перейти в [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) и начать поиск журналов и трассировок.
+
+<div id="logs">
+  ## Журналы
+</div>
+
+Если вы следуете требованиям Grafana к журналам, вы можете выбрать `Query Type: Log` в конструкторе запросов и нажать `Run Query`. Конструктор запросов сформирует запрос для вывода журналов и их корректного отображения, например.
+
+```sql
+SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-16.webp" alt="Настройка журналов коннектора" size="lg" border />
+
+Конструктор запросов позволяет легко изменять запрос без необходимости писать SQL. В конструкторе запросов также можно настраивать фильтрацию, в том числе искать журналы по ключевым словам. Если нужно составлять более сложные запросы, можно переключиться в редактор SQL. Если запрос возвращает нужные столбцы и в качестве Query Type выбрано `logs`, результаты будут отображаться как журналы. Столбцы, необходимые для отображения журналов, перечислены [здесь](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
+
+<div id="logs-to-traces">
+  ### От журналов к трассировкам
+</div>
+
+Если в журналах есть trace ID, вы можете перейти к трассировке, связанной с конкретной строкой журнала.
+
+<Image img="/images/use-cases/observability/observability-17.webp" alt="От журналов к трассировкам" size="lg" border />
+
+<div id="traces">
+  ## Трассировки
+</div>
+
+Как и в случае с описанным выше журналированием, если столбцы, необходимые Grafana для отображения трассировок, настроены должным образом (например, при использовании схемы OTel), конструктор запросов может автоматически сформировать нужные запросы. Если выбрать `Query Type: Traces` и нажать `Run Query`, будет сгенерирован и выполнен запрос, похожий на следующий (в зависимости от настроенных столбцов; в примере ниже предполагается использование OTel):
+
+```sql
+SELECT "TraceId" as traceID,
+  "ServiceName" as serviceName,
+  "SpanName" as operationName,
+  "Timestamp" as startTime,
+  multiply("Duration", 0.000001) as duration
+FROM "default"."otel_traces"
+WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
+  AND ( ParentSpanId = '' )
+  AND ( Duration > 0 )
+  ORDER BY Timestamp DESC, Duration DESC LIMIT 1000
+```
+
+Этот запрос возвращает имена столбцов, которые ожидает Grafana, и отображает таблицу трассировок, как показано ниже. Фильтровать по длительности или другим столбцам можно без написания SQL.
+
+<Image img="/images/use-cases/observability/observability-18.webp" alt="Трассировки" size="lg" border />
+
+Если вам нужны более сложные запросы, вы можете переключиться в `редактор SQL`.
+
+<div id="view-trace-details">
+  ### Просмотр деталей трассы
+</div>
+
+Как показано выше, идентификаторы трасс отображаются как ссылки, по которым можно перейти. При нажатии на идентификатор трассы пользователь может выбрать просмотр связанных спанов по ссылке `View Trace`. При этом выполняется следующий запрос (если используются столбцы OTel), чтобы получить спаны в нужной структуре и отобразить результаты в виде waterfall-диаграммы.
+
+```sql
+WITH '<trace_id>' AS trace_id,
+  (SELECT min(Start) FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_start,
+  (SELECT max(End) + 1 FROM "default"."otel_traces_trace_id_ts"
+    WHERE TraceId = trace_id) AS trace_end
+SELECT "TraceId" AS traceID,
+  "SpanId" AS spanID,
+  "ParentSpanId" AS parentSpanID,
+  "ServiceName" AS serviceName,
+  "SpanName" AS operationName,
+  "Timestamp" AS startTime,
+  multiply("Duration", 0.000001) AS duration,
+  arrayMap(key -> map('key', key, 'value',"SpanAttributes"[key]),
+  mapKeys("SpanAttributes")) AS tags,
+  arrayMap(key -> map('key', key, 'value',"ResourceAttributes"[key]),
+  mapKeys("ResourceAttributes")) AS serviceTags
+FROM "default"."otel_traces"
+WHERE traceID = trace_id
+  AND startTime >= trace_start
+  AND startTime <= trace_end
+LIMIT 1000
+```
+
+<Note>
+  Обратите внимание, что приведённый выше запрос использует materialized view `otel_traces_trace_id_ts` для поиска по трассировке ID. Подробнее см. в разделе [Ускорение запросов — использование materialized views для быстрого поиска](/ru/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups).
+</Note>
+
+<Image img="/images/use-cases/observability/observability-19.webp" alt="Сведения о трассировке" size="lg" border />
+
+<div id="traces-to-logs">
+  ### От трасс к журналам
+</div>
+
+Если журналы содержат идентификаторы трассировки, вы можете перейти от трассы к связанным с ней журналам. Чтобы просмотреть журналы, нажмите на идентификатор трассировки и выберите `View Logs`. При этом будет выполнен следующий запрос при использовании столбцов OTel по умолчанию.
+
+```sql
+SELECT Timestamp AS "timestamp",
+  Body AS "body", SeverityText AS "level",
+  TraceId AS "traceID" FROM "default"."otel_logs"
+WHERE ( traceID = '<trace_id>' )
+ORDER BY timestamp ASC LIMIT 1000
+```
+
+<Image img="/images/use-cases/observability/observability-20.webp" alt="Переход от трассировок к журналам" size="lg" border />
+
+<div id="dashboards">
+  ## Панели мониторинга
+</div>
+
+Вы можете создавать панели мониторинга в Grafana с помощью источника данных ClickHouse. Подробности см. в [документации по источнику данных ClickHouse для Grafana](https://github.com/grafana/clickhouse-datasource), особенно в разделах о [макросах](https://github.com/grafana/clickhouse-datasource?tab=readme-ov-file#macros) и [переменных](https://grafana.com/docs/grafana/latest/dashboards/variables/).
+
+Плагин включает несколько готовых панелей мониторинга, в том числе пример «Simple ClickHouse OTel dashboarding» для данных логирования и трассировки, соответствующих спецификации OTel. Для этого необходимо использовать стандартные имена столбцов OTel; установить эту панель можно из конфигурации источника данных.
+
+<Image img="/images/use-cases/observability/observability-21.webp" alt="Панели мониторинга" size="lg" border />
+
+Ниже приведены несколько простых советов по созданию визуализаций.
+
+<div id="time-series">
+  ### Временные ряды
+</div>
+
+Наряду со статистикой линейные графики — один из самых распространённых видов визуализации в сценариях обсервабилити. Плагин ClickHouse автоматически построит линейный график, если запрос возвращает столбец `datetime` с именем `time` и числовой столбец. Например:
+
+```sql
+SELECT
+ $__timeInterval(Timestamp) as time,
+ quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE
+ $__timeFilter(Timestamp)
+ AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-22.webp" alt="Временные ряды" size="lg" border />
+
+<div id="multi-line-charts">
+  ### Многолинейные графики
+</div>
+
+Многолинейные графики будут автоматически отображаться для запроса, если выполняются следующие условия:
+
+* поле 1: поле datetime с псевдонимом time
+* поле 2: значение, по которому выполняется группировка. Оно должно иметь тип String.
+* поле 3+: значения метрик
+
+Например:
+
+```sql
+SELECT
+  $__timeInterval(Timestamp) as time,
+  ServiceName,
+  quantile(0.99)(Duration)/1000000 AS p99
+FROM otel_traces
+WHERE $__timeFilter(Timestamp)
+AND ( Timestamp  >= $__fromTime AND Timestamp <= $__toTime )
+GROUP BY ServiceName, time
+ORDER BY time ASC
+LIMIT 100000
+```
+
+<Image img="/images/use-cases/observability/observability-23.webp" alt="Диаграммы с несколькими линиями" size="lg" border />
+
+<div id="visualizing-geo-data">
+  ### Визуализация геоданных
+</div>
+
+В предыдущих разделах мы рассмотрели обогащение данных обсервабилити географическими координатами с помощью IP-словарей. Если у вас есть столбцы `latitude` и `longitude`, данные обсервабилити можно визуализировать с помощью функции `geohashEncode`. В результате получаются геохеши, совместимые с панелью Grafana Geo Map. Ниже показаны пример запроса и визуализация:
+
+```sql
+WITH coords AS
+        (
+        SELECT
+                Latitude,
+                Longitude,
+                geohashEncode(Longitude, Latitude, 4) AS hash
+        FROM otel_logs_v2
+        WHERE (Longitude != 0) AND (Latitude != 0)
+        )
+SELECT
+        hash,
+        count() AS heat,
+        round(log10(heat), 2) AS adj_heat
+FROM coords
+GROUP BY hash
+```
+
+<Image img="/images/use-cases/observability/observability-24.webp" alt="Визуализация геоданных" size="lg" border />

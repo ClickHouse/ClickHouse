@@ -1,0 +1,154 @@
+---
+title: 'ClickHouse に接続する'
+slug: /cloud/reference/byoc/connect
+sidebarTitle: 'ClickHouse に接続する'
+keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'ClickHouse への接続', 'ロードバランサー', 'privatelink']
+description: 'パブリック、プライベート、または PrivateLink エンドポイント経由で BYOC の ClickHouse サービスに接続します'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このページでは、BYOC で ClickHouse サービスに接続するさまざまな方法について説明します。セキュリティ要件やネットワーク要件に応じて、パブリックロードバランサー、プライベートロードバランサー、または PrivateLink/Private Service Connect エンドポイントを選択できます。
+
+<div id="public-load-balancer">
+  ## パブリックロードバランサー
+</div>
+
+パブリックロードバランサーを使用すると、インターネット経由で ClickHouse サービスにアクセスできます。これは、ClickHouse 管理の専用 VPC を使用する場合のデフォルト構成です。
+
+<div id="public-load-balancer-overview">
+  ### 概要
+</div>
+
+* **アクセス**: パブリックインターネットからアクセス可能
+* **ユースケース**: さまざまな場所やネットワークから接続する必要があるアプリケーションやユーザーに適しています
+* **Security**: TLS による暗号化と IP フィルタリングで保護 (推奨)
+
+<div id="connecting-via-public-load-balancer">
+  ### Public Load Balancer 経由で接続する
+</div>
+
+パブリックエンドポイントを使用して ClickHouse サービスに接続するには、次の手順に従います。
+
+1. ClickHouse Cloud コンソールから**サービスのエンドポイントを取得**します。エンドポイントは、サービスの「Connect」セクションに表示されます。
+
+<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="BYOC 接続" background="black" />
+
+たとえば:
+
+```text
+sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com
+```
+
+<div id="public-ip-filtering">
+  ### IP フィルタリング
+</div>
+
+公開ロードバランサーを使用する場合は、許可された IP アドレスまたは CIDR 範囲からのアクセスのみに制限するため、IP フィルタリング (IP Access List) の使用を**強く推奨**します。
+
+IP フィルタリングの詳細については、[IP Access List ドキュメント](/ja/products/cloud/guides/security/connectivity/setting-ip-filters)を参照してください。
+
+<div id="private-load-balancer">
+  ## プライベートロードバランサー
+</div>
+
+プライベートロードバランサーは、ClickHouse サービスへの内部アクセスを提供するもので、接続されたネットワーク内 (例: ピア接続された VPC) からのみアクセスできます。これは、顧客管理 VPC を使用する場合のデフォルト構成です。
+
+<div id="public-load-balancer-overview">
+  ### 概要
+</div>
+
+* **アクセス**: プライベートネットワークのインフラストラクチャ内からのみアクセスできます
+* **ユースケース**: 同じクラウド環境で稼働するアプリケーションや、VPC ピアリング で接続されたアプリケーションに最適です
+* **セキュリティ**: トラフィックはプライベートネットワーク内にとどまり、パブリックインターネットには公開されません
+
+<div id="connecting-via-private-load-balancer">
+  ### プライベート ロードバランサー経由で接続する
+</div>
+
+プライベート エンドポイントを使用して接続するには、次の手順を実行します。
+
+1. **プライベート ロードバランサーを有効にする** (まだ有効になっていない場合) 。デプロイメントで[プライベート ロードバランサーを有効にする](/ja/products/bring-your-own-cloud/configuration/configurations#load-balancers)必要がある場合は、ClickHouse Support にお問い合わせください。
+2. **ネットワーク接続を確認する**:
+   * VPC ピアリング の場合: VPC ピアリング のセットアップを完了します ([Private Networking Setup](/ja/products/bring-your-own-cloud/onboarding/network)を参照)
+   * その他のプライベート ネットワークの場合: BYOC VPC に到達できるようにルーティングが構成されていることを確認します
+3. **プライベート エンドポイントを確認する**:
+   プライベート エンドポイントは、サービスの「Connect」セクションにある ClickHouse Cloud コンソール で確認できます。プライベート エンドポイントはパブリック エンドポイントと同じフォーマットですが、サービス ID の部分に `-private` という接尾辞が追加されます。例:
+   * **パブリック エンドポイント**: `sb9jmrq2ne.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+   * **プライベート エンドポイント**: `sb9jmrq2ne-private.asf3kcggao.ap-southeast-1.aws.clickhouse-byoc.com`
+
+<div id="private-ip-filtering">
+  ### IPフィルタリング
+</div>
+
+プライベートロードバランサーでは内部ネットワークからのみアクセスできますが、プライベートネットワーク内のどの送信元から接続を許可するかをより細かく制御するために、IPフィルタリングを設定することもできます。プライベートロードバランサーのIPフィルタリングでは、パブリックロードバランサーと同じ設定方法を使用します。許可するIPアドレスまたはCIDR範囲を定義すると、ClickHouse Cloudがこれらのルールを各endpointタイプに応じて適切に適用します。プラットフォームはパブリックCIDR範囲とプライベートCIDR範囲を自動的に区別し、それぞれ対応するロードバランサーのendpointに割り当てます。詳細については、[IP Access Listのドキュメント](/ja/products/cloud/guides/security/connectivity/setting-ip-filters)を参照してください。
+
+<div id="security-group-configuration">
+  ### セキュリティグループ設定
+</div>
+
+AWS へのデプロイでは、プライベートロードバランサーのセキュリティグループが、どのネットワークからエンドポイントにアクセスできるかを制御します。デフォルトでは、BYOC VPC 内からのトラフィックのみが許可されます。
+
+詳細については、[Private Load Balancer Security Group configuration](/ja/products/bring-your-own-cloud/configuration/configurations#private-load-balancer-security-group) を参照してください。
+
+<div id="privatelink-or-private-service-connect">
+  ## PrivateLink または Private Service Connect
+</div>
+
+AWS PrivateLink と GCP Private Service Connect は、最も安全性の高い接続オプションであり、VPCピアリングやインターネットゲートウェイを使わずに ClickHouse サービスへプライベートにアクセスできます。
+
+<div id="public-load-balancer-overview">
+  ### 概要
+</div>
+
+* **アクセス**: クラウドプロバイダーのマネージドサービスを介したプライベート接続
+* **ネットワーク分離**: トラフィックがパブリックインターネットを通過しない
+* **ユースケース**: 最大限のセキュリティとネットワーク分離が求められるエンタープライズ環境での導入
+* **利点**:
+  * VPC ピアリング は不要
+  * ネットワークアーキテクチャの簡素化
+  * セキュリティとコンプライアンス体制の強化
+
+<div id="connecting-via-privatelink">
+  ### PrivateLink/Private Service Connect 経由で接続する
+</div>
+
+PrivateLink または Private Service Connect のセットアップを完了してください ([Private Networking Setup](/ja/products/bring-your-own-cloud/onboarding/network) を参照) 。設定が完了すると、PrivateLink 専用のエンドポイント形式を使用して ClickHouseサービスに接続できます。PrivateLink エンドポイントには、VPC エンドポイント経由でルーティングされることを示す `vpce` サブドメインが含まれます。VPC 内の DNS 名前解決により、トラフィックは自動的に PrivateLink エンドポイント経由でルーティングされます。
+
+PrivateLink エンドポイントの形式はパブリックエンドポイントと似ていますが、service サブドメインと BYOC インフラストラクチャのサブドメインの間に `vpce` サブドメインが入ります。たとえば、次のとおりです。
+
+* **パブリックエンドポイント**: `h5ju65kv87.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+* **PrivateLink エンドポイント**: `h5ju65kv87.vpce.mhp0y4dmph.us-west-2.aws.clickhouse-byoc.com`
+
+<div id="endpoint-id-allowlist">
+  ### Endpoint ID 許可リスト
+</div>
+
+PrivateLink または Private Service Connect を使用するには、クライアント接続の Endpoint ID を各 ClickHouseサービスごとに明示的に許可する必要があります。ClickHouse Support に連絡し、サービスの許可リストに追加できるよう、Endpoint ID を共有してください。
+
+詳細なセットアップ手順については、[Private Networking Setup guide](/ja/products/bring-your-own-cloud/onboarding/network) を参照してください。
+
+<div id="choosing-connection-method">
+  ## 適切な接続方式の選択
+</div>
+
+| 接続方式                                    | セキュリティレベル          | ネットワーク要件                 | ユースケース                  |
+| --------------------------------------- | ------------------ | ------------------------ | ----------------------- |
+| **パブリックロードバランサー**                       | 中 (IP フィルタリング使用時)  | インターネット接続                | さまざまな場所にいるアプリケーション/ユーザー |
+| **プライベートロードバランサー**                      | 高                  | VPC ピアリングまたはプライベートネットワーク | 同一クラウド環境内のアプリケーション      |
+| **PrivateLink/Private Service Connect** | 最高                 | クラウドプロバイダー管理のサービス        | 最大限の分離が必要なエンタープライズ導入    |
+
+<div id="troubleshooting">
+  ## 接続問題のトラブルシューティング
+</div>
+
+接続に問題がある場合:
+
+1. **エンドポイントの到達可能性を確認**: 正しいエンドポイント (パブリックまたはプライベート) を使用していることを確認します
+2. **IP フィルタを確認**: パブリックロードバランサーでは、ご利用の IP アドレスが許可リストに含まれていることを確認します
+3. **ネットワーク接続を確認**: プライベート接続では、VPC ピアリング または PrivateLink が正しく設定されていることを確認します
+4. **セキュリティグループを確認**: プライベートロードバランサーでは、セキュリティグループのルールで送信元ネットワークからのトラフィックが許可されていることを確認します
+5. **セキュリティグループを確認**: PrivateLink または Private Service Connect では、Endpoint ID が ClickHouse service の許可リストに追加されていることを確認します
+6. **認証を確認**: 正しい認証情報 (ユーザー名とパスワード) を使用していることを確認します
+7. **サポートに連絡**: 問題が解決しない場合は、ClickHouse Support に連絡してください

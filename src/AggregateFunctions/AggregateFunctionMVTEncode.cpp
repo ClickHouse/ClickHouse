@@ -572,7 +572,7 @@ public:
         ++state.num_features;
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         const auto & rhs_state = Base::data(rhs);
         if (rhs_state.data_size == 0)

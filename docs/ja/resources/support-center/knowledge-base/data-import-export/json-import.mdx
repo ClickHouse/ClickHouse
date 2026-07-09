@@ -1,0 +1,40 @@
+---
+slug: /faq/integration/json-import
+title: 'JSON を ClickHouse にインポートするには？'
+toc_hidden: true
+toc_priority: 11
+description: 'このページでは、JSON を ClickHouse にインポートする方法を紹介します'
+keywords: ['JSON のインポート', 'JSONEachRow フォーマット', 'データのインポート', 'JSON インジェスト', 'データフォーマット']
+doc_type: 'guide'
+---
+
+ClickHouse は、[入出力用のさまざまなデータフォーマット](/ja/reference/formats/index)をサポートしています。その中には複数の JSON バリエーションがありますが、データのインジェストで最もよく使われるのは [JSONEachRow](/ja/reference/formats/JSON/JSONEachRow) です。これは 1 行につき 1 つの JSON オブジェクトを想定しており、各オブジェクトは改行で区切られます。
+
+<div id="examples">
+  ## 例
+</div>
+
+[HTTPインターフェイス](/ja/concepts/features/interfaces/http)を使う場合:
+
+```bash
+$ echo '{"foo":"bar"}' | curl 'http://localhost:8123/?query=INSERT%20INTO%20test%20FORMAT%20JSONEachRow' --data-binary @-
+```
+
+[CLI インターフェイス](/ja/concepts/features/interfaces/cli)を使用する場合：
+
+```bash
+$ echo '{"foo":"bar"}'  | clickhouse-client --query="INSERT INTO test FORMAT JSONEachRow"
+```
+
+手動でデータを挿入する代わりに、[インテグレーションツール](/ja/integrations/home)の利用を検討するとよいでしょう。
+
+<div id="useful-settings">
+  ## 便利な設定
+</div>
+
+* `input_format_skip_unknown_fields` を使用すると、テーブルのスキーマに存在しない追加フィールドがあっても、それらを破棄して JSON を挿入できます。
+* `input_format_import_nested_json` を使用すると、ネストされた JSON オブジェクトを [Nested](/ja/reference/data-types/nested-data-structures/index) 型のカラムに挿入できます。
+
+<Note>
+  設定は、HTTP インターフェイスでは `GET` パラメータとして、`CLI` インターフェイスでは `--` をプレフィックスとして付けた追加のコマンドライン引数として指定します。
+</Note>

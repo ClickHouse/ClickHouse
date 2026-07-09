@@ -1,0 +1,957 @@
+---
+description: 'Документация по интерфейсу командной строки клиента ClickHouse'
+sidebarTitle: 'Клиент ClickHouse'
+slug: /interfaces/client
+title: 'Клиент ClickHouse'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickHouse предоставляет нативный клиент командной строки для выполнения SQL-запросов напрямую к серверу ClickHouse.
+Он поддерживает как интерактивный режим (для выполнения запросов в реальном времени), так и пакетный режим (для сценариев и автоматизации).
+Результаты запроса можно выводить в терминал или экспортировать в файл; поддерживаются все выходные [форматы](/ru/reference/formats/index) ClickHouse, такие как Pretty, CSV, JSON и другие.
+
+Клиент в реальном времени показывает сведения о выполнении запроса: индикатор прогресса, количество прочитанных строк, объём обработанных данных в байтах и время выполнения запроса.
+Он поддерживает как [параметры командной строки](#command-line-options), так и [файлы конфигурации](#configuration_files).
+
+<div id="install">
+  ## Установка
+</div>
+
+Чтобы загрузить ClickHouse, выполните:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+Чтобы установить и его, выполните:
+
+```bash
+sudo ./clickhouse install
+```
+
+См. [Установка ClickHouse](/ru/get-started/setup/install), чтобы ознакомиться с другими вариантами установки.
+
+Разные версии клиента и сервера совместимы между собой, но некоторые возможности могут быть недоступны в старых версиях клиента. Мы рекомендуем использовать одну и ту же версию клиента и сервера.
+
+<div id="run">
+  ## Запуск
+</div>
+
+<Note>
+  Если вы только скачали ClickHouse, но не установили его, используйте `./clickhouse client` вместо `clickhouse-client`.
+</Note>
+
+Чтобы подключиться к серверу ClickHouse, выполните:
+
+```bash
+$ clickhouse-client --host server
+
+ClickHouse client version 24.12.2.29 (official build).
+Connecting to server:9000 as user default.
+Connected to ClickHouse server version 24.12.2.
+
+:)
+```
+
+При необходимости укажите дополнительные сведения о подключении:
+
+| Параметр                         | Описание                                                                                                                                                                                       |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--port <port>`                  | Порт, на котором сервер ClickHouse принимает подключения. Порты по умолчанию: 9440 (TLS) и 9000 (без TLS). Обратите внимание: клиент ClickHouse использует собственный протокол, а не HTTP(S). |
+| `-s [ --secure ]`                | Использовать ли TLS (обычно определяется автоматически).                                                                                                                                       |
+| `-u [ --user ] <username>`       | Пользователь базы данных, от имени которого выполняется подключение. По умолчанию используется пользователь `default`.                                                                         |
+| `--password <password>`          | Пароль пользователя базы данных. Пароль для подключения также можно указать в файле конфигурации. Если пароль не указан, клиент запросит его.                                                  |
+| `-c [ --config ] <path-to-file>` | Расположение файла конфигурации для клиента ClickHouse, если он находится не в одном из стандартных мест. См. [Файлы конфигурации](#configuration_files).                                      |
+| `--connection <name>`            | Имя предварительно настроенных сведений о подключении из [файла конфигурации](#connection-credentials).                                                                                        |
+
+Полный список параметров командной строки см. в разделе [Параметры командной строки](#command-line-options).
+
+<div id="connecting-cloud">
+  ### Подключение к ClickHouse Cloud
+</div>
+
+Сведения о вашем сервисе ClickHouse Cloud доступны в консоли ClickHouse Cloud. Выберите сервис, к которому хотите подключиться, и нажмите **Connect**:
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="Кнопка Connect для сервиса ClickHouse Cloud" />
+
+<br />
+
+<br />
+
+Выберите **Native** — отобразятся сведения о подключении и пример команды `clickhouse-client`:
+
+<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="Сведения о Native TCP-соединении с ClickHouse Cloud" />
+
+<div id="connection-credentials">
+  ### Хранение подключений в файле конфигурации
+</div>
+
+Вы можете хранить сведения о подключении к одному или нескольким серверам ClickHouse в [файле конфигурации](#configuration_files).
+
+Формат выглядит так:
+
+```xml
+<config>
+    <connections_credentials>
+        <connection>
+            <name>default</name>
+            <hostname>hostname</hostname>
+            <port>9440</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password>password</password>
+            <!-- <history_file></history_file> -->
+            <!-- <history_max_entries></history_max_entries> -->
+            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
+            <!-- <prompt></prompt> -->
+        </connection>
+    </connections_credentials>
+</config>
+```
+
+См. [раздел о файлах конфигурации](#configuration_files) для получения дополнительной информации.
+
+<Note>
+  Чтобы сосредоточиться на синтаксисе запроса, в остальных примерах опущены сведения о подключении (`--host`, `--port` и т. д.). Не забудьте добавить их при использовании команд.
+</Note>
+
+<div id="interactive-mode">
+  ## Интерактивный режим
+</div>
+
+<div id="using-interactive-mode">
+  ### Использование интерактивного режима
+</div>
+
+Чтобы запустить ClickHouse в интерактивном режиме, просто выполните:
+
+```bash
+clickhouse-client
+```
+
+Откроется цикл Read-Eval-Print Loop (REPL), в котором можно интерактивно вводить SQL-запросы.
+После подключения появится промпт, в который можно вводить запросы:
+
+```bash
+ClickHouse client version 25.x.x.x
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 25.x.x.x
+
+hostname :)
+```
+
+В интерактивном режиме формат вывода по умолчанию — `PrettyCompact`.
+Вы можете изменить формат в предложении `FORMAT` запроса или с помощью параметра командной строки `--format`.
+Чтобы использовать формат Vertical, можно указать `--vertical` или добавить `\G` в конце запроса.
+В этом формате каждое значение выводится на отдельной строке, что удобно для широких таблиц.
+
+В интерактивном режиме по умолчанию всё введённое выполняется при нажатии `Enter`.
+Точка с запятой в конце запроса не обязательна.
+
+Вы можете запустить клиент с параметром `-m, --multiline`.
+Чтобы ввести многострочный запрос, добавьте обратную косую черту `\` перед переводом строки.
+После нажатия `Enter` вам будет предложено ввести следующую строку запроса.
+Чтобы выполнить запрос, завершите его точкой с запятой и нажмите `Enter`.
+
+Клиент ClickHouse основан на `replxx` (аналог `readline`), поэтому поддерживает привычные сочетания клавиш и сохраняет историю.
+По умолчанию история записывается в `~/.clickhouse-client-history`.
+
+Чтобы выйти из клиента, нажмите `Ctrl+D` или вместо запроса введите одно из следующего:
+
+* `exit` или `exit;`
+* `quit` или `quit;`
+* `q`, `Q` или `:q`
+* `logout` или `logout;`
+
+<div id="processing-info">
+  ### Информация об обработке запроса
+</div>
+
+При обработке запроса клиент показывает:
+
+1. Прогресс, который по умолчанию обновляется не чаще 10 раз в секунду.
+   Для быстрых запросов прогресс может просто не успеть отобразиться.
+2. Отформатированный запрос после разбора — для отладки.
+3. Результат в указанном формате.
+4. Количество строк в результате, затраченное время и среднюю скорость обработки запроса.
+   Все объёмы данных относятся к несжатым данным.
+
+Вы можете отменить длительный запрос, нажав `Ctrl+C`.
+Однако вам всё равно придётся немного подождать, пока сервер прервёт его выполнение.
+На некоторых этапах отменить запрос невозможно.
+Если не ждать и нажать `Ctrl+C` второй раз, клиент завершит работу.
+
+клиент ClickHouse позволяет передавать внешние данные (внешние временные таблицы) для выполнения запросов.
+Подробнее см. в разделе [Внешние данные для обработки запроса](/ru/reference/engines/table-engines/special/external-data).
+
+<div id="cli_aliases">
+  ### Псевдонимы
+</div>
+
+В REPL можно использовать следующие псевдонимы:
+
+* `\l` - SHOW DATABASES
+* `\d` - SHOW TABLES
+* `\c <DATABASE>` - USE DATABASE
+* `.` - повторить последний запрос
+
+<div id="keyboard_shortcuts">
+  ### Сочетания клавиш
+</div>
+
+* `Alt (Option) + Shift + e` — открыть редактор с текущим запросом. Редактор можно задать с помощью переменной окружения `EDITOR`. По умолчанию используется `vim`.
+* `Alt (Option) + #` — закомментировать строку.
+* `Ctrl + r` — поиск по истории с нечётким совпадением.
+
+Полный список доступных сочетаний клавиш приведён в [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262).
+
+<Tip>
+  Чтобы настроить корректную работу клавиши Meta (Option) в macOS:
+
+  iTerm2: перейдите в Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key и нажмите Esc+
+</Tip>
+
+<div id="batch-mode">
+  ## Пакетный режим
+</div>
+
+<div id="using-batch-mode">
+  ### Работа в пакетном режиме
+</div>
+
+Вместо интерактивной работы с клиентом ClickHouse его можно запускать в пакетном режиме.
+В пакетном режиме ClickHouse выполняет один запрос и сразу завершает работу — без интерактивного промпта и цикла.
+
+Один запрос можно указать так:
+
+```bash
+$ clickhouse-client "SELECT sum(number) FROM numbers(10)"
+45
+```
+
+Можно также использовать параметр командной строки `--query`:
+
+```bash
+$ clickhouse-client --query "SELECT uniq(number) FROM numbers(10)"
+10
+```
+
+Можно передать запрос через `stdin`:
+
+```bash
+$ echo "SELECT avg(number) FROM numbers(10)" | clickhouse-client
+4.5
+```
+
+Если таблица `messages` уже существует, вы также можете вставить данные из командной строки:
+
+```bash
+$ echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT CSV"
+```
+
+Когда указан `--query`, все входные данные добавляются к запросу после символа перевода строки.
+
+<div id="cloud-example">
+  ### Вставка CSV-файла в удалённый сервис ClickHouse
+</div>
+
+В этом примере CSV-файл с тестовым набором данных `cell_towers.csv` вставляется в существующую таблицу `cell_towers` в базе данных `default`:
+
+```bash
+clickhouse-client --host HOSTNAME.clickhouse.cloud \
+  --port 9440 \
+  --user default \
+  --password PASSWORD \
+  --query "INSERT INTO cell_towers FORMAT CSVWithNames" \
+  < cell_towers.csv
+```
+
+<div id="more-examples">
+  ### Примеры вставки данных из командной строки
+</div>
+
+Есть несколько способов вставки данных из командной строки.
+В примере ниже две строки данных в формате CSV вставляются в таблицу ClickHouse в пакетном режиме:
+
+```bash
+echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | \
+  clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```
+
+В примере ниже `cat <<_EOF` начинает конструкцию heredoc, которая считывает всё до следующего появления `_EOF`, а затем выводит это:
+
+```bash
+cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+3, 'some text', '2016-08-14 00:00:00'
+4, 'some more text', '2016-08-14 00:00:01'
+_EOF
+```
+
+В примере ниже содержимое file.csv выводится в stdout с помощью `cat`, а затем через конвейер передаётся на вход `clickhouse-client`:
+
+```bash
+cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```
+
+В пакетном режиме [формат](/ru/reference/formats/index) данных по умолчанию — `TabSeparated`.
+Вы можете указать формат в предложении `FORMAT` запроса, как показано в примере выше.
+
+<div id="cli-queries-with-parameters">
+  ## Запросы с параметрами
+</div>
+
+Вы можете указать параметры в запросе и передать их значения через параметры командной строки.
+Это позволяет не подставлять конкретные динамические значения в запрос на стороне клиента.
+Например:
+
+```bash
+$ clickhouse-client --param_parName="[1, 2]" --query "SELECT {parName: Array(UInt16)}"
+[1,2]
+```
+
+Параметры также можно задавать в [интерактивном сеансе](#interactive-mode):
+
+```text highlight={4,14}
+$ clickhouse-client
+ClickHouse client version 25.X.X.XXX (official build).
+
+:) SET param_parName='[1, 2]';
+
+SET param_parName = '[1, 2]'
+
+Query id: 7ac1f84e-e89a-4eeb-a4bb-d24b8f9fd977
+
+Ok.
+
+0 rows in set. Elapsed: 0.000 sec.
+
+:) SELECT {parName:Array(UInt16)}
+
+SELECT {parName:Array(UInt16)}
+
+Query id: 0358a729-7bbe-4191-bb48-29b063c548a7
+
+   ┌─_CAST([1, 2]⋯y(UInt16)')─┐
+1. │ [1,2]                    │
+   └──────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+<div id="cli-queries-with-parameters-syntax">
+  ### Синтаксис запроса
+</div>
+
+В запросе заключите в фигурные скобки значения, которые нужно подставить с помощью параметров командной строки, в следующем формате:
+
+```sql
+{<name>:<data type>}
+```
+
+| Параметр    | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`      | Идентификатор подстановки. Соответствующая опция командной строки — `--param_<name> = value`.                                                                                                                                                                                                                                                                                                                                                                   |
+| `data type` | [Тип данных](/ru/reference/data-types/index) параметра. <br /><br />Например, структура данных вида `(integer, ('string', integer))` может иметь тип данных `Tuple(UInt8, Tuple(String, UInt8))` (также можно использовать и другие типы [integer](/ru/reference/data-types/int-uint)). <br /><br />В качестве параметров также можно передавать имя таблицы, имя базы данных и имена столбцов; в этом случае в качестве типа данных нужно использовать `Identifier`. |
+
+<div id="cli-queries-with-parameters-examples">
+  ### Примеры
+</div>
+
+```bash
+$ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
+    --query "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" \
+    --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
+```
+
+<div id="ai-sql-generation">
+  ## Генерация SQL с помощью ИИ
+</div>
+
+Клиент ClickHouse включает встроенную ИИ-поддержку для генерации SQL-запросов по описаниям на естественном языке. Эта возможность помогает пользователям составлять сложные запросы без глубокого знания SQL.
+
+ИИ-поддержка работает сразу после настройки переменной окружения `OPENAI_API_KEY` или `ANTHROPIC_API_KEY`. Более подробную информацию о расширенной настройке см. в разделе [Configuration](#ai-sql-generation-configuration).
+
+<div id="ai-sql-generation-usage">
+  ### Использование
+</div>
+
+Чтобы использовать генерацию SQL с помощью ИИ, добавьте префикс `??` перед запросом на естественном языке:
+
+```bash
+:) ?? show all users who made purchases in the last 30 days
+```
+
+ИИ будет:
+
+1. Автоматически изучать схему вашей базы данных
+2. Генерировать подходящий SQL на основе обнаруженных таблиц и столбцов
+3. Сразу выполнять сгенерированный запрос
+
+<div id="ai-sql-generation-example">
+  ### Пример
+</div>
+
+```bash
+:) ?? count orders by product category
+
+Starting AI SQL generation with schema discovery...
+──────────────────────────────────────────────────
+
+🔍 list_databases
+   ➜ system, default, sales_db
+
+🔍 list_tables_in_database
+   database: sales_db
+   ➜ orders, products, categories
+
+🔍 get_schema_for_table
+   database: sales_db
+   table: orders
+   ➜ CREATE TABLE orders (order_id UInt64, product_id UInt64, quantity UInt32, ...)
+
+✨ SQL query generated successfully!
+──────────────────────────────────────────────────
+
+SELECT
+    c.name AS category,
+    COUNT(DISTINCT o.order_id) AS order_count
+FROM sales_db.orders o
+JOIN sales_db.products p ON o.product_id = p.product_id
+JOIN sales_db.categories c ON p.category_id = c.category_id
+GROUP BY c.name
+ORDER BY order_count DESC
+```
+
+<div id="ai-sql-generation-configuration">
+  ### Конфигурация
+</div>
+
+Для генерации SQL с помощью ИИ необходимо настроить провайдера ИИ в файле конфигурации клиента ClickHouse. Вы можете использовать OpenAI, Anthropic или любой API-сервис с поддержкой совместимости с OpenAI.
+
+<div id="ai-sql-generation-fallback">
+  #### Резервный вариант через переменные окружения
+</div>
+
+Если в файле конфигурации не указана конфигурация AI, клиент ClickHouse автоматически попытается использовать переменные окружения:
+
+1. Сначала проверяется переменная окружения `OPENAI_API_KEY`
+2. Если она не найдена, проверяется переменная окружения `ANTHROPIC_API_KEY`
+3. Если не найдена ни одна из них, возможности AI будут отключены
+
+Это позволяет быстро выполнить настройку без использования файлов конфигурации:
+
+```bash
+# Использование OpenAI
+export OPENAI_API_KEY=your-openai-key
+clickhouse-client
+
+# Использование Anthropic
+export ANTHROPIC_API_KEY=your-anthropic-key
+clickhouse-client
+```
+
+<div id="ai-sql-generation-configuration-file">
+  #### Файл конфигурации
+</div>
+
+Чтобы точнее управлять настройками ИИ, задайте их в файле конфигурации клиента ClickHouse, расположенном по одному из следующих путей:
+
+* `$XDG_CONFIG_HOME/clickhouse/config.xml` (или `~/.config/clickhouse/config.xml`, если `XDG_CONFIG_HOME` не задан) (формат XML)
+* `$XDG_CONFIG_HOME/clickhouse/config.yaml` (или `~/.config/clickhouse/config.yaml`, если `XDG_CONFIG_HOME` не задан) (формат YAML)
+* `~/.clickhouse-client/config.xml` (формат XML, устаревший путь)
+* `~/.clickhouse-client/config.yaml` (формат YAML, устаревший путь)
+* Или укажите произвольный путь с помощью `--config-file`
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <config>
+        <ai>
+            {/* Обязательно: ваш API-ключ (или задайте его через переменную окружения) */}
+            <api_key>your-api-key-here</api_key>
+
+            {/* Обязательно: тип провайдера (openai, anthropic) */}
+            <provider>openai</provider>
+
+            {/* Используемая модель (значение по умолчанию зависит от провайдера) */}
+            <model>gpt-4o</model>
+
+            {/* Необязательно: пользовательская конечная точка API для сервисов, совместимых с OpenAI */}
+            {/* <base_url>https://openrouter.ai/api</base_url> */}
+
+            {/* Настройки доступа к схеме */}
+            <enable_schema_access>true</enable_schema_access>
+
+            {/* Параметры генерации */}
+            <temperature>0.0</temperature>
+            <max_tokens>1000</max_tokens>
+            <timeout_seconds>30</timeout_seconds>
+            <max_steps>10</max_steps>
+
+            {/* Необязательно: пользовательский системный промпт */}
+            {/* <system_prompt>You are an expert ClickHouse SQL assistant...</system_prompt> */}
+        </ai>
+    </config>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    ai:
+      # Обязательно: ваш API-ключ (или задайте его через переменную окружения)
+      api_key: your-api-key-here
+
+      # Обязательно: тип провайдера (openai, anthropic)
+      provider: openai
+
+      # Используемая модель
+      model: gpt-4o
+
+      # Необязательно: пользовательская конечная точка API для сервисов, совместимых с OpenAI
+      # base_url: https://openrouter.ai/api
+
+      # Включить доступ к схеме — позволяет ИИ запрашивать информацию о базе данных и таблицах
+      enable_schema_access: true
+
+      # Параметры генерации
+      temperature: 0.0      # Управляет случайностью (0.0 = детерминированный результат)
+      max_tokens: 1000      # Максимальная длина ответа
+      timeout_seconds: 30   # Тайм-аут запроса
+      max_steps: 10         # Максимальное число шагов при исследовании схемы
+
+      # Необязательно: пользовательский системный промпт
+      # system_prompt: |
+      #   Вы — экспертный помощник по ClickHouse SQL. Преобразуйте естественный язык в SQL.
+      #   Сосредоточьтесь на производительности и используйте оптимизации, специфичные для ClickHouse.
+      #   Всегда возвращайте исполняемый SQL без объяснений.
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**Использование API, совместимых с OpenAI (например, OpenRouter):**
+
+```yaml
+ai:
+  provider: openai  # Используйте 'openai' для совместимости
+  api_key: your-openrouter-api-key
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-3.5-sonnet  # Используйте именование моделей OpenRouter
+```
+
+**Примеры минимальной конфигурации:**
+
+```yaml
+# Минимальная конфигурация — использует переменную окружения для API-ключа
+ai:
+  provider: openai  # Будет использована переменная окружения OPENAI_API_KEY
+
+# Без конфигурации — автоматический fallback
+# (Пустая или отсутствующая секция ai — сначала будет проверена OPENAI_API_KEY, затем ANTHROPIC_API_KEY)
+
+# Переопределение только модели — использует переменную окружения для API-ключа
+ai:
+  provider: openai
+  model: gpt-3.5-turbo
+```
+
+<div id="ai-sql-generation-parameters">
+  ### Параметры
+</div>
+
+<Accordion title="Обязательные параметры">
+  * `api_key` - Ваш API-ключ для сервиса ИИ. Можно не указывать, если он задан через переменную окружения:
+    * OpenAI: `OPENAI_API_KEY`
+    * Anthropic: `ANTHROPIC_API_KEY`
+    * Примечание: API-ключ в файле конфигурации имеет приоритет над переменной окружения
+  * `provider` - Провайдер ИИ: `openai` или `anthropic`
+    * Если не указан, автоматически выбирается по доступным переменным окружения
+</Accordion>
+
+<Accordion title="Конфигурация модели">
+  * `model` - Используемая модель (по умолчанию: зависит от провайдера)
+    * OpenAI: `gpt-4o`, `gpt-4`, `gpt-3.5-turbo` и т. д.
+    * Anthropic: `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229` и т. д.
+    * OpenRouter: используйте их схему именования моделей, например `anthropic/claude-3.5-sonnet`
+</Accordion>
+
+<Accordion title="Настройки подключения">
+  * `base_url` - Пользовательская конечная точка API для сервисов, совместимых с OpenAI (необязательно)
+  * `timeout_seconds` - Тайм-аут запроса в секундах (по умолчанию: `30`)
+</Accordion>
+
+<Accordion title="Исследование схемы">
+  * `enable_schema_access` - Разрешить ИИ просматривать схемы базы данных (по умолчанию: `true`)
+  * `max_steps` - Максимальное количество шагов вызова инструментов для исследования схемы (по умолчанию: `10`)
+</Accordion>
+
+<Accordion title="Параметры генерации">
+  * `temperature` - Управляет степенью случайности: 0.0 = детерминированно, 1.0 = креативно (по умолчанию: `0.0`)
+  * `max_tokens` - Максимальная длина ответа в токенах (по умолчанию: `1000`)
+  * `system_prompt` - Пользовательские инструкции для ИИ (необязательно)
+</Accordion>
+
+<div id="ai-sql-generation-how-it-works">
+  ### Как это работает
+</div>
+
+Генератор AI SQL использует многоэтапный процесс:
+
+1. **Определение схемы**
+
+AI использует встроенные инструменты, чтобы изучить вашу базу данных:
+
+* Перечисляет доступные базы данных
+* Находит таблицы в соответствующих базах данных
+* Анализирует структуру таблиц с помощью операторов `CREATE TABLE`
+
+2. **Генерация запроса**
+
+На основе обнаруженной схемы AI генерирует SQL, который:
+
+* Соответствует вашему запросу на естественном языке
+* Использует правильные имена таблиц и столбцов
+* Применяет подходящие JOIN и агрегации
+
+3. **Выполнение**
+
+Сгенерированный SQL автоматически выполняется, а результаты отображаются
+
+<div id="ai-sql-generation-limitations">
+  ### Ограничения
+</div>
+
+* Требуется активное подключение к интернету
+* На использование API распространяются ограничения по частоте запросов, а также взимается плата со стороны поставщика ИИ
+* Для сложных запросов может потребоваться несколько уточнений
+* ИИ имеет доступ только для чтения к информации о схеме, но не к фактическим данным
+
+<div id="ai-sql-generation-security">
+  ### Безопасность
+</div>
+
+* Ключи API никогда не отправляются на серверы ClickHouse
+* AI видит только информацию о схеме (имена таблиц/столбцов и типы), а не сами данные
+* Все сгенерированные запросы учитывают ваши текущие разрешения на доступ к базе данных
+
+<div id="connection_string">
+  ## Строка подключения
+</div>
+
+<div id="ai-sql-generation-usage">
+  ### Использование
+</div>
+
+Клиент ClickHouse также поддерживает подключение к серверу ClickHouse с помощью строки подключения, аналогичной строкам подключения в [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/), [PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING) и [MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). Она имеет следующий синтаксис:
+
+```text
+clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
+```
+
+| Компонент (все поля необязательны) | Описание                                                                                                                                                                 | По умолчанию     |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| `user`                             | Имя пользователя database.                                                                                                                                               | `default`        |
+| `password`                         | Пароль пользователя database. Если указан `:` и пароль пустой, клиент предложит ввести пароль пользователя.                                                              | -                |
+| `hosts_and_ports`                  | Список хостов и необязательных портов `host[:port] [, host:[port]], ...`.                                                                                                | `localhost:9000` |
+| `database`                         | Имя database.                                                                                                                                                            | `default`        |
+| `query_parameters`                 | Список пар ключ-значение `param1=value1[,&param2=value2], ...`. Для некоторых параметров значение не требуется. Имена параметров и их значения чувствительны к регистру. | -                |
+
+<div id="connection-string-notes">
+  ### Примечания
+</div>
+
+Если имя пользователя, пароль или база данных указаны в строке подключения, их нельзя указывать через `--user`, `--password` или `--database` (и наоборот).
+
+Компонент host может быть как именем хоста, так и адресом IPv4 или IPv6.
+Адреса IPv6 должны быть заключены в `[]`:
+
+```text
+clickhouse://[2001:db8::1234]
+```
+
+Строки подключения могут содержать несколько хостов.
+Клиент ClickHouse будет пытаться подключиться к этим хостам по порядку (слева направо).
+После установления соединения попытки подключения к оставшимся хостам не выполняются.
+
+Строка подключения должна быть указана в качестве первого аргумента `clickHouse-client`.
+Строку подключения можно сочетать с любым количеством других [параметров командной строки](#command-line-options), кроме `--host` и `--port`.
+
+Для `query_parameters` допустимы следующие ключи:
+
+| Key               | Description                                                                                                                                                        |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `secure` (or `s`) | Если указан этот ключ, клиент подключится к серверу по защищённому соединению (TLS). См. `--secure` в разделе [параметры командной строки](#command-line-options). |
+
+**Процентное кодирование**
+
+Символы вне US-ASCII, пробелы и специальные символы в следующих параметрах должны быть [закодированы с помощью процентного кодирования](https://en.wikipedia.org/wiki/URL_encoding):
+
+* `user`
+* `password`
+* `hosts`
+* `database`
+* `query parameters`
+
+<div id="cli-queries-with-parameters-examples">
+  ### Примеры
+</div>
+
+Подключитесь к `localhost` через порт 9000 и выполните запрос `SELECT 1`.
+
+```bash
+clickhouse-client clickhouse://localhost:9000 --query "SELECT 1"
+```
+
+Подключитесь к `localhost` от имени пользователя `john` с паролем `secret`, указав хост `127.0.0.1` и порт `9000`
+
+```bash
+clickhouse-client clickhouse://john:secret@127.0.0.1:9000
+```
+
+Подключитесь к `localhost` от имени пользователя `default`, используя узел с адресом IPv6 `[::1]` и порт `9000`.
+
+```bash
+clickhouse-client clickhouse://[::1]:9000
+```
+
+Подключитесь к `localhost` через порт 9000 в многострочном режиме.
+
+```bash
+clickhouse-client clickhouse://localhost:9000 '-m'
+```
+
+Подключитесь к `localhost` по порту 9000 под пользователем `default`.
+
+```bash
+clickhouse-client clickhouse://default@localhost:9000
+
+# эквивалентно:
+clickhouse-client clickhouse://localhost:9000 --user default
+```
+
+Подключитесь к `localhost` через порт 9000; по умолчанию будет использоваться база данных `my_database`.
+
+```bash
+clickhouse-client clickhouse://localhost:9000/my_database
+
+# эквивалентно:
+clickhouse-client clickhouse://localhost:9000 --database my_database
+```
+
+Подключитесь к `localhost` на порту 9000; по умолчанию будет использоваться база данных `my_database`, указанная в строке подключения, а для защищенного подключения используйте сокращенный параметр `s`.
+
+```bash
+clickhouse-client clickhouse://localhost/my_database?s
+
+# эквивалентно:
+clickhouse-client clickhouse://localhost/my_database -s
+```
+
+Подключитесь к хосту по умолчанию, используя порт, пользователя и базу данных по умолчанию.
+
+```bash
+clickhouse-client clickhouse:
+```
+
+Подключитесь к хосту по умолчанию через порт по умолчанию под пользователем `my_user`, без пароля.
+
+```bash
+clickhouse-client clickhouse://my_user@
+
+# Пустой пароль между : и @ означает, что перед установкой соединения пользователю будет предложено ввести пароль.
+clickhouse-client clickhouse://my_user:@
+```
+
+Подключитесь к `localhost`, используя адрес электронной почты в качестве имени пользователя. Символ `@` заменяется на `%40` при процентном кодировании.
+
+```bash
+clickhouse-client clickhouse://some_user%40some_mail.com@localhost:9000
+```
+
+Подключитесь к одному из двух узлов: `192.168.1.15`, `192.168.1.25`.
+
+```bash
+clickhouse-client clickhouse://192.168.1.15,192.168.1.25
+```
+
+<div id="query-id-format">
+  ## Формат Query id
+</div>
+
+В интерактивном режиме клиент ClickHouse отображает Query id для каждого запроса. По умолчанию идентификатор имеет такой формат:
+
+```sql
+Query id: 927f137d-00f1-4175-8914-0dd066365e96
+```
+
+Пользовательский формат можно указать в файле конфигурации в теге `query_id_formats`. Заполнитель `{query_id}` в строке формата заменяется идентификатором запроса. Внутри тега допускается несколько строк формата.
+Эту возможность можно использовать для генерации URL-адресов, облегчающих анализ данных профилирования запросов.
+
+**Пример**
+
+```xml
+<config>
+  <query_id_formats>
+    <speedscope>http://speedscope-host/#profileURL=qp%3Fid%3D{query_id}</speedscope>
+  </query_id_formats>
+</config>
+```
+
+При указанной выше конфигурации идентификатор запроса отображается в следующем формате:
+
+```response
+speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
+```
+
+<div id="configuration_files">
+  ## Файлы конфигурации
+</div>
+
+Клиент ClickHouse использует первый найденный из следующих файлов:
+
+* Файл, указанный параметром `-c [ -C, --config, --config-file ]`.
+* `./clickhouse-client.[xml|yaml|yml]`
+* `$XDG_CONFIG_HOME/clickhouse/config.[xml|yaml|yml]` (или `~/.config/clickhouse/config.[xml|yaml|yml]`, если `XDG_CONFIG_HOME` не задан)
+* `~/.clickhouse-client/config.[xml|yaml|yml]`
+* `/etc/clickhouse-client/config.[xml|yaml|yml]`
+
+См. пример файла конфигурации в репозитории ClickHouse: [`clickhouse-client.xml`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/client/clickhouse-client.xml)
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <config>
+        <user>username</user>
+        <password>password</password>
+        <secure>true</secure>
+        <openSSL>
+          <client>
+            <caConfig>/etc/ssl/cert.pem</caConfig>
+          </client>
+        </openSSL>
+    </config>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    user: username
+    password: 'password'
+    secure: true
+    openSSL:
+      client:
+        caConfig: '/etc/ssl/cert.pem'
+    ```
+  </Tab>
+</Tabs>
+
+<div id="environment-variable-options">
+  ## Параметры переменных окружения
+</div>
+
+Имя пользователя, пароль и хост можно задать с помощью переменных окружения `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` и `CLICKHOUSE_HOST`.
+Аргументы командной строки `--user`, `--password` или `--host`, а также [строка подключения](#connection_string) (если она указана), имеют приоритет над переменными окружения.
+
+<div id="command-line-options">
+  ## Параметры командной строки
+</div>
+
+Все параметры командной строки можно указать прямо в командной строке или задать значения по умолчанию в [файле конфигурации](#configuration_files).
+
+<div id="command-line-options-general">
+  ### Общие параметры
+</div>
+
+| Параметр                                            | Описание                                                                                                                                                          | По умолчанию           |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| `-c [ -C, --config, --config-file ] <path-to-file>` | Расположение файла конфигурации клиента, если он находится не в одном из стандартных мест. См. [Файлы конфигурации](#configuration_files).                        | -                      |
+| `--help`                                            | Вывести краткую справку по использованию и завершить работу. Используйте вместе с `--verbose`, чтобы показать все возможные параметры, включая настройки запроса. | -                      |
+| `--history_file <path-to-file>`                     | Путь к файлу, содержащему историю команд.                                                                                                                         | -                      |
+| `--history_max_entries`                             | Максимальное количество записей в файле истории.                                                                                                                  | `1000000` (1 миллион)  |
+| `--prompt <prompt>`                                 | Указать пользовательский промпт.                                                                                                                                  | `display_name` сервера |
+| `--verbose`                                         | Увеличить подробность вывода.                                                                                                                                     | -                      |
+| `-V [ --version ]`                                  | Вывести версию и завершить работу.                                                                                                                                | -                      |
+
+<div id="command-line-options-connection">
+  ### Параметры подключения
+</div>
+
+| Option                               | Description                                                                                                                                                                                                                                                                                                                                                                                           | Default                                                                                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--connection <name>`                | Имя заранее настроенного подключения из файла конфигурации. См. [Учетные данные подключения](#connection-credentials).                                                                                                                                                                                                                                                                                | -                                                                                                                                          |
+| `-d [ --database ] <database>`       | Выбрать базу данных, которая будет использоваться по умолчанию для этого подключения.                                                                                                                                                                                                                                                                                                                 | Текущая база данных из настроек сервера (`default` по умолчанию)                                                                           |
+| `-h [ --host ] <host>`               | Имя хоста ClickHouse server, к которому нужно подключиться. Это может быть как имя хоста, так и адрес IPv4 или IPv6. Можно указать несколько хостов, передав этот аргумент несколько раз.                                                                                                                                                                                                             | `localhost`                                                                                                                                |
+| `--jwt <value>`                      | Использовать JSON Web Token (JWT) для аутентификации. <br /><br />JWT-авторизация на стороне сервера доступна только в ClickHouse Cloud.                                                                                                                                                                                                                                                              | -                                                                                                                                          |
+| `login`                              | Запускает OAuth device grant flow для аутентификации через IdP. <br /><br />Для хостов ClickHouse Cloud переменные OAuth определяются автоматически, в противном случае их нужно передать с помощью `--oauth-url`, `--oauth-client-id` и `--oauth-audience`.                                                                                                                                          | -                                                                                                                                          |
+| `--no-warnings`                      | Отключить показ предупреждений из `system.warnings` при подключении клиента к серверу.                                                                                                                                                                                                                                                                                                                | -                                                                                                                                          |
+| `--no-server-client-version-message` | Отключить сообщение о несовпадении версий сервера и клиента при подключении клиента к серверу.                                                                                                                                                                                                                                                                                                        | -                                                                                                                                          |
+| `--password <password>`              | Пароль пользователя базы данных. Пароль для подключения также можно указать в файле конфигурации. Если пароль не указан, клиент запросит его.                                                                                                                                                                                                                                                         | -                                                                                                                                          |
+| `--port <port>`                      | Порт, на котором сервер принимает подключения. Порты по умолчанию: 9440 (TLS) и 9000 (без TLS). <br /><br />Примечание: клиент использует собственный протокол, а не HTTP(S).                                                                                                                                                                                                                         | `9440`, если указан `--secure`, иначе `9000`. Если имя хоста оканчивается на `.clickhouse.cloud`, по умолчанию всегда используется `9440`. |
+| `-s [ --secure ]`                    | Использовать ли TLS. <br /><br />Автоматически включается при подключении к порту 9440 (защищенному порту по умолчанию) или к ClickHouse Cloud. <br /><br />Возможно, потребуется настроить CA‑сертификаты в [файле конфигурации](#configuration_files). Доступные параметры конфигурации такие же, как для [настройки TLS на стороне сервера](/ru/reference/settings/server-settings/settings#openssl). | Автоматически включается при подключении к порту 9440 или к ClickHouse Cloud                                                               |
+| `--ssh-key-file <path-to-file>`      | Файл, содержащий закрытый SSH-ключ для аутентификации на сервере.                                                                                                                                                                                                                                                                                                                                     | -                                                                                                                                          |
+| `--ssh-key-passphrase <value>`       | Парольная фраза для закрытого SSH-ключа, указанного в `--ssh-key-file`.                                                                                                                                                                                                                                                                                                                               | -                                                                                                                                          |
+| `--tls-sni-override <server name>`   | Если используется TLS, имя сервера (SNI), которое передается при рукопожатии.                                                                                                                                                                                                                                                                                                                         | Хост, указанный через `-h` или `--host`.                                                                                                   |
+| `-u [ --user ] <username>`           | Пользователь базы данных, от имени которого выполняется подключение.                                                                                                                                                                                                                                                                                                                                  | `default`                                                                                                                                  |
+
+<Note>
+  Вместо параметров `--host`, `--port`, `--user` и `--password` клиент также поддерживает [строки подключения](#connection_string).
+</Note>
+
+<div id="command-line-options-query">
+  ### Параметры запроса
+</div>
+
+| Option                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--param_<name>=<value>`        | Значение подстановки для параметра в [запросе с параметрами](#cli-queries-with-parameters).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `-q [ --query ] <query>`        | Запрос для выполнения в batch mode. Можно указать этот параметр несколько раз (`--query "SELECT 1" --query "SELECT 2"`) или один раз, передав несколько запросов, разделённых точкой с запятой (`--query "SELECT 1; SELECT 2;"`). В последнем случае запросы `INSERT` с форматами, отличными от `VALUES`, должны разделяться пустыми строками. <br /><br />Один запрос также можно указать без параметра: `clickhouse-client "SELECT 1"` <br /><br />Нельзя использовать вместе с `--queries-file`.                                                                                                                                                                     |
+| `--queries-file <path-to-file>` | Путь к файлу с запросами. `--queries-file` можно указать несколько раз, например: `--queries-file queries1.sql --queries-file queries2.sql`. <br /><br />Нельзя использовать вместе с `--query`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `-m [ --multiline ]`            | Если параметр указан, разрешаются многострочные запросы (запрос не отправляется по нажатию Enter). Запросы отправляются только после завершения точкой с запятой.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `--inline-insert-data`          | Отправлять `INSERT ... VALUES` (и другие inline-форматы) как есть в тексте запроса вместо преобразования данных в блоки в native format. Сервер сам разбирает inline-данные, что позволяет избежать обратной передачи клиенту структуры таблицы и значений столбцов по умолчанию. Это может повысить производительность при большом количестве небольших вставок через собственный протокол. Автоматически устанавливает [`send_table_structure_on_insert_with_inline_data`](/ru/reference/settings/session-settings#send_table_structure_on_insert_with_inline_data) в `0`. Нельзя использовать одновременно с inline-данными и внешними данными (из stdin или `INFILE`). |
+
+<div id="command-line-options-query-settings">
+  ### Настройки запроса
+</div>
+
+Настройки запроса можно задавать в клиенте через параметры командной строки, например:
+
+```bash
+$ clickhouse-client --max_threads 1
+```
+
+Список настроек см. в разделе [Settings](/ru/reference/settings/session-settings).
+
+<div id="command-line-options-formatting">
+  ### Параметры форматирования
+</div>
+
+| Option                            | Description                                                                                                                                                                                                                            | Default                                                                |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `-f [ --format ] <format>`        | Использовать указанный формат для вывода результата. <br /><br />Список поддерживаемых форматов см. в разделе [Форматы входных и выходных данных](/ru/reference/formats/index).                                                           | `TabSeparated`                                                         |
+| `--pager <command>`               | Передавать весь вывод в эту команду. Обычно это `less` (например, `less -S` для отображения широких результирующих наборов) или аналогичная команда.                                                                                   | -                                                                      |
+| `-E [ --vertical ]`               | Использовать [Вертикальный формат](/ru/reference/formats/Vertical) для вывода результата. Это то же самое, что и `–-format Vertical`. В этом формате каждое значение выводится с новой строки, что удобно при отображении широких таблиц. | -                                                                      |
+| `--echo [ <bool> ]`               | Выводить каждый запрос перед выполнением. Принимает необязательное булево значение.                                                                                                                                                    | `true` в интерактивном режиме, `false` в неинтерактивном режиме (батч) |
+| `--echo-formatted [ <bool> ]`     | Форматировать выводимые запросы. Принимает необязательное булево значение.                                                                                                                                                             | `true` в интерактивном режиме, `false` в неинтерактивном режиме (батч) |
+| `--echo-query-id [ <bool> ]`      | Выводить Query id перед выполнением. Принимает необязательное булево значение.                                                                                                                                                         | `true` в интерактивном режиме, `false` в неинтерактивном режиме (батч) |
+| `--highlight [ --hilite ] <bool>` | Включать или отключать подсветку синтаксиса в приглашении командной строки и выводимых запросах.                                                                                                                                       | `true`                                                                 |
+
+<div id="command-line-options-execution-details">
+  ### Подробности выполнения
+</div>
+
+| Параметр                         | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                | По умолчанию                                                        |
+| -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `--chime [N]`                    | Записывать управляющий символ `BEL` в `stderr`, когда запрос завершается (успешно или с ошибкой), если он выполнялся не менее `N` секунд. Выводится только тогда, когда `stderr` подключен к терминалу (TTY); перенаправление `stderr` (например, `2>err.log`) подавляет этот вывод, тогда как перенаправление `stdout` (например, `> result.tsv`) — нет. При передаче `--chime` без значения используется порог по умолчанию. Установите `--chime 0`, чтобы отключить. | `5` секунд                                                          |
+| `--enable-progress-table-toggle` | Включить переключение таблицы прогресса по нажатию управляющей клавиши (Space). Применяется только в интерактивном режиме, когда включен вывод таблицы прогресса.                                                                                                                                                                                                                                                                                                       | `включенный`                                                        |
+| `--hardware-utilization`         | Выводить информацию об использовании аппаратных ресурсов в индикаторе прогресса.                                                                                                                                                                                                                                                                                                                                                                                        | -                                                                   |
+| `--memory-usage`                 | Если указано, выводить использование памяти в `stderr` в неинтерактивном режиме. <br /><br />Возможные значения: <br />• `none` - не выводить использование памяти <br />• `default` - выводить количество байт <br />• `readable` - выводить использование памяти в человекочитаемом формате                                                                                                                                                                           | -                                                                   |
+| `--print-profile-events`         | Выводить пакеты `ProfileEvents`.                                                                                                                                                                                                                                                                                                                                                                                                                                        | -                                                                   |
+| `--progress`                     | Выводить прогресс выполнения запроса. <br /><br />Возможные значения: <br />• `tty\|on\|1\|true\|yes` - выводить в терминал в интерактивном режиме <br />• `err` - выводить в `stderr` в неинтерактивном режиме <br />• `off\|0\|false\|no` - отключить вывод прогресса                                                                                                                                                                                                 | `tty` в интерактивном режиме, `off` в неинтерактивном (батч) режиме |
+| `--progress-table`               | Выводить таблицу прогресса с изменяющимися метриками во время выполнения запроса. <br /><br />Возможные значения: <br />• `tty\|on\|1\|true\|yes` - выводить в терминал в интерактивном режиме <br />• `err` - выводить в `stderr` в неинтерактивном режиме <br />• `off\|0\|false\|no` - отключить таблицу прогресса                                                                                                                                                   | `tty` в интерактивном режиме, `off` в неинтерактивном (батч) режиме |
+| `--stacktrace`                   | Выводить трассировки стека для исключений.                                                                                                                                                                                                                                                                                                                                                                                                                              | -                                                                   |
+| `-t [ --time ]`                  | Выводить время выполнения запроса в `stderr` в неинтерактивном режиме (для бенчмарков).                                                                                                                                                                                                                                                                                                                                                                                 | -                                                                   |
