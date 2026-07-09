@@ -227,15 +227,22 @@ static ReturnType deserializeISODateJSON(
     else if (!checkChar(')', istr))
         return ReturnType(false);
 
+    /// 'basic' has no notion of a 'Z' suffix, unlike 'best_effort'/'best_effort_us' which consume it
+    /// themselves. Strip it upfront and force UTC, otherwise it'd parse in the column time zone.
+    const bool basic_format = settings.date_time_input_format == FormatSettings::DateTimeInputFormat::Basic;
+    const bool has_trailing_z = basic_format && !inner.empty() && inner.back() == 'Z';
+    if (has_trailing_z)
+        inner.pop_back();
+
     ReadBufferFromString buf(inner);
     if constexpr (throw_exception)
-        readText(x, scale, buf, settings, time_zone, utc_time_zone);
-    else if (!tryReadText(x, scale, buf, settings, time_zone, utc_time_zone))
+        readText(x, scale, buf, settings, has_trailing_z ? utc_time_zone : time_zone, utc_time_zone);
+    else if (!tryReadText(x, scale, buf, settings, has_trailing_z ? utc_time_zone : time_zone, utc_time_zone))
         return ReturnType(false);
 
-    /// Consume optional timezone 'Z' suffix that readText may leave behind
-    /// Case: ISODate("2024-05-29T23:16:12.256Z")
-    if (!buf.eof() && *buf.position() == 'Z')
+    /// Consume a 'Z' left behind by 'best_effort'/'best_effort_us'; skip for 'basic' since it was
+    /// already stripped above, so anything left is malformed (e.g. a second 'Z' in "...256ZZ").
+    if (!has_trailing_z && !buf.eof() && *buf.position() == 'Z')
         ++buf.position();
 
     if (!buf.eof())
