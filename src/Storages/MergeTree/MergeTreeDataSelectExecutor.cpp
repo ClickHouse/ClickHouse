@@ -2596,8 +2596,11 @@ RangesInDataParts MergeTreeDataSelectExecutor::selectPartsToRead(
         counters.num_initial_selected_parts += 1;
         counters.num_initial_selected_granules += num_granules;
 
-        /// hyperrectangle must come from the part whose metadata built the condition.
-        if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part->partition).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
+        /// Both the partition and the hyperrectangle must come from part_or_projection: the condition
+        /// was built from its metadata. For a projection part the partition is empty (matching the
+        /// projection's empty partition key); using the parent partition here would mismatch the
+        /// projection partition key size and abort in getID.
+        if (minmax_idx_condition && !minmax_idx_condition->generateForPartition(part_or_projection->partition).checkInHyperrectangle(part_or_projection->getMinMaxIndex()->hyperrectangle, minmax_columns_types).can_be_true)
             continue;
 
         counters.num_parts_after_minmax += 1;
