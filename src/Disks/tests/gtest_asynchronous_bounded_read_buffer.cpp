@@ -148,3 +148,64 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtWithPrefetch)
         EXPECT_TRUE(all_ok.load()) << "concurrent readBigAt returned wrong data at iteration " << iteration;
     }
 }
+
+/// readBigAt() for a range that starts at or past the estimated prefetch end must not wait on
+/// prefetch_mutex: it reads straight from impl. This races such out-of-prefetch reads against an
+/// in-flight prefetch and checks every reader observes the correct data (correctness of the
+/// mutex-skipping narrowing requested in the PR review).
+TEST_F(AsynchronousBoundedReadBufferTest, concurrentOutOfPrefetchReadBigAt)
+{
+    String contents;
+    for (size_t i = 0; i < 100000; ++i)
+        contents += static_cast<char>('a' + (i % 26));
+    String file_path = makeTempFile(contents);
+    ThreadPoolRemoteFSReader remote_fs_reader(8, 0);
+
+    for (int iteration = 0; iteration < 50; ++iteration)
+    {
+        AsynchronousBoundedReadBuffer read_buffer(
+            createReadBufferFromFileBase(file_path, ReadSettings{}), remote_fs_reader,
+            /* buffer_size */ 4096, /* min_bytes_for_seek */ 0,
+            Priority{0}, /* page_cache_block_size */ 0, /* enable_prefetches_log */ false);
+
+        ASSERT_TRUE(read_buffer.supportsReadAt());
+
+        /// Prefetch covers only [0, 4096); the readers below all start well past that, so they must
+        /// skip the mutex and read directly from impl while the prefetch is still in flight.
+        read_buffer.prefetch(Priority{0});
+
+        constexpr size_t num_threads = 8;
+        std::atomic<size_t> ready{0};
+        std::atomic<bool> go{false};
+        std::atomic<bool> all_ok{true};
+        std::vector<std::thread> threads;
+        threads.reserve(num_threads);
+        for (size_t t = 0; t < num_threads; ++t)
+        {
+            threads.emplace_back([&, t]()
+            {
+                const size_t range_begin = 8192 + t * 4096;
+                const size_t n = 4096;
+                String out;
+                out.resize(n);
+
+                ready.fetch_add(1);
+                while (!go.load())
+                    ;
+
+                size_t read = read_buffer.readBigAt(out.data(), n, range_begin, nullptr);
+                if (read != n || out != contents.substr(range_begin, n))
+                    all_ok.store(false);
+            });
+        }
+
+        while (ready.load() != num_threads)
+            ;
+        go.store(true);
+
+        for (auto & thread : threads)
+            thread.join();
+
+        EXPECT_TRUE(all_ok.load()) << "out-of-prefetch readBigAt returned wrong data at iteration " << iteration;
+    }
+}
