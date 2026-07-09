@@ -1134,6 +1134,48 @@ TEST(ReaderExecutor, EncryptedEofReleasesLongConnectionSlot)
     EXPECT_EQ(long_connection_limit->getActiveCount(), 0u);
 }
 
+TEST(ReaderExecutor, EncryptedSeekInsidePrefetchedWindow)
+{
+    /// Encrypted twin of `SeekInsidePrefetchedWindow`: the collect trims the kept
+    /// prefetched window against the seek target. Everything inside the executor is
+    /// PHYSICAL (header-inclusive), so a trim against the logical cursor would slice
+    /// the chain 64 bytes (one header) early and serve shifted plaintext - the
+    /// unencrypted twin cannot catch that.
+    String key(16, 's');
+    FileEncryption::InitVector iv(UInt128{0x5eedu});
+    String plaintext(2000, '\0');
+    for (size_t i = 0; i < plaintext.size(); ++i)
+        plaintext[i] = static_cast<char>('A' + (i % 26));
+    String file_bytes = makeEncryptedFile(key, iv, plaintext);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"obj", file_bytes}});
+    StoredObjects objects;
+    objects.emplace_back("obj", "", file_bytes.size());
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 500;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, {}, executor_options);
+    executor.addDecryptionLayer("/t", 0,
+        [&](UInt128, const String &) { return key; });
+    executor.initDecryption();
+
+    auto rope1 = executor.readNextWindow();
+    EXPECT_EQ(rope1.range().offset, 0u);
+    ASSERT_FALSE(rope1.getNodes().empty());
+    EXPECT_EQ(rope1.getNodes().front().data()[0], plaintext[0]);
+
+    executor.seek(750);
+    EXPECT_EQ(executor.getPosition(), 750u);
+
+    auto rope2 = executor.readNextWindow();
+    EXPECT_EQ(rope2.range().offset, 750u);
+    ASSERT_FALSE(rope2.getNodes().empty());
+    EXPECT_EQ(rope2.getNodes().front().data()[0], plaintext[750]);
+}
+
 TEST(ReaderExecutor, DecryptsSmallPayload)
 {
     /// Same path but payload smaller than CHAINED_BUFFER_BLOCK_SIZE — exercises the

@@ -807,14 +807,13 @@ bool ReaderExecutor::tryCollectMachine(ChainedBuffers & chain)
     /// chain, inline on the read thread. After `finalizeAssembledWindow` - the pin was
     /// just taken from the plan's writers while they were still here.
     runPutStep(std::move(m), result);
-    if (data_start_offset)
-        chain.shift(-static_cast<ssize_t>(data_start_offset));
 
-    /// A seek landed inside the fetched window: trim the prefix so `chain` starts at `position`.
-    if (!chain.empty() && position > chain.range().offset)
+    /// A seek landed inside the fetched window: trim the prefix so `chain` starts at the cursor.
+    const size_t position_phys = position + data_start_offset;
+    if (!chain.empty() && position_phys > chain.range().offset)
     {
         const size_t end = chain.range().end();
-        chain = chain.slice(ByteRange{position, end - position});
+        chain = chain.slice(ByteRange{position_phys, end - position_phys});
     }
     return true;
 }
@@ -1887,9 +1886,9 @@ size_t ReaderExecutor::serveRunAt(size_t pos_phys) const
 // running ahead of the cursor). ONE machine in flight - sequential serve is ordered, so a
 // deeper read-ahead only trades memory for latency-hiding, and connection parallelism
 // comes from multiple executors. A populatable job's bytes live in its cells (the cache is
-// the buffer); only a bypass job banks its bytes in the lane's bank
-// (LOGICAL coords, matching the I/O leaves' output, so banking needs no shift), sliced per
-// step. The long connection coalesces the GETs across pieces.
+// the buffer); what the cells cannot hold goes to the lane's bank (PHYSICAL coords, like
+// everything inside the executor - the one shift to logical happens on the consumer exit,
+// `serveFromDisplay`). The long connection coalesces the GETs across pieces.
 
 bool ReaderExecutor::clampAllowsAhead(size_t ri) const
 {
@@ -2100,7 +2099,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
         /// A populatable retrieve's worker committed its led cells inline: the display IS its
         /// data progress, and the serve reads the bytes back from the cache (the cache is the
         /// buffer) - banking them too would just hold a redundant in-memory copy. Only a bypass
-        /// gap keeps the bank (`collected` is logical, as `ready_bytes` is - no shift).
+        /// gap keeps the bank.
         if (r.into.empty() && !collected.empty())
             fill_lane.bank.append(std::move(collected));
         else if (was_inline && !collected.empty())
@@ -2111,8 +2110,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
             /// The serve then always covers what a piece fetched; no bespoke assembler needed.
             /// Inline pieces only: they are window-sized, so the overflow stays ~one window
             /// (a pool lead's refusal is re-fetched window-wise by the serve loop instead).
-            const ByteRange got = collected.range();
-            if (!display.covers(ByteRange{got.offset + data_start_offset, got.size}))
+            if (!display.covers(collected.range()))
                 fill_lane.bank.append(std::move(collected));
         }
         /// The lane's ahead cursor: the window was ATTEMPTED end to end (committed, refused
@@ -2143,8 +2141,8 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
         IntervalSet cov = committedCoverage(range);
         for (const auto & iv : fill_lane.bank.getIntervals())
         {
-            const size_t lo = std::max(iv.offset + data_start_offset, range.offset);
-            const size_t hi = std::min(iv.end() + data_start_offset, range.end());
+            const size_t lo = std::max(iv.offset, range.offset);
+            const size_t hi = std::min(iv.end(), range.end());
             if (lo < hi)
                 cov.add(ByteRange{lo, hi - lo});
         }
@@ -2237,8 +2235,6 @@ bool ReaderExecutor::pump(std::optional<size_t> ri_opt, ByteRange window)
             if (!sibling_bytes.empty())
             {
                 stats.add(Stats::BytesFromFilesystemCache, sibling_bytes.totalBytes());
-                if (data_start_offset)
-                    sibling_bytes.shift(-static_cast<ssize_t>(data_start_offset));
                 fill_lane.bank.append(std::move(sibling_bytes));
             }
             /// Advance the ahead cursor only to the CONTIGUOUS display frontier: a waited
@@ -2315,8 +2311,6 @@ bool ReaderExecutor::bankDirectRead(ByteRange window)
         /*may_open_long=*/true, stats);
     if (direct.empty())
         return false;
-    if (data_start_offset)
-        direct.shift(-static_cast<ssize_t>(data_start_offset));
     fill_lane.bank.append(std::move(direct));
     return true;
 }
@@ -2402,7 +2396,7 @@ bool ReaderExecutor::Display::coversByte(size_t phys) const
                 && w.writer->committed().subtract(ByteRange{phys, 1}).empty())
                 return true;
     for (const auto & iv : ex.fill_lane.bank.getIntervals())
-        if (iv.offset + ex.data_start_offset <= phys && phys < iv.end() + ex.data_start_offset)
+        if (iv.offset <= phys && phys < iv.end())
             return true;
     return false;
 }
@@ -2426,13 +2420,12 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
                     cov.add(ByteRange{lo, hi - lo});
             }
         }
-    /// The bank (logical coords; the display is physical). Per-INTERVAL, not the bounding
-    /// range: the bank can hold disjoint chunks (sibling-waited pieces), and coverage must
-    /// never claim a hole.
+    /// The bank. Per-INTERVAL, not the bounding range: the bank can hold disjoint chunks
+    /// (sibling-waited pieces), and coverage must never claim a hole.
     for (const auto & iv : ex.fill_lane.bank.getIntervals())
     {
-        const size_t lo = std::max(iv.offset + ex.data_start_offset, window_phys.offset);
-        const size_t hi = std::min(iv.end() + ex.data_start_offset, window_phys.end());
+        const size_t lo = std::max(iv.offset, window_phys.offset);
+        const size_t hi = std::min(iv.end(), window_phys.end());
         if (lo < hi)
             cov.add(ByteRange{lo, hi - lo});
     }
@@ -2508,19 +2501,17 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     if (!bank.empty())
         for (const auto & iv : bank.getIntervals())
         {
-            const size_t lo = std::max(iv.offset + ex.data_start_offset, window_phys.offset);
-            const size_t hi = std::min(iv.end() + ex.data_start_offset, window_phys.end());
+            const size_t lo = std::max(iv.offset, window_phys.offset);
+            const size_t hi = std::min(iv.end(), window_phys.end());
             if (lo >= hi)
                 continue;
             for (const auto & g : covered.subtract(ByteRange{lo, hi - lo}))
             {
-                const ByteRange g_logical{g.offset - ex.data_start_offset, g.size};
-                ChainedBuffers slice = bank.slice(g_logical);
+                ChainedBuffers slice = bank.slice(g);
                 /// Within one interval the slice covers the gap by construction; the guard
                 /// stays so a byte is never marked covered that was not appended.
-                if (!slice.covers(g_logical))
+                if (!slice.covers(g))
                     continue;
-                slice.shift(static_cast<ssize_t>(ex.data_start_offset));
                 out.append(std::move(slice));
                 covered.add(g);
             }
@@ -2534,11 +2525,10 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     const size_t prefix_end_phys = prefix_gaps.empty() ? window_phys.end() : prefix_gaps.front().offset;
     if (prefix_end_phys > window_phys.offset && !bank.empty())
     {
-        const ByteRange held = bank.range();   /// logical
-        const size_t cut = prefix_end_phys - ex.data_start_offset;
-        if (cut > held.offset)
-            bank = cut < held.end()
-                ? bank.slice(ByteRange{cut, held.end() - cut})
+        const ByteRange held = bank.range();
+        if (prefix_end_phys > held.offset)
+            bank = prefix_end_phys < held.end()
+                ? bank.slice(ByteRange{prefix_end_phys, held.end() - prefix_end_phys})
                 : ChainedBuffers{};
     }
 }
@@ -2990,8 +2980,8 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     if (!m)
         return;
     /// The global `machine` was just moved out above, so `machineFor` reports no machine for
-    /// this retrieve from here on; the banked `ready_bytes` stays valid - the cursor
-    /// has not moved (`setReadExtent`), or a seek re-plans and rebuilds them (see `seek`).
+    /// this retrieve from here on; the bank stays valid - the cursor has not moved
+    /// (`setReadExtent`), or a seek re-plans and rebuilds it (see `seek`).
 
     LOG_TRACE(log, "Prefetch: discarding [{}, {})",
         m->physical_window.offset - data_start_offset, m->physical_window.end() - data_start_offset);

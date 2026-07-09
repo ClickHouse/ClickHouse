@@ -746,11 +746,11 @@ private:
         size_t attempted_end = 0;
         void advanceAttempted(size_t phys_end) { attempted_end = std::max(attempted_end, phys_end); }
 
-        /// The BANK - the pipe's overflow cell, in LOGICAL coords: bytes no cache cell could
-        /// hold (a bypass gap's fetch, an overflow of refused writes, sibling-waited chunks,
-        /// heal reads), consumed-and-trimmed as the display serves. ONE lane-level holder:
-        /// the display reads it by offset, so job identity carries nothing. Plan-epoch
-        /// scoped, reset with the ahead cursor.
+        /// The BANK - the pipe's overflow cell, in PHYSICAL coords like the rest of the
+        /// executor state: bytes no cache cell could hold (a bypass gap's fetch, an overflow
+        /// of refused writes, sibling-waited chunks, heal reads), consumed-and-trimmed as the
+        /// display serves. ONE lane-level holder: the display reads it by offset, so job
+        /// identity carries nothing. Plan-epoch scoped, reset with the ahead cursor.
         ChainedBuffers bank;
 
 #if defined(DEBUG_OR_SANITIZER_BUILD)
