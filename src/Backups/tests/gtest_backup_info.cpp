@@ -440,9 +440,9 @@ TEST(BackupInfo, NormalizedStringRejectsInvalidBackupEngineShapes)
     EXPECT_THROW((void)BackupInfo::fromString("Unknown('x')").toNormalizedString(), Exception);
 }
 
-TEST(BackupInfo, NormalizedStringSupportsMemoryAndNullEngines)
+TEST(BackupInfo, NormalizedStringSupportsNullAndRejectsMemoryEngine)
 {
-    EXPECT_EQ(BackupInfo::fromString("Memory('backup')").toNormalizedString(), "Memory(6:backup)");
+    EXPECT_THROW((void)BackupInfo::fromString("Memory('backup')").toNormalizedString(), Exception);
     EXPECT_EQ(BackupInfo::fromString("Null()").toNormalizedString(), "Null()");
 }
 

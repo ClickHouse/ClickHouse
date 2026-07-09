@@ -509,13 +509,9 @@ namespace
 
         if (info.backup_engine_name == "Memory")
         {
-            if (has_named_collection)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Backup engine 'Memory' requires its first argument to be a string");
-            if (info.args.size() != 1)
-                throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Backup engine 'Memory' requires 1 argument (name)");
-
-            validateStringArgsForNormalizedIdentity(info);
-            return;
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Backup engine 'Memory' is session-scoped and is not supported for normalized backup identity");
         }
 
         if (info.backup_engine_name == "Null")
