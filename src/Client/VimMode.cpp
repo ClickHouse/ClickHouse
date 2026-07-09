@@ -6,8 +6,10 @@ namespace DB
 {
 using Replxx = replxx::Replxx;
 
-void ReplxxLineReader::resetVim() {
+void ReplxxLineReader::resetVim(int pos, std::string *text) {
     vimbuffer = vimbufferinner = flag = op = 0;
+    if (pos >= 0 && text)
+        recomputeCurswant(pos, *text);
 }
 
 template <typename T>
@@ -36,7 +38,7 @@ void ReplxxLineReader::recomputeCurswant(int pos, std::string &text) {
     for (prev_newline = pos; prev_newline > 0; prev_newline--)
         if (text[prev_newline] == '\n')
             break;
-    curswant = std::max(prev_newline == 0 ? pos + rx.prompt_indentation() + 1 : pos - prev_newline, 1);
+    curswant = std::max(text[prev_newline] != '\n' || pos == 0 ? pos + rx.prompt_indentation() + 1 : pos - prev_newline, 1);
 }
 
 void ReplxxLineReader::setupVimKeybindings()
@@ -45,9 +47,9 @@ void ReplxxLineReader::setupVimKeybindings()
     for (int i = 0; i < MODE_END; i++) {
         if (i == MODE_INSERT) {
             bindKey(Replxx::KEY::ESCAPE, [this](int &pos, std::string &text, char32_t) {
-                resetVim();
                 if (pos > 0 && text[pos - 1] != '\n')
                     pos--;
+                resetVim(pos, &text);
                 rx.set_editing_mode(MODE_NORMAL);
             }, i);
         }
@@ -70,13 +72,13 @@ void ReplxxLineReader::setupVimKeybindings()
     bindKey('h', [this](int &pos, std::string &text, char32_t) {
         if (pos > 0 && text[pos - 1] != '\n')
             pos--;
-        recomputeCurswant(pos, text);
+        resetVim(pos, &text);
     }, MODE_NORMAL);
 
     bindKey('l', [this](int &pos, std::string &text, char32_t) {
         if (pos < static_cast<int>(text.length()) - 1 && text[pos] != '\n' && text[pos + 1] != '\n')
             pos++;
-        recomputeCurswant(pos, text);
+        resetVim(pos, &text);
     }, MODE_NORMAL);
 
     bindKey('j', [this](int &pos, std::string &text, char32_t) {
@@ -123,6 +125,11 @@ void ReplxxLineReader::setupVimKeybindings()
                 break;
             }
         }
+    }, MODE_NORMAL);
+
+    bindKey('0', [this](int &pos, std::string &text, char32_t) {
+        for (; pos > 0 && text[pos - 1] != '\n'; pos--);
+        resetVim(pos, &text);
     }, MODE_NORMAL);
 
 
