@@ -2712,13 +2712,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     strict_transformer_to_used_column_names[replace_transformer].insert(
                         matched_replace_target.empty() ? column_name : matched_replace_target);
 
+                /// Keyed by the canonical column name only: the WHERE/HAVING rewriter folds
+                /// unquoted references in `standard` mode, and a double-quoted reference must
+                /// not match a folded target spelling.
                 replace_transformer_mappings[column_name] = replace_expression;
-                /// Store under the user's target spelling too so a WHERE/HAVING reference written
-                /// with the same case (e.g. `WHERE age = 0` after `REPLACE (0 AS age)` against
-                /// physical column `Age`) finds the mapping by exact name. The WHERE/HAVING
-                /// rewriter additionally does a case-insensitive fallback in `standard` mode.
-                if (!matched_replace_target.empty() && matched_replace_target != column_name)
-                    replace_transformer_mappings[matched_replace_target] = replace_expression;
 
                 node = replace_expression->clone();
                 node_projection_names = resolveExpressionNode(node, scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);

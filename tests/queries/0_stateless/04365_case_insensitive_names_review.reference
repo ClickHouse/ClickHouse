@@ -87,3 +87,6 @@ SELECT 1 AS "MyAlias"
 1
 2
 3
+--- Quoted folded spelling must not match a REPLACE target ---
+0
+0

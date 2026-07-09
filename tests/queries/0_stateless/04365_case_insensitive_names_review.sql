@@ -235,3 +235,11 @@ WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT mycol + 1 FROM cte WHE
 WITH RECURSIVE cte("MyCol") AS (SELECT 1 UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte ORDER BY "MyCol";
 WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte; -- { serverError UNKNOWN_IDENTIFIER }
 WITH RECURSIVE cte AS (SELECT 1 AS MyCol UNION ALL SELECT mycol + 1 FROM cte WHERE mycol < 3) SELECT * FROM cte ORDER BY MyCol;
+
+SELECT '--- Quoted folded spelling must not match a REPLACE target ---';
+CREATE TABLE t_replace_quote (Age Int32) ENGINE = Memory;
+INSERT INTO t_replace_quote VALUES (5);
+SELECT * REPLACE (0 AS age) FROM t_replace_quote WHERE "age" = 0; -- { serverError UNKNOWN_IDENTIFIER }
+SELECT * REPLACE (0 AS age) FROM t_replace_quote WHERE age = 0;
+SELECT * REPLACE (0 AS age) FROM t_replace_quote WHERE "Age" = 0;
+DROP TABLE t_replace_quote;
