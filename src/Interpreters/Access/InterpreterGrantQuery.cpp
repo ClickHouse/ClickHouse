@@ -451,7 +451,7 @@ BlockIO InterpreterGrantQuery::execute()
     collectRolesToGrantOrRevoke(access_control, query, roles_to_grant, roles_to_revoke);
 
     /// Replacing empty database with the default. This step must be done before replication to avoid privilege escalation.
-    const auto current_database = getContext()->getCurrentDatabase();
+    const auto current_database = getContext()->getCurrentDatabaseInfo();
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);

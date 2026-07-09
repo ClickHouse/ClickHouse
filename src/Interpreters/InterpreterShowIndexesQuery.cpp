@@ -25,7 +25,16 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String table = escapeString(query.table);
+    String table_name = query.table;
+    /// Under `USE db.namespace` (DataLakeCatalog) an unqualified name refers to the
+    /// namespace-qualified table, the same way `Context::resolveStorageID` resolves it.
+    if (query.database.empty())
+    {
+        const auto current_db_info = getContext()->getCurrentDatabaseInfo();
+        if (!current_db_info.table_prefix.empty())
+            table_name = current_db_info.table_prefix + "." + table_name;
+    }
+    String table = escapeString(table_name);
     String resolved_database = getContext()->resolveDatabase(query.database);
     String database = escapeString(resolved_database);
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression->formatWithSecretsOneLine()) : "";

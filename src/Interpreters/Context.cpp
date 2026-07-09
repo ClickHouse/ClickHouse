@@ -1424,7 +1424,7 @@ const RefreshSet & Context::getRefreshSet() const { return shared->refresh_set; 
 
 String Context::resolveDatabase(const String & database_name) const
 {
-    String res = database_name.empty() ? getCurrentDatabase().database : database_name;
+    String res = database_name.empty() ? getCurrentDatabase() : database_name;
     if (res.empty())
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
     return res;
@@ -2918,7 +2918,7 @@ static bool findIdentifier(const ASTFunction * function)
 StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const ASTSelectQuery * select_query_hint)
 {
     ASTFunction * function = assert_cast<ASTFunction *>(table_expression.get());
-    String database_name = getCurrentDatabase().database;
+    String database_name = getCurrentDatabase();
     String table_name = function->name;
 
     if (function->isCompoundName())
@@ -3439,7 +3439,13 @@ std::shared_ptr<const SettingsConstraintsAndProfileIDs> Context::getSettingsCons
     return getSettingsConstraintsAndCurrentProfilesWithLock();
 }
 
-CurrentDatabaseInfo Context::getCurrentDatabase() const
+String Context::getCurrentDatabase() const
+{
+    SharedLockGuard lock(mutex);
+    return current_database;
+}
+
+CurrentDatabaseInfo Context::getCurrentDatabaseInfo() const
 {
     SharedLockGuard lock(mutex);
     return {current_database, current_table_prefix};
@@ -3484,8 +3490,15 @@ void Context::setCurrentDatabaseWithLock(const String & name, const String & tab
 
 void Context::setCurrentDatabase(const String & name, const String & table_prefix)
 {
+    String database_name = name;
+    String database_table_prefix = table_prefix;
+    /// A dotted name may select a namespace inside a DataLakeCatalog database ("db.namespace"),
+    /// e.g. a client default database persisted after `USE db.namespace` and sent on reconnect.
+    if (database_table_prefix.empty() && !name.empty())
+        std::tie(database_name, database_table_prefix) = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(name);
+
     std::lock_guard lock(mutex);
-    setCurrentDatabaseWithLock(name, table_prefix, lock);
+    setCurrentDatabaseWithLock(database_name, database_table_prefix, lock);
 }
 
 void Context::setCurrentDatabaseUnchecked(const String & name)

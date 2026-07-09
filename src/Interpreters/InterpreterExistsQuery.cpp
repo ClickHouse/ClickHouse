@@ -44,7 +44,7 @@ QueryPipeline InterpreterExistsQuery::executeImpl()
 
     /// Under `USE db.namespace` (DataLakeCatalog) an unqualified name refers to the
     /// namespace-qualified table, the same way `Context::resolveStorageID` resolves it.
-    const auto current_db_info = getContext()->getCurrentDatabase();
+    const auto current_db_info = getContext()->getCurrentDatabaseInfo();
     auto with_table_prefix = [&](const String & table_name, const String & query_database)
     {
         if (query_database.empty() && !current_db_info.table_prefix.empty())

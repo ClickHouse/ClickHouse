@@ -1111,7 +1111,10 @@ public:
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
 
-    CurrentDatabaseInfo getCurrentDatabase() const;
+    String getCurrentDatabase() const;
+    /// The current database together with the namespace prefix selected by `USE db.namespace`
+    /// (DataLakeCatalog databases). Use where the prefix affects name resolution.
+    CurrentDatabaseInfo getCurrentDatabaseInfo() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 
     /// Id of initiating query for distributed queries; or current query id if it's not a distributed query.

@@ -228,7 +228,7 @@ StoragePtr JoinedTables::getLeftTableStorage()
         {
             /// Temporarily set the current database to match the context we're analyzing in
             table_function_context = Context::createCopy(table_function_context);
-            auto current_db_info = context->getCurrentDatabase();
+            auto current_db_info = context->getCurrentDatabaseInfo();
             table_function_context->setCurrentDatabase(current_db_info.database, current_db_info.table_prefix);
         }
         return table_function_context->executeTableFunction(left_table_expression, &select_query);
@@ -311,7 +311,7 @@ void JoinedTables::rewriteDistributedInAndJoins(ASTPtr & query)
 
     String database;
     if (!renamed_tables.empty())
-        database = context->getCurrentDatabase().database;
+        database = context->getCurrentDatabase();
 
     for (auto & [subquery, ast_tables] : renamed_tables)
     {

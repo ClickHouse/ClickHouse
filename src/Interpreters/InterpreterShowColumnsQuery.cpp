@@ -43,7 +43,16 @@ String InterpreterShowColumnsQuery::getRewrittenQuery()
     WriteBufferFromOwnString buf_database;
     String resolved_database = getContext()->resolveDatabase(query.database);
     String database = escapeString(resolved_database);
-    String table = escapeString(query.table);
+    String table_name = query.table;
+    /// Under `USE db.namespace` (DataLakeCatalog) an unqualified name refers to the
+    /// namespace-qualified table, the same way `Context::resolveStorageID` resolves it.
+    if (query.database.empty())
+    {
+        const auto current_db_info = getContext()->getCurrentDatabaseInfo();
+        if (!current_db_info.table_prefix.empty())
+            table_name = current_db_info.table_prefix + "." + table_name;
+    }
+    String table = escapeString(table_name);
 
     String rewritten_query;
     if (use_mysql_types)

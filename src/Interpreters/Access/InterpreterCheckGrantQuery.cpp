@@ -18,7 +18,7 @@ BlockIO InterpreterCheckGrantQuery::execute()
 
     /// Collect access rights elements which will be checked.
     AccessRightsElements & elements_to_check_grant = query.access_rights_elements;
-    const auto current_database = getContext()->getCurrentDatabase();
+    const auto current_database = getContext()->getCurrentDatabaseInfo();
     elements_to_check_grant.replaceEmptyDatabase(current_database);
 
     auto current_user_access = getContext()->getAccess();

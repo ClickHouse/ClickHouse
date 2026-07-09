@@ -302,7 +302,7 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
         table_name = table_identifier[0];
     }
 
-    auto current_db_info = context->getCurrentDatabase();
+    auto current_db_info = context->getCurrentDatabaseInfo();
     const String & current_database = current_db_info.database;
     /// Namespaced table names are specific to data lake catalogs, so check the engine name
     /// (`isRemoteDatabase` would also cover MySQL/PostgreSQL). The current database may be
@@ -454,7 +454,7 @@ std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifi
     /// Resolve the database the same way table resolution does, so the hint search starts from
     /// the right database (the current one for a bare name) and can fall back to other databases.
     if (database_name.empty())
-        database_name = context->getCurrentDatabase().database;
+        database_name = context->getCurrentDatabase();
 
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);
     TableNameHints hints(database, context);

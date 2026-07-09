@@ -138,7 +138,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         [](const AccessRightsElement & elem) { return elem.isEmptyDatabase(); });
 
     bool use_local_default_database = false;
-    const auto current_database_info = context->getCurrentDatabase();
+    const auto current_database_info = context->getCurrentDatabaseInfo();
     const String & current_database = current_database_info.database;
 
     if (need_replace_current_database)
@@ -232,7 +232,7 @@ bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)
 
     String database_name = query->getDatabase();
     if (database_name.empty())
-        database_name = context->getCurrentDatabase().database;
+        database_name = context->getCurrentDatabase();
 
     auto * query_on_cluster = dynamic_cast<ASTQueryWithOnCluster *>(query_ptr.get());
     auto database = DatabaseCatalog::instance().tryGetDatabase(database_name);

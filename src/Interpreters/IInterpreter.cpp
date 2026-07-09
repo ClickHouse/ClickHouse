@@ -28,7 +28,7 @@ void IInterpreter::extendQueryLogElem(
     }
     else if (!query_table.empty())
     {
-        auto quoted_database = query_database.empty() ? backQuoteIfNeed(context->getCurrentDatabase().database)
+        auto quoted_database = query_database.empty() ? backQuoteIfNeed(context->getCurrentDatabase())
                                                       : backQuoteIfNeed(query_database);
         elem.query_databases.insert(quoted_database);
         elem.query_tables.insert(quoted_database + "." + backQuoteIfNeed(query_table));

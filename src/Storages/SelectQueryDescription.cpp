@@ -47,7 +47,7 @@ StorageID extractDependentTableFromSelectQuery(ASTSelectQuery & query, ContextPt
 {
     if (add_default_db)
     {
-        const auto current_database_info = context->getCurrentDatabase();
+        const auto current_database_info = context->getCurrentDatabaseInfo();
         AddDefaultDatabaseVisitor visitor(
             context, current_database_info.database, /*only_replace_current_database_function*/ false,
             /*only_replace_in_join*/ false, current_database_info.table_prefix);

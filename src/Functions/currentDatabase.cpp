@@ -19,7 +19,7 @@ public:
     static constexpr auto name = "currentDatabase";
     static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionCurrentDatabase>(context->getCurrentDatabase().database);
+        return std::make_shared<FunctionCurrentDatabase>(context->getCurrentDatabase());
     }
 
     explicit FunctionCurrentDatabase(const String & db_name_) : db_name{db_name_}

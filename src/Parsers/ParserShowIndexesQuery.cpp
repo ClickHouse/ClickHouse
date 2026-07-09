@@ -41,11 +41,19 @@ bool ParserShowIndexesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
     const auto * table_id = from1->as<ASTIdentifier>();
     if (!table_id)
         return false;
-    query->table = table_id->shortName();
     if (table_id->compound())
-        query->database = table_id->name_parts[0];
+    {
+        const auto & parts = table_id->name_parts;
+        query->database = parts[0];
+        /// Fold namespace parts into the table name (DataLakeCatalog databases):
+        /// catalog.ns1.ns2.table -> table `ns1.ns2.table`
+        query->table = parts[1];
+        for (size_t i = 2; i < parts.size(); ++i)
+            query->table += "." + parts[i];
+    }
     else
     {
+        query->table = table_id->shortName();
         if (ParserKeyword(Keyword::FROM).ignore(pos, expected) || ParserKeyword(Keyword::IN).ignore(pos, expected))
             if (!ParserIdentifier().parse(pos, from2, expected))
                 return false;
