@@ -64,6 +64,7 @@
                     "group": "Get started",
                     "icon": "/images/menu-icon-lightning.svg",
                     "pages": [
+                      "get-started/quickstarts/home",
                       {
                         "expandable": true,
                         "expanded": true,
@@ -85,8 +86,7 @@
                         ],
                         "root": "get-started/use-cases/overview"
                       },
-                      "get-started/about/deployment-modes",
-                      "get-started/quickstarts/home"
+                      "get-started/about/deployment-modes"
                     ],
                     "root": "get-started/index"
                   },
