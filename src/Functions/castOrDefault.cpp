@@ -46,7 +46,10 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : context(context_), keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -128,7 +131,7 @@ public:
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
         ColumnWithTypeAndName column_to_cast_non_const{non_const_column_to_cast, column_to_cast.type, column_to_cast.name};
 
-        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
+        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type, context);
 
         const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
         const auto & null_map_data = cast_result_nullable.getNullMapData();
@@ -195,6 +198,7 @@ public:
 
 private:
 
+    ContextPtr context;
     bool keep_nullable;
 };
 

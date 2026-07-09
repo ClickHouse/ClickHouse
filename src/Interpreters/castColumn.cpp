@@ -12,7 +12,7 @@
 namespace DB
 {
 
-static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache = nullptr)
+static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & arg, const DataTypePtr & type, const ContextPtr & context, InternalCastFunctionCache * cache = nullptr)
 {
     if (arg.type->equals(*type) && cast_type != CastType::accurateOrNull)
         return arg.column;
@@ -28,9 +28,9 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
             ""
         }
     };
-    auto get_cast_func = [from = arg, to = type, cast_type]
+    auto get_cast_func = [from = arg, to = type, cast_type, context]
     {
-        return createInternalCast(from, to, cast_type, {}, nullptr);
+        return createInternalCast(from, to, cast_type, {}, context);
     };
 
     FunctionBasePtr func_cast = cache ? cache->getOrSet(cast_type, from_name, to_name, std::move(get_cast_func)) : get_cast_func();
@@ -42,17 +42,22 @@ static ColumnPtr castColumn(CastType cast_type, const ColumnWithTypeAndName & ar
 
 ColumnPtr castColumn(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    return castColumn(CastType::nonAccurate, arg, type, cache);
+    return castColumn(CastType::nonAccurate, arg, type, nullptr, cache);
 }
 
 ColumnPtr castColumnAccurate(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    return castColumn(CastType::accurate, arg, type, cache);
+    return castColumn(CastType::accurate, arg, type, nullptr, cache);
 }
 
 ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    return castColumn(CastType::accurateOrNull, arg, type, cache);
+    return castColumn(CastType::accurateOrNull, arg, type, nullptr, cache);
+}
+
+ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const DataTypePtr & type, const ContextPtr & context, InternalCastFunctionCache * cache)
+{
+    return castColumn(CastType::accurateOrNull, arg, type, context, cache);
 }
 
 }
