@@ -13,22 +13,21 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Keep the tables empty - the flaky check reruns this test many times under sanitizers, and
 # large Memory-engine inserts multiplied by that repetition exhaust the job's memory/time.
 
-# Run one racing probe query and classify its outcome explicitly. Returns non-zero (fails the
-# test) only for the failure this PR eliminates: a fatal type-mismatch abort, or a lost server
-# connection (how such an abort surfaces to the client). A recoverable server exception such as
-# ILLEGAL_TYPE_OF_ARGUMENT (Code 43) is an expected, acceptable outcome of the race - after the
-# EXCHANGE settles the real execution re-resolves the function and reports a clean recoverable
-# error - so we must not demand unconditional client success, only the absence of an abort.
+# Run one racing probe query and classify its outcome explicitly. The abort this PR eliminates is
+# a type-mismatch LOGICAL_ERROR ("Unexpected return type ..."). It has exactly two manifestations:
+# in a release build it is a catchable exception whose text reaches the client, so we fail on that
+# text; in a debug/sanitizer build it aborts the whole server process, which the liveness check
+# after each batch detects directly (see assert_alive). We do NOT try to classify the abort from
+# other client-side symptoms: a recoverable ILLEGAL_TYPE_OF_ARGUMENT (Code 43) is the expected
+# non-abort outcome of the race (after the EXCHANGE settles, real execution re-resolves the
+# function and reports a clean recoverable error), and a transient connection reset under heavy
+# concurrency leaves the server up - both must be tolerated, and the liveness check tells crashes
+# apart from them without false positives.
 probe() {
     local out
     out=$(${CLICKHOUSE_CLIENT} --query "$1" 2>&1) || true
     if echo "$out" | grep -qE "LOGICAL_ERROR|Unexpected return type"; then
         echo "FAIL: fatal type-mismatch abort during partial evaluation:" >&2
-        echo "$out" >&2
-        return 1
-    fi
-    if echo "$out" | grep -qiE "Connection refused|Connection reset|Broken pipe|I/O error|DB::NetException|Poco::(Net|TimeoutException)|Timeout: connect"; then
-        echo "FAIL: lost connection to server (possible crash):" >&2
         echo "$out" >&2
         return 1
     fi
@@ -43,6 +42,14 @@ check_pids() {
         wait "$p" || status=1
     done
     return $status
+}
+
+# Unambiguous crash detector: if the type-mismatch abort fired in a debug/sanitizer build it killed
+# the server, so a plain liveness query fails. A tolerated recoverable exception or a transient
+# reset during the race leaves the server responding, so this has no false positives.
+assert_alive() {
+    ${CLICKHOUSE_CLIENT} --query "SELECT 1" >/dev/null 2>&1 \
+        || { echo "FAIL: server not responding after race (partial-evaluation abort?)" >&2; exit 1; }
 }
 
 # Base-type drift: swap Float64 with Int256. A strict function (arithmetic) resolved for the
@@ -61,6 +68,7 @@ for _ in {1..10}; do
     ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_1 AND tbl_03007_2" 2>/dev/null &
 done
 check_pids "${pids[@]}"
+assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE IF EXISTS tbl_03007_1;
@@ -90,6 +98,7 @@ for _ in {1..10}; do
     ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_3 AND tbl_03007_4" 2>/dev/null &
 done
 check_pids "${pids[@]}"
+assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE IF EXISTS tbl_03007_3;
@@ -121,6 +130,7 @@ for _ in {1..10}; do
     ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_5 AND tbl_03007_6" 2>/dev/null &
 done
 check_pids "${pids[@]}"
+assert_alive
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE IF EXISTS tbl_03007_5;
