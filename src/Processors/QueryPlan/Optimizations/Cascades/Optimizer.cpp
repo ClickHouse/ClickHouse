@@ -86,8 +86,7 @@ void CascadesOptimizer::optimize()
     LOG_TEST(optimizer_context.log, "Initial memo:\n{}", optimizer_context.memo.dump());
 
     /// Add task to optimize root group
-    CostLimit initial_cost_limit = std::numeric_limits<CostLimit>::infinity();
-    optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, root_required_properties, initial_cost_limit));
+    optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(root_group_id, root_required_properties));
 
     /// Limit the time in terms of optimization tasks instead of wall clock time. This is done for stability of generated plans regardless of system load.
     /// Guys from MS SQL Server describe this in Andy Pavlo's seminar: https://www.youtube.com/watch?v=pQe1LQJiXN0
@@ -108,11 +107,12 @@ void CascadesOptimizer::optimize()
     if (!optimizer_context.tasks.empty())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "Cascades optimizer did not finish within the task budget of {} tasks "
-            "(root group #{}, required properties {}, {} groups in memo). "
-            "The distributed Cascades optimizer is experimental; disable enable_cascades_optimizer "
+            "(root group #{}, required properties {}, {} groups in memo, {} tasks left, next: {}). "
+            "The distributed Cascades optimizer is experimental; set enable_cascades_optimizer = 0 "
             "or simplify the query.",
             executed_tasks_limit, root_group_id, root_required_properties.dump(),
-            optimizer_context.memo.getGroupCount());
+            optimizer_context.memo.getGroupCount(), optimizer_context.tasks.size(),
+            optimizer_context.tasks.top()->describe());
 
     /// Get the best plan for the root group
     auto best_plan = buildBestPlan(root_group_id, root_required_properties, optimizer_context.memo);
@@ -182,7 +182,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
         return best;
     };
 
-    /// DFS stack frame — one per expression (leaf, single-input, or multi-input).
+    /// DFS stack frame - one per expression (leaf, single-input, or multi-input).
     struct Frame
     {
         GroupId group_id;
@@ -236,7 +236,7 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
             continue;
         }
 
-        /// All children processed — build this node's plan (post-order).
+        /// All children processed - build this node's plan (post-order).
         if (frame.expression->inputs.empty())
         {
             result = std::make_unique<QueryPlan>();

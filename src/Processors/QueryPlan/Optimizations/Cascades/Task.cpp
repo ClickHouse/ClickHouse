@@ -18,7 +18,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     auto group = optimizer_context.getGroup(group_id);
 
     /// Skip this group only if it is already fully processed (explored + implemented +
-    /// enforced) for these properties and has a satisfying plan — re-running would be a no-op.
+    /// enforced) for these properties and has a satisfying plan - re-running would be a no-op.
     /// We deliberately do NOT prune just because a current best is within a finite cost budget:
     /// the budget is an upper bound, not a lower bound, so such pruning is unsound for
     /// optimality, and it can return before stage-3 enforcers add the distributed alternatives.
@@ -38,15 +38,15 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
     if (!group->isExplored())
     {
         /// Explore the group and then re-run OptimizeGroup again
-        optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties, cost_limit));
-        optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(group_id, cost_limit));
+        optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties));
+        optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(group_id));
     }
     else if (!group->isOptimizedFor(required_properties))
     {
-        optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties, cost_limit));
+        optimizer_context.pushTask(std::make_shared<OptimizeGroupTask>(group_id, required_properties));
 
         for (auto & expression : group->logical_expressions)
-            optimizer_context.pushTask(std::make_shared<OptimizeExpressionTask>(expression, required_properties, cost_limit));
+            optimizer_context.pushTask(std::make_shared<OptimizeExpressionTask>(expression, required_properties));
 
         group->setOptimizedFor(required_properties);
     }
@@ -63,7 +63,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
         ///
         /// A fixed-point loop handles enforcer composition within a single invocation:
         /// e.g. SortingEnforcer creates Sort({N nodes, sorted}), then DistributionEnforcer
-        /// creates GatherExchange(sorted) from it — all in the same Stage 3 pass.
+        /// creates GatherExchange(sorted) from it - all in the same Stage 3 pass.
 
         group->setEnforcedFor(required_properties);
 
@@ -102,7 +102,7 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
                     /// alternative (e.g. a sorted gather for each requested direction).
                     /// Enforcers return only the expressions they actually inserted (structural
                     /// duplicates are dropped), so duplicate enforcer outputs are neither scheduled
-                    /// nor counted as progress — they cannot exhaust the task budget.
+                    /// nor counted as progress - they cannot exhaust the task budget.
                     auto new_expressions = enforcer->apply(expression, required_properties, optimizer_context.getMemo());
                     if (new_expressions.empty())
                         continue;
@@ -125,15 +125,15 @@ void OptimizeGroupTask::execute(OptimizerContext & optimizer_context)
             /// executes AFTER all OptimizeInputsTask complete.  This re-run checks
             /// whether the newly created enforcer expressions need further composition.
             optimizer_context.pushTask(
-                std::make_shared<OptimizeGroupTask>(group_id, required_properties, cost_limit));
+                std::make_shared<OptimizeGroupTask>(group_id, required_properties));
 
             for (const auto & new_expression : enforcer_expressions)
             {
                 /// Fast path: if all inputs already have best implementations,
-                /// compute cost directly — avoids the entire OptimizeInputsTask chain.
+                /// compute cost directly - avoids the entire OptimizeInputsTask chain.
                 if (!optimizer_context.tryUpdateBestPlanDirectly(new_expression))
                     optimizer_context.pushTask(
-                        std::make_shared<OptimizeInputsTask>(new_expression, 0, cost_limit));
+                        std::make_shared<OptimizeInputsTask>(new_expression, 0));
             }
         }
     }
@@ -153,7 +153,7 @@ void ExploreGroupTask::execute(OptimizerContext & optimizer_context)
     group->setExplored();
 
     for (const auto & expression : group->logical_expressions)
-        optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(expression, cost_limit));
+        optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(expression));
 }
 
 
@@ -173,12 +173,12 @@ void ExploreExpressionTask::execute(OptimizerContext & optimizer_context)
     std::sort(moves.begin(), moves.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
     for (const auto & m : moves)
-        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, ExpressionProperties{}, m.second, m.first, cost_limit));
+        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, ExpressionProperties{}, m.second, m.first));
 
     for (const auto & input : expression->inputs)
     {
         if (!optimizer_context.getGroup(input.group_id)->isExplored())
-            optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(input.group_id, cost_limit));
+            optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(input.group_id));
     }
 }
 
@@ -201,12 +201,12 @@ void OptimizeExpressionTask::execute(OptimizerContext & optimizer_context)
     std::sort(moves.begin(), moves.end(), [](const auto & lhs, const auto & rhs) { return lhs.first < rhs.first; });
 
     for (const auto & m : moves)
-        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, required_properties, m.second, m.first, cost_limit));
+        optimizer_context.pushTask(std::make_shared<ApplyRuleTask>(expression, required_properties, m.second, m.first));
 
     for (const auto & input : expression->inputs)
     {
         if (!optimizer_context.getGroup(input.group_id)->isExplored())
-            optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(input.group_id, cost_limit));
+            optimizer_context.pushTask(std::make_shared<ExploreGroupTask>(input.group_id));
     }
 }
 
@@ -225,18 +225,18 @@ void ApplyRuleTask::execute(OptimizerContext & optimizer_context)
     {
         if (rule->isTransformation())
         {
-            optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(new_expression, cost_limit));
+            optimizer_context.pushTask(std::make_shared<ExploreExpressionTask>(new_expression));
         }
         else
         {
             /// Fast path: if all inputs already have best implementations,
-            /// compute cost directly — avoids the entire OptimizeInputsTask chain.
+            /// compute cost directly - avoids the entire OptimizeInputsTask chain.
             if (optimizer_context.tryUpdateBestPlanDirectly(new_expression))
                 continue;
 
             /// Finite branch-and-bound budgets are disabled for now (see OptimizeInputsTask);
             /// pass the incoming limit through unchanged.
-            optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(new_expression, 0, cost_limit));
+            optimizer_context.pushTask(std::make_shared<OptimizeInputsTask>(new_expression, 0));
         }
     }
 }
@@ -252,7 +252,7 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
         const auto & cost_config = optimizer_context.getMemo().getEnvironment().cost_config;
 
         /// If any input has no satisfying implementation, this expression is
-        /// unsatisfiable — skip cost estimation.
+        /// unsatisfiable - skip cost estimation.
         for (const auto & input : expression->inputs)
         {
             if (!optimizer_context.getGroup(input.group_id)
@@ -280,26 +280,46 @@ void OptimizeInputsTask::execute(OptimizerContext & optimizer_context)
         auto child_group = optimizer_context.getGroup(input.group_id);
 
         /// Skip pushing OptimizeGroupTask for this child only if it is already FULLY done
-        /// (explored + implemented + enforced) for the required properties — matching
+        /// (explored + implemented + enforced) for the required properties - matching
         /// tryUpdateBestPlanDirectly. A child that merely has an early local best may still
         /// gain a cheaper enforcer-built alternative, so it must keep being optimized.
         bool child_already_done = child_group->isFullyDoneFor(input.required_properties);
 
         optimizer_context.pushTask(
-            std::make_shared<OptimizeInputsTask>(expression, input_index_to_optimize + 1, cost_limit));
+            std::make_shared<OptimizeInputsTask>(expression, input_index_to_optimize + 1));
 
         if (!child_already_done)
         {
-            /// Finite child cost budgets are disabled for now: deriving them from sibling best
-            /// costs is unsound, because an in-progress sibling best is an upper bound, not a
-            /// lower bound, so it can prune a parent expression that would still become cheapest.
-            /// Pass an unbounded limit; total work is bounded by the optimizer task budget,
-            /// which fails closed (see CascadesOptimizer::optimize).
+            /// The search has no per-subtree cost budget: deriving one from sibling best costs
+            /// is unsound, because an in-progress sibling best is an upper bound, not a lower
+            /// bound, so it could prune a parent expression that would still become cheapest.
+            /// Total work is bounded by the optimizer task budget, which fails closed
+            /// (see CascadesOptimizer::optimize).
             optimizer_context.pushTask(
-                std::make_shared<OptimizeGroupTask>(input.group_id, input.required_properties,
-                    std::numeric_limits<CostLimit>::infinity()));
+                std::make_shared<OptimizeGroupTask>(input.group_id, input.required_properties));
         }
     }
+}
+
+
+String ExploreExpressionTask::describe() const
+{
+    return fmt::format("explore expression '{}'", expression->getName());
+}
+
+String OptimizeExpressionTask::describe() const
+{
+    return fmt::format("optimize expression '{}' for {}", expression->getName(), required_properties.dump());
+}
+
+String ApplyRuleTask::describe() const
+{
+    return fmt::format("apply rule {} to '{}'", rule->getName(), expression->getName());
+}
+
+String OptimizeInputsTask::describe() const
+{
+    return fmt::format("optimize input #{} of '{}'", input_index_to_optimize, expression->getName());
 }
 
 }

@@ -5,6 +5,7 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Properties.h>
 #include <memory>
+#include <fmt/format.h>
 #include <base/types.h>
 #include <boost/core/noncopyable.hpp>
 
@@ -16,21 +17,17 @@ class OptimizerContext;
 class IOptimizationRule;
 using OptimizationRulePtr = std::shared_ptr<const IOptimizationRule>;
 
+/// Rule priority: among the rules applicable to one expression, a higher promise fires first.
+/// Candidates are sorted ascending and pushed on the LIFO task stack, so the largest promise
+/// ends up on top.
 using Promise = Int64;
-using CostLimit = Float64;
-
 class IOptimizationTask : boost::noncopyable
 {
-protected:
-    explicit IOptimizationTask(CostLimit cost_limit_)
-        : cost_limit(cost_limit_)
-    {}
-
 public:
     virtual ~IOptimizationTask() = default;
     virtual void execute(OptimizerContext & optimizer_context) = 0;
-
-    const CostLimit cost_limit;
+    /// One line for logs and the task-budget error: which task and on what.
+    virtual String describe() const = 0;
 };
 
 using OptimizationTaskPtr = std::shared_ptr<IOptimizationTask>;
@@ -41,13 +38,13 @@ using OptimizationTaskPtr = std::shared_ptr<IOptimizationTask>;
 class OptimizeGroupTask final : public IOptimizationTask
 {
 public:
-    OptimizeGroupTask(GroupId group_id_, ExpressionProperties required_properties_, CostLimit cost_limit_)
-        : IOptimizationTask(cost_limit_)
-        , group_id(group_id_)
+    OptimizeGroupTask(GroupId group_id_, ExpressionProperties required_properties_)
+        : group_id(group_id_)
         , required_properties(required_properties_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
+    String describe() const override { return fmt::format("optimize group #{} for {}", group_id, required_properties.dump()); }
 
 private:
     GroupId group_id;
@@ -58,12 +55,12 @@ private:
 class ExploreGroupTask final : public IOptimizationTask
 {
 public:
-    ExploreGroupTask(GroupId group_id_, CostLimit cost_limit_)
-        : IOptimizationTask(cost_limit_)
-        , group_id(group_id_)
+    explicit ExploreGroupTask(GroupId group_id_)
+        : group_id(group_id_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
+    String describe() const override { return fmt::format("explore group #{}", group_id); }
 
 private:
     GroupId group_id;
@@ -73,12 +70,12 @@ private:
 class ExploreExpressionTask final : public IOptimizationTask
 {
 public:
-    ExploreExpressionTask(GroupExpressionPtr expression_, CostLimit cost_limit_)
-        : IOptimizationTask(cost_limit_)
-        , expression(expression_)
+    explicit ExploreExpressionTask(GroupExpressionPtr expression_)
+        : expression(expression_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
+    String describe() const override;
 
 private:
     GroupExpressionPtr expression;
@@ -88,13 +85,13 @@ private:
 class OptimizeExpressionTask final : public IOptimizationTask
 {
 public:
-    OptimizeExpressionTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_, CostLimit cost_limit_)
-        : IOptimizationTask(cost_limit_)
-        , expression(expression_)
+    OptimizeExpressionTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_)
+        : expression(expression_)
         , required_properties(required_properties_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
+    String describe() const override;
 
 private:
     GroupExpressionPtr expression;
@@ -105,15 +102,15 @@ private:
 class ApplyRuleTask final : public IOptimizationTask
 {
 public:
-    ApplyRuleTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_, OptimizationRulePtr rule_, Promise promise_, CostLimit cost_limit_)
-        : IOptimizationTask(cost_limit_)
-        , expression(expression_)
+    ApplyRuleTask(GroupExpressionPtr expression_, ExpressionProperties required_properties_, OptimizationRulePtr rule_, Promise promise_)
+        : expression(expression_)
         , required_properties(required_properties_)
         , rule(rule_)
         , promise(promise_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
+    String describe() const override;
 
 private:
     void updateMemo(const std::vector<GroupExpressionPtr> & new_expressions, OptimizerContext & optimizer_context);
@@ -128,13 +125,13 @@ private:
 class OptimizeInputsTask final : public IOptimizationTask
 {
 public:
-    OptimizeInputsTask(GroupExpressionPtr expression_, size_t input_index_to_optimize_, CostLimit cost_limit_)
-        : IOptimizationTask(cost_limit_)
-        , expression(expression_)
+    OptimizeInputsTask(GroupExpressionPtr expression_, size_t input_index_to_optimize_)
+        : expression(expression_)
         , input_index_to_optimize(input_index_to_optimize_)
     {}
 
     void execute(OptimizerContext & optimizer_context) override;
+    String describe() const override;
 
 private:
     GroupExpressionPtr expression;
