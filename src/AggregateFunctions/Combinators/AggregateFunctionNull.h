@@ -104,20 +104,26 @@ public:
 
     DataTypePtr getNormalizedStateType() const override
     {
-        DataTypes normalized_argument_types;
-        normalized_argument_types.reserve(this->argument_types.size());
-        for (const auto & argument_type : this->argument_types)
-            normalized_argument_types.emplace_back(argument_type->getNormalizedType());
-
         const DataTypePtr nested_normalized_state = nested_function->getNormalizedStateType();
         const auto & nested_aggregate_state = assert_cast<const DataTypeAggregateFunction &>(*nested_normalized_state);
+
+        const DataTypes nested_normalized_argument_types = nested_aggregate_state.getArgumentsDataTypes();
+        DataTypes normalized_argument_types;
+        normalized_argument_types.reserve(nested_normalized_argument_types.size());
+        for (size_t i = 0; i != nested_normalized_argument_types.size(); ++i)
+        {
+            if (i < this->argument_types.size())
+                normalized_argument_types.emplace_back(this->argument_types[i]->getNormalizedType());
+            else
+                normalized_argument_types.emplace_back(nested_normalized_argument_types[i]);
+        }
         return std::make_shared<DataTypeAggregateFunction>(
-            this->shared_from_this(), normalized_argument_types, nested_aggregate_state.getParameters());
+            nested_aggregate_state.getFunction(), normalized_argument_types, nested_aggregate_state.getParameters());
     }
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
-        return DataTypeAggregateFunction::strictEquals(getNormalizedStateType(), rhs.getNormalizedStateType());
+        return getNormalizedStateType()->equals(*rhs.getNormalizedStateType());
     }
 
     String getName() const override

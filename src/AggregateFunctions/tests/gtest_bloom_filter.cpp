@@ -534,6 +534,7 @@ TEST(BloomFilterAggregateFunction, NullableIfConditionHasSameNormalizedStateType
         {},
         properties);
 
+    EXPECT_TRUE(bare_default->haveSameStateRepresentation(*if_nullable_condition));
     EXPECT_TRUE(bare_default->getNormalizedStateType()->equals(*if_nullable_condition->getNormalizedStateType()));
 }
 

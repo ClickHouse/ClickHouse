@@ -119,22 +119,7 @@ public:
 
     bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
     {
-        const auto * rhs_bloom = dynamic_cast<const IAggregateFunctionGroupBloomFilter *>(&rhs);
-        if (!rhs_bloom
-            || filter_size_bytes != rhs_bloom->getFilterSizeBytes()
-            || num_hashes != rhs_bloom->getNumHashes()
-            || seed != rhs_bloom->getSeed())
-            return false;
-
-        const auto lhs_argument_types = getNormalizedArgumentTypes();
-        const auto rhs_argument_types = rhs_bloom->getNormalizedArgumentTypes();
-        return lhs_argument_types.size() == rhs_argument_types.size()
-            && std::equal(
-                lhs_argument_types.begin(),
-                lhs_argument_types.end(),
-                rhs_argument_types.begin(),
-                rhs_argument_types.end(),
-                [](const auto & lhs, const auto & rhs_) { return lhs->equals(*rhs_); });
+        return DataTypeAggregateFunction::strictEquals(getNormalizedStateType(), rhs.getNormalizedStateType());
     }
 
     DataTypePtr getNormalizedStateType() const override
