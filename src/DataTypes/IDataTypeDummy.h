@@ -37,11 +37,6 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method getDefault is not implemented for data type {}", getName());
     }
 
-    void insertDefaultInto(IColumn &) const override
-    {
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method insertDefaultInto is not implemented for data type {}", getName());
-    }
-
     bool haveSubtypes() const override { return false; }
     bool cannotBeStoredInTables() const override { return true; }
 
