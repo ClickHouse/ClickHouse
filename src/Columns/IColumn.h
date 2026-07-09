@@ -1,7 +1,6 @@
 #pragma once
 
 #include <string_view>
-#include <vector>
 #include <Columns/IColumn_fwd.h>
 #include <Core/TypeId.h>
 #include <Common/AllocatorWithMemoryTracking.h>
