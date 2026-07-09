@@ -854,7 +854,11 @@ struct IcuTextBinding
 #endif
 
 bool IcuTokenizer::nextInString(
-    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+    [[maybe_unused]] const char * data,
+    [[maybe_unused]] size_t length,
+    [[maybe_unused]] size_t & __restrict pos,
+    [[maybe_unused]] size_t & __restrict token_start,
+    [[maybe_unused]] size_t & __restrict token_length) const
 {
 #if USE_ICU
     icu::BreakIterator & iterator = getThreadLocalIcuWordIterator(locale);
