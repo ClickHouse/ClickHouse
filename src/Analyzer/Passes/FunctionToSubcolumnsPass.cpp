@@ -745,7 +745,7 @@ void optimizeJSONArrayElementChain(
 
     String full_name = ctx.column.name + "." + subcolumn_name;
 
-    if (!canOptimizeToSubcolumn(ctx.column_source, full_name, false))
+    if (sourceHasColumn(ctx.column_source, full_name) || !canOptimizeToSubcolumn(ctx.column_source, full_name, false))
         return;
 
     /// For a single key, use the actual subcolumn type (may be a typed path, not Dynamic).
