@@ -91,6 +91,22 @@ void ReplxxLineReader::setupVimKeybindings()
         }
     }
 
+    rx.bind_key(Replxx::KEY::ENTER, [this](char32_t code) {
+        rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
+        return Replxx::ACTION_RESULT::CONTINUE;
+    }, MODE_NORMAL);
+
+    bindKey(Replxx::KEY::BACKSPACE, [this](int &pos, std::string &text, char32_t) {
+        (void)text;
+        int reps = vimReps();
+        for (int rep = 0; rep < reps && pos > 0; rep++) {
+            pos--;
+            if (text[pos] == '\n')
+                rep--;
+        }
+        resetVim(&pos, &text);
+    }, MODE_NORMAL);
+
     bindKey('i', [this](char32_t) {
         if (op) {
             if (!flag)
