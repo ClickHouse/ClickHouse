@@ -89,7 +89,7 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (!exp_args.parse(pos, ast_args, expected))
         return false;
 
-    for (size_t i = 0; i < ast_args->children.size(); ++i)
+    for (const auto & child : ast_args->children)
     {
         /// Re-serialize each argument into a safe SQL fragment before it is
         /// spliced into the prepared statement body by `$N` substitution. The
@@ -97,7 +97,7 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         /// literals quoted and escaped and a crafted argument cannot break out
         /// of its context to inject SQL (`fieldToString` on a raw string would
         /// drop the quotes and allow injection).
-        const IAST & arg = *ast_args->children[i];
+        const IAST & arg = *child;
         if (const auto * literal = arg.as<ASTLiteral>())
             /// Fast path for the common case: numbers stay bare, strings are
             /// quoted and escaped by FieldVisitorToString.
