@@ -2165,9 +2165,11 @@ void MergeTreeData::applyEngineModification(const ASTPtr & new_engine_ast, const
     /// from the (already changed, see StorageMergeTree::alter) settings so `check` enforces the same tuple
     /// constraints the reload path does. getSettings() here reflects a MODIFY SETTING in the same ALTER.
     new_params.setAllowTupleElementAggregationFromSettings(*getSettings());
-    /// sanity_checks=false: MODIFY ENGINE re-validates against the same rules the reload (ATTACH) path
-    /// applies, so a table that will load under the new engine is accepted here without CREATE-only checks.
-    new_params.check(*getSettings(), new_metadata, /*sanity_checks=*/false);
+    /// sanity_checks=true: MODIFY ENGINE chooses a new engine now, so it is create-time metadata, not the
+    /// grandfathering of legacy on-disk metadata that ATTACH does. In particular the AggregatingMergeTree
+    /// off-key-dimension guard (checkDimensionsAreInSortingKey, issue #751) must apply, or a
+    /// MergeTree -> AggregatingMergeTree switch could add a column that is silently collapsed during merges.
+    new_params.check(*getSettings(), new_metadata, /*sanity_checks=*/true);
 
     LOG_INFO(log, "MODIFY ENGINE: merge semantics will change from {} to {} on next table load",
         merging_params.getModeName().empty() ? "MergeTree" : merging_params.getModeName(),
@@ -4787,8 +4789,10 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// constraints exactly as the reload path will -- otherwise a Summing/Aggregating/Coalescing
             /// target with a Nullable Tuple column would pass here and only fail on the next ATTACH.
             new_merging_params.setAllowTupleElementAggregationFromSettings(*settings_for_check);
-            /// sanity_checks=false to match the reload (ATTACH) path this MODIFY ENGINE will take.
-            new_merging_params.check(*settings_for_check, metadata_for_check, /*sanity_checks=*/false);
+            /// sanity_checks=true: MODIFY ENGINE picks a new engine now (create-time metadata), so the
+            /// AggregatingMergeTree off-key-dimension guard (issue #751) applies here just as it would to a
+            /// CREATE. This is not the legacy-metadata grandfathering that ATTACH performs.
+            new_merging_params.check(*settings_for_check, metadata_for_check, /*sanity_checks=*/true);
 
             /// registerStorageMergeTree rejects a special-mode MergeTree that has projections when
             /// deduplicate_merge_projection_mode = throw. The reload-only design keeps the live mode

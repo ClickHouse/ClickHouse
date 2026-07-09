@@ -87,6 +87,51 @@ ATTACH TABLE t_tea;
 SELECT 'tuple-key replacing', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_tea';
 DROP TABLE t_tea;
 
+-- MODIFY ENGINE chooses a new engine now, so it is create-time metadata (not the legacy grandfathering
+-- ATTACH does). The AggregatingMergeTree off-key-dimension guard (issue #751) must apply: a column that
+-- is neither in the sorting key nor an aggregate measure keeps an arbitrary value after merges, silently
+-- producing wrong results. A plain CREATE AggregatingMergeTree rejects such a schema; MODIFY ENGINE must too.
+
+-- (k) MergeTree -> AggregatingMergeTree with an off-key non-measure dimension column is rejected.
+CREATE TABLE t_dim (k UInt64, dim String, m AggregateFunction(sum, UInt64)) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_dim MODIFY ENGINE = AggregatingMergeTree; -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_dim;
+
+-- (l) the allow_dimensions_outside_sorting_key escape hatch works on MODIFY ENGINE, as on CREATE.
+CREATE TABLE t_dim (k UInt64, dim String, m AggregateFunction(sum, UInt64)) ENGINE = MergeTree ORDER BY k
+    SETTINGS allow_dimensions_outside_sorting_key = 1;
+ALTER TABLE t_dim MODIFY ENGINE = AggregatingMergeTree;
+DETACH TABLE t_dim;
+ATTACH TABLE t_dim;
+SELECT 'dimension escape hatch', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_dim';
+DROP TABLE t_dim;
+
+-- (m) a schema with every column covered (in the sorting key) or a measure is accepted.
+CREATE TABLE t_dim (k UInt64, dim String, m AggregateFunction(sum, UInt64)) ENGINE = MergeTree ORDER BY (k, dim);
+ALTER TABLE t_dim MODIFY ENGINE = AggregatingMergeTree;
+DETACH TABLE t_dim;
+ATTACH TABLE t_dim;
+SELECT 'dimension in sorting key', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_dim';
+DROP TABLE t_dim;
+
+-- (n) a table with no aggregate-state measure is not the issue #751 scenario, so it is accepted.
+CREATE TABLE t_dim (k UInt64, dim String) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_dim MODIFY ENGINE = AggregatingMergeTree;
+DETACH TABLE t_dim;
+ATTACH TABLE t_dim;
+SELECT 'no measures', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_dim';
+DROP TABLE t_dim;
+
+-- (o) the guard also fires on the reload-path validation: an engine left pending by a reload-only
+-- MODIFY ENGINE is re-checked on a later ALTER, so adding the offending column then is rejected too.
+CREATE TABLE t_dim (k UInt64, m AggregateFunction(sum, UInt64)) ENGINE = MergeTree ORDER BY k;
+ALTER TABLE t_dim MODIFY ENGINE = AggregatingMergeTree;
+ALTER TABLE t_dim ADD COLUMN dim String; -- { serverError BAD_ARGUMENTS }
+DETACH TABLE t_dim;
+ATTACH TABLE t_dim;
+SELECT 'pending dimension guard', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_dim';
+DROP TABLE t_dim;
+
 -- A reload-only MODIFY ENGINE leaves the new engine pending on the live metadata while merging_params
 -- stays the old mode until reload. A subsequent ALTER with no MODIFY ENGINE of its own must re-validate
 -- that pending engine before changing any metadata, otherwise it can persist an unloadable CREATE.

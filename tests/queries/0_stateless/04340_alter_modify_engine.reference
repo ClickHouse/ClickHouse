@@ -5,6 +5,10 @@ summing	1	30
 summing	2	100
 collapsing	CollapsingMergeTree
 tuple-key replacing	ReplacingMergeTree
+dimension escape hatch	AggregatingMergeTree
+dimension in sorting key	AggregatingMergeTree
+no measures	AggregatingMergeTree
+pending dimension guard	AggregatingMergeTree
 pending setting guard	SummingMergeTree
 pending drop guard	SummingMergeTree
 pending reset guard	SummingMergeTree
