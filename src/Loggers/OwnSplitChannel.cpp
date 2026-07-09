@@ -474,9 +474,11 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
 
     auto flush_queue = [&]()
     {
-        /// Only drain messages already queued when the flush started, so producers can't prolong it forever.
-        size_t count = queue.messages.size();
-        while (count-- > 0)
+        /// Exact, bounded flush boundary: drain every message enqueued as of now (position captured with
+        /// acquire so we observe their published slots) and no later arrival, so producers can't prolong
+        /// the flush; dequeueMessageForFlush waits out any slot still being published.
+        const size_t target = queue.messages.enqueuePosition();
+        while (queue.messages.dequeuePosition() < target)
         {
             auto notif = dequeueMessageForFlush(queue.messages);
             if (!notif)
@@ -496,9 +498,12 @@ void OwnAsyncSplitChannel::runChannel(size_t i)
             }
             else
             {
-                /// Empty queue: sleep, then report overflow drops here (only once caught up, so the warning can't precede real messages).
+                /// Empty queue: sleep, then report overflow drops here. tryPop can also fail while a producer
+                /// holds an unpublished slot, so only warn once the queue is truly drained (size()==0), else
+                /// the warning could overtake real messages still being enqueued.
                 sleepForMilliseconds(sleep_on_empty_queue_ms);
-                report_dropped_messages();
+                if (queue.messages.size() == 0)
+                    report_dropped_messages();
             }
         }
         catch (...)
@@ -550,9 +555,12 @@ void OwnAsyncSplitChannel::runTextLog()
 
     auto flush_queue = [&](const std::shared_ptr<SystemLogQueue<TextLogElement>> & text_log_locked)
     {
-        /// Only drain messages already queued when the flush started, so producers can't prolong it forever.
-        size_t count = text_log_queue.messages.size();
-        while (count-- > 0)
+        /// Exact, bounded flush boundary: SYSTEM FLUSH LOGS relies on every record accepted before the
+        /// request reaching text_log before flushImpl samples the last index. Capture the enqueue position
+        /// with acquire (size() is imprecise while producers run) and drain up to it, waiting out any slot
+        /// still being published. Later arrivals aren't included, so producers can't prolong the flush.
+        const size_t target = text_log_queue.messages.enqueuePosition();
+        while (text_log_queue.messages.dequeuePosition() < target)
         {
             auto notif = dequeueMessageForFlush(text_log_queue.messages);
             if (!notif)
@@ -572,6 +580,9 @@ void OwnAsyncSplitChannel::runTextLog()
             if (text_log_flush_requested)
             {
                 flush_queue(text_log_locked);
+                /// Emit the drop warning as part of the flush, before releasing the waiter, so SYSTEM FLUSH
+                /// LOGS / shutdown can't miss the only record that tells users messages were dropped.
+                report_dropped_messages(text_log_locked);
                 text_log_flush_requested = false;
                 text_log_flush_requested.notify_all();
                 continue;
@@ -584,9 +595,12 @@ void OwnAsyncSplitChannel::runTextLog()
             }
             else
             {
-                /// Empty queue: sleep, then report overflow drops here (only once caught up, so the warning can't precede real messages).
+                /// Empty queue: sleep, then report overflow drops here. tryPop can also fail while a producer
+                /// holds an unpublished slot, so only warn once the queue is truly drained (size()==0), else
+                /// the warning could overtake real messages still being enqueued.
                 sleepForMilliseconds(sleep_on_empty_queue_ms);
-                report_dropped_messages(text_log_locked);
+                if (text_log_queue.messages.size() == 0)
+                    report_dropped_messages(text_log_locked);
             }
         }
         catch (...)

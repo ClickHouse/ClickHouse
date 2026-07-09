@@ -1275,7 +1275,12 @@ try
     if (server_settings[ServerSetting::remap_executable])
     {
         LOG_DEBUG(log, "Will remap executable in memory.");
+        /// remapExecutable rewrites the whole code segment in place; any other thread executing code during
+        /// the window faults (and the signal handler's code is unmapped too, so it dies silently). The async
+        /// logging threads poll rather than block, so join them for the duration and restart afterwards.
+        stopAsyncLoggingThreads();
         size_t size = remapExecutable();
+        startAsyncLoggingThreads();
         LOG_DEBUG(log, "The code ({}) in memory has been successfully remapped.", ReadableSize(size));
     }
 
