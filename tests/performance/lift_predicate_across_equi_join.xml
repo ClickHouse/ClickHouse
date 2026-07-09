@@ -12,10 +12,13 @@
     <create_query>CREATE TABLE lift_perf_lineitem (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192</create_query>
     <!-- k is not covered by any index here, so a lifted predicate cannot prune -->
     <create_query>CREATE TABLE lift_perf_flat     (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192</create_query>
+    <!-- tiny source side: its WHERE conjuncts are the lift candidates and its scan cost is negligible -->
+    <create_query>CREATE TABLE lift_perf_small    (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
 
     <fill_query>INSERT INTO lift_perf_orders   SELECT number FROM numbers(200000000) SETTINGS max_insert_threads = 8</fill_query>
     <fill_query>INSERT INTO lift_perf_lineitem SELECT number FROM numbers(200000000) SETTINGS max_insert_threads = 8</fill_query>
     <fill_query>INSERT INTO lift_perf_flat     SELECT number FROM numbers(200000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO lift_perf_small    SELECT number FROM numbers(1000)</fill_query>
 
     <!-- A: point lookup. With lift ON the target reads 1 granule (~ms), with lift OFF it does
          a full scan (~2 s). Expect ~25-30x speedup. -->
@@ -126,7 +129,25 @@
         SETTINGS query_plan_lift_predicate_across_join = 0
     </query>
 
+    <!-- H: worst case with expensive conjuncts. All three atoms are substitutable and match
+         every row, so an ungated lift re-evaluates three hash functions for each of the 200M
+         probe-side rows with no pruning possible (measured 4.3x slower ungated). The gate
+         must bail; ON and OFF must be identical. -->
+    <query>
+        SELECT count()
+        FROM lift_perf_flat AS l
+        INNER JOIN (SELECT * FROM lift_perf_small WHERE sipHash64(k) % 10 &lt;= 9 AND intHash64(k) % 10 &lt;= 9 AND cityHash64(k) >= 0) AS o ON l.k = o.k
+        SETTINGS query_plan_lift_predicate_across_join = 1
+    </query>
+    <query>
+        SELECT count()
+        FROM lift_perf_flat AS l
+        INNER JOIN (SELECT * FROM lift_perf_small WHERE sipHash64(k) % 10 &lt;= 9 AND intHash64(k) % 10 &lt;= 9 AND cityHash64(k) >= 0) AS o ON l.k = o.k
+        SETTINGS query_plan_lift_predicate_across_join = 0
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS lift_perf_orders</drop_query>
     <drop_query>DROP TABLE IF EXISTS lift_perf_lineitem</drop_query>
     <drop_query>DROP TABLE IF EXISTS lift_perf_flat</drop_query>
+    <drop_query>DROP TABLE IF EXISTS lift_perf_small</drop_query>
 </test>

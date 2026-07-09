@@ -127,6 +127,18 @@ FROM (
     INNER JOIN gate_pk AS l ON o.k = l.k
 );
 
+-- The lift depends on PK re-analysis after the pushdown; with it disabled the lifted
+-- filter could never reach index analysis, so the lift must not fire even on a PK key
+SELECT 'no pk analysis',
+       countIf(explain LIKE '%Lifted equi-join filter%')
+FROM (
+    EXPLAIN PLAN actions=1
+    SELECT count()
+    FROM (SELECT * FROM gate_src WHERE k = 12345) AS o
+    INNER JOIN gate_pk AS l ON o.k = l.k
+    SETTINGS query_plan_optimize_primary_key = 0
+);
+
 -- Correctness: same result with and without the lift for every gate outcome
 SELECT 'plain correctness',
        (SELECT count() FROM (SELECT * FROM gate_src WHERE k BETWEEN 100 AND 200) AS o
