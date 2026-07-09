@@ -41,7 +41,13 @@ class Docker:
         print(
             f"Docker inspect results for {config.name}:{tag}: exit code [{code}], out [{out}], err [{err}]"
         )
-        if "no such manifest" in err:
+        # Skip only when the manifest is confirmed to exist. Any inspect failure
+        # means the image must be built: "no such manifest" for a missing tag in
+        # an existing repository, but a repository that does not exist yet (the
+        # first build of a new image) fails with "denied"/"authentication
+        # required" instead, and treating that as "image exists" skips the build
+        # and breaks every dependent image's FROM.
+        if code != 0:
             tags_substr = f" -t {config.name}:{tag}"
 
             from_tag = ""
