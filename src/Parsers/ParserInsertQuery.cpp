@@ -392,18 +392,22 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             }
         };
 
-        /// Copy SETTINGS from the INSERT ... SELECT ... SETTINGS.
-        /// When RETURNING is present, keep source-SELECT settings in `source_select_settings_ast` so they can be
-        /// applied for the source phase but excluded from RETURNING planning/limits.
-        ASTPtr & source_settings_target = returning_select ? source_select_settings_runtime_ast : settings_ast;
-        InsertQuerySettingsPushDownVisitor::Data visitor_data{source_settings_target};
-        InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
-
         if (returning_select)
         {
+            /// For INSERT ... RETURNING we need recursive collection of source settings to reject unsupported
+            /// query-global settings and to restore query settings before RETURNING planning.
+            InsertQuerySettingsPushDownVisitor::Data visitor_data{source_select_settings_runtime_ast};
+            InsertQuerySettingsPushDownVisitor(visitor_data).visit(select);
+
             merge_settings_ast(source_select_settings_global_ast, source_select_settings_ast);
             if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(select.get()))
                 merge_settings_ast(source_select_settings_global_ast, query_with_output->settings_ast);
+        }
+        else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(select.get()))
+        {
+            /// For plain INSERT ... SELECT keep historical top-level-only pushdown semantics:
+            /// nested source subquery SETTINGS stay local and must not leak into outer planning/execution.
+            merge_settings_ast(settings_ast, query_with_output->settings_ast);
         }
 
     }

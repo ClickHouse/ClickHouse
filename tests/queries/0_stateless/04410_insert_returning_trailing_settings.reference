@@ -46,6 +46,8 @@ unset
 nested source settings do not affect outer source expressions
 1
 0
+plain insert nested source settings do not affect outer source expressions
+0
 source default settings merged with trailing settings
 3
 3
