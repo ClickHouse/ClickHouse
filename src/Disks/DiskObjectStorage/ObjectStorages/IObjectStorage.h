@@ -106,8 +106,9 @@ struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
     bool is_size_known = true;
-    /// The server decompressed the object while serving it (e.g. GCS decompressive transcoding),
-    /// so the compression implied by the file extension must not be applied when reading.
+    /// The server decompressed the object while serving it (e.g. GCS decompressive transcoding), so the
+    /// compression implied by the file extension must not be applied when reading. Detected only from
+    /// `HeadObject` responses; metadata coming from bucket listings cannot carry this information.
     bool is_server_side_decompressed = false;
     /// True if this metadata was obtained from a real object-storage request (HEAD/listing).
     /// False only for the skip_object_metadata placeholder.

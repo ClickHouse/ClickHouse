@@ -3623,3 +3623,16 @@ def test_gcs_decompressive_transcoding_gz(started_cluster):
         "'http://resolver:8084/bucket/data.log.gz', NOSIGN, 'LineAsString', 'line String')"
     )
     assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'
+
+
+def test_gcs_not_transcoded_content_encoding_present(started_cluster):
+    """Negative case: x-goog-stored-content-encoding: gzip alone must not disable
+    decompression. The mock keeps Content-Encoding: gzip and serves gzip bytes
+    (still no Content-Length), so extension-based decompression must be applied."""
+    instance = started_cluster.instances["dummy"]
+
+    result = instance.query(
+        "SELECT * FROM s3("
+        "'http://resolver:8084/bucket/data_encoded.log.gz', NOSIGN, 'LineAsString', 'line String')"
+    )
+    assert result.strip() == '{"id":1}\n{"id":2}\n{"id":3}'
