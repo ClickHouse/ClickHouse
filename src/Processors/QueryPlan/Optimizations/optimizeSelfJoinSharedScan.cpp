@@ -99,8 +99,14 @@ void tryOptimizeSelfJoinSharedScan(
     /// side is fully consumed before the probe side is read, so the probe scan can replay the
     /// buffer filled by the build scan. `GRACE_HASH` qualifies too and is kept so that a
     /// user-requested on-disk algorithm is not silently downgraded to an in-memory one.
+    /// `AUTO` also qualifies: it resolves to `SpillingHashJoin`, `JoinSwitcher`, or `HashJoin`,
+    /// all producer-first, and stripping it would replace the user's configured under-memory-pressure
+    /// fallback (spill to disk or switch to merge join) with an exception.
     const auto is_compatible_algorithm = [](JoinAlgorithm algo)
-    { return algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::GRACE_HASH; };
+    {
+        return algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::GRACE_HASH
+            || algo == JoinAlgorithm::AUTO;
+    };
 
     const auto & join_settings = join_step->getJoinSettings();
     if (std::ranges::none_of(join_settings.join_algorithms, is_compatible_algorithm))
