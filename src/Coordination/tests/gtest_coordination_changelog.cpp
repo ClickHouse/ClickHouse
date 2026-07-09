@@ -1853,7 +1853,7 @@ TYPED_TEST(CoordinationChangelogTest, ConcurrentAppendWhileHistoricalReadPaused)
     ASSERT_NE(entries, nullptr);
     ASSERT_EQ(entries->size(), 5u);
     for (size_t i = 0; i < 5; ++i)
-        EXPECT_EQ((*entries)[i]->get_term(), static_cast<ulong>(i + 1));
+        EXPECT_EQ((*entries)[i]->get_term(), static_cast<uint64_t>(i + 1));
 }
 
 
@@ -2008,7 +2008,7 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
         for (size_t i = 0; i < entries->size(); ++i)
         {
             const auto term = (*entries)[i]->get_term();
-            EXPECT_TRUE(term == static_cast<ulong>(i + 1) || term == 999u) << "Unexpected term " << term << " at position " << i;
+            EXPECT_TRUE(term == static_cast<uint64_t>(i + 1) || term == 999u) << "Unexpected term " << term << " at position " << i;
             if (term == 999u)
                 seen_new_term = true;
             else
@@ -2021,7 +2021,7 @@ TYPED_TEST(CoordinationChangelogTest, WriteAtRaceHistoricalRead)
     ASSERT_NE(follow_up, nullptr);
     ASSERT_EQ(follow_up->size(), 5u);
     for (size_t i = 0; i < 4; ++i)
-        EXPECT_EQ((*follow_up)[i]->get_term(), static_cast<ulong>(i + 1));
+        EXPECT_EQ((*follow_up)[i]->get_term(), static_cast<uint64_t>(i + 1));
     EXPECT_EQ((*follow_up)[4]->get_term(), 999u);
 }
 
@@ -2216,7 +2216,7 @@ TYPED_TEST(CoordinationChangelogTest, DirectPathEvictedReadsAndByteHints)
 
     for (size_t i = 0; i < 10; ++i)
     {
-        EXPECT_EQ((*entries)[i]->get_term(), static_cast<ulong>(i + 1))
+        EXPECT_EQ((*entries)[i]->get_term(), static_cast<uint64_t>(i + 1))
             << "Wrong term at index " << (i + 1);
     }
 
