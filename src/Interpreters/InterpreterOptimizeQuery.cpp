@@ -27,7 +27,14 @@ namespace ErrorCodes
 
 BlockIO InterpreterOptimizeQuery::execute()
 {
-    const auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+    auto & ast = query_ptr->as<ASTOptimizeQuery &>();
+
+    /// Resolve before authorization and ON CLUSTER serialization: the resolver may
+    /// namespace-qualify the table (DataLakeCatalog), and access checks must target
+    /// the executed table.
+    auto table_id = getContext()->resolveStorageID(ast);
+    ast.setDatabase(table_id.database_name);
+    ast.setTable(table_id.table_name);
 
     if (!ast.cluster.empty())
     {
@@ -37,8 +44,6 @@ BlockIO InterpreterOptimizeQuery::execute()
     }
 
     getContext()->checkAccess(getRequiredAccess());
-
-    auto table_id = getContext()->resolveStorageID(ast);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
     checkStorageSupportsTransactionsIfNeeded(table, getContext());
     auto metadata_snapshot = table->getInMemoryMetadataPtr(getContext(), false);

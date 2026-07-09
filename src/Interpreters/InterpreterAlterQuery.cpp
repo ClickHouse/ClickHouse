@@ -420,6 +420,30 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         table = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
     }
 
+    /// Resolve partition-command table references (REPLACE/ATTACH PARTITION ... FROM,
+    /// MOVE PARTITION ... TO TABLE) the same way.
+    if (alter.command_list)
+    {
+        for (const auto & child : alter.command_list->children)
+        {
+            auto * command_ast = child->as<ASTAlterCommand>();
+            if (!command_ast->from_table.empty())
+            {
+                auto from_id = getContext()->resolveStorageID(
+                    {command_ast->from_database, command_ast->from_table}, Context::ResolveOrdinary);
+                command_ast->from_database = from_id.database_name;
+                command_ast->from_table = from_id.table_name;
+            }
+            if (!command_ast->to_table.empty())
+            {
+                auto to_id = getContext()->resolveStorageID(
+                    {command_ast->to_database, command_ast->to_table}, Context::ResolveOrdinary);
+                command_ast->to_database = to_id.database_name;
+                command_ast->to_table = to_id.table_name;
+            }
+        }
+    }
+
     if (!alter.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
         if (table && table->as<StorageKeeperMap>())
