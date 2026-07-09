@@ -25,17 +25,11 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 String InterpreterShowIndexesQuery::getRewrittenQuery()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String table_name = query.table;
-    /// Under `USE db.namespace` (DataLakeCatalog) an unqualified name refers to the
-    /// namespace-qualified table, the same way `Context::resolveStorageID` resolves it.
-    if (query.database.empty())
-    {
-        const auto current_db_info = getContext()->getCurrentDatabaseInfo();
-        if (!current_db_info.table_prefix.empty())
-            table_name = current_db_info.table_prefix + "." + table_name;
-    }
-    String table = escapeString(table_name);
-    String resolved_database = getContext()->resolveDatabase(query.database);
+    /// Resolve through the central storage resolver so DataLakeCatalog namespaces are honored
+    /// (`USE db.namespace` prefixes and `namespace.table` qualifiers under `USE catalog`).
+    auto storage_id = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary);
+    String table = escapeString(storage_id.table_name);
+    String resolved_database = storage_id.database_name;
     String database = escapeString(resolved_database);
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression->formatWithSecretsOneLine()) : "";
 
@@ -133,7 +127,7 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 BlockIO InterpreterShowIndexesQuery::execute()
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String database = getContext()->resolveDatabase(query.database);
+    String database = getContext()->resolveStorageID({query.database, query.table}, Context::ResolveOrdinary).database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
