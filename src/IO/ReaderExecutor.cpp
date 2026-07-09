@@ -331,22 +331,21 @@ void ReaderExecutor::seek(size_t new_position)
 {
     LOG_DEBUG(log, "seek to {}, current position={}", new_position, position);
 
-    /// The machine's requested LOGICAL range is its `physical_window` shifted by the header.
-    const size_t requested_logical_offset = machine ? toLogical(machine->physical_window.offset) : 0;
-    const size_t requested_logical_end = machine ? toLogical(machine->physical_window.end()) : 0;
+    /// Compare on the PHYSICAL side: a cell-aligned machine window on an encrypted file
+    /// can start BELOW the header (the header bytes are part of the first cell), where no
+    /// logical coordinate exists.
+    const size_t new_physical = toPhys(new_position);
     if (machine
-        && new_position >= requested_logical_offset
-        && new_position < requested_logical_end)
+        && new_physical >= machine->physical_window.offset
+        && new_physical < machine->physical_window.end())
     {
-        LOG_TRACE(log, "seek: target within prefetch [{}, {}), keeping prefetch",
-            requested_logical_offset, requested_logical_end);
+        LOG_TRACE(log, "seek: target within prefetch (physical [{}, {})), keeping prefetch",
+            machine->physical_window.offset, machine->physical_window.end());
         position = new_position;
         return;
     }
 
     cancelMachine(/*cancelled=*/true);
-
-    const size_t new_physical = toPhys(new_position);
     /// Feed the seek to the continuity estimator and rewind the plan-feed watermark,
     /// so the post-seek plan re-feeds its predicted reads from here.
     continuity_tracker.recordSeek(new_physical);
@@ -683,8 +682,8 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
     /// no takeover: a one-shot fetch has nothing to take over (the GET is read to
     /// its bound, and splitting it would forfeit the request); a stall-join interrupts
     /// first, so the wait is bounded by one tile.
-    LOG_TRACE(log, "collect: waiting on prefetched [{}, {})",
-        toLogical(m->physical_window.offset), toLogical(m->physical_window.end()));
+    LOG_TRACE(log, "collect: waiting on prefetched (physical [{}, {}))",
+        m->physical_window.offset, m->physical_window.end());
     StatTimer wait_scope(stats, Stats::PrefetchWaitMicroseconds);
     collectRunner().waitReleased(*m);
 
@@ -745,7 +744,7 @@ void ReaderExecutor::collectInFlightInto(size_t ri)
         /// worker commits per tile); retry only the refused residue into the writers,
         /// then let the caller read synchronously - serving an empty window here would
         /// read as a false EOF upstream.
-        if (toLogical(fetched_end) <= position)
+        if (fetched_end <= toPhys(position))
         {
             runPutStep(m, m->fetched);
             return;
@@ -2772,8 +2771,8 @@ void ReaderExecutor::cancelMachine(bool cancelled)
     /// this retrieve from here on; the bank stays valid - the cursor has not moved
     /// (`setReadExtent`), or a seek re-plans and rebuilds it (see `seek`).
 
-    LOG_TRACE(log, "Prefetch: discarding [{}, {})",
-        toLogical(m->physical_window.offset), toLogical(m->physical_window.end()));
+    LOG_TRACE(log, "Prefetch: discarding (physical [{}, {}))",
+        m->physical_window.offset, m->physical_window.end());
 
     if (collectRunner().tryCancelQueued(*m))
     {

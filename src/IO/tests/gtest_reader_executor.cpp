@@ -4108,6 +4108,104 @@ TEST(ReaderExecutor, FullCacheColdReadServesRefusedBytesFromBank)
     EXPECT_EQ(result, content) << "refused bytes must reach the consumer through the bank";
 }
 
+TEST(ReaderExecutor, EncryptedColdCellWindowStartsBelowHeader)
+{
+    /// On an encrypted file the first cache cell spans the header: when that cell is not
+    /// committed (populate refused here - the cache cannot hold even the header), fetch
+    /// runs and machine windows legitimately start at PHYSICAL 0, below the header, where
+    /// no logical coordinate exists. Every comparison and log along the collect/seek path
+    /// must stay on the physical side - a logical conversion of such a window aborts
+    /// debug builds (the `toLogical` underflow guard).
+    DB::ServerUUID::setRandomForUnitTests();
+
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_enc_subheader");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_enc_subheader_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    /// Smaller than the 64-byte encryption header: every populate is refused, so the
+    /// first cell (which spans the header) never commits and the cold fetch runs from 0.
+    settings[DB::FileCacheSetting::max_size] = 48;
+    settings[DB::FileCacheSetting::max_file_segment_size] = 2000;
+    settings[DB::FileCacheSetting::boundary_alignment] = 2000;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_enc_subheader", settings);
+    cache->initialize();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 100;
+    auto provider = std::make_shared<DB::DiskCacheProvider>(cache, cache_settings, /*query_id_=*/String{});
+
+    String key(16, 'e');
+    FileEncryption::InitVector iv(UInt128{0xC0FFEEu});
+    String plaintext(4000, '\0');
+    for (size_t i = 0; i < plaintext.size(); ++i)
+        plaintext[i] = static_cast<char>('A' + (i % 29));
+    String file_bytes = makeEncryptedFile(key, iv, plaintext);
+
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"enc_obj", file_bytes}});
+    StoredObjects objects;
+    objects.emplace_back("enc_obj", "enc_obj", file_bytes.size());
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(provider);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 1000;
+    executor_options.fill_ahead_lead = 3000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, caches, executor_options);
+    executor.addDecryptionLayer("/enc", 0,
+        [&](UInt128, const String &) { return key; });
+    executor.initDecryption();
+
+    /// A seek right after init launches the ahead lead at the un-attempted job start -
+    /// PHYSICAL 0 here (the refused header keeps the first cell uncommitted) - and the
+    /// second seek's keep-prefetch compare must evaluate that window on the physical
+    /// side (a logical conversion of offset 0 aborts debug builds).
+    executor.seek(0);
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch());
+    ASSERT_EQ(inspect(executor).inflightPrefetchOffset(), 0u);
+    executor.seek(10);
+    executor.seek(0);
+
+    String result;
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            result.append(node.data(), node.size);
+    }
+    EXPECT_EQ(result, plaintext);
+}
+
 TEST(ReaderExecutor, PlanGrowsInWindowStepsToTheTarget)
 {
     /// The plan is probed in `window_size` steps until the enriched span reaches the
