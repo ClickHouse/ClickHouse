@@ -677,11 +677,25 @@ def test_bind_unspecified_oid_infers_type(started_cluster):
     assert res_none.status == psycopg.pq.ExecStatus.TUPLES_OK, res_none.error_message
     assert res_none.get_value(0, 0) == b"42"
 
-    # A non-numeric unspecified-OID value can only be inferred as text, so it stays a
-    # safely quoted string literal.
+    # A boolean keyword (`true`/`false`) carries an unambiguous type in its own text,
+    # so an unspecified-OID boolean bind infers as Bool. `SELECT NOT $1` + `true` must
+    # negate a boolean (NOT rejects a String argument), not become `NOT 'true'`.
+    res_bool = pg.exec_params(b"SELECT NOT $1", [b"true"], [0], [0], 0)
+    assert res_bool.status == psycopg.pq.ExecStatus.TUPLES_OK, res_bool.error_message
+    # `NOT true` is false, rendered as `f`/`false`/`0` depending on the text format.
+    assert res_bool.get_value(0, 0) in (b"f", b"false", b"0"), res_bool.get_value(0, 0)
+
+    # A non-numeric, non-boolean unspecified-OID value can only be inferred as text, so
+    # it stays a safely quoted string literal.
     res_text = pg.exec_params(b"SELECT $1", [b"hello"], [0], [0], 0)
     assert res_text.status == psycopg.pq.ExecStatus.TUPLES_OK, res_text.error_message
     assert res_text.get_value(0, 0) == b"hello"
+
+    # A boolean-looking payload with a trailing injection is not the exact `true`/
+    # `false` keyword, so it stays a quoted string and cannot splice SQL.
+    res_bool_inj = pg.exec_params(b"SELECT $1", [b"true; DROP TABLE bind_infer_t"], [0], [0], 0)
+    assert res_bool_inj.status == psycopg.pq.ExecStatus.TUPLES_OK, res_bool_inj.error_message
+    assert res_bool_inj.get_value(0, 0) == b"true; DROP TABLE bind_infer_t"
 
     # Injection payloads with an unspecified OID are not single numeric literals, so
     # they fall through to a quoted string and cannot splice SQL. `1--` used as a
@@ -1214,6 +1228,70 @@ def test_execute_no_sql_injection(started_cluster):
     cur.execute("DEALLOCATE echo_one;")
     cur.execute("DROP TABLE exec_users;")
     cur.execute("DROP TABLE exec_secret;")
+
+
+def test_execute_requires_exact_argument_count(started_cluster):
+    # The exact-arity invariant must hold on the simple SQL PREPARE/EXECUTE path too,
+    # not only the extended Bind path. Without the check `EXECUTE s(1, 2)` on
+    # `PREPARE s AS SELECT $1` silently drops the extra argument, and `EXECUTE s(1)`
+    # on `PREPARE s AS SELECT $1, $2` leaves `$2` literally in the executed SQL.
+    node = started_cluster.instances["node"]
+
+    def connect():
+        return psycopg.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+        )
+
+    # Exact arity is accepted (a fresh connection per case: a rejected EXECUTE errors
+    # out and drops the connection).
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("PREPARE one_arg AS SELECT $1 AS v;")
+    cur.execute("EXECUTE one_arg(7);")
+    assert cur.fetchall() == [(7,)]
+    ch.close()
+
+    # Over-supply: an extra argument must be rejected, not silently dropped.
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("PREPARE over_arg AS SELECT $1 AS v;")
+    rejected = False
+    try:
+        cur.execute("EXECUTE over_arg(1, 2);")
+        cur.fetchall()
+    except psycopg.Error:
+        rejected = True
+    assert rejected, "EXECUTE with too many arguments must be rejected"
+    ch.close()
+
+    # Under-supply: a missing argument must be rejected, not leave `$2` in the SQL.
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("PREPARE under_arg AS SELECT $1, $2;")
+    rejected = False
+    try:
+        cur.execute("EXECUTE under_arg(1);")
+        cur.fetchall()
+    except psycopg.Error:
+        rejected = True
+    assert rejected, "EXECUTE with too few arguments must be rejected"
+    ch.close()
+
+    # A zero-placeholder statement rejects any argument.
+    ch = connect()
+    cur = ch.cursor()
+    cur.execute("PREPARE no_arg AS SELECT 1;")
+    rejected = False
+    try:
+        cur.execute("EXECUTE no_arg(1);")
+        cur.fetchall()
+    except psycopg.Error:
+        rejected = True
+    assert rejected, "EXECUTE with an argument for a zero-parameter statement must be rejected"
+    ch.close()
 
 
 def test_copy_no_sql_injection(started_cluster):

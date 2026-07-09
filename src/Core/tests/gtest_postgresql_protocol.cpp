@@ -596,10 +596,24 @@ TEST(PostgreSQLProtocol, BindUnspecifiedOidInfersType)
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"-2.5e-3"}}), "SELECT  -2.5e-3 ");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{".5"}}), "SELECT  .5 ");
 
-    /// A non-numeric value's only safe inference is text, so it stays a
+    /// A boolean keyword (`true`/`false`, case-insensitive) also carries an
+    /// unambiguous type in its own text, so it infers as Bool: `Parse("SELECT NOT
+    /// $1")` + `Bind("true")` must assemble `SELECT NOT  true `, not `SELECT NOT
+    /// 'true'` (NOT rejects a String argument).
+    EXPECT_EQ(bindAndGetStatement("SELECT NOT $1", {0}, {{"true"}}), "SELECT NOT  true ");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"false"}}), "SELECT  false ");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"TRUE"}}), "SELECT  TRUE ");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"False"}}), "SELECT  False ");
+
+    /// A non-numeric, non-boolean value's only safe inference is text, so it stays a
     /// quoted+escaped string literal.
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"hi"}}), "SELECT 'hi'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"2024-01-15"}}), "SELECT '2024-01-15'");
+    /// Values that merely resemble a boolean but are not the exact keyword stay text
+    /// (accepting them would either mis-parse or reopen injection).
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"t"}}), "SELECT 't'");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"truex"}}), "SELECT 'truex'");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"true--"}}), "SELECT 'true--'");
 }
 
 TEST(PostgreSQLProtocol, BindUnspecifiedOidIsInjectionSafe)
@@ -615,6 +629,10 @@ TEST(PostgreSQLProtocol, BindUnspecifiedOidIsInjectionSafe)
               "SELECT '1 UNION ALL SELECT secret FROM s'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"1.2.3"}}), "SELECT '1.2.3'");
     EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"1e"}}), "SELECT '1e'");
+    /// A boolean-looking payload with a trailing injection is not the exact `true`/
+    /// `false` keyword, so it fails isBooleanLiteral and stays quoted.
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"true; DROP TABLE s"}}), "SELECT 'true; DROP TABLE s'");
+    EXPECT_EQ(bindAndGetStatement("SELECT $1", {0}, {{"true OR 1=1"}}), "SELECT 'true OR 1=1'");
     /// The surrounding spaces additionally block token-adjacency: a body `5-$1` with
     /// value `-5` becomes `5- -5 ` (= 5 - (-5)), never the comment-truncating `5--5`.
     EXPECT_EQ(bindAndGetStatement("SELECT 5-$1", {0}, {{"-5"}}), "SELECT 5- -5 ");
@@ -820,6 +838,69 @@ TEST(PostgreSQLProtocol, BindArityIsPlaceholderCountNotDeclaredTypeCount)
         {
             EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
         }
+    }
+}
+
+TEST(PostgreSQLProtocol, ExecuteArityMatchesPlaceholderCount)
+{
+    /// The exact-arity invariant must hold on the simple SQL PREPARE/EXECUTE path
+    /// too, not only the extended Bind path. `getStatement` goes straight to
+    /// `substitute`, so without the check `EXECUTE s(1, 2)` on `PREPARE s AS SELECT
+    /// $1` silently drops the extra argument and `EXECUTE s(1)` on `PREPARE s AS
+    /// SELECT $1, $2` leaves `$2` literally in the executed SQL. The statement's
+    /// parameter count (highest `$N`) is already recorded at PREPARE time.
+    auto prepare = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body)
+    {
+        ASTPreparedStatement statement;
+        statement.function_name = "s";
+        statement.function_body = body;
+        manager.addStatement(&statement);
+    };
+    auto execute = [](PreparedStatements::PreparedStatemetsManager & manager, std::vector<String> args)
+    {
+        ASTExecute ast;
+        ast.function_name = "s";
+        for (auto & a : args)
+            ast.arguments.push_back(std::move(a));
+        return manager.getStatement(&ast);
+    };
+    auto expectRejected = [&](const String & body, std::vector<String> args)
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        prepare(manager, body);
+        try
+        {
+            execute(manager, std::move(args));
+            FAIL() << "expected arity mismatch to throw for body: " << body;
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::BAD_ARGUMENTS);
+        }
+    };
+
+    /// Over-supply: extra argument previously silently dropped.
+    expectRejected("SELECT $1", {"1", "2"});
+    /// Under-supply: `$2` previously left in the executed SQL.
+    expectRejected("SELECT $1, $2", {"1"});
+    /// Zero-placeholder statement rejects any argument.
+    expectRejected("SELECT 1", {"1"});
+
+    /// Exact arity is accepted and substituted (a repeated placeholder counts once).
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        prepare(manager, "SELECT $1, $2");
+        EXPECT_EQ(execute(manager, {"1", "2"}), "SELECT 1, 2");
+    }
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        prepare(manager, "SELECT $1 + $1");
+        EXPECT_EQ(execute(manager, {"7"}), "SELECT 7 + 7");
+    }
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        prepare(manager, "SELECT 1");
+        EXPECT_EQ(execute(manager, {}), "SELECT 1");
     }
 }
 

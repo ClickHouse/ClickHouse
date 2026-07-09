@@ -1787,6 +1787,16 @@ public:
         auto it = statements.find(execute->function_name);
         if (it == statements.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown statement");
+        /// Enforce exact arity, same as the extended Bind path (attachBindQuery):
+        /// EXECUTE must supply one argument per `$N` placeholder the statement body
+        /// references. Without this, `EXECUTE s(1, 2)` on `PREPARE s AS SELECT $1`
+        /// silently drops the extra argument (`substitute` ignores arguments past
+        /// the highest placeholder), and `EXECUTE s(1)` on `PREPARE s AS SELECT $1,
+        /// $2` leaves `$2` literally in the executed SQL.
+        if (execute->arguments.size() != it->second.parameter_count)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "EXECUTE supplies {} argument(s) but the prepared statement has {} parameter(s)",
+                execute->arguments.size(), it->second.parameter_count);
         return substitute(it->second.body, execute->arguments);
     }
 
@@ -2225,15 +2235,42 @@ private:
         return std::nullopt;
     }
 
+    /// Returns true if the whole string is the boolean literal `true` or `false`
+    /// (case-insensitive, matching both ClickHouse's boolean keyword literals and
+    /// PostgreSQL's canonical boolean text). Nothing else — `t`/`f`/`yes`/`1` are not
+    /// ClickHouse boolean literals, and accepting them would either mis-parse or, for
+    /// arbitrary text, reopen injection. Used by formatInferredParameter so an
+    /// unspecified-OID boolean bind infers as Bool, not String.
+    static bool isBooleanLiteral(const String & value)
+    {
+        static constexpr std::string_view t = "true";
+        static constexpr std::string_view f = "false";
+        if (value.size() != t.size() && value.size() != f.size())
+            return false;
+        auto ci_equals = [](const String & v, std::string_view kw)
+        {
+            if (v.size() != kw.size())
+                return false;
+            for (size_t i = 0; i < kw.size(); ++i)
+                if ((v[i] | 0x20) != kw[i])
+                    return false;
+            return true;
+        };
+        return ci_equals(value, t) || ci_equals(value, f);
+    }
+
     /// Formats a Bind parameter whose type was left unspecified (OID 0 / omitted) in
     /// the Parse message. In the PostgreSQL protocol OID 0 means "let the server infer
     /// the parameter type from the statement", so `Parse("SELECT $1 + 1")` /
-    /// `Parse("... LIMIT $1")` must keep working as numbers, not regress to a String
-    /// literal (`'41' + 1` fails, `LIMIT '1'` is rejected). We honor inference for the
-    /// only case where the value's own text carries an unambiguous type: a numeric
-    /// literal is emitted verbatim as a bare, space-padded literal, so ClickHouse
-    /// infers its numeric type exactly as an inline literal would. Any other value
-    /// stays a quoted+escaped string literal (its only safe inference is text).
+    /// `Parse("... LIMIT $1")` must keep working as numbers and `Parse("SELECT NOT
+    /// $1")` + `Bind("true")` must infer Bool, not regress to a String literal
+    /// (`'41' + 1` fails, `LIMIT '1'` is rejected, `NOT 'true'` fails). We honor
+    /// inference for the cases where the value's own text is an unambiguous,
+    /// injection-safe SQL literal: a numeric literal or a boolean keyword is emitted
+    /// verbatim as a bare, space-padded literal, so ClickHouse infers its type exactly
+    /// as an inline literal would. Any other value stays a quoted+escaped string
+    /// literal (its only safe inference is text; a genuine string parameter infers
+    /// String correctly).
     ///
     /// The value is emitted bare (not parenthesized): a body like `SELECT $1::Int32`
     /// must stay a numeric cast, but `($1)::Int32` parses as `CAST('(42)', 'Int32')`
@@ -2243,13 +2280,14 @@ private:
     /// comment-truncating `5--5`.
     ///
     /// Injection-safe by construction: isSingleNumericLiteral accepts ONLY a single
-    /// optionally-signed decimal/exponent literal, so a payload such as `1--`, `1+2`,
-    /// `1 UNION ALL SELECT ...` or `x'; DROP ...` fails validation and falls through to
+    /// optionally-signed decimal/exponent literal and isBooleanLiteral ONLY the exact
+    /// tokens `true`/`false`, so a payload such as `1--`, `1+2`, `1 UNION ALL SELECT
+    /// ...`, `true; DROP ...` or `x'; DROP ...` fails both checks and falls through to
     /// the quoted-string branch. The surrounding spaces keep the validated literal a
     /// single, self-contained token sequence regardless of neighboring SQL.
     static String formatInferredParameter(const String & value)
     {
-        if (isSingleNumericLiteral(value))
+        if (isSingleNumericLiteral(value) || isBooleanLiteral(value))
             return fmt::format(" {} ", value);
         return quoteString(value);
     }
