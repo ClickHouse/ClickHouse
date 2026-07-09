@@ -1,10 +1,10 @@
 #!/bin/bash
-# Seeds the DinD daemon's image store from clickhouse/integration-images-cache
+# Seeds the DinD daemon's image store from clickhouse/clickhouse-integration-test
 # so the stable external service images (tests/integration/compose/*.yml) do
 # not have to be pulled from the registry by every integration job.
 #
 # Usage:
-#   seed_dind_images_cache.sh clickhouse/integration-images-cache:TAG
+#   seed_dind_images_cache.sh clickhouse/clickhouse-integration-test:TAG
 #
 # The cache image ships the service images as docker-archive tarballs under
 # /preseed (see ci/docker/integration-images-cache/). They are `docker load`ed

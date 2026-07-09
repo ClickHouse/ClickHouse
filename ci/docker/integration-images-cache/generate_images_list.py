@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Generate (or verify) images.txt - the list of external service images baked
-into the clickhouse/integration-images-cache image.
+into the clickhouse/clickhouse-integration-test image.
 
 The list is derived from tests/integration/compose/*.yml. Only images that are
 version-locked inline in the compose files are included:
@@ -12,7 +12,7 @@ version-locked inline in the compose files are included:
     those are per-commit CI images (see IMAGES_ENV in
     ci/jobs/scripts/integration_tests_configs.py) and are pulled fresh anyway.
 
-The build of clickhouse/integration-images-cache pulls exactly this list (see
+The build of clickhouse/clickhouse-integration-test pulls exactly this list (see
 pull.sh); its build context is only this directory, so the list has to be a
 committed file rather than parsed from the compose files at build time. The
 `integration_images_cache` style check runs this script with --check to fail
@@ -41,7 +41,7 @@ EXCLUDED = {
 }
 
 HEADER = """\
-# External service images baked into clickhouse/integration-images-cache.
+# External service images baked into clickhouse/clickhouse-integration-test.
 # AUTO-GENERATED - do not edit by hand. Regenerate with:
 #   python3 ci/docker/integration-images-cache/generate_images_list.py --update
 # The `integration_images_cache` style check fails when this file is out of

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Fetches every image listed in $1 (one reference per line, # comments allowed)
 # into docker-archive tarballs under $2 and writes $2/index.txt with the tar
-# file names. Runs inside the clickhouse/integration-images-cache image build,
+# file names. Runs inside the clickhouse/clickhouse-integration-test image build,
 # where no docker daemon is available, so skopeo fetches the images
 # daemon-less.
 #

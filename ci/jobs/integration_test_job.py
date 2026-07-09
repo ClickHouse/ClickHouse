@@ -919,7 +919,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
             assert False, f"No tag found for image [{image_name}]"
 
     # Seed the DinD image store with the stable external service images from
-    # the prebuilt clickhouse/integration-images-cache image, so the pre-fetch
+    # the prebuilt clickhouse/clickhouse-integration-test image, so the pre-fetch
     # below finds them locally instead of pulling each from the registry. The
     # script is fail-open: on any failure the pre-fetch pulls as before.
     # Disabled for local runs by default (the preseed is multi-GiB); override
@@ -927,7 +927,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
     seed_env = os.environ.get("DIND_IMAGES_CACHE")
     seed_enabled = seed_env == "1" if seed_env is not None else not info.is_local_run
     if seed_enabled:
-        cache_image = "clickhouse/integration-images-cache"
+        cache_image = "clickhouse/clickhouse-integration-test"
         cache_tag = info.docker_tag(cache_image)
         if cache_tag:
             Shell.check(

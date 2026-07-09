@@ -1,4 +1,4 @@
-# docker build -t clickhouse/stateful-dataset .
+# docker build -t clickhouse/clickhouse-stateful-test .
 #
 # Bakes the hits_v1/visits_v1 stateful datasets into a local, self-contained
 # (table_disk) store at /opt/ch-stateful. clickhouse/stateless-test is built

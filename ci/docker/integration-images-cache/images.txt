@@ -1,4 +1,4 @@
-# External service images baked into clickhouse/integration-images-cache.
+# External service images baked into clickhouse/clickhouse-integration-test.
 # AUTO-GENERATED - do not edit by hand. Regenerate with:
 #   python3 ci/docker/integration-images-cache/generate_images_list.py --update
 # The `integration_images_cache` style check fails when this file is out of

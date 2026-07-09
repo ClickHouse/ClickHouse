@@ -1,4 +1,4 @@
-# docker build -t clickhouse/integration-images-cache .
+# docker build -t clickhouse/clickhouse-integration-test .
 #
 # Ships the stable external service images used by the integration tests
 # (tests/integration/compose/*.yml, listed in images.txt) as docker-archive

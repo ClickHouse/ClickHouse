@@ -1,7 +1,7 @@
 #!/bin/bash
 # Bakes the hits_v1/visits_v1 stateful datasets into a local, self-contained
 # (table_disk) store at /opt/ch-stateful, so clickhouse/stateless-test (which is
-# built FROM clickhouse/stateful-dataset) can attach them instantly from a local
+# built FROM clickhouse/clickhouse-stateful-test) can attach them instantly from a local
 # disk instead of lazily reading them from the web disk (real AWS S3), which is
 # too slow. See tests/docker_scripts/create.sql for the serve-time (read-only)
 # attach and ci/jobs/scripts/clickhouse_proc.py for the symlink that exposes

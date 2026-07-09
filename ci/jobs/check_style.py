@@ -692,7 +692,7 @@ if __name__ == "__main__":
                 files=compose_files,
             )
         )
-    # Drift guard for the clickhouse/integration-images-cache preseed: its
+    # Drift guard for the clickhouse/clickhouse-integration-test preseed: its
     # build context is only its own directory, so the image list is a committed
     # file that must be regenerated when compose files change their images.
     testname = "integration_images_cache"

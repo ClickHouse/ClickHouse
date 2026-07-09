@@ -113,7 +113,12 @@ DOCKERS = [
         depends_on=["clickhouse/fasttest"],
     ),
     Docker.Config(
-        name="clickhouse/stateful-dataset",
+        # Bakes the hits_v1/visits_v1 stateful datasets for the stateless-test
+        # image. The name reuses a Docker Hub repository that has been dead
+        # since 2021 (the pre-praktika CI's stateful-test image): the CI robot
+        # cannot create new repositories in the clickhouse org, only push to
+        # existing ones.
+        name="clickhouse/clickhouse-stateful-test",
         path="./ci/docker/stateful-dataset",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
@@ -122,10 +127,10 @@ DOCKERS = [
         name="clickhouse/stateless-test",
         path="./ci/docker/stateless-test",
         platforms=Docker.Platforms.arm_amd,
-        # FROM clickhouse/stateful-dataset (which is FROM clickhouse/test-base) so
+        # FROM clickhouse/clickhouse-stateful-test (which is FROM clickhouse/test-base) so
         # the baked /opt/ch-stateful datasets are inherited. praktika passes the
         # single dependency as FROM_TAG, so no digest needs to be pinned by hand.
-        depends_on=["clickhouse/stateful-dataset"],
+        depends_on=["clickhouse/clickhouse-stateful-test"],
     ),
     Docker.Config(
         name="clickhouse/cctools",
@@ -187,8 +192,12 @@ DOCKERS = [
         # clickhouse/integration-tests-runner: the integration job pulls it
         # with the nested DinD daemon at job start (fail-open, CI only), so
         # local development never downloads the multi-GiB preseed layer. See
-        # ci/jobs/scripts/seed_dind_images_cache.sh.
-        name="clickhouse/integration-images-cache",
+        # ci/jobs/scripts/seed_dind_images_cache.sh. Not to be confused with
+        # clickhouse/integration-test (the per-commit service image): the name
+        # reuses a Docker Hub repository that has been dead since 2021 - the
+        # CI robot cannot create new repositories in the clickhouse org, only
+        # push to existing ones.
+        name="clickhouse/clickhouse-integration-test",
         path="./ci/docker/integration-images-cache",
         platforms=Docker.Platforms.arm_amd,
         depends_on=["clickhouse/test-base"],
