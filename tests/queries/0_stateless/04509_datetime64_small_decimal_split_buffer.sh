@@ -64,3 +64,14 @@ printf '1234\t12\t30\t99999999\n' > "$DATA_MC"
 ${CLICKHOUSE_LOCAL} -q "SELECT a = toDateTime64('1234', 2, 'UTC') AND b = 12 AND c = 30 AND d = 99999999 FROM file('${DATA_MC}', TSV, 'a DateTime64(2, \'UTC\'), b UInt32, c UInt32, d UInt32') SETTINGS date_time_input_format='basic', cast_string_to_date_time_mode='basic'"
 ${CLICKHOUSE_LOCAL} --query "SELECT a FROM file('${DATA_MC}', TSV, 'a DateTime(\'UTC\'), b UInt32, c UInt32, d UInt32') SETTINGS date_time_input_format='basic'" 2>&1 | grep -qE "CANNOT_PARSE" && echo "plain DateTime rejects 4-digit field" || echo "plain DateTime FAIL"
 rm -f "$DATA_MC"
+
+# A dot with no fractional digit (\".\", \"+.\", \"-.\", \".x\") is not a valid DateTime64.
+${CLICKHOUSE_LOCAL} -q "
+SET date_time_input_format = 'basic', cast_string_to_date_time_mode = 'basic';
+SELECT
+    toDateTime64OrNull('.', 3, 'UTC') IS NULL,
+    toDateTime64OrNull('+.', 3, 'UTC') IS NULL,
+    toDateTime64OrNull('-.', 3, 'UTC') IS NULL,
+    toDateTime64OrNull('.x', 3, 'UTC') IS NULL,
+    toDateTime64OrNull(toFixedString('.', 20), 3, 'UTC') IS NULL
+"

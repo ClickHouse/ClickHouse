@@ -1814,10 +1814,22 @@ ReturnType readDateTimeTextFallback(
             /// with no integer digits (optionally signed). Leave the whole part at zero and let the caller
             /// read the fraction, so the non-throwing entrypoints (toDateTime64OrNull, schema inference)
             /// agree with the throwing ones, which recover this case through their catch at the '.'.
-            if (dt64_mode && *buf.position() == '.')
+            if (dt64_mode && fraction_prefix != nullptr && *buf.position() == '.')
             {
-                datetime = 0;
-                return ReturnType(true);
+                /// Require at least one digit after the dot so a bare "."/"+."/"-." is not accepted as
+                /// the epoch. Consume the dot and let the caller read the fraction (via fraction_prefix).
+                ++buf.position();
+                if (!buf.eof() && isNumericASCII(*buf.position()))
+                {
+                    datetime = 0;
+                    fraction_prefix->has_fraction = true;
+                    return ReturnType(true);
+                }
+
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
+                else
+                    return false;
             }
 
             if (negative_multiplier == -1)

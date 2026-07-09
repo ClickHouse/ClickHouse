@@ -912,7 +912,9 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
     /// which the fallback avoids but this optimistic path would otherwise reject.
     if constexpr (dt64_mode)
     {
-        if (s[0] == '.' || ((s[0] == '-' || s[0] == '+') && s[1] == '.'))
+        /// Require a digit after the dot so a bare "."/"+."/"-." is not accepted as the epoch.
+        if ((s[0] == '.' && isNumericASCII(s[1]))
+            || ((s[0] == '-' || s[0] == '+') && s[1] == '.' && isNumericASCII(s[2])))
         {
             if (s[0] == '-' || s[0] == '+')
                 ++buf.position();
