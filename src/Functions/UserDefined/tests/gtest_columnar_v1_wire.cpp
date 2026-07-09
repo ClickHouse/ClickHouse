@@ -1048,3 +1048,57 @@ TEST(ColumnarV1Wire, BoundsCheckWrappedLowCardIndexOffsetsOffsetRejected)
     auto result_type = std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
     EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
 }
+
+// ── COL_FIXED64 must reject a data_size that doesn't match the row count ─────
+//
+// desc.data_size claims 1 byte, but rows_to_dec (=num_rows) is 3, so the actual
+// memcpy would need 24 bytes. Without cross-checking data_size against
+// rows_to_dec * width, the buf.size()-relative bounds check alone would let this
+// read run into whatever bytes happen to follow within the frame.
+
+TEST(ColumnarV1Wire, BoundsCheckFixed64DataSizeMismatchRejected)
+{
+    const uint32_t num_rows = 3;
+    const uint32_t data_off = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    std::vector<uint8_t> buf(data_off + num_rows * 8u, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_FIXED64;
+    desc.data_offset = data_off;
+    desc.data_size   = 1;  // should be num_rows * 8 = 24
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeUInt64>();
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
+}
+
+// ── readColumnarOutput must reject descriptors pointing into header/descriptor
+// metadata, matching ColumnBinaryInputFormat's equivalent check ────────────────
+//
+// data_offset = 0 points at the frame header instead of a real data section;
+// without this check, readColumnFromDesc would silently decode header bytes as
+// the column's payload instead of throwing.
+
+TEST(ColumnarV1Wire, OutputRejectsDataOffsetInsideHeader)
+{
+    const uint32_t num_rows = 1;
+    const uint32_t hdr_desc_size = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES;
+
+    std::vector<uint8_t> buf(hdr_desc_size, 0);
+    uint32_t one = 1;
+    std::memcpy(buf.data(),     &num_rows, 4);
+    std::memcpy(buf.data() + 4, &one,      4);
+
+    ColDescriptor desc{};
+    desc.type        = COL_FIXED64;
+    desc.data_offset = 0;  // points at the frame header, not a real data section
+    desc.data_size   = 8;
+    std::memcpy(buf.data() + COLUMNAR_HEADER_BYTES, &desc, COLUMNAR_DESC_BYTES);
+
+    auto result_type = std::make_shared<DataTypeUInt64>();
+    EXPECT_THROW(readColumnarOutput({buf.data(), buf.size()}, result_type, num_rows), DB::Exception);
+}

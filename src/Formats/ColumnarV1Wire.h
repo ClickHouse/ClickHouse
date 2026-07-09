@@ -1063,6 +1063,14 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED8 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
+        // desc.data_size is otherwise-untrusted and must match the declared row count exactly:
+        // without this check, only the (buf.size()-relative) bounds check below applies, which
+        // lets a frame with a too-small declared data_size still consume bytes belonging to the
+        // next column's payload as long as enough bytes remain in the whole buffer.
+        if (desc.data_size != static_cast<uint64_t>(rows_to_dec))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED8 data_size {} does not match row count {}",
+                desc.data_size, rows_to_dec);
         if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED8 data out of bounds: offset={}, rows={}, buf={}",
@@ -1080,6 +1088,11 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED16 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
+        // See the matching check in COL_FIXED8 above.
+        if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 2u)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED16 data_size {} does not match row count {}",
+                desc.data_size, rows_to_dec);
         if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 2u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED16 data out of bounds: offset={}, rows={}, buf={}",
@@ -1096,6 +1109,11 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED32 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
+        // See the matching check in COL_FIXED8 above.
+        if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 4u)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED32 data_size {} does not match row count {}",
+                desc.data_size, rows_to_dec);
         if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 4u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED32 data out of bounds: offset={}, rows={}, buf={}",
@@ -1112,6 +1130,11 @@ inline MutableColumnPtr readColumnFromDesc(
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED64 type width mismatch: declared type has {} bytes",
                 base_type->getSizeOfValueInMemory());
+        // See the matching check in COL_FIXED8 above.
+        if (desc.data_size != static_cast<uint64_t>(rows_to_dec) * 8u)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1: COL_FIXED64 data_size {} does not match row count {}",
+                desc.data_size, rows_to_dec);
         if (desc.data_offset > buf.size() || static_cast<uint64_t>(rows_to_dec) * 8u > buf.size() - desc.data_offset)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "COLUMNAR_V1: COL_FIXED64 data out of bounds: offset={}, rows={}, buf={}",
@@ -1479,6 +1502,24 @@ inline MutableColumnPtr readColumnarOutput(
 
     ColDescriptor desc{};
     std::memcpy(&desc, buf.data() + COLUMNAR_HEADER_BYTES, sizeof(desc));
+
+    // Mirrors ColumnBinaryInputFormat::read()'s frame validator: null_offset/offsets_offset use
+    // 0 as the "absent" sentinel, but any nonzero value, and data_offset unconditionally (it has
+    // no absent sentinel — the writer's cursor always starts at hdr_desc_size and only grows),
+    // must point at or past the end of the header + descriptor table. Without this check, a
+    // hostile or buggy WASM module could set e.g. data_offset = 0 and have readColumnFromDesc
+    // silently decode header/descriptor bytes as the column's payload instead of throwing.
+    constexpr uint64_t hdr_desc_size = COLUMNAR_HEADER_BYTES + COLUMNAR_DESC_BYTES; // num_cols == 1
+    for (uint64_t off : {desc.null_offset, desc.offsets_offset})
+        if (off != 0 && off < hdr_desc_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "COLUMNAR_V1 output descriptor offset {} points inside the header/descriptor table (< {})",
+                off, hdr_desc_size);
+    if (desc.data_offset < hdr_desc_size)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "COLUMNAR_V1 output descriptor data_offset {} points inside the header/descriptor table (< {})",
+            desc.data_offset, hdr_desc_size);
+
     return readColumnFromDesc(buf, desc, num_rows, result_type);
 }
 
