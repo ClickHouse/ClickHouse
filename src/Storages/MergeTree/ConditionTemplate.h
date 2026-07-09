@@ -44,8 +44,10 @@ public:
     /// Substitutes nothing.
     const Cond & generateUnsubstituted() const;
 
-    /// Substitutes partition level constants into dag.
-    const Cond & generateForPartition(const MergeTreePartition & partition) const;
+    /// Substitutes partition level constants into dag. The part supplies both its own partition
+    /// (for partition-key substitution and the metadata partition key size) and, when it is a
+    /// projection part, its parent for the _partition_id / _partition_value virtual columns.
+    const Cond & generateForPartition(const IMergeTreeDataPart & part) const;
 
     /// Maps already generated condition using provided lambda.
     void addTransformation(Transformer transformer_);

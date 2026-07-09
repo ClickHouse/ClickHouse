@@ -5,3 +5,13 @@
 9
 10
 500
+-- _partition_id filter, no projection
+1
+3
+-- _partition_id filter, forced projection
+1
+3
+-- _partition_value filter, no projection
+2
+-- _partition_value filter, forced projection
+2
