@@ -53,7 +53,7 @@ SETTINGS log_comment = 'query_03915_04';
 
 -- Test 5: INNER JOIN that exceeds max_bytes_before_external_join and must spill.
 SELECT 'inner join spill';
-SET max_bytes_before_external_join = 1000;
+SET max_bytes_before_external_join = 100000;
 SELECT count(), sum(t2.v)
 FROM (SELECT number AS k FROM numbers(10000)) AS t1
 INNER JOIN (SELECT number AS k, number AS v FROM numbers(10000)) AS t2

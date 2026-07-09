@@ -1695,6 +1695,7 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             auto merge_task = std::make_unique<MergeTextIndexesTask>(
                 std::move(segments),
                 ctx->new_data_part,
+                (*ctx->mutate_entry)->rows_written,
                 index,
                 /*merged_part_offsets=*/ nullptr,
                 reader_settings,
@@ -2455,7 +2456,8 @@ private:
         MergeTreePartition partition = ctx->new_data_part->partition;
         std::string part_name = ctx->new_data_part->getNewName(part_info);
 
-        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(part_info, partition, part_name, ctx->txn);
+        auto [mutable_empty_part, _] = ctx->data->createEmptyPart(
+            part_info, partition, part_name, ctx->new_data_part->getMetadataSnapshot(), ctx->txn);
         ctx->new_data_part = std::move(mutable_empty_part);
     }
 };
@@ -2822,6 +2824,7 @@ bool MutateTask::prepare()
                 ctx->future_part->part_info,
                 ctx->source_part->partition,
                 ctx->future_part->name,
+                ctx->source_part->getMetadataSnapshot(),
                 ctx->txn);
 
             ProfileEvents::increment(ProfileEvents::MutationCreatedEmptyParts);

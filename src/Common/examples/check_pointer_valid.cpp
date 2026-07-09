@@ -32,7 +32,7 @@ bool isPointerValid(const void * ptr)
     return false;
 }
 
-int mainEntryExampleCheckPointerValid(int, char **)
+int main(int, char **)
 {
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));

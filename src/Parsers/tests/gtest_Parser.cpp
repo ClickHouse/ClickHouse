@@ -8,7 +8,6 @@
 #include <Parsers/ParserOptimizeQuery.h>
 #include <Parsers/ParserRenameQuery.h>
 #include <Parsers/ParserAttachAccessEntity.h>
-#include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/Kusto/ParserKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
@@ -37,13 +36,6 @@ std::ostream & operator<<(std::ostream & ostr, const ParserTestCase & test_case)
     std::string input_text{test_case.input_text};
     boost::replace_all(input_text, "\n", "\\n");
     return ostr << "ParserTestCase input: " << input_text;
-}
-
-TEST(Lexer, NullInputWithMaxQuerySize)
-{
-    Lexer lexer(nullptr, nullptr, 262144);
-    Token token = lexer.nextToken();
-    EXPECT_EQ(TokenType::EndOfStream, token.type);
 }
 
 TEST_P(ParserTest, parseQuery)

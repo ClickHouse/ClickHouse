@@ -64,7 +64,7 @@ IProcessor::Status LazyReadReplacingFinalSource::prepare()
         if (processors.empty())
             return Status::Ready;
         else
-            return Status::UpdatePipeline;
+            return Status::ExpandPipeline;
     }
 
     /// Forward chunks
@@ -341,12 +341,12 @@ void LazyReadReplacingFinalSource::work()
     processors = Pipe::detachProcessors(std::move(pipe));
 }
 
-IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
+Processors LazyReadReplacingFinalSource::expandPipeline()
 {
     inputs.emplace_back(pipeline_output->getHeader(), this);
     connect(*pipeline_output, inputs.back());
     inputs.back().setNeeded();
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return std::move(processors);
 }
 
 }

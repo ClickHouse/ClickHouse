@@ -1207,6 +1207,21 @@ class FunctionBinaryArithmetic : public IFunction
 
         /// We use exponentiation by squaring algorithm to perform multiplying aggregate states by N in O(log(N)) operations
         /// https://en.wikipedia.org/wiki/Exponentiation_by_squaring
+        ///
+        /// The squaring step computes vec_from[i] := vec_from[i] + vec_from[i].
+        /// Calling `function->merge(state, state)` directly is undefined behaviour:
+        /// many aggregate function `merge` implementations append the source's
+        /// internal storage to the destination's. When `src == dst` and the
+        /// destination reallocates, the source iterators (pointing to the freed
+        /// buffer) are dereferenced, producing a heap-use-after-free. We avoid
+        /// the alias by copying `vec_from` into an independent column first.
+        ///
+        /// The temporary column is constructed inside the squaring branch so
+        /// that its arena is released at the end of each iteration. Re-using a
+        /// single column across iterations would leak per-iteration state
+        /// memory into the column's monotonic arena (`popBack` decrements the
+        /// row count but does not free arena allocations), causing the
+        /// temporary footprint to grow with the multiplier.
         while (m)
         {
             if (m % 2)
@@ -1217,8 +1232,15 @@ class FunctionBinaryArithmetic : public IFunction
             }
             else
             {
+                auto column_temp = ColumnAggregateFunction::create(function);
+                column_temp->reserve(size);
                 for (size_t i = 0; i < size; ++i)
-                    function->merge(vec_from[i], vec_from[i], arena.get());
+                    column_temp->insertFrom(vec_from[i]);
+                auto & vec_temp = column_temp->getData();
+
+                for (size_t i = 0; i < size; ++i)
+                    function->merge(vec_from[i], vec_temp[i], arena.get());
+
                 m /= 2;
             }
         }
@@ -3216,9 +3238,9 @@ public:
             // const +|- variable
             if (left.column && isColumnConst(*left.column))
             {
-                auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -3226,11 +3248,9 @@ public:
                         = {{left_type->createColumnConst(1, (*left.column)[0]), left_type, left.name},
                            {right_type->createColumnConst(1, point), right_type, right.name}};
 
-                    /// This is a bit dangerous to call `Base::executeImpl` cause it ignores `use Default Implementation For XXX` flags.
-                    /// It was possible to check monotonicity for nullable right type, which results in an exception.
-                    /// We also strip `LowCardinality` recursively (e.g. `Array(LowCardinality(Float64))` -> `Array(Float64)`)
-                    /// because the framework's `LowCardinality` default implementation is bypassed when calling `Base::executeImpl`
-                    /// directly, and the inner numeric dispatch (via `castBothTypes`) does not recognize `LowCardinality`.
+                    /// This is a bit dangerous to call Base::executeImpl cause it ignores `use Default Implementation For XXX` flags.
+                    /// It was possible to check monotonicity for nullable right type which result to exception.
+                    /// Adding removeNullable above fixes the issue, but some other inconsistency may left.
                     auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
@@ -3256,9 +3276,9 @@ public:
             // variable +|- constant
             if (right.column && isColumnConst(*right.column))
             {
-                auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -3287,17 +3307,7 @@ public:
             {
                 auto constant = (*left.column)[0];
                 if (accurateEquals(constant, Field(0)))
-                {
-                    /// `0 / x` is 0 for any `x` != 0, but undefined at `x` = 0
-                    /// (`NaN`/`Inf` for `divide`, division-by-zero exception for `intDiv`).
-                    /// The function is constant (and therefore monotonic) only when the range
-                    /// strictly excludes 0. Otherwise the chain is non-monotonic and the
-                    /// `MergeTreeSetIndex` binary search invariant (begin <= end) can be violated.
-                    if ((accurateLess(left_point, Field(0)) && accurateLess(right_point, Field(0)))
-                        || (accurateLess(Field(0), left_point) && accurateLess(Field(0), right_point)))
-                        return {true, true, false, false};
-                    return {false, true, false, false};
-                }
+                    return {true, true, false, false}; // 0 / 0 is undefined, thus it's not always monotonic
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 if (accurateLess(left_point, Field(0))

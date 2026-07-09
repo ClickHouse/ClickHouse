@@ -256,7 +256,8 @@ GraceHashJoin::GraceHashJoin(
     SharedHeader left_sample_block_,
     SharedHeader right_sample_block_,
     TemporaryDataOnDiskScopePtr tmp_data_,
-    bool any_take_last_row_)
+    bool any_take_last_row_,
+    size_t external_join_threshold_)
     : log{getLogger("GraceHashJoin")}
     , table_join{std::move(table_join_)}
     , left_sample_block{left_sample_block_}
@@ -264,6 +265,7 @@ GraceHashJoin::GraceHashJoin(
     , any_take_last_row{any_take_last_row_}
     , initial_num_buckets(initial_num_buckets_)
     , max_num_buckets(max_num_buckets_)
+    , external_join_threshold(external_join_threshold_)
     , left_key_names(table_join->getOnlyClause().key_names_left)
     , right_key_names(table_join->getOnlyClause().key_names_right)
     , tmp_data(tmp_data_->childScope({
@@ -325,6 +327,17 @@ bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) con
     if (total_rows < 2)
         return false;
     bool has_overflow = !table_join->sizeLimits().softCheck(total_rows, total_bytes);
+
+    /// Wrapper-only auto-spill: when `SpillingHashJoin` drives this instance, it passes its
+    /// memory cap as `external_join_threshold`. We must keep spilling under the same cap;
+    /// otherwise the in-memory bucket would just keep growing and the wrapper's spill decision
+    /// would be meaningless. We use half the threshold for the same reason as the wrapper: the
+    /// in-memory hash table doubles its buffer in power-of-two steps, transiently holding 3X
+    /// the previous size, so rehashing buckets early prevents that doubling from exceeding the
+    /// cap. Standalone `grace_hash` instances pass 0 and rely solely on
+    /// `max_rows_in_join` / `max_bytes_in_join`.
+    if (!has_overflow && external_join_threshold > 0 && total_bytes * 2 >= external_join_threshold)
+        has_overflow = true;
 
     if (has_overflow)
         LOG_TRACE(log, "Memory overflow, size exceeded {} / {} bytes, {} / {} rows",
@@ -760,14 +773,39 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
                 return;
         }
         auto prev_keys_num = hash_join->getTotalRowCount();
+        size_t pre_total_bytes = hash_join->getTotalByteCount();
 
-        hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
-        size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
-        size_t hash_join_total_bytes = hash_join->getTotalByteCount();
-        if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
-            return;
+        /// Pre-check: rehash when the in-memory bucket alone is already past half of the
+        /// wrapper-supplied auto-spill cap. The inner `HashJoin::addBlockToJoin` grows its
+        /// hash buffer in power-of-two steps. Doubling from X to 2X transiently holds 3X
+        /// (old buffer + new buffer being filled), so a post-add check can race with that
+        /// doubling and observe the OOM only as an allocator exception.
+        ///
+        /// We trigger the rehash on the existing table size and deliberately do NOT factor
+        /// in the incoming block: `block.allocatedBytes()` is a misleading lower bound on
+        /// the actual hash-table cost (cell overhead, load-factor padding, resize peaks),
+        /// so a tiny block could leave a near-full bucket bypassing the pre-check and OOM
+        /// during the resize. Mirrors `SpillingHashJoin::addBlockToJoin`. Skipped for
+        /// standalone `grace_hash` instances (`external_join_threshold == 0`); they still
+        /// rely on the post-insert `hasMemoryOverflow` check against
+        /// `max_rows_in_join` / `max_bytes_in_join`.
+        const bool pre_threshold_overflow = external_join_threshold > 0
+            && pre_total_bytes * 2 >= external_join_threshold;
 
-        current_block = {};
+        bool block_added = false;
+        if (!pre_threshold_overflow)
+        {
+            hash_join->addBlockToJoin(current_block, /* check_limits = */ false);
+            block_added = true;
+            size_t hash_join_total_keys = hash_join->getAndSetRightTableKeys();
+            size_t hash_join_total_bytes = hash_join->getTotalByteCount();
+            if (!hasMemoryOverflow(hash_join_total_keys, hash_join_total_bytes))
+                return;
+        }
+
+        if (block_added)
+            current_block = {};
+        /// else: we did not add the block, so we must include it when re-scattering after rehash.
 
         // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
         buckets_snapshot = rehashBuckets();
@@ -777,7 +815,15 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
 
         {
             Blocks current_blocks;
-            current_blocks.reserve(right_blocks.size());
+            current_blocks.reserve(right_blocks.size() + 1);
+
+            if (current_block.rows() > 0)
+            {
+                Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, current_block, buckets_snapshot.size());
+                flushBlocksToBuckets<JoinTableSide::Right>(blocks, buckets_snapshot, bucket_index);
+                current_blocks.emplace_back(std::move(blocks[bucket_index]));
+            }
+
             for (const auto & right_block : right_blocks)
             {
                 Blocks blocks = JoinCommon::scatterBlockByHash(right_key_names, right_block, buckets_snapshot.size());
@@ -788,7 +834,12 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
             current_block = concatenateBlocks(current_blocks);
         }
 
-        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num);
+        /// `rehashBuckets` doubles the bucket count from N to 2N. Of the `prev_keys_num` rows that
+        /// were in this bucket, about half map to bucket `i` and half to bucket `i + N` under the
+        /// new modulus, so ~half stay here and the rest are flushed to disk. Reserving for the
+        /// full `prev_keys_num` would allocate a power-of-two buffer for the pre-rehash size and
+        /// immediately blow past `max_bytes_before_external_join`.
+        hash_join = makeInMemoryJoin(fmt::format("grace{}", bucket_index), prev_keys_num / 2);
 
         if (current_block.rows() > 0)
             hash_join->addBlockToJoin(current_block, /* check_limits = */ false);

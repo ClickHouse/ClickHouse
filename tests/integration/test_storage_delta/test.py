@@ -838,6 +838,181 @@ def test_types(started_cluster, use_delta_kernel):
 
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
+def test_varchar_char_types(started_cluster, use_delta_kernel):
+    """
+    VARCHAR(n) and CHAR(n) are valid Delta Lake column types emitted by Spark/Databricks
+    when tables originate from relational databases. ClickHouse must map them to String.
+    """
+    instance = get_node(started_cluster, use_delta_kernel)
+    TABLE_NAME = randomize_table_name("test_varchar_char_types")
+    spark = started_cluster.spark_session
+    result_file = randomize_table_name(f"{TABLE_NAME}_result")
+
+    # Use the DeltaTable builder with DDL-style type names so that the Delta Lake
+    # schema metadata records varchar/char column types. Using VarcharType/CharType
+    # directly in a StructType would be rejected by Spark's Catalyst planner.
+    delta_table = (
+        DeltaTable.create(spark)
+        .tableName(TABLE_NAME)
+        .location(f"/{result_file}")
+        .addColumn("id", "INT", nullable=False)
+        .addColumn("varchar_col", "VARCHAR(256)", nullable=True)
+        .addColumn("char_col", "CHAR(10)", nullable=True)
+        .execute()
+    )
+    spark.sql(
+        f"INSERT INTO {TABLE_NAME} VALUES (1, 'hello varchar', 'hello char')"
+    )
+
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    upload_directory(minio_client, bucket, f"/{result_file}", "")
+
+    table_function = f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
+
+    # Both varchar and char columns must be readable and resolve to String
+    assert instance.query(f"DESCRIBE {table_function} FORMAT TSV") == TSV(
+        [
+            ["id", "Int32"],
+            ["varchar_col", "Nullable(String)"],
+            ["char_col", "Nullable(String)"],
+        ]
+    )
+    assert (
+        instance.query(f"SELECT id, varchar_col, char_col FROM {table_function}").strip()
+        == "1\thello varchar\thello char"
+    )
+
+
+def test_varchar_char_types_in_delta_log(started_cluster):
+    """
+    Regression test for: `Unsupported DeltaLake type: varchar(n)`.
+
+    Spark/Delta normalises VARCHAR/CHAR DDL down to the physical `string` type in
+    the Delta log, so a Spark-driven test never exercises the broken code path.
+    Some real-world emitters (notably the Unity Catalog REST API in `type_json`)
+    do leave `varchar(n)` / `char(n)` in the schema string, which is what hits
+    `DeltaLakeMetadata::getSimpleTypeByName` and previously threw.
+
+    This test constructs a Delta log by hand with such non-normalised type names
+    so the regression path is exercised under both the bugfix-validation run
+    (must fail without the fix) and the patched build (must succeed).
+    The bug only ever lived in the non-kernel path, so this test does not
+    parametrise on `use_delta_kernel`.
+    """
+    instance = started_cluster.instances["node1"]
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_varchar_char_types_in_delta_log")
+
+    schema = pa.schema([
+        pa.field("id", pa.int32()),
+        pa.field("varchar_col", pa.string()),
+        pa.field("char_col", pa.string()),
+    ])
+    table_data = pa.table(
+        {
+            "id": pa.array([1], type=pa.int32()),
+            "varchar_col": pa.array(["hello varchar"], type=pa.string()),
+            "char_col": pa.array(["hello char"], type=pa.string()),
+        },
+        schema=schema,
+    )
+    buf = io.BytesIO()
+    pq.write_table(table_data, buf, compression=None)
+    parquet_bytes = buf.getvalue()
+
+    parquet_object_name = f"{TABLE_NAME}/part-0.parquet"
+    minio_client.put_object(
+        bucket_name=bucket,
+        object_name=parquet_object_name,
+        data=io.BytesIO(parquet_bytes),
+        length=len(parquet_bytes),
+    )
+
+    protocol = '{"protocol":{"minReaderVersion":1,"minWriterVersion":2}}'
+    metadata = json.dumps(
+        {
+            "metaData": {
+                "id": str(uuid.uuid4()),
+                "format": {"provider": "parquet", "options": {}},
+                "schemaString": json.dumps(
+                    {
+                        "type": "struct",
+                        "fields": [
+                            {
+                                "name": "id",
+                                "type": "integer",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                            {
+                                "name": "varchar_col",
+                                "type": "varchar(256)",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                            {
+                                "name": "char_col",
+                                "type": "char(10)",
+                                "nullable": True,
+                                "metadata": {},
+                            },
+                        ],
+                    }
+                ),
+                "partitionColumns": [],
+                "configuration": {},
+                "createdTime": 1600000000000,
+            }
+        }
+    )
+    add = json.dumps(
+        {
+            "add": {
+                "path": "part-0.parquet",
+                "partitionValues": {},
+                "size": len(parquet_bytes),
+                "modificationTime": 1600000000000,
+                "dataChange": True,
+                "stats": json.dumps({"numRecords": 1}),
+            }
+        }
+    )
+
+    log_content = ("\n".join([protocol, metadata, add])).encode()
+    minio_client.put_object(
+        bucket_name=bucket,
+        object_name=f"{TABLE_NAME}/_delta_log/00000000000000000000.json",
+        data=io.BytesIO(log_content),
+        length=len(log_content),
+    )
+
+    table_function = (
+        f"deltaLake('http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{TABLE_NAME}/', "
+        f"'minio', '{minio_secret_key}')"
+    )
+
+    # `allow_experimental_delta_kernel_rs=0` exercises the C++ schema parser,
+    # which is where `getSimpleTypeByName` was throwing on `varchar(n)`/`char(n)`.
+    settings = {"allow_experimental_delta_kernel_rs": "0"}
+    assert instance.query(f"DESCRIBE {table_function} FORMAT TSV", settings=settings) == TSV(
+        [
+            ["id", "Nullable(Int32)"],
+            ["varchar_col", "Nullable(String)"],
+            ["char_col", "Nullable(String)"],
+        ]
+    )
+    assert (
+        instance.query(
+            f"SELECT id, varchar_col, char_col FROM {table_function}",
+            settings=settings,
+        ).strip()
+        == "1\thello varchar\thello char"
+    )
+
+
+@pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_restart_broken(started_cluster, use_delta_kernel):
     instance = get_node(started_cluster, use_delta_kernel)
     spark = started_cluster.spark_session
@@ -1362,6 +1537,8 @@ def test_filesystem_cache(started_cluster, use_delta_kernel):
     # (it reads last 64kb for parquet metadata unconditionally
     # assuming most of it will be metadata, see Reader::readFileMetaData)
     # So we end up reading the same data two times here with parquet reader v3.
+    # We cannot disable input_format_parquet_use_native_reader_v3 because
+    # this setting is deprecated.
     # So we cannot check count == CachedReadBufferReadFromCacheBytes,
     # but instead check that CachedReadBufferReadFromCacheBytes is no more than 2 times more :(
     assert count * 2 > int(
@@ -2394,7 +2571,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_1"
     sum = int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1",
+            f"SELECT sum(id) FROM {table_function} SETTINGS allow_experimental_delta_kernel_rs=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1",
             query_id=query_id,
         )
     )
@@ -2410,7 +2587,7 @@ def test_column_pruning(started_cluster):
     query_id = f"query_{TABLE_NAME}_2"
     assert sum == int(
         instance.query(
-            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, use_parquet_metadata_cache=0",
+            f"SELECT sum(id) FROM {table_function} SETTINGS enable_filesystem_cache=0, max_read_buffer_size_remote_fs=100, remote_read_min_bytes_for_seek=1, input_format_parquet_use_native_reader_v3=1, use_parquet_metadata_cache=0",
             query_id=query_id,
         )
     )
@@ -5182,3 +5359,120 @@ def test_azure_url_encoded_partition_path(started_cluster, use_delta_kernel):
     assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 3
 
     instance.query(f"DROP TABLE IF EXISTS {TABLE_NAME}")
+
+def test_delta_kernel_rebuild_on_credentials_rotation(started_cluster):
+    """Cache a DeltaLake snapshot, then change the credentials fingerprint between two
+    reads and assert the second read rebuilds the kernel engine instead of silently
+    reusing the stale one.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_rebuild_on_rotation")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # First read: caches the kernel snapshot state under the current credentials fingerprint.
+    baseline_query_id = f"{TABLE_NAME}_baseline"
+    assert int(instance.query(
+        f"SELECT count() FROM {TABLE_NAME}",
+        query_id=baseline_query_id,
+    )) == 100
+
+    instance.query("SYSTEM FLUSH LOGS")
+    init_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Initializing snapshot%'"
+    ).strip())
+    assert init_hits >= 1, "First read should initialize the kernel snapshot state"
+
+    rebuild_hits_pre = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{baseline_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state%'"
+    ).strip())
+    assert rebuild_hits_pre == 0, "First read should NOT trigger the credentials-rotation rebuild"
+
+    # Second read: the failpoint perturbs the credentials fingerprint, simulating an STS
+    # rotation between consecutive reads of the same cached snapshot. The fingerprint
+    # mismatch must trigger the rebuild path; the row count must still come back correct.
+    rotated_query_id = f"{TABLE_NAME}_rotated"
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=rotated_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    rebuild_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{rotated_query_id}' "
+        "  AND message ILIKE '%Rebuilding kernel snapshot state (credentials rotated)%'"
+    ).strip())
+    assert rebuild_hits >= 1, (
+        f"Expected the credentials-rotation rebuild log line to fire for query {rotated_query_id}, "
+        f"found {rebuild_hits} hits — the fingerprint check did not rebuild the kernel state."
+    )
+
+
+def test_delta_kernel_retry_on_stale_token_via_catalog_callback(started_cluster):
+    """Simulate delta-kernel reporting an `ExpiredToken` during snapshot init. The
+    `delta_kernel_force_stale_token_error` failpoint throws the kernel error exactly
+    once; `object_storage_force_refresh_callback_success` short-circuits the catalog
+    refresh callback to succeed without an actual catalog. The retry path must rebuild
+    the snapshot and return the correct row count.
+    """
+    instance = started_cluster.instances["node1"]
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    TABLE_NAME = randomize_table_name("test_delta_kernel_retry_on_stale_token")
+
+    write_delta_from_df(
+        spark, generate_data(spark, 0, 100), f"/{TABLE_NAME}", mode="overwrite"
+    )
+    upload_directory(minio_client, bucket, f"/{TABLE_NAME}", "")
+    create_delta_table(instance, "s3", TABLE_NAME, started_cluster)
+
+    # Prime the cache so the second read starts from a clean state.
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 100
+
+    retry_query_id = f"{TABLE_NAME}_retry"
+    instance.query("SYSTEM ENABLE FAILPOINT object_storage_force_refresh_callback_success")
+    # Drift the fingerprint so initOrUpdateSnapshot enters its rebuild branch; the
+    # stale-token failpoint then trips inside the KernelSnapshotState ctor and the
+    # retry path takes over.
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+    instance.query("SYSTEM ENABLE FAILPOINT delta_kernel_force_stale_token_error")
+    try:
+        assert int(instance.query(
+            f"SELECT count() FROM {TABLE_NAME}",
+            query_id=retry_query_id,
+        )) == 100
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_credentials_fingerprint_drift")
+        instance.query("SYSTEM DISABLE FAILPOINT object_storage_force_refresh_callback_success")
+        # delta_kernel_force_stale_token_error is FIU_ONETIME and self-disables, but
+        # disable defensively in case the retry path never reached it.
+        instance.query("SYSTEM DISABLE FAILPOINT delta_kernel_force_stale_token_error")
+
+    instance.query("SYSTEM FLUSH LOGS")
+    retry_hits = int(instance.query(
+        "SELECT count() FROM system.text_log "
+        f"WHERE query_id = '{retry_query_id}' "
+        "  AND message ILIKE '%stale credentials during snapshot init; rebuilding%'"
+        "  AND message ILIKE '%refreshed via callback: true%'"
+    ).strip())
+    assert retry_hits >= 1, (
+        f"Expected the catalog-callback retry log line to fire for query {retry_query_id}, "
+        f"found {retry_hits} hits — the stale-token retry path was not exercised."
+    )

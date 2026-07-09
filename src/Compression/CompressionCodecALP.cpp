@@ -633,6 +633,13 @@ private:
 
         // Read bits
         const UInt8 bits = static_cast<UInt8>(*source++);
+        if (unlikely(bits > sizeof(UInt64) * 8))
+            throw Exception(
+                ErrorCodes::CANNOT_DECOMPRESS,
+                "Cannot decompress ALP-encoded data, invalid bit-width: {}, max allowed: {}",
+                static_cast<UInt32>(bits),
+                static_cast<UInt32>(sizeof(UInt64) * 8));
+
         const UInt32 bitpacked_size = Compression::FFOR::calculateBitpackedBytes<ALP_BLOCK_MAX_FLOAT_COUNT>(bits);
 
         // Read frame of reference

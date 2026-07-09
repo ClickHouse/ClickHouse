@@ -102,7 +102,8 @@ private:
         {
             /// Atoms
             FUNCTION_EQUALS,
-            FUNCTION_HAS_ANY_ELEMENTS,
+            FUNCTION_IN,
+            FUNCTION_MATCH,
             FUNCTION_HAS_ANY_TOKENS,
             FUNCTION_HAS_ALL_TOKENS,
             FUNCTION_LIKE,

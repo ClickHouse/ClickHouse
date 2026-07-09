@@ -146,7 +146,7 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
         return Status::PortFull;
 
     if (lazy_materializing_rows)
-        return Status::UpdatePipeline;
+        return Status::ExpandPipeline;
 
     /// Here we reading inputs as long as they are ready, to parallelize reading.
     /// But the chunks should be processed in the order of parts and ranges.
@@ -199,7 +199,7 @@ IProcessor::Status LazyReadFromMergeTreeSource::prepare(const UpdatedInputPorts 
     return Status::Finished;
 }
 
-IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
+Processors LazyReadFromMergeTreeSource::expandPipeline()
 {
     if (!lazy_materializing_rows)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "LazyReadFromMergeTreeSource: No lazy materializing rows");
@@ -216,7 +216,7 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
 
     next_input_to_process = inputs.begin();
     chunks.resize(processors.size());
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return processors;
 }
 
 Processors LazyReadFromMergeTreeSource::buildReaders()

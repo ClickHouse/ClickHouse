@@ -83,8 +83,6 @@ class IcebergSchemaProcessor
     using Node = ActionsDAG::Node;
 
 public:
-    explicit IcebergSchemaProcessor(bool allow_geo_parser_ = false) : allow_geo_parser(allow_geo_parser_) {}
-
     void addIcebergTableSchema(Poco::JSON::Object::Ptr schema_ptr);
     std::shared_ptr<NamesAndTypesList> getClickhouseTableSchemaById(Int32 id);
     std::shared_ptr<const ActionsDAG> getSchemaTransformationDagByIds(Int32 old_id, Int32 new_id);
@@ -95,7 +93,7 @@ public:
     Poco::JSON::Object::Ptr getIcebergTableSchemaById(Int32 id) const;
     bool hasClickhouseTableSchemaById(Int32 id) const;
 
-    static DataTypePtr getSimpleType(const String & type_name, bool allow_geo_parser = true);
+    static DataTypePtr getSimpleType(const String & type_name);
 
     static std::unordered_map<String, Int64> traverseSchema(Poco::JSON::Array::Ptr schema);
 
@@ -130,7 +128,6 @@ private:
         const Poco::JSON::Object::Ptr & old_schema, const Poco::JSON::Object::Ptr & new_schema, Int32 old_id, Int32 new_id);
 
     mutable SharedMutex mutex;
-    bool allow_geo_parser = true;
 };
 
 using IcebergSchemaProcessorPtr = std::shared_ptr<IcebergSchemaProcessor>;

@@ -1,5 +1,6 @@
 #include <memory>
 #include <stack>
+#include <unordered_set>
 
 #include <Storages/VirtualColumnUtils.h>
 
@@ -7,6 +8,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/convertFieldToType.h>
@@ -95,6 +97,57 @@ void buildSetsForDagImpl(const ActionsDAG & dag, const ContextPtr & context, boo
 void buildSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
 {
     buildSetsForDagImpl(dag, context, /* ordered = */ false);
+}
+
+void buildSetsForDAGExcludingGlobalIn(const ActionsDAG & dag, const ContextPtr & context)
+{
+    /// Collect ColumnSet nodes that are arguments to globalIn/globalNotIn functions.
+    /// These sets must NOT be built synchronously here because ReadFromRemote needs to
+    /// attach external tables to them first (via setExternalTable). Building them early
+    /// would make the set "created" without explicit elements, causing a LOGICAL_ERROR.
+    std::unordered_set<const ActionsDAG::Node *> global_in_set_nodes;
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            auto name = node.function_base->getName();
+            if (functionIsGlobalInOperator(name))
+            {
+                /// The set is the second argument (index 1)
+                if (node.children.size() >= 2)
+                    global_in_set_nodes.insert(node.children[1]);
+            }
+        }
+    }
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN && !global_in_set_nodes.contains(&node))
+        {
+            const ColumnSet * column_set = checkAndGetColumnConstData<const ColumnSet>(node.column.get());
+            if (!column_set)
+                column_set = checkAndGetColumn<const ColumnSet>(node.column.get());
+
+            if (column_set)
+            {
+                auto future_set = column_set->getData();
+                if (!future_set->get())
+                {
+                    if (auto * set_from_subquery = typeid_cast<FutureSetFromSubquery *>(future_set.get()))
+                    {
+                        /// Prefer ordered build so that the set retains explicit elements,
+                        /// which `KeyCondition` and skip-index analysis require to use the set
+                        /// for primary-key / skip-index filtering (via `buildOrderedSetInplace`).
+                        /// If `use_index_for_in_with_subqueries` is disabled, the ordered build
+                        /// returns `nullptr` without building; fall back to unordered so the set
+                        /// is still ready when PREWHERE is evaluated at read time.
+                        if (!set_from_subquery->buildOrderedSetInplace(context))
+                            set_from_subquery->buildSetInplace(context);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void buildOrderedSetsForDAG(const ActionsDAG & dag, const ContextPtr & context)
@@ -259,9 +312,7 @@ static void addPathAndFileToVirtualColumns(
             if (const auto * column = block.findByName(key))
             {
                 ReadBufferFromString buf(value);
-                auto hive_format_settings = format_settings;
-                hive_format_settings.allow_number_leading_zeros = true;
-                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, hive_format_settings);
+                column->type->getDefaultSerialization()->deserializeWholeText(column->column->assumeMutableRef(), buf, format_settings);
             }
         }
     }
@@ -300,7 +351,8 @@ ColumnPtr getFilterByPathAndFileIndexes(
     const ExpressionActionsPtr & actions,
     const NamesAndTypesList & virtual_columns,
     const NamesAndTypesList & hive_columns,
-    const ContextPtr & context)
+    const ContextPtr & context,
+    const std::optional<FormatSettings> & format_settings)
 {
     Block block;
     NameSet common_virtuals = getVirtualNamesForFileLikeStorage();
@@ -317,14 +369,17 @@ ColumnPtr getFilterByPathAndFileIndexes(
 
     block.insert({ColumnUInt64::create(), std::make_shared<DataTypeUInt64>(), "_idx"});
 
+    const auto hive_format_settings = HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
+    const bool parse_hive_columns = context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty();
+
     for (size_t i = 0; i != paths.size(); ++i)
     {
         addPathAndFileToVirtualColumns(
             block,
             paths[i],
             /* idx */i,
-            getFormatSettings(context),
-            /* parse_hive_columns */context->getSettingsRef()[Setting::use_hive_partitioning] || !hive_columns.empty());
+            hive_format_settings,
+            parse_hive_columns);
     }
 
     filterBlockWithExpression(actions, block);
@@ -336,11 +391,18 @@ void addRequestedFileLikeStorageVirtualsToChunk(
     Chunk & chunk,
     const NamesAndTypesList & requested_virtual_columns,
     VirtualsForFileLikeStorage virtual_values,
-    ContextPtr context)
+    ContextPtr context,
+    const std::optional<FormatSettings> & format_settings)
 {
     HivePartitioningUtils::HivePartitioningKeysAndValues hive_map;
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         hive_map = HivePartitioningUtils::parseHivePartitioningKeysAndValues(virtual_values.path);
+
+    /// `hive_format_settings` is hoisted out of the loop because constructing it from `getFormatSettings(context)`
+    /// reads many settings, and the result is identical for every hive virtual column in `requested_virtual_columns`.
+    const auto hive_format_settings = hive_map.empty()
+        ? FormatSettings{}
+        : HivePartitioningUtils::buildHiveFormatSettings(format_settings, context);
 
     for (const auto & virtual_column : requested_virtual_columns)
     {
@@ -447,8 +509,6 @@ void addRequestedFileLikeStorageVirtualsToChunk(
         }
         else if (auto it = hive_map.find(virtual_column.getNameInStorage()); it != hive_map.end())
         {
-            FormatSettings hive_format_settings;
-            hive_format_settings.allow_number_leading_zeros = true;
             chunk.addColumn(
                 virtual_column.type->createColumnConst(
                     chunk.getNumRows(),

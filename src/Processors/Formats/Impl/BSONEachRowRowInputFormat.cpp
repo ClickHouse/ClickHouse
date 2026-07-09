@@ -1,5 +1,6 @@
 #include <IO/ReadBufferFromString.h>
 
+#include <Common/checkStackSize.h>
 #include <Core/CaseAwareBlockNameMap.h>
 
 #include <Formats/FormatFactory.h>
@@ -44,6 +45,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int UNKNOWN_TYPE;
     extern const int TYPE_MISMATCH;
+    extern const int TOO_DEEP_RECURSION;
 }
 
 namespace
@@ -362,6 +364,11 @@ static void readAndInsertUUID(ReadBuffer & in, IColumn & column, BSONType bson_t
 
 void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    /// Nested Array/Tuple/Map recurse through readField; the depth is bounded by the declared column
+    /// type, but guard the native stack here (on container entry, not on every primitive field)
+    /// against a pathologically deep declared type.
+    checkStackSize();
+
     if (bson_type != BSONType::ARRAY)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Array column", getBSONTypeName(bson_type));
 
@@ -394,6 +401,8 @@ void BSONEachRowRowInputFormat::readArray(IColumn & column, const DataTypePtr & 
 
 void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    checkStackSize();
+
     if (bson_type != BSONType::ARRAY && bson_type != BSONType::DOCUMENT)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Tuple column", getBSONTypeName(bson_type));
 
@@ -461,6 +470,8 @@ void BSONEachRowRowInputFormat::readTuple(IColumn & column, const DataTypePtr & 
 
 void BSONEachRowRowInputFormat::readMap(IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
+    checkStackSize();
+
     if (bson_type != BSONType::DOCUMENT)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into Map column", getBSONTypeName(bson_type));
 
@@ -523,14 +534,8 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             auto & nullable_column = assert_cast<ColumnNullable &>(column);
             auto & nested_column = nullable_column.getNestedColumn();
             const auto & nested_type = assert_cast<const DataTypeNullable *>(data_type.get())->getNestedType();
-            /// Read into the nested column first. If `readField` throws, we must not leave
-            /// the `null_map` out of sync with the nested column — otherwise subsequent
-            /// rollback (e.g. `SerializationArray::readArraySafe` calling
-            /// `ColumnNullable::popBack`) would trip an assertion because
-            /// `ColumnNullable::size()` reflects `null_map.size()`.
-            auto result = readField(nested_column, nested_type, bson_type);
             nullable_column.getNullMapColumn().insertValue(0);
-            return result;
+            return readField(nested_column, nested_type, bson_type);
         }
         case TypeIndex::LowCardinality:
         {
@@ -887,7 +892,7 @@ BSONEachRowSchemaReader::BSONEachRowSchemaReader(ReadBuffer & in_, const FormatS
 {
 }
 
-DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, bool allow_to_skip_unsupported_types, bool & skip)
+DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, bool allow_to_skip_unsupported_types, bool & skip, size_t depth)
 {
     switch (type)
     {
@@ -932,7 +937,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::DOCUMENT:
         {
-            auto nested_names_and_types = getDataTypesFromBSONDocument(false);
+            auto nested_names_and_types = getDataTypesFromBSONDocument(false, depth + 1);
             auto nested_types = nested_names_and_types.getTypes();
             bool types_are_equal = true;
             if (nested_types.empty() || !nested_types[0])
@@ -954,7 +959,7 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
         }
         case BSONType::ARRAY:
         {
-            auto nested_types = getDataTypesFromBSONDocument(false).getTypes();
+            auto nested_types = getDataTypesFromBSONDocument(false, depth + 1).getTypes();
             bool types_are_equal = true;
             if (nested_types.empty() || !nested_types[0])
                 return nullptr;
@@ -1006,8 +1011,21 @@ DataTypePtr BSONEachRowSchemaReader::getDataTypeFromBSONField(BSONType type, boo
     }
 }
 
-NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool allow_to_skip_unsupported_types)
+NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool allow_to_skip_unsupported_types, size_t depth)
 {
+    /// BSON documents and arrays can be nested arbitrarily deep. Reject deep nesting early (before
+    /// building the type) with an explicit limit, so inference stays cheap and interruptible instead
+    /// of overflowing the native stack in this recursive descent. checkStackSize is a last-resort
+    /// backstop for when max_parser_depth is raised above the default.
+    /// max_parser_depth == 0 means unlimited (matching the SQL parser), leaving only checkStackSize.
+    if (format_settings.max_parser_depth != 0 && depth > format_settings.max_parser_depth)
+        throw Exception(
+            ErrorCodes::TOO_DEEP_RECURSION,
+            "Too deep recursion while inferring the BSON schema: the nesting depth exceeds the limit ({}). "
+            "It can be raised with the setting 'max_parser_depth', but a very deep schema is rarely intentional",
+            format_settings.max_parser_depth);
+    checkStackSize();
+
     size_t document_start = in.count();
     BSONSizeT document_size;
     readBinaryLittleEndian(document_size, in);
@@ -1018,7 +1036,7 @@ NamesAndTypesList BSONEachRowSchemaReader::getDataTypesFromBSONDocument(bool all
         String name;
         readNullTerminated(name, in);
         bool skip = false;
-        auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip);
+        auto type = getDataTypeFromBSONField(bson_type, allow_to_skip_unsupported_types, skip, depth);
         if (!skip)
             names_and_types.emplace_back(name, type);
     }
@@ -1036,7 +1054,7 @@ NamesAndTypesList BSONEachRowSchemaReader::readRowAndGetNamesAndDataTypes(bool &
         return {};
     }
 
-    return getDataTypesFromBSONDocument(format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference);
+    return getDataTypesFromBSONDocument(format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference, 1);
 }
 
 void BSONEachRowSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePtr & new_type)

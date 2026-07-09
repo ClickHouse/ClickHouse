@@ -283,7 +283,6 @@ std_cerr_cout_excludes=(
     src/Daemon/BaseDaemon.cpp
     src/Loggers/Loggers.cpp
     src/IO/Ask.cpp
-    src/Examples/main.cpp
     # Only in block comments (/* ... */)
     src/Storages/IStorage.h
     src/Common/mysqlxx/mysqlxx/Query.h

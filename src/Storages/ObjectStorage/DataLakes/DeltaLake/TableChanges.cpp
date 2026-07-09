@@ -169,6 +169,11 @@ DB::Chunk TableChanges::next()
             record_batch.status().ToString());
     }
 
+    /// Validate validity bitmaps before building the table: Table::FromRecordBatches computes
+    /// each column's null_count, and Arrow derives an unknown FieldNode null_count by scanning
+    /// the bitmap over the declared length, which reads out of bounds on a truncated bitmap.
+    DB::ArrowColumnToCHColumn::checkRecordBatchValidityBitmaps(**record_batch);
+
     auto table_result = arrow::Table::FromRecordBatches(std::vector<std::shared_ptr<arrow::RecordBatch>>{*record_batch});
     if (!table_result.ok())
         throw DB::Exception(DB::ErrorCodes::UNKNOWN_EXCEPTION,

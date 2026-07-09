@@ -21,7 +21,7 @@
   */
 
 
-int mainEntryExampleSipHashPerf(int, char **)
+int main(int, char **)
 {
     std::vector<std::string> data;
     DB::ReadBufferFromFileDescriptor in(STDIN_FILENO);

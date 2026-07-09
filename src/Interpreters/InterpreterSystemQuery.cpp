@@ -37,7 +37,6 @@
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/SessionLog.h>
 #include <Interpreters/TransactionLog.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
@@ -131,8 +130,6 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
 }
 
@@ -174,6 +171,7 @@ namespace ActionLocks
     extern const StorageActionBlockType PullReplicationLog;
     extern const StorageActionBlockType Cleanup;
     extern const StorageActionBlockType ViewRefresh;
+    extern const StorageActionBlockType ViewRefreshPause;
 }
 
 namespace
@@ -231,6 +229,8 @@ AccessType getRequiredAccessType(StorageActionBlockType action_type)
     if (action_type == ActionLocks::Cleanup)
         return AccessType::SYSTEM_CLEANUP;
     if (action_type == ActionLocks::ViewRefresh)
+        return AccessType::SYSTEM_VIEWS;
+    if (action_type == ActionLocks::ViewRefreshPause)
         return AccessType::SYSTEM_VIEWS;
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown action type: {}", std::to_string(action_type));
 }
@@ -836,11 +836,19 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::START_VIEW:
         case Type::START_VIEWS:
+            /// `SYSTEM START VIEW` must undo both `SYSTEM STOP VIEW` and `SYSTEM PAUSE VIEW`.
+            /// Each call drops the corresponding lock (if any) and invokes `refresher->start()`;
+            /// `start` is idempotent so calling it twice is safe.
             startStopAction(ActionLocks::ViewRefresh, true);
+            startStopAction(ActionLocks::ViewRefreshPause, true);
             break;
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
             startStopAction(ActionLocks::ViewRefresh, false);
+            break;
+        case Type::PAUSE_VIEW:
+        case Type::PAUSE_VIEWS:
+            startStopAction(ActionLocks::ViewRefreshPause, false);
             break;
         case Type::START_REPLICATED_VIEW:
             for (const auto & task : getRefreshTasks())
@@ -1170,6 +1178,7 @@ BlockIO InterpreterSystemQuery::execute()
 #endif
 
         case Type::RESET_DDL_WORKER:
+            getContext()->checkAccess(AccessType::SYSTEM_RESET_DDL_WORKER);
             getContext()->getDDLWorker().requestToResetState();
             break;
         default:
@@ -1679,7 +1688,7 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
     {
         auto query_context = Context::createCopy(getContext());
         query_context->makeQueryContext();
-        query_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        query_context->setDDLOrOnClusterInternal(true);
         query_context->setCurrentDatabase(restoring_database_name);
         query_context->setCurrentQueryId("");
 
@@ -1725,14 +1734,8 @@ DatabasePtr InterpreterSystemQuery::restoreDatabaseFromKeeperPath(
                 /*query=*/create_query_string);
             auto create_query_context = make_create_context();
 
-            {
-                SelectIntersectExceptQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::intersect_default_mode], create_query_context->getSettingsRef()[Setting::except_default_mode]};
-                SelectIntersectExceptQueryVisitor{data}.visit(query_ast);
-            }
-            {
-                NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
-                NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
-            }
+            NormalizeSelectWithUnionQueryVisitor::Data data{create_query_context->getSettingsRef()[Setting::union_default_mode]};
+            NormalizeSelectWithUnionQueryVisitor{data}.visit(query_ast);
 
             LOG_INFO(log, "Restoring {}", query_ast->formatForLogging());
             InterpreterCreateQuery(query_ast, create_query_context).execute();
@@ -2446,6 +2449,8 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::STOP_VIEW:
         case Type::STOP_VIEWS:
         case Type::STOP_REPLICATED_VIEW:
+        case Type::PAUSE_VIEW:
+        case Type::PAUSE_VIEWS:
         case Type::CANCEL_VIEW:
         case Type::TEST_VIEW:
         {
@@ -2600,6 +2605,11 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_INSTRUMENT_REMOVE);
             break;
         }
+        case Type::RESET_DDL_WORKER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_RESET_DDL_WORKER);
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         case Type::FREE_MEMORY:
         {
@@ -2615,7 +2625,6 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
-        case Type::RESET_DDL_WORKER:
         case Type::END: break;
     }
     return required_access;

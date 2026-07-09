@@ -198,7 +198,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
 
-        bool secondary_query = getContext()->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY;
+        bool secondary_query = getContext()->isDDLOrOnClusterInternal();
 
         /// Don't ignore DROP for refreshable materialized views: TRUNCATE doesn't stop
         /// the periodic refresh task, so the orphaned view would keep refreshing indefinitely,
@@ -520,12 +520,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
                 for (auto iterator = database->getTablesIterator(table_context); iterator->isValid(); iterator->next())
                 {
                     auto table_ptr = iterator->table();
-
-                    /// Skip tables that don't support truncation (e.g. views)
-                    /// when doing TRUNCATE ALL TABLES.
-                    if (truncate && query.has_tables && !table_ptr->supportsTruncate())
-                        continue;
-
                     StorageID storage_id = table_ptr->getStorageID();
                     tables_to_drop.push_back({storage_id, table_ptr->isDictionary()});
                     /// If the database doesn't support table UUIDs, we might call
@@ -669,11 +663,6 @@ BlockIO InterpreterDropQuery::executeToDatabaseImpl(const ASTDropQuery & query, 
         for (auto it = database->getTablesIterator(table_context); it->isValid(); it->next())
         {
             const auto & table_ptr = it->table();
-
-            /// Skip tables that don't support truncation (e.g. views).
-            if (!table_ptr->supportsTruncate())
-                continue;
-
             const auto & storage_id = table_ptr->getStorageID();
             const auto & tname = storage_id.table_name;
 
@@ -867,7 +856,7 @@ void InterpreterDropQuery::executeDropQuery(ASTDropQuery::Kind kind, ContextPtr 
 
         if (ignore_sync_setting)
             drop_context->setSetting("database_atomic_wait_for_drop_and_detach_synchronously", false);
-        drop_context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+        drop_context->setDDLOrOnClusterInternal(true);
         if (auto txn = current_context->getZooKeeperMetadataTransaction())
         {
             /// For Replicated database

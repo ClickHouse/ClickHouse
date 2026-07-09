@@ -147,6 +147,9 @@ FUNCTIONS_CONTEXT_PTR_EXCEPTIONS=(
     -e /TimeSeries/timeSeriesIdToTags.cpp
     -e /TimeSeries/timeSeriesTagsGroupToTags.cpp
     -e /TimeSeries/timeSeriesStoreTags.cpp
+
+    -e /FunctionBaseAI.h
+    -e /aiEmbed.cpp
 )
 find $ROOT_PATH/src/Functions -type f | xargs grep -l 'ContextPtr [a-z_]*;' | grep -v "${FUNCTIONS_CONTEXT_PTR_EXCEPTIONS[@]}" | grep -P '.' && echo "Avoid holding a copy of ContextPtr in Functions"
 

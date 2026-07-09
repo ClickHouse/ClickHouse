@@ -64,6 +64,21 @@ bool ConvertImplFromDynamicToColumn::shouldThrowOnNull(bool keep_nullable, const
         && !result_type->canBeInsideNullable();
 }
 
+/// When assembling the result of a Variant/Dynamic-to-column conversion, the result column must have
+/// the exact type of the converted columns it is filled from, otherwise `insertFrom` fails the column
+/// type check. Under `accurateCastOrNull` a per-variant conversion may return a `Nullable` column even
+/// when `result_type` is not `Nullable` (a NULL marks a value that could not be converted), so the
+/// result column cannot always be created from `result_type` directly. All convertible variants share
+/// the same target type, so the type of any non-empty converted column is a valid template. Returns
+/// `nullptr` when there is no converted column to copy the type from.
+static MutableColumnPtr cloneEmptyFromFirstConvertedColumn(const std::vector<ColumnPtr> & cast_columns)
+{
+    for (const auto & column : cast_columns)
+        if (column)
+            return column->cloneEmpty();
+    return nullptr;
+}
+
 ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -160,7 +175,11 @@ ColumnPtr ConvertImplFromDynamicToColumn::execute(
     }
 
     /// Construct result column from all cast variants.
-    auto res = result_type->createColumn();
+    auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
+    if (!res)
+        res = cloneEmptyFromFirstConvertedColumn(cast_shared_variant_columns);
+    if (!res)
+        res = result_type->createColumn();
     res->reserve(input_rows_count);
     for (size_t i = 0; i != input_rows_count; ++i)
     {
@@ -580,35 +599,6 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
                         "Illegal column {} for function CAST AS AggregateFunction",
                         argument_column.column->getName());
                 }
-            };
-        }
-
-        /// Different state variants (e.g. Window vs Aggregation) of the same aggregate function
-        /// can be converted by merging the source state into a fresh target state.
-        if (to_type->getFunction()->canMergeStateFromDifferentVariant(*agg_type->getFunction()))
-        {
-            return [function = to_type->getFunction(), from_function = agg_type->getFunction()](
-                       ColumnsWithTypeAndName & arguments,
-                       const DataTypePtr & /* result_type */,
-                       const ColumnNullable * /* nullable_source */,
-                       size_t /*input_rows_count*/) -> ColumnPtr
-            {
-                const auto & argument_column = arguments.front();
-                const auto * col_agg = checkAndGetColumn<ColumnAggregateFunction>(argument_column.column.get());
-                if (!col_agg)
-                    throw Exception(
-                        ErrorCodes::LOGICAL_ERROR,
-                        "Illegal column {} for function CAST AS AggregateFunction",
-                        argument_column.column->getName());
-
-                auto res = ColumnAggregateFunction::create(function);
-
-                for (const auto * src_state : col_agg->getData())
-                {
-                    res->insertDefault();
-                    function->mergeStateFromDifferentVariant(res->getData().back(), *from_function, src_state, &res->createOrGetArena());
-                }
-                return res;
             };
         }
     }
@@ -1233,7 +1223,7 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
     if (checkAndGetDataType<DataTypeTuple>(from_type.get())
         || checkAndGetDataType<DataTypeMap>(from_type.get()) || checkAndGetDataType<DataTypeObject>(from_type.get()))
     {
-        return [this, requested_result_is_nullable](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
+        return [this](ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * nullable_source, size_t input_rows_count)
         {
             auto json_string = ColumnString::create();
             ColumnStringHelpers::WriteHelper<ColumnString> write_helper(assert_cast<ColumnString &>(*json_string), input_rows_count);
@@ -1249,9 +1239,6 @@ FunctionCast::WrapperType FunctionCast::createObjectWrapper(const DataTypePtr & 
             write_helper.finalize();
 
             ColumnsWithTypeAndName args_with_json_string = {ColumnWithTypeAndName(json_string->getPtr(), std::make_shared<DataTypeString>(), "")};
-            if (requested_result_is_nullable && cast_type == CastType::accurateOrNull)
-                return ConvertImplGenericFromString<false>::execute(args_with_json_string, makeNullable(result_type), nullable_source, input_rows_count, settings);
-
             return ConvertImplGenericFromString<true>::execute(args_with_json_string, result_type, nullable_source, input_rows_count, settings);
         };
     }
@@ -1403,7 +1390,9 @@ FunctionCast::WrapperType FunctionCast::createVariantToColumnWrapper(const DataT
 
         /// Second, construct resulting column from cast variant columns according to discriminators.
         const auto & local_discriminators = column_variant.getLocalDiscriminators();
-        auto res = result_type->createColumn();
+        auto res = cloneEmptyFromFirstConvertedColumn(cast_variant_columns);
+        if (!res)
+            res = result_type->createColumn();
         res->reserve(input_rows_count);
         for (size_t i = 0; i != input_rows_count; ++i)
         {

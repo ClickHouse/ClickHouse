@@ -69,6 +69,12 @@ public:
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
     void dropTable(const String & namespace_name, const String & table_name) const override;
 
+    /// Returns a callback that re-vends fresh AWS credentials from the configured
+    /// credentials provider chain. Invoked by `ReadBufferFromS3` when an S3 call
+    /// fails with `ExpiredToken`, so that a long-running read can recover without
+    /// the user having to restart the query.
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
+
     /// Resolves the precise Iceberg timestamp type for `column_name` by searching the current schema
     /// in the Iceberg `metadata_object`. Falls back to `"timestamp_ns"` when `glue_column_type` is
     /// `"timestamp_nano"`, or `"timestamp"` otherwise, when the column is not found in the metadata.

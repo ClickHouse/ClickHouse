@@ -813,6 +813,35 @@ bool ActionsDAG::removeUnusedActions(const std::unordered_set<const Node *> & us
 }
 
 
+size_t ActionsDAG::removeNodes(const std::unordered_set<const Node *> & to_remove)
+{
+    if (to_remove.empty())
+        return 0;
+
+    std::unordered_set<const Node *> required;
+    std::stack<const Node *> stack;
+    for (const auto * out : outputs)
+        if (required.insert(out).second)
+            stack.push(out);
+    while (!stack.empty())
+    {
+        const auto * cur = stack.top();
+        stack.pop();
+        for (const auto * child : cur->children)
+            if (required.insert(child).second)
+                stack.push(child);
+    }
+
+    size_t removed = std::erase_if(nodes, [&](const Node & n)
+    {
+        return to_remove.contains(&n) && !required.contains(&n);
+    });
+    if (removed > 0)
+        removeUnusedActions(/*allow_remove_inputs=*/false);
+    return removed;
+}
+
+
 void ActionsDAG::removeAliasesForFilter(const std::string & filter_name)
 {
     const auto & filter_node = findInOutputs(filter_name);
@@ -1766,8 +1795,17 @@ void ActionsDAG::removeTrivialWrappers()
                 child = child->children[0];
 
     for (auto *& output : outputs)
-        while (is_trivial_wrapper(output))
-            output = output->children[0];
+    {
+        if (is_trivial_wrapper(output))
+        {
+            auto original_name = output->result_name;
+            while (is_trivial_wrapper(output))
+                output = output->children[0];
+
+            if (output->result_name != original_name)
+                output = &addAlias(*output, original_name);
+        }
+    }
 
     removeUnusedActions();
 }

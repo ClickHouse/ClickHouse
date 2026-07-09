@@ -13,7 +13,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
-#include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
@@ -25,8 +24,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsSetOperationMode except_default_mode;
-    extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsBool log_queries;
 }
@@ -104,14 +101,8 @@ ASTPtr normalizeCreateFunctionQuery(const IAST & create_function_query, const Co
         query->or_replace = false;
         FunctionNameNormalizer::visit(query->function_core.get());
 
-        {
-            SelectIntersectExceptQueryVisitor::Data data{context->getSettingsRef()[Setting::intersect_default_mode], context->getSettingsRef()[Setting::except_default_mode]};
-            SelectIntersectExceptQueryVisitor{data}.visit(query->function_core);
-        }
-        {
-            NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
-            NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
-        }
+        NormalizeSelectWithUnionQueryVisitor::Data data{context->getSettingsRef()[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor{data}.visit(query->function_core);
     }
 
     if (auto * query = typeid_cast<ASTCreateWasmFunctionQuery *>(ptr.get()))

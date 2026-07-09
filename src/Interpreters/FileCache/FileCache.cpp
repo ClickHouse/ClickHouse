@@ -118,7 +118,7 @@ namespace
 
 void FileCacheReserveStat::update(size_t size, FileSegmentKind kind, State state)
 {
-    auto & local_stat = getStatByKind(kind);
+    auto & local_stat = stat_by_kind[kind];
     switch (state)
     {
         case State::Releasable:
@@ -317,7 +317,7 @@ FileCache::OriginInfo FileCache::getCommonOriginWithSegmentKeyType(const fs::pat
         return origin;
 
     const static std::set<std::string> system_cache_type = {".txt", ".json", ".idx", ".cidx", ".dat"};
-    origin.segment_type = system_cache_type.contains(filename.extension().string()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
+    origin.segment_type = system_cache_type.contains(fs::path(filename).extension()) ? FileSegmentKeyType::System : FileSegmentKeyType::Data;
     return origin;
 }
 
@@ -588,6 +588,7 @@ std::vector<FileSegment::Range> FileCache::splitRange(size_t offset, size_t size
     size_t end_pos_non_included = offset + size;
     size_t remaining_size = aligned_size;
 
+    FileSegments file_segments;
     const size_t max_size = max_file_segment_size.load();
     while (current_pos < end_pos_non_included)
     {
@@ -1232,10 +1233,12 @@ bool FileCache::doTryReserve(
     try
     {
         auto lock = cache_state_guard.lock();
+        main_priority_iterator->check(lock);
         main_eviction_info->releaseHoldSpace(lock);
         if (query_eviction_info)
             query_eviction_info->releaseHoldSpace(lock);
 
+        main_priority_iterator->check(lock);
         eviction_candidates.afterEvictState(lock);
         main_priority_iterator->incrementSize(size, lock);
 
@@ -1879,7 +1882,11 @@ void FileCache::loadMetadataImpl()
 
 void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginInfo & origin_info)
 {
-    if (fs::is_empty(key_directory))
+    /// Open the directory once and reuse the iterator for the scan below.
+    /// `fs::is_empty` would open the directory just to test for emptiness,
+    /// which costs a redundant opendir/readdir per key directory.
+    fs::directory_iterator offset_it{key_directory};
+    if (offset_it == fs::directory_iterator())
     {
         LOG_DEBUG(log, "Removing empty key directory: {}", key_directory.string());
         fs::remove(key_directory);
@@ -1904,7 +1911,7 @@ void FileCache::loadMetadataForKey(const fs::path & key_directory, const OriginI
     };
     std::vector<SegmentToLoad> segments;
 
-    for (fs::directory_iterator offset_it{key_directory}; offset_it != fs::directory_iterator(); ++offset_it)
+    for (; offset_it != fs::directory_iterator(); ++offset_it)
     {
         auto offset_with_suffix = offset_it->path().filename().string();
         bool parsed;
@@ -2524,23 +2531,25 @@ bool FileCache::doDynamicResizeImpl(
         for (const auto & candidate : key_candidates)
         {
             const auto & file_segment = candidate->file_segment;
+            /// Restore the original queue entry size. For partial segments it is reserved size.
+            const auto restored_size = candidate->size();
 
             LOG_DEBUG(
-                log, "Adding back file segment after failed eviction: {}:{}, size: {}",
-                file_segment->key(), file_segment->offset(), file_segment->getDownloadedSize());
+                log, "Adding back file segment after failed eviction: {}:{}, restored size: {}, downloaded size: {}",
+                file_segment->key(), file_segment->offset(), restored_size, file_segment->getDownloadedSize());
 
             auto original_queue_type = eviction_candidates.getOriginalQueueType(candidate.get());
 
             auto main_priority_iterator = main_priority->addForRestore(
                 key_metadata,
                 file_segment->offset(),
-                file_segment->getDownloadedSize(),
+                restored_size,
                 original_queue_type,
                 cache_write_lock,
                 &state_lock);
 
             candidate->setRemovedFlag(*locked_key, /* value */false);
-            file_segment->setQueueIterator(main_priority_iterator);
+            file_segment->restoreQueueIteratorAfterDelayedRemoval(main_priority_iterator);
         }
     }
 

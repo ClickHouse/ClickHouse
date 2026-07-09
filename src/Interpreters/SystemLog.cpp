@@ -31,7 +31,6 @@
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/PartLog.h>
 #include <Interpreters/BackgroundSchedulePoolLog.h>
-#include <Interpreters/PredicateStatisticsLog.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetricLog.h>
@@ -402,21 +401,6 @@ std::vector<ISystemLog *> SystemLogs::getAllLogs() const
     return result;
 }
 
-bool hasAnySystemLogConfigured(const Poco::Util::AbstractConfiguration & config)
-{
-#define CHECK_HAS_SYSTEM_LOG(log_type, member, descr) \
-    if (config.has(#member)) \
-        return true;
-
-    LIST_OF_ALL_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
-    #if CLICKHOUSE_CLOUD
-        LIST_OF_CLOUD_SYSTEM_LOGS(CHECK_HAS_SYSTEM_LOG)
-    #endif
-#undef CHECK_HAS_SYSTEM_LOG
-
-    return false;
-}
-
 namespace
 {
 constexpr String getLowerCaseAndRemoveUnderscores(const String & name)
@@ -691,14 +675,6 @@ void SystemLog<LogElement>::flushImpl(const std::vector<LogElement> & to_flush, 
 
         auto insert = make_intrusive<ASTInsertQuery>();
         insert->table_id = table_id;
-
-        /// Explicitly specify column names to avoid mismatch when the table
-        /// has been altered (e.g. columns added) between prepareTable() and this INSERT.
-        auto columns_ast = make_intrusive<ASTExpressionList>();
-        for (const auto & name : block.getNames())
-            columns_ast->children.emplace_back(make_intrusive<ASTIdentifier>(name));
-        insert->columns = std::move(columns_ast);
-
         ASTPtr query_ptr = std::move(insert);
 
         // we need query context to do inserts to target table with MV containing subqueries or joins

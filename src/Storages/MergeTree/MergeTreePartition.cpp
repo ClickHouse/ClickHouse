@@ -470,6 +470,14 @@ void MergeTreePartition::create(const StorageMetadataPtr & metadata_snapshot, Bl
 NamesAndTypesList MergeTreePartition::executePartitionByExpression(const StorageMetadataPtr & metadata_snapshot, Block & block, ContextPtr context)
 {
     auto adjusted_partition_key = adjustPartitionKey(metadata_snapshot, context);
+    /// Materialize subcolumns that the partition key expression needs.
+    /// The block may contain only parent columns (e.g. a Tuple or JSON column),
+    /// while the expression requires individual subcolumns as separate inputs.
+    for (const auto & required_column : adjusted_partition_key.expression->getRequiredColumns())
+    {
+        if (!block.has(required_column))
+            block.insert(block.getSubcolumnByName(required_column));
+    }
     adjusted_partition_key.expression->execute(block);
     return adjusted_partition_key.sample_block.getNamesAndTypesList();
 }
