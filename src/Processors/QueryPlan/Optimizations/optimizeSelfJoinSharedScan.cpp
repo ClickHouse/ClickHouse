@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <QueryPipeline/SizeLimits.h>
 
 namespace DB::QueryPlanOptimizations
 {
@@ -88,8 +89,17 @@ void tryOptimizeSelfJoinSharedScan(
     if (join_op.strictness != JoinStrictness::All)
         return;
 
-    const auto & join_algorithms = join_step->getJoinSettings().join_algorithms;
-    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH; }))
+    const auto & join_settings = join_step->getJoinSettings();
+    if (std::ranges::none_of(join_settings.join_algorithms, [](auto algo) { return algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH; }))
+        return;
+
+    /// Under `join_overflow_mode = 'break'` the build side stops consuming its input once
+    /// `max_rows_in_join` / `max_bytes_in_join` is reached, so the shared buffer would hold only a
+    /// prefix of the scan. The probe side would then replay that truncated prefix instead of the
+    /// full stream, losing rows beyond what the join's soft limit is allowed to drop (e.g. the
+    /// preserved side of a LEFT JOIN).
+    if (join_settings.join_overflow_mode == OverflowMode::BREAK
+        && (join_settings.max_rows_in_join != 0 || join_settings.max_bytes_in_join != 0))
         return;
 
     auto left_scan = findReadFromMergeTree(node.children[0]);
