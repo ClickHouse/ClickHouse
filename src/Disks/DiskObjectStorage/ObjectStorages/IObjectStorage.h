@@ -252,6 +252,14 @@ public:
     /// (common prefixes) concurrently instead of listing the whole prefix in a single serial stream.
     virtual bool supportsDelimitedListing() const { return false; }
 
+    /// Whether the parallel delimiter walk (see `supportsDelimitedListing`) may start from `key_prefix`.
+    /// The walk issues `ListObjectsV2` with `Delimiter='/'` from the glob's fixed prefix, and S3 Express /
+    /// directory buckets accept a delimiter only when the prefix ends with '/'. So a glob whose fixed prefix
+    /// ends mid-component (e.g. `data_` for `data_??.csv`, or `year=` for `year=*/month=*/...`) must fall back
+    /// to the serial (flat, no-delimiter) iterator, which those endpoints do support. The empty prefix (the
+    /// bucket root) is always allowed. Storages without this restriction just answer `supportsDelimitedListing`.
+    virtual bool supportsDelimitedListingFromPrefix(const std::string & /*key_prefix*/) const { return supportsDelimitedListing(); }
+
     /// Whether a big flat "directory" (no sub-"directories") may be listed in parallel by splitting its
     /// keyspace. The split issues `listObjectsSingleLevel` requests that resume strictly after an arbitrary
     /// key (`start_after`) and use an empty delimiter to list a raw key range recursively. Some endpoints

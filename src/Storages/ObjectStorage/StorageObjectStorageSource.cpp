@@ -1534,7 +1534,7 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
         /// to one request per directory).
         const bool use_parallel_listing =
             parallelism > 1
-            && object_storage->supportsDelimitedListing()
+            && object_storage->supportsDelimitedListingFromPrefix(key_prefix)
             && key_with_globs.path.find("**") == std::string::npos;
 
         if (use_parallel_listing)

@@ -106,6 +106,16 @@ public:
 
     bool supportsDelimitedListing() const override { return true; }
 
+    /// Directory buckets accept a `Delimiter` only when the `Prefix` ends with '/', so the delimiter walk
+    /// can only start from a prefix that ends at a '/' boundary (or the bucket root); other globs fall back
+    /// to the serial iterator (see the base declaration).
+    bool supportsDelimitedListingFromPrefix(const std::string & key_prefix) const override
+    {
+        if (client.get()->isS3ExpressBucket())
+            return key_prefix.empty() || key_prefix.ends_with('/');
+        return true;
+    }
+
     /// S3 Express / directory buckets reject `StartAfter` and only allow the '/' delimiter, so keyspace
     /// splitting of flat directories must be disabled for them (they keep the hierarchical delimiter walk).
     bool supportsListingKeyspaceSplit() const override { return !client.get()->isS3ExpressBucket(); }
