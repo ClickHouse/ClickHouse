@@ -213,9 +213,6 @@ possible_properties = {
     "index_uncompressed_cache_policy": lambda: random.choice(["LRU", "SLRU"]),
     "index_uncompressed_cache_size": threshold_generator(0.2, 0.2, 0, 5368709120),
     "index_uncompressed_cache_size_ratio": threshold_generator(0.2, 0.2, 0.0, 1.0),
-    "insert_deduplication_version": lambda: random.choice(
-        ["old_separate_hashes", "compatible_double_hashes", "new_unified_hashes"]
-    ),
     "io_thread_pool_queue_size": threshold_generator(0.2, 0.2, 0, 1000),
     "keeper_multiread_batch_size": threshold_generator(0.2, 0.2, 1, 1000),
     "load_marks_threadpool_pool_size": threads_lambda,
@@ -1670,7 +1667,6 @@ keeper_settings = {
         "dead_session_check_period_ms": threshold_generator(0.2, 0.2, 100, 5000),
         "disk_move_retries_during_init": threshold_generator(0.2, 0.2, 0, 200),
         "disk_move_retries_wait_ms": threshold_generator(0.2, 0.2, 0, 5000),
-        "experimental_use_rocksdb": true_false_lambda,
         "force_sync": true_false_lambda,
         "fresh_log_gap": threshold_generator(0.2, 0.2, 0, 200),
         "heart_beat_interval_ms": threshold_generator(0.2, 0.2, 100, 1500),
@@ -1727,7 +1723,6 @@ keeper_settings = {
         "raft_limits_reconnect_limit": threshold_generator(0.2, 0.2, 0, 100),
         "raft_limits_response_limit": threshold_generator(0.2, 0.2, 0, 40),
         "reserved_log_items": threshold_generator(0.2, 0.2, 0, 100000),
-        "rocksdb_load_batch_size": threshold_generator(0.2, 0.2, 0, 2000),
         "rotate_log_storage_interval": threshold_generator(0.2, 0.2, 1, 100000),
         "session_shutdown_timeout": threshold_generator(0.2, 0.2, 5000, 30000),
         "shutdown_timeout": threshold_generator(0.2, 0.2, 3000, 30000),

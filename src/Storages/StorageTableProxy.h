@@ -34,6 +34,24 @@ public:
         return "TableProxy";
     }
 
+    /// Forward the metadata query to the nested storage once it has been materialized.
+    /// `IStorage::metadata` on the proxy itself is only seeded with the columns from the
+    /// `CREATE TABLE` query and is updated lazily in `StorageProxy::alter` *after*
+    /// `nested->alter` returns. With long-running alters (e.g. `RENAME COLUMN`
+    /// while merges are stopped), the nested storage's in-memory metadata can be
+    /// updated by `setProperties` while the proxy's cached copy still reflects the
+    /// pre-alter schema. A concurrent `INSERT` would then resolve column names against
+    /// the proxy's stale metadata but build the sink from the nested's current metadata,
+    /// causing a `Block structure mismatch` `LOGICAL_ERROR` in `Chain::addSink`.
+    /// Forwarding here keeps metadata observers in sync with the nested storage.
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context_, bool bypass_metadata_cache) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getInMemoryMetadataPtr(context_, bypass_metadata_cache);
+        return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
+    }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
@@ -142,6 +160,11 @@ public:
     void checkTableCanBeDropped(ContextPtr query_context) const override
     {
         getNested()->checkTableCanBeDropped(query_context);
+    }
+
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override
+    {
+        getNested()->checkTableSizeBelowDropLimit(query_context);
     }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override

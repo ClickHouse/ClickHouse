@@ -1,0 +1,144 @@
+---
+sidebarTitle: 'Приём данных из MySQL в ClickHouse'
+description: 'Легко настройте приём данных из вашей базы данных MySQL или MariaDB в ClickHouse Cloud.'
+slug: /integrations/clickpipes/mysql
+title: 'Приём данных из MySQL в ClickHouse (с использованием CDC)'
+doc_type: 'guide'
+keywords: ['MySQL', 'ClickPipes', 'CDC', 'фиксация изменений данных', 'репликация базы данных']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  Приём данных из MySQL в ClickHouse Cloud через ClickPipes доступен в рамках публичной бета-версии.
+</Info>
+
+MySQL ClickPipe предоставляет полностью управляемое и отказоустойчивое решение для приёма данных из баз данных MySQL и MariaDB в ClickHouse Cloud. Он поддерживает как **пакетную загрузку** для одноразовой ингестии, так и **CDC (фиксацию изменений данных)** для непрерывной ингестии.
+
+MySQL ClickPipes можно развёртывать и управлять ими вручную через интерфейс ClickPipes, а также программно с использованием [OpenAPI](/ru/integrations/clickpipes/programmatic-access/openapi) и [Terraform](/ru/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+[//]: # "TODO Конфигурация репликации binlog не нужна для одноразовых пайпов ингестии. В прошлом это уже вызывало путаницу, поэтому нам также следует указать минимальные требования для пакетной загрузки, чтобы не отпугнуть пользователей."
+
+Чтобы начать, сначала убедитесь, что ваша база данных MySQL правильно настроена для репликации binlog. Шаги настройки зависят от того, как именно развёрнут MySQL, поэтому следуйте соответствующему руководству ниже:
+
+<div id="supported-data-sources">
+  ### Поддерживаемые источники данных
+</div>
+
+| Name                                                              | Logo | Details                                                                                                                            |
+| ----------------------------------------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Amazon RDS MySQL** <br /> *Однократная загрузка, CDC*           |      | См. [руководство по настройке Amazon RDS MySQL](/ru/integrations/clickpipes/mysql/source/rds).                                        |
+| **Amazon Aurora MySQL** <br /> *Однократная загрузка, CDC*        |      | См. [руководство по настройке Amazon Aurora MySQL](/ru/integrations/clickpipes/mysql/source/aurora).                                  |
+| **Cloud SQL for MySQL** <br /> *Однократная загрузка, CDC*        |      | См. [руководство по настройке Cloud SQL for MySQL](/ru/integrations/clickpipes/mysql/source/gcp).                                     |
+| **Azure Flexible Server for MySQL** <br /> *Однократная загрузка* |      | См. [руководство по настройке Azure Flexible Server for MySQL](/ru/integrations/clickpipes/mysql/source/azure-flexible-server-mysql). |
+| **Самоуправляемый MySQL** <br /> *Однократная загрузка, CDC*      |      | См. [руководство по настройке Общий MySQL](/ru/integrations/clickpipes/mysql/source/generic).                                         |
+| **Amazon RDS MariaDB** <br /> *Однократная загрузка, CDC*         |      | См. [руководство по настройке Amazon RDS MariaDB](/ru/integrations/clickpipes/mysql/source/rds-maria).                                |
+| **Самоуправляемый MariaDB** <br /> *Однократная загрузка, CDC*    |      | См. [руководство по настройке Общий MariaDB](/ru/integrations/clickpipes/mysql/source/generic-maria).                                 |
+
+После настройки исходной базы данных MySQL можно перейти к созданию ClickPipe.
+
+<div id="create-your-clickpipe">
+  ## Создайте ClickPipe
+</div>
+
+Убедитесь, что вы вошли в свою учётную запись ClickHouse Cloud. Если у вас ещё нет учётной записи, вы можете зарегистрироваться [здесь](https://cloud.clickhouse.com/).
+
+[//]: # "   TODO update image here"
+
+1. В консоли ClickHouse Cloud перейдите к своему сервису ClickHouse Cloud.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Сервис ClickHouse Cloud" size="lg" border />
+
+2. Выберите кнопку `Data Sources` в меню слева и нажмите «Set up a ClickPipe»
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импорта" size="lg" border />
+
+3. Выберите плитку `MySQL CDC`
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="Выберите MySQL" size="lg" border />
+
+<div id="add-your-source-mysql-database-connection">
+  ### Добавьте подключение к исходной базе данных MySQL
+</div>
+
+4. Заполните сведения о подключении к вашей исходной базе данных MySQL, которую вы настроили на этапе предварительной подготовки.
+
+<Info>
+  Прежде чем добавлять сведения о подключении, убедитесь, что IP-адреса ClickPipes добавлены в список разрешённых в правилах брандмауэра. На следующей странице вы найдёте [список IP-адресов ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips).
+  Дополнительные сведения см. в руководствах по настройке исходной базы данных MySQL, ссылки на которые приведены [в верхней части этой страницы](#prerequisites).
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="Заполните сведения о подключении" size="lg" border />
+
+<div id="optional-set-up-ssh-tunneling">
+  #### (Необязательно) Настройте SSH-туннелирование
+</div>
+
+Вы можете указать параметры SSH-туннелирования, если ваша исходная база данных MySQL недоступна из интернета.
+
+1. Включите переключатель &quot;Use SSH Tunnelling&quot;.
+
+2. Заполните сведения для SSH-подключения.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH-туннелирование" size="lg" border />
+
+3. Чтобы использовать аутентификацию по ключу, нажмите &quot;Revoke and generate key pair&quot;, чтобы создать новую пару ключей, и скопируйте сгенерированный открытый ключ на ваш SSH-сервер в `~/.ssh/authorized_keys`.
+
+4. Нажмите &quot;Verify Connection&quot;, чтобы проверить подключение.
+
+<Note>
+  Убедитесь, что [IP-адреса ClickPipes](/ru/integrations/clickpipes/home#list-of-static-ips) добавлены в список разрешённых в правилах вашего брандмауэра для SSH-бастиона, чтобы ClickPipes мог установить SSH-туннель.
+</Note>
+
+После заполнения сведений о подключении нажмите `Next`.
+
+<div id="advanced-settings">
+  #### Настройка расширенных параметров
+</div>
+
+При необходимости можно настроить расширенные параметры. Краткое описание каждого параметра приведено ниже:
+
+* **Интервал синхронизации**: интервал, с которым ClickPipes будет опрашивать исходную базу данных на предмет изменений. Это влияет на целевой сервис ClickHouse, поэтому пользователям, чувствительным к затратам, рекомендуется задавать здесь более высокое значение (свыше `3600`).
+* **Параллельные потоки для начальной загрузки**: количество параллельных воркеров, которые будут использоваться для получения начального снимка. Это полезно, если у вас много таблиц и вы хотите управлять числом параллельных воркеров, используемых для получения начального снимка. Этот параметр задается отдельно для каждой таблицы.
+* **Размер батча Pull**: количество строк, извлекаемых за один батч. Это параметр best effort, поэтому он может соблюдаться не во всех случаях.
+* **Количество строк снимка на партицию**: количество строк, которое будет извлекаться в каждой партиции во время начального снимка. Это полезно, если в ваших таблицах много строк и вы хотите управлять количеством строк, извлекаемых в каждой партиции.
+* **Количество таблиц в снимке, обрабатываемых параллельно**: количество таблиц, которые будут извлекаться параллельно во время начального снимка. Это полезно, если у вас много таблиц и вы хотите управлять количеством таблиц, извлекаемых параллельно.
+
+<div id="configure-the-tables">
+  ### Настройте таблицы
+</div>
+
+5. Здесь вы можете выбрать целевую базу данных для вашего ClickPipe. Можно выбрать существующую базу данных или создать новую.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="Выберите целевую базу данных" size="lg" border />
+
+6. Вы можете выбрать таблицы, которые хотите реплицировать из исходной базы данных MySQL. При выборе таблиц также можно переименовать их в целевой базе данных ClickHouse и исключить отдельные столбцы.
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### Проверьте разрешения и запустите ClickPipe
+</div>
+
+7. Выберите роль &quot;Full access&quot; в раскрывающемся списке разрешений и нажмите &quot;Complete Setup&quot;.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Проверка разрешений" size="lg" border />
+
+Наконец, см. страницу [&quot;FAQ по ClickPipes для MySQL&quot;](/ru/integrations/clickpipes/mysql/faq), где описаны распространённые проблемы и способы их решения.
+
+<div id="whats-next">
+  ## Что дальше?
+</div>
+
+[//]: # "TODO Написать отдельное руководство по миграции для MySQL и рекомендации по лучшим практикам, аналогичные существующим материалам для PostgreSQL. Текущее руководство по миграции ссылается на движок таблицы MySQL, что не лучший вариант."
+
+После того как вы настроите ClickPipe для репликации данных из MySQL в ClickHouse Cloud, можно сосредоточиться на том, как запрашивать и моделировать данные для оптимальной производительности. Ответы на распространённые вопросы о MySQL CDC и устранении неполадок см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).

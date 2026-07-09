@@ -1,0 +1,51 @@
+---
+sidebarTitle: 'Visão geral'
+slug: /manage/scaling
+description: 'Visão geral do escalonamento automático no ClickHouse Cloud'
+keywords: ['escalonamento automático', 'auto scaling', 'escalonamento', 'horizontal', 'vertical', 'picos']
+title: 'Escalonamento automático'
+doc_type: 'guide'
+---
+
+import ScalePlanFeatureBadge from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+O escalonamento é a capacidade de ajustar os recursos disponíveis para atender às demandas dos clientes. Os serviços dos tiers Scale e Enterprise (com perfil padrão 1:4) podem ser escalados horizontalmente por meio de chamadas programáticas à API ou da alteração de configurações na UI para ajustar os recursos do sistema. Esses serviços também podem ser **escalados automaticamente** verticalmente para atender às demandas da aplicação.
+
+<ScalePlanFeatureBadge feature="Escalonamento vertical automático" />
+
+<Note>
+  Os tiers Scale e Enterprise oferecem suporte a serviços com réplica única e com múltiplas réplicas, enquanto o tier Basic oferece suporte apenas a serviços com réplica única. Os serviços com réplica única devem ter tamanho fixo e não permitem escalonamento vertical nem horizontal. Você pode fazer upgrade para o tier Scale ou Enterprise para escalar seus serviços.
+</Note>
+
+<div id="how-scaling-works-in-clickhouse-cloud">
+  ## Como o escalonamento funciona no ClickHouse Cloud
+</div>
+
+Atualmente, o ClickHouse Cloud oferece suporte a escalonamento automático vertical e escalonamento horizontal manual para serviços do tier Scale.
+
+Para serviços do tier Enterprise, o escalonamento funciona da seguinte forma:
+
+* **Escalonamento horizontal**: o escalonamento horizontal manual estará disponível em todos os perfis padrão e personalizados no tier Enterprise.
+* **Escalonamento vertical**:
+  * Perfis padrão (1:4) terão suporte a escalonamento automático vertical.
+  * Perfis personalizados (`highMemory` e `highCPU`) não oferecem suporte a escalonamento automático vertical nem a escalonamento vertical manual. No entanto, esses serviços podem ser escalonados verticalmente entrando em contato com o suporte.
+
+<Note>
+  No ClickHouse Cloud, o escalonamento ocorre por meio da abordagem [&quot;Make Before Break&quot; (MBB)](/pt-BR/products/cloud/features/autoscaling/make-before-break), como a chamamos.
+  Essa abordagem adiciona uma ou mais réplicas com o novo tamanho antes de remover as réplicas antigas, evitando qualquer perda de capacidade durante as operações de escalonamento.
+  Ao eliminar o intervalo entre a remoção das réplicas existentes e a adição das novas, o MBB torna o processo de escalonamento mais fluido e menos disruptivo.
+  Isso é especialmente vantajoso em cenários de scale-up, nos quais a alta utilização de recursos aciona a necessidade de capacidade adicional, já que remover réplicas prematuramente só agravaria as restrições de recursos.
+  Como parte dessa abordagem, aguardamos até uma hora para permitir que consultas em execução nas réplicas antigas sejam concluídas antes de removê-las.
+  Isso equilibra a necessidade de concluir as consultas existentes com a garantia de que as réplicas antigas não permaneçam ativas por tempo demais.
+</Note>
+
+<div id="learn-more">
+  ## Saiba mais
+</div>
+
+* [Escalonamento vertical automático](/pt-BR/products/cloud/features/autoscaling/vertical) — Escalonamento automático de CPU e memória com base no uso
+* [Escalonamento horizontal](/pt-BR/products/cloud/features/autoscaling/horizontal) — Escalonamento manual de réplicas via API ou UI
+* [Make Before Break (MBB)](/pt-BR/products/cloud/features/autoscaling/make-before-break) — Como o ClickHouse Cloud realiza operações de escalonamento sem interrupção
+* [Inatividade automática](/pt-BR/products/cloud/features/autoscaling/idling) — Economia de custos por meio da suspensão automática do serviço
+* [Recomendações de escalonamento](/pt-BR/products/cloud/features/autoscaling/scaling-recommendations) — Entenda as recomendações de escalonamento
+* [Scheduled scaling](/pt-BR/products/cloud/features/autoscaling/scheduled-scaling) — Entenda o recurso Scheduled Scaling, que permite definir exatamente quando seu serviço deve aumentar ou reduzir a escala, independentemente das métricas em tempo real

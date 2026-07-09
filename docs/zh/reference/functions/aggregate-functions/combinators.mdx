@@ -1,0 +1,343 @@
+---
+description: '聚合函数组合器文档'
+sidebarTitle: '组合器'
+slug: /sql-reference/aggregate-functions/combinators
+title: '聚合函数组合器'
+doc_type: 'reference'
+---
+
+聚合函数名称后可以附加后缀，从而改变该聚合函数的工作方式。
+
+<div id="-if">
+  ## -If
+</div>
+
+后缀 -If 可以追加到任何聚合函数的名称后。在这种情况下，聚合函数会接受一个额外的参数——条件 (Uint8 类型) 。聚合函数只处理满足该条件的行。如果该条件一次都未满足，则返回默认值 (通常为零或空字符串) 。
+
+示例：`sumIf(column, cond)`、`countIf(cond)`、`avgIf(x, cond)`、`quantilesTimingIf(level1, level2)(x, cond)`、`argMinIf(arg, val, cond)` 等。
+
+借助条件聚合函数，你可以一次性计算多个条件下的聚合结果，而无需使用子查询和 `JOIN`。例如，条件聚合函数可用于实现分群对比功能。
+
+<div id="-array">
+  ## -Array
+</div>
+
+`-Array` 后缀可以附加到任何聚合函数上。在这种情况下，聚合函数接受的参数类型是 `Array(T)` (数组) ，而不是 `T`。如果聚合函数接受多个参数，那么这些参数必须是长度相同的数组。处理数组时，聚合函数会像原始聚合函数一样，对所有数组元素进行聚合计算。
+
+示例 1：`sumArray(arr)` - 对所有 `arr` 数组中的全部元素求和。在这个示例中，也可以写成更简单的形式：`sum(arraySum(arr))`。
+
+示例 2：`uniqArray(arr)` – 统计所有 `arr` 数组中不同元素的数量。这也可以用更简单的方式实现：`uniq(arrayJoin(arr))`，但并不总是可以在查询中添加 `arrayJoin`。
+
+`-If` 和 `-Array` 可以组合使用。不过，`Array` 必须在前，`If` 必须在后。示例：`uniqArrayIf(arr, cond)`、`quantilesTimingArrayIf(level1, level2)(arr, cond)`。由于这个顺序，`cond` 参数不会是数组。
+
+<div id="-map">
+  ## -Map
+</div>
+
+`-Map` 后缀可以附加到任何聚合函数上。这会创建一个以 Map 类型作为参数的聚合函数，并使用指定的聚合函数分别对 map 中每个键的值进行聚合。结果也将是 Map 类型。
+
+**示例**
+
+```sql
+CREATE TABLE map_map(
+    date Date,
+    timeslot DateTime,
+    status Map(String, UInt64)
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO map_map VALUES
+    ('2000-01-01', '2000-01-01 00:00:00', (['a', 'b', 'c'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:00:00', (['c', 'd', 'e'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['d', 'e', 'f'], [10, 10, 10])),
+    ('2000-01-01', '2000-01-01 00:01:00', (['f', 'g', 'g'], [10, 10, 10]));
+
+SELECT
+    timeslot,
+    sumMap(status),
+    avgMap(status),
+    minMap(status)
+FROM map_map
+GROUP BY timeslot;
+
+┌────────────timeslot─┬─sumMap(status)───────────────────────┬─avgMap(status)───────────────────────┬─minMap(status)───────────────────────┐
+│ 2000-01-01 00:00:00 │ {'a':10,'b':10,'c':20,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │ {'a':10,'b':10,'c':10,'d':10,'e':10} │
+│ 2000-01-01 00:01:00 │ {'d':10,'e':10,'f':20,'g':20}        │ {'d':10,'e':10,'f':10,'g':10}        │ {'d':10,'e':10,'f':10,'g':10}        │
+└─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
+```
+
+<div id="-simplestate">
+  ## -SimpleState
+</div>
+
+应用此组合器时，聚合函数会返回相同的值，但类型不同。它会返回一个 [SimpleAggregateFunction(...)](/zh/reference/data-types/simpleaggregatefunction)，可存储在表中，以便与 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 表配合使用。
+
+**语法**
+
+```sql
+<aggFunction>SimpleState(x)
+```
+
+**参数**
+
+* `x` — 聚合函数的参数。
+
+**返回值**
+
+`SimpleAggregateFunction(...)` 类型聚合函数的值。
+
+**示例**
+
+```sql title="Query"
+WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
+```
+
+```text title="Response"
+┌─toTypeName(c)────────────────────────┬─c─┐
+│ SimpleAggregateFunction(any, UInt64) │ 0 │
+└──────────────────────────────────────┴───┘
+```
+
+<div id="-state">
+  ## -State
+</div>
+
+如果应用此组合器，聚合函数 返回的不是最终结果值 (例如，[uniq](/zh/reference/functions/aggregate-functions/uniq) 函数返回的唯一值数量) ，而是 聚合 的中间状态 (对于 `uniq`，即用于计算唯一值数量的哈希表) 。这是一个 `AggregateFunction(...)`，可用于进一步处理，或存储在表中以便稍后完成聚合。
+
+<Note>
+  请注意，由于中间状态中的数据顺序可能发生变化，-MapState 对于同一份数据而言并不是不变的，不过这不会影响这些数据的摄取。
+</Note>
+
+要处理这些状态，请使用：
+
+* [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 表引擎。
+* [finalizeAggregation](/zh/reference/functions/regular-functions/other-functions#finalizeAggregation) 函数。
+* [runningAccumulate](/zh/reference/functions/regular-functions/other-functions#runningAccumulate) 函数。
+* [-Merge](#-merge) 组合器。
+* [-MergeState](#-mergestate) 组合器。
+
+<div id="-merge">
+  ## -Merge
+</div>
+
+应用此组合器后，聚合函数会将中间聚合状态作为参数，合并这些状态以完成聚合，并返回结果值。
+
+<div id="-mergestate">
+  ## -MergeState
+</div>
+
+像 -Merge 组合器一样合并中间聚合状态。不过，它返回的不是结果值，而是中间聚合状态，类似于 -State 组合器。
+
+<div id="-foreach">
+  ## -ForEach
+</div>
+
+将用于表的聚合函数转换为用于数组的聚合函数，对数组中对应位置的元素进行聚合，并返回结果数组。例如，对于数组 `[1, 2]`、`[3, 4, 5]` 和 `[6, 7]`，`sumForEach` 会将对应位置的元素相加，并返回结果 `[10, 13, 5]`。
+
+<div id="-distinct">
+  ## -Distinct
+</div>
+
+每种唯一的参数组合都只会聚合一次。重复值会被忽略。
+示例：`sum(DISTINCT x)` (或 `sumDistinct(x)`) 、`groupArray(DISTINCT x)` (或 `groupArrayDistinct(x)`) 、`corrStable(DISTINCT x, y)` (或 `corrStableDistinct(x, y)`) 等。
+
+<div id="-ordefault">
+  ## -OrDefault
+</div>
+
+改变聚合函数的行为。
+
+如果聚合函数没有输入值，使用此组合器时会返回其返回数据类型的默认值。它适用于可接受空输入数据的聚合函数。
+
+`-OrDefault` 可以与其他组合器搭配使用。
+
+**语法**
+
+```sql
+<aggFunction>OrDefault(x)
+```
+
+**参数**
+
+* `x` — 聚合函数参数。
+
+**返回值**
+
+如果没有可供聚合的数据，则返回该聚合函数返回类型的默认值。
+
+类型取决于所使用的聚合函数。
+
+**示例**
+
+```sql title="Query"
+SELECT avg(number), avgOrDefault(number) FROM numbers(0)
+```
+
+```text title="Response"
+┌─avg(number)─┬─avgOrDefault(number)─┐
+│         nan │                    0 │
+└─────────────┴──────────────────────┘
+```
+
+此外，`-OrDefault` 也可以与其他组合器配合使用。在聚合函数不接受空输入时，这会很有用。
+
+```sql title="Query"
+SELECT avgOrDefaultIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+```text title="Response"
+┌─avgOrDefaultIf(x, greater(x, 10))─┐
+│                              0.00 │
+└───────────────────────────────────┘
+```
+
+<div id="-ornull">
+  ## -OrNull
+</div>
+
+更改聚合函数的行为。
+
+此组合器会将聚合函数的结果转换为 [Nullable](/zh/reference/data-types/nullable) 数据类型。如果聚合函数没有可用于计算的值，则返回 [NULL](/zh/reference/settings/formats#input_format_null_as_default)。
+
+`-OrNull` 可以与其他组合器配合使用。
+
+**语法**
+
+```sql
+<aggFunction>OrNull(x)
+```
+
+**Arguments**
+
+* `x` — 聚合函数的参数。
+
+**Returned values**
+
+* 聚合函数的结果，转换为 `Nullable` 数据类型。
+* 如果没有可聚合的内容，则返回 `NULL`。
+
+Type: `Nullable(aggregate function return type)`。
+
+**Example**
+
+在聚合函数末尾加上 `-orNull`。
+
+```sql title="Query"
+SELECT sumOrNull(number), toTypeName(sumOrNull(number)) FROM numbers(10) WHERE number > 10
+```
+
+```text title="Response"
+┌─sumOrNull(number)─┬─toTypeName(sumOrNull(number))─┐
+│              ᴺᵁᴸᴸ │ Nullable(UInt64)              │
+└───────────────────┴───────────────────────────────┘
+```
+
+此外，`-OrNull` 还可以与其他组合器结合使用。当聚合函数不接受空输入时，这会很有用。
+
+```sql title="Query"
+SELECT avgOrNullIf(x, x > 10)
+FROM
+(
+    SELECT toDecimal32(1.23, 2) AS x
+)
+```
+
+```text title="Response"
+┌─avgOrNullIf(x, greater(x, 10))─┐
+│                           ᴺᵁᴸᴸ │
+└────────────────────────────────┘
+```
+
+<div id="-resample">
+  ## -Resample
+</div>
+
+可将数据划分为多个组，并分别对各组中的数据进行聚合。组是通过将某一列中的值按若干时间间隔进行划分来创建的。
+
+```sql
+<aggFunction>Resample(start, end, step)(<aggFunction_params>, resampling_key)
+```
+
+**参数**
+
+* `start` — `resampling_key` 值所需整个时间间隔的起始值。
+* `stop` — `resampling_key` 值所需整个时间间隔的结束值。整个时间间隔不包含 `stop` 值，即 `[start, stop)`。
+* `step` — 将整个时间间隔划分为子区间的步长。`aggFunction` 会在每个子区间上独立执行。
+* `resampling_key` — 其值用于将数据划分到各个时间间隔中的列。
+* `aggFunction_params` — `aggFunction` 的参数。
+
+**返回值**
+
+* 包含各个子区间 `aggFunction` 结果的 Array。
+
+**示例**
+
+假设 `people` 表包含以下数据：
+
+```text
+┌─name───┬─age─┬─wage─┐
+│ John   │  16 │   10 │
+│ Alice  │  30 │   15 │
+│ Mary   │  35 │    8 │
+│ Evelyn │  48 │ 11.5 │
+│ David  │  62 │  9.9 │
+│ Brian  │  60 │   16 │
+└────────┴─────┴──────┘
+```
+
+让我们获取年龄落在 `[30,60)` 和 `[60,75)` 区间内的人员姓名。由于年龄用整数表示，因此对应的年龄范围就是 `[30, 59]` 和 `[60,74]`。
+
+要将姓名聚合为数组，我们使用 [groupArray](/zh/reference/functions/aggregate-functions/groupArray) 聚合函数。它接受一个参数。在本例中，该参数是 `name` 列。`groupArrayResample` 函数应使用 `age` 列按年龄聚合姓名。为定义所需的区间，我们向 `groupArrayResample` 函数传入参数 `30, 75, 30`。
+
+```sql
+SELECT groupArrayResample(30, 75, 30)(name, age) FROM people
+```
+
+```text
+┌─groupArrayResample(30, 75, 30)(name, age)─────┐
+│ [['Alice','Mary','Evelyn'],['David','Brian']] │
+└───────────────────────────────────────────────┘
+```
+
+来看结果。
+
+`John` 不在样本中，因为他太年轻了。其他人则按指定的年龄区间分布。
+
+现在让我们统计指定年龄区间内的总人数以及他们的平均工资。
+
+```sql
+SELECT
+    countResample(30, 75, 30)(name, age) AS amount,
+    avgResample(30, 75, 30)(wage, age) AS avg_wage
+FROM people
+```
+
+```text
+┌─amount─┬─avg_wage──────────────────┐
+│ [3,2]  │ [11.5,12.949999809265137] │
+└────────┴───────────────────────────┘
+```
+
+<div id="-argmin">
+  ## -ArgMin
+</div>
+
+后缀 -ArgMin 可以附加到任何聚合函数的名称后。在这种情况下，该聚合函数会接受一个额外的参数，该参数应为任意可比较的表达式。该聚合函数只处理在指定额外表达式上具有最小值的那些行。
+
+示例：`sumArgMin(column, expr)`、`countArgMin(expr)`、`avgArgMin(x, expr)` 等。
+
+<div id="-argmax">
+  ## -ArgMax
+</div>
+
+与后缀 -ArgMin 类似，但它只处理指定附加表达式取值最大的那些行。
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[在 ClickHouse 中使用聚合组合器处理 Array、Map 和 状态](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

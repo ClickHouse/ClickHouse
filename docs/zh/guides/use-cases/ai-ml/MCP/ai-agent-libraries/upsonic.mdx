@@ -1,0 +1,333 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/upsonic
+sidebarTitle: '集成 Upsonic'
+title: '如何使用 Upsonic 和 ClickHouse MCP 服务器构建 AI 智能体'
+description: '了解如何使用 Upsonic 和 ClickHouse MCP 服务器构建 AI 智能体'
+keywords: ['ClickHouse', 'MCP', 'Upsonic']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+在本指南中，你将了解如何构建一个 [Upsonic](https://github.com/Upsonic/Upsonic/tree/master) AI 智能体，使其能够借助 [ClickHouse MCP 服务器](https://github.com/ClickHouse/mcp-clickhouse) 与
+[ClickHouse 的 SQL playground](https://sql.clickhouse.com/) 交互。
+
+<Info>
+  **示例笔记本**
+
+  你可以在 [examples 仓库](https://github.com/ClickHouse/examples/blob/main/ai/mcp/upsonic/upsonic.ipynb)中找到此示例的笔记本版本。
+</Info>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+* 你的系统中需要安装 Python。
+* 你的系统中需要安装 `pip`。
+* 你需要一个 OpenAI API key。
+
+你可以在 Python REPL 中执行以下步骤，也可以通过脚本运行。
+
+<Steps>
+  <Step>
+    ## 安装库
+
+    运行以下命令安装 mcp-agent 库：
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q "upsonic[loaders,tools]" openai
+    pip install -q ipywidgets
+    ```
+  </Step>
+
+  <Step>
+    ## 配置凭据
+
+    接下来，您需要提供您的 OpenAI API 密钥：
+
+    ```python
+    import os, getpass
+    os.environ["OPENAI_API_KEY"] = getpass.getpass("Enter OpenAI API Key:")
+    ```
+
+    ```response title="Response"
+    Enter OpenAI API Key: ········
+    ```
+
+    接下来，设置连接 ClickHouse SQL playground 所需的凭证：
+
+    ```python
+    env = {
+        "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+        "CLICKHOUSE_PORT": "8443",
+        "CLICKHOUSE_USER": "demo",
+        "CLICKHOUSE_PASSWORD": "",
+        "CLICKHOUSE_SECURE": "true"
+    }
+    ```
+  </Step>
+
+  <Step>
+    ## 初始化 MCP Server 与 Upsonic agent
+
+    现在，将 ClickHouse MCP 服务器配置为指向 ClickHouse SQL playground，
+    然后初始化 agent 并向其提问：
+
+    ```python
+    from upsonic import Agent, Task
+    from upsonic.models.openai import OpenAIResponsesModel
+    ```
+
+    ```python
+    class DatabaseMCP:
+        """
+        MCP server for ClickHouse database operations.
+        Provides tools for querying tables and databases
+        """
+        command="uv"
+        args=[
+            "run",
+            "--with",
+            "mcp-clickhouse",
+            "--python",
+            "3.10",
+            "mcp-clickhouse"
+        ]
+        env=env
+
+    database_agent = Agent(
+        name="Data Analyst",
+        role="ClickHouse specialist.",
+        goal="Query ClickHouse database and tables and answer questions",
+        model=OpenAIResponsesModel(model_name="gpt-5-mini-2025-08-07")
+    )
+
+    task = Task(
+        description="Tell me what happened in the UK property market in the 2020s. Use ClickHouse.",
+        tools=[DatabaseMCP]
+    )
+
+    # 执行工作流
+    workflow_result = database_agent.do(task)
+    print("\nMulti-MCP Workflow Result:")
+    print(workflow_result)
+    ```
+
+    ```response title="Response"
+    2025-10-10 11:26:12,758 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+    Found 3 tools from DatabaseMCP
+      - list_databases: List available ClickHouse databases
+      - list_tables: List available ClickHouse tables in a database, including schema, comment,
+    row count, and column count.
+      - run_select_query: Run a SELECT query in a ClickHouse database
+    ✅ MCP tools discovered via thread
+
+    ...
+
+    [10/10/25 11:26:20] INFO     Starting MCP server 'mcp-clickhouse' with transport 'stdio'                                      server.py:1502
+    2025-10-10 11:26:20,183 - mcp.server.lowlevel.server - INFO - Processing request of type ListToolsRequest
+    2025-10-10 11:26:20,184 - mcp.server.lowlevel.server - INFO - Processing request of type ListPromptsRequest
+    2025-10-10 11:26:20,185 - mcp.server.lowlevel.server - INFO - Processing request of type ListResourcesRequest
+    [INFO] 2025-10-10T11:26:20 mcp_agent.workflows.llm.augmented_llm_openai.database-anayst - Using reasoning model 'gpt-5-mini-2025-08-07' with
+    'medium' reasoning effort
+    [INFO] 2025-10-10T11:26:23 mcp_agent.mcp.mcp_aggregator.database-anayst - Requesting tool call
+    {
+      "data": {
+        "progress_action": "Calling Tool",
+        "tool_name": "list_databases",
+        "server_name": "clickhouse",
+        "agent_name": "database-anayst"
+      }
+    }
+    2025-10-10 11:26:23,477 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+    2025-10-10 11:26:23,479 - mcp-clickhouse - INFO - Listing all databases
+    2025-10-10 11:26:23,479 - mcp-clickhouse - INFO - Creating ClickHouse client connection to sql-clickhouse.clickhouse.com:8443 as demo (secure=True, verify=True, connect_timeout=30s, send_receive_timeout=30s)
+    2025-10-10 11:26:24,375 - mcp-clickhouse - INFO - Successfully connected to ClickHouse server version 25.8.1.8344
+    2025-10-10 11:26:24,551 - mcp-clickhouse - INFO - Found 38 databases
+    [INFO] 2025-10-10T11:26:26 mcp_agent.mcp.mcp_aggregator.database-anayst - Requesting tool call
+    {
+      "data": {
+        "progress_action": "Calling Tool",
+        "tool_name": "list_tables",
+        "server_name": "clickhouse",
+        "agent_name": "database-anayst"
+      }
+    }
+    2025-10-10 11:26:26,825 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+    2025-10-10 11:26:26,832 - mcp-clickhouse - INFO - Listing tables in database 'uk'
+    2025-10-10 11:26:26,832 - mcp-clickhouse - INFO - Creating ClickHouse client connection to sql-clickhouse.clickhouse.com:8443 as demo (secure=True, verify=True, connect_timeout=30s, send_receive_timeout=30s)
+    2025-10-10 11:26:27,311 - mcp-clickhouse - INFO - Successfully connected to ClickHouse server version 25.8.1.8344
+    2025-10-10 11:26:28,738 - mcp-clickhouse - INFO - Found 9 tables
+    [INFO] 2025-10-10T11:26:48 mcp_agent.mcp.mcp_aggregator.database-anayst - Requesting tool call
+    {
+      "data": {
+        "progress_action": "Calling Tool",
+        "tool_name": "run_select_query",
+        "server_name": "clickhouse",
+        "agent_name": "database-anayst"
+      }
+    }
+    [INFO] 2025-10-10T11:26:48 mcp_agent.mcp.mcp_aggregator.database-anayst - Requesting tool call
+    {
+      "data": {
+        "progress_action": "Calling Tool",
+        "tool_name": "run_select_query",
+        "server_name": "clickhouse",
+        "agent_name": "database-anayst"
+      }
+    }
+    [INFO] 2025-10-10T11:26:48 mcp_agent.mcp.mcp_aggregator.database-anayst - Requesting tool call
+    {
+      "data": {
+        "progress_action": "Calling Tool",
+        "tool_name": "run_select_query",
+        "server_name": "clickhouse",
+        "agent_name": "database-anayst"
+      }
+    }
+    [INFO] 2025-10-10T11:26:48 mcp_agent.mcp.mcp_aggregator.database-anayst - Requesting tool call
+    {
+      "data": {
+        "progress_action": "Calling Tool",
+        "tool_name": "run_select_query",
+        "server_name": "clickhouse",
+        "agent_name": "database-anayst"
+      }
+    }
+    [INFO] 2025-10-10T11:26:48 mcp_agent.mcp.mcp_aggregator.database-anayst - Requesting tool call
+    {
+      "data": {
+        "progress_action": "Calling Tool",
+        "tool_name": "run_select_query",
+        "server_name": "clickhouse",
+        "agent_name": "database-anayst"
+      }
+    }
+    2025-10-10 11:26:48,366 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+    2025-10-10 11:26:48,367 - mcp-clickhouse - INFO - Executing SELECT query: SELECT
+    count(*) AS transactions,
+    avg(price) AS avg_price,
+    quantileExact(0.5)(price) AS median_price,
+    min(price) AS min_price,
+    max(price) AS max_price
+    FROM uk.uk_price_paid_simple_partitioned
+    WHERE toYear(date)=2025
+    2025-10-10 11:26:48,367 - mcp-clickhouse - INFO - Creating ClickHouse client connection to sql-clickhouse.clickhouse.com:8443 as demo (secure=True, verify=True, connect_timeout=30s, send_receive_timeout=30s)
+    2025-10-10 11:26:49,262 - mcp-clickhouse - INFO - Successfully connected to ClickHouse server version 25.8.1.8344
+    2025-10-10 11:26:49,407 - mcp-clickhouse - INFO - Query returned 1 rows
+    2025-10-10 11:26:49,408 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+    2025-10-10 11:26:49,408 - mcp-clickhouse - INFO - Executing SELECT query: SELECT toMonth(date) AS month, count(*) AS transactions, avg(price) AS avg_price, quantileExact(0.5)(price) AS median_price
+    FROM uk.uk_price_paid_simple_partitioned
+    WHERE toYear(date)=2025
+    GROUP BY month
+    ORDER BY month
+    2025-10-10 11:26:49,408 - mcp-clickhouse - INFO - Creating ClickHouse client connection to sql-clickhouse.clickhouse.com:8443 as demo (secure=True, verify=True, connect_timeout=30s, send_receive_timeout=30s)
+    2025-10-10 11:26:49,857 - mcp-clickhouse - INFO - Successfully connected to ClickHouse server version 25.8.1.8344
+    2025-10-10 11:26:50,067 - mcp-clickhouse - INFO - Query returned 8 rows
+    2025-10-10 11:26:50,068 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+    2025-10-10 11:26:50,069 - mcp-clickhouse - INFO - Executing SELECT query: SELECT town, count(*) AS transactions, avg(price) AS avg_price
+    FROM uk.uk_price_paid_simple_partitioned
+    WHERE toYear(date)=2025
+    GROUP BY town
+    HAVING transactions >= 50
+    ORDER BY avg_price DESC
+    LIMIT 10
+    2025-10-10 11:26:50,069 - mcp-clickhouse - INFO - Creating ClickHouse client connection to sql-clickhouse.clickhouse.com:8443 as demo (secure=True, verify=True, connect_timeout=30s, send_receive_timeout=30s)
+    2025-10-10 11:26:50,594 - mcp-clickhouse - INFO - Successfully connected to ClickHouse server version 25.8.1.8344
+    2025-10-10 11:26:50,741 - mcp-clickhouse - INFO - Query returned 10 rows
+    2025-10-10 11:26:50,744 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+    2025-10-10 11:26:50,746 - mcp-clickhouse - INFO - Executing SELECT query: SELECT toYear(date) AS year, count(*) AS transactions, avg(price) AS avg_price, quantileExact(0.5)(price) AS median_price
+    FROM uk.uk_price_paid_simple_partitioned
+    WHERE toYear(date) IN (2024,2025)
+    GROUP BY year
+    ORDER BY year
+    2025-10-10 11:26:50,747 - mcp-clickhouse - INFO - Creating ClickHouse client connection to sql-clickhouse.clickhouse.com:8443 as demo (secure=True, verify=True, connect_timeout=30s, send_receive_timeout=30s)
+    2025-10-10 11:26:51,256 - mcp-clickhouse - INFO - Successfully connected to ClickHouse server version 25.8.1.8344
+    2025-10-10 11:26:51,447 - mcp-clickhouse - INFO - Query returned 2 rows
+    2025-10-10 11:26:51,449 - mcp.server.lowlevel.server - INFO - Processing request of type CallToolRequest
+    2025-10-10 11:26:51,452 - mcp-clickhouse - INFO - Executing SELECT query: SELECT type, count(*) AS transactions, avg(price) AS avg_price, quantileExact(0.5)(price) AS median_price
+    FROM uk.uk_price_paid
+    WHERE toYear(date)=2025
+    GROUP BY type
+    ORDER BY avg_price DESC
+    2025-10-10 11:26:51,452 - mcp-clickhouse - INFO - Creating ClickHouse client connection to sql-clickhouse.clickhouse.com:8443 as demo (secure=True, verify=True, connect_timeout=30s, send_receive_timeout=30s)
+    2025-10-10 11:26:51,952 - mcp-clickhouse - INFO - Successfully connected to ClickHouse server version 25.8.1.8344
+    2025-10-10 11:26:52,166 - mcp-clickhouse - INFO - Query returned 5 rows
+    [INFO] 2025-10-10T11:27:51 mcp_agent.mcp_basic_agent - Summary (TL;DR)
+    - Based on the UK Price Paid tables in ClickHouse, for transactions recorded in 2025 so far there are 376,633 sales with an average price of
+    £362,283 and a median price of £281,000. The data appears to include only months Jan–Aug 2025 (so 2025 is incomplete). There are extreme
+    outliers (min £100, max £127,700,000) that skew the mean.
+
+    我计算的内容（方式）
+    我对 ClickHouse 中的 uk.price-paid 表运行了聚合查询：
+    - 2025 年整体汇总（计数、均值、中位数、最小值、最大值），来源：uk.uk_price_paid_simple_partitioned
+    - 2025 年按月细分（交易量、均值、中位数）
+    - 2025 年按平均价格排名的前几大城镇（交易量 >= 50 的城镇）
+    - 年度对比：2024 年 vs 2025 年（计数、均值、中位数）
+    - 2025 年按房产类型细分（计数、平均值、中位数），来源：uk.uk_price_paid
+
+    关键数据（来自数据集）
+    - 2025 年整体（已记录交易）：交易量 = 376,633；均价 = £362,282.66；中位价 = £281,000；最低 = £100；最高 = £127,700,000。
+    - 按月（2025 年）：（月份、交易量、均价、中位价）
+      - 1月：53,927，均价 £386,053，中位价 £285,000
+      - 2月：58,740，均价 £371,803，中位价 £285,000
+      - 3月：95,274，均价 £377,200，中位价 £315,000
+      - 4月：24,987，均价 £331,692，中位价 £235,000
+      - 5月：39,013，均价 £342,380，中位价 £255,000
+      - 6月：41,446，均价 £334,667，中位价 £268,500
+      - 7月：44,431，均价 £348,293，中位价 £277,500
+      - 8月：18,815，均价 £364,653，中位价 £292,999
+      （数据集中仅包含第 1–8 个月。）
+    - 按平均价格排名的前几大城镇（2025 年，交易量 ≥50 的城镇）
+      - TRING：126 笔交易，均价 £1,973,274
+      - BUCKHURST HILL：98 笔交易，均价 £1,441,331
+      - ASCOT：175 笔交易，均价 £1,300,748
+      - RADLETT：69 笔交易，均价 £1,160,217
+      - COBHAM：115 笔交易，均价 £1,035,192
+      - EAST MOLESEY、BEACONSFIELD、ESHER、CHALFONT ST GILES、THAMES DITTON 也位列前 10（均为高均价通勤/富裕城镇）。
+    - 年度对比（2024 年 vs 2025 年已记录数据）
+      - 2024 年：859,960 笔交易，均价 £390,879，中位价 £280,000
+      - 2025 年：376,633 笔交易，均价 £362,283，中位价 £281,000
+      （2025 年计数较低，因为数据集仅包含部分年份数据。）
+    - 按房产类型（2025 年）
+      - 独立式住宅：85,362 笔交易，均价 £495,714，中位价 £415,000
+      - 半独立式住宅：107,580 笔交易，均价 £319,922，中位价 £270,000
+      - 公寓：62,975 笔交易，均价 £298,529，中位价 £227,000
+      - 联排住宅：112,832 笔交易，均价 £286,616，中位价 £227,000
+      - 其他：7,884 笔交易，均价 £1,087,765（中位价 £315,000）—— 注意小样本组和异常值效应
+
+    重要注意事项及数据质量说明
+    - 2025 年数据集似乎不完整（仅包含 1 月至 8 月）。任何"2025 年"总计均非全年数据。
+    - 存在较大异常值（例如最高 £127.7M，最低 £100）。这些可能包含数据录入错误或非标准记录，会拉高均值。中位数在此处通常是更稳健的衡量指标。
+    - "其他"房产类型的平均值不稳定，原因是样本量少、异质性高且存在异常值。
+    - 我未按 is_new、duration 或其他元数据进行筛选；这些筛选条件可能改变结果（例如排除新建房或租赁房）。
+    - 这些表是价格支付式交易记录（已记录销售）—— 不直接代表要价或估值。
+
+    建议的后续步骤（我可以执行）
+    - 剔除明显异常值（例如价格 < £10k 或 > £10M），重新计算均值/中位数。
+    - 生成区域 / 郡县 / 邮政编码区域汇总及地图。
+    - 计算环比或滚动 3 个月中位数，以展示 2025 年的趋势。
+    - 按月生成同比（YoY）增长率（例如 2025 年 3 月 vs 2024 年 3 月）。
+    - 使用简单外推或时间序列建模预测 2025 年全年数据（但最好在确定如何处理缺失月份/异常值后再进行）。
+
+    如果您愿意，我可以：
+    - 在剔除极端异常值后重新运行相同的聚合查询，并展示清洗后的结果。
+    - 生成同比月度增长数据和图表（我可以返回 CSV 或 JSON 格式的聚合数据供您绘图）。
+    您希望我接下来做哪项？
+    [INFO] 2025-10-10T11:27:51 mcp_agent.mcp.mcp_aggregator.database-anayst - Last aggregator closing, shutting down all persistent
+    connections...
+    [INFO] 2025-10-10T11:27:51 mcp_agent.mcp.mcp_connection_manager - Disconnecting all persistent server connections...
+    [INFO] 2025-10-10T11:27:51 mcp_agent.mcp.mcp_connection_manager - clickhouse: Requesting shutdown...
+    [INFO] 2025-10-10T11:27:51 mcp_agent.mcp.mcp_connection_manager - All persistent server connections signaled to disconnect.
+    [INFO] 2025-10-10T11:27:52 mcp_agent.mcp.mcp_aggregator.database-anayst - Connection manager successfully closed and removed from context
+    [INFO] 2025-10-10T11:27:52 mcp_agent.mcp_basic_agent - MCPApp cleanup
+    {
+      "data": {
+        "progress_action": "Finished",
+        "target": "mcp_basic_agent",
+        "agent_name": "mcp_application_loop"
+      }
+    }
+    ```
+  </Step>
+</Steps>

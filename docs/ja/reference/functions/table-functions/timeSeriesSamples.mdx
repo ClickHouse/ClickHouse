@@ -1,0 +1,32 @@
+---
+description: 'timeSeriesSamples は、テーブルエンジンが TimeSeries であるテーブル `db_name.time_series_table`
+  で使用される Samples テーブルを返します。'
+sidebarTitle: 'timeSeriesSamples'
+slug: /sql-reference/table-functions/timeSeriesSamples
+title: 'timeSeriesSamples'
+doc_type: 'reference'
+---
+
+`timeSeriesSamples(db_name.time_series_table)` - テーブルエンジンが [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series) であるテーブル `db_name.time_series_table` で使用される [samples](/ja/reference/engines/table-engines/integrations/time-series#samples-table) テーブルを返します。
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES samples_table
+```
+
+この関数は、*samples* テーブルが内側にある場合でも動作します:
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+以下のクエリは同等です。
+
+```sql
+SELECT * FROM timeSeriesSamples(db_name.time_series_table);
+SELECT * FROM timeSeriesSamples('db_name.time_series_table');
+SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
+```
+
+<Note>
+  関数 `timeSeriesSamples` には、後方互換性のために `timeSeriesData` というエイリアスが残されています。
+</Note>
