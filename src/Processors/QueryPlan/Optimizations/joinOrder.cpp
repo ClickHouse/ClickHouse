@@ -921,12 +921,20 @@ const std::vector<JoinActionRef *> & JoinOrderOptimizer::collectJoinEdgesMask(UI
         const UInt32 pin = dpsub_data.edge_pinned[i] ? dpsub_data.edge_pin_mask[i] : 0;
         const UInt32 applicable = sources | pin;
 
-        if (std::popcount(applicable) <= 1)
+        if (applicable == 0)
         {
-            /// Base-relation filter or constant predicate: it becomes applicable as soon as its single
-            /// relation is present, so attach it at the earliest (two-relation) join to filter as low
-            /// as possible.
-            if (two_relations && (edge.fromLeft() || edge.fromRight() || edge.fromNone()))
+            /// Constant predicate: attach it at two-relation joins. Every join tree contains at
+            /// least one such step, and applying a constant filter more than once is harmless.
+            if (two_relations)
+                out.push_back(&edge);
+        }
+        else if (std::popcount(applicable) == 1)
+        {
+            /// A single-relation predicate is attached at the join step where its relation forms
+            /// a whole side, i.e. at the leaf join of that relation. Every join tree contains
+            /// exactly one such step per relation, so the predicate is applied exactly once
+            /// regardless of the chosen join order.
+            if (applicable == left_mask || applicable == right_mask)
                 out.push_back(&edge);
         }
         else if ((applicable & ~left_mask) && (applicable & ~right_mask))
