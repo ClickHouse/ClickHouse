@@ -414,4 +414,9 @@ SELECT accurateCastOrNull('abc', 'UInt32')
     factory.registerFunction("accurateCastOrNull", [](ContextPtr context){ return CastOverloadResolverImpl::create(context, CastType::accurateOrNull, false, {}); }, accurateCastOrNull_documentation);
 }
 
+FunctionOverloadResolverPtr createInternalCastOverloadResolver(ContextPtr context, CastType cast_type, std::optional<CastDiagnostic> diagnostic)
+{
+    return CastOverloadResolverImpl::create(context, cast_type, true, std::move(diagnostic));
+}
+
 }

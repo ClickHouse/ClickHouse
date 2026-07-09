@@ -15,11 +15,11 @@
 #include <Columns/ColumnNullable.h>
 
 #include <Interpreters/Context.h>
-#include <Interpreters/castColumn.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
+#include <Functions/CastOverloadResolver.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
 namespace DB
@@ -46,7 +46,11 @@ public:
         return std::make_shared<FunctionCastOrDefault>(context);
     }
 
-    explicit FunctionCastOrDefault(ContextPtr context_) : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable]) { }
+    explicit FunctionCastOrDefault(ContextPtr context_)
+        : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
+        , cast_or_null_resolver(createInternalCastOverloadResolver(context_, CastType::accurateOrNull, {}))
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -128,7 +132,18 @@ public:
         auto non_const_column_to_cast = column_to_cast.column->convertToFullColumnIfConst();
         ColumnWithTypeAndName column_to_cast_non_const{non_const_column_to_cast, column_to_cast.type, column_to_cast.name};
 
-        auto cast_result = castColumnAccurateOrNull(column_to_cast_non_const, return_type);
+        auto nullable_return_type = makeNullable(return_type);
+        ColumnsWithTypeAndName cast_args
+        {
+            column_to_cast_non_const,
+            {
+                DataTypeString().createColumnConst(non_const_column_to_cast->size(), return_type->getName()),
+                std::make_shared<DataTypeString>(),
+                ""
+            }
+        };
+        auto cast_func = cast_or_null_resolver->build(cast_args);
+        auto cast_result = cast_func->execute(cast_args, nullable_return_type, non_const_column_to_cast->size(), false);
 
         const auto & cast_result_nullable = assert_cast<const ColumnNullable &>(*cast_result);
         const auto & null_map_data = cast_result_nullable.getNullMapData();
@@ -194,8 +209,8 @@ public:
     }
 
 private:
-
     bool keep_nullable;
+    FunctionOverloadResolverPtr cast_or_null_resolver;
 };
 
 class FunctionCastOrDefaultTyped final : public IFunction
