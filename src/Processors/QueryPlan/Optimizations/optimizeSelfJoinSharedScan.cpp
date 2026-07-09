@@ -95,8 +95,15 @@ void tryOptimizeSelfJoinSharedScan(
     if (join_op.strictness != JoinStrictness::All)
         return;
 
+    /// Compatible algorithms are those with a producer-first (`FillRightFirst`) pipeline: the build
+    /// side is fully consumed before the probe side is read, so the probe scan can replay the
+    /// buffer filled by the build scan. `GRACE_HASH` qualifies too and is kept so that a
+    /// user-requested on-disk algorithm is not silently downgraded to an in-memory one.
+    const auto is_compatible_algorithm = [](JoinAlgorithm algo)
+    { return algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::GRACE_HASH; };
+
     const auto & join_settings = join_step->getJoinSettings();
-    if (std::ranges::none_of(join_settings.join_algorithms, [](auto algo) { return algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH; }))
+    if (std::ranges::none_of(join_settings.join_algorithms, is_compatible_algorithm))
         return;
 
     /// Under `join_overflow_mode = 'break'` the build side stops consuming its input once
@@ -157,7 +164,7 @@ void tryOptimizeSelfJoinSharedScan(
         node.children[0] = &ref_node;
 
     auto & mutable_join_algorithms = join_step->getJoinSettings().join_algorithms;
-    std::erase_if(mutable_join_algorithms, [](auto algo) { return algo != JoinAlgorithm::HASH && algo != JoinAlgorithm::PARALLEL_HASH; });
+    std::erase_if(mutable_join_algorithms, [&](auto algo) { return !is_compatible_algorithm(algo); });
     join_step->setOptimized();
 }
 
