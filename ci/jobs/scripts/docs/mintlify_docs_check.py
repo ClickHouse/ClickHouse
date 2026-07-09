@@ -23,7 +23,9 @@ the full set (``DEFAULT_CHECKS`` plus, when a locale tree changed,
 ``LOCALE_CHECKS``); this client driver runs only ``CLIENT_CHECKS`` -- the checks
 a consuming repo can act on for the slice it owns (validate + internal links).
 Redirects, external links, and the locale checks are aggregator-global and are
-left to the aggregator job.
+left to the aggregator job. With ``--scoped``, ``mint validate`` is replaced by
+``scoped_validate.mjs`` over the replaced folders plus every out-of-scope file
+that imports into them.
 
 A check can be any shell command, including ``python3 <script>``. Checks run
 from the docs root, so a Python check script committed at
@@ -73,6 +75,16 @@ DEFAULT_CHECKS = [
 # depend on the site-wide redirects map, third-party sites, and the translated
 # trees), so the client driver does not run them.
 CLIENT_CHECKS = [VALIDATE_CHECK, INTERNAL_LINKS_CHECK]
+
+
+# Swaps the full `mint validate` (which MDX-parses the whole site, ~13 minutes)
+# for scoped_validate.mjs over just the replaced folders -- see that script's
+# header for what it covers.
+def scoped_validate_check(scopes):
+    command = "node ../ci/jobs/scripts/docs/scoped_validate.mjs " + " ".join(
+        f"--scope {shlex.quote(scope)}" for scope in scopes
+    )
+    return ("Validate docs.json and the replaced folders (scoped)", command + " .")
 
 # Locale-only checks, kept out of DEFAULT_CHECKS: the Praktika job runs them only
 # when a PR touches the locale folders (top-level or snippets/<locale>/) -- they
@@ -184,8 +196,15 @@ def main(argv=None):
     p.add_argument("--replace", action="append", default=[], metavar="SRC:DEST",
                    help="Replace DEST (relative to docs root) with the local folder "
                         "SRC, wiping DEST first; repeatable.")
+    p.add_argument("--scoped", action="store_true",
+                   help="Validate only the --replace destinations instead of running "
+                        "the full (slow) `mint validate` over the whole site. "
+                        "Requires at least one --replace.")
     p.add_argument("--workdir", help="Where to clone (default: a temp dir).")
     args = p.parse_args(argv)
+
+    if args.scoped and not args.replace:
+        p.error("--scoped requires at least one --replace")
 
     base = args.workdir or tempfile.mkdtemp(prefix="docs-check-")
     clone_dir = os.path.abspath(os.path.join(base, "aggregator"))
@@ -196,18 +215,23 @@ def main(argv=None):
     if not os.path.isfile(os.path.join(docs_root, "docs.json")):
         raise FileNotFoundError(f"No docs.json in docs root: {docs_root}")
 
+    replace_dests = []
     for spec in args.replace:
         parts = spec.split(":")
         if len(parts) != 2:
             raise ValueError(f"Invalid --replace '{spec}'. Expected SRC:DEST.")
         replace(parts[0], resolve_replace_dest(docs_root, parts[1]))
+        replace_dests.append(parts[1])
 
     # A consuming client repo owns only its docs slice, so it runs just the
     # checks it can act on (see CLIENT_CHECKS): validate + internal links. The
     # aggregator-global checks -- redirects, external links, and the locale
     # checks -- are run by the aggregator's own Praktika job, not here.
+    checks = list(CLIENT_CHECKS)
+    if args.scoped:
+        checks[0] = scoped_validate_check(replace_dests)
     results = [(name, run_check(docs_root, name, command))
-               for name, command in CLIENT_CHECKS]
+               for name, command in checks]
 
     print("\n=== Summary ===", flush=True)
     for name, ok in results:

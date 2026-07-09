@@ -34,7 +34,8 @@ static std::unique_ptr<MergeTreeReaderStream> makeIndexReaderStream(
         settings.save_marks_in_cache,
         settings.read_settings,
         load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1);
+        /*num_columns_in_mark=*/ 1,
+        settings.use_streaming_marks_compression);
 
     marks_loader->startAsyncLoad();
 
