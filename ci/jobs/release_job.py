@@ -387,7 +387,16 @@ def main():
             workdir=REPO_PATH,
         )
 
-    if create_new_release:
+    # For a "new" release the version bump also opens the master bump PR that
+    # --merge-prs merges below, so it must run here, before that merge. For a
+    # "patch" release the bump is only a direct push of the branch version file
+    # and nothing downstream depends on it; it is deferred to the very end of the
+    # run (after --merge-prs) so that a rerun after any failure between the tag
+    # push and the end always sees an un-bumped branch. prepare then reads the
+    # branch tip as the just-released version, recovers the existing release, and
+    # never refuses a rerun as "out-of-order" or mints a release below the tip —
+    # all without scanning git tags. See the deferred step near the end of main.
+    if create_new_release and args.release_type == "new":
         step(
             name="Bump CH Version and Update Contributors' List",
             command=[
@@ -759,6 +768,24 @@ def main():
             name="Update Release Info and Merge Created PRs",
             command=[
                 f"python3 ./ci/jobs/create_release.py --merge-prs"
+                f" {dry_run_flag}".strip()
+            ],
+            workdir=REPO_PATH,
+        )
+
+    # Deferred patch version bump — the LAST release mutation. Bumping the branch
+    # version file here (rather than right after the tag push) keeps the branch
+    # tip equal to the released commit for the whole publish phase, so any rerun
+    # in that window sees an un-bumped branch and prepare recovers the existing
+    # release instead of refusing it or minting a below-tip release. `step` skips
+    # it when a prior step already failed, so a failed publish leaves the branch
+    # un-bumped and recoverable. ("new" bumps earlier, above, because --merge-prs
+    # merges the master bump PR it opens.)
+    if create_new_release and args.release_type == "patch":
+        step(
+            name="Bump CH Version and Update Contributors' List",
+            command=[
+                f"python3 ./ci/jobs/create_release.py --create-bump-version-pr"
                 f" {dry_run_flag}".strip()
             ],
             workdir=REPO_PATH,
