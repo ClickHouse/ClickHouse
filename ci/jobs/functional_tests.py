@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import zlib
 from pathlib import Path
 
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
@@ -17,7 +18,6 @@ from ci.praktika.result import Result
 from ci.praktika.utils import MetaClasses, Shell, Utils
 
 temp_dir = f"{Utils.cwd()}/ci/tmp"
-
 
 
 class JobStages(metaclass=MetaClasses.WithIter):
@@ -318,6 +318,78 @@ def main():
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
+
+    # If this PR only touches test files (no production/config code changed),
+    # this job only needs to run if one of the changed tests would even be
+    # selected here - and, when the job is also hash-batched (N/M), only the
+    # batch(es) containing a changed test need to run. Other jobs/batches
+    # would produce results identical to master and can be skipped. Note:
+    # "parallel"/"sequential" job flavors need no batch number of their own
+    # (e.g. "amd_debug, parallel") - the flavor-applicability check below must
+    # not be gated on batching being active.
+    if (
+        not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not is_per_test_coverage
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_functional_files = [
+                f for f in changed_files if Targeting.is_functional_test_file(f)
+            ]
+            if not changed_functional_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-functional test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            # "parallel"/"sequential" is a second, independent sharding dimension:
+            # each is hash-batched separately (--no-sequential/--no-parallel), and
+            # a test tagged no-parallel/sequential never runs under the "parallel"
+            # flavor (and vice versa) regardless of batch. Restrict to the changed
+            # tests that this job flavor would even select before checking batches.
+            is_parallel_flavor = "parallel" in test_options
+            is_sequential_flavor = "sequential" in test_options
+            hash_batch_files = []
+            for f in changed_functional_files:
+                hash_batch_file = Targeting.functional_test_hash_batch_file(f)
+                if hash_batch_file is None:
+                    # Could not resolve to a concrete test source file (e.g. an
+                    # orphan data file) - be conservative and run the batch normally.
+                    hash_batch_files = None
+                    break
+                is_sequential_test = Targeting.is_sequential_functional_test(
+                    hash_batch_file
+                )
+                if is_parallel_flavor and is_sequential_test:
+                    continue
+                if is_sequential_flavor and not is_sequential_test:
+                    continue
+                hash_batch_files.append(hash_batch_file)
+            if hash_batch_files is not None and not hash_batch_files:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests apply to this job's parallel/sequential flavor",
+                ).complete_job()
+            if (
+                hash_batch_files is not None
+                and batch_num
+                and total_batches > 1
+                and not any(
+                    zlib.crc32(f.encode("utf-8")) % total_batches == batch_num - 1
+                    for f in hash_batch_files
+                )
+            ):
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed tests fall into this batch",
+                ).complete_job()
 
     if is_llvm_coverage:
         # Pin random-by-default fault injection seeds server-side (in the default

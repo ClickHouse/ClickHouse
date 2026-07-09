@@ -912,6 +912,13 @@ bool StorageBuffer::supportsPrewhere() const
     return false;
 }
 
+bool StorageBuffer::supportsOptimizationToSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToSubcolumns();
+    return false;
+}
+
 bool StorageBuffer::checkThresholds(const Buffer & buffer, bool direct, time_t current_time, size_t additional_rows, size_t additional_bytes) const
 {
     time_t time_passed = 0;

@@ -2704,6 +2704,16 @@ SELECT * FROM test;
 Allows query to return a partial result after cancel.
 )", 0) \
     \
+    DECLARE(Bool, discard_query_data, false, R"(
+If enabled, the server skips sending query result rows to the client. The query is still executed and logged fully on the server, and the client still receives the remaining packets.
+
+Used for shadow traffic, benchmarks, and fuzzing.
+
+Has no effect for secondary queries.
+
+Affects only the native TCP protocol.
+)", 0) \
+    \
     DECLARE(Bool, ignore_on_cluster_for_replicated_udf_queries, false, R"(
 Ignore ON CLUSTER clause for replicated UDF management queries.
 )", 0) \
@@ -8431,6 +8441,9 @@ If the number of set bits in a runtime bloom filter exceeds this ratio the filte
 )", EXPERIMENTAL) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
+)", 0) \
+    DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
+Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
 )", 0) \
     DECLARE(Bool, rewrite_in_to_join, false, R"(
 Rewrite expressions like 'x IN subquery' to JOIN. This might be useful for optimizing the whole query with join reordering.

@@ -2114,9 +2114,9 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
           [&]
           {
               std::unique_ptr<SQLType> sub;
-              FloatingPoints nflo = {};
               uint32_t dimension = rg.nextSmallNumber();
               uint32_t stride = dimension;
+              QBit * qbit = tp ? tp->mutable_qbit() : nullptr;
 
               /// Occasionally generate a strided QBit. Constraints: dimension % stride == 0 and stride % 8 == 0.
               if (rg.nextSmallNumber() < 3)
@@ -2126,12 +2126,26 @@ StatementGenerator::bottomType(RandomGenerator & rg, const uint64_t allowed_type
                   dimension = stride * num_groups;
               }
 
-              std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
-              if (tp)
+              if (rg.nextSmallNumber() < 3)
               {
-                  QBit * qbit = tp->mutable_qbit();
+                  sub = std::make_unique<IntType>(8, false);
+                  if (tp)
+                  {
+                      qbit->set_int8(true);
+                  }
+              }
+              else
+              {
+                  FloatingPoints nflo = {};
 
-                  qbit->set_subtype(nflo);
+                  std::tie(sub, nflo) = randomFloatType(rg, allowed_types);
+                  if (tp)
+                  {
+                      qbit->set_floats(nflo);
+                  }
+              }
+              if (qbit)
+              {
                   qbit->set_dimension(dimension);
                   if (stride != dimension)
                       qbit->set_stride(stride);
