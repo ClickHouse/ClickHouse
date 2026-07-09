@@ -9,13 +9,17 @@
 #include <Common/Exception.h>
 #include <Core/Block.h>
 #include <Core/ColumnWithTypeAndName.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/convertFieldToType.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <Storages/MergeTree/RPNBuilder.h>
 #include <Storages/Statistics/Statistics.h>
+#include <Storages/Statistics/StatisticsBasic.h>
 #include <Storages/Statistics/StatisticsMinMax.h>
 #include <Storages/StatisticsDescription.h>
 #include <Storages/ColumnsDescription.h>
@@ -591,5 +595,87 @@ TEST(Statistics, StructureEqualsConsidersDataType)
     EXPECT_TRUE(make_stat(bool_type)->structureEquals(*make_stat(bool_type)));
     EXPECT_FALSE(make_stat(bool_type)->structureEquals(*make_stat(uint8_type)));
     EXPECT_FALSE(make_stat(uint8_type)->structureEquals(*make_stat(bool_type)));
+}
+
+/// `basic` on a non-Nullable column counts rows equal to the type default (0) and answers an exact
+/// equality-to-default estimate, while reporting no NULL count.
+TEST(Statistics, BasicDefaultCountNonNullable)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr col = data_type->createColumn();
+    /// 10 rows, 4 of them equal to the default (0).
+    const Int64 values[10] = {0, 1, 0, 2, 0, 3, 0, 4, 5, 6};
+    for (Int64 v : values)
+        col->insert(Field(v));
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+
+    /// A non-Nullable column has no NULL count.
+    EXPECT_FALSE(stats->hasNullCount());
+    EXPECT_EQ(stats->getNullCount(), 0u);
+    EXPECT_EQ(stats->estimateDefaults(), 4u);
+
+    /// Exact equality-to-default estimate.
+    auto eq0 = stats->estimateEqual(Field(Int64(0)));
+    ASSERT_TRUE(eq0.has_value());
+    EXPECT_DOUBLE_EQ(*eq0, 4.0);
+
+    /// A non-default value has no exact answer from `basic` alone.
+    EXPECT_FALSE(stats->estimateEqual(Field(Int64(3))).has_value());
+}
+
+/// On a Nullable column the type default is NULL, so the default count is exactly the NULL count and
+/// equality to a (non-NULL) literal is not answered by it.
+TEST(Statistics, BasicDefaultCountNullableIsNullCount)
+{
+    /// 100 rows, every 5th NULL -> 20 NULLs.
+    auto stats = buildNullableInt32Stats({StatisticsType::Basic}, /*total=*/100, /*null_every=*/5);
+    EXPECT_TRUE(stats->hasNullCount());
+    EXPECT_EQ(stats->getNullCount(), 20u);
+    EXPECT_EQ(stats->estimateDefaults(), 20u);
+    EXPECT_FALSE(stats->estimateEqual(Field(Int64(0))).has_value());
+}
+
+/// The default count survives a serialize/deserialize round-trip.
+TEST(Statistics, BasicDefaultCountRoundTrip)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+    MutableColumnPtr col = data_type->createColumn();
+    for (Int64 i = 0; i < 8; ++i)
+        col->insert(Field(i % 2 == 0 ? Int64(0) : i)); /// 4 zeros out of 8
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+    ASSERT_EQ(stats->estimateDefaults(), 4u);
+
+    WriteBufferFromOwnString wb;
+    stats->serialize(wb);
+    ReadBufferFromString rb(wb.str());
+    auto restored = ColumnStatistics::deserialize(rb, data_type);
+
+    EXPECT_EQ(restored->estimateDefaults(), 4u);
+    auto eq0 = restored->estimateEqual(Field(Int64(0)));
+    ASSERT_TRUE(eq0.has_value());
+    EXPECT_DOUBLE_EQ(*eq0, 4.0);
+}
+
+/// `basic` can be declared on any type; on a composite type it counts rows equal to the default
+/// (an empty array) and answers `col = []`.
+TEST(Statistics, BasicDefaultCountArray)
+{
+    auto data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>());
+    EXPECT_TRUE(basicStatisticsValidator(SingleStatisticsDescription(StatisticsType::Basic, nullptr, false), data_type));
+
+    MutableColumnPtr col = data_type->createColumn();
+    col->insert(Field(Array{}));                                     /// empty (default)
+    col->insert(Field(Array{Field(UInt64(1))}));                     /// non-empty
+    col->insert(Field(Array{}));                                     /// empty (default)
+    col->insert(Field(Array{Field(UInt64(2)), Field(UInt64(3))}));   /// non-empty
+    auto stats = createTestStats({StatisticsType::Basic}, data_type);
+    stats->build(std::move(col));
+
+    EXPECT_EQ(stats->estimateDefaults(), 2u);
+    auto eq_empty = stats->estimateEqual(Field(Array{}));
+    ASSERT_TRUE(eq_empty.has_value());
+    EXPECT_DOUBLE_EQ(*eq_empty, 2.0);
 }
 

@@ -1293,11 +1293,11 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 - `Basic`
 
     A compact bundle of single-value summaries derived from a column. Depending on the column type, the following pieces are populated:
+  - for any column: the number of rows equal to the column type's default value. "Default" here is the type-intrinsic default (`0`, `''`, `[]`, ...), not the column's DDL `DEFAULT` expression. For a `Nullable` / `LowCardinality(Nullable)` column the type default is `NULL`, so this count is exactly the number of `NULL` rows and lets the optimizer discount `NULL` rows and estimate `IS NULL`; for a non-`Nullable` column it is the number of type-default rows and estimates equality against the default (`col = 0`, `col = ''`);
   - for any column whose values are represented by a number (integers, floats, `Decimal*`, `Date*`, `DateTime*`, `Enum*`, `IPv4`, ...): the minimum and maximum value, which allow to estimate the selectivity of range filters and enable part pruning;
-  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived);
-  - for `Nullable` and `LowCardinality(Nullable)` columns: the count of `NULL` values, which the optimizer uses to discount `NULL` rows from selectivity estimates.
+  - for `String` and `FixedString` columns: the total byte length of non-`NULL` values (from which the average string length can be derived).
 
-    A single `Basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the null count. Compared to `MinMax`, `Basic` additionally works on `String` / `FixedString` columns and can be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+    A single `Basic` statistic can populate several of these at once — for example on a `Nullable(UInt32)` column it tracks both numeric min/max and the `NULL` count. Because a default-value count is defined for every column type, `Basic` can be declared on any column, including composite types such as `Array`, `Tuple`, and `Map`.
 
     Syntax: `basic`
 
@@ -1335,29 +1335,31 @@ Statistics of type `countmin` have high creation costs and potentially slow down
 
 ### Supported data types {#supported-data-types}
 
-|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString |
-|-----------|----------------------------------------------------|------|-----------------------|
-| Basic     | ✔                                                  | ✔    | ✔                     |
-| CountMin  | ✔                                                  | ✔    | ✔                     |
-| MinMax    | ✔                                                  | ✔    | ✗                     |
-| TDigest   | ✔                                                  | ✗    | ✗                     |
-| Uniq      | ✔                                                  | ✔    | ✔                     |
+|           | (U)Int*, Float*, Decimal(*), Date*, Boolean, Enum* | IPv4 | String or FixedString | Any other type |
+|-----------|----------------------------------------------------|------|-----------------------|----------------|
+| Basic     | ✔                                                  | ✔    | ✔                     | ✔ (default count only) |
+| CountMin  | ✔                                                  | ✔    | ✔                     | ✗              |
+| MinMax    | ✔                                                  | ✔    | ✗                     | ✗              |
+| TDigest   | ✔                                                  | ✗    | ✗                     | ✗              |
+| Uniq      | ✔                                                  | ✔    | ✔                     | ✗              |
 
-All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on `Nullable` wrappers of types like `UUID` or `IPv6` purely to track the null count.
+All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers of the listed types. `Basic` may additionally be declared on any other type (including composite types such as `Array`, `Tuple`, and `Map`), where it records only the default-value count.
 
 ### Supported operations {#supported-operations}
 
-|           | Equality filters (==) | Range filters (`>, >=, <, <=`) |
-|-----------|-----------------------|--------------------------------|
-| Basic     | ✗                     | ✔ (numeric columns only)       |
-| CountMin  | ✔                     | ✗                              |
-| MinMax    | ✗                     | ✔ (numeric columns only)       |
-| TDigest   | ✗                     | ✔ (numeric columns only)       |
-| Uniq      | ✔                     | ✗                              |
+|           | Equality filters (==)          | Range filters (`>, >=, <, <=`) |
+|-----------|--------------------------------|--------------------------------|
+| Basic     | ✔ (default value only)         | ✔ (numeric columns only)       |
+| CountMin  | ✔                              | ✗                              |
+| MinMax    | ✗                              | ✔ (numeric columns only)       |
+| TDigest   | ✗                              | ✔ (numeric columns only)       |
+| Uniq      | ✔                              | ✗                              |
 
-For `Basic` on `String` / `FixedString` columns the statistic only records the total
-non-NULL byte length (used to estimate average string length) and the null count;
-range filters and part pruning are not driven by it.
+`Basic` answers an equality filter exactly only when the compared value is the column type's
+default (`col = 0`, `col = ''`, ...); for other values the optimizer falls back to other statistics.
+For `Basic` on `String` / `FixedString` columns the statistic records the total non-NULL byte length
+(used to estimate average string length) plus the default/`NULL` count; range filters and part
+pruning are not driven by it.
 
 ## Column-level settings {#column-level-settings}
 

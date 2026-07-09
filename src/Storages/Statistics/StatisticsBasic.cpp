@@ -1,7 +1,6 @@
 #include <Storages/Statistics/StatisticsBasic.h>
 
 #include <Columns/ColumnFixedString.h>
-#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeFactory.h>
@@ -32,38 +31,11 @@ enum BasicFeatureMask : UInt8
 {
     NumericMinMax = 1u << 0,
     StringLengthSum = 1u << 1,
-    NullCount = 1u << 2,
+    /// Count of rows equal to the type's default value. Historically this bit held the NULL count
+    /// of a Nullable column; the type default of a Nullable column *is* NULL, so the on-disk value
+    /// is unchanged and old blobs deserialize correctly (see the class comment in the header).
+    DefaultCount = 1u << 2,
 };
-
-UInt64 countNullsInColumn(const ColumnPtr & column)
-{
-    /// `ColumnConst(Nullable(...))` reaches us from pipelines like `INSERT ... SELECT NULL`;
-    /// `convertToFullColumnIfConst` unwraps it so the Nullable/LowCardinality branches below
-    /// can see the real column.
-    auto full = column->convertToFullColumnIfConst()->convertToFullColumnIfSparse();
-
-    if (const auto * nullable = typeid_cast<const ColumnNullable *>(full.get()))
-    {
-        const auto & null_map = nullable->getNullMapData();
-        return std::count(null_map.begin(), null_map.end(), 1);
-    }
-
-    if (const auto * lc = typeid_cast<const ColumnLowCardinality *>(full.get()))
-    {
-        if (!lc->nestedIsNullable())
-            return 0;
-
-        size_t null_index = lc->getDictionary().getNullValueIndex();
-        const auto & indexes = lc->getIndexes();
-        UInt64 cnt = 0;
-        for (size_t i = 0, n = indexes.size(); i < n; ++i)
-            if (indexes.getUInt(i) == null_index)
-                ++cnt;
-        return cnt;
-    }
-
-    return 0;
-}
 
 const NullMap * tryGetNullMap(const IColumn & column)
 {
@@ -111,16 +83,24 @@ StatisticsBasic::StatisticsBasic(const SingleStatisticsDescription & description
 {
     tracks_numeric = data_type->isValueRepresentedByNumber();
     tracks_string = isStringOrFixedString(data_type);
-    tracks_null = isNullableOrLowCardinalityNullable(data_type_);
+    is_nullable = isNullableOrLowCardinalityNullable(data_type_);
 }
 
 void StatisticsBasic::build(const ColumnPtr & column)
 {
     const size_t column_size = column->size();
-    const UInt64 nulls_in_block = tracks_null ? countNullsInColumn(column) : 0;
 
-    if (tracks_null)
-        null_count += nulls_in_block;
+    /// Count rows equal to the type's default value. For a Nullable / LowCardinality(Nullable)
+    /// column the type default is NULL, and `getNumberOfDefaultRows` counts exactly the NULL rows
+    /// (`ColumnNullable::isDefaultAt` == `isNullAt`; the LC dictionary keeps NULL at index 0). For a
+    /// non-Nullable column it counts the type-default rows (0, '', [], ...). This works natively on
+    /// Const/Sparse columns without materializing them.
+    const UInt64 defaults_in_block = column->getNumberOfDefaultRows();
+    default_count += defaults_in_block;
+    has_default_count = true;
+
+    /// NULL rows in this block; used only to detect all-NULL blocks for the min/max guard below.
+    const UInt64 nulls_in_block = is_nullable ? defaults_in_block : 0;
 
     /// Skip the min/max update for blocks with no non-NULL rows. `ColumnNullable::getExtremes`
     /// returns the `POSITIVE_INFINITY/POSITIVE_INFINITY` sentinel for an all-NULL block, which
@@ -159,8 +139,10 @@ void StatisticsBasic::merge(const StatisticsPtr & other_stats)
     }
     if (tracks_string)
         string_total_bytes += other->string_total_bytes;
-    if (tracks_null)
-        null_count += other->null_count;
+    /// A merged default count is trustworthy only if both sides carry one; otherwise the sum would
+    /// silently undercount (e.g. an old part that predates default-count tracking).
+    default_count += other->default_count;
+    has_default_count = has_default_count && other->has_default_count;
 
     row_count += other->row_count;
 }
@@ -174,8 +156,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
         mask |= BasicFeatureMask::NumericMinMax;
     if (tracks_string)
         mask |= BasicFeatureMask::StringLengthSum;
-    if (tracks_null)
-        mask |= BasicFeatureMask::NullCount;
+    if (has_default_count)
+        mask |= BasicFeatureMask::DefaultCount;
     writeIntBinary(mask, buf);
 
     if (tracks_numeric)
@@ -185,8 +167,8 @@ void StatisticsBasic::serialize(WriteBuffer & buf)
     }
     if (tracks_string)
         writeIntBinary(string_total_bytes, buf);
-    if (tracks_null)
-        writeIntBinary(null_count, buf);
+    if (has_default_count)
+        writeIntBinary(default_count, buf);
 }
 
 void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*version*/)
@@ -207,9 +189,10 @@ void StatisticsBasic::deserialize(ReadBuffer & buf, StatisticsFileVersion /*vers
         readIntBinary(string_total_bytes, buf);
     }
 
-    if (mask & BasicFeatureMask::NullCount)
+    if (mask & BasicFeatureMask::DefaultCount)
     {
-        readIntBinary(null_count, buf);
+        readIntBinary(default_count, buf);
+        has_default_count = true;
     }
 }
 
@@ -220,12 +203,37 @@ std::optional<Float64> StatisticsBasic::estimateLess(const Field & val) const
     if (row_count == 0 || min.isNull() || max.isNull())
         return std::nullopt;
 
-    /// Total non-NULL rows known to the part: the linear-interpolation domain.
-    const UInt64 non_null = (tracks_null && null_count <= row_count) ? (row_count - null_count) : row_count;
+    /// Total non-NULL rows known to the part: the linear-interpolation domain. Only subtract the
+    /// default count when it counts NULLs (Nullable column); for a non-Nullable column the defaults
+    /// are ordinary values that belong to the interpolation domain.
+    const UInt64 non_null = (is_nullable && has_default_count && default_count <= row_count)
+        ? (row_count - default_count)
+        : row_count;
     if (non_null == 0)
         return 0.0;
 
     return StatisticsUtils::interpolateLessLinear(val, min, max, non_null, data_type);
+}
+
+std::optional<Float64> StatisticsBasic::estimateEqual(const Field & val) const
+{
+    /// Only a non-Nullable column exposes an exact equality-to-default count. For a Nullable column
+    /// the default is NULL, whose selectivity is served by `IS NULL`, not by `col = <literal>`.
+    if (is_nullable || !has_default_count)
+        return std::nullopt;
+
+    /// Coerce the literal to the column type (e.g. parse '0'); a value that does not convert cannot
+    /// be the default. The try-variant returns NULL instead of throwing on an unconvertible field.
+    Field converted = tryConvertFieldToType(val, *data_type);
+    if (converted.isNull())
+        return std::nullopt;
+
+    /// `default_count` is the exact number of rows equal to the type's default value; use it only
+    /// when `val` is that default, otherwise fall through to more general statistics.
+    if (converted != data_type->getDefault())
+        return std::nullopt;
+
+    return static_cast<Float64>(default_count);
 }
 
 String StatisticsBasic::getNameForLogs() const
@@ -251,10 +259,10 @@ String StatisticsBasic::getNameForLogs() const
         sep("string_length_avg");
         result += std::to_string(getStringLengthAvg());
     }
-    if (tracks_null)
+    if (has_default_count)
     {
-        sep("null_count");
-        result += std::to_string(null_count);
+        sep("default_count");
+        result += std::to_string(default_count);
     }
     if (first)
         result += "(empty)";
@@ -263,23 +271,23 @@ String StatisticsBasic::getNameForLogs() const
 
 Int64 StatisticsBasic::getStringLengthAvg() const
 {
-    /// Denominator = number of non-NULL rows we summed bytes over. When the column is Nullable
-    /// we subtract `null_count`; otherwise every processed row contributed.
-    const UInt64 non_null = (tracks_null && null_count <= row_count) ? (row_count - null_count) : row_count;
+    /// Denominator = number of non-NULL rows we summed bytes over. When the column is Nullable the
+    /// default count is the NULL count, so subtract it; otherwise every processed row contributed.
+    const UInt64 non_null = (is_nullable && has_default_count && default_count <= row_count)
+        ? (row_count - default_count)
+        : row_count;
     if (non_null == 0)
         return 0;
     return static_cast<Int64>(string_total_bytes / non_null);
 }
 
-bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)
+bool basicStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & /*data_type*/)
 {
-    auto inner = removeLowCardinalityAndNullable(removeNullable(data_type));
-    if (inner->isValueRepresentedByNumber())
-        return true;
-    if (isStringOrFixedString(inner))
-        return true;
-    /// Pure null-count tracking (e.g. `Nullable(Array(...))`) is also useful.
-    return isNullableOrLowCardinalityNullable(data_type);
+    /// `basic` supports any column type: a default-value count (`getNumberOfDefaultRows`) is defined
+    /// for every column, and the numeric min/max and string-length sub-statistics are populated only
+    /// for the applicable types. Numeric types additionally get min/max; String/FixedString get the
+    /// average length; Nullable columns get a NULL count (the default of a Nullable type is NULL).
+    return true;
 }
 
 StatisticsPtr basicStatisticsCreator(const SingleStatisticsDescription & description, const DataTypePtr & data_type)

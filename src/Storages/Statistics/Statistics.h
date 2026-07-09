@@ -74,7 +74,7 @@ public:
     /// Per-value estimations.
     /// Returns std::nullopt when the statistics object cannot produce a meaningful estimate
     /// (e.g. the value cannot be converted to the column type).
-    virtual Float64 estimateEqual(const Field & val) const; /// cardinality of val in the column
+    virtual std::optional<Float64> estimateEqual(const Field & val) const; /// cardinality of val in the column
     virtual std::optional<Float64> estimateLess(const Field & val) const;  /// summarized cardinality of values < val in the column
     virtual Float64 estimateRange(const Range & range) const;
     virtual String getNameForLogs() const = 0;
