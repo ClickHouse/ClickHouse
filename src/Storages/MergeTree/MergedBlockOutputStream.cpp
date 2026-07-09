@@ -374,6 +374,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     }
 
     const auto & statistics = gathered_data.statistics;
+    new_part->setStatistics(statistics);
     new_part->setEstimates(statistics.getEstimates());
 
     if (!statistics.empty())

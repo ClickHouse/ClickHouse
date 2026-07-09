@@ -1989,6 +1989,7 @@ protected:
 
     void startStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);
+    void refreshStatistics(const DataPartsVector & data_parts, UInt64 interval_seconds);
 
     static void incrementInsertedPartsProfileEvent(MergeTreeDataPartType type);
     static void incrementMergedPartsProfileEvent(MergeTreeDataPartType type);

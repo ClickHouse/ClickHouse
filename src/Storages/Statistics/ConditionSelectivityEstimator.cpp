@@ -506,9 +506,8 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
         auto & column_estimator = estimator->column_estimators[column_name];
 
         if (column_estimator.stats == nullptr)
-            column_estimator.stats = column_stats;
-        else
-            column_estimator.stats->merge(column_stats);
+            column_estimator.stats = column_stats->cloneEmpty();
+        column_estimator.stats->merge(column_stats);
     }
 }
 

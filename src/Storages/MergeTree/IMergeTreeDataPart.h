@@ -189,6 +189,8 @@ public:
 
     ColumnsStatistics loadStatistics() const;
     ColumnsStatistics loadStatistics(const Names & required_columns) const;
+    void setStatistics(const ColumnsStatistics & new_statistics);
+    bool hasCachedStatistics() const;
     Estimates getEstimates() const;
     void setEstimates(const Estimates & new_estimates);
 
@@ -791,6 +793,13 @@ private:
     /// It is used while reading from wide parts.
     std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested;
 
+    /// Full per-column statistics retained for freshly built in-memory parts.
+    /// Disk-loaded parts leave this empty and keep using the on-disk statistics files.
+    /// The selectivity estimator builder copies statistics into its own aggregate before merging,
+    /// so loadStatistics() can return these retained shared pointers without corrupting the part cache.
+    mutable std::mutex statistics_cache_mutex;
+    mutable std::optional<ColumnsStatistics> statistics_cache TSA_GUARDED_BY(statistics_cache_mutex);
+
     /// Small state of finalized statistics for suitable statistics types.
     /// Lazily initialized on a first access.
     mutable std::mutex estimates_mutex;
@@ -837,6 +846,7 @@ private:
     void loadDefaultCompressionCodec();
     void loadSourcePartsSet();
 
+    std::optional<ColumnsStatistics> tryGetCachedStatistics(const NameSet & required_columns) const;
     ColumnsStatistics loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const;
     ColumnsStatistics loadStatisticsWide(const NameSet & required_columns) const;
     PackedFilesReader * getStatisticsPackedReader() const;

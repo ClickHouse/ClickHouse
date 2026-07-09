@@ -1130,6 +1130,20 @@ PackedFilesReader * IMergeTreeDataPart::getStatisticsPackedReader() const
     return statistics_reader.get();
 }
 
+namespace
+{
+
+bool isColumnStatisticsRequired(const String & column_name, const NameSet & required_columns)
+{
+    /// `<col>.null` subcolumn may appear in required_columns when
+    /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
+    return required_columns.empty()
+        || required_columns.contains(column_name)
+        || required_columns.contains(column_name + ".null");
+}
+
+}
+
 static const ColumnDescription * getColumnForStatisticsFile(const String & filename, const ColumnsDescription & all_columns, const NameSet & required_columns)
 {
     chassert(filename.starts_with(STATS_FILE_PREFIX));
@@ -1140,14 +1154,27 @@ static const ColumnDescription * getColumnForStatisticsFile(const String & filen
 
     /// `<col>.null` subcolumn may appear in required_columns when
     /// `optimize_functions_to_subcolumns=1`, keep stats for the parent column in that case.
-    if (!required_columns.empty()
-        && !required_columns.contains(column_name)
-        && !required_columns.contains(column_name + ".null"))
-    {
+    if (!isColumnStatisticsRequired(column_name, required_columns))
         return nullptr;
-    }
 
     return all_columns.tryGet(column_name);
+}
+
+std::optional<ColumnsStatistics> IMergeTreeDataPart::tryGetCachedStatistics(const NameSet & required_columns) const
+{
+    std::lock_guard lock(statistics_cache_mutex);
+    if (!statistics_cache)
+        return std::nullopt;
+
+    ColumnsStatistics result;
+    for (const auto & [column_name, column_stats] : *statistics_cache)
+    {
+        if (!isColumnStatisticsRequired(column_name, required_columns) || !column_stats)
+            continue;
+
+        result.emplace(column_name, column_stats);
+    }
+    return result;
 }
 
 ColumnsStatistics IMergeTreeDataPart::loadStatisticsPacked(const PackedFilesReader & reader, const NameSet & required_columns) const
@@ -1234,6 +1261,9 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics() const
 
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
 
+    if (auto cached_statistics = tryGetCachedStatistics({}))
+        return std::move(*cached_statistics);
+
     if (auto * reader = getStatisticsPackedReader())
         return loadStatisticsPacked(*reader, {});
 
@@ -1245,10 +1275,25 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const Names & required_colu
     auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::loadStatistics");
     NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
+    if (auto cached_statistics = tryGetCachedStatistics(required_columns_set))
+        return std::move(*cached_statistics);
+
     if (auto * reader = getStatisticsPackedReader())
         return loadStatisticsPacked(*reader, required_columns_set);
 
     return loadStatisticsWide(required_columns_set);
+}
+
+void IMergeTreeDataPart::setStatistics(const ColumnsStatistics & new_statistics)
+{
+    std::lock_guard lock(statistics_cache_mutex);
+    statistics_cache = new_statistics;
+}
+
+bool IMergeTreeDataPart::hasCachedStatistics() const
+{
+    std::lock_guard lock(statistics_cache_mutex);
+    return statistics_cache.has_value() && !statistics_cache->empty();
 }
 
 Estimates IMergeTreeDataPart::getEstimates() const

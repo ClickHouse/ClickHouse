@@ -2963,13 +2963,19 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
 }
 
 void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
+{
+    auto parts_lock = readLockParts();
+    auto data_parts = getDataPartsVectorForInternalUsage({DataPartState::Active}, parts_lock);
+    refreshStatistics(data_parts, interval_seconds);
+}
+
+void MergeTreeData::refreshStatistics(const DataPartsVector & data_parts, UInt64 interval_seconds)
 try
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
-    DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
-    if (cached_estimator)
     {
-        if (!cached_estimator->isStale(data_parts))
+        std::lock_guard<std::mutex> lock(stats_mutex);
+        if (cached_estimator && !cached_estimator->isStale(data_parts))
         {
             LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
             if (interval_seconds)
@@ -2977,13 +2983,13 @@ try
             return;
         }
     }
+
     LOG_DEBUG(log, "Refreshing statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
     for (const DataPartPtr & data_part : data_parts)
     {
         try
         {
-            auto parts_lock = readLockParts();
             auto stats = data_part->loadStatistics();
             estimator_builder.markDataPart(data_part);
             for (const auto & [column_name, stat] : stats)
@@ -9390,6 +9396,25 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             ssize_t diff_parts  = add_parts - reduce_parts;
             data.increaseDataVolume(diff_bytes, diff_rows, diff_parts);
         });
+
+        /// INSERT already built full per-column statistics for new parts (see MergeTreeDataWriter).
+        /// Warm the table-level estimator immediately after the parts become Active so the
+        /// first SELECT does not synchronously cold-load/rebuild statistics in the planner.
+        /// Only warm when the committed parts actually carry retained in-memory statistics:
+        /// otherwise (statistics not materialized on insert - large tables above
+        /// materialize_statistics_on_insert_max_table_size, or the setting off) refreshStatistics
+        /// would loop all active parts and do the full on-disk cold-load we are trying to avoid,
+        /// synchronously on the INSERT path.
+        /// A production version should make this coalesced/asynchronous and memory-aware.
+        if (data.getContext()->getSettingsRef()[Setting::use_statistics_cache]
+            && std::any_of(
+                precommitted_parts.begin(),
+                precommitted_parts.end(),
+                [](const auto & part) { return part->hasCachedStatistics(); }))
+        {
+            auto active_parts = data.getDataPartsVectorForInternalUsage({DataPartState::Active}, acquired_parts_lock);
+            data.refreshStatistics(active_parts, /*interval_seconds=*/ 0);
+        }
     }
 
     clear();
