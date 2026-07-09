@@ -399,6 +399,15 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
             }
         }
 
+        /// Set check_stream_exists_callback so that enumerateStreams can skip substreams
+        /// that do not exist in this part (e.g. MapBucketIndexes in old bucketed Map parts).
+        enumerate_settings.check_stream_exists_callback = [&, column_pos = *pos](const ISerialization::SubstreamPath & substream_path) -> bool
+        {
+            auto substream = ISerialization::getFileNameForStream(
+                column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+            return columns_substreams.tryGetSubstreamPosition(column_pos, substream).has_value();
+        };
+
         auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
         deserialization_order.reserve(subcolumns_indexes.size());
         for (size_t i : order)

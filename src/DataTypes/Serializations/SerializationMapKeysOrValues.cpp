@@ -12,6 +12,7 @@ namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 SerializationMapKeysOrValues::SerializationMapKeysOrValues(
@@ -94,14 +95,20 @@ void SerializationMapKeysOrValues::enumerateStreams(
     const auto * buckets_info_state = checkAndGetState<SerializationMap::DeserializeBinaryBulkStateBucketsInfo>(map_keys_or_values_with_buckets_deserialize_state->buckets_info_state);
 
     /// Enumerate the bucket index stream (used to preserve original key order).
-    /// Only needed when there are multiple buckets.
+    /// Only needed when there are multiple buckets. When a check_stream_exists_callback
+    /// is set, skip the stream if it does not exist in the part — old parts written
+    /// before the bucket index fix lack this stream.
     if (buckets_info_state->buckets > 1)
     {
         settings.path.push_back(Substream::MapBucketIndexes);
-        auto bucket_index_serialization = getSmallestIndexesType(buckets_info_state->buckets)->getDefaultSerialization();
-        auto bucket_index_data = SubstreamData(bucket_index_serialization)
-            .withDeserializeState(map_keys_or_values_with_buckets_deserialize_state->bucket_index_state);
-        bucket_index_serialization->enumerateStreams(settings, callback, bucket_index_data);
+        bool enumerate_bucket_index = !settings.check_stream_exists_callback || settings.check_stream_exists_callback(settings.path);
+        if (enumerate_bucket_index)
+        {
+            auto bucket_index_serialization = getSmallestIndexesType(buckets_info_state->buckets)->getDefaultSerialization();
+            auto bucket_index_data = SubstreamData(bucket_index_serialization)
+                .withDeserializeState(map_keys_or_values_with_buckets_deserialize_state->bucket_index_state);
+            bucket_index_serialization->enumerateStreams(settings, callback, bucket_index_data);
+        }
         settings.path.pop_back();
     }
 
@@ -265,6 +272,8 @@ void collectMapKeysOrValuesFromBucketsWithOrderImpl(
         for (size_t j = 0; j < total_size; ++j)
         {
             size_t bucket_idx = bucket_index_data[bucket_index_offset++];
+            if (bucket_idx >= keys_or_values_buckets.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket_idx, keys_or_values_buckets.size());
             size_t pos = bucket_positions[bucket_idx]++;
             data.insertFrom(*data_buckets[bucket_idx], pos);
         }

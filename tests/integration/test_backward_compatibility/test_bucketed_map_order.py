@@ -107,7 +107,7 @@ def test_bucketed_map_backward_compatibility(start_cluster):
     )
     node.query("INSERT INTO t_merge VALUES (1, {'z':1, 'a':2})")
 
-    # Table for subcolumn test
+    # Table for subcolumn test (wide parts)
     node.query(
         f"""
         CREATE TABLE t_sub (id UInt64, m Map(String, UInt64))
@@ -117,6 +117,16 @@ def test_bucketed_map_backward_compatibility(start_cluster):
     )
     node.query("INSERT INTO t_sub VALUES (1, {'z':1, 'a':2, 'm':3})")
 
+    # Table for subcolumn test (compact parts)
+    node.query(
+        f"""
+        CREATE TABLE t_sub_compact (id UInt64, m Map(String, UInt64))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS {TABLE_SETTINGS_COMPACT}
+        """
+    )
+    node.query("INSERT INTO t_sub_compact VALUES (1, {'z':1, 'a':2, 'm':3})")
+
     # --- Phase 2: Upgrade to latest version (single restart) ---
 
     node.restart_with_latest_version()
@@ -125,7 +135,7 @@ def test_bucketed_map_backward_compatibility(start_cluster):
 
     # Old parts were written before the fix, so they must not have the bucket_indexes stream.
     # This confirms we're actually exercising the check_stream_exists_callback fallback path.
-    for table in ["t_wide", "t_compact", "t_merge", "t_sub"]:
+    for table in ["t_wide", "t_compact", "t_merge", "t_sub", "t_sub_compact"]:
         result = node.query(
             f"""
             SELECT has(substreams, 'm.bucket_indexes')
@@ -211,7 +221,7 @@ def test_bucketed_map_backward_compatibility(start_cluster):
     result = node.query("SELECT id FROM t_merge ORDER BY m").strip()
     assert len(result.split("\n")) == 2
 
-    # --- Phase 6: Verify subcolumns on old parts ---
+    # --- Phase 6: Verify subcolumns on old wide parts ---
 
     # map.keys subcolumn (uses SerializationMapKeysOrValues path)
     result = node.query("SELECT m.keys FROM t_sub").strip()
@@ -224,9 +234,26 @@ def test_bucketed_map_backward_compatibility(start_cluster):
     # map.size0 subcolumn
     assert node.query("SELECT m.size0 FROM t_sub").strip() == "3"
 
+    # --- Phase 7: Verify subcolumns on old compact parts ---
+    # This exercises the enumerateStreams check_stream_exists_callback path in
+    # initSubcolumnsDeserializationOrder — old compact parts lack the bucket_indexes
+    # stream and enumerating it unconditionally would cause "Unexpected substream" errors.
+
+    # map.keys subcolumn on compact part
+    result = node.query("SELECT m.keys FROM t_sub_compact").strip()
+    assert len(result) > 0
+
+    # map.values subcolumn on compact part
+    result = node.query("SELECT m.values FROM t_sub_compact").strip()
+    assert len(result) > 0
+
+    # map.size0 subcolumn on compact part
+    assert node.query("SELECT m.size0 FROM t_sub_compact").strip() == "3"
+
     # --- Cleanup ---
 
     node.query("DROP TABLE t_wide")
     node.query("DROP TABLE t_compact")
     node.query("DROP TABLE t_merge")
     node.query("DROP TABLE t_sub")
+    node.query("DROP TABLE t_sub_compact")

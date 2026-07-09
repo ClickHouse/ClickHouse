@@ -671,16 +671,20 @@ void SerializationMap::enumerateStreams(
 
     /// Enumerate the bucket index stream (used to preserve original key order).
     /// Only needed when there are multiple buckets — single-bucket serialization
-    /// preserves order trivially. Delegates to the bucket index serialization
-    /// (a SerializationNumber) so the path includes the Regular sub-path that
-    /// SerializationNumber uses when calling getter.
+    /// preserves order trivially. When a check_stream_exists_callback is set (e.g. in
+    /// compact parts determining deserialization order), skip the stream if it does not
+    /// exist in the part — old parts written before the bucket index fix lack this stream.
     if (buckets > 1)
     {
         settings.path.push_back(Substream::MapBucketIndexes);
-        auto bucket_index_serialization = getSmallestIndexesType(buckets)->getDefaultSerialization();
-        auto bucket_index_data = SubstreamData(bucket_index_serialization)
-            .withDeserializeState(map_deserialize_state ? map_deserialize_state->bucket_index_state : nullptr);
-        bucket_index_serialization->enumerateStreams(settings, callback, bucket_index_data);
+        bool enumerate_bucket_index = !settings.check_stream_exists_callback || settings.check_stream_exists_callback(settings.path);
+        if (enumerate_bucket_index)
+        {
+            auto bucket_index_serialization = getSmallestIndexesType(buckets)->getDefaultSerialization();
+            auto bucket_index_data = SubstreamData(bucket_index_serialization)
+                .withDeserializeState(map_deserialize_state ? map_deserialize_state->bucket_index_state : nullptr);
+            bucket_index_serialization->enumerateStreams(settings, callback, bucket_index_data);
+        }
         settings.path.pop_back();
     }
 
@@ -1167,6 +1171,8 @@ void collectMapFromBucketsWithOrderImpl(
         for (size_t j = 0; j < total_size; ++j)
         {
             size_t bucket_idx = bucket_index_data[bucket_index_offset++];
+            if (bucket_idx >= map_buckets.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Bucket index {} is out of range, total buckets: {}", bucket_idx, map_buckets.size());
             size_t pos = bucket_positions[bucket_idx]++;
             map_keys_column.insertFrom(*map_keys_buckets[bucket_idx], pos);
             map_values_column.insertFrom(*map_values_buckets[bucket_idx], pos);

@@ -353,6 +353,13 @@ public:
         /// Type of MergeTree data part we serialize/deserialize data from if any.
         MergeTreeDataPartType data_part_type = MergeTreeDataPartType::Unknown;
 
+        /// Callback to check whether a specific substream exists in the current data part.
+        /// Used during enumeration to skip substreams that were introduced after the part
+        /// was written (e.g. MapBucketIndexes in old bucketed Map parts).
+        /// When not set, all substreams are enumerated unconditionally.
+        using CheckStreamExistsCallback = std::function<bool(const SubstreamPath &)>;
+        CheckStreamExistsCallback check_stream_exists_callback;
+
         /// Current level of array. Needed to differentiate stream names of nested array offsets.
         size_t array_level = 0;
     };
