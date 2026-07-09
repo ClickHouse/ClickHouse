@@ -129,6 +129,15 @@ def main():
     stopwatch = Utils.Stopwatch()
     args = parse_args()
 
+    # Drop any release-info file left by a previous release on a reused
+    # self-hosted runner. "Prepare Release Info" writes a fresh STARTED stub as
+    # soon as it runs, so from here on RELEASE_INFO_FILE exists only if that step
+    # ran this attempt; the "--post-status" step below is guarded on it, so an
+    # early setup failure that skips prepare neither reads a missing file
+    # (FileNotFoundError) nor reports a stale previous release's status.
+    if os.path.exists(RELEASE_INFO_FILE):
+        os.remove(RELEASE_INFO_FILE)
+
     dry_run_flag = "--dry-run" if args.dry_run else ""
     original_branch = Shell.get_output("git rev-parse --abbrev-ref HEAD", strict=True)
     # Per-run GNUPGHOME for the signing key (set when the GPG import step runs);
@@ -755,17 +764,23 @@ def main():
             workdir=REPO_PATH,
         )
 
-    # Always post the final status (the completed release, or the failing step).
-    results.append(
-        Result.from_commands_run(
-            name="Post Slack Message",
-            command=[
-                f"python3 ./ci/jobs/create_release.py --post-status"
-                f" {dry_run_flag}".strip()
-            ],
-            workdir=REPO_PATH,
+    # Post the final release status — but only when "Prepare Release Info" ran
+    # this attempt and produced RELEASE_INFO_FILE. If an early setup step failed
+    # before prepare, the file is absent (cleared at the top of main), so
+    # --post-status would raise FileNotFoundError trying to read it; skip it and
+    # let the aggregated job Result (praktika Slack feed) report the failing
+    # setup step instead.
+    if os.path.exists(RELEASE_INFO_FILE):
+        results.append(
+            Result.from_commands_run(
+                name="Post Slack Message",
+                command=[
+                    f"python3 ./ci/jobs/create_release.py --post-status"
+                    f" {dry_run_flag}".strip()
+                ],
+                workdir=REPO_PATH,
+            )
         )
-    )
 
     # Always remove the publishing credentials and the signing-key home so they
     # do not persist for a later job on a reused self-hosted runner.
