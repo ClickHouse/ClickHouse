@@ -11,6 +11,7 @@
 
 #include <Access/AccessControl.h>
 #if CLICKHOUSE_CLOUD
+#include <Access/ContextAccess.h>
 #include <Access/EnabledMaskingPolicies.h>
 #include <Access/MaskingPolicy.h>
 #endif
@@ -249,6 +250,7 @@ namespace Setting
 
 namespace MergeTreeSetting
 {
+    extern const MergeTreeSettingsBool allow_dimensions_outside_sorting_key;
     extern const MergeTreeSettingsBool allow_nullable_key;
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
     extern const MergeTreeSettingsBool allow_suspicious_indices;
@@ -296,6 +298,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 part_moves_between_shards_enable;
     extern const MergeTreeSettingsUInt64 parts_to_delay_insert;
     extern const MergeTreeSettingsUInt64 parts_to_throw_insert;
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsBool remove_rolled_back_parts_immediately;
@@ -773,7 +776,7 @@ MergeTreeData::MergeTreeData(
     setProperties(metadata_, metadata_, !sanity_checks);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
-    merging_params.check(*settings, metadata_);
+    merging_params.check(*settings, metadata_, sanity_checks);
 
     if (metadata_.sampling_key.definition_ast != nullptr)
     {
@@ -1634,7 +1637,70 @@ static void checkTupleElementAggregationConstraints(const StorageInMemoryMetadat
     }
 }
 
-void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata) const
+/// In AggregatingMergeTree, background merges collapse all rows that share the same value of the
+/// sorting key into a single row, combining the aggregate states. A column that is neither part of
+/// the sorting key nor an aggregate-state *measure* (`AggregateFunction` or `SimpleAggregateFunction`)
+/// is a *dimension*: after a merge it keeps an arbitrary value of one of the collapsed rows, silently
+/// producing wrong results for queries that `GROUP BY` or filter on it. This is almost always a mistake
+/// (see https://github.com/ClickHouse/ClickHouse/issues/751), so we reject such a schema at table
+/// creation unless the `allow_dimensions_outside_sorting_key` setting is enabled.
+static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metadata)
+{
+    /// Columns whose value survives a merge unchanged: those that determine the merge group (the
+    /// sorting key) and those that are constant within a part (the partition key). We use the required
+    /// columns of both expressions, which over-approximates the set of safe columns and therefore
+    /// never produces a false positive (at the cost of occasionally missing a genuine mistake).
+    NameSet covered_columns;
+    if (metadata.isSortingKeyDefined())
+        for (const auto & name : metadata.getSortingKey().expression->getRequiredColumns())
+            covered_columns.insert(name);
+    if (metadata.isPartitionKeyDefined())
+        for (const auto & name : metadata.getPartitionKey().expression->getRequiredColumns())
+            covered_columns.insert(name);
+
+    /// A `MATERIALIZED` column is computed from an expression, not supplied as raw data, so it is not
+    /// the off-key dimension from issue #751. When its expression depends only on covered columns (e.g.
+    /// `d MATERIALIZED toString(key)`), its value is constant within a merge group and therefore safe.
+    /// Treating all materialized columns as covered keeps the over-approximation free of false positives
+    /// (at the cost of not catching a materialized column derived from an off-key column, which is the
+    /// same accepted trade-off as above).
+    for (const auto & column : metadata.getColumns().getMaterialized())
+        covered_columns.insert(column.name);
+
+    auto is_measure = [](const NameAndTypePair & column)
+    {
+        return WhichDataType(column.type).isAggregateFunction()
+            || typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(column.type->getCustomName()) != nullptr;
+    };
+
+    const auto physical_columns = metadata.getColumns().getAllPhysical();
+
+    /// Only act when the table actually performs aggregation, i.e. it has at least one aggregate-state
+    /// column. A table without any measures is not the scenario from issue #751 (it is not aggregating
+    /// anything) and is left alone.
+    if (std::none_of(physical_columns.begin(), physical_columns.end(), is_measure))
+        return;
+
+    Names offending_columns;
+    for (const auto & column : physical_columns)
+        if (!covered_columns.contains(column.name) && !is_measure(column))
+            offending_columns.push_back(column.name);
+
+    if (offending_columns.empty())
+        return;
+
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Column(s) {} of the AggregatingMergeTree table are neither part of the sorting key nor aggregate "
+        "measures (AggregateFunction or SimpleAggregateFunction). During background merges, rows with the "
+        "same value of the sorting key are collapsed into one, so these columns keep an arbitrary value, "
+        "which silently produces wrong results for queries that GROUP BY or filter on them. Add them to the "
+        "sorting key (ORDER BY), or set 'allow_dimensions_outside_sorting_key = 1' if this is intentional "
+        "(for example, when the columns are functionally dependent on the sorting key).",
+        boost::algorithm::join(offending_columns, ", "));
+}
+
+void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, const StorageInMemoryMetadata & metadata, bool sanity_checks) const
 {
     const auto columns = metadata.getColumns().getAllPhysical();
 
@@ -1825,6 +1891,14 @@ void MergeTreeData::MergingParams::check(const MergeTreeSettings & settings, con
 
     if (allow_tuple_element_aggregation)
         checkTupleElementAggregationConstraints(metadata);
+
+    /// Reject AggregatingMergeTree schemas where a non-key, non-measure column would be silently
+    /// collapsed during merges. Only on table creation, so existing tables keep loading. When
+    /// `allow_tuple_element_aggregation` is enabled, Tuple sub-columns are aggregated independently and a
+    /// plain column can be a measure, so the column-level check does not apply.
+    if (mode == MergingParams::Aggregating && sanity_checks && !allow_tuple_element_aggregation
+        && !settings[MergeTreeSetting::allow_dimensions_outside_sorting_key])
+        checkDimensionsAreInSortingKey(metadata);
 
     /// TODO Checks for Graphite mode.
 }
@@ -6178,6 +6252,136 @@ size_t MergeTreeData::getTotalUncompressedBytesInPatches() const
     return total_uncompressed_bytes_in_patches.load();
 }
 
+MergeTreeData::ColumnDefaultnessStatsUnavailableReason
+MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context, const MutationsSnapshotPtr & mutations_snapshot)
+{
+    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
+    if (query_context->getCurrentTransaction())
+        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
+
+    if (!mutations_snapshot)
+        return ColumnDefaultnessStatsUnavailableReason::None;
+
+    if (mutations_snapshot->hasPatchParts())
+        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
+    if (mutations_snapshot->hasDataMutations())
+        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
+    if (mutations_snapshot->hasAlterMutations())
+        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
+
+    return ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+MergeTreeData::ColumnDefaultnessStatsUnavailableReason
+MergeTreeData::getColumnDefaultnessStatsUnavailableReason(ContextPtr query_context) const
+{
+    /// A transaction can change which parts are visible vs the snapshot we'd reason about.
+    if (query_context->getCurrentTransaction())
+        return ColumnDefaultnessStatsUnavailableReason::ActiveTransaction;
+
+    /// Patch parts apply updates/deletes at read time and don't update the base part's
+    /// `serialization.json`, so the recorded `num_defaults` would be stale.
+    if (!getPatchPartsVectorForInternalUsage().empty())
+        return ColumnDefaultnessStatsUnavailableReason::PatchParts;
+
+    auto mutation_counters = getMutationCounters();
+
+    /// Pending data mutations can change values read on the fly, so the stat can
+    /// mismatch the post-mutation default semantics.
+    if (mutation_counters.num_data > 0)
+        return ColumnDefaultnessStatsUnavailableReason::DataMutations;
+
+    /// Pending alter mutations (e.g. `MODIFY COLUMN` with on-the-fly conversion) leave
+    /// `serialization.json` describing source-type defaults while reads return the new
+    /// type. The stat would mismatch the post-conversion default semantics.
+    if (mutation_counters.num_alter > 0)
+        return ColumnDefaultnessStatsUnavailableReason::AlterMutations;
+
+    /// Masking policies rewrite values at read time without touching `serialization.json`,
+    /// so the recorded `num_defaults` does not describe what the masked user reads.
+    if (hasEnabledMaskingPolicies(query_context))
+        return ColumnDefaultnessStatsUnavailableReason::MaskingPolicy;
+
+    return ColumnDefaultnessStatsUnavailableReason::None;
+}
+
+bool MergeTreeData::hasEnabledMaskingPolicies(const ContextPtr & query_context) const
+{
+#if CLICKHOUSE_CLOUD
+    auto storage_id = getStorageID();
+    if (!storage_id.hasDatabase())
+        return false;
+    auto masking_policies = query_context->getAccess()->getEnabledMaskingPolicies();
+    return masking_policies && masking_policies->hasPolicies(storage_id.getDatabaseName(), storage_id.getTableName());
+#else
+    /// Masking policies only exist in the Cloud build.
+    (void)query_context;
+    return false;
+#endif
+}
+
+const char * MergeTreeData::columnDefaultnessStatsUnavailableReasonToString(ColumnDefaultnessStatsUnavailableReason reason)
+{
+    switch (reason)
+    {
+        case ColumnDefaultnessStatsUnavailableReason::None: return "available";
+        case ColumnDefaultnessStatsUnavailableReason::ActiveTransaction: return "active transaction";
+        case ColumnDefaultnessStatsUnavailableReason::PatchParts: return "table has patch parts";
+        case ColumnDefaultnessStatsUnavailableReason::DataMutations: return "pending data mutations";
+        case ColumnDefaultnessStatsUnavailableReason::AlterMutations: return "pending alter mutations";
+        case ColumnDefaultnessStatsUnavailableReason::MaskingPolicy: return "table has a masking policy";
+    }
+    UNREACHABLE();
+}
+
+std::optional<IStorage::ColumnDefaultnessStats>
+MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr query_context) const
+{
+    auto unavailable_reason = getColumnDefaultnessStatsUnavailableReason(query_context);
+    if (unavailable_reason != ColumnDefaultnessStatsUnavailableReason::None)
+    {
+        LOG_DEBUG(
+            log,
+            "No defaultness stats for column {}: {}",
+            column_name,
+            columnDefaultnessStatsUnavailableReasonToString(unavailable_reason));
+        return std::nullopt;
+    }
+
+    ColumnDefaultnessStats aggregate;
+    for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
+    {
+        if (part->isEmpty())
+            continue;
+
+        const auto & infos = part->getSerializationInfos();
+        auto it = infos.find(column_name);
+        if (it == infos.end())
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: not present in serialization info of part {}", column_name, part->name);
+            return std::nullopt;
+        }
+
+        /// Pre-flag parts have a sampled `num_defaults` that can't be trusted.
+        const auto & info_data = it->second->getData();
+        if (!info_data.exact_num_defaults)
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: part {} was written without the exact_num_defaults flag", column_name, part->name);
+            return std::nullopt;
+        }
+
+        aggregate.num_rows += part->rows_count;
+        aggregate.num_defaults += info_data.num_defaults;
+    }
+    return aggregate;
+}
+
+MergeTreeData::DataPartsVector
+MergeTreeData::getActivePartsForColumnDefaultnessStats(ContextPtr query_context) const
+{
+    return getVisibleDataPartsVector(query_context);
+}
+
 size_t MergeTreeData::getActivePartsCount() const
 {
     return total_active_size_parts.load();
@@ -7145,13 +7349,7 @@ Pipe MergeTreeData::alterPartition(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
-    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-    /// must reject explicit partition mutations as well. Partition commands are dispatched here directly by
-    /// `InterpreterAlterQuery`, bypassing `StorageMergeTree::alter` / `assertNotReadonly`, so without this
-    /// gate a read-only table could still have its parts dropped, moved, attached, fetched, or replaced.
-    /// Operations that do not modify the table's data (`FREEZE`/`UNFREEZE` of a backup, `FORGET PARTITION`)
-    /// remain allowed, and the `table_readonly` setting itself can always be toggled back via
-    /// `ALTER ... MODIFY/RESET SETTING` (which goes through `alter`, not this path).
+    /// A read-only table must reject explicit partition mutations as well.
     if ((*getSettings())[MergeTreeSetting::table_readonly])
     {
         for (const PartitionCommand & command : commands)
@@ -9583,6 +9781,7 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
+        settings[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
@@ -10266,14 +10465,6 @@ bool MergeTreeData::scheduleDataProcessingJob(BackgroundJobsAssignee & /*assigne
 
 bool MergeTreeData::scheduleDataMovingJob(BackgroundJobsAssignee & assignee)
 {
-    /// A read-only table (the `table_readonly` MergeTree setting, used e.g. for rotated system log tables)
-    /// must not waste background CPU and I/O moving parts between volumes/disks, neither because of the
-    /// storage policy `move_factor` nor because of `TTL ... TO DISK/VOLUME` rules. Explicit
-    /// `ALTER TABLE ... MOVE` commands are rejected separately by `assertNotReadonly`; this only suppresses
-    /// the automatic background moves. The setting is sampled here, immediately before move selection and
-    /// scheduling, so the window against a concurrent `ALTER ... MODIFY SETTING table_readonly = 1` is
-    /// minimal; suppression of an already-selected move is best-effort and a single in-flight move that
-    /// slips through right at the moment the setting is published is harmless (see `scheduleDataProcessingJob`).
     if ((*getSettings())[MergeTreeSetting::table_readonly])
         return false;
 
@@ -11065,6 +11256,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
     {
         static_cast<double>((*getSettings())[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
+        (*getSettings())[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*getSettings())[MergeTreeSetting::serialization_info_version],
         (*getSettings())[MergeTreeSetting::string_serialization_version],
         (*getSettings())[MergeTreeSetting::nullable_serialization_version],
@@ -11328,6 +11520,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     {
         static_cast<double>((*settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         false,
+        (*settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*settings)[MergeTreeSetting::serialization_info_version],
         (*settings)[MergeTreeSetting::string_serialization_version],
         (*settings)[MergeTreeSetting::nullable_serialization_version],
