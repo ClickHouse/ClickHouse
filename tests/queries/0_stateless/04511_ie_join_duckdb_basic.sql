@@ -1,5 +1,5 @@
--- Ported from DuckDB test/sql/join/iejoin/test_iejoin.test.
--- The recursive CTE case is not ported: it only checks DuckDB-internal operator gating.
+-- Basic IEJoin scenarios: range conditions with extra inequalities, joins inside CTEs,
+-- range bucketing, and an IEJoin at the end of a chain of joins.
 
 SET allow_experimental_ie_join = 1;
 
@@ -18,8 +18,9 @@ sub AS (
 )
 SELECT min(lid), max(rid) FROM sub;
 
--- Bucketing a year of daily epochs into 40 ranges (the original uses a LEFT join; all buckets
--- are non-empty, so the INNER equivalent must produce the same aggregate)
+-- Bucketing a year of daily epochs into 40 ranges (the LEFT join variant is covered
+-- by test 04531; all buckets are non-empty, so the INNER equivalent here must produce
+-- the same aggregate)
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     WITH data_table AS (SELECT toInt64(1577836800 + number * 86400) AS ts FROM numbers(367)),
@@ -45,8 +46,7 @@ SELECT bucket, low, high, count() AS cnt
 FROM buckets JOIN data_table ON data_table.ts >= buckets.low AND data_table.ts < buckets.high
 GROUP BY bucket, low, high ORDER BY bucket;
 
--- DuckDB internal issue 5197: a chain of an equality join (empty result), a cross join
--- and an inequality join must not break
+-- A chain of an equality join (empty result), a cross join and an inequality join must not break
 DROP TABLE IF EXISTS test_big;
 DROP TABLE IF EXISTS test_small;
 CREATE TABLE test_big ENGINE = MergeTree ORDER BY i AS SELECT toInt64(number) AS i, toInt64(number + 100000) AS j, 'hello' AS k FROM numbers(20000);

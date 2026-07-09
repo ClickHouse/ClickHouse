@@ -1,14 +1,16 @@
 #pragma once
 
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/Transforms/IEJoinTransform.h>
 
 namespace DB
 {
 
-/// Joins two data streams by two inequality conditions with the IEJoin algorithm
-/// (see `IEJoinTransform`). Inputs are consumed unsorted; the output is the concatenation
-/// of the left and right input columns.
+/// Joins two data streams by two inequality conditions with the IEJoin algorithm.
+/// The step speaks the query terms: conditions and join type refer to the query's left and
+/// right tables. Right-side SEMI/ANTI are executed as the left-side mirror internally: the
+/// step swaps the input pipelines, reverses the operators, and restores the column order.
 class IEJoinStep : public IQueryPlanStep
 {
 public:
@@ -16,7 +18,13 @@ public:
         const SharedHeader & left_header_,
         const SharedHeader & right_header_,
         IEJoinConditions conditions_,
+        JoinKind kind_,
+        JoinStrictness strictness_,
+        bool inputs_sorted_by_first_key_,
         size_t max_block_size_);
+
+    /// Whether the step can execute this join type.
+    static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
     String getName() const override { return "IEJoin"; }
 
@@ -32,7 +40,17 @@ private:
 
     String formatConditions() const;
 
+    /// Conditions in the query orientation (`left` refers to the query's left table).
     IEJoinConditions conditions;
+
+    /// The executed join type and whether to swap the input pipelines for it,
+    /// derived from the query kind/strictness.
+    IEJoinKind kind = IEJoinKind::Inner;
+    bool swap_inputs = false;
+
+    /// The planner pre-sorted each input by its first-condition key with a `SortingStep`
+    /// (always ascending, NULLS LAST); selects the merge-based L1 build in the operator.
+    bool inputs_sorted_by_first_key;
     size_t max_block_size;
 };
 

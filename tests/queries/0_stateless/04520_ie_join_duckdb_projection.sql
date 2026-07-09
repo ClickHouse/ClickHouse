@@ -1,7 +1,5 @@
--- Ported from DuckDB test/sql/join/iejoin/iejoin_projection_maps.test_slow: only a subset
--- of the columns is selected from the join, so the unused ones must be pruned correctly.
--- The original relies on seeded `random()` and DuckDB-internal projection maps; here the data
--- is deterministic and the result is compared with the cross join with a filter.
+-- Only a subset of the columns is selected from the join, so the unused ones must be pruned
+-- correctly; results are verified against the same query with IEJoin disabled.
 
 SET allow_experimental_ie_join = 1;
 
@@ -23,7 +21,7 @@ SELECT (
     SETTINGS allow_experimental_ie_join = 0
 );
 
--- The same with an aggregation on top, as in the original
+-- The same with an aggregation on top
 SELECT (
     SELECT groupArray((id2, id3, s)) FROM (SELECT l.id2 AS id2, r.id3 AS id3, sum(l.v * r.v) AS s FROM df l JOIN df r ON l.id3 > r.id3 AND l.id3 < r.id3 + 3 GROUP BY id2, id3 ORDER BY id2, id3)
 ) = (

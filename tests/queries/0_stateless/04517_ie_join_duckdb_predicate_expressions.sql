@@ -1,5 +1,4 @@
--- Ported from DuckDB test/sql/join/iejoin/predicate_expressions.test:
--- join conditions that are expressions (`ifNull` over a nullable range end), an SCD2-style
+-- Join conditions that are expressions (`ifNull` over a nullable range end), an SCD2-style
 -- range aggregation, and both orders of the two range conditions.
 -- Each result is compared with the cross join with a filter (`allow_experimental_ie_join = 0`).
 

@@ -1,6 +1,6 @@
--- Ported from DuckDB test/sql/join/iejoin/test_iejoin_events.test: the interval overlap
--- query Q2 from the IEJoin paper. The original uses seeded `random()`; here the events are
--- derived deterministically and the results are compared with the cross join with a filter.
+-- Interval overlap self-join, query Q2 from the IEJoin paper (Khayyat et al., PVLDB 8(13)),
+-- over deterministically derived events; results are verified against the same query with
+-- IEJoin disabled.
 
 SET allow_experimental_ie_join = 1;
 
@@ -23,8 +23,7 @@ SELECT (
     SETTINGS allow_experimental_ie_join = 0
 );
 
--- With the additional `<>` condition of the original query (three conditions fall back,
--- the result must stay correct)
+-- With an additional `<>` condition (three conditions fall back, the result must stay correct)
 SELECT (
     SELECT (count(), sum(cityHash64(r.id, s2.id))) FROM events r JOIN events s2 ON r.s <= s2.e AND r.e >= s2.s AND r.id <> s2.id
 ) = (

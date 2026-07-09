@@ -1,7 +1,10 @@
--- INNER count of a large timestamp `BETWEEN` band join (167137 x 158 rows, `DateTime64(6)`
--- keys) at full size. The LEFT/RIGHT/FULL variants are checked in 04527.
+-- LEFT/RIGHT/FULL counts of a large timestamp `BETWEEN` band join (167137 x 158 rows,
+-- `DateTime64(6)` keys) at full size, using the same fixture as 04521.
+-- `join_use_nulls = 1` is required: `count(flag_desc)`/`count(ts)` count non-NULL values, so
+-- unmatched rows must be padded with NULLs, not defaults.
 
 SET allow_experimental_ie_join = 1;
+SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS ota;
 DROP TABLE IF EXISTS flags;
@@ -172,14 +175,13 @@ INSERT INTO flags VALUES
     ('2023-01-10 21:49:02.442825','2023-01-26 21:10:04.737504','legacy','2/0'),
     ('2023-02-10 20:18:13.432147','2023-02-13 15:22:40.650655','legacy','2/11');
 
-SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM ota JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop) WHERE explain LIKE '%IEJoin%';
-SELECT count() FROM ota JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop;
-SELECT (
-    SELECT count() FROM ota JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop
-) = (
-    SELECT count() FROM ota JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop
-    SETTINGS allow_experimental_ie_join = 0
-);
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT ota.ts, flags.flag_desc FROM ota LEFT JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT ota.ts, flags.flag_desc FROM ota RIGHT JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT ota.ts, flags.flag_desc FROM ota FULL JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop) WHERE explain LIKE '%IEJoin%';
+
+SELECT count(), count(ts), count(flag_desc) FROM (SELECT ota.ts AS ts, flags.flag_desc AS flag_desc FROM ota LEFT JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop);
+SELECT count(), count(ts), count(flag_desc) FROM (SELECT ota.ts AS ts, flags.flag_desc AS flag_desc FROM ota RIGHT JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop);
+SELECT count(), count(ts), count(flag_desc) FROM (SELECT ota.ts AS ts, flags.flag_desc AS flag_desc FROM ota FULL JOIN flags ON ota.ts BETWEEN flags.start AND flags.stop);
 
 DROP TABLE ota;
 DROP TABLE flags;

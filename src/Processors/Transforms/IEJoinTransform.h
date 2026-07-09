@@ -1,8 +1,9 @@
 #pragma once
 
 #include <array>
-#include <memory>
 
+#include <Columns/ColumnsNumber.h>
+#include <Columns/IColumn.h>
 #include <Core/Block_fwd.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Processors/Chunk.h>
@@ -25,20 +26,23 @@ struct IEJoinCondition
     size_t keyPosition(size_t side) const { return side == 0 ? left_key_position : right_key_position; }
 };
 
+/// The join types the IEJoin operator executes. There are no right-side SEMI/ANTI:
+/// `IEJoinStep` executes them as the left-side mirror with swapped inputs and reversed operators.
+enum class IEJoinKind : uint8_t
+{
+    Inner,
+    Left,
+    Right,
+    Full,
+    LeftSemi,
+    LeftAnti,
+};
+
+const char * toString(IEJoinKind kind);
+
 /// The two conditions `left.x op1 right.x AND left.y op2 right.y` executed by the IEJoin
 /// algorithm: the first condition defines the L1 order, the second the L2 order.
-struct IEJoinConditions
-{
-    std::array<IEJoinCondition, 2> conditions;
-
-    /// Set by the planner when it inserted a `SortingStep` over the first condition's key
-    /// (always ascending, NULLS LAST) on each input. Selects the merge-based L1 build in the
-    /// operator; with the flag off the operator orders the union itself with an index sort.
-    bool inputs_sorted_by_first_key = false;
-
-    IEJoinCondition & operator[](size_t index) { return conditions[index]; }
-    const IEJoinCondition & operator[](size_t index) const { return conditions[index]; }
-};
+using IEJoinConditions = std::array<IEJoinCondition, 2>;
 
 /*
  * Joins two fully materialized streams by two inequality conditions
@@ -55,7 +59,12 @@ struct IEJoinConditions
 class IEJoinAlgorithm final : public IMergingAlgorithm
 {
 public:
-    IEJoinAlgorithm(const IEJoinConditions & conditions, const SharedHeaders & input_headers_, size_t max_block_size_);
+    IEJoinAlgorithm(
+        IEJoinKind kind_,
+        const IEJoinConditions & conditions_,
+        bool inputs_sorted_by_first_key_,
+        const SharedHeaders & input_headers_,
+        size_t max_block_size_);
 
     const char * getName() const override { return "IEJoinAlgorithm"; }
     void initialize(Inputs inputs) override;
@@ -65,7 +74,8 @@ public:
     MergedStats getMergedStats() const override;
 
 private:
-    /// Materialize both sides, drop rows with NULL keys, sort the union, build Li/P and the bit array.
+    /// Materialize both sides, sort the union (skipping rows with NULL keys), build Li/P and
+    /// the bit array.
     void buildJoinState();
 
     /// Compare key values (key_index: 0 for L1 keys, 1 for L2 keys) of two union entries.
@@ -79,8 +89,24 @@ private:
     /// Returns false when L2 is exhausted.
     bool nextLeftRow();
 
-    /// Emit up to max_block_size result pairs. Resumable: sets produce_done when everything is emitted.
+    /// Whether the side's unmatched rows are emitted in a post-phase;
+    /// exactly these sides get a matched bitmap filled by the pair scan.
+    bool sideNeedsUnmatchedRows(size_t side) const;
+
+    /// Emit up to max_block_size rows: the pair scan first, then the unmatched rows of the
+    /// sides that need them; sets produce_done when everything is emitted.
     Chunk produceBatch();
+    /// Run the pair scan and fill up to max_block_size rows per the join kind. Returns true
+    /// when the scan is exhausted; an empty chunk alone is not a completion signal.
+    bool producePairsBatch(Chunk & chunk);
+    /// Fill up to max_block_size rows of the side without a set bit in the matched bitmap,
+    /// padding the other side. Returns true when all rows of the side were examined.
+    bool produceUnmatchedBatch(size_t side, Chunk & chunk);
+
+    /// Append the side's columns gathered by `indexes`.
+    void appendGathered(Chunk & chunk, size_t side, const ColumnUInt64 & indexes) const;
+    /// Append `num_rows` default values of the side's column types (NULL for a Nullable type).
+    void appendPadded(Chunk & chunk, size_t side, size_t num_rows) const;
 
     void setBit(size_t pos);
     bool testBit(size_t pos) const;
@@ -92,6 +118,9 @@ private:
     /// Check that the bit array is exactly {right-side entries whose L2 key qualifies
     /// against the current left entry} (debug builds, small inputs only).
     void checkFrontierInvariant() const;
+    /// Check at the end of emission that every filtered row of each post-phase side ended up
+    /// exactly one of matched/unmatched (debug builds).
+    void checkFinalInvariants() const;
 #ifndef NDEBUG
     /// With `inputs_sorted_by_first_key` the operator trusts the upstream order; check that an
     /// input chunk is ordered by the first condition's key, also against the previous chunk of
@@ -102,7 +131,12 @@ private:
     SharedHeaders input_headers;
     size_t max_block_size;
 
+    IEJoinKind kind;
     IEJoinConditions conditions;
+    /// The inputs are each sorted by the first condition's key (ascending, NULLS LAST):
+    /// selects the merge-based L1 build; with the flag off the operator orders the union
+    /// itself with an index sort.
+    bool inputs_sorted_by_first_key;
 
     std::array<Chunks, 2> accumulated_chunks;
     std::array<bool, 2> source_finished = {false, false};
@@ -114,8 +148,11 @@ private:
 
     /// Populated by buildJoinState:
 
-    /// All columns of each side with NULL-key rows removed. Result rows are gathered from them.
+    /// All columns of each side, result rows are gathered from them.
     std::array<Columns, 2> side_columns;
+
+    /// One byte per row of the side, set by the pair scan; allocated only for sides that need it
+    std::array<IColumn::Filter, 2> matched;
 
     /// Both sides' key column of one condition, prepared for comparisons
     /// (from `side_columns`, with `LowCardinality` stripped).
@@ -156,6 +193,11 @@ private:
     Int64 current_left_rid = 0;
     bool has_current_left = false;
 
+    /// Post-phase state, per side: the row cursor and the number of unmatched rows emitted
+    /// (for the final invariant check).
+    std::array<size_t, 2> unmatched_row_cursor = {0, 0};
+    std::array<size_t, 2> unmatched_emitted = {0, 0};
+
     struct Statistic
     {
         size_t num_blocks[2] = {0, 0};
@@ -171,7 +213,9 @@ class IEJoinTransform final : public IMergingTransform<IEJoinAlgorithm>
 
 public:
     IEJoinTransform(
+        IEJoinKind kind,
         const IEJoinConditions & conditions,
+        bool inputs_sorted_by_first_key,
         SharedHeaders & input_headers,
         SharedHeader output_header,
         size_t max_block_size,

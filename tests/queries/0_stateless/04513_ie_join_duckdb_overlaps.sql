@@ -1,5 +1,4 @@
--- Ported from DuckDB test/sql/join/iejoin/test_iejoin_overlaps.test:
--- non-overlapping ranges must produce an empty result with both orders of the conditions
+-- Non-overlapping ranges must produce an empty result with both orders of the conditions
 -- (the second order exercises the short circuit on the second condition).
 
 SET allow_experimental_ie_join = 1;

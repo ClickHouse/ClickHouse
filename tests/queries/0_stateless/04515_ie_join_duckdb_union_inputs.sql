@@ -1,4 +1,3 @@
--- Ported from DuckDB test/sql/join/iejoin/iejoin_issue_7278.test (their issue #7278):
 -- IEJoin over inputs assembled with UNION ALL (multiple upstream streams).
 
 SET allow_experimental_ie_join = 1;

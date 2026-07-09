@@ -1,6 +1,5 @@
--- Ported from DuckDB test/sql/join/iejoin/test_iejoin_sort_tasks.test_slow, scaled down
--- from 10M to 200k rows per side: two adjacent ranges of unit intervals with exactly one
--- matching pair at the boundary.
+-- Two adjacent ranges of unit intervals (200k rows per side) with exactly one matching
+-- pair at the boundary.
 
 SET allow_experimental_ie_join = 1;
 

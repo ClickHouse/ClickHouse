@@ -1,8 +1,8 @@
--- Golden test for the IEJoin algorithm: edge cases.
+-- IEJoin edge cases: empty, single-row and NULL-key inputs, boundary row positions,
+-- block-size-aligned output, and shapes that must fall back to other join algorithms.
 
 SET allow_experimental_ie_join = 1;
 
--- Make sure this query shape is executed by IEJoin
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT count()

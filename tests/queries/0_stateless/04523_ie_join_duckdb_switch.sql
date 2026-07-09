@@ -1,6 +1,5 @@
--- Ported from DuckDB test/sql/join/iejoin/merge_join_switch.test: switching between join
--- algorithms. ClickHouse has no size thresholds for IEJoin yet, so the ported part checks
--- switching by the setting and that a null-safe equality keeps the join on the hash path.
+-- Switching between join algorithms: there are no size thresholds for IEJoin yet, so the
+-- switch is controlled by the setting; a null-safe equality keeps the join on the hash path.
 
 SET allow_experimental_ie_join = 1;
 

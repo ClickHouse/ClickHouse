@@ -1,9 +1,8 @@
--- Golden test for the IEJoin algorithm: band join `a.t >= b.t_lo AND a.t <= b.t_hi`
--- with `a.t = 0..N-1` and `b = [k, k+5]` for `k = 0..N-1` must produce exactly `6 * N - 15` pairs.
+-- Band join `a.t >= b.t_lo AND a.t <= b.t_hi` with `a.t = 0..N-1` and `b = [k, k+5]`
+-- for `k = 0..N-1` must produce exactly `6 * N - 15` pairs.
 
 SET allow_experimental_ie_join = 1;
 
--- Make sure the query is executed by IEJoin
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT count()

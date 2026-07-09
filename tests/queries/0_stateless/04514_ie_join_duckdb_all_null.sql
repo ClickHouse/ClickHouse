@@ -1,5 +1,4 @@
--- Ported from DuckDB test/sql/join/iejoin/iejoin_issue_6861.test (their issue #6861):
--- empty and all-NULL inputs with `a.x BETWEEN b.x AND b.x` must not read out of bounds.
+-- Empty and all-NULL inputs with `a.x BETWEEN b.x AND b.x` must not read out of bounds.
 
 SET allow_experimental_ie_join = 1;
 

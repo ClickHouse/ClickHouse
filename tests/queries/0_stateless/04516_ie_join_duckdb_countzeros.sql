@@ -1,8 +1,7 @@
--- Ported from DuckDB test/sql/join/iejoin/test_countzeros.test:
--- a 100k self-join of one-second states where every row matches exactly itself,
+-- A 100k self-join of one-second states where every row matches exactly itself,
 -- exercising the boundary of the word-level scan over the match bit array.
--- The original also has an equality on `k`; with the equality the join has a hash key
--- and is not executed by IEJoin, so both variants are checked.
+-- With an additional equality on `k` the join has a hash key and is not executed
+-- by IEJoin, so both variants are checked.
 
 SET allow_experimental_ie_join = 1;
 

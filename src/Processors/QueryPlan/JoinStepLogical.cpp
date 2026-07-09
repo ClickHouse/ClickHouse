@@ -813,22 +813,9 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
     return has_join_predicates;
 }
 
-static JoinConditionOperator reverseInequalityOperator(JoinConditionOperator op)
-{
-    switch (op)
-    {
-        case JoinConditionOperator::Less: return JoinConditionOperator::Greater;
-        case JoinConditionOperator::Greater: return JoinConditionOperator::Less;
-        case JoinConditionOperator::LessOrEquals: return JoinConditionOperator::GreaterOrEquals;
-        case JoinConditionOperator::GreaterOrEquals: return JoinConditionOperator::LessOrEquals;
-        default:
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot reverse operator {}", toString(op));
-    }
-}
-
-/// Two inequality conditions extracted from the JOIN ON expression for the IEJoin algorithm.
-/// Key names refer to the outputs of the pre-join actions; they are used only inside the planner
-/// to resolve the key positions for `IEJoinStep`.
+/// Two inequality conditions extracted from the JOIN ON expression for the IEJoin algorithm,
+/// in the query orientation. Key names refer to the outputs of the pre-join actions; they are
+/// used only inside the planner to resolve the key positions for `IEJoinStep`.
 struct IEJoinPlanDescription
 {
     Names key_names_left;
@@ -848,16 +835,21 @@ static std::optional<IEJoinPlanDescription> tryExtractIEJoinDescription(
     const JoinSettings & join_settings,
     const JoinPlanningContext & planning_context)
 {
-    if (join_operator.kind != JoinKind::Inner || join_operator.strictness != JoinStrictness::All)
+    IEJoinPlanDescription description;
+
+    if (!IEJoinStep::isSupportedJoinType(join_operator.kind, join_operator.strictness))
         return {};
 
     if (planning_context.is_storage_join)
         return {};
 
+    /// FIXME:
+    /// For non-INNER kinds the ON conditions affect matching (unmatched rows are emitted padded,
+    /// not dropped), so requiring exactly two conjuncts is semantic: an extra conjunct cannot be
+    /// split off into a filter over the join result, that is only equivalent for INNER.
     if (join_expression.size() != 2)
         return {};
 
-    IEJoinPlanDescription description;
     std::vector<std::pair<JoinActionRef, JoinActionRef>> keys;
     for (size_t i = 0; i < 2; ++i)
     {
@@ -1173,6 +1165,8 @@ static void constructIEJoinStep(
     ActionsDAG post_join_actions,
     std::pair<String, bool> residual_filter_condition,
     IEJoinPlanDescription description,
+    JoinKind kind,
+    JoinStrictness strictness,
     const JoinSettings & join_settings,
     const SortingStep::Settings & sort_settings,
     size_t max_step_description_length,
@@ -1188,15 +1182,12 @@ static void constructIEJoinStep(
 
     makeExpressionNodeOnTopOf(*join_right_node, std::move(right_pre_join_actions), nodes, makeDescription("Right Pre Join Actions"));
 
-    /// Pre-sort each input by its first-condition key, so that the operator builds the L1 order
+    /// Pre-sort each input by its first-condition key: the operator then builds the L1 order
     /// with an O(n) merge of two sorted runs instead of sorting the whole union. The sort is
-    /// always ascending with NULLS LAST regardless of the operator: a descending L1 order is
-    /// produced by iterating the materialized inputs backwards inside the operator, and an
-    /// ascending sort keeps read-in-order in forward-read mode (`optimizeReadInOrder` turns the
-    /// sort into `FinishSorting` or elides it when the table is already ordered by the key).
-    /// Which condition gets the plan-level sort is a planner degree of freedom (sorting by
-    /// whichever key matches the table's `ORDER BY` makes elision more likely); fixed to the
-    /// first condition for now.
+    /// always ascending with NULLS LAST regardless of the operator (a descending L1 iterates
+    /// the materialized inputs backwards), which lets `optimizeReadInOrder` relax or elide it
+    /// when the table is already ordered by the key. Which condition gets the sort is a
+    /// planner degree of freedom; fixed to the first condition for now.
     auto add_sorting = [&](QueryPlan::Node *& sort_node, const String & key_name, JoinTableSide join_table_side)
     {
         SortDescription sort_description;
@@ -1221,9 +1212,10 @@ static void constructIEJoinStep(
         conditions[i].left_key_position = left_header->getPositionByName(description.key_names_left[i]);
         conditions[i].right_key_position = right_header->getPositionByName(description.key_names_right[i]);
     }
-    conditions.inputs_sorted_by_first_key = true;
 
-    node.step = std::make_unique<IEJoinStep>(left_header, right_header, conditions, join_settings.max_block_size);
+    node.step = std::make_unique<IEJoinStep>(
+        left_header, right_header, conditions, kind, strictness,
+        /*inputs_sorted_by_first_key=*/ true, join_settings.max_block_size);
 
     node.children = {join_left_node, join_right_node};
 
@@ -1583,7 +1575,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
         constructIEJoinStep(
             node, std::move(left_dag), std::move(right_dag), std::move(residual_dag),
             std::make_pair(ie_residual_filter_condition_name, can_remove_residual_filter),
-            std::move(*ie_join_description), join_settings, sorting_settings,
+            std::move(*ie_join_description), join_operator.kind, join_operator.strictness,
+            join_settings, sorting_settings,
             optimization_settings.max_step_description_length, nodes);
         return node;
     }

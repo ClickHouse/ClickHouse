@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <bit>
+#include <optional>
 
 #include <base/defines.h>
 #include <base/sort.h>
@@ -26,15 +27,35 @@ static bool isInequalityOperator(JoinConditionOperator op)
         || op == JoinConditionOperator::Greater || op == JoinConditionOperator::GreaterOrEquals;
 }
 
-IEJoinAlgorithm::IEJoinAlgorithm(const IEJoinConditions & conditions_, const SharedHeaders & input_headers_, size_t max_block_size_)
+const char * toString(IEJoinKind kind)
+{
+    switch (kind)
+    {
+        case IEJoinKind::Inner: return "INNER";
+        case IEJoinKind::Left: return "LEFT";
+        case IEJoinKind::Right: return "RIGHT";
+        case IEJoinKind::Full: return "FULL";
+        case IEJoinKind::LeftSemi: return "LEFT SEMI";
+        case IEJoinKind::LeftAnti: return "LEFT ANTI";
+    }
+}
+
+IEJoinAlgorithm::IEJoinAlgorithm(
+    IEJoinKind kind_,
+    const IEJoinConditions & conditions_,
+    bool inputs_sorted_by_first_key_,
+    const SharedHeaders & input_headers_,
+    size_t max_block_size_)
     : input_headers(input_headers_)
     , max_block_size(std::max<size_t>(1, max_block_size_))
+    , kind(kind_)
     , conditions(conditions_)
+    , inputs_sorted_by_first_key(inputs_sorted_by_first_key_)
 {
     if (input_headers.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "IEJoinAlgorithm requires exactly two inputs");
 
-    for (const auto & condition : conditions.conditions)
+    for (const auto & condition : conditions)
     {
         if (!isInequalityOperator(condition.op))
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected operator in IEJoin condition: {}", toString(condition.op));
@@ -83,7 +104,7 @@ void IEJoinAlgorithm::consume(Input & input, size_t source_num)
     if (input.chunk.getNumRows() > 0)
     {
 #ifndef NDEBUG
-        if (conditions.inputs_sorted_by_first_key)
+        if (inputs_sorted_by_first_key)
             checkInputChunkOrder(input.chunk, source_num);
 #endif
         accumulated_chunks[source_num].push_back(std::move(input.chunk));
@@ -116,6 +137,13 @@ int IEJoinAlgorithm::compareKeysAt(size_t key_index, size_t union_a, size_t unio
     return keys.bySide(side_a)->compareAt(row_a, row_b, *keys.bySide(side_b), /* nan_direction_hint */ 1);
 }
 
+bool IEJoinAlgorithm::sideNeedsUnmatchedRows(size_t side) const
+{
+    if (side == 0)
+        return kind == IEJoinKind::Left || kind == IEJoinKind::Full || kind == IEJoinKind::LeftAnti;
+    return kind == IEJoinKind::Right || kind == IEJoinKind::Full;
+}
+
 bool IEJoinAlgorithm::frontierAdvances(size_t l2_from, size_t l2_current) const
 {
     const auto op2 = conditions[1].op;
@@ -133,6 +161,10 @@ bool IEJoinAlgorithm::frontierAdvances(size_t l2_from, size_t l2_current) const
 void IEJoinAlgorithm::buildJoinState()
 {
     join_state_built = true;
+
+    /// Byte mask of the rows with non-NULL keys per side; left empty when every row is valid.
+    std::array<IColumn::Filter, 2> valid_mask;
+    std::array<size_t, 2> num_valid_rows = {0, 0};
 
     for (size_t side = 0; side < 2; ++side)
     {
@@ -196,9 +228,10 @@ void IEJoinAlgorithm::buildJoinState()
                 comparison_keys[key_index] = columns[conditions[key_index].keyPosition(side)]->convertToFullColumnIfLowCardinality();
         }
 
-        /// Exclude rows with NULL in any key from the union entirely: a NULL fails every inequality,
-        /// so such rows cannot produce matches (the join is INNER).
-        IColumn::Filter non_null_filter;
+        /// Rows with NULL in any key never enter the union: a NULL fails every inequality, so
+        /// they cannot produce matches. The rows stay in `side_columns`, their matched bits are
+        /// never set, and the post-phases emit them as unmatched naturally.
+        auto & valid = valid_mask[side];
         for (size_t key_index = 0; key_index < (side_key_shared ? 1u : 2u); ++key_index)
         {
             const auto & key = comparison_keys[key_index];
@@ -207,27 +240,30 @@ void IEJoinAlgorithm::buildJoinState()
                 continue;
 
             const auto & null_map = nullable->getNullMapData();
-            if (non_null_filter.empty())
-                non_null_filter.resize_fill(rows, 1);
+            if (valid.empty())
+                valid.resize_fill(rows, 1);
             for (size_t row = 0; row < rows; ++row)
-                non_null_filter[row] &= !null_map[row];
+                valid[row] &= !null_map[row];
         }
 
-        if (!non_null_filter.empty() && countBytesInFilter(non_null_filter) != rows)
+        num_valid_rows[side] = rows;
+        if (!valid.empty())
         {
-            for (auto & column : columns)
-                column = column->filter(non_null_filter, -1);
-            comparison_keys[0] = comparison_keys[0]->filter(non_null_filter, -1);
-            comparison_keys[1] = side_key_shared ? comparison_keys[0] : comparison_keys[1]->filter(non_null_filter, -1);
+            num_valid_rows[side] = countBytesInFilter(valid);
+            if (num_valid_rows[side] == rows)
+                valid.clear();
         }
 
         side_columns[side] = std::move(columns);
         for (size_t key_index = 0; key_index < 2; ++key_index)
             key_columns[key_index].bySide(side) = std::move(comparison_keys[key_index]);
-        num_side_rows[side] = side_columns[side].empty() ? 0 : side_columns[side].front()->size();
+        num_side_rows[side] = rows;
+
+        if (sideNeedsUnmatchedRows(side))
+            matched[side].resize_fill(num_side_rows[side], 0);
     }
 
-    n_union = num_side_rows[0] + num_side_rows[1];
+    n_union = num_valid_rows[0] + num_valid_rows[1];
 
     const auto op1 = conditions[0].op;
     const bool l1_descending = op1 == JoinConditionOperator::Greater || op1 == JoinConditionOperator::GreaterOrEquals;
@@ -255,38 +291,50 @@ void IEJoinAlgorithm::buildJoinState()
     /// L1: the union of both sides in the L1 order, so that for any two entries the one at the
     /// higher position satisfies the condition with respect to the lower one.
     l1_union.resize(n_union);
-    if (conditions.inputs_sorted_by_first_key)
+    if (inputs_sorted_by_first_key)
     {
-        /// Each input arrives pre-sorted ascending by its first-condition key (NULL-key rows were
-        /// filtered above, which preserves order), so L1 is a two-way merge. A descending L1
-        /// iterates both materialized sides backwards: the direction is just a view over the
-        /// sorted input. The tie policy is stated in terms of final L1 positions, so it is
-        /// independent of the iteration direction; the order within a run of equal keys on one
-        /// side is irrelevant.
-        const size_t num_left = num_side_rows[0];
-        const size_t num_right = num_side_rows[1];
-        auto left_entry = [&](size_t index) -> UInt64 { return l1_descending ? num_left - 1 - index : index; };
-        auto right_entry = [&](size_t index) -> UInt64 { return num_left + (l1_descending ? num_right - 1 - index : index); };
+        /// Each input arrives pre-sorted ascending by its first-condition key (skipping NULL-key
+        /// rows keeps the order), so L1 is a two-way merge. A descending L1 iterates both
+        /// materialized sides backwards: the direction is just a view over the sorted input.
+        /// The tie policy is stated in terms of final L1 positions, so it is independent of the
+        /// iteration direction; the order within a run of equal keys on one side is irrelevant.
+        const Int64 step = l1_descending ? -1 : 1;
+        std::array<Int64, 2> cursor;
+        auto in_range = [&](size_t side) { return cursor[side] >= 0 && cursor[side] < static_cast<Int64>(num_side_rows[side]); };
+        /// Advance the cursor to a row with non-NULL keys in the iteration direction.
+        auto skip_invalid = [&](size_t side)
+        {
+            if (valid_mask[side].empty())
+                return;
+            while (in_range(side) && !valid_mask[side][cursor[side]])
+                cursor[side] += step;
+        };
+        for (size_t side = 0; side < 2; ++side)
+        {
+            cursor[side] = l1_descending ? static_cast<Int64>(num_side_rows[side]) - 1 : 0;
+            skip_invalid(side);
+        }
 
         size_t out = 0;
-        size_t left_taken = 0;
-        size_t right_taken = 0;
-        while (left_taken < num_left && right_taken < num_right)
+        auto take = [&](size_t side)
         {
-            int cmp = compareKeysAt(0, left_entry(left_taken), right_entry(right_taken));
+            l1_union[out++] = (side ? num_side_rows[0] : 0) + cursor[side];
+            cursor[side] += step;
+            skip_invalid(side);
+        };
+        while (in_range(0) && in_range(1))
+        {
+            int cmp = compareKeysAt(0, cursor[0], num_side_rows[0] + cursor[1]);
             if (l1_descending)
                 cmp = -cmp;
             /// On equal keys a loose condition pulls the left entry first, a strict one the right.
             bool take_left = cmp != 0 ? cmp < 0 : !op1_strict;
-            if (take_left)
-                l1_union[out++] = left_entry(left_taken++);
-            else
-                l1_union[out++] = right_entry(right_taken++);
+            take(take_left ? 0 : 1);
         }
-        while (left_taken < num_left)
-            l1_union[out++] = left_entry(left_taken++);
-        while (right_taken < num_right)
-            l1_union[out++] = right_entry(right_taken++);
+        while (in_range(0))
+            take(0);
+        while (in_range(1))
+            take(1);
         chassert(out == n_union);
 
 #ifndef NDEBUG
@@ -297,7 +345,15 @@ void IEJoinAlgorithm::buildJoinState()
     }
     else
     {
-        iota(l1_union.data(), n_union, UInt64(0));
+        size_t out = 0;
+        for (size_t side = 0; side < 2; ++side)
+        {
+            const size_t offset = side ? num_side_rows[0] : 0;
+            for (size_t row = 0; row < num_side_rows[side]; ++row)
+                if (valid_mask[side].empty() || valid_mask[side][row])
+                    l1_union[out++] = offset + row;
+        }
+        chassert(out == n_union);
         ::sort(l1_union.begin(), l1_union.end(), l1_order_less);
     }
 
@@ -325,42 +381,52 @@ void IEJoinAlgorithm::buildJoinState()
     };
 
     permutation.resize(n_union);
-    const bool left_key_shared = conditions[0].left_key_position == conditions[1].left_key_position;
-    if (left_key_shared && l1_descending == l2_descending)
+    /// The side whose entries are already in L2 order within L1 order: it reads the same column
+    /// in both conditions and the operator families are opposite - exactly then the L1 and L2
+    /// directions coincide (entries with equal first keys have equal second keys). This is the
+    /// `x BETWEEN a AND b` shape with `x` on either side of the join.
+    std::optional<size_t> in_order_side;
+    if (l1_descending == l2_descending)
     {
-        /// `x BETWEEN a AND b` shapes: both left conditions read the same column, and the
-        /// operator families are opposite - exactly then the L1 and L2 directions coincide, so
-        /// the left entries are already in L2 order within L1 order (entries with equal first
-        /// keys have equal second keys). Build L2 by sorting only the right entries by the
-        /// second key and merging the two runs, instead of sorting the whole union.
-        PaddedPODArray<UInt64> right_positions;
-        right_positions.reserve(num_side_rows[1]);
-        size_t num_left_positions = 0;
+        if (conditions[0].left_key_position == conditions[1].left_key_position)
+            in_order_side = 0;
+        else if (conditions[0].right_key_position == conditions[1].right_key_position)
+            in_order_side = 1;
+    }
+
+    if (in_order_side)
+    {
+        /// Build L2 by sorting only the other side's entries by the second key and merging the
+        /// two runs, instead of sorting the whole union.
+        const bool in_order_from_left = *in_order_side == 0;
+        PaddedPODArray<UInt64> sorted_positions;
+        sorted_positions.reserve(num_valid_rows[1 - *in_order_side]);
+        size_t num_in_order = 0;
         for (size_t pos = 0; pos < n_union; ++pos)
         {
-            if (li[pos] > 0)
-                permutation[num_left_positions++] = pos;
+            if ((li[pos] > 0) == in_order_from_left)
+                permutation[num_in_order++] = pos;
             else
-                right_positions.push_back(pos);
+                sorted_positions.push_back(pos);
         }
-        chassert(num_left_positions == num_side_rows[0]);
-        ::sort(right_positions.begin(), right_positions.end(), l2_order_less);
+        chassert(num_in_order == num_valid_rows[*in_order_side]);
+        ::sort(sorted_positions.begin(), sorted_positions.end(), l2_order_less);
 
-        /// Merge the two runs in place from the back; a prefix of the left run that is never
+        /// Merge the two runs in place from the back; a prefix of the in-order run that is never
         /// displaced stays where it is.
-        size_t left_remaining = num_left_positions;
-        size_t right_remaining = right_positions.size();
+        size_t in_order_remaining = num_in_order;
+        size_t sorted_remaining = sorted_positions.size();
         size_t write = n_union;
-        while (left_remaining > 0 && right_remaining > 0)
+        while (in_order_remaining > 0 && sorted_remaining > 0)
         {
-            if (l2_order_less(permutation[left_remaining - 1], right_positions[right_remaining - 1]))
-                permutation[--write] = right_positions[--right_remaining];
+            if (l2_order_less(permutation[in_order_remaining - 1], sorted_positions[sorted_remaining - 1]))
+                permutation[--write] = sorted_positions[--sorted_remaining];
             else
-                permutation[--write] = permutation[--left_remaining];
+                permutation[--write] = permutation[--in_order_remaining];
         }
-        while (right_remaining > 0)
-            permutation[--write] = right_positions[--right_remaining];
-        chassert(write == left_remaining);
+        while (sorted_remaining > 0)
+            permutation[--write] = sorted_positions[--sorted_remaining];
+        chassert(write == in_order_remaining);
     }
     else
     {
@@ -469,18 +535,41 @@ bool IEJoinAlgorithm::nextLeftRow()
 
 Chunk IEJoinAlgorithm::produceBatch()
 {
+    Chunk chunk;
+    bool done = producePairsBatch(chunk);
+    if (chunk.hasRows() || !done)
+        return chunk;
+
+    for (size_t side = 0; side < 2; ++side)
+    {
+        if (!sideNeedsUnmatchedRows(side))
+            continue;
+
+        done = produceUnmatchedBatch(side, chunk);
+        if (chunk.hasRows() || !done)
+            return chunk;
+    }
+
+    produce_done = true;
+    checkFinalInvariants();
+    return {};
+}
+
+bool IEJoinAlgorithm::producePairsBatch(Chunk & chunk)
+{
     auto left_indexes = ColumnUInt64::create();
     auto right_indexes = ColumnUInt64::create();
     auto & left_data = left_indexes->getData();
     auto & right_data = right_indexes->getData();
 
+    bool done = false;
     while (left_data.size() < max_block_size)
     {
         if (!has_current_left)
         {
             if (!nextLeftRow())
             {
-                produce_done = true;
+                done = true;
                 break;
             }
             has_current_left = true;
@@ -502,23 +591,97 @@ Chunk IEJoinAlgorithm::produceBatch()
         size_t left_row = current_left_rid - 1;
         size_t right_row = -right_rid - 1;
 
-        /// Every emitted pair must satisfy both conditions, re-verify by direct evaluation.
+        /// Every found pair must satisfy both conditions, re-verify by direct evaluation.
         chassert(checkEmittedPair(0, left_row, right_row));
         chassert(checkEmittedPair(1, left_row, right_row));
 
-        left_data.push_back(left_row);
-        right_data.push_back(right_row);
+        /// The matched bitmaps are allocated exactly for the sides that emit unmatched rows
+        /// in a post-phase.
+        if (!matched[0].empty())
+            matched[0][left_row] = 1;
+        if (!matched[1].empty())
+            matched[1][right_row] = 1;
+
+        /// For SEMI/ANTI one pair decides the fate of the left row (its matches are contiguous):
+        /// skip the rest of its scan. SEMI emits the first pair, ANTI only marks.
+        if (kind == IEJoinKind::LeftSemi || kind == IEJoinKind::LeftAnti)
+        {
+            has_current_left = false;
+            ++l2_cursor;
+        }
+
+        if (kind != IEJoinKind::LeftAnti)
+        {
+            left_data.push_back(left_row);
+            right_data.push_back(right_row);
+        }
     }
 
-    if (left_data.empty())
-        return {};
+    if (!left_data.empty())
+    {
+        appendGathered(chunk, 0, *left_indexes);
+        appendGathered(chunk, 1, *right_indexes);
+    }
+    return done;
+}
 
-    Chunk result;
-    for (const auto & column : side_columns[0])
-        result.addColumn(column->index(*left_indexes, 0));
-    for (const auto & column : side_columns[1])
-        result.addColumn(column->index(*right_indexes, 0));
-    return result;
+bool IEJoinAlgorithm::produceUnmatchedBatch(size_t side, Chunk & chunk)
+{
+    /// Rows that the pair scan did not mark; rows with NULL keys never entered the union,
+    /// so their bits are never set and they are emitted here as well.
+    auto & row_cursor = unmatched_row_cursor[side];
+    auto indexes = ColumnUInt64::create();
+    auto & data = indexes->getData();
+    while (row_cursor < num_side_rows[side] && data.size() < max_block_size)
+    {
+        if (!matched[side][row_cursor])
+            data.push_back(row_cursor);
+        ++row_cursor;
+    }
+
+    if (!data.empty())
+    {
+        unmatched_emitted[side] += data.size();
+        if (side == 0)
+        {
+            appendGathered(chunk, 0, *indexes);
+            appendPadded(chunk, 1, data.size());
+        }
+        else
+        {
+            appendPadded(chunk, 0, data.size());
+            appendGathered(chunk, 1, *indexes);
+        }
+    }
+    return row_cursor >= num_side_rows[side];
+}
+
+void IEJoinAlgorithm::appendGathered(Chunk & chunk, size_t side, const ColumnUInt64 & indexes) const
+{
+    for (const auto & column : side_columns[side])
+        chunk.addColumn(column->index(indexes, 0));
+}
+
+void IEJoinAlgorithm::appendPadded(Chunk & chunk, size_t side, size_t num_rows) const
+{
+    for (const auto & column_with_type : *input_headers[side])
+    {
+        /// The default of the column type: NULL when it is Nullable (with `join_use_nulls`
+        /// the planner made the padded side's columns Nullable in the pre-join actions).
+        auto column = column_with_type.type->createColumn();
+        column->insertManyDefaults(num_rows);
+        chunk.addColumn(std::move(column));
+    }
+}
+
+void IEJoinAlgorithm::checkFinalInvariants() const
+{
+    /// Every filtered row of a post-phase side ended up exactly one of matched/unmatched.
+    for (size_t side = 0; side < 2; ++side)
+    {
+        if (sideNeedsUnmatchedRows(side))
+            chassert(countBytesInFilter(matched[side]) + unmatched_emitted[side] == num_side_rows[side]);
+    }
 }
 
 bool IEJoinAlgorithm::checkEmittedPair(size_t key_index, size_t left_row, size_t right_row) const
@@ -542,10 +705,16 @@ bool IEJoinAlgorithm::checkEmittedPair(size_t key_index, size_t left_row, size_t
 
 IMergingAlgorithm::Status IEJoinAlgorithm::merge()
 {
-    /// Materialize the left input entirely, then the right one.
-    if (!source_finished[0])
+    /// Materialize both inputs entirely, read from both uniformly to increase parallelism
+    if (!source_finished[0] && !source_finished[1])
+    {
+        auto lhs_chunks = accumulated_chunks[0].size();
+        auto rhs_chunks = accumulated_chunks[1].size();
+        return Status(lhs_chunks < rhs_chunks ? 0 : 1);
+    }
+    else if (!source_finished[0])
         return Status(0);
-    if (!source_finished[1])
+    else if (!source_finished[1])
         return Status(1);
 
     if (!join_state_built)
@@ -569,7 +738,9 @@ IMergingAlgorithm::MergedStats IEJoinAlgorithm::getMergedStats() const
 }
 
 IEJoinTransform::IEJoinTransform(
+    IEJoinKind kind,
     const IEJoinConditions & conditions,
+    bool inputs_sorted_by_first_key,
     SharedHeaders & input_headers,
     SharedHeader output_header,
     size_t max_block_size,
@@ -581,7 +752,9 @@ IEJoinTransform::IEJoinTransform(
         limit_hint_,
         /* always_read_till_end_= */ false,
         /* empty_chunk_on_finish_= */ true,
+        kind,
         conditions,
+        inputs_sorted_by_first_key,
         input_headers,
         max_block_size)
 {

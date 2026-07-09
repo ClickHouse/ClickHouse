@@ -1,5 +1,4 @@
--- Ported from DuckDB test/sql/join/iejoin/test_iejoin_east_west.test:
--- the East/West example queries from the IEJoin paper (Khayyat et al., PVLDB 8(13)).
+-- The East/West example queries from the IEJoin paper (Khayyat et al., PVLDB 8(13)).
 
 SET allow_experimental_ie_join = 1;
 

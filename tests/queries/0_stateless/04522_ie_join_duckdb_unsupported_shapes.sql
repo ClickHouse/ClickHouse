@@ -1,9 +1,10 @@
--- Ported from DuckDB test/sql/join/iejoin/test_iesemijoin.test and test_ieantijoin.test.
--- DuckDB executes SEMI/ANTI/LEFT/RIGHT/FULL inequality joins with IEJoin; ClickHouse does not
--- support these join kinds with an inequality-only ON section yet, so this test checks the
--- INNER part and locks the current error for the rest (to be revisited with IEJoin for other kinds).
+-- SEMI/ANTI/LEFT/RIGHT/FULL joins with exactly two inequality conditions route through
+-- IEJoin; more than two inequality conjuncts or an OR of inequalities stays error-locked.
+-- `join_use_nulls` is enabled so that unmatched rows are padded with NULLs; the rows with
+-- NULL keys (ids 4 and 5) never match but are emitted as unmatched, not dropped.
 
 SET allow_experimental_ie_join = 1;
+SET join_use_nulls = 1;
 
 DROP TABLE IF EXISTS left_small;
 DROP TABLE IF EXISTS right_small;
@@ -23,15 +24,33 @@ INSERT INTO right_small VALUES
     (2, '2026-01-03', '2026-01-04', 'A', 150.50, false),
     (3, '2026-01-04', '2026-01-05', 'B', 379.00, true);
 
--- The INNER join works via IEJoin; the rows with NULL keys (ids 4 and 5) never match
 SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id, r.id FROM left_small l JOIN right_small r ON l.start < r.stop AND r.start < l.stop) WHERE explain LIKE '%IEJoin%';
-SELECT l.id, r.id FROM left_small l JOIN right_small r ON l.start < r.stop AND r.start < l.stop ORDER BY ALL;
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop AND r.start < l.stop) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id, r.id FROM left_small l LEFT JOIN right_small r ON l.start < r.stop AND r.start < l.stop) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id, r.id FROM left_small l RIGHT JOIN right_small r ON l.start < r.stop AND r.start < l.stop) WHERE explain LIKE '%IEJoin%';
+SELECT count() > 0 FROM (EXPLAIN actions = 1 SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop) WHERE explain LIKE '%IEJoin%';
 
-SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop AND r.start < l.stop; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT l.id, r.id FROM left_small l LEFT JOIN right_small r ON l.start < r.stop AND r.start < l.stop; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT l.id, r.id FROM left_small l RIGHT JOIN right_small r ON l.start < r.stop AND r.start < l.stop; -- { serverError INVALID_JOIN_ON_EXPRESSION }
-SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT 'inner';
+SELECT l.id, r.id FROM left_small l JOIN right_small r ON l.start < r.stop AND r.start < l.stop ORDER BY ALL;
+SELECT 'semi';
+SELECT l.id, l.start, l.stop FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop ORDER BY ALL;
+SELECT 'anti';
+SELECT l.id, l.start, l.stop FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop AND r.start < l.stop ORDER BY ALL;
+SELECT 'left';
+SELECT l.id, r.id FROM left_small l LEFT JOIN right_small r ON l.start < r.stop AND r.start < l.stop ORDER BY ALL;
+SELECT 'right';
+SELECT l.id, r.id FROM left_small l RIGHT JOIN right_small r ON l.start < r.stop AND r.start < l.stop ORDER BY ALL;
+SELECT 'full';
+SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop ORDER BY ALL;
+
+-- More than two inequality conditions stay unsupported for every kind: for non-INNER kinds the
+-- ON conditions affect matching, so an extra conjunct cannot be split off into a filter over the
+-- join result. Same for a disjunction of inequality conditions.
+SELECT l.id FROM left_small l LEFT SEMI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT l.id, r.id FROM left_small l FULL JOIN right_small r ON l.start < r.stop AND r.start < l.stop AND l.price + r.bid > 300; -- { serverError INVALID_JOIN_ON_EXPRESSION }
+SELECT l.id FROM left_small l LEFT ANTI JOIN right_small r ON (l.start < r.stop AND r.start < l.stop) OR (l.start > r.stop AND r.start > l.stop); -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
 DROP TABLE left_small;
 DROP TABLE right_small;
