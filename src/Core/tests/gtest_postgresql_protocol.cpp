@@ -962,6 +962,94 @@ TEST(PostgreSQLProtocol, ExecuteRejectsNonLiteralArguments)
     }
 }
 
+TEST(PostgreSQLProtocol, ExecuteZeroArityReachableThroughGrammar)
+{
+    /// End-to-end through the real SQL grammar: a zero-parameter prepared statement
+    /// must be runnable as `EXECUTE s` (parentheses omitted, as PostgreSQL allows) or
+    /// `EXECUTE s()` (empty list). Previously `ParserExecute` required `(` and a
+    /// non-empty argument list, so `PREPARE s AS SELECT 1` had no executable EXECUTE
+    /// form even though the arity check accepted zero arguments at the AST level.
+    auto parse = [](const String & query)
+    {
+        ParserExecute parser;
+        ASTPtr ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        return ast->as<ASTExecute>();
+    };
+
+    {
+        const auto * execute = parse("EXECUTE s");
+        ASSERT_TRUE(execute);
+        EXPECT_EQ(execute->function_name, "s");
+        EXPECT_EQ(execute->arguments.size(), 0u);
+    }
+    {
+        const auto * execute = parse("EXECUTE s()");
+        ASSERT_TRUE(execute);
+        EXPECT_EQ(execute->function_name, "s");
+        EXPECT_EQ(execute->arguments.size(), 0u);
+    }
+
+    /// And a zero-parameter statement run through the parsed EXECUTE produces the body
+    /// unchanged (the whole path PREPARE -> EXECUTE s -> substitute now works).
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        ASTPreparedStatement prepared;
+        prepared.function_name = "s";
+        prepared.function_body = "SELECT 1";
+        manager.addStatement(&prepared);
+
+        ParserExecute parser;
+        ASTPtr ast = parseQuery(parser, "EXECUTE s", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+        EXPECT_EQ(manager.getStatement(ast->as<ASTExecute>()), "SELECT 1");
+    }
+}
+
+TEST(PostgreSQLProtocol, InferredUnspecifiedOidFractionalIntCastIsRejectedNotTruncated)
+{
+    /// A Bind parameter left with an unspecified type (OID 0 / omitted) is emitted as
+    /// a bare, space-padded literal so the server infers the type from the statement
+    /// context — `SELECT $1 + 1`, `LIMIT $1`, `SELECT $1::Int32` keep working as
+    /// numbers. This is not full statement-context type inference (the layer has only
+    /// the body text and the value text, no resolved AST), but binding `3.14` to
+    /// `SELECT $1::Int32` assembles `SELECT  3.14 ::Int32`, which casts the numeric
+    /// literal to Int32 and REJECTS the fractional value rather than truncating it —
+    /// matching PostgreSQL's rejection of `3.14` for `int4`. This end-to-end Bind test
+    /// pins the exact spliced form the reviewer asked about.
+    auto addStmt = [](PreparedStatements::PreparedStatemetsManager & manager, const String & body, std::vector<Int32> oids)
+    {
+        ASTPreparedStatement statement;
+        statement.function_name = "s";
+        statement.function_body = body;
+        for (Int32 oid : oids)
+            statement.parameter_types.push_back(oid);
+        manager.addStatement(&statement);
+    };
+    auto bindValue = [](PreparedStatements::PreparedStatemetsManager & manager, const String & value)
+    {
+        auto msg = std::make_unique<Messaging::BindQuery>();
+        msg->function_name = "s";
+        msg->parameters.push_back(value);
+        manager.attachBindQuery(std::move(msg));
+    };
+
+    /// `3.14` with an unspecified OID against `SELECT $1::Int32` assembles the cast of
+    /// a numeric literal; the value is emitted bare and space-padded (not quoted),
+    /// which infers as a number just as an inline literal would.
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStmt(manager, "SELECT $1::Int32", {});
+        bindValue(manager, "3.14");
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT  3.14 ::Int32");
+    }
+    /// An integer value against the same statement stays an integer literal.
+    {
+        PreparedStatements::PreparedStatemetsManager manager(std::nullopt);
+        addStmt(manager, "SELECT $1::Int32", {});
+        bindValue(manager, "42");
+        EXPECT_EQ(manager.getStatmentFromBind(), "SELECT  42 ::Int32");
+    }
+}
+
 TEST(PostgreSQLProtocol, CopyDataRejectsLengthBelowFour)
 {
     for (Int32 size = 0; size < 4; ++size)

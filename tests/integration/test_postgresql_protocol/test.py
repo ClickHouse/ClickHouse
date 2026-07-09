@@ -1354,6 +1354,33 @@ def test_execute_rejects_non_literal_arguments(started_cluster):
     ch.close()
 
 
+def test_execute_zero_parameter_statement(started_cluster):
+    # A prepared statement with no parameters must be runnable through the simple
+    # SQL EXECUTE path. PostgreSQL lets the argument list be omitted (`EXECUTE s`)
+    # or empty (`EXECUTE s()`) for a zero-parameter statement. `ParserExecute`
+    # previously required `(` and a non-empty list, so `PREPARE s AS SELECT 1` had
+    # no executable EXECUTE form. Both forms must now work and return the body.
+    node = started_cluster.instances["node"]
+
+    ch = psycopg.connect(
+        host=node.ip_address,
+        port=server_port,
+        user="default",
+        password="123",
+    )
+    cur = ch.cursor()
+
+    cur.execute("PREPARE zero_arity AS SELECT 42 AS v;")
+    # Parentheses omitted.
+    cur.execute("EXECUTE zero_arity;")
+    assert cur.fetchall() == [(42,)]
+    # Empty parentheses.
+    cur.execute("EXECUTE zero_arity();")
+    assert cur.fetchall() == [(42,)]
+
+    ch.close()
+
+
 def test_copy_no_sql_injection(started_cluster):
     # COPY builds its SELECT/INSERT from the client-supplied table and column
     # identifiers. A malicious identifier (quoted so it survives as a single
