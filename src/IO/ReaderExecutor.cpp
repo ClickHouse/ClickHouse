@@ -80,11 +80,11 @@ namespace DB
 ///   hit serve `readHitFromView` they join at `Display::read`.
 /// PRODUCER: `coordinatedPrefetch` (machine fetch step) -> `fetchGapsFromSource`
 ///   -> `readFromSource` / the Long connection region; fills land through
-///   `FillLane::write`; deferred puts run at collect.
+///   `writeSliceToWriter`; deferred puts run at collect.
 /// ──────────────────────────────────────────────────────────────────────────────
 
 
-ReaderExecutor::FetchMachine::FetchMachine()
+ReaderExecutorFetchMachine::ReaderExecutorFetchMachine()
     : inflight_gauge(CurrentMetrics::ReaderExecutorPrefetchInFlight)
 {
 }
@@ -574,7 +574,7 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
                 stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(stats, Stats::CachePopulateMicroseconds);
                 stats.add(Stats::BytesPushedToCacheSync,
-                    fill_lane.write(*m.writer, fetched.slice(header_range)));
+                    m.writer->write(fetched.slice(header_range)));
             }
         }
     }
@@ -1127,48 +1127,13 @@ void ReaderExecutor::writeSliceToWriter(CacheWriter * writer, ByteRange window, 
             continue;
         out_stats.add(Stats::CachePopulateRequests);
         StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
-        out_stats.add(Stats::BytesPushedToCacheSync, fill_lane.write(*writer, std::move(slice)));
+        out_stats.add(Stats::BytesPushedToCacheSync, writer->write(std::move(slice)));
         HistogramMetrics::ReaderExecutorCachePopulateLatency.observe(
             static_cast<HistogramMetrics::Value>(put_scope.elapsedMicroseconds()));
     }
 }
 
 // ─── Fill lane ─────────────────────────────────────────────────────────────
-
-size_t ReaderExecutor::FillLane::write(CacheWriter & writer, ChainedBuffers && slice)
-{
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    {
-        std::lock_guard lock(active_mutex);
-        for (const auto * w : active_writers)
-            chassert(w != &writer && "concurrent writes to one CacheWriter - the machine slot's exclusion broke");
-        active_writers.push_back(&writer);
-    }
-    SCOPE_EXIT({
-        std::lock_guard lock(active_mutex);
-        std::erase(active_writers, &writer);
-    });
-#endif
-    return writer.write(std::move(slice));
-}
-
-void ReaderExecutor::FillLane::lend(FetchMachine & m)
-{
-    chassert(!m.long_conn);
-    m.long_conn = takeLongConnection(conn);
-    conn_lent = m.long_conn.has_value();
-}
-
-void ReaderExecutor::FillLane::reclaim(FetchMachine & m)
-{
-    /// The worker no longer touches the payload (queued-cancel, or the release edge has
-    /// passed). The lane cannot hold a second connection meanwhile - opens are refused while
-    /// lent (`shouldOpenLongConnection`) - which is what makes this a move, never an overwrite.
-    chassert(!(conn && m.long_conn));
-    if (m.long_conn)
-        conn = takeLongConnection(m.long_conn);
-    conn_lent = false;
-}
 
 void ReaderExecutor::pushChainToWriters(const VectorWithMemoryTracking<WriterView> & views, ByteRange window,
     const ChainedBuffers & chain, Stats & out_stats)
@@ -1205,14 +1170,14 @@ VectorWithMemoryTracking<ByteRange> ReaderExecutor::uncommittedIn(
     return committed_union.subtract(range);
 }
 
-void ReaderExecutor::recreditCommittedPrefixes(
+void ReaderExecutor::Display::recreditCommittedPrefixes(
     ByteRange window, ChainedBuffers & result, IntervalSet & covered, Stats & out_stats)
 {
     /// Re-credit any committed prefix of a frozen miss that a concurrent reader (or this
     /// plan's own write) has grown since plan-build, serving it from the held write buffer's
     /// own `read`. Held write buffers are in tier-priority order, so the `covered` guard
     /// serves each byte from the fastest tier under the SAME shared `covered`.
-    for (const auto & buf : read_plan.bufs)
+    for (const auto & buf : plan.bufs)
     {
         if (!buf.provider)
             continue;
@@ -1695,7 +1660,7 @@ void ReaderExecutor::runHandedFills(ByteRange served_range, const ChainedBuffers
                 out_stats.add(Stats::CachePopulateRequests);
                 StatTimer put_scope(out_stats, Stats::CachePopulateMicroseconds);
                 auto handed_claim = w.writer->claim(ByteRange{lo, hi - lo});
-                const size_t written = fill_lane.write(*w.writer, std::move(slice));
+                const size_t written = w.writer->write(std::move(slice));
                 if (r.source == PlanSchedule::Source::HandedChain)
                 {
                     out_stats.add(Stats::BytesPromoted, written);
@@ -1757,7 +1722,7 @@ bool ReaderExecutor::clampAllowsAhead(size_t ri) const
         if (lo >= hi)
             continue;
         const ByteRange below{lo, hi - lo};
-        for (const auto & gap : committedCoverage(below).subtract(below))
+        for (const auto & gap : display.committedCoverage(below).subtract(below))
         {
             bool own = false;
             for (const auto & run : r.fetch_runs)
@@ -1972,7 +1937,7 @@ ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) c
     /// bytes went to the bank is walked PAST, not refetched forever.
     const auto fill_prefix_end = [&](ByteRange range)
     {
-        IntervalSet cov = committedCoverage(range);
+        IntervalSet cov = display.committedCoverage(range);
         fill_lane.addBankCoverage(cov, range);
         auto gaps = cov.subtract(range);
         return gaps.empty() ? range.end() : gaps.front().offset;
@@ -2023,7 +1988,7 @@ bool ReaderExecutor::waitSiblingFills(ByteRange window)
     if (waited.empty())
         return false;
 
-    const IntervalSet committed = committedCoverage(window);
+    const IntervalSet committed = display.committedCoverage(window);
     ChainedBuffers sibling_bytes;
     for (const auto & iv : waited.getIntervals())
         for (const auto & gap : committed.subtract(iv))
@@ -2156,12 +2121,12 @@ bool ReaderExecutor::bankDirectRead(ByteRange window)
     return true;
 }
 
-IntervalSet ReaderExecutor::committedCoverage(ByteRange window_phys) const
+IntervalSet ReaderExecutor::Display::committedCoverage(ByteRange window_phys) const
 {
     /// Mirrors the committed-range computation in `recreditCommittedPrefixes` but only
     /// accumulates coverage - no `read`, no stats - so the serve can poll the fill front.
     IntervalSet covered;
-    for (const auto & buf : read_plan.bufs)
+    for (const auto & buf : plan.bufs)
         for (const auto & w : buf.writers)
             if (w.writer)
                 for (const auto & part : committedPartsIn(*w.writer, window_phys))
@@ -2173,7 +2138,7 @@ size_t ReaderExecutor::committedCellPrefixEnd(ByteRange window_phys) const
 {
     /// The first uncovered byte (in increasing-offset order) is the end of the contiguous
     /// committed prefix; with the window fully covered there is no gap, so it is the window end.
-    auto gaps = committedCoverage(window_phys).subtract(window_phys);
+    auto gaps = display.committedCoverage(window_phys).subtract(window_phys);
     return gaps.empty() ? window_phys.end() : gaps.front().offset;
 }
 
@@ -2217,12 +2182,12 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
 {
     /// Committed cells - the writers' LIVE committed sets, so an in-flight worker's streaming
     /// commits show up here as they land (the fill front's current progress).
-    IntervalSet cov = ex.committedCoverage(window_phys);
+    IntervalSet cov = committedCoverage(window_phys);
     /// Resident hit views - the plan's pinned facts (an entry can only serve through its held view).
-    if (const auto & geom = ex.read_plan.geometry())
+    if (const auto & geom = plan.geometry())
         for (size_t i = 0; i < geom->entries.size(); ++i)
         {
-            if (i >= ex.read_plan.bufs.size() || !ex.read_plan.bufs[i].view)
+            if (i >= plan.bufs.size() || !plan.bufs[i].view)
                 continue;
             for (const auto & res : geom->entries[i].resident)
             {
@@ -2232,7 +2197,7 @@ IntervalSet ReaderExecutor::Display::coverage(ByteRange window_phys) const
                     cov.add(ByteRange{lo, hi - lo});
             }
         }
-    ex.fill_lane.addBankCoverage(cov, window_phys);
+    lane.addBankCoverage(cov, window_phys);
     return cov;
 }
 
@@ -2261,7 +2226,7 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     ///    non-resident byte - the later holders take over under the shared `covered` guard.
     ///    Entered only when the window STARTS resident (a hit step), so the classification
     ///    failpoint and the read-latency histogram fire exactly as the old hit path did.
-    const auto & geom = ex.read_plan.geometry();
+    const auto & geom = plan.geometry();
     if (geom && geom->residentAt(window_phys.offset).resident())
     {
         /// Test hook: pause after residency classified this a hit but before the read, so a
@@ -2271,11 +2236,11 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
         for (size_t pos = window_phys.offset; pos < window_phys.end();)
         {
             auto run = geom->residentAt(pos);
-            if (!run.resident() || run.entry >= ex.read_plan.bufs.size()
-                || !ex.read_plan.bufs[run.entry].view)
+            if (!run.resident() || run.entry >= plan.bufs.size()
+                || !plan.bufs[run.entry].view)
                 break;
             const size_t serve_end = std::min(run.run_end, window_phys.end());
-            ChainedBuffers chunk = readHitFromView(*ex.read_plan.bufs[run.entry].view, ByteRange{pos, serve_end - pos});
+            ChainedBuffers chunk = readHitFromView(*plan.bufs[run.entry].view, ByteRange{pos, serve_end - pos});
             const size_t got = chunk.range().size;
             if (got == 0)
                 break;
@@ -2293,7 +2258,7 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     }
 
     /// 2) Committed cells (fastest resident tier first, under the shared `covered`).
-    ex.recreditCommittedPrefixes(window_phys, out, covered, out_stats);
+    recreditCommittedPrefixes(window_phys, out, covered, out_stats);
 
     /// 3) The bank - bytes a piece fetched that no cell could hold. Served per INTERVAL, the
     ///    exact shape `coverage` claims: the bank can be holey (a sibling-waited middle that
@@ -2301,7 +2266,7 @@ void ReaderExecutor::Display::read(ByteRange window_phys, ChainedBuffers & out, 
     ///    the intersection of each uncovered gap with each interval keeps `frontier` and `read`
     ///    in agreement - a claimed prefix always serves, never a false empty window.
     ///    No cache counters - the bytes were counted at fetch.
-    auto & bank = ex.fill_lane.bank;
+    auto & bank = lane.bank;
     if (!bank.empty())
         for (const auto & iv : bank.getIntervals())
         {
@@ -2341,7 +2306,7 @@ void ReaderExecutor::Display::wait(ByteRange window_phys, ChainedBuffers & out, 
 {
     /// No cache-read credit here: the caller banks the sibling bytes and credits them once
     /// (its own committed bytes are dropped - the serve reads and counts them from the cells).
-    for (const auto & buf : ex.read_plan.bufs)
+    for (const auto & buf : plan.bufs)
     {
         /// A page cell is filled by promotion at the serve, not downloaded - no downloader,
         /// a wait on it would never wake.

@@ -10,7 +10,8 @@
 #include <IO/ReaderExecutorStats.h>
 #include <IO/CoverageMap.h>
 #include <IO/PlanSchedule.h>
-#include <IO/FetchMachine.h>
+#include <IO/ReaderExecutorFetchMachine.h>
+#include <IO/ReaderExecutorFillLane.h>
 #include <IO/ReadContinuityTracker.h>
 
 #include <Common/CurrentMetrics.h>
@@ -304,88 +305,9 @@ private:
         std::shared_ptr<const CoverageMap> geometry_snapshot;
     };
 
-    /// A NON-OWNING reference to one held write buffer in `read_plan.bufs`
-    /// (`writer` is owned there by a `unique_ptr`). A put step records these
-    /// instead of moving the writers out, so the shared `bufs` are written in
-    /// place. The raw pointer stays valid while `read_plan` is not rebuilt - and
-    /// every rebuild path drains the put lane first - so a put never outlives its
-    /// views. `range` is the cell's miss range (the lane-overlap key).
-    struct WriterView
-    {
-        CacheWriter * writer = nullptr;
-        ByteRange range;
-    };
-
-    /// The model's in-flight PIECE token: a steppable context for one fill piece,
-    /// pool-run (ahead) or serve-thread-run (pump). One step today - elect the
-    /// downloaders, fetch the LED runs of the pre-bounded window, stream them into
-    /// the cells - then the `AwaitCollect` barrier; the foreground collects or
-    /// cancels. Bundles EVERYTHING the worker touches, so it never reads a shared
-    /// `this->` member.
-    struct FetchMachine : MachineBase
-    {
-        /// Out-of-line: initializes `inflight_gauge` (metric symbol is in the .cpp).
-        FetchMachine();
-
-        /// The PHYSICAL cache-aligned window the fetch step reads
-        /// (`fetchWindowAt` widened); collect backfills the caches over it. The
-        /// LOGICAL requested range (the space `position` works in) is this shifted
-        /// down by `data_start_offset`.
-        ByteRange physical_window;
-        /// The plan's memory-pressure level, snapshotted at launch - the only
-        /// geometry field the worker reads (sizes the fetch block / suppresses
-        /// read-ahead). A future stage needing other geometry fields on the
-        /// worker must re-add a snapshot rather than reach into shared state.
-        MemoryPressureLevel pressure_snapshot{};
-        /// The advertised read extent at launch: the worker bounds its source
-        /// connection with THIS, never the live `read_extent_end` member - a
-        /// soft-cancelled machine must not race `setReadExtent`.
-        std::optional<size_t> extent_snapshot;
-        /// The schedule retrieve this machine fulfills (index into the launch-time plan's
-        /// `schedule.retrieves`). Set at launch; read live by `machineFor` (is a machine
-        /// running for this retrieve). Meaningful only while this machine is the live
-        /// in-flight handle of that plan; the re-plan barrier (`chassert(!machine)`)
-        /// guarantees none straddles a rebuild.
-        size_t retrieve_index = 0;
-        /// The long source connection CARRIED by this machine: moved in from the
-        /// foreground at launch (a machine never opens one itself - the foreground is
-        /// the sole opener), drained by the worker's fetch step instead of a one-shot
-        /// GET, reclaimed by the foreground at collect, or accounted + released at reap
-        /// if the machine is abandoned. Empty when the foreground carried no connection
-        /// into this launch.
-        std::optional<LongConnection> long_conn;
-        Stats stats;
-        bool reached_eof = false;
-        /// The fetch step's RESIDUE: raw PHYSICAL source bytes no cell accepted (a refused
-        /// write, a sibling-claimed cell; a bypass window retains everything). Bytes the
-        /// worker committed per tile live in the cells and are NOT held here - the serve
-        /// reads them from the display. Capped at one (pressure-scaled) window by the
-        /// fetch step: when nothing commits, the lead stops instead of ballooning in memory.
-        ChainedBuffers fetched;
-        /// The PHYSICAL frontier the fetch actually reached (end of the last fetched run),
-        /// independent of what `fetched` retains - the pin and the attempted accounting
-        /// anchor here. `physical_window.offset` when nothing was fetched.
-        size_t fetched_end = 0;
-        /// The fill step's targets: NON-OWNING views of the writers this fill writes
-        /// (the schedule's fill targets overlapping the window). The writers stay in the
-        /// shared `read_plan.bufs`; the fill runs inline on the read thread, so referencing
-        /// them in place is race-free.
-        VectorWithMemoryTracking<WriterView> writer_views;
-        /// Set by the worker when a SIBLING is downloading some segment (this worker lost the
-        /// election): it skipped fetching those, so `fetched` has holes there. At collect the
-        /// foreground revokes to the synchronous path (which re-elects/waits on the sibling-led
-        /// bytes on the query thread). False with no contention (the worker then leads - and
-        /// fetches - the whole window).
-        bool contended = false;
-        /// Set when this machine is driven INLINE on the serve thread (a `LocalFetchMachineRunner`),
-        /// as opposed to a pool worker reading ahead. The inline fetch "stops at the first loss":
-        /// it fetches only the contiguous led PREFIX up to the first sibling-led segment, so the
-        /// serve thread never blocks fetching a led run PAST a sibling-led hole (the caller's next
-        /// read resolves the boundary). A pool worker keeps the full-window fetch.
-        bool inline_serve = false;
-        /// `ReaderExecutorPrefetchInFlight` for this machine's lifetime.
-        CurrentMetrics::Increment inflight_gauge;
-    };
+    using WriterView = ReaderExecutorWriterView;
+    using FetchMachine = ReaderExecutorFetchMachine;
+    using FillLane = ReaderExecutorFillLane;
 
     // ─── Window serve path ───────────────────────────────────────────────
 
@@ -483,13 +405,6 @@ private:
     /// its owning lower tier - never promoted into a faster tier.
     bool isScheduledFillTarget(ByteRange window, size_t entry, ByteRange cell) const;
 
-    /// Re-credit, BEFORE the source fetch, any committed prefix of a frozen
-    /// miss that a writer has grown since plan-build: serve it from the write
-    /// buffer's own `read`, marking it `covered` so only the truly-uncommitted
-    /// tail drives the fetch. Every byte read out of a cell counts as a cache read (the cache is
-    /// the buffer), including bytes this serve just fetched into the cell.
-    void recreditCommittedPrefixes(ByteRange window, ChainedBuffers & result, IntervalSet & covered,
-        Stats & out_stats);
 
     /// Read from source into the pre-allocated `blocks`: DRAIN a held/carried long
     /// connection (`lc`, nullable) if it can serve this fetch, otherwise open a
@@ -657,7 +572,7 @@ private:
     class Display
     {
     public:
-        explicit Display(ReaderExecutor & ex_) : ex(ex_) {}
+        Display(const ReadPlan & plan_, FillLane & lane_) : plan(plan_), lane(lane_) {}
 
         /// What is servable of `window_phys` right now (union of the three holders).
         IntervalSet coverage(ByteRange window_phys) const;
@@ -674,108 +589,25 @@ private:
         /// worker's or a sibling executor's download). Page cells are filled by promotion,
         /// not downloaded - never waited on.
         void wait(ByteRange window_phys, ChainedBuffers & out, IntervalSet & covered);
+        /// Coverage by the plan's held write buffers' committed ranges only (no read, no
+        /// stats). A byte a SIBLING downloaded is NOT in this executor's per-writer
+        /// committed set, so it reads as uncovered here - it enters the display only
+        /// through the bank.
+        IntervalSet committedCoverage(ByteRange window_phys) const;
 
     private:
         /// Is `phys` servable by ANY holder - the one-byte gate that keeps an empty `read`
         /// costless (the serve-first cycle probes by serving).
         bool coversByte(size_t phys) const;
-        ReaderExecutor & ex;
+        /// Re-credit any committed prefix a concurrent reader (or this plan's own write)
+        /// has grown since plan-build, serving it from the held write buffer's own read.
+        void recreditCommittedPrefixes(ByteRange window, ChainedBuffers & result,
+            IntervalSet & covered, Stats & out_stats);
+        const ReadPlan & plan;
+        FillLane & lane;
     };
 
-    /// The FILL LANE: the one gate every cache-cell write passes through - the WRITE side of
-    /// the pipe (the display is the read side; the two-cursors model's fill front,
-    /// `tmp/reader-executor-two-cursors/DESIGN.md`). Every producer of cell bytes - the
-    /// worker's streaming tiles, the collect's put completion, the synchronous assembled
-    /// push, and the serve's handed fills - lands its bytes through `write`, so ordering,
-    /// exclusion, and (later) the fill cursor and pin have ONE owner. T1 scope: the choke
-    /// point plus the consolidated debug guard for the invariant the single machine slot
-    /// provides today - no two threads ever write the same `CacheWriter` concurrently
-    /// (the pool worker streams only its machine's fill targets; every other producer runs
-    /// on the serve thread). Connection / pin / cursor ownership arrives in T2/T4.
-    class FillLane
-    {
-    public:
-        /// Land `slice` into `writer`; returns the bytes the writer took. The sole
-        /// caller of the writer's write verb. Downloader roles are the caller's open
-        /// `claim`s' business - the write itself never touches them.
-        size_t write(CacheWriter & writer, ChainedBuffers && slice);
 
-        /// Source-side ownership (T2). The lane holds THE long connection and the in-flight
-        /// segment pin. A POOL piece borrows the connection for its flight (`lend`/`reclaim`
-        /// are the only movers); an INLINE piece runs on the serve thread and uses the slot
-        /// directly - no borrow. While the connection is LENT the lane refuses to open
-        /// another (`shouldOpenLongConnection`), so a foreground read during a pool flight degrades to
-        /// a one-shot: "the foreground holds no connection mid-flight" is lane state, not a
-        /// chassert at every collect site.
-        std::optional<LongConnection> conn;
-        /// Pin on the partial segment under the fill frontier (plan-scoped: dropped BEFORE
-        /// the plan's writers tear down - the `[CF-plan-rebuild]` aliasing invariant).
-        CacheWriter::CacheSegmentPin pin;
-        bool conn_lent = false;
-
-        void lend(FetchMachine & m);
-        void reclaim(FetchMachine & m);
-
-        /// The AHEAD cursor `F` (T4) - ONE global launch high-water in PHYSICAL offsets:
-        /// everything below it has been attempted by this executor (launched over, served
-        /// inline, or observed covered) whether the bytes committed, were refused, or belong
-        /// to a sibling's download. Launch POLICY only - the serve reads the display. Plan-
-        /// epoch scoped: reset where the job sidecar is rebuilt; the seek fast path keeps it
-        /// with the surviving plan.
-        size_t attempted_end = 0;
-        void advanceAttempted(size_t phys_end) { attempted_end = std::max(attempted_end, phys_end); }
-
-        /// The BANK - the pipe's overflow cell, in PHYSICAL coords like the rest of the
-        /// executor state: bytes no cache cell could hold (a bypass gap's fetch, an overflow
-        /// of refused writes, sibling-waited chunks, heal reads), consumed-and-trimmed as the
-        /// display serves. ONE lane-level holder: the display reads it by offset, so job
-        /// identity carries nothing. Plan-epoch scoped, reset with the ahead cursor.
-        ChainedBuffers bank;
-
-        /// FULL-CACHE BACKPRESSURE: raised when a collect banked the still-refused residue
-        /// of a POPULATING window (the cells took nothing - cache full or sibling-claimed);
-        /// while it holds bytes the launcher runs no new lead (more fetch would only grow
-        /// the in-memory residue). Cleared when the serve consumes the bank; reset with it.
-        bool bank_refused = false;
-
-        /// New plan epoch: the ahead cursor re-derives from the fresh display truth and
-        /// the bank drops with the plan it served.
-        void resetEpoch()
-        {
-            attempted_end = 0;
-            bank = {};
-            bank_refused = false;
-        }
-
-        /// Fold the bank's coverage clamped to `window` into `cov` - per INTERVAL, never the
-        /// bounding range: the bank can hold disjoint chunks (sibling-waited pieces), and
-        /// coverage must never claim a hole.
-        void addBankCoverage(IntervalSet & cov, ByteRange window) const
-        {
-            for (const auto & iv : bank.getIntervals())
-            {
-                const size_t lo = std::max(iv.offset, window.offset);
-                const size_t hi = std::min(iv.end(), window.end());
-                if (lo < hi)
-                    cov.add(ByteRange{lo, hi - lo});
-            }
-        }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    private:
-        /// The exclusion guard: a same-writer concurrent write means the machine slot's
-        /// mutual exclusion was broken somewhere upstream - loud here, silent corruption
-        /// (interleaved frontier appends) otherwise.
-        std::mutex active_mutex;
-        VectorWithMemoryTracking<const CacheWriter *> active_writers;
-#endif
-    };
-
-    /// Coverage by the plan's held write buffers' committed ranges only (the read-only twin of
-    /// `recreditCommittedPrefixes`: no read, no stats). A byte a SIBLING downloaded is NOT in
-    /// this executor's per-writer committed set, so it reads as uncovered here - which is what
-    /// bounds the inline serve to its own led prefix.
-    IntervalSet committedCoverage(ByteRange window_phys) const;
     /// The end of the CONTIGUOUS committed run from `window_phys.offset` (== offset when nothing
     /// is committed there). The inline populatable serve narrows to this prefix: the first
     /// sibling-led byte bounds it short, so the serve returns the led prefix as a short window.
@@ -1003,8 +835,8 @@ private:
     /// settled inline machine (null `current_step`).
     std::unique_ptr<IFetchMachineRunner> local_runner;
     /// The display (see the class doc): holds only a back-reference, safe to initialize here.
-    Display display{*this};
     FillLane fill_lane;
+    Display display{read_plan, fill_lane};
     /// Single source of truth for "is a background machine in flight". The
     /// machine is co-owned with the pool job; the worker reads and writes ONLY
     /// the machine payload, and the foreground reclaims it through the
