@@ -18,6 +18,8 @@ public:
     /// Machine / prefetch state.
     bool hasInflightPrefetch() const { return ex.machine != nullptr; }
     size_t inflightPrefetchSize() const { return ex.machine ? ex.machine->physical_window.size : 0; }
+    size_t inflightPrefetchOffset() const { return ex.machine ? ex.machine->physical_window.offset : 0; }
+    bool inflightPrefetchReleased() const { return ex.machine && ex.machineReleased(); }
     size_t abandonedPrefetchCount() const { return ex.abandoned_machines.size(); }
     bool machineHasLongConn() const { return ex.machine && ex.machine->long_conn.has_value(); }
 

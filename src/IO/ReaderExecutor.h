@@ -876,6 +876,16 @@ private:
     /// retrieve" presence test the serve loop branches on.
     bool machineFor(size_t ri) const { return machine && machine->retrieve_index == ri; }
 
+    /// Whether the worker has RELEASED the in-flight machine (its step left
+    /// Scheduled/Running: products staged, `waitReleased` would not block). A non-blocking
+    /// probe - only a collect decision; the collect itself still joins via the runner,
+    /// which is what establishes the happens-before edge over the payload.
+    bool machineReleased() const
+    {
+        const MachineState s = machine->state.load(std::memory_order_acquire);
+        return s != MachineState::Scheduled && s != MachineState::Running;
+    }
+
     /// The runner that drives the in-flight machine's revoke/release verbs at collect: the pool
     /// runner when read-ahead launched it, else the inline runner (no pool). The verbs branch on
     /// the machine's `current_step`, so a settled inline machine no-ops through either.

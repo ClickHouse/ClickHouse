@@ -42,6 +42,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <chrono>
 #include <future>
 #include <latch>
 #include <limits>
@@ -3646,13 +3647,15 @@ TEST(ReaderExecutor, ResidentRunOverlapsDownstreamGapPrefetch)
     EXPECT_TRUE(inspect(executor).hasInflightPrefetch())
         << "the first gap ahead must prefetch during the resident run (overlap)";
 
-    /// Resident run [100,200) from cache, served WHILE the [200,300) prefetch is in flight
-    /// (the relaxed `serveCacheBlock` path). The re-trigger at the tail is a no-op while one
-    /// is already pending.
+    /// Resident run [100,200) from cache, served while the [200,300) prefetch runs. A
+    /// RELEASED machine may already be collected behind the cursor (the lead top-up
+    /// policy), so "still in flight" is not the invariant - the prefetch not being LOST
+    /// is: its block is committed to the cache and serves the next window without a
+    /// re-fetch.
     auto r2 = executor.readNextWindow();
     EXPECT_EQ(r2.range().offset, 100u);
     EXPECT_EQ(r2.range().size, 100u);
-    EXPECT_TRUE(inspect(executor).hasInflightPrefetch());
+    EXPECT_TRUE(cache->hasBlock(2)) << "the overlapped prefetch's bytes must be committed, not cancelled";
 
     /// Cold gap [200,300) - the cursor reaches it and consumes the overlapped prefetch.
     auto r3 = executor.readNextWindow();
@@ -3903,6 +3906,117 @@ TEST(ReaderExecutor, RealDiskCacheSequentialEvictionKeepsPinnedSegment)
 
     /// The streamed segment stayed pinned through every flood, so its bytes were
     /// served intact rather than re-read or lost to eviction.
+    EXPECT_EQ(result, content);
+}
+
+TEST(ReaderExecutor, DoneMachineCollectedAndLeadToppedUpBehindCursor)
+{
+    /// The fill-ahead lead is a consumer-anchored HIGH-WATER, not a fetch-then-drain
+    /// sawtooth: when the worker finishes its piece early, the collect does not wait for
+    /// the cursor to consume the whole window - the released machine is joined at the next
+    /// serve and the NEXT piece launches for `[cursor, cursor + lead)`. Pinned here: the
+    /// cursor strictly INSIDE the first machine's window while the second machine is
+    /// already in flight beyond it, bounded by the horizon.
+    DB::ServerUUID::setRandomForUnitTests();
+
+    auto * saved_thread = DB::current_thread;
+    DB::current_thread = nullptr;
+    SCOPE_EXIT({ DB::current_thread = saved_thread; });
+
+    DB::ThreadStatus thread_status;
+
+    Poco::XML::DOMParser dom_parser;
+    std::string xml(R"CONFIG(<clickhouse></clickhouse>)CONFIG");
+    Poco::AutoPtr<Poco::XML::Document> document = dom_parser.parseString(xml);
+    Poco::AutoPtr<Poco::Util::XMLConfiguration> config = new Poco::Util::XMLConfiguration(document);
+    getMutableContext().context->setConfig(config);
+
+    auto query_context = DB::Context::createCopy(getContext().context);
+    query_context->makeQueryContext();
+    query_context->setCurrentQueryId("reader_exec_lead_topup");
+    auto query_scope_holder = DB::QueryScope::create(query_context);
+
+    namespace fs = std::filesystem;
+    auto cache_path = fs::temp_directory_path() / "reader_exec_lead_topup_cache";
+    fs::remove_all(cache_path);
+    fs::create_directories(cache_path);
+    SCOPE_EXIT({ fs::remove_all(cache_path); });
+
+    DB::FileCacheSettings settings;
+    settings[DB::FileCacheSetting::path] = cache_path.string();
+    settings[DB::FileCacheSetting::max_size] = 1024 * 1024;   /// no eviction pressure
+    settings[DB::FileCacheSetting::max_file_segment_size] = 2000;
+    settings[DB::FileCacheSetting::boundary_alignment] = 2000;
+    settings[DB::FileCacheSetting::load_metadata_asynchronously] = false;
+    settings[DB::FileCacheSetting::cache_policy] = FileCachePolicy::LRU;
+
+    auto cache = std::make_shared<DB::FileCache>("reader_exec_lead_topup", settings);
+    cache->initialize();
+
+    DB::FilesystemCacheSettings cache_settings;
+    cache_settings.reserve_space_wait_lock_timeout_milliseconds = 1000;
+    auto provider = std::make_shared<DB::DiskCacheProvider>(cache, cache_settings, /*query_id_=*/String{});
+
+    String content(16000, '\0');
+    for (size_t i = 0; i < content.size(); ++i)
+        content[i] = static_cast<char>('a' + (i % 23));
+    auto source = std::make_shared<MemorySourceReader>(
+        std::unordered_map<String, String>{{"lead_obj", content}});
+    StoredObjects objects;
+    objects.emplace_back("lead_obj", "lead_obj", content.size());
+
+    VectorWithMemoryTracking<std::shared_ptr<ICacheProvider>> caches;
+    caches.push_back(provider);
+
+    auto pool = std::make_shared<PrefetchThreadPool>(2);
+    ReaderExecutor::Options executor_options;
+    executor_options.window_size = 2000;
+    executor_options.fill_ahead_lead = 6000;
+    executor_options.min_bytes_for_seek = 0;
+    executor_options.prefetch_pool = pool;
+    ReaderExecutor executor(source, objects, caches, executor_options);
+
+    /// Window 1 [0, 2000) is a cold inline read; its finishWindow launches the background
+    /// machine at the frontier, horizon-clamped: [2000, 2000 + 6000).
+    auto w1 = executor.readNextWindow();
+    ASSERT_EQ(w1.range().offset, 0u);
+    ASSERT_EQ(w1.range().size, 2000u);
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch());
+    EXPECT_EQ(inspect(executor).inflightPrefetchOffset(), 2000u);
+    const size_t first_lead_end
+        = inspect(executor).inflightPrefetchOffset() + inspect(executor).inflightPrefetchSize();
+    EXPECT_EQ(first_lead_end, 8000u);
+
+    /// Let the worker finish the whole lead (a memory source is fast; bounded wait).
+    for (int i = 0; i < 5000 && !inspect(executor).inflightPrefetchReleased(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_TRUE(inspect(executor).inflightPrefetchReleased());
+
+    /// Window 2 [2000, 4000) serves from the machine's committed cells. Its finishWindow
+    /// must collect the RELEASED machine although the cursor (4000) is still strictly
+    /// inside its window (end 8000), and top the lead up: the next machine starts at the
+    /// old fetch frontier and stays inside the new horizon [4000, 4000 + 6000).
+    auto w2 = executor.readNextWindow();
+    ASSERT_EQ(w2.range().offset, 2000u);
+    ASSERT_EQ(w2.range().size, 2000u);
+    ASSERT_TRUE(inspect(executor).hasInflightPrefetch()) << "released machine not collected behind the cursor";
+    EXPECT_EQ(inspect(executor).inflightPrefetchOffset(), 8000u);
+    EXPECT_LE(inspect(executor).inflightPrefetchOffset() + inspect(executor).inflightPrefetchSize(), 4000u + 6000u);
+
+    /// Drain and verify the whole payload.
+    String result;
+    for (const auto & node : w1.getNodes())
+        result.append(node.data(), node.size);
+    for (const auto & node : w2.getNodes())
+        result.append(node.data(), node.size);
+    while (true)
+    {
+        auto chain = executor.readNextWindow();
+        if (chain.empty())
+            break;
+        for (const auto & node : chain.getNodes())
+            result.append(node.data(), node.size);
+    }
     EXPECT_EQ(result, content);
 }
 

@@ -2018,21 +2018,33 @@ void ReaderExecutor::launchRetrieve(size_t ri)
     const auto & r = read_plan.schedule.retrieves[ri];
     const MemoryPressureLevel level = read_plan.geometry()->pressure_level;
 
-    /// Fetch the fill-ahead LEAD within the job range at its launch frontier - never `r.range`
-    /// itself (a coalesced connection can be a whole column). The frontier is the display truth
-    /// advanced past already-attempted bytes (`launchProgress`): the background continues the
-    /// job from wherever the last piece - its own or an inline one - left off, which is what
-    /// makes stopping a piece anywhere a free migration. The single in-flight machine runs the
-    /// lead ahead of the serve in one GET (the long connection keeps it open), committing cells
-    /// progressively; the serve reads the committed prefix.
+    /// Fetch within the job range at its launch frontier - never `r.range` itself (a coalesced
+    /// connection can be a whole column). The frontier is the display truth advanced past
+    /// already-attempted bytes (`launchProgress`): the background continues the job from
+    /// wherever the last piece - its own or an inline one - left off, which is what makes
+    /// stopping a piece anywhere a free migration.
     const size_t base = launchProgress(ri);
     if (base >= r.range.end())
         return;
-    const size_t chunk = std::min(r.range.end() - base, boundedFetchSize(fillAheadLead(level)));
+
+    /// The fill-ahead lead is a HIGH-WATER anchored at the CONSUMER: launch only work that
+    /// lands inside `[cursor, cursor + lead)`. Data past the horizon is not fetched yet - the
+    /// cursor advancing pulls the horizon (and with it the next launch) forward - so the
+    /// read-ahead footprint stays lead-bounded and adjacent to the serve.
+    const size_t horizon_end = toPhys(position) + fillAheadLead(level);
+    if (base >= horizon_end)
+        return;
+    const size_t chunk = std::min(r.range.end() - base, boundedFetchSize(horizon_end - base));
     if (chunk == 0)
         return;
+    /// Refill hysteresis: a launch costs a machine round-trip (and, on the stateless arm, its
+    /// own GET), so top the lead up in at-least-window pieces - except the job tail, which is
+    /// whatever remains.
+    if (base + chunk < r.range.end() && chunk < effectiveWindowSize(level))
+        return;
 
-    /// Read-ahead runs on the pool (async); the serve cursor reads its committed cells live.
+    /// Read-ahead runs on the pool (async), committing cells progressively; the serve cursor
+    /// reads the committed prefix live.
     launchMachineForWindow(ri, ByteRange{base, chunk}, *runner);
 }
 
@@ -2040,17 +2052,19 @@ void ReaderExecutor::advanceAhead()
 {
     if (!prefetch_pool)
         return;
-    /// Finalize a done in-flight machine FIRST - before the `atEnd()` early-return below, so the
-    /// machine that fills the tail up to the extent/EOF is still collected. "Done" = the cursor
-    /// consumed the lead, or we reached the extent/EOF; the collect runs the deferred put (which
-    /// rebuilds the in-flight pin), reclaims the connection, and frees the slot for the next lead.
-    /// While the cursor is still inside the lead the serve reads the committed cells live, so keep
-    /// the machine running ahead. The cursor cannot pass the worker's committed frontier (the
-    /// serve waits on it), so by the time it reaches the window end the collect does not block.
+    /// Finalize the in-flight machine FIRST - before the `atEnd()` early-return below, so the
+    /// machine that fills the tail up to the extent/EOF is still collected. Collect as soon as
+    /// the worker RELEASED the machine (its products are in the cells, so joining is free), not
+    /// only once the cursor consumed the lead: the freed slot lets the launch below top the
+    /// read-ahead back up to the cursor-anchored horizon, so the producer never idles while the
+    /// consumer drains. A machine still RUNNING with the cursor inside its lead keeps going -
+    /// the serve reads its committed cells live, and the cursor cannot pass the worker's
+    /// committed frontier (the serve waits on it), so a consumed-lead collect does not block.
     if (machine)
     {
         const size_t cursor_phys = toPhys(position);
-        if (!atEnd() && cursor_phys < machine->physical_window.end())
+        const bool lead_consumed = atEnd() || cursor_phys >= machine->physical_window.end();
+        if (!lead_consumed && !machineReleased())
             return;  /// still filling ahead of the cursor
         collectInFlightInto(machine->retrieve_index);
     }
