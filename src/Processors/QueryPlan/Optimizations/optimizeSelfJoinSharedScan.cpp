@@ -46,7 +46,15 @@ bool isPlainScan(const ReadFromMergeTree * rmt)
 {
     /// A `STREAM` scan is unbounded and keeps producing newly committed rows;
     /// buffering it or replaying a one-shot buffer instead would change semantics.
+    ///
+    /// An in-order reading contract (from `optimizeReadInOrder`, including
+    /// `read_in_order_through_join`) makes the scan emit rows in sorting-key order, which downstream
+    /// steps may rely on without an explicit sort. Replaying the probe scan from a buffer filled by
+    /// the build scan would emit the build scan's order instead, silently breaking that contract.
+    /// `optimizeReadInOrder` runs after this rewrite so `input_order_info` is normally still unset
+    /// here; this guard keeps the invariant explicit and robust to pass reordering.
     return !rmt->isQueryWithFinal()
+        && rmt->getInputOrder() == nullptr
         && !rmt->getQueryInfo().isStream()
         && !rmt->isQueryWithSampling()
         && !rmt->isParallelReadingFromReplicas()
