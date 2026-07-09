@@ -403,11 +403,49 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(select.get()))
                 merge_settings_ast(source_select_settings_global_ast, query_with_output->settings_ast);
         }
-        else if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(select.get()))
+        else
         {
             /// For plain INSERT ... SELECT keep historical top-level-only pushdown semantics:
             /// nested source subquery SETTINGS stay local and must not leak into outer planning/execution.
-            merge_settings_ast(settings_ast, query_with_output->settings_ast);
+            auto collect_top_level_source_settings = [&](auto && self, const ASTPtr & current, bool allow_subquery_unwrap) -> void
+            {
+                if (!current)
+                    return;
+
+                if (const auto * query_with_output = dynamic_cast<const ASTQueryWithOutput *>(current.get()))
+                    merge_settings_ast(settings_ast, query_with_output->settings_ast);
+
+                if (const auto * select_query = current->as<ASTSelectQuery>())
+                    merge_settings_ast(settings_ast, select_query->settings());
+
+                if (const auto * select_with_union = current->as<ASTSelectWithUnionQuery>())
+                {
+                    if (!select_with_union->list_of_selects)
+                        return;
+
+                    for (const auto & child : select_with_union->list_of_selects->children)
+                        self(self, child, false);
+                    return;
+                }
+
+                if (const auto * intersect_except = current->as<ASTSelectIntersectExceptQuery>())
+                {
+                    auto children = intersect_except->getListOfSelects();
+                    for (const auto & child : children)
+                        self(self, child, false);
+                    return;
+                }
+
+                /// Keep `(SELECT ...)` equivalent to top-level SELECT while still avoiding traversal into
+                /// arbitrary nested subqueries below the source root.
+                if (allow_subquery_unwrap)
+                {
+                    if (const auto * subquery = current->as<ASTSubquery>())
+                        self(self, subquery->children.empty() ? ASTPtr{} : subquery->children.front(), false);
+                }
+            };
+
+            collect_top_level_source_settings(collect_top_level_source_settings, select, true);
         }
 
     }
