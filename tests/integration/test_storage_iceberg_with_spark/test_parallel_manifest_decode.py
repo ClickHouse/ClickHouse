@@ -213,14 +213,22 @@ def test_parallel_manifest_decode_matches_serial(
     # a regular, catchable exception — not abort the server — and the very next
     # attempt (the failpoint disarms itself after one hit) must succeed with
     # correct results, proving the failed construction left no wedged state.
+    # Note: the probe must read actual data (not a bare `count()`, which the
+    # trivial-count optimization answers from snapshot metadata without ever
+    # constructing the data-file iterator, so the failpoint would not fire).
     instance.query(
         "SYSTEM ENABLE FAILPOINT iceberg_parallel_manifest_decode_spawn_failure"
     )
     with pytest.raises(Exception, match="Simulated producer spawn failure"):
         instance.query(
-            f"SELECT count() FROM {cluster_expr} "
+            f"SELECT id, value FROM {cluster_expr} ORDER BY id "
             f"SETTINGS iceberg_parallel_manifest_decode_threads = 8"
         )
+    # The ONCE failpoint disarms after one hit; disable explicitly anyway so the
+    # recovery check below does not depend on failpoint semantics.
+    instance.query(
+        "SYSTEM DISABLE FAILPOINT iceberg_parallel_manifest_decode_spawn_failure"
+    )
     assert instance.query("SELECT 1").strip() == "1", "server unreachable after spawn failure"
     _, recovered = query_with_threads("recovery", select_all, 8)
     assert recovered == serial_del
