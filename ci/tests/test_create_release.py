@@ -259,7 +259,21 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
     git("commit", "-q", "-m", "Base release commit")
     # The previous release on this branch.
     git("tag", "-a", "v26.6.1.1-stable", "-m", "Release v26.6.1.1-stable")
-    # A later commit so HEAD is one commit past the previous tag (tweak math).
+    prev = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # Point the version-file githash at the previous release so the tweak counts
+    # real commits on top of it (two here) — a non-empty patch release (26.6.2.2),
+    # not the empty tweak==1 case that prepare refuses.
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, prev), encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Point version githash at previous release")
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
     git("commit", "-q", "-m", "Post-release commit")
@@ -326,8 +340,8 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
         info = json.load(f)
     assert info["release_type"] == "patch"
     assert info["release_branch"] == "26.6"
-    assert info["release_tag"] == "v26.6.2.1-stable"
-    assert info["version"] == "26.6.2.1"
+    assert info["release_tag"] == "v26.6.2.2-stable"
+    assert info["version"] == "26.6.2.2"
     assert info["commit_sha"] == commit_sha
     assert info["create_new_release"] is True
 
@@ -718,7 +732,21 @@ def test_prepare_creates_from_branch_ref(tmp_path):
     git("add", "-A")
     git("commit", "-q", "-m", "Previous release commit")
     git("tag", "-a", "v26.6.1.1-stable", "-m", "Release v26.6.1.1-stable")
-    # Advance the branch tip past the latest release tag.
+    prev = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    # Point the version-file githash at the previous release so the tweak counts
+    # real commits on top of it (two here) — a non-empty patch release (26.6.2.2),
+    # not the empty tweak==1 case that prepare refuses.
+    (repo / _VERSIONS_FILE).write_text(
+        _VERSIONS_CONTENT.replace("0" * 40, prev), encoding="utf-8"
+    )
+    git("add", "-A")
+    git("commit", "-q", "-m", "Point version githash at previous release")
     (repo / "README.md").write_text("clickhouse\n", encoding="utf-8")
     git("add", "-A")
     git("commit", "-q", "-m", "New commit to release")
@@ -763,5 +791,5 @@ def test_prepare_creates_from_branch_ref(tmp_path):
     )
     with open("/tmp/release_info.json", encoding="utf-8") as f:
         info = json.load(f)
-    assert info["release_tag"] == "v26.6.2.1-stable"
+    assert info["release_tag"] == "v26.6.2.2-stable"
     assert info["create_new_release"] is True

@@ -5,9 +5,7 @@ concurrency:
   group: ${{ github.workflow }}
 on:
   workflow_dispatch:
-    inputs:
   workflow_call:
-    inputs:
     secrets:
       TWINE_PASSWORD:
         required: true

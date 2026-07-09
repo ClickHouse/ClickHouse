@@ -97,8 +97,7 @@ name: {NAME}
 concurrency:
   group: ${{{{{{{{ github.workflow }}}}}}}}
 on:
-  workflow_dispatch:
-    inputs:{DISPATCH_INPUTS}{WORKFLOW_CALL}
+  workflow_dispatch:{DISPATCH_INPUTS_BLOCK}{WORKFLOW_CALL}
 
 env:
   PYTHONUNBUFFERED: 1
@@ -111,8 +110,7 @@ jobs:
 """
 
         TEMPLATE_WORKFLOW_CALL = """
-  workflow_call:
-    inputs:{INPUTS}\
+  workflow_call:{INPUTS_BLOCK}\
 """
 
         TEMPLATE_WORKFLOW_CALL_STRING_INPUT = """
@@ -141,6 +139,7 @@ jobs:
         TEMPLATE_BOOLEAN_INPUT = """
       {NAME}:
         description: {DESCRIPTION}
+        required: {IS_REQUIRED}
         type: boolean
         default: {DEFAULT_VALUE}\
 """
@@ -468,6 +467,7 @@ class PullRequestPushYamlGen:
                 dispatch_inputs += YamlGenerator.Templates.TEMPLATE_BOOLEAN_INPUT.format(
                     NAME=input_item.name,
                     DESCRIPTION=input_item.description,
+                    IS_REQUIRED="true" if input_item.is_required else "false",
                     DEFAULT_VALUE=input_item.default_value or "false",
                 )
             elif not input_item.options:
@@ -537,6 +537,7 @@ class PullRequestPushYamlGen:
                     wc_inputs += YamlGenerator.Templates.TEMPLATE_BOOLEAN_INPUT.format(
                         NAME=input_item.name,
                         DESCRIPTION=input_item.description,
+                        IS_REQUIRED="true" if input_item.is_required else "false",
                         DEFAULT_VALUE=input_item.default_value or "false",
                     )
                 else:
@@ -548,20 +549,29 @@ class PullRequestPushYamlGen:
                         DEFAULT_VALUE=input_item.default_value or "''",
                     )
             workflow_call = YamlGenerator.Templates.TEMPLATE_WORKFLOW_CALL.format(
-                INPUTS=wc_inputs
+                INPUTS_BLOCK=f"\n    inputs:{wc_inputs}" if wc_inputs else ""
             )
-            wc_secret_names = [
-                secret.name
-                for secret in self.parser.config.secrets
-                if secret.is_gh_secret()
-            ]
+            # Reusable-workflow callers can only pass secrets declared under
+            # `on.workflow_call.secrets`, so re-declare every GH secret the
+            # generated jobs may reference — both workflow-level secrets and
+            # per-job secrets — deduplicated and order-preserving.
+            wc_secret_names = []
+            for secret in self.parser.config.secrets:
+                if secret.is_gh_secret() and secret.name not in wc_secret_names:
+                    wc_secret_names.append(secret.name)
+            for job in self.parser.config.jobs:
+                for secret in job.secrets:
+                    if secret.is_gh_secret() and secret.name not in wc_secret_names:
+                        wc_secret_names.append(secret.name)
             if wc_secret_names:
                 workflow_call += "\n    secrets:"
                 for name in wc_secret_names:
                     workflow_call += f"\n      {name}:\n        required: true"
 
             format_kwargs = {
-                "DISPATCH_INPUTS": dispatch_inputs,
+                "DISPATCH_INPUTS_BLOCK": (
+                    f"\n    inputs:{dispatch_inputs}" if dispatch_inputs else ""
+                ),
                 "WORKFLOW_CALL": workflow_call,
                 "GH_TOKEN_PERMISSIONS": (
                     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
