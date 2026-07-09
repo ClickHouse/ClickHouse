@@ -2,6 +2,13 @@
 
 SET async_insert = 0;
 
+-- Parser regression for backward-incompatible `RETURNING` keyword behavior:
+-- implicit alias is rejected, explicit aliasing stays allowed.
+SELECT 'returning keyword parsing';
+SELECT 1 returning; -- { serverError SYNTAX_ERROR }
+SELECT 1 AS returning;
+SELECT 1 AS `returning`;
+
 DROP TABLE IF EXISTS t_insert_returning;
 DROP TABLE IF EXISTS t_insert_returning_other;
 
@@ -192,16 +199,16 @@ CREATE TABLE db_insert_returning_tx.t_insert_returning_tx (id UInt64) ENGINE = M
 SELECT 'returning failure rolls back implicit transaction';
 INSERT INTO db_insert_returning_tx.t_insert_returning_tx
 SETTINGS implicit_transaction=1
-SELECT number FROM numbers(3)
-RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx); -- { serverError UNKNOWN_IDENTIFIER }
+RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx)
+VALUES (0), (1), (2); -- { serverError UNKNOWN_IDENTIFIER }
 SELECT count() FROM db_insert_returning_tx.t_insert_returning_tx;
 
 SELECT 'returning failure rolls back explicit transaction';
 TRUNCATE TABLE db_insert_returning_tx.t_insert_returning_tx;
 BEGIN TRANSACTION;
 INSERT INTO db_insert_returning_tx.t_insert_returning_tx
-SELECT number + 10 FROM numbers(3)
-RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx); -- { serverError UNKNOWN_IDENTIFIER }
+RETURNING (SELECT no_such_col FROM db_insert_returning_tx.t_insert_returning_tx)
+VALUES (10), (11), (12); -- { serverError UNKNOWN_IDENTIFIER }
 ROLLBACK;
 SELECT count() FROM db_insert_returning_tx.t_insert_returning_tx;
 
