@@ -2075,3 +2075,42 @@ def test_namespace_prefix_optimize_and_partition_authorization(started_cluster):
         assert "ACCESS_DENIED" not in err, f"REPLACE PARTITION: unexpected ACCESS_DENIED: {err}"
     finally:
         node.query(f"DROP USER IF EXISTS {user}")
+
+
+def test_namespace_prefix_mutation_expression(started_cluster):
+    """
+    Table references inside ALTER ... UPDATE expressions under USE db.namespace
+    must resolve inside the namespace, like any other table reference.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_mutexpr_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    target = "mut_expr_target"
+    src = "mut_expr_src"
+    write_settings = {"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1}
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, target, "(x String, y Int32)")
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, src, "(x String, y Int32)")
+
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{namespace}.{target}` VALUES ('old', 1)",
+        settings=write_settings,
+    )
+    node.query(
+        f"INSERT INTO {CATALOG_NAME}.`{namespace}.{src}` VALUES ('fresh', 2)",
+        settings=write_settings,
+    )
+
+    node.query(
+        f"USE {CATALOG_NAME}.{namespace}; "
+        f"ALTER TABLE {target} UPDATE x = (SELECT any(x) FROM {src}) WHERE 1",
+        settings=write_settings,
+    )
+    result = node.query(f"SELECT x FROM {CATALOG_NAME}.`{namespace}.{target}`").strip()
+    assert result == "fresh", f"mutation expression resolved the wrong source: {result}"

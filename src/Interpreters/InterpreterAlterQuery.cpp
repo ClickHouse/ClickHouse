@@ -500,7 +500,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
-    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
+    /// These references are qualified with the target table's database; the session namespace
+    /// prefix (USE db.namespace) applies only when that is the session's current database.
+    const auto current_database_info = getContext()->getCurrentDatabaseInfo();
+    const String & expression_table_prefix
+        = table_id.database_name == current_database_info.database ? current_database_info.table_prefix : "";
+    AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName(),
+        /*only_replace_current_database_function*/ false, /*only_replace_in_join*/ false, expression_table_prefix);
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
