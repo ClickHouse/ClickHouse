@@ -32,6 +32,8 @@ PRIMARY KEY(primary_key_name);
 :::note Serialization
 `PRIMARY KEY` supports only one column. The primary key will be serialized in binary as a Redis key.
 Columns other than the primary key will be serialized in binary as Redis value in corresponding order.
+
+When the `DB_INDEX` contains other none serialized key and value, `select * from redis_table` without key filter will throw `Code: 33: CANNOT_READ_ALL_DATA`. Remove the non-serialized key and value to enable scanning query.
 :::
 
 Arguments also can be passed using [named collections](/operations/named-collections.md). In this case `host` and `port` should be specified separately. This approach is recommended for production environment. At this moment, all parameters passed using named collections to redis are required.
