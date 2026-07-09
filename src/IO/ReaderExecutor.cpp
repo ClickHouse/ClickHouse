@@ -39,7 +39,6 @@ namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_READ_ALL_DATA;
-    extern const int LOGICAL_ERROR;
 }
 
 namespace DB::FailPoints
