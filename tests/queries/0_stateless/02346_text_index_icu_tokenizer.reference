@@ -1,21 +1,47 @@
--- The has*Tokens functions must use the same tokenizer as the index, passed via function-call syntax.
+-- has*Tokens infers the tokenizer from the text index, so no tokenizer argument is needed.
 
 -- { echoOn }
--- A Latin token embedded in Japanese text (deterministic segmentation).
-SELECT id FROM tab WHERE hasAnyTokens(doc, 'ClickHouse', 'icu(''ja'')') ORDER BY id;
+-- String needle: tokenized with the index tokenizer (icu). A Latin token embedded in Japanese text.
+SELECT id FROM tab WHERE hasAnyTokens(doc, 'ClickHouse') ORDER BY id;
 3
--- Single Japanese dictionary words.
-SELECT id FROM tab WHERE hasAnyTokens(doc, '日本語', 'icu(''ja'')') ORDER BY id;
+-- String needle: a single Japanese dictionary word.
+SELECT id FROM tab WHERE hasAnyTokens(doc, '日本語') ORDER BY id;
 1
-SELECT id FROM tab WHERE hasAnyTokens(doc, '東京', 'icu(''ja'')') ORDER BY id;
-4
--- hasAnyTokens with multiple needles: match if any token is present.
-SELECT id FROM tab WHERE hasAnyTokens(doc, ['日本語', '東京'], 'icu(''ja'')') ORDER BY id;
+-- String needle that icu splits into several words (コンピュータ / の / プログラミング). splitByNonAlpha would
+-- keep it as one token and match nothing; matching only row 2 proves the index tokenizer (icu) is used.
+SELECT id FROM tab WHERE hasAllTokens(doc, 'コンピュータのプログラミング') ORDER BY id;
+2
+-- Array needle: each element is treated as a literal token (no tokenization).
+SELECT id FROM tab WHERE hasAnyTokens(doc, ['日本語', '東京']) ORDER BY id;
 1
 4
 -- hasAllTokens: all needle tokens must be present in the same row.
-SELECT id FROM tab WHERE hasAllTokens(doc, ['日本', '都市'], 'icu(''ja'')') ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(doc, ['日本', '都市']) ORDER BY id;
 4
-SELECT id FROM tab WHERE hasAllTokens(doc, ['日本語', '東京'], 'icu(''ja'')') ORDER BY id;
+SELECT id FROM tab WHERE hasAllTokens(doc, ['日本語', '東京']) ORDER BY id;
 -- A token that is not present in any row.
-SELECT id FROM tab WHERE hasAnyTokens(doc, '存在しない', 'icu(''ja'')') ORDER BY id;
+SELECT id FROM tab WHERE hasAnyTokens(doc, '存在しない') ORDER BY id;
+-- Without an index and without a tokenizer argument, the brute-force scan uses splitByNonAlpha, which
+-- cannot segment Japanese: a run with no ASCII separators becomes one token, so searching for an
+-- individual Japanese word that is only a part of such a run finds nothing.
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '日本語') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '東京') ORDER BY id;
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市']) ORDER BY id;
+-- Specifying the icu tokenizer explicitly makes the brute-force scan segment Japanese correctly, giving
+-- exactly the same results as the indexed column (which infers the icu tokenizer). Each pair must match.
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '日本語', 'icu(''ja'')') ORDER BY id;
+1
+SELECT id FROM tab         WHERE hasAnyTokens(doc, '日本語') ORDER BY id;
+1
+SELECT id FROM tab_noindex WHERE hasAnyTokens(doc, '東京', 'icu(''ja'')') ORDER BY id;
+4
+SELECT id FROM tab         WHERE hasAnyTokens(doc, '東京') ORDER BY id;
+4
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, 'コンピュータのプログラミング', 'icu(''ja'')') ORDER BY id;
+2
+SELECT id FROM tab         WHERE hasAllTokens(doc, 'コンピュータのプログラミング') ORDER BY id;
+2
+SELECT id FROM tab_noindex WHERE hasAllTokens(doc, ['日本', '都市'], 'icu(''ja'')') ORDER BY id;
+4
+SELECT id FROM tab         WHERE hasAllTokens(doc, ['日本', '都市']) ORDER BY id;
+4
