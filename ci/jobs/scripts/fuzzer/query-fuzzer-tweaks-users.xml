@@ -27,20 +27,15 @@
                     <max>200</max>
                 </table_function_remote_max_addresses>
 
-                <!-- A fuzzed huge max_threads saturates the global thread pool, starving
-                     the server-liveness probe and delaying query cancellation. Cap it. -->
-                <max_threads>
-                    <max>128</max>
-                </max_threads>
-
                 <!-- Don't waste cycles testing the old interpreter. Spend time in the analyzer instead -->
                 <enable_analyzer>
                     <min>1</min>
                 </enable_analyzer>
 
                 <!-- Recursion-limiting constraints (max_ast_depth, max_parser_depth,
-                     max_parser_backtracks) live in limit-recursion-settings.xml, installed
-                     alongside this file and shared with the stress test. -->
+                     max_parser_backtracks) and the max_threads cap live in
+                     limit-recursion-settings.xml, installed alongside this file and
+                     shared with the stress test. -->
 
             </constraints>
 
