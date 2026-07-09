@@ -259,6 +259,8 @@ def test_metric_values_and_stability(started_cluster):
     # equality, executor-ran) plus the async-metric registration. The per-cell R/I/cost
     # magnitudes are printed for diagnostics but NOT gated: they are timing/config-sensitive on
     # a max_threads=8 read and cannot hold a tight band across the full CI sanitizer/config matrix.
+    if node.is_built_with_llvm_coverage():
+        pytest.skip("the query matrix does not fit in the 900s per-test timeout on the coverage build")
     report = []
     for mode, use_long_conn in MODES:
         for name, query in LOADS.items():
@@ -324,6 +326,8 @@ def test_metric_values_and_stability(started_cluster):
 # whether the variable-window machinery earns its keep (Stage 4); the assertion is only a
 # loose pathology guard, not a tight equivalence gate (under-load variance is real).
 def test_fixed_small_vs_variable_window(started_cluster):
+    if node.is_built_with_llvm_coverage():
+        pytest.skip("the query matrix does not fit in the 900s per-test timeout on the coverage build")
     window = node.query("SELECT getSetting('reader_executor_window_size')").strip()
     fixed_small = {"reader_executor_plan_look_ahead_max_window": int(window)}
     report = []
