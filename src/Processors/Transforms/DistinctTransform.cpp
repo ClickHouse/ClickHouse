@@ -1,5 +1,6 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
+#include <algorithm>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
 
@@ -10,7 +11,6 @@ namespace ErrorCodes
 {
     extern const int SET_SIZE_LIMIT_EXCEEDED;
     extern const int LOGICAL_ERROR;
-    extern const int QUERY_WAS_CANCELLED;
 }
 
 void LCOptimizationController::update(size_t num_rows, size_t new_indices_in_chunk)
@@ -71,7 +71,10 @@ void DistinctTransform::buildFilter(
         for (size_t i = 0; i < rows; ++i)
         {
             if ((i & 0xFFF) == 0 && isCancelled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+            {
+                std::fill(filter.begin() + i, filter.end(), 0);
+                return;
+            }
 
             if (!(*mask)[i])
             {
@@ -89,7 +92,10 @@ void DistinctTransform::buildFilter(
         for (size_t i = 0; i < rows; ++i)
         {
             if ((i & 0xFFF) == 0 && isCancelled())
-                throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+            {
+                std::fill(filter.begin() + i, filter.end(), 0);
+                return;
+            }
 
             auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
 
@@ -157,7 +163,7 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             for (size_t row = 0; row < num_rows; ++row)
             {
                 if ((row & 0xFFF) == 0 && isCancelled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+                    return {std::move(mask), state.seen_count - seen_count_before};
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -168,7 +174,7 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             for (size_t row = 0; row < num_rows; ++row)
             {
                 if ((row & 0xFFF) == 0 && isCancelled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+                    return {std::move(mask), state.seen_count - seen_count_before};
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -179,7 +185,7 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             for (size_t row = 0; row < num_rows; ++row)
             {
                 if ((row & 0xFFF) == 0 && isCancelled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+                    return {std::move(mask), state.seen_count - seen_count_before};
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -190,7 +196,7 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             for (size_t row = 0; row < num_rows; ++row)
             {
                 if ((row & 0xFFF) == 0 && isCancelled())
-                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+                    return {std::move(mask), state.seen_count - seen_count_before};
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -208,7 +214,11 @@ void DistinctTransform::transform(Chunk & chunk)
         return;
 
     if (isCancelled())
-        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
+    {
+        chunk.clear();
+        stopReading();
+        return;
+    }
 
     /// Convert to full column, because SetVariant for sparse column is not implemented.
     removeSpecialColumnRepresentations(chunk);
@@ -241,6 +251,14 @@ void DistinctTransform::transform(Chunk & chunk)
         {
             auto [mask, new_indices_count] = buildLowCardinalityMask(*lc, num_rows);
             lc_optimization_controller.update(num_rows, new_indices_count);
+
+            if (isCancelled())
+            {
+                chunk.clear();
+                stopReading();
+                return;
+            }
+
             lc_mask.emplace(std::move(mask));
 
             /// Empty mask -> no candidate rows in this chunk, emit nothing.
@@ -265,6 +283,13 @@ void DistinctTransform::transform(Chunk & chunk)
         break;
         APPLY_FOR_SET_VARIANTS(M)
 #undef M
+    }
+
+    if (isCancelled())
+    {
+        chunk.clear();
+        stopReading();
+        return;
     }
 
     const auto new_set_size = data.getTotalRowCount();
