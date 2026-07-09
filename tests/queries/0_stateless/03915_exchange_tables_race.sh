@@ -64,3 +64,35 @@ ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE IF EXISTS tbl_03007_3;
 DROP TABLE IF EXISTS tbl_03007_4;
 EOF
+
+# Wrapper-only drift reaching an input_rows_count == 1 partial-evaluation caller. The queries
+# above go through ActionsDAG::updateHeader (input_rows_count == 0); the one-row path that the
+# do-not-fold guard also protects is reached only from the partial-evaluation callers (JOIN
+# rewrite / shard skipping / path extraction). Here an ANY LEFT JOIN whose post-join filter is
+# isNullable(r.w) triggers convertAnyJoinToSemiOrAntiJoin, which evaluates that filter via
+# evaluatePartialResult(input_rows_count = 1) to decide the rewrite. A concurrent EXCHANGE
+# swapping String with Nullable(String) drifts r.w between analysis and that evaluation: without
+# the exact-type guard isNullable would fold a definitive but wrong UInt8, silently changing the
+# rewrite; with the guard the drifted argument is do-not-fold, the column stays null and the
+# caller takes its "unknown" path (getFilterResult returns UNKNOWN) so the JOIN is left unchanged.
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+DROP TABLE IF EXISTS tbl_03007_5;
+DROP TABLE IF EXISTS tbl_03007_6;
+DROP TABLE IF EXISTS tbl_03007_l;
+CREATE TABLE tbl_03007_l (k UInt64) ENGINE=Memory;
+CREATE TABLE tbl_03007_5 (k UInt64, w String) ENGINE=Memory;
+CREATE TABLE tbl_03007_6 (k UInt64, w Nullable(String)) ENGINE=Memory;
+EOF
+
+for _ in {1..10}; do
+    (! ${CLICKHOUSE_CLIENT} --query "SELECT l.k FROM tbl_03007_l l ANY LEFT JOIN tbl_03007_5 r ON l.k = r.k WHERE isNullable(r.w) SETTINGS query_plan_convert_any_join_to_semi_or_anti_join = 1" 2>&1 | grep -E "LOGICAL_ERROR|Unexpected return type") &
+    ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_5 AND tbl_03007_6" 2>/dev/null &
+done
+
+wait 2>/dev/null
+
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+DROP TABLE IF EXISTS tbl_03007_5;
+DROP TABLE IF EXISTS tbl_03007_6;
+DROP TABLE IF EXISTS tbl_03007_l;
+EOF
