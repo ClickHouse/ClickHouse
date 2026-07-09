@@ -396,6 +396,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_policies", [&](const JSONObjectType & value) { max_policies = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_hypotheticals", [&](const JSONObjectType & value) { max_hypotheticals = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
@@ -889,6 +890,12 @@ ORDER BY f.name)sql";
 void FuzzConfig::loadServerConfigurations()
 {
     loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
+    loadServerSettings<String>(this->in_formats, "input formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1)");
+    loadServerSettings<String>(this->out_formats, "output formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_output" = 1)");
+    loadServerSettings<String>(
+        this->in_out_formats,
+        "input and output formats",
+        R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1 AND "is_output" = 1)");
     loadServerSettings<String>(
         this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
     loadServerSettings<String>(

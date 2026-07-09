@@ -519,9 +519,7 @@ static bool writeMetadataFiles(
             buffer_manifest_list->finalize();
         }
 
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::JSON::Stringifier::stringify(metadata, oss, 4);
-        std::string json_representation = removeEscapedSlashes(oss.str());
+        std::string json_representation = stringifyJSON(metadata, 4);
 
         fiu_do_on(FailPoints::iceberg_writes_cleanup,
         {
@@ -760,9 +758,7 @@ void alter(
             }
         }
 
-        std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
-        Poco::JSON::Stringifier::stringify(metadata, oss, 4);
-        std::string json_representation = removeEscapedSlashes(oss.str());
+        std::string json_representation = stringifyJSON(metadata, 4);
 
         auto metadata_info = filename_generator.generateMetadataPathWithInfo();
 
