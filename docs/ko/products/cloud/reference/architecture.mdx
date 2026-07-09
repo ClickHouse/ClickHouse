@@ -1,0 +1,75 @@
+---
+sidebarTitle: '아키텍처'
+slug: /cloud/reference/architecture
+title: 'ClickHouse Cloud 아키텍처'
+description: '이 페이지는 ClickHouse Cloud 아키텍처를 설명합니다'
+keywords: ['ClickHouse Cloud', '클라우드 아키텍처', '스토리지와 컴퓨트의 분리']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Image img="/images/cloud/reference/architecture.webp" size="lg" alt="Cloud 아키텍처" />
+
+<div id="storage-backed-by-object-store">
+  ## 객체 스토어 기반 스토리지
+</div>
+
+* 사실상 무제한에 가까운 스토리지
+* 데이터를 수동으로 분산할 필요 없음
+* 데이터 저장 비용이 훨씬 낮으며, 특히 자주 액세스하지 않는 데이터에 더욱 유리함
+
+<div id="compute">
+  ## 컴퓨트
+</div>
+
+* 자동 스케일링 및 유휴 상태 전환: 사전에 용량을 정할 필요가 없고, 최대 사용량에 맞춰 과도하게 프로비저닝할 필요도 없습니다
+* 자동 유휴 상태 전환 및 재개: 사용하지 않을 때는 컴퓨트를 계속 실행해 둘 필요가 없습니다
+* 기본적으로 보안과 고가용성(HA)이 보장됩니다
+
+<div id="administration">
+  ## 관리
+</div>
+
+* Setup, 모니터링, 백업, 청구는 모두 대신 처리됩니다.
+* 비용 제어는 기본적으로 활성화되어 있으며, Cloud Console에서 조정할 수 있습니다.
+
+<div id="service-isolation">
+  ## 서비스 격리
+</div>
+
+<div id="network-isolation">
+  ### 네트워크 격리
+</div>
+
+모든 서비스는 네트워크 수준에서 격리됩니다.
+
+<div id="compute-isolation">
+  ### 컴퓨트 격리
+</div>
+
+모든 서비스는 각자의 Kubernetes 공간에서 별도의 파드로 배포되며, 네트워크 수준 격리가 적용됩니다.
+
+<div id="storage-isolation">
+  ### 스토리지 격리
+</div>
+
+모든 서비스는 공유 버킷(AWS, GCP) 또는 스토리지 컨테이너(Azure)의 별도 하위 경로를 사용합니다.
+
+AWS에서는 AWS IAM을 통해 스토리지 접근을 제어하며, 각 IAM role은 서비스마다 고유합니다. Enterprise 서비스의 경우, 저장 상태의 데이터에 대해 고급 데이터 격리를 제공하도록 [CMEK](/ko/products/cloud/guides/security/cmek)을 활성화할 수 있습니다. 현재 CMEK는 AWS 서비스에서만 지원됩니다.
+
+GCP와 Azure에서는 서비스별 객체 스토리지 격리가 제공됩니다(모든 서비스는 자체 버킷 또는 스토리지 컨테이너를 사용합니다).
+
+<div id="compute-compute-separation">
+  ## 컴퓨트-컴퓨트 분리
+</div>
+
+[컴퓨트-컴퓨트 분리](/ko/products/cloud/features/infrastructure/warehouses)를 사용하면 각각 고유한 서비스 URL을 가지면서 동일한 공유 객체 스토리지를 사용하는 여러 컴퓨트 노드 그룹을 생성할 수 있습니다. 이를 통해 동일한 데이터를 공유하더라도 쓰기와 읽기처럼 서로 다른 사용 사례별로 컴퓨트를 격리할 수 있습니다. 또한 필요에 따라 컴퓨트 그룹을 각각 독립적으로 스케일링할 수 있어 리소스를 더 효율적으로 활용할 수 있습니다.
+
+<div id="concurrency-limits">
+  ## 동시성 제한
+</div>
+
+ClickHouse Cloud 서비스에는 초당 쿼리 수(QPS) 제한이 없습니다. 다만 동시에 실행할 수 있는 쿼리는 레플리카당 1000개까지입니다. QPS는 결국 평균 쿼리 실행 시간과 서비스의 레플리카 수에 따라 결정됩니다.
+
+자가 관리형 ClickHouse 인스턴스나 다른 데이터베이스/데이터 웨어하우스와 비교할 때 ClickHouse Cloud의 주요 장점 중 하나는 [레플리카를 더 추가하는 방식(수평 스케일링)](/ko/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling)으로 동시성을 쉽게 높일 수 있다는 점입니다.

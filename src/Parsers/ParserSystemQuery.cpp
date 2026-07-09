@@ -13,6 +13,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/InstrumentationManager.h>
+#include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
 #include <base/EnumReflection.h>
@@ -22,6 +23,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 [[nodiscard]] static bool parseQueryWithOnClusterAndMaybeTable(boost::intrusive_ptr<ASTSystemQuery> & res, IParser::Pos & pos,
                                                  Expected & expected, bool require_table, bool allow_string_literal)
@@ -211,14 +217,31 @@ enum class SystemQueryTargetType : uint8_t
             if (!ParserStringLiteral{}.parse(pos, path_ast, expected))
                 return false;
             String zk_path = path_ast->as<ASTLiteral &>().value.safeGet<String>();
-            if (!zk_path.empty() && zk_path[zk_path.size() - 1] == '/')
-                zk_path.pop_back();
-            if (!zk_path.empty())
-            {
-                res->full_replica_zk_path = std::move(zk_path);
-                res->zk_name = zkutil::extractZooKeeperName(res->full_replica_zk_path);
-                res->replica_zk_path = zkutil::extractZooKeeperPath(res->full_replica_zk_path, /*check_starts_with_slash*/false);
-            }
+
+            /// Reject empty/root-only keeper paths at parse time (see #109217). For "", "/", "//",
+            /// "aux:/", "aux://" the fully collapsed keeper path is empty/root, so the malformed query
+            /// is caught here instead of building a lossy AST that fails the debug round-trip self-check.
+            /// (Short-circuit: for an empty literal the helper would throw a less specific message.)
+            if (zk_path.empty()
+                || zkutil::extractZooKeeperPathAndCollapseTrailingSlashes(zk_path, /*check_starts_with_slash*/ false)
+                       .find_first_not_of('/') == String::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "ZooKeeper path in DROP REPLICA is empty or refers to the root");
+
+            res->zk_name = zkutil::extractZooKeeperName(zk_path);
+
+            /// Store the drop path with the legacy one-slash normalization (strip one trailing slash
+            /// here, extractZooKeeperPath strips one more) so it matches how tables and Replicated
+            /// databases store their keeper path (TableZnodeInfo::resolve / DatabaseReplicated). Fully
+            /// collapsing here would make a remote-replica drop of an object created with a trailing
+            /// slash probe the wrong znode. The self-protection guards collapse both sides instead.
+            String legacy_path = zk_path;
+            if (legacy_path.back() == '/')
+                legacy_path.pop_back();
+            res->replica_zk_path = zkutil::extractZooKeeperPath(legacy_path, /*check_starts_with_slash*/ false);
+
+            /// Keep the raw literal for formatting so the AST round-trips losslessly (formatImpl prints
+            /// full_replica_zk_path; the interpreter uses the normalized replica_zk_path for the drop).
+            res->full_replica_zk_path = std::move(zk_path);
         }
         else
             return false;
@@ -406,6 +429,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
         case Type::RESTART_REPLICA:
         case Type::SYNC_REPLICA:
         case Type::WAIT_LOADING_PARTS:
+        case Type::WAIT_QUERY_RUNNER:
         case Type::PREWARM_MARK_CACHE:
         case Type::PREWARM_PRIMARY_INDEX_CACHE:
         {

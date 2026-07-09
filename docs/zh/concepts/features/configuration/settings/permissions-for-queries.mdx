@@ -1,0 +1,75 @@
+---
+description: '查询权限设置。'
+sidebarTitle: '查询权限'
+slug: /operations/settings/permissions-for-queries
+title: '查询权限'
+doc_type: 'reference'
+---
+
+ClickHouse 中的查询可分为以下几类：
+
+1. 读取数据查询：`SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`。
+2. 写入数据查询：`INSERT`, `OPTIMIZE`。
+3. 修改设置查询：`SET`, `USE`。
+4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询：`CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`。
+5. `KILL QUERY`。
+
+以下设置按查询类型控制用户权限：
+
+<div id="readonly">
+  ## readonly
+</div>
+
+限制读取数据、写入数据和修改设置查询的权限。
+
+设置为 1 时，允许：
+
+* 所有类型的读取查询 (如 SELECT 及其等效查询) 。
+* 仅修改会话上下文的查询 (如 USE) 。
+
+设置为 2 时，除上述之外，还允许：
+
+* SET 和 CREATE TEMPORARY TABLE
+
+<Tip>
+  EXISTS、DESCRIBE、EXPLAIN、SHOW PROCESSLIST 等查询等同于 SELECT，因为它们只是从系统表中执行 select。
+</Tip>
+
+可能的值：
+
+* 0 — 允许读取、写入和修改设置查询。
+* 1 — 仅允许读取数据查询。
+* 2 — 允许读取数据和修改设置查询。
+
+默认值：0
+
+<Note>
+  设置 `readonly = 1` 后，用户无法在当前会话中更改 `readonly` 和 `allow_ddl` 设置。
+
+  在 [HTTP interface](/zh/concepts/features/interfaces/http) 中使用 `GET` method 时，会自动将 `readonly` 设为 1。若要修改数据，请使用 `POST` method。
+
+  设置 `readonly = 1` 会禁止用户更改设置。你也可以仅禁止用户更改特定设置，或者在 `readonly = 1` 的限制下只允许更改特定设置。详情请参见[设置约束](/zh/concepts/features/configuration/settings/constraints-on-settings)。
+</Note>
+
+<div id="allow_ddl">
+  ## allow_ddl
+</div>
+
+允许或禁止 [DDL](https://en.wikipedia.org/wiki/Data_definition_language) 查询。
+
+可能的值：
+
+* 0 — 不允许执行 DDL 查询。
+* 1 — 允许执行 DDL 查询。
+
+默认值：1
+
+<Note>
+  如果当前会话的 `allow_ddl = 0`，则无法运行 `SET allow_ddl = 1`。
+</Note>
+
+<Info>
+  **KILL QUERY**
+
+  无论 readonly 和 allow&#95;ddl 的设置如何组合，都可以执行 `KILL QUERY`。
+</Info>

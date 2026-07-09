@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'تهيئة جدولة النسخ الاحتياطية'
+slug: /cloud/manage/backups/configurable-backups
+description: 'دليل يوضّح كيفية تهيئة جدولة النسخ الاحتياطية'
+title: 'تهيئة جدولة النسخ الاحتياطية'
+keywords: ['النسخ الاحتياطية', 'النسخ الاحتياطية السحابية', 'استعادة']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="النسخ الاحتياطية القابلة للتهيئة" linking_verb_are="True" />
+
+لإعداد جدولة النسخ الاحتياطي لخدمة، انتقل إلى علامة التبويب **الإعدادات** في وحدة التحكم وانقر على **تغيير إعدادات النسخ الاحتياطي**.
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="إعداد إعدادات النسخ الاحتياطي" border />
+
+سيؤدي ذلك إلى فتح علامة تبويب على اليمين، حيث يمكنك اختيار قيم مدة الاحتفاظ والتكرار ووقت البدء. ستحتاج إلى حفظ الإعدادات التي اخترتها لكي يتم تطبيقها.
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="تحديد مدة الاحتفاظ بالنسخ الاحتياطي وتكراره" border />
+
+<Note>
+  وقت البدء والتكرار لا يمكن استخدامهما معًا. وتكون الأولوية لوقت البدء.
+</Note>
+
+<Note>
+  قد يؤدي تغيير جدولة النسخ الاحتياطي إلى ارتفاع رسوم التخزين الشهرية، لأن بعض النسخ الاحتياطية قد لا تكون مشمولة ضمن النسخ الاحتياطية الافتراضية للخدمة. راجع [&quot;فهم تكلفة النسخ الاحتياطي&quot;](/ar/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>

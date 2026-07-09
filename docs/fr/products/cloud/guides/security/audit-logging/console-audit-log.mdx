@@ -1,0 +1,70 @@
+---
+sidebarTitle: 'Journal d’audit de la console'
+slug: /cloud/security/audit-logging/console-audit-log
+title: 'Journal d’audit de la console'
+description: 'Cette page explique comment consulter le journal d’audit de la console'
+doc_type: 'guide'
+keywords: ['journal d’audit']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Les activités de la Console sont consignées dans le journal d’audit. Si vous avez le rôle Admin ou Developer au niveau de l’organisation, vous pouvez consulter ce journal et l’intégrer à vos systèmes de journalisation.
+
+<div id="console-audit-log-ui">
+  ## Accéder au journal d’audit de la console via l’interface utilisateur
+</div>
+
+<Steps>
+  <Step>
+    ## Sélectionnez l’organisation
+
+    Dans ClickHouse Cloud, accédez aux détails de votre organisation.
+
+    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="Onglet Activity de ClickHouse Cloud" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## Sélectionnez Audit
+
+    Sélectionnez l’onglet **Audit** dans le menu de gauche pour voir les modifications apportées à votre organisation ClickHouse Cloud, notamment qui les a effectuées et à quel moment.
+
+    La page **Activity** affiche un tableau contenant la liste des événements enregistrés pour votre organisation. Par défaut, cette liste est triée en ordre chronologique inverse (l’événement le plus récent en haut). Modifiez l’ordre du tableau en cliquant sur les en-têtes de colonnes. Chaque élément du tableau contient les champs suivants :
+
+    * **Activity :** Un court texte décrivant l’événement
+    * **User :** L’utilisateur à l’origine de l’événement
+    * **IP Address :** Le cas échéant, ce champ indique l’adresse IP de l’utilisateur à l’origine de l’événement
+    * **Time :** L’horodatage de l’événement
+
+    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="Tableau Activity de ClickHouse Cloud" border />
+
+    <br />
+  </Step>
+
+  <Step>
+    ## Utilisez la barre de recherche
+
+    Vous pouvez utiliser la barre de recherche pour filtrer les événements selon certains critères, comme le nom du service ou l’adresse IP. Vous pouvez également exporter ces informations au format CSV pour les exploiter ou les analyser dans un outil externe.
+  </Step>
+</Steps>
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="Export CSV d’Activity dans ClickHouse Cloud" border />
+</div>
+
+<div id="console-audit-log-api">
+  ## Accéder au journal d’audit de la console via l’API
+</div>
+
+Vous pouvez utiliser le endpoint `activity` de la ClickHouse Cloud API pour obtenir une exportation
+des événements d’audit. Vous trouverez plus d’informations dans la [référence de l’API](/fr/api-reference/organization/get-list-of-available-organizations).
+
+<div id="log-integrations">
+  ## Intégrations de logs
+</div>
+
+Vous pouvez utiliser l’API pour l’intégrer à la plateforme de journalisation de votre choix. Les connecteurs prêts à l’emploi suivants sont pris en charge :
+
+* [module d’audit ClickHouse Cloud pour Splunk](/fr/integrations/connectors/data-integrations/integrations/splunk)

@@ -1,0 +1,125 @@
+---
+sidebarTitle: '配置 IP 过滤器'
+slug: /cloud/security/setting-ip-filters
+title: '配置 IP 过滤器'
+description: '本页介绍如何在 ClickHouse Cloud 中配置 IP 过滤器，以控制对 ClickHouse 服务的访问。'
+doc_type: 'guide'
+keywords: ['IP 过滤器', 'IP 访问列表']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div id="setting-ip-filters">
+  ## 设置 IP 过滤器
+</div>
+
+IP 访问列表通过指定允许连接的源地址，过滤发往 ClickHouse 服务或 API 密钥的流量。每个服务和每个 API 密钥都可以单独配置这些列表。可以在创建服务或 API 密钥时进行配置，也可以稍后再配置。
+
+<Warning>
+  **为您的服务配置 IP 访问列表**
+
+  创建 ClickHouse Cloud 服务时，IP 允许列表的默认设置为“允许来自任何位置”。我们强烈建议您尽快将访问限制到特定的 IP 地址或 IP 范围。设置为 `允许从任何位置访问` 的服务，可能会被寻找公网 IP 的互联网爬虫和扫描器定期从空闲状态唤醒为活动状态，从而产生意外费用。
+</Warning>
+
+<div id="prepare">
+  ## 准备
+</div>
+
+开始之前，请先收集需要添加到访问列表中的 IP 地址或地址范围。请将远程办公人员、值班地点、VPN 等情况考虑在内。IP 访问列表界面支持输入单个地址和 CIDR 表示法。
+
+无类别域间路由 (CIDR) 表示法允许您指定比传统 A、B 或 C 类子网掩码大小 (8、16 或 24) 更小的 IP 地址范围。如果您有需要，[ARIN](https://account.arin.net/public/cidrCalculator) 和其他一些机构提供了 CIDR 计算器；如果您想进一步了解 CIDR 表示法，请参阅 [Classless Inter-domain Routing (CIDR)](https://www.rfc-editor.org/rfc/rfc4632.html) RFC。
+
+<div id="create-or-modify-an-ip-access-list">
+  ## 创建或修改 IP 访问列表
+</div>
+
+<Info>
+  **仅适用于 PrivateLink 外部的连接**
+
+  IP 访问列表仅适用于来自公共互联网 (即 [PrivateLink](/zh/products/cloud/guides/security/connectivity/private-networking/index) 之外) 的连接。
+  如果你只希望接收来自 PrivateLink 的流量，请在 IP 允许列表中设置 `DenyAll`。
+</Info>
+
+<Accordion title="ClickHouse 服务的 IP 访问列表">
+  创建 ClickHouse 服务时，IP 允许列表的默认设置为“允许从任何位置访问”。
+
+  在 ClickHouse Cloud 服务列表中，选择相应服务，然后选择 **Settings**。在 **安全** 部分中，你会看到 IP 访问列表。点击 Add IPs 按钮。
+
+  随后会出现一个侧边栏，你可以在其中进行以下配置：
+
+  * 允许从任何位置向该服务发送入站流量
+  * 允许从特定位置访问该服务
+  * 拒绝对该服务的所有访问
+</Accordion>
+
+<Accordion title="API 密钥的 IP 访问列表">
+  创建 API 密钥时，IP 允许列表的默认设置为“允许从任何位置访问”。
+
+  在 API 密钥列表中，点击该 API 密钥旁边、**Actions** 列下的三个点，然后选择 **Edit**。在屏幕底部，你会看到 IP 访问列表及其配置选项：
+
+  * 允许从任何位置向该服务发送入站流量
+  * 允许从特定位置访问该服务
+  * 拒绝对该服务的所有访问
+</Accordion>
+
+此截图显示了一个访问列表，它允许来自某个 IP 地址范围的流量，该范围标记为“NY Office range”：
+
+<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="ClickHouse Cloud 中现有的访问列表" border />
+
+<div id="possible-actions">
+  ### 可执行的操作
+</div>
+
+1. 如需添加新条目，可以使用 **+ Add new IP**
+
+以下示例添加了一个 IP 地址，描述为 `London server`：
+
+<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="在 ClickHouse Cloud 的访问列表中添加单个 IP" border />
+
+2. 删除现有条目
+
+点击叉号 (x) 即可删除条目
+
+3. 编辑现有条目
+
+直接修改该条目即可
+
+4. 切换为允许从 **Anywhere** 访问
+
+不建议这样做，但系统允许此操作。我们建议将基于 ClickHouse 构建的应用程序暴露给公网，并限制对后端 ClickHouse Cloud 服务的访问。
+
+要应用所做的更改，必须点击 **Save**。
+
+<div id="verification">
+  ## 验证
+</div>
+
+创建好过滤器后，请确认在该范围内可以连接到服务，并确认来自允许范围之外的连接会被拒绝。可以使用一个简单的 `curl` 命令进行验证：
+
+```bash title="Attempt rejected from outside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+curl: (35) error:02FFF036:system library:func(4095):Connection reset by peer
+```
+
+或
+
+```response
+curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to HOSTNAME.clickhouse.cloud:8443
+```
+
+```bash title="Attempt permitted from inside the allow list"
+curl https://<HOSTNAME>.clickhouse.cloud:8443
+```
+
+```response
+Ok.
+```
+
+<div id="limitations">
+  ## 限制
+</div>
+
+* 目前，IP 访问列表仅支持 IPv4
