@@ -345,7 +345,7 @@ void UnityCatalog::createTable(
 
         if (type_var.isString())
         {
-            const String delta_type = type_var.extract<String>();
+            const String & delta_type = type_var.extract<String>();
             type_text = delta_type;
             type_json = '"' + delta_type + '"';
             type_name = deltaPrimitiveToUnityTypeName(delta_type);
@@ -360,7 +360,7 @@ void UnityCatalog::createTable(
         }
         else
         {
-            auto descriptor = type_var.extract<Poco::JSON::Object::Ptr>();
+            const auto & descriptor = type_var.extract<Poco::JSON::Object::Ptr>();
             const String kind = descriptor->getValue<String>("type");
             if (kind == "array")       type_name = "ARRAY";
             else if (kind == "map")    type_name = "MAP";
