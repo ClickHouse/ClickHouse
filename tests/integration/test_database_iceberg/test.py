@@ -1873,6 +1873,16 @@ def test_namespace_prefix_create_drop_table(started_cluster):
     node.query(f"USE {CATALOG_NAME}; DROP TABLE {namespace}.{table_name}")
     assert node.query(f"EXISTS TABLE {full_name}").strip() == "0"
 
+    # CREATE via the two-part form under USE catalog.
+    node.query(
+        f"USE {CATALOG_NAME}; "
+        f"CREATE TABLE {namespace}.{table_name} (x String) "
+        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/{table_name}/', '{minio_access_key}', '{minio_secret_key}')",
+        settings={"write_full_path_in_iceberg_metadata": 1},
+    )
+    assert node.query(f"EXISTS TABLE {full_name}").strip() == "1"
+    node.query(f"DROP TABLE {full_name}")
+
 
 def test_namespace_prefix_update_authorization(started_cluster):
     """

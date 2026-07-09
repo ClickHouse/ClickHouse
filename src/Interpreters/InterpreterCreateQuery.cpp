@@ -2649,14 +2649,28 @@ BlockIO InterpreterCreateQuery::execute()
 
     create.if_not_exists |= getContext()->getSettingsRef()[Setting::create_if_not_exists];
 
-    /// USE db.namespace: an unqualified new table and unqualified view targets belong to the
-    /// selected namespace. Fold before the access check (and before ON CLUSTER shipping) so
-    /// authorization targets the same names the query will create.
-    if (const auto database_info = getContext()->getCurrentDatabaseInfo(); !database_info.table_prefix.empty())
+    /// Qualify the created table the same way other statements resolve table references
+    /// (`USE db.namespace` prefixes and namespace qualifiers), before the access check and
+    /// ON CLUSTER shipping, so authorization targets the names the query will create.
+    if (!create.isTemporary() && create.table)
     {
-        if (!create.isTemporary() && !create.database && create.table)
-            create.setTable(database_info.table_prefix + "." + create.getTable());
-        if (create.targets)
+        const auto database_info = getContext()->getCurrentDatabaseInfo();
+        if (!create.database)
+        {
+            if (!database_info.table_prefix.empty())
+                create.setTable(database_info.table_prefix + "." + create.getTable());
+        }
+        else
+        {
+            /// `USE catalog; CREATE TABLE namespace.table ...`
+            auto resolved = getContext()->resolveStorageID({create.getDatabase(), create.getTable()}, Context::ResolveGlobal);
+            if (resolved.database_name != create.getDatabase())
+            {
+                create.setDatabase(resolved.database_name);
+                create.setTable(resolved.table_name);
+            }
+        }
+        if (create.targets && !database_info.table_prefix.empty())
             create.targets->setCurrentDatabase(database_info);
     }
 
