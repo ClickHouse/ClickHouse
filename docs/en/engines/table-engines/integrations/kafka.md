@@ -456,7 +456,7 @@ When using StorageKafka2, you can optionally enable static partition-to-shard af
 partition_id % kafka_shard_count == kafka_partition_shard_num % kafka_shard_count
 ```
 
-Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be a non-negative integer not greater than `kafka_shard_count` (values equal to `kafka_shard_count` are allowed to support 1-based shard numbering). It supports macro expansion (e.g., `'{shard}'`), which is resolved at table creation time — validation is performed both before and after macro expansion.
+Both settings must be specified together; specifying only one raises an exception. The `kafka_partition_shard_num` value must be a non-negative integer not greater than `kafka_shard_count` (values equal to `kafka_shard_count` are allowed to support 1-based shard numbering). It supports macro expansion (e.g., `'{shard}'`), which is re-expanded on each server startup. This allows the same table metadata to be shared across shards in a Replicated database, with each shard resolving its own value. Validation is performed after macro expansion.
 
 Example with 3 shards consuming a 12-partition topic:
 
