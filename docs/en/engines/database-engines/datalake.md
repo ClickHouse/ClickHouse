@@ -122,6 +122,15 @@ USE catalog_name;
 SELECT * FROM `namespace.table`;
 ```
 
+Access-control statements (`GRANT`, row policies) always interpret a two-part name
+`a.b` as `database.table` and do not fall back to namespaces, because grants may
+legitimately reference databases that do not exist yet. Use the full
+`catalog_name.namespace.table` form (or the quoted table name) there:
+
+```sql
+GRANT SELECT ON catalog_name.namespace.table TO user;
+```
+
 ## Examples {#examples}
 
 See below sections for examples of using the `DataLakeCatalog` engine:
