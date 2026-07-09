@@ -1047,22 +1047,6 @@ static std::optional<UInt64> getMaxBaseRelationRows(const BitSet & relations, co
     return result;
 }
 
-/// Returns true if every relation in the set has per-column NDV estimates.
-static bool allRelationsHaveColumnStats(const BitSet & relations, const std::vector<RelationStats> & relation_stats)
-{
-    bool has_relation = false;
-    for (size_t relation_id = 0; relation_id < relation_stats.size(); ++relation_id)
-    {
-        if (!relations.test(relation_id))
-            continue;
-
-        has_relation = true;
-        if (relation_stats[relation_id].column_stats.empty())
-            return false;
-    }
-    return has_relation;
-}
-
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     auto base_relation_stats = query_graph_builder.relation_stats;
@@ -1210,8 +1194,17 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 : entry->join_method == JoinMethod::Hash && lhs_estimation && rhs_estimation
                     && lhs_estimation.value() < rhs_estimation.value();
 
-            if (swap_on_sizes && !optimization_settings.join_swap_table.has_value() && left_rels.count() > 1
-                && !allRelationsHaveColumnStats(left_rels, base_relation_stats))
+            /// Guard against swapping a composite subtree to the build side when its cardinality
+            /// may be underestimated due to missing column statistics. This targets the star-schema
+            /// pattern: a fact table joined with small dimension tables, where the intermediate
+            /// cardinality is underestimated because NDV falls back to estimated_rows (too high
+            /// for the fact table's join key). Only triggers when:
+            ///  - left side is composite (multi-table) with no column stats (estimation unreliable)
+            ///  - right side is a single table (typical star-schema dimension)
+            ///  - the largest base table in the composite exceeds the right side's estimation
+            if (swap_on_sizes && !optimization_settings.join_swap_table.has_value()
+                && left_rels.count() > 1 && right_rels.count() == 1
+                && entry->left->column_stats.empty())
             {
                 auto lhs_max_base_rows = getMaxBaseRelationRows(left_rels, base_relation_stats);
                 if (lhs_max_base_rows && rhs_estimation && lhs_max_base_rows.value() > rhs_estimation.value())
