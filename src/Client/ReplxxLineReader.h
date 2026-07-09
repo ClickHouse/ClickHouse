@@ -121,7 +121,7 @@ private:
     };
 
     enum {
-        OPERATOR_C,
+        OPERATOR_C = 1,
         OPERATOR_D,
     };
 
