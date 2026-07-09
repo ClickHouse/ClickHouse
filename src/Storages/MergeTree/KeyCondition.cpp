@@ -1477,6 +1477,13 @@ KeyCondition::KeyCondition(
 
     rpn = std::move(builder).extractRPN();
 
+    /// A multi-atom group is the run of RPN elements that one predicate leaf produced: when a leaf
+    /// constrains several key columns, `RPNBuilder` emits one atom per key column combined by AND
+    /// (`atom0 atom1 AND atom2 AND ...`) and marks every element after the first with
+    /// `continues_multi_atom_group`. The group stands where a single atom would have stood, and
+    /// consumers that rely on a one-element-per-leaf RPN layout treat the whole group as one
+    /// position (see `checkInHyperrectangle`).
+    ///
     /// The multi-atom group structure must be well-formed: a group is opened by an unmarked
     /// element, so the first RPN element never continues a group, and the marked elements
     /// are only the atoms of a group and the ANDs combining them — never OR, NOT or
@@ -2785,6 +2792,11 @@ void KeyCondition::tryPrepareSetAtomsForIn(
     extractSetAtomsForKeyArgument(left_arg, info, set_columns, set_types, std::move(analysis), allow_constant_transformation, out);
 }
 
+/// Under the default `optimize_rewrite_has_to_in = 1`, `has(const_array, x)` is rewritten into
+/// `x IN ...` by the analyzer, so this path only serves queries with that rewrite disabled. This
+/// also means a negated `has` reaches the RPN as a `NOT` operator over the positive atoms built
+/// here (there is no `notHas` complement function), unlike `NOT IN`, which arrives as the
+/// complement leaf `notIn` with the relaxed-atom sources gated off.
 void KeyCondition::tryPrepareSetAtomsForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -3650,7 +3662,7 @@ void KeyCondition::extractAtomsFromTree(const RPNBuilderTreeNode & node, const B
         return;
     }
 
-    /// For example, `ORDER BY a` and `WHERE a = 1`.
+    /// For example, `ORDER BY a` and `WHERE a = 1`. Here, the function is "equals".
     if (node.isFunction())
     {
         extractAtomsFromFunction(node, info, out);
