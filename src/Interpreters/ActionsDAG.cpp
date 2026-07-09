@@ -1282,23 +1282,29 @@ static ColumnWithTypeAndName executeActionForPartialResult(
         {
             try
             {
-                /// The function was resolved (overload picked, return type computed) for a fixed set of
-                /// argument types during analysis. Partial evaluation can be handed a column whose type no
-                /// longer matches, e.g. when a concurrent EXCHANGE TABLES swaps the underlying table between
-                /// analysis and header computation. Executing a strict function (e.g. arithmetic) on a
-                /// genuinely different type would trip an internal LOGICAL_ERROR inside the function body,
-                /// which aborts the server in debug/sanitizer builds. There is no generic way to tell a
-                /// polymorphic function that tolerates the drift (e.g. _CAST, toNullable) from a strict one
-                /// that aborts, so we do not try to execute at all on a mismatch: constant folding is only an
-                /// optimization for header/constant evaluation, and the node's declared result type is already
-                /// known. Skip folding and leave the column empty; the real execution path re-resolves the
-                /// function and reports a clean, recoverable error if the drift is genuinely illegal.
-                /// Compare base types only (strip Nullable/LowCardinality): the prepared function applies its
-                /// default implementations for those wrappers, so a wrapper-only difference is usually handled
-                /// fine (it legitimately arises from JOIN use_nulls / group_by_use_nulls widening a header
-                /// column). A wrapper-only drift that a wrapper-preserving function turns into a mismatching
-                /// result type is caught after execution by the columnMatchesType check below.
-                bool argument_types_match = true;
+                /// Do not constant-fold when any argument type drifted from the type the function was
+                /// resolved for during analysis (a concurrent EXCHANGE TABLES swapping the underlying
+                /// table between analysis and header computation, or JOIN use_nulls / group_by_use_nulls
+                /// widening a header column). Folding on a drifted argument is unsafe in three distinct
+                /// ways, so an exact type comparison (not a wrapper-stripped one) is required:
+                ///   - a strict function (arithmetic) on a different base type trips a LOGICAL_ERROR
+                ///     inside the function body, aborting the server in debug/sanitizer builds;
+                ///   - a wrapper-preserving function (materialize, toNullable) returns a column whose
+                ///     type mismatches the resolved result type, tripping the columnMatchesType check;
+                ///   - a wrapper-sensitive value folder (isNullable folds straight from the argument
+                ///     type) returns a definitive but WRONG value whose result type is unchanged, so no
+                ///     type check catches it at all.
+                /// Folding is only an optimization and the node's declared result type is already known,
+                /// so skip it. For header-only evaluation (input_rows_count == 0) create an empty column
+                /// of the declared result type so header computation can proceed. For the shared
+                /// partial-evaluation callers with input_rows_count == 1 (getFilterResult /
+                /// createSelector / extractPathValuesFromFilter, reached via JOIN rewrites, shard
+                /// skipping and virtual-column path extraction) leave the column null: they treat any
+                /// non-null output as a definitive folded result (getBool(0), hashing), so a fabricated
+                /// or wrong value would silently change JOIN rewrites or skip the wrong shards. A null
+                /// column routes them through their existing "unknown value" path. The real execution
+                /// path re-resolves the function and reports a clean, recoverable error if the drift is
+                /// genuinely illegal.
                 bool argument_types_drifted = false;
                 const auto & expected_argument_types = node->function_base->getArgumentTypes();
                 if (expected_argument_types.size() == arguments.size())
@@ -1308,29 +1314,15 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                         if (!arguments[i].type || !expected_argument_types[i])
                             continue;
                         if (!arguments[i].type->equals(*expected_argument_types[i]))
-                            argument_types_drifted = true;
-                        if (!removeLowCardinalityAndNullable(arguments[i].type)
-                                 ->equals(*removeLowCardinalityAndNullable(expected_argument_types[i])))
                         {
-                            argument_types_match = false;
+                            argument_types_drifted = true;
                             break;
                         }
                     }
                 }
 
-                if (!argument_types_match)
+                if (argument_types_drifted)
                 {
-                    /// Do not fold on type drift. For header-only evaluation (input_rows_count == 0)
-                    /// produce an empty column of the declared result type so header computation can
-                    /// proceed. For the shared partial-evaluation callers with input_rows_count == 1
-                    /// (getFilterResult / createSelector / extractPathValuesFromFilter, reached via
-                    /// filterResultForNotMatchedRows/MatchedRows, JOIN rewrites, shard skipping and
-                    /// virtual-column path extraction) we must NOT manufacture a one-row value: they
-                    /// treat any non-null output as a definitive folded result (getBool(0), hashing),
-                    /// so a tolerated type drift would silently become false / 0 / '' instead of
-                    /// "unknown", changing JOIN rewrites or skipping the wrong shards. Leave the column
-                    /// null so those callers route this node through their existing "unknown value"
-                    /// path instead of reading a fabricated default.
                     if (input_rows_count == 0)
                         res_column.column = res_column.type->createColumn();
                     break;
@@ -1341,36 +1333,15 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                 else
                     res_column.column = node->function_base->getConstantResultForNonConstArguments(arguments, res_column.type);
 
+                /// Arguments did not drift (checked above), so a result-type mismatch here is a genuine
+                /// function contract violation rather than an EXCHANGE TABLES race.
                 if (res_column.column && !columnMatchesType(*res_column.column, *res_column.type))
-                {
-                    /// The executed function produced a column whose type does not match the result
-                    /// type resolved during analysis. When the argument types drifted (only by a wrapper,
-                    /// since the base-type check above passed), this is the same concurrent EXCHANGE TABLES
-                    /// race: a wrapper-preserving function (materialize returns its argument type,
-                    /// toNullable returns Nullable(arg)) executes on the current wrapper and returns
-                    /// Nullable(String) / LowCardinality(String) while node->result_type is still the
-                    /// pre-EXCHANGE type. Throwing LOGICAL_ERROR here would abort the server in
-                    /// debug/sanitizer builds, the exact abort this guard avoids. Treat it as "do not
-                    /// fold", identical to argument type drift: leave the column null so the
-                    /// input_rows_count == 1 callers route the node through their existing "unknown value"
-                    /// path, and only manufacture a header placeholder for input_rows_count == 0.
-                    /// If the arguments did NOT drift, this is a genuine function contract violation, so
-                    /// keep raising the assertion.
-                    if (argument_types_drifted)
-                    {
-                        res_column.column = nullptr;
-                        if (input_rows_count == 0)
-                            res_column.column = res_column.type->createColumn();
-                        break;
-                    }
-
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Unexpected return type from {}. Expected {}. Got {}",
                         node->function->getName(),
                         res_column.type->getName(),
                         res_column.column->getName());
-                }
             }
             catch (Exception & e)
             {
