@@ -2,8 +2,10 @@
 -- ORDER BY <LowCardinality column> LIMIT N after LEFT JOIN with lazy column
 -- replication produced a permutation of size min(rows, limit) = LIMIT, which
 -- ColumnReplicated::permute (from the JOIN payload columns) rejected with
--- SIZES_OF_COLUMNS_DOESNT_MATCH. Fixed by routing sortBlock through
--- transformColumnsWithSharedIndex (PR #106566).
+-- SIZES_OF_COLUMNS_DOESNT_MATCH. Fixed on master by routing sortBlock through
+-- transformColumnsWithSharedIndex (PR #106566); this PR additionally relaxes the
+-- overly strict size check in ColumnReplicated::permute so the general
+-- IColumn::permute contract (a shorter permutation with a limit) is accepted.
 
 SET enable_lazy_columns_replication = 1;
 
