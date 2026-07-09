@@ -2021,3 +2021,57 @@ def test_namespace_prefix_create_as(started_cluster):
     finally:
         for copy in copies:
             node.query(f"DROP TABLE IF EXISTS {copy}")
+
+
+def test_namespace_prefix_optimize_and_partition_authorization(started_cluster):
+    """
+    OPTIMIZE and ALTER ... PARTITION sub-table references under USE db.namespace
+    must authorize the namespace-qualified names.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_optauth_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "opt_auth_table"
+    src_name = "opt_auth_src"
+    user = f"user_{test_ref}"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+    create_table(catalog, namespace, src_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    node.query(f"DROP USER IF EXISTS {user}")
+    node.query(f"CREATE USER {user}")
+    try:
+        optimize = f"USE {CATALOG_NAME}.{namespace}; OPTIMIZE TABLE {table_name}"
+        replace = (
+            f"USE {CATALOG_NAME}.{namespace}; "
+            f"ALTER TABLE {table_name} REPLACE PARTITION tuple() FROM {src_name}"
+        )
+
+        # Grants on the bare (wrong) names only: must be denied.
+        node.query(
+            f"GRANT SELECT, INSERT, ALTER, OPTIMIZE ON {CATALOG_NAME}.{table_name} TO {user}"
+        )
+        node.query(
+            f"GRANT SELECT, INSERT, ALTER, OPTIMIZE ON {CATALOG_NAME}.{src_name} TO {user}"
+        )
+        _, err = node.query_and_get_answer_with_error(optimize, user=user)
+        assert "ACCESS_DENIED" in err, f"OPTIMIZE: expected ACCESS_DENIED, got: {err}"
+        _, err = node.query_and_get_answer_with_error(replace, user=user)
+        assert "ACCESS_DENIED" in err, f"REPLACE PARTITION: expected ACCESS_DENIED, got: {err}"
+
+        # Namespace-scoped wildcard grant: authorization must pass (the engine may
+        # still reject the operation itself, which is fine).
+        node.query(
+            f"GRANT SELECT, INSERT, ALTER, OPTIMIZE ON {CATALOG_NAME}.`{namespace}.`* TO {user}"
+        )
+        _, err = node.query_and_get_answer_with_error(optimize, user=user)
+        assert "ACCESS_DENIED" not in err, f"OPTIMIZE: unexpected ACCESS_DENIED: {err}"
+        _, err = node.query_and_get_answer_with_error(replace, user=user)
+        assert "ACCESS_DENIED" not in err, f"REPLACE PARTITION: unexpected ACCESS_DENIED: {err}"
+    finally:
+        node.query(f"DROP USER IF EXISTS {user}")
