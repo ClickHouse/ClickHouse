@@ -1,5 +1,6 @@
 #include <Parsers/ParserPreparedStatement.h>
 
+#include <Common/Exception.h>
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/IParserBase.h>
@@ -12,6 +13,11 @@
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
 
 ASTPtr ASTPreparedStatement::clone() const
 {
@@ -91,24 +97,22 @@ bool ParserExecute::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     for (const auto & child : ast_args->children)
     {
-        /// Re-serialize each argument into a safe SQL fragment before it is
-        /// spliced into the prepared statement body by `$N` substitution. The
-        /// value comes from a parsed AST, so re-serialization keeps string
-        /// literals quoted and escaped and a crafted argument cannot break out
-        /// of its context to inject SQL (`fieldToString` on a raw string would
-        /// drop the quotes and allow injection).
-        const IAST & arg = *child;
-        if (const auto * literal = arg.as<ASTLiteral>())
-            /// Fast path for the common case: numbers stay bare, strings are
-            /// quoted and escaped by FieldVisitorToString.
-            result->arguments.push_back(applyVisitor(FieldVisitorToString(), literal->value));
-        else
-            /// General expression such as `1 + 1` or `now()` (`-1` already parses
-            /// as a literal): serialize the whole node. Nested string literals are
-            /// still quoted and escaped, so this stays injection-safe. Previously
-            /// this code assumed every argument was an ASTLiteral and dereferenced
-            /// a null `as<ASTLiteral>()` for expressions, crashing the connection.
-            result->arguments.push_back(arg.formatWithSecretsOneLine());
+        /// An EXECUTE argument binds one parameter VALUE, so it must be a literal.
+        /// A non-literal expression (`1 + 1`, `now()`, `rand()`) cannot be bound as
+        /// a value here: this parser has no execution context, and splicing the
+        /// expression's SQL text into the body via `$N` substitution changes results
+        /// (`$1 * 10` with `1 + 1` assembles `1 + 1 * 10` = 11 not 20; `$1, $1` with
+        /// `rand()` evaluates it twice). Reject it cleanly instead. `-1`/`-1.5`
+        /// parse as a single ASTLiteral, so negative numbers are still accepted.
+        const auto * literal = child->as<ASTLiteral>();
+        if (!literal)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "EXECUTE argument must be a literal value, not an expression: {}",
+                child->formatWithSecretsOneLine());
+        /// Numbers stay bare, strings are quoted and escaped by FieldVisitorToString,
+        /// so a crafted string argument stays a single quoted literal and cannot break
+        /// out of its context to inject SQL.
+        result->arguments.push_back(applyVisitor(FieldVisitorToString(), literal->value));
     }
     if (!close_bracket.ignore(pos, expected))
         return false;

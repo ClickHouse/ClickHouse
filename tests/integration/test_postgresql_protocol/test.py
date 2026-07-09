@@ -1294,13 +1294,15 @@ def test_execute_requires_exact_argument_count(started_cluster):
     ch.close()
 
 
-def test_execute_accepts_non_literal_arguments(started_cluster):
-    # A simple-query EXECUTE argument may be a general expression, not only a
-    # literal (e.g. `1 + 1`, `now()`). The argument formatting used to assume
-    # every argument was a literal and dereferenced a null pointer for
-    # expressions, crashing the connection. Expressions must be serialized into a
-    # safe SQL fragment instead, and string literals inside them must stay quoted
-    # so injection remains impossible.
+def test_execute_rejects_non_literal_arguments(started_cluster):
+    # A simple-query EXECUTE argument binds one parameter VALUE, so it must be a
+    # literal. A non-literal expression (`1 + 1`, `now()`, `rand()`) cannot be
+    # bound as a value: the parser has no execution context, and splicing the
+    # expression's SQL text into the body via `$N` substitution changes results
+    # (`$1 * 10` with `1 + 1` assembles `1 + 1 * 10` = 11 not 20; `$1, $1` with
+    # `rand()` evaluates it twice). Such arguments must be rejected cleanly, not
+    # crash the connection and not be re-serialized. Negative numbers are single
+    # literals and stay accepted.
     node = started_cluster.instances["node"]
 
     def connect():
@@ -1311,21 +1313,37 @@ def test_execute_accepts_non_literal_arguments(started_cluster):
             password="123",
         )
 
-    # An arithmetic expression argument must not crash and must evaluate.
-    ch = connect()
-    cur = ch.cursor()
-    cur.execute("PREPARE expr_arith AS SELECT $1 AS v;")
-    cur.execute("EXECUTE expr_arith(1 + 1);")
-    assert cur.fetchall() == [(2,)]
-    ch.close()
+    def rejected(prepare_sql, execute_sql):
+        # Each probe uses a fresh connection: a rejected EXECUTE errors the
+        # transaction, so reusing the connection would fail unrelated queries.
+        ch = connect()
+        cur = ch.cursor()
+        try:
+            cur.execute(prepare_sql)
+            try:
+                cur.execute(execute_sql)
+                cur.fetchall()
+                return False
+            except psycopg.errors.Error:
+                return True
+        finally:
+            ch.close()
 
-    # A function-call expression argument must not crash and must evaluate.
-    ch = connect()
-    cur = ch.cursor()
-    cur.execute("PREPARE expr_func AS SELECT $1 AS v;")
-    cur.execute("EXECUTE expr_func(abs(-5));")
-    assert cur.fetchall() == [(5,)]
-    ch.close()
+    # Arithmetic, function-call and injection-shaped expression arguments are
+    # rejected (would otherwise give wrong precedence/double-eval results or,
+    # before, crash on a null deref).
+    assert rejected("PREPARE expr_arith AS SELECT $1 AS v;", "EXECUTE expr_arith(1 + 1);")
+    assert rejected("PREPARE expr_func AS SELECT $1 AS v;", "EXECUTE expr_func(abs(-5));")
+    assert rejected("PREPARE expr_rand AS SELECT $1 AS v;", "EXECUTE expr_rand(rand());")
+    assert rejected(
+        "PREPARE expr_concat AS SELECT $1 AS v;",
+        "EXECUTE expr_concat(concat('1 UNION ALL SELECT 2', ' -- '));",
+    )
+
+    # A precedence-sensitive body makes the wrongness of serialization concrete:
+    # if `1 + 1` were spliced into `$1 * 10` it would give `1 + 1 * 10` = 11.
+    # Rejection avoids the wrong answer entirely.
+    assert rejected("PREPARE expr_prec AS SELECT $1 * 10 AS v;", "EXECUTE expr_prec(1 + 1);")
 
     # A negative number is a single literal and round-trips unchanged.
     ch = connect()
@@ -1333,16 +1351,6 @@ def test_execute_accepts_non_literal_arguments(started_cluster):
     cur.execute("PREPARE expr_neg AS SELECT $1 AS v;")
     cur.execute("EXECUTE expr_neg(-7);")
     assert cur.fetchall() == [(-7,)]
-    ch.close()
-
-    # Injection stays impossible for an expression that embeds a string literal:
-    # the string is serialized as a single quoted literal, so the concat result
-    # is plain data, never spliced SQL.
-    ch = connect()
-    cur = ch.cursor()
-    cur.execute("PREPARE expr_concat AS SELECT $1 AS v;")
-    cur.execute("EXECUTE expr_concat(concat('1 UNION ALL SELECT 2', ' -- '));")
-    assert cur.fetchall() == [("1 UNION ALL SELECT 2 -- ",)]
     ch.close()
 
 

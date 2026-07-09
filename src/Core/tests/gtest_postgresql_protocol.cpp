@@ -907,15 +907,17 @@ TEST(PostgreSQLProtocol, ExecuteArityMatchesPlaceholderCount)
     }
 }
 
-TEST(PostgreSQLProtocol, ExecuteAcceptsNonLiteralArgumentsWithoutCrashing)
+TEST(PostgreSQLProtocol, ExecuteRejectsNonLiteralArguments)
 {
-    /// `ParserExecute` accepts a general expression list, but the argument
-    /// formatting used to assume every child was an ASTLiteral and dereferenced
-    /// a null `as<ASTLiteral>()` for expressions such as `1 + 1` or `now()`,
-    /// crashing the connection. Each argument must be re-serialized into a safe
-    /// SQL fragment instead: literals keep their existing form (numbers bare,
-    /// strings quoted and escaped) and general expressions are serialized whole,
-    /// with nested string literals still quoted so injection stays impossible.
+    /// `ParserExecute` accepts a general expression list, but an EXECUTE argument
+    /// binds one parameter VALUE, so it must be a literal. A non-literal expression
+    /// (`1 + 1`, `now()`, `rand()`) cannot be bound as a value here: the parser has
+    /// no execution context, and splicing the expression's SQL text into the body
+    /// via `$N` substitution changes results (`$1 * 10` with `1 + 1` assembles
+    /// `1 + 1 * 10` = 11 not 20; `$1, $1` with `rand()` evaluates it twice). An
+    /// earlier fix dereferenced a null `as<ASTLiteral>()` for such expressions and
+    /// crashed the connection; a later attempt re-serialized the AST but produced
+    /// those wrong results. The correct behavior is a clean rejection.
     auto parse_args = [](const String & query)
     {
         ParserExecute parser;
@@ -923,22 +925,26 @@ TEST(PostgreSQLProtocol, ExecuteAcceptsNonLiteralArgumentsWithoutCrashing)
         return ast->as<ASTExecute>()->arguments;
     };
 
-    /// Non-literal expressions must parse and serialize, not crash.
-    {
-        auto args = parse_args("EXECUTE s(1 + 1)");
-        ASSERT_EQ(args.size(), 1u);
-        EXPECT_EQ(args[0], "1 + 1");
-    }
-    {
-        auto args = parse_args("EXECUTE s(now())");
-        ASSERT_EQ(args.size(), 1u);
-        EXPECT_EQ(args[0], "now()");
-    }
-    /// A negative number already parses as a single literal (not an expression).
+    /// Non-literal expressions must be rejected cleanly (not crash, not serialize).
+    EXPECT_THROW(parse_args("EXECUTE s(1 + 1)"), Exception);
+    EXPECT_THROW(parse_args("EXECUTE s(now())"), Exception);
+    EXPECT_THROW(parse_args("EXECUTE s(rand())"), Exception);
+    EXPECT_THROW(parse_args("EXECUTE s(concat('a', 'b'))"), Exception);
+    /// A string argument that itself contains SQL is a literal, so it is accepted
+    /// as a single quoted value; but a bare expression injection attempt is rejected.
+    EXPECT_THROW(parse_args("EXECUTE s(1 UNION ALL SELECT secret)"), Exception);
+
+    /// A negative number already parses as a single literal (not an expression),
+    /// so negative arguments are still accepted.
     {
         auto args = parse_args("EXECUTE s(-1)");
         ASSERT_EQ(args.size(), 1u);
         EXPECT_EQ(args[0], "-1");
+    }
+    {
+        auto args = parse_args("EXECUTE s(-1.5)");
+        ASSERT_EQ(args.size(), 1u);
+        EXPECT_EQ(args[0], "-1.5");
     }
     /// Plain literals keep their existing formatting: numbers bare, strings quoted.
     {
@@ -947,19 +953,12 @@ TEST(PostgreSQLProtocol, ExecuteAcceptsNonLiteralArgumentsWithoutCrashing)
         EXPECT_EQ(args[0], "42");
         EXPECT_EQ(args[1], "'abc'");
     }
-    /// Injection stays impossible: a string argument holding SQL syntax is
-    /// serialized as a single quoted, escaped literal, never as raw SQL.
+    /// Injection stays impossible: a string argument holding SQL syntax is a single
+    /// quoted, escaped literal, never raw SQL.
     {
         auto args = parse_args("EXECUTE s('1 UNION ALL SELECT secret -- ')");
         ASSERT_EQ(args.size(), 1u);
         EXPECT_EQ(args[0], "'1 UNION ALL SELECT secret -- '");
-    }
-    /// An expression that contains a nested string literal keeps that literal
-    /// quoted after serialization (the concat is a function, not spliced SQL).
-    {
-        auto args = parse_args("EXECUTE s(concat('a', 'b'))");
-        ASSERT_EQ(args.size(), 1u);
-        EXPECT_EQ(args[0], "concat('a', 'b')");
     }
 }
 
