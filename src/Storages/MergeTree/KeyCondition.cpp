@@ -3703,31 +3703,21 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     const bool allow_constant_transformation = !no_relaxed_atom_functions.contains(func_name);
 
     /// This fills the function kind and the range/set of every prepared element in `out` via the
-    /// atom_map builder. An atom that cannot be built is dropped: the atoms of one leaf are ANDed
-    /// necessary conditions, so the remaining ones stay usable, and if none remain, RPNBuilder turns
-    /// the empty leaf into FUNCTION_UNKNOWN. The value argument is unused by the set and unary
-    /// builders reached from here; comparison atoms pass the real constant in
-    /// `extractBinaryComparisonAtoms`.
+    /// atom_map builder. The set, unary and polygon builders reached from here always succeed and
+    /// ignore the value argument; comparison atoms pass the real constant in
+    /// `extractBinaryComparisonAtoms` instead.
     auto finalize_atoms = [&]
     {
         Field unused_value;
-        for (auto it = out.begin(); it != out.end();)
+        for (auto & element : out)
         {
             /// Constant-folded elements (e.g. `has([], x)` folds to ALWAYS_FALSE) are already complete;
             /// the builder would overwrite their function kind.
-            if (it->function == RPNElement::ALWAYS_TRUE || it->function == RPNElement::ALWAYS_FALSE)
-            {
-                ++it;
+            if (element.function == RPNElement::ALWAYS_TRUE || element.function == RPNElement::ALWAYS_FALSE)
                 continue;
-            }
 
-            if (!atom_it->second(*it, unused_value))
-            {
-                it = out.erase(it);
-                continue;
-            }
-
-            ++it;
+            [[maybe_unused]] const bool built = atom_it->second(element, unused_value);
+            chassert(built);
         }
     };
 
