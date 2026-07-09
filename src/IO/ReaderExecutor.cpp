@@ -1325,7 +1325,8 @@ VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> ReaderExecutor::al
     chassert(block_size > 0);
     VectorWithMemoryTracking<std::shared_ptr<OwnedChainedBuffer>> blocks;
     blocks.reserve((size + block_size - 1) / block_size);
-    for (size_t pos = 0; pos < size; )
+    size_t pos = 0;
+    while (pos < size)
     {
         const size_t chunk = std::min(block_size, size - pos);
         blocks.push_back(std::make_shared<OwnedChainedBuffer>(chunk));
@@ -1911,8 +1912,6 @@ void ReaderExecutor::advanceAhead()
         return;
     }
 }
-
-
 
 ByteRange ReaderExecutor::nextScheduledPiece(size_t ri, ByteRange window_phys) const
 {
