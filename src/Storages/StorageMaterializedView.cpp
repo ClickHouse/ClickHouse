@@ -431,12 +431,22 @@ void StorageMaterializedView::readImpl(
     if (query_info.order_optimizer)
         query_info.input_order_info = query_info.order_optimizer->getInputOrder(target_metadata_snapshot, context);
 
-    /// The source-table check follows the long-standing contract: reading view columns requires
-    /// `SELECT` on the source-table columns with the same names as the view's output columns.
+    /// The source-table check follows the long-standing contract: reading a view column requires
+    /// `SELECT` on the source-table column with the *same name* as the view's output column. This
+    /// check is name-based by design — it does not analyze the inner `SELECT`'s real column
+    /// lineage. A view whose output column is derived from a differently named source column is
+    /// therefore authorized by the output name, not by the columns the expression actually reads.
+    /// That is a pre-existing property of this check and is not specific to subcolumns: the
+    /// parent-column read `SELECT a FROM mv` is authorized exactly the same way. Driving the check
+    /// from analyzed source dependencies would change the behavior of every materialized-view read
+    /// (parent columns included), so it is intentionally out of scope here.
+    ///
     /// Reading a subcolumn (e.g. `t.a`) is a partial read of its parent view column `t`, so it
-    /// must require exactly the grants that reading `t` requires. Hence the requested names are
-    /// normalized to parent columns here as well, but against the view's own schema — the one
-    /// they were resolved against — and not the target table's, which can diverge from it.
+    /// must require exactly the grants that reading `t` requires — never more, never less. The
+    /// requested names are hence normalized to parent columns here as well, but against the view's
+    /// own schema — the one they were resolved against — and not the target table's, which can
+    /// diverge from it. This keeps a subcolumn read strictly consistent with, and no weaker than,
+    /// its parent-column read: it never authorizes anything the parent read would not already.
     const auto & select_table_id = view_metadata->select.select_table_id;
     if (!select_table_id.empty())
         context->checkAccess(AccessType::SELECT, select_table_id, storage_snapshot->getColumnNamesInStorageForAccessCheck(column_names));
