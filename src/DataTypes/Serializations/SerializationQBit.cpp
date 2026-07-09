@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeQBit.h>
 #include <Common/SipHash.h>
 #include <DataTypes/Serializations/SerializationQBit.h>
-#include <Formats/ParseError.h>
 
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
@@ -119,8 +118,6 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
         restore_elements();
         if constexpr (throw_exception)
             throw;
-        /// Other errors (e.g. MEMORY_LIMIT_EXCEEDED) must propagate, not be reported as a failed parse.
-        rethrowIfNotParseError();
         return ReturnType(false);
     }
 
@@ -129,7 +126,7 @@ static ReturnType addElementSafe(size_t num_elems, IColumn & column, F && impl)
 
 size_t SerializationQBit::validateAndReadQBitSize(ReadBuffer & istr, const FormatSettings & settings) const
 {
-    size_t size = 0;
+    size_t size;
     readVarUInt(size, istr);
 
     if (settings.binary.max_binary_array_size && size > settings.binary.max_binary_array_size)
@@ -469,7 +466,7 @@ DECLARE_DEFAULT_CODE(
 
 /// Do not inline target specific implementations to avoid code bloat on all targets
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    static void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
+    void untransposeBitPlaneFloat64Impl(const UInt8 * __restrict src, UInt64 * __restrict dst, size_t stride_len, UInt64 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
@@ -496,7 +493,7 @@ DECLARE_X86_64_V4_SPECIFIC_CODE(
     })
 
 DECLARE_X86_64_V4_SPECIFIC_CODE(
-    static void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
+    void untransposeBitPlaneFloat32Impl(const UInt8 * __restrict src, UInt32 * __restrict dst, size_t stride_len, UInt32 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         ssize_t row_base = stride_len - 1;
@@ -557,7 +554,7 @@ namespace TargetSpecific::x86_64_v4
 {
     using namespace DB::TargetSpecific::x86_64_v4;
 
-    static void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
+    void untransposeBitPlaneBFloat16Impl(const UInt8 * __restrict src, UInt16 * __restrict dst, size_t stride_len, UInt16 bit_mask)
     {
         const size_t bytes_per_fs = stride_len / 8;
         const __m512i bmask = _mm512_set1_epi16(bit_mask);

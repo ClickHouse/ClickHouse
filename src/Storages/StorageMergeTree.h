@@ -61,10 +61,6 @@ public:
 
     bool supportsParallelInsert() const override { return true; }
 
-    bool supportsStreaming() const override { return true; }
-
-    CursorPromotersMap buildPromoters() override;
-
     bool supportsTransactions() const override { return support_transaction; }
 
     void read(

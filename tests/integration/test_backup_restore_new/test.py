@@ -1730,6 +1730,7 @@ def test_backup_all(exclude_system_log_tables):
             "crash_log",
             "text_log",
             "metric_log",
+            "histogram_metric_log",
             "filesystem_cache_log",
             "filesystem_read_prefetches_log",
             "asynchronous_metric_log",

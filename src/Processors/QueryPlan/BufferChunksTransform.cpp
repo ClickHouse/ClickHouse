@@ -58,7 +58,7 @@ IProcessor::Status BufferChunksTransform::prepare()
         }
         else if (input.hasData())
         {
-            bool virtual_row = false;
+            bool virtual_row;
             auto chunk = pullChunk(virtual_row);
             output.push(std::move(chunk));
             if (virtual_row)
@@ -71,7 +71,7 @@ IProcessor::Status BufferChunksTransform::prepare()
 
     if (input.hasData() && (num_buffered_rows < max_rows_to_buffer || num_buffered_bytes < max_bytes_to_buffer))
     {
-        bool virtual_row = false;
+        bool virtual_row;
         auto chunk = pullChunk(virtual_row);
         if (virtual_row)
         {

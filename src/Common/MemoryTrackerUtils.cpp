@@ -1,14 +1,11 @@
 #include <algorithm>
 #include <limits>
 #include <Common/CurrentThread.h>
-#include <Common/Logger.h>
-#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
-#include <Common/logger_useful.h>
 
 std::optional<UInt64> getMostStrictAvailableSystemMemory()
 {
-    MemoryTracker * query_memory_tracker = nullptr;
+    MemoryTracker * query_memory_tracker;
     if (query_memory_tracker = DB::CurrentThread::getMemoryTracker(); !query_memory_tracker)
         return {};
     /// query-level memory tracker
@@ -62,35 +59,4 @@ Int64 getCurrentQueryMemoryUsage()
         return 0;
 
     return query_process_memory_tracker->get();
-}
-
-
-static size_t getMaxThreadsForAvailableMemoryImpl(size_t max_threads, UInt64 min_free_per_thread)
-{
-    if (min_free_per_thread == 0 || max_threads <= 1)
-        return max_threads;
-
-    Int64 hard_limit = total_memory_tracker.getHardLimit();
-    if (hard_limit <= 0)
-        return max_threads;
-
-    Int64 tracked = total_memory_tracker.get();
-    Int64 free_memory = hard_limit - tracked;
-
-    if (free_memory <= 0)
-        return 1;
-
-    auto allowed = static_cast<size_t>(static_cast<UInt64>(free_memory) / min_free_per_thread);
-    if (allowed < 1)
-        return 1;
-    if (allowed < max_threads)
-        return allowed;
-    return max_threads;
-}
-size_t getMaxThreadsForAvailableMemory(size_t max_threads, UInt64 min_free_per_thread)
-{
-    size_t effective_threads = getMaxThreadsForAvailableMemoryImpl(max_threads, min_free_per_thread);
-    if (effective_threads != max_threads)
-        LOG_DEBUG(getLogger("MemoryTrackerUtils"), "Lower number of threads for query to {} ({} requested)", effective_threads, max_threads);
-    return effective_threads;
 }

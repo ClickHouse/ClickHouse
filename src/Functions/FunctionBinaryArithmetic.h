@@ -64,6 +64,7 @@
 #    include <llvm/IR/IRBuilder.h>
 #endif
 
+#include <cassert>
 #include <ranges>
 
 namespace DB
@@ -291,72 +292,27 @@ struct BinaryOperation
     template <OpCase op_case>
     static void NO_INLINE process(const A * __restrict a, const B * __restrict b, ResultType * __restrict c, size_t size, const NullMap * right_nullmap = nullptr)
     {
-        /// No mainstream ISA has SIMD integer division (see `DivideIntegralImpl`).
-        /// The compiler "vectorizes" by extracting each element, doing scalar div,
-        /// and re-inserting, bloating the loop ~3-5x for no benefit. Operations
-        /// that use div/mod set `no_vectorize = true` to opt out; `Op` types that
-        /// don't define the member are treated as opting in to vectorization.
-        static constexpr bool disable_vectorization = []
-        {
-            if constexpr (requires { Op::no_vectorize; })
-                return bool(Op::no_vectorize);
-            else
-                return false;
-        }();
-
         if constexpr (op_case == OpCase::RightConstant)
         {
             if (right_nullmap && (*right_nullmap)[0])
                 return;
 
-            if constexpr (disable_vectorization)
-            {
-                #pragma clang loop vectorize(disable)
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], *b);
-            }
-            else
-            {
-                for (size_t i = 0; i < size; ++i)
-                    c[i] = Op::template apply<ResultType>(a[i], *b);
-            }
+            for (size_t i = 0; i < size; ++i)
+                c[i] = Op::template apply<ResultType>(a[i], *b);
         }
         else
         {
             if (right_nullmap)
             {
-                if constexpr (disable_vectorization)
-                {
-                    #pragma clang loop vectorize(disable)
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        if ((*right_nullmap)[i])
-                            c[i] = ResultType();
-                        else
-                            apply<op_case>(a, b, c, i);
-                }
+                for (size_t i = 0; i < size; ++i)
+                    if ((*right_nullmap)[i])
+                        c[i] = ResultType();
+                    else
+                        apply<op_case>(a, b, c, i);
             }
             else
-            {
-                if constexpr (disable_vectorization)
-                {
-                    #pragma clang loop vectorize(disable)
-                    for (size_t i = 0; i < size; ++i)
-                        apply<op_case>(a, b, c, i);
-                }
-                else
-                {
-                    for (size_t i = 0; i < size; ++i)
-                        apply<op_case>(a, b, c, i);
-                }
-            }
+                for (size_t i = 0; i < size; ++i)
+                    apply<op_case>(a, b, c, i);
         }
     }
 
@@ -634,7 +590,7 @@ public:
         if constexpr (op_case == OpCase::LeftConstant) static_assert(!is_decimal<decltype(a)>);
         if constexpr (op_case == OpCase::RightConstant) static_assert(!is_decimal<decltype(b)>);
 
-        size_t size = 0;
+        size_t size;
 
         if constexpr (op_case == OpCase::LeftConstant)
             size = b.size();
@@ -873,7 +829,6 @@ class FunctionBinaryArithmetic : public IFunction
     static constexpr bool is_division_or_null = IsOperation<Op>::division_or_null;
 
     ContextPtr context;
-
     bool check_decimal_overflow = true;
 
     static bool castType(const IDataType * type, auto && f)
@@ -934,11 +889,8 @@ class FunctionBinaryArithmetic : public IFunction
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
+    getFunctionForIntervalArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!context_)
-            return {};
-
         bool first_arg_is_date_or_time_or_datetime_or_string = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type0) || isString(type0);
         bool second_arg_is_date_or_time_or_datetime_or_string = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type1) || isString(type1);
 
@@ -990,15 +942,12 @@ class FunctionBinaryArithmetic : public IFunction
                 function_name = is_plus ? "addSeconds" : "subtractSeconds";
         }
 
-        return FunctionFactory::instance().get(function_name, context_);
+        return FunctionFactory::instance().get(function_name, context);
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForDateTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
+    getFunctionForDateTupleOfIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!context_)
-            return {};
-
         bool first_arg_is_date_or_datetime = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type0);
         bool second_arg_is_date_or_datetime = isDateOrDate32OrTimeOrTime64OrDateTimeOrDateTime64(type1);
 
@@ -1028,15 +977,12 @@ class FunctionBinaryArithmetic : public IFunction
             function_name = "subtractTupleOfIntervals";
         }
 
-        return FunctionFactory::instance().get(function_name, context_);
+        return FunctionFactory::instance().get(function_name, context);
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForMergeIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
+    getFunctionForMergeIntervalsArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!context_)
-            return {};
-
         /// Special case when the function is plus or minus, first argument is Interval or Tuple of Intervals
         ///  and the second argument is the Interval of a different kind.
         /// We construct another function (example: addIntervals) and call it
@@ -1072,15 +1018,12 @@ class FunctionBinaryArithmetic : public IFunction
             function_name = "subtractInterval";
         }
 
-        return FunctionFactory::instance().get(function_name, context_);
+        return FunctionFactory::instance().get(function_name, context);
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
+    getFunctionForTupleArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!context_)
-            return {};
-
         if (!isTuple(removeNullable(type0)) || !isTuple(removeNullable(type1)))
             return {};
 
@@ -1104,15 +1047,12 @@ class FunctionBinaryArithmetic : public IFunction
             function_name = "dotProduct";
         }
 
-        return FunctionFactory::instance().get(function_name, context_);
+        return FunctionFactory::instance().get(function_name, context);
     }
 
     static FunctionOverloadResolverPtr
-    getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context_)
+    getFunctionForTupleAndNumberArithmetic(const DataTypePtr & type0, const DataTypePtr & type1, ContextPtr context)
     {
-        if (!context_)
-            return {};
-
         if (!(isTuple(removeNullable(type0)) && isNumber(removeNullable(type1)))
             && !(isTuple(removeNullable(type1)) && isNumber(removeNullable(type0))))
             return {};
@@ -1156,7 +1096,7 @@ class FunctionBinaryArithmetic : public IFunction
             }
         }
 
-        return FunctionFactory::instance().get(function_name, context_);
+        return FunctionFactory::instance().get(function_name, context);
     }
 
     static bool isAggregateMultiply(const DataTypePtr & type0, const DataTypePtr & type1)
@@ -1354,11 +1294,11 @@ class FunctionBinaryArithmetic : public IFunction
         {
             explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
             const ColumnWithTypeAndName & argument;
-            const ColumnDateTime64 * col{};
+            const ColumnDateTime64 * col;
             ColumnPtr converted_col;
-            UInt64 const_val{};
-            bool is_const{};
-            UInt64 scale{};
+            UInt64 const_val;
+            bool is_const;
+            UInt64 scale;
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
 
         const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
@@ -1453,11 +1393,11 @@ class FunctionBinaryArithmetic : public IFunction
         {
             explicit ColumnInfo(const ColumnWithTypeAndName & argument_) : argument(argument_), converted_col(nullptr) {}
             const ColumnWithTypeAndName & argument;
-            const ColumnTime64 * col{};
+            const ColumnTime64 * col;
             ColumnPtr converted_col;
-            UInt64 const_val{};
-            bool is_const{};
-            UInt64 scale{};
+            UInt64 const_val;
+            bool is_const;
+            UInt64 scale;
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
 
         const auto * type = checkAndGetDataType<DataTypeDecimal<Decimal64>>(result_type.get());
@@ -2045,11 +1985,11 @@ class FunctionBinaryArithmetic : public IFunction
 
 public:
     static constexpr auto name = Name::name;
-    static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionBinaryArithmetic>(context_); }
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionBinaryArithmetic>(context); }
 
     explicit FunctionBinaryArithmetic(ContextPtr context_)
     :   context(context_),
-        check_decimal_overflow(decimalCheckArithmeticOverflow(context_))
+        check_decimal_overflow(decimalCheckArithmeticOverflow(context))
     {}
 
     String getName() const override { return name; }
@@ -2079,7 +2019,7 @@ public:
         return getReturnTypeImplStatic(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context_)
+    static DataTypePtr getReturnTypeImplStatic(const DataTypes & arguments, ContextPtr context)
     {
         /// Special case when multiply aggregate function state
         if (isAggregateMultiply(arguments[0], arguments[1]))
@@ -2109,7 +2049,7 @@ public:
                     isIPv4(arguments[1]) ? std::make_shared<DataTypeUInt32>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic2(new_arguments, context_);
+            return getReturnTypeImplStatic2(new_arguments, context);
         }
 
         /// Special case -one argument is IPv6 and the other is Ipv4 or an integer
@@ -2121,7 +2061,7 @@ public:
                     isIPv6(arguments[1]) ? std::make_shared<DataTypeUInt128>() : arguments[1],
             };
 
-            return getReturnTypeImplStatic2(new_arguments, context_);
+            return getReturnTypeImplStatic2(new_arguments, context);
         }
 
 
@@ -2133,7 +2073,7 @@ public:
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
         }
 
@@ -2215,7 +2155,7 @@ public:
                         static_cast<const DataTypeArray &>(*arguments[0]).getNestedType(),
                         arguments[1],
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
             if (isNumber(arguments[0]) && isArray(arguments[1]))
             {
@@ -2223,17 +2163,17 @@ public:
                         arguments[0],
                         static_cast<const DataTypeArray &>(*arguments[1]).getNestedType(),
                 };
-                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context_));
+                return std::make_shared<DataTypeArray>(getReturnTypeImplStatic(new_arguments, context));
             }
         }
 
-        return getReturnTypeImplStatic2(arguments, context_);
+        return getReturnTypeImplStatic2(arguments, context);
     }
 
-    static DataTypePtr getReturnTypeImplStatic2(const DataTypes & arguments, ContextPtr context_)
+    static DataTypePtr getReturnTypeImplStatic2(const DataTypes & arguments, ContextPtr context)
     {
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime/String and another is Interval.
-        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context_))
+        if (auto function_builder = getFunctionForIntervalArithmetic(arguments[0], arguments[1], context))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2252,7 +2192,7 @@ public:
         }
 
         /// Special case when the function is plus, minus or multiply, both arguments are tuples.
-        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context_))
+        if (auto function_builder = getFunctionForTupleArithmetic(arguments[0], arguments[1], context))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2264,7 +2204,7 @@ public:
         }
 
         /// Special case when the function is plus or minus, one of arguments is Date/DateTime and another is Tuple.
-        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0], arguments[1], context_))
+        if (auto function_builder = getFunctionForDateTupleOfIntervalsArithmetic(arguments[0], arguments[1], context))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2280,7 +2220,7 @@ public:
         }
 
         /// Special case when the function is plus or minus, one of arguments is Interval/Tuple of Intervals and another is Interval.
-        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0], arguments[1], context_))
+        if (auto function_builder = getFunctionForMergeIntervalsArithmetic(arguments[0], arguments[1], context))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2292,7 +2232,7 @@ public:
         }
 
         /// Special case when the function is multiply or divide, one of arguments is Tuple and another is Number.
-        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context_))
+        if (auto function_builder = getFunctionForTupleAndNumberArithmetic(arguments[0], arguments[1], context))
         {
             ColumnsWithTypeAndName new_arguments(2);
 
@@ -2384,7 +2324,7 @@ public:
                     {
                         if constexpr (is_division)
                         {
-                            if (decimalCheckArithmeticOverflow(context_))
+                            if (decimalCheckArithmeticOverflow(context))
                             {
                                 /// Check overflow by using operands scale (based on big decimal division implementation details):
                                 /// big decimal arithmetic is based on big integers, decimal operands are converted to big integers
@@ -2946,24 +2886,15 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
         /// Process special case when operation is divide, intDiv or modulo and denominator
         /// is Nullable(Something) to prevent division by zero error.
-        ///
-        /// `division_by_nullable` is captured at build time from the original arguments. When the
-        /// function is invoked recursively with already-stripped element types (e.g. from
-        /// `executeArrayWithNumericImpl` for `intDiv(Array, Nullable(N))`, where the framework
-        /// wraps a non-Nullable `Array` result), `right_argument.type` is no longer Nullable.
-        /// The Nullable special-case has already been handled by the outer call, so skip it here.
-        if (division_by_nullable && !right_nullmap && right_argument.type->isNullable())
+        if (division_by_nullable && !right_nullmap)
         {
+            assert(right_argument.type->isNullable());
             bool is_const = checkColumnConst<ColumnNullable>(right_argument.column.get());
             const ColumnNullable * nullable_column = is_const ? checkAndGetColumnConstData<ColumnNullable>(right_argument.column.get())
                                                               : checkAndGetColumn<ColumnNullable>(right_argument.column.get());
 
             const auto & null_bytemap = nullable_column->getNullMapData();
             auto res = executeImpl2(createBlockWithNestedColumns(arguments), removeNullable(result_type), input_rows_count, &null_bytemap);
-            /// When the framework declared a non-Nullable result type (e.g. `Array` via `makeNullableSafe`),
-            /// `wrapInNullable` would produce a `ColumnNullable` that disagrees with `result_type`.
-            if (!result_type->isNullable())
-                return res;
             return wrapInNullable(res, arguments, result_type, input_rows_count);
         }
 
@@ -3165,7 +3096,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
     llvm::Value * compileImpl(llvm::IRBuilderBase & builder, const ValuesWithType & arguments, const DataTypePtr & result_type) const override
     {
-        chassert(2 == arguments.size());
+        assert(2 == arguments.size());
 
         auto denull_left_type = removeNullable(arguments[0].type);
         auto denull_right_type = removeNullable(arguments[1].type);
@@ -3207,7 +3138,7 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
 
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true, bool division_by_nullable = false>
-class FunctionBinaryArithmeticWithConstants final : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
+class FunctionBinaryArithmeticWithConstants : public FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>
 {
 public:
     using Base = FunctionBinaryArithmetic<Op, Name, valid_on_default_arguments, valid_on_float_arguments, division_by_nullable>;
@@ -3217,9 +3148,9 @@ public:
         const ColumnWithTypeAndName & left_,
         const ColumnWithTypeAndName & right_,
         const DataTypePtr & return_type_,
-        ContextPtr context_)
+        ContextPtr context)
     {
-        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context_);
+        return std::make_shared<FunctionBinaryArithmeticWithConstants>(left_, right_, return_type_, context);
     }
 
     FunctionBinaryArithmeticWithConstants(
@@ -3307,9 +3238,9 @@ public:
             // const +|- variable
             if (left.column && isColumnConst(*left.column))
             {
-                auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -3317,11 +3248,9 @@ public:
                         = {{left_type->createColumnConst(1, (*left.column)[0]), left_type, left.name},
                            {right_type->createColumnConst(1, point), right_type, right.name}};
 
-                    /// This is a bit dangerous to call `Base::executeImpl` cause it ignores `use Default Implementation For XXX` flags.
-                    /// It was possible to check monotonicity for nullable right type, which results in an exception.
-                    /// We also strip `LowCardinality` recursively (e.g. `Array(LowCardinality(Float64))` -> `Array(Float64)`)
-                    /// because the framework's `LowCardinality` default implementation is bypassed when calling `Base::executeImpl`
-                    /// directly, and the inner numeric dispatch (via `castBothTypes`) does not recognize `LowCardinality`.
+                    /// This is a bit dangerous to call Base::executeImpl cause it ignores `use Default Implementation For XXX` flags.
+                    /// It was possible to check monotonicity for nullable right type which result to exception.
+                    /// Adding removeNullable above fixes the issue, but some other inconsistency may left.
                     auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
                     Field point_transformed;
                     col->get(0, point_transformed);
@@ -3347,9 +3276,9 @@ public:
             // variable +|- constant
             if (right.column && isColumnConst(*right.column))
             {
-                auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
-                auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
-                auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
+                auto left_type = removeNullable(removeLowCardinality(left.type));
+                auto right_type = removeNullable(removeLowCardinality(right.type));
+                auto ret_type = removeNullable(removeLowCardinality(return_type));
 
                 auto transform = [&](const Field & point)
                 {
@@ -3378,17 +3307,7 @@ public:
             {
                 auto constant = (*left.column)[0];
                 if (accurateEquals(constant, Field(0)))
-                {
-                    /// `0 / x` is 0 for any `x` != 0, but undefined at `x` = 0
-                    /// (`NaN`/`Inf` for `divide`, division-by-zero exception for `intDiv`).
-                    /// The function is constant (and therefore monotonic) only when the range
-                    /// strictly excludes 0. Otherwise the chain is non-monotonic and the
-                    /// `MergeTreeSetIndex` binary search invariant (begin <= end) can be violated.
-                    if ((accurateLess(left_point, Field(0)) && accurateLess(right_point, Field(0)))
-                        || (accurateLess(Field(0), left_point) && accurateLess(Field(0), right_point)))
-                        return {true, true, false, false};
-                    return {false, true, false, false};
-                }
+                    return {true, true, false, false}; // 0 / 0 is undefined, thus it's not always monotonic
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 if (accurateLess(left_point, Field(0))
@@ -3519,13 +3438,13 @@ private:
 };
 
 template <template <typename, typename> class Op, typename Name, bool valid_on_default_arguments = true, bool valid_on_float_arguments = true>
-class BinaryArithmeticOverloadResolver final : public IFunctionOverloadResolver
+class BinaryArithmeticOverloadResolver : public IFunctionOverloadResolver
 {
 public:
     static constexpr auto name = Name::name;
-    static FunctionOverloadResolverPtr create(ContextPtr context_)
+    static FunctionOverloadResolverPtr create(ContextPtr context)
     {
-        return std::make_unique<BinaryArithmeticOverloadResolver>(context_);
+        return std::make_unique<BinaryArithmeticOverloadResolver>(context);
     }
 
     explicit BinaryArithmeticOverloadResolver(ContextPtr context_) : context(context_) {}

@@ -1,10 +1,8 @@
-import concurrent.futures
 import logging
 import os
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 import gcsfs
@@ -77,113 +75,10 @@ class BigLakeCatalogManager(CatalogManager):
         self._tables_created: List[str] = []
 
         self._cleanup_stale_namespaces()
-        self._cleanup_stale_storage_paths()
 
         self._refresh_token_if_needed()
         self.catalog.create_namespace(self._session_namespace)
         log.info("Created session namespace '%s'", self._session_namespace)
-
-    def _namespace_gcs_path(self, namespace: str) -> str:
-        """Build the GCS path for a namespace's data files, handling
-        the case where `gcs_prefix` is empty (no leading subdirectory)."""
-        if self.config.gcs_prefix:
-            return f"{self.config.gcs_bucket}/{self.config.gcs_prefix}/{namespace}"
-        return f"{self.config.gcs_bucket}/{namespace}"
-
-    def _cleanup_stale_storage_paths(self) -> None:
-        """Remove leftover GCS storage directories from previous BigLake
-        test runs.
-
-        BigLake drops namespace records on `drop_namespace`, but the
-        underlying GCS data files are NOT auto-purged. Combined with a
-        long-standing path-join bug (when `gcs_prefix=""` the previous
-        cleanup attempted to delete `bucket//<ns>`, an invalid path),
-        the bucket has accumulated thousands of orphan storage prefixes.
-
-        We list `ch_e2e_bl_*` directories at the configured storage root
-        and delete those older than `_STALE_GRACE_SECONDS`. Age is
-        determined either from the encoded timestamp in the directory
-        name (`ch_e2e_bl_<ts>_<hex>`) or, for the legacy
-        `ch_e2e_bl_<hex>` form, by the `updated` time of the first
-        object found inside.
-        """
-        try:
-            self._refresh_token_if_needed()
-            fs = gcsfs.GCSFileSystem(token=self._credential.token)
-            root = (
-                f"{self.config.gcs_bucket}/{self.config.gcs_prefix}"
-                if self.config.gcs_prefix
-                else self.config.gcs_bucket
-            )
-            now = datetime.now(timezone.utc)
-            stale: List[str] = []
-            for entry in fs.ls(root, detail=True):
-                name = entry.get("name", "").rstrip("/")
-                tail = name.rsplit("/", 1)[-1]
-                if not tail.startswith(NAMESPACE_PREFIX):
-                    continue
-                if tail == self._session_namespace:
-                    continue
-                age_seconds = self._estimate_storage_age(fs, name, tail, now)
-                if age_seconds is None:
-                    continue
-                if age_seconds >= self._STALE_GRACE_SECONDS:
-                    stale.append(name)
-            if not stale:
-                return
-            log.info(
-                "Cleaning up %d stale BigLake storage paths (older than %ds)",
-                len(stale), self._STALE_GRACE_SECONDS,
-            )
-            with concurrent.futures.ThreadPoolExecutor(max_workers=16) as pool:
-                list(pool.map(self._delete_gcs_prefix, stale))
-        except Exception as exc:
-            log.warning("Stale BigLake storage cleanup failed: %s", exc)
-
-    def _estimate_storage_age(
-        self, fs: gcsfs.GCSFileSystem, full_path: str, tail: str, now: datetime,
-    ) -> Optional[float]:
-        """Return the age (in seconds) of a `ch_e2e_bl_*` storage prefix.
-
-        New-format directory names embed the session creation timestamp
-        (`ch_e2e_bl_<ts>_<hex>`), so the age comes straight from the
-        name.  For the legacy `ch_e2e_bl_<hex>` form (pre-timestamp
-        naming) we walk into the nested `tbl_*/data/...` and
-        `tbl_*/metadata/...` files and use the first `updated`
-        timestamp we can read.  If no probe-able file is found we
-        return `None` so the caller skips the prefix rather than
-        assuming it is stale -- that prevents a concurrent test
-        session still on the old naming format from losing a fresh
-        storage path it just created."""
-        parts = tail.split("_")
-        try:
-            ns_ts = int(parts[3])
-            return (now - datetime.fromtimestamp(ns_ts, tz=timezone.utc)).total_seconds()
-        except (IndexError, ValueError):
-            pass
-        try:
-            for tbl_entry in fs.ls(full_path, detail=True):
-                if tbl_entry.get("type") != "directory":
-                    continue
-                for sub_entry in fs.ls(tbl_entry["name"], detail=True):
-                    if sub_entry.get("type") != "directory":
-                        continue
-                    for obj in fs.ls(sub_entry["name"], detail=True):
-                        if obj.get("type") != "file":
-                            continue
-                        updated = obj.get("updated")
-                        if not updated:
-                            continue
-                        if isinstance(updated, str):
-                            updated = datetime.fromisoformat(
-                                updated.replace("Z", "+00:00")
-                            )
-                        elif updated.tzinfo is None:
-                            updated = updated.replace(tzinfo=timezone.utc)
-                        return (now - updated).total_seconds()
-        except Exception as exc:
-            log.debug("age probe of '%s' failed: %s", full_path, exc)
-        return None
 
     def _warehouse_path(self) -> str:
         if self.config.gcs_prefix:
@@ -197,7 +92,7 @@ class BigLakeCatalogManager(CatalogManager):
 
     # Only clean up namespaces older than this to avoid racing with other
     # concurrently running test sessions.
-    _STALE_GRACE_SECONDS: int = 43200  # 12 hours
+    _STALE_GRACE_SECONDS: int = 3600
 
     def _cleanup_stale_namespaces(self) -> None:
         """Remove leftover namespaces from previous test runs."""
@@ -232,7 +127,10 @@ class BigLakeCatalogManager(CatalogManager):
                             pass
                     self.catalog.drop_namespace(ns)
                     log.info("Cleaned up stale namespace '%s'", ns)
-                    self._delete_gcs_prefix(self._namespace_gcs_path(ns))
+                    ns_gcs_path = (
+                        f"{self.config.gcs_bucket}/{self.config.gcs_prefix}/{ns}"
+                    )
+                    self._delete_gcs_prefix(ns_gcs_path)
                 except Exception as exc:
                     log.warning("Failed to clean up namespace '%s': %s", ns, exc)
         except Exception as exc:
@@ -428,7 +326,11 @@ class BigLakeCatalogManager(CatalogManager):
         except Exception:
             pass
 
-        self._delete_gcs_prefix(self._namespace_gcs_path(self._session_namespace))
+        ns_gcs_path = (
+            f"{self.config.gcs_bucket}/{self.config.gcs_prefix}"
+            f"/{self._session_namespace}"
+        )
+        self._delete_gcs_prefix(ns_gcs_path)
 
     def resolve_table_name(
         self,

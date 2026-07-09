@@ -108,7 +108,6 @@ public:
 
 }
 
-void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory);
 void registerAggregateFunctionAggThrow(AggregateFunctionFactory & factory)
 {
         FunctionDocumentation::Description description_aggThrow = R"(

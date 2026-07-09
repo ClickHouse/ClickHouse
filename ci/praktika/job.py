@@ -4,7 +4,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Iterable, List, Optional
 
 from . import Artifact
@@ -31,7 +31,6 @@ class Job:
         provides: Optional[List[str]] = None
         requires: Optional[List[str]] = None
         timeout: Optional[int] = None
-        command: Optional[str] = None
 
     @dataclass
     class Config:
@@ -70,14 +69,7 @@ class Job:
 
         run_unless_cancelled: bool = False
 
-        # If True, the job failure does not block PR merge, but the job
-        # is still shown as failed in the CI report.
-        allow_failure: bool = False
-
-        # If True, the job failure is hidden entirely: the CI report shows
-        # green status and the job does not block PR merge. Use for
-        # experimental jobs that are not yet stable enough to be enforced.
-        force_success: bool = False
+        allow_merge_on_failure: bool = False
 
         enable_commit_status: bool = False
 
@@ -107,12 +99,9 @@ class Job:
                 assert (
                     not obj.provides
                 ), "Job.Config.provides must be empty for parametrized jobs"
-                if param_set.command:
-                    obj.command = param_set.command
                 if param_set.parameter:
                     obj.parameter = param_set.parameter
-                    if not param_set.command:
-                        obj.command = obj.command.format(PARAMETER=param_set.parameter)
+                    obj.command = obj.command.format(PARAMETER=param_set.parameter)
                 if param_set.runs_on:
                     obj.runs_on = param_set.runs_on
                 if param_set.timeout:
@@ -240,9 +229,9 @@ class Job:
             res.provides = provides_res
             return res
 
-        def set_allow_failure(self, value=True):
+        def set_allow_merge_on_failure(self, value=True):
             res = copy.deepcopy(self)
-            res.allow_failure = value
+            res.allow_merge_on_failure = value
             return res
 
         def set_post_hooks(self, post_hooks):
@@ -285,7 +274,7 @@ class Job:
                     # Check if included
                     for include in self.digest_config.include_paths:
                         include_norm = os.path.normpath(include)
-                        if PurePosixPath("/" + file).match("/" + include_norm) or file.startswith(
+                        if fnmatch.fnmatch(file, include_norm) or file.startswith(
                             include_norm + os.sep
                         ):
                             return True

@@ -147,7 +147,7 @@ MergeSortingTransform::MergeSortingTransform(
 {
 }
 
-IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
+Processors MergeSortingTransform::expandPipeline()
 {
     if (processors.size() > 2)
     {
@@ -173,7 +173,7 @@ IProcessor::PipelineUpdate MergeSortingTransform::updatePipeline()
         /// Generate
         static_cast<MergingSortedTransform &>(*external_merging_sorted).setHaveAllInputs();
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return std::move(processors);
 }
 
 void MergeSortingTransform::consume(Chunk chunk)

@@ -81,7 +81,6 @@ public:
     }
 };
 
-void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory & factory);
 void registerAggregateFunctionExponentialMovingAverage(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

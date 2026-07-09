@@ -87,7 +87,7 @@ private:
     struct Interval
     {
         mutable std::atomic<QuotaValue> used[static_cast<size_t>(QuotaType::MAX)];
-        QuotaValue max[static_cast<size_t>(QuotaType::MAX)]{};
+        QuotaValue max[static_cast<size_t>(QuotaType::MAX)];
         std::chrono::seconds duration = std::chrono::seconds::zero();
         bool randomize_interval = false;
         mutable std::atomic<std::chrono::system_clock::duration> end_of_interval;

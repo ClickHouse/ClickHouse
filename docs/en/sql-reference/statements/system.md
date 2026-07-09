@@ -101,10 +101,6 @@ Clears the mark cache.
 
 Clears the iceberg metadata cache.
 
-## SYSTEM CLEAR|DROP AVRO SCHEMA CACHE {#drop-avro-schema-cache}
-
-Clears the per-URL Confluent Schema Registry caches used by the `AvroConfluent` format. This drops both the schema-fetch cache (id → schema) and the schema-registration cache (subject + schema → id), so subsequent reads and writes fall back to the registry server. Useful when a schema was deleted or rewritten on the registry side, or to verify the registry's idempotency in tests.
-
 ## SYSTEM DROP PARQUET METADATA CACHE {#drop-parquet-metadata-cache}
 
 Clears the parquet metadata cache.
@@ -244,7 +240,7 @@ There are three different kind of handlers to add to functions:
 
 **Syntax**
 ```sql
-SYSTEM INSTRUMENT ADD FUNCTION HANDLER [ARGUMENTS]
+SYSTEM INSTRUMENT ADD FUNCTION HANDLER [PARAMETERS]
 ```
 
 where `FUNCTION` is any function or substring of a function such as `QueryMetricLog::startQuery`, and the handler one of the following
@@ -290,7 +286,7 @@ Removes either a single instrumentation point with:
 SYSTEM INSTRUMENT REMOVE ID
 ```
 
-all of them using the `ALL` keyword:
+all of them using the `ALL` parameter:
 
 ```sql
 SYSTEM INSTRUMENT REMOVE ALL
@@ -403,8 +399,6 @@ SYSTEM START MERGES [ON CLUSTER cluster_name] [ON VOLUME <volume_name> | [db.]me
 
 ### SYSTEM STOP TTL MERGES {#stop-ttl-merges}
 
-<CloudNotSupportedBadge/>
-
 Provides possibility to stop background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist or table has not MergeTree engine. Returns error when database does not exist:
 
@@ -413,8 +407,6 @@ SYSTEM STOP TTL MERGES [ON CLUSTER cluster_name] [[db.]merge_tree_family_table_n
 ```
 
 ### SYSTEM START TTL MERGES {#start-ttl-merges}
-
-<CloudNotSupportedBadge/>
 
 Provides possibility to start background delete old data according to [TTL expression](../../engines/table-engines/mergetree-family/mergetree.md#table_engine-mergetree-ttl) for tables in the MergeTree family:
 Returns `Ok.` even if table does not exist. Returns error when database does not exist:

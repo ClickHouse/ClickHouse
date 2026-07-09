@@ -7,6 +7,8 @@ title: 'Map(K, V)'
 doc_type: 'reference'
 ---
 
+# Map(K, V)
+
 Data type `Map(K, V)` stores key-value pairs.
 
 Unlike other databases, maps are not unique in ClickHouse, i.e. a map can contain two elements with the same key.
@@ -24,18 +26,20 @@ Also, `m[k]` scans the map, i.e. the runtime of the operation is linear in the s
 
 Create a table with a column of type map:
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO tab VALUES ({'key1':1, 'key2':10}), ({'key1':2,'key2':20}), ({'key1':3,'key2':30});
 ```
 
 To select `key2` values:
 
-```sql title="Query"
+```sql
 SELECT m['key2'] FROM tab;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─arrayElement(m, 'key2')─┐
 │                      10 │
 │                      20 │
@@ -46,13 +50,15 @@ SELECT m['key2'] FROM tab;
 If the requested key `k` is not contained in the map, `m[k]` returns the value type's default value, e.g. `0` for integer types and `''` for string types.
 To check whether a key exists in a map, you can use function [mapContains](/sql-reference/functions/tuple-map-functions#mapContainsKey).
 
-```sql title="Query"
+```sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE=Memory;
 INSERT INTO tab VALUES ({'key1':100}), ({});
 SELECT m['key1'] FROM tab;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─arrayElement(m, 'key1')─┐
 │                     100 │
 │                       0 │
@@ -65,11 +71,15 @@ Values of type `Tuple()` can be cast to values of type `Map()` using function [C
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 SELECT CAST(([1, 2, 3], ['Ready', 'Steady', 'Go']), 'Map(UInt8, String)') AS map;
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─map───────────────────────────┐
 │ {1:'Ready',2:'Steady',3:'Go'} │
 └───────────────────────────────┘
@@ -81,7 +91,9 @@ To avoid reading the entire map, you can use subcolumns `keys` and `values` in s
 
 **Example**
 
-```sql title="Query"
+Query:
+
+```sql
 CREATE TABLE tab (m Map(String, UInt64)) ENGINE = Memory;
 INSERT INTO tab VALUES (map('key1', 1, 'key2', 2, 'key3', 3));
 
@@ -89,7 +101,9 @@ SELECT m.keys FROM tab; --   same as mapKeys(m)
 SELECT m.values FROM tab; -- same as mapValues(m)
 ```
 
-```text title="Response"
+Result:
+
+```text
 ┌─m.keys─────────────────┐
 │ ['key1','key2','key3'] │
 └────────────────────────┘

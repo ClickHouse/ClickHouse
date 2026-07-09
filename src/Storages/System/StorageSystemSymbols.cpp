@@ -49,7 +49,7 @@ VirtualColumnsDescription StorageSystemSymbols::createVirtuals()
 namespace
 {
 
-class SymbolsBlockSource final : public ISource
+class SymbolsBlockSource : public ISource
 {
 private:
     using Iterator = std::vector<SymbolIndex::Symbol>::const_iterator;

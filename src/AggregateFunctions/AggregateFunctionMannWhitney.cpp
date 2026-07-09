@@ -48,7 +48,7 @@ struct MannWhitneyData : public StatisticalSample<Float64, Float64>
     {
         ConcatenatedSamples both(this->x, this->y);
         RanksArray ranks;
-        Float64 tie_correction = 0;
+        Float64 tie_correction;
 
         /// Compute ranks according to both samples.
         std::tie(ranks, tie_correction) = computeRanksAndTieCorrection(both);
@@ -142,7 +142,6 @@ private:
     bool continuity_correction{true};
 
 public:
-    /// TODO: We need to pass params to the base constructor for consistency with other aggregation functions.
     explicit AggregateFunctionMannWhitney(const DataTypes & arguments, const Array & params)
         : IAggregateFunctionDataHelper<MannWhitneyData, AggregateFunctionMannWhitney> ({arguments}, {}, createResultType())
     {
@@ -269,7 +268,6 @@ AggregateFunctionPtr createAggregateFunctionMannWhitneyUTest(
 }
 
 
-void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMannWhitney(AggregateFunctionFactory & factory)
 {
     FunctionDocumentation::Description description = R"(

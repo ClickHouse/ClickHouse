@@ -355,11 +355,11 @@ struct PartsRangesIterator
     }
 
     Values value;
-    bool in_reverse_order{};
-    MarkRange range{};
-    size_t part_index{};
-    EventType event{};
-    bool selected{}; /// Whether this range was selected or rejected in skip index filtering
+    bool in_reverse_order;
+    MarkRange range;
+    size_t part_index;
+    EventType event;
+    bool selected; /// Whether this range was selected or rejected in skip index filtering
 };
 
 struct PartRangeIndex
@@ -929,7 +929,7 @@ static ASTs buildFilters(const KeyDescription & primary_key, const std::vector<V
     return filters;
 }
 
-static RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
+RangesInDataParts findPKRangesForFinalAfterSkipIndexImpl(RangesInDataParts & ranges_in_data_parts, bool cannot_sort_primary_key, const LoggerPtr & logger)
 {
     IndexAccess index_access(ranges_in_data_parts);
     std::vector<PartsRangesIterator> selected_ranges;

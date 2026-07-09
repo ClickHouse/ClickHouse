@@ -9,7 +9,6 @@
 #include <IO/Operators.h>
 
 #include <Parsers/ASTWithAlias.h>
-#include <Parsers/IAST.h>
 
 #include <boost/functional/hash.hpp>
 
@@ -96,8 +95,8 @@ bool IQueryTreeNode::isEqual(const IQueryTreeNode & rhs, CompareOptions compare_
         const auto * lhs_node_to_compare = nodes_to_compare.first;
         const auto * rhs_node_to_compare = nodes_to_compare.second;
 
-        chassert(lhs_node_to_compare);
-        chassert(rhs_node_to_compare);
+        assert(lhs_node_to_compare);
+        assert(rhs_node_to_compare);
 
         if (equals_pairs.contains(std::make_pair(lhs_node_to_compare, rhs_node_to_compare)))
             continue;
@@ -282,7 +281,6 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
 
         node_clone->original_ast = node_to_clone->original_ast;
         node_clone->setAlias(node_to_clone->alias);
-        node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
         node_clone->weak_pointers = node_to_clone->weak_pointers;
 
@@ -315,7 +313,7 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
       */
     for (auto & weak_pointer_ptr : weak_pointers_to_update_after_clone)
     {
-        chassert(weak_pointer_ptr);
+        assert(weak_pointer_ptr);
         auto strong_pointer = weak_pointer_ptr->lock();
         auto it = old_pointer_to_new_pointer.find(strong_pointer.get());
 
@@ -350,8 +348,6 @@ ASTPtr IQueryTreeNode::toAST(const ConvertToASTOptions & options) const
 
     if (auto * /*ast_with_alias*/ _ = dynamic_cast<ASTWithAlias *>(converted_node.get()))
         converted_node->setAlias(alias);
-
-    converted_node->setParenthesized(parenthesized);
 
     return converted_node;
 }

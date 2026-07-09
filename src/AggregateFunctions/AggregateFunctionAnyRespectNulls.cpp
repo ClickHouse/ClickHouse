@@ -215,7 +215,6 @@ AggregateFunctionPtr createAggregateFunctionAnyLastRespectNulls(
 
 }
 
-void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsAnyRespectNulls(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties default_properties_for_respect_nulls
