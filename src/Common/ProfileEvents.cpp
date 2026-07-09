@@ -1357,6 +1357,10 @@ The server successfully detected this situation and will download merged part fr
     M(KeeperLogsEntryReadFromCommitReadAhead, "Number of log entries served to the commit thread from the commit read-ahead reader's decoded window (fast-path pop or first-of-window drain pop)", ValueType::Number) \
     M(KeeperChangelogWrittenBytes, "Number of bytes written to the changelog in Keeper", ValueType::Bytes) \
     M(KeeperChangelogFileSyncMicroseconds, "Time spent in fsync for Keeper changelog (uncompressed logs only)", ValueType::Microseconds) \
+    M(KeeperChangelogStartupReadMicroseconds, "Wall time spent in the parallel changelog read during Keeper startup", ValueType::Microseconds) \
+    M(KeeperChangelogStartupStitchMicroseconds, "Wall time spent stitching per-file parallel startup read results into LogEntryStorage state", ValueType::Microseconds) \
+    M(KeeperChangelogStartupReadEntries, "Number of changelog records validated by the parallel Keeper startup reader", ValueType::Number) \
+    M(KeeperChangelogStartupReadBytes, "Number of physical bytes (checksum + header + blob) read from changelog files by the parallel Keeper startup reader", ValueType::Bytes) \
     M(KeeperSnapshotWrittenBytes, "Number of bytes written to snapshot files in Keeper", ValueType::Bytes) \
     M(KeeperSnapshotFileSyncMicroseconds, "Time spent in fsync for Keeper snapshot files", ValueType::Microseconds) \
     \

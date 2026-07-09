@@ -287,6 +287,9 @@ def test_cmd_conf(started_cluster):
     assert result["log_readahead_chunk_size"] == "16"
     assert result["log_readahead_commit_window_bytes"] == "524288000"
 
+    assert result["log_startup_read_max_streams"] == "16"
+    assert result["log_startup_read_buffer_size"] == "8388608"
+
     assert result["disk_move_retries_wait_ms"] == "1000"
     assert result["disk_move_retries_during_init"] == "100"
 
