@@ -24,6 +24,7 @@
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
+#include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
 #include <Common/ThreadPool.h>
 #include <Common/ProfileEvents.h>
@@ -75,7 +76,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
     extern const int FAULT_INJECTED;
-    extern const int CANNOT_OPEN_FILE;
 }
 
 namespace FailPoints
@@ -825,9 +825,7 @@ ChangelogFileStartupReadResult readChangelogFile(
     std::unique_ptr<ReadBuffer> read_buf;
     try
     {
-        /// Open/size failures are fatal, not read errors -- matches the serial reader's readFile.
-        const size_t file_size = file_description->disk->getFileSize(filepath);
-        read_buf = file_description->disk->readFile(filepath, read_settings.adjustBufferSize(file_size));
+        read_buf = file_description->disk->readFile(filepath, read_settings);
     }
     catch (...)
     {
@@ -3476,7 +3474,8 @@ Changelog::Changelog(
     : changelogs_detached_dir("detached")
     , rotate_interval(log_file_settings.rotate_interval)
     , compress_logs(log_file_settings.compress_logs)
-    , startup_read_max_streams(log_file_settings.startup_read_max_streams)
+    , startup_read_max_streams(
+          log_file_settings.startup_read_max_streams == 0 ? getNumberOfCPUCoresToUse() : log_file_settings.startup_read_max_streams)
     , startup_read_buffer_size(log_file_settings.startup_read_buffer_size)
     , log(log_)
     , entry_storage(log_file_settings, readahead_settings_, keeper_context_)
@@ -3634,10 +3633,10 @@ void Changelog::readChangelogAndInitWriter(uint64_t last_commited_log_index, uin
     const bool any_in_scope_compressed
         = std::ranges::any_of(in_scope_files, [](const auto & file_description) { return file_description->is_compressed; });
 
-    /// A single in-scope file has no parallelism to exploit; `startup_read_max_streams == 0`
-    /// explicitly selects serial too.
+    /// A single in-scope file has no parallelism to exploit; `startup_read_max_streams <= 1`
+    /// (explicitly requested, or auto-resolved to 1 on a single-core machine) selects serial too.
     const bool use_serial_read = compress_logs || any_in_scope_compressed || force_serial_startup_read_for_test
-        || startup_read_max_streams == 0 || in_scope_files.size() <= 1;
+        || startup_read_max_streams <= 1 || in_scope_files.size() <= 1;
 
     if (use_serial_read)
         readChangelogAndInitWriterSerialLocked(last_commited_log_index, start_to_read_from);

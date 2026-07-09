@@ -198,7 +198,8 @@ struct LogFileSettings
     uint64_t max_size = 0;
     uint64_t overallocate_size = 0;
     uint64_t latest_logs_cache_size_threshold = 0;
-    uint64_t startup_read_max_streams = 16;
+    /// 0 = automatically use the number of CPU cores (resolved by Changelog's constructor).
+    uint64_t startup_read_max_streams = 0;
     uint64_t startup_read_buffer_size = 8 * 1024 * 1024;
 };
 

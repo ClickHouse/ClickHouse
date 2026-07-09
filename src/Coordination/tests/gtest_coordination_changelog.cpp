@@ -4127,19 +4127,6 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefresh
 
 // Tests: parallel startup read (log_startup_read_max_streams / log_startup_read_buffer_size).
 
-namespace
-{
-
-/// Like getLogEntry, but tagged as a nuraft::conf record so it's retained by value (feeds latest_config).
-LogEntryPtr getStartupReadConfigLogEntry(const std::string & s, size_t term)
-{
-    auto base = getLogEntry(s, term);
-    return nuraft::cs_new<nuraft::log_entry>(term, base->get_buf_ptr(), nuraft::log_val_type::conf);
-}
-
-}
-
-
 // A file that disappears between directory discovery and the actual read must abort startup with
 // an exception on every dispatch path, not be silently treated as empty/missing.
 TYPED_TEST(CoordinationChangelogTest, StartupReadOpenFailureAbortsStartup)
@@ -4176,19 +4163,19 @@ TYPED_TEST(CoordinationChangelogTest, StartupReadOpenFailureAbortsStartup)
 
         /// Construct readers (directory discovery) before the file disappears.
         DB::LogFileSettings serial_via_streams_settings = settings;
-        serial_via_streams_settings.startup_read_max_streams = 0;
+        serial_via_streams_settings.startup_read_max_streams = 1;
 
         DB::Changelog default_dispatch_reader(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
         DB::Changelog force_serial_reader(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
         force_serial_reader.setForceSerialStartupReadForTesting(true);
-        DB::Changelog streams_zero_reader(
+        DB::Changelog streams_one_reader(
             this->log, serial_via_streams_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
 
         fs::remove(file_to_delete);
 
         EXPECT_THROW(default_dispatch_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
         EXPECT_THROW(force_serial_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
-        EXPECT_THROW(streams_zero_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
+        EXPECT_THROW(streams_one_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
 
         for (const auto & path : all_files)
             if (path != file_to_delete)
