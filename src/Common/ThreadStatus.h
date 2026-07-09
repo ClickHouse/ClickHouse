@@ -6,6 +6,7 @@
 #include <Common/IThrottler.h>
 #include <Common/Logger_fwd.h>
 #include <Common/MemoryTracker.h>
+#include <Common/PerCPUMemoryThreadState.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
 #include <Common/Scheduler/ResourceLink.h>
@@ -54,6 +55,8 @@ using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
+/// Throws the real cancellation cause if the query has been cancelled and its process-list element is available.
+using ThrowIfQueryCanceledPredicate = std::function<void()>;
 
 /** Thread group is a collection of threads dedicated to single task
   * (query or other process like background merge).
@@ -105,6 +108,7 @@ public:
         std::shared_ptr<std::atomic_size_t> pipeline_processor_index = std::make_shared<std::atomic_size_t>(0);
 
         QueryIsCanceledPredicate query_is_canceled_predicate = {};
+        ThrowIfQueryCanceledPredicate throw_if_query_canceled_predicate = {};
     };
 
     SharedData getSharedData()
@@ -182,6 +186,8 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Per-CPU untracked memory
+    PerCPUMemoryThreadState per_cpu_untracked_memory;
 
     /// Statistics of read and write rows/bytes
     Progress progress_in;
@@ -285,6 +291,9 @@ public:
 
     bool isQueryCanceled() const;
 
+    /// Throws the real cancellation cause if the query has been cancelled. No-op if not attached to a query.
+    void throwIfQueryCanceled() const;
+
     /// Proper cal for fatal_error_callback
     void onFatalError();
 
@@ -317,6 +326,18 @@ public:
             return 0;
         return sample_probability;
     }
+
+    /// getEffectiveSampleProbability reads only this cache on the per-allocation path, so it must be
+    /// re-resolved from the tracker chain whenever the effective parent changes (attach, switcher),
+    /// otherwise threads parented to total_memory_tracker miss total_memory_tracker_sample_probability.
+    MemoryTracker::SampleConfig getMemorySampleConfig() const { return {sample_probability, sample_min_allocation_size, sample_max_allocation_size}; }
+    void setMemorySampleConfig(const MemoryTracker::SampleConfig & c)
+    {
+        sample_probability = c.probability;
+        sample_min_allocation_size = c.min_allocation_size;
+        sample_max_allocation_size = c.max_allocation_size;
+    }
+    void resolveMemorySampleConfig() { setMemorySampleConfig(memory_tracker.getResolvedSampleConfig()); }
 
 private:
     void applyGlobalSettings();

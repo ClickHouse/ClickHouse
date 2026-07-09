@@ -1,0 +1,36 @@
+---
+title: 'Поддерживаемые типы данных'
+slug: /integrations/clickpipes/mysql/datatypes
+description: 'Страница с описанием сопоставления типов данных MySQL ClickPipe из MySQL в ClickHouse'
+doc_type: 'reference'
+keywords: ['типы данных MySQL ClickPipe', 'типы данных MySQL в ClickHouse', 'сопоставление типов данных ClickPipe', 'преобразование типов MySQL ClickHouse', 'совместимость типов баз данных']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Ниже приведено поддерживаемое сопоставление типов данных для MySQL ClickPipe:
+
+| Тип MySQL                            | Тип ClickHouse         | Примечания                                                                                              |
+| ------------------------------------ | ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| Enum                                 | LowCardinality(String) |                                                                                                         |
+| Set                                  | String                 |                                                                                                         |
+| Decimal                              | Decimal                |                                                                                                         |
+| TinyInt                              | Int8                   | Поддерживаются беззнаковые значения.                                                                    |
+| SmallInt                             | Int16                  | Поддерживаются беззнаковые значения.                                                                    |
+| MediumInt, Int                       | Int32                  | Поддерживаются беззнаковые значения.                                                                    |
+| BigInt                               | Int64                  | Поддерживаются беззнаковые значения.                                                                    |
+| Year                                 | Int16                  |                                                                                                         |
+| TinyText, Text, MediumText, LongText | String                 |                                                                                                         |
+| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                                                                         |
+| Char, Varchar                        | String                 |                                                                                                         |
+| Binary, VarBinary                    | String                 |                                                                                                         |
+| TinyInt(1)                           | Bool                   |                                                                                                         |
+| JSON                                 | String                 | Только для MySQL; в MariaDB `json` — это просто псевдоним `text` с ограничением.                        |
+| Geometry &amp; Geometry Types        | String                 | WKT (Well-Known Text). Возможна небольшая потеря точности WKT.                                          |
+| Vector                               | Array(Float32)         | Только для MySQL; MariaDB скоро добавит поддержку.                                                      |
+| Float                                | Float32                | Точность в ClickHouse может отличаться от MySQL во время начальной загрузки из-за текстового протокола. |
+| Double                               | Float64                | Точность в ClickHouse может отличаться от MySQL во время начальной загрузки из-за текстового протокола. |
+| Date                                 | Date32                 | День/месяц со значением 00 сопоставляется с 01.                                                         |
+| Time                                 | DateTime64(6)          | Смещение времени относительно эпохи Unix.                                                               |
+| Datetime, Timestamp                  | DateTime64(6)          | День/месяц со значением 00 сопоставляется с 01.                                                         |

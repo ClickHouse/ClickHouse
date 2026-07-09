@@ -1,0 +1,181 @@
+---
+slug: /use-cases/observability/clickstack/production
+title: 'الانتقال إلى الإنتاج'
+sidebarTitle: 'الإنتاج'
+description: 'الانتقال إلى الإنتاج باستخدام ClickStack'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['clickstack', 'الإنتاج', 'النشر', 'أفضل الممارسات', 'العمليات']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
+
+عند نشر ClickStack في بيئة الإنتاج، هناك عدة اعتبارات إضافية لضمان الأمان والاستقرار والإعداد الصحيح. وتختلف هذه الاعتبارات بحسب النسخة المستخدمة - مفتوحة المصدر أو المُدارة - .
+
+<Tabs>
+  <Tab title="ClickStack المُدار">
+    بالنسبة إلى عمليات النشر في بيئات الإنتاج، يُوصى باستخدام [Managed ClickStack](/ar/clickstack/getting-started/managed). فهو يطبّق [ممارسات الأمان](/ar/products/cloud/features/security) القياسية في المجال افتراضيًا، بما في ذلك التشفير المعزّز، والمصادقة والاتصال، وعناصر التحكّم بالوصول المُدارة، كما يوفّر المزايا التالية:
+
+    * التوسّع التلقائي لقدرات الحوسبة بصورة مستقلة عن التخزين
+    * احتفاظ منخفض التكلفة وعمليًا غير محدود بالاعتماد على التخزين الكائني
+    * إمكانية عزل أعباء عمل القراءة والكتابة بشكل مستقل باستخدام Warehouses.
+    * المصادقة المدمجة
+    * [نسخ احتياطية](/ar/products/cloud/features/backups/overview) مؤتمتة
+    * ترقيات سلسة
+
+    **اتبع [أفضل الممارسات](/ar/products/cloud/guides/production-readiness) هذه في ClickHouse Cloud عند استخدام Managed ClickStack.**
+
+    ### تأمين الإدخال
+
+    افتراضيًا، لا يكون ClickStack OpenTelemetry Collector مؤمّنًا عند نشره خارج التوزيعات مفتوحة المصدر، ولا يتطلب مصادقة على منافذ OTLP الخاصة به.
+
+    لتأمين الإدخال، حدّد رمز مصادقة عند نشر collector باستخدام متغير البيئة `OTLP_AUTH_TOKEN`. راجع [&quot;تأمين الـ collector&quot;](/ar/clickstack/ingesting-data/collector#securing-the-collector) لمزيد من التفاصيل.
+
+    #### إنشاء مستخدم للإدخال
+
+    يُوصى بإنشاء مستخدم مخصّص لـ OTel collector للإدخال إلى Managed ClickHouse، ولضمان إرسال البيانات المُدخلة إلى قاعدة بيانات محددة مثل `otel`. راجع [&quot;إنشاء مستخدم للإدخال&quot;](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user) لمزيد من التفاصيل.
+
+    ### تهيئة Time To Live (TTL)
+
+    تأكّد من أن [Time To Live (TTL)](/ar/clickstack/managing/ttl) قد جرت [تهيئته بالشكل المناسب](/ar/clickstack/managing/ttl#modifying-ttl) لعملية نشر Managed ClickStack لديك. فهذا يتحكّم في مدة الاحتفاظ بالبيانات، وغالبًا ما يلزم تعديل القيمة الافتراضية البالغة 3 أيام.
+
+    ### تقدير الموارد
+
+    <ResourceEstimation />
+
+    لمزيد من التفاصيل حول تحسين افتراضات تقدير الحجم لبيئتك، راجع [&quot;تحسين افتراضات تقدير الحجم لبيئتك&quot;](/ar/clickstack/managing/estimating-resources#refining-sizing-assumptions).
+
+    #### عزل أعباء عمل الرصد
+
+    إذا كنت تضيف ClickStack إلى **خدمة ClickHouse Cloud حالية** تدعم بالفعل أعباء عمل أخرى، مثل تحليلات التطبيقات في الوقت الفعلي، فإن عزل حركة مرور الرصد يُوصى به بشدة.
+
+    استخدم [**Managed Warehouses**](/ar/products/cloud/features/infrastructure/warehouses) لإنشاء **خدمة فرعية** مخصّصة لـ ClickStack. يتيح لك ذلك ما يلي:
+
+    * عزل حمل الإدخال والاستعلامات عن التطبيقات الحالية
+    * توسيع أعباء عمل الرصد بشكل مستقل
+    * منع استعلامات الرصد من التأثير في تحليلات الإنتاج
+    * مشاركة مجموعات البيانات الأساسية نفسها عبر الخدمات عند الحاجة
+
+    يضمن هذا النهج بقاء أعباء العمل الحالية لديك دون تأثر، مع السماح لـ ClickStack بالتوسع بشكل مستقل مع نمو بيانات الرصد.
+
+    بالنسبة إلى عمليات النشر الأكبر أو إرشادات تقدير الحجم المخصّصة، يُرجى التواصل مع الدعم للحصول على تقدير أدق.
+  </Tab>
+
+  <Tab title="ClickStack مفتوح المصدر">
+    ### أمان الشبكة والمنافذ
+
+    بشكل افتراضي، يكشف Docker Compose المنافذ على المضيف، مما يجعلها قابلة للوصول من خارج الحاوية - حتى لو كانت أدوات مثل `ufw` (جدار الحماية المبسّط) مُفعَّلة. يعود هذا السلوك إلى حزمة شبكات Docker، التي يمكنها تجاوز قواعد جدار الحماية على مستوى المضيف ما لم يُضبط ذلك صراحةً.
+
+    **التوصية:**
+
+    اعرض المنافذ الضرورية لبيئة الإنتاج فحسب، وتشمل عادةً نقاط نهاية OTLP وخادم API والواجهة الأمامية.
+
+    على سبيل المثال، احذف تعيينات المنافذ غير الضرورية أو علّق عليها في ملف `docker-compose.yml` الخاص بك:
+
+    ```yaml
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "8080:8080"  # Only if needed for the API
+    # Avoid exposing internal ports like ClickHouse 8123 or MongoDB 27017.
+    ```
+
+    راجع [توثيق شبكات Docker](https://docs.docker.com/network/) للاطلاع على تفاصيل عزل الحاويات وتقوية ضوابط الوصول.
+
+    ### تهيئة سر الجلسة
+
+    في بيئة الإنتاج، يجب تعيين قيمة قوية وعشوائية لمتغير البيئة `EXPRESS_SESSION_SECRET` الخاص بـ ClickStack UI (HyperDX)، لحماية بيانات الجلسة والحيلولة دون التلاعب بها.
+
+    إليك كيفية إضافته إلى ملف `docker-compose.yml` الخاص بك لخدمة التطبيق:
+
+    ```yaml
+      app:
+        image: ${IMAGE_NAME_HDX}:${IMAGE_VERSION}
+        ports:
+          - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
+          - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
+        environment:
+          FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
+          HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+          HYPERDX_API_PORT: ${HYPERDX_API_PORT}
+          HYPERDX_APP_PORT: ${HYPERDX_APP_PORT}
+          HYPERDX_APP_URL: ${HYPERDX_APP_URL}
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          MINER_API_URL: 'http://miner:5123'
+          MONGO_URI: 'mongodb://db:27017/hyperdx'
+          NEXT_PUBLIC_SERVER_URL: http://127.0.0.1:${HYPERDX_API_PORT}
+          OTEL_SERVICE_NAME: 'hdx-oss-api'
+          USAGE_STATS_ENABLED: ${USAGE_STATS_ENABLED:-true}
+          EXPRESS_SESSION_SECRET: "super-secure-random-string"
+        networks:
+          - internal
+        depends_on:
+          - ch-server
+          - db1
+    ```
+
+    يمكنك إنشاء مفتاح سري قوي باستخدام `openssl`:
+
+    ```shell
+    openssl rand -hex 32
+    ```
+
+    تجنّب إيداع الـ secrets في نظام التحكم بالإصدارات. في بيئة الإنتاج، يُنصح باستخدام أدوات إدارة متغيرات البيئة (مثل Docker Secrets أو HashiCorp Vault أو إعدادات CI/CD الخاصة بكل بيئة).
+
+    ### استيعاب آمن للبيانات
+
+    يجب أن تتم عملية الاستيعاب بالكامل عبر منافذ OTLP التي يكشفها توزيع ClickStack من مُجمِّع OpenTelemetry (OTel). يستلزم هذا افتراضيًا مفتاح API استيعاب آمنًا يُولَّد عند بدء التشغيل. يُعدّ هذا المفتاح ضروريًا عند إرسال البيانات إلى منافذ OTel، ويمكن العثور عليه في واجهة HyperDX UI ضمن `Team Settings → API Keys`.
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح استيعاب البيانات" size="lg" />
+
+    بالإضافة إلى ذلك، يُوصى بتفعيل TLS لنقاط نهاية OTLP.
+
+    #### إنشاء مستخدم استيعاب
+
+    يُوصى بإنشاء مستخدم مخصص لـ OTel collector لاستيعاب البيانات في ClickHouse، والتأكد من توجيه عملية الاستيعاب إلى قاعدة بيانات محددة، مثل `otel`. راجع [&quot;إنشاء مستخدم استيعاب&quot;](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user) لمزيد من التفاصيل.
+
+    ### ClickHouse
+
+    ينبغي للمستخدمين الذين يديرون نسخة ClickHouse الخاصة بهم الالتزام بأفضل الممارسات التالية.
+
+    #### أفضل ممارسات الأمان
+
+    إذا كنت تدير نسخة ClickHouse الخاصة بك، فمن الضروري تفعيل **TLS** (أمان طبقة النقل)، وفرض المصادقة، واتباع أفضل الممارسات لتقوية ضوابط الوصول. راجع [منشور المدونة هذا](https://www.wiz.io/blog/clickhouse-and-wiz) للاطلاع على أمثلة واقعية حول الأخطاء الشائعة في الإعداد وكيفية تجنبها.
+
+    يوفر ClickHouse OSS ميزات أمان قوية جاهزة للاستخدام دون الحاجة إلى إعداد مسبق. غير أن تفعيل هذه الميزات يستلزم بعض الضبط والتهيئة:
+
+    * **استخدم TLS** عبر `tcp_port_secure` و`<openSSL>` في `config.xml`. راجع [guides/sre/configuring-tls](/ar/concepts/features/security/tls/configuring-tls).
+    * **عيّن كلمة مرور قوية** للمستخدم `default` أو عطّله.
+    * **تجنّب تعريض ClickHouse للوصول الخارجي** ما لم يكن ذلك مقصودًا صراحةً. افتراضيًا، لا يستمع ClickHouse إلا على `localhost` ما لم يتم تعديل `listen_host`.
+    * **استخدم طرق المصادقة** مثل كلمات المرور، والشهادات، ومفاتيح SSH، أو [وسائل المصادقة الخارجية](/ar/concepts/features/security/external-authenticators/index).
+    * **قيّد الوصول** باستخدام تصفية عناوين IP وعبارة `HOST`. راجع [sql-reference/statements/create/user#user-host](/ar/reference/statements/create/user#user-host).
+    * **فعّل التحكم في الوصول المستند إلى الدور (RBAC)** لمنح امتيازات دقيقة. راجع [operations/access-rights](/ar/concepts/features/security/access-rights).
+    * **افرض الحصص والحدود** باستخدام [quotas](/ar/concepts/features/configuration/server-config/quotas) و[settings profiles](/ar/concepts/features/configuration/settings/settings-profiles) وأوضاع القراءة فقط.
+    * **شفّر البيانات المخزنة** واستخدم تخزينًا خارجيًا آمنًا. راجع [operations/storing-data](/ar/concepts/features/configuration/server-config/storing-data) و[cloud/security/CMEK](/ar/products/cloud/guides/security/cmek).
+    * **تجنّب تضمين بيانات الاعتماد في الشيفرة بشكل ثابت.** استخدم [named collections](/ar/concepts/features/configuration/server-config/named-collections) أو أدوار IAM في ClickHouse Cloud.
+    * **دقّق في الوصول والاستعلامات** باستخدام [سجلات النظام](/ar/reference/system-tables/query_log) و[سجلات الجلسات](/ar/reference/system-tables/session_log).
+
+    راجع أيضاً [المصادقات الخارجية](/ar/concepts/features/security/external-authenticators/index) و[إعدادات تعقيد الاستعلام](/ar/concepts/features/configuration/settings/query-complexity) لإدارة المستخدمين وفرض حدود الاستعلامات والموارد.
+
+    #### أذونات المستخدم لواجهة ClickStack UI
+
+    لا يحتاج مستخدم ClickHouse المخصص لـ ClickStack UI إلا إلى أن يكون مستخدمًا بصلاحية `readonly` مع إمكانية تعديل الإعدادات التالية:
+
+    * `max_rows_to_read` (بحد أدنى يصل إلى مليون واحد)
+    * `read_overflow_mode`
+    * `cancel_http_readonly_queries_on_client_close`
+    * `wait_end_of_query`
+
+    بشكل افتراضي، يمتلك المستخدم `default` في كلٍّ من OSS وClickHouse Cloud هذه الصلاحيات، غير أنه يُنصح بإنشاء مستخدم جديد بهذه الصلاحيات.
+
+    ### ضبط مدة البقاء (TTL)
+
+    تأكد من [ضبط مدة البقاء (TTL)](/ar/clickstack/managing/ttl) [بالشكل المناسب](/ar/clickstack/managing/ttl#modifying-ttl) لنشر ClickStack لديك. يتحكم هذا الإعداد في مدة الاحتفاظ بالبيانات - وغالبًا ما تحتاج القيمة الافتراضية البالغة 3 أيام إلى تعديل.
+
+    ### إرشادات MongoDB
+
+    اتبع [قائمة التحقق الأمني الرسمية لـ MongoDB](https://www.mongodb.com/docs/manual/administration/security-checklist/).
+  </Tab>
+</Tabs>

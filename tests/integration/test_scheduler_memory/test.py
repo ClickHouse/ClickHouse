@@ -124,12 +124,14 @@ def test_reserve_memory():
 
     node.query("SYSTEM FLUSH LOGS")
 
+    # NOTE: MemoryReservationDecreases is intentionally not asserted per-query here.
+    # The reservation is released at query teardown (BlockIO::onFinish), after the query's
+    # ProfileEvents have already been snapshotted into query_log, so the decrease is not
+    # reliably attributed to the query. Asserting it per-query would be race-prone.
     assert_profile_event(node, "test_production", "MemoryReservationIncreases", lambda x: x == 1)
-    assert_profile_event(node, "test_production", "MemoryReservationDecreases", lambda x: x == 1)
     assert_profile_event(node, "test_production", "MemoryReservationKilled", lambda x: x == 0)
     assert_profile_event(node, "test_production", "MemoryReservationFailed", lambda x: x == 0)
     assert_profile_event(node, "test_development", "MemoryReservationIncreases", lambda x: x == 1)
-    assert_profile_event(node, "test_development", "MemoryReservationDecreases", lambda x: x == 1)
     assert_profile_event(node, "test_development", "MemoryReservationKilled", lambda x: x == 0)
     assert_profile_event(node, "test_development", "MemoryReservationFailed", lambda x: x == 0)
 
