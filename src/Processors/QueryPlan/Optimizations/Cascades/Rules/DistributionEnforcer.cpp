@@ -69,9 +69,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             enforcer_expr->properties.distribution = required_properties.distribution;
             enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
 
-            enforcer_expr->setApplied(*this, required_properties);
-            if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
-                result.push_back(enforcer_expr);
+            addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
         }
         else if (required_properties.distribution.node_count > 1)
         {
@@ -91,9 +89,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
             enforcer_expr->properties.distribution = required_properties.distribution;
             enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
 
-            enforcer_expr->setApplied(*this, required_properties);
-            if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
-                result.push_back(enforcer_expr);
+            addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
         }
         else if (required_properties.distribution.node_count == 1
                  && expression->properties.distribution.node_count > 1
@@ -115,9 +111,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
                 /// Sorting is destroyed by a regular gather.
 
-                enforcer_expr->setApplied(*this, required_properties);
-                if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
-                    result.push_back(enforcer_expr);
+                addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
             }
 
             /// Sorted-merge gather: N nodes -> 1 node, sorting PRESERVED.
@@ -141,9 +135,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
                 enforcer_expr->properties.sorting = expression->properties.sorting;
                 enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
 
-                enforcer_expr->setApplied(*this, required_properties);
-                if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
-                    result.push_back(enforcer_expr);
+                addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
             }
         }
     }
@@ -221,9 +213,7 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
         enforcer_expr->enforcer_axis = EnforcerAxis::Distribution;
         /// Shuffle/scatter destroys sorting.
 
-        enforcer_expr->setApplied(*this, required_properties);
-        if (memo.getGroup(expression->group_id)->addPhysicalExpression(enforcer_expr))
-            result.push_back(enforcer_expr);
+        addPhysicalToMemo(enforcer_expr, required_properties, memo, result);
     }
 
     return result;

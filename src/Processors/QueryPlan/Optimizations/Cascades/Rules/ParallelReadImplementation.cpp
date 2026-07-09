@@ -53,12 +53,8 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
 
     /// Produce a distributed read that splits work uniformly across all nodes.
     /// DefaultImplementation handles the single-node (local) read.
-    auto parallel_read_step_ptr = read_step->clone();
-    auto * parallel_read_step = typeid_cast<ReadFromMergeTree *>(parallel_read_step_ptr.get());
-    if (!parallel_read_step)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "ParallelReadImplementation: clone() of ReadFromMergeTree returned unexpected step type for expression '{}'",
-            expression->getDescription());
+    auto parallel_read_step_ptr = cloneStepAs(*read_step);
+    auto * parallel_read_step = parallel_read_step_ptr.get();
 
     /// The coordinator computes each bucket's authoritative marks; the fan-out ships them to
     /// the workers in the `read_bucket` task parameters. A read that cannot be bucketed
@@ -81,11 +77,9 @@ std::vector<GroupExpressionPtr> ParallelReadImplementation::applyImpl(GroupExpre
     parallel_properties.distribution.node_count = node_count;
     parallel_read_expression->properties = parallel_properties;
 
-    parallel_read_expression->setApplied(*this, required_properties);
-    if (!memo.getGroup(expression->group_id)->addPhysicalExpression(parallel_read_expression))
-        return {};
-
-    return {parallel_read_expression};
+    std::vector<GroupExpressionPtr> result;
+    addPhysicalToMemo(parallel_read_expression, required_properties, memo, result);
+    return result;
 }
 
 /// Replicated read on shared storage: every node reads the full table directly from
@@ -138,11 +132,9 @@ std::vector<GroupExpressionPtr> ReplicatedReadImplementation::applyImpl(GroupExp
     replicated_properties.distribution.is_replicated = true;
     replicated_read_expression->properties = replicated_properties;
 
-    replicated_read_expression->setApplied(*this, required_properties);
-    if (!memo.getGroup(expression->group_id)->addPhysicalExpression(replicated_read_expression))
-        return {};
-
-    return {replicated_read_expression};
+    std::vector<GroupExpressionPtr> result;
+    addPhysicalToMemo(replicated_read_expression, required_properties, memo, result);
+    return result;
 }
 
 /// Unsorted single-node read: fallback for `ReadFromMergeTree` at {1 node}.
@@ -163,11 +155,10 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
-        implementation_expression->setApplied(*this, required_properties);
         /// No distribution propagation: output stays at default {1 node}.
-        if (!memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
-            return {};
-        return {implementation_expression};
+        std::vector<GroupExpressionPtr> result;
+        addPhysicalToMemo(implementation_expression, required_properties, memo, result);
+        return result;
     }
 };
 

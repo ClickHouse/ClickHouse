@@ -12,6 +12,14 @@ bool isTopNSort(const IQueryPlanStep & step)
     return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() > 0;
 }
 
+void IOptimizationRule::addPhysicalToMemo(GroupExpressionPtr expression, const ExpressionProperties & required_properties,
+    Memo & memo, std::vector<GroupExpressionPtr> & result) const
+{
+    expression->setApplied(*this, required_properties);
+    if (memo.getGroup(expression->group_id)->addPhysicalExpression(expression))
+        result.push_back(expression);
+}
+
 std::vector<GroupExpressionPtr> IOptimizationRule::apply(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const
 {
     auto new_expressions = applyImpl(expression, required_properties, memo);

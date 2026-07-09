@@ -117,9 +117,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             partial_impl->inputs[0].required_properties.distribution = dist;
             partial_impl->properties.distribution = dist;
 
-            partial_impl->setApplied(*this, required_properties);
-            if (memo.getGroup(expression->group_id)->addPhysicalExpression(partial_impl))
-                result.push_back(partial_impl);
+            addPhysicalToMemo(partial_impl, required_properties, memo, result);
         }
         return result;
     }
@@ -151,9 +149,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
         local_agg->inputs[0].required_properties.distribution = single_node;
         local_agg->properties.distribution = single_node;
 
-        local_agg->setApplied(*this, required_properties);
-        if (memo.getGroup(expression->group_id)->addPhysicalExpression(local_agg))
-            result.push_back(local_agg);
+        addPhysicalToMemo(local_agg, required_properties, memo, result);
     }
 
     /// For a single-node cluster distributed strategies are identical to local - skip them.
@@ -187,9 +183,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
             shuffle_agg->inputs[0].required_properties.distribution = by_keys;
             shuffle_agg->properties.distribution = by_keys;
 
-            shuffle_agg->setApplied(*this, required_properties);
-            if (memo.getGroup(expression->group_id)->addPhysicalExpression(shuffle_agg))
-                result.push_back(shuffle_agg);
+            addPhysicalToMemo(shuffle_agg, required_properties, memo, result);
         }
 
         /// Strategy B2: Single-key shuffle alternatives.
@@ -216,9 +210,7 @@ std::vector<GroupExpressionPtr> AggregationImplementation::applyImpl(GroupExpres
                     single_key_agg->inputs[0].required_properties.distribution = by_single_key;
                     single_key_agg->properties.distribution = by_single_key;
 
-                    single_key_agg->setApplied(*this, required_properties);
-                    if (memo.getGroup(expression->group_id)->addPhysicalExpression(single_key_agg))
-                        result.push_back(single_key_agg);
+                    addPhysicalToMemo(single_key_agg, required_properties, memo, result);
                 }
             }
         }
@@ -259,12 +251,8 @@ std::vector<GroupExpressionPtr> TwoPhaseAggregationTransformation::applyImpl(Gro
             expression->inputs.size(), expression->getDescription());
 
     /// Phase 1: partial aggregation - takes raw rows, outputs intermediate aggregate states.
-    auto partial_step_ptr = agg_step->clone();
-    auto * partial_step = dynamic_cast<AggregatingStep *>(partial_step_ptr.get());
-    if (!partial_step)
-        throw Exception(ErrorCodes::LOGICAL_ERROR,
-            "TwoPhaseAggregationTransformation: clone of AggregatingStep '{}' did not produce an AggregatingStep",
-            agg_step->getStepDescription());
+    auto partial_step_ptr = cloneStepAs(*agg_step);
+    auto * partial_step = partial_step_ptr.get();
     partial_step->setFinal(false);
     partial_step->setStepDescription(fmt::format("Partial: {}", agg_step->getStepDescription()), 200);
 

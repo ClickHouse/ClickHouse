@@ -54,12 +54,11 @@ protected:
     std::vector<GroupExpressionPtr> applyImpl(GroupExpressionPtr expression, const ExpressionProperties & required_properties, Memo & memo) const override
     {
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
-        implementation_expression->setApplied(*this, required_properties);
         /// No distribution propagation: output stays at default {1 node}.
 
-        if (!memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
-            return {};
-        return {implementation_expression};
+        std::vector<GroupExpressionPtr> result;
+        addPhysicalToMemo(implementation_expression, required_properties, memo, result);
+        return result;
     }
 };
 

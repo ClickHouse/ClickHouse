@@ -141,20 +141,14 @@ protected:
             step_dag && QueryPlanOptimizations::dagContainsNonDeterministicFunction(*step_dag))
         {
             DistributionDescription single_node;    /// node_count=1, not replicated (default)
-            if (auto implementation_expression = createAtDistribution(expression, required_properties, single_node))
-            {
-                if (memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
-                    result.push_back(implementation_expression);
-            }
+            if (auto implementation_expression = createAtDistribution(expression, single_node))
+                addPhysicalToMemo(implementation_expression, required_properties, memo, result);
             return result;
         }
 
         /// Implementation at the parent's required distribution.
-        if (auto implementation_expression = createAtDistribution(expression, required_properties, required_properties.distribution))
-        {
-            if (memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
-                result.push_back(implementation_expression);
-        }
+        if (auto implementation_expression = createAtDistribution(expression, required_properties.distribution))
+            addPhysicalToMemo(implementation_expression, required_properties, memo, result);
 
         /// Speculative implementations at each candidate node count.
         auto candidates = getCandidateNodeCounts(memo.getEnvironment().cluster_node_count);
@@ -166,11 +160,8 @@ protected:
             DistributionDescription dist;
             dist.node_count = candidate;
 
-            if (auto implementation_expression = createAtDistribution(expression, required_properties, dist))
-            {
-                if (memo.getGroup(expression->group_id)->addPhysicalExpression(implementation_expression))
-                    result.push_back(implementation_expression);
-            }
+            if (auto implementation_expression = createAtDistribution(expression, dist))
+                addPhysicalToMemo(implementation_expression, required_properties, memo, result);
         }
 
         /// Sorted passthrough: delegate sorting to the child (column names translated
@@ -186,7 +177,6 @@ protected:
                 auto create_sorted_variant = [&](const DistributionDescription & dist)
                 {
                     auto sorted_impl = std::make_shared<GroupExpression>(*expression);
-                    sorted_impl->setApplied(*this, required_properties);
 
                     chassert(sorted_impl->inputs.size() == 1);
                     auto & sorted_input_props = sorted_impl->inputs[0].required_properties;
@@ -197,8 +187,7 @@ protected:
                     sorted_impl->properties.distribution = dist;
                     sorted_impl->properties.sorting = required_properties.sorting;
 
-                    if (memo.getGroup(expression->group_id)->addPhysicalExpression(sorted_impl))
-                        result.push_back(sorted_impl);
+                    addPhysicalToMemo(sorted_impl, required_properties, memo, result);
                 };
 
                 for (size_t candidate : candidates)
@@ -218,11 +207,9 @@ protected:
 private:
     GroupExpressionPtr createAtDistribution(
         const GroupExpressionPtr & expression,
-        const ExpressionProperties & required_properties,
         const DistributionDescription & distribution) const
     {
         auto implementation_expression = std::make_shared<GroupExpression>(*expression);
-        implementation_expression->setApplied(*this, required_properties);
 
         chassert(implementation_expression->inputs.size() == 1);
         auto & input_props = implementation_expression->inputs[0].required_properties;

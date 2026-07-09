@@ -52,7 +52,6 @@ std::vector<GroupExpressionPtr> SortImplementation::applyImpl(GroupExpressionPtr
     auto make_variant = [&](size_t node_count)
     {
         auto impl = std::make_shared<GroupExpression>(*expression);
-        impl->setApplied(*this, required_properties);
 
         chassert(impl->inputs.size() == 1);
         ExpressionProperties input_required;
@@ -63,8 +62,7 @@ std::vector<GroupExpressionPtr> SortImplementation::applyImpl(GroupExpressionPtr
         impl->properties.distribution.node_count = node_count;
         impl->properties.sorting = sort_desc;                  /// output is sorted
 
-        if (memo.getGroup(expression->group_id)->addPhysicalExpression(impl))
-            result.push_back(impl);
+        addPhysicalToMemo(impl, required_properties, memo, result);
     };
 
     const bool is_partial = dynamic_cast<const PartialTopNStrategy *>(expression->strategy.get()) != nullptr;
