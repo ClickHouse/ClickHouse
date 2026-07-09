@@ -560,6 +560,16 @@ public:
             auto wmm = std::make_unique<WasmMemoryManagerV01>(compartment, stop_token);
             WasmMemoryGuard wasm_input = allocateInWasmMemory(wmm.get(), total_buf_size);
             auto wasm_mem = wasm_input.getMemoryView();
+            // Same defensive check as the buffered path's fallback branch: a buggy
+            // clickhouse_create_buffer implementation in the WASM module could return a
+            // handle to a smaller buffer than requested. Without it, the header/descriptor
+            // memcpys and writeColData below would write past the end of the real guest
+            // buffer instead of throwing.
+            if (wasm_mem.size() != total_buf_size)
+                throw Exception(ErrorCodes::WASM_ERROR,
+                    "Cannot allocate WASM buffer of size {}, got {}. "
+                    "Maybe '{}' function implementation in WebAssembly module is incorrect",
+                    total_buf_size, wasm_mem.size(), WasmMemoryManagerV01::allocate_function_name);
 
             // Write header
             uint32_t n_rows32 = static_cast<uint32_t>(input_rows_count);
