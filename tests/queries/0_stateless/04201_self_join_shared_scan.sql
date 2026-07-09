@@ -3,6 +3,10 @@ SET query_plan_optimize_self_join_shared_scan = 1;
 SET enable_join_runtime_filters = 0;
 SET enable_parallel_replicas = 0;
 SET enable_shared_storage_snapshot_in_query = 1;
+-- Pin the join order: a swapped self-join changes which side's columns must be a subset of the
+-- other's, so whether the rewrite fires.
+SET query_plan_join_swap_table = 0;
+SET query_plan_optimize_join_order_randomize = 0;
 
 DROP TABLE IF EXISTS t_sjss;
 CREATE TABLE t_sjss (x UInt64, y String) ENGINE = MergeTree ORDER BY x;
