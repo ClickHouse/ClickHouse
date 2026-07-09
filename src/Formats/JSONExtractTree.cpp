@@ -1713,6 +1713,12 @@ public:
             }
             case ElementType::STRING:
             {
+                /// When try_infer_numbers_from_strings is enabled, skip the fast path entirely
+                /// and fall through to the generic inference path which handles number inference
+                /// from strings (e.g., "123" should be inferred as Int64, not stored as String).
+                if (format_settings.json.try_infer_numbers_from_strings)
+                    break;
+
                 std::string_view data = element.getString();
 
                 /// Without date/datetime inference, insert as String directly.
@@ -2265,6 +2271,12 @@ private:
             }
             case ElementType::STRING:
             {
+                /// When try_infer_numbers_from_strings is enabled, skip the fast path entirely
+                /// and fall through to the generic path via DynamicNode which handles number
+                /// inference from strings (e.g., "123" should be inferred as Int64, not stored as String).
+                if (format_settings.json.try_infer_numbers_from_strings)
+                    break;
+
                 std::string_view data = element.getString();
 
                 if (!format_settings.try_infer_dates && !format_settings.try_infer_datetimes)

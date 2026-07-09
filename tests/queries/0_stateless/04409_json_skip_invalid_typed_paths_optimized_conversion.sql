@@ -1,11 +1,3 @@
--- Tests that type_json_skip_invalid_typed_paths works correctly with the optimized
--- JSON type conversion path (json_use_optimized_type_conversion = 1).
--- Verifies that invalid values produce defaults instead of exceptions for:
---   1. Changed typed paths (e.g. String -> UInt32)
---   2. New typed paths extracted from dynamic
---   3. New typed paths promoted from shared data
-
-SET allow_experimental_json_type = 1;
 SET type_json_skip_invalid_typed_paths = 1;
 SET json_use_optimized_type_conversion = 1;
 

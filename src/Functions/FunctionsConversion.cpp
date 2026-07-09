@@ -1655,6 +1655,39 @@ bool isStructuralTypeForJSON(const DataTypePtr & type)
     return has_structural;
 }
 
+/// Returns true if CAST and format+parse produce different results for the given type,
+/// meaning we must fall back to format+parse. Checks the type itself and all nested subtypes.
+/// Cases:
+/// - DateTime/DateTime64 with explicit timezone or non-default date_time_output_format
+/// - String when try_infer_numbers_from_strings is enabled (CAST keeps as String,
+///   but format+parse would infer "123" as Int64)
+bool needsFormatParseFallback(const DataTypePtr & type, const FormatSettings & format_settings)
+{
+    auto check = [&](const IDataType & t) -> bool
+    {
+        if (isDateTime(t))
+            return assert_cast<const DataTypeDateTime &>(t).hasExplicitTimeZone()
+                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
+        if (isDateTime64(t))
+            return assert_cast<const DataTypeDateTime64 &>(t).hasExplicitTimeZone()
+                || format_settings.date_time_output_format != FormatSettings::DateTimeOutputFormat::Simple;
+        if (isStringOrFixedString(t))
+            return format_settings.json.try_infer_numbers_from_strings;
+        return false;
+    };
+
+    if (check(*type))
+        return true;
+
+    bool found = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!found && check(child))
+            found = true;
+    });
+    return found;
+}
+
 /// Returns the canonical Dynamic type for a typed path type, or nullptr if not promotable.
 DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSettings & format_settings)
 {
@@ -1706,7 +1739,9 @@ DataTypePtr getPromotedTypeForDynamic(const DataTypePtr & type, const FormatSett
         case TypeIndex::DateTime64:
         {
             if (format_settings.try_infer_datetimes)
+            {
                 return std::make_shared<DataTypeDateTime64>(9);
+            }
             return std::make_shared<DataTypeString>();
         }
         case TypeIndex::Array:
@@ -2248,7 +2283,7 @@ ColumnPtr convertObjectColumns(
         else
         {
             auto it = src_typed_paths.find(path);
-            if (skip_invalid)
+            if (skip_invalid || needsFormatParseFallback(from_tp, format_settings))
                 dst_typed_columns[path] = convertTypedColumnToTypedSafe(it->second, from_tp, to_tp, rows, format_settings);
             else
                 dst_typed_columns[path] = castColumn({it->second, from_tp, ""}, to_tp);
@@ -2330,8 +2365,11 @@ ColumnPtr convertObjectColumns(
         auto it_col = src_typed_paths.find(path);
 
         /// Produce a ColumnDynamic from the typed column.
+        /// Check if settings require format+parse fallback before trying the fast CAST path.
         ColumnPtr dynamic_col;
-        auto promoted = getPromotedTypeForDynamic(it_type->second, format_settings);
+        auto promoted = needsFormatParseFallback(it_type->second, format_settings)
+            ? nullptr
+            : getPromotedTypeForDynamic(it_type->second, format_settings);
         if (promoted)
         {
             auto dynamic_type = std::make_shared<DataTypeDynamic>(dst_max_dynamic_types);
