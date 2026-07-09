@@ -50,6 +50,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_csv_missing_nullable_as_empty_string", false, false, "New setting to read a missing value of `Nullable(String)` from CSV as an empty string instead of NULL."},
             {"use_legacy_to_time", true, false, "Use the new `toTime` function (converting values to the `Time` data type) by default instead of the legacy `toTime` (which is still available as `toTimeWithFixedDate`)."},
             {"reserve_memory", 0, 0, "New setting to reserve memory for specific workload before starting a query."},
+            {"input_format_arrow_use_native_reader", false, true, "New setting to use the native ClickHouse reader for the Arrow and ArrowStream formats instead of the Apache Arrow library."},
+            {"output_format_arrow_use_native_writer", false, true, "New setting to use the native ClickHouse writer for the Arrow and ArrowStream formats instead of the Apache Arrow library."},
             {"allow_minmax_index_for_json", true, false, "Forbid creating minmax skip index on JSON columns by default because the index serialization cannot handle heterogeneous Field values"},
             {"s3_allow_server_credentials_in_user_queries", true, false, "New setting to block S3 access from user SQL from resolving the server's own ambient credentials (environment/IMDS/IRSA/instance-profile/AWS-config-file/role_arn-STS/GCP-OAuth-metadata). The previous behavior (allowed) is restored with compatibility settings."},
             {"query_plan_merge_expression_into_join", false, true, "New setting. Allow to merge Expression step into JOIN step during join reordering optimization."},
