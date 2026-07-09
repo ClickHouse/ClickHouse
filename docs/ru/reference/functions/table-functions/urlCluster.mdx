@@ -1,0 +1,77 @@
+---
+description: 'Позволяет параллельно обрабатывать файлы по URL с множества узлов в
+  указанном кластере.'
+sidebarTitle: 'urlCluster'
+slug: /sql-reference/table-functions/urlCluster
+title: 'urlCluster'
+doc_type: 'reference'
+---
+
+Позволяет параллельно обрабатывать файлы по URL с множества узлов в указанном кластере. На инициаторе создаётся connection ко всем узлам кластера, раскрывается звёздочка в пути к файлу URL, после чего каждый файл динамически распределяется. На узле-воркере он запрашивает у инициатора следующую задачу на обработку и выполняет её. Это повторяется, пока не будут завершены все задачи.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+urlCluster(cluster_name, URL, format, structure)
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+| Аргумент       | Описание                                                                                                                                      |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name` | Имя кластера, используемое для формирования набора адресов и параметров подключения к удалённым и локальным серверам.                         |
+| `URL`          | HTTP- или HTTPS-адрес сервера, принимающего запросы `GET`. Тип: [String](/ru/reference/data-types/string).                                       |
+| `format`       | [Формат](/ru/reference/formats/index) данных. Тип: [String](/ru/reference/data-types/string).                                                       |
+| `structure`    | Структура таблицы в формате `'UserID UInt64, Name String'`. Определяет имена столбцов и их типы. Тип: [String](/ru/reference/data-types/string). |
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Таблица с указанными форматом и структурой, содержащая данные из заданного `URL`.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Получение первых 3 строк таблицы, содержащей столбцы типов `String` и [UInt32](/ru/reference/data-types/int-uint), с HTTP-сервера, который возвращает данные в формате [CSV](/ru/reference/formats/CSV/CSV).
+
+1. Создайте простой HTTP-сервер с помощью стандартных средств Python 3 и запустите его:
+
+```python
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class CSVHTTPServer(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/csv')
+        self.end_headers()
+
+        self.wfile.write(bytes('Hello,1\nWorld,2\n', "utf-8"))
+
+if __name__ == "__main__":
+    server_address = ('127.0.0.1', 12345)
+    HTTPServer(server_address, CSVHTTPServer).serve_forever()
+```
+
+```sql
+SELECT * FROM urlCluster('cluster_simple','http://127.0.0.1:12345', CSV, 'column1 String, column2 UInt32')
+```
+
+<div id="globs-in-url">
+  ## Глоб-шаблоны в URL
+</div>
+
+Шаблоны в `{ }` используются для генерации набора сегментов или для указания резервных адресов. Поддерживаемые типы шаблонов и примеры приведены в описании функции [remote](/ru/reference/functions/table-functions/remote#globs-in-addresses).
+Символ `|` внутри шаблонов используется для указания резервных адресов. Они перебираются в том же порядке, в котором перечислены в шаблоне. Количество генерируемых адресов ограничено настройкой [glob&#95;expansion&#95;max&#95;elements](/ru/reference/settings/session-settings#glob_expansion_max_elements).
+
+<div id="related">
+  ## См. также
+</div>
+
+* [Движок HDFS](/ru/reference/engines/table-engines/integrations/hdfs)
+* [Табличная функция URL](/ru/reference/engines/table-engines/special/url)

@@ -1,0 +1,135 @@
+---
+title: 'Поддерживаемые облачные регионы'
+sidebarTitle: 'Поддерживаемые облачные регионы'
+keywords: ['aws', 'gcp', 'google cloud', 'azure', 'облако', 'регионы']
+description: 'Поддерживаемые регионы ClickHouse Cloud'
+slug: /cloud/reference/supported-regions
+doc_type: 'reference'
+---
+
+import EnterprisePlanFeatureBadge from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+
+<div id="aws-regions">
+  ## Регионы AWS
+</div>
+
+* ap-northeast-1 (Токио)
+* ap-northeast-2 (Южная Корея, Сеул)
+* ap-south-1 (Мумбаи)
+* ap-southeast-1 (Сингапур)
+* ap-southeast-2 (Сидней)
+* eu-central-1 (Франкфурт)
+* eu-west-1 (Ирландия)
+* eu-west-2 (Лондон)
+* us-east-1 (Северная Вирджиния)
+* us-east-2 (Огайо)
+* us-west-2 (Орегон)
+* il-central-1 (Израиль, Тель-Авив)
+
+**Частный регион:**
+
+* ca-central-1 (Канада)
+* af-south-1 (Южная Африка)
+* eu-north-1 (Стокгольм)
+* sa-east-1 (Южная Америка)
+* ap-southeast-3 (Джакарта)
+* ap-east-1 (Гонконг)
+* mx-central-1 (Мексика)
+
+<div id="google-cloud-regions">
+  ## Регионы Google Cloud
+</div>
+
+* asia-southeast1 (Сингапур)
+* asia-northeast1 (Токио)
+* europe-west2 (Лондон)
+* europe-west4 (Нидерланды)
+* us-central1 (Айова)
+* us-east1 (Южная Каролина)
+
+**Частный регион:**
+
+* australia-southeast1 (Сидней)
+* europe-west3 (Франкфурт)
+* europe-west6 (Цюрих)
+* northamerica-northeast1 (Монреаль)
+* us-west1 (Орегон)
+
+<div id="azure-regions">
+  ## Регионы Azure
+</div>
+
+* West US 3 (Аризона)
+* East US 2 (Виргиния)
+* Germany West Central (Франкфурт)
+
+**Частный регион:**
+
+* Japan East (Токио, Сайтама)
+* UAE North (Дубай)
+* Australia East (Новый Южный Уэльс)
+
+<Note>
+  Нужно развернуть в регионе, которого нет в текущем списке? [Отправьте запрос](https://clickhouse.com/pricing?modal=open).
+</Note>
+
+<div id="private-regions">
+  ## Частные регионы
+</div>
+
+<EnterprisePlanFeatureBadge feature="Возможность частных регионов" />
+
+Мы предлагаем частные регионы для наших сервисов уровня Enterprise. По вопросам подключения частного региона [свяжитесь с нами](https://clickhouse.com/company/contact).
+
+Ключевые особенности частных регионов:
+
+* Сервисы не поддерживают автомасштабирование; однако поддерживается ручное вертикальное и горизонтальное масштабирование.
+* Сервисы нельзя перевести в неактивное состояние.
+* Страница статуса недоступна для частных регионов.
+
+Для соответствия требованиям HIPAA могут предъявляться дополнительные требования (включая подписание BAA). Обратите внимание, что HIPAA в настоящее время доступна только для сервисов уровня Enterprise
+
+<div id="hipaa-compliant-regions">
+  ## Регионы, соответствующие требованиям HIPAA
+</div>
+
+<EnterprisePlanFeatureBadge feature="HIPAA" support="true" />
+
+Чтобы развернуть сервисы в регионах, соответствующих требованиям HIPAA, клиенты должны подписать соглашение Business Associate Agreement (BAA) и запросить онбординг через отдел продаж или службу поддержки. Следующие регионы поддерживают соответствие требованиям HIPAA:
+
+* AWS af-south-1 (Южная Африка) **Частный регион**
+* AWS ca-central-1 (Канада) **Частный регион**
+* AWS eu-central-1 (Франкфурт)
+* AWS eu-north-1 (Стокгольм) **Частный регион**
+* AWS eu-west-1 (Ирландия)
+* AWS eu-west-2 (Лондон)
+* AWS sa-east-1 (Южная Америка) **Частный регион**
+* AWS us-east-1 (Северная Виргиния)
+* AWS us-east-2 (Огайо)
+* AWS us-west-2 (Орегон)
+* GCP europe-west4 (Нидерланды)
+* GCP us-central1 (Айова)
+* GCP us-east1 (Южная Каролина)
+
+<div id="pci-compliant-regions">
+  ## Регионы, соответствующие требованиям PCI
+</div>
+
+<EnterprisePlanFeatureBadge feature="PCI" support="true" />
+
+Чтобы развернуть сервисы в регионах, соответствующих требованиям PCI, клиенты должны запросить онбординг через отдел продаж или службу поддержки. Следующие регионы поддерживают соответствие требованиям PCI:
+
+* AWS af-south-1 (Южная Африка) **Частный регион**
+* AWS ca-central-1 (Канада) **Частный регион**
+* AWS eu-central-1 (Франкфурт)
+* AWS eu-north-1 (Стокгольм) **Частный регион**
+* AWS eu-west-1 (Ирландия)
+* AWS eu-west-2 (Лондон)
+* AWS mx-central-1 (Мексика) **Частный регион**
+* AWS sa-east-1 (Южная Америка) **Частный регион**
+* AWS us-east-1 (Северная Виргиния)
+* AWS us-east-2 (Огайо)
+* AWS us-west-2 (Орегон)
+* GCP europe-west4 (Нидерланды)
+* GCP us-central1 (Айова)
+* GCP us-east1 (Южная Каролина)

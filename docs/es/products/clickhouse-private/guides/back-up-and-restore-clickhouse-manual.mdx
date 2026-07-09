@@ -1,0 +1,68 @@
+---
+noindex: true
+title: "Copias de seguridad y restauración de ClickHouse (manual)"
+sidebarTitle: "Copia de seguridad y restauración"
+description: "Realice copias de seguridad y restauraciones manuales de datos de ClickHouse mediante comandos SQL y almacenamiento S3."
+---
+
+Realice copias de seguridad y restauraciones manuales de datos de ClickHouse mediante comandos SQL y almacenamiento S3. Para consultar todos los detalles de la sintaxis, vea la [documentación oficial de copias de seguridad de ClickHouse](https://clickhouse.com/docs/operations/backup).
+
+Para las operaciones de copia de seguridad mediante la API, vea [Administrar copias de seguridad mediante la API](/es/products/clickhouse-private/guides/manage-backups-via-the-private-api).
+
+<div id="prerequisites">
+  ## Requisitos previos
+</div>
+
+* Un bucket de S3 en la misma región que tu clúster
+* El rol de IAM vinculado a la cuenta de servicio de Kubernetes debe tener permisos de lectura, escritura y listado en el bucket
+
+<div id="s3-path-format">
+  ## Formato de la ruta de S3
+</div>
+
+Todos los comandos de copia de seguridad utilizan la siguiente ruta de S3:
+
+```text
+https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID
+```
+
+| Variable             | Descripción                                                                                                                             |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `$REGION`            | Región de S3 (p. ej., `us-west-2`)                                                                                                      |
+| `$S3_BUCKET`         | Nombre del bucket de S3 para las copias de seguridad                                                                                    |
+| `$CLUSTER_S3_PREFIX` | Prefijo de clave de S3 del clúster, que se encuentra en el recurso `clickhousecluster`, en `spec.s3.keyPrefix` (p. ej., `ch-s3-{uuid}`) |
+| `$BACKUP_ID`         | Identificador único (UUID) de esta copia de seguridad                                                                                   |
+
+<div id="perform-a-full-backup">
+  ## Realizar una copia de seguridad completa
+</div>
+
+Desde uno de los pods del servidor, ejecuta:
+
+```sql
+BACKUP TABLE system.users, TABLE system.roles, TABLE system.settings_profiles, TABLE system.row_policies, TABLE system.quotas, TABLE system.functions, ALL EXCEPT DATABASES INFORMATION_SCHEMA,information_schema, system TO S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$BACKUP_ID' ASYNC;
+```
+
+La copia de seguridad se ejecuta de forma asíncrona. Consulte el progreso en la tabla [`system.backups`](https://clickhouse.com/docs/operations/system-tables/backups):
+
+```sql
+SELECT * FROM system.backups WHERE id = '$BACKUP_ID';
+```
+
+<div id="incremental-backups">
+  ## Copias de seguridad incrementales
+</div>
+
+Consulta [Hacer una copia de seguridad incremental](https://clickhouse.com/docs/operations/backup#take-an-incremental-backup) en la documentación original.
+
+<div id="restore-from-a-backup">
+  ## Restaurar desde una copia de seguridad
+</div>
+
+Ejecute lo siguiente en el clúster donde desea restaurar:
+
+```sql
+RESTORE ALL FROM S3('https://s3.$REGION.amazonaws.com/$S3_BUCKET/$CLUSTER_S3_PREFIX/$BACKUP_ID') SETTINGS id='$RESTORE_ID', allow_different_database_def=true;
+```
+
+`$RESTORE_ID` es cualquier identificador único que asignes a la operación de restauración.

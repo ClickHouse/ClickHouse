@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'PrettyMonoBlock 포맷 문서'
+input_format: false
+keywords: ['PrettyMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettyMonoBlock
+title: 'PrettyMonoBlock'
+doc_type: '참고'
+---
+
+import PrettyFormatSettings from '/snippets/ko/common-pretty-format-settings.mdx';
+
+| 입력 | 출력 | 별칭 |
+| -- | -- | -- |
+| ✗  | ✔  |    |
+
+<div id="description">
+  ## 설명
+</div>
+
+[`Pretty`](/ko/reference/formats/Pretty/Pretty) 포맷과 다른 점은 최대 `10,000`개의 행을 버퍼링한 후,
+[블록](/ko/resources/develop-contribute/introduction/architecture#block)별로 출력하지 않고 하나의 테이블로 출력한다는 것입니다.
+
+<div id="example-usage">
+  ## 사용 예시
+</div>
+
+<div id="format-settings">
+  ## 포맷 설정
+</div>
+
+<PrettyFormatSettings />

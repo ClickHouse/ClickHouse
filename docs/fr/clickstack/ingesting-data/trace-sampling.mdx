@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/trace-sampling
+title: "Échantillonnage des traces"
+sidebarTitle: "Échantillonnage des traces"
+description: "Configurez des agrégations pondérées selon le taux d’échantillonnage pour des données de traces échantillonnées dans ClickStack."
+doc_type: 'guide'
+keywords: ['ClickStack', 'échantillonnage des traces', 'tail sampling', "taux d'échantillonnage", 'agrégations pondérées selon le taux d’échantillonnage', 'OpenTelemetry', 'SampleRate']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Les services à fort débit peuvent produire des millions de spans par seconde. Stocker chaque span coûte cher, c’est pourquoi les équipes utilisent couramment le [tail-sampling processor](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) de l’OpenTelemetry Collector pour ne conserver qu’1 span sur N. Chaque span conservé porte un attribut `SampleRate` qui enregistre N.
+
+Une fois les données échantillonnées, les agrégations naïves sont erronées : `count()` renvoie N fois moins d’événements que ce qui s’est réellement produit, `sum()` et `avg()` sont biaisés, et les percentiles sont faussés. Les tableaux de bord affichent des volumes de requêtes, un débit et des taux d’erreur trompeusement bas.
+
+ClickStack résout ce problème avec un moteur de requête adapté à l’échantillonnage. Lorsque vous configurez une expression de taux d’échantillonnage sur une source de traces, le générateur de requêtes réécrit les agrégations SQL pour pondérer chaque span par son taux d’échantillonnage — dans les tableaux de bord, les alertes et les recherches ad hoc.
+
+<div id="how-it-works">
+  ## Fonctionnement
+</div>
+
+Lorsqu’une source de traces est configurée avec un `sampleRateExpression`, ClickStack l’encapsule comme suit :
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+Les spans dépourvus de l’attribut `SampleRate` se voient attribuer par défaut un poids de 1, de sorte que les données non échantillonnées produisent des résultats identiques à ceux des requêtes d’origine.
+
+Le générateur de requêtes réécrit ensuite les agrégations :
+
+| Agrégation         | Avant              | Après (corrigé pour l’échantillonnage)    |
+| ------------------ | ------------------ | ----------------------------------------- |
+| count              | `count()`          | `sum(weight)`                             |
+| count + condition  | `countIf(cond)`    | `sumIf(weight, cond)`                     |
+| avg                | `avg(col)`         | `sum(col * weight) / sum(weight)`         |
+| sum                | `sum(col)`         | `sum(col * weight)`                       |
+| quantile(p)        | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max          | inchangé           | inchangé                                  |
+| count&#95;distinct | inchangé           | inchangé                                  |
+
+<Note>
+  En cas d’échantillonnage, les percentiles utilisent `quantileTDigestWeighted`, un sketch T-Digest approximatif. Les résultats sont proches, mais pas exacts.
+</Note>
+
+<div id="configuring">
+  ## Configuration de l’expression du taux d’échantillonnage
+</div>
+
+Ouvrez votre source de traces dans **Paramètres de la source** et saisissez, dans le champ **Expression du taux d’échantillonnage**, l’expression ClickHouse qui calcule le taux d’échantillonnage pour chaque span.
+
+Par exemple, si votre tail-sampling processor OpenTelemetry écrit ce taux dans `SpanAttributes['SampleRate']` :
+
+<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Champ Expression du taux d’échantillonnage dans les paramètres de la source ClickStack" size="lg" />
+
+Une fois cette configuration en place, tous les graphiques, tableaux de bord, alertes et panneaux du tableau de bord du service appliquent automatiquement des agrégations pondérées par l’échantillonnage. Il n’est pas nécessaire de modifier les requêtes individuellement.
