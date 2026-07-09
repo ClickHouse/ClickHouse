@@ -1,7 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Functions/array/has.h>
-#include <Interpreters/Context.h>
 
 namespace DB
 {
@@ -19,9 +18,15 @@ class FunctionNotHas : public IFunction
 public:
     static constexpr auto name = "notHas";
 
-    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionNotHas>(context); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionNotHas>(FunctionFactory::instance().get("not", context));
+    }
 
-    explicit FunctionNotHas(ContextPtr context_) : context(std::move(context_)) {}
+    explicit FunctionNotHas(FunctionOverloadResolverPtr not_function_resolver_)
+        : not_function_resolver(std::move(not_function_resolver_))
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -37,7 +42,7 @@ public:
     {
         auto has_function = createInternalFunctionHasOverloadResolver()->build(arguments);
         ColumnsWithTypeAndName not_arguments{{nullptr, has_function->getResultType(), ""}};
-        return FunctionFactory::instance().get("not", context)->build(not_arguments)->getResultType();
+        return not_function_resolver->build(not_arguments)->getResultType();
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -46,12 +51,12 @@ public:
         auto has_result = has_function->execute(arguments, has_function->getResultType(), input_rows_count, /*dry_run*/ false);
 
         ColumnsWithTypeAndName not_arguments{{has_result, has_function->getResultType(), ""}};
-        auto not_function = FunctionFactory::instance().get("not", context)->build(not_arguments);
+        auto not_function = not_function_resolver->build(not_arguments);
         return not_function->execute(not_arguments, not_function->getResultType(), input_rows_count, /*dry_run*/ false);
     }
 
 private:
-    ContextPtr context;
+    FunctionOverloadResolverPtr not_function_resolver;
 };
 
 }
