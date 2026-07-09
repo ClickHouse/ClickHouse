@@ -234,7 +234,7 @@ TEST_F(AsynchronousBoundedReadBufferTest, concurrentReadBigAtNoPrefetchInFlight)
 
         /// Issue then fully drain the prefetch so no prefetch is in flight when the readBigAt storm hits.
         read_buffer.prefetch(Priority{0});
-        char c;
+        char c = 0;
         ASSERT_EQ(read_buffer.read(&c, 1), 1u);
 
         constexpr size_t num_threads = 8;
