@@ -1,10 +1,8 @@
-#include <ctime>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Processors/Executors/ExecutionThreadContext.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
-#include <base/types.h>
 #include <base/defines.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -94,7 +92,6 @@ bool ExecutionThreadContext::executeTask()
         span = std::make_unique<OpenTelemetry::SpanHolder>(node->processor()->getUniqID());
         span->addAttribute("thread_number", thread_number);
     }
-
     std::optional<Stopwatch> execution_time_watch;
 
     const size_t group = node->processor()->getQueryPlanStepGroup();
@@ -130,11 +127,9 @@ bool ExecutionThreadContext::executeTask()
         node->exception = std::current_exception();
     }
 
-    UInt64 elapsed_ns = 0;
-
     if (profile_processors || step_to_wall_clock_registry)
     {
-        elapsed_ns = execution_time_watch->elapsedNanoseconds();
+        UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
         /// Once processor can be in two groups. See AggregatingTransform as an example
         node->processor()->addElapsedNs(group, elapsed_ns);
@@ -143,12 +138,9 @@ bool ExecutionThreadContext::executeTask()
     }
 
     if (clock)
+    {
         clock->onLeave();
-
-    if (collect_work_intervals)
-        work_intervals.emplace_back(execution_time_watch->getStart(), 
-                                    elapsed_ns,
-                                    node->processors_id);
+    }
 
 #ifndef NDEBUG
     execution_time_ns += execution_time_watch->elapsed();
@@ -162,11 +154,6 @@ void ExecutionThreadContext::rethrowExceptionIfHas()
 {
     if (exception)
         std::rethrow_exception(exception);
-}
-
-WorkIntervals ExecutionThreadContext::takeWorkIntervals()
-{
-    return std::move(work_intervals);
 }
 
 }
