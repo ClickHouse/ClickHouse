@@ -54,6 +54,7 @@ SELECT * FROM eval('SELECT 1 FORMAT Null'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT 1 INTO OUTFILE ''eval_table_function.tsv'''); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT * FROM eval(''SELECT 1'')'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT * FROM remote(''remote'', eval(''SELECT 1''))'); -- { serverError BAD_ARGUMENTS }
+SELECT * FROM eval('SELECT * FROM remote(remote_eval, database = eval(''SELECT 1 AS x''))'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT * FROM loop(eval(''SELECT 1'')) LIMIT 1'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM eval('SELECT * FROM viewIfPermitted(SELECT 1 AS x ELSE eval(''SELECT 1 AS x''))'); -- { serverError BAD_ARGUMENTS }
 -- A nested `eval(SELECT ...)` used as a scalar sub-expression puts a bare `SELECT` query node inside the

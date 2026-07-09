@@ -292,9 +292,23 @@ void checkNoNestedEvalTableFunction(const ASTPtr & table_function_ast, ContextPt
         return;
 
     const auto table_function = TableFunctionFactory::instance().tryGet(function->name, context);
-    auto table_expression_argument_indexes = table_function
-        ? table_function->getTableExpressionArgumentIndexes(table_function_ast, context)
-        : VectorWithMemoryTracking<size_t>{};
+    if (!table_function)
+    {
+        /// Keep the table-expression context through wrappers such as `equals(database, eval(...))`
+        /// used by named-collection overrides.
+        for (const auto & argument : function->arguments->children)
+        {
+            const auto * argument_function = argument->as<ASTFunction>();
+            if (argument_function && TableFunctionFactory::instance().isTableFunctionName(argument_function->name))
+                checkNoNestedEvalTableFunction(argument, context);
+            else
+                checkNoNestedEval(argument, context);
+        }
+
+        return;
+    }
+
+    auto table_expression_argument_indexes = table_function->getTableExpressionArgumentIndexes(table_function_ast, context);
 
     for (size_t argument_index = 0; argument_index != function->arguments->children.size(); ++argument_index)
     {
