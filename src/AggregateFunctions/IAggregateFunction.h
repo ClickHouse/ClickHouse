@@ -137,6 +137,20 @@ public:
 
     virtual const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const { return *this; }
 
+    /// Extra state layout and serialization properties that are not always reflected in
+    /// the normalized state type. In particular, the Null adapter can intentionally keep
+    /// legacy argument spelling while changing whether a flag byte is stored or serialized.
+    virtual bool storesNullableResultInState() const { return false; }
+    virtual bool serializesNullableResultInState() const { return false; }
+
+    bool hasSameStateRepresentationDetails(const IAggregateFunction & rhs) const
+    {
+        return sizeOfData() == rhs.sizeOfData()
+            && alignOfData() == rhs.alignOfData()
+            && storesNullableResultInState() == rhs.storesNullableResultInState()
+            && serializesNullableResultInState() == rhs.serializesNullableResultInState();
+    }
+
     /// Returns true if two aggregate functions have the same definition: name, parameters, and argument types.
     /// Unlike haveSameStateRepresentation, this ignores the state variant (Aggregation vs Window),
     /// making it suitable for canMergeStateFromDifferentVariant where the variant intentionally differs.

@@ -230,6 +230,10 @@ bool DataTypeAggregateFunction::equals(const IDataType & rhs) const
     if (typeid(rhs) != typeid(*this))
         return false;
 
+    const auto & rhs_function = *typeid_cast<const DataTypeAggregateFunction &>(rhs).function;
+    if (!function->hasSameStateRepresentationDetails(rhs_function))
+        return false;
+
     auto lhs_state_type = function->getNormalizedStateType();
     auto rhs_state_type = typeid_cast<const DataTypeAggregateFunction &>(rhs).function->getNormalizedStateType();
 

@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Common/tests/gtest_global_register.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -16,6 +17,12 @@ static AggregateFunctionPtr resolve(const String & name, const DataTypes & argum
     parameters.push_back(level);
     AggregateFunctionProperties properties;
     return AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, arguments, parameters, properties);
+}
+
+static AggregateFunctionPtr resolveNoParams(const String & name, const DataTypes & arguments)
+{
+    AggregateFunctionProperties properties;
+    return AggregateFunctionFactory::instance().get(name, NullsAction::EMPTY, arguments, {}, properties);
 }
 
 /// Only-null arguments collapse an aggregate function to a `nothing*` placeholder that keeps the
@@ -42,4 +49,51 @@ TEST(AggregateFunctionNothingPlaceholder, StateRepresentationIgnoresParameters)
 
     EXPECT_TRUE(tuple_a->haveSameStateRepresentation(*tuple_b));
     EXPECT_TRUE(tuple_b->haveSameStateRepresentation(*tuple_a));
+}
+
+TEST(AggregateFunctionStateCompatibility, NullableTupleReturningIfDoesNotMatchBareState)
+{
+    tryRegisterAggregateFunctions();
+
+    const auto float64_type = std::make_shared<DataTypeFloat64>();
+    const auto nullable_float64_type = std::make_shared<DataTypeNullable>(float64_type);
+    const auto uint8_type = std::make_shared<DataTypeUInt8>();
+
+    const auto nullable_bare = resolveNoParams(
+        "simpleLinearRegression",
+        DataTypes{nullable_float64_type, nullable_float64_type});
+    const auto nullable_if = resolveNoParams(
+        "simpleLinearRegressionIf",
+        DataTypes{nullable_float64_type, nullable_float64_type, uint8_type});
+
+    EXPECT_FALSE(nullable_bare->haveSameStateRepresentation(*nullable_if));
+    EXPECT_FALSE(nullable_if->haveSameStateRepresentation(*nullable_bare));
+    EXPECT_FALSE(nullable_bare->getStateType()->equals(*nullable_if->getStateType()));
+
+    const auto non_nullable_bare = resolveNoParams(
+        "simpleLinearRegression",
+        DataTypes{float64_type, float64_type});
+    const auto non_nullable_if = resolveNoParams(
+        "simpleLinearRegressionIf",
+        DataTypes{float64_type, float64_type, uint8_type});
+
+    EXPECT_TRUE(non_nullable_bare->haveSameStateRepresentation(*non_nullable_if));
+    EXPECT_TRUE(non_nullable_if->haveSameStateRepresentation(*non_nullable_bare));
+}
+
+TEST(AggregateFunctionStateCompatibility, SerializedNullableFlagAffectsStateCompatibility)
+{
+    tryRegisterAggregateFunctions();
+
+    const auto uint64_type = std::make_shared<DataTypeUInt64>();
+    const auto nullable_uint8_type = std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>());
+
+    const auto bare = resolveNoParams("uniq", DataTypes{uint64_type});
+    const auto if_nullable_condition = resolveNoParams("uniqIf", DataTypes{uint64_type, nullable_uint8_type});
+
+    EXPECT_EQ(bare->sizeOfData(), if_nullable_condition->sizeOfData());
+    EXPECT_EQ(bare->alignOfData(), if_nullable_condition->alignOfData());
+    EXPECT_FALSE(bare->haveSameStateRepresentation(*if_nullable_condition));
+    EXPECT_FALSE(if_nullable_condition->haveSameStateRepresentation(*bare));
+    EXPECT_FALSE(bare->getStateType()->equals(*if_nullable_condition->getStateType()));
 }

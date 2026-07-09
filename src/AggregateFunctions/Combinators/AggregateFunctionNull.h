@@ -126,6 +126,9 @@ public:
         return getNormalizedStateType()->equals(*rhs.getNormalizedStateType());
     }
 
+    bool storesNullableResultInState() const override { return result_is_nullable; }
+    bool serializesNullableResultInState() const override { return serialize_flag; }
+
     String getName() const override
     {
         /// This is just a wrapper. The function for Nullable arguments is named the same as the nested function itself.
