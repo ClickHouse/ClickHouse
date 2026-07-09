@@ -111,3 +111,5 @@ SELECT 1 AS "MyAlias"
 1
 --- NATURAL JOIN respects quoted alias pins and sibling ambiguity ---
 1	2	1	100
+--- Recursive CTE quoted column survives AST round-trip ---
+1

@@ -307,7 +307,15 @@ ASTPtr UnionNode::toASTImpl(const ConvertToASTOptions & options) const
         auto select_expression_list_ast = make_intrusive<ASTExpressionList>();
         select_expression_list_ast->children.reserve(recursive_cte_table->columns.size());
         for (const auto & recursive_cte_table_column : recursive_cte_table->columns)
-            select_expression_list_ast->children.push_back(make_intrusive<ASTIdentifier>(recursive_cte_table_column.name));
+        {
+            auto column_identifier_ast = make_intrusive<ASTIdentifier>(recursive_cte_table_column.name);
+            /// Re-emit the double quoting of pinned output columns so reparsing under `standard`
+            /// mode keeps them case-sensitive.
+            const auto & pinned = recursive_cte_table->case_sensitive_column_names;
+            if (std::find(pinned.begin(), pinned.end(), recursive_cte_table_column.name) != pinned.end())
+                column_identifier_ast->setQuoteStyle(IdentifierQuoteStyle::DoubleQuote);
+            select_expression_list_ast->children.push_back(std::move(column_identifier_ast));
+        }
 
         recursive_select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_expression_list_ast));
 

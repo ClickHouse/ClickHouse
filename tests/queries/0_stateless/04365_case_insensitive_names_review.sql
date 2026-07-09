@@ -311,3 +311,8 @@ INSERT INTO t_nat_sib VALUES (1, 5, 10);
 SELECT * FROM t_nat_sib NATURAL JOIN t_nat2; -- { serverError AMBIGUOUS_IDENTIFIER }
 DROP TABLE t_nat_sib;
 DROP TABLE t_nat2;
+
+SELECT '--- Recursive CTE quoted column survives AST round-trip ---';
+-- The synthetic `SELECT ... FROM cte` projection must re-emit the quote pin. (Seed-alias form:
+-- viewExplain does not support recursive CTE column lists even in default mode.)
+SELECT count() FROM viewExplain('EXPLAIN QUERY TREE', 'run_passes = 1, dump_ast = 1', (WITH RECURSIVE cte AS (SELECT 1 AS "MyCol" UNION ALL SELECT "MyCol" + 1 FROM cte WHERE "MyCol" < 3) SELECT * FROM cte)) WHERE explain LIKE '%SELECT "MyCol"%';

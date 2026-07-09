@@ -4647,7 +4647,7 @@ void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table
         if (table_node)
             case_sensitive_columns.insert(
                 table_node->getCaseSensitiveColumnNames().begin(), table_node->getCaseSensitiveColumnNames().end());
-        table_expression_data.enableStandardMode(std::move(case_sensitive_columns));
+        table_expression_data.enableStandardMode(case_sensitive_columns);
     }
 
     if (auto * scope_query_node = scope.scope_node->as<QueryNode>())
@@ -6933,6 +6933,9 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
         }
 
         recursive_cte_table.emplace(std::move(final_temporary_table_holder), std::move(final_temporary_table_storage), std::move(temporary_table_columns));
+        /// Carry the quote pins so query-tree -> AST conversion re-emits quoted output columns.
+        if (recursive_cte_table_node)
+            recursive_cte_table->case_sensitive_column_names = recursive_cte_table_node->getCaseSensitiveColumnNames();
     }
 
     size_t queries_nodes_size = queries_nodes.size();

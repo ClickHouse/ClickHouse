@@ -46,6 +46,9 @@ public:
     TemporaryTableHolderPtr holder;
     StoragePtr storage;
     NamesAndTypes columns;
+    /// Column names pinned case-sensitive in `standard` mode (double-quoted CTE column list or
+    /// seed projection aliases); consumed when rebuilding the synthetic projection in `toAST`.
+    Names case_sensitive_column_names;
 };
 
 }
