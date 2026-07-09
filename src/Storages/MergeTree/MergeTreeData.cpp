@@ -7342,6 +7342,8 @@ Pipe MergeTreeData::alterPartition(
     const PartitionCommands & commands,
     ContextPtr query_context)
 {
+    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::alterPartition");
+
     /// Reject all ALTER ... PARTITION ... operations on UNIQUE KEY tables.
     /// Each command interacts with the dense-index sidecar and bitmap state
     /// in ways that require UK-aware semantics not yet implemented.
