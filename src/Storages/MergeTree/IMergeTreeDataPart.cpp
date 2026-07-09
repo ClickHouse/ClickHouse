@@ -3,6 +3,8 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 
+#include <algorithm>
+
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
@@ -529,32 +531,42 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex() const
     return index;
 }
 
-IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::getIndex(const MarkRanges & ranges) const
+IMergeTreeDataPart::IndexWithRanges IMergeTreeDataPart::getIndex(const MarkRanges & ranges) const
 {
     /// Whole-part (or empty) request: reuse the normal full, cached index.
     if (ranges.empty() || ranges.isOneRangeForWholePart(index_granularity->getMarksCount()))
-        return getIndex();
+        return {getIndex(), {}};
 
     auto index_cache = storage.getPrimaryIndexCache();
     if (!index_cache)
-        return loadIndex(ranges);
+        return {loadIndex(ranges), ranges};
 
-    /// Range-qualified key so a partial index does not collide with the full one, and identical
-    /// range sets (the common case across replicas) hit the cache.
-    String ranges_suffix;
-    for (const auto & range : ranges)
-        ranges_suffix += std::to_string(range.begin) + "-" + std::to_string(range.end) + ",";
-    auto key = PrimaryIndexCache::hash(
-        getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart() + ":" + ranges_suffix);
-
+    auto load_entry = [this](const MarkRanges & load_ranges)
     {
-        std::scoped_lock lock(index_mutex);
-        if (std::find(cached_partial_index_keys.begin(), cached_partial_index_keys.end(), key) == cached_partial_index_keys.end())
-            cached_partial_index_keys.push_back(key);
+        return std::make_shared<PrimaryIndexCacheEntry>(load_ranges, std::move(*loadIndex(load_ranges)));
+    };
+
+    /// One cache entry per part, under the same key as the full index (an empty `loaded_ranges`
+    /// means the full one and covers any request). When the entry does not cover the request,
+    /// it is replaced by a load of the union of its and the requested ranges: the sequential
+    /// prefix read makes loading the union cost about the same as loading only the missing rows.
+    /// Concurrent widenings may load the union twice; the last insert wins and every caller
+    /// keeps its own consistent entry.
+    const auto key = getPrimaryIndexCacheKey();
+    auto entry = index_cache->getOrSet(key, [&] { return load_entry(ranges); });
+    if (!entry->loaded_ranges.empty() && !entry->loaded_ranges.contains(ranges))
+    {
+        MarkRanges union_ranges = entry->loaded_ranges;
+        union_ranges.insert(union_ranges.end(), ranges.begin(), ranges.end());
+        std::sort(union_ranges.begin(), union_ranges.end(), [](const MarkRange & a, const MarkRange & b) { return a.begin < b.begin; });
+        union_ranges.coalesce();
+
+        entry = load_entry(union_ranges);
+        index_cache->set(key, entry);
     }
 
-    auto callback = [this, &ranges] { return loadIndex(ranges); };
-    return index_cache->getOrSet(key, callback);
+    IndexPtr entry_index(entry, &entry->index);
+    return {std::move(entry_index), entry->loaded_ranges};
 }
 
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
@@ -563,11 +575,25 @@ IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::tryGetIndex() const
     return index;
 }
 
+UInt128 IMergeTreeDataPart::getPrimaryIndexCacheKey() const
+{
+    return PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
+}
+
 IMergeTreeDataPart::IndexPtr IMergeTreeDataPart::loadIndexToCache(PrimaryIndexCache & index_cache) const
 {
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-    auto callback = [this] { return loadIndex(); };
-    return index_cache.getOrSet(key, callback);
+    auto key = getPrimaryIndexCacheKey();
+    auto load_full_entry = [this] { return std::make_shared<PrimaryIndexCacheEntry>(MarkRanges{}, std::move(*loadIndex())); };
+
+    auto entry = index_cache.getOrSet(key, load_full_entry);
+    /// A partial entry cannot serve the whole part; replace it with the full one.
+    if (!entry->loaded_ranges.empty())
+    {
+        entry = load_full_entry();
+        index_cache.set(key, entry);
+    }
+
+    return IndexPtr(entry, &entry->index);
 }
 
 void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
@@ -576,8 +602,7 @@ void IMergeTreeDataPart::moveIndexToCache(PrimaryIndexCache & index_cache)
     if (!index)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-    index_cache.set(key, std::const_pointer_cast<Index>(index));
+    index_cache.set(getPrimaryIndexCacheKey(), std::make_shared<PrimaryIndexCacheEntry>(MarkRanges{}, *index));
     index.reset();
 
     for (const auto & [_, projection] : projection_parts)
@@ -589,17 +614,7 @@ void IMergeTreeDataPart::removeIndexFromCache(PrimaryIndexCache * index_cache) c
     if (!index_cache)
         return;
 
-    auto key = PrimaryIndexCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
-    index_cache->remove(key);
-
-    /// Partial (range-qualified) entries are keyed individually and cannot be evicted by prefix.
-    std::vector<UInt128> partial_keys;
-    {
-        std::scoped_lock lock(index_mutex);
-        partial_keys.swap(cached_partial_index_keys);
-    }
-    for (const auto & partial_key : partial_keys)
-        index_cache->remove(partial_key);
+    index_cache->remove(getPrimaryIndexCacheKey());
 }
 
 /// Remove all vector similarity index cache entries for this part.

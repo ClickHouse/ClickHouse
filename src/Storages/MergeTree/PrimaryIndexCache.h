@@ -3,6 +3,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/HashTable/Hash.h>
 #include <Columns/IColumn_fwd.h>
+#include <Storages/MergeTree/MarkRange.h>
 
 namespace ProfileEvents
 {
@@ -15,25 +16,35 @@ namespace DB
 
 using PrimaryIndex = std::vector<ColumnPtr>;
 
+/// One entry per data part, under the per-part key. `loaded_ranges` are the sorted, disjoint,
+/// coalesced mark ranges whose index rows `index` holds (one row per mark); empty means the whole
+/// part. A request not covered by the entry replaces it with a load of the union of the ranges,
+/// so an entry only widens until it is evicted or removed with the part.
+struct PrimaryIndexCacheEntry
+{
+    MarkRanges loaded_ranges;
+    PrimaryIndex index;
+};
+
 /// Estimate of number of bytes in cache for primary index.
 struct PrimaryIndexWeightFunction
 {
     /// We spent additional bytes on key in hashmap, linked lists, shared pointers, etc ...
     static constexpr size_t PRIMARY_INDEX_CACHE_OVERHEAD = 128;
 
-    size_t operator()(const PrimaryIndex & index) const;
+    size_t operator()(const PrimaryIndexCacheEntry & entry) const;
 };
 
-extern template class CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
+extern template class CacheBase<UInt128, PrimaryIndexCacheEntry, UInt128TrivialHash, PrimaryIndexWeightFunction>;
 
 /** Cache of primary index for MergeTree tables.
   * Primary index is a list of columns from primary key
   * that store first row for each granule of data part.
   */
-class PrimaryIndexCache : public CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>
+class PrimaryIndexCache : public CacheBase<UInt128, PrimaryIndexCacheEntry, UInt128TrivialHash, PrimaryIndexWeightFunction>
 {
 private:
-    using Base = CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
+    using Base = CacheBase<UInt128, PrimaryIndexCacheEntry, UInt128TrivialHash, PrimaryIndexWeightFunction>;
 
 public:
     PrimaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);

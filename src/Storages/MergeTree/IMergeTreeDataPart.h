@@ -13,6 +13,7 @@
 #include <Storages/MergeTree/ColumnsSubstreams.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Storages/MergeTree/MergeTreeDataPartBuilder.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeDataPartState.h>
@@ -42,7 +43,6 @@ namespace DB
 
 class Block;
 struct ColumnSize;
-struct MarkRanges;
 class DeserializationPrefixesCache;
 class MergeTreeData;
 struct FutureMergedMutatedPart;
@@ -423,10 +423,18 @@ public:
     std::optional<UInt64> temp_projection_block_number;
 
     IndexPtr getIndex() const;
+
+    /// An index together with the mark ranges its rows cover: empty `loaded_ranges` means the
+    /// whole part; the ranges may be wider than requested when a cached superset is reused.
+    struct IndexWithRanges
+    {
+        IndexPtr index;
+        MarkRanges loaded_ranges;
+    };
     /// Load (and cache, when a `PrimaryIndexCache` is configured) only the primary index rows for
     /// the given absolute mark ranges. Used by index analysis to avoid loading a huge part's
     /// whole primary index. Ranges covering the whole part fall back to `getIndex`.
-    IndexPtr getIndex(const MarkRanges & ranges) const;
+    IndexWithRanges getIndex(const MarkRanges & ranges) const;
     IndexPtr loadIndexToCache(PrimaryIndexCache & index_cache) const;
     void moveIndexToCache(PrimaryIndexCache & index_cache);
     void removeIndexFromCache(PrimaryIndexCache * index_cache) const;
@@ -701,11 +709,10 @@ protected:
     /// Note that marks (also correspond to primary key) are not always in RAM, but cached. See MarkCache.h.
     mutable std::mutex index_mutex;
     mutable IndexPtr index;
-    /// Range-qualified `PrimaryIndexCache` keys of partial indexes loaded for this part, so they
-    /// can all be dropped on part removal (the cache has no prefix-based eviction).
-    mutable std::vector<UInt128> cached_partial_index_keys TSA_GUARDED_BY(index_mutex);
 
 private:
+    UInt128 getPrimaryIndexCacheKey() const;
+
     void calculateColumnsAndSecondaryIndicesSizesOnDiskUnlocked() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
 
     /// Columns and secondary indices sizes can be calculated lazily on first request.

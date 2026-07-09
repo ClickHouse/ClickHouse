@@ -1841,10 +1841,20 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     /// cache: without it a partial index would be re-read from disk on every query, while the
     /// full index is (or can be) resident on the part.
     IndexMarkTranslator translator;
+    IMergeTreeDataPart::IndexPtr index;
     if (load_partial_primary_key && part->storage.getPrimaryIndexCache())
-        translator = IndexMarkTranslator(computeIndexLoadRanges(part_with_ranges.ranges, marks_count));
-
-    const auto index = translator.isPartial() ? part->getIndex(translator.loaded_ranges) : part->getIndex();
+    {
+        /// The returned rows may cover more than requested (a cached superset, or the full
+        /// index); the translator must describe what was actually returned.
+        auto index_with_ranges = part->getIndex(computeIndexLoadRanges(part_with_ranges.ranges, marks_count));
+        index = std::move(index_with_ranges.index);
+        if (!index_with_ranges.loaded_ranges.empty())
+            translator = IndexMarkTranslator(std::move(index_with_ranges.loaded_ranges));
+    }
+    else
+    {
+        index = part->getIndex();
+    }
     const bool use_sparse_pk_representation
         = settings[Setting::use_lightweight_primary_key_index_analysis];
 

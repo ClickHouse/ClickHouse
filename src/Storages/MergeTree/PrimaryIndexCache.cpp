@@ -12,16 +12,17 @@ namespace CurrentMetrics
 namespace DB
 {
 
-size_t PrimaryIndexWeightFunction::operator()(const PrimaryIndex & index) const
+size_t PrimaryIndexWeightFunction::operator()(const PrimaryIndexCacheEntry & entry) const
 {
     size_t res = PRIMARY_INDEX_CACHE_OVERHEAD;
-    res += index.capacity() * sizeof(PrimaryIndex::value_type);
-    for (const auto & column : index)
+    res += entry.loaded_ranges.capacity() * sizeof(MarkRange);
+    res += entry.index.capacity() * sizeof(PrimaryIndex::value_type);
+    for (const auto & column : entry.index)
         res += column->allocatedBytes();
     return res;
 }
 
-template class CacheBase<UInt128, PrimaryIndex, UInt128TrivialHash, PrimaryIndexWeightFunction>;
+template class CacheBase<UInt128, PrimaryIndexCacheEntry, UInt128TrivialHash, PrimaryIndexWeightFunction>;
 
 
 PrimaryIndexCache::PrimaryIndexCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio)

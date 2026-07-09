@@ -113,6 +113,19 @@ void MarkRanges::coalesce()
         resize(merged + 1);
 }
 
+bool MarkRanges::contains(const MarkRanges & other) const
+{
+    const auto * my = begin();
+    for (const auto & range : other)
+    {
+        while (my != end() && my->end < range.end)
+            ++my;
+        if (my == end() || my->begin > range.begin || range.end > my->end)
+            return false;
+    }
+    return true;
+}
+
 void MarkRanges::serialize(WriteBuffer & out) const
 {
     writeBinaryLittleEndian(this->size(), out);

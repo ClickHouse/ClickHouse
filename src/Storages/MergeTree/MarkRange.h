@@ -48,6 +48,11 @@ struct MarkRanges : public boost::container::devector<MarkRange, AllocatorWithMe
     /// Merge adjacent and overlapping ranges in place. Requires the ranges to be sorted by `begin`.
     void coalesce();
 
+    /// Whether every range of `other` is covered by this set. Requires both sets to be sorted and
+    /// non-intersecting; this set must additionally be coalesced (a range of `other` spanning two
+    /// touching ranges of this set would otherwise be reported as not covered).
+    bool contains(const MarkRanges & other) const;
+
     void serialize(WriteBuffer & out) const;
     String describe() const;
     void deserialize(ReadBuffer & in);
