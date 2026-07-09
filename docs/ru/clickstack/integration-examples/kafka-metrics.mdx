@@ -77,7 +77,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... другие настройки Kafka
+          # ... other Kafka configuration
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -196,10 +196,10 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Чтобы сгенерировать активность и получить больше метрик:
 
     ```bash
-    # Создать тестовый топик
+    # Create a test topic
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # Отправить тестовые сообщения
+    # Send test messages
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -432,11 +432,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * Отслеживайте несколько брокеров Kafka, добавив дополнительные экземпляры JMX Metric Gatherer с уникальными атрибутами ресурса `kafka.broker.id`
 
 <div id="going-to-production">
-  ## Переход к промышленной эксплуатации
+  ## Переход в продакшн
 </div>
 
 В этом руководстве метрики отправляются напрямую из JMX Metric Gatherer в конечную точку OTLP ClickStack, что хорошо подходит для тестирования и небольших развертываний.
 
-Для промышленной эксплуатации разверните собственный OpenTelemetry Collector в роли агента, чтобы он принимал метрики от JMX Exporter и пересылал их в ClickStack. Это обеспечивает пакетную обработку, отказоустойчивость и централизованное управление конфигурацией.
+Для продакшн-среды разверните собственный OpenTelemetry Collector в роли агента, чтобы принимать метрики из JMX Exporter и пересылать их в ClickStack. Это обеспечивает батчинг, отказоустойчивость и централизованное управление конфигурацией.
 
-См. [Приём данных с помощью OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), где описаны схемы развертывания для промышленной эксплуатации и приведены примеры конфигурации OpenTelemetry Collector.
+См. [Приём данных с помощью OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry), чтобы ознакомиться с шаблонами развертывания для продакшн-среды и примерами конфигурации OpenTelemetry Collector.

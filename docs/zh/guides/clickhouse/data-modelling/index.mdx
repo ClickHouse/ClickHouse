@@ -8,11 +8,15 @@ doc_type: 'landing-page'
 
 本节介绍 ClickHouse 中的数据建模，包含以下主题：
 
-| Page                                                                                        | Description                                                    |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| [Schema Design](/zh/guides/clickhouse/data-modelling/schema-design)                            | 介绍 ClickHouse 的 schema 设计，以及如何结合查询、数据更新、延迟和数据量等因素实现最佳性能。       |
-| [Dictionary](/zh/concepts/features/dictionaries/index)                                         | 说明如何定义和使用字典，以提升查询性能并丰富数据。                                      |
-| [Materialized Views](/zh/concepts/features/materialized-views/index)                           | 介绍 ClickHouse 中的 materialized views 和可刷新materialized views。    |
-| [Projections](/zh/concepts/features/projections/projections)                                   | 介绍 ClickHouse 中的 Projections。                                  |
-| [Data Compression](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) | 介绍 ClickHouse 中的各种压缩模式，以及如何为特定数据类型和工作负载选择合适的压缩方法，以优化数据存储和查询性能。 |
-| [Denormalizing Data](/zh/guides/clickhouse/data-modelling/denormalization)                     | 介绍 ClickHouse 中使用的数据非规范化方法，其目标是通过将相关数据存储在单个表中来提升查询性能。          |
+| Page                                                                                                                     | Description                                                    |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| [Schema Design](/zh/guides/clickhouse/data-modelling/schema-design)                                                         | 介绍 ClickHouse 的 schema 设计，以及如何结合查询、数据更新、延迟和数据量等因素实现最佳性能。       |
+| [Sparse primary indexes](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)                                       | 对 ClickHouse 中主索引的实用入门介绍。                                      |
+| [Denormalizing Data](/zh/guides/clickhouse/data-modelling/denormalization)                                                  | 介绍 ClickHouse 中使用的数据非规范化方法，其目标是通过将相关数据存储在单个表中来提升查询性能。          |
+| [Backfilling Data](/zh/guides/clickhouse/data-modelling/backfilling)                                                        | 介绍如何高效地向 ClickHouse 表回填数据。                                     |
+| [Merge table function](/zh/guides/clickhouse/data-modelling/merge-table-function)                                           | 使用 Merge 表函数将多个表作为一个表进行查询。                                     |
+| [Stored procedures and prepared statements](/zh/guides/clickhouse/data-modelling/stored-procedures-and-prepared-statements) | ClickHouse 中的存储过程和查询参数。                                        |
+| [Generating test data](/zh/guides/clickhouse/data-modelling/generating-test-data)                                           | 如何在 ClickHouse 中生成随机测试数据。                                      |
+| [Data Compression](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)                              | 介绍 ClickHouse 中的各种压缩模式，以及如何为特定数据类型和工作负载选择合适的压缩方法，以优化数据存储和查询性能。 |
+| [Working with arrays](/zh/guides/clickhouse/working-with-arrays)                                                            | 在 ClickHouse 中使用数组。                                            |
+| [Working with JOINs](/zh/guides/clickhouse/working-with-joins)                                                              | 在 ClickHouse 中使用 JOIN。                                         |

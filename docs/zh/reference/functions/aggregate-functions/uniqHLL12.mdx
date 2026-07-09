@@ -15,11 +15,12 @@ doc_type: 'reference'
 
 使用 [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) 算法，计算不同参数值的近似数量。
 
-<Warning>
-  不建议使用此函数。在大多数情况下，请使用 [uniq](/zh/reference/functions/aggregate-functions/uniq) 或 [uniqCombined](/zh/reference/functions/aggregate-functions/uniqCombined) 函数。
-</Warning>
+:::warning
+不建议使用此函数。在大多数情况下，请使用 [uniq](/zh/reference/functions/aggregate-functions/uniq) 或 [uniqCombined](/zh/reference/functions/aggregate-functions/uniqCombined) 函数。
+:::
 
-<Accordion title="实现细节">
+<details>
+  <summary>实现细节</summary>
   此函数会对聚合中的所有参数计算哈希值，并在计算中使用这些哈希值。
   它使用 HyperLogLog 算法来近似计算不同参数值的数量。
 
@@ -30,7 +31,7 @@ doc_type: 'reference'
   从 100M 开始，估算误差会增大；对于基数极高的数据集 (1B+ 个元素) ，该函数会返回非常不准确的结果。
 
   可提供确定性的结果 (不依赖查询处理顺序) 。
-</Accordion>
+</details>
 
 **语法**
 

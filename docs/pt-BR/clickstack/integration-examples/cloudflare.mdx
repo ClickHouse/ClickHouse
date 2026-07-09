@@ -278,9 +278,9 @@ Se os dados estiverem no ClickHouse, mas não estiverem visíveis no HyperDX, ve
 * Crie dashboards adicionais para casos de uso específicos (desempenho de API, otimização de cache, análise geográfica de tráfego)
 
 <div id="going-to-production">
-  ## Em produção
+  ## Colocando em produção
 </div>
 
-Este guia demonstra a ingestão de logs do Cloudflare usando um dataset público de demonstração. Para implantações em produção, configure o Cloudflare Logpush para gravar no seu próprio bucket do S3 e configure o ClickPipes com [autenticação baseada em IAM role](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para acesso seguro. Selecione apenas os [campos do Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) de que você precisa para reduzir os custos de armazenamento e o volume de ingestão. Ative subpastas diárias no Logpush para melhorar a organização dos arquivos e use `**/*` no padrão de caminho do ClickPipes para corresponder em todos os subdiretórios.
+Este guia demonstra a ingestão de logs do Cloudflare usando um dataset público de demonstração. Para implantações de produção, configure o Cloudflare Logpush para gravar no seu próprio bucket do S3 e configure o ClickPipes com [autenticação baseada em IAM role](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para acesso seguro. Selecione apenas os [campos do Logpush](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/) de que você precisa para reduzir os custos de armazenamento e o volume de ingestão. Ative subpastas diárias no Logpush para organizar melhor os arquivos e use `**/*` no padrão de caminho do ClickPipes para corresponder a arquivos em todos os subdiretórios.
 
-Consulte a [documentação do S3 ClickPipes](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview) para ver opções avançadas de configuração, incluindo [ingestão não ordenada baseada em SQS](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) para lidar com backfills e arquivos fora de ordem.
+Consulte a [documentação do S3 ClickPipes](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview) para opções avançadas de configuração, incluindo a [ingestão não ordenada com base em SQS](/pt-BR/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order) para lidar com backfills e arquivos fora de ordem.

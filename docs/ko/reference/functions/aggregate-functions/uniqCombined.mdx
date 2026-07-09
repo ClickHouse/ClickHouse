@@ -16,10 +16,10 @@ doc_type: '참고'
 서로 다른 인수 값의 대략적인 개수를 계산합니다.
 결과는 결정론적으로 반환됩니다(쿼리 처리 순서에 의존하지 않음).
 
-<Note>
-  String이 아닌 타입에는 32비트 해시를 사용하므로, 카디널리티가 `UINT_MAX`보다 훨씬 크면 결과 오차가 매우 커집니다(고유 값이 수백억 개를 넘기 시작하면 오차가 빠르게 증가합니다).
-  카디널리티가 `UINT_MAX`보다 큰 경우에는 대신 [`uniqCombined64`](/ko/reference/functions/aggregate-functions/uniqCombined64)를 사용하세요.
-</Note>
+:::note
+String이 아닌 타입에는 32비트 해시를 사용하므로, 카디널리티가 `UINT_MAX`보다 훨씬 크면 결과 오차가 매우 커집니다(고유 값이 수백억 개를 넘기 시작하면 오차가 빠르게 증가합니다).
+카디널리티가 `UINT_MAX`보다 큰 경우에는 대신 [`uniqCombined64`](/ko/reference/functions/aggregate-functions/uniqCombined64)를 사용하세요.
+:::
 
 `uniq` 함수와 비교하면 `uniqCombined` 함수는 다음과 같은 특징이 있습니다.
 
@@ -27,14 +27,15 @@ doc_type: '참고'
 * 정확도가 몇 배 더 높습니다
 * 일반적으로 성능은 약간 더 낮습니다. 다만 일부 시나리오에서는 `uniqCombined`가 `uniq`보다 더 나은 성능을 낼 수 있습니다. 예를 들어, 네트워크를 통해 많은 수의 집계 상태를 전송하는 분산 쿼리에서 그렇습니다
 
-<Accordion title="구현 세부 사항">
+<details>
+  <summary>구현 세부 사항</summary>
   이 함수는 집계의 모든 매개변수에 대해 해시(String에는 64비트 해시, 그 외에는 32비트)를 계산한 다음, 이를 계산에 사용합니다.
   이 함수는 배열, 해시 테이블, 그리고 오차 보정 테이블이 포함된 HyperLogLog를 조합한 세 가지 알고리즘을 사용합니다:
 
   * 고유 원소 수가 적을 때는 배열을 사용합니다
   * 집합 크기가 더 커지면 해시 테이블을 사용합니다
   * 원소 수가 더 많아지면 HyperLogLog를 사용하며, 이 경우 고정된 양의 메모리를 사용합니다
-</Accordion>
+</details>
 
 **구문**
 

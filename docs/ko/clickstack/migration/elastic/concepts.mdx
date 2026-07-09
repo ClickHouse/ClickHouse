@@ -93,7 +93,7 @@ Elasticsearch는 JSON(및 [제한적인 CSV](https://www.elastic.co/docs/referen
 
 <Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
 
-세그먼트 분할(sharding) 개념은 Elasticsearch의 확장성 모델에서 기본입니다. 각 ① [**인덱스**](https://www.elastic.co/blog/what-is-an-elasticsearch-index)는 **세그먼트**로 분할되며, 각 세그먼트는 디스크에 세그먼트로 저장된 물리적 Lucene 인덱스입니다. 세그먼트는 복원력을 위해 replica 세그먼트라고 불리는 하나 이상의 물리적 복사본을 가질 수 있습니다. 확장성을 위해 세그먼트와 리플리카는 여러 노드에 분산될 수 있습니다. 단일 세그먼트 ②는 하나 이상의 불변 세그먼트로 구성됩니다. 세그먼트는 Elasticsearch의 기반이 되는 인덱싱 및 검색 기능을 제공하는 Java 라이브러리인 Lucene의 기본 인덱싱 구조입니다.
+세그먼트 분할(sharding) 개념은 Elasticsearch의 확장성 모델에서 기본입니다. 각 ① [**인덱스**](https://www.elastic.co/blog/what-is-an-elasticsearch-index)는 **세그먼트**로 분할되며, 각 세그먼트는 디스크에 세그먼트로 저장된 물리적 Lucene 인덱스입니다. 세그먼트는 복원력을 위해 replica 세그먼트라고 불리는 하나 이상의 물리적 복사본을 가질 수 있습니다. 확장성을 위해 세그먼트와 레플리카는 여러 노드에 분산될 수 있습니다. 단일 세그먼트 ②는 하나 이상의 불변 세그먼트로 구성됩니다. 세그먼트는 Elasticsearch의 기반이 되는 인덱싱 및 검색 기능을 제공하는 Java 라이브러리인 Lucene의 기본 인덱싱 구조입니다.
 
 <Info>
   **Elasticsearch의 삽입 처리**
@@ -101,7 +101,7 @@ Elasticsearch는 JSON(및 [제한적인 CSV](https://www.elastic.co/docs/referen
   Ⓐ 새로 삽입된 문서들은 Ⓑ 먼저 메모리 내 인덱싱 버퍼로 들어가며 기본적으로 1초마다 플러시됩니다. 라우팅 공식이 플러시된 문서의 대상 세그먼트를 결정하고, 세그먼트에 대해 새로운 세그먼트가 디스크에 기록됩니다. 쿼리 효율을 높이고 삭제되거나 업데이트된 문서의 물리적 삭제를 가능하게 하기 위해 세그먼트는 백그라운드에서 지속적으로 더 큰 세그먼트로 병합되어 최대 크기 5GB에 도달할 때까지 합쳐집니다. 그러나 더 큰 세그먼트로 강제 병합하는 것도 가능합니다.
 </Info>
 
-Elasticsearch는 [JVM 힙 및 메타데이터 오버헤드](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards)를 이유로 세그먼트 크기를 약 [50GB 혹은 2억 문서](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards)로 권장합니다. 각 세그먼트가 가지는 오버헤드에 대한 자세한 내용은 [여기](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#each-shard-has-overhead)를 참조하세요. 세그먼트당 [20억 문서의 하드 리미트](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#troubleshooting-max-docs-limit)도 존재합니다. Elasticsearch는 세그먼트 전체에 쿼리를 병렬화하지만 각 세그먼트는 **단일 스레드**로 처리되므로 과도한 세그먼트 분할은 비용이 많이 들고 역효과를 낳습니다. 이는 성능 확장을 위해 더 많은 세그먼트(및 노드)가 필요하다는 점에서 세그먼트 분할과 확장을 밀접하게 결합합니다.
+Elasticsearch는 [JVM 힙 및 메타데이터 오버헤드](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#each-shard-has-overhead)를 이유로 세그먼트 크기를 약 [50GB 혹은 2억 문서](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards)로 권장합니다. 세그먼트당 [20억 문서의 하드 리미트](https://www.elastic.co/docs/deploy-manage/production-guidance/optimize-performance/size-shards#troubleshooting-max-docs-limit)도 존재합니다. Elasticsearch는 세그먼트 전체에 쿼리를 병렬화하지만 각 세그먼트는 **단일 스레드**로 처리되므로 과도한 세그먼트 분할은 비용이 많이 들고 역효과를 낳습니다. 이는 성능 확장을 위해 더 많은 세그먼트(및 노드)가 필요하다는 점에서 세그먼트 분할과 확장을 밀접하게 결합합니다.
 
 Elasticsearch는 빠른 검색을 위해 모든 필드를 [**역색인(inverted indices)**](https://www.elastic.co/docs/manage-data/data-store/index-basics)으로 인덱싱하며, 집계, 정렬 및 스크립트된 필드 접근을 위해 선택적으로 [**doc values**](https://www.elastic.co/docs/reference/elasticsearch/mapping-reference/doc-values)를 사용합니다. 숫자 및 지리 필드는 지리공간 데이터 및 숫자·날짜 범위 검색을 위해 [Block K-D 트리](https://users.cs.duke.edu/~pankaj/publications/papers/bkd-sstd.pdf)를 사용합니다.
 
@@ -109,7 +109,7 @@ Elasticsearch는 빠른 검색을 위해 모든 필드를 [**역색인(inverted 
 
 Elasticsearch에서 [인덱스 매핑](https://www.elastic.co/guide/en/elasticsearch/reference/current/mapping.html)(ClickHouse의 테이블 스키마에 해당)은 필드 유형과 이 영속성 및 쿼리에 사용되는 데이터 구조를 제어합니다.
 
-반대로 ClickHouse는 **열 지향(column-oriented)** 입니다 — 각 컬럼은 독립적으로 저장되지만 항상 테이블의 기본/정렬 키로 정렬됩니다. 이 정렬은 ClickHouse가 쿼리 실행 중 데이터를 효율적으로 건너뛰게 해주는 [희소 기본 인덱스(sparse primary indexes)](/ko/concepts/core-concepts/primary-indexes)를 가능하게 합니다. 쿼리가 기본 키 필드로 필터링할 때 ClickHouse는 각 컬럼의 관련 부분만 읽어 디스크 I/O를 크게 줄이고 성능을 향상시킵니다 — 모든 컬럼에 전체 인덱스가 없어도 그렇습니다.
+반대로 ClickHouse는 **컬럼 지향(column-oriented)** 입니다 — 각 컬럼은 독립적으로 저장되지만 항상 테이블의 기본/정렬 키로 정렬됩니다. 이 정렬은 ClickHouse가 쿼리 실행 중 데이터를 효율적으로 건너뛰게 해주는 [희소 프라이머리 인덱스(sparse primary indexes)](/ko/concepts/core-concepts/primary-indexes)를 가능하게 합니다. 쿼리가 기본 키 필드로 필터링할 때 ClickHouse는 각 컬럼의 관련 부분만 읽어 디스크 I/O를 크게 줄이고 성능을 향상시킵니다 — 모든 컬럼에 전체 인덱스가 없어도 그렇습니다.
 
 <Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
 

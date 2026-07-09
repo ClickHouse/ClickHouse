@@ -191,6 +191,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
       * `ALTER CONSTRAINT`
         * `ALTER ADD CONSTRAINT`
         * `ALTER DROP CONSTRAINT`
+        * `ALTER MODIFY CONSTRAINT`
       * `ALTER DELETE`
       * `ALTER FETCH PARTITION`
       * `ALTER FREEZE PARTITION`
@@ -318,6 +319,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
     * `SYSTEM REDUCE BLOCKING PARTS`
     * `SYSTEM REPLICATION QUEUES`
     * `SYSTEM REPLICA READINESS`
+    * `SYSTEM RESET DDL WORKER`
     * `SYSTEM RESTART DISK`
     * `SYSTEM RESTART REPLICA`
     * `SYSTEM RESTORE REPLICA`
@@ -353,7 +355,7 @@ GRANT SELECT(foo) ON db.table* TO john -- wrong
 أمثلة على كيفية التعامل مع هذا التسلسل الهرمي:
 
 * يشمل الامتياز `ALTER` جميع امتيازات `ALTER*` الأخرى.
-* يشمل `ALTER CONSTRAINT` امتيازي `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT`.
+* يشمل `ALTER CONSTRAINT` امتيازات `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT` و`ALTER MODIFY CONSTRAINT`.
 
 تُطبَّق الامتيازات على مستويات مختلفة. وتساعد معرفة المستوى على تحديد الصيغة المتاحة للامتياز.
 
@@ -452,6 +454,7 @@ GRANT INSERT(x,y) ON db.table TO john
   * `ALTER CONSTRAINT`. المستوى: `GROUP`. الأسماء البديلة: `CONSTRAINT`
   * `ALTER ADD CONSTRAINT`. المستوى: `TABLE`. الأسماء البديلة: `ADD CONSTRAINT`
   * `ALTER DROP CONSTRAINT`. المستوى: `TABLE`. الأسماء البديلة: `DROP CONSTRAINT`
+  * `ALTER MODIFY CONSTRAINT`. المستوى: `TABLE`. الأسماء البديلة: `MODIFY CONSTRAINT`
   * `ALTER TTL`. المستوى: `TABLE`. الأسماء البديلة: `ALTER MODIFY TTL`, `MODIFY TTL`
   * `ALTER MATERIALIZE TTL`. المستوى: `TABLE`. الأسماء البديلة: `MATERIALIZE TTL`
   * `ALTER SETTINGS`. المستوى: `TABLE`. الأسماء البديلة: `ALTER SETTING`, `ALTER MODIFY SETTING`, `MODIFY SETTING`
@@ -467,7 +470,7 @@ GRANT INSERT(x,y) ON db.table TO john
 أمثلة على كيفية تطبيق هذا التسلسل الهرمي:
 
 * يشمل امتياز `ALTER` جميع امتيازات `ALTER*` الأخرى.
-* يشمل `ALTER CONSTRAINT` امتيازي `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT`.
+* يشمل `ALTER CONSTRAINT` امتيازات `ALTER ADD CONSTRAINT` و`ALTER DROP CONSTRAINT` و`ALTER MODIFY CONSTRAINT`.
 
 **ملاحظات**
 

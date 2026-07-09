@@ -21,14 +21,14 @@ Desde el punto de vista de la instancia de ClickHouse, puede:
 3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** usar almacenamiento de objetos S3 con una lógica de «descargar y luego cargar»
 
 <Note>
-  En este tutorial usamos Redshift como fuente de datos. Sin embargo, los enfoques de migración que se presentan aquí no son exclusivos de Redshift, y pueden seguirse pasos similares para cualquier fuente de datos compatible.
+  Usamos Redshift como fuente de datos en este tutorial. Sin embargo, los enfoques de migración que se presentan aquí no son exclusivos de Redshift, y pueden seguirse pasos similares para cualquier fuente de datos compatible.
 </Note>
 
 <div id="push-data-from-redshift-to-clickhouse">
   ## Enviar datos de Redshift a ClickHouse
 </div>
 
-En un escenario Push, la idea es aprovechar una herramienta o servicio de terceros (ya sea código personalizado o un [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) para enviar los datos a su instancia de ClickHouse. Por ejemplo, puede usar software como [Airbyte](https://www.airbyte.com/) para mover datos entre su instancia de Redshift (como origen) y ClickHouse como destino ([consulte nuestra guía de integración de Airbyte](/es/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
+En el escenario Push, la idea es aprovechar una herramienta o servicio de terceros (ya sea código personalizado o un [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) para enviar sus datos a su instancia de ClickHouse. Por ejemplo, puede usar un software como [Airbyte](https://www.airbyte.com/) para mover datos entre su instancia de Redshift (como origen) y ClickHouse como destino ([consulte nuestra guía de integración de Airbyte](/es/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
 <Image img="/images/integrations/data-ingestion/redshift/push.webp" size="md" alt="PUSH de Redshift a ClickHouse" />
 
@@ -216,7 +216,7 @@ En este escenario, exportamos los datos a S3 en un formato PIVOT intermedio y, e
 
 * Dos pasos en el proceso (exportar desde Redshift y luego cargar en ClickHouse).
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### Tutorial
 </div>
 

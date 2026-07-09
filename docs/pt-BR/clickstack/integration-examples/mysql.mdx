@@ -50,16 +50,16 @@ Se quiser testar a integração de logs do MySQL antes de configurar seu própri
 
     ```ini
     [mysqld]
-    # Configuração do log de erros
+    # Error log configuration
     log_error = /var/log/mysql/error.log
 
-    # Configuração do log de consultas lentas
+    # Slow query log configuration
     slow_query_log = ON
     slow_query_log_file = /var/log/mysql/mysql-slow.log
     long_query_time = 1
     log_queries_not_using_indexes = ON
 
-    # Opcional: Log geral de consultas (verboso, use com cautela em produção)
+    # Optional: General query log (verbose, use with caution in production)
     # general_log = ON
     # general_log_file = /var/log/mysql/mysql-general.log
     ```
@@ -71,20 +71,20 @@ Se quiser testar a integração de logs do MySQL antes de configurar seu própri
     Depois de fazer essas alterações, reinicie o MySQL:
 
     ```bash
-    # Para systemd
+    # For systemd
     sudo systemctl restart mysql
 
-    # Para Docker
+    # For Docker
     docker restart <mysql-container>
     ```
 
     Verifique se os logs estão sendo registrados:
 
     ```bash
-    # Verificar log de erros
+    # Check error log
     tail -f /var/log/mysql/error.log
 
-    # Verificar log de consultas lentas
+    # Check slow query log
     tail -f /var/log/mysql/mysql-slow.log
     ```
   </Step>
@@ -186,14 +186,14 @@ Se quiser testar a integração de logs do MySQL antes de configurar seu própri
     ```yaml
     services:
       clickstack:
-        # ... configuração existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... outras variáveis de ambiente ...
+          # ... other environment variables ...
         volumes:
           - ./mysql-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/mysql:/var/log/mysql:ro
-          # ... outros volumes ...
+          # ... other volumes ...
     ```
 
     <Note>
@@ -230,10 +230,10 @@ Para usuários que desejam testar a integração de logs do MySQL antes de confi
     Baixe os arquivos de log de amostra:
 
     ```bash
-    # Baixar log de erros
+    # Download error log
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/error.log
 
-    # Baixar log de consultas lentas
+    # Download slow query log
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/mysql-slow.log
     ```
 
@@ -256,7 +256,7 @@ Para usuários que desejam testar a integração de logs do MySQL antes de confi
       filelog/mysql_error:
         include:
           - /tmp/mysql-demo/error.log
-        start_at: beginning  # Lê desde o início para dados de demonstração
+        start_at: beginning  # Read from beginning for demo data
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         operators:
@@ -279,7 +279,7 @@ Para usuários que desejam testar a integração de logs do MySQL antes de confi
       filelog/mysql_slow:
         include:
           - /tmp/mysql-demo/mysql-slow.log
-        start_at: beginning  # Lê desde o início para dados de demonstração
+        start_at: beginning  # Read from beginning for demo data
         multiline:
           line_start_pattern: '^# Time:'
         operators:
@@ -488,7 +488,7 @@ Se o seu formato for significativamente diferente, ajuste os padrões de regex n
 * Ajuste `long_query_time` com base nos padrões observados de desempenho das consultas
 
 <div id="going-to-production">
-  ## Indo para produção
+  ## Preparando para produção
 </div>
 
-Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+Este guia se baseia no OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

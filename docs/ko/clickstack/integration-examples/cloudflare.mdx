@@ -281,6 +281,6 @@ SELECT count() FROM cloudflare_http_logs;
   ## 프로덕션 환경으로 전환
 </div>
 
-이 가이드는 공개 데모 데이터세트를 사용해 Cloudflare 로그를 수집하는 방법을 보여줍니다. 프로덕션 배포에서는 Cloudflare Logpush가 자체 S3 버킷에 쓰도록 구성하고, 안전한 액세스를 위해 [IAM 역할 기반 인증](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)으로 ClickPipes를 설정하십시오. 스토리지 비용과 수집량을 줄이려면 필요한 [Logpush 필드](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)만 선택하십시오. 파일을 더 체계적으로 관리할 수 있도록 Logpush에서 일별 하위 폴더를 활성화하고, 하위 디렉터리 전체를 일치시키려면 ClickPipes 경로 패턴에 `**/*`를 사용하십시오.
+이 가이드는 공개 데모 데이터세트를 사용해 Cloudflare 로그를 수집하는 방법을 보여줍니다. 프로덕션 배포에서는 Cloudflare Logpush가 자체 S3 버킷에 쓰도록 구성하고, 안전한 액세스를 위해 [IAM role 기반 인증](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)을 사용하여 ClickPipes를 설정하십시오. 스토리지 비용과 수집량을 줄이려면 필요한 [Logpush 필드](https://developers.cloudflare.com/logs/logpush/logpush-job/datasets/zone/http_requests/)만 선택하십시오. 파일을 더 체계적으로 관리하려면 Logpush에서 일별 하위 폴더를 활성화하고, 하위 디렉터리 전체를 일치시키려면 ClickPipes 경로 패턴에 `**/*`를 사용하십시오.
 
-백필과 순서가 뒤바뀐 파일을 처리하기 위한 [SQS 기반 비순차 수집](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order)을 포함한 고급 구성 옵션은 [S3 ClickPipes 문서](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)를 참조하십시오.
+백필과 순서가 뒤바뀐 파일 처리를 위한 [SQS 기반 비순차 수집](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-any-order)을 비롯한 고급 구성 옵션은 [S3 ClickPipes 문서](/ko/integrations/clickpipes/object-storage/amazon-s3/overview)를 참조하십시오.

@@ -19,10 +19,11 @@ Introducido en: v20.1.0
 Suma un array `value` según las claves especificadas en el array `key`. Devuelve una tupla de dos arrays: claves en orden ordenado y valores sumados para las claves correspondientes.
 Se diferencia de la función [`sumMap`](/es/reference/functions/aggregate-functions/sumMap) en que realiza la suma con desbordamiento; es decir, devuelve para la suma el mismo tipo de dato que el del argumento.
 
-<Note>
-  * Pasar una tupla de arrays de claves y valores es idéntico a pasar un array de claves y un array de valores.
-  * El número de elementos de `key` y `value` debe ser el mismo para cada fila que se totaliza.
-</Note>
+:::note
+
+* Pasar una tupla de arrays de claves y valores es idéntico a pasar un array de claves y un array de valores.
+* El número de elementos de `key` y `value` debe ser el mismo para cada fila que se totaliza.
+  :::
 
 **Sintaxis**
 

@@ -278,9 +278,9 @@ SELECT reverseBySeparator('abcde', '')
 يُقسِّم سلسلة نصية باستخدام السلسلة الثابتة المحددة `separator`، والتي يجب أن تتكوّن من محرف واحد تمامًا، إلى مصفوفة من السلاسل الفرعية.
 قد تُحدَّد سلاسل فرعية فارغة إذا ظهر الفاصل في بداية السلسلة أو نهايتها، أو إذا وُجدت عدة فواصل متتالية.
 
-<Note>
-  يتحكّم الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (القيمة الافتراضية: `0`) في ما إذا كانت السلسلة المتبقية ستُضمَّن في العنصر الأخير من مصفوفة النتيجة عندما تكون الوسيطة `max_substrings > 0`.
-</Note>
+:::note
+يتحكّم الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (القيمة الافتراضية: `0`) في ما إذا كانت السلسلة المتبقية ستُضمَّن في العنصر الأخير من مصفوفة النتيجة عندما تكون الوسيطة `max_substrings > 0`.
+:::
 
 قد تُحدَّد سلاسل فرعية فارغة في الحالات التالية:
 
@@ -326,9 +326,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 
 يقسم السلسلة النصية، المفصولة بمحارف المسافات البيضاء وعلامات الترقيم، إلى مصفوفة من السلاسل الفرعية.
 
-<Note>
-  يحدد الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (القيمة الافتراضية: `0`) ما إذا كان سيتم تضمين السلسلة المتبقية في العنصر الأخير من مصفوفة النتائج عندما تكون الوسيطة `max_substrings > 0`.
-</Note>
+:::note
+يحدد الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (القيمة الافتراضية: `0`) ما إذا كان سيتم تضمين السلسلة المتبقية في العنصر الأخير من مصفوفة النتائج عندما تكون الوسيطة `max_substrings > 0`.
+:::
 
 **البنية**
 
@@ -373,9 +373,9 @@ SELECT splitByNonAlpha('user@domain.com');
 * إذا وُجدت عدة تطابقات غير فارغة ومتتالية للتعبير النمطي
 * إذا كانت السلسلة الأصلية فارغة بينما التعبير النمطي غير فارغ.
 
-<Note>
-  يحدّد الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (الافتراضي: `0`) ما إذا كانت السلسلة المتبقية ستُدرج في العنصر الأخير من المصفوفة الناتجة عندما تكون قيمة `max_substrings > 0`.
-</Note>
+:::note
+يحدّد الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (الافتراضي: `0`) ما إذا كانت السلسلة المتبقية ستُدرج في العنصر الأخير من المصفوفة الناتجة عندما تكون قيمة `max_substrings > 0`.
+:::
 
 **البنية**
 
@@ -434,9 +434,9 @@ SELECT splitByRegexp('', 'abcde');
 * إذا وُجدت عدة فواصل غير فارغة متتالية
 * إذا كانت السلسلة النصية الأصلية `s` فارغة وكان الفاصل غير فارغ
 
-<Note>
-  يتحكّم الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (الافتراضي: `0`) في ما إذا كانت السلسلة النصية المتبقية ستُدرج في العنصر الأخير من مصفوفة النتيجة عندما تكون الوسيطة `max_substrings > 0`.
-</Note>
+:::note
+يتحكّم الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (الافتراضي: `0`) في ما إذا كانت السلسلة النصية المتبقية ستُدرج في العنصر الأخير من مصفوفة النتيجة عندما تكون الوسيطة `max_substrings > 0`.
+:::
 
 **البنية**
 
@@ -488,9 +488,9 @@ SELECT splitByString('', 'abcde');
 
 تقسم سلسلة نصية مفصولة بمحارف المسافات البيضاء إلى مصفوفة من السلاسل الفرعية.
 
-<Note>
-  يتحكم الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (الافتراضي: `0`) في ما إذا كان الجزء المتبقي من السلسلة النصية يُدرج في العنصر الأخير من مصفوفة النتيجة عندما تكون الوسيطة `max_substrings > 0`.
-</Note>
+:::note
+يتحكم الإعداد [`splitby_max_substrings_includes_remaining_string`](/ar/reference/settings/session-settings#splitby_max_substrings_includes_remaining_string) (الافتراضي: `0`) في ما إذا كان الجزء المتبقي من السلسلة النصية يُدرج في العنصر الأخير من مصفوفة النتيجة عندما تكون الوسيطة `max_substrings > 0`.
+:::
 
 **الصياغة**
 

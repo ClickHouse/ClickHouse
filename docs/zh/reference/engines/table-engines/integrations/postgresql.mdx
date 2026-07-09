@@ -41,7 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 * `host:port` — PostgreSQL 服务器地址。
 * `database` — 远程数据库名称。
-* `table` — 远程表名。
+* `table` — 远程表名，或按原样传递给 PostgreSQL 的查询 (参见[传递查询而不是表名](#passing-a-query)) 。
 * `user` — PostgreSQL 用户。
 * `password` — 用户密码。
 * `schema` — 非默认表 schema。可选。
@@ -76,6 +76,25 @@ PostgreSQL 端的 `SELECT` 查询会在只读的 PostgreSQL 事务中以 `COPY (
 简单的 `WHERE` 子句，如 `=`, `!=`, `>`, `>=`, `<`, `<=` 和 `IN`，会在 PostgreSQL 服务器上执行。
 
 所有 JOIN、聚合、排序、`IN [ array ]` 条件以及 `LIMIT` 采样约束，都只会在对 PostgreSQL 的查询结束后于 ClickHouse 中执行。
+
+<div id="passing-a-query">
+  ## 传递查询而不是表名
+</div>
+
+`table` 参数可以不是表名，而是一个按原样传递给 PostgreSQL 的 `SELECT` 查询。表的结构会从查询结果中推断出来。该查询既可以写成子查询，也可以包装在 `query` 函数中：
+
+```sql
+CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+这对于将 JOIN、聚合或任何其他处理下推到 PostgreSQL 很有帮助。这样的表是只读的：不允许对其执行 `INSERT`。[`postgresql`](/zh/reference/functions/table-functions/postgresql) 表函数也支持相同的语法。
+
+<Note>
+  子查询形式 `(SELECT ...)` 会由 ClickHouse 解析，并在发送到服务器之前按 PostgreSQL 方言重新序列化 (包括 PostgreSQL 标识符引用和字符串字面量转义) 。因此，它必须是有效的 ClickHouse SQL。若要传递 ClickHouse 不会解析的 PostgreSQL 特有语法，请使用 `query('...')` 形式，其文本会原样发送到 PostgreSQL。
+
+  周围 ClickHouse 查询中的任何外层 `WHERE`、`LIMIT`、聚合等，**都不会**下推到传入的查询中，而是在拉取完整查询结果后由 ClickHouse 应用。要限制从 PostgreSQL 读取的数据，请将过滤器放在传入的查询内部。使用 [`external_table_strict_query = 1`](/zh/reference/settings/session-settings#external_table_strict_query) 时，无法下推的外层过滤器会直接抛出异常，而不是在本地应用。
+</Note>
 
 PostgreSQL 端的 `INSERT` 查询会在 PostgreSQL 事务中以 `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` 的形式运行，并在每条 `INSERT` 语句后自动提交。
 

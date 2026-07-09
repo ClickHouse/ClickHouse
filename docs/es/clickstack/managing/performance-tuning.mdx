@@ -141,7 +141,7 @@ Ahora los usuarios pueden consultar los nombres de los pods de Kubernetes de for
 
 <Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="Filtrado de trazas v2" />
 
-En los datos recién insertados, esto evita por completo el acceso al mapa y reduce significativamente la E/S.
+En los datos recién insertados, esto evita por completo el acceso al Map y reduce significativamente la E/S.
 
 Sin embargo, incluso si los usuarios siguen consultando la ruta del atributo original, por ejemplo `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`, **ClickStack reescribirá automáticamente la consulta** internamente para usar la columna materializada `PodName`, es decir, usando el predicado:
 
@@ -991,7 +991,7 @@ Las versiones más recientes de ClickHouse también admiten proyecciones aún m�
   ### Alternativas
 </div>
 
-Si necesita varias claves de ordenación, las proyecciones no son la única opción. En función de las restricciones operativas y de cómo quiera que ClickStack dirija las consultas, considere lo siguiente:
+Si necesita varias claves de ordenación, las proyecciones no son la única opción. Según las restricciones operativas y cómo quiera que ClickStack dirija las consultas, considere lo siguiente:
 
-* Configurar su OpenTelemetry Collector para que escriba en dos tablas con claves `ORDER BY` diferentes y crear fuentes de ClickStack independientes para cada tabla.
-* Crear una vista materializada como canalización de copia; es decir, adjuntar una vista materializada a la tabla principal que seleccione filas sin procesar en una tabla secundaria con una clave de ordenación distinta (un patrón de desnormalización o enrutamiento). Cree una fuente para esta tabla de destino. Puede encontrar ejemplos [aquí](/es/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).
+* Configurar su OpenTelemetry Collector para escribir en dos tablas con claves `ORDER BY` diferentes y crear fuentes de ClickStack independientes para cada tabla.
+* Crear una vista materializada como canalización de copia; es decir, adjuntar una vista materializada a la tabla principal para copiar las filas sin procesar a una tabla secundaria con una clave de ordenación distinta (un patrón de desnormalización o enrutamiento). Cree una fuente para esta tabla de destino. Puede encontrar ejemplos [aquí](/es/concepts/features/materialized-views/incremental-materialized-view#filtering-and-transformation).

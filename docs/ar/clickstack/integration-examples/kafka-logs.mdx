@@ -195,7 +195,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### إنشاء تهيئة مجمّع للاختبار
+    #### إنشاء تهيئة collector للاختبار
 
     أنشئ ملفًا باسم `kafka-logs-demo.yaml` بالمحتوى التالي:
 
@@ -292,7 +292,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     3. حمّل ملف kafka-logs-dashboard.json وانقر على إنهاء الاستيراد.
 
-    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="إنهاء استيراد لوحة معلومات Kafka logs" />
+    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="إنهاء استيراد لوحة معلومات سجلات Kafka" />
   </Step>
 
   <Step>
@@ -300,7 +300,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني ليشمل **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
-    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="لوحة معلومات Kafka logs التجريبية" />
+    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="لوحة معلومات سجلات Kafka التجريبية" />
   </Step>
 </Steps>
 
@@ -337,7 +337,7 @@ tail -1 /var/log/kafka/server.log
 * أنشئ [لوحات معلومات](/ar/clickstack/features/dashboards/overview) إضافية لحالات استخدام محددة (أحداث وحدة التحكم، إعادة إسناد الأقسام)
 
 <div id="going-to-production">
-  ## الانتقال إلى بيئة الإنتاج
+  ## الانتقال إلى الإنتاج
 </div>
 
-يستفيد هذا الدليل من OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

@@ -1069,9 +1069,9 @@ SELECT extractURLParameters('http://example.com/?param1=value1&param2=value2');
 
 도입 버전: v1.1.0
 
-&quot;첫 번째로 의미 있는 하위 도메인&quot;을 반환합니다.
+&quot;유의미한 하위 도메인&quot;을 반환합니다.
 
-첫 번째로 의미 있는 하위 도메인은 &#39;com&#39;, &#39;net&#39;, &#39;org&#39; 또는 &#39;co&#39;인 경우 2단계 도메인입니다.
+유의미한 하위 도메인은 &#39;com&#39;, &#39;net&#39;, &#39;org&#39; 또는 &#39;co&#39;인 경우 2단계 도메인입니다.
 그렇지 않으면 3단계 도메인입니다.
 
 예를 들어, firstSignificantSubdomain(&#39;https://news.clickhouse.com/&#39;) = &#39;clickhouse&#39;이고, firstSignificantSubdomain (&#39;https://news.clickhouse.com.tr/&#39;) = &#39;clickhouse&#39;입니다.
@@ -1096,9 +1096,6 @@ firstSignificantSubdomain(url)
 
 ```sql title=Query
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
-```
-
-```response title=Response
 ```
 
 <div id="firstSignificantSubdomainCustomRFC">
@@ -1530,16 +1527,17 @@ SELECT queryStringAndFragment('https://clickhouse.com/docs?query=value&param=123
 
 URL에서 최상위 도메인을 추출합니다.
 
-<Note>
-  URL은 프로토콜이 있거나 없어도 지정할 수 있습니다.
-  예를 들면 다음과 같습니다:
+:::note
+URL은 프로토콜이 있거나 없어도 지정할 수 있습니다.
+예를 들면 다음과 같습니다:
 
-  ```text
-  svn+ssh://some.svn-hosting.com:80/repo/trunk
-  some.svn-hosting.com:80/repo/trunk
-  https://clickhouse.com/time/
-  ```
-</Note>
+```text
+svn+ssh://some.svn-hosting.com:80/repo/trunk
+some.svn-hosting.com:80/repo/trunk
+https://clickhouse.com/time/
+```
+
+:::
 
 **구문**
 

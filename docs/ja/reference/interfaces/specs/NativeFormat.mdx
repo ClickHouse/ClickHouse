@@ -155,10 +155,10 @@ Byte 1: data = 0x02, continuation = 0 → accumulator = (0x02 << 7) | 0x2C = 300
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-`BlockInfo` プレフィックスの有無はチャネルによって異なります。これは、writer が *リビジョン* によってパラメータ化されているためです。
+`BlockInfo` プレフィックスの有無はチャネルによって異なります。これは、writer が *リビジョン* によってパラメータ化されているためです (完全な説明については [Protocol revision and the Native format](#protocol-revision) を参照してください。これには `client_protocol_version` が出力専用であることも含まれます)。
 
-* **native TCP プロトコル** では、server は接続時にネゴシエートされた リビジョン で block を書き込みます (大きな値であり、この release では `DBMS_TCP_PROTOCOL_VERSION` は `54485` です) 。`BlockInfo` は、その リビジョン が 0 より大きい場合に書き込まれます。実際の接続では、これは常に当てはまります。各 column の `has_custom_serialization` バイト ([column wire layout](#column-wire-layout) を参照) は、リビジョン `54454` 以上で書き込まれます。
-* `Native` *出力フォーマット* — HTTP 経由の `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`、および `clickhouse-client` が生成する `Native` フォーマット — は、*デフォルトでは* リビジョン `0` でシリアライズされます。リビジョン `0` では、`BlockInfo` プレフィックスと `has_custom_serialization` バイトはどちらも省略されるため、block は単に `num_columns`、`num_rows`、および columns だけになります。
+* **native TCP プロトコル** では、server は接続時にネゴシエートされた リビジョン で block を書き込みます (大きな値であり、この release では `DBMS_TCP_PROTOCOL_VERSION` は `54485` です) 。`BlockInfo` は、その リビジョン が 0 より大きい場合に書き込まれます。実際の接続では、これは常に当てはまります。各 カラム の `has_custom_serialization` バイト ([カラム wire layout](#column-wire-layout) を参照) は、リビジョン `54454` 以上で書き込まれます。
+* `Native` *出力フォーマット* — HTTP 経由の `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`、および `clickhouse-client` が生成する `Native` フォーマット — は、*デフォルトでは* リビジョン `0` でシリアライズされます。リビジョン `0` では、`BlockInfo` プレフィックスと `has_custom_serialization` バイトはどちらも省略されるため、block は単に `num_columns`、`num_rows`、および カラム だけになります。
 
   HTTP では、この リビジョン は固定ではありません。client は `?client_protocol_version=<n>` クエリパラメータでこれを引き上げることができ、server はその値をレスポンスのシリアライゼーション リビジョン として使用します。
 
@@ -349,6 +349,92 @@ Data ファミリーのすべてのパケットは、同じ Block ワイヤ形�
 ```
 
 (ヘッダーのみのブロックのような0行の結果は、`FORMAT Native` では一切バイトを出力しません。出力フォーマットは空のブロックを出力しないためです。)
+
+<div id="protocol-revision">
+  ## プロトコルのリビジョンとNativeフォーマット
+</div>
+
+Nativeのバイトストリームは、何よりもまず、そのwriterとreaderが使用する**プロトコルのリビジョン**によって決まります。リビジョンはバイト列そのもののどこにも含まれておらず、つまりワイヤ上にリビジョン フィールドは存在しません。それでも、いくつかの機能が現れるかどうかはこの値で決まります。そのため、デコーダがペイロードをparseするには、そのペイロードがどのリビジョンで書き込まれたかを事前に把握している必要があります。リビジョンはストリームに含まれないため、readerとwriterは別の方法でその値を取り決める必要があります。
+
+これは単一の`UInt64`値で、`NativeWriter`と`NativeReader`はいずれもこれをコンストラクタ引数として受け取ります。writerはこれを`client_revision`、readerは`server_revision`と呼びますが、どちらも同じ数値です。このリリースが認識している最新のリビジョンは`DBMS_TCP_PROTOCOL_VERSION`で、現在は`54485`です。
+
+<div id="what-the-revision-gates">
+  ### リビジョンが制御する内容
+</div>
+
+各機能には `DBMS_MIN_REVISION_WITH_*` のしきい値があります。writer は自身のリビジョンがそのしきい値に達して初めてその機能を出力し、reader もまったく同じ条件でそれを期待します。こうして両者の動作はそろいますが、どちらか一方でもリビジョンを誤ると読み書きの前提がずれてしまいます。Nativeフォーマット で重要になるゲートは次のとおりです。
+
+| Feature                                 | Threshold constant                                                 | Revision | Effect when below threshold                                                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BlockInfo` prefix                      | (any value `> 0`)                                                  | `1`      | [`BlockInfo`](#blockinfo) プレフィックスは完全に省略され、block は `num_columns`、`num_rows`、columns だけになります。                                                                          |
+| `has_custom_serialization` byte         | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | カラムごとの [`has_custom_serialization`](#column-wire-layout) バイトは省略され、すべてのカラムでデフォルトのシリアライゼーションが使われます (spare、replicated、detached 形式は使われません) 。                             |
+| `LowCardinality` on the wire            | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | 特殊ケースで、単純な「しきい値未満なら無効」という規則には**従いません**。`LowCardinality(T)` が基本型 `T` に落とされるのは、リビジョンが *0 ではなく* `54405` 未満の場合、または別途強制的に落とす場合だけです。リビジョン `0` では保持されます。詳しくは以下の注記を参照してください。 |
+| V2 `Dynamic` / `JSON` serialization     | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` と `JSON`/`Object` は V2 ではなく V1 のシリアライゼーション (`max_dynamic_*` パラメーター付き) を使用します。                                                                              |
+| Aggregate-function versioning           | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | `AggregateFunction` state は埋め込みバージョンなしで書き込まれます。                                                                                                                      |
+| `out_of_order_buckets` in `BlockInfo`   | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | `BlockInfo` のフィールド ID `3` は書き込まれません ([BlockInfo](#blockinfo) を参照) 。                                                                                                  |
+| Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | カラムが `ColumnBLOB` でラップされることはなく、`DETACHED` / `DETACHED_OVER_SPARSE` kind も現れません ([kind&#95;stack](#kind-stack-and-sparse-encoding) を参照) 。                             |
+| `DateTime(tz)` type parameter           | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | timezone パラメーターは `type` string から落とされ、`DateTime('UTC')` は単なる `DateTime` として通知されます。                                                                                   |
+
+つまり、リビジョン `0` はほぼすべてにおいて最も保守的なエンコーディングになります。stream には `BlockInfo` も `has_custom_serialization` バイトも含まれず、`Dynamic`/`JSON` は V1、aggregate-function のバージョンもなく、timezone パラメーターが省かれた素の `DateTime` になります。
+
+唯一の例外が `LowCardinality` で、しかも重要な例外です。writer の判定は `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)` です。ポイントは先頭の `client_revision &&` です。リビジョンがちょうど `0` の場合、この条件全体は短絡評価で false になります。
+
+したがって、リビジョン `0` では — `FORMAT Native` のデフォルトですが — `LowCardinality(T)` は**落とされません**。その type string と block ごとの state prefix は stream に残り、リビジョン `0` の reader はそれらをそのまま読み取ります。落としが有効になるのは、`54405` 未満の 0 以外のリビジョンの場合か、リビジョンに関係なく強制された場合だけです。
+
+この強制を行うのが `remove_low_cardinality` フラグです。`FORMAT Native` の出力ではこれが設定されることはありませんが、native TCP 経路では `low_cardinality_allow_in_native_format = 0` のときに設定されます (デフォルトは `1`) 。言い換えると、この setting は native TCP の出力には影響しますが、`FORMAT Native` には何も影響しません。
+
+実務上の要点は次のとおりです。デフォルトの `FORMAT Native` stream には正当に `LowCardinality` が含まれうるため、リビジョン `0` では存在しない機能として扱わないでください。
+
+<div id="revision-per-channel">
+  ### データの流れ方によって、リビジョンがどこで決まるか
+</div>
+
+同じ Native のバイト列でも、native TCP プロトコル、HTTPリクエスト、あるいはディスク上のファイルなど、異なる経路でやり取りされることがあります。経路ごとに、リビジョンの設定方法は異なります。注意点として、読み取り側と書き込み側は別々に設定されるため、結果として異なるリビジョンになることがあります。
+
+<div id="revision-tcp">
+  #### Native TCP プロトコル — ネゴシエートされ、双方向
+</div>
+
+[native TCP protocol](/ja/reference/interfaces/specs/NativeProtocol) では、リビジョンは Hello ハンドシェイクで決まります。クライアントは `DBMS_TCP_PROTOCOL_VERSION` を送信し、サーバーは自身の値を返します。その後は、各側が **相手側が通知したリビジョン** でシリアライズします。つまり、サーバーは `client_tcp_protocol_version` を基に `NativeReader`/`NativeWriter` を構築し、クライアントは受け取った `server_revision` を使用します。明示的な `min` はありませんが、どちらの側も未実装の機能を出力することはできないため、各方向の上限は実質的に 2 つのピアのうち古い側で決まります。
+
+両方のピアが同じ最新の build であれば、双方向とも同じリビジョン (ここでは `54485`) になり、すべてのゲートが有効になります。これは一般的なケースですが、保証されているわけではありません。バージョンが混在している場合や third-party のピアでは、2 つの方向で異なるリビジョンになることがあるため、ゲートは方向ごとに見る必要があります。`BlockInfo` はリビジョンが 0 でなければ常に存在しますが、それ以外、つまり `has_custom_serialization` を含む項目は、その方向の有効リビジョンがそれぞれのしきい値に達して初めて現れます。たとえば、`54454` 未満のリビジョンを通知するピアは、`has_custom_serialization` バイトを送信することも受信することもありません。
+
+<div id="revision-output">
+  #### `FORMAT Native` 出力 — 既定ではリビジョン 0、HTTP 経由では引き上げ可能
+</div>
+
+`Native` *出力*フォーマットの既定値は、リビジョン **`0`** です。これは、HTTP 経由の `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`、および `clickhouse-client` が書き出す `Native` 出力に当てはまります。いずれの場合も、出力ファクトリは `FormatSettings::client_protocol_version` をそのまま `NativeWriter` に渡します。
+
+ただし、HTTP 経由ではこれで終わりではありません。クライアントは `?client_protocol_version=<n>` クエリパラメータで、この値を引き上げられます。HTTP ハンドラーはこれを SQL の設定ではなく予約済みパラメータとして扱うため、値はクエリコンテキストに入り、フォーマット層がそれを `FormatSettings` にコピーします。十分に高い値を設定すると、HTTP の `FORMAT Native` 出力にも TCP 経路と同様に `BlockInfo` プレフィックスと `has_custom_serialization` バイトが含まれるようになります。したがって、HTTP の `FORMAT Native` ペイロードが常にリビジョン `0` だと考えてはいけません。ファイルエクスポートやローカルの `clickhouse-client` 出力にはこのような切り替え手段はなく、`0` のままです。
+
+<div id="revision-input">
+  #### `FORMAT Native` 入力 — 常にリビジョン 0
+</div>
+
+`Native` の*入力*フォーマットは逆向きです。これは**リビジョン `0` にハードコードされており**、`client_protocol_version` はまったく参照しません。`INSERT ... FORMAT Native` のボディをパースする場合でも、`Native` ファイルを読み込む場合でも、`NativeReader` はリテラルの `0` で構築されるため、`BlockInfo` プレフィックスを想定せず、`has_custom_serialization` バイトも読み取らず、常にデフォルトのシリアライゼーションを前提とします。
+
+つまり、`client_protocol_version` は出力専用です。`INSERT ... FORMAT Native` リクエストに `?client_protocol_version=54485` を付けても、ボディの読み取り方法には何の影響もありません。ボディは引き続きリビジョン `0` である必要があります。`BlockInfo` プレフィックスや `has_custom_serialization` バイトを含むボディを与えると、リーダーは同期が取れなくなり、その結果、正常に insert されるのではなく、パースエラー (`INCORRECT_DATA` または `CANNOT_READ_ALL_DATA`) として返されます。
+
+<div id="revision-round-trip">
+  ### 往復変換時の影響
+</div>
+
+`FORMAT Native` では、両端でリビジョン `0` を使うのが安全で、これがデフォルトの動作です。リビジョン `0` の `SELECT ... FORMAT Native` で書き出したデータは、そのまま `INSERT ... FORMAT Native` に問題なく読み戻せます。
+
+問題になるのは、意図的に出力リビジョンを引き上げた場合だけです。`?client_protocol_version=<large>` を付けた `SELECT ... FORMAT Native` は、`BlockInfo` と `has_custom_serialization` のバイトを含むストリームを生成しますが、リビジョン `0` の入力パスではそれらを読み戻せません。こうしたデータを往復変換させる必要があるなら、生成側の `SELECT` では `client_protocol_version` を付けないか、`FORMAT Native` ではなく native TCP プロトコル経由でデータを転送してください。こちらでは各方向で、ハンドシェイク時にネゴシエートされたリビジョンが使われます。
+
+| チャネル                                                        | 書き込みリビジョン                               | 読み取りリビジョン                                  | `BlockInfo` / カスタムシリアライゼーション                                         |
+| ----------------------------------------------------------- | --------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------- |
+| Native TCP Data パケット                                        | ピアが通知したリビジョン (方向ごと)                     | ピアが通知したリビジョン (方向ごと)                        | リビジョン `> 0` なら常に `BlockInfo`、`≥ 54454` なら `has_custom_serialization` |
+| `SELECT ... FORMAT Native` over HTTP                        | `client_protocol_version` (デフォルトは `0`)  | n/a                                        | `client_protocol_version` を引き上げた場合のみ                                 |
+| `INSERT ... FORMAT Native` over HTTP                        | n/a                                     | `0` (固定。`client_protocol_version` は無視される)  | 読み取られない                                                              |
+| `INTO OUTFILE` / file / `clickhouse-client` `FORMAT Native` | `0`                                     | `0`                                        | なし (ただし `LowCardinality` は保持されます。上記の注記を参照)                           |
+
+<Info>
+  **プロトコルのリビジョンとシリアル化バージョン**
+
+  プロトコルのリビジョンと[シリアル化バージョン](#serialization-version-concept)を混同しないでください。ここでいうリビジョンは接続単位またはリクエスト単位のもので、バイト列には現れません。シリアル化バージョンはカラムごとに存在し、[バージョン付き型](#versioned-types)によって保持され、空でないすべてのブロックに書き込まれます。リビジョンは、その機能自体が存在するかどうかを決めます。シリアル化バージョンは、バージョン付きカラムの中で、その型のどのエンコーディング方式が続くかを選びます。
+</Info>
 
 <div id="data-types">
   ## データ型

@@ -34,24 +34,24 @@ Ejemplo de configuración YAML para la configuración común:
 
 ```yaml
 jsonData:
-  host: 127.0.0.1 # (obligatorio) dirección del servidor.
-  port: 9000      # (obligatorio) puerto del servidor. Para native, el valor predeterminado es 9440 (seguro) y 9000 (no seguro). Para HTTP, el valor predeterminado es 8443 (seguro) y 8123 (no seguro).
+  host: 127.0.0.1 # (required) server address.
+  port: 9000      # (required) server port. For native, defaults to 9440 secure and 9000 insecure. For HTTP, defaults to 8443 secure and 8123 insecure.
 
-  protocol: native # (obligatorio) el protocolo utilizado para la conexión. Puede establecerse en "native" o "http".
-  secure: false    # establezca en true si la conexión es segura.
+  protocol: native # (required) the protocol used for the connection. Can be set to "native" or "http".
+  secure: false    # set to true if the connection is secure.
 
-  username: default # el nombre de usuario utilizado para la autenticación.
+  username: default # the username used for authentication.
 
-  tlsSkipVerify:     <boolean> # omite la verificación TLS cuando se establece en true.
-  tlsAuth:           <boolean> # establezca en true para habilitar la autenticación de cliente TLS.
-  tlsAuthWithCACert: <boolean> # establezca en true si se proporciona un certificado CA. Obligatorio para verificar certificados TLS autofirmados.
+  tlsSkipVerify:     <boolean> # skips TLS verification when set to true.
+  tlsAuth:           <boolean> # set to true to enable TLS client authentication.
+  tlsAuthWithCACert: <boolean> # set to true if CA certificate is provided. Required for verifying self-signed TLS certificates.
 
 secureJsonData:
-  password: secureExamplePassword # la contraseña utilizada para la autenticación.
+  password: secureExamplePassword # the password used for authentication.
 
-  tlsCACert:     <string> # certificado CA de TLS
-  tlsClientCert: <string> # certificado de cliente TLS
-  tlsClientKey:  <string> # clave de cliente TLS
+  tlsCACert:     <string> # TLS CA certificate
+  tlsClientCert: <string> # TLS client certificate
+  tlsClientKey:  <string> # TLS client key
 ```
 
 Ten en cuenta que se añade una propiedad `version` cuando la configuración se guarda desde la UI. Esto indica la versión del plugin con la que se guardó la configuración.
@@ -118,12 +118,12 @@ YAML de ejemplo:
 
 ```yaml
 jsonData:
-  defaultDatabase: default # base de datos predeterminada cargada por el generador de consultas. Por defecto: "default".
-  defaultTable: <string>   # tabla predeterminada cargada por el generador de consultas.
+  defaultDatabase: default # default database loaded by the query builder. Defaults to "default".
+  defaultTable: <string>   # default table loaded by the query builder.
 
-  dialTimeout: 10    # timeout de marcado al conectarse al servidor, en segundos. Por defecto: "10".
-  queryTimeout: 60   # timeout de consulta al ejecutar una consulta, en segundos. Por defecto: 60. Requiere permisos en el usuario; si aparece un error de permisos, intente establecerlo en "0" para deshabilitarlo.
-  validateSql: false # cuando se establece en true, valida el SQL en el SQL Editor.
+  dialTimeout: 10    # dial timeout when connecting to the server, in seconds. Defaults to "10".
+  queryTimeout: 60   # query timeout when running a query, in seconds. Defaults to 60. This requires permissions on the user, if you get a permission error try setting it to "0" to disable it.
+  validateSql: false # when set to true, will validate the SQL in the SQL editor.
 ```
 
 <div id="opentelemetry">
@@ -156,16 +156,16 @@ Ejemplo de YAML de configuración de logs:
 ```yaml
 jsonData:
   logs:
-    defaultDatabase: default # base de datos de logs predeterminada.
-    defaultTable: otel_logs  # tabla de logs predeterminada. Si usa OTel, debe establecerse en "otel_logs".
+    defaultDatabase: default # default log database.
+    defaultTable: otel_logs  # default log table. If you're using OTel, this should be set to "otel_logs".
 
-    otelEnabled: false  # establezca en true si OTel está habilitado.
-    otelVersion: latest # versión del esquema del OTel collector a utilizar. Las versiones se muestran en la UI, pero "latest" usará la última versión disponible en el plugin.
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    # Columnas predeterminadas que se seleccionarán al abrir una nueva consulta de logs. Se ignorarán si OTel está habilitado.
-    timeColumn:       <string> # la columna de tiempo principal del log.
-    levelColumn:   <string> # el nivel/severidad del log. Los valores suelen tener el formato "INFO", "error" o "Debug".
-    messageColumn: <string> # el mensaje/contenido del log.
+    # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
+    timeColumn:       <string> # the primary time column for the log.
+    levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
+    messageColumn: <string> # the log's message/content.
 ```
 
 <div id="traces">
@@ -187,23 +187,23 @@ YAML de ejemplo de configuración de trazas:
 ```yaml
 jsonData:
   traces:
-    defaultDatabase: default  # base de datos de trazas predeterminada.
-    defaultTable: otel_traces # tabla de trazas predeterminada. Si usa OTel, debe establecerse en "otel_traces".
+    defaultDatabase: default  # default trace database.
+    defaultTable: otel_traces # default trace table. If you're using OTel, this should be set to "otel_traces".
 
-    otelEnabled: false  # establezca en true si OTel está habilitado.
-    otelVersion: latest # la versión del esquema del OTel collector que se utilizará. Las versiones se muestran en la UI, pero "latest" usará la última versión disponible en el plugin.
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    # Columnas predeterminadas que se seleccionarán al abrir una nueva consulta de trazas. Se ignorará si OTel está habilitado.
-    traceIdColumn:       <string>    # columna de trace ID.
-    spanIdColumn:        <string>    # columna de ID de span.
-    operationNameColumn: <string>    # columna de nombre de operación.
-    parentSpanIdColumn:  <string>    # columna de ID de span padre.
-    serviceNameColumn:   <string>    # columna de nombre de servicio.
-    durationTimeColumn:  <string>    # columna de tiempo de duración.
-    durationUnitColumn:  <time unit> # unidad de tiempo de duración. Puede establecerse en "seconds", "milliseconds", "microseconds" o "nanoseconds". Para OTel el valor predeterminado es "nanoseconds".
-    startTimeColumn:     <string>    # columna de tiempo de inicio. Es la columna de tiempo principal para el trace span.
-    tagsColumn:          <string>    # columna de tags. Se espera que sea de tipo map.
-    serviceTagsColumn:   <string>    # columna de tags de servicio. Se espera que sea de tipo map.
+    # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
+    traceIdColumn:       <string>    # trace ID column.
+    spanIdColumn:        <string>    # span ID column.
+    operationNameColumn: <string>    # operation name column.
+    parentSpanIdColumn:  <string>    # parent span ID column.
+    serviceNameColumn:   <string>    # service name column.
+    durationTimeColumn:  <string>    # duration time column.
+    durationUnitColumn:  <time unit> # duration time unit. Can be set to "seconds", "milliseconds", "microseconds", or "nanoseconds". For OTel the default is "nanoseconds".
+    startTimeColumn:     <string>    # start time column. This is the primary time column for the trace span.
+    tagsColumn:          <string>    # tags column. This is expected to be a map type.
+    serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
 <div id="column-aliases">
@@ -254,9 +254,9 @@ Grafana requiere que la tabla de alias tenga la siguiente estructura de columnas
 
 ```sql
 CREATE TABLE aliases (
-  `alias` String,  -- El nombre del alias, tal como aparece en el selector de columnas de Grafana
-  `select` String, -- La sintaxis SELECT que se usará en el generador de SQL
-  `type` String    -- El tipo de la columna resultante, para que el plugin pueda ajustar las opciones de la UI según el tipo de dato.
+  `alias` String,  -- The name of the alias, as seen in the Grafana column selector
+  `select` String, -- The SELECT syntax to use in the SQL generator
+  `type` String    -- The type of the resulting column, so the plugin can modify the UI options to match the data type.
 )
 ```
 
@@ -270,8 +270,8 @@ CREATE TABLE example_table (
 CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
 
 INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
-('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Conservar la columna original de la tabla (opcional)
-('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Agregar nueva columna que convierte TimestampNanos a Date
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Preserve original column from table (optional)
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Add new column that converts TimestampNanos to a Date
 ```
 
 Luego podemos configurar esta tabla para usarla en Grafana. Ten en cuenta que el nombre puede ser cualquiera, o incluso definirse en una base de datos independiente:

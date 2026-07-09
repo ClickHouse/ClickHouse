@@ -15,11 +15,11 @@ Introducido en: v1.1.0
 
 Calcula el número exacto de valores distintos del argumento.
 
-<Warning>
-  La función `uniqExact` usa más memoria que `uniq`, porque el tamaño del estado crece sin límite a medida que aumenta el número de valores distintos.
-  Usa la función `uniqExact` solo si necesitas un resultado exacto.
-  En caso contrario, usa la función [`uniq`](/es/reference/functions/aggregate-functions/uniq).
-</Warning>
+:::warning
+La función `uniqExact` usa más memoria que `uniq`, porque el tamaño del estado crece sin límite a medida que aumenta el número de valores distintos.
+Usa la función `uniqExact` solo si necesitas un resultado exacto.
+En caso contrario, usa la función [`uniq`](/es/reference/functions/aggregate-functions/uniq).
+:::
 
 **Sintaxis**
 

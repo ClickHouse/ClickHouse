@@ -153,7 +153,7 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 
             ### Démarrer un collecteur
 
-            La procédure ci-dessous suit l’approche recommandée, qui consiste à utiliser la **distribution ClickStack de l’OpenTelemetry Collector**, laquelle inclut un traitement supplémentaire et est optimisée spécifiquement pour ClickHouse Cloud. Si vous souhaitez utiliser votre propre OpenTelemetry Collector, consultez [&quot;Configurer des collecteurs existants.&quot;](#configure-existing-collectors)
+            La procédure ci-dessous suit l’approche recommandée, qui consiste à utiliser la **distribution ClickStack de l’OpenTelemetry Collector**, laquelle inclut un traitement supplémentaire et est optimisée spécifiquement pour ClickHouse Cloud. Si vous souhaitez utiliser votre propre OpenTelemetry Collector, consultez [&quot;Configurer des collecteurs existants.&quot;](#configure-existing-collectors-existing)
 
             Pour démarrer rapidement, copiez et exécutez la commande Docker affichée.
 
@@ -312,16 +312,16 @@ Ce guide suppose que vous avez déjà créé un service ClickHouse Cloud. Si ce 
 1. Accédez à votre service dans la console ClickHouse Cloud
 2. Accédez à **Settings** → **SQL Console Access**
 3. Définissez le niveau d’autorisation approprié pour chaque utilisateur :
-   * **Service Admin → Full Access** - Requis pour activer les alerts
-   * **Service Read Only → Read Only** - Permet de consulter les données d’observabilité et de créer des dashboards
+   * **Service Admin → Full Access** - Requis pour activer les alertes
+   * **Service Read Only → Read Only** - Permet de consulter les données d’observabilité et de créer des tableaux de bord
    * **No access** - Ne permet pas d’accéder à HyperDX
 
 <Image img="/images/clickstack/read-only-access.webp" alt="ClickHouse Cloud Lecture seule" size="md" />
 
 <Warning>
-  **Les alerts nécessitent des droits d’administrateur**
+  **Les alertes nécessitent des droits d’administrateur**
 
-  Pour activer les alerts, au moins un utilisateur disposant des permissions **Service Admin** (associées à **Full Access** dans la liste déroulante **SQL Console Access**) doit se connecter à HyperDX au moins une fois. Cela crée dans la base de données un utilisateur dédié qui exécute les requêtes d’alerts.
+  Pour activer les alertes, au moins un utilisateur disposant des permissions **Service Admin** (associées à **Full Access** dans la liste déroulante **SQL Console Access**) doit se connecter à HyperDX au moins une fois. Cela crée dans la base de données un utilisateur dédié qui exécute les requêtes d’alerte.
 </Warning>
 
 <div id="clickstack-read-only-compute">

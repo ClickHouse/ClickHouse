@@ -47,10 +47,10 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     EC2インスタンス上で、メタデータサービスにアクセスできることを確認します。
 
     ```bash
-    # メタデータトークンを取得する (IMDSv2)
+    # Get metadata token (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # インスタンスメタデータを確認する
+    # Verify instance metadata
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -73,15 +73,15 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     EC2 インスタンスに syslog ファイルが出力されていることを確認します。
 
     ```bash
-    # Ubuntuインスタンス
+    # Ubuntu instances
     ls -la /var/log/syslog
 
-    # Amazon Linux / RHELインスタンス
+    # Amazon Linux / RHEL instances
     ls -la /var/log/messages
 
-    # 最近のエントリを表示
+    # View recent entries
     tail -20 /var/log/syslog
-    # または
+    # or
     tail -20 /var/log/messages
     ```
   </Step>
@@ -92,14 +92,14 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     EC2インスタンスに OpenTelemetry Collector Contrib をインストールします。
 
     ```bash
-    # 最新リリースをダウンロード
+    # Download the latest release
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # 展開してインストール
+    # Extract and install
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # インストールを確認
+    # Verify installation
     otelcol-contrib --version
     ```
   </Step>
@@ -366,7 +366,7 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
             value: "ec2-demo"
 
     processors:
-      # デモ用にEC2メタデータをシミュレート（実際のEC2インスタンス不要）
+      # Simulate EC2 metadata for demo (no real EC2 instance required)
       resource:
         attributes:
           - key: service.name
@@ -624,7 +624,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * セキュリティ監視 (SSH 接続の試行、sudo の使用、ファイアウォールによるブロック) 向けにカスタムダッシュボードを作成します
 
 <div id="going-to-production">
-  ## 本番環境での運用
+  ## 本番環境への移行
 </div>
 
-このガイドでは、ホストレベルの監視向けの本番環境構成として推奨される方法に従い、OpenTelemetry Collector を EC2 インスタンスに直接インストールします。多数のインスタンスにまたがる collector の管理には、構成管理ツール (Ansible、Chef、Puppet) や、Kubernetes 環境では OpenTelemetry Operator の利用を検討してください。本番環境向けの設定については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+このガイドでは、ホストレベルの監視における本番環境の推奨構成として、OpenTelemetry Collector を EC2 インスタンスに直接インストールします。多数のインスタンスにわたって collector を管理する場合は、構成管理ツール (Ansible、Chef、Puppet) や、Kubernetes 環境では OpenTelemetry Operator の利用を検討してください。本番環境向けの設定については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

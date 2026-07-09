@@ -41,7 +41,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     1. ClickStack URL에서 HyperDX를 여십시오(예: http://localhost:8080)
     2. 필요하면 계정을 생성하거나 로그인하십시오
     3. **Team Settings → API Keys**로 이동하십시오
-    4. **수집 API key**를 복사하십시오
+    4. **수집 API Key**를 복사하십시오
 
     <Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key" />
   </Step>
@@ -314,6 +314,6 @@ ClickStack이 원격 호스트에 있는 경우 애플리케이션 서버에서 
   ## 프로덕션 환경으로 전환
 </div>
 
-이 가이드는 로컬 테스트를 위해 OpenTelemetry Java agent를 구성하는 방법을 설명합니다. 프로덕션 배포에서는 관리가 더 쉽도록 컨테이너 이미지에 agent JAR를 포함하고 환경 변수를 통해 구성하십시오. JVM 인스턴스가 많은 대규모 환경에서는 ClickStack으로 직접 전송하는 대신 중앙 집중식 OpenTelemetry Collector를 배포하여 여러 애플리케이션의 메트릭을 일괄 처리해 전달하십시오.
+이 가이드는 로컬 테스트를 위해 OpenTelemetry Java agent를 구성하는 방법을 설명합니다. 프로덕션 배포에서는 관리를 더 쉽게 하기 위해 컨테이너 이미지에 agent JAR를 포함하고 환경 변수를 통해 구성하세요. JVM 인스턴스가 많은 대규모 환경에서는 ClickStack으로 직접 전송하는 대신, 중앙 집중식 OpenTelemetry Collector를 배포하여 여러 애플리케이션의 메트릭을 일괄 처리해 전달하세요.
 
-프로덕션 배포 패턴과 collector 구성 예시는 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.
+프로덕션 배포 패턴과 collector 구성 예시는 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하세요.

@@ -469,16 +469,16 @@ SELECT URLHash('https://www.clickhouse.com/docs', 1);
 对于字符串参数，它使用 CityHash 算法；对于其他数据类型的参数，则使用特定于实现的快速非加密哈希函数。
 该函数使用 CityHash 组合器来生成最终结果。
 
-<Info>
-  Google 在将 CityHash 引入 ClickHouse 后修改了该算法。
-  换句话说，ClickHouse 的 cityHash64 与 Google 上游的 CityHash 现在会产生不同的结果。
-  ClickHouse 的 cityHash64 对应于 CityHash v1.0.2。
-</Info>
+:::info
+Google 在将 CityHash 引入 ClickHouse 后修改了该算法。
+换句话说，ClickHouse 的 cityHash64 与 Google 上游的 CityHash 现在会产生不同的结果。
+ClickHouse 的 cityHash64 对应于 CityHash v1.0.2。
+:::
 
-<Note>
-  对于参数类型不同但输入值相同的情况，计算得到的哈希值可能相同。
-  例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
-</Note>
+:::note
+对于参数类型不同但输入值相同的情况，计算得到的哈希值可能相同。
+例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
+:::
 
 **语法**
 
@@ -542,14 +542,14 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
 
 使用 `Fingerprint64` 方法生成 64 位的 [FarmHash](https://github.com/google/farmhash) 值。
 
-<Tip>
-  相比 [`farmHash64`](#farmHash64)，为了获得稳定且可移植的值，优先使用 `farmFingerprint64`。
-</Tip>
+:::tip
+相比 [`farmHash64`](#farmHash64)，为了获得稳定且可移植的值，优先使用 `farmFingerprint64`。
+:::
 
-<Note>
-  对于参数类型不同但输入值相同的情况，计算出的哈希值可能相同。
-  例如，这会影响不同大小的整数类型、具有相同数据的具名和非具名 `Tuple`，以及具有相同数据的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
-</Note>
+:::note
+对于参数类型不同但输入值相同的情况，计算出的哈希值可能相同。
+例如，这会影响不同大小的整数类型、具有相同数据的具名和非具名 `Tuple`，以及具有相同数据的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
+:::
 
 **语法**
 
@@ -587,14 +587,14 @@ SELECT farmFingerprint64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 
 
 使用 `Hash64` 方法生成 64 位 [FarmHash](https://github.com/google/farmhash) 值。
 
-<Tip>
-  如需稳定且可移植的值，建议优先使用 [`farmFingerprint64`](#farmFingerprint64)。
-</Tip>
+:::tip
+如需稳定且可移植的值，建议优先使用 [`farmFingerprint64`](#farmFingerprint64)。
+:::
 
-<Note>
-  对于参数类型不同但输入值相同的情况，计算得到的哈希值可能相同。
-  例如，不同位宽的整数类型、数据相同的具名与非具名 `Tuple`，以及数据相同的 `Map` 与对应的 `Array(Tuple(key, value))` 类型都会受到影响。
-</Note>
+:::note
+对于参数类型不同但输入值相同的情况，计算得到的哈希值可能相同。
+例如，不同位宽的整数类型、数据相同的具名与非具名 `Tuple`，以及数据相同的 `Map` 与对应的 `Array(Tuple(key, value))` 类型都会受到影响。
+:::
 
 **语法**
 
@@ -712,14 +712,14 @@ SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
 
 引入版本：v20.1.0
 
-根据字符串计算 “HiveHash”。
+根据字符串计算 &quot;HiveHash&quot;。
 它实际上就是将符号位清零后的 [`JavaHash`](#javaHash)。
 在 3.0 之前的版本中，[Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) 使用此函数。
 
-<Warning>
-  此哈希函数性能较差。
-  仅当其他系统已使用此算法，且你需要计算相同结果时，才应使用它。
-</Warning>
+:::caution
+此哈希函数性能较差。
+仅当其他系统已使用此算法，且你需要计算相同结果时，才应使用它。
+:::
 
 **语法**
 
@@ -873,15 +873,15 @@ SELECT intHash64(42);
 * [Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
 * [Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
 
-<Warning>
-  此哈希函数性能较差。
-  仅当其他系统已在使用该算法，且你需要计算相同结果时，才应使用它。
-</Warning>
+:::caution
+此哈希函数性能较差。
+仅当其他系统已在使用该算法，且你需要计算相同结果时，才应使用它。
+:::
 
-<Note>
-  Java 仅支持计算有符号整数的哈希，
-  因此，如果你想计算无符号整数的哈希，必须先将它们转换为相应的有符号 ClickHouse 类型。
-</Note>
+:::note
+Java 仅支持计算有符号整数的哈希，
+因此，如果你想计算无符号整数的哈希，必须先将它们转换为相应的有符号 ClickHouse 类型。
+:::
 
 **语法**
 
@@ -1119,10 +1119,10 @@ SELECT kostikConsistentHash(16045690984833335023, 2);
 
 生成一个 64 位的 [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) 哈希值。
 
-<Note>
-  对于不同参数类型中相同的输入值，计算出的哈希值可能相同。
-  例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
-</Note>
+:::note
+对于不同参数类型中相同的输入值，计算出的哈希值可能相同。
+例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
+:::
 
 **语法**
 
@@ -1160,10 +1160,10 @@ Introduced in：v18.5.0
 
 计算输入值的 [MurmurHash2](https://github.com/aappleby/smhasher) 哈希值。
 
-<Note>
-  对于数值相同但参数类型不同的输入，计算得到的哈希值可能相同。
-  例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
-</Note>
+:::note
+对于数值相同但参数类型不同的输入，计算得到的哈希值可能相同。
+例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
+:::
 
 **Syntax**
 
@@ -1201,10 +1201,10 @@ SELECT murmurHash2_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 计算输入值的 [MurmurHash2](https://github.com/aappleby/smhasher) 哈希值。
 
-<Note>
-  对于参数类型不同但输入值相同的情况，计算出的哈希值可能相同。
-  例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 与对应的 `Array(Tuple(key, value))` 类型。
-</Note>
+:::note
+对于参数类型不同但输入值相同的情况，计算出的哈希值可能相同。
+例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 与对应的 `Array(Tuple(key, value))` 类型。
+:::
 
 **语法**
 
@@ -1278,10 +1278,10 @@ SELECT hex(murmurHash3_128('foo', 'foo', 'foo'));
 
 生成 [MurmurHash3](https://github.com/aappleby/smhasher) 哈希值。
 
-<Note>
-  对于 argument 类型不同但输入值相同的情况，计算出的哈希值可能会相同。
-  例如，这会影响不同大小的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 与对应的 `Array(Tuple(key, value))` 类型。
-</Note>
+:::note
+对于 argument 类型不同但输入值相同的情况，计算出的哈希值可能会相同。
+例如，这会影响不同大小的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 与对应的 `Array(Tuple(key, value))` 类型。
+:::
 
 **语法**
 
@@ -1319,10 +1319,10 @@ SELECT murmurHash3_32(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:
 
 计算输入值的 [MurmurHash3](https://github.com/aappleby/smhasher) 哈希。
 
-<Note>
-  对于参数类型不同但输入值相同的情况，计算得到的哈希值可能相同。
-  例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 与对应的 `Array(Tuple(key, value))` 类型。
-</Note>
+:::note
+对于参数类型不同但输入值相同的情况，计算得到的哈希值可能相同。
+例如，这会影响不同位宽的整数类型、数据相同的具名和非具名 `Tuple`，以及数据相同的 `Map` 与对应的 `Array(Tuple(key, value))` 类型。
+:::
 
 **语法**
 
@@ -1848,13 +1848,11 @@ SELECT ngramSimHashUTF8('ClickHouse') AS Hash;
 
 与 [`sipHash64`](#sipHash64) 类似，但会生成 128 位哈希值，即最终的异或折叠状态会一直处理到 128 位。
 
-<Tip>
-  **新项目请使用 sipHash128Reference**
-
-  这个 128 位变体与参考实现不同，且强度更弱。
-  之所以保留这个版本，是因为编写它时，SipHash 还没有官方的 128 位扩展。
-  建议新项目使用 [`sipHash128Reference`](#sipHash128Reference)。
-</Tip>
+:::tip 新项目请使用 sipHash128Reference
+这个 128 位变体与参考实现不同，且强度更弱。
+之所以保留这个版本，是因为编写它时，SipHash 还没有官方的 128 位扩展。
+建议新项目使用 [`sipHash128Reference`](#sipHash128Reference)。
+:::
 
 **语法**
 
@@ -1892,13 +1890,11 @@ SELECT hex(sipHash128('foo', '\x01', 3));
 
 与 [`sipHash128`](#sipHash128) 相同，但会额外接受一个显式指定的密钥参数，而不是使用固定密钥。
 
-<Tip>
-  **新项目请使用 sipHash128ReferenceKeyed**
-
-  这个 128 位变体与参考实现不同，而且安全性更弱。
-  之所以保留这个版本，是因为在编写它时，SipHash 还没有官方的 128 位扩展。
-  新项目应优先使用 [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed)。
-</Tip>
+:::tip 新项目请使用 sipHash128ReferenceKeyed
+这个 128 位变体与参考实现不同，而且安全性更弱。
+之所以保留这个版本，是因为在编写它时，SipHash 还没有官方的 128 位扩展。
+新项目应优先使用 [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed)。
+:::
 
 **语法**
 
@@ -1908,7 +1904,7 @@ sipHash128Keyed((k0, k1), [arg1, arg2, ...])
 
 **参数**
 
-* `(k0, k1)` — 由两个 UInt64 值组成、表示键的 Tuple。[`Tuple(UInt64, UInt64)`](/zh/reference/data-types/tuple)
+* `(k0, k1)` — 由两个 UInt64 值组成、表示密钥的 Tuple。[`Tuple(UInt64, UInt64)`](/zh/reference/data-types/tuple)
 * `arg1[, arg2, ...]` — 用于计算哈希的数量可变的输入参数。[`Any`](/zh/reference/data-types/index)
 
 **返回值**
@@ -2019,10 +2015,10 @@ SELECT hex(sipHash128Reference('foo', '', 3));
 2. 将前一步计算出的哈希值与第三个输入参数的哈希值，按类似方式再次进行哈希计算。
 3. 对原始输入中其余所有哈希值重复这一计算过程。
 
-<Note>
-  对于参数类型不同但输入值相同的情况，计算出的哈希值可能相同。
-  例如，这会影响不同大小的整数类型、具有相同数据的具名和匿名 `Tuple`，以及具有相同数据的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
-</Note>
+:::note
+对于参数类型不同但输入值相同的情况，计算出的哈希值可能相同。
+例如，这会影响不同大小的整数类型、具有相同数据的具名和匿名 `Tuple`，以及具有相同数据的 `Map` 和对应的 `Array(Tuple(key, value))` 类型。
+:::
 
 **语法**
 

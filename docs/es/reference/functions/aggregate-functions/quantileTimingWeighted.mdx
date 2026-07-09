@@ -29,13 +29,13 @@ El cálculo es preciso si:
 
 De lo contrario, el resultado del cálculo se redondea al múltiplo de 16 ms más cercano.
 
-<Note>
-  Para calcular cuantiles del tiempo de carga de páginas, esta función es más eficaz y precisa que [`quantile`](/es/reference/functions/aggregate-functions/quantile).
-</Note>
+:::note
+Para calcular cuantiles del tiempo de carga de páginas, esta función es más eficaz y precisa que [`quantile`](/es/reference/functions/aggregate-functions/quantile).
+:::
 
-<Note>
-  Si no se pasan valores a la función (al usar `quantileTimingIf`), se devuelve [NaN](/es/reference/data-types/float#nan-and-inf). Esto permite distinguir estos casos de aquellos cuyo resultado es cero. Consulte la [cláusula ORDER BY](/es/reference/statements/select/order-by) para ver notas sobre cómo ordenar valores `NaN`.
-</Note>
+:::note
+Si no se pasan valores a la función (al usar `quantileTimingIf`), se devuelve [NaN](/es/reference/data-types/float#nan-and-inf). Esto permite distinguir estos casos de aquellos cuyo resultado es cero. Consulte la [cláusula ORDER BY](/es/reference/statements/select/order-by) para ver notas sobre cómo ordenar valores `NaN`.
+:::
 
 **Sintaxis**
 

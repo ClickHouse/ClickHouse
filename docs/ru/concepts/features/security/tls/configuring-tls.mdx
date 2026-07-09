@@ -400,7 +400,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
        | 9444            | порт Raft для ClickHouse Keeper   |
 
     3. Проверьте состояние ClickHouse Keeper
-       Обычные команды [из 4 букв (4lW)](/ru/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) не работают с `echo` без TLS; ниже показано, как использовать их с `openssl`.
+       Обычные команды [из 4 букв (4lW)](/ru/guides/oss/deployment-and-scaling/keeper/index#four-letter-word-commands) не работают через `echo` без TLS; вот как использовать эти команды с `openssl`.
        * Запустите интерактивный сеанс в `openssl`
 
     ```bash
@@ -426,7 +426,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ...
     ```
 
-    * Отправьте команды 4LW в сеансе OpenSSL
+    * Введите команды 4LW в сеансе OpenSSL
 
       ```bash
       mntr

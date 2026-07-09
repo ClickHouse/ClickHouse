@@ -12,7 +12,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
-import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse に接続するための公式 JS client です。
 この client は TypeScript で書かれており、client の公開 API 向けの型定義を提供します。
@@ -157,13 +156,13 @@ const client = createClient({
   #### Node.js 固有の設定パラメータ
 </div>
 
-| 設定                                                                             | 説明                                           | デフォルト値 | 関連項目                                                                                                              |
-| ------------------------------------------------------------------------------ | -------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
-| **max&#95;open&#95;connections**?: number                                      | ホストごとに許可されるソケット接続の最大数。                       | `10`   | -                                                                                                                 |
-| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`       | TLS 証明書を設定します。                               | -      | [TLS ドキュメント](/ja/integrations/language-clients/js#tls-certificates-nodejs-only)                                      |
-| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }` | -                                            | -      | [Keep Alive ドキュメント](/ja/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                       |
-| **http&#95;agent**?: http.Agent | https.Agent <br /><ExperimentalBadge />      | クライアント用のカスタム HTTP Agent。                     | -      | [HTTP agent ドキュメント](/ja/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)            |
-| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><ExperimentalBadge />    | basic 認証の認証情報を含む `Authorization` ヘッダーを設定します。 | `true` | [HTTP agent ドキュメントでのこの設定の使用方法](/ja/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
+| 設定                                                                                                  | 説明                                           | デフォルト値 | 関連項目                                                                                                              |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
+| **max&#95;open&#95;connections**?: number                                                           | ホストごとに許可されるソケット接続の最大数。                       | `10`   | -                                                                                                                 |
+| **tls**?: `{ **ca_cert**: Buffer, **cert**?: Buffer, **key**?: Buffer }`                            | TLS 証明書を設定します。                               | -      | [TLS ドキュメント](/ja/integrations/language-clients/js#tls-certificates-nodejs-only)                                      |
+| **keep&#95;alive**?: `{ **enabled**?: boolean, **idle_socket_ttl**?: number }`                      | -                                            | -      | [Keep Alive ドキュメント](/ja/integrations/language-clients/js#keep-alive-configuration-nodejs-only)                       |
+| **http&#95;agent**?: http.Agent | https.Agent <br /><Badge color="green" icon="flask">実験的</Badge>   | クライアント用のカスタム HTTP Agent。                     | -      | [HTTP agent ドキュメント](/ja/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only)            |
+| **set&#95;basic&#95;auth&#95;header**?: boolean <br /><Badge color="green" icon="flask">実験的</Badge> | Basic 認証の認証情報を含む `Authorization` ヘッダーを設定します。 | `true` | [HTTP agent ドキュメントでのこの設定の使用方法](/ja/integrations/language-clients/js#custom-httphttps-agent-experimental-nodejs-only) |
 
 <div id="url-configuration">
   ### URL 設定

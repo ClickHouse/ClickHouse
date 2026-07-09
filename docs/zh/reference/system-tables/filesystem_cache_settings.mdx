@@ -35,6 +35,7 @@ doc_type: 'reference'
 * `keep_free_space_size_ratio` ([Float64](/zh/reference/data-types/index)) — 缓存会在后台尽力维持的空闲空间比例
 * `keep_free_space_elements_ratio` ([Float64](/zh/reference/data-types/index)) — 缓存会在后台尽力维持的空闲元素比例
 * `keep_free_space_remove_batch` ([UInt64](/zh/reference/data-types/index)) — 后台线程为维持空闲空间/元素比例而删除的缓存元素批次大小
+* `keep_free_space_eviction_threads` ([UInt64](/zh/reference/data-types/index)) — 用于在后台维持空闲空间/元素比例时实际执行 File 段删除 (文件系统删除) 的线程数。单个后台线程会收集淘汰候选项并释放其优先队列条目，而这些线程则并行执行无锁删除
 * `invalidated_entries_cleanup_interval_ms` ([UInt64](/zh/reference/data-types/index)) — 后台任务清理已失效 (延迟删除) 的优先队列条目时的空闲间隔 (毫秒)
 * `invalidated_entries_cleanup_threshold` ([UInt64](/zh/reference/data-types/index)) — 累积的已失效优先队列条目数量，达到该数量时会触发后台删除
 * `invalidated_entries_cleanup_remove_batch` ([UInt64](/zh/reference/data-types/index)) — 每次后台迭代中，在单个写锁下删除的已失效优先队列条目最大数量
@@ -51,6 +52,8 @@ doc_type: 'reference'
 * `split_cache_ratio` ([Float64](/zh/reference/data-types/index)) — 在 split&#95;cache 中，system 部分占缓存总大小的比率。
 * `overcommit_eviction_evict_step` ([UInt64](/zh/reference/data-types/index)) — overcommit 驱逐策略的驱逐步长 (以字节为单位) 。用于 keep&#95;free&#95;space&#95;*&#95;ratio 设置
 * `check_cache_probability` ([Float64](/zh/reference/data-types/index)) — 仅适用于 debug 或 sanitizer 构建。通过遍历整个缓存并检查每个缓存元素的状态来验证缓存的正确性
+* `expose_prometheus_eviction_metrics` ([UInt8](/zh/reference/data-types/index)) — 暴露文件系统缓存淘汰活动的 Prometheus 指标 (`filesystem_cache_evictions_total` 等)。默认关闭。可在运行时通过 `SYSTEM RELOAD CONFIG` 切换。
+* `expose_prometheus_eviction_metrics_per_user` ([UInt8](/zh/reference/data-types/index)) — 额外暴露按 user-id 划分的淘汰指标。需要 `expose_prometheus_eviction_metrics`。基数会随着发生淘汰的不同用户数量增加而增长。
 * `is_initialized` ([UInt8](/zh/reference/data-types/index)) — 表示缓存是否已成功初始化
 * `current_size` ([UInt64](/zh/reference/data-types/index)) — 当前缓存大小
 * `current_elements_num` ([UInt64](/zh/reference/data-types/index)) — 当前缓存元素 (File 段) 数量

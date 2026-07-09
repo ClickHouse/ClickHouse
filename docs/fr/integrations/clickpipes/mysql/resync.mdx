@@ -52,5 +52,5 @@ Voici quelques scénarios :
 5. Rendez-vous dans l’onglet **Metrics**.
 6. Au bout d’environ 5 secondes (ou après actualisation de la page), le statut du pipe devrait être **Setup** ou **Snapshot**.
 7. Le chargement initial du Resync peut être suivi dans l’onglet **Tables**, dans la section **Initial Load Stats**.
-8. Une fois le chargement initial terminé, le pipe échangera de manière atomique les tables `_resync` avec les tables d’origine. Pendant cet échange, le statut sera **Resync**.
-9. Une fois l’échange terminé, le pipe passera à l’état **Running** et effectuera le CDC s’il est activé.
+8. Une fois le chargement initial terminé, le pipe effectuera de manière atomique la permutation des tables `_resync` avec les tables d’origine. Pendant cette permutation, le statut sera **Resync**.
+9. Une fois la permutation terminée, le pipe passera à l’état **Running** et effectuera le CDC s’il est activé.

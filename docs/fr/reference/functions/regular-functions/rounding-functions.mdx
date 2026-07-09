@@ -250,27 +250,24 @@ Si le nombre à arrondir se trouve exactement à mi-chemin entre deux nombres, l
 * Si `N < 0`, la fonction arrondit à gauche de la virgule
 * Si `N = 0`, la fonction arrondit à l’entier le plus proche
 
-<Info>
-  **Notes**
+:::info Notes
 
-  * Lorsque le nombre à arrondir se trouve exactement à mi-chemin entre deux nombres, il est arrondi vers le chiffre pair le plus proche à la position décimale spécifiée.
-    Par exemple : `3.5` s’arrondit à `4`, `2.5` s’arrondit à `2`.
-  * La fonction `round` applique le même arrondi aux nombres à virgule flottante.
-  * La fonction `roundBankers` arrondit également les entiers de la même manière, par exemple `roundBankers(45, -1) = 40`.
-  * Dans les autres cas, la fonction arrondit les nombres à l’entier le plus proche.
-</Info>
+* Lorsque le nombre à arrondir se trouve exactement à mi-chemin entre deux nombres, il est arrondi vers le chiffre pair le plus proche à la position décimale spécifiée.
+  Par exemple : `3.5` s’arrondit à `4`, `2.5` s’arrondit à `2`.
+* La fonction `round` applique le même arrondi aux nombres à virgule flottante.
+* La fonction `roundBankers` arrondit également les entiers de la même manière, par exemple `roundBankers(45, -1) = 40`.
+* Dans les autres cas, la fonction arrondit les nombres à l’entier le plus proche.
+  :::
 
-<Tip>
-  **Utilisez l’arrondi bancaire pour les additions et les soustractions**
+:::tip Utilisez l’arrondi bancaire pour les additions et les soustractions
+L’arrondi bancaire permet de réduire l’effet de l’arrondi sur les résultats de l’addition ou de la soustraction de ces nombres.
 
-  L’arrondi bancaire permet de réduire l’effet de l’arrondi sur les résultats de l’addition ou de la soustraction de ces nombres.
+Par exemple, additionnez les nombres `1.5, 2.5, 3.5, 4.5` avec différents types d’arrondi :
 
-  Par exemple, additionnez les nombres `1.5, 2.5, 3.5, 4.5` avec différents types d’arrondi :
-
-  * Sans arrondi : `1.5 + 2.5 + 3.5 + 4.5 = 12`.
-  * Arrondi bancaire : `2 + 2 + 4 + 4 = 12`.
-  * Arrondi à l’entier le plus proche : `2 + 3 + 4 + 5 = 14`.
-</Tip>
+* Sans arrondi : `1.5 + 2.5 + 3.5 + 4.5 = 12`.
+* Arrondi bancaire : `2 + 2 + 4 + 4 = 12`.
+* Arrondi à l’entier le plus proche : `2 + 3 + 4 + 5 = 14`.
+  :::
 
 **Syntaxe**
 

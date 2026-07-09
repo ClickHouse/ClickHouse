@@ -24,7 +24,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ### 1. 自動バックアップでバイナリログを有効にする
 </div>
 
-MySQL でバイナリログを有効にするには、自動バックアップ機能を有効にする必要があります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** に移動し、**Enable automated backups** チェックボックスをオンにすることで、インスタンスに設定できます (まだ有効になっていない場合) 。
+MySQL でバイナリログを有効にするには、自動バックアップ機能を有効にする必要があります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** に移動し、**Enable automated backups** チェックボックスをオンにすることで、インスタンスに設定できます (まだ有効になっていない場合)。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Aurora で自動バックアップを有効にする" size="lg" border />
 
@@ -142,7 +142,7 @@ GTID ベースのレプリケーションは、Amazon Aurora MySQL v2 (MySQL 5.7
   ### IP ベースのアクセス制御
 </div>
 
-Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を Aurora のセキュリティグループの **Inbound rules** に追加します。
+Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/home#list-of-static-ips) を、Aurora のセキュリティグループの **Inbound rules** に追加します。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Aurora MySQL でセキュリティグループはどこで確認できますか？" size="lg" border />
 
@@ -158,4 +158,4 @@ Aurora MySQL インスタンスにプライベートネットワーク経由で�
   ## 次のステップ
 </div>
 
-これで、Amazon Aurora MySQL インスタンスは binlog レプリケーション向けに設定され、ClickHouse Cloud への安全な接続も完了しました。[最初の MySQL ClickPipe を作成](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)できます。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL よくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。
+Amazon Aurora MySQL インスタンスで binlogレプリケーションが設定され、ClickHouse Cloud への安全な接続が確立されたら、[最初の MySQL ClickPipe を作成できます](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)。MySQL CDC (変更データキャプチャ) に関する一般的な質問については、[MySQL よくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。

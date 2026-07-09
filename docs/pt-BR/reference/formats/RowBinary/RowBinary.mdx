@@ -1289,7 +1289,7 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
   ### QBit
 </div>
 
-`QBit` é um tipo de vetor para consultas eficientes com diferentes níveis de precisão. Internamente, ele é armazenado em formato transposto. Na transmissão, QBit é simplesmente um `Array` do tipo de elemento subjacente (`Float32`, `Float64` ou `BFloat16`). A otimização de transposição de bits para armazenamento acontece no lado do servidor, não no protocolo RowBinary.
+`QBit` é um tipo de vetor para consultas eficientes com diferentes níveis de precisão. Internamente, ele é armazenado em formato transposto. Na transmissão, QBit é simplesmente um `Array` do tipo de elemento subjacente (`Int8`, `Float32`, `Float64` ou `BFloat16`). A otimização de transposição de bits para armazenamento acontece no lado do servidor, não no protocolo RowBinary.
 
 Sintaxe:
 
@@ -1297,13 +1297,13 @@ Sintaxe:
 QBit(element_type, dimension)
 ```
 
-Onde `element_type` é `Float32`, `Float64` ou `BFloat16`, e `dimension` é a dimensão fixa do vetor.
+Onde `element_type` é `Int8`, `Float32`, `Float64` ou `BFloat16`, e `dimension` é a dimensão fixa do vetor.
 
 wire format: idêntico a `Array(element_type)`:
 
 ```text
-// comprimento LEB128
-// seguido de `length` elementos de `element_type`
+// LEB128 length
+// followed by `length` elements of `element_type`
 ```
 
 Exemplo de codificação de `QBit(Float32, 4)` contendo `[1.0, 2.0, 3.0, 4.0]`:
@@ -1313,11 +1313,11 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 ```
 
 ```text
-0x04,                   // LEB128 - array tem 4 elementos
-0x00, 0x00, 0x80, 0x3F, // 1.0 como Float32
-0x00, 0x00, 0x00, 0x40, // 2.0 como Float32
-0x00, 0x00, 0x40, 0x40, // 3.0 como Float32
-0x00, 0x00, 0x80, 0x40, // 4.0 como Float32
+0x04,                   // LEB128 - array has 4 elements
+0x00, 0x00, 0x80, 0x3F, // 1.0 as Float32
+0x00, 0x00, 0x00, 0x40, // 2.0 as Float32
+0x00, 0x00, 0x40, 0x40, // 3.0 as Float32
+0x00, 0x00, 0x80, 0x40, // 4.0 as Float32
 ```
 
 <div id="format-settings">

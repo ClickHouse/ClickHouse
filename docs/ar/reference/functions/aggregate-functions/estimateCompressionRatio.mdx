@@ -13,12 +13,12 @@ doc_type: 'reference'
 
 أُضيف في: v25.4.0
 
-تُقدِّر نسبة الضغط لعمود معيّن دون ضغطه فعليًا.
+تُقدِّر الضغط لعمود معيّن دون ضغطه فعليًا.
 
-<Note>
-  في الأمثلة أدناه، ستختلف النتيجة بحسب ترميز الضغط الافتراضي للخادم.
-  راجع [ترميزات ضغط الأعمدة](/ar/reference/statements/create/table#column_compression_codec).
-</Note>
+:::note
+في الأمثلة أدناه، ستختلف النتيجة بحسب ترميز الضغط الافتراضي للخادم.
+راجع [ترميزات ضغط الأعمدة](/ar/reference/statements/create/table#column_compression_codec).
+:::
 
 **الصيغة**
 
@@ -37,7 +37,7 @@ estimateCompressionRatio([codec, block_size_bytes])(column)
 
 **القيمة المرجعة**
 
-تعيد قيمة تقديرية لنسبة الضغط للعمود المحدد. [`Float64`](/ar/reference/data-types/float)
+تعيد قيمة تقديرية للضغط للعمود المحدد. [`Float64`](/ar/reference/data-types/float)
 
 **أمثلة**
 

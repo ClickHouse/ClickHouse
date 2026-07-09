@@ -15,9 +15,9 @@ Introduit dans : v25.6.0
 
 Fonction d’agrégation qui prend des données de séries temporelles sous forme de paires d’horodatages et de valeurs, et calcule un [irate de type PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) à partir de ces données sur une grille temporelle régulière définie par un horodatage de début, un horodatage de fin et un pas. Pour chaque point de la grille, les échantillons utilisés pour calculer `irate` sont pris en compte dans la fenêtre temporelle spécifiée.
 
-<Warning>
-  Cette fonction est expérimentale. Pour l’activer, définissez `allow_experimental_ts_to_grid_aggregate_function=true`.
-</Warning>
+:::warning
+Cette fonction est expérimentale. Pour l’activer, définissez `allow_experimental_ts_to_grid_aggregate_function=true`.
+:::
 
 **Syntaxe**
 
@@ -46,6 +46,7 @@ Renvoie les valeurs `irate` sur la grille spécifiée. Le tableau renvoyé conti
 **Utilisation de base avec des paires horodatage-valeur individuelles**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -74,6 +75,7 @@ FROM
 **Utilisation d’arguments de type Array**
 
 ```sql title=Query
+SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,

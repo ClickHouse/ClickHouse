@@ -47,10 +47,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     在 EC2 实例上，验证元数据服务是否可访问：
 
     ```bash
-    # 获取元数据令牌 (IMDSv2)
+    # Get metadata token (IMDSv2)
     TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
-    # 验证实例元数据
+    # Verify instance metadata
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region
     curl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-type
@@ -73,15 +73,15 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     确认您的 EC2 实例正在写入 syslog 文件：
 
     ```bash
-    # Ubuntu 实例
+    # Ubuntu instances
     ls -la /var/log/syslog
 
-    # Amazon Linux / RHEL 实例
+    # Amazon Linux / RHEL instances
     ls -la /var/log/messages
 
-    # 查看最近的日志条目
+    # View recent entries
     tail -20 /var/log/syslog
-    # 或
+    # or
     tail -20 /var/log/messages
     ```
   </Step>
@@ -92,14 +92,14 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     在 EC2 实例上安装 OpenTelemetry Collector Contrib 发行版：
 
     ```bash
-    # 下载最新版本
+    # Download the latest release
     wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.114.0/otelcol-contrib_0.114.0_linux_amd64.tar.gz
 
-    # 解压并安装
+    # Extract and install
     tar -xvf otelcol-contrib_0.114.0_linux_amd64.tar.gz
     sudo mv otelcol-contrib /usr/local/bin/
 
-    # 验证安装
+    # Verify installation
     otelcol-contrib --version
     ```
   </Step>
@@ -366,7 +366,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
             value: "ec2-demo"
 
     processors:
-      # 为演示模拟 EC2 元数据（无需真实 EC2 实例）
+      # Simulate EC2 metadata for demo (no real EC2 instance required)
       resource:
         attributes:
           - key: service.name
@@ -624,7 +624,7 @@ sudo journalctl -u otelcol-contrib -n 50
 * 为安全监控 (SSH 尝试、sudo 使用情况、防火墙拦截) 创建自定义仪表盘
 
 <div id="going-to-production">
-  ## 生产环境部署
+  ## 用于生产环境
 </div>
 
-本指南将 OpenTelemetry Collector 直接安装到 EC2 实例上，这是进行主机级监控时推荐的生产环境部署方式。若要在大量实例之间统一管理采集器，可考虑使用配置管理工具 (Ansible、Chef、Puppet) ；在 Kubernetes 环境中，则可使用 OpenTelemetry Operator。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南介绍如何将 OpenTelemetry Collector 直接安装到 EC2 实例上，这是主机级监控推荐采用的生产环境部署方式。若要在大量实例上管理采集器，建议使用配置管理工具 (Ansible、Chef、Puppet) ，或在 Kubernetes 环境中使用 OpenTelemetry Operator。有关生产环境配置，请参见[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

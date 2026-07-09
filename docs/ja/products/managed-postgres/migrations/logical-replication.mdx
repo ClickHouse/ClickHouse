@@ -57,7 +57,7 @@ dig +short <your-managed-postgres-hostname>
   ## ソースデータベースのスキーマのみをダンプする
 </div>
 
-論理レプリケーションを設定する前に、移行先データベースの ClickHouse Managed Postgres データベースにスキーマを作成する必要があります。これには、`pg_dump` を使用してソースデータベースのスキーマのみのダンプを作成します。
+論理レプリケーションを設定する前に、移行先の ClickHouse Managed Postgres データベースにスキーマを作成する必要があります。これには、`pg_dump` を使用してソースデータベースのスキーマのみのダンプを作成します。
 
 ```shell
 pg_dump \
@@ -130,10 +130,10 @@ CREATE PUBLICATION <pub_name> FOR TABLE table1, table2...;
 </Info>
 
 <div id="migration-logical-replication-create-subscription">
-  ### 移行先データベースのClickHouse Managed Postgresデータベースにsubscriptionを作成する
+  ### 移行先の ClickHouse Managed Postgres データベースにsubscriptionを作成する
 </div>
 
-次に、移行先データベースのClickHouse Managed Postgresデータベースに接続し、ソースデータベースのpublicationに接続するsubscriptionを作成します。
+次に、移行先の ClickHouse Managed Postgres データベースに接続し、ソースデータベースのpublicationに接続するsubscriptionを作成します。
 
 ```sql
 CREATE SUBSCRIPTION demo_rds_subscription
@@ -147,7 +147,7 @@ PUBLICATION <pub_name_you_entered_above>;
 
 <Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="論理レプリケーション後の移行結果" size="xl" border />
 
-以降、ソースデータベースに新たに挿入された行は、ほぼリアルタイムで移行先データベースの ClickHouse Managed Postgres データベースにレプリケートされます。
+以降、ソースデータベースに新たに挿入された行は、ほぼリアルタイムで移行先の ClickHouse Managed Postgres データベースにレプリケートされます。
 
 <div id="migration-logical-replication-caveats">
   ## 注意事項と考慮点
@@ -162,6 +162,6 @@ PUBLICATION <pub_name_you_entered_above>;
   ## 次のステップ
 </div>
 
-おめでとうございます。pg&#95;dump と pg&#95;restore を使用して、PostgreSQL データベースを ClickHouse Managed Postgres へ正常に移行できました。これで、Managed Postgres の機能や ClickHouse とのインテグレーションを試す準備は万全です。まずは 10 分で始められるクイックスタートをご覧ください。
+おめでとうございます。pg&#95;dump と pg&#95;restore を使用して、PostgreSQL データベースを ClickHouse Managed Postgres に正常に移行できました。これで、Managed Postgres の機能や ClickHouse とのインテグレーションを活用する準備が整いました。使い始めるには、次の 10 分間のクイックスタートをご覧ください。
 
 * [Managed Postgres クイックスタートガイド](/ja/products/managed-postgres/quickstart)

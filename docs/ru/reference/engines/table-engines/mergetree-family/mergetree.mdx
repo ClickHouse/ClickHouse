@@ -982,7 +982,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 Помимо локальных блочных устройств, ClickHouse поддерживает следующие типы хранилищ:
 
 * [`s3` для S3 и MinIO](#table_engine-mergetree-s3)
-* [`gcs` для GCS](/ru/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` для GCS](/ru/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` для Azure Blob Storage](/ru/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` для HDFS](/ru/reference/engines/table-engines/integrations/hdfs)
 * [`web` для доступа только для чтения через веб](/ru/concepts/features/configuration/server-config/storing-data#web-storage)

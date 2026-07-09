@@ -432,11 +432,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * Surveillez plusieurs brokers Kafka en ajoutant des instances JMX Metric Gatherer supplémentaires avec des attributs de ressource `kafka.broker.id` uniques
 
 <div id="going-to-production">
-  ## Mise en production
+  ## Passage en production
 </div>
 
-Ce guide envoie les métriques directement du JMX Metric Gatherer au point de terminaison OTLP de ClickStack, ce qui convient bien aux tests et aux petits déploiements.
+Ce guide envoie les métriques directement du JMX Metric Gatherer vers l’endpoint OTLP de ClickStack, ce qui convient bien aux tests et aux petits déploiements.
 
-Pour les environnements de production, déployez votre propre OpenTelemetry Collector en tant qu’agent pour recevoir les métriques du JMX Exporter et les transmettre à ClickStack. Cela apporte le traitement par lots, la résilience et une gestion centralisée de la configuration.
+Pour les environnements de production, déployez votre propre OpenTelemetry Collector comme agent afin de recevoir les métriques du JMX Exporter et de les transmettre à ClickStack. Cela apporte le traitement par lots, la résilience et une gestion centralisée de la configuration.
 
-Consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour connaître les schémas de déploiement en production et voir des exemples de configuration du collecteur.
+Consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour découvrir des modèles de déploiement en production et des exemples de configuration du collector.

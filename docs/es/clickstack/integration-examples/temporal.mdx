@@ -130,13 +130,13 @@ En esta sección se explica cómo configurar ClickStack mediante la configuraci�
     ```yaml
     services:
       clickstack:
-        # ... configuración existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
         volumes:
           - ./temporal-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - ./temporal.key:/etc/otelcol-contrib/temporal.key:ro
-          # ... otros volúmenes ...
+          # ... other volumes ...
     ```
 
     ##### Opción 2: `docker run` (imagen todo en uno)
@@ -167,7 +167,7 @@ En esta sección se explica cómo configurar ClickStack mediante la configuraci�
 </Steps>
 
 <div id="dashboards">
-  ## Dashboards y visualizaciones
+  ## Dashboards y visualización
 </div>
 
 Para ayudarte a empezar a monitorear Temporal Cloud con ClickStack, proporcionamos algunas visualizaciones de ejemplo para las métricas de Temporal.
@@ -296,7 +296,7 @@ Si ClickStack no puede conectarse a Temporal Cloud, asegúrate de que tu archivo
 * Supervisa varias cuentas de Temporal Cloud duplicando la configuración del receiver con distintos endpoints y nombres de servicio
 
 <div id="going-to-production">
-  ## Paso a producción
+  ## Preparación para producción
 </div>
 
-Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver la configuración de producción.

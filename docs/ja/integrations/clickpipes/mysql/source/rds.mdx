@@ -24,7 +24,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   ### 1. 自動バックアップでバイナリログを有効にする
 </div>
 
-自動バックアップ機能の設定によって、MySQL のバイナリログの有効／無効が決まります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** の順に進み、**Enable automated backups** チェックボックスを選択すると、対象のインスタンスで設定できます (まだ選択していない場合) 。
+自動バックアップ機能の設定によって、MySQL のバイナリログの有効／無効が決まります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** の順に進み、**Enable automated backups** チェックボックスを選択すると、対象のインスタンスで設定できます (まだ選択していない場合)。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS で自動バックアップを有効にする" size="lg" border />
 
@@ -162,4 +162,4 @@ Aurora MySQL インスタンスへのトラフィックを制限するには、[
   ## 次のステップ
 </div>
 
-Amazon RDS MySQL インスタンスでの binlog レプリケーションと、ClickHouse Cloud への安全な接続の設定が完了したら、[最初の MySQL ClickPipe を作成](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)できます。MySQL CDC に関するよくある質問は、[MySQL のよくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。
+Amazon RDS MySQLインスタンスでbinlogレプリケーションの設定が完了し、ClickHouse Cloud への安全な接続も確立できたら、[最初の MySQL ClickPipe を作成](/ja/integrations/clickpipes/mysql/index#create-your-clickpipe)できます。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL のよくある質問ページ](/ja/integrations/clickpipes/mysql/faq)を参照してください。

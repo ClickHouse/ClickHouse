@@ -61,7 +61,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
   في الخطوة الأولى، جمعتَ تفاصيل الاتصال — أدخِل URL الخاص بالمضيف، والمنفذ، واسم المستخدم، وكلمة المرور، واسم قاعدة البيانات، ثم اختبر الاتصال.
 
 <Tip>
-  أدخل اسم المضيف فقط في حقل **Host** (على سبيل المثال، `your-host.clickhouse.cloud`) من دون أي بادئة بروتوكول مثل `https://`.
+  أدخِل اسم المضيف فقط في حقل **Host** (على سبيل المثال، `your-host.clickhouse.cloud`) من دون أي بادئة بروتوكول مثل `https://`.
 
   بالنسبة إلى اتصالات ClickHouse Cloud، يجب إضافة `?ssl=true` إلى حقل **URL** أسفل المضيف. يجب أن يكون JDBC URL الكامل على النحو التالي:
 
@@ -69,7 +69,7 @@ import CommunityMaintainedBadge from "/snippets/ar/components/CommunityMaintaine
 
   يتطلب ClickHouse Cloud تشفير SSL لجميع الاتصالات. ومن دون المعلَمة `?ssl=true`، ستظهر أخطاء &quot;Connection reset&quot; حتى مع بيانات الاعتماد الصحيحة.
 
-  لمزيد من التفاصيل حول إعدادات JDBC URL، يُرجى الرجوع إلى [repository الخاص بـ برنامج تشغيل ClickHouse JDBC](https://github.com/ClickHouse/clickhouse-java).
+  لمزيد من التفاصيل حول إعدادات JDBC URL، يُرجى الرجوع إلى repository [ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java).
 </Tip>
 
 <Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="نموذج تفاصيل الاتصال في DataGrip مع إعدادات ClickHouse" />

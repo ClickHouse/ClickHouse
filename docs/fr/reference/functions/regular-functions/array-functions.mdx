@@ -98,14 +98,14 @@ arrayAUCPR(scores, labels[, partial_offsets])
   * `higher_partitions_fp` : Le nombre d’étiquettes négatives dans les partitions ayant les scores les plus élevés.
   * `total_positives` : Le nombre total d’échantillons positifs dans l’ensemble du jeu de données.
 
-<Note>
-  Lorsque `arr_partial_offsets` est utilisé, `arr_scores` et `arr_labels` ne doivent représenter qu’une partition de l’ensemble du jeu de données, contenant un intervalle de scores.
-  Le jeu de données doit être divisé en partitions contiguës, où chaque partition contient le sous-ensemble de données dont les scores se situent dans une plage spécifique.
-  Par exemple :
+:::note
+Lorsque `arr_partial_offsets` est utilisé, `arr_scores` et `arr_labels` ne doivent représenter qu’une partition de l’ensemble du jeu de données, contenant un intervalle de scores.
+Le jeu de données doit être divisé en partitions contiguës, où chaque partition contient le sous-ensemble de données dont les scores se situent dans une plage spécifique.
+Par exemple :
 
-  * Une partition peut contenir tous les scores dans l’intervalle [0, 0.5).
-  * Une autre partition peut contenir les scores dans l’intervalle [0.5, 1.0].
-</Note>
+* Une partition peut contenir tous les scores dans l’intervalle [0, 0.5).
+* Une autre partition peut contenir les scores dans l’intervalle [0.5, 1.0].
+  :::
 
 **Valeur renvoyée**
 
@@ -667,9 +667,9 @@ Introduit dans : v23.5.0
 
 Renvoie le produit scalaire de deux tableaux.
 
-<Note>
-  Les deux vecteurs doivent être de même taille. Les Array et les Tuple peuvent également contenir des éléments de types différents.
-</Note>
+:::note
+Les deux vecteurs doivent être de même taille. Les tableaux et les Tuple peuvent également contenir des éléments de types différents.
+:::
 
 **Syntaxe**
 
@@ -679,16 +679,17 @@ arrayDotProduct(v1, v2)
 
 **Arguments**
 
-* `v1` — Premier vecteur. [`Array((U)Int* | Float* | Decimal)`](/fr/reference/data-types/array) ou [`Tuple((U)Int* | Float* | Decimal)`](/fr/reference/data-types/tuple)
-* `v2` — Deuxième vecteur. [`Array((U)Int* | Float* | Decimal)`](/fr/reference/data-types/array) ou [`Tuple((U)Int* | Float* | Decimal)`](/fr/reference/data-types/tuple)
+* `v1` — Premier vecteur. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/fr/reference/data-types/array) ou [`Tuple((U)Int* | Float* | Decimal)`](/fr/reference/data-types/tuple)
+* `v2` — Deuxième vecteur. [`Array((U)Int* | Float* | BFloat16 | Decimal)`](/fr/reference/data-types/array) ou [`Tuple((U)Int* | Float* | Decimal)`](/fr/reference/data-types/tuple)
 
-**Valeur de retour**
+**Valeur renvoyée**
 
 Le produit scalaire des deux vecteurs.
 
-<Note>
-  Le type de retour dépend du type des arguments. Si des Array ou des Tuple contiennent des types d&#39;éléments mixtes, le type du résultat est le supertype.
-</Note>
+:::note
+Le type de retour dépend du type des arguments. Si des tableaux ou des Tuple contiennent des types d&#39;éléments mixtes, le type du résultat est le supertype.
+Deux tableaux `BFloat16` accumulent et renvoient un `Float32` (la même règle que pour deux tableaux `Float32`).
+:::
 
 [`(U)Int*`](/fr/reference/data-types/int-uint) ou [`Float*`](/fr/reference/data-types/float) ou [`Decimal`](/fr/reference/data-types/decimal)
 
@@ -724,9 +725,9 @@ Récupère l&#39;élément du tableau fourni à l&#39;indice `n`, où `n` peut �
 Si l&#39;indice est en dehors des limites du tableau, la fonction renvoie une valeur par défaut (0 pour les nombres, une chaîne vide pour les chaînes de caractères, etc.),
 sauf pour les arguments correspondant à un tableau non constant et à un indice constant égal à 0. Dans ce cas, l&#39;erreur `Array indices are 1-based` est renvoyée.
 
-<Note>
-  Les tableaux dans ClickHouse sont indexés à partir de 1.
-</Note>
+:::note
+Les tableaux dans ClickHouse sont indexés à partir de 1.
+:::
 
 Les indices négatifs sont pris en charge. Dans ce cas, l&#39;élément correspondant est sélectionné en comptant depuis la fin. Par exemple, `arr[-1]` est le dernier élément du tableau.
 
@@ -797,9 +798,9 @@ Introduit dans : v1.1.0
 Renvoie l’élément du tableau fourni à l’indice `n`, où `n` peut être de n’importe quel type entier.
 Si l’indice est hors des limites du tableau, `NULL` est renvoyé au lieu d’une valeur par défaut.
 
-<Note>
-  Les tableaux dans ClickHouse sont indexés à partir de 1.
-</Note>
+:::note
+Les tableaux dans ClickHouse sont indexés à partir de 1.
+:::
 
 Les indices négatifs sont pris en charge. Dans ce cas, l’élément correspondant est sélectionné en comptant depuis la fin. Par exemple, `arr[-1]` est le dernier élément du tableau.
 
@@ -1731,6 +1732,10 @@ et avec les fonctions d’agrégation, qui prennent un groupe de lignes et les &
 Toutes les valeurs des colonnes sont simplement copiées, à l’exception de celles de la colonne à laquelle cette fonction est appliquée ;
 celles-ci sont remplacées par la valeur correspondante du tableau.
 
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
+
 **Syntaxe**
 
 ```sql
@@ -1785,7 +1790,7 @@ WHERE arrayJoin(cities) IN ['Istanbul', 'Berlin'];
 **Utiliser plusieurs fonctions arrayJoin**
 
 ```sql title=Query
-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
+-- A query can use multiple arrayJoin functions. In this case, the transformation is performed multiple times and the rows are multiplied.
 
 SELECT
     sum(1) AS impressions,
@@ -1800,16 +1805,19 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    city,
+    browser
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           2 │ Istanbul │ Chrome  │
-│           1 │ Istanbul │ Firefox │
 │           2 │ Berlin   │ Chrome  │
 │           1 │ Berlin   │ Firefox │
 │           2 │ Bobruisk │ Chrome  │
 │           1 │ Bobruisk │ Firefox │
+│           2 │ Istanbul │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -1818,7 +1826,7 @@ GROUP BY
 ```sql title=Query
 -- Using multiple arrayJoin with the same expression may not produce the expected result due to optimizations.
 -- For these cases, consider modifying the repeated array expression with extra operations that do not affect join result.
-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
+-- e.g. arrayJoin(arraySort(arr)), arrayJoin(arrayConcat(arr, []))
 
 SELECT
     arrayJoin(dice) as first_throw,
@@ -1892,13 +1900,16 @@ ARRAY JOIN
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -1920,13 +1931,16 @@ FROM
 GROUP BY
     2,
     3
+ORDER BY
+    2,
+    3
 ```
 
 ```response title=Response
 ┌─impressions─┬─city─────┬─browser─┐
-│           1 │ Istanbul │ Firefox │
 │           1 │ Berlin   │ Chrome  │
 │           1 │ Bobruisk │ Chrome  │
+│           1 │ Istanbul │ Firefox │
 └─────────────┴──────────┴─────────┘
 ```
 
@@ -2318,9 +2332,13 @@ Introduit dans : v23.2.0
 
 Cette fonction est identique à `arrayReverseSort`, mais avec un argument `limit` supplémentaire permettant un tri partiel.
 
-<Tip>
-  Pour conserver uniquement les éléments triés, utilisez `arrayResize`.
-</Tip>
+:::tip
+Pour conserver uniquement les éléments triés, utilisez `arrayResize`.
+:::
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2331,7 +2349,7 @@ arrayPartialReverseSort([f,] limit, arr [, arr1, ... ,arrN])
 **Arguments**
 
 * `f(arr[, arr1, ... ,arrN])` — La fonction lambda à appliquer aux éléments du tableau `x`. [`Fonction lambda`](/fr/reference/functions/regular-functions/overview#arrow-operator-and-lambda)
-* `limit` — Valeur d’indice jusqu’à laquelle le tri s’effectue. [`(U)Int*`](/fr/reference/data-types/int-uint)
+* `limit` — Valeur d’index jusqu’à laquelle le tri s’effectue. [`(U)Int*`](/fr/reference/data-types/int-uint)
 * `arr` — Tableau à trier. [`Array(T)`](/fr/reference/data-types/array)
 * `arr1, ... ,arrN` — N tableaux supplémentaires, dans le cas où `f` accepte plusieurs arguments. [`Array(T)`](/fr/reference/data-types/array)
 
@@ -2402,11 +2420,15 @@ Renvoie un tableau de la même taille que le tableau d&#39;origine, dans lequel 
 du tableau d&#39;origine. Les éléments restants `(limit..n]` doivent contenir les éléments qui ne figurent pas dans l&#39;intervalle `[1..limit]`, dans un ordre indéfini.
 La valeur de `limit` doit être comprise dans l&#39;intervalle `[1..n]`. Les valeurs en dehors de cet intervalle reviennent à effectuer un `arrayShuffle` complet :
 
-<Note>
-  Cette fonction ne matérialisera pas les constantes.
+:::note
+Cette fonction ne matérialisera pas les constantes.
 
-  La valeur de `limit` doit être comprise dans l&#39;intervalle `[1..N]`. Les valeurs en dehors de cet intervalle reviennent à effectuer un [`arrayShuffle`](#arrayShuffle) complet.
-</Note>
+La valeur de `limit` doit être comprise dans l&#39;intervalle `[1..N]`. Les valeurs en dehors de cet intervalle reviennent à effectuer un [`arrayShuffle`](#arrayShuffle) complet.
+:::
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2495,9 +2517,13 @@ Introduit dans : v23.2.0
 
 Cette fonction est identique à `arraySort`, mais avec un argument `limit` supplémentaire qui permet un tri partiel.
 
-<Tip>
-  Pour conserver uniquement les éléments triés, utilisez `arrayResize`.
-</Tip>
+:::tip
+Pour conserver uniquement les éléments triés, utilisez `arrayResize`.
+:::
+
+:::note
+Cette fonction est non-déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -2705,13 +2731,14 @@ arrayPushBack(arr, x)
 * `x` —
 * Valeur unique à ajouter à la fin du tableau. [`Array(T)`](/fr/reference/data-types/array).
 
-<Note>
-  - Seuls des nombres peuvent être ajoutés à un tableau de nombres, et seules des chaînes peuvent être ajoutées à un tableau de chaînes.
-  - Lors de l’ajout de nombres, ClickHouse définit automatiquement le type de `x` en fonction du type de données du tableau.
-  - Peut être `NULL`. La fonction ajoute un élément `NULL` à un tableau, et le type des éléments du tableau est converti en `Nullable`.
+:::note
 
-  Pour plus d’informations sur les types de données dans ClickHouse, consultez [Types de données](/fr/reference/data-types/index).
-</Note>
+* Seuls des nombres peuvent être ajoutés à un tableau de nombres, et seules des chaînes peuvent être ajoutées à un tableau de chaînes.
+* Lors de l’ajout de nombres, ClickHouse définit automatiquement le type de `x` en fonction du type de données du tableau.
+* Peut être `NULL`. La fonction ajoute un élément `NULL` à un tableau, et le type des éléments du tableau est converti en `Nullable`.
+
+Pour plus d’informations sur les types de données dans ClickHouse, consultez [Types de données](/fr/reference/data-types/index).
+:::
 
 **Valeur renvoyée**
 
@@ -2748,13 +2775,14 @@ arrayPushFront(arr, x)
 * `arr` — Tableau auquel ajouter la valeur `x` à la fin. [`Array(T)`](/fr/reference/data-types/array). - `x` —
 * Valeur unique à ajouter au début du tableau. [`Array(T)`](/fr/reference/data-types/array).
 
-<Note>
-  - Seuls des nombres peuvent être ajoutés à un tableau de nombres, et seules des chaînes peuvent être ajoutées à un tableau de chaînes.
-  - Lors de l&#39;ajout de nombres, ClickHouse définit automatiquement le type de `x` en fonction du type de données du tableau.
-  - Peut être `NULL`. La fonction ajoute un élément `NULL` au tableau, et le type des éléments du tableau devient `Nullable`.
+:::note
 
-  Pour plus d&#39;informations sur les types de données dans ClickHouse, consultez [Types de données](/fr/reference/data-types/index).
-</Note>
+* Seuls des nombres peuvent être ajoutés à un tableau de nombres, et seules des chaînes peuvent être ajoutées à un tableau de chaînes.
+* Lors de l’ajout de nombres, ClickHouse définit automatiquement le type de `x` en fonction du type de données du tableau.
+* Peut être `NULL`. La fonction ajoute un élément `NULL` au tableau, et le type des éléments du tableau devient `Nullable`.
+
+Pour plus d’informations sur les types de données dans ClickHouse, consultez [Types de données](/fr/reference/data-types/index).
+:::
 
 **Valeur renvoyée**
 
@@ -2762,7 +2790,7 @@ Renvoie un tableau identique à `arr`, mais avec une valeur supplémentaire `x` 
 
 **Exemples**
 
-**Exemple d&#39;utilisation**
+**Exemple d’utilisation**
 
 ```sql title=Query
 SELECT arrayPushFront(['b'], 'a') AS res;
@@ -2805,14 +2833,14 @@ arrayROCAUC(scores, labels[, scale[, partial_offsets]])
   * `total_positives` : Le nombre total d’échantillons positifs dans l’ensemble du jeu de données.
   * `total_negatives` : Le nombre total d’échantillons négatifs dans l’ensemble du jeu de données.
 
-<Note>
-  Lorsque `arr_partial_offsets` est utilisé, `arr_scores` et `arr_labels` ne doivent représenter qu’une partition de l’ensemble du jeu de données, contenant un intervalle de scores.
-  Le jeu de données doit être divisé en partitions contiguës, chaque partition contenant le sous-ensemble de données dont les scores se situent dans une plage spécifique.
-  Par exemple :
+:::note
+Lorsque `arr_partial_offsets` est utilisé, `arr_scores` et `arr_labels` ne doivent représenter qu’une partition de l’ensemble du jeu de données, contenant un intervalle de scores.
+Le jeu de données doit être divisé en partitions contiguës, chaque partition contenant le sous-ensemble de données dont les scores se situent dans une plage spécifique.
+Par exemple :
 
-  * Une partition peut contenir tous les scores dans la plage [0, 0.5).
-  * Une autre partition peut contenir les scores dans la plage [0.5, 1.0].
-</Note>
+* Une partition peut contenir tous les scores dans la plage [0, 0.5).
+* Une autre partition peut contenir les scores dans la plage [0.5, 1.0].
+  :::
 
 **Valeur renvoyée**
 
@@ -2837,6 +2865,10 @@ SELECT arrayROCAUC([0.1, 0.4, 0.35, 0.8], [0, 0, 1, 1]);
 Introduit dans : v23.10.0
 
 Renvoie un sous-ensemble de `samples` éléments choisis aléatoirement dans un tableau en entrée. Si `samples` dépasse la taille du tableau en entrée, la taille de l’échantillon est limitée à celle du tableau ; autrement dit, tous les éléments du tableau sont renvoyés, mais leur ordre n’est pas garanti. La fonction peut traiter à la fois des tableaux plats et des tableaux imbriqués.
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3087,10 +3119,10 @@ Introduit dans : v1.1.0
 
 Inverse l’ordre des éléments du tableau donné.
 
-<Note>
-  La fonction `reverse(arr)` remplit la même fonction, mais elle s’applique aussi à d’autres types de données
-  en plus des Arrays.
-</Note>
+:::note
+La fonction `reverse(arr)` remplit la même fonction, mais elle s’applique aussi à d’autres types de données
+en plus des tableaux.
+:::
 
 **Syntaxe**
 
@@ -3509,9 +3541,13 @@ Introduite dans : v23.2.0
 Renvoie un tableau de même taille que le tableau d’origine, contenant les éléments dans un ordre aléatoire.
 Les éléments sont réordonnés de sorte que chaque permutation possible a la même probabilité d’apparaître.
 
-<Note>
-  Cette fonction ne matérialise pas les constantes.
-</Note>
+:::note
+Cette fonction ne matérialise pas les constantes.
+:::
+
+:::note
+Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+:::
 
 **Syntaxe**
 
@@ -3540,7 +3576,7 @@ SELECT arrayShuffle([1, 2, 3, 4]);
 [1,4,2,3]
 ```
 
-**Exemple sans seed (résultats stables)**
+**Exemple sans graine (résultats stables)**
 
 ```sql title=Query
 SELECT arrayShuffle([1, 2, 3, 4], 41);
@@ -3781,11 +3817,11 @@ Introduite dans : v25.4.0
 
 Accepte plusieurs tableaux et renvoie un tableau contenant les éléments qui ne sont pas présents dans tous les tableaux source. Le résultat ne contient que des valeurs uniques.
 
-<Note>
-  La différence symétrique de *plus de deux ensembles* est [définie mathématiquement](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)
-  comme l’ensemble de tous les éléments d’entrée présents dans un nombre impair d’ensembles d’entrée.
-  En revanche, la fonction `arraySymmetricDifference` renvoie simplement l’ensemble des éléments d’entrée qui ne sont pas présents dans tous les ensembles d’entrée.
-</Note>
+:::note
+La différence symétrique de *plus de deux ensembles* est [définie mathématiquement](https://en.wikipedia.org/wiki/Symmetric_difference#n-ary_symmetric_difference)
+comme l’ensemble de tous les éléments d’entrée présents dans un nombre impair d’ensembles d’entrée.
+En revanche, la fonction `arraySymmetricDifference` renvoie simplement l’ensemble des éléments d’entrée qui ne sont pas présents dans tous les ensembles d’entrée.
+:::
 
 **Syntaxe**
 
@@ -4019,9 +4055,9 @@ Il comptera ensuite le nombre de tuples uniques. Dans ce cas, `2`.
 
 Tous les tableaux fournis doivent avoir la même longueur.
 
-<Tip>
-  Si vous souhaitez obtenir une liste des éléments uniques d’un tableau, vous pouvez utiliser `arrayReduce('groupUniqArray', arr)`.
-</Tip>
+:::tip
+Si vous souhaitez obtenir une liste des éléments uniques d’un tableau, vous pouvez utiliser `arrayReduce('groupUniqArray', arr)`.
+:::
 
 **Syntaxe**
 
@@ -4213,9 +4249,9 @@ Vérifie si le tableau d’entrée est vide.
 
 Un tableau est considéré comme vide s’il ne contient aucun élément.
 
-<Note>
-  Peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la subcolumn [size0](/fr/reference/data-types/array#array-size) au lieu de lire et de traiter toute la array column. La query `SELECT empty(arr) FROM TABLE;` est transformée en `SELECT arr.size0 = 0 FROM TABLE;`.
-</Note>
+:::note
+Peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la subcolumn [size0](/fr/reference/data-types/array#array-size) au lieu de lire et de traiter toute la array column. La query `SELECT empty(arr) FROM TABLE;` est transformée en `SELECT arr.size0 = 0 FROM TABLE;`.
+:::
 
 La fonction fonctionne également avec les Strings ou les UUIDs.
 
@@ -4251,7 +4287,7 @@ SELECT empty([]);
 
 Introduit dans : v1.1.0
 
-Renvoie un Array de Date vide
+Renvoie un tableau de Date vide
 
 **Syntaxe**
 
@@ -4272,7 +4308,7 @@ Un tableau Date vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayDate
+SELECT emptyArrayDate()
 ```
 
 ```response title=Response
@@ -4297,7 +4333,7 @@ emptyArrayDateTime()
 
 * Aucun.
 
-**Valeur retournée**
+**Valeur renvoyée**
 
 Un tableau DateTime vide. [`Array(T)`](/fr/reference/data-types/array)
 
@@ -4306,7 +4342,7 @@ Un tableau DateTime vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayDateTime
+SELECT emptyArrayDateTime()
 ```
 
 ```response title=Response
@@ -4340,7 +4376,7 @@ Un tableau vide de Float32. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayFloat32
+SELECT emptyArrayFloat32()
 ```
 
 ```response title=Response
@@ -4374,7 +4410,7 @@ Un tableau Float64 vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT emptyArrayFloat64
+SELECT emptyArrayFloat64()
 ```
 
 ```response title=Response
@@ -4408,7 +4444,7 @@ Un tableau vide de type Int16. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayInt16
+SELECT emptyArrayInt16()
 ```
 
 ```response title=Response
@@ -4442,7 +4478,7 @@ Un tableau Int32 vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayInt32
+SELECT emptyArrayInt32()
 ```
 
 ```response title=Response
@@ -4476,7 +4512,7 @@ Un tableau Int64 vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT emptyArrayInt64
+SELECT emptyArrayInt64()
 ```
 
 ```response title=Response
@@ -4510,7 +4546,7 @@ Un tableau Int8 vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT emptyArrayInt8
+SELECT emptyArrayInt8()
 ```
 
 ```response title=Response
@@ -4544,7 +4580,7 @@ Un tableau vide de String. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayString
+SELECT emptyArrayString()
 ```
 
 ```response title=Response
@@ -4615,7 +4651,7 @@ emptyArrayUInt16()
 
 * Aucun.
 
-**Valeur retournée**
+**Valeur renvoyée**
 
 Un tableau UInt16 vide. [`Array(T)`](/fr/reference/data-types/array)
 
@@ -4624,7 +4660,7 @@ Un tableau UInt16 vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayUInt16
+SELECT emptyArrayUInt16()
 ```
 
 ```response title=Response
@@ -4658,7 +4694,7 @@ Un tableau UInt32 vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayUInt32
+SELECT emptyArrayUInt32()
 ```
 
 ```response title=Response
@@ -4692,7 +4728,7 @@ Un tableau UInt64 vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d’utilisation**
 
 ```sql title=Query
-SELECT emptyArrayUInt64
+SELECT emptyArrayUInt64()
 ```
 
 ```response title=Response
@@ -4726,7 +4762,7 @@ Un tableau UInt8 vide. [`Array(T)`](/fr/reference/data-types/array)
 **Exemple d&#39;utilisation**
 
 ```sql title=Query
-SELECT emptyArrayUInt8
+SELECT emptyArrayUInt8()
 ```
 
 ```response title=Response
@@ -5149,10 +5185,10 @@ Introduit dans : v24.12.0
 Renvoie l’indice du premier élément de valeur &#39;x&#39; (à partir de `1`) s’il se trouve dans le tableau.
 Si le tableau ne contient pas la valeur recherchée, la fonction renvoie `0`.
 
-<Note>
-  Contrairement à la fonction `indexOf`, cette fonction suppose que le tableau est trié par
-  ordre croissant. Si le tableau n’est pas trié, les résultats sont indéfinis.
-</Note>
+:::note
+Contrairement à la fonction `indexOf`, cette fonction suppose que le tableau est trié par
+ordre croissant. Si le tableau n’est pas trié, les résultats sont indéfinis.
+:::
 
 **Syntaxe**
 
@@ -5181,78 +5217,6 @@ SELECT indexOfAssumeSorted([1, 3, 3, 3, 4, 4, 5], 4)
 5
 ```
 
-<div id="kql_array_sort_asc">
-  ## kql_array_sort_asc
-</div>
-
-Introduit dans : v23.10.0
-
-Trie un ou plusieurs tableaux par ordre croissant. Le premier tableau est trié, puis les tableaux suivants sont réordonnés pour correspondre à l’ordre de tri du premier tableau. Les valeurs NULL sont placées à la fin. Il s’agit d’une fonction de compatibilité KQL (Kusto Query Language).
-
-**Syntaxe**
-
-```sql
-kql_array_sort_asc(array1[, array2, ..., nulls_last])
-```
-
-**Arguments**
-
-* `array1` — Le tableau à trier. [`Array(T)`](/fr/reference/data-types/array)
-* `array2` — Facultatif. Tableaux supplémentaires à réordonner selon l’ordre de tri de `array1`. [`Array(T)`](/fr/reference/data-types/array)
-* `nulls_last` — Facultatif. Booléen indiquant si les valeurs nulles doivent apparaître en dernier. La valeur par défaut est `true`. [`UInt8`](/fr/reference/data-types/int-uint)
-
-**Valeur renvoyée**
-
-Renvoie un tuple de tableaux triés par ordre croissant. [`Tuple(Array, ...)`](/fr/reference/data-types/tuple)
-
-**Exemples**
-
-**Utilisation de base**
-
-```sql title=Query
-SELECT kql_array_sort_asc([3, 1, 2])
-```
-
-```response title=Response
-([1, 2, 3])
-```
-
-<div id="kql_array_sort_desc">
-  ## kql_array_sort_desc
-</div>
-
-Introduit dans : v23.10.0
-
-Trie un ou plusieurs tableaux par ordre décroissant. Le premier tableau est trié, et les tableaux suivants sont réorganisés selon l’ordre trié du premier tableau. Les valeurs NULL sont placées à la fin. Il s’agit d’une fonction de compatibilité KQL (Kusto Query Language).
-
-**Syntaxe**
-
-```sql
-kql_array_sort_desc(array1[, array2, ..., nulls_last])
-```
-
-**Arguments**
-
-* `array1` — Le tableau à trier. [`Array(T)`](/fr/reference/data-types/array)
-* `array2` — Tableaux supplémentaires facultatifs à réordonner selon l’ordre de tri de `array1`. [`Array(T)`](/fr/reference/data-types/array)
-* `nulls_last` — Booléen facultatif indiquant si les valeurs NULL doivent apparaître en dernier. La valeur par défaut est `true`. [`UInt8`](/fr/reference/data-types/int-uint)
-
-**Valeur renvoyée**
-
-Renvoie un tuple de tableaux triés par ordre décroissant. [`Tuple(Array, ...)`](/fr/reference/data-types/tuple)
-
-**Exemples**
-
-**Utilisation de base**
-
-```sql title=Query
-SELECT kql_array_sort_desc([3, 1, 2])
-```
-
-```response title=Response
-([3, 2, 1])
-```
-
 <div id="length">
   ## length
 </div>
@@ -5262,8 +5226,9 @@ Introduit dans : v1.1.0
 Calcule la longueur d’une chaîne ou d’un tableau.
 
 * Pour les arguments String ou FixedString : calcule le nombre d’octets de la chaîne.
-* Pour les arguments Array : calcule le nombre d’éléments du tableau.
-* Si elle est appliquée à un argument FixedString, la fonction est une expression constante.
+* Pour les arguments tableaux : calcule le nombre d’éléments du tableau.
+* Pour les arguments QBit : calcule la dimension du vecteur.
+* Si elle est appliquée à un argument FixedString ou QBit, la fonction est une expression constante.
 
 Veuillez noter que le nombre d’octets d’une chaîne n’est pas le même que le nombre de
 points de code Unicode (&quot;code points&quot;), ni que le nombre de &quot;grappes de graphèmes&quot; Unicode
@@ -5281,11 +5246,11 @@ length(x)
 
 **Arguments**
 
-* `x` — Valeur pour laquelle calculer le nombre d’octets (pour String/FixedString) ou d’éléments (pour Array). [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Array(T)`](/fr/reference/data-types/array)
+* `x` — Valeur pour laquelle calculer le nombre d’octets (pour String/FixedString), d’éléments (pour tableau) ou la dimension (pour QBit). [`String`](/fr/reference/data-types/string) ou [`FixedString`](/fr/reference/data-types/fixedstring) ou [`Array(T)`](/fr/reference/data-types/array) ou [`QBit`](/fr/reference/data-types/qbit)
 
 **Valeur renvoyée**
 
-Renvoie le nombre d’octets de la String/FixedString `x` / le nombre d’éléments du tableau `x` [`UInt64`](/fr/reference/data-types/int-uint)
+Renvoie le nombre d’octets de la String/FixedString `x`, le nombre d’éléments du tableau `x` ou la dimension du QBit `x` [`UInt64`](/fr/reference/data-types/int-uint)
 
 **Exemples**
 
@@ -5299,7 +5264,7 @@ SELECT length('Hello, world!')
 13
 ```
 
-**Exemple : Array**
+**Exemple : tableau**
 
 ```sql title=Query
 SELECT length(['Hello', 'world'])
@@ -5307,6 +5272,16 @@ SELECT length(['Hello', 'world'])
 
 ```response title=Response
 2
+```
+
+**Exemple de QBit**
+
+```sql title=Query
+SELECT length([0, 0, 0, 0, 0, 0, 0, 0]::QBit(Float32, 8))
+```
+
+```response title=Response
+8
 ```
 
 **exemple de constexpr**
@@ -5361,9 +5336,9 @@ Vérifie si le tableau en entrée n’est pas vide.
 
 Un tableau est considéré comme non vide s’il contient au moins un élément.
 
-<Note>
-  Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la sous-colonne [size0](/fr/reference/data-types/array#array-size), au lieu de lire et traiter toute la colonne de tableau. La requête `SELECT notEmpty(arr) FROM table` est transformée en `SELECT arr.size0 != 0 FROM TABLE`.
-</Note>
+:::note
+Cette fonction peut être optimisée en activant le paramètre [`optimize_functions_to_subcolumns`](/fr/reference/settings/session-settings#optimize_functions_to_subcolumns). Avec `optimize_functions_to_subcolumns = 1`, la fonction lit uniquement la sous-colonne [size0](/fr/reference/data-types/array#array-size), au lieu de lire et traiter toute la colonne de tableau. La requête `SELECT notEmpty(arr) FROM table` est transformée en `SELECT arr.size0 != 0 FROM TABLE`.
+:::
 
 La fonction fonctionne également avec les chaînes de caractères et les UUIDs.
 
@@ -5391,6 +5366,83 @@ SELECT notEmpty([1,2]);
 
 ```response title=Response
 1
+```
+
+<div id="randomHadamardTransform">
+  ## randomHadamardTransform
+</div>
+
+Introduit dans : v26.7.0
+
+Applique une transformée de Hadamard aléatoire à un vecteur de nombres à virgule flottante : `y = (1/sqrt(k)) * (H * D * x)`, où
+`D` est une matrice diagonale de signes déterministes +/-1 choisis par `seed`, `H` est la matrice de Walsh-Hadamard,
+et l’entrée est complétée par des zéros jusqu’à `m`, la puissance de deux immédiatement supérieure à sa longueur.
+
+Cette transformée est une rotation orthogonale **qui préserve la norme** et répartit uniformément l’énergie
+d’un vecteur entre les coordonnées, rendant la distribution de chaque coordonnée approximativement gaussienne et
+indépendante des données. Elle est utile comme étape de prétraitement avant une quantification scalaire et -- lorsqu’elle est
+tronquée -- comme projection aléatoire de Johnson-Lindenstrauss / Hadamard aléatoire sous-échantillonnée (SRHT).
+
+Lorsque la longueur d’entrée est `2^k * m` avec `m` dans `{12, 20}` (ordres pour lesquels il existe une matrice de Hadamard, par ex.
+`768 = 64 * 12`, `1536 = 128 * 12`, `3072 = 256 * 12`, `2560 = 128 * 20`), une transformée de Kronecker exacte
+`H_(2^k) (x) H_m` est utilisée au lieu d’un remplissage, de sorte que la sortie conserve la dimension d’entrée
+au lieu d’être étendue à la puissance de deux suivante. Toutes les autres longueurs sont complétées par des zéros jusqu’à `m`, la puissance de deux suivante.
+
+Le résultat a le même type d’élément que l’entrée ; un tableau d’entrée vide renvoie un tableau vide.
+
+* `seed` (facultatif, valeur par défaut `0`) : sélectionne la configuration des signes ; la même seed produit toujours la même
+  transformée.
+* `output_dims` (facultatif, par défaut la longueur de la transformée) : ne conserve que les `output_dims`
+  premières coordonnées. Le facteur d’échelle `1/sqrt(output_dims)` fait que le résultat préserve la norme pour la transformée complète
+  et la préserve en espérance lorsqu’elle est tronquée. Il ne doit pas dépasser la longueur de la transformée
+  (la puissance de deux suivante, ou la longueur d’entrée dans le cas exact de Kronecker).
+
+**Syntaxe**
+
+```sql
+randomHadamardTransform(vector[, seed[, output_dims]])
+```
+
+**Arguments**
+
+* `vector` — Vecteur à transformer. [`Array(BFloat16)`](/fr/reference/data-types/array) or [`Array(Float32)`](/fr/reference/data-types/array) or [`Array(Float64)`](/fr/reference/data-types/array)
+* `seed` — Facultatif. Valeur d&#39;initialisation des signes déterministes +/-1 (0 par défaut). [`UInt*`](/fr/reference/data-types/int-uint)
+* `output_dims` — Facultatif. Tronque le résultat à ce nombre de coordonnées de tête (par défaut : la longueur complète de la transformation, qui correspond à la longueur d&#39;entrée pour les dimensions exactes de Kronecker, ou sinon à la puissance de deux immédiatement supérieure). [`UInt*`](/fr/reference/data-types/int-uint)
+
+**Valeur renvoyée**
+
+Le vecteur transformé (du même type d&#39;élément que l&#39;entrée). Sa longueur correspond à celle de la transformation : la longueur d&#39;entrée pour les dimensions exactes de Kronecker, sinon l&#39;entrée complétée jusqu&#39;à la puissance de deux immédiatement supérieure ; avec troncature éventuelle à output&#95;dims. [`Array(BFloat16)`](/fr/reference/data-types/array) or [`Array(Float32)`](/fr/reference/data-types/array) or [`Array(Float64)`](/fr/reference/data-types/array)
+
+**Exemples**
+
+**Transformation complète (longueur complétée jusqu&#39;à une puissance de deux)**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3]::Array(Float32)))
+```
+
+```response title=Response
+4
+```
+
+**La norme est conservée**
+
+```sql title=Query
+SELECT round(arraySum(x -> x * x, randomHadamardTransform([1, 2, 3, 4]::Array(Float32))) - 30, 4)
+```
+
+```response title=Response
+0
+```
+
+**Projection tronquée à 3 dimensions**
+
+```sql title=Query
+SELECT length(randomHadamardTransform([1, 2, 3, 4, 5, 6, 7, 8]::Array(Float32), 42, 3))
+```
+
+```response title=Response
+3
 ```
 
 <div id="range">

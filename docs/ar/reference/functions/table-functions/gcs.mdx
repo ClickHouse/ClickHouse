@@ -76,7 +76,7 @@ gcs(named_collection[, option=value [,..]])
   ## أمثلة
 </div>
 
-اختيار أول صفّين من الجدول الموجود في ملف GCS `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
+اختيار أول صفّين من ملف GCS `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`. تُكتشَف أسلوب الضغط تلقائيًا من امتداد الملف `.gz`:
 
 ```sql
 SELECT *
@@ -91,7 +91,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-مثال مشابه، ولكن من ملف باستخدام طريقة ضغط `gzip`:
+الاستعلام نفسه كما أعلاه، ولكن مع تحديد أسلوب الضغط `gzip` صراحةً بدلًا من الاعتماد على الاكتشاف التلقائي:
 
 ```sql
 SELECT *

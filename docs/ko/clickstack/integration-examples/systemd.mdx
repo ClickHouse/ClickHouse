@@ -195,9 +195,9 @@ OpenTelemetry Collector를 journald 수신기와 함께 실행해 기존 Linux �
     3. `service.name:systemd-logs`로 필터링합니다
     4. `unit`, `priority`, `MESSAGE`, `_HOSTNAME` 등의 필드가 포함된 구조화된 로그 항목이 표시되어야 합니다
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="Log search view" />
+    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="로그 검색 보기" />
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="Log view" />
+    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="로그 보기" />
   </Step>
 </Steps>
 
@@ -284,9 +284,9 @@ OpenTelemetry Collector를 journald 수신기와 함께 실행해 기존 Linux �
     2. Search view로 이동한 다음 source를 `Logs`로 설정합니다
     3. 시간 범위를 **2025-11-14 00:00:00 - 2025-11-17 00:00:00**으로 설정합니다
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="로그 검색 view" />
+    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="로그 검색 보기" />
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="로그 view" />
+    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="로그 보기" />
 
     <Info>
       **시간대 표시**
@@ -334,7 +334,7 @@ ClickStack으로 systemd 로그 모니터링을 시작할 수 있도록 systemd 
     <Image img="/images/clickstack/systemd/systemd-logs-dashboard.webp" alt="예시 대시보드" />
 
     <Note>
-      데모 데이터세트에서는 시간 범위를 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**로 설정한 뒤, 로컬 시간대에 맞게 조정하십시오.
+      데모 데이터세트에서는 시간 범위를 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 따라 조정).
     </Note>
   </Step>
 </Steps>
@@ -394,12 +394,12 @@ otelcol-contrib --config=otel-config.yaml
   ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드에서는 systemd 로그를 읽어 ClickStack의 OTLP 엔드포인트로 전송하기 위해 별도의 OpenTelemetry Collector를 사용하며, 이는 프로덕션 환경에서 권장되는 패턴입니다.
+이 가이드에서는 별도의 OpenTelemetry Collector를 사용해 systemd 로그를 읽고 ClickStack의 OTLP 엔드포인트로 전송하며, 이는 프로덕션 환경에서 권장되는 패턴입니다.
 
-여러 호스트가 있는 프로덕션 환경에서는 다음 사항을 고려하세요.
+여러 호스트가 있는 프로덕션 환경에서는 다음을 고려하십시오.
 
 * Kubernetes에서 collector를 데몬셋으로 배포
 * 각 호스트에서 collector를 systemd 서비스로 실행
-* 자동 배포를 위해 OpenTelemetry Operator 사용
+* 자동화된 배포를 위해 OpenTelemetry Operator 사용
 
 프로덕션 배포 패턴은 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.

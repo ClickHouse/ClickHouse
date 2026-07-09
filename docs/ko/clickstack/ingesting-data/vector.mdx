@@ -183,7 +183,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         <Info>
           **Nginx 기본 키(primary key)**
 
-          위 기본 키(primary key)는 ClickStack UI에서 Nginx 로그를 조회할 때의 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경에서는 워크로드에 따라 조정이 필요할 수 있습니다.
+          위의 기본 키(primary key)는 ClickStack UI에서 Nginx 로그에 대해 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경에서는 워크로드에 따라 조정해야 할 수 있습니다.
         </Info>
       </Step>
 
@@ -249,11 +249,11 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
       </Step>
 
       <Step>
-        ### 데이터 살펴보기
+        ### 데이터 탐색
 
-        로그 보기로 이동해 데이터를 살펴보고 ClickStack 사용을 시작하십시오.
+        로그 보기로 이동하여 데이터를 탐색하고 ClickStack 사용을 시작하세요.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack의 Nginx 로그" size="lg" />
+        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="CLickStack의 Nginx 로그" size="lg" />
       </Step>
     </Steps>
   </Tab>
@@ -346,7 +346,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouse 호환 DateTime 포맷
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -445,7 +445,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
       </Step>
 
       <Step>
-        ### 샘플 데이터 다운로드하기
+        ### 샘플 데이터 다운로드
 
         <VectorSampleData />
       </Step>
@@ -488,9 +488,9 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         ```
 
         <Info>
-          **Nginx 프라이머리 키(primary key)**
+          **Nginx 기본 키(primary key)**
 
-          위의 프라이머리 키(primary key)는 ClickStack UI에서 Nginx 로그에 대한 일반적인 액세스 패턴을 기준으로 한 것이지만, 프로덕션 환경의 워크로드에 따라 조정해야 할 수 있습니다.
+          위의 기본 키(primary key)는 Nginx 로그에 대해 ClickStack UI에서 일반적인 액세스 패턴을 기준으로 한 것이며, 프로덕션 환경에서는 워크로드에 따라 조정이 필요할 수 있습니다.
         </Info>
       </Step>
 
@@ -518,7 +518,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouse 호환 DateTime 포맷
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -583,7 +583,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
         )
         ```
 
-        구조화된 필드에서 로그 한 줄을 재구성합니다.
+        구조화된 필드로부터 로그 라인을 재구성합니다.
 
         다른 옵션은 [구성 참고](/ko/clickstack/managing/config)를 참조하십시오.
       </Step>
@@ -599,7 +599,7 @@ ClickStack과 함께 Vector를 사용할 때는 사용자가 자체 스키마를
       <Step>
         ### 데이터 탐색
 
-        데이터를 탐색하고 ClickStack 사용을 시작하려면 `October 20th, 2025`의 Search view로 이동하세요.
+        데이터를 탐색하고 ClickStack 사용을 시작하려면 `October 20th, 2025`의 Search view로 이동하십시오.
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="HyperDX UI" size="lg" />
       </Step>

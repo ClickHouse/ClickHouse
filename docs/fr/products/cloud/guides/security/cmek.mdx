@@ -159,6 +159,6 @@ Les sauvegardes sont chiffrées à l’aide de la même clé que le service asso
   ## Performance
 </div>
 
-Le chiffrement de la base de données s&#39;appuie sur la [fonctionnalité de système de fichiers virtuel pour le chiffrement des données intégrée à ClickHouse](/fr/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) pour chiffrer et protéger vos données. L&#39;algorithme utilisé pour cette fonctionnalité est `AES_256_CTR`, ce qui devrait entraîner une baisse de performance de 5 à 15 % selon la charge de travail :
+Le chiffrement au niveau de la base de données s&#39;appuie sur la [fonctionnalité de système de fichiers virtuel pour le chiffrement des données intégrée à ClickHouse](/fr/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) pour chiffrer et protéger vos données. L&#39;algorithme utilisé pour cette fonctionnalité est `AES_256_CTR`, ce qui devrait entraîner une baisse de performance de 5 à 15 % selon la charge de travail :
 
 <Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Baisse de performance du CMEK" />

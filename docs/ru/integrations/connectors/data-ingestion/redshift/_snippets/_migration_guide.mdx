@@ -51,7 +51,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Перенос данных из Redshift в ClickHouse по схеме Pull
 </div>
 
-В сценарии Pull используется ClickHouse JDBC Bridge: он позволяет напрямую подключаться к кластеру Redshift из ClickHouse и выполнять запросы `INSERT INTO ... SELECT`:
+В сценарии Pull используется ClickHouse JDBC Bridge: он позволяет напрямую подключаться к кластеру Redshift из экземпляра ClickHouse и выполнять запросы `INSERT INTO ... SELECT`:
 
 <Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="PULL из Redshift в ClickHouse" />
 
@@ -216,7 +216,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 * Два этапа процесса (выгрузка из Redshift, затем загрузка в ClickHouse).
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### Руководство
 </div>
 
@@ -280,7 +280,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     ```
 
     <Note>
-      В этом примере в качестве промежуточного формата использовался CSV. Однако для промышленных рабочих нагрузок мы рекомендуем Apache Parquet как оптимальный вариант для крупных миграций, поскольку он поддерживает сжатие и позволяет снизить затраты на хранение, одновременно сокращая время передачи. (По умолчанию каждая группа строк сжимается с помощью SNAPPY). ClickHouse также использует колоночную организацию Parquet для ускорения ингестии данных.
+      В этом примере в качестве промежуточного формата использовался CSV. Однако для рабочих нагрузок в продакшне мы рекомендуем Apache Parquet как оптимальный вариант для крупных миграций, поскольку он поддерживает сжатие и позволяет снизить затраты на хранилище, одновременно сокращая время передачи. (По умолчанию каждая группа строк сжимается с помощью SNAPPY). ClickHouse также использует колоночную организацию Parquet для ускорения ингестии данных.
     </Note>
   </Step>
 </Steps>

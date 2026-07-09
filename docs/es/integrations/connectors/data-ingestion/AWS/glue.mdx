@@ -30,7 +30,7 @@ Para integrar su código de Glue con ClickHouse, puede usar nuestro Spark conect
 <Tabs>
   <Tab title="AWS Marketplace">
     1. <h3 id="subscribe-to-the-connector">Suscribirse al conector</h3>
-       Para acceder al conector en su cuenta, suscríbase al ClickHouse AWS Glue Conector desde AWS Marketplace.
+       Para acceder al conector en su cuenta, suscríbase al ClickHouse AWS Glue conector desde AWS Marketplace.
 
     2. <h3 id="grant-required-permissions">Conceder los permisos necesarios</h3>
        Asegúrese de que el IAM role de su job de Glue tenga los permisos necesarios, como se describe en la [guía](https://docs.aws.amazon.com/glue/latest/dg/getting-started-min-privs-job.html#getting-started-min-privs-connectors) de privilegios mínimos.
@@ -88,7 +88,7 @@ Para integrar su código de Glue con ClickHouse, puede usar nuestro Spark conect
           .config("spark.sql.catalog.clickhouse.user", "default")
           .config("spark.sql.catalog.clickhouse.password", "<your-password>")
           .config("spark.sql.catalog.clickhouse.database", "default")
-          // para ClickHouse Cloud
+          // for ClickHouse cloud
           .config("spark.sql.catalog.clickhouse.option.ssl", "true")
           .config("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
           .getOrCreate
@@ -121,10 +121,10 @@ Para integrar su código de Glue con ClickHouse, puede usar nuestro Spark conect
           .schema(schema)
           .csv(url)
 
-        // Escribir en ClickHouse
+        // Write to ClickHouse
         df.writeTo("clickhouse.default.cell_towers").append()
 
-        // Leer desde ClickHouse
+        // Read from ClickHouse
         val dfRead = spark.sql("select * from clickhouse.default.cell_towers")
         Job.commit()
       }
@@ -161,18 +161,18 @@ Para integrar su código de Glue con ClickHouse, puede usar nuestro Spark conect
     spark.conf.set("spark.sql.catalog.clickhouse.database", "default")
     spark.conf.set("spark.clickhouse.write.format", "json")
     spark.conf.set("spark.clickhouse.read.format", "arrow")
-    # para ClickHouse Cloud
+    # for ClickHouse cloud
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl", "true")
     spark.conf.set("spark.sql.catalog.clickhouse.option.ssl_mode", "NONE")
 
-    # Crear DataFrame
+    # Create DataFrame
     data = [Row(id=11, name="John"), Row(id=12, name="Doe")]
     df = spark.createDataFrame(data)
 
-    # Escribir DataFrame en ClickHouse
+    # Write DataFrame to ClickHouse
     df.writeTo("clickhouse.default.example_table").append()
 
-    # Leer DataFrame desde ClickHouse
+    # Read DataFrame from ClickHouse
     df_read = spark.sql("select * from clickhouse.default.example_table")
     logger.info(str(df.take(10)))
 
@@ -181,4 +181,3 @@ Para integrar su código de Glue con ClickHouse, puede usar nuestro Spark conect
   </Tab>
 </Tabs>
 
-Para obtener más información, consulte nuestra [documentación de Spark](/es/integrations/connectors/data-ingestion/apache-spark/index).

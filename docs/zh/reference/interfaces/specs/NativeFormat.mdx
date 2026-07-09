@@ -155,9 +155,9 @@ Byte 1: data = 0x02, continuation = 0 → accumulator = (0x02 << 7) | 0x2C = 300
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-`BlockInfo` 前缀是否存在取决于通道，因为写入器是按 *修订版本* 参数化的：
+`BlockInfo` 前缀是否存在取决于通道，因为写入器是按 *修订版本* 参数化的 (完整说明参见[协议修订版本与 Native 格式](#protocol-revision)，其中还包括 `client_protocol_version` 仅影响输出这一点) ：
 
-* 在 **native TCP protocol** 上，server 会按 connection 协商出的 修订版本 写入块 (这是一个较大的值——在此 release 中，`DBMS_TCP_PROTOCOL_VERSION` 为 `54485`) 。只要该 修订版本 大于零，就会写入 `BlockInfo`；而对于真实 connection，这一条件始终成立。每一列中的 `has_custom_serialization` 字节 (参见[列 wire 布局](#column-wire-layout)) 会在 修订版本 为 `54454` 及以上时写入。
+* 在 **native TCP protocol** 上，server 会按 connection 协商出的 修订版本 写入块 (这是一个较大的值——在此 release 中，`DBMS_TCP_PROTOCOL_VERSION` 为 `54485`) 。只要该 修订版本 大于零，就会写入 `BlockInfo`；而对于真实 connection，这一条件始终成立。每一列中的 `has_custom_serialization` 字节 (参见[列的线协议布局](#column-wire-layout)) 会在 修订版本 为 `54454` 及以上时写入。
 * `Native` *output format*——即通过 HTTP 执行的 `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`，以及 `clickhouse-client` 生成的 `Native` format——*默认*按 修订版本 `0` 进行序列化。在 修订版本 `0` 下，`BlockInfo` 前缀和 `has_custom_serialization` 字节都会被省略，因此一个块只包含 `num_columns`、`num_rows` 和各列。
 
   对于 HTTP，这个 修订版本 不是固定的：client 可以通过 `?client_protocol_version=<n>` 查询参数提高它，而 server 会将该值作为响应的序列化 修订版本。
@@ -349,6 +349,92 @@ Data 家族的所有数据包都共享相同的 Block 传输格式。各个变�
 ```
 
 (零行结果 (例如仅含头部信息的块) 通过 `FORMAT Native` 完全不会产生任何字节：该输出格式不会输出空块。)
+
+<div id="protocol-revision">
+  ## 协议修订版本与 Native 格式
+</div>
+
+Native 字节流的形态首先取决于写入端和读取端所使用的**协议修订版本**。修订版本本身并不包含在这些字节中——线上并没有修订版本字段——但它仍然决定了某些特性是否会出现。因此，解码器必须先知道某个载荷是按哪个修订版本写入的，才能对其进行解析。由于修订版本不在 stream 中，读取端和写入端必须通过其他方式就此达成一致。
+
+它是一个单独的 `UInt64`，并且 `NativeWriter` 和 `NativeReader` 都将其作为构造函数参数传入。写入端将其称为 `client_revision`，读取端将其称为 `server_revision``，但它们是同一个数值。此版本所知的最新修订版本是 `DBMS&#95;TCP&#95;PROTOCOL&#95;VERSION`，当前为 `54485&#96;。
+
+<div id="what-the-revision-gates">
+  ### 修订版本控制的内容
+</div>
+
+每项功能背后都有一个 `DBMS_MIN_REVISION_WITH_*` 阈值。只有当修订版本达到该阈值时，写入端才会写出该功能；读取端也会按完全相同的规则来判断是否读取，因此两端才能保持一致——只要任一侧的修订版本判断出错，就会失步。对于 Native 格式，关键的门槛如下：
+
+| 功能                                    | 阈值常量                                                               | 修订版本    | 低于阈值时的影响                                                                                                                       |
+| ------------------------------------- | ------------------------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `BlockInfo` 前缀                        |  (任意 `> 0` 的值)                                                     | `1`     | [`BlockInfo`](#blockinfo) 前缀会被完全省略；一个块就只包含 `num_columns`、`num_rows` 和各列。                                                       |
+| `has_custom_serialization` 字节         | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454` | 每列的 [`has_custom_serialization`](#column-wire-layout) 字节会被省略；所有列都使用默认序列化 (没有 sparse、replicated 或 detached 形式) 。                |
+| 线上传输的 `LowCardinality`                | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405` | 特殊情况——**不**遵循简单的“低于阈值就禁用”规则。只有当修订版本为*非零*且低于 `54405` 时，或者被单独强制剥离时，`LowCardinality(T)` 才会被剥离为基本类型 `T`。修订版本为 `0` 时会保留它。见下文说明。     |
+| V2 `Dynamic` / `JSON` 序列化             | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473` | `Dynamic` 和 `JSON`/`Object` 会使用 V1 序列化 (带 `max_dynamic_*` 参数) ，而不是 V2。                                                         |
+| 聚合函数版本控制                              | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452` | `AggregateFunction` 状态写入时不包含内嵌版本。                                                                                              |
+| `BlockInfo` 中的 `out_of_order_buckets` | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480` | 不会写入 `BlockInfo` 字段 ID `3` (见 [BlockInfo](#blockinfo)) 。                                                                       |
+| 并行块编组 (`DETACHED`)                    | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478` | 列永远不会封装在 `ColumnBLOB` 中；也不会出现 `DETACHED` / `DETACHED_OVER_SPARSE` kind (见 [kind&#95;stack](#kind-stack-and-sparse-encoding)) 。 |
+| `DateTime(tz)` 类型参数                   | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | 时区参数会从 `type` 字符串中去掉——`DateTime('UTC')` 会被声明为不带参数的 `DateTime`。                                                                 |
+
+这意味着，修订版本 `0` 对几乎所有情况来说都是最保守的编码方式：stream 中没有 `BlockInfo`、没有 `has_custom_serialization` 字节、使用 V1 `Dynamic`/`JSON`、没有聚合函数版本，并且 `DateTime` 会去掉时区参数。
+
+`LowCardinality` 是唯一的例外，而且这一点非常重要。写入端的判断条件是 `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`。关键就在前面的 `client_revision &&`：当修订版本恰好为 `0` 时，整个条件会短路为 false。
+
+因此，在修订版本 `0`——也就是 `FORMAT Native` 的默认值——下，`LowCardinality(T)` **不会**被剥离。它的类型字符串和每块状态前缀都会保留在 stream 中，而修订版本为 `0` 的读取端也会原样读回。只有当修订版本为非零且低于 `54405`，或者在不考虑修订版本的情况下被强制剥离时，才会发生剥离。
+
+这个强制机制就是 `remove_low_cardinality` 标志。`FORMAT Native` 输出永远不会设置它，但 native TCP 路径会在 `low_cardinality_allow_in_native_format = 0` 时设置它 (默认值为 `1`) 。换句话说，这个 setting 会改变 native TCP 输出，但对 `FORMAT Native` 没有任何影响。
+
+实际结论是：默认的 `FORMAT Native` stream 完全可能合法地包含 `LowCardinality`，因此不要把它当成一个在修订版本 `0` 下不存在的功能。
+
+<div id="revision-per-channel">
+  ### 修订版本的来源取决于数据的传输方式
+</div>
+
+相同的 Native 字节可以通过不同路径传输：native TCP 协议、HTTP 请求，或磁盘上的文件。每条路径都会以各自的方式确定修订版本。有一点需要注意：读取端和写入端是分别设置的，因此它们最终可能使用不同的修订版本。
+
+<div id="revision-tcp">
+  #### 原生 TCP 协议——通过协商确定，双向分别生效
+</div>
+
+在 [原生 TCP 协议](/zh/reference/interfaces/specs/NativeProtocol) 中，修订版本来自 Hello 握手。客户端发送 `DBMS_TCP_PROTOCOL_VERSION`，服务端返回自己的版本，此后双方都会按**对方声明的修订版本**进行序列化：服务端根据 `client_tcp_protocol_version` 构建其 `NativeReader`/`NativeWriter`，客户端则使用收到的 `server_revision`。这里没有显式的 &#96;min&#96;&#96;，但双方都不可能发送自己尚未实现的特性，因此每个方向实际上都会受限于较旧的那一端。
+
+当两端都是相同的较新构建时，两个方向会落到同一个修订版本 (这里是 `54485`) ，所有门槛条件都会启用。这是最常见的情况，但并不绝对。对于混合版本或第三方对端，两个方向可能处于不同的修订版本，因此这些门槛条件必须按方向分别理解：只要修订版本非零，就会包含 `BlockInfo`；而其余内容——包括 `has_custom_serialization`——只有当该方向的有效修订版本达到各自阈值时才会出现。比如，某个对端如果声明的修订版本低于 `54454`，就既不会发送，也不会接收 `has_custom_serialization` 这个字节。
+
+<div id="revision-output">
+  #### `FORMAT Native` 输出——默认修订版本为 0，但可通过 HTTP 提高
+</div>
+
+`Native` *输出*格式默认采用修订版本 **`0`**。这包括通过 HTTP 执行的 `SELECT ... FORMAT Native`、`INTO OUTFILE ... FORMAT Native`，以及 ClickHouse 客户端写出的 `Native` 输出；在这几种情况下，输出工厂都会将 `FormatSettings::client_protocol_version` 直接传给 `NativeWriter`。
+
+不过，对于 HTTP 来说，默认值并非全部。客户端可以通过 `?client_protocol_version=<n>` 查询参数提高该值，HTTP handler 会将其视为保留参数，而不是 SQL 设置：它会进入查询上下文，然后由格式层复制到 `FormatSettings` 中。只要设得足够高，HTTP 的 `FORMAT Native` 输出就会像 TCP 路径一样，开始包含 `BlockInfo` 前缀和 `has_custom_serialization` 字节——因此，不要想当然地认为 HTTP 的 `FORMAT Native` 载荷始终都是修订版本 `0`。文件导出和本地 ClickHouse 客户端输出没有这样的调节方式，因此会保持为 `0`。
+
+<div id="revision-input">
+  #### `FORMAT Native` 输入 — 始终为修订版本 0
+</div>
+
+`Native` *输入*格式则正好相反：它被**硬编码为修订版本 `0`**，完全不会理会 `client_protocol_version`。无论是解析 `INSERT ... FORMAT Native` 的 body，还是读取 `Native` 文件，它在构建 `NativeReader` 时都会直接使用字面量 `0`，因此既不会预期有 `BlockInfo` 前缀，也不会读取 `has_custom_serialization` 字节，并且始终假定使用默认序列化。
+
+因此，`client_protocol_version` 只对输出有效。在 `INSERT ... FORMAT Native` 请求上加上 `?client_protocol_version=54485`，不会对 body 的读取方式产生任何影响——body 仍然必须是修订版本 `0``。如果传入的 body 带有 `BlockInfo`前缀或`has&#95;custom&#95;serialization` 字节，读取器就会失去同步，最终表现为解析错误（`INCORRECT&#95;DATA`或`CANNOT&#95;READ&#95;ALL&#95;DATA&#96;) ，而不是成功插入。
+
+<div id="revision-round-trip">
+  ### 往返兼容性的影响
+</div>
+
+对于 `FORMAT Native`，两端都使用修订版本 `0` 是最稳妥的选择，这也是默认行为。通过修订版本 `0` 的 `SELECT ... FORMAT Native` 写出的数据，可以直接再读回 `INSERT ... FORMAT Native`，不会出现任何意外。
+
+只有在你刻意提高输出修订版本时，问题才会出现。带有 `?client_protocol_version=<large>` 的 `SELECT ... FORMAT Native` 会生成一个包含 `BlockInfo` 和 `has_custom_serialization` 字节的数据流，而修订版本为 `0` 的读取路径无法将其读回。如果你需要这类数据能够往返传输，要么在生成数据的 `SELECT` 中不要设置 `client_protocol_version`，要么通过原生 TCP 协议传输数据——在这种情况下，每个方向都使用由握手协商出的修订版本——而不要使用 `FORMAT Native`。
+
+| 通道                                                     | 写入修订版本                              | 读取修订版本                                 | `BlockInfo` / 自定义序列化                                                     |
+| ------------------------------------------------------ | ----------------------------------- | -------------------------------------- | ------------------------------------------------------------------------ |
+| Native TCP Data 包                                      | 对端声明的修订版本 (按方向)                     | 对端声明的修订版本 (按方向)                        | 修订版本 `> 0` 时带有 `BlockInfo`；修订版本 `≥ 54454` 时带有 `has_custom_serialization` |
+| 通过 HTTP 的 `SELECT ... FORMAT Native`                   | `client_protocol_version` (默认 `0`)  | n/a                                    | 仅在提高 `client_protocol_version` 时                                         |
+| 通过 HTTP 的 `INSERT ... FORMAT Native`                   | n/a                                 | `0` (固定，忽略 `client_protocol_version`)  | 永不读取                                                                     |
+| `INTO OUTFILE` / 文件 / `ClickHouse 客户端` `FORMAT Native` | `0`                                 | `0`                                    | 不包含 (但会保留 `LowCardinality`——见上文说明)                                       |
+
+<Info>
+  **协议修订版本与序列化版本**
+
+  不要将协议修订版本与[序列化版本](#serialization-version-concept)混为一谈。这里的修订版本是连接级或请求级的，永远不会出现在字节流中。序列化版本则是按列区分的，由[带版本的类型](#versioned-types)携带，并会写入每个非空块。修订版本决定某个特性是否存在；而序列化版本则是在进入带版本的列后，决定该类型后续使用哪一种编码变体。
+</Info>
 
 <div id="data-types">
   ## 数据类型

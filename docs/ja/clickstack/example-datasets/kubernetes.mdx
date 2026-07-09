@@ -47,7 +47,7 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
     TLS 証明書が必要な場合は、Helm を使用して [cert-manager](https://cert-manager.io/) をインストールします。
 
     ```shell
-    # Cert manager リポジトリを追加する 
+    # Add Cert manager repo 
 
     helm repo add jetstack https://charts.jetstack.io 
 
@@ -69,9 +69,9 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
     * 環境変数 `OTEL_RESOURCE_ATTRIBUTES` を介してログ、メトリクス、トレースを相関付けるための [リソースタグの転送](/ja/clickstack/integration-examples/kubernetes#forwarding-resouce-tags-to-pods)。
 
     ```shell
-    ## デモ用 Kubernetes マニフェストファイルをダウンロード
+    ## download demo Kubernetes manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
-    # wget を使う場合の代替コマンド
+    # wget alternative
     # wget https://raw.githubusercontent.com/ClickHouse/opentelemetry-demo/refs/heads/main/kubernetes/opentelemetry-demo.yaml
     kubectl apply --namespace otel-demo -f opentelemetry-demo.yaml
     ```
@@ -229,12 +229,12 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
     インジェスト API key と、ClickStack Helm チャートでデプロイした OTel collector の場所を格納した ConfigMap を含む、新しい Kubernetes Secret を作成します。後続のコンポーネントはこれを使用して、ClickStack Helm チャートでデプロイした collector へのインジェストを行えるようになります。
 
     ```shell
-    # インジェスト API key を使って secret を作成する
+    # create secret with the ingestion API key
     kubectl create secret generic hyperdx-secret \
     --from-literal=HYPERDX_API_KEY=<ingestion_api_key> \
     -n otel-demo
 
-    # 上記でデプロイした ClickStack OTel collector を指す ConfigMap を作成する
+    # create a ConfigMap pointing to the ClickStack OTel collector deployed above
     kubectl create configmap -n=otel-demo otel-config-vars --from-literal=YOUR_OTEL_COLLECTOR_ENDPOINT=http://my-hyperdx-hdx-oss-v2-otel-collector:4318
     ```
 
@@ -257,7 +257,7 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
     これには、OpenTelemetry Helm リポジトリをインストールする必要があります。
 
     ```shell
-    # OTel Helm リポジトリを追加する
+    # Add Otel Helm repo
     helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts 
     ```
   </Step>
@@ -276,9 +276,9 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
     まず、collector をデプロイメントとしてインストールします。
 
     ```shell
-    # マニフェストファイルをダウンロードする
+    # download manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_deployment.yaml
-    # Helm チャートをインストールする
+    # install the helm chart
     helm install --namespace otel-demo k8s-otel-deployment open-telemetry/opentelemetry-collector -f k8s_deployment.yaml
     ```
 
@@ -291,26 +291,26 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
         repository: otel/opentelemetry-collector-contrib
         tag: 0.123.0
        
-      # このcollectorは1つだけ必要です。複数あると重複データが生成されます
+      # We only want one of these collectors - any more and we'd produce duplicate data
       replicaCount: 1
        
       presets:
         kubernetesAttributes:
           enabled: true
-          # 有効にすると、プロセッサーは関連するポッドのすべてのラベルを抽出し、リソース属性として追加します。
-          # ラベルの正確な名前がキーになります。
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
           extractAllPodLabels: true
-          # 有効にすると、プロセッサーは関連するポッドのすべてのアノテーションを抽出し、リソース属性として追加します。
-          # アノテーションの正確な名前がキーになります。
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
           extractAllPodAnnotations: true
-        # collectorがKubernetesイベントを収集するよう設定します。
-        # k8sobject receiverをlogsパイプラインに追加し、デフォルトでKubernetesイベントを収集します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
+        # Configures the collector to collect Kubernetes events.
+        # Adds the k8sobject receiver to the logs pipeline and collects Kubernetes events by default.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-objects-receiver
         kubernetesEvents:
           enabled: true
-        # Kubernetes Cluster Receiverがクラスターレベルのメトリクスを収集するよう設定します。
-        # k8s_cluster receiverをmetricsパイプラインに追加し、ClusterRoleに必要なルールを追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
+        # Configures the Kubernetes Cluster Receiver to collect cluster-level metrics.
+        # Adds the k8s_cluster receiver to the metrics pipeline and adds the necessary rules to ClusteRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-cluster-receiver
         clusterMetrics:
           enabled: true
 
@@ -348,9 +348,9 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
     次に、ノードおよびポッドレベルのメトリクスとログを収集するため、collectorをデーモンセットとしてデプロイします。
 
     ```shell
-    # マニフェストファイルをダウンロードする
+    # download manifest file
     curl -O https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/refs/heads/main/docs/use-cases/observability/clickstack/example-datasets/_snippets/k8s_daemonset.yaml
-    # Helm チャートをインストールする
+    # install the helm chart
     helm install --namespace otel-demo k8s-otel-daemonset open-telemetry/opentelemetry-collector -f k8s_daemonset.yaml
     ```
 
@@ -363,7 +363,7 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
         repository: otel/opentelemetry-collector-contrib
         tag: 0.123.0
          
-      # kubeletstats の CPU/メモリ使用率メトリクスを使用するために必要
+      # Required to use the kubeletstats cpu/memory utilization metrics
       clusterRole:
         create: true
         rules:
@@ -379,20 +379,20 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
           enabled: true
         hostMetrics:
           enabled: true
-        # Kubernetes メタデータを追加するために Kubernetes Processor を設定します。
-        # k8sattributes プロセッサーをすべてのパイプラインに追加し、クラスター ロールに必要なルールを追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
+        # Configures the Kubernetes Processor to add Kubernetes metadata.
+        # Adds the k8sattributes processor to all the pipelines and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubernetes-attributes-processor
         kubernetesAttributes:
           enabled: true
-          # 有効にすると、プロセッサーは関連するポッドのすべてのラベルを抽出し、リソース属性として追加します。
-          # ラベルの正確な名前がキーになります。
+          # When enabled, the processor will extract all labels for an associated pod and add them as resource attributes.
+          # The label's exact name will be the key.
           extractAllPodLabels: true
-          # 有効にすると、プロセッサーは関連するポッドのすべてのアノテーションを抽出し、リソース属性として追加します。
-          # アノテーションの正確な名前がキーになります。
+          # When enabled, the processor will extract all annotations for an associated pod and add them as resource attributes.
+          # The annotation's exact name will be the key.
           extractAllPodAnnotations: true
-        # キューブレット上の API サーバーからノード、ポッド、コンテナーのメトリクスを収集するように collector を設定します。
-        # kubeletstats receiver をメトリクスパイプラインに追加し、クラスター ロールに必要なルールを追加します。
-        # 詳細: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
+        # Configures the collector to collect node, pod, and container metrics from the API server on a kubelet..
+        # Adds the kubeletstats receiver to the metrics pipeline and adds the necessary rules to ClusterRole.
+        # More Info: https://opentelemetry.io/docs/kubernetes/collector/components/#kubeletstats-receiver
         kubeletMetrics:
           enabled: true
 
@@ -411,7 +411,7 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
 
       config:
         receivers:
-          # 追加のキューブレットメトリクスを設定します
+          # Configures additional kubelet metrics
           kubeletstats:
             collection_interval: 20s
             auth_type: 'serviceAccount'

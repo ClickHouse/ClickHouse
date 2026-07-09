@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'ربط كتالوج Iceberg'
 title: 'كيفية ربط كتالوج Iceberg في ClickHouse Cloud'
-useCases: ['Data warehousing']
+useCases: ['مستودعات البيانات']
 products: ['Cloud']
 skillLevel: 'مبتدئ'
 description: 'تعرّف على كيفية ربط ClickHouse Cloud بكتالوج البيانات لديك والاستعلام عن جداول Iceberg.'
@@ -41,14 +41,14 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
   ## ما ستبنيه
 </div>
 
-في هذا الدليل السريع، ستقوم بما يلي:
+في هذا البدء السريع، ستقوم بما يلي:
 
 * الاتصال بـ Iceberg REST Catalog في ClickHouse Cloud
-* إنشاء قاعدة بيانات ClickHouse تستند إلى هذا catalog
+* إنشاء قاعدة بيانات ClickHouse تستند إلى هذا كتالوج
 * الاستعلام مباشرةً من ClickHouse عن جدول Iceberg موجود
 * التحقق من أن ClickHouse يقرأ البيانات من بحيرة البيانات لديك
 
-بنهاية هذا الدليل، سيكون ClickHouse Cloud متصلاً بـ كتالوج Iceberg لديك، وستتمكن من تشغيل استعلامات SQL على جداول Iceberg من دون نسخ البيانات.
+بنهاية هذا البدء السريع، سيكون ClickHouse Cloud متصلاً بـ كتالوج Iceberg لديك، وستتمكن من تشغيل استعلامات SQL على جداول Iceberg من دون نسخ البيانات.
 
 <Steps titleSize="h3">
   <Step>
@@ -60,7 +60,7 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 
     2. انتقل إلى **Data Sources → Connect to your Data Lake Catalog**.
 
-    3. حدّد data catalog من القائمة المنسدلة.
+    3. حدّد كتالوج البيانات من القائمة المنسدلة.
 
     4. املأ النموذج ببيانات الاعتماد ومعلومات الاتصال.
        بالنسبة إلى Unity Catalog، أدخل ما يلي:
@@ -68,13 +68,13 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
        * Open Table Format (Iceberg)
        * اسم قاعدة بيانات ClickHouse. سيكون هذا هو اسم قاعدة بيانات ClickHouse التي ستجري منها الاستعلامات على جداول Iceberg.
        * معرّف مساحة العمل
-       * اسم Databricks catalog
+       * اسم Databricks كتالوج
        * معرّف العميل
        * السرّ الخاص بالعميل
 
        **أدرج الصور**
 
-    5. احفظ catalog. ينبغي أن يظهر الآن كتالوج البيانات في صفحة Data Sources مع عدد الجداول المتاحة في قاعدة البيانات.
+    5. احفظ كتالوج. ينبغي أن يظهر الآن كتالوج البيانات في صفحة Data Sources مع عدد الجداول المتاحة في قاعدة البيانات.
   </Step>
 
   <Step>

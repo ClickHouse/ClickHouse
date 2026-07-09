@@ -91,10 +91,10 @@ Luego, haga clic en **Save Changes** en la esquina superior derecha. Es posible 
 </div>
 
 <Tip>
-  El ClickPipe de MySQL también admite la replicación sin el modo GTID. Sin embargo, se recomienda habilitar el modo GTID para obtener un mejor rendimiento y facilitar la solución de problemas.
+  El ClickPipe para MySQL también admite la replicación sin el modo GTID. Sin embargo, se recomienda habilitar el modo GTID para obtener un mejor rendimiento y facilitar la solución de problemas.
 </Tip>
 
-Los [Global Transaction Identifiers (GTIDs)](https://dev.mysql.com/doc/refman/8.0/en/replication-gtids.html) son identificadores únicos asignados a cada transacción confirmada en MySQL. Simplifican la replicación del binlog y facilitan la solución de problemas. **Recomendamos** habilitar el modo GTID para que el ClickPipe de MySQL pueda usar la replicación basada en GTID.
+Los [Global Transaction Identifiers (GTIDs)](https://dev.mysql.com/doc/refman/8.0/en/replication-gtids.html) son identificadores únicos asignados a cada transacción confirmada en MySQL. Simplifican la replicación del binlog y facilitan la solución de problemas. **Recomendamos** habilitar el modo GTID para que el ClickPipe para MySQL pueda usar la replicación basada en GTID.
 
 La replicación basada en GTID es compatible con Amazon Aurora MySQL v2 (MySQL 5.7) y v3 (MySQL 8.0), así como con Aurora Serverless v2. Para habilitar el modo GTID en tu instancia de Aurora MySQL, sigue estos pasos:
 
@@ -158,4 +158,4 @@ Para conectarse a su instancia de Aurora MySQL a través de una red privada, pue
   ## ¿Qué sigue?
 </div>
 
-Ahora que su instancia de Amazon Aurora MySQL está configurada para la replicación mediante binlog y se conecta de forma segura a ClickHouse Cloud, puede [crear su primer ClickPipe de MySQL](/es/integrations/clickpipes/mysql/index#create-your-clickpipe). Si tiene preguntas frecuentes sobre el CDC de MySQL, consulte la [página de preguntas frecuentes de MySQL](/es/integrations/clickpipes/mysql/faq).
+Ahora que su instancia de Amazon Aurora MySQL está configurada para la replicación mediante binlog y se conecta de forma segura a ClickHouse Cloud, ya puede [crear su primer ClickPipe para MySQL](/es/integrations/clickpipes/mysql/index#create-your-clickpipe). Para consultar las preguntas frecuentes sobre MySQL CDC, vea la [página de preguntas frecuentes sobre MySQL](/es/integrations/clickpipes/mysql/faq).

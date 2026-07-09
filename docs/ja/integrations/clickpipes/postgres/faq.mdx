@@ -439,11 +439,11 @@ CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish =
   ### フェイルオーバーを有効にしたレプリケーションスロットを ClickPipe に作成させることはできますか？
 </div>
 
-はい。レプリケーションモードが CDC (変更データキャプチャ)  または Snapshot + CDC (変更データキャプチャ)  の Postgres ClickPipe では、ClickPipe の作成時に `Advanced Settings` セクションで以下のスイッチを有効にすることで、ClickPipes にフェイルオーバー対応のレプリケーションスロットを作成させることができます。なお、この機能を使用するには Postgres 17 以降が必要です。
+はい。レプリケーションモードが CDC (変更データキャプチャ) または Snapshot + CDC (変更データキャプチャ) の Postgres ClickPipe では、ClickPipe の作成時に `Advanced Settings` セクションで以下のスイッチを有効にすることで、ClickPipes にフェイルオーバー対応のレプリケーションスロットを作成させることができます。なお、この機能を使用するには Postgres 17 以降が必要です。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
 
-ソース側が適切に設定されていれば、Postgres のリードレプリカへのフェイルオーバー後もスロットは保持され、データレプリケーションを継続できます。詳細は[こちら](https://www.postgresql.org/docs/current/logical-replication-failover.html)をご覧ください。
+ソース側が適切に設定されていれば、Postgres の読み取りレプリカへのフェイルオーバー後もスロットは保持され、データレプリケーションを継続できます。詳細は[こちら](https://www.postgresql.org/docs/current/logical-replication-failover.html)をご覧ください。
 
 <div id="transient-logical-decoding-errors">
   ### `Internal error encountered during logical decoding of aborted sub-transaction` のようなエラーが表示される

@@ -95,7 +95,7 @@
                   ]
                 },
                 {
-                  "group": "Búsqueda vectorial & embeddings",
+                  "group": "Búsqueda vectorial y embeddings",
                   "pages": [
                     "es/get-started/sample-datasets/dbpedia",
                     "es/get-started/sample-datasets/hacker-news-vector-search",
@@ -104,7 +104,7 @@
                   ]
                 },
                 {
-                  "group": "Analítica web & de redes sociales",
+                  "group": "Analítica web y social",
                   "pages": [
                     "es/get-started/sample-datasets/amazon-reviews",
                     "es/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -116,7 +116,7 @@
                   ]
                 },
                 {
-                  "group": "Geo & ubicación",
+                  "group": "Geoespacial y ubicación",
                   "pages": [
                     "es/get-started/sample-datasets/cell-towers",
                     "es/get-started/sample-datasets/foursquare-os-places",
@@ -124,7 +124,7 @@
                   ]
                 },
                 {
-                  "group": "Series temporales & sensores",
+                  "group": "Series temporales y sensores",
                   "pages": [
                     "es/get-started/sample-datasets/environmental-sensors",
                     "es/get-started/sample-datasets/noaa",
@@ -133,7 +133,7 @@
                   ]
                 },
                 {
-                  "group": "Registros públicos & datos abiertos",
+                  "group": "Registros públicos y datos abiertos",
                   "pages": [
                     "es/get-started/sample-datasets/covid19",
                     "es/get-started/sample-datasets/menus",
@@ -286,7 +286,7 @@
                     },
                     "es/concepts/features/performance/lazy-materialization",
                     {
-                      "group": "Resolución de problemas",
+                      "group": "Solución de problemas",
                       "pages": [
                         "es/concepts/features/performance/troubleshoot/debugging-memory-issues",
                         "es/concepts/features/performance/troubleshoot/performance-test",
@@ -447,7 +447,7 @@
                     "es/concepts/features/interfaces/schema-inference",
                     "es/concepts/features/interfaces/web-terminal",
                     {
-                      "group": "clients de terceros",
+                      "group": "Clientes de terceros",
                       "pages": [],
                       "root": "es/concepts/features/interfaces/third-party/index"
                     }
@@ -665,7 +665,7 @@
                     "es/guides/use-cases/observability/cloud-monitoring",
                     "es/guides/use-cases/observability/self-managed-monitoring",
                     {
-                      "group": "Crea el tuyo propio",
+                      "group": "Cree el suyo propio",
                       "pages": [
                         "es/guides/use-cases/observability/build-your-own/introduction",
                         "es/guides/use-cases/observability/build-your-own/schema-design",
@@ -773,7 +773,7 @@
             {
               "expandable": true,
               "expanded": true,
-              "group": "Referencia SQL",
+              "group": "Referencia de SQL",
               "pages": [
                 "es/reference/syntax",
                 {
@@ -848,7 +848,7 @@
                             },
                             {
                               "expanded": false,
-                              "group": "Orígenes",
+                              "group": "Sources",
                               "pages": [
                                 "es/reference/statements/create/dictionary/sources/local-file",
                                 "es/reference/statements/create/dictionary/sources/executable-file",
@@ -1072,7 +1072,7 @@
               "pages": [
                 {
                   "expanded": false,
-                  "group": "Motores de tabla",
+                  "group": "Motores de tablas",
                   "pages": [
                     {
                       "expanded": false,
@@ -1128,7 +1128,6 @@
                         "es/reference/engines/table-engines/mergetree-family/collapsingmergetree",
                         "es/reference/engines/table-engines/mergetree-family/custom-partitioning-key",
                         "es/reference/engines/table-engines/mergetree-family/graphitemergetree",
-                        "es/reference/engines/table-engines/mergetree-family/invertedindexes",
                         "es/reference/engines/table-engines/mergetree-family/replacingmergetree",
                         "es/reference/engines/table-engines/mergetree-family/replication",
                         "es/reference/engines/table-engines/mergetree-family/summingmergetree",
@@ -1166,7 +1165,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Motores de base de datos",
+                  "group": "Motores de bases de datos",
                   "pages": [
                     "es/reference/engines/database-engines/atomic",
                     "es/reference/engines/database-engines/backup",
@@ -1687,7 +1686,7 @@
             {
               "expandable": true,
               "expanded": false,
-              "group": "Ajustes",
+              "group": "Configuración",
               "pages": [
                 "es/reference/settings/server-settings/settings",
                 "es/reference/settings/session-settings",
@@ -1976,7 +1975,7 @@
                     "es/products/cloud/features/support",
                     {
                       "expanded": false,
-                      "group": "AI/ML",
+                      "group": "IA/ML",
                       "pages": [
                         "es/products/cloud/features/ai-ml/ask-ai",
                         "es/products/cloud/features/ai-ml/aichat/using-ai-chat",
@@ -2110,7 +2109,7 @@
                         "es/products/cloud/guides/backups/configurable-backups",
                         {
                           "expanded": false,
-                          "group": "Use su propia copia de seguridad",
+                          "group": "Usar tu propia copia de seguridad",
                           "pages": [
                             "es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                             "es/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -2138,7 +2137,7 @@
                       "pages": [
                         {
                           "expanded": false,
-                          "group": "Modos de despliegue",
+                          "group": "Modos de implementación",
                           "pages": [
                             "es/products/cloud/guides/infrastructure/deployment-options/clickhouse-private",
                             "es/products/cloud/guides/infrastructure/deployment-options/clickhouse-government",
@@ -2153,7 +2152,7 @@
                       "pages": [
                         {
                           "expanded": false,
-                          "group": "Gestión del acceso a Cloud",
+                          "group": "Gestión de acceso a Cloud",
                           "pages": [
                             "es/products/cloud/guides/security/cloud-access-management/manage-my-account",
                             "es/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
@@ -2205,7 +2204,7 @@
                         },
                         {
                           "expanded": false,
-                          "group": "Cumplimiento normativo",
+                          "group": "Cumplimiento",
                           "pages": [
                             "es/products/cloud/guides/security/compliance/hipaa-onboarding",
                             "es/products/cloud/guides/security/compliance/pci-onboarding"
@@ -2218,7 +2217,175 @@
                 },
                 {
                   "group": "Referencia de la API",
-                  "openapi": "https://api.clickhouse.cloud/v1"
+                  "openapi": "https://api.clickhouse.cloud/v1",
+                  "pages": [
+                    {
+                      "group": "Organización",
+                      "pages": [
+                        "es/GET /v1/organizations",
+                        "es/GET /v1/organizations/{organizationId}",
+                        "es/PATCH /v1/organizations/{organizationId}",
+                        "es/GET /v1/organizations/{organizationId}/activities",
+                        "es/GET /v1/organizations/{organizationId}/activities/{activityId}",
+                        "es/GET /v1/organizations/{organizationId}/privateEndpointConfig",
+                        "es/POST /v1/organizations/{organizationId}/byocInfrastructure",
+                        "es/DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        "es/PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        {
+                          "group": "Facturación",
+                          "pages": [
+                            "es/GET /v1/organizations/{organizationId}/usageCost"
+                          ]
+                        },
+                        {
+                          "group": "Gestión de usuarios",
+                          "pages": [
+                            "es/GET /v1/organizations/{organizationId}/members",
+                            "es/GET /v1/organizations/{organizationId}/members/{userId}",
+                            "es/PATCH /v1/organizations/{organizationId}/members/{userId}",
+                            "es/DELETE /v1/organizations/{organizationId}/members/{userId}",
+                            "es/GET /v1/organizations/{organizationId}/invitations",
+                            "es/POST /v1/organizations/{organizationId}/invitations",
+                            "es/GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+                            "es/DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+                          ]
+                        },
+                        {
+                          "group": "Gestión de roles",
+                          "pages": [
+                            "es/GET /v1/organizations/{organizationId}/roles",
+                            "es/POST /v1/organizations/{organizationId}/roles",
+                            "es/GET /v1/organizations/{organizationId}/roles/{roleId}",
+                            "es/PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+                            "es/DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "Servicio",
+                      "pages": [
+                        "es/GET /v1/organizations/{organizationId}/services",
+                        "es/POST /v1/organizations/{organizationId}/services",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "es/POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/scaling",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+                        "es/POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "es/POST /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "es/PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        {
+                          "group": "Backup",
+                          "pages": [
+                            "es/GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+                            "es/GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+                            "es/GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "es/GET /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "es/POST /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/backupBucket"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "OpenAPI",
+                      "pages": [
+                        "es/GET /v1/organizations/{organizationId}/keys",
+                        "es/POST /v1/organizations/{organizationId}/keys",
+                        "es/GET /v1/organizations/{organizationId}/keys/{keyId}",
+                        "es/PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+                        "es/DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+                      ]
+                    },
+                    {
+                      "group": "Prometheus",
+                      "pages": [
+                        "es/GET /v1/organizations/{organizationId}/prometheus",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+                        "es/GET /v1/organizations/{organizationId}/postgres/prometheus",
+                        "es/GET /v1/organizations/{organizationId}/postgres/{postgresId}/prometheus"
+                      ]
+                    },
+                    {
+                      "group": "ClickPipes",
+                      "pages": [
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "es/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "es/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "es/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "es/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+                      ]
+                    },
+                    {
+                      "group": "ClickStack",
+                      "pages": [
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "es/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "es/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "es/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "es/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "es/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "es/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks"
+                      ],
+                      "tag": "Beta"
+                    },
+                    {
+                      "group": "Postgres",
+                      "pages": [
+                        "es/POST /v1/organizations/{organizationId}/postgres",
+                        "es/GET /v1/organizations/{organizationId}/postgres",
+                        "es/GET /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "es/DELETE /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "es/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "es/GET /v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates",
+                        "es/POST /v1/organizations/{organizationId}/postgres/{postgresId}/restoredService",
+                        "es/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/password",
+                        "es/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/state",
+                        "es/POST /v1/organizations/{organizationId}/postgres/{postgresId}/readReplica",
+                        "es/GET /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "es/POST /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "es/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "es/GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
+                        "es/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
+                        "es/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}"
+                      ],
+                      "tag": "Beta"
+                    }
+                  ]
                 }
               ]
             },
@@ -2226,7 +2393,7 @@
               "group": "Bring Your Own Cloud",
               "pages": [
                 {
-                  "group": "Información general",
+                  "group": "Descripción general",
                   "pages": [
                     "es/products/bring-your-own-cloud/overview/overview",
                     "es/products/bring-your-own-cloud/overview/architecture"
@@ -2241,7 +2408,7 @@
                   ]
                 },
                 {
-                  "group": "Puesta en marcha",
+                  "group": "Incorporación",
                   "pages": [
                     "es/products/bring-your-own-cloud/onboarding/aws",
                     "es/products/bring-your-own-cloud/onboarding/standard",
@@ -2294,7 +2461,7 @@
               ]
             },
             {
-              "group": "Funciones",
+              "group": "Características",
               "pages": [
                 "es/products/managed-postgres/connection",
                 "es/products/managed-postgres/settings",
@@ -2306,6 +2473,14 @@
                 "es/products/managed-postgres/read-replicas",
                 "es/products/managed-postgres/backup-and-restore",
                 "es/products/managed-postgres/extensions",
+                {
+                  "group": "pg_clickhouse",
+                  "pages": [
+                    "es/products/managed-postgres/extensions/pg_clickhouse/reference",
+                    "es/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+                  ],
+                  "root": "es/products/managed-postgres/extensions/pg_clickhouse/introduction"
+                },
                 "es/products/managed-postgres/upgrades",
                 "es/products/managed-postgres/openapi",
                 "es/products/managed-postgres/terraform"
@@ -2324,7 +2499,7 @@
               ]
             },
             {
-              "group": "ClickHouse Integration",
+              "group": "Integración de ClickHouse",
               "pages": [
                 "es/products/managed-postgres/clickhouse-integration"
               ]
@@ -2399,7 +2574,7 @@
               "root": "es/clickstack/overview"
             },
             {
-              "group": "Funciones",
+              "group": "Características",
               "pages": [
                 {
                   "group": "Implementación",
@@ -2423,7 +2598,7 @@
                               "root": "es/clickstack/deployment/helm"
                             },
                             {
-                              "group": "v1.x (obsoleto)",
+                              "group": "v1.x (en desuso)",
                               "pages": [
                                 "es/clickstack/deployment/helm-configuration-v1",
                                 "es/clickstack/deployment/helm-deployment-options-v1",
@@ -2486,7 +2661,7 @@
             },
             {
               "expanded": true,
-              "group": "Gestión de ClickStack",
+              "group": "Administración de ClickStack",
               "pages": [
                 "es/clickstack/managing/admin",
                 "es/clickstack/managing/config",
@@ -2503,7 +2678,7 @@
               "group": "Guías",
               "pages": [
                 {
-                  "group": "Ingestar datos",
+                  "group": "Ingesta de datos",
                   "pages": [
                     "es/clickstack/ingesting-data/overview",
                     "es/clickstack/ingesting-data/opentelemetry",
@@ -2544,7 +2719,7 @@
                       "root": "es/clickstack/integration-examples/index"
                     },
                     {
-                      "group": "SDK de lenguaje",
+                      "group": "SDK de lenguajes",
                       "pages": [
                         "es/clickstack/ingesting-data/sdks/browser",
                         "es/clickstack/ingesting-data/sdks/nodejs",
@@ -2588,7 +2763,7 @@
             },
             {
               "expanded": true,
-              "group": "Partners de integración",
+              "group": "Socios de integración",
               "pages": [
                 "es/clickstack/integration-partners/bindplane",
                 "es/clickstack/integration-partners/odigos"
@@ -2644,7 +2819,7 @@
               "root": "es/products/chdb/index"
             },
             {
-              "group": "Integraciones de lenguaje",
+              "group": "Integraciones de lenguajes",
               "pages": [
                 "es/products/chdb/install/python",
                 "es/products/chdb/install/nodejs",
@@ -2726,7 +2901,7 @@
             "es/products/kubernetes-operator/overview",
             {
               "expanded": true,
-              "group": "Instalar",
+              "group": "Instalación",
               "pages": [
                 "es/products/kubernetes-operator/install/kubectl",
                 "es/products/kubernetes-operator/install/helm",
@@ -2833,9 +3008,11 @@
           "groups": [
             {
               "group": "ClickPipes para almacenamiento de objetos",
+              "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
               "pages": [
                 {
                   "group": "Amazon S3",
+                  "icon": "/images/integrations/logos/amazon_s3_logo.svg",
                   "pages": [
                     "es/integrations/clickpipes/object-storage/amazon-s3/overview",
                     "es/integrations/clickpipes/object-storage/amazon-s3/get-started",
@@ -2844,6 +3021,7 @@
                 },
                 {
                   "group": "Google Cloud Storage",
+                  "icon": "/images/integrations/logos/gcs.svg",
                   "pages": [
                     "es/integrations/clickpipes/object-storage/google-cloud-storage/overview",
                     "es/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
@@ -2852,6 +3030,7 @@
                 },
                 {
                   "group": "Azure Blob Storage",
+                  "icon": "/images/integrations/logos/azureblobstorage.svg",
                   "pages": [
                     "es/integrations/clickpipes/object-storage/azure-blob-storage/overview",
                     "es/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
@@ -2862,6 +3041,7 @@
             },
             {
               "group": "ClickPipes para Postgres",
+              "icon": "/images/integrations/logos/postgresql.svg",
               "pages": [
                 "es/integrations/clickpipes/postgres/deduplication",
                 "es/integrations/clickpipes/postgres/ordering-keys",
@@ -2887,7 +3067,7 @@
                   ]
                 },
                 {
-                  "group": "Origen",
+                  "group": "Fuente",
                   "pages": [
                     "es/integrations/clickpipes/postgres/source/alloydb",
                     "es/integrations/clickpipes/postgres/source/rds",
@@ -2907,6 +3087,7 @@
             },
             {
               "group": "ClickPipes para Kafka",
+              "icon": "/images/integrations/logos/kafka.svg",
               "pages": [
                 "es/integrations/clickpipes/kafka/create-kafka-clickpipe",
                 "es/integrations/clickpipes/kafka/schema-registries",
@@ -2918,6 +3099,7 @@
             },
             {
               "group": "ClickPipes para Kinesis",
+              "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
               "pages": [
                 "es/integrations/clickpipes/kinesis/overview",
                 "es/integrations/clickpipes/kinesis/auth"
@@ -2926,6 +3108,7 @@
             },
             {
               "group": "ClickPipes para GCP Pub/Sub",
+              "icon": "/images/integrations/logos/google_pubsub.svg",
               "pages": [
                 "es/integrations/clickpipes/pubsub/overview",
                 "es/integrations/clickpipes/pubsub/auth"
@@ -2934,6 +3117,7 @@
             },
             {
               "group": "ClickPipes para MySQL",
+              "icon": "/images/integrations/logos/mysql.svg",
               "pages": [
                 "es/integrations/clickpipes/mysql/faq",
                 "es/integrations/clickpipes/mysql/datatypes",
@@ -2953,7 +3137,7 @@
                   ]
                 },
                 {
-                  "group": "Origen",
+                  "group": "Fuente",
                   "pages": [
                     "es/integrations/clickpipes/mysql/source/rds",
                     "es/integrations/clickpipes/mysql/source/aurora",
@@ -2969,6 +3153,7 @@
             },
             {
               "group": "ClickPipes para MongoDB",
+              "icon": "/images/integrations/logos/mongodb.svg",
               "pages": [
                 "es/integrations/clickpipes/mongodb/datatypes",
                 "es/integrations/clickpipes/mongodb/quickstart",
@@ -2987,7 +3172,7 @@
                   ]
                 },
                 {
-                  "group": "Origen",
+                  "group": "Fuente",
                   "pages": [
                     "es/integrations/clickpipes/mongodb/source/atlas",
                     "es/integrations/clickpipes/mongodb/source/generic",
@@ -2999,6 +3184,7 @@
             },
             {
               "group": "ClickPipes para BigQuery",
+              "icon": "/images/logo-bigquery.svg",
               "pages": [
                 "es/integrations/clickpipes/bigquery/overview",
                 "es/integrations/clickpipes/bigquery/get-started"
@@ -3006,6 +3192,7 @@
             },
             {
               "group": "Acceso programático",
+              "icon": "code",
               "pages": [
                 "es/integrations/clickpipes/programmatic-access/openapi",
                 "es/integrations/clickpipes/programmatic-access/terraform"
@@ -3013,6 +3200,7 @@
             },
             {
               "group": "Otros",
+              "icon": "ellipsis",
               "pages": [
                 "es/integrations/clickpipes/aws-privatelink",
                 "es/integrations/clickpipes/dynamodb",
@@ -3102,7 +3290,7 @@
               "root": "es/integrations/language-clients/c"
             },
             {
-              "group": "clients de terceros",
+              "group": "Clientes de terceros",
               "icon": "users",
               "pages": [
                 "es/integrations/language-clients/third-party/moose-olap",
@@ -3111,7 +3299,7 @@
             }
           ],
           "icon": "/images/icons/icon-language-clients.svg",
-          "item": "Clients de lenguaje"
+          "item": "Clientes para lenguajes"
         },
         {
           "groups": [
@@ -3218,6 +3406,7 @@
               "group": "Ingestión de datos",
               "pages": [
                 "es/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
+                "es/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
                 "es/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
                 {
                   "expanded": false,
@@ -3316,7 +3505,7 @@
             },
             {
               "expanded": true,
-              "group": "Clients SQL",
+              "group": "Clientes SQL",
               "pages": [
                 "es/integrations/connectors/sql-clients/sql-console",
                 "es/integrations/connectors/sql-clients/datagrip",
@@ -3610,7 +3799,7 @@
               ]
             },
             {
-              "group": "Compilación",
+              "group": "Desarrollo",
               "pages": [
                 "es/resources/develop-contribute/build/build",
                 "es/resources/develop-contribute/build/build-osx",
@@ -3633,7 +3822,7 @@
               ]
             },
             {
-              "group": "Contribuciones",
+              "group": "Contribuir",
               "pages": [
                 "es/resources/develop-contribute/contribute/tests",
                 "es/resources/develop-contribute/contribute/continuous-integration",
@@ -3662,7 +3851,7 @@
             }
           ],
           "icon": "/images/icons/icon-contribute.svg",
-          "item": "Desarrollo y contribución",
+          "item": "Desarrollo y contribuciones",
           "root": "es/resources/develop-contribute/index"
         },
         {
@@ -3682,7 +3871,7 @@
                 },
                 "es/resources/changelogs/cloud/release-status",
                 {
-                  "group": "Registro de cambios de versiones de la base de datos Cloud",
+                  "group": "Registro de cambios de las versiones de la base de datos de Cloud",
                   "pages": [
                     "es/resources/changelogs/cloud/release-notes/26_02",
                     "es/resources/changelogs/cloud/release-notes/25_12",
@@ -3729,7 +3918,6 @@
               "group": "Acerca de ClickHouse",
               "pages": [
                 "es/resources/about/adopters",
-                "es/resources/about/cloud",
                 "es/resources/about/support"
               ],
               "root": "es/resources/about/index"

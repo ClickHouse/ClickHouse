@@ -15,11 +15,11 @@ Introduced in：v1.1.0
 
 计算不同参数值的精确数量。
 
-<Warning>
-  `uniqExact` 函数比 `uniq` 占用更多内存，因为随着不同值的数量增加，其状态大小会无限增长。
-  只有在你确实需要精确结果时，才应使用 `uniqExact` 函数。
-  否则，请使用 [`uniq`](/zh/reference/functions/aggregate-functions/uniq) 函数。
-</Warning>
+:::warning
+`uniqExact` 函数比 `uniq` 占用更多内存，因为随着不同值的数量增加，其状态大小会无限增长。
+只有在你确实需要精确结果时，才应使用 `uniqExact` 函数。
+否则，请使用 [`uniq`](/zh/reference/functions/aggregate-functions/uniq) 函数。
+:::
 
 **Syntax**
 

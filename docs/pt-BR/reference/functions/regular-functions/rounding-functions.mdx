@@ -250,27 +250,24 @@ Se o número a ser arredondado estiver exatamente no meio entre dois números, a
 * Se `N < 0`, a função arredonda à esquerda do separador decimal
 * Se `N = 0`, a função arredonda para o inteiro seguinte
 
-<Info>
-  **Notas**
+:::info Notas
 
-  * Quando o número a ser arredondado está exatamente no meio entre dois números, ele é arredondado para o dígito par mais próximo na posição decimal especificada.
-    Por exemplo: `3.5` é arredondado para cima, para `4`, e `2.5` é arredondado para baixo, para `2`.
-  * A função `round` realiza o mesmo arredondamento para números de ponto flutuante.
-  * A função `roundBankers` também arredonda inteiros da mesma forma; por exemplo, `roundBankers(45, -1) = 40`.
-  * Nos demais casos, a função arredonda os números para o inteiro mais próximo.
-</Info>
+* Quando o número a ser arredondado está exatamente no meio entre dois números, ele é arredondado para o dígito par mais próximo na posição decimal especificada.
+  Por exemplo: `3.5` é arredondado para cima, para `4`, e `2.5` é arredondado para baixo, para `2`.
+* A função `round` realiza o mesmo arredondamento para números de ponto flutuante.
+* A função `roundBankers` também arredonda inteiros da mesma forma; por exemplo, `roundBankers(45, -1) = 40`.
+* Nos demais casos, a função arredonda os números para o inteiro mais próximo.
+  :::
 
-<Tip>
-  **Use o arredondamento bancário para somar ou subtrair números**
+:::tip Use o arredondamento bancário para somar ou subtrair números
+Ao usar o arredondamento bancário, você pode reduzir o efeito que o arredondamento dos números tem nos resultados da soma ou subtração desses números.
 
-  Ao usar o arredondamento bancário, você pode reduzir o efeito que o arredondamento dos números tem nos resultados da soma ou subtração desses números.
+Por exemplo, some os números `1.5, 2.5, 3.5, 4.5` usando diferentes formas de arredondamento:
 
-  Por exemplo, some os números `1.5, 2.5, 3.5, 4.5` usando diferentes formas de arredondamento:
-
-  * Sem arredondamento: `1.5 + 2.5 + 3.5 + 4.5 = 12`.
-  * Arredondamento bancário: `2 + 2 + 4 + 4 = 12`.
-  * Arredondamento para o inteiro mais próximo: `2 + 3 + 4 + 5 = 14`.
-</Tip>
+* Sem arredondamento: `1.5 + 2.5 + 3.5 + 4.5 = 12`.
+* Arredondamento bancário: `2 + 2 + 4 + 4 = 12`.
+* Arredondamento para o inteiro mais próximo: `2 + 3 + 4 + 5 = 14`.
+  :::
 
 **Sintaxe**
 

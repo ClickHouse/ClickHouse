@@ -153,7 +153,7 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
 
             ### Iniciar un collector
 
-            A continuación se asume la opción recomendada: usar la **distribución de ClickStack de OpenTelemetry Collector**, que incluye procesamiento adicional y está optimizada específicamente para ClickHouse Cloud. Si quiere usar su propio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors)
+            A continuación se asume la opción recomendada: usar la **distribución de ClickStack de OpenTelemetry Collector**, que incluye procesamiento adicional y está optimizada específicamente para ClickHouse Cloud. Si quiere usar su propio OpenTelemetry Collector, consulte [&quot;Configurar collectors existentes.&quot;](#configure-existing-collectors-existing)
 
             Para empezar rápidamente, copie y ejecute el comando de Docker que se muestra.
 
@@ -311,7 +311,7 @@ La siguiente guía asume que ya has creado un servicio de ClickHouse Cloud. Si a
 
 1. Vaya a su servicio en la consola de ClickHouse Cloud
 2. Vaya a **Settings** → **SQL Console Access**
-3. Establezca el nivel de acceso adecuado para cada usuario:
+3. Establezca el nivel de permiso adecuado para cada usuario:
    * **Service Admin → Full Access** - Necesario para habilitar alertas
    * **Service Read Only → Read Only** - Puede ver datos de observabilidad y crear dashboards
    * **No access** - No puede acceder a HyperDX

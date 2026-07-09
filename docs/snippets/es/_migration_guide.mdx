@@ -16,10 +16,10 @@ Desde el punto de vista de la instancia de ClickHouse, puede optar por lo siguie
 
 2. **[PULL](#pull-data-from-redshift-to-clickhouse)** extraer datos de Redshift aprovechando ClickHouse JDBC Bridge
 
-3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** usar almacenamiento de objetos S3 con una lógica de «descargar y luego cargar»
+3. **[PIVOT](#pivot-data-from-redshift-to-clickhouse-using-s3)** usar S3 object storage con una lógica de «descargar y luego cargar»
 
 <Note>
-  En este tutorial usamos Redshift como fuente de datos. Sin embargo, los enfoques de migración que se presentan aquí no son exclusivos de Redshift, y se pueden seguir pasos similares con cualquier fuente de datos compatible.
+  Usamos Redshift como origen de datos en este tutorial. Sin embargo, los enfoques de migración que se presentan aquí no son exclusivos de Redshift, y se pueden seguir pasos similares con cualquier origen de datos compatible.
 </Note>
 
 <div id="push-data-from-redshift-to-clickhouse">
@@ -49,7 +49,7 @@ En el escenario push, la idea es aprovechar una herramienta o un servicio de ter
   ## Extraer datos de Redshift a ClickHouse
 </div>
 
-En el escenario Pull, la idea es aprovechar el ClickHouse JDBC Bridge para conectarse directamente a un clúster de Redshift desde una instancia de ClickHouse y ejecutar consultas `INSERT INTO ... SELECT`:
+En el escenario Pull, la idea es aprovechar ClickHouse JDBC Bridge para conectarse directamente a un clúster de Redshift desde una instancia de ClickHouse y ejecutar consultas `INSERT INTO ... SELECT`:
 
 <Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="PULL de Redshift a ClickHouse" />
 
@@ -214,7 +214,7 @@ En este escenario, exportamos los datos a S3 en un formato PIVOT intermedio y, e
 
 * Dos pasos en el proceso (exportar desde Redshift y luego cargar en ClickHouse).
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### Tutorial
 </div>
 

@@ -313,16 +313,16 @@ WHERE town = 'LONDON'
 
 df_distribution = chdb.query(query_distribution, "DataFrame")
 
-# インタラクティブな箱ひげ図を作成する。
+# create an interactive box plot.
 fig_box = go.Figure()
 
 fig_box.add_trace(
     go.Box(
         y=df_distribution['price'],
         name=f'London {year_slider.value}',
-        boxmean='sd',  # 平均と標準偏差を表示する
+        boxmean='sd',  # Show mean and standard deviation
         marker_color='lightblue',
-        boxpoints='outliers'  # 外れ値のポイントを表示する
+        boxpoints='outliers'  # Show outlier points
     )
 )
 

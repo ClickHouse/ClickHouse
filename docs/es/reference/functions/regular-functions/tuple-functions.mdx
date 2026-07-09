@@ -42,7 +42,7 @@ dotProduct(vector1, vector2)
 
 **Valor devuelto**
 
-Devuelve el producto escalar de ambos vectores. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
+Devuelve el producto escalar de ambos vectores. Dos arrays de `BFloat16` acumulan en `Float32` y devuelven `Float32`. [`(U)Int*`](/es/reference/data-types/int-uint) o [`Float*`](/es/reference/data-types/float) o [`Decimal`](/es/reference/data-types/decimal)
 
 **Ejemplos**
 
@@ -175,9 +175,9 @@ Introducido en: v21.11.0
 
 Calcula la división elemento a elemento de dos o más tuplas del mismo tamaño, de izquierda a derecha.
 
-<Note>
-  La división por cero devuelve `inf`.
-</Note>
+:::note
+La división por cero devuelve `inf`.
+:::
 
 **Sintaxis**
 
@@ -224,9 +224,9 @@ Introducido en: v21.11.0
 
 Devuelve una tupla cuyos elementos se dividen por un número.
 
-<Note>
-  La división por cero devuelve `inf`.
-</Note>
+:::note
+La división por cero devuelve `inf`.
+:::
 
 **Sintaxis**
 
@@ -352,24 +352,25 @@ Introducido en: v21.1.0
 
 Devuelve la [distancia de Hamming](https://en.wikipedia.org/wiki/Hamming_distance) entre dos tuplas del mismo tamaño.
 
-<Note>
-  El tipo del resultado se determina del mismo modo que en las [funciones aritméticas](/es/reference/functions/regular-functions/arithmetic-functions), en función del número de elementos de las tuplas de entrada.
+:::note
+El tipo del resultado se determina del mismo modo que en las [funciones aritméticas](/es/reference/functions/regular-functions/arithmetic-functions), en función del número de elementos de las tuplas de entrada.
 
-  ```sql
-  SELECT
-      toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
-      toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
-      toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
-      toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
-      toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
-  ```
+```sql
+SELECT
+    toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
+    toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
+    toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
+```
 
-  ```text
-  ┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
-  │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
-  └───────┴────────┴────────┴────────┴────────┘
-  ```
-</Note>
+```text
+┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
+│ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
+└───────┴────────┴────────┴────────┴────────┘
+```
+
+:::
 
 **Sintaxis**
 

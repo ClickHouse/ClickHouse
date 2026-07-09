@@ -130,7 +130,7 @@ https://{bucket}.s3.amazonaws.com/{prefix}/AWSDynamoDB/{export-id}/data/*
   ## 4. Создайте Kinesis ClickPipe
 </div>
 
-Теперь можно настроить Kinesis ClickPipe, чтобы отслеживать изменения из потока Kinesis в реальном времени. Следуйте руководству по Kinesis ClickPipe [здесь](/ru/integrations/clickpipes/kinesis/overview), но используйте следующие настройки:
+Теперь можно настроить Kinesis ClickPipe для захвата изменений из потока Kinesis в реальном времени. Следуйте руководству по Kinesis ClickPipe [здесь](/ru/integrations/clickpipes/kinesis/overview), но используйте следующие настройки:
 
 * **Поток**: поток Kinesis из шага 1
 * **Таблица**: ваша целевая таблица (например, `default.destination` в примере выше)

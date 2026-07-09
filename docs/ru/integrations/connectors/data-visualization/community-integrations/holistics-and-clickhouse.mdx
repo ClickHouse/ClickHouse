@@ -33,10 +33,10 @@ import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintaine
 Выделенному пользователю требуются привилегии `SELECT` для таблиц, которые вы хотите запрашивать, а также для таблиц `system` (для определения схемы).
 
 ```sql
--- Пример: предоставление доступа на чтение к конкретной базе данных
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- Предоставление доступа к системным метаданным
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 

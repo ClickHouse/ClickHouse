@@ -46,6 +46,10 @@ SELECT
 
 Эта функция возвращает тот же результат, что и `now('UTC')`. Она была добавлена только для поддержки MySQL. Предпочтительно использовать [`now`](#now).
 
+:::note
+Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -389,9 +393,9 @@ SELECT dateAdd('1998-06-16'::Date, INTERVAL 10 hour)
 
 Добавляет интервал к другому интервалу или кортежу интервалов.
 
-<Note>
-  Интервалы одного и того же типа будут объединены в один интервал. Например, если переданы `toIntervalDay(1)` и `toIntervalDay(2)`, результатом будет `(3)`, а не `(1,1)`.
-</Note>
+:::note
+Интервалы одного и того же типа будут объединены в один интервал. Например, если переданы `toIntervalDay(1)` и `toIntervalDay(2)`, результатом будет `(3)`, а не `(1,1)`.
+:::
 
 **Синтаксис**
 
@@ -1961,6 +1965,10 @@ SELECT fromUnixTimestampInJodaSyntax(1234334543, 'yyyy-MM-dd HH:mm:ss', 'UTC') A
 Возвращает текущее время суток в часовом поясе сервера (или сеанса) на момент анализа запроса.
 Функция является константным выражением. Это стандартный для SQL / PostgreSQL `LOCALTIME`, эквивалентный `CAST(now() AS Time)`.
 
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -2230,6 +2238,10 @@ SELECT monthName(date_value)
 
 Возвращает текущие дату и время на момент анализа запроса. Эта функция является константным выражением.
 
+:::note
+Эта функция недетерминированна: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -2292,6 +2304,10 @@ SELECT NOW, CURRENT_TIMESTAMP
 
 Возвращает текущие дату и время с точностью до долей секунды в момент анализа запроса. Функция является константным выражением.
 
+:::note
+Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -2301,7 +2317,7 @@ now64([scale[, timezone]])
 **Аргументы**
 
 * `scale` — Необязательный. Размер шага (точность): 10^-precision секунды. Допустимый диапазон: [0 : 9]. Обычно используются значения 3 (по умолчанию) — миллисекунды, 6 — микросекунды, 9 — наносекунды. [`UInt8`](/ru/reference/data-types/int-uint)
-* `timezone` — Необязательный. Название часового пояса для возвращаемого значения. [`String`](/ru/reference/data-types/string)
+* `timezone` — Необязательный. Имя часового пояса для возвращаемого значения. [`String`](/ru/reference/data-types/string)
 
 **Возвращаемое значение**
 
@@ -2330,6 +2346,10 @@ SELECT now64(), now64(9, 'Asia/Istanbul')
 Возвращает текущие дату и время на момент обработки каждого блока данных. В отличие от функции [`now`](#now), это не константное выражение, и при длительном выполнении запроса возвращаемое значение будет различаться в разных блоках.
 
 Эту функцию имеет смысл использовать для генерации текущего времени в длительно выполняющихся запросах `INSERT SELECT`.
+
+:::note
+Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -2377,6 +2397,10 @@ FORMAT PrettyCompactMonoBlock
 
 Эту функцию имеет смысл использовать для генерации текущего времени в длительно выполняющихся запросах INSERT SELECT.
 
+:::note
+Эта функция недетерминированная: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -2422,6 +2446,10 @@ FORMAT PrettyCompactMonoBlock
 
 Возвращает часовой пояс сервера, то есть значение настройки [`timezone`](/ru/reference/settings/server-settings/settings#timezone).
 Если функция выполняется в контексте distributed таблицы, она создаёт обычный столбец со значениями для каждого сегмента. В противном случае она возвращает константное значение.
+
+:::note
+Эта функция недетерминированна: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -3262,10 +3290,10 @@ SELECT
 
 Округляет время до начала получасового интервала.
 
-<Note>
-  Хотя эта функция может принимать в качестве аргумента значения расширенных типов `Date32` и `DateTime64`,
-  передача ей времени вне обычного диапазона (с 1970 по 2149 год для `Date` / до 2106 года для `DateTime`) приведет к неверным результатам.
-</Note>
+:::note
+Хотя эта функция может принимать в качестве аргумента значения расширенных типов `Date32` и `DateTime64`,
+передача ей времени вне обычного диапазона (с 1970 по 2149 год для `Date` / до 2106 года для `DateTime`) приведет к неверным результатам.
+:::
 
 **Синтаксис**
 
@@ -3403,6 +3431,10 @@ SELECT timestamp('2023-12-31 12:00:00', '12:00:00.11') AS ts;
 Добавленный в: v21.4.0
 
 Возвращает имя часового пояса текущего сеанса или преобразует смещение либо название часового пояса в каноническое имя часового пояса.
+
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 
@@ -3864,9 +3896,9 @@ toISOYear(toDateTime('2024-10-02 01:30:00')) as year2
 
 Округляет дату или дату и время до последнего дня месяца.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -3906,9 +3938,9 @@ SELECT toLastDayOfMonth(toDateTime('2023-04-21 10:20:30'))
 
 Округляет дату или дату и время до ближайшей субботы или воскресенья в большую сторону.
 
-<Note>
-  Возвращаемый тип можно настроить параметром [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить параметром [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -3932,15 +3964,15 @@ toLastDayOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* пятница */
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* пятница */
-    toLastDayOfWeek(toDate('2023-04-23')), /* воскресенье */
-    toLastDayOfWeek(toDate('2023-04-23'), 1) /* воскресенье */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+    toLastDayOfWeek(toDate('2023-04-23')), /* a Sunday */
+    toLastDayOfWeek(toDate('2023-04-23'), 1) /* a Sunday */
 FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
@@ -4146,9 +4178,9 @@ SELECT toModifiedJulianDayOrNull('0000-00-00'); -- некорректная да
 
 Округляет дату или дату и время вниз до понедельника той же недели. Возвращает дату.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -4170,8 +4202,8 @@ toMonday(value)
 
 ```sql title=Query
 SELECT
-toMonday(toDateTime('2023-04-21 10:20:30')), -- Пятница
-toMonday(toDate('2023-04-24'));              -- Уже понедельник
+toMonday(toDateTime('2023-04-21 10:20:30')), -- A Friday
+toMonday(toDate('2023-04-24'));              -- Already a Monday
 ```
 
 ```response title=Response
@@ -4678,9 +4710,9 @@ SELECT toSecond(toDateTime('2023-04-21 10:20:30'))
 
 Округляет дату и время вниз до начала дня.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -4718,9 +4750,9 @@ SELECT toStartOfDay(toDateTime('2023-04-21 10:20:30'))
 
 Округляет дату и время в меньшую сторону до начала пятнадцатиминутного интервала.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -4764,9 +4796,9 @@ toStartOfFifteenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:15:00
 
 Округляет дату и время вниз до начала ближайшего пятиминутного интервала.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -4797,7 +4829,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -4812,9 +4844,9 @@ toStartOfFiveMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 
 Округляет дату и время вниз до начала часа.
 
-<Note>
-  Возвращаемый тип можно настроить параметром [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить параметром [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -4853,9 +4885,9 @@ SELECT
 
 Округляет дату или дату и время вниз до первого дня ISO-года, который может не совпадать с обычным календарным годом. См. [дату недели по ISO](https://en.wikipedia.org/wiki/ISO_week_date).
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -5076,9 +5108,9 @@ SELECT toStartOfMillisecond(dt64, 'Asia/Istanbul');
 
 Округляет дату и время вниз до начала минуты.
 
-<Note>
-  Возвращаемый тип можно задать с помощью настройки [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно задать с помощью настройки [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -5106,7 +5138,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Строка 1:
+Row 1:
 ──────
 toStartOfMinute(toDateTime('2023-04-21 10:20:30')):           2023-04-21 10:20:00
 toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:00
@@ -5120,9 +5152,9 @@ toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:0
 
 Округляет дату или дату и время вниз до первого дня месяца.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -5211,9 +5243,9 @@ SELECT toStartOfNanosecond(dt64, 'Asia/Istanbul');
 
 Округляет дату или дату и время вниз до первого дня квартала. Первый день квартала — это 1 января, 1 апреля, 1 июля или 1 октября.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -5302,9 +5334,9 @@ SELECT toStartOfSecond(dt64, 'Asia/Istanbul');
 
 Округляет дату и время вниз до начала ближайшего интервала в десять минут.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -5348,9 +5380,9 @@ toStartOfTenMinutes(toDateTime('2023-04-21 10:23:00')): 2023-04-21 10:20:00
 
 Округляет дату или дату и время вниз до ближайшего воскресенья или понедельника.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -5374,10 +5406,10 @@ toStartOfWeek(datetime[, mode[, timezone]])
 
 ```sql title=Query
 SELECT
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* пятница */
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* пятница */
-        toStartOfWeek(toDate('2023-04-24')), /* понедельник */
-        toStartOfWeek(toDate('2023-04-24'), 1) /* понедельник */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+        toStartOfWeek(toDate('2023-04-24')), /* a Monday */
+        toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
 ```
 
@@ -5398,9 +5430,9 @@ Row 1:
 
 Округляет дату или дату и время вниз до первого дня года. Возвращает значение типа `Date`.
 
-<Note>
-  Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+Возвращаемый тип можно настроить с помощью параметра [`enable_extended_results_for_datetime_functions`](/ru/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Синтаксис**
 
@@ -5928,6 +5960,10 @@ SELECT toDate('2016-12-27') AS date, toYearWeek(date) AS yearWeek0, toYearWeek(d
 
 Возвращает текущую дату на момент анализа запроса. То же, что и `toDate(now())`.
 
+:::note
+Эта функция является недетерминированной: она может возвращать разные результаты для одних и тех же аргументов.
+:::
+
 **Синтаксис**
 
 ```sql
@@ -5981,6 +6017,10 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 Добавленный в: v1.1.0
 
 Не принимает аргументов и возвращает вчерашнюю дату на одном из этапов анализа запроса.
+
+:::note
+Эта функция недетерминирована: она может возвращать разные результаты для одних и тех же аргументов.
+:::
 
 **Синтаксис**
 

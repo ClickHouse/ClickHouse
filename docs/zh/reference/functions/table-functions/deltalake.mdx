@@ -71,10 +71,10 @@ LIMIT 2
 </div>
 
 假设 S3 存储 `s3://ch-docs-s3-bucket/people_10k/` 中有一个表。
-要向该表插入数据，首先启用该 Experimental 功能：
+Delta Lake 写入属于默认禁用的 Beta 功能。请按如下方式启用 (`allow_delta_lake_writes` 从 26.7 版本开始可用；在更早版本中请使用 `allow_experimental_delta_lake_writes`) ：
 
 ```sql title="Query"
-SET allow_experimental_delta_lake_writes=1
+SET allow_delta_lake_writes=1
 ```
 
 然后输入：

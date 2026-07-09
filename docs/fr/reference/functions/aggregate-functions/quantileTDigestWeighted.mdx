@@ -27,10 +27,10 @@ Le résultat dépend de l’ordre d’exécution de la requête et est non déte
 Lors de l’utilisation de plusieurs fonctions `quantile*` avec différents niveaux dans une requête, les états internes ne sont pas combinés (c’est-à-dire que la requête est moins efficace qu’elle pourrait l’être).
 Dans ce cas, utilisez la fonction [`quantiles`](/fr/reference/functions/aggregate-functions/quantiles#quantiles).
 
-<Note>
-  L’utilisation de `quantileTDigestWeighted` [n’est pas recommandée pour les petits jeux de données](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) et peut entraîner une erreur importante.
-  Dans ce cas, envisagez plutôt d’utiliser [`quantileTDigest`](/fr/reference/functions/aggregate-functions/quantileTDigest).
-</Note>
+:::note
+L’utilisation de `quantileTDigestWeighted` [n’est pas recommandée pour les petits jeux de données](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275) et peut entraîner une erreur importante.
+Dans ce cas, envisagez plutôt d’utiliser [`quantileTDigest`](/fr/reference/functions/aggregate-functions/quantileTDigest).
+:::
 
 **Syntaxe**
 

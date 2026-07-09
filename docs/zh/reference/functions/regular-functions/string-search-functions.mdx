@@ -41,14 +41,12 @@ doc_type: 'reference'
 
 返回字符串中正则表达式的匹配次数。
 
-<Info>
-  **与版本相关的行为**
+:::note 与版本相关的行为
+此函数的行为取决于 ClickHouse 版本：
 
-  此函数的行为取决于 ClickHouse 版本：
-
-  * 在 &lt; v25.6 的版本中，即使模式能够匹配空字符串，函数也会在第一次空匹配时停止计数。
-  * 在 &gt;= 25.6 的版本中，发生空匹配时，函数会继续执行。可使用设置 `count_matches_stop_at_empty_match = true` 恢复旧版行为；
-</Info>
+* 在 &lt; v25.6 的版本中，即使模式能够匹配空字符串，函数也会在第一次空匹配时停止计数。
+* 在 &gt;= 25.6 的版本中，发生空匹配时，函数会继续执行。可使用设置 `count_matches_stop_at_empty_match = true` 恢复旧版行为；
+  :::
 
 **语法**
 
@@ -458,10 +456,10 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 与 [`hasAnyTokens`](#hasAnyTokens) 类似，但仅当 `needle` 字符串或数组中的所有标记都与 `input` 字符串匹配时返回 1，否则返回 0。如果 `input` 是一列，则返回满足此条件的所有行。
 
-<Note>
-  为获得最佳性能，列 `input` 应定义一个[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
-  如果未定义文本索引，该函数会对该列执行穷举列扫描，其速度比索引查找慢几个数量级。
-</Note>
+:::note
+列 `input` 应定义一个[文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)以获得最佳性能。
+如果未定义文本索引，该函数会对该列执行穷举列扫描，其速度比索引查找慢几个数量级。
+:::
 
 在搜索之前，该函数会对文本进行标记化处理
 
@@ -470,15 +468,17 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
   会使用为文本索引指定的分词器进行处理。
   如果该列未定义文本索引，则会改用 `splitByNonAlpha` 分词器。
   如果 `needle` 参数的类型为 [Array(String)](/zh/reference/data-types/array)，则数组中的每个元素都会被视为一个标记——不会再进行额外的分词。
+  如果文本索引配置了[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional)表达式，则会在标记化之前将预处理器应用到 needle (如果其类型为 `String`) 。
+  如果文本索引配置了[后处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional)表达式，则会将后处理器应用到 needle 标记和 input 标记 (即两者都在标记化之后处理) 。
 
 重复的标记将被忽略。
 例如，needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] 与 [&#39;ClickHouse&#39;] 等效。
 
-<Note>
-  当文本索引定义了一个[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasAllTokens` 会将其应用于 `input`；如果 `needles` 是 [String](/zh/reference/data-types/string)，则也会在标记化之前将其应用于 `needles`。当 `needles` 是 [Array(String)](/zh/reference/data-types/array) 时，其元素会按原样传递，不会对其应用预处理器。
-  预处理器仅在文本索引路径上生效，因此，使用文本索引的查询与不使用文本索引的查询，结果可能会有所不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
-  为提高全文检索的易用性，这种不一致是可以接受的。
-</Note>
+:::note
+当文本索引定义了一个[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasAllTokens` 会将其应用于 `input`；如果 `needles` 是 [String](/zh/reference/data-types/string)，则也会在标记化之前将其应用于 `needles`。当 `needles` 是 [Array(String)](/zh/reference/data-types/array) 时，其元素会按原样传递，不会对其应用预处理器。
+预处理器仅在文本索引路径上生效，因此，使用文本索引的查询与不使用文本索引的查询，结果可能会有所不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
+为提高全文检索的易用性，这种不一致是可以接受的。
+:::
 
 **语法**
 
@@ -503,7 +503,7 @@ hasAllTokens(input, needles)
 **使用字符串 needle 的基本用法**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -511,9 +511,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -525,7 +525,17 @@ SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
 **指定要在数组中按原样搜索的 needle (不进行标记化)&#x20;**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -534,10 +544,20 @@ SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**使用 `tokens` 函数生成 needle**
+**使用 `tokens` 函数生成 needles**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -546,16 +566,16 @@ SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString'
 └─────────┘
 ```
 
-**通过第三个参数使用自定义分词器**
+**通过第 3 个参数指定自定义分词器**
 
 ```sql title=Query
 SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
-│                                            1 │
-└──────────────────────────────────────────────┘
+┌─hasAllTokens⋯ngrams(3)')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 **Array 和 Map 列的使用示例**
@@ -577,12 +597,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
 **数组列示例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 ```
 
@@ -592,9 +624,24 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 └─────────┘
 ```
 
-**mapKeys 示例**
+**使用 mapKeys 的示例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -604,9 +651,24 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 └─────────┘
 ```
 
-**使用 mapValues 的示例**
+**mapValues 示例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -624,10 +686,10 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 如果 `needle` 字符串或数组中至少有一个标记与 `input` 字符串匹配，则返回 1，否则返回 0。如果 `input` 是一列，则返回满足此条件的所有行。
 
-<Note>
-  列 `input` 应定义 [文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)，以获得最佳性能。
-  如果未定义文本索引，该函数会对列执行穷举列扫描，其速度比索引查找慢几个数量级。
-</Note>
+:::note
+列 `input` 应定义 [文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)，以获得最佳性能。
+如果未定义文本索引，该函数会对列执行穷举列扫描，其速度比索引查找慢几个数量级。
+:::
 
 在搜索之前，该函数会对文本进行标记化处理
 
@@ -636,15 +698,17 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
   会使用为文本索引指定的分词器进行分词。
   如果该列未定义文本索引，则会改用 `splitByNonAlpha` 分词器。
   如果 `needle` 参数的类型为 [Array(String)](/zh/reference/data-types/array)，则会将数组中的每个元素视为一个标记——不会再进行额外分词。
+  如果文本索引配置了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 表达式，则会在分词前将预处理器应用于 `needle` (如果其类型为 `String`)。
+  如果文本索引配置了 [后处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 表达式，则会在分词后将后处理器应用于 `needle` 标记和 `input` 标记 (即两者都会应用)。
 
 重复的标记将被忽略。
 例如，[&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] 与 [&#39;ClickHouse&#39;] 的处理方式相同。
 
-<Note>
-  当文本索引定义了[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasAnyTokens` 会在分词前将其应用于 `input`；当 `needles` 为 [String](/zh/reference/data-types/string) 时，也会将其应用于 `needles`。当 `needles` 为 [Array(String)](/zh/reference/data-types/array) 时，其元素会按原样传递，不会对其应用预处理器。
-  预处理器仅在文本索引路径上应用，因此，使用文本索引的查询与不使用文本索引的查询之间的结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
-  为了提高全文检索的易用性，可以容忍这种不一致性。
-</Note>
+:::note
+当文本索引定义了[预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasAnyTokens` 会在分词前将其应用于 `input`；当 `needles` 为 [String](/zh/reference/data-types/string) 时，也会将其应用于 `needles`。当 `needles` 为 [Array(String)](/zh/reference/data-types/array) 时，其元素会按原样传递，不会对其应用预处理器。
+预处理器仅在文本索引路径上应用，因此，使用文本索引的查询与不使用文本索引的查询之间的结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
+为了提高全文检索的易用性，可以容忍这种不一致性。
+:::
 
 **语法**
 
@@ -669,7 +733,7 @@ hasAnyTokens(input, needles)
 **使用字符串 needle 的基本示例**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -677,9 +741,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -691,7 +755,17 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
 **指定要在数组中按原样搜索的 needle (不进行标记化)&#x20;**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -700,10 +774,20 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**使用 `tokens` 函数生成 needle**
+**使用 `tokens` 函数生成 needles**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -712,7 +796,7 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 └─────────┘
 ```
 
-**数组和 map 列的使用示例**
+**数组列和 map 列的使用示例**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -731,12 +815,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
 **数组列示例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 ```
 
@@ -749,6 +845,21 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **使用 mapKeys 的示例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -761,6 +872,21 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **使用 mapValues 的示例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -778,20 +904,20 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 检查 `input` 是否按连续顺序包含 `phrase` 中的所有标记。
 
-<Note>
-  为获得最佳性能，列 `input` 应定义 [文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
-  如果未定义 文本索引，该函数会执行穷举列扫描，其速度比索引查找慢几个数量级。
-</Note>
+:::note
+为获得最佳性能，列 `input` 应定义 [文本索引](/zh/reference/engines/table-engines/mergetree-family/textindexes)。
+如果未定义 文本索引，该函数会执行穷举列扫描，其速度比索引查找慢几个数量级。
+:::
 
 搜索前，该函数会使用为 文本索引 指定的分词器，对 `input` 和 `phrase` 参数进行分词。
 如果该列未定义 文本索引，则改用 `splitByNonAlpha` 分词器——除非通过可选的第三个参数提供了分词器。
 `tokenizer` 参数必须是 `splitByNonAlpha`、`splitByString`、`ngrams` 或 `asciiCJK` 之一。
 
-<Note>
-  当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在分词前将其应用于 `input` 和 `phrase`。
-  预处理器 仅在 文本索引 路径上生效，因此，使用 文本索引 的查询与不使用 文本索引 的查询，结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
-  为了提高 全文检索 的易用性，可以容忍这种不一致。
-</Note>
+:::note
+当 文本索引 定义了 [预处理器](/zh/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (例如 `lowerUTF8`) 时，`hasPhrase` 会在分词前将其应用于 `input` 和 `phrase`。
+预处理器 仅在 文本索引 路径上生效，因此，使用 文本索引 的查询与不使用 文本索引 的查询，结果可能不同 (例如 `SETTINGS use_skip_indexes = 0`) 。
+为了提高 全文检索 的易用性，可以容忍这种不一致。
+:::
 
 与 [`hasToken`](#hasToken)、[`hasAnyTokens`](#hasAnyTokens) 和 [`hasAllTokens`](#hasAllTokens) 不同，`hasPhrase` 要求这些标记按相同顺序连续出现，
 中间不能有任何其他标记。例如，`hasPhrase('the quick brown fox', 'quick fox')` 返回 0，
@@ -1061,6 +1187,11 @@ SELECT hasToken('clickhouse test', 'test')
 
 使用 tokenbf&#95;v1 索引在 haystack 中执行对 needle 的不区分大小写查找。
 
+:::note
+此函数在配合非 `default` 分词器以及预处理器或后处理器表达式时存在一些陷阱。
+我们建议改用 [`hasAnyTokens`](#hasAnyTokens) 和 [`hasAllTokens`](#hasAllTokens)。
+:::
+
 **语法**
 
 ```sql
@@ -1082,6 +1213,11 @@ hasTokenCaseInsensitive(haystack, needle)
 引入版本：v23.1.0
 
 使用 tokenbf&#95;v1 索引在 haystack 中不区分大小写地查找 needle。如果 needle 的格式不合法，则返回 NULL。
+
+:::note
+该函数在使用非 default 分词器以及预处理器或后处理器表达式时有一些注意事项。
+我们建议改用 [`hasAnyTokens`](#hasAnyTokens) 和 [`hasAllTokens`](#hasAllTokens)。
+:::
 
 **语法**
 
@@ -1249,9 +1385,9 @@ SELECT ilike('ClickHouse', '%house%');
 要匹配字面量 `%`、`_` 和 `\` (它们是 `LIKE` 元字符) ，请在它们前面加上反斜杠：`\%`、`\_` 和 `\\`。
 如果反斜杠后面的字符不是 `%`、`_` 或 `\`，则反斜杠会失去其特殊含义 (即按字面量解释) 。
 
-<Note>
-  ClickHouse 要求字符串中的反斜杠[也需要转义](/zh/reference/syntax#string)，因此实际需要写成 `\\%`、`\\_` 和 `\\\\`。
-</Note>
+:::note
+ClickHouse 要求字符串中的反斜杠[也需要转义](/zh/reference/syntax#string)，因此实际需要写成 `\\%`、`\\_` 和 `\\\\`。
+:::
 
 对于形如 `%needle%` 的 `LIKE` 表达式，该函数的速度与 `position` 函数一样快。
 所有其他 `LIKE` 表达式在内部都会转换为正则表达式，并以与 `match` 函数相近的性能执行。
@@ -1340,15 +1476,13 @@ SELECT '50%off' LIKE '50#%off' ESCAPE '#';
 
 与 [`position`](#position) 类似，但参数 `haystack` 和 `locate` 的顺序互换了。
 
-<Info>
-  **与版本相关的行为**
+:::note 与版本相关的行为
+此函数的行为取决于 ClickHouse 的版本：
 
-  此函数的行为取决于 ClickHouse 的版本：
-
-  * 在 &lt; v24.3 的版本中，`locate` 是函数 `position` 的别名，接受参数 `(haystack, needle[, start_pos])`。
-  * 在 &gt;= 24.3 的版本中，`locate` 是一个独立函数 (为了更好地兼容 MySQL) ，接受参数 `(needle, haystack[, start_pos])`。
-    可以通过设置 `function_locate_has_mysql_compatible_argument_order = false` 恢复之前的行为。
-</Info>
+* 在 &lt; v24.3 的版本中，`locate` 是函数 `position` 的别名，接受参数 `(haystack, needle[, start_pos])`。
+* 在 &gt;= 24.3 的版本中，`locate` 是一个独立函数 (为了更好地兼容 MySQL) ，接受参数 `(needle, haystack[, start_pos])`。
+  可以通过设置 `function_locate_has_mysql_compatible_argument_order = false` 恢复之前的行为。
+  :::
 
 **语法**
 
@@ -1505,9 +1639,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 此函数依赖 [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) 库的 Experimental 功能，在某些边缘情况下可能较慢。
 其性能取决于编辑距离的取值和所使用的模式，但与非模糊变体相比，开销始终更高。
 
-<Note>
-  由于 hyperscan 的限制，`multiFuzzyMatch*()` 函数家族不支持 UTF-8 正则表达式 (会将其视为字节序列) 。
-</Note>
+:::note
+由于 hyperscan 的限制，`multiFuzzyMatch*()` 函数家族不支持 UTF-8 正则表达式 (会将其视为字节序列) 。
+:::
 
 **语法**
 

@@ -77,13 +77,13 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     **AWS SSO 사용자용(대부분의 조직에 권장):**
 
     ```bash
-    # SSO 로그인
+    # Login to SSO
     aws sso login --profile YOUR_PROFILE_NAME
 
-    # 자격 증명을 환경 변수로 내보내기
+    # Export credentials to environment variables
     eval $(aws configure export-credentials --profile YOUR_PROFILE_NAME --format env)
 
-    # 자격 증명 확인
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -96,7 +96,7 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     export AWS_SECRET_ACCESS_KEY="your-secret-access-key"
     export AWS_REGION="us-east-1"
 
-    # 자격 증명 확인
+    # Verify credentials work
     aws sts get-caller-identity
     ```
 
@@ -331,7 +331,7 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/aws/cloudwatch/cloudwatch-logs.jsonl
     ```
 
-    이 데이터셋에는 여러 서비스의 CloudWatch Logs 24시간치가 포함되어 있습니다.
+    이 데이터셋에는 여러 서비스의 CloudWatch Logs 24시간치가 포함되어 있습니다:
 
     * **Lambda functions**: 결제 처리, 주문 관리, 인증
     * **ECS services**: rate limiting 및 timeout이 적용된 API gateway
@@ -369,12 +369,12 @@ AWS CloudWatch는 AWS 리소스와 애플리케이션을 위한 모니터링 서
 
     가져오기가 완료되면 다음을 수행하세요.
 
-    1. http://localhost:8080에서 HyperDX를 열고 로그인합니다(필요한 경우 계정을 생성합니다).
-    2. **Logs** 보기로 이동합니다.
-    3. 시간 범위를 **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**로 설정합니다.
-    4. `cloudwatch-demo`를 검색하거나 `LogAttributes['source'] = 'cloudwatch-demo'`로 필터링합니다.
+    1. http://localhost:8080에서 HyperDX를 열고 로그인합니다(필요한 경우 계정을 생성합니다)
+    2. **Logs** 보기로 이동합니다
+    3. 시간 범위를 **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)**로 설정합니다
+    4. `cloudwatch-demo`를 검색하거나 `LogAttributes['source'] = 'cloudwatch-demo'`로 필터링합니다
 
-    여러 CloudWatch log groups의 로그가 표시되어야 합니다.
+    여러 CloudWatch 로그 그룹의 로그가 표시되어야 합니다.
 
     <Image img="/images/clickstack/cloudwatch/demo-search-view.webp" alt="데모 검색 보기" />
 
@@ -558,9 +558,9 @@ groups:
 * 수집량을 줄이려면 노이즈가 많은 로그 그룹을 collector 구성에서 제거하세요
 
 <div id="going-to-production">
-  ## 프로덕션 환경으로 전환
+  ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드에서는 테스트 목적으로 Docker Compose를 사용해 로컬에서 OpenTelemetry Collector를 실행하는 방법을 설명합니다. 프로덕션 배포에서는 액세스 키를 직접 관리할 필요가 없도록 AWS에 접근할 수 있는 인프라(예: IAM roles를 사용하는 EC2, IRSA를 사용하는 EKS, 또는 task roles를 사용하는 ECS)에서 collector를 실행하십시오. 지연 시간과 비용을 줄이려면 CloudWatch 로그 그룹과 동일한 AWS 리전에 collector를 배포하십시오.
+이 가이드는 테스트를 위해 Docker Compose로 OpenTelemetry Collector를 로컬에서 실행하는 방법을 보여줍니다. 프로덕션 배포에서는 액세스 키를 관리할 필요가 없도록 AWS에 접근할 수 있는 인프라(EC2의 IAM 역할, IRSA를 사용하는 EKS 또는 task 역할을 사용하는 ECS)에서 collector를 실행하십시오. 지연 시간과 비용을 줄이려면 collector를 CloudWatch 로그 그룹과 동일한 AWS 리전에 배포하십시오.
 
 프로덕션 배포 패턴과 collector 구성 예시는 [OpenTelemetry로 수집하기](/ko/clickstack/ingesting-data/opentelemetry)를 참조하십시오.

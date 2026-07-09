@@ -1,7 +1,7 @@
 ---
 sidebarTitle: 'Uso del tipo Map'
 title: 'Uso del tipo Map en ClickHouse'
-useCases: ['Observability']
+useCases: ['Observabilidad']
 products: ['OSS']
 description: 'Aprenda a usar el tipo Map en ClickHouse para almacenar, consultar y agregar datos dinámicos de clave-valor, usando atributos de recurso de OTel como ejemplo práctico.'
 ---
@@ -155,7 +155,7 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
     ORDER BY key;
     ```
 
-    **Desglosa un Map en filas con ARRAY JOIN** — convierte cada par clave-valor en una fila independiente, lo que resulta útil para crear inventarios de atributos o usarlos en paneles:
+    **Desglosa un Map en filas con ARRAY JOIN** â convierte cada par clave-valor en una fila independiente, lo que resulta útil para crear inventarios de atributos o usarlos en paneles:
 
     ```sql
     SELECT
@@ -254,7 +254,7 @@ En esta guía de inicio rápido usarás `clickhouse-local` para cargar datos rea
     GROUP BY ServiceName;
     ```
 
-    **Por qué esto es importante para OTel:** Cuando tu OTel collector escribe en ClickHouse desgloses por minuto de los códigos de estado, `sumMap` te permite consolidarlos en totales por hora o por día en una sola consulta, sin `ARRAY JOIN`, sin despivotar y sin necesidad de conocer de antemano el conjunto completo de claves. Cualquier clave que aparezca en cualquier fila se incluye automáticamente en el resultado.
+    **Por qué esto es importante para OTel:** Cuando tu OTel Collector escribe en ClickHouse desgloses por minuto de códigos de estado, `sumMap` te permite consolidarlos en totales por hora o por día en una sola consulta — sin `ARRAY JOIN`, sin despivotar y sin necesidad de conocer de antemano el conjunto completo de claves. Cualquier clave que aparezca en cualquier fila se incluye automáticamente en el resultado.
   </Step>
 
   <Step>

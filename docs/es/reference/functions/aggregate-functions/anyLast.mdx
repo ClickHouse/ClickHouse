@@ -15,10 +15,10 @@ Introducido en: v1.1.0
 
 Selecciona el último valor encontrado en una columna.
 
-<Warning>
-  Dado que una consulta puede ejecutarse en un orden arbitrario, el resultado de esta función no es determinista.
-  Si necesita un resultado arbitrario pero determinista, use las funciones [min](/es/reference/functions/aggregate-functions/min) o [max](/es/reference/functions/aggregate-functions/max).
-</Warning>
+:::warning
+Dado que una consulta puede ejecutarse en un orden arbitrario, el resultado de esta función no es determinista.
+Si necesita un resultado arbitrario pero determinista, use las funciones [min](/es/reference/functions/aggregate-functions/min) o [max](/es/reference/functions/aggregate-functions/max).
+:::
 
 De forma predeterminada, la función nunca devuelve NULL; es decir, ignora los valores NULL de la columna de entrada.
 Sin embargo, si la función se usa con el modificador `RESPECT NULLS`, devuelve el último valor leído, independientemente de si es NULL o no.

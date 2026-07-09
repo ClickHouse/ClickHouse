@@ -98,9 +98,9 @@ Pour une présentation détaillée avec des exemples, consultez [Comment se conn
 
 Configurez les éléments suivants au sein des services et des bases de données à l’aide de l’instruction SQL [GRANT](/fr/reference/statements/grant).
 
-| Role    | Description                                                                       |
-| :------ | :-------------------------------------------------------------------------------- |
-| Default | Accès administratif complet aux services                                          |
+| Role    | Description                                                                          |
+| :------ | :----------------------------------------------------------------------------------- |
+| Default | Accès administratif complet aux services                                             |
 | Custom  | À configurer à l’aide de l’instruction SQL [`GRANT`](/fr/reference/statements/grant) |
 
 * Les rôles de base de données sont cumulatifs. Cela signifie que si un utilisateur est membre de deux rôles, il dispose du niveau d’accès le plus élevé accordé par l’un ou l’autre de ces rôles. L’ajout de rôles ne réduit pas ses accès.
@@ -183,7 +183,7 @@ Le processus suivant permet de générer une liste complète des accès dans la 
 </Steps>
 
 <div id="warehouse-users">
-  ## Utilisateurs du warehouse
+  ## Utilisateurs du Warehouse
 </div>
 
-Les utilisateurs du warehouse sont communs à tous les services d’un même warehouse. Pour plus d’informations, consultez les [contrôles d’accès au warehouse](/fr/products/cloud/features/infrastructure/warehouses#access-controls).
+Les utilisateurs du Warehouse sont partagés entre les services d&#39;un même Warehouse. Pour plus d&#39;informations, consultez les [contrôles d&#39;accès du Warehouse](/fr/products/cloud/features/infrastructure/warehouses#access-controls).

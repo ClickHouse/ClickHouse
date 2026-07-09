@@ -23,9 +23,9 @@ doc_type: 'reference'
 
 解码由 bech32 或 bech32m 算法生成的 Bech32 地址字符串。
 
-<Note>
-  与编码函数不同，`bech32Decode` 会自动处理带填充的 FixedStrings。
-</Note>
+:::note
+与编码函数不同，`bech32Decode` 会自动处理带填充的 FixedStrings。
+:::
 
 **语法**
 
@@ -72,12 +72,12 @@ tb   751E76E8199196D454941C45D1B3A323F1433BD6
 
 使用 [Bech32 或 Bech32m](https://en.bitcoin.it/wiki/Bech32) 算法，对二进制数据字符串及人类可读部分 (HRP) 进行编码。
 
-<Note>
-  使用 [`FixedString`](/zh/reference/data-types/fixedstring) 数据类型时，如果某个值未完全占满其长度，则会用空字符进行填充。
-  虽然 `bech32Encode` 函数会自动处理 hrp 参数的这种情况，但对于 data 参数，其值不得被填充。
-  因此，不建议将 [`FixedString`](/zh/reference/data-types/fixedstring) 数据类型用于你的数据值，除非你能
-  确定它们的长度都相同，并确保你的 `FixedString` 列也设置为相同的长度。
-</Note>
+:::note
+使用 [`FixedString`](/zh/reference/data-types/fixedstring) 数据类型时，如果某个值未完全占满其长度，则会用空字符进行填充。
+虽然 `bech32Encode` 函数会自动处理 hrp 参数的这种情况，但对于 data 参数，其值不得被填充。
+因此，不建议将 [`FixedString`](/zh/reference/data-types/fixedstring) 数据类型用于你的数据值，除非你能
+确定它们的长度都相同，并确保你的 `FixedString` 列也设置为相同的长度。
+:::
 
 **语法**
 
@@ -100,7 +100,7 @@ bech32Encode(hrp, data[, witver | 'bech32' | 'bech32m'])
 **默认 Bech32m**
 
 ```sql title=Query
--- 当未提供见证版本时，默认值为 1，即使用更新后的 Bech32m 算法。
+-- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
@@ -111,7 +111,7 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
 **Bech32 算法**
 
 ```sql title=Query
--- 见证版本为 0 将生成不同的地址字符串。
+-- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
@@ -122,8 +122,8 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
 **自定义 HRP**
 
 ```sql title=Query
--- 虽然 'bc'（主网）和 'tb'（测试网）是 SegWit 地址格式中唯一允许的 hrp 值，
--- 但 Bech32 允许任何满足上述要求的 hrp。
+-- While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the
+-- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
 ```
 
@@ -134,8 +134,8 @@ abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
 **Cosmos SDK 地址 (BIP173，不含见证版本)&#x20;**
 
 ```sql title=Query
--- 使用 'bech32' Variant 对原始数据进行编码，不附加见证版本字节，
--- 兼容 Cosmos SDK、Injective、Osmosis 及其他非 SegWit 链。
+-- Using 'bech32' variant encodes raw data without a witness version byte,
+-- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
 ```
 
@@ -1020,9 +1020,9 @@ Introduced in: v21.8.0
 
 对于数值参数，`unbin()` 返回的结果并不是 `bin()` 的逆运算结果。如果要将结果转换为数值，可以使用 reverse 和 `reinterpretAs<Type>` 函数。
 
-<Note>
-  如果在 `clickhouse-client` 中调用 `unbin`，二进制字符串会以 UTF-8 格式显示。
-</Note>
+:::note
+如果在 `clickhouse-client` 中调用 `unbin`，二进制字符串会以 UTF-8 格式显示。
+:::
 
 支持二进制数字 `0` 和 `1`。二进制位数不必是 8 的倍数。如果参数字符串中包含二进制数字以外的任何内容，
 则结果未定义 (不会抛出异常) 。
@@ -1077,10 +1077,10 @@ SELECT reinterpretAsUInt64(reverse(unbin('1110'))) AS num
 
 如果要将结果转换为数值，可以使用 `reverse` 和 `reinterpretAs<Type>` 函数。
 
-<Note>
-  `clickhouse-client` 会将字符串解释为 UTF-8。
-  这可能会导致 `hex` 返回的值显示效果出乎意料。
-</Note>
+:::note
+`clickhouse-client` 会将字符串解释为 UTF-8。
+这可能会导致 `hex` 返回的值显示效果出乎意料。
+:::
 
 支持大写和小写字母 `A-F`。
 十六进制数字的位数不必为偶数。

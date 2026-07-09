@@ -25,7 +25,7 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 
 在本指南中，你将把 ClickHouse 中的数据连接到 Explo，并将结果可视化。图表效果如下：
 
-<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo 仪表盘" />
 
 <p />
 
@@ -42,10 +42,10 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 <ConnectionDetails />
 
 <div id="2--connect-explo-to-clickhouse">
-  ## 2.  将 Explo 连接到 ClickHouse
+  ## 2. 将 Explo 连接到 ClickHouse
 </div>
 
-1. 注册 Explo 账户。
+1. 注册一个 Explo 账户。
 
 2. 点击左侧边栏中的 Explo **数据**选项卡。
 
@@ -55,15 +55,15 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 
 <Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="连接数据源" border />
 
-4. 在 **入门** 页面填写相关信息
+4. 填写 **Getting Started** 页面的信息。
 
-<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="入门" border />
+<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="Getting Started" border />
 
 5. 选择 **ClickHouse**
 
-<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="ClickHouse" border />
+<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="Clickhouse" border />
 
-6. 输入你的 **ClickHouse 凭据**。
+6. 输入您的 **ClickHouse 凭据**。
 
 <Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="凭据" border />
 
@@ -72,17 +72,17 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 <Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="安全" border />
 
 8. 在 ClickHouse 中，**将 Explo 的 IP 地址加入白名单**。
-   `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
+   `54.211.43.19, 52.55.98.121, 3.214.169.94, 以及 54.156.141.148`
 
 <div id="3-create-a-dashboard">
   ## 3. 创建仪表盘
 </div>
 
-1. 前往左侧导航栏中的 **Dashboard** 选项卡。
+1. 前往左侧导航栏中的 **仪表盘** 选项卡。
 
 <Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="仪表盘" border />
 
-2. 点击右上角的 **Create Dashboard**，然后为仪表盘命名。至此，你已创建好一个仪表盘。
+2. 点击右上角的 **Create 仪表盘**，然后为仪表盘命名。至此，你已创建好一个仪表盘。
 
 <Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="创建仪表盘" border />
 
@@ -98,11 +98,11 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
    `SELECT * FROM YOUR_TABLE_NAME
    LIMIT 100`
 
-<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo Dashboard" border />
+<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo 仪表盘" border />
 
 2. 现在点击“运行”，然后前往“预览”选项卡查看数据。
 
-<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo Dashboard" border />
+<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo 仪表盘" border />
 
 <div id="5-build-a-chart">
   ## 5. 创建图表
@@ -110,23 +110,23 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 
 1. 从左侧将柱状图图标拖到画布上。
 
-<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo Dashboard" border />
+<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo 仪表盘" border />
 
 2. 选择数据集。此时你应该会看到如下界面：
 
-<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo Dashboard" border />
+<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo 仪表盘" border />
 
 3. 按如下方式在 X 轴中填入 **county**，并在 Y 轴部分填入 **Price**：
 
-<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo Dashboard" border />
+<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo 仪表盘" border />
 
 4. 现在，将聚合方式更改为 **AVG**。
 
-<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo Dashboard" border />
+<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo 仪表盘" border />
 
 5. 现在，我们已经得到了按县划分的房屋平均价格！
 
-<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo Dashboard" />
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo 仪表盘" />
 
 <div id="learn-more">
   ## 了解更多

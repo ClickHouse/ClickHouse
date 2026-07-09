@@ -40,13 +40,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     Сначала убедитесь, что система записывает файлы syslog:
 
     ```bash
-    # Проверить наличие файлов syslog (Linux)
+    # Check if syslog files exist (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # Или на macOS
+    # Or on macOS
     ls -la /var/log/system.log
 
-    # Просмотреть последние записи
+    # View recent entries
     tail -20 /var/log/syslog
     ```
 
@@ -219,14 +219,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... существующая конфигурация ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... другие переменные окружения ...
+          # ... other environment variables ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... другие тома ...
+          # ... other volumes ...
     ```
 
     ##### Вариант 2: Docker Run (образ «всё в одном»)
@@ -386,7 +386,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### Импортируйте преднастроенный дашборд
+    #### Импортируйте преднастроенную панель мониторинга
 
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
@@ -512,7 +512,7 @@ tail -5 /var/log/system.log
 * Создайте пользовательские панели мониторинга для мониторинга безопасности (попытки SSH, использование sudo, блокировки межсетевым экраном)
 
 <div id="going-to-production">
-  ## Переход к промышленной эксплуатации
+  ## Переход к продакшну
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для промышленной эксплуатации мы рекомендуем запустить собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для настройки production-конфигурации.
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Инструкции по настройке для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).

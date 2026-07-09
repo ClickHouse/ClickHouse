@@ -30,13 +30,13 @@ doc_type: 'reference'
 
 بخلاف ذلك، تُقرَّب نتيجة الحساب إلى أقرب مضاعف لـ 16 ms.
 
-<Note>
-  عند حساب كوانتايلات زمن تحميل الصفحة، تكون هذه الدالة أكثر كفاءة ودقة من [`quantile`](/ar/reference/functions/aggregate-functions/quantile).
-</Note>
+:::note
+عند حساب كوانتايلات زمن تحميل الصفحة، تكون هذه الدالة أكثر كفاءة ودقة من [`quantile`](/ar/reference/functions/aggregate-functions/quantile).
+:::
 
-<Note>
-  إذا لم تُمرَّر أي قيم إلى الدالة (عند استخدام `quantileTimingIf`)، فستُعاد [NaN](/ar/reference/data-types/float#nan-and-inf). والغرض من ذلك هو التمييز بين هذه الحالات والحالات التي تكون نتيجتها صفرًا. راجع [عبارة ORDER BY](/ar/reference/statements/select/order-by) للاطلاع على ملاحظات حول فرز قيم `NaN`.
-</Note>
+:::note
+إذا لم تُمرَّر أي قيم إلى الدالة (عند استخدام `quantileTimingIf`)، فستُعاد [NaN](/ar/reference/data-types/float#nan-and-inf). والغرض من ذلك هو التمييز بين هذه الحالات والحالات التي تكون نتيجتها صفرًا. راجع [عبارة ORDER BY](/ar/reference/statements/select/order-by) للاطلاع على ملاحظات حول فرز قيم `NaN`.
+:::
 
 **الصياغة**
 

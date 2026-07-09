@@ -42,7 +42,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # または
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
@@ -69,11 +69,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
         done
         ```
 
-        これは、OTLP のログ、トレース、メトリクスのソースが OTel collector にデータを送信する状況をシミュレートしたものです。本番環境では、これらのソースは各言語のクライアントや、場合によっては別の OTel collector になることもあります。
+        これは、OTLP のログ、トレース、メトリクスの送信元が OTel collector にデータを送信する状況をシミュレートしています。本番環境では、これらの送信元は各種言語のクライアントや、別の OTel collector である場合もあります。
 
-        `Search` ビューに戻ると、データの読み込みが始まっているはずです (データが表示されない場合は、時間範囲を `Last 1 hour` に調整してください) 。
+        `Search` ビューに戻ると、データの読み込みが始まっていることを確認できます (データが表示されない場合は、時間範囲を `Last 1 hour` に調整してください) 。
 
-        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX Search" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="HyperDX の検索" size="lg" />
 
         データの読み込みには数分かかります。次の手順に進む前に、読み込みが完了するまで待ってください。
       </Step>
@@ -85,7 +85,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
         左側のメニューから `Client Sessions` を選択します。
 
-        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="セッション" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-11.webp" alt="Sessions" size="lg" />
 
         このビューでは、EC ストアのフロントエンドセッションを確認できます。ユーザーがチェックアウトして購入を完了しようとするまで、セッションは Anonymous のままです。
 
@@ -93,7 +93,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
         失敗していてメールアドレスにも紐づいているトレースを選択します。次のビューでは、ユーザーのセッションをリプレイして問題の内容を確認できます。play を押してセッションを再生してください。
 
-        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="セッションリプレイ" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-12.webp" alt="Session replay" size="lg" />
 
         リプレイでは、ユーザーがサイト内を移動し、商品をカートに追加していく様子を確認できます。支払いを完了しようとする場面までスキップしてかまいません。
 
@@ -103,7 +103,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
         ユーザーは注文を完了できませんでしたが、目立ったエラーはありません。左側のパネルの一番下までスクロールすると、ユーザーのブラウザーから送信されたネットワークイベントとコンソールイベントが表示されます。`/api/checkout` の呼び出し時に 500 エラーが発生していたことがわかります。
 
-        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="セッション内のエラー" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-13.webp" alt="Error in session" size="lg" />
 
         この `500` エラーを選択します。`概要` にも `Column Values` にも、エラーが想定外で `Internal Error` を引き起こしていること以外、問題の原因を示す情報はありません。
       </Step>
@@ -111,23 +111,23 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       <Step>
         ### トレースを確認する
 
-        完全な分散トレースを表示するには、`Trace` タブに移動します。
+        完全な分散トレースを確認するには、`Trace` タブに移動します。
 
         <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="セッショントレース" size="lg" />
 
-        トレースを下にスクロールすると、エラーの始点である `checkout` service のスパンを確認できます。`Payment` service のスパンを選択します。
+        トレースを下にスクロールして、エラーの始点である `checkout` サービスのスパンを確認します。次に、`Payment` サービスのスパンを選択します。
 
         <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="スパン" size="lg" />
 
-        `Column Values` タブを選択して下にスクロールします。問題は cache がいっぱいになっていることに関連しているとわかります。
+        `Column Values` タブを選択して下にスクロールします。問題は、cache がいっぱいになっていることに関連していると分かります。
 
         <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="カラム値" size="lg" />
 
-        上にスクロールしてトレースに戻ると、先ほどの設定により、ログがスパンに相関付けられていることがわかります。これにより、さらに詳しいコンテキストが得られます。
+        上にスクロールしてトレースに戻ると、先ほどの設定により、ログがそのスパンに相関付けられていることが分かります。これにより、さらに詳しいコンテキストを確認できます。
 
         <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="相関付けられたログ" size="lg" />
 
-        payment service で cache が埋まりつつあり、そのため支払いを完了できなくなっていることが確認できました。
+        payment サービスで cache が埋まりつつあり、そのため支払いを完了できなくなっていることが分かりました。
       </Step>
 
       <Step>
@@ -143,18 +143,18 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       </Step>
 
       <Step>
-        ### メトリクスのチャート
+        ### チャートメトリクス
 
-        コードに明らかにエラーが混入していますが、cache のサイズはメトリクスで確認できます。`Chart Explorer` ビューに移動します。
+        コードに明らかにエラーが入り込んでいますが、metrics を使って cache サイズを確認できます。`Chart Explorer` ビューに移動します。
 
-        データソースとして `Metrics` を選択します。`visa_validation_cache.size (Gauge)` の `Maximum` をプロットするようにチャートビルダーを設定し、`play` ボタンを押します。cache は最大サイズに達するまで明らかに増加しており、その後エラーが発生していました。
+        データソースとして `Metrics` を選択します。チャートビルダーで `visa_validation_cache.size (Gauge)` の `Maximum` を表示するよう設定し、`play` ボタンを押します。cache は最大サイズに達するまで明らかに増加し、その後エラーが発生しました。
 
         <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="メトリクス" size="lg" />
       </Step>
     </Steps>
   </Tab>
 
-  <Tab title="ClickStack オープンソース版">
+  <Tab title="ClickStack Open Source">
     以下の例では、[オールインワンイメージの手順](/ja/clickstack/getting-started/oss)に従ってオープンソース版 ClickStack を起動し、[ローカルの ClickHouse インスタンス](/ja/clickstack/getting-started/oss#complete-connection-credentials)に接続済みであることを前提とします。
 
     <Steps>
@@ -184,11 +184,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
         ```shell
         # curl
         curl -O https://storage.googleapis.com/hyperdx/sample.tar.gz
-        # または
+        # or
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
-        このファイルには、公開中の [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) のサンプルのログ、メトリクス、トレースが含まれています。これは、マイクロサービスで構成されたシンプルな e コマースストアです。このファイルを任意のディレクトリにコピーしてください。
+        このファイルには、一般公開されている [OpenTelemetry デモ](https://github.com/ClickHouse/opentelemetry-demo) のサンプルのログ、メトリクス、トレースが含まれています。これは、マイクロサービスで構成されたシンプルな e コマースストアです。このファイルを任意のディレクトリにコピーしてください。
       </Step>
 
       <Step>
@@ -199,11 +199,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
         まず、先ほどコピーしたAPIキーをエクスポートします。
 
         ```shell
-        # API キーをエクスポート
+        # export API key
         export CLICKSTACK_API_KEY=<YOUR_INGESTION_API_KEY>
         ```
 
-        データをOTel collectorに送信するには、次のコマンドを実行します。
+        次のコマンドを実行して、データを OTel collector に送信します：
 
         ```shell
         for filename in $(tar -tf sample.tar.gz); do

@@ -212,6 +212,20 @@ ClickStack поддерживает визуализацию событий со
 
 <Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="Редактирование панели мониторинга" size="lg" />
 
+<div id="tile-display-settings">
+  ### Настройки отображения плитки
+</div>
+
+У каждой плитки есть выдвижная панель **Display Settings** с параметрами, которые определяют, как отображается её значение. Откройте её в редакторе плитки, нажав **Display Settings**. Доступные параметры зависят от типа визуализации.
+
+Плитки Number могут показывать **background chart**: спарклайн тренда, который отображается за значением, чтобы динамика в выбранном временном диапазоне была видна с первого взгляда. Это полезно для плиток SLO и error budget, где важны не только текущее значение, но и его изменение со временем.
+
+Выбрав плитку Number, откройте **Display Settings** и установите для **Background chart** значение **Line** или **Area** (или **None**, чтобы отключить его). Спарклайн строится на основе версии запроса плитки, разбитой по временным бакетам, поэтому дополнительная настройка не требуется. По умолчанию он наследует цвет плитки; задайте **Background color**, чтобы переопределить его и выбрать конкретный цвет из палитры.
+
+<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="Выдвижная панель Display Settings для плитки Number, где для параметра Background chart установлено значение Area" size="lg" />
+
+Фоновые графики доступны для плиток Number, созданных в конструкторе запросов. Плитки Number с Raw SQL возвращают одно значение без временной размерности для разбиения по бакетам, поэтому этот параметр для них отображается, но остаётся недоступным.
+
 <div id="dashboard-listing-search">
   ## Панели мониторинга — список и поиск
 </div>
@@ -345,4 +359,4 @@ HyperDX поставляется с готовыми панелями монит
 
 Данные Kubernetes для удобства навигации распределены по трем вкладкам: Поды, Узлы и Пространства имен.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse Kubernetes" size="lg" />
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg" />

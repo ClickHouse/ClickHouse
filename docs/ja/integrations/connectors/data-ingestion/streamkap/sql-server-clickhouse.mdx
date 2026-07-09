@@ -64,23 +64,23 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 では、始めましょう！
 
 <div id="step-1-creating-a-sql-server-source-in-streamkap">
-  ### ステップ 1: Streamkap で SQL Server ソースを作成する
+  ### ステップ 1: Streamkap で SQL Server ログソースを作成する
 </div>
 
-まず、ソース接続を設定します。これにより、Streamkap はどこから変更を取得すればよいかを認識します。
+まず、ログソース接続を設定します。これにより、Streamkap はどこから変更を取得すればよいかを認識します。
 
 手順は次のとおりです。
 
-1. Streamkap を開き、Sources セクションに移動します。
-2. 新しいソースを作成します。
+1. Streamkap を開き、ログソース セクションに移動します。
+2. 新しいログソースを作成します。
 
 * わかりやすい名前を付けます (例: sqlserver-demo-source) 。
 
 3. SQL Server の接続情報を入力します。
 
-* Host (例: your-db-instance.rds.amazonaws.com) 
-* Port (SQL Server のデフォルトは 3306) 
-* Username と Password
+* Host (例: your-db-instance.rds.amazonaws.com)
+* Port (SQL Server のデフォルトは 3306)
+* ユーザー名とパスワード
 * データベース名
 
 <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />

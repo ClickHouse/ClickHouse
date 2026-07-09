@@ -146,11 +146,11 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
   ### Управление доступом на основе IP
 </div>
 
-Чтобы ограничить сетевой доступ к вашему экземпляру Aurora MySQL, добавьте [статические NAT IP-адреса, указанные в документации](/ru/integrations/clickpipes/home#list-of-static-ips), в **Inbound rules** вашей группы безопасности RDS.
+Чтобы ограничить доступ к вашему экземпляру Aurora MySQL, добавьте [статические NAT IP-адреса, указанные в документации](/ru/integrations/clickpipes/home#list-of-static-ips), в **Inbound rules** группы безопасности RDS.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Где найти группу безопасности в RDS MySQL?" size="lg" border />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение правил входящего трафика для указанной выше группы безопасности" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменить правила входящего трафика для указанной выше группы безопасности" size="lg" border />
 
 <div id="private-access-via-aws-privatelink">
   ### Доступ через AWS PrivateLink по частной сети
@@ -159,7 +159,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 Чтобы подключиться к вашему экземпляру RDS по частной сети, можно использовать AWS PrivateLink. Следуйте [руководству по настройке AWS PrivateLink для ClickPipes](/ru/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes), чтобы настроить подключение.
 
 <div id="next-steps">
-  ## Дальнейшие шаги
+  ## Следующие шаги
 </div>
 
-Теперь, когда ваш экземпляр Amazon RDS MySQL настроен для репликации через binlog и безопасно подключён к ClickHouse Cloud, вы можете [создать свой первый MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index#create-your-clickpipe). Ответы на распространённые вопросы о CDC MySQL см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).
+Теперь, когда ваш экземпляр Amazon RDS MySQL настроен для репликации через binlog и безопасного подключения к ClickHouse Cloud, вы можете [создать свой первый MySQL ClickPipe](/ru/integrations/clickpipes/mysql/index#create-your-clickpipe). Ответы на распространённые вопросы о MySQL CDC см. на [странице с часто задаваемыми вопросами по MySQL](/ru/integrations/clickpipes/mysql/faq).

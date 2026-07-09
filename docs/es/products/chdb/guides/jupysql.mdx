@@ -415,8 +415,8 @@ LIMIT 10
 JupySQL también tiene funciones de gráficos limitadas.
 Podemos crear diagramas de caja o histogramas.
 
-Vamos a crear un histograma, pero primero escribamos (y guardemos) una consulta que calcule las posiciones dentro del top 100 que ha alcanzado cada jugador.
-Podremos usar esto para crear un histograma que muestre cuántos jugadores alcanzaron cada posición:
+Vamos a crear un histograma, pero primero escribamos (y guardemos) una consulta que calcule las clasificaciones dentro del top 100 que ha alcanzado cada jugador.
+Podremos usar esto para crear un histograma que muestre cuántos jugadores alcanzaron cada clasificación:
 
 ```python
 %%sql --save players_per_rank --no-execute
@@ -439,4 +439,4 @@ plot = (
 )
 ```
 
-<Image img="/images/chdb/guides/players_per_rank.webp" size="md" alt="Histograma del ranking de los jugadores en el conjunto de datos de la ATP" />
+<Image img="/images/chdb/guides/players_per_rank.webp" size="md" alt="Histograma de la clasificación de los jugadores en el conjunto de datos de la ATP" />

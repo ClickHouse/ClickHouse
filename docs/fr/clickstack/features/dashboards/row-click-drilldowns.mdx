@@ -28,7 +28,7 @@ Un tableau d’ensemble avec une ligne par service répond à la question « qu
   <Step>
     ### Créer le tableau de bord de détail
 
-    Créez un tableau de bord nommé `Service Detail` et ajoutez un [filtre personnalisé](/fr/clickstack/features/dashboards/overview#custom-filters) avec l’expression `ServiceName` sur votre traces source. Le filtre au niveau du tableau de bord redéfinit la portée de chaque tuile sur un seul service, afin que les tuiles elles-mêmes n’intègrent pas de service en dur dans leurs requêtes. Ajoutez les vues par service souhaitées : indicateurs clés RED (requests, errors, durée P95), graphique des percentiles de latence (P50, P95, P99), taux de requêtes au fil du temps et ventilation par endpoint regroupée par `SpanName`.
+    Créez un tableau de bord nommé `Service Detail` et ajoutez un [custom filter](/fr/clickstack/features/dashboards/overview#custom-filters) avec l’expression `ServiceName` sur votre source de traces. Le filtre au niveau du tableau de bord redéfinit la portée de chaque tuile sur un seul service, afin que les tuiles elles-mêmes n’intègrent pas de service en dur dans leurs requêtes. Ajoutez les vues par service souhaitées : indicateurs clés RED (requests, errors, durée P95), graphique des percentiles de latence (P50, P95, P99), taux de requêtes au fil du temps et ventilation par endpoint regroupée par `SpanName`.
 
     Enregistrez d’abord ce tableau de bord afin de pouvoir le sélectionner comme cible à l’étape suivante.
   </Step>
@@ -36,7 +36,7 @@ Un tableau d’ensemble avec une ligne par service répond à la question « qu
   <Step>
     ### Créer l’inventaire des services
 
-    Sur un tableau de bord d’ensemble, ajoutez une tuile **Table** sur votre traces source, regroupée par `ServiceName`. Donnez-lui les colonnes RED qui évaluent chaque service, chacune correspondant à une série avec alias :
+    Sur un tableau de bord d’ensemble, ajoutez une tuile **Table** sur votre source de traces, regroupée par `ServiceName`. Donnez-lui les colonnes RED qui évaluent chaque service, chacune correspondant à une série avec alias :
 
     * `Requests` : nombre de spans (taux).
     * `Errors` : nombre de spans avec un statut d’erreur.
@@ -58,7 +58,7 @@ Un tableau d’ensemble avec une ligne par service répond à la question « qu
 
     Sur le tableau d’inventaire, ouvrez **Row Click Action**, sélectionnez **Dashboard**, puis choisissez `Service Detail` dans la liste des tableaux de bord. Le fait de choisir directement le tableau de bord l’ancre par ID. Le lien continue de fonctionner si le tableau de bord est renommé plus tard, et il reste valable après export et import du tableau de bord. (Réservez l’option **Template** au choix d’un tableau de bord différent par ligne ; voir [Configurer une action de clic sur une ligne](#set-up).)
 
-    Comme `Service Detail` déclare un filtre personnalisé `ServiceName`, le panneau latéral préremplit un filtre vide pour cette expression. Renseignez son modèle :
+    Comme `Service Detail` déclare un custom filter `ServiceName`, le panneau latéral préremplit un filtre vide pour cette expression. Renseignez son modèle :
 
     * **Expression** : `ServiceName` (déjà renseigné)
     * **Template** : `{{ServiceName}}`
@@ -69,9 +69,9 @@ Un tableau d’ensemble avec une ligne par service répond à la question « qu
   <Step>
     ### Cliquer sur une ligne
 
-    Au survol d’une ligne, un lien d’action apparaît sur le bord droit du tableau, avec une indication décrivant l’action (`Open dashboard "Service Detail"`). Un clic sur la ligne ouvre le tableau de bord `Service Detail` avec son filtre `ServiceName` défini sur la valeur cliquée, de sorte que chaque tuile (les indicateurs clés RED, les percentiles de latence, la ventilation par endpoint) se recentre sur ce seul service en un seul clic.
+    Au survol d’une ligne, un lien d’action apparaît sur le bord droit du tableau, avec une indication décrivant l’action (`Open dashboard \"Service Detail\"`). Un clic sur la ligne ouvre le tableau de bord `Service Detail` avec son filtre `Service` défini sur la valeur cliquée, de sorte que chaque tuile (les indicateurs clés RED, les percentiles de latence, la ventilation par endpoint) se recentre sur ce seul service en un seul clic.
 
-    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Tableau de bord Service Detail après un clic sur une ligne, avec le filtre ServiceName défini sur le service cliqué et les indicateurs clés RED, les percentiles de latence et la ventilation par endpoint tous limités à celui-ci" size="lg" />
+    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Tableau de bord Service Detail après un clic sur une ligne, avec le filtre Service défini sur le service cliqué et les indicateurs clés RED, les percentiles de latence et la ventilation par endpoint tous limités à celui-ci" size="lg" />
   </Step>
 </Steps>
 

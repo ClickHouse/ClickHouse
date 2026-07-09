@@ -59,7 +59,7 @@ Clique em **Iniciar importação**.
 
 Preencha os detalhes da conexão com seu banco de dados PostgreSQL de origem: host, porta, nome de usuário, senha e nome do banco de dados. Ative **TLS** se a origem exigir.
 
-Se você precisar de uma conexão privada com seu banco de dados de origem, poderá optar por **tunelamento SSH** e fornecer os detalhes necessários de SSH. Isso permite que a migração se conecte com segurança a bancos de dados que não estão acessíveis publicamente.
+Se você precisar de uma conexão privada com seu banco de dados de origem, poderá optar por **tunelamento SSH** e fornecer os detalhes de SSH necessários. Isso permite que a migração se conecte com segurança a bancos de dados que não estão acessíveis publicamente.
 
 Escolha um método de ingestão:
 
@@ -69,7 +69,7 @@ Escolha um método de ingestão:
 
 <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="Etapa 1: formulário de conexão com o banco de dados de origem com opções de método de ingestão" size="lg" border />
 
-Clique em **próximo**.
+Clique em **Próximo**.
 
 <div id="step-2-export-schema">
   ## Etapa 2: Exporte o esquema do seu banco de dados
@@ -155,7 +155,7 @@ Após criar a migração, ela aparecerá listada em **Fontes de dados** com o st
 
 <Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="Lista de fontes de dados mostrando uma migração em execução" size="lg" border />
 
-Clique na migração para abrir a tela de detalhes. A aba **Tabelas** mostra o progresso da carga inicial de cada tabela, incluindo linhas processadas, partições e o tempo médio por partição. A aba **Métricas** mostra o atraso da replicação e a taxa de transferência quando o CDC começar.
+Clique na migração para abrir a tela de detalhes. A aba **Tabelas** mostra o progresso da carga inicial de cada tabela, incluindo linhas processadas, partições e o tempo médio por partição. A aba **Métricas** mostra a defasagem da replicação e a taxa de transferência quando o CDC começar.
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Tela de detalhes da migração mostrando estatísticas da carga inicial por tabela" size="lg" border />
 
@@ -228,4 +228,4 @@ SELECT pg_drop_replication_slot('<slot_name>');
 
 * [Guia de início rápido do Managed Postgres](/pt-BR/products/managed-postgres/quickstart)
 * [Detalhes de conexão do Managed Postgres](/pt-BR/products/managed-postgres/connection)
-* [FAQ do Postgres no ClickPipes](/pt-BR/integrations/clickpipes/postgres/faq)
+* [FAQ do ClickPipes Postgres](/pt-BR/integrations/clickpipes/postgres/faq)

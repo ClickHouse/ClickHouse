@@ -9,7 +9,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
 </div>
 
 <Warning>
-  通过 Homebrew Formulae 安装现已弃用，并将于 2026-09-01 停止支持。
+  通过 Homebrew Formulae 安装现已弃用，并将于 2026-09-01 禁用。
   我们建议改用适用于任何平台的[快速安装](/zh/get-started/setup/self-managed/quick-install)方法。
 </Warning>
 
@@ -34,14 +34,14 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
   <Step>
     ## 修复 macOS 中的开发者验证错误
 
-    如果你使用 `brew` 安装 ClickHouse，可能会遇到 macOS 报出的错误。
-    默认情况下，macOS 不会运行由无法验证身份的开发者创建的应用或工具。
+    如果你使用 `brew` 安装 ClickHouse，可能会遇到 MacOS 报出的错误。
+    默认情况下，MacOS 不会运行由无法验证身份的开发者创建的应用或工具。
 
     尝试运行任意 `clickhouse` 命令时，你可能会看到以下错误：
 
     <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="sm" alt="MacOS 开发者验证错误对话框" border />
 
-    要绕过这个验证错误，你需要将该应用从 macOS 的隔离区中移除。可以在系统设置中找到相应选项，也可以使用终端，或者重新安装 ClickHouse。
+    要绕过这个验证错误，你需要将该应用从 MacOS 的隔离区中移除。可以在系统设置中找到相应选项，也可以使用终端，或者重新安装 ClickHouse。
 
     ### 系统设置流程
 
@@ -59,7 +59,7 @@ import Recommendations from '/snippets/zh/recommendations.mdx';
 
        <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="显示 Allow Anyway 按钮的 MacOS 隐私与安全设置" border />
 
-    5. 输入你的 macOS 用户密码。
+    5. 输入你的 MacOS 用户密码。
 
     现在你应该就可以在终端中运行 `clickhouse` 命令了。
 

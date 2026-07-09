@@ -17,17 +17,19 @@ Calcula el número aproximado de valores distintos del argumento.
 
 La función utiliza un algoritmo de muestreo adaptativo. Para el estado de cálculo, la función usa una muestra de hasta 65536 valores hash de los elementos. Este algoritmo es muy preciso y muy eficiente para la CPU. Cuando la consulta contiene varias de estas funciones, usar uniq es casi tan rápido como usar otras funciones de agregación.
 
-<Accordion title="Detalles de implementación">
+<details>
+  <summary>Detalles de implementación</summary>
+
   Esta función calcula un hash para todos los parámetros de la agregación y luego lo usa en los cálculos.
   Utiliza un algoritmo de muestreo adaptativo.
   Para el estado de cálculo, la función usa una muestra de hasta 65536 valores hash de los elementos.
   Este algoritmo es muy preciso y muy eficiente para la CPU.
   Cuando la consulta contiene varias de estas funciones, usar `uniq` es casi tan rápido como usar otras funciones de agregación.
-</Accordion>
+</details>
 
-<Tip>
-  Recomendamos usar esta función en lugar de otras variantes en casi todos los casos.
-</Tip>
+:::tip
+Recomendamos usar esta función en lugar de otras variantes en casi todos los casos.
+:::
 
 **Sintaxis**
 

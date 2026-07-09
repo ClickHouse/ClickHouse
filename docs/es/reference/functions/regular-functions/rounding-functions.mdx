@@ -250,27 +250,24 @@ Si el número a redondear está exactamente a mitad de camino entre dos números
 * Si `N < 0`, la función redondea a la izquierda del punto decimal
 * Si `N = 0`, la función redondea al entero más cercano
 
-<Info>
-  **Notas**
+:::info Notas
 
-  * Cuando el número a redondear está exactamente a mitad de camino entre dos números, se redondea al dígito par más cercano en la posición decimal especificada.
-    Por ejemplo: `3.5` se redondea hacia arriba a `4`, `2.5` se redondea hacia abajo a `2`.
-  * La función `round` realiza el mismo tipo de redondeo para números de coma flotante.
-  * La función `roundBankers` también redondea enteros de la misma forma; por ejemplo, `roundBankers(45, -1) = 40`.
-  * En los demás casos, la función redondea los números al entero más cercano.
-</Info>
+* Cuando el número a redondear está exactamente a mitad de camino entre dos números, se redondea al dígito par más cercano en la posición decimal especificada.
+  Por ejemplo: `3.5` se redondea hacia arriba a `4`, `2.5` se redondea hacia abajo a `2`.
+* La función `round` realiza el mismo tipo de redondeo para números de coma flotante.
+* La función `roundBankers` también redondea enteros de la misma forma; por ejemplo, `roundBankers(45, -1) = 40`.
+* En los demás casos, la función redondea los números al entero más cercano.
+  :::
 
-<Tip>
-  **Use el redondeo bancario para sumar o restar números**
+:::tip Use el redondeo bancario para sumar o restar números
+Al usar el redondeo bancario, puede reducir el efecto que tiene el redondeo de números en los resultados de sumarlos o restarlos.
 
-  Al usar el redondeo bancario, puede reducir el efecto que tiene el redondeo de números en los resultados de sumarlos o restarlos.
+Por ejemplo, sume los números `1.5, 2.5, 3.5, 4.5` con distintos tipos de redondeo:
 
-  Por ejemplo, sume los números `1.5, 2.5, 3.5, 4.5` con distintos tipos de redondeo:
-
-  * Sin redondeo: `1.5 + 2.5 + 3.5 + 4.5 = 12`.
-  * Redondeo bancario: `2 + 2 + 4 + 4 = 12`.
-  * Redondeo al entero más cercano: `2 + 3 + 4 + 5 = 14`.
-</Tip>
+* Sin redondeo: `1.5 + 2.5 + 3.5 + 4.5 = 12`.
+* Redondeo bancario: `2 + 2 + 4 + 4 = 12`.
+* Redondeo al entero más cercano: `2 + 3 + 4 + 5 = 14`.
+  :::
 
 **Sintaxis**
 

@@ -174,7 +174,7 @@ Para el formato AvroConfluent: tiempo de espera de conexión en segundos del cli
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "Nueva configuración que controla el número máximo de reintentos ante errores transitorios (tiempos de espera del transporte, conexión rechazada, errores de DNS, HTTP 5xx/408/429) al comunicarse con Confluent Schema Registry. Establézcala en 0 para deshabilitar los reintentos. El comportamiento anterior (sin reintentos) se conserva mediante `compatibility = '26.5'`."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "Nueva configuración que controla el número máximo de reintentos ante errores transitorios (tiempos de espera del transporte, conexión rechazada, errores de DNS, HTTP 5xx\/408\/429) al comunicarse con Confluent Schema Registry. Establézcala en 0 para deshabilitar los reintentos. El comportamiento anterior (sin reintentos) se conserva mediante `compatibility = '26.5'`."}]}]} />
 
 Para el formato AvroConfluent: número máximo de reintentos ante errores transitorios al comunicarse con Confluent Schema Registry (tiempos de espera del transporte, conexión rechazada, errores de DNS, HTTP 5xx/408/429). Establézcalo en 0 para deshabilitar los reintentos. El valor máximo permitido es 20. Los errores de validación del esquema (HTTP 409, Avro JSON malformado) no se reintentan.
 
@@ -372,6 +372,22 @@ Valores posibles:
 
 * 0 — Deshabilitado.
 * 1 — Habilitado.
+
+<div id="format_geojson_validate_geometry">
+  ## format_geojson_validate_geometry
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nueva configuración que controla si el formato GeoJSON aplica la validación de geometrías según RFC 7946 (número mínimo de puntos por línea y anillo, cierre de anillos y multigeometrías no vacías) al leer y escribir"}]}]} />
+
+Controla si el formato `GeoJSON` aplica la validación de geometrías según RFC 7946 en ambos sentidos.
+
+Cuando está habilitado (de forma predeterminada), se rechaza cualquier geometría que infrinja las reglas de forma de GeoJSON: un `LineString` (o una línea de un `MultiLineString`) con menos de dos puntos; un anillo de `Polygon` o `MultiPolygon` con menos de cuatro puntos o cuyo primer y último punto sean distintos (un anillo no cerrado); o un `MultiLineString`, `Polygon` o `MultiPolygon` vacío. Esto se aplica tanto al leer (se rechaza ese documento) como al escribir (se rechaza ese valor de ClickHouse en lugar de producir un documento que el input format rechazaría).
+
+Cuando está deshabilitado, estas reglas de forma no se aplican: esas geometrías se leen y se escriben tal cual, de modo que las geometrías degeneradas pueden hacer round-trip, pero es posible que el documento escrito no sea un GeoJSON válido.
+
+La validación es solo estructural: comprueba el número de puntos y el cierre de los anillos. No evalúa la corrección geométrica de una forma: no se aplica la orientación de los anillos (la regla de la mano derecha / orden de orientación), y se aceptan geometrías estructuralmente válidas pero geométricamente degeneradas, como un polígono de área cero, un anillo autointersecante o un polígono cuyos holes están fuera de su anillo exterior. Las coordenadas no finitas (`NaN`, `Inf`) siempre se rechazan, independientemente de esta configuración, porque no pueden representarse como números JSON.
 
 <div id="format_json_object_each_row_column_for_object_name">
   ## format_json_object_each_row_column_for_object_name
@@ -660,9 +676,9 @@ Modos compatibles:
 
 Cuando esta opción está activada, si la conexión se cierra inesperadamente, los datos que queden en el búfer se analizarán y procesarán en lugar de tratarse como un error
 
-<Note>
-  Activar esta opción desactiva el análisis en paralelo e impide la deduplicación
-</Note>
+:::note
+Activar esta opción desactiva el análisis en paralelo e impide la deduplicación
+:::
 
 <div id="input_format_csv_allow_cr_end_of_line">
   ## input_format_csv_allow_cr_end_of_line
@@ -731,6 +747,16 @@ Considera los campos vacíos en la entrada CSV como valores predeterminados.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Considera los valores `enum` insertados en formatos CSV como índices de `enum`
+
+<div id="input_format_csv_missing_nullable_as_empty_string">
+  ## input_format_csv_missing_nullable_as_empty_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nueva configuración para leer en CSV un valor ausente de `Nullable(String)` como una cadena vacía en lugar de NULL."}]}]} />
+
+Controla cómo se lee `Nullable(String)` cuando falta un valor en CSV. Un valor ausente es un espacio vacío entre comas, o antes o después de ellas, sin estar entre comillas. Si esta configuración está habilitada, independientemente del valor de `input_format_csv_empty_as_default`, el valor ausente de `Nullable(String)` se interpretará como un `String` vacío, no como NULL.
 
 <div id="input_format_csv_skip_first_lines">
   ## input_format_csv_skip_first_lines
@@ -829,9 +855,9 @@ Omitir las líneas vacías finales del formato CustomSeparated
 
 Al realizar consultas `INSERT`, sustituye los valores omitidos de las columnas de entrada por los valores predeterminados de las columnas correspondientes. Esta opción se aplica a [JSONEachRow](/es/reference/formats/JSON/JSONEachRow) (y otros formatos JSON), [CSV](/es/reference/formats/CSV/CSV), [TabSeparated](/es/reference/formats/TabSeparated/TabSeparated), [TSKV](/es/reference/formats/TabSeparated/TSKV), [Parquet](/es/reference/formats/Parquet/Parquet), [Arrow](/es/reference/formats/Arrow/Arrow), [Avro](/es/reference/formats/Avro/Avro), [ORC](/es/reference/formats/ORC), [Native](/es/reference/formats/Native) y a los formatos con los sufijos `WithNames`/`WithNamesAndTypes`.
 
-<Note>
-  Cuando esta opción está habilitada, se envían metadatos ampliados de la tabla desde el servidor al cliente. Esto consume recursos de procesamiento adicionales en el servidor y puede reducir el rendimiento.
-</Note>
+:::note
+Cuando esta opción está habilitada, se envían metadatos ampliados de la tabla desde el servidor al cliente. Esto consume recursos de procesamiento adicionales en el servidor y puede reducir el rendimiento.
+:::
 
 Valores posibles:
 
@@ -1288,13 +1314,13 @@ Limita, en bytes, el tamaño de los bloques que se forman durante el análisis d
 
 Limita el tiempo máximo de espera, en milisegundos, antes de emitir un bloque durante el análisis en formatos de entrada basados en filas. 0 significa que no hay límite.
 
-<Note>
-  Esta opción solo funciona si `input_format_connection_handling` está habilitado. Establecer un valor también desactiva el análisis en paralelo y hace imposible la deduplicación.
-</Note>
+:::note
+Esta opción solo funciona si `input_format_connection_handling` está habilitado. Establecer un valor también desactiva el análisis en paralelo y hace imposible la deduplicación.
+:::
 
-<Note>
-  Para inserts de streaming, también se deben establecer `min_insert_block_size_rows=0` y `min_insert_block_size_bytes=0`. De lo contrario, los bloques analizados pueden seguir acumulándose en memoria durante la etapa de squashing de bloques hasta que se alcancen esos umbrales, lo que impide que los inserts se realicen a tiempo.
-</Note>
+:::note
+Para inserts de streaming, también se deben establecer `min_insert_block_size_rows=0` y `min_insert_block_size_bytes=0`. De lo contrario, los bloques analizados pueden seguir acumulándose en memoria durante la etapa de squashing de bloques hasta que se alcancen esos umbrales, lo que impide que los inserts se realicen a tiempo.
+:::
 
 **Ejemplo: transmitir cambios recientes de Wikipedia a ClickHouse**
 
@@ -1865,7 +1891,7 @@ Para el formato Values: si el campo no pudo analizarse con el parser de streamin
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "20.5"},{"label": "1"},{"label": "Activa el uso de la cabecera con nombres para formatos con sufijos WithNames/WithNamesAndTypes"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "20.5"},{"label": "1"},{"label": "Activa el uso del encabezado con nombres para formatos con sufijos WithNames/WithNamesAndTypes"}]}]} />
 
 Activa o desactiva la comprobación del orden de las columnas al insertar datos.
 
@@ -2031,7 +2057,7 @@ Habilita la salida del tipo LowCardinality como tipo Diccionario de Arrow
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse permite datos binarios arbitrarios en el tipo de dato String, que normalmente es UTF-8. Las cadenas de Parquet/ORC/Arrow solo admiten UTF-8. Por eso, puede elegir qué tipo de dato de Arrow usar para el tipo de dato String de ClickHouse: String o Binary. Aunque Binary sería más correcto y compatible, usar String de forma predeterminada se ajusta a las expectativas de los usuarios en la mayoría de los casos."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse permite datos binarios arbitrarios en el tipo de dato String, que normalmente es UTF-8. Las cadenas de Parquet\/ORC\/Arrow solo admiten UTF-8. Por eso, puede elegir qué tipo de dato de Arrow usar para el tipo de dato String de ClickHouse: String o Binary. Aunque Binary sería más correcto y compatible, usar String de forma predeterminada se ajusta a las expectativas de los usuarios en la mayoría de los casos."}]}]} />
 
 Usar el tipo String de Arrow en lugar de Binary para las columnas String
 
@@ -2160,6 +2186,18 @@ Posibles valores: números no negativos. Tenga en cuenta que, si el valor es dem
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Si se establece en `true`, el fin de línea en formato CSV será \r\n en lugar de \n.
+
+<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
+  ## output_format_csv_header_serialize_tuple_into_separate_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "Nueva configuración. Cuando output_format_csv_serialize_tuple_into_separate_columns está habilitada, el encabezado de CSVWithNames\/CSVWithNamesAndTypes ahora aplana las columnas Tuple en sus campos hoja para que el ancho del encabezado coincida con los datos. Establézcala en false para restaurar el encabezado anterior con un único nombre."}]}]} />
+
+Cuando [output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](#output_format_csv_serialize_tuple_into_separate_columns) está habilitada, las filas de encabezado de `CSVWithNames` y `CSVWithNamesAndTypes` aplanan cada columna Tuple en sus campos hoja (nombres con puntos como `t.a`, `t.b` y los nombres de los tipos hoja), de modo que el encabezado tenga el mismo número de columnas que los datos. En `CustomSeparated*`, este aplanado se aplica solo cuando `format_custom_escaping_rule = 'CSV'` y `format_custom_field_delimiter` es un único carácter igual a `format_csv_delimiter`; de lo contrario (por ejemplo, el delimitador de tabulación predeterminado o `format_custom_field_delimiter = '|'`), el encabezado permanece sin aplanar para que siga coincidiendo con los datos. Establézcala en `0` para mantener el comportamiento anterior, en el que el encabezado conserva el único nombre y tipo Tuple de nivel superior.
+
+Nota: un encabezado aplanado no se vuelve a leer como una Tuple por nombre cuando `input_format_with_names_use_header = 1`. Para volver a leer estos datos en una Tuple, establezca esta configuración en `0` en la salida, o lea con `input_format_with_names_use_header = 0` (y, para los formatos `*WithNamesAndTypes` `CSVWithNamesAndTypes` y `CustomSeparatedWithNamesAndTypes`, también `input_format_with_types_use_header = 0`, ya que, de lo contrario, la fila de tipos aplanados se valida con respecto al único campo de entrada Tuple de nivel superior y se rechaza).
 
 <div id="output_format_csv_serialize_tuple_into_separate_columns">
   ## output_format_csv_serialize_tuple_into_separate_columns
@@ -2571,7 +2609,7 @@ Escribe tipos de datos en formato binario en lugar de nombres de tipos en el for
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Añade serializaciones aplanadas de Dynamic/JSON al formato Native"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Añade serializaciones aplanadas de Dynamic\/JSON al formato Native"}]}]} />
 
 Escribe los datos de las columnas [JSON](/es/reference/data-types/newjson) y [Dynamic](/es/reference/data-types/dynamic) en formato aplanado (todos los tipos y rutas como subcolumnas independientes).
 
@@ -2601,7 +2639,7 @@ El tamaño, en bytes, del bloque de compresión para el formato de salida ORC.
 
 <SettingsInfoBlock type="ORCCompression" default_value="zstd" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet/ORC/Arrow admiten muchos métodos de compresión, incluidos lz4 y zstd. ClickHouse admite todos estos métodos de compresión. Algunas herramientas menos capaces, como 'duckdb', no admiten el método de compresión `lz4`, que es más rápido; por eso zstd se establece de forma predeterminada."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "Usa lz4 como compresión predeterminada en el formato de salida ORC"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet\/ORC\/Arrow admiten muchos métodos de compresión, incluidos lz4 y zstd. ClickHouse admite todos estos métodos de compresión. Algunas herramientas menos capaces, como 'duckdb', no admiten el método de compresión `lz4`, que es más rápido; por eso zstd se establece de forma predeterminada."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "Usa lz4 como compresión predeterminada en el formato de salida ORC"}]}]} />
 
 Método de compresión para el formato de salida ORC. Códecs compatibles: lz4, snappy, zlib, zstd, none (sin comprimir)
 
@@ -2629,7 +2667,7 @@ Paso objetivo del índice de filas en el formato de salida ORC
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse permite datos binarios arbitrarios en el tipo de dato String, que suele ser UTF-8. Las cadenas de Parquet/ORC/Arrow solo admiten UTF-8. Por eso, puede elegir qué tipo de dato de Arrow usar para el tipo de dato String de ClickHouse: String o Binary. Aunque Binary sería más correcto y compatible, usar String de forma predeterminada se ajusta a las expectativas de los usuarios en la mayoría de los casos."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse permite datos binarios arbitrarios en el tipo de dato String, que suele ser UTF-8. Las cadenas de Parquet\/ORC\/Arrow solo admiten UTF-8. Por eso, puede elegir qué tipo de dato de Arrow usar para el tipo de dato String de ClickHouse: String o Binary. Aunque Binary sería más correcto y compatible, usar String de forma predeterminada se ajusta a las expectativas de los usuarios en la mayoría de los casos."}]}]} />
 
 Usa el tipo String de ORC en lugar de Binary para las columnas String
 
@@ -2802,7 +2840,7 @@ Tamaño objetivo del grupo de filas en bytes, antes de la compresión.
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse permite datos binarios arbitrarios en el tipo de dato String, que normalmente es UTF-8. Las cadenas de Parquet/ORC/Arrow solo admiten UTF-8. Por eso, puede elegir qué tipo de dato de Arrow usar para el tipo de dato String de ClickHouse: String o Binary. Aunque Binary sería más correcto y compatible, usar String de forma predeterminada se ajusta a las expectativas de los usuarios en la mayoría de los casos."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse permite datos binarios arbitrarios en el tipo de dato String, que normalmente es UTF-8. Las cadenas de Parquet\/ORC\/Arrow solo admiten UTF-8. Por eso, puede elegir qué tipo de dato de Arrow usar para el tipo de dato String de ClickHouse: String o Binary. Aunque Binary sería más correcto y compatible, usar String de forma predeterminada se ajusta a las expectativas de los usuarios en la mayoría de los casos."}]}]} />
 
 Use el tipo String de Parquet en lugar de Binary para las columnas String.
 
@@ -3186,7 +3224,7 @@ Si se establece en verdadero, el final de línea en formato TSV será \r\n en lu
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Si es verdadero, se escapa ' como '', de lo contrario, se entrecomilla con \'"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "Si es verdadero, se escapa ' como '', de lo contrario, se entrecomilla con \\'"}]}]} />
 
 Si es verdadero, se escapa &#39; como &#39;&#39;, de lo contrario, se entrecomilla con &#92;&#39;
 
@@ -3212,7 +3250,7 @@ Usar un algoritmo de análisis de números de coma flotante más preciso (pero m
   ## schema_inference_hints
 </div>
 
-La lista de nombres de columnas y tipos que se utilizarán como sugerencias para la inferencia de esquemas en formatos sin esquema.
+La lista de nombres de columnas y tipos que se utilizarán como sugerencias para la inferencia de esquema en formatos sin esquema.
 
 Ejemplo:
 
@@ -3230,9 +3268,9 @@ y   Nullable(String)
 z   IPv4
 ```
 
-<Note>
-  Si `schema_inference_hints` no tiene el formato adecuado, o si hay un error tipográfico, un tipo de dato incorrecto, etc., se ignorará por completo `schema_inference_hints`.
-</Note>
+:::note
+Si `schema_inference_hints` no tiene el formato adecuado, o si hay un error tipográfico, un tipo de dato incorrecto, etc., se ignorará por completo `schema_inference_hints`.
+:::
 
 <div id="schema_inference_make_columns_nullable">
   ## schema_inference_make_columns_nullable

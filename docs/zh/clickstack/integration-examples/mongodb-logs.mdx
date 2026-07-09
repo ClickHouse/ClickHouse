@@ -60,10 +60,10 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     更改配置后，重新启动 MongoDB：
 
     ```bash
-    # 适用于 systemd
+    # For systemd
     sudo systemctl restart mongod
 
-    # 适用于 Docker
+    # For Docker
     docker restart <mongodb-container>
     ```
   </Step>
@@ -368,7 +368,7 @@ tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
 * 针对特定用例创建更多[仪表盘](/zh/clickstack/features/dashboards/overview) (如副本集监控、连接跟踪)
 
 <div id="going-to-production">
-  ## 进入生产环境
+  ## 投入生产
 </div>
 
-本指南基于 ClickStack 内置的 OpenTelemetry Collector，可帮助您快速完成设置。对于生产部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南基于 ClickStack 内置的 OpenTelemetry Collector，帮助您快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

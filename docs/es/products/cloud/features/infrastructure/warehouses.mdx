@@ -12,10 +12,10 @@ import ScalePlanFeatureBadge from "/snippets/es/components/ScalePlanFeatureBadge
 <ScalePlanFeatureBadge feature="Separación entre recursos de cómputo" />
 
 <div id="what-is-compute-compute-separation">
-  ## ¿Qué es la separación de cómputo-cómputo?
+  ## ¿Qué es la separación entre recursos de cómputo?
 </div>
 
-Antes de explicar qué es la separación de cómputo-cómputo, conviene entender qué es un **servicio** en ClickHouse Cloud.
+Antes de explicar qué es la separación entre recursos de cómputo, conviene entender qué es un **servicio** en ClickHouse Cloud.
 
 Cada servicio de ClickHouse Cloud incluye:
 
@@ -30,12 +30,12 @@ Cada servicio de ClickHouse Cloud incluye:
 *Fig. 1 - Servicio único en ClickHouse Cloud*
 
 En lugar de tener un único servicio, puedes crear varios servicios con acceso al mismo almacenamiento compartido, lo que te permite dedicar recursos a cargas de trabajo específicas sin tener que duplicar los datos.
-Este concepto se denomina **separación de cómputo-cómputo**.
+Este concepto se denomina **separación entre recursos de cómputo**.
 
-La separación de cómputo-cómputo significa que cada servicio tiene su propio conjunto de réplicas y un endpoint, pero utiliza la misma carpeta de almacenamiento de objetos y accede a las mismas tablas, vistas, etc.
+La separación entre recursos de cómputo significa que cada servicio tiene su propio conjunto de réplicas y un endpoint, pero utiliza la misma carpeta de almacenamiento de objetos y accede a las mismas tablas, vistas, etc.
 Esto significa que puedes elegir la capacidad de cómputo adecuada para tu carga de trabajo. Algunas cargas de trabajo pueden resolverse con una sola réplica pequeña, mientras que otras pueden requerir alta disponibilidad (HA) completa y cientos de gigabytes de memoria en varias réplicas.
 
-La separación de cómputo-cómputo también te permite separar las operaciones de lectura de las de escritura para que no interfieran entre sí:
+La separación entre recursos de cómputo también te permite separar las operaciones de lectura de las de escritura para que no interfieran entre sí:
 
 <Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Separación de cómputo en ClickHouse Cloud" />
 
@@ -49,7 +49,7 @@ La separación de cómputo-cómputo también te permite separar las operaciones 
 
 En ClickHouse Cloud, un *warehouse* es un conjunto de **servicios** que comparten los mismos datos.
 Cada warehouse tiene un servicio principal (el servicio que se crea primero) y uno o más servicios secundarios.
-Por ejemplo, en la captura de pantalla de abajo, puedes ver un warehouse, &quot;DWH Prod&quot;, compuesto por dos servicios:
+Por ejemplo, en la captura de pantalla de abajo, puedes ver un warehouse &quot;DWH Prod&quot; compuesto por dos servicios:
 
 * Servicio principal `DWH Prod`
 * Servicio secundario `DWH Prod Subservice`
@@ -114,12 +114,12 @@ Los servicios pueden ser de uno de estos tipos:
 * **lectura y escritura**
   * Pueden leer y escribir datos en ClickHouse
   * Realizan operaciones de fusión en segundo plano (p. ej., fusionar partes después de insertar datos), que consumen CPU y memoria
-  * Pueden exportar datos a sistemas externos
+  * Pueden exportar datos externamente
 * **solo lectura**
   * Solo pueden leer datos; no pueden escribir ni modificar datos en ClickHouse
-  * No realizan operaciones de fusión en segundo plano fuera de las system tables, por lo que sus recursos se dedican por completo a las consultas de lectura
-  * Aún pueden exportar datos a sistemas externos (p. ej., mediante table functions), pero no pueden modificar datos dentro de ClickHouse
-  * Entran en inactividad sin demora, a diferencia de los servicios de lectura y escritura, que pueden mantenerse activos debido a las fusiones en segundo plano.
+  * No realizan operaciones de fusión en segundo plano fuera de las tablas del sistema, por lo que sus recursos se dedican por completo a las consultas de lectura
+  * Aún pueden exportar datos externamente (p. ej., mediante table functions), pero no pueden modificar los datos dentro de ClickHouse
+  * Pasan a inactividad sin demora, a diferencia de los servicios de lectura y escritura, que pueden mantenerse activos debido a las fusiones en segundo plano.
 
 A veces conviene aislar las cargas de trabajo de lectura críticas de la sobrecarga de escritura y fusión haciendo que un servicio sea de solo lectura.
 Puede hacerlo con el segundo servicio y con cualquier servicio adicional que cree; sin embargo, el primer servicio siempre será de lectura y escritura, como se muestra en la figura siguiente:
@@ -133,7 +133,7 @@ Puede hacerlo con el segundo servicio y con cualquier servicio adicional que cre
 <Note>
   1. Actualmente, los servicios de solo lectura admiten operaciones de gestión de usuarios (CREATE, DROP, etc.).
   2. Las [vistas materializadas actualizables](/es/concepts/features/materialized-views/refreshable-materialized-view) se ejecutan **solo** en servicios de lectura y escritura (RW) de un warehouse.
-  3. El tipo de un servicio (solo lectura o lectura y escritura) queda fijado en el momento de su creación y no puede cambiarse posteriormente desde la Cloud Console. Para cambiar entre acceso de solo lectura y de lectura y escritura, cree un servicio nuevo en el warehouse con el tipo deseado.
+  3. El tipo de un servicio (solo lectura o lectura y escritura) queda fijado en el momento de su creación y no puede cambiarse posteriormente desde la Cloud Console. Para alternar entre acceso de solo lectura y de lectura y escritura, cree un nuevo servicio en el warehouse con el tipo deseado.
 </Note>
 
 <div id="scaling">

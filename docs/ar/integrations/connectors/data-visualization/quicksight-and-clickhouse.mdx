@@ -116,38 +116,38 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
   ## ربط QuickSight بـ ClickHouse
 </div>
 
-أولاً، انتقل إلى [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com)، ثم افتح قسم Datasets وانقر على &quot;New dataset&quot;:
+أولًا، انتقل إلى [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com)، ثم افتح Datasets وانقر على &quot;New dataset&quot;:
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_01.webp" alt="لوحة معلومات Amazon QuickSight تعرض زر New dataset في قسم Datasets" border />
 
 <br />
 
-ابحث عن موصل MySQL الرسمي المضمّن مع QuickSight (ويظهر باسم **MySQL** فقط):
+ابحث عن موصل MySQL الرسمي المضمّن في QuickSight (باسم **MySQL** فقط):
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="شاشة اختيار مصدر البيانات في QuickSight مع تمييز MySQL في نتائج البحث" border />
 
 <br />
 
-حدّد تفاصيل الاتصال. يُرجى ملاحظة أن منفذ واجهة MySQL هو 9004 افتراضيًا،
-وقد يختلف بحسب إعدادات الخادم لديك.
+حدّد تفاصيل الاتصال الخاصة بك. يُرجى ملاحظة أن منفذ واجهة MySQL هو 9004 افتراضيًا،
+وقد يختلف حسب تهيئة الخادم لديك.
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="نموذج إعداد اتصال MySQL في QuickSight مع حقول اسم المضيف والمنفذ وقاعدة البيانات وبيانات الاعتماد" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="نموذج تهيئة اتصال MySQL في QuickSight مع حقول اسم المضيف والمنفذ وقاعدة البيانات وبيانات الاعتماد" border />
 
 <br />
 
-أمامك الآن خياران لجلب البيانات من ClickHouse. أولاً، يمكنك اختيار جدول من القائمة:
+لديك الآن خياران لجلب البيانات من ClickHouse. أولًا، يمكنك اختيار جدول من القائمة:
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="واجهة اختيار الجداول في QuickSight تعرض جداول قاعدة البيانات المتاحة من ClickHouse" border />
 
 <br />
 
-بدلاً من ذلك، يمكنك تحديد custom SQL لجلب بياناتك:
+بدلًا من ذلك، يمكنك إدخال استعلام SQL مخصص لجلب بياناتك:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="محرر استعلامات custom SQL في QuickSight لجلب البيانات من ClickHouse" border />
+<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="محرر استعلامات SQL المخصصة في QuickSight لجلب البيانات من ClickHouse" border />
 
 <br />
 
-عند النقر على &quot;Edit/Preview data&quot;، ينبغي أن تتمكن من رؤية بنية الجدول المكتشفة أو تعديل custom SQL، إذا اخترت هذه الطريقة للوصول إلى البيانات:
+عند النقر على &quot;Edit/Preview data&quot;، ينبغي أن تتمكن من رؤية بنية الجدول المستكشفة أو تعديل استعلام SQL المخصص، إذا اخترت هذه الطريقة للوصول إلى البيانات:
 
 <Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="معاينة البيانات في QuickSight تعرض بنية الجدول مع الأعمدة وبيانات نموذجية" border />
 
@@ -159,7 +159,7 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 
 <br />
 
-يمكنك الآن المتابعة إلى نشر مجموعة البيانات وإنشاء تصور جديد!
+يمكنك الآن المتابعة لنشر مجموعة البيانات وإنشاء تصور جديد!
 
 <div id="known-limitations">
   ## القيود المعروفة

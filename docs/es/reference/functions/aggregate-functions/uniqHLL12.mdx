@@ -16,12 +16,13 @@ Introducido en: v1.1.0
 
 Calcula el número aproximado de valores distintos del argumento mediante el algoritmo [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
-<Warning>
-  No recomendamos usar esta función. En la mayoría de los casos, utilice la función [uniq](/es/reference/functions/aggregate-functions/uniq) o [uniqCombined](/es/reference/functions/aggregate-functions/uniqCombined).
-</Warning>
+:::warning
+No recomendamos usar esta función. En la mayoría de los casos, utilice la función [uniq](/es/reference/functions/aggregate-functions/uniq) o [uniqCombined](/es/reference/functions/aggregate-functions/uniqCombined).
+:::
 
-<Accordion title="Detalles de implementación">
-  Esta función calcula un hash para todos los parámetros de la función de agregado y luego lo usa en los cálculos.
+<details>
+  <summary>Detalles de implementación</summary>
+  Esta función calcula un hash para todos los parámetros de la función de agregación y luego lo usa en los cálculos.
   Utiliza el algoritmo HyperLogLog para aproximar el número de valores distintos del argumento.
 
   Se utilizan 2^12 celdas de 5 bits.
@@ -31,7 +32,7 @@ Calcula el número aproximado de valores distintos del argumento mediante el alg
   A partir de 100M, el error de estimación aumenta y la función devolverá resultados muy imprecisos para conjuntos de datos con cardinalidad extremadamente alta (1B+ elementos).
 
   Proporciona un resultado determinista (no depende del orden de procesamiento de la consulta).
-</Accordion>
+</details>
 
 **Sintaxis**
 

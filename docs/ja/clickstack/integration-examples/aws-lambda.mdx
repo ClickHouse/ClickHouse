@@ -97,7 +97,7 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... その他の設定 ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
@@ -113,13 +113,13 @@ import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintaine
     以下の環境変数を Lambda 関数に追加します。
 
     ```bash
-    # 必須: ClickStack OTLPエンドポイント
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # オプション: 認証ヘッダー
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # オプション: サービス名（デフォルトはラムダ関数名）
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 

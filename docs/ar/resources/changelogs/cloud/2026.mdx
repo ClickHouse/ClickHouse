@@ -2,14 +2,46 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'سجل تغييرات Cloud - 2026'
-description: 'سجل تغييرات ClickHouse Cloud يوفّر وصفًا لما هو جديد في كل إصدار من إصدارات ClickHouse Cloud'
+description: 'سجل تغييرات ClickHouse Cloud الذي يقدّم وصفًا لما هو جديد في كل إصدار من إصدارات ClickHouse Cloud'
 doc_type: 'changelog'
 keywords: ['سجل التغييرات', 'ملاحظات الإصدار', 'التحديثات', 'الميزات الجديدة', 'تغييرات Cloud']
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-إلى جانب سجل تغييرات ClickHouse Cloud هذا، يُرجى أيضًا مراجعة صفحة [توافق Cloud](/ar/products/cloud/guides/cloud-compatibility).
+بالإضافة إلى Cloud changelog الخاص بـ ClickHouse Cloud، يُرجى أيضًا الاطلاع على صفحة [Cloud Compatibility](/ar/products/cloud/guides/cloud-compatibility).
+
+<Update label="30 يونيو 2026">
+  تتضمن تحديثات هذا الأسبوع ميزات observability جديدة لـ Postgres ولبنية ClickHouse الداخلية، وعناصر تحكم موسّعة في ClickPipes، بما في ذلك تسليم exactly-once لـ Kafka، إلى جانب عدة إضافات على مستوى المنصة: Azure Marketplace BYOC، وموفّر Airflow الرسمي، وتحديثات ClickHouse Agents.
+
+  ### تسليم exactly-once لـ Kafka في ClickPipes
+
+  يمكنك الآن تمكين تسليم exactly-once لواردات Kafka مباشرةً من خلال مسار الاستيراد [ClickPipes](/ar/integrations/clickpipes/kafka/index)، مع إتاحة الخيار نفسه أيضًا عبر واجهة برمجة تطبيقات عامة للإعداد البرمجي.
+
+  ### عناصر تحكم TLS موحّدة لمصادر CDC
+
+  أصبحت مستويات تفعيل TLS والتحقق منه متسقة الآن عبر جميع مصادر CDC. كما تنقل نقاط نهاية الإنشاء والتحديث في OpenAPI الحقول `postgres_skip_cert_verification` و`postgres_disable_tls` و`mongo_skip_cert_verification`، بحيث يمكنك إدارة التعامل مع الشهادات عبر واجهة برمجة تطبيقات.
+
+  ### عودة قواعد بيانات Replicated إلى منتقي ClickPipes
+
+  أصبحت قواعد بيانات Replicated قابلة للاختيار مرةً أخرى في منتقي الوجهة ضمن ClickPipes.
+
+  ### تحديثات ClickHouse Agents (بيتا عامة)
+
+  تدعم [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents/index) الآن Chat Projects لتنظيم المحادثات، ومؤشرًا لاستخدام السياق يعرض استخدام الرموز ونافذة السياق، وSkills ينشئها الوكيل، وSkills مضمّنة لأفضل ممارسات ClickHouse. ويتضمن هذا الإصدار أيضًا تحسينات في الإعدادات والتنقل والاختصارات والتثبيت.
+
+  ### ClickHouse BYOC على Azure Marketplace
+
+  أصبحت خدمة ClickHouse [Bring Your Own Cloud](/ar/products/cloud/guides/infrastructure/deployment-options/byoc/overview) مُدرجة الآن على Azure Marketplace، ما يتيح للعملاء الشراء عبر Private Offer ونشر BYOC مع احتساب الرسوم من خلال حساب Azure الخاص بهم. كما أُضيف دعم الفوترة لإدراجات Azure BYOC في Marketplace ولمعرّفات المنتجات على مستوى المنصة.
+
+  ### موفّر ClickHouse Airflow الرسمي
+
+  أصبح موفّر Apache Airflow الرسمي لـ ClickHouse متاحًا الآن على PyPI ومدرجًا في سجل Airflow، ليحل محل الاعتماد على المكوّن الإضافي المجتمعي القديم لنقل البيانات إلى ClickHouse ومنه.
+
+  ### تحسينات على وضوح الفوترة وMarketplace
+
+  تتضمن الفوترة الآن جدول سجل أرصدة ذاتي الخدمة، وملخصًا للدفع المسبق يوضح المبالغ المستخدمة والمنتهية الصلاحية، ودعم البريد الإلكتروني لـ GCP MPPO.
+</Update>
 
 <Update label="3 يونيو 2026">
   جاء أسبوع Open House 2026 بموجة من الإطلاقات تمحورت حول تشغيل ClickHouse في البيئة التي تعيش فيها بياناتك، وإدراج سير العمل الوكيلية المدعومة بالذكاء الاصطناعي في المنصة.

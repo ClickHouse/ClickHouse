@@ -360,7 +360,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration MySQL logs avant de
   ## Tableaux de bord et visualisations
 </div>
 
-Pour vous aider à démarrer la supervision de MySQL avec ClickStack, nous fournissons des visualisations essentielles pour les logs MySQL.
+Pour vous aider à démarrer la surveillance de MySQL avec ClickStack, nous fournissons des visualisations essentielles pour les logs MySQL.
 
 <Steps>
   <Step>
@@ -371,7 +371,7 @@ Pour vous aider à démarrer la supervision de MySQL avec ClickStack, nous fourn
     #### Importer le tableau de bord préconfiguré
 
     1. Ouvrez HyperDX et accédez à la section Dashboards
-    2. Cliquez sur **Import Dashboard** dans le coin supérieur droit, dans le menu des points de suspension
+    2. Cliquez sur **Import Dashboard** dans le coin supérieur droit, sous le menu à points de suspension
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’importation du tableau de bord" />
 
@@ -388,7 +388,7 @@ Pour vous aider à démarrer la supervision de MySQL avec ClickStack, nous fourn
     <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Exemple de tableau de bord" />
 
     <Note>
-      Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Par défaut, le tableau de bord importé n’aura pas d’intervalle de temps défini.
+      Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Le tableau de bord importé n’aura pas d’intervalle de temps défini par défaut.
     </Note>
   </Step>
 </Steps>
@@ -491,4 +491,4 @@ Si votre format diffère sensiblement, ajustez les motifs d’expression réguli
   ## Passage en production
 </div>
 
-Ce guide s’appuie sur l’OpenTelemetry Collector intégré à ClickStack pour une mise en route rapide. Pour les déploiements en production, nous vous recommandons d’exécuter votre propre OTel Collector et d’envoyer les données vers l’endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.
+Ce guide s&#39;appuie sur l&#39;OpenTelemetry Collector intégré à ClickStack pour une configuration rapide. Pour les déploiements en production, nous vous recommandons d&#39;exécuter votre propre OTel Collector et d&#39;envoyer les données vers le endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration en production.

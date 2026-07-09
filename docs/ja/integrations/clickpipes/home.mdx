@@ -30,7 +30,7 @@ ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管�
 | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | -------------- | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Apache Kafka](/ja/integrations/clickpipes/kafka/index)        | <img src="/images/integrations/logos/kafka.svg" alt="Apache Kafka ロゴ" width="32" />                  | Streaming      | Stable          | ClickPipes を設定し、Apache Kafka から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                  |
 | Confluent Cloud                                             | <img src="/images/integrations/logos/confluent.svg" alt="Confluent Cloud ロゴ" width="32" />           | Streaming      | Stable          | 直接インテグレーションにより、Confluent と ClickHouse Cloud をシームレスに連携させることができます。                                                                                                           |
-| Redpanda                                                    | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda ロゴ" width="32" />              | Streaming      | Stable          | ClickPipes を設定し、Redpanda から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                      |
+| Redpanda                                                    | <img src="/images/integrations/logos/logo_redpanda.webp" alt="Redpanda ロゴ" width="32" />             | Streaming      | Stable          | ClickPipes を設定し、Redpanda から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                      |
 | AWS MSK                                                     | <img src="/images/integrations/logos/msk.svg" alt="AWS MSK ロゴ" width="32" />                         | Streaming      | Stable          | ClickPipes を設定し、AWS MSK から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                       |
 | Azure Event Hubs                                            | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs ロゴ" width="32" />   | Streaming      | Stable          | ClickPipes を設定し、Azure Event Hubs から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。詳しくは [Azure Event Hubs よくある質問](/ja/integrations/clickpipes/kafka/faq#azure-eventhubs) を参照してください。 |
 | WarpStream                                                  | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream ロゴ" width="32" />               | Streaming      | Stable          | ClickPipes を設定し、WarpStream から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。                                                                                                    |
@@ -107,14 +107,18 @@ ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管�
   ### Google Cloud 固定 NAT IP
 </div>
 
-| Google Cloud リージョン                           | IP アドレス                                                                               |
-| -------------------------------------------- | ------------------------------------------------------------------------------------- |
-| **asia-northeast1** - 東京 (2026年5月27日以降)      | `104.198.114.210`, `35.221.66.81`, `35.243.126.127`, `136.110.107.86`, `34.85.18.112` |
-| **asia-southeast1** - シンガポール (2026年5月27日以降)  | `34.21.197.28`, `35.197.141.23`, `35.197.157.90`, `136.110.17.200`, `35.185.179.231`  |
-| **europe-west2** - ロンドン (2026年5月27日以降)       | `35.242.131.178`, `34.39.77.101`, `34.39.47.179`, `34.89.53.234`, `8.228.63.151`      |
-| **europe-west4** - オランダ (2026年5月27日以降)       | `34.34.86.3`, `34.6.175.56`, `34.178.6.187`, `34.91.204.220`, `34.12.85.206`          |
-| **us-central1** - アイオワ (2026年5月27日以降)        | `34.28.24.54`, `34.42.56.195`, `34.63.141.9`, `35.238.146.37`, `34.10.251.49`         |
-| **us-east1** - サウスカロライナ (2026年5月27日以降)       | `34.24.134.232`, `34.24.214.165`, `34.24.20.1`, `35.243.193.248`, `34.23.98.76`       |
+| Google Cloud リージョン                            | IP アドレス                                                                               |
+| --------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **asia-northeast1** - 東京 (2026年5月27日以降)       | `104.198.114.210`, `35.221.66.81`, `35.243.126.127`, `136.110.107.86`, `34.85.18.112` |
+| **asia-southeast1** - シンガポール (2026年5月27日以降)   | `34.21.197.28`, `35.197.141.23`, `35.197.157.90`, `136.110.17.200`, `35.185.179.231`  |
+| **australia-southeast1** - シドニー (2026年7月7日以降) | `34.40.200.47`, `34.151.85.215`, `34.151.163.22`, `34.87.195.243`, `34.40.243.42`     |
+| **europe-west2** - ロンドン (2026年5月27日以降)        | `35.242.131.178`, `34.39.77.101`, `34.39.47.179`, `34.89.53.234`, `8.228.63.151`      |
+| **europe-west3** - フランクフルト (2026年7月8日以降)      | `35.234.83.97`, `34.185.190.148`, `35.246.247.157`, `34.159.127.6`, `34.141.3.60`     |
+| **europe-west4** - オランダ (2026年5月27日以降)        | `34.34.86.3`, `34.6.175.56`, `34.178.6.187`, `34.91.204.220`, `34.12.85.206`          |
+| **europe-west6** - チューリッヒ (2026年7月8日以降)       | `34.65.96.1`, `34.65.131.251`, `34.65.140.197`, `34.65.186.186`, `34.158.21.76`       |
+| **us-central1** - アイオワ (2026年7月7日以降)          | `34.28.24.54`, `34.42.56.195`, `34.63.141.9`, `35.238.146.37`, `34.10.251.49`         |
+| **us-east1** - サウスカロライナ (2026年5月27日以降)        | `34.24.134.232`, `34.24.214.165`, `34.24.20.1`, `35.243.193.248`, `34.23.98.76`       |
+| **us-west1** - オレゴン (2026年7月1日以降)             | `136.118.254.175`, `8.229.115.2`, `34.83.0.219`, `35.247.34.28`, `35.199.165.121`     |
 
 <div id="adjusting-clickhouse-settings">
   ## ClickHouse設定の調整
@@ -146,12 +150,12 @@ ClickPipes には、ほとんどのユースケースに対応できる適切な
 | `Max insert threads`                 | 1       | ファイル処理に使用する[同時実行の挿入スレッドの最大数](/ja/reference/settings/session-settings#max_insert_threads)。                            |
 | `Min insert block size bytes`        | 1 GB    | テーブルに挿入可能な[ブロックの最小バイトサイズ](/ja/reference/settings/session-settings#min_insert_block_size_bytes)。                      |
 | `Max download threads`               | 4       | [同時実行されるダウンロードスレッドの最大数](/ja/reference/settings/session-settings#max_download_threads)。                               |
-| `オブジェクトストレージ polling interval`    | 30 s    | データを ClickHouse クラスターに挿入するまでの最大待機時間を設定します。                                                                        |
+| `オブジェクトストレージ polling interval`       | 30 s    | データを ClickHouse クラスターに挿入するまでの最大待機時間を設定します。                                                                        |
 | `Parallel distributed insert select` | 2       | [Parallel distributed insert select 設定](/ja/reference/settings/session-settings#parallel_distributed_insert_select)。 |
 | `Parallel view processing`           | false   | アタッチされたビューへのプッシュを、[順次ではなく同時実行](/ja/reference/settings/session-settings#parallel_view_processing)にするかどうか。             |
 | `Use cluster function`               | true    | 複数のノードにまたがってファイルを並列に処理するかどうか。                                                                                     |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の詳細設定" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
 
 <div id="clickpipes-advanced-settings-streaming">
   ### ストリーミング ClickPipes
@@ -166,6 +170,10 @@ ClickPipes には、ほとんどのユースケースに対応できる適切な
 </div>
 
 ClickPipes は、インジェスト中に発生したエラーの種類に応じて、エラーを 2 つの別々のテーブルに保存します。
+
+<Note>
+  これは現在、CDC パイプ (Postgres、MySQL、MongoDB) には適用されません。これらについては、運用ログとエラーログを ClickHouse Cloud コンソールで直接確認できます。
+</Note>
 
 <div id="record-errors">
   ### レコードエラー

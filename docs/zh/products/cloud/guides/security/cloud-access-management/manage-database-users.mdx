@@ -98,9 +98,9 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 使用 SQL [GRANT](/zh/reference/statements/grant) 语句在服务和数据库中配置以下权限。
 
-| Role    | Description                                          |
-| :------ | :--------------------------------------------------- |
-| Default | 对服务具有完全管理权限                                          |
+| Role    | Description                                             |
+| :------ | :------------------------------------------------------ |
+| Default | 对服务具有完全管理权限                                             |
 | Custom  | 使用 SQL [`GRANT`](/zh/reference/statements/grant) 语句进行配置 |
 
 * 数据库角色的权限是累加的。这意味着，如果某个用户同时属于两个角色，那么该用户将拥有这两个角色中级别更高的访问权限。添加角色不会导致其失去现有访问权限。
@@ -186,4 +186,4 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   ## 仓库用户
 </div>
 
-同一仓库中的各个服务共享同一组仓库用户。更多信息，请参阅[仓库访问控制](/zh/products/cloud/features/infrastructure/warehouses#access-controls)。
+仓库用户在同一仓库内的各个服务之间共享。更多信息，请参阅[仓库访问控制](/zh/products/cloud/features/infrastructure/warehouses#access-controls)。

@@ -34,12 +34,10 @@ ClickHouse は `COUNT(DISTINCT ...)` 構文をサポートしています。
 `optimize_functions_to_subcolumns = 1` の場合、この関数はカラム全体のカラムデータを読み取って処理する代わりに、[`null`](/ja/reference/data-types/nullable#finding-null) サブカラムのみを読み取ります。
 クエリ `SELECT count(n) FROM table` は `SELECT sum(NOT n.null) FROM table` に変換されます。
 
-<Tip>
-  **COUNT(DISTINCT expr) のパフォーマンス改善**
-
-  `COUNT(DISTINCT expr)` クエリが遅い場合は、並列化が向上するため [`GROUP BY`](/ja/reference/statements/select/group-by) 句を追加することを検討してください。
-  また、`COUNT(DISTINCT target_col)` で使用する対象カラムに索引を作成するため、[projection](/ja/reference/statements/alter/projection) を使用することもできます。
-</Tip>
+:::tip COUNT(DISTINCT expr) のパフォーマンス改善
+`COUNT(DISTINCT expr)` クエリが遅い場合は、並列化が向上するため [`GROUP BY`](/ja/reference/statements/select/group-by) 句を追加することを検討してください。
+また、`COUNT(DISTINCT target_col)` で使用する対象カラムに索引を作成するため、[projection](/ja/reference/statements/alter/projection) を使用することもできます。
+:::
 
 **構文**
 
@@ -72,7 +70,7 @@ SELECT count() FROM t
 **COUNT(DISTINCT)の例**
 
 ```sql title=Query
--- この例では、`count_distinct_implementation` 設定値に従って、`count(DISTINCT num)` が `uniqExact` 関数によって実行されることを示しています。
+-- This example shows that `count(DISTINCT num)` is performed by the `uniqExact` function according to the `count_distinct_implementation` setting value.
 SELECT name, value FROM system.settings WHERE name = 'count_distinct_implementation';
 SELECT count(DISTINCT num) FROM t
 ```

@@ -24,7 +24,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   ### 1. 자동 백업을 통해 바이너리 로깅 활성화
 </div>
 
-자동 백업 기능 설정에 따라 MySQL의 바이너리 로깅이 활성화되거나 비활성화됩니다. 자동 백업은 RDS Console에서 **Modify** &gt; **Additional configuration** &gt; **Backup**으로 이동한 다음 **Enable automated backups** 체크박스를 선택해 인스턴스에 대해 구성할 수 있습니다(아직 선택하지 않은 경우).
+자동 백업 기능 설정에 따라 MySQL의 바이너리 로깅 활성화 여부가 결정됩니다. 자동 백업은 RDS Console에서 **Modify** &gt; **Additional configuration** &gt; **Backup**으로 이동한 다음 **Enable automated backups** 체크박스를 선택하여 인스턴스에 대해 구성할 수 있습니다(아직 선택하지 않은 경우).
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS에서 자동 백업 활성화" size="lg" border />
 
@@ -146,7 +146,7 @@ GTID 기반 복제는 Amazon RDS for MySQL 버전 5.7, 8.0, 8.4에서 지원됩�
   ### IP 기반 접근 제어
 </div>
 
-Aurora MySQL 인스턴스에 대한 트래픽을 제한하려면, [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 RDS 보안 그룹의 **인바운드 규칙**에 추가하십시오.
+Aurora MySQL 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/home#list-of-static-ips)를 RDS 보안 그룹의 **인바운드 규칙**에 추가하십시오.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS MySQL에서 보안 그룹을 찾는 위치" size="lg" border />
 
@@ -162,4 +162,4 @@ Aurora MySQL 인스턴스에 대한 트래픽을 제한하려면, [문서에 안
   ## 다음 단계
 </div>
 
-이제 Amazon RDS MySQL 인스턴스가 binlog 복제를 위해 구성되었고 ClickHouse Cloud에 안전하게 연결되었으므로, [첫 번째 MySQL ClickPipe를 생성하세요](/ko/integrations/clickpipes/mysql/index#create-your-clickpipe). MySQL CDC에 관한 일반적인 질문은 [MySQL FAQ 페이지](/ko/integrations/clickpipes/mysql/faq)에서 확인하십시오.
+이제 Amazon RDS MySQL 인스턴스가 binlog 복제용으로 구성되었고 ClickHouse Cloud와 안전하게 연결되었으므로, [첫 번째 MySQL ClickPipe를 생성할 수 있습니다](/ko/integrations/clickpipes/mysql/index#create-your-clickpipe). MySQL CDC와 관련된 일반적인 질문은 [MySQL FAQ 페이지](/ko/integrations/clickpipes/mysql/faq)를 참조하십시오.

@@ -104,11 +104,11 @@ Bindplane resuelve esto al ofrecer:
     4. Añade fuentes:
        * Haz clic en **Add Source** para elegir entre más de 80 fuentes disponibles
        * Para hacer pruebas, puedes añadir una fuente generadora de telemetría para simular tráfico
-       * Para producción, añade fuentes para tu telemetría real (logs, metrics, traces)
+       * Para producción, añade fuentes para tu telemetría real (logs, métricas, trazas)
     5. Añade el destino de ClickStack:
        * Haz clic en **Add Destination**
        * Selecciona el destino de ClickStack que creaste en el paso anterior
-       * Elige qué tipos de telemetría enviar (Logs, Metrics, Traces o todos)
+       * Elige qué tipos de telemetría enviar (Logs, Métricas, Trazas o todos)
 
     <Tip>
       **Puntos clave**
@@ -120,10 +120,10 @@ Bindplane resuelve esto al ofrecer:
   <Step>
     #### Añade procesadores (opcional)
 
-    Bindplane proporciona inteligencia de pipelines y recomendaciones de procesadores. Puedes añadir procesadores para:
+    Bindplane proporciona inteligencia de pipeline y recomendaciones de procesadores. Puedes añadir procesadores para:
 
     * **Filter**: Reducir el volumen de datos excluyendo telemetría innecesaria
-    * **Sample**: Aplicar estrategias de sampling a traces de gran volumen
+    * **Sample**: Aplicar estrategias de sampling a trazas de gran volumen
     * **Enrich**: Añadir atributos de recursos, labels o metadatos
     * **Transform**: Modificar la estructura o el contenido de la telemetría
     * **Batch**: Optimizar el tamaño de los lotes para una transmisión eficiente
@@ -163,7 +163,7 @@ Bindplane resuelve esto al ofrecer:
     Una vez desplegada la configuración, la telemetría empezará a fluir hacia ClickStack desde tu flota gestionada de collectors:
 
     1. Inicia sesión en tu instancia de ClickStack (UI de HyperDX)
-    2. Ve al explorador de **Logs**, **Metrics** o **Traces**
+    2. Ve al explorador de **Logs**, **Métricas** o **Trazas**
     3. Deberías ver datos de telemetría de tus collectors gestionados por Bindplane
     4. Los datos que llegan a ClickStack ya están enriquecidos y estructurados por los procesadores de Bindplane
 

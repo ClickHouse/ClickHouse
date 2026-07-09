@@ -1,35 +1,31 @@
 ---
-description: '用户自定义函数（UDFs）文档'
+description: '用户自定义函数 (UDFs) 文档'
 sidebarTitle: 'UDF'
 slug: /sql-reference/functions/udf
-title: '用户自定义函数（UDFs）'
+title: '用户自定义函数 (UDFs)'
 doc_type: 'reference'
 ---
 
-import PrivatePreviewBadge from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import ExperimentalBadge from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
-
-<div id="udfs-user-defined-functions">
-  # UDFs 用户自定义函数
-</div>
 
 ClickHouse 支持多种类型的用户自定义函数 (UDFs) ：
 
 * [可执行 UDFs](#executable-user-defined-functions) 会启动外部程序或脚本 (Python、Bash 等) ，并通过 STDIN / STDOUT 以流式方式向其传输数据块。可用于在无需重新编译 ClickHouse 的情况下集成现有代码或工具。与进程内方案相比，它们的单次调用开销更高，因此更适合较重的逻辑，或需要不同运行时的场景。
 * [SQL UDFs](#sql-user-defined-functions) 使用 `CREATE FUNCTION` 通过纯 SQL 定义。它们会被内联/展开到查询计划中 (不存在进程边界) ，因此开销较低，非常适合复用表达式逻辑或简化复杂的计算列。
 * [Experimental WebAssembly UDFs](#webassembly-user-defined-functions) 会在服务器进程内的沙箱中运行编译为 WebAssembly 的代码。与外部可执行程序相比，它们的单次调用开销更低；与原生扩展相比，又具备更好的隔离性，因此适合用可编译为 WASM 的语言 (如 C/C++/Rust) 编写自定义算法。
+* [Experimental 基于 driver 的可执行 UDFs](#driver-based-executable-user-defined-functions) 允许由运维人员提供的 &quot;driver&quot; 在函数创建时，将 `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` 中提供的代码片段转换为可执行 UDF (例如通过编译) 。它们构建在可执行 UDFs 之上，并且需要服务器端 driver 配置。
 
 <div id="executable-user-defined-functions">
   ## 可执行用户自定义函数
 </div>
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
 <Note>
-  此功能目前在 ClickHouse Cloud 中处于私有预览阶段。
-  如需开通，请通过 https://clickhouse.cloud/support 联系 ClickHouse 支持团队。
+  在 ClickHouse Cloud 中，可执行 UDF 目前处于 Public Beta 阶段，并通过 Cloud 控制台 UI 创建。有关 Cloud 特定工作流，请参见 [Cloud 中的用户自定义函数](/zh/products/cloud/features/sql-console-features/user-defined-functions)。
 </Note>
 
 ClickHouse 可以调用任意外部可执行程序或脚本来处理数据。
@@ -526,6 +522,144 @@ SELECT my_function(10, 20);
 </div>
 
 更多详情请参阅[WebAssembly 用户自定义函数](/zh/reference/functions/regular-functions/wasm_udf)文档。
+
+<div id="driver-based-executable-user-defined-functions">
+  ## 基于驱动的可执行用户自定义函数
+</div>
+
+<CloudNotSupportedBadge />
+
+<ExperimentalBadge />
+
+<Note>
+  这是一项 Experimental 功能，未来的发行版中可能会引入不向后兼容的变更。请通过 [`allow_experimental_executable_udf_drivers`](/zh/reference/settings/server-settings/settings#allow_experimental_executable_udf_drivers) 服务器设置启用它。
+</Note>
+
+*驱动* 是由运维方提供的一种适配器，用于将用户编写的代码片段转换为可运行的[可执行 UDF](#executable-user-defined-functions)。当使用 `ENGINE = DriverName(...)` 创建函数时，ClickHouse 会运行该驱动的 `create_command`，并向其传递函数签名和代码主体；驱动会对代码主体进行编译或其他处理，然后输出一份可执行 UDF 配置，供 ClickHouse 存储和加载。
+
+这样，管理员就能为用户提供一种安全且受限的方式，用任意语言定义函数 (例如，在沙箱容器中编译的 C) ，而无需授予他们访问服务器配置文件或文件系统的权限。可用驱动的范围完全由运维方控制。
+
+<div id="enabling-drivers">
+  ### 启用驱动
+</div>
+
+Driver-based executable UDFs 默认处于禁用状态。要启用它们，请按以下步骤操作：
+
+1. 在服务器配置中启用 Experimental 功能开关：
+
+   ```xml
+   <clickhouse>
+       <allow_experimental_executable_udf_drivers>true</allow_experimental_executable_udf_drivers>
+   </clickhouse>
+   ```
+
+2. 将 `user_defined_executable_function_drivers_config` 配置为指向一个或多个驱动配置文件 (支持 glob) ，并可选择设置 [`dynamic_user_defined_executable_functions_path`](/zh/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path)，即用于存储生成的可执行 UDF 配置的目录：
+
+   ```xml
+   <clickhouse>
+       <user_defined_executable_function_drivers_config>user_defined_executable_function_drivers_config.d/*_driver.xml</user_defined_executable_function_drivers_config>
+       <dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+   </clickhouse>
+   ```
+
+驱动 registry 会在服务器启动时加载，并在执行 `SYSTEM RELOAD CONFIG` 时刷新，因此无需重启服务器即可添加、更改或移除驱动。
+
+<div id="driver-configuration">
+  ### 驱动程序配置
+</div>
+
+驱动程序由一个以 `<driver>` 为顶层元素的 XML (或 YAML) 文件定义。支持以下字段：
+
+| Field              | Description                                                                                  | Required |
+| ------------------ | -------------------------------------------------------------------------------------------- | -------- |
+| `name`             | 驱动程序名称，用于 `CREATE FUNCTION ... ENGINE = <name>(...)`。                                        | 是        |
+| `create_command`   | 用于根据代码片段创建 UDF 的程序路径。相对路径会相对于驱动程序配置文件解析。                                                     | 是        |
+| `drop_command`     | 删除基于此驱动程序的函数时调用的程序路径。                                                                        | 否        |
+| `engine_arguments` | 声明 `ENGINE = DriverName(...)` 中允许使用的参数。每个子元素都是一个参数名；`<required>true</required>` 子元素表示该参数为必填。 | 否        |
+| `env`              | 调用驱动程序命令时导出的环境变量。                                                                            | 否        |
+
+驱动程序配置示例：
+
+```xml
+<clickhouse>
+    <driver>
+        <name>DockerC</name>
+        <create_command>../user_defined_executable_function_drivers/docker_c_create.sh</create_command>
+        <drop_command>../user_defined_executable_function_drivers/docker_c_drop.sh</drop_command>
+        <engine_arguments>
+            <opt_level><required>false</required></opt_level>
+        </engine_arguments>
+        <env>
+            <CLICKHOUSE_C_DRIVER_MEMORY>256m</CLICKHOUSE_C_DRIVER_MEMORY>
+            <CLICKHOUSE_C_DRIVER_CPUS>1.0</CLICKHOUSE_C_DRIVER_CPUS>
+        </env>
+    </driver>
+</clickhouse>
+```
+
+<div id="driver-invocation-contract">
+  #### 驱动调用约定
+</div>
+
+运行 `CREATE FUNCTION` 时，会在设置好已配置的 `env` 变量后调用 `create_command`，并传入以下参数：
+
+* `--name <function_name>`
+* `--return <return_type>` (如果存在 `RETURNS` 子句)
+* `--args <signature>` (如果存在 `ARGUMENTS` 子句) ，其中 signature 是声明的参数列表，例如 `x UInt8, y DateTime`
+* 对于在 `ENGINE = DriverName(key = value)` 中提供的每个已声明 engine 参数，都会传入 `--<key> <value>`
+
+用户代码主体 (即 `AS` 后面的文本) 会被发送到该命令的标准输入。该命令必须将可执行 UDF 的配置输出到标准输出。格式会自动检测：以 `<` 开头的输出会被视为 XML，否则视为 YAML。生成配置中定义的函数名必须与正在创建的函数名一致。如果 `create_command` 以非零状态退出，该 statement 会失败，并抛出包含退出码和驱动标准错误输出的异常。
+
+如果存在 `drop_command`，则在删除函数时也会以相同方式调用它 (但不会通过 stdin 传入代码主体) 。
+
+<div id="creating-a-function-with-a-driver">
+  ### 创建函数
+</div>
+
+```sql
+CREATE [OR REPLACE] FUNCTION [IF NOT EXISTS] name [ON CLUSTER cluster]
+    ARGUMENTS (a UInt8, b String) RETURNS UInt64
+    ENGINE = DriverName(key1 = 'value1', key2 = 42)
+    AS '...code body...'
+```
+
+ClickHouse 运行 driver 的 `create_command`，将生成的配置写入 [`dynamic_user_defined_executable_functions_path`](/zh/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path)，随后现有的可执行 UDF 加载器会检测并加载该配置。之后，这个函数就可以像其他函数一样调用。
+
+<div id="dropping-a-function-with-a-driver">
+  ### 删除函数
+</div>
+
+```sql
+DROP FUNCTION [IF EXISTS] name [ON CLUSTER cluster]
+```
+
+`DROP FUNCTION` 会调用驱动程序的 `drop_command` (如果存在) ，删除生成的动态配置以及每个函数的工作目录，重新加载可执行 UDF 加载器，并删除已持久化的查询。
+
+<div id="driver-persistence-and-restart">
+  ### 持久化与重启
+</div>
+
+原始查询会以 `ATTACH FUNCTION ...` 语句的形式保存在用户定义 SQL 对象目录中，因此服务器重启后该函数仍会保留。启动时，会直接加载 [`dynamic_user_defined_executable_functions_path`](/zh/reference/settings/server-settings/settings#dynamic_user_defined_executable_functions_path) 中生成的配置，而无需重新运行驱动程序。如果已持久化的 `ATTACH FUNCTION` 没有对应的已生成配置 (例如动态目录丢失了) ，则会重新运行驱动程序来重新创建它。
+
+<div id="driver-limitations">
+  ### 限制
+</div>
+
+* 该功能为 Experimental，受 `allow_experimental_executable_udf_drivers` 控制。
+* 基于 driver 的函数不支持复制型用户自定义函数存储 (`ON CLUSTER` 和 `<user_defined_zookeeper_path>`) ，因为被复制的只有发起查询，不包括生成的制品。
+* 对已备份的基于 driver 的函数执行 `RESTORE` 时，会保留查询，但不会重新运行 driver；生成的 configuration 会在重启恢复期间稍后物化。
+
+<div id="example-c-drivers">
+  ### C 驱动程序示例
+</div>
+
+源码树在 `programs/server/user_defined_executable_function_drivers_config.d/` 下提供了一些概念验证驱动，用于编译并运行 C 函数体。它们仅作为示例，**不会随软件包一起安装**：
+
+* `DockerC` - 在经过沙箱隔离的 Docker 容器内编译并运行代码 (`--network=none --read-only --cap-drop=ALL --security-opt=no-new-privileges`，以及内存/CPU/PID 限制) ，并输出一个 `executable_pool` UDF。
+* `GVisorC` - 一种变体，在 [gVisor](https://gvisor.dev/) `runsc` 运行时下运行已编译的可执行文件。
+* `UnsafeC` - 直接在主机上编译并运行代码，不使用沙箱。顾名思义，它不提供任何隔离，仅适用于受信任环境和测试。
+
+这些示例驱动程序可作为起点；在将它们暴露给不受信任的用户之前，请先根据您的环境审查并加固其沙箱隔离机制。
 
 <div id="related-content">
   ## 相关文章

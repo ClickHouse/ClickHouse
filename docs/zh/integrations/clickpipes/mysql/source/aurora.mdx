@@ -55,7 +55,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
 在 RDS 控制台中点击你的 MySQL 实例，然后进入 **Configuration** 选项卡，即可找到参数组。
 
 <Tip>
-  如果你使用的是 MySQL 集群，则下面的参数可在 [DB 集群](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html)参数组中找到，而不是 DB 实例参数组。
+  如果你使用的是 MySQL 集群，则下面的参数可在 [DB 集群](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) 参数组中找到，而不是 DB 实例参数组。
 </Tip>
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp" alt="在 Aurora 中查找参数组的位置" size="lg" border />
@@ -94,7 +94,7 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 72);
   MySQL ClickPipe 也支持在未启用 GTID 模式的情况下进行复制。不过，仍建议启用 GTID 模式，以获得更好的性能并简化故障排查。
 </Tip>
 
-[全局事务标识符 (GTID) ](https://dev.mysql.com/doc/refman/8.0/en/replication-gtids.html)是 MySQL 为每个已提交事务分配的唯一 ID。它们可简化 binlog 复制，并使故障排查更加直接。我们**建议**启用 GTID 模式，以便 MySQL ClickPipe 使用基于 GTID 的复制。
+[全局事务标识符 (GTID)](https://dev.mysql.com/doc/refman/8.0/en/replication-gtids.html) 是 MySQL 为每个已提交事务分配的唯一 ID。它们可简化 binlog 复制，并使故障排查更加直接。我们**建议**启用 GTID 模式，以便 MySQL ClickPipe 使用基于 GTID 的复制。
 
 Amazon Aurora MySQL v2 (MySQL 5.7) 和 v3 (MySQL 8.0) 以及 Aurora Serverless v2 均支持基于 GTID 的复制。要为 Aurora MySQL 实例启用 GTID 模式，请按以下步骤操作：
 
@@ -155,7 +155,7 @@ Amazon Aurora MySQL v2 (MySQL 5.7) 和 v3 (MySQL 8.0) 以及 Aurora Serverless v
 如需通过私有网络连接到您的 Aurora MySQL 实例，可使用 AWS PrivateLink。请按照 [ClickPipes 的 AWS PrivateLink 设置指南](/zh/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes) 配置连接。
 
 <div id="whats-next">
-  ## 接下来呢？
+  ## 接下来做什么？
 </div>
 
-现在，您的 Amazon Aurora MySQL 实例已配置为支持 binlog 复制，并已安全连接到 ClickHouse Cloud，您可以[创建第一个 MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index#create-your-clickpipe)。有关 MySQL CDC (变更数据捕获)  的常见问题，请参阅 [MySQL 常见问题页面](/zh/integrations/clickpipes/mysql/faq)。
+现在，您的Amazon Aurora MySQL 实例已配置好 binlog 复制，并已安全连接到 ClickHouse Cloud，您可以[创建您的第一个 MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index#create-your-clickpipe)。如需了解 MySQL CDC (变更数据捕获)  的常见问题，请参阅 [MySQL 常见问题页面](/zh/integrations/clickpipes/mysql/faq)。

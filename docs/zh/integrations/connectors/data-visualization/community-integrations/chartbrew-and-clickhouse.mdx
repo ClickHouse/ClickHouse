@@ -42,16 +42,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 2. 将 Chartbrew 连接到 ClickHouse
 </div>
 
-1. 登录 [Chartbrew](https://chartbrew.com/login)，然后转到 **Connections** 选项卡。
+1. 登录 [Chartbrew](https://chartbrew.com/login)，然后前往 **Connections** 选项卡。
 
 2. 点击 **Create connection**，然后在可用的数据库选项中选择 **ClickHouse**。
 
    <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="在 Chartbrew 中选择 ClickHouse 连接" />
 
-3. 输入 ClickHouse 数据库的连接详细信息：
+3. 输入你的 ClickHouse 数据库的连接详细信息：
 
    * **Display Name**：用于在 Chartbrew 中标识该连接的名称。
-   * **Host**：ClickHouse server 的主机名或 IP 地址。
+   * **Host**：你的 ClickHouse server 的主机名或 IP 地址。
    * **Port**：HTTPS 连接通常使用 `8443`。
    * **Database Name**：要连接的数据库。
    * **Username**：你的 ClickHouse 用户名。
@@ -59,7 +59,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
    <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Chartbrew 中的 ClickHouse 连接设置" />
 
-4. 点击 **Test connection**，验证 Chartbrew 是否能够连接到 ClickHouse。
+4. 点击 **Test connection**，验证 Chartbrew 是否可以连接到 ClickHouse。
 
 5. 如果测试成功，点击 **Save connection**。Chartbrew 会自动从 ClickHouse 检索 schema。
 

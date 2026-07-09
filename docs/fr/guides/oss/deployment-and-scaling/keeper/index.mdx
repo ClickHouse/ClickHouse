@@ -507,7 +507,7 @@ Consignez des métriques de comparaison avant la migration afin de pouvoir véri
 
 4. Facultatif, mais recommandé : identifiez le nœud leader de ZooKeeper, démarrez-le, puis arrêtez-le à nouveau. Cela force ZooKeeper à écrire un snapshot cohérent sur le disque avant la conversion.
 
-5. Exécutez `clickhouse-keeper-converter` sur le nœud leader. Si vous avez installé le binaire complet de ClickHouse, utilisez plutôt la sous-commande `keeper-converter` (`clickhouse keeper-converter`). Si aucun des deux n’est disponible, [téléchargez le binaire](/getting-started/quick-start/oss#install-clickhouse).
+5. Exécutez `clickhouse-keeper-converter` sur le nœud leader. Si vous avez installé le binaire complet de ClickHouse, utilisez plutôt la sous-commande `keeper-converter` (`clickhouse keeper-converter`). Si aucun des deux n’est disponible, [téléchargez le binaire](/fr/get-started/setup/self-managed/quick-install#install-clickhouse-using-curl).
 
 ```bash
 clickhouse-keeper-converter \

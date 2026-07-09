@@ -97,7 +97,7 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... 기타 구성 ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
@@ -113,13 +113,13 @@ import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintaine
     다음 환경 변수를 Lambda 함수에 추가하세요:
 
     ```bash
-    # 필수: ClickStack OTLP 엔드포인트
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # 선택 사항: 인증 헤더
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # 선택 사항: 서비스 이름 (기본값: Lambda 함수 이름)
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 

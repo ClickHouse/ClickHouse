@@ -59,14 +59,14 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
     <Info>
       **仅限本地模式**
 
-      如果你在以本地模式部署时点击了 `Connect to Demo Server`，则可以跳过此步骤。使用此模式时，数据源会带有 `Demo_` 前缀，例如 `Demo_Logs`
+      如果你在以 `Local Mode` 部署时点击了 `Connect to Demo Server`，则可以跳过此步骤。使用此模式时，数据源名称会带有 `Demo_` 前缀，例如 `Demo_Logs`
     </Info>
 
     前往 `Team Settings`，然后点击 `Local Connection` 对应的 `Edit`：
 
     <Image img="/images/use-cases/observability/edit_connection.webp" alt="编辑连接" size="lg" />
 
-    将该连接重命名为 `Demo`，然后在后续表单中填写以下演示服务器的连接信息：
+    将连接重命名为 `Demo`，然后在接下来的表单中填写以下演示服务器连接信息：
 
     * `Connection Name`: `Demo`
     * `Host`: `https://sql-clickhouse.clickhouse.com`
@@ -80,17 +80,17 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
     ### 修改数据源
 
     <Info>
-      **仅限本地模式**
+      **仅本地模式**
 
-      如果你在本地模式部署时点击了 `Connect to Demo Server`，则可以跳过此步骤。使用此模式时，数据源会带有 `Demo_` 前缀，例如 `Demo_Logs`
+      如果你在以 Local Mode 部署时点击了 `Connect to Demo Server`，则可以跳过此步骤。如果使用此模式，数据源将带有 `Demo_` 前缀，例如 `Demo_Logs`
     </Info>
 
-    向上滚动到 `Sources`，将各个数据源——`Logs`、`Traces`、`Metrics` 和 `Sessions`——都改为使用 `otel_v2` 数据库。
+    向上滚动到 `Sources`，将各个数据源 (`Logs`、`Traces`、`Metrics` 和 `Sessions`) 修改为使用 `otel_v2` database。
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp" alt="编辑 Demo 数据源" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp" alt="编辑 Demo Source" size="lg" />
 
     <Note>
-      你可能需要重新加载页面，以确保每个数据源中都显示完整的数据库列表。
+      你可能需要重新加载页面，以确保每个数据源中都显示完整的 database 列表。
     </Note>
   </Step>
 
@@ -101,75 +101,75 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_2.webp" alt="步骤 2" size="lg" />
 
-    你可能会在概览柱状图中看到错误数量略有变化，连续几个柱中的红色部分会稍微增加。
+    你可能会注意到，概览柱状图中的错误数量略有变化，其中连续几个柱条的红色部分会略微增多。
 
     <Note>
-      柱状图的位置会因你查询数据集的时间不同而有所差异。
+      柱条的位置会因你查询数据集的时间不同而有所变化。
     </Note>
   </Step>
 
   <Step>
-    ### 筛选 error
+    ### 筛选错误
 
-    要突出显示错误出现的位置，请使用 `SeverityText` 过滤器，并选择 `error`，这样只会显示错误级别的条目。
+    要突出显示错误，请使用 `SeverityText` 过滤器，并选择 `error`，这样就只会显示错误级别的条目。
 
-    这样错误就会更明显：
+    这样一来，错误会更明显：
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_3.webp" alt="步骤 3" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_3.webp" alt="第 3 步" size="lg" />
   </Step>
 
   <Step>
     ### 识别错误模式
 
-    借助 HyperDX 的聚类功能，您可以自动识别错误，并将其归为有意义的模式。在处理海量日志和链路追踪时，这能帮助用户更快地完成分析。要使用此功能，请在左侧面板的 `分析模式` 菜单中选择 `Event Patterns`。
+    借助 HyperDX 的 Clustering 功能，您可以自动识别错误，并将其归为有意义的模式。这能帮助您在处理大量日志和链路追踪时更快地完成分析。要使用此功能，请在左侧面板的 `分析模式` 菜单中选择 `Event Patterns`。
 
-    这些错误聚类结果揭示了与支付失败相关的问题，其中包括一个名为 `Failed to place order` 的模式。其他聚类也表明存在银行卡扣款失败以及缓存已满等问题。
+    这些错误聚类揭示了与支付失败相关的问题，其中包括一个名为 `Failed to place order` 的模式。其他聚类还表明存在银行卡扣费问题以及缓存已满的问题。
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_4.webp" alt="步骤 4" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_4.webp" alt="第 4 步" size="lg" />
 
     请注意，这些错误聚类很可能来自不同的服务。
   </Step>
 
   <Step>
-    ### 查看错误模式
+    ### 分析错误模式
 
-    点击与已报告问题 (用户仍然能够完成支付) 最明显相关的错误聚类：`Failed to place order`。
+    点击最明显且与我们报告的“用户能够完成支付”问题相关的错误聚类：`Failed to place order`。
 
-    这将显示与 `frontend` 服务相关的此错误的所有发生记录：
+    这将显示与 `frontend` 服务相关的该错误的所有出现记录：
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_5.webp" alt="第 5 步" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_5.webp" alt="步骤 5" size="lg" />
 
-    选择任意一条结果中的错误，即可查看详细的日志元数据。滚动查看 `Overview` 和 `Column Values` 后，可以判断问题出在银行卡扣款，原因是缓存已满：
+    选择任意一条返回的错误记录。系统会详细显示其日志元数据。查看 `Overview` 和 `Column Values` 后可以看出，问题似乎出在缓存导致的信用卡扣款失败：
 
     `failed to charge card: could not charge the card: rpc error: code = Unknown desc = Visa cache full: cannot add new item.`
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_6.webp" alt="第 6 步" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_6.webp" alt="步骤 6" size="lg" />
   </Step>
 
   <Step>
-    ### 探查基础设施
+    ### 排查基础设施
 
-    我们已经发现了一个与缓存相关的错误，它很可能是导致支付失败的原因。现在还需要确定这个问题在我们的微服务架构中究竟源自哪里。
+    我们已经发现了一个与缓存相关的错误，它很可能导致了支付失败。我们仍需确定这个问题在微服务架构中的源头。
 
-    既然问题与缓存有关，接下来就有必要检查一下底层基础设施——相关的 pod (容器组) 是否存在内存问题？在 ClickStack 中，日志和指标是统一的，并且会结合上下文展示，因此能更快定位根因。
+    鉴于缓存出现了问题，接下来排查底层基础设施是合理的——相关 pod (容器组) 是否存在内存问题？在 ClickStack 中，日志和指标是统一的，并且会结合上下文一起展示，因此更容易快速定位根因。
 
-    选择 `Infrastructure` 选项卡，查看 `frontend` 服务底层 pod (容器组) 的相关指标，并将时间范围扩大到 `1d`：
+    选择 `Infrastructure` 选项卡，查看与 `frontend` 服务底层 pod (容器组) 相关的指标，并将时间范围扩大到 `1d`：
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_7.webp" alt="步骤 7" size="lg" />
 
-    看起来这个问题似乎与基础设施无关——在这一时间段内，无论错误发生前还是发生后，各项指标都没有明显变化。关闭基础设施选项卡。
+    看起来这个问题似乎与基础设施无关——在这段时间内，无论错误发生前还是发生后，各项指标都没有明显变化。关闭基础设施选项卡。
   </Step>
 
   <Step>
     ### 查看 trace
 
-    在 ClickStack 中，trace 也会自动与日志和指标关联。让我们查看与所选日志关联的 trace，以确定是哪个服务导致了问题。
+    在 ClickStack 中，链路追踪也会自动与日志和指标关联。让我们查看与所选日志关联的 trace，以确定是哪个服务导致了问题。
 
-    选择 `Trace` 以可视化查看关联的 trace。继续向下滚动该视图，我们可以看到 HyperDX 如何将跨多个微服务的分布式 trace 可视化，并串联起各个服务中的 span。一次支付显然会涉及多个微服务，包括执行结账和货币转换的服务。
+    选择 `Trace` 以查看关联的 trace。向下滚动该视图后，我们可以看到 HyperDX 如何将跨多个微服务的分布式 trace 可视化，并串联起各个服务中的 spans。一次支付显然会涉及多个微服务，包括执行结账和货币换算的服务。
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_8.webp" alt="步骤 8" size="lg" />
 
-    滚动到视图底部后，我们可以看到是 `payment` 服务引发了该错误，而这个错误又会沿着调用链逐级向上传播。
+    滚动到视图底部后，我们可以看到是 `payment` 服务导致了错误，而该错误随后会沿着调用链向上传播。
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_9.webp" alt="步骤 9" size="lg" />
   </Step>
@@ -177,74 +177,74 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
   <Step>
     ### 搜索链路追踪
 
-    我们已经确认，用户因支付服务中的缓存问题而无法完成购买。现在让我们更详细地查看该服务的链路追踪，看看能否进一步找出根本原因。
+    我们已经确认，用户因支付服务中的缓存问题而无法完成购买。接下来更详细地查看该服务的链路追踪，看看能否进一步找出根本原因。
 
-    选择 `搜索`，切换到主搜索视图。将数据源切换为 `Traces`，并选择 `结果表` 视图。**请确保时间范围仍为过去一天。**
+    选择 `Search`，切换到主搜索视图。将数据源切换为 `Traces`，并选择 `结果表` 视图。**确保时间范围仍为最近一天。**
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_10.webp" alt="步骤 10" size="lg" />
 
-    此视图显示过去一天内的所有 trace。我们知道问题源自支付服务，因此请在 `ServiceName` 上应用 `payment` 过滤器。
+    此视图显示最近一天内的所有链路追踪。我们知道问题出在支付服务，因此将 `ServiceName` 过滤为 `payment`。
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_11.webp" alt="步骤 11" size="lg" />
 
-    如果选择 `Event Patterns` 对这些 trace 应用事件聚类，就能立即看到 `payment` 服务中的缓存问题。
+    如果选择 `Event Patterns` 对这些链路追踪进行事件聚类，就能立即看到 `payment` 服务中的缓存问题。
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_12.webp" alt="步骤 12" size="lg" />
   </Step>
 
   <Step>
-    ### 查看某个 trace 的基础设施
+    ### 在 Explore 中查看某条 trace 的基础设施
 
-    点击 `结果表` 切换到结果视图。使用 `StatusCode` 过滤器和 `Error` 值将结果筛选为错误。
+    点击 `Results table` 切换到结果视图。使用 `StatusCode` 过滤器并将值设为 `Error`，筛选出错误。
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_13.webp" alt="第 13 步" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_13.webp" alt="步骤 13" size="lg" />
 
     选择一条 `Error: Visa cache full: cannot add new item.` 错误，切换到 `Infrastructure` 选项卡，并将时间范围扩大到 `1d`。
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_14.webp" alt="第 14 步" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_14.webp" alt="步骤 14" size="lg" />
 
-    通过将链路追踪与指标关联起来，我们可以看到，与 `payment` 服务相关的内存和 CPU 先升高，随后又降为 `0` (这可以归因于 pod (容器组) 重启) ——这表明缓存问题引发了资源异常。可以预计，这已经影响了支付完成耗时。
+    通过将链路追踪与指标关联起来，我们可以看到 `payment` 服务的内存和 CPU 都有所升高，随后又降至 `0` (这可归因于 pod (容器组) 重启) ——这表明缓存问题引发了资源异常。可以预计，这已经影响了支付完成时间。
   </Step>
 
   <Step>
-    ### 使用 Event Deltas 更快定位问题
+    ### 使用 Event Deltas 更快定位根因
 
-    Event Deltas 可通过将性能或错误率的变化归因于特定数据子集来帮助发现异常，从而更轻松、更快速地定位根本原因。
+    Event Deltas 通过将性能或错误率的变化归因于特定数据子集，帮助发现异常，从而更容易快速定位根因。
 
-    虽然我们知道 `payment` 服务存在缓存问题，导致资源消耗增加，但还没有完全确认根本原因。
+    虽然我们知道 `payment` 服务存在缓存问题，导致资源消耗增加，但仍未完全确定其根因。
 
-    返回结果表视图，选择包含这些错误的时间段以缩小数据范围。请确保在错误出现前向左多选几个小时，如有可能，也包含错误发生后的时间 (问题可能仍在持续) ：
+    返回结果表视图，选择包含错误的时间段以缩小数据范围。请确保所选范围包含错误出现前左侧数小时的数据，并尽可能包含错误发生后的时间 (问题可能仍在持续) ：
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_15.webp" alt="步骤 15" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_15.webp" alt="Step 15" size="lg" />
 
-    移除错误过滤器，然后从左侧的 `分析模式` 菜单中选择 `Event Deltas`。
+    移除 errors 过滤器，然后在左侧的 `分析模式` 菜单中选择 `Event Deltas`。
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_16.webp" alt="步骤 16" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_16.webp" alt="Step 16" size="lg" />
 
-    顶部面板显示的是耗时分布，颜色表示事件密度 (即 spans 数量) 。主集中区域之外的那部分事件，通常就是值得重点调查的对象。
+    顶部面板显示耗时分布，颜色表示事件密度 (span 数量) 。位于主要集中区域之外的事件子集，通常就是值得重点排查的对象。
 
-    如果我们选择耗时大于 `1ms` 的事件，并应用 `Filter by selection` 过滤器，就可以分析“正常”事件与耗时约为 0ms 的高密度 spans 组之间的差异：
+    如果选择耗时大于 `1ms` 的事件，并应用 `Filter by selection` 过滤器，就可以分析“正常”事件与耗时约为 0ms 的高密度 span 组之间的差异：
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_17.webp" alt="步骤 17" size="lg" />
+    <Image img="/images/use-cases/observability/hyperdx-demo/step_17.webp" alt="Step 17" size="lg" />
 
-    在对这个数据子集完成分析后，我们可以看到，选择范围之外“background”中的 spans 大多是 Visa 交易，由于缓存错误而呈现 0ms 响应。
+    对该数据子集完成分析后，我们可以看到，选择范围之外的“background” spans 大多是 visa transactions，由于缓存错误而呈现 0ms 响应。
   </Step>
 
   <Step>
     ### 使用图表获取更多上下文
 
-    在 ClickStack 中，我们可以将日志、链路追踪或指标中的任何数值绘制成图表，以获得更丰富的上下文。
+    在 ClickStack 中，我们可以将日志、链路追踪或指标中的任意数值绘制成图表，以获得更多上下文。
 
     我们已经确认：
 
-    * 问题出在支付服务上
+    * 问题出在支付服务
     * 某个缓存已满
-    * 这导致资源消耗上升
-    * 这个问题导致 Visa 支付无法完成——或者至少会让其完成时间变得很长。
+    * 这导致资源消耗增加
+    * 该问题使 Visa 支付无法完成，或者至少会使其完成耗时很长。
 
     <br />
 
-    从左侧菜单中选择 `Chart Explorer`。填写以下配置值，以绘制支付完成耗时的图表：
+    从左侧菜单中选择 `Chart Explorer`。填写以下值，以图表方式展示支付完成耗时：
 
     * `Data Source`: `Traces`
     * `Metric`: `Maximum`
@@ -254,74 +254,73 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     <br />
 
-    点击 `▶️` 后，即可看到支付性能如何随时间逐渐恶化。
+    点击 `▶️` 后，将显示支付性能如何随时间逐渐下降。
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_18.webp" alt="步骤 18" size="lg" />
 
-    如果将 `Group By` 设置为 `SpanAttributes['app.payment.card_type']` (只需输入 `card` 即可自动补全) ，我们就能看到相较于 Mastercard，该服务在 Visa 交易上的性能是如何下降的：
+    如果将 `Group By` 设置为 `SpanAttributes['app.payment.card_type']` (只需输入 `card` 即可自动补全) ，就可以看到与 Mastercard 相比，Visa 交易的服务性能是如何下降的：
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_19.webp" alt="步骤 19" size="lg" />
 
-    请注意，错误一旦发生，响应就会在 `0s` 内返回。
+    请注意，一旦发生错误，响应会在 `0s` 内返回。
   </Step>
 
   <Step>
     ### 通过指标获取更多上下文
 
-    最后，让我们将缓存大小绘制为一个指标，看看它随时间的变化，从而获得更多上下文。
+    最后，让我们将缓存大小绘制为一个指标，观察它随时间的变化，从而获得更多上下文信息。
 
     填写以下配置值：
 
     * `Data Source`: `Metrics`
     * `Metric`: `Maximum`
-    * `SQL Column`: `visa_validation_cache.size (gauge)` (只需输入 `cache` 即可自动补全)
+    * `SQL Column`: `visa_validation_cache.size (gauge)` (只需输入 `cache` 即可触发自动补全)
     * `Where`: `ServiceName: payment`
     * `Group By`: `<empty>`
 
-    我们可以看到，缓存大小在 4–5 小时内不断增长 (很可能是在一次软件部署之后) ，随后达到最大值 `100,000`。从 `Sample Matched Events` 中可以看出，我们的错误与缓存达到这一上限相对应；在这之后，它记录的大小变为 `0`，响应时间也变成了 `0s`。
+    我们可以看到，缓存大小在 4-5 小时内持续增长 (很可能发生在一次软件部署之后) ，随后达到 `100,000` 的最大值。从 `Sample Matched Events` 中可以看出，我们的错误与缓存达到这一上限存在关联；之后，记录到的缓存大小为 `0`，响应时间也变成了 `0s`。
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_20.webp" alt="步骤 20" size="lg" />
 
-    总之，通过依次探索日志、链路追踪以及最后的指标，我们得出以下结论：
+    总之，通过依次分析日志、链路追踪以及最后的指标，我们得出以下结论：
 
     * 问题出在 payment 服务
-    * 服务行为发生了变化，很可能是由于一次部署，导致 visa 缓存在 4–5 小时内缓慢增长，最终达到最大值 `100,000`
-    * 随着缓存不断增大，资源消耗也随之上升——很可能是由于实现不佳
+    * 服务行为发生了变化 (很可能由一次部署引起) ，导致 visa 缓存在 4-5 小时内缓慢增长，最终达到 `100,000` 的最大大小。
+    * 随着缓存增大，资源消耗也随之上升——很可能是由于实现不佳
     * 随着缓存增长，Visa 支付的性能逐渐下降
-    * 达到最大大小后，缓存开始拒绝支付，并将自身报告为大小 `0`
+    * 达到最大大小后，缓存开始拒绝支付，并将自身大小报告为 `0`。
   </Step>
 
   <Step>
     ### 使用会话
 
-    会话让我们能够回放用户体验，从用户视角直观还原错误是如何发生的。虽然它通常不用于诊断根本原因，但在核实客户支持团队上报的问题时非常有价值，也可以作为深入调查的起点。
+    会话可以让我们回放用户体验，从用户视角直观查看错误是如何发生的。虽然它通常不直接用于定位根本原因，但对于核实客户支持团队反馈的问题非常有帮助，也可以作为进一步调查的起点。
 
-    在 HyperDX 中，会话与链路追踪和日志相关联，因此可以完整查看背后的原因。
+    在 HyperDX 中，会话与链路追踪和日志相关联，因此可以帮助我们完整了解底层原因。
 
-    例如，如果支持团队提供了一位遇到支付问题的用户邮箱 `Ronny.Windler@gmail.com`，通常从该用户的会话入手会比直接搜索日志或链路追踪更有效。
+    例如，如果支持团队提供了一位遇到支付问题的用户邮箱 `Ronny.Windler@gmail.com`，通常从其会话入手会比直接搜索日志或链路追踪更有效。
 
-    先在左侧菜单中进入 `Client Sessions` 选项卡，然后确认数据源设置为 `Sessions`，时间范围设置为 `Last 1 day`：
+    先从左侧菜单进入 `Client Sessions` 选项卡，然后确保数据源设置为 `Sessions`，时间范围设置为 `Last 1 day`：
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_21.webp" alt="步骤 21" size="lg" />
 
-    搜索 `SpanAttributes.userEmail: Ronny.Windler` 以找到该客户的会话。选择该会话后，左侧会显示该客户会话的浏览器事件和相关 spans，右侧则会重现用户的浏览器操作过程：
+    搜索 `SpanAttributes.userEmail: Ronny.Windler`，找到该客户的会话。选择该会话后，左侧会显示该客户会话中的浏览器事件及关联的 spans，右侧则会重现用户的浏览器体验：
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_22.webp" alt="步骤 22" size="lg" />
   </Step>
 
   <Step>
-    ### 回放会话
+    ### 重放会话
 
-    按下 ▶️ 按钮即可回放会话。在 `Highlighted` 和 `All Events` 之间切换，可以调整 span 的粒度：前者会突出显示关键事件和错误。
+    点击 ▶️ 按钮即可重放会话。在 `Highlighted` 和 `All Events` 之间切换，可以按不同的 span 粒度查看，其中前者会突出显示关键事件和错误。
 
-    如果滚动到 spans 底部，可以看到一个与 `/api/checkout` 相关的 `500` 错误。选择这个 span 的 ▶️ 按钮后，回放会跳转到该会话中的这个时间点，从而帮助我们确认客户当时的体验——支付似乎就是无法完成，而且界面上没有显示任何错误。
+    如果滚动到 spans 列表底部，可以看到一个与 `/api/checkout` 相关的 `500` 错误。点击这个特定 span 的 ▶️ 按钮，会将重放定位到该会话中的这一时刻，让我们能够确认客户当时的体验——支付似乎就是无法完成，而且界面没有显示任何错误。
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_23.webp" alt="步骤 23" size="lg" />
 
-    选中该 span 后，我们可以确认这是由内部错误引起的。点击 `Trace` 选项卡并滚动查看关联的 spans 后，我们可以确认该客户确实受到了缓存问题的影响。
+    选中该 span 后，我们可以确认这是由内部错误导致的。点击 `Trace` 选项卡并滚动查看相连的 spans 后，我们可以确认该客户确实受到了缓存问题的影响。
 
     <Image img="/images/use-cases/observability/hyperdx-demo/step_24.webp" alt="步骤 24" size="lg" />
   </Step>
 </Steps>
 
-本演示将带你了解一起真实发生的事件：某电商应用出现支付失败，并展示 ClickStack 如何通过统一的日志、链路追踪、指标和会话回放来定位根本原因——查看我们的[其他入门指南](/zh/clickstack/example-datasets/index)，深入了解具体功能。

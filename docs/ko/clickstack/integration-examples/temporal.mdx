@@ -130,13 +130,13 @@ Temporal은 간단하면서도 정교하고 복원력이 뛰어난 애플리케�
     ```yaml
     services:
       clickstack:
-        # ... 기존 구성 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
         volumes:
           - ./temporal-metrics.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - ./temporal.key:/etc/otelcol-contrib/temporal.key:ro
-          # ... 기타 볼륨 ...
+          # ... other volumes ...
     ```
 
     ##### 옵션 2: Docker run (all-in-one 이미지)
@@ -299,4 +299,4 @@ ClickStack에서 Temporal Cloud에 연결할 수 없는 경우 Docker Compose �
   ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드는 빠른 설정을 위해 ClickStack에 내장된 OpenTelemetry Collector를 확장해 사용합니다. 프로덕션 환경에 배포할 때는 자체 OTel collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 보내는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+이 가이드는 빠르게 설정할 수 있도록 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장합니다. 프로덕션 배포 환경에서는 자체 OTel Collector를 실행하여 데이터를 ClickStack의 OTLP 엔드포인트로 보내는 것을 권장합니다. 프로덕션용 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

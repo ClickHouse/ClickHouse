@@ -26,7 +26,7 @@ Os dados serão inseridos em uma `ReplacingMergeTree`. Esse mecanismo de tabela 
   ## 1. Configure o stream do Kinesis
 </div>
 
-Primeiro, habilite um stream do Kinesis na sua tabela do DynamoDB para capturar alterações em tempo real. É importante fazer isso antes de criar o snapshot para evitar a perda de dados.
+Primeiro, habilite um stream do Kinesis na sua tabela do DynamoDB para capturar alterações em tempo real. Queremos fazer isso antes de criar o snapshot para evitar a perda de dados.
 Consulte o guia da AWS [aqui](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
 <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="DynamoDB Kinesis Stream" border />
@@ -35,7 +35,7 @@ Consulte o guia da AWS [aqui](https://docs.aws.amazon.com/amazondynamodb/latest/
   ## 2. Crie o snapshot
 </div>
 
-Em seguida, vamos criar um snapshot da tabela do DynamoDB. Isso pode ser feito com uma exportação da AWS para o S3. Consulte o guia da AWS [aqui](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
+Em seguida, vamos criar um snapshot da tabela do DynamoDB. Isso pode ser feito por meio de uma exportação da AWS para o S3. Consulte o guia da AWS [aqui](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
 **Faça uma &quot;Exportação completa&quot; no formato DynamoDB JSON.**
 
 <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="Exportação do DynamoDB para S3" border />

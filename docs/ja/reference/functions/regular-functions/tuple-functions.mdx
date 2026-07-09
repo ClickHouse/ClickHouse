@@ -42,7 +42,7 @@ dotProduct(vector1, vector2)
 
 **戻り値**
 
-2つのベクトルの内積を返します。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
+2つのベクトルの内積を返します。2つの `BFloat16` 配列は `Float32` として累積され、戻り値も `Float32` になります。[`(U)Int*`](/ja/reference/data-types/int-uint) または [`Float*`](/ja/reference/data-types/float) または [`Decimal`](/ja/reference/data-types/decimal)
 
 **例**
 
@@ -175,9 +175,9 @@ SELECT tupleConcat((1, 2), ('a',), (true, false))
 
 同じサイズの2つ以上のタプルに対して、左から右の順に要素ごとの除算を行います。
 
-<Note>
-  ゼロで除算した場合は `inf` が返されます。
-</Note>
+:::note
+ゼロで除算した場合は `inf` が返されます。
+:::
 
 **構文**
 
@@ -187,16 +187,16 @@ tupleDivide(t1, t2[, tN, ...])
 
 **引数**
 
-* `t1` — 最初の入力Tuple。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
-* `t2, ..., tN` — 追加の入力Tupleを1つ以上指定します。すべてのTupleは同じサイズである必要があります。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
+* `t1` — 最初の入力タプル。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
+* `t2, ..., tN` — 追加の入力タプルを1つ以上指定します。すべてのタプルは同じサイズである必要があります。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
 
 **戻り値**
 
-要素ごとの商を含むTupleを返します。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
+要素ごとの商を含むタプルを返します。[`Tuple((U)Int*)`](/ja/reference/data-types/tuple) または [`Tuple(Float*)`](/ja/reference/data-types/tuple) または [`Tuple(Decimal)`](/ja/reference/data-types/tuple)
 
 **例**
 
-**2つのTuple**
+**2つのタプル**
 
 ```sql title=Query
 SELECT tupleDivide((1, 2), (2, 3))
@@ -224,9 +224,9 @@ SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0))
 
 すべての要素を数値で割ったタプルを返します。
 
-<Note>
-  ゼロで除算すると `inf` を返します。
-</Note>
+:::note
+ゼロで除算すると `inf` を返します。
+:::
 
 **構文**
 
@@ -352,24 +352,25 @@ hello
 
 同じサイズの 2 つのタプル間の[ハミング距離](https://en.wikipedia.org/wiki/Hamming_distance)を返します。
 
-<Note>
-  結果の型は、入力タプルの要素数に基づいて、[算術関数](/ja/reference/functions/regular-functions/arithmetic-functions)と同じ方法で決定されます。
+:::note
+結果の型は、入力タプルの要素数に基づいて、[算術関数](/ja/reference/functions/regular-functions/arithmetic-functions)と同じ方法で決定されます。
 
-  ```sql
-  SELECT
-      toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
-      toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
-      toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
-      toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
-      toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
-  ```
+```sql
+SELECT
+    toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
+    toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
+    toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
+```
 
-  ```text
-  ┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
-  │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
-  └───────┴────────┴────────┴────────┴────────┘
-  ```
-</Note>
+```text
+┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
+│ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
+└───────┴────────┴────────┴────────┴────────┘
+```
+
+:::
 
 **構文**
 

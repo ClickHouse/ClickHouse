@@ -372,6 +372,22 @@ CustomSeparated 포맷에서 첫 번째 컬럼 필드 앞의 구분자
 * 0 — 비활성화됨.
 * 1 — 활성화됨.
 
+<div id="format_geojson_validate_geometry">
+  ## format_geojson_validate_geometry
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "GeoJSON 포맷이 읽기 및 쓰기 시 RFC 7946 geometry 유효성(선 및 ring의 최소 point 수, ring 폐합, 비어 있지 않은 multi-geometry)을 적용할지 제어하는 새로운 설정"}]}]} />
+
+`GeoJSON` 포맷이 양방향으로 RFC 7946 geometry 유효성을 적용할지 제어합니다.
+
+활성화되면(기본값) GeoJSON shape 규칙을 위반하는 geometry는 거부됩니다. 예를 들어, point가 2개 미만인 `LineString`(또는 `MultiLineString`의 선), point가 4개 미만이거나 첫 번째 point와 마지막 point가 다른(닫히지 않은 ring) `Polygon` 또는 `MultiPolygon`의 ring, 또는 비어 있는 `MultiLineString`, `Polygon`, `MultiPolygon`이 이에 해당합니다. 이는 읽기 시(이러한 document가 거부됨)와 쓰기 시(입력 형식이 거부할 document를 생성하는 대신 이러한 ClickHouse 값이 거부됨) 모두에 적용됩니다.
+
+비활성화되면 이러한 shape 규칙은 적용되지 않습니다. 이러한 geometry는 있는 그대로 읽고 그대로 기록하므로 퇴화된 geometry도 round-trip되지만, 기록된 document는 유효한 GeoJSON이 아닐 수 있습니다.
+
+이 유효성 검사는 구조만 확인합니다. 즉, point 수와 ring 폐합만 검사합니다. shape의 기하학적 정확성은 검사하지 않습니다. ring 방향(오른손 법칙 / winding order)은 적용되지 않으며, 구조적으로는 유효하지만 기하학적으로는 퇴화된 geometry(예: 면적이 0인 polygon, 자기 교차하는 ring, 또는 바깥 ring 바깥에 hole이 있는 polygon)도 허용됩니다. 유한하지 않은 좌표(`NaN`, `Inf`)는 JSON 숫자로 표현할 수 없으므로 이 설정과 관계없이 항상 거부됩니다.
+
 <div id="format_json_object_each_row_column_for_object_name">
   ## format_json_object_each_row_column_for_object_name
 </div>
@@ -659,9 +675,9 @@ CapnProto 포맷에서 스키마 추론 시 지원되지 않는 타입의 컬럼
 
 이 옵션을 활성화하면 연결이 예기치 않게 종료되더라도 버퍼에 남아 있는 데이터가 오류로 처리되지 않고 파싱되어 처리됩니다
 
-<Note>
-  이 옵션을 활성화하면 병렬 파싱이 비활성화되며 중복 제거를 사용할 수 없게 됩니다
-</Note>
+:::note
+이 옵션을 활성화하면 병렬 파싱이 비활성화되며 중복 제거를 사용할 수 없게 됩니다
+:::
 
 <div id="input_format_csv_allow_cr_end_of_line">
   ## input_format_csv_allow_cr_end_of_line
@@ -730,6 +746,16 @@ CSV 입력에서 빈 필드를 기본값으로 처리합니다.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 CSV 형식에서 삽입되는 enum 값을 enum 인덱스로 처리합니다
+
+<div id="input_format_csv_missing_nullable_as_empty_string">
+  ## input_format_csv_missing_nullable_as_empty_string
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "`Nullable(String)`의 누락된 값을 CSV에서 NULL 대신 빈 문자열로 읽기 위한 새로운 설정입니다."}]}]} />
+
+CSV에서 누락된 값을 `Nullable(String)`으로 읽는 방식을 제어합니다. 누락된 값은 따옴표로 둘러싸이지 않은, 쉼표 사이 또는 쉼표 앞뒤의 빈 공간을 의미합니다. 이 설정을 활성화하면 `input_format_csv_empty_as_default`의 값과 관계없이 `Nullable(String)`의 누락된 값은 NULL이 아니라 빈 `String`으로 해석됩니다.
 
 <div id="input_format_csv_skip_first_lines">
   ## input_format_csv_skip_first_lines
@@ -826,11 +852,11 @@ CustomSeparated format의 끝에 있는 빈 줄을 건너뜁니다
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "19.12"},{"label": "1"},{"label": "일부 입력 형식에서 생략된 필드에 대해 복잡한 기본 표현식을 계산하도록 활성화합니다. 이는 기대되는 동작이기 때문입니다"}]}]} />
 
-`INSERT` 쿼리를 수행할 때 생략된 입력 컬럼 값은 해당 컬럼의 기본값으로 대체됩니다. 이 옵션은 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow)(및 기타 JSON 포맷), [CSV](/ko/reference/formats/CSV/CSV), [TabSeparated](/ko/reference/formats/TabSeparated/TabSeparated), [TSKV](/ko/reference/formats/TabSeparated/TSKV), [Parquet](/ko/reference/formats/Parquet/Parquet), [Arrow](/ko/reference/formats/Arrow/Arrow), [Avro](/ko/reference/formats/Avro/Avro), [ORC](/ko/reference/formats/ORC), [Native](/ko/reference/formats/Native) 포맷과 `WithNames`/`WithNamesAndTypes` 접미사가 있는 포맷에 적용됩니다.
+`INSERT` 쿼리를 수행할 때 생략된 입력 컬럼 값은 해당 컬럼의 기본값으로 대체됩니다. 이 옵션은 [JSONEachRow](/ko/reference/formats/JSON/JSONEachRow) (및 기타 JSON 포맷), [CSV](/ko/reference/formats/CSV/CSV), [TabSeparated](/ko/reference/formats/TabSeparated/TabSeparated), [TSKV](/ko/reference/formats/TabSeparated/TSKV), [Parquet](/ko/reference/formats/Parquet/Parquet), [Arrow](/ko/reference/formats/Arrow/Arrow), [Avro](/ko/reference/formats/Avro/Avro), [ORC](/ko/reference/formats/ORC), [Native](/ko/reference/formats/Native) 포맷과 `WithNames`/`WithNamesAndTypes` 접미사가 있는 포맷에 적용됩니다.
 
-<Note>
-  이 옵션을 활성화하면 확장된 테이블 메타데이터가 서버에서 클라이언트로 전송됩니다. 이로 인해 서버에서 추가 컴퓨팅 리소스가 사용되며 성능이 저하될 수 있습니다.
-</Note>
+:::note
+이 옵션을 활성화하면 확장된 테이블 메타데이터가 서버에서 클라이언트로 전송됩니다. 이로 인해 서버에서 추가 컴퓨팅 리소스가 사용되며 성능이 저하될 수 있습니다.
+:::
 
 가능한 값:
 
@@ -1286,13 +1312,13 @@ JSON/JSONCompact/JSONColumnsWithMetadata 입력 형식에서 이 설정이 1로 
 
 행 기반 입력 형식에서 파싱 중 블록을 내보내기 전에 대기할 수 있는 최대 시간을 밀리초 단위로 제한합니다. 0은 제한이 없음을 의미합니다.
 
-<Note>
-  이 옵션은 `input_format_connection_handling`이 활성화된 경우에만 작동합니다. 값을 설정하면 병렬 파싱도 비활성화되며 중복 제거를 사용할 수 없게 됩니다.
-</Note>
+:::note
+이 옵션은 `input_format_connection_handling`이 활성화된 경우에만 작동합니다. 값을 설정하면 병렬 파싱도 비활성화되며 중복 제거를 사용할 수 없게 됩니다.
+:::
 
-<Note>
-  스트리밍 삽입의 경우 `min_insert_block_size_rows=0` 및 `min_insert_block_size_bytes=0`도 설정해야 합니다. 그렇지 않으면 파싱된 블록이 해당 임계값에 도달할 때까지 block squashing 단계에서 메모리에 계속 누적되어, 제때 삽입되지 않을 수 있습니다.
-</Note>
+:::note
+스트리밍 삽입의 경우 `min_insert_block_size_rows=0` 및 `min_insert_block_size_bytes=0`도 설정해야 합니다. 그렇지 않으면 파싱된 블록이 해당 임계값에 도달할 때까지 block squashing 단계에서 메모리에 계속 누적되어, 제때 삽입되지 않을 수 있습니다.
+:::
 
 **예시: Wikipedia 최근 변경 사항을 ClickHouse로 스트리밍하기**
 
@@ -1496,7 +1522,7 @@ Parquet 입력 형식을 읽을 때 누락된 컬럼을 허용합니다
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE/PREWHERE 표현식과 블룸 필터를 기준으로 전체 row group을 건너뜁니다."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE/PREWHERE 표현식과 블룸 필터를 기준으로 전체 row group을 건너뜁니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.5"},{"label": "1"},{"label": "Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE\/PREWHERE 표현식과 블룸 필터를 기준으로 전체 row group을 건너뜁니다."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "0"},{"label": "Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE\/PREWHERE 표현식과 블룸 필터를 기준으로 전체 row group을 건너뜁니다."}]}]} />
 
 Parquet 파일을 읽을 때 Parquet 메타데이터의 WHERE 표현식과 블룸 필터를 기준으로 전체 row group을 건너뜁니다.
 
@@ -2029,7 +2055,7 @@ FixedString 컬럼에는 Binary 대신 Arrow FIXED&#95;SIZE&#95;BINARY 유형을
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8로 처리되는 String 데이터 타입에 임의의 바이너리 데이터를 허용합니다. Parquet/ORC/Arrow의 String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 대해 Arrow의 어떤 데이터 타입을 사용할지(String 또는 Binary) 선택할 수 있습니다. Binary가 더 정확하고 호환성도 높지만, 대부분의 경우 기본값으로 String을 사용하면 사용자 기대에 더 잘 부합합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8인 String 데이터 타입에 임의의 바이너리 데이터를 허용합니다. Parquet/ORC/Arrow String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 대해 Arrow의 어떤 데이터 타입(String 또는 Binary)을 사용할지 선택할 수 있습니다. Binary가 더 정확하고 호환성도 높지만, 대부분의 경우 기본값으로 String을 사용하면 사용자 기대에 더 잘 부합합니다."}]}]} />
 
 String 컬럼에는 Binary 대신 Arrow String 유형 사용
 
@@ -2158,6 +2184,18 @@ String 컬럼에는 Binary 대신 BSON String 유형을 사용합니다.
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true로 설정하면 CSV 형식의 줄 끝은 \n 대신 \r\n이 됩니다.
+
+<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
+  ## output_format_csv_header_serialize_tuple_into_separate_columns
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "1"},{"label": "새 설정입니다. output_format_csv_serialize_tuple_into_separate_columns가 활성화되면 이제 CSVWithNames\/CSVWithNamesAndTypes 헤더에서 Tuple 컬럼이 리프 필드로 평탄화되어 헤더 너비가 데이터와 일치합니다. 이전의 단일 이름 헤더로 되돌리려면 false로 설정하십시오."}]}]} />
+
+[output&#95;format&#95;csv&#95;serialize&#95;tuple&#95;into&#95;separate&#95;columns](#output_format_csv_serialize_tuple_into_separate_columns)이 활성화되면 `CSVWithNames` 및 `CSVWithNamesAndTypes`의 헤더 행은 각 Tuple 컬럼을 리프 필드(예: `t.a`, `t.b`와 같은 점 표기 이름과 리프 타입 이름)로 평탄화하므로, 헤더의 컬럼 수가 데이터와 같아집니다. `CustomSeparated*`에서는 `format_custom_escaping_rule = 'CSV'`이고 `format_custom_field_delimiter`가 `format_csv_delimiter`와 같은 단일 문자일 때만 이 평탄화가 적용됩니다. 그렇지 않은 경우(예: 기본 탭 구분자 또는 `format_custom_field_delimiter = '|'`)에는 헤더가 평탄화되지 않은 상태로 유지되어 계속 데이터와 일치합니다. 헤더가 단일 최상위 Tuple 이름과 타입을 유지하는 이전 동작을 유지하려면 `0`으로 설정하십시오.
+
+참고: 평탄화된 헤더는 `input_format_with_names_use_header = 1`일 때 이름 기준으로 다시 Tuple로 읽어들이지 않습니다. 이런 데이터를 다시 Tuple로 읽으려면 출력할 때 이 설정을 `0`으로 설정하거나, `input_format_with_names_use_header = 0`으로 읽으십시오(`*WithNamesAndTypes` 포맷인 `CSVWithNamesAndTypes` 및 `CustomSeparatedWithNamesAndTypes`의 경우에는 `input_format_with_types_use_header = 0`도 설정해야 합니다. 그렇지 않으면 평탄화된 타입 행이 단일 최상위 Tuple 입력 필드를 기준으로 검증되어 거부됩니다).
 
 <div id="output_format_csv_serialize_tuple_into_separate_columns">
   ## output_format_csv_serialize_tuple_into_separate_columns
@@ -2569,7 +2607,7 @@ Native 출력 형식에서 타입 이름 대신 데이터 타입을 바이너리
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Native 형식에 평탄화된 Dynamic/JSON 직렬화 추가"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "0"},{"label": "Native 형식에 평탄화된 Dynamic\/JSON 직렬화 추가"}]}]} />
 
 [JSON](/ko/reference/data-types/newjson) 및 [Dynamic](/ko/reference/data-types/dynamic) 컬럼 데이터를 평탄화된 포맷(모든 타입/경로를 별도의 서브컬럼으로 분리)으로 씁니다.
 
@@ -2599,9 +2637,9 @@ ORC 출력 형식의 압축 블록 크기(바이트)입니다.
 
 <SettingsInfoBlock type="ORCCompression" default_value="zstd" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet/ORC/Arrow는 lz4와 zstd를 포함해 다양한 압축 방식을 지원합니다. ClickHouse는 이러한 모든 압축 방식을 지원합니다. 'duckdb'와 같은 일부 성능이 떨어지는 도구는 더 빠른 `lz4` 압축 방식을 지원하지 않으므로 기본값을 zstd로 설정했습니다."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "기본적으로 ORC 출력 형식에서 lz4 압축을 사용합니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet\/ORC\/Arrow는 lz4와 zstd를 포함해 다양한 압축 방식을 지원합니다. ClickHouse는 이러한 모든 압축 방식을 지원합니다. 'duckdb'와 같은 일부 도구는 더 빠른 `lz4` 압축 방식을 지원하지 않으므로 기본값으로 zstd를 설정했습니다."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4_frame"},{"label": "기본적으로 ORC 출력 형식에서 lz4 압축을 사용합니다"}]}]} />
 
-ORC 출력 형식의 압축 방식입니다. 지원되는 코덱: lz4, snappy, zlib, zstd, none(비압축)
+ORC 출력 형식의 압축 방식입니다. 지원되는 코덱: lz4, snappy, zlib, zstd, none (비압축)
 
 <div id="output_format_orc_dictionary_key_size_threshold">
   ## output_format_orc_dictionary_key_size_threshold
@@ -2627,7 +2665,7 @@ ORC 출력 형식의 대상 행 인덱스 간격
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8로 사용되는 String 데이터 타입에 임의의 바이너리 데이터를 저장할 수 있습니다. Parquet/ORC/Arrow의 String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 대해 Arrow의 데이터 타입으로 String 또는 Binary 중 어떤 것을 사용할지 선택할 수 있습니다. Binary가 더 정확하고 호환성 측면에서도 더 적절하지만, 대부분의 경우 기본값으로 String을 사용하는 것이 사용자 기대에 더 잘 부합합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8인 String 데이터 타입에 임의의 바이너리 데이터를 저장할 수 있습니다. Parquet\/ORC\/Arrow의 String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 사용할 Arrow 데이터 타입으로 String 또는 Binary를 선택할 수 있습니다. Binary가 더 정확하고 호환성도 높지만, 대부분의 경우 기본값으로 String을 사용하는 것이 사용자 기대에 더 잘 부합합니다."}]}]} />
 
 String 컬럼에 Binary 대신 ORC String 타입을 사용합니다
 
@@ -2698,9 +2736,9 @@ Parquet 파일에서 블룸 필터를 배치할 위치를 지정합니다. 블�
 
 <SettingsInfoBlock type="ParquetCompression" default_value="zstd" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet/ORC/Arrow는 lz4와 zstd를 포함한 다양한 압축 방식을 지원합니다. ClickHouse는 이러한 모든 압축 방식을 지원합니다. 'duckdb'와 같은 일부 성능이 떨어지는 도구는 더 빠른 `lz4` 압축 방식을 지원하지 않으므로 기본값을 zstd로 설정했습니다."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4"},{"label": "기본적으로 Parquet 출력 형식에 lz4 압축을 사용합니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "zstd"},{"label": "Parquet\/ORC\/Arrow는 lz4와 zstd를 포함한 다양한 압축 방식을 지원합니다. ClickHouse는 이러한 모든 압축 방식을 지원합니다. 'duckdb'와 같은 일부 성능이 떨어지는 도구는 더 빠른 `lz4` 압축 방식을 지원하지 않으므로 기본값을 zstd로 설정했습니다."}]}, {"id": "row-2","items": [{"label": "23.3"},{"label": "lz4"},{"label": "기본적으로 Parquet 출력 형식에 lz4 압축을 사용합니다"}]}]} />
 
-Parquet 출력 형식의 압축 방식입니다. 지원되는 코덱: snappy, lz4, brotli, zstd, gzip, none (압축되지 않음)
+Parquet 출력 형식의 압축 방식입니다. 지원되는 코덱: snappy, lz4, brotli, zstd, gzip, none (비압축)
 
 <div id="output_format_parquet_data_page_size">
   ## output_format_parquet_data_page_size
@@ -2800,7 +2838,7 @@ Parquet 메타데이터에 Geo 컬럼 정보를 기록하고, 컬럼을 WKB 포�
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8로 처리되는 String 데이터 타입에 임의의 binary 데이터를 허용합니다. Parquet/ORC/Arrow의 String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 사용할 Arrow 데이터 타입을 String 또는 Binary 중에서 선택할 수 있습니다. Binary가 더 정확하고 호환성 측면에서도 더 적절하지만, 대부분의 경우 기본값으로 String을 사용하면 사용자 기대에 더 잘 부합합니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.3"},{"label": "1"},{"label": "ClickHouse는 일반적으로 UTF-8로 처리되는 String 데이터 타입에 임의의 바이너리 데이터를 허용합니다. Parquet/ORC/Arrow의 String은 UTF-8만 지원합니다. 따라서 ClickHouse String 데이터 타입에 사용할 Arrow 데이터 타입을 String 또는 Binary 중에서 선택할 수 있습니다. Binary가 더 정확하고 호환성 측면에서도 더 적절하지만, 대부분의 경우 기본값으로 String을 사용하면 사용자 기대에 더 잘 부합합니다."}]}]} />
 
 String 컬럼에 Binary 대신 Parquet String 타입을 사용합니다.
 
@@ -3184,9 +3222,9 @@ INSERT 대신 REPLACE 문을 사용합니다
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "값이 true이면 '를 ''로 이스케이프하고, 그렇지 않으면 \\'를 사용해 감쌉니다"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.2"},{"label": "0"},{"label": "값이 true이면 '를 ''로 이스케이프하고, 그렇지 않으면 \\'로 감쌉니다"}]}]} />
 
-값이 true이면 &#39;를 &#39;&#39;로 이스케이프하고, 그렇지 않으면 &#92;&#39;를 사용해 감쌉니다
+값이 true이면 &#39;를 &#39;&#39;로 이스케이프하고, 그렇지 않으면 &#92;&#39;로 감쌉니다
 
 <div id="output_format_write_statistics">
   ## output_format_write_statistics
@@ -3228,9 +3266,9 @@ y   Nullable(String)
 z   IPv4
 ```
 
-<Note>
-  `schema_inference_hints`의 형식이 올바르지 않거나 오타, 잘못된 데이터 타입 등이 있는 경우... `schema_inference_hints` 전체가 무시됩니다.
-</Note>
+:::note
+`schema_inference_hints`의 형식이 올바르지 않거나 오타나 잘못된 데이터 타입 등이 있는 경우... schema&#95;inference&#95;hints 전체가 무시됩니다.
+:::
 
 <div id="schema_inference_make_columns_nullable">
   ## schema_inference_make_columns_nullable

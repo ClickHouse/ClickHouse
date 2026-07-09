@@ -50,16 +50,16 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
 
     ```ini
     [mysqld]
-    # Configuración del log de errores
+    # Error log configuration
     log_error = /var/log/mysql/error.log
 
-    # Configuración del log de consultas lentas
+    # Slow query log configuration
     slow_query_log = ON
     slow_query_log_file = /var/log/mysql/mysql-slow.log
     long_query_time = 1
     log_queries_not_using_indexes = ON
 
-    # Opcional: Log de consultas general (detallado, usar con precaución en producción)
+    # Optional: General query log (verbose, use with caution in production)
     # general_log = ON
     # general_log_file = /var/log/mysql/mysql-general.log
     ```
@@ -71,20 +71,20 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     Después de realizar estos cambios, reinicia MySQL:
 
     ```bash
-    # Para systemd
+    # For systemd
     sudo systemctl restart mysql
 
-    # Para Docker
+    # For Docker
     docker restart <mysql-container>
     ```
 
     Verifique que se estén escribiendo los logs:
 
     ```bash
-    # Verificar el log de errores
+    # Check error log
     tail -f /var/log/mysql/error.log
 
-    # Verificar el log de consultas lentas
+    # Check slow query log
     tail -f /var/log/mysql/mysql-slow.log
     ```
   </Step>
@@ -165,7 +165,7 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     Esta configuración:
 
     * Lee los logs de errores de MySQL y los logs de consultas lentas desde sus ubicaciones estándar
-    * Gestiona entradas de log de varias líneas (las consultas lentas abarcan varias líneas)
+    * Gestiona entradas de log de varias líneas (las consultas lentan abarcan varias líneas)
     * Analiza ambos formatos de log para extraer campos estructurados (level, error&#95;code, query&#95;time, rows&#95;examined)
     * Conserva las marcas de tiempo originales de los logs
     * Añade los atributos `source: mysql-error` y `source: mysql-slow` para filtrar en HyperDX
@@ -186,14 +186,14 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     ```yaml
     services:
       clickstack:
-        # ... configuración existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... otras variables de entorno ...
+          # ... other environment variables ...
         volumes:
           - ./mysql-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/mysql:/var/log/mysql:ro
-          # ... otros volúmenes ...
+          # ... other volumes ...
     ```
 
     <Note>
@@ -230,10 +230,10 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
     Descargue los archivos de log de ejemplo:
 
     ```bash
-    # Descargar el log de errores
+    # Download error log
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/error.log
 
-    # Descargar el log de consultas lentas
+    # Download slow query log
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/mysql-slow.log
     ```
 
@@ -256,7 +256,7 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
       filelog/mysql_error:
         include:
           - /tmp/mysql-demo/error.log
-        start_at: beginning  # Leer desde el principio para datos de demostración
+        start_at: beginning  # Read from beginning for demo data
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         operators:
@@ -279,7 +279,7 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
       filelog/mysql_slow:
         include:
           - /tmp/mysql-demo/mysql-slow.log
-        start_at: beginning  # Leer desde el principio para datos de demostración
+        start_at: beginning  # Read from beginning for demo data
         multiline:
           line_start_pattern: '^# Time:'
         operators:
@@ -491,4 +491,4 @@ Si el formato difiere significativamente, ajusta los patrones regex en la config
   ## Paso a producción
 </div>
 
-Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones en producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver una configuración de producción.

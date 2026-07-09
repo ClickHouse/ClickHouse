@@ -21,15 +21,15 @@ postgresql({host:port, database, table, user, password[, schema, [, on_conflict]
   ## Arguments
 </div>
 
-| Argument      | Description                                                                           |
-| ------------- | ------------------------------------------------------------------------------------- |
-| `host:port`   | Adresse du serveur PostgreSQL.                                                        |
-| `database`    | Nom de la base de données distante.                                                   |
-| `table`       | Nom de la table distante.                                                             |
-| `user`        | Utilisateur PostgreSQL.                                                               |
-| `password`    | Mot de passe de l&#39;utilisateur.                                                    |
-| `schema`      | Schéma de table autre que celui par défaut. Facultatif.                               |
-| `on_conflict` | Stratégie de résolution des conflits. Exemple : `ON CONFLICT DO NOTHING`. Facultatif. |
+| Argument      | Description                                                                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host:port`   | Adresse du serveur PostgreSQL.                                                                                                                                |
+| `database`    | Nom de la base de données distante.                                                                                                                           |
+| `table`       | Nom de la table distante, ou une requête transmise à PostgreSQL telle quelle (voir [passer une requête au lieu d’un nom de table](#passing-a-query)). |
+| `user`        | Utilisateur PostgreSQL.                                                                                                                                       |
+| `password`    | Mot de passe de l&#39;utilisateur.                                                                                                                            |
+| `schema`      | Schéma de table autre que celui par défaut. Facultatif.                                                                                                       |
+| `on_conflict` | Stratégie de résolution des conflits. Exemple : `ON CONFLICT DO NOTHING`. Facultatif.                                                                         |
 
 Les arguments peuvent également être transmis à l&#39;aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections). Dans ce cas, `host` et `port` doivent être indiqués séparément. Cette approche est recommandée en production.
 
@@ -51,7 +51,26 @@ Les requêtes `SELECT` côté PostgreSQL s’exécutent sous la forme de `COPY (
 
 Les clauses `WHERE` simples, telles que `=`, `!=`, `>`, `>=`, `<`, `<=` et `IN`, sont exécutées sur le serveur PostgreSQL.
 
-Toutes les jointures, agrégations, opérations de tri, conditions `IN [ array ]` et la contrainte d’échantillonnage `LIMIT` sont exécutées dans ClickHouse, et uniquement une fois la requête vers PostgreSQL terminée.
+Toutes les jointures, agrégations, opérations de tri, conditions `IN [ array ]` et la contrainte d’échantillonnage `LIMIT` sont exécutées dans ClickHouse, uniquement une fois la requête PostgreSQL terminée.
+
+<div id="passing-a-query">
+  ## Passer une requête au lieu d’un nom de table
+</div>
+
+Au lieu d’un nom de table, le troisième argument peut être une requête `SELECT` transmise telle quelle à PostgreSQL. La structure de la table résultante est inférée à partir du résultat de la requête. La requête peut être écrite soit comme une sous-requête, soit encapsulée dans la fonction `query` :
+
+```sql
+SELECT * FROM postgresql('localhost:5432', 'test', (SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0), 'user', 'password');
+SELECT * FROM postgresql('localhost:5432', 'test', query('SELECT a, b FROM t1 JOIN t2 USING (id) WHERE a > 0'), 'user', 'password');
+```
+
+Cela est utile pour déléguer à PostgreSQL les jointures, les agrégations ou tout autre traitement. Une telle table est en lecture seule : les requêtes `INSERT` n’y sont pas autorisées. La même syntaxe est prise en charge par le moteur de table [`PostgreSQL`](/fr/reference/engines/table-engines/integrations/postgresql).
+
+<Note>
+  La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse puis re-sérialisée dans le dialecte PostgreSQL (quotage des identifiants PostgreSQL et échappement des littéraux de chaîne) avant d’être envoyée au serveur. Elle doit donc être valide en ClickHouse SQL. Pour transmettre une syntaxe spécifique à PostgreSQL que ClickHouse n’analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé tel quel à PostgreSQL.
+
+  Toute clause externe `WHERE`, `LIMIT`, agrégation, etc. de la requête ClickHouse englobante n’est **pas** déléguée à la requête transmise — elle est appliquée dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis PostgreSQL, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings#external_table_strict_query), un filtre externe qui ne peut pas être délégué est rejeté avec une exception au lieu d’être appliqué localement.
+</Note>
 
 Les requêtes `INSERT` côté PostgreSQL s’exécutent sous la forme de `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` à l’intérieur d’une transaction PostgreSQL avec commit automatique après chaque instruction `INSERT`.
 

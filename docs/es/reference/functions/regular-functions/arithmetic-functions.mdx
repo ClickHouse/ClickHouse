@@ -264,9 +264,9 @@ Introducido en: v1.1.0
 Calcula el cociente de dos valores, `a` y `b`. El tipo de resultado siempre es [Float64](/es/reference/data-types/float).
 La función `intDiv` proporciona la división entera.
 
-<Note>
-  La división por `0` devuelve `inf`, `-inf` o `nan`.
-</Note>
+:::note
+La división por `0` devuelve `inf`, `-inf` o `nan`.
+:::
 
 **Sintaxis**
 
@@ -313,10 +313,10 @@ Introducido en: v22.12.0
 Realiza la división de dos números decimales. El valor resultante será de tipo [Decimal256](/es/reference/data-types/decimal).
 La escala del resultado puede especificarse explícitamente mediante el argumento `result_scale` (un Integer constante en el rango `[0, 76]`). Si no se especifica, la escala del resultado será la escala máxima de los argumentos proporcionados.
 
-<Note>
-  Esta función es significativamente más lenta que `divide`.
-  Si realmente no necesita precisión controlada y/o necesita un cálculo rápido, considere usar [divide](#divide).
-</Note>
+:::note
+Esta función es significativamente más lenta que `divide`.
+Si realmente no necesita precisión controlada y/o necesita un cálculo rápido, considere usar [divide](#divide).
+:::
 
 **Sintaxis**
 
@@ -1050,8 +1050,9 @@ SELECT moduloLegacy(10, 3)
 
 Introducido en: v25.5.0
 
-Calcula el resto de dividir `a` entre `b`. Es similar a la función `modulo`, excepto que `moduloOrNull` devuelve NULL
-si el argumento de la derecha es 0.
+Calcula el resto de dividir `a` entre `b`. Es similar a la función `modulo`, excepto que `moduloOrNull` devuelve `NULL`
+cuando, de otro modo, la operación produciría una excepción de coma flotante. En el caso de argumentos de coma flotante, esto ocurre solo cuando el
+divisor es `0`; para argumentos enteros, además cubre el caso del valor negativo mínimo módulo `-1` (por ejemplo, `-128 % -1` para `Int8`).
 
 **Sintaxis**
 
@@ -1068,7 +1069,8 @@ moduloOrNull(x, y)
 
 **Valor devuelto**
 
-Devuelve el resto de la división de `x` entre `y`, o `NULL` cuando el divisor es cero.
+Devuelve el resto de la división de `x` entre `y`, o `NULL` cuando la operación produciría una excepción de coma flotante:
+cuando el divisor es cero o, en el caso de argumentos enteros, al calcular el valor negativo mínimo módulo `-1`.
 
 **Ejemplos**
 
@@ -1076,6 +1078,16 @@ Devuelve el resto de la división de `x` entre `y`, o `NULL` cuando el divisor e
 
 ```sql title=Query
 SELECT moduloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**moduloOrNull del entero negativo mínimo con -1**
+
+```sql title=Query
+SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response
@@ -1162,10 +1174,10 @@ Introducido en: v22.12.0
 Realiza la multiplicación de dos valores decimales. El valor resultante será de tipo [Decimal256](/es/reference/data-types/decimal).
 La escala del resultado puede especificarse explícitamente mediante el argumento `result_scale` (Integer constante en el rango `[0, 76]`). Si no se especifica, la escala del resultado será la escala máxima de los argumentos proporcionados.
 
-<Note>
-  Estas funciones son considerablemente más lentas que `multiply`.
-  Si realmente no necesita precisión controlada o necesita un cálculo rápido, considere usar [multiply](#multiply)
-</Note>
+:::note
+Estas funciones son considerablemente más lentas que `multiply`.
+Si realmente no necesita precisión controlada o necesita un cálculo rápido, considere usar [multiply](#multiply)
+:::
 
 **Sintaxis**
 
@@ -1371,8 +1383,9 @@ SELECT positiveModulo(-1, 10)
 
 Introducido en: v25.5.0
 
-Calcula el resto de dividir `a` entre `b`. Es similar a la función `positiveModulo`, salvo que `positiveModuloOrNull` devuelve NULL
-si el argumento de la derecha es 0.
+Calcula el resto de dividir `a` entre `b`. Es similar a la función `positiveModulo`, salvo que `positiveModuloOrNull` devuelve `NULL`
+cuando la operación provocaría de otro modo una excepción de coma flotante. En el caso de argumentos de coma flotante, esto solo ocurre cuando el
+divisor es `0`; para argumentos enteros, además cubre el valor negativo mínimo módulo `-1` (por ejemplo, `-128 % -1` para `Int8`).
 
 **Sintaxis**
 
@@ -1389,14 +1402,25 @@ positiveModuloOrNull(x, y)
 **Valor devuelto**
 
 Devuelve la diferencia entre `x` y el entero más cercano, no mayor que
-`x`, divisible por `y`; `null` cuando el divisor es cero.
+`x`, divisible por `y`, o `NULL` cuando la operación produciría una excepción de coma flotante: cuando el divisor es cero o,
+para argumentos enteros, al calcular el valor negativo mínimo módulo `-1`.
 
 **Ejemplos**
 
-**positiveModuloOrNull**
+**positiveModuloOrNull con cero**
 
 ```sql title=Query
 SELECT positiveModuloOrNull(5, 0)
+```
+
+```response title=Response
+\N
+```
+
+**positiveModuloOrNull del entero negativo mínimo dividido entre -1**
+
+```sql title=Query
+SELECT positiveModuloOrNull(toInt8(-128), toInt8(-1))
 ```
 
 ```response title=Response

@@ -145,7 +145,7 @@ Un seul octet. `0x00` correspond à false ; toute valeur non nulle correspond �
 </div>
 
 <div id="block-wire-layout">
-  ### Structure binaire du bloc
+  ### wire layout du bloc
 </div>
 
 ```text
@@ -155,9 +155,9 @@ Un seul octet. `0x00` correspond à false ; toute valeur non nulle correspond �
 [Column × num_columns]    column entries, omitted when num_columns = 0
 ```
 
-La présence du préfixe `BlockInfo` dépend du canal, car l’écriture est paramétrée par une *révision* :
+La présence du préfixe `BlockInfo` dépend du canal, car l’écriture est paramétrée par une *révision* (voir [Révision du protocole et format Native](#protocol-revision) pour le traitement complet, y compris le fait que `client_protocol_version` s’applique uniquement à la sortie) :
 
-* Sur le **protocole TCP natif**, le serveur écrit les blocs à la révision négociée de la connexion (une valeur élevée — `DBMS_TCP_PROTOCOL_VERSION` vaut `54485` dans cette version). `BlockInfo` est écrit dès que cette révision est supérieure à zéro, ce qui est toujours le cas pour une connexion réelle. L’octet `has_custom_serialization` dans chaque colonne (voir la [représentation binaire des colonnes](#column-wire-layout)) est écrit à partir de la révision `54454`.
+* Sur le **protocole TCP natif**, le serveur écrit les blocs à la révision négociée de la connexion (une valeur élevée — `DBMS_TCP_PROTOCOL_VERSION` vaut `54485` dans cette version). `BlockInfo` est écrit dès que cette révision est supérieure à zéro, ce qui est toujours le cas pour une connexion réelle. L’octet `has_custom_serialization` dans chaque colonne (voir la [wire layout des colonnes](#column-wire-layout)) est écrit à partir de la révision `54454`.
 * Le *format de sortie* `Native` — `SELECT ... FORMAT Native` sur HTTP, `INTO OUTFILE ... FORMAT Native`, ainsi que le format `Native` produit par `clickhouse-client` — sérialise à la révision `0` *par défaut*. À la révision `0`, le préfixe `BlockInfo` et l’octet `has_custom_serialization` sont tous deux omis, de sorte qu’un bloc se résume à `num_columns`, `num_rows` et aux colonnes.
 
   Sur HTTP, cette révision n’est pas fixe : un client peut l’augmenter avec le paramètre de requête `?client_protocol_version=<n>`, et le serveur utilise cette valeur comme révision de sérialisation pour la réponse.
@@ -349,6 +349,92 @@ Avec `FORMAT Native` (révision `0`), le même bloc de résultats ne comporte ni
 ```
 
 (Un résultat sans aucune ligne, comme un bloc contenant uniquement un en-tête, ne produit aucun octet avec `FORMAT Native` : le format de sortie n’émet pas de blocs vides.)
+
+<div id="protocol-revision">
+  ## Révision du protocole et format Native
+</div>
+
+Un flux d’octets Native est avant tout déterminé par la **révision du protocole** utilisée par son lecteur et son rédacteur. La révision n’apparaît nulle part dans les octets eux-mêmes — il n’existe pas de champ de révision dans la représentation transmise — mais elle détermine malgré tout si plusieurs fonctionnalités sont présentes ou non. Pour cette raison, un décodeur doit connaître la révision avec laquelle une charge utile a été écrite avant de pouvoir l’analyser. Comme la révision ne figure pas dans le flux, le lecteur et le rédacteur doivent s’accorder dessus d’une autre manière.
+
+Il s’agit d’un simple `UInt64`, et `NativeWriter` comme `NativeReader` le prennent comme argument du constructeur. Le rédacteur l’appelle `client_revision` et le lecteur l’appelle `server_revision`, mais c’est le même nombre. La révision la plus récente prise en charge par cette version est `DBMS_TCP_PROTOCOL_VERSION`, actuellement `54485`.
+
+<div id="what-the-revision-gates">
+  ### Ce que conditionne la révision
+</div>
+
+Chaque fonctionnalité est conditionnée par un seuil `DBMS_MIN_REVISION_WITH_*`. Le writer n’émet la fonctionnalité qu’à partir du moment où sa révision atteint ce seuil, et le reader la recherche selon exactement la même règle, afin que les deux restent synchronisés — si la révision est incorrecte d’un côté ou de l’autre, ils se désynchronisent. Les seuils importants pour le Native format sont les suivants :
+
+| Fonctionnalité                                | Constante de seuil                                                 | Révision | Effet en dessous du seuil                                                                                                                                                                                                                                                                                      |
+| --------------------------------------------- | ------------------------------------------------------------------ | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Préfixe `BlockInfo`                           | (toute valeur `> 0`)                                               | `1`      | Le préfixe [`BlockInfo`](#blockinfo) est entièrement omis ; un bloc se limite alors à `num_columns`, `num_rows`, colonnes.                                                                                                                                                                                     |
+| Octet `has_custom_serialization`              | `DBMS_MIN_REVISION_WITH_CUSTOM_SERIALIZATION`                      | `54454`  | L’octet [`has_custom_serialization`](#column-wire-layout) par colonne est omis ; chaque colonne utilise la sérialisation par défaut (pas de formes sparse, replicated ou detached).                                                                                                                              |
+| `LowCardinality` sur le wire                  | `DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE`                      | `54405`  | Cas particulier — ne suit **pas** la règle simple applicable en dessous du seuil. `LowCardinality(T)` n’est réduit au base type `T` que lorsque la révision est *non nulle* et inférieure à `54405`, ou lorsque cette suppression est forcée séparément. La révision `0` le conserve. Voir la note ci-dessous. |
+| Sérialisation V2 de `Dynamic` / `JSON`        | `DBMS_MIN_REVISION_WITH_V2_DYNAMIC_AND_JSON_SERIALIZATION`         | `54473`  | `Dynamic` et `JSON`/`Object` utilisent la sérialisation V1 (avec le parameter `max_dynamic_*`) au lieu de V2.                                                                                                                                                                                                  |
+| Gestion de version des fonctions d’agrégation | `DBMS_MIN_REVISION_WITH_AGGREGATE_FUNCTIONS_VERSIONING`            | `54452`  | L’état `AggregateFunction` est écrit sans version embarquée.                                                                                                                                                                                                                                                   |
+| `out_of_order_buckets` dans `BlockInfo`       | `DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION`       | `54480`  | Le field `BlockInfo` d’ID `3` n’est pas écrit (voir [BlockInfo](#blockinfo)).                                                                                                                                                                                                                                  |
+| Marshalling parallèle des blocs (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING`                 | `54478`  | Les colonnes ne sont jamais encapsulées dans un `ColumnBLOB` ; aucun type `DETACHED` / `DETACHED_OVER_SPARSE` n’apparaît (voir [kind&#95;stack](#kind-stack-and-sparse-encoding)).                                                                                                                              |
+| Parameter de type `DateTime(tz)`              | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337`  | Le parameter de timezone est supprimé de la chaîne `type` — `DateTime('UTC')` est annoncé comme un simple `DateTime`.                                                                                                                                                                                          |
+
+Cela fait de la révision `0` l’encodage le plus conservateur dans presque tous les cas : le stream ne contient pas de `BlockInfo`, pas d’octet `has_custom_serialization`, `Dynamic`/`JSON` en V1, pas de version de fonction d’agrégation, et un `DateTime` simple sans parameter de timezone.
+
+`LowCardinality` est la seule exception, et c’est un point important. La condition vérifiée par le writer est `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`. L’astuce tient au `client_revision &&` initial : lorsque la révision vaut exactement `0`, toute la condition est court-circuitée en false.
+
+Ainsi, avec la révision `0` — la valeur par défaut pour `FORMAT Native` — `LowCardinality(T)` n’est **pas** supprimé. Sa chaîne de type et son state prefix par bloc restent dans le stream, et le reader en révision `0` les lit tels quels. La suppression ne s’applique qu’à une révision non nulle inférieure à `54405`, ou lorsqu’elle est forcée indépendamment de la révision.
+
+Ce forçage correspond au flag `remove_low_cardinality`. La sortie `FORMAT Native` ne l’active jamais, mais le chemin native TCP, oui, lorsque `low_cardinality_allow_in_native_format = 0` (valeur par défaut : `1`). Autrement dit, ce setting modifie la sortie native TCP mais n’a aucun effet sur `FORMAT Native`.
+
+En pratique, un stream `FORMAT Native` par défaut peut légitimement contenir `LowCardinality` ; ne le considérez donc pas comme une fonctionnalité absente à la révision `0`.
+
+<div id="revision-per-channel">
+  ### D’où vient la révision selon le mode de transport des données
+</div>
+
+Les mêmes octets Native peuvent transiter par différents chemins : le protocole TCP natif, une requête HTTP ou un fichier sur disque. Chaque chemin définit la révision à sa façon. Point important : le côté lecture et le côté écriture sont configurés séparément, et peuvent donc se retrouver avec des révisions différentes.
+
+<div id="revision-tcp">
+  #### Protocole TCP natif — négocié dans les deux sens
+</div>
+
+Sur le [protocole TCP natif](/fr/reference/interfaces/specs/NativeProtocol), la révision est issue de l’échange initial Hello. Le client envoie `DBMS_TCP_PROTOCOL_VERSION`, le serveur renvoie la sienne, puis chaque côté sérialise selon la **révision annoncée par l’autre** : le serveur construit son `NativeReader`/`NativeWriter` à partir de `client_tcp_protocol_version`, tandis que le client utilise la `server_revision` reçue. Il n’y a pas de `min` explicite, mais aucune des deux parties ne peut émettre une fonctionnalité qu’elle n’a pas implémentée ; en pratique, chaque sens est donc limité par le plus ancien des deux pairs.
+
+Lorsque les deux pairs utilisent la même build récente, les deux sens aboutissent à la même révision (`54485` ici) et tous les mécanismes de contrôle sont actifs. C’est le cas le plus courant, mais ce n’est pas garanti. Avec des pairs de versions différentes ou tiers, les deux sens peuvent se retrouver à des révisions distinctes ; ces mécanismes doivent donc être interprétés pour chaque sens : `BlockInfo` est présent pour toute révision non nulle, mais le reste — y compris `has_custom_serialization` — n’apparaît que lorsque la révision effective de ce sens atteint les seuils correspondants. Un pair annonçant une révision inférieure à `54454`, par exemple, n’envoie ni ne reçoit l’octet `has_custom_serialization`.
+
+<div id="revision-output">
+  #### Sortie `FORMAT Native` — révision 0 par défaut, pouvant être relevée via HTTP
+</div>
+
+Le format de *sortie* `Native` utilise par défaut la révision **`0`**. Cela couvre `SELECT ... FORMAT Native` via HTTP, `INTO OUTFILE ... FORMAT Native`, ainsi que la sortie `Native` produite par `clickhouse-client` ; dans chaque cas, la fabrique de sortie transmet directement `FormatSettings::client_protocol_version` au `NativeWriter`.
+
+Avec HTTP, toutefois, cela ne s’arrête pas là. Un client peut relever cette valeur avec le paramètre de requête `?client_protocol_version=<n>`, que le handler HTTP traite comme un paramètre réservé plutôt que comme un paramètre SQL : il est placé dans le contexte de la requête, puis la couche de format le copie dans `FormatSettings`. Si vous le définissez à une valeur suffisamment élevée, la sortie HTTP `FORMAT Native` commence à inclure le préfixe `BlockInfo` et l’octet `has_custom_serialization`, comme sur le chemin TCP — ne partez donc pas du principe qu’un payload HTTP `FORMAT Native` est toujours en révision `0`. Les exportations vers fichier et la sortie locale de `clickhouse-client` n’offrent pas ce type de réglage et restent à `0`.
+
+<div id="revision-input">
+  #### `FORMAT Native` en entrée — toujours révision 0
+</div>
+
+Le format `Native` en *entrée* fonctionne à l’inverse : il est **codé en dur sur la révision `0`** et ne tient aucunement compte de `client_protocol_version`. Qu’il analyse le corps d’un `INSERT ... FORMAT Native` ou qu’il lise un fichier `Native`, il construit son `NativeReader` avec un `0` littéral ; il ne s’attend donc jamais à un préfixe `BlockInfo`, ne lit jamais l’octet `has_custom_serialization` et suppose toujours la sérialisation par défaut.
+
+`client_protocol_version` n’agit donc que sur la sortie. Ajouter `?client_protocol_version=54485` à une requête `INSERT ... FORMAT Native` ne change rien à la façon dont le corps est lu : le corps doit toujours être en révision `0`. Si vous fournissez un corps qui contient un préfixe `BlockInfo` ou un octet `has_custom_serialization`, le lecteur se désynchronise, ce qui se traduit par une erreur d’analyse (`INCORRECT_DATA` ou `CANNOT_READ_ALL_DATA`) plutôt que par un insert réussi.
+
+<div id="revision-round-trip">
+  ### Implications pour un aller-retour
+</div>
+
+Pour `FORMAT Native`, le choix le plus sûr est la révision `0` des deux côtés, ce qui est le comportement par défaut. Les données écrites par `SELECT ... FORMAT Native` avec la révision `0` peuvent être relues directement par `INSERT ... FORMAT Native`, sans surprise.
+
+Les problèmes n&#39;apparaissent que si vous augmentez délibérément la révision de sortie. Un `SELECT ... FORMAT Native` exécuté avec `?client_protocol_version=<large>` produit un flux qui contient les octets `BlockInfo` et `has_custom_serialization`, et le code de lecture en révision `0` ne peut pas les relire. Si vous avez besoin que ces données fassent un aller-retour, soit n&#39;ajoutez pas `client_protocol_version` au `SELECT` qui les produit, soit transférez les données via le protocole TCP natif — où chaque sens utilise la révision négociée lors du handshake — au lieu de `FORMAT Native`.
+
+| Canal                                                          | Révision d&#39;écriture                          | Révision de lecture                              | `BlockInfo` / sérialisation personnalisée                                                    |
+| -------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Paquet Data en TCP natif                                       | Révision annoncée par le pair (dans chaque sens) | Révision annoncée par le pair (dans chaque sens) | `BlockInfo` dès que la révision est `> 0` ; `has_custom_serialization` à partir de `≥ 54454` |
+| `SELECT ... FORMAT Native` sur HTTP                            | `client_protocol_version` (par défaut `0`)       | n/a                                              | Uniquement si `client_protocol_version` est augmenté                                         |
+| `INSERT ... FORMAT Native` sur HTTP                            | n/a                                              | `0` (fixe, ignore `client_protocol_version`)     | Jamais lu                                                                                    |
+| `INTO OUTFILE` / fichier / `clickhouse-client` `FORMAT Native` | `0`                                              | `0`                                              | Absent (mais `LowCardinality` est conservé — voir la note ci-dessus)                         |
+
+<Info>
+  **Révision du protocole vs version de sérialisation**
+
+  Ne confondez pas la révision du protocole avec la [version de sérialisation](#serialization-version-concept). Ici, la révision vaut pour l&#39;ensemble de la connexion ou de la requête et n&#39;apparaît jamais dans les octets. La version de sérialisation, elle, est propre à chaque colonne, est portée par les [types versionnés](#versioned-types) et est écrite dans chaque bloc non vide. La révision détermine si une fonctionnalité est présente ou non ; la version de sérialisation, une fois dans une colonne versionnée, choisit quelle variante de l&#39;encodage de ce type précis suit.
+</Info>
 
 <div id="data-types">
   ## Types de données

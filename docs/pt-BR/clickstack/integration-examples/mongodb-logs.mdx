@@ -60,10 +60,10 @@ Se você quiser testar a integração com MongoDB antes de configurar sua própr
     Após alterar a configuração, reinicie o MongoDB:
 
     ```bash
-    # Para systemd
+    # For systemd
     sudo systemctl restart mongod
 
-    # Para Docker
+    # For Docker
     docker restart <mongodb-container>
     ```
   </Step>
@@ -368,7 +368,7 @@ Se a saída não for um JSON válido, sua versão do MongoDB pode estar usando o
 * Crie [dashboards](/pt-BR/clickstack/features/dashboards/overview) adicionais para casos de uso específicos (monitoramento do conjunto de réplicas, rastreamento de conexões)
 
 <div id="going-to-production">
-  ## Colocando em produção
+  ## Preparando para produção
 </div>
 
-Este guia aproveita o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel Collector e enviar os dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.
+Este guia usa o OpenTelemetry Collector integrado do ClickStack para uma configuração rápida. Para implantações em produção, recomendamos executar seu próprio OTel collector e enviar dados para o endpoint OTLP do ClickStack. Consulte [Enviando dados do OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para a configuração de produção.

@@ -16,7 +16,7 @@ Para declarar uma coluna do tipo `QBit`, use a seguinte sintaxe:
 column_name QBit(element_type, dimension)
 ```
 
-* `element_type` – o tipo de cada elemento do vetor. Os tipos permitidos são `BFloat16`, `Float32` e `Float64`
+* `element_type` – o tipo de cada elemento do vetor. Os tipos permitidos são `Int8`, `BFloat16`, `Float32` e `Float64`
 * `dimension` – o número de elementos de cada vetor
 
 <div id="creating-qbit">
@@ -63,6 +63,28 @@ SELECT * FROM vectors ORDER BY id;
 
 A conversão também pode ser feita explicitamente com `CAST`, por exemplo `CAST(embedding AS QBit(Float32, 8))`.
 
+<div id="converting-qbit-to-arrays">
+  ## Convertendo QBit para arrays
+</div>
+
+A conversão inversa reconstrói o vetor original a partir da representação transposta em bits; portanto, converter um `QBit` em um `Array` retorna os valores armazenados. Isso é o inverso de [converter arrays para `QBit`](#converting-arrays-to-qbit):
+
+```sql
+SELECT [1, 2, 3, 4]::QBit(Float32, 4)::Array(Float32) AS vec;
+```
+
+```text
+┌─vec───────┐
+│ [1,2,3,4] │
+└───────────┘
+```
+
+O array reconstruído usa o tipo de elemento de `QBit`, e seus elementos são então convertidos para o tipo de elemento do array solicitado. Portanto, um cast que também altera o tipo de elemento, como de `QBit(Float32, N)` para `Array(Float64)`, também funciona.
+
+Uma conversão de ida e volta `Array` -&gt; `QBit` -&gt; `Array` não perde informação para `Int8`, `Float32` e `Float64`. Para `BFloat16`, ela corresponde a uma conversão direta para `BFloat16` — a única precisão perdida é a do próprio `BFloat16`.
+
+Quando a `dimension` não é um múltiplo de 8, os elementos de preenchimento no final presentes na representação interna são descartados, de modo que o resultado sempre tenha exatamente `dimension` elementos.
+
 <div id="qbit-subcolumns">
   ## Subcolunas do QBit
 </div>
@@ -85,6 +107,7 @@ SELECT bin(vec.1) FROM test;
 
 O número de subcolunas acessíveis depende do tipo de elemento:
 
+* `Int8`: 8 subcolunas (1-8)
 * `BFloat16`: 16 subcolunas (1-16)
 * `Float32`: 32 subcolunas (1-32)
 * `Float64`: 64 subcolunas (1-64)
@@ -97,3 +120,4 @@ Estas são as funções de distância para busca vetorial por similaridade que u
 
 * [`L2DistanceTransposed`](/pt-BR/reference/functions/regular-functions/distance-functions#L2DistanceTransposed)
 * [`cosineDistanceTransposed`](/pt-BR/reference/functions/regular-functions/distance-functions#cosineDistanceTransposed)
+* [`dotProductTransposed`](/pt-BR/reference/functions/regular-functions/distance-functions#dotProductTransposed)

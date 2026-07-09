@@ -22,35 +22,26 @@ doc_type: 'reference'
 * **إعادة المحاولة مع زيادة تدريجية في التأخير**: تتم إعادة محاولة الإخفاقات العابرة ([`ai_function_max_retries`](/ar/reference/settings/session-settings#ai_function_max_retries)) باستخدام تأخير أُسّي متزايد ([`ai_function_retry_initial_delay_ms`](/ar/reference/settings/session-settings#ai_function_retry_initial_delay_ms)).
 
 <div id="configuration">
-  ## التهيئة
+  ## الإعداد
 </div>
 
-تستمد دوال AI بيانات اعتماد الموفّر والتهيئة من [**مجموعة مُسمّاة**](/ar/concepts/features/configuration/server-config/named-collections). لتحديد مجموعة مُسمّاة لاستخدامها لبيانات الاعتماد، استخدم الإعداد [`ai_function_credentials`](/ar/reference/settings/session-settings#ai_function_credentials).
+تشير دوال الذكاء الاصطناعي إلى **مجموعة مُسمّاة** تخزّن بيانات اعتماد الموفّر وإعداداته. ويمكن إنشاء مجموعات مُسمّاة مختلفة واستخدامها مع دوال مختلفة أو مع استدعاءات مختلفة للدوال. على سبيل المثال، قد ترغب في تعريف مجموعة مُسمّاة مختلفة لاستخدامها مع دوال النص (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) مقابل الدالة `aiEmbed`، إذ تتطلب نقاط نهاية مختلفة وتستخدم عادةً نماذج مختلفة.
 
-مثال على تعليمة لإنشاء مجموعة مُسمّاة تتضمن بيانات اعتماد الموفّر:
+مثال على تعليمة لإنشاء مجموعة مُسمّاة تحتوي على بيانات اعتماد الموفّر، إحداهما مع نقطة نهاية للدردشة والأخرى مع نقطة نهاية للتضمين:
 
 ```sql
-CREATE NAMED COLLECTION my_ai_credentials AS
+CREATE NAMED COLLECTION ai_text_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
+
+CREATE NAMED COLLECTION ai_embedding_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/embeddings',
+    model = 'text-embedding-3-small',
+    api_key = 'sk-...';
 ```
-
-حدِّد المجموعة المُسمّاة بإعداد `ai_function_credentials`، للجلسة أو لاستعلام واحد:
-
-```sql
--- For the session:
-SET allow_experimental_ai_functions = 1;
-SET ai_function_credentials = 'my_ai_credentials';
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
-
--- Or for a single query:
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
-SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
-```
-
-عندما تكون قيمة `ai_function_credentials` فارغة (وهو الإعداد الافتراضي)، يتم طرح استثناء.
 
 <div id="named-collection-parameters">
   ### معلمات المجموعة المسماة
@@ -69,46 +60,53 @@ SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_c
   يمكن استخدام أي واجهة برمجة تطبيقات متوافقة مع OpenAI (مثل vLLM وOllama وLiteLLM) عبر ضبط `provider = 'openai'` وتوجيه `endpoint` إلى خدمتك.
 </Note>
 
+<div id="selecting-credentials">
+  ### اختيار بيانات الاعتماد
+</div>
+
+تحدِّد الدالة المجموعة المُسمّاة المطلوب استخدامها وفق الترتيب التالي:
+
+1. مفتاح `credentials` في خريطة المَعلمات الخاصة بها، إن وُجد؛
+2. وإلا، إعداد بيانات الاعتماد الافتراضي المنطبق:
+   * [`ai_function_text_default_credentials`](/ar/reference/settings/session-settings#ai_function_text_default_credentials) لدوال النص (`aiGenerate` و`aiClassify` و`aiExtract` و`aiTranslate`);
+   * [`ai_function_embedding_default_credentials`](/ar/reference/settings/session-settings#ai_function_embedding_default_credentials) للدالة `aiEmbed`.
+
+إذا لم يُضبط أيٌّ منهما، يفشل الاستدعاء. تستخدم دوال النص ودوال التضمين إعدادات افتراضية منفصلة لأن نقطة النهاية والنموذج الخاصين بإكمالات الدردشة يختلفان عن نظيريهما الخاصين بالتضمينات.
+
+```sql
+SET ai_function_text_default_credentials = 'ai_text_credentials';
+
+-- Uses ai_text_credentials from the setting:
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
+
+-- Overrides the default for this call:
+SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+<div id="parameter-map">
+  ### خريطة المعلمات
+</div>
+
+تقبل كل دالة، اختياريًا، ‎`Map(String, String)`‎ من المعلمات في النهاية. جميع القيم سلاسل نصية (ضع الأرقام بين علامتَي اقتباس، مثل ‎`'0.2'`‎). تُرفض المفاتيح غير المعروفة. وإذا كان المفتاح موجودًا، فإنه يتجاوز القيمة المناظرة في المجموعة المُسمّاة؛ أما إذا لم يكن موجودًا، فيُستخدَم ما في المجموعة المُسمّاة (بالنسبة إلى ‎`model`‎/‎`max_tokens`‎) أو القيمة الافتراضية المضمّنة.
+
+المعلمات التالية مشتركة بين جميع دوال الذكاء الاصطناعي:
+
+| Key           | Description                                        |
+| ------------- | -------------------------------------------------- |
+| `credentials` | المجموعة المُسمّاة المطلوب استخدامها (انظر أعلاه). |
+| `model`       | يتجاوز قيمة `model` الخاصة بالمجموعة.              |
+
+وتقبل كل دالة أيضًا معلمات إضافية خاصة بها (مثل ‎`max_tokens`‎ و‎`temperature`‎ و‎`system_prompt`‎ و‎`instructions`‎ و‎`dimensions`‎). راجع المرجع الخاص بكل دالة أدناه لمعرفة المعلمات التي تقبلها وقيمها الافتراضية.
+
+```sql
+SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
+```
+
 <div id="query-level-settings">
   ### إعدادات على مستوى الاستعلام
 </div>
 
-يُحدَّد اختيار المجموعة المُسمّاة المستخدمة من خلال الإعداد [`ai_function_credentials`](/ar/reference/settings/session-settings#ai_function_credentials). وتَرِد الإعدادات الأخرى المتعلقة بالذكاء الاصطناعي في [الإعدادات](/ar/reference/settings/session-settings) تحت البادئة `ai_function_`.
-
-<div id="default-and-materialized-columns">
-  ### الاستخدام مع أعمدة `DEFAULT` و`MATERIALIZED`
-</div>
-
-تُقرأ قيمة الإعداد `ai_function_credentials` عند تقييم التعبير الافتراضي، وليس عند تعريف العمود. ولا يُخزَّن اسم المجموعة ضمن تعريف العمود:
-
-```sql
-CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
--- The stored default is `aiEmbed(doc)`; no collection is captured.
-```
-
-يتطلب تقييم `expression` ثلاثة أمور: يجب ضبط `allow_experimental_ai_functions` و`ai_function_credentials`، ويجب أن يكون لدى المستخدم الذي يُجري التقييم امتياز `GRANT NAMED COLLECTION` على المجموعة المسماة (ويؤدي حلّ بيانات الاعتماد إلى إجراء فحص وصول لـ `NAMED COLLECTION`). ويؤدي غياب أيٍّ منها إلى ظهور استثناء (`SUPPORT_IS_DISABLED`، أو خطأ بيانات اعتماد فارغة، أو `ACCESS_DENIED`).
-
-يُقيَّم عمود `DEFAULT` عند `INSERT`، لذا يجب ضبط كلا الإعدادين في الجلسة أو الاستعلام الذي ينفّذ الإدراج:
-
-```sql
-GRANT NAMED COLLECTION ON my_ai_credentials TO user;
-SET allow_experimental_ai_functions = 1;
-SET ai_function_credentials = 'my_ai_credentials';
-INSERT INTO t (id, doc) VALUES (1, 'hello');
-```
-
-لجعل الإدراج ممكنًا في مثل هذه الجداول دون تعيين هذين الإعدادين لكل جلسة، اضبطهما في [ملف تعريف الإعدادات](/ar/concepts/features/configuration/settings/settings-profiles):
-
-```xml
-<profiles>
-    <default>
-        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
-        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
-    </default>
-</profiles>
-```
-
-يُحتسَب عمود `MATERIALIZED` عند `INSERT` مثل عمود `DEFAULT`، كما يُعاد احتسابه أيضًا بواسطة عمليات mutation مثل `ALTER TABLE ... MATERIALIZE COLUMN`. تعمل عمليات mutation خارج جلسة المستخدم ولا ترث عبارة `SETTINGS` الخاصة بالاستعلام، لكنها ترث الإعدادات من profile إعدادات. اضبط كلا الإعدادين في profile إعدادات، وامنح `NAMED COLLECTION` لمالك الجدول، لكي تنجح إعادة الاحتساب الناتجة عن عمليات mutation.
+تَرِد جميع الإعدادات المتعلقة بالذكاء الاصطناعي في [الإعدادات](/ar/reference/settings/session-settings) تحت البادئة `ai_function_`.
 
 <div id="restricting-endpoint-hosts">
   ### تقييد مضيفات نقطة النهاية
@@ -181,18 +179,19 @@ ORDER BY event_time DESC;
 يقيّد النموذج بحيث يُرجع تسمية واحدة فقط من التسميات المزوّدة. وعندما تُعاد الاستجابة على شكل كائن JSON
 بالصيغة `{"category": "..."}`، تُستخرج التسمية ويُعاد نصّها.
 
-تُؤخذ بيانات اعتماد الموفّر والتهيئة من المجموعة المسماة المحددة بواسطة الإعداد `ai_function_credentials`.
+المعامل الأول هو مجموعة مسماة تحدد الموفّر والنموذج ونقطة النهاية، واختياريًا مفتاح واجهة برمجة تطبيقات.
 
 **الصياغة**
 
 ```sql
-aiClassify(text, categories[, temperature])
+aiClassify(collection, text, categories[, temperature])
 ```
 
 **الأسماء البديلة**: `AIClassify`
 
 **المعاملات**
 
+* `collection` — اسم مجموعة مسماة تحتوي على بيانات اعتماد الموفّر والتهيئة. [`String`](/ar/reference/data-types/string)
 * `text` — النص المطلوب تصنيفه. [`String`](/ar/reference/data-types/string)
 * `categories` — قائمة ثابتة بتسميات الفئات المرشحة. [`Array(String)`](/ar/reference/data-types/array)
 * `temperature` — درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية. القيمة الافتراضية: `0.0`. [`Float64`](/ar/reference/data-types/float)
@@ -206,7 +205,7 @@ aiClassify(text, categories[, temperature])
 **تصنيف المشاعر**
 
 ```sql title=Query
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
+SELECT aiClassify('ai_credentials', 'I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
 ```response title=Response
@@ -216,10 +215,7 @@ positive
 **تصنيف عمود**
 
 ```sql title=Query
-SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
-```
-
-```response title=Response
+SELECT body, aiClassify('ai_credentials', body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
 ```
 
 <div id="aiEmbed">
@@ -235,18 +231,20 @@ SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issue
 [`ai_function_embedding_max_batch_size`](/ar/reference/settings/session-settings#ai_function_embedding_max_batch_size)
 عنصرًا لكل طلب HTTP لتقليل العبء الإضافي لكل استدعاء.
 
-تُؤخذ بيانات اعتماد الموفّر والتهيئة من المجموعة المُسمّاة المحددة بواسطة الإعداد `ai_function_credentials`.
+الوسيطة الأولى هي مجموعة مُسمّاة تحدد الموفّر، والنموذج، ونقطة النهاية، ويمكن أن تتضمن مفتاح واجهة برمجة تطبيقات اختياريًا.
+
 وتطلب الوسيطة الاختيارية `dimensions`، عند دعمها من قِبل النموذج (مثل `text-embedding-3-*` من OpenAI)،
 متجهًا بالحجم المحدد؛ وإلا فسيُعاد الحجم الأصلي للنموذج.
 
 **البنية**
 
 ```sql
-aiEmbed(text[, dimensions])
+aiEmbed(collection, text[, dimensions])
 ```
 
 **الوسائط**
 
+* `collection` — اسم مجموعة مُسمّاة تحتوي على بيانات اعتماد الموفّر والتهيئة. [`String`](/ar/reference/data-types/string)
 * `text` — النص المطلوب تضمينه. [`String`](/ar/reference/data-types/string)
 * `dimensions` — عدد الأبعاد المستهدف الاختياري لمتجه الإخراج. تعني القيمة `0` أو عدم تحديدها استخدام الحجم الأصلي للنموذج. [`UInt64`](/ar/reference/data-types/int-uint)
 
@@ -259,28 +257,19 @@ aiEmbed(text[, dimensions])
 **تضمين سلسلة نصية واحدة**
 
 ```sql title=Query
-SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
-```
-
-```response title=Response
+SELECT aiEmbed('ai_credentials', 'Hello world')
 ```
 
 **مع أبعاد محددة صراحة**
 
 ```sql title=Query
-SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
-```
-
-```response title=Response
+SELECT aiEmbed('ai_credentials', 'Hello world', 256)
 ```
 
 **تضمين عمود من النصوص**
 
 ```sql title=Query
-SELECT aiEmbed(title, 256) FROM articles LIMIT 10
-```
-
-```response title=Response
+SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10
 ```
 
 <div id="aiExtract">
@@ -291,24 +280,25 @@ SELECT aiEmbed(title, 256) FROM articles LIMIT 10
 
 يستخرج معلومات منظَّمة من نص غير منظَّم باستخدام موفّر LLM.
 
-يمكن أن تكون الوسيطة الثانية إما تعليمة بلغة طبيعية حرة الصياغة (مثل `'the main complaint'`) أو
+يمكن أن تكون الوسيطة الثالثة إما تعليمة بلغة طبيعية حرة الصياغة (مثل `'the main complaint'`) أو
 مخططًا مُرمَّزًا بتنسيق JSON بالشكل `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
 
 في وضع التعليمات، تُرجِع الدالة القيمة المستخرجة كسلسلة نصية عادية، أو سلسلة فارغة إذا لم يُعثر على أي شيء.
 وفي وضع المخطط، تُرجِع الدالة سلسلة كائن JSON تتطابق مفاتيحها مع المخطط المطلوب؛ وتكون الحقول المفقودة `null`.
 
-تُؤخذ بيانات اعتماد الموفّر والتهيئة من مجموعة مُسمّاة المحددة بواسطة الإعداد `ai_function_credentials`.
+الوسيطة الأولى هي مجموعة مُسمّاة تحدد الموفّر والنموذج ونقطة النهاية، وبشكل اختياري مفتاح واجهة برمجة تطبيقات.
 
 **البنية**
 
 ```sql
-aiExtract(text, instruction_or_schema[, temperature])
+aiExtract(collection, text, instruction_or_schema[, temperature])
 ```
 
 **الأسماء البديلة**: `AIExtract`
 
 **الوسيطات**
 
+* `collection` — اسم مجموعة مُسمّاة تحتوي على بيانات اعتماد الموفّر والتهيئة. [`String`](/ar/reference/data-types/string)
 * `text` — النص المراد استخراج المعلومات منه. [`String`](/ar/reference/data-types/string)
 * `instruction_or_schema` — تعليمة استخراج بصياغة حرة، أو كائن JSON ثابت يصف الحقول المطلوب استخراجها. [`const String`](/ar/reference/data-types/string)
 * `temperature` — درجة حرارة أخذ العينات التي تتحكم في مستوى العشوائية. القيمة الافتراضية: `0.0`. [`const Float64`](/ar/reference/data-types/float)
@@ -322,7 +312,7 @@ aiExtract(text, instruction_or_schema[, temperature])
 **تعليمة بصياغة حرة**
 
 ```sql title=Query
-SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
+SELECT aiExtract('ai_credentials', 'The package arrived late and was damaged.', 'the main complaint')
 ```
 
 ```response title=Response
@@ -332,10 +322,7 @@ late and damaged package
 **استخراج المخطط**
 
 ```sql title=Query
-SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
-```
-
-```response title=Response
+SELECT aiExtract('ai_credentials', review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
 <div id="aiGenerate">
@@ -350,18 +337,19 @@ SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic"
 يمكن توفير موجّه نظام اختياري لتوجيه سلوك النموذج (مثل النبرة أو التنسيق أو الدور).
 إذا لم يتم توفير موجّه نظام، فسيكون موجّه النظام الافتراضي هو: `You are a helpful assistant. Provide a clear and concise response.`
 
-تُؤخذ بيانات اعتماد الموفّر والتهيئة من المجموعة المسماة المحددة بواسطة الإعداد `ai_function_credentials`.
+المعامل الأول هو مجموعة مسماة تحدد الموفّر والنموذج ونقطة النهاية، ويمكن أن تتضمن أيضًا مفتاح واجهة برمجة تطبيقات.
 
 **الصيغة**
 
 ```sql
-aiGenerate(prompt[, system_prompt[, temperature]])
+aiGenerate(collection, prompt[, system_prompt[, temperature]])
 ```
 
 **الأسماء المستعارة**: `AIGenerate`
 
 **المعاملات**
 
+* `collection` — اسم مجموعة مسماة تحتوي على بيانات اعتماد الموفّر والتهيئة. [`String`](/ar/reference/data-types/string)
 * `prompt` — موجّه المستخدم أو سؤاله الذي يُرسل إلى النموذج. [`String`](/ar/reference/data-types/string)
 * `system_prompt` — تعليمة اختيارية ثابتة على مستوى النظام تُوجّه سلوك النموذج (مثل الشخصية أو تنسيق المخرجات)، وتُرسل مع كل موجّه. [`String`](/ar/reference/data-types/string)
 * `temperature` — درجة حرارة أخذ العينات التي تتحكم في العشوائية. القيمة الافتراضية: `0.7`. [`Float64`](/ar/reference/data-types/float)
@@ -375,7 +363,7 @@ aiGenerate(prompt[, system_prompt[, temperature]])
 **سؤال بسيط**
 
 ```sql title=Query
-SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+SELECT aiGenerate('ai_credentials', 'What is 2 + 2? Reply with just the number.')
 ```
 
 ```response title=Response
@@ -385,19 +373,13 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_func
 **باستخدام موجّه النظام**
 
 ```sql title=Query
-SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
-```
-
-```response title=Response
+SELECT aiGenerate('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')
 ```
 
 **تلخيص قيم العمود**
 
 ```sql title=Query
-SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
-```
-
-```response title=Response
+SELECT article_title, aiGenerate('ai_credentials', concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
 <div id="aiTranslate">
@@ -408,20 +390,21 @@ SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_b
 
 يترجم النص المحدد إلى اللغة الهدف المطلوبة باستخدام موفّر LLM.
 
-يمكن تمرير تعليمات إضافية للأسلوب أو اللهجة كوسيطة ثالثة (مثلًا: `'أبقِ المصطلحات التقنية من دون ترجمة'`).
+يمكن تمرير تعليمات إضافية للأسلوب أو اللهجة كوسيطة رابعة (مثلًا: `'أبقِ المصطلحات التقنية من دون ترجمة'`).
 
-تُؤخذ بيانات اعتماد الموفّر والتهيئة من المجموعة المُسمّاة المحددة عبر الإعداد `ai_function_credentials`.
+الوسيطة الأولى هي مجموعة مُسمّاة تحدد الموفّر، والنموذج، ونقطة النهاية، واختياريًا مفتاح واجهة برمجة تطبيقات.
 
 **بناء الجملة**
 
 ```sql
-aiTranslate(text, target_language[, instructions[, temperature]])
+aiTranslate(collection, text, target_language[, instructions[, temperature]])
 ```
 
 **الأسماء البديلة**: `AITranslate`
 
 **الوسيطات**
 
+* `collection` — اسم مجموعة مُسمّاة تحتوي على بيانات اعتماد الموفّر والتهيئة. [`String`](/ar/reference/data-types/string)
 * `text` — النص المراد ترجمته. [`String`](/ar/reference/data-types/string)
 * `target_language` — اسم اللغة المستهدفة أو رمز BCP-47 (مثل `'French'`، `'es-MX'`). [`String`](/ar/reference/data-types/string)
 * `instructions` — تعليمات إضافية ثابتة اختيارية للمترجم. [`String`](/ar/reference/data-types/string)
@@ -436,7 +419,7 @@ aiTranslate(text, target_language[, instructions[, temperature]])
 **الترجمة إلى الفرنسية**
 
 ```sql title=Query
-SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
+SELECT aiTranslate('ai_credentials', 'Hello, world!', 'French')
 ```
 
 ```response title=Response
@@ -446,10 +429,7 @@ Bonjour le monde!
 **الترجمة إلى اليابانية مع إرشادات الأسلوب**
 
 ```sql title=Query
-SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
-```
-
-```response title=Response
+SELECT aiTranslate('ai_credentials', body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
 ```
 
 {/*AUTOGENERATED_END*/}

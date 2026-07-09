@@ -77,7 +77,7 @@ Si primero quiere probar esta integración sin modificar su configuración actua
         environment:
           JMX_PORT: 9999
           KAFKA_JMX_HOSTNAME: kafka
-          # ... otra configuración de Kafka
+          # ... other Kafka configuration
         ports:
           - "9092:9092"
           - "9999:9999"
@@ -196,10 +196,10 @@ Si primero quiere probar esta integración sin modificar su configuración actua
     Para generar actividad y recopilar más métricas:
 
     ```bash
-    # Crear un topic de prueba
+    # Create a test topic
     docker exec kafka bash -c "unset JMX_PORT && kafka-topics --create --topic test-topic --bootstrap-server kafka:9092 --partitions 3 --replication-factor 1"
 
-    # Enviar mensajes de prueba
+    # Send test messages
     echo -e "Message 1\nMessage 2\nMessage 3" | docker exec -i kafka bash -c "unset JMX_PORT && kafka-console-producer --topic test-topic --bootstrap-server kafka:9092"
     ```
 
@@ -432,11 +432,11 @@ docker exec <jmx-exporter-container> sh -c "timeout 2 bash -c 'cat < /dev/null >
 * Supervisar varios brókers de Kafka añadiendo instancias adicionales de JMX Metric Gatherer con atributos de recurso `kafka.broker.id` únicos
 
 <div id="going-to-production">
-  ## Llevar a producción
+  ## Paso a producción
 </div>
 
-Esta guía envía métricas directamente desde JMX Metric Gatherer al endpoint OTLP de ClickStack, lo cual funciona bien para pruebas y despliegues pequeños.
+Esta guía envía métricas directamente desde JMX Metric Gatherer al endpoint OTLP de ClickStack, lo que funciona bien para pruebas e implementaciones pequeñas.
 
-Para entornos de producción, implemente su propio OpenTelemetry Collector como agente para recibir métricas del exportador JMX y reenviarlas a ClickStack. Esto proporciona procesamiento por lotes, resiliencia y una gestión centralizada de la configuración.
+Para entornos de producción, despliega tu propio OpenTelemetry Collector como agente para recibir métricas del exportador JMX y reenviarlas a ClickStack. Esto proporciona procesamiento por lotes, resiliencia y gestión centralizada de la configuración.
 
-Consulte [Ingesta mediante OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver patrones de despliegue para producción y ejemplos de configuración del collector.
+Consulta [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver patrones de despliegue para producción y ejemplos de configuración del collector.

@@ -293,17 +293,17 @@ FROM s3(
   <Step>
     #### 액세스 역할 생성
 
-    SQL 콘솔을 여십시오.
+    SQL 콘솔을 여십시오
 
     <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="서비스 기본 설정 구성" />
 
     ### S3 액세스 설정
 
-    S3에서 백업을 복원하려면 ClickHouse Cloud와 S3 버킷 간에 보안 액세스를 구성해야 합니다.
+    S3에서 Backup을 복원하려면 ClickHouse Cloud와 S3 버킷 간의 보안 액세스를 구성해야 합니다.
 
-    1. [&quot;Accessing S3 data securely&quot;](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)의 단계에 따라 액세스 역할을 생성하고 역할 ARN을 가져오십시오.
+    1. [&quot;Accessing S3 data securely&quot;](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)의 단계에 따라 액세스 역할을 생성하고 role ARN을 가져오십시오.
 
-    2. [&quot;How to create an S3 bucket and IAM role&quot;](/ko/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)에서 생성한 S3 버킷 정책에 이전 단계에서 얻은 역할 ARN을 추가해 업데이트하십시오.
+    2. 이전 단계에서 얻은 role ARN을 추가하여 [&quot;How to create an S3 bucket and IAM role&quot;](/ko/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)에서 생성한 S3 버킷 정책을 업데이트하십시오.
 
     업데이트된 S3 버킷 정책은 다음과 비슷합니다.
 
@@ -331,9 +331,9 @@ FROM s3(
     }
     ```
 
-    이 정책에는 두 ARNs가 모두 포함됩니다.
+    이 정책에는 두 ARN이 모두 포함됩니다.
 
-    * **IAM user** (`docs-s3-user`): 자가 관리형 ClickHouse 클러스터가 S3에 백업할 수 있도록 허용합니다.
+    * **IAM user** (`docs-s3-user`): 자가 관리형 ClickHouse 클러스터가 S3에 Backup할 수 있도록 허용합니다.
     * **ClickHouse Cloud role** (`ClickHouseAccess-001`): Cloud 서비스가 S3에서 복원할 수 있도록 허용합니다.
   </Step>
 </Steps>
@@ -441,8 +441,8 @@ BACKUP DATABASE my_database
 TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
 ASYNC;
        
--- 백업 ID와 함께 즉시 반환됩니다
--- 예시 결과:
+-- Returns immediately with backup ID
+-- Example result:
 -- ┌─id──────────────────────────────────┬─status────────────┐
 -- │ abc123-def456-789                   │ CREATING_BACKUP   │
 -- └─────────────────────────────────────┴───────────────────┘

@@ -204,10 +204,10 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 </Steps>
 
 <div id="dashboards">
-  ## لوحات المعلومات والمرئيات
+  ## لوحات المعلومات والتصورات
 </div>
 
-لمساعدتك على بدء مراقبة PostgreSQL باستخدام ClickStack، نوفر مرئيات أساسية لمقاييس PostgreSQL.
+لمساعدتك على بدء مراقبة PostgreSQL باستخدام ClickStack، نوفر تصورات أساسية لمقاييس PostgreSQL.
 
 <Steps>
   <Step>
@@ -230,7 +230,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   <Step>
     #### اعرض لوحة المعلومات
 
-    ستُنشأ لوحة المعلومات مع إعداد جميع المرئيات مسبقًا:
+    ستُنشأ لوحة المعلومات مع إعداد جميع التصورات مسبقًا:
 
     <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="لوحة معلومات مقاييس PostgreSQL" />
 
@@ -304,4 +304,4 @@ psql -h postgres-host -U otel_monitor -d postgres -c "SELECT version();"
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يستند هذا الدليل إلى OTel Collector المضمّن في ClickStack لتوفير إعداد سريع. بالنسبة إلى عمليات النشر في بيئة الإنتاج، نوصي بتشغيل OTel Collector خاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطّلاع على إعدادات بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتوفير إعداد سريع. أما في عمليات النشر على بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات الإنتاج.

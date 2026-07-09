@@ -76,7 +76,7 @@ gcs(named_collection[, option=value [,..]])
   ## Примеры
 </div>
 
-Выбор первых двух строк из таблицы в файле GCS `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
+Выбор первых двух строк из файла GCS `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`. Метод сжатия автоматически определяется по расширению файла `.gz`:
 
 ```sql
 SELECT *
@@ -91,7 +91,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-То же самое, но из файла со сжатием `gzip`:
+Тот же запрос, что и выше, но с явно указанным методом сжатия `gzip` вместо автоопределения:
 
 ```sql
 SELECT *

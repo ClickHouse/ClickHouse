@@ -42,7 +42,7 @@ dotProduct(vector1, vector2)
 
 **返回值**
 
-返回两个向量的点积。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
+返回两个向量的点积。两个 `BFloat16` 数组会以 `Float32` 类型累加并返回 `Float32`。[`(U)Int*`](/zh/reference/data-types/int-uint) 或 [`Float*`](/zh/reference/data-types/float) 或 [`Decimal`](/zh/reference/data-types/decimal)
 
 **示例**
 
@@ -175,9 +175,9 @@ SELECT tupleConcat((1, 2), ('a',), (true, false))
 
 计算两个或多个大小相同的Tuple按元素逐一相除的结果，按从左到右的顺序进行。
 
-<Note>
-  除以零将返回 `inf`。
-</Note>
+:::note
+除以零将返回 `inf`。
+:::
 
 **语法**
 
@@ -224,9 +224,9 @@ SELECT tupleDivide((100.0, 60.0), (5.0, 3.0), (2.0, 4.0))
 
 返回一个 Tuple，其中所有元素都除以同一个数。
 
-<Note>
-  除以零将返回 `inf`。
-</Note>
+:::note
+除以零将返回 `inf`。
+:::
 
 **语法**
 
@@ -352,24 +352,25 @@ hello
 
 返回两个大小相同的 Tuple 之间的 [Hamming 距离](https://en.wikipedia.org/wiki/Hamming_distance)。
 
-<Note>
-  结果类型的确定方式与 [算术函数](/zh/reference/functions/regular-functions/arithmetic-functions) 相同，具体取决于输入 Tuple 中的元素数量。
+:::note
+结果类型的确定方式与 [算术函数](/zh/reference/functions/regular-functions/arithmetic-functions) 相同，具体取决于输入 Tuple 中的元素数量。
 
-  ```sql
-  SELECT
-      toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
-      toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
-      toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
-      toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
-      toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
-  ```
+```sql
+SELECT
+    toTypeName(tupleHammingDistance(tuple(0), tuple(0))) AS t1,
+    toTypeName(tupleHammingDistance((0, 0), (0, 0))) AS t2,
+    toTypeName(tupleHammingDistance((0, 0, 0), (0, 0, 0))) AS t3,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0), (0, 0, 0, 0))) AS t4,
+    toTypeName(tupleHammingDistance((0, 0, 0, 0, 0), (0, 0, 0, 0, 0))) AS t5
+```
 
-  ```text
-  ┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
-  │ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
-  └───────┴────────┴────────┴────────┴────────┘
-  ```
-</Note>
+```text
+┌─t1────┬─t2─────┬─t3─────┬─t4─────┬─t5─────┐
+│ UInt8 │ UInt16 │ UInt32 │ UInt64 │ UInt64 │
+└───────┴────────┴────────┴────────┴────────┘
+```
+
+:::
 
 **语法**
 

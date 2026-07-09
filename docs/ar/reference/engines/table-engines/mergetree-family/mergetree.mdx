@@ -982,7 +982,7 @@ TTL d + INTERVAL 1 MONTH GROUP BY k1, k2 SET x = max(x), y = min(y);
 بالإضافة إلى أجهزة التخزين الكتلية المحلية، يدعم ClickHouse أنواع التخزين التالية:
 
 * [`s3` لـ S3 وMinIO](#table_engine-mergetree-s3)
-* [`gcs` لـ GCS](/ar/reference/functions/table-functions/gcs#creating-a-disk)
+* [`gcs` لـ GCS](/ar/integrations/connectors/data-sources/gcs#creating-a-disk)
 * [`blob_storage_disk` لـ Azure Blob Storage](/ar/concepts/features/configuration/server-config/storing-data#azure-blob-storage)
 * [`hdfs` لـ HDFS](/ar/reference/engines/table-engines/integrations/hdfs)
 * [`web` للقراءة فقط عبر الويب](/ar/concepts/features/configuration/server-config/storing-data#web-storage)

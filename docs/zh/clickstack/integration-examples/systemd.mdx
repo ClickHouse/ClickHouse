@@ -304,7 +304,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
 <Steps>
   <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">下载</TrackedLink> 仪表盘配置
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">下载</TrackedLink>仪表盘配置
   </Step>
 
   <Step>
@@ -391,15 +391,15 @@ otelcol-contrib --config=otel-config.yaml
 * 按特定 systemd 单元进行过滤，以减少噪声，并将重点放在重要服务上
 
 <div id="going-to-production">
-  ## 投入生产环境
+  ## 面向生产环境
 </div>
 
-本指南使用独立的 OpenTelemetry Collector 读取 systemd 日志，并将其发送到 ClickStack 的 OTLP 端点，这是推荐的生产环境部署模式。
+本指南使用独立的 OpenTelemetry Collector 读取 systemd 日志，并将其发送到 ClickStack 的 OTLP 端点，这是生产环境中的推荐做法。
 
 对于包含多台主机的生产环境，请考虑：
 
 * 在 Kubernetes 中将 collector 部署为 DaemonSet 守护进程集
 * 在每台主机上将 collector 作为 systemd 服务运行
-* 使用 OpenTelemetry Operator 进行自动化部署
+* 使用 OpenTelemetry Operator 自动部署
 
 有关生产环境的部署模式，请参阅 [使用 OpenTelemetry 摄取数据](/zh/clickstack/ingesting-data/opentelemetry)。

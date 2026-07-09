@@ -59,7 +59,7 @@ ClickHouse Cloud 现已提供 ClickPipes，可将外部 PostgreSQL 数据库迁�
 
 填写源 PostgreSQL 数据库的连接信息：主机、端口、用户名、密码和数据库名称。如果源数据库要求使用 **TLS**，请启用该选项。
 
-如果您需要通过私有连接访问源数据库，可以选择 **SSH 隧道** 并提供所需的 SSH 信息。这样，迁移便可安全连接到无法从公网访问的数据库。
+如果您需要通过私网连接访问源数据库，可以选择 **SSH 隧道** 并提供所需的 SSH 信息。这样，迁移便可安全连接到无法从公网访问的数据库。
 
 选择一种摄取方式：
 
@@ -141,7 +141,7 @@ psql \
   ## 第 5 步：选择表
 </div>
 
-选择要复制的表。表会按 schema 分组显示。你可以选择单个表，也可以展开某个 schema 一次性选择其中的所有表。
+选择要复制的表。表会按 schema 分组显示。你可以选择单个表，也可以展开某个 schema，一次性选择其中的所有表。
 
 <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="第 5 步：按 schema 分组的表选择器，带有“Create migration”按钮" size="lg" border />
 
@@ -227,5 +227,5 @@ SELECT pg_drop_replication_slot('<slot_name>');
 </div>
 
 * [Managed Postgres 快速入门](/zh/products/managed-postgres/quickstart)
-* [Managed Postgres 连接详情](/zh/products/managed-postgres/connection)
+* [Managed Postgres 连接信息](/zh/products/managed-postgres/connection)
 * [ClickPipes Postgres FAQ](/zh/integrations/clickpipes/postgres/faq)

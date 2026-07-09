@@ -69,13 +69,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         done
         ```
 
-        يحاكي هذا مصادر OTLP للسجلات والتتبعات والمقاييس التي ترسل البيانات إلى OTel collector. في بيئة الإنتاج، قد تكون هذه المصادر مكتبات العملاء للغات البرمجة، أو حتى OTel collectors أخرى.
+        يحاكي هذا مصادر السجلات والتتبعات والمقاييس عبر OTLP وهي ترسل البيانات إلى OTel collector. في بيئة الإنتاج، قد تكون هذه المصادر مكتبات العملاء للغات البرمجة أو حتى OTel collectors أخرى.
 
-        بالعودة إلى عرض `Search`، ينبغي أن ترى أن البيانات قد بدأت بالتحميل (اضبط الإطار الزمني على `Last 1 hour` إذا لم تظهر البيانات):
+        بالعودة إلى عرض `Search`، ينبغي أن ترى أن تحميل البيانات قد بدأ (اضبط النطاق الزمني على `Last 1 hour` إذا لم تظهر البيانات):
 
         <Image img="/images/use-cases/observability/hyperdx-10.webp" alt="بحث HyperDX" size="lg" />
 
-        قد يستغرق تحميل البيانات بضع دقائق. انتظر حتى يكتمل التحميل قبل المتابعة إلى الخطوات التالية.
+        سيستغرق تحميل البيانات بضع دقائق. انتظر حتى يكتمل التحميل قبل الانتقال إلى الخطوات التالية.
       </Step>
 
       <Step>
@@ -111,23 +111,23 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       <Step>
         ### استكشاف التتبعات
 
-        انتقل إلى علامة التبويب `Trace` لرؤية التتبّع الموزّع الكامل.
+        انتقل إلى علامة التبويب `Trace` لرؤية التتبّع الموزّع بالكامل.
 
         <Image img="/images/use-cases/observability/hyperdx-14.webp" alt="تتبّع الجلسة" size="lg" />
 
-        مرّر إلى أسفل التتبّع لرؤية مصدر الخطأ، وهو امتداد خدمة `checkout`. حدّد امتداد خدمة `Payment`.
+        مرّر إلى أسفل التتبّع لرؤية مصدر الخطأ، وهو span خدمة `checkout`. حدِّد span خدمة `Payment`.
 
-        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="امتداد" size="lg" />
+        <Image img="/images/use-cases/observability/hyperdx-15.webp" alt="Span" size="lg" />
 
-        حدّد علامة التبويب `Column Values` ومرّر إلى الأسفل. يمكننا أن نرى أن المشكلة مرتبطة بامتلاء ذاكرة التخزين المؤقت.
+        حدِّد علامة التبويب `Column Values` ومرّر إلى الأسفل. يمكننا أن نرى أن المشكلة مرتبطة بامتلاء الذاكرة المؤقتة.
 
         <Image img="/images/use-cases/observability/hyperdx-16.webp" alt="قيم الأعمدة" size="lg" />
 
-        عند التمرير إلى الأعلى والعودة إلى التتبّع، نرى أن السجلات مرتبطة بالامتداد، بفضل الإعداد الذي أنشأناه سابقًا. وهذا يوفّر سياقًا إضافيًا.
+        عند التمرير للأعلى والعودة إلى التتبّع، يمكننا أن نرى أن السجلات مرتبطة بـ span، وذلك بفضل الإعداد الذي أجريناه سابقًا. وهذا يوفّر سياقًا إضافيًا.
 
         <Image img="/images/use-cases/observability/hyperdx-17.webp" alt="سجل مرتبط" size="lg" />
 
-        تبيّن لنا أن ذاكرة التخزين المؤقت تمتلئ في خدمة الدفع، وهذا يمنع اكتمال عمليات الدفع.
+        لقد تبيّن لنا أن الذاكرة المؤقتة تمتلئ في خدمة الدفع، مما يمنع اكتمال عمليات الدفع.
       </Step>
 
       <Step>
@@ -145,9 +145,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       <Step>
         ### مقاييس المخطط
 
-        رغم أنه تم بوضوح إدخال خطأ في الشيفرة، يمكننا استخدام المقاييس للتحقق من حجم ذاكرة التخزين المؤقت. انتقل إلى عرض `Chart Explorer`.
+        رغم أنه أُدخل خطأ بوضوح في الشيفرة، يمكننا استخدام المقاييس للتأكد من حجم ذاكرة التخزين المؤقت. انتقل إلى عرض `Chart Explorer`.
 
-        حدّد `Metrics` كمصدر البيانات. أكمل إعدادات منشئ المخطط لرسم `Maximum` لـ `visa_validation_cache.size (Gauge)` ثم اضغط زر `play`. كان حجم ذاكرة التخزين المؤقت يزداد بوضوح حتى بلغ الحد الأقصى، وبعد ذلك بدأت الأخطاء بالظهور.
+        حدّد `Metrics` كمصدر للبيانات. أكمل أداة إنشاء المخططات لرسم `Maximum` لـ `visa_validation_cache.size (Gauge)`، ثم اضغط زر `play`. من الواضح أن ذاكرة التخزين المؤقت كانت تزداد قبل أن تصل إلى حجمها الأقصى، وبعد ذلك بدأت الأخطاء بالظهور.
 
         <Image img="/images/use-cases/observability/hyperdx-19.webp" alt="المقاييس" size="lg" />
       </Step>
@@ -175,11 +175,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       </Step>
 
       <Step>
-        ### تنزيل بيانات نموذجية
+        ### تنزيل بيانات تجريبية
 
-        لكي تظهر بيانات نموذجية في واجهة المستخدم، نزّل الملف التالي:
+        لتعبئة واجهة المستخدم ببيانات تجريبية، نزّل الملف التالي:
 
-        [بيانات نموذجية](https://storage.googleapis.com/hyperdx/sample.tar.gz)
+        [بيانات تجريبية](https://storage.googleapis.com/hyperdx/sample.tar.gz)
 
         ```shell
         # curl
@@ -188,7 +188,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         # wget https://storage.googleapis.com/hyperdx/sample.tar.gz
         ```
 
-        يحتوي هذا الملف على سجلات ومقاييس وتتبعات تجريبية من تطبيق [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) العام لدينا، وهو متجر تجارة إلكترونية بسيط قائم على الخدمات المصغّرة. انسخ هذا الملف إلى الدليل الذي تختاره.
+        يحتوي هذا الملف على أمثلة على السجلات والمقاييس والتتبعات من [OpenTelemetry demo](https://github.com/ClickHouse/opentelemetry-demo) المتاح للعامة - وهو متجر تجارة إلكترونية بسيط قائم على الخدمات المصغّرة. انسخ هذا الملف إلى الدليل الذي تختاره.
       </Step>
 
       <Step>

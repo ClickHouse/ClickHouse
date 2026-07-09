@@ -33,10 +33,10 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 专用用户需要对你要查询的表以及 `system` 表 (用于 schema 检测) 拥有 `SELECT` 权限。
 
 ```sql
--- 示例：授予对特定数据库的读取权限
+-- Example: Grant read access to a specific database
 GRANT SELECT ON my_database.* TO holistics_user;
 
--- 授予对系统元数据的访问权限
+-- Grant access to system metadata
 GRANT SELECT ON system.* TO holistics_user;
 ```
 

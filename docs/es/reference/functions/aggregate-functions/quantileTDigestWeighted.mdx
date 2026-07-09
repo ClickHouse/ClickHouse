@@ -28,10 +28,10 @@ El resultado depende del orden de ejecución de la consulta y no es determinista
 Al usar varias funciones `quantile*` con distintos niveles en una consulta, los estados internos no se combinan (es decir, la consulta funciona con menos eficiencia de la que podría).
 En este caso, use la función [`quantiles`](/es/reference/functions/aggregate-functions/quantiles#quantiles).
 
-<Note>
-  No se recomienda usar `quantileTDigestWeighted` [con conjuntos de datos muy pequeños](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275), ya que puede dar lugar a errores significativos.
-  En este caso, considere usar [`quantileTDigest`](/es/reference/functions/aggregate-functions/quantileTDigest) en su lugar.
-</Note>
+:::note
+No se recomienda usar `quantileTDigestWeighted` [con conjuntos de datos muy pequeños](https://github.com/tdunning/t-digest/issues/167#issuecomment-828650275), ya que puede dar lugar a errores significativos.
+En este caso, considere usar [`quantileTDigest`](/es/reference/functions/aggregate-functions/quantileTDigest) en su lugar.
+:::
 
 **Sintaxis**
 

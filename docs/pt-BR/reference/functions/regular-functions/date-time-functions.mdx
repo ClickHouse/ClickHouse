@@ -46,6 +46,10 @@ Retorna a data e a hora atuais no momento da análise da consulta. A função é
 
 Esta função retorna o mesmo resultado que `now('UTC')`. Ela foi adicionada apenas para oferecer suporte ao MySQL. [`now`](#now) é a forma de uso preferida.
 
+:::note
+Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
+
 **Sintaxe**
 
 ```sql
@@ -389,9 +393,9 @@ Introduzido em: v22.11.0
 
 Adiciona um intervalo a outro intervalo ou a uma tupla de intervalos.
 
-<Note>
-  Intervalos do mesmo tipo serão combinados em um único intervalo. Por exemplo, se `toIntervalDay(1)` e `toIntervalDay(2)` forem passados, o resultado será `(3)` em vez de `(1,1)`.
-</Note>
+:::note
+Intervalos do mesmo tipo serão combinados em um único intervalo. Por exemplo, se `toIntervalDay(1)` e `toIntervalDay(2)` forem passados, o resultado será `(3)` em vez de `(1,1)`.
+:::
 
 **Sintaxe**
 
@@ -1961,6 +1965,10 @@ Introduzido em: v26.7.0
 Retorna a hora atual do dia no fuso horário do servidor (ou da sessão), no momento da análise da consulta.
 A função é uma expressão constante. É o `LOCALTIME` padrão do SQL/PostgreSQL e equivale a `CAST(now() AS Time)`.
 
+:::note
+Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
+
 **Sintaxe**
 
 ```sql
@@ -2230,6 +2238,10 @@ Introduzido em: v1.1.0
 
 Retorna a data e hora atuais no momento da análise da consulta. A função é uma expressão constante.
 
+:::note
+Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
+
 **Sintaxe**
 
 ```sql
@@ -2292,6 +2304,10 @@ Introduzido em: v20.1.0
 
 Retorna a data e a hora atuais com precisão inferior a segundos no momento da análise da consulta. A função é uma expressão constante.
 
+:::note
+Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
+
 **Sintaxe**
 
 ```sql
@@ -2330,6 +2346,10 @@ Introduzido em: v22.8.0
 Retorna a data e a hora atuais no momento em que cada bloco de dados é processado. Ao contrário da função [`now`](#now), não é uma expressão constante, e o valor retornado será diferente entre os blocos em consultas de longa duração.
 
 Faz sentido usar essa função para gerar a hora atual em consultas `INSERT SELECT` de longa duração.
+
+:::note
+Esta função é não determinística: ela pode retornar resultados diferentes para os mesmos argumentos.
+:::
 
 **Sintaxe**
 
@@ -2377,6 +2397,10 @@ Retorna a data e a hora atuais no momento do processamento de cada bloco de dado
 
 Faz sentido usar essa função para gerar a hora atual em consultas `INSERT SELECT` de longa duração.
 
+:::note
+Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
+
 **Sintaxe**
 
 ```sql
@@ -2422,6 +2446,10 @@ Introduzido em: v23.6.0
 
 Retorna o fuso horário do servidor, ou seja, o valor da configuração [`timezone`](/pt-BR/reference/settings/server-settings/settings#timezone).
 Se a função for executada no contexto de uma tabela distribuída, ela gerará uma coluna comum com valores correspondentes a cada shard. Caso contrário, produzirá um valor constante.
+
+:::note
+Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
 
 **Sintaxe**
 
@@ -3262,10 +3290,10 @@ Introduzido em: v1.1.0
 
 Arredonda a hora para o início de um intervalo de meia hora.
 
-<Note>
-  Embora esta função possa receber como argumento valores dos tipos estendidos `Date32` e `DateTime64`,
-  passá-la uma data/hora fora do intervalo normal (anos de 1970 a 2149 para `Date` / 2106 para `DateTime`) produzirá resultados incorretos.
-</Note>
+:::note
+Embora esta função possa receber como argumento valores dos tipos estendidos `Date32` e `DateTime64`,
+passá-la uma data/hora fora do intervalo normal (anos de 1970 a 2149 para `Date` / 2106 para `DateTime`) produzirá resultados incorretos.
+:::
 
 **Sintaxe**
 
@@ -3404,6 +3432,10 @@ Introduzido em: v21.4.0
 
 Retorna o nome do fuso horário da sessão atual ou converte um offset
 ou nome de fuso horário em um nome canônico de fuso horário.
+
+:::note
+Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
 
 **Sintaxe**
 
@@ -3865,9 +3897,9 @@ Introduzido na versão: v1.1.0
 
 Arredonda uma data ou data com hora para o último dia do mês.
 
-<Note>
-  O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -3907,9 +3939,9 @@ Introduzido em: v23.5.0
 
 Arredonda uma data ou data com hora para cima até o sábado ou domingo mais próximo.
 
-<Note>
-  O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -3933,15 +3965,15 @@ Retorna a data do sábado ou domingo mais próximo, na data especificada ou apó
 
 ```sql title=Query
 SELECT
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* uma sexta-feira */
-    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* uma sexta-feira */
-    toLastDayOfWeek(toDate('2023-04-23')), /* um domingo */
-    toLastDayOfWeek(toDate('2023-04-23'), 1) /* um domingo */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+    toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+    toLastDayOfWeek(toDate('2023-04-23')), /* a Sunday */
+    toLastDayOfWeek(toDate('2023-04-23'), 1) /* a Sunday */
 FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30')):      2023-04-23
 toLastDayOfWeek(toDateTime('2023-04-21 10:20:30'), 1):   2023-04-22
@@ -4147,9 +4179,9 @@ Introduzido em: v1.1.0
 
 Arredonda uma data ou uma data com hora para a segunda-feira da mesma semana. Retorna a data.
 
-<Note>
-  O tipo de retorno pode ser configurado pela definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado pela definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -4171,8 +4203,8 @@ Retorna a data da segunda-feira da mesma semana para a data ou data com hora for
 
 ```sql title=Query
 SELECT
-toMonday(toDateTime('2023-04-21 10:20:30')), -- Uma sexta-feira
-toMonday(toDate('2023-04-24'));              -- Já é uma segunda-feira
+toMonday(toDateTime('2023-04-21 10:20:30')), -- A Friday
+toMonday(toDate('2023-04-24'));              -- Already a Monday
 ```
 
 ```response title=Response
@@ -4679,9 +4711,9 @@ Introduzido em: v1.1.0
 
 Arredonda para baixo uma data e hora até o início do dia.
 
-<Note>
-  O tipo de retorno pode ser configurado por meio da configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado por meio da configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -4719,9 +4751,9 @@ Introduzido em: v1.1.0
 
 Arredonda a data com hora para baixo até o início do intervalo de quinze minutos.
 
-<Note>
-  O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -4731,11 +4763,11 @@ toStartOfFifteenMinutes(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data ou data e hora para arredondar. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Uma data ou data com hora para arredondar. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data e hora arredondada para o início do intervalo de quinze minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com hora arredondada para o início do intervalo de quinze minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -4750,7 +4782,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFifteenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:15:00
@@ -4765,9 +4797,9 @@ Introduzido em: v22.6.0
 
 Arredonda uma data com hora para baixo até o início do intervalo de cinco minutos mais próximo.
 
-<Note>
-  O tipo de retorno pode ser configurado definindo [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado definindo [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -4779,11 +4811,11 @@ toStartOfFiveMinutes(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data e hora para arredondar. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Uma data com hora para arredondar. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data e hora arredondada para o início do intervalo de cinco minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com hora arredondada para o início do intervalo de cinco minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -4798,7 +4830,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:15:00
 toStartOfFiveMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -4813,9 +4845,9 @@ Introduzido em: v1.1.0
 
 Arredonda uma data com hora para baixo até o início da hora.
 
-<Note>
-  O tipo de retorno pode ser configurado por meio da definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado por meio da definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -4854,9 +4886,9 @@ Introduzido em: v1.1.0
 
 Arredonda uma data ou data com hora para o primeiro dia do ano ISO, que pode ser diferente do ano civil. Veja [ISO week date](https://en.wikipedia.org/wiki/ISO_week_date).
 
-<Note>
-  O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -5077,9 +5109,9 @@ Introduzido em: v1.1.0
 
 Arredonda uma data com hora para o início do minuto.
 
-<Note>
-  O tipo de retorno pode ser configurado com a definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado com a definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -5107,7 +5139,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-Linha 1:
+Row 1:
 ──────
 toStartOfMinute(toDateTime('2023-04-21 10:20:30')):           2023-04-21 10:20:00
 toStartOfMinute(toDateTime64('2023-04-21 10:20:30.5300', 8)): 2023-04-21 10:20:00
@@ -5121,9 +5153,9 @@ Introduzido em: v1.1.0
 
 Arredonda uma data ou data com hora para baixo, até o primeiro dia do mês.
 
-<Note>
-  O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -5212,9 +5244,9 @@ Introduzido em: v1.1.0
 
 Arredonda uma data ou data com hora para o primeiro dia do trimestre. O primeiro dia do trimestre é 1º de janeiro, 1º de abril, 1º de julho ou 1º de outubro.
 
-<Note>
-  O tipo de retorno pode ser configurado por meio da configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado por meio da configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -5303,9 +5335,9 @@ Introduzido em: v20.1.0
 
 Arredonda uma data com hora para baixo até o início do intervalo de dez minutos mais próximo.
 
-<Note>
-  O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado pela configuração [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -5315,11 +5347,11 @@ toStartOfTenMinutes(datetime)
 
 **Argumentos**
 
-* `datetime` — Uma data e hora. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+* `datetime` — Uma data com hora. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Valor retornado**
 
-Retorna a data e hora arredondada para o início do intervalo de dez minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
+Retorna a data com hora arredondada para o início do intervalo de dez minutos mais próximo. [`DateTime`](/pt-BR/reference/data-types/datetime) ou [`DateTime64`](/pt-BR/reference/data-types/datetime64)
 
 **Exemplos**
 
@@ -5334,7 +5366,7 @@ FORMAT Vertical
 ```
 
 ```response title=Response
-linha 1:
+Linha 1:
 ──────
 toStartOfTenMinutes(toDateTime('2023-04-21 10:17:00')): 2023-04-21 10:10:00
 toStartOfTenMinutes(toDateTime('2023-04-21 10:20:00')): 2023-04-21 10:20:00
@@ -5349,9 +5381,9 @@ Introduzido na versão: v20.1.0
 
 Arredonda uma data ou data com hora para o domingo ou a segunda-feira anteriores mais próximos.
 
-<Note>
-  O tipo de retorno pode ser configurado com a definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado com a definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -5375,10 +5407,10 @@ Retorna a data do domingo ou da segunda-feira mais próximos, na data informada 
 
 ```sql title=Query
 SELECT
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* uma sexta-feira */
-        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* uma sexta-feira */
-        toStartOfWeek(toDate('2023-04-24')), /* uma segunda-feira */
-        toStartOfWeek(toDate('2023-04-24'), 1) /* uma segunda-feira */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30')), /* a Friday */
+        toStartOfWeek(toDateTime('2023-04-21 10:20:30'), 1), /* a Friday */
+        toStartOfWeek(toDate('2023-04-24')), /* a Monday */
+        toStartOfWeek(toDate('2023-04-24'), 1) /* a Monday */
     FORMAT Vertical
 ```
 
@@ -5399,9 +5431,9 @@ Introduzido na versão: v1.1.0
 
 Arredonda uma data ou data com hora para o primeiro dia do ano. Retorna a data como um objeto `Date`.
 
-<Note>
-  O tipo de retorno pode ser configurado pela definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
-</Note>
+:::note
+O tipo de retorno pode ser configurado pela definição de [`enable_extended_results_for_datetime_functions`](/pt-BR/reference/settings/session-settings#enable_extended_results_for_datetime_functions).
+:::
 
 **Sintaxe**
 
@@ -5929,6 +5961,10 @@ Introduzido em: v1.1.0
 
 Retorna a data atual no momento da análise da consulta. O mesmo que `toDate(now())`.
 
+:::note
+Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
+
 **Sintaxe**
 
 ```sql
@@ -5982,6 +6018,10 @@ SELECT TODAY, CURDATE,CURRENT_DATE
 Introduzido em: v1.1.0
 
 Aceita zero argumentos e retorna a data de ontem em um dos estágios da análise da consulta.
+
+:::note
+Esta função não é determinística: pode retornar resultados diferentes para os mesmos argumentos.
+:::
 
 **Sintaxe**
 

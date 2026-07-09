@@ -10,6 +10,10 @@ doc_type: 'reference'
 import SystemLogParameters from '/snippets/fr/_system-log-parameters.mdx';
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 
+<div id="server-settings">
+  # Paramètres du serveur
+</div>
+
 Cette section contient la description des paramètres du serveur. Il s’agit de paramètres qui
 ne peuvent pas être modifiés au niveau de la session ou de la requête.
 
@@ -79,6 +83,12 @@ Chemin du dossier dans lequel un serveur ClickHouse stocke les configurations de
 
 <SettingsInfoBlock type="UInt64" default_value="16777215" changeable_without_restart="Non" />Taille maximale, en octets, d&#39;un élément de tableau pour la fonction groupArray. Cette limite est vérifiée lors de la sérialisation et permet d&#39;éviter une taille d&#39;état trop importante.
 
+<div id="allow_experimental_executable_udf_drivers">
+  ## allow_experimental_executable_udf_drivers
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Active la prise en charge expérimentale des drivers pour les fonctions utilisateur exécutables, déclarées via `user_defined_executable_function_drivers_config`. Un driver transforme un fragment de code fourni par l&#39;utilisateur dans `CREATE FUNCTION ... ENGINE = DriverName(...) AS '...'` en une UDF exécutable.
+
 <div id="allow_experimental_webassembly_udf">
   ## allow_experimental_webassembly_udf
 </div>
@@ -105,9 +115,9 @@ Détermine si l&#39;utilisateur peut modifier les paramètres associés aux diff
 
 Cela revient à définir une contrainte readonly sur toutes les fonctionnalités `EXPERIMENTAL` / `BETA`.
 
-<Note>
-  Une valeur de `0` signifie que tous les paramètres peuvent être modifiés.
-</Note>
+:::note
+Une valeur de `0` signifie que tous les paramètres peuvent être modifiés.
+:::
 
 <div id="allow_impersonate_user">
   ## allow_impersonate_user
@@ -334,11 +344,11 @@ Définit un ratio entre le nombre de threads et le nombre de merges et de mutati
 
 Par exemple, si le ratio est égal à 2 et que [`background_pool_size`](/fr/reference/settings/server-settings/settings#background_pool_size) est défini sur 16, alors ClickHouse peut exécuter 32 merges en arrière-plan simultanément. Cela est possible, car les opérations en arrière-plan peuvent être suspendues et reportées. Cela est nécessaire pour accorder une priorité d’exécution plus élevée aux petites fusions.
 
-<Note>
-  Vous ne pouvez augmenter ce ratio qu’à chaud. Pour le diminuer, vous devez redémarrer le serveur.
+:::note
+Vous ne pouvez augmenter ce ratio qu’à chaud. Pour le diminuer, vous devez redémarrer le serveur.
 
-  Comme pour le paramètre [`background_pool_size`](/fr/reference/settings/server-settings/settings#background_pool_size), [`background_merges_mutations_concurrency_ratio`](/fr/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) peut être appliqué depuis le profil `default` pour assurer la compatibilité descendante.
-</Note>
+Comme pour le paramètre [`background_pool_size`](/fr/reference/settings/server-settings/settings#background_pool_size), [`background_merges_mutations_concurrency_ratio`](/fr/reference/settings/server-settings/settings#background_merges_mutations_concurrency_ratio) peut être appliqué depuis le profil `default` pour assurer la compatibilité descendante.
+:::
 
 <div id="background_merges_mutations_scheduling_policy">
   ## background_merges_mutations_scheduling_policy
@@ -374,18 +384,19 @@ Valeurs possibles :
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="Non" />
 
-Définit le nombre de threads qui effectuent les fusions en arrière-plan et les mutations pour les tables utilisant des moteurs MergeTree.
+Définit le nombre de threads qui effectuent les opérations de merge en arrière-plan et les mutations pour les tables utilisant des moteurs MergeTree.
 
-<Note>
-  * Ce paramètre peut également être appliqué au démarrage du serveur à partir de la configuration du profil `default`, pour préserver la rétrocompatibilité lors du démarrage du serveur ClickHouse.
-  * Vous pouvez uniquement augmenter le nombre de threads à l&#39;exécution.
-  * Pour réduire le nombre de threads, vous devez redémarrer le serveur.
-  * En ajustant ce paramètre, vous gérez la charge du CPU et du disque.
-</Note>
+:::note
 
-<Danger>
-  Une taille de pool plus petite utilise moins de ressources CPU et disque, mais les processus en arrière-plan progressent plus lentement, ce qui peut finir par affecter les performances des requêtes.
-</Danger>
+* Ce paramètre peut également être appliqué au démarrage du serveur à partir de la configuration du profil `default`, pour préserver la compatibilité descendante lors du démarrage du serveur ClickHouse.
+* Vous pouvez uniquement augmenter le nombre de threads à l&#39;exécution.
+* Pour réduire le nombre de threads, vous devez redémarrer le serveur.
+* En ajustant ce paramètre, vous gérez la charge du CPU et du disque.
+  :::
+
+:::danger
+Une taille de pool plus petite utilise moins de ressources CPU et disque, mais les processus en arrière-plan progressent plus lentement, ce qui peut finir par affecter les performances des requêtes.
+:::
 
 Avant de le modifier, veuillez également consulter les paramètres MergeTree associés, tels que :
 
@@ -398,6 +409,12 @@ Avant de le modifier, veuillez également consulter les paramètres MergeTree as
 ```xml
 <background_pool_size>16</background_pool_size>
 ```
+
+<div id="background_schedule_pool_initial_size">
+  ## background_schedule_pool_initial_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="Non" />Nombre initial de threads de travail alloués à chaque pool de planification en arrière-plan. Chaque pool augmente progressivement jusqu’à la limite configurée (`background_schedule_pool_size` et paramètres associés) lorsque la charge dépasse le nombre actuel de workers. Des valeurs plus faibles réduisent la surcharge au démarrage et le nombre de threads inactifs ; des valeurs plus élevées suppriment la latence d’ordonnancement de la première tâche sur les serveurs très sollicités.
 
 <div id="background_schedule_pool_log">
   ## background_schedule_pool_log
@@ -430,7 +447,7 @@ Contient des informations sur toutes les tâches d’arrière-plan exécutées d
   ## background_schedule_pool_size
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="Increase only" />Le nombre maximal de threads utilisés pour exécuter en continu certaines opérations périodiques légères pour les tables répliquées, le streaming Kafka et les mises à jour du cache DNS.
+<SettingsInfoBlock type="UInt64" default_value="512" changeable_without_restart="Increase only" />Le nombre maximal de threads utilisés pour exécuter des opérations périodiques légères pour les tables répliquées, le streaming Kafka, les mises à jour du cache DNS et d&#39;autres tâches similaires. Les threads sont créés à la demande jusqu&#39;à cette limite, de sorte qu&#39;un serveur avec une faible charge en arrière-plan utilise bien moins de threads que ce nombre.
 
 <div id="backup_log">
   ## backup_log
@@ -530,9 +547,9 @@ Ce paramètre est configuré par défaut comme suit :
 
 Le nombre maximal de jobs pouvant être planifiés dans le Backups IO Thread pool. Il est recommandé de laisser cette queue illimitée en raison de la logique actuelle des backups S3.
 
-<Note>
-  Une valeur de `0` (par défaut) signifie que la queue est illimitée.
-</Note>
+:::note
+Une valeur de `0` (par défaut) signifie que la queue est illimitée.
+:::
 
 <div id="bcrypt_workfactor">
   ## bcrypt_workfactor
@@ -676,6 +693,18 @@ Paramètres de compression des données pour les tables avec le moteur [MergeTre
 </compression>
 ```
 
+<div id="concurrent_threads_lazy_allocation">
+  ## concurrent_threads_lazy_allocation
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Oui" />
+
+Contrôle la façon dont les slots CPU sont alloués aux requêtes.
+
+Lorsque `true` (par défaut), une requête démarre avec un slot CPU et ne demande des slots supplémentaires à l’ordonnanceur que lorsque son pipeline génère réellement davantage de travail parallélisable. Cela évite qu’une requête réserve jusqu’à `max_threads` slots sans jamais en utiliser qu’une partie, au détriment d’autres requêtes concurrentes. S’applique à la fois au contrôle de la concurrence et à l’ordonnanceur CPU préemptif pour les workloads.
+
+Lorsque `false`, la requête demande d’emblée tous les slots `max_threads` au démarrage.
+
 <div id="concurrent_threads_scheduler">
   ## concurrent_threads_scheduler
 </div>
@@ -698,9 +727,9 @@ Valeurs possibles :
 
 Nombre maximal de threads de traitement des requêtes, hors threads utilisés pour récupérer les données depuis des serveurs distants, pouvant être alloués à l’exécution de l’ensemble des requêtes. Il ne s’agit pas d’une limite stricte. Si cette limite est atteinte, la requête disposera tout de même d’au moins un thread pour s’exécuter. La requête peut augmenter jusqu’au nombre souhaité de threads pendant son exécution si davantage de threads deviennent disponibles.
 
-<Note>
-  Une valeur de `0` (par défaut) signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` (par défaut) signifie qu’il n’y a pas de limite.
+:::
 
 <div id="concurrent_threads_soft_limit_ratio_to_cores">
   ## concurrent_threads_soft_limit_ratio_to_cores
@@ -904,9 +933,9 @@ La valeur par défaut de ce paramètre est `480` (8 minutes).
 Paramètre d’une tâche qui nettoie les fichiers inutiles du répertoire `store/`.
 Définit la périodicité d’exécution de la tâche.
 
-<Note>
-  Une valeur de `0` signifie « jamais ». La valeur par défaut correspond à 1 jour.
-</Note>
+:::note
+Une valeur de `0` signifie « jamais ». La valeur par défaut correspond à 1 jour.
+:::
 
 <div id="database_catalog_unused_dir_hide_timeout_sec">
   ## database_catalog_unused_dir_hide_timeout_sec
@@ -920,9 +949,9 @@ Si un sous-répertoire n&#39;est pas utilisé par clickhouse-server et que ce r�
 supprimant tous les droits d&#39;accès. Cela fonctionne également pour les répertoires que clickhouse-server ne
 s&#39;attend pas à trouver dans `store/`.
 
-<Note>
-  Une valeur de `0` signifie « immédiatement ».
-</Note>
+:::note
+Une valeur de `0` signifie « immédiatement ».
+:::
 
 <div id="database_catalog_unused_dir_rm_timeout_sec">
   ## database_catalog_unused_dir_rm_timeout_sec
@@ -938,9 +967,9 @@ et que ce répertoire n’a pas été modifié au cours des
 Cela fonctionne également pour les répertoires que clickhouse-server ne
 s’attend pas à trouver dans `store/`.
 
-<Note>
-  Une valeur de `0` signifie « jamais ». La valeur par défaut correspond à 30 jours.
-</Note>
+:::note
+Une valeur de `0` signifie « jamais ». La valeur par défaut correspond à 30 jours.
+:::
 
 <div id="database_replicated_allow_detach_permanently">
   ## database_replicated_allow_detach_permanently
@@ -1078,10 +1107,10 @@ Chargement différé des dictionnaires.
 * Si `true`, chaque dictionnaire est chargé lors de sa première utilisation. Si le chargement échoue, la fonction qui utilise le dictionnaire lève une exception.
 * Si `false`, le serveur charge tous les dictionnaires au démarrage.
 
-<Note>
-  Au démarrage, le serveur attend que tous les dictionnaires aient terminé leur chargement avant d’accepter toute connexion
-  (exception : si [`wait_dictionaries_load_at_startup`](/fr/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) est défini sur `false`).
-</Note>
+:::note
+Au démarrage, le serveur attend que tous les dictionnaires aient terminé leur chargement avant d’accepter toute connexion
+(exception : si [`wait_dictionaries_load_at_startup`](/fr/reference/settings/server-settings/settings#wait_dictionaries_load_at_startup) est défini sur `false`).
+:::
 
 **Exemple**
 
@@ -1163,7 +1192,7 @@ Il en va de même pour GitLab, même s’il comporte un point en tête. `gitlab.
   ## disk_connections_rcvbuf
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Oui" />Taille de l&#39;option SO&#95;RCVBUF pour les connexions de disque (S3, Azure, GCS). Si elle est définie sur une valeur supérieure à 0, elle remplace l&#39;autotuning TCP du noyau pour le tampon de réception. 0 = valeur par défaut du noyau (autotuning). Remarque : remettre ce paramètre à 0 ne rétablit l&#39;autotuning que pour les connexions nouvellement créées ; les connexions existantes du pool conservent une taille de tampon fixe jusqu&#39;à leur recréation.
+<SettingsInfoBlock type="UInt64" default_value="204800" changeable_without_restart="Oui" />Taille de l&#39;option SO&#95;RCVBUF pour les connexions de disque (S3, Azure, GCS). La valeur par défaut est 204800 (200 KB) : le stockage d&#39;objets est accessible au sein de la Region, où le produit débit-délai est très inférieur à 100 KB. Une faible limite suffit donc à offrir le débit maximal tout en évitant les tampons de plusieurs MiB par socket que l&#39;autotuning du noyau allouerait autrement. Définissez-la sur 0 pour utiliser à la place l&#39;autotuning TCP du noyau pour le tampon de réception. Remarque : remettre ce paramètre à 0 ne rétablit l&#39;autotuning que pour les connexions nouvellement créées ; les connexions existantes du pool conservent une taille de tampon fixe jusqu&#39;à leur recréation.
 
 <div id="disk_connections_sndbuf">
   ## disk_connections_sndbuf
@@ -1370,6 +1399,21 @@ Interrompt les nouvelles tentatives de mise à jour du cache DNS d’un nom d’
 
 <SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="Non" />La taille de la file d’attente du pool de threads utilisé pour supprimer le cache distribué.
 
+<div id="dynamic_user_defined_executable_functions_path">
+  ## dynamic_user_defined_executable_functions_path
+</div>
+
+<SettingsInfoBlock type="String" default_value="/var/lib/clickhouse/dynamic_user_defined_executable_functions/" changeable_without_restart="Non" />
+
+Le répertoire utilisé pour stocker les fichiers de configuration des UDF exécutables créées dynamiquement via des drivers (voir `CREATE FUNCTION ... ENGINE = DriverName(...)`).
+Au redémarrage du serveur, le répertoire est parcouru à la recherche de fichiers de configuration, et les UDF correspondantes sont chargées sans invoquer à nouveau le driver.
+
+**Exemple**
+
+```xml
+<dynamic_user_defined_executable_functions_path>/var/lib/clickhouse/dynamic_user_defined_executable_functions/</dynamic_user_defined_executable_functions_path>
+```
+
 <div id="enable_azure_sdk_logging">
   ## enable_azure_sdk_logging
 </div>
@@ -1529,11 +1573,11 @@ Ce paramètre indique le chemin du cache.
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Oui" />
 
-Le nombre maximal de jobs pouvant être planifiés dans la file d’attente du thread pool pour l’analyse de l’entrée.
+Le nombre maximal de jobs pouvant être planifiés dans la file d’attente du pool de threads pour l’analyse de l’entrée.
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 <div id="format_schema_path">
   ## format_schema_path
@@ -1714,28 +1758,16 @@ Permet d’utiliser des gestionnaires HTTP personnalisés.
 Pour ajouter un nouveau gestionnaire HTTP, ajoutez simplement une nouvelle `<rule>`.
 Les règles sont vérifiées de haut en bas dans l’ordre défini,
 et la première correspondance exécute le gestionnaire.
-Une règle sans condition de correspondance (uniquement `handler`) correspond à toutes les requêtes ; comme les règles sont vérifiées dans l’ordre,
-une telle règle n’est utile qu’en solution de repli, placée en dernier.
 
-Les paramètres suivants peuvent être configurés via des sous-balises (toutes ces sous-balises sont facultatives, sauf `handler`) :
+Les paramètres suivants peuvent être configurés via des sous-balises :
 
-| Sous-balises         | Définition                                                                                                                                                                                                                                                                                                                                 |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `url`                | Permet de faire correspondre le chemin URL de la requête. La chaîne de requête est ignorée lors de la correspondance                                                                                                                                                                                                                       |
-| `url_prefix`         | Permet de faire correspondre le chemin URL de la requête à un chemin de base : le chemin lui-même ou tout ce qui se trouve en dessous, sur une limite de segment de chemin (par ex. &#39;/api/v1&#39; correspond à /api/v1, /api/v1/ et /api/v1/write, mais pas à /api/v1beta). La chaîne de requête est ignorée lors de la correspondance |
-| `url_regexp`         | Permet de faire correspondre le chemin URL de la requête à une expression régulière. La chaîne de requête est ignorée lors de la correspondance                                                                                                                                                                                            |
-| `full_url`           | Permet de faire correspondre l’URL complète de la requête `scheme://host:port/path`. La chaîne de requête est ignorée lors de la correspondance, et l’hôte est l’adresse IP de la connexion (et non l’en-tête `Host`)                                                                                                                      |
-| `full_url_prefix`    | Permet de faire correspondre l’URL complète de la requête `scheme://host:port/path` à l’URL de base `scheme://host:port/base_path`, sur une limite de segment de chemin (voir `url_prefix`). La chaîne de requête est ignorée lors de la correspondance                                                                                    |
-| `full_url_regexp`    | Permet de faire correspondre l’URL complète de la requête `scheme://host:port/path` à une expression régulière. La chaîne de requête est ignorée lors de la correspondance                                                                                                                                                                 |
-| `methods`            | Permet de faire correspondre les méthodes de requête ; vous pouvez utiliser des virgules pour séparer plusieurs méthodes                                                                                                                                                                                                                   |
-| `headers`            | Permet de faire correspondre les en-têtes de requête en faisant correspondre chaque élément enfant (le nom de l’élément enfant est le nom de l’en-tête)                                                                                                                                                                                    |
-| `headers_regexp`     | Comme `headers`, mais la valeur de chaque élément enfant est comparée à une expression régulière                                                                                                                                                                                                                                           |
-| `empty_query_string` | Vérifie qu’il n’y a pas de chaîne de requête dans l’URL                                                                                                                                                                                                                                                                                    |
-| `handler`            | Le gestionnaire de requête (obligatoire)                                                                                                                                                                                                                                                                                                   |
-
-<Note>
-  Au lieu de `url_regexp`, `full_url_regexp` et `headers_regexp`, vous pouvez aussi écrire une expression régulière dans `url`, `full_url` ou `headers` en utilisant le préfixe `regex:` (par ex. `<url>regex:/api/.*</url>`). Cette syntaxe reste prise en charge pour la rétrocompatibilité, mais elle est obsolète : préférez les sous-balises dédiées `url_regexp`, `full_url_regexp` et `headers_regexp`.
-</Note>
+| Sous-balises         | Définition                                                                                                                                                                                                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`                | Permet de faire correspondre l’URL de la requête ; vous pouvez utiliser le préfixe &#39;regex:&#39; pour utiliser une correspondance par expression régulière (facultatif)                                                                                                        |
+| `methods`            | Permet de faire correspondre les méthodes de requête ; vous pouvez utiliser des virgules pour séparer plusieurs méthodes (facultatif)                                                                                                                                             |
+| `headers`            | Permet de faire correspondre les en-têtes de requête en faisant correspondre chaque élément enfant (le nom de l’élément enfant est le nom de l’en-tête) ; vous pouvez utiliser le préfixe &#39;regex:&#39; pour utiliser une correspondance par expression régulière (facultatif) |
+| `handler`            | Le gestionnaire de requête                                                                                                                                                                                                                                                        |
+| `empty_query_string` | Vérifie qu’il n’y a pas de chaîne de requête dans l’URL                                                                                                                                                                                                                           |
 
 `handler` contient les paramètres suivants, qui peuvent être configurés via des sous-balises :
 
@@ -1908,9 +1940,9 @@ Ouvre `https://tabix.io/` lors de l’accès à `http://localhost: http_port`.
 
 Si cette option est activée, ClickHouse n’écrit pas les valeurs par défaut pour une instruction `SQL SECURITY` vide dans les requêtes `CREATE VIEW`.
 
-<Note>
-  Ce paramètre n’est nécessaire que pendant la période de migration et deviendra obsolète dans la version 24.4
-</Note>
+:::note
+Ce paramètre n’est nécessaire que pendant la période de migration et deviendra obsolète dans la version 24.4
+:::
 
 <div id="include_from">
   ## include_from
@@ -1948,11 +1980,12 @@ Pour plus d&#39;informations, consultez la section [Fichiers de configuration](/
 
 Taille maximale du cache des marques d’index.
 
-<Note>
-  Une valeur de `0` signifie que ce paramètre est désactivé.
+:::note
 
-  Ce paramètre peut être modifié en cours d’exécution et prendra effet immédiatement.
-</Note>
+Une valeur de `0` signifie que ce paramètre est désactivé.
+
+Ce paramètre peut être modifié en cours d’exécution et prendra effet immédiatement.
+:::
 
 <div id="index_mark_cache_size_ratio">
   ## index_mark_cache_size_ratio
@@ -1974,11 +2007,11 @@ Taille maximale du cache des marques d’index.
 
 Taille maximale du cache pour les blocs non compressés des indices `MergeTree`.
 
-<Note>
-  Une valeur de `0` signifie que cette fonctionnalité est désactivée.
+:::note
+Une valeur de `0` signifie que cette fonctionnalité est désactivée.
 
-  Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
-</Note>
+Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
+:::
 
 <div id="index_uncompressed_cache_size_ratio">
   ## index_uncompressed_cache_size_ratio
@@ -1990,15 +2023,19 @@ Taille maximale du cache pour les blocs non compressés des indices `MergeTree`.
   ## insert_deduplication_version
 </div>
 
-<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="compatible_double_hashes" changeable_without_restart="Non" />
+<SettingsInfoBlock type="InsertDeduplicationVersions" default_value="new_unified_hash" changeable_without_restart="Non" />
 
 Ce paramètre permet de migrer d’une version du code où la déduplication des inserts synchrones et asynchrones est gérée de façon totalement distincte et non transparente vers une version du code où les données insérées sont dédupliquées de manière uniforme entre les inserts synchrones et asynchrones.
 La valeur `old_separate_hashes` signifie que ClickHouse utilisera des hachages de déduplication différents pour les inserts synchrones et asynchrones (comme auparavant).
-Cette valeur doit être utilisée comme valeur par défaut s’il n’est pas prévu de lancer la migration.
+Cette valeur préserve le comportement legacy d’avant migration pour les instances qui n’ont volontairement pas commencé la migration ; ce n’est plus la valeur par défaut recommandée.
 La valeur `compatible_double_hashes` signifie que ClickHouse utilisera deux hachages de déduplication : l’ancien pour les inserts synchrones ou asynchrones, et le nouveau pour tous les inserts. Cette valeur doit être utilisée pour migrer les instances existantes vers le nouveau comportement en toute sécurité.
 Cette valeur doit être activée pendant un certain temps (voir les paramètres replicated&#95;deduplication&#95;window et non&#95;replicated&#95;deduplication&#95;window) afin de garantir qu’aucun insert synchrone ou asynchrone n’est perdu pendant la migration.
 Enfin, la valeur `new_unified_hash` signifie que ClickHouse utilisera le nouveau hachage de déduplication pour les inserts synchrones et asynchrones. Cette valeur peut être activée sur de nouvelles instances de ClickHouse ou sur des instances ayant déjà utilisé la valeur `compatible_double_hashes` pendant un certain temps.
-La valeur par défaut sera d’abord définie sur `compatible_double_hashes`, puis ultérieurement sur `new_unified_hash` dans de futures versions de ClickHouse, afin de mener cette migration à bien en toute sécurité et en deux étapes.
+Avec `new_unified_hash`, le hachage de déduplication couvre l’ensemble du block inséré, de sorte qu’un insert n’est dédupliqué que lorsque l’intégralité de ses données correspond à un insert précédent (une nouvelle tentative), et non partition par partition.
+Avec `new_unified_hash`, les inserts asynchrones utilisent également le hachage unifié et partagent la fenêtre de déduplication synchrone (`replicated_deduplication_window` / `replicated_deduplication_window_seconds`) ; les paramètres de fenêtre `*_for_async_inserts` ne s’appliquent qu’au mode legacy `old_separate_hashes` / `compatible_double_hashes`.
+La valeur par défaut était `compatible_double_hashes` pendant une phase de la migration et est maintenant `new_unified_hash`, ce qui achève la migration en toute sécurité en deux phases.
+Les instances mises à niveau directement depuis `old_separate_hashes` doivent utiliser `compatible_double_hashes` jusqu’à ce que la plus longue fenêtre de déduplication pertinente soit écoulée (la fenêtre synchrone `replicated_deduplication_window` / `replicated_deduplication_window_seconds`, la fenêtre asynchrone `replicated_deduplication_window_for_async_inserts` / `replicated_deduplication_window_seconds_for_async_inserts`, qui vaut par défaut une semaine si les inserts asynchrones sont utilisés, et `non_replicated_deduplication_window`) avant de s’appuyer sur le hachage unifié. Sinon, les identifiants antérieurs à la mise à niveau encore conservés dans les répertoires `blocks` / `async_blocks` ne sont pas vus par le hachage unifié et leurs nouvelles tentatives peuvent être acceptées comme de nouveaux inserts, produisant des doublons.
+Les inserts asynchrones impliquent également un point d’attention lors du basculement vers `new_unified_hash` : avec `compatible_double_hashes`, leur déduplication couvre effectivement la fenêtre asynchrone (l’identifiant `async_blocks` est conservé aussi longtemps), tandis que `new_unified_hash` ne consulte que `deduplication_hashes` (conservé pour la fenêtre synchrone), de sorte que les inserts asynchrones plus anciens que la fenêtre synchrone peuvent être de nouveau acceptés après le basculement, même après avoir attendu. Avant de basculer des workloads asynchrones, soit augmentez `replicated_deduplication_window` / `replicated_deduplication_window_seconds` jusqu’à la fenêtre asynchrone et conservez cette configuration pendant toute une fenêtre asynchrone, soit suspendez les inserts asynchrones pendant la fenêtre asynchrone, soit conservez `compatible_double_hashes`.
 
 <div id="interserver_http_credentials">
   ## interserver_http_credentials
@@ -2141,9 +2178,9 @@ Valeur par défaut :
 
 Le nombre maximal de jobs pouvant être planifiés dans l’IO Thread pool.
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 <div id="jemalloc_collect_global_profile_samples_in_trace_log">
   ## jemalloc_collect_global_profile_samples_in_trace_log
@@ -2211,7 +2248,7 @@ Le nombre de secondes pendant lesquelles ClickHouse attend des requêtes entrant
 **Exemple**
 
 ```xml
-<keep_alive_timeout>10</keep_alive_timeout>
+<keep_alive_timeout>30</keep_alive_timeout>
 ```
 
 <div id="keeper_hosts">
@@ -2406,7 +2443,7 @@ L’emplacement et le format des messages de log.
 
 **Clés**:
 
-| Key                          | Description                                                                                                                                                                                                                                                                                                                                                                 |
+| Clé                          | Description                                                                                                                                                                                                                                                                                                                                                                 |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `async`                      | Lorsque `true` (par défaut), la journalisation s’effectue de manière asynchrone (un thread d’arrière-plan par canal de sortie). Sinon, elle s’effectue dans le thread qui appelle LOG                                                                                                                                                                                       |
 | `async_queue_max_size`       | En cas de journalisation asynchrone, nombre maximal de messages conservés dans la file d’attente avant vidage. Les messages supplémentaires seront abandonnés                                                                                                                                                                                                               |
@@ -2431,7 +2468,7 @@ L’emplacement et le format des messages de log.
 
 Les noms de fichiers dans les chemins `log` et `errorLog` prennent en charge les spécificateurs de format ci-dessous pour le nom de fichier résultant (la partie répertoire ne les prend pas en charge).
 
-La colonne « Example » montre la sortie à `2023-07-06 18:32:07`.
+La colonne « Exemple » montre la sortie à `2023-07-06 18:32:07`.
 
 | Spécificateur | Description                                                                                                                                                                                                | Exemple                    |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
@@ -2725,9 +2762,9 @@ Pour plus d’informations, consultez la section [Création de tables répliqué
 
 Taille maximale du cache des marks (index des tables de la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/index)).
 
-<Note>
-  Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
-</Note>
+:::note
+Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
+:::
 
 <div id="mark_cache_size_ratio">
   ## mark_cache_size_ratio
@@ -2751,9 +2788,9 @@ Le nombre maximal de méthodes d’authentification avec lesquelles un utilisate
 La modification de ce paramètre n’affecte pas les utilisateurs existants. Les requêtes CREATE/ALTER liées à l’authentification échoueront si elles dépassent la limite spécifiée dans ce paramètre.
 Les requêtes CREATE/ALTER sans lien avec l’authentification réussiront.
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 <div id="max_backup_bandwidth_for_server">
   ## max_backup_bandwidth_for_server
@@ -2781,9 +2818,9 @@ Les requêtes CREATE/ALTER sans lien avec l’authentification réussiront.
 
 Nombre maximal de threads à utiliser pour créer des index vectoriels.
 
-<Note>
-  Une valeur de `0` signifie que tous les cœurs sont utilisés.
-</Note>
+:::note
+Une valeur de `0` signifie que tous les cœurs sont utilisés.
+:::
 
 <div id="max_concurrent_insert_queries">
   ## max_concurrent_insert_queries
@@ -2793,11 +2830,12 @@ Nombre maximal de threads à utiliser pour créer des index vectoriels.
 
 Limite du nombre total de requêtes `insert` concurrentes.
 
-<Note>
-  Une valeur de `0` (par défaut) signifie qu’il n’y a pas de limite.
+:::note
 
-  Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement. Les requêtes déjà en cours d’exécution resteront inchangées.
-</Note>
+Une valeur de `0` (par défaut) signifie qu’il n’y a pas de limite.
+
+Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement. Les requêtes déjà en cours d’exécution resteront inchangées.
+:::
 
 <div id="max_concurrent_queries">
   ## max_concurrent_queries
@@ -2813,11 +2851,12 @@ Voir aussi :
 * [`max_concurrent_select_queries`](/fr/reference/settings/server-settings/settings#max_concurrent_select_queries)
 * [`max_concurrent_queries_for_all_users`](/fr/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-<Note>
-  Une valeur de `0` (par défaut) signifie qu’il n’y a pas de limite.
+:::note
 
-  Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement. Les requêtes déjà en cours d’exécution resteront inchangées.
-</Note>
+Une valeur de `0` (par défaut) signifie qu’il n’y a pas de limite.
+
+Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement. Les requêtes déjà en cours d’exécution resteront inchangées.
+:::
 
 <div id="max_concurrent_select_queries">
   ## max_concurrent_select_queries
@@ -2827,11 +2866,12 @@ Voir aussi :
 
 Limite du nombre total de requêtes SELECT simultanées.
 
-<Note>
-  Une valeur de `0` (par défaut) signifie qu&#39;il n&#39;y a pas de limite.
+:::note
 
-  Ce paramètre peut être modifié à chaud et prendra effet immédiatement. Les requêtes déjà en cours d&#39;exécution resteront inchangées.
-</Note>
+Une valeur de `0` (par défaut) signifie qu&#39;il n&#39;y a pas de limite.
+
+Ce paramètre peut être modifié à chaud et prendra effet immédiatement. Les requêtes déjà en cours d&#39;exécution resteront inchangées.
+:::
 
 <div id="max_connections">
   ## max_connections
@@ -2880,9 +2920,9 @@ Ne prend en compte que les tables des moteurs de base de données suivants :
 * Replicated
 * Lazy
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 **Exemple**
 
@@ -2950,6 +2990,17 @@ Nombre total maximal de threads à utiliser pour l’analyse syntaxique des donn
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Non" />Nombre maximal de snapshots légers pouvant être conservés simultanément. Zéro signifie illimité. Si le nombre de snapshots atteint cette limite, une exception est levée lors de la tentative de création d&#39;un nouveau snapshot.
 
+<div id="max_http_index_page_size">
+  ## max_http_index_page_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
+
+Taille maximale d&#39;une réponse de page d&#39;index HTTP utilisée pour lister le contenu d&#39;un répertoire via HTTP.
+Si la réponse dépasse cette limite, la requête échoue avec une erreur.
+
+Par défaut : `10485760` (10 MiB).
+
 <div id="max_io_thread_pool_free_size">
   ## max_io_thread_pool_free_size
 </div>
@@ -2988,9 +3039,9 @@ Nombre maximal de requêtes sur une même connexion keep-alive avant qu’elle n
 
 Le débit maximal des lectures locales, en octets par seconde.
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 <div id="max_local_write_bandwidth_for_server">
   ## max_local_write_bandwidth_for_server
@@ -3000,9 +3051,9 @@ Le débit maximal des lectures locales, en octets par seconde.
 
 La vitesse maximale d’écriture locale en octets par seconde.
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 <div id="max_materialized_views_count_for_table">
   ## max_materialized_views_count_for_table
@@ -3012,9 +3063,9 @@ La vitesse maximale d’écriture locale en octets par seconde.
 
 Limite du nombre de vues matérialisées associées à une table.
 
-<Note>
-  Seules les vues directement dépendantes sont prises en compte ici, et la création d&#39;une vue sur une autre vue n&#39;est pas prise en compte.
-</Note>
+:::note
+Seules les vues directement dépendantes sont prises en compte ici, et la création d&#39;une vue sur une autre vue n&#39;est pas prise en compte.
+:::
 
 <div id="max_merges_bandwidth_for_server">
   ## max_merges_bandwidth_for_server
@@ -3036,9 +3087,9 @@ Limite du nombre de vues matérialisées associées à une table.
 
 Si le nombre de collections nommées dépasse cette valeur, le serveur lèvera une exception.
 
-<Note>
-  Une valeur de `0` signifie qu&#39;il n&#39;y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu&#39;il n&#39;y a pas de limite.
+:::
 
 **Exemple**
 
@@ -3068,9 +3119,9 @@ Si le nombre de collections nommées dépasse la valeur spécifiée, serveur Cli
 
 Le nombre maximal de fichiers ouverts.
 
-<Note>
-  Nous vous recommandons d’utiliser cette option sous macOS, car la fonction getrlimit() renvoie une valeur incorrecte.
-</Note>
+:::note
+Nous vous recommandons d’utiliser cette option sous macOS, car la fonction getrlimit() renvoie une valeur incorrecte.
+:::
 
 <div id="max_os_cpu_wait_time_ratio_to_drop_connection">
   ## max_os_cpu_wait_time_ratio_to_drop_connection
@@ -3112,11 +3163,11 @@ Restriction concernant la suppression des partitions.
 Si la taille d’une table [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) dépasse [`max_partition_size_to_drop`](#max_partition_size_to_drop) (en octets), vous ne pouvez pas supprimer de partition à l’aide d’une requête [DROP PARTITION](/fr/reference/statements/alter/partition#drop-partitionpart).
 Ce paramètre ne nécessite pas de redémarrage du serveur ClickHouse pour être pris en compte. Une autre façon de désactiver cette restriction consiste à créer le fichier `<clickhouse-path>/flags/force_drop_table`.
 
-<Note>
-  La valeur `0` signifie que vous pouvez supprimer des partitions sans aucune restriction.
+:::note
+La valeur `0` signifie que vous pouvez supprimer des partitions sans aucune restriction.
 
-  Cette limitation ne s’applique pas à drop table ni à truncate table, voir [max&#95;table&#95;size&#95;to&#95;drop](/fr/reference/settings/session-settings#max_table_size_to_drop)
-</Note>
+Cette limitation ne s’applique pas à drop table ni à truncate table, voir [max&#95;table&#95;size&#95;to&#95;drop](/fr/reference/settings/session-settings#max_table_size_to_drop)
+:::
 
 **Exemple**
 
@@ -3158,6 +3209,14 @@ Si le nombre de mutations en attente dépasse la valeur spécifiée, le serveur 
 <max_pending_mutations_to_warn>400</max_pending_mutations_to_warn>
 ```
 
+<div id="max_per_cpu_untracked_memory">
+  ## max_per_cpu_untracked_memory
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Oui" />
+
+Limite supérieure, en octets, de la mémoire non suivie que l’ensemble des threads s’exécutant sur un CPU peuvent détenir simultanément avant qu’elle ne soit reportée au memory tracker. Alors que `max_untracked_memory` limite un thread individuel, ce paramètre limite le total par CPU, afin d’éviter qu’un grand nombre de threads ne multiplient leur quota par thread en un overcommit important à l’échelle du serveur. La mémoire totale non suivie est donc limitée à environ `number_of_cpus * max_per_cpu_untracked_memory`. Une valeur de `0` désactive la limite par CPU (seule la limite par thread `max_untracked_memory` s’applique). Linux uniquement.
+
 <div id="max_prefixes_deserialization_thread_pool_free_size">
   ## max_prefixes_deserialization_thread_pool_free_size
 </div>
@@ -3180,11 +3239,11 @@ ClickHouse utilise des threads du pool de threads de désérialisation des préf
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
-La vitesse maximale de transfert de données sur le réseau, en octets par seconde, pour la lecture.
+Le débit maximal de transfert de données sur le réseau, en octets par seconde, pour la lecture.
 
-<Note>
-  Une valeur de `0` (par défaut) signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` (par défaut) signifie qu’il n’y a pas de limite.
+:::
 
 <div id="max_remote_write_network_bandwidth_for_server">
   ## max_remote_write_network_bandwidth_for_server
@@ -3194,9 +3253,9 @@ La vitesse maximale de transfert de données sur le réseau, en octets par secon
 
 Le débit maximal d’échange de données sur le réseau, en octets par seconde, pour l’écriture.
 
-<Note>
-  Une valeur de `0` (par défaut) signifie qu’il n’y a aucune limite.
-</Note>
+:::note
+Une valeur de `0` (par défaut) signifie qu’il n’y a aucune limite.
+:::
 
 <div id="max_replicated_fetches_network_bandwidth_for_server">
   ## max_replicated_fetches_network_bandwidth_for_server
@@ -3225,9 +3284,9 @@ Seules les tables des moteurs de base de données suivants sont comptabilisées�
 * Replicated
 * Lazy
 
-<Note>
-  Une valeur de `0` signifie qu&#39;il n&#39;y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu&#39;il n&#39;y a pas de limite.
+:::
 
 **Exemple**
 
@@ -3243,9 +3302,9 @@ Seules les tables des moteurs de base de données suivants sont comptabilisées�
 
 La quantité maximale de mémoire que le serveur est autorisé à utiliser, exprimée en octets.
 
-<Note>
-  La consommation maximale de mémoire du serveur est en outre limitée par le paramètre `max_server_memory_usage_to_ram_ratio`.
-</Note>
+:::note
+La consommation maximale de mémoire du serveur est en outre limitée par le paramètre `max_server_memory_usage_to_ram_ratio`.
+:::
 
 Par exception, une valeur de `0` (par défaut) signifie que le serveur peut consommer toute la mémoire disponible (hors restrictions supplémentaires imposées par `max_server_memory_usage_to_ram_ratio`).
 
@@ -3269,9 +3328,9 @@ Ce ratio est appliqué de deux façons :
 
 Définir ce ratio sur `0` désactive à la fois le plafonnement au démarrage et l’ajustement à l’exécution. L’ajustement à l’exécution est également un no-op sur les systèmes non Linux et dans `clickhouse-keeper`, qui n’expose pas ce paramètre. Pour conserver le plafonnement statique au démarrage/rechargement tout en désactivant l’ajustement à l’exécution (le comportement des versions précédentes), définissez `memory_worker_dynamic_hard_limit` sur `0`.
 
-<Note>
-  La consommation maximale de mémoire du serveur est en outre limitée par le paramètre `max_server_memory_usage`.
-</Note>
+:::note
+La consommation maximale de mémoire du serveur est en outre limitée par le paramètre `max_server_memory_usage`.
+:::
 
 <div id="max_session_timeout">
   ## max_session_timeout
@@ -3319,9 +3378,9 @@ Ne compte que les tables des moteurs de base de données suivants :
 * Replicated
 * Lazy
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 **Exemple**
 
@@ -3353,11 +3412,11 @@ Restriction sur la suppression de tables.
 
 Si la taille d&#39;une table [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) dépasse `max_table_size_to_drop` (en octets), vous ne pouvez pas la supprimer à l&#39;aide d&#39;une requête [`DROP`](/fr/reference/statements/drop) ou [`TRUNCATE`](/fr/reference/statements/truncate).
 
-<Note>
-  Une valeur de `0` signifie que vous pouvez supprimer toutes les tables sans aucune restriction.
+:::note
+Une valeur de `0` signifie que vous pouvez supprimer toutes les tables sans aucune restriction.
 
-  Ce paramètre ne nécessite pas de redémarrage du serveur ClickHouse pour être pris en compte. Une autre façon de désactiver cette restriction consiste à créer le fichier `<clickhouse-path>/flags/force_drop_table`.
-</Note>
+Ce paramètre ne nécessite pas de redémarrage du serveur ClickHouse pour être pris en compte. Une autre façon de désactiver cette restriction consiste à créer le fichier `<clickhouse-path>/flags/force_drop_table`.
+:::
 
 **Exemple**
 
@@ -3374,9 +3433,9 @@ Si la taille d&#39;une table [MergeTree](/fr/reference/engines/table-engines/mer
 La quantité maximale d’espace de stockage pouvant être utilisée pour l’agrégation externe, les jointures ou le tri.
 Les requêtes qui dépassent cette limite échoueront en renvoyant une exception.
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 Voir aussi :
 
@@ -3432,9 +3491,9 @@ Ne compte que les tables des moteurs de base de données suivants :
 * Replicated
 * Lazy
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 **Exemple**
 
@@ -3465,23 +3524,24 @@ Si le nombre de vues attachées dépasse la valeur spécifiée, le serveur Click
 Limite du nombre total de requêtes simultanément en attente.
 L&#39;exécution d&#39;une requête en attente est bloquée tant que les tables requises sont chargées de façon asynchrone (voir [`async_load_databases`](/fr/reference/settings/server-settings/settings#async_load_databases).
 
-<Note>
-  Les requêtes en attente ne sont pas prises en compte lors de la vérification des limites contrôlées par les paramètres suivants :
+:::note
+Les requêtes en attente ne sont pas prises en compte lors de la vérification des limites contrôlées par les paramètres suivants :
 
-  * [`max_concurrent_queries`](/fr/reference/settings/server-settings/settings#max_concurrent_queries)
-  * [`max_concurrent_insert_queries`](/fr/reference/settings/server-settings/settings#max_concurrent_insert_queries)
-  * [`max_concurrent_select_queries`](/fr/reference/settings/server-settings/settings#max_concurrent_select_queries)
-  * [`max_concurrent_queries_for_user`](/fr/reference/settings/session-settings#max_concurrent_queries_for_user)
-  * [`max_concurrent_queries_for_all_users`](/fr/reference/settings/session-settings#max_concurrent_queries_for_all_users)
+* [`max_concurrent_queries`](/fr/reference/settings/server-settings/settings#max_concurrent_queries)
+* [`max_concurrent_insert_queries`](/fr/reference/settings/server-settings/settings#max_concurrent_insert_queries)
+* [`max_concurrent_select_queries`](/fr/reference/settings/server-settings/settings#max_concurrent_select_queries)
+* [`max_concurrent_queries_for_user`](/fr/reference/settings/session-settings#max_concurrent_queries_for_user)
+* [`max_concurrent_queries_for_all_users`](/fr/reference/settings/session-settings#max_concurrent_queries_for_all_users)
 
-  Cet ajustement est effectué pour éviter d&#39;atteindre ces limites juste après le démarrage du serveur.
-</Note>
+Cet ajustement est effectué pour éviter d&#39;atteindre ces limites juste après le démarrage du serveur.
+:::
 
-<Note>
-  Une valeur de `0` (par défaut) signifie qu&#39;il n&#39;y a pas de limite.
+:::note
 
-  Ce paramètre peut être modifié à l&#39;exécution et prendra effet immédiatement. Les requêtes déjà en cours d&#39;exécution resteront inchangées.
-</Note>
+Une valeur de `0` (par défaut) signifie qu&#39;il n&#39;y a pas de limite.
+
+Ce paramètre peut être modifié à l&#39;exécution et prendra effet immédiatement. Les requêtes déjà en cours d&#39;exécution resteront inchangées.
+:::
 
 <div id="max_zookeeper_pooled_connections">
   ## max_zookeeper_pooled_connections
@@ -3545,6 +3605,29 @@ Le ratio seuil des pages sales de jemalloc par rapport à la mémoire disponible
 
 Le ratio seuil de purge de jemalloc par rapport à la mémoire disponible pour le serveur ClickHouse. Lorsque l’utilisation totale de la mémoire dépasse ce ratio, le background memory worker force la purge des pages sales. S’il est défini sur 0, la purge forcée basée sur la mémoire totale est désactivée.
 
+<div id="memory_worker_rss_speculative_reserve_ratio">
+  ## memory_worker_rss_speculative_reserve_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="1" changeable_without_restart="Non" />
+
+À chaque tick de `MemoryWorker`, réservez une quantité supplémentaire de
+`ratio * min(resident - previous_resident, resident - tracked)` au-delà de
+la RSS observée, en partant du principe que le tick suivant peut augmenter du même
+montant que le précédent (`resident - previous_resident` correspond à l’augmentation de la RSS
+pendant le dernier tick). Cette augmentation est plafonnée par `resident - tracked`, la partie
+de la RSS non visible pour le memory tracker global, car la croissance déjà
+suivie est gérée par la vérification habituelle de la limite stricte. La réservation
+est appliquée au compteur `rss` que la vérification globale de la limite stricte consulte
+via `MemoryTracker::allocImpl`, de sorte que lorsque la valeur extrapolée dépasse
+`max_server_memory_usage`, les allocations suivantes lèvent
+`MEMORY_LIMIT_EXCEEDED` avant que l’OOM-killer du noyau ne se déclenche. Une valeur de `0`
+désactive la spéculation (avec retour à `rss = resident`) ; la valeur par défaut `1`
+réserve une marge correspondant à un delta complet de croissance pour l’intervalle suivant. Sous
+les sanitizers (`ASan`, `UBSan`, `MSan`, `TSan`), la valeur par défaut est `0`, car l’écart
+`resident - tracked` est surtout dû à la surcharge du shadow / runtime des sanitizers
+plutôt qu’au décalage de comptabilisation du tracker.
+
 <div id="memory_worker_use_cgroup">
   ## memory_worker_use_cgroup
 </div>
@@ -3585,12 +3668,12 @@ Utilisé pour réguler l’utilisation et le partage des ressources entre les fu
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
-Définit la quantité maximale de RAM pouvant être utilisée pour effectuer des opérations de merge et de mutation.
-Si ClickHouse atteint la limite définie, il ne planifiera plus de nouvelles opérations de merge ou de mutation en arrière-plan, mais continuera d’exécuter les tâches déjà planifiées.
+Définit la quantité maximale de RAM pouvant être utilisée pour effectuer des opérations de fusion et de mutation.
+Si ClickHouse atteint la limite définie, il ne planifiera plus de nouvelles opérations de fusion ou de mutation en arrière-plan, mais continuera d’exécuter les tâches déjà planifiées.
 
-<Note>
-  Une valeur de `0` signifie illimité.
-</Note>
+:::note
+Une valeur de `0` signifie illimité.
+:::
 
 **Exemple**
 
@@ -3685,9 +3768,9 @@ Voir [Contrôler le comportement en cas de surcharge CPU du serveur](/fr/concept
 
 Exécute `<mlockall>` après le démarrage afin de réduire la latence des premières requêtes et d’empêcher que l’exécutable ClickHouse ne soit évincé de la mémoire sous une forte charge d’IO.
 
-<Note>
-  Il est recommandé d’activer cette option, mais cela augmentera le temps de démarrage de quelques secondes au maximum. Gardez à l’esprit que ce paramètre ne fonctionnera pas sans la capability &quot;CAP&#95;IPC&#95;LOCK&quot;.
-</Note>
+:::note
+Il est recommandé d’activer cette option, mais cela augmentera le temps de démarrage de quelques secondes au maximum. Gardez à l’esprit que ce paramètre ne fonctionnera pas sans la capability &quot;CAP&#95;IPC&#95;LOCK&quot;.
+:::
 
 **Exemple**
 
@@ -3714,11 +3797,11 @@ La quantité de données dans les fichiers mappés peut être surveillée dans l
 * `MMappedFiles`/`MMappedFileBytes`/`MMapCacheCells` dans [`system.metrics`](/fr/reference/system-tables/metrics), [`system.metric_log`](/fr/reference/system-tables/metric_log)
 * `CreatedReadBufferMMap`/`CreatedReadBufferMMapFailed`/`MMappedFileCacheHits`/`MMappedFileCacheMisses` dans [`system.events`](/fr/reference/system-tables/events), [`system.processes`](/fr/reference/system-tables/processes), [`system.query_log`](/fr/reference/system-tables/query_log), [`system.query_thread_log`](/fr/reference/system-tables/query_thread_log), [`system.query_views_log`](/fr/reference/system-tables/query_views_log)
 
-<Note>
-  La quantité de données dans les fichiers mappés ne consomme pas directement de mémoire et n’est pas prise en compte dans l’utilisation mémoire des requêtes ou du serveur, car cette mémoire peut être libérée comme celle du cache de pages de l’OS. Le cache est supprimé (les fichiers sont fermés) automatiquement lors de la suppression des anciennes parts dans les tables de la famille MergeTree, et il peut également être supprimé manuellement à l’aide de la requête `SYSTEM DROP MMAP CACHE`.
+:::note
+La quantité de données dans les fichiers mappés ne consomme pas directement de mémoire et n’est pas prise en compte dans l’utilisation mémoire des requêtes ou du serveur, car cette mémoire peut être libérée comme celle du cache de pages de l’OS. Le cache est supprimé (les fichiers sont fermés) automatiquement lors de la suppression des anciennes parts dans les tables de la famille MergeTree, et il peut également être supprimé manuellement à l’aide de la requête `SYSTEM DROP MMAP CACHE`.
 
-  Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
-</Note>
+Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
+:::
 
 <div id="mutation_workload">
   ## mutation_workload
@@ -4321,15 +4404,37 @@ Threads de nettoyage pour le parts killer des parts du shared merge tree. Dispon
 
 Chemin d’accès au répertoire contenant les données.
 
-<Note>
-  La barre oblique de fin est obligatoire.
-</Note>
+:::note
+La barre oblique de fin est obligatoire.
+:::
 
 **Exemple**
 
 ```xml
 <path>/var/lib/clickhouse/</path>
 ```
+
+<div id="per_cpu_untracked_memory_thread_buffer">
+  ## per_cpu_untracked_memory_thread_buffer
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="32768" changeable_without_restart="Yes" />
+
+Quantité de mémoire non suivie, en octets, que chaque thread peut conserver sans utiliser le budget partagé par CPU. Cela amortit le coût du suivi par CPU pour les petites allocations et correspond à la marge ajoutée au-dessus de `max_per_cpu_untracked_memory * number_of_cpus` dans le pire des cas. Une valeur de `0` supprime cette marge : chaque allocation met à jour le compteur partagé par CPU (solution la plus précise, mais avec davantage de contention). Linux uniquement.
+
+<div id="point_in_polygon_cache_size">
+  ## point_in_polygon_cache_size
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="268435456" changeable_without_restart="Yes" />
+
+Taille maximale, en octets, du cache de polygones prétraités utilisé par la fonction `pointInPolygon` avec un argument de polygone constant.
+Les entrées dépassant cette limite sont évincées selon l&#39;ordre du moins récemment utilisé.
+Le définir sur `0` désactive le cache : tous les polygones mis en cache sont évincés, et chaque requête suivante prétraite à nouveau son polygone constant.
+Le cache peut également être vidé manuellement, sans modifier cette limite, à l&#39;aide de la requête [`SYSTEM DROP POINT IN POLYGON CACHE`](/fr/reference/statements/system#drop-point-in-polygon-cache).
+:::note
+Ce paramètre peut être modifié à l&#39;exécution et prendra effet immédiatement.
+:::
 
 <div id="postgresql_port">
   ## postgresql_port
@@ -4374,9 +4479,9 @@ Port de communication avec les clients via le protocole PostgreSQL.
 
 Le nombre maximal de jobs pouvant être planifiés sur le pool de threads de désérialisation des préfixes.
 
-<Note>
-  Une valeur de `0` signifie qu&#39;il n&#39;y a aucune limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu&#39;il n&#39;y a aucune limite.
+:::
 
 <div id="prepare_system_log_tables_on_startup">
   ## prepare_system_log_tables_on_startup
@@ -4701,10 +4806,9 @@ Les paramètres suivants sont disponibles :
 <SettingsInfoBlock type="UInt64" default_value="104857600" changeable_without_restart="Oui" />
 
 Taille maximale du cache des conditions de requête.
-
-<Note>
-  Ce paramètre peut être modifié à l’exécution et prend effet immédiatement.
-</Note>
+:::note
+Ce paramètre peut être modifié à l’exécution et prend effet immédiatement.
+:::
 
 <div id="query_condition_cache_size_ratio">
   ## query_condition_cache_size_ratio
@@ -4873,9 +4977,9 @@ Si la table n&#39;existe pas, ClickHouse la crée. Si la structure du journal de
 
 Paramètre permettant de réallouer la mémoire du code machine (&quot;text&quot;) à l’aide de huge pages.
 
-<Note>
-  Cette fonctionnalité est encore très expérimentale.
-</Note>
+:::note
+Cette fonctionnalité est encore très expérimentale.
+:::
 
 **Exemple**
 
@@ -5062,6 +5166,12 @@ Chemin dans Keeper contenant des numéros auto-incrémentés, générés par la 
 </div>
 
 <SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Non" />Si cette option est définie sur true, les adresses seront affichées dans les traces de pile
+
+<div id="show_license_expiration_warnings">
+  ## afficher_les_avertissements_d_expiration_de_licence
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="Oui" />Afficher un avertissement concernant l’expiration prochaine de la licence dans system.warnings
 
 <div id="shutdown_wait_backups_and_restores">
   ## shutdown_wait_backups_and_restores
@@ -5297,9 +5407,9 @@ Si cette option est définie sur true, les utilisateurs doivent disposer d’un 
 
 Définit le nombre de threads effectuant des tâches de chargement asynchrones dans le pool d’arrière-plan. Le pool d’arrière-plan est utilisé pour charger les tables de manière asynchrone après le démarrage du serveur lorsqu’aucune requête n’est en attente pour la table. Il peut être utile de conserver un faible nombre de threads dans le pool d’arrière-plan s’il y a beaucoup de tables. Cela réservera des ressources CPU pour l’exécution concurrente des requêtes.
 
-<Note>
-  Une valeur de `0` signifie que tous les CPU disponibles seront utilisés.
-</Note>
+:::note
+Une valeur de `0` signifie que tous les CPU disponibles seront utilisés.
+:::
 
 <div id="tables_loader_foreground_pool_size">
   ## tables_loader_foreground_pool_size
@@ -5309,9 +5419,9 @@ Définit le nombre de threads effectuant des tâches de chargement asynchrones d
 
 Définit le nombre de threads qui exécutent les tâches de chargement dans le pool de premier plan. Le pool de premier plan est utilisé pour charger les tables de manière synchrone avant que le serveur ne commence à écouter sur un port, ainsi que pour charger les tables dont on attend la disponibilité. Le pool de premier plan a une priorité plus élevée que le pool d’arrière-plan. Cela signifie qu’aucune tâche ne démarre dans le pool d’arrière-plan tant que des tâches sont en cours d’exécution dans le pool de premier plan.
 
-<Note>
-  Une valeur de `0` signifie que tous les CPU disponibles seront utilisés.
-</Note>
+:::note
+Une valeur de `0` signifie que tous les CPU disponibles seront utilisés.
+:::
 
 <div id="tcp_close_connection_after_queries_num">
   ## tcp_close_connection_after_queries_num
@@ -5369,15 +5479,15 @@ Avec cette option, les données temporaires seront stockées dans le cache du di
 Dans cette section, vous devez spécifier le nom du disque de type `cache`.
 Dans ce cas, le cache et les données temporaires partageront le même espace, et des éléments du cache du disque pourront être évincés pour libérer de l’espace pour les données temporaires.
 
-<Note>
-  Une seule option peut être utilisée pour configurer le stockage des données temporaires : `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
-</Note>
+:::note
+Une seule option peut être utilisée pour configurer le stockage des données temporaires : `tmp_path` ,`tmp_policy`, `temporary_data_in_cache`.
+:::
 
 **Exemple**
 
 Le cache de `local_disk` et les données temporaires seront tous deux stockés dans `/tiny_local_cache` sur le système de fichiers, géré par `tiny_local_cache`.
 
-```xml highlight={9-16,20}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5386,6 +5496,7 @@ Le cache de `local_disk` et les données temporaires seront tous deux stockés d
 <path>/local_disk/</path>
 </local_disk>
 
+<!-- highlight-start -->
 <tiny_local_cache>
 <type>cache</type>
 <disk>local_disk</disk>
@@ -5394,10 +5505,13 @@ Le cache de `local_disk` et les données temporaires seront tous deux stockés d
 <max_file_segment_size>1M</max_file_segment_size>
 <cache_on_write_operations>1</cache_on_write_operations>
 </tiny_local_cache>
+<!-- highlight-end -->
 </disks>
 </storage_configuration>
 
+<!-- highlight-start -->
 <temporary_data_in_cache>tiny_local_cache</temporary_data_in_cache>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5425,9 +5539,9 @@ Le cache de `local_disk` et les données temporaires seront tous deux stockés d
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Taille du cache des en-têtes de l’index de texte. Zéro signifie qu’il est désactivé.
 
-<Note>
-  Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
-</Note>
+:::note
+Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
+:::
 
 <div id="text_index_header_cache_size_ratio">
   ## text_index_header_cache_size_ratio
@@ -5453,9 +5567,9 @@ Le cache de `local_disk` et les données temporaires seront tous deux stockés d
 
 <SettingsInfoBlock type="UInt64" default_value="2147483648" changeable_without_restart="Yes" />Taille du cache des listes de postings de l’index de texte. Une valeur de zéro le désactive.
 
-<Note>
-  Ce paramètre peut être modifié pendant l’exécution et prend effet immédiatement.
-</Note>
+:::note
+Ce paramètre peut être modifié pendant l’exécution et prend effet immédiatement.
+:::
 
 <div id="text_index_postings_cache_size_ratio">
   ## text_index_postings_cache_size_ratio
@@ -5481,9 +5595,9 @@ Le cache de `local_disk` et les données temporaires seront tous deux stockés d
 
 <SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Taille du cache des tokens de l’index de texte. La valeur zéro désactive le cache.
 
-<Note>
-  Ce paramètre peut être modifié à l’exécution et prend effet immédiatement.
-</Note>
+:::note
+Ce paramètre peut être modifié à l’exécution et prend effet immédiatement.
+:::
 
 <div id="text_index_tokens_cache_size_ratio">
   ## text_index_tokens_cache_size_ratio
@@ -5530,11 +5644,11 @@ De plus :
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="Non" />
 
-Le nombre maximal de tâches pouvant être planifiées dans le Global Thread pool. Augmenter la taille de la file d’attente entraîne une consommation mémoire plus élevée. Il est recommandé de conserver cette valeur égale à [`max_thread_pool_size`](/fr/reference/settings/server-settings/settings#max_thread_pool_size).
+Le nombre maximal de tâches pouvant être planifiées dans le pool de threads global. Augmenter la taille de la file d’attente entraîne une consommation mémoire plus élevée. Il est recommandé de conserver cette valeur égale à [`max_thread_pool_size`](/fr/reference/settings/server-settings/settings#max_thread_pool_size).
 
-<Note>
-  Une valeur de `0` signifie qu’il n’y a pas de limite.
-</Note>
+:::note
+Une valeur de `0` signifie qu’il n’y a pas de limite.
+:::
 
 **Exemple**
 
@@ -5627,10 +5741,11 @@ Le fuseau horaire est nécessaire pour les conversions entre les formats String 
 
 Chemin du système de fichiers local où stocker les données temporaires utilisées pour le traitement des requêtes volumineuses.
 
-<Note>
-  * Une seule option peut être utilisée pour configurer le stockage des données temporaires : tmp&#95;path, tmp&#95;policy, temporary&#95;data&#95;in&#95;cache.
-  * La barre oblique finale est obligatoire.
-</Note>
+:::note
+
+* Une seule option peut être utilisée pour configurer le stockage des données temporaires : tmp&#95;path, tmp&#95;policy, temporary&#95;data&#95;in&#95;cache.
+* La barre oblique finale est obligatoire.
+  :::
 
 **Exemple**
 
@@ -5644,27 +5759,28 @@ Chemin du système de fichiers local où stocker les données temporaires utilis
 
 Politique de stockage des données temporaires. Tous les fichiers dont le préfixe est `tmp` seront supprimés au démarrage.
 
-<Note>
-  Recommandations pour l’utilisation du stockage objet avec `tmp_policy` :
+:::note
+Recommandations pour l’utilisation du stockage objet avec `tmp_policy` :
 
-  * Utilisez un `bucket:path` distinct sur chaque serveur
-  * Utilisez `metadata_type=plain`
-  * Vous pouvez également définir un TTL pour ce bucket
-</Note>
+* Utilisez un `bucket:path` distinct sur chaque serveur
+* Utilisez `metadata_type=plain`
+* Vous pouvez également définir un TTL pour ce bucket
+  :::
 
-<Note>
-  * Une seule option peut être utilisée pour configurer le stockage des données temporaires : `tmp_path`, `tmp_policy`, `temporary_data_in_cache`.
-  * `move_factor`, `keep_free_space_bytes`, `max_data_part_size_bytes` sont ignorés.
-  * La politique doit comporter exactement *un volume*
+:::note
 
-  Pour plus d’informations, consultez la documentation du [moteur de table MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
-</Note>
+* Une seule option peut être utilisée pour configurer le stockage des données temporaires : `tmp_path`, `tmp_policy`, `temporary_data_in_cache`.
+* `move_factor`, `keep_free_space_bytes`, `max_data_part_size_bytes` sont ignorés.
+* La politique doit comporter exactement *un volume*
+
+Pour plus d’informations, consultez la documentation du [moteur de table MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree).
+:::
 
 **Exemple**
 
 Lorsque `/disk1` est plein, les données temporaires seront stockées sur `/disk2`.
 
-```xml highlight={13-20,24}
+```xml
 <clickhouse>
 <storage_configuration>
 <disks>
@@ -5677,6 +5793,7 @@ Lorsque `/disk1` est plein, les données temporaires seront stockées sur `/disk
 </disks>
 
 <policies>
+<!-- highlight-start -->
 <tmp_two_disks>
 <volumes>
 <main>
@@ -5685,10 +5802,13 @@ Lorsque `/disk1` est plein, les données temporaires seront stockées sur `/disk
 </main>
 </volumes>
 </tmp_two_disks>
+<!-- highlight-end -->
 </policies>
 </storage_configuration>
 
+<!-- highlight-start -->
 <tmp_policy>tmp_two_disks</tmp_policy>
+<!-- highlight-end -->
 </clickhouse>
 ```
 
@@ -5798,17 +5918,35 @@ Le serveur dispose d’un cache partagé. La mémoire est allouée à la demande
 
 Le cache non compressé peut être utile pour des requêtes très courtes dans certains cas.
 
-<Note>
-  Une valeur de `0` signifie que le cache est désactivé.
+:::note
+Une valeur de `0` signifie que le cache est désactivé.
 
-  Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
-</Note>
+Ce paramètre peut être modifié à l’exécution et prendra effet immédiatement.
+:::
 
 <div id="uncompressed_cache_size_ratio">
   ## uncompressed_cache_size_ratio
 </div>
 
 <SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Non" />Taille de la file d’attente protégée (dans le cas de la politique SLRU) dans le cache non compressé, par rapport à la taille totale du cache.
+
+<div id="unique_key_bitmap_cache_policy">
+  ## unique_key_bitmap_cache_policy
+</div>
+
+<SettingsInfoBlock type="String" default_value="SLRU" changeable_without_restart="No" />Nom de la politique de cache du bitmap de suppression de UNIQUE KEY (SLRU ou LRU).
+
+<div id="unique_key_bitmap_cache_size_bytes">
+  ## unique_key_bitmap_cache_size_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="1073741824" changeable_without_restart="Yes" />Taille maximale, en octets, du cache intégré au processus pour les bitmaps de suppression par part de UNIQUE KEY. Définissez cette valeur sur 0 pour désactiver le cache.
+
+<div id="unique_key_bitmap_cache_size_ratio">
+  ## unique_key_bitmap_cache_size_ratio
+</div>
+
+<SettingsInfoBlock type="Double" default_value="0.5" changeable_without_restart="Non" />La taille de la file d’attente protégée (dans le cas d&#39;une politique SLRU) du cache de bitmap de suppression de UNIQUE KEY, par rapport à la taille totale du cache.
 
 <div id="unique_key_index_cache_policy">
   ## unique_key_index_cache_policy
@@ -6085,9 +6223,9 @@ Par défaut, sa valeur est `false` :
 
 <SettingsInfoBlock type="UInt64" default_value="5368709120" changeable_without_restart="Oui" />Taille du cache des index de similarité vectorielle. Une valeur de zéro signifie qu’il est désactivé.
 
-<Note>
-  Ce paramètre peut être modifié à l’exécution et prend effet immédiatement.
-</Note>
+:::note
+Ce paramètre peut être modifié à l’exécution et prend effet immédiatement.
+:::
 
 <div id="vector_similarity_index_cache_size_ratio">
   ## vector_similarity_index_cache_size_ratio
@@ -6188,16 +6326,14 @@ Les paramètres suivants peuvent être configurés à l’aide de sous-balises 
 
 Il existe également le paramètre `zookeeper_load_balancing` (optional), qui permet de sélectionner l’algorithme de sélection des nœuds ZooKeeper :
 
-| Nom de l’algorithme              | Description                                                                                                                     |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `random`                         | sélectionne aléatoirement l’un des nœuds ZooKeeper.                                                                             |
-| `in_order`                       | sélectionne le premier nœud ZooKeeper ; s’il n’est pas disponible, le deuxième, et ainsi de suite.                              |
-| `nearest_hostname`               | sélectionne un nœud ZooKeeper dont le hostname est le plus proche de celui du serveur, en comparant le préfixe du nom.          |
-| `hostname_levenshtein_distance`  | comme nearest&#95;hostname, mais compare le hostname selon la distance de Levenshtein.                                          |
-| `hostname_longest_common_prefix` | comme nearest&#95;hostname, mais préfère le nœud dont le hostname partage le plus long préfixe commun avec celui du serveur.    |
-| `hostname_longest_common_suffix` | comme nearest&#95;hostname, mais préfère le nœud dont le hostname partage le plus long suffixe commun avec celui du serveur.    |
-| `first_or_random`                | sélectionne le premier nœud ZooKeeper ; s’il n’est pas disponible, sélectionne aléatoirement l’un des nœuds ZooKeeper restants. |
-| `round_robin`                    | sélectionne le premier nœud ZooKeeper, puis sélectionne le suivant en cas de reconnexion.                                       |
+| Nom de l’algorithme             | Description                                                                                                                     |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `random`                        | sélectionne aléatoirement l’un des nœuds ZooKeeper.                                                                             |
+| `in_order`                      | sélectionne le premier nœud ZooKeeper ; s’il n’est pas disponible, le deuxième, et ainsi de suite.                              |
+| `nearest_hostname`              | sélectionne un nœud ZooKeeper dont le hostname est le plus proche de celui du serveur, en comparant le préfixe du nom.          |
+| `hostname_levenshtein_distance` | comme nearest&#95;hostname, mais compare le hostname selon la distance de Levenshtein.                                          |
+| `first_or_random`               | sélectionne le premier nœud ZooKeeper ; s’il n’est pas disponible, sélectionne aléatoirement l’un des nœuds ZooKeeper restants. |
+| `round_robin`                   | sélectionne le premier nœud ZooKeeper, puis sélectionne le suivant en cas de reconnexion.                                       |
 
 **Exemple de configuration**
 
@@ -6217,7 +6353,7 @@ Il existe également le paramètre `zookeeper_load_balancing` (optional), qui pe
     <root>/path/to/zookeeper/node</root>
     <!-- Optional. Zookeeper digest ACL string. -->
     <identity>user:password</identity>
-    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / hostname_longest_common_prefix / hostname_longest_common_suffix / first_or_random / round_robin</zookeeper_load_balancing>-->
+    <!--<zookeeper_load_balancing>random / in_order / nearest_hostname / hostname_levenshtein_distance / first_or_random / round_robin</zookeeper_load_balancing>-->
     <zookeeper_load_balancing>random</zookeeper_load_balancing>
     <!-- Optional. Enable 64-bit transaction IDs. -->
     <use_xid_64>false</use_xid_64>

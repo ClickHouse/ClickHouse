@@ -76,7 +76,7 @@ Uma tabela com a estrutura especificada para ler ou gravar dados no arquivo espe
   ## Exemplos
 </div>
 
-Selecionando as duas primeiras linhas da tabela a partir do arquivo do GCS `https://storage.googleapis.com/my-test-bucket-768/data.csv`:
+Selecionando as duas primeiras linhas do arquivo do GCS `https://storage.googleapis.com/clickhouse_public_datasets/my-test-bucket-768/data.csv.gz`. O método de compressão é detectado automaticamente pela extensão de arquivo `.gz`:
 
 ```sql
 SELECT *
@@ -91,7 +91,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-Semelhante, mas de um arquivo com método de compressão `gzip`:
+A mesma consulta acima, mas com o método de compressão `gzip` especificado explicitamente em vez de depender da autodetecção:
 
 ```sql
 SELECT *

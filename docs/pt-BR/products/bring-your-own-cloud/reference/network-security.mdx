@@ -52,14 +52,14 @@ O Tailscale cria um túnel de rede privado e criptografado entre o plano de cont
 
 Para cada serviço ou endpoint que precisa ser acessado via Tailscale, o ClickHouse BYOC implanta:
 
-1. **Registro de endereço tailnet**: cada endpoint registra um endereço tailnet exclusivo (por exemplo, `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com` para o servidor de API do Kubernetes)
+1. **Registro de endereço tailnet**: cada endpoint registra um endereço tailnet exclusivo (por exemplo, `k8s.xxxx.us-east-1.aws.byoc.clickhouse-prd.com` para o servidor da API do Kubernetes)
 
 2. **Contêiner do agente Tailscale**: um contêiner do agente Tailscale é executado no seu cluster EKS e é responsável por:
    * Conectar-se ao servidor de coordenação do Tailscale
-   * Registrar serviços para que possam ser descobertos
-   * Coordenar a configuração da rede com os pods do Nginx
+   * Registrar serviços para torná-los detectáveis
+   * Coordenar a configuração da rede com os pods do Kubernetes do Nginx
 
-3. **Pod do Nginx**: um pod do Nginx que:
+3. **Pod do Kubernetes do Nginx**: um pod do Kubernetes do Nginx que:
    * Faz a terminação do tráfego TLS do Tailscale
    * Encaminha o tráfego para os IPs apropriados dentro do seu cluster EKS
 

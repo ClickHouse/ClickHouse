@@ -16,10 +16,10 @@ Introducido en: v1.1.0
 Calcula el número aproximado de valores de argumento distintos.
 Proporciona el resultado de forma determinista (no depende del orden de procesamiento de la consulta).
 
-<Note>
-  Dado que utiliza un hash de 32 bits para los tipos que no son String, el resultado tendrá un error muy alto para cardinalidades significativamente mayores que `UINT_MAX` (el error aumentará rápidamente después de unas pocas decenas de miles de millones de valores distintos).
-  Si las cardinalidades son mayores que `UINT_MAX`, debe usar [`uniqCombined64`](/es/reference/functions/aggregate-functions/uniqCombined64) en su lugar.
-</Note>
+:::note
+Dado que utiliza un hash de 32 bits para los tipos que no son String, el resultado tendrá un error muy alto para cardinalidades significativamente mayores que `UINT_MAX` (el error aumentará rápidamente después de unas pocas decenas de miles de millones de valores distintos).
+Si las cardinalidades son mayores que `UINT_MAX`, debe usar [`uniqCombined64`](/es/reference/functions/aggregate-functions/uniqCombined64) en su lugar.
+:::
 
 En comparación con la función uniq, la función uniqCombined:
 
@@ -27,14 +27,15 @@ En comparación con la función uniq, la función uniqCombined:
 * Calcula con una precisión varias veces mayor
 * Normalmente tiene un rendimiento ligeramente inferior. En algunos escenarios, uniqCombined puede rendir mejor que uniq; por ejemplo, con consultas distribuidas que transmiten una gran cantidad de estados de agregación por la red
 
-<Accordion title="Detalles de implementación">
+<details>
+  <summary>Detalles de implementación</summary>
   Esta función calcula un hash (de 64 bits para String y de 32 bits en caso contrario) para todos los parámetros de la agregación y luego lo utiliza en los cálculos.
   Utiliza una combinación de tres algoritmos: array, tabla hash y HyperLogLog con una tabla de corrección de errores:
 
   * Para una pequeña cantidad de elementos distintos, se utiliza un array
   * Cuando el tamaño del conjunto es mayor, se utiliza una tabla hash
   * Para una cantidad mayor de elementos, se utiliza HyperLogLog, que ocupará una cantidad fija de memoria
-</Accordion>
+</details>
 
 **Sintaxis**
 

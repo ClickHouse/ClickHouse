@@ -87,7 +87,7 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
     أنشئ سجل TXT لدى موفّر DNS الخاص بك. انسخ `TXT record name` إلى حقل اسم سجل TXT لدى موفّر DNS الخاص بك. انسخ `Value` إلى حقل المحتوى لدى موفّر DNS الخاص بك. انقر على `Verify and Finish` لإتمام العملية.
 
     <Note>
-      قد يستغرق تحديث سجل DNS والتحقّق منه عدة دقائق. يمكنك مغادرة صفحة الإعداد والعودة لاحقًا لإتمام العملية دون الحاجة إلى البدء من جديد.
+      قد يستغرق تحديث سجل DNS والتحقّق منه عدة دقائق. يمكنك مغادرة صفحة الإعداد والعودة لاحقًا لإتمام العملية دون الحاجة إلى البدء من جديد. تظل قيمة التحقق صالحة لمدة 48 ساعة من وقت إنشائها لأول مرة.
     </Note>
 
     <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="تحقّق من نطاقك" force />
@@ -229,8 +229,8 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 
   6. أدخل ACS URL وEntity ID أدناه.
 
-     | Field     | Value                                      |
-     | --------- | ------------------------------------------ |
+     | Field     | Value                                          |
+     | --------- | ---------------------------------------------- |
      | ACS URL   | انسخ Single Sign-On URL من وحدة التحكم         |
      | Entity ID | انسخ Service Provider Entity ID من وحدة التحكم |
 
@@ -265,7 +265,7 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 
   1. سجّل الدخول إلى مركز إدارة Microsoft Entra.
 
-  2. انتقل إلى **Applications &gt; Enterprise applications** في الجهة اليسرى.
+  2. انتقل إلى **Applications &gt; Enterprise** applications في الجهة اليسرى.
 
   3. انقر على **New application** في القائمة العلوية.
 
@@ -285,8 +285,8 @@ import EnterprisePlanFeatureBadge from "/snippets/ar/components/EnterprisePlanFe
 
      | الحقل                                           | القيمة                                                          |
      | ----------------------------------------------- | --------------------------------------------------------------- |
-     | المعرّف (معرّف الكيان)                          | انسخ Service Provider Entity ID من وحدة التحكم                      |
-     | عنوان URL للرد (عنوان URL لخدمة مستهلك التأكيد) | انسخ Single Sign-On URL من وحدة التحكم                              |
+     | المعرّف (معرّف الكيان)                          | انسخ Service Provider Entity ID من وحدة التحكم                  |
+     | عنوان URL للرد (عنوان URL لخدمة مستهلك التأكيد) | انسخ Single Sign-On URL من وحدة التحكم                          |
      | عنوان URL لتسجيل الدخول                         | `https://console.clickhouse.cloud/?connection={organizationid}` |
      | Relay State                                     | فارغ                                                            |
      | عنوان URL لتسجيل الخروج                         | فارغ                                                            |

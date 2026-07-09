@@ -469,16 +469,16 @@ Esta é uma função de hash rápida e não criptográfica.
 Ela usa o algoritmo CityHash para parâmetros do tipo string e uma função de hash rápida e não criptográfica específica da implementação para parâmetros com outros tipos de dados.
 A função usa o combinador CityHash para obter os resultados finais.
 
-<Info>
-  O Google alterou o algoritmo do CityHash depois que ele foi adicionado ao ClickHouse.
-  Em outras palavras, o cityHash64 do ClickHouse e o CityHash upstream do Google agora produzem resultados diferentes.
-  O cityHash64 do ClickHouse corresponde ao CityHash v1.0.2.
-</Info>
+:::info
+O Google alterou o algoritmo do CityHash depois que ele foi adicionado ao ClickHouse.
+Em outras palavras, o cityHash64 do ClickHouse e o CityHash upstream do Google agora produzem resultados diferentes.
+O cityHash64 do ClickHouse corresponde ao CityHash v1.0.2.
+:::
 
-<Note>
-  Os valores de hash calculados podem ser iguais para os mesmos valores de entrada de diferentes tipos de argumento.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeado e não nomeado com os mesmos dados, `Map` e o tipo `Array(Tuple(key, value))` correspondente com os mesmos dados.
-</Note>
+:::note
+Os valores de hash calculados podem ser iguais para os mesmos valores de entrada de diferentes tipos de argumento.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeado e não nomeado com os mesmos dados, `Map` e o tipo `Array(Tuple(key, value))` correspondente com os mesmos dados.
+:::
 
 **Sintaxe**
 
@@ -542,14 +542,14 @@ Introduzido em: v20.12.0
 
 Produz um valor [FarmHash](https://github.com/google/farmhash) de 64 bits usando o método `Fingerprint64`.
 
-<Tip>
-  `farmFingerprint64` é preferível quando se deseja um valor estável e portátil, em vez de [`farmHash64`](#farmHash64).
-</Tip>
+:::tip
+`farmFingerprint64` é preferível quando se deseja um valor estável e portátil, em vez de [`farmHash64`](#farmHash64).
+:::
 
-<Note>
-  Os valores de hash calculados podem ser iguais para os mesmos valores de entrada com diferentes tipos de argumento.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeada e não nomeada com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
-</Note>
+:::note
+Os valores de hash calculados podem ser iguais para os mesmos valores de entrada com diferentes tipos de argumento.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeada e não nomeada com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
+:::
 
 **Sintaxe**
 
@@ -587,14 +587,14 @@ Introduzido em: v1.1.0
 
 Produz um [FarmHash](https://github.com/google/farmhash) de 64 bits usando o método `Hash64`.
 
-<Tip>
-  [`farmFingerprint64`](#farmFingerprint64) é a opção preferida para um valor estável e portátil.
-</Tip>
+:::tip
+[`farmFingerprint64`](#farmFingerprint64) é a opção preferida para um valor estável e portátil.
+:::
 
-<Note>
-  Os valores de hash calculados podem ser iguais para os mesmos valores de entrada de tipos de argumento diferentes.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeadas e não nomeadas com os mesmos dados, `Map` e o tipo `Array(Tuple(key, value))` correspondente com os mesmos dados.
-</Note>
+:::note
+Os valores de hash calculados podem ser iguais para os mesmos valores de entrada de tipos de argumento diferentes.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeadas e não nomeadas com os mesmos dados, `Map` e o tipo `Array(Tuple(key, value))` correspondente com os mesmos dados.
+:::
 
 **Sintaxe**
 
@@ -716,10 +716,10 @@ Calcula um &quot;HiveHash&quot; de uma string.
 Isso é apenas [`JavaHash`](#javaHash) com os bits de sinal zerados.
 Essa função é usada no [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) em versões anteriores à 3.0.
 
-<Warning>
-  Essa função de hash tem baixo desempenho.
-  Use-a apenas quando esse algoritmo já for usado em outro sistema e você precisar calcular o mesmo resultado.
-</Warning>
+:::caution
+Essa função de hash tem baixo desempenho.
+Use-a apenas quando esse algoritmo já for usado em outro sistema e você precisar calcular o mesmo resultado.
+:::
 
 **Sintaxe**
 
@@ -873,15 +873,15 @@ Calcula JavaHash a partir de:
 * [Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
 * [Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
 
-<Warning>
-  Esta função de hash é pouco eficiente.
-  Use-a somente quando esse algoritmo já estiver em uso em outro sistema e você precisar calcular o mesmo resultado.
-</Warning>
+:::caution
+Esta função de hash é pouco eficiente.
+Use-a somente quando esse algoritmo já estiver em uso em outro sistema e você precisar calcular o mesmo resultado.
+:::
 
-<Note>
-  O Java só oferece suporte ao cálculo de hash de inteiros com sinal,
-  portanto, se você quiser calcular o hash de inteiros sem sinal, deverá fazer cast deles para os tipos com sinal apropriados do ClickHouse.
-</Note>
+:::note
+O Java só oferece suporte ao cálculo de hash de inteiros com sinal,
+portanto, se você quiser calcular o hash de inteiros sem sinal, deverá fazer cast deles para os tipos com sinal apropriados do ClickHouse.
+:::
 
 **Sintaxe**
 
@@ -1119,10 +1119,10 @@ Introduzido em: v1.1.0
 
 Produz um valor de hash [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) de 64 bits.
 
-<Note>
-  Os valores de hash calculados podem ser iguais para os mesmos valores de entrada, mesmo quando os tipos de argumento são diferentes.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, uma `Tuple` nomeada e outra não nomeada com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
-</Note>
+:::note
+Os valores de hash calculados podem ser iguais para os mesmos valores de entrada, mesmo quando os tipos de argumento são diferentes.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, uma `Tuple` nomeada e outra não nomeada com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
+:::
 
 **Sintaxe**
 
@@ -1160,10 +1160,10 @@ Introduzido em: v18.5.0
 
 Calcula o hash [MurmurHash2](https://github.com/aappleby/smhasher) do valor de entrada.
 
-<Note>
-  Os valores de hash calculados podem ser iguais para os mesmos valores de entrada de tipos de argumento diferentes.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeada e não nomeada com os mesmos dados, `Map` e o tipo `Array(Tuple(key, value))` correspondente com os mesmos dados.
-</Note>
+:::note
+Os valores de hash calculados podem ser iguais para os mesmos valores de entrada de tipos de argumento diferentes.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeada e não nomeada com os mesmos dados, `Map` e o tipo `Array(Tuple(key, value))` correspondente com os mesmos dados.
+:::
 
 **Sintaxe**
 
@@ -1201,10 +1201,10 @@ Introduzido em: v18.10.0
 
 Calcula o hash [MurmurHash2](https://github.com/aappleby/smhasher) do valor de entrada.
 
-<Note>
-  Os valores de hash calculados podem ser iguais para os mesmos valores de entrada com tipos de argumento diferentes.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeadas e não nomeadas com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
-</Note>
+:::note
+Os valores de hash calculados podem ser iguais para os mesmos valores de entrada com tipos de argumento diferentes.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeadas e não nomeadas com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
+:::
 
 **Sintaxe**
 
@@ -1278,10 +1278,10 @@ Introduzido em: v18.10.0
 
 Produz um valor de hash [MurmurHash3](https://github.com/aappleby/smhasher).
 
-<Note>
-  Os valores de hash calculados podem ser iguais para os mesmos valores de entrada de tipos de argumento diferentes.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeada e não nomeada com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
-</Note>
+:::note
+Os valores de hash calculados podem ser iguais para os mesmos valores de entrada de tipos de argumento diferentes.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeada e não nomeada com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
+:::
 
 **Sintaxe**
 
@@ -1319,10 +1319,10 @@ Introduzido em: v18.10.0
 
 Calcula o hash [MurmurHash3](https://github.com/aappleby/smhasher) do valor de entrada.
 
-<Note>
-  Os valores de hash calculados podem ser iguais para os mesmos valores de entrada com tipos de argumento diferentes.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, tipos `Tuple` nomeados e não nomeados com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
-</Note>
+:::note
+Os valores de hash calculados podem ser iguais para os mesmos valores de entrada com tipos de argumento diferentes.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, tipos `Tuple` nomeados e não nomeados com os mesmos dados, `Map` e o tipo correspondente `Array(Tuple(key, value))` com os mesmos dados.
+:::
 
 **Sintaxe**
 
@@ -1848,13 +1848,11 @@ Introduzido em: v1.1.0
 
 Como [`sipHash64`](#sipHash64), mas produz um valor de hash de 128 bits, ou seja, o estado final de xor-folding é calculado em 128 bits.
 
-<Tip>
-  **use sipHash128Reference em novos projetos**
-
-  Esta variante de 128 bits difere da implementação de referência e é mais fraca.
-  Esta versão existe porque, quando foi escrita, não havia uma extensão oficial de 128 bits para SipHash.
-  Recomenda-se o uso de [`sipHash128Reference`](#sipHash128Reference) em novos projetos.
-</Tip>
+:::tip use sipHash128Reference em novos projetos
+Esta variante de 128 bits difere da implementação de referência e é mais fraca.
+Esta versão existe porque, quando foi escrita, não havia uma extensão oficial de 128 bits para SipHash.
+Recomenda-se o uso de [`sipHash128Reference`](#sipHash128Reference) em novos projetos.
+:::
 
 **Sintaxe**
 
@@ -1892,13 +1890,11 @@ Introduzido em: v23.2.0
 
 Igual a [`sipHash128`](#sipHash128), mas recebe também um argumento de chave explícito em vez de usar uma chave fixa.
 
-<Tip>
-  **use sipHash128ReferenceKeyed em novos projetos**
-
-  Esta variante de 128 bits difere da implementação de referência e é mais fraca.
-  Esta versão existe porque, quando foi escrita, não havia uma extensão oficial de 128 bits para o SipHash.
-  Novos projetos provavelmente devem usar [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed).
-</Tip>
+:::tip use sipHash128ReferenceKeyed em novos projetos
+Esta variante de 128 bits difere da implementação de referência e é mais fraca.
+Esta versão existe porque, quando foi escrita, não havia uma extensão oficial de 128 bits para o SipHash.
+Novos projetos provavelmente devem usar [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed).
+:::
 
 **Sintaxe**
 
@@ -2019,10 +2015,10 @@ Em seguida, combina os hashes usando o seguinte algoritmo:
 2. O valor de hash calculado anteriormente e o hash do terceiro parâmetro de entrada são submetidos a hash de maneira semelhante.
 3. Esse cálculo é repetido para todos os valores de hash restantes da entrada original.
 
-<Note>
-  os valores de hash calculados podem ser iguais para os mesmos valores de entrada de diferentes tipos de argumento.
-  Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeado e não nomeado com os mesmos dados, `Map` e o tipo `Array(Tuple(key, value))` correspondente com os mesmos dados.
-</Note>
+:::note
+os valores de hash calculados podem ser iguais para os mesmos valores de entrada de diferentes tipos de argumento.
+Isso afeta, por exemplo, tipos inteiros de tamanhos diferentes, `Tuple` nomeado e não nomeado com os mesmos dados, `Map` e o tipo `Array(Tuple(key, value))` correspondente com os mesmos dados.
+:::
 
 **Sintaxe**
 

@@ -225,7 +225,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
 
     1. 在你的 ClickStack URL 中打开 HyperDX
     2. 进入 Settings → API Keys
-    3. 复制你的**摄取 API key**
+    3. 复制你的 **摄取 API key**
 
     然后将链路追踪发送到 ClickStack：
 
@@ -358,7 +358,7 @@ tail -f /var/log/nginx/access.log
 * 针对特定用例 (API 监控、安全事件) 创建更多[仪表盘](/zh/clickstack/features/dashboards/overview)
 
 <div id="going-to-production">
-  ## 投入生产环境
+  ## 进入生产环境
 </div>
 
-本指南将链路追踪直接从 Nginx OpenTelemetry 模块发送到 ClickStack 的 OTLP 端点。对于生产环境部署，我们建议自行运行 OTel collector 作为网关，以提供批处理能力和弹性。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南将链路追踪直接从 Nginx OpenTelemetry 模块发送到 ClickStack 的 OTLP 端点。对于生产环境部署，我们建议部署您自己的 OTel collector 作为网关，以提供批处理和更强的容错能力。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

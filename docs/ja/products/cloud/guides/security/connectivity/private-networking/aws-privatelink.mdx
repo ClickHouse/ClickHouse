@@ -173,7 +173,7 @@ PrivateLink 経由でクロスリージョン接続を確立する場合は、&q
   セキュリティグループでポート `443`、`8443`、`9440`、`3306` が許可されていることを確認してください。
 </Note>
 
-VPC Endpoint を作成したら、`Endpoint ID` の値を控えておいてください。後続の手順で必要になります。
+VPC エンドポイント を作成したら、`Endpoint ID` の値を控えておいてください。後続の手順で必要になります。
 
 <Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="VPC Endpoint ID" border />
 
@@ -419,10 +419,10 @@ jq .result.privateEndpointIds
   ### リモートデータベースへの接続
 </div>
 
-ClickHouse Cloud で [MySQL](/ja/reference/functions/table-functions/mysql) または [PostgreSQL](/ja/reference/functions/table-functions/postgresql) のテーブル関数を使用して、Amazon Web Services (AWS) の VPC でホストされているデータベースに接続しようとしているとします。この接続を安全に確立するために AWS PrivateLink を使用することはできません。PrivateLink は一方向の接続だからです。内部ネットワークまたは Amazon VPC から ClickHouse Cloud へ安全に接続することはできますが、ClickHouse Cloud から内部ネットワークへ接続することはできません。
+ClickHouse Cloud で [MySQL](/ja/reference/functions/table-functions/mysql) または [PostgreSQL](/ja/reference/functions/table-functions/postgresql) のテーブル関数を使用して、Amazon Web Services (AWS) の VPC でホストされているデータベースに接続しようとしているとします。この接続を安全に実現するために AWS PrivateLink を使用することはできません。PrivateLink は単方向の一方向接続です。内部ネットワークまたは Amazon VPC から ClickHouse Cloud へは安全に接続できますが、ClickHouse Cloud から内部ネットワークへ接続することはできません。
 
-[AWS PrivateLink documentation](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html) には、次のように記載されています。
+[AWS PrivateLink のドキュメント](https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html) によると、次のとおりです。
 
-> クライアント/サーバー構成で、1 つ以上の consumer VPC から service provider VPC 内の特定の service または一連のインスタンスに対して一方向アクセスを許可したい場合は、AWS PrivateLink を使用します。service provider VPC 内の service への接続を開始できるのは、consumer VPC 内のクライアントのみです。
+> AWS PrivateLink は、クライアント/サーバー構成において、1 つ以上の consumer VPC から、service provider VPC 内の特定のサービスまたはインスタンス群への単方向アクセスを許可したい場合に使用します。service provider VPC 内のサービスへの接続を開始できるのは、consumer VPC 内のクライアントのみです。
 
-これを行うには、AWS のセキュリティグループを設定して、ClickHouse Cloud から内部またはプライベートなデータベースサービスへの接続を許可してください。[ClickHouse Cloud の各 Region のデフォルトの egress IP アドレス](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) と、[利用可能な静的 IP アドレス](https://api.clickhouse.cloud/static-ips.json) を確認してください。
+これを行うには、AWS のセキュリティグループを設定し、ClickHouse Cloud から内部のプライベートデータベースサービスへの接続を許可してください。[ClickHouse Cloud の各リージョンにおけるデフォルトの egress IP アドレス](/ja/products/cloud/guides/data-sources/cloud-endpoints-api) と、[利用可能な静的 IP アドレス](https://api.clickhouse.cloud/static-ips.json) を確認してください。

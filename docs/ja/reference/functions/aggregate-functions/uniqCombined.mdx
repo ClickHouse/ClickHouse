@@ -16,10 +16,10 @@ doc_type: 'reference'
 異なる引数値のおおよその個数を計算します。
 結果は決定論的です (クエリ処理の順序には依存しません) 。
 
-<Note>
-  String 以外の型には 32 ビットハッシュを使用するため、カーディナリティが `UINT_MAX` を大幅に超える場合、結果の誤差は非常に大きくなります (異なる値が数百億件規模になると、誤差は急速に増加します) 。
-  カーディナリティが `UINT_MAX` を超える場合は、代わりに [`uniqCombined64`](/ja/reference/functions/aggregate-functions/uniqCombined64) を使用してください。
-</Note>
+:::note
+String 以外の型には 32 ビットハッシュを使用するため、カーディナリティが `UINT_MAX` を大幅に超える場合、結果の誤差は非常に大きくなります (異なる値が数百億件規模になると、誤差は急速に増加します) 。
+カーディナリティが `UINT_MAX` を超える場合は、代わりに [`uniqCombined64`](/ja/reference/functions/aggregate-functions/uniqCombined64) を使用してください。
+:::
 
 uniq 関数と比較すると、uniqCombined 関数には次の特徴があります。
 
@@ -27,14 +27,15 @@ uniq 関数と比較すると、uniqCombined 関数には次の特徴があり�
 * 精度が数倍高くなります
 * 通常、パフォーマンスはわずかに低下します。ただし、状況によっては uniqCombined のほうが uniq より高いパフォーマンスを示すことがあります。たとえば、ネットワーク経由で多数の集約状態を転送する分散クエリの場合です
 
-<Accordion title="実装の詳細">
+<details>
+  <summary>実装の詳細</summary>
   この関数は、集約内のすべてのパラメータに対してハッシュ (String には 64 ビットハッシュ、それ以外には 32 ビット) を計算し、それを計算に使用します。
   配列、hash table、誤り補正テーブル付き HyperLogLog の 3 つのアルゴリズムを組み合わせて使用します。
 
   * 異なる要素数が少ない場合は、配列を使用します
   * Set のサイズが大きくなると、hash table を使用します
   * 要素数がさらに多い場合は、一定量のメモリを使用する HyperLogLog を使用します
-</Accordion>
+</details>
 
 **構文**
 

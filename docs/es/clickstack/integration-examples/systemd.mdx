@@ -391,15 +391,15 @@ otelcol-contrib --config=otel-config.yaml
 * Filtra por unidades específicas de systemd para reducir el ruido y centrarte en los servicios que más importan
 
 <div id="going-to-production">
-  ## Paso a producción
+  ## Llevar a producción
 </div>
 
-Esta guía utiliza un OpenTelemetry Collector independiente para leer los logs de systemd y enviarlos al endpoint de OTLP de ClickStack, que es el patrón recomendado para producción.
+Esta guía usa un OpenTelemetry Collector independiente para leer logs de systemd y enviarlos al endpoint OTLP de ClickStack, que es el enfoque recomendado para producción.
 
-Para entornos de producción con varios hosts, ten en cuenta lo siguiente:
+Para entornos de producción con varios hosts, considera:
 
-* Implementar el OpenTelemetry Collector como un conjunto de daemon en Kubernetes
-* Ejecutar el OpenTelemetry Collector como un servicio de systemd en cada host
-* Usar OpenTelemetry Operator para automatizar el despliegue
+* Desplegar el collector como un conjunto de daemon en Kubernetes
+* Ejecutar el collector como un servicio de systemd en cada host
+* Usar el OpenTelemetry Operator para el despliegue automatizado
 
-Consulta [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver patrones de despliegue para producción.
+Consulta [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para conocer los patrones de despliegue en producción.

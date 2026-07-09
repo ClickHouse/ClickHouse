@@ -273,7 +273,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs hôte avan
   <Step>
     #### Télécharger le jeu de données d’exemple
 
-    Téléchargez le fichier log d’exemple :
+    Téléchargez le fichier de log d’exemple :
 
     ```bash
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
@@ -349,7 +349,7 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs hôte avan
     ```
 
     <Note>
-      **Le fichier log est ici monté directement dans le conteneur. Cela est uniquement destiné aux tests avec des données de démonstration statiques.**
+      **Le fichier de log est ici monté directement dans le conteneur. Cela est uniquement destiné aux tests avec des données de démonstration statiques.**
     </Note>
   </Step>
 
@@ -512,7 +512,7 @@ Si ce n’est pas le bon format, sélectionnez l’onglet de configuration appro
 * Créez des tableaux de bord personnalisés pour la surveillance de la sécurité (tentatives SSH, utilisation de sudo, blocages du pare-feu)
 
 <div id="going-to-production">
-  ## Passage en production
+  ## Passer en production
 </div>
 
-Ce guide s&#39;appuie sur l&#39;OpenTelemetry Collector intégré à ClickStack pour une mise en place rapide. Pour les déploiements en production, nous vous recommandons d&#39;exécuter votre propre OTel Collector et d&#39;envoyer les données vers l&#39;endpoint OTLP de ClickStack. Consultez [Envoi de données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour une configuration adaptée à la production.
+Ce guide s&#39;appuie sur l&#39;OpenTelemetry Collector intégré à ClickStack pour une configuration rapide. Pour les déploiements en production, nous vous recommandons d&#39;exécuter votre propre OTel Collector et d&#39;envoyer les données vers le point de terminaison OTLP de ClickStack. Consultez [Envoyer des données OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour la configuration de production.

@@ -23,9 +23,9 @@ Introduzido em: v25.6.0
 
 Decodifica uma string de endereço Bech32 gerada pelos algoritmos bech32 ou bech32m.
 
-<Note>
-  Ao contrário da função de codificação, `bech32Decode` lida automaticamente com FixedStrings preenchidas.
-</Note>
+:::note
+Ao contrário da função de codificação, `bech32Decode` lida automaticamente com FixedStrings preenchidas.
+:::
 
 **Sintaxe**
 
@@ -70,14 +70,14 @@ tb   751E76E8199196D454941C45D1B3A323F1433BD6
 
 Introduzido em: v25.6.0
 
-Codifica uma string de dados binários, juntamente com uma parte legível para humanos (HRP), usando os algoritmos [Bech32 ou Bech32m](https://en.bitcoin.it/wiki/Bech32).
+Codifica uma string de dados binários, juntamente com uma parte legível por humanos (HRP), usando os algoritmos [Bech32 ou Bech32m](https://en.bitcoin.it/wiki/Bech32).
 
-<Note>
-  Ao usar o tipo de dados [`FixedString`](/pt-BR/reference/data-types/fixedstring), se um valor não preencher completamente a linha, ele será completado com caracteres nulos.
-  Embora a função `bech32Encode` trate isso automaticamente para o argumento hrp, no caso do argumento data os valores não devem ser completados.
-  Por esse motivo, não é recomendável usar o tipo de dados [`FixedString`](/pt-BR/reference/data-types/fixedstring) para seus valores de dados, a menos que você tenha
-  certeza de que todos eles têm o mesmo comprimento e garanta que sua coluna `FixedString` também esteja definida com esse comprimento.
-</Note>
+:::note
+Ao usar o tipo de dados [`FixedString`](/pt-BR/reference/data-types/fixedstring), se um valor não preencher completamente a linha, ele será completado com caracteres nulos.
+Embora a função `bech32Encode` trate isso automaticamente para o argumento hrp, no caso do argumento data os valores não devem ser completados.
+Por esse motivo, não é recomendável usar o tipo de dados [`FixedString`](/pt-BR/reference/data-types/fixedstring) para seus valores de dados, a menos que você tenha
+certeza de que todos eles têm o mesmo comprimento e garanta que sua coluna `FixedString` também esteja definida com esse comprimento.
+:::
 
 **Sintaxe**
 
@@ -100,7 +100,7 @@ Retorna uma string de endereço Bech32, composta pela parte legível por humanos
 **Bech32m padrão**
 
 ```sql title=Query
--- Quando nenhuma versão de witness é fornecida, o padrão é 1, o algoritmo Bech32m atualizado.
+-- When no witness version is supplied, the default is 1, the updated Bech32m algorithm.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
@@ -111,7 +111,7 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
 **Algoritmo Bech32**
 
 ```sql title=Query
--- Uma versão de witness igual a 0 resultará em uma string de endereço diferente.
+-- A witness version of 0 will result in a different address string.
 SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
@@ -122,8 +122,8 @@ bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
 **HRP personalizado**
 
 ```sql title=Query
--- Embora 'bc' (Mainnet) e 'tb' (Testnet) sejam os únicos valores hrp permitidos para o
--- formato de endereço SegWit, o Bech32 permite qualquer hrp que satisfaça os requisitos acima.
+-- While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the
+-- SegWit address format, Bech32 allows any hrp that satisfies the above requirements.
 SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 10)
 ```
 
@@ -134,8 +134,8 @@ abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
 **Endereço do Cosmos SDK (BIP173, sem witness version)**
 
 ```sql title=Query
--- Usar a variante 'bech32' codifica dados brutos sem um byte de versão de witness,
--- compatível com Cosmos SDK, Injective, Osmosis e outras cadeias não-SegWit.
+-- Using 'bech32' variant encodes raw data without a witness version byte,
+-- compatible with Cosmos SDK, Injective, Osmosis, and other non-SegWit chains.
 SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'bech32')
 ```
 
@@ -1027,9 +1027,9 @@ Interpreta cada par de dígitos binários (no argumento) como um número e o con
 
 Para um argumento numérico, `unbin()` não retorna o inverso de `bin()`. Se você quiser converter o resultado em um número, pode usar as funções reverse e `reinterpretAs<Type>`.
 
-<Note>
-  Se `unbin` for chamado de dentro do `clickhouse-client`, as strings binárias serão exibidas usando UTF-8.
-</Note>
+:::note
+Se `unbin` for chamado de dentro do `clickhouse-client`, as strings binárias serão exibidas usando UTF-8.
+:::
 
 Aceita os dígitos binários `0` e `1`. A quantidade de dígitos binários não precisa ser múltipla de oito. Se a string do argumento contiver qualquer coisa além de dígitos binários,
 o resultado será indefinido (nenhuma exceção é lançada).
@@ -1085,10 +1085,10 @@ no byte representado por esse número. O valor retornado é uma string binária 
 
 Se você quiser converter o resultado em um número, pode usar as funções `reverse` e `reinterpretAs<Type>`.
 
-<Note>
-  `clickhouse-client` interpreta strings como UTF-8.
-  Isso pode fazer com que os valores retornados por `hex` sejam exibidos de forma inesperada.
-</Note>
+:::note
+`clickhouse-client` interpreta strings como UTF-8.
+Isso pode fazer com que os valores retornados por `hex` sejam exibidos de forma inesperada.
+:::
 
 Aceita letras `A-F`, tanto maiúsculas quanto minúsculas.
 A quantidade de dígitos hexadecimais não precisa ser par.
@@ -1108,7 +1108,7 @@ unhex(arg)
 
 **Valor retornado**
 
-Retorna uma sequência binária de caracteres (BLOB). [`String`](/pt-BR/reference/data-types/string)
+Retorna uma string binária (BLOB). [`String`](/pt-BR/reference/data-types/string)
 
 **Exemplos**
 

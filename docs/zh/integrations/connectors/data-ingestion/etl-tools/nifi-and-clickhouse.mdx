@@ -95,10 +95,10 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
 
     2. 在 `ExecuteSQL` 处理器的 &quot;Properties&quot; 部分中，填写以下值
 
-       | Property                            | Value                        | Remark                                |
-       | ----------------------------------- | ---------------------------- | ------------------------------------- |
-       | Database Connection Pooling Service | ClickHouse JDBC              | 选择为 ClickHouse 配置的 Controller Service |
-       | SQL select query                    | SELECT * FROM system.metrics | 在此输入查询                                |
+       | Property                            | Value                            | Remark                                |
+       | ----------------------------------- | -------------------------------- | ------------------------------------- |
+       | Database Connection Pooling Service | ClickHouse JDBC                  | 选择为 ClickHouse 配置的 Controller Service |
+       | SQL select query                    | SELECT &#42; FROM system.metrics | 在此输入查询                                |
 
     3. 启动 `ExecuteSQL` 处理器
 

@@ -183,7 +183,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         <Info>
           **Nginx 主键**
 
-          上述主键是基于 ClickStack UI 中 Nginx 日志的常见访问模式设定的，但在生产环境中，可能需要根据实际工作负载进行调整。
+          上述主键是基于 ClickStack UI 中 Nginx 日志的常见访问模式设定的，但在生产环境中可能需要根据你的工作负载进行调整。
         </Info>
       </Step>
 
@@ -249,9 +249,9 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       </Step>
 
       <Step>
-        ### 查看数据
+        ### 探查数据
 
-        前往日志视图查看数据，并开始使用 ClickStack。
+        前往日志视图探查数据，并开始使用 ClickStack。
 
         <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="ClickStack 中的 Nginx 日志" size="lg" />
       </Step>
@@ -346,7 +346,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # ClickHouse 兼容的 DateTime 格式
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -435,7 +435,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
   </Tab>
 
   <Tab title="开源 ClickStack">
-    以下指南假设您已参照[入门指南](/zh/clickstack/getting-started/oss)完成了 ClickStack Open Source 的部署。
+    以下指南假设您已参照[入门指南](/zh/clickstack/getting-started/oss)完成了 ClickStack 开源版的部署。
 
     <Steps>
       <Step>
@@ -445,7 +445,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       </Step>
 
       <Step>
-        ### 下载样本数据
+        ### 下载示例数据
 
         <VectorSampleData />
       </Step>
@@ -490,7 +490,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         <Info>
           **Nginx 主键**
 
-          上述主键是根据 ClickStack UI 中 Nginx 日志的典型访问模式设计的，但在生产环境中可能需要根据你的工作负载进行调整。
+          上述主键是根据 ClickStack UI 中 Nginx 日志的常见访问模式设定的，但在生产环境中可能需要根据实际工作负载进行调整。
         </Info>
       </Step>
 
@@ -518,7 +518,7 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
             source: |
               . = parse_json!(to_string!(.message))
               ts = parse_timestamp!(.time_local, format: "%d/%b/%Y:%H:%M:%S %z")
-              # 适合 ClickHouse 的 DateTime 格式
+              # ClickHouse-friendly DateTime format
               .time_local = format_timestamp!(ts, format: "%F %T")
 
         sinks:
@@ -583,9 +583,9 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
         )
         ```
 
-        这会根据结构化字段重新构建日志行。
+        这会根据结构化字段还原日志行。
 
-        有关其他选项，请参阅[配置参考](/zh/clickstack/managing/config)。
+        有关其他可用选项，请参阅[配置参考](/zh/clickstack/managing/config)。
       </Step>
 
       <Step>

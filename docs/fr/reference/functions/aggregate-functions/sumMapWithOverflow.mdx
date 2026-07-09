@@ -19,10 +19,11 @@ Introduite dans : v20.1.0
 Calcule le total d’un tableau `value` selon les clés spécifiées dans le tableau `key`. Renvoie un tuple de deux tableaux : les clés dans l’ordre trié et les valeurs additionnées pour les clés correspondantes.
 Cette fonction diffère de la fonction [`sumMap`](/fr/reference/functions/aggregate-functions/sumMap) en ce qu’elle effectue la sommation avec dépassement de capacité, c’est-à-dire qu’elle renvoie pour la somme le même type de données que celui de l’argument.
 
-<Note>
-  * Passer un tuple de tableaux de clés et de valeurs revient au même que passer un tableau de clés et un tableau de valeurs.
-  * Le nombre d’éléments de `key` et de `value` doit être identique pour chaque ligne totalisée.
-</Note>
+:::note
+
+* Passer un tuple de tableaux de clés et de valeurs revient au même que passer un tableau de clés et un tableau de valeurs.
+* Le nombre d’éléments de `key` et de `value` doit être identique pour chaque ligne totalisée.
+  :::
 
 **Syntaxe**
 

@@ -439,11 +439,11 @@ También conviene comprobar lo siguiente:
   ### ¿Puedo hacer que ClickPipe cree un slot de replicación con failover habilitado?
 </div>
 
-Sí, en un ClickPipe de Postgres con el modo de replicación configurado como CDC o Snapshot + CDC, puedes hacer que ClickPipes cree un slot de replicación con failover habilitado activando el siguiente interruptor en la sección `Advanced Settings` al crear el ClickPipe. Ten en cuenta que tu versión de Postgres debe ser 17 o superior para usar esta función.
+Sí, en un ClickPipe de Postgres con el modo de replicación configurado como CDC o Snapshot + CDC, puedes hacer que ClickPipes cree un slot de replicación con failover habilitado activando el interruptor que aparece a continuación en la sección `Advanced Settings` al crear el ClickPipe. Ten en cuenta que tu versión de Postgres debe ser 17 o superior para usar esta función.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
 
-Si el origen está configurado correctamente, el slot se conserva tras un failover a una réplica de lectura de Postgres, lo que garantiza una replicación continua de los datos. Más información [aquí](https://www.postgresql.org/docs/current/logical-replication-failover.html).
+Si el origen está configurado correctamente, el slot se conserva tras un failover a una réplica de lectura de Postgres, lo que garantiza la replicación continua de los datos. Más información [aquí](https://www.postgresql.org/docs/current/logical-replication-failover.html).
 
 <div id="transient-logical-decoding-errors">
   ### Veo errores como `Internal error encountered during logical decoding of aborted sub-transaction`

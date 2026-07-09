@@ -34,24 +34,24 @@ import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupporte
 
 ```yaml
 jsonData:
-  host: 127.0.0.1 # （必填）服务器地址。
-  port: 9000      # （必填）服务器端口。native 协议默认安全端口为 9440，非安全端口为 9000；HTTP 协议默认安全端口为 8443，非安全端口为 8123。
+  host: 127.0.0.1 # (required) server address.
+  port: 9000      # (required) server port. For native, defaults to 9440 secure and 9000 insecure. For HTTP, defaults to 8443 secure and 8123 insecure.
 
-  protocol: native # （必填）连接所使用的协议，可设置为 "native" 或 "http"。
-  secure: false    # 若使用安全连接，则设置为 true。
+  protocol: native # (required) the protocol used for the connection. Can be set to "native" or "http".
+  secure: false    # set to true if the connection is secure.
 
-  username: default # 用于身份验证的用户名。
+  username: default # the username used for authentication.
 
-  tlsSkipVerify:     <boolean> # 设置为 true 时跳过 TLS 验证。
-  tlsAuth:           <boolean> # 设置为 true 以启用 TLS 客户端身份验证。
-  tlsAuthWithCACert: <boolean> # 提供了 CA 证书时设置为 true，验证自签名 TLS 证书时必须启用。
+  tlsSkipVerify:     <boolean> # skips TLS verification when set to true.
+  tlsAuth:           <boolean> # set to true to enable TLS client authentication.
+  tlsAuthWithCACert: <boolean> # set to true if CA certificate is provided. Required for verifying self-signed TLS certificates.
 
 secureJsonData:
-  password: secureExamplePassword # 用于身份验证的密码。
+  password: secureExamplePassword # the password used for authentication.
 
-  tlsCACert:     <string> # TLS CA 证书
-  tlsClientCert: <string> # TLS 客户端证书
-  tlsClientKey:  <string> # TLS 客户端密钥
+  tlsCACert:     <string> # TLS CA certificate
+  tlsClientCert: <string> # TLS client certificate
+  tlsClientKey:  <string> # TLS client key
 ```
 
 请注意，从 UI 保存配置时，系统会自动添加一个 `version` 属性。该属性显示保存此配置时所使用的插件版本。
@@ -118,12 +118,12 @@ secureJsonData:
 
 ```yaml
 jsonData:
-  defaultDatabase: default # query builder 加载的默认数据库。默认值为 "default"。
-  defaultTable: <string>   # query builder 加载的默认表。
+  defaultDatabase: default # default database loaded by the query builder. Defaults to "default".
+  defaultTable: <string>   # default table loaded by the query builder.
 
-  dialTimeout: 10    # 连接服务器时的拨号超时时间，单位为秒。默认值为 "10"。
-  queryTimeout: 60   # 执行查询时的超时时间，单位为秒。默认值为 60。此设置需要用户具有相应权限，若出现权限错误，可尝试将其设置为 "0" 以禁用该功能。
-  validateSql: false # 设置为 true 时，将在 SQL 编辑器中对 SQL 进行验证。
+  dialTimeout: 10    # dial timeout when connecting to the server, in seconds. Defaults to "10".
+  queryTimeout: 60   # query timeout when running a query, in seconds. Defaults to 60. This requires permissions on the user, if you get a permission error try setting it to "0" to disable it.
+  validateSql: false # when set to true, will validate the SQL in the SQL editor.
 ```
 
 <div id="opentelemetry">
@@ -156,16 +156,16 @@ OpenTelemetry 数据可通过我们的 [exporter 插件](https://github.com/open
 ```yaml
 jsonData:
   logs:
-    defaultDatabase: default # 默认日志数据库。
-    defaultTable: otel_logs  # 默认日志表。如果使用 OTel，应将其设置为 "otel_logs"。
+    defaultDatabase: default # default log database.
+    defaultTable: otel_logs  # default log table. If you're using OTel, this should be set to "otel_logs".
 
-    otelEnabled: false  # 如果启用了 OTel，请设置为 true。
-    otelVersion: latest # 要使用的 OTel collector schema 版本。版本信息显示在 UI 中，"latest" 表示使用插件中可用的最新版本。
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    # 打开新日志查询时默认选择的列。启用 OTel 后此设置将被忽略。
-    timeColumn:       <string> # 日志的主时间列。
-    levelColumn:   <string> # 日志的级别/严重程度。值通常为 "INFO"、"error" 或 "Debug"。
-    messageColumn: <string> # 日志的消息/内容。
+    # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
+    timeColumn:       <string> # the primary time column for the log.
+    levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
+    messageColumn: <string> # the log's message/content.
 ```
 
 <div id="traces">
@@ -187,23 +187,23 @@ jsonData:
 ```yaml
 jsonData:
   traces:
-    defaultDatabase: default  # 默认链路追踪数据库。
-    defaultTable: otel_traces # 默认链路追踪表。如果使用 OTel，应将其设置为 "otel_traces"。
+    defaultDatabase: default  # default trace database.
+    defaultTable: otel_traces # default trace table. If you're using OTel, this should be set to "otel_traces".
 
-    otelEnabled: false  # 如果启用了 OTel，请设置为 true。
-    otelVersion: latest # 要使用的 OTel collector schema 版本。版本号显示在 UI 中，"latest" 将使用插件中最新的可用版本。
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
-    # 打开新的链路追踪查询时默认选择的列。如果启用了 OTel，此设置将被忽略。
-    traceIdColumn:       <string>    # trace ID 列。
-    spanIdColumn:        <string>    # span ID 列。
-    operationNameColumn: <string>    # 操作名称列。
-    parentSpanIdColumn:  <string>    # 父 span ID 列。
-    serviceNameColumn:   <string>    # 服务名称列。
-    durationTimeColumn:  <string>    # 耗时列。
-    durationUnitColumn:  <time unit> # 耗时单位。可设置为 "seconds"、"milliseconds"、"microseconds" 或 "nanoseconds"。OTel 的默认值为 "nanoseconds"。
-    startTimeColumn:     <string>    # 开始时间列。这是 trace span 的主时间列。
-    tagsColumn:          <string>    # 标签列。该列应为 map 类型。
-    serviceTagsColumn:   <string>    # 服务标签列。该列应为 map 类型。
+    # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
+    traceIdColumn:       <string>    # trace ID column.
+    spanIdColumn:        <string>    # span ID column.
+    operationNameColumn: <string>    # operation name column.
+    parentSpanIdColumn:  <string>    # parent span ID column.
+    serviceNameColumn:   <string>    # service name column.
+    durationTimeColumn:  <string>    # duration time column.
+    durationUnitColumn:  <time unit> # duration time unit. Can be set to "seconds", "milliseconds", "microseconds", or "nanoseconds". For OTel the default is "nanoseconds".
+    startTimeColumn:     <string>    # start time column. This is the primary time column for the trace span.
+    tagsColumn:          <string>    # tags column. This is expected to be a map type.
+    serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
 <div id="column-aliases">
@@ -254,9 +254,9 @@ Grafana 要求别名表具有以下列结构：
 
 ```sql
 CREATE TABLE aliases (
-  `alias` String,  -- 别名的名称，显示在 Grafana 列选择器中
-  `select` String, -- 在 SQL 生成器中使用的 SELECT 语法
-  `type` String    -- 结果列的类型，插件将据此调整 UI 选项以匹配数据类型。
+  `alias` String,  -- The name of the alias, as seen in the Grafana column selector
+  `select` String, -- The SELECT syntax to use in the SQL generator
+  `type` String    -- The type of the resulting column, so the plugin can modify the UI options to match the data type.
 )
 ```
 
@@ -270,8 +270,8 @@ CREATE TABLE example_table (
 CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
 
 INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
-('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- 保留表中的原始列（可选）
-('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- 添加新列，将 TimestampNanos 转换为 Date 类型
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Preserve original column from table (optional)
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Add new column that converts TimestampNanos to a Date
 ```
 
 然后，我们就可以将此表配置为供 Grafana 使用。请注意，这个名称可以随意指定，甚至可以在单独的数据库中定义：

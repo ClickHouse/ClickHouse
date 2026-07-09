@@ -436,10 +436,10 @@ CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish =
 * ما إذا كانت هناك سياسات صفوف على جانب ClickHouse قد تؤدي إلى تصفية بعض الصفوف.
 
 <div id="failover-slot">
-  ### هل يمكنني جعل ClickPipe ينشئ فتحة نسخ متماثل مع تمكين failover؟
+  ### هل يمكنني جعل ClickPipe ينشئ فتحة النسخ المتماثل مع تمكين failover؟
 </div>
 
-نعم، بالنسبة إلى Postgres ClickPipe عندما يكون وضع النسخ المتماثل هو CDC أو Snapshot + CDC، يمكنك جعل ClickPipes ينشئ فتحة نسخ متماثل مع تمكين failover، وذلك عبر تبديل المفتاح أدناه في قسم `Advanced Settings` أثناء إنشاء ClickPipe. لاحظ أن إصدار Postgres لديك يجب أن يكون 17 أو أحدث لاستخدام هذه الميزة.
+نعم، بالنسبة إلى Postgres ClickPipe عندما يكون وضع النسخ المتماثل هو CDC أو Snapshot + CDC، يمكنك جعل ClickPipes ينشئ فتحة النسخ المتماثل مع تمكين failover، وذلك عبر تبديل المفتاح أدناه في قسم `Advanced Settings` أثناء إنشاء ClickPipe. لاحظ أن إصدار Postgres لديك يجب أن يكون 17 أو أحدث لاستخدام هذه الميزة.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
 

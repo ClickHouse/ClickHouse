@@ -49,7 +49,7 @@ ClickHouse インスタンスの観点では、次のいずれかの方法を選
   ## Redshift から ClickHouse へデータを Pull する
 </div>
 
-Pull シナリオでは、ClickHouse JDBC Bridge を使用して ClickHouse インスタンスから Redshift クラスターへ直接接続し、`INSERT INTO ... SELECT` クエリを実行します。
+Pull シナリオでは、ClickHouse JDBC Bridge を活用して ClickHouse インスタンスから Redshift クラスターに直接接続し、`INSERT INTO ... SELECT` クエリを実行します。
 
 <Image img="/images/integrations/data-ingestion/redshift/pull.webp" size="md" alt="Redshift から ClickHouse への PULL" />
 
@@ -214,7 +214,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を使用して ClickHouse イ�
 
 * プロセスが2段階になります (Redshift からアンロードして、その後 ClickHouse にロードする必要があります) 。
 
-<div id="tutorial">
+<div id="tutorial-1">
   ### チュートリアル
 </div>
 
@@ -278,7 +278,7 @@ Pull シナリオでは、ClickHouse JDBC Bridge を使用して ClickHouse イ�
     ```
 
     <Note>
-      この例では、中間フォーマットとして CSV を使用しました。ただし、本番ワークロードでは、大規模な移行には Apache Parquet を最適な選択肢として推奨します。圧縮に対応しているため、転送時間を短縮しながらストレージコストも抑えられるからです。 (デフォルトでは、各行グループは SNAPPY で圧縮されます。) また、ClickHouse は Parquet のカラム指向も活用して、データの取り込みを高速化します。
+      この例では、PIVOT フォーマットとして CSV を使用しました。ただし、本番ワークロードでは、大規模な移行には Apache Parquet を最適な選択肢として推奨します。圧縮に対応しているため、転送時間を短縮しながらストレージコストも抑えられるからです。 (デフォルトでは、各行グループは SNAPPY で圧縮されます。) また、ClickHouse は Parquet のカラム指向も活用して、データの取り込みを高速化します。
     </Note>
   </Step>
 </Steps>

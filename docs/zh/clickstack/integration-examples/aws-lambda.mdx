@@ -97,7 +97,7 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
       MyFunction:
         Type: AWS::Serverless::Function
         Properties:
-          # ... 其他配置 ...
+          # ... other configuration ...
           Layers:
             - arn:aws:lambda:{region}:418653438961:layer:rotel-extension-{arch}:{version}
     ```
@@ -113,13 +113,13 @@ import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintaine
     将这些环境变量添加到你的 Lambda 函数中：
 
     ```bash
-    # 必填：ClickStack OTLP 端点
+    # Required: ClickStack OTLP endpoint
     ROTEL_OTLP_EXPORTER_ENDPOINT=https://clickstack.example.com:4317
 
-    # 可选：身份验证请求头
+    # Optional: Authentication headers
     ROTEL_OTLP_EXPORTER_CUSTOM_HEADERS="Authorization=<YOUR_INGESTION_API_KEY>"
 
-    # 可选：服务名称（默认为 Lambda 函数名称）
+    # Optional: Service name (defaults to Lambda function name)
     ROTEL_OTEL_RESOURCE_ATTRIBUTES="service.name=my-lambda-api,service.version=1.0.0"
     ```
 

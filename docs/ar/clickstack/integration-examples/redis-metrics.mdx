@@ -312,13 +312,13 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
 <Steps>
   <Step>
-    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">تنزيل</TrackedLink> تهيئة لوحة المعلومات
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/redis-metrics-dashboard.json'} download="redis-metrics-dashboard.json" eventName="docs.redis_metrics_monitoring.dashboard_download">تنزيل</TrackedLink> إعداد لوحة المعلومات
   </Step>
 
   <Step>
     #### استيراد لوحة المعلومات المعدّة مسبقًا
 
-    1. افتح HyperDX وانتقل إلى قسم Dashboards
+    1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
@@ -454,4 +454,4 @@ docker exec <clickstack-container> telnet redis 6379
   ## الانتقال إلى بيئة الإنتاج
 </div>
 
-يبني هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتسهيل الإعداد السريع. بالنسبة إلى عمليات النشر في بيئات الإنتاج، نوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على تهيئة بيئة الإنتاج.
+يعتمد هذا الدليل على OpenTelemetry Collector المضمّن في ClickStack لتسهيل الإعداد السريع. أمّا لعمليات النشر في بيئة الإنتاج، فنوصي بتشغيل OTel Collector الخاص بك وإرسال البيانات إلى نقطة نهاية OTLP الخاصة بـ ClickStack. راجع [إرسال بيانات OpenTelemetry](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئة الإنتاج.

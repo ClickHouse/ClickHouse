@@ -77,9 +77,9 @@ Neon では、UI から論理レプリケーションを有効にできます。
 Neon Postgres インスタンスで、以下の設定を確認しましょう。
 
 ```sql
-SHOW wal_level; -- logical である必要があります
-SHOW max_wal_senders; -- 10 である必要があります
-SHOW max_replication_slots; -- 10 である必要があります
+SHOW wal_level; -- should be logical
+SHOW max_wal_senders; -- should be 10
+SHOW max_replication_slots; -- should be 10
 ```
 
 <div id="ip-whitelisting-for-neon-enterprise-plan">

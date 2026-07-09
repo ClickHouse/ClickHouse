@@ -60,10 +60,10 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     구성을 변경한 후 MongoDB를 재시작하십시오:
 
     ```bash
-    # systemd의 경우
+    # For systemd
     sudo systemctl restart mongod
 
-    # Docker의 경우
+    # For Docker
     docker restart <mongodb-container>
     ```
   </Step>
@@ -371,4 +371,4 @@ tail -1 /var/log/mongodb/mongod.log | python3 -m json.tool
   ## 프로덕션 환경으로 전환하기
 </div>
 
-이 가이드는 빠르게 설정할 수 있도록 ClickStack에 내장된 OpenTelemetry Collector를 확장합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션용 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.
+이 가이드는 빠르게 설정할 수 있도록 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장한 것입니다. 프로덕션 환경에 배포할 때는 자체 OTel Collector를 실행하고 텔레메트리 데이터를 ClickStack의 OTLP endpoint로 전송하는 것을 권장합니다. 프로덕션 환경용 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

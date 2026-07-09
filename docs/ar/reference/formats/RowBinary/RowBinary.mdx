@@ -1291,7 +1291,7 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
   ### QBit
 </div>
 
-يُعد `QBit` نوعًا متجهيًا يتيح إجراء `lookup` بكفاءة عند مستويات مختلفة من الدقة. ويُخزَّن داخليًا بتنسيق منقول. وعلى مستوى wire، فإن QBit هو ببساطة `Array` من نوع العنصر الأساسي (`Float32` أو `Float64` أو `BFloat16`). ويجري تحسين نقل البت للتخزين على جهة الخادم، وليس في بروتوكول RowBinary.
+يُعد `QBit` نوعًا متجهيًا يتيح إجراء `lookup` بكفاءة عند مستويات مختلفة من الدقة. ويُخزَّن داخليًا بتنسيق منقول. وعلى مستوى wire، فإن QBit هو ببساطة `Array` من نوع العنصر الأساسي (`Int8` أو `Float32` أو `Float64` أو `BFloat16`). ويجري تحسين نقل البت للتخزين على جهة الخادم، وليس في بروتوكول RowBinary.
 
 البنية:
 
@@ -1299,9 +1299,9 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 QBit(element_type, dimension)
 ```
 
-حيث يكون `element_type` هو `Float32` أو `Float64` أو `BFloat16`، ويكون `dimension` هو البُعد الثابت للمتجه.
+حيث يكون `element_type` هو `Int8` أو `Float32` أو `Float64` أو `BFloat16`، ويكون `dimension` هو البُعد الثابت للمتجه.
 
-تنسيق النقل الثنائي: مطابق لـ `Array(element_type)`:
+wire format: مطابق لـ `Array(element_type)`:
 
 ```text
 // LEB128 length

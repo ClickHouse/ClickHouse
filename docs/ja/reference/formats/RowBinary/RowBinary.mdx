@@ -1289,7 +1289,7 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
   ### QBit
 </div>
 
-`QBit` は、異なる精度レベルで効率的にルックアップできるベクトル型です。内部的には転置フォーマットで保存されます。転送時には、QBit は単に基底要素型 (`Float32`、`Float64`、または `BFloat16`) の `Array` です。保存時のビット転置の最適化は RowBinary プロトコルではなく、サーバー側で行われます。
+`QBit` は、異なる精度レベルで効率的にルックアップできるベクトル型です。内部的には転置フォーマットで保存されます。転送時には、QBit は単に基底要素型 (`Int8`、`Float32`、`Float64`、または `BFloat16`) の `Array` です。保存時のビット転置の最適化は RowBinary プロトコルではなく、サーバー側で行われます。
 
 構文:
 
@@ -1297,13 +1297,13 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 QBit(element_type, dimension)
 ```
 
-ここで、`element_type` は `Float32`、`Float64`、または `BFloat16` で、`dimension` は固定のベクトル次元です。
+ここで、`element_type` は `Int8`、`Float32`、`Float64`、または `BFloat16` で、`dimension` は固定のベクトル次元です。
 
 ワイヤ形式: `Array(element_type)` と同一です。
 
 ```text
-// LEB128 長さ
-// 続いて `element_type` の要素が `length` 個
+// LEB128 length
+// followed by `length` elements of `element_type`
 ```
 
 `[1.0, 2.0, 3.0, 4.0]` を含む `QBit(Float32, 4)` のエンコード例:
@@ -1313,7 +1313,7 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 ```
 
 ```text
-0x04,                   // LEB128 - 配列は4要素
+0x04,                   // LEB128 - array has 4 elements
 0x00, 0x00, 0x80, 0x3F, // 1.0 as Float32
 0x00, 0x00, 0x00, 0x40, // 2.0 as Float32
 0x00, 0x00, 0x40, 0x40, // 3.0 as Float32

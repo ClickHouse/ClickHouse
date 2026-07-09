@@ -40,13 +40,13 @@ Si desea probar la integración de logs del host antes de configurar su propio e
     Primero, verifique que su sistema esté generando archivos de syslog:
 
     ```bash
-    # Compruebe si existen archivos de syslog (Linux)
+    # Check if syslog files exist (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # O en macOS
+    # Or on macOS
     ls -la /var/log/system.log
 
-    # Ver entradas recientes
+    # View recent entries
     tail -20 /var/log/syslog
     ```
 
@@ -219,14 +219,14 @@ Si desea probar la integración de logs del host antes de configurar su propio e
     ```yaml
     services:
       clickstack:
-        # ... configuración existente ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... otras variables de entorno ...
+          # ... other environment variables ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... otros volúmenes ...
+          # ... other volumes ...
     ```
 
     ##### Opción 2: Docker Run (imagen todo en uno)
@@ -515,4 +515,4 @@ Si el formato no coincide, selecciona la pestaña de configuración adecuada en 
   ## Paso a producción
 </div>
 
-Esta guía se basa en el OpenTelemetry Collector integrado de ClickStack para ofrecer una configuración rápida. Para implementaciones de producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.
+Esta guía amplía el OpenTelemetry Collector integrado de ClickStack para facilitar una configuración rápida. Para implementaciones en producción, recomendamos ejecutar su propio OTel Collector y enviar los datos al endpoint OTLP de ClickStack. Consulte [Envío de datos de OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para la configuración de producción.

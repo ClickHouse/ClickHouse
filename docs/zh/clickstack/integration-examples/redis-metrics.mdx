@@ -308,7 +308,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   ## 仪表盘与可视化
 </div>
 
-为帮助你开始使用 ClickStack 监控 Redis，我们提供了 Redis 指标 所需的关键可视化内容。
+为帮助你开始使用 ClickStack 监控 Redis，我们提供了 Redis 指标 的关键可视化内容。
 
 <Steps>
   <Step>
@@ -316,9 +316,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   </Step>
 
   <Step>
-    #### 导入预构建仪表盘
+    #### 导入预构建的仪表盘
 
-    1. 打开 HyperDX 并进入 仪表盘 部分
+    1. 打开 HyperDX 并导航到仪表盘部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
     <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
@@ -331,7 +331,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   <Step>
     #### 查看仪表盘
 
-    导入后，仪表盘会创建完成，且所有可视化都已预先配置好：
+    仪表盘创建完成后，所有可视化都将预先配置好：
 
     <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Redis 指标 仪表盘" />
 
@@ -451,7 +451,7 @@ docker exec <clickstack-container> telnet redis 6379
 * 通过复制 receiver 配置并使用不同的端点和服务名称，监控多个 Redis 实例
 
 <div id="going-to-production">
-  ## 生产环境部署
+  ## 部署到生产环境
 </div>
 
-本指南在 ClickStack 内置的 OpenTelemetry Collector 基础上进行了扩展，便于快速完成设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参阅[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。
+本指南利用 ClickStack 内置的 OpenTelemetry Collector 实现快速设置。对于生产环境部署，我们建议运行您自己的 OTel Collector，并将数据发送到 ClickStack 的 OTLP 端点。有关生产环境配置，请参见[发送 OpenTelemetry 数据](/zh/clickstack/ingesting-data/opentelemetry)。

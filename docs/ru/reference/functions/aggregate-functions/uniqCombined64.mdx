@@ -20,23 +20,24 @@ doc_type: 'reference'
 
 Эта функция возвращает детерминированный результат (он не зависит от порядка обработки запроса).
 
-<Note>
-  Поскольку для всех типов используется 64-битный хеш, результат не страдает от очень большой погрешности при кардинальностях, значительно превышающих `UINT_MAX`, как у [`uniqCombined`](/ru/reference/functions/aggregate-functions/uniqCombined), который использует 32-битный хеш для типов, отличных от String.
-</Note>
+:::note
+Поскольку для всех типов используется 64-битный хеш, результат не страдает от очень большой погрешности при кардинальностях, значительно превышающих `UINT_MAX`, как у [`uniqCombined`](/ru/reference/functions/aggregate-functions/uniqCombined), который использует 32-битный хеш для типов, отличных от String.
+:::
 
 По сравнению с функцией [uniq](/ru/reference/functions/aggregate-functions/uniq), функция uniqCombined64:
 
 * Потребляет в несколько раз меньше памяти
 * Обеспечивает в несколько раз более высокую точность
 
-<Accordion title="Подробности реализации">
+<details>
+  <summary>Подробности реализации</summary>
   Эта функция вычисляет 64-битный хеш для всех типов данных и всех параметров агрегатной функции, а затем использует его в вычислениях.
   Она использует комбинацию трех алгоритмов: массива, хеш-таблицы и [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog) с таблицей коррекции ошибок:
 
   * Для небольшого числа различных элементов используется массив
   * Когда размер множества увеличивается, используется хеш-таблица
   * Для еще большего числа элементов используется HyperLogLog, который занимает фиксированный объем памяти
-</Accordion>
+</details>
 
 **Синтаксис**
 
@@ -74,19 +75,19 @@ SELECT uniqCombined64(number) FROM numbers(1e10);
 **Сравнение с uniqCombined**
 
 ```sql title=Query
--- uniqCombined64 с большим набором данных
+-- uniqCombined64 with large dataset
 SELECT uniqCombined64(number) FROM numbers(1e10);
 
--- uniqCombined с тем же набором данных даёт плохое приближение
+-- uniqCombined with same dataset shows poor approximation
 SELECT uniqCombined(number) FROM numbers(1e10);
 ```
 
 ```response title=Response
 ┌─uniqCombined64(number)─┐
-│             9998568925 │ -- 10,00 миллиарда
+│             9998568925 │ -- 10.00 billion
 └────────────────────────┘
 ┌─uniqCombined(number)─┐
-│           5545308725 │ -- 5,55 миллиарда
+│           5545308725 │ -- 5.55 billion
 └──────────────────────┘
 ```
 

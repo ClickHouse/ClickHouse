@@ -16,11 +16,12 @@ Introduzido em: v1.1.0
 
 Calcula o número aproximado de valores distintos do argumento usando o algoritmo [HyperLogLog](https://en.wikipedia.org/wiki/HyperLogLog).
 
-<Warning>
-  Não recomendamos usar esta função. Na maioria dos casos, use a função [uniq](/pt-BR/reference/functions/aggregate-functions/uniq) ou [uniqCombined](/pt-BR/reference/functions/aggregate-functions/uniqCombined).
-</Warning>
+:::warning
+Não recomendamos usar esta função. Na maioria dos casos, use a função [uniq](/pt-BR/reference/functions/aggregate-functions/uniq) ou [uniqCombined](/pt-BR/reference/functions/aggregate-functions/uniqCombined).
+:::
 
-<Accordion title="Detalhes de implementação">
+<details>
+  <summary>Detalhes de implementação</summary>
   Esta função calcula um hash para todos os parâmetros na agregação e depois o usa nos cálculos.
   Ela usa o algoritmo HyperLogLog para aproximar o número de valores distintos do argumento.
 
@@ -31,7 +32,7 @@ Calcula o número aproximado de valores distintos do argumento usando o algoritm
   A partir de 100M, o erro de estimativa aumenta, e a função retornará resultados muito imprecisos para conjuntos de dados com cardinalidade extremamente alta (1B+ elementos).
 
   Fornece um resultado determinístico (não depende da ordem de processamento da consulta).
-</Accordion>
+</details>
 
 **Sintaxe**
 
@@ -45,7 +46,7 @@ uniqHLL12(x[, ...])
 
 **Valor retornado**
 
-Retorna um número do tipo UInt64 que representa a quantidade aproximada de valores de argumento distintos. [`UInt64`](/pt-BR/reference/data-types/int-uint)
+Retorna um número do tipo UInt64 que representa a quantidade aproximada de valores distintos do argumento. [`UInt64`](/pt-BR/reference/data-types/int-uint)
 
 **Exemplos**
 

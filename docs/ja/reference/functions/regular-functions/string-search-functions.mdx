@@ -41,14 +41,12 @@ doc_type: 'reference'
 
 文字列内で正規表現に一致する回数を返します。
 
-<Info>
-  **バージョン依存の動作**
+:::note バージョン依存の動作
+この関数の動作は、ClickHouse のバージョンによって異なります。
 
-  この関数の動作は、ClickHouse のバージョンによって異なります。
-
-  * バージョン &lt; v25.6 では、pattern が受理される場合でも、最初の空一致でカウントを停止します。
-  * バージョン &gt;= 25.6 では、空一致が発生しても関数は実行を継続します。従来の動作は、setting `count_matches_stop_at_empty_match = true` を使用して復元できます。
-</Info>
+* バージョン &lt; v25.6 では、pattern が受理される場合でも、最初の空一致でカウントを停止します。
+* バージョン &gt;= 25.6 では、空一致が発生しても関数は実行を継続します。従来の動作は、setting `count_matches_stop_at_empty_match = true` を使用して復元できます。
+  :::
 
 **構文**
 
@@ -458,27 +456,29 @@ SELECT extractGroups(s, '< ([\\w\\-]+): ([^\\r\\n]+)');
 
 [`hasAnyTokens`](#hasAnyTokens) と同様ですが、`needle` 文字列またはArrayに含まれるすべてのトークンが `input` 文字列と一致する場合は1を、それ以外の場合は0を返します。`input` がカラムの場合、この条件を満たすすべての行を返します。
 
-<Note>
-  最適なパフォーマンスを得るには、カラム `input` に [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義しておく必要があります。
-  テキスト索引が定義されていない場合、この関数はカラム全体を総当たりでスキャンするため、索引ルックアップと比べて桁違いに低速になります。
-</Note>
+:::note
+カラム `input` には、最適なパフォーマンスを得るために [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義しておく必要があります。
+テキスト索引が定義されていない場合、この関数はカラム全体を総当たりでスキャンするため、索引ルックアップと比べて桁違いに低速になります。
+:::
 
 検索前に、この関数はトークン化を行い、
 
-* `input` 引数 (必須) と
+* `input` 引数 (常に) と
 * `needle` 引数 ([String](/ja/reference/data-types/string) として指定された場合) は、
   テキスト索引で指定されたトークナイザーを使用して処理されます。
   カラムにテキスト索引が定義されていない場合は、代わりに `splitByNonAlpha` トークナイザーが使用されます。
   `needle` 引数の型が [Array(String)](/ja/reference/data-types/array) の場合、配列の各要素はトークンとして扱われ、追加のトークン化は行われません。
+  テキスト索引に [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) 式が設定されている場合、`needle` (`String` として指定された場合) にはトークン化の前にプリプロセッサが適用されます。
+  テキスト索引に [ポストプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) 式が設定されている場合、needle のトークンと input のトークンの両方 (つまり、どちらもトークン化後) にポストプロセッサが適用されます。
 
 重複するトークンは無視されます。
 例えば、needles = [&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] は [&#39;ClickHouse&#39;] と同じように扱われます。
 
-<Note>
-  テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasAllTokens` はそれを `input` に適用し、`needles` が [String](/ja/reference/data-types/string) の場合はトークン化の前に `needles` にも適用します。`needles` が [Array(String)](/ja/reference/data-types/array) の場合、その要素はそのまま渡され、プリプロセッサは適用されません。
-  プリプロセッサはテキスト索引を使用する経路でのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (例: `SETTINGS use_skip_indexes = 0`) では結果が異なることがあります。
-  この不一致は、全文検索の使い勝手を向上させるために許容されています。
-</Note>
+:::note
+テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasAllTokens` はそれを `input` に適用し、`needles` が [String](/ja/reference/data-types/string) の場合はトークン化の前に `needles` にも適用します。`needles` が [Array(String)](/ja/reference/data-types/array) の場合、その要素はそのまま渡され、プリプロセッサは適用されません。
+プリプロセッサはテキスト索引の経路でのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (例: `SETTINGS use_skip_indexes = 0`) では結果が異なることがあります。
+この不一致は、全文検索の使い勝手を向上させるために許容されています。
+:::
 
 **構文**
 
@@ -503,7 +503,7 @@ hasAllTokens(input, needles)
 **文字列のneedleを使った基本的な使い方**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -511,9 +511,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAllTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -525,7 +525,17 @@ SELECT count() FROM table WHERE hasAllTokens(msg, 'a\\d()');
 **Array内で検索するneedleをAS-IS (トークン化なし) で指定する**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -534,10 +544,20 @@ SELECT count() FROM table WHERE hasAllTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**`tokens` 関数を使用してneedleを生成する**
+**`tokens` 関数を使って needles を生成する**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAllTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -553,12 +573,12 @@ SELECT hasAllTokens('abcdef', 'abc', 'ngrams(3)');
 ```
 
 ```response title=Response
-┌─hasAllTokens('abcdef', 'abc', 'ngrams(3)')─┐
-│                                            1 │
-└──────────────────────────────────────────────┘
+┌─hasAllTokens⋯ngrams(3)')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
-**ArrayおよびMapカラムの使用例**
+**Array と Map カラムの使用例**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -577,12 +597,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
-**Array型カラムの例**
+**Array型のカラムの例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 ```
 
@@ -592,9 +624,24 @@ SELECT count() FROM log WHERE hasAllTokens(tags, 'clickhouse');
 └─────────┘
 ```
 
-**mapKeys を使った例**
+**mapKeysの使用例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -604,9 +651,24 @@ SELECT count() FROM log WHERE hasAllTokens(mapKeys(attributes), ['address', 'log
 └─────────┘
 ```
 
-**mapValuesを使った例**
+**mapValues の例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -622,12 +684,12 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
 
 導入バージョン: v25.10.0
 
-`needle` の文字列またはArrayの中に少なくとも1つのtokenが `input` 文字列と一致する場合は1を、それ以外の場合は0を返します。`input` がカラムの場合、この条件を満たすすべての行を返します。
+`needle` の文字列またはArrayの中に少なくとも1つのトークンが `input` 文字列と一致する場合は1を、それ以外の場合は0を返します。`input` がカラムの場合、この条件を満たすすべての行を返します。
 
-<Note>
-  最適なパフォーマンスを得るには、カラム `input` に [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義する必要があります。
-  テキスト索引が定義されていない場合、この関数はカラム全体を総当たりでスキャンします。これは索引ルックアップに比べて桁違いに低速です。
-</Note>
+:::note
+最適なパフォーマンスを得るには、カラム `input` に [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義する必要があります。
+テキスト索引が定義されていない場合、この関数はカラム全体を総当たりでスキャンします。これは索引ルックアップに比べて桁違いに低速です。
+:::
 
 検索前に、この関数はトークン化します
 
@@ -636,15 +698,17 @@ SELECT count() FROM log WHERE hasAllTokens(mapValues(attributes), ['192.0.0.1', 
   テキスト索引で指定されたトークナイザーを使用して処理されます。
   カラムにテキスト索引が定義されていない場合は、代わりに `splitByNonAlpha` トークナイザーが使用されます。
   `needle` 引数の型が [Array(String)](/ja/reference/data-types/array) の場合、配列の各要素はトークンとして扱われ、追加のトークン化は行われません。
+  テキスト索引に [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) の式が設定されている場合、`needle` (`String` として指定された場合) には、トークン化の前にプリプロセッサが適用されます。
+  テキスト索引に [ポストプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional) の式が設定されている場合、トークン化の後にポストプロセッサが `needle` のトークンと `input` のトークンの両方に適用されます。
 
 重複するトークンは無視されます。
 例えば、[&#39;ClickHouse&#39;, &#39;ClickHouse&#39;] は [&#39;ClickHouse&#39;] と同じように扱われます。
 
-<Note>
-  テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasAnyTokens` はそれを `input` に適用し、`needles` が [String](/ja/reference/data-types/string) の場合はトークン化の前に `needles` にも適用します。`needles` が [Array(String)](/ja/reference/data-types/array) の場合、その要素はそのまま渡され、プリプロセッサは適用されません。
-  プリプロセッサはテキスト索引の経路でのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (例: `SETTINGS use_skip_indexes = 0`) では結果が異なる場合があります。
-  この不整合は、全文検索の使い勝手を向上させるために許容されています。
-</Note>
+:::note
+テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasAnyTokens` はそれを `input` に適用し、`needles` が [String](/ja/reference/data-types/string) の場合はトークン化の前に `needles` にも適用します。`needles` が [Array(String)](/ja/reference/data-types/array) の場合、その要素はそのまま渡され、プリプロセッサは適用されません。
+プリプロセッサはテキスト索引の経路でのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (例: `SETTINGS use_skip_indexes = 0`) では結果が異なる場合があります。
+この不整合は、全文検索の使い勝手を向上させるために許容されています。
+:::
 
 **構文**
 
@@ -669,7 +733,7 @@ hasAnyTokens(input, needles)
 **文字列のneedleを使った基本的な使い方**
 
 ```sql title=Query
-CREATE TABLE table (
+CREATE TABLE doc (
     id UInt32,
     msg String,
     INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
@@ -677,9 +741,9 @@ CREATE TABLE table (
 ENGINE = MergeTree
 ORDER BY id;
 
-INSERT INTO table VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
 
-SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
+SELECT count() FROM doc WHERE hasAnyTokens(msg, 'a\\d()');
 ```
 
 ```response title=Response
@@ -691,7 +755,17 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, 'a\\d()');
 **Array内でAS-IS (トークン化なし) で検索するneedleを指定する**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, ['a', 'd']);
 ```
 
 ```response title=Response
@@ -700,10 +774,20 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, ['a', 'd']);
 └─────────┘
 ```
 
-**`tokens` 関数を使用してneedleを生成する**
+**`tokens` 関数で needle を生成する**
 
 ```sql title=Query
-SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
+CREATE TABLE doc (
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByString(['()', '\\']))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO doc VALUES (1, '()a,\\bc()d'), (2, '()\\a()bc\\d'), (3, ',()a\\,bc,(),d,');
+
+SELECT count() FROM doc WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString', ['()', '\\']));
 ```
 
 ```response title=Response
@@ -712,7 +796,7 @@ SELECT count() FROM table WHERE hasAnyTokens(msg, tokens('a()d', 'splitByString'
 └─────────┘
 ```
 
-**ArrayおよびMapカラムの使用例**
+**ArrayカラムとMapカラムの使用例**
 
 ```sql title=Query
 CREATE TABLE log (
@@ -731,12 +815,24 @@ INSERT INTO log VALUES
     (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
 ```
 
-```response title=Response
-```
-
 **Arrayカラムを使った例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 ```
 
@@ -749,6 +845,21 @@ SELECT count() FROM log WHERE hasAnyTokens(tags, 'clickhouse');
 **mapKeysを使った例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log_level']);
 ```
 
@@ -761,6 +872,21 @@ SELECT count() FROM log WHERE hasAnyTokens(mapKeys(attributes), ['address', 'log
 **mapValuesを使った例**
 
 ```sql title=Query
+CREATE TABLE log (
+    id UInt32,
+    tags Array(String),
+    attributes Map(String, String),
+    INDEX idx_tags (tags) TYPE text(tokenizer = splitByNonAlpha),
+    INDEX idx_attributes_keys mapKeys(attributes) TYPE text(tokenizer = array),
+    INDEX idx_attributes_vals mapValues(attributes) TYPE text(tokenizer = array)
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO log VALUES
+    (1, ['clickhouse', 'clickhouse cloud'], {'address': '192.0.0.1', 'log_level': 'INFO'}),
+    (2, ['chdb'], {'embedded': 'true', 'log_level': 'DEBUG'});
+
 SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 'DEBUG']);
 ```
 
@@ -776,25 +902,25 @@ SELECT count() FROM log WHERE hasAnyTokens(mapValues(attributes), ['192.0.0.1', 
 
 導入バージョン: v26.4.0
 
-`input` に、`phrase` 内のすべての token が連続した順序で含まれているかどうかを確認します。
+`input` に、`phrase` 内のすべての トークン が連続した順序で含まれているかどうかを確認します。
 
-<Note>
-  最適なパフォーマンスを得るには、カラム `input` に [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義しておく必要があります。
-  テキスト索引が定義されていない場合、この関数は総当たりのカラムスキャンを実行します。これは索引ルックアップと比べて桁違いに低速です。
-</Note>
+:::note
+最適なパフォーマンスを得るには、カラム `input` に [テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) を定義しておく必要があります。
+テキスト索引が定義されていない場合、この関数は総当たりのカラムスキャンを実行します。これは索引ルックアップと比べて桁違いに低速です。
+:::
 
 検索を行う前に、この関数はテキスト索引に指定されたトークナイザーを使用して、`input` 引数と `phrase` 引数の両方をトークン化します。
 カラムにテキスト索引が定義されていない場合は、省略可能な第 3 引数としてトークナイザーが指定されていない限り、代わりに `splitByNonAlpha` トークナイザーが使用されます。
 トークナイザー引数には、`splitByNonAlpha`、`splitByString`、`ngrams`、`asciiCJK` のいずれかを指定する必要があります。
 
-<Note>
-  テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasPhrase` はトークン化の前にそれを `input` と `phrase` の両方に適用します。
-  プリプロセッサはテキスト索引のパスでのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (たとえば `SETTINGS use_skip_indexes = 0`) では結果が異なる場合があります。
-  この不整合は、全文検索の使い勝手を向上させるために許容されています。
-</Note>
+:::note
+テキスト索引で [プリプロセッサ](/ja/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (たとえば `lowerUTF8`) が定義されている場合、`hasPhrase` はトークン化の前にそれを `input` と `phrase` の両方に適用します。
+プリプロセッサはテキスト索引の経路でのみ適用されるため、テキスト索引を使用するクエリと使用しないクエリ (たとえば `SETTINGS use_skip_indexes = 0`) では結果が異なる場合があります。
+この不整合は、全文検索の使い勝手を向上させるために許容されています。
+:::
 
-[`hasToken`](#hasToken)、[`hasAnyTokens`](#hasAnyTokens)、[`hasAllTokens`](#hasAllTokens) とは異なり、`hasPhrase` では token が同じ順序で現れ、
-その間に別の token が挟まらないことが必要です。たとえば、`hasPhrase('the quick brown fox', 'quick fox')` は 0 を返します。
+[`hasToken`](#hasToken)、[`hasAnyTokens`](#hasAnyTokens)、[`hasAllTokens`](#hasAllTokens) とは異なり、`hasPhrase` では トークン が同じ順序で現れ、
+その間に別の トークン が挟まらないことが必要です。たとえば、`hasPhrase('the quick brown fox', 'quick fox')` は 0 を返します。
 これは、&quot;quick&quot; と &quot;fox&quot; の間に &quot;brown&quot; があるためです。
 
 **構文**
@@ -1061,6 +1187,11 @@ SELECT hasToken('clickhouse test', 'test')
 
 tokenbf&#95;v1 索引を使用して、haystack 内の needle の大文字と小文字を区別しないルックアップを実行します。
 
+:::note
+この関数には、デフォルト以外のトークナイザーや、プリプロセッサまたはポストプロセッサの式に関して、いくつか注意点があります。
+代わりに [`hasAnyTokens`](#hasAnyTokens) と [`hasAllTokens`](#hasAllTokens) を使用することを推奨します。
+:::
+
 **構文**
 
 ```sql
@@ -1082,6 +1213,11 @@ hasTokenCaseInsensitive(haystack, needle)
 導入バージョン: v23.1.0
 
 tokenbf&#95;v1 索引を使用して、haystack 内の needle を大文字と小文字を区別せずにルックアップします。needle の形式が不正な場合は null を返します。
+
+:::note
+この関数は、既定以外のトークナイザーや、プリプロセッサまたはポストプロセッサの式を使用する場合に、いくつか注意点があります。
+代わりに [`hasAnyTokens`](#hasAnyTokens) と [`hasAllTokens`](#hasAllTokens) を使用することを推奨します。
+:::
 
 **構文**
 
@@ -1249,9 +1385,9 @@ Unicode の正規化は自動では行われないため、必要に応じて `n
 リテラルの `%`、`_`、`\` (これらは `LIKE` のメタ文字です) に一致させるには、それぞれの前にバックスラッシュを付けます: `\%`、`\_`、`\\`。
 バックスラッシュの直後の文字が `%`、`_`、`\` 以外の場合、バックスラッシュは特別な意味を失い、リテラルとして解釈されます。
 
-<Note>
-  ClickHouse では、文字列内のバックスラッシュ自体も[エスケープする必要がある](/ja/reference/syntax#string)ため、実際には `\\%`、`\\_`、`\\\\` と記述する必要があります。
-</Note>
+:::note
+ClickHouse では、文字列内のバックスラッシュ自体も[エスケープする必要がある](/ja/reference/syntax#string)ため、実際には `\\%`、`\\_`、`\\\\` と記述する必要があります。
+:::
 
 `%needle%` 形式の `LIKE` 式では、この関数は `position` 関数と同程度の速度で動作します。
 それ以外の `LIKE` 式はすべて内部的に正規表現へ変換され、`match` 関数と同程度の性能で実行されます。
@@ -1340,15 +1476,13 @@ SELECT '50%off' LIKE '50#%off' ESCAPE '#';
 
 [`position`](#position) と似ていますが、引数 `haystack` と `locate` の順序が逆になっています。
 
-<Info>
-  **バージョン依存の動作**
+:::note バージョン依存の動作
+この関数の動作は、ClickHouse のバージョンによって異なります。
 
-  この関数の動作は、ClickHouse のバージョンによって異なります。
-
-  * バージョン &lt; v24.3 では、`locate` は関数 `position` のエイリアスであり、引数 `(haystack, needle[, start_pos])` を受け付けます。
-  * バージョン &gt;= 24.3 では、`locate` は独立した関数となり (MySQL との互換性向上のため) 、引数 `(needle, haystack[, start_pos])` を受け付けます。
-    以前の動作は、setting `function_locate_has_mysql_compatible_argument_order = false` を使用して復元できます。
-</Info>
+* バージョン &lt; v24.3 では、`locate` は関数 `position` のエイリアスであり、引数 `(haystack, needle[, start_pos])` を受け付けます。
+* バージョン &gt;= 24.3 では、`locate` は独立した関数となり (MySQL との互換性向上のため) 、引数 `(needle, haystack[, start_pos])` を受け付けます。
+  以前の動作は、setting `function_locate_has_mysql_compatible_argument_order = false` を使用して復元できます。
+  :::
 
 **Syntax**
 
@@ -1505,9 +1639,9 @@ SELECT multiFuzzyMatchAllIndices('ClickHouse', 2, ['ClickHouse', 'ClckHouse', 'C
 この関数は [hyperscan](https://intel.github.io/hyperscan/dev-reference/compilation.html#approximate-matching) ライブラリの実験的機能に依存しているため、一部のエッジケースでは低速になることがあります。
 パフォーマンスは編集距離の値や使用するパターンに依存しますが、非あいまい一致のバリアントと比べると常にコストが高くなります。
 
-<Note>
-  hyperscan の制約により、`multiFuzzyMatch*()` 関数ファミリーは UTF-8 正規表現をサポートしていません (UTF-8 正規表現はバイト列として扱われます) 。
-</Note>
+:::note
+hyperscan の制約により、`multiFuzzyMatch*()` 関数ファミリーは UTF-8 正規表現をサポートしていません (UTF-8 正規表現はバイト列として扱われます) 。
+:::
 
 **構文**
 

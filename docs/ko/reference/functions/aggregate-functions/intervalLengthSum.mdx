@@ -16,10 +16,10 @@ doc_type: '참고'
 
 여러 숫자 범위를 받아, 겹치는 모든 구간을 하나의 연속된 범위로 합쳤을 때의 전체 길이를 계산합니다.
 
-<Note>
-  인수는 동일한 데이터 타입이어야 합니다.
-  그렇지 않으면 예외가 발생합니다.
-</Note>
+:::note
+인수는 동일한 데이터 타입이어야 합니다.
+그렇지 않으면 예외가 발생합니다.
+:::
 
 **구문**
 
@@ -34,7 +34,7 @@ intervalLengthSum(start, end)
 
 **반환 값**
 
-모든 범위의 합집합의 전체 길이(숫자 축상의 세그먼트)를 반환합니다. 인수의 타입에 따라 반환 값의 타입은 UInt64 또는 Float64일 수 있습니다. [`UInt64`](/ko/reference/data-types/int-uint) 또는 [`Float64`](/ko/reference/data-types/float)
+모든 범위의 합집합의 전체 길이(숫자 축상의 구간)를 반환합니다. 인수의 타입에 따라 반환 값의 타입은 UInt64 또는 Float64일 수 있습니다. [`UInt64`](/ko/reference/data-types/int-uint) 또는 [`Float64`](/ko/reference/data-types/float)
 
 **예시**
 

@@ -50,16 +50,16 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
 
     ```ini
     [mysqld]
-    # 오류 로그 구성
+    # Error log configuration
     log_error = /var/log/mysql/error.log
 
-    # 느린 쿼리 로그 구성
+    # Slow query log configuration
     slow_query_log = ON
     slow_query_log_file = /var/log/mysql/mysql-slow.log
     long_query_time = 1
     log_queries_not_using_indexes = ON
 
-    # 선택 사항: 일반 쿼리 로그 (상세 출력, 프로덕션 환경에서는 주의하여 사용)
+    # Optional: General query log (verbose, use with caution in production)
     # general_log = ON
     # general_log_file = /var/log/mysql/mysql-general.log
     ```
@@ -71,20 +71,20 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     이 변경 사항을 적용한 후 MySQL을 다시 시작하세요:
 
     ```bash
-    # systemd의 경우
+    # For systemd
     sudo systemctl restart mysql
 
-    # Docker의 경우
+    # For Docker
     docker restart <mysql-container>
     ```
 
     로그가 기록되는지 확인하십시오:
 
     ```bash
-    # 오류 로그 확인
+    # Check error log
     tail -f /var/log/mysql/error.log
 
-    # 느린 쿼리 로그 확인
+    # Check slow query log
     tail -f /var/log/mysql/mysql-slow.log
     ```
   </Step>
@@ -186,14 +186,14 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... 기존 구성 ...
+        # ... existing configuration ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... 기타 환경 변수 ...
+          # ... other environment variables ...
         volumes:
           - ./mysql-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log/mysql:/var/log/mysql:ro
-          # ... 기타 볼륨 ...
+          # ... other volumes ...
     ```
 
     <Note>
@@ -230,10 +230,10 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     샘플 로그 파일을 다운로드하세요:
 
     ```bash
-    # 오류 로그 다운로드
+    # Download error log
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/error.log
 
-    # 느린 쿼리 로그 다운로드
+    # Download slow query log
     curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/mysql/mysql-slow.log
     ```
 
@@ -256,7 +256,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
       filelog/mysql_error:
         include:
           - /tmp/mysql-demo/error.log
-        start_at: beginning  # 데모 데이터를 처음부터 읽기
+        start_at: beginning  # Read from beginning for demo data
         multiline:
           line_start_pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}'
         operators:
@@ -279,7 +279,7 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
       filelog/mysql_slow:
         include:
           - /tmp/mysql-demo/mysql-slow.log
-        start_at: beginning  # 데모 데이터를 처음부터 읽기
+        start_at: beginning  # Read from beginning for demo data
         multiline:
           line_start_pattern: '^# Time:'
         operators:
@@ -488,7 +488,7 @@ head -5 /var/log/mysql/error.log
 * 확인된 쿼리 성능 패턴에 따라 `long_query_time`을 조정하세요
 
 <div id="going-to-production">
-  ## 프로덕션 환경으로 전환하기
+  ## 프로덕션 환경으로 전환
 </div>
 
 이 가이드는 빠르게 설정할 수 있도록 ClickStack에 기본 제공되는 OpenTelemetry Collector를 확장해 사용합니다. 프로덕션 배포에서는 자체 OTel Collector를 실행하고 데이터를 ClickStack의 OTLP 엔드포인트로 전송하는 것을 권장합니다. 프로덕션 구성은 [OpenTelemetry 데이터 전송](/ko/clickstack/ingesting-data/opentelemetry)을 참조하십시오.

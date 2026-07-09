@@ -162,7 +162,7 @@ Para los usuarios que quieran probar el tracing de Node.js con ClickStack antes 
 
     1. Abre [HyperDX](http://localhost:8080/) e inicia sesión en tu cuenta (puede que primero tengas que crear una cuenta)
     2. Ve a la vista de **Búsqueda** y establece la fuente en **Traces**
-    3. Establece el intervalo de tiempo en **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
+    3. Establece el rango temporal en **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
     <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Vista de búsqueda de trazas" />
 
@@ -171,7 +171,7 @@ Para los usuarios que quieran probar el tracing de Node.js con ClickStack antes 
     <Info>
       **Visualización de la zona horaria**
 
-      HyperDX muestra los timestamps en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. El amplio intervalo de tiempo garantiza que verás las trazas de demostración independientemente de tu ubicación. Una vez que veas las trazas, puedes reducirlo a un período de 24 horas para obtener visualizaciones más claras.
+      HyperDX muestra los timestamps en la zona horaria local de tu navegador. Los datos de demostración abarcan **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. El amplio rango temporal garantiza que verás las trazas de demostración independientemente de tu ubicación. Una vez que veas las trazas, puedes reducirlo a un período de 24 horas para obtener visualizaciones más claras.
     </Info>
   </Step>
 </Steps>
@@ -206,7 +206,7 @@ Para ayudarte a empezar a monitorizar el rendimiento de aplicaciones Node.js, pr
     <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Dashboard de ejemplo" />
 
     <Note>
-      Para el conjunto de datos de demostración, establece el intervalo de tiempo en **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (ajústalo según tu zona horaria local). El dashboard importado no tendrá ningún intervalo de tiempo especificado de forma predeterminada.
+      Para el conjunto de datos de demostración, establece el rango temporal en **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (ajústalo según tu zona horaria local). El dashboard importado no tendrá ningún rango temporal especificado de forma predeterminada.
     </Note>
   </Step>
 </Steps>
@@ -263,9 +263,9 @@ Busca mensajes de inicialización de OpenTelemetry al iniciar la aplicación. El
 * Crea dashboards adicionales para casos de uso específicos (monitorización de API, eventos de seguridad)
 
 <div id="going-to-production">
-  ## Pasar a producción
+  ## Llevar a producción
 </div>
 
-Esta guía utiliza el SDK de HyperDX, que envía trazas directamente al endpoint OTLP de ClickStack. Esto funciona bien para entornos de desarrollo, pruebas y despliegues de producción pequeños o medianos.
-Para entornos de producción más grandes, o si necesita un mayor control sobre los datos de telemetría, considere implementar su propio OpenTelemetry Collector como agente.
-Consulte [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para ver patrones de despliegue en producción y ejemplos de configuración del OpenTelemetry Collector.
+Esta guía usa el SDK de HyperDX, que envía trazas directamente al endpoint OTLP de ClickStack. Esto funciona bien para entornos de desarrollo, pruebas e implementaciones de producción pequeñas y medianas.
+Para entornos de producción más grandes, o si necesita un mayor control sobre los datos de telemetría, considere desplegar su propio OpenTelemetry Collector como agente.
+Consulte [Ingesta con OpenTelemetry](/es/clickstack/ingesting-data/opentelemetry) para conocer los patrones de despliegue para producción y ejemplos de configuración del OpenTelemetry Collector.

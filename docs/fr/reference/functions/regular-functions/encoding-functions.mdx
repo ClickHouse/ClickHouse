@@ -23,9 +23,9 @@ Introduit dans : v25.6.0
 
 Décode une chaîne d’adresse Bech32 générée par l’algorithme bech32 ou bech32m.
 
-<Note>
-  Contrairement à la fonction d’encodage, `bech32Decode` gère automatiquement les FixedStrings avec remplissage.
-</Note>
+:::note
+Contrairement à la fonction d’encodage, `bech32Decode` gère automatiquement les FixedStrings avec remplissage.
+:::
 
 **Syntaxe**
 
@@ -72,12 +72,12 @@ Introduit dans : v25.6.0
 
 Encode une chaîne de données binaires avec une partie lisible par l’humain (HRP), à l’aide des algorithmes [Bech32 ou Bech32m](https://en.bitcoin.it/wiki/Bech32).
 
-<Note>
-  Lors de l’utilisation du type de données [`FixedString`](/fr/reference/data-types/fixedstring), si une valeur ne remplit pas entièrement la ligne, elle est complétée par des caractères nuls.
-  Bien que la fonction `bech32Encode` gère cela automatiquement pour l’argument hrp, les valeurs de l’argument data ne doivent pas être complétées.
-  Pour cette raison, il n’est pas recommandé d’utiliser le type de données [`FixedString`](/fr/reference/data-types/fixedstring) pour vos données, sauf si vous êtes
-  certain qu’elles ont toutes la même longueur et que votre colonne `FixedString` est également définie sur cette longueur.
-</Note>
+:::note
+Lors de l’utilisation du type de données [`FixedString`](/fr/reference/data-types/fixedstring), si une valeur ne remplit pas entièrement la ligne, elle est complétée par des caractères nuls.
+Bien que la fonction `bech32Encode` gère cela automatiquement pour l’argument hrp, les valeurs de l’argument data ne doivent pas être complétées.
+Pour cette raison, il n’est pas recommandé d’utiliser le type de données [`FixedString`](/fr/reference/data-types/fixedstring) pour vos données, sauf si vous êtes
+certain qu’elles ont toutes la même longueur et que votre colonne `FixedString` est également définie sur cette longueur.
+:::
 
 **Syntaxe**
 
@@ -1027,9 +1027,9 @@ Interprète chaque paire de chiffres binaires (dans l&#39;argument) comme un nom
 
 Pour un argument numérique, `unbin()` ne renvoie pas l&#39;inverse de `bin()`. Si vous souhaitez convertir le résultat en nombre, vous pouvez utiliser les fonctions `reverse` et `reinterpretAs<Type>`.
 
-<Note>
-  Si `unbin` est appelée depuis le `clickhouse-client`, les chaînes binaires sont affichées en UTF-8.
-</Note>
+:::note
+Si `unbin` est appelée depuis le `clickhouse-client`, les chaînes binaires sont affichées en UTF-8.
+:::
 
 Prend en charge les chiffres binaires `0` et `1`. Le nombre de chiffres binaires n&#39;a pas besoin d&#39;être un multiple de huit. Si la chaîne d&#39;argument contient autre chose que des chiffres binaires,
 le résultat est indéfini (aucune exception n&#39;est levée).
@@ -1085,10 +1085,10 @@ en l’octet représenté par ce nombre. La valeur renvoyée est une chaîne bin
 
 Si vous souhaitez convertir le résultat en nombre, vous pouvez utiliser les fonctions `reverse` et `reinterpretAs<Type>`.
 
-<Note>
-  `clickhouse-client` interprète les chaînes comme de l’UTF-8.
-  Cela peut entraîner un affichage inattendu des valeurs renvoyées par `hex`.
-</Note>
+:::note
+`clickhouse-client` interprète les chaînes comme de l’UTF-8.
+Cela peut entraîner un affichage inattendu des valeurs renvoyées par `hex`.
+:::
 
 Prend en charge les lettres `A-F`, en majuscules comme en minuscules.
 Le nombre de chiffres hexadécimaux n’a pas besoin d’être pair.

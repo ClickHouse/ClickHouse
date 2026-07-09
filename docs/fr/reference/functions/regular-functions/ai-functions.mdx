@@ -25,32 +25,23 @@ Toutes les fonctions partagent une infrastructure commune qui fournit :
   ## Configuration
 </div>
 
-Les fonctions d’IA récupèrent les identifiants du fournisseur et la configuration à partir d’une [**collection nommée**](/fr/concepts/features/configuration/server-config/named-collections). Pour définir la collection nommée à utiliser pour les identifiants, utilisez le paramètre [`ai_function_credentials`](/fr/reference/settings/session-settings#ai_function_credentials).
+Les fonctions d’IA s’appuient sur une **collection nommée** qui stocke les identifiants du fournisseur et la configuration. Différentes collections nommées peuvent être créées et utilisées pour différentes fonctions ou différents appels de fonction. Par exemple, vous pouvez définir une collection nommée distincte pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`), et une autre pour la fonction `aiEmbed`, qui nécessite des points de terminaison différents et utilise généralement des modèles différents.
 
-Exemple d’instruction pour créer une collection nommée avec les identifiants du fournisseur :
+Exemple d’instruction pour créer une collection nommée avec les identifiants du fournisseur, l’une avec un point de terminaison de chat et l’autre avec un point de terminaison d’embedding :
 
 ```sql
-CREATE NAMED COLLECTION my_ai_credentials AS
+CREATE NAMED COLLECTION ai_text_credentials AS
     provider = 'openai',
     endpoint = 'https://api.openai.com/v1/chat/completions',
     model = 'gpt-4o-mini',
     api_key = 'sk-...';
+
+CREATE NAMED COLLECTION ai_embedding_credentials AS
+    provider = 'openai',
+    endpoint = 'https://api.openai.com/v1/embeddings',
+    model = 'text-embedding-3-small',
+    api_key = 'sk-...';
 ```
-
-Sélectionnez la collection avec le paramètre `ai_function_credentials`, pour la session ou pour une seule requête :
-
-```sql
--- For the session:
-SET allow_experimental_ai_functions = 1;
-SET ai_function_credentials = 'my_ai_credentials';
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']);
-
--- Or for a single query:
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
-SETTINGS allow_experimental_ai_functions = 1, ai_function_credentials = 'my_ai_credentials';
-```
-
-Lorsqu’`ai_function_credentials` est vide (par défaut), une exception est levée.
 
 <div id="named-collection-parameters">
   ### Paramètres de la collection nommée
@@ -69,46 +60,53 @@ Lorsqu’`ai_function_credentials` est vide (par défaut), une exception est lev
   Toute API compatible OpenAI (par ex. vLLM, Ollama, LiteLLM) peut être utilisée en définissant `provider = 'openai'` et en pointant `endpoint` vers votre service.
 </Note>
 
+<div id="selecting-credentials">
+  ### Sélection des identifiants d’authentification
+</div>
+
+Une fonction détermine la collection nommée à utiliser dans l’ordre suivant :
+
+1. la clé `credentials` de sa map de paramètres, lorsqu’elle est présente ;
+2. sinon, le paramètre par défaut applicable pour les identifiants d’authentification :
+   * [`ai_function_text_default_credentials`](/fr/reference/settings/session-settings#ai_function_text_default_credentials) pour les fonctions de texte (`aiGenerate`, `aiClassify`, `aiExtract`, `aiTranslate`) ;
+   * [`ai_function_embedding_default_credentials`](/fr/reference/settings/session-settings#ai_function_embedding_default_credentials) pour `aiEmbed`.
+
+Si aucun des deux n’est défini, l’appel échoue. Les fonctions de texte et d’embedding utilisent des paramètres par défaut distincts, car un point de terminaison et un modèle de chat-completions diffèrent de ceux des embeddings.
+
+```sql
+SET ai_function_text_default_credentials = 'ai_text_credentials';
+
+-- Uses ai_text_credentials from the setting:
+SELECT aiGenerate('What is 2 + 2? Reply with just the number.');
+
+-- Overrides the default for this call:
+SELECT aiGenerate('Bonjour', map('credentials', 'other_credentials'));
+```
+
+<div id="parameter-map">
+  ### Map de paramètres
+</div>
+
+Chaque fonction accepte, en dernier argument optionnel, une `Map(String, String)` de paramètres. Toutes les valeurs sont des chaînes de caractères (mettez les nombres entre apostrophes, par ex. `'0.2'`). Les clés inconnues sont rejetées. Une clé présente remplace la valeur correspondante de la collection nommée ; une clé absente se rabat sur la collection nommée (pour `model`/`max_tokens`) ou sur la valeur par défaut intégrée.
+
+Les paramètres suivants sont communs à toutes les fonctions d’IA :
+
+| Clé           | Description                                    |
+| ------------- | ---------------------------------------------- |
+| `credentials` | Collection nommée à utiliser (voir ci-dessus). |
+| `model`       | Remplace le `model` de la collection.          |
+
+Certaines fonctions acceptent des paramètres supplémentaires qui leur sont propres (tels que `max_tokens`, `temperature`, `system_prompt`, `instructions` et `dimensions`). Consultez la référence de chaque fonction ci-dessous pour connaître les paramètres qu’elle accepte ainsi que leurs valeurs par défaut.
+
+```sql
+SELECT aiGenerate(body, map('temperature', '0.2', 'system_prompt', 'You are terse.')) FROM articles;
+```
+
 <div id="query-level-settings">
   ### Paramètres au niveau de la requête
 </div>
 
-Le choix de la collection nommée à utiliser est déterminé par le paramètre [`ai_function_credentials`](/fr/reference/settings/session-settings#ai_function_credentials). Les autres paramètres liés à l’IA sont répertoriés dans [Paramètres](/fr/reference/settings/session-settings) sous le préfixe `ai_function_`.
-
-<div id="default-and-materialized-columns">
-  ### Utilisation dans les colonnes `DEFAULT` et `MATERIALIZED`
-</div>
-
-Le paramètre `ai_function_credentials` est lu au moment de l’évaluation de l’expression par défaut, et NON lors de la définition de la colonne. Le nom de la collection n’est pas stocké dans la définition de la colonne :
-
-```sql
-CREATE TABLE t (id UInt32, doc String, vector Array(Float32) DEFAULT aiEmbed(doc)) ...;
--- The stored default is `aiEmbed(doc)`; no collection is captured.
-```
-
-L’évaluation de l’expression requiert trois éléments : `allow_experimental_ai_functions` et `ai_function_credentials` doivent être définis, et l’utilisateur qui l’évalue doit disposer de `GRANT NAMED COLLECTION` sur la collection nommée (la résolution des identifiants déclenche une vérification d’accès `NAMED COLLECTION`). Si l’un d’eux manque, une exception est levée (`SUPPORT_IS_DISABLED`, une erreur d’identifiants vides ou `ACCESS_DENIED`).
-
-Une colonne `DEFAULT` est évaluée au moment de l’`INSERT`, les deux paramètres doivent donc être définis dans la session ou la requête d’insertion :
-
-```sql
-GRANT NAMED COLLECTION ON my_ai_credentials TO user;
-SET allow_experimental_ai_functions = 1;
-SET ai_function_credentials = 'my_ai_credentials';
-INSERT INTO t (id, doc) VALUES (1, 'hello');
-```
-
-Pour pouvoir insérer des données dans ces tables sans devoir définir ces deux paramètres pour chaque session, définissez-les tous les deux dans un [profil de paramètres](/fr/concepts/features/configuration/settings/settings-profiles) :
-
-```xml
-<profiles>
-    <default>
-        <allow_experimental_ai_functions>1</allow_experimental_ai_functions>
-        <ai_function_credentials>my_ai_credentials</ai_function_credentials>
-    </default>
-</profiles>
-```
-
-Une colonne `MATERIALIZED` est calculée lors d’un `INSERT`, comme une colonne `DEFAULT`, et elle est également recalculée par des mutations telles que `ALTER TABLE ... MATERIALIZE COLUMN`. Les mutations s’exécutent en dehors d’une session utilisateur et n’héritent pas de la clause `SETTINGS` d’une requête, mais elles héritent des paramètres d’un profil de paramètres. Définissez les deux paramètres dans un profil de paramètres et accordez le privilège `NAMED COLLECTION` au propriétaire de la table pour que le recalcul déclenché par une mutation puisse aboutir.
+Tous les paramètres liés à l’IA sont répertoriés dans [Paramètres](/fr/reference/settings/session-settings) sous le préfixe `ai_function_`.
 
 <div id="restricting-endpoint-hosts">
   ### Restreindre les hôtes de point de terminaison
@@ -181,18 +179,19 @@ La fonction envoie le texte avec une invite de classification fixe et un format 
 qui contraint le modèle à renvoyer exactement l’un des libellés fournis. Lorsque la réponse est renvoyée sous la forme d’un objet JSON
 de la forme `{"category": "..."}`, le libellé est extrait et sa chaîne de caractères est renvoyée.
 
-Les identifiants du fournisseur et la configuration sont récupérés à partir de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+Le premier argument est une collection nommée qui spécifie le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API.
 
 **Syntaxe**
 
 ```sql
-aiClassify(text, categories[, temperature])
+aiClassify(collection, text, categories[, temperature])
 ```
 
 **Alias** : `AIClassify`
 
 **Arguments**
 
+* `collection` — Nom d’une collection nommée contenant les identifiants du fournisseur et la configuration. [`String`](/fr/reference/data-types/string)
 * `text` — Texte à classifier. [`String`](/fr/reference/data-types/string)
 * `categories` — Liste constante des libellés des catégories candidates. [`Array(String)`](/fr/reference/data-types/array)
 * `temperature` — Température d’échantillonnage contrôlant l’aléa. Par défaut : `0.0`. [`Float64`](/fr/reference/data-types/float)
@@ -206,7 +205,7 @@ L’un des libellés de catégorie fournis, ou la valeur par défaut du type de 
 **Classifier le sentiment**
 
 ```sql title=Query
-SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral']) SETTINGS ai_function_credentials = 'my_ai_credentials'
+SELECT aiClassify('ai_credentials', 'I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
 ```response title=Response
@@ -216,10 +215,7 @@ positive
 **Classifier une colonne**
 
 ```sql title=Query
-SELECT body, aiClassify(body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
-```
-
-```response title=Response
+SELECT body, aiClassify('ai_credentials', body, ['bug', 'question', 'feature']) AS kind FROM issues LIMIT 5
 ```
 
 <div id="aiEmbed">
@@ -235,18 +231,19 @@ Au sein d’un même bloc de lignes, les entrées sont regroupées en lots de
 [`ai_function_embedding_max_batch_size`](/fr/reference/settings/session-settings#ai_function_embedding_max_batch_size)
 entrées maximum par requête HTTP afin de réduire la surcharge de chaque appel.
 
-Les identifiants du fournisseur et la configuration sont récupérés à partir de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+Le premier argument est une collection nommée qui spécifie le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API.
 L’argument facultatif `dimensions`, lorsqu’il est pris en charge par le modèle (par exemple `text-embedding-3-*` d’OpenAI),
 demande un vecteur de la taille indiquée ; sinon, la taille native du modèle est renvoyée.
 
 **Syntaxe**
 
 ```sql
-aiEmbed(text[, dimensions])
+aiEmbed(collection, text[, dimensions])
 ```
 
 **Arguments**
 
+* `collection` — Nom d’une collection nommée contenant les identifiants du fournisseur et la configuration. [`String`](/fr/reference/data-types/string)
 * `text` — Texte à encoder. [`String`](/fr/reference/data-types/string)
 * `dimensions` — Nombre de dimensions cible facultatif pour le vecteur de sortie. `0` ou l’omission de ce paramètre signifie utiliser la dimension native du modèle. [`UInt64`](/fr/reference/data-types/int-uint)
 
@@ -259,28 +256,19 @@ Le vecteur d’embedding, ou un tableau vide si l’entrée est NULL ou vide, si
 **Encoder une seule chaîne**
 
 ```sql title=Query
-SELECT aiEmbed('Hello world') SETTINGS ai_function_credentials = 'my_ai_credentials'
-```
-
-```response title=Response
+SELECT aiEmbed('ai_credentials', 'Hello world')
 ```
 
 **Avec des dimensions explicites**
 
 ```sql title=Query
-SELECT aiEmbed('Hello world', 256) SETTINGS ai_function_credentials = 'my_ai_credentials'
-```
-
-```response title=Response
+SELECT aiEmbed('ai_credentials', 'Hello world', 256)
 ```
 
 **Intégrer une colonne de texte**
 
 ```sql title=Query
-SELECT aiEmbed(title, 256) FROM articles LIMIT 10
-```
-
-```response title=Response
+SELECT aiEmbed('ai_credentials', title, 256) FROM articles LIMIT 10
 ```
 
 <div id="aiExtract">
@@ -291,24 +279,25 @@ Introduit dans : v26.4.0
 
 Extrait des informations structurées à partir de texte non structuré à l’aide d’un fournisseur de LLM.
 
-Le deuxième argument peut être soit une instruction en langage naturel librement formulée (par ex. `'the main complaint'`), soit un
+Le troisième argument peut être soit une instruction en langage naturel librement formulée (par ex. `'the main complaint'`), soit un
 schéma au format JSON de la forme `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
 
 En mode instruction, la fonction renvoie la valeur extraite sous la forme d’une simple chaîne de caractères, ou une chaîne vide si rien n’a été trouvé.
 En mode schéma, la fonction renvoie une chaîne JSON représentant un objet dont les clés correspondent au schéma demandé ; les champs manquants sont `null`.
 
-L’identifiant du fournisseur et la configuration proviennent de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+Le premier argument est une collection nommée qui spécifie le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API.
 
 **Syntaxe**
 
 ```sql
-aiExtract(text, instruction_or_schema[, temperature])
+aiExtract(collection, text, instruction_or_schema[, temperature])
 ```
 
 **Alias** : `AIExtract`
 
 **Arguments**
 
+* `collection` — Nom d’une collection nommée contenant les identifiants du fournisseur et la configuration. [`String`](/fr/reference/data-types/string)
 * `text` — Texte à partir duquel extraire des informations. [`String`](/fr/reference/data-types/string)
 * `instruction_or_schema` — Instruction d’extraction en texte libre, ou objet JSON constant décrivant les champs à extraire. [`const String`](/fr/reference/data-types/string)
 * `temperature` — Température d’échantillonnage qui contrôle le caractère aléatoire. Par défaut : `0.0`. [`const Float64`](/fr/reference/data-types/float)
@@ -322,7 +311,7 @@ Une valeur extraite (mode instruction) ou une chaîne JSON représentant un obje
 **Instruction en texte libre**
 
 ```sql title=Query
-SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint') SETTINGS ai_function_credentials = 'my_ai_credentials'
+SELECT aiExtract('ai_credentials', 'The package arrived late and was damaged.', 'the main complaint')
 ```
 
 ```response title=Response
@@ -332,10 +321,7 @@ late and damaged package
 **Extraction du schéma**
 
 ```sql title=Query
-SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
-```
-
-```response title=Response
+SELECT aiExtract('ai_credentials', review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
 ```
 
 <div id="aiGenerate">
@@ -350,18 +336,19 @@ La fonction envoie le prompt au fournisseur d’IA configuré et renvoie le text
 Un system prompt facultatif peut être fourni pour guider le comportement du modèle (par exemple, le ton, le format ou le rôle).
 Si aucun system prompt n’est fourni, le system prompt par défaut est : `You are a helpful assistant. Provide a clear and concise response.`
 
-Les identifiants du fournisseur et la configuration sont extraits de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+Le premier argument est une collection nommée qui spécifie le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API.
 
 **Syntaxe**
 
 ```sql
-aiGenerate(prompt[, system_prompt[, temperature]])
+aiGenerate(collection, prompt[, system_prompt[, temperature]])
 ```
 
 **Alias** : `AIGenerate`
 
 **Arguments**
 
+* `collection` — Nom d’une collection nommée contenant les identifiants du fournisseur et la configuration. [`String`](/fr/reference/data-types/string)
 * `prompt` — Le prompt ou la question de l’utilisateur à envoyer au modèle. [`String`](/fr/reference/data-types/string)
 * `system_prompt` — Instruction système constante facultative qui guide le comportement du modèle (par ex. persona, format de sortie) et est envoyée avec chaque prompt. [`String`](/fr/reference/data-types/string)
 * `temperature` — Température d’échantillonnage contrôlant le caractère aléatoire. Par défaut : `0.7`. [`Float64`](/fr/reference/data-types/float)
@@ -375,7 +362,7 @@ La réponse textuelle générée, ou la valeur par défaut du type de colonne (c
 **Question simple**
 
 ```sql title=Query
-SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_function_credentials = 'my_ai_credentials'
+SELECT aiGenerate('ai_credentials', 'What is 2 + 2? Reply with just the number.')
 ```
 
 ```response title=Response
@@ -385,19 +372,13 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.') SETTINGS ai_func
 **Avec le system prompt**
 
 ```sql title=Query
-SELECT aiGenerate('Explain ClickHouse', 'You are a database expert. Be concise.') SETTINGS ai_function_credentials = 'my_ai_credentials'
-```
-
-```response title=Response
+SELECT aiGenerate('ai_credentials', 'Explain ClickHouse', 'You are a database expert. Be concise.')
 ```
 
 **Résumer les valeurs d’une colonne**
 
 ```sql title=Query
-SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
-```
-
-```response title=Response
+SELECT article_title, aiGenerate('ai_credentials', concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
 ```
 
 <div id="aiTranslate">
@@ -408,20 +389,21 @@ Introduit dans : v26.4.0
 
 Traduit le texte donné vers la langue cible spécifiée à l’aide d’un fournisseur de LLM.
 
-Des instructions supplémentaires de style ou de dialecte peuvent être passées comme troisième argument (par ex. `'keep technical terms untranslated'`).
+Des instructions supplémentaires de style ou de dialecte peuvent être passées comme quatrième argument (par ex. `'keep technical terms untranslated'`).
 
-L’identifiant du fournisseur et la configuration sont récupérés à partir de la collection nommée spécifiée par le paramètre `ai_function_credentials`.
+Le premier argument est une collection nommée qui spécifie le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API.
 
 **Syntaxe**
 
 ```sql
-aiTranslate(text, target_language[, instructions[, temperature]])
+aiTranslate(collection, text, target_language[, instructions[, temperature]])
 ```
 
 **Alias** : `AITranslate`
 
 **Arguments**
 
+* `collection` — Nom d’une collection nommée contenant les identifiants du fournisseur et la configuration. [`String`](/fr/reference/data-types/string)
 * `text` — Texte à traduire. [`String`](/fr/reference/data-types/string)
 * `target_language` — Nom de la langue cible ou code BCP-47 (par exemple, `'French'`, `'es-MX'`). [`String`](/fr/reference/data-types/string)
 * `instructions` — Instructions supplémentaires facultatives et constantes destinées au traducteur. [`String`](/fr/reference/data-types/string)
@@ -436,7 +418,7 @@ Le texte traduit, ou la valeur par défaut du type de la colonne (chaîne vide) 
 **Traduire en français**
 
 ```sql title=Query
-SELECT aiTranslate('Hello, world!', 'French') SETTINGS ai_function_credentials = 'my_ai_credentials'
+SELECT aiTranslate('ai_credentials', 'Hello, world!', 'French')
 ```
 
 ```response title=Response
@@ -446,10 +428,7 @@ Bonjour le monde!
 **Traduire en japonais avec des consignes de style**
 
 ```sql title=Query
-SELECT aiTranslate(body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
-```
-
-```response title=Response
+SELECT aiTranslate('ai_credentials', body, 'Japanese', 'Use polite form (desu/masu)') FROM articles LIMIT 5
 ```
 
 {/*AUTOGENERATED_END*/}

@@ -63,8 +63,8 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 インジェスト方法を選択します。
 
-* **Initial load + CDC** — 既存データをコピーした後、継続的な変更を反映してターゲットを同期し続けます。
-* **Initial load only** — 一回限りのコピーで、継続的なレプリケーションは行いません。
+* **初期ロード + CDC** — 既存データをコピーした後、継続的な変更を反映してターゲットを同期し続けます。
+* **初期ロード only** — 一回限りのコピーで、継続的なレプリケーションは行いません。
 * **CDC only** — 初期コピーをスキップし、この時点以降の新しい変更だけをレプリケートします。
 
 <Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="ステップ 1: インジェスト方法のオプションを含むソースデータベース接続フォーム" size="lg" border />
@@ -227,5 +227,5 @@ SELECT pg_drop_replication_slot('<slot_name>');
 </div>
 
 * [Managed Postgres クイックスタート](/ja/products/managed-postgres/quickstart)
-* [Managed Postgres 接続情報](/ja/products/managed-postgres/connection)
-* [ClickPipes Postgres よくある質問](/ja/integrations/clickpipes/postgres/faq)
+* [Managed Postgres の接続情報](/ja/products/managed-postgres/connection)
+* [ClickPipes Postgres のよくある質問](/ja/integrations/clickpipes/postgres/faq)

@@ -10,10 +10,10 @@
       "menu": [
         {
           "icon": "/images/icons/icon-get-started.svg",
-          "item": "Premier pas",
+          "item": "Premiers pas",
           "pages": [
             {
-              "group": "Premier pas",
+              "group": "Prise en main",
               "icon": "/images/menu-icon-lightning.svg",
               "pages": [
                 "fr/get-started/quickstarts/home",
@@ -29,7 +29,7 @@
                 },
                 {
                   "expanded": true,
-                  "group": "Cas d’utilisation",
+                  "group": "Cas d’usage",
                   "pages": [
                     "fr/get-started/use-cases/real-time-analytics",
                     "fr/get-started/use-cases/observability",
@@ -83,7 +83,7 @@
               "pages": [
                 "fr/get-started/sample-datasets/playground",
                 {
-                  "group": "Benchmarks",
+                  "group": "Tests de performance",
                   "pages": [
                     "fr/get-started/sample-datasets/amplab-benchmark",
                     "fr/get-started/sample-datasets/brown-benchmark",
@@ -104,7 +104,7 @@
                   ]
                 },
                 {
-                  "group": "Analyses web et réseaux sociaux",
+                  "group": "Analytique web et réseaux sociaux",
                   "pages": [
                     "fr/get-started/sample-datasets/amazon-reviews",
                     "fr/get-started/sample-datasets/anon-web-analytics-metrica",
@@ -223,7 +223,7 @@
             "fr/concepts/index",
             {
               "expanded": true,
-              "group": "Principes fondamentaux",
+              "group": "Fondamentaux",
               "pages": [
                 "fr/concepts/core-concepts/glossary",
                 "fr/concepts/core-concepts/parts",
@@ -237,7 +237,7 @@
             },
             {
               "expanded": true,
-              "group": "Concepts de ClickHouse",
+              "group": "Concepts ClickHouse",
               "pages": [
                 {
                   "group": "Vues matérialisées",
@@ -263,7 +263,7 @@
                   ]
                 },
                 {
-                  "group": "Performance",
+                  "group": "Performances",
                   "pages": [
                     "fr/concepts/features/performance/prewhere",
                     "fr/concepts/features/performance/allocation-profiling",
@@ -300,7 +300,7 @@
                   "group": "Opérations",
                   "pages": [
                     {
-                      "group": "Insert",
+                      "group": "Insertion",
                       "pages": [
                         "fr/concepts/features/operations/insert/inserting-data",
                         "fr/concepts/features/operations/insert/asyncinserts",
@@ -311,13 +311,13 @@
                       ]
                     },
                     {
-                      "group": "Select",
+                      "group": "Sélection",
                       "pages": [
                         "fr/concepts/features/operations/select/joining-tables"
                       ]
                     },
                     {
-                      "group": "Update",
+                      "group": "Mise à jour",
                       "pages": [
                         "fr/concepts/features/operations/update/overview",
                         "fr/concepts/features/operations/update/on-fly-mutations",
@@ -326,7 +326,7 @@
                       "root": "fr/concepts/features/operations/update/index"
                     },
                     {
-                      "group": "Delete",
+                      "group": "Suppression",
                       "pages": [
                         "fr/concepts/features/operations/delete/overview",
                         "fr/concepts/features/operations/delete/delete-mutations",
@@ -386,7 +386,7 @@
                       "root": "fr/concepts/features/security/tls/index"
                     },
                     {
-                      "group": "Systèmes d’authentification externes",
+                      "group": "Authentificateurs externes",
                       "pages": [
                         {
                           "group": "SSL",
@@ -548,7 +548,7 @@
                   "root": "fr/guides/clickhouse/data-modelling/index"
                 },
                 {
-                  "group": "Performances et monitoring",
+                  "group": "Performances et supervision",
                   "pages": [
                     "fr/guides/clickhouse/performance-and-monitoring/query-optimization",
                     "fr/guides/clickhouse/performance-and-monitoring/analyzer",
@@ -615,7 +615,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Monitoring",
+                      "group": "Supervision",
                       "pages": [
                         "fr/guides/oss/deployment-and-scaling/monitoring/monitoring",
                         "fr/guides/oss/deployment-and-scaling/monitoring/opentelemetry"
@@ -638,7 +638,7 @@
             },
             {
               "expanded": true,
-              "group": "Guides par cas d’usage",
+              "group": "Guides de cas d’usage",
               "pages": [
                 {
                   "group": "Analyse en temps réel",
@@ -660,12 +660,12 @@
                   ]
                 },
                 {
-                  "group": "Observability",
+                  "group": "Observabilité",
                   "pages": [
                     "fr/guides/use-cases/observability/cloud-monitoring",
                     "fr/guides/use-cases/observability/self-managed-monitoring",
                     {
-                      "group": "Créez le vôtre",
+                      "group": "Créez votre propre solution",
                       "pages": [
                         "fr/guides/use-cases/observability/build-your-own/introduction",
                         "fr/guides/use-cases/observability/build-your-own/schema-design",
@@ -680,10 +680,10 @@
                   "root": "fr/guides/use-cases/observability/index"
                 },
                 {
-                  "group": "Entrepôts de données",
+                  "group": "Entrepôt de données",
                   "pages": [
                     {
-                      "group": "Prise en main",
+                      "group": "Premiers pas",
                       "pages": [
                         "fr/guides/use-cases/data-warehousing/getting-started/querying-directly",
                         "fr/guides/use-cases/data-warehousing/getting-started/connecting-catalogs",
@@ -732,7 +732,7 @@
                         "fr/guides/use-cases/ai-ml/MCP/ollama",
                         "fr/guides/use-cases/ai-ml/MCP/janai",
                         {
-                          "group": "Bibliothèques d’agents IA",
+                          "group": "Bibliothèques d’agents d’IA",
                           "pages": [
                             "fr/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
                             "fr/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
@@ -779,7 +779,7 @@
                 {
                   "expandable": true,
                   "expanded": false,
-                  "group": "Instructions SQL",
+                  "group": "Instructions",
                   "pages": [
                     {
                       "expanded": false,
@@ -1001,7 +1001,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Types composites",
+                  "group": "Types composés",
                   "pages": [
                     "fr/reference/data-types/array",
                     "fr/reference/data-types/tuple",
@@ -1128,7 +1128,6 @@
                         "fr/reference/engines/table-engines/mergetree-family/collapsingmergetree",
                         "fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key",
                         "fr/reference/engines/table-engines/mergetree-family/graphitemergetree",
-                        "fr/reference/engines/table-engines/mergetree-family/invertedindexes",
                         "fr/reference/engines/table-engines/mergetree-family/replacingmergetree",
                         "fr/reference/engines/table-engines/mergetree-family/replication",
                         "fr/reference/engines/table-engines/mergetree-family/summingmergetree",
@@ -1139,7 +1138,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "Spécial",
+                      "group": "Spéciaux",
                       "pages": [
                         "fr/reference/engines/table-engines/special/alias",
                         "fr/reference/engines/table-engines/special/buffer",
@@ -1256,7 +1255,7 @@
                 },
                 {
                   "expanded": false,
-                  "group": "Fonctions d'agrégation",
+                  "group": "Fonctions d’agrégation",
                   "pages": [
                     "fr/reference/functions/aggregate-functions/combinators",
                     "fr/reference/functions/aggregate-functions/grouping_function",
@@ -1498,7 +1497,7 @@
                   "root": "fr/reference/functions/window-functions/index"
                 },
                 {
-                  "group": "Fonctions définies par l'utilisateur",
+                  "group": "Fonctions définies par l’utilisateur",
                   "pages": [
                     "fr/reference/functions/regular-functions/udf",
                     "fr/reference/functions/regular-functions/wasm_udf"
@@ -1941,7 +1940,7 @@
                       "group": "Admin",
                       "pages": [
                         {
-                          "group": "API Cloud",
+                          "group": "Cloud API",
                           "pages": [
                             "fr/products/cloud/features/admin-features/api/api-overview",
                             "fr/products/cloud/features/admin-features/api/openapi",
@@ -1955,7 +1954,7 @@
                     "fr/products/cloud/features/security",
                     {
                       "expanded": false,
-                      "group": "Monitoring",
+                      "group": "Supervision",
                       "pages": [
                         "fr/products/cloud/features/monitoring/overview",
                         "fr/products/cloud/features/monitoring/cloud-console",
@@ -2110,7 +2109,7 @@
                         "fr/products/cloud/guides/backups/configurable-backups",
                         {
                           "expanded": false,
-                          "group": "Bring Your Own Backup",
+                          "group": "Utiliser votre propre sauvegarde",
                           "pages": [
                             "fr/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account",
                             "fr/products/cloud/guides/backups/bring-your-own-backup/backup-restore-from-ui",
@@ -2175,7 +2174,7 @@
                             "fr/products/cloud/guides/security/connectivity/setting-ip-filters",
                             {
                               "expanded": false,
-                              "group": "Réseau privé",
+                              "group": "Mise en réseau privée",
                               "pages": [
                                 "fr/products/cloud/guides/security/connectivity/private-networking/aws-privatelink",
                                 "fr/products/cloud/guides/security/connectivity/private-networking/gcp-private-service-connect",
@@ -2218,7 +2217,175 @@
                 },
                 {
                   "group": "Référence de l’API",
-                  "openapi": "https://api.clickhouse.cloud/v1"
+                  "openapi": "https://api.clickhouse.cloud/v1",
+                  "pages": [
+                    {
+                      "group": "Organisation",
+                      "pages": [
+                        "fr/GET /v1/organizations",
+                        "fr/GET /v1/organizations/{organizationId}",
+                        "fr/PATCH /v1/organizations/{organizationId}",
+                        "fr/GET /v1/organizations/{organizationId}/activities",
+                        "fr/GET /v1/organizations/{organizationId}/activities/{activityId}",
+                        "fr/GET /v1/organizations/{organizationId}/privateEndpointConfig",
+                        "fr/POST /v1/organizations/{organizationId}/byocInfrastructure",
+                        "fr/DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        "fr/PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                        {
+                          "group": "Facturation",
+                          "pages": [
+                            "fr/GET /v1/organizations/{organizationId}/usageCost"
+                          ]
+                        },
+                        {
+                          "group": "Gestion des utilisateurs",
+                          "pages": [
+                            "fr/GET /v1/organizations/{organizationId}/members",
+                            "fr/GET /v1/organizations/{organizationId}/members/{userId}",
+                            "fr/PATCH /v1/organizations/{organizationId}/members/{userId}",
+                            "fr/DELETE /v1/organizations/{organizationId}/members/{userId}",
+                            "fr/GET /v1/organizations/{organizationId}/invitations",
+                            "fr/POST /v1/organizations/{organizationId}/invitations",
+                            "fr/GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+                            "fr/DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+                          ]
+                        },
+                        {
+                          "group": "Gestion des rôles",
+                          "pages": [
+                            "fr/GET /v1/organizations/{organizationId}/roles",
+                            "fr/POST /v1/organizations/{organizationId}/roles",
+                            "fr/GET /v1/organizations/{organizationId}/roles/{roleId}",
+                            "fr/PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+                            "fr/DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "Service",
+                      "pages": [
+                        "fr/GET /v1/organizations/{organizationId}/services",
+                        "fr/POST /v1/organizations/{organizationId}/services",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "fr/POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/scaling",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+                        "fr/POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "fr/POST /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "fr/PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                        {
+                          "group": "Backup",
+                          "pages": [
+                            "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+                            "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+                            "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                            "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "fr/POST /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                            "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/backupBucket"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "group": "OpenAPI",
+                      "pages": [
+                        "fr/GET /v1/organizations/{organizationId}/keys",
+                        "fr/POST /v1/organizations/{organizationId}/keys",
+                        "fr/GET /v1/organizations/{organizationId}/keys/{keyId}",
+                        "fr/PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+                        "fr/DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+                      ]
+                    },
+                    {
+                      "group": "Prometheus",
+                      "pages": [
+                        "fr/GET /v1/organizations/{organizationId}/prometheus",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+                        "fr/GET /v1/organizations/{organizationId}/postgres/prometheus",
+                        "fr/GET /v1/organizations/{organizationId}/postgres/{postgresId}/prometheus"
+                      ]
+                    },
+                    {
+                      "group": "ClickPipes",
+                      "pages": [
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "fr/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "fr/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "fr/POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                        "fr/PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+                      ]
+                    },
+                    {
+                      "group": "ClickStack",
+                      "pages": [
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "fr/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "fr/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "fr/POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "fr/PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "fr/DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                        "fr/GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks"
+                      ],
+                      "tag": "Beta"
+                    },
+                    {
+                      "group": "Postgres",
+                      "pages": [
+                        "fr/POST /v1/organizations/{organizationId}/postgres",
+                        "fr/GET /v1/organizations/{organizationId}/postgres",
+                        "fr/GET /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "fr/DELETE /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "fr/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}",
+                        "fr/GET /v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates",
+                        "fr/POST /v1/organizations/{organizationId}/postgres/{postgresId}/restoredService",
+                        "fr/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/password",
+                        "fr/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/state",
+                        "fr/POST /v1/organizations/{organizationId}/postgres/{postgresId}/readReplica",
+                        "fr/GET /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "fr/POST /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "fr/PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                        "fr/GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
+                        "fr/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
+                        "fr/GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}"
+                      ],
+                      "tag": "Beta"
+                    }
+                  ]
                 }
               ]
             },
@@ -2241,7 +2408,7 @@
                   ]
                 },
                 {
-                  "group": "Onboarding",
+                  "group": "Prise en main",
                   "pages": [
                     "fr/products/bring-your-own-cloud/onboarding/aws",
                     "fr/products/bring-your-own-cloud/onboarding/standard",
@@ -2306,13 +2473,21 @@
                 "fr/products/managed-postgres/read-replicas",
                 "fr/products/managed-postgres/backup-and-restore",
                 "fr/products/managed-postgres/extensions",
+                {
+                  "group": "pg_clickhouse",
+                  "pages": [
+                    "fr/products/managed-postgres/extensions/pg_clickhouse/reference",
+                    "fr/products/managed-postgres/extensions/pg_clickhouse/tutorial"
+                  ],
+                  "root": "fr/products/managed-postgres/extensions/pg_clickhouse/introduction"
+                },
                 "fr/products/managed-postgres/upgrades",
                 "fr/products/managed-postgres/openapi",
                 "fr/products/managed-postgres/terraform"
               ]
             },
             {
-              "group": "Tests de performance",
+              "group": "Benchmarks",
               "pages": [
                 "fr/products/managed-postgres/benchmarks"
               ]
@@ -2343,7 +2518,7 @@
               ]
             },
             {
-              "group": "Monitoring",
+              "group": "Surveillance",
               "pages": [
                 "fr/products/managed-postgres/monitoring/overview",
                 "fr/products/managed-postgres/monitoring/dashboard",
@@ -2463,7 +2638,7 @@
                 "fr/clickstack/features/session-replay",
                 "fr/clickstack/mcp",
                 {
-                  "group": "Demo days",
+                  "group": "Demo Days",
                   "pages": [
                     {
                       "group": "2026",
@@ -2522,7 +2697,7 @@
                         "fr/clickstack/integration-examples/cloudwatch",
                         "fr/clickstack/integration-examples/aws-lambda",
                         {
-                          "group": "Logs de l’hôte",
+                          "group": "Logs d’hôte",
                           "pages": [
                             "fr/clickstack/integration-examples/host-logs",
                             "fr/clickstack/integration-examples/host-logs/ec2"
@@ -2569,7 +2744,7 @@
                   "group": "Guides de migration",
                   "pages": [
                     {
-                      "group": "Migration depuis Elastic",
+                      "group": "Migrer depuis Elastic",
                       "pages": [
                         "fr/clickstack/migration/elastic/intro",
                         "fr/clickstack/migration/elastic/concepts",
@@ -2616,7 +2791,7 @@
         {
           "groups": [
             {
-              "group": "Premier pas",
+              "group": "Premiers pas",
               "pages": [
                 "fr/products/agentic-data-stack/overview",
                 "fr/products/agentic-data-stack/docker-setup"
@@ -2637,7 +2812,7 @@
         {
           "groups": [
             {
-              "group": "Premier pas",
+              "group": "Premiers pas",
               "pages": [
                 "fr/products/chdb/getting-started"
               ],
@@ -2689,7 +2864,7 @@
               "root": "fr/products/chdb/debugging/index"
             },
             {
-              "group": "Guides du développeur",
+              "group": "Guides de développement",
               "pages": [
                 "fr/products/chdb/guides/jupysql",
                 "fr/products/chdb/guides/querying-pandas",
@@ -2721,7 +2896,7 @@
         },
         {
           "icon": "/images/icons/icon-kubernetes-operator.svg",
-          "item": "Opérateur Kubernetes",
+          "item": "Operator Kubernetes",
           "pages": [
             "fr/products/kubernetes-operator/overview",
             {
@@ -2833,9 +3008,11 @@
           "groups": [
             {
               "group": "ClickPipes for Object Storage",
+              "icon": "/images/integrations/logos/clickpipes_for_amazon_s3.svg",
               "pages": [
                 {
                   "group": "Amazon S3",
+                  "icon": "/images/integrations/logos/amazon_s3_logo.svg",
                   "pages": [
                     "fr/integrations/clickpipes/object-storage/amazon-s3/overview",
                     "fr/integrations/clickpipes/object-storage/amazon-s3/get-started",
@@ -2844,6 +3021,7 @@
                 },
                 {
                   "group": "Google Cloud Storage",
+                  "icon": "/images/integrations/logos/gcs.svg",
                   "pages": [
                     "fr/integrations/clickpipes/object-storage/google-cloud-storage/overview",
                     "fr/integrations/clickpipes/object-storage/google-cloud-storage/get-started",
@@ -2852,6 +3030,7 @@
                 },
                 {
                   "group": "Azure Blob Storage",
+                  "icon": "/images/integrations/logos/azureblobstorage.svg",
                   "pages": [
                     "fr/integrations/clickpipes/object-storage/azure-blob-storage/overview",
                     "fr/integrations/clickpipes/object-storage/azure-blob-storage/get-started"
@@ -2862,6 +3041,7 @@
             },
             {
               "group": "ClickPipes for Postgres",
+              "icon": "/images/integrations/logos/postgresql.svg",
               "pages": [
                 "fr/integrations/clickpipes/postgres/deduplication",
                 "fr/integrations/clickpipes/postgres/ordering-keys",
@@ -2907,6 +3087,7 @@
             },
             {
               "group": "ClickPipes for Kafka",
+              "icon": "/images/integrations/logos/kafka.svg",
               "pages": [
                 "fr/integrations/clickpipes/kafka/create-kafka-clickpipe",
                 "fr/integrations/clickpipes/kafka/schema-registries",
@@ -2918,6 +3099,7 @@
             },
             {
               "group": "ClickPipes for Kinesis",
+              "icon": "/images/integrations/logos/amazon_kinesis_logo.svg",
               "pages": [
                 "fr/integrations/clickpipes/kinesis/overview",
                 "fr/integrations/clickpipes/kinesis/auth"
@@ -2926,6 +3108,7 @@
             },
             {
               "group": "ClickPipes for GCP Pub/Sub",
+              "icon": "/images/integrations/logos/google_pubsub.svg",
               "pages": [
                 "fr/integrations/clickpipes/pubsub/overview",
                 "fr/integrations/clickpipes/pubsub/auth"
@@ -2934,6 +3117,7 @@
             },
             {
               "group": "ClickPipes for MySQL",
+              "icon": "/images/integrations/logos/mysql.svg",
               "pages": [
                 "fr/integrations/clickpipes/mysql/faq",
                 "fr/integrations/clickpipes/mysql/datatypes",
@@ -2969,6 +3153,7 @@
             },
             {
               "group": "ClickPipes for MongoDB",
+              "icon": "/images/integrations/logos/mongodb.svg",
               "pages": [
                 "fr/integrations/clickpipes/mongodb/datatypes",
                 "fr/integrations/clickpipes/mongodb/quickstart",
@@ -2999,13 +3184,15 @@
             },
             {
               "group": "ClickPipes for BigQuery",
+              "icon": "/images/logo-bigquery.svg",
               "pages": [
                 "fr/integrations/clickpipes/bigquery/overview",
                 "fr/integrations/clickpipes/bigquery/get-started"
               ]
             },
             {
-              "group": "Accès par programmation",
+              "group": "Accès programmatique",
+              "icon": "code",
               "pages": [
                 "fr/integrations/clickpipes/programmatic-access/openapi",
                 "fr/integrations/clickpipes/programmatic-access/terraform"
@@ -3013,6 +3200,7 @@
             },
             {
               "group": "Autres",
+              "icon": "ellipsis",
               "pages": [
                 "fr/integrations/clickpipes/aws-privatelink",
                 "fr/integrations/clickpipes/dynamodb",
@@ -3111,7 +3299,7 @@
             }
           ],
           "icon": "/images/icons/icon-language-clients.svg",
-          "item": "Bibliothèques clientes"
+          "item": "Clients par langage"
         },
         {
           "groups": [
@@ -3158,7 +3346,7 @@
             },
             {
               "expanded": true,
-              "group": "Visualisation de données",
+              "group": "Visualisation des données",
               "pages": [
                 {
                   "expanded": false,
@@ -3215,9 +3403,10 @@
             },
             {
               "expanded": true,
-              "group": "Ingestion de données",
+              "group": "Ingestion des données",
               "pages": [
                 "fr/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse",
+                "fr/integrations/connectors/data-ingestion/etl-tools/airflow-and-clickhouse",
                 "fr/integrations/connectors/data-ingestion/etl-tools/apify-and-clickhouse",
                 {
                   "expanded": false,
@@ -3431,7 +3620,7 @@
                   ]
                 },
                 {
-                  "group": "Résolution des problèmes et erreurs",
+                  "group": "Dépannage et erreurs",
                   "pages": [
                     "fr/resources/support-center/troubleshooting/troubleshooting",
                     "fr/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
@@ -3445,7 +3634,7 @@
                   "root": "fr/resources/support-center/troubleshooting/index"
                 },
                 {
-                  "group": "Tables et schéma",
+                  "group": "Tables et schémas",
                   "pages": [
                     "fr/resources/support-center/knowledge-base/tables-schema/add-column",
                     "fr/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -3480,7 +3669,7 @@
                   ]
                 },
                 {
-                  "group": "Supervision et débogage",
+                  "group": "Surveillance et débogage",
                   "pages": [
                     "fr/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
                     "fr/resources/support-center/knowledge-base/monitoring-debugging/generate-har-file",
@@ -3494,7 +3683,7 @@
                   ]
                 },
                 {
-                  "group": "Sécurité et contrôle d’accès",
+                  "group": "Sécurité et contrôle d'accès",
                   "pages": [
                     "fr/resources/support-center/knowledge-base/security/check-users-roles",
                     "fr/resources/support-center/knowledge-base/security/common-rbac-queries",
@@ -3551,7 +3740,7 @@
                       "root": "fr/resources/support-center/knowledge-base/general-faqs/index"
                     },
                     {
-                      "group": "Cas d’usage",
+                      "group": "Cas d'utilisation",
                       "pages": [
                         "fr/resources/support-center/knowledge-base/general-faqs/key-value",
                         "fr/resources/support-center/knowledge-base/general-faqs/time-series",
@@ -3646,7 +3835,7 @@
               ]
             },
             {
-              "group": "Développement d’intégrations",
+              "group": "Développement d'intégrations",
               "pages": [
                 "fr/resources/develop-contribute/integrations/building-integrations",
                 "fr/resources/develop-contribute/integrations/testing-your-integration",
@@ -3662,7 +3851,7 @@
             }
           ],
           "icon": "/images/icons/icon-contribute.svg",
-          "item": "Développement et contributions",
+          "item": "Développement et contribution",
           "root": "fr/resources/develop-contribute/index"
         },
         {
@@ -3682,7 +3871,7 @@
                 },
                 "fr/resources/changelogs/cloud/release-status",
                 {
-                  "group": "Historique des versions de la base de données Cloud",
+                  "group": "Changelog des versions de la base de données Cloud",
                   "pages": [
                     "fr/resources/changelogs/cloud/release-notes/26_02",
                     "fr/resources/changelogs/cloud/release-notes/25_12",
@@ -3703,7 +3892,7 @@
               "root": "fr/resources/changelogs/cloud/index"
             },
             {
-              "group": "Autogéré",
+              "group": "Auto-hébergé",
               "pages": [
                 "fr/resources/changelogs/oss/2026",
                 "fr/resources/changelogs/oss/2025",
@@ -3729,7 +3918,6 @@
               "group": "À propos de ClickHouse",
               "pages": [
                 "fr/resources/about/adopters",
-                "fr/resources/about/cloud",
                 "fr/resources/about/support"
               ],
               "root": "fr/resources/about/index"

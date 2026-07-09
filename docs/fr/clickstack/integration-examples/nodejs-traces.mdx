@@ -29,8 +29,8 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
   ##### Prérequis
 </div>
 
-* Instance ClickStack en fonctionnement avec des endpoints OTLP accessibles (ports 4317/4318)
-* Application Node.js existante (Node.js 14 ou version supérieure)
+* Instance ClickStack en cours d’exécution avec des endpoints OTLP accessibles (ports 4317/4318)
+* Application Node.js existante (Node.js 14 ou version ultérieure)
 * Gestionnaire de paquets npm ou yarn
 * Nom d’hôte ou adresse IP de ClickStack
 
@@ -38,15 +38,15 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
   <Step>
     #### Installer et configurer OpenTelemetry
 
-    Installez le paquet `@hyperdx/node-opentelemetry` et initialisez-le au démarrage de votre application. Consultez le [guide du SDK Node.js](/fr/clickstack/ingesting-data/sdks/nodejs#getting-started) pour obtenir des instructions d’installation détaillées.
+    Installez le paquet `@hyperdx/node-opentelemetry` et initialisez-le au démarrage de votre application. Consultez le [guide du SDK Node.js](/fr/clickstack/ingesting-data/sdks/nodejs#getting-started) pour obtenir les étapes d’installation détaillées.
   </Step>
 
   <Step>
     #### Obtenir une clé API ClickStack
 
-    Une clé API est nécessaire pour envoyer des traces vers l’endpoint OTLP de ClickStack.
+    Une clé API est nécessaire pour envoyer des traces vers le point de terminaison OTLP de ClickStack.
 
-    1. Ouvrez HyperDX à l’URL de votre ClickStack (par exemple, http://localhost:8080)
+    1. Ouvrez HyperDX à l’URL de votre instance ClickStack (par exemple, http://localhost:8080)
     2. Créez un compte ou connectez-vous si nécessaire
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **clé API d’ingestion**
@@ -128,7 +128,7 @@ Pour les utilisateurs qui souhaitent tester le tracing Node.js avec ClickStack a
   <Step>
     #### Obtenir une clé API ClickStack
 
-    Vous avez besoin d’une clé API pour envoyer des traces vers l’endpoint OTLP de ClickStack.
+    Vous avez besoin d’une clé API pour envoyer des traces vers le point de terminaison OTLP de ClickStack.
 
     1. Ouvrez HyperDX à l’URL de votre instance ClickStack (par ex. http://localhost:8080)
     2. Créez un compte ou connectez-vous si nécessaire
@@ -177,10 +177,10 @@ Pour les utilisateurs qui souhaitent tester le tracing Node.js avec ClickStack a
 </Steps>
 
 <div id="dashboards">
-  ## Tableaux de bord et visualisations
+  ## Tableaux de bord et visualisation
 </div>
 
-Pour vous aider à commencer à surveiller les performances des applications Node.js, nous fournissons un tableau de bord préconfiguré avec les visualisations de traces essentielles.
+Pour vous aider à commencer à surveiller les performances de l’application Node.js, nous fournissons un tableau de bord préconfiguré avec les visualisations de traces essentielles.
 
 <Steps>
   <Step>
@@ -263,9 +263,9 @@ Recherchez des messages d’initialisation d’OpenTelemetry au démarrage de vo
 * Créez des tableaux de bord supplémentaires pour des cas d’usage spécifiques (supervision des API, événements de sécurité)
 
 <div id="going-to-production">
-  ## Passage en production
+  ## Mise en production
 </div>
 
-Ce guide utilise le SDK HyperDX, qui envoie les traces directement vers l’endpoint OTLP de ClickStack. Cette approche convient bien aux environnements de développement, de test et aux déploiements de production de petite à moyenne taille.
-Pour des environnements de production plus importants, ou si vous avez besoin de davantage de contrôle sur les données de télémétrie, envisagez de déployer votre propre OpenTelemetry Collector en tant qu’agent.
-Consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour découvrir des schémas de déploiement en production et des exemples de configuration du collecteur.
+Ce guide utilise le SDK HyperDX, qui envoie les traces directement vers le point de terminaison OTLP de ClickStack. Cette approche convient bien au développement, aux tests et aux déploiements en production de petite à moyenne taille.
+Pour des environnements de production plus importants, ou si vous avez besoin d&#39;un contrôle plus fin sur les données de télémétrie, envisagez de déployer votre propre OpenTelemetry Collector en tant qu’agent.
+Consultez [Ingestion avec OpenTelemetry](/fr/clickstack/ingesting-data/opentelemetry) pour les modèles de déploiement en production et des exemples de configuration du collecteur.
