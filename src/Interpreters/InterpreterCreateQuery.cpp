@@ -2660,6 +2660,15 @@ BlockIO InterpreterCreateQuery::execute()
             create.targets->setCurrentDatabase(database_info);
     }
 
+    /// Normalize the `AS <table>` source through the shared resolver so DataLakeCatalog
+    /// namespaces are honored, before access checks and ON CLUSTER shipping.
+    if (!create.as_table.empty())
+    {
+        auto as_table_id = getContext()->resolveStorageID({create.as_database, create.as_table}, Context::ResolveOrdinary);
+        create.as_database = as_table_id.database_name;
+        create.as_table = as_table_id.table_name;
+    }
+
     bool is_create_database = create.database && !create.table;
     if (!create.cluster.empty() && !maybeRemoveOnCluster(query_ptr, getContext()))
     {
