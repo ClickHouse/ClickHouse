@@ -527,7 +527,6 @@ ReplxxLineReader::ReplxxLineReader(ReplxxLineReader::Options && options)
     /// bind C-j to ENTER action.
     rx.bind_key(Replxx::KEY::control('J'), commit_action);
     rx.bind_key(Replxx::KEY::ENTER, commit_action);
-    rx.bind_key(Replxx::KEY::ENTER, [this, commit_action](char32_t code) { rx.set_editing_mode(MODE_INSERT); return commit_action(code); }, MODE_NORMAL);
 
     /// By default COMPLETE_NEXT/COMPLETE_PREV was bound to C-p/C-n, re-bind
     /// to M-P/M-N (that was used for HISTORY_COMMON_PREFIX_SEARCH before, but

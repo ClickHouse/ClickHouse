@@ -91,6 +91,53 @@ void ReplxxLineReader::setupVimKeybindings()
         }
     }
 
+    for (int i = 0; i < MODE_END; i++) {
+        rx.bind_key(Replxx::KEY::control('P'), [this](char32_t code) {
+            resetVim();
+            rx.set_editing_mode(MODE_NORMAL);
+            Replxx::ACTION_RESULT ret = rx.invoke(Replxx::ACTION::HISTORY_PREVIOUS, code);
+            auto state = rx.get_state();
+            int pos = state.cursor_position();
+            std::string text = state.text();
+            resetVim(&pos, &text);
+            rx.set_state(Replxx::State(text.c_str(), pos));
+            return ret;
+        }, i);
+        rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) {
+            resetVim();
+            rx.set_editing_mode(MODE_NORMAL);
+            Replxx::ACTION_RESULT ret = rx.invoke(Replxx::ACTION::HISTORY_NEXT, code);
+            auto state = rx.get_state();
+            int pos = state.cursor_position();
+            std::string text = state.text();
+            resetVim(&pos, &text);
+            rx.set_state(Replxx::State(text.c_str(), pos));
+            return ret;
+        }, i);
+        rx.bind_key(Replxx::KEY::control('N'), [this](char32_t code) {
+            resetVim();
+            rx.set_editing_mode(MODE_NORMAL);
+            Replxx::ACTION_RESULT ret = rx.invoke(Replxx::ACTION::HISTORY_NEXT, code);
+            auto state = rx.get_state();
+            int pos = state.cursor_position();
+            std::string text = state.text();
+            resetVim(&pos, &text);
+            rx.set_state(Replxx::State(text.c_str(), pos));
+            return ret;
+        }, i);
+        rx.bind_key(Replxx::KEY::control('C'), [this](char32_t code) {
+            resetVim();
+            rx.set_editing_mode(MODE_INSERT);
+            Replxx::ACTION_RESULT ret = rx.invoke(Replxx::ACTION::ABORT_LINE, code);
+            auto state = rx.get_state();
+            int pos = state.cursor_position();
+            std::string text = state.text();
+            resetVim(&pos, &text);
+            rx.set_state(Replxx::State(text.c_str(), pos));
+            return ret;
+        }, i);
+    }
+
     rx.bind_key(Replxx::KEY::ENTER, [this](char32_t code) {
         rx.invoke(Replxx::ACTION::COMMIT_LINE, code);
         return Replxx::ACTION_RESULT::CONTINUE;
