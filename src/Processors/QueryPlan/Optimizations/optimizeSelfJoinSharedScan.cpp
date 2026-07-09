@@ -44,7 +44,10 @@ std::optional<ScanDescend> findReadFromMergeTree(QueryPlan::Node * node)
 
 bool isPlainScan(const ReadFromMergeTree * rmt)
 {
+    /// A `STREAM` scan is unbounded and keeps producing newly committed rows;
+    /// buffering it or replaying a one-shot buffer instead would change semantics.
     return !rmt->isQueryWithFinal()
+        && !rmt->getQueryInfo().isStream()
         && !rmt->isQueryWithSampling()
         && !rmt->isParallelReadingFromReplicas()
         && rmt->getFilterActionsDAG() == nullptr
