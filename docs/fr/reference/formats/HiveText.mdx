@@ -1,0 +1,138 @@
+---
+alias: []
+description: 'Documentation sur le format HiveText'
+input_format: true
+keywords: ['HiveText']
+output_format: false
+slug: /interfaces/formats/HiveText
+title: 'HiveText'
+doc_type: 'reference'
+---
+
+| Entrée | Sortie | Alias |
+| ------ | ------ | ----- |
+| ✔      | ✗      |       |
+
+<div id="description">
+  ## Description
+</div>
+
+`HiveText` lit le format de sérialisation texte utilisé par les tables [Apache Hive](https://hive.apache.org/)
+(format produit par le `LazySimpleSerDe` de Hive). Il s&#39;agit d&#39;un format texte
+délimité, semblable à [`CSV`](/fr/reference/formats/CSV/CSV), dans lequel les champs sont
+séparés par le délimiteur Hive par défaut `\x01` (Ctrl-A). Le délimiteur de champ est
+configurable via [`input_format_hive_text_fields_delimiter`](#format-settings).
+
+`HiveText` est un format d&#39;entrée uniquement. Les données n&#39;ont pas de ligne d&#39;en-tête : les valeurs sont
+associées aux colonnes de la table de destination selon leur position, de sorte que les noms et les types des
+colonnes sont repris de la table (ou d&#39;une structure explicitement fournie)
+plutôt qu&#39;inférés à partir des données. Lors de la lecture, ClickHouse analyse les
+dates et heures en mode best-effort (voir [`date_time_input_format`](/fr/reference/settings/formats#date_time_input_format)),
+complète les champs de fin omis avec les valeurs par défaut des colonnes et ignore les champs qu&#39;il ne
+reconnaît pas.
+
+Dans un champ, les valeurs sont analysées à l&#39;aide des mêmes règles d&#39;échappement que `CSV`, plutôt
+que des délimiteurs imbriqués de Hive. En particulier, une colonne de type
+[`Array`](/fr/reference/data-types/array) est lue à partir de la
+représentation entre crochets (par exemple, `"['a','b','c']"`), et non à partir de valeurs séparées par
+le délimiteur de collection Hive `\x02`.
+
+<Info>
+  **Les paramètres de délimiteurs imbriqués n&#39;ont aucun effet**
+
+  Les paramètres [`input_format_hive_text_collection_items_delimiter`](#format-settings) et
+  [`input_format_hive_text_map_keys_delimiter`](#format-settings)
+  sont acceptés pour des raisons de compatibilité, mais ne sont actuellement pas utilisés lors de l&#39;analyse.
+</Info>
+
+Par défaut, les lignes peuvent contenir un nombre variable de champs (voir
+[`input_format_hive_text_allow_variable_number_of_columns`](#format-settings)) :
+pour les lignes comportant moins de champs que la table, les colonnes manquantes sont remplies avec des
+valeurs par défaut, et pour les lignes comportant des champs supplémentaires en fin de ligne, ces champs sont ignorés.
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Les exemples ci-dessous remplacent le délimiteur de champ par défaut par une virgule (`,`) à l’aide de
+[`input_format_hive_text_fields_delimiter`](#format-settings), afin de rendre les fichiers d’entrée
+plus faciles à lire.
+
+<div id="reading-data">
+  ### Lecture d’un fichier HiveText
+</div>
+
+Soit un fichier `hive_data.txt` avec des champs séparés par des virgules :
+
+```text title="hive_data.txt"
+1,3
+3,5,9
+```
+
+Nous créons une table qui définit les noms et les types des colonnes, puis nous y insérons le fichier
+avec `FORMAT HiveText` :
+
+```sql title="Query"
+CREATE TABLE test_tbl (a UInt16, b UInt32, c UInt32) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO test_tbl FROM INFILE 'hive_data.txt'
+SETTINGS input_format_hive_text_fields_delimiter = ','
+FORMAT HiveText;
+
+SELECT * FROM test_tbl;
+```
+
+```response title="Response"
+┌─a─┬─b─┬─c─┐
+│ 1 │ 3 │ 0 │
+│ 3 │ 5 │ 9 │
+└───┴───┴───┘
+```
+
+Notez que la première ligne, `1,3`, ne contient que deux champs ; la colonne manquante `c`
+est donc renseignée avec sa valeur par défaut `0`.
+
+<div id="variable-number-of-columns">
+  ### Nombre variable de colonnes
+</div>
+
+Avec la valeur par défaut `input_format_hive_text_allow_variable_number_of_columns = 1`,
+les lignes qui comportent plus de champs que la table n’a de colonnes voient simplement les champs
+supplémentaires en fin de ligne ignorés :
+
+```text title="hive_extras.txt"
+1,2,3,4,5
+6,7,8
+```
+
+```sql title="Query"
+CREATE TABLE test_extras (a UInt16, b UInt32, c UInt32) ENGINE = MergeTree ORDER BY a;
+
+INSERT INTO test_extras FROM INFILE 'hive_extras.txt'
+SETTINGS input_format_hive_text_fields_delimiter = ','
+FORMAT HiveText;
+
+SELECT * FROM test_extras ORDER BY a;
+```
+
+```response title="Response"
+┌─a─┬─b─┬─c─┐
+│ 1 │ 2 │ 3 │
+│ 6 │ 7 │ 8 │
+└───┴───┴───┘
+```
+
+Définir `input_format_hive_text_allow_variable_number_of_columns = 0` à la place
+impose un nombre strict de champs, et une ligne comportant moins de champs que la table déclenche
+une exception d’analyse.
+
+<div id="format-settings">
+  ## Paramètres de format
+</div>
+
+| Paramètre                                                 | Description                                                                                                                                                                     | Par défaut |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `input_format_hive_text_fields_delimiter`                 | Délimiteur entre les champs dans Hive Text File                                                                                                                                 | `\x01`     |
+| `input_format_hive_text_collection_items_delimiter`       | Délimiteur entre les éléments d&#39;une collection (Array ou Map) dans Hive Text File. Accepté, mais actuellement non utilisé lors de l&#39;analyse.                            | `\x02`     |
+| `input_format_hive_text_map_keys_delimiter`               | Délimiteur entre une paire clé/valeur d&#39;une Map dans Hive Text File. Accepté, mais actuellement non utilisé lors de l&#39;analyse.                                          | `\x03`     |
+| `input_format_hive_text_allow_variable_number_of_columns` | Ignore les colonnes supplémentaires dans l&#39;entrée Hive Text (si le fichier comporte plus de colonnes que prévu) et traite les champs manquants comme des valeurs par défaut | `1`        |

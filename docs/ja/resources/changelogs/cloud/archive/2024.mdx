@@ -1,0 +1,742 @@
+---
+slug: /whats-new/cloud/2024
+sidebarTitle: '2024'
+title: 'Cloud 変更履歴 - 2024'
+description: '2024年のClickHouse Cloudの変更履歴'
+doc_type: 'changelog'
+keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Cloud の変更', '2024']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<div id="december-20-2024">
+  ## 2024年12月20日
+</div>
+
+<div id="marketplace-subscription-organization-attachment">
+  ### マーケットプレイスサブスクリプションの組織への関連付け
+</div>
+
+新しいマーケットプレイスサブスクリプションを、既存の ClickHouse Cloud 組織に関連付けられるようになりました。マーケットプレイスでのサブスクリプション手続きを完了し、ClickHouse Cloud にリダイレクトされた後、以前に作成した既存の組織を新しいマーケットプレイスサブスクリプションに接続できます。以降、その組織内のリソースはマーケットプレイス経由で請求されます。
+
+<Image img="/images/cloud/reference/add_marketplace.webp" size="md" alt="既存の組織にマーケットプレイスサブスクリプションを追加する方法を示す ClickHouse Cloud インターフェイス" border />
+
+<div id="force-openapi-key-expiration">
+  ### OpenAPI キーの有効期限の強制設定
+</div>
+
+API キーの有効期限オプションを制限し、有効期限のない OpenAPI キーが作成されないように設定できるようになりました。お使いの組織でこの制限を有効にするには、ClickHouse Cloud Support チームまでお問い合わせください。
+
+<div id="custom-emails-for-notifications">
+  ### 通知用のカスタムメール
+</div>
+
+Org Admin は、特定の通知に追加の受信者としてメールアドレスを追加できるようになりました。これは、通知をエイリアス宛てに送信したい場合や、ClickHouse Cloud のユーザーではない組織内の他のユーザーにも送信したい場合に便利です。設定するには、Cloud Console の Notification Settings に移動し、メール通知の受信先にしたいメールアドレスを編集します。
+
+<div id="december-6-2024">
+  ## 2024年12月6日
+</div>
+
+<div id="byoc-beta">
+  ### BYOC (ベータ)
+</div>
+
+AWS 向けの Bring Your Own Cloud がベータとして利用可能になりました。このデプロイメントモデルでは、お客様ご自身の AWS アカウントで ClickHouse Cloud をデプロイして実行できます。現在、11 以上の AWS リージョンでのデプロイをサポートしており、対応リージョンは今後さらに拡大予定です。ご利用を希望される場合は、[サポートにお問い合わせください](https://clickhouse.com/support/program)。なお、このデプロイメントは大規模な導入向けに限定されています。
+
+<div id="postgres-change-data-capture-cdc-connector-in-clickpipes">
+  ### ClickPipes の Postgres CDC (変更データキャプチャ) コネクタ
+</div>
+
+このすぐに使えるインテグレーションを利用すると、わずか数クリックで Postgres データベースを ClickHouse Cloud にレプリケートし、ClickHouse による超高速分析を活用できます。このコネクタは、Postgres からの継続的なレプリケーションにも、一回限りの移行にも使用できます。
+
+<div id="dashboards-beta">
+  ### ダッシュボード (ベータ)
+</div>
+
+今週、ClickHouse Cloud でダッシュボードのベータ版をリリースしたことをお知らせします。ダッシュボードを使うと、保存クエリを可視化し、それらをダッシュボードに整理して、クエリパラメータを使ってダッシュボードを操作できます。使い始めるには、[ダッシュボードのドキュメント](/ja/products/cloud/features/sql-console-features/dashboards)を参照してください。
+
+<Image img="/images/cloud/reference/beta_dashboards.webp" size="lg" alt="可視化を含む新しいダッシュボードのベータ機能を表示する ClickHouse Cloud インターフェイス" border />
+
+<div id="query-api-endpoints-ga">
+  ### クエリ API エンドポイント (GA)
+</div>
+
+ClickHouse Cloud でクエリ API エンドポイントが GA リリースとなったことをお知らせします。クエリ API エンドポイントを使うと、数クリックで保存クエリ用の RESTful API エンドポイントを作成でき、言語クライアントや認証まわりの複雑さに煩わされることなく、アプリケーションでデータを利用し始められます。初回リリース以降、以下を含むさまざまな改善を行ってきました。
+
+* エンドポイントのレイテンシを低減 (特にコールドスタート時)
+* エンドポイントの RBAC 制御を強化
+* CORS で許可するドメインを設定可能
+* 結果のストリーミング
+* すべての ClickHouse 互換の出力フォーマットをサポート
+
+これらの改善に加えて、既存のフレームワークを活用し、ClickHouse Cloud サービスに対して任意の SQL クエリを実行できる汎用クエリ API エンドポイントもリリースしました。汎用エンドポイントは、サービスの Settings ページから有効化および設定できます。
+
+使い始めるには、[クエリ API エンドポイントのドキュメント](/ja/products/cloud/guides/sql-console/query-endpoints)を参照してください。
+
+<Image img="/images/cloud/reference/api_endpoints.webp" size="lg" alt="各種設定を含む API Endpoints の構成を表示している ClickHouse Cloud インターフェイス" border />
+
+<div id="native-json-support-beta">
+  ### ネイティブ JSON サポート (ベータ)
+</div>
+
+ClickHouse Cloud でネイティブ JSON サポートのベータ提供を開始します。利用を開始するには、サポート[までご連絡のうえ、Cloud サービスを有効化してください](/ja/products/cloud/features/support)。
+
+<div id="vector-search-using-vector-similarity-indexes-early-access">
+  ### ベクトル類似度索引を使用したベクトル検索 (早期アクセス)
+</div>
+
+近似ベクトル検索向けのベクトル類似度索引を、早期アクセス版として提供開始します。
+
+ClickHouse はすでに、[距離関数]https://clickhouse.com/blog/reinvent-2024-product-announcements#vector-search-using-vector-similarity-indexes-early-access) の豊富なサポートと線形スキャンの実行機能により、ベクトルベースのユースケースに幅広く対応しています。さらに最近では、[usearch](https://github.com/unum-cloud/usearch) ライブラリと Hierarchical Navigable Small Worlds (HNSW) 近似最近傍探索アルゴリズムを用いた、実験的な[ 近似ベクトル検索](/ja/reference/engines/table-engines/mergetree-family/annindexes) アプローチも追加しました。
+
+利用を開始するには、[早期アクセスのウェイトリストにご登録ください](https://clickhouse.com/cloud/vector-search-index-waitlist)。
+
+<div id="clickhouse-connect-python-and-clickhouse-kafka-connect-users">
+  ### ClickHouse-connect (Python) および ClickHouse Kafka Connect ユーザー
+</div>
+
+クライアントで `MEMORY_LIMIT_EXCEEDED` 例外が発生する問題の影響を受けたお客様には、通知メールを送信しました。
+
+次のバージョン以降にアップグレードしてください:
+
+* Kafka-Connect: &gt; 1.2.5
+* ClickHouse-Connect (Java): &gt; 0.8.6
+
+<div id="clickpipes-now-supports-cross-vpc-resource-access-on-aws">
+  ### ClickPipes が AWS でクロス VPC リソースアクセスをサポート
+</div>
+
+AWS MSK のような特定のデータソースに対して、一方向のアクセスを許可できるようになりました。AWS PrivateLink と VPC Lattice を利用したクロス VPC リソースアクセスにより、VPC やアカウントの境界をまたいで個別のリソースを共有できるほか、オンプレミスのネットワークからでも、パブリックネットワークを経由する際のプライバシーやセキュリティを損なうことなく共有できます。利用を開始してリソース共有を設定するには、[発表記事](https://clickhouse.com/blog/clickpipes-crossvpc-resource-endpoints?utm_medium=web\&utm_source=changelog)をご覧ください。
+
+<Image img="/images/cloud/reference/cross-vpc-clickpipes.webp" size="lg" alt="ClickPipes が AWS MSK に接続するためのクロス VPC リソースアクセスのアーキテクチャを示す図" border />
+
+<div id="clickpipes-now-supports-iam-for-aws-msk">
+  ### ClickPipes が AWS MSK の IAM 認証に対応しました
+</div>
+
+AWS MSK ClickPipes で、IAM 認証を使用して MSK ブローカーに接続できるようになりました。詳しくは、[ドキュメント](/ja/integrations/clickpipes/kafka/best-practices#iam)をご確認ください。
+
+<div id="maximum-replica-size-for-new-services-on-aws">
+  ### AWS上の新規サービスにおける最大レプリカサイズ
+</div>
+
+今後、AWS上で作成されるすべての新規サービスで、利用可能な最大レプリカサイズは236 GiBとなります。
+
+<div id="november-22-2024">
+  ## 2024年11月22日
+</div>
+
+<div id="built-in-advanced-observability-dashboard-for-clickhouse-cloud">
+  ### ClickHouse Cloud 向けの組み込み高度オブザーバビリティダッシュボード
+</div>
+
+これまで、ClickHouse server のメトリクスやハードウェアのリソース使用状況を監視できる高度オブザーバビリティダッシュボードは、オープンソース版の ClickHouse でのみ利用可能でした。この機能が ClickHouse Cloudコンソールでも利用できるようになりました。
+
+このダッシュボードでは、[system.dashboards](/ja/reference/system-tables/dashboards) テーブルに基づくクエリをオールインワンの UI で確認できます。今すぐ高度オブザーバビリティダッシュボードの利用を開始するには、**監視 &gt; Service Health** ページにアクセスしてください。
+
+<Image img="/images/cloud/reference/nov-22-dashboard.webp" size="lg" alt="server のメトリクスとリソース使用状況を表示する ClickHouse Cloud の高度オブザーバビリティダッシュボード" border />
+
+<div id="ai-powered-sql-autocomplete">
+  ### AI による SQL オートコンプリート
+</div>
+
+オートコンプリートが大幅に改善され、新しい AI Copilot により、クエリの入力中にインラインで SQL の補完候補を利用できるようになりました。この機能は、任意の ClickHouse Cloud サービスで **&quot;Enable Inline Code Completion&quot;** 設定をオンにすると有効になります。
+
+<Image img="/images/cloud/reference/nov-22-copilot.gif" size="lg" alt="ユーザーの入力中に AI Copilot が SQL のオートコンプリート候補を提示するアニメーション" border />
+
+<div id="new-billing-role">
+  ### 新しい「billing」ロール
+</div>
+
+組織内のユーザーに、新しい **Billing** ロールを割り当てられるようになりました。このロールでは、サービスの設定や管理を行う権限を与えることなく、請求情報の閲覧と管理が可能です。新しいユーザーを招待するか、既存ユーザーのロールを編集して **Billing** ロールを割り当ててください。
+
+<div id="november-8-2024">
+  ## 2024年11月8日
+</div>
+
+<div id="customer-notifications-in-clickhouse-cloud">
+  ### ClickHouse Cloudのお客様向け通知
+</div>
+
+ClickHouse Cloud では現在、いくつかの billing イベントおよびスケーリング イベントに対して、コンソール内通知とメール通知を提供しています。これらの通知は、Cloud Console の通知センターで設定でき、UI のみに表示するか、メールで受け取るか、またはその両方にするかを選べます。受信する通知のカテゴリと重大度は、service レベルで設定できます。
+
+今後は、他のイベントに関する通知や、通知の受信方法の追加にも対応する予定です。
+
+service の通知を有効にする方法の詳細については、[ClickHouse Docs](/ja/products/cloud/features/monitoring/notifications)をご覧ください。
+
+<Image img="/images/cloud/reference/nov-8-notifications.webp" size="lg" alt="さまざまな通知タイプの設定オプションを表示した ClickHouse Cloud 通知センターのインターフェイス" border />
+
+<br />
+
+<div id="october-4-2024">
+  ## 2024年10月4日
+</div>
+
+<div id="clickhouse-cloud-now-offers-hipaa-ready-services-in-beta-for-gcp">
+  ### ClickHouse Cloud、GCP 向けに HIPAA 対応サービスをベータ提供開始
+</div>
+
+保護対象保健情報 (PHI) に対してより高いセキュリティを必要とするお客様は、[Google Cloud Platform (GCP)](https://cloud.google.com/) 上の ClickHouse Cloud を利用開始できるようになりました。ClickHouse は、[HIPAA Security Rule](https://www.hhs.gov/hipaa/for-professionals/security/index.html) で定められた管理上、物理上、および技術上の保護措置を実装しており、現在は、お客様の具体的なユースケースやワークロードに応じて適用できる、構成可能なセキュリティ設定も提供しています。利用可能なセキュリティ設定の詳細については、[セキュリティ機能ページ](/ja/products/cloud/features/security) をご確認ください。
+
+このサービスは GCP `us-central-1` で **Dedicated** サービス種別のお客様向けに提供されており、Business Associate Agreement (BAA) の締結が必要です。この機能へのアクセスを希望する場合、または今後追加される GCP、AWS、Azure の各リージョンのウェイトリストへの参加を希望する場合は、[sales](mailto:sales@clickhouse.com) または [support](https://clickhouse.com/support/program) にお問い合わせください。
+
+<div id="compute-compute-separation-is-now-in-private-preview-for-gcp-and-azure">
+  ### Compute-compute separation が GCP と Azure でプライベートプレビューとして利用可能になりました
+</div>
+
+先日、AWS 向けの Compute-Compute Separation のプライベートプレビューを発表しましたが、このたび GCP と Azure でも利用可能になりました。
+
+Compute-compute separation を使用すると、特定のサービスを read-write または読み取り専用サービスとして指定できるため、アプリケーションに最適なコンピュート構成を設計し、コストとパフォーマンスを最適化できます。詳細については、[ドキュメントをご覧ください](/ja/products/cloud/features/infrastructure/warehouses)。
+
+<div id="self-service-mfa-recovery-codes">
+  ### セルフサービスのMFAリカバリーコード
+</div>
+
+多要素認証を利用しているお客様は、電話を紛失した場合やトークンを誤って削除してしまった場合に使用できるリカバリーコードを取得できるようになりました。初めてMFAを設定するお客様には、設定時にこのコードが提供されます。すでにMFAを利用しているお客様は、現在のMFAトークンを削除して新しいトークンを追加することで、リカバリーコードを取得できます。
+
+<div id="clickpipes-update-custom-certificates-latency-insights-and-more">
+  ### ClickPipes のアップデート: カスタム証明書、レイテンシの可視化、その他
+</div>
+
+ClickHouse サービスにデータを取り込む最も簡単な方法である ClickPipes の最新アップデートをお知らせします。これらの新機能は、データインジェストをより細かく制御できるようにし、パフォーマンスメトリクスの可視性をさらに高めることを目的としています。
+
+*Kafka 向けカスタム認証証明書*
+
+Kafka 向け ClickPipes で、SASL とパブリック SSL/TLS を使用する Kafka broker 用のカスタム認証証明書がサポートされるようになりました。ClickPipe の Setup 時に SSL Certificate セクションで独自の証明書を簡単にアップロードでき、Kafka との接続をより安全に確立できます。
+
+*Kafka と Kinesis 向けレイテンシメトリクスの導入*
+
+パフォーマンスの可視性は非常に重要です。ClickPipes ではレイテンシグラフが利用可能になり、メッセージが生成されてから (Kafka topic または Kinesis Stream) ClickHouse Cloud にインジェストされるまでの時間を把握できます。この新しいメトリクスにより、データパイプラインのパフォーマンスをこれまで以上に詳しく監視し、必要に応じて最適化できます。
+
+<Image img="/images/cloud/reference/oct-4-latency-insights.webp" size="lg" alt="データインジェストのパフォーマンスを示すレイテンシメトリクスのグラフが表示された ClickPipes インターフェイス" border />
+
+<br />
+
+*Kafka と Kinesis 向けスケーリング制御 (プライベートベータ)&#x20;*
+
+高スループットなワークロードでは、データ量やレイテンシの要件を満たすために、追加のリソースが必要になることがあります。ClickPipes に水平スケーリングを導入し、Cloud Console から直接利用できるようになりました。この機能は現在プライベートベータとして提供されており、要件に応じてリソースをより効果的にスケールできます。ベータへの参加をご希望の場合は、[support](https://clickhouse.com/support/program) までご連絡ください。
+
+*Kafka と Kinesis 向け raw message インジェスト*
+
+Kafka または Kinesis のメッセージ全体を、パースせずにそのまま取り込めるようになりました。ClickPipes では `_raw_message` [virtual column](/ja/integrations/clickpipes/kafka/reference#kafka-virtual-columns) がサポートされ、メッセージ全体を 1 つの String カラムにマッピングできます。これにより、必要に応じて生データを柔軟に扱えます。
+
+<div id="august-29-2024">
+  ## 2024年8月29日
+</div>
+
+<div id="new-terraform-provider-version---v100">
+  ### 新しい Terraform プロバイダー バージョン - v1.0.0
+</div>
+
+Terraform を使用すると、ClickHouse Cloud サービスをプログラムで制御し、設定をコードとして管理できます。ClickHouse の Terraform プロバイダーはダウンロード数がまもなく 20 万件に達し、このたび正式に v1.0.0 となりました。この新バージョンには、再試行ロジックの改善に加え、ClickHouse Cloud サービスにプライベート エンドポイントを関連付けるための新しいリソースなどが含まれています。[Terraform プロバイダーはこちら](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest)からダウンロードでき、[完全な変更履歴はこちら](https://github.com/ClickHouse/terraform-provider-clickhouse/releases/tag/v1.0.0)で確認できます。
+
+<div id="2024-soc-2-type-ii-report-and-updated-iso-27001-certificate">
+  ### 2024年版 SOC 2 Type II レポートおよび更新版 ISO 27001 証明書
+</div>
+
+このたび、2024年版 SOC 2 Type II レポートおよび更新版 ISO 27001 証明書をご利用いただけるようになりましたので、お知らせします。これらには、新たに開始した Azure 上のサービスに加え、AWS および GCP 上のサービスも引き続き対象として含まれています。
+
+当社の SOC 2 Type II は、ClickHouse ユーザーに提供するサービスにおけるセキュリティ、可用性、処理の完全性、機密性の確保に継続的に取り組んでいることを示すものです。詳細については、American Institute of Certified Public Accountants (AICPA) が公開している [SOC 2 - SOC for Service Organizations: Trust Services Criteria](https://www.aicpa-cima.com/resources/landing/system-and-organization-controls-soc-suite-of-services) および International Standards Organization (ISO) による [What is ISO/IEC 27001](https://www.iso.org/standard/27001) をご覧ください。
+
+セキュリティおよびコンプライアンス関連の文書やレポートについては、当社の [Trust Center](https://trust.clickhouse.com/) もご確認ください。
+
+<div id="august-15-2024">
+  ## 2024年8月15日
+</div>
+
+<div id="compute-compute-separation-is-now-in-private-preview-for-aws">
+  ### Compute-compute separation が AWS 向けにプライベートプレビューで提供開始
+</div>
+
+既存の ClickHouse Cloud サービスでは、レプリカが読み取りと書き込みの両方を処理しており、特定のレプリカをどちらか一方の処理のみに割り当てることはできません。現在提供予定の新機能 Compute-compute separation では、特定のサービスを読み書き可能または読み取り専用サービスとして指定できるため、アプリケーションに合わせて最適なコンピュート構成を設計し、コストとパフォーマンスを最適化できます。
+
+この新しい Compute-compute separation 機能により、それぞれが独自のエンドポイントを持つ複数のコンピュートノードグループを作成できます。これらは同じオブジェクトストレージフォルダーを使用するため、同じテーブルやビューなどを共有します。詳細は、[Compute-compute separation はこちら](/ja/products/cloud/features/infrastructure/warehouses)をご覧ください。この機能のプライベートプレビューへのアクセスをご希望の場合は、[サポートにお問い合わせください](https://clickhouse.com/support/program)。
+
+<Image img="/images/cloud/reference/aug-15-compute-compute.webp" size="lg" alt="読み書き可能および読み取り専用のサービスグループを含む compute-compute separation のアーキテクチャ例を示す図" border />
+
+<div id="clickpipes-for-s3-and-gcs-now-in-ga-continuous-mode-support">
+  ### S3 および GCS 向け ClickPipes が GA に、Continuous mode に対応
+</div>
+
+ClickPipes は、ClickHouse Cloud にデータを取り込む最も簡単な方法です。S3 および GCS 向けの [ClickPipes](https://clickhouse.com/cloud/clickpipes) が **一般提供** になったことをお知らせします。ClickPipes は、一回限りのバッチ取り込みと「continuous mode」の両方をサポートしています。取り込みタスクは、特定のリモートバケットからパターンに一致するすべてのファイルを ClickHouse の宛先テーブルに読み込みます。「continuous mode」では、ClickPipes のジョブが継続的に実行され、リモートのオブジェクトストレージバケットに追加された一致ファイルを到着に応じて取り込みます。これにより、任意のオブジェクトストレージバケットを、ClickHouse Cloud にデータを取り込むための本格的なステージング領域として利用できるようになります。ClickPipes の詳細については、[ドキュメント](/ja/integrations/clickpipes/home)をご覧ください。
+
+<div id="july-18-2024">
+  ## 2024年7月18日
+</div>
+
+<div id="prometheus-endpoint-for-metrics-is-now-generally-available">
+  ### メトリクス向け Prometheus エンドポイントが一般提供になりました
+</div>
+
+前回のクラウド changelog では、ClickHouse Cloud から [Prometheus](https://prometheus.io/) メトリクスをエクスポートするためのプライベートプレビューを発表しました。この機能を使用すると、[ClickHouse Cloud API](/ja/products/cloud/features/admin-features/api/api-overview) を利用して、[Grafana](https://grafana.com/) や [Datadog](https://www.datadoghq.com/) などのツールでメトリクスを可視化できます。この機能が **一般提供** となったことをお知らせします。詳細は、[ドキュメント](/ja/products/cloud/features/monitoring/prometheus) をご覧ください。
+
+<div id="table-inspector-in-cloud-console">
+  ### Cloud コンソールのテーブルインスペクター
+</div>
+
+ClickHouse には、[`DESCRIBE`](/ja/reference/statements/describe-table) のように、テーブルを調べてスキーマを確認できるコマンドがあります。これらのコマンドはコンソールに出力されますが、テーブルやカラムに関する必要な情報をすべて取得するには複数のクエリを組み合わせる必要があるため、必ずしも使いやすいとは限りません。
+
+このたび、Cloud コンソールに **Table Inspector** を追加しました。これにより、SQL を書かなくても、UI 上で重要なテーブル情報やカラム情報を確認できます。お使いのサービスで Table Inspector を試すには、Cloud コンソールをご利用ください。スキーマ、ストレージ、圧縮などの情報を、1 つの統合されたインターフェイスで確認できます。
+
+<Image img="/images/cloud/reference/july-18-table-inspector.webp" size="lg" alt="詳細なスキーマ情報とストレージ情報を表示する ClickHouse Cloud Table Inspector インターフェイス" border />
+
+<div id="new-java-client-api">
+  ### 新しい Java クライアント API
+</div>
+
+当社の [Java クライアント](https://github.com/ClickHouse/clickhouse-java) は、ClickHouse への接続に使われるクライアントの中でも特に人気の高いものの 1 つです。そこで、API の再設計や各種パフォーマンス最適化を行い、さらに使いやすく直感的に利用できるようにしました。これらの変更により、Java アプリケーションから ClickHouse への接続が大幅に簡単になります。更新版 Java クライアントの使い方について詳しくは、この [ブログ記事](https://clickhouse.com/blog/java-client-sequel) をご覧ください。
+
+<div id="new-analyzer-is-enabled-by-default">
+  ### 新しいアナライザがデフォルトで有効に
+</div>
+
+ここ数年にわたり、クエリ分析と最適化のための新しいアナライザの開発に取り組んできました。このアナライザによりクエリパフォーマンスが向上し、より高速で効率的な `JOIN` をはじめ、さらなる最適化が可能になります。これまでは、新規ユーザーは設定 `allow_experimental_analyzer` を使用してこの機能を有効にする必要がありました。現在、この改良されたアナライザは、新しい ClickHouse Cloud サービスでデフォルトで利用できます。
+
+アナライザについては、今後もさらに多くの最適化を予定しています。引き続きご注目ください。
+
+<div id="june-28-2024">
+  ## 2024年6月28日
+</div>
+
+<div id="clickhouse-cloud-for-microsoft-azure-is-now-generally-available">
+  ### Microsoft Azure 向け ClickHouse Cloud の一般提供を開始しました
+</div>
+
+Microsoft Azure のサポートは、[今年 5 月](https://clickhouse.com/blog/clickhouse-cloud-is-now-on-azure-in-public-beta)にベータ版として初めて発表しました。今回の最新リリースでは、Azure サポートがベータから一般提供へ移行したことをお知らせします。これにより、ClickHouse Cloud は AWS、Google Cloud Platform、Microsoft Azure の主要 3 大クラウドプラットフォームすべてで利用可能になりました。
+
+このリリースには、[Microsoft Azure Marketplace](https://azuremarketplace.microsoft.com/en-us/marketplace/apps/clickhouse.clickhouse_cloud) 経由でのサブスクリプション対応も含まれています。本サービスは、まず以下のリージョンでサポートされます。
+
+* 米国: West US 3 (Arizona)
+* 米国: East US 2 (Virginia)
+* ヨーロッパ: Germany West Central (Frankfurt)
+
+対応を希望する特定のリージョンがある場合は、[お問い合わせください](https://clickhouse.com/support/program)。
+
+<div id="query-log-insights">
+  ### クエリログのインサイト
+</div>
+
+Cloud コンソール の新しいクエリインサイト UI により、ClickHouse に組み込まれたクエリログを大幅に使いやすくしました。ClickHouse の `system.query_log` テーブルは、クエリ最適化、デバッグ、そしてクラスター全体の健全性やパフォーマンスの監視において重要な情報源です。ただし、注意点が 1 つあります。70 を超えるフィールドがあり、さらに 1 つのクエリにつき複数のレコードが存在するため、クエリログを読み解くには高い学習コストが伴います。このクエリインサイトの初期バージョンは、クエリのデバッグや最適化パターンをよりシンプルにするための今後の取り組みの土台となるものです。今後もこの機能を継続的に改善していくにあたり、ぜひフィードバックをお寄せください。皆さまのご意見をお待ちしています。
+
+<Image img="/images/cloud/reference/june-28-query-insights.webp" size="lg" alt="クエリパフォーマンスのメトリクスと分析を表示する ClickHouse Cloud Query Insights UI" border />
+
+<div id="prometheus-endpoint-for-metrics-private-preview">
+  ### メトリクス向け Prometheus エンドポイント (プライベートプレビュー)
+</div>
+
+おそらく、これまでで最も多くのご要望をいただいてきた機能の 1 つです。ClickHouse Cloud から [Prometheus](https://prometheus.io/) メトリクスを [Grafana](https://grafana.com/) や [Datadog](https://www.datadoghq.com/) にエクスポートして可視化できるようになりました。Prometheus は、ClickHouse を監視し、カスタムアラートを設定するためのオープンソースのソリューションです。お使いの ClickHouse Cloud サービスの Prometheus メトリクスには、[ClickHouse Cloud API](/ja/products/cloud/features/monitoring/prometheus) 経由でアクセスできます。この機能は現在プライベートプレビューです。組織でこの機能を有効にするには、[サポートチーム](https://clickhouse.com/support/program) までお問い合わせください。
+
+<Image img="/images/cloud/reference/june-28-prometheus.webp" size="lg" alt="ClickHouse Cloud の Prometheus メトリクスを表示する Grafana ダッシュボード" border />
+
+<div id="other-features">
+  ### その他の機能
+</div>
+
+* バックアップの頻度、保持期間、スケジュールなどのカスタムポリシーを設定できる[設定可能なバックアップ](/ja/products/cloud/guides/backups/configurable-backups)が、一般提供開始となりました。
+
+<div id="june-13-2024">
+  ## 2024年6月13日
+</div>
+
+<div id="configurable-offsets-for-kafka-clickpipes-connector-beta">
+  ### Kafka ClickPipes Connector のオフセット設定に対応 (ベータ)
+</div>
+
+最近まで、新しい [ClickPipes 向け Kafka Connector](/ja/integrations/clickpipes/kafka/index) を設定すると、常に Kafka トピックの先頭からデータを消費していました。そのため、履歴データを再処理したい場合や、新しく到着するデータを監視したい場合、あるいは特定の位置から再開したい場合など、用途によっては十分な柔軟性がありませんでした。
+
+Kafka 向け ClickPipes に、Kafka トピックからのデータ消費をより柔軟かつ細かく制御できる新機能が追加されました。これにより、どのオフセットからデータの消費を開始するかを設定できるようになりました。
+
+利用可能なオプションは次のとおりです。
+
+* 先頭から: Kafka トピックの先頭からデータの消費を開始します。すべての履歴データを再処理する必要がある場合に最適です。
+* 最新から: 最新のオフセットからデータの消費を開始します。新しいメッセージだけを対象にしたい場合に便利です。
+* タイムスタンプから: 特定のタイムスタンプ時点以降に生成されたメッセージからデータの消費を開始します。この機能により、より正確な制御が可能になり、処理を特定の時点から再開できます。
+
+<Image img="/images/cloud/reference/june-13-kafka-config.webp" size="lg" alt="オフセット選択オプションを表示する ClickPipes Kafka コネクタの設定インターフェイス" border />
+
+<div id="enroll-services-to-the-fast-release-channel">
+  ### サービスを Fast リリースチャネルに登録する
+</div>
+
+Fast リリースチャネルでは、サービスがリリーススケジュールより早く更新を受け取れます。以前は、この機能を有効にするにはサポートチームの支援が必要でした。現在は、ClickHouse Cloud console からサービスに対してこの機能を直接有効にできます。**Settings** に移動し、**Enroll in fast releases** をクリックするだけです。これで、サービスは更新が利用可能になり次第すぐに受け取れるようになります。
+
+<Image img="/images/cloud/reference/june-13-fast-releases.webp" size="lg" alt="Fast リリースへの登録オプションが表示された ClickHouse Cloud の設定ページ" border />
+
+<div id="terraform-support-for-horizontal-scaling">
+  ### Terraform による水平スケーリングのサポート
+</div>
+
+ClickHouse Cloud は、[水平スケーリング](/ja/products/cloud/features/autoscaling/overview#how-scaling-works-in-clickhouse-cloud)に対応しており、サービスに同じサイズのレプリカを追加できます。水平スケーリングにより、同時実行されるクエリに対応するためのパフォーマンスと並列性が向上します。これまでは、レプリカを追加するには ClickHouse Cloud コンソールまたは API を使用する必要がありました。現在では、Terraform を使用してサービスのレプリカを追加または削除できるため、必要に応じて ClickHouse サービスをプログラムでスケールできるようになりました。
+
+詳細については、[ClickHouse Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs)を参照してください。
+
+<div id="may-30-2024">
+  ## 2024年5月30日
+</div>
+
+<div id="share-queries-with-your-teammates">
+  ### チームメンバーとクエリを共有する
+</div>
+
+SQLクエリを作成すると、そのクエリはチーム内のほかのメンバーにとっても役立つことがよくあります。これまでは、クエリを Slack やメールで送る必要があり、あとから編集しても、チームメンバーがそのクエリの更新を自動的に受け取る手段はありませんでした。
+
+このたび、ClickHouse Cloudコンソールからクエリを簡単に共有できるようになりました。クエリエディタから、チーム全体または特定のチームメンバーにクエリを直接共有できます。また、読み取り専用か書き込み可能かのアクセス権も指定できます。新しい共有クエリ機能を試すには、クエリエディタの **Share** ボタンをクリックしてください。
+
+<Image img="/images/cloud/reference/may-30-share-queries.webp" size="lg" alt="共有機能とアクセス権オプションを表示した ClickHouse Cloud クエリエディタ" border />
+
+<div id="clickhouse-cloud-for-microsoft-azure-is-now-in-beta">
+  ### Microsoft Azure 向け ClickHouse Cloud がベータ版になりました
+</div>
+
+ついに、Microsoft Azure 上で ClickHouse Cloud サービスを作成できるようになりました。すでに多くのお客様が、プライベートプレビュー プログラムの一環として、Azure 上の ClickHouse Cloud を本番環境で利用しています。これで、どなたでも Azure 上に独自のサービスを作成できます。AWS と GCP でサポートされている ClickHouse の主要機能は、Azure でもすべて利用できます。
+
+今後数週間のうちに、Azure 向け ClickHouse Cloud を一般提供できる見込みです。詳しくは[こちらのブログ記事](https://clickhouse.com/blog/clickhouse-cloud-is-now-on-azure-in-public-beta)をご覧いただくか、ClickHouse Cloud コンソールから Azure を使用して新しいサービスを作成してください。
+
+注意: 現時点では、Azure の **Development** サービスはサポートされていません。
+
+<div id="set-up-private-link-via-the-cloud-console">
+  ### ClickHouse Cloud コンソールからプライベートリンクを設定する
+</div>
+
+プライベートリンク 機能を使用すると、ClickHouse Cloud サービスをクラウドプロバイダーアカウント内の内部サービスに、トラフィックをパブリックインターネット経由にすることなく接続できるため、コスト削減とセキュリティ強化を実現できます。従来は、この設定は難しく、ClickHouse Cloud API を使用する必要がありました。
+
+現在では、ClickHouse Cloud コンソールから数回クリックするだけで、プライベート エンドポイントを直接設定できます。サービスの **Settings** に移動し、**Security** セクションを開いて、**Set up private endpoint** をクリックするだけです。
+
+<Image img="/images/cloud/reference/may-30-private-endpoints.webp" size="lg" alt="Security 設定のプライベート エンドポイント設定インターフェイスを表示している ClickHouse Cloud コンソール" border />
+
+<div id="may-17-2024">
+  ## 2024年5月17日
+</div>
+
+<div id="ingest-data-from-amazon-kinesis-using-clickpipes-beta">
+  ### ClickPipes (ベータ) を使用してAmazon Kinesisからデータを取り込む
+</div>
+
+ClickPipesは、コードを書くことなくデータを取り込める ClickHouse Cloud 提供のサービスです。Amazon Kinesisは、データストリームを取り込んで保存し、処理できるようにするAWSの完全マネージド型ストリーミングサービスです。特にご要望の多かったインテグレーションの1つである、Amazon Kinesis向けClickPipesベータを公開できることを大変うれしく思います。ClickPipesには今後さらに多くのインテグレーションを追加していく予定ですので、対応してほしいデータソースがあればぜひお知らせください。この機能の詳細は[こちら](https://clickhouse.com/blog/clickpipes-amazon-kinesis)をご覧ください。
+
+Cloud Consoleで、ClickPipes向けの新しいAmazon Kinesisインテグレーションを試すことができます。
+
+<Image img="/images/cloud/reference/may-17-kinesis.webp" size="lg" alt="Amazon Kinesisインテグレーションの設定オプションを表示するClickPipesインターフェイス" border />
+
+<div id="configurable-backups-private-preview">
+  ### 設定可能なバックアップ (プライベートプレビュー)
+</div>
+
+バックアップは、どれほど信頼性の高いデータベースであっても重要です。ClickHouse Cloud では、サービス開始当初からバックアップを非常に重視してきました。今週、サービスのバックアップをより柔軟に設定できる「設定可能なバックアップ」をリリースしました。これにより、開始時刻、保持期間、頻度を指定できるようになりました。この機能は **Production** および **Dedicated** サービスで利用でき、**Development** サービスでは利用できません。現在この機能はプライベートプレビュー段階のため、ご利用のサービスで有効にするには support@clickhouse.com までお問い合わせください。設定可能なバックアップの詳細は[こちら](https://clickhouse.com/blog/configurable-backups-in-clickhouse-cloud)をご覧ください。
+
+<div id="create-apis-from-your-sql-queries-beta">
+  ### SQLクエリからAPIを作成 (ベータ)
+</div>
+
+ClickHouse向けのSQLクエリを作成しても、そのクエリをアプリケーションから利用できるようにするには、引き続きドライバー経由でClickHouseに接続する必要があります。そこで、新しい **Query Endpoints** 機能を使えば、設定不要でAPIから直接SQLクエリを実行できます。クエリエンドポイントが JSON、CSV、または TSV を返すように指定することも可能です。お使いのクエリでこの新機能を試すには、Cloud Console の「Share」ボタンをクリックしてください。Query Endpoints の詳細は[こちら](https://clickhouse.com/blog/automatic-query-endpoints)をご覧ください。
+
+<Image img="/images/cloud/reference/may-17-query-endpoints.webp" size="lg" alt="出力フォーマットのオプションを備えた Query Endpoints の設定を示す ClickHouse Cloud インターフェイス" border />
+
+<div id="official-clickhouse-certification-is-now-available">
+  ### 公式ClickHouse認定資格の提供を開始しました
+</div>
+
+ClickHouse Developトレーニングコースには、無料のトレーニングモジュールが12個用意されています。これまでは、ClickHouseの習熟度を公式に証明する方法はありませんでした。このたび、**ClickHouse Certified Developer** になるための公式試験を開始しました。この試験に合格すると、データインジェスト、モデリング、分析、パフォーマンス最適化などの分野におけるClickHouseの習熟度を、現在および将来の雇用主に示せるようになります。試験は[こちら](https://clickhouse.com/learn/certification)から受験でき、ClickHouse認定資格の詳細はこの[ブログ記事](https://clickhouse.com/blog/first-official-clickhouse-certification)でもご覧いただけます。
+
+<div id="april-25-2024">
+  ## 2024年4月25日
+</div>
+
+<div id="load-data-from-s3-and-gcs-using-clickpipes">
+  ### ClickPipes を使用して S3 と GCS からデータを読み込む
+</div>
+
+新たにリリースされた Cloud Console に、「Data sources」という新しいセクションが追加されていることにお気づきかもしれません。「Data sources」ページは ClickPipes を基盤としており、これは ClickHouse Cloud にネイティブに備わった機能で、さまざまなソースから ClickHouse Cloud へデータを簡単に取り込めます。
+
+今回の ClickPipes の最新アップデートでは、Amazon S3 と Google Cloud Storage からデータを直接アップロードできるようになりました。引き続き組み込みのテーブル関数を使用することもできますが、ClickPipes は UI 経由で利用できるフルマネージドサービスで、数回クリックするだけで S3 や GCS からデータを取り込めます。この機能は現在もプライベートプレビュー段階ですが、今すぐ Cloud Console からお試しいただけます。
+
+<Image img="/images/cloud/reference/clickpipes-s3-gcs.webp" size="lg" alt="S3 と GCS バケットからデータを読み込むための構成オプションを表示する ClickPipes インターフェイス" border />
+
+<div id="use-fivetran-to-load-data-from-500-sources-into-clickhouse-cloud">
+  ### Fivetran を使用して 500 を超えるソースから ClickHouse Cloud にデータを読み込む
+</div>
+
+ClickHouse は大規模なデータセット全体を高速にクエリできますが、当然、その前にデータを ClickHouse に挿入しておく必要があります。Fivetran の豊富なコネクタにより、500 を超えるデータソースからすばやくデータを読み込めるようになりました。Zendesk や Slack をはじめ、お使いのさまざまなアプリケーションからデータを取り込みたい場合でも、Fivetran 向けの新しい ClickHouse 宛先を使用すれば、アプリケーションデータの移行先データベースとして ClickHouse を利用できます。
+
+これは、当社のインテグレーションチームが数か月にわたって尽力して開発したオープンソースのインテグレーションです。詳しくは、こちらの [リリースブログ記事](https://clickhouse.com/blog/fivetran-destination-clickhouse-cloud) と [GitHub リポジトリ](https://github.com/ClickHouse/clickhouse-fivetran-destination) をご覧ください。
+
+<div id="other-changes">
+  ### その他の変更
+</div>
+
+**コンソールの変更点**
+
+* SQL コンソールが出力フォーマットに対応
+
+**インテグレーションの変更点**
+
+* ClickPipes Kafka コネクタがマルチブローカー構成に対応
+* PowerBI コネクタで ODBC ドライバの設定オプションを指定可能に
+
+<div id="april-18-2024">
+  ## 2024年4月18日
+</div>
+
+<div id="aws-tokyo-region-is-now-available-for-clickhouse-cloud">
+  ### AWS Tokyo リージョンが ClickHouse Cloud で利用可能になりました
+</div>
+
+このリリースでは、ClickHouse Cloud で新たに AWS Tokyo リージョン (`ap-northeast-1`) が利用可能になりました。ClickHouse を最速のデータベースにすることを目指し、レイテンシを可能な限り低減できるよう、各クラウドで対応リージョンを継続的に拡大しています。更新されたクラウドコンソールから、Tokyo に新しいサービスを作成できます。
+
+<Image img="/images/cloud/reference/create-tokyo-service.webp" size="lg" alt="Tokyo リージョンの選択を示す ClickHouse Cloud サービス作成インターフェイス" border />
+
+その他の変更:
+
+<div id="console-changes">
+  ### コンソールの変更点
+</div>
+
+* Kafka 向け ClickPipes の Avro フォーマットのサポートが一般提供になりました
+* Terraform プロバイダーでのリソース (サービスおよびプライベート エンドポイント) のインポートを完全にサポート
+
+<div id="integrations-changes">
+  ### インテグレーションの変更点
+</div>
+
+* NodeJS client の安定版メジャーリリース: クエリと ResultSet に対する高度な TypeScript サポート、URL 設定
+* Kafka Connector: DLQ への書き込み時に例外が無視される不具合を修正し、Avro Enum 型のサポートを追加、[MSK](https://www.youtube.com/watch?v=6lKI_WlQ3-s) および [Confluent Cloud](https://www.youtube.com/watch?v=SQAiPVbd3gg) でコネクタを使用するためのガイドを公開
+* Grafana: UI での Nullable 型サポートに関する不具合を修正し、動的な OTel トレーシングテーブル名のサポートを修正
+* DBT: カスタム materialization の model 設定を修正。
+* Java クライアント: エラーコードのパースが正しく行われない不具合を修正
+* Python クライアント: 数値型のパラメータバインドを修正し、クエリバインドにおける数値リストの不具合を修正し、SQLAlchemy Point のサポートを追加。
+
+<div id="april-4-2024">
+  ## 2024年4月4日
+</div>
+
+<div id="introducing-the-new-clickhouse-cloud-console">
+  ### 新しい ClickHouse Cloud console のご紹介
+</div>
+
+このリリースでは、新しい Cloud console のプライベートプレビューを提供します。
+
+ClickHouse では、開発者体験をどう向上させるかを常に考えています。最速のリアルタイムデータウェアハウスを提供するだけでは十分ではなく、使いやすく、管理しやすいことも重要だと考えています。
+
+毎月、何千もの ClickHouse Cloud ユーザーが当社の SQL コンソール で数十億件ものクエリを実行しています。そのため、ClickHouse Cloud サービスをこれまで以上に簡単に操作できるよう、世界水準の console への投資をさらに強化することにしました。新しい Cloud console では、独立した SQL エディタと管理 console を、直感的な 1 つの UI に統合しています。
+
+一部のお客様には、新しい Cloud console のプレビューをご提供します。これは、ClickHouse 内のデータを探索し、管理するための、統合された没入感のある新しい体験です。優先アクセスをご希望の場合は、support@clickhouse.com までお問い合わせください。
+
+<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="統合された SQL エディタと管理機能を備えた新しい ClickHouse Cloud console インターフェイスを示すアニメーション" border />
+
+<div id="march-28-2024">
+  ## 2024年3月28日
+</div>
+
+このリリースでは、Microsoft Azure のサポート、API を介した水平スケーリング、ならびにプライベートプレビューとしてリリースチャネルのサポートが追加されました。
+
+<div id="general-updates">
+  ### 一般的な更新
+</div>
+
+* Microsoft Azure のサポートをプライベートプレビューとして提供開始しました。利用を希望する場合は、アカウント管理またはサポートまでお問い合わせいただくか、[ウェイトリスト](https://clickhouse.com/cloud/azure-waitlist)にご登録ください。
+* Release Channels を導入しました。これにより、環境の種類に応じてアップグレードのタイミングを指定できます。このリリースでは &quot;fast&quot; release channel を追加し、本番環境より前に非本番環境をアップグレードできるようになりました (有効にするにはサポートにお問い合わせください) 。
+
+<div id="administration-changes">
+  ### 管理関連の変更
+</div>
+
+* API 経由で水平スケーリングを設定できるようになりました (プライベートプレビュー。利用を有効にするにはサポートにお問い合わせください)
+* 起動時にメモリ不足エラーが発生するサービスをスケールアップできるよう、オートスケーリングを改善しました
+* Terraform プロバイダー経由で AWS の CMEK をサポートしました
+
+<div id="console-changes">
+  ### コンソールの変更点
+</div>
+
+* Microsoft のソーシャルログインのサポートを追加
+* SQL コンソールにパラメータ化クエリの共有機能を追加
+* クエリエディタのパフォーマンスを大幅に改善 (一部の EU リージョンではレイテンシが 5 秒から 1.5 秒に短縮)
+
+<div id="integrations-changes">
+  ### インテグレーションの変更点
+</div>
+
+* ClickHouse OpenTelemetry エクスポーター: ClickHouse のレプリケーションテーブルエンジンの[サポートを追加](https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/31920)し、[結合テストを追加](https://github.com/open-telemetry/opentelemetry-collector-contrib/pull/31896)
+* ClickHouse DBT アダプター: [Dictionaries 用の materialization マクロ](https://github.com/ClickHouse/dbt-clickhouse/pull/255)と、[有効期限 (TTL) 式のサポートに関するテスト](https://github.com/ClickHouse/dbt-clickhouse/pull/254)を追加
+* ClickHouse Kafka Connect Sink: Kafka プラグイン discovery との[互換性を追加](https://github.com/ClickHouse/clickhouse-kafka-connect/issues/350) (コミュニティからの貢献)
+* ClickHouse Java Client: 新しいクライアント API 向けの[新しいパッケージ](https://github.com/ClickHouse/clickhouse-java/pull/1574)を導入し、Cloud テスト向けの[テストカバレッジを追加](https://github.com/ClickHouse/clickhouse-java/pull/1575)
+* ClickHouse NodeJS Client: 新しい HTTP keep-alive の挙動に関するテストとドキュメントを拡充。v0.3.0 リリース以降で利用可能
+* ClickHouse Golang Client: Map のキーとして Enum を使用した場合の[不具合を修正](https://github.com/ClickHouse/clickhouse-go/pull/1236)し、エラーが発生した接続が接続プールに残る場合の[不具合を修正](https://github.com/ClickHouse/clickhouse-go/pull/1237) (コミュニティからの貢献)
+* ClickHouse Python クライアント: PyArrow を介したクエリ streaming の[サポートを追加](https://github.com/ClickHouse/clickhouse-connect/issues/155) (コミュニティからの貢献)
+
+<div id="security-updates">
+  ### セキュリティアップデート
+</div>
+
+* ClickHouse Cloud を更新し、[&quot;クエリキャッシュが有効な場合にロールベースのアクセス制御がバイパスされる&quot;](https://github.com/ClickHouse/ClickHouse/security/advisories/GHSA-45h5-f7g3-gr8r) 問題を防止しました (CVE-2024-22412)
+
+<div id="march-14-2024">
+  ## 2024年3月14日
+</div>
+
+このリリースでは、新しい Cloud コンソール エクスペリエンス、S3 および GCS からの一括ロード向け ClickPipes、Kafka 向け ClickPipes での Avro フォーマットのサポートを早期アクセスとして提供します。また、ClickHouse データベースのバージョンを 24.1 に更新し、新しい関数のサポートに加え、パフォーマンスとリソース使用量の最適化も実現しています。
+
+<div id="console-changes">
+  ### コンソールの変更点
+</div>
+
+* 新しい Cloud コンソールのエクスペリエンスが早期アクセスで利用可能になりました (参加にご興味がある場合は、サポートまでお問い合わせください) 。
+* S3 および GCS からの一括ロード向け ClickPipes が早期アクセスで利用可能になりました (参加にご興味がある場合は、サポートまでお問い合わせください) 。
+* Kafka 向け ClickPipes での Avro フォーマットのサポートが早期アクセスで利用可能になりました (参加にご興味がある場合は、サポートまでお問い合わせください) 。
+
+<div id="clickhouse-version-upgrade">
+  ### ClickHouse バージョンのアップグレード
+</div>
+
+* FINAL の最適化、ベクトル化の改善、集計の高速化については、詳細は [23.12 release blog](https://clickhouse.com/blog/clickhouse-release-23-12#optimizations-for-final) を参照してください。
+* punycode の処理、文字列類似度、外れ値検出のための新しい関数に加え、merges と Keeper のメモリ最適化については、詳細は [24.1 release blog](https://clickhouse.com/blog/clickhouse-release-24-01) および [プレゼンテーション](https://presentations.clickhouse.com/release_24.1/) を参照してください。
+* この ClickHouse Cloud バージョンは 24.1 をベースとしており、多数の新機能、パフォーマンス改善、バグ修正が含まれています。詳細はコアデータベースの [変更履歴](/ja/resources/changelogs/oss/2023#2312) を参照してください。
+
+<div id="integrations-changes">
+  ### インテグレーションの変更点
+</div>
+
+* Grafana: v4 向けのダッシュボードの移行とアドホックフィルタリングロジックを修正
+* Tableau Connector: DATENAME 関数と &quot;real&quot; 引数の丸め処理を修正
+* Kafka Connector: 接続初期化時の NPE を修正し、JDBC ドライバーのオプションを指定できるように改善
+* Golang client: レスポンス処理時のメモリ使用量を削減し、Date32 の極端な値を修正し、圧縮有効時のエラー報告を修正
+* Python クライアント: datetime パラメーターにおけるタイムゾーンのサポートを改善し、Pandas DataFrame のパフォーマンスを向上
+
+<div id="february-29-2024">
+  ## 2024年2月29日
+</div>
+
+このリリースでは、SQL コンソール アプリケーションの読み込み時間が改善され、ClickPipes での SCRAM-SHA-256 認証がサポートされるようになり、Kafka Connect におけるネスト構造のサポートが拡張されました。
+
+<div id="console-changes">
+  ### コンソールの変更点
+</div>
+
+* SQL コンソールの初期ロード時間を最適化
+* &#39;authentication failed&#39; エラーの原因となっていた SQL コンソールのレースコンディションを修正
+* 監視ページで、最新のメモリ割り当て値が誤って表示されることがあった問題を修正
+* SQL コンソールが KILL QUERY コマンドを重複して発行することがあった問題を修正
+* ClickPipes で、Kafka ベースのデータソース向けに SCRAM-SHA-256 認証方式のサポートを追加
+
+<div id="integrations-changes">
+  ### インテグレーションの変更点
+</div>
+
+* Kafka Connector: 複雑なネスト構造 (Array、Map) のサポートを拡張し、FixedString 型と複数のデータベースへのインジェストに対応
+* Metabase: バージョン 23.8 未満の ClickHouse との非互換性を修正
+* DBT: model 作成時に設定を渡せるように改善
+* Node.js client: 長時間実行されるクエリ (&gt;1時間) をサポートし、空の値も適切に処理するよう改善
+
+<div id="february-15-2024">
+  ## 2024年2月15日
+</div>
+
+このリリースでは、コアデータベースのバージョンをアップグレードし、Terraform 経由でプライベートリンクを設定する機能を追加するとともに、Kafka Connect を介した非同期挿入の exactly-once セマンティクスをサポートしています。
+
+<div id="clickhouse-version-upgrade">
+  ### ClickHouse バージョンのアップグレード
+</div>
+
+* S3 からの継続的かつ定期的なデータ読み込みに対応する S3Queue テーブルエンジン が本番環境で利用可能になりました - 詳細は [23.11 release blog](https://clickhouse.com/blog/clickhouse-release-23-11) を参照してください。
+* FINAL の大幅なパフォーマンス改善と SIMD 命令のベクトル化の改善により、クエリが高速化されました - 詳細は [23.12 release blog](https://clickhouse.com/blog/clickhouse-release-23-12#optimizations-for-final) を参照してください。
+* この ClickHouse Cloud のバージョンは 23.12 をベースとしており、多数の新機能、パフォーマンス改善、バグ修正が含まれています。詳細は [core database changelogs](/ja/resources/changelogs/oss/2023#2312) を参照してください。
+
+<div id="console-changes">
+  ### コンソールの変更点
+</div>
+
+* Terraform プロバイダー経由で AWS プライベートリンク と GCP Private Service Connect を設定できるようになりました
+* リモートファイルからのデータインポートの耐障害性を向上しました
+* すべてのデータインポートに、インポートステータスの詳細を表示するフライアウトを追加しました
+* S3 データインポートでアクセスキー/シークレットキー認証情報をサポートしました
+
+<div id="integrations-changes">
+  ### インテグレーションの変更点
+</div>
+
+* Kafka Connect
+  * exactly once 向けの async&#95;insert をサポート (デフォルトでは無効)
+* Golang クライアント
+  * DateTime のバインディングを修正
+  * バッチ挿入のパフォーマンスを改善
+* Java クライアント
+  * リクエスト圧縮の問題を修正
+
+<div id="settings-changes">
+  ### 設定の変更
+</div>
+
+* `use_mysql_types_in_show_columns` は不要になりました。MySQL インターフェイス経由で接続すると、自動的に有効になります。
+* `async_insert_max_data_size` のデフォルト値が `10 MiB` になりました
+
+<div id="february-2-2024">
+  ## 2024年2月2日
+</div>
+
+このリリースでは、Azure Event Hub向けのClickPipesが利用可能になったほか、v4 ClickHouse Grafanaコネクタを使用したログやトレースのナビゲーションワークフローが大幅に改善され、FlywayおよびAtlasのデータベーススキーマ管理ツールのサポートも新たに追加されました。
+
+<div id="console-changes">
+  ### コンソールの変更点
+</div>
+
+* Azure Event Hub 向けの ClickPipes サポートを追加
+* 新しいサービスは、デフォルトのアイドル移行時間を 15 分に設定して起動されます
+
+<div id="integrations-changes">
+  ### インテグレーションの変更点
+</div>
+
+* [Grafana 向け ClickHouse データソース](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) v4 リリース
+  * Table、ログ、時系列、トレース向けの専用エディターを備えたクエリビルダーに全面刷新
+  * より複雑で動的なクエリをサポートするため、SQL ジェネレーターを全面刷新
+  * ログビューとトレースビューで OpenTelemetry のネイティブサポートを追加
+  * ログとトレースのデフォルトのテーブルとカラムを指定できるよう、設定を拡張
+  * カスタム HTTP ヘッダーを指定する機能を追加
+  * このほかにも多数の改善 - 詳細は完全な[変更履歴](https://github.com/grafana/clickhouse-datasource/blob/main/CHANGELOG.md#400)を参照
+* データベーススキーマ管理ツール
+  * [Flyway が ClickHouse のサポートを追加](https://github.com/flyway/flyway-community-db-support/packages/2037428)
+  * [Ariga Atlas が ClickHouse のサポートを追加](https://atlasgo.io/blog/2023/12/19/atlas-v-0-16#clickhouse-beta-program)
+* Kafka Connector Sink
+  * デフォルト値を持つテーブルへのインジェストを最適化
+  * DateTime64 で文字列形式の日付をサポート
+* Metabase
+  * 複数のデータベースへの接続をサポート
+
+<div id="january-18-2024">
+  ## 2024年1月18日
+</div>
+
+このリリースでは、AWS の新しいリージョン (ロンドン / eu-west-2) が追加されたほか、Redpanda、Upstash、Warpstream 向けの ClickPipes サポートが追加され、データベースの中核機能である [is&#95;deleted](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) の信頼性も向上しました。
+
+<div id="general-changes">
+  ### 全般的な変更
+</div>
+
+* 新しい AWS リージョン: ロンドン (eu-west-2)
+
+<div id="console-changes">
+  ### コンソールの変更点
+</div>
+
+* Redpanda、Upstash、Warpstream 向けの ClickPipes サポートを追加
+* UI で ClickPipes の認証方式を設定できるようにしました
+
+<div id="integrations-changes">
+  ### インテグレーションの変更点
+</div>
+
+* Java クライアント:
+  * 破壊的変更: 呼び出し時にランダムな URL ハンドルを指定する機能を削除しました。この機能は ClickHouse からも削除されています
+  * 非推奨: Java CLI クライアントおよび GRPC パッケージ
+  * バッチサイズと ClickHouse インスタンスへの負荷を軽減するため、RowBinaryWithDefaults フォーマットのサポートを追加しました (Exabeam からの要望)
+  * Date32 と DateTime64 の範囲境界を ClickHouse と互換性のあるものにし、Spark の Array string type との互換性およびノード選択メカニズムを改善しました
+* Kafka Connector: Grafana 用の JMX 監視ダッシュボードを追加しました
+* PowerBI: UI で ODBC ドライバの設定を変更できるようにしました
+* JavaScript クライアント: クエリの要約情報を公開し、挿入時に特定のカラムのサブセットを指定できるようにし、Web クライアントで keep&#95;alive を設定可能にしました
+* Python クライアント: SQLAlchemy の Nothing 型のサポートを追加しました
+
+<div id="reliability-changes">
+  ### 信頼性に関する変更
+</div>
+
+* ユーザー向けの後方互換性を持たない変更: 以前は、特定の条件下で 2 つの機能 ([is&#95;deleted](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree#is_deleted) と `OPTIMIZE CLEANUP`) によって ClickHouse のデータが破損する可能性がありました。ユーザーのデータの整合性を保護しつつ機能の中核は維持するため、この機能の動作を調整しました。具体的には、MergeTree の設定 `clean_deleted_rows` は現在非推奨で、効果はありません。`CLEANUP` キーワードはデフォルトでは許可されていません (使用するには `allow_experimental_replacing_merge_with_cleanup` を有効にする必要があります) 。`CLEANUP` を使用する場合は、必ず `FINAL` と併用する必要があり、さらに `OPTIMIZE FINAL CLEANUP` を実行した後は、古いバージョンの行が一切挿入されないことを保証しなければなりません。

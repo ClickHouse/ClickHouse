@@ -180,7 +180,7 @@ class FTResultsProcessor:
                         info="".join(test[3])[:16384],
                     )
                 )
-            except Exception as e:
+            except Exception:
                 print(f"ERROR: Failed to parse test results: {test}")
                 traceback.print_exc()
                 self.debug_files.append(self.tests_output_file)

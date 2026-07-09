@@ -1,0 +1,77 @@
+---
+description: 'Puede supervisar el uso de los recursos de hardware y también las métricas del servidor ClickHouse.'
+keywords: ['monitorización', 'observabilidad', 'dashboard avanzado', 'dashboard', 'dashboard de observabilidad']
+sidebarTitle: 'Monitorización'
+slug: /operations/monitoring
+title: 'Monitorización'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<Note>
+  Los datos de monitorización descritos en esta guía están disponibles en ClickHouse Cloud. Además de mostrarse en el panel integrado que se describe a continuación, tanto las métricas básicas como las avanzadas de rendimiento también pueden consultarse directamente en la consola principal del servicio.
+</Note>
+
+Puede supervisar:
+
+* El uso de los recursos de hardware.
+* Las métricas del servidor ClickHouse.
+
+<div id="built-in-advanced-observability-dashboard">
+  ## Panel integrado de observabilidad avanzada
+</div>
+
+<Image img="https://github.com/ClickHouse/ClickHouse/assets/3936029/2bd10011-4a47-4b94-b836-d44557c7fdc1" alt="Captura de pantalla 2023-11-12 a las 6 08 58 p. m." size="md" />
+
+ClickHouse incluye un panel integrado avanzado de observabilidad al que se puede acceder mediante `$HOST:$PORT/dashboard` (requiere usuario y contraseña) y que muestra las siguientes métricas:
+
+* Consultas/segundo
+* Uso de CPU (núcleos)
+* Consultas en ejecución
+* Merges en ejecución
+* Bytes seleccionados/segundo
+* Espera de E/S
+* Espera de CPU
+* Uso de CPU del SO (espacio de usuario)
+* Uso de CPU del SO (kernel)
+* Lectura desde disco
+* Lectura desde el sistema de archivos
+* Memoria (monitorizada)
+* Filas insertadas/segundo
+* Total de partes de MergeTree
+* Máximo de partes por partición
+
+<div id="resource-utilization">
+  ## Utilización de recursos
+</div>
+
+ClickHouse también supervisa por sí mismo el estado de los recursos de hardware, como:
+
+* La carga y la temperatura de los procesadores.
+* La utilización del sistema de almacenamiento, la RAM y la red.
+
+Estos datos se recopilan en la tabla `system.asynchronous_metric_log`.
+
+<div id="clickhouse-server-metrics">
+  ## Métricas del servidor ClickHouse
+</div>
+
+El servidor ClickHouse cuenta con instrumentos integrados para supervisar su propio estado.
+
+Para rastrear los eventos del servidor, use los registros del servidor. Consulte la sección [logger](/es/reference/settings/server-settings/settings#logger) del archivo de configuración.
+
+ClickHouse recopila:
+
+* Diferentes métricas sobre cómo el servidor utiliza los recursos computacionales.
+* Estadísticas comunes sobre el procesamiento de consultas.
+
+Puede encontrar las métricas en las tablas [system.metrics](/es/reference/system-tables/metrics), [system.events](/es/reference/system-tables/events) y [system.asynchronous&#95;metrics](/es/reference/system-tables/asynchronous_metrics).
+
+Puede configurar ClickHouse para exportar métricas a [Graphite](https://github.com/graphite-project). Consulte la [sección Graphite](/es/reference/settings/server-settings/settings#graphite) en el archivo de configuración del servidor ClickHouse. Antes de configurar la exportación de métricas, debe configurar Graphite siguiendo su [guía](https://graphite.readthedocs.io/en/latest/install.html) oficial.
+
+Puede configurar ClickHouse para exportar métricas a [Prometheus](https://prometheus.io). Consulte la [sección Prometheus](/es/reference/settings/server-settings/settings#prometheus) en el archivo de configuración del servidor ClickHouse. Antes de configurar la exportación de métricas, debe configurar Prometheus siguiendo su [guía](https://prometheus.io/docs/prometheus/latest/installation/) oficial.
+
+Además, puede supervisar la disponibilidad del servidor a través de la API HTTP. Envíe una solicitud `HTTP GET` a `/ping`. Si el servidor está disponible, responde con `200 OK`.
+
+Para supervisar servidores en una configuración de clúster, debe establecer el parámetro [max&#95;replica&#95;delay&#95;for&#95;distributed&#95;queries](/es/reference/settings/session-settings#max_replica_delay_for_distributed_queries) y usar el recurso HTTP `/replicas_status`. Una solicitud a `/replicas_status` devuelve `200 OK` si la réplica está disponible y no va retrasada con respecto a las demás réplicas. Si una réplica está retrasada, devuelve `503 HTTP_SERVICE_UNAVAILABLE` con información sobre la diferencia.

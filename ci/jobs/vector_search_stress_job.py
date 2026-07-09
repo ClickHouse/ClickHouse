@@ -24,7 +24,7 @@ def main():
     elif Utils.is_amd():
         latest_ch_master_url = "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/amd64/clickhouse"
     else:
-        assert False, f"Unknown processor architecture"
+        assert False, "Unknown processor architecture"
 
     if res and not info.is_local_run:
         step_name = "Download ClickHouse"

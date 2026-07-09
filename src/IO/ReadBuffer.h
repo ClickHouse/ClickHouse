@@ -45,6 +45,13 @@ public:
     // FIXME: behavior differs greately from `BufferBase::set()` and it's very confusing.
     void set(Position ptr, size_t size) { BufferBase::set(ptr, size, 0); working_buffer.resize(0); }
 
+    /// Whether this buffer's nextImpl honors the external-buffer pointer set via set() -- i.e.,
+    /// reads into the caller-provided memory. Defaults to false: a buffer is external-capable
+    /// only if it explicitly opts in by overriding this, so a buffer whose nextImpl ignores
+    /// set() is never read zero-copy. Callers that want zero-copy via set()+next() must check
+    /// this first.
+    virtual bool supportsExternalBufferMode() const { return false; }
+
     /** read next data and fill a buffer with it; set position to the beginning of the new data
       * (but not necessarily to the beginning of working_buffer!);
       * return `false` in case of end, `true` otherwise; throw an exception, if something is wrong;
@@ -68,6 +75,10 @@ public:
     }
 
     virtual ~ReadBuffer() = default;
+
+    /// True if the whole input is already in the working buffer and will never be refilled
+    /// (e.g. ReadBufferFromMemory). Lets hot parsers take the no-copy path without an RTTI check.
+    virtual bool isMemoryBuffer() const { return false; }
 
     /** Unlike std::istream, it returns true if all data was read
       *  (and not in case there was an attempt to read after the end).

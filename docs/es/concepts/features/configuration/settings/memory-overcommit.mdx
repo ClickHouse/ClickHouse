@@ -1,0 +1,47 @@
+---
+description: 'Una técnica experimental diseñada para permitir establecer límites de
+  memoria más flexibles para las consultas.'
+slug: /operations/settings/memory-overcommit
+title: 'Memory overcommit'
+doc_type: 'reference'
+---
+
+Memory overcommit es una técnica experimental diseñada para permitir establecer límites de memoria más flexibles para las consultas.
+
+La idea de esta técnica es introducir ajustes que puedan representar la cantidad garantizada de memoria que una consulta puede usar.
+Cuando memory overcommit está habilitado y se alcanza el límite de memoria, ClickHouse seleccionará la consulta con mayor sobreasignación e intentará liberar memoria finalizando esa consulta.
+
+Cuando se alcanza el límite de memoria, cualquier consulta esperará un tiempo mientras intenta asignar más memoria.
+Si el tiempo de espera vence y se libera memoria, la consulta continúa su ejecución.
+De lo contrario, se generará una excepción y la consulta se finalizará.
+
+La selección de la consulta que se debe detener o finalizar la realizan los rastreadores de overcommit global o por usuario, según el límite de memoria que se haya alcanzado.
+Si el rastreador de overcommit no puede elegir una consulta para detener, se genera la excepción MEMORY&#95;LIMIT&#95;EXCEEDED.
+
+<div id="user-overcommit-tracker">
+  ## Rastreador de overcommit de usuario
+</div>
+
+El rastreador de overcommit de usuario encuentra la consulta con el mayor ratio de overcommit en la lista de consultas del usuario.
+El ratio de overcommit de una consulta se calcula como el número de bytes asignados dividido por el valor de la configuración `memory_overcommit_ratio_denominator_for_user`.
+
+Si `memory_overcommit_ratio_denominator_for_user` de la consulta es igual a cero, el rastreador de overcommit no seleccionará esa consulta.
+
+El tiempo máximo de espera se establece con la configuración `memory_usage_overcommit_max_wait_microseconds`.
+
+**Ejemplo**
+
+```sql
+SELECT number FROM numbers(1000) GROUP BY number SETTINGS memory_overcommit_ratio_denominator_for_user=4000, memory_usage_overcommit_max_wait_microseconds=500
+```
+
+<div id="global-overcommit-tracker">
+  ## Rastreador global de overcommit
+</div>
+
+El rastreador global de overcommit identifica la consulta con la mayor ratio de overcommit entre todas las consultas.
+En este caso, la ratio de overcommit se calcula dividiendo el número de bytes asignados entre el valor del ajuste `memory_overcommit_ratio_denominator`.
+
+Si `memory_overcommit_ratio_denominator` de la consulta es igual a cero, el rastreador de overcommit no seleccionará esa consulta.
+
+El tiempo de espera se define mediante el parámetro `memory_usage_overcommit_max_wait_microseconds` en el archivo de configuración.

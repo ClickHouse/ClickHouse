@@ -1,0 +1,59 @@
+---
+sidebarTitle: 'Fabi.ai'
+slug: /integrations/fabi.ai
+keywords: ['clickhouse', 'Fabi.ai', '接続', 'インテグレーション', 'notebook', 'UI', '分析']
+description: 'Fabi.ai は、共同データ分析のためのオールインワンプラットフォームです。SQL、Python、AI、ノーコードを活用して、これまで以上に素早くダッシュボードやデータワークフローを構築できます'
+title: 'ClickHouse を Fabi.ai に接続する'
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+
+<CommunityMaintainedBadge />
+
+<a href="https://www.fabi.ai/" target="_blank">Fabi.ai</a> は、共同データ分析のためのオールインワンプラットフォームです。SQL、Python、AI、ノーコードを活用して、これまで以上に素早くダッシュボードやデータワークフローを構築できます。ClickHouse のスケーラビリティと高い性能を組み合わせることで、大規模なデータセットに対する高性能なダッシュボードをわずか数分で作成し、共有できます。
+
+<Image size="md" img="/images/integrations/data-visualization/fabi_01.webp" alt="Fabi.ai のデータ探索およびワークフロープラットフォーム" border />
+
+<div id="gather-your-connection-details">
+  ## 接続情報を確認する
+</div>
+
+<ConnectionDetails />
+
+<div id="connect-to-clickhouse">
+  ## Fabi.ai アカウントを作成して ClickHouse に接続する
+</div>
+
+Fabi.ai にログインするか、アカウントを作成します: https://app.fabi.ai/
+
+1. アカウントを初めて作成すると、データベースへの接続を求められます。すでにアカウントをお持ちの場合は、任意の Smartbook の左側にあるデータソースパネルをクリックし、[Add Data Source] を選択します。
+
+   <Image size="lg" img="/images/integrations/data-visualization/fabi_02.webp" alt="データソースを追加" border />
+
+2. 次に、接続情報を入力します。
+
+   <Image size="md" img="/images/integrations/data-visualization/fabi_03.webp" alt="ClickHouse 認証情報フォーム" border />
+
+3. これで ClickHouse と Fabi.ai の連携は完了です。
+
+<div id="querying-clickhouse">
+  ## ClickHouse へのクエリ
+</div>
+
+Fabi.ai を ClickHouse に接続したら、任意の [Smartbook](https://docs.fabi.ai/analysis_and_reporting/smartbooks) を開き、SQL セルを作成します。Fabi.ai のインスタンスに接続されているデータソースが 1 つだけの場合、SQL セルの接続先は自動的に ClickHouse になります。複数のデータソースが接続されている場合は、ソースのドロップダウンからクエリする対象を選択できます。
+
+<Image size="lg" img="/images/integrations/data-visualization/fabi_04.webp" alt="ClickHouse へのクエリ" border />
+
+<div id="additional-resources">
+  ## 追加リソース
+</div>
+
+[Fabi.ai](https://www.fabi.ai) のドキュメント: https://docs.fabi.ai/introduction
+
+[Fabi.ai](https://www.fabi.ai) のスタートガイド動画: https://www.youtube.com/playlist?list=PLjxPRVnyBCQXxxByw2CLC0q7c-Aw6t2nl

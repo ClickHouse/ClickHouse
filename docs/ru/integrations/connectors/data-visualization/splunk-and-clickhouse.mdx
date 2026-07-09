@@ -1,0 +1,215 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/splunk
+keywords: ['Splunk', 'интеграция', 'визуализация данных']
+description: 'Подключение панелей мониторинга Splunk к ClickHouse'
+title: 'Подключение Splunk к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<Tip>
+  Хотите сохранять журналы аудита ClickHouse Cloud в Splunk? Следуйте руководству [&quot;Storing ClickHouse Cloud Audit logs into Splunk&quot;](/ru/integrations/connectors/data-integrations/integrations/splunk).
+</Tip>
+
+Splunk — популярная платформа для безопасности и обсервабилити. Это также мощный движок для поиска и создания панелей мониторинга. Существуют сотни приложений Splunk для самых разных сценариев использования.
+
+Для ClickHouse мы используем [Splunk DB Connect App](https://splunkbase.splunk.com/app/2686), который обеспечивает простую интеграцию с высокопроизводительным JDBC-драйвером ClickHouse и позволяет выполнять запросы к таблицам в ClickHouse напрямую.
+
+Эта интеграция лучше всего подходит, когда ClickHouse используется для крупных источников данных, таких как NetFlow, бинарные данные Avro или Protobuf, DNS, журналы потоков VPC и другие журналы OTel, которыми можно делиться с командой через Splunk для поиска и создания панелей мониторинга. При таком подходе данные не поступают в слой индекса Splunk, а запрашиваются напрямую из ClickHouse — аналогично другим интеграциям для визуализации, таким как [Metabase](https://www.metabase.com/) или [Superset](https://superset.apache.org/).
+
+<div id="goal">
+  ## Цель​
+</div>
+
+В этом руководстве мы будем использовать JDBC-драйвер ClickHouse, чтобы подключить ClickHouse к Splunk. Мы установим локальную версию Splunk Enterprise, но не будем индексировать данные. Вместо этого воспользуемся функциями поиска через движок запросов DB Connect.
+
+С помощью этого руководства вы сможете создать панель мониторинга, подключенную к ClickHouse, примерно такую:
+
+<Image img="/images/integrations/splunk/splunk-1.webp" size="lg" border alt="Панель мониторинга Splunk с визуализациями данных о такси Нью-Йорка" />
+
+<Note>
+  В этом руководстве используется [набор данных New York City Taxi](/ru/get-started/sample-datasets/nyc-taxi). Вы также можете использовать множество других наборов данных из [нашей документации](http://localhost:3000/docs/getting-started/example-datasets).
+</Note>
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+Перед началом работы вам потребуется:
+
+* Splunk Enterprise для работы с функциями search head
+* Установленная в ОС или контейнере [Java Runtime Environment (JRE)](https://docs.splunk.com/Documentation/DBX/3.16.0/DeployDBX/Prerequisites), соответствующая требованиям
+* [Splunk DB Connect](https://splunkbase.splunk.com/app/2686)
+* Роль Admin или SSH-доступ к ОС экземпляра Splunk Enterprise
+* сведения о подключении к ClickHouse (см. [здесь](/ru/integrations/connectors/data-visualization/metabase-and-clickhouse#1-gather-your-connection-details), если вы используете ClickHouse Cloud)
+
+<div id="install-and-configure-db-connect-on-splunk-enterprise">
+  ## Установите и настройте DB Connect в Splunk Enterprise
+</div>
+
+Сначала необходимо установить Java Runtime Environment в вашем экземпляре Splunk Enterprise. Если вы используете Docker, можно воспользоваться командой `microdnf install java-11-openjdk`.
+
+Запишите путь `java_home`: `java -XshowSettings:properties -version`.
+
+Убедитесь, что в Splunk Enterprise установлено приложение DB Connect App. Его можно найти в разделе Apps в веб-интерфейсе Splunk:
+
+* Войдите в Splunk Web и перейдите в Apps &gt; Find More Apps
+* Используйте поле поиска, чтобы найти DB Connect
+* Нажмите зелёную кнопку &quot;Install&quot; рядом со Splunk DB Connect
+* Нажмите &quot;Restart Splunk&quot;
+
+Если у вас возникают проблемы с установкой DB Connect App, дополнительные инструкции см. [по этой ссылке](https://splunkbase.splunk.com/app/2686).
+
+После того как вы убедитесь, что DB Connect App установлен, добавьте путь `java_home` в DB Connect App в разделе Configuration -&gt; Settings, затем нажмите save и reset.
+
+<Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="Страница настроек Splunk DB Connect с конфигурацией Java Home" />
+
+<div id="configure-jdbc-for-clickhouse">
+  ## Настройка JDBC для ClickHouse
+</div>
+
+Скачайте [JAR-файл драйвера JDBC для ClickHouse](https://github.com/ClickHouse/clickhouse-java/releases/) и скопируйте его в папку DB Connect Drivers по адресу:
+
+```bash
+$SPLUNK_HOME/etc/apps/splunk_app_db_connect/drivers
+```
+
+Чтобы в DB Connect App были доступны все необходимые зависимости, скачайте один из следующих файлов:
+
+```text
+- clickhouse-jdbc-<VERSION>-shaded-all.jar (if VERSION < 0.9.0)
+- clickhouse-jdbc-<VERSION>-all-dependencies.jar (if VERSION >= 0.9.0)
+```
+
+Затем необходимо изменить конфигурацию типов подключений в `$SPLUNK_HOME/etc/apps/splunk_app_db_connect/local/db_connection_types.conf`, чтобы добавить сведения о классе JDBC-драйвера ClickHouse. Добавьте следующий блок в `db_connection_types.conf`:
+
+```text
+[ClickHouse]
+displayName = ClickHouse
+serviceClass = com.splunk.dbx2.DefaultDBX2JDBC
+jdbcUrlFormat = jdbc:ch://<host>:<port>/<database>
+jdbcUrlSSLFormat = jdbc:ch://<host>:<port>/<database>?ssl=true
+jdbcDriverClass = com.clickhouse.jdbc.ClickHouseDriver
+ui_default_catalog = $database$
+```
+
+Перезапустите Splunk командой `$SPLUNK_HOME/bin/splunk restart`.
+
+Вернитесь в DB Connect App и перейдите в Configuration &gt; Settings &gt; Drivers. Рядом с ClickHouse должен отображаться зеленый флажок:
+
+<Image img="/images/integrations/splunk/splunk-3.webp" size="lg" border alt="Страница драйверов Splunk DB Connect, где показано, что драйвер ClickHouse успешно установлен" />
+
+<div id="connect-splunk-search-to-clickhouse">
+  ## Подключите поиск Splunk к ClickHouse
+</div>
+
+Перейдите в DB Connect App Configuration -&gt; Databases -&gt; Identities и создайте Identity для ClickHouse.
+
+Создайте новое подключение к ClickHouse через Configuration -&gt; Databases -&gt; Connections и выберите &quot;New Connection&quot;.
+
+<Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="Кнопка создания нового подключения в Splunk DB Connect" />
+
+<br />
+
+Добавьте данные хоста ClickHouse и убедитесь, что флажок &quot;Enable SSL&quot; установлен:
+
+<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="Страница настройки подключения Splunk к ClickHouse" />
+
+После сохранения подключение ClickHouse к Splunk будет успешно настроено!
+
+<Note>
+  Если вы получаете ошибку, убедитесь, что IP-адрес вашего экземпляра Splunk добавлен в ClickHouse Cloud IP Access List. Подробнее см. в [документации](/ru/products/cloud/guides/security/connectivity/setting-ip-filters).
+</Note>
+
+<div id="run-a-sql-query">
+  ## Выполните SQL-запрос
+</div>
+
+Теперь выполним SQL-запрос, чтобы проверить, что всё работает.
+
+В SQL Explorer выберите сведения о подключении в разделе DataLab приложения DB Connect App. В этом примере мы используем таблицу `trips`:
+
+<Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="SQL Explorer в Splunk: выбор подключения к ClickHouse" />
+
+Выполните SQL-запрос к таблице `trips`, который возвращает общее количество записей в таблице:
+
+<Image img="/images/integrations/splunk/splunk-7.webp" size="md" border alt="Выполнение SQL-запроса в Splunk с отображением количества записей в таблице trips" />
+
+Если запрос выполнен успешно, вы увидите результаты.
+
+<div id="create-a-dashboard">
+  ## Создайте панель мониторинга
+</div>
+
+Давайте создадим панель мониторинга, в которой используется сочетание SQL и мощного языка Splunk Processing Language (SPL).
+
+Прежде чем продолжить, необходимо сначала [отключить механизмы защиты DPL](https://docs.splunk.com/Documentation/Splunk/9.2.1/Security/SPLsafeguards?ref=hk#Deactivate_SPL_safeguards).
+
+Запустите следующий запрос, который показывает 10 районов, где чаще всего забирают пассажиров:
+
+```sql
+dbxquery query="SELECT pickup_ntaname, count(*) AS count
+FROM default.trips GROUP BY pickup_ntaname
+ORDER BY count DESC LIMIT 10;" connection="chc"
+```
+
+Выберите вкладку визуализации, чтобы увидеть созданную столбчатую диаграмму:
+
+<Image img="/images/integrations/splunk/splunk-8.webp" size="lg" border alt="Визуализация столбчатой диаграммы в Splunk, показывающая 10 районов с наибольшим числом посадок" />
+
+Теперь создадим панель мониторинга: нажмите Save As &gt; Save to a Dashboard.
+
+Давайте добавим ещё один запрос, который показывает среднюю стоимость поездки в зависимости от количества пассажиров.
+
+```sql
+dbxquery query="SELECT passenger_count,avg(total_amount)
+FROM default.trips GROUP BY passenger_count;" connection="chc"
+```
+
+На этот раз давайте создадим столбчатую диаграмму и сохраним её на предыдущей панели мониторинга.
+
+<Image img="/images/integrations/splunk/splunk-9.webp" size="lg" border alt="Столбчатая диаграмма в Splunk, показывающая среднюю стоимость поездки в зависимости от количества пассажиров" />
+
+Наконец, давайте добавим ещё один запрос, который показывает корреляцию между количеством пассажиров и длиной поездки:
+
+```sql
+dbxquery query="SELECT passenger_count, toYear(pickup_datetime) AS year,
+round(trip_distance) AS distance, count(* FROM default.trips)
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC; " connection="chc"
+```
+
+Наша итоговая панель мониторинга должна выглядеть так:
+
+<Image img="/images/integrations/splunk/splunk-10.webp" size="lg" border alt="Итоговая панель мониторинга Splunk с несколькими визуализациями данных о такси в Нью-Йорке" />
+
+<div id="time-series-data">
+  ## Данные временных рядов
+</div>
+
+В Splunk есть сотни встроенных функций, которые панели мониторинга могут использовать для визуализации и отображения данных временных рядов. В этом примере SQL и SPL будут объединены, чтобы создать запрос, способный работать с данными временных рядов в Splunk
+
+```sql
+dbxquery query="SELECT time, orig_h, duration
+FROM "demo"."conn" WHERE time >= now() - interval 1 HOURS" connection="chc"
+| eval time = strptime(time, "%Y-%m-%d %H:%M:%S.%3Q")
+| eval _time=time
+| timechart avg(duration) as duration by orig_h
+| eval duration=round(duration/60)
+| sort - duration:
+```
+
+<div id="learn-more">
+  ## Подробнее
+</div>
+
+Если вы хотите узнать больше о Splunk DB Connect и создании панелей мониторинга, см. [документацию Splunk](https://docs.splunk.com/Documentation).

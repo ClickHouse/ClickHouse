@@ -338,7 +338,7 @@ void EvictionCandidates::evict()
                 {
                     try
                     {
-                        on_evict_callback(*segment);
+                        on_evict_callback(*segment, key_candidates.key_metadata->origin->user_id);
                     }
                     catch (...)
                     {

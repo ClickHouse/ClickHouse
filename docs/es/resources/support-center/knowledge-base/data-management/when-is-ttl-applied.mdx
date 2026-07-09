@@ -1,0 +1,88 @@
+---
+date: 2023-05-02
+title: ¿Cuándo se aplican las reglas TTL y se puede controlar?
+description: Las reglas TTL en ClickHouse acaban aplicándose, y puede controlar cuándo se ejecutan mediante la configuración `merge_with_ttl_timeout`. Aprenda a forzar la aplicación de TTL y a gestionar los hilos en segundo plano para su ejecución.
+tags: ['Conceptos fundamentales de los datos']
+keywords: ['TTL']
+---
+
+<div id="ttl-rules-and-control">
+  ## Reglas TTL y control
+</div>
+
+TTL terminará aplicándose ***con el tiempo***. ¿Qué significa esto? La configuración de tabla `MergeTree` [`merge_with_ttl_timeout`](/es/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) establece el retraso mínimo, en segundos, antes de repetir una fusión con TTL de eliminación. El valor predeterminado es de 14400 segundos (4 horas). Pero ese es solo el retraso mínimo; puede pasar más tiempo antes de que se active una fusión para aplicar el TTL de eliminación.
+
+Puede ver toda la configuración actual de TTL (como `merge_with_ttl_timeout`) con esta consulta:
+
+```sql
+SELECT *
+FROM system.merge_tree_settings
+WHERE name like '%ttl%'
+```
+
+La respuesta tiene este aspecto:
+
+```response
+┌─name───────────────────────────────────────────────────────────┬─value───┬─changed─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┬─type───┐
+│ max_replicated_merges_with_ttl_in_queue                        │ 1       │       0 │ Cuántas tareas de fusión de partes con TTL se permiten simultáneamente en la cola de ReplicatedMergeTree.                                                                                          │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ max_number_of_merges_with_ttl_in_pool                          │ 2       │       0 │ Cuando hay más del número especificado de fusiones con entradas TTL en el pool, no asignar una nueva fusión con TTL. Esto es para dejar hilos libres para las fusiones regulares y evitar "Too many parts" │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds │ 2592000 │       1 │ Eliminar en segundo plano las partes desconectadas antiguas y dañadas si permanecieron sin modificarse durante el período de tiempo especificado por esta configuración.                                                              │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_with_ttl_timeout                                         │ 14400   │       0 │ Tiempo mínimo en segundos para que una fusión con TTL de eliminación pueda repetirse.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ merge_with_recompression_ttl_timeout                           │ 14400   │       0 │ Tiempo mínimo en segundos para que una fusión con TTL de recompresión pueda repetirse.                                                                                                                │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ ttl_only_drop_parts                                            │ 0       │       0 │ Solo eliminar por completo las partes expiradas sin podarlas parcialmente.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+│ materialize_ttl_recalculate_only                               │ 0       │       0 │ Solo recalcular la información de TTL al ejecutar MATERIALIZE TTL                                                                                                                                             │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+└────────────────────────────────────────────────────────────────┴─────────┴─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┴────────┘
+```
+
+Puede usar `SHOW CREATE TABLE` para comprobar si su tabla contiene reglas TTL, así como si alguno de los `SETTINGS` de la tabla modificó los valores de las opciones de configuración anteriores:
+
+```sql
+SHOW CREATE TABLE <TableName>
+```
+
+<div id="force-a-ttl-rule-to-be-applied">
+  ## Forzar la aplicación de una regla TTL
+</div>
+
+No es la solución más elegante, pero puedes invocar explícitamente `MATERIALIZE TTL`, lo que obliga a materializar todas las reglas TTL de una tabla:
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+<div id="background-threads-affecting-ttl">
+  ## Hilos en segundo plano que afectan al TTL
+</div>
+
+Es posible que las reglas TTL no se estén aplicando porque no hay suficientes hilos de trabajo en el background pool. Por ejemplo, si inserta datos de forma intensiva, todo el background pool podría estar ocupado con las fusiones normales. Sin embargo, puede aumentar el tamaño del background pool.
+
+Puede comprobar el tamaño actual del background pool con esta consulta:
+
+```sql
+SELECT *
+FROM system.settings
+WHERE name = 'background_pool_size';
+```
+
+La respuesta tiene este aspecto:
+
+```response
+┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
+│ background_pool_size │ 16    │       0 │ Configuración obsoleta, no hace nada. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+└──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
+```
+
+Consulta la documentación para ver cómo modificar la [configuración `background_pool_size`](/es/reference/settings/server-settings/settings#background_pool_size), que se configura de la siguiente manera:
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+Puedes comprobar la actividad actual del background pool con esta consulta:
+
+```sql
+SELECT *
+FROM system.metrics
+WHERE metric like 'Background%'
+```

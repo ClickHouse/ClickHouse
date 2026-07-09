@@ -1,0 +1,239 @@
+---
+slug: /whats-new/changelog/cloud
+sidebarTitle: '2026'
+title: 'Cloud 変更履歴 - 2026'
+description: '各 ClickHouse Cloud リリースの新機能を紹介する ClickHouse Cloud の変更履歴'
+doc_type: '変更履歴'
+keywords: ['変更履歴', 'リリースノート', '更新', '新機能', 'Cloud の変更']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このClickHouse Cloudの変更履歴に加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility)ページもご覧ください。
+
+<Update label="2026年6月3日">
+  Open House 2026 ウィークでは、データが存在する場所で ClickHouse を稼働させることと、AIエージェント主導のワークフローをプラットフォームに取り込むことを軸に、数多くの新機能が一斉にリリースされました。
+
+  ### ClickPipesがPrivate Service ConnectでGCP上のネイティブ動作に対応しました
+
+  ClickPipes のインフラストラクチャは、5月26日以降に作成されたすべての新しい GCP サービスについて、ClickHouse Cloud サービスと同じ GCP リージョンで動作するようになりました。これには Private Service Connect (PSC) のサポートも含まれます。これにより、クラウド間のエグレスコストが削減され、レイテンシが低下し、データをローカルに保持できるほか、SSH トンネリングなどの回避策を使わずに GCP ネイティブのプライベートネットワーキング経由で GCP ソースに接続できます。既存のサービスの移行については、弊社チームにお問い合わせください。
+
+  詳細については、[ClickPipes 静的IPリスト](/ja/integrations/clickpipes/home#list-of-static-ips)を参照してください。
+
+  ### ClickPipes for GCP Pub/Sub (プライベートプレビュー)
+
+  ClickPipes は、GCP Pub/Sub のトピックから ClickHouse Cloud へデータを直接ストリーミングできるようになりました。これにより、GCP ネイティブなチームは Cloud Logging、Cloud Monitoring、GKE などのデータを分析に活用するための直接的な経路を確保できます。ClickPipes の UI、OpenAPI、および Terraform 経由で利用可能です。プライベートプレビュー期間中は[サインアップ](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview)が必要です。
+
+  セットアップと設定の詳細については、[ClickPipes for GCP Pub/Sub ドキュメント](/ja/integrations/clickpipes/pubsub/overview)を参照してください。
+
+  ### ClickHouse Agents: Claudeを活用したエージェント型アナリティクス (パブリックベータ)
+
+  ClickHouse Agents が [ai.clickhouse.cloud](http://ai.clickhouse.cloud) にてパブリックベータとして公開されました。Claude を基盤とするファーストパーティのエージェントプラットフォームで、ClickHouse Cloud のデータに対してスキーマを認識した会話形式の分析が行えます。ノーコードの AgentBuilder でカスタムエージェントを構築し、MCPサーバー (Slack、Linear、Notion など) を接続してサブエージェントワークフローを組み合わせ、会話を離れることなくクエリ、パイプライン、アプリを生成できます。AWS Bedrock AgentCore インテグレーションおよびマネージド LibreChat 基盤も含まれています。
+
+  詳細は、[ClickHouse Agentsのドキュメント](/ja/products/cloud/features/ai-ml/agents/index)をご覧ください。
+
+  ### ClickHouse Postgres (パブリックベータ)
+
+  ローカルNVMeストレージ上の完全マネージド型Postgresがパブリックベータとして提供開始されました。AWS RDSと比較して5倍以上のTPSを実現し、OLTPとOLAPを単一のマネージドスタックに統合します。ネイティブCDCパイプラインにより、中間インフラストラクチャを介さずデータを直接ClickHouseへストリーミングできます。また、オープンソースの`pg_clickhouse`拡張機能を使用することで、標準的なPostgresセッションからClickHouseのテーブルをクエリできます。
+
+  詳細については、[Open House 2026 Day 1: Real-time data without lock-in and what teams can build next](https://clickhouse.com/blog/open-house-2026-day-1#postgres-announcements) をご覧ください。
+
+  ### ClickStack Cloud: サーバーレスオブザーバビリティ (プライベートプレビュー)
+
+  ClickStack Cloud は、ClickHouse Cloud を基盤とする完全マネージド型のサーバーレスオブザーバビリティプラットフォームです。OpenTelemetry Collector をマネージド OTLP エンドポイントに向けるだけで、ClickStack UI 上でログ、メトリクス、トレースをすぐに確認できます。インジェスト、バッファリング、スケーリング、ストレージ、クエリ処理、認証、RBAC はすべて自動で管理されます。AWS us-east-1 にて限定プライベートプレビューとして提供中です。
+
+  詳細については、[ClickStack Cloud プライベートプレビュー](https://clickhouse.com/blog/clickstack-cloud-private-preview)および[ClickStack Cloud ウェイトリスト](https://clickhouse.com/cloud/clickstack-cloud-waitlist)を参照してください。
+
+  ### Managed ClickStack向けAIノートブック (ベータ)
+
+  AIノートブックは、AIを活用したインシデント調査のための永続的で透明なワークスペースをManaged ClickStackに提供します。プロンプト、クエリ、チャート、推論を構造化された形で記録し、複数の仮説を探索するためにブランチを作成し、生成されたすべてのクエリと結果を参照・編集可能な状態でチームの共同成果物として調査内容を共有できます。ClickStack UIの左側のナビゲーションからアクセスできます。
+
+  詳細については、以下を参照してください：
+
+  * [ClickStack AIノートブックのドキュメント](/ja/clickstack/notebooks)
+  * [ベータ版のAIノートブック (ブログ記事) ](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#ai-notebooks-in-beta)
+
+  ### 水平オートスケーリング (プライベートプレビュー)
+
+  水平オートスケーリングは、ClickHouse Cloud クラスター内のレプリカ数を自動的に調整します。需要が急増した際には積極的にスケールアウトし、負荷が低下するにつれて段階的にスケールインするため、変動が大きく高い同時実行性を要するワークロードを抱えるチームは、クラスターのサイズを手動で調整する必要がなくなります。プライベートプレビューでは同時実行クエリ数に基づいてスケーリングを行い、CPU およびメモリのシグナルはパブリックベータでの対応が予定されています。ClickHouse 26.2 以降をご利用の Enterprise および Scale ティアのお客様が対象です。
+
+  注意: 初回GAリリース時点では、水平オートスケーリングと垂直オートスケーリングは相互に排他的です。水平オートスケーリングが有効になるのは、垂直オートスケーリングが無効になっている場合 (つまり、サービスが固定サイズに設定されている場合) に限られます。同様に、垂直オートスケーリングが有効になるのは、レプリカ数が固定されている場合に限られます。この動作は将来のリリースでより柔軟になる予定です。
+
+  ### ClickStack MCPサーバー (オープンソース)
+
+  新しいオープンソースの ClickStack MCPサーバーは、ClickStack と ClickHouse 上に構築された構造化されたオブザーバビリティ調査ツールを外部の AI エージェントに提供します。ログ、メトリクス、トレースに対するセマンティックなプリミティブを公開し、ログのパターン分析、トレースの外れ値調査、相関分析、クロスシグナルのデバッグをサポートします。また、ダッシュボード、検索、アラートを永続化しながら、より深い探索のためのネイティブ SQL アクセスも維持します。Claude Code、Cursor、Codex、またはカスタムフレームワークなどのエージェントを接続できます。
+
+  詳細については、[ClickStack MCPサーバーのドキュメント](/ja/clickstack/mcp)および[オブザーバビリティMCPサーバー + AIノートブックのブログ記事](https://clickhouse.com/blog/observability-mcp-server-ai-notebooks#clickstack-mcp-server)を参照してください。
+
+  {/* vale off */}
+
+  ### 実行可能ユーザー定義関数
+
+  {/* vale on */}
+
+  Pythonで関数を記述し、zip圧縮してクラスターにアップロードするだけで、組み込み関数と同様にSQLから呼び出せるようになりました。ClickHouseは長期稼働するサンドボックスプロセスのプールを維持し、クエリ速度で行をパイプ処理します。そのため、アドホッククエリ、join、さらにはinsertのたびに起動するmaterialized viewなど、SQLが使えるあらゆる場所で関数を呼び出せます。モデルコードはデータのすぐそばに置かれ、デプロイはCloud consoleのアップロード画面一つで完結します。
+
+  その機能を示すために、[デモ](https://github.com/ClickHouse/stock-anomaly-udf)を作成しました。StockHouseのリアルタイム株式取引データをもとに、小規模なPyTorchオートエンコーダーをトレーニングし、取引ティックが取り込まれる際に異常スコアを付与します。必要なのはUDF一つとDDLステートメント一つだけで、残りはすべて通常のSQLです。さらに、ネットワークアクセスUDF (プライベートベータ) のプレビューもこっそり盛り込みました。この機能を使うと、UDFからアウトバウンドのHTTPS呼び出しが可能になります。これを活用してニュースやSEC提出書類を取得し、特定の取引が異常に見える理由をClaudeに分類させています。
+
+  詳細については、[アナウンスブログ](https://clickhouse.com/blog/executable-udfs-clickhouse-cloud-beta)または[ドキュメント](/ja/products/cloud/features/sql-console-features/user-defined-functions)をご覧ください。
+</Update>
+
+<Update label="2026年5月25日">
+  ### 組織の 支出アラート の GA リリース
+
+  組織の [支出アラート](/ja/products/cloud/reference/billing/spend-alerts) が一般提供となりました。請求期間ごとに設定した組織の支出額に対して、50%、75%、100% に達した時点で通知を受け取れます。通知チャネルには、Email、Cloud コンソール (UI) 、Slack を選択できます。アラートは組織の総利用額に基づいて1時間ごとに発報され、請求期間ごとに自動的にリセットされます。Org Admin または Billing Admin ロールが必要です。
+
+  ### ClickPipes の新しい AWS リージョン
+
+  [Cloud region launch](/ja/resources/changelogs/cloud/2026#new-region-support) に続き、AWS リージョン `mx-central-1` (Mexico Central) が [ClickPipes](/ja/integrations/clickpipes/home) で利用可能になりました。2026 年 5 月 19 日以降にこのリージョンで作成された ClickHouse Cloud サービスでは、ClickPipes も同じリージョンに配置されます。それより前に作成されたサービスでは、ClickPipes の既定リージョンは `us-east-2` になります。該当する場合は、新しいリージョンを使えるようサービスにパッチを適用しますので、[当社チームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
+
+  ### Compute-compute separation におけるプライマリサービスのアイドリングが一般提供開始
+
+  Compute-compute separation におけるプライマリサービスのアイドリングが一般提供となりました。
+  すべてのプライマリサービスでアイドリングを利用できるようになりました。
+</Update>
+
+<Update label="2026年5月18日">
+  ### Python クライアント v1.0.0
+
+  ClickHouse 向け Python クライアントである [clickhouse-connect](/ja/integrations/language-clients/python/index) のメジャーバージョンリリースです。主なハイライトは次のとおりです。
+
+  * ClickHouse-specific SQL をより深くサポートする、充実した SQLAlchemy dialect
+  * aiohttp 上に構築されたネイティブ async client。streaming を含め、すべての機能を同等にサポート
+  * DateTime、DateTime64、固定幅数値の insert、Maps、Decimals、BigDecimals における大幅なパフォーマンス改善
+  * 新しい `tz_mode` と `tz_source` パラメータによる timezone 処理の再設計
+  * Variant カラムへのネイティブ書き込み
+  * オプションの dependencies (numpy、pandas、pyarrow、polars) の lazy import により、最小構成での import を 4 倍高速化
+  * Experimental な Python 3.14 free-threading サポート
+
+  **破壊的変更:** Python &lt; 3.9 および Pandas 1.x のサポートを終了しました。timezone に関するその他の破壊的変更については、[リリースノート](https://github.com/ClickHouse/clickhouse-connect/releases) を確認してください。
+
+  ### ClickStack における SQL ベースのチャート作成とアラート
+
+  [ClickStack](/ja/clickstack/overview) で、任意の ClickHouse SQL クエリを使ってチャートとアラートを作成できるようになりました。ユーザーはダッシュボードやアラートビルダーで raw SQL を直接記述でき、window functions、CTE、マルチステージクエリ、ClickHouse ネイティブの分析関数を完全にサポートします。SQL アラートでは、アラートの判定ロジック全体をクエリ自体に組み込めるため、異常検知、遅行平均、統計的なスパイク検知が可能になります。すべての ClickStack デプロイメント (Cloud、Private、BYOC、OSS) で利用できます。詳細は [SQL-based visualizations](/ja/clickstack/features/dashboards/sql-visualizations) および [SQL アラート結果の解釈](/ja/clickstack/features/alerts#sql-result-interpretation) を参照してください。
+
+  ### 新しいリージョンのサポート
+
+  新しい ClickHouse Cloud リージョンをサポートしました。
+
+  * AWS Mexico (mx-central-1) — Private Region、PCI
+  * Azure Australia East — Private Region
+
+  完全な一覧は [サポート対象リージョン](/ja/products/cloud/reference/supported-regions) を、Private Region に関する注意事項は [Private Region considerations](/ja/products/cloud/reference/supported-regions#private-regions) を参照してください。
+
+  ### Kafka ClickPipes での Protobuf サポート
+
+  [Kafka ClickPipes](/ja/integrations/clickpipes/kafka/index) で、Avro と JSON に加えて、[**Protobuf**](/ja/integrations/clickpipes/kafka/reference#protobuf) 形式もサポートするようになりました。機能には、スキーマレジストリとのインテグレーションによる自動スキーマ解決、再帰参照のサポート、well-known types、ネイティブ `oneof` 型のサポートが含まれます。Protobuf のサポートは、すべての Kafka ClickPipes インターフェイス (UI、OpenAPI、Terraform) で利用できます。
+</Update>
+
+<Update label="2026年5月8日">
+  ### Postgres クエリインサイト (プライベートプレビュー)
+
+  [ClickHouse Cloud Managed Postgres](/ja/products/managed-postgres/overview) (プライベートプレビュー) で、新しい **クエリインサイト** タブが利用できるようになりました。影響度に基づいてすべてのクエリパターンを順位付けし、それぞれが遅い理由を次の 3 つの画面で示します。
+
+  * **概要** — 1 画面で確認できるデータベースの健全性
+  * **Patterns** — 実行時間、CPU、エラー、P95 で並べ替え可能なテーブル
+  * **Per-pattern flyout** — レイテンシのパーセンタイル、CPU と I/O、キャッシュとディスク、一時スピル、並列ワーカー不足、WAL ボリューム
+
+  オープンソースの Postgres 拡張機能である [pg&#95;stat&#95;ch](https://github.com/ClickHouse/pg_stat_ch) を基盤としています。
+
+  ### データカタログインテグレーションの拡充
+
+  Data Sources UI 経由の [データカタログインテグレーション](/ja/products/cloud/features/data-catalogs) のサポートを拡充し、認証方式、テーブル形式、データカタログの種類を追加しました。
+
+  * [AWS Glue Catalog](/ja/guides/use-cases/data-warehousing/glue-catalog) の IAM サポート
+  * データカタログインテグレーション向けの [BigLake Metastore](/ja/guides/use-cases/data-warehousing/biglake-catalog) サポート
+  * [Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog) での Delta Tables サポート
+</Update>
+
+<Update label="2026年5月2日">
+  ### GCP ロンドンの新リージョン (europe-west2)
+
+  ClickHouse Cloud で、新たにパブリックリージョン GCP London (europe-west2) がサポートされました。詳細は、[サポート対象リージョン](/ja/products/cloud/reference/supported-regions) の一覧をご覧ください。
+</Update>
+
+<Update label="2026年4月25日">
+  ### 索引の分片化 (プライベートプレビュー)
+
+  索引の分片化がプライベートプレビューで利用可能になりました。この機能は索引解析フェーズを複数のレプリカに分散し、レプリカごとのメモリ使用量を削減するとともに、分散並列化によってクエリパフォーマンスを向上させます。これは、vector search や full-text search のような負荷の高いセカンダリ索引を持つテーブルで特に効果的です。詳細は [ブログ記事](https://clickhouse.com/blog/index-sharding-clickhouse-cloud-petabyte-scale-indexing) をご覧ください。
+
+  ### ClickPipes 向け Terraform と OpenAPI (一般提供)
+
+  ClickHouse の [Terraform プロバイダー](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs) における ClickPipes リソースが、安定版リリースの一部として一般提供となりました。また、[OpenAPI エンドポイント](/ja/api-reference/organization/get-list-of-available-organizations) もベータ表記ではなくなりました。これには CDC コネクタ (Postgres、MySQL、MongoDB) の完全対応が含まれます。詳細は [Terraform ドキュメント](/ja/integrations/clickpipes/programmatic-access/terraform)、[OpenAPI ドキュメント](/ja/integrations/clickpipes/programmatic-access/openapi)、および [ブログ記事](https://clickhouse.com/blog/terraform-ga) をご覧ください。
+</Update>
+
+<Update label="2026年4月17日">
+  ### 請求 UI で返金を表示
+
+  Cloud コンソール の請求 UI で、すべての返金を直接確認できるようになりました。返金は処理されると表示されます。クレジットカードへの返金は、銀行によって明細への反映にさらに時間がかかる場合があります。
+
+  ### 組織の支出アラート (プライベートプレビュー)
+
+  組織の支出アラートがプライベートプレビューで利用可能になりました。請求期間ごとに設定した組織の利用額に対して、50%、75%、100% の時点で通知を受け取れます。通知チャネルには、メール、Cloud コンソール、Slack を選択できます。アラートは組織の総利用量に基づき、1 時間ごとに発報され、請求期間ごとに自動的にリセットされます。Org Admin または Billing Admin ロールが必要です。
+
+  ### AWS における ClickPipes のリージョン対応拡大
+
+  ClickHouse Cloud がサポートするすべての AWS リージョン (パブリックおよびプライベート) で ClickPipes が利用可能になり、対応リージョン数は 6 から 18 に拡大しました。これには Singapore (ap-southeast-1) 、Seoul (ap-northeast-2) 、Tokyo (ap-northeast-1) などの主要リージョンが含まれます。新しいリージョンは、2026 年 4 月 14 日以降に作成されたサービスで利用できます。詳細は [ドキュメント](/ja/integrations/clickpipes/home#list-of-static-ips) をご覧ください。
+</Update>
+
+<Update label="2026年4月10日">
+  ### 一元化されたマーケットプレイス請求
+
+  お客様は、単一のクラウド マーケットプレイス サブスクリプション (AWS、Azure、GCP) を通じて、複数の組織にまたがる請求を統合できるようになりました。主な更新内容は次のとおりです。
+
+  * **Marketplace Subscription Sharing:** 組織の請求をクレジットカード請求から、別の組織の既存のマーケットプレイス サブスクリプションに切り替えられるようになり、追加のマーケットプレイス サブスクリプションを設定する必要がなくなりました。統合されるのは PAYG の利用分のみであり、前払いクレジットは含まれません。
+  * **Update Marketplace Subscriptions:** 組織のマーケットプレイス サブスクリプションを、別の組織で使用されているものに切り替えられます。
+  * **Backup Payment Method:** マーケットプレイス請求を利用している組織では、プライマリのマーケットプレイス サブスクリプションが解約または期限切れになった場合のバックアップとして、クレジットカードを追加できるようになりました。
+
+  詳細は [請求ドキュメント](/ja/products/cloud/reference/billing/managing-payment-methods) をご覧ください。
+
+  ### clickhousectl CLI (パブリックベータ)
+
+  [clickhousectl](https://github.com/ClickHouse/clickhousectl) は、ローカル インストールの管理、ローカル サーバーの実行、ClickHouse Cloud の運用のための公式 ClickHouse CLI です。今すぐインストールしてください。
+
+  ```bash
+  curl https://clickhouse.com/cli | sh
+  ```
+</Update>
+
+<Update label="2026年4月3日">
+  * **2 ウィンドウ レコメンダーによる、より高度な自動スケーリング:** ClickHouse Cloud では、垂直自動スケーリングにデュアル ルックバック ウィンドウ方式を採用し、従来の単一の 30 時間ウィンドウを、3 時間の「small window」と 30 時間の「large window」を組み合わせた方式に置き換えました。これにより、スケールアップ時の応答性を損なうことなく、スケールダウンのレイテンシを最長 30 時間から最短 3 時間まで短縮し、変動するワークロードのインフラストラクチャ コストを削減できます。詳細は [ブログ記事](https://clickhouse.com/blog/smarter-auto-scaling)をご覧ください。
+  * **Cloud コンソールでの監視:** 新しい概要ダッシュボードとインフラストラクチャ ダッシュボードにより、ClickHouse server の動作をこれまで以上に可視化できるようになりました。ClickHouse Cloud の利用時には、一般的な問題について Admin ユーザーにメール通知が送信されるようになりました。詳細は [ブログ記事](https://clickhouse.com/blog/clickhouse-cloud-new-monitoring-capabilities)をご覧ください。
+  * **Compute-compute separation (warehouses):** プライマリサービス (親サービスとも呼ばれます) での自動アイドル化のサポートが、現在パブリックプレビューとして順次提供されています。この機能がお使いの組織でまだ有効になっていない場合は、アクセスについて[サポートにお問い合わせください](https://clickhouse.com/support/program)。この機能が一般提供に移行すると、既存のプライマリサービスでは自動アイドル化を有効にするオプションを利用でき、新しいプライマリサービスではデフォルトで有効になります。
+  * **Data Catalog integration:** ClickHouse Cloud では、データソース UI でデータレイク カタログのインテグレーションとして Iceberg REST Catalog と Microsoft OneLake をサポートするようになりました。接続すると、カタログはデータベースとして表示され、データを複製することなく Iceberg テーブルを直接読み取ることができます。
+  * **Bring Your Own Cloud (BYOC) on GCP is now generally available:** ClickHouse BYOC は Google Cloud で一般提供を開始し、自身の GCP プロジェクト内に ClickHouse サービスをデプロイして、厳格なデータ所在地要件に対応できるようになりました。詳細は[ドキュメント](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview)と[ブログ記事](https://clickhouse.com/blog/byoc-gcp-ga)をご覧ください。アクセスをご希望の場合は、[お問い合わせください](https://clickhouse.com/cloud/bring-your-own-cloud)。
+  * **前払いクレジットおよび支払い方法の変更に関する請求通知:** ClickHouse Cloud は、コミットメント契約に基づいて前払いクレジットが組織に追加されたとき、または支払い方法 (クレジットカードまたはマーケットプレイスサブスクリプション) が更新されたときに、通知を送信するようになりました。通知は UI とメールでデフォルトで有効になっており、Slack にも送信するよう設定できます。
+</Update>
+
+<Update label="2026年3月20日">
+  * **Usage Breakdown のカスタム日付範囲:** Usage Breakdown 画面で、カスタム日付範囲を使用して、すべての請求ディメンションにわたる利用コストを表示できるようになりました。
+    開始日と終了日 (両端を含む) を選択すると、特定の期間でコストを絞り込み、結果を CSV としてダウンロードできます。
+    日付範囲は最大 31 日間です。
+</Update>
+
+<Update label="2026年2月20日">
+  * **ClickPipes:** 非アクティブ状態の Reverse private endpoints は、定義済みの猶予期間が経過すると自動的に削除されるようになりました。これにより、未使用または設定ミスの endpoints がバックエンドに無期限に残り続けることを防ぎます。詳細は、自動クリーンアップの[ドキュメント](/ja/integrations/clickpipes/aws-privatelink#automatic-cleanup)をご覧ください。
+</Update>
+
+<Update label="2026年2月13日">
+  * [BigQuery Connector](/ja/integrations/clickpipes/bigquery/overview) がプライベートプレビューで利用可能になりました。詳細はこの[ブログ記事](https://clickhouse.com/blog/bigquery-clickpipe-private-preview)をご覧ください。アクセスをご希望の場合は、[ウェイトリスト](https://clickhouse.com/cloud/clickpipes/bigquery-connector)にご登録ください。
+  * Google Cloud 向け PCI デプロイメントのサポートを開始しました。対応リージョン:
+    * GCP europe-west4 (オランダ)
+    * GCP us-central1 (アイオワ)
+    * GCP us-east1 (サウスカロライナ)
+  * クラッシュレポート収集の設定を組織レベルで構成できるようになりました。この設定は以前はサービスレベルでのみ利用可能でした。組織レベルで無効にすると、既存および今後のすべてのサービスで自動的に無効化されます。
+
+  <Image img="/images/cloud/reference/crash-reports-collection.webp" size="md" alt="クラッシュレポート収集" />
+</Update>
+
+<Update label="2026年1月23日">
+  * ClickPipes が AWS `eu-west-1` で利用可能になりました。そのリージョンで 1 月 20 日以降に作成された新しい ClickHouse Cloud サービスでは、ClickPipes に同じリージョンが使用されます。それ以前に作成されたサービスでは、ClickPipes のデフォルトは `eu-central-1` です。詳細は[ドキュメント](/ja/integrations/clickpipes/home#list-of-static-ips)を参照してください。
+</Update>
+
+<Update label="2026年1月16日">
+  * **API によるサービス単位での利用コストの絞り込み:** API で、特定のサービスタグを使って組織の利用コストを絞り込めるようになりました。これにより、より細かい粒度で支出を分析しやすくなります。
+  * **Data Catalog integration:** 外部データカタログをデータソースとして接続できるようになりました。ClickHouse Cloud は AWS Glue と Unity Catalog に対応しており (今後さらに追加予定) 、接続するとカタログがデータベースとして表示され、データを複製することなく Iceberg テーブルを直接読み取れます。利用するには、サポートに連絡してアクセスをリクエストしてください。
+  * **ClickPipes:**
+    * MongoDB コネクタがパブリックベータに昇格し、すべてのサービスティアで、新規および既存の ClickHouse Cloud のお客様にご利用いただけるようになりました。新機能の概要については [ブログ記事](https://clickhouse.com/blog/mongodb-cdc-connector-clickpipes-beta) をご覧ください。利用開始方法は [ドキュメント](/ja/integrations/clickpipes/mongodb/index) を参照してください。
+    * [S3 ClickPipe](/ja/integrations/clickpipes/object-storage/amazon-s3/overview) が、OVHcloud の S3 API 互換オブジェクトストレージサービスである OVH Object Storage に対応しました。
+</Update>

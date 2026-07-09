@@ -161,18 +161,18 @@ def test_read_new_format(cluster, node_name):
         write_file(old_node, detached_primary_idx, "\n".join(lines))
 
         active_count = old_node.query(
-            f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
+            "SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
         ).strip()
         assert active_count == "0", active_count
 
         old_node.query(f"ALTER TABLE test_read_new_format ATTACH PART '{part_name}'")
 
         active_count = old_node.query(
-            f"SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
+            "SELECT count() FROM system.parts WHERE table = 'test_read_new_format' and active"
         ).strip()
         assert active_count == "1", active_count
 
-        values = old_node.query(f"SELECT * FROM test_read_new_format").split("\n")
+        values = old_node.query("SELECT * FROM test_read_new_format").split("\n")
         values = [x for x in values if x]
         assert values == ["1\tHello"], values
 
