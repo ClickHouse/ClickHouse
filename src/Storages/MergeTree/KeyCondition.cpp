@@ -3727,6 +3727,7 @@ void KeyCondition::extractAtomsFromFunction(const RPNBuilderTreeNode & node, con
     if (func_name == "pointInPolygon")
     {
         extractPointInPolygonAtom(func, out);
+        finalize_atoms();
         return;
     }
 
@@ -3827,8 +3828,6 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
         element.key_columns.push_back(it->second);
     }
 
-    element.point_in_polygon_function_name = "pointInPolygon";
-
     /// Analyze [(0, 0), (8, 4), (5, 8), (0, 2)]
     /// The polygon argument may be a constant of a wrapper type (Variant, Dynamic, ...)
     /// holding an array; only a plain Array constant can be turned into a skip-index atom.
@@ -3853,12 +3852,6 @@ void KeyCondition::extractPointInPolygonAtom(const RPNBuilderFunctionTreeNode & 
     /// Store bounding box of the polygon so that we can quickly reject blocks/parts and avoid
     /// costly `intersects` checks
     boost::geometry::envelope(element.polygon->ring, element.polygon->bbox);
-
-    element.function = RPNElement::FUNCTION_POINT_IN_POLYGON;
-    /// The atom is always relaxed (like in the atom_map builder for `pointInPolygon`): its evaluation
-    /// only checks whether the granule's rectangle intersects the polygon, so it never produces an
-    /// exact `can_be_false`.
-    element.relaxed = true;
 
     out.emplace_back(std::move(element));
 }
@@ -6788,7 +6781,7 @@ String KeyCondition::RPNElement::toString(const std::vector<String> & key_names)
         case FUNCTION_POINT_IN_POLYGON:
         {
             const auto & ring = polygon->ring;
-            buf << point_in_polygon_function_name.value_or("") << "(";
+            buf << "pointInPolygon(";
             print_wrapped_columns();
             buf << ", ";
             buf << "[";

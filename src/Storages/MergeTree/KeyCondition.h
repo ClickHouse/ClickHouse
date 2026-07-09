@@ -370,9 +370,7 @@ public:
         Hyperrectangle space_filling_curve_args_hyperrectangle;
 
         /// For FUNCTION_POINT_IN_POLYGON.
-        /// Function name (e.g. 'pointInPolygon') and the polygon.
-        /// Additionally, `key_columns` has two elements for point coordinates (x, y).
-        std::optional<String> point_in_polygon_function_name;
+        /// `key_columns` has two elements for the point coordinates (x, y).
         std::shared_ptr<Polygon> polygon;
 
         /// What functions are applied to the key column before doing the range/set/etc check.
