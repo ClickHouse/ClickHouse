@@ -32,6 +32,7 @@ public:
         Array,
         SparseGrams,
         AsciiCJK,
+        Icu,
     };
 
     ITokenizer() = delete;
@@ -434,6 +435,30 @@ struct AsciiCJKTokenizer final : public ITokenizerHelper<AsciiCJKTokenizer>
     bool supportsStringLike() const override { return true; }
 };
 
+/// Tokenizer based on ICU's word `BreakIterator`. It performs locale-aware Unicode word
+/// segmentation (UAX #29 plus dictionary-based breaking), so it can split languages that do not
+/// use whitespace between words (e.g. Chinese, Japanese, Thai) into meaningful word tokens.
+struct IcuTokenizer final : public ITokenizerHelper<IcuTokenizer>
+{
+    explicit IcuTokenizer(String locale_) : ITokenizerHelper(Type::Icu), locale(std::move(locale_)) {}
+
+    static const char * getName() { return "icu"; }
+    static const char * getExternalName() { return getName(); }
+    String getDescription() const override { return fmt::format("icu('{}')", locale); }
+
+    bool nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const override;
+    bool nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const override;
+
+    bool supportsStringLike() const override { return false; }
+    void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
+    void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
+    const String & getLocale() const { return locale; }
+
+private:
+    String locale;
+};
+
 namespace detail
 {
 
@@ -500,6 +525,12 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         {
             const auto & ascii_cjk_tokenizer = assert_cast<const AsciiCJKTokenizer &>(tokenizer);
             detail::forEachTokenImpl(ascii_cjk_tokenizer, data, length, callback);
+            return;
+        }
+        case ITokenizer::Type::Icu:
+        {
+            const auto & icu_tokenizer = assert_cast<const IcuTokenizer &>(tokenizer);
+            detail::forEachTokenImpl(icu_tokenizer, data, length, callback);
             return;
         }
     }

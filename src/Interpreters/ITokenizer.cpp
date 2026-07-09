@@ -1,5 +1,7 @@
 #include <Interpreters/ITokenizer.h>
 
+#include "config.h"
+
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
 #include <Common/quoteString.h>
@@ -14,12 +16,31 @@
 #  endif
 #endif
 
+#if USE_ICU
+#  include <unicode/brkiter.h>
+#  include <unicode/locid.h>
+#  include <unicode/ubrk.h>
+#  include <unicode/utext.h>
+#  include <unicode/utypes.h>
+
+/// ICU renames its entry points via self-referential macros (e.g. `u_errorName` expands to
+/// `U_ICU_ENTRY_POINT_RENAME(u_errorName)`), which trips `-Wdisabled-macro-expansion`.
+#  pragma clang diagnostic push
+#  pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
+#endif
+
 namespace DB
 {
 
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
+#if USE_ICU
+    extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
+#else
+    extern const int SUPPORT_IS_DISABLED;
+#endif
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -785,4 +806,125 @@ void AsciiCJKTokenizer::substringToTokens(
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
+#if USE_ICU
+namespace
+{
+
+/// `icu::BreakIterator` is stateful and not thread-safe, while tokenizers are shared as `const`
+/// pointers across threads. Keeping one iterator per (thread, locale) makes the tokenizer itself
+/// stateless (it only stores the locale) and avoids re-creating the iterator for every string.
+icu::BreakIterator & getThreadLocalIcuWordIterator(const String & locale)
+{
+    thread_local std::unordered_map<String, std::unique_ptr<icu::BreakIterator>> iterators;
+
+    auto it = iterators.find(locale);
+    if (it == iterators.end())
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        std::unique_ptr<icu::BreakIterator> iterator(
+            icu::BreakIterator::createWordInstance(icu::Locale::createCanonical(locale.c_str()), status));
+
+        if (U_FAILURE(status))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot create ICU word break iterator for locale '{}': {}",
+                locale, u_errorName(status));
+
+        it = iterators.emplace(locale, std::move(iterator)).first;
+    }
+
+    return *it->second;
 }
+
+/// Holds the UTF-8 `UText` currently bound to the thread-local break iterator. RAII closes it at thread exit so it is not reported as a leak.
+struct IcuTextBinding
+{
+    UText * utext = nullptr;
+    const char * data = nullptr;
+    const icu::BreakIterator * iterator = nullptr;
+
+    ~IcuTextBinding()
+    {
+        if (utext)
+            utext_close(utext);
+    }
+};
+
+}
+#endif
+
+bool IcuTokenizer::nextInString(
+    const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
+{
+#if USE_ICU
+    icu::BreakIterator & iterator = getThreadLocalIcuWordIterator(locale);
+
+    /// The iterator's text is (re)bound at the start of each new string (`pos == 0`); afterwards
+    /// `nextInString` is called repeatedly with an increasing `pos` until the string is exhausted.
+    /// A UTF-8 `UText` is used so that break positions are native byte offsets into `data`, matching
+    /// the `token_start` / `token_length` contract.
+    thread_local IcuTextBinding binding;
+
+    if (pos == 0 || data != binding.data || &iterator != binding.iterator)
+    {
+        UErrorCode status = U_ZERO_ERROR;
+        binding.utext = utext_openUTF8(binding.utext, data, static_cast<int64_t>(length), &status);
+        if (U_FAILURE(status))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot open ICU UTF-8 text: {}", u_errorName(status));
+
+        iterator.setText(binding.utext, status);
+        if (U_FAILURE(status))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set ICU break iterator text: {}", u_errorName(status));
+
+        binding.data = data;
+        binding.iterator = &iterator;
+    }
+
+    auto start = static_cast<int32_t>(pos);
+    int32_t end = 0;
+    while ((end = iterator.following(start)) != icu::BreakIterator::DONE)
+    {
+        /// Keep only "word" segments (letters, numbers, kana, ideographs) and skip the segments that
+        /// consist of whitespace or punctuation (rule status below `UBRK_WORD_NONE_LIMIT`).
+        if (iterator.getRuleStatus() >= UBRK_WORD_NONE_LIMIT)
+        {
+            token_start = static_cast<size_t>(start);
+            token_length = static_cast<size_t>(end - start);
+            pos = static_cast<size_t>(end);
+            return true;
+        }
+
+        start = end;
+    }
+
+    pos = length;
+    return false;
+#else
+    throw Exception(
+        ErrorCodes::SUPPORT_IS_DISABLED,
+        "The 'icu' tokenizer requires ClickHouse to be built with ICU support");
+#endif
+}
+
+bool IcuTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "IcuTokenizer::nextInStringLike is not implemented");
+}
+
+void IcuTokenizer::substringToBloomFilter(
+    const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToBloomFilter(*this, data, length, bloom_filter, is_prefix, is_suffix);
+}
+
+void IcuTokenizer::substringToTokens(
+    const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const
+{
+    wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
+}
+
+}
+
+#if USE_ICU
+#  pragma clang diagnostic pop
+#endif
