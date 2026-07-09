@@ -269,3 +269,22 @@ SELECT ITEMS FROM t_nested_sib; -- { serverError AMBIGUOUS_IDENTIFIER }
 SELECT Items FROM t_nested_sib;
 SELECT items FROM t_nested_sib;
 DROP TABLE t_nested_sib;
+
+SELECT '--- Transformer targets resolve against the column namespace ---';
+CREATE TABLE t_tr (Age Int32, age Int32) ENGINE = Memory;
+INSERT INTO t_tr VALUES (1, 2);
+SELECT * EXCEPT (AGE) FROM t_tr; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT * EXCEPT (Age) FROM t_tr;
+SELECT * EXCEPT (age) FROM t_tr;
+SELECT * REPLACE (0 AS AGE) FROM t_tr; -- { serverError AMBIGUOUS_IDENTIFIER }
+SELECT * REPLACE (0 AS Age) FROM t_tr;
+DROP TABLE t_tr;
+
+SELECT '--- NATURAL JOIN folds common columns ---';
+CREATE TABLE t_nat_l (Key Int32, a Int32) ENGINE = Memory;
+CREATE TABLE t_nat_r (key Int32, b Int32) ENGINE = Memory;
+INSERT INTO t_nat_l VALUES (1, 10), (2, 20);
+INSERT INTO t_nat_r VALUES (1, 100), (3, 300);
+SELECT * FROM t_nat_l NATURAL JOIN t_nat_r ORDER BY ALL;
+DROP TABLE t_nat_l;
+DROP TABLE t_nat_r;

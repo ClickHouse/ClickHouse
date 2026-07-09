@@ -98,3 +98,9 @@ SELECT 1 AS "MyAlias"
 --- Folded Nested prefix must not mix case-sibling families ---
 [('a')]
 [(1)]
+--- Transformer targets resolve against the column namespace ---
+2
+1
+0	2
+--- NATURAL JOIN folds common columns ---
+1	10	100

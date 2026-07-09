@@ -238,6 +238,41 @@ ExceptColumnTransformerNode::ExceptColumnTransformerNode(std::shared_ptr<re2::RE
 {
 }
 
+
+namespace
+{
+
+/// Rebind unquoted transformer targets to the visible column namespace: exact spelling wins,
+/// a single folded match is canonicalized in place, several folded matches are ambiguous.
+void canonicalizeTargetsImpl(
+    Names & targets,
+    const std::vector<std::vector<bool>> & target_parts_double_quoted,
+    const Names & visible_column_names)
+{
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        const bool quoted = i < target_parts_double_quoted.size()
+            && std::any_of(target_parts_double_quoted[i].begin(), target_parts_double_quoted[i].end(), [](bool q) { return q; });
+        if (quoted)
+            continue;
+        auto & target = targets[i];
+        if (std::find(visible_column_names.begin(), visible_column_names.end(), target) != visible_column_names.end())
+            continue;
+        Names folded_matches;
+        for (const auto & column_name : visible_column_names)
+            if (Poco::icompare(column_name, target) == 0)
+                folded_matches.push_back(column_name);
+        if (folded_matches.size() > 1)
+            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                "Column transformer target '{}' is ambiguous: matches columns with different cases: '{}' and '{}'",
+                target, folded_matches[0], folded_matches[1]);
+        if (folded_matches.size() == 1)
+            target = folded_matches.front();
+    }
+}
+
+}
+
 bool ExceptColumnTransformerNode::isColumnMatching(const std::string & column_name, bool standard_mode, std::string * matched_target) const
 {
     if (column_matcher)
@@ -414,6 +449,16 @@ ReplaceColumnTransformerNode::ReplaceColumnTransformerNode(const std::vector<Rep
         target_parts_double_quoted.push_back(replacement.parts_double_quoted);
         replacement_expressions_nodes.push_back(replacement.expression_node);
     }
+}
+
+void ExceptColumnTransformerNode::canonicalizeColumnTargets(const Names & visible_column_names)
+{
+    canonicalizeTargetsImpl(except_column_names, target_parts_double_quoted, visible_column_names);
+}
+
+void ReplaceColumnTransformerNode::canonicalizeColumnTargets(const Names & visible_column_names)
+{
+    canonicalizeTargetsImpl(replacements_names, target_parts_double_quoted, visible_column_names);
 }
 
 QueryTreeNodePtr ReplaceColumnTransformerNode::findReplacementExpression(const std::string & expression_name, bool standard_mode, std::string * matched_target)

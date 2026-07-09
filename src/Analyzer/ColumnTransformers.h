@@ -210,6 +210,10 @@ public:
         return except_column_names;
     }
 
+    /// `standard` mode: rebind each unquoted target to the column namespace — exact spelling
+    /// wins, a single folded match is canonicalized, several folded matches are ambiguous.
+    void canonicalizeColumnTargets(const Names & visible_column_names);
+
     ColumnTransfomerType getTransformerType() const override
     {
         return ColumnTransfomerType::EXCEPT;
@@ -289,6 +293,9 @@ public:
     {
         return replacements_names;
     }
+
+    /// See ExceptColumnTransformerNode::canonicalizeColumnTargets.
+    void canonicalizeColumnTargets(const Names & visible_column_names);
 
     /// Returns true if replace column transformer is strict, false otherwise
     bool isStrict() const

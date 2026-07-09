@@ -2614,6 +2614,24 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         }
     }
 
+    /// `standard` mode: resolve EXCEPT/REPLACE targets against the matched-column namespace
+    /// once, up front (exact-first, single folded match canonicalized, several ambiguous), so
+    /// the per-column checks below can match exactly and case-siblings are never both consumed.
+    if (scope.isStandardMode())
+    {
+        Names matched_column_names;
+        matched_column_names.reserve(matched_expression_nodes_with_names.size());
+        for (const auto & [_, matched_column_name] : matched_expression_nodes_with_names)
+            matched_column_names.push_back(matched_column_name);
+        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+        {
+            if (auto * except_node = transformer->as<ExceptColumnTransformerNode>())
+                except_node->canonicalizeColumnTargets(matched_column_names);
+            else if (auto * replace_node = transformer->as<ReplaceColumnTransformerNode>())
+                replace_node->canonicalizeColumnTargets(matched_column_names);
+        }
+    }
+
     std::unordered_map<const IColumnTransformerNode *, std::unordered_set<std::string>> strict_transformer_to_used_column_names;
     for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
     {
@@ -2692,7 +2710,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     continue;
 
                 std::string matched_target;
-                if (except_transformer->isColumnMatching(column_name, scope.isStandardMode(), &matched_target))
+                if (except_transformer->isColumnMatching(column_name, false /*standard_mode: targets pre-canonicalized*/, &matched_target))
                 {
                     if (except_transformer->isStrict())
                     {
@@ -2712,7 +2730,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     continue;
 
                 std::string matched_replace_target;
-                auto replace_expression = replace_transformer->findReplacementExpression(column_name, scope.isStandardMode(), &matched_replace_target);
+                auto replace_expression = replace_transformer->findReplacementExpression(column_name, false /*standard_mode: targets pre-canonicalized*/, &matched_replace_target);
                 if (!replace_expression)
                     continue;
 
@@ -5563,6 +5581,27 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             {
                 seen.insert(col_name);
                 using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
+            }
+            else if (scope.isStandardMode() && !seen.contains(col_name))
+            {
+                /// `standard` mode: fold the intersection like an unquoted USING key. Exact pairs
+                /// are preferred (an exact left sibling of the folded right column wins the class);
+                /// several folded right matches are ambiguous.
+                Names folded_rights;
+                for (const auto & right_col : right_cols)
+                    if (right_col.find('.') == std::string::npos && Poco::icompare(right_col, col_name) == 0)
+                        folded_rights.push_back(right_col);
+                if (folded_rights.size() > 1)
+                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                        "NATURAL JOIN common column '{}' is ambiguous: matches right-side columns with different cases: '{}' and '{}'. In scope {}",
+                        col_name, folded_rights[0], folded_rights[1],
+                        join_node_typed.formatASTForErrorMessage());
+                if (folded_rights.size() == 1
+                    && std::find(left_cols.begin(), left_cols.end(), folded_rights.front()) == left_cols.end())
+                {
+                    seen.insert(col_name);
+                    using_nodes.push_back(std::make_shared<IdentifierNode>(Identifier(col_name)));
+                }
             }
         }
 
