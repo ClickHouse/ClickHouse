@@ -259,6 +259,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
     ThreadGroupPtr res_group;
     if (auto current_group = CurrentThread::getGroup())
     {
+        /// `new` (not `make_shared`): the borrowing constructor is private.
         res_group = ThreadGroupPtr(new ThreadGroup(current_group));
     }
     else
@@ -272,6 +273,7 @@ ThreadGroupPtr ThreadGroup::createForMaterializedView(ContextPtr context)
 
 ThreadGroupPtr ThreadGroup::createForFlushAsyncInsertQueue(ContextPtr context, ThreadGroupPtr parent)
 {
+    /// `new` (not `make_shared`): the borrowing constructor is private.
     auto res_group = ThreadGroupPtr(new ThreadGroup(context, parent));
     res_group->memory_tracker.setDescription("FlushAsyncInsertQueue");
     return res_group;

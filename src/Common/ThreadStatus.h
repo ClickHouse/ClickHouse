@@ -66,6 +66,19 @@ using ThrowIfQueryCanceledPredicate = std::function<void()>;
   *
   * Create via CurrentThread::initializeQuery (for queries) or directly (for various background tasks).
   * Use via CurrentThread::getGroup.
+  *
+  * A group either owns its accounting or borrows it. A borrowed group (`createForMaterializedView` /
+  * `createForFlushAsyncInsertQueue`) sets its `performance_counters` and `memory_tracker` to raw
+  * (non-owning) pointers into the parent query group, so materialized-view and async-insert work is
+  * accounted against the parent query.
+  *
+  * Borrowing a raw pointer (rather than holding a `shared_ptr` to the parent) is deliberate: owning the
+  * parent would keep the finished query's group - and its memory accounting - alive for as long as the
+  * borrowed work runs. The price is that a borrowed group is only valid while the parent is alive, so it
+  * must not be captured by asynchronous work: the async task may run on a pool thread after the parent
+  * query finished and its group was destroyed, and would then dereference the freed parent counters
+  * (use-after-free). `getCurrentThreadGroupForAsyncCallback` returns nullptr for a borrowed group so async
+  * work runs under normal thread/global accounting instead.
   */
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
@@ -76,6 +89,7 @@ public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
 
+    /// A borrowed group aliases the parent query group's accounting; see the class comment.
     bool isBorrowed() const;
 
     /// The first thread created this thread group
@@ -91,8 +105,7 @@ public:
 
     MemorySpillScheduler::Ptr memory_spill_scheduler;
 
-    /// Borrowed child groups (`createForMaterializedView` / `createForFlushAsyncInsertQueue`) keep
-    /// raw accounting pointers into the parent group. They are valid only while the parent is alive.
+    /// For a borrowed group these are raw pointers into the parent query group (see the class comment).
     ProfileEvents::Counters performance_counters{VariableContext::Process};
     MemoryTracker memory_tracker{VariableContext::Process};
 
@@ -147,8 +160,8 @@ public:
 private:
     enum class ThreadGroupKind : uint8_t
     {
-        Root,
-        Borrowed,
+        Root,     /// Owns `performance_counters` / `memory_tracker`.
+        Borrowed, /// Aliases the parent group's accounting; valid only while the parent lives.
     };
 
     const ThreadGroupKind kind = ThreadGroupKind::Root;
@@ -170,6 +183,7 @@ private:
     Stopwatch effective_group_stopwatch TSA_GUARDED_BY(mutex) = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
     UInt64 elapsed_group_ms TSA_GUARDED_BY(mutex) = 0;
 
+    /// Borrowing constructors (mark the group `Borrowed`); private so only the factories create them.
     explicit ThreadGroup(ThreadGroupPtr parent);
     ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent);
 

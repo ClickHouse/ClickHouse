@@ -19,8 +19,8 @@ class ThreadStatus;
 /// This is equivalent to CurrentThread::getGroup() but avoids including CurrentThread.h.
 ThreadGroupPtr getCurrentThreadGroup();
 
-/// Returns the current thread group for async callback capture.
-/// Borrowed groups are scoped accounting objects, so async callbacks must not keep them alive.
+/// Like `getCurrentThreadGroup`, but returns nullptr for a borrowed group (see `ThreadGroup`): a borrowed
+/// group is only valid while its parent query is alive, and async work may outlive that query.
 ThreadGroupPtr getCurrentThreadGroupForAsyncCallback();
 
 /**
