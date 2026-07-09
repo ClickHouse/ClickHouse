@@ -110,6 +110,25 @@ protected:
             findSecretNamedArgument(key, start);
     }
 
+    /// The explicit-key S3 form accepts a positional `session_token` as the fourth argument:
+    /// s3('url', 'access_key_id', 'secret_access_key', 'session_token' [, 'format', ...]).
+    /// It is masked when the second argument is an access key (not NOSIGN/format) and the fourth is
+    /// not itself a format name, mirroring the storage's positional disambiguation.
+    void maskPositionalSessionToken(size_t second_arg_idx, size_t session_token_idx, size_t count)
+    {
+        if (session_token_idx >= count)
+            return;
+        String second_arg;
+        if (tryGetStringFromArgument(second_arg_idx, &second_arg)
+            && (boost::iequals(second_arg, "NOSIGN") || second_arg == "auto" || KnownFormatNames::instance().exists(second_arg)))
+            return;
+        String token_arg;
+        if (tryGetStringFromArgument(session_token_idx, &token_arg)
+            && (token_arg == "auto" || KnownFormatNames::instance().exists(token_arg)))
+            return;
+        markSecretArgument(session_token_idx);
+    }
+
     /// `extra_credentials(role_arn = ..., external_id = ..., ...)` carries S3 assume-role auth material.
     /// Mask all of its values, like `headers`; over-masking the non-secret identifiers is safe.
     void maskS3ExtraCredentials()
@@ -416,7 +435,10 @@ protected:
         /// s3('url', 'aws_access_key_id', 'aws_secret_access_key', ...)
         /// s3Cluster('cluster_name', 'url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
         if (url_arg_idx + 2 < count)
+        {
             markSecretArgument(url_arg_idx + 2);
+            maskPositionalSessionToken(url_arg_idx + 1, url_arg_idx + 3, count);
+        }
     }
 
     void findAzureBlobStorageFunctionSecretArguments(bool is_cluster_function)
@@ -773,7 +795,10 @@ protected:
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format')
         /// S3('url', 'aws_access_key_id', 'aws_secret_access_key', 'format', 'compression')
         if (2 < count)
+        {
             markSecretArgument(2);
+            maskPositionalSessionToken(1, 3, count);
+        }
     }
 
     void findAzureBlobStorageTableEngineSecretArguments()
@@ -939,25 +964,34 @@ protected:
                 }
             }
 
-            /// Nested `extra_credentials(k = v, ...)` map: reconstruct with every value hidden.
+            /// Nested `extra_credentials(k = v, ...)` map: reconstruct with every value hidden. Build into
+            /// a temporary; if any inner key is not a plain literal (e.g. a constant expression the parser
+            /// still accepts), fail closed by hiding the whole map rather than emitting it verbatim.
             if (auto extra_credentials_func = arg->getFunction();
                 extra_credentials_func && extra_credentials_func->name() == "extra_credentials" && extra_credentials_func->hasArguments())
             {
-                replacement += "extra_credentials(";
+                std::string masked_map = "extra_credentials(";
+                bool reconstructed = true;
                 const auto & cred_args = *extra_credentials_func->arguments;
                 for (size_t j = 0; j < cred_args.size(); ++j)
                 {
-                    if (j > 0)
-                        replacement += ", ";
                     String cred_key;
                     auto cred_kv = cred_args.at(j)->getFunction();
                     if (cred_kv && cred_kv->name() == "equals" && cred_kv->hasArguments() && cred_kv->arguments->size() == 2
                         && cred_kv->arguments->at(0)->tryGetString(&cred_key, /* allow_identifier= */ true))
-                        replacement += cred_key + " = '[HIDDEN]'";
+                    {
+                        if (j > 0)
+                            masked_map += ", ";
+                        masked_map += cred_key + " = '[HIDDEN]'";
+                    }
                     else
-                        return; /// Cannot reconstruct an argument; do not emit a wrong masked form.
+                    {
+                        reconstructed = false;
+                        break;
+                    }
                 }
-                replacement += ")";
+                masked_map += ")";
+                replacement += reconstructed ? masked_map : "'[HIDDEN]'";
                 has_secret = true;
                 continue;
             }
