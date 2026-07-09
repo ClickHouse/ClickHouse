@@ -61,6 +61,10 @@ public:
     /// buffer when covered, otherwise the prefetch is dropped and the read falls back to impl.
     bool supportsReadAt() override { return impl->supportsReadAt(); }
 
+    /// Reads into `memory` (or prefetch_buffer), not into the pointer set via `ReadBuffer::set`.
+    /// Same reasoning as `AsynchronousReadBufferFromFileDescriptor::supportsExternalBufferMode`.
+    bool supportsExternalBufferMode() const override { return false; }
+
     size_t readBigAt(char * to, size_t n, size_t range_begin, const std::function<bool(size_t)> & progress_callback) const override;
 
     std::optional<Field> getMetadata(const String & name) const override;
