@@ -26,16 +26,6 @@ ThreadGroupPtr getCurrentThreadGroup()
     return current_thread->getThreadGroup();
 }
 
-ThreadGroupPtr getCurrentThreadGroupForAsyncCallback()
-{
-    ThreadGroupPtr result = getCurrentThreadGroup();
-    if (result && result->isBorrowed())
-        result = nullptr;
-
-    chassert(!result || !result->isBorrowed());
-    return result;
-}
-
 ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group) noexcept
     : thread_group(std::move(thread_group_))
 {
@@ -57,7 +47,13 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             else if (!allow_existing_group)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Thread ({}) is already attached to a group (master_thread_id {})", thread_name, prev_thread_group->master_thread_id);
             else
+            {
+                /// Borrowing a thread that owns a group: remember its name (even UNKNOWN) before the
+                /// setThreadName below renames it, so we can restore it with the group.
+                prev_thread_name = getThreadName();
+                should_restore_prev_thread_name = true;
                 CurrentThread::detachFromGroupIfNotDetached();
+            }
         }
 
         if (!prev_thread)
@@ -87,9 +83,12 @@ ThreadGroupSwitcher::ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadNam
             /// leaving the thread on the target group. Detach it first.
             if (CurrentThread::getGroup() == thread_group)
                 CurrentThread::detachFromGroupIfNotDetached();
-            /// Restore the previous group for allow_existing_group=true callers.
+            /// Restore the borrowed group and name here: the destructor early-returns on this path
+            /// (both groups are nulled below).
             if (prev_thread_group && !CurrentThread::getGroup())
                 CurrentThread::attachToGroup(prev_thread_group);
+            if (should_restore_prev_thread_name)
+                setThreadName(prev_thread_name);
         }
         catch (...)
         {
@@ -121,6 +120,10 @@ ThreadGroupSwitcher::~ThreadGroupSwitcher()
         {
             LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
             CurrentThread::attachToGroup(prev_thread_group);
+            /// Restore the borrowed thread's original name, else it keeps the async-pool name and
+            /// misattributes later logs, traces, /proc names and jemalloc thread profiles.
+            if (should_restore_prev_thread_name)
+                setThreadName(prev_thread_name);
         }
     }
     catch (...)

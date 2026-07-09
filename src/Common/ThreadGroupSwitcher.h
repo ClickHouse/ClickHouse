@@ -19,10 +19,6 @@ class ThreadStatus;
 /// This is equivalent to CurrentThread::getGroup() but avoids including CurrentThread.h.
 ThreadGroupPtr getCurrentThreadGroup();
 
-/// Returns the current thread group for async callback capture.
-/// Borrowed groups are scoped accounting objects, so async callbacks must not keep them alive.
-ThreadGroupPtr getCurrentThreadGroupForAsyncCallback();
-
 /**
  * RAII wrapper around CurrentThread::attachToGroup/detachFromGroupIfNotDetached.
  *
@@ -40,7 +36,7 @@ public:
     /// allow_existing_group:
     ///  * If false, asserts that the thread is not already attached to a different group.
     ///    Use this when running a task in a thread pool.
-    ///  * If true, remembers the current group and restores it in destructor.
+    ///  * If true, remembers the current group and thread name and restores them in destructor.
     /// If thread_name is not empty, calls setThreadName along the way; should be at most 15 bytes long.
     ThreadGroupSwitcher(ThreadGroupPtr thread_group_, ThreadName thread_name, bool allow_existing_group = false) noexcept;
     ~ThreadGroupSwitcher();
@@ -49,6 +45,10 @@ private:
     ThreadStatus * prev_thread = nullptr;
     ThreadGroupPtr prev_thread_group;
     ThreadGroupPtr thread_group;
+    /// Name of a borrowed thread (allow_existing_group=true), saved before renaming and restored in the
+    /// destructor. A separate bool gates the restore because UNKNOWN is a valid saved name, not a sentinel.
+    ThreadName prev_thread_name = ThreadName::UNKNOWN;
+    bool should_restore_prev_thread_name = false;
 };
 
 
