@@ -135,8 +135,8 @@ void validateSupportedColumns(
 
 CompressionMethod chooseCompressionMethod(const ObjectInfo & object_info, const std::string & compression_hint)
 {
-    /// The server already decompressed the object while serving it (e.g. GCS decompressive
-    /// transcoding), so the compression implied by the file extension must not be applied.
+    /// The server already decompressed the object while serving it (decompressive
+    /// transcoding), so the compression implied by the file extension must not be applied
     const auto & metadata = object_info.relative_path_with_metadata.metadata;
     if (metadata && metadata->is_server_side_decompressed)
         return CompressionMethod::None;
