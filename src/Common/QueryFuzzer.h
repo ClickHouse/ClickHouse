@@ -237,6 +237,14 @@ private:
     ASTPtr makeFuzzedColumnTransformers();
     ASTPtr getRandomExpressionList(size_t nproj);
     DataTypePtr fuzzDataType(DataTypePtr type);
+    /// Recursively fuzz every element of a type list in place. Returns true if any element changed.
+    bool fuzzDataTypes(DataTypes & types);
+    /// If `type` is an Array/Tuple/Variant, rebuild it with its children fuzzed; otherwise return nullptr.
+    DataTypePtr fuzzContainerChildren(const DataTypePtr & type);
+    /// Occasionally swap an aggregate's name for a compatible candidate (same arity). Returns true if changed.
+    bool fuzzAggregateName(String & name, size_t nargs);
+    /// Occasionally fuzz an aggregate's literal parameters in place. Returns true if changed.
+    bool fuzzAggregateParameters(Array & parameters);
     DataTypePtr getRandomType();
     /// Builds a random, structurally valid QBit type (valid element type + a dimension/stride pair
     /// satisfying dimension % stride == 0 and, when strided, stride % 8 == 0). Shared by fuzzDataType
