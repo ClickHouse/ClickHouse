@@ -1703,6 +1703,38 @@ static void checkDimensionsAreInSortingKey(const StorageInMemoryMetadata & metad
         boost::algorithm::join(offending_columns, ", "));
 }
 
+/// Up-front schema validation for GraphiteMergeTree, matching what GraphiteRollupSortedAlgorithm::defineColumns
+/// requires at merge time: the configured path/time/value/version columns must exist, and the value column must
+/// be Float64. Without this the engine clause validates only the config element, so a MODIFY ENGINE to
+/// GraphiteMergeTree can succeed and reload cleanly, then throw only once a background merge (or FINAL)
+/// instantiates the rollup algorithm. MergingParams::check has no Graphite branch (create-time GraphiteMergeTree
+/// keeps its historical "fail at merge" behavior), so this is called explicitly from the MODIFY ENGINE paths.
+static void checkGraphiteSchema(const Graphite::Params & params, const StorageInMemoryMetadata & metadata)
+{
+    const auto & columns = metadata.getColumns();
+
+    auto require_column = [&](const String & column_name, const char * role) -> DataTypePtr
+    {
+        if (!columns.hasPhysical(column_name))
+            throw Exception(
+                ErrorCodes::NO_SUCH_COLUMN_IN_TABLE,
+                "The {} column '{}' required by GraphiteMergeTree does not exist in the table.",
+                role, column_name);
+        return columns.getPhysical(column_name).type;
+    };
+
+    require_column(params.path_column_name, "path");
+    require_column(params.time_column_name, "time");
+    auto value_type = require_column(params.value_column_name, "value");
+    require_column(params.version_column_name, "version");
+
+    if (!WhichDataType(value_type).isFloat64())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Only `Float64` data type is allowed for the value column '{}' of GraphiteMergeTree, got {}.",
+            params.value_column_name, value_type->getName());
+}
+
 void MergeTreeData::MergingParams::setAllowTupleElementAggregationFromSettings(const MergeTreeSettings & settings)
 {
     /// Only Summing / Aggregating / Coalescing understand the flag; for other modes it is forced off so
@@ -2170,6 +2202,13 @@ void MergeTreeData::applyEngineModification(const ASTPtr & new_engine_ast, const
     /// off-key-dimension guard (checkDimensionsAreInSortingKey, issue #751) must apply, or a
     /// MergeTree -> AggregatingMergeTree switch could add a column that is silently collapsed during merges.
     new_params.check(*getSettings(), new_metadata, /*sanity_checks=*/true);
+
+    /// MergingParams::check has no Graphite branch, so validate the Graphite schema (column existence +
+    /// Float64 value) up front here, matching what the rollup algorithm requires at merge time. Otherwise a
+    /// MODIFY ENGINE = GraphiteMergeTree with a missing or non-Float64 value column would reload cleanly and
+    /// only fail on the first merge.
+    if (new_params.mode == MergingParams::Graphite)
+        checkGraphiteSchema(new_params.graphite_params, new_metadata);
 
     LOG_INFO(log, "MODIFY ENGINE: merge semantics will change from {} to {} on next table load",
         merging_params.getModeName().empty() ? "MergeTree" : merging_params.getModeName(),
@@ -4793,6 +4832,12 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             /// AggregatingMergeTree off-key-dimension guard (issue #751) applies here just as it would to a
             /// CREATE. This is not the legacy-metadata grandfathering that ATTACH performs.
             new_merging_params.check(*settings_for_check, metadata_for_check, /*sanity_checks=*/true);
+
+            /// MergingParams::check has no Graphite branch; validate the Graphite schema up front here too,
+            /// so a MODIFY ENGINE = GraphiteMergeTree with a missing or non-Float64 value column is rejected
+            /// before the metadata changes rather than at the first merge after the next load.
+            if (new_merging_params.mode == MergingParams::Graphite)
+                checkGraphiteSchema(new_merging_params.graphite_params, metadata_for_check);
 
             /// registerStorageMergeTree rejects a special-mode MergeTree that has projections when
             /// deduplicate_merge_projection_mode = throw. The reload-only design keeps the live mode

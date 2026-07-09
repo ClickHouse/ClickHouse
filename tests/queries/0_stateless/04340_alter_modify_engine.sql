@@ -223,3 +223,25 @@ DETACH TABLE t_proj;
 ATTACH TABLE t_proj;
 SELECT 'projection rebuild', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_proj';
 DROP TABLE t_proj;
+
+-- Graphite schema is validated up front on MODIFY ENGINE, matching what the rollup algorithm needs at
+-- merge time (configured path/time/value/version columns exist and the value column is Float64). The
+-- `graphite_rollup` config element uses the default Path/Time/Value column names and version_column_name = Version.
+
+-- (p) a non-Float64 value column is rejected (would otherwise only fail on the first merge).
+CREATE TABLE t_graphite (Path String, Time DateTime, Value UInt64, Version UInt32, key UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError BAD_ARGUMENTS }
+DROP TABLE t_graphite;
+
+-- (q) a missing required column (no Version) is rejected.
+CREATE TABLE t_graphite (Path String, Time DateTime, Value Float64, key UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite MODIFY ENGINE = GraphiteMergeTree('graphite_rollup'); -- { serverError NO_SUCH_COLUMN_IN_TABLE }
+DROP TABLE t_graphite;
+
+-- (r) a valid Graphite schema is accepted and the engine switches on reload.
+CREATE TABLE t_graphite (Path String, Time DateTime, Value Float64, Version UInt32, key UInt32) ENGINE = MergeTree ORDER BY key;
+ALTER TABLE t_graphite MODIFY ENGINE = GraphiteMergeTree('graphite_rollup');
+DETACH TABLE t_graphite;
+ATTACH TABLE t_graphite;
+SELECT 'graphite valid', engine FROM system.tables WHERE database = currentDatabase() AND name = 't_graphite';
+DROP TABLE t_graphite;

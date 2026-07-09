@@ -17,3 +17,4 @@ pending unrelated alter	SummingMergeTree
 projection guard	MergeTree
 pending projection guard	ReplacingMergeTree
 projection rebuild	ReplacingMergeTree
+graphite valid	GraphiteMergeTree
