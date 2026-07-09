@@ -162,7 +162,7 @@ def test_version_file_roundtrips(tmp_path, monkeypatch):
     monkeypatch.setattr(chv, "FILE_WITH_VERSION_PATH", str(version_file))
 
     version = chv.CHVersion(26, 6, 1, 54511, 42).with_description("stable")
-    chv.update_cmake_version(version)
+    version.write()
     read = chv._read_versions()
     # tweak is not stored as its own SET() line — it is encoded in the string
     # (major.minor.patch.tweak) and the describe.
@@ -187,7 +187,7 @@ def test_version_bump():
     assert patch.patch == 6 and patch.tweak == 1
 
     rollover = chv.CHVersion(26, 12, 1, 100)
-    rollover.bump()
+    rollover.bump_release()
     assert (rollover.major, rollover.minor, rollover.patch) == (27, 1, 1)
 
 
@@ -298,12 +298,14 @@ def test_dry_run_patch_release_end_to_end(tmp_path):
         text=True,
     ).stdout.strip()
 
-    # `gh` stub: is_latest_release_branch (now in create_release) is the only network call on this path;
-    # empty output makes it report "not the latest branch", which is enough.
+    # `gh` stub: is_latest_release_branch (now in create_release) is the only
+    # network call on this path. It prints an empty JSON array (what a real
+    # `gh pr list --json` prints when nothing matches), so the strict retried
+    # read succeeds and reports "not the latest branch", which is enough.
     bindir = tmp_path / "bin"
     bindir.mkdir()
     gh_stub = bindir / "gh"
-    gh_stub.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    gh_stub.write_text("#!/bin/sh\necho '[]'\n", encoding="utf-8")
     gh_stub.chmod(0o755)
 
     env = {

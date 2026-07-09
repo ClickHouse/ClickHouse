@@ -40,6 +40,7 @@ import dataclasses
 import json
 import os
 import re
+import shlex
 import shutil
 import sys
 import tempfile
@@ -52,7 +53,6 @@ from ci.jobs.scripts.clickhouse_version import (
     FILE_WITH_VERSION_PATH,
     CHVersion,
     VersionType,
-    update_cmake_version,
 )
 from ci.praktika.gh import GH
 from ci.praktika.git import Git
@@ -100,12 +100,24 @@ def is_latest_release_branch(branch: str, repo: str = GITHUB_REPOSITORY) -> bool
     """Whether `branch` is the latest release branch — i.e. the head branch of
     the most recently created `release`-labeled PR. Release-domain logic (knows
     the `release` label / branch convention), so it lives here rather than in
-    the generic praktika GH helper."""
-    latest = Shell.get_output(
-        f'gh pr list --label release --repo {repo} --search "sort:created"'
+    the generic praktika GH helper.
+
+    The `gh pr list` read is retried and a persistent failure raises: mistaking
+    a transient GitHub error for "not the latest branch" would silently skip the
+    floating `latest` docker tag for an otherwise successful release. A
+    successful `--json` read always prints at least `[]`, so an empty result
+    means the command failed; genuinely no release PR is an empty JSON array."""
+    raw = GH.get_output_with_retries(
+        f'gh pr list --label release --repo {shlex.quote(repo)} --search "sort:created"'
         f" -L1 --json headRefName"
     )
-    latest_branch = json.loads(latest)[0]["headRefName"] if latest else ""
+    if not raw:
+        raise RuntimeError(
+            f"gh pr list failed for release PRs in repo [{repo}] after retries; "
+            f"refusing to treat a failed lookup as 'not the latest release branch'"
+        )
+    prs = json.loads(raw)
+    latest_branch = prs[0]["headRefName"] if prs else ""
     print(
         f"Latest release branch [{latest_branch}], checking [{branch}]:"
         f" is_latest={latest_branch == branch}"
@@ -282,10 +294,10 @@ class ReleaseInfo:
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
                 git = Git()
-                version = CHVersion.current()
+                version = CHVersion.read()
                 release_branch = f"{version.major}.{version.minor}"
                 expected_prev_tag = f"v{version.major}.{version.minor}.1.1-new"
-                version.bump().with_description(VersionType.NEW)
+                version.bump_release().with_description(VersionType.NEW)
                 assert (
                     git.latest_tag == expected_prev_tag
                 ), f"BUG: latest tag [{git.latest_tag}], expected [{expected_prev_tag}]"
@@ -294,7 +306,7 @@ class ReleaseInfo:
         if release_type == "patch":
             with checkout(commit_ref):
                 commit_sha = Git.get_commit_sha(commit_ref)
-                version = CHVersion.current()
+                version = CHVersion.read()
                 codename = version.get_stable_release_type()
                 version.with_description(codename)
                 release_branch = f"{version.major}.{version.minor}"
@@ -310,8 +322,8 @@ class ReleaseInfo:
             # branch tip, the branch has already moved to a newer release, so this
             # ref is behind / superseded.
             with checkout(f"origin/{release_branch}"):
-                branch_version = CHVersion.current()
-            newer_release_exists = version.is_older_release_than(branch_version)
+                branch_version = CHVersion.read()
+            newer_release_exists = version.is_older(branch_version)
 
             if is_latest_release_branch(release_branch, repo=GITHUB_REPOSITORY):
                 print("This is going to be the latest release!")
@@ -427,10 +439,10 @@ class ReleaseInfo:
             print("WARNING: failed to create backport labels for the new branch")
 
     def push_new_release_branch(self, dry_run: bool) -> None:
-        version = CHVersion.current()
+        version = CHVersion.read()
         new_release_branch = self.release_branch
         version_after_release = copy(version)
-        version_after_release.bump()
+        version_after_release.bump_release()
         assert version_after_release.string == self.version, (
             f"Unexpected current version in git, must precede [{self.version}] by one step, "
             f"actual [{version.string}]"
@@ -469,7 +481,7 @@ class ReleaseInfo:
 
     def update_version_and_contributors_list(self, dry_run: bool) -> None:
         with checkout(self.commit_sha):
-            version = CHVersion.current()
+            version = CHVersion.read()
             if self.release_type == "patch":
                 assert version.string == self.version, (
                     f"BUG: version in release info does not match version in git commit, "
@@ -477,11 +489,11 @@ class ReleaseInfo:
                 )
                 version.bump_patch()
             else:
-                version.reset_tweak()
+                version.tweak = 1
             version.with_description(version.get_stable_release_type())
 
         with checkout(self.release_branch):
-            update_cmake_version(version, preserve_sha=self.release_type == "new")
+            version.write(preserve_sha=self.release_type == "new")
             update_contributors(raise_error=True)
             cmd_commit_version_upd = (
                 f"{GIT_PREFIX} commit '{FILE_WITH_VERSION_PATH}' '{GENERATED_CONTRIBUTORS}' "
@@ -525,12 +537,12 @@ class ReleaseInfo:
             print("Update version on master branch")
             branch_upd = self.get_version_bump_branch()
             with checkout(self.commit_sha):
-                version = CHVersion.current()
-                version.bump()
+                version = CHVersion.read()
+                version.bump_release()
                 version.with_description(VersionType.TESTING)
             with checkout("master"):
                 with checkout_new(branch_upd):
-                    update_cmake_version(version)
+                    version.write()
                     update_contributors(raise_error=True)
                     actor = os.getenv("GITHUB_ACTOR", "") or "me"
                     body = (
