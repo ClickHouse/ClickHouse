@@ -1982,3 +1982,42 @@ def test_namespace_prefix_create_authorization(started_cluster):
         node.query(f"DROP TABLE {full_name}")
     finally:
         node.query(f"DROP USER IF EXISTS {user}")
+
+
+def test_namespace_prefix_create_as(started_cluster):
+    """
+    CREATE TABLE ... AS <source> must resolve the source through the namespace-aware
+    resolver: bare names under USE db.namespace, namespace.table under USE catalog,
+    and the full three-part form.
+    """
+    node = started_cluster.instances["node1"]
+
+    test_ref = f"test_ns_createas_{uuid.uuid4().hex[:8]}"
+    namespace = f"ns_{test_ref}"
+    table_name = "create_as_src"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    create_table(catalog, namespace, table_name)
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    copies = [f"default.copy_{i}_{test_ref}" for i in range(3)]
+    try:
+        node.query(
+            f"USE {CATALOG_NAME}.{namespace}; "
+            f"CREATE TABLE {copies[0]} ENGINE = Memory AS {table_name}"
+        )
+        node.query(
+            f"USE {CATALOG_NAME}; "
+            f"CREATE TABLE {copies[1]} ENGINE = Memory AS {namespace}.{table_name}"
+        )
+        node.query(
+            f"CREATE TABLE {copies[2]} ENGINE = Memory AS {CATALOG_NAME}.{namespace}.{table_name}"
+        )
+        for copy in copies:
+            describe = node.query(f"DESCRIBE TABLE {copy}")
+            assert "id" in describe and "data" in describe, f"{copy} structure wrong: {describe}"
+    finally:
+        for copy in copies:
+            node.query(f"DROP TABLE IF EXISTS {copy}")
