@@ -129,6 +129,7 @@ namespace DB
     M(PUSHING_ASYNC_EXECUTOR, "QueryPushPipeEx") \
     M(PRETTY_WRITER, "PrettyWriter") \
     M(QUERY_ASYNC_EXECUTOR, "QueryPipelineEx") \
+    M(QUERY_RUNNER, "QueryRunner") \
     M(READER_POOL, "Reader") \
     M(READ_TASK_ITERATOR, "ReadTaskIteratr") \
     M(READ_THREAD_POOL, "ThreadPoolRead") \
@@ -159,6 +160,7 @@ namespace DB
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \
+    M(UDF_DRIVER, "UDFDriver") \
     M(UNIQ_EXACT_CONVERT, "UniqExaConvert") \
     M(UNIQ_EXACT_MERGER, "UniqExactMerger") \
     M(USER_DEFINED_WATCH, "UserDefWatch") \

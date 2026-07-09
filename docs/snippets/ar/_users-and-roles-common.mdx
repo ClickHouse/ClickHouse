@@ -1,0 +1,562 @@
+---
+title: الأمور المشتركة بين المستخدمين والأدوار
+---
+
+<div id="test-admin-privileges">
+  ## اختبر امتيازات المسؤول
+</div>
+
+سجّل الخروج من المستخدم `default` ثم سجّل الدخول مرة أخرى باستخدام المستخدم `clickhouse_admin`.
+
+يجب أن ينجح كل ما يلي:
+
+```sql
+SHOW GRANTS FOR clickhouse_admin;
+```
+
+```sql
+CREATE DATABASE db1
+```
+
+```sql
+CREATE TABLE db1.table1 (id UInt64, column1 String) ENGINE = MergeTree() ORDER BY id;
+```
+
+```sql
+INSERT INTO db1.table1 (id, column1) VALUES (1, 'abc');
+```
+
+```sql
+SELECT * FROM db1.table1;
+```
+
+```sql
+DROP TABLE db1.table1;
+```
+
+```sql
+DROP DATABASE db1;
+```
+
+<div id="non-admin-users">
+  ## المستخدمون غير المشرفين
+</div>
+
+يجب أن يمتلك المستخدمون الامتيازات اللازمة، وألا يكونوا جميعًا من مستخدمي مسؤول. ويعرض باقي هذا المستند سيناريوهات توضيحية والأدوار المطلوبة.
+
+<div id="preparation">
+  ### التحضير
+</div>
+
+أنشئ الجداول والمستخدمين التالية لاستخدامها في الأمثلة.
+
+<div id="creating-a-sample-database-table-and-rows">
+  #### إنشاء قاعدة بيانات وجدول وصفوف تجريبية
+</div>
+
+<Steps>
+  <Step>
+    ##### أنشئ قاعدة بيانات للاختبار
+
+    ```sql
+    CREATE DATABASE db1;
+    ```
+  </Step>
+
+  <Step>
+    ##### أنشئ جدولًا
+
+    ```sql
+    CREATE TABLE db1.table1 (
+       id UInt64,
+       column1 String,
+       column2 String
+    )
+    ENGINE MergeTree
+    ORDER BY id;
+    ```
+  </Step>
+
+  <Step>
+    ##### املأ الجدول بصفوف تجريبية
+
+    ```sql
+    INSERT INTO db1.table1
+       (id, column1, column2)
+    VALUES
+       (1, 'A', 'abc'),
+       (2, 'A', 'def'),
+       (3, 'B', 'abc'),
+       (4, 'B', 'def');
+    ```
+  </Step>
+
+  <Step>
+    ##### تحقّق من الجدول
+
+    ```sql title="استعلام"
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response title="الاستجابة"
+    Query id: 475015cc-6f51-4b20-bda2-3c9c41404e49
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### أنشئ `column_user`
+
+    أنشئ مستخدمًا عاديًا سيُستخدم لتوضيح تقييد الوصول إلى أعمدة معيّنة:
+
+    ```sql
+    CREATE USER column_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+
+  <Step>
+    ##### أنشئ `row_user`
+
+    أنشئ مستخدمًا عاديًا سيُستخدم لتوضيح تقييد الوصول إلى الصفوف ذات القيم المعيّنة:
+
+    ```sql
+    CREATE USER row_user IDENTIFIED BY 'password';
+    ```
+  </Step>
+</Steps>
+
+<div id="creating-roles">
+  #### إنشاء الأدوار
+</div>
+
+باستخدام هذه المجموعة من الأمثلة:
+
+* سيتم إنشاء أدوار لامتيازات مختلفة، مثل الأعمدة والصفوف
+* سيتم منح الامتيازات لهذه الأدوار
+* سيتم إسناد المستخدمين إلى كل دور
+
+تُستخدم الأدوار لتحديد مجموعات من المستخدمين ذوي امتيازات معيّنة، بدلًا من إدارة كل مستخدم على حدة.
+
+<Steps>
+  <Step>
+    ##### أنشئ دورًا لتقييد مستخدمي هذا الدور بحيث لا يمكنهم رؤية سوى `column1` في قاعدة البيانات `db1` والجدول `table1`:
+
+    ```sql
+    CREATE ROLE column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### اضبط الامتيازات للسماح بعرض `column1`
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO column1_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### أضف المستخدم `column_user` إلى الدور `column1_users`
+
+    ```sql
+    GRANT column1_users TO column_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### أنشئ دورًا لتقييد مستخدمي هذا الدور بحيث لا يمكنهم رؤية إلا الصفوف المحددة، وفي هذه الحالة الصفوف التي تحتوي على `A` في `column1` فقط
+
+    ```sql
+    CREATE ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### أضف `row_user` إلى الدور `A_rows_users`
+
+    ```sql
+    GRANT A_rows_users TO row_user;
+    ```
+  </Step>
+
+  <Step>
+    ##### أنشئ سياسة للسماح بعرض الصفوف التي تكون فيها قيمة `column1` هي `A` فقط
+
+    ```sql
+    CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### اضبط امتيازات قاعدة البيانات والجدول
+
+    ```sql
+    GRANT SELECT(id, column1, column2) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### امنح أذونات صريحة للأدوار الأخرى حتى تظل قادرة على الوصول إلى جميع الصفوف
+
+    ```sql
+    CREATE ROW POLICY allow_other_users_filter 
+    ON db1.table1 FOR SELECT USING 1 TO clickhouse_admin, column1_users;
+    ```
+
+    <Note>
+      عند ربط سياسة بجدول، سيطبّق النظام هذه السياسة، ولن يتمكن من تنفيذ عمليات على الجدول إلا المستخدمون والأدوار المحددون فيها، بينما سيُمنع جميع الآخرين من تنفيذ أي عمليات. ولكي لا تُطبَّق سياسة الصفوف التقييدية على المستخدمين الآخرين، يجب تعريف سياسة أخرى تسمح للمستخدمين والأدوار الآخرين بالحصول على وصول عادي أو أنواع أخرى من الوصول.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="verification">
+  ## التحقق
+</div>
+
+<div id="testing-role-privileges-with-column-restricted-user">
+  ### اختبار امتيازات الدور باستخدام مستخدم مقيّد بالأعمدة
+</div>
+
+<Steps>
+  <Step>
+    ##### سجّل الدخول إلى عميل ClickHouse باستخدام المستخدم `clickhouse_admin`
+
+    ```bash
+    clickhouse-client --user clickhouse_admin --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### تحقّق من إمكانية الوصول إلى قاعدة البيانات والجدول وجميع الصفوف باستخدام المستخدم المسؤول.
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: f5e906ea-10c6-45b0-b649-36334902d31d
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    │  3 │ B       │ abc     │
+    │  4 │ B       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+  </Step>
+
+  <Step>
+    ##### سجّل الدخول إلى عميل ClickHouse باستخدام المستخدم `column_user`
+
+    ```bash
+    clickhouse-client --user column_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### اختبر `SELECT` باستخدام جميع الأعمدة
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5576f4eb-7450-435c-a2d6-d6b49b7c4a23
+
+    0 rows in set. Elapsed: 0.006 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+
+    <Note>
+      تم رفض الوصول لأن جميع الأعمدة طُلبت، بينما يملك المستخدم حق الوصول فقط إلى `id` و`column1`
+    </Note>
+  </Step>
+
+  <Step>
+    ##### تحقّق من استعلام `SELECT` باستخدام الأعمدة المحددة والمسموح بها فقط:
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: cef9a083-d5ce-42ff-9678-f08dc60d4bb9
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    │  3 │ B       │
+    │  4 │ B       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="testing-role-privileges-with-row-restricted-user">
+  ### اختبار امتيازات الدور باستخدام مستخدم مقيَّد على مستوى الصفوف
+</div>
+
+<Steps>
+  <Step>
+    ##### سجّل الدخول إلى عميل ClickHouse باستخدام `row_user`
+
+    ```bash
+    clickhouse-client --user row_user --password password
+    ```
+  </Step>
+
+  <Step>
+    ##### اعرض الصفوف المتاحة
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: a79a113c-1eca-4c3f-be6e-d034f9a220fb
+
+    ┌─id─┬─column1─┬─column2─┐
+    │  1 │ A       │ abc     │
+    │  2 │ A       │ def     │
+    └────┴─────────┴─────────┘
+    ```
+
+    <Note>
+      تحقّق من أنه لا يتم إرجاع سوى الصفَّين أعلاه، ويجب استبعاد الصفوف التي تحتوي على القيمة `B` في `column1`.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="modifying-users-and-roles">
+  ## تعديل المستخدمين والأدوار
+</div>
+
+يمكن إسناد عدة أدوار إلى المستخدم للحصول على مجموعة الامتيازات المطلوبة. وعند استخدام عدة أدوار، يجمع النظام بينها لتحديد الامتيازات، بحيث تكون أذونات الأدوار في المحصلة تراكمية.
+
+على سبيل المثال، إذا كان `role1` يتيح فقط تنفيذ SELECT على `column1` وكان `role2` يتيح تنفيذ SELECT على `column1` و`column2`، فسيكون لدى المستخدم حق الوصول إلى كلا العمودين.
+
+<Steps>
+  <Step>
+    ##### باستخدام حساب مسؤول، أنشئ مستخدمًا جديدًا لتقييد الوصول حسب الصف والعمود مع أدوار افتراضية
+
+    ```sql
+    CREATE USER row_and_column_user IDENTIFIED BY 'password' DEFAULT ROLE A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### أزل الامتيازات السابقة من الدور `A_rows_users`
+
+    ```sql
+    REVOKE SELECT(id, column1, column2) ON db1.table1 FROM A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### اسمح للدور `A_row_users` بتنفيذ SELECT على `column1` فقط
+
+    ```sql
+    GRANT SELECT(id, column1) ON db1.table1 TO A_rows_users;
+    ```
+  </Step>
+
+  <Step>
+    ##### سجّل الدخول إلى عميل ClickHouse باستخدام `row_and_column_user`
+
+    ```bash
+    clickhouse-client --user row_and_column_user --password password;
+    ```
+  </Step>
+
+  <Step>
+    ##### اختبر باستخدام جميع الأعمدة:
+
+    ```sql
+    SELECT *
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 8cdf0ff5-e711-4cbe-bd28-3c02e52e8bc4
+
+    0 rows in set. Elapsed: 0.005 sec.
+
+    Received exception from server (version 22.3.2):
+    Code: 497. DB::Exception: Received from localhost:9000. 
+    DB::Exception: row_and_column_user: Not enough privileges. 
+    To execute this query it's necessary to have grant 
+    SELECT(id, column1, column2) ON db1.table1. (ACCESS_DENIED)
+    ```
+  </Step>
+
+  <Step>
+    ##### اختبر باستخدام الأعمدة المسموح بها فقط:
+
+    ```sql
+    SELECT
+        id,
+        column1
+    FROM db1.table1
+    ```
+
+    ```response
+    Query id: 5e30b490-507a-49e9-9778-8159799a6ed0
+
+    ┌─id─┬─column1─┐
+    │  1 │ A       │
+    │  2 │ A       │
+    └────┴─────────┘
+    ```
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## استكشاف الأخطاء وإصلاحها
+</div>
+
+قد تتداخل الامتيازات أو تجتمع أحيانًا فتؤدي إلى نتائج غير متوقعة، ويمكن استخدام الأوامر التالية لحصر المشكلة باستخدام حساب مسؤول
+
+<div id="listing-the-grants-and-roles-for-a-user">
+  ### عرض الامتيازات والأدوار الخاصة بمستخدم
+</div>
+
+```sql
+SHOW GRANTS FOR row_and_column_user
+```
+
+```response
+Query id: 6a73a3fe-2659-4aca-95c5-d012c138097b
+
+┌─GRANTS FOR row_and_column_user───────────────────────────┐
+│ GRANT A_rows_users, column1_users TO row_and_column_user │
+└──────────────────────────────────────────────────────────┘
+```
+
+<div id="list-roles-in-clickhouse">
+  ### عرض الأدوار في ClickHouse
+</div>
+
+```sql
+SHOW ROLES
+```
+
+```response
+Query id: 1e21440a-18d9-4e75-8f0e-66ec9b36470a
+
+┌─name────────────┐
+│ A_rows_users    │
+│ column1_users   │
+└─────────────────┘
+```
+
+<div id="display-the-policies">
+  ### عرض السياسات
+</div>
+
+```sql
+SHOW ROW POLICIES
+```
+
+```response
+Query id: f2c636e9-f955-4d79-8e80-af40ea227ebc
+
+┌─name───────────────────────────────────┐
+│ A_row_filter ON db1.table1             │
+│ allow_other_users_filter ON db1.table1 │
+└────────────────────────────────────────┘
+```
+
+<div id="view-how-a-policy-was-defined-and-current-privileges">
+  ### الاطلاع على كيفية تعريف سياسة ما والامتيازات الحالية
+</div>
+
+```sql
+SHOW CREATE ROW POLICY A_row_filter ON db1.table1
+```
+
+```response
+Query id: 0d3b5846-95c7-4e62-9cdd-91d82b14b80b
+
+┌─CREATE ROW POLICY A_row_filter ON db1.table1────────────────────────────────────────────────┐
+│ CREATE ROW POLICY A_row_filter ON db1.table1 FOR SELECT USING column1 = 'A' TO A_rows_users │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="example-commands-to-manage-roles-policies-and-users">
+  ## أوامر نموذجية لإدارة الأدوار والسياسات والمستخدمين
+</div>
+
+تُستخدم الأوامر التالية من أجل:
+
+* حذف الامتيازات
+* حذف السياسات
+* إلغاء تعيين المستخدمين من الأدوار
+* حذف المستخدمين والأدوار
+  <br />
+
+<Tip>
+  نفّذ هذه الأوامر باستخدام مستخدم مسؤول أو المستخدم `default`
+</Tip>
+
+<div id="remove-privilege-from-a-role">
+  ### سحب امتياز من دور
+</div>
+
+```sql
+REVOKE SELECT(column1, id) ON db1.table1 FROM A_rows_users;
+```
+
+<div id="delete-a-policy">
+  ### حذف سياسة
+</div>
+
+```sql
+DROP ROW POLICY A_row_filter ON db1.table1;
+```
+
+<div id="unassign-a-user-from-a-role">
+  ### إزالة مستخدم من دور
+</div>
+
+```sql
+REVOKE A_rows_users FROM row_user;
+```
+
+<div id="delete-a-role">
+  ### حذف دور
+</div>
+
+```sql
+DROP ROLE A_rows_users;
+```
+
+<div id="delete-a-user">
+  ### حذف مستخدم
+</div>
+
+```sql
+DROP USER row_user;
+```
+
+<div id="summary">
+  ## الملخص
+</div>
+
+استعرضت هذه المقالة أساسيات إنشاء مستخدمي SQL والأدوار، وقدّمت خطوات لتعيين الامتيازات للمستخدمين والأدوار وتعديلها. ولمزيد من التفاصيل حول كل منها، يُرجى الرجوع إلى أدلة المستخدم والوثائق المرجعية لدينا.

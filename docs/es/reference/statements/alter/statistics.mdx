@@ -1,0 +1,41 @@
+---
+description: 'Documentación sobre la gestión de estadísticas de columnas'
+sidebarTitle: 'STATISTICS'
+slug: /sql-reference/statements/alter/statistics
+title: 'Gestión de estadísticas de columnas'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+Las siguientes operaciones están disponibles:
+
+* `ALTER TABLE [db].table ADD STATISTICS [IF NOT EXISTS] (column list) TYPE (type list)` - Agrega la descripción de las estadísticas a los metadatos de la tabla.
+
+* `ALTER TABLE [db].table MODIFY STATISTICS (column list) TYPE (type list)` - Modifica la descripción de las estadísticas en los metadatos de la tabla.
+
+* `ALTER TABLE [db].table DROP STATISTICS [IF EXISTS] (column list)` - Elimina las estadísticas de los metadatos de las columnas especificadas y borra todos los objetos de estadísticas en todas las partes de esas columnas.
+
+* `ALTER TABLE [db].table CLEAR STATISTICS [IF EXISTS] (column list)` - Borra todos los objetos de estadísticas en todas las partes de las columnas especificadas. Los objetos de estadísticas pueden volver a generarse con `ALTER TABLE MATERIALIZE STATISTICS`.
+
+* `ALTER TABLE [db.]table MATERIALIZE STATISTICS (ALL | [IF EXISTS] (column list))` - Vuelve a generar las estadísticas de las columnas. Se implementa como una [mutación](/es/reference/statements/alter/index#mutations).
+
+Los dos primeros comandos son ligeros, en el sentido de que solo cambian metadatos o eliminan archivos.
+
+Además, estas operaciones se replican y sincronizan los metadatos de las estadísticas a través de ZooKeeper.
+
+<div id="example">
+  ## Ejemplo:
+</div>
+
+Añadir dos tipos de estadísticas a dos columnas:
+
+```sql
+ALTER TABLE t1 MODIFY STATISTICS c, d TYPE TDigest, Uniq;
+```
+
+<Note>
+  Las estadísticas solo son compatibles con las tablas que usan motores [`*MergeTree`](/es/reference/engines/table-engines/mergetree-family/mergetree) (incluidas las variantes [replicadas](/es/reference/engines/table-engines/mergetree-family/replication)).
+</Note>

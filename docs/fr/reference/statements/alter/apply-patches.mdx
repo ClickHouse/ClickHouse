@@ -1,0 +1,77 @@
+---
+description: 'Documentation de APPLY PATCHES pour les lightweight updates'
+sidebarTitle: 'APPLY PATCHES'
+slug: /sql-reference/statements/alter/apply-patches
+title: 'APPLY PATCHES pour les lightweight updates'
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge />
+
+```sql
+ALTER TABLE [db.]table [ON CLUSTER cluster] APPLY PATCHES [IN PARTITION partition_id]
+```
+
+La commande déclenche manuellement la matérialisation physique des patch parts créées par les instructions [de Lightweight `UPDATE`](/fr/reference/statements/update). Elle force l’application des patchs en attente aux parties de données en ne réécrivant que les colonnes concernées.
+
+<Note>
+  * Elle fonctionne uniquement pour les tables de la famille [`MergeTree`](/fr/reference/engines/table-engines/mergetree-family/mergetree) (y compris les tables [répliquées](/fr/reference/engines/table-engines/mergetree-family/replication)).
+  * Il s’agit d’une opération de mutation qui s’exécute de manière asynchrone en arrière-plan.
+</Note>
+
+<div id="when-to-use">
+  ## Quand utiliser APPLY PATCHES
+</div>
+
+<Tip>
+  En règle générale, vous ne devriez pas avoir besoin d’utiliser `APPLY PATCHES`
+</Tip>
+
+Les patch parts sont normalement appliquées automatiquement lors des fusions lorsque le paramètre [`apply_patches_on_merge`](/fr/reference/settings/merge-tree-settings#apply_patches_on_merge) est activé (par défaut). Cependant, il peut être utile de déclencher manuellement l’application des patchs dans les cas suivants :
+
+* Pour réduire le surcoût lié à l’application des patchs pendant les requêtes `SELECT`
+* Pour consolider plusieurs patch parts avant qu’elles ne s’accumulent
+* Pour préparer les données pour une sauvegarde ou une exportation, avec des patchs déjà matérialisés
+* Lorsque `apply_patches_on_merge` est désactivé et que vous souhaitez contrôler le moment où les patchs sont appliqués
+
+<div id="examples">
+  ## Exemples
+</div>
+
+Appliquez tous les patchs en attente d’une table :
+
+```sql
+ALTER TABLE my_table APPLY PATCHES;
+```
+
+N’appliquez les patchs qu’à une partition donnée :
+
+```sql
+ALTER TABLE my_table APPLY PATCHES IN PARTITION '2024-01';
+```
+
+Combinez avec d&#39;autres opérations :
+
+```sql
+ALTER TABLE my_table APPLY PATCHES, UPDATE column = value WHERE condition;
+```
+
+<div id="monitor">
+  ## Suivi de l’application du correctif
+</div>
+
+Vous pouvez suivre l’avancement de l’application du correctif à l’aide de la table [`system.mutations`](/fr/reference/system-tables/mutations) :
+
+```sql
+SELECT * FROM system.mutations
+WHERE table = 'my_table' AND command LIKE '%APPLY PATCHES%';
+```
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [Lightweight `UPDATE`](/fr/reference/statements/update) - Créer des patch parts à l’aide de lightweight updates
+* [paramètre `apply_patches_on_merge`](/fr/reference/settings/merge-tree-settings#apply_patches_on_merge) - Contrôler l’application automatique des patchs lors des fusions

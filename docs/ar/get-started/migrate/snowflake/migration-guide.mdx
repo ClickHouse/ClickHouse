@@ -1,0 +1,119 @@
+---
+sidebarTitle: 'دليل الترحيل'
+slug: /migrations/snowflake
+description: 'الترحيل من Snowflake إلى ClickHouse'
+keywords: ['Snowflake']
+title: 'الترحيل من Snowflake إلى ClickHouse'
+show_related_blogs: false
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+> يوضّح هذا الدليل كيفية ترحيل البيانات من Snowflake إلى ClickHouse.
+
+يتطلّب ترحيل البيانات بين Snowflake وClickHouse استخدام خدمة تخزين كائنات،
+مثل S3، كمساحة تخزين وسيطة لعملية النقل. كما تعتمد عملية الترحيل
+على استخدام الأمر `COPY INTO` من Snowflake والأمر `INSERT INTO SELECT`
+في ClickHouse.
+
+<Steps>
+  <Step>
+    ## تصدير البيانات من Snowflake
+
+    <Image img="/images/migrations/migrate_snowflake_clickhouse.webp" size="md" alt="الترحيل من Snowflake إلى ClickHouse" />
+
+    يتطلب تصدير البيانات من Snowflake استخدام مرحلة خارجية، كما هو موضح في المخطط أعلاه.
+
+    لنفترض أننا نريد تصدير جدول من Snowflake بالمخطط التالي:
+
+    ```sql
+    CREATE TABLE MYDATASET (
+       timestamp TIMESTAMP,
+       some_text varchar,
+       some_file OBJECT,
+       complex_data VARIANT,
+    ) DATA_RETENTION_TIME_IN_DAYS = 0;
+    ```
+
+    لنقل بيانات هذا الجدول إلى قاعدة بيانات ClickHouse، نحتاج أولًا إلى نسخ هذه البيانات إلى مرحلة خارجية. عند نسخ البيانات، نوصي باستخدام Parquet كتنسيق وسيط لأنه يتيح تمرير معلومات الأنواع، ويحافظ على الدقة، ويوفر ضغطًا جيدًا، ويدعم أصلًا البُنى المتداخلة الشائعة في التحليلات.
+
+    في المثال أدناه، ننشئ تنسيق ملف مُسمّى في Snowflake لتمثيل Parquet وخيارات الملف المطلوبة. ثم نحدد الحاوية التي ستحتوي على مجموعة البيانات المنسوخة. وأخيرًا، ننسخ مجموعة البيانات إلى الحاوية.
+
+    ```sql
+    CREATE FILE FORMAT my_parquet_format TYPE = parquet;
+
+    -- أنشئ المرحلة الخارجية التي تحدد حاوية S3 التي سيتم النسخ إليها
+    CREATE OR REPLACE STAGE external_stage
+    URL='s3://mybucket/mydataset'
+    CREDENTIALS=(AWS_KEY_ID='<key>' AWS_SECRET_KEY='<secret>')
+    FILE_FORMAT = my_parquet_format;
+
+    -- طبّق البادئة "mydataset" على جميع الملفات وحدد حجمًا أقصى للملف قدره 150mb
+    -- المعلَمة `header=true` مطلوبة للحصول على أسماء الأعمدة
+    COPY INTO @external_stage/mydataset from mydataset max_file_size=157286400 header=true;
+    ```
+
+    بالنسبة إلى مجموعة بيانات بحجم يقارب 5TB مع حجم أقصى للملف يبلغ 150MB، وعند استخدام warehouse من Snowflake بحجم 2X-Large في AWS Region نفسها `us-east-1`، سيستغرق نسخ البيانات إلى حاوية S3 حوالي 30 دقيقة.
+  </Step>
+
+  <Step>
+    ## الاستيراد إلى ClickHouse
+
+    بمجرد تجهيز البيانات في تخزين كائنات وسيط، يمكن استخدام وظائف ClickHouse مثل [s3 table function](/ar/reference/functions/table-functions/s3) لإدراج البيانات في جدول، كما هو موضح أدناه.
+
+    يستخدم هذا المثال [s3 table function](/ar/reference/functions/table-functions/s3) مع AWS S3، لكن يمكن استخدام [gcs table function](/ar/reference/functions/table-functions/gcs) مع Google Cloud Storage، ويمكن استخدام [azureBlobStorage table function](/ar/reference/functions/table-functions/azureBlobStorage) مع Azure Blob Storage.
+
+    بافتراض مخطط الجدول الهدف التالي:
+
+    ```sql
+    CREATE TABLE default.mydataset
+    (
+      `timestamp` DateTime64(6),
+      `some_text` String,
+      `some_file` Tuple(filename String, version String),
+      `complex_data` Tuple(name String, description String),
+    )
+    ENGINE = MergeTree
+    ORDER BY (timestamp)
+    ```
+
+    يمكننا بعد ذلك استخدام الأمر `INSERT INTO SELECT` لإدراج البيانات من S3 في جدول ClickHouse:
+
+    ```sql
+    INSERT INTO mydataset
+    SELECT
+      timestamp,
+      some_text,
+      JSONExtract(
+        ifNull(some_file, '{}'),
+        'Tuple(filename String, version String)'
+      ) AS some_file,
+      JSONExtract(
+        ifNull(complex_data, '{}'),
+        'Tuple(filename String, description String)'
+      ) AS complex_data,
+    FROM s3('https://mybucket.s3.amazonaws.com/mydataset/mydataset*.parquet')
+    SETTINGS input_format_null_as_default = 1, -- تأكد من إدراج الأعمدة بالقيم الافتراضية إذا كانت القيم null
+    input_format_parquet_case_insensitive_column_matching = 1 -- يجب أن تكون مطابقة الأعمدة بين البيانات المصدر والجدول الهدف غير حساسة لحالة الأحرف
+    ```
+
+    <Info>
+      **ملاحظة حول بُنى الأعمدة المتداخلة**
+
+      سيتم إخراج العمودين `VARIANT` و`OBJECT` في مخطط جدول Snowflake الأصلي كسلاسل JSON افتراضيًا، ما يفرض علينا تحويل نوعهما عند إدراجهما في ClickHouse.
+
+      تُحوَّل البُنى المتداخلة مثل `some_file` إلى سلاسل JSON عند النسخ بواسطة Snowflake. ويتطلب استيراد هذه البيانات منا تحويل هذه البُنى إلى Tuple وقت الإدراج في ClickHouse، باستخدام [JSONExtract function](/ar/reference/functions/regular-functions/json-functions#JSONExtract) كما هو موضح أعلاه.
+    </Info>
+  </Step>
+
+  <Step>
+    ## اختبار نجاح تصدير البيانات
+
+    لاختبار ما إذا كانت بياناتك قد أُدرجت بشكل صحيح، ما عليك سوى تشغيل استعلام `SELECT` على جدولك الجديد:
+
+    ```sql
+    SELECT * FROM mydataset LIMIT 10;
+    ```
+  </Step>
+</Steps>

@@ -1,0 +1,352 @@
+---
+title: 'Прямые запросы к открытым табличным форматам'
+sidebarTitle: 'Прямые запросы'
+slug: /use-cases/data-lake/getting-started/querying-directly
+description: 'Используйте табличные функции ClickHouse, чтобы читать таблицы Iceberg, Delta Lake, Hudi и Paimon в объектном хранилище без предварительной настройки.'
+toc_max_heading_level: 2
+keywords: ['озера данных', 'lakehouse', 'iceberg', 'delta lake', 'hudi', 'paimon', 'табличные функции']
+doc_type: 'guide'
+---
+
+import ExperimentalBadge from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+ClickHouse предоставляет табличные функции для выполнения запросов к данным, хранящимся в открытых табличных форматах, непосредственно в объектном хранилище. Для этого не требуется подключаться к внешнему каталогу — данные запрашиваются на месте, подобно тому, как AWS Athena читает их из S3.
+
+Вы передаёте путь в хранилище и учётные данные прямо в вызове функции, а ClickHouse берёт на себя всё остальное. Доступны весь синтаксис и все функции ClickHouse SQL, а запросы получают преимущества от параллельного выполнения в ClickHouse и [эффективного нативного ридера Parquet](https://clickhouse.com/blog/clickhouse-and-parquet-a-foundation-for-fast-lakehouse-analytics).
+
+<Info>
+  **Сервер, локально или chDB**
+
+  Шаги в этом руководстве можно выполнить, используя существующую установку сервера ClickHouse. Для разовых запросов можно вместо этого использовать [clickhouse-local](/ru/concepts/features/tools-and-utilities/clickhouse-local) и выполнить тот же процесс без запуска сервера. С небольшими изменениями этот процесс также можно выполнить с помощью in-process дистрибутива ClickHouse — [chDB](/ru/products/chdb/index).
+</Info>
+
+В следующих примерах используется датасет [hits](/ru/get-started/sample-datasets/star-schema), хранящийся в S3 в каждом формате lakehouse. Для каждого формата lakehouse существуют отдельные функции для каждого провайдера объектного хранилища.
+
+<Tabs>
+  <Tab title="Apache Iceberg">
+    Табличная функция [`iceberg`](/ru/reference/functions/table-functions/iceberg) (псевдоним `icebergS3`) читает таблицы Iceberg напрямую из объектного хранилища. Для каждого бэкенда хранилища предусмотрены свои варианты: `icebergS3`, `icebergAzure`, `icebergHDFS` и `icebergLocal`.
+
+    **Пример синтаксиса:**
+
+    ```sql
+    icebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    icebergAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    icebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **Поддержка GCS**
+
+      Для Google Cloud Storage (GCS) можно использовать вариант функций для S3.
+    </Info>
+
+    **Пример:**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 миллиона
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 миллиона
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.375 sec. Processed 100.00 million rows, 9.98 GB (29.63 million rows/s., 2.96 GB/s.)
+    Peak memory usage: 10.48 GiB.
+    ```
+
+    ### Кластерный вариант
+
+    Функция [`icebergS3Cluster`](/ru/reference/functions/table-functions/icebergCluster) распределяет операции чтения между несколькими узлами кластера ClickHouse. Узел-инициатор устанавливает соединения со всеми узлами и динамически распределяет файлы данных. Каждый узел-воркер запрашивает и обрабатывает задачи до тех пор, пока не будут прочитаны все файлы. `icebergCluster` — псевдоним для `icebergS3Cluster`. Также существуют варианты для Azure ([`icebergAzureCluster`](/ru/reference/functions/table-functions/icebergCluster)) и HDFS ([`icebergHDFSCluster`](/ru/reference/functions/table-functions/icebergCluster)).
+
+    **Пример синтаксиса:**
+
+    ```sql
+    icebergS3Cluster(cluster_name, url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+    -- icebergCluster является псевдонимом для icebergS3Cluster
+
+    icebergAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    **Пример (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3Cluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/'
+    )
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### Движок таблицы
+
+    В качестве альтернативы использованию табличной функции в каждом запросе можно создать постоянную таблицу с помощью [движка таблицы `Iceberg`](/ru/reference/engines/table-engines/integrations/iceberg). Данные по-прежнему хранятся в объектном хранилище и считываются по требованию — никакие данные не копируются в ClickHouse. Преимущество заключается в том, что определение таблицы хранится в ClickHouse и доступно всем пользователям в разных сеансах без необходимости каждый раз указывать путь к хранилищу и учётные данные. Для каждого типа backend-соединения предусмотрены варианты движка: `IcebergS3` (или псевдоним `Iceberg`), `IcebergAzure`, `IcebergHDFS` и `IcebergLocal`.
+
+    И движок таблицы, и табличная функция поддерживают [кэширование данных](/ru/reference/engines/table-engines/integrations/iceberg#data-cache), используя тот же механизм кэширования, что и движки хранилища S3, AzureBlobStorage и HDFS. Кроме того, [кэш метаданных](/ru/reference/engines/table-engines/integrations/iceberg#metadata-cache) хранит в памяти информацию из файлов манифестов, сокращая повторные чтения метаданных Iceberg. Этот кэш включён по умолчанию через настройку `use_iceberg_metadata_files_cache`.
+
+    **Пример синтаксиса:**
+
+    Движок таблицы `Iceberg` — это псевдоним для `IcebergS3`.
+
+    ```sql
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergS3(url [, NOSIGN | access_key_id, secret_access_key, [session_token]] [,format] [,compression_method])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression])
+
+    CREATE TABLE iceberg_table
+        ENGINE = IcebergLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    <Info>
+      **Поддержка GCS**
+
+      Для Google Cloud Storage (GCS) можно использовать S3-вариант движка таблицы.
+    </Info>
+
+    **Пример:**
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─url────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 2.737 sec. Processed 100.00 million rows, 9.98 GB (36.53 million rows/s., 3.64 GB/s.)
+    Peak memory usage: 10.53 GiB.
+    ```
+
+    Список поддерживаемых возможностей, включая отсечение партиций, эволюцию схемы, перемещение во времени, кэширование и другое, см. в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полную справочную информацию см. в документации по [табличной функции `iceberg`](/ru/reference/functions/table-functions/iceberg) и [движку таблицы `Iceberg`](/ru/reference/engines/table-engines/integrations/iceberg).
+  </Tab>
+
+  <Tab title="Delta Lake">
+    Табличная функция [`deltaLake`](/ru/reference/functions/table-functions/deltalake) (псевдоним для `deltaLakeS3`) считывает таблицы Delta Lake из объектного хранилища. Для других бэкендов предусмотрены варианты: `deltaLakeAzure` и `deltaLakeLocal`.
+
+    **Пример синтаксиса:**
+
+    ```sql
+    deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+
+    deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    deltaLakeLocal(path, [,format])
+    ```
+
+    <Info>
+      **Поддержка GCS**
+
+      Вариант функций для S3 можно использовать с Google Cloud Storage (GCS).
+    </Info>
+
+    **Пример:**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │ -- 3,29 миллиона
+    │ http://kinopoisk.ru                                │ 1625250 │ -- 1,63 миллиона
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 rows in set. Elapsed: 3.878 sec. Processed 100.00 million rows, 14.82 GB (25.78 million rows/s., 3.82 GB/s.)
+    Peak memory usage: 9.16 GiB.
+    ```
+
+    ### Вариант с кластером
+
+    Функция [`deltaLakeCluster`](/ru/reference/functions/table-functions/deltalakeCluster) распределяет операции чтения между несколькими узлами кластера ClickHouse. Узел-инициатор динамически направляет файлы данных на воркер-узлы для параллельной обработки. `deltaLakeS3Cluster` — псевдоним для `deltaLakeCluster`. Также доступен вариант для Azure ([`deltaLakeAzureCluster`](/ru/reference/functions/table-functions/deltalakeCluster)).
+
+    **Пример синтаксиса:**
+
+    ```sql
+    deltaLakeCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    -- deltaLakeS3Cluster является псевдонимом для deltaLakeCluster
+
+    deltaLakeAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+    ```
+
+    <Info>
+      **Поддержка GCS**
+
+      Вариант функций S3 можно использовать с Google Cloud Storage (GCS).
+    </Info>
+
+    **Пример (ClickHouse Cloud):**
+
+    ```sql
+    SELECT
+        URL,
+        count() AS cnt
+    FROM deltaLakeCluster(
+        'default',
+        'https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/'
+    )
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ### Движок таблицы
+
+    В качестве альтернативы использованию табличной функции в каждом запросе можно создать постоянную таблицу с помощью [движка таблицы `DeltaLake`](/ru/reference/engines/table-engines/integrations/deltalake) при работе с S3-совместимым хранилищем. Данные по-прежнему хранятся в объектном хранилище и считываются по требованию — никакие данные не копируются в ClickHouse. Преимущество заключается в том, что определение таблицы хранится в ClickHouse и доступно всем пользователям в рамках их сеансов без необходимости каждый раз указывать путь к хранилищу и учётные данные.
+
+    И движок таблицы, и table function поддерживают [кэширование данных](/ru/reference/engines/table-engines/integrations/deltalake#data-cache), используя тот же механизм кэширования, что и движки хранилища S3, AzureBlobStorage и HDFS.
+
+    **Пример синтаксиса:**
+
+    ```sql
+    CREATE TABLE delta_table
+        ENGINE = DeltaLake(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    <Info>
+      **Поддержка GCS**
+
+      Этот движок таблицы можно использовать с Google Cloud Storage (GCS).
+    </Info>
+
+    **Пример:**
+
+    ```sql
+    CREATE TABLE hits_delta
+        ENGINE = DeltaLake('https://datasets-documentation.s3.amazonaws.com/lake_formats/delta_lake/')
+
+    SELECT
+        URL,
+        count() AS cnt
+    FROM hits_delta
+    GROUP BY URL
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    ```response
+    ┌─URL────────────────────────────────────────────────┬─────cnt─┐
+    │ http://liver.ru/belgorod/page/1006.jки/доп_приборы │ 3288173 │
+    │ http://kinopoisk.ru                                │ 1625250 │
+    │ http://bdsm_po_yers=0&with_video                   │  791465 │
+    │ http://video.yandex                                │  582400 │
+    │ http://smeshariki.ru/region                        │  514984 │
+    └────────────────────────────────────────────────────┴─────────┘
+
+    5 строк в наборе. Время выполнения: 3.608 с. Обработано 100.00 млн строк, 14.82 GB (27.72 млн строк/с., 4.11 GB/с.)
+    Пиковое потребление памяти: 9.27 GiB.
+    ```
+
+    Список поддерживаемых возможностей, включая серверные хранилища данных, кэширование и другое, см. в [таблице совместимости](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полную справочную информацию см. в документации по [табличной функции `deltaLake`](/ru/reference/functions/table-functions/deltalake) и [движку таблицы `DeltaLake`](/ru/reference/engines/table-engines/integrations/deltalake).
+  </Tab>
+
+  <Tab title="Apache Hudi">
+    Табличная функция [`hudi`](/ru/reference/functions/table-functions/hudi) читает таблицы Hudi из S3.
+
+    **Синтаксис:**
+
+    ```sql
+    hudi(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### Кластерный вариант
+
+    Функция [`hudiCluster`](/ru/reference/functions/table-functions/hudiCluster) распределяет чтение между несколькими узлами кластера ClickHouse. Узел-инициатор динамически распределяет файлы данных между воркер-узлами для параллельной обработки.
+
+    ```sql
+    hudiCluster(cluster_name, url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression])
+    ```
+
+    ### Движок таблицы
+
+    Вместо того чтобы использовать табличную функцию в каждом запросе, вы можете создать постоянную таблицу с помощью [движка таблицы `Hudi`](/ru/reference/engines/table-engines/integrations/hudi). Данные по-прежнему хранятся в Объектном хранилище и читаются по запросу — в ClickHouse ничего не копируется. Преимущество в том, что определение таблицы хранится в ClickHouse и может использоваться разными пользователями в разных сеансах, без необходимости каждый раз указывать путь к хранилищу и учетные данные.
+
+    **Синтаксис:**
+
+    ```sql
+    CREATE TABLE hudi_table
+        ENGINE = Hudi(url [,aws_access_key_id, aws_secret_access_key])
+    ```
+
+    Поддерживаемые возможности, включая хранилища и другое, см. в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полное справочное описание см. в документации по [табличной функции `hudi`](/ru/reference/functions/table-functions/hudi) и [движку таблицы `Hudi`](/ru/reference/engines/table-engines/integrations/hudi).
+  </Tab>
+
+  <Tab title="Apache Paimon">
+    <ExperimentalBadge />
+
+    Табличная функция [`paimon`](/ru/reference/functions/table-functions/paimon) (псевдоним `paimonS3`) считывает таблицы Paimon из объектного хранилища. Для каждого backend-а хранилища предусмотрен свой вариант: `paimonS3`, `paimonAzure`, `paimonHDFS` и `paimonLocal`.
+
+    **Синтаксис:**
+
+    ```sql
+    paimon(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    paimonS3(url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+
+    paimonAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFS(path_to_table, [,format] [,compression_method])
+
+    paimonLocal(path_to_table, [,format] [,compression_method])
+    ```
+
+    ### Кластерный вариант
+
+    Функция [`paimonS3Cluster`](/ru/reference/functions/table-functions/paimonCluster) распределяет операции чтения между несколькими узлами в кластере ClickHouse. Узел-инициатор динамически распределяет файлы данных между узлами-воркерами для параллельной обработки. `paimonCluster` — псевдоним `paimonS3Cluster`. Также доступны варианты для Azure ([`paimonAzureCluster`](/ru/reference/functions/table-functions/paimonCluster)) и HDFS ([`paimonHDFSCluster`](/ru/reference/functions/table-functions/paimonCluster)).
+
+    ```sql
+    paimonS3Cluster(cluster_name, url [,access_key_id, secret_access_key] [,format] [,structure] [,compression])
+    -- paimonCluster — псевдоним для paimonS3Cluster
+
+    paimonAzureCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+
+    paimonHDFSCluster(cluster_name, path_to_table, [,format] [,compression_method])
+    ```
+
+    ### Движок таблицы
+
+    В настоящее время у Paimon нет отдельного движка таблицы в ClickHouse. Для запросов к таблицам Paimon используйте указанные выше табличные функции.
+
+    Список поддерживаемых возможностей, включая бэкенды хранилища и другие, см. в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix#format-support). Полное описание см. в документации по [табличной функции `paimon`](/ru/reference/functions/table-functions/paimon).
+  </Tab>
+</Tabs>
