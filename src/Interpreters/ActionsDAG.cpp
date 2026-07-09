@@ -1294,17 +1294,23 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                 /// known. Skip folding and leave the column empty; the real execution path re-resolves the
                 /// function and reports a clean, recoverable error if the drift is genuinely illegal.
                 /// Compare base types only (strip Nullable/LowCardinality): the prepared function applies its
-                /// default implementations for those wrappers, so a wrapper-only difference is handled fine
-                /// (it legitimately arises from JOIN use_nulls / group_by_use_nulls widening a header column).
+                /// default implementations for those wrappers, so a wrapper-only difference is usually handled
+                /// fine (it legitimately arises from JOIN use_nulls / group_by_use_nulls widening a header
+                /// column). A wrapper-only drift that a wrapper-preserving function turns into a mismatching
+                /// result type is caught after execution by the columnMatchesType check below.
                 bool argument_types_match = true;
+                bool argument_types_drifted = false;
                 const auto & expected_argument_types = node->function_base->getArgumentTypes();
                 if (expected_argument_types.size() == arguments.size())
                 {
                     for (size_t i = 0; i < arguments.size(); ++i)
                     {
-                        if (arguments[i].type && expected_argument_types[i]
-                            && !removeLowCardinalityAndNullable(arguments[i].type)
-                                    ->equals(*removeLowCardinalityAndNullable(expected_argument_types[i])))
+                        if (!arguments[i].type || !expected_argument_types[i])
+                            continue;
+                        if (!arguments[i].type->equals(*expected_argument_types[i]))
+                            argument_types_drifted = true;
+                        if (!removeLowCardinalityAndNullable(arguments[i].type)
+                                 ->equals(*removeLowCardinalityAndNullable(expected_argument_types[i])))
                         {
                             argument_types_match = false;
                             break;
@@ -1336,12 +1342,35 @@ static ColumnWithTypeAndName executeActionForPartialResult(
                     res_column.column = node->function_base->getConstantResultForNonConstArguments(arguments, res_column.type);
 
                 if (res_column.column && !columnMatchesType(*res_column.column, *res_column.type))
+                {
+                    /// The executed function produced a column whose type does not match the result
+                    /// type resolved during analysis. When the argument types drifted (only by a wrapper,
+                    /// since the base-type check above passed), this is the same concurrent EXCHANGE TABLES
+                    /// race: a wrapper-preserving function (materialize returns its argument type,
+                    /// toNullable returns Nullable(arg)) executes on the current wrapper and returns
+                    /// Nullable(String) / LowCardinality(String) while node->result_type is still the
+                    /// pre-EXCHANGE type. Throwing LOGICAL_ERROR here would abort the server in
+                    /// debug/sanitizer builds, the exact abort this guard avoids. Treat it as "do not
+                    /// fold", identical to argument type drift: leave the column null so the
+                    /// input_rows_count == 1 callers route the node through their existing "unknown value"
+                    /// path, and only manufacture a header placeholder for input_rows_count == 0.
+                    /// If the arguments did NOT drift, this is a genuine function contract violation, so
+                    /// keep raising the assertion.
+                    if (argument_types_drifted)
+                    {
+                        res_column.column = nullptr;
+                        if (input_rows_count == 0)
+                            res_column.column = res_column.type->createColumn();
+                        break;
+                    }
+
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
                         "Unexpected return type from {}. Expected {}. Got {}",
                         node->function->getName(),
                         res_column.type->getName(),
                         res_column.column->getName());
+                }
             }
             catch (Exception & e)
             {

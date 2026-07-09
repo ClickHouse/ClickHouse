@@ -32,3 +32,31 @@ ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 DROP TABLE IF EXISTS tbl_03007_1;
 DROP TABLE IF EXISTS tbl_03007_2;
 EOF
+
+# Wrapper-only drift: swap String with Nullable(String). The base-type check strips
+# Nullable/LowCardinality, so a wrapper-preserving function still executes (materialize
+# returns its argument type, toNullable returns Nullable(arg)) and produces a column whose
+# type differs from the result type resolved before the exchange. That post-execution
+# mismatch must be treated as "do not fold" too, otherwise it re-hits the same
+# Unexpected-return-type LOGICAL_ERROR that aborts debug/sanitizer builds.
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+DROP TABLE IF EXISTS tbl_03007_3;
+DROP TABLE IF EXISTS tbl_03007_4;
+CREATE TABLE tbl_03007_3 (s String) ENGINE=Memory;
+CREATE TABLE tbl_03007_4 (s Nullable(String)) ENGINE=Memory;
+INSERT INTO tbl_03007_3 SELECT toString(number) FROM numbers(100000);
+INSERT INTO tbl_03007_4 SELECT toString(number) FROM numbers(100000);
+EOF
+
+for _ in {1..10}; do
+    (! ${CLICKHOUSE_CLIENT} --query "SELECT materialize(s) FROM (SELECT * FROM tbl_03007_3)" 2>&1 | grep -E "LOGICAL_ERROR|Unexpected return type") &
+    (! ${CLICKHOUSE_CLIENT} --query "SELECT toNullable(s) FROM (SELECT * FROM tbl_03007_4)" 2>&1 | grep -E "LOGICAL_ERROR|Unexpected return type") &
+    ${CLICKHOUSE_CLIENT} --query "EXCHANGE TABLES tbl_03007_3 AND tbl_03007_4" 2>/dev/null &
+done
+
+wait 2>/dev/null
+
+${CLICKHOUSE_CLIENT} --multiquery <<EOF
+DROP TABLE IF EXISTS tbl_03007_3;
+DROP TABLE IF EXISTS tbl_03007_4;
+EOF
