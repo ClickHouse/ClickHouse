@@ -1,0 +1,53 @@
+---
+description: 'ينشئ جدولًا مؤقتًا بالبنية المحددة باستخدام محرك الجدول Null. تُستخدم هذه الدالة لتسهيل كتابة الاختبارات والعروض التوضيحية.'
+sidebarTitle: 'دالة null'
+slug: /sql-reference/table-functions/null
+title: 'null'
+doc_type: 'reference'
+---
+
+ينشئ جدولًا مؤقتًا بالبنية المحددة باستخدام محرك الجدول [Null](/ar/reference/engines/table-engines/special/null). ووفقًا لخصائص محرك `Null`، تُتجاهل بيانات الجدول، ويُحذف الجدول نفسه مباشرةً بعد تنفيذ الاستعلام. تُستخدم هذه الدالة لتسهيل كتابة الاختبارات والعروض التوضيحية.
+
+<div id="syntax">
+  ## بناء الجملة
+</div>
+
+```sql
+null('structure')
+```
+
+<div id="argument">
+  ## المعامل
+</div>
+
+* `structure` — قائمة بالأعمدة وأنواع الأعمدة. [String](/ar/reference/data-types/string).
+
+<div id="returned_value">
+  ## القيمة المعادة
+</div>
+
+جدول مؤقت بمحرك `Null` وبالبنية المحددة.
+
+<div id="example">
+  ## مثال
+</div>
+
+استعلام باستخدام الدالة `null`:
+
+```sql
+INSERT INTO function null('x UInt64') SELECT * FROM numbers_mt(1000000000);
+```
+
+يمكن أن يحلّ محل ثلاثة استعلامات:
+
+```sql
+CREATE TABLE t (x UInt64) ENGINE = Null;
+INSERT INTO t SELECT * FROM numbers_mt(1000000000);
+DROP TABLE IF EXISTS t;
+```
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [محرك الجدول Null](/ar/reference/engines/table-engines/special/null)

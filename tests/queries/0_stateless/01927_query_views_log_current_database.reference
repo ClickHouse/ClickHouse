@@ -66,7 +66,7 @@ view_name:            default.matview_join_d_e
 view_type:            Materialized
 status:               QueryFinish
 view_target:          default.table_f
-view_query:           SELECT table_d.a AS a, table_e.count + sleepEachRow(0.000003) AS count FROM default.table_d LEFT JOIN default.table_e ON table_d.a = table_e.a
+view_query:           SELECT table_d.a AS a, table_e.count + sleepEachRow(0.000003) AS count FROM default.table_d LEFT JOIN default.table_e ON table_d.a = table_e.a SETTINGS query_plan_optimize_join_order_randomize = 0
 read_rows:            50
 written_rows:         50
 sleep_calls:          50

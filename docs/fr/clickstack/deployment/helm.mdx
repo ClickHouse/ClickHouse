@@ -1,0 +1,421 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm
+title: 'Helm'
+description: 'Déployer ClickStack avec Helm - La stack d’observabilité ClickHouse'
+doc_type: 'guide'
+keywords: ['chart Helm ClickStack', 'déploiement de ClickHouse avec Helm', 'installation d’HyperDX avec Helm', 'stack d’observabilité Kubernetes', 'déploiement de ClickStack sur Kubernetes']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+import JSONSupport from '/snippets/fr/_json_support.mdx';
+
+<Warning>
+  **Chart version 2.x**
+
+  Cette page documente le chart Helm **v2.x** basé sur des sous-charts. Si vous utilisez encore le chart v1.x avec des templates inline, consultez le [guide Helm v1.x](/fr/clickstack/deployment/helm-v1). Pour les étapes de migration, consultez le [guide de mise à niveau](/fr/clickstack/deployment/helm-upgrade).
+</Warning>
+
+Le chart Helm de ClickStack est disponible [ici](https://github.com/ClickHouse/ClickStack-helm-charts) et constitue la méthode **recommandée** pour les déploiements en production.
+
+Le chart v2.x utilise une **installation en deux phases**. Les operators et les CRD sont d’abord installés via le chart `clickstack-operators`, puis le chart principal `clickstack`, qui crée des ressources personnalisées gérées par operator pour ClickHouse, MongoDB et l’OpenTelemetry Collector.
+
+Par défaut, le chart Helm provisionne tous les composants principaux, notamment :
+
+* **ClickHouse** — géré par le [ClickHouse Operator](/fr/products/kubernetes-operator/overview) via les ressources personnalisées `ClickHouseCluster` et `KeeperCluster`
+* **HyperDX** — l’UI et l’API d’observabilité
+* **OpenTelemetry (OTel) collector** — déployé via l’[OpenTelemetry Collector Helm chart officiel](https://github.com/open-telemetry/opentelemetry-helm-charts) en tant que sous-chart
+* **MongoDB** — géré par le [MongoDB Kubernetes Operator (MCK)](https://github.com/mongodb/mongodb-kubernetes) via une ressource personnalisée `MongoDBCommunity`
+
+Cependant, il peut facilement être personnalisé pour s’intégrer à un déploiement ClickHouse existant — par exemple, hébergé sur **ClickHouse Cloud**.
+
+Le chart prend en charge les bonnes pratiques Kubernetes standard, notamment :
+
+* Configuration spécifique à l’environnement via `values.yaml`
+* Limites de ressources et mise à l’échelle au niveau des pods
+* Configuration de TLS et d’Ingress
+* Gestion des secrets et configuration de l’authentification
+* [Manifests supplémentaires](/fr/clickstack/deployment/helm-additional-manifests) pour déployer des objets Kubernetes arbitraires (NetworkPolicy, HPA, ALB Ingress, etc.) en complément du chart
+
+<div id="suitable-for">
+  ### Convient pour
+</div>
+
+* Les preuves de concept
+* La production
+
+<div id="deployment-steps">
+  ## Étapes de déploiement
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Prérequis
+
+    * [Helm](https://helm.sh/) v3+
+    * cluster Kubernetes (v1.20+ recommandé)
+    * `kubectl` configuré pour interagir avec votre cluster
+  </Step>
+
+  <Step>
+    ### Ajouter le dépôt Helm de ClickStack
+
+    Ajoutez le dépôt Helm de ClickStack :
+
+    ```shell
+    helm repo add clickstack https://clickhouse.github.io/ClickStack-helm-charts
+    helm repo update
+    ```
+  </Step>
+
+  <Step>
+    ### Installer les opérateurs
+
+    Installez d’abord le chart de l’opérateur. Cela enregistre les CRD requises par le chart principal :
+
+    ```shell
+    helm install clickstack-operators clickstack/clickstack-operators
+    ```
+
+    Attendez que les pods de l’opérateur soient prêts avant de poursuivre :
+
+    ```shell
+    kubectl get pods -l app.kubernetes.io/instance=clickstack-operators
+    ```
+  </Step>
+
+  <Step>
+    ### Installer ClickStack
+
+    Une fois les opérateurs démarrés, installez le chart principal :
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack
+    ```
+  </Step>
+
+  <Step>
+    ### Vérifier l&#39;installation
+
+    Vérifiez l&#39;installation :
+
+    ```shell
+    kubectl get pods -l "app.kubernetes.io/name=clickstack"
+    ```
+
+    Lorsque tous les pods sont prêts, continuez.
+  </Step>
+
+  <Step>
+    ### Transfert de ports
+
+    Le transfert de ports permet d’accéder à HyperDX et de le configurer. Pour un déploiement en production, il est préférable d’exposer le service via une ressource d’entrée ou un équilibreur de charge afin de garantir un accès réseau approprié, la terminaison TLS et la scalabilité. Le transfert de ports convient surtout au développement local ou à des tâches administratives ponctuelles, et non à des environnements pérennes ou à haute disponibilité.
+
+    ```shell
+    kubectl port-forward \
+      pod/$(kubectl get pod -l app.kubernetes.io/name=clickstack -o jsonpath='{.items[0].metadata.name}') \
+      8080:3000
+    ```
+
+    <Tip>
+      **Configuration de l’ingress en production**
+
+      Pour les déploiements en production, configurez l’ingress avec TLS plutôt que d’utiliser le transfert de port. Consultez le [guide de configuration de l’ingress](/fr/clickstack/deployment/helm-configuration#ingress-setup) pour obtenir des instructions détaillées.
+    </Tip>
+  </Step>
+
+  <Step>
+    ### Accéder à l’UI
+
+    Rendez-vous sur [http://localhost:8080](http://localhost:8080) pour accéder à l’UI HyperDX.
+
+    Créez un utilisateur en indiquant un nom d’utilisateur et un mot de passe conformes aux exigences.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    Lorsque vous cliquez sur `Create`, des sources de données sont créées pour l’instance ClickHouse déployée avec le chart Helm.
+
+    <Info>
+      **Remplacer la connexion par défaut**
+
+      Vous pouvez remplacer la connexion par défaut à l’instance ClickHouse intégrée. Pour en savoir plus, consultez [&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud).
+    </Info>
+  </Step>
+
+  <Step>
+    ### Personnaliser les valeurs (facultatif)
+
+    Vous pouvez personnaliser ces valeurs à l’aide des options `--set`. Par exemple :
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack --set key=value
+    ```
+
+    Vous pouvez également modifier le `values.yaml`. Pour obtenir les valeurs par défaut :
+
+    ```shell
+    helm show values clickstack/clickstack > values.yaml
+    ```
+
+    Exemple de configuration :
+
+    ```yaml
+    hyperdx:
+      frontendUrl: "https://hyperdx.example.com"
+
+      deployment:
+        replicas: 2
+        resources:
+          limits:
+            cpu: "2"
+            memory: 4Gi
+          requests:
+            cpu: 500m
+            memory: 1Gi
+
+      ingress:
+        enabled: true
+        host: hyperdx.example.com
+        tls:
+          enabled: true
+          tlsSecretName: "hyperdx-tls"
+    ```
+
+    ```shell
+    helm install my-clickstack clickstack/clickstack -f values.yaml
+    ```
+  </Step>
+
+  <Step>
+    ### Utilisation des secrets (facultatif)
+
+    Le chart v2.x utilise un secret unifié (`clickstack-secret`), alimenté à partir de `hyperdx.secrets` dans vos values. Toutes les variables d&#39;environnement sensibles — y compris les mots de passe ClickHouse, les mots de passe MongoDB et la clé API HyperDX — passent par ce secret unique.
+
+    Pour remplacer les valeurs du secret :
+
+    ```yaml
+    hyperdx:
+      secrets:
+        HYPERDX_API_KEY: "your-api-key"
+        CLICKHOUSE_PASSWORD: "your-clickhouse-password"
+        CLICKHOUSE_APP_PASSWORD: "your-app-password"
+        MONGODB_PASSWORD: "your-mongodb-password"
+    ```
+
+    Pour la gestion externe des secrets (par exemple à l’aide d’un opérateur de secrets), vous pouvez faire référence à un secret Kubernetes existant :
+
+    ```yaml
+    hyperdx:
+      useExistingConfigSecret: true
+      existingConfigSecret: "my-external-secret"
+      existingConfigConnectionsKey: "connections.json"
+      existingConfigSourcesKey: "sources.json"
+    ```
+
+    <Tip>
+      **Gestion des clés API**
+
+      Pour des instructions détaillées sur la configuration des clés API, notamment les différentes méthodes de configuration et les procédures de redémarrage des pods, consultez le [guide de configuration des clés API](/fr/clickstack/deployment/helm-configuration#api-key-setup).
+    </Tip>
+  </Step>
+</Steps>
+
+<div id="using-clickhouse-cloud">
+  ## Utiliser ClickHouse Cloud
+</div>
+
+Si vous utilisez ClickHouse Cloud, désactivez l’instance ClickHouse intégrée et renseignez vos identifiants Cloud :
+
+```yaml
+# values-clickhouse-cloud.yaml
+clickhouse:
+  enabled: false
+
+hyperdx:
+  secrets:
+    CLICKHOUSE_PASSWORD: "your-cloud-password"
+    CLICKHOUSE_APP_PASSWORD: "your-cloud-password"
+
+  useExistingConfigSecret: true
+  existingConfigSecret: "clickhouse-cloud-config"
+  existingConfigConnectionsKey: "connections.json"
+  existingConfigSourcesKey: "sources.json"
+```
+
+Créez le secret de connexion séparément :
+
+```bash
+cat <<EOF > connections.json
+[
+  {
+    "name": "ClickHouse Cloud",
+    "host": "https://your-cloud-instance.clickhouse.cloud",
+    "port": 8443,
+    "username": "default",
+    "password": "your-cloud-password"
+  }
+]
+EOF
+
+kubectl create secret generic clickhouse-cloud-config \
+  --from-file=connections.json=connections.json
+
+rm connections.json
+```
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values-clickhouse-cloud.yaml
+```
+
+<Tip>
+  **Configurations externes avancées**
+
+  Pour les déploiements en production avec une configuration via des secrets, des collectors OTel externes ou des configurations minimales, consultez le [guide des options de déploiement](/fr/clickstack/deployment/helm-deployment-options).
+</Tip>
+
+<div id="production-notes">
+  ## Remarques pour la production
+</div>
+
+Par défaut, ce chart installe ClickHouse, MongoDB et l’OTel collector. Pour un environnement de production, il est recommandé de gérer ClickHouse et l’OTel collector séparément.
+
+Pour désactiver ClickHouse et l’OTel collector :
+
+```yaml
+clickhouse:
+  enabled: false
+
+otel-collector:
+  enabled: false
+```
+
+<Tip>
+  **Bonnes pratiques pour la production**
+
+  Pour les déploiements en production, y compris la configuration de la haute disponibilité, la gestion des ressources, la configuration d’Ingress/TLS et les paramètres spécifiques au Cloud (GKE, EKS, AKS), consultez :
+
+  * [Guide de configuration](/fr/clickstack/deployment/helm-configuration) - Ingress, TLS et gestion des secrets
+  * [Déploiements Cloud](/fr/clickstack/deployment/helm-cloud) - paramètres spécifiques au Cloud et liste de contrôle pour la production
+</Tip>
+
+<div id="task-configuration">
+  ## Configuration des tâches
+</div>
+
+Par défaut, une tâche est définie dans la configuration du chart sous forme de cronjob et se charge de vérifier si des alertes doivent se déclencher. Dans la version 2.x, la configuration des tâches a été déplacée sous `hyperdx.tasks` :
+
+| Paramètre                             | Description                                                                                                                                                                                                                               | Valeur par défaut  |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
+| `hyperdx.tasks.enabled`               | Active/désactive les tâches cron dans le cluster. Par défaut, l’image HyperDX exécute les tâches cron dans le processus principal. Définissez cette valeur sur `true` si vous préférez utiliser une tâche cron distincte dans le cluster. | `false`            |
+| `hyperdx.tasks.checkAlerts.schedule`  | Planification cron de la tâche check-alerts                                                                                                                                                                                               | `*/1 * * * *`      |
+| `hyperdx.tasks.checkAlerts.resources` | Requêtes et limites de ressources pour la tâche check-alerts                                                                                                                                                                              | Voir `values.yaml` |
+
+<div id="upgrading-the-chart">
+  ## Mise à jour du chart
+</div>
+
+Pour passer à une version plus récente :
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+Pour vérifier les versions disponibles du chart :
+
+```shell
+helm search repo clickstack
+```
+
+<Info>
+  **Mise à niveau depuis la version 1.x**
+
+  Si vous effectuez une mise à niveau depuis le chart inline-template v1.x, consultez le [guide de mise à niveau](/fr/clickstack/deployment/helm-upgrade) pour connaître la procédure de migration. Il s&#39;agit d&#39;un changement incompatible : une commande `helm upgrade` sur place n&#39;est pas prise en charge.
+</Info>
+
+<div id="uninstalling-clickstack">
+  ## Désinstaller ClickStack
+</div>
+
+Désinstallez dans l’ordre inverse :
+
+```shell
+helm uninstall my-clickstack            # Remove app + CRs first
+helm uninstall clickstack-operators     # Remove operators + CRDs
+```
+
+**Remarque :** Les PersistentVolumeClaims créés par les opérateurs MongoDB et ClickHouse ne sont **pas** supprimés par `helm uninstall`. C’est intentionnel, afin d’éviter toute perte accidentelle de données. Pour supprimer les PVC, reportez-vous à :
+
+* [documentation de l’opérateur Kubernetes MongoDB](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)
+
+<div id="troubleshooting">
+  ## Dépannage
+</div>
+
+<div id="checking-logs">
+  ### Vérifier les logs
+</div>
+
+```shell
+kubectl logs -l app.kubernetes.io/name=clickstack
+```
+
+<div id="debugging-a-failed-install">
+  ### Débogage après l’échec d’une installation
+</div>
+
+```shell
+helm install my-clickstack clickstack/clickstack --debug --dry-run
+```
+
+<div id="verifying-deployment">
+  ### Vérification du déploiement
+</div>
+
+```shell
+kubectl get pods -l app.kubernetes.io/name=clickstack
+```
+
+<Tip>
+  **Ressources de dépannage supplémentaires**
+
+  Pour les problèmes spécifiques à l’Ingress, les problèmes de TLS ou le dépannage des déploiements Cloud, consultez :
+
+  * [Dépannage de l’Ingress](/fr/clickstack/deployment/helm-configuration#troubleshooting-ingress) - Distribution des ressources, réécritures de chemin, problèmes de navigateur
+  * [Déploiements Cloud](/fr/clickstack/deployment/helm-cloud#loadbalancer-dns-resolution-issue) - Problèmes liés à GKE OpAMP et problèmes spécifiques au cloud
+</Tip>
+
+<JSONSupport />
+
+<div id="related-documentation">
+  ## Documentation associée
+</div>
+
+<div id="deployment-guides">
+  ### Guides de déploiement
+</div>
+
+* [Options de déploiement](/fr/clickstack/deployment/helm-deployment-options) - ClickHouse externe, OTel collector et déploiements minimaux
+* [Guide de configuration](/fr/clickstack/deployment/helm-configuration) - Clés API, secrets et configuration de l’Ingress
+* [Déploiements Cloud](/fr/clickstack/deployment/helm-cloud) - Configurations GKE, EKS et AKS, et bonnes pratiques pour la production
+* [Guide de mise à niveau](/fr/clickstack/deployment/helm-upgrade) - Migration de v1.x vers v2.x
+* [Manifestes supplémentaires](/fr/clickstack/deployment/helm-additional-manifests) - Déployer des objets Kubernetes personnalisés en plus du chart
+
+<div id="v1x-documentation">
+  ### Documentation v1.x
+</div>
+
+* [Helm (v1.x)](/fr/clickstack/deployment/helm-v1) - guide de déploiement pour v1.x
+* [Configuration (v1.x)](/fr/clickstack/deployment/helm-configuration-v1) - configuration pour v1.x
+* [Options de déploiement (v1.x)](/fr/clickstack/deployment/helm-deployment-options-v1) - options de déploiement pour v1.x
+* [Déploiements Cloud (v1.x)](/fr/clickstack/deployment/helm-cloud-v1) - configurations Cloud pour v1.x
+
+<div id="additional-resources">
+  ### Ressources supplémentaires
+</div>
+
+* [Guide de prise en main de ClickStack](/fr/clickstack/getting-started/index) - Introduction à ClickStack
+* [Dépôt des charts Helm de ClickStack](https://github.com/ClickHouse/ClickStack-helm-charts) - Code source des charts et référence des valeurs
+* [Documentation Kubernetes](https://kubernetes.io/docs/) - Référence de Kubernetes
+* [Documentation Helm](https://helm.sh/docs/) - Référence de Helm

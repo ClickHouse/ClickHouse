@@ -102,6 +102,7 @@ if (OMIT_HEAVY_DEBUG_SYMBOLS)
 endif()
 
 add_headers_and_sources(clickhouse_common_io Common)
+add_headers_and_sources(clickhouse_common_io Common/RegexpJIT)
 add_headers_and_sources(clickhouse_common_io Common/Crypto)
 add_headers_and_sources(clickhouse_common_io Common/JSONParsers)
 add_headers_and_sources(clickhouse_common_io Common/HashTable)
@@ -218,10 +219,10 @@ if (ENABLE_CLIENT_AI)
     add_headers_and_sources(dbms Client/AI)
 endif()
 
-if (OS_LINUX)
+if (OS_LINUX OR OS_DARWIN)
     add_headers_and_sources(dbms Storages/FileLog)
 else()
-    message(STATUS "StorageFileLog is only supported on Linux")
+    message(STATUS "StorageFileLog is only supported on Linux and macOS")
 endif ()
 
 list(APPEND clickhouse_common_io_sources ${CONFIG_INCLUDE_PATH}/config_version.cpp)
@@ -488,6 +489,10 @@ if (USE_PARQUET)
     add_object_library(clickhouse_processors_formats_impl_parquet Processors/Formats/Impl/Parquet)
 endif()
 
+if (USE_ARROW)
+    add_object_library(clickhouse_processors_formats_impl_arrow_ipc Processors/Formats/Impl/ArrowIPC)
+endif()
+
 if (TARGET ch_contrib::nuraft)
     add_object_library(clickhouse_coordination Coordination)
 endif()
@@ -695,6 +700,11 @@ endif ()
 
 if (TARGET ch_contrib::parquet)
     target_link_libraries(dbms PRIVATE ch_contrib::parquet)
+endif ()
+
+# Native Arrow IPC reader/writer needs only the FlatBuffers-generated metadata headers, not the Arrow runtime.
+if (TARGET ch_contrib::arrow_ipc_metadata)
+    target_link_libraries(dbms PRIVATE ch_contrib::arrow_ipc_metadata)
 endif ()
 
 if (TARGET ch_contrib::avrocpp)

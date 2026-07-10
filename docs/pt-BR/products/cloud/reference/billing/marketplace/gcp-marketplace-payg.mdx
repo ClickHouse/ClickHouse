@@ -1,0 +1,107 @@
+---
+slug: /cloud/billing/marketplace/gcp-marketplace-payg
+title: 'GCP Marketplace PAYG'
+description: 'Assine o ClickHouse Cloud pelo Marketplace do GCP (PAYG).'
+keywords: ['gcp', 'marketplace', 'cobrança', 'PAYG']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Comece a usar o ClickHouse Cloud no [Marketplace do GCP](https://console.cloud.google.com/marketplace) por meio de uma oferta pública PAYG (pague conforme o uso).
+
+<div id="prerequisites">
+  ## Pré-requisitos
+</div>
+
+* Um projeto no GCP habilitado para compras pelo administrador de faturamento.
+* Para assinar o ClickHouse Cloud no Marketplace do GCP, você deve estar conectado com uma conta que tenha permissão de compra e escolher o projeto adequado.
+
+<div id="steps-to-sign-up">
+  ## Etapas para se cadastrar
+</div>
+
+1. Acesse o [Marketplace do GCP](https://cloud.google.com/marketplace) e pesquise por ClickHouse Cloud. Verifique se o projeto correto está selecionado.
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-1.webp" size="md" alt="Página inicial do Marketplace do GCP" border />
+
+2. Clique na [página do produto](https://console.cloud.google.com/marketplace/product/clickhouse-public/clickhouse-cloud) e depois em **Subscribe**.
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-2.webp" size="md" alt="ClickHouse Cloud no Marketplace do GCP" border />
+
+3. Na tela seguinte, configure a assinatura:
+
+* O plano será definido por padrão como &quot;ClickHouse Cloud&quot;
+* O período da assinatura será &quot;Monthly&quot;
+* Escolha a conta de faturamento apropriada
+* Aceite os termos e clique em **Subscribe**
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-3.webp" size="sm" alt="Configurar assinatura no Marketplace do GCP" border />
+
+<br />
+
+4. Depois de clicar em **Subscribe**, você verá uma janela modal **Sign up with ClickHouse**.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-4.webp" size="md" alt="Modal de cadastro do Marketplace do GCP" border />
+
+<br />
+
+5. Observe que, neste ponto, a configuração ainda não está concluída. Você precisará acessar o ClickHouse Cloud clicando em **Set up your account** e se cadastrando no ClickHouse Cloud.
+
+6. Depois de acessar o ClickHouse Cloud, você poderá fazer login com uma conta existente ou registrar uma nova conta. Esta etapa é muito importante para que possamos vincular sua organização do ClickHouse Cloud ao faturamento do Marketplace do GCP.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-6.webp" size="md" alt="Página de login do ClickHouse Cloud" border />
+
+<br />
+
+Se você for um novo usuário do ClickHouse Cloud, clique em **Register** na parte inferior da página. Será solicitado que você crie um novo usuário e verifique o e-mail. Depois de verificar seu e-mail, você poderá sair da página de login do ClickHouse Cloud e entrar usando o novo nome de usuário em [https://console.clickhouse.cloud](https://console.clickhouse.cloud).
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-7.webp" size="md" alt="Página de cadastro do ClickHouse Cloud" border />
+
+<br />
+
+Observe que, se você for um novo usuário, também precisará fornecer algumas informações básicas sobre sua empresa. Veja as capturas de tela abaixo.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-8.webp" size="md" alt="Formulário de informações de cadastro do ClickHouse Cloud" border />
+
+<br />
+
+Se você já for um usuário do ClickHouse Cloud, basta fazer login usando suas credenciais.
+
+7. Depois de fazer login com sucesso, uma nova organização do ClickHouse Cloud será criada. Essa organização será vinculada à sua conta de faturamento do GCP, e todo o uso será cobrado por meio da sua conta do GCP.
+
+8. Depois de fazer login, você poderá confirmar que seu faturamento está realmente vinculado ao Marketplace do GCP e começar a configurar seus recursos do ClickHouse Cloud.
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-5.webp" size="md" alt="Página de login do ClickHouse Cloud" border />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/aws-marketplace-payg-11.webp" size="md" alt="Página de novos serviços do ClickHouse Cloud" border />
+
+<br />
+
+9. Você deverá receber um e-mail confirmando o cadastro:
+
+<br />
+
+<br />
+
+<Image img="/images/cloud/manage/billing/marketplace/gcp-marketplace-payg-6.webp" size="md" alt="Email de confirmação do Marketplace do GCP" border />
+
+<br />
+
+<br />
+
+Se tiver qualquer problema, não hesite em entrar em contato com [nossa equipe de suporte](https://clickhouse.com/support/program).

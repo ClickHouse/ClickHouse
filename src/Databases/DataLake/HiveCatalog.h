@@ -36,6 +36,8 @@ public:
 
     DB::Names getTables() const override;
 
+    Namespaces getNamespaces() const override;
+
     bool existsTable(const std::string & namespace_name, const std::string & table_name) const override;
 
     void getTableMetadata(const std::string & namespace_name, const std::string & table_name, TableMetadata & result) const override;
@@ -51,6 +53,8 @@ private:
 
     template <typename Func>
     void executeWithRetry(Func && func) const;
+
+    DB::Names listTablesInNamespaceDirect(const std::string & namespace_name) const override;
 
     String base_url;
 
