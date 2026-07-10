@@ -46,6 +46,29 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ngrambf WHERE
 SELECT 'correctness';
 SELECT count(), min(id) FROM t_text WHERE hasToken(s, toLowCardinality('rare'));
 
+-- Map-key lookup on a `mapKeys(...)` text index: `attrs[key] = ...` / `attrs[key] IN (...)`.
+-- The map-element key path also gated the constant key with a raw-type string check, so a
+-- LowCardinality key degraded to a full scan there too. Disable subcolumn folding so the
+-- `arrayElement` map-key branch is exercised directly. Each LowCardinality variant must prune
+-- to the SAME single granule as the plain-String key.
+SET optimize_functions_to_subcolumns = 0;
+
+DROP TABLE IF EXISTS t_map;
+CREATE TABLE t_map (id UInt64, attrs Map(String, String), INDEX idx mapKeys(attrs) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO t_map SELECT number, map(if(number = 500, 'entity', 'other'), 'v') FROM numbers(1024);
+
+SELECT 'mapkey equals String';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map WHERE attrs['entity'] = 'v') WHERE explain ILIKE '%Granules: 1/128%';
+SELECT 'mapkey equals LowCardinality';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map WHERE attrs[toLowCardinality('entity')] = 'v') WHERE explain ILIKE '%Granules: 1/128%';
+SELECT 'mapkey in LowCardinality';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map WHERE attrs[toLowCardinality('entity')] IN ('v')) WHERE explain ILIKE '%Granules: 1/128%';
+
+SELECT 'mapkey correctness';
+SELECT count(), min(id) FROM t_map WHERE attrs[toLowCardinality('entity')] = 'v';
+
 DROP TABLE t_text;
 DROP TABLE t_tokenbf;
 DROP TABLE t_ngrambf;
+DROP TABLE t_map;

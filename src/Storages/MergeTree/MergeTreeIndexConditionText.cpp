@@ -1354,7 +1354,17 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN)
+                    return false;
+
+                /// Strip the type wrapper before the string-type gate (mirrors the compared-value
+                /// path): a Const(LowCardinality(String)) / Nullable(String) key otherwise fails the
+                /// gate and degrades to a full scan. Nullable is stripped only for a non-null key.
+                auto key_type = removeLowCardinality(const_key_argument->result_type);
+                const bool key_is_null = const_key_argument->column->isNullAt(0);
+                if (!key_is_null)
+                    key_type = removeNullable(key_type);
+                if (key_is_null || !isStringOrFixedString(key_type))
                     return false;
 
                 key_const_value = std::string{const_key_argument->column->getDataAt(0)};

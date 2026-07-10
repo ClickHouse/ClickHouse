@@ -16,3 +16,11 @@ ngrambf hasToken LowCardinality
 1
 correctness
 1	500
+mapkey equals String
+1
+mapkey equals LowCardinality
+1
+mapkey in LowCardinality
+1
+mapkey correctness
+1	500
