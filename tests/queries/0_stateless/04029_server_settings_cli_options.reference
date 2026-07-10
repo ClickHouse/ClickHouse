@@ -4,3 +4,5 @@ Unknown option specified: no_such_server_setting
 Option must not be given more than once: max_thread_pool_size
 50
 OK: --config resolves
+OK: --log resolves
+1

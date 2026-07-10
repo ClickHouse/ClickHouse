@@ -104,3 +104,46 @@ if grep -q 'Ambiguous option' "${CLICKHOUSE_TMP}/server5.log"; then
 else
     echo "OK: --config resolves"
 fi
+
+# Test 6: The built-in `--log` option (an abbreviation of `--log-file`) must likewise keep resolving.
+# Registering the `logger_*` server settings (which all share the `log` prefix) previously made `--log`
+# ambiguous with `logger_level`, `logger_log`, ... Pass a non-existent config file so the server fails
+# fast, and check that the failure is not "ambiguous option" for `--log`.
+srv_dir6="${CLICKHOUSE_TMP}/srv6"
+mkdir -p "$srv_dir6"
+$CLICKHOUSE_BINARY server \
+    --log="$srv_dir6/server.log" --config="$srv_dir6/no_such_config.xml" \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir6/" > "${CLICKHOUSE_TMP}/server6.log" 2>&1
+
+if grep -q 'Ambiguous option' "${CLICKHOUSE_TMP}/server6.log"; then
+    echo "FAIL: --log is ambiguous"
+else
+    echo "OK: --log resolves"
+fi
+
+# Test 7: Bool server settings are registered as CLI options too. Pass one with an explicit value and
+# verify it is applied. (Whether Bool flags may be given without a value - like the client's program
+# options - is a separate design decision and is not exercised here.)
+srv_dir7="${CLICKHOUSE_TMP}/srv7"
+mkdir -p "$srv_dir7"
+$CLICKHOUSE_BINARY server \
+    --shutdown_wait_unfinished_queries 1 \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir7/" > "${CLICKHOUSE_TMP}/server7.log" 2>&1 &
+PID=$!
+
+trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null' EXIT
+
+for i in {1..30}; do
+    sleep 1
+    $CLICKHOUSE_CLIENT --query "SELECT 1" >/dev/null 2>&1 && break
+    if [[ $i == 30 ]]; then
+        cat "${CLICKHOUSE_TMP}/server7.log"
+        exit 1
+    fi
+done
+
+$CLICKHOUSE_CLIENT --query "SELECT value IN ('1', 'true') FROM system.server_settings WHERE name = 'shutdown_wait_unfinished_queries'"
+
+kill $PID 2>/dev/null
+wait $PID 2>/dev/null
+trap '' EXIT

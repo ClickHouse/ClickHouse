@@ -1934,13 +1934,15 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
     {
         const String & name = accessor.getName(i);
 
-        /// `Poco::Util::OptionSet` resolves options by unique prefix, so a multi-component built-in option
-        /// such as `config-file` can be abbreviated (e.g. `--config`, as used by the systemd unit and by
-        /// `clickhouse restart`). Registering a server setting that shares the first name component with such
-        /// a built-in option (both `config_file` and `config_reload_interval_ms` share `config` with
-        /// `config-file`) would make that abbreviation ambiguous and prevent the server from starting. Skip
-        /// these settings - they can still be set through the config file or after the `--` separator.
-        std::string_view name_component = first_component(name);
+        /// `Poco::Util::OptionSet` resolves a long option by any unique prefix, so a compound built-in
+        /// option such as `config-file` can be abbreviated down to its first name component: `--config`
+        /// (used by the systemd unit and by `clickhouse restart`), `--log` for `log-file`, and so on.
+        /// Registering a server setting whose name begins with that component makes the abbreviation
+        /// ambiguous and prevents the server from starting (`AmbiguousOptionException`): `config_file` and
+        /// `config_reload_interval_ms` would break `--config`, and every `logger_*` setting would break
+        /// `--log`. Reserve the first component of each compound built-in option for that option and skip
+        /// the colliding settings - they can still be set through the config file or after the `--`
+        /// separator.
         const bool clashes_with_builtin = std::any_of(
             builtin_options.begin(),
             builtin_options.end(),
@@ -1949,7 +1951,7 @@ void ServerSettings::addToProgramOptions(Poco::Util::OptionSet & options)
                 if (builtin == name)
                     return true;
                 std::string_view builtin_component = first_component(builtin);
-                return builtin_component.size() != builtin.size() && builtin_component == name_component;
+                return builtin_component.size() != builtin.size() && name.starts_with(builtin_component);
             });
         if (clashes_with_builtin)
             continue;
