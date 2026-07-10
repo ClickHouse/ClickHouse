@@ -33,6 +33,7 @@ and OOM the whole host.
 import os
 import pwd
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -77,13 +78,48 @@ def oom_kill_count():
     return 0
 
 
+# The `clickhouse client` subprocesses this script started, tracked so `cleanup` can tear down exactly
+# those - and nothing else - instead of a host-wide `pkill -f` over a shared `--port` that could kill
+# unrelated `clickhouse client` sessions. Each client runs in its own session/process group, so a stuck
+# one can be killed by PGID together with the `sudo` wrapper that spawned it.
+_clients = set()
+_clients_lock = threading.Lock()
+
+
+def kill_client_group(proc):
+    # SIGKILL the whole session/process group of a client we started, reaping the `sudo` wrapper and the
+    # `clickhouse client` grandchild together (killing `proc` alone would orphan the grandchild). Only
+    # this script's own clients are ever passed here.
+    try:
+        os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        proc.kill()
+
+
 def client(*args, user=None, timeout=None):
-    return subprocess.run(
+    # Launch in its own session (start_new_session=True -> the child is a process-group leader, PGID ==
+    # PID) and register it, so a call that blocks against a wedged or OOM-killed server can be torn down
+    # by PGID on timeout or cleanup, and only clients this script started are ever killed.
+    proc = subprocess.Popen(
         ["sudo", "-u", user or RUN_USER, BIN, "client", "--port", str(PORT), *args],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
+        start_new_session=True,
     )
+    with _clients_lock:
+        _clients.add(proc)
+    try:
+        try:
+            out, err = proc.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            kill_client_group(proc)
+            proc.communicate()  # reap the killed process group
+            raise
+        return subprocess.CompletedProcess(proc.args, proc.returncode, out, err)
+    finally:
+        with _clients_lock:
+            _clients.discard(proc)
 
 
 def cleanup(base):
@@ -91,8 +127,12 @@ def cleanup(base):
     # Also kill any outstanding `clickhouse client` subprocesses this script started: a churn worker
     # may still have one blocked in an `INSERT`/`OPTIMIZE` against a wedged or OOM-killed server, and
     # those clients do not match the `{base}/cfg` pattern above (they are launched with `--port`, not a
-    # config file), so the server-side kill alone would leave them running.
-    subprocess.run(["pkill", "-9", "-f", f"{BIN} client --port {PORT}"], stderr=subprocess.DEVNULL)
+    # config file), so the server-side kill alone would leave them running. Kill only the tracked client
+    # process groups, never a host-wide `pkill -f` that could hit unrelated sessions on a shared port.
+    with _clients_lock:
+        outstanding = list(_clients)
+    for proc in outstanding:
+        kill_client_group(proc)
     time.sleep(1)
     if os.path.isdir(CG):
         try:
