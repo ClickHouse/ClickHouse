@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'Carregando JSON'
+title: 'Trabalhando com JSON'
+slug: /integrations/data-formats/json/loading
+description: 'Carregando JSON'
+keywords: ['json', 'ClickHouse', 'inserindo', 'carregando', 'inserindo']
+score: 15
+doc_type: 'guide'
+---
+
+Os exemplos a seguir mostram, de forma bem simples, como carregar dados JSON estruturados e semiestruturados. Para JSONs mais complexos, incluindo estruturas aninhadas, consulte o guia [**Projetando o schema JSON**](/pt-BR/guides/clickhouse/data-formats/json/schema).
+
+<div id="loading-structured-json">
+  ## Carregando JSON estruturado
+</div>
+
+Nesta seção, assumimos que os dados JSON estão no formato [`NDJSON`](https://github.com/ndjson/ndjson-spec) (JSON delimitado por nova linha), conhecido como [`JSONEachRow`](/pt-BR/reference/formats/JSON/JSONEachRow) no ClickHouse, e bem estruturados, ou seja, os nomes e tipos das colunas são fixos. O `NDJSON` é o formato preferido para carregamento de JSON devido à sua concisão e uso eficiente de espaço, mas outros formatos são suportados tanto para [entrada quanto para saída](/pt-BR/reference/formats/JSON/JSON).
+
+Considere o seguinte exemplo de JSON, que representa uma linha do [Python PyPI dataset](https://clickpy.clickhouse.com/):
+
+```json
+{
+  "date": "2022-11-15",
+  "country_code": "ES",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "pip",
+  "python_minor": "3.9",
+  "system": "Linux",
+  "version": "0.3.0"
+}
+```
+
+Para carregar este objeto JSON no ClickHouse, é necessário definir um esquema de tabela.
+
+Neste caso simples, nossa estrutura é estática, os nomes das colunas são conhecidos e seus tipos são bem definidos.
+
+Embora o ClickHouse suporte dados semiestruturados por meio de um tipo JSON, onde os nomes das chaves e seus tipos podem ser dinâmicos, isso não é necessário neste caso.
+
+<Info>
+  **Prefira esquemas estáticos sempre que possível**
+
+  Nos casos em que suas colunas têm nomes e tipos fixos, e não se espera a criação de novas colunas, sempre prefira um esquema definido estaticamente em produção.
+
+  O tipo JSON é preferível para dados altamente dinâmicos, em que os nomes e tipos das colunas podem mudar. Esse tipo também é útil para prototipagem e exploração de dados.
+</Info>
+
+Um esquema simples para isso é mostrado abaixo, onde **as chaves JSON são mapeadas para os nomes das colunas**:
+
+```sql
+CREATE TABLE pypi (
+  `date` Date,
+  `country_code` String,
+  `project` String,
+  `type` String,
+  `installer` String,
+  `python_minor` String,
+  `system` String,
+  `version` String
+)
+ENGINE = MergeTree
+ORDER BY (project, date)
+```
+
+<Info>
+  **Chaves de ordenação**
+
+  Selecionamos aqui uma chave de ordenação por meio da cláusula `ORDER BY`. Para mais detalhes sobre chaves de ordenação e como escolhê-las, consulte [aqui](/pt-BR/guides/clickhouse/data-modelling/schema-design#choosing-an-ordering-key).
+</Info>
+
+O ClickHouse pode carregar dados JSON em vários formatos, inferindo automaticamente o tipo a partir da extensão e do conteúdo. Podemos ler arquivos JSON para a tabela acima usando a [função S3](/pt-BR/reference/functions/table-functions/s3):
+
+```sql
+SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+LIMIT 1
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type────────┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-11-15 │ CN           │ clickhouse-connect │ bdist_wheel │ bandersnatch │              │        │ 0.2.8 │
+└────────────┴──────────────┴────────────────────┴─────────────┴──────────────┴──────────────┴────────┴─────────┘
+
+1 linha no conjunto. Elapsed: 1.232 sec.
+```
+
+Observe que não é necessário especificar o formato do arquivo. Em vez disso, usamos um glob pattern para ler todos os arquivos `*.json.gz` no bucket. O ClickHouse infere automaticamente que o formato é `JSONEachRow` (ndjson) com base na extensão e no conteúdo do arquivo. Um formato pode ser especificado manualmente por meio de funções de parâmetro caso o ClickHouse não consiga detectá-lo automaticamente.
+
+```sql
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz', JSONEachRow)
+```
+
+<Info>
+  **Arquivos compactados**
+
+  Os arquivos acima também são compactados. O ClickHouse detecta e processa isso automaticamente.
+</Info>
+
+Para carregar as linhas nesses arquivos, podemos usar um [`INSERT INTO SELECT`](/pt-BR/reference/statements/insert-into#inserting-the-results-of-select):
+
+```sql
+INSERT INTO pypi SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/json/*.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 10.445 sec. Processed 19.49 million rows, 35.71 MB (1.87 million rows/s., 3.42 MB/s.)
+```
+
+```sql
+SELECT * FROM pypi LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┘
+
+2 rows in set. Elapsed: 0.005 sec. Processed 8.19 thousand rows, 908.03 KB (1.63 million rows/s., 180.38 MB/s.)
+```
+
+As linhas também podem ser carregadas diretamente usando a [cláusula `FORMAT`](/pt-BR/reference/statements/select/format), por exemplo.
+
+```sql
+INSERT INTO pypi
+FORMAT JSONEachRow
+{"date":"2022-11-15","country_code":"CN","project":"clickhouse-connect","type":"bdist_wheel","installer":"bandersnatch","python_minor":"","system":"","version":"0.2.8"}
+```
+
+Estes exemplos pressupõem o uso do formato `JSONEachRow`. Também há suporte a outros formatos JSON comuns, com exemplos de carregamento disponíveis [aqui](/pt-BR/guides/clickhouse/data-formats/json/formats).
+
+<div id="loading-semi-structured-json">
+  ## Carregando JSON semiestruturado
+</div>
+
+No exemplo anterior, carregamos um JSON estático, com nomes de chaves e tipos bem conhecidos. Muitas vezes, não é assim: chaves podem ser adicionadas ou seus tipos podem mudar. Isso é comum em casos de uso como dados de observabilidade.
+
+O ClickHouse lida com isso por meio de um tipo [`JSON`](/pt-BR/reference/data-types/newjson) específico.
+
+Considere o exemplo a seguir de uma versão estendida do [Python PyPI dataset](https://clickpy.clickhouse.com/) mencionado acima. Aqui, adicionamos uma coluna `tags` arbitrária com pares aleatórios de chave-valor.
+
+```json
+{
+  "date": "2022-09-22",
+  "country_code": "IN",
+  "project": "clickhouse-connect",
+  "type": "bdist_wheel",
+  "installer": "bandersnatch",
+  "python_minor": "",
+  "system": "",
+  "version": "0.2.8",
+  "tags": {
+    "5gTux": "f3to*PMvaTYZsz!*rtzX1",
+    "nD8CV": "value"
+  }
+}
+
+```
+
+A coluna `tags` aqui é imprevisível e, portanto, impossível de modelar. Para carregar esses dados, podemos usar nosso esquema anterior, mas incluir uma coluna adicional `tags` do tipo [`JSON`](/pt-BR/reference/data-types/newjson):
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE pypi_with_tags
+(
+    `date` Date,
+    `country_code` String,
+    `project` String,
+    `type` String,
+    `installer` String,
+    `python_minor` String,
+    `system` String,
+    `version` String,
+    `tags` JSON
+)
+ENGINE = MergeTree
+ORDER BY (project, date);
+```
+
+Preenchemos a tabela usando a mesma abordagem adotada para o conjunto de dados original:
+
+```sql
+INSERT INTO pypi_with_tags SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```sql
+INSERT INTO pypi_with_tags SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/pypi/pypi_with_tags/sample.json.gz')
+```
+
+```response
+Ok.
+
+0 rows in set. Elapsed: 255.679 sec. Processed 1.00 million rows, 29.00 MB (3.91 thousand rows/s., 113.43 KB/s.)
+Peak memory usage: 2.00 GiB.
+```
+
+```sql
+SELECT *
+FROM pypi_with_tags
+LIMIT 2
+```
+
+```response
+┌───────date─┬─country_code─┬─project────────────┬─type──┬─installer────┬─python_minor─┬─system─┬─version─┬─tags─────────────────────────────────────────────────────┐
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"nsBM":"5194603446944555691"}                           │
+│ 2022-05-26 │ CN           │ clickhouse-connect │ sdist │ bandersnatch │              │        │ 0.0.7 │ {"4zD5MYQz4JkP1QqsJIS":"0","name":"8881321089124243208"} │
+└────────────┴──────────────┴────────────────────┴───────┴──────────────┴──────────────┴────────┴─────────┴──────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.149 sec.
+```
+
+Note a diferença de desempenho aqui no carregamento de dados. A coluna JSON exige inferência de tipos no momento da inserção, além de armazenamento adicional se houver colunas com mais de um tipo. Embora o tipo JSON possa ser configurado (consulte [Projetando o schema JSON](/pt-BR/guides/clickhouse/data-formats/json/schema)) para oferecer desempenho equivalente ao da declaração explícita de colunas, ele é intencionalmente flexível por padrão. Essa flexibilidade, no entanto, tem um custo.
+
+<div id="when-to-use-the-json-type">
+  ### Quando usar o tipo JSON
+</div>
+
+Use o tipo JSON quando seus dados:
+
+* Têm **chaves imprevisíveis** que podem mudar ao longo do tempo.
+* Contêm **valores com tipos diferentes** (por exemplo, um caminho pode às vezes conter uma string e, em outras, um número).
+* Exigem flexibilidade de schema quando a tipagem estrita não é viável.
+
+Se a estrutura dos seus dados for conhecida e consistente, raramente há necessidade de usar o tipo JSON, mesmo que os dados estejam em formato JSON. Especificamente, se seus dados tiverem:
+
+* **Uma estrutura plana com chaves conhecidas**: use tipos de coluna padrão, por exemplo, String.
+* **Aninhamento previsível**: use os tipos Tuple, Array ou Nested para essas estruturas.
+* **Estrutura previsível com tipos variados**: considere usar os tipos Dynamic ou Variant.
+
+Você também pode combinar abordagens, como fizemos no exemplo acima, usando colunas estáticas para chaves previsíveis de nível superior e uma única coluna JSON para uma seção dinâmica do payload.

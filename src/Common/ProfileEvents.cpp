@@ -2,6 +2,7 @@
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
+#include <Common/PerCPU.h>
 #include <Common/CurrentThread.h>
 #include <Common/TraceSender.h>
 #include <Interpreters/Context.h>
@@ -43,6 +44,8 @@
     M(FailedInsertQuery, "Same as FailedQuery, but only for INSERT queries.", ValueType::Number) \
     M(FailedAsyncInsertQuery, "Number of failed ASYNC INSERT queries.", ValueType::Number) \
     M(ASTFuzzerQueries, "Number of fuzzed queries attempted by the server-side AST fuzzer.", ValueType::Number) \
+    M(ASTFuzzerSkippedBackupRestore, "Number of fuzzed BACKUP/RESTORE queries the server-side AST fuzzer skipped instead of executing.", ValueType::Number) \
+    M(ASTFuzzerSkippedReplicatedDDLInternal, "Number of times the server-side AST fuzzer skipped fuzzing because an internal replicated-database DDL execution (a live ZooKeeperMetadataTransaction) was in flight on the context.", ValueType::Number) \
     M(QueryTimeMicroseconds, "Total time of all queries.", ValueType::Microseconds) \
     M(SelectQueryTimeMicroseconds, "Total time of SELECT queries.", ValueType::Microseconds) \
     M(InsertQueryTimeMicroseconds, "Total time of INSERT queries.", ValueType::Microseconds) \
@@ -251,6 +254,10 @@
     M(ReaderExecutorIncompleteConnections, "Number of source connections ReaderExecutor dropped before draining them to their right bound; not pool-reusable, forcing a re-establishment. Zero until ReaderExecutor live source-buffer reuse is introduced.", ValueType::Number) \
     M(ReaderExecutorWorkMicroseconds, "Total wall-clock time spent inside ReaderExecutor::readNextWindow (opening, seeking and reading the served window). Direct contributor to query read latency.", ValueType::Microseconds) \
     M(ReaderExecutorModeledCostMicroseconds, "Modeled I/O cost of ReaderExecutor reads: a synthetic proxy KPI for read-path optimality, NOT measured latency. Weighted sum of the counters above with heuristic S3 weights: 30ms per source request + 5ms per incomplete connection + 20ms per MiB transferred from source (useful payload plus over-read) + 0.1ms per cache put + 0.05ms per cache get. Divide by ReaderExecutorRequestedBytes for a load-independent cost-per-byte. Experimental, tracks the experimental ReaderExecutor.", ValueType::Microseconds) \
+    M(ReaderExecutorLongConnectionOpened, "Number of long source connections opened by ReaderExecutor for sequential read optimization.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
+    M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryLocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
@@ -371,6 +378,7 @@
     M(DistributedConnectionStaleReplica, "Number of times we rejected a replica from a distributed query, because some table needed for a query had replication lag higher than the configured threshold.", ValueType::Number) \
     M(DistributedConnectionSkipReadOnlyReplica, "Number of replicas skipped during INSERT into Distributed table due to replicas being read-only", ValueType::Number) \
     M(DistributedConnectionFailAtAll, "Total count when distributed connection fails after all retries finished.", ValueType::Number) \
+    M(DistributedShardsSkipped, "Number of shards silently skipped in a query to a Distributed table (or the remote/cluster table functions) when `skip_unavailable_shards` is enabled, either because the shard was unavailable or because it raised an exception covered by `skip_unavailable_shards_mode`.", ValueType::Number) \
     \
     M(Shards, "The number of shards involved in a query, summed across all distributed tables and table functions. A single host is counted multiple times if it appears in multiple tables. The number counts the total expected number of shards, which includes skipped shards with the `skip_unavailable_shards` setting.", ValueType::Number) \
     \
@@ -572,7 +580,7 @@
     M(ContextLock, "Number of times the lock of Context was acquired or tried to acquire. This is global lock.", ValueType::Number) \
     M(ContextLockWaitMicroseconds, "Context lock wait time in microseconds", ValueType::Microseconds) \
     M(RowPolicyCacheRecalculations, "Number of times the row policy cache re-mixed filters for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
-    M(RowPolicyCacheRecalculationMicroseconds, "Total time spent re-mixing row policy filters for all live enabled sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
+    M(RowPolicyCacheRecalculationMicroseconds, "Total time spent re-mixing row policy filters for all live enabled sets, off the RowPolicyCache mutex (so it does not block the ContextAccess build path).", ValueType::Microseconds) \
     M(RoleCacheRecalculations, "Number of times the role cache recalculated all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
     M(RoleCacheRecalculationMicroseconds, "Total time spent recalculating all live enabled role sets (held under the cache mutex that the ContextAccess build path also takes).", ValueType::Microseconds) \
     M(SettingsProfileCacheRecalculations, "Number of times the settings profile cache re-merged settings and constraints for all live enabled sets. Coalesced to once per access entity notification batch.", ValueType::Number) \
@@ -1463,6 +1471,7 @@ The server successfully detected this situation and will download merged part fr
     M(QueryPreempted, "How many times tasks are paused and waiting due to 'priority' setting", ValueType::Number) \
     M(IndexBinarySearchAlgorithm, "Number of times the binary search algorithm is used over the index marks", ValueType::Number) \
     M(IndexGenericExclusionSearchAlgorithm, "Number of times the generic exclusion search algorithm is used over the index marks", ValueType::Number) \
+    M(IndexGenericExclusionSearchStepLimitReached, "Number of times the generic exclusion search over the index marks reached merge_tree_generic_exclusion_search_max_steps and accepted the remaining mark ranges without further splitting", ValueType::Number) \
     M(ParallelReplicasQueryCount, "Number of (sub)queries executed using parallel replicas during a query execution", ValueType::Number) \
     M(DistributedConnectionReconnectCount, "Number of reconnects to other servers done during distributed query execution. It can happen when a stale connection has been acquired from connection pool", ValueType::Number) \
     M(DistributedConnectionConnectCount, "Number of connects to other servers done during distributed query execution. Happens when new connection is established instead of using existing from pool.", ValueType::Number) \
@@ -1531,10 +1540,74 @@ namespace ProfileEvents
 #undef M
 constexpr Event END = Event(__COUNTER__);
 
-/// Global variable, initialized by zeros.
-static constinit Counter global_counters_array[END] {};
-/// Constant-initialized so it is ready before any dynamic initializer can allocate memory.
-constinit Counters global_counters(global_counters_array);
+/// Row stride padded so each per-CPU row ends on a cache-line boundary. Without this the last
+/// few events of one row share a cache line with the first events of the next row, causing
+/// false sharing across CPUs at row boundaries.
+constexpr size_t counts_per_cache_line = DB::CH_CACHE_LINE_SIZE / sizeof(Count);
+static_assert((counts_per_cache_line & (counts_per_cache_line - 1)) == 0);
+constexpr size_t per_cpu_stride = (static_cast<size_t>(END) + counts_per_cache_line - 1) & ~(counts_per_cache_line - 1);
+
+/// Cell count for a layout: `cpus` padded rows, or a compact single row of raw events.
+ALWAYS_INLINE inline size_t cellCount(uint32_t cpus)
+{
+    return cpus ? static_cast<size_t>(cpus) * per_cpu_stride : static_cast<size_t>(END);
+}
+
+/// Cells are plain `Count` accessed via `std::atomic_ref`; over a suitably aligned object it is
+/// lock-free and generates the same code as a `std::atomic` member (required_alignment == 8).
+ALWAYS_INLINE inline std::atomic_ref<Count> cell(Count * counters, size_t cpu, Event event)
+{
+    return std::atomic_ref<Count>(counters[cpu * per_cpu_stride + event]);
+}
+
+ALWAYS_INLINE inline AlignedCounters allocateCounters(size_t n)
+{
+    return AlignedCounters(new (std::align_val_t{DB::CH_CACHE_LINE_SIZE}) Count[n] {});
+}
+
+/// Per-CPU storage for `global_counters`, cache-line aligned. `Count` is trivially default-
+/// constructible, so this static array is a guaranteed zero-init BSS with no dynamic initializer:
+/// valid before any dynamic initializer can touch `global_counters` (which points here), and only
+/// touched rows fault in. An `atomic` element is not trivially constructible and would reintroduce
+/// dynamic initialization for an array this large — hence plain `Count` cells + `atomic_ref`.
+static_assert(std::is_trivially_default_constructible_v<Count>);
+alignas(DB::CH_CACHE_LINE_SIZE) static Count global_counters_storage[PerCPU::MAX_CPUS * per_cpu_stride];
+
+/// `cpus` starts at 0 (single-row layout); `ProfileEventsPerCPUInitializer` flips it to
+/// `PerCPU::getNumCPUs()` before any worker thread exists.
+constexpr Counters::Counters(Count * allocated_counters) noexcept
+    : counters(allocated_counters)
+    , parent(nullptr)
+    , level(VariableContext::Global)
+{}
+
+constinit Counters global_counters(global_counters_storage);
+
+/// Per-CPU width applied to newly-created `User`-level `Counters`. Set to `getNumCPUs()` during
+/// dynamic static init; `setUserPerCPUEnabled(false)` resets it to 0 to force the compact single-row
+/// layout. Read once per `User` ctor; the server sets it at startup before any user exists.
+constinit std::atomic<uint32_t> user_counters_cpus = 0;
+
+/// Switches `global_counters` to per-CPU layout during dynamic static init. Only `cpus` is
+/// mutated — storage stays put, so both pre- and post-flip readers see a valid view of the same
+/// BSS array (pre-flip increments land in row 0, which post-flip sums include). The store is
+/// relaxed-atomic because a thread spawned by an earlier TU's dynamic initializer may already be
+/// incrementing counters while this runs.
+struct ProfileEventsPerCPUInitializer
+{
+    ProfileEventsPerCPUInitializer()
+    {
+        const uint32_t cpus = PerCPU::getNumCPUs();
+        global_counters.cpus.store(cpus, std::memory_order_relaxed);
+        user_counters_cpus.store(cpus, std::memory_order_relaxed);
+    }
+};
+static const ProfileEventsPerCPUInitializer profile_events_per_cpu_initializer;
+
+void setUserPerCPUEnabled(bool enabled)
+{
+    user_counters_cpus.store(enabled ? PerCPU::getNumCPUs() : 0, std::memory_order_relaxed);
+}
 
 const Event Counters::num_counters = END;
 
@@ -1562,15 +1635,20 @@ void Timer::end()
 }
 
 Counters::Counters(VariableContext level_, Counters * parent_)
-    : counters_holder(new Counter[num_counters] {}),
-      parent(parent_),
-      level(level_)
+    /// `User`-level instances snapshot `user_counters_cpus` (stable post-init, server-tunable);
+    /// other levels stay single-row (`cpus == 0`). `cpus` is read once and the allocation is
+    /// sized from it, so the layout and the row count cannot disagree.
+    : cpus(level_ == VariableContext::User ? user_counters_cpus.load(std::memory_order_relaxed) : 0)
+    , counters_holder(allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
+    , parent(parent_)
+    , level(level_)
 {
     counters = counters_holder.get();
 }
 
 Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
+    , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
     , parent(src.parent.exchange(nullptr))
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_relaxed))
@@ -1582,11 +1660,60 @@ Counters::Counters(Counters && src) noexcept
 
 void Counters::resetCounters()
 {
-    if (counters)
+    if (!counters)
+        return;
+    const size_t total = cellCount(cpus.load(std::memory_order_relaxed));
+    for (size_t i = 0; i < total; ++i)
+        std::atomic_ref<Count>(counters[i]).store(0, std::memory_order_relaxed);
+}
+
+Count Counters::load(Event event) const
+{
+    const uint32_t rows = cpus.load(std::memory_order_relaxed);
+    if (!rows)
+        return cell(counters, 0, event).load(std::memory_order_relaxed);
+    Count sum = 0;
+    for (uint32_t s = 0; s < rows; ++s)
+        sum += cell(counters, s, event).load(std::memory_order_relaxed);
+    return sum;
+}
+
+void Counters::setParent(Counters * parent_)
+{
+    parent.store(parent_, std::memory_order_relaxed);
+}
+
+void Counters::setUserCounters(Counters * user)
+{
+    auto * current_val = this;
+    auto * parent_val = this->parent.load(std::memory_order_relaxed);
+
+    while (parent_val != nullptr && parent_val->level != VariableContext::Global && parent_val->level != VariableContext::User)
     {
-        for (Event i = Event(0); i < num_counters; ++i)
-            counters[i].store(0, std::memory_order_relaxed);
+        current_val = parent_val;
+        parent_val = current_val->parent.load(std::memory_order_relaxed);
     }
+
+    current_val->parent.store(user, std::memory_order_relaxed);
+}
+
+void Counters::setTraceAllProfileEvents()
+{
+    trace_all_profile_events.store(true, std::memory_order_relaxed);
+}
+
+void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
+{
+    const uint32_t rows = cpus.load(std::memory_order_relaxed);
+    if (rows)
+    {
+        /// `cpu` may be >= rows if a CPU above `MAX_CPUS` is online, and -1 on error. In both
+        /// cases, fall back to row 0 — still atomic, still correct, just with less cache locality.
+        const size_t row = (cpu >= 0 && static_cast<uint32_t>(cpu) < rows) ? static_cast<size_t>(cpu) : 0;
+        cell(counters, row, event).fetch_add(amount, std::memory_order_relaxed);
+    }
+    else
+        cell(counters, 0, event).fetch_add(amount, std::memory_order_relaxed);
 }
 
 void Counters::reset()
@@ -1603,7 +1730,7 @@ Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
     for (Event i = Event(0); i < num_counters; ++i)
-        res.counters_holder[i] = counters[i].load(std::memory_order_relaxed);
+        res.counters_holder[i] = load(i);
     return res;
 }
 
@@ -1736,12 +1863,17 @@ void incrementNoTrace(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().incrementNoTrace(event, amount);
 }
 
+void incrementSignalSafe(Event event, Count amount)
+{
+    DB::CurrentThread::getProfileEvents().incrementSignalSafe(event, amount);
+}
+
 double Counters::getCPUOverload(Int64 os_cpu_busy_time_threshold, bool reset)
 {
     /// It's possible that we'll have slightly inconsistent values between wait time and busy time. But since we take the value of CPU wait time first,
     /// it should not affect the situation a lot. In the worst case scenario we will have a slightly lower CPU overload value than it should be, but it's fine.
-    Int64 curr_cpu_wait_microseconds = counters[OSCPUWaitMicroseconds];
-    Int64 curr_cpu_virtual_time_microseconds = counters[OSCPUVirtualTimeMicroseconds];
+    Int64 curr_cpu_wait_microseconds = static_cast<Int64>(load(OSCPUWaitMicroseconds));
+    Int64 curr_cpu_virtual_time_microseconds = static_cast<Int64>(load(OSCPUVirtualTimeMicroseconds));
 
     Int64 os_cpu_wait_microseconds = curr_cpu_wait_microseconds - prev_cpu_wait_microseconds.load(std::memory_order_acquire);
     Int64 os_cpu_virtual_time_microseconds = curr_cpu_virtual_time_microseconds - prev_cpu_virtual_time_microseconds.load(std::memory_order_acquire);
@@ -1764,10 +1896,11 @@ void Counters::increment(Event event, Count amount)
 {
     Counters * current = this;
     bool send_to_trace_log = false;
+    const int32_t cpu = PerCPU::getCurrentCPU();
 
     do
     {
-        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current->fetchAdd(event, amount, cpu);
         if (auto * trace_arr = current->should_trace_array.load(std::memory_order_relaxed))
             send_to_trace_log |= trace_arr[event].load(std::memory_order_relaxed);
         send_to_trace_log |= current->trace_all_profile_events.load(std::memory_order_relaxed);
@@ -1782,9 +1915,22 @@ void Counters::increment(Event event, Count amount)
 void Counters::incrementNoTrace(Event event, Count amount)
 {
     Counters * current = this;
+    const int32_t cpu = PerCPU::getCurrentCPU();
     do
     {
-        current->counters[event].fetch_add(amount, std::memory_order_relaxed);
+        current->fetchAdd(event, amount, cpu);
+        current = current->parent;
+    } while (current != nullptr);
+}
+
+void Counters::incrementSignalSafe(Event event, Count amount)
+{
+    Counters * current = this;
+    /// Must stay async-signal-safe (called from signal/crash handlers), so unlike `incrementNoTrace`
+    /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
+    do
+    {
+        current->fetchAdd(event, amount, -1);
         current = current->parent;
     } while (current != nullptr);
 }

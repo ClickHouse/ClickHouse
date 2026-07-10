@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/deployment/docker-compose
+title: 'Docker Compose'
+description: '使用 Docker Compose 部署 ClickStack 开源版 —— ClickHouse 可观测性技术栈'
+doc_type: 'guide'
+keywords: ['ClickStack Docker Compose', 'Docker Compose ClickHouse', 'HyperDX Docker 部署', 'ClickStack 部署指南', 'OpenTelemetry Docker Compose']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import JSONSupport from '/snippets/zh/_json_support.mdx';
+
+所有 ClickStack 开源组件都以单独的 Docker 镜像形式分别发布：
+
+* **ClickHouse**
+* **HyperDX**
+* **OpenTelemetry (OTel) collector**
+* **MongoDB**
+
+这些镜像可以通过 Docker Compose 在本地组合部署。
+
+基于默认的 `otel-collector` 配置，Docker Compose 会额外暴露一些用于可观测性和摄取的端口：
+
+* `13133`：`health_check` 扩展 的健康检查端点
+* `24225`：用于日志摄取的 Fluentd receiver
+* `4317`：OTLP gRPC receiver (traces、logs 和 metrics 的标准端口)
+* `4318`：OTLP HTTP receiver (gRPC 的替代方案)
+* `8888`：用于监控 collector 自身的 Prometheus metrics 端点
+
+这些端口可支持与多种 telemetry source 集成，并让 OpenTelemetry collector 能够满足多样化摄取场景的生产环境需求。
+
+<div id="suitable-for">
+  ### 适用于
+</div>
+
+* 本地测试
+* 概念验证
+* 不要求容错能力，且单台服务器足以承载所有 ClickHouse 数据的生产部署
+* 部署 ClickStack 但将 ClickHouse 单独托管时，例如使用 ClickHouse Cloud。
+
+<div id="deployment-steps">
+  ## 部署步骤
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### 克隆仓库
+
+    要使用 Docker Compose 部署，请克隆 ClickStack 仓库，进入该目录并运行 `docker-compose up`：
+
+    ```shell
+    git clone https://github.com/ClickHouse/ClickStack.git
+    docker compose up
+    ```
+  </Step>
+
+  <Step>
+    ### 访问 HyperDX UI
+
+    访问 [http://localhost:8080](http://localhost:8080) 打开 HyperDX UI。
+
+    创建用户时，请提供符合要求的用户名和密码。
+
+    点击 `Create` 后，系统会为通过 Docker Compose 部署的 ClickHouse 实例创建数据源。
+
+    <Info>
+      **覆盖默认连接**
+
+      你可以覆盖集成的 ClickHouse 实例的默认连接。详情请参阅[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud)。
+    </Info>
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+
+    有关使用其他 ClickHouse 实例的示例，请参阅[&quot;Using ClickHouse Cloud&quot;](#using-clickhouse-cloud)。
+  </Step>
+
+  <Step>
+    ### 填写连接详细信息
+
+    要连接到已部署的 ClickHouse 实例，只需点击 **Create** 并接受默认设置即可。
+
+    如果你想连接自己的**外部 ClickHouse 集群** (例如 ClickHouse Cloud) ，也可以手动输入连接凭据。
+
+    如果系统提示创建数据源，请保留所有默认值，并在 `Table` 字段中填写 `otel_logs`。其余设置应会自动检测完成，然后你就可以点击 `Save New Source`。
+
+    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="创建日志数据源" size="md" />
+  </Step>
+</Steps>
+
+<div id="modifying-settings">
+  ## 修改 Compose 设置
+</div>
+
+你可以通过环境变量文件修改整个栈的设置，例如使用的版本：
+
+```shell
+user@example-host clickstack % cat .env
+
+# 由 docker-compose.yml 使用
+IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
+LOCAL_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-local
+ALL_IN_ONE_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-all-in-one
+OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB=clickhouse/clickstack-otel-collector
+CODE_VERSION=2.8.0
+IMAGE_VERSION_SUB_TAG=.8.0
+IMAGE_VERSION=2
+IMAGE_NIGHTLY_TAG=2-nightly
+IMAGE_LATEST_TAG=latest
+
+# 设置域名 URL
+HYPERDX_API_PORT=8000 #可选（不应被其他服务占用）
+HYPERDX_APP_PORT=8080
+HYPERDX_APP_URL=http://localhost
+HYPERDX_LOG_LEVEL=debug
+HYPERDX_OPAMP_PORT=4320
+
+# OTel/ClickHouse 配置
+HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE=default
+```
+
+<div id="configuring-collector">
+  ### 配置 OpenTelemetry collector
+</div>
+
+如有需要，可修改 OTel collector 配置——请参阅[“修改配置”](/zh/clickstack/ingesting-data/collector#modifying-otel-collector-configuration)。
+
+<div id="using-clickhouse-cloud">
+  ## 使用 ClickHouse Cloud
+</div>
+
+此发行版可与 ClickHouse Cloud 搭配使用，但不同于[托管 ClickStack](/zh/clickstack/deployment/managed)。在这种部署方式下，您需要自行管理 ClickStack UI，而 ClickHouse Cloud 仅用于计算和存储。除非您有特定原因必须独立运行 UI，否则我们建议使用托管 ClickStack；它提供集成的身份验证和额外的 Enterprise 功能，同时无需您自行管理 ClickStack UI。
+
+您应该：
+
+* 从 `docker-compose.yml` 文件中移除 ClickHouse 服务。如果只是用于测试，这一步是可选的，因为已部署的 ClickHouse 实例会被直接忽略，不过会浪费本地资源。如果移除了该服务，请确保一并删除所有对它的引用，例如 `depends_on`。
+
+* 修改 OTel collector，使其通过在 compose 文件中设置环境变量 `CLICKHOUSE_ENDPOINT`、`CLICKHOUSE_USER` 和 `CLICKHOUSE_PASSWORD` 来使用 ClickHouse Cloud 实例。具体来说，将这些环境变量添加到 OTel collector 服务中：
+
+  ```shell
+  otel-collector:
+      image: ${OTEL_COLLECTOR_IMAGE_NAME_DOCKERHUB}:${IMAGE_VERSION}
+      environment:
+        CLICKHOUSE_ENDPOINT: '<CLICKHOUSE_ENDPOINT>' # 在此填写 https 端点
+        CLICKHOUSE_USER: '<CLICKHOUSE_USER>'
+        CLICKHOUSE_PASSWORD: '<CLICKHOUSE_PASSWORD>'
+        HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE: ${HYPERDX_OTEL_EXPORTER_CLICKHOUSE_DATABASE}
+        HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+        OPAMP_SERVER_URL: 'http://app:${HYPERDX_OPAMP_PORT}'
+      ports:
+        - '13133:13133' # health_check 扩展
+        - '24225:24225' # fluentd receiver
+        - '4317:4317' # OTLP gRPC receiver
+        - '4318:4318' # OTLP http receiver
+        - '8888:8888' # metrics extension
+      restart: always
+      networks:
+        - internal
+  ```
+
+  `CLICKHOUSE_ENDPOINT` 应为 ClickHouse Cloud 的 HTTPS 端点，并包含端口 `8443`，例如 `https://mxl4k3ul6a.us-east-2.aws.clickhouse.com:8443`
+
+* 连接到 HyperDX UI 并创建与 ClickHouse 的连接时，请使用您的 Cloud 凭据。
+
+<JSONSupport />

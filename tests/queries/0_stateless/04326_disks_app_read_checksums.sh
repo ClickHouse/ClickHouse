@@ -24,7 +24,9 @@ run() {
 # Create a MergeTree part.
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS rc_test"
 ${CLICKHOUSE_CLIENT} --query "CREATE TABLE rc_test (k UInt64, s String) ENGINE = MergeTree ORDER BY k SETTINGS disk = 'default'"
-${CLICKHOUSE_CLIENT} --query "INSERT INTO rc_test SELECT number, toString(number) FROM numbers(3)"
+# Pin materialize_statistics_on_insert (randomized in CI): when on, auto-statistics are
+# materialized into the part as statistics.packed, which would change the asserted file set.
+${CLICKHOUSE_CLIENT} --query "INSERT INTO rc_test SETTINGS materialize_statistics_on_insert = 0 SELECT number, toString(number) FROM numbers(3)"
 path=$(${CLICKHOUSE_CLIENT} --query "SELECT path FROM system.parts \
     WHERE database = currentDatabase() AND table = 'rc_test' AND active LIMIT 1")
 

@@ -1,0 +1,80 @@
+---
+title: TRUNCATE
+---
+
+Оператор `TRUNCATE` в ClickHouse используется для быстрого удаления всех данных из таблицы или базы данных с сохранением их структуры.
+
+<div id="truncate-table">
+  ## TRUNCATE TABLE
+</div>
+
+```sql
+TRUNCATE TABLE [IF EXISTS] [db.]name [ON CLUSTER cluster] [SYNC]
+```
+
+<br />
+
+| Parameter            | Описание                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `IF EXISTS`          | Предотвращает ошибку, если таблица не существует. Если этот параметр не указан, запрос возвращает ошибку.                                                                |
+| `db.name`            | Необязательное имя базы данных.                                                                                                                                          |
+| `ON CLUSTER cluster` | Выполняет команду на всём указанном кластере.                                                                                                                            |
+| `SYNC`               | Делает операцию усечения синхронной на всех репликах при использовании реплицируемых таблиц. Если этот параметр не указан, по умолчанию усечение выполняется асинхронно. |
+
+Вы можете использовать настройку [alter&#95;sync](/ru/reference/settings/session-settings#alter_sync), чтобы настроить ожидание выполнения действий на репликах.
+
+С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать, пока неактивные реплики выполнят запросы `TRUNCATE`.
+
+<Info>
+  Если для `alter_sync` установлено значение `2` и некоторые реплики остаются неактивными дольше времени, заданного настройкой `replication_wait_for_inactive_replica_timeout`, будет сгенерировано исключение `UNFINISHED`.
+</Info>
+
+Запрос `TRUNCATE TABLE` **не поддерживается** для следующих движков таблиц:
+
+* [`View`](/ru/reference/engines/table-engines/special/view)
+* [`File`](/ru/reference/engines/table-engines/special/file)
+* [`URL`](/ru/reference/engines/table-engines/special/url)
+* [`Buffer`](/ru/reference/engines/table-engines/special/buffer)
+* [`Null`](/ru/reference/engines/table-engines/special/null)
+
+<div id="truncate-all-tables">
+  ## TRUNCATE ВСЕ ТАБЛИЦЫ
+</div>
+
+```sql
+TRUNCATE [ALL] TABLES FROM [IF EXISTS] db [LIKE | ILIKE | NOT LIKE '<pattern>'] [ON CLUSTER cluster]
+```
+
+<br />
+
+| Параметр                                | Описание                                              |
+| --------------------------------------- | ----------------------------------------------------- |
+| `ALL`                                   | Удаляет данные из всех таблиц в базе данных.          |
+| `IF EXISTS`                             | Предотвращает ошибку, если база данных не существует. |
+| `db`                                    | Имя базы данных.                                      |
+| `LIKE \| ILIKE \| NOT LIKE '<pattern>'` | Фильтрует таблицы по шаблону.                         |
+| `ON CLUSTER cluster`                    | Выполняет команду на всем кластере.                   |
+
+Удаляет все данные из всех таблиц в базе данных.
+
+<div id="truncate-database">
+  ## TRUNCATE DATABASE
+</div>
+
+```sql
+TRUNCATE DATABASE [IF EXISTS] db [ON CLUSTER cluster]
+```
+
+<br />
+
+| Parameter            | Описание                                              |
+| -------------------- | ----------------------------------------------------- |
+| `IF EXISTS`          | Предотвращает ошибку, если база данных не существует. |
+| `db`                 | Имя базы данных.                                      |
+| `ON CLUSTER cluster` | Выполняет команду во всём указанном кластере.         |
+
+Удаляет все таблицы из базы данных, но сохраняет саму базу данных. Если предложение `IF EXISTS` опущено, запрос вернёт ошибку, если база данных не существует.
+
+<Note>
+  `TRUNCATE DATABASE` не поддерживается для баз данных `Replicated`. Вместо этого просто выполните `DROP` и `CREATE` базы данных.
+</Note>

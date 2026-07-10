@@ -1,0 +1,21 @@
+---
+title: 性能优化目录
+---
+
+| 主题                                                                          | 描述                                                                 |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| [查询优化指南](/zh/guides/clickhouse/performance-and-monitoring/query-optimization)  | 从这里开始了解查询优化基础，涵盖常见场景以及提升查询执行速度的性能优化技巧。                             |
+| [主索引高级指南](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)         | 深入了解 ClickHouse 独特的稀疏主索引系统、它与传统数据库的差异，以及制定最佳索引策略的最佳实践。             |
+| [查询并行](/zh/concepts/core-concepts/query-parallelism)                           | 了解 ClickHouse 如何借助处理通道和 `max_threads` 设置并行执行查询，以及如何检查和优化并行执行。      |
+| [分区键](/zh/concepts/best-practices/partitioning-keys)                           | 掌握分区键的选择方法，通过高效裁剪数据分区并避开常见分区陷阱，显著提升查询性能。                           |
+| [数据跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)      | 有策略地应用二级索引，跳过无关的数据块，加速针对非主键列的过滤查询。                                 |
+| [`PREWHERE` 优化](/zh/concepts/features/performance/prewhere)                    | 了解 `PREWHERE` 如何通过在读取不必要的列之前先过滤数据来自动减少 I/O，以及如何监控其效果。              |
+| [批量插入](/zh/concepts/features/operations/insert/bulkinserts)                    | 通过高效地批量插入数据，最大限度提高摄取吞吐量并降低资源开销。                                    |
+| [异步插入](/zh/concepts/features/operations/insert/asyncinserts)                   | 利用服务端批处理提升插入性能，降低客户端复杂度，并提高高频插入场景下的吞吐量。                            |
+| [避免变更](/zh/concepts/best-practices/avoid-mutations)                            | 设计仅追加的工作流，在保持数据准确性和性能的同时，避免高成本的 `UPDATE` 和 `DELETE` 操作。            |
+| [避免 Nullable 列](/zh/concepts/best-practices/avoidnullablecolumns)              | 尽可能使用默认值代替可空列，以减少存储开销并提升查询性能。                                      |
+| [避免 `OPTIMIZE FINAL`](/zh/concepts/best-practices/avoid-optimize-final)        | 了解何时应该以及何时不应该使用 `OPTIMIZE TABLE FINAL`                             |
+| [analyzer](/zh/guides/clickhouse/performance-and-monitoring/analyzer)          | 利用 ClickHouse 新的查询分析器识别性能瓶颈，并优化查询执行计划以提升效率。                        |
+| [查询剖析](/zh/concepts/features/performance/troubleshoot/sampling-query-profiler) | 使用采样查询分析器分析查询执行模式，识别性能热点，并优化资源使用。                                  |
+| [查询缓存](/zh/concepts/features/performance/caches/query-cache)                   | 通过启用并配置 ClickHouse 内置的查询结果缓存，加速频繁执行的 `SELECT` 查询。                  |
+| [测试硬件](/zh/concepts/features/performance/troubleshoot/performance-test)        | 无需安装即可在任意服务器上运行 ClickHouse 性能基准测试，以评估硬件能力。 (不适用于 ClickHouse Cloud) |
