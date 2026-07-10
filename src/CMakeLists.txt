@@ -339,7 +339,10 @@ add_object_library(clickhouse_planner Planner)
 add_object_library(clickhouse_interpreters Interpreters)
 add_object_library(clickhouse_interpreters_cache Interpreters/Cache)
 add_object_library(clickhouse_interpreters_filecache Interpreters/FileCache)
-add_object_library(clickhouse_interpreters_hash_join Interpreters/HashJoin)
+# Interpreters/HashJoin is compiled as a separate object library (see below,
+# after the `dbms` target is fully configured) so that its compile jobs can be
+# throttled through a dedicated ninja job pool.
+add_headers_and_sources(clickhouse_interpreters_hash_join Interpreters/HashJoin)
 add_object_library(clickhouse_interpreters_access Interpreters/Access)
 add_object_library(clickhouse_interpreters_mysql Interpreters/MySQL)
 add_object_library(clickhouse_interpreters_clusterproxy Interpreters/ClusterProxy)
@@ -905,6 +908,48 @@ if (TARGET ch_rust::wasmtime)
     target_link_libraries(clickhouse_common_io PRIVATE ch_rust::wasmtime)
     target_link_libraries(dbms PRIVATE ch_rust::wasmtime)
 endif()
+
+# The join-instantiation translation units in Interpreters/HashJoin are by far
+# the most memory-hungry compiles of the whole build: with sanitizers each one
+# peaks at ~5 GB. On a cold compiler cache ninja's critical-path scheduling
+# starts all of them at once, which can exceed the builder's memory and get
+# the compilers killed by the OOM killer. Compile them as a separate object
+# library whose job pool bounds how many are in flight simultaneously, sized
+# by physical memory; the rest of the build keeps full parallelism. The pool
+# is only applied to sanitizer/fuzzer builds - elsewhere these units are not
+# outliers enough to matter.
+add_library(clickhouse_interpreters_hash_join OBJECT ${clickhouse_interpreters_hash_join_headers} ${clickhouse_interpreters_hash_join_sources})
+# Inherit the compile environment of `dbms` (snapshotted here, after `dbms` is
+# fully configured; nothing modifies it outside this file). `daemon` and
+# `loggers` are excluded from the inherited link libraries: they mutually link
+# `dbms` (a cycle that is legal among static libraries but not with an object
+# library in the loop), and nothing in Interpreters/HashJoin uses their headers.
+get_target_property(dbms_include_directories dbms INCLUDE_DIRECTORIES)
+get_target_property(dbms_compile_definitions dbms COMPILE_DEFINITIONS)
+get_target_property(dbms_compile_options dbms COMPILE_OPTIONS)
+get_target_property(dbms_link_libraries dbms LINK_LIBRARIES)
+list(REMOVE_ITEM dbms_link_libraries daemon loggers)
+target_include_directories(clickhouse_interpreters_hash_join PRIVATE ${dbms_include_directories})
+if (dbms_compile_definitions)
+    target_compile_definitions(clickhouse_interpreters_hash_join PRIVATE ${dbms_compile_definitions})
+endif ()
+if (dbms_compile_options)
+    target_compile_options(clickhouse_interpreters_hash_join PRIVATE ${dbms_compile_options})
+endif ()
+target_link_libraries(clickhouse_interpreters_hash_join PRIVATE ${dbms_link_libraries})
+target_sources(dbms PRIVATE $<TARGET_OBJECTS:clickhouse_interpreters_hash_join>)
+if (SANITIZE OR SANITIZE_COVERAGE OR ENABLE_FUZZING)
+    set (MAX_HASH_JOIN_COMPILER_MEMORY 8000) # megabytes; ~5 GB peak per TU plus headroom for the rest of the build
+    math (EXPR HASH_JOIN_COMPILE_JOBS "${TOTAL_PHYSICAL_MEMORY} / ${MAX_HASH_JOIN_COMPILER_MEMORY}")
+    if (HASH_JOIN_COMPILE_JOBS LESS 2)
+        set (HASH_JOIN_COMPILE_JOBS 2)
+    elseif (HASH_JOIN_COMPILE_JOBS GREATER NUMBER_OF_LOGICAL_CORES)
+        set (HASH_JOIN_COMPILE_JOBS ${NUMBER_OF_LOGICAL_CORES})
+    endif ()
+    message (STATUS "Limiting concurrent compilation of Interpreters/HashJoin to ${HASH_JOIN_COMPILE_JOBS} jobs")
+    set_property (GLOBAL APPEND PROPERTY JOB_POOLS hash_join_compile_pool=${HASH_JOIN_COMPILE_JOBS})
+    set_target_properties (clickhouse_interpreters_hash_join PROPERTIES JOB_POOL_COMPILE hash_join_compile_pool)
+endif ()
 
 if (ENABLE_TESTS)
     macro (grep_gtest_sources BASE_DIR DST_VAR)
