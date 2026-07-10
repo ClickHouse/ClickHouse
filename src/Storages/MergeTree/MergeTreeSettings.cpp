@@ -2085,6 +2085,9 @@ Notify newest block number to SharedJoin or SharedSet. Only in ClickHouse Cloud.
     DECLARE(UInt64, shared_merge_tree_virtual_parts_discovery_batch, 1, R"(
 How many partition discoveries should be packed into batch
 )", EXPERIMENTAL) \
+    DECLARE(Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, false, R"(
+Will SMT discover virtual parts partition atomically with extra data fetch and watches setup.
+)", EXPERIMENTAL) \
     DECLARE(Bool, shared_merge_tree_enable_automatic_empty_partitions_cleanup, true, R"(
 Enabled cleanup of Keeper entries of empty partition.
 )", 0) \

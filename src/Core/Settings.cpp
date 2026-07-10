@@ -41,7 +41,6 @@ constexpr UInt64 default_distributed_cache_send_timeout_ms = 3000;
 constexpr UInt64 default_distributed_cache_receive_timeout_ms = 3000;
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = 2900;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = true;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = false;
 #else
 constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
@@ -55,7 +54,6 @@ constexpr UInt64 default_distributed_cache_send_timeout_ms = DistributedCache::D
 constexpr UInt64 default_distributed_cache_receive_timeout_ms = DistributedCache::DEFAULT_RECEIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_tcp_keep_alive_timeout_ms = DistributedCache::DEFAULT_TCP_KEEP_ALIVE_TIMEOUT_MS;
 constexpr UInt64 default_distributed_cache_use_clients_cache_for_read = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_READ;
-constexpr UInt64 default_distributed_cache_use_clients_cache_for_write = DistributedCache::DEFAULT_USE_CLIENTS_CACHE_FOR_WRITE;
 #endif
 }
 
@@ -4013,6 +4011,9 @@ Allow '.' to match newline characters for a regexp_tree dictionary.
     DECLARE(Bool, dictionary_use_async_executor, false, R"(
 Execute a pipeline for reading dictionary source in several threads. It's supported only by dictionaries with local CLICKHOUSE source.
 )", 0) \
+    DECLARE(BoolAuto, dictionary_lazy_load, Field("auto"), R"(
+Controls loading of a dictionary when specified in the `SETTINGS` clause of `CREATE DICTIONARY`: `1` defers loading until first use, `0` loads the dictionary at creation, `'auto'` follows the server setting `dictionaries_lazy_load`. Has no effect when set on a session or query level.
+)", 0) \
     DECLARE(LogsLevel, send_logs_level, LogsLevel::fatal, R"(
 Send server text logs with specified minimum level to client. Valid values: 'trace', 'debug', 'information', 'warning', 'error', 'fatal', 'none'
 )", 0) \
@@ -6679,7 +6680,7 @@ Whether to use only prewhere columns size to determine reading task size.
 Hard lower limit on the task size (even when the number of granules is low and the number of available threads is high we won't allocate smaller tasks
 )", 0) \
     DECLARE(UInt64, merge_tree_compact_parts_min_granules_to_multibuffer_read, 16, R"(
-Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request.
+Only has an effect in ClickHouse Cloud. Number of granules in stripe of compact part of MergeTree tables to use multibuffer reader, which supports parallel reading and prefetch. In case of reading from remote fs using of multibuffer reader increases number of read request. A part is read with a single buffer when it contains both fewer granules than this threshold and fewer granules than the number of columns being read, because in that case the single buffer reader issues fewer read requests than the multibuffer reader.
 )", 0) \
     \
     DECLARE(Bool, send_table_structure_on_insert_with_inline_data, true, R"(
@@ -7136,9 +7137,6 @@ Only has an effect in ClickHouse Cloud. Timeout for sending data to istributed c
 )", 0) \
     DECLARE(UInt64, distributed_cache_tcp_keep_alive_timeout_ms, default_distributed_cache_tcp_keep_alive_timeout_ms, R"(
 Only has an effect in ClickHouse Cloud. The time in milliseconds the connection to distributed cache server needs to remain idle before TCP starts sending keepalive probes.
-)", 0) \
-    DECLARE(Bool, distributed_cache_use_clients_cache_for_write, default_distributed_cache_use_clients_cache_for_write, R"(
-Only has an effect in ClickHouse Cloud. Use clients cache for write requests.
 )", 0) \
     DECLARE(Bool, distributed_cache_use_clients_cache_for_read, default_distributed_cache_use_clients_cache_for_read, R"(
 Only has an effect in ClickHouse Cloud. Use clients cache for read requests.
@@ -8558,6 +8556,7 @@ Name of the named collection used by `aiEmbed` when the call does not pass `cred
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
     MAKE_OBSOLETE(M, Bool, query_condition_cache_store_conditions_as_plaintext, false) \
     MAKE_OBSOLETE(M, Bool, update_insert_deduplication_token_in_dependent_materialized_views, 0) \

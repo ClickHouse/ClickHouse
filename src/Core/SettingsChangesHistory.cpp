@@ -41,6 +41,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.7",
         {
+            {"dictionary_lazy_load", "auto", "auto", "New setting overriding the server setting `dictionaries_lazy_load` for an individual dictionary."},
             {"discard_query_data", false, false, "New setting to skip sending query result rows to the client over the native TCP protocol."},
             {"optimize_trivial_count_with_sparsity_filter", false, false, "New (experimental) setting to serve `SELECT count() FROM t WHERE <pred>` from per-column `num_defaults` / `num_rows` recorded in `serialization.json` when `<pred>` partitions rows into defaults vs non-defaults."},
             {"merge_tree_generic_exclusion_search_max_steps", 0, 0, "New setting to limit the number of steps of the generic exclusion search over the primary key index."},
@@ -1302,6 +1303,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_experimental_text_index_positions", false, false, "New setting"},
             {"allow_dimensions_outside_sorting_key", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."},
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
+            {"shared_merge_tree_virtual_parts_partition_atomic_discovery", false, false, "New setting"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",

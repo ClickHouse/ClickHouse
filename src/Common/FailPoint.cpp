@@ -38,6 +38,7 @@ static struct InitFiu
     ONCE(replicated_merge_tree_insert_quorum_fail_0) \
     REGULAR(replicated_merge_tree_commit_zk_fail_when_recovering_from_hw_fault) \
     REGULAR(rmt_dedup_conflict_part_name_missing) \
+    REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
     REGULAR(cluster_discovery_faults) \
@@ -82,6 +83,7 @@ static struct InitFiu
     ONCE(distributed_cache_server_fail_show_request) \
     ONCE(distributed_cache_server_fail_show_streaming) \
     REGULAR(distributed_cache_fail_request_in_the_middle_of_request_always) \
+    REGULAR(distributed_cache_cancel_query_in_response_wait) \
     REGULAR(file_cache_stall_free_space_ratio_keeping_thread) \
     PAUSEABLE(file_cache_pause_before_do_eviction) \
     REGULAR(file_cache_simulate_evicting_segment) \
@@ -91,6 +93,7 @@ static struct InitFiu
     REGULAR(distributed_cache_fail_connect_non_retriable) \
     REGULAR(distributed_cache_fail_connect_retriable) \
     ONCE(distributed_cache_simulate_stale_connection) \
+    REGULAR(distributed_cache_write_fail_object_storage) \
     REGULAR(write_through_cache_fail) \
     REGULAR(object_storage_queue_fail_commit) \
     REGULAR(object_storage_queue_fail_after_insert) \
@@ -228,6 +231,7 @@ static struct InitFiu
     ONCE(thread_group_switcher_post_attach_failure) \
     PAUSEABLE(transaction_after_commit_pause) \
     REGULAR(mt_mutate_task_can_skip_conversion_to_nullable_force_null_column_desc) \
+    PAUSEABLE_ONCE(iceberg_compaction_merge_pause_in_step) \
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     ONCE(zk_send_thread_request_window_throw) \
