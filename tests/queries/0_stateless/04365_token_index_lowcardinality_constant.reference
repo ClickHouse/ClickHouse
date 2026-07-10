@@ -24,3 +24,13 @@ mapkey in LowCardinality
 1
 mapkey correctness
 1	500
+mapkey tokenbf equals String
+1
+mapkey tokenbf equals LowCardinality
+1
+mapkey tokenbf equals LowCardinality(Nullable)
+1
+mapkey ngrambf equals LowCardinality(Nullable)
+1
+mapkey tokenbf correctness
+1	500

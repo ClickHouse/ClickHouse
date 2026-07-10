@@ -68,7 +68,38 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map WHERE att
 SELECT 'mapkey correctness';
 SELECT count(), min(id) FROM t_map WHERE attrs[toLowCardinality('entity')] = 'v';
 
+-- Bloom-filter sibling (MergeTreeIndexBloomFilterText.cpp) of the map-key path: a
+-- `mapKeys(...)` tokenbf_v1/ngrambf_v1 index. tryGetConstant strips only an outer Nullable,
+-- so a LowCardinality(Nullable(String)) key survived as Nullable(String) after
+-- removeLowCardinality, failed the raw string-type gate and degraded to a full scan. The key
+-- must be stripped of LowCardinality then Nullable (non-null only) before the gate. Each
+-- variant must prune to the SAME single granule as the plain-String key.
+DROP TABLE IF EXISTS t_map_tokenbf;
+CREATE TABLE t_map_tokenbf (id UInt64, attrs Map(String, String), INDEX idx mapKeys(attrs) TYPE tokenbf_v1(256, 2, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO t_map_tokenbf SELECT number, map(if(number = 500, 'entity', 'other'), 'v') FROM numbers(1024);
+
+SELECT 'mapkey tokenbf equals String';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_tokenbf WHERE attrs['entity'] = 'v') WHERE explain ILIKE '%Granules: 1/128%';
+SELECT 'mapkey tokenbf equals LowCardinality';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_tokenbf WHERE attrs[toLowCardinality('entity')] = 'v') WHERE explain ILIKE '%Granules: 1/128%';
+SELECT 'mapkey tokenbf equals LowCardinality(Nullable)';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_tokenbf WHERE attrs[CAST('entity', 'LowCardinality(Nullable(String))')] = 'v') WHERE explain ILIKE '%Granules: 1/128%';
+
+DROP TABLE IF EXISTS t_map_ngrambf;
+CREATE TABLE t_map_ngrambf (id UInt64, attrs Map(String, String), INDEX idx mapKeys(attrs) TYPE ngrambf_v1(3, 256, 2, 0) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 8;
+INSERT INTO t_map_ngrambf SELECT number, map(if(number = 500, 'entityword', 'otherword'), 'v') FROM numbers(1024);
+
+SELECT 'mapkey ngrambf equals LowCardinality(Nullable)';
+SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_map_ngrambf WHERE attrs[CAST('entityword', 'LowCardinality(Nullable(String))')] = 'v') WHERE explain ILIKE '%Granules: 1/128%';
+
+SELECT 'mapkey tokenbf correctness';
+SELECT count(), min(id) FROM t_map_tokenbf WHERE attrs[CAST('entity', 'LowCardinality(Nullable(String))')] = 'v';
+
 DROP TABLE t_text;
 DROP TABLE t_tokenbf;
 DROP TABLE t_ngrambf;
 DROP TABLE t_map;
+DROP TABLE t_map_tokenbf;
+DROP TABLE t_map_ngrambf;

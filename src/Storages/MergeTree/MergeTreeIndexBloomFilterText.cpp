@@ -506,8 +506,16 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
                 {
                     key_index = map_keys_index;
 
-                    auto const_data_type = WhichDataType(removeLowCardinality(const_type));
-                    if (!const_data_type.isStringOrFixedString() && !const_data_type.isArray())
+                    /// Strip the type wrapper before the string-type gate (mirrors the
+                    /// compared-value path): tryGetConstant strips only an outer Nullable, so a
+                    /// Const(LowCardinality(Nullable(String))) key otherwise survives as
+                    /// Nullable(String) after removeLowCardinality, fails the gate and degrades to
+                    /// a full scan. Nullable is stripped only for a non-null key.
+                    auto unwrapped_const_type = removeLowCardinality(const_type);
+                    if (!const_value.isNull())
+                        unwrapped_const_type = removeNullable(unwrapped_const_type);
+                    auto const_data_type = WhichDataType(unwrapped_const_type);
+                    if (const_value.isNull() || (!const_data_type.isStringOrFixedString() && !const_data_type.isArray()))
                         return false;
                 }
                 else
