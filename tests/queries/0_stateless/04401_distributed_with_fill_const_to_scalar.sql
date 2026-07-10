@@ -6,6 +6,13 @@
 -- causing "Bad cast from type DB::FunctionNode to DB::ConstantNode".
 -- optimize_const_name_size = 0 replaces ALL constants with __getScalar calls.
 
+-- Query-plan serialization does not support WITH FILL sort descriptions
+-- (NOT_IMPLEMENTED in serializeSortDescription); the AST-rewrite path this test
+-- covers is orthogonal to it. Pin it off so the test is stable under the
+-- distributed-plan CI job, where prefer_localhost_replica=0 would otherwise send
+-- the localhost shard through the serialized plan path.
+SET serialize_query_plan = 0;
+
 DROP TABLE IF EXISTS t0;
 DROP TABLE IF EXISTS t1;
 
