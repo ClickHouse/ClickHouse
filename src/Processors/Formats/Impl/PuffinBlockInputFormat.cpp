@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstring>
 #include <limits>
 #include <unordered_map>
@@ -47,6 +48,7 @@ namespace
 constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
 constexpr UInt8 PUFFIN_FOOTER_COMPRESSED_FLAG = 0x01;
 constexpr size_t PUFFIN_FOOTER_TRAILER_SIZE = 12;
+constexpr size_t PUFFIN_FOOTER_LZ4_MAX_RATIO = 255;
 constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
 constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
 constexpr Int32 DELETION_VECTOR_MAX_KEY = std::numeric_limits<Int32>::max() - 1;
@@ -118,11 +120,23 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
     const char * src = data + header_size;
     size_t src_remaining = size - header_size;
 
+    size_t max_decompressed_size = 0;
+    if (common::mulOverflow(size, PUFFIN_FOOTER_LZ4_MAX_RATIO, max_decompressed_size))
+        throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer compressed payload is too large");
+
     String result;
     if (frame_info.contentSize != 0)
-        result.resize(frame_info.contentSize);
+    {
+        if (frame_info.contentSize > max_decompressed_size)
+            throw Exception(
+                ErrorCodes::LZ4_DECODER_FAILED,
+                "Puffin footer LZ4 content size {} exceeds decompression limit {}",
+                frame_info.contentSize,
+                max_decompressed_size);
+        result.resize(static_cast<size_t>(frame_info.contentSize));
+    }
     else
-        result.resize(std::max(size * 2, static_cast<size_t>(256)));
+        result.resize(std::min(std::max(size * 2, static_cast<size_t>(256)), max_decompressed_size));
 
     size_t dst_offset = 0;
     while (true)
@@ -141,8 +155,23 @@ String decompressPuffinFooterPayload(const char * data, size_t size)
             break;
 
         if (dst_offset == result.size())
-            result.resize(result.size() * 2);
+        {
+            if (result.size() >= max_decompressed_size)
+                throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer decompressed size exceeds limit {}", max_decompressed_size);
+
+            const size_t new_size = std::min(result.size() * 2, max_decompressed_size);
+            if (new_size == result.size())
+                throw Exception(ErrorCodes::LZ4_DECODER_FAILED, "Puffin footer decompressed size exceeds limit {}", max_decompressed_size);
+            result.resize(new_size);
+        }
     }
+
+    if (frame_info.contentSize != 0 && dst_offset != frame_info.contentSize)
+        throw Exception(
+            ErrorCodes::LZ4_DECODER_FAILED,
+            "Puffin footer LZ4 decompressed size {} does not match content size {}",
+            dst_offset,
+            frame_info.contentSize);
 
     result.resize(dst_offset);
     return result;
