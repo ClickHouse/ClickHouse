@@ -189,7 +189,9 @@ FractionalLimitTransform::Status FractionalLimitTransform::prepare()
 
                 rows_processed += chunk_rows;
                 early_pushed_rows += chunk_rows;
-                if (with_ties && rows_processed == limit_rows_for_current_input + offset_rows)
+                /// Skip the tie-key snapshot for an empty chunk: there is no row to remember and
+                /// chunk_rows - 1 would underflow. The previously stored ties_last_row is still correct.
+                if (with_ties && rows_processed == limit_rows_for_current_input + offset_rows && chunk_rows > 0)
                     ties_last_row = makeChunkWithPreviousRow(front_chunk, chunk_rows - 1);
 
                 output->push(std::move(front_chunk));
@@ -351,7 +353,10 @@ FractionalLimitTransform::Status FractionalLimitTransform::pushData()
         {
             /// Return the whole chunk.
             /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-            if (with_ties && rows_processed == offset_rows + limit_rows)
+            /// Skip when the chunk is empty (e.g. a trailing empty chunk from the WITH FILL / read-in-order
+            /// pipeline that reached us after rows_processed already hit the limit boundary): there is no row
+            /// to remember and chunk_rows - 1 would underflow. The previously stored ties_last_row is still correct.
+            if (with_ties && rows_processed == offset_rows + limit_rows && chunk_rows > 0)
                 ties_last_row = makeChunkWithPreviousRow(chunk, chunk_rows - 1);
         }
         else
