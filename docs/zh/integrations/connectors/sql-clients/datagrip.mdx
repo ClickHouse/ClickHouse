@@ -1,0 +1,81 @@
+---
+sidebarTitle: 'DataGrip'
+slug: /integrations/datagrip
+description: 'DataGrip 是一款原生支持 ClickHouse 的数据库 IDE。'
+title: '将 DataGrip 连接到 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+  - website: 'https://www.jetbrains.com/datagrip/'
+keywords: ['DataGrip', '数据库 IDE', 'JetBrains', 'SQL 客户端', '集成开发环境']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
+import CommunityMaintainedBadge from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="start-or-download-datagrip">
+  ## 启动或下载 DataGrip
+</div>
+
+DataGrip 可在 https://www.jetbrains.com/datagrip/ 下载
+
+<div id="1-gather-your-connection-details">
+  ## 1. 获取连接信息
+</div>
+
+<ConnectionDetails />
+
+<div id="2-load-the-clickhouse-driver">
+  ## 2. 加载 ClickHouse 驱动程序
+</div>
+
+1. 启动 DataGrip，在 **Data Sources and Drivers** 对话框的 **Data Sources** 选项卡中，点击 **+** 图标
+
+<Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="DataGrip 的 Data Sources 选项卡，+ 图标已高亮显示" />
+
+选择 **ClickHouse**
+
+<Tip>
+  随着你建立的连接增多，列表顺序会发生变化，因此 ClickHouse 可能还不在列表顶部。
+</Tip>
+
+<Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="在数据源列表中选择 ClickHouse 的 DataGrip" />
+
+* 切换到 **Drivers** 选项卡并加载 ClickHouse 驱动程序
+
+  DataGrip 默认不附带驱动程序，以尽量减小下载体积。在 **Drivers** 选项卡中，
+  从 **Complete Support** 列表中选择 **ClickHouse**，然后点击展开 **+** 号。在 **Provided Driver** 选项中选择 **Latest stable** 驱动程序：
+
+<Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="DataGrip 的 Drivers 选项卡，显示 ClickHouse 驱动程序安装" />
+
+<div id="3-connect-to-clickhouse">
+  ## 3. 连接到 ClickHouse
+</div>
+
+* 填写数据库连接信息，然后点击 **Test Connection**。
+  在第一步中，你已经收集了连接信息——填写主机 URL、端口、用户名、密码和数据库名称，然后测试连接。
+
+<Tip>
+  在 **Host** 字段中仅输入主机名 (例如：`your-host.clickhouse.cloud`) ，不要包含任何类似 `https://` 的协议前缀。
+
+  对于 ClickHouse Cloud 连接，你必须在主机下方的 **URL** 字段中添加 `?ssl=true`。完整的 JDBC URL 应如下所示：
+
+  `jdbc:clickhouse://your-host.clickhouse.cloud:8443/default?ssl=true`
+
+  ClickHouse Cloud 要求所有连接都使用 SSL 加密。如果没有 `?ssl=true` 参数，即使凭据正确，也会出现“Connection reset”错误。
+
+  有关 JDBC URL 设置的更多详细信息，请参阅 [ClickHouse JDBC 驱动](https://github.com/ClickHouse/clickhouse-java) 仓库。
+</Tip>
+
+<Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="带有 ClickHouse 设置的 DataGrip 连接信息表单" />
+
+<div id="learn-more">
+  ## 了解更多
+</div>
+
+如需了解 DataGrip 的更多信息，请参阅 DataGrip 文档。

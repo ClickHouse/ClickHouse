@@ -1,0 +1,80 @@
+---
+description: 'OS 페이지 캐시에 의존하지 않고 
+데이터를 프로세스 내 메모리에 캐시할 수 있게 해주는 캐싱 메커니즘입니다.'
+sidebarTitle: '사용자 공간 페이지 캐시'
+slug: /operations/userspace-page-cache
+title: '사용자 공간 페이지 캐시'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+> 사용자 공간 페이지 캐시는 OS 페이지 캐시에 의존하지 않고, 프로세스 내 메모리에 데이터를 캐시할 수 있게 해주는 새로운 캐싱 메커니즘입니다.
+
+ClickHouse는 이미 Amazon S3, Google Cloud Storage (GCS), Azure Blob Storage와 같은 원격 객체 스토리지 상위 계층에서 캐싱하는 방법으로 [파일 시스템 캐시](/ko/concepts/features/configuration/server-config/storing-data)를 제공합니다. 사용자 공간 페이지 캐시는 일반적인 OS 캐싱만으로는 충분한 성능을 내지 못할 때 원격 데이터에 대한 액세스 속도를 높이도록 설계되었습니다.
+
+이는 파일 시스템 캐시와 다음과 같은 차이가 있습니다:
+
+| 파일 시스템 캐시                           | 사용자 공간 페이지 캐시         |
+| ----------------------------------- | --------------------- |
+| 데이터를 로컬 파일 시스템에 씁니다                 | 메모리에만 존재합니다           |
+| 디스크 공간을 사용합니다(tmpfs로도 구성 가능)        | 파일 시스템과 독립적입니다        |
+| 서버 재시작 후에도 유지됩니다                    | 서버 재시작 후에는 유지되지 않습니다  |
+| 서버의 메모리 사용량에 표시되지 않습니다              | 서버의 메모리 사용량에 표시됩니다    |
+| 디스크 기반과 메모리 기반(OS 페이지 캐시) 모두에 적합합니다 | **디스크가 없는 서버에 적합합니다** |
+
+<div id="configuration-settings-and-usage">
+  ## 구성 설정 및 사용법
+</div>
+
+<div id="usage">
+  ### 사용
+</div>
+
+사용자 공간 페이지 캐시를 활성화하려면 먼저 서버에서 이를 설정하십시오:
+
+```bash
+cat config.d/page_cache.yaml
+page_cache_max_size: 100G
+```
+
+<Note>
+  사용자 공간 페이지 캐시는 지정된 양까지 메모리를 사용할 수 있지만,
+  해당 메모리가 예약되는 것은 아닙니다. 서버의 다른 용도로 메모리가 필요해지면
+  이 메모리는 회수됩니다.
+</Note>
+
+다음으로, 쿼리 수준에서 이 기능 사용을 활성화합니다:
+
+```sql
+SET use_page_cache_for_disks_without_file_cache=1;
+```
+
+<div id="settings">
+  ### 설정
+</div>
+
+| 설정                                                      | 설명                                                                                                                                                                                                      | 기본값         |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| `use_page_cache_for_disks_without_file_cache`           | 파일 시스템 캐시가 활성화되지 않은 원격 디스크에 사용자 공간 페이지 캐시를 사용합니다.                                                                                                                                                       | `0`         |
+| `use_page_cache_with_distributed_cache`                 | Distributed Cache를 사용할 때 사용자 공간 페이지 캐시를 사용합니다.                                                                                                                                                          | `0`         |
+| `read_from_page_cache_if_exists_otherwise_bypass_cache` | [`read_from_filesystem_cache_if_exists_otherwise_bypass_cache`](/ko/reference/settings/session-settings#read_from_filesystem_cache_if_exists_otherwise_bypass_cache)와 유사하게, 패시브 모드에서 사용자 공간 페이지 캐시를 사용합니다. | `0`         |
+| `page_cache_inject_eviction`                            | 사용자 공간 페이지 캐시가 때때로 일부 페이지를 무작위로 무효화합니다. 테스트용입니다.                                                                                                                                                        | `0`         |
+| `page_cache_block_size`                                 | 사용자 공간 페이지 캐시에 저장할 파일 청크의 크기(바이트)입니다. 캐시를 거치는 모든 읽기는 이 크기의 배수로 올림됩니다.                                                                                                                                   | `1048576`   |
+| `page_cache_history_window_ms`                          | 해제된 메모리를 사용자 공간 페이지 캐시가 다시 사용할 수 있기까지의 지연 시간입니다.                                                                                                                                                        | `1000`      |
+| `page_cache_policy`                                     | 사용자 공간 페이지 캐시 정책의 이름입니다.                                                                                                                                                                                | `SLRU`      |
+| `page_cache_size_ratio`                                 | 사용자 공간 페이지 캐시에서 보호 큐가 캐시 전체 크기에서 차지하는 비율입니다.                                                                                                                                                            | `0.5`       |
+| `page_cache_min_size`                                   | 사용자 공간 페이지 캐시의 최소 크기입니다.                                                                                                                                                                                | `104857600` |
+| `page_cache_max_size`                                   | 사용자 공간 페이지 캐시의 최대 크기입니다. 캐시를 비활성화하려면 0으로 설정합니다. `page_cache_min_size`보다 크면, 사용 가능한 메모리 대부분을 활용하면서 전체 메모리 사용량이 제한(`max_server_memory_usage`[`_to_ram_ratio`]) 아래로 유지되도록 이 범위 내에서 캐시 크기가 계속 조정됩니다.        | `0`         |
+| `page_cache_free_memory_ratio`                          | 메모리 한도 중 사용자 공간 페이지 캐시가 사용하지 않고 남겨 둘 비율입니다. Linux의 min&#95;free&#95;kbytes 설정과 유사합니다.                                                                                                                   | `0.15`      |
+| `page_cache_lookahead_blocks`                           | 사용자 공간 페이지 캐시 미스가 발생하면, 해당 블록들 역시 캐시에 없을 경우 하위 스토리지에서 최대 이 수만큼의 연속 블록을 한 번에 읽습니다. 각 블록의 크기는 `page_cache_block_size`바이트입니다.                                                                              | `16`        |
+| `page_cache_shards`                                     | 뮤텍스 경합을 줄이기 위해 사용자 공간 페이지 캐시를 이 수만큼의 세그먼트에 걸쳐 분산합니다. 실험적 기능이며 성능 향상에 도움이 될 가능성은 크지 않습니다.                                                                                                                | `4`         |
+
+<div id="related-content">
+  ## 관련 콘텐츠
+</div>
+
+* [파일 시스템 캐시](/ko/concepts/features/configuration/server-config/storing-data)
+* [ClickHouse v25.3 출시 웨비나](https://www.youtube.com/live/iCKEzp0_Z2Q?feature=shared\&t=1320)

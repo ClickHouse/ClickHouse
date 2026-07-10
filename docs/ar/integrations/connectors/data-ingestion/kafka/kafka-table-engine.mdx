@@ -1,0 +1,545 @@
+---
+sidebarTitle: 'محرك جدول Kafka'
+slug: /integrations/kafka/kafka-table-engine
+description: 'استخدام محرك جدول Kafka'
+title: 'استخدام محرك جدول Kafka'
+doc_type: 'guide'
+keywords: ['Kafka', 'محرك الجدول', 'التدفق', 'الوقت الفعلي', 'قائمة انتظار الرسائل']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يمكن استخدام محرك جدول Kafka [**لقراءة** البيانات من](#kafka-to-clickhouse) و[**لكتابة** البيانات إلى](#clickhouse-to-kafka) Apache Kafka وغيره من الوسطاء المتوافقين مع واجهة برمجة تطبيقات Kafka (مثل Redpanda وAmazon MSK).
+
+<div id="kafka-to-clickhouse">
+  ### من Kafka إلى ClickHouse
+</div>
+
+<Note>
+  إذا كنت تستخدم ClickHouse Cloud، فننصحك باستخدام [ClickPipes](/ar/integrations/clickpipes/home) بدلاً منه. يوفّر ClickPipes دعمًا أصليًا لاتصالات الشبكة الخاصة، ولتوسيع موارد الإدخال وموارد العنقود بشكل مستقل، ولمراقبة شاملة لإدخال بيانات Kafka المتدفقة إلى ClickHouse.
+</Note>
+
+لاستخدام محرك جدول Kafka، ينبغي أن تكون لديك معرفة عامة بـ [العروض المادية في ClickHouse](/ar/concepts/features/materialized-views/cascading-materialized-views).
+
+<div id="overview">
+  #### نظرة عامة
+</div>
+
+نركّز أولًا على حالة الاستخدام الأكثر شيوعًا: استخدام محرك جدول Kafka لإدراج البيانات في ClickHouse من Kafka.
+
+يتيح محرك جدول Kafka لـ ClickHouse القراءة مباشرةً من topic Kafka. وعلى الرغم من فائدته في عرض الرسائل الموجودة في topic، فإن هذا المحرك، بحكم تصميمه، لا يتيح سوى الاسترجاع لمرة واحدة؛ أي عند تنفيذ استعلام على الجدول، يستهلك البيانات من الطابور ويزيد إزاحة المستهلك قبل إعادة النتائج إلى الجهة الطالبة. وبذلك، لا يمكن عمليًا إعادة قراءة البيانات من دون إعادة تعيين هذه الإزاحات.
+
+وللاحتفاظ بهذه البيانات بعد قراءتها من محرك الجدول، نحتاج إلى وسيلة لالتقاطها وإدراجها في جدول آخر. وتوفّر العروض المادية المعتمدة على المشغّلات هذه الوظيفة بشكل أصيل. ويبدأ العرض المادي قراءةً من محرك الجدول، ثم يتلقى دفعات من المستندات. وتحدّد العبارة `TO` وجهة البيانات، والتي تكون عادةً جدولًا من [عائلة MergeTree](/ar/reference/engines/table-engines/mergetree-family/index). يوضّح الشكل التالي هذه العملية:
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="مخطط معمارية محرك جدول Kafka" style={{width: '80%'}} />
+
+<div id="steps">
+  #### الخطوات
+</div>
+
+<div id="1-prepare">
+  ##### 1. التحضير
+</div>
+
+إذا كانت لديك بيانات مُحمَّلة في topic مستهدف، يمكنك تكييف ما يلي لاستخدامه مع مجموعة بياناتك. بدلاً من ذلك، تتوفر [مجموعة بيانات GitHub](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson) نموذجية [هنا](https://datasets-documentation.s3.eu-west-3.amazonaws.com/kafka/github_all_columns.ndjson). تُستخدم مجموعة البيانات هذه في الأمثلة أدناه، وتعتمد مخططًا مبسّطًا ومجموعة فرعية من الصفوف (وتحديدًا، نقتصر على أحداث GitHub المتعلقة بـ [مستودع ClickHouse](https://github.com/ClickHouse/ClickHouse)) مقارنةً بمجموعة البيانات الكاملة المتاحة [هنا](https://ghe.clickhouse.tech/)، اختصارًا. ومع ذلك، يظل هذا كافيًا لكي تعمل معظم الاستعلامات [المنشورة مع مجموعة البيانات](https://ghe.clickhouse.tech/).
+
+<div id="2-configure-clickhouse">
+  ##### 2. تهيئة ClickHouse
+</div>
+
+هذه الخطوة مطلوبة إذا كنت تتصل بـ Kafka مؤمَّن. لا يمكن تمرير هذه الإعدادات عبر أوامر SQL DDL، ويجب تهيئتها في ملف config.xml الخاص بـ ClickHouse. نفترض أنك تتصل بمثيل مؤمَّن باستخدام SASL. وهذه أبسط طريقة عند التعامل مع Confluent Cloud.
+
+```xml
+<clickhouse>
+   <kafka>
+       <sasl_username>username</sasl_username>
+       <sasl_password>password</sasl_password>
+       <security_protocol>sasl_ssl</security_protocol>
+       <sasl_mechanisms>PLAIN</sasl_mechanisms>
+   </kafka>
+</clickhouse>
+```
+
+إما أن تضع المقتطف أعلاه في ملف جديد داخل الدليل `conf.d/`، أو أن تدمجه في ملفات الإعدادات الحالية. للاطلاع على الإعدادات التي يمكن ضبطها، راجع [هنا](/ar/reference/engines/table-engines/integrations/kafka#configuration).
+
+سننشئ أيضًا قاعدة بيانات باسم `KafkaEngine` لاستخدامها في هذا الدليل العملي:
+
+```sql
+CREATE DATABASE KafkaEngine;
+```
+
+بعد إنشاء قاعدة البيانات، ستحتاج إلى الانتقال إليها:
+
+```sql
+USE KafkaEngine;
+```
+
+<div id="3-create-the-destination-table">
+  ##### 3. أنشئ جدول الوجهة
+</div>
+
+جهّز جدول الوجهة. في المثال أدناه، نستخدم مخطط GitHub المبسّط اختصارًا. لاحظ أنه رغم أننا نستخدم محرك الجدول MergeTree، يمكن تكييف هذا المثال بسهولة للعمل مع أي محرك ضمن [عائلة MergeTree](/ar/reference/engines/table-engines/mergetree-family/index).
+
+```sql
+CREATE TABLE github
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+) ENGINE = MergeTree ORDER BY (event_type, repo_name, created_at)
+```
+
+<div id="4-create-and-populate-the-topic">
+  ##### 4. إنشاء الـ topic وتعبئته
+</div>
+
+بعد ذلك، سننشئ topic. هناك عدة أدوات يمكن استخدامها لتنفيذ ذلك. إذا كنا نشغّل Kafka محليًا على جهازنا أو داخل حاوية Docker، فإن [RPK](https://docs.redpanda.com/current/get-started/rpk-install/) خيار مناسب. يمكننا إنشاء topic باسم `github` مع 5 partitions عبر تشغيل الأمر التالي:
+
+```bash
+rpk topic create -p 5 github --brokers <host>:<port>
+```
+
+إذا كنّا نشغّل Kafka على Confluent Cloud، فقد نفضّل استخدام [Confluent CLI](https://docs.confluent.io/platform/current/tutorials/examples/clients/docs/kcat.html#produce-records):
+
+```bash
+confluent kafka topic create --if-not-exists github
+```
+
+نحتاج الآن إلى ملء هذا الـ topic ببعض البيانات، وسنفعل ذلك باستخدام [kcat](https://github.com/edenhill/kcat). يمكننا تشغيل أمر مشابه لما يلي إذا كان Kafka يعمل محليًا وكانت المصادقة معطّلة:
+
+```bash
+cat github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+```
+
+أو استخدم ما يلي إذا كان عنقود Kafka لدينا يستخدم SASL للمصادقة:
+
+```bash
+cat github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username>  \
+  -X sasl.password=<password> \
+```
+
+تحتوي مجموعة البيانات على 200,000 صف، لذا يُفترض أن يتم إدخالها خلال بضع ثوانٍ فقط. إذا كنت تريد العمل مع مجموعة بيانات أكبر، فألقِ نظرة على [قسم مجموعات البيانات الكبيرة](https://github.com/ClickHouse/kafka-samples/tree/main/producer#large-datasets) في مستودع GitHub ‏[ClickHouse/kafka-samples](https://github.com/ClickHouse/kafka-samples).
+
+<div id="5-create-the-kafka-table-engine">
+  ##### 5. إنشاء محرك جدول Kafka
+</div>
+
+ينشئ المثال أدناه محرك جدول بالمخطط نفسه لجدول MergeTree. وهذا ليس مطلوبًا تمامًا، إذ يمكن أن يكون لديك اسم مستعار أو أعمدة مؤقتة في الجدول الهدف. لكن الإعدادات مهمة — لاحظ استخدام `JSONEachRow` كنوع البيانات لاستهلاك JSON من Kafka topic. وتمثل القيمتان `github` و`clickhouse` اسمي الـ topic ومجموعة المستهلكين، على التوالي. ويمكن أن تكون الـ topics في الواقع قائمة من القيم.
+
+```sql
+CREATE TABLE github_queue
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+)
+   ENGINE = Kafka('kafka_host:9092', 'github', 'clickhouse',
+            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+```
+
+نناقش أدناه إعدادات المحرك وضبط الأداء. في هذه المرحلة، ينبغي أن يقرأ استعلام `SELECT` بسيط على الجدول `github_queue` بعض الصفوف.  لاحظ أن هذا سيُقدّم إزاحات المستهلك إلى الأمام، مما يمنع إعادة قراءة هذه الصفوف دون [إعادة تعيين](#common-operations). لاحظ القيد والمعلَمة المطلوبة `stream_like_engine_allow_direct_select.`
+
+<div id="6-create-the-materialized-view">
+  ##### 6. أنشئ العرض المادي
+</div>
+
+سيربط العرض المادي بين الجدولين اللذين أُنشئا سابقًا، إذ يقرأ البيانات من محرك جدول Kafka ويُدرجها في جدول MergeTree الهدف. يمكننا إجراء عدد من تحويلات البيانات. سنجري قراءةً وإدراجًا بسيطين. ويفترض استخدام * أن أسماء الأعمدة متطابقة تمامًا (مع مراعاة حالة الأحرف).
+
+```sql
+CREATE MATERIALIZED VIEW github_mv TO github AS
+SELECT *
+FROM github_queue;
+```
+
+عند إنشائه، يتصل العرض المادي بمحرك Kafka ويبدأ القراءة وإدراج الصفوف في الجدول الهدف. ستستمر هذه العملية إلى أجل غير مسمى، مع استهلاك أي رسائل تُدرج لاحقًا في Kafka. لا تتردد في إعادة تشغيل البرنامج النصي للإدراج لإدراج المزيد من الرسائل في Kafka.
+
+<div id="7-confirm-rows-have-been-inserted">
+  ##### 7. تأكّد من إدراج الصفوف
+</div>
+
+تحقّق من وجود البيانات في الجدول الهدف:
+
+```sql
+SELECT count() FROM github;
+```
+
+يجب أن ترى 200,000 صفًا:
+
+```response
+┌─count()─┐
+│  200000 │
+└─────────┘
+```
+
+<div id="common-operations">
+  #### العمليات الشائعة
+</div>
+
+<div id="stopping--restarting-message-consumption">
+  ##### إيقاف استهلاك الرسائل &amp; إعادة تشغيله
+</div>
+
+لإيقاف استهلاك الرسائل، يمكنك فصل جدول محرك Kafka:
+
+```sql
+DETACH TABLE github_queue;
+```
+
+لن يؤثر هذا في إزاحات مجموعة المستهلك. ولاستئناف الاستهلاك ومتابعته من الإزاحة السابقة، أعد إرفاق الجدول.
+
+```sql
+ATTACH TABLE github_queue;
+```
+
+<div id="adding-kafka-metadata">
+  ##### إضافة البيانات الوصفية لـ Kafka
+</div>
+
+قد يكون من المفيد تتبّع البيانات الوصفية لرسائل Kafka الأصلية بعد إدخالها إلى ClickHouse. على سبيل المثال، قد نرغب في معرفة مقدار ما استهلكناه من topic أو partition معيّنين. ولهذا الغرض، يوفّر محرك جدول Kafka عدة [أعمدة افتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns). ويمكن حفظها كأعمدة في الجدول الهدف من خلال تعديل المخطط وعبارة select الخاصة بالعرض المادي.
+
+أولاً، ننفّذ عملية الإيقاف الموضّحة أعلاه قبل إضافة أعمدة إلى الجدول الهدف.
+
+```sql
+DETACH TABLE github_queue;
+```
+
+فيما يلي نضيف أعمدة معلومات لتحديد الـ topic المصدر والـ partition الذي جاء منه الصف.
+
+```sql
+ALTER TABLE github
+   ADD COLUMN topic String,
+   ADD COLUMN partition UInt64;
+```
+
+بعد ذلك، نحتاج إلى التأكد من تعيين الأعمدة الافتراضية على النحو المطلوب.
+تبدأ الأعمدة الافتراضية بالبادئة `_`.
+يمكن العثور على قائمة كاملة بالأعمدة الافتراضية [هنا](/ar/reference/engines/table-engines/integrations/kafka#virtual-columns).
+
+لتحديث جدولنا بالأعمدة الافتراضية، سنحتاج إلى حذف العرض المادي، ثم إعادة إرفاق جدول محرك Kafka، ثم إعادة إنشاء العرض المادي.
+
+```sql
+DROP VIEW github_mv;
+```
+
+```sql
+ATTACH TABLE github_queue;
+```
+
+```sql
+CREATE MATERIALIZED VIEW github_mv TO github AS
+SELECT *, _topic AS topic, _partition as partition
+FROM github_queue;
+```
+
+يجب أن تتضمن الصفوف التي جرى استهلاكها حديثًا البيانات الوصفية.
+
+```sql
+SELECT actor_login, event_type, created_at, topic, partition
+FROM github
+LIMIT 10;
+```
+
+تكون النتيجة كما يلي:
+
+| actor&#95;login | event&#95;type     | created&#95;at      | topic  | partition |
+| :-------------- | :----------------- | :------------------ | :----- | :-------- |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:22:00 | github | 0         |
+| queeup          | CommitCommentEvent | 2011-02-12 02:23:23 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:23:24 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:24:50 | github | 0         |
+| IgorMinar       | CommitCommentEvent | 2011-02-12 02:25:20 | github | 0         |
+| dapi            | CommitCommentEvent | 2011-02-12 06:18:36 | github | 0         |
+| sourcerebels    | CommitCommentEvent | 2011-02-12 06:34:10 | github | 0         |
+| jamierumbelow   | CommitCommentEvent | 2011-02-12 12:21:40 | github | 0         |
+| jpn             | CommitCommentEvent | 2011-02-12 12:24:31 | github | 0         |
+| Oxonium         | CommitCommentEvent | 2011-02-12 12:31:28 | github | 0         |
+
+<div id="modify-kafka-engine-settings">
+  ##### تعديل إعدادات محرك Kafka
+</div>
+
+نوصي بإسقاط جدول محرك Kafka ثم إعادة إنشائه بالإعدادات الجديدة. لا حاجة إلى تعديل العرض المادي أثناء هذه العملية، إذ سيُستأنف استهلاك الرسائل بمجرد إعادة إنشاء جدول محرك Kafka.
+
+<div id="debugging-issues">
+  ##### استكشاف المشكلات وإصلاحها
+</div>
+
+لا يتم الإبلاغ عن الأخطاء، مثل مشكلات المصادقة، في الاستجابات لأوامر DDL الخاصة بمحرك Kafka. لتشخيص المشكلات، نوصي باستخدام ملف السجل الرئيسي لـ ClickHouse، وهو clickhouse-server.err.log. ويمكن تمكين تسجيل تتبّع إضافي لمكتبة عميل Kafka الأساسية [librdkafka](https://github.com/edenhill/librdkafka) من خلال التكوين.
+
+```xml
+<kafka>
+   <debug>all</debug>
+</kafka>
+```
+
+<div id="handling-malformed-messages">
+  ##### التعامل مع الرسائل غير السليمة
+</div>
+
+غالبًا ما يُستخدم Kafka بوصفه &quot;مكبًا&quot; للبيانات. ويؤدي ذلك إلى احتواء الموضوعات على تنسيقات رسائل مختلطة وأسماء حقول غير متسقة. تجنّب ذلك، واستفد من ميزات Kafka مثل Kafka Streams أو ksqlDB لضمان أن تكون الرسائل سليمة ومتسقة قبل إدراجها في Kafka. وإذا لم تكن هذه الخيارات ممكنة، فإن ClickHouse يوفّر بعض الميزات التي يمكن أن تساعد.
+
+* تعامل مع حقل الرسالة على أنه سلاسل نصية. ويمكن استخدام الدوال في عبارة `materialized view` لإجراء التنظيف وCAST عند الحاجة. لا ينبغي أن يُعدّ هذا حلًا لبيئة production، لكنه قد يساعد في الإدخال لمرة واحدة.
+* إذا كنت تستهلك JSON من topic، باستخدام التنسيق JSONEachRow، فاستخدم الإعداد [`input_format_skip_unknown_fields`](/ar/reference/settings/formats#input_format_skip_unknown_fields). عند كتابة البيانات، يرفع ClickHouse افتراضيًا استثناءً إذا كانت بيانات الإدخال تحتوي على أعمدة غير موجودة في الجدول الهدف. ومع ذلك، إذا كان هذا الخيار مفعّلًا، فسيتم تجاهل هذه الأعمدة الزائدة. ومرة أخرى، لا يُعدّ هذا حلًا على مستوى production وقد يسبب التباسًا للآخرين.
+* ضع في اعتبارك الإعداد `kafka_skip_broken_messages`. يتطلب هذا من المستخدم تحديد مستوى التحمّل لكل كتلة تجاه الرسائل غير السليمة، وذلك في سياق kafka&#95;max&#95;block&#95;size. وإذا تم تجاوز هذا التحمّل (ويُقاس بعدد الرسائل المطلق)، فسيعود سلوك الاستثناء المعتاد، وسيتم تخطي الرسائل الأخرى.
+
+<div id="delivery-semantics-and-challenges-with-duplicates">
+  ##### دلالات التسليم والتحديات المرتبطة بالتكرارات
+</div>
+
+يستخدم محرك جدول Kafka دلالات تسليم من نوع &quot;مرة واحدة على الأقل&quot;. ومن الممكن حدوث تكرارات في عدة حالات نادرة معروفة. فعلى سبيل المثال، قد تُقرأ الرسائل من Kafka وتُدرج بنجاح في ClickHouse. لكن قبل اعتماد الإزاحة الجديدة، قد ينقطع الاتصال بـ Kafka. وفي هذه الحالة، يلزم إعادة محاولة الكتلة. وقد تتم [إزالة التكرار من ](/ar/reference/engines/table-engines/mergetree-family/replication)الكتلة باستخدام distributed table أو ReplicatedMergeTree كجدول هدف. ومع أن ذلك يقلل من احتمال تكرار الصفوف، فإنه يعتمد على كتل متطابقة. وقد تؤدي أحداث مثل Kafka rebalancing إلى إبطال هذا الافتراض، مما يسبب تكرارات في حالات نادرة.
+
+<div id="quorum-based-inserts">
+  ##### عمليات الإدراج القائمة على النصاب
+</div>
+
+قد تحتاج إلى [عمليات الإدراج القائمة على النصاب](/ar/reference/settings/session-settings#insert_quorum) في الحالات التي تتطلب ضمانات أعلى لوصول البيانات في ClickHouse. لا يمكن تعيين هذا على العرض المادي أو الجدول الهدف. ومع ذلك، يمكن تعيينه لملفات تعريف المستخدمين، على سبيل المثال.
+
+```xml
+<profiles>
+  <default>
+    <insert_quorum>2</insert_quorum>
+  </default>
+</profiles>
+```
+
+<div id="clickhouse-to-kafka">
+  ### ClickHouse إلى Kafka
+</div>
+
+على الرغم من أن هذا يُعد حالة استخدام أقل شيوعًا، يمكن أيضًا الاحتفاظ ببيانات ClickHouse في Kafka. على سبيل المثال، سنُدرج الصفوف يدويًا في محرك جدول Kafka. سيقرأ محرك Kafka نفسه هذه البيانات، ثم يضعها عرضه المادي في جدول MergeTree. وأخيرًا، نوضّح كيفية استخدام العروض المادية مع عمليات الإدراج إلى Kafka لقراءة الجداول من الجداول المصدر الموجودة.
+
+<div id="steps">
+  #### الخطوات
+</div>
+
+يمكن توضيح هدفنا الأولي بأفضل شكل كما يلي:
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="مخطط محرك جدول Kafka مع عمليات الإدراج" />
+
+نفترض أنك أنشأت الجداول وطرق العرض ضمن خطوات [Kafka إلى ClickHouse](#kafka-to-clickhouse)، وأن الـ topic قد استُهلك بالكامل.
+
+<div id="1-inserting-rows-directly">
+  ##### 1. إدراج الصفوف مباشرةً
+</div>
+
+أولًا، تحقّق من عدد صفوف الجدول المستهدف.
+
+```sql
+SELECT count() FROM github;
+```
+
+يُفترض أن يكون لديك 200,000 صف:
+
+```response
+┌─count()─┐
+│  200000 │
+└─────────┘
+```
+
+الآن أدرِج صفوفًا من جدول GitHub الهدف مرة أخرى في محرك جدول Kafka ‏github&#95;queue. لاحظ كيف نستخدم تنسيق JSONEachRow ونقيّد استعلام SELECT إلى 100 باستخدام LIMIT.
+
+```sql
+INSERT INTO github_queue SELECT * FROM github LIMIT 100 FORMAT JSONEachRow
+```
+
+أعِدّ حساب عدد الصفوف في GitHub للتأكد من أنه زاد بمقدار 100. كما هو موضح في المخطط أعلاه، أُدخلت الصفوف إلى Kafka عبر محرك جدول Kafka، ثم أعاد المحرك نفسه قراءتها وأدرجها في الجدول الهدف GitHub بواسطة العرض المادي لدينا!
+
+```sql
+SELECT count() FROM github;
+```
+
+يجب أن ترى 100 صفًا إضافيًا:
+
+```response
+┌─count()─┐
+│  200100 │
+└─────────┘
+```
+
+<div id="2-using-materialized-views">
+  ##### 2. استخدام العروض المادية
+</div>
+
+يمكننا استخدام العروض المادية لإرسال الرسائل إلى محرك Kafka (وإلى topic) عند إدراج المستندات في جدول. وعند إدراج صفوف في جدول GitHub، يتم تشغيل عرض مادي، ما يؤدي إلى إدراج الصفوف مرة أخرى في محرك Kafka وفي topic جديد. ويوضح الشكل التالي ذلك بشكل أفضل:
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="مخطط محرك جدول Kafka مع العروض المادية" />
+
+أنشئ Kafka topic جديدًا باسم `github_out` أو ما يعادله. وتأكد من أن محرك جدول Kafka باسم `github_out_queue` يشير إلى هذا الـ topic.
+
+```sql
+CREATE TABLE github_out_queue
+(
+    file_time DateTime,
+    event_type Enum('CommitCommentEvent' = 1, 'CreateEvent' = 2, 'DeleteEvent' = 3, 'ForkEvent' = 4, 'GollumEvent' = 5, 'IssueCommentEvent' = 6, 'IssuesEvent' = 7, 'MemberEvent' = 8, 'PublicEvent' = 9, 'PullRequestEvent' = 10, 'PullRequestReviewCommentEvent' = 11, 'PushEvent' = 12, 'ReleaseEvent' = 13, 'SponsorshipEvent' = 14, 'WatchEvent' = 15, 'GistEvent' = 16, 'FollowEvent' = 17, 'DownloadEvent' = 18, 'PullRequestReviewEvent' = 19, 'ForkApplyEvent' = 20, 'Event' = 21, 'TeamAddEvent' = 22),
+    actor_login LowCardinality(String),
+    repo_name LowCardinality(String),
+    created_at DateTime,
+    updated_at DateTime,
+    action Enum('none' = 0, 'created' = 1, 'added' = 2, 'edited' = 3, 'deleted' = 4, 'opened' = 5, 'closed' = 6, 'reopened' = 7, 'assigned' = 8, 'unassigned' = 9, 'labeled' = 10, 'unlabeled' = 11, 'review_requested' = 12, 'review_request_removed' = 13, 'synchronize' = 14, 'started' = 15, 'published' = 16, 'update' = 17, 'create' = 18, 'fork' = 19, 'merged' = 20),
+    comment_id UInt64,
+    path String,
+    ref LowCardinality(String),
+    ref_type Enum('none' = 0, 'branch' = 1, 'tag' = 2, 'repository' = 3, 'unknown' = 4),
+    creator_user_login LowCardinality(String),
+    number UInt32,
+    title String,
+    labels Array(LowCardinality(String)),
+    state Enum('none' = 0, 'open' = 1, 'closed' = 2),
+    assignee LowCardinality(String),
+    assignees Array(LowCardinality(String)),
+    closed_at DateTime,
+    merged_at DateTime,
+    merge_commit_sha String,
+    requested_reviewers Array(LowCardinality(String)),
+    merged_by LowCardinality(String),
+    review_comments UInt32,
+    member_login LowCardinality(String)
+)
+   ENGINE = Kafka('host:port', 'github_out', 'clickhouse_out',
+            'JSONEachRow') SETTINGS kafka_thread_per_consumer = 0, kafka_num_consumers = 1;
+```
+
+أنشئ الآن عرضًا ماديًا جديدًا `github_out_mv` يشير إلى جدول GitHub، بحيث يُدرِج الصفوف في المحرّك المذكور أعلاه عند تفعيله. ونتيجةً لذلك، ستُدفَع الإضافات إلى جدول GitHub إلى Kafka topic الجديد لدينا.
+
+```sql
+CREATE MATERIALIZED VIEW github_out_mv TO github_out_queue AS
+SELECT file_time, event_type, actor_login, repo_name,
+       created_at, updated_at, action, comment_id, path,
+       ref, ref_type, creator_user_login, number, title,
+       labels, state, assignee, assignees, closed_at, merged_at,
+       merge_commit_sha, requested_reviewers, merged_by,
+       review_comments, member_login
+FROM github
+FORMAT JsonEachRow;
+```
+
+إذا أجريت عملية insert في topic الأصلي المسمى github، والذي أُنشئ كجزء من [Kafka to ClickHouse](#kafka-to-clickhouse)، فستظهر المستندات تلقائيًا في topic &quot;github&#95;clickhouse&quot;. أكِّد ذلك باستخدام أدوات Kafka الأصلية. على سبيل المثال، نُدرج أدناه 100 صف في topic ‏github باستخدام [kcat](https://github.com/edenhill/kcat) لـ topic مستضاف على Confluent Cloud:
+
+```sql
+head -n 10 github_all_columns.ndjson |
+kcat -P \
+  -b <host>:<port> \
+  -t github
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username> \
+  -X sasl.password=<password>
+```
+
+ينبغي أن تؤكد القراءة من الـtopic `github_out` وصول الرسائل.
+
+```sql
+kcat -C \
+  -b <host>:<port> \
+  -t github_out \
+  -X security.protocol=sasl_ssl \
+  -X sasl.mechanisms=PLAIN \
+  -X sasl.username=<username> \
+  -X sasl.password=<password> \
+  -e -q |
+wc -l
+```
+
+على الرغم من أن هذا مثالٌ مفصّل، فإنه يوضح قوة العروض المادية عند استخدامها مع محرك Kafka.
+
+<div id="clusters-and-performance">
+  ### العناقيد والأداء
+</div>
+
+<div id="working-with-clickhouse-clusters">
+  #### العمل مع عناقيد ClickHouse
+</div>
+
+من خلال مجموعات مستهلكي Kafka، يمكن لعدة مثيلات من ClickHouse القراءة من topic نفسه. ويُعيَّن كل مستهلك إلى partition واحد من topic بنسبة 1:1. عند توسيع استهلاك ClickHouse باستخدام محرك جدول Kafka، ضع في اعتبارك أن العدد الإجمالي للمستهلكين داخل العنقود لا يمكن أن يتجاوز عدد partitions في topic. لذلك، احرص مسبقًا على تهيئة تقسيم topic بالشكل المناسب.
+
+يمكن أيضًا تهيئة عدة مثيلات من ClickHouse للقراءة من topic واحد باستخدام معرّف مجموعة المستهلكين نفسه، والذي يُحدَّد عند إنشاء محرك جدول Kafka. وبذلك، سيقرأ كل مثيل من partition واحد أو أكثر، مع إدراج المقاطع في الجدول الهدف المحلي الخاص به. ويمكن بعد ذلك تهيئة الجداول الهدف لاستخدام ReplicatedMergeTree للتعامل مع تكرار البيانات. يتيح هذا النهج توسيع قراءات Kafka بالتوازي مع عنقود ClickHouse، شريطة توفّر عدد كافٍ من partitions Kafka.
+
+<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="مخطط محرك جدول Kafka مع تجمعات ClickHouse" />
+
+<div id="tuning-performance">
+  #### ضبط الأداء
+</div>
+
+ضع ما يلي في الاعتبار عند السعي إلى زيادة أداء معدل النقل لجدول Kafka Engine:
+
+* يختلف الأداء بحسب حجم الرسائل، والتنسيق، وأنواع الجداول المستهدفة. ويمكن اعتبار 100 ألف صف/ثانية على table engine واحد معدلًا يمكن تحقيقه. افتراضيًا، تُقرأ الرسائل على شكل كتل، ويتحكم في ذلك المعلَمة kafka&#95;max&#95;block&#95;size. افتراضيًا، تُضبط هذه القيمة على [max&#95;insert&#95;block&#95;size](/ar/reference/settings/session-settings#max_insert_block_size)، وقيمتها الافتراضية 1,048,576. وما لم تكن الرسائل كبيرة جدًا، فمن الأفضل تقريبًا دائمًا زيادة هذه القيمة. كما أن القيم بين 500 ألف ومليون ليست غير شائعة. اختبر هذا وقيّم أثره في أداء معدل النقل.
+* يمكن زيادة عدد المستهلكين لمحرك الجدول باستخدام kafka&#95;num&#95;consumers. لكن افتراضيًا، ستُسلسل عمليات الإدراج في thread واحد ما لم يتم تغيير kafka&#95;thread&#95;per&#95;consumer عن القيمة الافتراضية 1. اضبطه على 1 لضمان تنفيذ عمليات التفريغ بالتوازي. لاحظ أن إنشاء جدول Kafka engine بعدد N من المستهلكين (ومع kafka&#95;thread&#95;per&#95;consumer=1) يكافئ منطقيًا إنشاء N من Kafka engines، لكل منها materialized view وkafka&#95;thread&#95;per&#95;consumer=0.
+* زيادة عدد المستهلكين ليست بلا تكلفة. إذ يحتفظ كل مستهلك بمخازنه المؤقتة وthreads الخاصة به، مما يزيد الحمل الإضافي على الخادم. لذلك، انتبه إلى الحمل الإضافي الناتج عن المستهلكين، ووسّع أفقيًا عبر عنقود أولًا إن أمكن.
+* إذا كان معدل نقل رسائل Kafka متغيرًا وكانت التأخيرات مقبولة، ففكّر في زيادة stream&#95;flush&#95;interval&#95;ms لضمان تفريغ كتل أكبر.
+* يحدّد [background&#95;message&#95;broker&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_message_broker_schedule_pool_size) عدد threads التي تنفّذ tasks في الخلفية. وتُستخدم هذه threads في Kafka streaming. يُطبَّق هذا الإعداد عند بدء تشغيل ClickHouse server ولا يمكن تغييره ضمن session للمستخدم، وقيمته الافتراضية 16. إذا رأيت حالات timeout في السجلات، فقد يكون من المناسب زيادة هذه القيمة.
+* في الاتصال مع Kafka، تُستخدم مكتبة librdkafka، وهي بدورها تنشئ threads. لذلك، قد يؤدي العدد الكبير من جداول Kafka أو المستهلكين إلى عدد كبير من عمليات تبديل السياق. وزّع هذا الحمل عبر عنقود، مع الاكتفاء بتكرار الجداول المستهدفة فقط إن أمكن، أو فكّر في استخدام محرك جدول للقراءة من topics متعددة، إذ إن قائمة من القيم مدعومة. كما يمكن قراءة عدة materialized views من جدول واحد، بحيث يرشّح كلٌّ منها البيانات الخاصة بـ topic معيّن.
+
+يجب اختبار أي تغييرات في الإعدادات. نوصي بمراقبة تأخر المستهلكين في Kafka لضمان أن التوسّع لديك مناسب.
+
+<div id="additional-settings">
+  #### إعدادات إضافية
+</div>
+
+إلى جانب الإعدادات المذكورة أعلاه، قد تهمّك أيضًا الإعدادات التالية:
+
+* [Kafka&#95;max&#95;wait&#95;ms](/ar/reference/settings/session-settings#kafka_max_wait_ms) - مدة الانتظار بالمللي ثانية لقراءة الرسائل من Kafka قبل إعادة المحاولة. يُضبط هذا الإعداد على مستوى profile المستخدم، وتكون قيمته الافتراضية 5000.
+
+يمكن أيضًا وضع [جميع الإعدادات ](https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md)الخاصة بمكتبة librdkafka الأساسية داخل ملفات تهيئة ClickHouse ضمن عنصر *kafka* - ويجب أن تكون أسماء الإعدادات عناصر XML مع استبدال النقاط بشرطات سفلية، على سبيل المثال.
+
+```xml
+<clickhouse>
+   <kafka>
+       <enable_ssl_certificate_verification>false</enable_ssl_certificate_verification>
+   </kafka>
+</clickhouse>
+```
+
+هذه إعدادات مخصّصة للخبراء، وننصح بالرجوع إلى وثائق Kafka للحصول على شرحٍ وافٍ.

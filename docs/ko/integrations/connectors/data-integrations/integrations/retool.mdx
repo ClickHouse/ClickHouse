@@ -1,0 +1,61 @@
+---
+sidebarTitle: 'Retool'
+slug: /integrations/retool
+keywords: ['clickhouse', 'retool', '연결', '통합', 'UI', '관리자', '패널', '대시보드', '노코드', '노코드']
+description: '풍부한 사용자 인터페이스를 갖춘 웹 및 모바일 앱을 빠르게 구축하고, 복잡한 작업을 자동화하고, 데이터를 기반으로 AI를 통합할 수 있습니다.'
+title: 'Retool을 ClickHouse에 연결'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<div id="1-gather-your-connection-details">
+  ## 1. 연결 정보를 준비합니다
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-resource">
+  ## 2. ClickHouse 리소스 생성
+</div>
+
+Retool 계정에 로그인한 다음 *Resources* 탭으로 이동합니다. &quot;Create New&quot; -&gt; &quot;Resource&quot;를 선택합니다:
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="새 리소스 생성" />
+
+<br />
+
+사용 가능한 커넥터 목록에서 &quot;JDBC&quot;를 선택합니다:
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="JDBC 커넥터 선택" />
+
+<br />
+
+설정 마법사에서 &quot;Driver name&quot;으로 `com.clickhouse.jdbc.ClickHouseDriver`를 선택했는지 확인합니다:
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="올바른 드라이버 선택" />
+
+<br />
+
+다음 형식으로 ClickHouse 자격 증명을 입력합니다: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
+인스턴스에 SSL이 필요하거나 ClickHouse Cloud를 사용하는 경우 연결 문자열에 `&ssl=true`를 추가하여 `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true` 형식이 되도록 합니다
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="자격 증명 입력" />
+
+<br />
+
+그런 다음 연결을 테스트합니다:
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="연결 테스트" />
+
+<br />
+
+이제 ClickHouse 리소스를 사용해 앱 작업을 계속 진행할 수 있습니다.

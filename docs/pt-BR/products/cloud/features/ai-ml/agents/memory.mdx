@@ -1,0 +1,91 @@
+---
+sidebarTitle: 'Memory'
+slug: /cloud/features/ai-ml/agents/memory
+title: 'Memory'
+description: 'Memory e personalização em ClickHouse Agents'
+keywords: ['AI', 'ClickHouse Cloud', 'agents', 'Memory', 'personalização']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<BetaBadge />
+
+é um armazenamento por usuário que o agente pode recuperar em várias conversas. Ele é composto por várias entradas, cada uma delas um par chave-valor — seu
+formato de data preferido, o banco de dados que você costuma consultar, o quão concisas você quer as respostas. O agente traz essas informações para o contexto quando elas se aplicam.
+
+<div id="how-it-works">
+  ## Como a Memory funciona
+</div>
+
+Um pequeno agente de Memory funciona junto com a conversa principal. Ele lê mensagens recentes, decide o que vale a pena lembrar e grava entradas em um armazenamento por usuário.
+Na conversa seguinte, essas entradas ficam disponíveis como contexto que o agente principal pode consultar sem que você precise se repetir.
+
+Na prática, isso se traduz em continuidade: diga uma vez a um agente que você prefere a saída SQL em letras minúsculas e que seu ano fiscal termina em março, e as conversas futuras se ajustarão a isso.
+
+<div id="manage-your-memories">
+  ## Gerencie suas memórias
+</div>
+
+Abra o painel de memória pelo ícone **Memories** (cérebro) na navegação à esquerda. O painel lista as memórias armazenadas, com controles para criar, editar, excluir e filtrar entradas.
+
+<Image img="/images/cloud/agent-builder/memory/memories.webp" alt="Painel Memories mostrando o ícone de cérebro destacado na navegação à esquerda, um campo de filtro, um botão Add, uma caixa de seleção Use memory, uma entrada de memória com controles de edição e exclusão e um botão Admin Settings" size="sm" />
+
+O Memory é privado para cada usuário. Os agentes de outras pessoas nunca veem suas entradas, e os seus agentes nunca veem as delas.
+
+<div id="create-memory">
+  ### Criar uma Memory
+</div>
+
+Clique no botão **+** na parte superior do painel para abrir a caixa de diálogo **Criar Memory**. Insira uma **Chave** (apenas letras minúsculas e sublinhados) e um **Valor** e, em seguida, clique em **Criar**.
+
+<Image img="/images/cloud/agent-builder/memory/create.webp" alt="Painel de Memory com o botão + de Criar Memory destacado" size="sm" />
+
+<div id="filter-memories">
+  ### Filtrar Memories
+</div>
+
+Use o campo **Filtrar Memories** no topo do painel para localizar uma entrada pela chave.
+
+<Image img="/images/cloud/agent-builder/memory/filter.webp" alt="Painel de Memory com o campo Filtrar Memories destacado e 'demo' digitado" size="sm" />
+
+<div id="edit-memory">
+  ### Editar uma Memory
+</div>
+
+Clique no ícone de lápis em uma Memory para abrir a caixa de diálogo **Editar Memory**. Ajuste a Chave ou o Valor e clique em **Salvar**.
+
+<Image img="/images/cloud/agent-builder/memory/edit.webp" alt="Entrada de Memory com o ícone de lápis de Editar Memory destacado" size="sm" />
+
+<div id="delete-memory">
+  ### Excluir uma Memory
+</div>
+
+Clique no ícone de lixeira de uma Memory para removê-la.
+
+<Image img="/images/cloud/agent-builder/memory/delete.webp" alt="Entrada de Memory com o ícone de lixeira Excluir Memory destacado" size="sm" />
+
+<div id="toggle-memory">
+  ## Ativar/desativar a Memory
+</div>
+
+Ative ou desative a Memory com a caixa de seleção **Use memory** na parte superior do painel de Memory. Desative-a para tópicos sensíveis que você não queira armazenar ou para conversas pontuais em que a personalização não seja útil.
+
+Quando a Memory está desativada, o agente não lê nem grava nada no seu repositório de Memory.
+
+<Image img="/images/cloud/agent-builder/memory/toggle.webp" alt="Painel de Memory com a caixa de seleção Use memory destacada na parte superior" size="sm" />
+
+<div id="memory-best-practices">
+  ## Boas práticas de Memory
+</div>
+
+Memory pode ajudar quando:
+
+* Convenções recorrentes: formatos de data preferidos, definições de negócio, padrões de nomenclatura.
+* Contexto do projeto: qual serviço ou banco de dados você costuma consultar, quais painéis são importantes para você.
+* Estilo de comunicação: respostas mais sucintas ou mais detalhadas, com mais código ou mais texto corrido.
+
+Memory não foi criado para ser usado como um banco de dados. Por exemplo, não é um lugar para despejar grandes volumes de material de referência.
+Em vez disso, use uma [skill](/pt-BR/products/cloud/features/ai-ml/agents/builder/skills) ou incorpore esse material às instruções do agente.
+Ele também não foi criado para recuperar informações de chats anteriores; o próprio histórico da conversa cumpre esse papel.

@@ -1,0 +1,198 @@
+---
+sidebarTitle: 'JDBC'
+keywords: ['clickhouse', 'jdbc', 'ربط', 'تكامل']
+slug: /integrations/jdbc/jdbc-with-clickhouse
+description: 'يتيح ClickHouse JDBC Bridge لـ ClickHouse الوصول إلى بيانات أي مصدر بيانات خارجي يتوفر له برنامج تشغيل JDBC'
+title: 'ربط ClickHouse بمصادر بيانات خارجية باستخدام JDBC'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Warning>
+  يحتوي clickhouse-jdbc-bridge على شيفرة تجريبية ولم يعد مدعومًا. وقد يتضمن مشكلات تتعلق بالموثوقية وثغرات أمنية. استخدمه على مسؤوليتك الخاصة.
+</Warning>
+
+<Note>
+  يتطلب استخدام JDBC جسر ClickHouse JDBC، لذا ستحتاج إلى استخدام `clickhouse-local` على جهاز محلي لتمرير البيانات من قاعدة بياناتك إلى ClickHouse Cloud. تفضّل بزيارة صفحة [**استخدام clickhouse-local**](/ar/get-started/migrate/other-methods/clickhouse-local-etl) في قسم **Migrate** من الوثائق لمزيد من التفاصيل.
+</Note>
+
+**نظرة عامة:** يتيح <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>، بالاقتران مع [jdbc table function](/ar/reference/functions/table-functions/jdbc) أو [JDBC table engine](/ar/reference/engines/table-engines/integrations/jdbc)، لـ ClickHouse الوصول إلى البيانات من أي مصدر بيانات خارجي يتوفر له <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBC driver</a>:
+
+<Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="مخطط معمارية ClickHouse JDBC Bridge" background="white" />
+
+ويكون ذلك مفيدًا عندما لا يتوفر [integration engine](/ar/reference/engines/table-engines/integrations/index) أصلي مدمج، أو table function، أو قاموس خارجي لمصدر البيانات الخارجي، بينما يتوفر JDBC driver لهذا المصدر.
+
+يمكنك استخدام ClickHouse JDBC Bridge لكلٍّ من القراءة والكتابة، وكذلك بالتوازي مع عدة مصادر بيانات خارجية. فعلى سبيل المثال، يمكنك تشغيل distributed queries على ClickHouse عبر عدة مصادر بيانات خارجية وداخلية في الوقت الفعلي.
+
+في هذا الدرس، سنوضح لك مدى سهولة تثبيت ClickHouse JDBC Bridge وتهيئته وتشغيله لربط ClickHouse بمصدر بيانات خارجي. وسنستخدم MySQL بوصفه مصدر البيانات الخارجي في هذا الدرس.
+
+لنبدأ!
+
+<Info>
+  **المتطلبات الأساسية**
+
+  يجب أن يكون لديك وصول إلى جهاز يتوفر فيه ما يلي:
+
+  1. Unix shell واتصال بالإنترنت
+  2. <a href="https://www.gnu.org/software/wget/" target="_blank">wget</a> مثبت
+  3. إصدار حديث من **Java** (مثل <a href="https://openjdk.java.net" target="_blank">OpenJDK</a> بالإصدار &gt;= 17) مثبت
+  4. إصدار حديث من **MySQL** (مثل <a href="https://www.mysql.com" target="_blank">MySQL</a> بالإصدار &gt;=8) مثبت ويعمل
+  5. إصدار حديث من **ClickHouse** [installed](/ar/get-started/setup/install) ومشغّل
+</Info>
+
+<div id="install-the-clickhouse-jdbc-bridge-locally">
+  ## ثبّت ClickHouse JDBC Bridge محليًا
+</div>
+
+أسهل طريقة لاستخدام ClickHouse JDBC Bridge هي تثبيته وتشغيله على نفس المضيف الذي يعمل عليه ClickHouse:<Image img="/images/integrations/data-ingestion/dbms/jdbc-02.webp" size="lg" alt="مخطط نشر ClickHouse JDBC Bridge محليًا" background="white" />
+
+لنبدأ بالاتصال بـ Unix shell على الجهاز الذي يعمل عليه ClickHouse، ثم إنشاء مجلد محلي سنُثبّت فيه ClickHouse JDBC Bridge لاحقًا (يمكنك تسمية المجلد كما تشاء ووضعه في أي مكان تريده):
+
+```bash
+mkdir ~/clickhouse-jdbc-bridge
+```
+
+ننزّل الآن <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/" target="_blank">النسخة الحالية</a> من ClickHouse JDBC Bridge إلى ذلك المجلد:
+
+```bash
+cd ~/clickhouse-jdbc-bridge
+wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0.7/clickhouse-jdbc-bridge-2.0.7-shaded.jar
+```
+
+للاتصال بـ MySQL، ننشئ مصدر بيانات مُسمّى:
+
+```bash
+ cd ~/clickhouse-jdbc-bridge
+ mkdir -p config/datasources
+ touch config/datasources/mysql8.json
+```
+
+يمكنك الآن نسخ إعدادات التكوين التالية ولصقها في الملف `~/clickhouse-jdbc-bridge/config/datasources/mysql8.json`:
+
+```json
+ {
+   "mysql8": {
+   "driverUrls": [
+     "https://repo1.maven.org/maven2/mysql/mysql-connector-java/8.0.28/mysql-connector-java-8.0.28.jar"
+   ],
+   "jdbcUrl": "jdbc:mysql://<host>:<port>",
+   "username": "<username>",
+   "password": "<password>"
+   }
+ }
+```
+
+<Note>
+  في ملف الإعدادات أعلاه
+
+  * لك حرية استخدام أي اسم تريده لمصدر البيانات، وقد استخدمنا `mysql8`
+  * في قيمة `jdbcUrl`، تحتاج إلى استبدال `<host>` و`<port>` بالقيم المناسبة وفقًا لمثيل MySQL قيد التشغيل لديك، على سبيل المثال: `"jdbc:mysql://localhost:3306"`
+  * تحتاج إلى استبدال `<username>` و`<password>` ببيانات اعتماد MySQL الخاصة بك. وإذا كنت لا تستخدم كلمة مرور، فيمكنك حذف السطر `"password": "<password>"` من ملف الإعدادات أعلاه
+  * في قيمة `driverUrls`، اكتفينا بتحديد URL يمكن تنزيل <a href="https://repo1.maven.org/maven2/mysql/mysql-connector-java/" target="_blank">الإصدار الحالي</a> من MySQL JDBC driver منه. هذا كل ما نحتاج إلى فعله، وسيتولى ClickHouse JDBC Bridge تنزيل JDBC driver هذا تلقائيًا (إلى دليل خاص بنظام التشغيل).
+</Note>
+
+<br />
+
+الآن أصبحنا جاهزين لبدء ClickHouse JDBC Bridge:
+
+```bash
+ cd ~/clickhouse-jdbc-bridge
+ java -jar clickhouse-jdbc-bridge-2.0.7-shaded.jar
+```
+
+<Note>
+  لقد شغّلنا ClickHouse JDBC Bridge في وضع المقدّمة. لإيقاف Bridge، يمكنك إحضار نافذة Unix shell المذكورة أعلاه إلى المقدّمة ثم الضغط على `CTRL+C`.
+</Note>
+
+<div id="use-the-jdbc-connection-from-within-clickhouse">
+  ## استخدم اتصال JDBC من داخل ClickHouse
+</div>
+
+يمكن لـ ClickHouse الآن الوصول إلى بيانات MySQL إما باستخدام [jdbc table function](/ar/reference/functions/table-functions/jdbc) أو [JDBC table engine](/ar/reference/engines/table-engines/integrations/jdbc).
+
+أسهل طريقة لتنفيذ الأمثلة التالية هي نسخها ولصقها في [`clickhouse-client`](/ar/concepts/features/interfaces/cli) أو في [واجهة المستخدم Play](/ar/concepts/features/interfaces/http).
+
+* jdbc table function:
+
+```sql
+ SELECT * FROM jdbc('mysql8', 'mydatabase', 'mytable');
+```
+
+<Note>
+  نستخدم اسم مصدر البيانات المُسمّى الذي قمنا بتهيئته أعلاه كأول مَعلَمة في `jdbc table function`.
+</Note>
+
+* JDBC table engine:
+
+```sql
+ CREATE TABLE mytable (
+      <column> <column_type>,
+      ...
+ )
+ ENGINE = JDBC('mysql8', 'mydatabase', 'mytable');
+
+ SELECT * FROM mytable;
+```
+
+<Note>
+  نستخدم اسم مصدر البيانات المسمّى الذي أعددناه أعلاه كمعلمة أولى في بند محرك jdbc
+
+  يجب أن يكون مخطط جدول محرك ClickHouse JDBC ومخطط جدول MySQL المتصل متطابقين؛ فعلى سبيل المثال، يجب أن تتطابق أسماء الأعمدة وترتيبها، وأن تكون أنواع بيانات الأعمدة متوافقة
+</Note>
+
+<div id="install-the-clickhouse-jdbc-bridge-externally">
+  ## تثبيت ClickHouse JDBC Bridge خارجيًا
+</div>
+
+بالنسبة إلى عنقود ClickHouse موزّع (أي عنقود يضم أكثر من مضيف ClickHouse واحد)، فمن المنطقي تثبيت ClickHouse JDBC Bridge وتشغيله خارجيًا على مضيف مستقل:
+
+<Image img="/images/integrations/data-ingestion/dbms/jdbc-03.webp" size="lg" alt="مخطط نشر خارجي لـ ClickHouse JDBC Bridge" background="white" />
+
+وتتمثل ميزة ذلك في أن كل مضيف ClickHouse يمكنه الوصول إلى JDBC Bridge. بخلاف ذلك، سيلزم تثبيت JDBC Bridge محليًا على كل مثيل ClickHouse من المفترض أن يصل إلى مصادر بيانات خارجية عبر الـ Bridge.
+
+لتثبيت ClickHouse JDBC Bridge خارجيًا، نتبع الخطوات التالية:
+
+1. نثبّت ClickHouse JDBC Bridge ونُهيّئه ونشغّله على مضيف مخصص باتباع الخطوات الموضحة في القسم 1 من هذا الدليل.
+
+2. على كل مضيف ClickHouse، نضيف كتلة الإعداد التالية إلى <a href="/ar/concepts/features/configuration/server-config/configuration-files#configuration_files" target="_blank">إعدادات خادم ClickHouse</a> (بحسب تنسيق الإعداد الذي اخترته، استخدم إما إصدار XML أو YAML):
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <jdbc_bridge>
+       <host>JDBC-Bridge-Host</host>
+       <port>9019</port>
+    </jdbc_bridge>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    jdbc_bridge:
+        host: JDBC-Bridge-Host
+        port: 9019
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  * تحتاج إلى استبدال `JDBC-Bridge-Host` باسم المضيف أو عنوان IP الخاص بمضيف ClickHouse JDBC Bridge المخصص
+  * لقد حدّدنا المنفذ الافتراضي لـ ClickHouse JDBC Bridge وهو `9019`، وإذا كنت تستخدم منفذًا مختلفًا لـ JDBC Bridge، فيجب تعديل الإعداد أعلاه وفقًا لذلك
+</Note>
+
+[//]: # "## 4. Additional Info"
+
+[//]: #
+
+[//]: # "TODO: "
+
+[//]: # "- mention that for jdbc table function it is more performant (not two queries each time) to also specify the schema as a parameter"
+
+[//]: #
+
+[//]: # "- mention ad hoc query vs table query, saved query, named query"
+
+[//]: #
+
+[//]: # "- mention insert into "
