@@ -36,6 +36,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
     extern const int LZ4_DECODER_FAILED;
 }
@@ -278,6 +279,18 @@ BlobBufPtr readBlobBytes(
     };
 }
 
+roaring::Roaring readRoaringPortableSafe(const char * data, size_t size, Int32 key)
+{
+    try
+    {
+        return roaring::Roaring::readSafe(data, size);
+    }
+    catch (const std::exception & e)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
+    }
+}
+
 std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
 {
     if (bytes.size() < sizeof(Int64))
@@ -316,15 +329,7 @@ std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
         while (last_key < key - 1)
             ++last_key;
 
-        roaring::Roaring bitmap;
-        try
-        {
-            bitmap = roaring::Roaring::readSafe(ptr, remaining);
-        }
-        catch (const std::exception & e)
-        {
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
-        }
+        auto bitmap = readRoaringPortableSafe(ptr, remaining, key);
 
         const size_t bitmap_size = bitmap.getSizeInBytes(/*portable=*/true);
         if (bitmap_size > remaining)
