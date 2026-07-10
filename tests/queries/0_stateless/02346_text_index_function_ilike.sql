@@ -410,3 +410,43 @@ SELECT groupArray(id) FROM tab WHERE message ILIKE '%foo%';
 SELECT groupArray(id) FROM tab WHERE message NOT ILIKE '%foo%';
 
 DROP TABLE tab;
+
+SELECT 'Text index analysis for ILIKE with an ALIAS index column and lower preprocessor';
+-- The lower preprocessor on an ALIAS index column must still be recognized as pure case folding, so
+-- ILIKE keeps using the dictionary-scan optimization (same granule pruning as the physical-column case).
+
+SET use_text_index_like_evaluation_by_dictionary_scan = 1;
+
+CREATE TABLE tab
+(
+    id UInt32,
+    provider Nullable(String),
+    message String ALIAS ifNull(provider, 'default'),
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lower(message)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY (id)
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab(id, provider) SELECT number, 'Hello ClickHouse' FROM numbers(1024);
+INSERT INTO tab(id, provider) SELECT number, 'Hello World, ClickHouse is fast!' FROM numbers(1024);
+INSERT INTO tab(id, provider) SELECT number, 'Hallo xClickHouse' FROM numbers(1024);
+INSERT INTO tab(id, provider) SELECT number, 'ClickHousez rocks' FROM numbers(1024);
+
+-- Show the text index's own selection (Description + pruned Granules). If the lower preprocessor on the
+-- ALIAS column were not recognized as case folding, ILIKE would not use the text index and it would not prune.
+SELECT '-- ILIKE %world% prunes to 1024/4096 granules via the text index';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE message ILIKE '%world%'
+) WHERE explain LIKE '%Description: text%' OR (explain LIKE '%Granules: %/4096' AND explain NOT LIKE '%4096/4096')
+ORDER BY explain;
+
+SELECT '-- ILIKE %HELLO% (case-insensitive) prunes to 2048/4096 granules via the text index';
+SELECT trimLeft(explain) AS explain FROM (
+    EXPLAIN indexes=1
+    SELECT count() FROM tab WHERE message ILIKE '%HELLO%'
+) WHERE explain LIKE '%Description: text%' OR (explain LIKE '%Granules: %/4096' AND explain NOT LIKE '%4096/4096')
+ORDER BY explain;
+
+DROP TABLE tab;
