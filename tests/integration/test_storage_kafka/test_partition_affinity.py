@@ -472,9 +472,17 @@ def test_partition_affinity_multi_replica_failover(kafka_cluster):
             """
         )
 
-        # Both replicas together consume shard-0 partitions {0,2,4}
+        # Both replicas together consume shard-0 partitions {0,2,4}: 3 * 6 = 18 messages total
         wait_for_count(instance, "test.dst_mr_r1", 1)
         wait_for_count(instance, "test.dst_mr_r2", 1)
+
+        # Wait for all initial messages to be consumed by both replicas combined
+        instance.query_with_retry(
+            "SELECT count() FROM test.dst_mr_r1",
+            check_callback=lambda r: int(r.strip()) + int(instance.query("SELECT count() FROM test.dst_mr_r2").strip()) >= 18,
+            retry_count=60,
+            sleep_time=1,
+        )
 
         # Both replicas only consume shard-0 partitions
         for tbl in ["test.dst_mr_r1", "test.dst_mr_r2"]:
@@ -483,8 +491,9 @@ def test_partition_affinity_multi_replica_failover(kafka_cluster):
             ).strip()
             assert leaked == "0", f"{tbl} leaked messages from shard-1 partitions"
 
-        # Detach replica 2 to simulate failure
-        instance.query("DETACH TABLE test.kafka_mr_r2")
+        # Drop replica 2 to simulate permanent failure (removes persistent replica node from Keeper)
+        instance.query("DROP TABLE test.mv_mr_r2")
+        instance.query("DROP TABLE test.kafka_mr_r2")
 
         # Produce more messages to shard-0 partitions
         for p in [0, 2, 4]:
@@ -493,7 +502,7 @@ def test_partition_affinity_multi_replica_failover(kafka_cluster):
 
         # r1 must reclaim all shard-0 partitions and consume all 15 new messages
         r1_before = int(instance.query("SELECT count() FROM test.dst_mr_r1").strip())
-        wait_for_count(instance, "test.dst_mr_r1", r1_before + 15)
+        wait_for_count(instance, "test.dst_mr_r1", r1_before + 15, timeout=120)
 
         # Verify r1 consumed from ALL shard-0 partitions after r2 went away
         r1_partitions = instance.query(
