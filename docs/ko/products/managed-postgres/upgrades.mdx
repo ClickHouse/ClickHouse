@@ -1,0 +1,44 @@
+---
+slug: /cloud/managed-postgres/upgrades
+sidebarTitle: '업그레이드'
+title: '업그레이드'
+description: 'ClickHouse Managed Postgres에서 PostgreSQL 버전 업그레이드가 이루어지는 방식'
+keywords: ['Managed Postgres 업그레이드', 'Postgres 버전', '마이너 업그레이드', '메이저 업그레이드', '유지 관리 기간']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
+Managed Postgres는 인스턴스를 안전하고 최신 상태로 유지할 수 있도록 PostgreSQL 버전 업그레이드를 관리합니다. 마이너 버전 업그레이드와 메이저 버전 업그레이드 모두 중단을 최소화하면서 지원됩니다.
+
+<div id="maintenance-updates">
+  ## 유지 관리 업데이트
+</div>
+
+PostgreSQL 인스턴스의 정기 유지 관리에는 다음이 포함됩니다.
+
+* 마이너 버전 업그레이드(예: 17.4에서 17.5로)에는 버그 수정과 PostgreSQL engine 보안 패치가 포함됩니다.
+* Managed Service 기능. 네이티브 CDC, 관측성, pg&#95;clickhouse 및 기타 확장 기능에 대한 개선 사항이 포함됩니다.
+* 운영 체제 및 시스템 구성 요소 패치. 보안 수정, 효율성 향상 및 기타 개선 사항이 포함됩니다.
+
+이러한 작업은 failover를 통해 수행되며, 일반적으로 몇 초 정도의 짧은 연결 끊김만 발생합니다.
+
+[대기 인스턴스](/ko/products/managed-postgres/high-availability)가 활성화된 인스턴스의 경우, 가동 중단 시간을 최소화하기 위해 먼저 대기 인스턴스에 업그레이드를 적용한 후 failover를 수행합니다.
+
+<div id="maintenance-windows">
+  ## 유지 관리 기간
+</div>
+
+기본 유지 관리 기간은 일요일 14:00~16:00 UTC입니다.
+예상 중단 시간은 해당 기간 내 1분 미만입니다.
+
+Enterprise Tier 조직에서는 Managed Postgres의 유지 관리 기간을 지원하므로, 업그레이드 및 기타 유지 관리 작업을 워크로드에 미치는 영향이 가장 적은 시간대에 예약할 수 있습니다. 유지 관리 기간 구성을 위한 UI 및 API 지원은 곧 제공될 예정입니다. 그전까지는 인스턴스의 유지 관리 기간을 설정하려면 [support](https://clickhouse.com/support/program)에 문의하십시오.
+
+<div id="major-version-upgrades">
+  ## 메이저 버전 업그레이드
+</div>
+
+UI 및 API를 통한 메이저 버전 업그레이드(예: 17.x에서 18.x로)는 곧 지원될 예정입니다.
+그때까지는 Managed Postgres 인스턴스를 업그레이드하려면 [지원팀](https://clickhouse.com/support/program)에 문의하십시오.

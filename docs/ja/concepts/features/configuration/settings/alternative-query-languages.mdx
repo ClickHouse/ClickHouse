@@ -1,0 +1,89 @@
+---
+slug: /guides/developer/alternative-query-languages
+sidebarTitle: '代替のクエリ言語'
+title: '代替のクエリ言語'
+description: 'ClickHouseで代替のクエリ言語を使用する'
+keywords: ['代替のクエリ言語', 'クエリの方言', 'MySQL方言', 'PostgreSQL方言', '開発者ガイド']
+doc_type: 'reference'
+---
+
+import ExperimentalBadge from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+標準 SQL に加えて、ClickHouse はデータのクエリに使用できるさまざまな代替クエリ言語をサポートしています。
+
+現在サポートされているダイアレクトは次のとおりです。
+
+* `clickhouse`: ClickHouse のデフォルトの [SQL ダイアレクト](/ja/products/chdb/reference/sql-reference)
+* `prql`: [Pipelined Relational Query Language (PRQL)](https://prql-lang.org/)
+* `kusto`: [Kusto Query Language (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+
+使用するクエリ言語は、`dialect` 設定で制御します。
+
+<div id="standard-sql">
+  ## Standard SQL
+</div>
+
+Standard SQL は、ClickHouse のデフォルトのクエリ言語です。
+
+```sql
+SET dialect = 'clickhouse'
+```
+
+<div id="pipelined-relational-query-language-prql">
+  ## パイプライン指向リレーショナルクエリ言語 (PRQL)
+</div>
+
+<ExperimentalBadge />
+
+PRQL を有効にするには:
+
+```sql
+SET allow_experimental_prql_dialect = 1; -- このSETステートメントはClickHouse v25.1以降でのみ必要です
+SET dialect = 'prql'
+```
+
+PRQLクエリの例:
+
+```prql
+from trips
+aggregate {
+    ct = count this
+    total_days = sum days
+}
+```
+
+内部的には、ClickHouse は PRQL を SQL にトランスパイルして、PRQL クエリを実行します。
+
+<div id="kusto-query-language-kql">
+  ## Kusto クエリ言語 (KQL)
+</div>
+
+<ExperimentalBadge />
+
+KQL を有効にするには:
+
+```sql
+SET allow_experimental_kusto_dialect = 1; -- このSETステートメントはClickHouseバージョン25.1以降でのみ必要です
+SET dialect = 'kusto'
+```
+
+```kql title="Query"
+numbers(10) | project number
+```
+
+```response title="Response"
+┌─number─┐
+│      0 │
+│      1 │
+│      2 │
+│      3 │
+│      4 │
+│      5 │
+│      6 │
+│      7 │
+│      8 │
+│      9 │
+└────────┘
+```
+
+KQL クエリでは、ClickHouse で定義されているすべての関数を利用できるとは限りません。

@@ -1,0 +1,173 @@
+---
+slug: /use-cases/AI/MCP/ai-agent-libraries/llamaindex
+sidebarTitle: 'Intégrer LlamaIndex'
+title: "Comment créer un agent IA LlamaIndex avec le serveur MCP de ClickHouse."
+description: "Découvrez comment créer un agent IA LlamaIndex capable d'interagir avec le serveur MCP de ClickHouse."
+keywords: ['ClickHouse', 'MCP', 'LlamaIndex']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+Dans ce guide, vous apprendrez à créer un agent IA [LlamaIndex](https://docs.llamaindex.ai) qui
+peut interagir avec le [SQL playground de ClickHouse](https://sql.clickhouse.com/) à l&#39;aide du [serveur MCP de ClickHouse](https://github.com/ClickHouse/mcp-clickhouse).
+
+<Info>
+  **Exemple de notebook**
+
+  Cet exemple est disponible sous forme de notebook dans le [dépôt examples](https://github.com/ClickHouse/examples/blob/main/ai/mcp/llamaindex/llamaindex.ipynb).
+</Info>
+
+<div id="prerequisites">
+  ## Prérequis
+</div>
+
+* Python doit être installé sur votre système.
+* `pip` doit être installé sur votre système.
+* Vous aurez besoin d&#39;une clé API Anthropic ou d&#39;une clé API d&#39;un autre fournisseur de LLM.
+
+Vous pouvez exécuter les étapes suivantes soit depuis votre REPL Python, soit à l&#39;aide d&#39;un script.
+
+<Steps>
+  <Step>
+    ## Installer les bibliothèques
+
+    Installez les bibliothèques requises en exécutant les commandes suivantes :
+
+    ```python
+    pip install -q --upgrade pip
+    pip install -q llama-index clickhouse-connect llama-index-llms-anthropic llama-index-tools-mcp
+    ```
+  </Step>
+
+  <Step>
+    ## Configuration des identifiants
+
+    Ensuite, vous devrez fournir votre clé API Anthropic :
+
+    ```python
+    import os, getpass
+    os.environ["ANTHROPIC_API_KEY"] = getpass.getpass("Enter Anthropic API Key:")
+    ```
+
+    ```response title="Response"
+    Enter Anthropic API Key: ········
+    ```
+
+    <Info>
+      **Utiliser un autre fournisseur de LLM**
+
+      Si vous n&#39;avez pas de clé API Anthropic et souhaitez utiliser un autre fournisseur de LLM,
+      vous trouverez les instructions pour configurer vos identifiants dans la [documentation LlamaIndex &quot;LLMs&quot;](https://docs.llamaindex.ai/en/stable/examples/)
+    </Info>
+  </Step>
+
+  <Step>
+    ## Initialiser le serveur MCP
+
+    Configurez maintenant le serveur MCP de ClickHouse pour qu’il pointe vers le ClickHouse SQL playground.
+    Vous devrez convertir ces fonctions Python en outils Llama Index :
+
+    ```python
+    from llama_index.tools.mcp import BasicMCPClient, McpToolSpec
+
+    mcp_client = BasicMCPClient(
+        "uv",
+        args=[
+            "run",
+            "--with", "mcp-clickhouse",
+            "--python", "3.13",
+            "mcp-clickhouse"
+        ],
+        env={
+            "CLICKHOUSE_HOST": "sql-clickhouse.clickhouse.com",
+            "CLICKHOUSE_PORT": "8443",
+            "CLICKHOUSE_USER": "demo",
+            "CLICKHOUSE_PASSWORD": "",
+            "CLICKHOUSE_SECURE": "true"
+        }
+    )
+
+    mcp_tool_spec = McpToolSpec(
+        client=mcp_client,
+    )
+
+    tools = await mcp_tool_spec.to_tool_list_async()
+    ```
+  </Step>
+
+  <Step>
+    ## Créer un agent
+
+    Vous êtes maintenant prêt à créer un agent ayant accès à ces outils. Définissez à 10 le nombre maximal
+    d’appels aux outils dans une même exécution. Vous pouvez modifier ce paramètre si vous le souhaitez :
+
+    ```python
+    from llama_index.core.agent import AgentRunner, FunctionCallingAgentWorker
+
+    agent_worker = FunctionCallingAgentWorker.from_tools(
+        tools=tools,
+        llm=llm, verbose=True, max_function_calls=10
+    )
+    agent = AgentRunner(agent_worker)
+    ```
+  </Step>
+
+  <Step>
+    ## Initialiser le LLM
+
+    Initialisez le modèle Claude Sonnet 4.0 avec le code ci-dessous :
+
+    ```python
+    from llama_index.llms.anthropic import Anthropic
+    llm = Anthropic(model="claude-sonnet-4-0")
+    ```
+  </Step>
+
+  <Step>
+    ## Lancer l’agent
+
+    Enfin, vous pouvez poser une question à l’agent :
+
+    ```python
+    response = agent.query("What's the most popular repository?")
+    ```
+
+    La réponse étant longue, elle a été tronquée dans l&#39;exemple
+    de réponse ci-dessous :
+
+    ```response title="Response"
+    Added user message to memory: What's the most popular repository?
+    === LLM Response ===
+    I'll help you find the most popular repository. Let me first explore the available databases and tables to understand the data structure.
+    === Calling Function ===
+    Calling function: list_databases with args: {}
+    === Function Output ===
+    meta=None content=[TextContent(type='text', text='amazon\nbluesky\ncountry\ncovid\ndefault\ndns\nenvironmental\nfood\nforex\ngeo\ngit\ngithub\nhackernews\nimdb\nlogs\nmetrica\nmgbench\nmta\nnoaa\nnyc_taxi\nnypd\nontime\nopensky\notel\notel_v2\npypi\nrandom\nreddit\nrubygems\nstackoverflow\nstar_schema\nstock\nsystem\ntw_weather\ntwitter\nuk\nwiki\nwords\nyoutube', annotations=None)] isError=False
+    === LLM Response ===
+    I can see there's a `github` database which likely contains repository data. Let me explore the tables in that database.
+    === Calling Function ===
+    Calling function: list_tables with args: {"database": "github"}
+    === Function Output ===
+    ...
+    ...
+    ...
+    === LLM Response ===
+    Based on the GitHub data, **the most popular repository is `sindresorhus/awesome`** with **402,292 stars**.
+
+    Here are the top 10 most popular repositories by star count:
+
+    1. **sindresorhus/awesome** - 402,292 stars
+    2. **996icu/996.ICU** - 388,413 stars  
+    3. **kamranahmedse/developer-roadmap** - 349,097 stars
+    4. **donnemartin/system-design-primer** - 316,524 stars
+    5. **jwasham/coding-interview-university** - 313,767 stars
+    6. **public-apis/public-apis** - 307,227 stars
+    7. **EbookFoundation/free-programming-books** - 298,890 stars
+    8. **facebook/react** - 286,034 stars
+    9. **vinta/awesome-python** - 269,320 stars
+    10. **freeCodeCamp/freeCodeCamp** - 261,824 stars
+
+    The `sindresorhus/awesome` repository is a curated list of awesome lists, which explains its popularity as it serves as a comprehensive directory of resources across many different topics in software development.
+    ```
+  </Step>
+</Steps>

@@ -1,0 +1,382 @@
+---
+description: 'Guia para usar o clickhouse-local para processar dados sem servidor'
+sidebarTitle: 'clickhouse-local'
+slug: /operations/utilities/clickhouse-local
+title: 'clickhouse-local'
+doc_type: 'reference'
+---
+
+<div id="when-to-use-clickhouse-local-vs-clickhouse">
+  ## Quando usar clickhouse-local vs. ClickHouse
+</div>
+
+`clickhouse-local` é uma versão do ClickHouse fácil de usar, ideal para desenvolvedores que precisam processar rapidamente arquivos locais e remotos usando SQL, sem precisar instalar um servidor de banco de dados completo. Com o `clickhouse-local`, os desenvolvedores podem usar comandos SQL (com o [dialeto ClickHouse SQL](/pt-BR/reference/home)) diretamente na linha de comando, o que oferece uma maneira simples e eficiente de acessar os recursos do ClickHouse sem a necessidade de uma instalação completa. Um dos principais benefícios do `clickhouse-local` é que ele já vem incluído na instalação do [clickhouse-client](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local). Isso significa que os desenvolvedores podem começar a usar o `clickhouse-local` rapidamente, sem passar por um processo de instalação complexo.
+
+Embora o `clickhouse-local` seja uma ótima ferramenta para desenvolvimento, testes e processamento de arquivos, ele não é adequado para atender usuários finais nem aplicações. Nesses cenários, recomenda-se usar o [ClickHouse](/pt-BR/get-started/setup/install) de código aberto. O ClickHouse é um poderoso banco de dados OLAP projetado para lidar com cargas de trabalho analíticas em grande escala. Ele oferece processamento rápido e eficiente de consultas complexas em grandes conjuntos de dados, o que o torna ideal para ambientes de produção em que alto desempenho é essencial. Além disso, o ClickHouse oferece uma ampla variedade de recursos, como replicação, sharding e alta disponibilidade, que são essenciais para escalar e lidar com grandes conjuntos de dados, além de atender aplicações. Se você precisa lidar com conjuntos de dados maiores ou atender usuários finais ou aplicações, recomendamos usar o ClickHouse de código aberto em vez do `clickhouse-local`.
+
+Leia a documentação abaixo, que mostra exemplos de casos de uso do `clickhouse-local`, como [consultar um arquivo local](#query_data_in_file) ou [ler um arquivo Parquet no S3](#query-data-in-a-parquet-file-in-aws-s3).
+
+<div id="download-clickhouse-local">
+  ## Baixe o clickhouse-local
+</div>
+
+O `clickhouse-local` é executado usando o mesmo binário `clickhouse` que executa o servidor ClickHouse e o `clickhouse-client`. A forma mais fácil de baixar a versão mais recente é com o seguinte comando:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+<Note>
+  O binário que você acabou de baixar pode executar todos os tipos de ferramentas e utilitários do ClickHouse. Se você quiser executar o ClickHouse como um servidor de banco de dados, confira o [Quick Start](/pt-BR/get-started/setup/install).
+</Note>
+
+<div id="query_data_in_file">
+  ## Consultar dados em um arquivo usando SQL
+</div>
+
+Um uso comum do `clickhouse-local` é executar consultas ad hoc em arquivos, sem precisar inserir os dados em uma tabela. O `clickhouse-local` pode ler os dados de um arquivo em uma tabela temporária e executar seu SQL.
+
+Se o arquivo estiver na mesma máquina que o `clickhouse-local`, você pode simplesmente especificar o arquivo a ser carregado. O arquivo `reviews.tsv` a seguir contém uma amostra de avaliações de produtos da Amazon:
+
+```bash
+./clickhouse local -q "SELECT * FROM 'reviews.tsv'"
+```
+
+Este comando é um atalho para:
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv')"
+```
+
+O ClickHouse reconhece, pela extensão do nome do arquivo, que ele usa um formato separado por tabulação. Se precisar especificar explicitamente o formato, basta adicionar um dos [muitos formatos de entrada do ClickHouse](/pt-BR/reference/formats/index):
+
+```bash
+./clickhouse local -q "SELECT * FROM file('reviews.tsv', 'TabSeparated')"
+```
+
+A função de tabela `file` cria uma tabela, e você pode usar `DESCRIBE` para ver o schema inferido:
+
+```bash
+./clickhouse local -q "DESCRIBE file('reviews.tsv')"
+```
+
+<Tip>
+  Você pode usar globs em nomes de arquivo (consulte [substituições de glob](/pt-BR/reference/functions/table-functions/file#globs-in-path)).
+
+  Exemplos:
+
+  ```bash
+  ./clickhouse local -q "SELECT * FROM 'reviews*.jsonl'"
+  ./clickhouse local -q "SELECT * FROM 'review_?.csv'"
+  ./clickhouse local -q "SELECT * FROM 'review_{1..3}.csv'"
+  ```
+</Tip>
+
+```response
+marketplace    Nullable(String)
+customer_id    Nullable(Int64)
+review_id    Nullable(String)
+product_id    Nullable(String)
+product_parent    Nullable(Int64)
+product_title    Nullable(String)
+product_category    Nullable(String)
+star_rating    Nullable(Int64)
+helpful_votes    Nullable(Int64)
+total_votes    Nullable(Int64)
+vine    Nullable(String)
+verified_purchase    Nullable(String)
+review_headline    Nullable(String)
+review_body    Nullable(String)
+review_date    Nullable(Date)
+```
+
+Vamos encontrar o produto com a melhor avaliação:
+
+```bash
+./clickhouse local -q "SELECT
+    argMax(product_title,star_rating),
+    max(star_rating)
+FROM file('reviews.tsv')"
+```
+
+```response
+Monopoly Junior Board Game    5
+```
+
+<div id="query-data-in-a-parquet-file-in-aws-s3">
+  ## Consultar dados em um arquivo Parquet no S3 da AWS
+</div>
+
+Se você tiver um arquivo no S3, use `clickhouse-local` e a função de tabela `s3` para consultar o arquivo diretamente no S3 (sem inserir os dados em uma tabela do ClickHouse). Temos um arquivo chamado `house_0.parquet` em um bucket público que contém preços de imóveis vendidos no Reino Unido. Vamos ver quantas linhas ele tem:
+
+```bash
+./clickhouse local -q "
+SELECT count()
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+```
+
+O arquivo tem 2,7 milhões de linhas:
+
+```response
+2772030
+```
+
+É sempre útil ver qual schema o ClickHouse infere a partir do arquivo:
+
+```bash
+./clickhouse local -q "DESCRIBE s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')"
+```
+
+```response
+price    Nullable(Int64)
+date    Nullable(UInt16)
+postcode1    Nullable(String)
+postcode2    Nullable(String)
+type    Nullable(String)
+is_new    Nullable(UInt8)
+duration    Nullable(String)
+addr1    Nullable(String)
+addr2    Nullable(String)
+street    Nullable(String)
+locality    Nullable(String)
+town    Nullable(String)
+district    Nullable(String)
+county    Nullable(String)
+```
+
+Vamos ver quais são os bairros mais caros:
+
+```bash
+./clickhouse local -q "
+SELECT
+    town,
+    district,
+    count() AS c,
+    round(avg(price)) AS price,
+    bar(price, 0, 5000000, 100)
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/house_parquet/house_0.parquet')
+GROUP BY
+    town,
+    district
+HAVING c >= 100
+ORDER BY price DESC
+LIMIT 10"
+```
+
+```response
+LONDON    CITY OF LONDON    886    2271305    █████████████████████████████████████████████▍
+LEATHERHEAD    ELMBRIDGE    206    1176680    ███████████████████████▌
+LONDON    CITY OF WESTMINSTER    12577    1108221    ██████████████████████▏
+LONDON    KENSINGTON AND CHELSEA    8728    1094496    █████████████████████▉
+HYTHE    FOLKESTONE AND HYTHE    130    1023980    ████████████████████▍
+CHALFONT ST GILES    CHILTERN    113    835754    ████████████████▋
+AMERSHAM    BUCKINGHAMSHIRE    113    799596    ███████████████▉
+VIRGINIA WATER    RUNNYMEDE    356    789301    ███████████████▊
+BARNET    ENFIELD    282    740514    ██████████████▊
+NORTHWOOD    THREE RIVERS    184    731609    ██████████████▋
+```
+
+<Tip>
+  Quando estiver pronto para inserir seus arquivos no ClickHouse, inicie o servidor ClickHouse e insira os resultados das funções de tabela `file` e `s3` em uma tabela `MergeTree`. Consulte o [Quick Start](/pt-BR/get-started/setup/install) para mais detalhes.
+</Tip>
+
+<div id="format-conversions">
+  ## Conversões entre formatos
+</div>
+
+Você pode usar `clickhouse-local` para converter dados entre diferentes formatos. Exemplo:
+
+```bash
+$ clickhouse-local --input-format JSONLines --output-format CSV --query "SELECT * FROM table" < data.json > data.csv
+```
+
+Os formatos são detectados automaticamente pelas extensões de arquivo:
+
+```bash
+$ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
+```
+
+Como atalho, você pode escrevê-lo com o argumento `--copy`:
+
+```bash
+$ clickhouse-local --copy < data.json > data.csv
+```
+
+<div id="usage">
+  ## Uso
+</div>
+
+Por padrão, o `clickhouse-local` tem acesso aos dados de um servidor ClickHouse no mesmo host e não depende da configuração do servidor. Ele também permite carregar a configuração do servidor usando o argumento `--config-file`. Para dados temporários, um diretório temporário exclusivo é criado por padrão.
+
+Uso básico (Linux):
+
+```bash
+$ clickhouse-local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+```
+
+Uso básico (Mac):
+
+```bash
+$ ./clickhouse local --structure "table_structure" --input-format "format_of_incoming_data" --query "query"
+```
+
+<Note>
+  `clickhouse-local` também é compatível com o Windows via WSL2.
+</Note>
+
+Argumentos:
+
+* `-S`, `--structure` — estrutura da tabela para os dados de entrada.
+* `--input-format` — formato de entrada, `TSV` por padrão.
+* `-F`, `--file` — caminho para os dados, `stdin` por padrão.
+* `-q`, `--query` — consultas a executar, com `;` como delimitador. `--query` pode ser especificado várias vezes, por exemplo, `--query "SELECT 1" --query "SELECT 2"`. Não pode ser usado simultaneamente com `--queries-file`.
+* `--queries-file` - caminho do arquivo com as consultas a executar. `--queries-file` pode ser especificado várias vezes, por exemplo, `--query queries1.sql --query queries2.sql`. Não pode ser usado simultaneamente com `--query`.
+* `--multiquery, -n` – Se especificado, várias consultas separadas por ponto e vírgula podem ser listadas após a opção `--query`. Para maior conveniência, também é possível omitir `--query` e passar as consultas diretamente após `--multiquery`.
+* `-N`, `--table` — nome da tabela onde os dados de saída serão colocados, `table` por padrão.
+* `-f`, `--format`, `--output-format` — formato de saída, `TSV` por padrão.
+* `-d`, `--database` — banco de dados padrão, `_local` por padrão.
+* `--stacktrace` — se deve gerar saída de depuração em caso de exceção.
+* `--echo [ <bool> ]` — imprime cada consulta antes da execução. Aceita um valor booleano opcional. Habilitado por padrão no modo interativo e desabilitado no modo batch. Nota: como `--echo` agora aceita um valor opcional, uma consulta posicional colocada imediatamente após um `--echo` sem valor é interpretada como seu valor; use `--echo --query "..."`, `--echo -q "..."`, `--echo=false` ou `stdin` via pipe.
+* `--echo-formatted [ <bool> ]` — formata as consultas exibidas por `echo`. Aceita um valor booleano opcional. Habilitado por padrão no modo interativo e desabilitado no modo batch.
+* `--echo-query-id [ <bool> ]` — imprime o `query_id` antes da execução. Aceita um valor booleano opcional. Habilitado por padrão no modo interativo e desabilitado no modo batch.
+* `--highlight`, `--hilite` `<bool>` — alterna o realce de sintaxe do prompt de comando e das consultas exibidas por `echo`. Habilitado por padrão. O realce é aplicado somente ao escrever em um terminal.
+* `--verbose` — mais detalhes sobre a execução da consulta.
+* `--logger.console` — Registrar no console.
+* `--logger.log` — Nome do arquivo de log.
+* `--logger.level` — Nível de log.
+* `--ignore-error` — não interrompe o processamento se uma consulta falhar.
+* `-c`, `--config-file` — caminho para o arquivo de configuração no mesmo formato do servidor ClickHouse; por padrão, a configuração é vazia.
+* `--no-system-tables` — não anexar as tabelas do sistema.
+* `--help` — referência dos argumentos de `clickhouse-local`.
+* `-V`, `--version` — imprime informações da versão e sai.
+
+Além disso, há argumentos para cada variável de configuração do ClickHouse que são mais usados do que `--config-file`.
+
+<div id="commands">
+  ## Comandos
+</div>
+
+<div id="ls-command">
+  ### Comando LS
+</div>
+
+Lista todos os arquivos no diretório de trabalho atual aos quais o clickhouse-local tem acesso.
+
+Você pode executá-lo no modo interativo assim:
+
+```sql title="Query"
+ClickHouse local version 26.3.1.1.
+
+:) ls
+
+SELECT _file AS file
+FROM file('*', 'One')
+ORDER BY file ASC
+```
+
+```text title="Response"
+┌─file────────┐
+│ file1.csv   │
+│ file2.json  │
+│ file3.xml   │
+└─────────────┘
+```
+
+Você também pode executá-lo como uma consulta usando o argumento -q:
+
+```sh
+./clickhouse-local -q ls
+```
+
+```text title="Response"
+file1.csv
+file2.json
+file3.xml
+```
+
+<div id="clear-command">
+  ### Comando CLEAR
+</div>
+
+Limpa a tela do terminal (semelhante ao comando `clear` no Linux ou a Ctrl+L em muitos terminais). Esta é uma ação do lado do cliente: não é enviada ao mecanismo SQL.
+
+No `clickhouse-local`, o metacomando é reconhecido no modo **interativo** e para entrada com **`-q`** e **`--queries-file`** (mesmo caminho no cliente que `-q`, mesma ideia que `ls`), de modo que um `clear` isolado não gera um erro `UNKNOWN_IDENTIFIER`. O **`clickhouse-client --queries-file`** remoto permanece inalterado: o conteúdo do arquivo é executado apenas como SQL (sem metacomandos em nível de texto).
+
+No `clickhouse-client`, ele é reconhecido apenas no modo **interativo**. Com **`-q`** ou arquivos de consulta, `clear` continua sendo interpretado como SQL, então a automação mantém o comportamento de erro anterior, em vez de transformar erros de digitação em um no-op silencioso.
+
+Formas compatíveis: `clear`, `CLEAR`, `/clear` (um `;` opcional no final é ignorado). Se a saída padrão não for um terminal (por exemplo, ao redirecionar a saída por pipe), o metacomando é aceito quando reconhecido, mas não emite sequências de controle.
+
+Com `clickhouse-local` e `-q`:
+
+```sh
+./clickhouse-local -q clear
+```
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+```bash title="Query"
+$ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
+    --input-format "CSV" --query "SELECT * FROM table"
+Read 2 rows, 32.00 B in 0.000 sec., 5182 rows/sec., 80.97 KiB/sec.
+1   2
+3   4
+```
+
+O exemplo anterior é igual a:
+
+```bash title="Query"
+$ echo -e "1,2\n3,4" | clickhouse-local -n --query "
+    CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin);
+    SELECT a, b FROM table;
+    DROP TABLE table;"
+Read 2 rows, 32.00 B in 0.000 sec., 4987 rows/sec., 77.93 KiB/sec.
+1   2
+3   4
+```
+
+Você não precisa usar o argumento `stdin` nem `--file` e pode abrir qualquer número de arquivos usando a [função de tabela `file`](/pt-BR/reference/functions/table-functions/file):
+
+```bash title="Query"
+$ echo 1 | tee 1.tsv
+1
+
+$ echo 2 | tee 2.tsv
+2
+
+$ clickhouse-local --query "
+    select * from file('1.tsv', TSV, 'a int') t1
+    cross join file('2.tsv', TSV, 'b int') t2"
+1    2
+```
+
+Agora, vamos exibir o memory user de cada usuário Unix:
+
+```bash title="Query"
+$ ps aux | tail -n +2 | awk '{ printf("%s\t%s\n", $1, $4) }' \
+    | clickhouse-local --structure "user String, mem Float64" \
+        --query "SELECT user, round(sum(mem), 2) as memTotal
+            FROM table GROUP BY user ORDER BY memTotal DESC FORMAT Pretty"
+```
+
+```text title="Response"
+Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
+┏━━━━━━━━━━┳━━━━━━━━━━┓
+┃ user     ┃ memTotal ┃
+┡━━━━━━━━━━╇━━━━━━━━━━┩
+│ bayonet  │    113.5 │
+├──────────┼──────────┤
+│ root     │      8.8 │
+├──────────┼──────────┤
+...
+```
+
+<div id="related-content-1">
+  ## Conteúdo relacionado
+</div>
+
+* [Extraindo, convertendo e consultando dados em arquivos locais com o clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
+* [Carregando dados no ClickHouse - Parte 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)
+* [Explorando conjuntos de dados massivos do mundo real: mais de 100 anos de registros meteorológicos no ClickHouse](https://clickhouse.com/blog/real-world-data-noaa-climate-data)
+* Blog: [Extraindo, convertendo e consultando dados em arquivos locais com o clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)

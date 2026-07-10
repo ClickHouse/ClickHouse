@@ -1,0 +1,111 @@
+---
+sidebarTitle: 'ダッシュボード'
+slug: /cloud/manage/dashboards
+title: 'ダッシュボード'
+description: 'SQL Console のダッシュボード機能を使用すると、保存クエリから可視化をまとめて共有できます。'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'ダッシュボード', 'データ可視化', 'SQL Console のダッシュボード', 'クラウド分析']
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+SQL Console のダッシュボード機能では、保存クエリから可視化を集約し、共有できます。まずはクエリを保存して可視化し、その可視化をダッシュボードに追加して、クエリパラメータを使ってダッシュボードをインタラクティブにしましょう。
+
+<div id="core-concepts">
+  ## 基本概念
+</div>
+
+<div id="query-sharing">
+  ### クエリの共有
+</div>
+
+ダッシュボードを同僚と共有する際は、基になる保存クエリも必ず共有してください。可視化を表示するには、少なくとも基になる保存クエリへの読み取り専用のアクセス権が必要です。
+
+<div id="interactivity">
+  ### インタラクティブ性
+</div>
+
+ダッシュボードをインタラクティブにするには、[クエリパラメータ](/ja/reference/syntax#defining-and-using-query-parameters)を使用します。たとえば、`WHERE` 句にクエリパラメータを追加して、フィルタとして機能させることができます。
+
+可視化設定で “フィルタ” タイプを選択すると、**Global** フィルタのサイドペインからクエリパラメータ入力の表示を切り替えられます。また、ダッシュボード上の別のオブジェクト (テーブルなど) にリンクして、クエリパラメータ入力の表示を切り替えることもできます。詳しくは、以下のクイックスタートガイドの「[フィルタを設定する](/ja/products/cloud/features/sql-console-features/dashboards#configure-a-filter)」セクションを参照してください。
+
+<div id="quick-start">
+  ## クイックスタート
+</div>
+
+[query&#95;log](/ja/reference/system-tables/query_log) システムテーブルを使って、ClickHouseサービスを監視するためのダッシュボードを作成しましょう。
+
+<div id="quick-start">
+  ## クイックスタート
+</div>
+
+<div id="create-a-saved-query">
+  ### 保存クエリを作成する
+</div>
+
+すでに可視化するための保存クエリがある場合は、この手順はスキップできます。
+
+新しいクエリタブを開きます。ClickHouseのシステムテーブルを使って、あるサービスの日別のクエリ数を集計するクエリを書いてみましょう。
+
+<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="保存クエリを作成する" border />
+
+クエリの結果はテーブル形式で表示することも、チャートビューから可視化の作成を始めることもできます。次の手順に進むため、このクエリを `queries over time` として保存します。
+
+<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="クエリを保存" border />
+
+保存クエリの詳細については、[Saving a Query セクション](/ja/products/cloud/features/sql-console-features/sql-console#saving-a-query)を参照してください。
+
+別のクエリ `query count by query kind` を作成して保存し、query kindごとのクエリ数を集計することもできます。以下は、SQL Consoleでこのデータを棒グラフとして可視化したものです。
+
+<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="クエリ結果の棒グラフによる可視化" border />
+
+これでクエリが2つそろったので、これらを可視化してまとめるためのダッシュボードを作成しましょう。
+
+<div id="create-a-dashboard">
+  ### ダッシュボードを作成する
+</div>
+
+「Dashboards」パネルに移動し、「New Dashboard」をクリックします。名前を付けると、最初のダッシュボードが作成されます。
+
+<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="新しいダッシュボードを作成する" border />
+
+<div id="add-a-visualization">
+  ### 可視化を追加する
+</div>
+
+`queries over time` と `query count by query kind` という 2 つの保存クエリがあります。まずは 1 つ目を折れ線チャートとして可視化しましょう。可視化にタイトルとサブタイトルを付け、可視化するクエリを選択します。次に、「Line」チャートタイプを選択し、x 軸と y 軸を指定します。
+
+<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="可視化を追加する" border />
+
+ここでは、数値のフォーマット、凡例のレイアウト、軸ラベルなど、スタイルに関する追加の調整も行えます。
+
+次に、2 つ目のクエリをテーブルとして可視化し、折れ線チャートの下に配置しましょう。
+
+<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="クエリ結果をテーブルとして可視化する" border />
+
+これで、2 つの保存クエリを可視化した最初のダッシュボードが完成しました！
+
+<div id="configure-a-filter">
+  ### フィルタを設定する
+</div>
+
+`query kind` にフィルタを追加して、このダッシュボードをインタラクティブにしましょう。これにより、Insert クエリに関連する傾向だけを表示できます。この作業は、[クエリパラメータ](/ja/reference/syntax#defining-and-using-query-parameters) を使って行います。
+
+折れ線チャートの横にある 3 点メニューをクリックし、クエリの横にある鉛筆ボタンをクリックしてインラインのクエリエディタを開きます。ここでは、ダッシュボードから直接、元の保存クエリを編集できます。
+
+<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="元のクエリを編集する" border />
+
+ここで黄色のクエリ実行ボタンを押すと、先ほどと同じクエリが Insert クエリのみに絞り込まれて表示されます。保存ボタンをクリックしてクエリを更新します。グラフ設定に戻ると、折れ線チャートにフィルタを適用できるようになります。
+
+これで、上部リボンの Global Filters を使って、入力を変更することでフィルタを切り替えられます。
+
+<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="グローバルフィルタを調整する" border />
+
+折れ線チャートのフィルタをテーブルに連動させたいとします。これを行うには、可視化設定に戻って `query_kind` クエリパラメータの value source をテーブルに変更し、連動させるフィールドとして `query_kind` カラムを選択します。
+
+<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="クエリパラメータを変更する" border />
+
+これで、queries by kind テーブルから直接、折れ線チャートのフィルタを操作できるようになり、ダッシュボードをインタラクティブにできます。
+
+<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="折れ線グラフのフィルタを制御する" border />

@@ -328,11 +328,14 @@ void DisksApp::registerCommands()
     command_descriptions.emplace("link", makeCommandLink());
     command_descriptions.emplace("write", makeCommandWrite());
     command_descriptions.emplace("read", makeCommandRead());
+    command_descriptions.emplace("sed", makeCommandSed());
     command_descriptions.emplace("read-bitmap", makeCommandReadBitmap());
     command_descriptions.emplace("mkdir", makeCommandMkDir());
     command_descriptions.emplace("switch-disk", makeCommandSwitchDisk());
     command_descriptions.emplace("current_disk_with_path", makeCommandGetCurrentDiskAndPath());
     command_descriptions.emplace("touch", makeCommandTouch());
+    command_descriptions.emplace("du", makeCommandDiskUsage());
+    command_descriptions.emplace("wc", makeCommandWordCount());
     command_descriptions.emplace("read-checksums", makeCommandReadChecksums());
     command_descriptions.emplace("help", makeCommandHelp(*this));
 #if CLICKHOUSE_CLOUD

@@ -1,0 +1,478 @@
+---
+sidebarTitle: 'UI를 통한 백업 또는 복원'
+slug: /cloud/manage/backups/backup-restore-via-ui
+title: '사용자 인터페이스를 통한 백업 / 복원'
+description: '사용자 버킷을 사용해 UI에서 백업을 생성하거나 백업을 복원하는 방법을 설명하는 페이지'
+doc_type: 'guide'
+keywords: ['백업', '재해 복구', '데이터 보호', '복원', '클라우드 기능']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<Note>
+  외부 버킷으로의 자동 백업은 24시간마다 &quot;전체&quot; 백업으로 실행되도록 구성되어 있으며, 실행 주기는 변경할 수 없습니다.
+</Note>
+
+<div id="AWS">
+  ## AWS
+</div>
+
+<div id="taking-backups-to-aws">
+  ### AWS에 백업하기
+</div>
+
+<div id="aws-steps">
+  #### 1. AWS에서 수행할 단계
+</div>
+
+<Note>
+  이 단계는 [&quot;S3 데이터에 안전하게 액세스하기&quot;](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)에 설명된 보안 S3 설정과 유사하지만, 역할 권한에는 추가로 설정해야 할 항목이 있습니다.
+</Note>
+
+아래 단계를 AWS 계정에서 수행하십시오:
+
+<Steps>
+  <Step>
+    ##### AWS S3 버킷 생성
+
+    백업을 내보낼 AWS S3 버킷을 계정에 생성합니다.
+  </Step>
+
+  <Step>
+    ##### IAM 역할 생성
+
+    AWS는 역할 기반 인증(authentication)을 사용하므로, ClickHouse Cloud 서비스가 이 버킷에 쓰기 작업을 수행할 수 있도록 Assume할 수 있는 IAM 역할을 생성합니다.
+
+    * a. ClickHouse Cloud 서비스 설정 페이지의 Network security information에서 ARN을 확인합니다. 형식은 다음과 비슷합니다:
+
+    <Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
+
+    * b. 이 역할에 대해 다음과 같이 신뢰 정책을 생성합니다:
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "backup service",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS":  "arn:aws:iam::463754717262:role/CH-S3-bordeaux-ar-90-ue2-29-Role"
+          },
+          "Action": "sts:AssumeRole"
+        }
+      ]
+    }
+    ```
+  </Step>
+
+  <Step>
+    ##### 역할 권한 업데이트
+
+    이 ClickHouse Cloud 서비스가 S3 버킷에 쓸 수 있도록 이 역할의 권한도 설정해야 합니다.
+    이를 위해 역할에 대한 권한 정책을 아래와 유사한 JSON으로 생성하고, 두 위치의 Resource에 사용자 버킷의 ARN을 입력합니다.
+
+    ```json
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Action": [
+            "s3:GetBucketLocation",
+            "s3:ListBucket"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui"
+          ],
+          "Effect": "Allow"
+        },
+        {
+          "Action": [
+            "s3:Get*",
+            "s3:List*",
+            "s3:PutObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui/*"
+          ],
+          "Effect": "Allow"
+        },
+        {
+          "Action": [
+            "s3:DeleteObject"
+          ],
+          "Resource": [
+            "arn:aws:s3:::byob-ui/*/.lock"
+          ],
+          "Effect": "Allow"
+        }
+      ]
+    }
+    ```
+  </Step>
+</Steps>
+
+<div id="cloud-steps">
+  #### 2. ClickHouse Cloud에서 수행할 단계
+</div>
+
+외부 버킷을 구성하려면 아래 단계를 ClickHouse Cloud 콘솔에서 수행하십시오.
+
+<Steps>
+  <Step>
+    ##### 외부 백업 변경
+
+    설정 페이지에서 &quot;Set up external backup&quot;을 클릭하십시오.
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="외부 백업 변경" size="lg" />
+  </Step>
+
+  <Step>
+    ##### AWS IAM Role ARN 및 S3 버킷 세부 정보 구성
+
+    다음 화면에서 방금 생성한 AWS IAM Role ARN과 다음 형식의 S3 버킷 URL을 입력하십시오.
+
+    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="AWS IAM Role ARN 및 S3 버킷 세부 정보 구성" size="lg" />
+  </Step>
+
+  <Step>
+    ##### 변경 사항 저장
+
+    설정을 저장하려면 &quot;Save External Bucket&quot;을 클릭하십시오.
+  </Step>
+
+  <Step>
+    ##### 기본 일정에서 백업 일정 변경
+
+    이제 외부 백업은 기본 일정에 따라 사용자의 버킷에 저장됩니다.
+    또는 &quot;설정&quot; 페이지에서 백업 일정을 구성할 수 있습니다.
+    다르게 구성한 경우에는 사용자 지정 일정이 사용자의
+    버킷에 백업을 저장하는 데 사용되며, 기본 일정(24시간마다 백업)은
+    ClickHouse Cloud 소유 버킷의 백업에 사용됩니다.
+  </Step>
+
+  <Step>
+    ##### 버킷에 저장된 백업 보기
+
+    아래와 같이 Backups 페이지에 사용자의 버킷에 있는 백업이 별도의 테이블로
+    표시됩니다.
+
+    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="버킷에 저장된 백업 보기" size="lg" />
+  </Step>
+</Steps>
+
+<div id="restoring-backups-from-aws">
+  ### AWS에서 백업 복원하기
+</div>
+
+아래 단계에 따라 AWS에서 백업을 복원하십시오.
+
+<Steps>
+  <Step>
+    ##### 복원할 새 서비스 만들기
+
+    백업을 복원할 새 서비스를 만드십시오.
+  </Step>
+
+  <Step>
+    ##### 서비스 ARN 추가
+
+    새로 생성한 서비스의 ARN을 IAM 역할의 신뢰 정책에 추가하십시오(ClickHouse
+    Cloud Console의 서비스 설정 페이지에서 확인 가능). 이는 위 AWS 단계 섹션의
+    [두 번째 단계](#create-iam-role)와 동일합니다. 새 서비스가 S3 버킷에 액세스할 수
+    있도록 하려면 이 작업이 필요합니다.
+  </Step>
+
+  <Step>
+    ##### 백업 복원에 사용할 SQL 명령 가져오기
+
+    UI의 백업 목록 위에 있는 &quot;access or restore a backup&quot; 링크를 클릭하여 백업을 복원하는
+    SQL 명령을 확인하십시오. 명령은 다음과 같은 형태입니다.
+
+    <Image img="/images/cloud/manage/backups/backup_command.webp" alt="백업 복원에 사용할 SQL 명령 가져오기" size="md" />
+
+    <Warning>
+      **백업을 다른 위치로 이동하는 경우**
+
+      백업을 다른 위치로 옮기면 새 위치를 참조하도록 복원 명령을 사용자 지정해야 합니다.
+    </Warning>
+
+    <Tip>
+      **ASYNC 명령**
+
+      복원 명령의 경우 대용량 복원을 위해 끝에 `ASYNC` 명령을 선택적으로 추가할 수도 있습니다.
+      이렇게 하면 복원이 비동기적으로 수행되므로 연결이 끊겨도 복원이 계속 실행됩니다.
+      중요한 점은 ASYNC 명령이 즉시 성공 상태를 반환한다는 것입니다.
+      하지만 이것이 복원이 성공했다는 뜻은 아닙니다.
+      복원이 완료되었는지, 그리고 성공했는지 실패했는지 확인하려면 `system.backups` 테이블을 모니터링해야 합니다.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### 복원 명령 실행
+
+    새로 생성한 서비스의 SQL 콘솔에서 복원 명령을 실행하여
+    백업을 복원하십시오.
+  </Step>
+</Steps>
+
+<div id="gcp">
+  ## GCP
+</div>
+
+<div id="taking-backups-to-gcp">
+  ### GCP에 백업 생성하기
+</div>
+
+아래 단계에 따라 GCP에 백업을 생성하십시오:
+
+<div id="gcp-steps-to-follow">
+  #### GCP에서 따라야 할 단계
+</div>
+
+<Steps>
+  <Step>
+    ##### GCP 스토리지 버킷 생성
+
+    백업을 내보내기 위해 GCP 계정에 스토리지 버킷을 생성하십시오.
+  </Step>
+
+  <Step>
+    ##### HMAC 키 및 시크릿 생성
+
+    비밀번호 기반 인증에 필요한 HMAC 키 및 시크릿을 생성하십시오. 키를 생성하려면 아래 단계를 따르십시오.
+
+    * a. 서비스 계정 만들기
+      * I.  Google Cloud Console의 IAM &amp; Admin 섹션으로 이동한 다음 `Service Accounts`를 선택하십시오.
+      * II. `Create Service Account`를 클릭하고 이름과 ID를 입력하십시오. `Create and Continue`를 클릭하십시오.
+      * III. 이 서비스 계정에 Storage Object User 역할을 부여하십시오.
+      * IV. `Done`을 클릭하여 서비스 계정 생성을 완료하십시오.
+
+    * b. HMAC 키 생성
+      * I. Google Cloud Console의 Cloud Storage로 이동한 다음 `Settings`를 선택하십시오.
+      * II. Interoperability 탭으로 이동하십시오.
+      * III. `Service account HMAC` 섹션에서 `Create a key for a service account`를 클릭하십시오.
+      * IV. 드롭다운 메뉴에서 이전 단계에서 생성한 서비스 계정을 선택하십시오.
+      * V. `Create key`를 클릭하십시오.
+
+    * c. 자격 증명을 안전하게 저장하기:
+      * I. 시스템에 Access ID(HMAC 키)와 시크릿(HMAC 시크릿)이 표시됩니다. 이 값은 저장해 두십시오.
+        이 창을 닫은 후에는 시크릿이 다시 표시되지 않습니다.
+  </Step>
+</Steps>
+
+<div id="gcp-cloud-steps">
+  #### ClickHouse Cloud에서 수행할 단계
+</div>
+
+외부 버킷을 구성하려면 아래 단계를 ClickHouse Cloud 콘솔에서 수행하십시오.
+
+<Steps>
+  <Step>
+    ##### 외부 백업 변경
+
+    `설정` 페이지에서 `외부 백업 변경`을 클릭합니다.
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="외부 백업 변경" size="lg" />
+  </Step>
+
+  <Step>
+    ##### GCP HMAC 키 및 시크릿 구성
+
+    팝업 대화상자에서 이전 섹션에서 생성한 GCP 버킷 경로, HMAC 키, 시크릿을 입력합니다.
+
+    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="GCP HMAC 키 및 시크릿 구성" size="md" />
+  </Step>
+
+  <Step>
+    ##### 외부 버킷 저장
+
+    설정을 저장하려면 `Save External Bucket`을 클릭합니다.
+  </Step>
+
+  <Step>
+    ##### 기본 일정 대신 백업 일정 변경
+
+    이제 외부 백업은 기본 일정에 따라 버킷에 수행됩니다.
+    또는 `설정` 페이지에서 백업 일정을 구성할 수 있습니다.
+    다르게 구성한 경우 사용자 지정 일정은
+    버킷에 백업을 저장하는 데 사용되며, 기본 일정(24시간마다 백업)은
+    ClickHouse Cloud 소유 버킷의 백업에 사용됩니다.
+  </Step>
+
+  <Step>
+    ##### 버킷에 저장된 백업 보기
+
+    아래와 같이 Backups 페이지에 버킷에 저장된 백업이 별도의 테이블로 표시됩니다.
+
+    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="버킷에 저장된 백업 보기" size="lg" />
+  </Step>
+</Steps>
+
+<div id="gcp-restoring-backups-from-gcp">
+  ### GCP에서 백업 복원
+</div>
+
+아래 단계에 따라 GCP에서 백업을 복원하세요:
+
+<Steps>
+  <Step>
+    ##### 복원할 새 서비스 만들기
+
+    백업을 복원할 새 서비스를 만드세요.
+  </Step>
+
+  <Step>
+    ##### 백업 복원에 사용할 SQL 명령 가져오기
+
+    UI의 백업 목록 위에 있는 `access or restore a backup` 링크를 클릭하여 백업 복원에 사용할 SQL 명령을 확인하세요. 명령은 다음과 같은 형태이며, 드롭다운에서 원하는 백업을 선택하면 해당 백업에 맞는 복원 명령을 확인할 수 있습니다. 명령에 시크릿 액세스 키를 추가해야 합니다:
+
+    <Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="백업 복원에 사용할 SQL 명령 가져오기" size="md" />
+
+    <Warning>
+      **백업을 다른 위치로 이동하는 경우**
+
+      백업을 다른 위치로 옮긴 경우에는 새 위치를 참조하도록 복원 명령을 직접 수정해야 합니다.
+    </Warning>
+
+    <Tip>
+      **ASYNC 명령**
+
+      대용량 복원의 경우 복원 명령 끝에 `ASYNC` 명령을 선택적으로 추가할 수도 있습니다.
+      이렇게 하면 복원이 비동기적으로 수행되므로 connection이 끊겨도 복원이 계속 진행됩니다.
+      중요한 점은 ASYNC 명령이 즉시 성공 상태를 반환한다는 것입니다.
+      하지만 이것이 복원이 성공했다는 의미는 아닙니다.
+      복원이 완료되었는지, 그리고 성공 또는 실패했는지 확인하려면 `system.backups` 테이블을 모니터링해야 합니다.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### 백업 복원을 위한 SQL 명령 실행
+
+    새로 만든 서비스의 SQL 콘솔에서 복원 명령을 실행하여 백업을 복원하세요.
+  </Step>
+</Steps>
+
+<div id="azure">
+  ## Azure
+</div>
+
+<div id="taking-backups-to-azure">
+  ### Azure에 백업하기
+</div>
+
+Azure에 백업하려면 아래 단계를 따르십시오:
+
+<div id="steps-to-follow-in-azure">
+  #### Azure에서 수행할 단계
+</div>
+
+<Steps>
+  <Step>
+    ##### 스토리지 계정 생성
+
+    백업을 저장할 Azure 포털에서 스토리지 계정을 생성하거나 기존 스토리지 계정을 선택합니다.
+  </Step>
+
+  <Step>
+    ##### 연결 문자열 가져오기
+
+    * a. 스토리지 계정 `Overview`에서 `Security + networking` 섹션을 찾아 `Access keys`를 클릭합니다.
+    * b. 여기에서 `key1`과 `key2`를 확인할 수 있습니다. 각 키 아래에 `Connection string` 필드가 있습니다.
+    * c. `Show`를 클릭하여 연결 문자열을 표시합니다. ClickHouse Cloud 설정에 사용할 연결 문자열을 복사합니다.
+  </Step>
+</Steps>
+
+<div id="gcp-cloud-steps">
+  #### ClickHouse Cloud에서 수행할 단계
+</div>
+
+외부 버킷을 구성하려면 ClickHouse Cloud 콘솔에서 아래 단계를 수행하십시오.
+
+<Steps>
+  <Step>
+    ##### 외부 백업 변경
+
+    `설정` 페이지에서 `외부 백업 변경`을 클릭합니다.
+
+    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="외부 백업 변경" size="lg" />
+  </Step>
+
+  <Step>
+    ##### Azure 스토리지 계정의 연결 문자열 및 컨테이너 이름 입력
+
+    다음 화면에서 이전 섹션에서 생성한 Azure 스토리지 계정의 연결 문자열과 Container Name을 입력합니다.
+
+    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Azure 스토리지 계정의 연결 문자열 및 컨테이너 이름 입력" size="md" />
+  </Step>
+
+  <Step>
+    ##### 외부 버킷 저장
+
+    설정을 저장하려면 `Save External Bucket`을 클릭합니다.
+  </Step>
+
+  <Step>
+    ##### 기본 일정에서 백업 일정 변경
+
+    이제 외부 백업은 기본 일정에 따라 버킷에 저장됩니다. 또는 `설정` 페이지에서 백업 일정을 구성할 수 있습니다. 별도의 일정으로 구성한 경우에는 사용자 지정 일정에 따라 버킷에 백업이 저장되며, 기본 일정(24시간마다 백업)은 ClickHouse Cloud 소유 버킷의 백업에 적용됩니다.
+  </Step>
+
+  <Step>
+    ##### 버킷에 저장된 백업 보기
+
+    아래와 같이 `Backups` 페이지에 버킷의 백업이 별도 테이블로 표시되어야 합니다.
+
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="버킷에 저장된 백업 보기" size="md" />
+  </Step>
+</Steps>
+
+<div id="azure-restore-steps">
+  ### Azure에서 백업 복원
+</div>
+
+Azure에서 백업을 복원하려면 아래 단계를 따르십시오.
+
+<Steps>
+  <Step>
+    ##### 복원할 새 서비스 생성
+
+    백업을 복원할 새 서비스를 생성하십시오. 현재는 백업을 새 서비스로만
+    복원할 수 있습니다.
+  </Step>
+
+  <Step>
+    ##### 백업 복원에 사용할 SQL 명령 가져오기
+
+    UI의 백업 목록 위에 있는 `access or restore a backup` 링크를 클릭하여
+    백업 복원에 사용할 SQL 명령을 가져오십시오. 명령은 다음과 같은 형태이며,
+    드롭다운에서 적절한 백업을 선택해 해당 백업의 복원 명령을
+    확인할 수 있습니다. 명령에 Azure 스토리지 계정 연결 문자열을
+    추가해야 합니다.
+
+    <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Azure에서 백업 복원" size="md" />
+
+    <Warning>
+      **백업을 다른 위치로 이동하는 경우**
+
+      백업을 다른 위치로 이동한 경우, 새 위치를 참조하도록 복원 명령을 직접 수정해야 합니다.
+    </Warning>
+
+    <Tip>
+      **ASYNC 명령**
+
+      대규모 복원의 경우 복원 명령 끝에 `ASYNC`를 선택적으로 추가할 수도 있습니다.
+      이렇게 하면 복원이 비동기적으로 수행되므로 연결이 끊겨도 복원 작업은 계속 실행됩니다.
+      중요한 점은 ASYNC 명령이 즉시 성공 상태를 반환한다는 것입니다.
+      이것이 복원이 성공했다는 뜻은 아닙니다.
+      복원이 완료되었는지, 그리고 성공했는지 실패했는지 확인하려면 `system.backups` 테이블을 모니터링해야 합니다.
+    </Tip>
+  </Step>
+
+  <Step>
+    ##### 백업 복원을 위해 SQL 명령 실행
+
+    새로 생성한 서비스의 SQL 콘솔에서 복원 명령을 실행하여
+    백업을 복원하십시오.
+  </Step>
+</Steps>

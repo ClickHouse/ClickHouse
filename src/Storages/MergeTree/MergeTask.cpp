@@ -30,6 +30,8 @@
 #include <Processors/Merges/ReplacingSortedTransform.h>
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
+#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/ExtractColumnsStep.h>
@@ -135,6 +137,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
     extern const MergeTreeSettingsUInt64 min_merge_bytes_to_use_direct_io;
+    extern const MergeTreeSettingsBool compute_exact_num_defaults_for_sparse_columns;
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_bytes_to_activate;
     extern const MergeTreeSettingsUInt64 vertical_merge_algorithm_min_columns_to_activate;
@@ -164,6 +167,8 @@ namespace ErrorCodes
     extern const int DIRECTORY_ALREADY_EXISTS;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int TIMEOUT_EXCEEDED;
+    extern const int QUERY_WAS_CANCELLED;
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -232,6 +237,25 @@ private:
 
     std::shared_ptr<BuildStatisticsTransform> transform;
 };
+
+/// `PullingPipelineExecutor::pull` returns `false` both on a genuine end-of-stream and when the
+/// pipeline is cancelled (query kill or a soft `max_execution_time` with `timeout_overflow_mode = 'break'`).
+/// A merge that ran with the user query's limits (e.g. `OPTIMIZE ... DRY RUN`, which executes the merge
+/// synchronously in the query) can therefore be silently truncated. If we treat that as a normal finish,
+/// the merge finalizes a partial part and the row-count invariants in the merge stages fire a LOGICAL_ERROR.
+/// Detect the cancellation here and throw the proper error instead.
+static void throwIfMergePipelineCancelled(const PullingPipelineExecutor & executor)
+{
+    switch (executor.getExecutionStatus())
+    {
+        case PipelineExecutor::ExecutionStatus::CancelledByTimeout:
+            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Timeout exceeded while merging parts");
+        case PipelineExecutor::ExecutionStatus::CancelledByUser:
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while merging parts");
+        default:
+            break;
+    }
+}
 
 /// Manages the "rows_sources" temporary file that is used during vertical merge.
 class RowsSourcesTemporaryFile : public ITemporaryFileLookup
@@ -430,6 +454,11 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
     for (const auto & index : skip_indexes)
     {
         if (exclude_index_names.contains(index.name)) /// user requested to skip this index during merge
+            continue;
+
+        /// Inert indices (a removed index type kept only for attach compatibility) hold no data and
+        /// cannot be recomputed. Skip them so the merge does not try to aggregate them and wedge.
+        if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
             continue;
 
         auto index_columns = index.expression->getRequiredColumns();
@@ -804,6 +833,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     {
         static_cast<double>((*merge_tree_settings)[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
         true,
+        (*merge_tree_settings)[MergeTreeSetting::compute_exact_num_defaults_for_sparse_columns],
         (*merge_tree_settings)[MergeTreeSetting::serialization_info_version],
         (*merge_tree_settings)[MergeTreeSetting::string_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
@@ -830,7 +860,11 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             infos.add(part_infos);
         }
 
-        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context));
+        global_ctx->alter_conversions.push_back(MergeTreeData::getAlterConversionsForPart(part, mutations_snapshot, global_ctx->context
+#if CLICKHOUSE_CLOUD
+            , nullptr
+#endif
+            ));
     }
 
     if (global_ctx->new_data_part->info.isPatch())
@@ -878,6 +912,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             {
                 if (!exclude_index_names.contains(index.name))
                 {
+                    /// Inert indices (a removed index type kept only for attach compatibility) hold no
+                    /// data and cannot be recomputed. Skip them so the merge does not wedge trying to
+                    /// aggregate them.
+                    if (MergeTreeIndexFactory::instance().get(global_ctx->metadata_snapshot, index, *global_ctx->data_settings)->isInert())
+                        continue;
+
                     if (index.type == "text")
                         global_ctx->text_indexes_to_merge.push_back(index);
                     else
@@ -979,14 +1019,18 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
 bool MergeTask::enabledBlockNumberColumn(GlobalRuntimeContextPtr global_ctx)
 {
-    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column]
-        && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    if (global_ctx->parent_part)
+        return false;
+
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_number_column];
 }
 
 bool MergeTask::enabledBlockOffsetColumn(GlobalRuntimeContextPtr global_ctx)
 {
-    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column]
-        && global_ctx->metadata_snapshot->getGroupByTTLs().empty();
+    if (global_ctx->parent_part)
+        return false;
+
+    return (*global_ctx->data_settings)[MergeTreeSetting::enable_block_offset_column];
 }
 
 void MergeTask::addGatheringColumn(GlobalRuntimeContextPtr global_ctx, const String & name, const DataTypePtr & type)
@@ -1490,6 +1534,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::executeImpl() const
         {
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+            else
+                throwIfMergePipelineCancelled(*global_ctx->merging_executor);
             finalize();
             return false;
         }
@@ -1860,6 +1906,8 @@ bool MergeTask::VerticalMergeStage::executeVerticalMergeForOneColumn() const
         {
             if (cancelled)
                 global_ctx->merge_list_element_ptr->is_cancelled.store(true, std::memory_order_relaxed);
+            else
+                throwIfMergePipelineCancelled(*ctx->executor);
             return false;
         }
 
@@ -2269,6 +2317,7 @@ bool MergeTask::MergeTextIndexStage::prepare() const
         auto task = std::make_unique<MergeTextIndexesTask>(
             std::move(segments),
             global_ctx->new_data_part,
+            global_ctx->rows_written,
             index_ptr,
             global_ctx->merged_part_offsets,
             reader_settings,

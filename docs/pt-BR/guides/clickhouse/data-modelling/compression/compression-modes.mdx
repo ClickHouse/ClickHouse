@@ -1,0 +1,61 @@
+---
+slug: /data-compression/compression-modes
+title: 'Modos de compressão'
+description: 'Modos de compressão de colunas no ClickHouse'
+keywords: ['compressão', 'codec', 'codificação', 'modos']
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+O protocolo do ClickHouse oferece suporte à compressão de **blocos de dados** com checksum.
+Use `LZ4` se não tiver certeza de qual modo escolher.
+&#96;&#96;
+
+<Tip>
+  Saiba mais sobre os [codecs de compressão de colunas](/pt-BR/reference/statements/create/table#column_compression_codec) disponíveis e especifique-os ao criar suas tabelas ou posteriormente.
+</Tip>
+
+<div id="modes">
+  ## Modos
+</div>
+
+| valor  | nome               | descrição                                     |
+| ------ | ------------------ | --------------------------------------------- |
+| `0x02` | [None](#none-mode) | Sem compressão, apenas checksums              |
+| `0x82` | LZ4                | Extremamente rápido, boa compressão           |
+| `0x90` | ZSTD               | Zstandard, bastante rápido, melhor compressão |
+
+Tanto o LZ4 quanto o ZSTD foram criados pelo mesmo autor, mas com trade-offs diferentes.
+Segundo [benchmarks do Facebook](https://facebook.github.io/zstd/#benchmarks):
+
+| nome              | taxa | codificação | decodificação |
+| ----------------- | ---- | ----------- | ------------- |
+| **zstd** 1.4.5 -1 | 2.8  | 500 MB/s    | 1660 MB/s     |
+| **lz4** 1.9.2     | 2.1  | 740 MB/s    | 4530 MB/s     |
+
+<div id="block">
+  ## Bloco
+</div>
+
+| campo               | tipo    | descrição                                                                                     |
+| ------------------- | ------- | --------------------------------------------------------------------------------------------- |
+| checksum            | uint128 | [Hash](/pt-BR/resources/develop-contribute/native-protocol/hash) de (cabeçalho + dados compactados) |
+| raw&#95;size        | uint32  | Tamanho bruto sem o cabeçalho                                                                 |
+| data&#95;size       | uint32  | Tamanho dos dados descompactados                                                              |
+| mode                | byte    | Modo de compressão                                                                            |
+| compressed&#95;data | binary  | Bloco de dados compactados                                                                    |
+
+<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Diagrama que ilustra a estrutura do bloco de compressão do ClickHouse" />
+
+O cabeçalho é (raw&#95;size + data&#95;size + mode), e o tamanho bruto corresponde a len(header + compressed&#95;data).
+
+O checksum é `hash(header + compressed_data)`, usando [ClickHouse CityHash](/pt-BR/resources/develop-contribute/native-protocol/hash).
+
+<div id="none-mode">
+  ## Modo None
+</div>
+
+Se o modo *None* for usado, `compressed_data` será igual aos dados originais.
+O modo sem compressão é útil para garantir uma camada adicional de integridade dos dados com checksums, porque
+a sobrecarga do cálculo de hash é desprezível.

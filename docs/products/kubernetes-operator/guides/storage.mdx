@@ -1,0 +1,175 @@
+---
+position: 3
+slug: /clickhouse-operator/guides/storage
+title: Storage and volumes
+keywords: ['kubernetes', 'storage', 'volumes', 'pvc', 'jbod', 'disks']
+description: 'How the operator provisions persistent storage for ClickHouse clusters, including the primary data volume, multi-disk (JBOD) layouts, expansion, and what cannot change after creation.'
+doc_type: 'guide'
+---
+
+This guide covers how the operator provisions persistent storage for a
+`ClickHouseCluster`: the primary data volume, attaching extra disks in a
+multi-disk (JBOD) layout, expanding capacity, and the rules that govern what you
+can and cannot change after a cluster exists.
+
+For the field-by-field reference, see
+[Configuration → Storage configuration](/products/kubernetes-operator/guides/configuration#storage-configuration)
+and the [API Reference](/products/kubernetes-operator/reference/api-reference).
+
+## Primary data volume {#primary-data-volume}
+
+`spec.dataVolumeClaimSpec` is a standard Kubernetes `PersistentVolumeClaimSpec`.
+The operator turns it into a StatefulSet `volumeClaimTemplate`, so the StatefulSet
+controller creates and retains one PersistentVolumeClaim per replica and mounts it
+at the ClickHouse data path `/var/lib/clickhouse`.
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd   # optional; depends on the installed CSI driver
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+- When `accessModes` is omitted, the operator defaults it to `ReadWriteOnce`.
+- The per-replica PVC is retained when the cluster is deleted, so data survives a
+  delete-and-recreate of the Custom Resource.
+- The same field exists on `KeeperCluster` and behaves the same way.
+
+## Running without a persistent data volume {#ephemeral-storage}
+
+`dataVolumeClaimSpec` is optional. If you omit it and do not mount your own volume
+at the data path, ClickHouse writes to the container's ephemeral filesystem and the
+admission webhook returns a warning that data may be lost if the cluster is restarted.
+
+This is intended only for throwaway or test clusters. To supply your own storage
+instead of `dataVolumeClaimSpec` — for example an `emptyDir` or a pre-provisioned
+volume — define it through `spec.podTemplate.volumes` and mount it at
+`/var/lib/clickhouse` with `spec.containerTemplate.volumeMounts`.
+
+<Note>
+`dataVolumeClaimSpec` and a custom volume at the data path are mutually exclusive.
+If `dataVolumeClaimSpec` is set, mounting a custom volume at `/var/lib/clickhouse`
+is rejected. The reserved volume names `clickhouse-storage-volume`,
+`clickhouse-server-tls-volume`, and `clickhouse-server-custom-ca-volume` cannot be
+used in `podTemplate.volumes`.
+</Note>
+
+## Expanding storage {#expanding-storage}
+
+To grow a volume, increase `resources.requests.storage` and apply the change. The
+operator updates the existing PVCs in place.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 200Gi   # was 100Gi
+```
+
+<Note>
+Expansion only works when the underlying StorageClass has
+`allowVolumeExpansion: true`. Kubernetes does not support shrinking a PVC, so the
+new size must be greater than or equal to the current size.
+</Note>
+
+## Multi-disk (JBOD) storage {#multi-disk-jbod}
+
+`spec.additionalVolumeClaimTemplates` attaches extra disks to each ClickHouse
+replica on top of the primary `dataVolumeClaimSpec`. Each entry is a named PVC
+template — a `metadata.name` plus a PVC `spec` — reconciled exactly like the
+primary data disk, so the StatefulSet controller creates and retains one PVC per
+replica named `<name>-<statefulset>-0`.
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+The operator mounts each additional volume at `/var/lib/clickhouse/disks/<name>`
+and **generates the ClickHouse `storage_configuration` for you** — you do not write
+it by hand. It registers every additional disk and adds it to the built-in `default`
+storage policy.
+
+The primary data disk (`default`) and every additional disk share a single volume
+of the `default` policy, so ClickHouse spreads new data parts across all of them in
+round-robin fashion. Usable capacity is the sum of all disks, and every table that
+does not set its own `storage_policy` — including `system.*` tables — uses the
+combined set.
+
+<Note>
+The mount path keeps the template name verbatim, but the disk identifier inside
+`storage_configuration` replaces hyphens with underscores. A template named
+`cold-disk` is mounted at `/var/lib/clickhouse/disks/cold-disk` and appears as
+`cold_disk` in the generated configuration.
+</Note>
+
+## Custom storage policies {#custom-storage-policies}
+
+You do **not** need `extraConfig` for the JBOD layout above — the operator generates
+the `default` policy automatically. Reach for `spec.settings.extraConfig` only when
+you want storage policies *beyond* the generated default, for example a tiered
+hot/cold policy with `move_factor` and `prefer_not_to_merge`, or an S3-backed disk.
+Configuration you add there is merged on top of the generated `storage_configuration`.
+
+See the
+[ClickHouse storage documentation](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)
+for the policy fields.
+
+## What you cannot change after creation {#immutability}
+
+Storage layout is largely fixed once a cluster exists. The admission webhook rejects
+updates that would orphan or rebind PersistentVolumeClaims:
+
+- The presence of `dataVolumeClaimSpec` is immutable — you cannot **add** a data
+  volume to a cluster created without one, nor **remove** it from a cluster created
+  with one.
+- The set of `additionalVolumeClaimTemplates` is fixed — you cannot **add**,
+  **remove**, or **rename** entries after creation.
+- Expanding `resources.requests.storage` on an existing entry **is** allowed (subject
+  to StorageClass support, see [Expanding storage](#expanding-storage)).
+
+## Validation reference {#validation-reference}
+
+| Condition | Result |
+|---|---|
+| No `dataVolumeClaimSpec` and no custom volume at `/var/lib/clickhouse` | Warning — possible data loss on restart |
+| Custom volume mounted at `/var/lib/clickhouse` while `dataVolumeClaimSpec` is set | Rejected |
+| `additionalVolumeClaimTemplates` set but `dataVolumeClaimSpec` missing | Rejected |
+| Additional disk named `default` | Rejected — reserved by the ClickHouse default disk |
+| Additional disk named `clickhouse-storage-volume` | Rejected — collides with the primary data volume name |
+| Duplicate additional disk name | Rejected |
+| Name not matching `^[a-z]([-a-z0-9]*[a-z0-9])?$` or longer than 63 characters | Rejected by the CRD schema |
+| Adding or removing `dataVolumeClaimSpec` after creation | Rejected |
+| Adding, removing, or renaming `additionalVolumeClaimTemplates` after creation | Rejected |
+| Reserved volume name in `podTemplate.volumes` | Rejected |
+
+## Related guides {#related-guides}
+
+- [Configuration](/products/kubernetes-operator/guides/configuration) — the full field reference, including `extraConfig`.
+- [Scaling clusters](/products/kubernetes-operator/guides/scaling) — how replicas and shards are added and removed.

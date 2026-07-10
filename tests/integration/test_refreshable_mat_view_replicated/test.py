@@ -1,6 +1,5 @@
 import logging
 import time
-import math
 from datetime import datetime
 from typing import Optional
 
@@ -150,26 +149,26 @@ MODIFY REFRESH
 def module_setup_tables(started_cluster):
 
     # default is Atomic by default
-    node.query(f"DROP DATABASE IF EXISTS default ON CLUSTER default SYNC")
+    node.query("DROP DATABASE IF EXISTS default ON CLUSTER default SYNC")
     node.query(
         "CREATE DATABASE default ON CLUSTER default ENGINE=Replicated('/clickhouse/default/','{shard}','{replica}')"
     )
 
     assert (
         node.query(
-            f"SELECT engine FROM clusterAllReplicas(default, system.databases) where name='default'"
+            "SELECT engine FROM clusterAllReplicas(default, system.databases) where name='default'"
         )
         == "Replicated\nReplicated\n"
     )
 
-    node.query(f"DROP DATABASE IF EXISTS test_db ON CLUSTER default SYNC")
+    node.query("DROP DATABASE IF EXISTS test_db ON CLUSTER default SYNC")
     node.query(
         "CREATE DATABASE test_db ON CLUSTER default ENGINE=Replicated('/clickhouse/test_db/','{shard}','{replica}')"
     )
 
     assert (
         node.query(
-            f"SELECT engine FROM clusterAllReplicas(default, system.databases) where name='test_db'"
+            "SELECT engine FROM clusterAllReplicas(default, system.databases) where name='test_db'"
         )
         == "Replicated\nReplicated\n"
     )
@@ -182,20 +181,20 @@ def module_setup_tables(started_cluster):
     node.query("DROP TABLE IF EXISTS tgt2 ON CLUSTER default")
 
     node.query(
-        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
+        "CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
     )
     node.query(
-        f"CREATE TABLE src2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
+        "CREATE TABLE src2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
     )
     node.query(
-        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
+        "CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
     )
     node.query(
-        f"CREATE TABLE tgt2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
+        "CREATE TABLE tgt2 ON CLUSTER default (a DateTime, b UInt64) ENGINE = ReplicatedMergeTree() ORDER BY tuple()"
     )
     node.query(
-        f"CREATE MATERIALIZED VIEW IF NOT EXISTS dummy_rmv ON CLUSTER default "
-        f"REFRESH EVERY 10 HOUR ENGINE = ReplicatedMergeTree() ORDER BY tuple() EMPTY AS select number as x from numbers(1)"
+        "CREATE MATERIALIZED VIEW IF NOT EXISTS dummy_rmv ON CLUSTER default "
+        "REFRESH EVERY 10 HOUR ENGINE = ReplicatedMergeTree() ORDER BY tuple() EMPTY AS select number as x from numbers(1)"
     )
 
 
@@ -207,15 +206,15 @@ def fn_setup_tables():
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default")
 
     node.query(
-        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) "
-        f"ENGINE = ReplicatedMergeTree ORDER BY tuple()"
+        "CREATE TABLE tgt1 ON CLUSTER default (a DateTime, b UInt64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple()"
     )
 
     node.query(
-        f"CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) "
-        f"ENGINE = ReplicatedMergeTree ORDER BY tuple()"
+        "CREATE TABLE src1 ON CLUSTER default (a DateTime, b UInt64) "
+        "ENGINE = ReplicatedMergeTree ORDER BY tuple()"
     )
-    node.query(f"INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
+    node.query("INSERT INTO src1 VALUES ('2020-01-01', 1), ('2020-01-02', 2)")
 
     yield
 
@@ -333,11 +332,11 @@ def test_alters(
 
     compare_DDL_on_all_nodes()
 
-    node.query(f"DROP TABLE test_db.test_rmv")
+    node.query("DROP TABLE test_db.test_rmv")
     node.query(create_sql)
     compare_DDL_on_all_nodes()
 
-    show_create = node.query(f"SHOW CREATE test_db.test_rmv")
+    show_create = node.query("SHOW CREATE test_db.test_rmv")
 
     alter_sql = ALTER_RMV.render(
         table_name="test_rmv",
@@ -352,7 +351,7 @@ def test_alters(
     )
 
     node.query(alter_sql)
-    show_create_after_alter = node.query(f"SHOW CREATE test_db.test_rmv")
+    show_create_after_alter = node.query("SHOW CREATE test_db.test_rmv")
     assert show_create == show_create_after_alter
     compare_DDL_on_all_nodes()
 
@@ -455,7 +454,7 @@ def fn3_setup_tables():
     node.query("DROP TABLE IF EXISTS tgt1 ON CLUSTER default SYNC")
 
     node.query(
-        f"CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = ReplicatedMergeTree ORDER BY tuple()"
+        "CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = ReplicatedMergeTree ORDER BY tuple()"
     )
 
 
@@ -482,11 +481,11 @@ def test_query_fail(fn3_setup_tables):
             exc.value
         )
     assert (
-        node.query(f"SELECT count() FROM system.view_refreshes WHERE view='test_rmv'")
+        node.query("SELECT count() FROM system.view_refreshes WHERE view='test_rmv'")
         == "0\n"
     )
     assert (
-        node.query(f"SELECT count() FROM system.tables WHERE name='test_rmv'") == "0\n"
+        node.query("SELECT count() FROM system.tables WHERE name='test_rmv'") == "0\n"
     )
 
 

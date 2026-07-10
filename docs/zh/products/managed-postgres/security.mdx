@@ -1,0 +1,160 @@
+---
+slug: /cloud/managed-postgres/security
+sidebarTitle: '安全'
+title: '安全'
+description: 'ClickHouse Managed Postgres 的安全功能，包括 IP 白名单、加密和 Private Link'
+keywords: ['Postgres 安全', 'IP 白名单', '加密', 'tls', 'ssl', 'private link', '备份保留策略']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
+
+Managed Postgres 具备企业级安全功能，可保护您的数据并满足合规要求。本页介绍网络安全、加密和备份保留策略。
+
+<div id="ip-whitelisting">
+  ## IP 白名单
+</div>
+
+IP 过滤器用于控制哪些源 IP 地址可以连接到您的 Managed Postgres 实例，从网络层面实施访问控制，保护数据库免受未经授权的连接。
+
+<Image img="/images/managed-postgres/ip-filters.webp" alt="IP 访问列表配置" size="md" border />
+
+<div id="configuring-ip-filters">
+  ### 配置 IP 过滤器
+</div>
+
+要配置 IP 过滤器：
+
+1. 导航到 **设置** 选项卡
+2. 在 **IP Filters** 下，点击 **Edit**
+3. 添加允许连接的 IP 地址或 CIDR 范围
+4. 点击 **Save** 以应用更改
+
+您可以指定：
+
+* 单个 IP 地址 (例如 `203.0.113.5`)
+* 网络的 CIDR 范围 (例如 `192.168.1.0/24`)
+* **Anywhere**，允许所有 IP 地址 (不建议用于生产环境)
+* **Nowhere**，阻止所有连接
+
+<Warning>
+  **生产环境最佳实践**
+
+  如果未配置任何 IP 过滤器，则允许所有 IP 地址发起连接。对于生产环境，建议将访问限制为已知的 IP 地址或 CIDR 范围。可考虑仅允许以下来源访问：
+
+  * 您的应用服务器
+  * VPN 网关 IP 地址
+  * 用于管理访问的堡垒机
+  * 用于自动化部署的 CI/CD 管道 IP
+</Warning>
+
+<div id="encryption">
+  ## 加密
+</div>
+
+Managed Postgres 会对静态数据和传输中的数据进行加密，确保数据得到全面保护。
+
+<div id="encryption-at-rest">
+  ### 静态加密
+</div>
+
+Managed Postgres 存储的所有数据都会在静止状态下加密，以防止对底层存储基础设施的未授权访问。
+
+<div id="nvme-encryption">
+  #### NVMe 存储加密
+</div>
+
+存储在 NVMe 驱动器上的数据库文件、事务日志和临时 File 均采用业界标准的加密算法进行加密。此加密对您的应用程序完全透明，无需任何配置。
+
+<div id="s3-encryption">
+  #### 对象存储加密 (S3)
+</div>
+
+存储在对象存储中的备份和预写日志 (WAL) 归档同样采用静态加密。包括：
+
+* 每日全量备份
+* 增量 WAL 归档
+* 时间点恢复数据
+
+所有备份数据都存储在专用且隔离的存储桶中，并且访问凭据的权限范围仅限于各个实例，从而确保备份数据安全，且只有经授权的系统才能访问。
+
+<Info>
+  默认情况下，所有 Managed Postgres 实例均启用静态加密，且无法禁用。无需额外配置。
+</Info>
+
+<div id="encryption-in-transit">
+  ### 传输中加密
+</div>
+
+所有连接到 Managed Postgres 的网络连接都使用 TLS (传输层安全) 进行保护，以确保数据在您的应用程序与数据库之间传输时的安全。
+
+<div id="tls-ssl">
+  #### TLS/SSL 配置
+</div>
+
+默认情况下，连接会使用 TLS 加密，但不会验证证书。对于生产环境中的工作负载，我们建议使用经过验证的 TLS 连接，以确保您连接的是正确的服务器。
+
+有关 TLS 配置和连接选项的更多信息，请参阅[连接](/zh/products/managed-postgres/connection#tls)页面。
+
+<div id="private-link">
+  ## Private Link
+</div>
+
+Private Link 可在您的 Managed Postgres 实例与虚拟私有云 (VPC) 之间建立私有连接，无需将流量暴露到公共互联网。这进一步增强了网络隔离性和安全性。
+
+<Info>
+  **需要手动设置**
+
+  Private Link 已支持，但需要由 ClickHouse 支持团队手动配置。此功能非常适合对网络隔离有严格要求的企业客户。
+</Info>
+
+<div id="requesting-private-link">
+  ### 请求设置 Private Link
+</div>
+
+要为您的 Managed Postgres 实例启用 Private Link：
+
+1. **创建支持工单，联系 ClickHouse 支持团队**
+
+2. **提供以下信息**：
+   * 您的 ClickHouse Organization ID
+   * Postgres service 的 ID/主机名
+   * 您希望通过 Private Link 连接的 AWS account ID/ARN
+     * (可选) 您希望发起连接的、除 Postgres 实例所在区域之外的其他区域
+
+3. **ClickHouse 支持团队将**：
+   * 在 Managed Postgres 侧预配 Private Link 端点
+   * 向您提供端点连接详细信息，您可使用这些信息创建端点接口。
+
+4. **设置您的 Private Link**：
+   * 前往 AWS 设置中的端点接口，使用 ClickHouse 支持团队提供的配置创建 Private Link。
+   * 当您的 Private Link 处于“Available”状态后，您即可使用 AWS UI 中提供的 Private DNS 名称进行连接。
+
+<div id="backup-retention">
+  ## 备份保留策略
+</div>
+
+Managed Postgres 会自动备份您的数据，以防止因意外删除、数据损坏或其他数据丢失情况而导致的数据丢失。
+
+<div id="retention-policy">
+  ### 保留策略
+</div>
+
+* **默认保留期**：7 天
+* **备份频率**：每日全量备份 + 持续进行 WAL 归档 (每 60 秒或 16 MB，以先到者为准)
+* **恢复粒度**：可在保留窗口内进行时间点恢复到任意时刻
+
+<div id="backup-security">
+  ### 备份安全性
+</div>
+
+备份在存储时享有与主数据相同的安全保障：
+
+* 对象存储中的**静态加密**
+* 每个实例配备隔离的**存储桶**和范围受限的凭证
+* **访问控制**仅限于与该备份关联的 Postgres 实例。
+
+有关备份策略和时间点恢复的更多信息，请参阅[备份与恢复](/zh/products/managed-postgres/backup-and-restore)页面。

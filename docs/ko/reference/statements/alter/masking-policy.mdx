@@ -1,0 +1,25 @@
+---
+description: 'ALTER MASKING POLICY 문서'
+sidebarTitle: 'MASKING POLICY'
+slug: /sql-reference/statements/alter/masking-policy
+title: 'ALTER MASKING POLICY'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/ko/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+기존 마스킹 정책을 수정합니다.
+
+구문:
+
+```sql
+ALTER MASKING POLICY [IF EXISTS] policy_name ON [database.]table
+    [UPDATE column1 = expression1 [, column2 = expression2 ...]]
+    [WHERE condition]
+    [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
+    [PRIORITY priority_number]
+```
+
+모든 절은 선택 사항입니다. 지정한 절만 업데이트됩니다.
