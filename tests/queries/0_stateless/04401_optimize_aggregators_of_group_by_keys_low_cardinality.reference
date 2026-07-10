@@ -32,3 +32,6 @@ Granules: 8/128
 2
 3
 4
+-- IN subquery must not break: the pass re-resolves ordinary functions but must skip non-column/function arguments (a non-correlated subquery QueryNode has no result type)
+3
+1	2

@@ -64,3 +64,8 @@ SELECT any(c) AS m FROM t_lc_matrix GROUP BY c ORDER BY m;
 SELECT anyLast(a) AS m FROM t_lc_matrix GROUP BY a ORDER BY m;
 
 DROP TABLE t_lc_matrix;
+
+SELECT '-- IN subquery must not break: the pass re-resolves ordinary functions but must skip non-column/function arguments (a non-correlated subquery QueryNode has no result type)';
+SELECT count() FROM numbers(10) WHERE number IN (SELECT number FROM numbers(3));
+SELECT s, count() FROM (SELECT toLowCardinality(toString(number % 5)) AS s, number AS id FROM numbers(20))
+WHERE id IN (SELECT number FROM numbers(10)) GROUP BY s HAVING min(s) = '1' ORDER BY s;

@@ -147,6 +147,15 @@ private:
         bool argument_types_changed = false;
         for (size_t i = 0; i < argument_nodes.size(); ++i)
         {
+            /// Only these argument node types expose a result type and can be substituted by this
+            /// pass (an eliminated aggregate is replaced by its FUNCTION/COLUMN argument). Other
+            /// argument kinds (a non-correlated QueryNode/UnionNode from an IN subquery, ListNode,
+            /// etc.) throw from getResultType() and are never rewritten here, so skip them.
+            const auto arg_type = argument_nodes[i]->getNodeType();
+            if (arg_type != QueryTreeNodeType::FUNCTION && arg_type != QueryTreeNodeType::COLUMN
+                && arg_type != QueryTreeNodeType::CONSTANT)
+                continue;
+
             if (!resolved_argument_types[i] || !resolved_argument_types[i]->equals(*argument_nodes[i]->getResultType()))
             {
                 argument_types_changed = true;
