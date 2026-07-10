@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/integration-guides
+description: 'إدخال البيانات إلى ClickStack - حزمة ClickHouse للـ observability'
+title: 'أدلة التكامل'
+doc_type: 'landing-page'
+keywords: ['إدخال البيانات إلى ClickStack', 'إدخال بيانات observability', 'أدلة تكامل ClickStack']
+---
+
+يوفّر ClickStack عدة طرق لإدخال بيانات observability إلى مثيل ClickHouse لديك. يحتوي هذا القسم على أدلة بدء سريعة لمجموعة متنوعة من مصادر السجلات والتتبعات والمقاييس.
+
+<Note>
+  تستخدم عدة أدلة تكامل في هذا القسم OpenTelemetry Collector المضمّن في ClickStack Open Source للاختبار والتقييم السريع.
+
+  بالنسبة إلى عمليات النشر في بيئات الإنتاج، نوصي بتشغيل عمليات التكامل كوكلاء OpenTelemetry Collector بالقرب من أعباء العمل لديك. ويجب أن تقوم هذه الوكلاء بتمرير البيانات التليمترية عبر OTLP إلى ClickStack OpenTelemetry Collector، الذي يرسل البيانات بعد ذلك إما إلى مثيل ClickHouse ذاتي الإدارة لتوزيعة ClickStack Open Source أو إلى Managed ClickStack. راجع [&quot;إرسال بيانات OpenTelemetry&quot;](/ar/clickstack/ingesting-data/opentelemetry) للاطلاع على إعدادات بيئات الإنتاج.
+</Note>
+
+| القسم                                                                          | الوصف                                           |
+| ------------------------------------------------------------------------------ | ----------------------------------------------- |
+| [سجلات المضيف العامة](/ar/clickstack/integration-examples/host-logs)              | اجمع سجلات نظام المضيف                          |
+| [سجلات مضيف EC2](/ar/clickstack/integration-examples/host-logs/ec2)               | راقب سجلات مثيل EC2                             |
+| [سجلات AWS Lambda باستخدام Rotel](/ar/clickstack/integration-examples/aws-lambda) | مرّر سجلات Lambda باستخدام Rotel                |
+| [AWS CloudWatch](/ar/clickstack/integration-examples/cloudwatch)                  | مرّر CloudWatch log groups                      |
+| [مقاييس JVM](/ar/clickstack/integration-examples/jvm-metrics)                     | راقب أداء JVM                                   |
+| [سجلات Kafka](/ar/clickstack/integration-examples/kafka-logs)                     | اجمع سجلات وسطاء Kafka                          |
+| [مقاييس Kafka](/ar/clickstack/integration-examples/kafka-metrics)                 | راقب أداء Kafka                                 |
+| [Kubernetes](/ar/clickstack/integration-examples/kubernetes)                      | راقب مجموعات K8s                                |
+| [سجلات MongoDB](/ar/clickstack/integration-examples/mongodb-logs)                 | اجمع سجلات خادم MongoDB                         |
+| [سجلات MySQL](/ar/clickstack/integration-examples/mysql)                          | اجمع سجلات الاستعلامات البطيئة/الأخطاء في MySQL |
+| [سجلات Nginx](/ar/clickstack/integration-examples/nginx-logs)                     | اجمع سجلات الوصول/الأخطاء في Nginx              |
+| [تتبعات Nginx](/ar/clickstack/integration-examples/nginx-traces)                  | تتبّع طلبات HTTP في Nginx                       |
+| [تتبعات Node.js](/ar/clickstack/integration-examples/nodejs-traces)               | تتبّع طلبات HTTP في Node.js                     |
+| [سجلات PostgreSQL](/ar/clickstack/integration-examples/postgres-logs)             | اجمع سجلات Postgres                             |
+| [مقاييس PostgreSQL](/ar/clickstack/integration-examples/postgres-metrics)         | راقب أداء Postgres                              |
+| [سجلات Redis](/ar/clickstack/integration-examples/redis-logs)                     | اجمع سجلات خادم Redis                           |
+| [مقاييس Redis](/ar/clickstack/integration-examples/redis-metrics)                 | راقب أداء Redis                                 |
+| [سجلات Systemd](/ar/clickstack/integration-examples/systemd)                      | اجمع سجلات Systemd/Journald                     |
+| [مقاييس Temporal](/ar/clickstack/integration-examples/temporal)                   | راقب مقاييس Temporal Cloud                      |

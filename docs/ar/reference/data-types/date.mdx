@@ -1,0 +1,50 @@
+---
+description: 'توثيق نوع البيانات Date في ClickHouse'
+sidebarTitle: 'Date'
+slug: /sql-reference/data-types/date
+title: 'Date'
+doc_type: 'reference'
+---
+
+تاريخ. يُخزَّن في بايتين على شكل عدد الأيام منذ 1970-01-01 (غير موقَّع). ويتيح تخزين القيم بدءًا من بعد بداية Unix Epoch مباشرةً وحتى الحد الأعلى الذي يحدده ثابت في مرحلة الترجمة البرمجية (ويمتد ذلك حاليًا حتى سنة 2149، لكن آخر سنة مدعومة بالكامل هي 2148).
+
+نطاق القيم المدعوم: [1970-01-01, 2149-06-06].
+
+تُخزَّن قيمة التاريخ من دون المنطقة الزمنية.
+
+**مثال**
+
+إنشاء جدول يحتوي على عمود من النوع `Date` وإدراج البيانات فيه:
+
+```sql
+CREATE TABLE dt
+(
+    `timestamp` Date,
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- Parse Date
+-- - from string,
+-- - from 'small' integer interpreted as number of days since 1970-01-01, and
+-- - from 'big' integer interpreted as number of seconds since 1970-01-01.
+INSERT INTO dt VALUES ('2019-01-01', 1), (17897, 2), (1546300800, 3);
+
+SELECT * FROM dt;
+```
+
+```text
+┌──timestamp─┬─event_id─┐
+│ 2019-01-01 │        1 │
+│ 2019-01-01 │        2 │
+│ 2019-01-01 │        3 │
+└────────────┴──────────┘
+```
+
+**انظر أيضًا**
+
+* [دوال التعامل مع التواريخ والأوقات](/ar/reference/functions/regular-functions/date-time-functions)
+* [معاملات التعامل مع التواريخ والأوقات](/ar/reference/operators/index#operators-for-working-with-dates-and-times)
+* [نوع البيانات `DateTime`](/ar/reference/data-types/datetime)

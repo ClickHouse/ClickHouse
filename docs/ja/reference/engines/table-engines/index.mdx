@@ -1,0 +1,124 @@
+---
+description: 'テーブルエンジンのドキュメント'
+slug: /engines/table-engines/
+toc_folder_title: 'テーブルエンジン'
+toc_priority: 26
+toc_title: '概要'
+title: 'テーブルエンジン'
+doc_type: 'reference'
+---
+
+テーブルエンジン (テーブルの種類) は、次の内容を決定します。
+
+* データをどのように、どこに保存するか、どこに書き込むか、どこから読み取るか。
+* どのクエリがどのようにサポートされるか。
+* データへの同時アクセス。
+* 索引がある場合に、それを使用するかどうか。
+* リクエストをマルチスレッドで実行できるかどうか。
+* データレプリケーションのパラメータ。
+
+<div id="engine-families">
+  ## エンジンファミリー
+</div>
+
+<div id="mergetree">
+  ### MergeTree
+</div>
+
+高負荷のワークロード向けに、最も汎用的で高機能なテーブルエンジンです。これらのエンジンに共通する特徴は、高速にデータを挿入でき、その後のデータ処理がバックグラウンドで行われることです。`MergeTree` ファミリーのエンジンは、データのレプリケーション ([Replicated*](/ja/reference/engines/table-engines/mergetree-family/replication) バージョンのエンジン) 、パーティション化、セカンダリのデータスキッピング索引のほか、他のエンジンではサポートされない機能もサポートしています。
+
+このファミリーに含まれるエンジン:
+
+| MergeTree エンジン                                                                                                 |
+| -------------------------------------------------------------------------------------------------------------- |
+| [MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree)                                       |
+| [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree)                     |
+| [SummingMergeTree](/ja/reference/engines/table-engines/mergetree-family/summingmergetree)                         |
+| [AggregatingMergeTree](/ja/reference/engines/table-engines/mergetree-family/aggregatingmergetree)                 |
+| [CollapsingMergeTree](/ja/reference/engines/table-engines/mergetree-family/collapsingmergetree)                   |
+| [VersionedCollapsingMergeTree](/ja/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree) |
+| [GraphiteMergeTree](/ja/reference/engines/table-engines/mergetree-family/graphitemergetree)                       |
+| [CoalescingMergeTree](/ja/reference/engines/table-engines/mergetree-family/coalescingmergetree)                   |
+
+<div id="log">
+  ### Log
+</div>
+
+最小限の機能を備えた軽量な[エンジン](/ja/reference/engines/table-engines/log-family/index)です。多数の小さなテーブル (約 100 万行まで) にすばやく書き込み、後でまとめて読み取る必要がある場合に最適です。
+
+このファミリーに含まれるエンジン:
+
+| Log Engines                                                        |
+| ------------------------------------------------------------------ |
+| [TinyLog](/ja/reference/engines/table-engines/log-family/tinylog)     |
+| [StripeLog](/ja/reference/engines/table-engines/log-family/stripelog) |
+| [Log](/ja/reference/engines/table-engines/log-family/log)             |
+
+<div id="integration-engines">
+  ### インテグレーションエンジン
+</div>
+
+他のデータストレージシステムやデータ処理システムと連携するためのエンジンです。
+
+このファミリーに含まれるエンジン:
+
+| インテグレーションエンジン                                                                     |
+| --------------------------------------------------------------------------------- |
+| [ODBC](/ja/reference/engines/table-engines/integrations/odbc)                         |
+| [JDBC](/ja/reference/engines/table-engines/integrations/jdbc)                        |
+| [MySQL](/ja/reference/engines/table-engines/integrations/mysql)                      |
+| [MongoDB](/ja/reference/engines/table-engines/integrations/mongodb)                  |
+| [Redis](/ja/reference/engines/table-engines/integrations/redis)                      |
+| [HDFS](/ja/reference/engines/table-engines/integrations/hdfs)                        |
+| [S3](/ja/reference/engines/table-engines/integrations/s3)                            |
+| [Kafka](/ja/reference/engines/table-engines/integrations/kafka)                      |
+| [EmbeddedRocksDB](/ja/reference/engines/table-engines/integrations/embedded-rocksdb) |
+| [RabbitMQ](/ja/reference/engines/table-engines/integrations/rabbitmq)                |
+| [PostgreSQL](/ja/reference/engines/table-engines/integrations/postgresql)            |
+| [S3Queue](/ja/reference/engines/table-engines/integrations/s3queue)                  |
+| [TimeSeries](/ja/reference/engines/table-engines/integrations/time-series)           |
+
+<div id="special-engines">
+  ### 特殊エンジン
+</div>
+
+このファミリーに含まれるエンジン:
+
+| 特殊エンジン                                                                  |
+| ----------------------------------------------------------------------- |
+| [Distributed](/ja/reference/engines/table-engines/special/distributed)     |
+| [Dictionary](/ja/reference/engines/table-engines/special/dictionary)       |
+| [Merge](/ja/reference/engines/table-engines/special/merge)                 |
+| [Executable](/ja/reference/engines/table-engines/special/executable)       |
+| [File](/ja/reference/engines/table-engines/special/file)                   |
+| [Null](/ja/reference/engines/table-engines/special/null)                   |
+| [Set](/ja/reference/engines/table-engines/special/set)                     |
+| [Join](/ja/reference/engines/table-engines/special/join)                   |
+| [URL](/ja/reference/engines/table-engines/special/url)                     |
+| [View](/ja/reference/engines/table-engines/special/view)                   |
+| [Memory](/ja/reference/engines/table-engines/special/memory)               |
+| [Buffer](/ja/reference/engines/table-engines/special/buffer)               |
+| [External Data](/ja/reference/engines/table-engines/special/external-data) |
+| [GenerateRandom](/ja/reference/engines/table-engines/special/generate)     |
+| [KeeperMap](/ja/reference/engines/table-engines/special/keepermap)         |
+| [FileLog](/ja/reference/engines/table-engines/special/filelog)             |
+
+<div id="table_engines-virtual_columns">
+  ## 仮想カラム
+</div>
+
+仮想カラムは、エンジンのソースコードで定義される、テーブルエンジンに組み込まれた属性です。
+
+仮想カラムを `CREATE TABLE` クエリで指定することはできません。また、`SHOW CREATE TABLE` や `DESCRIBE TABLE` クエリの結果にも表示されません。仮想カラムは読み取り専用でもあるため、仮想カラムにデータを挿入することもできません。
+
+仮想カラムからデータを取得するには、`SELECT` クエリでその名前を明示的に指定する必要があります。`SELECT *` では仮想カラムの値は返されません。
+
+テーブルの仮想カラムのいずれかと同じ名前のカラムを持つテーブルを作成すると、その仮想カラムにはアクセスできなくなります。これは推奨されません。競合を避けるため、仮想カラム名には通常、先頭にアンダースコアが付いています。
+
+* `_table` — データの読み取り元であるテーブル名を格納します。Type: [String](/ja/reference/data-types/string).
+
+  使用しているテーブルエンジンに関係なく、すべてのテーブルには `_table` という共通の仮想カラムがあります。
+
+  Merge テーブルエンジンを使用してテーブルにクエリする場合は、`WHERE/PREWHERE` 句で `_table` に対する定数条件を設定できます (たとえば `WHERE _table='xyz'`) 。この場合、読み取り処理は `_table` の条件を満たすテーブルに対してのみ実行されるため、`_table` カラムは索引として機能します。
+
+  `SELECT ... FROM (... UNION ALL ...)` のような形式のクエリを使用すると、`_table` カラムを指定することで、返された行が実際にどのテーブルに由来するかを判別できます。

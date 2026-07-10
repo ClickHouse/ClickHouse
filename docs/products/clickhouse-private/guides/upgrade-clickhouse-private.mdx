@@ -1,0 +1,140 @@
+---
+noindex: true
+title: "Upgrade ClickHouse Private"
+description: "Upgrade the ClickHouse Private components — the operator and the ClickHouse cluster (keeper + server) — to a new release."
+---
+
+Upgrade the ClickHouse Private components — the operator and the ClickHouse cluster (keeper + server) — to a new release.
+
+> **Best practice:** Always run the upgrade on a staging or test cluster first before applying it to production. A dedicated test cluster that mirrors production is strongly recommended as part of your standard upgrade process.
+
+## Pre-Upgrade Checklist
+
+Before beginning the upgrade:
+
+1.  **Verify the cluster is healthy** — confirm all server and keeper pods are running and ready, and the `ClickhouseCluster` CR status shows no errors:
+
+    ``` bash
+    kubectl get clickhousecluster -A
+    ```
+
+    Do not proceed if any pods are crashlooping or the cluster is degraded.
+
+2.  **(Highly recommended for production) Take a full backup** of your cluster — see [Back Up and Restore ClickHouse](/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual). Verify the backup completes successfully (`status = BACKUP_DONE` in `system.backups`) before proceeding.
+
+3.  **Ensure the previous version is available for rollback** — verify that the previous artifact versions are still accessible in your internal ECR. Having the images and charts present is sufficient to roll back quickly if needed.
+
+4.  **Copy all images for the new version to your internal ECR**. Use the [Component Versions reference](/products/clickhouse-private/reference/component-versions) for the target release.
+
+5.  **Run preflight checks**. Preflight checks validate additional requirements and checks for deprecated feature flags. For more details see the [How To: Run Preflight Checks](/products/clickhouse-private/guides/run-preflight-checks) page.
+
+## Upgrade Procedure
+
+<Steps>
+
+<Step>
+
+### 1. Upgrade the Operator Helm Chart
+
+Keep all existing helm values the same, updating only the operator versions to the new target versions.
+
+``` bash
+helm upgrade clickhouse-operator oci://$YOUR_ECR/helm/clickhouse-operator-helm \
+  --version <new-version> \
+  -f values.yaml \
+  -n clickhouse-operator-system
+```
+
+> **Note:** Upgrading the operator may trigger a rolling restart of all ClickHouse clusters it manages. If you have multiple clusters and want to validate the upgrade on one before allowing the operator to reconcile others, see [Protecting Clusters During Upgrade](#protecting-clusters-during-upgrade) below.
+
+</Step>
+
+<Step>
+
+### 2. Validate the Upgraded Operator
+
+Confirm the operator deployment is running and healthy:
+
+``` bash
+kubectl rollout status deployment -n clickhouse-operator-system
+kubectl get deployments clickhouse-operator-clickhouse-operator-helm -n clickhouse-operator-system
+kubectl logs -n clickhouse-operator-system deployment/clickhouse-operator-clickhouse-operator-helm
+```
+
+Check that there are no errors in the logs and that all managed clusters have been reconciled successfully:
+
+``` bash
+kubectl get clickhousecluster -A
+```
+
+</Step>
+
+<Step>
+
+### 3. Upgrade the onprem-clickhouse-cluster Helm Chart
+
+Upgrade the `onprem-clickhouse-cluster` helm chart for each cluster. Keep all existing helm values the same, updating only the ClickHouse server and keeper image versions to the new target versions.
+
+``` bash
+helm upgrade <cluster-release-name> oci://$YOUR_ECR/helm/onprem-clickhouse-cluster \
+  --version <new-chart-version> \
+  -n <namespace> \
+  -f values.yaml \
+  --set server.version=<new-server-version> \
+  --set keeper.version=<new-keeper-version>
+```
+
+This triggers a **rolling restart of keeper and server pods** (one pod at a time). Repeat for each cluster.
+
+</Step>
+
+<Step>
+
+### 4. Validate the Upgraded Cluster
+
+After the rolling restart completes, confirm the cluster is healthy:
+
+``` bash
+kubectl get clickhousecluster -n <namespace>
+kubectl get pods -n <namespace>
+```
+
+All pods should be in `Running` state and the `ClickhouseCluster` CR should show no errors. To further validate connectivity, port-forward the ClickHouse service (see the Port-forward section in the relevant [tutorial](/products/clickhouse-private/tutorials/deploy-clickhouse-on-aws-eks)) and run a test query.
+
+</Step>
+
+</Steps>
+
+## Protecting Clusters During Upgrade
+
+If you manage multiple clusters under a single operator and want to validate the operator upgrade on one cluster before allowing it to reconcile others (e.g., test on a staging cluster before production), pause reconciliation on specific clusters using the `clickhouse.com/skip-reconcile` annotation.
+
+Add the annotation to any cluster you want to protect before upgrading the operator:
+
+``` bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='merge' \
+  -p '{"metadata": {"annotations": {"clickhouse.com/skip-reconcile": "true"}}}'
+```
+
+The operator skips reconciliation for annotated clusters entirely — no restarts or config changes are applied. Once you have validated the upgrade on your test cluster, remove the annotation to allow the operator to resume normal reconciliation:
+
+``` bash
+kubectl patch clickhousecluster c-default-xx-01 -n ns-default-xx-01 \
+  --type='json' \
+  -p='[{"op": "remove", "path": "/metadata/annotations/clickhouse.com~1skip-reconcile"}]'
+```
+
+Confirm the operator has noticed the annotation by checking its logs for:
+
+``` text
+Skip ClickhouseCluster reconcile req ... because it has clickhouse.com/skip-reconcile annotation
+```
+
+## Rollback
+
+If issues are detected after the upgrade:
+
+- **Operator rollback:** redeploy the previous operator helm chart version.
+- **Cluster rollback:** redeploy the previous `onprem-clickhouse-cluster` helm chart version with the previous server and keeper image versions.
+- **Data recovery:** if data issues are suspected, restore from the backup taken in the pre-upgrade checklist — see [Back Up and Restore ClickHouse](/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual).

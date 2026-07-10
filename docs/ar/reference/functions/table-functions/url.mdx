@@ -1,0 +1,135 @@
+---
+description: 'ينشئ جدولًا من `URL` وفق `format` و`structure` المحددين'
+sidebarTitle: 'url'
+slug: /sql-reference/table-functions/url
+title: 'url'
+doc_type: 'مرجع'
+---
+
+import ExperimentalBadge from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="url-table-function">
+  # الدالة الجدولية `url`
+</div>
+
+تنشئ الدالة `url` جدولًا من `URL` وفق `format` و`structure` المحدَّدين.
+
+يمكن استخدام الدالة `url` في استعلامات `SELECT` و`INSERT` على البيانات الموجودة في جداول [URL](/ar/reference/engines/table-engines/special/url).
+
+<div id="syntax">
+  ## الصيغة
+</div>
+
+```sql
+url(URL [,format] [,structure] [,headers])
+```
+
+<div id="parameters">
+  ## المعلمات
+</div>
+
+| المعلمة     | الوصف                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `URL`       | عنوان خادم HTTP أو HTTPS محاط بعلامتَي اقتباس مفردتين، ويمكنه قبول طلبات `GET` أو `POST` (لاستعلامات `SELECT` أو `INSERT` على الترتيب). النوع: [String](/ar/reference/data-types/string). |
+| `format`    | [تنسيق](/ar/reference/formats/index) البيانات. النوع: [String](/ar/reference/data-types/string).                                                                                             |
+| `structure` | بنية الجدول بصيغة `'UserID UInt64, Name String'`. ويحدد أسماء الأعمدة وأنواعها. النوع: [String](/ar/reference/data-types/string).                                                         |
+| `headers`   | الرؤوس بصيغة `'headers('key1'='value1', 'key2'='value2')'`. يمكنك تعيين رؤوس لاستدعاء HTTP.                                                                                            |
+
+<div id="returned_value">
+  ## القيمة المُعادة
+</div>
+
+جدول بالتنسيق والبنية المحدَّدين، ويحتوي على بيانات من `URL` المحدَّد.
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+الحصول على أول 3 أسطر من جدول يحتوي على أعمدة من النوع `String` والنوع [UInt32](/ar/reference/data-types/int-uint) من خادم HTTP يردّ بتنسيق [CSV](/ar/reference/formats/CSV/CSV).
+
+```sql
+SELECT * FROM url('http://127.0.0.1:12345/', CSV, 'column1 String, column2 UInt32', headers('Accept'='text/csv; charset=utf-8')) LIMIT 3;
+```
+
+إدراج البيانات من `URL` في جدول:
+
+```sql
+CREATE TABLE test_table (column1 String, column2 UInt32) ENGINE=Memory;
+INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FORMAT+CSV', 'CSV', 'column1 String, column2 UInt32') VALUES ('http interface', 42);
+SELECT * FROM test_table;
+```
+
+<div id="globs-in-url">
+  ## أنماط glob في URL
+</div>
+
+تُستخدم الأنماط داخل `{ }` لإنشاء مجموعة من الشظايا أو لتحديد عناوين التبديل الاحتياطي. للاطلاع على أنواع الأنماط المدعومة والأمثلة، راجع وصف الدالة [remote](/ar/reference/functions/table-functions/remote#globs-in-addresses).
+يُستخدم المحرف `|` داخل الأنماط لتحديد عناوين التبديل الاحتياطي. ويجري المرور عليها بالترتيب نفسه الوارد في النمط. ويكون عدد العناوين المُنشأة محدودًا بإعداد [glob&#95;expansion&#95;max&#95;elements](/ar/reference/settings/session-settings#glob_expansion_max_elements).
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+* `_path` — المسار إلى `URL`. النوع: `LowCardinality(String)`.
+* `_file` — اسم مورد `URL`. النوع: `LowCardinality(String)`.
+* `_size` — حجم المورد بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، فستكون القيمة `NULL`.
+* `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، فستكون القيمة `NULL`.
+* `_headers` - رؤوس استجابة HTTP. النوع: `Map(LowCardinality(String), LowCardinality(String))`.
+
+<div id="hive-style-partitioning">
+  ## إعداد use_hive_partitioning
+</div>
+
+عند تعيين `use_hive_partitioning` إلى 1، سيكتشف ClickHouse التقسيم بنمط Hive في المسار (`/name=value/`) وسيتيح استخدام أعمدة التقسيم كأعمدة افتراضية في الاستعلام. وستكون لهذه الأعمدة الافتراضية الأسماء نفسها الموجودة في مسار التقسيم.
+
+**مثال**
+
+استخدام عمود افتراضي مُنشأ باستخدام التقسيم بنمط Hive
+
+```sql
+SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
+```
+
+<div id="resolving-relative-urls">
+  ## حلّ عناوين URL النسبية
+</div>
+
+يتيح الإعداد [url&#95;base](/ar/reference/settings/session-settings#url_base) تمرير عنوان URL نسبي إلى الدالة `url`. وعند تعيين `url_base` وكانت وسيطة الدالة مرجعًا نسبيًا، يُحلّ هذا المرجع بالاستناد إلى عنوان URL الأساسي وفقًا لـ [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
+
+قواعد الحلّ هي:
+
+* **نسبي إلى المسار** (مثل `data.csv`): يُدمج مع مسار عنوان URL الأساسي — بحيث يُستبدل كل ما يلي آخر `/` في المسار الأساسي. وتُعد الشرطة المائلة الختامية مهمة: `https://example.com/dir/` + `data.csv` ينتج `https://example.com/dir/data.csv`، بينما `https://example.com/dir` + `data.csv` ينتج `https://example.com/data.csv`. كما تُطبَّع مقاطع النقاط (`./` و `../`).
+* **نسبي إلى المضيف** (مثل `/test/data.csv`): يُحلّ باستخدام المخطط والمضيف لعنوان URL الأساسي.
+* **نسبي إلى المخطط** (مثل `//other.com/test/data.csv`): يُحلّ باستخدام مخطط عنوان URL الأساسي.
+* **استعلام فقط** (مثل `?x=1`): يُلحَق بالمسار الأساسي الكامل، مع استبدال أي استعلام أو مقطع موجود.
+* **مقطع فقط** (مثل `#frag`): يُلحَق بعنوان URL الأساسي، مع الاحتفاظ بالاستعلام واستبدال أي مقطع موجود.
+* **فارغ**: يعيد عنوان URL الأساسي من دون مقطع.
+* **عنوان URL مطلق**: يُمرَّر كما هو من دون تغيير؛ ويُتجاهل `url_base`.
+
+**مثال**
+
+```sql
+SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/';
+SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
+```
+
+<div id="storage-settings">
+  ## إعدادات التخزين
+</div>
+
+* [engine&#95;url&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings#engine_url_skip_empty_files) - يسمح بتجاوز الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.
+* [enable&#95;url&#95;encoding](/ar/reference/settings/session-settings#enable_url_encoding) - يسمح بتمكين/تعطيل فك ترميز/ترميز المسار في URI. يكون مُمكّنًا افتراضيًا.
+* [url&#95;base](/ar/reference/settings/session-settings#url_base) - عنوان URL الأساسي المستخدم في resolving عناوين URL نسبية المُمرَّرة إلى الدالة `url`.
+
+<div id="permissions">
+  ## الأذونات
+</div>
+
+تتطلب الدالة `url` الإذن `CREATE TEMPORARY TABLE`. لذلك، لن تعمل مع المستخدمين الذين لديهم الإعداد [readonly](/ar/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1. ويُشترط أن تكون القيمة على الأقل readonly = 2.
+
+<div id="related">
+  ## مواضيع ذات صلة
+</div>
+
+* [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)

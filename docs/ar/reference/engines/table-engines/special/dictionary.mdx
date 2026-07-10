@@ -1,0 +1,102 @@
+---
+description: 'يعرض المحرك `Dictionary` بيانات القاموس على هيئة جدول في ClickHouse.'
+sidebarTitle: 'Dictionary'
+slug: /engines/table-engines/special/dictionary
+title: 'محرك الجدول Dictionary'
+doc_type: 'reference'
+---
+
+يعرض المحرك `Dictionary` بيانات [القاموس](/ar/reference/statements/create/dictionary) على هيئة جدول في ClickHouse.
+
+<div id="example">
+  ## مثال
+</div>
+
+على سبيل المثال، لنفترض وجود قاموس `products` بالإعداد التالي:
+
+```xml
+<dictionaries>
+    <dictionary>
+        <name>products</name>
+        <source>
+            <odbc>
+                <table>products</table>
+                <connection_string>DSN=some-db-server</connection_string>
+            </odbc>
+        </source>
+        <lifetime>
+            <min>300</min>
+            <max>360</max>
+        </lifetime>
+        <layout>
+            <flat/>
+        </layout>
+        <structure>
+            <id>
+                <name>product_id</name>
+            </id>
+            <attribute>
+                <name>title</name>
+                <type>String</type>
+                <null_value></null_value>
+            </attribute>
+        </structure>
+    </dictionary>
+</dictionaries>
+```
+
+نفّذ استعلامًا على بيانات القاموس:
+
+```sql
+SELECT
+    name,
+    type,
+    key,
+    attribute.names,
+    attribute.types,
+    bytes_allocated,
+    element_count,
+    source
+FROM system.dictionaries
+WHERE name = 'products'
+```
+
+```text
+┌─name─────┬─type─┬─key────┬─attribute.names─┬─attribute.types─┬─bytes_allocated─┬─element_count─┬─source──────────┐
+│ products │ Flat │ UInt64 │ ['title']       │ ['String']      │        23065376 │        175032 │ ODBC: .products │
+└──────────┴──────┴────────┴─────────────────┴─────────────────┴─────────────────┴───────────────┴─────────────────┘
+```
+
+يمكنك استخدام الدوال [dictGet*](/ar/reference/functions/regular-functions/ext-dict-functions) للحصول على بيانات القاموس بهذا التنسيق.
+
+لا يكون هذا العرض مفيدًا عندما تحتاج إلى الحصول على البيانات الخام، أو عند تنفيذ عملية `JOIN`. في هذه الحالات، يمكنك استخدام المحرك `Dictionary`، الذي يعرض بيانات القاموس في جدول.
+
+الصياغة:
+
+```sql
+CREATE TABLE %table_name% (%fields%) engine = Dictionary(%dictionary_name%)`
+```
+
+مثال للاستخدام:
+
+```sql
+CREATE TABLE products (product_id UInt64, title String) ENGINE = Dictionary(products);
+```
+
+حسنًا
+
+ألقِ نظرة على محتويات الجدول.
+
+```sql
+SELECT * FROM products LIMIT 1;
+```
+
+```text
+┌────product_id─┬─title───────────┐
+│        152689 │ Some item       │
+└───────────────┴─────────────────┘
+```
+
+**انظر أيضًا**
+
+* [دالة Dictionary](/ar/reference/functions/table-functions/dictionary)
