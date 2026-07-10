@@ -776,3 +776,32 @@ def test_x509_san_email_support():
     )
 
     instance.query("DROP USER IF EXISTS bob")
+
+
+def test_x509_san_email_no_wildcard():
+    # '*' is a legal character in an email address local part (RFC 5321), so EMAIL: SANs are
+    # matched exactly and a '*' is NEVER treated as a wildcard (unlike the Common Name and DNS:/URI:
+    # SANs). A user configured with 'EMAIL:*@example.com' must therefore match only a certificate
+    # whose email SAN is literally '*@example.com', and must NOT authenticate 'alice@example.com'.
+    instance.query("DROP USER IF EXISTS email_wildcard")
+    instance.query(
+        "CREATE USER email_wildcard IDENTIFIED WITH ssl_certificate SAN 'EMAIL:*@example.com'"
+    )
+    try:
+        # client13's certificate carries 'EMAIL:alice@example.com', which is not the literal
+        # pattern, so authentication must fail on both interfaces (no wildcard expansion).
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance,
+                "SELECT currentUser()",
+                user="email_wildcard",
+                cert_name="client13",
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+        with pytest.raises(Exception) as err:
+            execute_query_https(
+                "SELECT currentUser()", user="email_wildcard", cert_name="client13"
+            )
+        assert "403" in str(err.value)
+    finally:
+        instance.query("DROP USER IF EXISTS email_wildcard")

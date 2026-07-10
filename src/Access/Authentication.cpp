@@ -274,10 +274,13 @@ namespace
                     return true;
 
                 // Wildcard support (single '*' only): a '*' must match exactly one component.
-                // Certificate SAN subjects are stored with a type prefix ("DNS:" or "URI:"), so a
-                // wildcard SAN pattern must carry one of those prefixes to align with a candidate.
-                // An unprefixed SAN wildcard (e.g. a bare "*" or "*.corp.example.com") would let '*'
-                // absorb the candidate's type prefix and span DNS labels, so it matches nothing.
+                // Certificate SAN subjects are stored with a type prefix ("DNS:", "URI:", or
+                // "EMAIL:"), so a wildcard SAN pattern must carry a prefix that supports wildcards
+                // ("DNS:" or "URI:") to align with a candidate. An unprefixed SAN wildcard (e.g. a
+                // bare "*" or "*.corp.example.com") would let '*' absorb the candidate's type prefix
+                // and span components, so it matches nothing. "EMAIL:" SANs are matched exactly and
+                // never as a wildcard: '*' is a legal character in an email address (RFC 5321), so a
+                // pattern such as "EMAIL:*@example.com" matches only that literal address.
                 // A DNS label (a CN or a "DNS:" SAN) is one non-empty label with no '.' and no '/'.
                 // A "URI:" SAN keeps the original rule: only '/' is forbidden in the matched span,
                 // identical to the original slash-count guard, so "URI:" matching is never widened.
