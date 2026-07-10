@@ -2,11 +2,6 @@
 -- unquoted fractional unix timestamp form (e.g. 1783585473.954), same as scalar columns.
 -- A bare integer stays a scaled tick count (backward compatible).
 SET session_timezone = 'UTC';
--- This tests the basic DateTime64 reader (readDateTime64Text / readNumericText), which is
--- what the reported bug and this fix concern. The best_effort parser is a separate reader
--- that does not accept the fractional-unix-timestamp form even for scalar columns, so pin
--- basic here (CI randomizes date_time_input_format).
-SET date_time_input_format = 'basic';
 
 -- Reported bug: CSV Array element as unquoted fractional unix timestamp used to fail
 -- with CANNOT_READ_ARRAY_FROM_TEXT.
@@ -46,6 +41,16 @@ SELECT 'scalar_eq_container_neg_zero',
 SELECT 'scalar_eq_container_neg_one',
     (SELECT x FROM format(CSV, 'x DateTime64(3)', '-1.123') SETTINGS date_time_input_format = 'basic')
   = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3))', '"[-1.123]"'));
+
+-- Bare shorthand `-.123` (sign directly followed by the decimal point, implied zero whole part):
+-- the scalar path already accepts it, so the container/JSON path must too, and both must agree.
+-- readIntText rejects a lone sign without digits, so the container helper special-cases it.
+SELECT 'csv_neg_shorthand', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[-.123]"');
+SELECT 'json_neg_shorthand', toString(x[1]) FROM format(JSONEachRow, 'x Array(DateTime64(3))', '{"x":[-.877]}');
+SELECT 'pos_shorthand', toString(x[1]) FROM format(CSV, 'x Array(DateTime64(3))', '"[.123]"');
+SELECT 'scalar_eq_container_neg_shorthand',
+    (SELECT x FROM format(CSV, 'x DateTime64(3)', '-.123') SETTINGS date_time_input_format = 'basic')
+  = (SELECT x[1] FROM format(CSV, 'x Array(DateTime64(3))', '"[-.123]"'));
 
 -- Fraction is truncated / padded to the column scale.
 SELECT 'scale0', [1783585473.954]::Array(DateTime64(0));

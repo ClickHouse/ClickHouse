@@ -130,7 +130,16 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
     bool is_negative = (!istr.eof() && *istr.position() == '-');
 
     time_t whole = 0;
-    if constexpr (throw_exception)
+    /// Accept the bare shorthand `-.123` (sign directly followed by a decimal point, implied zero whole part).
+    /// readIntText rejects a lone sign with no digits, so consume the sign here and leave whole == 0; the
+    /// explicit-negative-zero-whole case is then handled by adjustFractionalDateTimeSign below. This mirrors
+    /// the scalar readDateTime64Text path, which already accepts `-.123`. The `.123` form (no sign) already
+    /// works because readIntText tolerates zero leading digits.
+    if (is_negative && istr.available() >= 2 && istr.position()[1] == '.')
+    {
+        ++istr.position();
+    }
+    else if constexpr (throw_exception)
         readIntText(whole, istr);
     else if (!tryReadIntText(whole, istr))
         return ReturnType(false);
