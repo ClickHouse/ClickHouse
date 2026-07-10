@@ -450,7 +450,7 @@ String transformQueryForExternalDatabaseImpl(
         {
             auto limit_len = limit_len_lit->value.safeGet<UInt64>();
             if (limit.has_value())
-                limit = std::min(limit.value(), limit_len);
+                limit = std::min<size_t>(limit.value(), limit_len);
             else
                 limit = limit_len;
         }
