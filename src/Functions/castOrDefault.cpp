@@ -1,5 +1,4 @@
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -48,7 +47,7 @@ public:
 
     explicit FunctionCastOrDefault(ContextPtr context_)
         : keep_nullable(context_->getSettingsRef()[Setting::cast_keep_nullable])
-        , cast_or_null_resolver(createInternalCastOverloadResolver(context_, CastType::accurateOrNull, {}))
+        , cast_or_null_resolver(createCastOverloadResolver(context_, CastType::accurateOrNull, {}))
     {
     }
 
@@ -82,7 +81,11 @@ public:
                 getName(),
                 arguments[1].type->getName());
 
-        DataTypePtr result_type = DataTypeFactory::instance().get(type_column_typed->getValue<String>());
+        /// Delegate type determination to the cast resolver. This ensures that
+        /// DataTypeValidationSettings and timezone substitution are applied
+        /// consistently between getReturnTypeImpl and executeImpl.
+        ColumnsWithTypeAndName cast_args{arguments[0], arguments[1]};
+        DataTypePtr result_type = removeNullable(cast_or_null_resolver->getReturnType(cast_args));
 
         if (keep_nullable && arguments.front().type->isNullable())
             result_type = makeNullable(result_type);
