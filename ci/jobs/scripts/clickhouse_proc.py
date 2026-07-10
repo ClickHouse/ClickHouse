@@ -438,6 +438,27 @@ profiles:
             verbose=True,
         )
 
+    def get_log_export_senders(self):
+        """Return the concrete `system.<table>_sender` `Distributed` tables
+        that log export created for this run, as a set of names (e.g.
+        `{"query_log_sender", "trace_log_sender"}`).
+
+        Called right after `start_log_exports` succeeds, before any test
+        runs, so the set reflects only the CI-owned sender tables
+        `setup_log_cluster.sh` created (one per `system.%_log` table). The
+        CIDB-staging-overload heuristic in `FTResultsProcessor` keys off this
+        exact set, so a test that later forges a `system.*_sender` name
+        cannot be mistaken for a log-export shipping error. Returns an empty
+        set on any error - the heuristic then abstains and the run stays on
+        the `Server died` path.
+        """
+        out = Shell.get_output(
+            "clickhouse-client --query \""
+            "SELECT name FROM system.tables "
+            "WHERE database = 'system' AND name LIKE '%\\_sender'\""
+        )
+        return {name.strip() for name in out.splitlines() if name.strip()}
+
     @staticmethod
     def stop_log_exports():
         return Shell.check(

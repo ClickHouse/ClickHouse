@@ -82,34 +82,31 @@ _REAL_CRASH_PATTERN = re.compile(
     r"<Fatal>|AddressSanitizer:|MemorySanitizer:|ThreadSanitizer:|UndefinedBehaviorSanitizer:|LOGICAL_ERROR"
 )
 
-# Pattern that identifies a CIDB log-export shipping error. The setup script
-# `ci/jobs/scripts/functional_tests/setup_log_cluster.sh` ships system logs by
-# creating one `Distributed` table per `system.%_log` table, named
-# `system.<table>_log_sender` (e.g. `system.query_log_sender`), that points at
-# the CIDB staging cluster. When that cluster is overloaded, the background
-# sender keeps retrying and every such `<Error>` line is logged under that
-# table's directory-queue logger, whose name is
-# `system.<table>_log_sender.DistributedInsertQueue.<disk>` (see
+# How the CIDB log-export shipping errors are identified.
+#
+# The setup script `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`
+# ships system logs by creating one `Distributed` table per `system.%_log`
+# table, named `system.<table>_sender` (e.g. `system.query_log_sender`), that
+# points at the CIDB staging cluster. When that cluster is overloaded, the
+# background sender keeps retrying and every such `<Error>` line is logged
+# under that table's directory-queue logger, whose name is
+# `system.<table>_sender.DistributedInsertQueue.<disk>` (see
 # `DistributedAsyncInsertDirectoryQueue::getLoggerName`) - so it always
-# contains the `system.<table>_log_sender` substring.
+# contains the `system.<table>_sender.` substring.
 #
-# We deliberately do NOT match the bare `Distributed` logger/engine names
-# (`DistributedAsyncInsertQueue`, `BgDistSchPool`, `StorageDistributed`, ...):
-# those also fire for a test-owned `Distributed` table in the `default` /
-# `test_*` databases. We match only the `_log_sender` suffix that setup
-# actually creates, never a bare `_sender`, so a test that creates its own
-# `system.foo_sender` table does not match.
-#
-# The regex is defense-in-depth only. A functional test CAN create a table in
-# the `system` database (e.g. `02494_query_cache_system_tables.sql` creates
-# `system.system`), so a log-line pattern alone is forgeable. The
-# authoritative gate is `FTResultsProcessor(log_export_started=...)`: the
-# heuristic is consulted only for a job whose harness actually ran
-# `start_log_exports` / `setup_logs_replication` for this run (see
-# `FTResultsProcessor.run`). A run that never started log export - notably
-# every `ci/jobs/fast_test.py` run, and any local run - can never reach the
-# classifier, so no test-created `system.*_sender` table can turn it green.
-_STAGING_SHIPPING_SENDER_PATTERN = re.compile(r"system\.\w+_log_sender")
+# We deliberately do NOT match a bare `_log_sender` / `_sender` name PATTERN:
+# a functional test CAN create a table in the `system` database (e.g.
+# `02494_query_cache_system_tables.sql` creates `system.system`), so any
+# name pattern is forgeable - a test could create `system.fake_log_sender`
+# and flood the log with matching shipping errors. Instead, the classifier
+# is given the CONCRETE `system.<table>_sender` table names that setup
+# created for THIS run (captured from `system.tables` right after
+# `start_log_exports` succeeds, before any test runs - see
+# `ci/jobs/functional_tests.py`). A test that later forges a
+# `system.*_sender` name is not in that set, so it cannot be counted. With
+# no concrete senders (every `ci/jobs/fast_test.py` run, any local run, or a
+# run whose log export failed to start) the classifier abstains entirely and
+# the run stays on the `Server died` path.
 
 # Minimum number of `<Error>` lines that must point at the CIDB staging
 # cluster before we treat the run as "infrastructure-only". A handful of
@@ -126,22 +123,50 @@ _STAGING_OVERLOAD_MIN_ERRORS = 100
 _STAGING_OVERLOAD_MIN_FRACTION = 0.95
 
 
-def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
+def _build_sender_pattern(sender_tables) -> Optional["re.Pattern"]:
+    """Build a regex that matches the directory-queue logger name of the
+    concrete `system.<table>_sender` `Distributed` tables that
+    `setup_log_cluster.sh` created for this run.
+
+    ``sender_tables`` is the set of names (e.g. ``{"query_log_sender",
+    "trace_log_sender"}``) captured from `system.tables` right after log
+    export started, before any test ran. Returns ``None`` when the set is
+    empty, so the caller abstains rather than matching a forgeable pattern.
+    """
+    if not sender_tables:
+        return None
+    # `DistributedAsyncInsertDirectoryQueue::getLoggerName` emits
+    # `system.<table>.DistributedInsertQueue.<disk>`, so anchor on the exact
+    # `system.<name>.` prefix for each concrete sender table.
+    alternation = "|".join(re.escape(name) for name in sorted(sender_tables))
+    return re.compile(r"system\.(?:" + alternation + r")\.")
+
+
+def is_ci_logs_cluster_overload(server_err_log: Path, sender_tables=None) -> bool:
     """Return ``True`` iff `clickhouse-server.err.log` looks like the CIDB
     staging log cluster was unresponsive during the run and the server
     itself was healthy.
 
+    ``sender_tables`` is the set of concrete `system.<table>_sender` table
+    names that `setup_log_cluster.sh` created for this run (captured before
+    any test ran). A line counts as a CIDB-shipping retry only when it names
+    one of those exact tables, so a test that later forges a
+    `system.*_sender` name cannot be counted. When the set is empty (or
+    ``None``) the classifier abstains: with no concrete senders there is
+    nothing a shipping error could legitimately come from.
+
     The classifier requires:
 
+    * a non-empty ``sender_tables`` set;
     * no real-crash markers (`<Fatal>`, sanitizer report, `LOGICAL_ERROR`)
       anywhere in the file;
     * at least `_STAGING_OVERLOAD_MIN_ERRORS` `<Error>` lines in the file;
     * at least `_STAGING_OVERLOAD_MIN_FRACTION` of those `<Error>` lines
-      naming the CIDB log-export path `system.<table>_sender` (the
-      `Distributed` tables `setup_log_cluster.sh` creates to ship system
-      logs to the staging cluster). Errors from any other `Distributed`
-      table - including test-owned ones - do not count, so a real
-      non-CIDB regression is never mistaken for a log-export outage.
+      naming one of the concrete CIDB log-export `system.<table>_sender`
+      tables. Errors from any other `Distributed` table - including
+      test-owned ones and test-forged `system.*_sender` names - do not
+      count, so a real non-CIDB regression is never mistaken for a
+      log-export outage.
 
     The file is streamed line by line because under chronic staging
     overload it can grow to hundreds of MiB; any fixed byte cap on the
@@ -154,6 +179,9 @@ def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
     job red. A green run with a `SKIPPED` informational leaf is more
     honest than a synthetic `Server died` `FAIL`.
     """
+    sender_pattern = _build_sender_pattern(sender_tables)
+    if sender_pattern is None:
+        return False
     if not server_err_log.exists():
         return False
 
@@ -170,7 +198,7 @@ def is_ci_logs_cluster_overload(server_err_log: Path) -> bool:
                 if "<Error>" not in line:
                     continue
                 error_lines += 1
-                if _STAGING_SHIPPING_SENDER_PATTERN.search(line):
+                if sender_pattern.search(line):
                     shipping_lines += 1
     except OSError:
         return False
@@ -198,7 +226,7 @@ class FTResultsProcessor:
         self,
         wd,
         server_err_log_path: Optional[str] = None,
-        log_export_started: bool = False,
+        log_export_senders=None,
     ):
         self.tests_output_file = f"{wd}/test_result.txt"
         # Path to the server's `err.log`. Used by the CIDB-staging-cluster
@@ -211,16 +239,20 @@ class FTResultsProcessor:
             server_err_log_path
             or f"{wd}/var/log/clickhouse-server/clickhouse-server.err.log"
         )
-        # Whether this job actually started CIDB log export
-        # (`clickhouse_proc.start_log_exports` / `setup_logs_replication`).
-        # The CIDB-staging-overload reclassification is consulted ONLY when
-        # this is True: a run that never started log export has no
-        # CI-owned `system.<table>_log_sender` tables, so any matching log
-        # line would have to be forged by a test. `ci/jobs/fast_test.py`
-        # (which never starts log export) and local runs leave this False,
-        # so they can never be reclassified. This is the un-forgeable gate
-        # the log-line regex alone cannot provide.
-        self.log_export_started = log_export_started
+        # The concrete `system.<table>_sender` `Distributed` table names that
+        # `clickhouse_proc.start_log_exports` / `setup_logs_replication`
+        # created for THIS run, captured from `system.tables` before any test
+        # ran (see `ci/jobs/functional_tests.py`). This is both the gate and
+        # the identifier for the CIDB-staging-overload reclassification:
+        #  * a run that never started log export - every `ci/jobs/fast_test.py`
+        #    run, any local run, or a run whose export setup failed - leaves
+        #    this empty, so the heuristic never fires;
+        #  * only log lines naming one of these exact tables are counted, so a
+        #    test that later forges a `system.*_sender` name (a test CAN create
+        #    tables under `system`) cannot flip the run green.
+        # A test cannot influence this set: it is snapshotted by the harness
+        # process before the suite starts.
+        self.log_export_senders = set(log_export_senders or ())
         self.debug_files = []
 
     def _process_test_output(self):
@@ -381,17 +413,21 @@ class FTResultsProcessor:
             # test may have emitted `FAIL` yet, but not all selected
             # tests ran either - the result must stay `Server died`.
             #
-            # `self.log_export_started` is the un-forgeable gate: the
-            # reclassification is considered ONLY for a job that actually
-            # started CIDB log export this run. A test cannot flip the
-            # harness process's flag, so a run that never shipped logs
-            # (every `fast_test.py` run, any local run) can never be
-            # greened by a test-created `system.*_log_sender` table.
+            # `self.log_export_senders` is both the un-forgeable gate and
+            # the identifier: reclassification is considered ONLY for a job
+            # that actually created CIDB log-export `system.<table>_sender`
+            # tables this run, and only log lines naming one of those exact
+            # tables are counted as shipping retries. A test cannot add to
+            # this harness-captured set, so a run that never shipped logs
+            # (every `fast_test.py` run, any local run) or a test-forged
+            # `system.*_sender` name can never green the run.
             if (
-                self.log_export_started
+                self.log_export_senders
                 and s.success_finish
                 and not failed_results
-                and is_ci_logs_cluster_overload(self.server_err_log_path)
+                and is_ci_logs_cluster_overload(
+                    self.server_err_log_path, self.log_export_senders
+                )
             ):
                 ci_logs_cluster_overload = True
                 test_results.append(

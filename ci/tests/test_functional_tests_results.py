@@ -46,6 +46,12 @@ from ci.jobs.scripts.functional_tests_results import (
 )
 from ci.praktika.result import Result
 
+# The concrete `system.<table>_sender` tables `setup_log_cluster.sh` creates,
+# as captured from `system.tables` before any test runs. The sample shipping
+# lines below name `query_log_sender` / `trace_log_sender` / `metric_log_sender`,
+# so this is the set a real run would pass to the classifier.
+_LOG_EXPORT_SENDERS = {"query_log_sender", "trace_log_sender", "metric_log_sender"}
+
 
 # Representative shipping-failure lines as they appear in the server's
 # `err.log` when the CIDB staging cluster is overloaded. The real
@@ -108,14 +114,25 @@ _NON_CIDB_DISTRIBUTED_ERROR_LINE = (
 # A `Distributed`-shipping error from a table a test forged inside the
 # `system` database. A functional test CAN create tables under `system`
 # (e.g. `02494_query_cache_system_tables.sql` creates `system.system`), so a
-# test could create `system.fake_sender` and flood this logger name. The
-# classifier must NOT be fooled by it: the un-forgeable `log_export_started`
-# gate keeps a run that never started log export (every `fast_test.py` run) on
-# the `Server died` path, and the tightened `_log_sender` regex does not even
-# match a bare `_sender` name. See clickhouse-gh[bot] review on PR #106176.
+# test could create `system.fake_sender` - or even `system.fake_log_sender`,
+# matching the old name pattern - and flood this logger name. The classifier
+# must NOT be fooled by either: it is keyed off the CONCRETE
+# `system.<table>_sender` tables captured before any test ran, so a
+# test-forged name is never in that set. See clickhouse-gh[bot] reviews on
+# PR #106176.
 _FORGED_SYSTEM_SENDER_ERROR_LINE = (
     "2026.05.30 14:37:00.000000 [ 4249 ] {} <Error> "
     "system.fake_sender.DistributedInsertQueue.default: Failed to send "
+    "batch due to: Code: 210. DB::NetException: Connection refused "
+    "(NETWORK_ERROR) some-test-shard:9000"
+)
+# The bot's exact repro on PR #106176 (2026-07-10): a forged
+# `system.fake_log_sender` matched the old `system\.\w+_log_sender` regex.
+# Keyed off the concrete captured sender set, it no longer matches (a test
+# cannot add `fake_log_sender` to the pre-suite snapshot).
+_FORGED_SYSTEM_LOG_SENDER_ERROR_LINE = (
+    "2026.05.30 14:38:00.000000 [ 4250 ] {} <Error> "
+    "system.fake_log_sender.DistributedInsertQueue.default: Failed to send "
     "batch due to: Code: 210. DB::NetException: Connection refused "
     "(NETWORK_ERROR) some-test-shard:9000"
 )
@@ -150,12 +167,12 @@ def _named(result, name):
 
 def test_overload_classifier_returns_false_when_log_missing(tmp_path):
     missing = tmp_path / "clickhouse-server.err.log"
-    assert is_ci_logs_cluster_overload(missing) is False
+    assert is_ci_logs_cluster_overload(missing, _LOG_EXPORT_SENDERS) is False
 
 
 def test_overload_classifier_returns_false_for_empty_log(tmp_path):
     err_log = _write_err_log(tmp_path, [])
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 def test_overload_classifier_detects_pure_shipping_failures(tmp_path):
@@ -165,7 +182,7 @@ def test_overload_classifier_detects_pure_shipping_failures(tmp_path):
         lines.append(_SHIPPING_ERROR_LINE_SOCKET_TIMEOUT)
         lines.append(_SHIPPING_ERROR_LINE_NETWORK_ERROR)
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is True
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is True
 
 
 def test_overload_classifier_ignores_log_with_too_few_errors(tmp_path):
@@ -174,28 +191,28 @@ def test_overload_classifier_ignores_log_with_too_few_errors(tmp_path):
     # blips is not a chronic overload.
     lines = [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * (_STAGING_OVERLOAD_MIN_ERRORS - 1)
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 def test_overload_classifier_rejects_log_with_fatal_marker(tmp_path):
     lines = [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
     lines.append(_REAL_FATAL_LINE)
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 def test_overload_classifier_rejects_log_with_sanitizer_report(tmp_path):
     lines = [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
     lines.append(_REAL_SANITIZER_LINE)
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 def test_overload_classifier_rejects_log_with_logical_error(tmp_path):
     lines = [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
     lines.append(_REAL_LOGICAL_ERROR_LINE)
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 def test_overload_classifier_rejects_log_dominated_by_unrelated_errors(tmp_path):
@@ -203,7 +220,7 @@ def test_overload_classifier_rejects_log_dominated_by_unrelated_errors(tmp_path)
     # `Server died` path.
     lines = [_UNRELATED_ERROR_LINE] * 200 + [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * 50
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 def test_overload_classifier_accepts_mostly_shipping_with_minor_noise(tmp_path):
@@ -212,7 +229,7 @@ def test_overload_classifier_accepts_mostly_shipping_with_minor_noise(tmp_path):
     other = max(1, shipping * 4 // 100 - 1)  # keep below 5%
     lines = [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * shipping + [_UNRELATED_ERROR_LINE] * other
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is True
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is True
 
 
 def test_overload_classifier_rejects_non_cidb_distributed_errors(tmp_path):
@@ -225,7 +242,7 @@ def test_overload_classifier_rejects_non_cidb_distributed_errors(tmp_path):
     # `fast_test.py`) must keep the `Server died` path.
     lines = [_NON_CIDB_DISTRIBUTED_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 # --- FTResultsProcessor.run --------------------------------------------------
@@ -250,7 +267,7 @@ def test_run_emits_server_died_when_err_log_missing(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(tmp_path / "no-such-file.err.log"),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -271,7 +288,7 @@ def test_run_emits_server_died_on_staging_cluster_overload_without_aborted_exit(
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
     result = processor.run(runner_exit_code=0)
 
@@ -291,7 +308,7 @@ def test_run_classifies_staging_overload_as_skipped(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
 
     for code in (
@@ -327,7 +344,7 @@ def test_run_keeps_server_died_when_real_crash_marker_present(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -354,7 +371,7 @@ def test_run_keeps_server_died_when_tests_failed(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -378,7 +395,7 @@ def test_run_keeps_server_died_when_test_run_was_incomplete(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -403,7 +420,7 @@ def test_run_keeps_server_died_on_non_cidb_distributed_errors(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -414,18 +431,18 @@ def test_run_keeps_server_died_on_non_cidb_distributed_errors(tmp_path):
 
 
 def test_run_keeps_server_died_when_log_export_not_started(tmp_path):
-    # clickhouse-gh[bot] correctness review on PR #106176 (follow-up on the
-    # `system.<table>_sender` narrowing): a functional test CAN create tables
-    # under the `system` database (e.g. `02494_query_cache_system_tables.sql`
-    # creates `system.system`), so a test could forge a `system.fake_sender`
-    # `Distributed` table and flood the log with matching shipping errors.
-    # `fast_test.py` shares `FTResultsProcessor` but NEVER starts log export,
-    # so a run that did not start log export must never be reclassified -
-    # regardless of what the log looks like. Here the log is 500 forged
-    # `system.fake_sender` shipping lines, the run finished and was killed by
-    # the wall-clock timeout, but `log_export_started` is False (the
-    # constructor default, as `fast_test.py` leaves it): the result must stay
-    # `Server died`.
+    # clickhouse-gh[bot] correctness review on PR #106176: a functional test
+    # CAN create tables under the `system` database (e.g.
+    # `02494_query_cache_system_tables.sql` creates `system.system`), so a
+    # test could forge a `system.fake_sender` `Distributed` table and flood
+    # the log with matching shipping errors. `fast_test.py` shares
+    # `FTResultsProcessor` but NEVER starts log export, so a run that did not
+    # start log export has NO concrete sender tables (`log_export_senders`
+    # defaults to the empty set) and must never be reclassified - regardless
+    # of what the log looks like. Here the log is 500 forged shipping lines
+    # and the run was killed by the wall-clock timeout, but the sender set is
+    # empty (exactly the fast_test.py case): the result must stay `Server
+    # died`.
     _empty_test_results_file(tmp_path)
     err_log = _write_err_log(
         tmp_path, [_FORGED_SYSTEM_SENDER_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
@@ -433,7 +450,7 @@ def test_run_keeps_server_died_when_log_export_not_started(tmp_path):
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        # log_export_started defaults to False - exactly the fast_test.py case.
+        # log_export_senders defaults to the empty set - the fast_test.py case.
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -443,21 +460,22 @@ def test_run_keeps_server_died_when_log_export_not_started(tmp_path):
     assert "CIDB log cluster unresponsive" not in leaf_names
 
 
-def test_run_keeps_server_died_on_forged_system_sender_even_with_export(tmp_path):
-    # Defense-in-depth companion to the test above: even if log export DID
-    # start for this job, a test-forged `system.fake_sender` table (bare
-    # `_sender`, not the `_log_sender` suffix `setup_log_cluster.sh` creates)
-    # must not match the tightened classifier regex, so the run stays
-    # `Server died`. This proves the regex narrowing and the
-    # `log_export_started` gate are independent layers.
+def test_run_keeps_server_died_on_forged_system_log_sender_even_with_export(tmp_path):
+    # clickhouse-gh[bot] review on PR #106176 (2026-07-10): even if log export
+    # DID start for this job, a test-forged `system.fake_log_sender` table
+    # (which matched the OLD `system\.\w+_log_sender` regex) must not be
+    # counted, because the classifier is keyed off the CONCRETE sender tables
+    # captured before any test ran - `fake_log_sender` is not in that set. The
+    # run stays `Server died`. This is the exact residual the bot flagged.
     _empty_test_results_file(tmp_path)
     err_log = _write_err_log(
-        tmp_path, [_FORGED_SYSTEM_SENDER_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+        tmp_path,
+        [_FORGED_SYSTEM_LOG_SENDER_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5),
     )
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
@@ -465,15 +483,36 @@ def test_run_keeps_server_died_on_forged_system_sender_even_with_export(tmp_path
     leaf_names = [r.name for r in result.results]
     assert "Server died" in leaf_names
     assert "CIDB log cluster unresponsive" not in leaf_names
+
+
+def test_overload_classifier_rejects_forged_system_log_sender_name(tmp_path):
+    # Classifier-level companion to the bot's 2026-07-10 repro: a forged
+    # `system.fake_log_sender` (not in the concrete captured sender set) must
+    # not be counted as a CIDB shipping line, so a log full of them - even
+    # with a real sender set passed - is not an overload.
+    lines = [_FORGED_SYSTEM_LOG_SENDER_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+    err_log = _write_err_log(tmp_path, lines)
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
+
+
+def test_overload_classifier_abstains_with_no_sender_tables(tmp_path):
+    # The empty sender set is the un-forgeable gate: with no concrete
+    # `system.<table>_sender` tables (fast_test.py / local run / export setup
+    # failed), even a log that is 100% real shipping lines must not be
+    # classified as an overload - there is nothing a shipping error could
+    # legitimately come from.
+    lines = [_SHIPPING_ERROR_LINE_TOO_MANY_PARTS] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
+    err_log = _write_err_log(tmp_path, lines)
+    assert is_ci_logs_cluster_overload(err_log, set()) is False
+    assert is_ci_logs_cluster_overload(err_log, None) is False
 
 
 def test_overload_classifier_rejects_forged_system_sender_name(tmp_path):
-    # Classifier-level companion: a bare `system.<name>_sender` (not
-    # `_log_sender`) must not be counted as a CIDB shipping line, so a log
-    # full of forged `system.fake_sender` errors is not an overload.
+    # A bare `system.<name>_sender` (not one of the concrete captured tables)
+    # must not be counted either.
     lines = [_FORGED_SYSTEM_SENDER_ERROR_LINE] * (_STAGING_OVERLOAD_MIN_ERRORS * 5)
     err_log = _write_err_log(tmp_path, lines)
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 def test_overload_classifier_scans_full_file_for_late_fatal_marker(tmp_path):
@@ -498,7 +537,7 @@ def test_overload_classifier_scans_full_file_for_late_fatal_marker(tmp_path):
     # Sanity-check that the file actually exceeds the old scan window —
     # otherwise this test would not exercise the fix.
     assert err_log.stat().st_size > 64 * 1024 * 1024
-    assert is_ci_logs_cluster_overload(err_log) is False
+    assert is_ci_logs_cluster_overload(err_log, _LOG_EXPORT_SENDERS) is False
 
 
 def test_run_keeps_server_died_when_oversized_log_has_late_logical_error(tmp_path):
@@ -523,7 +562,7 @@ def test_run_keeps_server_died_when_oversized_log_has_late_logical_error(tmp_pat
     processor = FTResultsProcessor(
         wd=str(tmp_path),
         server_err_log_path=str(err_log),
-        log_export_started=True,
+        log_export_senders=_LOG_EXPORT_SENDERS,
     )
     result = processor.run(runner_exit_code=-signal.SIGTERM)
 
