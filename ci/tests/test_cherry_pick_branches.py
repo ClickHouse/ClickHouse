@@ -1,22 +1,36 @@
 #!/usr/bin/env python3
 """
 Unit tests for the backport branch-selection contract in
-`cherry_pick_branches.py`. Run with `python -m unittest` from `tests/ci/`, or
-with `pytest tests/ci/test_cherry_pick_branches.py` from the repo root.
+`cherry_pick_branches.py`. Run as part of the `ci/tests/` suite with
+`pytest ci/tests/test_cherry_pick_branches.py` from the repo root.
 
 The module under test has no GitHub / git / CI dependencies, so these tests run
 anywhere. Label constants mirror `pr_info.Labels` and are kept local to avoid
 importing the heavyweight `cherry_pick` module.
 """
+import os
+import sys
 import unittest
 
-from cherry_pick_branches import (
-    backport_floor,
-    branch_version,
-    label_version,
-    select_backport_branches,
-    version_key,
+# `cherry_pick_branches` lives under `tests/ci` and imports sibling modules by
+# bare name, so put that directory on `sys.path` only while importing it and
+# remove it again afterwards to avoid leaking it into the rest of the pytest
+# session.
+_CI_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "tests", "ci")
 )
+sys.path.insert(0, _CI_DIR)
+try:
+    # pylint: disable=import-error
+    from cherry_pick_branches import (
+        backport_floor,
+        branch_version,
+        label_version,
+        select_backport_branches,
+        version_key,
+    )
+finally:
+    sys.path.remove(_CI_DIR)
 
 # Mirror of the label constants used by `cherry_pick.process_pr`.
 MUST_BACKPORT = "pr-must-backport"

@@ -3884,7 +3884,7 @@ void Context::loadOrReloadDictionaries(const Poco::Util::AbstractConfiguration &
 void Context::waitForDictionariesLoad() const
 {
     LOG_INFO(shared->log, "Waiting for dictionaries to be loaded");
-    auto results = getExternalDictionariesLoader().tryLoadAll<ExternalLoader::LoadResults>();
+    auto results = getExternalDictionariesLoader().tryLoadAllExceptLazy<ExternalLoader::LoadResults>();
     bool all_dictionaries_loaded = true;
     for (const auto & result : results)
     {
