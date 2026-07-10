@@ -1,0 +1,56 @@
+---
+title: Pourquoi mes données ne s’affichent-elles pas dans un dictionnaire dans ClickHouse Cloud ?
+description: Il existe un problème qui peut empêcher les données d’un dictionnaire d’être visibles immédiatement après sa création.
+date: 2024-04-12
+tags: ['Gestion du Cloud', 'Modélisation des données']
+keywords: ['dictionnaire']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="dictionaries-in-clickhouse">
+  ## dictionnaires dans ClickHouse
+</div>
+
+Les dictionnaires créés dans ClickHouse Cloud peuvent présenter des incohérences durant la phase de création initiale. Cela signifie qu’il se peut que vous ne voyiez aucune donnée dans le dictionnaire juste après sa création. Toutefois, après plusieurs tentatives, la requête de création peut aboutir sur différentes répliques, et les données deviennent alors visibles.
+
+Cela se produit parfois parce que le dictionnaire a été créé avant que la part n’atteigne le serveur. Par exemple :
+
+```
+2024-01-25 13:38:25.615837 - CREATE DICTIONARY received
+2024-01-25 13:38:25.626468 - CREATE DICTIONARY finished
+2024-01-25 13:38:25.733008 - Part all_0_0_0 downloaded
+```
+
+Comme vous pouvez le constater, la part n&#39;est arrivée qu&#39;après la création du dictionnaire. Cela peut devenir plus problématique si vous utilisez `LIFETIME(MIN 0 MAX 0)`, car cela signifie que le dictionnaire ne sera jamais actualisé automatiquement. Par conséquent, le dictionnaire restera vide tant que la commande `RELOAD DICTIONARIES` n&#39;aura pas été exécutée.
+
+Pour résoudre ce problème, utilisez une requête `SELECT` au lieu de spécifier une table source lors de la création du dictionnaire, et activez le paramètre `select_sequential_consistency=1`.
+
+Au lieu de spécifier une table source :
+
+```sql
+SOURCE(CLICKHOUSE(
+    table 'test.temp_title_table_1706189903924'
+    user default password 'PASSWORD'))
+```
+
+Utilisez une requête `SELECT` avec `select_sequential_consistency=1` :
+
+```sql
+SOURCE(CLICKHOUSE(QUERY
+    'SELECT songTitle, mappedTitle
+    FROM test.temp_title_table_1706189903924
+    SETTINGS select_sequential_consistency=1' USER default PASSWORD ''))
+```
+
+<div id="why-does-this-issue-occur">
+  ## Pourquoi ce problème se produit-il ?
+</div>
+
+Lorsque vous insérez des données puis créez ou rechargez un dictionnaire, l’instruction DDL peut parvenir à une réplique avant les données (ou les nouvelles données). Cela entraîne une incohérence entre les dictionnaires des différentes répliques. Ensuite, selon la réplique qui reçoit la requête, vous pouvez obtenir des résultats différents.
+
+Notez que la même chose se produit lorsque vous insérez des données puis lisez immédiatement une table. Si vous lisez depuis une réplique qui n’a pas encore répliqué les données, vous ne verrez pas les données nouvellement insérées. Si vous avez besoin d’une cohérence séquentielle, au détriment des performances (raison pour laquelle son utilisation n’est généralement pas recommandée), vous pouvez activer `select_sequential_consistency`.
+
+Le cas des dictionnaires est un peu plus délicat, car les dictionnaires n’utilisent pas les paramètres de la requête, mais ceux du serveur. Par conséquent, lors du chargement des données dans le dictionnaire, même si vous `SET select_sequential_consistency=1`, les données peuvent être chargées de façon incohérente entre les répliques. Le fait de spécifier `select_sequential_consistency=1` dans la requête de la source du dictionnaire permet au dictionnaire de respecter ce paramètre, même s’il n’est pas activé globalement en tant que paramètre du serveur.

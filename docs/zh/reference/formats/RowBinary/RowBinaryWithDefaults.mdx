@@ -1,0 +1,47 @@
+---
+alias: []
+description: '关于 RowBinaryWithDefaults 格式的文档'
+input_format: true
+keywords: ['RowBinaryWithDefaults']
+output_format: false
+slug: /interfaces/formats/RowBinaryWithDefaults
+title: 'RowBinaryWithDefaults'
+doc_type: '参考'
+---
+
+import RowBinaryFormatSettings from '/snippets/zh/common-row-binary-format-settings.mdx';
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+与 [`RowBinary`](/zh/reference/formats/RowBinary/RowBinary) 格式类似，但在每一列前都会额外加上一个字节，用于指示是否使用默认值。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+示例：
+
+```sql title="Query"
+SELECT * FROM FORMAT('RowBinaryWithDefaults', 'x UInt32 default 42, y UInt32', x'010001000000')
+```
+
+```response title="Response"
+┌──x─┬─y─┐
+│ 42 │ 1 │
+└────┴───┘
+```
+
+* 对于列 `x`，只有一个字节 `01`，表示应使用默认值，且该字节之后不再有其他数据。
+* 对于列 `y`，数据以字节 `00` 开始，表示该列有实际值，应从后续的 `01000000` 中读取。
+
+<div id="format-settings">
+  ## 格式设置
+</div>
+
+<RowBinaryFormatSettings />

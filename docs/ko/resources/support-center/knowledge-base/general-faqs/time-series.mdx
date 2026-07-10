@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/time-series
+title: 'ClickHouse를 시계열 데이터베이스로 사용할 수 있나요?'
+toc_hidden: true
+toc_priority: 101
+description: 'ClickHouse를 시계열 데이터베이스로 사용하는 방법을 설명하는 페이지'
+doc_type: 'guide'
+keywords: ['시계열', '시간 데이터', '사용 사례', '시간 기반 분석', 'timeseries']
+---
+
+*참고: 시계열 분석에 ClickHouse를 사용하는 추가 예시는 블로그 [Working with Time series data in ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)를 참조하십시오.*
+
+ClickHouse는 [OLAP](/ko/resources/support-center/knowledge-base/general-faqs/olap) 워크로드를 위한 범용 데이터 저장소 솔루션입니다. 반면, 특화된 [시계열 데이터베이스 관리 시스템](https://clickhouse.com/engineering-resources/what-is-time-series-database)도 많이 있습니다. 그럼에도 불구하고 ClickHouse는 [쿼리 실행 속도](/ko/get-started/about/why-clickhouse-is-so-fast)에 중점을 두고 있어 많은 경우 이러한 특화 시스템보다 더 뛰어난 성능을 보입니다. 이 주제에 대한 독립적인 벤치마크는 이미 많이 있으므로 여기서 별도로 다루지는 않겠습니다. 대신, 이 사용 사례에서 중요하게 활용할 수 있는 ClickHouse 기능에 집중하겠습니다.
+
+우선, 전형적인 시계열 데이터를 효과적으로 압축할 수 있는 **[특화된 코덱](/ko/reference/statements/create/table#specialized-codecs)** 이 있습니다. `DoubleDelta`, `Gorilla` 같은 일반적인 알고리즘도 있고, `T64`처럼 ClickHouse에 특화된 코덱도 있습니다.
+
+둘째, 시계열 쿼리는 하루 또는 일주일 이내의 최근 데이터만 조회하는 경우가 많습니다. 따라서 빠른 NVMe/SSD 드라이브와 대용량 HDD 드라이브를 모두 갖춘 서버를 사용하는 것이 합리적입니다. ClickHouse의 [TTL](/ko/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) 기능을 사용하면 최신 핫 데이터를 빠른 드라이브에 유지하고, 데이터가 오래될수록 점진적으로 더 느린 드라이브로 이동하도록 구성할 수 있습니다. 요구 사항에 따라 더 오래된 데이터를 롤업하거나 삭제하는 것도 가능합니다.
+
+원시 데이터를 저장하고 처리하는 ClickHouse의 철학과는 다소 어긋나지만, 더 엄격한 지연 시간 또는 비용 요구 사항을 충족하기 위해 [구체화된 뷰(Materialized View)](/ko/reference/statements/create/view)를 사용할 수 있습니다.

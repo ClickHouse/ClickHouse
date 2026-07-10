@@ -1,0 +1,32 @@
+---
+description: 'timeSeriesSamples 返回表引擎为 TimeSeries 的表 `db_name.time_series_table`
+  所使用的[样本表](/reference/engines/table-engines/integrations/time-series#samples-table)。'
+sidebarTitle: 'timeSeriesSamples'
+slug: /sql-reference/table-functions/timeSeriesSamples
+title: 'timeSeriesSamples'
+doc_type: 'reference'
+---
+
+`timeSeriesSamples(db_name.time_series_table)` - 返回表引擎为 [TimeSeries](/zh/reference/engines/table-engines/integrations/time-series) 的表 `db_name.time_series_table` 所使用的[样本表](/zh/reference/engines/table-engines/integrations/time-series#samples-table)：
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES samples_table
+```
+
+如果内部表是 *samples* 表，该函数同样适用：
+
+```sql
+CREATE TABLE db_name.time_series_table ENGINE=TimeSeries SAMPLES INNER UUID '01234567-89ab-cdef-0123-456789abcdef'
+```
+
+以下查询是等效的：
+
+```sql
+SELECT * FROM timeSeriesSamples(db_name.time_series_table);
+SELECT * FROM timeSeriesSamples('db_name.time_series_table');
+SELECT * FROM timeSeriesSamples('db_name', 'time_series_table');
+```
+
+<Note>
+  函数 `timeSeriesSamples` 有一个别名 `timeSeriesData`，保留该别名是为了向后兼容。
+</Note>

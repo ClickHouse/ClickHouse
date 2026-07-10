@@ -1,0 +1,307 @@
+---
+sidebarTitle: 'HTTP インターフェイスを使用する'
+slug: /integrations/azure-data-factory/http-interface
+description: 'ClickHouse の HTTP インターフェイスを使用して Azure Data Factory から ClickHouse にデータを取り込む'
+keywords: ['Azure Data Factory', 'Azure', 'Microsoft', 'データ', 'HTTP インターフェイス']
+title: 'Azure Data Factory で ClickHouse HTTP インターフェイスを使用する'
+doc_type: 'guide'
+integration:
+   - support_level: 'core'
+   - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+[`azureBlobStorage` Table Function](/ja/reference/functions/table-functions/azureBlobStorage)
+は、Azure Blob Storage から
+ClickHouse にデータをすばやく手軽に取り込む方法です。ただし、次の理由から
+常に適しているとは限りません。
+
+* データが Azure Blob Storage に保存されていない場合があります。たとえば、Azure SQL Database、Microsoft SQL Server、または Cosmos DB に保存されている可能性があります。
+* セキュリティ ポリシーにより、Blob Storage への外部アクセスが
+  完全に禁止されている場合があります。たとえば、ストレージ アカウントがパブリック エンドポイントなしで厳しく制限されている場合です。
+
+このような場合は、Azure Data Factory と
+[ClickHouse HTTP インターフェイス](/ja/concepts/features/interfaces/http)
+を組み合わせて使用し、Azure の各種サービスから ClickHouse にデータを送信できます。
+
+この方法ではデータの流れが逆になります。つまり、ClickHouse が
+Azure からデータを取得する代わりに、Azure Data Factory がデータを ClickHouse に送信します。この方法では通常、
+ClickHouse インスタンスがパブリック
+インターネットからアクセス可能である必要があります。
+
+<Info>
+  Azure Data Factory のセルフホスト統合ランタイムを使用すれば、
+  ClickHouse インスタンスをインターネットに公開せずに済みます。この構成では、
+  データをプライベート ネットワーク経由で送信できます。ただし、これはこの
+  記事の範囲外です。詳しくは、公式ガイドを参照してください:
+  [セルフホスト統合ランタイムを作成して構成する](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)
+</Info>
+
+<div id="turning-clickhouse-to-a-rest-service">
+  ## ClickHouse を REST サービスとして利用する
+</div>
+
+Azure Data Factory は、HTTP 経由で JSON
+フォーマットのデータを外部システムに送信できます。この機能を使うと、
+[ClickHouse HTTP インターフェイス](/ja/concepts/features/interfaces/http)
+を使用して ClickHouse に直接データを挿入できます。詳しくは、[ClickHouse HTTP インターフェイスのドキュメント](/ja/concepts/features/interfaces/http) を参照してください。
+
+この例では、宛先テーブルを指定し、入力データの
+フォーマットを JSON に設定し、timestamp の
+パースをより柔軟に行えるようにするオプションを含めるだけで十分です。
+
+```sql
+INSERT INTO my_table
+SETTINGS 
+    date_time_input_format='best_effort',
+    input_format_json_read_objects_as_strings=1
+FORMAT JSONEachRow
+```
+
+このクエリを HTTP リクエストの一部として送信するには、単に
+ClickHouse エンドポイントのクエリパラメータに URL エンコードされた文字列として渡します:
+
+```text
+https://your-clickhouse-url.com?query=INSERT%20INTO%20my_table%20SETTINGS%20date_time_input_format%3D%27best_effort%27%2C%20input_format_json_read_objects_as_strings%3D1%20FORMAT%20JSONEachRow%0A
+```
+
+<Info>
+  Azure Data Factory では、組み込みの
+  `encodeUriComponent` 関数でこのエンコードを自動的に処理できるため、手動で行う必要はありません。
+</Info>
+
+これで、この URL に JSON 形式のデータを送信できます。データはターゲットテーブルの
+構造に一致している必要があります。以下は、3 つのカラム `col_1`、`col_2`、`col_3` を持つ
+テーブルを想定した、curl を使った簡単な例です。
+
+```text
+curl \
+    -XPOST "https://your-clickhouse-url.com?query=<our_URL_encded_query>" \
+    --data '{"col_1":9119,"col_2":50.994,"col_3":"2019-06-01 00:00:00"}'
+```
+
+オブジェクトの JSON 配列、または JSON Lines (改行区切りの
+JSON オブジェクト) を送信することもできます。Azure Data Factory では JSON 配列フォーマットが使用されており、これは
+ClickHouse の `JSONEachRow` 入力と完全に適合します。
+
+ご覧のとおり、このステップでは ClickHouse
+側で特別なことをする必要はありません。HTTP インターフェイスには、
+REST 風のエンドポイントとして動作するために必要な機能がすでにすべて備わっており、
+追加の設定は不要です。
+
+これで ClickHouse を REST エンドポイントのように動作させられるようになったので、次は
+Azure Data Factory でこれを利用するように設定します。
+
+次のステップでは、Azure Data Factory インスタンスを作成し、ClickHouse インスタンスへの Linked
+Service を設定し、
+[REST sink](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
+用の Dataset を定義し、Azure から ClickHouse にデータを送信する Copy Data アクティビティを作成します。
+
+<div id="create-an-azure-data-factory-instance">
+  ## Azure Data Factory インスタンスの作成
+</div>
+
+このガイドでは、Microsoft Azure アカウントにアクセスでき、すでにサブスクリプションとリソース グループが設定済みであることを前提としています。Azure Data Factory がすでに設定されている場合は、この手順をスキップし、既存のインスタンスを使用して次の手順に進むことができます。
+
+1. [Microsoft Azure Portal](https://portal.azure.com/) にログインし、
+   **Create a resource** をクリックします。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Azure Portal ホーム ページ" border />
+
+2. 左側の Categories ペインで **Analytics** を選択し、
+   人気のサービス一覧から **Data Factory** をクリックします。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Azure Portal の新しいリソース" border />
+
+3. サブスクリプションとリソース グループを選択し、新しい Data
+   Factory インスタンスの名前を入力して、リージョンを選択し、バージョンは V2 のままにします。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Azure Portal の新しい Data Factory" border />
+
+4. **Review + Create** をクリックし、続いて **Create** をクリックしてデプロイを開始します。
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Azure Portal の新しい Data Factory の確認" border />
+
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Azure Portal の新しい Data Factory の作成成功" border />
+
+デプロイが正常に完了したら、新しい Azure
+Data Factory インスタンスを使い始めることができます。
+
+<div id="-creating-new-rest-based-linked-service">
+  ## 新しい REST ベースのリンク サービスを作成する
+</div>
+
+1. Microsoft Azure Portal にログインし、Data Factory インスタンスを開きます。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Data Factory が表示された Azure Portal のホーム ページ" border />
+
+2. Data Factory の概要ページで、**Launch Studio** をクリックします。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure Portal の Data Factory ページ" border />
+
+3. 左側のメニューで **Manage** を選択し、**Linked services** に移動して、**+ New** をクリックし、新しいリンク サービスを作成します。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory の新しいリンク サービス ボタン" border />
+
+4. **New linked service** の検索バーに **REST** と入力し、**REST** を選択して **Continue** をクリックし、[REST コネクタ](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)のインスタンスを作成します。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory の新しいリンク サービス検索" border />
+
+5. リンク サービスの構成ペインで新しいサービスの名前を入力し、**Base URL** フィールドをクリックしてから **Add dynamic content** をクリックします (このリンクはフィールドを選択したときにのみ表示されます) 。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="新しいリンク サービスのペイン" border />
+
+6. 動的コンテンツ ペインでは、パラメーター化された URL を作成できます。これにより、異なるテーブル用のデータセットを作成する際に後からクエリを定義できるため、リンク サービスを再利用できるようになります。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="Base URL が空の新しいリンク サービス" border />
+
+7. フィルター入力の横にある **&quot;+&quot;** をクリックして新しいパラメーターを追加し、名前を `pQuery`、型を String、デフォルト値を `SELECT 1` に設定します。**Save** をクリックします。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="新しいリンク サービスのパラメーター" border />
+
+8. 式フィールドに次を入力し、**OK** をクリックします。`your-clickhouse-url.com` は実際の ClickHouse インスタンスのアドレスに置き換えてください。
+   ```text
+   @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
+   ```
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="入力済みの新しいリンク サービスの式フィールド" border />
+
+9. メイン フォームに戻り、基本認証を選択して、ClickHouse HTTP インターフェイスへの接続に使用するユーザー名とパスワードを入力し、**Test connection** をクリックします。すべてが正しく構成されていれば、成功メッセージが表示されます。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="新しいリンク サービスの接続確認" border />
+
+10. **Create** をクリックしてセットアップを完了します。
+    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="リンク サービスの一覧" border />
+
+これで、一覧に新しく登録された REST ベースのリンク サービスが表示されるはずです。
+
+<div id="creating-a-new-dataset-for-the-clickhouse-http-interface">
+  ## ClickHouse HTTP インターフェイス用の新しいデータセットを作成する
+</div>
+
+ClickHouse HTTP インターフェイス用のリンク サービスの設定が完了したので、
+次に、Azure Data Factory がデータを ClickHouse に送信するために使用する
+データセットを作成します。
+
+この例では、[Environmental Sensors
+Data](/ja/get-started/sample-datasets/environmental-sensors) の一部のデータを挿入します。
+
+1. 任意の ClickHouse クエリコンソールを開きます。ClickHouse Cloud の web UI、
+   CLI クライアント、または普段クエリの実行に使用しているその他のインターフェイス
+   のいずれでもかまいません。そこで、ターゲットテーブルを作成します。
+   ```sql
+   CREATE TABLE sensors
+   (
+       sensor_id UInt16,
+       lat Float32,
+       lon Float32,
+       timestamp DateTime,
+       temperature Float32
+   )
+   ENGINE = MergeTree
+   ORDER BY (timestamp, sensor_id);
+   ```
+
+2. Azure Data Factory Studio で、左側のペインから Author を選択します。Dataset
+   項目にカーソルを合わせ、三点アイコンをクリックして、New dataset を選択します。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="新しいデータセット項目" border />
+
+3. 検索バーに **REST** と入力し、**REST** を選択して **Continue** をクリックします。
+   データセット名を入力し、前の手順で作成した **リンク サービス** を選択します。
+   **OK** をクリックしてデータセットを作成します。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="新しいデータセット ページ" border />
+
+4. 作成したデータセットが、左側の Factory Resources ペインの Datasets
+   セクションに表示されます。データセットを選択して、そのプロパティを
+   開きます。リンク サービスで定義した `pQuery` パラメーターが表示されるので、
+   **Value** テキストフィールドをクリックし、続いて **Add dynamic**
+   content をクリックします。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="新しいデータセットのプロパティ" border />
+
+5. 開いたペインに、次のクエリを貼り付けます。
+   ```sql
+   INSERT INTO sensors
+   SETTINGS 
+       date_time_input_format=''best_effort'', 
+       input_format_json_read_objects_as_strings=1 
+   FORMAT JSONEachRow
+   ```
+
+<Danger>
+  クエリ内のすべてのシングルクォート `'` は、2 つのシングルクォート
+  `''` に置き換える必要があります。これは Azure Data Factory の式パーサーで
+  必要となるためです。これらをエスケープしないと、すぐにはエラーが表示
+  されないことがありますが、後でデータセットを使用または保存しようとした
+  ときに失敗します。たとえば、`'best_effort'` は `''best_effort''` と
+  記述する必要があります。
+</Danger>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="新しいデータセット クエリ" border />
+
+6. **OK** をクリックして式を保存します。**Test connection** をクリックします。
+   すべてが正しく設定されていれば、Connection successful メッセージが表示
+   されます。ページ上部の **Publish all** をクリックして変更を保存します。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="新しいデータセット接続成功" border />
+
+<div id="setting-up-an-example-dataset">
+  ### 例として使用するデータセットの準備
+</div>
+
+この例では、Environmental Sensors Dataset 全体ではなく、
+[Sensors Dataset Sample](https://datasets-documentation.s3.eu-west-3.amazonaws.com/environmental/sensors.csv)で公開されている
+その一部のみを使用します。
+
+<Info>
+  このガイドでは要点に絞るため、Azure Data Factory でソース
+  データセットを作成する具体的な手順については説明しません。サンプルデータは任意の
+  ストレージサービスにアップロードできます。たとえば、Azure Blob Storage、Microsoft SQL
+  Server、あるいは Azure Data Factory がサポートする別のファイル形式でもかまいません。
+</Info>
+
+データセットを Azure Blob Storage (または任意のストレージ
+サービス) にアップロードします。次に、Azure Data Factory Studio で Factory Resources ペインを開きます。
+アップロードしたデータを参照する新しいデータセットを作成します。変更を保存するには、
+Publish all をクリックします。
+
+<div id="creating-the-copy-activity-to-transfer-data-to-clickhouse">
+  ## ClickHouse にデータを転送するための Copy Activity の作成
+</div>
+
+入力データセットと出力データセットの設定が完了したので、次に
+**Copy Data** アクティビティを設定して、サンプルデータセットから
+ClickHouse の `sensors` テーブルにデータを転送します。
+
+1. **Azure Data Factory Studio** を開き、**Author** タブに移動します。
+   **Factory Resources** ペインで **Pipeline** にカーソルを合わせ、三点アイコンをクリックして、**New pipeline** を選択します。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="ADF の新しいパイプライン項目" border />
+
+2. **Activities** ペインで **Move and transform** セクションを展開し、
+   **Copy data** アクティビティをキャンバスにドラッグします。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="新しい Copy Data 項目" border />
+
+3. **Source** タブを選択し、先ほど作成したソースデータセットを選択します。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="Copy Data のソース" border />
+
+4. **Sink** タブに移動し、
+   `sensors` テーブル用に作成した ClickHouse データセットを選択します。**Request method** は POST に設定します。**HTTP compression
+   type** が **None** に設定されていることを確認してください。
+
+<Warning>
+  HTTP 圧縮は、Azure Data Factory の Copy Data
+  アクティビティでは正しく動作しません。有効にすると、Azure は 0 バイトだけの
+  payload を送信します。これはおそらくサービス側のバグです。圧縮は必ず無効のままにしてください。
+</Warning>
+
+<Info>
+  デフォルトのバッチサイズ 10,000 のままにするか、さらに大きくすることを推奨します。
+  詳しくは、
+  [Selecting an Insert Strategy / Batch inserts if synchronous](/ja/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)
+  を参照してください。
+</Info>
+
+<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="POST を選択した Copy Data のシンク" border />
+
+5. キャンバス上部の **Debug** をクリックして、パイプラインを実行します。しばらくすると、
+   アクティビティがキューに入り実行されます。すべてが正しく設定されていれば、
+   タスクは **Success** ステータスで完了するはずです。
+   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="Copy Data の Debug 成功" border />
+
+6. 完了したら、**Publish all** をクリックして、パイプラインとデータセットの変更を保存します。
+
+<div id="additional-resources-1">
+  ## 追加リソース
+</div>
+
+* [HTTP インターフェイス](/ja/concepts/features/interfaces/http)
+* [Azure Data Factory を使用して REST エンドポイントとの間でデータをコピーおよび変換する](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest?tabs=data-factory)
+* [挿入戦略を選択する](/ja/concepts/best-practices/selecting-an-insert-strategy)
+* [セルフホスト統合ランタイムを作成して構成する](https://learn.microsoft.com/en-us/azure/data-factory/create-self-hosted-integration-runtime?tabs=data-factory)

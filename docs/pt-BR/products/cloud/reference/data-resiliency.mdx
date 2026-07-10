@@ -1,0 +1,148 @@
+---
+slug: /cloud/data-resiliency
+sidebarTitle: 'Resiliência de dados'
+title: 'Resiliência de dados'
+description: 'Este guia fornece uma visão geral sobre recuperação de desastres.'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'resiliência de dados', 'recuperação de desastres']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+Esta página apresenta as recomendações de recuperação de desastres para o ClickHouse Cloud, além de orientações para que os clientes se recuperem de uma indisponibilidade.
+No momento, o ClickHouse Cloud não oferece suporte a failover automático nem à sincronização automática entre várias regiões geográficas.
+
+<Tip>
+  Os clientes devem realizar testes periódicos de restauração de backups para entender o RTO específico do tamanho e da configuração do seu serviço.
+</Tip>
+
+<div id="definitions">
+  ## Definições
+</div>
+
+Antes, é útil revisar algumas definições.
+
+**RPO (Objetivo de Ponto de Recuperação)**: A perda máxima de dados aceitável, medida em tempo, após um evento de interrupção. Exemplo: um RPO de 30 min significa que, em caso de falha, o banco de dados deve poder ser restaurado para um estado com no máximo 30 min de defasagem. Isso, naturalmente, depende da frequência com que os backups são realizados.
+
+**RTO (Objetivo de Tempo de Recuperação)**: O tempo máximo de indisponibilidade aceitável antes que as operações normais precisem ser retomadas após uma interrupção. Exemplo: um RTO de 30 min significa que, em caso de falha, a equipe consegue restaurar os dados e as aplicações e restabelecer as operações normais em até 30 min.
+
+**Backups e snapshots de banco de dados**: Os backups fornecem armazenamento durável de longo prazo com uma cópia separada dos dados. Os snapshots não criam uma cópia adicional dos dados, geralmente são mais rápidos e proporcionam RPOs melhores.
+
+<div id="database-backups">
+  ## Backups de banco de dados
+</div>
+
+Manter um backup do seu serviço primário é uma forma eficaz de restaurá-lo em caso de indisisponibilidade do serviço primário.
+O ClickHouse Cloud oferece os seguintes recursos de backup.
+
+1. **Backups padrão**
+
+Por padrão, o ClickHouse Cloud faz um [backup](/pt-BR/products/cloud/guides/backups/index) do seu serviço a cada 24 horas.
+Esses backups ficam na mesma região do serviço e são realizados no bucket de armazenamento do CSP (provedor de serviços em nuvem) da ClickHouse.
+Caso os dados no serviço primário sejam corrompidos, o backup poderá ser usado para restaurar em um novo serviço.
+
+2. **Backups externos (no próprio bucket de armazenamento do cliente)**
+
+Você pode [exportar backups](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para o seu próprio armazenamento de objetos na sua conta, na mesma região ou em outra região.
+O suporte para exportação de backups entre clouds estará disponível em breve.
+Haverá cobrança por transferência de dados para backups entre regiões e entre clouds.
+
+<Note>
+  No momento, esse recurso não está disponível para serviços PCI/HIPAA
+</Note>
+
+3. **Backups configuráveis**
+
+Os clientes podem [configurar backups](/pt-BR/products/cloud/guides/backups/configurable-backups) para serem realizados com maior frequência, até a cada 6 horas, para melhorar o RPO.
+Os clientes também podem configurar um período de retenção maior.
+
+Os backups atualmente disponíveis para o serviço estão listados na página “backups” do console do ClickHouse Cloud.
+Esta seção também mostra o status de sucesso/falha de cada backup.
+
+<div id="restoring-from-a-backup">
+  ## Restauração a partir de um backup
+</div>
+
+1. Os backups padrão, no bucket do ClickHouse Cloud, podem ser restaurados em um novo serviço na mesma região.
+2. Os backups externos (no armazenamento de objetos do cliente) podem ser restaurados em um novo serviço na mesma região ou em outra região.
+
+<div id="backup-and-restore-duration-guidance">
+  ## Orientações sobre o tempo de backup e restauração
+</div>
+
+Os tempos de backup e restauração dependem de vários fatores, como o tamanho do banco de dados, o schema e o número de tabelas no banco de dados.
+
+Em nossos testes, vimos backups menores, de ~1 TB, levarem de 10 a 15 minutos ou mais para serem concluídos.
+Backups com menos de 20 TB geralmente são concluídos em até uma hora, e o backup de ~50 TB de dados deve levar de 2 a 3 horas.
+Backups se beneficiam de economias de escala em tamanhos maiores, e já vimos backups de até 1 PB, em alguns serviços internos, serem concluídos em menos de 10 horas.
+
+Recomendamos testar com seu próprio banco de dados ou com dados de amostra para obter estimativas mais precisas, já que a duração real depende de vários fatores, conforme descrito acima.
+
+Os tempos de restauração são semelhantes aos tempos de backup para volumes equivalentes.
+Como mencionado acima, recomendamos testar com seu próprio banco de dados para ter uma ideia de quanto tempo levará para restaurar o backup.
+
+<Note>
+  Atualmente, NÃO há suporte para failover automático entre 2 instâncias do ClickHouse Cloud, seja na mesma região ou em regiões diferentes.
+  Atualmente, NÃO há sincronização automática de dados entre diferentes serviços do ClickHouse Cloud na mesma região ou em regiões diferentes, ou seja, replicação Active-Active
+</Note>
+
+<div id="recovery-process">
+  ## Processo de recuperação
+</div>
+
+Esta seção explica as várias opções de recuperação e o procedimento a ser seguido em cada caso.
+
+<div id="primary-service-data-corruption">
+  ### Corrupção de dados do serviço primário
+</div>
+
+Nesse caso, os dados [podem ser restaurados](/pt-BR/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) a partir do backup em outro serviço na mesma região.
+O backup pode ter até 24 horas ao usar a política de backup padrão, ou até 6 horas (ao usar backups configuráveis com frequência de 6 horas).
+
+<div id="restoration-steps">
+  #### Etapas de restauração
+</div>
+
+Para restaurar usando um backup existente
+
+1. Vá para a seção “Backups” do console do ClickHouse Cloud.
+2. Clique nos três pontos em “Ações” do backup específico que você deseja restaurar.
+3. Dê um nome específico ao novo serviço e restaure a partir deste backup
+
+<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurar a partir de um backup" />
+
+<div id="primary-region-downtime">
+  ### Indisponibilidade da região primária
+</div>
+
+Você pode [exportar backups](/pt-BR/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para um bucket no seu próprio provedor de cloud.
+Se houver preocupação com falhas regionais, recomendamos exportar os backups para outra região.
+Lembre-se de que haverá cobrança por transferência de dados entre regiões.
+
+Se a região primária ficar indisponível, o backup em outra região poderá ser restaurado em um novo serviço em uma região diferente.
+
+Depois que o backup for restaurado em outro serviço, você precisará garantir que todas as configurações de DNS, balanceador de carga ou connection string sejam atualizadas para apontar para o novo serviço.
+Isso pode envolver:
+
+* Atualizar variáveis de ambiente ou Secrets
+* Reiniciar os serviços da aplicação para estabelecer novas conexões
+
+<Note>
+  No momento, backup / restore para um bucket externo não é compatível com serviços que utilizam [Transparent Data Encryption (TDE)](/pt-BR/products/cloud/guides/security/cmek#transparent-data-encryption-tde).
+</Note>
+
+<div id="additional-options">
+  ## Opções adicionais
+</div>
+
+Há algumas opções adicionais a considerar.
+
+1. **Gravação dupla em clusters separados**
+
+Nesta opção, você pode configurar 2 clusters separados em regiões diferentes e gravar em ambos.
+Essa opção tem um custo mais alto por natureza, pois envolve operar vários serviços, mas oferece maior disponibilidade caso uma das regiões fique indisponível.
+
+2. **Utilize a replicação do CSP**
+
+Com esta opção, você utilizaria a replicação nativa de armazenamento de objetos do provedor de serviços em nuvem para copiar os dados.
+Por exemplo, com BYOB, você pode exportar o backup para um bucket que pertence a você na região primária e fazer com que ele seja replicado para outra região usando a [replicação entre regiões da AWS](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication.html).
