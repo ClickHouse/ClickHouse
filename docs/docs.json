@@ -3616,6 +3616,7 @@
                           "resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
                           "resources/support-center/knowledge-base/cloud-services/change-billing-email",
                           "resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+                          "resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
                           "resources/support-center/knowledge-base/cloud-services/custom-dns-alias-for-instance",
                           "resources/support-center/knowledge-base/cloud-services/execute-system-queries-in-cloud",
                           "resources/support-center/knowledge-base/cloud-services/how-to-check-my-clickhouse-cloud-sevice-state",

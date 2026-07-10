@@ -1342,7 +1342,8 @@ try
 
     // If the startup_console_log_level is set in the config, we override the console logger level.
     // Specific loggers can still override it.
-    std::string original_console_log_level_config = config().getString("logger.startup_console_log_level", "");
+    bool console_log_level_was_set = config().has("logger.console_log_level");
+    std::string original_console_log_level_config = config().getString("logger.console_log_level", "");
     bool should_restore_console_log_level = false;
     if (config().has("logger.startup_console_log_level") && !config().getString("logger.startup_console_log_level").empty())
     {
@@ -3447,9 +3448,20 @@ try
 
             if (should_restore_console_log_level)
             {
-                config().setString("logger.console_log_level", original_console_log_level_config);
-                Loggers::updateLevels(config(), logger());
-                LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+                /// If the level was unset just remove the override so the default can be set via
+                /// Loggers::updateLevels again; otherwise restore the configured value.
+                if (console_log_level_was_set)
+                {
+                    config().setString("logger.console_log_level", original_console_log_level_config);
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to {}", original_console_log_level_config);
+                }
+                else
+                {
+                    config().remove("logger.console_log_level");
+                    Loggers::updateLevels(config(), logger());
+                    LOG_INFO(log, "Restored console logger level to logger.level");
+                }
             }
 
             for (auto & server : servers)
