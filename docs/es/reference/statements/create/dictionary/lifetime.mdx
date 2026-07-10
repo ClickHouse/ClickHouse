@@ -1,0 +1,142 @@
+---
+description: 'Configuración LIFETIME del diccionario para la actualización automática'
+sidebarTitle: 'LIFETIME'
+slug: /sql-reference/statements/create/dictionary/lifetime
+title: 'Actualización de los datos del diccionario con LIFETIME'
+doc_type: 'reference'
+---
+
+import CloudDetails from '/snippets/es/_snippet_dictionary_in_cloud.mdx';
+
+ClickHouse actualiza periódicamente los diccionarios según la etiqueta `LIFETIME` (definida en segundos).
+`LIFETIME` es el intervalo de actualización de los diccionarios descargados por completo y el intervalo de invalidación de los diccionarios en caché.
+
+Durante las actualizaciones, la versión anterior de un diccionario puede seguir consultándose.
+Las actualizaciones de diccionarios no bloquean las consultas, salvo cuando se cargan para usarse por primera vez.
+Si se produce un error durante una actualización, el error se registra en el log del servidor, y las consultas pueden seguir usando la versión anterior del diccionario.
+Si la actualización de un diccionario se completa correctamente, la versión anterior del diccionario se reemplaza [atómicamente](/es/concepts/core-concepts/glossary#atomicity).
+
+Ejemplo de configuración:
+
+<CloudDetails />
+
+```xml
+<dictionary>
+    ...
+    <lifetime>300</lifetime>
+    ...
+</dictionary>
+```
+
+o
+
+```sql
+CREATE DICTIONARY (...)
+...
+LIFETIME(300)
+...
+```
+
+Establecer `<lifetime>0</lifetime>` (`LIFETIME(0)`) impide que los diccionarios se actualicen.
+
+Puede establecer un intervalo de tiempo para las actualizaciones, y ClickHouse elegirá un instante aleatorio con distribución uniforme dentro de ese intervalo. Esto es necesario para distribuir la carga en la fuente del diccionario al actualizar en un gran número de servidores.
+
+Ejemplo de configuración:
+
+```xml
+<dictionary>
+    ...
+    <lifetime>
+        <min>300</min>
+        <max>360</max>
+    </lifetime>
+    ...
+</dictionary>
+```
+
+o
+
+```sql
+LIFETIME(MIN 300 MAX 360)
+```
+
+Si `<min>0</min>` y `<max>0</max>`, ClickHouse no recarga el diccionario por timeout.
+En este caso, ClickHouse puede recargar el diccionario antes si se modificó el archivo de configuración del diccionario o si se ejecutó el comando `SYSTEM RELOAD DICTIONARY`.
+
+Al actualizar los diccionarios, el servidor ClickHouse aplica una lógica distinta según el tipo de [origen](/es/reference/statements/create/dictionary/sources/overview):
+
+* En el caso de un archivo de texto, comprueba la hora de modificación. Si difiere de la hora registrada anteriormente, el diccionario se actualiza.
+* De forma predeterminada, los diccionarios de otros orígenes se actualizan siempre.
+
+Para otros orígenes (ODBC, PostgreSQL, ClickHouse, etc.), puede configurar una consulta para que los diccionarios se actualicen solo si realmente han cambiado, en lugar de hacerlo cada vez. Para ello, siga estos pasos:
+
+* La tabla del diccionario debe tener un campo que siempre cambie cuando se actualicen los datos del origen.
+* La configuración del origen debe especificar una consulta que recupere el campo variable. El servidor ClickHouse interpreta el resultado de la consulta como una fila y, si esta fila ha cambiado con respecto a su estado anterior, el diccionario se actualiza. Especifique la consulta en el campo `<invalidate_query>` de la configuración del [origen](/es/reference/statements/create/dictionary/sources/overview).
+
+Ejemplo de configuración:
+
+```xml
+<dictionary>
+    ...
+    <odbc>
+      ...
+      <invalidate_query>SELECT update_time FROM dictionary_source where id = 1</invalidate_query>
+    </odbc>
+    ...
+</dictionary>
+```
+
+o
+
+```sql
+...
+SOURCE(ODBC(... invalidate_query 'SELECT update_time FROM dictionary_source where id = 1'))
+...
+```
+
+Para los diccionarios `Cache`, `ComplexKeyCache`, `SSDCache` y `SSDComplexKeyCache`, se admiten actualizaciones tanto síncronas como asíncronas.
+
+También es posible que los diccionarios `Flat`, `Hashed`, `HashedArray` y `ComplexKeyHashed` soliciten únicamente los datos que hayan cambiado desde la actualización anterior. Si se especifica `update_field` como parte de la configuración del origen del diccionario, se añadirá a la solicitud de datos el valor, en segundos, del momento de la actualización anterior. Según el tipo de origen (Executable, HTTP, MySQL, PostgreSQL, ClickHouse u ODBC), se aplicará una lógica diferente a `update_field` antes de solicitar datos de un origen externo.
+
+* Si el origen es HTTP, `update_field` se añadirá como parámetro de consulta, con la hora de la última actualización como valor del parámetro.
+* Si el origen es Executable, `update_field` se añadirá como argumento del script ejecutable, con la hora de la última actualización como valor del argumento.
+* Si el origen es ClickHouse, MySQL, PostgreSQL u ODBC, se añadirá una parte adicional de `WHERE`, donde `update_field` se compara como mayor o igual que la hora de la última actualización.
+  * De forma predeterminada, esta condición `WHERE` se comprueba en el nivel más alto de la consulta SQL. Como alternativa, la condición puede comprobarse en cualquier otra cláusula `WHERE` de la consulta mediante la palabra clave `{condition}`. Ejemplo:
+    ```sql
+    ...
+    SOURCE(CLICKHOUSE(...
+        update_field 'added_time'
+        QUERY '
+            SELECT my_arr.1 AS x, my_arr.2 AS y, creation_time
+            FROM (
+                SELECT arrayZip(x_arr, y_arr) AS my_arr, creation_time
+                FROM dictionary_source
+                WHERE {condition}
+            )'
+    ))
+    ...
+    ```
+
+Si se configura la opción `update_field`, también puede configurarse la opción adicional `update_lag`. El valor de la opción `update_lag` se resta de la hora de la actualización anterior antes de solicitar los datos actualizados.
+
+Ejemplo de configuración:
+
+```xml
+<dictionary>
+    ...
+        <clickhouse>
+            ...
+            <update_field>added_time</update_field>
+            <update_lag>15</update_lag>
+        </clickhouse>
+    ...
+</dictionary>
+```
+
+o
+
+```sql
+...
+SOURCE(CLICKHOUSE(... update_field 'added_time' update_lag 15))
+...
+```

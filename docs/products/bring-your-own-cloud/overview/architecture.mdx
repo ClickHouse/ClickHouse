@@ -1,0 +1,107 @@
+---
+title: 'Architecture'
+slug: /cloud/reference/byoc/architecture
+sidebarTitle: 'Architecture'
+keywords: ['BYOC', 'cloud', 'bring your own cloud']
+description: 'Deploy ClickHouse on your own cloud infrastructure'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+
+## Key concepts {#key-concepts}
+The diagram below illustrates how ClickHouse Cloud organizations, cloud accounts, and BYOC infrastructure relate to each other.
+
+<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="BYOC organization hierarchy" />
+
+- **ClickHouse Cloud organization:** The top-level entity in ClickHouse Cloud that manages users, billing, and non-BYOC ClickHouse services. Users within an organization can access both standard Cloud services and BYOC services.
+- **ClickHouse BYOC organization:** A separate organization dedicated to managing BYOC deployments. It shares users with the Cloud organization but is linked to one or more cloud accounts where BYOC infrastructure is deployed.
+- **Cloud account / project:** The customer-owned AWS account or GCP project where BYOC infrastructure is provisioned. Each account or project can host BYOC deployments in one or more regions. A dedicated account or project per BYOC deployment is recommended for isolation.
+- **BYOC infrastructure:** The set of cloud resources deployed within a specific region of a cloud account, including a VPC, Kubernetes cluster (EKS/GKE), storage buckets, IAM roles, and supporting services. A single cloud account can contain multiple BYOC infrastructures across different regions.
+- **ClickHouse Service:** An individual ClickHouse cluster running within a BYOC infrastructure. Multiple services can run within the same BYOC infrastructure.
+
+<Note>
+Mixing of AWS accounts and GCP projects under the same organization is only possible for customers who are not set up through a [cloud service provider marketplace](/products/cloud/reference/billing/marketplace/overview).
+</Note>
+
+## Glossary {#glossary}
+- **ClickHouse VPC:**  The VPC owned by ClickHouse Cloud.
+- **Customer BYOC VPC:** The VPC, owned by the customer's cloud account, is provisioned and managed by ClickHouse Cloud and dedicated to a ClickHouse Cloud BYOC deployment.
+- **Customer VPC:** Other VPCs owned by the customer cloud account used for applications that need to connect to the Customer BYOC VPC.
+
+## Technical architecture {#architecture}
+BYOC separates the **ClickHouse control plane**, which runs in the ClickHouse VPC, from the **data plane**, which runs entirely in your cloud account. The ClickHouse VPC hosts the ClickHouse Cloud Console, authentication, user management, APIs, billing, infrastructure management components such as the BYOC controller, and alerting/incident tooling. These services orchestrate and monitor your deployment, but they don't store your data.
+
+In your **Customer BYOC VPC**, ClickHouse provisions a Kubernetes cluster (for example, Amazon EKS) that runs the ClickHouse data plane. As shown in the diagram, this includes the ClickHouse cluster itself, the ClickHouse operator, and supporting services such as ingress, DNS, certificate management, state exporters, and scrapers. A dedicated monitoring stack (Prometheus, Grafana, AlertManager, and Thanos) also runs within your VPC, ensuring that metrics and alerts originate from and remain in your environment.
+
+<br />
+
+<Image img="/images/cloud/reference/byoc-1.webp" size="lg" alt="BYOC Architecture" background='black'/>
+
+<br />
+
+The main cloud resources ClickHouse Cloud will deploy in your account are:
+
+* **VPC:** A Virtual Private Cloud dedicated to your ClickHouse deployment. This can be managed either by ClickHouse or by you, the customer, and is typically peered with your application VPCs.
+* **IAM roles and policies:** Roles and permissions necessary for Kubernetes, ClickHouse services, and the monitoring stack. These can be provisioned by ClickHouse or supplied by the customer.
+* **Storage buckets:** Used for storing data parts, backups, and (optionally) long-term metrics and log archives.
+* **Kubernetes cluster:** This can be Amazon EKS, Google GKE, or Azure AKS, depending on your cloud provider, and hosts the ClickHouse servers and supporting services shown in the architecture diagram.
+
+By default, ClickHouse Cloud provisions a new, dedicated VPC and sets up the necessary IAM roles to ensure secure operation of Kubernetes services. For organizations with advanced networking or security needs, there is also the option to manage the VPC and IAM roles independently. This approach allows for greater customization of network configurations and more precise control over permissions. However, choosing to self-manage these resources will increase your operational responsibilities.
+
+### Data Storage {#data-storage}
+All ClickHouse data, backups, and observability data stay in your cloud account. Data parts and backups are stored in your object storage (for example, Amazon S3), while logs are stored on the storage volumes attached to your ClickHouse nodes. In a future update, logs will be written to LogHouse, a ClickHouse-based logging service that also runs inside your BYOC VPC. Metrics can be stored locally or in an independent bucket in your BYOC VPC for long-term retention. Control-plane connectivity between the ClickHouse VPC and your BYOC VPC is provided over a secure, tightly scoped channel (for example, via Tailscale as shown in the diagram); this is used only for management operations, not for query traffic.
+
+### Control Plane communication {#control-plane-communication}
+The ClickHouse VPC communicates with your BYOC VPC over HTTPS (port 443) for service management operations including configuration changes, health checks, and deployment commands. This traffic carries only control plane data for orchestration. Critical telemetry and alerts flow from your BYOC VPC to the ClickHouse VPC to enable resource utilization and health monitoring.
+
+## Key Requirements for BYOC {#key-requirements}
+The BYOC deployment model requires two essential components to ensure reliable operations, ease of maintenance, and security:
+
+### Cross-account IAM permissions {#cross-account-iam-permissions}
+ClickHouse Cloud needs cross-account IAM permissions to provision and manage resources within your cloud account. This enables ClickHouse to:
+
+- **Provision infrastructure**: Create and configure VPCs, subnets, security groups, and other networking components
+- **Manage Kubernetes clusters**: Deploy and maintain EKS/GKE clusters, node groups, and cluster components
+- **Create storage resources**: Provision S3 buckets or equivalent object storage for data and backups
+- **Manage IAM roles**: Create and configure IAM roles for Kubernetes service accounts and supporting services
+- **Operate supporting services**: Deploy and manage monitoring stacks, ingress controllers, and other infrastructure components
+
+These permissions are granted through a cross-account IAM role (AWS) or service account (GCP) that you create during the initial onboarding process. The role follows the principle of least privilege, with permissions scoped to only what's necessary for BYOC operations.
+
+For detailed information about the specific permissions required, see the [BYOC Privilege Reference](/products/bring-your-own-cloud/reference/privilege).
+
+### Tailscale Private Network Connection {#tailscale-private-network}
+Tailscale provides a secure, zero-trust private network connection between ClickHouse Cloud's management services and your BYOC deployment. This connection enables:
+
+- **Continuous monitoring**: ClickHouse engineers can access the Prometheus monitoring stack deployed in your BYOC VPC to monitor service health and performance
+- **Proactive maintenance**: Engineers can perform routine maintenance, upgrades, and troubleshooting operations
+- **Emergency support**: In case of service issues, engineers can quickly access your environment to diagnose and resolve problems
+- **Infrastructure management**: Management services can coordinate with your BYOC infrastructure for automated operations
+
+The Tailscale connection is **outbound-only** from your BYOC VPC—no inbound connections are required, reducing your security exposure. All access is:
+- **Approved and audited**: Engineers must request access through an internal approval system
+- **Time-bound**: Access automatically expires after a set period
+- **Restricted**: Engineers can only access system tables and infrastructure components, never customer data
+- **Encrypted**: All communication is encrypted end-to-end
+
+For detailed information about how Tailscale works in BYOC and security controls, see the [Network Security documentation](/products/bring-your-own-cloud/reference/network-security#tailscale-private-network).
+
+### Why These Requirements Matter {#why-requirements-matter}
+Together, these two components enable ClickHouse Cloud to:
+
+- **Maintain reliability**: Proactively monitor and maintain your deployment to prevent issues
+- **Ensure security**: Use least-privilege access with full auditability
+- **Simplify operations**: Automate infrastructure management while you maintain control
+- **Provide support**: Quickly respond to and resolve issues when they occur
+
+All customer data remains within your cloud account and is never accessed or transmitted through these management channels.
+
+**Additional recommendations and considerations:**
+- Ensure that network CIDR ranges for your BYOC VPC doesn't overlap with any existing VPCs you plan to peer with.
+- Tag your resources clearly to simplify management and support.
+- Plan for adequate subnet sizing and distribution across availability zones for high availability.
+- Consult the [security playbook](/products/cloud/guides/security/audit-logging/byoc-security-playbook) to understand shared responsibility and best practices when ClickHouse Cloud operates within your environment.
+- Review the full onboarding guide for step-by-step instructions on initial account setup, VPC configuration, network connectivity (for example, VPC peering), and IAM role delegation.
+
+If you have unique requirements or constraints, contact ClickHouse Support for guidance on advanced network configurations or custom IAM policies.

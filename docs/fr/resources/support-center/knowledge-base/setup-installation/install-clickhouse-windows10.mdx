@@ -1,0 +1,161 @@
+---
+title: Comment installer ClickHouse sur Windows 10 ?
+description: "Découvrez comment installer et tester ClickHouse sur Windows 10 avec WSL 2, y compris la configuration, le dépannage et l’exécution dans un environnement de test."
+date: 2023-04-24
+tags: ['Outils et utilitaires']
+keywords: ['Windows 10']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="how-to-install-and-test-clickhouse-on-microsoft-windows">
+  ## Comment installer et tester ClickHouse sous Microsoft Windows
+</div>
+
+Lors de l&#39;installation de ClickHouse sous Windows 10, vous pouvez rencontrer des erreurs lors de l&#39;insertion de données, par exemple :
+
+```
+DB::Exception: std::__1::__fs::filesystem::filesystem_error: filesystem error: in rename: Permission denied ["./store/711/71144174-d098-4056-8976-6ad1204205ec/tmp_insert_all_1_1_0/"] ["./store/711/71144174-d098-4056-8976-6ad1204205ec/all_1_1_0/"]. Stack trace:
+```
+
+Sous Windows 10, vous devez mettre WSL à niveau vers WSL 2.
+
+* Ouvrez PowerShell en cliquant avec le bouton droit sur son icône, puis en sélectionnant &quot;Exécuter en tant qu’administrateur&quot;.
+
+* Suivez les instructions de Microsoft pour passer à WSL 2 ici :
+  https://learn.microsoft.com/en-us/windows/wsl/install
+
+* Une fois la mise à niveau terminée, ouvrez WSL depuis PowerShell.
+
+```
+wsl
+```
+
+* Pour tester, suivez ces instructions ; vous devriez obtenir un résultat similaire :
+  Comme il s’agit d’un test, je me suis connecté en tant que root pour éviter les problèmes de droits :
+
+```
+sudo -i
+```
+
+* Créez un répertoire pour ClickHouse :
+
+```
+root@marspc2:~# mkdir /clickhouse
+```
+
+* Dans le nouveau répertoire, téléchargez clickhouse :
+
+```
+root@marspc2:/# cd clickhouse
+
+root@marspc2:/clickhouse# curl https://clickhouse.com | sh
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  2739    0  2739    0     0   5515      0 --:--:-- --:--:-- --:--:--  5511
+
+Will download https://builds.clickhouse.com/master/amd64/clickhouse into clickhouse
+
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  530M  100  530M    0     0  8859k      0  0:01:01  0:01:01 --:--:-- 8549k
+
+Successfully downloaded the ClickHouse binary, you can run it as:
+    ./clickhouse
+
+You can also install it:
+    sudo ./clickhouse install
+```
+
+* Démarrez le serveur ClickHouse :
+
+```
+root@marspc2:/clickhouse# ./clickhouse server
+Processing configuration file 'config.xml'.
+There is no file 'config.xml', will use embedded config.
+Cannot set max size of core file to 1073741824
+2023.04.17 19:19:23.155323 [ 500 ] {} <Information> SentryWriter: Sending crash reports is disabled
+2023.04.17 19:19:23.165447 [ 500 ] {} <Trace> Pipe: Pipe capacity is 1.00 MiB
+2023.04.17 19:19:23.271147 [ 500 ] {} <Information> Application: Starting ClickHouse 23.4.1.1222 (revision: 54473, git hash: 3993aef8e281815ac4269d44e27bb1dcdcff21cb, build id: AF16AA59B689841860F39ACDBED30AC8F9AB70FA), PID 500
+2023.04.17 19:19:23.271208 [ 500 ] {} <Information> Application: starting up
+2023.04.17 19:19:23.271237 [ 500 ] {} <Information> Application: OS name: Linux, version: 5.15.90.1-microsoft-standard-WSL2, architecture: x86_64
+...
+```
+
+* Dans une autre fenêtre WSL, démarrez le client :
+
+```
+root@marspc2:/clickhouse# ./clickhouse client
+ClickHouse client version 23.4.1.1222 (official build).
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 23.4.1 revision 54462.
+
+Warnings:
+ * Linux transparent hugepages are set to "always". Check /sys/kernel/mm/transparent_hugepage/enabled
+
+marspc2. :)
+```
+
+* Créez la base de données et la table :
+
+```
+marspc2. :) create database db1;
+
+CREATE DATABASE db1
+
+Query id: 688f79e2-8132-44ed-98d6-0581abe9903a
+
+Ok.
+
+0 rows in set. Elapsed: 0.007 sec.
+
+marspc2. :) create table db1.table1 (id Int64, string_column String) engine = MergeTree() order by id;
+
+CREATE TABLE db1.table1
+(
+    `id` Int64,
+    `string_column` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: d91a93b4-e13f-4e17-8201-f329223287d0
+
+Ok.
+
+0 rows in set. Elapsed: 0.010 sec.
+```
+
+* Insérez des lignes d’exemple :
+
+```
+marspc2. :) insert into db1.table1 (id, string_column) values (1, 'a'), (2,'b');
+
+INSERT INTO db1.table1 (id, string_column) FORMAT Values
+
+Query id: 2b274eef-09af-434b-88e0-c25799649910
+
+Ok.
+
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+* Affichez les lignes :
+
+```
+marspc2. :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: 74c76bf1-d944-4b21-a384-cc0b5e6aa579
+
+┌─id─┬─string_column─┐
+│  1 │ a             │
+│  2 │ b             │
+└────┴───────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+```

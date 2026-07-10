@@ -1,0 +1,323 @@
+---
+slug: /use-cases/AI/jupyter-notebook
+sidebarTitle: 'Explorer des données avec des notebooks Jupyter et chDB'
+title: 'Explorer des données avec des notebooks Jupyter et chDB'
+description: 'Ce guide explique comment configurer et utiliser chDB pour explorer des données de ClickHouse Cloud ou de fichiers locaux dans des notebooks Jupyer'
+keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Dans ce guide, vous apprendrez à explorer un jeu de données dans ClickHouse Cloud à partir d’un notebook Jupyter à l’aide de [chDB](/fr/products/chdb/index), un moteur SQL OLAP in-process rapide basé sur ClickHouse.
+
+**Prérequis** :
+
+* un environnement virtuel
+* un service ClickHouse Cloud opérationnel et vos [informations de connexion](/fr/products/cloud/guides/sql-console/connection-details)
+
+<Tip>
+  Si vous n&#39;avez pas encore de compte ClickHouse Cloud, vous pouvez [vous inscrire](https://console.clickhouse.cloud/signUp?loc=docs-juypter-chdb) pour
+  bénéficier d’un essai et obtenir 300 $ de crédits gratuits pour commencer.
+</Tip>
+
+**Ce que vous apprendrez :**
+
+* Vous connecter à ClickHouse Cloud depuis des notebooks Jupyter avec chDB
+* Interroger des jeux de données distants et convertir les résultats en Pandas DataFrames
+* Combiner des données de ClickHouse Cloud avec des fichiers CSV locaux pour l’analyse
+* Visualiser les données à l’aide de matplotlib
+
+Nous utiliserons le jeu de données UK Property Price, disponible dans ClickHouse Cloud comme l’un des jeux de données d’exemple.
+Il contient des données sur les prix de vente des maisons au Royaume-Uni entre 1995 et 2024.
+
+<div id="setup">
+  ## Configuration
+</div>
+
+Pour ajouter ce jeu de données à un service ClickHouse Cloud existant, connectez-vous à [console.clickhouse.cloud](https://console.clickhouse.cloud/) avec les informations de votre compte.
+
+Dans le menu de gauche, cliquez sur `Data sources`. Cliquez ensuite sur `Predefined sample data` :
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Ajouter un exemple de jeu de données" />
+
+Sélectionnez `Get started` sur la carte des données de prix de l’immobilier au Royaume-Uni (4GB) :
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Sélectionner le jeu de données des prix de l’immobilier au Royaume-Uni" />
+
+Cliquez ensuite sur `Import dataset` :
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Importer le jeu de données des prix de l’immobilier au Royaume-Uni" />
+
+ClickHouse créera automatiquement la table `pp_complete` dans la base de données `default` et la remplira avec 28,92 millions de lignes de données sur les prix.
+
+Afin de réduire le risque d’exposer vos identifiants, nous vous recommandons d’ajouter votre nom d’utilisateur Cloud et votre mot de passe comme variables d’environnement sur votre machine locale.
+Depuis un terminal, exécutez la commande suivante pour ajouter votre nom d’utilisateur et votre mot de passe comme variables d’environnement :
+
+```bash
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=your_actual_password
+```
+
+<Note>
+  Les variables d’environnement ci-dessus ne persistent que pendant la durée de votre session de terminal.
+  Pour les définir de manière permanente, ajoutez-les à votre fichier de configuration du shell.
+</Note>
+
+Activez maintenant votre environnement virtuel.
+Depuis celui-ci, installez Jupyter Notebook avec la commande suivante :
+
+```python
+pip install notebook
+```
+
+Lancez Jupyter Notebook avec la commande suivante :
+
+```python
+jupyter notebook
+```
+
+Une nouvelle fenêtre de navigateur devrait s’ouvrir avec l’interface Jupyter sur `localhost:8888`.
+Cliquez sur `File` &gt; `New` &gt; `Notebook` pour créer un nouveau notebook.
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="Créer un nouveau notebook" />
+
+Vous serez invité à sélectionner un noyau.
+Sélectionnez n’importe quel noyau Python disponible ; dans cet exemple, nous choisirons `ipykernel` :
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="Sélectionner un noyau" />
+
+Dans une cellule vide, vous pouvez saisir la commande suivante pour installer chDB, que nous utiliserons pour nous connecter à notre instance ClickHouse Cloud distante :
+
+```python
+pip install chdb
+```
+
+Vous pouvez maintenant importer chDB et exécuter une requête simple pour vérifier que tout est correctement configuré :
+
+```python
+import chdb
+
+result = chdb.query("SELECT 'Hello, ClickHouse!' as message")
+print(result)
+```
+
+<div id="exploring-the-data">
+  ## Explorer les données
+</div>
+
+Avec le jeu de données UK price paid configuré et chDB en cours d’exécution dans un notebook Jupyter, nous pouvons maintenant commencer à explorer nos données.
+
+Imaginons que nous voulions examiner l’évolution des prix au fil du temps pour une zone précise du Royaume-Uni, comme sa capitale, Londres.
+La fonction [`remoteSecure`](/fr/reference/functions/table-functions/remote) de ClickHouse vous permet de récupérer facilement les données depuis ClickHouse Cloud.
+Vous pouvez demander à chDB de renvoyer ces données sous forme de data frame Pandas dans le processus, ce qui offre une manière pratique et familière de travailler avec les données.
+
+Écrivez la requête suivante pour récupérer les données UK price paid depuis votre service ClickHouse Cloud et les convertir en `pandas.DataFrame` :
+
+```python
+import os
+from dotenv import load_dotenv
+import chdb
+import pandas as pd
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+
+# Load environment variables from .env file
+load_dotenv()
+
+username = os.environ.get('CLICKHOUSE_USER')
+password = os.environ.get('CLICKHOUSE_PASSWORD')
+
+query = f"""
+SELECT 
+    toYear(date) AS year,
+    avg(price) AS avg_price
+FROM remoteSecure(
+'****.europe-west4.gcp.clickhouse.cloud',
+default.pp_complete,
+'{username}',
+'{password}'
+)
+WHERE town = 'LONDON'
+GROUP BY toYear(date)
+ORDER BY year;
+"""
+
+df = chdb.query(query, "DataFrame")
+df.head()
+```
+
+Dans l’extrait ci-dessus, `chdb.query(query, "DataFrame")` exécute la requête spécifiée et affiche le résultat dans le terminal sous forme de DataFrame Pandas.
+Dans la requête, nous utilisons la fonction `remoteSecure` pour nous connecter à ClickHouse Cloud.
+La fonction `remoteSecure` prend les paramètres suivants :
+
+* une chaîne de connexion
+* le nom de la base de données et de la table à utiliser
+* votre nom d’utilisateur
+* votre mot de passe
+
+Comme bonne pratique de sécurité, il est préférable d’utiliser des variables d’environnement pour les paramètres de nom d’utilisateur et de mot de passe plutôt que de les indiquer directement dans la fonction, même si cela reste possible si vous le souhaitez.
+
+La fonction `remoteSecure` se connecte au service ClickHouse Cloud distant, exécute la requête et renvoie le résultat.
+Selon le volume de vos données, cela peut prendre quelques secondes.
+Dans cet exemple, nous renvoyons un prix moyen par année et appliquons le filtre `town='LONDON'`.
+Le résultat est ensuite stocké sous forme de DataFrame dans une variable appelée `df`.
+
+`df.head` affiche uniquement les premières lignes des données renvoyées :
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="aperçu du dataframe" />
+
+Exécutez la commande suivante dans une nouvelle cellule pour vérifier les types des colonnes :
+
+```python
+df.dtypes
+```
+
+```response
+year          uint16
+avg_price    float64
+dtype: object
+```
+
+Notez que, bien que `date` soit de type `Date` dans ClickHouse, dans le DataFrame obtenu, il est de type `uint16`.
+chDB déduit automatiquement le type le plus approprié lorsqu’il renvoie le DataFrame.
+
+Maintenant que les données sont disponibles dans un format familier, voyons comment les prix de l&#39;immobilier à Londres ont évolué au fil du temps.
+
+Dans une nouvelle cellule, exécutez la commande suivante pour créer, avec matplotlib, un graphique simple du prix en fonction du temps pour Londres :
+
+```python
+plt.figure(figsize=(12, 6))
+plt.plot(df['year'], df['avg_price'], marker='o')
+plt.xlabel('Year')
+plt.ylabel('Price (£)')
+plt.title('Price of London property over time')
+
+# Show every 2nd year to avoid crowding
+years_to_show = df['year'][::2]  # Every 2nd year
+plt.xticks(years_to_show, rotation=45)
+
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="aperçu du DataFrame" />
+
+Sans surprise, les prix de l’immobilier à Londres ont considérablement augmenté au fil du temps.
+
+Un collègue data scientist nous a envoyé un fichier .csv contenant des variables supplémentaires liées au logement et se demande comment
+le nombre de logements vendus à Londres a évolué au fil du temps.
+Traçons-en quelques-unes par rapport aux prix de l’immobilier et voyons si nous pouvons mettre en évidence une corrélation.
+
+Vous pouvez utiliser le moteur de table `file` pour lire directement des fichiers sur votre machine locale.
+Dans une nouvelle cellule, exécutez la commande suivante pour créer un nouveau DataFrame à partir du fichier .csv local.
+
+```python
+query = f"""
+SELECT 
+    toYear(date) AS year,
+    sum(houses_sold)*1000
+    FROM file('/Users/datasci/Desktop/housing_in_london_monthly_variables.csv')
+WHERE area = 'city of london' AND houses_sold IS NOT NULL
+GROUP BY toYear(date)
+ORDER BY year;
+"""
+
+df_2 = chdb.query(query, "DataFrame")
+df_2.head()
+```
+
+<Accordion title="Lire depuis plusieurs sources en une seule étape">
+  Il est également possible de lire depuis plusieurs sources en une seule étape. Pour ce faire, vous pouvez utiliser la requête ci-dessous avec une `JOIN` :
+
+  ```python
+  query = f"""
+  SELECT 
+      toYear(date) AS year,
+      avg(price) AS avg_price, housesSold
+  FROM remoteSecure(
+  '****.europe-west4.gcp.clickhouse.cloud',
+  default.pp_complete,
+  '{username}',
+  '{password}'
+  ) AS remote
+  JOIN (
+    SELECT 
+      toYear(date) AS year,
+      sum(houses_sold)*1000 AS housesSold
+      FROM file('/Users/datasci/Desktop/housing_in_london_monthly_variables.csv')
+    WHERE area = 'city of london' AND houses_sold IS NOT NULL
+    GROUP BY toYear(date)
+    ORDER BY year
+  ) AS local ON local.year = remote.year
+  WHERE town = 'LONDON'
+  GROUP BY toYear(date)
+  ORDER BY year;
+  """
+  ```
+</Accordion>
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="aperçu du DataFrame" />
+
+Bien qu’il manque des données à partir de 2020, nous pouvons représenter les deux jeux de données sur un même graphique pour les années 1995 à 2019.
+Dans une nouvelle cellule, exécutez la commande suivante :
+
+```python
+# Create a figure with two y-axes
+fig, ax1 = plt.subplots(figsize=(14, 8))
+
+# Plot houses sold on the left y-axis
+color = 'tab:blue'
+ax1.set_xlabel('Year')
+ax1.set_ylabel('Houses Sold', color=color)
+ax1.plot(df_2['year'], df_2['houses_sold'], marker='o', color=color, label='Houses Sold', linewidth=2)
+ax1.tick_params(axis='y', labelcolor=color)
+ax1.grid(True, alpha=0.3)
+
+# Create a second y-axis for price data
+ax2 = ax1.twinx()
+color = 'tab:red'
+ax2.set_ylabel('Average Price (£)', color=color)
+
+# Plot price data up until 2019
+ax2.plot(df[df['year'] <= 2019]['year'], df[df['year'] <= 2019]['avg_price'], marker='s', color=color, label='Average Price', linewidth=2)
+ax2.tick_params(axis='y', labelcolor=color)
+
+# Format price axis with currency formatting
+ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'£{x:,.0f}'))
+
+# Set title and show every 2nd year
+plt.title('London Housing Market: Sales Volume vs Prices Over Time', fontsize=14, pad=20)
+
+# Use years only up to 2019 for both datasets
+all_years = sorted(list(set(df_2[df_2['year'] <= 2019]['year']).union(set(df[df['year'] <= 2019]['year']))))
+years_to_show = all_years[::2]  # Every 2nd year
+ax1.set_xticks(years_to_show)
+ax1.set_xticklabels(years_to_show, rotation=45)
+
+# Add legends
+ax1.legend(loc='upper left')
+ax2.legend(loc='upper right')
+
+plt.tight_layout()
+plt.show()
+```
+
+<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="Graphique du jeu de données distant et du jeu de données local" />
+
+D’après le graphique, on voit que les ventes ont démarré autour de 160 000 en 1995 et ont rapidement progressé, pour culminer à environ 540 000 en 1999.
+Ensuite, les volumes ont fortement reculé jusqu’au milieu des années 2000, chutant brutalement pendant la crise financière de 2007-2008 pour retomber à environ 140 000.
+Les prix, en revanche, ont connu une croissance régulière et soutenue, passant d’environ 150 000 £ en 1995 à près de 300 000 £ en 2005.
+Cette croissance s’est nettement accélérée après 2012, avec une hausse marquée d’environ 400 000 £ à plus de 1 000 000 £ en 2019.
+Contrairement au volume des ventes, les prix ont été peu affectés par la crise de 2008 et ont continué de suivre une trajectoire ascendante. Aïe !
+
+<div id="summary">
+  ## Résumé
+</div>
+
+Ce guide a montré comment chDB permet d’explorer les données en toute fluidité dans les notebooks Jupyter en connectant ClickHouse Cloud à des sources de données locales.
+À partir du jeu de données UK Property Price, nous avons montré comment interroger des données distantes dans ClickHouse Cloud avec la fonction `remoteSecure()`, lire des fichiers CSV locaux avec le moteur de table `file()`, et convertir directement les résultats en Pandas DataFrames pour l’analyse et la visualisation.
+Grâce à chDB, les data scientists peuvent tirer parti des puissantes capacités SQL de ClickHouse avec des outils Python courants comme Pandas et matplotlib, ce qui facilite la combinaison de plusieurs sources de données pour une analyse approfondie.
+
+Même si bien des data scientists londoniens ne pourront sans doute pas s’offrir leur propre maison ou appartement de sitôt, ils peuvent au moins analyser le marché qui les en a exclus !

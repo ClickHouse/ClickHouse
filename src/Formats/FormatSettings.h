@@ -32,6 +32,7 @@ struct FormatSettings
     bool decimal_trailing_zeros = false;
     bool always_write_decimal_point_in_float_and_decimal = false;
     UInt64 float_precision = 0;
+    bool precise_float_parsing = true;
     bool trim_fixed_string = false;
     bool defaults_for_omitted_fields = true;
     bool is_writing_to_terminal = false;
@@ -184,6 +185,8 @@ struct FormatSettings
         ArrowCompression output_compression_method = ArrowCompression::NONE;
         bool output_date_as_uint16 = false;
         bool output_unsupported_types_as_binary = true;
+        bool input_use_native_reader = true;
+        bool output_use_native_writer = true;
     } arrow{};
 
     struct AvroSchemaRegistryTimeouts

@@ -141,7 +141,7 @@ static Float64 extractFloatParameter(const std::string & function_name, const st
     {
         Float64 value{};
         ReadBufferFromString buf(string_value);
-        if (tryReadFloatText(value, buf))
+        if (tryReadFloatTextPrecise(value, buf))
             return value;
         else
             throw Exception(ErrorCodes::BAD_ARGUMENTS,

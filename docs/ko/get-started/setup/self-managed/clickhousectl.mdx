@@ -1,0 +1,101 @@
+---
+description: 'clickhousectl, ClickHouse CLI를 사용하여 로컬 ClickHouse 버전을 설치하고 관리합니다'
+keywords: ['ClickHouse', '설치', 'clickhousectl', 'CLI']
+sidebarTitle: 'clickhousectl (CLI)'
+slug: /install/clickhousectl
+title: 'ClickHouse CLI로 설치'
+hide_title: true
+doc_type: 'guide'
+---
+
+<Info>
+  **Windows 사용자**
+
+  ClickHouse는 Linux 및 macOS에서 네이티브로 실행됩니다. Windows에서는
+  [Windows Subsystem for Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about)
+  환경에서 다음 단계를 실행하십시오.
+</Info>
+
+ClickHouse CLI(`clickhousectl`)를 사용하면 로컬 ClickHouse 버전을 설치하고 관리하고,
+서버를 시작하고, 쿼리를 실행할 수 있습니다.
+
+<Steps>
+  <Step>
+    ## ClickHouse CLI 설치
+
+    ```bash
+    curl https://clickhouse.com/cli | sh
+    ```
+
+    편의를 위해 `chctl` 별칭도 자동으로 생성됩니다.
+  </Step>
+
+  <Step>
+    ## ClickHouse 설치
+
+    최신 버전의 ClickHouse를 설치하고 기본값으로 설정합니다.
+
+    ```bash
+    clickhousectl local use latest
+    ```
+
+    `local use`는 해당 버전이 아직 설치되어 있지 않으면 설치하고, 이를 기본값으로 설정하며,
+    `~/.local/bin`(`PATH`에 포함됨)에 `clickhouse` 심볼릭 링크를 생성해
+    `clickhouse` 바이너리를 직접 실행할 수 있게 합니다. 따라서 이 문서의 이후 단계에서
+    `clickhouse` 명령을 그대로 실행할 수 있습니다.
+
+    특정 버전을 선택할 수도 있습니다.
+
+    ```bash
+    clickhousectl local use 26.5            # 최신 26.5.x.x
+    clickhousectl local use 26.5.2.39       # 정확한 버전
+    ```
+
+    <Info>
+      **use와 install의 차이**
+
+      `clickhousectl local use <version>`은 버전을 설치하고 *동시에* 기본값으로
+      설정하며, `PATH`의 `clickhouse` 심볼릭 링크를 업데이트합니다. 기본값이나
+      심볼릭 링크는 변경하지 않고 버전만 다운로드하려면
+      `clickhousectl local install <version>`을 사용하십시오.
+    </Info>
+  </Step>
+
+  <Step>
+    ## clickhouse-server 시작
+
+    ```bash
+    clickhousectl local server start
+    ```
+
+    서버는 백그라운드에서 실행됩니다. 실행 중인지 확인하려면 다음 명령을 실행하십시오.
+
+    ```bash
+    clickhousectl local server list
+    ```
+  </Step>
+
+  <Step>
+    ## clickhouse-client 시작
+
+    ```bash
+    clickhousectl local client
+    ```
+
+    다음과 비슷한 출력이 표시됩니다.
+
+    ```response
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    이제 ClickHouse에 SQL 명령을 보낼 준비가 되었습니다!
+
+    <Tip>
+      [Quick Start](/ko/get-started/setup/install)에서는 테이블을 생성하고 데이터를 삽입하는 방법을 단계별로 안내합니다.
+    </Tip>
+  </Step>
+</Steps>

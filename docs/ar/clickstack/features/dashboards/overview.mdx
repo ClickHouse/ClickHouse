@@ -1,0 +1,348 @@
+---
+slug: /use-cases/observability/clickstack/dashboards
+title: 'التصورات ولوحات المعلومات في ClickStack'
+sidebarTitle: 'لوحات المعلومات'
+description: 'التصورات ولوحات المعلومات في ClickStack'
+doc_type: 'guide'
+keywords: ['clickstack', 'لوحات المعلومات', 'تصور', 'المراقبة', 'الرصد']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
+
+يدعم ClickStack تصور الأحداث، مع دعم مدمج لإنشاء المخططات في ClickStack UI ‏(HyperDX). ويمكن إضافة هذه المخططات إلى لوحات المعلومات لمشاركتها مع مستخدمين آخرين.
+
+يمكن إنشاء التصورات من التتبعات أو المقاييس أو السجلات أو أي بنى أحداث واسعة يعرّفها المستخدم.
+
+<div id="creating-visualizations">
+  ## إنشاء التصورات
+</div>
+
+تتيح لك واجهة **Chart Explorer** في HyperDX تصور المقاييس والتتبعات والسجلات عبر الزمن، مما يسهّل إنشاء تصورات سريعة لتحليل البيانات. وتُستخدم هذه الواجهة أيضًا عند إنشاء لوحات المعلومات. يوضّح القسم التالي كيفية إنشاء تصور باستخدام Chart Explorer.
+
+يبدأ كل تصور باختيار **مصدر بيانات**، ثم **مقياس**، مع إمكانية إضافة **تعبيرات تصفية** وحقول **Group By** اختياريًا. ومن الناحية المفاهيمية، تستند التصورات في HyperDX في الخلفية إلى استعلام SQL من نوع `GROUP BY` — إذ تحدد المقاييس المطلوب تجميعها عبر الأبعاد المحددة.
+
+<Tip>
+  **إنشاء المخططات بالذكاء الاصطناعي**
+
+  يدعم ClickStack أيضًا إنشاء المخططات من مطالبات باللغة الطبيعية باستخدام ميزة [text-to-chart](/ar/clickstack/text-to-chart). صف ما تريد رؤيته، وسينشئ ClickStack التصور تلقائيًا.
+</Tip>
+
+على سبيل المثال، يمكنك رسم عدد الأخطاء (`count()`) مجمّعًا حسب اسم الخدمة.
+
+في الأمثلة أدناه، نستخدم مجموعة البيانات البعيدة المتاحة على [sql.clickhouse.com](https://sql.clickhouse.com)، والمشروحة في دليل [&quot;Remote Demo Dataset&quot;](/ar/clickstack/example-datasets/remote-demo-data). **ويمكنك أيضًا إعادة تنفيذ هذه الأمثلة بزيارة [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com).**
+
+<Steps>
+  <Step>
+    ### الانتقال إلى Chart Explorer
+
+    حدّد `Chart Explorer` من القائمة اليسرى.
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
+  </Step>
+
+  <Step>
+    ### إنشاء تصور
+
+    في المثال أدناه، نرسم متوسط مدة الطلب عبر الزمن لكل اسم خدمة. ويتطلب ذلك من المستخدم تحديد مقياس وعمود (يمكن أن يكون تعبير SQL) وحقل تجميع.
+
+    حدّد نوع التصور `Line/Bar` من القائمة العلوية، ثم مجموعة البيانات `Traces` (أو `Demo Traces` إذا كنت تستخدم [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). أكمل القيم التالية:
+
+    * Metric: `Average`
+    * Column: `Duration/1000`
+    * Where: `<empty>`
+    * Group By: `ServiceName`
+    * Alias: `Average Time`
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="تصور بسيط" size="lg" />
+
+    لاحظ أنه يمكنك تصفية الأحداث باستخدام عبارة SQL `WHERE` أو صياغة Lucene، كما يمكنك تحديد النطاق الزمني الذي ينبغي تصور الأحداث خلاله. كما يدعم النظام أيضًا سلاسل متعددة.
+
+    على سبيل المثال، صفِّ حسب الخدمة `frontend` بإضافة عامل التصفية `ServiceName:"frontend"`. ثم أضف سلسلة ثانية لعدد الأحداث عبر الزمن بالاسم المستعار `Count` بالنقر على `Add Series`.
+
+    <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="تصور بسيط 2" size="lg" />
+
+    لإنشاء سلسلة مشابهة لسلسلة موجودة، يمكنك تكرارها بدلًا من البدء من الصفر. انقر على أيقونة النسخ (`Duplicate series`) في صف السلسلة لإدراج نسخة مباشرة أسفلها. تحتفظ النسخة بإعدادات السلسلة الأصلية، مثل المقياس والعمود وعامل التصفية. بعد ذلك، لا تغيّر إلا الحقول المختلفة (مثل التجميع) وتمنح النسخة اسمًا مستعارًا خاصًا بها. يتوفر التكرار في أي موضع يدعم سلاسل متعددة. ويكون مخفيًا لأنواع التصور التي تسمح بسلسلة واحدة فقط، مثل `Number` و`Pie` و`Heatmap`.
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="أيقونة نسخ Duplicate series وتلميحها في صف سلسلة مخطط" size="lg" />
+
+    لإنشاء سلسلة مشابهة لسلسلة موجودة، يمكنك تكرارها بدلًا من البدء من الصفر. انقر على أيقونة النسخ (`Duplicate series`) في صف السلسلة لإدراج نسخة مباشرة أسفلها. تحتفظ النسخة بإعدادات السلسلة الأصلية، مثل المقياس والعمود وعامل التصفية. بعد ذلك، لا تغيّر إلا الحقول المختلفة (مثل التجميع) وتمنح النسخة اسمًا مستعارًا خاصًا بها. يتوفر التكرار في أي موضع يدعم سلاسل متعددة. ويكون مخفيًا لأنواع التصور التي تسمح بسلسلة واحدة فقط، مثل `Number` و`Pie` و`Heatmap`.
+
+    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="أيقونة نسخ Duplicate series وتلميحها في صف سلسلة مخطط" size="lg" />
+
+    <Note>
+      يمكن إنشاء التصورات من أي مصدر بيانات — مقاييس أو تتبعات أو سجلات. ويتعامل ClickStack مع جميع هذه الأنواع على أنها wide events. ويمكن تمثيل أي **عمود رقمي** على مخطط عبر الزمن، كما يمكن استخدام الأعمدة **النصية** أو **التاريخية** أو **الرقمية** في عمليات التجميع.
+
+      يتيح هذا النهج الموحّد إنشاء لوحات معلومات عبر أنواع telemetry باستخدام نموذج متّسق ومرن.
+    </Note>
+  </Step>
+</Steps>
+
+<div id="creating-dashboards">
+  ## إنشاء لوحات المعلومات
+</div>
+
+توفّر لوحات المعلومات وسيلةً لتجميع التصورات ذات الصلة، مما يتيح لك مقارنة المقاييس واستكشاف الأنماط جنبًا إلى جنب لتحديد الأسباب الجذرية المحتملة في أنظمتك. ويمكن استخدام هذه اللوحات في تحقيقات مخصّصة أو حفظها لأغراض المراقبة المستمرة.
+
+يمكن تطبيق عوامل التصفية العامة على مستوى لوحة المعلومات، بحيث تُطبَّق تلقائيًا على جميع التصورات داخل تلك اللوحة. ويتيح ذلك التعمّق المتّسق عبر المخططات ويبسّط ربط الأحداث عبر الخدمات وأنواع بيانات القياس عن بُعد.
+
+سننشئ أدناه لوحة معلومات تضم تصورين باستخدام مصادر بيانات السجل وبيانات التتبّع. ويمكن إعادة تنفيذ هذه الخطوات على [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) أو محليًا من خلال الاتصال بمجموعة البيانات المستضافة على [sql.clickhouse.com](https://sql.clickhouse.com)، كما هو موضّح في دليل [&quot;Remote Demo Dataset&quot;](/ar/clickstack/example-datasets/remote-demo-data).
+
+<Steps>
+  <Step>
+    ### انتقل إلى لوحات المعلومات
+
+    اختر `Dashboards` من القائمة الجانبية اليسرى، ثم انقر على `New Dashboard` لإنشاء لوحة معلومات مؤقتة أو محفوظة.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="إنشاء لوحة معلومات" size="lg" />
+  </Step>
+
+  <Step>
+    ### أنشئ تصورًا — متوسط وقت الطلب حسب الخدمة
+
+    اختر `Add New Tile` لفتح لوحة إنشاء التصور.
+
+    اختر نوع التصور `Line/Bar` من القائمة العلوية، ثم مجموعة البيانات `Traces` (أو `Demo Traces` إذا كنت تستخدم [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). ثم أكمل القيم التالية لإنشاء مخطط يعرض متوسط مدة الطلب بمرور الوقت لكل اسم خدمة:
+
+    * اسم المخطط: `Average duration by service`
+    * المقياس: `Average`
+    * العمود: `Duration/1000`
+    * Where: `<empty>`
+    * التجميع حسب: `ServiceName`
+    * الاسم المستعار: `Average Time`
+
+    انقر على زر **play** قبل النقر على `Save`.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="إنشاء تصور للوحة المعلومات" size="lg" />
+
+    عدّل حجم التصور ليشغل كامل عرض لوحة المعلومات.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="لوحة معلومات تحتوي على تصورات" size="lg" />
+  </Step>
+
+  <Step>
+    ### أنشئ تصورًا – الأحداث بمرور الوقت حسب الخدمة
+
+    حدِّد `Add New Tile` لفتح لوحة إنشاء التصور.
+
+    حدِّد `Line/Bar` كـ visualization type من القائمة العلوية، ثم مجموعة البيانات `Logs` (أو `Demo Logs` إذا كنت تستخدم [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)). أكمل القيم التالية لإنشاء مخطط يوضّح عدد الأحداث بمرور الوقت لكل اسم خدمة:
+
+    * Chart Name: `Event count by service`
+    * Metric: `Count of Events`
+    * Where: `<empty>`
+    * Group By: `ServiceName`
+    * Alias: `Count of events`
+
+    انقر زر **play** قبل النقر على `Save`.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="تصور لوحة المعلومات 2" size="lg" />
+
+    غيّر حجم التصور ليشغل العرض الكامل للوحة المعلومات.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="لوحة المعلومات مع تصورات 2" size="lg" />
+  </Step>
+
+  <Step>
+    ### أضف بطاقة heatmap لمدة الـ span
+
+    تعرض بطاقات Heatmap عدد الأحداث التي تقع ضمن كل حاوية (وقت، قيمة) على هيئة شبكة ملوّنة. استخدم heatmap عندما تريد رؤية **شكل** التوزيع عبر الزمن، لا الاكتفاء بالمتوسط أو بقيمة مئينية واحدة. تكشف heatmap الخاصة بالكمون أنماط المدة ثنائية القمة، وتجمّعات الذيل البطيء، أو الاتساعات المفاجئة التي قد يُخفيها مخطط خطي عند الاكتفاء بالمتوسط.
+
+    لإضافة بطاقة heatmap:
+
+    1. حدِّد `Add New Tile`.
+    2. اختر نوع التصور `Heatmap` من القائمة العلوية. لا تعرض القائمة المنسدلة لمصدر البيانات إلا المصادر التي يكون [نوع المصدر فيها `Traces`](/ar/clickstack/managing/config#traces). وتُستبعَد مصادر logs وmetrics وsession، لأن heatmaps تحتاج إلى عمود لمدة الـ span لا توفره إلا مصادر traces.
+    3. اختر أيًّا من مصادر traces لديك بالاسم. الاسم بحد ذاته اعتباطي، والمهم هو النوع فقط.
+
+    بمجرد تحديد مصدر، يملأ heatmap القيم التالية مسبقًا:
+
+    * **القيمة**: `Duration Expression` الخاص بالمصدر، بعد تحجيمه إلى وحدة العرض الحالية (على سبيل المثال `(Duration)/1e6` لتحويل مدة الـ span لكل حدث من نانوثانية إلى ميلي ثانية)
+    * **العدد**: `count()`
+
+    4. عيّن اسمًا للمخطط، واستخدم `Where` لقصر heatmap على service معيّنة أو مجموعة من العمليات التي تريد مراقبة أدائها.
+    5. اضبط النطاق الزمني ليتوافق مع الفترة محل الاهتمام. تكشف النطاقات الأوسع تحولات التوزيع وأنماط الكمون ثنائية القمة التي قد تخفيها النوافذ الأقصر.
+
+    يوضح المثال أدناه service واحدة عبر نافذة مدتها 24 ساعة، مع انفصال المسارين السريع والبطيء لمدة الـ span بوضوح في نطاقين أفقيين.
+
+    لمزيد من تخصيص heatmap، انقر **إعدادات العرض** لفتح درج جانبي لإعداد **المقياس** (Log أو Linear) و**القيمة** وعبارة **العدد**. القائمة الكاملة للخيارات موثقة في [تخصيص heatmap](/ar/clickstack/features/event-deltas#customize) في صفحة Event Deltas. ويُعاد استخدام الدرج الجانبي نفسه هنا.
+
+    انقر `Run` لمعاينة المخطط، ثم `Save`.
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="محرر بطاقة Heatmap مع تعبئة القيم الافتراضية لمدة الـ span مسبقًا، ومرشح ServiceName payment، وزر إعدادات العرض" size="lg" />
+
+    تُعرَض البطاقة المحفوظة كـ heatmap على لوحة المعلومات. مرّر المؤشر فوق أي خلية لرؤية حدود الحاوية وعدد الأحداث.
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="بطاقة heatmap على لوحة المعلومات تعرض توزيع مدة الـ span لخدمة payment على مدى 24 ساعة" size="lg" />
+
+    <Tip>
+      **استعلاما ClickHouse لكل heatmap**
+
+      تعمل heatmap عبر استعلامين متتابعين: **استعلام حدود** صغير يحدد نطاق القيم، ثم **استعلام heatmap** يحسب عدد الأحداث في كل حاوية. يظهر كلا الاستعلامين في المحرر ضمن **Generated SQL** إذا أردت فحصهما أو نسخهما.
+    </Tip>
+
+    #### الانتقال التفصيلي إلى Event Deltas
+
+    انقر على أي خلية في بطاقة heatmap المعروضة لفتح إجراء **View in Event Deltas**.
+
+    <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="يكشف النقر على خلية في heatmap إجراء View in Event Deltas" size="lg" />
+
+    يؤدي تحديده إلى فتح عرض [Event Deltas](/ar/clickstack/features/event-deltas) مع تمرير مصدر بيانات البطاقة وعبارة `Where` والنطاق الزمني. ومن هناك يمكنك فحص التوزيع نفسه بصورة تفاعلية، والتقسيم حسب attribute لمعرفة ما الذي يجعل spans البطيئة مختلفة عن السريعة، وفحص spans الفردية وراء أي خلية، من دون إعادة بناء الاستعلام يدويًا.
+  </Step>
+
+  <Step>
+    ### تصفية لوحة المعلومات
+
+    يمكن تطبيق عوامل تصفية Lucene أو SQL، إلى جانب النطاق الزمني، على مستوى لوحة المعلومات، وستُطبَّق تلقائيًا على جميع التصورات.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="لوحة معلومات مع التصفية" size="lg" />
+
+    للتوضيح، طبّق عامل تصفية Lucene ‏`ServiceName:"frontend"` على لوحة المعلومات، وعدّل النافذة الزمنية لتشمل آخر 3 ساعات. لاحظ كيف تعرض التصورات الآن بيانات خدمة `frontend` فقط.
+
+    سيُحفَظ dashboard تلقائيًا. لتعيين اسم dashboard، حدِّد العنوان وعدِّله قبل النقر على `Save Name`.
+
+    <Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="حفظ لوحة المعلومات" size="lg" />
+  </Step>
+</Steps>
+
+<div id="dashboards-editing-visualizations">
+  ## لوحات المعلومات - تحرير التصورات
+</div>
+
+لإزالة تصور أو تعديله أو نسخه، مرّر المؤشر فوقه واستخدم أزرار الإجراءات المقابلة.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="تحرير لوحة المعلومات" size="lg" />
+
+<div id="dashboard-listing-search">
+  ## لوحة المعلومات - العرض والبحث
+</div>
+
+يمكن الوصول إلى لوحات المعلومات من صفحة لوحات المعلومات. وهي منظَّمة حسب الوسوم، مع إمكانات بحث وتصفية مدمجة للعثور بسرعة على لوحات معلومات معيّنة.
+
+يمكن إضافة لوحات المعلومات إلى المفضلة لسهولة الوصول إليها من الشريط الجانبي ومن أعلى صفحة العرض. وتكون المفضلة خاصة بكل مستخدم على حدة.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="البحث في لوحة المعلومات" size="lg" />
+
+<div id="tagging">
+  ## لوحات المعلومات - الوسوم
+</div>
+
+<Tagging />
+
+<div id="custom-filters">
+  ## فلاتر مخصصة
+</div>
+
+بالإضافة إلى [فلاتر النص الحر](#filter-dashboards) المتاحة في جميع لوحات المعلومات، تدعم لوحات المعلومات المحفوظة فلاتر مخصصة منسدلة تُعبَّأ ببيانات مستعلَمة من ClickHouse. وتوفّر هذه الفلاتر عناصر تحكم قابلة لإعادة الاستخدام تعتمد على النقر والاختيار، بحيث يتمكن مشاهدو لوحة المعلومات من التصفية من دون كتابة التعبيرات يدويًا.
+
+<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="فلتر خدمات منسدل يعرض أسماء الخدمات المتاحة" size="lg" />
+
+توضّح الخطوات التالية كيفية إضافة فلتر مخصص إلى لوحة المعلومات التي أُنشئت في قسم [&quot;إنشاء لوحات المعلومات&quot;](#creating-dashboards).
+
+<Steps>
+  <Step>
+    ### افتح مربع حوار Edit Filters
+
+    افتح لوحة معلومات محفوظة، ثم حدّد **Edit Filters** من شريط الأدوات.
+
+    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="زر Edit Filters في شريط أدوات لوحة المعلومات" size="lg" />
+  </Step>
+
+  <Step>
+    ### أضف فلترًا جديدًا
+
+    انقر على **Add new filter**. اضبط الفلتر بإدخال **Name**، وتحديد **Data source**، وإدخال **Filter expression** — وهو عمود أو تعبير SQL تُستخدم قيمه المميزة لتعبئة القائمة المنسدلة. ثم انقر على **Save filter**.
+
+    على سبيل المثال، لإضافة فلتر خدمة لبيانات التتبّع، استخدم `ServiceName` كتعبير للتصفية مع مصدر البيانات `Traces`. ويُعد &quot;Dropdown values filter&quot; اختياريًا، ويوفّر طريقة لتقييد القيم التي تظهر في القائمة المنسدلة.
+
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="مربع حوار إضافة فلتر يحتوي على حقول Name وData source وFilter expression" size="md" />
+
+    تعرض النافذة المنبثقة Filters جميع الفلاتر المُعدّة للوحة المعلومات. ومن هنا يمكنك تعديل الفلاتر الحالية أو حذفها، أو إضافة فلاتر أخرى.
+
+    <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="النافذة المنبثقة Filters تعرض فلتر Services مُعدًّا" size="md" />
+  </Step>
+
+  <Step>
+    ### استخدم الفلتر
+
+    أغلق النافذة المنبثقة Filters. سيظهر الفلتر المنسدل الجديد أسفل شريط البحث. انقر عليه لعرض القيم المتاحة، ثم اختر واحدة لتصفية جميع التصورات في لوحة المعلومات.
+
+    <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="لوحة معلومات تمت تصفيتها إلى خدمة frontend" size="lg" />
+  </Step>
+
+  <Step>
+    ### (اختياري) احفظ قيم الفلتر كإعداد افتراضي
+
+    للاحتفاظ باختيار الفلتر بوصفه الإعداد الافتراضي للوحة المعلومات، اختر **Save Query &amp; Filters as Default** من قائمة لوحة المعلومات. ستُفتح لوحة المعلومات دائمًا مع تطبيق الفلاتر المحددة. ولإعادة التعيين، حدّد **Remove Default Query &amp; Filters** من القائمة نفسها.
+
+    <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="قائمة لوحة المعلومات تعرض خيار Save Query and Filters as Default" size="lg" />
+  </Step>
+</Steps>
+
+<Note>
+  تتوفر الفلاتر المنسدلة المخصصة في لوحات المعلومات المحفوظة. وللاطلاع على مثال عملي لهذا النمط، راجع [لوحة معلومات Kubernetes](#kubernetes-dashboard)، التي توفّر فلاتر منسدلة مضمّنة لكل من Pod وDeployment واسم العقدة وNamespace وCluster.
+</Note>
+
+<div id="drilldown-to-search">
+  ## التعمّق إلى Search
+</div>
+
+تدعم بلاطات لوحة المعلومات التعمّق إلى صفحة Search. انقر على نقطة بيانات في تصور لفتح قائمة سياقية تتضمن الخيارات التالية:
+
+* **عرض جميع الأحداث** — ينقلك إلى صفحة Search لعرض جميع الأحداث ضمن النافذة الزمنية المحددة.
+* **التصفية حسب المجموعة** — ينقلك إلى صفحة Search بعد تطبيق تصفية على سلسلة محددة.
+
+<Image img="/images/clickstack/dashboards/drilldown.webp" alt="قائمة سياقية للتعمّق تعرض خياري عرض جميع الأحداث والتصفية حسب المجموعة" size="lg" />
+
+يفيد ذلك عند التحقق من الارتفاعات المفاجئة أو الحالات الشاذة التي تلاحظها في لوحة المعلومات — إذ يمكنك الانتقال سريعًا من عرض مُجمّع إلى الأحداث الفردية الأساسية.
+
+<div id="presets">
+  ## إعدادات مسبقة
+</div>
+
+يأتي HyperDX مزوّدًا بلوحات معلومات جاهزة للاستخدام.
+
+<div id="clickhouse-dashboard">
+  ### لوحة معلومات ClickHouse
+</div>
+
+توفر لوحة المعلومات هذه تصورات مرئية لمراقبة ClickHouse. للانتقال إلى لوحة المعلومات هذه، حدّدها من القائمة اليمنى.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="لوحة معلومات ClickHouse" size="lg" />
+
+تستخدم لوحة المعلومات هذه علامات تبويب لفصل مراقبة **Selects** و**Inserts** و**البنية التحتية لـ ClickHouse**.
+
+<Info>
+  **وصول مطلوب إلى جداول النظام**
+
+  تستعلم لوحة المعلومات هذه من [جداول النظام](/ar/reference/system-tables/index) في ClickHouse لعرض المقاييس الرئيسية. وتلزم امتيازات الوصول التالية:
+
+  `GRANT SHOW COLUMNS, SELECT(CurrentMetric_MemoryTracking, CurrentMetric_S3Requests, ProfileEvent_OSCPUVirtualTimeMicroseconds, ProfileEvent_OSReadChars, ProfileEvent_OSWriteChars, ProfileEvent_S3GetObject, ProfileEvent_S3ListObjects, ProfileEvent_S3PutObject, ProfileEvent_S3UploadPart, event_time) ON system.metric_log`
+
+  `GRANT SHOW COLUMNS, SELECT(active, database, partition, rows, table) ON system.parts`
+
+  `GRANT SHOW COLUMNS, SELECT(event_date, event_time, memory_usage, normalized_query_hash, query, query_duration_ms, query_kind, read_rows, tables, type, written_bytes, written_rows) ON system.query_log`
+
+  `GRANT SHOW COLUMNS, SELECT(event_date, event_time, hostname, metric, value) ON system.transposed_metric_log`
+</Info>
+
+<div id="services-dashboard">
+  ### لوحة معلومات الخدمات
+</div>
+
+تعرض لوحة معلومات الخدمات الخدمات النشطة حاليًا استنادًا إلى بيانات التتبعات. ويتطلب ذلك أن تكون قد جمعت التتبعات وتهيّئ مصدر بيانات Traces صالحًا.
+
+تُكتشف أسماء الخدمات تلقائيًا من بيانات التتبعات، مع مجموعة من التصورات الجاهزة والمنظَّمة ضمن ثلاث علامات تبويب: خدمات HTTP، وقاعدة البيانات، والأخطاء.
+
+يمكن تصفية التصورات باستخدام صيغة Lucene أو SQL، كما يمكن ضبط النافذة الزمنية لإجراء تحليل أكثر تركيزًا.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="خدمات ClickHouse" size="lg" />
+
+<div id="kubernetes-dashboard">
+  ### لوحة معلومات Kubernetes
+</div>
+
+تتيح لك لوحة المعلومات هذه استكشاف أحداث Kubernetes التي جُمعت عبر OpenTelemetry. وتتضمن خيارات تصفية متقدمة، ما يتيح لك التصفية حسب Pod في Kubernetes، وDeployment، واسم العقدة، ومساحة الأسماء، والعنقود، بالإضافة إلى إجراء عمليات بحث بالنص الحر.
+
+تُنظَّم بيانات Kubernetes ضمن ثلاث علامات تبويب لتسهيل التنقل: Pods وNodes وNamespaces.
+
+<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg" />

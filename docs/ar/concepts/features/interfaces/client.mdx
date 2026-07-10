@@ -1,0 +1,957 @@
+---
+description: 'توثيق واجهة عميل سطر الأوامر لـ ClickHouse'
+sidebarTitle: 'عميل ClickHouse'
+slug: /interfaces/client
+title: 'عميل ClickHouse'
+doc_type: 'مرجع'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوفّر ClickHouse عميل سطر أوامر أصليًا لتنفيذ استعلامات SQL مباشرةً على خادم ClickHouse.
+ويدعم كلًا من الوضع التفاعلي (لتنفيذ الاستعلامات مباشرةً) ووضع الدُفعات (للبرامج النصية والأتمتة).
+يمكن عرض نتائج الاستعلام في الطرفية أو تصديرها إلى ملف، مع دعم جميع [تنسيقات](/ar/reference/formats/index) إخراج ClickHouse، مثل Pretty وCSV وJSON وغيرها.
+
+يوفّر العميل معلومات آنية عن تنفيذ الاستعلام عبر شريط التقدّم، وعدد الصفوف المقروءة، والبايتات المُعالجة، وزمن تنفيذ الاستعلام.
+كما يدعم كلًا من [خيارات سطر الأوامر](#command-line-options) و[ملفات التهيئة](#configuration_files).
+
+<div id="install">
+  ## التثبيت
+</div>
+
+لتنزيل ClickHouse، نفّذ:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+ولتثبيته أيضًا، شغّل:
+
+```bash
+sudo ./clickhouse install
+```
+
+راجع [تثبيت ClickHouse](/ar/get-started/setup/install) للاطلاع على مزيد من خيارات التثبيت.
+
+تتوافق الإصدارات المختلفة للعميل والخادم مع بعضها البعض، لكن قد لا تتوفر بعض الميزات في إصدارات العميل الأقدم. نوصي باستخدام الإصدار نفسه لكل من العميل والخادم.
+
+<div id="run">
+  ## تشغيل
+</div>
+
+<Note>
+  إذا كنت قد نزّلت ClickHouse فقط ولم تثبّته، فاستخدم `./clickhouse client` بدلًا من `clickhouse-client`.
+</Note>
+
+للاتصال بخادم ClickHouse، شغّل:
+
+```bash
+$ clickhouse-client --host server
+
+ClickHouse client version 24.12.2.29 (official build).
+Connecting to server:9000 as user default.
+Connected to ClickHouse server version 24.12.2.
+
+:)
+```
+
+حدِّد تفاصيل اتصال إضافية حسب الحاجة:
+
+| Option                           | Description                                                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--port <port>`                  | المنفذ الذي يقبل خادم ClickHouse الاتصالات عليه. المنافذ الافتراضية هي 9440 ‏(TLS) و9000 ‏(من دون TLS). لاحظ أن عميل ClickHouse يستخدم البروتوكول الأصلي وليس HTTP(S). |
+| `-s [ --secure ]`                | ما إذا كان ينبغي استخدام TLS (يُكتشف تلقائيًا عادةً).                                                                                                                    |
+| `-u [ --user ] <username>`       | مستخدم قاعدة البيانات الذي سيتم الاتصال باسمه. يتصل بالمستخدم `default` افتراضيًا.                                                                                       |
+| `--password <password>`          | كلمة مرور مستخدم قاعدة البيانات. يمكنك أيضًا تحديد كلمة المرور لاتصالٍ ما في ملف تهيئة. إذا لم تحدد كلمة المرور، فسيطلبها العميل.                                    |
+| `-c [ --config ] <path-to-file>` | موقع ملف تهيئة الخاص بـ عميل ClickHouse، إذا لم يكن موجودًا في أحد المواقع الافتراضية. راجع [ملفات التهيئة](#configuration_files).                                 |
+| `--connection <name>`            | اسم تفاصيل الاتصال المُعدّة مسبقًا من [ملف التهيئة](#connection-credentials).                                                                                          |
+
+للاطلاع على قائمة كاملة بخيارات سطر الأوامر، راجع [خيارات سطر الأوامر](#command-line-options).
+
+<div id="connecting-cloud">
+  ### الاتصال بـ ClickHouse Cloud
+</div>
+
+تتوفر تفاصيل خدمة ClickHouse Cloud الخاصة بك في وحدة تحكم ClickHouse Cloud. حدِّد الخدمة التي تريد الاتصال بها ثم انقر على **Connect**:
+
+<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="زر Connect لخدمة ClickHouse Cloud" />
+
+<br />
+
+<br />
+
+اختر **Native**، وستظهر التفاصيل مع مثال لأمر `clickhouse-client`:
+
+<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="تفاصيل اتصال Native TCP لخدمة ClickHouse Cloud" />
+
+<div id="connection-credentials">
+  ### تخزين تفاصيل الاتصال في ملف تهيئة
+</div>
+
+يمكنك تخزين تفاصيل الاتصال بخادم ClickHouse واحد أو أكثر في [ملف تهيئة](#configuration_files).
+
+يكون التنسيق كما يلي:
+
+```xml
+<config>
+    <connections_credentials>
+        <connection>
+            <name>default</name>
+            <hostname>hostname</hostname>
+            <port>9440</port>
+            <secure>1</secure>
+            <user>default</user>
+            <password>password</password>
+            <!-- <history_file></history_file> -->
+            <!-- <history_max_entries></history_max_entries> -->
+            <!-- <accept-invalid-certificate>false</accept-invalid-certificate> -->
+            <!-- <prompt></prompt> -->
+        </connection>
+    </connections_credentials>
+</config>
+```
+
+راجع [قسم ملفات التهيئة](#configuration_files) لمزيد من المعلومات.
+
+<Note>
+  للتركيز على بناء جملة الاستعلام، حُذفت تفاصيل الاتصال (`--host`, `--port`، إلخ) من بقية الأمثلة. تذكّر إضافتها عند استخدام الأوامر.
+</Note>
+
+<div id="interactive-mode">
+  ## الوضع التفاعلي
+</div>
+
+<div id="using-interactive-mode">
+  ### استخدام الوضع التفاعلي
+</div>
+
+لتشغيل ClickHouse في الوضع التفاعلي، ما عليك سوى تنفيذ ما يلي:
+
+```bash
+clickhouse-client
+```
+
+يؤدي هذا إلى فتح حلقة القراءة-التقييم-الطباعة (REPL)، حيث يمكنك بدء كتابة استعلامات SQL بشكل تفاعلي.
+وبعد الاتصال، سيظهر لك موجّه يمكنك من خلاله إدخال الاستعلامات:
+
+```bash
+ClickHouse client version 25.x.x.x
+Connecting to localhost:9000 as user default.
+Connected to ClickHouse server version 25.x.x.x
+
+hostname :)
+```
+
+في الوضع التفاعلي، يكون تنسيق الإخراج الافتراضي هو `PrettyCompact`.
+يمكنك تغيير التنسيق في بند `FORMAT` في الاستعلام أو بتحديد خيار سطر الأوامر `--format`.
+لاستخدام Vertical format، يمكنك استخدام `--vertical` أو إضافة `\G` في نهاية الاستعلام.
+في هذا التنسيق، تُطبع كل قيمة في سطر منفصل، وهو ما يكون مناسبًا للجداول العريضة.
+
+في الوضع التفاعلي، يُنفَّذ افتراضيًا كل ما تُدخله عند الضغط على `Enter`.
+ولا تحتاج إلى فاصلة منقوطة في نهاية الاستعلام.
+
+يمكنك تشغيل العميل باستخدام المعامل `-m, --multiline`.
+ولإدخال استعلام متعدد الأسطر، أدخل شرطة مائلة عكسية `\` قبل محرف سطر جديد.
+بعد الضغط على `Enter`، سيُطلب منك إدخال السطر التالي من الاستعلام.
+ولتنفيذ الاستعلام، أنهِه بفاصلة منقوطة ثم اضغط `Enter`.
+
+يعتمد عميل ClickHouse على `replxx` (وهو مشابه لـ `readline`)، لذا فهو يستخدم اختصارات لوحة مفاتيح مألوفة ويحتفظ بسجل الأوامر.
+ويُكتَب سجل الأوامر افتراضيًا في `~/.clickhouse-client-history`.
+
+للخروج من العميل، اضغط `Ctrl+D`، أو أدخل أحد الخيارات التالية بدلًا من الاستعلام:
+
+* `exit` أو `exit;`
+* `quit` أو `quit;`
+* `q` أو `Q` أو `:q`
+* `logout` أو `logout;`
+
+<div id="processing-info">
+  ### معلومات عن معالجة الاستعلام
+</div>
+
+عند معالجة استعلام، يعرض العميل ما يلي:
+
+1. معلومات التقدّم، وتُحدَّث افتراضيًا بما لا يزيد على 10 مرات في الثانية.
+   بالنسبة إلى الاستعلامات السريعة، قد لا يكون هناك وقت كافٍ لعرض التقدّم.
+2. الاستعلام بعد تنسيقه وبعد التحليل، لأغراض تصحيح الأخطاء.
+3. النتيجة بالتنسيق المحدد.
+4. عدد الأسطر في النتيجة، والوقت المنقضي، ومتوسط سرعة معالجة الاستعلام.
+   تشير جميع كميات البيانات إلى بيانات غير مضغوطة.
+
+يمكنك إلغاء استعلام طويل بالضغط على `Ctrl+C`.
+ومع ذلك، ستظل بحاجة إلى الانتظار قليلًا حتى يُلغي الخادم الطلب.
+لا يمكن إلغاء الاستعلام في مراحل معيّنة.
+إذا لم تنتظر وضغطت على `Ctrl+C` مرةً ثانية، فسيخرج العميل.
+
+يتيح عميل ClickHouse تمرير بيانات خارجية (جداول مؤقتة خارجية) لاستخدامها في الاستعلام.
+لمزيد من المعلومات، راجع قسم [البيانات الخارجية لمعالجة الاستعلام](/ar/reference/engines/table-engines/special/external-data).
+
+<div id="cli_aliases">
+  ### الأسماء المستعارة
+</div>
+
+يمكنك استخدام الأسماء المستعارة التالية من داخل بيئة REPL:
+
+* `\l` - SHOW DATABASES
+* `\d` - SHOW TABLES
+* `\c <DATABASE>` - USE DATABASE
+* `.` - كرّر آخر استعلام
+
+<div id="keyboard_shortcuts">
+  ### اختصارات لوحة المفاتيح
+</div>
+
+* `Alt (Option) + Shift + e` - افتح المحرر مع الاستعلام الحالي. يمكن تحديد المحرر المراد استخدامه عبر متغير البيئة `EDITOR`. يُستخدم `vim` افتراضيًا.
+* `Alt (Option) + #` - علّق السطر.
+* `Ctrl + r` - بحث تقريبي في السجل.
+
+تتوفر القائمة الكاملة بجميع اختصارات لوحة المفاتيح المتاحة في [replxx](https://github.com/AmokHuginnsson/replxx/blob/1f149bf/src/replxx_impl.cxx#L262).
+
+<Tip>
+  لضبط عمل مفتاح Meta ‏(Option) بشكل صحيح على MacOS:
+
+  iTerm2: انتقل إلى Preferences -&gt; Profile -&gt; Keys -&gt; Left Option key ثم انقر على Esc+
+</Tip>
+
+<div id="batch-mode">
+  ## وضع الدُفعات
+</div>
+
+<div id="using-batch-mode">
+  ### استخدام وضع الدُفعات
+</div>
+
+بدلاً من استخدام عميل ClickHouse بشكل تفاعلي، يمكنك تشغيله في وضع الدُفعات.
+في وضع الدُفعات، ينفّذ ClickHouse استعلامًا واحدًا ثم يُنهي التشغيل فورًا - فلا يوجد موجّه أوامر تفاعلي ولا حلقة تكرار.
+
+يمكنك تحديد استعلام واحد كما يلي:
+
+```bash
+$ clickhouse-client "SELECT sum(number) FROM numbers(10)"
+45
+```
+
+يمكنك أيضًا استخدام الخيار `--query` في سطر الأوامر:
+
+```bash
+$ clickhouse-client --query "SELECT uniq(number) FROM numbers(10)"
+10
+```
+
+يمكنك تمرير استعلام عبر `stdin`:
+
+```bash
+$ echo "SELECT avg(number) FROM numbers(10)" | clickhouse-client
+4.5
+```
+
+بافتراض وجود جدول باسم `messages`، يمكنك أيضًا إدراج البيانات من سطر الأوامر:
+
+```bash
+$ echo "Hello\nGoodbye" | clickhouse-client --query "INSERT INTO messages FORMAT CSV"
+```
+
+عند تحديد `--query`، تُضاف أي مدخلات إلى الطلب بعد محرف سطر جديد.
+
+<div id="cloud-example">
+  ### إدراج ملف CSV في خدمة ClickHouse عن بُعد
+</div>
+
+يوضح هذا المثال كيفية إدراج ملف CSV لمجموعة بيانات تجريبية، `cell_towers.csv`، في الجدول الموجود `cell_towers` ضمن قاعدة البيانات `default`:
+
+```bash
+clickhouse-client --host HOSTNAME.clickhouse.cloud \
+  --port 9440 \
+  --user default \
+  --password PASSWORD \
+  --query "INSERT INTO cell_towers FORMAT CSVWithNames" \
+  < cell_towers.csv
+```
+
+<div id="more-examples">
+  ### أمثلة على إدراج البيانات من سطر الأوامر
+</div>
+
+هناك عدة طرق لإدراج البيانات من سطر الأوامر.
+يوضح المثال أدناه كيفية إدراج صفَّين من بيانات CSV في جدول ClickHouse باستخدام وضع الدُفعات:
+
+```bash
+echo -ne "1, 'some text', '2016-08-14 00:00:00'\n2, 'some more text', '2016-08-14 00:00:01'" | \
+  clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```
+
+في المثال أدناه، يبدأ `cat <<_EOF` كتلة heredoc التي تقرأ كل شيء حتى تصادف `_EOF` مرة أخرى، ثم تُخرِجه:
+
+```bash
+cat <<_EOF | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+3, 'some text', '2016-08-14 00:00:00'
+4, 'some more text', '2016-08-14 00:00:01'
+_EOF
+```
+
+في المثال أدناه، تُعرَض محتويات الملف file.csv على stdout باستخدام `cat`، ثم تُمرَّر عبر أنبوب إلى `clickhouse-client` كمدخلات:
+
+```bash
+cat file.csv | clickhouse-client --database=test --query="INSERT INTO test FORMAT CSV";
+```
+
+في وضع الدُفعات، يكون [تنسيق](/ar/reference/formats/index) البيانات الافتراضي هو `TabSeparated`.
+يمكنك تعيين التنسيق في عبارة `FORMAT` في الاستعلام كما هو موضح في المثال أعلاه.
+
+<div id="cli-queries-with-parameters">
+  ## الاستعلامات ذات المعلمات
+</div>
+
+يمكنك تحديد معلمات في الاستعلام وتمرير قيم إليها باستخدام خيارات سطر الأوامر.
+يؤدي ذلك إلى تجنّب تنسيق الاستعلام بقيم ديناميكية محددة من جهة العميل.
+على سبيل المثال:
+
+```bash
+$ clickhouse-client --param_parName="[1, 2]" --query "SELECT {parName: Array(UInt16)}"
+[1,2]
+```
+
+يمكن أيضًا تعيين المعلمات ضمن [جلسة تفاعلية](#interactive-mode):
+
+```text highlight={4,14}
+$ clickhouse-client
+ClickHouse client version 25.X.X.XXX (official build).
+
+:) SET param_parName='[1, 2]';
+
+SET param_parName = '[1, 2]'
+
+Query id: 7ac1f84e-e89a-4eeb-a4bb-d24b8f9fd977
+
+Ok.
+
+0 rows in set. Elapsed: 0.000 sec.
+
+:) SELECT {parName:Array(UInt16)}
+
+SELECT {parName:Array(UInt16)}
+
+Query id: 0358a729-7bbe-4191-bb48-29b063c548a7
+
+   ┌─_CAST([1, 2]⋯y(UInt16)')─┐
+1. │ [1,2]                    │
+   └──────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+<div id="cli-queries-with-parameters-syntax">
+  ### بنية الاستعلام
+</div>
+
+في الاستعلام، ضع القيم التي تريد تعبئتها باستخدام معلمات سطر الأوامر بين أقواس معقوفة بالتنسيق التالي:
+
+```sql
+{<name>:<data type>}
+```
+
+| المعلمة     | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`      | معرّف العنصر النائب. خيار سطر الأوامر المقابل هو `--param_<name> = value`.                                                                                                                                                                                                                                                                                                                                                             |
+| `data type` | [نوع البيانات](/ar/reference/data-types/index) للمعلمة. <br /><br />على سبيل المثال، يمكن أن يكون نوع البيانات لبنية بيانات مثل `(integer, ('string', integer))` هو `Tuple(UInt8, Tuple(String, UInt8))` (ويمكنك أيضًا استخدام أنواع [integer](/ar/reference/data-types/int-uint) أخرى). <br /><br />كما يمكن أيضًا تمرير اسم الجدول واسم قاعدة البيانات وأسماء الأعمدة كمعلمات، وفي هذه الحالة ستحتاج إلى استخدام `Identifier` كنوع بيانات. |
+
+<div id="cli-queries-with-parameters-examples">
+  ### أمثلة
+</div>
+
+```bash
+$ clickhouse-client --param_tuple_in_tuple="(10, ('dt', 10))" \
+    --query "SELECT * FROM table WHERE val = {tuple_in_tuple:Tuple(UInt8, Tuple(String, UInt8))}"
+
+$ clickhouse-client --param_tbl="numbers" --param_db="system" --param_col="number" --param_alias="top_ten" \
+    --query "SELECT {col:Identifier} as {alias:Identifier} FROM {db:Identifier}.{tbl:Identifier} LIMIT 10"
+```
+
+<div id="ai-sql-generation">
+  ## توليد SQL بالاستعانة بالذكاء الاصطناعي
+</div>
+
+يتضمن ClickHouse Client مساعدة مدمجة بالذكاء الاصطناعي لتوليد استعلامات SQL من أوصاف بلغة طبيعية. تساعد هذه الميزة المستخدمين على كتابة استعلامات معقدة من دون الحاجة إلى معرفة متعمقة بـ SQL.
+
+تعمل المساعدة بالذكاء الاصطناعي تلقائيًا إذا كان أحد متغيرَي البيئة `OPENAI_API_KEY` أو `ANTHROPIC_API_KEY` مُعيَّنًا. ولمزيد من التهيئة المتقدمة، راجع قسم [التهيئة](#ai-sql-generation-configuration).
+
+<div id="ai-sql-generation-usage">
+  ### الاستخدام
+</div>
+
+لاستخدام ميزة توليد SQL بالاستعانة بالذكاء الاصطناعي، ضع البادئة `??` في بداية استعلامك باللغة الطبيعية:
+
+```bash
+:) ?? show all users who made purchases in the last 30 days
+```
+
+سيقوم الذكاء الاصطناعي بما يلي:
+
+1. استكشاف مخطط قاعدة بياناتك تلقائيًا
+2. إنشاء SQL مناسب بناءً على الجداول والأعمدة المكتشفة
+3. تنفيذ الاستعلام الذي تم إنشاؤه فورًا
+
+<div id="ai-sql-generation-example">
+  ### مثال
+</div>
+
+```bash
+:) ?? count orders by product category
+
+Starting AI SQL generation with schema discovery...
+──────────────────────────────────────────────────
+
+🔍 list_databases
+   ➜ system, default, sales_db
+
+🔍 list_tables_in_database
+   database: sales_db
+   ➜ orders, products, categories
+
+🔍 get_schema_for_table
+   database: sales_db
+   table: orders
+   ➜ CREATE TABLE orders (order_id UInt64, product_id UInt64, quantity UInt32, ...)
+
+✨ SQL query generated successfully!
+──────────────────────────────────────────────────
+
+SELECT
+    c.name AS category,
+    COUNT(DISTINCT o.order_id) AS order_count
+FROM sales_db.orders o
+JOIN sales_db.products p ON o.product_id = p.product_id
+JOIN sales_db.categories c ON p.category_id = c.category_id
+GROUP BY c.name
+ORDER BY order_count DESC
+```
+
+<div id="ai-sql-generation-configuration">
+  ### الإعداد
+</div>
+
+يتطلب توليد SQL بالاستعانة بالذكاء الاصطناعي إعداد موفّر ذكاء اصطناعي في ملف تهيئة عميل ClickHouse لديك. يمكنك استخدام OpenAI أو Anthropic أو أي خدمة واجهة برمجة تطبيقات متوافقة مع OpenAI.
+
+<div id="ai-sql-generation-fallback">
+  #### آلية احتياطية تعتمد على البيئة
+</div>
+
+إذا لم يُحدَّد أي إعداد للذكاء الاصطناعي في ملف الإعداد، فسيحاول عميل ClickHouse تلقائيًا استخدام متغيرات البيئة:
+
+1. يتحقق أولًا من متغير البيئة `OPENAI_API_KEY`
+2. إذا لم يجده، يتحقق من متغير البيئة `ANTHROPIC_API_KEY`
+3. إذا لم يعثر على أيٍّ منهما، فسيتم تعطيل ميزات الذكاء الاصطناعي
+
+يتيح ذلك إعدادًا سريعًا من دون الحاجة إلى ملفات إعداد:
+
+```bash
+# Using OpenAI
+export OPENAI_API_KEY=your-openai-key
+clickhouse-client
+
+# Using Anthropic
+export ANTHROPIC_API_KEY=your-anthropic-key
+clickhouse-client
+```
+
+<div id="ai-sql-generation-configuration-file">
+  #### ملف الإعدادات
+</div>
+
+لمزيد من التحكم في إعدادات الذكاء الاصطناعي، اضبطها في ملف إعدادات عميل ClickHouse الموجود في:
+
+* `$XDG_CONFIG_HOME/clickhouse/config.xml` (أو `~/.config/clickhouse/config.xml` إذا لم يتم تعيين `XDG_CONFIG_HOME`) (بتنسيق XML)
+* `$XDG_CONFIG_HOME/clickhouse/config.yaml` (أو `~/.config/clickhouse/config.yaml` إذا لم يتم تعيين `XDG_CONFIG_HOME`) (بتنسيق YAML)
+* `~/.clickhouse-client/config.xml` (بتنسيق XML، الموقع القديم)
+* `~/.clickhouse-client/config.yaml` (بتنسيق YAML، الموقع القديم)
+* أو حدِّد موقعًا مخصصًا باستخدام `--config-file`
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <config>
+        <ai>
+            {/* مطلوب: مفتاح واجهة برمجة التطبيقات الخاص بك (أو اضبطه عبر متغير البيئة) */}
+            <api_key>your-api-key-here</api_key>
+
+            {/* مطلوب: نوع المزوّد (openai, anthropic) */}
+            <provider>openai</provider>
+
+            {/* النموذج المراد استخدامه (تختلف القيم الافتراضية حسب المزوّد) */}
+            <model>gpt-4o</model>
+
+            {/* اختياري: نقطة نهاية واجهة برمجة تطبيقات مخصصة للخدمات المتوافقة مع OpenAI */}
+            {/* <base_url>https://openrouter.ai/api</base_url> */}
+
+            {/* إعدادات استكشاف المخطط */}
+            <enable_schema_access>true</enable_schema_access>
+
+            {/* معلمات التوليد */}
+            <temperature>0.0</temperature>
+            <max_tokens>1000</max_tokens>
+            <timeout_seconds>30</timeout_seconds>
+            <max_steps>10</max_steps>
+
+            {/* اختياري: موجّه نظام مخصص */}
+            {/* <system_prompt>أنت مساعد خبير في ClickHouse SQL...</system_prompt> */}
+        </ai>
+    </config>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    ai:
+      # مطلوب: مفتاح واجهة برمجة التطبيقات الخاص بك (أو اضبطه عبر متغير البيئة)
+      api_key: your-api-key-here
+
+      # مطلوب: نوع المزوّد (openai, anthropic)
+      provider: openai
+
+      # النموذج المراد استخدامه
+      model: gpt-4o
+
+      # اختياري: نقطة نهاية واجهة برمجة تطبيقات مخصصة للخدمات المتوافقة مع OpenAI
+      # base_url: https://openrouter.ai/api
+
+      # تمكين الوصول إلى المخطط - يتيح للذكاء الاصطناعي الاستعلام عن معلومات قاعدة البيانات/الجدول
+      enable_schema_access: true
+
+      # معلمات التوليد
+      temperature: 0.0      # يتحكم في العشوائية (0.0 = حتمي)
+      max_tokens: 1000      # الحد الأقصى لطول الاستجابة
+      timeout_seconds: 30   # مهلة الطلب
+      max_steps: 10         # الحد الأقصى لخطوات استكشاف المخطط
+
+      # اختياري: موجّه نظام مخصص
+      # system_prompt: |
+      #   أنت مساعد خبير في ClickHouse SQL. حوّل اللغة الطبيعية إلى SQL.
+      #   ركّز على الأداء واستخدم تحسينات خاصة بـ ClickHouse.
+      #   أعد دائمًا عبارات SQL قابلة للتنفيذ من دون شروحات.
+    ```
+  </Tab>
+</Tabs>
+
+<br />
+
+**استخدام واجهات برمجة التطبيقات المتوافقة مع OpenAI (مثل OpenRouter):**
+
+```yaml
+ai:
+  provider: openai  # Use 'openai' for compatibility
+  api_key: your-openrouter-api-key
+  base_url: https://openrouter.ai/api/v1
+  model: anthropic/claude-3.5-sonnet  # Use OpenRouter model naming
+```
+
+**أمثلة على الحد الأدنى من التهيئة:**
+
+```yaml
+# Minimal config - uses environment variable for API key
+ai:
+  provider: openai  # Will use OPENAI_API_KEY env var
+
+# No config at all - automatic fallback
+# (Empty or no ai section - will try OPENAI_API_KEY then ANTHROPIC_API_KEY)
+
+# Only override model - uses env var for API key
+ai:
+  provider: openai
+  model: gpt-3.5-turbo
+```
+
+<div id="ai-sql-generation-parameters">
+  ### المعلمات
+</div>
+
+<Accordion title="المعلمات المطلوبة">
+  * `api_key` - مفتاح واجهة برمجة التطبيقات الخاص بك لخدمة الذكاء الاصطناعي. يمكن الاستغناء عنه إذا كان معيّنًا عبر متغير بيئة:
+    * OpenAI: `OPENAI_API_KEY`
+    * Anthropic: `ANTHROPIC_API_KEY`
+    * ملاحظة: تكون الأولوية لمفتاح واجهة برمجة التطبيقات في ملف الإعداد على متغير البيئة
+  * `provider` - مزوّد الذكاء الاصطناعي: `openai` أو `anthropic`
+    * إذا لم يتم تحديده، فسيُستخدم الرجوع التلقائي استنادًا إلى متغيرات البيئة المتاحة
+</Accordion>
+
+<Accordion title="إعدادات النموذج">
+  * `model` - النموذج المراد استخدامه (الافتراضي: خاص بالمزوّد)
+    * OpenAI: `gpt-4o`, `gpt-4`, `gpt-3.5-turbo`, إلخ.
+    * Anthropic: `claude-3-5-sonnet-20241022`, `claude-3-opus-20240229`, إلخ.
+    * OpenRouter: استخدم تسمية النماذج الخاصة به، مثل `anthropic/claude-3.5-sonnet`
+</Accordion>
+
+<Accordion title="إعدادات الاتصال">
+  * `base_url` - نقطة نهاية واجهة برمجة تطبيقات مخصّصة للخدمات المتوافقة مع OpenAI (اختياري)
+  * `timeout_seconds` - مهلة الطلب بالثواني (الافتراضي: `30`)
+</Accordion>
+
+<Accordion title="استكشاف المخططات">
+  * `enable_schema_access` - السماح للذكاء الاصطناعي باستكشاف مخططات قاعدة البيانات (الافتراضي: `true`)
+  * `max_steps` - الحد الأقصى لخطوات استدعاء الأدوات لاستكشاف المخططات (الافتراضي: `10`)
+</Accordion>
+
+<Accordion title="معلمات التوليد">
+  * `temperature` - يتحكم في درجة العشوائية، 0.0 = حتمي، 1.0 = إبداعي (الافتراضي: `0.0`)
+  * `max_tokens` - الحد الأقصى لطول الاستجابة بالرموز (الافتراضي: `1000`)
+  * `system_prompt` - تعليمات مخصّصة للذكاء الاصطناعي (اختياري)
+</Accordion>
+
+<div id="ai-sql-generation-how-it-works">
+  ### كيف يعمل
+</div>
+
+يستخدم مُولِّد SQL المعتمد على الذكاء الاصطناعي عمليةً متعددة الخطوات:
+
+1. **اكتشاف المخطط**
+
+يستخدم الذكاء الاصطناعي أدوات مدمجة لاستكشاف قاعدة بياناتك:
+
+* يسرد قواعد البيانات المتاحة
+* يكتشف الجداول ضمن قواعد البيانات ذات الصلة
+* يفحص بنية الجداول من خلال عبارات `CREATE TABLE`
+
+2. **توليد الاستعلامات**
+
+استنادًا إلى المخطط المكتشف، يُنشئ الذكاء الاصطناعي SQL بحيث:
+
+* يتوافق مع طلبك المكتوب بلغة طبيعية
+* يستخدم أسماء الجداول والأعمدة الصحيحة
+* يطبّق عمليات `JOIN` وعمليات التجميع المناسبة
+
+3. **التنفيذ**
+
+يُنفَّذ SQL المُنشأ تلقائيًا وتُعرَض النتائج
+
+<div id="ai-sql-generation-limitations">
+  ### القيود
+</div>
+
+* يتطلب اتصالًا نشطًا بالإنترنت
+* يخضع استخدام واجهة برمجة التطبيقات لقيود على معدل الاستخدام ولتكاليف يفرضها مزوّد الذكاء الاصطناعي
+* قد تتطلب الاستعلامات المعقدة عدة تنقيحات
+* لدى الذكاء الاصطناعي وصول للقراءة فقط إلى معلومات المخطط، وليس إلى البيانات الفعلية
+
+<div id="ai-sql-generation-security">
+  ### الأمان
+</div>
+
+* لا تُرسَل مفاتيح واجهة برمجة تطبيقات مطلقًا إلى خوادم ClickHouse
+* لا يرى الذكاء الاصطناعي سوى معلومات المخطط (أسماء الجداول/الأعمدة والأنواع)، وليس البيانات الفعلية
+* تلتزم جميع الاستعلامات المُولَّدة بأذونات قاعدة البيانات الحالية لديك
+
+<div id="connection_string">
+  ## سلسلة الاتصال
+</div>
+
+<div id="ai-sql-generation-usage">
+  ### الاستخدام
+</div>
+
+يدعم عميل ClickHouse أيضًا الاتصال بخادم ClickHouse باستخدام سلسلة اتصال مشابهة لتلك المستخدمة في [MongoDB](https://www.mongodb.com/docs/manual/reference/connection-string/)، و[PostgreSQL](https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING)، و[MySQL](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html#connecting-using-uri). وصيغتها كما يلي:
+
+```text
+clickhouse:[//[user[:password]@][hosts_and_ports]][/database][?query_parameters]
+```
+
+| المكوّن (جميعها اختيارية) | الوصف                                                                                                                                     | القيمة الافتراضية |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `user`                    | اسم المستخدم لقاعدة البيانات.                                                                                                             | `default`         |
+| `password`                | كلمة مرور مستخدم قاعدة البيانات. إذا تم تحديد `:` وكانت كلمة المرور فارغة، فسيطلب العميل كلمة مرور المستخدم.                              | -                 |
+| `hosts_and_ports`         | قائمة بالمضيفين والمنافذ الاختيارية `host[:port] [, host:[port]], ...`.                                                                   | `localhost:9000`  |
+| `database`                | اسم قاعدة البيانات.                                                                                                                       | `default`         |
+| `query_parameters`        | قائمة بأزواج المفتاح والقيمة `param1=value1[,&param2=value2], ...`. لا تتطلب بعض المعلمات قيمة. أسماء المعلمات والقيم حساسة لحالة الأحرف. | -                 |
+
+<div id="connection-string-notes">
+  ### ملاحظات
+</div>
+
+إذا تم تحديد اسم المستخدم أو كلمة المرور أو قاعدة البيانات في سلسلة الاتصال، فلا يمكن تحديدها باستخدام `--user` أو `--password` أو `--database`، والعكس صحيح.
+
+يمكن أن يكون مكوّن المضيف إما اسم مضيف أو عنوان IPv4 أو IPv6.
+يجب أن تكون عناوين IPv6 بين `[]`:
+
+```text
+clickhouse://[2001:db8::1234]
+```
+
+يمكن أن تحتوي سلاسل الاتصال على عدة مضيفين.
+سيحاول عميل ClickHouse الاتصال بهذه المضيفات حسب الترتيب (من اليسار إلى اليمين).
+وبمجرد إنشاء الاتصال، لن تُجرى أي محاولة للاتصال بالمضيفات المتبقية.
+
+يجب تحديد سلسلة الاتصال باعتبارها الوسيط الأول لـ `clickHouse-client`.
+يمكن استخدام سلسلة الاتصال مع أي عدد من [خيارات سطر الأوامر](#command-line-options) الأخرى، باستثناء `--host` و`--port`.
+
+المفاتيح التالية مسموح بها لـ `query_parameters`:
+
+| المفتاح           | الوصف                                                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `secure` (or `s`) | إذا تم تحديده، فسيتصل العميل بالخادم عبر اتصال آمن (TLS). راجع `--secure` في [خيارات سطر الأوامر](#command-line-options). |
+
+**الترميز بالنسبة المئوية**
+
+يجب أن تكون الأحرف غير التابعة لـ ASCII الأمريكي، والمسافات، والأحرف الخاصة في المَعلمات التالية [مرمّزة بالنسبة المئوية](https://en.wikipedia.org/wiki/URL_encoding):
+
+* `user`
+* `password`
+* `hosts`
+* `database`
+* `query parameters`
+
+<div id="cli-queries-with-parameters-examples">
+  ### أمثلة
+</div>
+
+اتصل بـ `localhost` على المنفذ 9000 ونفّذ الاستعلام `SELECT 1`.
+
+```bash
+clickhouse-client clickhouse://localhost:9000 --query "SELECT 1"
+```
+
+اتصل بـ `localhost` كمستخدم `john` باستخدام كلمة المرور `secret`، والمضيف `127.0.0.1` والمنفذ `9000`
+
+```bash
+clickhouse-client clickhouse://john:secret@127.0.0.1:9000
+```
+
+اتصل بـ`localhost` باسم المستخدم `default`، وبالمضيف ذي عنوان IPv6 `[::1]` وعلى المنفذ `9000`.
+
+```bash
+clickhouse-client clickhouse://[::1]:9000
+```
+
+اتصل بـ `localhost` على المنفذ 9000 باستخدام وضع متعدد الأسطر.
+
+```bash
+clickhouse-client clickhouse://localhost:9000 '-m'
+```
+
+اتصل بـ `localhost` باستخدام المنفذ 9000 باسم المستخدم `default`.
+
+```bash
+clickhouse-client clickhouse://default@localhost:9000
+
+# equivalent to:
+clickhouse-client clickhouse://localhost:9000 --user default
+```
+
+اتصل بـ `localhost` على المنفذ 9000، واستخدم قاعدة البيانات `my_database` كقاعدة بيانات افتراضية.
+
+```bash
+clickhouse-client clickhouse://localhost:9000/my_database
+
+# equivalent to:
+clickhouse-client clickhouse://localhost:9000 --database my_database
+```
+
+اتصل بـ `localhost` على المنفذ 9000، واجعل قاعدة البيانات الافتراضية `my_database` كما هي محددة في سلسلة الاتصال، مع استخدام اتصال آمن عبر المعامل المختصر `s`.
+
+```bash
+clickhouse-client clickhouse://localhost/my_database?s
+
+# equivalent to:
+clickhouse-client clickhouse://localhost/my_database -s
+```
+
+اتصل بالمضيف الافتراضي باستخدام المنفذ الافتراضي، والمستخدم default، وقاعدة البيانات الافتراضية.
+
+```bash
+clickhouse-client clickhouse:
+```
+
+اتصل بالمضيف الافتراضي باستخدام المنفذ الافتراضي، كمستخدم `my_user` ومن دون كلمة مرور.
+
+```bash
+clickhouse-client clickhouse://my_user@
+
+# Using a blank password between : and @ means to asking the user to enter the password before starting the connection.
+clickhouse-client clickhouse://my_user:@
+```
+
+اتصل بـ `localhost` باستخدام عنوان البريد الإلكتروني كاسم المستخدم. تُرمَّز العلامة `@` بترميز النسبة المئوية إلى `%40`.
+
+```bash
+clickhouse-client clickhouse://some_user%40some_mail.com@localhost:9000
+```
+
+اتصل بأحد هذين المضيفين: `192.168.1.15`، `192.168.1.25`.
+
+```bash
+clickhouse-client clickhouse://192.168.1.15,192.168.1.25
+```
+
+<div id="query-id-format">
+  ## تنسيق معرّف الاستعلام
+</div>
+
+في الوضع التفاعلي، يعرض عميل ClickHouse معرّف الاستعلام لكل استعلام. وبشكل افتراضي، يكون تنسيق المعرّف كما يلي:
+
+```sql
+Query id: 927f137d-00f1-4175-8914-0dd066365e96
+```
+
+يمكن تحديد تنسيق مخصّص في ملف إعدادات ضمن وسم `query_id_formats`. ويُستبدل العنصر النائب `{query_id}` بمعرّف الاستعلام في سلسلة التنسيق. ويمكن استخدام عدة سلاسل تنسيق داخل هذا الوسم.
+يمكن استخدام هذه الميزة لإنشاء عناوين URL لتسهيل تنميط الاستعلامات.
+
+**مثال**
+
+```xml
+<config>
+  <query_id_formats>
+    <speedscope>http://speedscope-host/#profileURL=qp%3Fid%3D{query_id}</speedscope>
+  </query_id_formats>
+</config>
+```
+
+مع التهيئة أعلاه، يظهر معرّف الاستعلام بالتنسيق التالي:
+
+```response
+speedscope:http://speedscope-host/#profileURL=qp%3Fid%3Dc8ecc783-e753-4b38-97f1-42cddfb98b7d
+```
+
+<div id="configuration_files">
+  ## ملفات الإعدادات
+</div>
+
+يستخدم عميل ClickHouse أول ملف موجود من بين ما يلي:
+
+* ملف تم تحديده باستخدام المعلمة `-c [ -C, --config, --config-file ]`.
+* `./clickhouse-client.[xml|yaml|yml]`
+* `$XDG_CONFIG_HOME/clickhouse/config.[xml|yaml|yml]` (أو `~/.config/clickhouse/config.[xml|yaml|yml]` إذا لم يتم تعيين `XDG_CONFIG_HOME`)
+* `~/.clickhouse-client/config.[xml|yaml|yml]`
+* `/etc/clickhouse-client/config.[xml|yaml|yml]`
+
+اطّلع على نموذج ملف التهيئة في مستودع ClickHouse: [`clickhouse-client.xml`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/client/clickhouse-client.xml)
+
+<Tabs>
+  <Tab title="XML">
+    ```xml
+    <config>
+        <user>username</user>
+        <password>password</password>
+        <secure>true</secure>
+        <openSSL>
+          <client>
+            <caConfig>/etc/ssl/cert.pem</caConfig>
+          </client>
+        </openSSL>
+    </config>
+    ```
+  </Tab>
+
+  <Tab title="YAML">
+    ```yaml
+    user: username
+    password: 'password'
+    secure: true
+    openSSL:
+      client:
+        caConfig: '/etc/ssl/cert.pem'
+    ```
+  </Tab>
+</Tabs>
+
+<div id="environment-variable-options">
+  ## خيارات متغيرات البيئة
+</div>
+
+يمكن تعيين اسم المستخدم وكلمة المرور والمضيف من خلال متغيرات البيئة `CLICKHOUSE_USER` و`CLICKHOUSE_PASSWORD` و`CLICKHOUSE_HOST`.
+تكون لوسيطات سطر الأوامر `--user` و`--password` و`--host`، أو [سلسلة الاتصال](#connection_string) (إذا كانت محددة)، أولوية على متغيرات البيئة.
+
+<div id="command-line-options">
+  ## خيارات سطر الأوامر
+</div>
+
+يمكن تحديد جميع خيارات سطر الأوامر مباشرةً عبر سطر الأوامر أو تعيينها كقيم افتراضية في [ملف الإعدادات](#configuration_files).
+
+<div id="command-line-options-general">
+  ### الخيارات العامة
+</div>
+
+| الخيار                                              | الوصف                                                                                                                        | القيمة الافتراضية            |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `-c [ -C, --config, --config-file ] <path-to-file>` | موقع ملف الإعدادات الخاص بالعميل إذا لم يكن موجودًا في أحد المواقع الافتراضية. راجع [ملفات الإعدادات](#configuration_files). | -                            |
+| `--help`                                            | اطبع ملخص الاستخدام ثم اخرج. استخدمه مع `--verbose` لعرض جميع الخيارات الممكنة، بما في ذلك إعدادات الاستعلام.                | -                            |
+| `--history_file <path-to-file>`                     | مسار ملف يحتوي على سجل الأوامر.                                                                                              | -                            |
+| `--history_max_entries`                             | الحد الأقصى لعدد العناصر في ملف السجل.                                                                                       | `1000000` (1 مليون)          |
+| `--prompt <prompt>`                                 | حدّد موجّهًا مخصصًا.                                                                                                         | `display_name` الخاص بالخادم |
+| `--verbose`                                         | زيادة مستوى تفصيل المخرجات.                                                                                                  | -                            |
+| `-V [ --version ]`                                  | اطبع الإصدار ثم اخرج.                                                                                                        | -                            |
+
+<div id="command-line-options-connection">
+  ### خيارات الاتصال
+</div>
+
+| Option                               | Description                                                                                                                                                                                                                                                                                                                                                 | Default                                                                                                                        |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--connection <name>`                | اسم تفاصيل الاتصال المُعدّة مسبقًا من ملف الإعدادات. راجع [بيانات اعتماد الاتصال](#connection-credentials).                                                                                                                                                                                                                                                   | -                                                                                                                              |
+| `-d [ --database ] <database>`       | حدّد قاعدة البيانات الافتراضية لهذا الاتصال.                                                                                                                                                                                                                                                                                                                | قاعدة البيانات الحالية من إعدادات الخادم (`default` افتراضيًا)                                                                 |
+| `-h [ --host ] <host>`               | اسم مضيف خادم ClickHouse المراد الاتصال به. يمكن أن يكون اسم مضيف أو عنوان IPv4 أو IPv6. ويمكن تمرير عدة مضيفين باستخدام عدة وسائط.                                                                                                                                                                                                                         | `localhost`                                                                                                                    |
+| `--jwt <value>`                      | استخدم JSON Web Token ‏(JWT) للمصادقة. <br /><br />تفويض JWT على الخادم متاح فقط في ClickHouse Cloud.                                                                                                                                                                                                                                                       | -                                                                                                                              |
+| `login`                              | يشغّل OAuth flow بنمط device grant للمصادقة عبر IdP. <br /><br />بالنسبة إلى مضيفي ClickHouse Cloud، يتم استنتاج متغيرات OAuth تلقائيًا، وإلا فيجب توفيرها باستخدام `--oauth-url` و`--oauth-client-id` و`--oauth-audience`.                                                                                                                                 | -                                                                                                                              |
+| `--no-warnings`                      | عطّل عرض التحذيرات من `system.warnings` عند اتصال العميل بالخادم.                                                                                                                                                                                                                                                                                           | -                                                                                                                              |
+| `--no-server-client-version-message` | أخفِ رسالة عدم تطابق إصدار الخادم والعميل عند اتصال العميل بالخادم.                                                                                                                                                                                                                                                                                         | -                                                                                                                              |
+| `--password <password>`              | كلمة مرور مستخدم قاعدة البيانات. يمكنك أيضًا تحديد كلمة المرور لاتصالٍ ما في ملف الإعدادات. إذا لم تحدد كلمة المرور، فسيطلبها العميل.                                                                                                                                                                                                                         | -                                                                                                                              |
+| `--port <port>`                      | المنفذ الذي يقبل الخادم الاتصالات عليه. المنافذ الافتراضية هي 9440 ‏(TLS) و9000 (بدون TLS). <br /><br />ملاحظة: يستخدم العميل البروتوكول الأصلي وليس HTTP(S).                                                                                                                                                                                               | `9440` إذا تم تحديد `--secure`، وإلا `9000`. تكون القيمة الافتراضية دائمًا `9440` إذا انتهى اسم المضيف بـ `.clickhouse.cloud`. |
+| `-s [ --secure ]`                    | يحدّد ما إذا كان سيتم استخدام TLS. <br /><br />يُفعَّل تلقائيًا عند الاتصال بالمنفذ 9440 (المنفذ الآمن الافتراضي) أو بـ ClickHouse Cloud. <br /><br />قد تحتاج إلى تهيئة شهادات CA في [ملف الإعدادات](#configuration_files). إعدادات التهيئة المتاحة هي نفسها المستخدمة في [تهيئة TLS على جانب الخادم](/ar/reference/settings/server-settings/settings#openssl). | يُفعَّل تلقائيًا عند الاتصال بالمنفذ 9440 أو ClickHouse Cloud                                                                  |
+| `--ssh-key-file <path-to-file>`      | ملف يحتوي على مفتاح SSH الخاص للمصادقة مع الخادم.                                                                                                                                                                                                                                                                                                           | -                                                                                                                              |
+| `--ssh-key-passphrase <value>`       | عبارة المرور لمفتاح SSH الخاص المحدد في `--ssh-key-file`.                                                                                                                                                                                                                                                                                                   | -                                                                                                                              |
+| `--tls-sni-override <server name>`   | عند استخدام TLS، اسم الخادم (SNI) الذي سيتم تمريره أثناء المصافحة.                                                                                                                                                                                                                                                                                          | المضيف الموفَّر عبر `-h` أو `--host`.                                                                                          |
+| `-u [ --user ] <username>`           | مستخدم قاعدة البيانات الذي سيتم الاتصال باسمه.                                                                                                                                                                                                                                                                                                              | `default`                                                                                                                      |
+
+<Note>
+  بدلًا من الخيارات `--host` و`--port` و`--user` و`--password`، يدعم العميل أيضًا [سلاسل الاتصال](#connection_string).
+</Note>
+
+<div id="command-line-options-query">
+  ### خيارات الاستعلام
+</div>
+
+| Option                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--param_<name>=<value>`        | قيمة الاستبدال لمعلَمة في [استعلام ذي معلمات](#cli-queries-with-parameters).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `-q [ --query ] <query>`        | الاستعلام المراد تشغيله في الوضع الدفعي. يمكن تحديده عدة مرات (`--query "SELECT 1" --query "SELECT 2"`) أو مرة واحدة مع عدة استعلامات مفصولة بفواصل منقوطة (`--query "SELECT 1; SELECT 2;"`). في الحالة الأخيرة، يجب فصل استعلامات `INSERT` ذات التنسيقات غير `VALUES` بأسطر فارغة. <br /><br />يمكن أيضًا تحديد استعلام واحد من دون معلمة: `clickhouse-client "SELECT 1"` <br /><br />لا يمكن استخدامه مع `--queries-file` في الوقت نفسه.                                                                                                                                                                                |
+| `--queries-file <path-to-file>` | مسار ملف يحتوي على استعلامات. يمكن تحديد `--queries-file` عدة مرات، على سبيل المثال: `--queries-file queries1.sql --queries-file queries2.sql`. <br /><br />لا يمكن استخدامه مع `--query` في الوقت نفسه.                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `-m [ --multiline ]`            | إذا تم تحديده، فسيُسمح بالاستعلامات متعددة الأسطر (لن يُرسل الاستعلام عند الضغط على Enter). لن تُرسل الاستعلامات إلا إذا انتهت بفاصلة منقوطة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `--inline-insert-data`          | أرسل `INSERT ... VALUES` (والتنسيقات المضمنة الأخرى) كما هي ضمن نص الاستعلام بدلًا من تحويل البيانات إلى كتل بالتنسيق الأصلي. يقوم الخادوم بتحليل البيانات المضمنة بنفسه، ما يتجنب رحلة الذهاب والإياب اللازمة لإرسال بنية الجدول والقيم الافتراضية للأعمدة مرة أخرى إلى العميل. يمكن أن يحسّن ذلك الأداء عند تنفيذ كثير من عمليات `insert` الصغيرة عبر البروتوكول الأصلي. ويضبط تلقائيًا [`send_table_structure_on_insert_with_inline_data`](/ar/reference/settings/session-settings#send_table_structure_on_insert_with_inline_data) على `0`. ولا يمكن دمجه مع البيانات المضمنة والبيانات الخارجية (من stdin أو `INFILE`). |
+
+<div id="command-line-options-query-settings">
+  ### إعدادات الاستعلام
+</div>
+
+يمكن تحديد إعدادات الاستعلام كخيارات لسطر الأوامر في الـ client، على سبيل المثال:
+
+```bash
+$ clickhouse-client --max_threads 1
+```
+
+راجع [الإعدادات](/ar/reference/settings/session-settings) للاطلاع على قائمة الإعدادات.
+
+<div id="command-line-options-formatting">
+  ### خيارات التنسيق
+</div>
+
+| Option                            | Description                                                                                                                                                                            | Default                                                            |
+| --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `-f [ --format ] <format>`        | استخدم التنسيق المحدد لإخراج النتيجة. <br /><br />راجع [تنسيقات بيانات الإدخال والإخراج](/ar/reference/formats/index) للاطلاع على قائمة التنسيقات المدعومة.                               | `TabSeparated`                                                     |
+| `--pager <command>`               | مرّر جميع المخرجات إلى هذا الأمر. وعادةً ما يكون `less` (مثل `less -S` لعرض مجموعات النتائج العريضة) أو ما يشابهه.                                                                     | -                                                                  |
+| `-E [ --vertical ]`               | استخدم [التنسيق العمودي](/ar/reference/formats/Vertical) لإخراج النتيجة. وهذا مماثل لـ `–-format Vertical`. في هذا التنسيق، تُطبع كل قيمة في سطر منفصل، مما يفيد عند عرض الجداول العريضة. | -                                                                  |
+| `--echo [ <bool> ]`               | اطبع كل استعلام قبل التنفيذ. يقبل قيمة منطقية اختيارية.                                                                                                                                | `true` في الوضع التفاعلي، و`false` في الوضع غير التفاعلي (الدُفعي) |
+| `--echo-formatted [ <bool> ]`     | نسّق الاستعلامات المطبوعة. يقبل قيمة منطقية اختيارية.                                                                                                                                  | `true` في الوضع التفاعلي، و`false` في الوضع غير التفاعلي (الدُفعي) |
+| `--echo-query-id [ <bool> ]`      | اطبع معرّف الاستعلام قبل التنفيذ. يقبل قيمة منطقية اختيارية.                                                                                                                           | `true` في الوضع التفاعلي، و`false` في الوضع غير التفاعلي (الدُفعي) |
+| `--highlight [ --hilite ] <bool>` | فعّل أو عطّل تمييز الصياغة لموجّه الأوامر والاستعلامات المطبوعة.                                                                                                                       | `true`                                                             |
+
+<div id="command-line-options-execution-details">
+  ### تفاصيل التنفيذ
+</div>
+
+| الخيار                           | الوصف                                                                                                                                                                                                                                                                                                                                                                           | الافتراضي                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `--chime [N]`                    | اكتب محرف التحكم `BEL` إلى `stderr` عند انتهاء الاستعلام (سواء نجح أو فشل) بعد تشغيله لمدة لا تقل عن `N` ثانية. لا يُرسل إلا إذا كان `stderr` متصلًا بطرفية (TTY)؛ ويؤدي إعادة توجيه `stderr` (مثل `2>err.log`) إلى منعه، بينما لا تؤثر إعادة توجيه `stdout` (مثل `> result.tsv`) عليه. يؤدي تمرير `--chime` بدون قيمة إلى استخدام العتبة الافتراضية. اضبط `--chime 0` لتعطيله. | `5` ثوانٍ                                                      |
+| `--enable-progress-table-toggle` | تمكين إظهار جدول التقدم أو إخفائه بالضغط على مفتاح التحكم (Space). ينطبق فقط في الوضع التفاعلي عند تمكين طباعة جدول التقدم.                                                                                                                                                                                                                                                     | `enabled`                                                      |
+| `--hardware-utilization`         | اطبع معلومات استخدام العتاد في شريط التقدم.                                                                                                                                                                                                                                                                                                                                     | -                                                              |
+| `--memory-usage`                 | إذا تم تحديده، فاطبع استخدام الذاكرة إلى `stderr` في الوضع غير التفاعلي. <br /><br />القيم الممكنة: <br />• `none` - لا تطبع استخدام الذاكرة <br />• `default` - اطبع عدد البايتات <br />• `readable` - اطبع استخدام الذاكرة بتنسيق سهل القراءة                                                                                                                                 | -                                                              |
+| `--print-profile-events`         | اطبع حزم `ProfileEvents`.                                                                                                                                                                                                                                                                                                                                                       | -                                                              |
+| `--progress`                     | اطبع تقدم تنفيذ الاستعلام. <br /><br />القيم الممكنة: <br />• `tty\|on\|1\|true\|yes` - يُخرج إلى الطرفية في الوضع التفاعلي <br />• `err` - يُخرج إلى `stderr` في الوضع غير التفاعلي <br />• `off\|0\|false\|no` - يعطّل طباعة التقدم                                                                                                                                           | `tty` في الوضع التفاعلي، و`off` في الوضع غير التفاعلي (الدفعي) |
+| `--progress-table`               | اطبع جدول تقدم يعرض مقاييس متغيرة أثناء تنفيذ الاستعلام. <br /><br />القيم الممكنة: <br />• `tty\|on\|1\|true\|yes` - يُخرج إلى الطرفية في الوضع التفاعلي <br />• `err` - يُخرج إلى `stderr` في الوضع غير التفاعلي <br />• `off\|0\|false\|no` - يعطّل جدول التقدم                                                                                                              | `tty` في الوضع التفاعلي، و`off` في الوضع غير التفاعلي (الدفعي) |
+| `--stacktrace`                   | اطبع تتبعات المكدس للاستثناءات.                                                                                                                                                                                                                                                                                                                                                 | -                                                              |
+| `-t [ --time ]`                  | اطبع زمن تنفيذ الاستعلام إلى `stderr` في الوضع غير التفاعلي (لاختبارات الأداء).                                                                                                                                                                                                                                                                                                 | -                                                              |

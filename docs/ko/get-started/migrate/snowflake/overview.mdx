@@ -1,0 +1,183 @@
+---
+sidebarTitle: '개요'
+slug: /migrations/snowflake-overview
+description: 'Snowflake에서 ClickHouse로의 마이그레이션'
+keywords: ['Snowflake']
+title: 'Snowflake에서 ClickHouse로의 마이그레이션'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+> 이 문서는 Snowflake에서 ClickHouse로 데이터를 마이그레이션하는 과정을 간략히 소개합니다.
+
+Snowflake는 주로 기존 온프레미스 데이터 웨어하우징 워크로드를 클라우드로
+마이그레이션하는 데 초점을 맞춘 클라우드 데이터 웨어하우스입니다. 대규모
+환경에서 장시간 실행되는 리포트를 처리하는 데 잘 최적화되어 있습니다.
+데이터셋이 클라우드로 이전되면, 데이터 소유자는 이 데이터에서 추가적인
+가치를 어떻게 끌어낼 수 있을지 고민하기 시작합니다. 여기에는 이러한
+데이터셋을 활용해 내부 및 외부 사용 사례를 위한 실시간 애플리케이션을
+구동하는 것도 포함됩니다. 이 시점에서 실시간 분석에 최적화된
+데이터베이스가 필요하다는 점을 깨닫는 경우가 많으며, ClickHouse가
+대표적인 예입니다.
+
+<div id="comparison">
+  ## 비교
+</div>
+
+이 섹션에서는 ClickHouse와 Snowflake의 주요 기능을 비교합니다.
+
+<div id="similarities">
+  ### 유사점
+</div>
+
+Snowflake는 대규모 데이터의 저장, 처리, 분석을 위한 확장 가능하고
+효율적인 솔루션을 제공하는 클라우드 기반 데이터 웨어하우징 플랫폼입니다.
+ClickHouse와 마찬가지로 Snowflake는 기존 기술 위에 구축된 것이 아니라
+자체 SQL 쿼리 엔진과 맞춤형 아키텍처를 기반으로 합니다.
+
+Snowflake의 아키텍처는 공유 스토리지(shared-storage, shared-disk)
+아키텍처와 shared-nothing 아키텍처의 하이브리드로 설명됩니다. 공유 스토리지 아키텍처는
+데이터가 S3와 같은 객체 스토리지에 저장되어 모든 컴퓨트 노드에서
+접근할 수 있는 구조입니다. shared-nothing 아키텍처는 각 컴퓨트 노드가
+전체 데이터 집합의 일부를 로컬에 저장하여 쿼리에 응답하는 구조입니다. 이는
+이론적으로 두 모델의 장점을 모두 제공합니다. 즉, shared-disk
+아키텍처의 단순성과 shared-nothing 아키텍처의 확장성을 함께 제공합니다.
+
+이 설계는 기본적으로 객체 스토리지를 주 저장 매체로 사용하며,
+이는 동시 접근 환경에서도 거의 무한에 가깝게 확장되고 높은
+복원력과 확장 가능한 처리량 보장을 제공합니다.
+
+아래 이미지는 [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)에서 가져온 것으로,
+이 아키텍처를 보여줍니다:
+
+<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Snowflake 아키텍처" />
+
+반대로, 오픈소스이자 클라우드 호스팅 제품인 ClickHouse는
+shared-disk 및 shared-nothing 아키텍처 모두에 배포할 수 있습니다. 후자는
+자가 관리형 배포에서 일반적입니다. 이 방식은 CPU와 메모리를 쉽게 확장할 수 있게 해주지만,
+shared-nothing 구성은 전통적인 데이터 관리 과제와
+데이터 복제 오버헤드를 수반하며, 특히 클러스터 구성원이 변경될 때 더욱 그렇습니다.
+
+이 때문에 ClickHouse Cloud는
+개념적으로 Snowflake와 유사한 공유 스토리지 아키텍처를 활용합니다. 데이터는
+S3 또는 GCS와 같은 객체 스토리지에 한 번만 저장되며
+(단일 사본), 사실상 무한한 스토리지와 강력한 이중화 보장을 제공합니다.
+각 노드는 이 단일 데이터 사본에 접근할 수 있으며,
+캐시 용도의 자체 로컬 SSD도 보유합니다. 이후 필요에 따라
+추가 CPU 및 메모리 리소스를 제공하도록 노드를 확장할 수 있습니다. Snowflake와 마찬가지로,
+S3의 확장성 특성은 shared-disk
+아키텍처의 전형적인 한계(디스크 I/O 및 네트워크 병목)를 해결합니다. 즉, 클러스터에
+노드가 추가되더라도 기존 노드에서 사용할 수 있는 I/O 처리량이
+영향받지 않도록 보장합니다.
+
+<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="ClickHouse Cloud 아키텍처" />
+
+<div id="differences">
+  ### 차이점
+</div>
+
+기반 스토리지 포맷과 쿼리 엔진 외에도, 이러한 아키텍처에는
+몇 가지 미묘한 차이가 있습니다:
+
+* Snowflake의 컴퓨트 리소스는 [웨어하우스](https://docs.snowflake.com/en/user-guide/warehouses)라는 개념을 통해 제공됩니다.
+  웨어하우스는 각각 정해진 크기의 여러 노드로 구성됩니다. Snowflake는
+  웨어하우스의 구체적인 아키텍처를 공개하지 않지만,
+  [일반적으로는](https://select.dev/posts/snowflake-warehouse-sizing)
+  각 노드가 8 vCPU, 16 GiB 메모리, 200 GB의 로컬 스토리지(캐시용)로 구성된 것으로 알려져 있습니다.
+  노드 수는 티셔츠 사이즈에 따라 달라지며, 예를 들어 x-small은 1개 노드,
+  small은 2개, medium은 4개, large는 8개입니다. 이러한 웨어하우스는 데이터와 분리되어 있어,
+  객체 스토리지에 있는 어떤 데이터베이스에 대해서도 쿼리를 실행할 수 있습니다. 유휴 상태이고
+  쿼리 부하가 없으면 웨어하우스는 일시 중지되며, 쿼리를
+  받으면 다시 시작됩니다. 스토리지 비용은 항상 청구에 반영되지만,
+  웨어하우스는 활성 상태일 때만 과금됩니다.
+
+* ClickHouse Cloud도 로컬 캐시
+  스토리지를 갖춘 노드라는 유사한 원리를 사용합니다. 다만 티셔츠 사이즈 대신, 사용자는 총
+  컴퓨트 용량과 사용 가능한 RAM을 기준으로 서비스를 배포합니다. 이후 이 서비스는
+  쿼리 부하에 따라(정의된 한도 내에서) 투명하게
+  자동 스케일링되며, 각 노드의 리소스를 늘리거나 줄이는 수직 스케일링 또는
+  전체 노드 수를 늘리거나 줄이는 수평 스케일링 방식으로 동작합니다. ClickHouse
+  Cloud 노드는 Snowflake의 1:2와 달리 CPU 대 메모리 비율이 1:1입니다.
+  더 느슨하게 결합하는 것도 가능하지만, 서비스는 Snowflake 웨어하우스와 달리
+  데이터에 결합되어 있습니다. 노드 역시 유휴 상태이면 일시 중지되며
+  쿼리를 받으면 다시 시작됩니다. 필요한 경우 서비스를 수동으로
+  리사이즈할 수도 있습니다.
+
+* ClickHouse Cloud의 쿼리 캐시는 노드별로 적용되며,
+  웨어하우스와 독립적인 서비스 계층에서 제공되는 Snowflake의
+  쿼리 캐시와는 다릅니다. 벤치마크 기준으로 보면, ClickHouse Cloud의 노드 캐시는
+  Snowflake보다 더 뛰어난 성능을 보입니다.
+
+* Snowflake와 ClickHouse Cloud는 쿼리
+  동시성을 높이기 위한 스케일링에 서로 다른 접근 방식을 취합니다. Snowflake는 이를
+  [멀티 클러스터 웨어하우스](https://docs.snowflake.com/en/user-guide/warehouses-multicluster#benefits-of-multi-cluster-warehouses)라는
+  기능으로 해결합니다.
+  이 기능을 사용하면 웨어하우스에 클러스터를 추가할 수 있습니다. 이는
+  쿼리 지연 시간을 개선하지는 않지만, 추가적인 병렬성을 제공하고
+  더 높은 쿼리 동시성을 가능하게 합니다. ClickHouse는 서비스에 더 많은 메모리와
+  CPU를 추가하는 수직 또는 수평 스케일링으로 이를 달성합니다. 이 블로그에서는
+  이러한 서비스가 더 높은 동시성까지 스케일링할 수 있는 capability를 자세히 다루지는 않으며,
+  대신 지연 시간에 초점을 맞춥니다. 다만 완전한 비교를 위해서는
+  이러한 평가도 필요하다는 점은 인정합니다. 그러나 Snowflake는
+  [웨어하우스당 동시 쿼리 수를 기본적으로 8개로 명시적으로 제한](https://docs.snowflake.com/en/sql-reference/parameters#max-concurrency-level)하고 있으므로,
+  어떤 동시성 테스트에서도 ClickHouse가 좋은 성능을 보일 것으로 기대합니다.
+  이에 비해 ClickHouse Cloud는 노드당 최대 1000개의 쿼리를
+  실행할 수 있습니다.
+
+* Snowflake는 데이터셋에서 컴퓨트 크기를 전환할 수 있는 기능과,
+  웨어하우스의 빠른 재시작 시간을 결합해, 애드혹
+  쿼리에 매우 뛰어난 사용 경험을 제공합니다. 데이터 웨어하우스 및 데이터 레이크 사용 사례에서는,
+  이는 다른 시스템에 비해 장점이 됩니다.
+
+<div id="real-time-analytics">
+  ### 실시간 분석
+</div>
+
+공개 [벤치마크](https://benchmark.clickhouse.com/#system=+%E2%98%81w|%EF%B8%8Fr|C%20c|nfe\&type=-\&machine=-ca2|gl|6ax|6ale|3al\&cluster_size=-\&opensource=-\&tuned=+n\&metric=hot\&queries=-) 데이터를 보면,
+ClickHouse는 다음 영역에서 실시간 분석 애플리케이션에 대해 Snowflake보다 우수한 성능을 제공합니다.
+
+* **쿼리 지연 시간**: Snowflake 쿼리는 성능 최적화를 위해 테이블에 클러스터링을 적용하더라도
+  쿼리 지연 시간이 더 높습니다. 당사 테스트에서는 Snowflake 클러스터링 키 또는 ClickHouse 프라이머리 키에
+  포함된 필터가 적용된 쿼리에서, Snowflake가 ClickHouse와 동등한 성능을 달성하려면
+  2배가 넘는 컴퓨트가 필요합니다. Snowflake의 [지속형 쿼리 캐시](https://docs.snowflake.com/en/user-guide/querying-persisted-results)는
+  이러한 지연 시간 문제를 일부 완화하지만, 필터 조건이 더 다양해지는 경우에는
+  효과적이지 않습니다. 또한 이 쿼리 캐시의 효과는 기반 데이터가 변경되면 더 크게 영향을 받을 수 있으며,
+  테이블이 변경되면 캐시 항목이 무효화됩니다. 애플리케이션용 벤치마크에서는 이런 상황이 아니지만,
+  실제 배포에서는 새 데이터를 계속 삽입해야 합니다. ClickHouse의 쿼리 캐시는
+  노드별로 동작하며 [트랜잭션 일관성](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)을
+  보장하지 않기 때문에, [실시간 분석에 더 적합합니다](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design).
+  또한 사용자는 [쿼리별로](/ko/reference/settings/session-settings#use_query_cache) 사용 여부를 제어하고,
+  [정확한 크기](/ko/reference/settings/session-settings#query_cache_max_size_in_bytes),
+  [쿼리 캐시 여부](/ko/reference/settings/session-settings#enable_writes_to_query_cache)
+  (지속 시간 제한 또는 필요한 실행 횟수), 그리고 [수동적으로만 사용할지 여부](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings)까지
+  세밀하게 제어할 수 있습니다.
+
+* **더 낮은 비용**: Snowflake 웨어하우스는 쿼리 비활성 상태가 일정 시간 지속되면
+  중지되도록 구성할 수 있습니다. 중지된 후에는 비용이 발생하지 않습니다.
+  실제로는 이 비활성 검사 간격을 [60 s까지만 줄일 수 있습니다](https://docs.snowflake.com/en/sql-reference/sql/alter-warehouse).
+  웨어하우스는 쿼리를 수신하면 몇 초 내에 자동으로 다시 시작됩니다.
+  Snowflake는 웨어하우스가 사용 중일 때만 리소스 비용을 청구하므로, 이러한 동작은
+  애드혹 쿼리처럼 자주 유휴 상태가 되는 워크로드에 적합합니다.
+
+  그러나 많은 실시간 분석 워크로드는 지속적인 실시간 데이터
+  수집과 유휴 상태 전환의 이점을 얻지 못하는 빈번한 쿼리를 필요로 합니다(예: 고객 대상 대시보드).
+  즉, 웨어하우스는 대개 계속 완전히 활성 상태를 유지해야 하며 비용도 지속적으로 발생합니다.
+  이로 인해 유휴 상태 전환의 비용상 이점은 물론, Snowflake가 대안보다 더 빠르게
+  응답 가능한 상태로 복귀할 수 있다는 성능상 이점도 사라집니다. 이러한 활성 상태 요구 사항은
+  ClickHouse Cloud가 활성 상태에서 초당 비용이 더 낮다는 점과 결합되어,
+  ClickHouse Cloud가 이러한 종류의 워크로드에 대해 총비용 측면에서
+  훨씬 더 낮은 비용을 제공합니다.
+
+* **예측 가능한 기능 요금:** materialized view와
+  클러스터링(ClickHouse의 `ORDER BY`에 해당) 같은 기능은 실시간 분석 사용 사례에서
+  최고 수준의 성능을 달성하는 데 필요합니다. Snowflake에서는 이러한 기능에 추가 비용이 발생하며,
+  credit당 비용이 1.5배 증가하는 상위 tier가 필요할 뿐 아니라,
+  예측하기 어려운 백그라운드 비용도 수반됩니다. 예를 들어 materialized view에는
+  백그라운드 유지 관리 비용이 발생하며, 클러스터링 역시
+  사용 전에 비용을 예측하기 어렵습니다. 반면 ClickHouse Cloud에서는 이러한 기능에 추가 비용이 들지 않으며,
+  삽입 시점의 추가 CPU 및 메모리 사용량만 발생하는데,
+  이는 일반적으로 삽입 워크로드가 매우 높은 경우가 아니라면 무시할 수 있는 수준입니다. 벤치마크에서 확인한 바에 따르면,
+  이러한 차이점은 더 낮은 쿼리 지연 시간과 더 높은 압축률과 함께,
+  ClickHouse의 비용을 크게 낮추는 결과로 이어집니다.

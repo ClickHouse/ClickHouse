@@ -1,0 +1,862 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: '쿼리 최적화'
+title: '쿼리 최적화를 위한 간단한 가이드'
+description: '쿼리 성능을 개선하는 일반적인 방법을 설명하는 쿼리 최적화 가이드'
+doc_type: 'guide'
+keywords: ['쿼리 최적화', '성능', '모범 사례', '쿼리 튜닝', '효율성']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+이 섹션에서는 일반적인 시나리오를 통해 [분석기](/ko/guides/clickhouse/performance-and-monitoring/analyzer), [쿼리 프로파일링](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler), [널 허용 컬럼 피하기](/ko/concepts/best-practices/avoidnullablecolumns)와 같은 다양한 성능 및 최적화 기법을 사용해 ClickHouse 쿼리 성능을 개선하는 방법을 설명합니다.
+
+<div id="understand-query-performance">
+  ## 쿼리 성능 이해하기
+</div>
+
+성능 최적화를 가장 먼저 고려해야 할 시점은 처음으로 ClickHouse에 데이터를 수집하기 전에 [데이터 스키마](/ko/guides/clickhouse/data-modelling/schema-design)를 설계할 때입니다. 
+
+하지만 현실적으로 데이터가 얼마나 증가할지, 어떤 타입의 쿼리가 실행될지는 예측하기 어렵습니다. 
+
+기존 배포 환경에서 개선하려는 쿼리가 몇 개 있다면, 첫 단계는 해당 쿼리의 성능을 파악하고, 어떤 쿼리는 몇 밀리초 만에 실행되는 반면 다른 쿼리는 더 오래 걸리는 이유를 이해하는 것입니다.
+
+ClickHouse는 쿼리가 어떻게 실행되는지와 실행 과정에서 어떤 리소스가 소비되는지를 파악할 수 있도록 다양한 도구를 제공합니다. 
+
+이 섹션에서는 이러한 도구와 사용 방법을 살펴보겠습니다. 
+
+<div id="general-considerations">
+  ## 일반적인 고려 사항
+</div>
+
+쿼리 성능을 이해하기 위해 쿼리 실행 시 ClickHouse 내부에서 어떤 일이 일어나는지 살펴보겠습니다. 
+
+다음 내용은 의도적으로 단순화했으며 일부 세부 사항은 생략했습니다. 여기서의 목적은 지나치게 많은 세부 정보로 혼란을 주는 것이 아니라 기본 개념을 빠르게 이해할 수 있도록 돕는 것입니다. 자세한 내용은 [쿼리 분석기](/ko/guides/clickhouse/performance-and-monitoring/analyzer)를 참고하십시오. 
+
+매우 높은 수준에서 보면 ClickHouse가 쿼리를 실행할 때 다음과 같은 일이 일어납니다. 
+
+* **쿼리 파싱 및 분석**
+
+쿼리를 파싱하고 분석한 뒤, 일반적인 쿼리 실행 계획을 생성합니다. 
+
+* **쿼리 최적화**
+
+쿼리 실행 계획을 최적화하고 불필요한 데이터를 제거하며, 쿼리 계획을 바탕으로 쿼리 파이프라인을 구성합니다. 
+
+* **쿼리 파이프라인 실행**
+
+데이터를 읽어 병렬로 처리합니다. 이 단계에서 ClickHouse는 필터링, 집계, 정렬과 같은 쿼리 작업을 실제로 수행합니다. 
+
+* **최종 처리**
+
+결과를 머지하고 정렬한 후 최종 결과 포맷으로 변환하여 클라이언트에 전송합니다.
+
+실제로는 많은 [최적화](/ko/get-started/about/why-clickhouse-is-so-fast)가 이루어지며, 이 가이드에서도 이를 조금 더 자세히 다룰 것입니다. 하지만 지금은 이러한 주요 개념만으로도 ClickHouse가 쿼리를 실행할 때 내부적으로 어떤 일이 일어나는지 충분히 이해할 수 있습니다. 
+
+이러한 높은 수준의 이해를 바탕으로 ClickHouse가 제공하는 도구와, 이를 사용해 쿼리 성능에 영향을 주는 메트릭을 추적하는 방법을 살펴보겠습니다. 
+
+<div id="dataset">
+  ## 데이터셋
+</div>
+
+쿼리 성능에 접근하는 방식을 설명하기 위해 실제 예시를 사용하겠습니다. 
+
+NYC의 택시 운행 데이터가 포함된 NYC Taxi 데이터셋을 사용하겠습니다. 먼저 최적화 없이 NYC Taxi 데이터셋을 적재합니다.
+
+아래는 테이블을 생성하고 S3 버킷에서 데이터를 삽입하는 명령입니다. 여기서는 의도적으로 데이터로부터 스키마(schema)를 추론하며, 이는 최적화되지 않은 방식입니다.
+
+```sql
+-- 추론된 스키마로 테이블 생성
+CREATE TABLE trips_small_inferred
+ORDER BY () EMPTY
+AS SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+
+-- 추론된 스키마를 가진 테이블에 데이터 삽입
+INSERT INTO trips_small_inferred
+SELECT *
+FROM s3Cluster
+('default','https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/clickhouse-academy/nyc_taxi_2009-2010.parquet');
+```
+
+데이터를 바탕으로 자동으로 추론된 테이블 스키마를 살펴보겠습니다.
+
+```sql
+--- 추론된 테이블 스키마 표시
+SHOW CREATE TABLE trips_small_inferred
+```
+
+```response
+Query id: d97361fd-c050-478e-b831-369469f0784d
+
+CREATE TABLE nyc_taxi.trips_small_inferred
+(
+    `vendor_id` Nullable(String),
+    `pickup_datetime` Nullable(DateTime64(6, 'UTC')),
+    `dropoff_datetime` Nullable(DateTime64(6, 'UTC')),
+    `passenger_count` Nullable(Int64),
+    `trip_distance` Nullable(Float64),
+    `ratecode_id` Nullable(String),
+    `pickup_location_id` Nullable(String),
+    `dropoff_location_id` Nullable(String),
+    `payment_type` Nullable(Int64),
+    `fare_amount` Nullable(Float64),
+    `extra` Nullable(Float64),
+    `mta_tax` Nullable(Float64),
+    `tip_amount` Nullable(Float64),
+    `tolls_amount` Nullable(Float64),
+    `total_amount` Nullable(Float64)
+)
+ORDER BY tuple()
+```
+
+<div id="spot-the-slow-queries">
+  ## 느린 쿼리 찾기
+</div>
+
+<div id="query-logs">
+  ### 쿼리 로그
+</div>
+
+기본적으로 ClickHouse는 실행된 각 쿼리에 대한 정보를 [쿼리 로그](/ko/reference/system-tables/query_log)에 수집해 기록합니다. 이 데이터는 `system.query_log` 테이블에 저장됩니다. 
+
+ClickHouse는 실행된 각 쿼리에 대해 쿼리 실행 시간, 읽은 행 수, CPU, 메모리 사용량, 파일 시스템 캐시 적중 횟수와 같은 리소스 사용량 등의 통계를 기록합니다. 
+
+따라서 느린 쿼리를 조사할 때 쿼리 로그는 가장 먼저 살펴보기 좋은 곳입니다. 실행 시간이 오래 걸리는 쿼리를 쉽게 찾아내고 각 쿼리의 리소스 사용량 정보도 확인할 수 있습니다. 
+
+이제 NYC taxi 데이터셋에서 실행 시간이 가장 긴 상위 5개의 쿼리를 찾아보겠습니다.
+
+```sql
+-- 지난 1시간 동안 nyc_taxi 데이터베이스에서 실행 시간이 긴 상위 5개 쿼리 조회
+SELECT
+    type,
+    event_time,
+    query_duration_ms,
+    query,
+    read_rows,
+    tables
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (event_time >= (now() - toIntervalMinute(60))) AND type='QueryFinish'
+ORDER BY query_duration_ms DESC
+LIMIT 5
+FORMAT VERTICAL
+```
+
+```response
+Query id: e3d48c9f-32bb-49a4-8303-080f59ed1835
+
+Row 1:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:36
+query_duration_ms: 2967
+query:             WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 2:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:11:33
+query_duration_ms: 2026
+query:             SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 3:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:17
+query_duration_ms: 1860
+query:             SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 4:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:31
+query_duration_ms: 690
+query:             SELECT avg(total_amount) FROM nyc_taxi.trips_small_inferred WHERE trip_distance > 5
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+
+Row 5:
+──────
+type:              QueryFinish
+event_time:        2024-11-27 11:12:44
+query_duration_ms: 634
+query:             SELECT
+vendor_id,
+avg(total_amount),
+avg(trip_distance),
+FROM
+nyc_taxi.trips_small_inferred
+GROUP BY vendor_id
+ORDER BY 1 DESC
+FORMAT JSON
+read_rows:         329044175
+tables:            ['nyc_taxi.trips_small_inferred']
+```
+
+`query_duration_ms` 필드는 해당 쿼리의 실행에 걸린 시간을 나타냅니다. 쿼리 로그의 결과를 보면 첫 번째 쿼리의 실행에 2967ms가 걸리므로, 개선의 여지가 있음을 알 수 있습니다. 
+
+메모리나 CPU를 가장 많이 사용하는 쿼리를 살펴보면 어떤 쿼리가 시스템에 부하를 주고 있는지도 파악할 수 있습니다. 
+
+```sql
+-- 메모리 사용량이 많은 상위 쿼리
+SELECT
+    type,
+    event_time,
+    query_id,
+    formatReadableSize(memory_usage) AS memory,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'UserTimeMicroseconds')] AS userCPU,
+    ProfileEvents.Values[indexOf(ProfileEvents.Names, 'SystemTimeMicroseconds')] AS systemCPU,
+    (ProfileEvents['CachedReadBufferReadFromCacheMicroseconds']) / 1000000 AS FromCacheSeconds,
+    (ProfileEvents['CachedReadBufferReadFromSourceMicroseconds']) / 1000000 AS FromSourceSeconds,
+    normalized_query_hash
+FROM clusterAllReplicas(default, system.query_log)
+WHERE has(databases, 'nyc_taxi') AND (type='QueryFinish') AND ((event_time >= (now() - toIntervalDay(2))) AND (event_time <= now())) AND (user NOT ILIKE '%internal%')
+ORDER BY memory_usage DESC
+LIMIT 30
+```
+
+찾은 장시간 실행 쿼리를 따로 분리한 뒤, 응답 시간을 파악하기 위해 몇 차례 다시 실행해 보겠습니다. 
+
+이 시점에서는 재현성을 높이기 위해 `enable_filesystem_cache` 설정을 0으로 지정해 파일 시스템 캐시를 비활성화하는 것이 매우 중요합니다.
+
+```sql
+-- 파일 시스템 캐시 비활성화
+set enable_filesystem_cache = 0;
+
+-- 쿼리 1 실행
+WITH
+  dateDiff('s', pickup_datetime, dropoff_datetime) as trip_time,
+  trip_distance / trip_time * 3600 AS speed_mph
+SELECT
+  quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM
+  nyc_taxi.trips_small_inferred
+WHERE
+  speed_mph > 30
+FORMAT JSON
+
+----
+```
+
+```response
+1 row in set. Elapsed: 1.699 sec. Processed 329.04 million rows, 8.88 GB (193.72 million rows/s., 5.23 GB/s.)
+Peak memory usage: 440.24 MiB.
+```
+
+```sql
+-- 쿼리 2 실행
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM
+    nyc_taxi.trips_small_inferred
+WHERE
+    pickup_datetime >= '2009-01-01' AND pickup_datetime < '2009-04-01'
+GROUP BY
+    payment_type
+ORDER BY
+    trip_count DESC;
+
+---
+```
+
+```response
+4 rows in set. Elapsed: 1.419 sec. Processed 329.04 million rows, 5.72 GB (231.86 million rows/s., 4.03 GB/s.)
+Peak memory usage: 546.75 MiB.
+```
+
+```sql
+-- 쿼리 3 실행
+SELECT
+  avg(dateDiff('s', pickup_datetime, dropoff_datetime))
+FROM nyc_taxi.trips_small_inferred
+WHERE passenger_count = 1 or passenger_count = 2
+FORMAT JSON
+
+---
+```
+
+```response
+1 row in set. Elapsed: 1.414 sec. Processed 329.04 million rows, 8.88 GB (232.63 million rows/s., 6.28 GB/s.)
+Peak memory usage: 451.53 MiB.
+```
+
+읽기 쉽도록 표로 정리해 보겠습니다.
+
+| 이름   | 경과 시간     | 처리된 행 수        | 최대 메모리     |
+| ---- | --------- | -------------- | ---------- |
+| 쿼리 1 | 1.699 sec | 329.04 million | 440.24 MiB |
+| 쿼리 2 | 1.419 sec | 329.04 million | 546.75 MiB |
+| 쿼리 3 | 1.414 sec | 329.04 million | 451.53 MiB |
+
+각 쿼리가 무엇을 하는지 조금 더 자세히 살펴보겠습니다. 
+
+* 쿼리 1은 시속 평균 30마일을 초과하는 운행의 거리 분포를 계산합니다.
+* 쿼리 2는 주별 운행 건수와 평균 비용을 구합니다. 
+* 쿼리 3은 데이터셋에서 각 이동의 평균 시간을 계산합니다.
+
+이 쿼리들 가운데 매우 복잡한 처리를 수행하는 것은 없습니다. 다만 첫 번째 쿼리는 실행할 때마다 이동 시간을 즉석에서 계산한다는 점이 예외입니다. 하지만 이 쿼리들은 각각 실행에 1초 이상 걸리며, ClickHouse에서는 이는 매우 긴 시간입니다. 메모리 사용량도 눈에 띕니다. 쿼리마다 대략 400MB 안팎을 사용하는 것은 상당히 큰 편입니다. 또한 각 쿼리는 같은 수의 행(즉, 3억 2904만 행)을 읽는 것으로 보입니다. 이 테이블에 행이 몇 개 있는지 빠르게 확인해 보겠습니다.
+
+```sql
+-- 테이블의 행 수 계산
+SELECT count()
+FROM nyc_taxi.trips_small_inferred
+```
+
+```response
+Query id: 733372c5-deaf-4719-94e3-261540933b23
+
+   ┌───count()─┐
+1. │ 329044175 │ -- 3억 2904만
+   └───────────┘
+```
+
+테이블에는 3억 2,904만 개의 행이 있으므로 각 쿼리는 테이블 전체를 스캔하게 됩니다.
+
+<div id="explain-statement">
+  ### Explain 구문
+</div>
+
+실행 시간이 긴 쿼리를 확인했으니, 이제 해당 쿼리가 어떻게 실행되는지 살펴보겠습니다. ClickHouse는 이를 위해 [EXPLAIN 문 명령어](/ko/reference/statements/explain)를 지원합니다. 이 도구는 쿼리를 실제로 실행하지 않고도 모든 쿼리 실행 단계를 매우 상세하게 확인할 수 있어 유용합니다. ClickHouse에 익숙하지 않은 사용자에게는 다소 복잡하게 느껴질 수 있지만, 쿼리 실행 방식을 파악하는 데 없어서는 안 될 도구입니다.
+
+EXPLAIN 구문이 무엇인지, 그리고 이를 활용하여 쿼리 실행을 분석하는 방법에 대한 자세한 내용은 별도의 [가이드](/ko/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer)를 참고하십시오. 여기서는 해당 가이드의 내용을 반복하는 대신, 쿼리 실행 성능의 병목 지점을 파악하는 데 유용한 몇 가지 명령어를 중점적으로 살펴보겠습니다.
+
+**인덱스 설명 = 1**
+
+먼저 EXPLAIN indexes = 1을 사용하여 쿼리 플랜을 살펴보겠습니다. 쿼리 플랜은 쿼리가 어떻게 실행될지 보여주는 트리 구조입니다. 여기서 쿼리의 각 절(clause)이 어떤 순서로 실행되는지 확인할 수 있습니다. EXPLAIN 문이 반환하는 쿼리 플랜은 아래에서 위 방향으로 읽습니다.
+
+장시간 실행되는 쿼리 중 첫 번째를 사용해 보겠습니다.
+
+```sql
+EXPLAIN indexes = 1
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: f35c412a-edda-4089-914b-fa1622d69868
+
+   ┌─explain─────────────────────────────────────────────┐
+1. │ Expression ((Projection + Before ORDER BY))         │
+2. │   Aggregating                                       │
+3. │     Expression (Before GROUP BY)                    │
+4. │       Filter (WHERE)                                │
+5. │         ReadFromMergeTree (nyc_taxi.trips_small_inferred) │
+   └─────────────────────────────────────────────────────┘
+```
+
+출력 결과는 간단합니다. 쿼리는 먼저 `nyc_taxi.trips_small_inferred` 테이블에서 데이터를 읽습니다. 이후 WHERE 절이 적용되어 계산된 값을 기준으로 행을 필터링합니다. 필터링된 데이터는 집계를 위해 준비되고, 분위수가 계산됩니다. 마지막으로 결과가 정렬되어 출력됩니다.
+
+여기서 프라이머리 키(primary key)가 사용되지 않은 것을 확인할 수 있습니다. 테이블 생성 시 프라이머리 키를 정의하지 않았으므로 당연한 결과입니다. 이로 인해 ClickHouse는 해당 쿼리에 대해 테이블 전체를 풀 스캔하고 있습니다.
+
+**파이프라인 설명(Explain Pipeline)**
+
+EXPLAIN Pipeline은 쿼리의 구체적인 실행 전략을 보여줍니다. 여기서 ClickHouse가 앞서 살펴본 일반적인 쿼리 플랜(query plan)을 실제로 어떻게 실행하는지 확인할 수 있습니다.
+
+```sql
+EXPLAIN PIPELINE
+WITH
+    dateDiff('s', pickup_datetime, dropoff_datetime) AS trip_time,
+    (trip_distance / trip_time) * 3600 AS speed_mph
+SELECT quantiles(0.5, 0.75, 0.9, 0.99)(trip_distance)
+FROM nyc_taxi.trips_small_inferred
+WHERE speed_mph > 30
+```
+
+```response
+Query id: c7e11e7b-d970-4e35-936c-ecfc24e3b879
+
+    ┌─explain─────────────────────────────────────────────────────────────────────────────┐
+ 1. │ (Expression)                                                                        │
+ 2. │ ExpressionTransform × 59                                                            │
+ 3. │   (Aggregating)                                                                     │
+ 4. │   Resize 59 → 59                                                                    │
+ 5. │     AggregatingTransform × 59                                                       │
+ 6. │       StrictResize 59 → 59                                                          │
+ 7. │         (Expression)                                                                │
+ 8. │         ExpressionTransform × 59                                                    │
+ 9. │           (Filter)                                                                  │
+10. │           FilterTransform × 59                                                      │
+11. │             (ReadFromMergeTree)                                                     │
+12. │             MergeTreeSelect(pool: PrefetchedReadPool, algorithm: Thread) × 59 0 → 1 │
+```
+
+여기서 쿼리 실행에 사용된 스레드 수가 59개임을 확인할 수 있는데, 이는 높은 수준의 병렬화를 나타냅니다. 이 덕분에 쿼리 실행 속도가 빨라지며, 사양이 낮은 머신에서는 실행 시간이 더 길어질 수 있습니다. 병렬로 실행되는 스레드 수가 많다는 점이 쿼리가 많은 메모리를 사용하는 이유를 설명해 줍니다.
+
+이상적으로는 모든 느린 쿼리를 동일한 방식으로 조사하여 불필요하게 복잡한 쿼리 플랜을 파악하고, 각 쿼리가 읽는 행 수와 소비되는 리소스를 확인하는 것이 좋습니다.
+
+<div id="methodology">
+  ## 방법론
+</div>
+
+프로덕션 환경에서는 문제를 일으키는 쿼리를 식별하기가 어려울 수 있습니다. 특정 시점에 ClickHouse 배포 환경에서 매우 많은 쿼리가 실행되고 있을 가능성이 높기 때문입니다. 
+
+문제가 발생하는 사용자, 데이터베이스 또는 테이블을 알고 있다면 `system.query_logs`의 `user`, `tables`, `databases` 필드를 사용해 검색 범위를 좁힐 수 있습니다. 
+
+최적화할 쿼리를 식별했다면 해당 쿼리 개선 작업을 시작할 수 있습니다. 이 단계에서 개발자가 흔히 저지르는 실수 중 하나는 여러 사항을 동시에 변경하고, ad-hoc 실험을 수행한 뒤, 대개 일관성 없는 결과만 얻게 되는 것입니다. 더 중요한 문제는 무엇이 쿼리를 더 빠르게 만들었는지 제대로 이해하지 못한다는 점입니다. 
+
+쿼리 최적화에는 체계적인 접근이 필요합니다. 고급 벤치마크를 하자는 뜻은 아니지만, 변경 사항이 쿼리 성능에 어떤 영향을 미치는지 파악할 수 있도록 간단한 절차를 마련해 두는 것만으로도 큰 도움이 됩니다. 
+
+먼저 쿼리 로그에서 느린 쿼리를 식별한 다음, 가능한 개선 사항을 개별적으로 검토하십시오. 쿼리를 테스트할 때는 파일 시스템 캐시를 반드시 비활성화하세요. 
+
+> ClickHouse는 여러 단계에서 [캐싱](/ko/concepts/features/performance/caches/caches)을 활용해 쿼리 성능을 높입니다. 이는 쿼리 성능에는 유리하지만, 트러블슈팅 중에는 잠재적인 I/O 병목이나 비효율적인 테이블 스키마를 가릴 수 있습니다. 이런 이유로 테스트 중에는 파일 시스템 캐시를 끄는 것을 권장합니다. 프로덕션 환경에서는 반드시 다시 활성화해 두십시오.
+
+가능한 최적화 방안을 식별했다면, 성능에 미치는 영향을 더 잘 추적할 수 있도록 이를 하나씩 적용하는 것이 좋습니다. 아래는 일반적인 접근 방식을 설명하는 다이어그램입니다.
+
+<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="최적화 워크플로" />
+
+*마지막으로, 이상치에 주의하십시오. 사용자가 ad-hoc으로 비용이 큰 쿼리를 실행했거나 다른 이유로 시스템에 부하가 걸려 쿼리가 느리게 실행되는 경우는 매우 흔합니다. `normalized_query_hash` 필드로 그룹화하면 정기적으로 실행되는 고비용 쿼리를 식별할 수 있습니다. 이런 쿼리를 우선 조사하는 것이 좋습니다.*
+
+<div id="basic-optimization">
+  ## 기본 최적화
+</div>
+
+이제 테스트할 기반이 마련되었으니 최적화를 시작할 수 있습니다.
+
+가장 먼저 살펴볼 부분은 데이터가 저장되는 방식입니다. 모든 데이터베이스와 마찬가지로, 읽는 데이터가 적을수록 쿼리는 더 빠르게 실행됩니다. 
+
+데이터를 수집한 방식에 따라, 수집된 데이터를 바탕으로 테이블 스키마를 추론하는 ClickHouse [기능](/ko/concepts/features/interfaces/schema-inference)을 활용했을 수 있습니다. 이는 시작하기에는 매우 편리하지만, 쿼리 성능을 최적화하려면 사용 사례에 가장 잘 맞게 데이터 스키마를 검토해야 합니다.
+
+<div id="nullable">
+  ### 널 허용
+</div>
+
+[모범 사례 문서](/ko/concepts/best-practices/select-data-type#avoid-nullable-columns)에서 설명했듯이, 가능한 한 널 허용 컬럼은 피하십시오. 데이터 수집 메커니즘을 더 유연하게 만들기 때문에 자주 사용하고 싶을 수 있지만, 매번 추가 컬럼을 처리해야 하므로 성능에 부정적인 영향을 줍니다.
+
+NULL 값을 가진 행 수를 계산하는 SQL 쿼리를 실행하면, 실제로 널 허용 타입이 필요한 테이블의 컬럼을 쉽게 파악할 수 있습니다.
+
+```sql
+-- NULL 값이 있는 컬럼 찾기
+SELECT
+    countIf(vendor_id IS NULL) AS vendor_id_nulls,
+    countIf(pickup_datetime IS NULL) AS pickup_datetime_nulls,
+    countIf(dropoff_datetime IS NULL) AS dropoff_datetime_nulls,
+    countIf(passenger_count IS NULL) AS passenger_count_nulls,
+    countIf(trip_distance IS NULL) AS trip_distance_nulls,
+    countIf(fare_amount IS NULL) AS fare_amount_nulls,
+    countIf(mta_tax IS NULL) AS mta_tax_nulls,
+    countIf(tip_amount IS NULL) AS tip_amount_nulls,
+    countIf(tolls_amount IS NULL) AS tolls_amount_nulls,
+    countIf(total_amount IS NULL) AS total_amount_nulls,
+    countIf(payment_type IS NULL) AS payment_type_nulls,
+    countIf(pickup_location_id IS NULL) AS pickup_location_id_nulls,
+    countIf(dropoff_location_id IS NULL) AS dropoff_location_id_nulls
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+Query id: 4a70fc5b-2501-41c8-813c-45ce241d85ae
+
+Row 1:
+──────
+vendor_id_nulls:           0
+pickup_datetime_nulls:     0
+dropoff_datetime_nulls:    0
+passenger_count_nulls:     0
+trip_distance_nulls:       0
+fare_amount_nulls:         0
+mta_tax_nulls:             137946731
+tip_amount_nulls:          0
+tolls_amount_nulls:        0
+total_amount_nulls:        0
+payment_type_nulls:        69305
+pickup_location_id_nulls:  0
+dropoff_location_id_nulls: 0
+```
+
+NULL 값을 갖는 컬럼은 `mta_tax`와 `payment_type` 두 개뿐입니다. 나머지 필드에는 `Nullable` 컬럼을 사용하지 않아야 합니다.
+
+<div id="low-cardinality">
+  ### 낮은 카디널리티
+</div>
+
+String에 적용할 수 있는 가장 쉬운 최적화 중 하나는 LowCardinality 데이터 타입을 적극적으로 활용하는 것입니다. 낮은 카디널리티 [문서](/ko/reference/data-types/lowcardinality)에서 설명한 것처럼, ClickHouse는 LowCardinality 컬럼에 딕셔너리 인코딩을 적용하며, 이를 통해 쿼리 성능이 크게 향상됩니다. 
+
+어떤 컬럼이 LowCardinality에 적합한지 판단하는 간단한 기준은, 고유값이 10,000개 미만인 컬럼이라면 매우 좋은 후보라는 것입니다.
+
+다음 SQL 쿼리를 사용하면 고유값 수가 적은 컬럼을 찾을 수 있습니다.
+
+```sql
+-- 낮은 카디널리티 컬럼 식별
+SELECT
+    uniq(ratecode_id),
+    uniq(pickup_location_id),
+    uniq(dropoff_location_id),
+    uniq(vendor_id)
+FROM trips_small_inferred
+FORMAT VERTICAL
+```
+
+```response
+쿼리 id: d502c6a1-c9bc-4415-9d86-5de74dd6d932
+
+행 1:
+──────
+uniq(ratecode_id):         6
+uniq(pickup_location_id):  260
+uniq(dropoff_location_id): 260
+uniq(vendor_id):           3
+```
+
+카디널리티가 낮으므로 `ratecode_id`, `pickup_location_id`, `dropoff_location_id`, `vendor_id` 4개의 컬럼은 LowCardinality 필드 유형에 적합한 후보입니다.
+
+<div id="optimize-data-type">
+  ### 데이터 타입 최적화
+</div>
+
+ClickHouse는 매우 다양한 데이터 타입을 지원합니다. 성능을 최적화하고 디스크 사용량을 줄이려면, 사용 사례에 맞는 가장 작은 데이터 타입을 선택하십시오. 
+
+숫자의 경우 데이터셋의 최소/최대값을 확인해 현재 precision 값이 실제 데이터셋에 맞는지 판단할 수 있습니다. 
+
+```sql
+-- payment_type 필드의 최솟값/최댓값 찾기
+SELECT
+    min(payment_type),max(payment_type),
+    min(passenger_count), max(passenger_count)
+FROM trips_small_inferred
+```
+
+```response
+쿼리 id: 4306a8e1-2a9c-4b06-97b4-4d902d2233eb
+
+   ┌─min(payment_type)─┬─max(payment_type)─┐
+1. │                 1 │                 4 │
+   └───────────────────┴───────────────────┘
+```
+
+날짜에는 데이터셋에 맞고 실행할 쿼리에 응답하기에 가장 적합한 정밀도를 선택해야 합니다.
+
+<div id="apply-the-optimizations">
+  ### 최적화를 적용합니다
+</div>
+
+최적화된 스키마를 사용할 새 테이블을 만들고 데이터를 다시 수집하겠습니다.
+
+```sql
+-- 최적화된 데이터로 테이블 생성
+CREATE TABLE trips_small_no_pk
+(
+    `vendor_id` LowCardinality(String),
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` LowCardinality(String),
+    `dropoff_location_id` LowCardinality(String),
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+ORDER BY tuple();
+
+-- 데이터 삽입
+INSERT INTO trips_small_no_pk SELECT * FROM trips_small_inferred
+```
+
+개선 여부를 확인하기 위해 새 테이블로 쿼리를 다시 실행합니다. 
+
+| Name    | Run 1 - Elapsed | Elapsed   | Rows processed | Peak memory |
+| ------- | --------------- | --------- | -------------- | ----------- |
+| Query 1 | 1.699 sec       | 1.353 sec | 329.04 million | 337.12 MiB  |
+| Query 2 | 1.419 sec       | 1.171 sec | 329.04 million | 531.09 MiB  |
+| Query 3 | 1.414 sec       | 1.188 sec | 329.04 million | 265.05 MiB  |
+
+쿼리 시간과 메모리 사용량 모두에서 일부 개선을 확인할 수 있습니다. 데이터 스키마 최적화 덕분에 데이터를 표현하는 전체 데이터 양이 줄어들어 메모리 사용량이 감소하고 처리 시간도 단축됩니다. 
+
+차이를 확인하기 위해 테이블 크기를 살펴보겠습니다. 
+
+```sql
+SELECT
+    `table`,
+    formatReadableSize(sum(data_compressed_bytes) AS size) AS compressed,
+    formatReadableSize(sum(data_uncompressed_bytes) AS usize) AS uncompressed,
+    sum(rows) AS rows
+FROM system.parts
+WHERE (active = 1) AND ((`table` = 'trips_small_no_pk') OR (`table` = 'trips_small_inferred'))
+GROUP BY
+    database,
+    `table`
+ORDER BY size DESC
+```
+
+```response
+쿼리 id: 72b5eb1c-ff33-4fdb-9d29-dd076ac6f532
+
+   ┌─table────────────────┬─compressed─┬─uncompressed─┬──────rows─┐
+1. │ trips_small_inferred │ 7.38 GiB   │ 37.41 GiB    │ 329044175 │
+2. │ trips_small_no_pk    │ 4.89 GiB   │ 15.31 GiB    │ 329044175 │
+   └──────────────────────┴────────────┴──────────────┴───────────┘
+```
+
+새 테이블은 이전 테이블보다 훨씬 작습니다. 테이블이 차지하는 디스크 공간도 약 34% 감소했습니다(7.38 GiB에서 4.89 GiB로 감소).
+
+<div id="the-importance-of-primary-keys">
+  ## 기본 키의 중요성
+</div>
+
+ClickHouse의 기본 키(primary key)는 대부분의 전통적인 데이터베이스 시스템과는 다르게 동작합니다. 이러한 시스템에서 기본 키는 고유성과 데이터 무결성을 보장합니다. 중복된 기본 키 값을 삽입하려고 하면 거부되며, 빠른 조회를 위해 일반적으로 B-트리 또는 해시 기반 인덱스가 생성됩니다. 
+
+ClickHouse에서 기본 키의 [목적](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#a-table-with-a-primary-key)은 다릅니다. 기본 키는 고유성을 보장하지 않으며 데이터 무결성을 유지하는 역할도 하지 않습니다. 대신 쿼리 성능을 최적화하도록 설계되었습니다. 기본 키는 데이터가 디스크에 저장되는 순서를 정의하며, 각 그래뉼의 첫 번째 행을 가리키는 포인터를 저장하는 희소 인덱스로 구현됩니다.
+
+> ClickHouse의 그래뉼은 쿼리 실행 중 데이터를 읽는 가장 작은 단위입니다. 그래뉼에는 `index_granularity`에 따라 결정되는 일정 개수 이하의 행이 포함되며, 기본값은 8192행입니다. 그래뉼은 연속적으로 저장되며 기본 키 순서로 정렬됩니다. 
+
+적절한 기본 키 집합을 선택하는 것은 성능에 매우 중요합니다. 실제로는 특정 쿼리 집합의 속도를 높이기 위해 동일한 데이터를 서로 다른 테이블에 저장하고, 각 테이블에 서로 다른 기본 키 집합을 사용하는 경우도 흔합니다. 
+
+Projection이나 구체화된 뷰(Materialized View)와 같이 ClickHouse가 지원하는 다른 옵션을 사용하면 동일한 데이터에 서로 다른 기본 키 집합을 적용할 수 있습니다. 이 블로그 시리즈의 두 번째 파트에서 이를 더 자세히 다룰 예정입니다. 
+
+<div id="choose-primary-keys">
+  ### 기본 키 선택
+</div>
+
+적절한 기본 키 조합을 선택하는 일은 복잡한 주제이며, 최적의 조합을 찾으려면 여러 트레이드오프와 실험이 필요할 수 있습니다. 
+
+지금은 다음과 같은 간단한 원칙을 따르겠습니다: 
+
+* 대부분의 쿼리에서 필터링에 사용되는 필드를 사용합니다
+* 카디널리티가 낮은 컬럼을 먼저 선택합니다 
+* 타임스탬프 데이터셋에서는 시간 기준 필터링이 매우 흔하므로, 기본 키에 시간 기반 요소를 포함하는 것을 고려합니다. 
+
+이 예제에서는 `passenger_count`, `pickup_datetime`, `dropoff_datetime`를 기본 키로 실험해 보겠습니다. 
+
+`passenger&#95;count`의 카디널리티는 낮고(고유값 24개) 느린 쿼리에서 사용됩니다. 또한 자주 필터링될 수 있으므로 타임스탬프 필드(`pickup_datetime` 및 `dropoff_datetime`)도 추가합니다.
+
+기본 키를 포함한 새 테이블을 만들고 데이터를 다시 수집합니다.
+
+```sql
+CREATE TABLE trips_small_pk
+(
+    `vendor_id` UInt8,
+    `pickup_datetime` DateTime,
+    `dropoff_datetime` DateTime,
+    `passenger_count` UInt8,
+    `trip_distance` Float32,
+    `ratecode_id` LowCardinality(String),
+    `pickup_location_id` UInt16,
+    `dropoff_location_id` UInt16,
+    `payment_type` Nullable(UInt8),
+    `fare_amount` Decimal32(2),
+    `extra` Decimal32(2),
+    `mta_tax` Nullable(Decimal32(2)),
+    `tip_amount` Decimal32(2),
+    `tolls_amount` Decimal32(2),
+    `total_amount` Decimal32(2)
+)
+PRIMARY KEY (passenger_count, pickup_datetime, dropoff_datetime);
+
+-- 데이터 삽입
+INSERT INTO trips_small_pk SELECT * FROM trips_small_inferred
+```
+
+그런 다음 쿼리를 다시 실행합니다. 세 번의 실험 결과를 종합해 경과 시간, 처리된 행 수, 메모리 사용량이 얼마나 개선되었는지 확인합니다. 
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">쿼리 1</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>실행 1</th>
+      <th>실행 2</th>
+      <th>실행 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>경과 시간</td>
+      <td>1.699 sec</td>
+      <td>1.353 sec</td>
+      <td>0.765 sec</td>
+    </tr>
+
+    <tr>
+      <td>처리된 행 수</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+    </tr>
+
+    <tr>
+      <td>최대 메모리 사용량</td>
+      <td>440.24 MiB</td>
+      <td>337.12 MiB</td>
+      <td>444.19 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">쿼리 2</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>실행 1</th>
+      <th>실행 2</th>
+      <th>실행 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>경과 시간</td>
+      <td>1.419 sec</td>
+      <td>1.171 sec</td>
+      <td>0.248 sec</td>
+    </tr>
+
+    <tr>
+      <td>처리된 행 수</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>41.46 million</td>
+    </tr>
+
+    <tr>
+      <td>최대 메모리 사용량</td>
+      <td>546.75 MiB</td>
+      <td>531.09 MiB</td>
+      <td>173.50 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+<table>
+  <thead>
+    <tr>
+      <th colspan="4">쿼리 3</th>
+    </tr>
+
+    <tr>
+      <th />
+
+      <th>실행 1</th>
+      <th>실행 2</th>
+      <th>실행 3</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>경과 시간</td>
+      <td>1.414 sec</td>
+      <td>1.188 sec</td>
+      <td>0.431 sec</td>
+    </tr>
+
+    <tr>
+      <td>처리된 행</td>
+      <td>329.04 million</td>
+      <td>329.04 million</td>
+      <td>276.99 million</td>
+    </tr>
+
+    <tr>
+      <td>최대 메모리</td>
+      <td>451.53 MiB</td>
+      <td>265.05 MiB</td>
+      <td>197.38 MiB</td>
+    </tr>
+  </tbody>
+</table>
+
+실행 시간과 메모리 사용량 모두에서 전반적으로 상당한 개선이 있었음을 확인할 수 있습니다. 
+
+쿼리 2는 기본 키의 이점을 가장 크게 얻습니다. 생성된 쿼리 계획이 이전과 어떻게 다른지 살펴보겠습니다.
+
+```sql
+EXPLAIN indexes = 1
+SELECT
+    payment_type,
+    COUNT() AS trip_count,
+    formatReadableQuantity(SUM(trip_distance)) AS total_distance,
+    AVG(total_amount) AS total_amount_avg,
+    AVG(tip_amount) AS tip_amount_avg
+FROM nyc_taxi.trips_small_pk
+WHERE (pickup_datetime >= '2009-01-01') AND (pickup_datetime < '2009-04-01')
+GROUP BY payment_type
+ORDER BY trip_count DESC
+```
+
+```response
+Query id: 30116a77-ba86-4e9f-a9a2-a01670ad2e15
+
+    ┌─explain──────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+ 1. │ Expression ((Projection + Before ORDER BY [lifted up part]))                                                     │
+ 2. │   Sorting (Sorting for ORDER BY)                                                                                 │
+ 3. │     Expression (Before ORDER BY)                                                                                 │
+ 4. │       Aggregating                                                                                                │
+ 5. │         Expression (Before GROUP BY)                                                                             │
+ 6. │           Expression                                                                                             │
+ 7. │             ReadFromMergeTree (nyc_taxi.trips_small_pk)                                                          │
+ 8. │             Indexes:                                                                                             │
+ 9. │               PrimaryKey                                                                                         │
+10. │                 Keys:                                                                                            │
+11. │                   pickup_datetime                                                                                │
+12. │                 Condition: and((pickup_datetime in (-Inf, 1238543999]), (pickup_datetime in [1230768000, +Inf))) │
+13. │                 Parts: 9/9                                                                                       │
+14. │                 Granules: 5061/40167                                                                             │
+    └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+기본 키 덕분에 테이블 그래뉼의 일부만 선택되었습니다. 이것만으로도 ClickHouse가 처리해야 하는 데이터가 크게 줄어들어 쿼리 성능이 크게 향상됩니다.
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+이 가이드를 통해 ClickHouse에서 느린 쿼리를 조사하고 더 빠르게 만드는 방법을 잘 이해하게 되기를 바랍니다. 이 주제를 더 깊이 살펴보려면 [쿼리 분석기](/ko/guides/clickhouse/performance-and-monitoring/analyzer)와 [프로파일링](/ko/concepts/features/performance/troubleshoot/sampling-query-profiler)을 참고하여 ClickHouse가 쿼리를 실제로 어떻게 실행하는지 더 정확히 이해하십시오.
+
+ClickHouse의 특성에 더 익숙해졌다면, 쿼리 성능을 더욱 향상시킬 수 있는 고급 기법을 익히기 위해 [파티셔닝 키](/ko/concepts/best-practices/partitioning-keys)와 [데이터 스키핑 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes)도 읽어보시기 바랍니다.

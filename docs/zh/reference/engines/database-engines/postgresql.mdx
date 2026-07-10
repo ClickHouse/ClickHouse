@@ -1,0 +1,156 @@
+---
+description: '允许连接到远程 PostgreSQL 服务器上的数据库。'
+sidebarTitle: 'PostgreSQL'
+slug: /engines/database-engines/postgresql
+title: 'PostgreSQL'
+doc_type: 'guide'
+---
+
+允许连接到远程 [PostgreSQL](https://www.postgresql.org) 服务器上的数据库。支持读写操作 (`SELECT` 和 `INSERT` 查询) ，以便在 ClickHouse 与 PostgreSQL 之间交换数据。
+
+借助 `SHOW TABLES` 和 `DESCRIBE TABLE` 查询，可以实时访问远程 PostgreSQL 中的表列表和表结构。
+
+支持表结构修改 (`ALTER TABLE ... ADD|DROP COLUMN`) 。如果 `use_table_cache` 参数 (参见下方的引擎参数) 设置为 `1`，则表结构会被缓存，且不会检查是否发生修改，但可以通过 `DETACH` 和 `ATTACH` 查询更新。
+
+<div id="creating-a-database">
+  ## 创建数据库
+</div>
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('host:port', 'database', 'user', 'password'[, `schema`, `use_table_cache`]);
+```
+
+**引擎参数**
+
+* `host:port` — PostgreSQL 服务器地址。
+* `database` — 远程数据库名称。
+* `user` — PostgreSQL 用户。
+* `password` — 用户密码。
+* `schema` — PostgreSQL schema。
+* `use_table_cache` — 定义是否缓存数据库表结构。可选。默认值：`0`。
+
+<div id="data_types-support">
+  ## 支持的数据类型
+</div>
+
+| PostgreSQL       | ClickHouse                                        |
+| ---------------- | ------------------------------------------------- |
+| DATE             | [Date](/zh/reference/data-types/date)                |
+| TIMESTAMP        | [DateTime](/zh/reference/data-types/datetime)        |
+| REAL             | [Float32](/zh/reference/data-types/float)            |
+| DOUBLE           | [Float64](/zh/reference/data-types/float)            |
+| DECIMAL, NUMERIC | [Decimal](/zh/reference/data-types/decimal) (见下方说明)  |
+| SMALLINT         | [Int16](/zh/reference/data-types/int-uint)           |
+| INTEGER          | [Int32](/zh/reference/data-types/int-uint)           |
+| BIGINT           | [Int64](/zh/reference/data-types/int-uint)           |
+| SERIAL           | [UInt32](/zh/reference/data-types/int-uint)          |
+| BIGSERIAL        | [UInt64](/zh/reference/data-types/int-uint)          |
+| TEXT, CHAR       | [String](/zh/reference/data-types/string)            |
+| INTEGER          | Nullable([Int32](/zh/reference/data-types/int-uint)) |
+| ARRAY            | [Array](/zh/reference/data-types/array)              |
+
+<Note>
+  对于精度 `p` 大于 76 (即 `Decimal256` 支持的最大精度) 的 PostgreSQL `numeric(p, 0)`——例如通常用于存储 256 位整数的 `numeric(78, 0)`——会映射为 [`Int256`](/zh/reference/data-types/int-uint) 而非 `Decimal`。超出 `Int256` 取值范围的值会报错并被拒绝。
+</Note>
+
+<div id="examples-of-use">
+  ## 使用示例
+</div>
+
+ClickHouse 中的数据库与 PostgreSQL 服务器交换数据：
+
+```sql
+CREATE DATABASE test_database
+ENGINE = PostgreSQL('postgres1:5432', 'test_database', 'postgres', 'mysecretpassword', 'schema_name',1);
+```
+
+```sql
+SHOW DATABASES;
+```
+
+```text
+┌─name──────────┐
+│ default       │
+│ test_database │
+│ system        │
+└───────────────┘
+```
+
+```sql
+SHOW TABLES FROM test_database;
+```
+
+```text
+┌─name───────┐
+│ test_table │
+└────────────┘
+```
+
+从 PostgreSQL 表中读取数据：
+
+```sql
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─id─┬─value─┐
+│  1 │     2 │
+└────┴───────┘
+```
+
+向 PostgreSQL 表写入数据：
+
+```sql
+INSERT INTO test_database.test_table VALUES (3,4);
+SELECT * FROM test_database.test_table;
+```
+
+```text
+┌─int_id─┬─value─┐
+│      1 │     2 │
+│      3 │     4 │
+└────────┴───────┘
+```
+
+假设 PostgreSQL 中的表结构已发生修改：
+
+```sql
+postgre> ALTER TABLE test_table ADD COLUMN data Text
+```
+
+由于创建数据库时已将 `use_table_cache` 参数设为 `1`，ClickHouse 中的表结构已被缓存，因此不会被修改：
+
+```sql
+DESCRIBE TABLE test_database.test_table;
+```
+
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+└────────┴───────────────────┘
+```
+
+将该表分离并重新附加后，其结构已更新：
+
+```sql
+DETACH TABLE test_database.test_table;
+ATTACH TABLE test_database.test_table;
+DESCRIBE TABLE test_database.test_table;
+```
+
+```text
+┌─name───┬─type──────────────┐
+│ id     │ Nullable(Integer) │
+│ value  │ Nullable(Integer) │
+│ data   │ Nullable(String)  │
+└────────┴───────────────────┘
+```
+
+<div id="related-content">
+  ## 相关内容
+</div>
+
+* 博客：[ClickHouse and PostgreSQL - 数据世界中的天作之合 - 第 1 部分](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
+* 博客：[ClickHouse and PostgreSQL - 数据世界中的天作之合 - 第 2 部分](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

@@ -1,0 +1,99 @@
+---
+sidebarTitle: 'Vue d’ensemble'
+title: 'API ClickHouse Cloud'
+slug: /cloud/manage/api/api-overview
+description: 'En savoir plus sur l’API ClickHouse Cloud'
+doc_type: 'reference'
+keywords: ['ClickHouse Cloud', 'présentation de l’API', 'Cloud API', 'REST API', 'accès programmatique']
+---
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+L’API ClickHouse Cloud est une API REST conçue pour permettre aux développeurs de gérer facilement les organisations et les services sur ClickHouse Cloud. Avec notre Cloud API, vous pouvez créer et gérer des services, provisionner des clés API, ajouter ou supprimer des membres de votre organisation, et bien plus encore.
+
+[Découvrez comment créer votre première clé API et commencer à utiliser l’API ClickHouse Cloud.](/fr/products/cloud/features/admin-features/api/openapi)
+
+<div id="swagger-openapi-endpoint-and-ui">
+  ## Point de terminaison Swagger (OpenAPI) et UI
+</div>
+
+L&#39;API ClickHouse Cloud s&#39;appuie sur la [spécification OpenAPI](https://www.openapis.org/)
+open source afin de permettre une utilisation prévisible côté client. Si vous devez
+consulter par programmation la documentation de l&#39;API ClickHouse Cloud, nous proposons un point de terminaison Swagger au format JSON
+via https://api.clickhouse.cloud/v1. Vous pouvez également accéder à la documentation de l&#39;API via
+la [Swagger UI](/fr/api-reference/organization/get-list-of-available-organizations).
+
+<Note>
+  Si votre organization a été migrée vers l&#39;un des [nouveaux plans tarifaires](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false) et que vous utilisez OpenAPI, vous devrez supprimer le champ `tier` de la requête `POST` de création de service.
+
+  Le champ `tier` a été supprimé de l&#39;objet service, car nous n&#39;avons plus de tiers de service.
+  Cela affectera les objets renvoyés par les requêtes de service `POST`, `GET` et `PATCH`. Par conséquent, tout code qui utilise ces API devra peut-être être adapté pour prendre en compte ces modifications.
+</Note>
+
+<div id="rate-limits">
+  ## Limites de débit
+</div>
+
+Les développeurs peuvent créer jusqu’à 100 clés API par organisation. Chaque clé API est limitée à 10 requêtes sur une période de 10 secondes. Si vous souhaitez augmenter le nombre de clés API ou de requêtes par période de 10 secondes pour votre organisation, veuillez contacter support@clickhouse.com
+
+<div id="terraform-provider">
+  ## Provider Terraform
+</div>
+
+Le provider Terraform officiel de ClickHouse vous permet d’utiliser l’[infrastructure en tant que code](https://www.redhat.com/en/topics/automation/what-is-infrastructure-as-code-iac)
+pour créer des configurations prévisibles et gérées par version, afin de rendre les déploiements beaucoup
+moins sujets aux erreurs.
+
+Vous pouvez consulter la documentation du provider Terraform dans le [registre Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs).
+
+Si vous souhaitez contribuer au provider Terraform ClickHouse, vous pouvez consulter
+le code source [dans le dépôt GitHub](https://github.com/ClickHouse/terraform-provider-clickhouse).
+
+<Note>
+  Si votre organisation a été migrée vers l’un des [nouveaux plans tarifaires](https://clickhouse.com/pricing?plan=scale\&provider=aws\&region=us-east-1\&hours=8\&storageCompressed=false), vous devrez utiliser la version 2.0.0 ou ultérieure de notre [provider Terraform ClickHouse](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs). Cette mise à niveau est nécessaire pour prendre en charge les modifications de l’attribut `tier` du service, car après la migration tarifaire, le champ `tier` n’est plus accepté et toutes les références à celui-ci doivent être supprimées.
+
+  Vous pourrez désormais également spécifier le champ `num_replicas` comme propriété de la ressource de service.
+</Note>
+
+<div id="terraform-provider-releases">
+  ## Releases des providers Terraform
+</div>
+
+ClickHouse maintient deux providers Terraform officiels : le provider ClickHouse Cloud pour l’infrastructure cloud et le provider DBops pour les objets au niveau de la base de données. Ils suivent tous deux le même modèle de release.
+
+<div id="stable-vs-alpha">
+  ### Stable versus alpha
+</div>
+
+Les versions stables (par ex. 3.11.1, 1.9.0) incluent uniquement des ressources pour les fonctionnalités en GA. Les versions alpha (par ex. 3.12.0-alpha2, 1.10.0-alpha1) incluent tout ce qui est présent dans les versions stables, ainsi que des ressources pour les fonctionnalités encore en bêta ou en private preview, et doivent être explicitement épinglées pour être utilisées.
+
+<div id="versioning">
+  ### Gestion des versions
+</div>
+
+Les deux providers utilisent le versionnage sémantique (MAJEUR.MINEUR.CORRECTIF). La version majeure est incrémentée en cas de breaking changes, la version mineure pour les nouvelles fonctionnalités ou ressources, et la
+version corrective pour les corrections de bugs. Les versions alpha ajoutent un suffixe de préversion à la prochaine version mineure (par ex. 3.12.0-alpha1), le numéro alpha étant incrémenté à mesure que des correctifs ou modifications supplémentaires sont ajoutés avant la promotion (par ex. alpha1 → alpha2 → alpha3). Les releases sont publiées à la demande plutôt que selon une cadence fixe. Une nouvelle version alpha est créée lorsqu’une ressource est ajoutée pour une fonctionnalité qui n’est pas encore GA, ou lorsqu’un correctif nécessite une validation anticipée. Une nouvelle version stable est créée une fois que les changements accumulés — y compris les fonctionnalités qui ont depuis atteint le stade GA — sont prêts pour la production, généralement après une période de retours clients. Plusieurs versions mineures alpha peuvent s’accumuler avant d’être regroupées dans une seule release stable.
+
+<div id="promotion">
+  ### Passage d’alpha à stable
+</div>
+
+Lorsqu’une fonctionnalité Terraform est prête pour la GA, la ressource Terraform passe d’alpha à stable dans la prochaine release stable. D’ici là, la ressource n’est disponible que dans les builds alpha.
+
+<div id="terraform-and-openapi-new-pricing---replica-settings-explained">
+  ## Nouveau modèle tarifaire Terraform et OpenAPI : explication des paramètres de répliques
+</div>
+
+Le nombre de répliques avec lequel chaque service est créé est de 3 par défaut pour les tiers Scale et Enterprise, contre 1 par défaut pour le tier Basic.
+Pour les tiers Scale et Enterprise, il est possible de l&#39;ajuster en transmettant un champ `numReplicas` dans la requête de création du service.
+La valeur du champ `numReplicas` doit être comprise entre 2 et 20 pour le premier service d&#39;un warehouse. Les services créés dans un warehouse existant peuvent avoir seulement 1 réplique.
+
+<div id="support">
+  ## Assistance
+</div>
+
+Nous vous recommandons de consulter d&#39;abord [notre canal Slack](https://clickhouse.com/slack) pour obtenir rapidement de l&#39;aide. Si
+vous souhaitez une assistance supplémentaire ou davantage d&#39;informations sur notre API et ses fonctionnalités,
+veuillez contacter ClickHouse Support à l&#39;adresse https://console.clickhouse.cloud/support

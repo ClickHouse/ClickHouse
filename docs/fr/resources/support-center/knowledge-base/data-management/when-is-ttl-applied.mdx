@@ -1,0 +1,88 @@
+---
+date: 2023-05-02
+title: Quand les règles TTL sont-elles appliquées, et peut-on en contrôler l’exécution ?
+description: Les règles TTL dans ClickHouse finissent par être appliquées, et vous pouvez contrôler quand elles s’exécutent à l’aide du paramètre `merge_with_ttl_timeout`. Découvrez comment forcer l’application des règles TTL et gérer les threads d’arrière-plan chargés de leur exécution.
+tags: ['Concepts fondamentaux des données']
+keywords: ['TTL']
+---
+
+<div id="ttl-rules-and-control">
+  ## Règles TTL et contrôle
+</div>
+
+Le TTL finira ***bien*** par être appliqué. Qu&#39;est-ce que cela signifie ? Le paramètre de table `MergeTree` [`merge_with_ttl_timeout`](/fr/reference/engines/table-engines/mergetree-family/mergetree#merge_with_ttl_timeout) définit le délai minimal, en secondes, avant de répéter une fusion avec TTL de suppression. La valeur par défaut est de 14400 secondes (4 heures). Mais ce n&#39;est que le délai minimal : le déclenchement d&#39;une fusion pour un TTL de suppression peut prendre plus de temps.
+
+Vous pouvez afficher tous vos paramètres TTL actuels (comme `merge_with_ttl_timeout`) avec cette requête :
+
+```sql
+SELECT *
+FROM system.merge_tree_settings
+WHERE name like '%ttl%'
+```
+
+La réponse ressemble à ceci :
+
+```response
+┌─name───────────────────────────────────────────────────────────┬─value───┬─changed─┬─description────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬─min──┬─max──┬─readonly─┬─type───┐
+│ max_replicated_merges_with_ttl_in_queue                        │ 1       │       0 │ How many tasks of merging parts with TTL are allowed simultaneously in ReplicatedMergeTree queue.                                                                                          │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ max_number_of_merges_with_ttl_in_pool                          │ 2       │       0 │ When there is more than specified number of merges with TTL entries in pool, do not assign new merge with TTL. This is to leave free threads for regular merges and avoid "Too many parts" │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_tree_clear_old_broken_detached_parts_ttl_timeout_seconds │ 2592000 │       1 │ Remove old broken detached parts in the background if they remained intouched for a specified by this setting period of time.                                                              │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │
+│ merge_with_ttl_timeout                                         │ 14400   │       0 │ Minimal time in seconds, when merge with delete TTL can be repeated.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ merge_with_recompression_ttl_timeout                           │ 14400   │       0 │ Minimal time in seconds, when merge with recompression TTL can be repeated.                                                                                                                │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Int64  │
+│ ttl_only_drop_parts                                            │ 0       │       0 │ Only drop altogether the expired parts and not partially prune them.                                                                                                                       │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+│ materialize_ttl_recalculate_only                               │ 0       │       0 │ Only recalculate ttl info when MATERIALIZE TTL                                                                                                                                             │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ Bool   │
+└────────────────────────────────────────────────────────────────┴─────────┴─────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────┴──────┴──────────┴────────┘
+```
+
+Vous pouvez utiliser `SHOW CREATE TABLE` pour vérifier si votre table contient des règles TTL, ainsi que pour voir si les `SETTINGS` de la table ont modifié les valeurs des paramètres ci-dessus :
+
+```sql
+SHOW CREATE TABLE <TableName>
+```
+
+<div id="force-a-ttl-rule-to-be-applied">
+  ## Forcer l&#39;application d&#39;une règle TTL
+</div>
+
+Ce n&#39;est pas la solution la plus élégante, mais vous pouvez exécuter explicitement `MATERIALIZE TTL`, ce qui force la matérialisation de toutes les règles TTL d&#39;une table :
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+<div id="background-threads-affecting-ttl">
+  ## Threads d’arrière-plan affectant le TTL
+</div>
+
+Il est possible que vos règles TTL ne soient pas appliquées faute d’un nombre suffisant de threads disponibles dans le pool d’arrière-plan. Par exemple, si vous insérez des données de façon intensive, l’ensemble du pool d’arrière-plan peut être mobilisé par les opérations de fusion normales. Vous pouvez toutefois augmenter la taille du pool d’arrière-plan.
+
+Vous pouvez vérifier la taille actuelle de votre pool d’arrière-plan avec cette requête :
+
+```sql
+SELECT *
+FROM system.settings
+WHERE name = 'background_pool_size';
+```
+
+La réponse ressemble à ceci :
+
+```response
+┌─name─────────────────┬─value─┬─changed─┬─description─────────────────────┬─min──┬─max──┬─readonly─┬─type───┬─default─┬─alias_for─┐
+│ background_pool_size │ 16    │       0 │ Obsolete setting, does nothing. │ ᴺᵁᴸᴸ │ ᴺᵁᴸᴸ │        0 │ UInt64 │ 16      │           │
+└──────────────────────┴───────┴─────────┴─────────────────────────────────┴──────┴──────┴──────────┴────────┴─────────┴───────────┘
+```
+
+Consultez la documentation pour savoir comment modifier le [`paramètre background_pool_size`](/fr/reference/settings/server-settings/settings#background_pool_size), qui est configuré comme suit :
+
+```xml
+<background_pool_size>16</background_pool_size>
+```
+
+Vous pouvez consulter l’activité actuelle du pool d’arrière-plan avec cette requête :
+
+```sql
+SELECT *
+FROM system.metrics
+WHERE metric like 'Background%'
+```
