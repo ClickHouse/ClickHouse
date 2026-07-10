@@ -6,6 +6,7 @@
 #include <Columns/IColumn.h>
 #include <Common/BitPackedStringArray.h>
 #include <Common/BitPackedUInt64Array.h>
+#include <Common/callOnce.h>
 #include <Common/Logger.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/StringHashMap.h>
@@ -557,8 +558,15 @@ public:
     MergeTreeIndexTextParams params;
     std::unique_ptr<ITokenizer> tokenizer;
     std::unique_ptr<IPostingListCodec> posting_list_codec;
-    MergeTreeIndexTextPreprocessorPtr preprocessor;
-    MergeTreeIndexTextPostprocessorPtr postprocessor;
+
+private:
+    /// Preprocessor and postprocessor construction analyzes expressions, which is expensive.
+    /// They are built lazily because metadata-only uses of the index object do not need them.
+    void buildProcessorsOnce() const;
+
+    mutable OnceFlag processors_initialized;
+    mutable MergeTreeIndexTextPreprocessorPtr preprocessor;
+    mutable MergeTreeIndexTextPostprocessorPtr postprocessor;
 };
 
 }

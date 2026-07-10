@@ -1826,9 +1826,18 @@ MergeTreeIndexText::MergeTreeIndexText(
     , params(std::move(params_))
     , tokenizer(std::move(tokenizer_))
     , posting_list_codec(std::move(posting_list_codec_))
-    , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
-    , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
 {
+}
+
+void MergeTreeIndexText::buildProcessorsOnce() const
+{
+    callOnce(processors_initialized, [this]
+    {
+        auto new_preprocessor = std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index);
+        auto new_postprocessor = std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index);
+        preprocessor = std::move(new_preprocessor);
+        postprocessor = std::move(new_postprocessor);
+    });
 }
 
 MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
@@ -1878,11 +1887,13 @@ MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexText::createIndexAggregator() const
 {
+    buildProcessorsOnce();
     return std::make_shared<MergeTreeIndexAggregatorText>(index.column_names[0], params, tokenizer.get(), posting_list_codec.get(), preprocessor, postprocessor);
 }
 
 MergeTreeIndexConditionPtr MergeTreeIndexText::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
+    buildProcessorsOnce();
     return std::make_shared<MergeTreeIndexConditionText>(predicate, context, index.sample_block, tokenizer.get(), preprocessor, postprocessor, params.positions);
 }
 
