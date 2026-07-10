@@ -5236,8 +5236,28 @@ connection_dropdown_elem.addEventListener('click', (e) => e.stopPropagation());
 /// call `stopPropagation()` in their own bubble-phase click handlers, so a bubbling listener
 /// would never see those clicks and the popover would stay open. A capture-phase listener runs
 /// before all of them, so every outside interaction dismisses it.
+///
+/// A `click` fires on the nearest common ancestor of the `mousedown` and `mouseup` targets, so a
+/// text selection that starts inside an input (e.g. selecting the user name) and is dragged past
+/// the drop-down's border before release lands its `click` on an ancestor outside `#connection-menu`
+/// — which would wrongly dismiss the popover mid-selection. Remember where the pointer went down
+/// (capture phase, so it is unaffected by `stopPropagation()` on inner handlers) and only close
+/// when the interaction both started and ended outside the menu.
+let connection_pointerdown_inside = false;
+document.addEventListener('mousedown', (e) => {
+    connection_pointerdown_inside = connection_menu_elem.contains(e.target);
+}, true);
 document.addEventListener('click', (e) => {
-    if (!connection_menu_elem.contains(e.target)) closeConnectionDropdown();
+    /// The latch is meaningful only for the pointer press that produced this `click`, and a press
+    /// arms it only when it goes on to emit a `click` (`detail !== 0`). Two kinds of `click` must
+    /// therefore ignore it: a keyboard or synthetic activation (Space/Enter on a focused control, or
+    /// a programmatic `.click()`) reports `detail === 0` and has no preceding `mousedown`; and a
+    /// mouse interaction that ends without a `click` — a right-click's `contextmenu`, a middle-click,
+    /// or a drag released outside the window — leaves a stale latch that no `click` ever consumes.
+    /// In both cases a stale `true` would otherwise wrongly suppress the outside dismissal, so the
+    /// latch counts only for a real pointer `click`.
+    const started_inside = e.detail !== 0 && connection_pointerdown_inside;
+    if (!connection_menu_elem.contains(e.target) && !started_inside) closeConnectionDropdown();
 }, true);
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !connection_dropdown_elem.hidden) {
