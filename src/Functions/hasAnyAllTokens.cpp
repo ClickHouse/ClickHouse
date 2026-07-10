@@ -26,6 +26,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_COLUMN;
 }
 
 namespace
@@ -182,7 +183,11 @@ FunctionBasePtr FunctionHasAnyAllTokensOverloadResolver<HasTokensTraits>::buildI
         /// hasAnyTokens(col, needle, 'icu', 'ja').
         FieldVector params;
         for (size_t i = arg_tokenizer + 1; i < arguments.size(); ++i)
+        {
+            if (!arguments[i].column)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Argument #{} of function {} must be constant", i + 1, getName());
             params.push_back(String(arguments[i].column->getDataAt(0)));
+        }
         tokenizer = TokenizerFactory::instance().get(tokenizer_name, params);
     }
     else

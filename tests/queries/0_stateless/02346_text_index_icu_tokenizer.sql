@@ -5,6 +5,14 @@ SET enable_analyzer = 1;
 SET enable_full_text_index = 1;
 SET use_query_condition_cache = 0;
 
+-- Invalid icu tokenizer arguments must be rejected gracefully (no crash).
+SELECT hasAnyTokens('a b', 'b', 'icu'); -- { serverError BAD_ARGUMENTS }
+SELECT hasAnyTokens('a b', 'b', 'icu', ''); -- { serverError BAD_ARGUMENTS }
+SELECT hasAnyTokens('a b', 'b', 'icu', 'ja', 'zz'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+SELECT hasAnyTokens('a b', 'b', materialize('icu')); -- { serverError ILLEGAL_COLUMN }
+SELECT hasAnyTokens('a b', 'b', 'icu', materialize('ja')); -- { serverError ILLEGAL_COLUMN }
+SELECT hasAllTokens('a b', 'b', 'icu', materialize('ja')); -- { serverError ILLEGAL_COLUMN }
+
 DROP TABLE IF EXISTS tab;
 DROP TABLE IF EXISTS tab_noindex;
 
