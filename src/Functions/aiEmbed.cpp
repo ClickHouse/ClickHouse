@@ -211,6 +211,7 @@ public:
             AIEmbeddingRequest ai_embedding_request;
             ai_embedding_request.model = model;
             ai_embedding_request.dimensions = dimensions;
+            ai_embedding_request.function_name = getName();
             ai_embedding_request.inputs.reserve(batch_end - batch_start);
 
             for (size_t k = batch_start; k < batch_end; ++k)
