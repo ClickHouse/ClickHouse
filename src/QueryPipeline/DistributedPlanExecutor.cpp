@@ -608,7 +608,8 @@ static String serializeQueryPlan(const QueryPlan & query_plan)
 static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, ContextPtr context)
 {
     ReadBufferFromString in(serialized_query_plan);
-    auto plan_and_sets = QueryPlan::deserialize(in, context);
+    /// Trusted server-to-server plan fragment: decode types without the input complexity limit.
+    auto plan_and_sets = QueryPlan::deserialize(in, context, 0);
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
