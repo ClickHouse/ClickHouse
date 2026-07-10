@@ -52,6 +52,22 @@ Int64 safeFloorToInt64(Float64 v)
     return result;
 }
 
+/// `floor(value / step)` is only a reliable integer bucket/cell index while the quotient
+/// stays inside Float64's exact-integer range. Past `2^53` the quotient's ULP exceeds 1,
+/// so two keys farther apart than the distance can round to the same bucket / cell and be
+/// merged unconditionally (Phase A merges same-bucket rows without a distance check). Reject
+/// such inputs instead of silently misclustering, mirroring the range guard in `readClusterValues`.
+void checkBucketQuotientPrecision(Float64 max_abs_value, Float64 step)
+{
+    constexpr Float64 FLOAT64_EXACT_INT_LIMIT = static_cast<Float64>(UInt64{1} << 53);
+    if (step > 0 && max_abs_value / step >= FLOAT64_EXACT_INT_LIMIT)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER: the cluster-key magnitude is too large relative to the "
+            "distance; the bucket/cell index floor(key / step) would exceed the Float64 exact-integer "
+            "limit (2^53) and could merge keys that are farther apart than the distance. "
+            "Use a larger distance or a narrower cluster-key range.");
+}
+
 struct BucketState
 {
     /// Row that accumulates the bucket's merged aggregate state. It is kept equal to the row
@@ -408,6 +424,14 @@ Chunk ClusterMergingTransform::generate1D()
     readClusterValues(*merged_columns[cluster_key_pos],
                       header.getByPosition(cluster_key_pos).type, total_rows, cluster_vals);
 
+    if (cluster_distance > 0)
+    {
+        Float64 max_abs = 0;
+        for (size_t i = 0; i < total_rows; ++i)
+            max_abs = std::max(max_abs, std::fabs(cluster_vals[i]));
+        checkBucketQuotientPrecision(max_abs, cluster_distance);
+    }
+
     for (size_t i = 0; i < total_rows; ++i)
     {
         Float64 cluster_val = cluster_vals[i];
@@ -704,6 +728,18 @@ Chunk ClusterMergingTransform::generate2D()
     std::vector<Float64> y_vals;
     readClusterValues(x_col, header.getByPosition(x_pos).type, total_rows, x_vals);
     readClusterValues(y_col, header.getByPosition(y_pos).type, total_rows, y_vals);
+
+    if (d > 0)
+    {
+        /// The cell index is `floor(coord / a)`, so guard the coordinate/cell-side ratio.
+        Float64 max_abs_coord = 0;
+        for (size_t i = 0; i < total_rows; ++i)
+        {
+            max_abs_coord = std::max(max_abs_coord, std::fabs(x_vals[i]));
+            max_abs_coord = std::max(max_abs_coord, std::fabs(y_vals[i]));
+        }
+        checkBucketQuotientPrecision(max_abs_coord, a);
+    }
 
     for (size_t i = 0; i < total_rows; ++i)
     {
