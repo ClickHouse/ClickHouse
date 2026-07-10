@@ -2,6 +2,11 @@
 -- unquoted fractional unix timestamp form (e.g. 1783585473.954), same as scalar columns.
 -- A bare integer stays a scaled tick count (backward compatible).
 SET session_timezone = 'UTC';
+-- This tests the basic DateTime64 reader (readDateTime64Text / readNumericText), which is
+-- what the reported bug and this fix concern. The best_effort parser is a separate reader
+-- that does not accept the fractional-unix-timestamp form even for scalar columns, so pin
+-- basic here (CI randomizes date_time_input_format).
+SET date_time_input_format = 'basic';
 
 -- Reported bug: CSV Array element as unquoted fractional unix timestamp used to fail
 -- with CANNOT_READ_ARRAY_FROM_TEXT.
