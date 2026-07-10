@@ -373,11 +373,13 @@ def test_audit_log_database_object_names(start_cluster):
 def test_audit_log_failed_query_before_start(start_cluster):
     """Queries that fail before execution starts (e.g. a parse error) must still be audited.
     Such queries never reach logQueryFinish/logQueryException, so the audit record has to be
-    emitted from logExceptionBeforeStart. A parse error has no AST and is classified as MISC."""
-    try:
-        node_dml_misc.query("SELECT 'audit_before_start_marker' FROM")
-    except Exception:
-        pass  # Expected to fail with a syntax error
+    emitted from logExceptionBeforeStart. A parse error has no AST and is classified as MISC.
+
+    The query is sent over HTTP on purpose: clickhouse-client parses the statement locally, so
+    a syntax error would be rejected on the client and never reach the server, producing no
+    server-side audit record. The HTTP interface parses server-side, exercising the audit path."""
+    error = node_dml_misc.http_query_and_get_error("SELECT 'audit_before_start_marker' FROM")
+    assert error, "The malformed query must be rejected by the server"
 
     assert_audit_log_contain_with_retry(node_dml_misc, "audit_before_start_marker")
     log_content = node_dml_misc.grep_in_log("audit_before_start_marker", from_host=True, filename="clickhouse-server.audit.log")
@@ -389,6 +391,34 @@ def test_audit_log_failed_query_before_start(start_cluster):
     fields = audit_part.split(", ")
     assert fields[0] == "MISC", f"A parse error (no AST) must be classified as MISC: {lines[0]}"
     assert fields[2] != "0", f"A failed query must record a non-zero exception code: {lines[0]}"
+
+
+def test_audit_log_failed_ddl_object_names(start_cluster):
+    """A DDL statement that fails before execution starts (e.g. RENAME of a missing table) is
+    audited from logExceptionBeforeStart, where query_tables is not populated. The affected
+    object name must still be recorded in OBJECT_NAMES, extracted from the AST, so a failed
+    sensitive operation is not audited with an empty OBJECT_NAMES field."""
+    missing = "audit_missing_rename_src"
+    dest = "audit_missing_rename_dst"
+    node_ddl.query(f"DROP TABLE IF EXISTS {missing}")
+    node_ddl.query(f"DROP TABLE IF EXISTS {dest}")
+
+    error = node_ddl.query_and_get_error(f"RENAME TABLE {missing} TO {dest}")
+    assert error, "RENAME of a missing table must fail"
+
+    assert_audit_log_contain_with_retry(node_ddl, missing)
+    log_content = node_ddl.grep_in_log(missing, from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n")
+             if "AUDIT:" in line and "Rename" in line and missing in line]
+    assert len(lines) >= 1, "A failed RENAME must produce a DDL audit record"
+
+    # Audit message format: "TYPE, COMMAND, EXCEPTION_CODE, USER, IP, OBJECT_NAMES, QUERY".
+    audit_part = lines[0].split("AUDIT: ", 1)[1]
+    fields = audit_part.split(", ")
+    assert fields[0] == "DDL", f"RENAME must be classified as DDL: {lines[0]}"
+    assert fields[2] != "0", f"A failed RENAME must record a non-zero exception code: {lines[0]}"
+    # OBJECT_NAMES is field index 5; it must carry the affected table, not only the query text.
+    assert missing in fields[5], f"OBJECT_NAMES must record the RENAME source table: {lines[0]}"
 
 
 def test_audit_log_pg_unsupported_auth_method(start_cluster):
