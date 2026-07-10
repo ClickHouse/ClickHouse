@@ -1,0 +1,53 @@
+---
+description: '이 ClickHouse 서버에 등록된 현재 활성 상태의 ZooKeeper watch를 보여주는 시스템 테이블입니다.'
+keywords: ['시스템 테이블', 'zookeeper_watches']
+slug: /operations/system-tables/zookeeper_watches
+title: 'system.zookeeper_watches'
+doc_type: '참고'
+---
+
+<div id="description">
+  ## 설명
+</div>
+
+이 ClickHouse 서버가 ZooKeeper 노드(보조 ZooKeeper 인스턴스 포함)에 등록한 현재 활성 [watch](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches)를 표시합니다. 각 행은 watch 1개를 나타냅니다.
+
+<div id="columns">
+  ## 컬럼
+</div>
+
+* `zookeeper_name` ([String](/ko/reference/data-types/string)) — ZooKeeper 연결 이름입니다(기본 연결은 `default`, 보조 연결은 해당 이름 사용).
+* `create_time` ([DateTime](/ko/reference/data-types/datetime)) — watch가 생성된 시간입니다.
+* `create_time_microseconds` ([DateTime64](/ko/reference/data-types/datetime64)) — watch가 마이크로초 정밀도로 생성된 시간입니다.
+* `path` ([String](/ko/reference/data-types/string)) — watch가 설정된 ZooKeeper 경로입니다.
+* `session_id` ([Int64](/ko/reference/data-types/int-uint)) — watch를 등록한 연결의 세션 ID입니다.
+* `request_xid` ([Int64](/ko/reference/data-types/int-uint)) — watch를 생성한 요청의 XID입니다.
+* `op_num` ([Enum](/ko/reference/data-types/enum)) — watch를 생성한 요청의 타입입니다.
+* `watch_type` ([Enum8](/ko/reference/data-types/enum)) — watch 유형입니다. 가능한 값:
+  * `Children` — 하위 노드 목록의 변경을 감시합니다(`List` 작업에서 설정).
+  * `Exists` — 노드의 생성 또는 삭제를 감시합니다.
+  * `Data` — 노드 데이터의 변경을 감시합니다(`Get` 작업에서 설정).
+
+예시:
+
+```sql
+SELECT * FROM system.zookeeper_watches FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+zookeeper_name:           default
+create_time:              2026-03-16 12:00:00
+create_time_microseconds: 2026-03-16 12:00:00.123456
+path:                     /clickhouse/task_queue/ddl
+session_id:               106662742089334927
+request_xid:              10858
+op_num:                   List
+watch_type:               Children
+```
+
+**관련 항목**
+
+* [ZooKeeper](/ko/guides/oss/best-practices/tips#zookeeper)
+* [ZooKeeper 안내서](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)

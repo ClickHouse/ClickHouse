@@ -1,0 +1,86 @@
+---
+description: 'يتيح هذا المحرك استيراد البيانات وتصديرها إلى SQLite، ويدعم إجراء استعلامات
+  على جداول SQLite مباشرةً من ClickHouse.'
+sidebarTitle: 'SQLite'
+slug: /engines/table-engines/integrations/sqlite
+title: 'محرك جدول SQLite'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+يتيح هذا المحرك استيراد البيانات إلى SQLite وتصديرها منه، كما يدعم الاستعلام عن جداول SQLite مباشرةً من ClickHouse.
+
+<div id="creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+    CREATE TABLE [IF NOT EXISTS] [db.]table_name
+    (
+        name1 [type1],
+        name2 [type2], ...
+    ) ENGINE = SQLite('db_path', 'table')
+```
+
+**معلمات المحرّك**
+
+* `db_path` — مسار ملف SQLite الذي يحتوي على قاعدة البيانات.
+* `table` — اسم جدول في قاعدة بيانات SQLite.
+
+<div id="data-types-support">
+  ## دعم أنواع البيانات
+</div>
+
+عند تحديد أنواع أعمدة ClickHouse صراحةً في تعريف الجدول، يمكن تحليل أنواع ClickHouse التالية من أعمدة TEXT في SQLite:
+
+* [Date](/ar/reference/data-types/date), [Date32](/ar/reference/data-types/date32)
+* [DateTime](/ar/reference/data-types/datetime), [DateTime64](/ar/reference/data-types/datetime64)
+* [UUID](/ar/reference/data-types/uuid)
+* [Enum8, Enum16](/ar/reference/data-types/enum)
+* [Decimal32, Decimal64, Decimal128, Decimal256](/ar/reference/data-types/decimal)
+* [FixedString](/ar/reference/data-types/fixedstring)
+* جميع أنواع الأعداد الصحيحة ([UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64](/ar/reference/data-types/int-uint))
+* [Float32, Float64](/ar/reference/data-types/float)
+
+راجع [محرك قاعدة بيانات SQLite](/ar/reference/engines/database-engines/sqlite#data_types-support) للاطّلاع على مطابقة الأنواع الافتراضية.
+
+<div id="usage-example">
+  ## مثال على الاستخدام
+</div>
+
+يعرض استعلامًا لإنشاء جدول SQLite:
+
+```sql
+SHOW CREATE TABLE sqlite_db.table2;
+```
+
+```text
+CREATE TABLE SQLite.table2
+(
+    `col1` Nullable(Int32),
+    `col2` Nullable(String)
+)
+ENGINE = SQLite('sqlite.db','table2');
+```
+
+يُرجِع البيانات من الجدول:
+
+```sql
+SELECT * FROM sqlite_db.table2 ORDER BY col1;
+```
+
+```text
+┌─col1─┬─col2──┐
+│    1 │ text1 │
+│    2 │ text2 │
+│    3 │ text3 │
+└──────┴───────┘
+```
+
+**راجع أيضًا**
+
+* محرك [SQLite](/ar/reference/engines/database-engines/sqlite)
+* دالة الجدول [sqlite](/ar/reference/functions/table-functions/sqlite)

@@ -1,0 +1,102 @@
+---
+description: 'هو اسم بديل لـ any، لكنه أُضيف للتوافق مع
+  دوال النافذة، إذ يلزم أحيانًا معالجة قيم `NULL` (إذ تتجاهل
+  جميع الدوال التجميعية في ClickHouse قيم NULL افتراضيًا).'
+slug: /sql-reference/aggregate-functions/reference/first_value
+title: 'first_value'
+doc_type: 'reference'
+---
+
+هو اسم بديل لـ [`any`](/ar/reference/functions/aggregate-functions/any)، لكنه أُضيف للتوافق مع [دوال النافذة](/ar/reference/functions/window-functions/index)، إذ يلزم أحيانًا معالجة قيم `NULL` (إذ تتجاهل جميع الدوال التجميعية في ClickHouse قيم NULL افتراضيًا).
+
+وهو يدعم تعريف مُعدِّل لمراعاة القيم الخالية (`RESPECT NULLS`)، سواء ضمن [دوال النافذة](/ar/reference/functions/window-functions/index) أو في عمليات التجميع العادية.
+
+وكما هو الحال مع `any`، فبدون دوال النافذة ستكون النتيجة عشوائية إذا لم يكن تدفق المصدر مرتبًا، ويطابق نوع الإرجاع
+نوع الإدخال (ولا تُعاد القيمة Null إلا إذا كان الإدخال من النوع Nullable أو أُضيف المُركِّب ‎-OrNull).
+
+<div id="examples">
+  ## أمثلة
+</div>
+
+```sql
+CREATE TABLE test_data
+(
+    a Int64,
+    b Nullable(Int64)
+)
+ENGINE = Memory;
+
+INSERT INTO test_data (a, b) VALUES (1,null), (2,3), (4, 5), (6,null);
+```
+
+<div id="example1">
+  ### المثال 1
+</div>
+
+بشكل افتراضي، تُتجاهَل قيمة NULL.
+
+```sql
+SELECT first_value(b) FROM test_data;
+```
+
+```text
+┌─any(b)─┐
+│      3 │
+└────────┘
+```
+
+<div id="example2">
+  ### مثال 2
+</div>
+
+تُتجاهَل القيمة NULL.
+
+```sql
+SELECT first_value(b) ignore nulls FROM test_data
+```
+
+```text
+┌─any(b) IGNORE NULLS ─┐
+│                    3 │
+└──────────────────────┘
+```
+
+<div id="example3">
+  ### مثال 3
+</div>
+
+تُقبل قيمة NULL.
+
+```sql
+SELECT first_value(b) respect nulls FROM test_data
+```
+
+```text
+┌─any(b) RESPECT NULLS ─┐
+│                  ᴺᵁᴸᴸ │
+└───────────────────────┘
+```
+
+<div id="example4">
+  ### المثال 4
+</div>
+
+تثبيت النتيجة باستخدام الاستعلام الفرعي مع `ORDER BY`.
+
+```sql
+SELECT
+    first_value_respect_nulls(b),
+    first_value(b)
+FROM
+(
+    SELECT *
+    FROM test_data
+    ORDER BY a ASC
+)
+```
+
+```text
+┌─any_respect_nulls(b)─┬─any(b)─┐
+│                 ᴺᵁᴸᴸ │      3 │
+└──────────────────────┴────────┘
+```

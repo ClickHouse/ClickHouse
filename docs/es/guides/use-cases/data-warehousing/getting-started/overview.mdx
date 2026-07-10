@@ -1,0 +1,248 @@
+---
+title: 'Primeros pasos con lagos de datos'
+sidebarTitle: 'Primeros pasos'
+slug: /use-cases/data-lake/getting-started
+description: 'Una introducción práctica a cómo consultar, acelerar y volver a escribir datos en formatos de tabla abiertos con ClickHouse.'
+keywords: ['lago de datos', 'lakehouse', 'primeros pasos', 'iceberg', 'delta lake', 'hudi', 'paimon']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<Info>
+  **En resumen**
+
+  Una guía práctica para consultar tablas de lago de datos, acelerarlas con MergeTree y escribir de nuevo los resultados en Iceberg. Todos los pasos usan datasets públicos y funcionan tanto en Cloud como en OSS.
+</Info>
+
+Las capturas de pantalla de esta guía son de la [consola SQL de ClickHouse Cloud](https://console.clickhouse.cloud). Todas las consultas funcionan tanto en Cloud como en despliegues autogestionados.
+
+<Steps>
+  <Step>
+    ## Consultar datos de Iceberg directamente
+
+    La forma más rápida de empezar es con la función de tabla [`icebergS3()`](/es/reference/functions/table-functions/iceberg): apúntala a una tabla Iceberg en S3 y haz la consulta de inmediato, sin necesidad de configuración.
+
+    Inspecciona el esquema:
+
+    ```sql
+    DESCRIBE icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    ```
+
+    Ejecuta una consulta:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/iceberg-query-direct.webp" alt="Consulta de Iceberg" />
+
+    ClickHouse lee los metadatos de Iceberg directamente desde S3 e infiere el esquema automáticamente. El mismo enfoque también funciona con [`deltaLake()`](/es/reference/functions/table-functions/deltalake), [`hudi()`](/es/reference/functions/table-functions/hudi) y [`paimon()`](/es/reference/functions/table-functions/paimon).
+
+    **Más información:** [Consultar directamente formatos de tabla abiertos](/es/guides/use-cases/data-warehousing/getting-started/querying-directly) abarca los cuatro formatos, las variantes de cluster para lecturas distribuidas y las opciones de backend de almacenamiento (S3, Azure, HDFS, local).
+  </Step>
+
+  <Step>
+    ## Cree una tabla persistente con el motor de tabla
+
+    Para acceder repetidamente, cree una tabla con el motor de tabla Iceberg para no tener que indicar la ruta cada vez. Los datos permanecen en S3 — no se duplica ningún dato:
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    ```
+
+    Ahora consúltala como cualquier otra tabla de ClickHouse:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/iceberg-query-engine.webp" alt="Consulta de Iceberg" />
+
+    El motor de tabla admite caché de datos, caché de metadatos, evolución del esquema y viaje en el tiempo. Consulta la guía [Consulta directa](/es/guides/use-cases/data-warehousing/getting-started/querying-directly) para obtener más información sobre las características del motor de tabla y la [matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) para ver una comparación completa de características.
+  </Step>
+
+  <Step>
+    ## Conectarse a un catálogo
+
+    La mayoría de las organizaciones administran las tablas de Iceberg mediante un catálogo de datos para centralizar los metadatos de las tablas y el descubrimiento de datos. ClickHouse permite conectarse a su catálogo mediante el motor de base de datos [`DataLakeCatalog`](/es/reference/engines/database-engines/datalake), lo que expone todas las tablas del catálogo como una base de datos de ClickHouse. Esta es la opción más escalable, ya que, a medida que se crean nuevas tablas de Iceberg, siempre están accesibles en ClickHouse sin necesidad de trabajo adicional.
+
+    A continuación se muestra un ejemplo de conexión a [AWS Glue](/es/guides/use-cases/data-warehousing/glue-catalog):
+
+    ```sql
+    CREATE DATABASE my_lake
+    ENGINE = DataLakeCatalog
+    SETTINGS
+        catalog_type = 'glue',
+        region = '<your-region>',
+        aws_access_key_id = '<your-access-key>',
+        aws_secret_access_key = '<your-secret-key>'
+    ```
+
+    Cada tipo de catálogo requiere su propia configuración de conexión; consulte las [guías sobre catálogos](/es/guides/use-cases/data-warehousing/reference/index) para ver la lista completa de catálogos compatibles y sus opciones de configuración.
+
+    Explore las tablas y realice consultas:
+
+    ```sql
+    SHOW TABLES FROM my_lake;
+    ```
+
+    ```sql
+    SELECT count(*) FROM my_lake.`<database>.<table>`
+    ```
+
+    <Note>
+      Se requieren comillas invertidas alrededor de `<database>.<table>` porque ClickHouse no admite de forma nativa más de un espacio de nombres.
+    </Note>
+
+    **Más información:** [Conexión a un catálogo de datos](/es/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) muestra una configuración completa de Unity Catalog con ejemplos de Delta e Iceberg.
+  </Step>
+
+  <Step>
+    ## Realiza una consulta
+
+    Independientemente del método que hayas usado antes —función de tabla, motor de tabla o catálogo—, el mismo ClickHouse SQL funciona en todos los casos:
+
+    ```sql
+    -- Table function
+    SELECT url, count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+
+    -- Table engine
+    SELECT url, count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+
+    -- Catalog
+    SELECT url, count() AS cnt
+    FROM my_lake.`<database>.<table>`
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+    ```
+
+    La sintaxis de la consulta es idéntica; solo cambia la cláusula `FROM`. Todas las funciones de ClickHouse SQL, los JOIN y las agregaciones funcionan de la misma manera independientemente de la fuente de datos.
+  </Step>
+
+  <Step>
+    ## Cargar un subconjunto en ClickHouse
+
+    Consultar Iceberg directamente es práctico, pero el rendimiento está limitado por el ancho de banda de la red y la organización de los archivos. Para cargas de trabajo analíticas, cargue los datos en una tabla nativa MergeTree.
+
+    Primero, ejecute una consulta filtrada sobre la tabla Iceberg para obtener una referencia:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    WHERE counterid = 38
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    Esta consulta recorre el conjunto de datos completo en S3, ya que Iceberg no tiene en cuenta el filtro `counterid`; es de esperar que tarde varios segundos.
+
+    <Image img="/images/datalake/iceberg-query.webp" alt="Consulta de Iceberg" />
+
+    Ahora crea una tabla MergeTree y carga los datos:
+
+    ```sql
+    CREATE TABLE hits_clickhouse
+    (
+        url String,
+        eventtime DateTime,
+        counterid UInt32
+    )
+    ENGINE = MergeTree()
+    ORDER BY (counterid, eventtime);
+    ```
+
+    ```sql
+    INSERT INTO hits_clickhouse
+    SELECT url, eventtime, counterid
+    FROM hits_iceberg
+    ```
+
+    Vuelva a ejecutar la misma consulta en la tabla MergeTree:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_clickhouse
+    WHERE counterid = 38
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/clickhouse-query.webp" alt="Consulta de ClickHouse" />
+
+    Como `counterid` es la primera columna de la clave `ORDER BY`, el índice primario disperso de ClickHouse salta directamente a los gránulos relevantes y solo lee las filas de `counterid = 38`, en lugar de escanear los 100 millones de filas. El resultado es un aumento drástico de la velocidad.
+
+    La guía [aceleración de analítica](/es/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) va un paso más allá con tipos `LowCardinality`, índices de texto completo y claves de ordenación optimizadas, y muestra una **mejora de ~40x** en un conjunto de datos de 283 millones de filas.
+
+    **Más información:** [Aceleración de analítica con MergeTree](/es/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) abarca la optimización del esquema, la indexación de texto completo y una comparación completa del rendimiento antes y después.
+  </Step>
+
+  <Step>
+    ## Escritura en Iceberg
+
+    ClickHouse también puede escribir datos de vuelta en tablas de Iceberg, lo que permite flujos de trabajo de ETL inverso: publicar resultados agregados o subconjuntos para que otras herramientas (Spark, Trino, DuckDB, etc.) los consuman.
+
+    Cree una tabla de Iceberg para la salida:
+
+    ```sql
+    CREATE TABLE output_iceberg
+    (
+        url String,
+        cnt UInt64
+    )
+    ENGINE = IcebergS3('https://your-bucket.s3.amazonaws.com/output/', 'access_key', 'secret_key')
+    ```
+
+    Escriba resultados agregados:
+
+    ```sql
+    SET allow_experimental_insert_into_iceberg = 1;
+
+    INSERT INTO output_iceberg
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_clickhouse
+    GROUP BY url
+    ORDER BY cnt DESC
+    ```
+
+    La tabla Iceberg resultante se puede leer con cualquier motor compatible con Iceberg.
+
+    **Más información:** [Escribir datos en formatos de tabla abiertos](/es/guides/use-cases/data-warehousing/getting-started/writing-data) explica cómo escribir datos sin procesar y resultados agregados con el conjunto de datos UK Price Paid, incluidas las consideraciones de esquema al mapear tipos de ClickHouse a Iceberg.
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## Próximos pasos
+</div>
+
+Ahora que ya has visto el flujo de trabajo completo, profundiza en cada área:
+
+* [Consultas directas](/es/guides/use-cases/data-warehousing/getting-started/querying-directly) — Los cuatro formatos, variantes de clúster, motores de tabla, caché
+* [Conexión a catálogos](/es/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — Guía completa de Unity Catalog con Delta e Iceberg
+* [Acelerar la analítica](/es/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — Optimización del esquema, indexación, demostración de aceleración de ~40x
+* [Escritura en lagos de datos](/es/guides/use-cases/data-warehousing/getting-started/writing-data) — Escrituras en bruto, escrituras agregadas, mapeo de tipos
+* [Matriz de compatibilidad](/es/guides/use-cases/data-warehousing/support-matrix) — Comparación de funcionalidades entre formatos y backends de almacenamiento

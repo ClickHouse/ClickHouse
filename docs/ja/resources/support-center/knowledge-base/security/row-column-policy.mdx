@@ -1,0 +1,21 @@
+---
+date: 2023-08-13
+title: "ClickHouse は行レベルおよびカラムレベルのセキュリティをサポートしていますか？"
+description: "ClickHouse と ClickHouse Cloud における行レベルおよびカラムレベルのアクセス制限と、ポリシーを使用したロールベースのアクセス制御（RBAC）の実装方法について説明します。"
+tags: ['セキュリティと認証']
+keywords: ['行レベル', 'カラムレベル', 'セキュリティ']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="clickhouse-and-clickhouse-cloud-both-support-row-and-column-level-access-restrictions">
+  ## ClickHouse と ClickHouse Cloud はどちらも行レベルおよびカラムレベルのアクセス制限をサポートしています
+</div>
+
+ClickHouse と ClickHouse Cloud はどちらも、ロールベースのアクセス制御 (RBAC) モデルの実現に必要な、読み取り専用ユーザー向けの行レベルおよびカラムレベルのアクセス制限をサポートしています。
+
+[行ポリシー](/ja/concepts/features/security/access-rights#row-policy-management) を使用すると、読み取り専用ユーザーがテーブルに対してクエリを実行したときに、どの行を返すかを指定できます。ClickHouse Cloud では、デフォルトで SQL ベースのワークフローが有効になっています。このワークフローを利用するには、[CREATE](/ja/reference/statements/create/user) でユーザーを作成し、[GRANT](/ja/reference/statements/grant) でそのユーザーにテーブルに対する権限を付与したうえで、適切な [ROW POLICY](/ja/concepts/features/security/access-rights#row-policy-management) を設定します。ユーザーが `SELECT * FROM table` を実行すると、ポリシーで許可された行のみが表示されます。
+
+カラムレベルの制限は、ユーザーやロールにテーブルレベルのアクセスを付与するために、[GRANT ステートメント](/ja/reference/statements/grant) で直接指定できます。ユーザーは、クエリに、自身がアクセスできるカラム *のみ* を含めることができます。`SELECT * FROM table` のように、指定されたすべてのカラムに対するアクセス権をユーザーが持っていないテーブルから制限されたカラムを選択すると、権限が不足していることを示すエラーが返されます。

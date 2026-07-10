@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'Ciclo de vida de un ClickPipe de Postgres'
+description: 'Distintos estados de un pipe y su significado'
+slug: /integrations/clickpipes/postgres/lifecycle
+title: 'Ciclo de vida de un ClickPipe de Postgres'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Este documento describe las distintas fases de un ClickPipe de Postgres, los diferentes estados que puede tener y su significado.
+
+<div id="provisioning">
+  ## Aprovisionamiento
+</div>
+
+Cuando haces clic en el botón Create ClickPipe, el ClickPipe se crea en el estado `Provisioning`. En el proceso de aprovisionamiento se pone en marcha la infraestructura subyacente necesaria para ejecutar ClickPipes para el servicio, además de registrar algunos metadatos iniciales para el pipe. Como la capacidad de cómputo de ClickPipes dentro de un servicio se comparte, tu segundo ClickPipe se creará mucho más rápido que el primero, ya que la infraestructura ya está lista.
+
+<div id="setup">
+  ## Configuración
+</div>
+
+Después de aprovisionar un pipe, entra en el estado `Setup`. En este estado creamos las tablas de destino en ClickHouse. Aquí también obtenemos y registramos las definiciones de tabla de sus tablas de origen.
+
+<div id="snapshot">
+  ## Instantánea
+</div>
+
+Una vez completada la configuración, entramos en el estado `Snapshot` (a menos que sea un pipe solo de CDC, en cuyo caso pasará a `Running`). `Snapshot`, `Initial Snapshot` e `Initial Load` (este último, el más habitual) son términos intercambiables. En este estado, se toma una instantánea de las tablas de la base de datos de origen y se cargan en ClickHouse. Esto no utiliza replicación lógica, pero el slot de replicación se crea en este paso; por lo tanto, los parámetros de `max_slot_wal_keep_size` y de almacenamiento deben contemplar el crecimiento del slot durante la carga inicial. Para obtener más información sobre la carga inicial, consulte la [documentación sobre la carga inicial en paralelo](/es/integrations/clickpipes/postgres/parallel-initial-load). El pipe también entrará en el estado `Snapshot` cuando se active una resincronización o cuando se añadan tablas nuevas a un pipe existente.
+
+<div id="running">
+  ## En ejecución
+</div>
+
+Una vez completada la carga inicial, el pipe entra en el estado `Running` (a menos que sea un pipe solo de instantánea, en cuyo caso pasaría a `Completed`). Aquí es donde el pipe comienza la `captura de datos de cambios (CDC)`. En este estado, iniciamos la replicación lógica desde la base de datos de origen hacia ClickHouse. Para obtener información sobre cómo controlar CDC, consulte [la documentación sobre el control de CDC](/es/integrations/clickpipes/postgres/controlling-sync).
+
+<div id="paused">
+  ## En pausa
+</div>
+
+Una vez que el pipe esté en el estado `Running`, puede pausarlo. Esto detendrá el proceso de CDC y el pipe pasará al estado `Paused`. En este estado, no se extraerán datos nuevos de la base de datos de origen, pero los datos existentes en ClickHouse permanecerán intactos. Puede reanudar el pipe desde este estado.
+
+<div id="pausing">
+  ## Pausar
+</div>
+
+<Note>
+  Este estado estará disponible próximamente. Si usas nuestra [OpenAPI](/es/products/cloud/features/admin-features/api/openapi), considera añadir compatibilidad con él desde ahora para garantizar que tu integración siga funcionando cuando se publique.
+</Note>
+
+Cuando haces clic en el botón Pause, el pipe entra en el estado `Pausing`. Este es un estado transitorio en el que se está deteniendo el proceso de CDC. Una vez que el proceso de CDC se haya detenido por completo, el pipe pasará al estado `Paused`.
+
+<div id="modifying">
+  ## Modificando
+</div>
+
+<Note>
+  Este estado estará disponible próximamente. Si usa nuestra [OpenAPI](/es/products/cloud/features/admin-features/api/openapi), considere añadir compatibilidad ahora para garantizar que su integración siga funcionando cuando esté disponible.
+</Note>
+
+Actualmente, esto indica que el pipe está eliminando tablas.
+
+<div id="resync">
+  ## Resincronización
+</div>
+
+<Note>
+  Este estado llegará próximamente. Si usas nuestra [OpenAPI](/es/products/cloud/features/admin-features/api/openapi), considera añadir compatibilidad con él ahora para asegurarte de que tu integración siga funcionando cuando se lance.
+</Note>
+
+Este estado indica que el pipe se encuentra en la fase de resincronización en la que realiza un intercambio atómico de las tablas &#95;resync con las tablas originales. Puedes encontrar más información sobre la resincronización en la [documentación de resincronización](/es/integrations/clickpipes/postgres/resync).
+
+<div id="completed">
+  ## Completado
+</div>
+
+Este estado se aplica a los pipes de solo instantánea e indica que la instantánea se ha completado y que no queda nada más por hacer.
+
+<div id="failed">
+  ## Failed
+</div>
+
+Si se produce un error irrecuperable en el pipe, este pasará al estado `Failed`. Puedes ponerte en contacto con soporte o [resincronizar](/es/integrations/clickpipes/postgres/resync) tu pipe para salir de este estado.
