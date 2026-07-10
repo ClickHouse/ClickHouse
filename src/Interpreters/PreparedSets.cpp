@@ -162,6 +162,14 @@ Columns FutureSetFromTuple::getKeyColumns() const
     return set->getSetElements();
 }
 
+size_t FutureSetFromTuple::getInputRowCount() const
+{
+    /// The deduplication filter built at construction has exactly one entry per input row, so its
+    /// size is the number of rows in the original right-hand side (before deduplication), available
+    /// in O(1) and without materializing the set elements.
+    return set_key_columns.filter ? set_key_columns.filter->size() : 0;
+}
+
 FutureSet::Hash FutureSetFromTuple::getContentHash() const
 {
     callOnce(content_hash_once, [this] { content_hash = computeContentHash(); });

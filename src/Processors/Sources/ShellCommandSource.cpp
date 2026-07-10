@@ -819,6 +819,7 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 {
     ShellCommand::Config command_config(command);
     command_config.arguments = arguments;
+    command_config.pipe_capacity = configuration.command_pipe_capacity;
     for (size_t i = 1; i < input_pipes.size(); ++i)
         command_config.write_fds.emplace_back(i + 2);
 
@@ -827,6 +828,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
 
     auto destructor_strategy = ShellCommand::DestructorStrategy{true /*terminate_in_destructor*/, SIGTERM, configuration.command_termination_timeout_seconds};
     command_config.terminate_in_destructor_strategy = destructor_strategy;
+
+    command_config.register_in_udf_process_registry = configuration.is_user_defined_function;
 
     bool is_executable_pool = (process_pool != nullptr);
     if (is_executable_pool)

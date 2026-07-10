@@ -1,0 +1,546 @@
+---
+sidebarTitle: 'استخدام BACKUP وRESTORE'
+slug: /cloud/migration/oss-to-cloud-backup-restore
+title: 'الترحيل من ClickHouse ذاتي الإدارة إلى ClickHouse Cloud باستخدام أوامر BACKUP وRESTORE'
+description: 'صفحة تشرح كيفية الترحيل بين ClickHouse ذاتي الإدارة وClickHouse Cloud باستخدام أوامر BACKUP وRESTORE'
+doc_type: 'guide'
+keywords: ['الترحيل', 'ClickHouse Cloud', 'OSS', 'ترحيل ClickHouse ذاتي الإدارة إلى Cloud', 'BACKUP', 'RESTORE']
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<div id="overview-migration-approaches">
+  ## نظرة عامة
+</div>
+
+توجد طريقتان أساسيتان لترحيل البيانات من ClickHouse ذاتي الإدارة (OSS) إلى ClickHouse Cloud:
+
+* استخدام الدالة [`remoteSecure()`](/ar/get-started/migrate/oss-to-cloud/clickhouse-to-cloud)، حيث تُسحَب البيانات أو تُدفَع مباشرةً.
+* استخدام أوامر `BACKUP`/`RESTORE` عبر تخزين الكائنات السحابي
+
+> يركّز دليل الترحيل هذا على نهج `BACKUP`/`RESTORE`، ويقدّم مثالًا عمليًا
+> على ترحيل قاعدة بيانات أو خدمة كاملة من ClickHouse مفتوح المصدر إلى Cloud عبر حاوية S3.
+
+**المتطلبات المسبقة**
+
+* أن يكون Docker مثبتًا لديك
+* أن تكون لديك [حاوية S3 ومستخدم IAM](/ar/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
+* أن تكون قادرًا على إنشاء خدمة ClickHouse Cloud جديدة
+
+ولتسهيل متابعة الخطوات الواردة في هذا الدليل وإمكانية تكرارها، سنستخدم إحدى وصفات Docker Compose
+لعنقود ClickHouse يضم شاردين ونسختين متماثلتين.
+
+<Info>
+  **العنقود مطلوب**
+
+  تتطلب طريقة النسخ الاحتياطي هذه عنقود ClickHouse، لأن الجداول يجب تحويلها من المحرك `MergeTree` إلى `ReplicatedMergeTree`.
+  إذا كنت تشغّل مثيلًا واحدًا، فاتبع الخطوات الواردة في [&quot;Migrating between self-managed ClickHouse and ClickHouse Cloud using remoteSecure&quot;](/ar/get-started/migrate/oss-to-cloud/clickhouse-to-cloud) بدلًا من ذلك.
+</Info>
+
+<div id="oss-setup">
+  ## التحضير لـ OSS
+</div>
+
+سننشئ أولًا عنقود ClickHouse باستخدام تهيئة Docker Compose من مستودع الأمثلة الخاص بنا.
+يمكنك تجاهل إنشاء عنقود ClickHouse إذا كان لديك عنقود يعمل بالفعل.
+
+1. استنسخ [مستودع الأمثلة](https://github.com/ClickHouse/examples) إلى جهازك المحلي
+2. من الطرفية، استخدم `cd` للانتقال إلى `examples/docker-compose-recipes/recipes/cluster_2S_2R`
+3. تأكد من أن Docker يعمل، ثم ابدأ عنقود ClickHouse:
+
+```bash
+docker compose up
+```
+
+من المفترض أن ترى:
+
+```bash
+[+] Running 7/7
+ ✔ Container clickhouse-keeper-01  Created  0.1s
+ ✔ Container clickhouse-keeper-02  Created  0.1s
+ ✔ Container clickhouse-keeper-03  Created  0.1s
+ ✔ Container clickhouse-01         Created  0.1s
+ ✔ Container clickhouse-02         Created  0.1s
+ ✔ Container clickhouse-04         Created  0.1s
+ ✔ Container clickhouse-03         Created  0.1s
+```
+
+من نافذة طرفية جديدة عند جذر المجلد، شغّل الأمر التالي للاتصال بالعقدة الأولى في العنقود:
+
+```bash
+docker exec -it clickhouse-01 clickhouse-client
+```
+
+<div id="mergetree-to-replicatedmergetree">
+  ### من جدول MergeTree إلى جدول ReplicatedMergeTree
+</div>
+
+يعمل ClickHouse Cloud مع [`SharedMergeTree`](/ar/products/cloud/features/infrastructure/shared-merge-tree).
+وعند استعادة نسخة احتياطية، يحوّل ClickHouse تلقائيًا الجداول التي تستخدم `ReplicatedMergeTree` إلى جداول `SharedMergeTree`.
+
+ومن المرجّح أن جداولك تستخدم بالفعل المحرّك `ReplicatedMergeTree` إذا كنت تشغّل عنقودًا.
+وإذا لم يكن الأمر كذلك، فستحتاج إلى تحويل أي جداول `MergeTree` إلى `ReplicatedMergeTree` قبل أخذ نسخة احتياطية منها.
+
+ولتوضيح كيفية تحويل جداول `MergeTree` إلى `ReplicatedMergeTree`، سنبدأ بجدول `MergeTree` ثم نحوّله لاحقًا إلى `ReplicatedMergeTree`.
+سنتبع أول خطوتين من [دليل بيانات سيارات الأجرة في نيويورك](/ar/get-started/sample-datasets/nyc-taxi) لإنشاء جدول نموذجي وتحميل البيانات إليه.
+وقد أُدرجت هاتان الخطوتان أدناه تيسيرًا عليك.
+
+شغّل الأوامر التالية لإنشاء قاعدة بيانات جديدة وإدراج البيانات من حاوية S3 في جدول جديد:
+
+```sql
+CREATE DATABASE nyc_taxi;
+
+CREATE TABLE nyc_taxi.trips_small_adapted (
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = MergeTree
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+```sql
+INSERT INTO nyc_taxi.trips_small_adapted
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+نفّذ الأمر التالي لإجراء `DETACH` للجدول.
+
+```sql
+DETACH TABLE nyc_taxi.trips_small_adapted;
+```
+
+ثم ألحِقه كجدول مكرّر:
+
+```sql
+ATTACH TABLE nyc_taxi.trips_small_adapted AS REPLICATED;
+```
+
+أخيرًا، استعد البيانات الوصفية للنسخة المتماثلة:
+
+```sql
+SYSTEM RESTORE REPLICA nyc_taxi.trips_small_adapted;
+```
+
+تحقّق من تحويله إلى `ReplicatedMergeTree`:
+
+```sql
+SELECT engine
+FROM system.tables
+WHERE name = 'trips_small_adapted' AND database = 'nyc_taxi';
+```
+
+```response
+┌─engine──────────────┐
+│ ReplicatedMergeTree │
+└─────────────────────┘
+```
+
+أنت الآن جاهز لمتابعة إعداد خدمة Cloud الخاصة بك تمهيدًا لاستعادة
+نسخة احتياطية لاحقًا من حاوية S3 الخاصة بك.
+
+<div id="distributed-tables">
+  ### الجداول الموزعة مع ReplicatedMergeTree
+</div>
+
+إذا كان إعدادك يستخدم جداول موزعة عبر عدة شوارد، فستحتاج إلى جدول `ReplicatedMergeTree` محلي على كل عقدة، وإلى جدول `Distributed` ليكون نقطة دخول للاستعلامات.
+
+شغّل الأمر التالي لإنشاء الجدول المحلي المُكرَّر على جميع عقد العنقود:
+
+```sql
+CREATE DATABASE IF NOT EXISTS nyc_taxi ON CLUSTER 'cluster_2S_2R';
+
+CREATE TABLE nyc_taxi.trips_small_dist_local ON CLUSTER 'cluster_2S_2R'
+(
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/{table}/{shard}', '{replica}')
+PRIMARY KEY (pickup_datetime, dropoff_datetime);
+```
+
+ثم أنشئ جدول `Distributed` فوقه:
+
+```sql
+
+CREATE TABLE nyc_taxi.trips_small_dist ON CLUSTER 'cluster_2S_2R'
+(
+    trip_id             UInt32,
+    pickup_datetime     DateTime,
+    dropoff_datetime    DateTime,
+    pickup_longitude    Nullable(Float64),
+    pickup_latitude     Nullable(Float64),
+    dropoff_longitude   Nullable(Float64),
+    dropoff_latitude    Nullable(Float64),
+    passenger_count     UInt8,
+    trip_distance       Float32,
+    fare_amount         Float32,
+    extra               Float32,
+    tip_amount          Float32,
+    tolls_amount        Float32,
+    total_amount        Float32,
+    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+    pickup_ntaname      LowCardinality(String),
+    dropoff_ntaname     LowCardinality(String)
+)
+ENGINE = Distributed('cluster_2S_2R', 'nyc_taxi', 'trips_small_dist_local', rand());
+```
+
+أدرِج البيانات عبر الجدول الموزّع:
+
+```sql
+INSERT INTO nyc_taxi.trips_small_dist
+SELECT
+    trip_id,
+    pickup_datetime,
+    dropoff_datetime,
+    pickup_longitude,
+    pickup_latitude,
+    dropoff_longitude,
+    dropoff_latitude,
+    passenger_count,
+    trip_distance,
+    fare_amount,
+    extra,
+    tip_amount,
+    tolls_amount,
+    total_amount,
+    payment_type,
+    pickup_ntaname,
+    dropoff_ntaname
+FROM s3(
+    'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+    'TabSeparatedWithNames'
+);
+```
+
+<div id="cloud-setup">
+  ## التحضير لـ Cloud
+</div>
+
+ستستعيد بياناتك إلى خدمة Cloud جديدة.
+اتبع الخطوات أدناه لإنشاء خدمة Cloud جديدة.
+
+<Steps>
+  <Step>
+    #### افتح Cloud Console
+
+    انتقل إلى [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
+  </Step>
+
+  <Step>
+    #### أنشئ خدمة جديدة
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="أنشئ خدمة جديدة" />
+  </Step>
+
+  <Step>
+    #### اضبط الإعدادات وأنشئ خدمة
+
+    اختر المنطقة والتكوين المطلوبين، ثم انقر على `Create service`
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="إعداد تفضيلات الخدمة" />
+  </Step>
+
+  <Step>
+    #### أنشئ دور وصول
+
+    افتح SQL Console
+
+    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="إعداد تفضيلات الخدمة" />
+
+    ### إعداد الوصول إلى S3
+
+    لاستعادة النسخة الاحتياطية من S3، ستحتاج إلى تهيئة وصول آمن بين ClickHouse Cloud وحاوية S3 الخاصة بك.
+
+    1. اتبع الخطوات الواردة في [&quot;Accessing S3 data securely&quot;](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) لإنشاء دور وصول والحصول على ARN الخاص بالدور.
+
+    2. حدّث سياسة حاوية S3 التي أنشأتها في [&quot;How to create an S3 bucket and IAM role&quot;](/ar/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket) بإضافة ARN الخاص بالدور من الخطوة السابقة.
+
+    ستبدو السياسة المحدّثة لحاوية S3 على النحو التالي تقريبًا:
+
+    ```json highlight={10-11}
+    {
+        "Version": "2012-10-17",
+        "Id": "Policy123456",
+        "Statement": [
+            {
+                "Sid": "abc123",
+                "Effect": "Allow",
+                "Principal": {
+                    "AWS": [
+                        "arn:aws:iam::123456789123:role/ClickHouseAccess-001",
+                        "arn:aws:iam::123456789123:user/docs-s3-user"
+                    ]
+                },
+                "Action": "s3:*",
+                "Resource": [
+                    "arn:aws:s3:::ch-docs-s3-bucket",
+                    "arn:aws:s3:::ch-docs-s3-bucket/*"
+                ]
+            }
+        ]
+    }
+    ```
+
+    تتضمن السياسة كِلا ARNين:
+
+    * **IAM user** (`docs-s3-user`): يتيح لعنقود ClickHouse ذاتي الإدارة لديك أخذ نسخة احتياطية إلى S3
+    * **ClickHouse Cloud role** (`ClickHouseAccess-001`): يتيح لخدمة Cloud لديك الاستعادة من S3
+  </Step>
+</Steps>
+
+<div id="taking-a-backup-on-oss">
+  ## أخذ نسخة احتياطية (في النشر ذاتي الإدارة)
+</div>
+
+يجب أخذ نسخة احتياطية لكل شارد بشكل مستقل. اتصل بعقدة في كل شارد، ثم شغّل
+أمر النسخ الاحتياطي باستخدام مسار وجهة فريد لكل شارد.
+
+استبدل `BUCKET_URL` و`KEY_ID` و`SECRET_KEY` ببيانات اعتماد AWS الخاصة بك.
+يوضح لك الدليل [&quot;كيفية إنشاء حاوية S3 ودور IAM&quot;](/ar/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
+كيفية الحصول عليها إذا لم تكن لديك بعد.
+
+**الشارد 1:**
+
+```sql
+BACKUP DATABASE nyc_taxi
+TO S3(
+  'BUCKET_URL/backup_s1.zip',
+  'KEY_ID',
+  'SECRET_KEY'
+)
+```
+
+**الشارد 2:**
+
+```sql
+BACKUP DATABASE nyc_taxi
+TO S3(
+  'BUCKET_URL/backup_s2.zip',
+  'KEY_ID',
+  'SECRET_KEY'
+)
+```
+
+إذا كان كل شيء مُعدًّا على نحو صحيح، فسترى استجابة مشابهة لما هو موضح أدناه،
+تتضمن معرّفًا فريدًا مُخصَّصًا للنسخة الاحتياطية وحالة النسخة الاحتياطية.
+
+```response
+Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
+
+┌─id───────────────────────────────────┬─status─────────┐
+│ e73b99ab-f2a9-443a-80b4-533efe2d40b3 │ BACKUP_CREATED │
+└──────────────────────────────────────┴────────────────┘
+```
+
+<Info>
+  **عمليات النشر ذات العقدة الواحدة**
+
+  إذا كنت لا تستخدم الجداول الموزعة، فيمكنك إنشاء نسخة احتياطية من قاعدة البيانات بالكامل بأمر واحد:
+
+  ```sql
+  BACKUP DATABASE nyc_taxi
+  TO S3(
+    'BUCKET_URL',
+    'KEY_ID',
+    'SECRET_KEY'
+  )
+  ```
+</Info>
+
+إذا تفقدت حاوية S3 التي كانت فارغة سابقًا، فسترى الآن ظهور بعض المجلدات:
+
+<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="النسخة الاحتياطية والبيانات والبيانات الوصفية" />
+
+إذا كنت تُجري ترحيلًا كاملًا، فيمكنك تشغيل الأمر التالي لإنشاء نسخة احتياطية من الخادم بالكامل:
+
+```sql
+BACKUP
+TABLE system.users,
+TABLE system.roles,
+TABLE system.settings_profiles,
+TABLE system.row_policies,
+TABLE system.quotas,
+TABLE system.functions,
+ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+TO S3(
+  'BUCKET_ID',
+  'KEY_ID',
+  'SECRET_ID'
+)
+SETTINGS
+  compression_method='lzma',
+  compression_level=3;
+```
+
+يأخذ الأمر أعلاه نسخة احتياطية مما يلي:
+
+* جميع قواعد بيانات المستخدم والجداول
+* حسابات المستخدمين وكلمات المرور
+* الأدوار والأذونات
+* ملفات تعريف الإعدادات
+* سياسات الصفوف
+* الحصص
+* الدوال المعرّفة من قبل المستخدم
+
+إذا كنت تستخدم موفّر خدمات Cloud (CSP) آخر، فيمكنك استخدام الصيغة `TO S3()` (لكلٍّ من AWS وGCP) و`TO AzureBlobStorage()`.
+
+بالنسبة إلى قواعد البيانات الكبيرة جدًا، فكّر في استخدام `ASYNC` لتشغيل النسخ الاحتياطي في الخلفية:
+
+```sql
+BACKUP DATABASE my_database 
+TO S3('https://your-bucket.s3.amazonaws.com/backup.zip', 'key', 'secret')
+ASYNC;
+       
+-- Returns immediately with backup ID
+-- Example result:
+-- ┌─id──────────────────────────────────┬─status────────────┐
+-- │ abc123-def456-789                   │ CREATING_BACKUP   │
+-- └─────────────────────────────────────┴───────────────────┘
+```
+
+يمكن بعد ذلك استخدام معرّف النسخة الاحتياطية لمتابعة تقدّم عملية النسخ الاحتياطي:
+
+```sql
+SELECT * 
+FROM system.backups 
+WHERE id = 'abc123-def456-789'
+```
+
+يمكن أيضًا إجراء نسخ احتياطية تزايدية.
+لمزيد من التفاصيل عن النسخ الاحتياطية عمومًا، يُرجى الرجوع إلى وثائق [النسخ الاحتياطي والاستعادة](/ar/concepts/features/backup-restore/overview).
+
+<div id="restore-to-clickhouse-cloud">
+  ## الاستعادة إلى ClickHouse Cloud
+</div>
+
+استعِد النسخة الاحتياطية لكل شارد على حدة إلى خدمة Cloud الخاصة بك. اضبط `ROLE_ARN` على
+القيمة التي تم الحصول عليها من [&quot;الوصول إلى بيانات S3 بأمان&quot;](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely).
+استخدم `SETTINGS allow_non_empty_tables=true` في عملية الاستعادة الثانية (وأي عملية استعادة لاحقة)
+بحيث تُضاف بيانات الشارد إلى الجداول التي تمت استعادتها بالفعل بدلًا من فشل العملية بسبب تعارض:
+
+**الشارد 1:**
+
+```sql
+RESTORE DATABASE nyc_taxi
+FROM S3(
+    'BUCKET_URL/backup_s1.zip',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+```
+
+**الشارد 2:**
+
+```sql
+RESTORE DATABASE nyc_taxi
+FROM S3(
+    'BUCKET_URL/backup_s2.zip',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+SETTINGS allow_non_empty_tables=true;
+```
+
+<Info>
+  **عمليات النشر غير الموزعة**
+
+  إذا كنت لا تستخدم الجداول الموزعة، فاستعِد قاعدة البيانات بأمر واحد:
+
+  ```sql
+  RESTORE DATABASE nyc_taxi
+  FROM S3(
+      'BUCKET_URL',
+      extra_credentials(role_arn = 'ROLE_ARN')
+  )
+  ```
+</Info>
+
+وبالمثل، يمكنك إجراء استعادة كاملة للخدمة:
+
+```sql
+RESTORE
+    TABLE system.users,
+    TABLE system.roles,
+    TABLE system.settings_profiles,
+    TABLE system.row_policies,
+    TABLE system.quotas,
+    ALL EXCEPT DATABASES INFORMATION_SCHEMA, information_schema, system
+FROM S3(
+    'BUCKET_URL',
+    extra_credentials(role_arn = 'ROLE_ARN')
+)
+```
+
+بعد اكتمال عملية الاستعادة، يمكنك التحقق من توفّر البيانات في Cloud:
+
+```sql
+-- ClickHouse Cloud restores everything in your local table
+SELECT count() from nyc_taxi.trips_small_dist_local;
+3000317
+```
+
+نظرًا إلى أن ClickHouse Cloud يستخدم `SharedMergeTree` داخليًا، لم تعد هناك حاجة إلى الجدول الموزّع القديم. يمكنك حذفه واستبداله بعرض يحتفظ باسم الجدول الأصلي لاستعلاماتك:
+
+```sql
+DROP TABLE drop table nyc_taxi.trips_small_dist;
+CREATE VIEW nyc_taxi.trips_small_dist AS SELECT * FROM nyc_taxi.trips_small_dist_local;
+SELECT count() from nyc_taxi.trips_small_dist;
+3000317
+```
+
+ستُستعاد جداول `ReplicatedMergeTree` غير الموزعة كجداول `SharedMergeTree`:
+
+```sql
+SELECT count() FROM nyc_taxi.trips_small_adapted;
+3000317
+```

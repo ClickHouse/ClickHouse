@@ -1,0 +1,69 @@
+---
+sidebarTitle: 'DbVisualizer'
+slug: /integrations/dbvisualizer
+description: 'DbVisualizer는 ClickHouse를 폭넓게 지원하는 데이터베이스 도구입니다.'
+title: 'DbVisualizer와 ClickHouse 연결하기'
+keywords: ['DbVisualizer', '데이터베이스 시각화', 'SQL 클라이언트', 'JDBC 드라이버', '데이터베이스 도구']
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'sql_client'
+---
+
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<div id="start-or-download-dbvisualizer">
+  ## DbVisualizer 시작 또는 다운로드
+</div>
+
+DbVisualizer는 https://www.dbvis.com/download/에서 다운로드할 수 있습니다.
+
+<div id="1-gather-your-connection-details">
+  ## 1. 연결 정보 수집
+</div>
+
+<ConnectionDetails />
+
+<div id="2-built-in-jdbc-driver-management">
+  ## 2. 기본 제공 JDBC 드라이버 관리
+</div>
+
+DbVisualizer에는 ClickHouse용 최신 JDBC 드라이버가 포함되어 있습니다. 또한 최신 릴리스와 이전 버전의 드라이버를 가리키는 JDBC 드라이버 관리 기능이 기본으로 완전히 내장되어 있습니다.
+
+<Image img="/images/integrations/sql-clients/dbvisualizer-driver-manager.webp" size="lg" border alt="ClickHouse JDBC 드라이버 구성을 보여주는 DbVisualizer Driver Manager 인터페이스" />
+
+<div id="3-connect-to-clickhouse">
+  ## 3. ClickHouse에 연결하기
+</div>
+
+DbVisualizer로 데이터베이스에 연결하려면 먼저 데이터베이스 연결을 생성하고 설정해야 합니다.
+
+1. **Database-&gt;Create Database Connection**에서 새 연결을 만들고 팝업 메뉴에서 데이터베이스에 맞는 드라이버를 선택합니다.
+
+2. 새 연결에 대한 **Object View** 탭이 열립니다.
+
+3. **Name** 필드에 연결 이름을 입력하고, 필요하면 **Notes** 필드에 연결 설명을 입력합니다.
+
+4. **Database Type**은 **Auto Detect**로 그대로 둡니다.
+
+5. **Driver Type**에서 선택한 드라이버에 녹색 체크 표시가 있으면 바로 사용할 수 있습니다. 녹색 체크 표시가 없다면 **Driver Manager**에서 드라이버를 구성해야 할 수 있습니다.
+
+6. 나머지 필드에 데이터베이스 서버 정보를 입력합니다.
+
+7. **Ping Server** 버튼을 클릭하여 지정한 주소와 포트로 네트워크 연결을 설정할 수 있는지 확인합니다.
+
+8. Ping Server 결과에서 서버에 연결할 수 있다고 표시되면 **Connect**를 클릭하여 데이터베이스 서버에 연결합니다.
+
+:::tip
+데이터베이스 연결에 문제가 있으면 몇 가지 팁을 제공하는 [Fixing Connection Issues](https://www.dbvis.com/docs/ug/troubleshooting/fixing-connection-issues/)를 참조하십시오.
+
+<div id="learn-more">
+  ## 더 알아보기
+</div>
+
+DbVisualizer에 대한 자세한 내용은 [DbVisualizer 문서](https://www.dbvis.com/docs/ug/)를 참조하십시오.

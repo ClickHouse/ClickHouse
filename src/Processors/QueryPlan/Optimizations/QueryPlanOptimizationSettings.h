@@ -30,6 +30,8 @@ struct QueryPlanOptimizationSettings
 
     explicit QueryPlanOptimizationSettings(ContextPtr from);
 
+    void keepOnlyExplicitlyEnabled(const Settings & from);
+
     /// Allows to globally disable all plan-level optimizations.
     /// Note: Even if set to 'true', individual optimizations may still be disabled via below settings.
     bool optimize_plan;
@@ -61,6 +63,7 @@ struct QueryPlanOptimizationSettings
     bool try_use_vector_search;
     bool convert_join_to_in;
     bool merge_filter_into_join_condition;
+    bool merge_expression_into_join;
     bool use_join_disjunctions_push_down;
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
@@ -92,6 +95,7 @@ struct QueryPlanOptimizationSettings
     bool optimize_projection;
     bool use_query_condition_cache;
     bool read_in_order_through_join;
+    bool optimize_aggregation_in_order_limit;
     bool correlated_subqueries_use_in_memory_buffer;
     bool push_limit_by_into_sort;
 
@@ -168,6 +172,7 @@ struct QueryPlanOptimizationSettings
     UInt64 max_entries_for_hash_table_stats;
     UInt64 max_size_to_preallocate_for_joins;
     bool collect_hash_table_stats_during_joins;
+    bool collect_hash_table_stats_during_aggregation;
     String initial_query_id;
     std::chrono::milliseconds lock_acquire_timeout{};
     ExpressionActionsSettings actions_settings;
@@ -180,6 +185,7 @@ struct QueryPlanOptimizationSettings
     Float64 join_runtime_filter_pass_ratio_threshold_for_disabling = 0.7;
     UInt64 join_runtime_filter_blocks_to_skip_before_reenabling = 30;
     Float64 join_runtime_bloom_filter_max_ratio_of_set_bits = 0.7;
+    bool join_runtime_filter_size_from_hash_table_stats = false;
 
     std::vector<JoinOrderAlgorithm> query_plan_optimize_join_order_algorithm;
 
