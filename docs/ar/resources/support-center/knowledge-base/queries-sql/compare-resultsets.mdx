@@ -1,0 +1,80 @@
+---
+title: كيفية التحقق مما إذا كان استعلامان يُرجعان مجموعات النتائج نفسها
+description: تعرّف على كيفية التحقق من أن استعلامَي ClickHouse يُرجعان مجموعات نتائج متطابقة باستخدام دوال التجزئة وتقنيات المقارنة.
+date: 2023-05-04
+tags: ['الدوال']
+keywords: ['التحقق', 'مجموعات النتائج', 'دوال التجزئة']
+---
+
+<div id="question">
+  ## السؤال
+</div>
+
+كيف يمكنني التحقق من أن استعلامين يعيدان مجموعات النتائج نفسها؟
+
+<div id="answer">
+  ## الإجابة
+</div>
+
+يمكنك اتباع النهج التالي:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- your query 1 here
+            -- SELECT ...
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            -- your query 2 here
+            -- SELECT ...
+        )
+    ) AS q2_resultset_hash
+SELECT equals(q1_resultset_hash,q2_resultset_hash) as Q1_equals_Q2
+```
+
+يستخدم المثال [CTE](/ar/reference/statements/select/with) لحساب مجموع قيم [cityHash](/ar/reference/functions/regular-functions/hash-functions#cityhash64) لكل صف في هذين الاستعلامين، ويُرجع `1` إذا كانت مجموعتا النتائج متطابقتين.
+
+باستخدام بعض البيانات من تسلسل أعداد صحيحة وبعض تنسيق Pretty:
+
+```sql
+WITH
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number DESC
+        )
+    ) AS q1_resultset_hash,
+    (
+        SELECT sum(cityHash64(*))
+        FROM
+        (
+            SELECT *
+            FROM numbers(10)
+            ORDER BY number ASC
+        )
+    ) AS q2_resultset_hash
+SELECT q1_resultset_hash = q2_resultset_hash AS Q1_equals_Q2
+FORMAT Pretty
+```
+
+ستكون النتيجة:
+
+```
+┏━━━━━━━━━━━━━━┓
+┃ Q1_equals_Q2 ┃
+┡━━━━━━━━━━━━━━┩
+│            1 │
+└──────────────┘
+```
+
+مع أن هذا قد يكون مفيدًا في العديد من السيناريوهات، فلا يمكن اعتباره حلًا قاطعًا للتحقق من تطابق مجموعات النتائج في جميع الأنواع، كما أن لاستخدامه بعض المحاذير؛ فعلى سبيل المثال، إذا احتوى أي صف على قيم `NULL` فسيفشل النهج المذكور أعلاه.

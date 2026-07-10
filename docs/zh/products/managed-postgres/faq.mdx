@@ -1,0 +1,160 @@
+---
+slug: /cloud/managed-postgres/faq
+sidebarTitle: 'FAQ'
+title: 'Managed Postgres FAQ'
+description: '关于 ClickHouse Managed Postgres 的常见问题'
+keywords: ['managed postgres faq', 'postgres 问题', '指标', '扩展', '迁移', 'terraform', 'pgbouncer', '预处理语句']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
+
+<div id="monitoring-and-metrics">
+  ## 监控与指标
+</div>
+
+<div id="metrics-access">
+  ### 如何访问我的 Managed Postgres 实例指标？
+</div>
+
+你可以直接在 ClickHouse Cloud 控制台中，进入 Managed Postgres 实例的 **Monitoring** 选项卡，监控 CPU、内存、IOPS 和存储使用情况。
+
+此外，你还可以在 **Query Insights** 选项卡中查看 [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud)，对查询进行详细分析。
+
+<div id="backup-and-recovery">
+  ## 备份与恢复
+</div>
+
+<div id="backup-options">
+  ### 有哪些可用的备份选项？
+</div>
+
+Managed Postgres 提供每日自动备份和持续 WAL 归档，支持将数据库恢复到 7 天保留期内的任意时间点。备份存储在 S3 中。
+
+有关备份频率、保留期以及如何执行时间点恢复的完整信息，请参阅 [备份与恢复](/zh/products/managed-postgres/backup-and-restore) 文档。
+
+<div id="infrastructure-and-automation">
+  ## 基础设施与自动化
+</div>
+
+<div id="terraform-support">
+  ### Managed Postgres 是否支持 Terraform？
+</div>
+
+Managed Postgres 目前尚不支持 Terraform。建议使用 ClickHouse Cloud 控制台或 [OpenAPI](/zh/products/managed-postgres/openapi) 创建和管理您的实例。
+
+<div id="extensions-and-configuration">
+  ## 扩展和配置
+</div>
+
+<div id="extensions-supported">
+  ### 支持哪些扩展？
+</div>
+
+Managed Postgres 提供超过 90 个 PostgreSQL 扩展，包括 PostGIS、pgvector、pg&#95;cron 等热门扩展，以及更多其他扩展。有关可用扩展的完整列表和安装说明，请参阅 [扩展](/zh/products/managed-postgres/extensions) 文档。
+
+<div id="config-customization">
+  ### 我可以自定义 PostgreSQL 配置参数吗？
+</div>
+
+可以，您可以通过控制台中的 **Settings** 选项卡修改 PostgreSQL 和 PgBouncer 的配置参数。有关可用参数及其修改方法的详细信息，请参阅 [Settings](/zh/products/managed-postgres/settings) 文档。
+
+<Tip>
+  如果您需要当前尚未提供的参数，请联系 [support](https://clickhouse.com/support/program) 提出申请。
+</Tip>
+
+<div id="connection-pooling">
+  ## 连接池
+</div>
+
+<div id="prepared-statement-errors">
+  ### 为什么我通过 PgBouncer 会看到 `prepared statement does not exist` 错误？
+</div>
+
+Managed Postgres 以 **transaction pooling** 模式运行 PgBouncer。在这种模式下，后端 Postgres 连接只会在单个事务期间分配给客户端，随后就会返回连接池——同一客户端的下一笔事务可能会落到不同的后端上。
+
+这会导致**服务器端预处理语句**失效，因为它们绑定在执行 `PREPARE` (或扩展查询 `Parse`) 的特定后端上。当对应的 `EXECUTE` 落到另一个后端时，就会出现如下错误：
+
+```text
+ERROR:  prepared statement "..." does not exist
+ERROR:  unnamed prepared statement does not exist
+```
+
+通常可追溯到这一根本原因的症状包括：
+
+* `prepared statement does not exist` 错误突然增多，尤其是在回填期间或高并发写入时
+* 看似“静默失败”的插入 —— 语句报错后，driver 会重试，结果一个批次最终可能只部分生效，甚至被丢弃
+* 返回值类型错误 (例如，把 `BIGINT` 列解码成 `float64` 位模式) —— 当缓存的客户端执行计划在某个后端上复用了过期的类型/format 代码时，就会发生这种情况，而该后端从未收到与之匹配的 `Parse`
+
+**修复方法：在你的 driver 中禁用服务器端预处理语句。** 具体开关取决于你使用的客户端库：
+
+| Driver                           | Setting                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| **pgx** (Go)                     | `statement_cache_capacity=0` and `default_query_exec_mode=exec` (or `simple_protocol`) |
+| **psycopg3** (Python)            | `prepare_threshold=None`                                                               |
+| **asyncpg** (Python)             | `statement_cache_size=0`                                                               |
+| **JDBC** (Java)                  | `prepareThreshold=0`                                                                   |
+| **node-postgres / pg** (Node.js) | 不要向 `query()` 传入 `name` (命名查询会变成服务端预处理语句)                                              |
+
+如果你的工作负载依赖预处理语句，请**直接连接到 PostgreSQL** (端口 5432) ，而不要通过 PgBouncer 连接池器 —— 直连可以正常支持预处理语句。关于如何在池化端点和直连端点之间进行选择的详细信息，请参阅 [Connection](/zh/products/managed-postgres/connection)。
+
+<div id="pgbouncer-vs-pg-connections">
+  ### PgBouncer 中的 `max_client_conn` 设置是什么意思？它与 Postgres 中的 `max_connections` 有什么关系？
+</div>
+
+它们控制的是不同的对象：
+
+* **Postgres `max_connections`** 限制的是 PostgreSQL 自身的 **后端** 连接数。这才是成本较高的那个限制——每个 后端 都会占用内存和一个进程槽位。
+* **PgBouncer `max_client_conn`** 限制的是连接池器中可同时打开的 **client** 连接数。PgBouncer 会将大量客户端连接复用到一组小得多的 后端 连接上。
+
+典型的 Managed Postgres 实例通常会配置为：PgBouncer 可接受的客户端连接数大约是 Postgres 后端 数量的 **10 倍** (例如 5000 个 client / 500 个 后端) 。如果你在连接池器这一层看到连接错误，那么相比达到醒目的客户端连接上限，更有可能是触及了每个连接池的 后端 限制 (`default_pool_size`) 。
+
+<div id="database-capabilities">
+  ## 数据库功能
+</div>
+
+<div id="multiple-databases-schemas">
+  ### 我可以创建多个数据库和 schema 吗？
+</div>
+
+可以。Managed Postgres 提供完整的 PostgreSQL 原生功能，包括在单个实例中支持多个数据库和 schema。您可以使用标准的 PostgreSQL 命令来创建和管理数据库及 schema。
+
+<div id="rbac-support">
+  ### 是否支持基于角色的访问控制 (RBAC) ？
+</div>
+
+您对自己的 Managed Postgres 实例拥有完整的 superuser 访问权限，因此可以使用标准的 PostgreSQL 命令创建角色并管理权限。
+
+<Note>
+  计划于今年推出与控制台集成的增强 RBAC 功能。
+</Note>
+
+<div id="upgrades">
+  ## 升级
+</div>
+
+<div id="version-upgrades">
+  ### PostgreSQL 版本升级是如何处理的？
+</div>
+
+无论是次要版本升级还是主版本升级，都是通过故障转移完成的，通常只会造成几秒钟的停机。您可以配置维护窗口，以控制升级在何时应用。完整详情请参阅[升级](/zh/products/managed-postgres/upgrades)文档。
+
+<div id="migration">
+  ## 迁移
+</div>
+
+<div id="migration-tools">
+  ### 可用于迁移到 Managed Postgres 的工具有哪些？
+</div>
+
+Managed Postgres 支持多种迁移方式：
+
+* **pg&#95;dump 和 pg&#95;restore**：适用于较小的数据库或一次性迁移。请参阅 [pg&#95;dump 和 pg&#95;restore](/zh/products/managed-postgres/migrations/pg_dump-pg_restore) 指南。
+* **逻辑复制**：适用于需要尽量减少停机时间的大型数据库。请参阅 [逻辑复制](/zh/products/managed-postgres/migrations/logical-replication) 指南。
+* **PeerDB**：适用于从其他 Postgres 源进行基于 CDC 的复制。请参阅 [PeerDB 迁移](/zh/products/managed-postgres/migrations/peerdb) 指南。
+
+<Note>
+  全托管迁移体验即将推出。
+</Note>

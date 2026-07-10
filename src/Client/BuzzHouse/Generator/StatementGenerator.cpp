@@ -72,7 +72,8 @@ StatementGenerator::StatementGenerator(
               {0.01, 0.10}, /// Kill
               {0.01, 0.08}, /// ShowStatement
               {0.02, 0.08}, /// CreatePolicy
-              {0.01, 0.15} /// SnapshotQuery
+              {0.01, 0.15}, /// SnapshotQuery
+              {0.01, 0.08} /// CreateHypotheticalIndex
           }},
           "SQL statements"))
     , litGen(ProbabilityGenerator(
@@ -171,7 +172,7 @@ StatementGenerator::StatementGenerator(
               {0.005, 0.02} /// FilesystemUDF (filesystem reads files, gate behind allow_not_deterministic)
           }},
           "SQL queries"))
-    , SQLMask(static_cast<size_t>(SQLOp::SnapshotQuery) + 1, true)
+    , SQLMask(static_cast<size_t>(SQLOp::CreateHypotheticalIndex) + 1, true)
     , litMask(static_cast<size_t>(LitOp::LitFraction) + 1, true)
     , expMask(static_cast<size_t>(ExpOp::LitAccurateCast) + 1, true)
     , predMask(static_cast<size_t>(PredOp::OtherExpr) + 1, true)
@@ -757,6 +758,7 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
     const uint32_t drop_database = 2 * static_cast<uint32_t>(collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3);
     const uint32_t drop_function = 1 * static_cast<uint32_t>(functions.size() > 3);
     const uint32_t drop_policy = 1 * static_cast<uint32_t>(policies.size() > 3);
+    const uint32_t drop_hypothetical_index = 2 * static_cast<uint32_t>(totalHypotheticalIndexes() > 3);
     std::optional<String> cluster;
 
     rg.pickWeighted(
@@ -825,9 +827,34 @@ void StatementGenerator::generateNextDrop(RandomGenerator & rg, Drop * dp)
               {
                   dp->mutable_target()->mutable_table()->set_value(rp.table_key);
               }
+          }},
+         {drop_hypothetical_index,
+          [&]
+          {
+              dp->set_sobject(SQLObject::HYPOTHETICAL_INDEX);
+              if (!collectionHas<SQLTable>(attached_tables_for_drop_hypothetical_index) || rg.nextMediumNumber() < 8)
+              {
+                  /// DROP ALL HYPOTHETICAL INDEXES. The `object` field is required by the proto, but not rendered for this statement.
+                  dp->set_all(true);
+                  sot->mutable_index()->set_value("hi0");
+              }
+              else
+              {
+                  /// Hypothetical indexes are session scoped on the server, so the tracked names are
+                  /// best effort: the index may no longer exist on the server.
+                  const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables_for_drop_hypothetical_index));
+
+                  dp->set_if_exists(rg.nextSmallNumber() < 7);
+                  sot->mutable_index()->set_value(rg.pickRandomly(t.hypothetical_indexes));
+                  t.setName(dp->mutable_target(), false);
+              }
           }}});
-    setClusterClause(rg, cluster, dp->mutable_cluster());
-    if (dp->sobject() != SQLObject::FUNCTION && dp->sobject() != SQLObject::ROW_POLICY && dp->sobject() != SQLObject::MASKING_POLICY)
+    if (dp->sobject() != SQLObject::HYPOTHETICAL_INDEX)
+    {
+        setClusterClause(rg, cluster, dp->mutable_cluster());
+    }
+    if (dp->sobject() != SQLObject::FUNCTION && dp->sobject() != SQLObject::ROW_POLICY && dp->sobject() != SQLObject::MASKING_POLICY
+        && dp->sobject() != SQLObject::HYPOTHETICAL_INDEX)
     {
         dp->set_sync(rg.nextSmallNumber() < 3);
         if (rg.nextSmallNumber() < 3)
@@ -926,9 +953,7 @@ void StatementGenerator::generateNextOptimizeTableInternal(RandomGenerator & rg,
     ot->set_use_force(rg.nextBool());
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
-        ot->set_format(
-            fc.truncate_output ? OutFormat::OUT_Null
-                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+        ot->set_format(fc.truncate_output ? "Null" : rg.pickRandomly(fc.out_formats));
     }
 }
 
@@ -992,9 +1017,7 @@ void StatementGenerator::generateNextCheckTable(RandomGenerator & rg, CheckTable
     }
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
-        ct->set_format(
-            fc.truncate_output ? OutFormat::OUT_Null
-                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+        ct->set_format(fc.truncate_output ? "Null" : rg.pickRandomly(fc.out_formats));
     }
 }
 
@@ -1012,6 +1035,13 @@ bool StatementGenerator::tableOrFunctionRef(
     const bool allCols = rg.nextMediumNumber() < 4;
 
     flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [&](const SQLColumn & c) { return allCols || c.canBeInserted(); });
+    if (this->entries.empty())
+    {
+        /// The model may have no insertable columns, e.g. a lake table whose only column kept a default
+        /// modifier the external catalog can't express, so the server-side column is plain. An empty
+        /// column list generates degenerate inserts like `SELECT  FROM numbers(8)`, so use all columns
+        flatTableColumnPath(skip_nested_node | flat_nested, t.cols, [](const SQLColumn &) { return true; });
+    }
     std::shuffle(this->entries.begin(), this->entries.end(), rg.generator);
     rg.pickWeighted(
         {{cluster_func,
@@ -1053,12 +1083,11 @@ bool StatementGenerator::tableOrFunctionRef(
 
               TableFunction * tf = tof->mutable_tfunc();
               URLFunc * ufunc = tf->mutable_url();
-              const OutFormat outf = (!this->allow_not_deterministic || rg.nextBool())
-                  ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                  : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1);
-              const InFormat iinf = (outIn.contains(outf) && (!this->allow_not_deterministic || rg.nextBool()))
-                  ? outIn.at(outf)
-                  : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1);
+              const String outf = rg.pickRandomly((!this->allow_not_deterministic || rg.nextBool()) ? fc.in_out_formats : fc.out_formats);
+              const std::optional<String> read_back = fc.formatToRead(outf);
+              const String iinf = (read_back.has_value() && (!this->allow_not_deterministic || rg.nextBool()))
+                  ? read_back.value()
+                  : rg.pickRandomly(fc.in_formats);
 
               if (cluster.has_value() && (!this->allow_not_deterministic || rg.nextSmallNumber() < 7))
               {
@@ -1091,13 +1120,13 @@ bool StatementGenerator::tableOrFunctionRef(
               }
               if (rg.nextMediumNumber() < 91)
               {
-                  sql += " FORMAT " + InFormat_Name(iinf).substr(3);
+                  sql += " FORMAT " + iinf;
               }
               url += getNextHTTPURL(rg, rg.nextSmallNumber() < 4) + "query=" + urlEncodeQueryParam(sql);
               ufunc->set_uurl(std::move(url));
               if (rg.nextMediumNumber() < 91)
               {
-                  ufunc->set_outformat(outf);
+                  ufunc->set_format(outf);
               }
               ufunc->mutable_structure()->mutable_lit_val()->set_string_lit(std::move(buf));
               addRandomHTTPHeaders(rg, tf);
@@ -1191,9 +1220,7 @@ void StatementGenerator::generateNextDescTable(RandomGenerator & rg, DescribeSta
     }
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
-        dt->set_format(
-            fc.truncate_output ? OutFormat::OUT_Null
-                               : (static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1)));
+        dt->set_format(fc.truncate_output ? "Null" : rg.pickRandomly(fc.out_formats));
     }
 }
 
@@ -1916,7 +1943,7 @@ std::optional<String> StatementGenerator::alterSingleTable(
              [&]
              {
                  AddIndex * add_index = ati->mutable_add_index();
-                 addTableIndex(rg, t, false, add_index->mutable_new_idx());
+                 addTableIndex(rg, t, IndexUsage::TableIndex, add_index->mutable_new_idx());
                  if (has_idxs)
                  {
                      const uint32_t next_option = rg.nextSmallNumber();
@@ -2030,6 +2057,15 @@ std::optional<String> StatementGenerator::alterSingleTable(
             {2 * static_cast<uint32_t>(no_oracle && nconstrs < 4), [&] { addTableConstraint(rg, t, ati->mutable_add_constraint()); }},
             {2 * static_cast<uint32_t>(no_oracle && has_constrs),
              [&] { ati->mutable_remove_constraint()->set_value(fc.tableGetRandomConstraint(rg.nextInFullRange(), dname_idx, tname_idx)); }},
+            {2 * static_cast<uint32_t>(no_oracle && has_constrs),
+             [&]
+             {
+                 /// Generate a new predicate for an existing constraint
+                 ConstraintDef * cdef = ati->mutable_modify_constraint();
+
+                 addTableConstraint(rg, t, cdef);
+                 cdef->mutable_constr()->set_value(fc.tableGetRandomConstraint(rg.nextInFullRange(), dname_idx, tname_idx));
+             }},
             /// Partition operations
             {5 * static_cast<uint32_t>(no_oracle && is_mt),
              [&]
@@ -3022,9 +3058,7 @@ void StatementGenerator::generateNextBackup(RandomGenerator & rg, BackupRestore 
     if (rg.nextBool())
     {
         /// Most of the times, use formats that can be read later
-        br->set_outformat(
-            rg.nextBool() ? rg.pickRandomly(rg.pickRandomly(outFormats))
-                          : static_cast<OutFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(OutFormat_MAX)) + 1));
+        br->set_format(rg.pickRandomly(rg.nextMediumNumber() < 91 ? fc.in_out_formats : fc.out_formats));
     }
 }
 
@@ -3093,10 +3127,9 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
     br->mutable_out()->CopyFrom(backup.bout);
     if (backup.out_format.has_value())
     {
-        br->set_informat(
-            outIn.contains(backup.out_format.value()) && rg.nextBool()
-                ? outIn.at(backup.out_format.value())
-                : static_cast<InFormat>((rg.nextLargeNumber() % static_cast<uint32_t>(InFormat_MAX)) + 1));
+        const std::optional<String> read_back = fc.formatToRead(backup.out_format.value());
+
+        br->set_format(read_back.has_value() && rg.nextBool() ? read_back.value() : rg.pickRandomly(fc.in_formats));
     }
 }
 
@@ -3280,7 +3313,8 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     SQLMask[static_cast<size_t>(SQLOp::Drop)] = !in_parallel
         && (collectionCount<SQLTable>(attached_tables) > 3 || collectionCount<SQLView>(attached_views) > 3
             || collectionCount<SQLDictionary>(attached_dictionaries) > 3
-            || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3);
+            || collectionCount<std::shared_ptr<SQLDatabase>>(attached_databases) > 3 || functions.size() > 3 || policies.size() > 3
+            || totalHypotheticalIndexes() > 3);
     SQLMask[static_cast<size_t>(SQLOp::Insert)] = has_tables;
     SQLMask[static_cast<size_t>(SQLOp::LightDelete)] = has_mergeable_mt;
     SQLMask[static_cast<size_t>(SQLOp::Truncate)] = has_databases || has_tables;
@@ -3313,6 +3347,8 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
     SQLMask[static_cast<size_t>(SQLOp::ShowStatement)] = !in_parallel;
     SQLMask[static_cast<size_t>(SQLOp::CreatePolicy)]
         = !in_parallel && static_cast<uint32_t>(policies.size()) < this->fc.max_policies && collectionHas<SQLTable>(attached_tables);
+    SQLMask[static_cast<size_t>(SQLOp::CreateHypotheticalIndex)]
+        = totalHypotheticalIndexes() < this->fc.max_hypotheticals && collectionHas<SQLTable>(attached_tables_for_create_hypothetical_index);
     SQLGen.setEnabled(SQLMask);
 
     switch (static_cast<SQLOp>(SQLGen.nextOp())) /// drifts over time
@@ -3347,6 +3383,7 @@ void StatementGenerator::generateNextQuery(RandomGenerator & rg, const bool in_p
             generateNextCreatePolicy(rg, !supports_cloud_features || rg.nextBool(), sq->mutable_create_policy());
             break;
         case SQLOp::SnapshotQuery: generateNextSnapshot(rg, sq->mutable_snapshot_query()); break;
+        case SQLOp::CreateHypotheticalIndex: generateNextCreateHypotheticalIndex(rg, sq->mutable_create_hypo_index()); break;
     }
 }
 
@@ -3390,7 +3427,20 @@ static const std::vector<ExplainOptValues> explainSettings{
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_projections, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_input_headers, trueOrFalseInt),
     ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_column_structure, trueOrFalseInt),
-    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_pretty, trueOrFalseInt)};
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_pretty, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_empirical, trueOrFalseInt),
+    ExplainOptValues(ExplainOption_ExplainOpt::ExplainOption_ExplainOpt_compact_repeated_processor_chains, trueOrFalseInt)};
+
+void StatementGenerator::generateNextCreateHypotheticalIndex(RandomGenerator & rg, CreateHypotheticalIndex * hi)
+{
+    /// The drop counterparts are generated by `generateNextDrop`
+    SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables_for_create_hypothetical_index));
+    IndexDef * idef = hi->mutable_create_def();
+
+    addTableIndex(rg, t, IndexUsage::HypotheticalIndex, idef);
+    hi->set_if_not_exists(rg.nextSmallNumber() < 4);
+    t.setName(hi->mutable_est(), false);
+}
 
 void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_parallel, ExplainQuery * eq)
 {
@@ -3421,7 +3471,11 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
                     this->ids.insert(this->ids.end(), {1, 8, 9, 10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_PIPELINE:
-                    this->ids.insert(this->ids.end(), {0, 8, 15, 16});
+                    this->ids.insert(this->ids.end(), {0, 8, 15, 16, 24});
+                    break;
+                case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF:
+                    /// `empirical` is the only supported setting for EXPLAIN WHATIF
+                    this->ids.insert(this->ids.end(), {23});
                     break;
                 case ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_CURRENT_TRANSACTION: break;
                 default: break;
@@ -3447,7 +3501,15 @@ void StatementGenerator::generateNextExplain(RandomGenerator & rg, bool in_paral
             this->ids.clear();
         }
     }
-    generateNextQuery(rg, in_parallel, eq->mutable_inner_query());
+    if (val.has_value() && val.value() == ExplainQuery_ExplainValues::ExplainQuery_ExplainValues_WHATIF)
+    {
+        /// Only SELECT is supported for EXPLAIN WHATIF
+        generateTopSelect(rg, false, std::numeric_limits<uint32_t>::max(), eq->mutable_inner_query()->mutable_select());
+    }
+    else
+    {
+        generateNextQuery(rg, in_parallel, eq->mutable_inner_query());
+    }
 }
 
 void StatementGenerator::generateNextStatement(RandomGenerator & rg, SQLQuery & sq)
@@ -3738,9 +3800,34 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
         {
             this->policies.erase(drp.object().policy().value());
         }
+        else if (drp.sobject() == SQLObject::HYPOTHETICAL_INDEX)
+        {
+            if (drp.all())
+            {
+                clearHypotheticalIndexes();
+            }
+            else
+            {
+                const String tkey = getNameFromProto(drp.target().table().value());
+
+                if (this->tables.contains(tkey))
+                {
+                    this->tables.at(tkey).hypothetical_indexes.erase(drp.object().index().value());
+                }
+            }
+        }
         else
         {
             UNREACHABLE();
+        }
+    }
+    else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_create_hypo_index() && success)
+    {
+        const String tkey = getNameFromProto(query.create_hypo_index().est().table().value());
+
+        if (this->tables.contains(tkey))
+        {
+            this->tables.at(tkey).hypothetical_indexes.insert(query.create_hypo_index().create_def().idx().value());
         }
     }
     else if (ssq.has_explain() && !ssq.explain().is_explain() && query.has_exchange() && success)
@@ -4175,9 +4262,9 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
                 CatalogBackup newb = this->snapshots.at(snap_number);
 
                 newb.bout.CopyFrom(br.out());
-                if (br.has_outformat())
+                if (br.has_format())
                 {
-                    newb.out_format = br.outformat();
+                    newb.out_format = br.format();
                 }
                 this->backups[backup_number] = std::move(newb);
             }
@@ -4188,9 +4275,9 @@ void StatementGenerator::updateGeneratorFromSingleQuery(const SingleSQLQuery & s
             const BackupRestoreElement & bre = br.backup_element();
 
             newb.bout.CopyFrom(br.out());
-            if (br.has_outformat())
+            if (br.has_format())
             {
-                newb.out_format = br.outformat();
+                newb.out_format = br.format();
             }
             if (bre.has_all())
             {

@@ -1,0 +1,168 @@
+---
+description: 'LIMIT 절 문서'
+sidebarTitle: 'LIMIT'
+slug: /sql-reference/statements/select/limit
+title: 'LIMIT 절'
+doc_type: 'reference'
+---
+
+`LIMIT` 절은 쿼리 결과로 반환할 행 수를 제어합니다.
+
+<div id="basic-syntax">
+  ## 기본 구문
+</div>
+
+**처음 몇 개의 행 선택:**
+
+```sql
+LIMIT m
+```
+
+결과에서 첫 `m`개 행을 반환하며, `m`개보다 적으면 모든 레코드를 반환합니다.
+
+**대체 TOP 구문(MS SQL Server 호환):**
+
+```sql
+-- SELECT TOP 숫자|퍼센트 컬럼명 FROM 테이블명
+SELECT TOP 10 * FROM numbers(100);
+SELECT TOP 0.1 * FROM numbers(100);
+```
+
+이는 `LIMIT m`과 같으며, Microsoft SQL Server 쿼리와의 호환성을 위해 사용할 수 있습니다.
+
+**OFFSET을 사용한 선택:**
+
+```sql
+LIMIT m OFFSET n
+-- 또는 동일하게:
+LIMIT n, m
+```
+
+처음 `n`개 행을 건너뛴 후, 다음 `m`개 행을 반환합니다.
+
+두 형식 모두에서 `n`과 `m`은 0 이상의 정수여야 합니다.
+
+<div id="negative-limits">
+  ## 음수 제한
+</div>
+
+음수 값을 사용해 결과 집합의 *끝*에서 행을 선택합니다.
+
+| 구문                   | 결과                           |
+| -------------------- | ---------------------------- |
+| `LIMIT -m`           | 마지막 `m`개 행                   |
+| `LIMIT -m OFFSET -n` | 마지막 `n`개 행을 건너뛴 후 마지막 `m`개 행 |
+| `LIMIT m OFFSET -n`  | 마지막 `n`개 행을 건너뛴 후 처음 `m`개 행  |
+| `LIMIT -m OFFSET n`  | 처음 `n`개 행을 건너뛴 후 마지막 `m`개 행  |
+
+`LIMIT -n, -m` 구문은 `LIMIT -m OFFSET -n`과 동일합니다.
+
+<div id="fractional-limits">
+  ## 분수형 제한
+</div>
+
+0과 1 사이의 소수 값을 사용해 행의 일정 비율을 선택합니다:
+
+| 구문                      | 결과                           |
+| ----------------------- | ---------------------------- |
+| `LIMIT 0.1`             | 처음 10%의 행                    |
+| `LIMIT 1 OFFSET 0.5`    | 중앙값에 해당하는 행                  |
+| `LIMIT 0.25 OFFSET 0.5` | 제3사분위수(처음 50%를 건너뛴 뒤의 25% 행) |
+
+<Note>
+  * 분수 값은 0보다 크고 1보다 작은 [Float64](/ko/reference/data-types/float) 값이어야 합니다.
+  * 소수로 계산된 행 수는 다음 정수로 올림됩니다.
+</Note>
+
+<div id="combining-limit-types">
+  ## LIMIT 유형 함께 사용하기
+</div>
+
+일반적인 정수 값과 소수 또는 음수 OFFSET을 함께 사용할 수 있습니다:
+
+```sql
+LIMIT 10 OFFSET 0.5    -- 중간 지점부터 시작하는 10행
+LIMIT 10 OFFSET -20    -- 마지막 20개를 건너뛴 후 10행
+```
+
+<div id="limit--with-ties-modifier">
+  ## LIMIT ... WITH TIES
+</div>
+
+`WITH TIES` 수정자는 제한된 결과의 마지막 행과 `ORDER BY` 값이 동일한 추가 행도 포함합니다.
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+`WITH TIES`를 사용하면 마지막 값과 동일한 모든 행이 포함됩니다:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+6행은 5행과 같은 값(`2`)을 가지므로 포함됩니다.
+
+`OFFSET` 키워드로 OFFSET을 지정한 경우에도 동일하게 적용됩니다:
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 3 OFFSET 2 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+처음 2개 행을 건너뛴 뒤 3개를 가져오면 일반적으로 `1, 1, 2`가 반환되지만, 마지막 행과 값이 같기 때문에 두 번째 `2`도 포함됩니다.
+
+<Note>
+  `WITH TIES`는 음수 제한와 함께는 지원되지 않습니다.
+</Note>
+
+이 수정자는 [`ORDER BY ... WITH FILL`](/ko/reference/statements/select/order-by#order-by-expr-with-fill-modifier) 수정자와 함께 사용할 수 있습니다.
+
+<div id="considerations">
+  ## 고려 사항
+</div>
+
+**비결정적 결과:** [`ORDER BY`](/ko/reference/statements/select/order-by) 절이 없으면 반환되는 행은 임의적일 수 있으며, 쿼리를 실행할 때마다 달라질 수 있습니다.
+
+**서버 측 제한:** 반환되는 행 수는 [limit](/ko/reference/settings/session-settings#limit) 설정의 영향을 받을 수도 있습니다.
+
+<div id="see-also">
+  ## 관련 항목
+</div>
+
+* [LIMIT BY](/ko/reference/statements/select/limit-by) — 값 그룹별 행 수를 제한하므로, 각 범주에서 상위 N개 결과를 가져올 때 유용합니다.

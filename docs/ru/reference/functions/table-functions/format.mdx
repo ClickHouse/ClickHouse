@@ -1,0 +1,100 @@
+---
+description: 'Разбирает данные из аргументов согласно указанному входному формату. Если аргумент structure не указан, структура извлекается из данных.'
+slug: /sql-reference/table-functions/format
+sidebarTitle: 'format'
+title: 'format'
+doc_type: 'reference'
+---
+
+Разбирает данные из аргументов согласно указанному входному формату. Если аргумент structure не указан, структура извлекается из данных.
+
+<div id="syntax">
+  ## Синтаксис
+</div>
+
+```sql
+format(format_name, [structure], data)
+```
+
+<div id="arguments">
+  ## Аргументы
+</div>
+
+* `format_name` — [формат](/ru/reference/formats/index) данных.
+* `structure` - Структура таблицы. Необязательный параметр. Формат: &#39;column1&#95;name column1&#95;type, column2&#95;name column2&#95;type, ...&#39;.
+* `data` — Строковый литерал или константное выражение, возвращающее строку с данными в указанном формате
+
+<div id="returned_value">
+  ## Возвращаемое значение
+</div>
+
+Таблица с данными, полученными при разборе аргумента `data` в соответствии с указанным форматом и указанной или извлечённой структурой.
+
+<div id="examples">
+  ## Примеры
+</div>
+
+Без аргумента `structure`:
+
+```sql title="Query"
+SELECT * FROM format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌───b─┬─a─────┐
+│ 111 │ Hello │
+│ 123 │ World │
+│ 112 │ Hello │
+│ 124 │ World │
+└─────┴───────┘
+```
+
+```sql title="Query"
+DESC format(JSONEachRow,
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌─name─┬─type──────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ b    │ Nullable(Float64) │              │                    │         │                  │                │
+│ a    │ Nullable(String)  │              │                    │         │                  │                │
+└──────┴───────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+С аргументом `structure`:
+
+```sql title="Query"
+SELECT * FROM format(JSONEachRow, 'a String, b UInt32',
+$$
+{"a": "Hello", "b": 111}
+{"a": "World", "b": 123}
+{"a": "Hello", "b": 112}
+{"a": "World", "b": 124}
+$$)
+```
+
+```response title="Response"
+┌─a─────┬───b─┐
+│ Hello │ 111 │
+│ World │ 123 │
+│ Hello │ 112 │
+│ World │ 124 │
+└───────┴─────┘
+```
+
+<div id="related">
+  ## См. также
+</div>
+
+* [Форматы](/ru/reference/formats/index)

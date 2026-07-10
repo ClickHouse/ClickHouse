@@ -1,0 +1,257 @@
+---
+slug: /cloud/data-sources/secure-gcs
+sidebarTitle: '安全访问 GCS 数据'
+title: '安全访问 GCS 数据'
+description: '本文介绍 ClickHouse Cloud 客户如何安全访问其 GCS 数据'
+keywords: ['GCS']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+本指南介绍如何安全地完成 Google Cloud Storage (GCS) 身份验证，并从 ClickHouse Cloud 访问您的数据。
+
+<div id="introduction">
+  ## 简介
+</div>
+
+ClickHouse Cloud 使用与 Google Cloud 服务账号关联的 HMAC (基于哈希的消息验证码) 密钥连接到 GCS。
+这种方式可让你在不将凭证直接嵌入查询中的情况下，安全地访问 GCS 桶。
+
+其工作原理如下：
+
+1. 你创建一个具有适当 GCS 权限的 Google Cloud 服务账号
+2. 你为该服务账号生成 HMAC 密钥
+3. 你将这些 HMAC 凭证提供给 ClickHouse Cloud
+4. ClickHouse Cloud 使用这些凭证访问你的 GCS 桶
+
+这种方式使你能够通过服务账号上的 IAM 策略来统一管理对所有 GCS 桶的访问，无需修改各个桶的策略即可更方便地授予或撤销访问权限。
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+要按照本指南操作，你需要具备：
+
+* 一个处于活动状态的 ClickHouse Cloud 服务
+* 一个已启用 Cloud Storage 的 Google Cloud 项目
+* 在 GCP 项目中创建服务账号并生成 HMAC 密钥的权限
+
+<div id="setup">
+  ## 设置
+</div>
+
+<Steps>
+  <Step>
+    ### 创建 Google Cloud 服务账号
+
+    1. 在 Google Cloud Console 中，前往 IAM &amp; Admin → Service Accounts
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt="" />
+
+    2. 在左侧菜单中点击 `Service accounts`，然后点击 `Create service account`：
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/create_service_account.webp" size="md" alt="" />
+
+    输入服务账号的名称和说明，例如：
+
+    ```text
+    Service account name: clickhouse-gcs-access (or your preferred name)
+    Service account description: Service account for ClickHouse Cloud to access GCS buckets
+    ```
+
+    点击 `Create and continue`
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/create_and_continue.webp" size="sm" alt="" />
+
+    向服务账号授予 `Storage Object User` 角色：
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/storage_object_user.webp" size="sm" alt="" />
+
+    此角色提供对 GCS object 的读写权限
+
+    <Tip>
+      如需只读权限，请改用 `Storage Object Viewer`
+      如需更细粒度的控制，可以创建自定义角色
+    </Tip>
+
+    点击 `Continue`，然后点击 `Done`
+
+    记下服务账号的电子邮件地址：
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt="" />
+  </Step>
+
+  <Step>
+    ### 向服务账号授予存储桶访问权限
+
+    您可以在项目级别或单个存储桶级别授予访问权限。
+
+    #### 选项 1：向特定存储桶授予访问权限 (推荐)
+
+    1. 导航到 `Cloud Storage` → `Buckets`
+    2. 点击您要授予访问权限的存储桶
+    3. 转到 `Permissions` 选项卡
+    4. 在 &quot;Permissions&quot; 下，点击为前面步骤中创建的主体授予访问权限的 `Grant access`
+    5. 在 &quot;New principals&quot; 字段中，输入您的服务账号电子邮件地址
+    6. 选择适当的角色：
+
+    * Storage Object User 用于读写访问
+    * Storage Object Viewer 用于只读访问
+
+    7. 点击 `Save`
+    8. 对其他需要授权的存储桶重复此操作
+
+    #### 选项 2：授予项目级别访问权限
+
+    1. 导航到 `IAM & Admin` → `IAM`
+    2. 点击 `Grant access`
+    3. 在 `New principals` 字段中输入您的服务账号电子邮件地址
+    4. 选择 Storage Object User (只读则选择 Storage Object Viewer)
+    5. 点击 SAVE
+
+    <Warning>
+      **安全最佳实践**
+
+      仅向 ClickHouse 需要访问的特定存储桶授予访问权限，而不要授予整个项目范围的权限。
+    </Warning>
+  </Step>
+
+  <Step>
+    ### 为服务账号生成 HMAC 密钥
+
+    前往 `Cloud Storage` → `Settings` → `Interoperability`：
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt="" />
+
+    如果未看到 “Access keys” 部分，请点击 `Enable interoperability access`
+
+    在 “Access keys for service accounts” 下，点击 `Create a key for a service account`：
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp" size="md" alt="" />
+
+    选择你之前创建的服务账号 (例如 clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
+
+    点击 `Create key`：
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/create_a_key.webp" size="md" alt="" />
+
+    系统会显示 HMAC 密钥。
+    请立即保存 Access Key 和 Secret——之后将无法再次查看该 secret。
+
+    下面显示的是示例密钥：
+
+    ```vbnet
+    Access Key: GOOG1EF4YBJVNFQ2YGCP3SLV4Y7CMFHW7HPC6EO7RITLJDDQ75639JK56SQVD
+    Secret: nFy6DFRr4sM9OnV6BG4FtWVPR25JfqpmcdZ6w9nV
+    ```
+
+    <Danger>
+      **重要**
+
+      请妥善保管这些凭据。
+      关闭此页面后，将无法再次获取该 secret。
+      如果丢失该 secret，则需要生成新的密钥。
+    </Danger>
+
+    ## 在 ClickHouse Cloud 中使用 HMAC 密钥
+
+    现在，你可以使用 HMAC 凭据从 ClickHouse Cloud 访问 GCS。
+    为此，请使用 GCS 表函数：
+
+    ```sql
+    SELECT *
+    FROM gcs(
+        'https://storage.googleapis.com/clickhouse-docs-example-bucket/epidemiology.csv',
+        'GOOG1E...YOUR_ACCESS_KEY',
+        'YOUR_SECRET_KEY',
+        'CSVWithNames'
+    );
+    ```
+
+    使用通配符匹配多个文件：
+
+    ```sql
+    SELECT *
+    FROM gcs(
+    'https://storage.googleapis.com/clickhouse-docs-example-bucket/*.parquet',
+    'GOOG1E...YOUR_ACCESS_KEY',
+    'YOUR_SECRET_KEY',
+    'Parquet'
+    );
+    ```
+
+    ## ClickPipes 中 GCS 的 HMAC 身份验证
+
+    ClickPipes 使用 HMAC (基于哈希的消息身份验证码) 密钥与 Google Cloud Storage 进行身份验证。
+
+    在[设置 GCS ClickPipe](/zh/integrations/clickpipes/object-storage/google-cloud-storage/get-started)时：
+
+    1. 在 ClickPipe 设置过程中，在 `Authentication method` 下选择 `Credentials`
+    2. 提供在前面步骤中获取的 HMAC 凭据
+
+    <Image img="/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp" size="md" alt="" />
+
+    <Note>
+      目前尚不支持服务账号身份验证，你必须使用 HMAC 密钥
+      GCS 存储桶 URL 必须采用以下格式：`https://storage.googleapis.com/<bucket>/<path>` (不能使用 `gs://`)
+    </Note>
+
+    HMAC 密钥必须关联到具有 `roles/storage.objectViewer` 角色的服务账号，该角色包含以下权限：
+
+    * `storage.objects.list`：列出存储桶中的对象
+    * `storage.objects.get`：拉取/读取对象
+  </Step>
+</Steps>
+
+<div id="best-practices">
+  ## 最佳实践
+</div>
+
+<div id="separate-service-accounts">
+  ### 为不同环境使用单独的服务账号
+</div>
+
+为开发、暂存和生产环境分别创建独立的服务账号。例如：
+
+* `clickhouse-gcs-dev@project.iam.gserviceaccount.com`
+* `clickhouse-gcs-staging@project.iam.gserviceaccount.com`
+* `clickhouse-gcs-prod@project.iam.gserviceaccount.com`
+
+这样，你就可以轻松撤销特定环境的访问权限，而不会影响其他环境。
+
+<div id="apply-least-privilege-access">
+  ### 采用最小权限原则
+</div>
+
+仅授予完成所需操作的最少权限：
+
+* 对于只读访问，使用 **Storage Object Viewer**
+* 将访问权限授予特定桶，而非整个项目
+* 可考虑使用桶级条件，将访问限制在特定路径下
+
+<div id="rotate-hmac-keys">
+  ### 定期轮换 HMAC 密钥
+</div>
+
+建立密钥轮换计划：
+
+* 生成新的 HMAC 密钥
+* 用新密钥更新 ClickHouse 配置
+* 使用新密钥验证功能是否正常
+* 删除旧的 HMAC 密钥
+
+<Tip>
+  Google Cloud 不会强制 HMAC 密钥过期，因此您必须自行制定轮转策略。
+</Tip>
+
+<div id="monitor-access">
+  ### 使用 Cloud Audit Logs 监控访问
+</div>
+
+为 Cloud Storage 启用并监控 Cloud Audit Logs：
+
+1. 前往 IAM &amp; Admin → Audit Logs
+2. 在列表中找到 Cloud Storage
+3. 启用 `Admin Read`、`Data Read` 和 `Data Write logs`
+4. 使用这些日志监控访问行为并检测异常

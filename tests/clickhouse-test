@@ -176,6 +176,13 @@ def shell_get_output(cmd: str, timeout: Optional[float] = None) -> str:
         return ""
 
 class SharedEngineReplacer:
+    # Infix marker embedded into the transient per-PID test and reference copies this
+    # class creates next to the originals. It contains a dot-delimited token that no
+    # real test filename uses, so suite discovery (`is_transient_test_copy`) can
+    # recognize and skip these copies unambiguously, without constraining the names of
+    # genuine tests.
+    TEMP_FILE_MARKER = "shared_engine_replacer_tmp"
+
     SPECIALIZED_ENGINES = "Collapsing|VersionedCollapsing|Summing|Replacing|Aggregating|Coalescing"
     ENGINES_NON_REPLICATED_REGEXP = (
         rf"(?i)ENGINE[ =]{{0,5}}(({SPECIALIZED_ENGINES}|)MergeTree\(?\)?)"
@@ -395,8 +402,10 @@ class SharedEngineReplacer:
         if not self._need_to_replace_something():
             return
 
-        self.temp_file_path = "{0}.{2}{1}".format(
-            *os.path.splitext(file_name), os.getpid()
+        self.temp_file_path = "{0}.{2}.{3}{1}".format(
+            *os.path.splitext(file_name),
+            SharedEngineReplacer.TEMP_FILE_MARKER,
+            os.getpid(),
         )
         shutil.copy2(self.file_name, self.temp_file_path)
 
@@ -1506,6 +1515,7 @@ class SettingsRandomizer:
         "secondary_indices_enable_bulk_filtering": lambda: random.randint(0, 1),
         "use_skip_indexes_if_final": lambda: random.randint(0, 1),
         "use_skip_indexes_on_data_read": lambda: random.randint(0, 1),
+        "optimize_trivial_count_with_sparsity_filter": lambda: random.randint(0, 1),
         "optimize_rewrite_like_perfect_affix": lambda: random.randint(0, 1),
         "enable_lazy_columns_replication": lambda: random.randint(0, 1),
         "allow_special_serialization_kinds_in_output_formats": lambda: random.randint(0, 1),
@@ -1546,6 +1556,7 @@ class SettingsRandomizer:
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
+        "materialize_statistics_on_insert": lambda: random.random() > 0.05,
         "query_plan_merge_filters": lambda: random.random() > 0.05,
         "query_plan_remove_unused_columns": lambda: random.random() > 0.05,
         "query_plan_convert_outer_join_to_inner_join": lambda: random.random() > 0.05,
@@ -1565,6 +1576,7 @@ class SettingsRandomizer:
         "use_join_disjunctions_push_down": lambda: random.random() > 0.05,
         "enable_join_transitive_predicates": lambda: random.random() < 0.3,
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
+        "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
         "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
     }
@@ -1587,7 +1599,6 @@ class SettingsRandomizer:
     }
 
     stress_test_only_settings = {
-        "query_plan_optimize_join_order_randomize",
         "analyzer_compatibility_prefer_alias_over_subcolumn",
     }
 
@@ -1642,6 +1653,7 @@ class MergeTreeSettingsRandomizer:
         "ratio_of_defaults_for_sparse_serialization": threshold_generator(
             0.3, 0.5, 0.0, 1.0
         ),
+        "compute_exact_num_defaults_for_sparse_columns": lambda: random.randint(0, 1),
         "prefer_fetch_merged_part_size_threshold": threshold_generator(
             0.2, 0.5, 1, 10 * 1024 * 1024 * 1024
         ),
@@ -1704,6 +1716,8 @@ class MergeTreeSettingsRandomizer:
         "reduce_blocking_parts_sleep_ms": lambda: random.randint(200, 2000),
         "shared_merge_tree_outdated_parts_group_size": lambda: random.randint(1, 2),
         "shared_merge_tree_max_outdated_parts_to_process_at_once": lambda: random.randint(1, 10),
+        "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas": lambda: random.randint(0, 1),
+        "shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup": lambda: random.randint(0, 1),
         "text_index_dictionary_block_size": lambda: random.choice([16, 64, 128, 256, 512, 1024, 8192]),
         "text_index_dictionary_block_frontcoding_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_block_size": lambda: random.choice([16, 64, 256, 1024, 65536, 1048576]),
@@ -5199,13 +5213,30 @@ def do_run_tests(
     return total_tests
 
 
+def is_transient_test_copy(case):
+    # `SharedEngineReplacer` writes a transient per-PID copy of a test next to the
+    # original while the test runs (see `SharedEngineReplacer.temp_file_path`), and
+    # removes it afterwards. Concurrent `clickhouse-test` invocations share one
+    # queries directory, so another one's suite scan (`os.listdir` in
+    # `get_selected_tests`) can observe such a copy and would otherwise schedule it as
+    # a real test — which then fails either as `FileNotFoundError` once the copy is
+    # gone or as `NO_REFERENCE` for the bogus name. These copies carry a dedicated
+    # marker (`SharedEngineReplacer.TEMP_FILE_MARKER`) that no real test name uses, so
+    # we recognize and skip them at discovery unambiguously, without inferring
+    # "transient copy" from the basename shape and thus without constraining the names
+    # of genuine tests.
+    return f".{SharedEngineReplacer.TEMP_FILE_MARKER}." in case
+
+
 def is_test_from_dir(suite_dir, case):
     case_file = os.path.join(suite_dir, case)
     # We could also test for executable files (os.access(case_file, os.X_OK),
     # but it interferes with 01610_client_spawn_editor.editor, which is invoked
     # as a query editor in the test, and must be marked as executable.
-    return os.path.isfile(case_file) and any(
-        case_file.endswith(suppotred_ext) for suppotred_ext in TEST_FILE_EXTENSIONS
+    return (
+        os.path.isfile(case_file)
+        and any(case_file.endswith(suppotred_ext) for suppotred_ext in TEST_FILE_EXTENSIONS)
+        and not is_transient_test_copy(case)
     )
 
 

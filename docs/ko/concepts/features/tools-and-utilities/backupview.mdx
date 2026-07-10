@@ -1,0 +1,53 @@
+---
+description: 'clickhouse_backupview 문서 {#clickhouse_backupview}'
+slug: /operations/utilities/backupview
+title: 'clickhouse_backupview'
+doc_type: 'reference'
+---
+
+[BACKUP](/ko/concepts/features/backup-restore/overview) 명령으로 생성된 백업을 분석하는 데 도움이 되는 Python 모듈입니다.
+실제로 복원하지 않고도 백업에서 일부 정보를 확인할 수 있게 하는 것이 주요 목적입니다.
+
+이 모듈은 다음 기능을 제공합니다.
+
+* 백업에 포함된 파일 나열
+* 백업에서 파일 읽기
+* 백업에 포함된 데이터베이스, 테이블, 파트에 대한 유용한 정보를 읽기 쉬운 형태로 제공
+* 백업 무결성 확인
+
+<div id="example">
+  ## 예시:
+</div>
+
+```python
+from clickhouse_backupview import open_backup, S3, FileInfo
+
+# 백업을 엽니다. 로컬 경로를 사용할 수도 있습니다:
+# backup = open_backup("/backups/my_backup_1/")
+backup = open_backup(S3("uri", "access_key_id", "secret_access_key"))
+
+# 백업 내 데이터베이스 목록을 가져옵니다.
+print(backup.get_databases()))
+
+# 백업 내 테이블 목록을 가져오고,
+# 각 테이블의 create query와 파트 및 파티션 목록을 가져옵니다.
+for db in backup.get_databases():
+    for tbl in backup.get_tables(database=db):
+        print(backup.get_create_query(database=db, table=tbl))
+        print(backup.get_partitions(database=db, table=tbl))
+        print(backup.get_parts(database=db, table=tbl))
+
+# 백업에서 모든 데이터를 추출합니다.
+backup.extract_all(table="mydb.mytable", out='/tmp/my_backup_1/all/')
+
+# 특정 테이블의 데이터를 추출합니다.
+backup.extract_table_data(table="mydb.mytable", out='/tmp/my_backup_1/mytable/')
+
+# 단일 파티션을 추출합니다.
+backup.extract_table_data(table="mydb.mytable", partition="202201", out='/tmp/my_backup_1/202201/')
+
+# 단일 파트를 추출합니다.
+backup.extract_table_data(table="mydb.mytable", part="202201_100_200_3", out='/tmp/my_backup_1/202201_100_200_3/')
+```
+
+더 많은 예시는 [test](https://github.com/ClickHouse/ClickHouse/blob/master/utils/backupview/test/test.py)를 확인하십시오.

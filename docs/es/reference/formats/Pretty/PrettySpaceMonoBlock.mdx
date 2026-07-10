@@ -1,0 +1,33 @@
+---
+alias: []
+description: 'Documentación sobre el formato PrettySpaceMonoBlock'
+input_format: false
+keywords: ['PrettySpaceMonoBlock']
+output_format: true
+slug: /interfaces/formats/PrettySpaceMonoBlock
+title: 'PrettySpaceMonoBlock'
+doc_type: 'referencia'
+---
+
+import PrettyFormatSettings from '/snippets/es/common-pretty-format-settings.mdx';
+
+| Entrada | Salida | Alias |
+| ------- | ------ | ----- |
+| ✗       | ✔      |       |
+
+<div id="description">
+  ## Descripción
+</div>
+
+Se diferencia del formato [`PrettySpace`](/es/reference/formats/Pretty/PrettySpace) en que se almacenan en búfer hasta `10,000` filas
+y luego se muestran como una sola tabla, en lugar de por [bloques](/es/resources/develop-contribute/introduction/architecture#block).
+
+<div id="example-usage">
+  ## Ejemplo de uso
+</div>
+
+<div id="format-settings">
+  ## Configuración de formato
+</div>
+
+<PrettyFormatSettings />
