@@ -145,6 +145,9 @@ def started_cluster():
                 "configs/config.d/use_environment_credentials.xml",
                 "configs/config.d/metadata_log.xml",
             ],
+            user_configs=[
+                "configs/allow_server_credentials.xml",
+            ],
             env_variables={
                 "AWS_ACCESS_KEY_ID": minio_access_key,
                 "AWS_SECRET_ACCESS_KEY": minio_secret_key,
@@ -1913,6 +1916,134 @@ def test_partition_columns_2(started_cluster, cluster):
     check_pruned(num_files - 1, query_id)
 
 
+def test_partition_by_nullable_bool(started_cluster):
+    # Nullable(Bool) partition column with true / false / NULL in separate files, exercising
+    # both the Bool literal visitor and the null visitor; all must yield Nullable(Bool).
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_partition_by_nullable_bool")
+
+    schema = pa.schema(
+        [
+            ("id", pa.int32()),
+            ("flag", pa.bool_()),
+        ]
+    )
+    data = [
+        pa.array([1, 2, 3], type=pa.int32()),
+        pa.array([True, False, None], type=pa.bool_()),
+    ]
+
+    storage_options = {
+        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        "AWS_ACCESS_KEY_ID": minio_access_key,
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{table_name}"
+    table = pa.Table.from_arrays(data, schema=schema)
+
+    write_deltalake_with_retry(
+        path, table, storage_options=storage_options, partition_by=["flag"]
+    )
+
+    delta_function = f"""
+    deltaLake(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}',
+            '{minio_access_key}',
+            '{minio_secret_key}')
+    """
+
+    # The partition column must be advertised as Nullable(Bool), not Nullable(UInt8).
+    assert (
+        "id\tNullable(Int32)\t\t\t\t\t\n"
+        "flag\tNullable(Bool)"
+        == node.query(
+            f"DESCRIBE TABLE {delta_function}",
+            settings={"allow_experimental_delta_kernel_rs": 1},
+        ).strip()
+    )
+
+    # true / false / NULL are materialized correctly across the separate data files.
+    assert (
+        "1\ttrue\n2\tfalse\n3\t\\N"
+        == node.query(
+            f"SELECT id, flag FROM {delta_function} ORDER BY id",
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "use_hive_partitioning": 0,
+            },
+        ).strip()
+    )
+
+
+def test_partition_by_binary(started_cluster):
+    # Delta `binary` partition column with two non-NULL values and a NULL in separate files,
+    # exercising both the binary literal visitor and the null visitor. `binary` is advertised as
+    # Nullable(String), so every per-file transform must yield Nullable(String); a stray FixedString
+    # on the non-NULL files would fail to unify with the schema's Nullable(String).
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_partition_by_binary")
+
+    schema = pa.schema(
+        [
+            ("id", pa.int32()),
+            ("data", pa.binary()),
+        ]
+    )
+    data = [
+        pa.array([1, 2, 3], type=pa.int32()),
+        pa.array([b"aa", b"bb", None], type=pa.binary()),
+    ]
+
+    storage_options = {
+        "AWS_ENDPOINT_URL": f"http://{started_cluster.minio_ip}:{started_cluster.minio_port}",
+        "AWS_ACCESS_KEY_ID": minio_access_key,
+        "AWS_SECRET_ACCESS_KEY": minio_secret_key,
+        "AWS_ALLOW_HTTP": "true",
+        "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+    }
+    path = f"s3://root/{table_name}"
+    table = pa.Table.from_arrays(data, schema=schema)
+
+    write_deltalake_with_retry(
+        path, table, storage_options=storage_options, partition_by=["data"]
+    )
+
+    delta_function = f"""
+    deltaLake(
+            'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}',
+            '{minio_access_key}',
+            '{minio_secret_key}')
+    """
+
+    # The partition column must be advertised as Nullable(String), not Nullable(FixedString(N)).
+    assert (
+        "id\tNullable(Int32)\t\t\t\t\t\n"
+        "data\tNullable(String)"
+        == node.query(
+            f"DESCRIBE TABLE {delta_function}",
+            settings={"allow_experimental_delta_kernel_rs": 1},
+        ).strip()
+    )
+
+    # The non-NULL and NULL partition files must unify: the transform type is Nullable(String) for
+    # every file. We assert the runtime type and null-ness rather than the exact bytes, since delta-rs
+    # escapes binary partition values in the log.
+    assert (
+        "1\tNullable(String)\t0\n"
+        "2\tNullable(String)\t0\n"
+        "3\tNullable(String)\t1"
+        == node.query(
+            f"SELECT id, toTypeName(data), isNull(data) FROM {delta_function} ORDER BY id",
+            settings={
+                "allow_experimental_delta_kernel_rs": 1,
+                "use_hive_partitioning": 0,
+            },
+        ).strip()
+    )
+
+
 @pytest.mark.parametrize(
     "column_mapping", ["", "name"]
 )  # "id" is not supported by delta-kernel at the moment
@@ -2870,7 +3001,7 @@ def test_join_with_distributed(started_cluster):
 
     table_function_cluster = f"deltaLakeCluster(cluster, 'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/{bucket}/{result_file}/', 'minio', '{minio_secret_key}')"
 
-    # All cases which were reproted as faulty
+    # All cases which were reported as faulty
     assert (
         int(
             instance.query(
@@ -3807,6 +3938,62 @@ deltaLake(
     """
     assert (
         "1\t('Alice','Smith')\n2\t('Bob','Johnson')"
+        == node.query(f"SELECT * FROM {delta_function} ORDER BY all").strip()
+    )
+
+
+@pytest.mark.parametrize("column_mapping", ["name", "id"])
+def test_column_mapping_write_rejected(started_cluster, column_mapping):
+    # Writing to a column-mapped table must be rejected: ClickHouse writes logical
+    # Parquet field names, not the physical names/ids that a Delta reader expects,
+    # so committing an AddFile would produce an unreadable data file.
+    node = started_cluster.instances["node1"]
+    table_name = randomize_table_name(f"test_column_mapping_write_{column_mapping}")
+    spark = started_cluster.spark_session
+    minio_client = started_cluster.minio_client
+    bucket = started_cluster.minio_bucket
+    path = f"/{table_name}"
+
+    schema = StructType(
+        [
+            StructField("id", IntegerType(), True),
+            StructField("name", StringType(), True),
+        ]
+    )
+    data = [(1, "Alice"), (2, "Bob")]
+    df = spark.createDataFrame(data, schema=schema)
+    df.write.format("delta").option("delta.minReaderVersion", "2").option(
+        "delta.minWriterVersion", "5"
+    ).option("delta.columnMapping.mode", column_mapping).save(path)
+    upload_directory(minio_client, bucket, path, "")
+
+    def list_objects():
+        return sorted(
+            obj.object_name
+            for obj in minio_client.list_objects(bucket, table_name, recursive=True)
+        )
+
+    objects_before = list_objects()
+
+    delta_function = f"""
+deltaLake(
+        'http://{started_cluster.minio_ip}:{started_cluster.minio_port}/root/{table_name}',
+        '{minio_access_key}',
+        '{minio_secret_key}')
+    """
+
+    error = node.query_and_get_error(
+        f"INSERT INTO TABLE FUNCTION {delta_function} SELECT 3 AS id, 'Carol' AS name"
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "column mapping" in error
+
+    # Nothing was committed: no new parquet data file and no new _delta_log entry.
+    assert objects_before == list_objects()
+
+    # The table is still readable and its data is unchanged.
+    assert (
+        "1\tAlice\n2\tBob"
         == node.query(f"SELECT * FROM {delta_function} ORDER BY all").strip()
     )
 

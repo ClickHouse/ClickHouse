@@ -22,6 +22,16 @@ def _skip_msan():
         pytest.skip("Memory Sanitizer cannot work with vfork")
 
 
+def _skip_unreliable_peak_memory_sampling():
+    # PeakMemoryByteSeconds is sampled from /proc/<pid>/VmHWM on a ~5 ms throttle.
+    # Under Thread Sanitizer the scheduling skew makes that best-effort sampling
+    # miss the child's at-peak window or read an inflated value, so the tight
+    # implied-peak bounds below are not deterministic there. The metric itself is
+    # exercised on every other build.
+    if node.is_built_with_thread_sanitizer():
+        pytest.skip("/proc VmHWM peak sampling is not deterministic under Thread Sanitizer")
+
+
 def _copy_into_container(local_path, container_path):
     os.system(f"docker cp {local_path} {node.docker_id}:{container_path}")
 
@@ -146,6 +156,7 @@ def test_system_time_microseconds(started_cluster):
 
 def test_peak_memory_byte_seconds(started_cluster):
     _skip_msan()
+    _skip_unreliable_peak_memory_sampling()
     qid = "exec-mem-procfs-1"
     # udf_mem.py allocates ~32 MiB in the UDF process itself (no forked children),
     # so the VmHWM sampled from /proc/<pid>/status while the process writes output
@@ -278,6 +289,7 @@ def test_unwaited_child_cpu_excluded(started_cluster):
 
 def test_reaped_child_memory_rolls_up(started_cluster):
     _skip_msan()
+    _skip_unreliable_peak_memory_sampling()
     qid = "exec-child-mem-1"
     # One ~64 MiB child is forked before the input loop, signals readiness, and
     # stays blocked at its peak until the parent has emitted all output rows.
@@ -311,6 +323,7 @@ def test_reaped_child_memory_rolls_up(started_cluster):
 
 def test_peak_memory_is_max_not_sum(started_cluster):
     _skip_msan()
+    _skip_unreliable_peak_memory_sampling()
     qid_concurrent = "exec-two-mem-concurrent-1"
     qid_sequential = "exec-two-mem-sequential-1"
     # concurrent: both ~100 MiB children are forked before the input loop, signal
@@ -414,6 +427,7 @@ def test_check_exit_code_false_no_spurious_log(started_cluster):
 
 def test_peak_memory_reflects_udf_not_server(started_cluster):
     _skip_msan()
+    _skip_unreliable_peak_memory_sampling()
     # The metric must reflect the UDF's own peak RSS, not the ClickHouse server's
     # footprint. The original bug reported the server RSS (~hundreds of MiB)
     # identically for every UDF regardless of its allocation; a lower-bound floor

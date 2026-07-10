@@ -1,0 +1,30 @@
+---
+sidebarTitle: 'Настройка расписаний резервного копирования'
+slug: /cloud/manage/backups/configurable-backups
+description: 'Руководство по настройке резервного копирования'
+title: 'Настройка расписаний резервного копирования'
+keywords: ['резервные копии', 'облачные резервные копии', 'восстановление']
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<ScalePlanFeatureBadge feature="Настраиваемые резервные копии" linking_verb_are="True" />
+
+Чтобы настроить расписание резервного копирования для сервиса, перейдите на вкладку **Настройки** в консоли и нажмите **Изменить настройки резервного копирования**.
+
+<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Настройка параметров резервного копирования" border />
+
+Справа откроется вкладка, где можно задать срок хранения, частоту и время начала. Чтобы выбранные настройки вступили в силу, их нужно сохранить.
+
+<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Выбор срока хранения и частоты резервного копирования" border />
+
+<Note>
+  Время начала и частота — взаимоисключающие параметры. Приоритет имеет время начала.
+</Note>
+
+<Note>
+  Изменение расписания резервного копирования может привести к увеличению ежемесячных затрат на хранение, поскольку некоторые резервные копии могут не входить в стандартный набор резервных копий сервиса. См. [&quot;Описание стоимости резервного копирования&quot;](/ru/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>

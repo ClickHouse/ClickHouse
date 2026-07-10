@@ -807,7 +807,7 @@ TYPED_TEST(CoordinationTest, TestListRequestTypes)
 
     const auto get_children = [&](const auto list_request_type)
     {
-        const auto list_request = std::make_shared<ZooKeeperFilteredListRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         int new_zxid = ++zxid;
         list_request->path = std::string{parentNodePath(test_path)};
         list_request->list_request_type = list_request_type;
@@ -883,7 +883,7 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     const auto get_children_with_options = [&](const auto & path, bool with_stat, bool with_data)
     {
         int new_zxid = ++zxid;
-        const auto list_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = path;
         list_request->list_request_type = ListRequestType::ALL;
         list_request->with_stat = with_stat;
@@ -1029,7 +1029,7 @@ TYPED_TEST(CoordinationTest, TestGetChildrenWithStatsAndData)
     {
         SCOPED_TRACE("Non-existent path");
         int new_zxid = ++zxid;
-        const auto list_request = std::make_shared<ZooKeeperFilteredListWithStatsAndDataRequest>();
+        const auto list_request = std::make_shared<ZooKeeperListRequest>();
         list_request->path = "/nonexistent";
         list_request->list_request_type = ListRequestType::ALL;
         list_request->with_stat = true;
@@ -2275,6 +2275,33 @@ TYPED_TEST(CoordinationTest, TestFailedMultiRollsBackTTLDestroyTime)
     ASSERT_NE(uncommitted, nullptr);
     ASSERT_TRUE(uncommitted->stats.isTTL());
     EXPECT_EQ(uncommitted->stats.destroyTime(), original_destroy_time);
+}
+
+TYPED_TEST(CoordinationTest, TestCreate2ResponseDataLength)
+{
+    using namespace DB;
+    using namespace Coordination;
+    using Storage [[maybe_unused]] = DB::KeeperStorage;
+
+    Storage storage{500, "", this->keeper_context};
+    int64_t zxid = 0;
+
+    const std::string data = "hello-create2";
+
+    auto request = std::make_shared<ZooKeeperCreateRequest>();
+    request->path = "/node";
+    request->data = data;
+    request->include_stats = true;
+
+    storage.preprocessRequest(request, 1, 0, ++zxid);
+    auto responses = storage.processRequest(request, 1, zxid);
+
+    ASSERT_EQ(responses.size(), 1u);
+    ASSERT_EQ(responses[0].response->error, Error::ZOK);
+    ASSERT_EQ(responses[0].response->getOpNum(), OpNum::Create2);
+
+    const auto & create2_response = dynamic_cast<const ZooKeeperCreate2Response &>(*responses[0].response);
+    EXPECT_EQ(create2_response.zstat.dataLength, static_cast<int32_t>(data.size()));
 }
 
 #endif
