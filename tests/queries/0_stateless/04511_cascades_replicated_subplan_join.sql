@@ -3,7 +3,7 @@
 -- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- A join of two small dimension tables that feeds a broadcast join is recomputed on every
--- node (`Replicated` join over two `ReplicatedRead`s, no exchange) instead of being joined
+-- node (a `Replicated` join over two `ReplicatedRead`s, no exchange) instead of being joined
 -- on one node and broadcast.  A non-deterministic join condition disables the recomputation
 -- (per-node results could diverge), falling back to the broadcast of a single-node join.
 
@@ -20,6 +20,15 @@ SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_limit = 10;
+SET query_plan_optimize_join_order_algorithm = 'greedy';
+-- The test pins full EXPLAIN outputs, so the randomized settings that shape these plans
+-- are pinned to their defaults.
+SET optimize_move_to_prewhere = 1;
+SET query_plan_optimize_prewhere = 1;
+SET query_plan_merge_filters = 1;
+SET query_plan_merge_filter_into_join_condition = 1;
+SET query_plan_remove_unused_columns = 1;
+SET enable_join_transitive_predicates = 1;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_cascades_cost_config = '{"sequential_weight":1000,"network_weight":1,"exchange_fixed_overhead":1,"work_weight":1}';
 
@@ -38,7 +47,7 @@ INSERT INTO rsj_fact SELECT number % 1000, number FROM numbers(100000);
 INSERT INTO rsj_dim1 SELECT number, number % 25 FROM numbers(1000);
 INSERT INTO rsj_dim2 SELECT number, toString(number) FROM numbers(25);
 
-SELECT '-- 1. The dimension join is recomputed per node: Replicated join over ReplicatedReads';
+SELECT '-- 1. The dimension join is recomputed per node: a Replicated join over ReplicatedReads, no exchange';
 EXPLAIN PLAN
 SELECT count(), sum(f.v)
 FROM rsj_fact AS f
@@ -61,10 +70,13 @@ WHERE d.name != ''
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 SELECT '-- 3. A non-deterministic join condition falls back to broadcasting a single-node join';
+-- The condition must not be provably true and must use columns from both join sides;
+-- otherwise the optimizer removes it from the join or moves it into a filter, and the join
+-- itself becomes deterministic and correctly runs replicated.
 EXPLAIN PLAN
 SELECT count(), sum(f.v)
 FROM rsj_fact AS f
-JOIN (SELECT d1.k AS k, d2.name AS name FROM rsj_dim1 AS d1 JOIN rsj_dim2 AS d2 ON d1.g = d2.g AND rand() >= 0) AS d
+JOIN (SELECT d1.k AS k, d2.name AS name FROM rsj_dim1 AS d1 JOIN rsj_dim2 AS d2 ON d1.g = d2.g AND d1.g + (rand() % 100) >= d2.g) AS d
 ON f.k = d.k
 WHERE d.name != '';
 

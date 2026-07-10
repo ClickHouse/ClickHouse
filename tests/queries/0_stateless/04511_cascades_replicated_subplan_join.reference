@@ -1,4 +1,4 @@
--- 1. The dimension join is recomputed per node: Replicated join over ReplicatedReads
+-- 1. The dimension join is recomputed per node: a Replicated join over ReplicatedReads, no exchange
 Expression ((Project names + Projection))
   MergingAggregated
     GatherExchange
@@ -26,7 +26,7 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (ParallelRead default.rsj_fact)
             BroadcastExchange
               JoinLogical (Local HashJoin )
-                Filter ((Join filter + Change column names to column identifiers))
+                Expression (Change column names to column identifiers)
                   ReadFromMergeTree (default.rsj_dim1)
                 Expression (((WHERE + (Change column names to column identifiers + (Project names + Projection))) + Change column names to column identifiers))
                   ReadFromMergeTree (default.rsj_dim2)
