@@ -78,6 +78,8 @@ namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool allow_experimental_group_by_with_cluster;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_inline_views;
@@ -3935,6 +3937,22 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     {
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "GROUP BY ... WITH CLUSTER cannot be combined with WITH ROLLUP, WITH CUBE, GROUPING SETS or WITH TOTALS");
+    }
+
+    /// `WITH CLUSTER` merges the exact `GROUP BY` groups, so it must receive all of them. A
+    /// `max_rows_to_group_by` cap with a non-throwing `group_by_overflow_mode` (`any` / `break`)
+    /// lets the aggregation drop keys before clustering, which would silently produce a wrong
+    /// result. Reject it instead of clustering a truncated set of groups. (The default trivial
+    /// `GROUP BY ... LIMIT` optimization is disabled for `WITH CLUSTER` in
+    /// `OptimizeTrivialGroupByLimitPass` so it never reaches this cap implicitly.)
+    if (query_node_typed.hasGroupByWithCluster()
+        && scope.context->getSettingsRef()[Setting::max_rows_to_group_by] != 0
+        && scope.context->getSettingsRef()[Setting::group_by_overflow_mode] != OverflowMode::THROW)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "GROUP BY ... WITH CLUSTER cannot be combined with a non-throwing `max_rows_to_group_by` cap "
+            "(`group_by_overflow_mode` = 'any' or 'break'): the aggregation could drop keys before clustering "
+            "and produce a wrong result.");
     }
 
     QueryTreeNodes nullable_group_by_keys;
