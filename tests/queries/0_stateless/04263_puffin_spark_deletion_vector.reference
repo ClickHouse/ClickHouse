@@ -1,0 +1,9 @@
+--- Spark-generated PuffinMetadata ---
+deletion-vector-v1	-1	-1	4	48		['cardinality','referenced-data-file']	['4','/tmp/clickhouse_spark_puffin_k5e7dq5_/default/spark_puffin_source/data/00000-0-148a67e2-92a7-4bca-a756-63569da2eeb7-0-00001.parquet']
+--- Spark-generated Puffin: deleted rows ---
+[2,5,7,100]
+--- Spark-generated Puffin: ARRAY JOIN ---
+2
+5
+7
+100
