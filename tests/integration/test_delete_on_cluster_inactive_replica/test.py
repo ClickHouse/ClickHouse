@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 
 
@@ -115,11 +116,17 @@ def test_delete_on_cluster_marks_task_executed_with_inactive_replica(started_clu
             zk.delete(REPLICA_IS_ACTIVE_PATH)
             wait_for_keeper_path_absent(zk, REPLICA_IS_ACTIVE_PATH)
 
-            node1.query(
-                f"DELETE FROM {DB}.{TABLE} ON CLUSTER {CLUSTER} WHERE id = 1",
-                settings=DDL_SETTINGS,
-                timeout=30,
-            )
+            with pytest.raises(
+                QueryRuntimeException,
+                match="Mutation is not finished because some replicas are inactive right now",
+            ) as exc_info:
+                node1.query(
+                    f"DELETE FROM {DB}.{TABLE} ON CLUSTER {CLUSTER} WHERE id = 1",
+                    settings=DDL_SETTINGS,
+                    timeout=30,
+                )
+
+            assert exc_info.value.returncode == 779
 
             entry = get_last_lightweight_delete_task_entry()
             assert entry
