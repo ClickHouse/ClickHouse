@@ -108,19 +108,22 @@ public:
         typename ResultDataType::ColumnType::MutablePtr result_col;
         if constexpr (std::is_same_v<ResultDataType, DataTypeDateTime64>)
         {
-            auto scale = DataTypeDateTime64::default_scale;
-            if constexpr (std::is_same_v<InputDataType, DateTime64>)
-                scale = static_cast<UInt8>(typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale());
+            /// result_type is the DateTime64 this function returns; its scale is the scale the
+            /// result column must carry (the values below are computed at this scale). The previous
+            /// guard `is_same_v<InputDataType, DateTime64>` was always false (InputDataType is a
+            /// DataType class while DateTime64 is a value-type alias), so the column was built at the
+            /// hardcoded default_scale 3 and a DateTime64(N != 3) result was structurally inconsistent.
+            const auto scale = static_cast<UInt8>(typeid_cast<const DataTypeDateTime64 &>(*result_type).getScale());
             result_col = ResultDataType::ColumnType::create(input_rows_count, scale);
         }
         else
             result_col = ResultDataType::ColumnType::create(input_rows_count);
 
-        auto date_time_col = arguments[0].column->convertToFullIfNeeded();
+        auto date_time_col = arguments[0].column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto & date_time_col_data = typeid_cast<const typename InputDataType::ColumnType &>(*date_time_col).getData();
 
         auto value_col = castColumn(arguments[1], std::make_shared<DataTypeFloat64>());
-        value_col = value_col->convertToFullIfNeeded();
+        value_col = value_col->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
         const auto & value_col_data = typeid_cast<const ColumnFloat64 &>(*value_col).getData();
 
         auto & result_col_data = result_col->getData();

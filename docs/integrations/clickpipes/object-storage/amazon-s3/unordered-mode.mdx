@@ -21,8 +21,7 @@ In this mode, the S3 ClickPipe does an initial load of **all files** in the sele
 Various types of failures can occur when ingesting data, which can result in partial inserts or duplicate data. Object Storage ClickPipes are resilient to insert failures and provide exactly-once semantics using temporary staging tables. Data is first inserted into a staging table; if something goes wrong, the staging table is truncated and the insert is retried from a clean state. Only once an insert completes successfully are the partitions moved to the target table.
 
 <Steps>
-<Step>
-## Create an Amazon SQS queue {#create-sqs-queue}
+<Step title="Create an Amazon SQS queue" id="create-sqs-queue">
 
 **1.** In the AWS Console, navigate to **Simple Queue Service > Create queue**. Use the defaults to create a new standard queue.
 
@@ -128,8 +127,7 @@ S3 doesn't allow multiple overlapping notification rules for the same event type
 </Tab>
 </Tabs>
 </Step>
-<Step>
-## Configure an IAM role {#configure-iam-role}
+<Step title="Configure an IAM role" id="configure-iam-role">
 
 **1.** In the ClickHouse Cloud console, navigate to **Settings > Network security information** and copy the **IAM role ARN** for your service.
 
@@ -190,8 +188,7 @@ S3 doesn't allow multiple overlapping notification rules for the same event type
 }
 ```
 </Step>
-<Step>
-## Create a ClickPipe with unordered mode {#create-clickpipe}
+<Step title="Create a ClickPipe with unordered mode" id="create-clickpipe">
 
 **1.** In the ClickHouse Cloud console, navigate to **Data Sources > Create ClickPipe** and select **Amazon S3**. Enter the details to connect to your S3 bucket. Under **Authentication method**, choose **IAM role** and provide the ARN of the role you created in the previous step.
 

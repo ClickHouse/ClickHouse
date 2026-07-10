@@ -51,6 +51,9 @@ class ClickHouseProc:
     WD2 = f"{temp_dir}/ft_wd2"
     CH_LOCAL_LOG = f"{temp_dir}/clickhouse-local.log"
     CH_LOCAL_ERR_LOG = f"{temp_dir}/clickhouse-local.err.log"
+    # Per-table wall-clock cap for dump_system_tables (seconds). One stuck dump
+    # must not exhaust the job's 9000s budget and get the whole job SIGKILLed.
+    DUMP_SYSTEM_TABLE_TIMEOUT = 600
 
     def __init__(
         self,
@@ -1302,6 +1305,19 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             result.set_label(Result.Label.LOG_CHECK)
         return results
 
+    # Exit codes coreutils `timeout` uses on expiry: 124 when the child dies on
+    # the initial SIGTERM, 128+9 = 137 when a SIGTERM-ignoring child is escalated
+    # with SIGKILL after --kill-after. Both mean the dump exceeded its cap.
+    _TIMEOUT_EXIT_CODES = (124, 137)
+
+    def _annotate_timeout(self, res, stderr):
+        # If `res` is one of timeout's expiry codes, prepend the "timed out"
+        # annotation so a stuck dump is reported as a timeout rather than an
+        # opaque non-zero failure. Returns the (possibly) annotated stderr.
+        if res in self._TIMEOUT_EXIT_CODES:
+            return f"timed out after {self.DUMP_SYSTEM_TABLE_TIMEOUT}s\n{stderr}"
+        return stderr
+
     def dump_system_tables(self):
         # Stop server so we can safely read data with clickhouse-local.
         # Why do we read data with clickhouse-local?
@@ -1351,6 +1367,13 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         #
         command_args_post = "-- --zookeeper.implementation=testkeeper"
 
+        # Bound each dump: a single hanging table (e.g. a huge minio_audit_logs
+        # on s3 runs) must not consume the whole 9000s job budget. On expiry
+        # timeout sends SIGTERM and returns 124; a dump that ignores SIGTERM is
+        # escalated with SIGKILL after --kill-after and returns 128+9 = 137.
+        # Both are timeouts, annotated by _annotate_timeout below.
+        dump_prefix = f"timeout --signal=TERM --kill-after=60 {self.DUMP_SYSTEM_TABLE_TIMEOUT} "
+
         Utils.clean_dir(p_temp_dir / "system_tables")
         res = True
 
@@ -1370,10 +1393,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
         for table in TABLES:
             path_arg = f" --path {self.run_path0}"
             res, stdout, stderr = Shell.get_res_stdout_stderr(
-                f"cd {self.run_path0} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                f"cd {self.run_path0} && {dump_prefix}clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                 verbose=True,
             )
             if res != 0:
+                stderr = self._annotate_timeout(res, stderr)
                 print(f"ERROR: Failed to dump system table: {table}\nError: {stderr}")
                 scraping_system_table.set_info(
                     f"Failed to dump system table: {table}\nError: {stderr}"
@@ -1396,10 +1420,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             if self.is_shared_catalog or self.is_db_replicated:
                 path_arg = f" --path {self.run_path1}"
                 res, stdout, stderr = Shell.get_res_stdout_stderr(
-                    f"cd {self.run_path1} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.1.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                    f"cd {self.run_path1} && {dump_prefix}clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.1.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                     verbose=True,
                 )
                 if res != 0:
+                    stderr = self._annotate_timeout(res, stderr)
                     print(
                         f"ERROR: Failed to dump system table from replica 1: {table}\nError: {stderr}"
                     )
@@ -1422,10 +1447,11 @@ clickhouse-client --query "SELECT count() FROM test.visits"
             if self.is_db_replicated:
                 path_arg = f" --path {self.run_path2}"
                 res, stdout, stderr = Shell.get_res_stdout_stderr(
-                    f"cd {self.run_path2} && clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.2.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
+                    f"cd {self.run_path2} && {dump_prefix}clickhouse local {command_args} {path_arg} --query \"select * from system.{table} into outfile '{temp_dir}/system_tables/{table}.2.tsv' format TSVWithNamesAndTypes\" {command_args_post}",
                     verbose=True,
                 )
                 if res != 0:
+                    stderr = self._annotate_timeout(res, stderr)
                     print(
                         f"ERROR: Failed to dump system table from replica 2: {table}\nError: {stderr}"
                     )
