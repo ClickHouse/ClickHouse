@@ -249,6 +249,10 @@ Clears the query condition cache.
 
 Clears the [query plan cache](../../operations/query-plan-cache.md).
 
+## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
+
+Clears the encryption headers cache. This cache holds the encryption headers read from the front of encrypted files and is used by the experimental `use_reader_executor` read path to avoid re-reading them; its size is configured by the `encryption_header_cache_size` server setting.
+
 ## SYSTEM CLEAR|DROP QUERY CACHE {#drop-query-cache}
 
 ```sql

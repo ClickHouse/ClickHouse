@@ -613,6 +613,26 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     ///     <recurse> `name2`
     ///     ...
 
+    /// The requested type may wrap the tuple in Nullable (e.g. `Nullable(Tuple(...))` is a legal
+    /// type). Unwrap it, match elements against the inner Tuple, and let the outer wrapper be
+    /// restored via outer_type_hint (needs_cast) in processSubtree.
+    /// Only unwrap when the tuple is always defined (REQUIRED group, no optional struct-group
+    /// ancestor), so the restored outer Nullable is always-non-null and lossless. Only Nullable
+    /// levels nested below the innermost array count: a Nullable level at or before it is the
+    /// optional wrapper of a LIST/MAP, whose nulls are normalized to empty collections by
+    /// processRepDefLevelsForArray and never reach the inner tuple null-map.
+    size_t innermost_array_idx = 0;
+    for (size_t i = 0; i < levels.size(); ++i)
+        if (levels[i].is_array)
+            innermost_array_idx = i;
+    bool has_optional_ancestor = false;
+    for (size_t i = innermost_array_idx + 1; i < levels.size(); ++i)
+        has_optional_ancestor |= !levels[i].is_array;
+    if (node.type_hint && node.type_hint->isNullable()
+        && node.element->repetition_type == parq::FieldRepetitionType::REQUIRED
+        && !has_optional_ancestor)
+        node.type_hint = assert_cast<const DataTypeNullable &>(*node.type_hint).getNestedType();
+
     const DataTypeTuple * tuple_type_hint = typeid_cast<const DataTypeTuple *>(node.type_hint.get());
     if (node.type_hint && !tuple_type_hint && !typeid_cast<const DataTypeObject *>(node.type_hint.get()))
         throw Exception(ErrorCodes::TYPE_MISMATCH, "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}", node.getNameForLogging(), node.type_hint->getName());

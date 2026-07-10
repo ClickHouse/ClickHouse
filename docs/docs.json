@@ -9,10 +9,6 @@
       "light": "#FFFFFF"
     }
   },
-  "banner": {
-    "content": "ClickHouse launches Claude-powered Agents and House Mates partner program at Open House 2026 [Read more →](https://clickhouse.com/blog/clickhouse-tops-250m-arr-and-4000-customers)",
-    "dismissible": true
-  },
   "colors": {
     "dark": "#fdff75",
     "light": "#333431",
@@ -68,6 +64,7 @@
                     "group": "Get started",
                     "icon": "/images/menu-icon-lightning.svg",
                     "pages": [
+                      "get-started/quickstarts/home",
                       {
                         "expandable": true,
                         "expanded": true,
@@ -89,8 +86,7 @@
                         ],
                         "root": "get-started/use-cases/overview"
                       },
-                      "get-started/about/deployment-modes",
-                      "get-started/quickstarts/home"
+                      "get-started/about/deployment-modes"
                     ],
                     "root": "get-started/index"
                   },
@@ -341,6 +337,7 @@
                             "group": "Troubleshooting",
                             "pages": [
                               "concepts/features/performance/troubleshoot/debugging-memory-issues",
+                              "concepts/features/performance/troubleshoot/oom-canary",
                               "concepts/features/performance/troubleshoot/performance-test",
                               "concepts/features/performance/troubleshoot/sampling-query-profiler"
                             ]
@@ -2269,7 +2266,175 @@
                       },
                       {
                         "group": "API reference",
-                        "openapi": "https://api.clickhouse.cloud/v1"
+                        "openapi": "https://api.clickhouse.cloud/v1",
+                        "pages": [
+                          {
+                            "group": "Organization",
+                            "pages": [
+                              "GET /v1/organizations",
+                              "GET /v1/organizations/{organizationId}",
+                              "PATCH /v1/organizations/{organizationId}",
+                              "GET /v1/organizations/{organizationId}/activities",
+                              "GET /v1/organizations/{organizationId}/activities/{activityId}",
+                              "GET /v1/organizations/{organizationId}/privateEndpointConfig",
+                              "POST /v1/organizations/{organizationId}/byocInfrastructure",
+                              "DELETE /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                              "PATCH /v1/organizations/{organizationId}/byocInfrastructure/{byocInfrastructureId}",
+                              {
+                                "group": "Billing",
+                                "pages": [
+                                  "GET /v1/organizations/{organizationId}/usageCost"
+                                ]
+                              },
+                              {
+                                "group": "User management",
+                                "pages": [
+                                  "GET /v1/organizations/{organizationId}/members",
+                                  "GET /v1/organizations/{organizationId}/members/{userId}",
+                                  "PATCH /v1/organizations/{organizationId}/members/{userId}",
+                                  "DELETE /v1/organizations/{organizationId}/members/{userId}",
+                                  "GET /v1/organizations/{organizationId}/invitations",
+                                  "POST /v1/organizations/{organizationId}/invitations",
+                                  "GET /v1/organizations/{organizationId}/invitations/{invitationId}",
+                                  "DELETE /v1/organizations/{organizationId}/invitations/{invitationId}"
+                                ]
+                              },
+                              {
+                                "group": "Role management",
+                                "pages": [
+                                  "GET /v1/organizations/{organizationId}/roles",
+                                  "POST /v1/organizations/{organizationId}/roles",
+                                  "GET /v1/organizations/{organizationId}/roles/{roleId}",
+                                  "PATCH /v1/organizations/{organizationId}/roles/{roleId}",
+                                  "DELETE /v1/organizations/{organizationId}/roles/{roleId}"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "group": "Service",
+                            "pages": [
+                              "GET /v1/organizations/{organizationId}/services",
+                              "POST /v1/organizations/{organizationId}/services",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/privateEndpointConfig",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                              "POST /v1/organizations/{organizationId}/services/{serviceId}/serviceQueryEndpoint",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/state",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/scaling",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/replicaScaling",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/password",
+                              "POST /v1/organizations/{organizationId}/services/{serviceId}/privateEndpoint",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                              "POST /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}/scalingSchedule",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                              "PUT /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}/upgradeWindow",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/schema",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickhouseSettings/{settingName}",
+                              {
+                                "group": "Backup",
+                                "pages": [
+                                  "GET /v1/organizations/{organizationId}/services/{serviceId}/backups",
+                                  "GET /v1/organizations/{organizationId}/services/{serviceId}/backups/{backupId}",
+                                  "GET /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                                  "PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupConfiguration",
+                                  "GET /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                                  "POST /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                                  "PATCH /v1/organizations/{organizationId}/services/{serviceId}/backupBucket",
+                                  "DELETE /v1/organizations/{organizationId}/services/{serviceId}/backupBucket"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "group": "OpenAPI",
+                            "pages": [
+                              "GET /v1/organizations/{organizationId}/keys",
+                              "POST /v1/organizations/{organizationId}/keys",
+                              "GET /v1/organizations/{organizationId}/keys/{keyId}",
+                              "PATCH /v1/organizations/{organizationId}/keys/{keyId}",
+                              "DELETE /v1/organizations/{organizationId}/keys/{keyId}"
+                            ]
+                          },
+                          {
+                            "group": "Prometheus",
+                            "pages": [
+                              "GET /v1/organizations/{organizationId}/prometheus",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/prometheus",
+                              "GET /v1/organizations/{organizationId}/postgres/prometheus",
+                              "GET /v1/organizations/{organizationId}/postgres/{postgresId}/prometheus"
+                            ]
+                          },
+                          {
+                            "group": "ClickPipes",
+                            "pages": [
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                              "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipes",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                              "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/settings",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/scaling",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipes/{clickPipeId}/state",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesCdcScaling",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                              "POST /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}",
+                              "PATCH /v1/organizations/{organizationId}/services/{serviceId}/clickpipesReversePrivateEndpoints/{reversePrivateEndpointId}"
+                            ]
+                          },
+                          {
+                            "group": "ClickStack",
+                            "tag": "Beta",
+                            "pages": [
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                              "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                              "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/dashboards/{clickStackDashboardId}",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                              "POST /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/sources",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                              "PUT /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                              "DELETE /v1/organizations/{organizationId}/services/{serviceId}/clickstack/alerts/{clickStackAlertId}",
+                              "GET /v1/organizations/{organizationId}/services/{serviceId}/clickstack/webhooks"
+                            ]
+                          },
+                          {
+                            "group": "Postgres",
+                            "tag": "Beta",
+                            "pages": [
+                              "POST /v1/organizations/{organizationId}/postgres",
+                              "GET /v1/organizations/{organizationId}/postgres",
+                              "GET /v1/organizations/{organizationId}/postgres/{postgresId}",
+                              "DELETE /v1/organizations/{organizationId}/postgres/{postgresId}",
+                              "PATCH /v1/organizations/{organizationId}/postgres/{postgresId}",
+                              "GET /v1/organizations/{organizationId}/postgres/{postgresId}/caCertificates",
+                              "POST /v1/organizations/{organizationId}/postgres/{postgresId}/restoredService",
+                              "PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/password",
+                              "PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/state",
+                              "POST /v1/organizations/{organizationId}/postgres/{postgresId}/readReplica",
+                              "GET /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                              "POST /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                              "PATCH /v1/organizations/{organizationId}/postgres/{postgresId}/config",
+                              "GET /v1/organizations/{organizationId}/postgres/{postgresId}/metrics",
+                              "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns",
+                              "GET /v1/organizations/{organizationId}/postgres/{postgresId}/slowQueryPatterns/{queryId}"
+                            ]
+                          }
+                        ]
                       }
                     ]
                   },
@@ -3448,8 +3613,10 @@
                         "pages": [
                           "resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes",
                           "resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-msk-clickpipes",
+                          "resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster",
                           "resources/support-center/knowledge-base/cloud-services/change-billing-email",
                           "resources/support-center/knowledge-base/cloud-services/clickhouse-cloud-api-usage",
+                          "resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes",
                           "resources/support-center/knowledge-base/cloud-services/custom-dns-alias-for-instance",
                           "resources/support-center/knowledge-base/cloud-services/execute-system-queries-in-cloud",
                           "resources/support-center/knowledge-base/cloud-services/how-to-check-my-clickhouse-cloud-sevice-state",

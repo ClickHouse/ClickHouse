@@ -203,14 +203,14 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
     if (!settings.reader_executor.enabled)
         return nullptr;
 
-    /// The executor does not implement caches, decryption, async prefetch, or the
-    /// distributed cache, so fall back rather than silently drop a configured stage.
-    if (distributed_cache || memory_cache || !filesystem_caches.empty()
-        || !decryption_stages.empty() || async_prefetch)
+    /// The executor does not implement caches, async prefetch, or the distributed cache, so
+    /// fall back rather than silently drop a configured stage. Decryption IS supported (fed
+    /// below), so it no longer forces a fallback.
+    if (distributed_cache || memory_cache || !filesystem_caches.empty() || async_prefetch)
     {
         LOG_DEBUG(log,
             "use_reader_executor: falling back to the legacy read path "
-            "(caches/decryption not yet supported by the executor)");
+            "(caches not yet supported by the executor)");
         return nullptr;
     }
 
@@ -258,7 +258,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor() c
             .min_bytes_for_seek = settings.reader_executor.min_bytes_for_seek,
             .block_size = block_size,
             .max_tail_for_drain = settings.reader_executor.max_tail_for_drain,
-            .long_connection_limit = long_connection_limit});
+            .long_connection_limit = long_connection_limit,
+            /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).
+            .encryption_header_cache = encryption_header_cache});
+
+    /// Feed the decryption layers (if any): the executor owns decryption internally and serves
+    /// plaintext, so it replaces the legacy `ReadBufferFromEncryptedFile` wrapping. `initDecryption`
+    /// reads and parses the headers once, up front.
+    for (const auto & dec : decryption_stages)
+        executor->addDecryptionLayer(dec.path, dec.key_finder);
+    executor->initDecryption();
 
     return std::make_unique<PipelineReadBuffer>(std::move(executor));
 }
