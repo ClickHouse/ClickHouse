@@ -122,12 +122,6 @@ void QueryPlanCache::updateConfiguration(size_t max_size_in_bytes, size_t max_en
         clear();
 }
 
-bool QueryPlanCache::isEnabled() const
-{
-    /// Mirrors the "disabled" condition guarded in `set`: a zero size or entry limit means off.
-    return maxSizeInBytes() > 0 && maxCount() > 0;
-}
-
 QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
 {
     auto result = Base::get(key);

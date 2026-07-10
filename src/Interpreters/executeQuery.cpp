@@ -1878,12 +1878,6 @@ static BlockIO executeQueryImpl(
         /// replicas, and when the analyzer is off.
         QueryPlanCachePtr query_plan_cache = context->getQueryPlanCache();
         const bool can_use_query_plan_cache = query_plan_cache != nullptr
-            /// The cache object is created unconditionally at startup; a zero server-configured
-            /// `query_plan_cache.max_size_in_bytes`/`max_entries` disables it. Without this check an
-            /// eligible query would still pay the analysis/serialization cost and run via the
-            /// storage-shortcut-skipping cacheable path on every run while nothing can be stored,
-            /// so "0" would not actually mean "off".
-            && query_plan_cache->isEnabled()
             && settings[Setting::allow_experimental_query_plan_cache]
             && settings[Setting::enable_query_plan_cache]
             && !internal
