@@ -1,0 +1,207 @@
+---
+description: 'ClickHouse 中 DateTime 数据类型的文档，该类型以秒级精度存储
+  时间戳'
+sidebarTitle: 'DateTime'
+slug: /sql-reference/data-types/datetime
+title: 'DateTime'
+doc_type: 'reference'
+---
+
+用于存储一个时间点，可表示为日历日期和一天中的时间。
+
+语法：
+
+```sql
+DateTime([timezone])
+```
+
+支持的取值范围：[1970-01-01 00:00:00, 2106-02-07 06:28:15]。
+
+分辨率：1 秒。
+
+<div id="speed">
+  ## 速度
+</div>
+
+在 *大多数* 情况下，`Date` 数据类型比 `DateTime` 更快。
+
+`Date` 类型占用 2 字节存储空间，而 `DateTime` 占用 4 字节。不过，在压缩时，`Date` 和 `DateTime` 之间的大小差异会更加明显。这是因为 `DateTime` 中的分钟和秒字段更难被压缩。相比过滤和聚合 `DateTime`，过滤和聚合 `Date` 也更快。
+
+<div id="usage-remarks">
+  ## 使用说明
+</div>
+
+时间点会保存为 [Unix timestamp](https://en.wikipedia.org/wiki/Unix_time)，与时区或夏令时无关。时区会影响 `DateTime` 类型的值以文本格式显示的方式，以及以字符串形式指定的值 (`'2020-01-01 05:00:01'`) 的解析方式。
+
+表中存储的是与时区无关的 Unix timestamp，而时区用于在数据导入/导出期间将其转换为文本格式或从文本格式转换回来，或者用于对这些值执行日历计算 (例如 `toDate`、`toHour` 等函数) 。时区不会存储在表的行中 (或结果集中) ，而是存储在列元数据中。
+
+支持的时区列表可在 [IANA Time Zone Database](https://www.iana.org/time-zones) 中找到，也可以通过 `SELECT * FROM system.time_zones` 查询。[该列表](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) 在 Wikipedia 上也可以查看。
+
+创建表时，您可以为 `DateTime` 类型的列显式设置时区。例如：`DateTime('UTC')`。如果未设置时区，ClickHouse 会使用 ClickHouse server 启动时服务器设置中的 [timezone](/zh/reference/settings/server-settings/settings#timezone) 参数值，或者使用操作系统设置中的值。
+
+如果在初始化数据类型时未显式设置时区，[clickhouse-client](/zh/concepts/features/interfaces/client) 默认会使用服务器时区。要使用客户端时区，请在运行 `clickhouse-client` 时添加 `--use_client_time_zone` 参数。
+
+ClickHouse 会根据 [date&#95;time&#95;output&#95;format](/zh/reference/settings/formats#date_time_output_format) 设置的值输出结果。默认的文本格式为 `YYYY-MM-DD hh:mm:ss`。此外，您还可以使用 [formatDateTime](/zh/reference/functions/regular-functions/date-time-functions#formatDateTime) 函数更改输出格式。
+
+向 ClickHouse 插入数据时，您可以根据 [date&#95;time&#95;input&#95;format](/zh/reference/settings/formats#date_time_input_format) 设置的值，使用不同格式的日期时间字符串。
+
+<div id="examples">
+  ## 示例
+</div>
+
+**1.** 创建一个带有 `DateTime` 类型列的表，并向其中插入数据：
+
+```sql
+CREATE TABLE dt
+(
+    `timestamp` DateTime('Asia/Istanbul'),
+    `event_id` UInt8
+)
+ENGINE = TinyLog;
+```
+
+```sql
+-- 解析 DateTime
+-- - 从字符串，
+-- - 从整数（解释为自 1970-01-01 起的秒数）。
+INSERT INTO dt VALUES ('2019-01-01 00:00:00', 1), (1546300800, 2);
+
+SELECT * FROM dt;
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+│ 2019-01-01 03:00:00 │        2 │
+└─────────────────────┴──────────┘
+```
+
+* 当以整数形式插入 datetime 时，它会被视为 Unix 时间戳 (UTC) 。`1546300800` 表示 UTC 时间 `'2019-01-01 00:00:00'`。不过，由于 `timestamp` 列指定了 `Asia/Istanbul` (UTC+3) 时区，因此在以字符串形式输出时，该值会显示为 `'2019-01-01 03:00:00'`
+* 当以字符串形式插入 datetime 值时，它会被视为采用列时区。`'2019-01-01 00:00:00'` 会被视为 `Asia/Istanbul` 时区的时间，并保存为 `1546290000`。
+
+**2.** 按 `DateTime` 值过滤
+
+```sql
+SELECT * FROM dt WHERE timestamp = toDateTime('2019-01-01 00:00:00', 'Asia/Istanbul')
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
+
+`DateTime` 列的值可以在 `WHERE` 条件中使用字符串值进行过滤。它会自动转换为 `DateTime`：
+
+```sql
+SELECT * FROM dt WHERE timestamp = '2019-01-01 00:00:00'
+```
+
+```text
+┌───────────timestamp─┬─event_id─┐
+│ 2019-01-01 00:00:00 │        1 │
+└─────────────────────┴──────────┘
+```
+
+**3.** 获取 `DateTime` 类型列的时区：
+
+```sql
+SELECT toDateTime(now(), 'Asia/Istanbul') AS column, toTypeName(column) AS x
+```
+
+```text
+┌──────────────column─┬─x─────────────────────────┐
+│ 2019-10-16 04:12:04 │ DateTime('Asia/Istanbul') │
+└─────────────────────┴───────────────────────────┘
+```
+
+**4.** 时区转换
+
+```sql
+SELECT
+toDateTime(timestamp, 'Europe/London') AS lon_time,
+toDateTime(timestamp, 'Asia/Istanbul') AS istanbul_time
+FROM dt
+```
+
+```text
+┌───────────lon_time──┬───────istanbul_time─┐
+│ 2019-01-01 00:00:00 │ 2019-01-01 03:00:00 │
+│ 2018-12-31 21:00:00 │ 2019-01-01 00:00:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+由于时区转换只会更改元数据，因此该操作不产生计算开销。
+
+<div id="limitations-on-time-zones-support">
+  ## 时区支持的限制
+</div>
+
+某些时区可能无法得到完全支持，主要有以下几种情况：
+
+如果相对 UTC 的偏移量不是 15 分钟的整数倍，那么小时和分钟的计算可能会不准确。例如，利比里亚蒙罗维亚时区在 1972 年 1 月 7 日之前的偏移量为 UTC -0:44:30。如果你对 Monrovia 时区中的历史时间进行计算，时间处理函数可能会给出不正确的结果。不过，1972 年 1 月 7 日之后的结果仍然是正确的。
+
+如果时间切换 (由于夏令时或其他原因) 发生在一个不是 15 分钟整数倍的时间点，那么在这一天的这个特定时刻，也可能得到不正确的结果。
+
+非单调的日历日期。例如，在 Happy Valley - Goose Bay，时间于 2010 年 11 月 7 日 00:01:00 向后调整了一小时 (即午夜过后 1 分钟) 。因此，在 11 月 6 日结束后，人们先经历了 11 月 7 日的整整 1 分钟，然后时间又被拨回到 11 月 6 日 23:01，接着再过 59 分钟，11 月 7 日才再次开始。ClickHouse (暂时) 还不支持这种特殊情况。在这些日期里，时间处理函数的结果可能会有轻微误差。
+
+2010 年的南极 Casey 测站也存在类似问题。当地在 3 月 5 日 02:00 将时间向后调整了 3 小时。如果你在南极测站工作，也不必因此担心无法使用 ClickHouse。只要确保将时区设置为 UTC，或者了解可能存在的误差即可。
+
+跨越多天的时间移位。一些太平洋岛屿将其相对 UTC 的时区偏移从 UTC+14 改为 UTC-12。这本身没有问题，但如果你使用这些时区对转换当日的历史时间点进行计算，仍可能出现一些不准确。
+
+<div id="handling-daylight-saving-time-dst">
+  ## 处理夏令时 (DST)
+</div>
+
+ClickHouse 的带时区 DateTime 类型在夏令时 (DST) 切换期间可能会出现异常行为，尤其是在以下情况下：
+
+* [`date_time_output_format`](/zh/reference/settings/formats#date_time_output_format) 设置为 `simple`。
+* 时钟向后拨 (“秋季回拨”) ，导致一小时重叠。
+* 时钟向前拨 (“春季前拨”) ，导致一小时空缺。
+
+默认情况下，ClickHouse 总是选择重叠时间中较早的那次出现；而在向前拨时，可能会将不存在的时间解释为有效时间。
+
+例如，考虑下面这个从夏令时 (DST) 切换到标准时间的情形。
+
+* 2023 年 10 月 29 日 02:00:00，时钟从 02:00:00 向后拨至 01:00:00 (BST → GMT) 。
+* 01:00:00 – 01:59:59 这一小时会出现两次 (一次是 BST，一次是 GMT) 。
+* ClickHouse 总是选择第一次出现的时间 (BST) ，因此在增加时间间隔时可能会产生意外结果。
+
+```sql
+SELECT '2023-10-29 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
+
+┌────────────────time─┬──────one_hour_later─┐
+│ 2023-10-29 01:30:00 │ 2023-10-29 01:30:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+类似地，在从标准时间切换为夏令时的过程中，也可能会出现“跳过”一个小时的情况。
+
+例如：
+
+* 在 2023 年 3 月 26 日 `00:59:59` 时，时钟会直接跳到 02:00:00 (GMT → BST) 。
+* `01:00:00` – `01:59:59` 这一小时并不存在。
+
+```sql
+SELECT '2023-03-26 01:30:00'::DateTime('Europe/London') AS time, time + toIntervalHour(1) AS one_hour_later
+
+┌────────────────time─┬──────one_hour_later─┐
+│ 2023-03-26 00:30:00 │ 2023-03-26 02:30:00 │
+└─────────────────────┴─────────────────────┘
+```
+
+在这种情况下，ClickHouse 会将不存在的时间 `2023-03-26 01:30:00` 移回到 `2023-03-26 00:30:00`。
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [类型转换函数](/zh/reference/functions/regular-functions/type-conversion-functions)
+* [用于处理日期和时间的函数](/zh/reference/functions/regular-functions/date-time-functions)
+* [用于处理数组的函数](/zh/reference/functions/regular-functions/array-functions)
+* [`date_time_input_format` 设置](/zh/reference/settings/formats#date_time_input_format)
+* [`date_time_output_format` 设置](/zh/reference/settings/formats#date_time_output_format)
+* [`timezone` 服务器配置参数](/zh/reference/settings/server-settings/settings#timezone)
+* [`session_timezone` 设置](/zh/reference/settings/session-settings#session_timezone)
+* [用于处理日期和时间的运算符](/zh/reference/operators/index#operators-for-working-with-dates-and-times)
+* [`Date` 数据类型](/zh/reference/data-types/date)

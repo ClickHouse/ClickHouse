@@ -1,0 +1,265 @@
+---
+title: 'Crear un rollup con vistas materializadas para análisis rápido de series temporales'
+slug: /knowledgebase/materialized-view-rollup-timeseries
+description: 'Ejemplo completo que crea una tabla de eventos sin procesar, una tabla de rollup y una vista materializada para análisis de baja latencia.'
+keywords: ['vista materializada', 'rollup', 'aggregate', 'timeseries', 'tutorial']
+doc_type: 'guide'
+---
+
+> Este tutorial te muestra cómo mantener rollups preagregados a partir de una tabla de eventos de alto volumen mediante [**vistas materializadas**](/es/concepts/features/materialized-views/index).
+> Crearás tres objetos: una tabla sin procesar, una tabla de rollup y la vista materializada que escribe automáticamente en la tabla de rollup.
+
+<div id="when-to-use">
+  ## Cuándo usar este patrón
+</div>
+
+Usa este patrón cuando:
+
+* Tienes un **flujo de eventos de solo inserción** (clics, vistas de página, IoT, logs).
+* La mayoría de las consultas son **agregaciones** sobre intervalos de tiempo (por minuto/hora/día).
+* Quieres **lecturas consistentes en menos de un segundo** sin volver a escanear todas las filas sin procesar.
+
+<Steps>
+  <Step>
+    ## Crear la tabla de eventos sin procesar
+
+    ```sql
+    CREATE TABLE events_raw
+    (
+        event_time   DateTime,
+        user_id      UInt64,
+        country      LowCardinality(String),
+        event_type   LowCardinality(String),
+        value        Float64
+    )
+    ENGINE = MergeTree
+    PARTITION BY toYYYYMM(event_time)
+    ORDER BY (event_time, user_id)
+    TTL event_time + INTERVAL 90 DAY DELETE
+    ```
+
+    **Notas**
+
+    * `PARTITION BY toYYYYMM(event_time)` mantiene las particiones pequeñas y fáciles de eliminar.
+    * `ORDER BY (event_time, user_id)` admite consultas acotadas en el tiempo + filtro secundario.
+    * `LowCardinality(String)` ahorra memoria para dimensiones categóricas.
+    * `TTL` elimina los datos brutos después de 90 días (ajústalo según tus requisitos de retención).
+  </Step>
+
+  <Step>
+    ## Diseña la tabla de rollup (agregada)
+
+    Preagregaremos con granularidad **horaria**.
+    Elige la granularidad para ajustarla al intervalo de análisis más habitual.
+
+    ```sql
+    CREATE TABLE events_rollup_1h
+    (
+        bucket_start  DateTime,            -- inicio de la hora
+        country       LowCardinality(String),
+        event_type    LowCardinality(String),
+        users_uniq    AggregateFunction(uniqExact, UInt64),
+        value_sum     AggregateFunction(sum, Float64),
+        value_avg     AggregateFunction(avg, Float64),
+        events_count  AggregateFunction(count)
+    )
+    ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(bucket_start)
+    ORDER BY (bucket_start, country, event_type)
+    ```
+
+    Almacenamos **estados de agregación** (p. ej., `AggregateFunction(sum, ...)`) que representan de forma compacta agregados parciales y que pueden fusionarse o finalizarse más adelante.
+  </Step>
+
+  <Step>
+    ## Cree una vista materializada que rellene el rollup
+
+    Esta vista materializada se ejecuta automáticamente con las inserciones en `events_raw` y escribe **estados de agregación** en el rollup.
+
+    ```sql
+    CREATE MATERIALIZED VIEW mv_events_rollup_1h
+    TO events_rollup_1h
+    AS
+    SELECT
+        toStartOfHour(event_time) AS bucket_start,
+        country,
+        event_type,
+        uniqExactState(user_id)   AS users_uniq,
+        sumState(value)           AS value_sum,
+        avgState(value)           AS value_avg,
+        countState()              AS events_count
+    FROM events_raw
+    GROUP BY bucket_start, country, event_type;
+    ```
+  </Step>
+
+  <Step>
+    ## Insertar algunos datos de ejemplo
+
+    Inserta algunos datos de ejemplo:
+
+    ```sql
+    INSERT INTO events_raw VALUES
+        (now() - INTERVAL 4 SECOND, 101, 'US', 'view', 1),
+        (now() - INTERVAL 3 SECOND, 101, 'US', 'click', 1),
+        (now() - INTERVAL 2 SECOND, 202, 'DE', 'view', 1),
+        (now() - INTERVAL 1 SECOND, 101, 'US', 'view', 1);
+    ```
+  </Step>
+
+  <Step>
+    ## Consultar el rollup
+
+    Puedes **combinar** los estados en tiempo de lectura o **finalizarlos**:
+
+    <Tabs>
+      <Tab title="Combinar en tiempo de lectura">
+        ```sql
+        SELECT
+            bucket_start,
+            country,
+            event_type,
+            uniqExactMerge(users_uniq) AS users,
+            sumMerge(value_sum)        AS value_sum,
+            avgMerge(value_avg)        AS value_avg,
+            countMerge(events_count)   AS events
+        FROM events_rollup_1h
+        WHERE bucket_start >= now() - INTERVAL 1 DAY
+        GROUP BY ALL
+        ORDER BY bucket_start, country, event_type;
+        ```
+      </Tab>
+
+      <Tab title="Finalizar con -Final">
+        ```sql
+        SELECT
+            bucket_start,
+            country,
+            event_type,
+            uniqExactMerge(users_uniq) AS users,
+            sumMerge(value_sum)        AS value_sum,
+            avgMerge(value_avg)        AS value_avg,
+            countMerge(events_count)   AS events
+        FROM events_rollup_1h
+        WHERE bucket_start >= now() - INTERVAL 1 DAY
+        GROUP BY ALL
+        ORDER BY bucket_start, country, event_type
+        SETTINGS final = 1;  -- o usa SELECT ... FINAL
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    <Tip>
+      Si esperas que las lecturas siempre se hagan contra el rollup, puedes crear una **segunda vista materializada** que escriba valores *finalizados* en una tabla `MergeTree` «normal» con la misma granularidad de 1 h.
+      Los estados ofrecen más flexibilidad, mientras que los valores finalizados permiten lecturas ligeramente más simples.
+    </Tip>
+  </Step>
+
+  <Step>
+    ## Filtra por campos de la clave primaria para obtener el máximo rendimiento
+
+    Puedes usar el comando `EXPLAIN` para ver cómo el índice descarta datos:
+
+    ```sql title="Query"
+    EXPLAIN indexes=1
+    SELECT *
+    FROM events_rollup_1h
+    WHERE bucket_start BETWEEN now() - INTERVAL 3 DAY AND now()
+      AND country = 'US';
+    ```
+
+    ```response title="Response"
+            ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+        1.  │ Expression ((Project names + Projection))                                                                                          │
+        2.  │   Expression                                                                                                                       │
+        3.  │     ReadFromMergeTree (default.events_rollup_1h)                                                                                   │
+        4.  │     Indexes:                                                                                                                       │
+        5.  │       MinMax                                                                                                                       │
+        6.  │         Keys:                                                                                                                      │
+        7.  │           bucket_start                                                                                                             │
+        8.  │         Condition: and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))                                 │
+        9.  │         Parts: 1/1                                                                                                                 │
+        10. │         Granules: 1/1                                                                                                              │
+        11. │       Partition                                                                                                                    │
+        12. │         Keys:                                                                                                                      │
+        13. │           toYYYYMM(bucket_start)                                                                                                   │
+        14. │         Condition: and((toYYYYMM(bucket_start) in (-Inf, 202509]), (toYYYYMM(bucket_start) in [202509, +Inf)))                     │
+        15. │         Parts: 1/1                                                                                                                 │
+        16. │         Granules: 1/1                                                                                                              │
+        17. │       PrimaryKey                                                                                                                   │
+        18. │         Keys:                                                                                                                      │
+        19. │           bucket_start                                                                                                             │
+        20. │           country                                                                                                                  │
+        21. │         Condition: and((country in ['US', 'US']), and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))) │
+        22. │         Parts: 1/1                                                                                                                 │
+        23. │         Granules: 1/1                                                                                                              │
+            └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+    ```
+
+    El plan de ejecución de la consulta anterior muestra que se usan tres tipos de índices:
+    un índice MinMax, un índice de partición y un índice de clave primaria.
+    Cada índice utiliza campos especificados en nuestra clave primaria: `(bucket_start, country, event_type)`.
+    Para obtener el mejor rendimiento de filtrado, asegúrate de que tus consultas utilicen campos de la clave primaria para omitir datos.
+  </Step>
+
+  <Step>
+    ## Variantes habituales
+
+    * **Granularidades diferentes**: añada un rollup diario:
+
+    ```sql
+    CREATE TABLE events_rollup_1d
+    (
+        bucket_start Date,
+        country      LowCardinality(String),
+        event_type   LowCardinality(String),
+        users_uniq   AggregateFunction(uniqExact, UInt64),
+        value_sum    AggregateFunction(sum, Float64),
+        value_avg    AggregateFunction(avg, Float64),
+        events_count AggregateFunction(count)
+    )
+    ENGINE = AggregatingMergeTree
+    PARTITION BY toYYYYMM(bucket_start)
+    ORDER BY (bucket_start, country, event_type);
+    ```
+
+    A continuación, una segunda vista materializada:
+
+    ```sql
+    CREATE MATERIALIZED VIEW mv_events_rollup_1d
+    TO events_rollup_1d
+    AS
+    SELECT
+        toDate(event_time) AS bucket_start,
+        country,
+        event_type,
+        uniqExactState(user_id),
+        sumState(value),
+        avgState(value),
+        countState()
+    FROM events_raw
+    GROUP BY ALL;
+    ```
+
+    * **Compresión**: aplica codecs a las columnas grandes (ejemplo: `Codec(ZSTD(3))`) en la tabla raw.
+    * **Control de costos**: concentra la retención más exigente en la tabla raw y conserva los roll-ups a largo plazo.
+    * **Carga de datos históricos**: al cargar datos históricos, inserta en `events_raw` y deja que la vista materializada genere los roll-ups automáticamente. Para las filas existentes, usa `POPULATE` al crear la vista materializada, si es adecuado, o `INSERT SELECT`.
+  </Step>
+
+  <Step>
+    ## Limpieza y retención
+
+    * Aumente el TTL de los datos sin procesar (p. ej., 30/90 días), pero mantenga las agregaciones durante más tiempo (p. ej., 1 año).
+    * También puede usar **TTL para mover** partes antiguas a un almacenamiento más económico si está habilitado el almacenamiento por niveles.
+  </Step>
+
+  <Step>
+    ## Solución de problemas
+
+    * ¿La vista materializada no se actualiza? Compruebe que las inserciones vayan a **events&#95;raw** (no a la tabla de rollup) y que el destino de la vista materializada sea correcto (`TO events_rollup_1h`).
+    * ¿Consultas lentas? Confirme que apunten al rollup (consulte directamente la tabla de rollup) y que los filtros de tiempo se ajusten a la granularidad del rollup.
+    * ¿Desajustes en el backfill? Use `SYSTEM FLUSH LOGS` y compruebe `system.query_log` / `system.parts` para confirmar las inserciones y las fusiones.
+  </Step>
+</Steps>

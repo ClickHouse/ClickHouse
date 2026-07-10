@@ -1,0 +1,196 @@
+---
+slug: /merges
+title: '파트 병합'
+description: 'ClickHouse의 파트 병합이란?'
+keywords: ['merges']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<div id="what-are-part-merges-in-clickhouse">
+  ## ClickHouse의 파트 병합이란 무엇인가요?
+</div>
+
+<br />
+
+ClickHouse는 [스토리지 계층(storage layer)](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf)이 [LSM 트리](https://en.wikipedia.org/wiki/Log-structured_merge-tree)와 비슷하게 동작하기 때문에, [쿼리](/ko/get-started/about/why-clickhouse-is-so-fast)뿐 아니라 삽입도 빠릅니다:
+
+① [MergeTree 엔진](/ko/reference/engines/table-engines/mergetree-family/index) 계열 테이블에 데이터를 삽입하면 정렬된 불변의 [데이터 파트](/ko/concepts/core-concepts/parts)가 생성됩니다.
+
+② 모든 데이터 처리는 **백그라운드 파트 병합**으로 넘겨집니다.
+
+이 방식 덕분에 데이터 쓰기 작업의 부담이 적고 [매우 효율적](/ko/get-started/about/why-clickhouse-is-so-fast#storage-layer-concurrent-inserts-are-isolated-from-each-other)입니다.
+
+테이블당 파트 수를 제어하고 위 ②를 구현하기 위해, ClickHouse는 더 작은 파트를 백그라운드에서 지속적으로 ([파티션별로](/ko/concepts/core-concepts/partitions#per-partition-merges)) 더 큰 파트로 병합하며, 압축된 크기가 약 [~150 GB](/ko/reference/settings/merge-tree-settings#max_bytes_to_merge_at_max_space_in_pool)에 이를 때까지 이를 계속합니다.
+
+다음 다이어그램은 이 백그라운드 병합 과정을 개략적으로 보여줍니다:
+
+<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+파트의 `머지 수준`은 머지가 한 번 추가로 일어날 때마다 1씩 증가합니다. 레벨이 `0`이면 해당 파트는 새로 생성되었으며 아직 병합되지 않았다는 뜻입니다. 더 큰 파트로 병합된 파트는 [비활성 상태](/ko/reference/system-tables/parts)로 표시되며, [설정 가능한](/ko/reference/settings/merge-tree-settings#old_parts_lifetime) 시간이 지난 뒤 최종적으로 삭제됩니다(기본값은 8분). 시간이 지나면서 이렇게 병합된 파트의 **트리**가 만들어집니다. 그래서 [merge tree](/ko/reference/engines/table-engines/mergetree-family/index) 테이블이라는 이름이 붙었습니다.
+
+<div id="monitoring-merges">
+  ## 머지 모니터링
+</div>
+
+[테이블 파트란 무엇인가](/ko/concepts/core-concepts/parts) 예시에서는 ClickHouse가 모든 테이블 파트를 [parts](/ko/reference/system-tables/parts) 시스템 테이블(system table)에서 추적한다는 점을 [확인했습니다](/ko/concepts/core-concepts/parts#monitoring-table-parts). 예시 테이블의 각 활성 파트에 대한 머지 수준과 저장된 행 수를 조회하기 위해 다음 쿼리를 사용했습니다:
+
+```sql
+SELECT
+    name,
+    level,
+    rows
+FROM system.parts
+WHERE (database = 'uk') AND (`table` = 'uk_price_paid_simple') AND active
+ORDER BY name ASC;
+```
+
+[앞서 설명한](/ko/concepts/core-concepts/parts#monitoring-table-parts) 쿼리 결과를 보면, 예시 테이블에는 활성 파트가 4개 있었고, 각 파트는 처음 삽입된 파트들을 한 차례 머지하여 생성되었습니다:
+
+```response
+   ┌─name────────┬─level─┬────rows─┐
+1. │ all_0_5_1   │     1 │ 6368414 │
+2. │ all_12_17_1 │     1 │ 6442494 │
+3. │ all_18_23_1 │     1 │ 5977762 │
+4. │ all_6_11_1  │     1 │ 6459763 │
+   └─────────────┴───────┴─────────┘
+```
+
+[실행](https://sql.clickhouse.com/?query=U0VMRUNUCiAgICBuYW1lLAogICAgbGV2ZWwsCiAgICByb3dzCkZST00gc3lzdGVtLnBhcnRzCldIRVJFIChkYXRhYmFzZSA9ICd1aycpIEFORCAoYHRhYmxlYCA9ICd1a19wcmljZV9wYWlkX3NpbXBsZScpIEFORCBhY3RpdmUKT1JERVIgQlkgbmFtZSBBU0M7\&run_query=true\&tab=results)하면 이제 4개의 파트가 하나의 최종 파트로 머지된 것을 확인할 수 있습니다(테이블에 추가 삽입이 없는 한):
+
+```response
+   ┌─name───────┬─level─┬─────rows─┐
+1. │ all_0_23_2 │     2 │ 25248433 │
+   └────────────┴───────┴──────────┘
+```
+
+ClickHouse 24.10에서는 새로운 [머지 대시보드](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)가 기본 제공 [모니터링 대시보드](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)에 추가되었습니다. OSS와 Cloud 모두에서 `/merges` HTTP handler를 통해 사용할 수 있으며, 이를 이용해 예시 테이블의 모든 파트 병합을 시각화할 수 있습니다:
+
+<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+위의 대시보드 녹화 화면은 초기 데이터 삽입부터 최종적으로 하나의 파트로 머지되기까지의 전체 과정을 보여줍니다:
+
+① 활성 파트 수.
+
+② 박스로 시각화한 파트 병합(상자 크기는 파트 크기를 반영).
+
+③ [쓰기 증폭](https://en.wikipedia.org/wiki/Write_amplification).
+
+<div id="concurrent-merges">
+  ## 동시 파트 병합
+</div>
+
+단일 ClickHouse 서버는 여러 개의 백그라운드 [병합 스레드](/ko/reference/settings/server-settings/settings#background_pool_size)를 사용해 동시에 파트 병합을 수행합니다:
+
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+각 병합 스레드는 다음과 같은 루프를 수행합니다:
+
+① 다음에 병합할 파트를 결정하고, 해당 파트를 메모리에 로드합니다.
+
+② 메모리에 로드된 파트들을 더 큰 파트로 병합합니다.
+
+③ 병합된 파트를 디스크에 기록합니다.
+
+①로 돌아갑니다
+
+CPU 코어 수와 RAM 용량을 늘리면 백그라운드 병합 처리량을 높일 수 있습니다.
+
+<div id="memory-optimized-merges">
+  ## 메모리 최적화된 머지
+</div>
+
+ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merges)에서 개략적으로 설명한 것처럼, 머지할 모든 파트를 반드시 한 번에 메모리에 로드하지는 않습니다. 여러 [요인](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L210)에 따라, 그리고 메모리 사용량을 줄이기 위해(대신 머지 속도는 희생됨) 이른바 [수직 머지](https://github.com/ClickHouse/ClickHouse/blob/bf37120c925ed846ae5cd72cd51e6340bebd2918/src/Storages/MergeTree/MergeTreeSettings.cpp#L209)는 한 번에 처리하는 대신 블록 청크 단위로 파트를 로드하고 머지합니다.
+
+<div id="merge-mechanics">
+  ## 머지 메커니즘
+</div>
+
+아래 다이어그램은 ClickHouse에서 단일 백그라운드 [병합 스레드](/ko/concepts/core-concepts/merges#concurrent-merges)가 파트를 어떻게 머지하는지 보여줍니다(기본적으로 [수직 머지](/ko/concepts/core-concepts/merges#memory-optimized-merges)는 사용하지 않음):
+
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+파트 병합은 여러 단계에 걸쳐 수행됩니다:
+
+**① 압축 해제 및 로드**: 머지할 파트의 [압축된 바이너리 컬럼 파일](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)을 압축 해제해 메모리에 로드합니다.
+
+**② 머지**: 데이터를 더 큰 컬럼 파일로 머지합니다.
+
+**③ 인덱싱**: 머지된 컬럼 파일에 대해 새로운 [희소 프라이머리 인덱스](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 생성합니다.
+
+**④ 압축 및 저장**: 새 컬럼 파일과 인덱스를 [압축](/ko/reference/statements/create/table#column_compression_codec)한 뒤, 머지된 데이터 파트를 나타내는 새 [디렉터리](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse)에 저장합니다.
+
+보조 데이터 스키핑 인덱스, 컬럼 통계, 체크섬, MinMax 인덱스와 같은 [데이터 파트의 추가 메타데이터](/ko/concepts/core-concepts/parts)도 머지된 컬럼 파일을 기반으로 다시 생성됩니다. 여기서는 단순화를 위해 이러한 세부 사항을 생략했습니다.
+
+② 단계의 구체적인 동작 방식은 사용 중인 [MergeTree 엔진](/ko/reference/engines/table-engines/mergetree-family/index)에 따라 달라집니다. 엔진마다 머지를 처리하는 방식이 서로 다르기 때문입니다. 예를 들어, 행이 집계되거나 오래된 경우 대체될 수 있습니다. 앞서 언급했듯이, 이 접근 방식은 **모든 데이터 처리를 백그라운드 머지로 오프로드**하므로 쓰기 작업을 가볍고 효율적으로 유지할 수 있어 **매우 빠른 삽입**이 가능합니다.
+
+다음으로, MergeTree 엔진 계열의 특정 엔진별 머지 메커니즘을 간략히 살펴보겠습니다.
+
+<div id="standard-merges">
+  ### 표준 병합
+</div>
+
+아래 다이어그램은 표준 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에서 파트가 어떻게 머지되는지 보여줍니다:
+
+<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+위 다이어그램의 DDL 문은 정렬 키 `(town, street)`를 가진 `MergeTree` 테이블을 생성하며, [즉](/ko/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) 디스크의 데이터는 이 컬럼을 기준으로 정렬되고 이에 따라 희소 프라이머리 인덱스가 생성됩니다.
+
+① 압축이 해제된 사전 정렬 테이블 컬럼을 ② 테이블의 정렬 키로 정의된 전역 정렬 순서를 유지한 채 머지하고, ③ 새로운 희소 프라이머리 인덱스를 생성한 다음, ④ 머지된 컬럼 파일과 인덱스를 압축해 디스크에 새 데이터 파트로 저장합니다.
+
+<div id="replacing-merges">
+  ### Replacing 머지
+</div>
+
+[ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 테이블의 파트 병합은 [표준 병합](/ko/concepts/core-concepts/merges#standard-merges)과 유사하게 동작하지만, 각 행의 최신 버전만 유지되고 이전 버전은 삭제됩니다:
+
+<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+위 다이어그램의 DDL 문은 정렬 키가 `(town, street, id)`인 `ReplacingMergeTree` 테이블을 생성합니다. 즉, 디스크에 저장된 데이터는 이 컬럼들을 기준으로 정렬되며, 이에 따라 희소 프라이머리 인덱스(sparse primary index)도 생성됩니다.
+
+② 머지 작업은 표준 `MergeTree` 테이블과 비슷하게 동작하며, 전역 정렬 순서를 유지하면서 압축 해제된 미리 정렬된 컬럼을 결합합니다.
+
+하지만 `ReplacingMergeTree`는 동일한 정렬 키를 가진 중복 행을 제거하고, 해당 행이 포함된 파트의 생성 타임스탬프를 기준으로 가장 최근 행만 유지합니다.
+
+<br />
+
+<div id="summing-merges">
+  ### 합산 머지
+</div>
+
+[SummingMergeTree](/ko/reference/engines/table-engines/mergetree-family/summingmergetree) 테이블의 파트가 머지되는 동안 숫자 데이터는 자동으로 합산됩니다:
+
+<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+위 다이어그램의 DDL 구문은 `town`을 정렬 키(sorting key)로 사용하는 `SummingMergeTree` 테이블을 정의합니다. 즉, 디스크의 데이터가 이 컬럼을 기준으로 정렬되며, 이에 따라 희소 프라이머리 인덱스가 생성됩니다.
+
+② 머지 단계에서 ClickHouse는 동일한 정렬 키를 가진 모든 행을 하나의 행으로 합치고, 숫자 컬럼의 값을 합산합니다.
+
+<div id="aggregating-merges">
+  ### 집계 머지
+</div>
+
+위의 `SummingMergeTree` 테이블 예시는 [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 테이블의 특수한 변형으로, 파트 병합 중 [90+](/ko/reference/functions/aggregate-functions/reference-index)개의 집계 함수를 적용해 [자동 증분 데이터 변환](https://www.youtube.com/watch?v=QDAJTKZT8y4)을 수행할 수 있습니다:
+
+<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="파트 병합" />
+
+<br />
+
+위 다이어그램의 DDL 문은 `town`을 정렬 키로 사용하는 `AggregatingMergeTree` 테이블을 생성합니다. 이렇게 하면 디스크에서 데이터가 이 컬럼 기준으로 정렬되고, 이에 대응하는 희소 프라이머리 인덱스가 생성됩니다.
+
+② 머지 중 ClickHouse는 동일한 정렬 키를 가진 모든 행을 [부분 집계 상태](https://clickhouse.com/blog/clickhouse_vs_elasticsearch_mechanics_of_count_aggregations#-multi-core-parallelization)를 저장하는 단일 행으로 대체합니다(예: `avg()`를 위한 `sum`과 `count`). 이러한 상태를 통해 증분 백그라운드 머지에서도 정확한 결과를 보장합니다.

@@ -462,9 +462,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
 {
     try
     {
-        if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
-            return;
-
         boost::intrusive_ptr<ASTCreateQuery> create_database_query;
         {
             std::lock_guard lock{mutex};
@@ -474,8 +471,44 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
             if (database_info.is_predefined_database)
                 return;
 
+            /// In `must-exist` mode RESTORE does not create the database, and the backup may not even contain
+            /// its definition (e.g. when restoring individual tables into an already-existing database), so there
+            /// is nothing to check or create here.
+            if (!database_info.create_database_query)
+                return;
+
             create_database_query = boost::static_pointer_cast<ASTCreateQuery>(database_info.create_database_query->clone());
         }
+
+        /// Restoring a MaterializedPostgreSQL database is not supported. Such a database replicates from the live
+        /// PostgreSQL source (its startup schedules `tryStartSynchronization`), so restoring the backup snapshot
+        /// on top of it would mix the snapshot with the current remote state. This is true whether RESTORE recreates
+        /// the database or reuses an existing one (`create_database = 'must-exist'`), so this check must run before
+        /// the `kMustExist` early return below: it makes the whole RESTORE fail during the `CREATING_DATABASES`
+        /// stage, before any backed-up table data is inserted into a live `MaterializedPostgreSQL` database. Fail
+        /// closed and direct the user to restore the data of individual tables instead - the data is still captured
+        /// by the backup (see `StorageMaterializedPostgreSQL::backupData`). In a database backup each table's stored
+        /// definition is already the synthetic nested `ReplacingMergeTree` (not the `MaterializedPostgreSQL` engine),
+        /// so a table can be restored straight into a new, not-yet-existing table.
+        {
+            const auto * storage = create_database_query->storage;
+            const String database_engine_name = storage && storage->engine ? storage->engine->name : "";
+            if (database_engine_name == "MaterializedPostgreSQL")
+                throw Exception(
+                    ErrorCodes::CANNOT_RESTORE_DATABASE,
+                    "Restoring a MaterializedPostgreSQL database ({}) is not supported, because the database "
+                    "replicates from the live PostgreSQL source, so restoring the backup snapshot would mix it with "
+                    "the current remote state. Restore the data of individual tables instead - each table's "
+                    "definition in the backup is already a ReplacingMergeTree, so it can be restored into a new "
+                    "table, e.g.: RESTORE TABLE <src_database>.<table> AS <database>.<new_table> FROM <backup> "
+                    "SETTINGS allow_different_table_def = 1.",
+                    backQuoteIfNeed(database_name));
+        }
+
+        /// In `must-exist` mode RESTORE does not create the database; it must already exist. We still had to run
+        /// the MaterializedPostgreSQL check above before returning, to fail closed for an existing live target.
+        if (restore_settings.create_database == RestoreDatabaseCreationMode::kMustExist)
+            return;
 
         /// Generate a new UUID for a database.
         /// The generated UUID will be ignored if the database does not support UUIDs.

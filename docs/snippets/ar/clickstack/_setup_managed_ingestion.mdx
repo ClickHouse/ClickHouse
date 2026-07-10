@@ -1,0 +1,137 @@
+---
+title: إعداد الاستيعاب المُدار
+---
+
+<img src="/images/clickstack/getting-started/start_ingestion.webp" alt="" />
+
+اختر &quot;Start Ingestion&quot;، وسيُطلب منك تحديد مصدر للاستيعاب. يدعم Managed ClickStack كلاً من OpenTelemetry و[Vector](https://vector.dev/) باعتبارهما المصدرين الرئيسيين للاستيعاب. ومع ذلك، يمكن للمستخدمين أيضًا إرسال البيانات مباشرةً إلى ClickHouse ضمن المخطط الخاص بهم باستخدام أي من [التكاملات التي يدعمها ClickHouse Cloud](/ar/integrations/home).
+
+<img src="/images/clickstack/getting-started/select_source.webp" alt="" />
+
+<Info>
+  **يُنصح باستخدام OpenTelemetry**
+
+  يُنصح بشدة باستخدام OpenTelemetry كتنسيق للاستيعاب.
+  فهو يوفّر أبسط تجربة وأكثرها كفاءة، مع مخططات جاهزة صُممت خصيصًا للعمل بكفاءة مع ClickStack.
+</Info>
+
+<Tabs>
+  <Tab title="OpenTelemetry">
+    لإرسال بيانات OpenTelemetry إلى Managed ClickStack، يُنصح باستخدام OpenTelemetry Collector. يعمل الـ collector كبوابة تستقبل بيانات OpenTelemetry من تطبيقاتك (ومن collectors أخرى) وتُمرّرها إلى ClickHouse Cloud.
+
+    إذا لم يكن لديك collector قيد التشغيل بالفعل، فابدأ تشغيله باتباع الخطوات أدناه. وإذا كانت لديك collectors موجودة، فستجد أيضًا مثالًا على التهيئة.
+
+    ### ابدأ collector
+
+    يفترض ما يلي المسار الموصى به، وهو استخدام **توزيعة ClickStack من OpenTelemetry Collector**، التي تتضمن معالجة إضافية ومُحسّنة خصيصًا لـ ClickHouse Cloud. إذا كنت تريد استخدام OpenTelemetry Collector الخاص بك، فراجع [&quot;تهيئة collectors الموجودة.&quot;](#configure-existing-collectors)
+
+    للبدء بسرعة، انسخ أمر Docker الموضّح وشغّله.
+
+    <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
+
+    يجب أن يتضمن هذا الأمر بيانات اعتماد الاتصال الخاصة بك مُعبأة مسبقًا.
+
+    <Info>
+      **النشر إلى بيئة production**
+
+      رغم أن هذا الأمر يستخدم المستخدم `default` للاتصال بـ Managed ClickStack، ينبغي لك إنشاء مستخدم مخصص عند [الانتقال إلى بيئة production](/ar/clickstack/managing/production#create-a-database-ingestion-user-managed) وتعديل التهيئة الخاصة بك.
+    </Info>
+
+    يؤدي تشغيل هذا الأمر الواحد إلى بدء ClickStack collector مع إتاحة OTLP endpoints على المنفذين 4317 ‏(gRPC) و4318 ‏(HTTP). إذا كان لديك بالفعل instrumentation وagents لـ OpenTelemetry، فيمكنك البدء فورًا في إرسال بيانات telemetry إلى هذه endpoints.
+
+    ### تهيئة collectors الموجودة
+
+    يمكنك أيضًا تهيئة OpenTelemetry Collectors الموجودة لديك أو استخدام التوزيعة الخاصة بك من collector.
+
+    <Info>
+      **يتطلب ClickHouse exporter**
+
+      إذا كنت تستخدم التوزيعة الخاصة بك، مثل [contrib image](https://github.com/open-telemetry/opentelemetry-collector-contrib)، فتأكد من أنها تتضمن [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter).
+    </Info>
+
+    ولهذا الغرض، نوفّر مثالًا على تهيئة OpenTelemetry Collector يستخدم ClickHouse exporter مع الإعدادات المناسبة ويُفعّل OTLP receivers. تتوافق هذه التهيئة مع الواجهات والسلوك المتوقعين من توزيعة ClickStack.
+
+    <ExampleOTelConfig />
+
+    <img src="/images/clickstack/getting-started/otel_collector_start.webp" alt="" />
+
+    لمزيد من التفاصيل حول تهيئة OpenTelemetry collectors، راجع [&quot;إدخال البيانات باستخدام OpenTelemetry.&quot;](/ar/clickstack/ingesting-data/opentelemetry)
+
+    ### ابدأ إدخال البيانات (اختياري)
+
+    إذا كانت لديك تطبيقات أو بنية تحتية قائمة تريد تزويدها بأدوات OpenTelemetry، فانتقل إلى الأدلة ذات الصلة المرتبطة من خلال UI.
+
+    لتزويد تطبيقاتك بالأدوات لجمع traces وlogs، استخدم [language SDKs المدعومة](/ar/clickstack/ingesting-data/sdks/index) التي ترسل البيانات إلى OpenTelemetry Collector الخاص بك، والذي يعمل كبوابة لإدخالها إلى Managed ClickStack.
+
+    يمكن [جمع السجلات باستخدام OpenTelemetry Collectors](/ar/clickstack/integration-examples/host-logs) التي تعمل في وضع agent، مع إعادة توجيه البيانات إلى collector نفسها. ولمراقبة Kubernetes، اتبع [الدليل المخصص](/ar/clickstack/integration-examples/kubernetes). وللتكاملات الأخرى، راجع [أدلة البدء السريع](/ar/clickstack/integration-examples/index) الخاصة بنا.
+
+    ### بيانات تجريبية
+
+    بدلًا من ذلك، إذا لم تكن لديك بيانات موجودة، فجرّب إحدى مجموعات البيانات النموذجية لدينا.
+
+    * [مجموعة بيانات نموذجية](/ar/clickstack/example-datasets/sample-data) - حمّل مجموعة بيانات نموذجية من العرض التجريبي العام الخاص بنا. شخّص مشكلة بسيطة.
+    * [الملفات المحلية وmetrics](/ar/clickstack/example-datasets/local-data) - حمّل ملفات محلية وراقب النظام على OSX أو Linux باستخدام OTel collector محلي.
+
+    <br />
+  </Tab>
+
+  <Tab title="متجه">
+    [Vector](https://vector.dev) هو مسار بيانات observability عالي الأداء ومحايد للمورّدين، ويشتهر بشكل خاص باستيعاب السجلات بفضل مرونته وانخفاض استهلاكه للموارد.
+
+    عند استخدام Vector مع ClickStack، يكون المستخدمون مسؤولين عن تحديد المخططات الخاصة بهم. وقد تتبع هذه المخططات اصطلاحات OpenTelemetry، لكنها قد تكون أيضًا مخصّصة بالكامل لتمثيل بنى أحداث يحدّدها المستخدم.
+
+    <Info>
+      **الطابع الزمني مطلوب**
+
+      الشرط الصارم الوحيد في Managed ClickStack هو أن تتضمن البيانات **عمود timestamp** (أو حقلًا زمنيًا مكافئًا)، ويمكن تعريفه عند تهيئة data source في ClickStack UI.
+    </Info>
+
+    يفترض ما يلي أن لديك مثيلًا من Vector قيد التشغيل ومهيّأ مسبقًا باستخدام ingest pipelines لتسليم البيانات.
+
+    ### أنشئ قاعدة بيانات وجدولًا
+
+    يتطلب Vector تعريف جدول ومخطط قبل استيعاب البيانات.
+
+    أنشئ أولًا قاعدة بيانات. ويمكن تنفيذ ذلك عبر [ClickHouse Cloud console](/ar/products/cloud/features/sql-console-features/sql-console).
+
+    على سبيل المثال، أنشئ قاعدة بيانات للسجلات:
+
+    ```sql
+    CREATE DATABASE IF NOT EXISTS logs
+    ```
+
+    ثم أنشئ جدولًا يتطابق مخططه مع بنية بيانات السجل لديك. يفترض المثال أدناه تنسيقًا تقليديًا لسجل الوصول في Nginx:
+
+    ```sql
+    CREATE TABLE logs.nginx_logs
+    (
+        `time_local` DateTime,
+        `remote_addr` IPv4,
+        `remote_user` LowCardinality(String),
+        `request` String,
+        `status` UInt16,
+        `body_bytes_sent` UInt64,
+        `http_referer` String,
+        `http_user_agent` String,
+        `http_x_forwarded_for` LowCardinality(String),
+        `request_time` Float32,
+        `upstream_response_time` Float32,
+        `http_host` String
+    )
+    ENGINE = MergeTree
+    ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+    ```
+
+    يجب أن يتوافق جدولك مع مخطط الإخراج الذي يُنتجه Vector. عدّل المخطط حسب الحاجة لبياناتك، مع اتباع [أفضل ممارسات المخطط الموصى بها](/ar/concepts/best-practices/select-data-type).
+
+    نوصي بشدة بفهم كيفية عمل [المفاتيح الأساسية](/ar/concepts/core-concepts/primary-indexes) في ClickHouse واختيار مفتاح ترتيب بناءً على أنماط الوصول لديك. راجع الإرشادات [الخاصة بـ ClickStack](/ar/clickstack/managing/performance-tuning#choosing-a-primary-key) بشأن اختيار مفتاح أساسي.
+
+    بمجرد إنشاء الجدول، انسخ مقتطف الإعدادات المعروض. عدّل المُدخل لاستهلاك مسارات المعالجة الحالية لديك، وكذلك الجدول الهدف وقاعدة البيانات إذا لزم الأمر. يُفترض أن تكون بيانات الاعتماد مُعبأة مسبقًا.
+
+    <img src="/images/clickstack/getting-started/vector_config.webp" alt="" />
+
+    للمزيد من أمثلة إدخال البيانات باستخدام Vector، راجع [&quot;الإدخال باستخدام Vector&quot;](/ar/clickstack/ingesting-data/vector) أو [توثيق ClickHouse sink في Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) للاطلاع على الخيارات المتقدمة.
+
+    <br />
+  </Tab>
+</Tabs>

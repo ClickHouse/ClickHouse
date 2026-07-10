@@ -110,7 +110,7 @@ void DatabaseFactory::validate(const ASTCreateQuery & create_query) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Database engine `{}` cannot have table overrides", engine_name);
 }
 
-DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
+DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal)
 {
     const auto engine_name = create.storage->engine->name;
     /// Resolve engine name to its canonical (registered) casing. The SQL parser may have
@@ -133,7 +133,7 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
     validate(create);
     cckMetadataPathForOrdinary(create, metadata_path);
 
-    DatabasePtr impl = getImpl(create, metadata_path, context, mode);
+    DatabasePtr impl = getImpl(create, metadata_path, context, mode, internal);
 
     if (impl && context->hasQueryContext() && context->getSettingsRef()[Setting::log_queries])
         context->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Database, impl->getEngineName());
@@ -170,7 +170,7 @@ bool DatabaseFactory::isDatabaseExternal(const String & engine_name) const
     return database_engines.at(canonical_engine_name).features.is_external;
 }
 
-DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode)
+DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal)
 {
     auto * storage = create.storage;
     const String & database_name = create.getDatabase();
@@ -189,7 +189,8 @@ DatabasePtr DatabaseFactory::getImpl(const ASTCreateQuery & create, const String
         .metadata_path = metadata_path,
         .uuid = create.uuid,
         .context = context,
-        .mode = mode};
+        .mode = mode,
+        .internal = internal};
 
     // creator_fn creates and returns a DatabasePtr with the supplied arguments
     auto creator_fn = database_engines.at(engine_name).creator_fn;

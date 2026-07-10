@@ -1,0 +1,1324 @@
+---
+slug: /materialized-view/incremental-materialized-view
+title: 'Incremental materialized view'
+description: 'Как использовать incremental materialized views для ускорения выполнения запросов'
+keywords: ['incremental materialized views', 'ускорение запросов', 'оптимизация запросов']
+score: 10000
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+<div id="background">
+  ## Общие сведения
+</div>
+
+Incremental Materialized Views (Materialized Views) позволяют перенести вычислительную нагрузку с query time на insert time, ускоряя запросы `SELECT`.
+
+В отличие от транзакционных баз данных, таких как Postgres, materialized view в ClickHouse — это всего лишь trigger, который выполняет запрос над blocks данных по мере их вставки в таблицу. Результат этого запроса вставляется во вторую, &quot;целевую&quot;, таблицу. При вставке новых строк результаты снова отправляются в целевую таблицу, где промежуточные результаты обновляются и объединяются. Этот объединённый результат эквивалентен выполнению запроса по всем исходным данным.
+
+Основная причина использовать Materialized Views заключается в том, что результаты, вставляемые в целевую таблицу, представляют собой итог aggregation, фильтрации или преобразования строк. Эти результаты часто занимают меньше места, чем исходные данные (в случае aggregations — в виде частичного sketch). Это, наряду с тем, что итоговый запрос для чтения результатов из целевой таблицы остаётся простым, обеспечивает более быстрое выполнение запросов, чем если бы те же вычисления выполнялись на исходных данных, перенося вычисления (а значит, и latency запроса) с query time на insert time.
+
+Materialized Views в ClickHouse обновляются в реальном времени по мере поступления данных в таблицу, на которой они основаны, и работают скорее как постоянно обновляемые indexes. Это отличается от других баз данных, где Materialized Views обычно представляют собой статические snapshots запроса, которые необходимо refresh (аналогично ClickHouse [Refreshable Materialized Views](/ru/reference/statements/create/view#refreshable-materialized-view)).
+
+<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Схема materialized view" />
+
+<div id="example">
+  ## Пример
+</div>
+
+В качестве примера мы будем использовать набор данных Stack Overflow, описанный в разделе [«Проектирование схемы»](/ru/guides/clickhouse/data-modelling/schema-design).
+
+Предположим, нам нужно получить количество голосов «за» и «против» за каждый день для определённого поста.
+
+```sql
+CREATE TABLE votes
+(
+    `Id` UInt32,
+    `PostId` Int32,
+    `VoteTypeId` UInt8,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `BountyAmount` UInt8
+)
+ENGINE = MergeTree
+ORDER BY (VoteTypeId, CreationDate, PostId)
+
+INSERT INTO votes SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 29.359 sec. Processed 238.98 million rows, 2.13 GB (8.14 million rows/s., 72.45 MB/s.)
+```
+
+В ClickHouse это достаточно простой запрос благодаря функции [`toStartOfDay`](/ru/reference/functions/regular-functions/date-time-functions#toStartOfDay):
+
+```sql
+SELECT toStartOfDay(CreationDate) AS day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY day
+ORDER BY day ASC
+LIMIT 10
+```
+
+```response
+┌─────────────────day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 00:00:00 │       6 │         0 │
+│ 2008-08-01 00:00:00 │     182 │        50 │
+│ 2008-08-02 00:00:00 │     436 │       107 │
+│ 2008-08-03 00:00:00 │     564 │       100 │
+│ 2008-08-04 00:00:00 │    1306 │       259 │
+│ 2008-08-05 00:00:00 │    1368 │       269 │
+│ 2008-08-06 00:00:00 │    1701 │       211 │
+│ 2008-08-07 00:00:00 │    1544 │       211 │
+│ 2008-08-08 00:00:00 │    1241 │       212 │
+│ 2008-08-09 00:00:00 │     576 │        46 │
+└─────────────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.133 sec. Processed 238.98 million rows, 2.15 GB (1.79 billion rows/s., 16.14 GB/s.)
+Пиковое потребление памяти: 363.22 MiB.
+```
+
+Этот запрос уже выполняется быстро благодаря ClickHouse, но можно ли сделать ещё лучше?
+
+Если мы хотим вычислять это во время вставки с помощью materialized view, нам нужна таблица для получения результатов. В этой таблице должна храниться только 1 строка в день. Если для существующего дня поступает обновление, остальные столбцы должны быть слиты со строкой этого дня. Чтобы такое слияние инкрементальных состояний стало возможным, для остальных столбцов необходимо хранить промежуточные состояния.
+
+Для этого требуется специальный тип движка в ClickHouse: [SummingMergeTree](/ru/reference/engines/table-engines/mergetree-family/summingmergetree). Он заменяет все строки с одинаковым ключом сортировки одной строкой, содержащей суммарные значения числовых столбцов. Следующая таблица будет объединять все строки с одинаковой датой, суммируя числовые столбцы:
+
+```sql
+CREATE TABLE up_down_votes_per_day
+(
+  `Day` Date,
+  `UpVotes` UInt32,
+  `DownVotes` UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY Day
+```
+
+Чтобы продемонстрировать работу materialized view, предположим, что таблица votes пуста и ещё не содержит никаких данных. Наш materialized view выполняет приведённый выше запрос `SELECT` над данными, вставленными в `votes`, и записывает результаты в `up_down_votes_per_day`:
+
+```sql
+CREATE MATERIALIZED VIEW up_down_votes_per_day_mv TO up_down_votes_per_day AS
+SELECT toStartOfDay(CreationDate)::Date AS Day,
+       countIf(VoteTypeId = 2) AS UpVotes,
+       countIf(VoteTypeId = 3) AS DownVotes
+FROM votes
+GROUP BY Day
+```
+
+Секция `TO` здесь является ключевой: она указывает, куда будут направлены результаты, то есть в `up_down_votes_per_day`.
+
+Мы можем заново заполнить нашу таблицу votes с помощью ранее выполненной вставки:
+
+```sql
+INSERT INTO votes SELECT toUInt32(Id) AS Id, toInt32(PostId) AS PostId, VoteTypeId, CreationDate, UserId, BountyAmount
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes/*.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 111.964 sec. Processed 477.97 million rows, 3.89 GB (4.27 million rows/s., 34.71 MB/s.)
+Peak memory usage: 283.49 MiB.
+```
+
+После этого мы можем проверить размер нашей `up_down_votes_per_day` — должна быть 1 строка на каждый день:
+
+```sql
+SELECT count()
+FROM up_down_votes_per_day
+FINAL
+```
+
+```response
+┌─count()─┐
+│    5723 │
+└─────────┘
+```
+
+Здесь мы фактически сократили число строк с 238 миллионов (в `votes`) до 5000, сохранив результат нашего запроса. Однако ключевой момент в том, что при вставке новых голосов в таблицу `votes` новые значения будут отправляться в `up_down_votes_per_day` для соответствующего дня, где они будут автоматически асинхронно сливаться в фоновом режиме, — так что для каждого дня будет сохраняться только одна строка. Таким образом, `up_down_votes_per_day` всегда будет оставаться небольшой и актуальной.
+
+Поскольку слияние строк выполняется асинхронно, в момент запроса у пользователя для одного дня может оказаться больше одной записи о голосе. Чтобы гарантировать, что все ещё не слитые строки будут объединены во время выполнения запроса, у нас есть два варианта:
+
+* Использовать модификатор `FINAL` в имени таблицы. Именно так мы поступили для запроса count выше.
+* Выполнить агрегацию по ключу упорядочивания, используемому в нашей итоговой таблице, то есть `CreationDate`, и просуммировать метрики. Обычно это эффективнее и гибче (таблицу можно использовать и для других задач), но первый вариант может быть проще для некоторых запросов. Ниже мы покажем оба:
+
+```sql
+SELECT
+        Day,
+        UpVotes,
+        DownVotes
+FROM up_down_votes_per_day
+FINAL
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+10 rows in set. Elapsed: 0.004 sec. Processed 8.97 thousand rows, 89.68 KB (2.09 million rows/s., 20.89 MB/s.)
+Пиковое потребление памяти: 289.75 KiB.
+```
+
+```sql
+SELECT Day, sum(UpVotes) AS UpVotes, sum(DownVotes) AS DownVotes
+FROM up_down_votes_per_day
+GROUP BY Day
+ORDER BY Day ASC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─UpVotes─┬─DownVotes─┐
+│ 2008-07-31 │       6 │         0 │
+│ 2008-08-01 │     182 │        50 │
+│ 2008-08-02 │     436 │       107 │
+│ 2008-08-03 │     564 │       100 │
+│ 2008-08-04 │    1306 │       259 │
+│ 2008-08-05 │    1368 │       269 │
+│ 2008-08-06 │    1701 │       211 │
+│ 2008-08-07 │    1544 │       211 │
+│ 2008-08-08 │    1241 │       212 │
+│ 2008-08-09 │     576 │        46 │
+└────────────┴─────────┴───────────┘
+
+10 rows in set. Elapsed: 0.010 sec. Processed 8.97 thousand rows, 89.68 KB (907.32 thousand rows/s., 9.07 MB/s.)
+Peak memory usage: 567.61 KiB.
+```
+
+Это ускорило наш запрос с 0.133s до 0.004s — более чем в 25 раз!
+
+<Warning>
+  **Важно: `ORDER BY` = `GROUP BY`**
+
+  В большинстве случаев столбцы, используемые в выражении `GROUP BY` при преобразовании materialized view, должны совпадать со столбцами, используемыми в выражении `ORDER BY` целевой таблицы, если применяются движки таблиц `SummingMergeTree` или `AggregatingMergeTree`. Эти движки используют столбцы `ORDER BY` для слияния строк с одинаковыми значениями во время фоновых операций слияния. Несоответствие между столбцами `GROUP BY` и `ORDER BY` может привести к снижению производительности запросов, неоптимальным слияниям или даже расхождениям в данных.
+</Warning>
+
+<div id="a-more-complex-example">
+  ### Более сложный пример
+</div>
+
+В приведённом выше примере Materialized Views используются для вычисления и поддержания двух сумм за день. Суммы — это самая простая форма агрегации для поддержания частичных состояний: по мере поступления новых значений их можно просто добавлять к уже существующим. Однако Materialized Views в ClickHouse можно использовать с любым типом агрегации.
+
+Предположим, мы хотим вычислять некоторую статистику по постам за каждый день: 99,9-й процентиль для `Score` и среднее значение `CommentCount`. Запрос для этого может выглядеть так:
+
+```sql
+SELECT
+        toStartOfDay(CreationDate) AS Day,
+        quantile(0.999)(Score) AS Score_99th,
+        avg(CommentCount) AS AvgCommentCount
+FROM posts
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌─────────────────Day─┬────────Score_99th─┬────AvgCommentCount─┐
+│ 2024-03-31 00:00:00 │  5.23700000000008 │ 1.3429811866859624 │
+│ 2024-03-30 00:00:00 │                 5 │ 1.3097158891616976 │
+│ 2024-03-29 00:00:00 │  5.78899999999976 │ 1.2827635327635327 │
+│ 2024-03-28 00:00:00 │                 7 │  1.277746158224246 │
+│ 2024-03-27 00:00:00 │ 5.738999999999578 │ 1.2113264918282023 │
+│ 2024-03-26 00:00:00 │                 6 │ 1.3097536945812809 │
+│ 2024-03-25 00:00:00 │                 6 │ 1.2836721018539201 │
+│ 2024-03-24 00:00:00 │ 5.278999999999996 │ 1.2931667891256429 │
+│ 2024-03-23 00:00:00 │ 6.253000000000156 │  1.334061135371179 │
+│ 2024-03-22 00:00:00 │ 9.310999999999694 │ 1.2388059701492538 │
+└─────────────────────┴───────────────────┴────────────────────┘
+
+10 rows in set. Elapsed: 0.113 sec. Processed 59.82 million rows, 777.65 MB (528.48 million rows/s., 6.87 GB/s.)
+Peak memory usage: 658.84 MiB.
+```
+
+Как и ранее, мы можем создать materialized view, которое будет выполнять приведённый выше запрос по мере вставки новых постов в нашу таблицу `posts`.
+
+В качестве примера и чтобы не загружать данные постов из S3, мы создадим дубликат таблицы `posts_null` с той же схемой, что и у `posts`. Однако эта таблица не будет хранить данные и будет использоваться только materialized view при вставке строк. Чтобы данные не сохранялись, мы можем использовать [тип движка таблицы `Null`](/ru/reference/engines/table-engines/special/null).
+
+```sql
+CREATE TABLE posts_null AS posts ENGINE = Null
+```
+
+Движок таблицы Null — это мощная оптимизация; считайте, что это `/dev/null`. Наша materialized view будет вычислять и сохранять сводную статистику, когда в таблицу `posts_null` при вставке поступают строки, — это лишь триггер. Однако исходные данные сохраняться не будут. Хотя в нашем случае мы, вероятно, всё же хотим хранить исходные посты, этот подход можно использовать для вычисления агрегатов, избегая накладных расходов на хранение исходных данных.
+
+Таким образом, materialized view принимает следующий вид:
+
+```sql
+CREATE MATERIALIZED VIEW post_stats_mv TO post_stats_per_day AS
+       SELECT toStartOfDay(CreationDate) AS Day,
+       quantileState(0.999)(Score) AS Score_quantiles,
+       avgState(CommentCount) AS AvgCommentCount
+FROM posts_null
+GROUP BY Day
+```
+
+Обратите внимание, что мы добавляем суффикс `State` в конец агрегатных функций. Это гарантирует, что будет возвращаться состояние агрегатной функции, а не итоговый результат. Оно содержит дополнительную информацию, которая позволяет этому промежуточному состоянию объединяться с другими состояниями. Например, в случае среднего значения это будут количество и сумма значений в столбце.
+
+> Промежуточные состояния агрегации необходимы для вычисления корректных результатов. Например, при вычислении среднего значения простое усреднение средних по поддиапазонам даёт некорректный результат.
+
+Теперь создадим целевую таблицу для этого представления `post_stats_per_day`, в которой хранятся эти промежуточные состояния агрегации:
+
+```sql
+CREATE TABLE post_stats_per_day
+(
+  `Day` Date,
+  `Score_quantiles` AggregateFunction(quantile(0.999), Int32),
+  `AvgCommentCount` AggregateFunction(avg, UInt8)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY Day
+```
+
+Хотя ранее `SummingMergeTree` было достаточно для хранения счётчиков, для других функций нам нужен более продвинутый тип движка: [`AggregatingMergeTree`](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree).
+Чтобы ClickHouse понимал, что будут храниться состояния агрегатных функций, мы задаём для `Score_quantiles` и `AvgCommentCount` тип `AggregateFunction`, указывая функцию, из которой формируются частичные состояния, и тип их исходных столбцов. Как и в `SummingMergeTree`, строки с одинаковым значением ключа `ORDER BY` будут объединены (`Day` в примере выше).
+
+Чтобы заполнить `post_stats_per_day` через нашу materialized view, мы можем просто выполнить вставку всех строк из `posts` в `posts_null`:
+
+```sql
+INSERT INTO posts_null SELECT * FROM posts
+```
+
+```response
+0 rows in set. Elapsed: 13.329 sec. Processed 119.64 million rows, 76.99 GB (8.98 million rows/s., 5.78 GB/s.)
+```
+
+> В рабочей среде вы, вероятно, прикрепили бы materialized view к таблице `posts`. Здесь мы использовали `posts_null`, чтобы продемонстрировать null-таблицу.
+
+В итоговом запросе нужно использовать суффикс `Merge` для наших функций (поскольку в столбцах хранятся промежуточные состояния агрегации):
+
+```sql
+SELECT
+        Day,
+        quantileMerge(0.999)(Score_quantiles),
+        avgMerge(AvgCommentCount)
+FROM post_stats_per_day
+GROUP BY Day
+ORDER BY Day DESC
+LIMIT 10
+```
+
+Обратите внимание: здесь мы используем `GROUP BY` вместо `FINAL`.
+
+<div id="other-applications">
+  ## Другие применения
+</div>
+
+Выше речь шла в основном об использовании Materialized Views для инкрементального обновления частичных агрегатов данных, что позволяет перенести вычисления с этапа выполнения запроса на этап вставки. Помимо этого распространённого сценария, у Materialized Views есть и другие применения.
+
+<div id="filtering-and-transformation">
+  ### Фильтрация и преобразование
+</div>
+
+В некоторых случаях может потребоваться при вставке сохранять только часть строк и столбцов. В таком случае вставку можно направлять в таблицу `posts_null`, а запрос `SELECT` будет фильтровать строки перед их вставкой в таблицу `posts`. Например, предположим, что мы хотим преобразовать столбец `Tags` в таблице `posts`. Он содержит список имён тегов, разделённых символом вертикальной черты. Преобразовав его в массив, мы сможем проще выполнять агрегацию по отдельным значениям тегов.
+
+> Это преобразование можно выполнить при запуске `INSERT INTO SELECT`. Однако materialized view позволяет инкапсулировать эту логику в DDL ClickHouse и сохранить `INSERT` простым, при этом преобразование будет автоматически применяться ко всем новым строкам.
+
+Наша materialized view для этого преобразования показана ниже:
+
+```sql
+CREATE MATERIALIZED VIEW posts_mv TO posts AS
+        SELECT * EXCEPT Tags, arrayFilter(t -> (t != ''), splitByChar('|', Tags)) as Tags FROM posts_null
+```
+
+<div id="lookup-table">
+  ### Таблица поиска
+</div>
+
+При выборе ключа сортировки в ClickHouse следует учитывать характер доступа к данным. Следует использовать столбцы, которые часто используются в секциях фильтрации и агрегации. Это может быть неудобно в сценариях, где у пользователей более разнообразные способы доступа к данным, которые нельзя выразить одним набором столбцов. Например, рассмотрим следующую таблицу `comments`:
+
+```sql
+CREATE TABLE comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY PostId
+```
+
+```response
+0 rows in set. Elapsed: 46.357 sec. Processed 90.38 million rows, 11.14 GB (1.95 million rows/s., 240.22 MB/s.)
+```
+
+Ключ упорядочивания здесь оптимизирует таблицу для запросов с фильтрацией по `PostId`.
+
+Предположим, пользователь хочет отфильтровать данные по определённому `UserId` и вычислить среднее значение `Score`:
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.778 sec. Processed 90.38 million rows, 361.59 MB (116.16 million rows/s., 464.74 MB/s.)
+Peak memory usage: 217.08 MiB.
+```
+
+Хотя это быстро (для ClickHouse объём данных небольшой), по числу обработанных строк — 90,38 миллиона — видно, что здесь требуется полное сканирование таблицы. Для более крупных датасетов мы можем использовать materialized view, чтобы получать значения ключа сортировки `PostId` для фильтрации по столбцу `UserId`. Затем эти значения можно использовать для эффективного поиска.
+
+В этом примере наша materialized view может быть очень простой и выбирать только `PostId` и `UserId` из `comments` при вставке. Эти результаты, в свою очередь, отправляются в таблицу `comments_posts_users`, которая упорядочена по `UserId`. Ниже мы создаём версию таблицы `Comments` с движком Null и используем её для заполнения нашего представления и таблицы `comments_posts_users`:
+
+```sql
+CREATE TABLE comments_posts_users (
+  PostId UInt32,
+  UserId Int32
+) ENGINE = MergeTree ORDER BY UserId
+
+CREATE TABLE comments_null AS comments
+ENGINE = Null
+
+CREATE MATERIALIZED VIEW comments_posts_users_mv TO comments_posts_users AS
+SELECT PostId, UserId FROM comments_null
+
+INSERT INTO comments_null SELECT * FROM comments
+```
+
+```response
+0 rows in set. Elapsed: 5.163 sec. Processed 90.38 million rows, 17.25 GB (17.51 million rows/s., 3.34 GB/s.)
+```
+
+Теперь мы можем использовать это представление в подзапросе, чтобы ускорить предыдущий запрос:
+
+```sql
+SELECT avg(Score)
+FROM comments
+WHERE PostId IN (
+        SELECT PostId
+        FROM comments_posts_users
+        WHERE UserId = 8592047
+) AND UserId = 8592047
+```
+
+```response
+┌──────────avg(Score)─┐
+│ 0.18181818181818182 │
+└─────────────────────┘
+
+1 row in set. Elapsed: 0.012 sec. Processed 88.61 thousand rows, 771.37 KB (7.09 million rows/s., 61.73 MB/s.)
+```
+
+<div id="chaining">
+  ### Цепочки и каскады materialized views
+</div>
+
+materialized views можно выстраивать в цепочки (или каскады), что позволяет создавать сложные рабочие процессы.
+Подробнее см. в руководстве [&quot;Каскадные materialized views&quot;](/ru/concepts/features/materialized-views/cascading-materialized-views).
+
+<div id="materialized-views-and-joins">
+  ## Materialized views и JOINs
+</div>
+
+<Info>
+  **Refreshable Materialized Views**
+
+  Нижеописанное относится только к Incremental Materialized Views. Refreshable Materialized Views периодически выполняют свой запрос по всему целевому набору данных и полностью поддерживают JOINs. Рассмотрите их использование для сложных JOINs, если допустимо некоторое снижение актуальности результатов.
+</Info>
+
+Incremental Materialized Views в ClickHouse полностью поддерживают операции `JOIN`, но с одним важным ограничением: **materialized view срабатывает только при вставке в исходную таблицу (крайнюю левую таблицу в запросе).** Таблицы в правой части JOIN не вызывают обновление, даже если их данные изменяются. Это особенно важно при создании **Incremental** Materialized Views, где данные агрегируются или преобразуются во время вставки.
+
+Если Incremental materialized view определяется с использованием `JOIN`, источником выступает крайняя левая таблица в запросе `SELECT`. Когда в эту таблицу вставляются новые строки, ClickHouse выполняет запрос materialized view *только* для этих вновь вставленных строк. Таблицы в правой части JOIN при этом читаются целиком, но изменения только в них не запускают view.
+
+Из-за этого JOINs в Materialized Views напоминают JOIN со снимком по статическим таблицам измерений.
+
+Это хорошо подходит для обогащения данных справочными таблицами или таблицами измерений. Однако любые обновления таблиц в правой части (например, метаданных пользователей) не обновят materialized view задним числом. Чтобы увидеть обновленные данные, в исходную таблицу должны поступить новые вставки.
+
+<div id="materialized-views-and-joins-example">
+  ### Пример
+</div>
+
+Давайте разберём конкретный пример, используя [набор данных Stack Overflow](/ru/guides/clickhouse/data-modelling/schema-design). Мы будем использовать materialized view, чтобы вычислить **ежедневное число значков для каждого пользователя**, включая отображаемое имя пользователя из таблицы `users`.
+
+Напомним, что схемы наших таблиц выглядят следующим образом:
+
+```sql
+CREATE TABLE badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+
+CREATE TABLE users
+(
+    `Id` Int32,
+    `Reputation` UInt32,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `DisplayName` LowCardinality(String),
+    `LastAccessDate` DateTime64(3, 'UTC'),
+    `Location` LowCardinality(String),
+    `Views` UInt32,
+    `UpVotes` UInt32,
+    `DownVotes` UInt32
+)
+ENGINE = MergeTree
+ORDER BY Id;
+```
+
+Будем считать, что таблица `users` уже заполнена:
+
+```sql
+INSERT INTO users
+SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet');
+```
+
+materialized view и соответствующая целевая таблица определяются следующим образом:
+
+```sql
+CREATE TABLE daily_badges_by_user
+(
+    Day Date,
+    UserId Int32,
+    DisplayName LowCardinality(String),
+    Gold UInt32,
+    Silver UInt32,
+    Bronze UInt32
+)
+ENGINE = SummingMergeTree
+ORDER BY (DisplayName, UserId, Day);
+
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user AS
+SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+<Info>
+  **Согласование группировки и сортировки**
+
+  В предложении `GROUP BY` в materialized view должны присутствовать `DisplayName`, `UserId` и `Day`, чтобы оно соответствовало `ORDER BY` в целевой таблице `SummingMergeTree`. Это гарантирует, что строки будут корректно агрегироваться и объединяться при слиянии. Если опустить любой из этих элементов, это может привести к неверным результатам или неэффективным слияниям.
+</Info>
+
+Если теперь заполнить таблицу badges, представление сработает и заполнит нашу таблицу `daily_badges_by_user`.
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 433.762 sec. Processed 1.16 billion rows, 28.50 GB (2.67 million rows/s., 65.70 MB/s.)
+```
+
+Предположим, мы хотим посмотреть, какие значки получил конкретный пользователь. Для этого можно написать следующий запрос:
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+8 rows in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 642.14 KB (1.86 million rows/s., 36.44 MB/s.)
+```
+
+Теперь, если этому пользователю будет выдан новый бейдж и в таблицу будет вставлена строка, наше представление обновится:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'gingerwizard'
+```
+
+```response
+┌────────Day─┬──UserId─┬─DisplayName──┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2013-10-30 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2013-11-18 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-27 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-02-28 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-04-17 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2023-10-31 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2024-03-04 │ 2936484 │ gingerwizard │    0 │      1 │      0 │
+│ 2024-03-05 │ 2936484 │ gingerwizard │    0 │      0 │      1 │
+│ 2025-04-13 │ 2936484 │ gingerwizard │    1 │      0 │      0 │
+└────────────┴─────────┴──────────────┴──────┴────────┴────────┘
+
+9 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 642.27 KB (1.96 million rows/s., 38.50 MB/s.)
+```
+
+<Warning>
+  Обратите внимание на задержку при вставке. Здесь для вставляемой строки пользователя выполняется JOIN со всей таблицей `users`, что существенно снижает производительность вставки. Ниже, в разделе [&quot;Использование исходной таблицы в фильтрах и JOIN&quot;](/ru/concepts/features/materialized-views/incremental-materialized-view#using-source-table-in-filters-and-joins-in-materialized-views), мы предлагаем способы решения этой проблемы.
+</Warning>
+
+И наоборот, если сначала вставить значок для нового пользователя, а затем строку этого пользователя, наша materialized view не сможет собрать метрики пользователей.
+
+```sql
+INSERT INTO badges VALUES (53505059, 23923286, 'Good Answer', now(), 'Bronze', 0);
+INSERT INTO users VALUES (23923286, 1, now(),  'brand_new_user', now(), 'UK', 1, 1, 0);
+```
+
+```sql
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user';
+```
+
+```response
+0 rows in set. Elapsed: 0.017 sec. Processed 32.77 thousand rows, 644.32 KB (1.98 million rows/s., 38.94 MB/s.)
+```
+
+В данном случае представление срабатывает только при вставке бейджа до того, как появляется строка пользователя. Если вставить для пользователя ещё один бейдж, строка будет вставлена, как и ожидается:
+
+```sql
+INSERT INTO badges VALUES (53505060, 23923286, 'Teacher', now(), 'Bronze', 0);
+
+SELECT *
+FROM daily_badges_by_user
+FINAL
+WHERE DisplayName = 'brand_new_user'
+```
+
+```response
+┌────────Day─┬───UserId─┬─DisplayName────┬─Gold─┬─Silver─┬─Bronze─┐
+│ 2025-04-13 │ 23923286 │ brand_new_user │    0 │      0 │      1 │
+└────────────┴──────────┴────────────────┴──────┴────────┴────────┘
+
+1 row in set. Elapsed: 0.018 sec. Processed 32.77 thousand rows, 644.48 KB (1.87 million rows/s., 36.72 MB/s.)
+```
+
+Однако учтите, что этот результат неверен.
+
+<div id="join-best-practices">
+  ### Рекомендации по использованию JOIN в materialized view
+</div>
+
+* **Используйте крайнюю левую таблицу как триггер.** Только таблица в левой части оператора `SELECT` запускает materialized view. Изменения в таблицах справа не вызовут обновления.
+
+* **Сначала вставляйте данные для JOIN.** Убедитесь, что данные в присоединяемых таблицах существуют до вставки строк в исходную таблицу. JOIN вычисляется во время вставки, поэтому отсутствие данных приведёт к несовпадающим строкам или значениям NULL.
+
+* **Ограничивайте число столбцов, получаемых через JOIN.** Выбирайте из присоединяемых таблиц только необходимые столбцы, чтобы минимизировать использование памяти и снизить задержку при вставке (см. ниже).
+
+* **Оценивайте производительность вставки.** JOIN увеличивает стоимость вставок, особенно при больших таблицах справа. Выполняйте бенчмарк скорости вставки на репрезентативных производственных данных.
+
+* **Для простых поисков предпочитайте словари**. Используйте [Dictionaries](/ru/concepts/features/dictionaries/index) для поиска по модели ключ-значение (например, сопоставления ID пользователя с именем), чтобы избежать дорогостоящих операций JOIN.
+
+* **Согласовывайте `GROUP BY` и `ORDER BY` для эффективного слияния.** При использовании `SummingMergeTree` или `AggregatingMergeTree` убедитесь, что `GROUP BY` соответствует `ORDER BY` в целевой таблице, чтобы обеспечить эффективное слияние строк.
+
+* **Используйте явные псевдонимы столбцов.** Если в таблицах есть совпадающие имена столбцов, используйте псевдонимы, чтобы избежать неоднозначности и обеспечить корректные результаты в целевой таблице.
+
+* **Учитывайте объём и частоту вставок.** JOIN хорошо работает при умеренной нагрузке на вставку. Для высокопроизводительной ингестии рассмотрите использование staging-таблиц, предварительных JOIN или других подходов, таких как Dictionaries и [Refreshable Materialized Views](/ru/concepts/features/materialized-views/refreshable-materialized-view).
+
+<div id="using-source-table-in-filters-and-joins-in-materialized-views">
+  ### Использование исходной таблицы в фильтрах и JOIN
+</div>
+
+При работе с materialized view в ClickHouse важно понимать, как используется исходная таблица во время выполнения запроса materialized view. В частности, в запросе materialized view исходная таблица заменяется вставляемым блоком данных. Если не учитывать это поведение, можно получить неожиданные результаты.
+
+<div id="example-scenario">
+  #### Пример сценария
+</div>
+
+Рассмотрим следующую схему:
+
+```sql
+CREATE TABLE t0 (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw1_inner (`c0` Int) ENGINE = Memory;
+CREATE TABLE mvw2_inner (`c0` Int) ENGINE = Memory;
+
+CREATE VIEW vt0 AS SELECT * FROM t0;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN ( SELECT * FROM t0 ) AS x ON t0.c0 = x.c0;
+
+CREATE MATERIALIZED VIEW mvw2 TO mvw2_inner
+AS SELECT count(*) AS c0
+    FROM t0
+    LEFT JOIN vt0 ON t0.c0 = vt0.c0;
+
+INSERT INTO t0 VALUES (1),(2),(3);
+
+INSERT INTO t0 VALUES (1),(2),(3),(4),(5);
+
+SELECT * FROM mvw1;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  5 │
+└────┘
+```
+
+```sql
+SELECT * FROM mvw2;
+```
+
+```response
+┌─c0─┐
+│  3 │
+│  8 │
+└────┘
+```
+
+<div id="explanation">
+  #### Объяснение
+</div>
+
+В приведённом выше примере есть два materialized view — `mvw1` и `mvw2`, — которые выполняют схожие операции, но немного различаются тем, как в них задаётся ссылка на исходную таблицу `t0`.
+
+В `mvw1` таблица `t0` указывается напрямую внутри подзапроса `(SELECT * FROM t0)` в правой части JOIN. Когда в `t0` выполняется вставка данных, запрос materialized view исполняется так, что `t0` заменяется вставленным блоком данных. Это означает, что операция JOIN выполняется только для вновь вставленных строк, а не для всей таблицы.
+
+Во втором случае, при JOIN с `vt0`, представление читает все данные из `t0`. Благодаря этому операция JOIN учитывает все строки в `t0`, а не только вновь вставленный блок.
+
+Ключевое различие заключается в том, как ClickHouse обрабатывает исходную таблицу в запросе materialized view. Когда materialized view срабатывает при вставке, исходная таблица (`t0` в данном случае) заменяется вставленным блоком данных. Это поведение можно использовать для оптимизации запросов, но его также нужно учитывать, чтобы избежать неожиданных результатов.
+
+<div id="use-cases-and-caveats">
+  ### Сценарии использования и предостережения
+</div>
+
+На практике это поведение можно использовать для оптимизации Materialized Views, которым требуется обрабатывать только подмножество данных исходной таблицы. Например, можно использовать подзапрос, чтобы отфильтровать исходную таблицу перед выполнением JOIN с другими таблицами. Это помогает уменьшить объем данных, обрабатываемых materialized view, и повысить производительность.
+
+```sql
+CREATE TABLE t0 (id UInt32, value String) ENGINE = MergeTree() ORDER BY id;
+CREATE TABLE t1 (id UInt32, description String) ENGINE = MergeTree() ORDER BY id;
+INSERT INTO t1 VALUES (1, 'A'), (2, 'B'), (3, 'C');
+
+CREATE TABLE mvw1_target_table (id UInt32, value String, description String) ENGINE = MergeTree() ORDER BY id;
+
+CREATE MATERIALIZED VIEW mvw1 TO mvw1_target_table AS
+SELECT t0.id, t0.value, t1.description
+FROM t0
+JOIN (SELECT * FROM t1 WHERE t1.id IN (SELECT id FROM t0)) AS t1
+ON t0.id = t1.id;
+```
+
+В этом примере множество, построенное из подзапроса `IN (SELECT id FROM t0)`, содержит только что вставленные строки, что помогает фильтровать по нему `t1`.
+
+<div id="example-with-stack-overflow">
+  #### Пример со Stack Overflow
+</div>
+
+Рассмотрим наш [предыдущий пример materialized view](/ru/concepts/features/materialized-views/incremental-materialized-view#example) для подсчёта **ежедневного количества значков для каждого пользователя**, включая отображаемое имя пользователя из таблицы `users`.
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN users AS u ON b.UserId = u.Id
+GROUP BY Day, b.UserId, u.DisplayName;
+```
+
+Это представление значительно увеличило задержку при вставке в таблицу `badges`, например:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 7.517 sec.
+```
+
+Используя описанный выше подход, мы можем оптимизировать это представление. Мы добавим фильтр к таблице `users`, используя идентификаторы пользователей из вставленных строк badge:
+
+```sql
+CREATE MATERIALIZED VIEW daily_badges_by_user_mv TO daily_badges_by_user
+AS SELECT
+    toDate(Date) AS Day,
+    b.UserId,
+    u.DisplayName,
+    countIf(Class = 'Gold') AS Gold,
+    countIf(Class = 'Silver') AS Silver,
+    countIf(Class = 'Bronze') AS Bronze
+FROM badges AS b
+LEFT JOIN
+(
+    SELECT
+        Id,
+        DisplayName
+    FROM users
+    WHERE Id IN (
+        SELECT UserId
+        FROM badges
+    )
+) AS u ON b.UserId = u.Id
+GROUP BY
+    Day,
+    b.UserId,
+    u.DisplayName
+```
+
+Это не только ускоряет первоначальную вставку значков:
+
+```sql
+INSERT INTO badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+```
+
+```response
+0 rows in set. Elapsed: 132.118 sec. Processed 323.43 million rows, 4.69 GB (2.45 million rows/s., 35.49 MB/s.)
+Peak memory usage: 1.99 GiB.
+```
+
+Но это также означает, что будущие вставки в `badge` будут выполняться эффективно:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+```
+
+```response
+1 row in set. Elapsed: 0.583 sec.
+```
+
+В приведённой выше операции из таблицы users для пользователя с идентификатором `2936484` извлекается только одна строка. Эта выборка также оптимизирована благодаря ключу упорядочивания таблицы `Id`.
+
+<div id="materialized-views-and-unions">
+  ## materialized views и объединения
+</div>
+
+Запросы `UNION ALL` обычно используются для объединения данных из нескольких исходных таблиц в один результирующий набор.
+
+Хотя `UNION ALL` напрямую не поддерживается в incremental materialized views, того же результата можно добиться, создав отдельную materialized view для каждой ветви `SELECT` и записывая результаты в общую целевую таблицу.
+
+В нашем примере мы будем использовать набор данных Stack Overflow. Рассмотрим приведённые ниже таблицы `badges` и `comments`, которые содержат сведения о значках, полученных пользователем, и комментариях, которые он оставляет к постам:
+
+```sql
+CREATE TABLE stackoverflow.comments
+(
+    `Id` UInt32,
+    `PostId` UInt32,
+    `Score` UInt16,
+    `Text` String,
+    `CreationDate` DateTime64(3, 'UTC'),
+    `UserId` Int32,
+    `UserDisplayName` LowCardinality(String)
+)
+ENGINE = MergeTree
+ORDER BY CreationDate
+
+CREATE TABLE stackoverflow.badges
+(
+    `Id` UInt32,
+    `UserId` Int32,
+    `Name` LowCardinality(String),
+    `Date` DateTime64(3, 'UTC'),
+    `Class` Enum8('Gold' = 1, 'Silver' = 2, 'Bronze' = 3),
+    `TagBased` Bool
+)
+ENGINE = MergeTree
+ORDER BY UserId
+```
+
+Их можно заполнить с помощью следующих команд `INSERT INTO`:
+
+```sql
+INSERT INTO stackoverflow.badges SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/badges.parquet')
+INSERT INTO stackoverflow.comments SELECT *
+FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/comments/*.parquet')
+```
+
+Предположим, мы хотим создать единое представление активности пользователей, показывающее последнее действие каждого из них за счёт объединения этих двух таблиц:
+
+```sql
+SELECT
+ UserId,
+ argMax(description, event_time) AS last_description,
+ argMax(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+LIMIT 10
+```
+
+Предположим, у нас есть целевая таблица для получения результатов этого запроса. Обратите внимание на использование движка таблицы [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree) и [AggregateFunction](/ru/reference/data-types/aggregatefunction), чтобы результаты объединялись корректно:
+
+```sql
+CREATE TABLE user_activity
+(
+    `UserId` String,
+    `last_description` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `activity_type` AggregateFunction(argMax, String, DateTime64(3, 'UTC')),
+    `last_activity` SimpleAggregateFunction(max, DateTime64(3, 'UTC'))
+)
+ENGINE = AggregatingMergeTree
+ORDER BY UserId
+```
+
+Если вы хотите, чтобы эта таблица обновлялась при вставке новых строк в `badges` или `comments`, наивный подход — попытаться создать materialized view на основе предыдущего union-запроса:
+
+```sql
+CREATE MATERIALIZED VIEW user_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(description, event_time) AS last_description,
+ argMaxState(activity_type, event_time) AS activity_type,
+    max(event_time) AS last_activity
+FROM
+(
+    SELECT
+ UserId,
+ CreationDate AS event_time,
+        Text AS description,
+        'comment' AS activity_type
+    FROM stackoverflow.comments
+    UNION ALL
+    SELECT
+ UserId,
+        Date AS event_time,
+        Name AS description,
+        'badge' AS activity_type
+    FROM stackoverflow.badges
+)
+GROUP BY UserId
+ORDER BY last_activity DESC
+```
+
+Хотя с точки зрения синтаксиса это корректно, результат будет не таким, как ожидается: представление будет срабатывать только при вставке данных в таблицу `comments`. Например:
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+Вставки в таблицу `badges` не будут активировать представление, поэтому `user_activity` не будет обновляться:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 09:56:19.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+```
+
+Чтобы решить эту проблему, достаточно создать отдельное materialized view для каждого оператора SELECT:
+
+```sql
+DROP TABLE user_activity_mv;
+TRUNCATE TABLE user_activity;
+
+CREATE MATERIALIZED VIEW comment_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Text, CreationDate) AS last_description,
+ argMaxState('comment', CreationDate) AS activity_type,
+    max(CreationDate) AS last_activity
+FROM stackoverflow.comments
+GROUP BY UserId;
+
+CREATE MATERIALIZED VIEW badges_activity_mv TO user_activity AS
+SELECT
+ UserId,
+ argMaxState(Name, Date) AS last_description,
+ argMaxState('badge', Date) AS activity_type,
+    max(Date) AS last_activity
+FROM stackoverflow.badges
+GROUP BY UserId;
+```
+
+Теперь вставка в любую из таблиц даёт правильный результат. Например, если вставить данные в таблицу `comments`:
+
+```sql
+INSERT INTO comments VALUES (99999999, 23121, 1, 'The answer is 42', now(), 2936484, 'gingerwizard');
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId;
+```
+
+```response
+┌─UserId──┬─description──────┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ The answer is 42 │ comment       │ 2025-04-15 10:18:47.000 │
+└─────────┴──────────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+Точно так же вставки в таблицу `badges` отражаются в таблице `user_activity`:
+
+```sql
+INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
+
+SELECT
+ UserId,
+ argMaxMerge(last_description) AS description,
+ argMaxMerge(activity_type) AS activity_type,
+    max(last_activity) AS last_activity
+FROM user_activity
+WHERE UserId = '2936484'
+GROUP BY UserId
+```
+
+```response
+┌─UserId──┬─description──┬─activity_type─┬───────────last_activity─┐
+│ 2936484 │ gingerwizard │ badge         │ 2025-04-15 10:20:18.000 │
+└─────────┴──────────────┴───────────────┴─────────────────────────┘
+
+1 row in set. Elapsed: 0.006 sec.
+```
+
+<div id="materialized-views-parallel-vs-sequential">
+  ## Параллельная и последовательная обработка
+</div>
+
+Как показано в предыдущем примере, таблица может служить источником для нескольких materialized view. Порядок их выполнения зависит от настройки [`parallel_view_processing`](/ru/reference/settings/session-settings#parallel_view_processing).
+
+По умолчанию эта настройка имеет значение `0` (`false`), то есть materialized view выполняются последовательно в порядке `uuid`.
+
+Например, рассмотрим следующую таблицу `source` и 3 materialized view, каждая из которых отправляет строки в таблицу `target`:
+
+```sql
+CREATE TABLE source
+(
+    `message` String
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE TABLE target
+(
+    `message` String,
+    `from` String,
+    `now` DateTime64(9),
+    `sleep` UInt8
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+CREATE MATERIALIZED VIEW mv_2 TO target
+AS SELECT
+    message,
+    'mv2' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_3 TO target
+AS SELECT
+    message,
+    'mv3' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+
+CREATE MATERIALIZED VIEW mv_1 TO target
+AS SELECT
+    message,
+    'mv1' AS from,
+    now64(9) as now,
+    sleep(1) as sleep
+FROM source;
+```
+
+Обратите внимание, что каждое представление делает паузу в 1 секунду перед вставкой своих строк в таблицу `target`, а также добавляет своё имя и время вставки.
+
+Вставка строки в таблицу `source` занимает ~3 секунды, при этом каждое представление выполняется последовательно:
+
+```sql
+INSERT INTO source VALUES ('test')
+```
+
+```response
+1 row in set. Elapsed: 3.786 sec.
+```
+
+Мы можем с помощью `SELECT` подтвердить, что строки поступают из каждой строки:
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 14:52:01.306162309 │
+│ test    │ mv1  │ 2025-04-15 14:52:02.307693521 │
+│ test    │ mv2  │ 2025-04-15 14:52:03.309250283 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.015 sec.
+```
+
+Это совпадает с `uuid` представлений:
+
+```sql
+SELECT
+    name,
+ uuid
+FROM system.tables
+WHERE name IN ('mv_1', 'mv_2', 'mv_3')
+ORDER BY uuid ASC
+```
+
+```response
+┌─name─┬─uuid─────────────────────────────────┐
+│ mv_3 │ ba5e36d0-fa9e-4fe8-8f8c-bc4f72324111 │
+│ mv_1 │ b961c3ac-5a0e-4117-ab71-baa585824d43 │
+│ mv_2 │ e611cc31-70e5-499b-adcc-53fb12b109f5 │
+└──────┴──────────────────────────────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+И наоборот, рассмотрим, что произойдет, если вставить строку при включенном `parallel_view_processing=1`. Когда этот параметр включен, представления выполняются параллельно, поэтому порядок, в котором строки поступают в целевую таблицу, не гарантируется:
+
+```sql
+TRUNCATE target;
+SET parallel_view_processing = 1;
+
+INSERT INTO source VALUES ('test');
+```
+
+```response
+1 row in set. Elapsed: 1.588 sec.
+```
+
+```sql
+SELECT
+    message,
+    from,
+    now
+FROM target
+ORDER BY now ASC
+```
+
+```response
+┌─message─┬─from─┬───────────────────────────now─┐
+│ test    │ mv3  │ 2025-04-15 19:47:32.242937372 │
+│ test    │ mv1  │ 2025-04-15 19:47:32.243058183 │
+│ test    │ mv2  │ 2025-04-15 19:47:32.337921800 │
+└─────────┴──────┴───────────────────────────────┘
+
+3 rows in set. Elapsed: 0.004 sec.
+```
+
+Хотя в нашем случае порядок поступления строк из каждого представления совпадает, это не гарантируется — на это указывает близкое время вставки у каждой строки. Также обратите внимание на более высокую производительность вставки.
+
+<div id="materialized-views-when-to-use-parallel">
+  ### Когда использовать параллельную обработку
+</div>
+
+Включение `parallel_view_processing=1` может значительно повысить пропускную способность вставки, как показано выше, особенно если к одной таблице подключено несколько Materialized Views. Однако важно понимать связанные с этим компромиссы:
+
+* **Повышенная нагрузка при вставке**: все Materialized Views выполняются одновременно, что увеличивает использование CPU и памяти. Если каждое представление выполняет ресурсоёмкие вычисления или JOIN, это может перегрузить систему.
+* **Необходимость строгого порядка выполнения**: в редких сценариях, где порядок выполнения представлений имеет значение (например, при цепочке зависимостей), параллельное выполнение может привести к несогласованному состоянию или race condition. Хотя такие конфигурации возможны, они хрупки и могут перестать работать в будущих версиях.
+
+<Info>
+  **Исторические значения по умолчанию и стабильность**
+
+  Последовательное выполнение долгое время использовалось по умолчанию, отчасти из-за сложности обработки ошибок. Исторически сбой в одном materialized view мог помешать выполнению остальных. В более новых версиях это улучшили за счёт изоляции сбоев на уровне каждого блока, но последовательное выполнение по-прежнему даёт более понятную семантику ошибок.
+</Info>
+
+В целом включайте `parallel_view_processing=1`, если:
+
+* У вас есть несколько независимых Materialized Views
+* Вы хотите добиться максимальной производительности вставки
+* Вы понимаете, достаточно ли у системы ресурсов для параллельного выполнения представлений
+
+Оставляйте этот параметр отключённым, если:
+
+* Materialized Views зависят друг от друга
+* Вам нужен предсказуемый порядок выполнения
+* Вы занимаетесь отладкой или аудитом поведения вставки и хотите детерминированного повторного воспроизведения
+
+<div id="materialized-views-common-table-expressions-ctes">
+  ## materialized views и общие табличные выражения (CTE)
+</div>
+
+**Нерекурсивные** общие табличные выражения (CTE) поддерживаются в materialized views.
+
+<Info>
+  **Общие табличные выражения **не** материализуются**
+
+  ClickHouse не материализует CTE; вместо этого он напрямую подставляет определение CTE в запрос, из-за чего одно и то же выражение может вычисляться несколько раз (если CTE используется более одного раза).
+</Info>
+
+Рассмотрим следующий пример, который вычисляет ежедневную активность для каждого типа публикаций.
+
+```sql
+CREATE TABLE daily_post_activity
+(
+    Day Date,
+ PostType String,
+ PostsCreated SimpleAggregateFunction(sum, UInt64),
+ AvgScore AggregateFunction(avg, Int32),
+ TotalViews SimpleAggregateFunction(sum, UInt64)
+)
+ENGINE = AggregatingMergeTree
+ORDER BY (Day, PostType);
+
+CREATE MATERIALIZED VIEW daily_post_activity_mv TO daily_post_activity AS
+WITH filtered_posts AS (
+    SELECT
+ toDate(CreationDate) AS Day,
+ PostTypeId,
+ Score,
+ ViewCount
+    FROM posts
+    WHERE Score > 0 AND PostTypeId IN (1, 2)  -- Вопрос или Ответ
+)
+SELECT
+    Day,
+    CASE PostTypeId
+        WHEN 1 THEN 'Question'
+        WHEN 2 THEN 'Answer'
+    END AS PostType,
+    count() AS PostsCreated,
+    avgState(Score) AS AvgScore,
+    sum(ViewCount) AS TotalViews
+FROM filtered_posts
+GROUP BY Day, PostTypeId;
+```
+
+Хотя CTE здесь, строго говоря, не требуется, для наглядности представление будет работать как ожидается:
+
+```sql
+INSERT INTO posts
+SELECT *
+FROM s3Cluster('default', 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/by_month/*.parquet')
+```
+
+```sql
+SELECT
+    Day,
+    PostType,
+    avgMerge(AvgScore) AS AvgScore,
+    sum(PostsCreated) AS PostsCreated,
+    sum(TotalViews) AS TotalViews
+FROM daily_post_activity
+GROUP BY
+    Day,
+    PostType
+ORDER BY Day DESC
+LIMIT 10
+```
+
+```response
+┌────────Day─┬─PostType─┬───────────AvgScore─┬─PostsCreated─┬─TotalViews─┐
+│ 2024-03-31 │ Question │ 1.3317757009345794 │          214 │       9728 │
+│ 2024-03-31 │ Answer   │ 1.4747191011235956 │          356 │          0 │
+│ 2024-03-30 │ Answer   │ 1.4587912087912087 │          364 │          0 │
+│ 2024-03-30 │ Question │ 1.2748815165876777 │          211 │       9606 │
+│ 2024-03-29 │ Question │ 1.2641509433962264 │          318 │      14552 │
+│ 2024-03-29 │ Answer   │ 1.4706927175843694 │          563 │          0 │
+│ 2024-03-28 │ Answer   │  1.601637107776262 │          733 │          0 │
+│ 2024-03-28 │ Question │ 1.3530864197530865 │          405 │      24564 │
+│ 2024-03-27 │ Question │ 1.3225806451612903 │          434 │      21346 │
+│ 2024-03-27 │ Answer   │ 1.4907539118065434 │          703 │          0 │
+└────────────┴──────────┴────────────────────┴──────────────┴────────────┘
+
+10 rows in set. Elapsed: 0.013 sec. Processed 11.45 thousand rows, 663.87 KB (866.53 thousand rows/s., 50.26 MB/s.)
+Peak memory usage: 989.53 KiB.
+```
+
+В ClickHouse CTE разворачиваются inline, то есть на этапе оптимизации фактически подставляются в запрос и **не** materialized. Это означает следующее:
+
+* Если ваш CTE ссылается на таблицу, отличную от исходной таблицы (то есть той, к которой привязано materialized view), и используется в `JOIN` или `IN`, он будет вести себя как подзапрос или JOIN, а не как триггер.
+* Materialized view по-прежнему будет срабатывать только при вставках в основную исходную таблицу, но CTE будет выполняться заново при каждой вставке, что может создавать лишние накладные расходы, особенно если таблица, на которую он ссылается, большая.
+
+Например,
+
+```sql
+WITH recent_users AS (
+  SELECT Id FROM stackoverflow.users WHERE CreationDate > now() - INTERVAL 7 DAY
+)
+SELECT * FROM stackoverflow.posts WHERE OwnerUserId IN (SELECT Id FROM recent_users)
+```
+
+В этом случае CTE `users` пересчитывается при каждой вставке в `posts`, а materialized view не будет обновляться при добавлении новых пользователей — только при вставке в `posts`.
+
+Как правило, CTE стоит использовать для логики, которая работает с той же исходной таблицей, к которой привязана materialized view, либо нужно убедиться, что используемые таблицы небольшие и вряд ли создадут узкие места по производительности. В качестве альтернативы рассмотрите [те же оптимизации, что и для JOIN в Materialized Views](/ru/concepts/features/materialized-views/incremental-materialized-view#join-best-practices).
