@@ -158,7 +158,7 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "azure": " --azure-blob-storage --no-random-settings --no-random-merge-tree-settings",  # azurite is slow, with randomization it can be super slow
     "parallel": "--no-sequential",
     "sequential": "--no-parallel",
-    "flaky check": "--flaky-check",
+    "flaky check": "--flaky-check --no-self-parallel",
     "targeted": "--flaky-check --no-self-parallel",
 }
 
@@ -470,8 +470,10 @@ def main():
         rerun_count = args.count
     elif is_flaky_check:
         # Large repeat count so the 45-min global_time_limit is the effective stopping
-        # condition, not the repeat count.  Tests run in parallel (--jobs N) with fresh
-        # random settings per TestCase; --max-failures 5 stops early on broken PRs.
+        # condition, not the repeat count. Different tests run in parallel (`--jobs N`),
+        # while copies of one test are serialized by `--no-self-parallel`. Fresh random
+        # settings are selected per `TestCase`; `--max-failures 5` stops early on broken
+        # PRs.
         rerun_count = 50
     elif is_targeted_check:
         rerun_count = 50

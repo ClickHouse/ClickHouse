@@ -240,7 +240,8 @@ List of available tags:
 | `no-[asan, tsan, msan, ubsan]` | Disables tests in build with [sanitizers](#sanitizers) | Test is run under QEMU which doesn't work with sanitizers |
 | `no-replicated-database` | Disables test when the default database uses `ReplicatedDatabaseEngine` ||
 | `no-ordinary-database` | Disables test when the default database engine is `Ordinary` ||
-| `no-parallel` | Disables running other tests in parallel with this one | Test reads from `system` tables and invariants may be broken|
+| `no-parallel` | Runs the test strictly alone after the parallel phase | Test changes process-global state that can affect arbitrary tests |
+| `no-parallel:<group>` | Runs the test in the parallel phase, but never overlaps it with another test in the same named group | Every test that mutates or observes one enumerable shared resource uses the same group |
 | `no-parallel-replicas` | Disables test when parallel replicas are enabled ||
 | `no-debug` | Disables tests in Debug builds ||
 | `no-release` | Disables tests in Release builds ||
@@ -309,8 +310,12 @@ Remember to add the words `shard` or `distributed` to the test name, so that it 
 
 Sometimes in a shell test you may need to create a file on the fly to work with.
 Keep in mind that some CI checks run tests in parallel, so if you are creating or removing a temporary file in your script without a unique name this can cause some of the CI checks, such as Flaky, to fail.
-To get around this you should use environment variable `$CLICKHOUSE_TEST_UNIQUE_NAME` to give temporary files a name unique to the test that is running.
+To get around this you should use the environment variable `$CLICKHOUSE_TEST_UNIQUE_NAME` to give temporary files a name unique to the test run.
 That way you can be sure that the file you are creating during setup or removing during cleanup is the file only in use by that test and not some other test which is running in parallel.
+
+The runner also exports `$CLICKHOUSE_TEST_UUID`, `$CLICKHOUSE_TEST_PORT`, and `$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX` for shell tests. Files that must be readable through the server's `user_files` directory belong under `$CLICKHOUSE_USER_FILES_UNIQUE`; the runner creates and removes that per-test sandbox.
+
+SQL tests receive the same run identity as typed query parameters. Use placeholders such as `{CLICKHOUSE_TEST_UNIQUE_NAME:Identifier}`, `{CLICKHOUSE_TEST_UNIQUE_NAME:String}`, `{CLICKHOUSE_TEST_UUID:UUID}`, `{CLICKHOUSE_TEST_PORT:UInt16}`, and `{CLICKHOUSE_TEST_ZOOKEEPER_PREFIX:String}`. The `{CLICKHOUSE_USER_FILES:String}` parameter points directly to the per-test `user_files` sandbox.
 
 ## Known bugs {#known-bugs}
 
