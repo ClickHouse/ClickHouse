@@ -90,6 +90,26 @@ def assert_create_query(nodes, table_name, expected):
         assert_eq_with_retry(node, query, expected, get_result=replace_uuid)
 
 
+def sync_and_assert_eq_with_retry(
+    node, database, table, query, expected, retry_count=60, sleep_time=1
+):
+    # A replica that recovered from lost metadata converges its table structure
+    # asynchronously. recoverLostReplica does not rewrite matching-UUID
+    # ReplicatedMergeTree tables; their structure is picked up by table-level
+    # metadata replication, which enqueues the metadata-update entry during
+    # recovery (cloneMetadataIfNeeded). A single SYSTEM SYNC REPLICA before the
+    # read can return before that entry exists, so re-sync inside the retry loop
+    # until the structure converges.
+    for _ in range(retry_count):
+        node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
+        node.query(f"SYSTEM SYNC REPLICA {database}.{table}")
+        if TSV(node.query(query)) == TSV(expected):
+            return
+        time.sleep(sleep_time)
+    # Final attempt raises AssertionError with a helpful diff.
+    assert_eq_with_retry(node, query, expected, retry_count=3)
+
+
 def zk_rmr_with_retries(zk, path):
     for i in range(1, 10):
         try:
@@ -1410,29 +1430,30 @@ def test_replicated_table_structure_alter(started_cluster):
     competing_node.restart_clickhouse(kill=True)
 
     dummy_node.query("ATTACH DATABASE table_structure")
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
-    # A recovered replica picks up the ADD COLUMN via table-level metadata replication
-    # (matching-UUID ReplicatedMergeTree tables are not rewritten by recoverLostReplica),
-    # so metadata_version converges asynchronously after SYNC REPLICA returns. Retry the read.
-    assert_eq_with_retry(
-        dummy_node, "SELECT * FROM table_structure.rmt", "1\t2\t3"
+    sync_and_assert_eq_with_retry(
+        dummy_node,
+        "table_structure",
+        "rmt",
+        "SELECT * FROM table_structure.rmt",
+        "1\t2\t3",
     )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    competing_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
-    # time.sleep(600)
     assert "mem" in competing_node.query("SHOW TABLES FROM table_structure")
-    assert_eq_with_retry(
-        competing_node, "SELECT * FROM table_structure.rmt", "1\t2\t3"
+    sync_and_assert_eq_with_retry(
+        competing_node,
+        "table_structure",
+        "rmt",
+        "SELECT * FROM table_structure.rmt",
+        "1\t2\t3",
     )
 
     main_node.query("ALTER TABLE table_structure.rmt ADD COLUMN k int")
     main_node.query("INSERT INTO table_structure.rmt VALUES (1, 2, 3, 4)")
-    dummy_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    dummy_node.query("SYSTEM SYNC REPLICA table_structure.rmt")
-    assert_eq_with_retry(
+    sync_and_assert_eq_with_retry(
         dummy_node,
+        "table_structure",
+        "rmt",
         "SELECT * FROM table_structure.rmt ORDER BY k",
         "1\t2\t3\t0\n1\t2\t3\t4",
     )
