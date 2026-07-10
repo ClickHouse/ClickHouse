@@ -1,0 +1,16 @@
+pk target	2
+plain target	1
+plain target, gate off	2
+partition target	2
+skip index target	2
+final partition target	1
+final opt-out partition target	2
+left join pk target	2
+mixed conjunction inferred atom	2
+mixed conjunction skipped atom	1
+plain correctness	0
+partition correctness	0
+skip index correctness	0
+left join correctness	0
+mixed-side atom correctness	0
+mixed-side atom result	1

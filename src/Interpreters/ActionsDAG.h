@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -482,6 +483,9 @@ public:
       * to left and right streams.
       * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
+      * @param is_inferred_copy_useful - optional veto for conjuncts inferred onto the opposite stream through column
+      * equivalence. It is consulted only for a conjunct whose original is pushed to its own stream anyway, so the copy
+      * is redundant for correctness and serves purely as a pruning hint for the receiving stream.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -492,7 +496,8 @@ public:
         const Block & right_stream_header,
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
+        const std::function<bool(const Node * conjunct, bool to_left_stream)> & is_inferred_copy_useful = {});
 
     /** Build filter dag from multiple filter dags.
       *

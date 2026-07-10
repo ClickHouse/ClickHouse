@@ -21,6 +21,7 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/joinFilterPushDownPruningGate.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/TotalsHavingStep.h>
@@ -451,7 +452,7 @@ std::optional<ActionsDAG> tryToExtractPartialPredicate(
 
 void addFilterOnTop(QueryPlan::Node & join_node, size_t child_idx, QueryPlan::Nodes & nodes, ActionsDAG filter_dag);
 
-static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node)
+static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlan::Node * child_node, const Optimization::ExtraSettings & settings)
 {
     auto & parent = parent_node->step;
     QueryPlanStepPtr & child = child_node->step;
@@ -720,6 +721,39 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     if (is_filter_column_const_before)
         original_filter_const_column = filter->getOutputHeader()->getByName(filter->getFilterColumnName()).column;
 
+    /// A conjunct inferred onto the opposite stream through column equivalence is a redundant
+    /// per-row filter unless index analysis on that stream can use it for pruning. When the
+    /// stream is a plain Expression/Filter chain over a MergeTree read, judge the substituted
+    /// conjunct with the same index analysis the read step performs and veto useless copies.
+    /// For any other subplan the benefit cannot be judged, so the copy is kept as before.
+    std::function<bool(const ActionsDAG::Node *, bool)> is_inferred_copy_useful;
+    if (settings.filter_push_down_inferred_only_for_pruning)
+    {
+        std::optional<PushDownPruningTarget> left_target = findPushDownPruningTarget(child_node->children.front());
+        std::optional<PushDownPruningTarget> right_target;
+        if (child_node->children.size() > 1)
+            right_target = findPushDownPruningTarget(child_node->children.back());
+
+        if (left_target || right_target)
+        {
+            is_inferred_copy_useful = [captured_left_target = std::move(left_target),
+                                       captured_right_target = std::move(right_target),
+                                       &equivalent_left_stream_column_to_right_stream_column,
+                                       &equivalent_right_stream_column_to_left_stream_column](const ActionsDAG::Node * conjunct, bool to_left_stream)
+            {
+                const auto & target = to_left_stream ? captured_left_target : captured_right_target;
+                if (!target)
+                    return true;
+                const auto & substitution
+                    = to_left_stream ? equivalent_right_stream_column_to_left_stream_column : equivalent_left_stream_column_to_right_stream_column;
+                auto candidate_dag = ActionsDAG::buildFilterActionsDAG({conjunct}, substitution, /*single_output_condition_node=*/true);
+                if (!candidate_dag || candidate_dag->getOutputs().size() != 1)
+                    return true;
+                return pushedPredicateHelpsPruning(std::move(*candidate_dag), *target);
+            };
+        }
+    }
+
     auto join_filter_push_down_actions = filter->getExpression().splitActionsForJOINFilterPushDown(
         filter->getFilterColumnName(),
         filter->removesFilterColumn(),
@@ -729,7 +763,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         *right_stream_input_header,
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
-        equivalent_right_stream_column_to_left_stream_column);
+        equivalent_right_stream_column_to_left_stream_column,
+        is_inferred_copy_useful);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
     {
@@ -1100,7 +1135,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto updated_steps = simplePushDownOverStep<BuildRuntimeFilterStep>(parent_node, true, nodes, child))
         return updated_steps;
 
-    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node))
+    if (auto updated_steps = tryPushDownOverJoinStep(parent_node, nodes, child_node, settings))
         return updated_steps;
 
     /// TODO.

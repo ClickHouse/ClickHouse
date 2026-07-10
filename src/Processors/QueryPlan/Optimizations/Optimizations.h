@@ -69,6 +69,10 @@ struct Optimization
         /// Neither can survive serialization to remote workers, so we suppress the
         /// optimization when the plan is going to be distributed.
         bool make_distributed_plan = false;
+
+        /// Add join-key-equivalence inferred filter conditions to the other join side only
+        /// when index analysis there can use them for pruning
+        bool filter_push_down_inferred_only_for_pruning = false;
     };
 
     using Function = size_t (*)(QueryPlan::Node *, QueryPlan::Nodes &, const ExtraSettings &);

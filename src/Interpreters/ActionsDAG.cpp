@@ -3278,7 +3278,8 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     const Block & right_stream_header,
     const Names & equivalent_columns_to_push_down,
     const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column)
+    const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
+    const std::function<bool(const Node * conjunct, bool to_left_stream)> & is_inferred_copy_useful)
 {
     Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
     if (!predicate)
@@ -3366,11 +3367,26 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
 
     for (const auto * both_streams_push_down_allowed_conjunction_node : both_streams_push_down_conjunctions.allowed)
     {
-        if (!left_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
-            left_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+        const bool original_on_left = left_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node);
+        const bool original_on_right = right_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node);
 
-        if (!right_stream_allowed_conjunctions_set.contains(both_streams_push_down_allowed_conjunction_node))
-            right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+        /// A conjunct whose original is pushed to the opposite stream is inferred here only as a
+        /// redundant copy, so the caller may veto it. A conjunct pushed to both streams with an
+        /// original on neither side (inputs mix equivalent columns of both streams) is load-bearing
+        /// because the post-join filter drops it, so it is never vetoed.
+        if (!original_on_left)
+        {
+            if (!original_on_right || !is_inferred_copy_useful
+                || is_inferred_copy_useful(both_streams_push_down_allowed_conjunction_node, /*to_left_stream=*/true))
+                left_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+        }
+
+        if (!original_on_right)
+        {
+            if (!original_on_left || !is_inferred_copy_useful
+                || is_inferred_copy_useful(both_streams_push_down_allowed_conjunction_node, /*to_left_stream=*/false))
+                right_stream_allowed_conjunctions.push_back(both_streams_push_down_allowed_conjunction_node);
+        }
     }
 
     std::unordered_set<const Node *> rejected_conjunctions_set;

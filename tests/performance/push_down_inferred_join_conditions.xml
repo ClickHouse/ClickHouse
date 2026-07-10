@@ -1,0 +1,73 @@
+<test>
+    <settings>
+        <enable_analyzer>1</enable_analyzer>
+        <enable_join_runtime_filters>0</enable_join_runtime_filters>
+        <max_threads>8</max_threads>
+    </settings>
+
+    <create_query>CREATE TABLE pdi_pk    (k UInt64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 8192</create_query>
+    <!-- k is not covered by any index here, so an inferred condition cannot prune -->
+    <create_query>CREATE TABLE pdi_flat  (k UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 8192</create_query>
+    <!-- tiny side: its WHERE conjuncts are the inference candidates and it keeps the hash table small -->
+    <create_query>CREATE TABLE pdi_small (k UInt64) ENGINE = MergeTree ORDER BY k</create_query>
+
+    <fill_query>INSERT INTO pdi_pk    SELECT number FROM numbers(200000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO pdi_flat  SELECT number FROM numbers(200000000) SETTINGS max_insert_threads = 8</fill_query>
+    <fill_query>INSERT INTO pdi_small SELECT number FROM numbers(1000)</fill_query>
+
+    <!-- A: win case. The inferred copy of `o.k = 999` prunes pdi_pk to one granule; without the
+         inference the probe side is a full scan. Gate ON and OFF must both keep this win. -->
+    <query>
+        SELECT count()
+        FROM pdi_pk AS l
+        INNER JOIN pdi_small AS o ON l.k = o.k
+        WHERE o.k = 999
+        SETTINGS query_plan_filter_push_down_inferred_only_for_pruning = 1
+    </query>
+    <query>
+        SELECT count()
+        FROM pdi_pk AS l
+        INNER JOIN pdi_small AS o ON l.k = o.k
+        WHERE o.k = 999
+        SETTINGS query_plan_filter_push_down_inferred_only_for_pruning = 0
+    </query>
+
+    <!-- B: worst case. The condition matches every row and pdi_flat has no index on k, so the
+         inferred copy cannot prune and only re-evaluates the condition on 200M probe rows.
+         The gate must skip it; ON must not be slower than OFF. -->
+    <query>
+        SELECT count()
+        FROM pdi_flat AS l
+        INNER JOIN pdi_small AS o ON l.k = o.k
+        WHERE o.k &lt; 1001
+        SETTINGS query_plan_filter_push_down_inferred_only_for_pruning = 1
+    </query>
+    <query>
+        SELECT count()
+        FROM pdi_flat AS l
+        INNER JOIN pdi_small AS o ON l.k = o.k
+        WHERE o.k &lt; 1001
+        SETTINGS query_plan_filter_push_down_inferred_only_for_pruning = 0
+    </query>
+
+    <!-- C: worst case with expensive conjuncts: three hash functions re-evaluated for each of
+         the 200M probe rows when the inferred copies are not gated. -->
+    <query>
+        SELECT count()
+        FROM pdi_flat AS l
+        INNER JOIN pdi_small AS o ON l.k = o.k
+        WHERE sipHash64(o.k) % 10 &lt;= 9 AND intHash64(o.k) % 10 &lt;= 9 AND cityHash64(o.k) >= 0
+        SETTINGS query_plan_filter_push_down_inferred_only_for_pruning = 1
+    </query>
+    <query>
+        SELECT count()
+        FROM pdi_flat AS l
+        INNER JOIN pdi_small AS o ON l.k = o.k
+        WHERE sipHash64(o.k) % 10 &lt;= 9 AND intHash64(o.k) % 10 &lt;= 9 AND cityHash64(o.k) >= 0
+        SETTINGS query_plan_filter_push_down_inferred_only_for_pruning = 0
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS pdi_pk</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pdi_flat</drop_query>
+    <drop_query>DROP TABLE IF EXISTS pdi_small</drop_query>
+</test>
