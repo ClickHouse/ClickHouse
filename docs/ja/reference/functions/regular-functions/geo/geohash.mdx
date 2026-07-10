@@ -1,0 +1,131 @@
+---
+description: 'Geohash のドキュメント'
+sidebarTitle: 'Geohash'
+slug: /sql-reference/functions/geo/geohash
+title: 'Geohash を扱う関数'
+doc_type: 'reference'
+---
+
+<div id="geohash">
+  ## Geohash
+</div>
+
+[Geohash](https://en.wikipedia.org/wiki/Geohash) はジオコードシステムの一種で、地球表面をグリッド状の区画に分割し、各セルを文字と数字からなる短い文字列としてエンコードします。階層的なデータ構造になっているため、geohash 文字列が長いほど、地理的位置をより高い精度で表せます。
+
+地理座標を geohash 文字列に手動で変換する必要がある場合は、[geohash.org](http://geohash.co/) を利用できます。
+
+<div id="geohashencode">
+  ## geohashEncode
+</div>
+
+緯度と経度を [geohash](#geohash) 文字列にエンコードします。
+
+**構文**
+
+```sql
+geohashEncode(longitude, latitude, [precision])
+```
+
+**入力値**
+
+* `longitude` — エンコードする座標の経度。`[-180°, 180°]` の範囲の浮動小数点数です。[Float](/ja/reference/data-types/float)。
+* `latitude` — エンコードする座標の緯度。`[-90°, 90°]` の範囲の浮動小数点数です。[Float](/ja/reference/data-types/float)。
+* `precision` (任意) — 生成されるエンコード文字列の長さ。デフォルト値は `12` です。`[1, 12]` の範囲の整数です。[Int8](/ja/reference/data-types/int-uint)。
+
+<Note>
+  - すべての座標パラメーターは同じ型である必要があります。`Float32` または `Float64` のいずれかを使用してください。
+  - `precision` パラメーターでは、`1` 未満または `12` を超える値は暗黙的に `12` に変換されます。
+</Note>
+
+**戻り値**
+
+* エンコードされた座標を表す英数字の文字列 (base32 エンコーディングのアルファベットを修正したものを使用) 。[String](/ja/reference/data-types/string)。
+
+**例**
+
+```sql title="Query"
+SELECT geohashEncode(-5.60302734375, 42.593994140625, 0) AS res;
+```
+
+```text title="Response"
+┌─res──────────┐
+│ ezs42d000000 │
+└──────────────┘
+```
+
+<div id="geohashdecode">
+  ## geohashDecode
+</div>
+
+[geohash](#geohash) でエンコードされた任意の文字列を、経度と緯度にデコードします。
+
+**構文**
+
+```sql
+geohashDecode(hash_str)
+```
+
+**入力値**
+
+* `hash_str` — Geohash エンコードされた文字列。
+
+**戻り値**
+
+* 経度と緯度を表す `Float64` 型の値からなる Tuple `(longitude, latitude)`。[Tuple](/ja/reference/data-types/tuple)([Float64](/ja/reference/data-types/float))
+
+**例**
+
+```sql
+SELECT geohashDecode('ezs42') AS res;
+```
+
+```text
+┌─res─────────────────────────────┐
+│ (-5.60302734375,42.60498046875) │
+└─────────────────────────────────┘
+```
+
+<div id="geohashesinbox">
+  ## geohashesInBox
+</div>
+
+指定したボックスの内側にあり、その境界に交差する、指定した精度の [geohash](#geohash) エンコード文字列の配列を返します。要するに、2D グリッドを一次元の配列に展開したものです。
+
+**構文**
+
+```sql
+geohashesInBox(longitude_min, latitude_min, longitude_max, latitude_max, precision)
+```
+
+**引数**
+
+* `longitude_min` — 最小経度。範囲: `[-180°, 180°]`。[Float](/ja/reference/data-types/float)。
+* `latitude_min` — 最小緯度。範囲: `[-90°, 90°]`。[Float](/ja/reference/data-types/float)。
+* `longitude_max` — 最大経度。範囲: `[-180°, 180°]`。[Float](/ja/reference/data-types/float)。
+* `latitude_max` — 最大緯度。範囲: `[-90°, 90°]`。[Float](/ja/reference/data-types/float)。
+* `precision` — Geohash の精度。範囲: `[1, 12]`。[UInt8](/ja/reference/data-types/int-uint)。
+
+<Note>
+  すべての座標パラメータは、`Float32` または `Float64` のいずれか同じ型である必要があります。
+</Note>
+
+**戻り値**
+
+* 指定した領域をカバーする Geohash ボックスを表す、長さが精度に等しい文字列の Array。要素の順序に依存しないでください。[Array](/ja/reference/data-types/array)([String](/ja/reference/data-types/string))。
+* `[]` - 最小の緯度および経度の値が、対応する最大値より小さくない場合は空の配列です。
+
+<Note>
+  結果の配列の長さが 10&#39;000&#39;000 項目を超える場合、この関数は例外をスローします。
+</Note>
+
+**例**
+
+```sql title="Query"
+SELECT geohashesInBox(24.48, 40.56, 24.785, 40.81, 4) AS thasos;
+```
+
+```text title="Response"
+┌─thasos──────────────────────────────────────┐
+│ ['sx1q','sx1r','sx32','sx1w','sx1x','sx38'] │
+└─────────────────────────────────────────────┘
+```

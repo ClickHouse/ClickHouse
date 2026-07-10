@@ -1,0 +1,141 @@
+---
+keywords: ['clickhouse', 'python', 'client', 'connect', 'integrate']
+slug: /integrations/python
+description: 'La suite de projets ClickHouse Connect permettant de connecter Python à ClickHouse'
+title: 'Intégration de Python avec ClickHouse Connect'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+  - website: 'https://github.com/ClickHouse/clickhouse-connect'
+---
+
+import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+ClickHouse Connect est un pilote de base de données central qui assure l’interopérabilité avec un large éventail d’applications Python.
+
+* L’interface principale est l’objet `Client` du paquet `clickhouse_connect.driver`. Ce paquet central comprend également diverses classes d’assistance et fonctions utilitaires utilisées pour communiquer avec le serveur ClickHouse, ainsi que des implémentations de « contexte » pour la gestion avancée des requêtes d’insertion et de sélection.
+* Le paquet `clickhouse_connect.datatypes` fournit une implémentation de base et des sous-classes pour tous les types de données ClickHouse non expérimentaux. Sa fonction principale est la sérialisation et la désérialisation des données ClickHouse dans le format binaire en colonnes « Native » de ClickHouse, afin d’assurer le transport le plus efficace entre ClickHouse et les applications clientes.
+* Les classes Cython/C du paquet `clickhouse_connect.cdriver` optimisent certaines des sérialisations et désérialisations les plus courantes, pour des performances nettement supérieures à celles d’une implémentation en Python pur.
+* Un dialecte [SQLAlchemy](https://www.sqlalchemy.org/) est disponible dans le paquet `clickhouse_connect.cc_sqlalchemy`, construit à partir des paquets `datatypes` et `dbi`. Cette implémentation prend en charge les fonctionnalités de SQLAlchemy Core, y compris les requêtes `SELECT` avec des `JOIN` (`INNER`, `LEFT OUTER`, `FULL OUTER`, `CROSS`), les clauses `WHERE`, `ORDER BY`, `LIMIT`/`OFFSET`, les opérations `DISTINCT`, les instructions `DELETE` légères avec des conditions `WHERE`, l’introspection des tables et les opérations DDL de base (`CREATE TABLE`, `CREATE`/`DROP DATABASE`). Bien qu’elle ne prenne pas en charge les fonctionnalités ORM avancées ni les fonctionnalités DDL avancées, elle fournit de solides capacités de requête adaptées à la plupart des charges de travail analytiques sur la base de données OLAP de ClickHouse.
+* Le pilote principal et l’implémentation [ClickHouse Connect SQLAlchemy](/fr/integrations/language-clients/python/sqlalchemy) sont la méthode privilégiée pour connecter ClickHouse à Apache Superset. Utilisez la connexion de base de données `ClickHouse Connect` ou la chaîne de connexion du dialecte SQLAlchemy `clickhousedb`.
+
+Cette documentation est à jour pour la version 0.9.2 de clickhouse-connect.
+
+<Note>
+  Le pilote Python officiel ClickHouse Connect utilise le protocole HTTP pour communiquer avec le serveur ClickHouse. Cela permet la prise en charge des équilibreurs de charge HTTP et fonctionne bien dans les environnements d’entreprise avec des pare-feu et des proxys, mais offre une compression et des performances légèrement inférieures à celles du protocole natif basé sur TCP, et ne prend pas en charge certaines fonctionnalités avancées comme l’annulation de requêtes. Selon le cas d’usage, vous pouvez envisager d’utiliser l’un des [pilotes Python de la communauté](/fr/integrations/language-clients/third-party/client-libraries) qui utilisent le protocole natif basé sur TCP.
+</Note>
+
+<div id="requirements-and-compatibility">
+  ## Exigences et compatibilité
+</div>
+
+|       Python |    |     Plateforme¹ |    |      ClickHouse |    | SQLAlchemy² |    | Apache Superset |    | Pandas |    | Polars |    |
+| -----------: | :- | --------------: | :- | --------------: | :- | ----------: | :- | --------------: | :- | -----: | :- | -----: | :- |
+| 2.x, &lt;3.9 | ❌  |     Linux (x86) | ✅  |       &lt;25.x³ | 🟡 |  &lt;1.4.40 | ❌  |         &lt;1.4 | ❌  |   ≥1.5 | ✅  |    1.x | ✅  |
+|        3.9.x | ✅  | Linux (Aarch64) | ✅  |           25.x³ | 🟡 |     ≥1.4.40 | ✅  |           1.4.x | ✅  |    2.x | ✅  |        |    |
+|       3.10.x | ✅  |     macOS (x86) | ✅  |    25.3.x (LTS) | ✅  |        ≥2.x | ✅  |           1.5.x | ✅  |        |    |        |    |
+|       3.11.x | ✅  |     macOS (ARM) | ✅  | 25.6.x (stable) | ✅  |             |    |           2.0.x | ✅  |        |    |        |    |
+|       3.12.x | ✅  |         Windows | ✅  | 25.7.x (stable) | ✅  |             |    |           2.1.x | ✅  |        |    |        |    |
+|       3.13.x | ✅  |                 |    |    25.8.x (LTS) | ✅  |             |    |           3.0.x | ✅  |        |    |        |    |
+|              |    |                 |    | 25.9.x (stable) | ✅  |             |    |                 |    |        |    |        |    |
+
+¹ClickHouse Connect a été explicitement testé sur les plateformes répertoriées. En outre, des wheels binaires non testées (avec optimisation C) sont générées pour toutes les architectures prises en charge par l&#39;excellent projet [`cibuildwheel`](https://cibuildwheel.readthedocs.io/en/stable/). Enfin, comme ClickHouse Connect peut aussi s’exécuter en pure Python, l’installation depuis les sources devrait fonctionner sur toute installation récente de Python.
+
+²La prise en charge de SQLAlchemy est limitée aux fonctionnalités Core (requêtes, DDL de base). Les fonctionnalités ORM ne sont pas prises en charge. Consultez la documentation [SQLAlchemy Integration Support](/fr/integrations/language-clients/python/sqlalchemy) pour plus de détails.
+
+³ClickHouse Connect fonctionne généralement bien avec des versions en dehors de la plage officiellement prise en charge.
+
+<div id="installation">
+  ## Installation
+</div>
+
+Installez ClickHouse Connect depuis [PyPI](https://pypi.org/project/clickhouse-connect/) avec pip :
+
+`pip install clickhouse-connect`
+
+ClickHouse Connect peut également être installé from source :
+
+* exécutez `git clone` sur le [dépôt GitHub](https://github.com/ClickHouse/clickhouse-connect).
+* (Facultatif) exécutez `pip install cython` pour compiler et activer les optimisations C/Cython
+* placez-vous dans le répertoire racine du projet avec `cd`, puis exécutez `pip install .`
+
+<div id="support-policy">
+  ## Politique de support
+</div>
+
+Veuillez mettre à jour ClickHouse Connect vers sa dernière version avant de signaler un problème. Les problèmes doivent être signalés dans le [projet GitHub](https://github.com/ClickHouse/clickhouse-connect/issues). Les futures versions de ClickHouse Connect sont conçues pour être compatibles avec les versions de ClickHouse activement prises en charge au moment de leur publication. Les versions de serveur ClickHouse actuellement prises en charge sont indiquées [ici](https://github.com/ClickHouse/ClickHouse/blob/master/SECURITY.md). Si vous ne savez pas quelle version de serveur ClickHouse utiliser, consultez cette discussion [ici](/fr/resources/support-center/knowledge-base/setup-installation/production#how-to-choose-between-clickhouse-releases). Notre matrice de tests CI couvre les deux dernières versions LTS et les trois dernières versions stables. Cependant, grâce au protocole HTTP et au faible nombre de changements non rétrocompatibles entre les versions de ClickHouse, ClickHouse Connect fonctionne généralement bien avec des versions du serveur en dehors de la plage officiellement prise en charge, même si la compatibilité avec certains types de données avancés peut varier.
+
+<div id="basic-usage">
+  ## Utilisation de base
+</div>
+
+<div id="gather-your-connection-details">
+  ### Rassemblez vos paramètres de connexion
+</div>
+
+<ConnectionDetails />
+
+<div id="establish-a-connection">
+  ### Établir une connexion
+</div>
+
+Voici deux exemples de connexion à ClickHouse :
+
+* Connexion à un serveur ClickHouse sur localhost.
+* Connexion à un service ClickHouse Cloud.
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-server-on-localhost">
+  #### Utilisez une instance du client ClickHouse Connect pour vous connecter à un serveur ClickHouse sur localhost :
+</div>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='localhost', username='default', password='password')
+```
+
+<div id="use-a-clickhouse-connect-client-instance-to-connect-to-a-clickhouse-cloud-service">
+  #### Utilisez une instance du client ClickHouse Connect pour vous connecter à un service ClickHouse Cloud :
+</div>
+
+<Tip>
+  Utilisez les paramètres de connexion recueillis précédemment. Les services ClickHouse Cloud nécessitent le protocole TLS ; utilisez donc le port 8443.
+</Tip>
+
+```python
+import clickhouse_connect
+
+client = clickhouse_connect.get_client(host='HOSTNAME.clickhouse.cloud', port=8443, username='default', password='your password')
+```
+
+<div id="interact-with-your-database">
+  ### Interagissez avec votre base de données
+</div>
+
+Pour exécuter une commande ClickHouse SQL, utilisez la méthode `command` du client :
+
+```python
+client.command('CREATE TABLE new_table (key UInt32, value String, metric Float64) ENGINE MergeTree ORDER BY key')
+```
+
+Pour insérer des données par lot, utilisez la méthode `insert` du client avec un tableau bidimensionnel de lignes et de valeurs :
+
+```python
+row1 = [1000, 'String Value 1000', 5.233]
+row2 = [2000, 'String Value 2000', -107.04]
+data = [row1, row2]
+client.insert('new_table', data, column_names=['key', 'value', 'metric'])
+```
+
+Pour récupérer des données avec ClickHouse SQL, utilisez la méthode `query` du client :
+
+```python
+result = client.query('SELECT max(key), avg(metric) FROM new_table')
+print(result.result_rows)
+# Output: [(2000, -50.9035)]
+```

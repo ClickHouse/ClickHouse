@@ -1,0 +1,57 @@
+---
+sidebarTitle: 'Notion'
+slug: /integrations/notion
+keywords: ['clickhouse', 'notion', 'mcp', 'custom agent', 'ИИ', 'интеграция', 'подключение']
+description: 'Подключите ClickHouse Cloud к Custom Agent в Notion через удалённый MCP-сервер ClickHouse.'
+title: 'Подключение Notion к ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+[Notion](https://www.notion.com/) — это единое рабочее пространство для заметок, документов, проектов и Custom Agents на базе ИИ.
+
+Вы можете подключить ClickHouse Cloud к [Custom Agent](https://www.notion.com/help/mcp-connections-for-custom-agents) в Notion. После подключения агент сможет просматривать ваши данные, выполнять аналитические запросы в режиме только для чтения и получать информацию о сервисе и расходах в ClickHouse Cloud, не покидая Notion.
+
+<div id="prerequisites">
+  ## Предварительные требования
+</div>
+
+* Запущенный [сервис ClickHouse Cloud](/ru/get-started/setup/cloud) с [включенным удалённым MCP-сервером](/ru/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)
+* Рабочее пространство Notion на тарифе **Business** или **Enterprise**
+
+<div id="connect-clickhouse-to-notion">
+  ## Подключение ClickHouse к Custom Agent в Notion
+</div>
+
+ClickHouse доступен в Notion как преднастроенное подключение (пока в статусе бета). Настраивать пользовательский MCP-сервер или вставлять URL не требуется.
+
+1. В Notion создайте новый Custom Agent в разделе **Agents** на боковой панели.
+2. В **Settings** агента, в разделе **Tools and Access**, выберите **Add connection** и добавьте **ClickHouse** из списка доступных подключений.
+
+<Image img="/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp" size="md" alt="Выбор ClickHouse в списке Add connection в Notion" />
+
+3. Нажмите **Connect** и завершите OAuth-аутентификацию, используя свои учётные данные ClickHouse Cloud. Доступ будет ограничен организациями и сервисами, к которым у вашего аккаунта уже есть доступ.
+
+4. Разверните новое подключение ClickHouse в настройках агента и включите нужные инструменты для этого агента. Для каждого инструмента также можно выбрать, должен ли агент запускать его автоматически или всегда запрашивать подтверждение. Все инструменты, предоставляемые удалённым MCP-сервером ClickHouse, доступны только для чтения. Полный актуальный список см. в разделе [доступных инструментов](/ru/products/cloud/features/ai-ml/remote-mcp#available-tools).
+
+<Image img="/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp" size="md" alt="Развёрнутое подключение ClickHouse в Notion с переключателями для отдельных инструментов" />
+
+<Note>
+  Для каждого Custom Agent требуется отдельное подключение ClickHouse, и только пользователь, выполнивший аутентификацию подключения, может изменять настройки его инструментов. Подробнее см. в Notion: [рекомендации по безопасности для подключений Agent](https://www.notion.com/help/security-best-practices-for-agent-connections).
+</Note>
+
+<div id="related-content">
+  ## Связанные материалы
+</div>
+
+* [Включить и подключить удалённый MCP-сервер в ClickHouse Cloud](/ru/products/cloud/features/ai-ml/mcp/remote-mcp)
+* [Remote MCP в Cloud: справочник по инструментам](/ru/products/cloud/features/ai-ml/remote-mcp)
+* Notion: [MCP-подключения для Custom Agents](https://www.notion.com/help/mcp-connections-for-custom-agents)
+* Notion: [Подключите Custom Agents к своему стеку инструментов с помощью MCP-интеграций](https://www.notion.com/help/guides/connect-custom-agents-to-mcp-integrations)

@@ -1,0 +1,106 @@
+---
+sidebarTitle: 'Holistics'
+slug: /integrations/holistics
+keywords: ['clickhouse', 'Holistics', 'AI', 'integrate', 'bi', 'data visualization']
+description: 'Holistics is an AI-powered platform for self-service BI and embedded analytics that helps everyone make better decisions with governed, easily accessible metrics.'
+title: 'Connecting ClickHouse to Holistics'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/components/Image.jsx";
+import CommunityMaintainedBadge from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge/>
+
+[Holistics](https://www.holistics.io/) is an AI-native self-service BI platform with a programmable semantic layer for consistent, trustworthy metrics.
+
+By connecting ClickHouse to Holistics, your teams get a fast, reliable AI-powered self-service experience grounded in a code-based semantic layer. Business users can explore data confidently with drag-and-drop and AI, while you keep metric definitions reusable, composable, and version-controlled in Git.
+
+## Prerequisites {#prerequisites}
+
+Before connecting, ensure you have the following:
+
+- **Permissions:** You must be an Admin in Holistics to add new Data Sources.
+- **Network Access:** Your ClickHouse server must be accessible from [Holistics' IP addresses](https://docs.holistics.io/docs/connect/ip-whitelisting).
+- **Database User:** Create a dedicated, read-only user for Holistics rather than using an admin account.
+
+### Recommended privileges {#recommended-privileges}
+
+The dedicated user requires `SELECT` privileges on the tables you wish to query, as well as the `system` tables (for schema detection).
+
+```sql
+-- Example: Grant read access to a specific database
+GRANT SELECT ON my_database.* TO holistics_user;
+
+-- Grant access to system metadata
+GRANT SELECT ON system.* TO holistics_user;
+```
+
+<Steps>
+<Step>
+## Gather connection details {#step-1-gather-connection-details}
+
+To connect to ClickHouse with HTTP(S) you will need this information:
+
+| **Parameter**     | **Description**                                                                           |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| **Host**          | The hostname of your ClickHouse server (e.g., `mz322.eu-central-1.aws.clickhouse.cloud`). |
+| **Port**          | **8443** for ClickHouse Cloud (SSL/TLS). **8123** for self-managed instances without SSL. |
+| **Database Name** | The name of the database you want to connect to. The default is usually `default`.        |
+| **Username**      | The database user. The default is `default`.                                              |
+| **Password**      | The password for the database user.                                                       |
+
+You can find these details by clicking the **Connect** button in your ClickHouse Cloud console and selecting **HTTPS**.
+
+<Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="Location of the Connect button in the ClickHouse Cloud console" border />
+</Step>
+<Step>
+## Configure network access {#step-2-configure-network-access}
+
+Since Holistics is a cloud-based application, its servers must be able to reach your database. You have two options:
+
+1. **Direct Connection (Recommended):** Allowlist Holistics' IP addresses in your firewall or ClickHouse Cloud IP Access List. You can find the list of IPs in the [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting).
+
+   <Image size="md" img="/images/integrations/data-visualization/holistics_02.webp" alt="Example of IP allowlisting in ClickHouse Cloud" border />
+
+2. **Reverse SSH Tunnel:** If your database is in a private network (VPC) and can't be exposed publicly, use a [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
+</Step>
+<Step>
+## Add data source in Holistics {#step-3-add-data-source-in-holistics}
+
+1. In Holistics, go to **Settings → Data Sources**.
+
+   <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="Navigating to Data Sources in Holistics settings" border />
+
+2. Click **New Data Source** and select **ClickHouse**.
+
+   <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="Selecting ClickHouse from the list of new data sources" border />
+
+3. Fill in the form with the details gathered in Step 1.
+
+   | **Field**         | **Setting**                                                       |
+   | ----------------- | ----------------------------------------------------------------- |
+   | **Host**          | Your ClickHouse Hostname                                          |
+   | **Port**          | `8443` (or `8123`)                                                |
+   | **Require SSL**   | Toggle **ON** if using port 8443 (Required for ClickHouse Cloud). |
+   | **Database Name** | `default` (or your specific DB)                                   |
+
+   <Image size="md" img="/images/integrations/data-visualization/holistics_05.webp" alt="Filling in ClickHouse connection details in Holistics" border />
+
+4. Click **Test Connection**.
+
+   <Image size="md" img="/images/integrations/data-visualization/holistics_06.webp" alt="Successful ClickHouse connection test in Holistics" border />
+
+   - **Success:** Click **Save**.
+   - **Failure:** Check your username/password and ensure the [Holistics IPs are allowlisted](https://docs.holistics.io/docs/connect/ip-whitelisting).
+</Step>
+</Steps>
+
+## Known limitations {#known-limitations}
+
+Holistics supports most standard SQL features in ClickHouse, with the following exceptions:
+
+- **Running Total:** This analytic function currently has limited support on ClickHouse.
+- **Nested Data Types:** Deeply nested JSON or Array structures may require flattening via SQL models before visualization.
+
+For a full list of supported features, please refer to the [Database-specific Limitations page](https://docs.holistics.io/docs/connect/faqs/clickhouse-limitations).
