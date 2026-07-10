@@ -10,6 +10,8 @@
 SET enable_automatic_use_uncompressed_cache = 1;
 SET enable_analyzer = 1;
 SET log_queries = 1;
+SET optimize_read_in_order = 1;
+SET parallel_replicas_local_plan = 1;
 SET query_plan_optimize_lazy_materialization = 1;
 SET query_plan_max_limit_for_lazy_materialization = 10000;
 
