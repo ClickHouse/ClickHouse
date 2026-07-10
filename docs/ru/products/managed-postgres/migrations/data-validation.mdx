@@ -1,0 +1,30 @@
+---
+slug: /cloud/managed-postgres/migrations/data-validation
+sidebarTitle: 'Проверка корректности данных'
+title: 'Проверьте корректность данных после миграции'
+description: 'Узнайте, как проверить корректность данных после миграции в ClickHouse Managed Postgres'
+keywords: ['postgres', 'postgresql', 'логическая репликация', 'миграция', 'передача данных', 'Managed Postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.data-validation-beta" />
+
+<div id="data-validation-counts">
+  ## Сравнение числа строк во всех таблицах
+</div>
+
+Простой способ проверить корректность данных после миграции — сравнить число строк во всех таблицах в исходной и целевой базах данных. Для этого выполните следующий запрос в обеих базах данных:
+
+```sql
+SELECT table_name, 
+       (xpath('/row/cnt/text()', xml_count))[1]::text::bigint AS row_count
+FROM (
+  SELECT table_name, 
+         query_to_xml('SELECT count(*) AS cnt FROM ' || quote_ident(table_name), false, true, '') AS xml_count
+  FROM information_schema.tables
+  WHERE table_schema = 'public'
+) t
+ORDER BY table_name;
+```

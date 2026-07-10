@@ -1,0 +1,88 @@
+---
+noindex: true
+title: "분산 쿼리를 위한 remote_servers 구성"
+sidebarTitle: "remote_servers 구성"
+description: "Kubernetes 시크릿과 `@from_env` 지시어를 사용하여 여러 ClickHouse Private 클러스터에 데이터를 세그먼트로 분할하도록 ClickHouse remote_servers를 안전하게 구성합니다."
+---
+
+Kubernetes 시크릿과 `@from_env` 지시어를 사용하여 여러 ClickHouse Private 클러스터에 데이터를 세그먼트로 분할하도록 ClickHouse `remote_servers`를 안전하게 구성합니다.
+
+<div id="when-to-use-remote_servers">
+  ## remote_servers를 사용해야 하는 경우
+</div>
+
+[`remote_servers`](https://clickhouse.com/docs/operations/server-configuration-parameters/settings#remote_servers)는 ClickHouse가 [분산 테이블](https://clickhouse.com/docs/engines/table-engines/special/distributed) 또는 [`cluster()`](https://clickhouse.com/docs/sql-reference/table-functions/cluster) 테이블 함수를 통해 분산 쿼리를 실행할 때 사용하는 이름이 지정된 클러스터 토폴로지를 정의합니다.
+
+단일 ClickHouse Private 클러스터 내에서는 레플리카가 이미 ClickHouse Keeper 및 [SharedMergeTree](https://clickhouse.com/docs/cloud/reference/shared-merge-tree)를 통해 조정되며, 이는 ClickHouse Cloud에서 사용하는 것과 동일한 아키텍처이므로 복제 목적으로는 `remote_servers`가 필요하지 않습니다. 이 구성이 대부분의 사용 사례를 충족합니다.
+
+여러 ClickHouse Private 클러스터에 걸쳐 데이터를 세그먼트 분할하면 운영 복잡성이 크게 증가하므로, 이는 최후의 수단으로만 고려해야 합니다. 워크로드에 이것이 필요하다고 생각되면, 실제로 적절한 접근 방식인지 평가할 수 있도록 먼저 문의할 것을 강력히 권장합니다.
+
+<div id="prerequisites">
+  ## 사전 요구 사항
+</div>
+
+* `onprem-clickhouse-cluster` Helm 차트 버전 **1.1.151 이상**
+* 2개의 ClickHouse Private 클러스터가 배포되어 있어야 합니다(이 가이드에서는 `default-xx-01` 및 `default-xx-02`를 사용합니다)
+* 클러스터 비밀번호가 포함된 `default-xx-01-password` 및 `default-xx-02-password`라는 이름의 Kubernetes [시크릿](https://kubernetes.io/docs/concepts/configuration/secret/)이 있어야 합니다
+
+<div id="the-pattern">
+  ## 패턴
+</div>
+
+1. Kubernetes 시크릿에 민감한 값(클러스터 비밀번호)을 저장합니다.
+2. `secretKeyRef`는 해당 값을 ClickHouse 컨테이너의 환경 변수로 주입합니다.
+3. ClickHouse 구성은 [`@from_env`](https://clickhouse.com/docs/operations/configuration-files#from_env_zk) 지시어를 사용해 런타임에 값을 읽습니다.
+
+이렇게 하면 렌더링된 매니페스트에서 민감한 데이터를 제외할 수 있습니다.
+
+> 외부 시크릿 저장소(예: HashiCorp Vault, AWS Secrets Manager)와 통합하는 경우 [Kubernetes Secrets Store CSI Driver](https://github.com/kubernetes-sigs/secrets-store-csi-driver)를 사용해 시크릿을 마운트하고 [환경 변수로 로드](https://secrets-store-csi-driver.sigs.k8s.io/topics/set-as-env-var)하십시오. 환경 변수가 어떤 방식으로 채워지든 `@from_env` 패턴은 동일하게 작동합니다.
+
+<div id="helm-values-example">
+  ## Helm Values 예시
+</div>
+
+각 세그먼트는 해당 클러스터의 `-any` 서비스를 통해 주소가 지정됩니다. 이 서비스는 해당 클러스터에서 사용 가능한 아무 레플리카로나 트래픽을 라우팅하는 Kubernetes 서비스입니다. 따라서 시간이 지나며 변경될 수 있는 개별 파드 DNS 이름을 사용하는 것보다 더 안정적입니다.
+
+```yaml
+server:
+  additionalEnvVars:
+    - name: DEFAULT_XX_01_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-01-password
+          key: password
+    - name: DEFAULT_XX_02_PASSWORD
+      valueFrom:
+        secretKeyRef:
+          name: default-xx-02-password
+          key: password
+  config:
+    remote_servers:
+      my-distributed-cluster:
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_01_PASSWORD
+              host: c-default-xx-01-any.ns-default-xx-01.svc.cluster.local
+              port: 9000
+        - shard:
+            replica:
+              user: default
+              password:
+                "@from_env": DEFAULT_XX_02_PASSWORD
+              host: c-default-xx-02-any.ns-default-xx-02.svc.cluster.local
+              port: 9000
+```
+
+<div id="service-hostname-format">
+  ## 서비스 호스트명 포맷
+</div>
+
+`-any` 서비스 호스트명은 다음과 같은 패턴을 따릅니다:
+
+```text
+c-<cluster-name>-any.<namespace>.svc.cluster.local
+```
+
+이 패턴을 사용하면 민감한 데이터가 매니페스트에 직접 템플릿으로 포함되지 않도록 할 수 있습니다. `additionalEnvVars` 필드는 `secretKeyRef`를 사용해 Kubernetes 시크릿에서 환경 변수를 설정하며, ClickHouse 구성의 `@from_env` 지시어는 런타임에 해당 값을 로드합니다.

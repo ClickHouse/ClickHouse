@@ -1,0 +1,142 @@
+---
+title: S3 身份验证与存储桶
+---
+
+<Accordion title="创建 S3 存储桶和 IAM 用户">
+  本文介绍配置 AWS IAM 用户、创建 S3 存储桶并将 ClickHouse 配置为使用该存储桶作为 S3 磁盘的基本步骤。
+  建议与您的安全团队共同确定所需权限，并将本文内容作为参考起点。
+
+  ### 创建 AWS IAM 用户
+
+  在以下步骤中，您将创建一个服务账号用户 (而非登录用户) 。
+
+  1. 登录到 AWS IAM 管理控制台。
+
+  2. 在 `Users` 菜单中，选择 `Create user`
+
+  <Image size="md" img="/images/_snippets/s3/s3-1.webp" alt="AWS IAM 管理控制台 - 添加新用户" border force />
+
+  3. 输入用户名，将凭证类型设为 `Access key - Programmatic access`，然后选择 `Next: Permissions`
+
+  <Image size="md" img="/images/_snippets/s3/s3-2.webp" alt="为 IAM 用户设置用户名和访问类型" border force />
+
+  4. 不要将该用户添加到任何组；选择 `Next: 标签`
+
+  <Image size="md" img="/images/_snippets/s3/s3-3.webp" alt="跳过 IAM 用户的组分配" border force />
+
+  5. 如果不需要添加标签，请选择 `Next: Review`
+
+  <Image size="md" img="/images/_snippets/s3/s3-4.webp" alt="跳过为 IAM 用户分配标签" border force />
+
+  6. 选择 `Create User`
+
+  <Note>
+    显示用户没有权限的警告信息可以忽略；将在下一节为该用户授予该存储桶的权限
+  </Note>
+
+  <Image size="md" img="/images/_snippets/s3/s3-5.webp" alt="关于创建无权限 IAM 用户的警告" border force />
+
+  7. 用户现已创建完成；点击 `show` 并复制访问密钥和秘密密钥。
+
+  <Note>
+    请将这些密钥另行妥善保存；这是唯一一次能看到 secret access key 的机会。
+  </Note>
+
+  <Image size="md" img="/images/_snippets/s3/s3-6.webp" alt="查看并复制 IAM 用户访问密钥" border force />
+
+  8. 点击“关闭”，然后在“用户”页面中找到该用户。
+
+  <Image size="md" img="/images/_snippets/s3/s3-7.webp" alt="在用户列表中找到新创建的 IAM 用户" border force />
+
+  9. 复制 ARN (Amazon Resource Name) ，并保存好，以便在为存储桶配置访问策略时使用。
+
+  <Image size="md" img="/images/_snippets/s3/s3-8.webp" alt="复制 IAM 用户 ARN" border force />
+
+  ### 创建 S3 存储桶
+
+  1. 在 S3 存储桶部分，选择 `Create bucket`
+
+  <Image size="md" img="/images/_snippets/s3/s3-9.webp" alt="开始创建 S3 bucket" border force />
+
+  2. 输入存储桶名称，其他选项保留默认值
+
+  <Note>
+    存储桶名称必须在整个 AWS 范围内保持唯一，而不只是组织内部唯一，否则会报错。
+  </Note>
+
+  3. 保持 `Block all Public Access` 为启用状态；无需开放公共访问。
+
+  <Image size="md" img="/images/_snippets/s3/s3-a.webp" alt="配置已阻止公共访问的 S3 存储桶设置" border force />
+
+  4. 在页面底部选择 `Create Bucket`。
+
+  <Image size="md" img="/images/_snippets/s3/s3-b.webp" alt="完成创建 S3 存储桶" border force />
+
+  5. 选择该链接，复制 ARN，并将其保存，以便在为存储桶配置访问策略时使用。
+
+  6. 创建存储桶后，在 S3 存储桶列表中找到新创建的 S3 存储桶，然后点击其链接
+
+  <Image size="md" img="/images/_snippets/s3/s3-c.webp" alt="在存储桶列表中查找新创建的 S3 存储桶" border force />
+
+  7. 选择 `Create folder`
+
+  <Image size="md" img="/images/_snippets/s3/s3-d.webp" alt="在 S3 存储桶中新建文件夹" border force />
+
+  8. 输入一个文件夹名称，作为 ClickHouse S3 磁盘的目标文件夹，然后选择 `Create folder`
+
+  <Image size="md" img="/images/_snippets/s3/s3-e.webp" alt="设置 ClickHouse S3 磁盘的文件夹名称" border force />
+
+  9. 该文件夹现在应该已在存储桶列表中显示
+
+  <Image size="md" img="/images/_snippets/s3/s3-f.webp" alt="查看 S3 存储桶中刚创建的文件夹" border force />
+
+  10. 选中新建文件夹旁的复选框，然后点击 `Copy URL`。请保存复制得到的 URL，以便在下一节的 ClickHouse 存储配置中使用。
+
+  <Image size="md" img="/images/_snippets/s3/s3-g.webp" alt="复制 ClickHouse 配置所需的 S3 文件夹 URL" border force />
+
+  11. 选择 `Permissions` 选项卡，然后点击 `Bucket Policy` 部分中的 `Edit` 按钮
+
+  <Image size="md" img="/images/_snippets/s3/s3-h.webp" alt="访问 S3 存储桶策略配置" border force />
+
+  12. 添加存储桶策略，示例如下：
+
+  ```json
+  {
+    "Version" : "2012-10-17",
+    "Id" : "Policy123456",
+    "Statement" : [
+      {
+        "Sid" : "abc123",
+        "Effect" : "Allow",
+        "Principal" : {
+          "AWS" : "arn:aws:iam::921234567898:user/mars-s3-user"
+        },
+        "Action" : "s3:*",
+        "Resource" : [
+          "arn:aws:s3:::mars-doc-test",
+          "arn:aws:s3:::mars-doc-test/*"
+        ]
+      }
+    ]
+  }
+  ```
+
+  ```response
+  |参数 | 描述 | 示例值 |
+  |----------|-------------|----------------|
+  |Version | 策略解释器的版本，保持不变 | 2012-10-17 |
+  |Sid | 用户自定义的策略 ID | abc123 |
+  |Effect | 用户请求是被允许还是被拒绝 | Allow |
+  |Principal | 被授权访问的账户或用户 | arn:aws:iam::921234567898:user/mars-s3-user |
+  |Action | 允许对存储桶执行的操作| s3:*|
+  |Resource | 存储桶中允许执行操作的资源范围 | "arn:aws:s3:::mars-doc-test", "arn:aws:s3:::mars-doc-test/*" |
+  ```
+
+  <Note>
+    你应与安全团队协作，确定要使用的权限；可将这些内容作为起点。
+    有关策略和设置的更多信息，请参阅 AWS 文档：
+    https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-policy-language-overview.html
+  </Note>
+
+  13. 保存策略配置。
+</Accordion>

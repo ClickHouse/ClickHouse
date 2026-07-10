@@ -1,0 +1,227 @@
+---
+slug: /sql-reference/statements/create/dictionary/layouts/regexp-tree
+title: '正则表达式树字典布局'
+sidebarTitle: '正则表达式树'
+description: '配置用于基于模式查找的正则表达式树字典。'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="overview">
+  ## 概述
+</div>
+
+`regexp_tree` 字典允许你根据分层正则表达式模式将键映射到值。
+它针对模式匹配查找进行了优化 (例如，通过匹配正则表达式模式对 User-Agent 字符串这类字符串进行分类) ，而不是精确的键名匹配。
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/ESlAhUJMoz8?si=sY2OVm-zcuxlDRaX" title="ClickHouse 正则表达式树字典简介" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+<div id="use-regular-expression-tree-dictionary-in-clickhouse-open-source">
+  ## 使用 YAMLRegExpTree 源的正则表达式树字典
+</div>
+
+<CloudNotSupportedBadge />
+
+在 ClickHouse 开源版中，正则表达式树字典通过 [`YAMLRegExpTree`](/zh/reference/statements/create/dictionary/sources/yamlregexptree) 源定义，该源需要提供一个指向包含正则表达式树的 YAML 文件的路径。
+
+```sql title="Query"
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    name String,
+    version String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+...
+```
+
+[`YAMLRegExpTree`](/zh/reference/statements/create/dictionary/sources/yamlregexptree) 字典源表示 正则表达式树 的结构。例如：
+
+```yaml
+- regexp: 'Linux/(\d+[\.\d]*).+tlinux'
+  name: 'TencentOS'
+  version: '\1'
+
+- regexp: '\d+/tclwebkit(?:\d+[\.\d]*)'
+  name: 'Android'
+  versions:
+    - regexp: '33/tclwebkit'
+      version: '13'
+    - regexp: '3[12]/tclwebkit'
+      version: '12'
+    - regexp: '30/tclwebkit'
+      version: '11'
+    - regexp: '29/tclwebkit'
+      version: '10'
+```
+
+此 config 由一组正则表达式树节点组成。每个节点具有以下结构：
+
+* **regexp**：节点的正则表达式。
+* **属性**：用户定义的字典属性列表。在此示例中，有两个属性：`name` 和 `version`。第一个节点定义了这两个属性。第二个节点只定义了属性 `name`。属性 `version` 由第二个节点的子节点提供。
+  * 属性值可以包含**反向引用**，用于引用匹配到的正则表达式捕获组。在此示例中，第一个节点中属性 `version` 的值包含一个反向引用 `\1`，它指向正则表达式中的捕获组 `(\d+[\.\d]*)`。反向引用编号范围为 1 到 9，写作 `$1` 或 `\1` (以数字 1 为例) 。执行查询时，反向引用会被替换为匹配到的捕获组。
+* **子节点**：正则表达式树 节点的子节点列表，每个子节点都有自己的属性以及 (可能存在的) 子节点。字符串匹配按深度优先的方式进行。如果某个字符串匹配一个 regexp 节点，字典会检查它是否也匹配该节点的子节点。如果是，则会赋予最深层匹配节点的属性。子节点的属性会覆盖父节点中同名的属性。YAML 文件中的子节点名称可以是任意的，例如上例中的 `versions`。
+
+正则表达式树 dictionaries 仅允许通过函数 `dictGet`、`dictGetOrDefault` 和 `dictGetAll` 访问。例如：
+
+```sql title="Query"
+SELECT dictGet('regexp_dict', ('name', 'version'), '31/tclwebkit1024');
+```
+
+```text title="Response"
+┌─dictGet('regexp_dict', ('name', 'version'), '31/tclwebkit1024')─┐
+│ ('Android','12')                                                │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+在这种情况下，我们首先在顶层第二个节点中匹配正则表达式 `\d+/tclwebkit(?:\d+[\.\d]*)`。
+然后，字典会继续查找子节点，并发现该字符串也匹配 `3[12]/tclwebkit`。
+因此，属性 `name` 的值为 `Android` (定义于第一层) ，而属性 `version` 的值为 `12` (定义于子节点) 。
+
+借助复杂的 YAML 配置文件，你可以将 正则表达式树 dictionaries 用作 User-Agent 字符串解析器。
+ClickHouse 支持 [uap-core](https://github.com/ua-parser/uap-core)，你可以在功能测试 [02504&#95;regexp&#95;dictionary&#95;ua&#95;parser](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/02504_regexp_dictionary_ua_parser.sh) 中查看其用法
+
+<div id="collecting-attribute-values">
+  ### 收集属性值
+</div>
+
+有时，返回多个已匹配的正则表达式对应的值会很有用，而不只是返回叶节点的值。在这种情况下，可以使用专用的 [`dictGetAll`](/zh/reference/functions/regular-functions/ext-dict-functions#dictGetAll) 函数。如果某个节点的属性值类型为 `T`，`dictGetAll` 将返回一个 `Array(T)`，其中包含零个或多个值。
+
+默认情况下，每个键返回的匹配数量不受限制。也可以将上限作为可选的第四个参数传给 `dictGetAll`。该数组会按*拓扑顺序*填充，也就是说，子节点排在父节点之前，而同级节点则遵循源中的顺序。
+
+示例：
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    tag String,
+    topological_index Int64,
+    captured Nullable(String),
+    parent String
+)
+PRIMARY KEY(regexp)
+SOURCE(YAMLRegExpTree(PATH '/var/lib/clickhouse/user_files/regexp_tree.yaml'))
+LAYOUT(regexp_tree)
+LIFETIME(0)
+```
+
+```yaml
+# /var/lib/clickhouse/user_files/regexp_tree.yaml
+- regexp: 'clickhouse\.com'
+  tag: 'ClickHouse'
+  topological_index: 1
+  paths:
+    - regexp: 'clickhouse\.com/docs(.*)'
+      tag: 'ClickHouse Documentation'
+      topological_index: 0
+      captured: '\1'
+      parent: 'ClickHouse'
+
+- regexp: '/docs(/|$)'
+  tag: 'Documentation'
+  topological_index: 2
+
+- regexp: 'github.com'
+  tag: 'GitHub'
+  topological_index: 3
+  captured: 'NULL'
+```
+
+```sql title="Query"
+CREATE TABLE urls (url String) ENGINE=MergeTree ORDER BY url;
+INSERT INTO urls VALUES ('clickhouse.com'), ('clickhouse.com/docs/en'), ('github.com/clickhouse/tree/master/docs');
+SELECT url, dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2) FROM urls;
+```
+
+```text title="Response"
+┌─url────────────────────────────────────┬─dictGetAll('regexp_dict', ('tag', 'topological_index', 'captured', 'parent'), url, 2)─┐
+│ clickhouse.com                         │ (['ClickHouse'],[1],[],[])                                                            │
+│ clickhouse.com/docs/en                 │ (['ClickHouse Documentation','ClickHouse'],[0,1],['/en'],['ClickHouse'])              │
+│ github.com/clickhouse/tree/master/docs │ (['Documentation','GitHub'],[2,3],[NULL],[])                                          │
+└────────────────────────────────────────┴───────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+<div id="matching-modes">
+  ### 匹配模式
+</div>
+
+模式匹配行为可通过某些字典设置进行调整：
+
+* `regexp_dict_flag_case_insensitive`：使用不区分大小写的匹配 (默认为 `false`) 。也可在单个表达式中使用 `(?i)` 和 `(?-i)` 进行覆盖。
+* `regexp_dict_flag_dotall`：允许 `.` 匹配换行字符 (默认为 `false`) 。
+
+<div id="use-regular-expression-tree-dictionary-in-clickhouse-cloud">
+  ## 在 ClickHouse Cloud 中使用正则表达式树字典
+</div>
+
+[`YAMLRegExpTree`](/zh/reference/statements/create/dictionary/sources/yamlregexptree) 源可在 ClickHouse Open Source 中使用，但在 ClickHouse Cloud 中不受支持。
+要在 ClickHouse Cloud 中使用正则表达式树字典，首先在本地的 ClickHouse Open Source 中基于 YAML 文件创建一个正则表达式树字典，然后使用 `dictionary` 表函数和 [INTO OUTFILE](/zh/reference/statements/select/into-outfile) 子句将该字典转储到 CSV file 中。
+
+```sql
+SELECT * FROM dictionary(regexp_dict) INTO OUTFILE('regexp_dict.csv')
+```
+
+CSV 文件内容如下：
+
+```text
+1,0,"Linux/(\d+[\.\d]*).+tlinux","['version','name']","['\\1','TencentOS']"
+2,0,"(\d+)/tclwebkit(\d+[\.\d]*)","['comment','version','name']","['test $1 and $2','$1','Android']"
+3,2,"33/tclwebkit","['version']","['13']"
+4,2,"3[12]/tclwebkit","['version']","['12']"
+5,2,"3[12]/tclwebkit","['version']","['11']"
+6,2,"3[12]/tclwebkit","['version']","['10']"
+```
+
+转储文件的 schema 如下：
+
+* `id UInt64`：RegexpTree 节点的 id。
+* `parent_id UInt64`：节点父节点的 id。
+* `regexp String`：正则表达式字符串。
+* `keys Array(String)`：用户定义属性的名称。
+* `values Array(String)`：用户定义属性的值。
+
+要在 ClickHouse Cloud 中创建该字典，首先创建一个名为 `regexp_dictionary_source_table` 的表，其表结构如下：
+
+```sql
+CREATE TABLE regexp_dictionary_source_table
+(
+    id UInt64,
+    parent_id UInt64,
+    regexp String,
+    keys   Array(String),
+    values Array(String)
+) ENGINE=Memory;
+```
+
+然后按如下方式更新本地 CSV：
+
+```bash
+clickhouse client \
+    --host MY_HOST \
+    --secure \
+    --password MY_PASSWORD \
+    --query "
+    INSERT INTO regexp_dictionary_source_table
+    SELECT * FROM input ('id UInt64, parent_id UInt64, regexp String, keys Array(String), values Array(String)')
+    FORMAT CSV" < regexp_dict.csv
+```
+
+你可以参阅[插入本地文件](/zh/integrations/connectors/data-ingestion/insert-local-files)了解更多详情。初始化源表后，我们就可以通过表源创建 RegexpTree：
+
+```sql
+CREATE DICTIONARY regexp_dict
+(
+    regexp String,
+    name String,
+    version String
+PRIMARY KEY(regexp)
+SOURCE(CLICKHOUSE(TABLE 'regexp_dictionary_source_table'))
+LIFETIME(0)
+LAYOUT(regexp_tree);
+```

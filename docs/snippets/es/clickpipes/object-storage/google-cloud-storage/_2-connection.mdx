@@ -1,0 +1,13 @@
+---
+title: 2 Conexión
+---
+
+<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/cp_step2.webp" alt="Complete los detalles de conexión" size="lg" border />
+
+* **Ruta del archivo de GCS**: El ClickPipe de GCS usa la [XML API](https://docs.cloud.google.com/storage/docs/interoperability) de Cloud Storage por motivos de interoperabilidad, lo que requiere el endpoint `storage.googleapis.com`:
+
+  ```bash
+  https://storage.googleapis.com/bucket-name/key-name
+  ```
+
+  Puede usar comodines POSIX para hacer coincidir varios archivos o prefijos. Consulte la [documentación de referencia](/es/integrations/clickpipes/object-storage/google-cloud-storage/overview#file-pattern-matching) para obtener orientación sobre los patrones admitidos.

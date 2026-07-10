@@ -1,0 +1,78 @@
+---
+description: 'UNION 절에 대한 문서'
+sidebarTitle: 'UNION'
+slug: /sql-reference/statements/select/union
+title: 'UNION 절'
+doc_type: 'reference'
+---
+
+`UNION`은 `UNION ALL` 또는 `UNION DISTINCT`를 명시적으로 지정해 사용할 수 있습니다.
+
+`ALL` 또는 `DISTINCT`를 지정하지 않으면 `union_default_mode` 설정에 따라 동작합니다. `UNION ALL`과 `UNION DISTINCT`의 차이는 `UNION DISTINCT`가 UNION 결과에 중복 제거를 적용한다는 점이며, 이는 `UNION ALL`을 포함하는 서브쿼리에서 `SELECT DISTINCT`를 수행하는 것과 같습니다.
+
+`UNION`을 사용하면 여러 개의 `SELECT` 쿼리 결과를 이어 붙여 결합할 수 있습니다. 예시:
+
+```sql title="Query"
+SELECT CounterID, 1 AS table, toInt64(count()) AS c
+    FROM test.hits
+    GROUP BY CounterID
+
+UNION ALL
+
+SELECT CounterID, 2 AS table, sum(Sign) AS c
+    FROM test.visits
+    GROUP BY CounterID
+    HAVING c > 0
+```
+
+결과 컬럼은 인덱스(`SELECT` 내부 순서)를 기준으로 매칭됩니다. 컬럼 이름이 일치하지 않으면 최종 결과의 이름은 첫 번째 쿼리의 이름을 따릅니다.
+
+유니온에는 타입 캐스팅이 수행됩니다. 예를 들어, 결합되는 두 쿼리에 호환 가능한 타입의 동일한 필드가 있고 하나는 non-`Nullable` 타입, 다른 하나는 `Nullable` 타입인 경우, 결과 `UNION`의 해당 필드는 `Nullable` 타입이 됩니다.
+
+`UNION`에 포함된 쿼리는 `()`로 감쌀 수 있습니다. [ORDER BY](/ko/reference/statements/select/order-by) 및 [LIMIT](/ko/reference/statements/select/limit)은 최종 결과가 아니라 각각의 개별 쿼리에 적용됩니다. 최종 결과에 변환을 적용해야 한다면, `UNION`이 포함된 모든 쿼리를 [FROM](/ko/reference/statements/select/from) 절의 서브쿼리로 넣을 수 있습니다.
+
+`UNION ALL` 또는 `UNION DISTINCT`를 명시적으로 지정하지 않고 `UNION`을 사용하는 경우, [union&#95;default&#95;mode](/ko/reference/settings/session-settings#union_default_mode) 설정으로 union mode를 지정할 수 있습니다. 이 설정의 값은 `ALL`, `DISTINCT` 또는 빈 문자열일 수 있습니다. 하지만 `union_default_mode` 설정이 빈 문자열로 지정된 상태에서 `UNION`을 사용하면 예외가 발생합니다. 다음 예시는 설정값에 따라 쿼리 결과가 어떻게 달라지는지 보여줍니다.
+
+```sql title="Query"
+SET union_default_mode = 'DISTINCT';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+```text title="Response"
+┌─1─┐
+│ 1 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 3 │
+└───┘
+```
+
+```sql title="Query"
+SET union_default_mode = 'ALL';
+SELECT 1 UNION SELECT 2 UNION SELECT 3 UNION SELECT 2;
+```
+
+```text title="Response"
+┌─1─┐
+│ 1 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 2 │
+└───┘
+┌─1─┐
+│ 3 │
+└───┘
+```
+
+`UNION/UNION ALL/UNION DISTINCT`를 구성하는 쿼리는 동시에 실행될 수 있으며, 그 결과가 함께 섞여 반환될 수 있습니다.
+
+**관련 항목**
+
+* [insert&#95;null&#95;as&#95;default](/ko/reference/settings/session-settings#insert_null_as_default) 설정.
+* [union&#95;default&#95;mode](/ko/reference/settings/session-settings#union_default_mode) 설정.
