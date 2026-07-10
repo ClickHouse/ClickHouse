@@ -970,6 +970,15 @@ std::optional<String> optimizeUseAggregateProjections(
                 auto projection_query_info = query_info;
                 projection_query_info.prewhere_info = nullptr;
                 projection_query_info.row_level_filter = nullptr;
+                /// `candidate.dag` is the projection-rewrite DAG. Its first output is a real `WHERE` /
+                /// `PREWHERE` filter predicate only when this candidate has a (residual) filter
+                /// (`candidate.has_filter`); otherwise — either the query has no filter, or the projection's
+                /// own `WHERE` fully covers it — the first output is a projection key column. Part selection
+                /// in `MergeTreeDataSelectExecutor::estimateNumMarksToRead` treats
+                /// `filter_actions_dag->getOutputs().front()` as a filter predicate for primary-key and
+                /// skip-index analysis, so installing the rewrite DAG as the pruning filter when there is no
+                /// real filter would make it prune on a bare key column (e.g. since #89222 a numeric key
+                /// column is read as `key != 0`), which is wrong. See #89222.
                 projection_query_info.filter_actions_dag = candidate.has_filter
                     ? std::make_unique<ActionsDAG>(candidate.dag.clone())
                     : nullptr;
