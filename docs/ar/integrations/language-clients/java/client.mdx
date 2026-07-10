@@ -1,0 +1,1458 @@
+---
+sidebarTitle: 'العميل'
+keywords: ['ClickHouse', 'Java', 'عميل', 'تكامل']
+description: 'موصل ClickHouse لـ Java'
+slug: /integrations/language-clients/java/client
+title: 'عميل Java'
+doc_type: 'مرجع'
+integration:
+  - support_level: 'core'
+  - category: 'language_client'
+---
+
+import WideTableWrapper from "/snippets/ar/components/WideTableWrapper/WideTableWrapper.jsx";
+
+<a id="migration_from_v1_config" />
+
+<View title="v0.8+">
+  مكتبة Java client للتواصل مع خادم DB عبر بروتوكولاته. يدعم التطبيق الحالي واجهة [HTTP interface](/ar/concepts/features/interfaces/http) فحسب.
+  توفر المكتبة واجهة برمجة تطبيقات خاصة بها لإرسال الطلبات إلى الخادم، كما توفر أدوات للعمل مع تنسيقات البيانات الثنائية المختلفة (RowBinary* &amp; Native*).
+
+  ## الإعداد
+
+  * Maven Central (صفحة المشروع على الويب): https://mvnrepository.com/artifact/com.clickhouse/client-v2
+  * الإصدارات الليلية (رابط المستودع): https://central.sonatype.com/repository/maven-snapshots/
+  * مستودع Artifactory القديم للإصدارات الليلية (رابط المستودع): https://s01.oss.sonatype.org/content/repositories/snapshots/
+
+  <br />
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>client-v2</artifactId>
+          <version>0.9.8</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/client-v2
+      implementation("com.clickhouse:client-v2:0.9.8")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/client-v2
+      implementation 'com.clickhouse:client-v2:0.9.8'
+      ```
+    </Tab>
+  </Tabs>
+
+  <br />
+
+  ## التهيئة
+
+  يتم تهيئة كائن Client عبر `com.clickhouse.client.api.Client.Builder#build()`. يمتلك كل client سياقه الخاص، ولا تُشارَك أي كائنات بين الـ clients.
+  يوفر Builder طرق ضبط تُيسّر عملية الإعداد.
+
+  مثال:
+
+  ```java showLineNumbers
+   Client client = new Client.Builder()
+                  .addEndpoint("https://clickhouse-cloud-instance:8443/")
+                  .setUsername(user)
+                  .setPassword(password)
+                  .build();
+  ```
+
+  `Client` هو `AutoCloseable` ويجب إغلاقه عند انتهاء الحاجة إليه.
+
+  ### المصادقة
+
+  تُهيَّأ المصادقة لكل عميل في مرحلة التهيئة. وتتوفر ثلاث طرق مصادقة مدعومة: بكلمة المرور، أو برمز الوصول، أو بشهادة SSL للعميل.
+
+  تتطلب المصادقة بكلمة مرور تعيين اسم المستخدم وكلمة المرور من خلال استدعاء `setUsername(String)` و`setPassword(String)`:
+
+  ```java showLineNumbers
+   Client client = new Client.Builder()
+          .addEndpoint("https://clickhouse-cloud-instance:8443/")
+          .setUsername(user)
+          .setPassword(password)
+          .build();
+  ```
+
+  تتطلب المصادقة عبر رمز الوصول ضبط رمز الوصول من خلال استدعاء `setAccessToken(String)`:
+
+  ```java showLineNumbers
+   Client client = new Client.Builder()
+          .addEndpoint("https://clickhouse-cloud-instance:8443/")
+          .setAccessToken(userAccessToken)
+          .build();
+  ```
+
+  تتطلب المصادقة عبر شهادة SSL للعميل تحديد اسم المستخدم، وتفعيل مصادقة SSL، وضبط شهادة العميل ومفتاحه من خلال استدعاء `setUsername(String)` و`useSSLAuthentication(boolean)` و`setClientCertificate(String)` و`setClientKey(String)` على التوالي:
+
+  ```java showLineNumbers
+  Client client = new Client.Builder()
+          .useSSLAuthentication(true)
+          .setUsername("some_user")
+          .setClientCertificate("some_user.crt")
+          .setClientKey("some_user.key")
+  ```
+
+  <Note>
+    قد يصعب استكشاف أخطاء مصادقة SSL وإصلاحها في بيئة الإنتاج لأن كثيرًا من الأخطاء الصادرة عن مكتبات SSL لا توفّر معلومات كافية. على سبيل المثال، إذا لم تتطابق شهادة العميل مع المفتاح، فسينهي الخادم الاتصال فورًا (وفي حالة HTTP، تكون هذه مرحلة بدء الاتصال حيث لا تُرسل أي طلبات HTTP، وبالتالي لا يُرسل أي رد).
+
+    استخدم أدوات مثل [openssl](https://docs.openssl.org/master/man1/openssl/) للتحقق من الشهادات والمفاتيح:
+
+    * التحقق من سلامة المفتاح: `openssl rsa -in [key-file.key] -check -noout`
+    * التحقق من أن شهادة العميل تتضمن CN مطابقًا لمستخدم:
+      * استخراج CN من شهادة المستخدم - `openssl x509 -noout -subject -in [user.cert]`
+      * التحقق من ضبط القيمة نفسها في قاعدة البيانات `select name, auth_type, auth_params from system.users where auth_type = 'ssl_certificate'` (سيُظهر الاستعلام `auth_params` بشيء مثل ` {"common_names":["some_user"]}`)
+  </Note>
+
+  ## التهيئة
+
+  يتم تعريف جميع الإعدادات عبر طرق النسخة (المعروفة أيضاً بطرق الإعداد)، مما يجعل نطاق وسياق كل قيمة واضحاً.
+  تُعرَّف معاملات الإعداد الرئيسية ضمن نطاق واحد (العميل أو العملية) ولا تتجاوز بعضها البعض.
+
+  يتم تحديد الإعداد أثناء إنشاء الـ client. راجع `com.clickhouse.client.api.Client.Builder`.
+
+  ## إعداد العميل
+
+  <Tabs>
+    <Tab title="الاتصال ونقاط النهاية">
+      | الطريقة                                                                 | الوسائط                                                                                          | الوصف                                                                                    | الافتراضي | المفتاح                     |
+      | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | --------- | --------------------------- |
+      | `addEndpoint(String endpoint)`                                          | `endpoint` - عنوان الخادم بتنسيق URL                                                             | يضيف نقطة نهاية خادم إلى قائمة الخوادم المتاحة. حاليًا، لا يتم دعم سوى نقطة نهاية واحدة. | `none`    | `none`                      |
+      | `addEndpoint(Protocol protocol, String host, int port, boolean secure)` | `protocol` - بروتوكول الاتصال<br />`host` - عنوان IP أو اسم المضيف<br />`secure` - استخدام HTTPS | يضيف نقطة نهاية خادم إلى قائمة الخوادم المتاحة. حاليًا، لا يتم دعم سوى نقطة نهاية واحدة. | `none`    | `none`                      |
+      | `enableConnectionPool(boolean enable)`                                  | `enable` - راية للتفعيل/التعطيل                                                                  | يحدد ما إذا كان مجمّع الاتصالات مفعّلًا                                                  | `true`    | `connection_pool_enabled`   |
+      | `setMaxConnections(int maxConnections)`                                 | `maxConnections` - عدد الاتصالات                                                                 | يحدد عدد الاتصالات التي يمكن للعميل فتحها لكل نقطة نهاية خادم.                           | `10`      | `max_open_connections`      |
+      | `setConnectionTTL(long timeout, ChronoUnit unit)`                       | `timeout` - قيمة المهلة<br />`unit` - وحدة الزمن                                                 | يحدد قيمة TTL للاتصال، وبعدها سيُعتبر الاتصال غير نشط                                    | `-1`      | `connection_ttl`            |
+      | `setKeepAliveTimeout(long timeout, ChronoUnit unit)`                    | `timeout` - قيمة المهلة<br />`unit` - وحدة الزمن                                                 | يحدد مهلة Keep-Alive لاتصال HTTP. اضبطها على `0` لتعطيل Keep-Alive.                      | -         | `http_keep_alive_timeout`   |
+      | `setConnectionReuseStrategy(ConnectionReuseStrategy strategy)`          | `strategy` - `LIFO` أو `FIFO`                                                                    | يحدد الاستراتيجية التي يجب أن يستخدمها مجمّع الاتصالات                                   | `FIFO`    | `connection_reuse_strategy` |
+      | `setDefaultDatabase(String database)`                                   | `database` - اسم قاعدة بيانات                                                                    | يحدد قاعدة البيانات الافتراضية.                                                          | `default` | `database`                  |
+    </Tab>
+
+    <Tab title="المصادقة">
+      | الطريقة                                              | الوسيطات                                         | الوصف                                                                                                                                                  | القيمة الافتراضية | المفتاح               |
+      | ---------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------- | --------------------- |
+      | `setUsername(String username)`                       | `username` - اسم المستخدم للمصادقة               | يضبط اسم المستخدم لطريقة مصادقة يتم تحديدها عبر إعدادات لاحقة                                                                                          | `default`         | `user`                |
+      | `setPassword(String password)`                       | `password` - قيمة سرية                           | يضبط قيمة سرية لمصادقة كلمة المرور، ويجعلها فعليًا طريقة المصادقة المستخدمة                                                                            | -                 | `password`            |
+      | `setAccessToken(String accessToken)`                 | `accessToken` - سلسلة رمز وصول                   | يضبط رمز وصول للمصادقة باستخدام طريقة المصادقة المقابلة                                                                                                | -                 | `access_token`        |
+      | `useSSLAuthentication(boolean useSSLAuthentication)` | `useSSLAuthentication` - علامة لتمكين مصادقة SSL | يضبط شهادة عميل SSL كطريقة مصادقة.                                                                                                                     | -                 | `ssl_authentication`  |
+      | `useHTTPBasicAuth(boolean useBasicAuth)`             | `useBasicAuth` - علامة للتمكين/التعطيل           | يحدد ما إذا كان ينبغي استخدام مصادقة HTTP الأساسية لمصادقة اسم المستخدم وكلمة المرور. ويعالج المشكلات المتعلقة بكلمات المرور التي تحتوي على أحرف خاصة. | `true`            | `http_use_basic_auth` |
+      | `useBearerTokenAuth(String bearerToken)`             | `bearerToken` - Bearer token مُرمَّز             | يحدد ما إذا كانت ستُستخدم مصادقة Bearer، وما الرمز الذي سيُستخدم. سيتم إرسال الرمز كما هو.                                                             | -                 | `bearer_token`        |
+    </Tab>
+
+    <Tab title="مهلات الانتظار & إعادة المحاولة">
+      | الطريقة                                                      | المعاملات                                            | الوصف                                                                                     | الافتراضي                                                    | المفتاح                      |
+      | ------------------------------------------------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------- |
+      | `setConnectTimeout(long timeout, ChronoUnit unit)`           | `timeout` - قيمة المهلة<br />`unit` - وحدة زمنية     | يضبط مهلة بدء الاتصال لأي اتصال صادر.                                                     | -                                                            | `connection_timeout`         |
+      | `setConnectionRequestTimeout(long timeout, ChronoUnit unit)` | `timeout` - قيمة المهلة<br />`unit` - وحدة زمنية     | يضبط مهلة طلب الاتصال. يسري ذلك فقط عند الحصول على اتصال من مجمّع الاتصالات.              | `10000`                                                      | `connection_request_timeout` |
+      | `setSocketTimeout(long timeout, ChronoUnit unit)`            | `timeout` - قيمة المهلة<br />`unit` - وحدة زمنية     | يضبط مهلة المقبس التي تؤثر في عمليات القراءة والكتابة                                     | `0`                                                          | `socket_timeout`             |
+      | `setExecutionTimeout(long timeout, ChronoUnit timeUnit)`     | `timeout` - قيمة المهلة<br />`timeUnit` - وحدة زمنية | يضبط الحد الأقصى لمهلة تنفيذ الاستعلامات                                                  | `0`                                                          | `max_execution_time`         |
+      | `retryOnFailures(ClientFaultCause ...causes)`                | `causes` - ثابت تعداد من `ClientFaultCause`          | يضبط أنواع الأعطال القابلة للاسترداد أو لإعادة المحاولة.                                  | `NoHttpResponse` `ConnectTimeout` `ConnectionRequestTimeout` | `client_retry_on_failures`   |
+      | `setMaxRetries(int maxRetries)`                              | `maxRetries` - عدد مرات إعادة المحاولة               | يضبط الحد الأقصى لعدد مرات إعادة المحاولة عند الإخفاقات المعرّفة بواسطة `retryOnFailures` | `3`                                                          | `retry`                      |
+    </Tab>
+
+    <Tab title="خيارات Socket">
+      | الطريقة                              | الوسيطات                       | الوصف                                                                                           | الافتراضي | المفتاح              |
+      | ------------------------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------- | --------- | -------------------- |
+      | `setSocketRcvbuf(long size)`         | `size` - الحجم بالبايت         | يضبط المخزن المؤقت لاستقبال مقبس TCP. يكون هذا المخزن المؤقت خارج ذاكرة JVM.                    | `8196`    | `socket_rcvbuf`      |
+      | `setSocketSndbuf(long size)`         | `size` - الحجم بالبايت         | يضبط المخزن المؤقت لإرسال مقبس TCP. يكون هذا المخزن المؤقت خارج ذاكرة JVM.                      | `8196`    | `socket_sndbuf`      |
+      | `setSocketKeepAlive(boolean value)`  | `value` - قيمة للتفعيل/التعطيل | يضبط الخيار `SO_KEEPALIVE` لكل مقبس TCP. يفعّل TCP Keep Alive آليةً تتحقق من استمرارية الاتصال. | -         | `socket_keepalive`   |
+      | `setSocketTcpNodelay(boolean value)` | `value` - قيمة للتفعيل/التعطيل | يضبط الخيار `SO_NODELAY` لكل مقبس TCP. يجعل هذا الخيار المقبس يرسل البيانات بأسرع ما يمكن.      | -         | `socket_tcp_nodelay` |
+      | `setSocketLinger(int secondsToWait)` | `secondsToWait` - عدد الثواني  | يضبط مدة الانتظار قبل الإغلاق لكل مقبس TCP ينشئه العميل.                                        | -         | `socket_linger`      |
+    </Tab>
+
+    <Tab title="الضغط">
+      | الطريقة                                   | المعاملات                        | الوصف                                                                                           | الافتراضي | المفتاح                                    |
+      | ----------------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------- | --------- | ------------------------------------------ |
+      | `compressServerResponse(boolean enabled)` | `enabled` - خيار للتمكين/التعطيل | يحدد ما إذا كان ينبغي على الخادم ضغط استجاباته.                                                 | `true`    | `compress`                                 |
+      | `compressClientRequest(boolean enabled)`  | `enabled` - خيار للتمكين/التعطيل | يحدد ما إذا كان ينبغي على العميل ضغط طلباته.                                                    | `false`   | `decompress`                               |
+      | `useHttpCompression(boolean enabled)`     | `enabled` - خيار للتمكين/التعطيل | يحدد ما إذا كان ينبغي استخدام ضغط HTTP للاتصالات بين العميل والخادم عند تمكين الخيارات المقابلة | -         | -                                          |
+      | `appCompressedData(boolean enabled)`      | `enabled` - خيار للتمكين/التعطيل | يُبلغ العميل بأن التطبيق سيتولى معالجة الضغط.                                                   | `false`   | `app_compressed_data`                      |
+      | `setLZ4UncompressedBufferSize(int size)`  | `size` - الحجم بالبايت           | يحدد حجم المخزن المؤقت الذي سيتلقى الجزء غير المضغوط من دفق البيانات.                           | `65536`   | `compression.lz4.uncompressed_buffer_size` |
+      | `disableNativeCompression`                | `disable` - خيار للتعطيل         | يعطّل الضغط الأصلي. وإذا ضُبطت القيمة على `true`، فسيتم تعطيل الضغط الأصلي.                     | `false`   | `disable_native_compression`               |
+    </Tab>
+
+    <Tab title="SSL/الأمان">
+      | الطريقة                                     | الوسيطات                            | الوصف                                                                               | الافتراضي | المفتاح              |
+      | ------------------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------- | --------- | -------------------- |
+      | `setSSLTrustStore(String path)`             | `path` - مسار ملف على النظام المحلي | يضبط ما إذا كان العميل سيستخدم مخزن ثقة SSL للتحقق من مضيف الخادم.                  | -         | `trust_store`        |
+      | `setSSLTrustStorePassword(String password)` | `password` - قيمة سرية              | يضبط كلمة المرور المستخدمة لإلغاء قفل مخزن ثقة SSL المحدد بواسطة `setSSLTrustStore` | -         | `key_store_password` |
+      | `setSSLTrustStoreType(String type)`         | `type` - اسم نوع مخزن الثقة         | يضبط نوع مخزن الثقة المحدد بواسطة `setSSLTrustStore`.                               | -         | `key_store_type`     |
+      | `setRootCertificate(String path)`           | `path` - مسار ملف على النظام المحلي | يضبط ما إذا كان العميل سيستخدم شهادة الجذر (CA) المحددة للتحقق من مضيف الخادم.      | -         | `sslrootcert`        |
+      | `setClientCertificate(String path)`         | `path` - مسار ملف على النظام المحلي | يضبط مسار شهادة العميل التي ستُستخدم عند إنشاء اتصال SSL ولأغراض المصادقة عبر SSL.  | -         | `sslcert`            |
+      | `setClientKey(String path)`                 | `path` - مسار ملف على النظام المحلي | يضبط المفتاح الخاص للعميل الذي سيُستخدم لتشفير اتصال SSL مع الخادم.                 | -         | `ssl_key`            |
+      | `sslSocketSNI(String sni)`                  | `sni` - سلسلة اسم الخادم            | يضبط اسم الخادم الذي سيُستخدم لـ SNI ‏(Server Name Indication) في اتصال SSL/TLS.    | -         | `ssl_socket_sni`     |
+    </Tab>
+
+    <Tab title="الوسيط">
+      | الطريقة                                           | الوسيطات                                                                          | الوصف                                            | الافتراضي | المفتاح                                  |
+      | ------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ | --------- | ---------------------------------------- |
+      | `addProxy(ProxyType type, String host, int port)` | `type` - نوع الوكيل<br />`host` - اسم مضيف الوكيل أو IP<br />`port` - منفذ الوكيل | يحدد الوكيل المُستخدم للاتصال بالخادم.           | -         | `proxy_type`, `proxy_host`, `proxy_port` |
+      | `setProxyCredentials(String user, String pass)`   | `user` - اسم مستخدم الوكيل<br />`pass` - كلمة المرور                              | يحدد بيانات اعتماد المستخدم للمصادقة لدى الوكيل. | -         | `proxy_user`, `proxy_password`           |
+    </Tab>
+
+    <Tab title="HTTP والترويسات">
+      | الطريقة                                     | الوسيطات                                                 | الوصف                                                                                                                                                                                                                                                              | الافتراضي | المفتاح                                  |
+      | ------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------- | ---------------------------------------- |
+      | `setHttpCookiesEnabled(boolean enabled)`    | `enabled` - علامة للتفعيل/التعطيل                        | يحدد ما إذا كان ينبغي تذكّر ملفات تعريف ارتباط HTTP ثم إرسالها مرة أخرى إلى الخادم.                                                                                                                                                                                | -         | -                                        |
+      | `httpHeader(String key, String value)`      | `key` - مفتاح ترويسة HTTP<br />`value` - قيمة نصية       | يضبط قيمة ترويسة HTTP واحدة. تُستبدل أي قيمة سابقة.                                                                                                                                                                                                                | `none`    | `none`                                   |
+      | `httpHeader(String key, Collection values)` | `key` - مفتاح ترويسة HTTP<br />`values` - قائمة قيم نصية | يضبط قيماً لترويسة HTTP واحدة. تُستبدل أي قيمة سابقة.                                                                                                                                                                                                              | `none`    | `none`                                   |
+      | `httpHeaders(Map headers)`                  | `headers` - خريطة تحتوي على ترويسات HTTP                 | يضبط قيم عدة ترويسات HTTP دفعة واحدة.                                                                                                                                                                                                                              | `none`    | `none`                                   |
+      | `useHttpFormDataForQuery(boolean enable)`   | `enable` - علامة للتفعيل/التعطيل                         | يضبط ما إذا كان يجب إرسال معلمات الاستعلام كبيانات نموذج HTTP في نص الطلب بدلاً من URL. لا يعمل إلا مع الضغط من جهة الخادم. إذا كان الضغط على مستوى العميل مفعّلاً، فسيتم تعطيله لطلبات الاستعلام التي تحتوي على معلمات، لأن كل معلمة تُرسَل كمحتوى متعدد الأجزاء. | `false`   | `client.http.use_form_request_for_query` |
+    </Tab>
+
+    <Tab title="إعدادات الخادم">
+      | الطريقة                                         | الوسائط                                            | الوصف                                                                                                                                                                                             | الافتراضي | المفتاح                  |
+      | ----------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------------------------ |
+      | `serverSetting(String name, String value)`      | `name` - اسم الإعداد<br />`value` - قيمة الإعداد   | يضبط الإعدادات التي تُمرَّر إلى الخادم مع كل استعلام. ويمكن لإعدادات العمليات الفردية تجاوز هذا الإعداد. [قائمة الإعدادات](/ar/concepts/features/configuration/settings/settings-query-level)        | `none`    | `none`                   |
+      | `serverSetting(String name, Collection values)` | `name` - اسم الإعداد<br />`values` - قيم الإعدادات | يضبط الإعدادات التي تُمرَّر إلى الخادم باستخدام قيم متعددة، مثل [الأدوار](/ar/concepts/features/interfaces/http#setting-role-with-query-parameters)                                                  | `none`    | `none`                   |
+      | `setOption("custom_settings_prefix", value)`    | `value` - سلسلة نصية للبادئة                       | يضبط بادئة الإعدادات المخصّصة التي تُمرَّر إلى الخادم. ويجب أن تتوافق مع تهيئة الخادم. راجع [مستندات ClickHouse](/ar/concepts/features/configuration/settings/settings-query-level#custom_settings). | `custom_` | `custom_settings_prefix` |
+    </Tab>
+
+    <Tab title="المنطقة الزمنية">
+      | الطريقة                                        | المعاملات                                   | الوصف                                                                                                                                | الافتراضي | المفتاح                |
+      | ---------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------- | ---------------------- |
+      | `useServerTimeZone(boolean useServerTimeZone)` | `useServerTimeZone` - علامة للتفعيل/التعطيل | يحدد ما إذا كان ينبغي للعميل استخدام timezone الخاص بالخادم عند فك ترميز قيم العمودين DateTime وDate.                                | `true`    | `use_server_time_zone` |
+      | `useTimeZone(String timeZone)`                 | `timeZone` - معرّف timezone صالح في Java    | يحدد ما إذا كان ينبغي استخدام timezone المحدد عند فك ترميز قيم العمودين DateTime وDate. وسيؤدي ذلك إلى تجاوز timezone الخاص بالخادم. | -         | `use_time_zone`        |
+      | `setServerTimeZone(String timeZone)`           | `timeZone` - معرّف timezone صالح في Java    | يعيّن timezone على جهة الخادم. ويُستخدم timezone ‏UTC افتراضيًا.                                                                     | `UTC`     | `server_time_zone`     |
+    </Tab>
+
+    <Tab title="متقدم">
+      | الطريقة                                                                   | الوسيطات                                                                  | الوصف                                                                                                                              | الافتراضي | المفتاح                      |
+      | ------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | --------- | ---------------------------- |
+      | `setOption(String key, String value)`                                     | `key` - مفتاح خيار الإعداد<br />`value` - قيمة الخيار                     | يضبط القيمة الخام لخيارات العميل. يفيد ذلك عند قراءة الإعدادات من ملفات الخصائص.                                                   | -         | -                            |
+      | `useAsyncRequests(boolean async)`                                         | `async` - علامة للتمكين/التعطيل                                           | يحدد ما إذا كان العميل سينفّذ الطلب في خيط تنفيذ منفصل. يكون معطّلًا افتراضيًا لأن التطبيق أدرى بكيفية تنظيم المهام متعددة الخيوط. | `false`   | `async`                      |
+      | `setSharedOperationExecutor(ExecutorService executorService)`             | `executorService` - مثيل خدمة ExecutorService                             | يضبط خدمة ExecutorService لمهام العمليات.                                                                                          | `none`    | `none`                       |
+      | `setQueryIdGenerator(Supplier<String> supplier)`                          | `supplier` - كائن `Supplier<String>` يُنشئ معرّفات query                  | يضبط مولّدًا مخصّصًا لمعرّفات query يُستخدم عندما لا يُحدَّد معرّف query في إعدادات العملية (`InsertSettings`, `QuerySettings`).   | -         | -                            |
+      | `setClientNetworkBufferSize(int size)`                                    | `size` - الحجم بالبايت                                                    | يضبط حجم buffer في مساحة ذاكرة التطبيق يُستخدم لنسخ البيانات بين socket والتطبيق.                                                  | `300000`  | `client_network_buffer_size` |
+      | `allowBinaryReaderToReuseBuffers(boolean reuse)`                          | `reuse` - علامة للتمكين/التعطيل                                           | عند التمكين، سيستخدم القارئ مخازن مؤقتة مخصّصة مسبقًا لتحويل ترميز الأرقام. وهذا يقلّل الضغط على GC للبيانات الرقمية.              | -         | -                            |
+      | `columnToMethodMatchingStrategy(ColumnToMethodMatchingStrategy strategy)` | `strategy` - تنفيذ استراتيجية المطابقة                                    | يضبط استراتيجية مخصّصة تُستخدم لمطابقة حقول فئة DTO مع أعمدة DB عند تسجيل DTO.                                                     | `none`    | `none`                       |
+      | `setClientName(String clientName)`                                        | `clientName` - سلسلة اسم التطبيق                                          | يضبط معلومات إضافية عن التطبيق المستدعي. وسيتم تمريرها في ترويسة `User-Agent`.                                                     | -         | `client_name`                |
+      | `registerClientMetrics(Object registry, String name)`                     | `registry` - مثيل registry لـ Micrometer<br />`name` - اسم مجموعة metrics | يسجّل المجسّات في مثيل registry الخاص بـ Micrometer ‏(https://micrometer.io/).                                                     | -         | -                            |
+      | `setServerVersion(String version)`                                        | `version` - سلسلة إصدار server                                            | يضبط إصدار server لتجنّب اكتشاف الإصدار تلقائيًا.                                                                                  | -         | `server_version`             |
+      | `typeHintMapping(Map typeHintMapping)`                                    | `typeHintMapping` - map من type hints                                     | يضبط تعيين type hint لأنواع ClickHouse. على سبيل المثال، لجعل المصفوفات متعددة الأبعاد تظهر كحاويات Java.                          | -         | `type_hint_mapping`          |
+    </Tab>
+  </Tabs>
+
+  <br />
+
+  ### تعريف العميل
+
+  يوجد حقلان في سجل الاستعلام يُحدِّدان التطبيق الذي أنشأ الطلب: `client_name` و`http_user_agent`. يستخدم بروتوكول native TCP الحقلَ `client_name` لتعريف التطبيق، بينما يستخدم بروتوكول HTTP الحقلَ `http_user_agent` لهذا الغرض. يوفر الـ Client builder الأسلوبَ `setClientName` لضبط القيم الصحيحة لكلا البروتوكولين.
+  يُضبط الحقل `http_user_agent` وفق التنسيق الشائع لترويسة `User-Agent`: `application-name[/version] [(operating-system; architecture; ...)]`.
+  تتكرر هذه المجموعة من القيم لكل طبقة: التطبيق، ومكتبة الـ client، ومكتبة الـ HTTP client. ويأتي ما يُحدَّد عبر الأسلوب `setClientName` في مقدمة القائمة.
+
+  على سبيل المثال:
+
+  ```java showLineNumbers
+  client.setClientName("my-app-01/1.0");
+  ```
+
+  سيؤدي ذلك إلى القيمة التالية لـ `http_user_agent`:
+
+  ```
+  my-app-01/1.0 clickhouse-java-v2/0.9.6-SNAPSHOT (Linux; jvm:17.0.17) Apache-HttpClient/5.4.4
+  ```
+
+  يمكن للتطبيق تعيين رأس HTTP الخاص به `User-Agent` للتعريف عن نفسه. غير أن الجزء `clickhouse-java-v2/0.9.6-SNAPSHOT` سيُلحَق بنهاية الرأس.
+
+  ### تحديد العملية
+
+  يتضمن سجل الاستعلام حقلين إضافيين هما `query_id` و`log_comment`، يمكن استخدامهما لتحديد عملية معينة وإضافة معلومات إضافية إلى سجل الاستعلام.
+
+  `query_id` هو معرّف فريد للعملية. يمكن تعيينه من قِبل التطبيق عن طريق استدعاء الدالة `setQueryId` في الفئة `QuerySettings`.
+
+  ```java showLineNumbers
+  QuerySettings querySettings = new QuerySettings();
+  querySettings.setQueryId("some-query-id");
+  ```
+
+  `log_comment` هو تعليق يمكن إضافته إلى سجل الاستعلام. يمكن للتطبيق ضبطه عبر استدعاء الدالة `logComment` من الفئة `QuerySettings`.
+
+  ```java showLineNumbers
+  QuerySettings querySettings = new QuerySettings();
+  querySettings.logComment("some-comment");
+  ```
+
+  ### إعدادات الخادم
+
+  يمكن تعيين إعدادات جانب الخادم على مستوى العميل مرةً واحدة أثناء الإنشاء (راجع الدالة `serverSetting` في `Builder`)، وعلى مستوى العملية (راجع `serverSetting` في class إعدادات العملية).
+
+  ```java showLineNumbers
+   try (Client client = new Client.Builder().addEndpoint(Protocol.HTTP, "localhost", mockServer.port(), false)
+          .setUsername("default")
+          .setPassword(ClickHouseServerForTest.getPassword())
+          .compressClientRequest(true)
+
+          // Client level
+          .serverSetting("max_threads", "10")
+          .serverSetting("async_insert", "1")
+          .serverSetting("roles", Arrays.asList("role1", "role2"))
+
+          .build()) {
+
+  	// Operation level
+  	QuerySettings querySettings = new QuerySettings();
+  	querySettings.serverSetting("session_timezone", "Europe/Zurich");
+
+  	...
+  }
+  ```
+
+  ⚠️ عند تعيين الخيارات عبر طريقة `setOption` (سواء في `Client.Builder` أو في فئة إعدادات العملية)، يجب أن يُسبَق اسم إعداد الخادم بالبادئة `clickhouse_setting_`. قد يكون `com.clickhouse.client.api.ClientConfigProperties#serverSetting()` مفيدًا في هذه الحالة.
+
+  ### HTTP Header مخصص
+
+  يمكن تعيين HTTP headers مخصصة لجميع العمليات (على مستوى العميل) أو لعملية واحدة فقط (على مستوى العملية).
+
+  ```java showLineNumbers
+
+  QuerySettings settings = new QuerySettings()
+      .httpHeader(HttpHeaders.REFERER, clientReferer)
+      .setQueryId(qId);
+
+  ```
+
+  عند تعيين الخيارات عبر الـ method الخاصة بـ `setOption` (سواء في `Client.Builder` أو class إعدادات العملية)، يجب أن يبدأ اسم الـ header المخصص بالبادئة `http_header_`. وقد تكون الـ method الخاصة بـ `com.clickhouse.client.api.ClientConfigProperties#httpHeader()` مفيدةً في هذه الحالة.
+
+  ## التعريفات الشائعة
+
+  ### ClickHouseFormat
+
+  تعداد [الصيغ المدعومة](/ar/reference/formats/index). يتضمن جميع الصيغ التي يدعمها ClickHouse.
+
+  * `raw` - يجب على المستخدم تحويل ترميز البيانات الخام
+  * `full` - يمكن للعميل تحويل ترميز البيانات بنفسه ويقبل تدفق بيانات خام
+  * `-` - هذه العملية غير مدعومة في ClickHouse لهذا التنسيق
+
+  يدعم إصدار client هذا:
+
+  | الصيغة                                                                                                           | الإدخال | الإخراج |
+  | ---------------------------------------------------------------------------------------------------------------- | :-----: | :-----: |
+  | [TabSeparated](/ar/reference/formats/TabSeparated/TabSeparated)                                                     |   raw   |   raw   |
+  | [TabSeparatedRaw](/ar/reference/formats/TabSeparated/TabSeparatedRaw)                                               |   raw   |   raw   |
+  | [TabSeparatedWithNames](/ar/reference/formats/TabSeparated/TabSeparatedWithNames)                                   |   raw   |   raw   |
+  | [TabSeparatedWithNamesAndTypes](/ar/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes)                   |   raw   |   raw   |
+  | [TabSeparatedRawWithNames](/ar/reference/formats/TabSeparated/TabSeparatedRawWithNames)                             |   raw   |   raw   |
+  | [TabSeparatedRawWithNamesAndTypes](/ar/reference/formats/TabSeparated/TabSeparatedRawWithNamesAndTypes)             |   raw   |   raw   |
+  | [Template](/ar/reference/formats/Template/Template)                                                                 |   raw   |   raw   |
+  | [TemplateIgnoreSpaces](/ar/reference/formats/Template/TemplateIgnoreSpaces)                                         |   raw   |    -    |
+  | [CSV](/ar/reference/formats/CSV/CSV)                                                                                |   raw   |   raw   |
+  | [CSVWithNames](/ar/reference/formats/CSV/CSVWithNames)                                                              |   raw   |   raw   |
+  | [CSVWithNamesAndTypes](/ar/reference/formats/CSV/CSVWithNamesAndTypes)                                              |   raw   |   raw   |
+  | [CustomSeparated](/ar/reference/formats/CustomSeparated/CustomSeparated)                                            |   raw   |   raw   |
+  | [CustomSeparatedWithNames](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNames)                          |   raw   |   raw   |
+  | [CustomSeparatedWithNamesAndTypes](/ar/reference/formats/CustomSeparated/CustomSeparatedWithNamesAndTypes)          |   raw   |   raw   |
+  | [SQLInsert](/ar/reference/formats/SQLInsert)                                                                        |    -    |   raw   |
+  | [Values](/ar/reference/formats/Values)                                                                              |   raw   |   raw   |
+  | [Vertical](/ar/reference/formats/Vertical)                                                                          |    -    |   raw   |
+  | [JSON](/ar/reference/formats/JSON/JSON)                                                                             |   raw   |   raw   |
+  | [JSONAsString](/ar/reference/formats/JSON/JSONAsString)                                                             |   raw   |    -    |
+  | [JSONAsObject](/ar/reference/formats/JSON/JSONAsObject)                                                             |   raw   |    -    |
+  | [JSONStrings](/ar/reference/formats/JSON/JSONStrings)                                                               |   raw   |   raw   |
+  | [JSONColumns](/ar/reference/formats/JSON/JSONColumns)                                                               |   raw   |   raw   |
+  | [JSONColumnsWithMetadata](/ar/reference/formats/JSON/JSONColumnsWithMetadata)                                       |   raw   |   raw   |
+  | [JSONCompact](/ar/reference/formats/JSON/JSONCompact)                                                               |   raw   |   raw   |
+  | [JSONCompactStrings](/ar/reference/formats/JSON/JSONCompactStrings)                                                 |    -    |   raw   |
+  | [JSONCompactColumns](/ar/reference/formats/JSON/JSONCompactColumns)                                                 |   raw   |   raw   |
+  | [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow)                                                               |   raw   |   raw   |
+  | [PrettyJSONEachRow](/ar/reference/formats/JSON/PrettyJSONEachRow)                                                   |    -    |   raw   |
+  | [JSONEachRowWithProgress](/ar/reference/formats/JSON/JSONEachRowWithProgress)                                       |    -    |   raw   |
+  | [JSONStringsEachRow](/ar/reference/formats/JSON/JSONStringsEachRow)                                                 |   raw   |   raw   |
+  | [JSONStringsEachRowWithProgress](/ar/reference/formats/JSON/JSONStringsEachRowWithProgress)                         |    -    |   raw   |
+  | [JSONCompactEachRow](/ar/reference/formats/JSON/JSONCompactEachRow)                                                 |   raw   |   raw   |
+  | [JSONCompactEachRowWithNames](/ar/reference/formats/JSON/JSONCompactEachRowWithNames)                               |   raw   |   raw   |
+  | [JSONCompactEachRowWithNamesAndTypes](/ar/reference/formats/JSON/JSONCompactEachRowWithNamesAndTypes)               |   raw   |   raw   |
+  | [JSONCompactStringsEachRow](/ar/reference/formats/JSON/JSONCompactStringsEachRow)                                   |   raw   |   raw   |
+  | [JSONCompactStringsEachRowWithNames](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithNames)                 |   raw   |   raw   |
+  | [JSONCompactStringsEachRowWithNamesAndTypes](/ar/reference/formats/JSON/JSONCompactStringsEachRowWithNamesAndTypes) |   raw   |   raw   |
+  | [JSONObjectEachRow](/ar/reference/formats/JSON/JSONObjectEachRow)                                                   |   raw   |   raw   |
+  | [BSONEachRow](/ar/reference/formats/BSONEachRow)                                                                    |   raw   |   raw   |
+  | [TSKV](/ar/reference/formats/TabSeparated/TSKV)                                                                     |   raw   |   raw   |
+  | [Pretty](/ar/reference/formats/Pretty/Pretty)                                                                       |    -    |   raw   |
+  | [PrettyNoEscapes](/ar/reference/formats/Pretty/PrettyNoEscapes)                                                     |    -    |   raw   |
+  | [PrettyMonoBlock](/ar/reference/formats/Pretty/PrettyMonoBlock)                                                     |    -    |   raw   |
+  | [PrettyNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettyNoEscapesMonoBlock)                                   |    -    |   raw   |
+  | [PrettyCompact](/ar/reference/formats/Pretty/PrettyCompact)                                                         |    -    |   raw   |
+  | [PrettyCompactNoEscapes](/ar/reference/formats/Pretty/PrettyCompactNoEscapes)                                       |    -    |   raw   |
+  | [PrettyCompactMonoBlock](/ar/reference/formats/Pretty/PrettyCompactMonoBlock)                                       |    -    |   raw   |
+  | [PrettyCompactNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettyCompactNoEscapesMonoBlock)                     |    -    |   raw   |
+  | [PrettySpace](/ar/reference/formats/Pretty/PrettySpace)                                                             |    -    |   raw   |
+  | [PrettySpaceNoEscapes](/ar/reference/formats/Pretty/PrettySpaceNoEscapes)                                           |    -    |   raw   |
+  | [PrettySpaceMonoBlock](/ar/reference/formats/Pretty/PrettySpaceMonoBlock)                                           |    -    |   raw   |
+  | [PrettySpaceNoEscapesMonoBlock](/ar/reference/formats/Pretty/PrettySpaceNoEscapesMonoBlock)                         |    -    |   raw   |
+  | [Prometheus](/ar/reference/formats/Prometheus)                                                                      |    -    |   raw   |
+  | [Protobuf](/ar/reference/formats/Protobuf/Protobuf)                                                                 |   raw   |   raw   |
+  | [ProtobufSingle](/ar/reference/formats/Protobuf/ProtobufSingle)                                                     |   raw   |   raw   |
+  | [ProtobufList](/ar/reference/formats/Protobuf/ProtobufList)                                                         |   raw   |   raw   |
+  | [Avro](/ar/reference/formats/Avro/Avro)                                                                             |   raw   |   raw   |
+  | [AvroConfluent](/ar/reference/formats/Avro/AvroConfluent)                                                           |   raw   |    -    |
+  | [Parquet](/ar/reference/formats/Parquet/Parquet)                                                                    |   raw   |   raw   |
+  | [ParquetMetadata](/ar/reference/formats/Parquet/ParquetMetadata)                                                    |   raw   |    -    |
+  | [Arrow](/ar/reference/formats/Arrow/Arrow)                                                                          |   خام   |   خام   |
+  | [ArrowStream](/ar/reference/formats/Arrow/ArrowStream)                                                              |   خام   |   خام   |
+  | [ORC](/ar/reference/formats/ORC)                                                                                    |   خام   |   خام   |
+  | [One](/ar/reference/formats/One)                                                                                    |   خام   |    -    |
+  | [Npy](/ar/reference/formats/Npy)                                                                                    |   خام   |   خام   |
+  | [RowBinary](/ar/reference/formats/RowBinary/RowBinary)                                                              |   كامل  |   كامل  |
+  | [RowBinaryWithNames](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)                                    |   كامل  |   كامل  |
+  | [RowBinaryWithNamesAndTypes](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes)                            |   كامل  |   كامل  |
+  | [RowBinaryWithDefaults](/ar/reference/formats/RowBinary/RowBinaryWithDefaults)                                      |   كامل  |    -    |
+  | [Native](/ar/reference/formats/Native)                                                                              |   كامل  |   خام   |
+  | [Null](/ar/reference/formats/Null)                                                                                  |    -    |   خام   |
+  | [XML](/ar/reference/formats/XML)                                                                                    |    -    |   خام   |
+  | [CapnProto](/ar/reference/formats/CapnProto)                                                                        |   خام   |   خام   |
+  | [LineAsString](/ar/reference/formats/LineAsString/LineAsString)                                                     |   خام   |   خام   |
+  | [Regexp](/ar/reference/formats/Regexp)                                                                              |   خام   |    -    |
+  | [RawBLOB](/ar/reference/formats/RawBLOB)                                                                            |   خام   |   خام   |
+  | [MsgPack](/ar/reference/formats/MsgPack)                                                                            |   خام   |   خام   |
+  | [MySQLDump](/ar/reference/formats/MySQLDump)                                                                        |   خام   |    -    |
+  | [DWARF](/ar/reference/formats/DWARF)                                                                                |   خام   |    -    |
+  | [Markdown](/ar/reference/formats/Markdown)                                                                          |    -    |   خام   |
+  | [Form](/ar/reference/formats/Form)                                                                                  |   خام   |    -    |
+
+  ## واجهة برمجة تطبيقات الإدراج
+
+  ### insert(String tableName, InputStream data, ClickHouseFormat format)
+
+  يقبل البيانات على شكل `InputStream` من البايتات بالتنسيق المحدد. ومن المتوقع أن تكون `data` مُرمَّزةً وفق `format`.
+
+  **التوقيعات**
+
+  ```java
+  CompletableFuture<InsertResponse> insert(String tableName, InputStream data, ClickHouseFormat format, InsertSettings settings)
+  CompletableFuture<InsertResponse> insert(String tableName, InputStream data, ClickHouseFormat format)
+  ```
+
+  **المعاملات**
+
+  `tableName` - اسم الجدول الهدف.
+
+  `data` - تدفق إدخال لبيانات مُرمَّزة.
+
+  `format` - التنسيق الذي تُرمَّز به البيانات.
+
+  `settings` - إعدادات الطلب.
+
+  **القيمة المُعادة**
+
+  مستقبل من نوع `InsertResponse` - نتيجة العملية ومعلومات إضافية كمقاييس جانب الخادم.
+
+  **أمثلة**
+
+  ```java showLineNumbers
+  try (InputStream dataStream = getDataStream()) {
+      try (InsertResponse response = client.insert(TABLE_NAME, dataStream, ClickHouseFormat.JSONEachRow,
+              insertSettings).get(3, TimeUnit.SECONDS)) {
+
+          log.info("Insert finished: {} rows written", response.getMetrics().getMetric(ServerMetrics.NUM_ROWS_WRITTEN).getLong());
+      } catch (Exception e) {
+          log.error("Failed to write JSONEachRow data", e);
+          throw new RuntimeException(e);
+      }
+  }
+
+  ```
+
+  ### insert(String tableName, List&lt;?&gt; data, InsertSettings settings)
+
+  يُرسل طلب كتابة إلى قاعدة البيانات. يتم تحويل قائمة الكائنات إلى تنسيق فعّال ثم إرسالها إلى الخادم. يجب تسجيل الفئة الخاصة بعناصر القائمة مسبقًا باستخدام الطريقة `register(Class, TableSchema)`.
+
+  **التوقيعات**
+
+  ```java
+  client.insert(String tableName, List<?> data, InsertSettings settings)
+  client.insert(String tableName, List<?> data)
+  ```
+
+  **المعاملات**
+
+  `tableName` - اسم الجدول الهدف.
+
+  `data` - كائنات DTO (Data Transfer Object) الخاصة بالمجموعة.
+
+  `settings` - إعدادات الطلب.
+
+  **القيمة المُعادة**
+
+  مستقبل من النوع `InsertResponse` - يمثّل نتيجة العملية ومعلومات إضافية كمقاييس جانب الخادم.
+
+  **أمثلة**
+
+  ```java showLineNumbers
+  // Important step (done once) - register class to pre-compile object serializer according to the table schema.
+  client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
+
+  List<ArticleViewEvent> events = loadBatch();
+
+  try (InsertResponse response = client.insert(TABLE_NAME, events).get()) {
+      // handle response, then it will be closed and connection that served request will be released.
+  }
+  ```
+
+  ### InsertSettings
+
+  خيارات الإعداد لعمليات الإدراج.
+
+  **طرق الإعداد**
+
+  | الطريقة                                         | الوصف                                                                                                                                                      |
+  | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                    | يضبط معرّف الاستعلام الذي سيُعيَّن للعملية. القيمة الافتراضية: `null`.                                                                                     |
+  | `setDeduplicationToken(String token)`           | يعيّن رمز إزالة التكرار. يُرسَل هذا الرمز إلى الخادم، ويمكن استخدامه لتحديد الاستعلام. القيمة الافتراضية: `null`.                                          |
+  | `setInputStreamCopyBufferSize(int size)`        | حجم مخزن النسخ المؤقت. يُستخدم هذا المخزن المؤقت أثناء عمليات الكتابة لنسخ البيانات من دفق إدخال يوفّره المستخدم إلى دفق إخراج. القيمة الافتراضية: `8196`. |
+  | `serverSetting(String name, String value)`      | يضبط إعدادات خادم فردية لعملية معيّنة.                                                                                                                     |
+  | `serverSetting(String name, Collection values)` | يُعيّن إعدادات خادم معيّنة ذات قيم متعددة لعملية ما. يجب أن تكون عناصر المجموعة من النوع `String`.                                                         |
+  | `setDBRoles(Collection dbRoles)`                | يعيّن أدوار قاعدة البيانات المراد تعيينها قبل تنفيذ العملية. يجب أن تكون عناصر المجموعة قيماً من نوع `String`.                                             |
+  | `setOption(String option, Object value)`        | يضبط خيار تهيئة بتنسيقه الخام. وهذا ليس إعداد خادم.                                                                                                        |
+
+  ### استجابة الإدراج
+
+  كائن Response يحتوي على نتيجة عملية الإدراج. لا يكون متاحاً إلا إذا تلقّى الـ Client استجابةً من الـ server.
+
+  <Note>
+    يجب إغلاق هذا الكائن في أقرب وقت ممكن لتحرير الاتصال، إذ لا يمكن إعادة استخدامه حتى تُقرأ جميع بيانات الاستجابة السابقة بالكامل.
+  </Note>
+
+  | الطريقة                         | الوصف                                                                                          |
+  | ------------------------------- | ---------------------------------------------------------------------------------------------- |
+  | `OperationMetrics getMetrics()` | يعيد كائنًا يتضمن مقاييس العملية.                                                              |
+  | `String getQueryId()`           | يعيد معرّف الاستعلام المخصَّص للعملية من قِبل التطبيق (عبر إعدادات العملية) أو من قِبل الخادم. |
+
+  ## واجهة برمجة تطبيقات الاستعلام
+
+  ### query(String sqlQuery)
+
+  يُرسل `sqlQuery` كما هو. يُحدَّد تنسيق الاستجابة من خلال إعدادات الاستعلام. سيحتفظ `QueryResponse` بمرجع إلى تدفق الاستجابة الذي يجب أن يستهلكه قارئ يدعم التنسيق المحدد.
+
+  **التوقيعات**
+
+  ```java
+  CompletableFuture<QueryResponse> query(String sqlQuery, QuerySettings settings)
+  CompletableFuture<QueryResponse> query(String sqlQuery)
+  ```
+
+  **المعاملات**
+
+  `sqlQuery` - عبارة SQL واحدة. يُرسَل الاستعلام كما هو إلى الخادم.
+
+  `settings` - إعدادات الطلب.
+
+  **القيمة المُعادة**
+
+  مستقبل من النوع `QueryResponse` - مجموعة بيانات نتائج ومعلومات إضافية كمقاييس جانب الخادم. يجب إغلاق كائن الاستجابة بعد الانتهاء من استهلاك مجموعة البيانات.
+
+  **أمثلة**
+
+  ```java
+  final String sql = "select * from " + TABLE_NAME + " where title <> '' limit 10";
+
+  // Default format is RowBinaryWithNamesAndTypesFormatReader so reader have all information about columns
+  try (QueryResponse response = client.query(sql).get(3, TimeUnit.SECONDS);) {
+
+      // Create a reader to access the data in a convenient way
+      ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
+
+      while (reader.hasNext()) {
+          reader.next(); // Read the next record from stream and parse it
+
+          // get values
+          double id = reader.getDouble("id");
+          String title = reader.getString("title");
+          String url = reader.getString("url");
+
+          // collecting data
+      }
+  } catch (Exception e) {
+      log.error("Failed to read data", e);
+  }
+
+  // put business logic outside of the reading block to release http connection asap.
+  ```
+
+  ### query(String sqlQuery, Map&lt;String, Object&gt; queryParams, QuerySettings settings)
+
+  يُرسل `sqlQuery` كما هو. كما يُرسل معاملات الاستعلام لكي يتمكن الخادم من تجميع تعبير SQL.
+
+  **التوقيعات**
+
+  ```java
+  CompletableFuture<QueryResponse> query(String sqlQuery, Map<String, Object> queryParams, QuerySettings settings)
+  ```
+
+  **المعاملات**
+
+  `sqlQuery` - تعبير SQL مع العناصر النائبة `{}`.
+
+  `queryParams` - مجموعة من المتغيرات لإكمال تعبير SQL على الخادم.
+
+  `settings` - إعدادات الطلب.
+
+  **القيمة المُعادة**
+
+  مستقبل من النوع `QueryResponse` - مجموعة بيانات نتائج ومعلومات إضافية كمقاييس جانب الخادم. يجب إغلاق كائن الاستجابة بعد الانتهاء من استهلاك مجموعة البيانات.
+
+  **أمثلة**
+
+  ```java showLineNumbers
+
+  // define parameters. They will be sent to the server along with the request.
+  Map<String, Object> queryParams = new HashMap<>();
+  queryParams.put("param1", 2);
+
+  try (QueryResponse response =
+          client.query("SELECT * FROM " + table + " WHERE col1 >= {param1:UInt32}", queryParams, new QuerySettings()).get()) {
+
+      // Create a reader to access the data in a convenient way
+      ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
+
+      while (reader.hasNext()) {
+          reader.next(); // Read the next record from stream and parse it
+
+          // reading data
+      }
+
+  } catch (Exception e) {
+      log.error("Failed to read data", e);
+  }
+
+  ```
+
+  ### queryAll(String sqlQuery)
+
+  يُرسل استعلامات للبيانات بتنسيق `RowBinaryWithNamesAndTypes`. يُعيد النتيجة على شكل مجموعة. أداء القراءة مماثل لأداء القارئ، إلا أنه يتطلب ذاكرة أكبر لاستيعاب مجموعة البيانات بالكامل.
+
+  **التوقيعات**
+
+  ```java
+  List<GenericRecord> queryAll(String sqlQuery)
+  ```
+
+  **المعاملات**
+
+  `sqlQuery` - تعبير SQL للاستعلام عن البيانات من الخادم.
+
+  **القيمة المُعادة**
+
+  مجموعة البيانات الكاملة ممثَّلةً بقائمة من كائنات `GenericRecord` التي توفر وصولاً على شكل صفوف إلى بيانات النتائج.
+
+  **أمثلة**
+
+  ```java showLineNumbers
+  try {
+      log.info("Reading whole table and process record by record");
+      final String sql = "select * from " + TABLE_NAME + " where title <> ''";
+
+      // Read whole result set and process it record by record
+      client.queryAll(sql).forEach(row -> {
+          double id = row.getDouble("id");
+          String title = row.getString("title");
+          String url = row.getString("url");
+
+          log.info("id: {}, title: {}, url: {}", id, title, url);
+      });
+  } catch (Exception e) {
+      log.error("Failed to read data", e);
+  }
+  ```
+
+  ### QuerySettings
+
+  خيارات التهيئة لعمليات الاستعلام.
+
+  **طرق الإعداد**
+
+  | الأسلوب                                           | الوصف                                                                                                                               |
+  | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+  | `setQueryId(String queryId)`                      | يعيّن معرّف الاستعلام الذي سيُسنَد إلى العملية.                                                                                     |
+  | `setFormat(ClickHouseFormat format)`              | يضبط تنسيق الاستجابة. راجع `RowBinaryWithNamesAndTypes` للاطلاع على القائمة الكاملة.                                                |
+  | `setMaxExecutionTime(Integer maxExecutionTime)`   | يعيّن وقت تنفيذ العملية على الخادم. لا يؤثر ذلك في مهلة القراءة.                                                                    |
+  | `waitEndOfQuery(Boolean waitEndOfQuery)`          | يطلب من الخادم انتظار اكتمال الاستعلام قبل إرسال الاستجابة.                                                                         |
+  | `setUseServerTimeZone(Boolean useServerTimeZone)` | ستُستخدم المنطقة الزمنية للخادم (راجع إعدادات العميل) لتحليل أنواع التاريخ/الوقت في ناتج العملية. القيمة الافتراضية `false`.        |
+  | `setUseTimeZone(String timeZone)`                 | يطلب من الخادم استخدام `timeZone` لتحويل الوقت. راجع [session&#95;timezone](/ar/reference/settings/session-settings#session_timezone). |
+  | `serverSetting(String name, String value)`        | يعيّن إعداد خادم محددًا للعملية.                                                                                                    |
+  | `serverSetting(String name, Collection values)`   | يُعيّن إعدادات خادم فردية بقيم متعددة لعملية ما. يجب أن تكون عناصر المجموعة من النوع `String`.                                      |
+  | `setDBRoles(Collection dbRoles)`                  | يحدّد أدوار DB المطلوب تعيينها قبل تنفيذ العملية. يجب أن تكون عناصر المجموعة قيماً من نوع `String`.                                 |
+  | `setOption(String option, Object value)`          | يضبط خيار تهيئة بتنسيق خام. هذا ليس إعدادًا على مستوى الخادم.                                                                       |
+
+  ### QueryResponse
+
+  كائن الاستجابة الذي يحتوي على نتيجة تنفيذ الاستعلام. لا يكون متاحاً إلا إذا تلقّى الـ client استجابةً من الـ server.
+
+  <Note>
+    يجب إغلاق هذا الكائن في أقرب وقت ممكن لتحرير الاتصال، لأن هذا الاتصال لا يمكن إعادة استخدامه حتى تتم قراءة جميع بيانات الاستجابة السابقة بالكامل.
+  </Note>
+
+  | الطريقة                         | الوصف                                                                                   |
+  | ------------------------------- | --------------------------------------------------------------------------------------- |
+  | `ClickHouseFormat getFormat()`  | يعيد التنسيق الذي تُرمَّز به البيانات في الاستجابة.                                     |
+  | `InputStream getInputStream()`  | يعيد تدفق بايتات البيانات غير المضغوطة بالتنسيق المحدد.                                 |
+  | `OperationMetrics getMetrics()` | يعيد كائنًا يحتوي على مقاييس العملية.                                                   |
+  | `String getQueryId()`           | يعيد معرّف الاستعلام الذي عيّنه التطبيق للعملية (عبر إعدادات العملية أو بواسطة الخادم). |
+  | `TimeZone getTimeZone()`        | يعيد المنطقة الزمنية التي يجب استخدامها لمعالجة النوعين Date وDateTime في الاستجابة.    |
+
+  ### أمثلة
+
+  * شيفرة المثال متاحة في [المستودع](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2)
+  * التنفيذ المرجعي لخدمة Spring متاح في [implementation](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service)
+
+  ## واجهة برمجة التطبيقات المشتركة
+
+  ### getTableSchema(String table)
+
+  يجلب مخطط الجدول الخاص بـ `table`.
+
+  **التوقيعات**
+
+  ```java
+  TableSchema getTableSchema(String table)
+  TableSchema getTableSchema(String table, String database)
+  ```
+
+  **المعاملات**
+
+  `table` - اسم الجدول الذي سيتم جلب بيانات المخطط الخاصة به.
+
+  `database` - قاعدة البيانات التي يُعرَّف فيها الجدول الهدف.
+
+  **القيمة المُعادة**
+
+  يُعيد كائن `TableSchema` يحتوي على قائمة بأعمدة الجدول.
+
+  ### getTableSchemaFromQuery(String sql)
+
+  يسترجع المخطط من عبارة SQL.
+
+  **التوقيعات**
+
+  ```java
+  TableSchema getTableSchemaFromQuery(String sql)
+  ```
+
+  **المعاملات**
+
+  `sql` - عبارة SQL من نوع &quot;SELECT&quot; التي سيتم إرجاع مخططها.
+
+  **القيمة المُعادة**
+
+  يُعيد كائن `TableSchema` يحتوي على أعمدة تتطابق مع تعبير `sql`.
+
+  ### TableSchema
+
+  ### register(Class&lt;?&gt; clazz, TableSchema schema)
+
+  يُجمِّع طبقة التسلسل وإلغاء التسلسل لـ Java Class لاستخدامها في كتابة/قراءة البيانات باستخدام `schema`. ستُنشئ هذه الدالة مُسلسِلاً ومُفككَ تسلسل لزوج getter/setter والعمود المقابل.
+  يُحدَّد تطابق العمود باستخراج اسمه من اسم الدالة. على سبيل المثال، سيرتبط `getFirstName` بالعمود `first_name` أو `firstname`.
+
+  **التوقيعات**
+
+  ```java
+  void register(Class<?> clazz, TableSchema schema)
+  ```
+
+  **المعاملات**
+
+  `clazz` - فئة تمثّل POJO المستخدم لقراءة البيانات وكتابتها.
+
+  `schema` - مخطط البيانات المستخدم للمطابقة مع خصائص POJO.
+
+  **أمثلة**
+
+  ```java showLineNumbers
+  client.register(ArticleViewEvent.class, client.getTableSchema(TABLE_NAME));
+  ```
+
+  ## أمثلة الاستخدام
+
+  تجد شيفرة الأمثلة الكاملة في المستودع داخل [مجلد](https://github.com/ClickHouse/clickhouse-java/tree/main/examples) &#39;example&#96;:
+
+  * [client-v2](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client-v2) - المجموعة الأساسية من الأمثلة.
+  * [demo-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-service) - مثال على كيفية استخدام العميل في تطبيق Spring Boot.
+  * [demo-kotlin-service](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/demo-kotlin-service) - مثال على كيفية استخدام العميل في تطبيق Ktor ‏(Kotlin).
+
+  ## قراءة البيانات
+
+  ثمة طريقتان شائعتان لقراءة البيانات:
+
+  * الطريقة `query()` التي تُرجع الكائن منخفض المستوى `QueryResponse`، والذي يحتوي على `InputStream` للبيانات. تُستخدم عادةً مع `ClickHouseBinaryFormatReader` لإجراء عمليات قراءة متدفقة، لكنها
+    يمكن استخدامها أيضًا مع أي تنفيذ مخصص آخر للقارئ. كما يوفّر `QueryResponse` إمكانية الوصول إلى البيانات الوصفية لمجموعة النتائج والمقاييس.
+  * الطريقة `queryAll()` مع استخدام `GenericRecord` للوصول بسهولة إلى الصفوف. في هذه الحالة، تُحمَّل مجموعة النتائج بالكامل إلى الذاكرة.
+  * الطريقة `queryRecords()` التي تُرجع `com.clickhouse.client.api.query.Records` - وهو مكرّر لكائنات `GenericRecord`. تستخدم هذه الطريقة نهجًا متدفقًا
+    (من دون تحميل أي بيانات إلى الذاكرة) وتستفيد من `GenericRecord` للوصول إلى البيانات.
+
+  **ملاحظة:** يستلزم أسلوب البث قراءةً سريعة، وإلا قد يتسبب في انتهاء مهلة الكتابة على الخادم، إذ تُقرأ البيانات مباشرةً من تدفق الشبكة.
+
+  ### قراءة المصفوفات
+
+  **طرق `ClickHouseBinaryFormatReader`**
+
+  * `getList(...)` - يقرأ أي `Array(...)` باعتباره `List<T>`. خيار افتراضي جيد لعمليات القراءة المرنة المقيّدة بالنوع. يدعم المصفوفات المتداخلة.
+  * `getByteArray(...)`, `getShortArray(...)`, `getIntArray(...)`, `getLongArray(...)`, `getFloatArray(...)`, `getDoubleArray(...)`, `getBooleanArray(...)` - الأفضل للمصفوفات أحادية البعد ذات القيم المتوافقة مع الأنواع الأولية.
+  * `getStringArray(...)` - مخصّص لـ `Array(String)` (وكذلك لقيم `enum` الممثلة كأسماء).
+  * `getObjectArray(...)` - خيار عام لأي نوع عنصر في `Array(...)`، بما في ذلك المصفوفات المتداخلة. استخدمه لقراءة المصفوفات التي تحتوي على قيم يمكن أن تكون `NULL` والمصفوفات المتداخلة.
+
+  تتوفر التحميلات الزائدة المستندة إلى الفهرس والمستندة إلى الاسم لجميع الطرق. يبدأ الفهرس من 1. تتيح الطرق المستندة إلى الفهرس الوصول المباشر إلى العمود.
+  تتطلب الطرق المستندة إلى الاسم البحث عن الفهرس في كل مرة.
+
+  ```java
+  try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
+      ClickHouseBinaryFormatReader reader = client.newBinaryFormatReader(response);
+      while (reader.next() != null) {
+          
+          Object[] uint64 = reader.getObjectArray("uint64_arr"); // Array(UInt64) -> BigInteger[]
+          Object[] arr2d = reader.getObjectArray("arr2d");       // Array(Array(Int64)) -> Object[]
+
+          // nested arrays are returned as nested Object[]:
+          Object[] firstInner = (Object[]) arr2d[0];
+          Long firstValue = (Long) firstInner[0];
+      }
+  }
+  ```
+
+  **طرق `GenericRecord`**
+
+  * `getList(...)` - يقرأ أي `Array(...)` باعتباره `List<T>`. خيار افتراضي جيد لعمليات القراءة المرنة المقيّدة بالأنواع. يدعم المصفوفات المتداخلة.
+  * `getByteArray(...)`, `getShortArray(...)`, `getIntArray(...)`, `getLongArray(...)`, `getFloatArray(...)`, `getDoubleArray(...)`, `getBooleanArray(...)` - الأفضل للمصفوفات أحادية البعد ذات القيم المتوافقة مع الأنواع البدائية.
+  * `getStringArray(...)` - لـ `Array(String)` (وقيم `enum` الممثلة على شكل أسماء).
+  * `getObjectArray(...)` - خيار عام لأي نوع عنصر في `Array(...)`، بما في ذلك المصفوفات المتداخلة. استخدمه لقراءة المصفوفات التي تحتوي على قيم قابلة لأن تكون NULL والمصفوفات المتداخلة.
+
+  تتوفر التحميلات الزائدة المستندة إلى الفهرس والمستندة إلى الاسم لجميع الطرق. يبدأ الفهرس من 1. تُتيح الطرق المستندة إلى الفهرس وصولاً مباشراً إلى العمود.
+  أما الطرق المستندة إلى الاسم فتستلزم البحث في الفهرس في كل مرة.
+
+  ```java
+  try (QueryResponse response = client.query("SELECT * FROM my_table").get()) {
+      List<GenericRecord> rows = client.queryAll(
+          "SELECT int_arr, arr2d_nullable FROM test_arrays ORDER BY id");
+
+      for (GenericRecord row : rows) {
+          Object[] intArr = row.getObjectArray("int_arr");                 // Array(Int32) -> Integer[]
+          Object[] arr2d = row.getObjectArray("arr2d_nullable");           // Array(Array(Nullable(Int32)))
+
+          Object[] inner = (Object[]) arr2d[0];
+          Object maybeNull = inner[1]; // may be null
+      }
+  }
+  ```
+
+  ## دليل الترحيل
+
+  كان العميل القديم (V1) يستخدم `com.clickhouse.client.ClickHouseClient#builder` كنقطة انطلاق. أما العميل الجديد (V2) فيعتمد نمطًا مشابهًا عبر `com.clickhouse.client.api.Client.Builder`. وأبرز
+  الفروقات هي:
+
+  * لا يُستخدم أي service loader لجلب التنفيذ الفعلي. وتمثّل `com.clickhouse.client.api.Client` فئة واجهة لمختلف أنواع التنفيذ مستقبلًا.
+  * عدد مصادر التهيئة أقل: يُمرَّر أحدها إلى الـ builder، ويكون الآخر ضمن إعدادات العملية (`QuerySettings`، `InsertSettings`). كان الإصدار السابق يتضمّن تهيئة لكل عقدة، وكان يقرأ
+    متغيرات البيئة في بعض الحالات.
+
+  ### تطابق معاملات الإعداد
+
+  توجد 3 فئات enum مرتبطة بالتهيئة في V1:
+
+  * `com.clickhouse.client.config.ClickHouseDefaults` - معلمات التهيئة التي يُفترض تعيينها في معظم حالات الاستخدام، مثل `USER` و`PASSWORD`.
+  * `com.clickhouse.client.config.ClickHouseClientOption` - معلمات تهيئة خاصة بالعميل، مثل `HEALTH_CHECK_INTERVAL`.
+  * `com.clickhouse.client.http.config.ClickHouseHttpOption` - معلمات تهيئة خاصة بواجهة HTTP، مثل `RECEIVE_QUERY_PROGRESS`.
+
+  صُمِّمت لتجميع المعاملات وتوفير فصل واضح بينها. غير أن ذلك أفضى في بعض الحالات إلى التباس (هل ثمة فرق بين `com.clickhouse.client.config.ClickHouseDefaults#ASYNC` و`com.clickhouse.client.config.ClickHouseClientOption#ASYNC`؟). يستخدم client الجديد V2 الفئة `com.clickhouse.client.api.Client.Builder` بوصفها مرجعًا موحدًا لجميع خيارات تهيئة الـ client الممكنة. كما تتوفر الفئة `com.clickhouse.client.api.ClientConfigProperties` التي تسرد جميع أسماء معاملات التهيئة.
+
+  يوضح الجدول أدناه الخيارات القديمة المدعومة في الـ client الجديد ومعانيها الجديدة.
+
+  **المفتاح:** ✔ = مدعوم، ✗ = مُسقَط
+
+  <Tabs>
+    <Tab title="الاتصال والمصادقة">
+      | إعدادات V1                                                                       | أسلوب Builder في V2                         | ملاحظات             |
+      | -------------------------------------------------------------------------------- | ------------------------------------------- | ------------------- |
+      | `ClickHouseDefaults#HOST`                                                        | `Client.Builder#addEndpoint`                |                     |
+      | `ClickHouseDefaults#PROTOCOL`                                                    | ✗                                           | لا يدعم V2 سوى HTTP |
+      | `ClickHouseDefaults#DATABASE`<br />`ClickHouseClientOption#DATABASE`             | `Client.Builder#setDefaultDatabase`         |                     |
+      | `ClickHouseDefaults#USER`                                                        | `Client.Builder#setUsername`                |                     |
+      | `ClickHouseDefaults#PASSWORD`                                                    | `Client.Builder#setPassword`                |                     |
+      | `ClickHouseClientOption#CONNECTION_TIMEOUT`                                      | `Client.Builder#setConnectTimeout`          |                     |
+      | `ClickHouseClientOption#CONNECTION_TTL`                                          | `Client.Builder#setConnectionTTL`           |                     |
+      | `ClickHouseHttpOption#MAX_OPEN_CONNECTIONS`                                      | `Client.Builder#setMaxConnections`          |                     |
+      | `ClickHouseHttpOption#KEEP_ALIVE`<br />`ClickHouseHttpOption#KEEP_ALIVE_TIMEOUT` | `Client.Builder#setKeepAliveTimeout`        |                     |
+      | `ClickHouseHttpOption#CONNECTION_REUSE_STRATEGY`                                 | `Client.Builder#setConnectionReuseStrategy` |                     |
+      | `ClickHouseHttpOption#USE_BASIC_AUTHENTICATION`                                  | `Client.Builder#useHTTPBasicAuth`           |                     |
+    </Tab>
+
+    <Tab title="SSL & الأمان">
+      | إعداد V1                                               | طريقة Builder                             | ملاحظات                                              |
+      | ------------------------------------------------------ | ----------------------------------------- | ---------------------------------------------------- |
+      | `ClickHouseDefaults#SSL_CERTIFICATE_TYPE`              | ✗                                         |                                                      |
+      | `ClickHouseDefaults#SSL_KEY_ALGORITHM`                 | ✗                                         |                                                      |
+      | `ClickHouseDefaults#SSL_PROTOCOL`                      | ✗                                         |                                                      |
+      | `ClickHouseClientOption#SSL`                           | ✗                                         | راجع `Client.Builder#addEndpoint`                    |
+      | `ClickHouseClientOption#SSL_MODE`                      | ✗                                         |                                                      |
+      | `ClickHouseClientOption#SSL_ROOT_CERTIFICATE`          | `Client.Builder#setRootCertificate`       | يجب تمكين مصادقة SSL باستخدام `useSSLAuthentication` |
+      | `ClickHouseClientOption#SSL_CERTIFICATE`               | `Client.Builder#setClientCertificate`     |                                                      |
+      | `ClickHouseClientOption#SSL_KEY`                       | `Client.Builder#setClientKey`             |                                                      |
+      | `ClickHouseClientOption#KEY_STORE_TYPE`                | `Client.Builder#setSSLTrustStoreType`     |                                                      |
+      | `ClickHouseClientOption#TRUST_STORE`                   | `Client.Builder#setSSLTrustStore`         |                                                      |
+      | `ClickHouseClientOption#KEY_STORE_PASSWORD`            | `Client.Builder#setSSLTrustStorePassword` |                                                      |
+      | `ClickHouseClientOption#SSL_SOCKET_SNI`                | `Client.Builder#sslSocketSNI`             |                                                      |
+      | `ClickHouseClientOption#CUSTOM_SOCKET_FACTORY`         | ✗                                         |                                                      |
+      | `ClickHouseClientOption#CUSTOM_SOCKET_FACTORY_OPTIONS` | ✗                                         | راجع `Client.Builder#sslSocketSNI` لتعيين SNI        |
+    </Tab>
+
+    <Tab title="خيارات Socket">
+      | تهيئة V1                                    | طريقة Builder في V2                    | ملاحظات |
+      | ------------------------------------------- | -------------------------------------- | ------- |
+      | `ClickHouseClientOption#SOCKET_TIMEOUT`     | `Client.Builder#setSocketTimeout`      |         |
+      | `ClickHouseClientOption#SOCKET_REUSEADDR`   | `Client.Builder#setSocketReuseAddress` |         |
+      | `ClickHouseClientOption#SOCKET_KEEPALIVE`   | `Client.Builder#setSocketKeepAlive`    |         |
+      | `ClickHouseClientOption#SOCKET_LINGER`      | `Client.Builder#setSocketLinger`       |         |
+      | `ClickHouseClientOption#SOCKET_IP_TOS`      | ✗                                      |         |
+      | `ClickHouseClientOption#SOCKET_TCP_NODELAY` | `Client.Builder#setSocketTcpNodelay`   |         |
+      | `ClickHouseClientOption#SOCKET_RCVBUF`      | `Client.Builder#setSocketRcvbuf`       |         |
+      | `ClickHouseClientOption#SOCKET_SNDBUF`      | `Client.Builder#setSocketSndbuf`       |         |
+    </Tab>
+
+    <Tab title="ضغط">
+      | تهيئة V1                                      | طريقة Builder                           | ملاحظات                                          |
+      | --------------------------------------------- | --------------------------------------- | ------------------------------------------------ |
+      | `ClickHouseClientOption#COMPRESS`             | `Client.Builder#compressServerResponse` | انظر أيضًا `useHttpCompression`                  |
+      | `ClickHouseClientOption#DECOMPRESS`           | `Client.Builder#compressClientRequest`  | انظر أيضًا `useHttpCompression`                  |
+      | `ClickHouseClientOption#COMPRESS_ALGORITHM`   | ✗                                       | `LZ4` لغير HTTP. يستخدم HTTP ‏`Accept-Encoding`  |
+      | `ClickHouseClientOption#DECOMPRESS_ALGORITHM` | ✗                                       | `LZ4` لغير HTTP. يستخدم HTTP ‏`Content-Encoding` |
+      | `ClickHouseClientOption#COMPRESS_LEVEL`       | ✗                                       |                                                  |
+      | `ClickHouseClientOption#DECOMPRESS_LEVEL`     | ✗                                       |                                                  |
+    </Tab>
+
+    <Tab title="بروكسي">
+      | تهيئة V1                                | طريقة Builder في V2                  | ملاحظات |
+      | --------------------------------------- | ------------------------------------ | ------- |
+      | `ClickHouseClientOption#PROXY_TYPE`     | `Client.Builder#addProxy`            |         |
+      | `ClickHouseClientOption#PROXY_HOST`     | `Client.Builder#addProxy`            |         |
+      | `ClickHouseClientOption#PROXY_PORT`     | `Client.Builder#addProxy`            |         |
+      | `ClickHouseClientOption#PROXY_USERNAME` | `Client.Builder#setProxyCredentials` |         |
+      | `ClickHouseClientOption#PROXY_PASSWORD` | `Client.Builder#setProxyCredentials` |         |
+    </Tab>
+
+    <Tab title="المهلات وإعادة المحاولة">
+      | إعدادات V1                                      | طريقة Builder في V2                  | ملاحظات                      |
+      | ----------------------------------------------- | ------------------------------------ | ---------------------------- |
+      | `ClickHouseClientOption#MAX_EXECUTION_TIME`     | `Client.Builder#setExecutionTimeout` |                              |
+      | `ClickHouseClientOption#RETRY`                  | `Client.Builder#setMaxRetries`       | انظر أيضًا `retryOnFailures` |
+      | `ClickHouseHttpOption#AHC_RETRY_ON_FAILURE`     | `Client.Builder#retryOnFailures`     |                              |
+      | `ClickHouseClientOption#FAILOVER`               | ✗                                    |                              |
+      | `ClickHouseClientOption#REPEAT_ON_SESSION_LOCK` | ✗                                    |                              |
+      | `ClickHouseClientOption#SESSION_ID`             | ✗                                    |                              |
+      | `ClickHouseClientOption#SESSION_CHECK`          | ✗                                    |                              |
+      | `ClickHouseClientOption#SESSION_TIMEOUT`        | ✗                                    |                              |
+    </Tab>
+
+    <Tab title="المنطقة الزمنية">
+      | إعدادات V1                                                                           | طريقة Builder في V2                | ملاحظات |
+      | ------------------------------------------------------------------------------------ | ---------------------------------- | ------- |
+      | `ClickHouseDefaults#SERVER_TIME_ZONE`<br />`ClickHouseClientOption#SERVER_TIME_ZONE` | `Client.Builder#setServerTimeZone` |         |
+      | `ClickHouseClientOption#USE_SERVER_TIME_ZONE`                                        | `Client.Builder#useServerTimeZone` |         |
+      | `ClickHouseClientOption#USE_SERVER_TIME_ZONE_FOR_DATES`                              |                                    |         |
+      | `ClickHouseClientOption#USE_TIME_ZONE`                                               | `Client.Builder#useTimeZone`       |         |
+    </Tab>
+
+    <Tab title="المخازن المؤقتة & الأداء">
+      | إعدادات V1                                      | طريقة Builder في V2                         | ملاحظات |
+      | ----------------------------------------------- | ------------------------------------------- | ------- |
+      | `ClickHouseClientOption#BUFFER_SIZE`            | `Client.Builder#setClientNetworkBufferSize` |         |
+      | `ClickHouseClientOption#BUFFER_QUEUE_VARIATION` | ✗                                           |         |
+      | `ClickHouseClientOption#READ_BUFFER_SIZE`       | ✗                                           |         |
+      | `ClickHouseClientOption#WRITE_BUFFER_SIZE`      | ✗                                           |         |
+      | `ClickHouseClientOption#REQUEST_CHUNK_SIZE`     | ✗                                           |         |
+      | `ClickHouseClientOption#REQUEST_BUFFERING`      | ✗                                           |         |
+      | `ClickHouseClientOption#RESPONSE_BUFFERING`     | ✗                                           |         |
+      | `ClickHouseClientOption#MAX_BUFFER_SIZE`        | ✗                                           |         |
+      | `ClickHouseClientOption#MAX_QUEUED_BUFFERS`     | ✗                                           |         |
+      | `ClickHouseClientOption#MAX_QUEUED_REQUESTS`    | ✗                                           |         |
+      | `ClickHouseClientOption#REUSE_VALUE_WRAPPER`    | ✗                                           |         |
+    </Tab>
+
+    <Tab title="الخيوط & عدم التزامن">
+      | إعدادات V1                                                     | طريقة Builder في V2               | ملاحظات                           |
+      | -------------------------------------------------------------- | --------------------------------- | --------------------------------- |
+      | `ClickHouseDefaults#ASYNC`<br />`ClickHouseClientOption#ASYNC` | `Client.Builder#useAsyncRequests` |                                   |
+      | `ClickHouseDefaults#MAX_SCHEDULER_THREADS`                     | ✗                                 | راجع `setSharedOperationExecutor` |
+      | `ClickHouseDefaults#MAX_THREADS`                               | ✗                                 | راجع `setSharedOperationExecutor` |
+      | `ClickHouseDefaults#THREAD_KEEPALIVE_TIMEOUT`                  | راجع `setSharedOperationExecutor` |                                   |
+      | `ClickHouseClientOption#MAX_THREADS_PER_CLIENT`                | ✗                                 |                                   |
+      | `ClickHouseClientOption#MAX_CORE_THREAD_TTL`                   | ✗                                 |                                   |
+    </Tab>
+
+    <Tab title="HTTP & الترويسات">
+      | تهيئة V1                                             | طريقة Builder في V2            | ملاحظات                                            |
+      | ---------------------------------------------------- | ------------------------------ | -------------------------------------------------- |
+      | `ClickHouseHttpOption#CUSTOM_HEADERS`                | `Client.Builder#httpHeaders`   |                                                    |
+      | `ClickHouseHttpOption#CUSTOM_PARAMS`                 | ✗                              | راجع `Client.Builder#serverSetting`                |
+      | `ClickHouseClientOption#CLIENT_NAME`                 | `Client.Builder#setClientName` |                                                    |
+      | `ClickHouseHttpOption#CONNECTION_PROVIDER`           | ✗                              |                                                    |
+      | `ClickHouseHttpOption#DEFAULT_RESPONSE`              | ✗                              |                                                    |
+      | `ClickHouseHttpOption#SEND_HTTP_CLIENT_ID`           | ✗                              |                                                    |
+      | `ClickHouseHttpOption#AHC_VALIDATE_AFTER_INACTIVITY` | ✗                              | يكون enabled دائمًا عند استخدام Apache Http Client |
+    </Tab>
+
+    <Tab title="الصيغة & الاستعلام">
+      | تهيئة V1                                                         | طريقة الـBuilder في V2 | ملاحظات                                                                                         |
+      | ---------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------- |
+      | `ClickHouseDefaults#FORMAT`<br />`ClickHouseClientOption#FORMAT` | ✗                      | نُقلت إلى إعدادات العملية (`QuerySettings` و`InsertSettings`)                                   |
+      | `ClickHouseClientOption#QUERY_ID`                                | ✗                      | راجع `QuerySettings` و`InsertSettings`                                                          |
+      | `ClickHouseClientOption#LOG_LEADING_COMMENT`                     | ✗                      | راجع `QuerySettings#logComment` و`InsertSettings#logComment`                                    |
+      | `ClickHouseClientOption#MAX_RESULT_ROWS`                         | ✗                      | هذا إعداد على مستوى الخادم                                                                      |
+      | `ClickHouseClientOption#RESULT_OVERFLOW_MODE`                    | ✗                      | هذا إعداد على مستوى الخادم                                                                      |
+      | `ClickHouseHttpOption#RECEIVE_QUERY_PROGRESS`                    | ✗                      | إعداد على مستوى الخادم                                                                          |
+      | `ClickHouseHttpOption#WAIT_END_OF_QUERY`                         | ✗                      | إعداد على مستوى الخادم                                                                          |
+      | `ClickHouseHttpOption#REMEMBER_LAST_SET_ROLES`                   | `Client#setDBRoles`    | أصبح الآن إعداد وقت التشغيل. راجع أيضًا `QuerySettings#setDBRoles` و`InsertSettings#setDBRoles` |
+    </Tab>
+
+    <Tab title="اكتشاف العُقد & موازنة الحمل">
+      | إعداد V1                                         | دالة Builder في V2 | ملاحظات |
+      | ------------------------------------------------ | ------------------ | ------- |
+      | `ClickHouseClientOption#AUTO_DISCOVERY`          | ✗                  |         |
+      | `ClickHouseClientOption#LOAD_BALANCING_POLICY`   | ✗                  |         |
+      | `ClickHouseClientOption#LOAD_BALANCING_TAGS`     | ✗                  |         |
+      | `ClickHouseClientOption#HEALTH_CHECK_INTERVAL`   | ✗                  |         |
+      | `ClickHouseClientOption#HEALTH_CHECK_METHOD`     | ✗                  |         |
+      | `ClickHouseClientOption#NODE_DISCOVERY_INTERVAL` | ✗                  |         |
+      | `ClickHouseClientOption#NODE_DISCOVERY_LIMIT`    | ✗                  |         |
+      | `ClickHouseClientOption#NODE_CHECK_INTERVAL`     | ✗                  |         |
+      | `ClickHouseClientOption#NODE_GROUP_SIZE`         | ✗                  |         |
+      | `ClickHouseClientOption#CHECK_ALL_NODES`         | ✗                  |         |
+    </Tab>
+
+    <Tab title="متفرقات">
+      | تهيئة V1                                                                         | method الإنشاء في V2              | التعليقات                   |
+      | -------------------------------------------------------------------------------- | --------------------------------- | --------------------------- |
+      | `ClickHouseDefaults#AUTO_SESSION`                                                | ✗                                 | ستُراجع إمكانية دعم الجلسات |
+      | `ClickHouseDefaults#BUFFERING`                                                   | ✗                                 |                             |
+      | `ClickHouseDefaults#MAX_REQUESTS`                                                | ✗                                 |                             |
+      | `ClickHouseDefaults#ROUNDING_MODE`                                               |                                   |                             |
+      | `ClickHouseDefaults#SERVER_VERSION`<br />`ClickHouseClientOption#SERVER_VERSION` | `Client.Builder#setServerVersion` |                             |
+      | `ClickHouseDefaults#SRV_RESOLVE`                                                 | ✗                                 |                             |
+      | `ClickHouseClientOption#CUSTOM_SETTINGS`                                         |                                   |                             |
+      | `ClickHouseClientOption#PRODUCT_NAME`                                            | ✗                                 | استخدم اسم client           |
+      | `ClickHouseClientOption#RENAME_RESPONSE_COLUMN`                                  | ✗                                 |                             |
+      | `ClickHouseClientOption#SERVER_REVISION`                                         | ✗                                 |                             |
+      | `ClickHouseClientOption#TRANSACTION_TIMEOUT`                                     | ✗                                 |                             |
+      | `ClickHouseClientOption#WIDEN_UNSIGNED_TYPES`                                    | ✗                                 |                             |
+      | `ClickHouseClientOption#USE_BINARY_STRING`                                       | ✗                                 |                             |
+      | `ClickHouseClientOption#USE_BLOCKING_QUEUE`                                      | ✗                                 |                             |
+      | `ClickHouseClientOption#USE_COMPILATION`                                         | ✗                                 |                             |
+      | `ClickHouseClientOption#USE_OBJECTS_IN_ARRAYS`                                   | ✗                                 |                             |
+      | `ClickHouseClientOption#MAX_MAPPER_CACHE`                                        | ✗                                 |                             |
+      | `ClickHouseClientOption#MEASURE_REQUEST_TIME`                                    | ✗                                 |                             |
+    </Tab>
+  </Tabs>
+
+  ### الفروق العامة
+
+  * يستخدم Client V2 عددًا أقل من الفئات الخاصة لزيادة قابلية النقل. على سبيل المثال، يعمل V2 مع أي تنفيذ لـ `java.io.InputStream` من أجل
+    كتابة البيانات إلى الخادم.
+  * يكون إعداد `async` في Client V2 مضبوطًا على `off` افتراضيًا. وهذا يعني عدم وجود مؤشرات ترابط إضافية وتحكمًا أكبر من التطبيق في العميل. ينبغي أن يكون هذا الإعداد `off` في معظم حالات الاستخدام. سيؤدي تمكين `async` إلى إنشاء مؤشر ترابط منفصل لكل طلب. ولا يكون ذلك منطقيًا إلا عند استخدام
+    منفّذ يتحكم فيه التطبيق (انظر `com.clickhouse.client.api.Client.Builder#setSharedOperationExecutor`)
+
+  ### كتابة البيانات
+
+  * استخدم أي تنفيذ لـ `java.io.InputStream`. الإصدار V1 `com.clickhouse.data.ClickHouseInputStream` مدعوم، لكنه غير مستحسن.
+  * بمجرد اكتشاف نهاية مجرى الإدخال، ستتم معالجتها وفقًا لذلك. في السابق، كان يجب إغلاق مجرى الإخراج الخاص بالطلب.
+
+  **V1 إدراج بيانات بتنسيق TSV.**
+
+  ```java
+  InputStream inData = getInData();
+  ClickHouseRequest.Mutation request = client.read(server)
+          .write()
+          .table(tableName)
+          .format(ClickHouseFormat.TSV);
+  ClickHouseConfig config = request.getConfig();
+  CompletableFuture<ClickHouseResponse> future;
+  try (ClickHousePipedOutputStream requestBody = ClickHouseDataStreamFactory.getInstance()
+          .createPipedOutputStream(config)) {
+      // start the worker thread which transfer data from the input into ClickHouse
+      future = request.data(requestBody.getInputStream()).execute();
+
+      // Copy data from inData stream to requestBody stream
+
+      // We need to close the stream before getting a response
+      requestBody.close();
+
+      try (ClickHouseResponse response = future.get()) {
+          ClickHouseResponseSummary summary = response.getSummary();
+          Assert.assertEquals(summary.getWrittenRows(), numRows, "Num of written rows");
+      }
+  }
+
+  ```
+
+  **إدراج بيانات بتنسيق TSV - الإصدار V2.**
+
+  ```java
+  InputStream inData = getInData();
+  InsertSettings settings = new InsertSettings().setInputStreamCopyBufferSize(8198 * 2); // set copy buffer size
+  try (InsertResponse response = client.insert(tableName, inData, ClickHouseFormat.TSV, settings).get(30, TimeUnit.SECONDS)) {
+
+    // Insert is complete at this point
+
+  } catch (Exception e) {
+   // Handle exception
+  }
+  ```
+
+  * توجد طريقة واحدة فقط لاستدعائها. لا حاجة إلى إنشاء كائن طلب إضافي.
+  * يُغلَق تدفّق جسم الطلب تلقائيًا عند نسخ جميع البيانات.
+  * تتوفر واجهة برمجة تطبيقات جديدة منخفضة المستوى `com.clickhouse.client.api.Client#insert(java.lang.String, java.util.List<java.lang.String>, com.clickhouse.client.api.DataStreamWriter, com.clickhouse.data.ClickHouseFormat, com.clickhouse.client.api.insert.InsertSettings)`. صُمِّم `com.clickhouse.client.api.DataStreamWriter` لتطبيق منطق مخصص لكتابة البيانات. على سبيل المثال، لقراءة البيانات من
+    قائمة انتظار.
+
+  ### قراءة البيانات
+
+  * تُقرأ البيانات بتنسيق `RowBinaryWithNamesAndTypes` افتراضيًا. وحاليًا لا يُدعَم عند الحاجة إلى ربط البيانات سوى هذا التنسيق.
+  * يمكن قراءة البيانات كمجموعة من السجلات باستخدام الأسلوب `List<GenericRecord> com.clickhouse.client.api.Client#queryAll(java.lang.String)`. يقرأ هذا الأسلوب البيانات إلى الذاكرة ثم يحرّر الاتصال. ولا حاجة إلى أي معالجة إضافية. يتيح `GenericRecord` الوصول إلى البيانات، ويجري بعض التحويلات.
+
+  ```java
+  Collection<GenericRecord> records = client.queryAll("SELECT * FROM table");
+  for (GenericRecord record : records) {
+      int rowId = record.getInteger("rowID");
+      String name = record.getString("name");
+      LocalDateTime ts = record.getLocalDateTime("ts");
+  }
+
+  ```
+</View>
+
+<View title="v0.7.x">
+  مكتبة Java client للتواصل مع خادم DB عبر بروتوكولاته. يدعم التطبيق الحالي واجهة [HTTP interface](/ar/concepts/features/interfaces/http) فقط. توفر المكتبة واجهة برمجة تطبيقات خاصة بها لإرسال الطلبات إلى الخادم.
+
+  <Warning>
+    **الإهمال**
+
+    ستُصبح هذه المكتبة مهملة قريبًا. استخدم أحدث [Java Client](/ar/integrations/language-clients/java/client) في المشاريع الجديدة
+  </Warning>
+
+  ## الإعداد
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <!-- https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client -->
+      <dependency>
+          <groupId>com.clickhouse</groupId>
+          <artifactId>clickhouse-http-client</artifactId>
+          <version>0.7.2</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client
+      implementation("com.clickhouse:clickhouse-http-client:0.7.2")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/com.clickhouse/clickhouse-http-client
+      implementation 'com.clickhouse:clickhouse-http-client:0.7.2'
+      ```
+    </Tab>
+  </Tabs>
+
+  منذ الإصدار `0.5.0`، يستخدم driver مكتبة client http جديدة يجب إضافتها ضمن التبعيات.
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <!-- https://mvnrepository.com/artifact/org.apache.httpcomponents.client5/httpclient5 -->
+      <dependency>
+          <groupId>org.apache.httpcomponents.client5</groupId>
+          <artifactId>httpclient5</artifactId>
+          <version>5.3.1</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/org.apache.httpcomponents.client5/httpclient5
+      implementation("org.apache.httpcomponents.client5:httpclient5:5.3.1")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/org.apache.httpcomponents.client5/httpclient5
+      implementation 'org.apache.httpcomponents.client5:httpclient5:5.3.1'
+      ```
+    </Tab>
+  </Tabs>
+
+  ## التهيئة
+
+  صيغة URL للاتصال: `protocol://host[:port][/database][?param[=value][&param[=value]][#tag[,tag]]`، مثال:
+
+  * `http://localhost:8443?ssl=true&sslmode=NONE`
+  * `https://(https://explorer@play.clickhouse.com:443`
+
+  الاتصال بعقدة واحدة:
+
+  ```java showLineNumbers
+  ClickHouseNode server = ClickHouseNode.of("http://localhost:8123/default?compress=0");
+  ```
+
+  الاتصال بمجموعة عقد متعددة:
+
+  ```java showLineNumbers
+  ClickHouseNodes servers = ClickHouseNodes.of(
+      "jdbc:ch:http://server1.domain,server2.domain,server3.domain/my_db"
+      + "?load_balancing_policy=random&health_check_interval=5000&failover=2");
+  ```
+
+  ## واجهة برمجة تطبيقات الاستعلام
+
+  ```java showLineNumbers
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+       ClickHouseResponse response = client.read(servers)
+          .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+          .query("select * from numbers limit :limit")
+          .params(1000)
+          .executeAndWait()) {
+              ClickHouseResponseSummary summary = response.getSummary();
+              long totalRows = summary.getTotalRowsToRead();
+  }
+  ```
+
+  ## واجهة برمجة تطبيقات الاستعلام المتدفق
+
+  ```java showLineNumbers
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+       ClickHouseResponse response = client.read(servers)
+          .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+          .query("select * from numbers limit :limit")
+          .params(1000)
+          .executeAndWait()) {
+              for (ClickHouseRecord r : response.records()) {
+              int num = r.getValue(0).asInteger();
+              // type conversion
+              String str = r.getValue(0).asString();
+              LocalDate date = r.getValue(0).asDate();
+          }
+  }
+  ```
+
+  اطّلع على [مثال الشيفرة الكامل](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L73) في [المستودع](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client).
+
+  ## واجهة برمجة تطبيقات الإدراج
+
+  ```java showLineNumbers
+
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+       ClickHouseResponse response = client.read(servers).write()
+          .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+          .query("insert into my_table select c2, c3 from input('c1 UInt8, c2 String, c3 Int32')")
+          .data(myInputStream) // `myInputStream` is source of data in RowBinary format
+          .executeAndWait()) {
+              ClickHouseResponseSummary summary = response.getSummary();
+              summary.getWrittenRows();
+  }
+  ```
+
+  راجع [مثال الشيفرة الكامل](https://github.com/ClickHouse/clickhouse-java/blob/main/examples/client/src/main/java/com/clickhouse/examples/jdbc/Main.java#L39) في [المستودع](https://github.com/ClickHouse/clickhouse-java/tree/main/examples/client).
+
+  **ترميز RowBinary**
+
+  يُوصَف تنسيق RowBinary في [صفحته](/ar/reference/formats/RowBinary/RowBinaryWithNamesAndTypes).
+
+  يمكن الاطلاع على [مثال للشيفرة](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/src/main/java/com/clickhouse/kafka/connect/sink/db/ClickHouseWriter.java#L622).
+
+  ## الميزات
+
+  ### الضغط
+
+  سيستخدم الـ client افتراضياً ضغط LZ4، مما يستلزم هذه التبعية:
+
+  <Tabs>
+    <Tab title="Maven">
+      ```xml
+      <!-- https://mvnrepository.com/artifact/org.lz4/lz4-java -->
+      <dependency>
+          <groupId>org.lz4</groupId>
+          <artifactId>lz4-java</artifactId>
+          <version>1.8.0</version>
+      </dependency>
+      ```
+    </Tab>
+
+    <Tab title="Gradle (Kotlin)">
+      ```kotlin
+      // https://mvnrepository.com/artifact/org.lz4/lz4-java
+      implementation("org.lz4:lz4-java:1.8.0")
+      ```
+    </Tab>
+
+    <Tab title="Gradle">
+      ```groovy
+      // https://mvnrepository.com/artifact/org.lz4/lz4-java
+      implementation 'org.lz4:lz4-java:1.8.0'
+      ```
+    </Tab>
+  </Tabs>
+
+  يمكنك اختيار استخدام gzip عوضاً عن ذلك من خلال تعيين `compress_algorithm=gzip` في URL الاتصال.
+
+  بدلاً من ذلك، يمكنك تعطيل الضغط بعدة طرق.
+
+  1. عطّل ذلك بتعيين `compress=0` في URL الاتصال: `http://localhost:8123/default?compress=0`
+  2. عطّل ذلك عبر إعدادات العميل:
+
+  ```java showLineNumbers
+  ClickHouseClient client = ClickHouseClient.builder()
+     .config(new ClickHouseConfig(Map.of(ClickHouseClientOption.COMPRESS, false)))
+     .nodeSelector(ClickHouseNodeSelector.of(ClickHouseProtocol.HTTP))
+     .build();
+  ```
+
+  راجع [وثائق الضغط](/ar/guides/clickhouse/data-modelling/compression/compression-modes) للاطلاع على مزيد من المعلومات حول خيارات الضغط المختلفة.
+
+  ### استعلامات متعددة
+
+  تنفيذ استعلامات متعددة في خيط عامل واحدًا تلو الآخر ضمن نفس الجلسة:
+
+  ```java showLineNumbers
+  CompletableFuture<List<ClickHouseResponseSummary>> future = ClickHouseClient.send(servers.apply(servers.getNodeSelector()),
+      "create database if not exists my_base",
+      "use my_base",
+      "create table if not exists test_table(s String) engine=Memory",
+      "insert into test_table values('1')('2')('3')",
+      "select * from test_table limit 1",
+      "truncate table test_table",
+      "drop table if exists test_table");
+  List<ClickHouseResponseSummary> results = future.get();
+  ```
+
+  ### المعاملات المسماة
+
+  يمكنك تمرير المعاملات بالاسم بدلاً من الاعتماد على موضعها في قائمة المعاملات فحسب. تتوفر هذه الإمكانية باستخدام دالة `params`.
+
+  ```java showLineNumbers
+  try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+       ClickHouseResponse response = client.read(servers)
+          .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+          .query("select * from my_table where name=:name limit :limit")
+          .params("Ben", 1000)
+          .executeAndWait()) {
+              //...
+          }
+  }
+  ```
+
+  <Info>
+    **المعلمات**
+
+    تفترض جميع صيغ `params` التي تتضمن النوع `String` (`String`, `String[]`, `Map<String, String>`) أن المفاتيح المُمرَّرة هي سلاسل صالحة في ClickHouse SQL. على سبيل المثال:
+
+    ```java showLineNumbers
+    try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+         ClickHouseResponse response = client.read(servers)
+            .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+            .query("select * from my_table where name=:name")
+            .params(Map.of("name","'Ben'"))
+            .executeAndWait()) {
+                //...
+            }
+    }
+    ```
+
+    إذا كنت تفضل عدم تحويل الكائنات من نوع String إلى تعبيرات ClickHouse SQL يدويًا، فيمكنك استخدام الدالة المساعدة `ClickHouseValues.convertToSqlExpression` الموجودة في `com.clickhouse.data`:
+
+    ```java showLineNumbers
+    try (ClickHouseClient client = ClickHouseClient.newInstance(ClickHouseProtocol.HTTP);
+         ClickHouseResponse response = client.read(servers)
+            .format(ClickHouseFormat.RowBinaryWithNamesAndTypes)
+            .query("select * from my_table where name=:name")
+            .params(Map.of("name", ClickHouseValues.convertToSqlExpression("Ben's")))
+            .executeAndWait()) {
+                //...
+            }
+    }
+    ```
+
+    في المثال أعلاه، ستقوم `ClickHouseValues.convertToSqlExpression` بإفلات علامة الاقتباس المفردة الداخلية، ثم تُحيط المتغير بعلامات اقتباس مفردة صحيحة.
+
+    أما الأنواع الأخرى، مثل `Integer` و`UUID` و`Array` و`Enum`، فستُحوَّل تلقائيًا داخل `params`.
+  </Info>
+
+  ## اكتشاف العقد
+
+  يوفر Java client إمكانية اكتشاف عقد ClickHouse تلقائيًا. يكون الاكتشاف التلقائي معطّلًا افتراضيًا. لتفعيله يدويًا، اضبط `auto_discovery` على `true`:
+
+  ```java
+  properties.setProperty("auto_discovery", "true");
+  ```
+
+  أو في عنوان URL للاتصال:
+
+  ```plaintext
+  jdbc:ch://my-server/system?auto_discovery=true
+  ```
+
+  إذا كانت ميزة الاكتشاف التلقائي مُفعَّلةً، فلا داعي لتحديد جميع عُقد ClickHouse في URL الاتصال. ستُعامَل العُقد المحددة في URL باعتبارها seeds، وسيكتشف Java client تلقائياً المزيد من العُقد من جداول النظام و/أو clickhouse-keeper أو zookeeper.
+
+  الخيارات التالية مسؤولة عن ضبط الاكتشاف التلقائي:
+
+  | الخاصية                         | القيمة الافتراضية | الوصف                                                                                                     |
+  | ------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------- |
+  | auto&#95;discovery              | `false`           | ما إذا كان ينبغي للعميل اكتشاف عقد إضافية من جداول النظام و/أو clickhouse-keeper/zookeeper.               |
+  | node&#95;discovery&#95;interval | `0`               | الفاصل الزمني لاكتشاف العقد، بالمللي ثانية. وتعني القيمة صفر أو أي قيمة سالبة أن الاكتشاف يتم لمرة واحدة. |
+  | node&#95;discovery&#95;limit    | `100`             | الحد الأقصى لعدد العقد التي يمكن اكتشافها في وقت واحد؛ وتشير القيمة صفر أو أي قيمة سالبة إلى عدم وجود حد. |
+
+  ### موازنة الحمل
+
+  يختار Java client عقدةً في ClickHouse لإرسال الطلبات إليها وفقًا لسياسة موازنة الحمل. بوجهٍ عام، تكون سياسة موازنة الحمل مسؤولةً عن الأمور التالية:
+
+  1. احصل على عقدة من قائمة العقد المُدارة.
+  2. إدارة حالة العقدة.
+  3. اختياريًا، قم بجدولة عملية تعمل في الخلفية لاكتشاف العقد (إذا كان الاكتشاف التلقائي مفعّلًا) وأجرِ فحصًا للحالة الصحية.
+
+  فيما يلي قائمة بالخيارات المتاحة لضبط موازنة الحمل:
+
+  | الخاصية                       | القيمة الافتراضية                        | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+  | ----------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | load&#95;balancing&#95;policy | `""`                                     | يمكن أن تكون سياسة موازنة التحميل واحدة من التالي: <li>`firstAlive` - يُرسَل الطلب إلى أول عقدة سليمة من قائمة العقد المُدارة</li><li>`random` - يُرسَل الطلب إلى عقدة عشوائية من قائمة العقد المُدارة </li><li>`roundRobin` - يُرسَل الطلب إلى كل عقدة من قائمة العقد المُدارة بالتناوب.</li><li>الاسم المؤهل بالكامل للفئة التي تنفّذ `ClickHouseLoadBalancingPolicy` - سياسة موازنة تحميل مخصّصة</li>إذا لم يتم تحديدها، فسيُرسَل الطلب إلى أول عقدة في قائمة العقد المُدارة |
+  | load&#95;balancing&#95;tags   | `""`                                     | وسوم موازنة التحميل لاستبعاد العُقد. لا تُرسَل الطلبات إلا إلى العُقد التي تحمل الوسوم المحددة.                                                                                                                                                                                                                                                                                                                                                                                 |
+  | health&#95;check&#95;interval | `0`                                      | فاصل التحقق من السلامة بالملي ثانية؛ وتعني القيمة الصفرية أو السالبة التشغيل لمرة واحدة.                                                                                                                                                                                                                                                                                                                                                                                        |
+  | health&#95;check&#95;method   | `ClickHouseHealthCheckMethod.SELECT_ONE` | طريقة التحقق من السلامة. يمكن أن تكون إحدى القيم التالية: <li>`ClickHouseHealthCheckMethod.SELECT_ONE` - التحقق باستخدام استعلام `select 1`</li> <li>`ClickHouseHealthCheckMethod.PING` - تحقق خاص بالبروتوكول، ويكون عمومًا أسرع</li>                                                                                                                                                                                                                                          |
+  | node&#95;check&#95;interval   | `0`                                      | فاصل التحقق من العقدة بالميلي ثانية، ويُعامَل الرقم السالب على أنه صفر. تُفحَص حالة العقدة إذا انقضت المدة المحددة منذ آخر تحقق.<br />الفرق بين `health_check_interval` و `node_check_interval` هو أن الخيار `health_check_interval` يُجدول مهمةً تعمل في الخلفية وتتحقق من حالة قائمة العقد (كلها أو المعطوبة فقط)، بينما يحدد `node_check_interval` مقدار الوقت المنقضي منذ آخر تحقق لتلك العقدة بعينها                                                                       |
+  | check&#95;all&#95;nodes       | `false`                                  | ما إذا كان سيتم إجراء فحص السلامة على جميع العقد أم على العقد المعطلة فقط.                                                                                                                                                                                                                                                                                                                                                                                                      |
+
+  ### التحويل التلقائي وإعادة المحاولة
+
+  يوفر Java client خيارات التهيئة اللازمة لضبط سلوك الـ failover والـ retry للاستعلامات الفاشلة:
+
+  | الخاصية                            | القيمة الافتراضية | الوصف                                                                                                                                                                                                                  |
+  | ---------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+  | failover                           | `0`               | الحد الأقصى لعدد مرات حدوث التحويل الاحتياطي للطلب. وتعني القيمة صفر أو أي قيمة سالبة عدم إجراء أي تحويل احتياطي. ويرسل التحويل الاحتياطي الطلب الذي فشل إلى عقدة أخرى (وفقًا لسياسة موازنة التحميل) للتعافي من الفشل. |
+  | retry                              | `0`               | الحد الأقصى لعدد مرات إعادة المحاولة للطلب. تعني القيمة صفر أو أي قيمة سالبة عدم إجراء أي إعادة محاولة. تُرسِل إعادة المحاولة طلبًا إلى العقدة نفسها، وذلك فقط إذا أعاد خادم ClickHouse رمز الخطأ `NETWORK_ERROR`      |
+  | repeat&#95;on&#95;session&#95;lock | `true`            | ما إذا كان ينبغي إعادة تنفيذ العملية عندما تكون الجلسة مقفلة إلى أن تنقضي المهلة (وفقًا لـ `session_timeout` أو `connect_timeout`). ويُعاد الطلب الذي فشل إذا أعاد خادم ClickHouse رمز الخطأ `SESSION_IS_LOCKED`       |
+
+  ### إضافة ترويسات HTTP مخصصة
+
+  يدعم Java client طبقة نقل HTTP/S عند الحاجة إلى إضافة HTTP headers مخصصة إلى الطلب.
+  يجب استخدام الخاصية custom&#95;http&#95;headers، وينبغي الفصل بين الـ headers بفاصلة `,`. أما مفتاح/قيمة الـ header فيجب الفصل بينهما باستخدام `=`
+
+  ## دعم Java Client
+
+  ```java
+  options.put("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+  ```
+
+  ## مشغّل JDBC
+
+  ```java
+  properties.setProperty("custom_http_headers", "X-ClickHouse-Quota=test, X-ClickHouse-Test=test");
+  ```
+</View>

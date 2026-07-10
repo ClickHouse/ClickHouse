@@ -248,8 +248,11 @@ bool ParserDataType::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     /// unquoted (e.g. UInt64). This introduces problems when the string in the quotes is garbage:
     ///  * Array(`x.y`) -> Array(x.y) -> fails to parse
     ///  * `Null` -> Null -> parses as keyword instead of type name
+    ///  * `8` -> 8 -> parses as a numeric literal instead of a type name
     /// Here we check for these cases and reject.
-    if (!std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
+    if (type_name.empty()
+        || isNumericASCII(type_name[0])
+        || !std::all_of(type_name.begin(), type_name.end(), [](char c) { return isWordCharASCII(c) || c == '$'; }))
     {
         expected.add(pos, "type name");
         return false;

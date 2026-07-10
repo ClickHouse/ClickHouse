@@ -1,0 +1,103 @@
+---
+sidebarTitle: 'Zing Data'
+slug: /integrations/zingdata
+keywords: ['Zing Data']
+description: 'Zing Data は、iOS、Android、ウェブ向けに作られた、ClickHouse 用のシンプルなソーシャルビジネスインテリジェンスです。'
+title: 'Zing Data を ClickHouse に接続する'
+show_related_blogs: true
+doc_type: 'guide'
+integration:
+   - support_level: 'community'
+   - category: 'data_visualization'
+---
+
+import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+<a href="https://www.zingdata.com/" target="_blank">Zing Data</a> は、データ探索と可視化のためのプラットフォームです。Zing Data は、ClickHouse が提供する JS ドライバーを使用して ClickHouse に接続します。
+
+<div id="how-to-connect">
+  ## 接続方法
+</div>
+
+1. 接続情報を確認します。
+
+<ConnectionDetails />
+
+2. Zing Dataをダウンロードするか、アクセスします
+
+   * モバイルでClickHouseをZing Dataと一緒に使用するには、[Google Play Store](https://play.google.com/store/apps/details?id=com.getzingdata.android) または [Apple App Store](https://apps.apple.com/us/app/zing-data-collaborative-bi/id1563294091) からZing Dataアプリをダウンロードします。
+
+   * WebでClickHouseをZing Dataと一緒に使用するには、[Zing Webコンソール](https://console.getzingdata.com/) にアクセスしてアカウントを作成します。
+
+3. データソースを追加します
+
+   * Zing DataでClickHouseのデータを操作するには、***データソース*** を定義する必要があります。Zing Dataのモバイルアプリメニューで **Sources** を選択し、**Add a Datasource** をクリックします。
+
+   * Webでデータソースを追加するには、上部メニューの **Data Sources** をクリックし、**New Datasource** をクリックして、ドロップダウンメニューから **ClickHouse** を選択します
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_01.webp" alt="New Datasourceボタンと、ドロップダウンメニュー内のClickHouseオプションが表示されたZing Dataのインターフェイス" border />
+
+   <br />
+
+4. 接続情報を入力し、**Check Connection** をクリックします。
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_02.webp" alt="server、port、database、username、passwordのフィールドが表示された、Zing DataのClickHouse接続設定フォーム" border />
+
+   <br />
+
+5. 接続が成功すると、Zingはテーブル選択画面に進みます。必要なテーブルを選択して **Save** をクリックします。Zingがデータソースに接続できない場合は、認証情報を確認して再試行するよう求めるメッセージが表示されます。認証情報を確認して再試行しても問題が解決しない場合は、<a id="contact_link" href="mailto:hello@getzingdata.com">こちらからZingサポートにお問い合わせください。</a>
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_03.webp" alt="利用可能なClickHouseテーブルがチェックボックス付きで表示された、Zing Dataのテーブル選択インターフェイス" border />
+
+   <br />
+
+6. ClickHouseデータソースを追加すると、Zing組織内の全員が **Data Sources** / **Sources** タブで利用できるようになります。
+
+<div id="creating-charts-and-dashboards-in-zing-data">
+  ## Zing Data でチャートとダッシュボードを作成する
+</div>
+
+1. ClickHouse データソースを追加したら、Web では **Zing App** をクリックし、モバイルではデータソースをタップして、チャートの作成を開始します。
+
+2. チャートを作成するには、テーブル一覧からテーブルをクリックします。
+
+   <Image size="sm" img="/images/integrations/data-visualization/zing_04.webp" alt="利用可能な ClickHouse テーブルを含むテーブル一覧を表示している Zing Data インターフェイス" border />
+
+   <br />
+
+3. ビジュアルクエリビルダーを使用して、必要なフィールドや集計などを選択し、**Run Question** をクリックします。
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_05.webp" alt="フィールド選択と集計オプションを備えた Zing Data のビジュアルクエリビルダーインターフェイス" border />
+
+   <br />
+
+4. SQL に慣れている場合は、カスタム SQL を記述してクエリを実行し、チャートを作成することもできます。
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_06.webp" alt="SQL クエリ記述インターフェイスを表示している Zing Data の SQL エディタモード" border />
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_07.webp" alt="表形式でデータが表示された Zing Data の SQL クエリ結果" border />
+
+5. チャートの例は次のとおりです。作成したクエリは三点メニューから保存できます。また、チャートにコメントしたり、チームメンバーにタグを付けたり、リアルタイムアラートを作成したり、チャートの種類を変更したりできます。
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_08.webp" alt="オプションメニュー付きで ClickHouse のデータを表示している Zing Data のチャート例" border />
+
+   <br />
+
+6. ダッシュボードは、ホーム画面の **Dashboards** の下にある「+」アイコンから作成できます。既存のクエリはドラッグしてダッシュボードに表示できます。
+
+   <Image size="md" img="/images/integrations/data-visualization/zing_09.webp" alt="ダッシュボードレイアウトに複数の可視化が配置された Zing Data のダッシュボードビュー" border />
+
+   <br />
+
+<div id="related-content">
+  ## 関連コンテンツ
+</div>
+
+* [ドキュメント](https://docs.getzingdata.com/docs/)
+* [クイックスタート](https://getzingdata.com/quickstart/)
+* [ダッシュボードの作成](https://getzingdata.com/blog/new-feature-create-multi-question-dashboards/)ガイド

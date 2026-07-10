@@ -1,0 +1,39 @@
+---
+description: 'Documentação da cláusula QUALIFY'
+sidebarTitle: 'QUALIFY'
+slug: /sql-reference/statements/select/qualify
+title: 'Cláusula QUALIFY'
+doc_type: 'reference'
+---
+
+Permite filtrar os resultados de funções de janela. É semelhante à cláusula [WHERE](/pt-BR/reference/statements/select/where), mas a diferença é que `WHERE` é executada antes da avaliação das funções de janela, enquanto `QUALIFY` é executada depois.
+
+É possível referenciar, na cláusula `QUALIFY`, os resultados de funções de janela da cláusula `SELECT` por meio de seus aliases. Como alternativa, a cláusula `QUALIFY` pode filtrar os resultados de funções de janela adicionais que não são retornadas nos resultados da consulta.
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+`QUALIFY` não pode ser usado quando não há funções de janela para avaliar. Use `WHERE` em vez disso.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+Exemplo:
+
+```sql
+SELECT number, COUNT() OVER (PARTITION BY number % 3) AS partition_count
+FROM numbers(10)
+QUALIFY partition_count = 4
+ORDER BY number;
+```
+
+```text
+┌─number─┬─partition_count─┐
+│      0 │               4 │
+│      3 │               4 │
+│      6 │               4 │
+│      9 │               4 │
+└────────┴─────────────────┘
+```

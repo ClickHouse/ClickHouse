@@ -1,0 +1,108 @@
+---
+slug: /cloud/managed-postgres/connection
+sidebarTitle: '连接'
+title: '连接到 Managed Postgres'
+description: '用于 ClickHouse Managed Postgres 的连接字符串、PgBouncer 连接池和 TLS 配置'
+keywords: ['Postgres 连接', '连接字符串', 'pgbouncer', 'TLS', 'SSL']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
+
+<Tip>
+  **SQL 控制台**
+
+  本页介绍如何将生产系统连接到 Postgres。如果您想快速运行查询，也可以通过 [SQL 控制台](/zh/integrations/connectors/sql-clients/sql-console) 进行连接，方式与连接 ClickHouse 实例相同。
+</Tip>
+
+<div id="accessing-connection-details">
+  ## 查看连接详细信息
+</div>
+
+要将应用程序连接到 Managed Postgres，请前往实例左侧边栏中的 **Connect** 视图。
+
+<Image img="/images/managed-postgres/connect-button.webp" alt="点击左侧边栏中的 Connect 以查看连接详细信息" size="md" border />
+
+点击 **Connect** 会打开一个连接弹窗，以多种格式显示连接凭据和连接字符串。
+
+<Image img="/images/managed-postgres/connect-modal.webp" alt="显示凭据和连接字符串格式的连接弹窗" size="md" border />
+
+连接弹窗会显示以下信息：
+
+* **用户名**：数据库用户 (默认：`postgres`)
+* **密码**：数据库密码 (默认隐藏，点击眼睛图标即可显示)
+* **Server**：Managed Postgres 实例的主机名
+* **Port**：PostgreSQL 端口 (默认：`5432`)
+
+Managed Postgres 为数据库提供 superuser 访问权限。请使用这些凭据以 superuser 身份连接，这样您就可以创建其他用户并管理数据库对象。
+
+<div id="connection-string">
+  ## 连接字符串格式
+</div>
+
+**连接方式**选项卡会以多种格式提供您的连接字符串，以满足应用程序的要求：
+
+| 格式       | 说明                                                                       |
+| -------- | ------------------------------------------------------------------------ |
+| **url**  | 采用 `postgresql://<USER>:<PASSWORD>@<HOST>:<PORT>/<DATABASE>` 格式的标准连接 URL |
+| **psql** | 可直接使用的命令，用于通过 psql 命令行工具连接                                               |
+| **env**  | 适用于基于 libpq 的客户端的环境变量                                                    |
+| **yaml** | YAML 格式的配置                                                               |
+| **jdbc** | 适用于 Java 应用程序的 JDBC 连接字符串                                                |
+
+出于安全考虑，连接字符串中的密码默认会被遮盖。点击任意字段或连接字符串旁边的复制图标，即可直接将其复制到剪贴板。
+
+<div id="pgbouncer">
+  ## PgBouncer 连接池
+</div>
+
+Managed Postgres 内置了一个 [PgBouncer](https://www.pgbouncer.org/) 实例，用于服务器端连接池。PgBouncer 有助于改善连接管理、提升性能和资源利用率，尤其适合以下应用程序：
+
+* 打开大量并发连接
+* 频繁创建和关闭连接
+* 使用无服务器或临时性计算环境
+
+要使用连接池，请点击连接弹窗顶部的 **通过 PgBouncer** 切换开关。连接详情将更新为通过连接池转发连接，而不是直接连接到 PostgreSQL。
+
+<Tip>
+  **何时使用 PgBouncer**
+
+  如果你的应用程序会建立大量短生命周期连接，请使用 PgBouncer。对于长时间保持的连接，或者使用了与连接池不兼容的 PostgreSQL 功能 (例如跨事务的预处理语句) 的应用程序，请直接连接。
+
+  不支持通过 PgBouncer 使用 ClickPipes 将数据导入 ClickHouse。
+</Tip>
+
+<div id="tls">
+  ## TLS 配置
+</div>
+
+所有 Managed Postgres 实例均受 TLS 保护。支持的最低版本为 **TLS 1.3**。
+
+<div id="quick-connection">
+  ### 快速连接 (TLS 加密)
+</div>
+
+默认情况下，连接会使用 TLS 加密，但不会验证证书：
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
+```
+
+<div id="verified-tls">
+  ### 已验证的 TLS 连接 (推荐用于生产环境)
+</div>
+
+对于生产环境中的 workloads，我们建议使用已验证的 TLS 连接，以确保你连接的是正确的 server。为此，请在 **Settings** 选项卡中下载 CA 证书包，并将其添加到数据库客户端的受信任证书中。
+
+<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="从 Settings 选项卡下载 CA 证书" size="md" border />
+
+该 CA 证书是你的 Managed Postgres 实例 专属的，不能用于其他 实例s。
+
+要建立已验证的 TLS 连接，请添加 `sslmode=verify-full` 以及已下载证书的 path：
+
+```bash
+psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres?sslmode=verify-full&sslrootcert=/path/to/ca-certificate.pem'
+```

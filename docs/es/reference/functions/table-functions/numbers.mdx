@@ -1,0 +1,98 @@
+---
+slug: /sql-reference/table-functions/numbers
+sidebarTitle: 'numbers'
+title: 'numbers'
+description: 'Devuelve una tabla con una sola columna `number` que contiene una secuencia de enteros.'
+doc_type: 'reference'
+---
+
+* `numbers()` – Devuelve una tabla infinita con una sola columna `number` (UInt64) que contiene enteros en orden ascendente, a partir de 0. Use `LIMIT` (y, opcionalmente, `OFFSET`) para limitar el número de filas.
+
+* `numbers(N)` – Devuelve una tabla con una sola columna `number` (UInt64) que contiene enteros de 0 a `N - 1`.
+
+* `numbers(N, M)` – Devuelve una tabla con una sola columna `number` (UInt64) que contiene `M` enteros desde `N` hasta `N + M - 1`.
+
+* `numbers(N, M, S)` – Devuelve una tabla con una sola columna `number` (UInt64) que contiene valores en `[N, N + M)` con paso `S` (aproximadamente `M / S` filas, redondeadas hacia arriba). `S` debe ser `>= 1`.
+
+Esto es similar a la tabla del sistema [`system.numbers`](/es/reference/system-tables/numbers). Puede utilizarse para pruebas y para generar valores sucesivos.
+
+Las siguientes consultas son equivalentes:
+
+```sql
+SELECT * FROM numbers(10);
+SELECT * FROM numbers(0, 10);
+SELECT * FROM numbers() LIMIT 10;
+SELECT * FROM system.numbers LIMIT 10;
+SELECT * FROM system.numbers WHERE number BETWEEN 0 AND 9;
+SELECT * FROM system.numbers WHERE number IN (0, 1, 2, 3, 4, 5, 6, 7, 8, 9);
+```
+
+Las siguientes consultas también son equivalentes:
+
+```sql
+SELECT * FROM numbers(10, 10);
+SELECT * FROM numbers() LIMIT 10 OFFSET 10;
+SELECT * FROM system.numbers LIMIT 10 OFFSET 10;
+```
+
+Las siguientes consultas también son equivalentes:
+
+```sql
+SELECT number * 2 FROM numbers(10);
+SELECT (number - 10) * 2 FROM numbers(10, 10);
+SELECT * FROM numbers(0, 20, 2);
+```
+
+<div id="examples">
+  ### Ejemplos
+</div>
+
+Los 10 primeros números.
+
+```sql
+SELECT * FROM numbers(10);
+```
+
+```response
+ ┌─number─┐
+ │      0 │
+ │      1 │
+ │      2 │
+ │      3 │
+ │      4 │
+ │      5 │
+ │      6 │
+ │      7 │
+ │      8 │
+ │      9 │
+ └────────┘
+```
+
+Genera una serie de fechas del 2010-01-01 al 2010-12-31.
+
+```sql
+SELECT toDate('2010-01-01') + number AS d FROM numbers(365);
+```
+
+Encuentra el primer `UInt64` `>= 10^15` cuyo `sipHash64(number)` tiene 20 bits finales iguales a cero.
+
+```sql
+SELECT number
+FROM numbers()
+WHERE number >= 1e15
+  AND bitAnd(sipHash64(number), 0xFFFFF) = 0
+LIMIT 1;
+```
+
+```response
+ ┌───────────number─┐
+ │ 1000000000056095 │ -- 1.00 quadrillion
+ └──────────────────┘
+```
+
+<div id="notes">
+  ### Notas
+</div>
+
+* Por motivos de rendimiento, si sabe cuántas filas necesita, prefiera las formas acotadas (`numbers(N)`, `numbers(N, M[, S])`) en lugar de las no acotadas `numbers()` / `system.numbers`.
+* Para la generación en paralelo, use `numbers_mt(...)` o la tabla [`system.numbers_mt`](/es/reference/system-tables/numbers_mt). Tenga en cuenta que los resultados pueden devolverse en cualquier orden.

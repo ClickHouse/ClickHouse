@@ -1,0 +1,255 @@
+---
+description: 'الجداول التي تستخدم المحرك Distributed لا تخزّن أي بيانات خاصة بها،
+  لكنها تتيح معالجة الاستعلامات الموزعة عبر عدة خوادم. تُنفَّذ القراءة بالتوازي
+  تلقائيًا. أثناء القراءة، تُستخدم فهارس الجداول على الخوادم البعيدة، إن وُجدت.'
+sidebarTitle: 'Distributed'
+slug: /engines/table-engines/special/distributed
+title: 'محرك الجدول Distributed'
+doc_type: 'مرجع'
+---
+
+<Warning>
+  **محرك Distributed في Cloud**
+
+  لإنشاء محرك جدول موزع في ClickHouse Cloud، يمكنك استخدام دوال الجداول [`remote` و`remoteSecure`](/ar/reference/functions/table-functions/remote).
+  لا يمكن استخدام الصياغة `Distributed(...)` في ClickHouse Cloud.
+</Warning>
+
+الجداول التي تستخدم المحرك Distributed لا تخزّن أي بيانات خاصة بها، لكنها تتيح معالجة الاستعلامات الموزعة عبر عدة خوادم.
+تُنفَّذ القراءة بالتوازي تلقائيًا. أثناء القراءة، تُستخدم فهارس الجداول على الخوادم البعيدة إن وُجدت.
+
+<div id="distributed-creating-a-table">
+  ## إنشاء جدول
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]])
+[SETTINGS name=value, ...]
+```
+
+<div id="distributed-from-a-table">
+  ### من جدول
+</div>
+
+عندما يشير جدول `Distributed` إلى جدول على الخادم الحالي، يمكنك اعتماد مخطط هذا الجدول:
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster] AS [db2.]name2 ENGINE = Distributed(cluster, database, table[, sharding_key[, policy_name]]) [SETTINGS name=value, ...]
+```
+
+<div id="distributed-parameters">
+  ### معلمات Distributed
+</div>
+
+| المعلمة                   | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster`                 | اسم الكتلة في ملف إعدادات الخادوم                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `database`                | اسم قاعدة بيانات بعيدة                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `table`                   | اسم جدول بعيد                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `sharding_key` (Optional) | مفتاح التوزيع على الشظايا. <br /> يُعد تحديد `sharding_key` ضروريًا لما يلي: <ul><li>لعمليات `INSERTs` إلى جدول موزّع (إذ يحتاج محرك الجدول إلى `sharding_key` لتحديد كيفية توزيع البيانات). ومع ذلك، إذا كان الإعداد `insert_distributed_one_random_shard` مُمكّنًا، فلن تحتاج عمليات `INSERTs` إلى مفتاح التوزيع على الشظايا.</li><li>للاستخدام مع `optimize_skip_unused_shards`، لأن `sharding_key` ضروري لتحديد الشظايا التي ينبغي الاستعلام عنها</li></ul> |
+| `policy_name` (Optional)  | اسم السياسة، وسيُستخدم لتخزين الملفات المؤقتة للإرسال في الخلفية                                                                                                                                                                                                                                                                                                                                                                                                |
+
+**انظر أيضًا**
+
+* الإعداد [distributed&#95;foreground&#95;insert](/ar/reference/settings/session-settings#distributed_foreground_insert)
+* [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes) للاطلاع على الأمثلة
+
+<div id="distributed-settings">
+  ### إعدادات Distributed
+</div>
+
+| الإعداد                                    | الوصف                                                                                                                                                                                                                                                | القيمة الافتراضية |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `fsync_after_insert`                       | نفّذ `fsync` لبيانات الملف بعد تنفيذ `insert` في الخلفية إلى Distributed. يضمن ذلك أن نظام التشغيل قد فرّغ كامل البيانات المُدرجة إلى ملف **على قرص العقدة المُبادِرة**.                                                                             | `false`           |
+| `fsync_directories`                        | نفّذ `fsync` للأدلة. يضمن ذلك أن نظام التشغيل قد حدّث البيانات الوصفية للدليل بعد العمليات المرتبطة بعمليات `insert` في الخلفية على جدول Distributed (بعد `insert`، وبعد إرسال البيانات إلى shard، وما إلى ذلك).                                     | `false`           |
+| `skip_unavailable_shards`                  | إذا كانت القيمة true، فسيتخطى ClickHouse الـ shards غير المتاحة بصمت. وتُعلَّم الـ shard على أنها غير متاحة في الحالات التالية: 1) يتعذر الوصول إلى الـ shard بسبب فشل في الاتصال. 2) يتعذر حل الـ shard عبر DNS. 3) الجدول غير موجود على الـ shard. | `false`           |
+| `bytes_to_throw_insert`                    | إذا كان عدد البايتات المضغوطة المعلّقة لعملية `INSERT` في الخلفية سيتجاوز هذه القيمة، فسيتم إطلاق استثناء. `0` - لا تُطلق استثناء.                                                                                                                   | `0`               |
+| `bytes_to_delay_insert`                    | إذا كان عدد البايتات المضغوطة المعلّقة لعملية `INSERT` في الخلفية سيتجاوز هذه القيمة، فسيتم تأخير query. `0` - لا تؤخّر.                                                                                                                             | `0`               |
+| `max_delay_to_insert`                      | الحد الأقصى لتأخير إدراج البيانات في جدول Distributed، بالثواني، إذا كان هناك عدد كبير من البايتات المعلّقة للإرسال في الخلفية.                                                                                                                      | `60`              |
+| `background_insert_batch`                  | مثل [`distributed_background_insert_batch`](/ar/reference/settings/session-settings#distributed_background_insert_batch)                                                                                                                                | `0`               |
+| `background_insert_split_batch_on_failure` | مثل [`distributed_background_insert_split_batch_on_failure`](/ar/reference/settings/session-settings#distributed_background_insert_split_batch_on_failure)                                                                                              | `0`               |
+| `background_insert_sleep_time_ms`          | مثل [`distributed_background_insert_sleep_time_ms`](/ar/reference/settings/session-settings#distributed_background_insert_sleep_time_ms)                                                                                                                | `0`               |
+| `background_insert_max_sleep_time_ms`      | مثل [`distributed_background_insert_max_sleep_time_ms`](/ar/reference/settings/session-settings#distributed_background_insert_max_sleep_time_ms)                                                                                                        | `0`               |
+| `flush_on_detach`                          | فرّغ البيانات إلى العقد البعيدة عند `DETACH`/`DROP`/إيقاف الخادم.                                                                                                                                                                                    | `true`            |
+
+<Note>
+  **إعدادات المتانة** (`fsync_...`):
+
+  * تؤثر فقط في عمليات `INSERT` في الخلفية (أي `distributed_foreground_insert=false`) عندما تُخزَّن البيانات أولًا على قرص العقدة المُبادِرة ثم تُرسَل لاحقًا، في الخلفية، إلى الـ shards.
+  * قد تُخفِّض أداء `INSERT` بشكل ملحوظ
+  * تؤثر في كتابة البيانات المخزنة داخل مجلد الجدول الموزّع على **العقدة التي استقبلت عملية insert**. إذا كنت بحاجة إلى ضمانات لكتابة البيانات إلى جداول MergeTree الأساسية، فراجع إعدادات المتانة (`...fsync...`) في `system.merge_tree_settings`
+
+  بالنسبة إلى **إعدادات حدود Insert** (`..._insert`)، انظر أيضًا:
+
+  * الإعداد [`distributed_foreground_insert`](/ar/reference/settings/session-settings#distributed_foreground_insert)
+  * الإعداد [`prefer_localhost_replica`](/ar/reference/settings/session-settings#prefer_localhost_replica)
+  * تتم معالجة `bytes_to_throw_insert` قبل `bytes_to_delay_insert`، لذلك ينبغي ألا تضبطه على قيمة أقل من `bytes_to_delay_insert`
+</Note>
+
+**مثال**
+
+```sql
+CREATE TABLE hits_all AS hits
+ENGINE = Distributed(logs, default, hits[, sharding_key[, policy_name]])
+SETTINGS
+    fsync_after_insert=0,
+    fsync_directories=0;
+```
+
+ستُقرأ البيانات من جميع الخوادم في مجموعة `logs`، من جدول `default.hits` الموجود على كل خادم في المجموعة. ولا يقتصر الأمر على قراءة البيانات فحسب، بل تُعالَج أيضًا جزئيًا على الخوادم البعيدة (بالقدر الممكن). على سبيل المثال، في استعلام يتضمن `GROUP BY`، ستُجمَّع البيانات على الخوادم البعيدة، وستُرسَل الحالات الوسيطة للدوال التجميعية إلى الخادم الطالب. ثم تُجمَّع البيانات مرةً أخرى.
+
+بدلًا من اسم قاعدة البيانات، يمكنك استخدام تعبير ثابت يُرجع سلسلة نصية. على سبيل المثال: `currentDatabase()`.
+
+<div id="distributed-clusters">
+  ## العناقيد
+</div>
+
+تُضبط العناقيد في [ملف إعدادات الخادم](/ar/concepts/features/configuration/server-config/configuration-files):
+
+```xml
+<remote_servers>
+    <logs>
+        <!-- Inter-server per-cluster secret for Distributed queries
+             default: no secret (no authentication will be performed)
+
+             If set, then Distributed queries will be validated on shards, so at least:
+             - such cluster should exist on the shard,
+             - such cluster should have the same secret.
+
+             And also (and which is more important), the initial_user will
+             be used as current user for the query.
+        -->
+        <!-- <secret></secret> -->
+        
+        <!-- Optional. Whether distributed DDL queries (ON CLUSTER clause) are allowed for this cluster. Default: true (allowed). -->        
+        <!-- <allow_distributed_ddl_queries>true</allow_distributed_ddl_queries> -->
+        
+        <shard>
+            <!-- Optional. Shard weight when writing data. Default: 1. -->
+            <weight>1</weight>
+            <!-- Optional. The shard name.  Must be non-empty and unique among shards in the cluster. If not specified, will be empty. -->
+            <name>shard_01</name>
+            <!-- Optional. Whether to write data to just one of the replicas. Default: false (write data to all replicas). -->
+            <internal_replication>false</internal_replication>
+            <replica>
+                <!-- Optional. Priority of the replica for load balancing (see also load_balancing setting). Default: 1 (less value has more priority). -->
+                <priority>1</priority>
+                <host>example01-01-1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>example01-01-2</host>
+                <port>9000</port>
+            </replica>
+        </shard>
+        <shard>
+            <weight>2</weight>
+            <name>shard_02</name>
+            <internal_replication>false</internal_replication>
+            <replica>
+                <host>example01-02-1</host>
+                <port>9000</port>
+            </replica>
+            <replica>
+                <host>example01-02-2</host>
+                <secure>1</secure>
+                <port>9440</port>
+            </replica>
+        </shard>
+    </logs>
+</remote_servers>
+```
+
+يُعرَّف هنا عنقود باسم `logs` يتكوّن من شاردين، يحتوي كلٌّ منهما على نسختين متماثلتين. وتشير الشاردات إلى الخوادم التي تحتوي على أجزاء مختلفة من البيانات (ولقراءة جميع البيانات، يجب عليك الوصول إلى جميع الشاردات). أما النسخ المتماثلة فهي خوادم متطابقة (ولقراءة جميع البيانات، يمكنك الوصول إلى البيانات على أي نسخة متماثلة منها).
+
+يجب ألا تحتوي أسماء العناقيد على نقاط.
+
+تُحدَّد المعلمات `host` و`port`، واختياريًا `user` و`password` و`secure` و`compression` و`bind_host` لكل خادم:
+
+| المعلمة       | الوصف                                                                                                                                                                                                                                                | القيمة الافتراضية |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
+| `host`        | عنوان الخادم البعيد. يمكنك استخدام اسم النطاق أو عنوان IPv4 أو IPv6. إذا حددت اسم النطاق، فسيُجري الخادم طلب DNS عند بدء التشغيل، وتُخزَّن النتيجة طوال فترة تشغيل الخادم. وإذا فشل طلب DNS، فلن يبدأ الخادم. وإذا غيّرت سجل DNS، فأعد تشغيل الخادم. | -                 |
+| `port`        | منفذ TCP لنشاط المراسلة (`tcp_port` في `config`، ويُضبط عادةً على 9000). لا تخلطه مع `http_port`.                                                                                                                                                    | -                 |
+| `user`        | اسم المستخدم للاتصال بخادم بعيد. يجب أن تكون لهذا المستخدم صلاحية الاتصال بالخادم المحدد. تُضبط صلاحيات الوصول في ملف `users.xml`. لمزيد من المعلومات، راجع قسم [حقوق الوصول](/ar/concepts/features/security/access-rights).                            | `default`         |
+| `password`    | كلمة المرور للاتصال بخادم بعيد (غير مخفية).                                                                                                                                                                                                          | &#39;&#39;        |
+| `secure`      | ما إذا كان سيتم استخدام اتصال SSL/TLS آمن. يتطلب ذلك عادةً أيضًا تحديد المنفذ (المنفذ الآمن الافتراضي هو `9440`). يجب أن يستمع الخادم على `<tcp_port_secure>9440</tcp_port_secure>` وأن يكون مُعدًّا باستخدام الشهادات الصحيحة.                      | `false`           |
+| `compression` | استخدام ضغط البيانات.                                                                                                                                                                                                                                | `true`            |
+| `bind_host`   | عنوان المصدر الذي سيُستخدم عند الاتصال بالخادم البعيد من هذه العقدة. لا يُدعم سوى عنوان IPv4. وهو مخصص لحالات النشر المتقدمة التي تتطلب تعيين عنوان IP المصدر الذي تستخدمه استعلامات ClickHouse الموزعة.                                             | -                 |
+
+عند تحديد النسخ المتماثلة، سيُختار أحد النسخ المتماثلة المتاحة لكل جزء عند القراءة. يمكنك تهيئة خوارزمية موازنة التحميل (أي تفضيل النسخة المتماثلة التي سيجري الوصول إليها) — راجع إعداد [load&#95;balancing](/ar/reference/settings/session-settings#load_balancing). إذا لم يتم إنشاء اتصال مع الخادم، فستُجرى محاولة اتصال بمهلة قصيرة. وإذا فشل الاتصال، فستُختار النسخة المتماثلة التالية، وهكذا عبر جميع النسخ المتماثلة. وإذا فشلت محاولة الاتصال مع جميع النسخ المتماثلة، فستُكرَّر المحاولة بالطريقة نفسها عدة مرات. يعزّز هذا المرونة، لكنه لا يوفّر تحمّلًا كاملًا للأعطال: فقد يقبل خادم بعيد الاتصال، لكنه قد لا يعمل أو قد يعمل بكفاءة ضعيفة.
+
+يمكنك تحديد جزء واحد فقط (وفي هذه الحالة ينبغي أن تُسمّى معالجة الاستعلام remote بدلًا من distributed)، أو أي عدد من الأجزاء. وفي كل جزء، يمكنك تحديد نسخة متماثلة واحدة أو أي عدد من النسخ المتماثلة. ويمكنك تحديد عدد مختلف من النسخ المتماثلة لكل جزء.
+
+يمكنك تحديد أي عدد تريده من العناقيد في التهيئة.
+
+لعرض عناقيدك، استخدم الجدول `system.clusters`.
+
+يتيح المحرك `Distributed` العمل مع العنقود كما لو كان خادمًا محليًا. ومع ذلك، لا يمكن تحديد تهيئة العنقود ديناميكيًا، بل يجب ضبطها في ملف إعدادات الخادم. وعادةً ما تكون لدى جميع الخوادم في العنقود تهيئة العنقود نفسها (مع أن هذا ليس مطلوبًا). وتُحدَّث العناقيد من ملف الإعدادات أثناء التشغيل، من دون إعادة تشغيل الخادم.
+
+إذا كنت بحاجة إلى إرسال استعلام إلى مجموعة غير معروفة من الأجزاء والنسخ المتماثلة في كل مرة، فلست بحاجة إلى إنشاء جدول `Distributed` — استخدم بدلًا من ذلك دالة الجدول `remote`. راجع قسم [دوال الجداول](/ar/reference/functions/table-functions/index).
+
+<div id="distributed-writing-data">
+  ## كتابة البيانات
+</div>
+
+هناك طريقتان لكتابة البيانات إلى cluster:
+
+أولًا، يمكنك تحديد الخوادم التي ستُكتب إليها البيانات المطلوبة، ثم تنفيذ الكتابة مباشرةً على كل shard. وبعبارة أخرى، نفّذ عبارات `INSERT` مباشرةً على الجداول البعيدة في cluster التي يشير إليها جدول `Distributed`. هذا هو الحل الأكثر مرونة، إذ يمكنك استخدام أي مخطط sharding، حتى لو لم يكن بسيطًا بسبب متطلبات مجال العمل. وهو أيضًا الحل الأمثل، لأن البيانات يمكن كتابتها إلى shards مختلفة بشكل مستقل تمامًا.
+
+ثانيًا، يمكنك تنفيذ عبارات `INSERT` على جدول `Distributed`. في هذه الحالة، سيتولى الجدول بنفسه توزيع البيانات المُدرجة على الخوادم. ولكي تتمكن من الكتابة إلى جدول `Distributed`، يجب أن يكون المعامل `sharding_key` مُعدًّا (إلا إذا كان هناك shard واحد فقط).
+
+يمكن تعريف `<weight>` لكل shard في config file. وتكون القيمة الافتراضية للوزن هي `1`. تُوزَّع البيانات على shards بكميات تتناسب مع وزن كل shard. وتُجمع أوزان جميع shards، ثم يُقسم وزن كل shard على المجموع الكلي لتحديد نسبة كل shard. على سبيل المثال، إذا كان هناك shardان وكان وزن الأول 1 ووزن الثاني 2، فسيُرسل ثلث الصفوف المُدرجة (1 / 3) إلى الأول، ويُرسل الثلثان (2 / 3) إلى الثاني.
+
+يمكن تعريف المعامل `internal_replication` لكل shard في config file. إذا ضُبط هذا المعامل على `true`، فستختار عملية الكتابة أول replica سليمة وتكتب البيانات إليها. استخدم هذا إذا كانت الجداول الأساسية التي يستند إليها جدول `Distributed` هي replicated tables (مثل أي من table engines من النوع `Replicated*MergeTree`). ستتلقى إحدى replicas الخاصة بالجدول عملية الكتابة، ثم ستُنسخ البيانات تلقائيًا إلى replicas الأخرى.
+
+إذا ضُبط `internal_replication` على `false` (وهو الإعداد الافتراضي)، فستُكتب البيانات إلى جميع replicas. في هذه الحالة، يتولى جدول `Distributed` نفسه replication البيانات. وهذا أسوأ من استخدام replicated tables لأن اتساق replicas لا يُتحقق منه، ومع مرور الوقت ستحتوي على بيانات مختلفة قليلًا.
+
+لاختيار shard الذي يُرسل إليه صف من البيانات، يُحلَّل تعبير sharding، ثم يُؤخذ remainder ناتج قسمته على إجمالي وزن shards. ويُرسل الصف إلى shard الذي يقابل نصف المجال من البواقي من `prev_weights` إلى `prev_weights + weight`، حيث إن `prev_weights` هو إجمالي وزن shards ذات الأرقام الأصغر، و`weight` هو وزن هذا shard. على سبيل المثال، إذا كان هناك shardان، وكان وزن الأول 9 ووزن الثاني 10، فسيُرسل الصف إلى shard الأول إذا كان الباقي ضمن المجال [0, 9)، وإلى الثاني إذا كان الباقي ضمن المجال [9, 19).
+
+يمكن أن يكون تعبير sharding أي expression مكوَّن من ثوابت وcolumns الجدول ويُرجع عددًا صحيحًا. على سبيل المثال، يمكنك استخدام التعبير `rand()` للتوزيع العشوائي للبيانات، أو `UserID` للتوزيع بحسب باقي قسمة معرّف المستخدم (وعندئذٍ ستوجد بيانات المستخدم الواحد على shard واحد، مما يسهّل تنفيذ `IN` و`JOIN` بحسب المستخدمين). وإذا لم يكن أحد columns موزعًا بالتساوي بما يكفي، يمكنك تغليفه بـ hash function مثل `intHash64(UserID)`.
+
+إن الاعتماد على remainder القسمة وحده حل محدود لـ sharding، وليس مناسبًا دائمًا. فهو يعمل مع أحجام البيانات المتوسطة والكبيرة (عشرات الخوادم)، لكنه لا يناسب أحجام البيانات الضخمة جدًا (مئات الخوادم أو أكثر). وفي الحالة الأخيرة، استخدم مخطط sharding الذي يتطلبه مجال العمل بدلًا من استخدام entries في جداول `Distributed`.
+
+ينبغي أن تهتم بمخطط sharding في الحالات التالية:
+
+* تُستخدم queries تتطلب join البيانات (`IN` أو `JOIN`) باستخدام مفتاح محدد. إذا كانت البيانات مُجزأة وفق هذا المفتاح، فيمكنك استخدام `IN` أو `JOIN` المحليين بدلًا من `GLOBAL IN` أو `GLOBAL JOIN`، وهذا أكثر كفاءة بكثير.
+* يُستخدم عدد كبير من الخوادم (مئات أو أكثر) مع عدد كبير من queries الصغيرة، مثل queries الخاصة ببيانات عملاء منفردين (مثل مواقع الويب أو المعلنين أو الشركاء). ولكي لا تؤثر queries الصغيرة في cluster بأكمله، فمن المنطقي وضع بيانات العميل الواحد على shard واحد. وبدلًا من ذلك، يمكنك إعداد sharding ثنائي المستوى: تقسيم cluster بأكمله إلى &quot;طبقات&quot;، بحيث قد تتكون الطبقة من عدة shards. توضع بيانات العميل الواحد على طبقة واحدة، لكن يمكن إضافة shards إلى الطبقة عند الحاجة، وتُوزَّع البيانات عشوائيًا داخلها. تُنشأ جداول `Distributed` لكل طبقة، ويُنشأ جدول distributed مشترك واحد للاستعلامات العامة.
+
+تُكتَب البيانات في الخلفية. عند إدراجها في الجدول، لا تُكتَب كتلة البيانات إلا إلى نظام الملفات المحلي. وتُرسَل البيانات إلى الخوادم البعيدة في الخلفية في أقرب وقت ممكن. ويُتحكَّم في دورية إرسال البيانات بواسطة الإعدادَين [distributed&#95;background&#95;insert&#95;sleep&#95;time&#95;ms](/ar/reference/settings/session-settings#distributed_background_insert_sleep_time_ms) و[distributed&#95;background&#95;insert&#95;max&#95;sleep&#95;time&#95;ms](/ar/reference/settings/session-settings#distributed_background_insert_max_sleep_time_ms). يرسل محرك `Distributed` كل ملف يحتوي على بيانات مُدرَجة بشكل منفصل، ولكن يمكنك تفعيل الإرسال الدفعي للملفات باستخدام الإعداد [distributed&#95;background&#95;insert&#95;batch](/ar/reference/settings/session-settings#distributed_background_insert_batch). يُحسِّن هذا الإعداد أداء المجموعة من خلال الاستفادة على نحو أفضل من موارد الخادم المحلي والشبكة. ينبغي التحقق من إرسال البيانات بنجاح عبر فحص قائمة الملفات (البيانات التي تنتظر الإرسال) في دليل الجدول: `/var/lib/clickhouse/data/database/table/`. ويمكن ضبط عدد الخيوط التي تنفّذ المهام في الخلفية بواسطة الإعداد [background&#95;distributed&#95;schedule&#95;pool&#95;size](/ar/reference/settings/server-settings/settings#background_distributed_schedule_pool_size).
+
+إذا تعطل الخادم أو تعرّض لإعادة تشغيل غير سليمة (على سبيل المثال، بسبب عطل في العتاد) بعد تنفيذ `INSERT` إلى جدول `Distributed`، فقد تُفقَد البيانات المُدرَجة. وإذا اكتُشف جزء بيانات تالف في دليل الجدول، فسيُنقَل إلى الدليل الفرعي `broken` ولن يُستخدَم بعد ذلك.
+
+<div id="distributed-reading-data">
+  ## قراءة البيانات
+</div>
+
+عند الاستعلام عن جدول `Distributed`، تُرسَل استعلامات `SELECT` إلى جميع المقاطع وتعمل بغضّ النظر عن كيفية توزيع البيانات بينها (إذ يمكن أن تكون موزعة عشوائيًا بالكامل). وعند إضافة مقطع جديد، لا تحتاج إلى نقل البيانات القديمة إليه. بدلًا من ذلك، يمكنك كتابة البيانات الجديدة إليه باستخدام وزن أعلى — ستتوزع البيانات بشكل غير متساوٍ قليلًا، لكن الاستعلامات ستعمل بكفاءة وبصورة صحيحة.
+
+عند تمكين الخيار `max_parallel_replicas`، تتم موازاة معالجة الاستعلام عبر جميع النسخ المتماثلة داخل مقطع واحد. لمزيد من المعلومات، راجع قسم [max&#95;parallel&#95;replicas](/ar/reference/settings/session-settings#max_parallel_replicas).
+
+لمعرفة المزيد حول كيفية معالجة الاستعلامات الموزعة `in` و`global in`، راجع [هذه الوثائق](/ar/reference/statements/in#distributed-subqueries).
+
+<div id="virtual-columns">
+  ## الأعمدة الافتراضية
+</div>
+
+<div id="_shard_num">
+  #### _Shard_num
+</div>
+
+`_shard_num` — يحتوي على قيمة `shard_num` من جدول `system.clusters`. النوع: [UInt32](/ar/reference/data-types/int-uint).
+
+<Note>
+  نظرًا لأن دالتي الجدول [`remote`](/ar/reference/functions/table-functions/remote) و[`cluster](../../../sql-reference/table-functions/cluster.md) تنشئان داخليًا جدولًا مؤقتًا من نوع Distributed، فإن `&#95;shard&#95;num&#96; متاح فيهما أيضًا.
+</Note>
+
+**انظر أيضًا**
+
+* وصف [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
+* الإعداد [`background_distributed_schedule_pool_size`](/ar/reference/settings/server-settings/settings#background_distributed_schedule_pool_size)
+* الدالتان [`shardNum()`](/ar/reference/functions/regular-functions/other-functions#shardNum) و[`shardCount()`](/ar/reference/functions/regular-functions/other-functions#shardCount)

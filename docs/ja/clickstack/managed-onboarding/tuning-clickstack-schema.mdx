@@ -1,0 +1,94 @@
+---
+slug: /use-cases/observability/clickstack/tuning-clickstack-schema
+title: 'Managed ClickStack のチューニング - スキーマの見直し'
+description: 'Managed ClickStack でクエリパフォーマンスとストレージ効率を向上させるための ClickStack スキーマの見直し'
+doc_type: 'guide'
+keywords: ['clickstack', 'tuning', 'schema', 'managed', 'observability', 'performance', 'optimization', 'storage']
+unlisted: true
+custom_edit_url: null
+hide_advert: true
+---
+
+ClickStack をしばらく運用しているなら、デフォルトのスキーマがほとんどのオブザーバビリティのワークロードを変更なしで処理できることに、すでに気づいているはずです。このページは、それでは足りなくなったときのためのものです。つまり、クエリのレイテンシが高くなり始めたり、アクセスパターンがデフォルトからずれてきたりした場合です。
+
+実際に効果のある対策の大半は、4 つの最適化でカバーできます。以下は、おおよそ作業量の少ない順に並べています。最初の 2 つは、段階的に適用できるローカルな `ALTER TABLE` の変更です。3 つ目は、同じ集計が dashboard 上で繰り返し実行される場合に効果を発揮します。4 つ目はテーブル移行が必要になるため、最も手間がかかります。
+
+以下の概要は、意図的に簡潔にしています。各変更の背景、ベンチマーク、既存データに適用するための手順については、[パフォーマンスチューニング](/ja/clickstack/managing/performance-tuning) を参照してください。
+
+<Steps>
+  <Step>
+    ## 頻繁にクエリする属性を materialize する
+
+    `LogAttributes['service.version']` でフィルタすると、ClickHouse は対象となる各行について `LogAttributes` Map 全体を読み込んでデコードする必要があります。この属性を `MATERIALIZED` カラムに昇格させると、同じフィルタは単なるカラム読み取りになり、通常は 1 桁以上高速になります。カラムが存在すれば、ClickStack がフィルタを自動的に書き換えるため、saved searches や dashboards も変更せずそのまま動作します。
+
+    実際によくクエリする属性だけを選んでください。materialized column を追加すると、Storage と insert time にコストがかかります。そのため、これは「すべてを昇格させる」のではなく、「実際に使うものだけを昇格させる」ための施策です。
+
+    ```sql
+    ALTER TABLE otel_logs
+      ADD COLUMN ServiceVersion LowCardinality(String)
+      MATERIALIZED LogAttributes['service.version'];
+    ```
+
+    既存の行では、`ALTER TABLE otel_logs MATERIALIZE COLUMN ServiceVersion` も実行するまで、新しいカラムは空のままです。
+
+    詳細は次を参照してください: [頻繁にクエリする属性を materialize する](/ja/clickstack/managing/performance-tuning#materialize-frequently-queried-attributes)。
+  </Step>
+
+  <Step>
+    ## スキップ索引を追加する
+
+    スキップ索引を使うと、ClickHouse はフィルタ条件に一致しない granules を除外できるため、全体スキャンを小さく絞り込んだ読み取りに変えられます。押さえておきたいのは次の 3 種類です。
+
+    * **テキスト索引** (`text(tokenizer = ...)`) は、文字列カラムや `mapKeys`/`*AttributeItems` 配列に対して使います。既定の logs スキーマには、すでにこれらが含まれています。
+    * **Min-max indexes** は、範囲条件でフィルタする数値カラムに適しています。典型例は trace の `Duration` です。
+    * **Bloom filters** は、まだテキスト索引をサポートしていない ClickHouse バージョンで、高カーディナリティの等価ルックアップに使います。
+
+    ```sql
+    ALTER TABLE otel_traces ADD INDEX idx_duration Duration TYPE minmax GRANULARITY 1;
+    ALTER TABLE otel_traces MATERIALIZE INDEX idx_duration;
+    ```
+
+    スキップ索引は、実際に granules を絞り込める場合にだけ、評価コストに見合います。効果があると判断する前に、代表的なクエリで `EXPLAIN indexes = 1` を使って確認してください。
+
+    詳細は次を参照してください: [スキップ索引の追加](/ja/clickstack/managing/performance-tuning#adding-skip-indexes)。
+  </Step>
+
+  <Step>
+    ## 繰り返し実行する集計を事前計算する
+
+    同じ集計が dashboard で何度も実行される場合 (エラー率の高い上位サービス、エンドポイントごとの p99 latency、1 分あたりのリクエスト数など) 、materialized view はその結果を insert time に計算し、小さなロールアップ table に書き込みます。すると dashboards は生の logs や traces ではなくロールアップを参照するようになり、コストを大きく抑えられます。
+
+    これは、dashboard へのアクセスが多く、基になるテーブルが大きい場合に特に効果的です。代わりに、insert time の CPU コストと、保守対象となる 2 つ目の table が増えます。
+
+    詳細は次を参照してください: [materialized view の活用](/ja/clickstack/managing/performance-tuning#exploiting-materialized-views)。
+  </Step>
+
+  <Step>
+    ## アクセスパターンに合わせて主キーを選ぶ
+
+    主キーは、行がディスク上でどのようにソートされるかを決めます。そのキーの先頭カラムに対するフィルタがあれば、ClickHouse は関連する領域へ直接到達できます。一方、そうしたカラムを先頭に含まないフィルタでは、パーティション全体をスキャンすることになります。
+
+    既定の logs key `(toStartOfFiveMinutes(Timestamp), ServiceName, Timestamp)` は、「サービス X で直近 N 分間に何が起きたか」というクエリに適しています。ほとんどのクエリが別のカラム (tenant id、customer id、region など) で始まるなら、そのカラムが先頭になるよう主キーを変更することが、最も効果の大きい変更です。
+
+    ```sql
+    CREATE TABLE otel_logs_v2
+    (
+      -- otel_logs と同じカラム
+    )
+    ENGINE = MergeTree
+    ORDER BY (TenantId, ServiceName, Timestamp);
+    ```
+
+    ClickHouse では主キーをその場で変更できないため、これは単純な `ALTER` ではなくテーブル移行になります。パフォーマンスチューニングガイドでは、新しい table の作成、インジェストの切り替え、さらに `Merge` table を使って既存の dashboards が新旧両方のデータに対して引き続き動作するようにする方法を説明しています。
+
+    詳細は次を参照してください: [主キーの変更](/ja/clickstack/managing/performance-tuning#modifying-the-primary-key)。
+  </Step>
+</Steps>
+
+<div id="further-reading">
+  ## 参考情報
+</div>
+
+* [パフォーマンスチューニング](/ja/clickstack/managing/performance-tuning): プロジェクションや行ルックアップの高速化を含む完全ガイド。
+* [ClickStack で使用されるテーブルとスキーマ](/ja/clickstack/ingesting-data/schemas): これらの最適化の基盤となる標準的な DDL。
+* [本番環境への移行](/ja/clickstack/managing/production): 本番環境全般に関する、より広範な推奨事項。
