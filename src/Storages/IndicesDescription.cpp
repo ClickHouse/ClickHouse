@@ -25,6 +25,30 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+/// Only the `preprocessor` and `postprocessor` arguments are column expressions; the rest are literals or tokenizer specs.
+void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDescription & columns)
+{
+    using ReplaceAliasToExprVisitor = InDepthNodeVisitor<ReplaceAliasByExpressionMatcher, true>;
+    for (const auto & child : arguments->children)
+    {
+        const auto * func = child->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
+            continue;
+
+        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+        if (key && (key->name() == "preprocessor" || key->name() == "postprocessor"))
+        {
+            ReplaceAliasToExprVisitor::Data data{columns};
+            ReplaceAliasToExprVisitor{data}.visit(func->arguments->children[1]);
+        }
+    }
+}
+
+}
+
 IndexDescription::IndexDescription(const IndexDescription & other)
     : definition_ast(other.definition_ast ? other.definition_ast->clone() : nullptr)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
@@ -128,7 +152,12 @@ IndexDescription IndexDescription::getIndexFromAST(
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Skip index '{}' must have at least one column in its expression", result.name);
 
     if (index_type && index_type->arguments)
+    {
         result.arguments = index_type->arguments->clone();
+
+        if (result.type == TEXT_INDEX_NAME)
+            expandTextIndexTransformAliases(result.arguments, columns);
+    }
 
     return result;
 }
