@@ -194,15 +194,23 @@ ASTPtr getSubqueryArgument(const ASTPtr & argument)
     return nullptr;
 }
 
+ContextMutablePtr getContextWithQuerySettings(ContextPtr context, const ASTPtr & query)
+{
+    auto query_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(query, query_context);
+    return query_context;
+}
+
 String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
 {
+    auto query_context = getContextWithQuerySettings(context, query);
     auto query_for_sample_block = query->clone();
 
     SharedHeader sample_block;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_for_sample_block, context);
+    if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_for_sample_block, query_context);
     else
-        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query_for_sample_block, context);
+        sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query_for_sample_block, query_context);
 
     if (sample_block->columns() != 1)
         throw Exception(
@@ -219,10 +227,10 @@ String evaluateSubqueryQueryText(const ASTPtr & query, ContextPtr context)
             result_type->getName());
 
     BlockIO io;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        io = InterpreterSelectQueryAnalyzer(query, context, SelectQueryOptions{}).execute();
+    if (query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        io = InterpreterSelectQueryAnalyzer(query, query_context, SelectQueryOptions{}).execute();
     else
-        io = InterpreterSelectWithUnionQuery(query, context, SelectQueryOptions{}).execute();
+        io = InterpreterSelectWithUnionQuery(query, query_context, SelectQueryOptions{}).execute();
 
     if (!io.pipeline.pulling())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function `eval` input subquery must return data");
@@ -361,13 +369,6 @@ ASTPtr parseGeneratedQuery(const String & query_text, ContextPtr context)
     return query;
 }
 
-ContextMutablePtr getContextWithGeneratedQuerySettings(ContextPtr context, const ASTPtr & query)
-{
-    auto query_context = Context::createCopy(context);
-    InterpreterSetQuery::applySettingsFromQuery(query, query_context);
-    return query_context;
-}
-
 ASTPtr wrapGeneratedQueryWithColumnAliases(const ASTPtr & query, const ColumnsDescription & columns)
 {
     auto column_aliases = make_intrusive<ASTExpressionList>();
@@ -437,7 +438,7 @@ ColumnsDescription TableFunctionEval::getActualTableStructure(ContextPtr context
     chassert(create.children.size() == 1);
     chassert(create.children[0]->as<ASTSelectWithUnionQuery>());
 
-    auto query_context = getContextWithGeneratedQuerySettings(context, create.children[0]);
+    auto query_context = getContextWithQuerySettings(context, create.children[0]);
     auto query_for_schema = create.children[0]->clone();
 
     SharedHeader sample_block;
@@ -456,7 +457,7 @@ StoragePtr TableFunctionEval::executeImpl(
     ColumnsDescription cached_columns,
     bool is_insert_query) const
 {
-    auto query_context = getContextWithGeneratedQuerySettings(context, create.children[0]);
+    auto query_context = getContextWithQuerySettings(context, create.children[0]);
     auto columns = cached_columns.empty() ? getActualTableStructure(query_context, is_insert_query) : std::move(cached_columns);
 
     ASTCreateQuery wrapped_create;

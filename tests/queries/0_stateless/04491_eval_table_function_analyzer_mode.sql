@@ -21,3 +21,6 @@ SELECT * FROM eval('SELECT 1 AS a, abs(a) SETTINGS enable_analyzer = 0') SETTING
 
 -- Control: with matching analyzer modes the same generated query keeps working.
 SELECT * FROM eval('SELECT 1 AS a, abs(a) SETTINGS enable_analyzer = 0') SETTINGS enable_analyzer = 0;
+
+-- The input subquery also chooses its interpreter from its own `SETTINGS`.
+SELECT * FROM eval(WITH RECURSIVE t AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM t WHERE n < 1) SELECT 'SELECT ' || toString(max(n)) || ' AS x' FROM t SETTINGS enable_analyzer = 1) SETTINGS enable_analyzer = 1;
