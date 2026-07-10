@@ -26,6 +26,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnSet.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Functions/FunctionHelpers.h>
 
 namespace DB
@@ -1141,8 +1143,13 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     /// It is true because `arrayElement` (and the equivalent subcolumn access) returns default value if key doesn't exist in the map,
     /// therefore we can use index to skip granules and use direct read as a hint for the original condition.
 
+    /// The result type may be Nullable(UInt8) when the map key is a Nullable constant
+    /// (e.g. `m[CAST('key' AS Nullable(String))] = 'value'`). This is still safe: a non-NULL
+    /// constant key returns the map value type default for a missing key (not NULL), so the
+    /// "predicate is false on the default value" invariant checked below on the empty map holds.
     const auto * dag_node = function_node.getDAGNode();
-    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic() || !WhichDataType(dag_node->result_type).isUInt8())
+    if (!dag_node || !dag_node->function_base || !dag_node->isDeterministic()
+        || !WhichDataType(removeNullable(dag_node->result_type)).isUInt8())
         return false;
 
     auto subdag = ActionsDAG::cloneSubDAG({dag_node}, true);
@@ -1182,10 +1189,23 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
                 if (map_argument->type != ActionsDAG::ActionType::INPUT || map_argument->result_name != required_column.name)
                     return false;
 
-                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN || !isStringOrFixedString(const_key_argument->result_type))
+                /// The key constant may be wrapped in Nullable (e.g. `m[CAST('key' AS Nullable(String))]`).
+                if (const_key_argument->type != ActionsDAG::ActionType::COLUMN
+                    || !isStringOrFixedString(removeNullable(const_key_argument->result_type)))
                     return false;
 
-                key_const_value = std::string{const_key_argument->column->getDataAt(0)};
+                ColumnPtr key_column = const_key_argument->column;
+                if (const auto * const_column = checkAndGetColumn<const ColumnConst>(key_column.get()))
+                    key_column = const_column->getDataColumnPtr();
+                if (const auto * nullable_column = checkAndGetColumn<const ColumnNullable>(key_column.get()))
+                {
+                    /// A NULL key makes arrayElement return NULL, breaking the default-value invariant.
+                    if (nullable_column->isNullAt(0))
+                        return false;
+                    key_column = nullable_column->getNestedColumnPtr();
+                }
+
+                key_const_value = std::string{key_column->getDataAt(0)};
             }
             else
             {
@@ -1249,11 +1269,20 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
 
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
-    /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
     if (node.isFunction())
     {
         const auto function = node.toFunctionNode();
-        if (function.getArgumentsSize() == 2 && function.getFunctionName() == "arrayElement")
+        const auto function_name = function.getFunctionName();
+
+        /// Unwrap a CAST that only wraps the element in Nullable, e.g. `m[CAST('key' AS Nullable(String))]`
+        /// becomes `_CAST(arrayElement(m, 'key'), 'Nullable(String)')` (or `_CAST(m.key_<key>, ...)`).
+        /// This is safe because the map element for a non-NULL constant key is the value-type default
+        /// (empty string) for absent keys, so the value index can still be used as a hint.
+        if ((function_name == "_CAST" || function_name == "CAST") && function.getArgumentsSize() == 2)
+            return hasIndexForMapElementValue(function.getArgumentAt(0));
+
+        /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
+        if (function.getArgumentsSize() == 2 && function_name == "arrayElement")
         {
             const auto column_name = function.getArgumentAt(0).getColumnName();
             return header.has(fmt::format("mapValues({})", column_name));

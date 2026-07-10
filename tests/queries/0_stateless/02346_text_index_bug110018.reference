@@ -1,0 +1,9 @@
+-- results are correct and independent of the key type wrapper
+2
+2
+2
+0
+0
+-- text index prunes granules with a Nullable constant key (issue #110018)
+1
+1
