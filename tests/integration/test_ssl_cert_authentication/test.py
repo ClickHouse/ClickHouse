@@ -1,5 +1,6 @@
 import os.path
 import ssl
+import time
 import urllib.parse
 import urllib.request
 import uuid
@@ -25,6 +26,7 @@ instance = cluster.add_instance(
     main_configs=[
         "configs/ssl_config.xml",
         "configs/session_log.xml",
+        "configs/audit_log.xml",
         "certs/server-key.pem",
         "certs/server-cert.pem",
         "certs/ca-cert.pem",
@@ -658,6 +660,54 @@ def test_session_log_certificate_login_failure():
         check_callback=lambda r: r.strip() != "",
     ).strip()
     assert result == "LoginFailure\t1", result
+
+
+def test_audit_log_certificate_fallback_records_both_failures():
+    # A native TLS connection that fails certificate authentication and then falls back to password
+    # authentication makes two DISTINCT authentication attempts on one connection. When both fail,
+    # each failed attempt must appear in the audit trail: the per-session idempotency latch that
+    # collapses a single failure seen by several layers must not also suppress the second, genuinely
+    # different failure. Regression test for the certificate-to-password fallback path.
+    user = "audit_cert_fallback_user"
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user} IDENTIFIED BY 'correct_password'")
+
+    try:
+        # The user has only password authentication, so presenting a CA-valid but unrelated
+        # certificate (client2) fails certificate auth; the wrong password then fails the fallback.
+        with pytest.raises(Exception) as err:
+            execute_query_native(
+                instance,
+                "SELECT 1",
+                user=user,
+                cert_name="client2",
+                password="wrong_password",
+            )
+        assert "AUTHENTICATION_FAILED" in str(err.value)
+    finally:
+        instance.query(f"DROP USER IF EXISTS {user}")
+
+    # Both the certificate attempt and the password fallback must be audited as LoginFailure.
+    def count_login_failures():
+        try:
+            content = instance.grep_in_log(
+                user, from_host=True, filename="clickhouse-server.audit.log"
+            )
+        except Exception:
+            return 0
+        return len(
+            [l for l in content.splitlines() if "LoginFailure" in l and user in l]
+        )
+
+    failures = 0
+    for _ in range(20):
+        failures = count_login_failures()
+        if failures >= 2:
+            break
+        time.sleep(0.5)
+    assert (
+        failures >= 2
+    ), f"Both the certificate and the password fallback failures must be audited, got {failures}"
 
 
 def test_session_log_certificate_https_non_cert_auth():

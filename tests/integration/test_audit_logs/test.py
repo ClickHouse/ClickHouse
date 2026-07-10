@@ -1,4 +1,5 @@
 import logging
+import re
 import socket
 import struct
 import time
@@ -419,6 +420,56 @@ def test_audit_log_failed_ddl_object_names(start_cluster):
     assert fields[2] != "0", f"A failed RENAME must record a non-zero exception code: {lines[0]}"
     # OBJECT_NAMES is field index 5; it must carry the affected table, not only the query text.
     assert missing in fields[5], f"OBJECT_NAMES must record the RENAME source table: {lines[0]}"
+
+
+def test_audit_log_failed_select_object_names(start_cluster):
+    """A select-like DML statement that fails before execution starts (e.g. a SELECT from a missing
+    table) is audited from logExceptionBeforeStart, where query_tables is not populated. The
+    referenced table must still be recorded in OBJECT_NAMES, extracted from the AST, so a failed
+    read is not audited with an empty OBJECT_NAMES field."""
+    missing = "audit_missing_select_table"
+    node_dml_misc.query(f"DROP TABLE IF EXISTS {missing}")
+
+    error = node_dml_misc.query_and_get_error(f"SELECT * FROM {missing}")
+    assert error, "SELECT from a missing table must fail"
+
+    assert_audit_log_contain_with_retry(node_dml_misc, missing)
+    log_content = node_dml_misc.grep_in_log(missing, from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n")
+             if "AUDIT:" in line and "Select" in line and missing in line]
+    assert len(lines) >= 1, "A failed SELECT must produce a DML audit record"
+
+    # Audit message format: "TYPE, COMMAND, EXCEPTION_CODE, USER, IP, OBJECT_NAMES, QUERY".
+    audit_part = lines[0].split("AUDIT: ", 1)[1]
+    fields = audit_part.split(", ")
+    assert fields[0] == "DML", f"SELECT must be classified as DML: {lines[0]}"
+    assert fields[2] != "0", f"A failed SELECT must record a non-zero exception code: {lines[0]}"
+    # OBJECT_NAMES is field index 5; it must carry the referenced table, not only the query text.
+    assert missing in fields[5], f"OBJECT_NAMES must record the SELECT source table: {lines[0]}"
+
+
+def test_audit_log_comma_in_query_is_parseable(start_cluster):
+    """An audit record is a list of comma-separated fields, so a comma inside a free-form field
+    (the query text, an object name, or a username) must be escaped — otherwise the record cannot
+    be split back into its fields. Verify that a query containing a comma stays a single,
+    machine-parseable record whose comma is escaped as '\\,'."""
+    marker = "audit_comma_marker"
+    node_dml_misc.query(f"SELECT 1 AS {marker}, 2")
+
+    assert_audit_log_contain_with_retry(node_dml_misc, marker)
+    log_content = node_dml_misc.grep_in_log(marker, from_host=True, filename="clickhouse-server.audit.log")
+    lines = [line for line in log_content.strip().split("\n") if "AUDIT:" in line and marker in line]
+    assert len(lines) >= 1, "The query with a comma must produce an audit record"
+
+    audit_part = lines[0].split("AUDIT: ", 1)[1]
+    # Split on unescaped separators only: a literal comma inside a field is written as '\,'.
+    fields = re.split(r"(?<!\\), ", audit_part)
+    assert len(fields) == 7, f"An escaped record must split into exactly 7 fields: {fields}"
+    assert fields[0] == "DML", f"SELECT must be classified as DML: {lines[0]}"
+    # The literal comma in the query text must survive as an escaped comma in the QUERY field, so
+    # it does not masquerade as a field separator.
+    assert marker in fields[6], f"QUERY field must contain the query text: {lines[0]}"
+    assert "\\," in fields[6], f"A comma in the query text must be escaped in the audit record: {lines[0]}"
 
 
 def test_audit_log_pg_unsupported_auth_method(start_cluster):
