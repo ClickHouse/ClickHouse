@@ -106,6 +106,21 @@ FROM (SELECT 1 SETTINGS custom_insert_source = 'x');
 
 SELECT id FROM t_ret_settings ORDER BY id;
 
+-- Branch-local settings in earlier set-op arms must stay local and not be pre-applied globally.
+SELECT 'set-op branch-local source settings stay local';
+TRUNCATE TABLE t_ret_settings;
+INSERT INTO t_ret_settings
+SELECT toUInt64(getSettingOrDefault('custom_insert_source', 'unset') = 'x')
+FROM
+(
+    SELECT 1 SETTINGS custom_insert_source = 'x'
+    UNION ALL
+    SELECT 2
+)
+RETURNING (SELECT count() FROM t_ret_settings);
+
+SELECT id FROM t_ret_settings ORDER BY id;
+
 -- Source DEFAULT settings parsed before RETURNING must survive merge with trailing source settings.
 SELECT 'source default settings merged with trailing settings';
 TRUNCATE TABLE t_ret_settings;

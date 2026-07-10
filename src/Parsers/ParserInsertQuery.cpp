@@ -410,16 +410,17 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
                     if (!select_with_union->list_of_selects)
                         return;
 
-                    for (const auto & child : select_with_union->list_of_selects->children)
-                        self(self, child, false);
+                    const auto & children = select_with_union->list_of_selects->children;
+                    if (!children.empty())
+                        self(self, children.back(), false);
                     return;
                 }
 
                 if (const auto * intersect_except = current->as<ASTSelectIntersectExceptQuery>())
                 {
                     auto children = intersect_except->getListOfSelects();
-                    for (const auto & child : children)
-                        self(self, child, false);
+                    if (!children.empty())
+                        self(self, children.back(), false);
                     return;
                 }
 
