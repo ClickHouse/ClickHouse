@@ -737,8 +737,10 @@ QueryPlan materializeCachedQueryPlan(std::string_view serialized_plan, const Con
     ReadBufferFromMemory in(serialized_plan.data(), serialized_plan.size());
 
     /// Reconstruct the logical plan skeleton; leaf nodes are storage-agnostic
-    /// `ReadFromTable` placeholders.
-    auto plan_and_sets = QueryPlan::deserialize(in, context);
+    /// `ReadFromTable` placeholders. The blob was produced by this same server in
+    /// `serializeQueryPlanForCache`, so it is fully trusted and passes `max_type_complexity = 0`
+    /// (unlimited), matching the trusted server-to-server path rather than untrusted client packets.
+    auto plan_and_sets = QueryPlan::deserialize(in, context, /* max_type_complexity= */ 0);
 
     /// Rebuild `PreparedSet` objects for IN (...) subqueries embedded in the plan.
     auto plan = QueryPlan::makeSets(std::move(plan_and_sets), context);
