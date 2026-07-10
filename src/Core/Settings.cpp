@@ -6360,6 +6360,15 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_remove_redundant_filter_conditions, true, R"(
+Remove filter conditions that comparison transitivity derives from the remaining conditions
+and that index analysis on the receiving table (primary key, partition key, skipping indexes)
+cannot use for pruning. For example, in `WHERE 10 < a AND a < b AND b > 10` the last condition
+is exactly what the first two derive; if `b` is not covered by any index the condition only
+costs a per-row check and is removed. This cleans up conditions added by
+`optimize_and_compare_chain` for columns where they cannot prune. Removed conditions never
+change the result. Only takes effect if `query_plan_enable_optimizations` is 1.
+)", 0) \
     DECLARE(Bool, query_plan_filter_push_down_inferred_only_for_pruning, false, R"(
 During filter push-down across an equi-join, a condition on one side's join key can be inferred
 for the other side through key equivalence (`t1.id = t2.id AND t1.id < 10` infers `t2.id < 10`).

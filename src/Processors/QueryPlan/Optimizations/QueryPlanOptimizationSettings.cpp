@@ -47,6 +47,7 @@ namespace Setting
     extern const SettingsBool query_plan_execute_functions_after_sorting;
     extern const SettingsBool query_plan_filter_push_down;
     extern const SettingsBool query_plan_filter_push_down_inferred_only_for_pruning;
+    extern const SettingsBool query_plan_remove_redundant_filter_conditions;
     extern const SettingsBool query_plan_join_shard_by_pk_ranges;
     extern const SettingsBool query_plan_lift_up_array_join;
     extern const SettingsBool query_plan_lift_up_union;
@@ -158,6 +159,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
     filter_push_down_inferred_only_for_pruning = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down_inferred_only_for_pruning];
+    remove_redundant_filter_conditions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_remove_redundant_filter_conditions];
     convert_outer_join_to_inner_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_convert_outer_join_to_inner_join];
     execute_functions_after_sorting = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_execute_functions_after_sorting];
     reuse_storage_ordering_for_window_functions = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_reuse_storage_ordering_for_window_functions];

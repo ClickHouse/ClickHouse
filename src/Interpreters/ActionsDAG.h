@@ -499,6 +499,12 @@ public:
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
         const std::function<bool(const Node * conjunct, bool to_left_stream)> & is_inferred_copy_useful = {});
 
+    /** Rebuild the filter output `filter_name` as the conjunction of `conjuncts_to_keep`,
+      * which must be a subset of its current conjunction atoms. Returns true when the filter
+      * became constant (nothing left to filter by).
+      */
+    bool keepFilterConjuncts(const std::string & filter_name, NodeRawConstPtrs conjuncts_to_keep, bool removes_filter);
+
     /** Build filter dag from multiple filter dags.
       *
       * If filter nodes are empty, result is nullptr.

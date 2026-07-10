@@ -2,6 +2,8 @@
 
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 
@@ -32,6 +34,24 @@ std::optional<PushDownPruningTarget> findPushDownPruningTarget(const QueryPlan::
         if (node->children.size() != 1)
             return {};
         node = node->children.front();
+    }
+    return {};
+}
+
+std::optional<PushDownPruningTarget> findPruningTargetForColumn(const QueryPlan::Node * node, const std::string & column_name)
+{
+    if (auto direct = findPushDownPruningTarget(node))
+        return direct;
+
+    const bool is_join = typeid_cast<const JoinStepLogical *>(node->step.get())
+        || typeid_cast<const JoinStep *>(node->step.get());
+    if (!is_join)
+        return {};
+
+    for (const auto * join_child : node->children)
+    {
+        if (join_child->step->getOutputHeader()->has(column_name))
+            return findPushDownPruningTarget(join_child);
     }
     return {};
 }

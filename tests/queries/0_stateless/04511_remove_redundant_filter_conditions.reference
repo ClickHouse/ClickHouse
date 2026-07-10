@@ -1,0 +1,24 @@
+derived prunable kept	1
+derived non-prunable removed	0
+hand-written removed	0
+looser bound kept	1
+tighter bound kept	1
+equality kept	1
+setting off	1
+join prunable kept	1
+join non-prunable removed	0
+join prunable correctness	0
+join non-prunable correctness	0
+string non-prunable removed	0
+string correctness	0
+nullable non-prunable removed	0
+nullable correctness	0
+float nan non-prunable removed	0
+float nan correctness	0
+enum domain kept	1
+enum domain correctness	0
+relation cycle result	0
+correctness	0
+hand-written correctness	0
+strictness correctness	0
+result	999

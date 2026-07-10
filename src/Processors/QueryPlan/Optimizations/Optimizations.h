@@ -164,14 +164,22 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 /// the preserved-side input must produce before joining.
 size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Remove filter conditions that are implied by the remaining ones through comparison
+/// transitivity (10 < a AND a < b makes b > 10 redundant) and that index analysis cannot
+/// use for pruning, e.g. conditions derived by `optimize_and_compare_chain` on non-indexed columns.
+size_t tryRemoveRedundantFilterConditions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const Optimization::ExtraSettings &);
+
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 18> optimizations = {{
+    static const std::array<Optimization, 19> optimizations = {{
         {tryLiftUpArrayJoin, "liftUpArrayJoin", &QueryPlanOptimizationSettings::lift_up_array_join},
         {tryPushDownLimit, "pushDownLimit", &QueryPlanOptimizationSettings::push_down_limit},
         {trySplitFilter, "splitFilter", &QueryPlanOptimizationSettings::split_filter},
         {tryMergeExpressions, "mergeExpressions", &QueryPlanOptimizationSettings::merge_expressions},
         {tryMergeFilters, "mergeFilters", &QueryPlanOptimizationSettings::merge_filters},
+        /// Runs before pushDownFilter: it needs to see whole conjunctions, and push-down would
+        /// split the implying conditions away from the derived one across a join
+        {tryRemoveRedundantFilterConditions, "removeRedundantFilterConditions", &QueryPlanOptimizationSettings::remove_redundant_filter_conditions},
         {tryPushDownFilter, "pushDownFilter", &QueryPlanOptimizationSettings::filter_push_down},
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},

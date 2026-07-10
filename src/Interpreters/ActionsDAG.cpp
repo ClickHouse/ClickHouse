@@ -3576,6 +3576,17 @@ ActionsDAG::ActionsForJOINFilterPushDown ActionsDAG::splitActionsForJOINFilterPu
     return result;
 }
 
+bool ActionsDAG::keepFilterConjuncts(const std::string & filter_name, NodeRawConstPtrs conjuncts_to_keep, bool removes_filter)
+{
+    Node * predicate = const_cast<Node *>(tryFindInOutputs(filter_name));
+    if (!predicate)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Output nodes for ActionsDAG do not contain filter column name {}. DAG:\n{}",
+            filter_name,
+            dumpDAG());
+    return removeUnusedConjunctions(std::move(conjuncts_to_keep), predicate, removes_filter);
+}
+
 bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions, Node * predicate, bool removes_filter)
 {
     bool is_filter_const = false;
