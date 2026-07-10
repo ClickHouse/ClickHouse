@@ -175,6 +175,9 @@
     M(AsynchronousInsertThreads, "Number of threads in the AsynchronousInsert thread pool.") \
     M(AsynchronousInsertThreadsActive, "Number of threads in the AsynchronousInsert thread pool running a task.") \
     M(AsynchronousInsertThreadsScheduled, "Number of queued or active jobs in the AsynchronousInsert thread pool.") \
+    M(QueryRunnerThreads, "Number of threads in the QueryRunner thread pool.") \
+    M(QueryRunnerThreadsActive, "Number of threads in the QueryRunner thread pool running a task.") \
+    M(QueryRunnerThreadsScheduled, "Number of queued or active jobs in the QueryRunner thread pool.") \
     M(AsynchronousInsertQueueSize, "Number of pending tasks in the AsynchronousInsert queue.") \
     M(AsynchronousInsertQueueBytes, "Number of pending bytes in the AsynchronousInsert queue.") \
     M(StartupSystemTablesThreads, "Number of threads in the StartupSystemTables thread pool.") \
