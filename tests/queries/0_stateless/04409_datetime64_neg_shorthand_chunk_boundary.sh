@@ -14,15 +14,15 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 opts="input_format_parallel_parsing = 0, max_read_buffer_size = 1, session_timezone = 'UTC'"
 
 printf '{"x":[-.123]}\n{"x":[-.877,-1.5]}\n{"x":[.123,-0.123]}\n' \
-    | ${CLICKHOUSE_LOCAL} --input-format=JSONEachRow --structure="x Array(DateTime64(3))" \
+    | ${CLICKHOUSE_LOCAL} --input-format=JSONEachRow --structure="x Array(DateTime64(3, 'UTC'))" \
         --query "SELECT 'json', arrayMap(e -> toString(e), x) FROM table SETTINGS $opts"
 
 printf '"[-.123,-0.877,.5]"\n' \
-    | ${CLICKHOUSE_LOCAL} --input-format=CSV --structure="x Array(DateTime64(3))" \
+    | ${CLICKHOUSE_LOCAL} --input-format=CSV --structure="x Array(DateTime64(3, 'UTC'))" \
         --query "SELECT 'csv', arrayMap(e -> toString(e), x) FROM table SETTINGS $opts"
 
 # A lone '-' (no fraction, no magnitude) must still be rejected, not silently parsed as 0.
 printf '{"x":[-]}\n' \
-    | ${CLICKHOUSE_LOCAL} --input-format=JSONEachRow --structure="x Array(DateTime64(3))" \
+    | ${CLICKHOUSE_LOCAL} --input-format=JSONEachRow --structure="x Array(DateTime64(3, 'UTC'))" \
         --query "SELECT * FROM table SETTINGS $opts" 2>&1 \
     | grep -c -m1 CANNOT_PARSE_NUMBER
