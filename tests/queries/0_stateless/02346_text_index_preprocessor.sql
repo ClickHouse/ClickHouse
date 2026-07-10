@@ -605,6 +605,30 @@ SELECT count() FROM tab WHERE hasToken(name, 'missing');
 
 DROP TABLE tab;
 
+SELECT '-- Preprocessor with a lambda parameter shadowing an ALIAS column';
+-- The preprocessor references the physical column `val`; its lambda parameter `x` collides with an
+-- ALIAS column named `x`. The lambda parameter must win, i.e. it must not be expanded to the ALIAS
+-- expression, so this previously valid definition keeps working.
+
+CREATE TABLE tab
+(
+    val String,
+    x String ALIAS 'shadow',
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = arrayStringConcat(arrayMap(x -> upper(x), splitByChar(' ', val)), ' '))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(val) VALUES ('hello world'), ('foo bar');
+
+SELECT count() FROM tab WHERE hasToken(val, 'HELLO');
+SELECT count() FROM tab WHERE hasToken(val, 'hello'); -- search term is preprocessed too
+SELECT count() FROM tab WHERE hasToken(val, 'world');
+SELECT count() FROM tab WHERE hasToken(val, 'foo');
+SELECT count() FROM tab WHERE hasToken(val, 'bar');
+SELECT count() FROM tab WHERE hasToken(val, 'shadow'); -- 0: the lambda arg is not the ALIAS `x`
+
+DROP TABLE tab;
+
 SELECT '-- Preprocessor on an ALIAS column with the sparseGrams tokenizer';
 
 CREATE TABLE tab
