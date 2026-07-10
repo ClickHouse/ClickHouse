@@ -206,6 +206,8 @@ String FieldVisitorToStringSQLite::operator() (const String & x) const
 template<>
 String FieldVisitorToStringSQLite::operator() (const Array & x) const
 {
+    checkStackSize();
+
     WriteBufferFromOwnString wb;
     wb << '[';
     for (auto it = x.begin(); it != x.end(); ++it)
@@ -221,6 +223,8 @@ String FieldVisitorToStringSQLite::operator() (const Array & x) const
 template<>
 String FieldVisitorToStringSQLite::operator() (const Tuple & x) const
 {
+    checkStackSize();
+
     WriteBufferFromOwnString wb;
     /// For single-element tuples we must use the explicit tuple() function,
     /// or they will be parsed back as plain literals.
@@ -241,6 +245,8 @@ String FieldVisitorToStringSQLite::operator() (const Tuple & x) const
 template<>
 String FieldVisitorToStringSQLite::operator() (const Map & x) const
 {
+    checkStackSize();
+
     WriteBufferFromOwnString wb;
     wb << '[';
     for (auto it = x.begin(); it != x.end(); ++it)
