@@ -8,11 +8,6 @@ node1 = cluster.add_instance(
     "node1",
 )
 
-HASHMAP_QUERY = """SELECT DISTINCT number % 10000000
-FROM numbers(100)
-FORMAT Null
-SETTINGS max_block_size=100, max_threads=1, max_rows_to_read=0"""
-
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -68,8 +63,13 @@ def run_kill_query_failpoint_test(query, fault_name, query_id=None):
 
 
 def test_hashmap_kill_query(started_cluster):
+    query = """SELECT DISTINCT number % 10000000
+FROM numbers(10000)
+FORMAT Null
+SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"""
+
     run_kill_query_failpoint_test(
-        HASHMAP_QUERY,
+        query,
         HASHMAP_FAULT_NAME,
     )
 
@@ -77,11 +77,11 @@ def test_hashmap_kill_query(started_cluster):
 def test_lc_kill_query(started_cluster):
     node1.query("CREATE TABLE IF NOT EXISTS lc_test (key LowCardinality(String)) ENGINE = Memory")
     node1.query("TRUNCATE TABLE IF EXISTS lc_test")
-    node1.query("INSERT INTO lc_test SELECT toString(number % 1000) FROM numbers(1000)")
+    node1.query("INSERT INTO lc_test SELECT toString(number % 1000) FROM numbers(10000)")
 
     query = """SELECT DISTINCT key FROM lc_test
 FORMAT Null
-SETTINGS max_block_size=1000, max_threads=1, max_rows_to_read=0"""
+SETTINGS max_block_size=10000, max_threads=1, max_rows_to_read=0"""
 
     run_kill_query_failpoint_test(
         query,

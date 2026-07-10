@@ -65,18 +65,21 @@ void DistinctTransform::buildFilter(
     SetVariants & variants,
     const IColumn::Filter * mask) const
 {
-    FailPointInjection::pauseFailPoint("distinct_transform_pause");
-
     typename Method::State state(columns, key_sizes, nullptr);
 
     if (mask)
     {
         for (size_t i = 0; i < rows; ++i)
         {
-            if ((i & 0xFFF) == 0 && isCancelled())
+            if ((i & 0xFFF) == 0)
             {
-                std::fill(filter.begin() + i, filter.end(), 0);
-                return;
+                if (i > 0) [[unlikely]]
+                    FailPointInjection::pauseFailPoint("distinct_transform_pause");
+                if (isCancelled())
+                {
+                    std::fill(filter.begin() + i, filter.end(), 0);
+                    return;
+                }
             }
 
             if (!(*mask)[i])
@@ -94,10 +97,15 @@ void DistinctTransform::buildFilter(
     {
         for (size_t i = 0; i < rows; ++i)
         {
-            if ((i & 0xFFF) == 0 && isCancelled())
+            if ((i & 0xFFF) == 0)
             {
-                std::fill(filter.begin() + i, filter.end(), 0);
-                return;
+                if (i > 0) [[unlikely]]
+                    FailPointInjection::pauseFailPoint("distinct_transform_pause");
+                if (isCancelled())
+                {
+                    std::fill(filter.begin() + i, filter.end(), 0);
+                    return;
+                }
             }
 
             auto emplace_result = state.emplaceKey(method.data, i, variants.string_pool);
@@ -111,8 +119,6 @@ void DistinctTransform::buildFilter(
 
 std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
 {
-    FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
-
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
 
@@ -167,8 +173,13 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             const auto & col = assert_cast<const ColumnUInt8 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
             {
-                if ((row & 0xFFF) == 0 && isCancelled())
-                    return {std::move(mask), state.seen_count - seen_count_before};
+                if ((row & 0xFFF) == 0)
+                {
+                    if (row > 0) [[unlikely]]
+                        FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
+                    if (isCancelled())
+                        return {std::move(mask), state.seen_count - seen_count_before};
+                }
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -178,8 +189,13 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             const auto & col = assert_cast<const ColumnUInt16 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
             {
-                if ((row & 0xFFF) == 0 && isCancelled())
-                    return {std::move(mask), state.seen_count - seen_count_before};
+                if ((row & 0xFFF) == 0)
+                {
+                    if (row > 0) [[unlikely]]
+                        FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
+                    if (isCancelled())
+                        return {std::move(mask), state.seen_count - seen_count_before};
+                }
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -189,8 +205,13 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             const auto & col = assert_cast<const ColumnUInt32 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
             {
-                if ((row & 0xFFF) == 0 && isCancelled())
-                    return {std::move(mask), state.seen_count - seen_count_before};
+                if ((row & 0xFFF) == 0)
+                {
+                    if (row > 0) [[unlikely]]
+                        FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
+                    if (isCancelled())
+                        return {std::move(mask), state.seen_count - seen_count_before};
+                }
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
@@ -200,8 +221,13 @@ std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(co
             const auto & col = assert_cast<const ColumnUInt64 &>(indexes_column).getData();
             for (size_t row = 0; row < num_rows; ++row)
             {
-                if ((row & 0xFFF) == 0 && isCancelled())
-                    return {std::move(mask), state.seen_count - seen_count_before};
+                if ((row & 0xFFF) == 0)
+                {
+                    if (row > 0) [[unlikely]]
+                        FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
+                    if (isCancelled())
+                        return {std::move(mask), state.seen_count - seen_count_before};
+                }
                 handle_index(static_cast<size_t>(col[row]), row);
             }
             break;
