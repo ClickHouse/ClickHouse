@@ -6,12 +6,14 @@
 -- self-join shared-scan rewrite must not buffer it or replay it from a one-shot
 -- buffer. Every mix of `STREAM` and plain scans must keep two `ReadFromMergeTree`.
 
-SET enable_analyzer = 1;
-SET enable_streaming_queries = 1;
-SET query_plan_optimize_self_join_shared_scan = 1;
-SET enable_join_runtime_filters = 0;
-SET enable_parallel_replicas = 0;
-SET enable_shared_storage_snapshot_in_query = 1;
+SET enable_analyzer = 1; -- the rewrite requires the analyzer
+SET enable_streaming_queries = 1; -- STREAM scans require it
+SET query_plan_optimize_self_join_shared_scan = 1; -- the setting under test
+SET enable_join_runtime_filters = 0; -- a runtime filter makes the scan non-plain and blocks the rewrite
+SET enable_parallel_replicas = 0; -- reading with parallel replicas blocks the rewrite
+SET enable_shared_storage_snapshot_in_query = 1; -- the rewrite requires both scans to share one storage snapshot
+SET max_bytes_before_external_join = 0; -- a non-zero spill threshold makes the join external-memory and blocks the rewrite
+SET max_bytes_ratio_before_external_join = 0; -- a non-zero spill threshold makes the join external-memory and blocks the rewrite
 
 DROP TABLE IF EXISTS t_sjss_stream;
 CREATE TABLE t_sjss_stream (x UInt64, y String) ENGINE = MergeTree ORDER BY x;

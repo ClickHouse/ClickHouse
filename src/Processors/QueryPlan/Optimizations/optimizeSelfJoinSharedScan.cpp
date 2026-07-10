@@ -98,11 +98,27 @@ void tryOptimizeSelfJoinSharedScan(
     /// The rewrite is valid only when the join is executed with a producer-first
     /// (`FillRightFirst`) pipeline: the build side is fully consumed before the probe side is
     /// read, so the probe scan can replay the buffer filled by the build scan.
+    ///
+    /// The rewrite also keeps the whole build-side scan result in memory (`ChunkBuffer`), outside
+    /// of any join spill accounting, until the probe side has replayed it. An external-memory
+    /// join algorithm bounds its memory usage by spilling to disk, and the shared buffer would
+    /// silently break that contract: a self-join that would normally spill could instead fail
+    /// with a memory limit exception. So the join must additionally be purely in-memory.
+    ///
     /// `chooseJoinAlgorithm` walks `join_algorithms` in order and executes the first algorithm
-    /// that applies, so walk the same list and prove that whichever entry wins is producer-first.
-    /// Otherwise (e.g. `join_algorithm = 'full_sorting_merge,hash'`) skip the rewrite: the user's
-    /// algorithm list must keep selecting the same algorithm it would select without the rewrite.
+    /// that applies, so walk the same list and prove that whichever entry wins is a producer-first
+    /// in-memory join. Otherwise (e.g. `join_algorithm = 'full_sorting_merge,hash'`) skip the
+    /// rewrite: the user's algorithm list must keep selecting the same algorithm it would select
+    /// without the rewrite.
     const auto & join_settings = join_step->getJoinSettings();
+
+    /// With a non-zero external-join threshold even the hash family is executed as
+    /// `SpillingHashJoin`, which spills to disk under memory pressure. Check the raw settings
+    /// rather than the effective threshold so the plan shape does not depend on the local memory
+    /// limits the effective value is derived from.
+    if (join_settings.max_bytes_before_external_join != 0 || join_settings.max_bytes_ratio_before_external_join != 0.)
+        return;
+
     bool producer_first_guaranteed = false;
     for (const auto algo : join_settings.join_algorithms)
     {
@@ -111,26 +127,19 @@ void tryOptimizeSelfJoinSharedScan(
         if (algo == JoinAlgorithm::DIRECT)
             continue;
 
-        /// These always create a join, and always a producer-first one, so no later entry can
-        /// win: the hash family; `default`, which means `direct,hash`; and `auto`, which resolves
-        /// to `SpillingHashJoin`, `JoinSwitcher`, or `HashJoin`.
-        if (algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::AUTO
-            || algo == JoinAlgorithm::DEFAULT)
+        /// These always create a join, and (with spilling excluded above) always a producer-first
+        /// in-memory one, so no later entry can win: the hash family and `default`, which means
+        /// `direct,hash`.
+        if (algo == JoinAlgorithm::HASH || algo == JoinAlgorithm::PARALLEL_HASH || algo == JoinAlgorithm::DEFAULT)
         {
             producer_first_guaranteed = true;
             break;
         }
 
-        /// Producer-first when chosen, but `chooseJoinAlgorithm` falls through to the next entry
-        /// when grace hash does not support the join, so the rest of the list must be safe too.
-        if (algo == JoinAlgorithm::GRACE_HASH)
-        {
-            producer_first_guaranteed = true;
-            continue;
-        }
-
-        /// A merge-style algorithm (`full_sorting_merge`, `partial_merge`, ...) may win; skip the
-        /// rewrite instead of overriding the user's algorithm choice.
+        /// Anything else may win and is either not producer-first (the merge-style algorithms) or
+        /// external-memory: `grace_hash` partitions the build side to disk by design, and `auto`
+        /// prefers `JoinSwitcher`, which switches to an on-disk merge join past a threshold that
+        /// defaults to `default_max_bytes_in_join` even when no join size limits are set.
         return;
     }
     if (!producer_first_guaranteed)

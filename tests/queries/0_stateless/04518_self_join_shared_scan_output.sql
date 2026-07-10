@@ -2,7 +2,7 @@
 -- test is pinned; everything else is left to the test harness's settings randomization so that
 -- CI exercises arbitrary combinations. The results must be correct whether or not the rewrite
 -- fires, so no plan shape is checked here.
-SET query_plan_optimize_self_join_shared_scan = 1;
+SET query_plan_optimize_self_join_shared_scan = 1; -- the setting under test
 
 DROP TABLE IF EXISTS t_sjss_out;
 CREATE TABLE t_sjss_out (x UInt64, y String, z UInt64) ENGINE = MergeTree ORDER BY x;
