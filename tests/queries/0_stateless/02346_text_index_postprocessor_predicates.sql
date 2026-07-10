@@ -311,3 +311,26 @@ SELECT count() FROM tab WHERE hasToken(name, 'name');
 SELECT count() FROM tab WHERE hasToken(name, 'missing');
 
 DROP TABLE IF EXISTS tab;
+
+SELECT '13. Postprocessor with a lambda parameter shadowing an ALIAS column.';
+-- The postprocessor references the physical column `val` as the token; its lambda parameter `x` collides
+-- with an ALIAS column named `x`. The lambda parameter must win and must not be expanded to the ALIAS.
+
+CREATE TABLE tab
+(
+    val String,
+    x String ALIAS 'shadow',
+    INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', postprocessor = arrayStringConcat(arrayMap(x -> upper(x), [val]), ''))
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO tab(val) VALUES ('hello world'), ('foo bar');
+
+SELECT count() FROM tab WHERE hasToken(val, 'HELLO');
+SELECT count() FROM tab WHERE hasToken(val, 'hello'); -- search term is postprocessed too
+SELECT count() FROM tab WHERE hasToken(val, 'world');
+SELECT count() FROM tab WHERE hasToken(val, 'foo');
+SELECT count() FROM tab WHERE hasToken(val, 'bar');
+SELECT count() FROM tab WHERE hasToken(val, 'shadow'); -- 0: the lambda arg is not the ALIAS `x`
+
+DROP TABLE IF EXISTS tab;
