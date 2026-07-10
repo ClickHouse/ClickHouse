@@ -77,16 +77,22 @@ def oom_kill_count():
     return 0
 
 
-def client(*args, user=None):
+def client(*args, user=None, timeout=None):
     return subprocess.run(
         ["sudo", "-u", user or RUN_USER, BIN, "client", "--port", str(PORT), *args],
         capture_output=True,
         text=True,
+        timeout=timeout,
     )
 
 
 def cleanup(base):
     subprocess.run(["pkill", "-9", "-f", f"{base}/cfg"], stderr=subprocess.DEVNULL)
+    # Also kill any outstanding `clickhouse client` subprocesses this script started: a churn worker
+    # may still have one blocked in an `INSERT`/`OPTIMIZE` against a wedged or OOM-killed server, and
+    # those clients do not match the `{base}/cfg` pattern above (they are launched with `--port`, not a
+    # config file), so the server-side kill alone would leave them running.
+    subprocess.run(["pkill", "-9", "-f", f"{BIN} client --port {PORT}"], stderr=subprocess.DEVNULL)
     time.sleep(1)
     if os.path.isdir(CG):
         try:
@@ -221,21 +227,47 @@ def main():
         def churn():
             while not stop.is_set():
                 # Queries are expected to fail once the cgroup OOM fires; keep churning regardless.
-                client(
-                    "-q",
-                    "INSERT INTO m SELECT 0, arrayReduce('groupArrayState', "
-                    "arrayMap(x -> repeat('x', 400000), range(500))) FROM numbers(1)",
-                )
-                client("-q", "OPTIMIZE TABLE m FINAL")
+                # Bound every client call: after `stop` is set - or once the server is OOM-killed or
+                # otherwise wedged - a call must not block forever, or the worker would never observe
+                # `stop` and the script would hang at exit. `--receive_timeout`/`--connect_timeout`
+                # bound it server-side; the subprocess `timeout` is a hard backstop that kills a stuck
+                # client. A `TimeoutExpired` here is expected under OOM, so swallow it and re-check
+                # `stop` on the next iteration.
+                try:
+                    client(
+                        "--connect_timeout", "5", "--receive_timeout", "10",
+                        "-q",
+                        "INSERT INTO m SELECT 0, arrayReduce('groupArrayState', "
+                        "arrayMap(x -> repeat('x', 400000), range(500))) FROM numbers(1)",
+                        timeout=20,
+                    )
+                    client(
+                        "--connect_timeout", "5", "--receive_timeout", "10",
+                        "-q", "OPTIMIZE TABLE m FINAL",
+                        timeout=20,
+                    )
+                except subprocess.TimeoutExpired:
+                    pass
 
-        workers = [threading.Thread(target=churn) for _ in range(NUM_WORKERS)]
+        # Daemon threads so a worker that is somehow still blocked cannot keep the interpreter alive at
+        # exit (a non-daemon thread would be joined implicitly, hanging the script).
+        workers = [threading.Thread(target=churn, daemon=True) for _ in range(NUM_WORKERS)]
         for w in workers:
             w.start()
         print(f"churning {NUM_WORKERS} workers for ~{CHURN_SECONDS}s in the {LIMIT_GB} GiB cgroup ...")
         time.sleep(CHURN_SECONDS)
         stop.set()
+        # The join window comfortably exceeds the per-call client timeout above, so a worker that was
+        # mid-call when `stop` was set still finishes here rather than lingering.
         for w in workers:
-            w.join(timeout=10)
+            w.join(timeout=30)
+        stuck = [w for w in workers if w.is_alive()]
+        if stuck:
+            print(
+                f"WARNING: {len(stuck)} churn worker(s) still running after join "
+                "(a client call did not return within its timeout)",
+                file=sys.stderr,
+            )
 
         oom_after = oom_kill_count()
         print(f"cgroup oom_kill: {oom_before} -> {oom_after}")
