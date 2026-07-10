@@ -465,6 +465,17 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
+    /// Only the set-style functions below consume an array constant. For scalar-string
+    /// functions (equals, notEquals, like, ...) an array constant (e.g. `arr = ['x']`)
+    /// cannot be turned into a token atom, so treat it as UNKNOWN (scan all granules)
+    /// instead of calling safeGet<String>() on an array Field and throwing BAD_GET.
+    if (value_data_type.isArray()
+        && function_name != "has"
+        && function_name != "hasAny"
+        && function_name != "hasAll"
+        && function_name != "multiSearchAny")
+        return false;
+
     Field const_value = value_field;
 
     const auto column_name = key_node.getColumnName();

@@ -757,6 +757,20 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (!value_data_type.isStringOrFixedString() && !value_data_type.isArray())
         return false;
 
+    /// Only the array-consuming functions below accept an array constant. For scalar-string
+    /// functions (equals, like, hasToken, ...) an array constant (e.g. `arr = ['x']`) cannot
+    /// be turned into a token query, so treat it as UNKNOWN (scan all granules) instead of
+    /// calling safeGet<String>() on an array Field and throwing BAD_GET.
+    if (value_data_type.isArray()
+        && function_name != "hasAnyTokens"
+        && function_name != "hasAllTokens"
+        && function_name != "hasAny"
+        && function_name != "hasAll"
+        && function_name != "multiSearchAny"
+        && function_name != "multiSearchAnyUTF8"
+        && function_name != "multiMatchAny")
+        return false;
+
     const auto & settings = getContext()->getSettingsRef();
 
     /// like/ilike optimization is only supported for splitByNonAlpha and array tokenizers.
