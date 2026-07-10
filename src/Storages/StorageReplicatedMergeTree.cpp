@@ -291,6 +291,7 @@ namespace ErrorCodes
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
     extern const int PARTITION_DOESNT_EXIST;
     extern const int UNFINISHED;
+    extern const int MUTATION_WILL_BE_DONE_ASYNCHRONOUSLY;
     extern const int RECEIVED_ERROR_TOO_MANY_REQUESTS;
     extern const int PART_IS_TEMPORARILY_LOCKED;
     extern const int CANNOT_ASSIGN_OPTIMIZE;
@@ -882,7 +883,7 @@ void StorageReplicatedMergeTree::waitMutationToFinishOnReplicas(
 
     if (!inactive_replicas.empty())
     {
-        throw Exception(ErrorCodes::UNFINISHED,
+        throw Exception(ErrorCodes::MUTATION_WILL_BE_DONE_ASYNCHRONOUSLY,
                         "Mutation is not finished because some replicas are inactive right now: {}. Mutation will be done asynchronously",
                         boost::algorithm::join(inactive_replicas, ", "));
     }

@@ -76,6 +76,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int TIMEOUT_EXCEEDED;
     extern const int UNFINISHED;
+    extern const int MUTATION_WILL_BE_DONE_ASYNCHRONOUSLY;
     extern const int NOT_A_LEADER;
     extern const int TABLE_IS_READ_ONLY;
     extern const int KEEPER_EXCEPTION;
@@ -602,6 +603,13 @@ bool DDLWorker::tryExecuteQuery(DDLTaskBase & task, const ZooKeeperPtr & zookeep
     {
         if (task.is_initial_query)
             throw;
+
+        if (e.code() == ErrorCodes::MUTATION_WILL_BE_DONE_ASYNCHRONOUSLY)
+        {
+            LOG_WARNING(log, "Query {} was accepted and will be finished asynchronously: {}", query_to_show_in_logs, e.message());
+            task.execution_status = ExecutionStatus(0);
+            return true;
+        }
 
         task.execution_status = ExecutionStatus::fromCurrentException();
 

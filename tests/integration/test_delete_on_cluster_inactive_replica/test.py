@@ -67,13 +67,15 @@ def best_effort_restore_replica_and_drop_database():
             print(f"Failed to drop {DB} on {node.name} during cleanup: {ex}")
 
 
-def get_last_delete_task_entry():
+def get_last_lightweight_delete_task_entry():
     return node1.query(
         f"""
         SELECT entry
         FROM system.distributed_ddl_queue
         WHERE cluster = '{CLUSTER}'
-          AND query LIKE '%DELETE FROM {DB}.{TABLE}%'
+          AND position(query, '{DB}') > 0
+          AND position(query, '{TABLE}') > 0
+          AND position(query, '_row_exists') > 0
         ORDER BY entry DESC
         LIMIT 1
         FORMAT TSVRaw
@@ -119,7 +121,7 @@ def test_delete_on_cluster_marks_task_executed_with_inactive_replica(started_clu
                 timeout=30,
             )
 
-            entry = get_last_delete_task_entry()
+            entry = get_last_lightweight_delete_task_entry()
             assert entry
             assert (
                 zk.exists(f"/clickhouse/task_queue/ddl/{entry}/shards/{SHARD_ID}/executed")
