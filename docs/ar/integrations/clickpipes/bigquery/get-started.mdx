@@ -1,0 +1,94 @@
+---
+sidebarTitle: 'ابدأ'
+description: 'دليل إرشادي خطوة بخطوة لإنشاء أول ClickPipe على BigQuery.'
+slug: /integrations/clickpipes/bigquery/get-started
+title: 'إنشاء أول ClickPipe على BigQuery'
+doc_type: 'guide'
+---
+
+import IntroClickPipe from '/snippets/ar/_intro.mdx';
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<IntroClickPipe />
+
+<div id="pre-requisites">
+  ## المتطلبات المسبقة
+</div>
+
+* يجب أن تكون لديك امتيازات إدارة [حسابات الخدمة](https://docs.cloud.google.com/iam/docs/service-account-overview) و[أدوار IAM](https://docs.cloud.google.com/iam/docs/roles-overview) في مشروع GCP الخاص بك، أو الاستعانة بمسؤول. نوصي بإنشاء حساب خدمة مخصص بأقل مجموعة مطلوبة من [الأذونات](/ar/integrations/clickpipes/bigquery/overview#permissions)، وفقًا لـ[الوثائق الرسمية](https://docs.cloud.google.com/iam/docs/service-accounts-create).
+
+* تتطلب عملية التحميل الأولي حاوية Google Cloud Storage ‏(GCS) يوفّرها المستخدم لأغراض التخزين المرحلي. نوصي بإنشاء حاوية مخصصة لـ ClickPipe الخاص بك وفقًا لـ[الوثائق الرسمية](https://docs.cloud.google.com/storage/docs/creating-buckets). مستقبلاً، ستُوفَّر الحاوية الوسيطة وتُدار بواسطة ClickPipes.
+
+<Steps>
+  <Step>
+    ## اختر مصدر البيانات
+
+    **1.** في ClickHouse Cloud، اختر **Data sources** من قائمة التنقل الرئيسية، ثم انقر على **Create ClickPipe**.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختر عمليات الاستيراد" size="lg" border />
+
+    **2.** انقر على لوحة **BigQuery**.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="اختر لوحة BigQuery" size="lg" border />
+  </Step>
+
+  <Step>
+    ## أعدّ اتصال ClickPipe الخاص بك
+
+    لإعداد ClickPipe جديد، يجب تقديم تفاصيل الاتصال بمخزن بيانات BigQuery والمصادقة عليه، بالإضافة إلى حاوية GCS مرحلية.
+
+    **1.** ارفع مفتاح `.json` الخاص بحساب الخدمة الذي أنشأته لـ ClickPipes. تأكد من أن حساب الخدمة يمتلك الحد الأدنى المطلوب من [الأذونات](/ar/integrations/clickpipes/bigquery/overview#permissions).
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="ارفع مفتاح حساب الخدمة" size="lg" border />
+
+    **2.** اختر **Replication method**. في مرحلة Private Preview، الخيار المدعوم الوحيد هو [**Initial load only**](/ar/integrations/clickpipes/bigquery/overview#initial-load).
+
+    **3.** أدخل مسار حاوية GCS لاستخدامها في تخزين البيانات مرحليًا أثناء التحميل الأولي.
+
+    **4.** انقر على **Next** للتحقق.
+  </Step>
+
+  <Step>
+    ## اضبط ClickPipe الخاص بك
+
+    استنادًا إلى حجم مجموعة بيانات BigQuery لديك، أو الحجم الإجمالي للجداول التي تريد مزامنتها، قد تحتاج إلى تعديل إعدادات الاستيعاب الافتراضية لـ ClickPipe.
+  </Step>
+
+  <Step>
+    ## اضبط الجداول
+
+    **1.** اختر قاعدة بيانات ClickHouse التي تريد نسخ جداول BigQuery إليها. يمكنك اختيار قاعدة بيانات موجودة أو إنشاء قاعدة جديدة.
+
+    **2.** اختر الجداول، وعند الحاجة الأعمدة، التي تريد نسخها. لن تظهر إلا مجموعات البيانات التي يملك حساب الخدمة المقدم صلاحية الوصول إليها.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="الأذونات" size="lg" border />
+
+    **3.** لكل جدول محدد، احرص على تحديد مفتاح فرز مخصص ضمن **Advanced settings** &gt; **Use a custom sorting key**. مستقبلًا، سيُستدل على مفتاح الفرز تلقائيًا استنادًا إلى مفاتيح التجميع العنقودي أو مفاتيح التقسيم الموجودة في قاعدة البيانات الأصلية.
+
+    <Warning>
+      **يجب** تحديد [مفتاح فرز](/ar/concepts/best-practices/choosing-a-primary-key) للجداول المنسوخة لتحسين أداء الاستعلامات في ClickHouse. وإلا فسيُضبط مفتاح الفرز على `tuple()`، ما يعني عدم إنشاء فهرس أساسي، وسيُجري ClickHouse فحصًا كاملًا للجدول في جميع الاستعلامات عليه.
+    </Warning>
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="الأذونات" size="lg" border />
+  </Step>
+
+  <Step>
+    ## اضبط الأذونات
+
+    أخيرًا، يمكنك ضبط أذونات مستخدم ClickPipes الداخلي.
+
+    **Permissions:** سينشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى الجدول الوجهة. يمكنك اختيار دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المحددة مسبقًا:
+
+    * `Full access`: وصول كامل إلى العنقود. مطلوب إذا كنت تستخدم العروض المادية أو القواميس مع الجدول الوجهة.
+    * `Only destination`: أذونات إدراج إلى الجدول الوجهة فقط.
+  </Step>
+
+  <Step>
+    ## أكمل الإعداد
+
+    انقر على **Create ClickPipe** لإكمال الإعداد. ستتم إعادة توجيهك إلى صفحة النظرة العامة، حيث يمكنك متابعة تقدم التحميل الأولي والنقر للاطلاع على تفاصيل BigQuery ClickPipes الخاصة بك.
+
+    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="الأذونات" size="lg" border />
+  </Step>
+</Steps>

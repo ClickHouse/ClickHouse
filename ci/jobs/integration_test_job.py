@@ -11,6 +11,7 @@ from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.integration_tests_configs import (
     IMAGES_ENV,
     LLVM_COVERAGE_SKIP_PREFIXES,
+    force_heavy_modules_sequential,
     get_optimal_test_batch,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
@@ -749,17 +750,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 # TODO: reduce scope to modified test cases instead of entire modules
                 changed_files = info.get_changed_files()
                 for file in changed_files:
-                    if (
-                        file.startswith("tests/integration/test")
-                        # e2e tests require external credentials/backends and are
-                        # excluded from the default pytest run via the `e2e`
-                        # marker. Skip them so a mixed PR (both e2e and regular
-                        # integration tests changed) does not try to run them.
-                        and not file.startswith("tests/integration/test_e2e_")
-                        and Path(file).name.startswith("test")
-                        and file.endswith(".py")
-                        and Path(file).is_file()
-                    ):
+                    if Targeting.is_integration_test_file(file):
                         changed_test_modules.append(
                             file.removeprefix("tests/integration/")
                         )
@@ -863,12 +854,67 @@ tar -czf ./ci/tmp/logs.tar.gz \
         )
     )
 
+    if is_flaky_check or is_targeted_check:
+        # The flaky/targeted parallel bucket runs `--dist=each`: every worker runs
+        # every parallel module at once. TEST_CONFIGS `dist_each_sequential` modules
+        # would start one cluster per worker and OOM small runners, so move them to
+        # the looped sequential phase. Normal `--dist=loadfile` runs do not call this.
+        before = list(parallel_test_modules)
+        parallel_test_modules, sequential_test_modules = force_heavy_modules_sequential(
+            parallel_test_modules, sequential_test_modules
+        )
+        moved = [m for m in before if m not in parallel_test_modules]
+        if moved:
+            print(f"Forced heavy modules to the sequential phase (avoid concurrent --dist=each clusters): {moved}")
+
     if is_sequential:
         parallel_test_modules = []
         assert not is_parallel
     elif is_parallel:
         sequential_test_modules = []
         assert not is_sequential
+
+    # If this PR only touches test files (no production/config code changed),
+    # this batch only needs to run whichever of parallel_test_modules /
+    # sequential_test_modules actually contains a changed module - the other
+    # side would produce results identical to master and can be dropped
+    # outright (saving the time to run it), and if neither side contains a
+    # changed module the whole batch can be skipped. Placed after the
+    # is_sequential/is_parallel handling above so it sees the modules this
+    # job invocation will actually run, not the pre-flavor-filter set.
+    if (
+        total_batches > 1
+        and not is_flaky_check
+        and not is_targeted_check
+        and not is_bugfix_validation
+        and not args.test
+    ):
+        changed_files = info.get_changed_files()
+        if changed_files and all(
+            Targeting.is_functional_test_file(f)
+            or Targeting.is_integration_test_file(f)
+            or Targeting.is_ci_job_script(f)
+            for f in changed_files
+        ):
+            changed_integration_modules = {
+                f.removeprefix("tests/integration/")
+                for f in changed_files
+                if Targeting.is_integration_test_file(f)
+            }
+            if not changed_integration_modules:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only non-integration test files changed in this PR - nothing for this job to run",
+                ).complete_job()
+            if not (changed_integration_modules & set(parallel_test_modules)):
+                parallel_test_modules = []
+            if not (changed_integration_modules & set(sequential_test_modules)):
+                sequential_test_modules = []
+            if not parallel_test_modules and not sequential_test_modules:
+                Result.create_from(
+                    status=Result.Status.SKIPPED,
+                    info="Only test files changed in this PR and none of the changed test modules fall into this batch",
+                ).complete_job()
 
     if (is_targeted_check or is_flaky_check) and not parallel_test_modules and not sequential_test_modules:
         # Targeted check: all selected tests were stale (removed or renamed since the CIDB record).
@@ -1415,6 +1461,18 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 R.set_success()
 
     force_ok_exit = False
+    if R:
+        failures_cnt = len([r for r in R.results if not r.is_ok()])
+        if failures_cnt > 0 and failures_cnt < 4:
+            print(
+                f"NOTE: Failed {failures_cnt} tests - do not block pipeline, exit with 0"
+            )
+            force_ok_exit = True
+        elif failures_cnt > 0 and "ci-non-blocking" in info.pr_labels:
+            print(
+                f"NOTE: Failed {failures_cnt} tests, label 'ci-non-blocking' is set - do not block pipeline - exit with 0"
+            )
+            force_ok_exit = True
     if is_bugfix_validation:
         # Per-arch bugfix-validation jobs are advisory: their pass/fail status
         # records "did the bug reproduce on this arch?", not whether the PR

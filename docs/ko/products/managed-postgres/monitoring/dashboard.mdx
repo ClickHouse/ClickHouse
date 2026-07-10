@@ -1,0 +1,56 @@
+---
+slug: /cloud/managed-postgres/monitoring/dashboard
+sidebarTitle: '대시보드'
+title: 'Managed Postgres 모니터링 대시보드'
+description: 'Managed Postgres 서비스용 Cloud Console 기본 제공 대시보드'
+keywords: ['managed postgres', '모니터링', '대시보드', 'cloud console', 'cpu', '메모리', 'iops']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
+
+인스턴스 왼쪽 사이드바의 **모니터링** 탭에는
+선택한 시간 범위의 리소스 사용량과 데이터베이스 활동을
+실시간으로 보여주는 차트가 표시됩니다.
+
+<Image img="/images/managed-postgres/monitoring/dashboard.webp" alt="IOPS, CPU 사용량, 메모리, 디스크, 네트워크 트래픽, 데이터베이스 크기, 연결, 처리량, 트랜잭션, 캐시 적중률, 교착 상태를 보여주는 모니터링 대시보드" size="lg" border />
+
+<div id="panels">
+  ## 패널
+</div>
+
+대시보드에서는 메트릭을 다음 패널로 나누어 보여줍니다:
+
+* **IOPS** — 초당 디스크 읽기 및 쓰기 작업 수
+* **CPU usage** — `user`, `system`, `iowait`, `softirq`,
+  `steal`별 사용량
+* **Memory usage** — 전체 대비 사용 중인 메모리, 캐시, 버퍼의
+  비율
+* **Disk usage** — 서비스에 할당된 스토리지 대비 사용 중인 파일 시스템
+  공간의 비율
+* **Network traffic** — 수신 및 전송 바이트 수
+* **Database size** — 데이터베이스별 바이트 수(`postgres`
+  기본 데이터베이스 및 사용자가 생성한 모든 데이터베이스 포함)
+* **Connection count** — 활성 및 유휴 연결 수
+* **Operation throughput** — 초당 fetches, 삽입, updates, deletes 수
+* **Transactions** — 초당 커밋 및 롤백 수
+* **Cache hit ratio** — 디스크가 아니라 버퍼 캐시에서
+  처리된 블록 읽기의 비율
+* **Deadlocks** — 서버에서 감지한 교착 상태 수
+
+<div id="time-period">
+  ## 시간 범위
+</div>
+
+**시간 범위** 선택기에서 지난 1시간, 1일,
+1주 또는 사용자 지정 범위로 전환할 수 있습니다.
+
+<div id="related">
+  ## 관련 페이지
+</div>
+
+* [Prometheus 엔드포인트](/ko/products/managed-postgres/monitoring/prometheus) — 동일한 메트릭을 자체 관측성 스택으로 스크레이프
+* [메트릭 참고](/ko/products/managed-postgres/monitoring/metrics) — 타입 및 레이블이 포함된 전체 메트릭 목록

@@ -1,0 +1,66 @@
+---
+description: 'Documentação do formato RawBLOB'
+keywords: ['RawBLOB']
+slug: /interfaces/formats/RawBLOB
+title: 'RawBLOB'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O formato `RawBLOB` lê todos os dados de entrada em um único valor. Só é possível fazer o parse de uma tabela com um único campo do tipo [`String`](/pt-BR/reference/data-types/string) ou similar.
+O resultado é produzido em formato binário, sem delimitadores nem caracteres de escape. Se mais de um valor for produzido, o formato será ambíguo, e será impossível ler os dados novamente.
+
+<div id="raw-formats-comparison">
+  ### Comparação de formatos raw
+</div>
+
+Abaixo está uma comparação entre os formatos `RawBLOB` e [`TabSeparatedRaw`](/pt-BR/reference/formats/TabSeparated/TabSeparatedRaw).
+
+`RawBLOB`:
+
+* os dados são emitidos em formato binário, sem caracteres de escape;
+* não há delimitadores entre os valores;
+* não há quebra de linha no final de cada valor.
+
+`TabSeparatedRaw`:
+
+* os dados são emitidos sem caracteres de escape;
+* as linhas contêm valores separados por tabulações;
+* há uma quebra de linha após o último valor de cada linha.
+
+A seguir, uma comparação entre os formatos `RawBLOB` e [RowBinary](/pt-BR/reference/formats/RowBinary/RowBinary).
+
+`RawBLOB`:
+
+* campos do tipo string são emitidos sem prefixo de comprimento.
+
+`RowBinary`:
+
+* campos do tipo string são representados pelo comprimento no formato varint ([LEB128] (https://en.wikipedia.org/wiki/LEB128) sem sinal), seguido pelos bytes da string.
+
+Quando dados vazios são passados para a entrada `RawBLOB`, o ClickHouse lança uma exceção:
+
+```text
+Code: 108. DB::Exception: No data to insert
+```
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+```bash title="Query"
+$ clickhouse-client --query "CREATE TABLE {some_table} (a String) ENGINE = Memory;"
+$ cat {filename} | clickhouse-client --query="INSERT INTO {some_table} FORMAT RawBLOB"
+$ clickhouse-client --query "SELECT * FROM {some_table} FORMAT RawBLOB" | md5sum
+```
+
+```text title="Response"
+f9725a22f9191e064120d718e26862a9  -
+```
+
+<div id="format-settings">
+  ## Configurações de formato
+</div>

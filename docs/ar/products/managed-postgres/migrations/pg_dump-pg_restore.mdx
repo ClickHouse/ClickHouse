@@ -1,0 +1,133 @@
+---
+slug: /cloud/managed-postgres/migrations/pg_dump-pg_restore
+sidebarTitle: 'pg_dump and pg_restore'
+title: 'ترحيل البيانات إلى ClickHouse Managed Postgres باستخدام pg_dump و pg_restore'
+description: 'تعرّف على كيفية ترحيل بيانات PostgreSQL إلى ClickHouse Managed Postgres باستخدام pg_dump و pg_restore'
+keywords: ['postgres', 'postgresql', 'pg_dump', 'pg_restore', 'ترحيل', 'نقل البيانات', 'managed postgres']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+يوفّر هذا الدليل إرشادات مفصّلة خطوة بخطوة لترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام الأداتين `pg_dump` و`pg_restore`.
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pg_dump-pg_restore-beta" />
+
+<div id="migration-pgdump-pg-restore-prerequisites">
+  ## المتطلبات المسبقة
+</div>
+
+* إمكانية الوصول إلى قاعدة بيانات PostgreSQL المصدر لديك.
+* تثبيت `pg_dump` و`pg_restore` على جهازك المحلي. وعادةً ما يكونان مضمَّنين ضمن تثبيتات PostgreSQL. وإذا لم يكونا كذلك، يمكنك تنزيلهما من [الموقع الرسمي لـ PostgreSQL](https://www.postgresql.org/download/).
+
+<div id="migration-pgdump-pg-restore-setup">
+  ## الإعداد
+</div>
+
+لتتبّع الخطوات، سنستخدم قاعدة بيانات RDS Postgres تجريبية بوصفها قاعدة البيانات المصدر. على سبيل المثال:
+
+<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="إعداد قاعدة بيانات PostgreSQL المصدر" size="xl" border />
+
+إليك ما نعمل عليه:
+
+* جدولان: `events` و`users`. يحتوي `events` على مليون صف، بينما يحتوي `users` على ألف صف.
+* يحتوي `events` على فهرس.
+* عرض مبني على جدول `events`.
+* بضع تسلسلات
+
+<div id="migration-pgdump-pg-restore-dump">
+  ## أنشئ ملف تفريغ لقاعدة البيانات المصدر
+</div>
+
+لنستخدم الآن `pg_dump` لإنشاء ملف تفريغ للكائنات المذكورة أعلاه. هذا أمر بسيط:
+
+```shell
+pg_dump \
+  -d 'postgresql://<user>:<password>@<host>:<port>/<database>' \
+  --format directory \
+  -f rds-dump
+```
+
+هنا:
+
+* استبدل `<user>` و`<password>` و`<host>` و`<port>` و`<database>` ببيانات اعتماد قاعدة بيانات المصدر. يوفّر معظم مزوّدي Postgres سلسلة سلسلة الاتصال يمكنك استخدامها مباشرةً.
+* يحدّد `--format directory` أننا نريد `تفريغ` بتنسيق directory، وهو مناسب لـ `pg_restore`.
+* يحدّد `-f rds-dump` directory الإخراج لملفات `تفريغ`. لاحظ أن هذا directory سيُنشأ تلقائيًا ويجب ألا يكون موجودًا مسبقًا.
+* يمكنك أيضًا تنفيذ عملية `تفريغ` بالتوازي بإضافة العلامة `--jobs` متبوعة بعدد jobs المتوازية التي تريد تشغيلها. لمزيد من التفاصيل، راجع [وثائق pg&#95;dump](https://www.postgresql.org/docs/current/app-pgdump.html).
+
+<Tip>
+  يمكنك اختبار هذه العملية مرة واحدة لتكوين فكرة عن المدة التي تستغرقها وعن حجم ملف `تفريغ`.
+</Tip>
+
+إليك كيف يبدو تشغيل هذا الأمر:
+
+<Image img="/images/managed-postgres/pg_dump_restore/dump-command.webp" alt="تنفيذ أمر pg_dump" size="xl" border />
+
+<div id="migration-pgdump-pg-restore-restore">
+  ## رحّل ملف تفريغ إلى ClickHouse Managed Postgres
+</div>
+
+الآن بعد أن أصبح لدينا ملف تفريغ، يمكننا استعادته في مثيل ClickHouse Managed Postgres الخاص بنا باستخدام `pg_restore`.
+
+<div id="migration-pgdump-pg-restore-create-pg">
+  ### أنشئ مثيلاً من Managed Postgres
+</div>
+
+أولاً، تأكد من إعداد مثيل من Managed Postgres، ويفضَّل أن يكون في المنطقة نفسها التي يوجد فيها المصدر. يمكنك اتباع الدليل السريع [هنا](/ar/products/managed-postgres/quickstart#create-postgres-database). إليك ما سننشئه في هذا الدليل:
+
+<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="أنشئ مثيلاً من ClickHouse Managed Postgres" size="md" border />
+
+<div id="migration-pgdump-pg-restore-restore-dump">
+  ### استعادة ملف التفريغ
+</div>
+
+الآن، بالعودة إلى جهازنا المحلي، يمكننا استخدام الأمر `pg_restore` لاستعادة ملف التفريغ إلى مثيل Managed Postgres لدينا:
+
+```shell
+pg_restore \
+  -d 'postgresql://<user>:<password>@<pg_clickhouse_host>:5432/<database>' \
+  --verbose \
+  rds-dump
+```
+
+يمكنك الحصول على سلسلة الاتصال لمثيل Managed Postgres الخاص بك من وحدة تحكم ClickHouse Cloud، كما هو موضّح ببساطة [هنا](/ar/products/managed-postgres/connection).
+
+وهنا أيضًا توجد علامتان يجدر الانتباه إليهما:
+
+* يوفّر `--verbose` مخرجات تفصيلية أثناء عملية الاستعادة.
+* يمكنك أيضًا استخدام العلامة `--jobs` هنا لتنفيذ عملية الاستعادة بالتوازي. لمزيد من التفاصيل، راجع [توثيق pg&#95;restore](https://www.postgresql.org/docs/current/app-pgrestore.html).
+
+في حالتنا، يبدو الأمر كما يلي:
+
+<Image img="/images/managed-postgres/pg_dump_restore/restore-command.webp" alt="تنفيذ أمر pg_restore" size="xl" border />
+
+<div id="migration-pgdump-pg-restore-verify">
+  ## تحقّق من الترحيل
+</div>
+
+بمجرد اكتمال عملية الاستعادة، يمكنك الاتصال بمثيل Managed Postgres لديك والتحقق من ترحيل جميع بياناتك وكائناتك بنجاح. يمكنك استخدام أي عميل PostgreSQL للاتصال وتشغيل الاستعلامات.
+إليك كيف يبدو إعداد Managed Postgres لدينا بعد الترحيل:
+
+<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="إعداد قاعدة بيانات Managed Postgres المستهدفة" size="xl" border />
+
+نرى أن جميع الجداول والفهارس والعروض والتسلسلات موجودة كما هي، مع تطابق أعداد البيانات أيضًا.
+
+<div id="migration-pgdump-pg-restore-considerations">
+  ## اعتبارات
+</div>
+
+* تأكد من توافق إصدارات PostgreSQL بين قاعدتَي البيانات المصدر والهدف.
+  قد يؤدي استخدام إصدار `pg_dump` أقدم من الخادم المصدر إلى فقدان بعض الميزات أو حدوث مشكلات في الاستعادة. ومن الأفضل استخدام الإصدار الرئيسي نفسه لـ `pg_dump` الخاص بقاعدة البيانات المصدر، أو إصدار رئيسي أحدث.
+* قد تستغرق قواعد البيانات الكبيرة وقتًا ملحوظًا لتفريغها واستعادتها.
+  خطط لذلك بما يساعد على تقليل فترة التوقف إلى الحد الأدنى، وفكّر في استخدام عمليات التفريغ/الاستعادة المتوازية (`--jobs`) حيثما كان ذلك مدعومًا.
+* لاحظ أن `pg_dump` / `pg_restore` لا ينسخان جميع الكائنات المرتبطة بقاعدة البيانات ولا حالة التشغيل.
+  يشمل ذلك الأدوار وعضوياتها، وفتحات النسخ المتماثل، والتهيئة على مستوى الخادم (مثل `postgresql.conf` و`pg_hba.conf`)، وtablespaces، وإحصاءات وقت التشغيل.
+
+<div id="migration-pgdump-pg-restore-next-steps">
+  ## الخطوات التالية
+</div>
+
+تهانينا! لقد نجحت في ترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام `pg_dump` و`pg_restore`. وأصبحت الآن جاهزًا تمامًا للتعرّف على ميزات Managed Postgres وتكامله مع ClickHouse. إليك دليل بدء سريع مدته 10 دقائق لمساعدتك على الانطلاق:
+
+* [دليل البدء السريع لـ Managed Postgres](/ar/products/managed-postgres/quickstart)

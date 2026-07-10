@@ -1,0 +1,55 @@
+---
+alias: []
+description: '关于 TemplateIgnoreSpaces 格式的文档'
+input_format: true
+keywords: ['TemplateIgnoreSpaces']
+output_format: false
+slug: /interfaces/formats/TemplateIgnoreSpaces
+title: 'TemplateIgnoreSpaces'
+doc_type: 'reference'
+---
+
+| 输入 | 输出 | 别名 |
+| -- | -- | -- |
+| ✔  | ✗  |    |
+
+<div id="description">
+  ## 说明
+</div>
+
+与 [`Template`] 类似，但会跳过输入流中分隔符与值之间的空白字符。
+不过，如果格式字符串本身包含空白字符，则输入流中也必须出现这些字符。
+此外，还允许指定空占位符 (`${}` 或 `${:None}`) ，将某些分隔符拆分为多个独立部分，以忽略它们之间的空格。
+这类占位符仅用于跳过空白字符。
+如果所有行中各列的值顺序都相同，则可以使用此格式读取 `JSON`。
+
+<Note>
+  此格式仅适用于输入。
+</Note>
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+以下请求可用于根据 [JSON](/zh/reference/formats/JSON/JSON) 格式的输出示例插入数据：
+
+```sql
+INSERT INTO table_name 
+SETTINGS
+    format_template_resultset = '/some/path/resultset.format',
+    format_template_row = '/some/path/row.format',
+    format_template_rows_between_delimiter = ','
+FORMAT TemplateIgnoreSpaces
+```
+
+```text title="/some/path/resultset.format"
+{${}"meta"${}:${:JSON},${}"data"${}:${}[${data}]${},${}"totals"${}:${:JSON},${}"extremes"${}:${:JSON},${}"rows"${}:${:JSON},${}"rows_before_limit_at_least"${}:${:JSON}${}}
+```
+
+```text title="/some/path/row.format"
+{${}"SearchPhrase"${}:${}${phrase:JSON}${},${}"c"${}:${}${cnt:JSON}${}}
+```
+
+<div id="format-settings">
+  ## 格式设置
+</div>
