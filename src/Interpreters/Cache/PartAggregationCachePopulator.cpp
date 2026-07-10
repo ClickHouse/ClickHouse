@@ -161,6 +161,24 @@ void populatePartAggregationCache(
                     data_variants, key_columns, aggregate_columns, no_more_keys);
             }
 
+            /// `PullingPipelineExecutor::pull` returns `false` on normal end-of-stream, but also on
+            /// cancellation without throwing: `KILL QUERY`, or `max_execution_time` reached (including
+            /// the soft `timeout_overflow_mode = 'break'` mode, where the query legitimately returns
+            /// partial results). In those cases the loop above stopped early, so `data_variants` holds
+            /// only the states aggregated before the stop. Caching that truncated per-part state would
+            /// let later queries reuse a wrong, partial aggregate. Detect cancellation after the loop
+            /// and fail closed: stop populating and do not cache this part. The main pipeline reads any
+            /// uncached part normally, or surfaces its own cancellation.
+            const auto execution_status = executor.getExecutionStatus();
+            if (execution_status == PipelineExecutor::ExecutionStatus::CancelledByUser
+                || execution_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout)
+            {
+                LOG_DEBUG(log, "Cache population for part {} was cancelled ({}); not caching it",
+                    part.data_part->name,
+                    execution_status == PipelineExecutor::ExecutionStatus::CancelledByTimeout ? "timeout" : "killed");
+                break;
+            }
+
             /// `executeOnBlock` flushes part of `data_variants` to temporary files once the part's
             /// aggregation exceeds `max_bytes_before_external_group_by`. Unlike `AggregatingTransform`,
             /// this populator does not merge that spilled data back, so `convertToChunks` below would
