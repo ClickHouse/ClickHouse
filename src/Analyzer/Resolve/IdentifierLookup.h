@@ -133,6 +133,29 @@ struct IdentifierLookup
         return true;
     }
 
+    /// Per-part fold mask for parts [first_part, size): element j is true iff part first_part + j may
+    /// fold. Empty when uniform (all fold / all exact) — callers then keep the single-bool behavior.
+    std::vector<bool> partFoldMaskFrom(size_t first_part, bool standard_mode) const
+    {
+        const size_t parts = identifier.getPartsSize();
+        if (!standard_mode || first_part >= parts)
+            return {};
+        std::vector<bool> mask;
+        mask.reserve(parts - first_part);
+        bool any_fold = false;
+        bool all_fold = true;
+        for (size_t i = first_part; i < parts; ++i)
+        {
+            const bool fold = !isPartDoubleQuoted(i);
+            any_fold |= fold;
+            all_fold &= fold;
+            mask.push_back(fold);
+        }
+        if (!any_fold || all_fold)
+            return {};
+        return mask;
+    }
+
     String dump() const
     {
         return identifier.getFullName() + ' ' + toString(lookup_context);
@@ -329,5 +352,18 @@ struct IdentifierResolveContext
         return *this;
     }
 };
+
+/// Masked variant of `IdentifierResolver::tryResolveIdentifierFromCompoundExpression`: suffix part j
+/// (after `identifier_bind_size`) folds iff (*suffix_fold_mask)[j]; nullptr keeps the uniform flag.
+/// Defined in IdentifierResolver.cpp; declared here so QueryAnalyzer.cpp can pass a mask too.
+QueryTreeNodePtr tryResolveIdentifierFromCompoundExpressionWithFoldMask(
+    const Identifier & expression_identifier,
+    size_t identifier_bind_size,
+    const QueryTreeNodePtr & compound_expression,
+    String compound_expression_source,
+    IdentifierResolveScope & scope,
+    bool can_be_not_found,
+    bool fold_subcolumn_case_insensitively,
+    const std::vector<bool> * suffix_fold_mask);
 
 }

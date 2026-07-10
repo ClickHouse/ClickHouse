@@ -139,11 +139,11 @@ void ASTIdentifier::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetti
     /// Preserve double quotes only — they are semantically meaningful for case-sensitivity in
     /// `standard` mode, while backticks behave like unquoted and can use the formatter's default
     /// quoting policy (which avoids spurious backticks in the output for plain identifiers).
-    /// When quote metadata is recorded and says a part is NOT double-quoted, presentation-level
-    /// DoubleQuotes quoting must divert to backticks: `"x"` would pin exact case on reparse in `standard` mode.
+    /// A part that is NOT double-quoted (empty `quote_styles` means all parts are known-unquoted)
+    /// must divert presentation-level DoubleQuotes to backticks: `"x"` would pin exact case on reparse in `standard` mode.
     auto write_not_pinned = [&](const String & part_name)
     {
-        if (!quote_styles.empty() && settings.identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotes)
+        if (settings.identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotes)
         {
             FormatSettings backtick_settings = settings;
             backtick_settings.identifier_quoting_style = IdentifierQuotingStyle::Backticks;

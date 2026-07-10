@@ -43,6 +43,43 @@ using ColumnNameToColumnNodeMap = std::unordered_map<std::string, ColumnNodePtr,
 /// Maps lowercase column name to the list of original column names that match
 using LowercaseToOriginalNamesMap = std::unordered_map<std::string, std::vector<std::string>>;
 
+/// Split a dotted subcolumn path (`Foo.Bar`) into its components. Dot-based, so a component that
+/// itself contains a dot is indistinguishable from a boundary — callers must align masks by count.
+inline std::vector<std::string_view> splitSubcolumnPathComponents(std::string_view path)
+{
+    std::vector<std::string_view> components;
+    size_t start = 0;
+    while (true)
+    {
+        size_t pos = path.find('.', start);
+        components.push_back(path.substr(start, pos - start));
+        if (pos == std::string_view::npos)
+            break;
+        start = pos + 1;
+    }
+    return components;
+}
+
+/// True iff `candidate` equals `reference` component-by-component: component j folds
+/// case-insensitively when fold_mask[mask_offset + j] is true and must match exactly otherwise.
+inline bool subcolumnComponentsMatchWithFoldMask(
+    std::string_view candidate, std::string_view reference, const std::vector<bool> & fold_mask, size_t mask_offset)
+{
+    auto candidate_components = splitSubcolumnPathComponents(candidate);
+    auto reference_components = splitSubcolumnPathComponents(reference);
+    if (candidate_components.size() != reference_components.size()
+        || mask_offset + reference_components.size() > fold_mask.size())
+        return false;
+    for (size_t j = 0; j < reference_components.size(); ++j)
+    {
+        const bool fold = fold_mask[mask_offset + j];
+        if (fold ? Poco::icompare(String(candidate_components[j]), String(reference_components[j])) != 0
+                 : candidate_components[j] != reference_components[j])
+            return false;
+    }
+    return true;
+}
+
 struct AnalysisTableExpressionData
 {
     std::string table_expression_name;
@@ -214,6 +251,9 @@ struct AnalysisTableExpressionData
     {
         bool fold_base = false;
         bool fold_suffix = false;
+        /// Optional per-part fold mask over the parts of the (qualifier-trimmed) identifier for mixed
+        /// quoting like `data."Foo".bar`; overrides the two bools per component. nullptr = uniform.
+        const std::vector<bool> * part_fold_mask = nullptr;
     };
 
     template <typename ScopeDescriptionProvider>
@@ -224,6 +264,11 @@ struct AnalysisTableExpressionData
     {
         const bool use_case_insensitive = match_flags.fold_base;
         const bool suffix_case_insensitive = match_flags.fold_suffix;
+        /// The mask is usable only when it aligns with the dot-components of the identifier —
+        /// a quoted part containing '.' breaks the alignment, so fall back to the uniform flags.
+        const std::vector<bool> * fold_mask = match_flags.part_fold_mask;
+        if (fold_mask && fold_mask->size() != splitSubcolumnPathComponents(full_identifier_name).size())
+            fold_mask = nullptr;
         ensureColumnMembershipSetsArePopulated();
         for (auto [column_name, subcolumn_name] : Nested::getAllColumnAndSubcolumnPairs(full_identifier_name))
         {
@@ -234,16 +279,37 @@ struct AnalysisTableExpressionData
             {
                 resolved_column_name = String(column_name);
             }
-            else if (use_case_insensitive)
+            else if (use_case_insensitive || fold_mask)
             {
                 auto lower_it = lowercase_column_name_to_original_names.find(Poco::toLower(String(column_name)));
                 if (lower_it == lowercase_column_name_to_original_names.end() || lower_it->second.empty())
                     continue;
-                if (lower_it->second.size() > 1)
-                    throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                        "Identifier '{}' is ambiguous: column '{}' matches multiple columns with different cases: {}. In scope {}",
-                        full_identifier_name, column_name, fmt::join(lower_it->second, ", "), get_scope_description());
-                resolved_column_name = lower_it->second.front();
+                if (fold_mask)
+                {
+                    /// Mixed quoting: the base may span several parts; each folds only if unquoted.
+                    String matched_base;
+                    for (const auto & original : lower_it->second)
+                    {
+                        if (!subcolumnComponentsMatchWithFoldMask(original, column_name, *fold_mask, 0))
+                            continue;
+                        if (!matched_base.empty() && matched_base != original)
+                            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                                "Identifier '{}' is ambiguous: column '{}' matches multiple columns with different cases: {}. In scope {}",
+                                full_identifier_name, column_name, fmt::join(lower_it->second, ", "), get_scope_description());
+                        matched_base = original;
+                    }
+                    if (matched_base.empty())
+                        continue;
+                    resolved_column_name = std::move(matched_base);
+                }
+                else
+                {
+                    if (lower_it->second.size() > 1)
+                        throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                            "Identifier '{}' is ambiguous: column '{}' matches multiple columns with different cases: {}. In scope {}",
+                            full_identifier_name, column_name, fmt::join(lower_it->second, ", "), get_scope_description());
+                    resolved_column_name = lower_it->second.front();
+                }
             }
             else
             {
@@ -265,15 +331,17 @@ struct AnalysisTableExpressionData
             /// canonicalize the suffix here. Multiple case-only-different subcolumn names are an
             /// ambiguity at this level. The fold is gated on `suffix_case_insensitive` rather than
             /// `use_case_insensitive` so a double-quoted suffix like `data."name"` stays case-sensitive
-            /// even when the base part was unquoted.
-            if (suffix_case_insensitive)
+            /// even when the base part was unquoted. With a mask each component folds independently.
+            if (suffix_case_insensitive || fold_mask)
             {
                 auto data_type = it->second->getResultType();
+                const size_t base_components = splitSubcolumnPathComponents(column_name).size();
                 String lower_suffix = Poco::toLower(String(subcolumn_name));
                 String matched_subcolumn;
                 for (const auto & candidate : data_type->getSubcolumnNames())
                 {
-                    if (Poco::toLower(candidate) != lower_suffix)
+                    if (fold_mask ? !subcolumnComponentsMatchWithFoldMask(candidate, subcolumn_name, *fold_mask, base_components)
+                                  : Poco::toLower(candidate) != lower_suffix)
                         continue;
                     if (!matched_subcolumn.empty() && matched_subcolumn != candidate)
                         throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,

@@ -26,6 +26,14 @@ void ASTWithElement::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     /// Preserve original double-quoting so format/reparse keeps the CTE name case-sensitive in `standard` mode
     if (name_is_double_quoted)
         writeDoubleQuotedString(name, ostr);
+    else if (settings.identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotes)
+    {
+        /// Presentation-level double quotes would pin the unquoted CTE name's case on reparse
+        /// in `standard` mode, so divert to backticks.
+        FormatSettings backtick_settings = settings;
+        backtick_settings.identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+        backtick_settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+    }
     else
         settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
     if (aliases)

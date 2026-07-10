@@ -196,6 +196,74 @@ void verifyMaterializedCTESubqueryMatchesStorage(
     }
 }
 
+/// For `FROM (SELECT ... UNION ALL ...) AS t("MyCol")`, QueryTreeBuilder applies the projection
+/// override to the first inner QueryNode of the UnionNode rather than the UnionNode itself.
+/// Drill in to find that carrier node.
+const QueryNode * findProjectionOverrideCarrier(const QueryNode * query_node, const UnionNode * union_node)
+{
+    if (query_node || !union_node)
+        return query_node;
+
+    const QueryTreeNodePtr * current = union_node->getQueries().getNodes().empty()
+        ? nullptr : &union_node->getQueries().getNodes().front();
+    while (current && *current)
+    {
+        if (const auto * inner_query = (*current)->as<QueryNode>())
+            return inner_query;
+        if (const auto * inner_union = (*current)->as<UnionNode>())
+        {
+            const auto & inner_queries = inner_union->getQueries().getNodes();
+            current = inner_queries.empty() ? nullptr : &inner_queries.front();
+        }
+        else
+        {
+            break;
+        }
+    }
+    return nullptr;
+}
+
+/// Names of the subquery's projection columns that must stay case-sensitive in `standard` mode:
+/// double-quoted projection-override aliases (`AS t("MyCol")`) and ordinary double-quoted
+/// projection aliases (`SELECT 1 AS "MyAlias"`; flags captured in resolveQuery before it
+/// stripped projection aliases).
+std::unordered_set<std::string> collectCaseSensitiveProjectionNames(const QueryNode * query_node, const UnionNode * union_node)
+{
+    std::unordered_set<std::string> case_sensitive_columns;
+    const QueryNode * carrier = findProjectionOverrideCarrier(query_node, union_node);
+    if (!carrier)
+        return case_sensitive_columns;
+
+    const auto & override_aliases = carrier->getProjectionAliasesToOverride();
+    const auto & override_is_quoted = carrier->getProjectionAliasesToOverrideIsDoubleQuoted();
+    for (size_t i = 0; i < override_aliases.size() && i < override_is_quoted.size(); ++i)
+        if (override_is_quoted[i])
+            case_sensitive_columns.insert(override_aliases[i]);
+
+    const auto & projection_quoted_flags = carrier->getProjectionColumnsDoubleQuoted();
+    const auto & projection_columns = carrier->getProjectionColumns();
+    for (size_t i = 0; i < projection_quoted_flags.size() && i < projection_columns.size(); ++i)
+        if (projection_quoted_flags[i])
+            case_sensitive_columns.insert(projection_columns[i].name);
+
+    return case_sensitive_columns;
+}
+
+/// Persist the standard-mode case-sensitive projection pins of a resolved materialized CTE body on
+/// the shared CTE state, and install them on the referencing TableNode before its TED is built.
+void installMaterializedCTECaseSensitivePins(
+    TableNode & table_node, const MaterializedCTEPtr & materialized_cte, const QueryTreeNodePtr & subquery)
+{
+    if (materialized_cte->case_sensitive_column_names.empty())
+    {
+        auto pinned = collectCaseSensitiveProjectionNames(subquery->as<QueryNode>(), subquery->as<UnionNode>());
+        Names pinned_sorted(pinned.begin(), pinned.end());
+        std::sort(pinned_sorted.begin(), pinned_sorted.end());
+        materialized_cte->case_sensitive_column_names = std::move(pinned_sorted);
+    }
+    table_node.setCaseSensitiveColumnNames(materialized_cte->case_sensitive_column_names);
+}
+
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
 ///
@@ -1307,15 +1375,18 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
         if (identifier_lookup.isExpressionLookup())
         {
             /// Fold the suffix case-insensitively when in `standard` mode and every suffix part was unquoted.
+            /// Mixed per-part quoting (e.g. `x."Foo".bar`) folds component-by-component via the mask.
             const bool suffix_case_insensitive = identifier_lookup.arePartsCaseInsensitiveFrom(1, standard_mode);
-            if (auto resolved_identifier = identifier_resolver.tryResolveIdentifierFromCompoundExpression(
+            const auto suffix_fold_mask = identifier_lookup.partFoldMaskFrom(1, standard_mode);
+            if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpressionWithFoldMask(
                 identifier_lookup.identifier,
                 1 /*identifier_bind_size*/,
                 alias_node,
                 {} /* compound_expression_source */,
                 scope,
                 identifier_resolve_context.allow_to_check_join_tree /* can_be_not_found */,
-                suffix_case_insensitive))
+                suffix_case_insensitive,
+                suffix_fold_mask.empty() ? nullptr : &suffix_fold_mask))
             {
                 return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::ALIASES };
             }
@@ -3543,6 +3614,10 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                                 materialized_cte_ptr->cte_name,
                                 scope.scope_node);
                         }
+
+                        /// Keep double-quoted projection aliases of the CTE body case-sensitive on this reference.
+                        if (scope.isStandardMode())
+                            installMaterializedCTECaseSensitivePins(*mat_table_node, materialized_cte_ptr, mat_subquery);
                     }
                 }
             }
@@ -4545,64 +4620,6 @@ void QueryAnalyzer::initializeQueryJoinTreeNode(QueryTreeNodePtr & join_tree_nod
 }
 
 /// Initialize table expression data for table expression node
-namespace
-{
-
-/// For `FROM (SELECT ... UNION ALL ...) AS t("MyCol")`, QueryTreeBuilder applies the projection
-/// override to the first inner QueryNode of the UnionNode rather than the UnionNode itself.
-/// Drill in to find that carrier node.
-const QueryNode * findProjectionOverrideCarrier(const QueryNode * query_node, const UnionNode * union_node)
-{
-    if (query_node || !union_node)
-        return query_node;
-
-    const QueryTreeNodePtr * current = union_node->getQueries().getNodes().empty()
-        ? nullptr : &union_node->getQueries().getNodes().front();
-    while (current && *current)
-    {
-        if (const auto * inner_query = (*current)->as<QueryNode>())
-            return inner_query;
-        if (const auto * inner_union = (*current)->as<UnionNode>())
-        {
-            const auto & inner_queries = inner_union->getQueries().getNodes();
-            current = inner_queries.empty() ? nullptr : &inner_queries.front();
-        }
-        else
-        {
-            break;
-        }
-    }
-    return nullptr;
-}
-
-/// Names of the subquery's projection columns that must stay case-sensitive in `standard` mode:
-/// double-quoted projection-override aliases (`AS t("MyCol")`) and ordinary double-quoted
-/// projection aliases (`SELECT 1 AS "MyAlias"`; flags captured in resolveQuery before it
-/// stripped projection aliases).
-std::unordered_set<std::string> collectCaseSensitiveProjectionNames(const QueryNode * query_node, const UnionNode * union_node)
-{
-    std::unordered_set<std::string> case_sensitive_columns;
-    const QueryNode * carrier = findProjectionOverrideCarrier(query_node, union_node);
-    if (!carrier)
-        return case_sensitive_columns;
-
-    const auto & override_aliases = carrier->getProjectionAliasesToOverride();
-    const auto & override_is_quoted = carrier->getProjectionAliasesToOverrideIsDoubleQuoted();
-    for (size_t i = 0; i < override_aliases.size() && i < override_is_quoted.size(); ++i)
-        if (override_is_quoted[i])
-            case_sensitive_columns.insert(override_aliases[i]);
-
-    const auto & projection_quoted_flags = carrier->getProjectionColumnsDoubleQuoted();
-    const auto & projection_columns = carrier->getProjectionColumns();
-    for (size_t i = 0; i < projection_quoted_flags.size() && i < projection_columns.size(); ++i)
-        if (projection_quoted_flags[i])
-            case_sensitive_columns.insert(projection_columns[i].name);
-
-    return case_sensitive_columns;
-}
-
-}
-
 void QueryAnalyzer::initializeTableExpressionData(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
 {
     auto * table_node = table_expression_node->as<TableNode>();
@@ -6309,6 +6326,10 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                         materialized_cte_ptr->cte_name,
                         scope.scope_node);
                 }
+
+                /// Keep double-quoted projection aliases of the CTE body case-sensitive on this reference.
+                if (scope.isStandardMode())
+                    installMaterializedCTECaseSensitivePins(*table_node, materialized_cte_ptr, table_node->getMaterializedCTESubquery());
             }
 
             inlineViewSubqueryIfNeeded(join_tree_node, scope);

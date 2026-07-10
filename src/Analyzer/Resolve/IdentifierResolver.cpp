@@ -516,13 +516,14 @@ std::pair<String, String> IdentifierResolver::tryGetTableNameHint(const Identifi
 
 /// Resolve identifier from compound expression
 /// If identifier cannot be resolved throw exception or return nullptr if can_be_not_found is true
-QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
+QueryTreeNodePtr tryResolveIdentifierFromCompoundExpressionWithFoldMask(const Identifier & expression_identifier,
     size_t identifier_bind_size,
     const QueryTreeNodePtr & compound_expression,
     String compound_expression_source,
     IdentifierResolveScope & scope,
     bool can_be_not_found,
-    bool fold_subcolumn_case_insensitively)
+    bool fold_subcolumn_case_insensitively,
+    const std::vector<bool> * suffix_fold_mask)
 {
     Identifier compound_expression_identifier;
     for (size_t i = 0; i < identifier_bind_size; ++i)
@@ -536,16 +537,23 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
     String nested_path_full = String(nested_path.getFullName());
     bool found = expression_type->hasSubcolumn(nested_path_full);
 
+    /// The mask is usable only when it aligns with the suffix's dot-components — a quoted part
+    /// that itself contains '.' breaks the alignment, so fall back to the uniform flag then.
+    if (suffix_fold_mask && suffix_fold_mask->size() != splitSubcolumnPathComponents(nested_path_full).size())
+        suffix_fold_mask = nullptr;
+
     /// In `standard` mode, an unquoted suffix must also match a subcolumn whose canonical name
     /// differs only by case (e.g. `data.name` on a `Tuple(Name String)`). Tuple/Variant subcolumns
     /// inside `IDataType` are looked up by exact string, so we canonicalize the suffix here.
-    if (!found && fold_subcolumn_case_insensitively)
+    /// With a per-part mask (mixed quoting like `"Foo".bar`) each component folds independently.
+    if (!found && (fold_subcolumn_case_insensitively || suffix_fold_mask))
     {
         String lower_suffix = Poco::toLower(nested_path_full);
         String matched;
         for (const auto & candidate : expression_type->getSubcolumnNames())
         {
-            if (Poco::toLower(candidate) != lower_suffix)
+            if (suffix_fold_mask ? !subcolumnComponentsMatchWithFoldMask(candidate, nested_path_full, *suffix_fold_mask, 0)
+                                 : Poco::toLower(candidate) != lower_suffix)
                 continue;
             if (!matched.empty() && matched != candidate)
                 throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
@@ -593,6 +601,19 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(
     }
 
     return wrapExpressionNodeInSubcolumn(compound_expression, nested_path_full, scope.context);
+}
+
+QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromCompoundExpression(const Identifier & expression_identifier,
+    size_t identifier_bind_size,
+    const QueryTreeNodePtr & compound_expression,
+    String compound_expression_source,
+    IdentifierResolveScope & scope,
+    bool can_be_not_found,
+    bool fold_subcolumn_case_insensitively)
+{
+    return tryResolveIdentifierFromCompoundExpressionWithFoldMask(
+        expression_identifier, identifier_bind_size, compound_expression, std::move(compound_expression_source),
+        scope, can_be_not_found, fold_subcolumn_case_insensitively, /*suffix_fold_mask=*/nullptr);
 }
 
 /** Resolve identifier from expression arguments.
@@ -643,10 +664,12 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromExpressionAr
     if (!resolve_full_identifier && identifier_lookup.identifier.isCompound() && identifier_lookup.isExpressionLookup())
     {
         /// Fold suffix case-insensitively only when every suffix part of the lookup was unquoted in `standard` mode.
+        /// Mixed per-part quoting (e.g. `x."Foo".bar`) folds component-by-component via the mask.
         const bool suffix_case_insensitive = identifier_lookup.arePartsCaseInsensitiveFrom(1, standard_mode);
-        if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpression(
+        const auto suffix_fold_mask = identifier_lookup.partFoldMaskFrom(1, standard_mode);
+        if (auto resolved_identifier = tryResolveIdentifierFromCompoundExpressionWithFoldMask(
                 identifier_lookup.identifier, 1 /*identifier_bind_size*/, it->second, {}, scope,
-                /*can_be_not_found=*/false, suffix_case_insensitive))
+                /*can_be_not_found=*/false, suffix_case_insensitive, suffix_fold_mask.empty() ? nullptr : &suffix_fold_mask))
             return { .resolved_identifier = resolved_identifier, .resolve_place = IdentifierResolvePlace::EXPRESSION_ARGUMENTS };
         return {};
     }
@@ -712,8 +735,10 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     const bool full_name_case_insensitive = standard_mode && !identifier_lookup.anyPartDoubleQuoted();
     /// Subcolumn base keys off the first part of the lookup (the tuple/struct column); a
     /// double-quoted suffix like `data."Name"` stays case-sensitive even when the base folds.
+    /// Mixed per-part quoting (e.g. `data."Foo".bar`) folds component-by-component via the mask.
     const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(0, standard_mode);
     const bool subcolumn_suffix_case_insensitive = identifier_lookup.arePartsCaseInsensitiveFrom(1, standard_mode);
+    const auto subcolumn_fold_mask = identifier_lookup.partFoldMaskFrom(0, standard_mode);
 
     const auto & node_map = scope.table_expression_data_for_alias_resolution->getColumnNodeMap();
     if (full_name_case_insensitive)
@@ -733,7 +758,9 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierFromTableColumns(const 
     /// Check if it's a subcolumn
     if (auto subcolumn_info = scope.table_expression_data_for_alias_resolution->tryGetSubcolumnInfo(
             identifier_full_name,
-            {.fold_base = subcolumn_base_case_insensitive, .fold_suffix = subcolumn_suffix_case_insensitive},
+            {.fold_base = subcolumn_base_case_insensitive,
+             .fold_suffix = subcolumn_suffix_case_insensitive,
+             .part_fold_mask = subcolumn_fold_mask.empty() ? nullptr : &subcolumn_fold_mask},
             [&] { return scope.scope_node->formatASTForErrorMessage(); }))
     {
         /// Don't read subcolumn of aliases directly, only using getSubcolumn,
@@ -914,8 +941,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     /// `data."Name"` matches an unquoted base column `Data` while the quoted tuple field `Name` stays
     /// case-sensitive. The suffix flag covers parts beyond the base — a double-quoted suffix part
     /// must pin the fallback case-sensitively even when the base was unquoted.
+    /// Mixed per-part quoting (e.g. `data."Foo".bar`) folds component-by-component via the mask.
     const bool subcolumn_base_case_insensitive = identifier_lookup.isPartCaseInsensitive(identifier_qualifier_parts, standard_mode);
     const bool subcolumn_suffix_case_insensitive = identifier_lookup.arePartsCaseInsensitiveFrom(identifier_qualifier_parts + 1, standard_mode);
+    const auto subcolumn_fold_mask = identifier_lookup.partFoldMaskFrom(identifier_qualifier_parts, standard_mode);
 
     const auto & node_map = table_expression_data.getColumnNodeMap();
     if (use_case_insensitive)
@@ -936,7 +965,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromStorage(
     {
         if (auto subcolumn_info = table_expression_data.tryGetSubcolumnInfo(
                 identifier_full_name,
-                {.fold_base = subcolumn_base_case_insensitive, .fold_suffix = subcolumn_suffix_case_insensitive},
+                {.fold_base = subcolumn_base_case_insensitive,
+                 .fold_suffix = subcolumn_suffix_case_insensitive,
+                 .part_fold_mask = subcolumn_fold_mask.empty() ? nullptr : &subcolumn_fold_mask},
                 [&] { return scope.scope_node->formatASTForErrorMessage(); }))
         {
             /// Don't read subcolumn of aliases directly, only using getSubcolumn,
@@ -1246,6 +1277,25 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
     return JoinTableSide::Left;
 }
 
+/// Exact-first requires the whole reference to be byte-exact: for a compound reference the
+/// qualifier (source alias or table name) must also match the first part without case folding.
+static bool resolvedColumnMatchesLookupExactly(const ColumnNode & column, const Identifier & identifier)
+{
+    if (column.getColumnName() != identifier.back())
+        return false;
+    if (identifier.isShort())
+        return true;
+
+    auto source = column.getColumnSourceOrNull();
+    if (!source)
+        return false;
+    if (!source->getAlias().empty())
+        return source->getAlias() == identifier.front();
+    if (const auto * table_node = source->as<TableNode>())
+        return table_node->getStorageID().getTableName() == identifier.front();
+    return false;
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
     const QueryTreeNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -1295,8 +1345,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         {
             const auto * first_column = resolve_result.resolved_identifier->as<ColumnNode>();
             const auto * second_column = identifier.resolved_identifier->as<ColumnNode>();
-            const bool first_exact = first_column && first_column->getColumnName() == identifier_lookup.identifier.back();
-            const bool second_exact = second_column && second_column->getColumnName() == identifier_lookup.identifier.back();
+            const bool first_exact = first_column && resolvedColumnMatchesLookupExactly(*first_column, identifier_lookup.identifier);
+            const bool second_exact = second_column && resolvedColumnMatchesLookupExactly(*second_column, identifier_lookup.identifier);
             if (scope.isStandardMode() && first_exact != second_exact)
             {
                 /// Exact-first across cross-join sides: the exact spelling wins over a folded match.
@@ -1607,7 +1657,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         auto & resolved_column = resolved_identifier_candidate->as<ColumnNode &>();
         auto using_column_node_it = using_column_name_to_column_node.find(resolved_column.getColumnName());
         /// Folded USING key: the clause spelling can be a case-sibling of the resolved name.
-        /// Accept an entry only when this side's participant is the resolved column itself.
+        /// Accept an entry only when any of its participants is the resolved column itself.
         if (using_column_node_it == using_column_name_to_column_node.end() && current_scope.isStandardMode())
         {
             for (auto it = using_column_name_to_column_node.begin(); it != using_column_name_to_column_node.end(); ++it)
@@ -1615,13 +1665,13 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
                 if (Poco::icompare(it->first, resolved_column.getColumnName()) != 0)
                     continue;
                 const auto & participants = it->second->as<ColumnNode &>().getExpressionOrThrow()->as<const ListNode &>().getNodes();
-                auto is_this_side_participant = [&](const QueryTreeNodePtr & participant)
+                auto is_resolved_column_participant = [&](const QueryTreeNodePtr & participant)
                 {
                     const auto * participant_column = participant->as<ColumnNode>();
                     return participant_column && participant_column->getColumnName() == resolved_column.getColumnName()
                         && participant_column->getColumnSource() == resolved_column.getColumnSource();
                 };
-                if (std::ranges::any_of(participants, is_this_side_participant))
+                if (std::ranges::any_of(participants, is_resolved_column_participant))
                 {
                     using_column_node_it = it;
                     break;
@@ -1681,26 +1731,27 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             auto & left_resolved_column = left_resolved_identifier->as<ColumnNode &>();
             auto & right_resolved_column = right_resolved_identifier->as<ColumnNode &>();
 
-            /// Folded USING key: use the entry whose per-side participants are exactly the
-            /// resolved columns — a mere case-sibling of the key must keep its own resolution.
+            /// Folded USING key: use the entry whose participants include both resolved columns —
+            /// a mere case-sibling of the key must keep its own resolution.
             auto find_folded_using_entry = [&]()
             {
+                auto matches_resolved = [](const QueryTreeNodePtr & participant, const ColumnNode & resolved_column)
+                {
+                    const auto * participant_column = participant->as<ColumnNode>();
+                    return participant_column && participant_column->getColumnName() == resolved_column.getColumnName()
+                        && participant_column->getColumnSource() == resolved_column.getColumnSource();
+                };
                 for (auto it = join_using_column_name_to_column_node.begin(); it != join_using_column_name_to_column_node.end(); ++it)
                 {
                     if (Poco::icompare(it->first, left_resolved_column.getColumnName()) != 0)
                         continue;
+                    /// Chained joins flatten more than two participants into the USING column node,
+                    /// so scan them all: one must be the left resolved column and one the right.
                     const auto & participants = it->second->as<ColumnNode &>().getExpressionOrThrow()->as<ListNode &>().getNodes();
-                    if (participants.size() != 2)
-                        continue;
-                    const auto * left_participant = participants[0]->as<ColumnNode>();
-                    const auto * right_participant = participants[1]->as<ColumnNode>();
-                    if (!left_participant || !right_participant
-                        || left_participant->getColumnName() != left_resolved_column.getColumnName()
-                        || right_participant->getColumnName() != right_resolved_column.getColumnName()
-                        || left_participant->getColumnSource() != left_resolved_column.getColumnSource()
-                        || right_participant->getColumnSource() != right_resolved_column.getColumnSource())
-                        continue;
-                    return it;
+                    const bool left_found = std::ranges::any_of(participants, [&](const auto & p) { return matches_resolved(p, left_resolved_column); });
+                    const bool right_found = std::ranges::any_of(participants, [&](const auto & p) { return matches_resolved(p, right_resolved_column); });
+                    if (left_found && right_found)
+                        return it;
                 }
                 return join_using_column_name_to_column_node.end();
             };
@@ -1731,22 +1782,26 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
 
         }
 
+        bool left_exact = false;
+        bool right_exact = false;
+        if (scope.isStandardMode()
+            && left_resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN
+            && right_resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN)
+        {
+            left_exact = resolvedColumnMatchesLookupExactly(left_resolved_identifier->as<ColumnNode &>(), identifier_lookup.identifier);
+            right_exact = resolvedColumnMatchesLookupExactly(right_resolved_identifier->as<ColumnNode &>(), identifier_lookup.identifier);
+        }
+
         if (using_column_node_it != join_using_column_name_to_column_node.end())
         {
             const auto & using_column_node = using_column_node_it->second->as<const ColumnNode &>();
             resolved_identifier = createProjectionForUsing(using_column_node, join_kind, scope);
         }
-        else if (scope.isStandardMode()
-            && left_resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN
-            && right_resolved_identifier->getNodeType() == QueryTreeNodeType::COLUMN
-            && (left_resolved_identifier->as<ColumnNode &>().getColumnName() == identifier_lookup.identifier.back())
-                != (right_resolved_identifier->as<ColumnNode &>().getColumnName() == identifier_lookup.identifier.back()))
+        else if (left_exact != right_exact)
         {
             /// Exact-first across join sides: the side matching the reference spelling exactly
             /// wins over the side that matched only by case folding.
-            resolved_identifier = left_resolved_identifier->as<ColumnNode &>().getColumnName() == identifier_lookup.identifier.back()
-                ? left_resolved_identifier
-                : right_resolved_identifier;
+            resolved_identifier = left_exact ? left_resolved_identifier : right_resolved_identifier;
         }
         else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {
@@ -2051,16 +2106,19 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
         }
 
         /// Resolve subcolumns. Example : SELECT x.y.z FROM tab ARRAY JOIN arr AS x
+        /// Mixed per-part quoting (e.g. `x."Foo".bar`) folds component-by-component via the mask.
         const size_t bind_size = identifier_lookup.identifier.getPartsSize() - identifier_view.getPartsSize();
         const bool suffix_case_insensitive = identifier_lookup.arePartsCaseInsensitiveFrom(bind_size, standard_mode);
-        auto compound_expr = tryResolveIdentifierFromCompoundExpression(
+        const auto suffix_fold_mask = identifier_lookup.partFoldMaskFrom(bind_size, standard_mode);
+        auto compound_expr = tryResolveIdentifierFromCompoundExpressionWithFoldMask(
             identifier_lookup.identifier,
             bind_size,
             array_join_column,
             {} /* compound_expression_source */,
             scope,
             true /* can_be_not_found */,
-            suffix_case_insensitive);
+            suffix_case_insensitive,
+            suffix_fold_mask.empty() ? nullptr : &suffix_fold_mask);
 
         if (compound_expr)
             return { .resolved_identifier = compound_expr, .resolve_place = IdentifierResolvePlace::JOIN_TREE };

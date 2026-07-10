@@ -13,6 +13,20 @@ ASTWithAlias::~ASTWithAlias() = default;
 ASTWithAlias::ASTWithAlias(const ASTWithAlias &) = default;
 ASTWithAlias & ASTWithAlias::operator=(const ASTWithAlias &) = default;
 
+/// A non-pinned alias must not be rendered with presentation-level double quotes:
+/// `"x"` would pin exact case on reparse in `standard` mode, so divert to backticks.
+static void writeAliasNotPinned(const String & name, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings)
+{
+    if (settings.identifier_quoting_style == IdentifierQuotingStyle::DoubleQuotes)
+    {
+        ASTWithAlias::FormatSettings backtick_settings = settings;
+        backtick_settings.identifier_quoting_style = IdentifierQuotingStyle::Backticks;
+        backtick_settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+    }
+    else
+        settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+}
+
 static void writeAlias(const String & name, bool name_is_double_quoted, WriteBuffer & ostr, const ASTWithAlias::FormatSettings & settings)
 {
     ostr << " AS ";
@@ -20,7 +34,7 @@ static void writeAlias(const String & name, bool name_is_double_quoted, WriteBuf
     if (name_is_double_quoted)
         writeDoubleQuotedString(name, ostr);
     else
-        settings.writeIdentifier(ostr, name, /*ambiguous=*/false);
+        writeAliasNotPinned(name, ostr, settings);
 }
 
 
@@ -33,7 +47,7 @@ void ASTWithAlias::formatImpl(WriteBuffer & ostr, const FormatSettings & setting
         if (alias_is_double_quoted)
             writeDoubleQuotedString(alias, ostr);
         else
-            settings.writeIdentifier(ostr, alias, /*ambiguous=*/false);
+            writeAliasNotPinned(alias, ostr, settings);
     }
     else if (frame.parenthesize_alias_inner_only && !alias.empty())
     {

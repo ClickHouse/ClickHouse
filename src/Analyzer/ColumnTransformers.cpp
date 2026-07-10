@@ -254,17 +254,32 @@ void canonicalizeTargetsImpl(
     std::vector<bool> target_was_rewritten(targets.size(), false);
     for (size_t i = 0; i < targets.size(); ++i)
     {
+        const bool multi_part = i < target_parts.size() && target_parts[i].size() > 1;
         const bool quoted = i < target_parts_double_quoted.size()
             && std::any_of(target_parts_double_quoted[i].begin(), target_parts_double_quoted[i].end(), [](bool q) { return q; });
-        if (quoted)
+        /// A quoted single-part target is fully pinned; a multi-part target still folds its unquoted parts.
+        if (quoted && !multi_part)
             continue;
         auto & target = targets[i];
         if (std::find(visible_column_names.begin(), visible_column_names.end(), target) != visible_column_names.end())
             continue;
         Names folded_matches;
-        for (const auto & column_name : visible_column_names)
-            if (Poco::icompare(column_name, target) == 0)
-                folded_matches.push_back(column_name);
+        if (multi_part)
+        {
+            /// Per-part matching: unquoted parts fold, double-quoted parts stay exact, and the
+            /// visible column name must split into the same number of dot-parts.
+            static const std::vector<bool> no_quotes;
+            const auto & per_part_quote = i < target_parts_double_quoted.size() ? target_parts_double_quoted[i] : no_quotes;
+            for (const auto & column_name : visible_column_names)
+                if (targetMatchesColumnName(target_parts[i], per_part_quote, column_name))
+                    folded_matches.push_back(column_name);
+        }
+        else
+        {
+            for (const auto & column_name : visible_column_names)
+                if (Poco::icompare(column_name, target) == 0)
+                    folded_matches.push_back(column_name);
+        }
         if (folded_matches.size() > 1)
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "Column transformer target '{}' is ambiguous: matches columns with different cases: '{}' and '{}'",
@@ -275,7 +290,9 @@ void canonicalizeTargetsImpl(
             target_was_rewritten[i] = true;
             /// Keep the parsed parts consistent: clone rebuilds names from parts, and equality
             /// compares parts, so hash/equality/clone must all see the canonical spelling.
-            if (i < target_parts.size() && target_parts[i].size() == 1)
+            if (multi_part)
+                target_parts[i] = Identifier(target).getParts();
+            else if (i < target_parts.size() && target_parts[i].size() == 1)
                 target_parts[i][0] = target;
         }
     }

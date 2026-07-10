@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/Names.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <base/defines.h>
 
@@ -79,6 +80,9 @@ struct MaterializedCTE
     const bool name_is_double_quoted;
     /// Temporary table name
     const std::string temporary_table_name;
+    /// Sorted projection names pinned case-sensitive in `standard` mode (double-quoted aliases in the
+    /// CTE body). Persisted at first resolution; installed on every referencing `TableNode` clone.
+    Names case_sensitive_column_names = {};
     /// Query Plan for the CTE
     std::unique_ptr<QueryPlan> plan = {};
     /// If true, query plan is built for the CTE (i.e. the table is being populated, but is not ready for reads yet).
