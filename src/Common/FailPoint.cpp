@@ -229,7 +229,9 @@ static struct InitFiu
     REGULAR(tcp_handler_fail_connection_setup) \
     REGULAR(distributed_plan_status_check_reenqueue_fault) \
     ONCE(zk_send_thread_request_window_throw) \
-    ONCE(zk_send_thread_operations_insert_throw)
+    ONCE(zk_send_thread_operations_insert_throw) \
+    PAUSEABLE_ONCE(distinct_transform_pause) \
+    PAUSEABLE_ONCE(distinct_transform_lc_pause)
 
 namespace FailPoints
 {

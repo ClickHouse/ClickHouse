@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -64,6 +65,8 @@ void DistinctTransform::buildFilter(
     SetVariants & variants,
     const IColumn::Filter * mask) const
 {
+    FailPointInjection::pauseFailPoint("distinct_transform_pause");
+
     typename Method::State state(columns, key_sizes, nullptr);
 
     if (mask)
@@ -108,6 +111,8 @@ void DistinctTransform::buildFilter(
 
 std::pair<IColumn::Filter, size_t> DistinctTransform::buildLowCardinalityMask(const ColumnLowCardinality & column, size_t num_rows)
 {
+    FailPointInjection::pauseFailPoint("distinct_transform_lc_pause");
+
     const auto & dictionary = column.getDictionary();
     const auto dict_size = dictionary.size();
 
