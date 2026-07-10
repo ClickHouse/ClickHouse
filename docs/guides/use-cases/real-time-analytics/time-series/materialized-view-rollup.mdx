@@ -1,0 +1,246 @@
+---
+title: 'Build a rollup with materialized views for fast time-series analytics'
+slug: /knowledgebase/materialized-view-rollup-timeseries
+description: 'End-to-end example creating a raw events table, a rollup table, and a materialized view for low-latency analytics.'
+keywords: ['materialized view', 'rollup', 'aggregate', 'timeseries', 'tutorial']
+doc_type: 'guide'
+---
+
+> This tutorial shows you how to maintain pre-aggregated roll-ups from a high-volume events table using [**materialized views**](/concepts/features/materialized-views/index).
+You’ll create three objects: a raw table, a rollup table, and the materialized view that writes into the rollup automatically.
+
+## When to use this pattern {#when-to-use}
+Use this pattern when:
+- You have an **append-only events stream** (clicks, pageviews, IoT, logs).
+- Most queries are **aggregations** over time ranges (per minute/hour/day).
+- You want **consistent sub-second reads** without re-scanning all raw rows.
+
+<Steps>
+<Step>
+## Create the raw events table {#create-raw-events-table}
+```sql
+CREATE TABLE events_raw
+(
+    event_time   DateTime,
+    user_id      UInt64,
+    country      LowCardinality(String),
+    event_type   LowCardinality(String),
+    value        Float64
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(event_time)
+ORDER BY (event_time, user_id)
+TTL event_time + INTERVAL 90 DAY DELETE
+```
+
+**Notes**
+
+- `PARTITION BY toYYYYMM(event_time)` keeps partitions small and easy to drop.
+- `ORDER BY (event_time, user_id)` supports time-bounded queries + secondary filter.
+- `LowCardinality(String)` saves memory for categorical dimensions.
+- `TTL` cleans up raw data after 90 days (tune to your retention requirements).
+</Step>
+<Step>
+## Design the rollup (aggregated) table {#design-rollup}
+We’ll pre-aggregate to **hourly** granularity.
+Choose your grain to match the most common analysis window.
+
+```sql
+CREATE TABLE events_rollup_1h
+(
+    bucket_start  DateTime,            -- start of the hour
+    country       LowCardinality(String),
+    event_type    LowCardinality(String),
+    users_uniq    AggregateFunction(uniqExact, UInt64),
+    value_sum     AggregateFunction(sum, Float64),
+    value_avg     AggregateFunction(avg, Float64),
+    events_count  AggregateFunction(count)
+)
+ENGINE = AggregatingMergeTree
+PARTITION BY toYYYYMM(bucket_start)
+ORDER BY (bucket_start, country, event_type)
+```
+
+We store **aggregate states** (e.g., `AggregateFunction(sum, ...)`) which compactly represent partial aggregates and can be merged or finalized later.
+</Step>
+<Step>
+## Create a materialized view that populates the rollup {#create-materialized-view-to-populate-rollup}
+This materialized view fires automatically on inserts into `events_raw` and writes **aggregate states** into the rollup.
+
+```sql
+CREATE MATERIALIZED VIEW mv_events_rollup_1h
+TO events_rollup_1h
+AS
+SELECT
+    toStartOfHour(event_time) AS bucket_start,
+    country,
+    event_type,
+    uniqExactState(user_id)   AS users_uniq,
+    sumState(value)           AS value_sum,
+    avgState(value)           AS value_avg,
+    countState()              AS events_count
+FROM events_raw
+GROUP BY bucket_start, country, event_type;
+```
+</Step>
+<Step>
+## Insert some sample data {#insert-some-sample-data}
+Insert some sample data:
+
+```sql
+INSERT INTO events_raw VALUES
+    (now() - INTERVAL 4 SECOND, 101, 'US', 'view', 1),
+    (now() - INTERVAL 3 SECOND, 101, 'US', 'click', 1),
+    (now() - INTERVAL 2 SECOND, 202, 'DE', 'view', 1),
+    (now() - INTERVAL 1 SECOND, 101, 'US', 'view', 1);
+```
+</Step>
+<Step>
+## Querying the rollup {#querying-the-rollup}
+You can either **merge** states at read time, or **finalize** them:
+
+<Tabs>
+  <Tab title="Merge at read time">
+
+```sql
+SELECT
+    bucket_start,
+    country,
+    event_type,
+    uniqExactMerge(users_uniq) AS users,
+    sumMerge(value_sum)        AS value_sum,
+    avgMerge(value_avg)        AS value_avg,
+    countMerge(events_count)   AS events
+FROM events_rollup_1h
+WHERE bucket_start >= now() - INTERVAL 1 DAY
+GROUP BY ALL
+ORDER BY bucket_start, country, event_type;
+```
+
+  </Tab>
+  <Tab title="Finalize with -Final">
+
+```sql
+SELECT
+    bucket_start,
+    country,
+    event_type,
+    uniqExactMerge(users_uniq) AS users,
+    sumMerge(value_sum)        AS value_sum,
+    avgMerge(value_avg)        AS value_avg,
+    countMerge(events_count)   AS events
+FROM events_rollup_1h
+WHERE bucket_start >= now() - INTERVAL 1 DAY
+GROUP BY ALL
+ORDER BY bucket_start, country, event_type
+SETTINGS final = 1;  -- or use SELECT ... FINAL
+```
+
+  </Tab>
+</Tabs>
+
+<br/>
+<Tip>
+If you expect reads to always hit the rollup, you can create a **second materialized view** that writes *finalized* numbers to a “plain” `MergeTree` table at the same 1h grain.
+States give more flexibility while finalized numbers give slightly simpler reads.
+</Tip>
+</Step>
+<Step>
+## Filter on fields in the primary key for best performance {#filtering-performance}
+You can use the `EXPLAIN` command to see how the index is used to prune data:
+
+```sql title="Query"
+EXPLAIN indexes=1
+SELECT *
+FROM events_rollup_1h
+WHERE bucket_start BETWEEN now() - INTERVAL 3 DAY AND now()
+  AND country = 'US';
+```
+
+```response title="Response"
+        ┌─explain────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+    1.  │ Expression ((Project names + Projection))                                                                                          │
+    2.  │   Expression                                                                                                                       │
+    3.  │     ReadFromMergeTree (default.events_rollup_1h)                                                                                   │
+    4.  │     Indexes:                                                                                                                       │
+    5.  │       MinMax                                                                                                                       │
+    6.  │         Keys:                                                                                                                      │
+    7.  │           bucket_start                                                                                                             │
+    8.  │         Condition: and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))                                 │
+    9.  │         Parts: 1/1                                                                                                                 │
+    10. │         Granules: 1/1                                                                                                              │
+    11. │       Partition                                                                                                                    │
+    12. │         Keys:                                                                                                                      │
+    13. │           toYYYYMM(bucket_start)                                                                                                   │
+    14. │         Condition: and((toYYYYMM(bucket_start) in (-Inf, 202509]), (toYYYYMM(bucket_start) in [202509, +Inf)))                     │
+    15. │         Parts: 1/1                                                                                                                 │
+    16. │         Granules: 1/1                                                                                                              │
+    17. │       PrimaryKey                                                                                                                   │
+    18. │         Keys:                                                                                                                      │
+    19. │           bucket_start                                                                                                             │
+    20. │           country                                                                                                                  │
+    21. │         Condition: and((country in ['US', 'US']), and((bucket_start in (-Inf, 1758550242]), (bucket_start in [1758291042, +Inf)))) │
+    22. │         Parts: 1/1                                                                                                                 │
+    23. │         Granules: 1/1                                                                                                              │
+        └────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+The query execution plan above shows three types of indexes being used:
+a MinMax index, a partition index, and a primary key Index.
+Each index makes use of fields specified in our primary key: `(bucket_start, country, event_type)`.
+For best filtering performance you will want to make sure that your queries are making use of primary key fields to prune data.
+</Step>
+<Step>
+## Common variations {#common-variations}
+- **Different grains**: add a daily rollup:
+
+```sql
+CREATE TABLE events_rollup_1d
+(
+    bucket_start Date,
+    country      LowCardinality(String),
+    event_type   LowCardinality(String),
+    users_uniq   AggregateFunction(uniqExact, UInt64),
+    value_sum    AggregateFunction(sum, Float64),
+    value_avg    AggregateFunction(avg, Float64),
+    events_count AggregateFunction(count)
+)
+ENGINE = AggregatingMergeTree
+PARTITION BY toYYYYMM(bucket_start)
+ORDER BY (bucket_start, country, event_type);
+```
+
+Then a second materialized view:
+
+```sql
+CREATE MATERIALIZED VIEW mv_events_rollup_1d
+TO events_rollup_1d
+AS
+SELECT
+    toDate(event_time) AS bucket_start,
+    country,
+    event_type,
+    uniqExactState(user_id),
+    sumState(value),
+    avgState(value),
+    countState()
+FROM events_raw
+GROUP BY ALL;
+```
+
+- **Compression**: apply codecs to big columns (example: `Codec(ZSTD(3))`) on the raw table.
+- **Cost control**: push heavy retention to the raw table and keep long-lived roll-ups.
+- **Backfilling**: when loading historical data, insert into `events_raw` and let the materialized view build roll-ups automatically. For existing rows, use `POPULATE` on materialized view creation if suitable, or `INSERT SELECT`.
+</Step>
+<Step>
+## Clean-up and retention {#clean-up-and-retention}
+- Increase raw TTL (e.g., 30/90 days) but keep roll-ups for longer (e.g., 1 year).
+- You can also use **TTL to move** old parts to cheaper storage if tiering is enabled.
+</Step>
+<Step>
+## Troubleshooting {#troubleshooting}
+- Materialized view not updating? Check that inserts go to the **events_raw** (not the roll-up table), and that the materialized view target is correct (`TO events_rollup_1h`).
+- Slow queries? Confirm they hit the rollup (query the rollup table directly) and that the time filters align to the rollup grain.
+- Backfill mismatches? Use `SYSTEM FLUSH LOGS` and check `system.query_log` / `system.parts` to confirm inserts and merges.
+</Step>
+</Steps>

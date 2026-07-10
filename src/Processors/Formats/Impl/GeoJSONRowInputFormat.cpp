@@ -91,12 +91,15 @@ String readStrictJSONNumberText(ReadBuffer & buf)
 
 /// Read a coordinate number using the strict JSON grammar and return it as `Float64`, additionally
 /// rejecting values that overflow `Float64` to a non-finite result (e.g. a huge exponent like `1e400`).
-Float64 readStrictJSONNumber(ReadBuffer & buf)
+Float64 readStrictJSONNumber(ReadBuffer & buf, bool precise_float_parsing)
 {
     String number = readStrictJSONNumberText(buf);
     Float64 result = 0;
     ReadBufferFromString number_buf(number);
-    readFloatText(result, number_buf);
+    if (precise_float_parsing)
+        readFloatTextPrecise(result, number_buf);
+    else
+        readFloatImpreciseForCompatibility(result, number_buf);
     if (!std::isfinite(result))
         throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: coordinate value is not finite");
     return result;
@@ -105,13 +108,13 @@ Float64 readStrictJSONNumber(ReadBuffer & buf)
 /// Read a GeoJSON position `[lon, lat, ...]` and return it as `(lon, lat)`. Any extra coordinates
 /// (such as an altitude) are read and discarded. When `lon_col`/`lat_col` are provided the position is
 /// appended to them directly; otherwise it is only read and validated.
-std::pair<Float64, Float64> readGeoJSONPosition(ReadBuffer & buf, ColumnFloat64 * lon_col, ColumnFloat64 * lat_col)
+std::pair<Float64, Float64> readGeoJSONPosition(ReadBuffer & buf, ColumnFloat64 * lon_col, ColumnFloat64 * lat_col, bool precise_float_parsing)
 {
     JSONUtils::skipArrayStart(buf);
 
-    Float64 lon = readStrictJSONNumber(buf);
+    Float64 lon = readStrictJSONNumber(buf, precise_float_parsing);
     JSONUtils::skipComma(buf);
-    Float64 lat = readStrictJSONNumber(buf);
+    Float64 lat = readStrictJSONNumber(buf, precise_float_parsing);
 
     /// Any extra position elements (a third altitude coordinate, or more) are discarded, so they are
     /// validated only for JSON-number grammar, not finiteness: a valid but out-of-`Float64`-range value
@@ -158,7 +161,7 @@ enum class PositionArrayKind
 /// Read an array of positions `[[lon,lat],...]` and enforce the shape invariant for `kind`. When
 /// `array_col` (an `Array(Tuple(Float64, Float64))`) is provided, each position is appended to its
 /// nested tuple and one array offset is pushed; otherwise the positions are only read and validated.
-void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArrayKind kind, bool validate)
+void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArrayKind kind, bool validate, bool precise_float_parsing)
 {
     ColumnFloat64 * lon_col = nullptr;
     ColumnFloat64 * lat_col = nullptr;
@@ -175,7 +178,7 @@ void readGeoJSONPositions(ReadBuffer & buf, ColumnArray * array_col, PositionArr
     std::pair<Float64, Float64> last{};
     forEachElementInJSONArray(buf, [&]
     {
-        auto position = readGeoJSONPosition(buf, lon_col, lat_col);
+        auto position = readGeoJSONPosition(buf, lon_col, lat_col, precise_float_parsing);
         if (count == 0)
             first = position;
         last = position;
@@ -422,7 +425,7 @@ size_t readGeoJSONNestedArray(ReadBuffer & buf, ColumnArray * array_col, Element
 /// `sub_col` is null the coordinates are only read and validated. `Ring` is a synonym for `LineString`
 /// because it is part of the `Geometry` type, and `MultiPoint` is read in validation-only mode because
 /// it can be stored as NULL.
-void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, IColumn * sub_col, bool validate)
+void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, IColumn * sub_col, bool validate, bool precise_float_parsing)
 {
     if (geo_type == "Point")
     {
@@ -434,7 +437,7 @@ void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, ICo
             lon_col = &assert_cast<ColumnFloat64 &>(tuple_col.getColumn(0));
             lat_col = &assert_cast<ColumnFloat64 &>(tuple_col.getColumn(1));
         }
-        readGeoJSONPosition(buf, lon_col, lat_col);
+        readGeoJSONPosition(buf, lon_col, lat_col, precise_float_parsing);
         return;
     }
 
@@ -442,23 +445,23 @@ void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, ICo
 
     if (geo_type == "LineString" || geo_type == "Ring")
     {
-        readGeoJSONPositions(buf, array_col, PositionArrayKind::Line, validate);
+        readGeoJSONPositions(buf, array_col, PositionArrayKind::Line, validate, precise_float_parsing);
     }
     else if (geo_type == "MultiPoint")
     {
-        readGeoJSONPositions(buf, array_col, PositionArrayKind::MultiPoint, validate);
+        readGeoJSONPositions(buf, array_col, PositionArrayKind::MultiPoint, validate, precise_float_parsing);
     }
     else if (geo_type == "MultiLineString")
     {
         /// A `MultiLineString` is an array of lines.
-        const size_t lines = readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * line_col) { readGeoJSONPositions(buf, line_col, PositionArrayKind::Line, validate); });
+        const size_t lines = readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * line_col) { readGeoJSONPositions(buf, line_col, PositionArrayKind::Line, validate, precise_float_parsing); });
         if (validate && lines == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a MultiLineString must have at least one LineString");
     }
     else if (geo_type == "Polygon")
     {
         /// A `Polygon` is an array of rings.
-        const size_t rings = readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring, validate); });
+        const size_t rings = readGeoJSONNestedArray(buf, array_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring, validate, precise_float_parsing); });
         if (validate && rings == 0)
             throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon must have at least one ring");
     }
@@ -467,7 +470,7 @@ void parseGeometryCoordinatesInto(const String & geo_type, ReadBuffer & buf, ICo
         /// A `MultiPolygon` is an array of polygons, each an array of rings.
         auto read_polygon = [&](ColumnArray * polygon_col)
         {
-            const size_t rings = readGeoJSONNestedArray(buf, polygon_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring, validate); });
+            const size_t rings = readGeoJSONNestedArray(buf, polygon_col, [&](ColumnArray * ring_col) { readGeoJSONPositions(buf, ring_col, PositionArrayKind::Ring, validate, precise_float_parsing); });
             if (validate && rings == 0)
                 throw Exception(ErrorCodes::INCORRECT_DATA, "GeoJSON: a Polygon must have at least one ring");
         };
@@ -559,7 +562,7 @@ void validateGeoJSONGeometryMembers(
             "GeoJSON: geometry of type '{}' is missing the 'coordinates' member", geo_type);
 
     ReadBufferFromString coord_buf(raw_coordinates);
-    parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr, format_settings.geojson.validate_geometry);
+    parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr, format_settings.geojson.validate_geometry, format_settings.precise_float_parsing);
 }
 
 } /// anonymous namespace
@@ -904,7 +907,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
 
     if (!col)
     {
-        parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr, format_settings.geojson.validate_geometry);
+        parseGeometryCoordinatesInto(geo_type, coord_buf, nullptr, format_settings.geojson.validate_geometry, format_settings.precise_float_parsing);
         return;
     }
 
@@ -914,7 +917,7 @@ void GeoJSONRowInputFormat::readGeometry(IColumn * col)
     auto local_discr = variant_col.localDiscriminatorByGlobal(global_discr);
     size_t offset = sub_col.size();
 
-    parseGeometryCoordinatesInto(geo_type, coord_buf, &sub_col, format_settings.geojson.validate_geometry);
+    parseGeometryCoordinatesInto(geo_type, coord_buf, &sub_col, format_settings.geojson.validate_geometry, format_settings.precise_float_parsing);
     variant_col.getLocalDiscriminators().push_back(local_discr);
     variant_col.getOffsets().push_back(offset);
 }

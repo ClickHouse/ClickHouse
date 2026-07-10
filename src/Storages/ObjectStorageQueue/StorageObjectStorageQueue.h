@@ -32,6 +32,7 @@ public:
         const ConstraintsDescription & constraints_,
         const String & comment,
         ContextPtr context_,
+        bool allow_server_credentials_in_user_queries_,
         std::optional<FormatSettings> format_settings_,
         ASTStorage * engine_args,
         LoadingStrictnessLevel mode,
@@ -94,6 +95,13 @@ public:
         const std::string & path,
         ContextPtr local_context,
         std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) const;
+
+    /// Rebuild the object-storage S3 client under `context`, re-resolving credentials, without detaching the
+    /// table. Used by the server-internal log-pipeline bootstrap to re-apply the server-credential opt-in after
+    /// a restart loaded the table with a restricted (anonymous) client. Safe to call while streaming: the client
+    /// is hot-swapped (MultiVersion) and the running streaming task picks it up on its next object-storage
+    /// operation, so this avoids the `DETACH ... SYNC` that would otherwise block on the live table.
+    void rebuildObjectStorageClient(ContextPtr rebuild_context);
 
     /// Can setting be changed via ALTER TABLE MODIFY SETTING query.
     static bool isSettingChangeable(const std::string & name, ObjectStorageQueueMode mode);

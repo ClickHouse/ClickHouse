@@ -1,0 +1,179 @@
+---
+sidebarTitle: 'Rocket BI'
+slug: /integrations/rocketbi
+keywords: ['clickhouse', 'RocketBI', 'conectar', 'integrar', 'ui']
+description: 'RocketBI é uma plataforma de inteligência de negócios self-service que ajuda você a analisar dados rapidamente, criar visualizações com recurso de arrastar e soltar e colaborar com colegas diretamente no navegador.'
+title: 'Objetivo: criar seu primeiro dashboard com o Rocket.BI'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import CommunityMaintainedBadge from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+Neste guia, você vai instalar e criar um dashboard simples com o Rocket.BI.
+Este é o dashboard:
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_01.webp" alt="Dashboard do Rocket BI mostrando métricas de vendas com gráficos e KPIs" border />
+
+<br />
+
+Você pode conferir [o dashboard neste link.](https://demo.rocket.bi/dashboard/sales-dashboard-7?token=7eecf750-cbde-4c53-8fa8-8b905fec667e)
+
+<div id="install">
+  ## Instalação
+</div>
+
+Inicie o RocketBI com nossas imagens Docker prontas para uso.
+
+Obtenha o docker-compose.yml e o arquivo de configuração:
+
+```bash
+wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/docker-compose.yml
+wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.clickhouse.env
+```
+
+Edite o `.clickhouse.env` e adicione as informações do servidor ClickHouse.
+
+Inicie o RocketBI executando o comando: `docker-compose up -d .`
+
+Abra o navegador, acesse `localhost:5050` e faça login com esta conta: `hello@gmail.com/123456`
+
+Para compilar a partir do código-fonte ou usar uma configuração avançada, consulte [Rocket.BI Readme](https://github.com/datainsider-co/rocket-bi/blob/main/README.md)
+
+<div id="lets-build-the-dashboard">
+  ## Vamos criar o dashboard
+</div>
+
+No Dashboard, você encontrará seus relatórios. Para começar a visualizar, clique em **+New**
+
+Você pode criar **dashboards ilimitados** e gerar **gráficos ilimitados** em um dashboard.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_02.webp" alt="Animação mostrando o processo de criação de um novo gráfico no Rocket BI" border />
+
+<br />
+
+Veja o tutorial em alta resolução no YouTube: [https://www.youtube.com/watch?v=TMkdMHHfvqY](https://www.youtube.com/watch?v=TMkdMHHfvqY)
+
+<div id="build-the-chart-controls">
+  ### Configure os controles do gráfico
+</div>
+
+<div id="create-a-metrics-control">
+  #### Criar um controle de métricas
+</div>
+
+Na aba Filtro, selecione os campos de métrica que deseja usar. Certifique-se de manter a opção de agregação marcada.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_03.webp" alt="Painel de configuração do controle de métricas do Rocket BI mostrando os campos selecionados e as configurações de agregação" border />
+
+<br />
+
+Renomeie os filtros e salve o controle no dashboard
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="Controle de métricas com filtros renomeados pronto para ser salvo no dashboard" border />
+
+<div id="create-a-date-type-control">
+  #### Crie um controle do tipo data
+</div>
+
+Escolha um campo de data como coluna principal de data:
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_05.webp" alt="Interface de seleção de campo de data no Rocket BI mostrando as colunas de data disponíveis" border />
+
+<br />
+
+Adicione variantes duplicadas com diferentes granularidades. Por exemplo: anual, mensal, diária ou dia da semana.
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_06.webp" alt="Configuração de intervalo de datas mostrando diferentes opções de período, como ano, mês e dia" border />
+
+<br />
+
+Renomeie os filtros e salve o controle no dashboard
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_07.webp" alt="Controle de intervalo de datas com filtros renomeados pronto para ser salvo no dashboard" border />
+
+<div id="now-let-build-the-charts">
+  ### Agora, vamos criar os gráficos
+</div>
+
+<div id="pie-chart-sales-metrics-by-regions">
+  #### Gráfico de pizza: métricas de vendas por regiões
+</div>
+
+Escolha Adding new chart e, em seguida, Select Pie Chart
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="Painel de seleção do tipo de gráfico com a opção de gráfico de pizza destacada" border />
+
+<br />
+
+Primeiro, arraste e solte a coluna &quot;Region&quot; do Dataset no Legend Field
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="Interface de arrastar e soltar mostrando a coluna Region sendo adicionada ao campo de legenda" border />
+
+<br />
+
+Em seguida, mude para a guia Chart Control
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_10.webp" alt="Interface da guia Chart Control mostrando opções de configuração da visualização" border />
+
+<br />
+
+Arraste e solte o Metrics Control no Value Field
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="Metrics Control sendo adicionado ao campo de valor do gráfico de pizza" border />
+
+<br />
+
+(você também pode usar o Metrics Control para ordenação)
+
+Acesse Chart Setting para mais personalizações
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="Painel de configurações do gráfico mostrando opções de personalização para o gráfico de pizza" border />
+
+<br />
+
+Por exemplo, altere Data label para Percentage
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="Configurações do rótulo de dados sendo alteradas para mostrar porcentagens no gráfico de pizza" border />
+
+<br />
+
+Salve e adicione o gráfico ao dashboard
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="Visualização do dashboard mostrando o gráfico de pizza recém-adicionado com outros controles" border />
+
+<div id="use-date-control-in-a-time-series-chart">
+  #### Use o controle de data em um gráfico de série temporal
+</div>
+
+Vamos usar um gráfico de colunas empilhadas
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_15.webp" alt="Interface de criação de gráfico de colunas empilhadas com dados de série temporal" border />
+
+<br />
+
+No Chart Control, use o Metrics Control como eixo Y e o Date Range como eixo X
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_16.webp" alt="Configuração do controle do gráfico mostrando métricas no eixo Y e intervalo de datas no eixo X" border />
+
+<br />
+
+Adicione a coluna Region ao Breakdown
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_17.webp" alt="Coluna Region sendo adicionada como dimensão de detalhamento no gráfico de colunas empilhadas" border />
+
+<br />
+
+Adicione um gráfico de número como KPI e destaque mais o dashboard
+
+<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="Dashboard completo com gráficos numéricos de KPI, gráfico de pizza e visualização de série temporal" border />
+
+<br />
+
+Agora, você criou com sucesso seu primeiro dashboard com rocket.BI

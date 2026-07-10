@@ -1,0 +1,139 @@
+---
+sidebarTitle: 'アップグレード'
+slug: /manage/updates
+title: 'アップグレード'
+description: 'ClickHouse Cloud では、パッチの適用やアップグレードについて心配する必要はありません。修正、新機能、パフォーマンス向上を含むアップグレードを定期的に展開しています。'
+doc_type: 'guide'
+keywords: ['アップグレード', 'バージョン管理', 'クラウド機能', 'メンテナンス', '更新']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import ScalePlanFeatureBadge from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
+ClickHouse Cloud なら、パッチ適用やアップグレードを気にする必要はありません。修正、新機能、パフォーマンス向上を含むアップグレードを定期的に実施しています。ClickHouse の最新情報の一覧については、[Cloud changelog](/ja/resources/changelogs/cloud/2026)を参照してください。
+
+<Note>
+  現在、&quot;make before break&quot; (MBB) と呼ぶ新しいアップグレードの仕組みを導入しています。この新しい方式では、アップグレード中に古いレプリカを削除する前に、更新済みのレプリカを追加します。これにより、実行中のワークロードへの影響を抑えた、よりシームレスなアップグレードが可能になります。
+
+  この変更の一環として、過去のシステムテーブルデータは、アップグレードイベントに関連して最大 30 日間保持されます。さらに、新しい組織ティアへの移行に伴い、AWS または GCP 上のサービスでは 2024 年 12 月 19 日より前、Azure 上のサービスでは 2025 年 1 月 14 日より前のシステムテーブルデータは保持されません。
+</Note>
+
+<div id="version-compatibility">
+  ## バージョン互換性
+</div>
+
+サービスを作成すると、[`compatibility`](/ja/reference/settings/session-settings#compatibility) 設定には、そのサービスが初回プロビジョニングされた時点で ClickHouse Cloud が提供している最新の ClickHouse バージョンが設定されます。
+
+`compatibility` 設定を使用すると、以前のバージョンにおける設定のデフォルト値を利用できます。サービスが新しいバージョンにアップグレードされても、`compatibility` 設定で指定したバージョンは変わりません。つまり、サービスを最初に作成した時点で存在していた設定のデフォルト値は変わりません (すでにそれらのデフォルト値を上書きしている場合は、その値がアップグレード後も維持されます) 。
+
+サービスレベルのデフォルト `compatibility` 設定は管理できません。サービスのデフォルト `compatibility` 設定に設定されているバージョンを変更したい場合は、[サポートに問い合わせる](https://clickhouse.com/support/program)必要があります。ただし、セッションで `SET compatibility = '22.3'` を使用したり、クエリで `SETTINGS compatibility = '22.3'` を使用したりするなど、標準の ClickHouse 設定メカニズムを使って、ユーザー、ロール、profile、クエリ、またはセッションの各レベルで `compatibility` 設定を上書きできます。
+
+<div id="maintenance-mode">
+  ## メンテナンスモード
+</div>
+
+場合によっては、サービスを更新するために、スケーリングやアイドル状態への移行などの一部機能を無効にする必要があります。まれに、問題が発生しているサービスに対して措置を講じ、正常な状態に復旧させる必要が生じることもあります。このようなメンテナンス中は、サービスページに *「メンテナンス実施中」* と表示されたバナーが表示されます。この間も、クエリのためにサービスを利用できる場合があります。
+
+サービスがメンテナンス中の時間については課金されません。*メンテナンスモード* が発生するのはまれであり、通常のサービスアップグレードとは異なります。
+
+<div id="release-channels-upgrade-schedule">
+  ## リリースチャネル (アップグレードスケジュール)
+</div>
+
+ユーザーは、特定のリリースチャネルに登録することで、ClickHouse Cloud サービスのアップグレードスケジュールを指定できます。リリースチャネルは 3 種類あり、**スケジュールされたアップグレード** 機能を使用して、アップグレードを実施する曜日と時刻を設定できます。
+
+3 つのリリースチャネルは次のとおりです。
+
+* アップグレードに早期アクセスできる [**Fast リリースチャネル**](#fast-release-channel-early-upgrades)。
+* [**Regular リリースチャネル**](#regular-release-channel) はデフォルトのチャネルで、このチャネルでのアップグレードは Fast リリースチャネル のアップグレード開始から 2 週間後に始まります。Scale ティアおよび Enterprise ティアのサービスでリリースチャネルが設定されていない場合は、デフォルトで Regular リリースチャネル が適用されます。
+* [**Slow リリースチャネル**](#slow-release-channel-deferred-upgrades) は、アップグレードを遅らせたい場合のためのチャネルです。このチャネルでのアップグレードは、Regular リリースチャネル のアップグレードから 2 週間後に実施されます。
+
+<Note>
+  Basic ティアのサービスは自動的に Fast リリースチャネル に登録されます
+</Note>
+
+<div id="fast-release-channel-early-upgrades">
+  ### Fast リリースチャネル (早期アップグレード)
+</div>
+
+<ScalePlanFeatureBadge feature="The fast release channel" />
+
+通常のアップグレードスケジュールに加えて、通常のリリーススケジュールより早くサービスを更新したい場合は、**Fast release** チャネルを利用できます。
+
+具体的には、サービスは次のようになります。
+
+* 最新のClickHouseリリースを受け取る
+* 新しいリリースのテストに合わせて、より高い頻度でアップグレードされる
+
+以下に示すように、Cloudコンソールでサービスのリリーススケジュールを変更できます。
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/fast_release.webp" size="lg" alt="リリースチャネルの種類を選択" border />
+</div>
+
+<br />
+
+この**Fast release**チャネルは、重要度の低い環境で新機能をテストするのに適しています。**高い可用性と信頼性が求められる本番ワークロードには推奨されません。**
+
+<div id="regular-release-channel">
+  ### Regular リリースチャネル
+</div>
+
+Scale ティアおよび Enterprise ティアのすべてのサービスで、リリースチャネルまたはアップグレードスケジュールが設定されていない場合は、Regular リリースチャネルのリリースの一環としてアップグレードされます。これは本番環境に推奨されます。
+
+Regular リリースチャネルへのアップグレードは、通常、**Fast リリースチャネル**の 2 週間後に実施されます。
+
+<Note>
+  Basic ティアのサービスは、Fast リリースチャネルの直後にアップグレードされます。
+</Note>
+
+<div id="slow-release-channel-deferred-upgrades">
+  ### Slow リリースチャネル (アップグレードの延期)
+</div>
+
+<EnterprisePlanFeatureBadge feature="The slow release channel" />
+
+サービスが通常のリリーススケジュールより後にアップグレードを受けるようにしたい場合は、**Slow release** チャネルをご利用いただけます。
+
+具体的には、サービスは次のようになります。
+
+* Fast および Regular リリースチャネル のロールアウト完了後にアップグレードされる
+* 通常のリリースから約 2 週間後に ClickHouse リリースを受け取る
+* 本番環境をアップグレードする前に、非本番環境で ClickHouse リリースをテストするための追加時間を必要とするお客様を想定しています。非本番環境では、テストおよび検証のために Fast または Regular release チャネルでアップグレードを受けることができます。
+
+<Note>
+  release チャネルはいつでも変更できます。ただし、場合によっては、その変更は今後のリリースにのみ適用されます。
+
+  * より速いチャネルに変更すると、サービスは直ちにアップグレードされます。例: Slow から Regular、Regular から Fast
+  * サービスで[スケジュールされたアップグレード](#scheduled-upgrades)を使用している場合は、代わりに次回の scheduled upgrade 時にアップグレードが行われます。
+  * より遅いチャネルに変更してもサービスがダウングレードされることはなく、そのチャネルで新しいバージョンが利用可能になるまで現在のバージョンのままとなります。例: Regular から Slow、Fast から Regular または Slow
+</Note>
+
+<div id="scheduled-upgrades">
+  ## スケジュールされたアップグレード
+</div>
+
+<EnterprisePlanFeatureBadge feature="Scheduled upgrades" linking_verb_are="true" />
+
+Enterprise tier のサービスでは、アップグレードの実施時間帯を設定できます。
+
+アップグレードのスケジュールを指定するサービスを選択し、左側のメニューから `Settings` をクリックします。`Scheduled upgrades` までスクロールします。
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrades.webp" size="lg" alt="スケジュールされたアップグレード" border />
+</div>
+
+<br />
+
+このオプションを選択すると、database と Cloud のアップグレードについて、曜日と時間帯を選択できます。
+
+<div class="eighty-percent">
+  <Image img="/images/cloud/manage/scheduled_upgrade_window.webp" size="lg" alt="スケジュールされたアップグレード時間帯" border />
+</div>
+
+<br />
+
+<Note>
+  スケジュールされたアップグレードは設定されたスケジュールに従って実施されますが、重大なセキュリティパッチや脆弱性の修正、またはデータ破損やデータ損失につながるおそれのある問題が想定される場合には、例外が適用されます。緊急のセキュリティ上の問題が確認された場合は、予定された時間帯外にアップグレードが実施されることがあります。こうした例外については、必要に応じてお客様に通知されます。
+</Note>

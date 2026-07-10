@@ -1,0 +1,181 @@
+---
+slug: /use-cases/observability/clickstack/production
+title: '本番運用に向けて'
+sidebarTitle: '本番環境'
+description: 'ClickStack の本番運用に向けて'
+doc_type: 'guide'
+toc_max_heading_level: 2
+keywords: ['ClickStack', '本番環境', 'デプロイメント', 'ベストプラクティス', '運用']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import ResourceEstimation from '/snippets/ja/_resource_estimation.mdx';
+
+本番環境で ClickStack をデプロイする際は、セキュリティ、安定性、適切な構成を確保するために、いくつか追加で考慮すべき点があります。これらは、使用するディストリビューション (オープンソース版またはマネージド版) によって異なります。
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    本番環境へのデプロイには、[Managed ClickStack](/ja/clickstack/getting-started/managed) を推奨します。デフォルトで、強化された暗号化、認証と接続、マネージドなアクセス制御を含む業界標準の[セキュリティ対策](/ja/products/cloud/features/security)が適用されるほか、次の利点があります。
+
+    * ストレージとは独立したコンピュートの自動スケーリング
+    * オブジェクトストレージを基盤とした、低コストで実質的に無制限のデータ保持
+    * Warehouses により、読み取りワークロードと書き込みワークロードを個別に分離可能
+    * 統合認証
+    * 自動化された[バックアップ](/ja/products/cloud/features/backups/overview)
+    * シームレスなアップグレード
+
+    **Managed ClickStack を使用する場合は、ClickHouse Cloud 向けの[ベストプラクティス](/ja/products/cloud/guides/production-readiness)に従ってください。**
+
+    ### インジェストの保護
+
+    デフォルトでは、Open Source ディストリビューション以外でデプロイされた ClickStack OpenTelemetry Collector は保護されておらず、OTLP ポートでの認証も不要です。
+
+    インジェストを保護するには、`OTLP_AUTH_TOKEN` 環境変数を使用して collector をデプロイする際に認証トークンを指定します。詳しくは、[&quot;collector の保護&quot;](/ja/clickstack/ingesting-data/collector#securing-the-collector)を参照してください。
+
+    #### インジェスト用ユーザーを作成する
+
+    Managed ClickHouse へのインジェスト用に、OTel collector 専用のユーザーを作成し、インジェストの送信先を特定のデータベース (例: `otel`) に固定することを推奨します。詳しくは、[&quot;インジェスト用ユーザーの作成&quot;](/ja/clickstack/ingesting-data/collector#creating-an-ingestion-user)を参照してください。
+
+    ### 有効期限 (TTL) を設定する
+
+    Managed ClickStack デプロイ向けに、[Time To Live (TTL)](/ja/clickstack/managing/ttl) が[適切に設定](/ja/clickstack/managing/ttl#modifying-ttl)されていることを確認してください。これはデータの保持期間を制御するものであり、デフォルトの 3 日間は変更が必要になることがよくあります。
+
+    ### リソースの見積もり
+
+    <ResourceEstimation />
+
+    環境に合わせてサイジングの前提条件をさらに調整する方法については、[&quot;環境に合わせたサイジング前提の調整&quot;](/ja/clickstack/managing/estimating-resources#refining-sizing-assumptions)を参照してください。
+
+    #### オブザーバビリティ ワークロードの分離
+
+    リアルタイムのアプリケーション分析など、すでに他のワークロードをサポートしている**既存の ClickHouse Cloud service**に ClickStack を追加する場合は、オブザーバビリティ トラフィックを分離することを強く推奨します。
+
+    [**Managed Warehouses**](/ja/products/cloud/features/infrastructure/warehouses) を使用して、ClickStack 専用の **子サービス** を作成してください。これにより、次のことが可能になります。
+
+    * 既存のアプリケーションからインジェスト負荷とクエリ負荷を分離する
+    * オブザーバビリティ ワークロードを個別にスケールさせる
+    * オブザーバビリティ クエリが本番分析に影響するのを防ぐ
+    * 必要に応じて、同じ基盤データセットをサービス間で共有する
+
+    この方法により、既存のワークロードに影響を与えることなく、オブザーバビリティ データの増加に応じて ClickStack を独立してスケールさせることができます。
+
+    より大規模なデプロイやカスタムのサイジング ガイダンスが必要な場合は、より正確な見積もりについてサポートにお問い合わせください。
+  </Tab>
+
+  <Tab title="ClickStack Open Source">
+    ### ネットワークとポートのセキュリティ
+
+    デフォルトでは、Docker Compose はホスト上のポートを公開するため、`ufw` (Uncomplicated Firewall) などのツールが有効になっている場合でも、コンテナー外部からアクセスできる状態になります。これは、明示的に設定しない限りホストレベルのファイアウォールルールを迂回できる Docker のネットワークスタックの仕様によるものです。
+
+    **推奨事項：**
+
+    本番環境で必要なポートのみを公開してください。通常は、OTLPエンドポイント、APIサーバー、フロントエンドが対象です。
+
+    例えば、`docker-compose.yml` ファイル内の不要なポートマッピングを削除またはコメントアウトしてください。
+
+    ```yaml
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "8080:8080"  # Only if needed for the API
+    # Avoid exposing internal ports like ClickHouse 8123 or MongoDB 27017.
+    ```
+
+    コンテナーの分離とアクセスのセキュリティ強化の詳細については、[Dockerネットワークドキュメント](https://docs.docker.com/network/)を参照してください。
+
+    ### セッションシークレットの設定
+
+    本番環境では、セッションデータを保護し改ざんを防ぐため、ClickStack UI (HyperDX) の環境変数 `EXPRESS_SESSION_SECRET` に強力なランダム値を必ず設定してください。
+
+    アプリサービスの `docker-compose.yml` ファイルに追加する方法を以下に示します。
+
+    ```yaml
+      app:
+        image: ${IMAGE_NAME_HDX}:${IMAGE_VERSION}
+        ports:
+          - ${HYPERDX_API_PORT}:${HYPERDX_API_PORT}
+          - ${HYPERDX_APP_PORT}:${HYPERDX_APP_PORT}
+        environment:
+          FRONTEND_URL: ${HYPERDX_APP_URL}:${HYPERDX_APP_PORT}
+          HYPERDX_API_KEY: ${HYPERDX_API_KEY}
+          HYPERDX_API_PORT: ${HYPERDX_API_PORT}
+          HYPERDX_APP_PORT: ${HYPERDX_APP_PORT}
+          HYPERDX_APP_URL: ${HYPERDX_APP_URL}
+          HYPERDX_LOG_LEVEL: ${HYPERDX_LOG_LEVEL}
+          MINER_API_URL: 'http://miner:5123'
+          MONGO_URI: 'mongodb://db:27017/hyperdx'
+          NEXT_PUBLIC_SERVER_URL: http://127.0.0.1:${HYPERDX_API_PORT}
+          OTEL_SERVICE_NAME: 'hdx-oss-api'
+          USAGE_STATS_ENABLED: ${USAGE_STATS_ENABLED:-true}
+          EXPRESS_SESSION_SECRET: "super-secure-random-string"
+        networks:
+          - internal
+        depends_on:
+          - ch-server
+          - db1
+    ```
+
+    `openssl` を使用して強力なシークレットを生成できます：
+
+    ```shell
+    openssl rand -hex 32
+    ```
+
+    シークレットをソース管理にコミットしないようにしてください。本番環境では、環境変数管理ツール (例：Docker Secrets、HashiCorp Vault、環境固有のCI/CD設定など) の使用を検討してください。
+
+    ### インジェストのセキュリティ保護
+
+    すべてのインジェストは、ClickStack が提供する OpenTelemetry (OTel) collector の OTLP ポートを経由して行う必要があります。デフォルトでは、起動時に生成されるセキュアなインジェスト API key が必要です。この API key は OTel ポートへのデータ送信時に必要となり、HyperDX UI の `Team Settings → API Keys` から確認できます。
+
+    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェストキー" size="lg" />
+
+    また、OTLPエンドポイントでのTLS有効化も推奨します。
+
+    #### インジェストユーザーの作成
+
+    OTel collector がClickHouseにデータを取り込むための専用ユーザーを作成し、インジェストが特定のデータベース (例：`otel`) に送信されるよう設定することを推奨します。詳細については、[「インジェストユーザーの作成」](/ja/clickstack/ingesting-data/collector#creating-an-ingestion-user)を参照してください。
+
+    ### ClickHouse
+
+    自身でClickHouseインスタンスを管理するユーザーは、以下のベストプラクティスを遵守してください。
+
+    #### セキュリティのベストプラクティス
+
+    独自の ClickHouse インスタンスを管理している場合は、**TLS** を有効化し、認証を強制し、アクセスを堅牢化するためのベストプラクティスに従うことが重要です。実際の設定ミスとその回避方法については、[このブログ記事](https://www.wiz.io/blog/clickhouse-and-wiz)を参照してください。
+
+    ClickHouse OSSは、堅牢なセキュリティ機能をすぐに利用できる形で提供しています。ただし、これらの機能を使用するには設定が必要です。
+
+    * **`config.xml` の `tcp_port_secure` と `<openSSL>` を使用して TLS を有効にします**。[guides/sre/configuring-tls](/ja/concepts/features/security/tls/configuring-tls) を参照してください。
+    * `default` ユーザーに**強力なパスワードを設定**するか、無効にします。
+    * **明示的に意図している場合を除き、ClickHouse を外部に公開しないでください**。デフォルトでは、`listen_host` を変更しない限り、ClickHouse は `localhost` でのみ待ち受けます。
+    * **認証方式** (パスワード、証明書、SSHキー、または[外部認証機構](/ja/concepts/features/security/external-authenticators/index)など) を使用します。
+    * **アクセスを制限する**には、IP フィルタリングと `HOST` 句を使用します。詳細は [sql-reference/statements/create/user#user-host](/ja/reference/statements/create/user#user-host) を参照してください。
+    * **きめ細かな権限を付与するには、ロールベースアクセス制御 (RBAC) を有効にします**。[operations/access-rights](/ja/concepts/features/security/access-rights)を参照してください。
+    * **[クォータ](/ja/concepts/features/configuration/server-config/quotas)、[設定プロファイル](/ja/concepts/features/configuration/settings/settings-profiles)、および読み取り専用モードを使用して、クォータや各種制限を適用します**。
+    * **保存データを暗号化**し、安全な外部ストレージを使用してください。[operations/storing-data](/ja/concepts/features/configuration/server-config/storing-data) および [cloud/security/CMEK](/ja/products/cloud/guides/security/cmek) を参照してください。
+    * **認証情報をハードコードしないでください。** ClickHouse Cloud では、[named collections](/ja/concepts/features/configuration/server-config/named-collections) または IAM ロールを使用してください。
+    * **アクセスとクエリを監査**するには、[システムログ](/ja/reference/system-tables/query_log) と [セッションログ](/ja/reference/system-tables/session_log) を使用します。
+
+    ユーザーの管理およびクエリ・リソース制限の設定については、[外部認証機能](/ja/concepts/features/security/external-authenticators/index)および[クエリ複雑度の設定](/ja/concepts/features/configuration/settings/query-complexity)も参照してください。
+
+    #### ClickStack UIのユーザー権限
+
+    ClickStack UI用のClickHouseユーザーは、以下の設定を変更できる`readonly`ユーザーであれば十分です：
+
+    * `max_rows_to_read` (少なくとも100万までは)
+    * `read_overflow_mode`
+    * `cancel_http_readonly_queries_on_client_close`
+    * `wait_end_of_query`
+
+    デフォルトでは、OSSおよびClickHouse Cloudの両方で`default`ユーザーにこれらの権限が付与されていますが、これらの権限を持つ新規ユーザーを作成することを推奨します。
+
+    ### 有効期限 (TTL) の設定
+
+    ClickStack のデプロイメントに合わせて、[有効期限 (TTL)](/ja/clickstack/managing/ttl) が[適切に設定されている](/ja/clickstack/managing/ttl#modifying-ttl)ことを確認してください。これはデータの保持期間を制御する設定で、デフォルトの 3 日間は多くの場合変更が必要です。
+
+    ### MongoDBガイドライン
+
+    公式の[MongoDBセキュリティチェックリスト](https://www.mongodb.com/docs/manual/administration/security-checklist/)に従ってください。
+  </Tab>
+</Tabs>

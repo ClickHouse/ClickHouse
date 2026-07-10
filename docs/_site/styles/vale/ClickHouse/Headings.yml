@@ -1,0 +1,890 @@
+extends: capitalization
+message: "'%s' should use sentence-style capitalization."
+link: "https://developers.google.com/style/capitalization#capitalization-in-titles-and-headings"
+level: warning
+scope: heading
+match: $sentence
+indicators:
+  - ":"
+exceptions:
+  - "^[a-z]+[A-Z][a-zA-Z]*$"  # Matches camelCase pattern
+  - "^[A-Z]+$"                # Matches words that are entirely uppercase
+  - "^[A-Z][a-zA-Z]*[A-Z][a-zA-Z]*$"  # Matches PascalCase system metrics
+  - "^[A-Z][a-zA-Z]*[A-Z][a-zA-Z]*_.*$"  # Matches system metrics with underscores
+  - "^[a-z][a-z_]*[a-z]$"  # Matches configuration parameter names with underscores
+  - API
+  - ANN
+  - APPEND
+  - DELETE FROM
+  - ALTER DELETE
+  - DROP PARTITION
+  - TRUNCATE
+  - Arrow
+  - AWS
+  - AWS
+  - Apache
+  - AggregatingMergeTree
+  - Amazon
+  - Amazon Web Services
+  - Azure
+  - Azure Blob Storage
+  - Azure Event Hubs
+  - B2B
+  - BigQuery
+  - Bring Your Own Cloud
+  - Bun
+  - BYOC
+  - BYOC
+  - CPU
+  - CSV
+  - CDC
+  - CMEK
+  - CLI
+  - ClickHouse
+  - ClickHouse Cloud
+  - ClickHouse Keeper
+  - ClickPipe
+  - ClickPipes
+  - ClickPipes Connector
+  - ClickStack
+  - ClickStack
+  - CloudFormation
+  - Cosmos
+  - Customer Managed Encryption Keys
+  - DBT
+  - DBT
+  - DDL
+  - DNS
+  - Docker
+  - Docker
+  - Docker Compose
+  - DigitalOcean Spaces
+  - Duo SAML
+  - EDOT
+  - Elastic Agent
+  - Emmet
+  - FAQ
+  - Filebeat
+  - Frequently Asked Questions
+  - GA
+  - GCS
+  - GET
+  - GitHub
+  - Go
+  - Google
+  - Google Cloud
+  - Google Cloud Platform
+  - Google Cloud Storage
+  - HTTP
+  - Helm
+  - HyperDX
+  - HyperDX
+  - I
+  - IdP
+  - JWT
+  - Java
+  - JSON
+  - JSON
+  - JSON format settings
+  - JSON settings
+  - Kafka
+  - Kafka
+  - Kafka Connect
+  - KMS
+  - Kubernetes
+  - LZ4
+  - Linux
+  - MERGETREE
+  - Microsoft
+  - Middle East
+  - MongoDB
+  - NPM
+  - NodeJS
+  - NodeJs
+  - OLAP
+  - OLTP
+  - ORC
+  - OSS
+  - OTel
+  - Okta
+  - OpenTelemetry
+  - Pandas
+  - Parquet
+  - PlanetScale
+  - Postgres
+  - PostgreSQL
+  - PSC
+  - Private Link
+  - Private Service Connect
+  - PrivateLink
+  - Prometheus
+  - Python
+  - RBAC
+  - REPL
+  - REPLACE
+  - REST
+  - Role-Based Access Control
+  - SAML
+  - SOC
+  - SQL
+  - SQL
+  - SSO
+  - S3
+  - SaaS
+  - SDK
+  - Studio
+  - TCP
+  - TDE
+  - TTL
+  - TiDB
+  - Time To Live
+  - Transparent Data Encryption
+  - TypeScript
+  - U.S.
+  - UDF
+  - UI
+  - URLs
+  - UAE
+  - User Defined Functions
+  - VLDB
+  - VS
+  - VPC
+  - Vitess
+  - Visual
+  - Windows
+  - Yandex.Metrica
+  - ZSTD
+  - chDB
+  - ch_bucket_us_east1
+  - ch_bucket_us_east4
+  - gRPC
+  - macOS
+  - MergeTree
+  - MySQL
+  - ReplacingMergeTree
+  - SLA
+  - SLAs
+  - Beta
+  - Preview
+  - Private Preview
+  - CDC
+  - DB
+  - URL
+  - Build
+  - Testing
+  - Packaging
+  - Tier
+  - Tiers
+  - Overview
+  - Console
+  - Endpoints
+  - Backups
+  - Thresholds
+  - Keys
+  - Routing
+  - Cloud
+  - Change Data Capture
+  - PostLinks
+  - PostHistory
+  - DateTime
+  - Stack Overflow
+  - Homebrew
+  - WSL
+  - London
+  - LowCardinality
+  - Query 2. Average price per year in London
+  - V24.5 changelog for Cloud
+  - V24.6 changelog for Cloud
+  - SELECT
+  - PARTITION BY
+  - Common Table Expressions
+  - FixedString(N)
+  - AvgMerge
+  - AvgMergeState
+  - AvgState
+  - CountResample
+  - Avgmap
+  - Avgmergestate
+  - Avgstate
+  - Countresample
+  - Grouparrayresample
+  - Grouparraydistinct
+  - Maxmap
+  - Minsimplestate
+  - Minmap
+  - Sumarray
+  - Summap
+  - Uniqarray
+  - Sumsimplestate
+  - CityHash
+  - FixedString(N)
+  - Avg merge
+  - Avg merge state
+  - Avg state
+  - Count resample
+  - avgMerge
+  - avgMergeState
+  - avgState
+  - countResample
+  - PREWHERE
+  - Splunk
+  - Retool
+  - Airbyte
+  - RawBLOB
+  - RowBinary
+  - MessagePack
+  - Protocol Buffers
+  - Cap'n Proto
+  - TabSeparated
+  - TabSeparatedRaw
+  - TabSeparatedWithNames
+  - TabSeparatedWithNamesAndTypes
+  - TabSeparatedRawWithNames
+  - TabSeparatedRawWithNamesAndTypes
+  - CustomSeparated
+  - CustomSeparatedWithNames
+  - CustomSeparatedWithNamesAndTypes
+  - BSONEachRow
+  - PrettyNoEscapes
+  - PrettyMonoBlock
+  - PrettyNoEscapesMonoBlock
+  - PrettyCompact
+  - PrettyCompactNoEscapes
+  - PrettyCompactMonoBlock
+  - PrettyCompactNoEscapesMonoBlock
+  - PrettySpace
+  - PrettySpaceNoEscapes
+  - PrettySpaceMonoBlock
+  - PrettySpaceNoEscapesMonoBlock
+  - CapnProto
+  - ProtobufSingle
+  - ProtobufList
+  - AvroConfluent
+  - MsgPack
+  - predefined_query_handler
+  - dynamic_query_handler
+  - static
+  - clickhouse-local
+  - agx
+  - ch-ui
+  - HouseOps
+  - LightHouse
+  - qryn
+  - clickhouse-cli
+  - clickhouse-flamegraph
+  - clickhouse-plantuml
+  - xeus-clickhouse
+  - ClickCat
+  - ClickHouse-Mate
+  - clickhouse-monitoring
+  - CKibana
+  - SeekTable
+  - chproxy
+  - KittenHouse
+  - ClickHouse-Bulk
+  - input_format_json_try_infer_numbers_from_strings
+  - input_format_json_try_infer_named_tuples_from_objects
+  - input_format_json_use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects
+  - input_format_json_read_objects_as_strings
+  - input_format_json_read_numbers_as_strings
+  - input_format_json_read_bools_as_numbers
+  - input_format_json_read_bools_as_strings
+  - input_format_json_read_arrays_as_strings
+  - input_format_json_infer_incomplete_types_as_strings
+  - input_format_csv_try_infer_numbers_from_strings
+  - input_format_max_rows_to_read_for_schema_inference
+  - input_format_max_bytes_to_read_for_schema_inference
+  - column_names_for_schema_inference
+  - schema_inference_hints
+  - schema_inference_make_columns_nullable
+  - input_format_try_infer_integers
+  - input_format_try_infer_datetimes
+  - input_format_try_infer_datetimes_only_datetime64
+  - input_format_try_infer_dates
+  - input_format_try_infer_exponent_floats
+  - TSV
+  - TSKV
+  - format_template_row
+  - format_template_rows_between_delimiter
+  - format_template_resultset
+  - DataLens
+  - Avro
+  - Yandex
+  - Holistics
+  - ClickHouse Schema Flow Visualizer
+  - Holistics Software
+  - UPDATEs
+  - DELETEs
+  - INSERTs
+  - MERGEs
+  - DBT
+  - insert_overwrite
+  - Vector
+  - Nginx
+  - Dataflow
+  - QueryResult
+  - AsyncClient
+  - QueryContexts
+  - StreamContexts
+  - Easypanel
+  - Date32
+  - Node.js
+  - EventHubs
+  - Kafka Connect Sink
+  - String
+  - Map
+  - Nested
+  - flatten_nested
+  - Tableau Online
+  - SSL/TLS
+  - Delta Lake
+  - Embeddable
+  - Draxlr
+  - Rust
+  - Rockset
+  - Astrato
+  - Chartbrew
+  - Deepnote
+  - Zing Data
+  - Mitzu
+  - Tableau
+  - DataGrip
+  - Grafana
+  - Datadog
+  - Splunk Enterprise
+  - Explo
+  - Hashboard
+  - Luzmo
+  - QuickSight
+  - Metabase
+  - Superset
+  - clickhouse-static-files-disk-uploader
+  - OpenTelemetry
+  - Kubernetes
+  - Data Lake
+  - Unity
+  - Databricks
+  - Read Delta
+  - Google Cloud Run
+  - ClickStack
+  - Build-Your-Own
+  - Time-Series
+  - New Features
+  - Bug Fixes
+  - Bug Fix
+  - Backward Incompatible Changes
+  - Backward Incompatible Change
+  - Build Improvements
+  - Main Changes
+  - New Feature
+  - Experimental Feature
+  - Security Fix
+  - Performance Improvements
+  - Performance Improvement
+  - Documentation Updates
+  - Documentation Update
+  - Improved Workflow for Developing and Assembling ClickHouse
+  - Please Note When Upgrading
+  - Complete List of Changes
+  - Minor Changes
+  - ClickHouse Release
+  - Improvements
+  - Build Changes
+  - Experimental Features
+  - Table of Contents
+  - Upgrade Notes
+  - CVE-2021-42390
+  - CVE-2021-42391
+  - CVE-2021-25263
+  - CVE-2019-15024
+  - CVE-2019-16535
+  - CVE-2019-16536
+  - CVE-2019-18657
+  - CVE-2018-14672
+  - CVE-2018-14671
+  - CVE-2018-14668
+  - CVE-2018-14669
+  - CVE-2018-14670
+  - Performance Optimizations
+  - Code Cleanup
+  - Cloud Changelog
+  - CVE-2025-1385
+  - CVE-2024-6873
+  - CVE-2024-22412
+  - CVE-2023-47118
+  - CVE-2023-48298
+  - CVE-2023-48704
+  - CVE-2022-44011
+  - CVE-2022-44010
+  - CVE-2021-43304
+  - CVE-2021-43305
+  - CVE-2021-42387
+  - CVE-2021-42388
+  - CVE-2021-42389
+  - cmake-variants.yaml
+  - launch.json
+  - settings.json
+  - run-debug.sh
+  - tasks.json
+  - Third-Party Libraries
+  - Build Clickhouse with DEFLATE_QPL
+  - Run Benchmark with DEFLATE_QPL
+  - Rust Libraries
+  - DEFLATE_QPL
+  - Star Schema
+  - DockerHub
+  - cpp
+  - codespell
+  - aspell
+  - mypy
+  - AST
+  - "C\\+\\+"
+  - clang-tidy
+  - DataLakeCatalog
+  - MergeTree
+  - ReplacingMergeTree
+  - SummingMergeTree
+  - AggregatingMergeTree
+  - CollapsingMergeTree
+  - VersionedCollapsingMergeTree
+  - GraphiteMergeTree
+  - TinyLog
+  - StripeLog
+  - MaterializedView
+  - DROP/DETACH TABLE
+  - ReplicatedMergeTree
+  - AzureQueue
+  - DeltaLake
+  - AzureBlobStorage
+  - Hudi
+  - MinMax
+  - Bloom
+  - N-gram
+  - EmbeddedRocksDB
+  - HDFS
+  - Hive
+  - ORC
+  - Parquet
+  - NATS
+  - MySQL
+  - ClickPipe
+  - ClickPipes
+  - Postgres
+  - CDC
+  - FAQ
+  - Amazon Web Services
+  - AWS
+  - Frequently Asked Questions
+  - PostgreSQL
+  - TTL
+  - ClickStack
+  - OpenTelemetry
+  - Filebeat
+  - Elastic Agent
+  - HyperDX
+  - Helm
+  - EDOT
+  - SDK
+  - Docker
+  - Time To Live
+  - Docker Compose
+  - Kafka
+  - Kafka Connect
+  - Kafka Connect Sink
+  - Google Cloud Run
+  - NPM
+  - OTel
+  - SQL
+  - OSS
+  - URL
+  - RabbitMQ
+  - Iceberg
+  - TimeSeries
+  - AggregateFunction
+  - SimpleAggregateFunction
+  - FileLog
+  - system.asynchronous_insert_log
+  - system.asynchronous_loader
+  - system.asynchronous_metrics
+  - system.backups
+  - system.backup_log
+  - system.iceberg_history
+  - system.latency_buckets
+  - system.latency_log
+  - system.histogram_metrics
+  - system.licenses
+  - system.merges
+  - system.merge_tree_settings
+  - system.metric_log
+  - system.moves
+  - system.numbers
+  - system.numbers_mt
+  - system.one
+  - system.opentelemetry_span_log
+  - system.mutations
+  - system.parts_columns
+  - system.projections
+  - system.processors_profile_log
+  - system.query_cache
+  - system.query_condition_cache
+  - system.query_metric_log
+  - system.query_thread_log
+  - system.quota_limits
+  - system.query_views_log
+  - system.quotas_usage
+  - system.replicated_fetches
+  - system.role_grants
+  - system.replication_queue
+  - system.s3_queue_settings
+  - system.row_policies
+  - system.schema_inference_cache
+  - system.server_settings
+  - system.settings_changes
+  - system.session_log
+  - system.settings_profile_elements
+  - system.settings_profiles
+  - system.stack_trace
+  - system.storage_policies
+  - system.table_engines
+  - system.user_processes
+  - system.view_refreshes
+  - system.zookeeper_connection
+  - system.zookeeper_log
+  - AsynchronousHeavyMetricsCalculationTimeSpent
+  - AsynchronousHeavyMetricsUpdateInterval
+  - AsynchronousMetricsCalculationTimeSpent
+  - AsynchronousMetricsUpdateInterval
+  - BlockActiveTime_
+  - BlockDiscardBytes_
+  - BlockDiscardMerges_
+  - BlockDiscardOps_
+  - BlockDiscardTime_
+  - BlockInFlightOps_
+  - BlockQueueTime_
+  - BlockReadBytes_
+  - BlockReadMerges_
+  - BlockReadOps_
+  - BlockReadTime_
+  - BlockWriteBytes_
+  - BlockWriteMerges_
+  - BlockWriteOps_
+  - BlockWriteTime_
+  - CPUFrequencyMHz_
+  - AggregatorThreads
+  - AggregatorThreadsActive
+  - TablesLoaderForegroundThreads
+  - TablesLoaderForegroundThreadsActive
+  - TablesLoaderBackgroundThreads
+  - TablesLoaderBackgroundThreadsActive
+  - AsynchronousReadWait
+  - BackgroundBufferFlushSchedulePoolSize
+  - BackgroundBufferFlushSchedulePoolTask
+  - BackgroundCommonPoolSize
+  - BackgroundCommonPoolTask
+  - BackgroundDistributedSchedulePoolSize
+  - BackgroundDistributedSchedulePoolTask
+  - BackgroundFetchesPoolSize
+  - BackgroundFetchesPoolTask
+  - BackgroundMergesAndMutationsPoolSize
+  - BackgroundMergesAndMutationsPoolTask
+  - BackgroundMessageBrokerSchedulePoolSize
+  - BackgroundMessageBrokerSchedulePoolTask
+  - BackgroundMovePoolSize
+  - BackgroundMovePoolTask
+  - BackgroundSchedulePoolSize
+  - BackgroundSchedulePoolTask
+  - CacheDetachedFileSegments
+  - CacheDictionaryThreads
+  - CacheDictionaryThreadsActive
+  - CacheDictionaryUpdateQueueBatches
+  - CacheFileSegments
+  - ContextLockWait
+  - DatabaseCatalogThreads
+  - DatabaseCatalogThreadsActive
+  - DatabaseOnDiskThreads
+  - DatabaseOnDiskThreadsActive
+  - DestroyAggregatesThreads
+  - DestroyAggregatesThreadsActive
+  - DictCacheRequests
+  - DiskObjectStorageAsyncThreads
+  - DiskObjectStorageAsyncThreadsActive
+  - DiskSpaceReservedForMerge
+  - DistributedSend
+  - EphemeralNode
+  - FilesystemCacheElements
+  - FilesystemCacheReadBuffers
+  - FilesystemCacheSize
+  - QueryCacheBytes
+  - QueryCacheEntries
+  - UncompressedCacheBytes
+  - UncompressedCacheCells
+  - CompiledExpressionCacheBytes
+  - CompiledExpressionCacheCount
+  - MarkCacheBytes
+  - MarkCacheFiles
+  - GlobalThread
+  - LocalThread
+  - MemoryCode
+  - MemoryShared
+  - NetworkSend
+  - OSGuestTime
+  - OSNiceTime
+  - OSOpenFiles
+  - OSUptime
+  - OSUserTime
+  - PartMutation
+  - PartsActive
+  - PartsCompact
+  - PartsWide
+  - QueryThread
+  - RemoteRead
+  - SendScalars
+  - keeper_response_time_ms_bucket
+  - KEY_COLUMN_USAGE
+  - user_name/password
+  - username/ssh-key
+  - access_management
+  - grants
+  - user_name/networks
+  - user_name/profile
+  - user_name/quota
+  - user_name/databases
+  - readonly
+  - allow_ddl
+  - max_pipeline_depth
+  - histogram_metrics
+  - latency_log
+  - system.part_log
+  - system.parts
+  - system.processes
+  - system.query_log
+  - backup_log
+  - backups
+  - clickhouse-benchmark
+  - clickhouse-format utility
+  - compression
+  - core_dump
+  - crash_log
+  - encryption
+  - error_log
+  - Example
+  - File System
+  - graphite
+  - hsts_max_age
+  - Huge Pages
+  - include_from
+  - ldap_servers
+  - Linux Kernel
+  - listen_host
+  - listen_try
+  - logger
+  - macros
+  - merge_tree
+  - metric_log
+  - mysql_port
+  - openSSL
+  - part_log
+  - path
+  - prometheus
+  - proxy
+  - query_cache
+  - query_log
+  - s3queue_log
+  - ssh_server
+  - system.metrics
+  - system.quotas
+  - system.replicas
+  - system.resources
+  - system.roles
+  - system.scheduler
+  - system.settings
+  - system.table_engine
+  - system.tables
+  - system.text_log
+  - system.time_zones
+  - system.trace_log
+  - system.users
+  - system.warnings
+  - system.workloads
+  - system.zookeeper
+  - tcp_port
+  - tcp_ssh_port
+  - text_log
+  - timezone
+  - trace_log
+  - users_config
+  - zookeeper
+  - clickhouse_backupview
+  - jemalloc.active
+  - jemalloc.allocated
+  - jemalloc.arenas.all.dirty_purged
+  - jemalloc.arenas.all.muzzy_purged
+  - jemalloc.arenas.all.pactive
+  - jemalloc.arenas.all.pdirty
+  - jemalloc.arenas.all.pmuzzy
+  - jemalloc.background_thread.num_runs
+  - jemalloc.background_thread.num_threads
+  - jemalloc.background_thread.run_intervals
+  - jemalloc.epoch
+  - jemalloc.mapped
+  - jemalloc.metadata
+  - jemalloc.metadata_thp
+  - jemalloc.resident
+  - jemalloc.retained
+  - jemalloc.prof.active
+  - clickhouse-keeper-client
+  - toBFloat16
+  - toFloat32
+  - toFloat64
+  - toDecimal32
+  - toDecimal64
+  - toDecimal128
+  - toDecimal256
+  - toFloat32OrZero
+  - toFloat32OrNull
+  - toFloat32OrDefault
+  - toFloat64OrZero
+  - toFloat64OrNull
+  - toFloat64OrDefault
+  - toBFloat16OrZero
+  - toBFloat16OrNull
+  - toDecimal32OrZero
+  - toDecimal32OrNull
+  - toDecimal32OrDefault
+  - toDecimal64OrZero
+  - toDecimal64OrNull
+  - toDecimal64OrDefault
+  - toDecimal128OrZero
+  - toDecimal128OrNull
+  - toDecimal128OrDefault
+  - toDecimal256OrZero
+  - toDecimal256OrNull
+  - toDecimal256OrDefault
+  - reinterpretAsFloat32
+  - reinterpretAsFloat64
+  - accurateCast
+  - accurateCastOrNull
+  - accurateCastOrDefault
+  - toUnixTimestamp64Second
+  - toUnixTimestamp64Milli
+  - toUnixTimestamp64Micro
+  - toUnixTimestamp64Nano
+  - fromUnixTimestamp64Second
+  - fromUnixTimestamp64Milli
+  - fromUnixTimestamp64Micro
+  - fromUnixTimestamp64Nano
+  - accurateCast.*
+  - accurateCastOrNull.*
+  - accurateCastOrDefault.*
+  - fromDaysSinceYearZero32
+  - now64
+  - getMacro
+  - blockSize
+  - currentUser
+  - transform.*
+  - runningDifference
+  - lengthUTF8
+  - leftUTF8
+  - leftPadUTF8
+  - rightUTF8
+  - rightPadUTF8
+  - lowerUTF8
+  - upperUTF8
+  - isValidUTF8
+  - toValidUTF8
+  - reverseUTF8
+  - substringUTF8
+  - endsWithUTF8
+  - startsWithUTF8
+  - normalizeUTF8NFC
+  - normalizeUTF8NFD
+  - normalizeUTF8NFKC
+  - normalizeUTF8NFKD
+  - editDistanceUTF8
+  - initcapUTF8
+  - sparseGramsUTF8
+  - sparseGramsHashesUTF8
+  - base32Encode
+  - base32Decode
+  - tryBase32Decode
+  - base58Encode
+  - base58Decode
+  - tryBase58Decode
+  - base64Encode
+  - base64Decode
+  - tryBase64Decode
+  - CRC32
+  - CRC64
+  - positionUTF8
+  - multiSearchAllPositionsUTF8
+  - multiSearchFirstPositionUTF8
+  - multiSearchAnyUTF8
+  - ngramDistanceUTF8
+  - ngramSearchUTF8
+  - hasSubsequenceUTF8
+  - halfMD5
+  - MD4
+  - MD5
+  - sipHash64
+  - sipHash64Keyed
+  - sipHash128
+  - sipHash128Keyed
+  - sipHash128Reference
+  - sipHash128ReferenceKeyed
+  - cityHash64
+  - intHash32
+  - intHash64
+  - SHA1
+  - SHA224
+  - SHA256
+  - SHA512
+  - SHA512_256
+  - SHA1, SHA224, SHA256, SHA512, SHA512_256
+  - BLAKE3
+  - farmFingerprint64
+  - farmHash64
+  - javaHashUTF16LE
+  - metroHash64
+  - murmurHash2_32
+  - murmurHash2_64
+  - murmurHash3_32
+  - murmurHash3_64
+  - murmurHash3_128
+  - xxh3
+  - xxHash32
+  - xxHash64
+  - ngramSimHashUTF8
+  - wordShingleSimHashUTF8
+  - wyHash64
+  - ngramMinHashUTF8
+  - ngramMinHashArgUTF8
+  - wordShingleMinHashUTF8
+  - wordShingleMinHashArgUTF8
+  - keccak256
+  - uniqUpTo.*
+  - quantileBFloat16Weighted
+  - quantiles
+  - quantileExact
+  - uniqHLL12
+  - uniqCombined64
+  - nonNegativeDerivative.*
+  - MySQL Docs
+  - Postgres Docs
+  - simpleJSON.*functions
+  - atan2
+  - e
+  - exp10
+  - exp2
+  - intExp10
+  - intExp2
+  - log10
+  - log1p
+  - log2
+  - bitmaskToList.*
+  - bitmaskToArray.*
+  - bitPositionsToArray.*
+  - h3kRing
+  - stringToH3
+  - h3PointDistM
+  - h3PointDistKm
+  - h3PointDistRads

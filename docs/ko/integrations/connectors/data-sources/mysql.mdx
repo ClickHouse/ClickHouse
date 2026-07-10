@@ -1,0 +1,176 @@
+---
+slug: /integrations/mysql
+sidebarTitle: 'MySQL'
+title: 'ClickHouse와 MySQL 통합'
+hide_title: true
+description: 'MySQL 통합 설명 페이지'
+doc_type: 'reference'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+  - website: 'https://github.com/ClickHouse/clickhouse'
+keywords: ['mysql', '데이터베이스 통합', '외부 테이블', '데이터 소스', 'SQL 데이터베이스']
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import ExperimentalBadge from "/snippets/ko/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+이 페이지에서는 MySQL 테이블에서 데이터를 읽기 위해 `MySQL` 테이블 엔진을 사용하는 방법을 설명합니다.
+
+<Note>
+  ClickHouse Cloud의 경우 [MySQL ClickPipe](/ko/integrations/clickpipes/mysql/index)를 사용해 MySQL 테이블의 데이터를 ClickHouse로 손쉽게 옮길 수도 있습니다(현재 공개 베타).
+</Note>
+
+<div id="connecting-clickhouse-to-mysql-using-the-mysql-table-engine">
+  ## MySQL 테이블 엔진을 사용해 ClickHouse를 MySQL에 연결하기
+</div>
+
+`MySQL` 테이블 엔진을 사용하면 ClickHouse를 MySQL에 연결할 수 있습니다. **SELECT** 및 **INSERT** SQL 문은 ClickHouse와 MySQL 테이블 양쪽에서 실행할 수 있습니다. 이 문서에서는 `MySQL` 테이블 엔진의 기본 사용 방법을 설명합니다.
+
+<div id="1-configure-mysql">
+  ### 1. MySQL 설정
+</div>
+
+1. MySQL에서 데이터베이스를 생성합니다:
+
+```sql
+  CREATE DATABASE db1;
+```
+
+2. 테이블을 생성하세요:
+
+```sql
+  CREATE TABLE db1.table1 (
+    id INT,
+    column1 VARCHAR(255)
+  );
+```
+
+3. 샘플 행을 삽입합니다:
+
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (1, 'abc'),
+    (2, 'def'),
+    (3, 'ghi');
+```
+
+4. ClickHouse에서 접속할 사용자를 생성합니다:
+
+```sql
+  CREATE USER 'mysql_clickhouse'@'%' IDENTIFIED BY 'Password123!';
+```
+
+5. 필요에 따라 권한을 부여합니다. (예시를 위해 `mysql_clickhouse` 사용자에게 관리자 권한을 부여합니다.)
+
+```sql
+  GRANT ALL PRIVILEGES ON *.* TO 'mysql_clickhouse'@'%';
+```
+
+<Note>
+  이 기능을 ClickHouse Cloud에서 사용하는 경우, ClickHouse Cloud IP 주소가 MySQL 인스턴스에 접근할 수 있도록 허용해야 할 수 있습니다.
+  송신 트래픽에 대한 자세한 내용은 ClickHouse [Cloud Endpoints API](/ko/products/cloud/guides/sql-console/query-endpoints)에서 확인하세요.
+</Note>
+
+<div id="2-define-a-table-in-clickhouse">
+  ### 2. ClickHouse에서 테이블 정의하기
+</div>
+
+1. 이제 `MySQL` 테이블 엔진을 사용하는 ClickHouse 테이블을 생성합니다:
+
+```sql
+  CREATE TABLE mysql_table1 (
+    id UInt64,
+    column1 String
+  )
+  ENGINE = MySQL('mysql-host.domain.com','db1','table1','mysql_clickhouse','Password123!')
+```
+
+최소 매개변수는 다음과 같습니다:
+
+| 매개변수     | 설명              | 예시                    |
+| -------- | --------------- | --------------------- |
+| host     | 호스트명 또는 IP      | mysql-host.domain.com |
+| database | MySQL 데이터베이스 이름 | db1                   |
+| table    | MySQL 테이블 이름    | table1                |
+| user     | MySQL에 연결할 사용자명 | mysql&#95;clickhouse  |
+| password | MySQL에 연결할 비밀번호 | Password123!          |
+
+<Note>
+  전체 매개변수 목록은 [MySQL 테이블 엔진](/ko/reference/engines/table-engines/integrations/mysql) 문서 페이지를 참조하십시오.
+</Note>
+
+<div id="3-test-the-integration">
+  ### 3. 통합 테스트
+</div>
+
+1. MySQL에 샘플 행을 삽입합니다:
+
+```sql
+  INSERT INTO db1.table1
+    (id, column1)
+  VALUES
+    (4, 'jkl');
+```
+
+2. MySQL 테이블의 기존 행과 방금 추가한 새 행이 모두 ClickHouse 테이블에 있는지 확인합니다:
+
+```sql
+  SELECT
+      id,
+      column1
+  FROM mysql_table1
+```
+
+4개의 행이 표시되어야 합니다:
+
+```response
+  Query id: 6d590083-841e-4e95-8715-ef37d3e95197
+
+  ┌─id─┬─column1─┐
+  │  1 │ abc     │
+  │  2 │ def     │
+  │  3 │ ghi     │
+  │  4 │ jkl     │
+  └────┴─────────┘
+
+  4 rows in set. Elapsed: 0.044 sec.
+```
+
+3. ClickHouse 테이블에 행을 추가해 보겠습니다:
+
+```sql
+  INSERT INTO mysql_table1
+    (id, column1)
+  VALUES
+    (5,'mno')
+```
+
+4. MySQL에 새 행이 나타나는 것을 확인합니다:
+
+```bash
+  mysql> select id,column1 from db1.table1;
+```
+
+새 행이 표시되어야 합니다:
+
+```response
+  +------+---------+
+  | id   | column1 |
+  +------+---------+
+  |    1 | abc     |
+  |    2 | def     |
+  |    3 | ghi     |
+  |    4 | jkl     |
+  |    5 | mno     |
+  +------+---------+
+  5 rows in set (0.01 sec)
+```
+
+<div id="summary">
+  ### 요약
+</div>
+
+`MySQL` 테이블 엔진을 사용하면 ClickHouse를 MySQL에 연결해 데이터를 양방향으로 주고받을 수 있습니다. 자세한 내용은 [MySQL 테이블 엔진](/ko/reference/functions/table-functions/mysql) 문서를 확인하십시오.

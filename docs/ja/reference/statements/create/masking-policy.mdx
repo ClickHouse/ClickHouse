@@ -1,0 +1,102 @@
+---
+description: 'マスキングポリシーに関するドキュメント'
+sidebarTitle: 'MASKING POLICY'
+slug: /sql-reference/statements/create/masking-policy
+title: 'CREATE MASKING POLICY'
+doc_type: 'reference'
+---
+
+import CloudOnlyBadge from "/snippets/ja/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
+
+<CloudOnlyBadge />
+
+マスキングポリシーを作成します。これにより、特定のユーザーまたはロールがテーブルをクエリする際に、カラムの値を動的に変換またはマスクできます。
+
+<Tip>
+  マスキングポリシーは、保存済みのデータを変更することなく、クエリ時に機密データを変換することで、カラムレベルのデータセキュリティを実現します。
+</Tip>
+
+構文:
+
+```sql
+CREATE MASKING POLICY [IF NOT EXISTS | OR REPLACE] policy_name ON [database.]table
+    UPDATE column1 = expression1 [, column2 = expression2 ...]
+    [WHERE condition]
+    TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}
+    [PRIORITY priority_number]
+```
+
+<div id="update-clause">
+  ## UPDATE 句
+</div>
+
+`UPDATE` 句では、マスクするカラムとその変換方法を指定します。1 つのポリシーで複数のカラムをマスクできます。
+
+例:
+
+* シンプルなマスキング: `UPDATE email = '***masked***'`
+* 部分的なマスキング: `UPDATE email = concat(substring(email, 1, 3), '***@***.***')`
+* ハッシュベースのマスキング: `UPDATE email = concat('masked_', substring(hex(cityHash64(email)), 1, 8))`
+* 複数カラム: `UPDATE email = '***@***.***', phone = '***-***-****'`
+
+<div id="where-clause">
+  ## WHERE句
+</div>
+
+オプションの`WHERE`句を使うと、行の値に基づく条件付きマスキングを適用できます。条件に一致する行にのみマスキングが適用されます。
+
+例:
+
+```sql
+CREATE MASKING POLICY mask_high_salaries ON employees
+UPDATE salary = 0
+WHERE salary > 100000
+TO analyst;
+```
+
+<div id="to-clause">
+  ## TO 句
+</div>
+
+`TO` 句では、ポリシーを適用するユーザーとロールを指定します。
+
+* `TO user1, user2`: 特定のユーザー/ロールに適用します
+* `TO ALL`: すべてのユーザーに適用します
+* `TO ALL EXCEPT user1, user2`: 指定したユーザーを除くすべてのユーザーに適用します
+
+<Note>
+  行ポリシーとは異なり、マスキングポリシーは、ポリシーが適用されていないユーザーには影響しません。ユーザーに適用されるマスキングポリシーが存在しない場合、そのユーザーには元のデータが表示されます。
+</Note>
+
+<div id="priority-clause">
+  ## PRIORITY 句
+</div>
+
+1 人のユーザーに対して複数のマスキングポリシーが同じカラムを対象とする場合、`PRIORITY` 句によって適用順序が決まります。ポリシーは、優先度の高いものから低いものの順に適用されます。
+
+デフォルトの優先度は 0 です。同じ優先度のポリシーは、適用順序が定義されていません。
+
+例:
+
+```sql
+-- 2番目に適用（優先度が低い）
+CREATE MASKING POLICY mask1 ON users
+UPDATE email = 'low@priority.com'
+TO analyst
+PRIORITY 1;
+
+-- 最初に適用（優先度が高い）
+CREATE MASKING POLICY mask2 ON users
+UPDATE email = 'high@priority.com'
+TO analyst
+PRIORITY 10;
+
+-- analystには最後に適用されるため 'low@priority.com' が表示される
+```
+
+<Info>
+  **パフォーマンスに関する注意点**
+
+  * マスキングポリシーは、式の複雑さによってはクエリのパフォーマンスに影響する場合があります
+  * マスキングポリシーが有効なテーブルでは、一部の最適化が無効になる場合があります
+</Info>
