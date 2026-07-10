@@ -463,6 +463,14 @@ const KeyCondition::AtomMap KeyCondition::atom_map
             }
         },
         {
+            "notHas",
+            [] (RPNElement & out, const Field &)
+            {
+                out.function = RPNElement::FUNCTION_NOT_IN_SET;
+                return true;
+            }
+        },
+        {
             "nullIn",
             [] (RPNElement & out, const Field &)
             {
@@ -703,7 +711,7 @@ const KeyCondition::AtomMap KeyCondition::atom_map
 /// insert into test values ('2020-01-02', 1, '');
 /// select * from test where d != '2020-01-01'; -- If relaxed, no record will return
 static const std::set<std::string_view> no_relaxed_atom_functions
-    = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty"};
+    = {"notLike", "notIn", "globalNotIn", "notNullIn", "globalNotNullIn", "notEquals", "notEmpty", "notHas"};
 
 static const std::map<std::string, std::string> inverse_relations =
 {
@@ -729,6 +737,8 @@ static const std::map<std::string, std::string> inverse_relations =
     {"notILike", "ilike"},
     {"empty", "notEmpty"},
     {"notEmpty", "empty"},
+    {"has", "notHas"},
+    {"notHas", "has"},
 };
 
 /// Returns the comparison operator after reversing comparison direction.
@@ -2619,7 +2629,7 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     const BuildInfo & info,
     RPNElement & out)
 {
-    chassert(func.getFunctionName() == "has");
+    chassert(func.getFunctionName() == "has" || func.getFunctionName() == "notHas");
     chassert(func.getArgumentsSize() == 2);
 
     /// Check if key usable
@@ -2657,8 +2667,9 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     const auto array_elements = array_col->getDataPtr();
     if (array_elements->empty())
     {
-        /// has([], x) is always false – we can mark the condition as always false
-        out.function = RPNElement::ALWAYS_FALSE;
+        /// has([], x) is always false and notHas([], x) is always true - we can fold the condition
+        /// to a constant.
+        out.function = func.getFunctionName() == "has" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
         return true;
     }
 
@@ -3588,12 +3599,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                     return false;
             }
 
-            if (func_name == "has")
+            if (func_name == "has" || func_name == "notHas")
             {
                 if (tryPrepareSetIndexForHas(func, info, out))
                 {
-                    /// Found empty array constant in has([], x) -> always false
-                    if (out.function == RPNElement::ALWAYS_FALSE)
+                    /// Found empty array constant: has([], x) is always false, notHas([], x) is always true.
+                    if (out.function == RPNElement::ALWAYS_FALSE || out.function == RPNElement::ALWAYS_TRUE)
                         return true;
 
                     const auto atom_it = atom_map.find(func_name);
