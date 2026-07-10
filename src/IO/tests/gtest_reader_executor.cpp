@@ -84,8 +84,6 @@ using namespace DB;
 #include <IO/ReaderExecutorDecryptor.h>
 #include <IO/FileEncryptionCommon.h>
 #include <IO/WriteBufferFromString.h>
-#include <latch>
-#include <thread>
 #endif
 
 namespace ProfileEvents
@@ -1003,9 +1001,6 @@ TEST(ReaderExecutor, TotalSizeSaturatesOnUndersizedEncryptedFile)
     EXPECT_EQ(executor.totalSize(), 0u);
 }
 
-#include <IO/FileEncryptionCommon.h>
-#include <IO/WriteBufferFromString.h>
-
 namespace
 {
     /// Encrypt `plaintext` with the given key/iv at stream offset 0 using
@@ -1308,8 +1303,6 @@ TEST(ReaderExecutor, DecryptsMultiLayer)
     ASSERT_EQ(result.size(), plaintext.size());
     EXPECT_EQ(result, plaintext);
 }
-
-#include <IO/ReaderExecutorDecryptor.h>
 
 TEST(ReaderExecutorDecryptor, ConcurrentDecryptIsReentrant)
 {
