@@ -1,0 +1,58 @@
+---
+title: 'Resync de un ClickPipe de una base de datos'
+description: 'Documentación para Resync de un ClickPipe de una base de datos'
+slug: /integrations/clickpipes/postgres/resync
+sidebarTitle: 'Resync ClickPipe'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestión de datos', 'sincronización en tiempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="what-postgres-resync-do">
+  ### ¿Qué hace Resync?
+</div>
+
+Resync implica las siguientes operaciones, en este orden:
+
+1. Se elimina el ClickPipe existente y se inicia un nuevo ClickPipe de &quot;resync&quot;. Así, al ejecutar un resync, se detectarán los cambios en la estructura de las tablas de origen.
+2. El ClickPipe de resync crea (o reemplaza) un nuevo conjunto de tablas de destino con los mismos nombres que las tablas originales, pero con el sufijo `_resync`.
+3. Se realiza la carga inicial en las tablas `_resync`.
+4. A continuación, las tablas `_resync` se intercambian por las tablas originales. Antes del intercambio, las filas marcadas con eliminación lógica se transfieren de las tablas originales a las tablas `_resync`.
+
+Se conservan todos los ajustes del ClickPipe original en el ClickPipe de resync. Las estadísticas del ClickPipe original se borran en la UI.
+
+<div id="use-cases-postgres-resync">
+  ### Casos de uso para Resync de un ClickPipe
+</div>
+
+Estos son algunos escenarios:
+
+1. Puede que necesite realizar cambios importantes en el esquema de las tablas de origen que harían que el ClickPipe existente dejara de funcionar y fuera necesario reiniciarlo. Puede simplemente hacer clic en Resync después de realizar los cambios.
+2. En ClickHouse en particular, puede que haya necesitado cambiar las claves de ORDER BY en las tablas de destino. Puede usar Resync para volver a cargar los datos en la nueva tabla con la clave de ordenación correcta.
+3. El slot de replicación del ClickPipe se invalida: Resync crea un nuevo ClickPipe y un nuevo slot en la base de datos de origen.
+
+<Note>
+  Puede hacer Resync varias veces; sin embargo, tenga en cuenta la carga en la base de datos de origen cuando lo haga,
+  ya que cada vez se realiza una carga inicial con hilos paralelos.
+</Note>
+
+<div id="guide-postgres-resync">
+  ### Guía para Resync de ClickPipe
+</div>
+
+1. En la pestaña **Data Sources**, haga clic en el ClickPipe de Postgres que desea hacer Resync.
+2. Vaya a la pestaña **Settings**.
+3. Haga clic en el botón **Resync**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resync_button.webp" border size="md" />
+
+4. Debería aparecer un cuadro de diálogo de confirmación. Haga clic de nuevo en **Resync**.
+5. Vaya a la pestaña **Metrics**.
+6. En aproximadamente 5 segundos (y también al actualizar la página), el estado del pipe debería ser **Setup** o **Snapshot**.
+7. La carga inicial del Resync puede supervisarse en la pestaña **Tables**, en la sección **Initial Load Stats**.
+8. Una vez completada la carga inicial, el pipe intercambiará atómicamente las tablas `_resync` por las tablas originales. Durante el intercambio, el estado será **Resync**.
+9. Una vez completado el intercambio, el pipe pasará al estado **Running** y realizará CDC si está habilitado.

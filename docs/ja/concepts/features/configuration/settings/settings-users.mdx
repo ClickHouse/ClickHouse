@@ -1,0 +1,427 @@
+---
+description: 'ユーザーとロールを設定するための設定。'
+sidebarTitle: 'ユーザー設定'
+slug: /operations/settings/settings-users
+title: 'ユーザーとロールの設定'
+doc_type: 'reference'
+---
+
+`users.xml` 構成ファイルの `users` セクションには、ユーザー設定が含まれています。
+
+<Note>
+  ClickHouse は、ユーザー管理のための [SQL ベースのワークフロー](/ja/concepts/features/security/access-rights#access-control-usage) もサポートしています。こちらの使用を推奨します。
+</Note>
+
+`users` セクションの構造:
+
+```xml
+<users>
+    <!-- ユーザー名が指定されていない場合、'default' ユーザーが使用されます。 -->
+    <user_name>
+        <!-- users.user_name レベルでは、認証方式を1つだけ指定できます。例: -->
+        <password></password>
+        <!-- または（排他） -->
+        <password_sha256_hex></password_sha256_hex>
+ 
+        <!-- または（排他）（注意: 後方互換性のため、複数のSSHキーを指定可能） -->
+        <ssh_keys>
+            <ssh_key>
+                <type>ssh-ed25519</type>
+                <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj</base64_key>
+            </ssh_key>
+            <ssh_key>
+                <type>ecdsa-sha2-nistp256</type>
+                <base64_key>AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNxeV2uN5UY6CUbCzTA1rXfYimKQA5ivNIqxdax4bcMXz4D0nSk2l5E1TkR5mG8EBWtmExSPbcEPJ8V7lyWWbA8=</base64_key>
+            </ssh_key>
+            <ssh_key>
+                <type>ssh-rsa</type>
+                <base64_key>AAAAB3NzaC1yc2EAAAADAQABAAABgQCpgqL1SHhPVBOTFlOm0pu+cYBbADzC2jL41sPMawYCJHDyHuq7t+htaVVh2fRgpAPmSEnLEC2d4BEIKMtPK3bfR8plJqVXlLt6Q8t4b1oUlnjb3VPA9P6iGcW7CV1FBkZQEVx8ckOfJ3F+kI5VsrRlEDgiecm/C1VPl0/9M2llW/mPUMaD65cM9nlZgM/hUeBrfxOEqM11gDYxEZm1aRSbZoY4dfdm3vzvpSQ6lrCrkjn3X2aSmaCLcOWJhfBWMovNDB8uiPuw54g3ioZ++qEQMlfxVsqXDGYhXCrsArOVuW/5RbReO79BvXqdssiYShfwo+GhQ0+aLWMIW/jgBkkqx/n7uKLzCMX7b2F+aebRYFh+/QXEj7SnihdVfr9ud6NN3MWzZ1ltfIczlEcFLrLJ1Yq57wW6wXtviWh59WvTWFiPejGjeSjjJyqqB49tKdFVFuBnIU5u/bch2DXVgiAEdQwUrIp1ACoYPq22HFFAYUJrL32y7RxX3PGzuAv3LOc=</base64_key>
+            </ssh_key>
+        </ssh_keys>
+
+        <!-- または（排他）複数の認証方式を使用する場合: -->
+        <auth_methods>
+            <method1>
+                <password></password>
+            </method1>
+            <method2>
+                <password_sha256_hex></password_sha256_hex>
+            </method2>
+            <!-- ... -->
+            <methodN>
+                <!-- ... -->
+            </methodN>
+        </auth_methods>
+
+        <access_management>0|1</access_management>
+
+        <networks incl="networks" replace="replace">
+        </networks>
+
+        <profile>profile_name</profile>
+
+        <quota>default</quota>
+        <default_database>default</default_database>
+        <databases>
+            <database_name>
+                <table_name>
+                    <filter>expression</filter>
+                </table_name>
+            </database_name>
+        </databases>
+
+        <grants>
+            <query>GRANT SELECT ON system.*</query>
+        </grants>
+    </user_name>
+    <!-- その他のユーザー設定 -->
+</users>
+```
+
+<div id="user-namepassword">
+  ### user_name/password
+</div>
+
+パスワードは、平文または SHA256 (16進形式) で指定できます。
+
+* 平文でパスワードを設定するには (**非推奨**) 、`password` 要素に記述します。
+
+  たとえば、`<password>qwerty</password>` です。パスワードは空のままでもかまいません。
+
+<a id="password_sha256_hex" />
+
+* SHA256 ハッシュを使ってパスワードを設定するには、`password_sha256_hex` 要素に記述します。
+
+  たとえば、`<password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>` です。
+
+  シェルからパスワードを生成する例:
+
+  ```bash
+  PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha256sum | tr -d '-'
+  ```
+
+  結果の 1 行目がパスワードで、2 行目が対応する SHA256 ハッシュです。
+
+<a id="password_double_sha1_hex" />
+
+* MySQL クライアントとの互換性のため、パスワードはダブル SHA1 ハッシュで指定することもできます。`password_double_sha1_hex` 要素に記述します。
+
+  たとえば、`<password_double_sha1_hex>08b4a0f1de6ad37da17359e592c8d74788a83eb0</password_double_sha1_hex>` です。
+
+  シェルからパスワードを生成する例:
+
+  ```bash
+  PASSWORD=$(base64 < /dev/urandom | head -c8); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+  ```
+
+  結果の 1 行目がパスワードで、2 行目が対応するダブル SHA1 ハッシュです。
+
+<div id="totp-authentication-configuration">
+  ### TOTP 認証の設定
+</div>
+
+Time-Based One-Time Password (TOTP) は、一定時間だけ有効な一時的なアクセスコードを生成することで、ClickHouse ユーザーの認証に使用できます。
+この TOTP 認証方式は [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238) に準拠しており、Google Authenticator や 1Password などの一般的な TOTP アプリと互換性があります。
+パスワードベースの認証に加えて、`users.xml` 設定ファイルで設定できます。
+なお、SQL ベースのアクセス制御ではまだサポートされていません。
+
+TOTP を使用して認証するには、ユーザーはプライマリパスワードに加えて、TOTP アプリで生成されたワンタイムパスワードを指定する必要があります。指定方法は、`--one-time-password` コマンドラインオプションを使うか、メインパスワードの末尾に &#39;+&#39; 文字を付けて連結します。
+たとえば、プライマリパスワードが `some_password` で、生成された TOTP コードが `345123` の場合、ClickHouse への接続時に `--password some_password+345123` または `--password some_password --one-time-password 345123` を指定できます。パスワードを指定しない場合、`clickhouse-client` は対話形式で入力を求めます。
+
+ユーザーの TOTP 認証を有効にするには、`users.xml` で `time_based_one_time_password` セクションを設定します。このセクションでは、secret、有効期間、桁数、hash アルゴリズムなどの TOTP 設定を定義します。
+
+**例**
+
+````xml
+<clickhouse>
+    <!-- ... -->
+    <users>
+        <my_user>
+            <!-- プライマリパスワードベースの認証: -->
+            <password>some_password</password>
+            <password_sha256_hex>1464acd6765f91fccd3f5bf4f14ebb7ca69f53af91b0a5790c2bba9d8819417b</password_sha256_hex>
+            <!-- ... またはその他のサポートされている認証方式 ... -->
+
+            <!-- TOTP認証の設定 -->
+            <time_based_one_time_password>
+                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32エンコードされたTOTPシークレット -->
+                <period>30</period>                    <!-- 任意: OTPの有効期間（秒） -->
+                <digits>6</digits>                     <!-- 任意: OTPの桁数 -->
+                <algorithm>SHA1</algorithm>            <!-- 任意: ハッシュアルゴリズム: SHA1、SHA256、SHA512 -->
+            </time_based_one_time_password>
+        </my_user>
+    </users>
+</clickhouse>
+
+パラメータ:
+
+- secret - （必須）TOTPコードの生成に使用するBase32エンコードされたシークレットキー。
+- period - 任意。各OTPの有効期間を秒単位で設定します。120以下の正の数を指定する必要があります。デフォルトは30です。
+- digits - 任意。各OTPの桁数を指定します。4以上10以下の値を指定する必要があります。デフォルトは6です。
+- algorithm - 任意。OTP生成に使用するハッシュアルゴリズムを指定します。使用可能な値はSHA1、SHA256、SHA512です。デフォルトはSHA1です。
+
+TOTPシークレットの生成
+
+ClickHouseで使用するTOTP互換のシークレットを生成するには、ターミナルで以下のコマンドを実行してください:
+
+```bash
+$ base32 -w32 < /dev/urandom | head -1
+````
+
+このコマンドを実行すると、users.xml の secret フィールドに追加できる、base32 エンコードされたシークレットが生成されます。
+
+特定のユーザーで TOTP を有効にするには、既存のパスワードベースのフィールド (`password` や `password_sha256_hex` など) に加えて、`time_based_one_time_password` セクションを追加します。
+
+TOTP シークレットの QR コードを生成するには、[qrencode](https://linux.die.net/man/1/qrencode) ツールを使用できます。
+
+```bash
+$ qrencode -t ansiutf8 'otpauth://totp/ClickHouse?issuer=ClickHouse&secret=JBSWY3DPEHPK3PXP'
+```
+
+ユーザーにTOTPを設定すると、前述のとおり、認証プロセスの一部としてワンタイムパスワードを使用できます。
+
+### username/ssh-key
+
+この設定では、SSH鍵を使って認証できます。
+
+次のような SSH 鍵 (`ssh-keygen` で生成したものなど) があるとします。
+
+```text
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj john@example.com
+```
+
+`ssh_key` 要素には次の内容が入ることが想定されています
+
+```xml
+<ssh_key>
+     <type>ssh-ed25519</type>
+     <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj</base64_key>
+ </ssh_key>
+```
+
+他のサポート対象のアルゴリズムを使用する場合は、`ssh-ed25519` を `ssh-rsa` または `ecdsa-sha2-nistp256` に置き換えてください。
+
+### 複数の認証方式
+
+1 人のユーザーに対して、`<auth_methods>` 要素を使って複数の認証方式を設定できます。これにより、ユーザーは一覧にあるいずれか 1 つの方式で認証できます。たとえば、あるユーザーにパスワードと LDAP 認証情報の両方が設定されている場合、そのどちらでログインしても成功します。
+
+`<auth_methods>` の各子要素は、任意の名前を付けられるラッパー要素で、その中には認証タイプをちょうど 1 つだけ含めます。ラッパー名 (例: `<method1>`、`<primary>`、`<a1>`) は重要ではなく、実際に使われるのは内側の認証要素だけです。
+
+**例: 複数のパスワード**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <primary>
+                <password>password_one</password>
+            </primary>
+            <secondary>
+                <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex>
+            </secondary>
+        </auth_methods>
+    </my_user>
+</users>
+```
+
+**例: 認証方式の混在**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <a1>
+                <password>plaintext_pass</password>
+            </a1>
+            <a2>
+                <password_sha256_hex>e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855</password_sha256_hex>
+            </a2>
+            <a3>
+                <ldap>
+                    <server>my_ldap_server</server>
+                </ldap>
+            </a3>
+        </auth_methods>
+    </my_user>
+</users>
+```
+
+`<auth_methods>` 内では、次の認証タイプがサポートされています。
+
+* **`password`** — 平文パスワード
+* **`password_sha256_hex`** — SHA256 パスワードハッシュ
+* **`password_scram_sha256_hex`** — SCRAM-SHA-256 パスワードハッシュ
+* **`password_double_sha1_hex`** — ダブル SHA1 パスワードハッシュ
+* **`ldap`** — LDAP サーバー認証
+* **`kerberos`** — Kerberos 認証
+* **`ssl_certificates`** — SSL 証明書認証
+* **`ssh_keys`** — SSH 鍵認証
+* **`http_authentication`** — HTTP 認証
+
+**ルールと制限:**
+
+* `<auth_methods>` は、ユーザーレベルで指定する認証方法と **併用できません**。どちらか一方の方式のみを使用し、両方を同時に使用しないでください。
+* `<auth_methods>` には、少なくとも 1 つの認証方法を含める必要があります。
+* `<auth_methods>` 内の各ラッパー要素には、認証タイプを必ず 1 つだけ含める必要があります (後方互換性のため、複数含められる `<ssh_keys>` は例外です) 。
+* TOTP (`<time_based_one_time_password>`) はユーザーレベル (`<auth_methods>` の外側) で指定し、リスト内のすべてのパスワードベースの方式に適用されます。TOTP を有効にする場合は、少なくとも 1 つのパスワードベースの方式が必要です。
+
+**例: TOTP を使用した `auth_methods`**
+
+```xml
+<users>
+    <my_user>
+        <auth_methods>
+            <a1>
+                <password>my_password</password>
+            </a1>
+            <a2>
+                <ldap>
+                    <server>ldap_server_1</server>
+                </ldap>
+            </a2>
+        </auth_methods>
+        <time_based_one_time_password>
+            <secret>JBSWY3DPEHPK3PXP</secret>
+        </time_based_one_time_password>
+    </my_user>
+</users>
+```
+
+この例では、TOTP 検証はパスワードベースの方式 (`<password>`) に適用される一方、LDAP 方式は外部サーバーに対して独立して認証を行います。
+
+### access_management
+
+この設定は、そのユーザーに対して SQL による [Access Control and Account Management](/ja/concepts/features/security/access-rights#access-control-usage) を使用するかどうかを有効または無効にします。
+
+設定可能な値:
+
+* 0 — 無効。
+* 1 — 有効。
+
+デフォルト値: 0。
+
+### grants
+
+この設定では、選択したユーザーに任意の権限を付与できます。
+リスト内の各要素は、付与先を指定しない `GRANT` クエリである必要があります。
+
+例:
+
+```xml
+<user1>
+    <grants>
+        <query>GRANT SHOW ON *.*</query>
+        <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        <query>GRANT SELECT ON system.*</query>
+    </grants>
+</user1>
+```
+
+この設定は、`dictionaries`、`access_management`、`named_collection_control`、`show_named_collections_secrets`、`allow_databases` の各設定と同時に指定することはできません。
+
+### user_name/networks
+
+ユーザーが ClickHouseサーバーに接続できるネットワークの一覧です。
+
+リストの各要素には、次のいずれかの形式を指定できます。
+
+* `<ip>` — IP アドレスまたはネットワークマスク。
+
+  例: `213.180.204.3`, `10.0.0.1/8`, `10.0.0.1/255.255.255.0`, `2a02:6b8::3`, `2a02:6b8::3/64`, `2a02:6b8::3/ffff:ffff:ffff:ffff::`.
+
+* `<host>` — ホスト名。
+
+  例: `example01.host.ru`.
+
+  アクセス確認時には DNS クエリが実行され、返されたすべての IP アドレスが接続元アドレスと比較されます。
+
+* `<host_regexp>` — ホスト名に対する正規表現。
+
+  例: `^example\d\d-\d\d-\d\.host\.ru$`
+
+  アクセス確認時には、まず接続元アドレスに対して [DNS PTR クエリ](https://en.wikipedia.org/wiki/Reverse_DNS_lookup) が実行され、その後で指定した正規表現が適用されます。次に、PTR クエリの結果に対して別の DNS クエリが実行され、返されたすべてのアドレスが接続元アドレスと比較されます。正規表現は $ で終わるようにすることを強く推奨します。
+
+DNS リクエストの結果はすべて、サーバーが再起動するまでキャッシュされます。
+
+**例**
+
+任意のネットワークからユーザーがアクセスできるようにするには、次のように指定します。
+
+```xml
+<ip>::/0</ip>
+```
+
+<Note>
+  ファイアウォールが適切に設定されているか、またはサーバーがインターネットに直接接続されていない場合を除き、任意のネットワークからのアクセスを許可するのは安全ではありません。
+</Note>
+
+localhost からのみアクセスを許可するには、次のように指定します:
+
+```xml
+<ip>::1</ip>
+<ip>127.0.0.1</ip>
+```
+
+### user_name/profile
+
+ユーザーには設定プロファイルを割り当てることができます。設定プロファイルは、`users.xml` ファイル内の別のセクションで設定します。詳しくは、[設定プロファイル](/ja/concepts/features/configuration/settings/settings-profiles) を参照してください。
+
+### user_name/quota
+
+クォータを使用すると、一定期間におけるリソース使用量を追跡したり、制限したりできます。クォータは、`users.xml` 設定ファイルの `quotas`
+セクションで設定します。
+
+ユーザーにはクォータセットを割り当てることができます。クォータの設定の詳細については、[Quotas](/ja/concepts/features/configuration/server-config/quotas) を参照してください。
+
+### user_name/databases
+
+このセクションでは、現在のユーザーが実行する `SELECT` クエリに対して ClickHouse が返す行を制限することで、基本的な行レベルセキュリティを実装できます。
+
+**例**
+
+次の設定では、ユーザー `user1` が `SELECT` クエリの結果として、`table1` のうち `id` フィールドの値が 1000 である行のみを参照できるようにします。
+
+```xml
+<user1>
+    <databases>
+        <database_name>
+            <table1>
+                <filter>id = 1000</filter>
+            </table1>
+        </database_name>
+    </databases>
+</user1>
+```
+
+`filter` には、[UInt8](/ja/reference/data-types/int-uint) 型の値を返す任意の式を指定できます。通常は、比較や論理演算子が含まれます。`database_name.table1` のうち、`filter` の結果が 0 になる行は、このユーザーには返されません。このフィルタリングは `PREWHERE` 操作と互換性がなく、`WHERE→PREWHERE` 最適化も無効にします。
+
+## ロール
+
+事前定義ロールは、`user.xml` の `roles` セクションを使用して任意に作成できます。
+
+`roles` セクションの構造:
+
+```xml
+<roles>
+    <test_role>
+        <grants>
+            <query>GRANT SHOW ON *.*</query>
+            <query>REVOKE SHOW ON system.*</query>
+            <query>GRANT CREATE ON *.* WITH GRANT OPTION</query>
+        </grants>
+    </test_role>
+</roles>
+```
+
+これらのロールは、`users` セクションでユーザーに付与することもできます。
+
+```xml
+<users>
+    <user_name>
+        ...
+        <grants>
+            <query>GRANT test_role</query>
+        </grants>
+    </user_name>
+<users>
+```

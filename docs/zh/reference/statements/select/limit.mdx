@@ -1,0 +1,168 @@
+---
+description: 'LIMIT 子句文档'
+sidebarTitle: 'LIMIT'
+slug: /sql-reference/statements/select/limit
+title: 'LIMIT 子句'
+doc_type: 'reference'
+---
+
+`LIMIT` 子句用于控制查询结果返回的行数。
+
+<div id="basic-syntax">
+  ## 基本语法
+</div>
+
+**选择前几行：**
+
+```sql
+LIMIT m
+```
+
+返回结果中的前 `m` 行；如果结果少于 `m` 行，则返回全部记录。
+
+**TOP 的另一种语法 (兼容 MS SQL Server) ：**
+
+```sql
+-- SELECT TOP 数量|百分比 列名 FROM 表名
+SELECT TOP 10 * FROM numbers(100);
+SELECT TOP 0.1 * FROM numbers(100);
+```
+
+这相当于 `LIMIT m`，可用于兼容 Microsoft SQL Server 的查询语法。
+
+**带偏移量的 SELECT：**
+
+```sql
+LIMIT m OFFSET n
+-- 或等价写法：
+LIMIT n, m
+```
+
+跳过前 `n` 行，然后返回后续 `m` 行。
+
+在这两种形式下，`n` 和 `m` 都必须是非负整数。
+
+<div id="negative-limits">
+  ## 负数限制
+</div>
+
+使用负值从结果集的*末尾*选取行：
+
+| 语法                   | 结果                     |
+| -------------------- | ---------------------- |
+| `LIMIT -m`           | 最后 `m` 行               |
+| `LIMIT -m OFFSET -n` | 跳过最后 `n` 行后，再取最后 `m` 行 |
+| `LIMIT m OFFSET -n`  | 跳过最后 `n` 行后，再取前 `m` 行  |
+| `LIMIT -m OFFSET n`  | 跳过前 `n` 行后，再取最后 `m` 行  |
+
+`LIMIT -n, -m` 语法等同于 `LIMIT -m OFFSET -n`。
+
+<div id="fractional-limits">
+  ## 分数限制
+</div>
+
+使用 0 到 1 之间的小数值来选取一定比例的行：
+
+| Syntax                  | Result                            |
+| ----------------------- | --------------------------------- |
+| `LIMIT 0.1`             | 前 10% 的行                          |
+| `LIMIT 1 OFFSET 0.5`    | 位于中间的那一行                          |
+| `LIMIT 0.25 OFFSET 0.5` | 第三四分位数对应的行 (跳过前 50% 后，再取 25% 的行)  |
+
+<Note>
+  * 分数必须是大于 0 且小于 1 的 [Float64](/zh/reference/data-types/float) 值。
+  * 非整数的行数会向上取整到下一个整数。
+</Note>
+
+<div id="combining-limit-types">
+  ## 组合不同的 LIMIT 类型
+</div>
+
+你可以将普通整数与小数或负偏移量混合使用：
+
+```sql
+LIMIT 10 OFFSET 0.5    -- 从中间位置开始的 10 行
+LIMIT 10 OFFSET -20    -- 跳过最后 20 行后的 10 行
+```
+
+<div id="limit--with-ties-modifier">
+  ## LIMIT ... WITH TIES
+</div>
+
+`WITH TIES` 修饰符会包含与限制结果中最后一行具有相同 `ORDER BY` 值的其他行。
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+└───┘
+```
+
+使用 `WITH TIES` 时，所有与最后一个值相同的行都会包含在结果中：
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 0, 5 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 0 │
+│ 0 │
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+第 6 行也会被包含在内，因为它与第 5 行的值相同 (`2`) 。
+
+使用 `OFFSET` 关键字指定偏移量时，情况也是如此：
+
+```sql
+SELECT * FROM (
+    SELECT number % 50 AS n FROM numbers(100)
+) ORDER BY n LIMIT 3 OFFSET 2 WITH TIES
+```
+
+```response
+┌─n─┐
+│ 1 │
+│ 1 │
+│ 2 │
+│ 2 │
+└───┘
+```
+
+跳过前 2 行并取 3 行通常会返回 `1, 1, 2`，但由于第二个 `2` 与最后一行并列，因此也会包含在结果中。
+
+<Note>
+  `WITH TIES` 不支持负数限制。
+</Note>
+
+此修饰符可与 [`ORDER BY ... WITH FILL`](/zh/reference/statements/select/order-by#order-by-expr-with-fill-modifier) 修饰符结合使用。
+
+<div id="considerations">
+  ## 注意事项
+</div>
+
+**非确定性结果：**如果没有 [`ORDER BY`](/zh/reference/statements/select/order-by) 子句，返回的行可能是任意的，并且在多次执行查询时可能会有所不同。
+
+**服务器端限制：**返回的行数也可能受到 [limit](/zh/reference/settings/session-settings#limit) 设置的影响。
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [LIMIT BY](/zh/reference/statements/select/limit-by) — 限制每组值中的行数，适用于获取每个类别下前 N 个结果。

@@ -1,0 +1,100 @@
+---
+sidebarTitle: 'Azure Synapse'
+slug: /integrations/azure-synapse
+description: 'مقدمة عن Azure Synapse مع ClickHouse'
+keywords: ['clickhouse', 'azure synapse', 'azure', 'synapse', 'microsoft', 'azure spark', 'بيانات']
+title: 'دمج Azure Synapse مع ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+تُعد [Azure Synapse](https://azure.microsoft.com/en-us/products/synapse-analytics) خدمة تحليلات متكاملة تجمع بين البيانات الضخمة وعلوم البيانات ومستودعات البيانات، بما يتيح تحليل البيانات بسرعة وعلى نطاق واسع.
+ضمن Synapse، توفّر مجمّعات Spark عناقيد [Apache Spark](https://spark.apache.org) قابلة للتوسّع وعند الطلب، ما يتيح لك تنفيذ تحويلات بيانات معقّدة وتعلّم الآلة وعمليات التكامل مع الأنظمة الخارجية.
+
+توضح هذه المقالة كيفية دمج [ClickHouse Spark connector](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector) عند العمل باستخدام Apache Spark داخل Azure Synapse.
+
+<div id="add-connector-dependencies">
+  ## أضف تبعيات الموصل
+</div>
+
+يدعم Azure Synapse ثلاثة مستويات لإدارة الحزم:
+
+1. الحزم الافتراضية
+2. Spark pool مستوى
+3. مستوى الجلسة
+
+<br />
+
+اتبع دليل [Manage libraries for تجمّع Apache Spark](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-portal-add-libraries) واتبعه أيضًا [إدارة المكتبات لـ تجمّع Apache Spark](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-manage-pool-packages) وأضف التبعيات المطلوبة التالية إلى تطبيق Spark الخاص بك:
+
+* `clickhouse-spark-runtime-{spark_version}_{scala_version}-{connector_version}.jar` - [Maven الرسمي](https://mvnrepository.com/artifact/com.clickhouse.spark)
+* `clickhouse-jdbc-{java_client_version}-all.jar` - [Maven الرسمي](https://mvnrepository.com/artifact/com.clickhouse/clickhouse-jdbc)
+
+يُرجى الرجوع إلى وثائق [مصفوفة توافق Spark Connector](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#compatibility-matrix) لمعرفة الإصدارات الأنسب لاحتياجاتك.
+
+<div id="add-clickhouse-as-catalog">
+  ## أضِف ClickHouse ككتالوج
+</div>
+
+توجد عدة طرق لإضافة إعدادات Spark إلى جلستك:
+
+* ملف إعدادات مخصص لتحميله مع جلستك
+* إضافة الإعدادات عبر واجهة مستخدم Azure Synapse
+* إضافة الإعدادات في دفتر ملاحظات Synapse
+
+اتبع هذا الدليل [إدارة إعدادات Apache Spark](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-create-spark-configuration)
+وأضف [إعدادات Spark المطلوبة للموصل](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#register-the-catalog-required).
+
+على سبيل المثال، يمكنك تهيئة جلسة Spark في دفتر ملاحظاتك باستخدام هذه الإعدادات:
+
+```python
+%%configure -f
+{
+    "conf": {
+        "spark.sql.catalog.clickhouse": "com.clickhouse.spark.ClickHouseCatalog",
+        "spark.sql.catalog.clickhouse.host": "<clickhouse host>",
+        "spark.sql.catalog.clickhouse.protocol": "https",
+        "spark.sql.catalog.clickhouse.http_port": "<port>",
+        "spark.sql.catalog.clickhouse.user": "<username>",
+        "spark.sql.catalog.clickhouse.password": "password",
+        "spark.sql.catalog.clickhouse.database": "default"
+    }
+}
+```
+
+تأكد من وجوده في الخلية الأولى كما يلي:
+
+<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="ضبط إعدادات Spark عبر دفتر الملاحظات" border />
+
+يرجى زيارة [صفحة إعدادات Spark في ClickHouse](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations) للاطلاع على إعدادات إضافية.
+
+<Info>
+  عند العمل مع ClickHouse Cloud، يُرجى التأكد من ضبط [إعدادات Spark المطلوبة](/ar/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#clickhouse-cloud-settings).
+</Info>
+
+<div id="setup-verification">
+  ## التحقق من الإعداد
+</div>
+
+للتحقق من إعداد التبعيات وعمليات التكوين بنجاح، يُرجى زيارة Spark UI الخاصة بجلسة العمل، ثم الانتقال إلى علامة التبويب `Environment`.
+هناك، ابحث عن إعدادات ClickHouse ذات الصلة:
+
+<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="التحقق من إعدادات ClickHouse باستخدام Spark UI" border />
+
+<div id="additional-resources">
+  ## موارد إضافية
+</div>
+
+* [وثائق ClickHouse Spark Connector](/ar/integrations/connectors/data-ingestion/apache-spark/index)
+* [نظرة عامة على تجمّعات Apache Spark في Azure Synapse](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-overview)
+* [تحسين الأداء لأعباء عمل Apache Spark](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-performance)
+* [إدارة المكتبات لتجمّعات Apache Spark في Synapse](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-manage-pool-packages)
+* [إدارة تكوين Apache Spark في Synapse](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-azure-create-spark-configuration)

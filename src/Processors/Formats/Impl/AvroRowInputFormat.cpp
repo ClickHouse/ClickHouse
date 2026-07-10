@@ -32,6 +32,7 @@
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <fmt/format.h>
 #include <Processors/Formats/Impl/AvroConfluentSchemaRegistry.h>
 #include <base/EnumReflection.h>
 #include <Compiler.hh>
@@ -411,6 +412,66 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
                     SerializationArray::readArraySafe(column, read_array);
                     return true;
                 };
+            }
+            /// Non-string-key maps are encoded in Avro as an array of two-field key/value
+            /// records (Avro native maps only allow string keys). This is what Iceberg /
+            /// Spark write for MAP<K, V> with a non-string K. A ClickHouse Map is physically
+            /// Array(Tuple(key, value)), so decode the array of records straight into it.
+            if (target.isMap())
+            {
+                const auto & items_node = root_node->leafAt(0);
+                if (items_node->type() == avro::AVRO_RECORD && items_node->leaves() == 2)
+                {
+                    const auto & map_type = assert_cast<const DataTypeMap &>(*target_type);
+                    const auto & keys_type = map_type.getKeyType();
+                    const auto & values_type = map_type.getValueType();
+
+                    /// Use name-based routing only when BOTH canonical field names are
+                    /// present, so that an ordinary 2-field record with just one field
+                    /// named "key" or "value" is not silently reinterpreted. Otherwise
+                    /// fall back to positional order (field 0 = key, field 1 = value).
+                    int key_field_index = 0;
+                    bool has_key_name = items_node->nameAt(0) == "key" || items_node->nameAt(1) == "key";
+                    bool has_value_name = items_node->nameAt(0) == "value" || items_node->nameAt(1) == "value";
+                    if (has_key_name && has_value_name)
+                        key_field_index = items_node->nameAt(0) == "key" ? 0 : 1;
+
+                    /// Avro record fields are encoded positionally, so build a deserializer for
+                    /// each field in declared order together with the column it targets.
+                    std::vector<std::pair<DeserializeFn, bool>> field_deserializers;
+                    field_deserializers.reserve(2);
+                    for (int i = 0; i != 2; ++i)
+                    {
+                        bool is_key = i == key_field_index;
+                        field_deserializers.emplace_back(
+                            createDeserializeFn(items_node->leafAt(i), is_key ? keys_type : values_type), is_key);
+                    }
+
+                    return [field_deserializers](IColumn & column, avro::Decoder & decoder)
+                    {
+                        ColumnMap & column_map = assert_cast<ColumnMap &>(column);
+                        ColumnArray & column_array = column_map.getNestedColumn();
+                        ColumnArray::Offsets & offsets = column_array.getOffsets();
+                        ColumnTuple & nested_columns = column_map.getNestedData();
+                        IColumn & keys_column = nested_columns.getColumn(0);
+                        IColumn & values_column = nested_columns.getColumn(1);
+                        auto read_map = [&]()
+                        {
+                            size_t total = 0;
+                            for (size_t n = decoder.arrayStart(); n != 0; n = decoder.arrayNext())
+                            {
+                                total += n;
+                                for (size_t i = 0; i < n; ++i)
+                                    for (const auto & [field_deserialize, is_key] : field_deserializers)
+                                        field_deserialize(is_key ? keys_column : values_column, decoder);
+                            }
+                            offsets.push_back(offsets.back() + total);
+                        };
+
+                        SerializationMap::readMapSafe(column, read_map);
+                        return true;
+                    };
+                }
             }
             break;
         case avro::AVRO_UNION:
@@ -1239,20 +1300,20 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
     NamesAndTypesList names_and_types;
     for (int i = 0; i != static_cast<int>(root_node->leaves()); ++i)
-        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i)));
+        names_and_types.emplace_back(root_node->nameAt(i), avroNodeToDataType(root_node->leafAt(i), format_settings.schema_inference_allow_nullable_tuple_type));
 
     return names_and_types;
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node)
+DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
     checkStackSize();
 
     std::unordered_set<std::string> seen_names;
-    return avroNodeToDataTypeImpl(node, seen_names);
+    return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
-DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names)
+DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
     switch (node->type())
     {
@@ -1322,7 +1383,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeFixedString>(node->fixedSize());
         }
         case avro::Type::AVRO_ARRAY:
-            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names));
+            return std::make_shared<DataTypeArray>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type));
         case avro::Type::AVRO_NULL:
             return std::make_shared<DataTypeNothing>();
         case avro::Type::AVRO_UNION:
@@ -1330,7 +1391,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             // Treat union[T] as just T
             if (node->leaves() == 1)
             {
-                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names);
+                return avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type);
             }
 
             // Treat union[T, NULL] and union[NULL, T] as Nullable(T)
@@ -1339,7 +1400,9 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 && (node->leafAt(0)->type() == avro::Type::AVRO_NULL || node->leafAt(1)->type() == avro::Type::AVRO_NULL))
             {
                 int nested_leaf_index = node->leafAt(0)->type() == avro::Type::AVRO_NULL ? 1 : 0;
-                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names);
+                auto nested_type = avroNodeToDataTypeImpl(node->leafAt(nested_leaf_index), seen_names, allow_nullable_tuple_type);
+                if (isTuple(nested_type) && !allow_nullable_tuple_type)
+                    return nested_type;
                 return nested_type->canBeInsideNullable() ? makeNullable(nested_type) : nested_type;
             }
 
@@ -1355,14 +1418,14 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
                 if (node->leafAt(i)->type() == avro::Type::AVRO_NULL) continue;
 
                 const auto & avro_node = node->leafAt(i);
-                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names));
+                nested_types.push_back(avroNodeToDataTypeImpl(avro_node, seen_names, allow_nullable_tuple_type));
             }
             return std::make_shared<DataTypeVariant>(nested_types);
         }
         case avro::Type::AVRO_SYMBOLIC:
         {
             auto resolved = avro::resolveSymbol(node);
-            return avroNodeToDataTypeImpl(resolved, seen_names);
+            return avroNodeToDataTypeImpl(resolved, seen_names, allow_nullable_tuple_type);
         }
         case avro::Type::AVRO_RECORD:
         {
@@ -1377,7 +1440,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             nested_names.reserve(node->leaves());
             for (int i = 0; i != static_cast<int>(node->leaves()); ++i)
             {
-                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names));
+                nested_types.push_back(avroNodeToDataTypeImpl(node->leafAt(i), seen_names, allow_nullable_tuple_type));
                 nested_names.push_back(node->nameAt(i));
             }
 
@@ -1385,7 +1448,7 @@ DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node,
             return std::make_shared<DataTypeTuple>(nested_types, nested_names);
         }
         case avro::Type::AVRO_MAP:
-            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names), avroNodeToDataTypeImpl(node->leafAt(1), seen_names));
+            return std::make_shared<DataTypeMap>(avroNodeToDataTypeImpl(node->leafAt(0), seen_names, allow_nullable_tuple_type), avroNodeToDataTypeImpl(node->leafAt(1), seen_names, allow_nullable_tuple_type));
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Avro column {} is not supported for inserting.", nodeName(node));
     }
@@ -1706,6 +1769,14 @@ void registerAvroSchemaReader(FormatFactory & factory)
         return std::make_shared<AvroSchemaReader>(buf, true, settings);
     });
 
+    for (const auto * format_name : {"Avro", "AvroConfluent"})
+    {
+        factory.registerAdditionalInfoForSchemaCacheGetter(format_name, [](const FormatSettings & settings)
+        {
+            return fmt::format(
+                "schema_inference_allow_nullable_tuple_type={}", settings.schema_inference_allow_nullable_tuple_type);
+        });
+    }
 }
 
 }

@@ -1,0 +1,73 @@
+---
+date: 2023-10-26
+title: Can you use ClickHouse for vector search?
+description: Learn how to use ClickHouse for vector search, including storing embeddings and searching with distance functions like cosine similarity.
+tags: ['Use Cases', 'Concepts']
+keywords: ['Vector Search']
+---
+
+{frontMatter.description}
+{/* truncate */}
+
+## ClickHouse for Vector Search! {#clickhouse-for-vector-search}
+Yes, ClickHouse can perform vector search.
+
+The main advantages of using ClickHouse for vector search compared to using more specialized vector databases include:
+
+- Using ClickHouse's filtering and full-text search capabilities to refine your dataset before performing a search.
+- Performing analytics on your datasets.
+- Running a `JOIN` against your existing data.
+- No need to manage yet another database and complicate your infrastructure.
+
+Here is a quick tutorial on how to use ClickHouse for vector search.
+
+<Steps>
+<Step title="Create embeddings">
+
+Your data (documents, images, or structured data) must be converted to _embeddings_. We recommend creating embeddings using the [OpenAI Embeddings API](https://platform.openai.com/docs/api-reference/embeddings) or using the open-source Python library [SentenceTransformers](https://www.sbert.net/).
+
+You can think of an embedding as a large array of floating-point numbers that represent your data. [Check out this guide from OpenAI to learn more about embeddings](https://platform.openai.com/docs/guides/embeddings/what-are-embeddings).
+
+</Step>
+<Step title="Store the embeddings">
+
+Once you have generated embeddings, you need to store them in ClickHouse. Each embedding should be stored in a separate row and can include metadata for filtering, aggregations, or analytics. Here's an example of a table that can store images with captions:
+
+```sql
+CREATE TABLE images
+(
+	`_file` LowCardinality(String),
+	`caption` String,
+	`image_embedding` Array(Float32)
+)
+ENGINE = MergeTree;
+```
+
+</Step>
+<Step title="Search for related embeddings">
+
+Let's say you want to search for pictures of dogs in your dataset. You can use a distance function like `cosineDistance` to take an embedding of a dog image and search for related images:
+
+```sql
+SELECT
+    _file,
+	caption,
+	cosineDistance(
+        -- An embedding of your "input" dog picture
+        [0.5736801028251648, 0.2516217529773712, ...,  -0.6825592517852783],
+        image_embedding
+    ) AS score
+FROM images
+ORDER BY score ASC
+LIMIT 10
+```
+
+This query returns the `_file` names and `caption` of the top 10 images most likely to be related to your provided dog image.
+
+</Step>
+</Steps>
+
+## Further reading {#further-reading}
+To follow a more in-depth tutorial on vector search using ClickHouse, please see:
+
+- [Exact and Approximate Vector Search](/reference/engines/table-engines/mergetree-family/annindexes)

@@ -1,0 +1,44 @@
+---
+slug: /cloud/managed-postgres/upgrades
+sidebarTitle: 'الترقيات'
+title: 'الترقيات'
+description: 'كيفية عمل ترقيات إصدارات PostgreSQL في ClickHouse Managed Postgres'
+keywords: ['ترقيات ClickHouse Managed Postgres', 'إصدار Postgres', 'ترقية ثانوية', 'ترقية رئيسية', 'نافذة الصيانة']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.upgrades-beta" />
+
+يتولى Managed Postgres ترقية إصدارات PostgreSQL للحفاظ على أمان مثيلاتك وإبقائها محدّثة. كما يدعم ترقيات الإصدارات الثانوية والرئيسية مع الحد الأدنى من الانقطاع.
+
+<div id="maintenance-updates">
+  ## تحديثات الصيانة
+</div>
+
+تتضمن الصيانة الدورية لمثيلات PostgreSQL ما يلي:
+
+* تتضمن ترقيات الإصدارات الثانوية (مثل 17.4 إلى 17.5) إصلاحات للأخطاء وتصحيحات أمان لمحرك PostgreSQL.
+* ميزات الخدمة المُدارة، بما في ذلك تحسينات على Native CDC وobservability وpg&#95;clickhouse وامتدادات أخرى.
+* تصحيحات لنظام التشغيل ومكوّنات النظام، بما في ذلك الإصلاحات الأمنية وتحسينات الكفاءة وغيرها من التحسينات.
+
+تُنفَّذ هذه العمليات عبر التبديل عند الفشل، وعادةً لا ينتج عنها سوى انقطاع قصير يستمر غالبًا لبضع ثوانٍ فقط.
+
+بالنسبة إلى المثيلات التي تكون فيها [المثيلات الاحتياطية](/ar/products/managed-postgres/high-availability) مفعّلة، يُطبَّق التحديث على المثيل الاحتياطي أولًا، ثم يتبعه التبديل عند الفشل لتقليل فترة التعطل إلى الحد الأدنى.
+
+<div id="maintenance-windows">
+  ## نوافذ الصيانة
+</div>
+
+نافذة الصيانة الافتراضية تكون من 14:00 إلى 16:00 بالتوقيت العالمي المنسق (UTC) يوم الأحد.
+ومن المتوقع ألا تتجاوز فترة التوقف دقيقة واحدة ضمن هذه النافذة.
+
+بالنسبة إلى المؤسسات ضمن Enterprise Tier، يدعم Managed Postgres نوافذ الصيانة بحيث يمكن جدولة الترقيات وعمليات الصيانة الأخرى في وقت يسبب أقل قدر ممكن من التأثير في أعباء العمل لديك. سيتوفر قريبًا دعم إعداد نوافذ الصيانة عبر واجهة المستخدم وواجهة برمجة تطبيقات. وحتى ذلك الحين، تواصل مع [support](https://clickhouse.com/support/program) لإعداد نافذة صيانة لمثيلك.
+
+<div id="major-version-upgrades">
+  ## ترقيات الإصدارات الرئيسية
+</div>
+
+ستتوفر قريبًا ترقيات الإصدارات الرئيسية (مثل 17.x إلى 18.x) عبر واجهة المستخدم وواجهة برمجة تطبيقات.
+وإلى أن تتوفر، تواصل مع [الدعم](https://clickhouse.com/support/program) لترقية مثيل Managed Postgres لديك.
