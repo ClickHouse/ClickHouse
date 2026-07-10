@@ -151,6 +151,9 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabasePostgreSQL::getDetachedTablesI
         SnapshotDetachedTable snapshot_table;
         snapshot_table.database = database_name;
         snapshot_table.table = table_name;
+        auto db_disk = getDisk();
+        fs::path table_marked_removed_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+        snapshot_table.is_permanently = db_disk->existsFile(table_marked_removed_path);
         snapshot.emplace(table_name, std::move(snapshot_table));
     }
     return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(snapshot));
@@ -312,6 +315,29 @@ void DatabasePostgreSQL::createTable(ContextPtr local_context, const String & ta
     attachTable(local_context, table_name, storage, {});
 }
 
+
+void DatabasePostgreSQL::detachTablePermanently(ContextPtr, const String & table_name)
+{
+    if (!persistent)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DETACH TABLE PERMANENTLY is not supported for non-persistent PostgreSQL database");
+
+    auto db_disk = getDisk();
+    std::lock_guard lock{mutex};
+
+    if (!checkPostgresTable(table_name))
+        throw Exception(ErrorCodes::UNKNOWN_TABLE, "Cannot detach table {} because it does not exist", getTableNameForLogs(table_name));
+
+    if (detached_or_dropped.contains(table_name))
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is already dropped/detached", getTableNameForLogs(table_name));
+
+    fs::path mark_table_removed = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+    db_disk->createFile(mark_table_removed);
+
+    if (cache_tables)
+        cached_tables.erase(table_name);
+
+    detached_or_dropped.emplace(table_name);
+}
 
 void DatabasePostgreSQL::dropTable(ContextPtr, const String & table_name, bool /* sync */)
 {

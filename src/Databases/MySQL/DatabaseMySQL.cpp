@@ -169,6 +169,9 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseMySQL::getDetachedTablesIterat
         SnapshotDetachedTable snapshot_table;
         snapshot_table.database = database_name;
         snapshot_table.table = table_name;
+        auto db_disk = getDisk();
+        fs::path remove_flag_path = fs::path(getMetadataPath()) / (escapeForFileName(table_name) + suffix);
+        snapshot_table.is_permanently = db_disk->existsFile(remove_flag_path);
         snapshot.emplace(table_name, std::move(snapshot_table));
     }
     return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(std::move(snapshot));
