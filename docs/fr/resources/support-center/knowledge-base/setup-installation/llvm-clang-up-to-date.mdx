@@ -1,0 +1,28 @@
+---
+date: 2024-04-22
+title: Comment compiler LLVM et clang sous Linux
+description: Commandes pour compiler LLVM et clang sous Linux.
+tags: ['Communauté', 'Outils et utilitaires']
+keywords: [contribution, llvm, clang]
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="build-llvm-and-clang-on-linux">
+  ## Compiler LLVM et Clang sous Linux
+</div>
+
+Pour compiler ClickHouse et y contribuer, vous devez utiliser [LLVM](https://llvm.org/) et [Clang](https://clang.llvm.org/).
+
+Voici les commandes pour compiler la dernière version de LLVM et de Clang sous Linux :
+
+```bash
+git clone git@github.com:llvm/llvm-project.git
+mkdir llvm-build
+cd llvm-build
+cmake -GNinja -DCMAKE_BUILD_TYPE:STRING=Release -DLLVM_ENABLE_PROJECTS=all -DLLVM_TARGETS_TO_BUILD=all ../llvm-project/llvm
+time ninja
+sudo ninja install
+```

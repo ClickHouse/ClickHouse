@@ -1,0 +1,66 @@
+---
+title: Como configurar as SETTINGs de um usuário no ClickHouse
+description: Aprenda a definir SETTINGS no ClickHouse para consultas individuais, sessões de cliente ou usuários específicos usando os comandos `SET` e `ALTER USER`.
+date: 2023-03-01
+tags: ['SETTINGs']
+keywords: ['SET', 'ALTER', 'Usuário', 'Consulta', 'Sessão']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="introduction">
+  ## Introdução
+</div>
+
+Há várias maneiras de definir uma SETTING para um usuário no ClickHouse, dependendo do caso de uso e de por quanto tempo você quer mantê-la configurada. Vamos ver alguns cenários...
+
+<div id="configure-a-setting-for-a-single-query">
+  ## Defina uma SETTING para uma única consulta
+</div>
+
+Uma consulta `SELECT` pode conter uma cláusula `SETTINGS`, na qual é possível definir quantas SETTINGs forem necessárias. As SETTINGs são aplicadas apenas a essa consulta específica. Por exemplo:
+
+```sql
+SELECT *
+FROM my_table
+SETTINGS max_threads = 8;
+```
+
+O número máximo de threads será 8 para esta consulta específica.
+
+<div id="configure-a-setting-for-a-session">
+  ## Configure uma SETTING para uma sessão
+</div>
+
+Você pode definir uma SETTING para a duração de uma sessão do cliente usando uma cláusula `SET`. Isso é útil para testes ad hoc ou quando você quer que uma SETTING permaneça ativa durante algumas consultas — mas não por mais tempo.
+
+```sql
+SET max_threads = 8;
+
+SELECT *
+FROM my_table;
+```
+
+<div id="configure-a-setting-for-a-particular-user">
+  ## Configure um parâmetro para um usuário específico
+</div>
+
+Use `ALTER USER` para definir um SETTING apenas para um usuário. Por exemplo:
+
+```sql
+ALTER USER my_user_name SETTINGS max_threads = 8;
+```
+
+Você pode verificar se funcionou fazendo logout no seu cliente, entrando novamente e, em seguida, usando a função `getSetting`:
+
+```sql
+SELECT getSetting('max_threads');
+```
+
+<Note>
+  Especificar as configurações dessa forma substituirá as configurações atuais do usuário; ou seja, se você tiver outras configurações aplicadas ao usuário, mas não as especificar na instrução `ALTER USER`, elas serão perdidas.
+
+  Se quiser manter suas configurações, use `ALTER USER ... MODIFY SETTING ...`
+</Note>

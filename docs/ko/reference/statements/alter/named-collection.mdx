@@ -1,0 +1,35 @@
+---
+description: 'ALTER NAMED COLLECTION 문서'
+sidebarTitle: '명명된 컬렉션'
+slug: /sql-reference/statements/alter/named-collection
+title: 'ALTER NAMED COLLECTION'
+doc_type: '참고'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+이 쿼리는 이미 존재하는 이름이 지정된 컬렉션을 수정하는 데 사용됩니다.
+
+**구문**
+
+```sql
+ALTER NAMED COLLECTION [IF EXISTS] name [ON CLUSTER cluster]
+[ SET
+key_name1 = 'some value' [[NOT] OVERRIDABLE],
+key_name2 = 'some value' [[NOT] OVERRIDABLE],
+key_name3 = 'some value' [[NOT] OVERRIDABLE],
+... ] |
+[ DELETE key_name4, key_name5, ... ]
+```
+
+**예시**
+
+```sql
+CREATE NAMED COLLECTION foobar AS a = '1' NOT OVERRIDABLE, b = '2';
+
+ALTER NAMED COLLECTION foobar SET a = '2' OVERRIDABLE, c = '3';
+
+ALTER NAMED COLLECTION foobar DELETE b;
+```

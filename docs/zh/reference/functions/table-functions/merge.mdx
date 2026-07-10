@@ -1,0 +1,34 @@
+---
+description: '创建一个临时 Merge 表。其结构通过对底层表的列取并集并推导公共类型得出。'
+sidebarTitle: 'merge'
+slug: /sql-reference/table-functions/merge
+title: 'merge'
+doc_type: 'reference'
+---
+
+创建一个临时 [Merge](/zh/reference/engines/table-engines/special/merge) 表。
+该表的 schema 通过对底层表的列取并集并推导公共类型得出。
+也可使用与 [Merge](/zh/reference/engines/table-engines/special/merge) 表引擎相同的虚拟列。
+
+<div id="syntax">
+  ## 语法
+</div>
+
+```sql
+merge(['db_name',] 'tables_regexp')
+```
+
+<div id="arguments">
+  ## 参数
+</div>
+
+| 参数              | 描述                                                                                                                                                                            |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `db_name`       | 可能的取值 (可选，默认为 `currentDatabase()`) ：<br />    - 数据库名称，<br />    - 返回数据库名称字符串的常量表达式，例如 `currentDatabase()`，<br />    - `REGEXP(expression)`，其中 `expression` 是用于匹配 DB 名称的正则表达式。 |
+| `tables_regexp` | 用于匹配指定 DB 或多个 DB 中表名的正则表达式。                                                                                                                                                   |
+
+<div id="related">
+  ## 相关
+</div>
+
+* [Merge](/zh/reference/engines/table-engines/special/merge) 表引擎

@@ -1,0 +1,72 @@
+---
+title: Configuration d’AWS PrivateLink pour exposer MSK à ClickPipes
+description: Étapes de configuration pour exposer un cluster MSK privé à ClickPipes via la connectivité MSK multi-VPC.
+date: 2025-4-15
+tags: ['Sécurité et authentification', 'Gestion du Cloud']
+keywords: ['AWS PrivateLink', 'MSK', 'ClickPipes']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="overview">
+  ## Vue d’ensemble
+</div>
+
+Ce guide vous aidera à démarrer la configuration d’un **MSK multi-VPC** à utiliser avec le [point de terminaison privé inverse de ClickPipes](/fr/integrations/clickpipes/aws-privatelink#msk-multi-vpc).
+
+<div id="requirements">
+  ## Exigences
+</div>
+
+Le VPC de votre cluster MSK doit être situé dans l’une de nos régions ClickPipes. Consultez [les régions ClickPipes](/fr/integrations/clickpipes/aws-privatelink#aws-privatelink-regions) pour obtenir la liste des régions prises en charge.
+
+<div id="enabling-multi-vpc-connectivity">
+  ## Activation de la connectivité multi-VPC
+</div>
+
+1. Accédez au cluster MSK.
+   * Choisissez « Clusters » dans le volet de navigation de gauche de la console Amazon MSK.
+   * Sélectionnez le cluster MSK que vous souhaitez configurer pour la connectivité multi-VPC.
+2. Activez la connectivité MSK multi-VPC
+   * Dans l’onglet **Connectivity**, repérez la section **Multi-VPC connectivity**.
+   * Cliquez sur **Edit**.
+   * Activez l’option **Turn-on MSK multi-VPC connectivity**.
+   * Suivez les instructions
+3. Ajoutez le principal du compte ClickPipes à la policy du cluster
+   * Accédez à l’onglet **Configuration**.
+   * Cliquez sur **Edit** dans la section **Cluster policy**.
+   * Ajoutez `arn:aws:iam::072088201116:root` à la **IAM policy**. Exemple :
+     ```json
+     {
+         "Version": "2012-10-17",
+         "Statement": [
+             {
+                 "Effect": "Allow",
+                 "Principal": {
+                     "AWS": [
+                         "arn:aws:iam::072088201116:root"
+                     ]
+                 },
+                 "Action": [
+                     "kafka:CreateVpcConnection",
+                     "kafka:GetBootstrapBrokers",
+                     "kafka:DescribeCluster",
+                     "kafka:DescribeClusterV2"
+                 ]
+             }
+         ]
+     }
+     ```
+
+<Tip>
+  La policy IAM du cluster permet à ClickPipes d’initier la connexion entre ClickPipes et votre cluster MSK.
+  Si vous souhaitez configurer l’authentification IAM pour votre cluster MSK, veuillez consulter la [documentation sur l’authentification IAM](/fr/integrations/clickpipes/kafka/best-practices#iam).
+</Tip>
+
+<div id="creating-reverse-private-endpoint">
+  ## Création d’un point de terminaison privé inverse
+</div>
+
+Suivez les étapes de création d’un point de terminaison privé inverse dans la [documentation ClickPipes](/fr/integrations/clickpipes/aws-privatelink#creating-clickpipe).

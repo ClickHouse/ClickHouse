@@ -1,0 +1,253 @@
+---
+description: 'コンポーザブルプロトコルにより、ClickHouseサーバーへの TCP アクセスをより柔軟に構成できます。'
+sidebarTitle: 'コンポーザブルプロトコル'
+slug: /operations/settings/composable-protocols
+title: 'コンポーザブルプロトコル'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 概要
+</div>
+
+コンポーザブルプロトコル を使用すると、ClickHouseサーバー への TCP アクセスをより柔軟に構成できます。この構成は、従来の構成と併用することも、置き換えることもできます。
+
+<div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
+  ## コンポーザブルプロトコルの設定
+</div>
+
+コンポーザブルプロトコルは、XML設定ファイルで設定できます。プロトコル
+セクションは、XML設定ファイル内の`protocols`タグで示されます。
+
+```xml
+<protocols>
+
+</protocols>
+```
+
+<div id="basic-modules-define-protocol-layers">
+  ### プロトコルレイヤーの設定
+</div>
+
+基本モジュールを使ってプロトコルレイヤーを定義できます。たとえば、HTTP レイヤーを定義するには、
+`protocols` セクションに新しい基本モジュールを追加します。
+
+```xml
+<protocols>
+
+  <!-- plain_http モジュール -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+</protocols>
+```
+
+モジュールは、以下の項目に従って設定できます。
+
+* `plain_http` - 別のレイヤーから参照できる名前
+* `type` - データ処理のために生成されるプロトコルハンドラーを示します。
+  事前定義されたプロトコルハンドラーとして、以下を使用できます。
+  * `tcp` - ClickHouseネイティブプロトコルハンドラー
+  * `http` - HTTP ClickHouseプロトコルハンドラー
+  * `tls` - TLS暗号化レイヤー
+  * `proxy1` - PROXYv1レイヤー
+  * `mysql` - MySQL互換プロトコルハンドラー
+  * `postgres` - PostgreSQL互換プロトコルハンドラー
+  * `prometheus` - Prometheusプロトコルハンドラー
+  * `interserver` - ClickHouseのinterserverハンドラー
+
+<Note>
+  `gRPC` プロトコルハンドラーは `コンポーザブルプロトコル` では実装されていません
+</Note>
+
+<div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
+  ### エンドポイントの設定
+</div>
+
+エンドポイント (待ち受けポート) は、`<port>` と省略可能な `<host>` タグで表されます。
+たとえば、先ほど追加した HTTP レイヤーにエンドポイントを設定するには、
+次のように設定を変更します。
+
+```xml
+<protocols>
+
+  <plain_http>
+
+    <type>http</type>
+    <!-- エンドポイント -->
+    <host>127.0.0.1</host>
+    <port>8123</port>
+
+  </plain_http>
+
+</protocols>
+```
+
+`<host>` タグが省略されている場合は、ルート設定の `<listen_host>` が
+使用されます。
+
+<div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
+  ### レイヤーシーケンスの設定
+</div>
+
+レイヤーシーケンスは、`<impl>` タグを使って定義し、別の
+モジュールを参照することで構成します。たとえば、plain&#95;http モジュールの上に TLS レイヤーを設定するには、
+設定をさらに次のように変更できます。
+
+```xml
+<protocols>
+
+  <!-- httpモジュール -->
+  <plain_http>
+    <type>http</type>
+  </plain_http>
+
+  <!-- plain_httpモジュールの上にTLSレイヤーとして設定されたhttpsモジュール -->
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="endpoint-can-be-attached-to-any-layer">
+  ### エンドポイントをレイヤーに割り当てる
+</div>
+
+エンドポイントはどのレイヤーにも割り当てることができます。たとえば、HTTP (ポート8123) とHTTPS (ポート8443) のエンドポイントを定義できます。
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+</protocols>
+```
+
+<div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
+  ### 追加のエンドポイントを定義する
+</div>
+
+任意のモジュールを参照し、`<type>` タグを省略することで、追加のエンドポイントを定義できます。たとえば、`plain_http` モジュールに対する `another_http` エンドポイントは次のように定義できます。
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+  </https>
+
+  <another_http>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8223</port>
+  </another_http>
+
+</protocols>
+```
+
+<div id="custom-http-handlers-per-endpoint">
+  ### エンドポイントごとのカスタム HTTP ハンドラー
+</div>
+
+デフォルトでは、すべての `type=http` プロトコルエントリは同じ `<http_handlers>`
+設定を共有します。これを変更するには、別の設定セクションを参照する `<handlers>` タグを追加します。これにより、各 HTTP ポートで
+異なる HTTP ルーティングルールのセットを提供できます。
+
+たとえば、ポート 8124 で独自のハンドラーを持つ別の HTTP API を実行するには:
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <alt_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8124</port>
+    <handlers>http_handlers_alt</handlers>
+  </alt_http>
+
+</protocols>
+
+<!-- plain_http (ポート 8123) で使用されるデフォルトハンドラー -->
+<http_handlers>
+    <defaults/>
+</http_handlers>
+
+<!-- alt_http (ポート 8124) で使用される代替ハンドラー -->
+<http_handlers_alt>
+    <rule>
+        <url>/custom</url>
+        <handler>
+            <type>predefined_query_handler</type>
+            <query>SELECT 'custom_endpoint'</query>
+        </handler>
+    </rule>
+    <defaults/>
+</http_handlers_alt>
+```
+
+この例では、ポート 8123 へのリクエストには標準の `<http_handlers>` ルールが使用され、
+ポート 8124 へのリクエストには `<http_handlers_alt>` ルールが使用されます。`<handlers>`
+を省略した場合、エンドポイント はデフォルトの `<http_handlers>` にフォールバックします。
+
+カスタムハンドラーのセクションは、
+[`<http_handlers>`](/ja/reference/settings/server-settings/settings#http_handlers) と同じ形式です。
+カスタムハンドラーのセクションへの変更は設定のリロード時に検出され、対応する
+エンドポイント は自動的に自動的に再起動されます。
+
+<div id="some-modules-can-contain-specific-for-its-layer-parameters">
+  ### 追加のレイヤーパラメータを指定する
+</div>
+
+一部のモジュールでは、追加のレイヤーパラメータを指定できます。たとえば、TLS レイヤーでは、秘密鍵 (`privateKeyFile`) と証明書ファイル (`certificateFile`) を次のように指定できます。
+
+```xml
+<protocols>
+
+  <plain_http>
+    <type>http</type>
+    <host>127.0.0.1</host>
+    <port>8123</port>
+  </plain_http>
+
+  <https>
+    <type>tls</type>
+    <impl>plain_http</impl>
+    <host>127.0.0.1</host>
+    <port>8443</port>
+    <privateKeyFile>another_server.key</privateKeyFile>
+    <certificateFile>another_server.crt</certificateFile>
+  </https>
+
+</protocols>
+```

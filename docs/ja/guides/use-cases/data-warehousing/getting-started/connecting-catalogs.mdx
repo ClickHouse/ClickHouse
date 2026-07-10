@@ -1,0 +1,167 @@
+---
+title: 'データカタログへの接続'
+sidebarTitle: 'カタログへの接続'
+slug: /use-cases/data-lake/getting-started/connecting-catalogs
+toc_max_heading_level: 3
+description: 'DataLakeCatalogデータベースエンジンを使用して、ClickHouseを外部のデータカタログに接続し、カタログ内のテーブルをネイティブなClickHouseデータベースとして利用できるようにします。'
+keywords: ['データレイク', 'レイクハウス', 'カタログ', 'glue', 'unity', 'rest', 'lakekeeper', 'nessie', 'OneLake']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
+[前のセクション](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly)では、ストレージパスを直接指定してオープンテーブルフォーマットをクエリしました。実際には、ほとんどの組織がテーブルメタデータを **データカタログ** で管理しています。これは、テーブルの場所、スキーマ、パーティションを追跡するための中央レジストリです。[`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使って ClickHouse をカタログに接続すると、カタログ全体が ClickHouse データベースとして公開されます。カタログ内の各テーブルは自動的に表示され、完全な ClickHouse SQL でクエリできます。個々のテーブルパスを把握したり、テーブルごとに認証情報を管理したりする必要はありません。
+
+このガイドでは、[Databricks Unity カタログ](https://www.databricks.com/product/unity-catalog) への接続方法を説明します。ClickHouse は次のカタログにも対応しています。完全なセットアップ手順については、各リファレンスガイドを参照してください。
+
+| カタログ              | Reference guide                                                             |
+| -------------------- | --------------------------------------------------------------------------- |
+| AWS Glue             | [AWS Glue カタログ](/ja/guides/use-cases/data-warehousing/glue-catalog)         |
+| Iceberg REST Catalog | [REST カタログ](/ja/guides/use-cases/data-warehousing/rest-catalog)             |
+| Lakekeeper           | [Lakekeeper カタログ](/ja/guides/use-cases/data-warehousing/lakekeeper-catalog) |
+| Project Nessie       | [Nessie カタログ](/ja/guides/use-cases/data-warehousing/nessie-catalog)         |
+| Microsoft OneLake    | [Fabric OneLake](/ja/guides/use-cases/data-warehousing/onelake-catalog)        |
+
+<div id="connecting-to-unity-catalog">
+  ## Unity Catalog への接続
+</div>
+
+<BetaBadge />
+
+ここでは例として、Unity Catalog を使用します。
+
+[Databricks Unity Catalog](https://www.databricks.com/product/unity-catalog) は、Databricks のレイクハウスデータに対する一元的なガバナンスを提供します。
+
+Databricks は、レイクハウス向けに複数のデータフォーマットをサポートしています。ClickHouse では、Unity Catalog のテーブルを Delta と Iceberg の両方の形式でクエリできます。
+
+<Note>
+  Unity Catalog とのインテグレーションは、マネージドテーブルと外部テーブルで動作します。
+  このインテグレーションは現在、AWS でのみサポートされています。
+</Note>
+
+<div id="configuring-unity-in-databricks">
+  ### Databricks で Unity を設定する
+</div>
+
+ClickHouse が Unity Catalog とやり取りできるようにするには、外部リーダーとの連携を許可するように Unity Catalog が設定されていることを確認する必要があります。これは、[「Unity Catalog への外部データアクセスを有効にする」](https://docs.databricks.com/aws/en/external-access/admin)ガイドに従うことで行えます。
+
+外部アクセスを有効にするだけでなく、インテグレーションを設定するプリンシパルに、テーブルを含むスキーマに対する `EXTERNAL USE SCHEMA` [権限](https://docs.databricks.com/aws/en/external-access/admin#external-schema)が付与されていることも確認してください。
+
+カタログの設定が完了したら、ClickHouse 用の認証情報を生成する必要があります。Unity との連携方法に応じて、使用できる方法は 2 つあります。
+
+* Iceberg クライアントの場合は、[サービスプリンシパル](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m)で認証します。
+
+* Delta クライアントの場合は、Personal Access Token ([PAT](https://docs.databricks.com/aws/en/dev-tools/auth/pat)) を使用します。
+
+<div id="connect-catalog">
+  ### カタログに接続する
+</div>
+
+認証情報を使用して、該当するエンドポイントに接続し、Iceberg または Delta テーブルをクエリできます。
+
+<Tabs>
+  <Tab title="Delta">
+    Delta フォーマットのデータにアクセスするには、[Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog) を使用します。
+
+    ```sql
+    SET allow_experimental_database_unity_catalog = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog')
+    SETTINGS warehouse = 'CATALOG_NAME', catalog_credential = '<PAT>', catalog_type = 'unity';
+    ```
+  </Tab>
+
+  <Tab title="Iceberg">
+    ```sql
+    SET allow_database_iceberg = 1;
+
+    CREATE DATABASE unity
+    ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+    SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+    oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+    ```
+  </Tab>
+</Tabs>
+
+<div id="list-tables">
+  ### テーブルを一覧表示する
+</div>
+
+カタログへの接続が完了したら、テーブルを一覧表示できます。
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+
+31 rows in set.
+```
+
+<div id="exploring-table-schemas">
+  ### テーブルスキーマを確認する
+</div>
+
+標準の `SHOW CREATE TABLE` コマンドを使用すると、テーブルの作成方法を確認できます。
+
+<Info>
+  **バッククォートが必要**
+
+  ネームスペースとテーブル名は、バッククォートで囲んで指定する必要があります。ClickHouse は複数のネームスペースには対応していません。
+</Info>
+
+以下では、REST Iceberg カタログに対してクエリを実行することを前提としています。
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+<div id="querying-a-table">
+  ### テーブルに対してクエリを実行する
+</div>
+
+ClickHouse のすべての関数を使用できます。繰り返しになりますが、ネームスペースとテーブル名はバッククォートで囲む必要があります。
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 2億8263万
+└───────────┘
+
+1 row in set. Elapsed: 1.265 sec.
+```
+
+詳しいセットアップ手順については、[Unity Catalog リファレンスガイド](/ja/guides/use-cases/data-warehousing/unity-catalog)を参照してください。
