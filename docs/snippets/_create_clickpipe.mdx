@@ -6,8 +6,7 @@ import S3Connection from '/snippets/es/clickpipes/object-storage/amazon-s3/_2-co
 import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-storage/_2-connection.mdx';
 
 <Steps>
-<Step>
-## Select the data source {#1-select-the-data-source}
+<Step title="Select the data source" id="1-select-the-data-source">
 
 **1.** In ClickHouse Cloud, select **Data sources** in the main navigation menu and click **Create ClickPipe**.
 
@@ -16,8 +15,7 @@ import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-s
 {props.provider === 's3' && <S3DataSource />}
 {props.provider === 'gcs' && <GCSSDataSource />}
 </Step>
-<Step>
-## Setup your ClickPipe connection {#2-setup-your-clickpipe-connection}
+<Step title="Setup your ClickPipe connection" id="2-setup-your-clickpipe-connection">
 
 **1.** To setup a new ClickPipe, you must provide details on how to connect to and authenticate with your object storage service.
 
@@ -26,8 +24,7 @@ import GCSConnection from '/snippets/es/clickpipes/object-storage/google-cloud-s
 
 **2.** Click **Incoming data**. ClickPipes will fetch metadata from your bucket for the next step.
 </Step>
-<Step>
-## Select data format {#3-select-data-format}
+<Step title="Select data format" id="3-select-data-format">
 
 The UI will display a list of files in the specified bucket.
 Select your data format (we currently support a subset of ClickHouse formats) and if you want to enable continuous ingestion.
@@ -35,8 +32,7 @@ See the "continuous ingest" section in the overview page for more details.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_object_storage.webp" alt="Set data format and topic" size="lg" border/>
 </Step>
-<Step>
-## Configure table, schema and settings {#5-configure-table-schema-settings}
+<Step title="Configure table, schema and settings" id="5-configure-table-schema-settings">
 
 In the next step, you can select whether you want to ingest data into a new ClickHouse table or reuse an existing one.
 Follow the instructions in the screen to modify your table name, schema, and settings.
@@ -57,8 +53,7 @@ In that case, the UI will allow you to map fields from the source to the ClickHo
 You can also map [virtual columns](/reference/functions/table-functions/s3#virtual-columns), like `_path` or `_size`, to fields.
 </Info>
 </Step>
-<Step>
-## Configure permissions {#6-configure-permissions}
+<Step title="Configure permissions" id="6-configure-permissions">
 
 Finally, you can configure permissions for the internal ClickPipes user.
 
@@ -68,8 +63,7 @@ Finally, you can configure permissions for the internal ClickPipes user.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" size="lg" border/>
 </Step>
-<Step>
-## Complete setup {#7-complete-setup}
+<Step title="Complete setup" id="7-complete-setup">
 
 By clicking on "Complete Setup", the system will register your ClickPipe, and you'll be able to see it listed in the summary table.
 

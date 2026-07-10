@@ -2057,6 +2057,41 @@ TEST_F(ALPTest, CompressProducesCorrectHeader)
     }
 }
 
+UInt8 alpAutoFloat64MetaByte(const std::vector<Float64> & values)
+{
+    auto codec = makeCodec("ALP(AUTO)", std::make_shared<DataTypeFloat64>());
+
+    const UInt32 source_size = static_cast<UInt32>(values.size() * sizeof(Float64));
+
+    Memory<> compressed_memory;
+    compressed_memory.resize(ICompressionCodec::getHeaderSize() + codec->getCompressedReserveSize(source_size));
+
+    codec->compress(reinterpret_cast<const char *>(values.data()), source_size, compressed_memory.data());
+
+    return static_cast<UInt8>(compressed_memory[ICompressionCodec::getHeaderSize()]);
+}
+
+TEST_F(ALPTest, AutoVariantGlobalSamplingCoversWholeStream)
+{
+    /// With 257-511 values the presampling windows used to cluster at the head of the stream.
+    /// The head is STD-hostile and the tail decimal-friendly, so STD wins only if the tail is sampled.
+    std::vector<Float64> values(300);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = i < 128 ? std::sin(static_cast<Float64>(i + 1)) * 1e6 : static_cast<Float64>(i) * 0.1;
+
+    ASSERT_EQ(alpAutoFloat64MetaByte(values), 0x01); // STD
+}
+
+TEST_F(ALPTest, AutoVariantThresholdIsSampleLengthIndependent)
+{
+    /// All values are STD-hostile, but the unscaled estimate of the 8-value tail sample used to stay below the full-sample threshold and forced STD.
+    std::vector<Float64> values(40);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = std::sin(static_cast<Float64>(i + 1)) * 1e6;
+
+    ASSERT_EQ(alpAutoFloat64MetaByte(values), 0x11); // RD
+}
+
 TEST_F(ALPTest, DecompressMalformedInputWithTruncatedHeader)
 {
     const std::vector<UInt8> source = {
