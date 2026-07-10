@@ -6368,7 +6368,7 @@ copy is added only when index analysis on the receiving side (primary key, parti
 skipping indexes) can use it for pruning; otherwise it is skipped, avoiding a per-row filter
 that cannot prune anything. Note that even a non-pruning inferred condition can still help by
 reducing the number of rows entering the join when it is selective, which is why this is
-disabled by default. Only takes effect if `query_plan_enable_optimizations` is 1.
+disabled by default. Only takes effect if `query_plan_enable_optimizations` and `query_plan_filter_push_down` are both 1.
 )", 0) \
     DECLARE(Bool, query_plan_convert_outer_join_to_inner_join, true, R"(
 Allow to convert `OUTER JOIN` to `INNER JOIN` if filter after `JOIN` always filters default values
