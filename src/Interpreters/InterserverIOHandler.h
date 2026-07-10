@@ -25,6 +25,7 @@ namespace ErrorCodes
 }
 
 class HTMLForm;
+class HTTPServerRequest;
 class HTTPServerResponse;
 class ReadBuffer;
 class WriteBuffer;
@@ -36,6 +37,15 @@ class InterserverIOEndpoint
 public:
     virtual std::string getId(const std::string & path) const = 0;
     virtual void processQuery(const HTMLForm & params, ReadBufferPtr body, WriteBuffer & out, HTTPServerResponse & response) = 0;
+
+    /// Optional per-endpoint authentication, invoked by the interserver HTTP handler
+    /// before `processQuery` (after the shared interserver credential check, which defers
+    /// a `Bearer` credential to this hook). The default accepts a request with Basic or no
+    /// credentials and rejects a `Bearer` credential, so an endpoint that does not implement
+    /// bearer authentication cannot be reached by presenting a bearer token. Endpoints that
+    /// authenticate bearer tokens override this. Throw to reject the request.
+    virtual void authenticate(const HTTPServerRequest & request) const;
+
     virtual ~InterserverIOEndpoint() = default;
 
     /// You need to stop the data transfer if blocker is activated.

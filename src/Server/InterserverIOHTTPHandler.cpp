@@ -14,6 +14,7 @@
 #include <Common/setThreadName.h>
 
 #include <Poco/Net/HTTPBasicCredentials.h>
+#include <Poco/String.h>
 #include <Poco/Util/LayeredConfiguration.h>
 
 #include <shared_mutex>
@@ -29,6 +30,18 @@ namespace ErrorCodes
 
 std::pair<String, bool> InterserverIOHTTPHandler::checkAuthentication(HTTPServerRequest & request) const
 {
+    /// A `Bearer` credential is a per-endpoint credential, not a server-wide interserver one.
+    /// Defer it to the target endpoint's `authenticate` (which validates it, or rejects it by
+    /// default), instead of rejecting it here as "not Basic".
+    if (request.hasCredentials())
+    {
+        String scheme;
+        String info;
+        request.getCredentials(scheme, info);
+        if (Poco::icompare(scheme, "Bearer") == 0)
+            return {"", true};
+    }
+
     auto server_credentials = server.context()->getInterserverCredentials();
     if (server_credentials)
     {
@@ -67,6 +80,11 @@ void InterserverIOHTTPHandler::processQuery(HTTPServerRequest & request, HTTPSer
     std::shared_lock lock(endpoint->rwlock);
     if (endpoint->blocker.isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Transferring part to replica was cancelled");
+
+    /// Per-endpoint authentication on top of the interserver credentials checked in
+    /// `checkAuthentication`. The default rejects a deferred `Bearer` credential; an endpoint
+    /// that carries its own per-request bearer credential overrides `authenticate` to accept it.
+    endpoint->authenticate(request);
 
     if (compress)
     {
