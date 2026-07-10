@@ -5,6 +5,7 @@
 #include <IO/ReadBufferFromFileBase.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/HistogramMetrics.h>
@@ -109,6 +110,7 @@ ReaderExecutor::ReaderExecutor(
     , long_connection_max_bound(options.long_connection_max_bound)
     , fill_ahead_lead(options.fill_ahead_lead)
     , hold_consumed(options.hold_consumed)
+    , encryption_header_cache(std::move(options.encryption_header_cache))
     , prefetch_pool(std::move(options.prefetch_pool))
     , runner(prefetch_pool ? std::make_unique<PoolFetchMachineRunner>(prefetch_pool) : nullptr)
     , local_runner(std::make_unique<LocalFetchMachineRunner>())
@@ -444,11 +446,10 @@ void ReaderExecutor::mergeTransientStats(const ReaderExecutor & transient)
 
 void ReaderExecutor::addDecryptionLayer(
     [[maybe_unused]] String path,
-    [[maybe_unused]] size_t buffer_size,
     [[maybe_unused]] KeyFinderFunc key_finder)
 {
 #if USE_SSL
-    decryptor.addLayer(std::move(path), buffer_size, std::move(key_finder));
+    decryptor.addLayer(std::move(path), std::move(key_finder));
     data_start_offset = decryptor.headerBytes();
     LOG_DEBUG(log, "Added decryption layer, data_start_offset={}", data_start_offset);
 #endif
@@ -554,10 +555,35 @@ ChainedBuffers ReaderExecutor::fetchEncryptionHeader()
         }
     }
 
+    /// Missed every tier: the global header cache (server-wide, keyed by remote path)
+    /// skips the source read; the populate below still runs, so the first cell's
+    /// append-only prefix commits. The size check guards against a stale entry from a
+    /// differently-layered file at the same path.
+    ChainedBuffers fetched;
+    if (encryption_header_cache && pieces.size() == 1)
+    {
+        if (auto cached = encryption_header_cache->read(pieces.front().object.remote_path);
+            cached && cached->size() == data_start_offset)
+        {
+            auto cached_block = std::make_shared<OwnedChainedBuffer>(data_start_offset);
+            std::memcpy(cached_block->data(), cached->data(), data_start_offset);
+            fetched.append(ChainedBufferNode{std::move(cached_block), 0, data_start_offset, 0});
+        }
+    }
+
     /// Miss: one one-shot source read (no long connection, no plan exists yet).
-    ChainedBuffers fetched = fetchGapsFromSource(header_range,
-        /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*read_extent=*/data_start_offset,
-        /*lc=*/nullptr, /*stop=*/nullptr, /*may_open_long=*/false, stats);
+    if (fetched.empty())
+    {
+        fetched = fetchGapsFromSource(header_range,
+            /*from_prefetch=*/false, reached_eof, MemoryPressureLevel{}, /*read_extent=*/data_start_offset,
+            /*lc=*/nullptr, /*stop=*/nullptr, /*may_open_long=*/false, stats);
+        if (encryption_header_cache && pieces.size() == 1 && fetched.totalBytes() == data_start_offset)
+        {
+            String header_bytes(data_start_offset, '\0');
+            fetched.copyTo(header_bytes.data(), header_range);
+            encryption_header_cache->write(pieces.front().object.remote_path, std::move(header_bytes));
+        }
+    }
 
     /// Populate the incrementally-fillable tiers so the first cell's append-only prefix
     /// commits and the following data writes can continue from `data_start_offset`.

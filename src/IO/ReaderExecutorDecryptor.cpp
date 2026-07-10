@@ -9,11 +9,10 @@
 namespace DB
 {
 
-void ReaderExecutorDecryptor::addLayer(String path, size_t buffer_size, KeyFinderFunc key_finder)
+void ReaderExecutorDecryptor::addLayer(String path, KeyFinderFunc key_finder)
 {
     layers.push_back(Layer{
         .path = std::move(path),
-        .buffer_size = buffer_size,
         .key_finder = std::move(key_finder),
         .key = {},
     });
@@ -52,9 +51,10 @@ void ReaderExecutorDecryptor::parseHeaders(const ChainedBuffers & header_bytes)
         FileEncryption::Header header;
         header.read(rb);
         layer.key = layer.key_finder(header.key_fingerprint, layer.path);
+        /// The key is resolved; release the finder so no key-resolution callback is retained.
+        layer.key_finder = {};
         headers.push_back(std::move(header));
 
-        /// Materialise this layer's encryptor for the next iteration to use.
         initialized_encryptors.emplace_back(
             headers.back().algorithm,
             layer.key,
@@ -73,11 +73,6 @@ void ReaderExecutorDecryptor::decrypt(char * data, size_t size, size_t logical_o
     /// the payload, so its CTR offset for `logical_offset` is
     /// `logical_offset + (N - 1 - i) * Header::kSize`; the innermost uses
     /// `logical_offset`. See `ReadBufferFromEncryptedFile::nextImpl`.
-    ///
-    /// Reentrant: a fresh `Encryptor` is built per layer per call from the
-    /// immutable {algorithm, key, init_vector}, so there is no shared mutable
-    /// state (the only thing previously serialising callers was `Encryptor`'s
-    /// `offset`). The EVP context was already allocated per call, so this is cheap.
     for (size_t i = 0; i < layers.size(); ++i)
     {
         FileEncryption::Encryptor encryptor(headers[i].algorithm, layers[i].key, headers[i].init_vector);

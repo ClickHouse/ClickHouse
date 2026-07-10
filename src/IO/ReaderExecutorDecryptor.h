@@ -14,25 +14,24 @@
 namespace DB
 {
 
-/// Thread-safe, isolated decryption helper extracted from `ReaderExecutor`.
+/// Decrypts the payload served by `ReaderExecutor`.
 ///
 /// Holds the immutable per-layer decryption configuration (algorithm, key,
-/// init vector) parsed once from the encryption headers, and decrypts served
+/// init vector) parsed once from the encryption headers, and decrypts
 /// ciphertext in place. `decrypt` is reentrant: it builds a fresh stack
-/// `FileEncryption::Encryptor` per layer per call, so there is no shared
-/// mutable state and a prefetch worker may decrypt concurrently with the
-/// foreground. Per-call construction is cheap because the EVP context was
-/// already allocated per call inside `Encryptor`.
+/// `FileEncryption::Encryptor` per layer per call, so there is no shared mutable
+/// state and it may be called concurrently from several threads. Per-call
+/// construction is cheap because the EVP context is allocated per call inside
+/// `Encryptor` anyway.
 ///
-/// Copyable: the transient sub-executor copies the parsed configuration; there
-/// is no encryptor state to carry.
+/// Copyable: it carries only the parsed configuration, no encryptor state.
 class ReaderExecutorDecryptor
 {
 public:
     using KeyFinderFunc = std::function<String(UInt128 key_fingerprint, const String & path_for_logs)>;
 
     /// Add a decryption layer. Call `parseHeaders` once after all layers.
-    void addLayer(String path, size_t buffer_size, KeyFinderFunc key_finder);
+    void addLayer(String path, KeyFinderFunc key_finder);
 
     /// No layers configured.
     bool empty() const { return layers.empty(); }
@@ -57,8 +56,9 @@ public:
 private:
     struct Layer
     {
+        /// Only used as the `path_for_logs` argument to `key_finder` (key-resolution diagnostics).
         String path;
-        size_t buffer_size = 0;
+        /// Resolves the header's key fingerprint to the key; cleared once `parseHeaders` resolves `key`.
         KeyFinderFunc key_finder;
         /// Populated by `parseHeaders`.
         String key;

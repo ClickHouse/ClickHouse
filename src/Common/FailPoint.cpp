@@ -102,6 +102,7 @@ static struct InitFiu
     REGULAR(file_cache_dynamic_resize_fail_to_evict) \
     PAUSEABLE_ONCE(reader_executor_pause_after_window) \
     PAUSEABLE_ONCE(reader_executor_pause_after_cache_status) \
+    REGULAR(file_cache_background_eviction_push_fail) \
     REGULAR(file_cache_slru_downgrade_fail_before_finalize) \
     REGULAR(file_cache_modify_size_limits_fail) \
     REGULAR(check_table_query_delay_for_part) \
@@ -129,6 +130,7 @@ static struct InitFiu
     ONCE(terminate_with_exception) \
     ONCE(terminate_with_std_exception) \
     ONCE(libcxx_hardening_out_of_bounds_assertion) \
+    ONCE(trigger_sanitizer_error) \
     ONCE(receive_timeout_on_table_status_response) \
     ONCE(unexpected_packet_in_table_status_response) \
     ONCE(delta_kernel_fail_literal_visitor) \

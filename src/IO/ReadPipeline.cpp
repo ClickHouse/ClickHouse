@@ -457,15 +457,20 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
             executor_options.reader_executor_log = global->getReaderExecutorLog();
     }
 
+    /// Null unless a random-object-key encrypted disk allowed it (see DiskEncrypted::prepareRead).
+    executor_options.encryption_header_cache = encryption_header_cache;
+
     auto executor = std::make_unique<ReaderExecutor>(
         source_reader,
         source->objects,
         std::move(executor_caches),
         std::move(executor_options));
 
+    /// Feed the decryption layers (if any): the executor owns decryption internally and serves
+    /// plaintext, so it replaces the legacy `ReadBufferFromEncryptedFile` wrapping. `initDecryption`
+    /// reads and parses the headers once, up front.
     for (const auto & dec : decryption_stages)
-        executor->addDecryptionLayer(dec.path, dec.buffer_size, dec.key_finder);
-
+        executor->addDecryptionLayer(dec.path, dec.key_finder);
     executor->initDecryption();
 
     return std::make_unique<PipelineReadBuffer>(std::move(executor));

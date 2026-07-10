@@ -604,6 +604,11 @@ void JoinStepLogicalLookup::initializePipeline(QueryPipelineBuilder & pipeline_b
     pipeline_builder = std::move(*child_plan.buildQueryPipeline(optimization_settings, build_pipeline_settings, /* do_optimize */ false));
 }
 
+QueryPlanRawPtrs JoinStepLogicalLookup::getChildPlans()
+{
+    return {&child_plan};
+}
+
 void JoinStepLogicalLookup::optimize(const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (optimized)
@@ -1721,7 +1726,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         if (num_dags != 1)
             throw Exception(ErrorCodes::INCORRECT_DATA, "JoinStepLogical deserialization expect 3 DAGs, got {}", num_dags);
 
-        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context);
+        actions_dag = ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity);
     }
     auto id_to_node = actions_dag.getIdToNode();
 

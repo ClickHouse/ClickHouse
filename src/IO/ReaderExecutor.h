@@ -38,6 +38,7 @@ class PrefetchThreadPool;
 class ReaderExecutorLog;
 class IFetchMachineRunner;
 class ReaderExecutorInspector;
+class EncryptionHeaderCache;
 
 /// Reads a logical file (one or more `StoredObject`s mapped by `OffsetMap`)
 /// through a fastest-first cache chain, falling back to the source.
@@ -153,6 +154,9 @@ public:
         size_t hold_consumed = 0;
         std::shared_ptr<PrefetchThreadPool> prefetch_pool;
         std::shared_ptr<LongConnectionLimit> long_connection_limit;
+        /// Null unless a random-object-key encrypted disk allowed caching this
+        /// file's encryption headers (see `DiskEncrypted::prepareRead`).
+        std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
         std::shared_ptr<ReaderExecutorLog> reader_executor_log;
     };
 
@@ -212,7 +216,7 @@ public:
 
     /// Add a decryption layer (callable multiple times for layered encryption).
     /// No-op without SSL. Call `initDecryption` once after all layers.
-    void addDecryptionLayer(String path, size_t buffer_size, KeyFinderFunc key_finder);
+    void addDecryptionLayer(String path, KeyFinderFunc key_finder);
 
     /// Read the encryption headers (one per layer) and resolve keys. Must run
     /// before any read; no-op when no layers / no SSL.
@@ -794,6 +798,8 @@ private:
     /// per-object by the providers themselves.
     String log_file_path;
     size_t window_size;
+    /// Global encryption-header cache; null disables caching (url / non-disk reads).
+    std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
     size_t min_bytes_for_seek;
     size_t block_size;
     size_t max_tail_for_drain;

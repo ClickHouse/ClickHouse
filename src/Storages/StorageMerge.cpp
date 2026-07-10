@@ -1281,6 +1281,13 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
         /// NOTE: It may not work correctly in some cases, because query was analyzed without final.
         /// However, it's needed for Materialized...SQL and it's unlikely that someone will use it with Merge tables.
         modified_select.setFinal();
+
+        if (modified_query_info.query_tree)
+        {
+            if (!modified_query_info.table_expression_modifiers)
+                modified_query_info.table_expression_modifiers.emplace();
+            modified_query_info.table_expression_modifiers->setHasFinal(true);
+        }
     }
 
     bool use_analyzer = modified_context->getSettingsRef()[Setting::allow_experimental_analyzer];

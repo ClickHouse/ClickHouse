@@ -8,11 +8,6 @@ drafts/
 
 # Skill scaffolds (internal docs for Claude Code, not user-facing pages).
 # Ignore everything under .mintlify/ EXCEPT each skill's SKILL.md definition.
-# The deploy pipeline honors .mintignore, so ignoring all of .mintlify/ hid the
-# SKILL.md files from skill discovery and they never published to
-# /.well-known/agent-skills. Keeping SKILL.md visible lets the deploy publish the
-# agent skills, while scaffolding (rules/, reference/, metadata.json, AGENTS.md,
-# etc.) stays ignored so it never becomes a doc page.
 .mintlify/*
 !.mintlify/skills/
 .mintlify/skills/*/*
@@ -24,11 +19,10 @@ drafts/
 # declared" on re-injection) and can abort injection of the real scripts.
 _site/styles/
 
-# Legacy Docusaurus content at the docs root. Anchor with a leading slash so
-# these match only the top-level dirs -- an unanchored `changelogs/` also matched
-# `resources/changelogs/` (gitignore any-depth semantics) and hid the real,
-# published changelog pages, which docs.json still references.
+# Legacy content in the docs folder. Anchored to the top level so that
+# resources/changelogs/ (and its locale copies) stays published.
 /_description_templates/
+/_includes/
 /changelogs/
 /en/
 /get-started/quickstarts/_TEMPLATE.mdx

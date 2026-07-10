@@ -25,6 +25,7 @@ class PrefetchThreadPool;
 class LongConnectionLimit;
 class IAsynchronousReader;
 class IBackup;
+class EncryptionHeaderCache;
 struct AsyncReadCounters;
 
 using FileCachePtr = std::shared_ptr<FileCache>;
@@ -162,6 +163,11 @@ public:
     /// from the encryption header and must return the decryption key.
     void needDecryption(String path, size_t buffer_size, KeyFinderFunc key_finder);
 
+    /// Let the executor cache this file's encryption headers in `cache`. Set only for encrypted disks
+    /// on random-object-key backends (see `DiskEncrypted::prepareRead`); deterministic-path backends
+    /// and url / external reads leave it null, so a reused key can't serve a stale header.
+    void needEncryptionHeaderCache(std::shared_ptr<EncryptionHeaderCache> cache) { encryption_header_cache = std::move(cache); }
+
     std::unique_ptr<ReadBufferFromFileBase> build() const;
 
     String describe() const;
@@ -241,6 +247,8 @@ private:
     std::shared_ptr<PrefetchThreadPool> prefetch_pool;
     std::shared_ptr<LongConnectionLimit> long_connection_limit;
     VectorWithMemoryTracking<DecryptionStage> decryption_stages;
+    /// Global encryption-header cache for the executor; null unless a random-object-key disk set it.
+    std::shared_ptr<EncryptionHeaderCache> encryption_header_cache;
 
     LoggerPtr log = getLogger("ReadPipeline");
 
