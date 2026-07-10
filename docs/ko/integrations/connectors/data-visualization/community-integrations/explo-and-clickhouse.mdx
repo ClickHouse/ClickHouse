@@ -1,0 +1,135 @@
+---
+sidebarTitle: 'Explo'
+slug: /integrations/explo
+keywords: ['clickhouse', 'Explo', '연결', '통합', 'UI']
+description: 'Explo는 데이터를 대상으로 질문할 수 있는 사용하기 쉬운 오픈 소스 UI 도구입니다.'
+title: 'ClickHouse에 Explo 연결하기'
+doc_type: 'guide'
+integration:
+  - support_level: 'community'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
+import CommunityMaintainedBadge from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
+<CommunityMaintainedBadge />
+
+모든 플랫폼을 위한 고객 대상 분석. 뛰어난 시각화를 위해 설계되었습니다. 간편한 사용을 위해 제작되었습니다.
+
+<div id="goal">
+  ## 목표
+</div>
+
+이 가이드에서는 ClickHouse의 데이터를 Explo에 연결하고 결과를 시각화하는 방법을 설명합니다. 차트는 다음과 같이 표시됩니다.
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo 대시보드" />
+
+<p />
+
+<Tip>
+  **데이터 추가**
+
+  작업할 데이터셋이 없다면 예시 중 하나를 추가할 수 있습니다. 이 가이드에서는 [UK Price Paid](/ko/get-started/sample-datasets/uk-price-paid) 데이터셋을 사용하므로 이를 선택해도 됩니다. 같은 문서 카테고리에서 확인할 수 있는 다른 예시도 여러 개 있습니다.
+</Tip>
+
+<div id="1-gather-your-connection-details">
+  ## 1. 연결 정보를 준비합니다
+</div>
+
+<ConnectionDetails />
+
+<div id="2--connect-explo-to-clickhouse">
+  ## 2.  Explo를 ClickHouse에 연결하기
+</div>
+
+1. Explo 계정에 가입합니다.
+
+2. 왼쪽 사이드바에서 Explo **Data** 탭을 클릭합니다.
+
+<Image img="/images/integrations/data-visualization/explo_01.webp" size="sm" alt="데이터 탭" border />
+
+3. 오른쪽 상단의 **데이터 소스 연결**을 클릭합니다.
+
+<Image img="/images/integrations/data-visualization/explo_02.webp" size="sm" alt="데이터 소스 연결" border />
+
+4. **시작하기** 페이지에서 정보를 입력합니다.
+
+<Image img="/images/integrations/data-visualization/explo_03.webp" size="md" alt="시작하기" border />
+
+5. **ClickHouse**를 선택합니다.
+
+<Image img="/images/integrations/data-visualization/explo_04.webp" size="md" alt="Clickhouse" border />
+
+6. **ClickHouse 자격 증명**을 입력합니다.
+
+<Image img="/images/integrations/data-visualization/explo_05.webp" size="md" alt="자격 증명" border />
+
+7. **보안**을 구성합니다.
+
+<Image img="/images/integrations/data-visualization/explo_06.webp" size="md" alt="보안" border />
+
+8. ClickHouse에서 **Explo IP를 허용 목록에 추가합니다**.
+   `54.211.43.19, 52.55.98.121, 3.214.169.94, and 54.156.141.148`
+
+<div id="3-create-a-dashboard">
+  ## 3. 대시보드 만들기
+</div>
+
+1. 왼쪽 탐색 바에서 **대시보드** 탭으로 이동하세요.
+
+<Image img="/images/integrations/data-visualization/explo_07.webp" size="sm" alt="대시보드" border />
+
+2. 오른쪽 상단의 **대시보드 만들기**를 클릭한 다음 대시보드 이름을 입력하세요. 이제 대시보드가 생성되었습니다!
+
+<Image img="/images/integrations/data-visualization/explo_08.webp" size="sm" alt="대시보드 만들기" border />
+
+3. 이제 다음과 비슷한 화면이 표시됩니다.
+
+<Image img="/images/integrations/data-visualization/explo_09.webp" size="md" alt="Explo 대시보드" border />
+
+<div id="4-run-a-sql-query">
+  ## 4. SQL 쿼리 실행
+</div>
+
+1. 스키마(schema) 제목 아래 오른쪽 사이드바에서 테이블(table) 이름을 확인하십시오. 그런 다음 아래 명령을 데이터셋 편집기에 입력하십시오:
+   `SELECT * FROM YOUR_TABLE_NAME
+   LIMIT 100`
+
+<Image img="/images/integrations/data-visualization/explo_10.webp" size="md" alt="Explo 대시보드" border />
+
+2. 이제 Run을 클릭한 다음 미리보기 탭으로 이동하여 데이터를 확인하십시오.
+
+<Image img="/images/integrations/data-visualization/explo_11.webp" size="md" alt="Explo 대시보드" border />
+
+<div id="5-build-a-chart">
+  ## 5. 차트 만들기
+</div>
+
+1. 왼쪽에서 막대 차트 아이콘을 화면으로 끌어다 놓으세요.
+
+<Image img="/images/integrations/data-visualization/explo_16.webp" size="sm" alt="Explo 대시보드" border />
+
+2. 데이터셋을 선택하세요. 그러면 다음과 같은 화면이 표시됩니다.
+
+<Image img="/images/integrations/data-visualization/explo_12.webp" size="sm" alt="Explo 대시보드" border />
+
+3. 다음과 같이 X축에는 **county**를, Y축 섹션에는 **Price**를 설정하세요.
+
+<Image img="/images/integrations/data-visualization/explo_13.webp" size="sm" alt="Explo 대시보드" border />
+
+4. 이제 집계를 **AVG**로 변경하세요.
+
+<Image img="/images/integrations/data-visualization/explo_14.webp" size="sm" alt="Explo 대시보드" border />
+
+5. 이제 카운티별 주택 평균 가격이 표시됩니다.
+
+<Image img="/images/integrations/data-visualization/explo_15.webp" size="md" alt="Explo 대시보드" />
+
+<div id="learn-more">
+  ## 더 알아보기
+</div>
+
+Explo에 대한 자세한 정보와 대시보드 구축 방법은 <a href="https://docs.explo.co/" target="_blank">Explo 문서에서</a> 확인할 수 있습니다.

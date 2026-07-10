@@ -1,0 +1,89 @@
+---
+sidebarTitle: 'SQL変換リファレンス'
+slug: /migrations/redshift/sql-translation-reference
+description: 'Amazon Redshift から ClickHouse への SQL 変換リファレンス'
+keywords: ['Redshift']
+title: 'Amazon Redshift SQL 変換ガイド'
+doc_type: 'reference'
+---
+
+<div id="data-types">
+  ## データ型
+</div>
+
+ClickHouse と Redshift の間でデータを移行するユーザーは、ClickHouse のほうがより幅広い型を備え、しかも制約が少ないことにすぐ気付くでしょう。Redshift では、可変長であっても文字列の長さを指定する必要がありますが、ClickHouse では文字列をエンコーディングせずにバイト列として格納するため、この制約や手間がありません。したがって、ClickHouse の String 型 には制限がなく、長さの指定も不要です。
+
+さらに、Redshift にはない Arrays、Tuples、Enums を第一級の機能として利用できます (`SUPER` を使って Arrays/Structs を擬似的に表現することは可能ですが、これはユーザーのよくある不満点です) 。また ClickHouse では、集計状態をクエリ実行時だけでなく、テーブルに永続化することもできます。これにより、通常は materialized view を使ってデータを事前集計でき、一般的なクエリの性能を大幅に向上させることができます。
+
+以下では、各 Redshift 型に対応する ClickHouse の同等の型を示します:
+
+| Redshift                                                                                                                             | ClickHouse                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`SMALLINT`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                | [`Int8`](/ja/reference/data-types/int-uint) *                                                                                                                                                                                  |
+| [`INTEGER`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                 | [`Int32`](/ja/reference/data-types/int-uint) *                                                                                                                                                                                 |
+| [`BIGINT`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-integer-types)                  | [`Int64`](/ja/reference/data-types/int-uint) *                                                                                                                                                                                 |
+| [`DECIMAL`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-decimal-or-numeric-type)       | [`UInt128`, `UInt256`, `Int128`, `Int256`](/ja/reference/data-types/int-uint), [`Decimal(P, S)`, `Decimal32(S)`, `Decimal64(S)`, `Decimal128(S)`, `Decimal256(S)`](/ja/reference/data-types/decimal) -  (高精度かつ広い範囲に対応)            |
+| [`REAL`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-floating-point-types)             | [`Float32`](/ja/reference/data-types/float)                                                                                                                                                                                    |
+| [`DOUBLE PRECISION`](https://docs.aws.amazon.com/redshift/latest/dg/r_Numeric_types201.html#r_Numeric_types201-floating-point-types) | [`Float64`](/ja/reference/data-types/float)                                                                                                                                                                                    |
+| [`BOOLEAN`](https://docs.aws.amazon.com/redshift/latest/dg/r_Boolean_type.html)                                                      | [`Bool`](/ja/reference/data-types/boolean)                                                                                                                                                                                     |
+| [`CHAR`](https://docs.aws.amazon.com/redshift/latest/dg/r_Character_types.html#r_Character_types-char-or-character)                  | [`String`](/ja/reference/data-types/string), [`FixedString`](/ja/reference/data-types/fixedstring)                                                                                                                                |
+| [`VARCHAR`](https://docs.aws.amazon.com/redshift/latest/dg/r_Character_types.html#r_Character_types-varchar-or-character-varying) ** | [`String`](/ja/reference/data-types/string)                                                                                                                                                                                    |
+| [`DATE`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-date)                                 | [`Date32`](/ja/reference/data-types/date32)                                                                                                                                                                                    |
+| [`TIMESTAMP`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timestamp)                       | [`DateTime`](/ja/reference/data-types/datetime), [`DateTime64`](/ja/reference/data-types/datetime64)                                                                                                                              |
+| [`TIMESTAMPTZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timestamptz)                   | [`DateTime`](/ja/reference/data-types/datetime), [`DateTime64`](/ja/reference/data-types/datetime64)                                                                                                                              |
+| [`GEOMETRY`](https://docs.aws.amazon.com/redshift/latest/dg/geospatial-overview.html)                                                | [Geoデータ型](/ja/reference/data-types/geo)                                                                                                                                                                                        |
+| [`GEOGRAPHY`](https://docs.aws.amazon.com/redshift/latest/dg/geospatial-overview.html)                                               | [Geo データ型](/ja/reference/data-types/geo) (まだ発展途上で、たとえば座標系はありませんが、[関数を使って](/ja/reference/functions/regular-functions/geo/index)代用できます)                                                                                             |
+| [`HLLSKETCH`](https://docs.aws.amazon.com/redshift/latest/dg/r_HLLSKTECH_type.html)                                                  | [`AggregateFunction(uniqHLL12, X)`](/ja/reference/data-types/aggregatefunction)                                                                                                                                                |
+| [`SUPER`](https://docs.aws.amazon.com/redshift/latest/dg/r_SUPER_type.html)                                                          | [`Tuple`](/ja/reference/data-types/tuple), [`Nested`](/ja/reference/data-types/nested-data-structures/index), [`Array`](/ja/reference/data-types/array), [`JSON`](/ja/reference/data-types/newjson), [`Map`](/ja/reference/data-types/map) |
+| [`TIME`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-time)                                 | [`DateTime`](/ja/reference/data-types/datetime), [`DateTime64`](/ja/reference/data-types/datetime64)                                                                                                                              |
+| [`TIMETZ`](https://docs.aws.amazon.com/redshift/latest/dg/r_Datetime_types.html#r_Datetime_types-timetz)                             | [`DateTime`](/ja/reference/data-types/datetime), [`DateTime64`](/ja/reference/data-types/datetime64)                                                                                                                              |
+| [`VARBYTE`](https://docs.aws.amazon.com/redshift/latest/dg/r_VARBYTE_type.html) **                                                   | [`String`](/ja/reference/data-types/string) と [`Bit`](/ja/reference/functions/regular-functions/bit-functions) および [Encoding](/ja/reference/functions/regular-functions/encoding-functions#hex) 関数の組み合わせ                             |
+
+<sub><span>*</span> ClickHouse は、<a href="http://clickhouse.com/docs/sql-reference/data-types/int-uint">`UInt8`, `UInt32`, `UInt32` and `UInt64`</a> など、より広い範囲を扱える符号なし整数型もサポートしています。</sub><br />
+<sub><span>**</span>ClickHouse の String 型はデフォルトでは長さに制限がありませんが、<a href="http://clickhouse.com/docs/sql-reference/statements/create/table#constraints">制約</a>を使用して特定の長さに制限できます。</sub>
+
+<div id="compression">
+  ## DDL 構文
+</div>
+
+<div id="sorting-keys">
+  ### ソートキー
+</div>
+
+ClickHouse と Redshift はどちらも「ソートキー」という概念を持っており、これは
+データの保存時のソート順を定義するものです。Redshift では、ソートキーを
+`SORTKEY` 句で定義します。
+
+```sql
+CREATE TABLE some_table(...) SORTKEY (column1, column2)
+```
+
+一方、ClickHouseでは、ソート順を指定するために `ORDER BY` 句を使用します。
+
+```sql
+CREATE TABLE some_table(...) ENGINE = MergeTree ORDER BY (column1, column2)
+```
+
+ほとんどの場合、デフォルトの `COMPOUND` 型を使用していれば、ClickHouse では
+Redshift と同じソートキーのカラムと順序を使用できます。Redshift では、データが
+追加されたら、`VACUUM` と `ANALYZE`
+コマンドを実行して、新しく追加されたデータを再ソートし、クエリプランナー用の統計情報を更新する必要があります。そうしないと、
+未ソート領域が増えていきます。ClickHouse では、そのような処理は必要ありません。
+
+Redshift は、ソートキーに関する便利な機能をいくつかサポートしています。1 つ目は
+自動ソートキー (`SORTKEY AUTO` の使用) です。これは使い始めには適していますが、
+ソートキーを最適に設計できるのであれば、明示的に指定したソートキーのほうが、パフォーマンスとストレージ
+効率の両面で最良の結果を得られます。2 つ目は `INTERLEAVED` ソートキーで、
+クエリが 1 つ以上の二次ソートカラムを使用する場合のパフォーマンスを向上させるため、
+ソートキー内の一部のカラムに同等の重みを与えます。ClickHouse では、
+明示的な [プロジェクション](/ja/concepts/features/projections/projections) をサポートしており、設定方法はやや異なるものの、
+最終的には同様の結果を実現できます。
+
+「主キー」という概念は、
+ClickHouse と Redshift では意味が異なることに注意してください。Redshift では、主キーは従来の
+制約を強制することを意図した RDBMS の概念に近いものです。ただし、Redshift ではこれらは
+厳密には強制されず、代わりにクエリプランナーへのヒントや、
+ノード間でのデータ分散のために使われます。ClickHouse では、主キーは
+スパースプライマリインデックスの構築に使用されるカラムを指し、これはデータがディスク上で
+順序付けされるようにするために使われます。これにより、圧縮を最大化しつつ、プライマリインデックスの肥大化や
+メモリの無駄遣いを防げます。

@@ -1,0 +1,288 @@
+---
+slug: /guides/developer/ttl
+sidebarTitle: 'TTL (Time to Live)'
+keywords: ['ttl', 'time to live', 'ClickHouse', '오래된', '데이터']
+description: 'TTL (time-to-live)은 일정 시간이 지나면 행이나 컬럼을 이동, 삭제하거나 롤업하도록 하는 기능을 의미합니다.'
+title: 'TTL (time-to-live)로 데이터 관리하기'
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="overview-of-ttl">
+  ## TTL 개요
+</div>
+
+TTL (time-to-live)은 일정 시간이 지나면 행이나 컬럼을 이동, 삭제 또는 롤업할 수 있는 기능을 의미합니다. &quot;time-to-live&quot;라는 표현만 보면 오래된 데이터를 삭제하는 데만 적용되는 것처럼 들리지만, TTL은 여러 용도로 활용할 수 있습니다.
+
+* 오래된 데이터 제거: 예상할 수 있듯이, 지정된 시간 인터벌이 지나면 행이나 컬럼을 삭제할 수 있습니다
+* 디스크 간 데이터 이동: 일정 시간이 지나면 스토리지 볼륨 간에 데이터를 이동할 수 있으며, 핫/웜/콜드 아키텍처를 구축할 때 유용합니다
+* 데이터 롤업: 오래된 데이터를 삭제하기 전에 다양한 집계 및 계산에 활용할 수 있도록 롤업할 수 있습니다
+
+<Note>
+  TTL은 전체 테이블 또는 특정 컬럼에 적용할 수 있습니다.
+</Note>
+
+<div id="ttl-syntax">
+  ## TTL 구문
+</div>
+
+`TTL` 절은 컬럼 정의 뒤와/또는 테이블 정의 끝에 올 수 있습니다. 기간을 지정하려면 `INTERVAL` 절을 사용하십시오(이 값은 `Date` 또는 `DateTime` 데이터 타입이어야 합니다). 예를 들어, 다음 테이블에는 두 개의 컬럼이 있고
+각 컬럼에 `TTL` 절이 지정되어 있습니다:
+
+```sql
+CREATE TABLE example1 (
+   timestamp DateTime,
+   x UInt32 TTL timestamp + INTERVAL 1 MONTH,
+   y String TTL timestamp + INTERVAL 1 DAY,
+   z String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+* x 컬럼은 timestamp 컬럼을 기준으로 1개월의 TTL이 적용됩니다
+* y 컬럼은 timestamp 컬럼을 기준으로 1일의 TTL이 적용됩니다
+* 인터벌이 경과하면 해당 컬럼이 만료됩니다. ClickHouse는 컬럼 값을 해당 데이터 타입의 기본값으로 대체합니다. 데이터 파트의 모든 컬럼 값이 만료되면 ClickHouse는 파일 시스템의 해당 데이터 파트에서 이 컬럼을 삭제합니다.
+
+<Note>
+  TTL 규칙은 변경하거나 삭제할 수 있습니다. 자세한 내용은 [테이블 TTL 조작](/ko/reference/statements/alter/ttl) 페이지를 참조하십시오.
+</Note>
+
+<Tip>
+  **모범 사례**
+
+  테이블 수준 TTL을 사용해 오래된 행을 제거하는 경우, TTL 표현식에 사용하는 것과 동일한 시간 필드의 날짜 또는 월을 기준으로 **테이블을 파티셔닝하는 것**을 권장합니다.
+
+  ClickHouse는 개별 행을 삭제하는 것보다 전체 파티션을 삭제하는 작업을 훨씬 더 효율적으로 수행할 수 있습니다.
+  파티션 키가 TTL 표현식과 일치하면 ClickHouse는 만료된 행을 제거하기 위해 데이터 파트를 다시 쓰는 대신, 만료 시 전체 파티션을 한 번에 삭제할 수 있습니다.
+
+  TTL 기간에 따라 파티션 세분화 수준을 선택하십시오:
+
+  * 일/주 단위 TTL의 경우: `toYYYYMMDD(date_field)`를 사용해 일별로 파티셔닝
+  * 월/년 단위 TTL의 경우: `toYYYYMM(date_field)` 또는 `toStartOfMonth(date_field)`를 사용해 월별로 파티셔닝
+</Tip>
+
+<div id="triggering-ttl-events">
+  ## TTL 이벤트 트리거하기
+</div>
+
+만료된 행의 삭제나 집계는 즉시 수행되지 않으며, 테이블 머지 중에만 발생합니다. 어떤 이유로든 머지가 활발히 일어나지 않는 테이블에서는 TTL 이벤트를 트리거하는 두 가지 설정이 있습니다.
+
+* `merge_with_ttl_timeout`: delete TTL이 적용된 머지를 다시 수행하기 전까지의 최소 지연 시간(초)입니다. 기본값은 14400초(4시간)입니다.
+* `merge_with_recompression_ttl_timeout`: recompression TTL(삭제 전에 데이터를 롤업하는 규칙)이 적용된 머지를 다시 수행하기 전까지의 최소 지연 시간(초)입니다. 기본값은 14400초(4시간)입니다.
+
+따라서 기본적으로 TTL 규칙은 최소 4시간에 한 번씩 테이블에 적용됩니다. TTL 규칙을 더 자주 적용해야 한다면 위 설정을 수정하십시오.
+
+<Note>
+  그다지 좋은 방법은 아니며 자주 사용하는 것도 권장하지 않지만, `OPTIMIZE`를 사용해 머지를 강제로 수행할 수도 있습니다.
+
+  ```sql
+  OPTIMIZE TABLE example1 FINAL
+  ```
+
+  `OPTIMIZE`는 테이블 파트에 대해 예정되지 않은 머지를 시작하며, `FINAL`은 테이블이 이미 단일 파트인 경우 재최적화를 강제합니다.
+</Note>
+
+<div id="removing-rows">
+  ## 행 삭제
+</div>
+
+일정 시간이 지난 후 테이블에서 전체 행을 삭제하려면 테이블 수준에서 TTL 규칙을 정의하십시오:
+
+```sql
+CREATE TABLE customers (
+timestamp DateTime,
+name String,
+balance Int32,
+address String
+)
+ENGINE = MergeTree
+ORDER BY timestamp
+TTL timestamp + INTERVAL 12 HOUR
+```
+
+또한 레코드 값에 따라 TTL 규칙을 정의할 수도 있습니다.
+이는 where 조건을 지정하면 쉽게 구현할 수 있습니다.
+여러 조건을 지정할 수 있습니다.
+
+```sql
+CREATE TABLE events
+(
+    `event` String,
+    `time` DateTime,
+    `value` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (event, time)
+TTL time + INTERVAL 1 MONTH DELETE WHERE event != 'error',
+    time + INTERVAL 6 MONTH DELETE WHERE event = 'error'
+```
+
+<div id="removing-columns">
+  ## 컬럼 제거
+</div>
+
+전체 행을 삭제하는 대신 balance 및 address 컬럼만 만료되게 하려는 경우를 가정해 보겠습니다. `customers` 테이블을 수정하고 두 컬럼 모두에 TTL을 2시간으로 추가합니다:
+
+```sql
+ALTER TABLE customers
+MODIFY COLUMN balance Int32 TTL timestamp + INTERVAL 2 HOUR,
+MODIFY COLUMN address String TTL timestamp + INTERVAL 2 HOUR
+```
+
+<div id="implementing-a-rollup">
+  ## 롤업 구현
+</div>
+
+일정 시간이 지난 후 행을 삭제하되, 보고 목적으로 일부 데이터는 유지하려는 경우를 가정해 보겠습니다. 모든 세부 정보가 필요한 것은 아니며, 과거 데이터의 집계 결과 몇 가지만 있으면 됩니다. 이는 `TTL` 표현식에 `GROUP BY` 절을 추가하고, 집계 결과를 저장할 컬럼을 테이블에 함께 추가하여 구현할 수 있습니다.
+
+다음 `hits` 테이블에서 오래된 행은 삭제하되, 행을 제거하기 전에 `hits` 컬럼의 합계와 최댓값은 유지하려는 경우를 가정해 보겠습니다. 이러한 값을 저장할 필드가 필요하며, 합계와 최댓값을 롤업하는 `TTL` 절에 `GROUP BY` 절도 추가해야 합니다.
+
+```sql
+CREATE TABLE hits (
+   timestamp DateTime,
+   id String,
+   hits Int32,
+   max_hits Int32 DEFAULT hits,
+   sum_hits Int64 DEFAULT hits
+)
+ENGINE = MergeTree
+PRIMARY KEY (id, toStartOfDay(timestamp), timestamp)
+TTL timestamp + INTERVAL 1 DAY
+    GROUP BY id, toStartOfDay(timestamp)
+    SET
+        max_hits = max(max_hits),
+        sum_hits = sum(sum_hits);
+```
+
+`hits` 테이블에 대한 몇 가지 참고 사항입니다:
+
+* `TTL` 절의 `GROUP BY` 컬럼은 `PRIMARY KEY`의 prefix여야 하며, 결과를 하루 시작 시점 기준으로 그룹화하려고 합니다. 따라서 `toStartOfDay(timestamp)`를 프라이머리 키에 추가했습니다
+* 집계 결과를 저장하기 위해 `max_hits`와 `sum_hits` 두 필드를 추가했습니다
+* `SET` 절의 정의 방식상, 로직이 올바르게 동작하려면 `max_hits`와 `sum_hits`의 기본값을 `hits`로 설정해야 합니다
+
+<div id="implementing-a-hotwarmcold-architecture">
+  ## 핫/웜/콜드 아키텍처 구현
+</div>
+
+<CloudNotSupportedBadge />
+
+<Note>
+  ClickHouse Cloud를 사용 중인 경우 이 학습의 단계는 적용되지 않습니다. ClickHouse Cloud에서는 오래된 데이터를 옮기는 작업을 신경 쓸 필요가 없습니다.
+</Note>
+
+대량의 데이터를 다룰 때 흔히 사용하는 방법은 데이터가 오래될수록 이를 다른 저장소로 옮기는 것입니다. 다음은 `TTL` 명령의 `TO DISK` 및 `TO VOLUME` 절을 사용해 ClickHouse에서 핫/웜/콜드 아키텍처를 구현하는 단계입니다. (참고로 꼭 핫/콜드 방식일 필요는 없습니다. 어떤 사용 사례에서든 TTL을 사용해 데이터를 이동할 수 있습니다.)
+
+1. `TO DISK` 및 `TO VOLUME` 옵션은 ClickHouse 설정 파일에 정의된 디스크 또는 볼륨의 이름을 가리킵니다. 디스크를 정의하는 `my_system.xml`이라는 새 파일(또는 다른 파일 이름)을 만든 다음, 해당 디스크를 사용하는 볼륨을 정의하십시오. XML 파일을 `/etc/clickhouse-server/config.d/`에 배치하면 구성이 시스템에 적용됩니다:
+
+```xml
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <default>
+            </default>
+           <hot_disk>
+              <path>./hot/</path>
+           </hot_disk>
+           <warm_disk>
+              <path>./warm/</path>
+           </warm_disk>
+           <cold_disk>
+              <path>./cold/</path>
+           </cold_disk>
+        </disks>
+        <policies>
+            <default>
+                <volumes>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                    <hot_volume>
+                        <disk>hot_disk</disk>
+                    </hot_volume>
+                    <warm_volume>
+                        <disk>warm_disk</disk>
+                    </warm_volume>
+                    <cold_volume>
+                        <disk>cold_disk</disk>
+                    </cold_volume>
+                </volumes>
+            </default>
+        </policies>
+    </storage_configuration>
+</clickhouse>
+```
+
+2. 위 구성은 ClickHouse가 읽고 쓸 수 있는 폴더를 가리키는 3개의 디스크를 참조합니다. 볼륨에는 하나 이상의 디스크가 포함될 수 있으며, 여기서는 3개의 디스크 각각에 대해 볼륨을 정의했습니다. 이제 디스크를 살펴보겠습니다:
+
+```sql
+SELECT name, path, free_space, total_space
+FROM system.disks
+```
+
+```response
+┌─name────────┬─path───────────┬───free_space─┬──total_space─┐
+│ cold_disk   │ ./data/cold/   │ 179143311360 │ 494384795648 │
+│ default     │ ./             │ 179143311360 │ 494384795648 │
+│ hot_disk    │ ./data/hot/    │ 179143311360 │ 494384795648 │
+│ warm_disk   │ ./data/warm/   │ 179143311360 │ 494384795648 │
+└─────────────┴────────────────┴──────────────┴──────────────┘
+```
+
+3. 이제...볼륨을 확인해 보겠습니다:
+
+```sql
+SELECT
+    volume_name,
+    disks
+FROM system.storage_policies
+```
+
+```response
+┌─volume_name─┬─disks─────────┐
+│ default     │ ['default']   │
+│ hot_volume  │ ['hot_disk']  │
+│ warm_volume │ ['warm_disk'] │
+│ cold_volume │ ['cold_disk'] │
+└─────────────┴───────────────┘
+```
+
+4. 이제 핫, 웜, 콜드 볼륨 간에 데이터를 이동하는 `TTL` 규칙을 추가합니다:
+
+```sql
+ALTER TABLE my_table
+   MODIFY TTL
+      trade_date TO VOLUME 'hot_volume',
+      trade_date + INTERVAL 2 YEAR TO VOLUME 'warm_volume',
+      trade_date + INTERVAL 4 YEAR TO VOLUME 'cold_volume';
+```
+
+5. 새 `TTL` 규칙은 구체화되어야 하지만, 확실히 하려면 강제로 구체화할 수 있습니다:
+
+```sql
+ALTER TABLE my_table
+    MATERIALIZE TTL
+```
+
+6. `system.parts` 테이블을 사용하여 데이터가 예상된 디스크로 이동했는지 확인하세요:
+
+```sql
+system.parts 테이블을 사용하여 crypto_prices 테이블의 파트가 어느 디스크에 있는지 확인합니다:
+
+SELECT
+    name,
+    disk_name
+FROM system.parts
+WHERE (table = 'my_table') AND (active = 1)
+```
+
+응답은 다음과 같습니다:
+
+```response
+┌─name────────┬─disk_name─┐
+│ all_1_3_1_5 │ warm_disk │
+│ all_2_2_0   │ hot_disk  │
+└─────────────┴───────────┘
+```

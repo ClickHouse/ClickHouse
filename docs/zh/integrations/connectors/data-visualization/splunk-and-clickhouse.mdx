@@ -1,0 +1,215 @@
+---
+sidebarTitle: 'Splunk'
+slug: /integrations/splunk
+keywords: ['Splunk', '集成', '数据可视化']
+description: '将 Splunk 仪表盘接入 ClickHouse'
+title: '将 Splunk 连接到 ClickHouse'
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+<Tip>
+  想将 ClickHouse 审计日志存储到 Splunk 中？请按照[&quot;将 ClickHouse Cloud 审计日志存入 Splunk&quot;](/zh/integrations/connectors/data-integrations/integrations/splunk)指南进行操作。
+</Tip>
+
+Splunk 是一种流行的安全与可观测性技术，也是一款强大的搜索和仪表盘引擎。Splunk 提供了数百种应用，可满足不同的使用场景。
+
+对于 ClickHouse，我们使用 [Splunk DB Connect App](https://splunkbase.splunk.com/app/2686)，它可通过简单集成接入高性能的 ClickHouse JDBC 驱动，从而直接查询 ClickHouse 中的表。
+
+这种集成最适合以下场景：你使用 ClickHouse 存储大型数据源，例如 NetFlow、Avro 或 Protobuf 二进制数据、DNS、VPC 流日志以及其他 OTel 日志，并希望在 Splunk 中与团队共享这些数据，用于搜索和创建仪表盘。采用这种方式时，数据不会被摄取到 Splunk 的索引层，而是像 [Metabase](https://www.metabase.com/) 或 [Superset](https://superset.apache.org/) 这类其他可视化集成一样，直接从 ClickHouse 查询。
+
+<div id="goal">
+  ## 目标​
+</div>
+
+在本指南中，我们将使用 ClickHouse JDBC 驱动将 ClickHouse 连接到 Splunk。我们会安装 Splunk Enterprise 的本地版本，但不会为任何数据建立索引；相反，我们将通过 DB Connect 查询引擎使用其搜索功能。
+
+通过本指南，您将能够创建一个连接到 ClickHouse 的仪表盘，效果类似于下图：
+
+<Image img="/images/integrations/splunk/splunk-1.webp" size="lg" border alt="显示 NYC 出租车数据可视化的 Splunk 仪表盘" />
+
+<Note>
+  本指南使用 [New York City Taxi dataset](/zh/get-started/sample-datasets/nyc-taxi)。您也可以在[我们的文档](http://localhost:3000/docs/getting-started/example-datasets)中使用许多其他数据集。
+</Note>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+开始之前，您需要准备：
+
+* 用于使用搜索头功能的 Splunk Enterprise
+* 在您的操作系统或容器中安装满足要求的 [Java 运行时环境 (JRE)](https://docs.splunk.com/Documentation/DBX/3.16.0/DeployDBX/Prerequisites)
+* [Splunk DB Connect](https://splunkbase.splunk.com/app/2686)
+* 对您的 Splunk Enterprise 操作系统实例具有管理员权限或 SSH 访问权限
+* ClickHouse 连接信息 (如果您使用的是 ClickHouse Cloud，请参见[此处](/zh/integrations/connectors/data-visualization/metabase-and-clickhouse#1-gather-your-connection-details))
+
+<div id="install-and-configure-db-connect-on-splunk-enterprise">
+  ## 在 Splunk Enterprise 上安装并配置 DB Connect
+</div>
+
+你必须先在 Splunk Enterprise 实例上安装 Java 运行时环境。如果你使用 Docker，可以使用命令 `microdnf install java-11-openjdk`。
+
+记下 `java_home` 路径：`java -XshowSettings:properties -version`。
+
+确保已在 Splunk Enterprise 上安装 DB Connect App。你可以在 Splunk Web UI 的 Apps 部分找到它：
+
+* 登录 Splunk Web，然后前往 Apps &gt; Find More Apps
+* 使用搜索框查找 DB Connect
+* 点击 Splunk DB Connect 旁边绿色的“Install”按钮
+* 点击“Restart Splunk”
+
+如果你在安装 DB Connect App 时遇到问题，请参阅[此链接](https://splunkbase.splunk.com/app/2686)了解更多说明。
+
+确认 DB Connect App 已安装后，在 Configuration -&gt; Settings 中将 `java_home` 路径添加到 DB Connect App，然后点击 save，再点击 reset。
+
+<Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="显示 Java Home 配置的 Splunk DB Connect 设置页面" />
+
+<div id="configure-jdbc-for-clickhouse">
+  ## 为 ClickHouse 配置 JDBC
+</div>
+
+下载 [ClickHouse JDBC 驱动 JAR 文件](https://github.com/ClickHouse/clickhouse-java/releases/)，并将其复制到以下路径中的 DB Connect Drivers 文件夹：
+
+```bash
+$SPLUNK_HOME/etc/apps/splunk_app_db_connect/drivers
+```
+
+为确保 DB Connect App 能使用所有必需的依赖项，请下载以下任一项：
+
+```text
+- clickhouse-jdbc-<VERSION>-shaded-all.jar (if VERSION < 0.9.0)
+- clickhouse-jdbc-<VERSION>-all-dependencies.jar (if VERSION >= 0.9.0)
+```
+
+然后，您必须编辑位于 `$SPLUNK_HOME/etc/apps/splunk_app_db_connect/local/db_connection_types.conf` 的 connection types configuration，加入 ClickHouse JDBC 驱动类的详细信息。将以下配置段添加到 `db_connection_types.conf` 中：
+
+```text
+[ClickHouse]
+displayName = ClickHouse
+serviceClass = com.splunk.dbx2.DefaultDBX2JDBC
+jdbcUrlFormat = jdbc:ch://<host>:<port>/<database>
+jdbcUrlSSLFormat = jdbc:ch://<host>:<port>/<database>?ssl=true
+jdbcDriverClass = com.clickhouse.jdbc.ClickHouseDriver
+ui_default_catalog = $database$
+```
+
+使用 `$SPLUNK_HOME/bin/splunk restart` 重启 Splunk。
+
+返回 DB Connect App，然后依次进入 Configuration &gt; Settings &gt; Drivers。你应该会在 ClickHouse 旁边看到一个绿色对勾：
+
+<Image img="/images/integrations/splunk/splunk-3.webp" size="lg" border alt="Splunk DB Connect 驱动程序页面，显示 ClickHouse 驱动已成功安装" />
+
+<div id="connect-splunk-search-to-clickhouse">
+  ## 将 Splunk 搜索连接到 ClickHouse
+</div>
+
+前往 DB Connect App Configuration -&gt; Databases -&gt; Identities：为 ClickHouse 创建一个 Identity。
+
+在 Configuration -&gt; Databases -&gt; Connections 中新建一个到 ClickHouse 的 connection，并选择“New Connection”。
+
+<Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="Splunk DB Connect 新建连接按钮" />
+
+<br />
+
+添加 ClickHouse 主机详细信息，并确保已勾选“Enable SSL”：
+
+<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="ClickHouse 的 Splunk connection 配置页面" />
+
+保存该 connection 后，即表示已成功将 Splunk 连接到 ClickHouse！
+
+<Note>
+  如果收到错误，请确保已将 Splunk 实例的 IP 地址添加到 ClickHouse Cloud IP Access List。更多信息请参阅[文档](/zh/products/cloud/guides/security/connectivity/setting-ip-filters)。
+</Note>
+
+<div id="run-a-sql-query">
+  ## 运行 SQL 查询
+</div>
+
+现在我们将运行一条 SQL 查询，测试一切是否正常。
+
+在 DB Connect App 的 DataLab 部分中，前往 SQL Explorer 并选择你的连接信息。这里我们使用 `trips` 表进行演示：
+
+<Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="在 Splunk SQL Explorer 中选择到 ClickHouse 的连接" />
+
+在 `trips` 表上执行一条 SQL 查询，返回该表中的记录总数：
+
+<Image img="/images/integrations/splunk/splunk-7.webp" size="md" border alt="Splunk SQL 查询执行，显示 trips 表中的记录总数" />
+
+如果查询成功，你应该会看到结果。
+
+<div id="create-a-dashboard">
+  ## 创建仪表盘
+</div>
+
+我们来创建一个仪表盘，结合使用 SQL 和强大的 Splunk Processing Language (SPL)。
+
+继续之前，必须先[停用 DPL Safeguards](https://docs.splunk.com/Documentation/Splunk/9.2.1/Security/SPLsafeguards?ref=hk#Deactivate_SPL_safeguards)。
+
+运行以下查询，查看接载最频繁的前 10 个街区：
+
+```sql
+dbxquery query="SELECT pickup_ntaname, count(*) AS count
+FROM default.trips GROUP BY pickup_ntaname
+ORDER BY count DESC LIMIT 10;" connection="chc"
+```
+
+选择 visualization 选项卡，查看已创建的柱状图表：
+
+<Image img="/images/integrations/splunk/splunk-8.webp" size="lg" border alt="显示前 10 个上车街区的 Splunk 柱状图表可视化" />
+
+现在，点击 Save As &gt; Save to a Dashboard，将其保存到仪表盘中。
+
+让我们再添加一个查询，根据乘客数量显示平均车费。
+
+```sql
+dbxquery query="SELECT passenger_count,avg(total_amount)
+FROM default.trips GROUP BY passenger_count;" connection="chc"
+```
+
+这次，我们来创建一个柱状图，并将其保存到前面的仪表盘中。
+
+<Image img="/images/integrations/splunk/splunk-9.webp" size="lg" border alt="显示按乘客数量统计平均车费的 Splunk 柱状图" />
+
+最后，我们再添加一个查询，用于展示乘客数量与行程距离之间的相关性：
+
+```sql
+dbxquery query="SELECT passenger_count, toYear(pickup_datetime) AS year,
+round(trip_distance) AS distance, count(* FROM default.trips)
+GROUP BY passenger_count, year, distance
+ORDER BY year, count(*) DESC; " connection="chc"
+```
+
+最终的仪表盘应如下所示：
+
+<Image img="/images/integrations/splunk/splunk-10.webp" size="lg" border alt="最终的 Splunk 仪表盘，包含 NYC 出租车数据的多个可视化图表" />
+
+<div id="time-series-data">
+  ## 时序数据
+</div>
+
+Splunk 内置了数百个函数，仪表盘可使用这些函数对时序数据进行可视化和呈现。本示例将结合 SQL + SPL，创建一个可用于处理 Splunk 中时序数据的查询
+
+```sql
+dbxquery query="SELECT time, orig_h, duration
+FROM "demo"."conn" WHERE time >= now() - interval 1 HOURS" connection="chc"
+| eval time = strptime(time, "%Y-%m-%d %H:%M:%S.%3Q")
+| eval _time=time
+| timechart avg(duration) as duration by orig_h
+| eval duration=round(duration/60)
+| sort - duration:
+```
+
+<div id="learn-more">
+  ## 了解更多
+</div>
+
+如果您想进一步了解 Splunk DB Connect 以及如何构建仪表盘，请访问 [Splunk 文档](https://docs.splunk.com/Documentation)。

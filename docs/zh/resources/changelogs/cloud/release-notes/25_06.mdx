@@ -1,0 +1,408 @@
+---
+slug: /changelogs/25.6
+title: 'Cloud v25.6 更新日志'
+description: 'v25.6 快速发布版更新日志'
+keywords: ['更新日志', 'cloud']
+sidebarTitle: '25.6'
+doc_type: 'changelog'
+---
+
+<div id="backward-incompatible-change">
+  ## 不兼容变更
+</div>
+
+* 函数 `geoToH3()` 现在接受按 (lat, lon,res) 顺序传入的输入 (这是几何函数的标准顺序) 。如需保留旧版的结果顺序 (lon, lat,res)，可设置 `geotoh3_lon_lat_input_order = true`。 [#78852](https://github.com/ClickHouse/ClickHouse/pull/78852) ([Pratima Patel](https://github.com/pratimapatel2008)).
+* `full_text` 类型的索引已重命名为 `gin`。这与 PostgreSQL 及其他数据库中更常见的术语保持一致。现有的 `full_text` 类型索引仍可加载，但在搜索中使用时会抛出异常 (并提示改用 `gin` 索引) 。 [#79024](https://github.com/ClickHouse/ClickHouse/pull/79024) ([Robert Schulze](https://github.com/rschu1ze)).
+* 新增文件系统缓存设置 `allow_dynamic_cache_resize`，默认值为 `false`，用于控制是否允许动态调整文件系统缓存大小。原因：在某些环境中 (ClickHouse Cloud) ，所有扩缩容事件都会通过进程重启完成，因此我们希望显式禁用该功能，以便更好地控制行为并作为额外的安全措施。此 PR 被标记为不兼容变更，因为在旧版本中，动态调整缓存大小默认启用，无需额外设置。 [#79148](https://github.com/ClickHouse/ClickHouse/pull/79148) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 已移除对旧版索引类型 `annoy` 和 `usearch` 的支持。两者长期以来都只是桩实现，也就是说，任何尝试使用这些旧版索引的操作本来都会返回 error。如果你仍然有 `annoy` 和 `usearch` 索引，请将其删除。 [#79802](https://github.com/ClickHouse/ClickHouse/pull/79802) ([Robert Schulze](https://github.com/rschu1ze)).
+  #* 移除 `format_alter_commands_with_parentheses` server setting。该设置于 24.2 引入，且默认禁用；在 25.2 中改为默认启用。由于已不存在不支持新格式的 LTS 版本，因此可以移除此设置。 [#79970](https://github.com/ClickHouse/ClickHouse/pull/79970) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+  #* 小改动：强制 backup&#95;threads 和 restore&#95;threads server settings 为非零值。 [#80224](https://github.com/ClickHouse/ClickHouse/pull/80224) ([Raúl Marín](https://github.com/Algunenano)).
+* 修复 `bitNot()` 对 String 的处理，使其返回以零结尾的字符串。 [#80791](https://github.com/ClickHouse/ClickHouse/pull/80791) ([Azat Khuzhin](https://github.com/azat)).
+
+<div id="new-feature">
+  ## 新特性
+</div>
+
+* 为 MergeTree `SETTINGS` 新增一个选项：如果 `CREATE` 查询未为指定列显式定义压缩编解码器，则使用默认压缩编解码器。此项修复了 [#42005](https://github.com/ClickHouse/ClickHouse/issues/42005)。[#66394](https://github.com/ClickHouse/ClickHouse/pull/66394) ([gvoelfin](https://github.com/gvoelfin)).
+* 这是对 https://github.com/ClickHouse/ClickHouse/pull/71943 的后续补充。此 PR 实现了 `Time`/`Time64` 数据类型。新增了数据类型 Time (HHH:MM:SS) 和 Time64 (HHH:MM:SS.`<fractional>`) ，以及一些基础的 CAST 函数和用于与其他数据类型交互的函数。此外，由于 CAST 函数需要使用 `toTime`，现有函数 `toTime` 已更名为 `toTimeWithFixedDate`。[#75735](https://github.com/ClickHouse/ClickHouse/pull/75735) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
+* 支持在 `WHERE` 子句中将关联子查询用作 `EXISTS` 表达式的参数。修复了 [#72459](https://github.com/ClickHouse/ClickHouse/issues/72459)。[#76078](https://github.com/ClickHouse/ClickHouse/pull/76078) ([Dmitry Novik](https://github.com/novikd)) 。
+* 允许写入 Merge 表引擎。[#77484](https://github.com/ClickHouse/ClickHouse/pull/77484) ([Anton Ivashkin](https://github.com/ianton-ru)) 。
+* 针对复制型 MergeTree 表的分布式 `INSERT SELECT` 现在可高效利用并行副本：在不同节点上选择不同的数据，并分别执行 `INSERT`，从而实现并行写入。[#78041](https://github.com/ClickHouse/ClickHouse/pull/78041) ([Igor Nikonov](https://github.com/devcrafter)).
+* 新增 `mapContainsValuesLike`/`mapContainsValues`/`mapExtractValuesLike` 函数，用于按 map 值进行过滤，并支持在基于 bloomfilter 的索引中使用这些函数。[#78171](https://github.com/ClickHouse/ClickHouse/pull/78171) ([UnamedRus](https://github.com/UnamedRus)).
+* 添加 `system.iceberg_history` 表。[#78244](https://github.com/ClickHouse/ClickHouse/pull/78244) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)) 。
+* 新增了针对 workloads 的查询 slot 调度功能，详见 https://clickhouse.com/docs/operations/workload-scheduling#query&#95;scheduling。 [#78415](https://github.com/ClickHouse/ClickHouse/pull/78415) ([Sergei Trifonov](https://github.com/serxa)) 。
+* 新增 `getServerSetting` 和 `getMergeTreeSetting` 函数。已关闭 https://github.com/clickhouse/clickhouse/issues/78318。[#78439](https://github.com/ClickHouse/ClickHouse/pull/78439) ([NamNguyenHoai](https://github.com/NamHoaiNguyen)).
+* settings 约束现支持禁用值。[#78499](https://github.com/ClickHouse/ClickHouse/pull/78499) ([Bharat Nallan](https://github.com/bharatnc)) 。
+* 新增 `iceberg_enable_version_hint` 设置，用于利用 `version-hint.text` 文件。[#78594](https://github.com/ClickHouse/ClickHouse/pull/78594) ([Arnaud Briche](https://github.com/arnaudbriche)) 。
+* 支持使用 `LIKE` 关键字进行过滤，并对数据库中的特定表执行 TRUNCATE。[#78597](https://github.com/ClickHouse/ClickHouse/pull/78597) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
+* `clickhouse-local` (及其简写别名 `ch`) 现在会在有输入数据需要处理时隐式使用 `FROM table`。这修复了 [#65023](https://github.com/ClickHouse/ClickHouse/issues/65023)。此外，如果未指定 `--input-format` 且处理的是普通文件，clickhouse-local 现在还支持格式推断。[#79085](https://github.com/ClickHouse/ClickHouse/pull/79085) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 新增 [`icebergHash`](https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements) 和 [`icebergBucketTransform`](https://iceberg.apache.org/spec/#bucket-transform-details) 函数。支持对使用 [`bucket transfom`](https://iceberg.apache.org/spec/#partitioning) 进行分区的 `Iceberg` 表中的数据文件进行剪枝。[#79262](https://github.com/ClickHouse/ClickHouse/pull/79262) ([Daniil Ivanik](https://github.com/divanik)) 。
+* 新增了对 Coalescing Merge Tree 的支持。此更改修复了 [#78869](https://github.com/ClickHouse/ClickHouse/issues/78869)。[#79344](https://github.com/ClickHouse/ClickHouse/pull/79344) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
+* 新增 `stringBytesUniq` 和 `stringBytesEntropy` 函数，用于搜索可能为随机数据或加密数据的内容。[#79350](https://github.com/ClickHouse/ClickHouse/pull/79350) ([Sachin Kumar Singh](https://github.com/sachinkumarsingh092)) 。
+* 在 MergeTree 家族表中支持 `_part_starting_offset` 虚拟列。该列表示所有前面 parts 的累计行数，并在查询时基于当前的 parts 列表进行计算。累计值会在整个查询执行过程中保留，即使在 part pruning 之后也仍然有效。相关内部逻辑已重构，以支持这一行为。[#79417](https://github.com/ClickHouse/ClickHouse/pull/79417) ([Amos Bird](https://github.com/amosbird)).
+* 新增设置 `enable_shared_storage_snapshot_in_query`，用于在单个查询的所有子查询中共享同一个存储快照。这可确保对同一张表的读取保持一致，即使该表在一个查询中被多次引用也是如此。[#79471](https://github.com/ClickHouse/ClickHouse/pull/79471) ([Amos Bird](https://github.com/amosbird)).
+* 支持将 CH JSON 列写入 Parquet，并可将 Parquet JSON 列直接读取为 CH JSON 列。[#79649](https://github.com/ClickHouse/ClickHouse/pull/79649) ([Nihal Z. Miaji](https://github.com/nihalzp)) 。
+* 将 [`chdig`](https://github.com/azat/chdig/) 随 ClickHouse 一同打包发布——这是一个用于 ClickHouse 的 TUI 界面 (类似 `top`) 。[#79666](https://github.com/ClickHouse/ClickHouse/pull/79666) ([Azat Khuzhin](https://github.com/azat)) 。
+* 为 `pointInPolygon` 添加对 `MultiPolygon` 的支持。[#79773](https://github.com/ClickHouse/ClickHouse/pull/79773) ([Nihal Z. Miaji](https://github.com/nihalzp)) 。
+* 新增对 Geo Parquet 的支持。此项变更关闭了 [#75317](https://github.com/ClickHouse/ClickHouse/issues/75317)。[#79777](https://github.com/ClickHouse/ClickHouse/pull/79777) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
+* 新增了对通过 `deltaLakeLocal` 表函数查询挂载在本地文件系统上的 Delta Lake 表的支持。[#79781](https://github.com/ClickHouse/ClickHouse/pull/79781) ([roykim98](https://github.com/roykim98)).
+* 新增了 base32 编码和解码功能。[#79809](https://github.com/ClickHouse/ClickHouse/pull/79809) ([Joanna Hulboj](https://github.com/jh0x)) 。
+* ClickHouse 向量搜索现已同时支持前过滤和后过滤，并提供相关设置以进行更精细的控制。 (问题 [#78161](https://github.com/ClickHouse/ClickHouse/issues/78161)) 。[#79854](https://github.com/ClickHouse/ClickHouse/pull/79854) ([Shankar Iyer](https://github.com/shankar-iyer)) 。
+* 支持读取 WKB 格式的函数。此项功能部分解决了 [#43941](https://github.com/ClickHouse/ClickHouse/issues/43941)。[#80139](https://github.com/ClickHouse/ClickHouse/pull/80139) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
+* 新增设置 `cast_string_to_date_time_mode`，可在从 String 转换时选择 DateTime 的解析模式。[#80210](https://github.com/ClickHouse/ClickHouse/pull/80210) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 新增了 `Bech32` 和 `Bech32m` 的编码与解码函数 (见问题 [#40381](https://github.com/ClickHouse/ClickHouse/issues/40381)) 。[#80239](https://github.com/ClickHouse/ClickHouse/pull/80239) ([George Larionov](https://github.com/glarik)) 。
+* 支持为 Atomic 和 Ordinary 数据库引擎设置 `disk`，用于指定存储表元数据文件的磁盘。[#80546](https://github.com/ClickHouse/ClickHouse/pull/80546) ([Tuan Pham Anh](https://github.com/tuanpach)) 。
+* 支持用于解包和比较 MergeTree parts 的函数。[#80573](https://github.com/ClickHouse/ClickHouse/pull/80573) ([Mikhail Artemenko](https://github.com/Michicosun)) 。
+* `timeSeries*` 辅助函数，用于在处理时间序列数据的某些场景中提速：- 按指定的起始时间戳、结束时间戳和步长，将数据重新采样到时间网格上 - 计算类 PromQL 的 `delta`、`rate`、`idelta` 和 `irate`。[#80590](https://github.com/ClickHouse/ClickHouse/pull/80590) ([Alexander Gololobov](https://github.com/davenger)) 。
+* 支持按 parts 所在的磁盘过滤待查询的 parts。[#80650](https://github.com/ClickHouse/ClickHouse/pull/80650) ([tanner-bruce](https://github.com/tanner-bruce)) 。
+* 新增了一个着陆页，用于列出嵌入式 Web 工具列表。当收到类似浏览器的 User-Agent 请求时，将打开该页面。 [#81129](https://github.com/ClickHouse/ClickHouse/pull/81129) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 支持在 `arrayFirst`、`arrayFirstIndex`、`arrayLast` &amp; `arrayLastIndex` 中过滤 `NULL` 值。修复了 [#81113](https://github.com/ClickHouse/ClickHouse/issues/81113)。[#81197](https://github.com/ClickHouse/ClickHouse/pull/81197) ([Lennard Eijsackers](https://github.com/Blokje5)) 。
+
+<div id="experimental-feature">
+  ## Experimental 功能
+</div>
+
+* 用于 Iceberg 数据湖的 Hive metastore catalog。[#77677](https://github.com/ClickHouse/ClickHouse/pull/77677) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
+* 现已支持通过键值对指定显式参数。目前支持的参数包括一个必需的 `tokenizer`，以及两个可选参数 `max_rows_per_postings_list` 和 `ngram_size`。[#80262](https://github.com/ClickHouse/ClickHouse/pull/80262) ([Elmi Ahmadov](https://github.com/ahmadov)) 。
+* 实验性的 `gin` 类型索引已重命名为 `text`。现有的 `gin` 类型索引仍可加载，但如果尝试在搜索中使用它们，则会抛出异常 (并提示改用 `text` 索引) 。[#80855](https://github.com/ClickHouse/ClickHouse/pull/80855) ([Robert Schulze](https://github.com/rschu1ze)) 。
+
+<div id="performance-improvement">
+  ## 性能提升
+</div>
+
+* 通过一次对多个粒度计算次级索引表达式，加快次级索引的处理速度。 [#64109](https://github.com/ClickHouse/ClickHouse/pull/64109) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 引入了一个阈值 (受设置 `parallel_hash_join_threshold` 控制) ，当右侧表的大小低于该阈值时，将回退到 `hash` 算法。[#76185](https://github.com/ClickHouse/ClickHouse/pull/76185) ([Nikita Taranov](https://github.com/nickitat)).
+* 现有的 `Pipe::resize` 实现会通过将单个 `Resize` 或 `StrictResize` 节点插入管道拓扑来创建该节点，该节点随后充当中心枢纽，把所有输入流 (上游节点) 连接到一组统一的输出流 (下游节点) 。这种设计会在管道图执行期间引发对 `ExecutingGraph::Node::status_mutex` 的争用，尤其是在高核数环境中。当管道扩展到数十个或数百个流时，这种争用会导致：[#77562](https://github.com/ClickHouse/ClickHouse/pull/77562) ([Zhiguo Zhou](https://github.com/ZhiguoZh)) 。
+* 通过支持 `S3Queue`/`AzureQueue` 并行执行 `INSERT` 写入来提升性能 (可通过队列设置 `parallel_inserts=true` 启用) 。此前，`S3Queue`/`AzureQueue` 只能并行执行管道的第一部分 (下载、解析) ，而 `INSERT` 仍是单线程的。而 `INSERT` 几乎总是瓶颈。现在，其性能将随着 `processing_threads_num` 的增加实现近乎线性扩展。[#77671](https://github.com/ClickHouse/ClickHouse/pull/77671) ([Azat Khuzhin](https://github.com/azat)) 。
+* 将 compact part 格式调整为可为每个子流保存标记，从而能够读取单个子列。旧版 compact 格式仍支持读取，也可通过 MergeTree setting `write_marks_for_substreams_in_compact_parts` 启用写入。由于这会改变 compact parts 的存储方式，为了让升级更稳妥，该功能默认处于禁用状态。它将在后续某个发行版中默认启用。[#77940](https://github.com/ClickHouse/ClickHouse/pull/77940) ([Pavel Kruglov](https://github.com/Avogar)).
+* 引入了新设置`use_skip_indexes_in_final_exact_mode`。如果针对 `ReplacingMergeTree` 表的查询包含 `FINAL` 子句，仅根据跳过索引读取表范围可能会产生错误结果。此设置可通过扫描与跳过索引返回的主键范围重叠的较新 parts，确保返回正确结果。设置为 0 表示禁用，1 表示启用。[#78350](https://github.com/ClickHouse/ClickHouse/pull/78350) ([Shankar Iyer](https://github.com/shankar-iyer)) 。
+* 现在，在启用并行副本时，我们使用副本数量来确定读取任务的大小。这样一来，在待读取的数据量不大时，副本之间的工作分配会更加均衡。[#78695](https://github.com/ClickHouse/ClickHouse/pull/78695) ([Nikita Taranov](https://github.com/nickitat)).
+* 支持在分布式聚合的最后阶段并行合并 `uniqExact` 状态。[#78703](https://github.com/ClickHouse/ClickHouse/pull/78703) ([Nikita Taranov](https://github.com/nickitat)) 。
+* 修复了按键聚合时并行合并 `uniqExact` 状态可能导致的性能下降问题。[#78724](https://github.com/ClickHouse/ClickHouse/pull/78724) ([Nikita Taranov](https://github.com/nickitat)) 。
+  #* 将 `DELETE FROM ... WHERE 1` 查询改为 `TRUNCATE`。 (已回退) 。[#78739](https://github.com/ClickHouse/ClickHouse/pull/78739) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
+* 减少对 Azure 存储发起的 List Blobs API 调用次数。[#78860](https://github.com/ClickHouse/ClickHouse/pull/78860) ([Julia Kartseva](https://github.com/jkartseva)) 。
+* 尽可能将过滤器查询计划步骤中的等值条件合并到 `JOIN` 条件中，以便将其用作哈希表键。[#78877](https://github.com/ClickHouse/ClickHouse/pull/78877) ([Dmitry Novik](https://github.com/novikd)) 。
+* 使用 `extractKeyValuePairs` 替代正则表达式，以提升 hive 路径解析的性能。[#79067](https://github.com/ClickHouse/ClickHouse/pull/79067) ([Arthur Passos](https://github.com/arthurpassos)) 。
+* 改进了启用并行副本时分布式 `INSERT SELECT` 的性能。[#79441](https://github.com/ClickHouse/ClickHouse/pull/79441) ([Azat Khuzhin](https://github.com/azat)) 。
+* 允许将包含子列的条件移至 `PREWHERE`。[#79489](https://github.com/ClickHouse/ClickHouse/pull/79489) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 所有 bloom filter 类型的性能均有提升。[#79800](https://github.com/ClickHouse/ClickHouse/pull/79800) ([Delyan Kratunov](https://github.com/dkratunov)) 。
+* 防止 `LogSeriesLimiter` 在每次构造时都执行清理，从而避免在高并发场景下出现锁竞争和性能下降。[#79864](https://github.com/ClickHouse/ClickHouse/pull/79864) ([filimonov](https://github.com/filimonov)).
+* 默认启用 `compile_expressions` (用于普通表达式片段的 JIT 编译器) 。这修复了 [#51264](https://github.com/ClickHouse/ClickHouse/issues/51264)、[#56386](https://github.com/ClickHouse/ClickHouse/issues/56386) 和 [#66486](https://github.com/ClickHouse/ClickHouse/issues/66486)。[#79907](https://github.com/ClickHouse/ClickHouse/pull/79907) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 通过 trivial count 优化加速查询。[#79945](https://github.com/ClickHouse/ClickHouse/pull/79945) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 在 `UniqExactSet::merge` 中，当其中一个集合为空时，新增了一条快速路径。另外，现在如果 LHS 集合是两级而 RHS 是单级，则不再将 RHS 转换为两级。[#79971](https://github.com/ClickHouse/ClickHouse/pull/79971) ([Nikita Taranov](https://github.com/nickitat)).
+* 为 `convertDecimalsImpl` 添加 `__attribute__((always_inline))`。[#79999](https://github.com/ClickHouse/ClickHouse/pull/79999) ([Konstantin Bogdanov](https://github.com/thevar1able)) 。
+* 默认将 `input_format_parquet_bloom_filter_push_down` 设为 true。此外，还修复了 settings 变更历史记录中的一个错误。[#80058](https://github.com/ClickHouse/ClickHouse/pull/80058) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+  #* 默认启用异步日志记录。你可以通过在 `<logger>` 下设置 `<async>false</async>` 来禁用此功能。[#80125](https://github.com/ClickHouse/ClickHouse/pull/80125) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 在使用两级哈希表时，提升内存复用效率并减少缺页错误。[#80245](https://github.com/ClickHouse/ClickHouse/pull/80245) ([Jiebin Sun](https://github.com/jiebinn)) 。
+* 避免 QueryConditionCache 中不必要的更新，减少锁争用。[#80247](https://github.com/ClickHouse/ClickHouse/pull/80247) ([Jiebin Sun](https://github.com/jiebinn)) 。
+* 对 `concatenateBlocks` 进行了小幅优化，这对并行 Hash join 可能会有帮助。[#80328](https://github.com/ClickHouse/ClickHouse/pull/80328) ([李扬](https://github.com/taiyang-li)) 。
+* 从主键范围中选择标记范围时，如果主键被函数包裹，就无法使用二分查找。此 PR 改进了这一限制：当主键被始终保持单调的函数链包裹时，或者 RPN 中包含一个始终为 true 的元素时，仍然可以使用二分查找。此 PR 关闭了 [#45536](https://github.com/ClickHouse/ClickHouse/issues/45536)。[#80597](https://github.com/ClickHouse/ClickHouse/pull/80597) ([zoomxi](https://github.com/zoomxi)) 。
+* 提升 Kafka 引擎的停机速度 (在存在多个 Kafka 表时，去掉额外的 3 秒延迟) 。[#80796](https://github.com/ClickHouse/ClickHouse/pull/80796) ([Azat Khuzhin](https://github.com/azat)) 。
+* 降低异步插入的内存占用，并提升插入查询的性能。[#80972](https://github.com/ClickHouse/ClickHouse/pull/80972) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 如果日志表已禁用，则不要对处理器进行性能分析。[#81256](https://github.com/ClickHouse/ClickHouse/pull/81256) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 当源值恰好就是所请求的内容时，加快 `toFixedString` 的处理速度。[#81257](https://github.com/ClickHouse/ClickHouse/pull/81257) ([Raúl Marín](https://github.com/Algunenano)).
+* 如果用户未受限制，则不要处理配额值。[#81549](https://github.com/ClickHouse/ClickHouse/pull/81549) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 将 ProcfsMetricsProvider 设为 thread&#95;local，以使文件在任务之间保持打开状态。[#81576](https://github.com/ClickHouse/ClickHouse/pull/81576) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 修复了内存跟踪中的性能回退。[#81694](https://github.com/ClickHouse/ClickHouse/pull/81694) ([Michael Kolupaev](https://github.com/al13n321)) 。
+
+<div id="improvement">
+  ## 改进
+</div>
+
+#* 如果指定 `--path` 命令行参数，`clickhouse-local` 在重启后会保留其数据库。此更改修复了 [#50647](https://github.com/ClickHouse/ClickHouse/issues/50647) 和 [#49947](https://github.com/ClickHouse/ClickHouse/issues/49947)。[#71722](https://github.com/ClickHouse/ClickHouse/pull/71722) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+
+* `EXPLAIN SYNTAX` 现在使用新的 analyzer。该命令会返回基于查询树构建的抽象语法树 (AST) 。新增选项 `query_tree_passes`，用于控制在将查询树转换为 AST 之前要执行的处理轮数。[#74536](https://github.com/ClickHouse/ClickHouse/pull/74536) ([Vladimir Cherkasov](https://github.com/vdimir)) 。
+  #* 默认在文件系统缓存中使用 SLRU 缓存策略。[#75072](https://github.com/ClickHouse/ClickHouse/pull/75072) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 重构了向视图推送的逻辑。[#77309](https://github.com/ClickHouse/ClickHouse/pull/77309) ([Sema Checherinda](https://github.com/CheSema)) 。
+* 对象存储 cluster 表函数 (例如 `s3Cluster`) 现在会根据一致性哈希将待读取的文件分配给副本，以提高缓存局部性。[#77326](https://github.com/ClickHouse/ClickHouse/pull/77326) ([Andrej Hoos](https://github.com/adikus)) 。
+* 出现 `AuthenticationRequired` 错误后刷新 S3 凭证。[#77353](https://github.com/ClickHouse/ClickHouse/pull/77353) ([Vitaly Baranov](https://github.com/vitlibar)) 。
+* 借助构建器，将代理配置嵌入某些 HTTP 缓冲区中。[#77693](https://github.com/ClickHouse/ClickHouse/pull/77693) ([Arthur Passos](https://github.com/arthurpassos)).
+* 向 `system.asynchronous_metrics` 添加了字典指标：- `DictionaryMaxUpdateDelay` - 字典更新的最大延迟 (单位为秒) 。- `DictionaryTotalFailedUpdates` - 自上次成功加载以来，所有字典中的错误总数。[#78175](https://github.com/ClickHouse/ClickHouse/pull/78175) ([Vlad](https://github.com/codeworse)) 。
+* 新增 `divideOrNull`、`moduloOrNull`、`intDivOrNull` 和 `positiveModuloOrNull` 函数，在右参数为零时返回 NULL。[#78276](https://github.com/ClickHouse/ClickHouse/pull/78276) ([kevinyhzou](https://github.com/KevinyhZou)).
+* 将 `isIPAddressInRange` 函数扩展为支持 String、IPv4、IPv6、Nullable(String)、Nullable(IPv4) 和 Nullable(IPv6) 数据类型。[#78364](https://github.com/ClickHouse/ClickHouse/pull/78364) ([YjyJeff](https://github.com/YjyJeff)) 。
+* 可动态更改 PostgreSQL 引擎的连接池设置。[#78414](https://github.com/ClickHouse/ClickHouse/pull/78414) ([Samay Sharma](https://github.com/samay-sharma)).
+* 允许在常规投影中指定 `_part_offset`。这是构建投影索引的第一步。它可以与 [#58224](https://github.com/ClickHouse/ClickHouse/issues/58224) 配合使用，并有助于改进 https://github.com/ClickHouse/ClickHouse/pull/63207。 [#78429](https://github.com/ClickHouse/ClickHouse/pull/78429) ([Amos Bird](https://github.com/amosbird)) 。
+* 改进了分布式查询中的分片键优化。[#78452](https://github.com/ClickHouse/ClickHouse/pull/78452) ([fhw12345](https://github.com/fhw12345)) 。
+* 为 `system.named_collections` 新增列 (`create_query` 和 `source`) 。已关闭 [#78179](https://github.com/ClickHouse/ClickHouse/issues/78179)。[#78582](https://github.com/ClickHouse/ClickHouse/pull/78582) ([MikhailBurdukov](https://github.com/MikhailBurdukov))。
+* 向系统表 `system.query_condition_cache` 新增了字段 `condition`。该字段存储其哈希值被用作查询条件缓存键的明文条件。[#78671](https://github.com/ClickHouse/ClickHouse/pull/78671) ([Robert Schulze](https://github.com/rschu1ze)) 。
+* 使用 ClickHouse Keeper 为 StorageKafka2 实现类似 Kafka 再平衡的逻辑。对于每个副本，我们支持两类分区锁：永久锁和临时锁。副本会尽可能长时间持有永久锁；在任意时刻，单个副本上的永久锁数量都不会超过 `all_topic_partitions / active_replicas_count` (其中，`all_topic_partitions` 表示所有分区的总数，`active_replicas_count` 表示活跃副本数) 。如果超过该数量，副本就会释放部分分区。有些分区会由副本临时持有。副本上的临时锁最大数量会动态调整，以便给其他副本机会将一些分区纳入永久锁。更新临时锁时，副本会先将其全部释放，然后再次尝试获取其他一些锁。[#78726](https://github.com/ClickHouse/ClickHouse/pull/78726) ([Daria Fomina](https://github.com/sinfillo)) 。
+* 为 `Kafka` 表引擎添加了用于 SASL 配置和凭据的表设置。这样就可以直接在 `CREATE TABLE` 语句中配置基于 SASL 的 Kafka 及 Kafka 兼容系统身份验证，而不必使用配置文件或命名集合。[#78810](https://github.com/ClickHouse/ClickHouse/pull/78810) ([Christoph Wurm](https://github.com/cwurm)) 。
+* 新增一条警告，说明某些数据库可能是为保存损坏的表而创建的。[#78841](https://github.com/ClickHouse/ClickHouse/pull/78841) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)) 。
+* 现在可在 `BFloat16` 列上创建向量相似度索引。[#78850](https://github.com/ClickHouse/ClickHouse/pull/78850) ([Robert Schulze](https://github.com/rschu1ze)).
+* 在 DateTime64 的尽力解析中支持带小数部分的 Unix 时间戳。[#78908](https://github.com/ClickHouse/ClickHouse/pull/78908) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 在 DeltaLake 的 delta-kernel 存储实现中，修复了 columnMappingMode.name 的问题，并增加了 schema 演进测试。[#78921](https://github.com/ClickHouse/ClickHouse/pull/78921) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 通过更优的值转换，改进了在 Values 格式中向 Variant 列插入数据的支持。[#78923](https://github.com/ClickHouse/ClickHouse/pull/78923) ([Pavel Kruglov](https://github.com/Avogar)).
+* 在 `S3Queue` 引擎中新增 `_time` 虚拟列。[#78926](https://github.com/ClickHouse/ClickHouse/pull/78926) ([Anton Ivashkin](https://github.com/ianton-ru)) 。
+* `tokens` 函数已扩展，可接受一个额外的 &quot;分词器&quot; 参数，以及更多特定于分词器的参数。[#79001](https://github.com/ClickHouse/ClickHouse/pull/79001) ([Elmi Ahmadov](https://github.com/ahmadov)) 。
+* `SHOW CLUSTER` 语句现在会展开其参数中的宏 (如果有) 。[#79006](https://github.com/ClickHouse/ClickHouse/pull/79006) ([arf42](https://github.com/arf42)) 。
+* 哈希函数现已支持处理数组、元组和 Map 中的 `NULL` 值。 (问题 [#48365](https://github.com/ClickHouse/ClickHouse/issues/48365) 和 [#48623](https://github.com/ClickHouse/ClickHouse/issues/48623)) 。[#79008](https://github.com/ClickHouse/ClickHouse/pull/79008) ([Michael Kolupaev](https://github.com/al13n321)) 。
+* 支持刷新只读 MergeTree 表。[#79033](https://github.com/ClickHouse/ClickHouse/pull/79033) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+  #* 将 cctz 更新至 2025a。[#79043](https://github.com/ClickHouse/ClickHouse/pull/79043) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 使在 CPU 过载时控制断开连接的设置支持热重载。[#79052](https://github.com/ClickHouse/ClickHouse/pull/79052) ([Alexey Katsman](https://github.com/alexkats)) 。
+* 这样用起来更方便。[#79066](https://github.com/ClickHouse/ClickHouse/pull/79066) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 默认启用查询条件缓存。[#79080](https://github.com/ClickHouse/ClickHouse/pull/79080) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+  #* 让 Web UI 中的选项卡支持撤销操作。此变更修复了 [#71284](https://github.com/ClickHouse/ClickHouse/issues/71284)。[#79084](https://github.com/ClickHouse/ClickHouse/pull/79084) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 在 `recoverLostReplica` 期间移除设置，与 https://github.com/ClickHouse/ClickHouse/pull/78637 中的做法相同。[#79113](https://github.com/ClickHouse/ClickHouse/pull/79113) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)) 。
+* 为 profile parquet 索引裁剪新增 ProfileEvents ParquetReadRowGroups 和 ParquetPrunedRowGroups。[#79180](https://github.com/ClickHouse/ClickHouse/pull/79180) ([flynn](https://github.com/ucasfl)) 。
+* 为 Azure Blob 存储中普通磁盘在 system.tables 里报告的数据路径添加容器前缀，使其与 S3 和 GCP 的报告保持一致。[#79241](https://github.com/ClickHouse/ClickHouse/pull/79241) ([Julia Kartseva](https://github.com/jkartseva)) 。
+* 支持在集群中修改数据库。[#79242](https://github.com/ClickHouse/ClickHouse/pull/79242) ([Tuan Pham Anh](https://github.com/tuanpach)) 。
+* 显式跳过 QueryMetricLog 统计信息收集中错过的执行轮次，否则该日志将需要很长时间才能追上当前时间。[#79257](https://github.com/ClickHouse/ClickHouse/pull/79257) ([Mikhail Artemenko](https://github.com/Michicosun)) 。
+* 新增了可实时应用轻量级删除的功能 (在设置 `lightweight_deletes_sync = 0`、`apply_mutations_on_fly = 1` 的情况下可用。[#79281](https://github.com/ClickHouse/ClickHouse/pull/79281) ([Anton Popov](https://github.com/CurtizJ)) ) 。
+* 优化了对所有行都应删除的 parts 执行的 `ALTER ... DELETE` 变更。现在，在这种情况下，无需执行变更，而是创建一个空的 part 来替代原始 part。[#79307](https://github.com/ClickHouse/ClickHouse/pull/79307) ([Anton Popov](https://github.com/CurtizJ)) 。
+* 对 `CHColumnToArrowColumn` 做了一些小优化。[#79308](https://github.com/ClickHouse/ClickHouse/pull/79308) ([Bharat Nallan](https://github.com/bharatnc)) 。
+* 设置 `allow_archive_path_syntax` 被误标为 Experimental。添加一项测试，防止 Experimental 设置默认处于启用状态。[#79320](https://github.com/ClickHouse/ClickHouse/pull/79320) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 使页面缓存设置可按单个查询粒度进行调整。这有助于更快地开展实验，并可针对高吞吐量、低延迟查询进行精细调优。[#79337](https://github.com/ClickHouse/ClickHouse/pull/79337) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 对于看起来像大多数 64 位哈希值的数字，不要在 Pretty 格式中打印数字提示。这修复了 [#79334](https://github.com/ClickHouse/ClickHouse/issues/79334)。[#79338](https://github.com/ClickHouse/ClickHouse/pull/79338) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 如果终端中显示的是 Pretty 格式的数据，并且后续块的列宽与前一个块相同，则可以通过上移光标将其接续到前一个块后面显示。这解决了 [#79333](https://github.com/ClickHouse/ClickHouse/issues/79333)。该功能由新设置 `output_format_pretty_glue_chunks` 控制。[#79339](https://github.com/ClickHouse/ClickHouse/pull/79339) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 高级仪表板中图表的颜色将根据对应查询的哈希值计算得出。这样在滚动浏览仪表板时，会更容易记住并找到某个图表。 [#79341](https://github.com/ClickHouse/ClickHouse/pull/79341) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 新增异步指标 `FilesystemCacheCapacity`——表示 `cache` 虚拟文件系统的总容量。这有助于进行全局基础设施监控。[#79348](https://github.com/ClickHouse/ClickHouse/pull/79348) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 优化对 system.parts 的访问 (仅在需要时才读取列/索引大小) 。[#79352](https://github.com/ClickHouse/ClickHouse/pull/79352) ([Azat Khuzhin](https://github.com/azat)) 。
+* 为 `'SHOW CLUSTER <name>'` 查询仅选择重要字段，而非所有字段。[#79368](https://github.com/ClickHouse/ClickHouse/pull/79368) ([Tuan Pham Anh](https://github.com/tuanpach)) 。
+* 支持为 `DatabaseCatalog` 指定存储设置。[#79407](https://github.com/ClickHouse/ClickHouse/pull/79407) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 为 delta kernel 提供对本地存储的支持。[#79416](https://github.com/ClickHouse/ClickHouse/pull/79416) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 新增一个查询级别的设置，用于启用 delta-kernel-rs：`allow_experimental_delta_kernel_rs`。[#79418](https://github.com/ClickHouse/ClickHouse/pull/79418) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 修复从 Azure/S3 blob 存储中列出 blob 时可能出现的无限循环问题。[#79425](https://github.com/ClickHouse/ClickHouse/pull/79425) ([Alexander Gololobov](https://github.com/davenger)) 。
+* 现在，ClickHouse 在支持 `param_<name>` (下划线) 形式的查询参数之外，也支持 `param-<name>` (短横线) 形式。这修复了 [#63093](https://github.com/ClickHouse/ClickHouse/issues/63093)。 [#79429](https://github.com/ClickHouse/ClickHouse/pull/79429) ([Engel Danila](https://github.com/aaaengel)).
+  #* 新增文件系统缓存设置 `max_size_ratio_to_total_space`。 [#79460](https://github.com/ClickHouse/ClickHouse/pull/79460) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 在启用 checksum 时，将数据从本地复制到远程 S3 时，针对带宽折扣提供更详细的警告信息。 [#79464](https://github.com/ClickHouse/ClickHouse/pull/79464) ([VicoWu](https://github.com/VicoWu)).
+* 对于 `clickhouse-benchmark`，重新配置 `reconnect` 选项，使其可分别接受 0、1 或 N 作为重连次数值。[#79465](https://github.com/ClickHouse/ClickHouse/pull/79465) ([Sachin Kumar Singh](https://github.com/sachinkumarsingh092)) 。
+* 新增设置 `input_format_max_block_size_bytes`，用于按字节限制输入格式中创建的块大小。这有助于在行包含较大值时，避免数据导入期间内存占用过高。 [#79495](https://github.com/ClickHouse/ClickHouse/pull/79495) ([Pavel Kruglov](https://github.com/Avogar)).
+* 提升 sparseGrams 的速度并降低内存占用。[#79517](https://github.com/ClickHouse/ClickHouse/pull/79517) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
+* 尽可能避免在插入到 Compact part 时额外复制块。[#79536](https://github.com/ClickHouse/ClickHouse/pull/79536) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 默认启用 `DeltaLake` 存储的 delta-kernel 实现。[#79541](https://github.com/ClickHouse/ClickHouse/pull/79541) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 如果从某个 URL 读取时发生了多次重定向，`enable_url_encoding` 设置会在整个重定向链中正确生效。[#79563](https://github.com/ClickHouse/ClickHouse/pull/79563) ([Shankar Iyer](https://github.com/shankar-iyer)) 。
+* 允许对位于不同 plain&#95;rewritable 磁盘上的表执行 `ALTER TABLE ... MOVE|REPLACE PARTITION`。[#79566](https://github.com/ClickHouse/ClickHouse/pull/79566) ([Julia Kartseva](https://github.com/jkartseva)).
+* 支持在 `WHERE` 子句中使用标量关联子查询。关闭 [#6697](https://github.com/ClickHouse/ClickHouse/issues/6697)。[#79600](https://github.com/ClickHouse/ClickHouse/pull/79600) ([Dmitry Novik](https://github.com/novikd)) 。
+* 此前，当 `input_format_parquet_max_block_size = 0` 时，ClickHouse 会卡死。现在该问题已修复。此更改关闭了 [#79394](https://github.com/ClickHouse/ClickHouse/issues/79394)。[#79601](https://github.com/ClickHouse/ClickHouse/pull/79601) ([abashkeev](https://github.com/abashkeev)).
+* 为 startup&#95;scripts 新增 `throw_on_error` 设置：当 `throw_on_error` 为 true 时，只有所有查询都成功完成，服务器才会启动。默认情况下，`throw_on_error` 为 false，保持此前的行为。[#79732](https://github.com/ClickHouse/ClickHouse/pull/79732) ([Aleksandr Musorin](https://github.com/AVMusorin)) 。
+* 现在，如果参考向量的类型是 `Array(BFloat16)`，也会使用向量相似度索引。[#79745](https://github.com/ClickHouse/ClickHouse/pull/79745) ([Shankar Iyer](https://github.com/shankar-iyer)).
+* 向 `system.error_log` 表中新增 `last_error_message`、`last_error_trace` 和 `query_id`。相关 issue 见 [#75816](https://github.com/ClickHouse/ClickHouse/issues/75816)。[#79836](https://github.com/ClickHouse/ClickHouse/pull/79836) ([Andrei Tinikov](https://github.com/Dolso)) 。
+  #* 默认启用崩溃报告发送功能。可在 server 的配置文件中关闭。[#79838](https://github.com/ClickHouse/ClickHouse/pull/79838) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 系统表 `system.functions` 现在会显示各函数最初是在 ClickHouse 的哪个版本中引入的。[#79839](https://github.com/ClickHouse/ClickHouse/pull/79839) ([Robert Schulze](https://github.com/rschu1ze)) 。
+* 新增了 `access_control_improvements.enable_user_name_access_type` 设置。该设置允许为用户/角色启用或禁用精确授权，此功能在 https://github.com/ClickHouse/ClickHouse/pull/72246 中引入。如果你的集群中有版本早于 25.1 的副本，可能需要关闭此设置。[#79842](https://github.com/ClickHouse/ClickHouse/pull/79842) ([pufit](https://github.com/pufit)).
+* `ASTSelectWithUnionQuery::clone()` 方法现已正确地将 `is_normalized` 字段也考虑在内。这可能有助于解决 [#77569](https://github.com/ClickHouse/ClickHouse/issues/77569)。[#79909](https://github.com/ClickHouse/ClickHouse/pull/79909) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)) 。
+* 在简单场景下，支持在投影列表中使用关联子查询。[#79925](https://github.com/ClickHouse/ClickHouse/pull/79925) ([Dmitry Novik](https://github.com/novikd)) 。
+* 修复了某些包含 `EXCEPT` 运算符的查询格式不一致的问题。如果 `EXCEPT` 运算符左侧以 `*` 结尾，格式化后的查询会丢失括号，随后被解析为带有 `EXCEPT` 修饰符的 `*`。这些查询由 fuzzer 发现，在实际场景中几乎不可能出现。此更改关闭了 [#79950](https://github.com/ClickHouse/ClickHouse/issues/79950)。[#79952](https://github.com/ClickHouse/ClickHouse/pull/79952) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 允许在任意类型的 `http_handlers` 中添加 `http_response_headers`。[#79975](https://github.com/ClickHouse/ClickHouse/pull/79975) ([Andrey Zvonov](https://github.com/zvonand)) 。
+* 通过缓存 Variant 的反序列化顺序，改进了 JSON 类型的解析。[#79984](https://github.com/ClickHouse/ClickHouse/pull/79984) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 允许在适用情况下将 `GLOBAL [NOT] IN` 谓词移至 `PREWHERE` 子句。 [#79996](https://github.com/ClickHouse/ClickHouse/pull/79996) ([Eduard Karacharov](https://github.com/korowa)).
+* 新增设置 `s3_slow_all_threads_after_network_error`。[#80035](https://github.com/ClickHouse/ClickHouse/pull/80035) ([Vitaly Baranov](https://github.com/vitlibar)) 。
+* 关于所选待合并 parts 的日志级别设置有误 (Information) 。关闭了 [#80061](https://github.com/ClickHouse/ClickHouse/issues/80061)。[#80062](https://github.com/ClickHouse/ClickHouse/pull/80062) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* reverse 函数支持 Tuple 数据类型。已关闭 [#80053](https://github.com/ClickHouse/ClickHouse/issues/80053)。[#80083](https://github.com/ClickHouse/ClickHouse/pull/80083) ([flynn](https://github.com/ucasfl)) 。
+* 设置项 `enble_url_encoding` 的默认值现已设置为 `False`。[#80088](https://github.com/ClickHouse/ClickHouse/pull/80088) ([Shankar Iyer](https://github.com/shankar-iyer)) 。
+* 这个小补丁解决了 [#75817](https://github.com/ClickHouse/ClickHouse/issues/75817)：支持从 `system.zookeeper` 表中获取 `auxiliary_zookeepers` 数据。[#80146](https://github.com/ClickHouse/ClickHouse/pull/80146) ([Nikolay Govorov](https://github.com/mrdimidium)) 。
+* 使用向量相似度索引的向量搜索现已处于 Beta 阶段 (此前为 Experimental) 。[#80164](https://github.com/ClickHouse/ClickHouse/pull/80164) ([Robert Schulze](https://github.com/rschu1ze)) 。
+* 新增有关服务器 TCP 套接字的异步指标。这提高了可观测性。关闭了 [#80187](https://github.com/ClickHouse/ClickHouse/issues/80187)。[#80188](https://github.com/ClickHouse/ClickHouse/pull/80188) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 函数 `tokens` 现已支持 `string` 分词器。[#80195](https://github.com/ClickHouse/ClickHouse/pull/80195) ([Robert Schulze](https://github.com/rschu1ze)) 。
+* 并行副本：如果所有读取任务都已分配给其他副本，则无需再等待未被使用的慢速副本。[#80199](https://github.com/ClickHouse/ClickHouse/pull/80199) ([Igor Nikonov](https://github.com/devcrafter)) 。
+* 支持 `simpleAggregateFunction` 使用 `anylast_respect_nulls` 和 `any_respect_nulls`。[#80219](https://github.com/ClickHouse/ClickHouse/pull/80219) ([Diskein](https://github.com/Diskein)) 。
+* 移除 Replicated 数据库中对 `adjustCreateQueryForBackup()` 的不必要调用。[#80282](https://github.com/ClickHouse/ClickHouse/pull/80282) ([Vitaly Baranov](https://github.com/vitlibar)) 。
+  #* 允许 `clickhouse-local` 使用不带等号的额外选项 (位于 `--` 之后，例如 `-- --config.value='abc'`) 。关闭 [#80292](https://github.com/ClickHouse/ClickHouse/issues/80292)。[#80293](https://github.com/ClickHouse/ClickHouse/pull/80293) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 在 `SHOW ... LIKE` 查询中高亮显示元字符。此更改关闭了 [#80275](https://github.com/ClickHouse/ClickHouse/issues/80275)。[#80297](https://github.com/ClickHouse/ClickHouse/pull/80297) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+  #* 使 `clickhouse-local` 中的 SQL UDF 持久保存。之前创建的函数会在启动时加载。此更改关闭了 [#80085](https://github.com/ClickHouse/ClickHouse/issues/80085)。[#80300](https://github.com/ClickHouse/ClickHouse/pull/80300) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 支持比较 `Time`/`Time64`。[#80327](https://github.com/ClickHouse/ClickHouse/pull/80327) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
+* 修正 explain plan 中 preliminary distinct 步骤的说明。[#80330](https://github.com/ClickHouse/ClickHouse/pull/80330) ([UnamedRus](https://github.com/UnamedRus)) 。
+* 允许在 ODBC/JDBC 中使用命名集合。[#80334](https://github.com/ClickHouse/ClickHouse/pull/80334) ([Andrey Zvonov](https://github.com/zvonand)) 。
+* 启用多投影过滤支持，以便在分片级过滤中使用多个投影。这解决了 [#55525](https://github.com/ClickHouse/ClickHouse/issues/55525)。这是继 [#78429](https://github.com/ClickHouse/ClickHouse/issues/78429) 之后，实现投影索引的第二步。[#80343](https://github.com/ClickHouse/ClickHouse/pull/80343) ([Amos Bird](https://github.com/amosbird)) 。
+* 用于统计只读和损坏磁盘数量的指标。DiskLocalCheckThread 启动时会记录提示日志。[#80391](https://github.com/ClickHouse/ClickHouse/pull/80391) ([VicoWu](https://github.com/VicoWu)).
+* 为 `s3_plain_rewritable` 存储新增了对投影的支持。在早期版本中，S3 中引用投影的元数据对象在被移动时不会更新。关闭 [#70258](https://github.com/ClickHouse/ClickHouse/issues/70258)。[#80393](https://github.com/ClickHouse/ClickHouse/pull/80393) ([Sav](https://github.com/sberss)).
+* 并行副本使用单独的连接超时设置，参见 `parallel_replicas_connect_timeout_ms` 设置。此前，`connect_timeout_with_failover_ms`/`connect_timeout_with_failover_secure_ms` 设置用作并行副本查询的连接超时值 (默认 1 秒) 。[#80421](https://github.com/ClickHouse/ClickHouse/pull/80421) ([Igor Nikonov](https://github.com/devcrafter)) 。
+* `SYSTEM UNFREEZE` 命令不会尝试在 readonly 和 write-once 磁盘中查找 parts。此更改解决了 [#80430](https://github.com/ClickHouse/ClickHouse/issues/80430)。[#80432](https://github.com/ClickHouse/ClickHouse/pull/80432) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 将 merged parts 消息的日志级别由 INFO 改为 TRACE。[#80476](https://github.com/ClickHouse/ClickHouse/pull/80476) ([Hans Krutzer](https://github.com/hkrutzer)) 。
+* 在 Native format 中为 Dynamic 和 JSON 实现扁平化序列化，使得无需依赖 Dynamic 的 shared variant 或 JSON 的 shared data 等特殊结构，即可对 Dynamic 和 JSON 数据进行序列化/反序列化。可通过设置 `output_format_native_use_flattened_dynamic_and_json_serialization` 来启用这种序列化方式。这种序列化方式可让不同语言的客户端更轻松地在 TCP 协议中支持 Dynamic 和 JSON。[#80499](https://github.com/ClickHouse/ClickHouse/pull/80499) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 调整了 Iceberg 表分区剪枝的默认行为。[#80583](https://github.com/ClickHouse/ClickHouse/pull/80583) ([Melvyn Peignon](https://github.com/melvynator)) 。
+* 为提升索引搜索算法的可观测性，新增两个 ProfileEvents：`IndexBinarySearchAlgorithm` 和 `IndexGenericExclusionSearchAlgorithm`。[#80679](https://github.com/ClickHouse/ClickHouse/pull/80679) ([Pablo Marcos](https://github.com/pamarcos)) 。
+* 对于较旧内核不支持 `MADV_POPULATE_WRITE` 的情况，不要在日志中报错 (以免日志被刷屏) 。[#80704](https://github.com/ClickHouse/ClickHouse/pull/80704) ([Robert Schulze](https://github.com/rschu1ze)) 。
+* 生存时间 (TTL) 现已支持 Date32 和 DateTime64。[#80710](https://github.com/ClickHouse/ClickHouse/pull/80710) ([Andrey Zvonov](https://github.com/zvonand)) 。
+* 调整 `max_merge_delayed_streams_for_parallel_write` 的兼容性配置值。[#80760](https://github.com/ClickHouse/ClickHouse/pull/80760) ([Azat Khuzhin](https://github.com/azat)) 。
+* 修复了一处崩溃问题：如果在析构函数中尝试删除临时文件时抛出异常 (这些文件用于将临时数据落盘) ，程序可能会终止。[#80776](https://github.com/ClickHouse/ClickHouse/pull/80776) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 为 `SYSTEM SYNC REPLICA` 添加 `IF EXISTS` 修饰符。[#80810](https://github.com/ClickHouse/ClickHouse/pull/80810) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 扩展关于 &quot;Having zero bytes, but read range is not finished...&quot; 的异常消息，并为 system.filesystem&#95;cache&#39; 添加 finished&#95;download&#95;time 列。[#80849](https://github.com/ClickHouse/ClickHouse/pull/80849) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 此前，全文索引不支持 `packed` 存储，因为段 id 需要通过读取和写入磁盘上的 (`.gin_sid`) 文件来动态更新。对于 `packed` 存储，不支持从未提交的文件中读取值，因此会引发一个问题。[#80852](https://github.com/ClickHouse/ClickHouse/pull/80852) ([Elmi Ahmadov](https://github.com/ahmadov)) 。
+* 在使用 `indexes = 1` 时，`EXPLAIN` 输出中新增了一个搜索算法部分，会显示 &quot;binary search&quot; 或 &quot;generic exclusion search&quot;。[#80881](https://github.com/ClickHouse/ClickHouse/pull/80881) ([Pablo Marcos](https://github.com/pamarcos)) 。
+* 在 2024 年初，由于新的 analyzer 默认未启用，MySQL handler 的 `prefer_column_name_to_alias` 被硬编码为 True。现在，这一设置已不再硬编码。[#80916](https://github.com/ClickHouse/ClickHouse/pull/80916) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
+* 现在，`system.iceberg_history` 会显示 glue 或 iceberg rest 等目录数据库的历史记录。为保持一致性，还将 `system.iceberg_history` 中的 `table_name` 和 `database_name` 列重命名为 `table` 和 `database`。[#80975](https://github.com/ClickHouse/ClickHouse/pull/80975) ([alesapin](https://github.com/alesapin)).
+* 允许 `merge` 表函数在只读模式下使用，因此无需 `CREATE TEMPORARY TABLE` 权限即可使用它。[#80981](https://github.com/ClickHouse/ClickHouse/pull/80981) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)) 。
+* 改进了对内存缓存的内部信息查看 (通过更完整的 `system.metrics` 而不是不完整的 `system.asynchronouse_metrics` 暴露缓存信息) 。将内存缓存大小 (以字节为单位) 添加到 `dashboard.html` 中。`VectorSimilarityIndexCacheSize`/`IcebergMetadataFilesCacheSize` 已重命名为 `VectorSimilarityIndexCacheBytes`/`IcebergMetadataFilesCacheBytes`。[#81023](https://github.com/ClickHouse/ClickHouse/pull/81023) ([Azat Khuzhin](https://github.com/azat)) 。
+* 从 system.rocksdb 读取时，忽略其引擎不支持包含 RocksDB 表的数据库。[#81083](https://github.com/ClickHouse/ClickHouse/pull/81083) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)) 。
+* 允许在 `clickhouse-local` 的配置文件中使用 `filesystem_caches` 和 `named_collections`。[#81105](https://github.com/ClickHouse/ClickHouse/pull/81105) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 修复 `INSERT` 查询中 `PARTITION BY` 的高亮显示问题。在之前的版本中，`PARTITION BY` 不会被作为关键字高亮。 [#81106](https://github.com/ClickHouse/ClickHouse/pull/81106) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* Web UI 的两项小改进：正确处理无输出的查询，例如 `CREATE`、`INSERT` (此前这些查询会导致加载指示器一直旋转) ；- 双击表时滚动到顶部。 [#81131](https://github.com/ClickHouse/ClickHouse/pull/81131) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* 将 `c-ares` 更新到 `v1.34.5`。 [#81159](https://github.com/ClickHouse/ClickHouse/pull/81159) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* 将 curl 升级到 8.14，以修复 CVE-2025-5025 和 CVE-2025-4947。 [#81171](https://github.com/ClickHouse/ClickHouse/pull/81171) ([larryluogit](https://github.com/larryluogit)).
+  #* 将 libarchive 升级到 3.7.9，以修复以下问题：CVE-2024-20696 CVE-2025-25724 CVE-2024-48958 CVE-2024-57970 CVE-2025-1632 CVE-2024-48957 CVE-2024-48615。 [#81174](https://github.com/ClickHouse/ClickHouse/pull/81174) ([larryluogit](https://github.com/larryluogit)).
+  #* 将 libxml2 升级到 2.14.3。 [#81187](https://github.com/ClickHouse/ClickHouse/pull/81187) ([larryluogit](https://github.com/larryluogit)).
+* `MemoryResidentWithoutPageCache` 表示服务器进程使用的物理内存量 (以字节为单位) ，不包括用户态页缓存。在启用用户态页缓存时，该指标能更准确地反映实际内存使用情况。当用户态页缓存被禁用时，该值等于 MemoryResident。[#81233](https://github.com/ClickHouse/ClickHouse/pull/81233) ([Jayme Bird](https://github.com/jaymebrd)) 。
+* 将 client、本地 server、Keeper 客户端和 disks 应用中手动记入日志的异常标记为已记录，以避免重复记录。 [#81271](https://github.com/ClickHouse/ClickHouse/pull/81271) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* 设置 `use_skip_indexes_if_final` 和 `use_skip_indexes_if_final_exact_mode` 现在默认均为 `True`。带有 `FINAL` 子句的查询现在会使用跳过索引 (如适用) 来筛选候选粒度，并读取与匹配主键范围对应的其他粒度。如需恢复先前会返回近似/不精确结果的行为，用户可在仔细评估后将 `use_skip_indexes_if_final_exact_mode` 设为 FALSE。[#81331](https://github.com/ClickHouse/ClickHouse/pull/81331) ([Shankar Iyer](https://github.com/shankar-iyer)) 。
+  #* 当你在 web UI 中有多个查询时，将运行光标所在的那个。延续 [#80977](https://github.com/ClickHouse/ClickHouse/issues/80977)。[#81354](https://github.com/ClickHouse/ClickHouse/pull/81354) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 此 PR 修复了转换函数单调性检查中 `is_strict` 实现的问题。目前，一些转换函数 (如 toFloat64(UInt32) 和 toDate(UInt8)) 会错误地返回 is&#95;strict = false，而实际上应返回 true。[#81359](https://github.com/ClickHouse/ClickHouse/pull/81359) ([zoomxi](https://github.com/zoomxi)).
+  #* 在带有日志的 filesystem 中，`mkdir` 会被写入持久化到 disk 的 filesystem 日志中。如果 disk 较慢，这个过程可能会耗费较长时间。因此，显然应该将其移出 reserve lock 的作用域。[#81371](https://github.com/ClickHouse/ClickHouse/pull/81371) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 在检查 `KeyCondition` 是否匹配连续区间时，如果键被非严格函数事件链包装，可能需要将 `Constraint::POINT` 转换为 `Constraint::RANGE`。例如，`toDate(event_time) = '2025-06-03'` 意味着 `event_time` 对应的范围为：[&#39;2025-06-03 00:00:00&#39;, &#39;2025-06-04 00:00:00&#39;)。此 PR 修复了这一问题。[#81400](https://github.com/ClickHouse/ClickHouse/pull/81400) ([zoomxi](https://github.com/zoomxi)).
+  #* 使用 `postgres` 16.9。[#81437](https://github.com/ClickHouse/ClickHouse/pull/81437) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* 使用 `openssl` 3.2.4。[#81438](https://github.com/ClickHouse/ClickHouse/pull/81438) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* 使用 `abseil-cpp` 2025-01-27。[#81440](https://github.com/ClickHouse/ClickHouse/pull/81440) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* 使用 `mongo-c-driver` 1.30.4。[#81449](https://github.com/ClickHouse/ClickHouse/pull/81449) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* 使用 `krb5` 1.21.3-final。[#81453](https://github.com/ClickHouse/ClickHouse/pull/81453) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* 使用 `orc` 2.1.2。[#81455](https://github.com/ClickHouse/ClickHouse/pull/81455) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* 为 `clickhouse-local` 新增对 `--database` 参数的支持。现在可以切换到之前创建的数据库。此更改关闭了 [#44115](https://github.com/ClickHouse/ClickHouse/issues/44115)。[#81465](https://github.com/ClickHouse/ClickHouse/pull/81465) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  #* 如果指定了 `--host` 或 `--port`，`clickhouse`/`ch` 别名将调用 `clickhouse-client` 而不是 `clickhouse-local`。这是 [#79422](https://github.com/ClickHouse/ClickHouse/issues/79422) 的后续工作。关闭了 [#65252](https://github.com/ClickHouse/ClickHouse/issues/65252)。[#81509](https://github.com/ClickHouse/ClickHouse/pull/81509) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 现在我们已经有了 Keeper 响应时间分布数据，因此可以调整直方图分桶。[#81516](https://github.com/ClickHouse/ClickHouse/pull/81516) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)) 。
+* 将 Iceberg manifest 文件延迟到查询首次读取时再读取。 [#81619](https://github.com/ClickHouse/ClickHouse/pull/81619) ([Daniil Ivanik](https://github.com/divanik)).
+  #* 使用 `grpc` 1.73.0。 [#81629](https://github.com/ClickHouse/ClickHouse/pull/81629) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  #* 使用 `delta-kernel-rs` v0.12.1。 [#81707](https://github.com/ClickHouse/ClickHouse/pull/81707) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* 新增 profile 事件 `PageCacheReadBytes`。[#81742](https://github.com/ClickHouse/ClickHouse/pull/81742) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+
+<div id="bug-fix-user-visible-misbehavior-in-an-official-stable-release">
+  ## 缺陷修复 (官方稳定版本中用户可见的异常行为)
+</div>
+
+* 修复参数化视图与 `SELECT EXCEPT` 查询配合使用时的问题。关闭 [#49447](https://github.com/ClickHouse/ClickHouse/issues/49447)。[#57380](https://github.com/ClickHouse/ClickHouse/pull/57380) ([Nikolay Degterinsky](https://github.com/evillique)) 。
+* analyzer：修复 join 中列类型提升后投影列名的问题。关闭 [#63345](https://github.com/ClickHouse/ClickHouse/issues/63345)。[#63519](https://github.com/ClickHouse/ClickHouse/pull/63519) ([Dmitry Novik](https://github.com/novikd)).
+* materialized view 可能启动得过晚，例如在向其流式传输数据的 Kafka 表之后才启动。[#72123](https://github.com/ClickHouse/ClickHouse/pull/72123) ([Ilya Golshtein](https://github.com/ilejn)).
+* 修复了在启用 analyzer&#95;compatibility&#95;join&#95;using&#95;top&#95;level&#95;identifier 时，发生列名冲突情况下的逻辑错误。[#75676](https://github.com/ClickHouse/ClickHouse/pull/75676) ([Vladimir Cherkasov](https://github.com/vdimir)) 。
+* 修复了一个罕见崩溃问题：在多次异步 (`alter_sync = 0`) 执行 `RENAME COLUMN` 和 `ADD COLUMN` 查询后，从 `MergeTree` 表读取数据时可能发生崩溃。[#76346](https://github.com/ClickHouse/ClickHouse/pull/76346) ([Anton Popov](https://github.com/CurtizJ)).
+* 启用 analyzer 时，修复了在创建 `VIEW` 期间对 `SELECT` 查询进行重写时的问题。已关闭 [#75956](https://github.com/ClickHouse/ClickHouse/issues/75956)。[#76356](https://github.com/ClickHouse/ClickHouse/pull/76356) ([Dmitry Novik](https://github.com/novikd)) 。
+* 修复在启用 `allow_push_predicate_ast_for_distributed_subqueries` 时，下推谓词中的 CTE 使用问题。修复了 [#75647](https://github.com/ClickHouse/ClickHouse/issues/75647)。修复了 [#79672](https://github.com/ClickHouse/ClickHouse/issues/79672)。[#77316](https://github.com/ClickHouse/ClickHouse/pull/77316) ([Dmitry Novik](https://github.com/novikd)) 。
+* 修复通过 `apply_settings_from_server` 从服务器应用 `async_insert` 时的问题 (此前会导致客户端报 `Unknown packet 11 from server` 错误) 。[#77578](https://github.com/ClickHouse/ClickHouse/pull/77578) ([Azat Khuzhin](https://github.com/azat)) 。
+* 修复了 Replicated 数据库中新添加的副本上可刷新materialized view 无法工作的问题。[#77774](https://github.com/ClickHouse/ClickHouse/pull/77774) ([Michael Kolupaev](https://github.com/al13n321)) 。
+* 修复了可刷新materialized view 导致备份失效的问题。[#77893](https://github.com/ClickHouse/ClickHouse/pull/77893) ([Michael Kolupaev](https://github.com/al13n321)) 。
+* 修复 `transform` 中旧的触发逻辑错误。[#78247](https://github.com/ClickHouse/ClickHouse/pull/78247) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
+* 修复了一个问题：`SYSTEM SYNC REPLICA LIGHTWEIGHT 'foo'` 在指定副本不存在时仍会显示成功。现在，该命令会在尝试同步前先正确验证该副本是否存在于 Keeper 中。[#78405](https://github.com/ClickHouse/ClickHouse/pull/78405) ([Jayme Bird](https://github.com/jaymebrd)).
+* 修复了某些情况下 analyzer 未应用次级索引的问题。修复了 [#65607](https://github.com/ClickHouse/ClickHouse/issues/65607)，修复了 [#69373](https://github.com/ClickHouse/ClickHouse/issues/69373)。[#78485](https://github.com/ClickHouse/ClickHouse/pull/78485) ([Nikolai Kochetov](https://github.com/KochetovNicolai)) 。
+* 修复在启用压缩的 HTTP 协议时转储 profile events (`NetworkSendElapsedMicroseconds`/`NetworkSendBytes`) 的问题 (误差不应超过缓冲区大小，通常约为 1MiB) 。 [#78516](https://github.com/ClickHouse/ClickHouse/pull/78516) ([Azat Khuzhin](https://github.com/azat)).
+  #* &#96;&#96;&#96;sql CREATE TABLE t0 ( key Int32, value Int32 ) ENGINE=MergeTree() PRIMARY KEY key PARTITION BY key % 2;. [#78593](https://github.com/ClickHouse/ClickHouse/pull/78593) ([Vlad](https://github.com/codeworse)).
+* 修复 analyzer 在 `JOIN ... USING` 涉及 `ALIAS` 列时错误地产生 `LOGICAL_ERROR` 的问题——此时应返回恰当的错误。[#78618](https://github.com/ClickHouse/ClickHouse/pull/78618) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)) 。
+* 修复 analyzer：若 SELECT 中包含位置参数，`CREATE VIEW ... ON CLUSTER` 将失败。[#78663](https://github.com/ClickHouse/ClickHouse/pull/78663) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)) 。
+* 修复在将 `INSERT SELECT` 插入带有 schema inference 的表函数且 `SELECT` 包含标量子查询时出现的 `Block structure mismatch` 错误。 [#78677](https://github.com/ClickHouse/ClickHouse/pull/78677) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* 修复 analyzer：对于 Distributed 表的 SELECT 查询，在 `prefer_global_in_and_join=1` 时，应将 `in` 函数替换为 `globalIn`。[#78749](https://github.com/ClickHouse/ClickHouse/pull/78749) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)) 。
+* 修复了多种从使用 `MongoDB` engine 或 `mongodb` table function 的表中读取数据的 `SELECT` 查询问题：包括在 `WHERE` 子句中对常量值进行隐式转换的查询 (例如 `WHERE datetime = '2025-03-10 00:00:00'`) ；以及带有 `LIMIT` 和 `GROUP BY` 的查询。此前，这些查询可能返回错误结果。[#78777](https://github.com/ClickHouse/ClickHouse/pull/78777) ([Anton Popov](https://github.com/CurtizJ)) 。
+* 修复了不同 JSON 类型之间的转换。现在通过先转换为 String 再转换回来的简单 cast 来执行。这样做效率较低，但可以 100% 准确。[#78807](https://github.com/ClickHouse/ClickHouse/pull/78807) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复 Dynamic 类型转换为 Interval 时的逻辑错误。[#78813](https://github.com/ClickHouse/ClickHouse/pull/78813) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复 JSON 解析错误时列回滚的问题。[#78836](https://github.com/ClickHouse/ClickHouse/pull/78836) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复使用常量别名列进行 join 时出现的 &#39;bad cast&#39; 错误。[#78848](https://github.com/ClickHouse/ClickHouse/pull/78848) ([Vladimir Cherkasov](https://github.com/vdimir)) 。
+* 不允许在视图与目标表中类型不同的列上，在 materialized view 中使用 `PREWHERE`。[#78889](https://github.com/ClickHouse/ClickHouse/pull/78889) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复了解析 Variant 列中的错误二进制数据时的逻辑错误。[#78982](https://github.com/ClickHouse/ClickHouse/pull/78982) ([Pavel Kruglov](https://github.com/Avogar)).
+* 当 Parquet 批次大小设置为 0 时，会抛出异常。此前，当 `output_format_parquet_batch_size = 0` 时，ClickHouse 会卡住。现在该问题已修复。[#78991](https://github.com/ClickHouse/ClickHouse/pull/78991) ([daryawessely](https://github.com/daryawessely)) 。
+* 修复了 compact parts 中使用 basic 格式时 Variant 判别标记的反序列化问题。该问题是在 https://github.com/ClickHouse/ClickHouse/pull/55518 中引入的。 [#79000](https://github.com/ClickHouse/ClickHouse/pull/79000) ([Pavel Kruglov](https://github.com/Avogar)).
+* `complex_key_ssd_cache` 类型的字典现在会拒绝 `block_size` 和 `write_buffer_size` 参数为零或负值的情况 (问题 [#78314](https://github.com/ClickHouse/ClickHouse/issues/78314)) 。[#79028](https://github.com/ClickHouse/ClickHouse/pull/79028) ([Elmi Ahmadov](https://github.com/ahmadov)) 。
+* 避免在 SummingMergeTree 中对非聚合列使用 `Field`。这可能会导致在 SummingMergeTree 中使用 Dynamic/Variant 类型时出现意外错误。[#79051](https://github.com/ClickHouse/ClickHouse/pull/79051) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复了 analyzer 中在目标表为 Distributed 且请求头不同的情况下，从 materialized view 读取时出现的问题。[#79059](https://github.com/ClickHouse/ClickHouse/pull/79059) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复了一个仅在极少数特定情况下出现的崩溃问题：当在 `ON CLUSTER` 查询的 `CONSTRAINT` 部分中使用 `currentDatabase` 函数时。关闭 [#78100](https://github.com/ClickHouse/ClickHouse/issues/78100)。[#79070](https://github.com/ClickHouse/ClickHouse/pull/79070) ([pufit](https://github.com/pufit)) 。
+* 修复了一个 bug：对于发生过批次插入的表，`arrayUnion()` 会返回额外的错误值。修复了 [#75057](https://github.com/ClickHouse/ClickHouse/issues/75057)。[#79079](https://github.com/ClickHouse/ClickHouse/pull/79079) ([Peter Nguyen](https://github.com/petern48)) 。
+  #* 修复 `OpenSSLInitializer` 中的 segfault。关闭了 [#79092](https://github.com/ClickHouse/ClickHouse/issues/79092)。[#79097](https://github.com/ClickHouse/ClickHouse/pull/79097) ([Konstantin Bogdanov](https://github.com/thevar1able)) 。
+* 修复了跨服务器查询中外部角色传递的问题。[#79099](https://github.com/ClickHouse/ClickHouse/pull/79099) ([Andrey Zvonov](https://github.com/zvonand)) 。
+* 始终为 S3 ListObject 设置前缀。[#79114](https://github.com/ClickHouse/ClickHouse/pull/79114) ([Azat Khuzhin](https://github.com/azat)) 。
+* 修复了一个缺陷：在有批量写入的表上，`arrayUnion()` 会返回额外的 (错误的) 值。修复了 [#79157](https://github.com/ClickHouse/ClickHouse/issues/79157)。[#79158](https://github.com/ClickHouse/ClickHouse/pull/79158) ([Peter Nguyen](https://github.com/petern48)) 。
+* 修复过滤器下推后出现的逻辑错误。[#79164](https://github.com/ClickHouse/ClickHouse/pull/79164) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)) 。
+* 在 SingleValueDataGeneric 中，尽量使用 IColumn 而非 Field。这样可修复某些聚合函数 (如 `argMax`) 在 `Dynamic/Variant/JSON` 类型中的返回值不正确的问题。[#79166](https://github.com/ClickHouse/ClickHouse/pull/79166) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复 DeltaLake 表引擎在使用基于 http 的端点和 delta-kernel 实现时的问题，并修复 NOSIGN。关闭 [#78124](https://github.com/ClickHouse/ClickHouse/issues/78124)。[#79203](https://github.com/ClickHouse/ClickHouse/pull/79203) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* Keeper 修复：避免在失败的 multi 请求中触发 watch。[#79247](https://github.com/ClickHouse/ClickHouse/pull/79247) ([Antonio Andelic](https://github.com/antonio2368)) 。
+* 禁止在 `IN` 中使用 Dynamic 和 JSON 类型。按照当前 `IN` 的实现，这样做可能会导致错误结果。在 `IN` 中正确支持这些类型较为复杂，后续可能会实现。 [#79282](https://github.com/ClickHouse/ClickHouse/pull/79282) ([Pavel Kruglov](https://github.com/Avogar)).
+* 修复 JSON 类型解析中重复路径检查的问题。[#79317](https://github.com/ClickHouse/ClickHouse/pull/79317) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复 SecureStreamSocket 连接相关问题。[#79383](https://github.com/ClickHouse/ClickHouse/pull/79383) ([Konstantin Bogdanov](https://github.com/thevar1able)) 。
+* 修复包含数据的 plain&#95;rewritable 磁盘加载问题。[#79439](https://github.com/ClickHouse/ClickHouse/pull/79439) ([Julia Kartseva](https://github.com/jkartseva)) 。
+* 修复 MergeTree 中 Wide parts 动态发现子列时的崩溃问题。[#79466](https://github.com/ClickHouse/ClickHouse/pull/79466) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 仅在初始 CREATE 查询时验证表名长度。不要在次级 CREATE 操作中执行此验证，以避免引发向后兼容性问题。[#79488](https://github.com/ClickHouse/ClickHouse/pull/79488) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)) 。
+* 修复了在某些带有稀疏列的表中出现的 `Block structure mismatch` 错误。 [#79491](https://github.com/ClickHouse/ClickHouse/pull/79491) ([Anton Popov](https://github.com/CurtizJ)).
+* 修复了两种会出现 `Logical Error: Can't set alias of * of Asterisk on alias` 的情况。[#79505](https://github.com/ClickHouse/ClickHouse/pull/79505) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 修复了 Azure Blob 存储中 use&#95;native&#95;copy 和 allow&#95;azure&#95;native&#95;copy 设置的应用问题，并更新为仅在凭据匹配时才使用原生复制，从而解决了 [#78964](https://github.com/ClickHouse/ClickHouse/issues/78964)。[#79561](https://github.com/ClickHouse/ClickHouse/pull/79561) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)) 。
+* 修复了重命名 Atomic 数据库时使用错误路径的问题。[#79569](https://github.com/ClickHouse/ClickHouse/pull/79569) ([Tuan Pham Anh](https://github.com/tuanpach)) 。
+* 修复将 JSON 列与其他列一起用于 ORDER BY 时的问题。[#79591](https://github.com/ClickHouse/ClickHouse/pull/79591) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复了在从远程读取数据且同时禁用 `use_hedged_requests` 和 `allow_experimental_parallel_reading_from_replicas` 时出现结果重复的问题。[#79599](https://github.com/ClickHouse/ClickHouse/pull/79599) ([Eduard Karacharov](https://github.com/korowa)) 。
+* 修复了使用 Unity Catalog 时 delta-kernel 实现发生崩溃的问题。[#79677](https://github.com/ClickHouse/ClickHouse/pull/79677) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 解析 autodiscovery 集群的宏。[#79696](https://github.com/ClickHouse/ClickHouse/pull/79696) ([Anton Ivashkin](https://github.com/ianton-ru)) 。
+* 修复了在检查此列是否为关联列时，因列来源作用域未知而产生的逻辑错误。修复了 [#78183](https://github.com/ClickHouse/ClickHouse/issues/78183)。修复了 [#79451](https://github.com/ClickHouse/ClickHouse/issues/79451)。[#79727](https://github.com/ClickHouse/ClickHouse/pull/79727) ([Dmitry Novik](https://github.com/novikd)) 。
+* 修复了在使用 ColumnConst 和 analyzer 的 grouping sets 时结果错误的问题。[#79743](https://github.com/ClickHouse/ClickHouse/pull/79743) ([Andrey Zvonov](https://github.com/zvonand)) 。
+* 修复了从分布式表读取时，在本地副本已陈旧的情况下本地分片结果重复的问题。[#79761](https://github.com/ClickHouse/ClickHouse/pull/79761) ([Eduard Karacharov](https://github.com/korowa)).
+* 妥善处理配置不当的 `page_cache_limits`。[#79805](https://github.com/ClickHouse/ClickHouse/pull/79805) ([Bharat Nallan](https://github.com/bharatnc)) 。
+* 修复了 SQL 函数 `formatDateTime` 在以下情况下结果异常的问题：可变长度的格式说明符 (例如 `%W`，即星期几 `Monday`、`Tuesday` 等) 后面紧跟复合格式说明符 (即一次输出多个组成部分的格式说明符，例如 `%D`，即美式日期 `05/04/25`) 。[#79835](https://github.com/ClickHouse/ClickHouse/pull/79835) ([Robert Schulze](https://github.com/rschu1ze)) 。
+* IcebergS3 支持 `count` 优化，但 IcebergS3Cluster 不支持。因此，在集群模式下返回的 count() 结果可能是副本数量的整数倍。[#79844](https://github.com/ClickHouse/ClickHouse/pull/79844) ([wxybear](https://github.com/wxybear)).
+* 修复了符号位为负的 NaN 的排序顺序。[#79847](https://github.com/ClickHouse/ClickHouse/pull/79847) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)) 。
+* 现在，`GROUP BY ALL` 不再将 `GROUPING` 部分纳入考虑。[#79915](https://github.com/ClickHouse/ClickHouse/pull/79915) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
+* 修复了在惰性物化场景下，如果在投影前的查询执行过程中未使用任何列而导致的 `AMBIGUOUS_COLUMN_NAME` 错误。示例：SELECT * FROM t ORDER BY rand() LIMIT 5。 [#79926](https://github.com/ClickHouse/ClickHouse/pull/79926) ([Igor Nikonov](https://github.com/devcrafter)).
+* 修复了 `TopK` / `TopKWeighted` 函数中的错误状态合并问题，此前即使容量未耗尽，也会导致错误值过多。[#79939](https://github.com/ClickHouse/ClickHouse/pull/79939) ([Joel Höner](https://github.com/athre0z)) 。
+* 隐藏查询 `CREATE DATABASE datalake ENGINE = DataLakeCatalog(\'http://catalog:8181\', \'admin\', \'password\')` 中的密码。 [#79941](https://github.com/ClickHouse/ClickHouse/pull/79941) ([Han Fei](https://github.com/hanfei1991)).
+* 允许在 `JOIN USING` 中指定别名。如果列已被重命名 (例如由于 &#96;ARRAY JOIN) ，请指定该别名。修复了 [#73707](https://github.com/ClickHouse/ClickHouse/issues/73707)。[#79942](https://github.com/ClickHouse/ClickHouse/pull/79942) ([Nikolai Kochetov](https://github.com/KochetovNicolai)) 。
+* 使 `azure_blob_storage` 对象存储遵循 `readonly` 设置。[#79954](https://github.com/ClickHouse/ClickHouse/pull/79954) ([Julia Kartseva](https://github.com/jkartseva)) 。
+* 修复了在使用 `match(column, '^…')` 且包含反斜杠转义字符时，查询结果错误以及因内存不足导致崩溃的问题。[#79969](https://github.com/ClickHouse/ClickHouse/pull/79969) ([filimonov](https://github.com/filimonov)) 。
+* 为数据湖禁用 Hive 分区。部分修复了 https://github.com/issues/assigned?issue=ClickHouse%7CClickHouse%7C79937。[#80005](https://github.com/ClickHouse/ClickHouse/pull/80005) ([Daniil Ivanik](https://github.com/divanik)) 。
+* 带有 lambda 表达式的跳过索引无法生效。修复了索引定义中的高层函数与查询中的函数完全匹配时无法应用的问题。[#80025](https://github.com/ClickHouse/ClickHouse/pull/80025) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 使包含 UNION 的 materialized views 能在新副本上正常工作。[#80037](https://github.com/ClickHouse/ClickHouse/pull/80037) ([Samay Sharma](https://github.com/samay-sharma)) 。
+* 修复了副本执行来自复制日志的 ATTACH&#95;PART 命令附加分片时的元数据版本问题。[#80038](https://github.com/ClickHouse/ClickHouse/pull/80038) ([Aleksei Filatov](https://github.com/aalexfvk)).
+* SQL 函数 `parseDateTime` 中的格式说明符 `%e` 现在可识别个位数日期 (例如 `3`) ，而此前要求使用空格填充 (例如 ` 3`) 。这使其行为与 MySQL 兼容。若要保留此前的行为，请设置 `parsedatetime_e_requires_space_padding = 1`。 (问题 [#78243](https://github.com/ClickHouse/ClickHouse/issues/78243)) 。[#80057](https://github.com/ClickHouse/ClickHouse/pull/80057) ([Robert Schulze](https://github.com/rschu1ze)) 。
+* 可执行用户自定义函数 (eUDF) 的名称与其他函数不同，不会被添加到 `system.query_log` 表的 `used_functions` 列中。此 PR 实现了在请求中使用 eUDF 时将其名称添加到该列。[#80073](https://github.com/ClickHouse/ClickHouse/pull/80073) ([Kyamran](https://github.com/nibblerenush)).
+  #* 修复 ClickHouse 日志中的警告 `Cannot find 'kernel' in '[...]/memory.stat'` (问题 [#77410](https://github.com/ClickHouse/ClickHouse/issues/77410)) 。[#80129](https://github.com/ClickHouse/ClickHouse/pull/80129) ([Robert Schulze](https://github.com/rschu1ze)).
+* 修复 Arrow format 中 LowCardinality(FixedString) 的逻辑错误。[#80156](https://github.com/ClickHouse/ClickHouse/pull/80156) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复 Merge 引擎读取子列的问题。[#80158](https://github.com/ClickHouse/ClickHouse/pull/80158) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复了 `KeyCondition` 中数值类型比较相关的一个缺陷。[#80207](https://github.com/ClickHouse/ClickHouse/pull/80207) ([Yarik Briukhovetskyi](https://github.com/yariks5s)) 。
+* 修复了对带有投影的表应用惰性物化时出现的 AMBIGUOUS&#95;COLUMN&#95;NAME 问题。[#80251](https://github.com/ClickHouse/ClickHouse/pull/80251) ([Igor Nikonov](https://github.com/devcrafter)) 。
+* 修复了在使用隐式投影时，对 `LIKE &#39;ab&#95;c%&#39;` 这类字符串前缀过滤器进行错误的计数优化的问题。此修复解决了 [#80250](https://github.com/ClickHouse/ClickHouse/issues/80250)。[#80261](https://github.com/ClickHouse/ClickHouse/pull/80261) ([Amos Bird](https://github.com/amosbird)) 。
+* 修复 MongoDB 文档中嵌套数值字段被错误序列化为字符串的问题。移除 MongoDB 文档的最大嵌套深度限制。[#80289](https://github.com/ClickHouse/ClickHouse/pull/80289) ([Kirill Nikiforov](https://github.com/allmazz)) 。
+* 在 Replicated 数据库中，对 RMT 执行更宽松的元数据检查。关闭 [#80296](https://github.com/ClickHouse/ClickHouse/issues/80296)。[#80298](https://github.com/ClickHouse/ClickHouse/pull/80298) ([Nikolay Degterinsky](https://github.com/evillique)) 。
+* 修复 PostgreSQL 存储中 DateTime 和 DateTime64 的文本表示问题。[#80301](https://github.com/ClickHouse/ClickHouse/pull/80301) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)) 。
+* 支持在 `StripeLog` 表中使用带时区的 `DateTime`。这解决了 [#44120](https://github.com/ClickHouse/ClickHouse/issues/44120)。[#80304](https://github.com/ClickHouse/ClickHouse/pull/80304) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* 对于包含非确定性函数的谓词，如果查询计划中的步骤会改变行数，则禁用过滤器下推。修复了 [#40273](https://github.com/ClickHouse/ClickHouse/issues/40273)。[#80329](https://github.com/ClickHouse/ClickHouse/pull/80329) ([Nikolai Kochetov](https://github.com/KochetovNicolai)) 。
+* 修复投影中的子列可能引发的逻辑错误和崩溃。[#80333](https://github.com/ClickHouse/ClickHouse/pull/80333) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复了在 `ON` 表达式不是简单等值条件时，由逻辑 JOIN sep 的过滤下推优化导致的 `NOT_FOUND_COLUMN_IN_BLOCK` 错误。修复 [#79647](https://github.com/ClickHouse/ClickHouse/issues/79647) 修复 [#77848](https://github.com/ClickHouse/ClickHouse/issues/77848)。[#80360](https://github.com/ClickHouse/ClickHouse/pull/80360) ([Nikolai Kochetov](https://github.com/KochetovNicolai)) 。
+* 修复在分区表中读取逆序键时结果错误的问题。此修复对应 [#79987](https://github.com/ClickHouse/ClickHouse/issues/79987)。[#80448](https://github.com/ClickHouse/ClickHouse/pull/80448) ([Amos Bird](https://github.com/amosbird)) 。
+* 修复了在具有 Nullable 键且启用 optimize&#95;read&#95;in&#95;order 的表中排序错误的问题。[#80515](https://github.com/ClickHouse/ClickHouse/pull/80515) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* 修复了一个问题：如果视图曾通过 SYSTEM STOP REPLICATED VIEW 暂停，可刷新materialized view 的 DROP 操作会卡住。[#80543](https://github.com/ClickHouse/ClickHouse/pull/80543) ([Michael Kolupaev](https://github.com/al13n321)) 。
+* 修复在分布式查询中使用常量元组时出现的 &#39;找不到列&#39; 错误。[#80596](https://github.com/ClickHouse/ClickHouse/pull/80596) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+* 修复在启用 `join_use_nulls` 时分布式表中 `shardNum` 函数的问题。[#80612](https://github.com/ClickHouse/ClickHouse/pull/80612) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)) 。
+* 修复了在读取 Merge 引擎中仅存在于部分表中的列时返回错误结果的问题。[#80643](https://github.com/ClickHouse/ClickHouse/pull/80643) ([Pavel Kruglov](https://github.com/Avogar)).
+* iceberg&#95;history 表中的时间戳现在应该已经正确了。[#80711](https://github.com/ClickHouse/ClickHouse/pull/80711) ([Melvyn Peignon](https://github.com/melvynator)) 。
+* 修复对象存储表函数中仅含单个元素的枚举通配符处理问题。[#80716](https://github.com/ClickHouse/ClickHouse/pull/80716) ([Konstantin Bogdanov](https://github.com/thevar1able)) 。
+* 修复了 `Tuple(Dynamic)` 与 `String` 比较函数的返回结果类型错误而导致逻辑错误的问题。[#80728](https://github.com/ClickHouse/ClickHouse/pull/80728) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 为 Unity Catalog 增加对缺失的 `timestamp_ntz` 数据类型的支持。修复了 [#79535](https://github.com/ClickHouse/ClickHouse/issues/79535) 和 [#79875](https://github.com/ClickHouse/ClickHouse/issues/79875)。[#80740](https://github.com/ClickHouse/ClickHouse/pull/80740) ([alesapin](https://github.com/alesapin))。
+* 修复在使用 `IN cte` 的分布式查询中出现的 `THERE_IS_NO_COLUMN` 错误。修复了 [#75032](https://github.com/ClickHouse/ClickHouse/issues/75032)。[#80757](https://github.com/ClickHouse/ClickHouse/pull/80757) ([Nikolai Kochetov](https://github.com/KochetovNicolai)) 。
+* 修复外部 `ORDER BY` 文件数过多 (会导致内存占用过高) 的问题。[#80777](https://github.com/ClickHouse/ClickHouse/pull/80777) ([Azat Khuzhin](https://github.com/azat)) 。
+  #* 此 PR 可能会关闭 [#80742](https://github.com/ClickHouse/ClickHouse/issues/80742)。[#80783](https://github.com/ClickHouse/ClickHouse/pull/80783) ([zoomxi](https://github.com/zoomxi)) 。
+  #* 修复 Kafka 中因 get&#95;member&#95;id() 从 NULL 构造 std::string 而导致的崩溃问题 (这很可能只会在与 broker 的连接失败时发生) 。[#80793](https://github.com/ClickHouse/ClickHouse/pull/80793) ([Azat Khuzhin](https://github.com/azat)) 。
+* 在关闭 Kafka 引擎之前，应妥善等待消费者结束 (关闭后仍处于活动状态的消费者可能触发各种调试断言，也可能在表已被删除/分离后继续在后台从消息代理读取数据) 。[#80795](https://github.com/ClickHouse/ClickHouse/pull/80795) ([Azat Khuzhin](https://github.com/azat)).
+* 修复由 `predicate-push-down` 优化引发的 `NOT_FOUND_COLUMN_IN_BLOCK`。修复 [#80443](https://github.com/ClickHouse/ClickHouse/issues/80443)。[#80834](https://github.com/ClickHouse/ClickHouse/pull/80834) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 修复了在带有 `USING` 的 `JOIN` 中解析表函数内的星号 (*) 匹配器时的逻辑错误。[#80894](https://github.com/ClickHouse/ClickHouse/pull/80894) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* 修复 Iceberg 元数据文件缓存的内存统计问题。[#80904](https://github.com/ClickHouse/ClickHouse/pull/80904) ([Azat Khuzhin](https://github.com/azat)) 。
+* 修复 Nullable 分区键导致的错误分区。[#80913](https://github.com/ClickHouse/ClickHouse/pull/80913) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)) 。
+* 修复了这样一个问题：当发起节点上的源表不存在时，带有下推谓词 (`allow_push_predicate_ast_for_distributed_subqueries=1`) 的分布式查询会报 `Table does not exist` 错误。修复 [#77281](https://github.com/ClickHouse/ClickHouse/issues/77281)。[#80915](https://github.com/ClickHouse/ClickHouse/pull/80915) ([Nikolai Kochetov](https://github.com/KochetovNicolai)) 。
+* 修复了使用命名窗口的嵌套函数中的逻辑错误。[#80926](https://github.com/ClickHouse/ClickHouse/pull/80926) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)) 。
+* 修复可空列和浮点列的极值问题。[#80970](https://github.com/ClickHouse/ClickHouse/pull/80970) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)) 。
+* 修复了查询 system.tables 时可能发生的崩溃问题 (很可能发生在内存压力较大时) 。[#80976](https://github.com/ClickHouse/ClickHouse/pull/80976) ([Azat Khuzhin](https://github.com/azat)) 。
+* 修复对压缩方式由文件扩展名推断的文件执行带 TRUNCATE 的原子重命名时的问题。[#80979](https://github.com/ClickHouse/ClickHouse/pull/80979) ([Pablo Marcos](https://github.com/pamarcos)).
+  #* 修复 ErrorCodes::getName。[#81032](https://github.com/ClickHouse/ClickHouse/pull/81032) ([RinChanNOW](https://github.com/RinChanNOWWW)).
+* 修复了一个 bug：当用户没有 Unity Catalog 中全部表的权限时，无法列出表。现在所有表都会正确列出，但尝试读取受限表时会抛出异常。[#81044](https://github.com/ClickHouse/ClickHouse/pull/81044) ([alesapin](https://github.com/alesapin)).
+* 现在 ClickHouse 会在 `SHOW TABLES` 查询中忽略来自数据湖目录的错误和意外响应。修复了 [#79725](https://github.com/ClickHouse/ClickHouse/issues/79725)。[#81046](https://github.com/ClickHouse/ClickHouse/pull/81046) ([alesapin](https://github.com/alesapin)).
+* 修复了在 `JSONExtract` 和 `JSON` 类型解析中从整数值解析 `DateTime64` 的问题。[#81050](https://github.com/ClickHouse/ClickHouse/pull/81050) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 在 schema 推断缓存中纳入 `date_time_input_format` 设置。[#81052](https://github.com/ClickHouse/ClickHouse/pull/81052) ([Pavel Kruglov](https://github.com/Avogar)) 。
+* 修复在以下情况下执行 `INSERT` 时发生的崩溃：查询开始后但在发送列信息之前，表被 DROP。[#81053](https://github.com/ClickHouse/ClickHouse/pull/81053) ([Azat Khuzhin](https://github.com/azat)).
+* 修复 quantileDeterministic 中使用未初始化值的问题。[#81062](https://github.com/ClickHouse/ClickHouse/pull/81062) ([Azat Khuzhin](https://github.com/azat)).
+* 修复 metadatastoragefromdisk disk 事务中的硬链接计数管理问题。添加测试。 [#81066](https://github.com/ClickHouse/ClickHouse/pull/81066) ([Sema Checherinda](https://github.com/CheSema)).
+* 与其他函数不同，用户自定义函数 (UDF) 的名称不会被记录到 `system.query_log` 表中。此 PR 实现了以下功能：如果请求中使用了 UDF，则将其名称添加到 `used_executable_user_defined_functions` 或 `used_sql_user_defined_functions` 两列之一中。[#81101](https://github.com/ClickHouse/ClickHouse/pull/81101) ([Kyamran](https://github.com/nibblerenush)) 。
+* 修复了通过 HTTP 协议使用文本格式 (`JSON`、`Values` 等) 执行插入且省略 `Enum` 字段时出现的 `Too large size ... passed to allocator` 错误及可能导致的崩溃。[#81145](https://github.com/ClickHouse/ClickHouse/pull/81145) ([Anton Popov](https://github.com/CurtizJ)).
+* 修复了将包含稀疏列的 INSERT 块推送到非 MT MV 时出现的 LOGICAL&#95;ERROR。[#81161](https://github.com/ClickHouse/ClickHouse/pull/81161) ([Azat Khuzhin](https://github.com/azat)) 。
+* 修复交叉复制场景下 `distributed_product_mode_local=local` 导致出现 `Unknown table expression identifier` 的问题。[#81162](https://github.com/ClickHouse/ClickHouse/pull/81162) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 修复了过滤后错误缓存 Parquet 文件行数的问题。[#81184](https://github.com/ClickHouse/ClickHouse/pull/81184) ([Michael Kolupaev](https://github.com/al13n321)) 。
+* 修复在使用相对缓存路径时 `max_size_to_total_space` fs cache 设置的问题。[#81237](https://github.com/ClickHouse/ClickHouse/pull/81237) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 修复了 `clickhouse-local` 以 Parquet 格式输出 const Tuple 或 Map 时崩溃的问题。[#81249](https://github.com/ClickHouse/ClickHouse/pull/81249) ([Michael Kolupaev](https://github.com/al13n321)) 。
+* 校验通过网络接收的数组偏移量。 [#81269](https://github.com/ClickHouse/ClickHouse/pull/81269) ([Azat Khuzhin](https://github.com/azat)).
+* 修复了查询在 JOIN 空表并使用窗口函数时的一个边界情况。该缺陷会导致并行流数量激增，从而引发 OOM。[#81299](https://github.com/ClickHouse/ClickHouse/pull/81299) ([Alexander Gololobov](https://github.com/davenger)).
+* 数据湖 Cluster 函数 (`deltaLakeCluster`、`icebergCluster` 等) 修复： (1) 修复在使用旧版 analyzer 的 `Cluster` 函数时，`DataLakeConfiguration` 中可能出现的段错误； (2) 移除重复的数据湖元数据更新 (会产生额外的对象存储请求) ； (3) 修复在未显式指定 format 时对对象存储进行的冗余列出操作 (此前已对非 Cluster 数据湖引擎完成此修复) 。[#81300](https://github.com/ClickHouse/ClickHouse/pull/81300) ([Kseniia Sumarokova](https://github.com/kssenii)).
+* 使 `force_restore_data` 标志可恢复丢失的 Keeper 元数据。[#81324](https://github.com/ClickHouse/ClickHouse/pull/81324) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 修复 delta-kernel 中的区域报错。修复 [#79914](https://github.com/ClickHouse/ClickHouse/issues/79914)。[#81353](https://github.com/ClickHouse/ClickHouse/pull/81353) ([Kseniia Sumarokova](https://github.com/kssenii)) 。
+* 禁用 divideOrNull 中有误的 JIT。[#81370](https://github.com/ClickHouse/ClickHouse/pull/81370) ([Raúl Marín](https://github.com/Algunenano)) 。
+* 修复了 MergeTree 表的分区列名过长时出现的插入错误。[#81390](https://github.com/ClickHouse/ClickHouse/pull/81390) ([hy123q](https://github.com/haoyangqian)) 。
+* 不要将多个 manifest 文件的内容全部存放在内存中。[#81470](https://github.com/ClickHouse/ClickHouse/pull/81470) ([Daniil Ivanik](https://github.com/divanik)) 。
+* 修复在关闭后台线程池 (`background_.*pool_size`) 时可能发生的崩溃。[#81473](https://github.com/ClickHouse/ClickHouse/pull/81473) ([Azat Khuzhin](https://github.com/azat)) 。
+* 修复了在使用 `URL` 引擎向表写入时，`Npy` 格式发生的越界读取问题。此修复关闭了 [#81356](https://github.com/ClickHouse/ClickHouse/issues/81356)。[#81502](https://github.com/ClickHouse/ClickHouse/pull/81502) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+* Web UI 可能会显示 `NaN%` (典型的 JavaScript 问题) 。[#81507](https://github.com/ClickHouse/ClickHouse/pull/81507) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 修复了 `database_replicated_enforce_synchronous_settings=1` 时 `DatabaseReplicated` 的问题。[#81564](https://github.com/ClickHouse/ClickHouse/pull/81564) ([Azat Khuzhin](https://github.com/azat)).
+* 修复 LowCardinality(Nullable(...)) 类型的排序顺序问题。[#81583](https://github.com/ClickHouse/ClickHouse/pull/81583) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)) 。
+* 如果尚未从套接字中完整读取请求，服务器不应保持 HTTP 连接。[#81595](https://github.com/ClickHouse/ClickHouse/pull/81595) ([Sema Checherinda](https://github.com/CheSema)) 。
+* 使标量关联子查询返回投影表达式的 Nullable 结果。修复了关联子查询产生空结果集时的问题。[#81632](https://github.com/ClickHouse/ClickHouse/pull/81632) ([Dmitry Novik](https://github.com/novikd)) 。
+* 修复对 `ReplicatedMergeTree` 执行 `ATTACH` 时出现的 `Unexpected relative path for a deduplicated part` 问题。[#81647](https://github.com/ClickHouse/ClickHouse/pull/81647) ([Azat Khuzhin](https://github.com/azat)).
+* 查询设置 `use_iceberg_partition_pruning` 对 Iceberg 存储不会生效，因为它使用的是全局上下文而不是查询上下文。不过这并不关键，因为它的默认值为 true。此 PR 可修复该问题。[#81673](https://github.com/ClickHouse/ClickHouse/pull/81673) ([Han Fei](https://github.com/hanfei1991)) 。
+* 为 MergeTree 设置 `merge_max_block_size` 增加校验，确保其不为零。[#81693](https://github.com/ClickHouse/ClickHouse/pull/81693) ([Bharat Nallan](https://github.com/bharatnc)) 。
+* 修复了 `clickhouse-local` 中 `DROP VIEW ` 查询卡住的问题。[#81705](https://github.com/ClickHouse/ClickHouse/pull/81705) ([Bharat Nallan](https://github.com/bharatnc)) 。
+* 修复了某些情况下 StorageRedis join 的问题。[#81736](https://github.com/ClickHouse/ClickHouse/pull/81736) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)) 。
+* 修复在启用旧 analyzer 且使用空 `USING ()` 时 `ConcurrentHashJoin` 的崩溃问题。[#81754](https://github.com/ClickHouse/ClickHouse/pull/81754) ([Nikita Taranov](https://github.com/nickitat)).
+* Keeper 修复：如果日志中存在无效条目，则阻止提交新的日志。此前，如果 leader 错误地应用了某些日志，即使 follower 会检测到摘要不匹配并中止，它仍会继续提交新的日志。[#81780](https://github.com/ClickHouse/ClickHouse/pull/81780) ([Antonio Andelic](https://github.com/antonio2368)) 。

@@ -1,0 +1,130 @@
+---
+sidebarTitle: 'Confluent Platform 上的 Kafka Connector Sink'
+slug: /integrations/kafka/cloud/confluent/custom-connector
+description: '配合 Kafka Connect 和 ClickHouse 使用 ClickHouse Connector Sink'
+title: '将 Confluent Platform 与 ClickHouse 集成'
+keywords: ['Confluent 与 ClickHouse 集成', 'ClickHouse Kafka connector', 'Kafka Connect ClickHouse sink', 'Confluent Platform ClickHouse', 'Confluent custom connector']
+doc_type: 'guide'
+---
+
+import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<div class="vimeo-container">
+  <Frame>
+    <iframe
+      src="//www.youtube.com/embed/SQAiPVbd3gg"
+      frameborder="0"
+      allow="autoplay;
+fullscreen;
+picture-in-picture"
+      allowfullscreen
+    />
+  </Frame>
+</div>
+
+<div id="prerequisites">
+  ## 前置条件
+</div>
+
+我们假设你已经熟悉以下内容：
+
+* [ClickHouse Connector Sink](/zh/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)
+* Confluent Platform 和 [自定义连接器](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/overview.html)。
+
+<div id="the-official-kafka-connector-from-clickhouse-with-confluent-platform">
+  ## ClickHouse 官方 Kafka 连接器 (适用于 Confluent Platform)
+</div>
+
+<div id="installing-on-confluent-platform">
+  ### 在 Confluent Platform 上安装
+</div>
+
+本文旨在作为一份快速入门指南，帮助你开始使用运行于 Confluent Platform 上的 ClickHouse Sink Connector。
+更多详情请参阅 [Confluent 官方文档](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector)。
+
+<div id="create-a-topic">
+  #### 创建 topic
+</div>
+
+在 Confluent Platform 上创建 topic 非常简单，详细说明请参见[此处](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)。
+
+<div id="important-notes">
+  #### 重要说明
+</div>
+
+* Kafka topic 名称必须与 ClickHouse 表名保持一致。要实现这一点，可以使用转换器 (例如 [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)) 。
+* 分区更多并不一定意味着性能更高——更多详情和性能优化建议，请参阅我们即将发布的指南。
+
+<div id="install-connector">
+  #### 安装连接器
+</div>
+
+您可以从我们的[仓库](https://github.com/ClickHouse/clickhouse-kafka-connect/releases)下载该连接器——也欢迎您在那里提交反馈和问题！
+
+导航到 &quot;Connector Plugins&quot; -&gt; &quot;Add plugin&quot;，并使用以下设置：
+
+```text
+'Connector Class' - 'com.clickhouse.kafka.connect.ClickHouseSinkConnector'
+'Connector type' - Sink
+'Sensitive properties' - 'password'. 这将确保 ClickHouse 密码在配置时以掩码形式显示。
+```
+
+示例：
+
+<Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="Confluent Platform UI，显示添加自定义 ClickHouse 连接器的设置" border />
+
+<div id="gather-your-connection-details">
+  #### 准备您的连接信息
+</div>
+
+<ConnectionDetails />
+
+<div id="configure-the-connector">
+  #### 配置连接器
+</div>
+
+前往 `Connectors` -&gt; `Add Connector`，并使用以下设置 (请注意，这些值仅为示例) ：
+
+```json
+{
+  "database": "<DATABASE_NAME>",
+  "errors.retry.timeout": "30",
+  "exactlyOnce": "false",
+  "schemas.enable": "false",
+  "hostname": "<CLICKHOUSE_HOSTNAME>",
+  "password": "<SAMPLE_PASSWORD>",
+  "port": "8443",
+  "ssl": "true",
+  "topics": "<TOPIC_NAME>",
+  "username": "<SAMPLE_USERNAME>",
+  "key.converter": "org.apache.kafka.connect.storage.StringConverter",
+  "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+  "value.converter.schemas.enable": "false"
+}
+```
+
+<div id="specify-the-connection-endpoints">
+  #### 指定连接端点
+</div>
+
+您需要指定该连接器可访问的端点允许列表。
+添加网络出站端点时，必须使用完全限定域名 (FQDN) 。
+示例：`u57swl97we.eu-west-1.aws.clickhouse.com:8443`
+
+<Note>
+  您必须指定 HTTP(S) 端口。该连接器目前尚不支持 Native protocol。
+</Note>
+
+[阅读文档。](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#cc-byoc-endpoints)
+
+这样应该就可以了！
+
+<div id="known-limitations">
+  #### 已知限制
+</div>
+
+* 自定义连接器必须使用公共互联网端点。不支持静态 IP 地址。
+* 你可以覆盖部分自定义连接器属性。请参阅[官方文档中的完整列表。](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-manage.html#override-configuration-properties)
+* 自定义连接器仅在[部分 AWS 区域](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#supported-aws-regions)中可用
+* 请参阅[官方文档中关于自定义连接器限制的列表](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-fands.html#limitations)

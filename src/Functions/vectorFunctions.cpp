@@ -1410,6 +1410,7 @@ public:
 
 inline constexpr char L2DistanceTransposedName[] = "L2DistanceTransposed";
 inline constexpr char CosineDistanceTransposedName[] = "cosineDistanceTransposed";
+inline constexpr char DotProductTransposedName[] = "dotProductTransposed";
 
 
 /// Helper to detect if Traits has is_transposed member, defaults to false
@@ -1509,6 +1510,11 @@ extern FunctionPtr createFunctionArrayCosineDistance(ContextPtr context_);
 
 extern FunctionPtr createFunctionArrayL2DistanceTransposed(ContextPtr context_);
 extern FunctionPtr createFunctionArrayCosineDistanceTransposed(ContextPtr context_);
+extern FunctionPtr createFunctionArrayDotProductTransposed(ContextPtr context_);
+
+extern FunctionPtr createFunctionArrayL2DistanceTransposedQuantized(ContextPtr context_);
+extern FunctionPtr createFunctionArrayCosineDistanceTransposedQuantized(ContextPtr context_);
+extern FunctionPtr createFunctionArrayDotProductTransposedQuantized(ContextPtr context_);
 
 struct DotProduct
 {
@@ -1625,6 +1631,42 @@ struct CosineDistanceTransposedTraits
     static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistanceTransposed;
 };
 
+struct DotProductTransposedTraits
+{
+    static constexpr auto name = "dotProductTransposed";
+    static constexpr bool is_transposed = true;
+
+    static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
+    static constexpr auto CreateArrayFunction = createFunctionArrayDotProductTransposed;
+};
+
+struct L2DistanceTransposedQuantizedTraits
+{
+    static constexpr auto name = "L2DistanceTransposedQuantized";
+    static constexpr bool is_transposed = true;
+
+    static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
+    static constexpr auto CreateArrayFunction = createFunctionArrayL2DistanceTransposedQuantized;
+};
+
+struct CosineDistanceTransposedQuantizedTraits
+{
+    static constexpr auto name = "cosineDistanceTransposedQuantized";
+    static constexpr bool is_transposed = true;
+
+    static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
+    static constexpr auto CreateArrayFunction = createFunctionArrayCosineDistanceTransposedQuantized;
+};
+
+struct DotProductTransposedQuantizedTraits
+{
+    static constexpr auto name = "dotProductTransposedQuantized";
+    static constexpr bool is_transposed = true;
+
+    static FunctionPtr CreateTupleFunction(ContextPtr) { return nullptr; } /// NOLINT(readability-identifier-naming)
+    static constexpr auto CreateArrayFunction = createFunctionArrayDotProductTransposedQuantized;
+};
+
 using TupleOrArrayFunctionDotProduct = TupleOrArrayFunction<DotProduct>;
 
 using TupleOrArrayFunctionL1Norm = TupleOrArrayFunction<L1NormTraits>;
@@ -1642,6 +1684,11 @@ using TupleOrArrayFunctionCosineDistance = TupleOrArrayFunction<CosineDistanceTr
 
 using TupleOrArrayFunctionL2DistanceTransposed = TupleOrArrayFunction<L2DistanceTransposedTraits>;
 using TupleOrArrayFunctionCosineDistanceTransposed = TupleOrArrayFunction<CosineDistanceTransposedTraits>;
+using TupleOrArrayFunctionDotProductTransposed = TupleOrArrayFunction<DotProductTransposedTraits>;
+
+using TupleOrArrayFunctionL2DistanceTransposedQuantized = TupleOrArrayFunction<L2DistanceTransposedQuantizedTraits>;
+using TupleOrArrayFunctionCosineDistanceTransposedQuantized = TupleOrArrayFunction<CosineDistanceTransposedQuantizedTraits>;
+using TupleOrArrayFunctionDotProductTransposedQuantized = TupleOrArrayFunction<DotProductTransposedQuantizedTraits>;
 
 REGISTER_FUNCTION(VectorFunctions)
 {
@@ -2073,7 +2120,7 @@ Returns the sum of the products of the corresponding elements.
         {"vector1", "First vector.", {"Array(T)", "Tuple(T)"}},
         {"vector2", "Second vector. Must be the same size as the first vector.", {"Array(T)", "Tuple(T)"}}
     };
-    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors.", {"(U)Int*", "Float*", "Decimal"}};
+    FunctionDocumentation::ReturnedValue returned_value_dotProduct = {"Returns the dot product of the two vectors. Two `BFloat16` arrays accumulate in and return `Float32`.", {"(U)Int*", "Float*", "Decimal"}};
     FunctionDocumentation::Examples examples_dotProduct = {
         {"Basic usage", "SELECT dotProduct((1, 2), (3, 4))", "11"}
     };
@@ -2405,9 +2452,9 @@ SELECT cosineDistance((1, 2), (2, 3));
     FunctionDocumentation::Description description_l2_distance_transposed = R"(
 Calculates the approximate distance between two points (the values of the vectors are the coordinates) in Euclidean space ([Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance)).
     )";
-    FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p)";
+    FunctionDocumentation::Syntax syntax_l2_distance_transposed = "L2DistanceTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_l2_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}};
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}}, {"reference", "Reference vector.", {"Array(T)"}}, {"p", "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more bits increases accuracy at the cost of performance.", {"UInt"}}, {"used_dims", "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only the stride groups covering these dimensions are read.", {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed = {"Returns the approximate 2-norm distance. Always returns `Float64`.", {"Float64"}};
     FunctionDocumentation::Examples examples_l2_distance_transposed
         = {{"Basic usage",
@@ -2439,14 +2486,19 @@ SELECT L2DistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     FunctionDocumentation::Description description_cosine_distance_transposed = R"(
 Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) between two points (the values of the vectors are the coordinates). The smaller the returned value is, the more similar are the vectors.
     )";
-    FunctionDocumentation::Syntax syntax_cosine_distance_transposed = "cosineDistanceTransposed(vector1, vector2, p)";
+    FunctionDocumentation::Syntax syntax_cosine_distance_transposed = "cosineDistanceTransposed(vector1, vector2, p[, used_dims])";
     FunctionDocumentation::Arguments arguments_cosine_distance_transposed
-        = {{"vectors", "Vectors.", {"QBit(T, UInt64)"}},
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}},
            {"reference", "Reference vector.", {"Array(T)"}},
            {"p",
             "Number of bits from each vector element to use in the distance calculation (1 to element bit-width). The quantization level "
             "controls the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while "
             "using more bits increases accuracy at the cost of performance.",
+            {"UInt"}},
+           {"used_dims",
+            "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
+            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
+            "the stride groups covering these dimensions are read.",
             {"UInt"}}};
     FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed
         = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns Float64.", {"Float64"}};
@@ -2476,6 +2528,195 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
 
     factory.registerFunction<TupleOrArrayFunctionCosineDistanceTransposed>(documentation_cosine_distance_transposed);
 
+    /// DotProductTransposed documentation
+    FunctionDocumentation::Description description_dot_product_transposed = R"(
+Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_product) (inner product) of two vectors (the values of the vectors are the coordinates). Unlike the distance functions, this is a similarity measure: the larger the returned value, the more similar the vectors are.
+    )";
+    FunctionDocumentation::Syntax syntax_dot_product_transposed = "dotProductTransposed(vector1, vector2, p[, used_dims])";
+    FunctionDocumentation::Arguments arguments_dot_product_transposed
+        = {{"vectors", "Vectors.", {"QBit(T, UInt64[, UInt64])"}},
+           {"reference", "Reference vector.", {"Array(T)"}},
+           {"p",
+            "Number of bits from each vector element to use in the calculation (1 to element bit-width). The quantization level controls "
+            "the precision-speed trade-off. Using fewer bits results in faster I/O and calculations with reduced accuracy, while using more "
+            "bits increases accuracy at the cost of performance.",
+            {"UInt"}},
+           {"used_dims",
+            "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
+            "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
+            "the stride groups covering these dimensions are read.",
+            {"UInt"}}};
+    FunctionDocumentation::ReturnedValue returned_value_dot_product_transposed
+        = {"Returns the approximate dot product of the two vectors. Always returns `Float64`.", {"Float64"}};
+    FunctionDocumentation::Examples examples_dot_product_transposed
+        = {{"Basic usage",
+            R"(
+CREATE TABLE qbit (id UInt32, vec QBit(Float64, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, [0, 1]);
+SELECT dotProductTransposed(vec, array(1, 2), 16) FROM qbit;
+)",
+            R"(
+┌─dotProductTransposed([0, 1], [1, 2], 16)─┐
+│                                        2 │
+└──────────────────────────────────────────┘
+            )"}};
+    FunctionDocumentation::IntroducedIn introduced_in_dot_product_transposed = {26, 7};
+    FunctionDocumentation::Category category_dot_product_transposed = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_dot_product_transposed
+        = {description_dot_product_transposed,
+           syntax_dot_product_transposed,
+           arguments_dot_product_transposed,
+           {},
+           returned_value_dot_product_transposed,
+           examples_dot_product_transposed,
+           introduced_in_dot_product_transposed,
+           category_dot_product_transposed};
+
+    factory.registerFunction<TupleOrArrayFunctionDotProductTransposed>(documentation_dot_product_transposed);
+
+    /// Quantized transposed distance functions. These operate on a QBit(Int8) whose codes were produced by the
+    /// quantizeBFloat16ToInt8 Lloyd-Max codec. Because the quantizer is non-linear, the codes are dequantized to their
+    /// reconstruction levels on the fly and the distance is computed against the reference (query) vector, which may be a
+    /// Float array (the query, cast to Float32 -- the reconstruction precision of the dequantized codes) or a quantized Array(Int8)
+    /// that is dequantized at full 8-bit precision (`p` truncates only the stored QBit).
+    const String quantized_reference_note
+        = "A `Float` reference (query) vector is compared directly at `Float32` precision -- the reconstruction precision of the "
+          "dequantized codes, so a `Float64` query is narrowed to `Float32` while a `BFloat16` query widens to it exactly "
+          "(asymmetric distance computation); an `Array(Int8)` reference "
+          "is itself treated as `quantizeBFloat16ToInt8` codes and dequantized to its reconstruction levels. Note that `p` truncates "
+          "only the stored `QBit` codes; the `Array(Int8)` reference is a complete query and is always reconstructed at full 8-bit "
+          "precision, so this is a symmetric quantized-vs-quantized distance only at `p = 8` (for `p < 8` only the stored side is "
+          "read at coarser precision). It must live in the same space as the values were in before quantization (i.e. after the same "
+          "random rotation and scaling), which is the caller's responsibility. Cosine distance is scale-invariant; dot product and "
+          "L2 distance are not.";
+    const auto quantized_precision_argument = FunctionDocumentation::Argument{
+        "p",
+        "Number of top bits of each stored `QBit` code to use (1 to 8). Fewer bits reconstruct a coarser embedded quantizer for "
+        "faster I/O with reduced accuracy; 8 bits is the full-precision reconstruction. `p` truncates only the stored `QBit`; an "
+        "`Array(Int8)` reference is always reconstructed at full 8-bit precision.",
+        {"UInt"}};
+    const auto quantized_used_dims_argument = FunctionDocumentation::Argument{
+        "used_dims",
+        "Optional. Number of leading dimensions to read, for a reduced-dimension (Matryoshka) search on a strided `QBit`. Must be a "
+        "multiple of the QBit stride not exceeding its dimension, and the reference vector must have exactly this many elements. Only "
+        "the stride groups covering these dimensions are read.",
+        {"UInt"}};
+    const FunctionDocumentation::IntroducedIn introduced_in_transposed_quantized = {26, 7};
+
+    /// L2DistanceTransposedQuantized documentation
+    FunctionDocumentation::Description description_l2_distance_transposed_quantized
+        = "Calculates the approximate [Euclidean distance](https://en.wikipedia.org/wiki/Euclidean_distance) between a "
+          "`QBit(Int8)` of `quantizeBFloat16ToInt8` codes (dequantized on the fly) and a reference vector. "
+          + quantized_reference_note;
+    FunctionDocumentation::Syntax syntax_l2_distance_transposed_quantized
+        = "L2DistanceTransposedQuantized(vectors, reference, p[, used_dims])";
+    FunctionDocumentation::Arguments arguments_l2_distance_transposed_quantized
+        = {{"vectors", "Vectors of `quantizeBFloat16ToInt8` codes.", {"QBit(Int8, UInt64[, UInt64])"}},
+           {"reference",
+            "Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed "
+            "to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly.",
+            {"Array(Float32)", "Array(Int8)"}},
+           quantized_precision_argument,
+           quantized_used_dims_argument};
+    FunctionDocumentation::ReturnedValue returned_value_l2_distance_transposed_quantized
+        = {"Returns the approximate 2-norm distance. Always returns `Float64`.", {"Float64"}};
+    FunctionDocumentation::Examples examples_l2_distance_transposed_quantized
+        = {{"Basic usage",
+            R"(
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT L2DistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+)",
+            ""}};
+    FunctionDocumentation::Category category_transposed_quantized = FunctionDocumentation::Category::Distance;
+    FunctionDocumentation documentation_l2_distance_transposed_quantized
+        = {description_l2_distance_transposed_quantized,
+           syntax_l2_distance_transposed_quantized,
+           arguments_l2_distance_transposed_quantized,
+           {},
+           returned_value_l2_distance_transposed_quantized,
+           examples_l2_distance_transposed_quantized,
+           introduced_in_transposed_quantized,
+           category_transposed_quantized};
+
+    factory.registerFunction<TupleOrArrayFunctionL2DistanceTransposedQuantized>(documentation_l2_distance_transposed_quantized);
+
+    /// CosineDistanceTransposedQuantized documentation
+    FunctionDocumentation::Description description_cosine_distance_transposed_quantized
+        = "Calculates the approximate [cosine distance](https://en.wikipedia.org/wiki/Cosine_similarity#Cosine_distance) between a "
+          "`QBit(Int8)` of `quantizeBFloat16ToInt8` codes (dequantized on the fly) and a reference vector. The smaller the returned "
+          "value, the more similar the vectors. "
+          + quantized_reference_note;
+    FunctionDocumentation::Syntax syntax_cosine_distance_transposed_quantized
+        = "cosineDistanceTransposedQuantized(vectors, reference, p[, used_dims])";
+    FunctionDocumentation::Arguments arguments_cosine_distance_transposed_quantized
+        = {{"vectors", "Vectors of `quantizeBFloat16ToInt8` codes.", {"QBit(Int8, UInt64[, UInt64])"}},
+           {"reference",
+            "Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed "
+            "to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly.",
+            {"Array(Float32)", "Array(Int8)"}},
+           quantized_precision_argument,
+           quantized_used_dims_argument};
+    FunctionDocumentation::ReturnedValue returned_value_cosine_distance_transposed_quantized
+        = {"Returns the approximate cosine distance (one minus the cosine similarity). Always returns `Float64`.", {"Float64"}};
+    FunctionDocumentation::Examples examples_cosine_distance_transposed_quantized
+        = {{"Basic usage",
+            R"(
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT cosineDistanceTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+)",
+            ""}};
+    FunctionDocumentation documentation_cosine_distance_transposed_quantized
+        = {description_cosine_distance_transposed_quantized,
+           syntax_cosine_distance_transposed_quantized,
+           arguments_cosine_distance_transposed_quantized,
+           {},
+           returned_value_cosine_distance_transposed_quantized,
+           examples_cosine_distance_transposed_quantized,
+           introduced_in_transposed_quantized,
+           category_transposed_quantized};
+
+    factory.registerFunction<TupleOrArrayFunctionCosineDistanceTransposedQuantized>(documentation_cosine_distance_transposed_quantized);
+
+    /// DotProductTransposedQuantized documentation
+    FunctionDocumentation::Description description_dot_product_transposed_quantized
+        = "Calculates the approximate [dot product](https://en.wikipedia.org/wiki/Dot_product) (inner product) between a "
+          "`QBit(Int8)` of `quantizeBFloat16ToInt8` codes (dequantized on the fly) and a reference vector. This is a similarity "
+          "measure: the larger the returned value, the more similar the vectors. "
+          + quantized_reference_note;
+    FunctionDocumentation::Syntax syntax_dot_product_transposed_quantized
+        = "dotProductTransposedQuantized(vectors, reference, p[, used_dims])";
+    FunctionDocumentation::Arguments arguments_dot_product_transposed_quantized
+        = {{"vectors", "Vectors of `quantizeBFloat16ToInt8` codes.", {"QBit(Int8, UInt64[, UInt64])"}},
+           {"reference",
+            "Reference (query) vector: a `Float` array (the query, compared at `Float32` precision -- a `Float64` query is narrowed "
+            "to `Float32`), or an `Array(Int8)` of `quantizeBFloat16ToInt8` codes dequantized on the fly.",
+            {"Array(Float32)", "Array(Int8)"}},
+           quantized_precision_argument,
+           quantized_used_dims_argument};
+    FunctionDocumentation::ReturnedValue returned_value_dot_product_transposed_quantized
+        = {"Returns the approximate dot product of the two vectors. Always returns `Float64`.", {"Float64"}};
+    FunctionDocumentation::Examples examples_dot_product_transposed_quantized
+        = {{"Basic usage",
+            R"(
+CREATE TABLE qbit (id UInt32, vec QBit(Int8, 2)) ENGINE = Memory;
+INSERT INTO qbit VALUES (1, arrayMap(x -> quantizeBFloat16ToInt8(x), [0.1, -0.5]::Array(BFloat16)));
+SELECT dotProductTransposedQuantized(vec, [0.1, -0.5]::Array(Float32), 8) FROM qbit;
+)",
+            ""}};
+    FunctionDocumentation documentation_dot_product_transposed_quantized
+        = {description_dot_product_transposed_quantized,
+           syntax_dot_product_transposed_quantized,
+           arguments_dot_product_transposed_quantized,
+           {},
+           returned_value_dot_product_transposed_quantized,
+           examples_dot_product_transposed_quantized,
+           introduced_in_transposed_quantized,
+           category_transposed_quantized};
+
+    factory.registerFunction<TupleOrArrayFunctionDotProductTransposedQuantized>(documentation_dot_product_transposed_quantized);
+
     // Register aliases for distance functions
     factory.registerAlias("distanceL1", FunctionL1Distance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2", FunctionL2Distance::name, FunctionFactory::Case::Insensitive);
@@ -2485,6 +2726,7 @@ SELECT cosineDistanceTransposed(vec, array(1, 2), 16) FROM qbit;
     factory.registerAlias("distanceCosine", TupleOrArrayFunctionCosineDistance::name, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceL2Transposed", L2DistanceTransposedName, FunctionFactory::Case::Insensitive);
     factory.registerAlias("distanceCosineTransposed", CosineDistanceTransposedName, FunctionFactory::Case::Insensitive);
+    factory.registerAlias("scalarProductTransposed", DotProductTransposedName, FunctionFactory::Case::Insensitive);
 
     /// L1Normalize documentation
     FunctionDocumentation::Description description_l1_normalize = R"(

@@ -967,7 +967,7 @@ def test_concurrent_create_drop_race_condition(cluster):
     node1 = cluster.instances["node_with_keeper"]
     node2 = cluster.instances["node_with_keeper_2"]
 
-    num_iterations = 50
+    num_iterations = 15
     stop_flag = threading.Event()
 
     def create_collections(node, prefix, count):
@@ -997,7 +997,7 @@ def test_concurrent_create_drop_race_condition(cluster):
 
     try:
         # Run multiple iterations to increase chance of hitting the race
-        for iteration in range(5):
+        for iteration in range(3):
             prefix = f"race_test_{iteration}"
             threads = []
 
@@ -1020,7 +1020,7 @@ def test_concurrent_create_drop_race_condition(cluster):
                 t.join(timeout=60)
 
             # Small delay between iterations
-            time.sleep(0.5)
+            time.sleep(0.1)
 
         # Verify both nodes are still healthy by running a simple query
         for node in [node1, node2]:

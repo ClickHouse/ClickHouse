@@ -1,0 +1,36 @@
+---
+title: 'أنواع البيانات المدعومة'
+slug: /integrations/clickpipes/mysql/datatypes
+description: 'صفحة توضّح تعيين أنواع البيانات في MySQL ClickPipe من MySQL إلى ClickHouse'
+doc_type: 'reference'
+keywords: ['أنواع بيانات MySQL ClickPipe', 'أنواع البيانات من MySQL إلى ClickHouse', 'تعيين أنواع بيانات ClickPipe', 'تحويل أنواع MySQL في ClickHouse', 'توافق أنواع قواعد البيانات']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+فيما يلي تعيين أنواع البيانات المدعومة لـ MySQL ClickPipe:
+
+| نوع MySQL                            | نوع ClickHouse         | ملاحظات                                                                             |
+| ------------------------------------ | ---------------------- | ----------------------------------------------------------------------------------- |
+| Enum                                 | LowCardinality(String) |                                                                                     |
+| Set                                  | String                 |                                                                                     |
+| Decimal                              | Decimal                |                                                                                     |
+| TinyInt                              | Int8                   | يدعم القيم غير الموقَّعة.                                                           |
+| SmallInt                             | Int16                  | يدعم القيم غير الموقَّعة.                                                           |
+| MediumInt, Int                       | Int32                  | يدعم القيم غير الموقَّعة.                                                           |
+| BigInt                               | Int64                  | يدعم القيم غير الموقَّعة.                                                           |
+| Year                                 | Int16                  |                                                                                     |
+| TinyText, Text, MediumText, LongText | String                 |                                                                                     |
+| TinyBlob, Blob, MediumBlob, LongBlob | String                 |                                                                                     |
+| Char, Varchar                        | String                 |                                                                                     |
+| Binary, VarBinary                    | String                 |                                                                                     |
+| TinyInt(1)                           | Bool                   |                                                                                     |
+| JSON                                 | String                 | خاص بـ MySQL فقط؛ `json` في MariaDB هو مجرد اسم مستعار لـ `text` مع قيد.            |
+| Geometry &amp; Geometry Types        | String                 | WKT ‏(Well-Known Text). قد يحدث فقدان طفيف في الدقة في WKT.                         |
+| Vector                               | Array(Float32)         | خاص بـ MySQL فقط؛ ستضيف MariaDB الدعم قريبًا.                                       |
+| Float                                | Float32                | قد تختلف الدقة في ClickHouse عنها في MySQL أثناء التحميل الأولي بسبب بروتوكول النص. |
+| Double                               | Float64                | قد تختلف الدقة في ClickHouse عنها في MySQL أثناء التحميل الأولي بسبب بروتوكول النص. |
+| Date                                 | Date32                 | تُحوَّل قيمة اليوم/الشهر 00 إلى 01.                                                 |
+| Time                                 | DateTime64(6)          | إزاحة زمنية محسوبة من حقبة Unix.                                                    |
+| Datetime, Timestamp                  | DateTime64(6)          | تُحوَّل قيمة اليوم/الشهر 00 إلى 01.                                                 |

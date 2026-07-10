@@ -1,0 +1,35 @@
+---
+title: 如何解决 ClickHouse 23.9 发布后出现的摄取失败问题？
+description: "了解如何解决 ClickHouse 23.9 中引入的更严格授权检查导致的摄取失败问题，这些问题会影响使用 `async_inserts` 的表。更新授权即可修复错误。"
+date: 2022-11-17
+tags: ['错误和异常']
+keywords: ['GRANT', '权限错误']
+---
+
+{frontMatter.description}
+
+{{/* truncate */}}
+
+<div id="resolving-ingest-failures-after-clickhouse-239-release">
+  ## 解决 ClickHouse 23.9 发布后出现的摄取失败问题
+</div>
+
+这些权限错误的根本原因已经确认，是新版本对 [`async_inserts`](/zh/concepts/features/operations/insert/asyncinserts) 的授权检查变得更加严格所致。
+
+要修复此问题，必须更新授权，服务才能正常运行。请检查提示缺少哪些授权的错误消息，并手动补充所需的授权。对于使用 `async_inserts` 的表，新增所需的授权为 `SELECT` 或 `dictGet`。
+
+<div id="add-necessary-grants-to-affected-tables-and-dictionaries">
+  ## 为受影响的表和字典添加必要的授权
+</div>
+
+```
+-- 添加 SELECT 授权权限
+GRANT SELECT ON mydb.insertTable TO insert_role WITH GRANT OPTION
+
+-- 添加 dictGet 授权权限
+GRANT dictGet ON mydb.insertDictionary TO insert_role
+```
+
+如需详细了解 `GRANT` 命令，请参阅[此页面](/zh/reference/statements/grant)。
+
+如果您无法进行此更改，请联系 [ClickHouse 支持团队](https://clickhouse.com/support/program) 获取帮助。

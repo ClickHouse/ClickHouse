@@ -1,0 +1,349 @@
+---
+sidebarTitle: 'تهيئة المكون الإضافي'
+slug: /integrations/grafana/config
+description: 'خيارات التهيئة للمكون الإضافي لمصدر بيانات ClickHouse في Grafana'
+title: 'تهيئة مصدر بيانات ClickHouse في Grafana'
+doc_type: 'guide'
+keywords: ['تهيئة المكون الإضافي في Grafana', 'إعدادات مصدر البيانات', 'معلمات الاتصال', 'إعداد المصادقة', 'خيارات المكون الإضافي']
+integration:
+  - support_level: 'core'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+import ClickHouseSupportedBadge from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
+
+<ClickHouseSupportedBadge />
+
+أسهل طريقة لتعديل الإعدادات هي عبر واجهة المستخدم في Grafana من صفحة إعدادات المكوّن الإضافي، ولكن يمكن أيضًا [تهيئة مصادر البيانات باستخدام ملف YAML](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources).
+
+تعرض هذه الصفحة قائمة بالخيارات المتاحة لتهيئة المكوّن الإضافي ClickHouse، بالإضافة إلى مقتطفات إعدادات لمن يهيّئون مصدر بيانات باستخدام YAML.
+
+للحصول على نظرة عامة سريعة على جميع الخيارات، يمكن العثور على قائمة كاملة بخيارات الإعداد [هنا](#all-yaml-options).
+
+<div id="common-settings">
+  ## الإعدادات الشائعة
+</div>
+
+مثال على شاشة التهيئة:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="مثال على تهيئة آمنة للبروتوكول الأصلي" border />
+
+مثال على ملف YAML للإعدادات الشائعة:
+
+```yaml
+jsonData:
+  host: 127.0.0.1 # (required) server address.
+  port: 9000      # (required) server port. For native, defaults to 9440 secure and 9000 insecure. For HTTP, defaults to 8443 secure and 8123 insecure.
+
+  protocol: native # (required) the protocol used for the connection. Can be set to "native" or "http".
+  secure: false    # set to true if the connection is secure.
+
+  username: default # the username used for authentication.
+
+  tlsSkipVerify:     <boolean> # skips TLS verification when set to true.
+  tlsAuth:           <boolean> # set to true to enable TLS client authentication.
+  tlsAuthWithCACert: <boolean> # set to true if CA certificate is provided. Required for verifying self-signed TLS certificates.
+
+secureJsonData:
+  password: secureExamplePassword # the password used for authentication.
+
+  tlsCACert:     <string> # TLS CA certificate
+  tlsClientCert: <string> # TLS client certificate
+  tlsClientKey:  <string> # TLS client key
+```
+
+لاحظ أنه تُضاف خاصية `version` عند حفظ التهيئة من واجهة المستخدم. ويُظهر ذلك إصدار المكوّن الإضافي الذي حُفظت به التهيئة.
+
+<div id="http-protocol">
+  ### بروتوكول HTTP
+</div>
+
+ستظهر إعدادات إضافية إذا اخترت الاتصال عبر بروتوكول HTTP.
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="خيارات إعداد HTTP إضافية" border />
+
+<div id="http-path">
+  #### مسار HTTP
+</div>
+
+إذا كان خادم HTTP لديك مُتاحًا ضمن مسار URL مختلف، يمكنك إضافته هنا.
+
+```yaml
+jsonData:
+  # excludes first slash
+  path: additional/path/example
+```
+
+<div id="custom-http-headers">
+  #### رؤوس HTTP مخصّصة
+</div>
+
+يمكنك إضافة رؤوس مخصّصة إلى الطلبات المُرسلة إلى الخادم لديك.
+
+يمكن أن تكون الرؤوس نصًا عاديًا أو آمنة.
+تُخزَّن جميع مفاتيح الرؤوس كنص عادي، بينما تُحفَظ قيم الرؤوس الآمنة في التهيئة الآمنة (على غرار الحقل `password`).
+
+<Warning>
+  **القيم الآمنة عبر HTTP**
+
+  رغم أن قيم الرؤوس الآمنة تُخزَّن بأمان في التهيئة، فإن القيمة ستظل تُرسَل عبر HTTP إذا كان الاتصال الآمن معطّلًا.
+</Warning>
+
+مثال YAML للرؤوس العادية/الآمنة:
+
+```yaml
+jsonData:
+  httpHeaders:
+  - name: X-Example-Plain-Header
+    value: plain text value
+    secure: false
+  - name: X-Example-Secure-Header
+    # "value" is excluded
+    secure: true
+secureJsonData:
+  secureHttpHeaders.X-Example-Secure-Header: secure header value
+```
+
+<div id="additional-settings">
+  ## إعدادات إضافية
+</div>
+
+هذه الإعدادات الإضافية اختيارية.
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="مثال لإعدادات إضافية" border />
+
+مثال YAML:
+
+```yaml
+jsonData:
+  defaultDatabase: default # default database loaded by the query builder. Defaults to "default".
+  defaultTable: <string>   # default table loaded by the query builder.
+
+  dialTimeout: 10    # dial timeout when connecting to the server, in seconds. Defaults to "10".
+  queryTimeout: 60   # query timeout when running a query, in seconds. Defaults to 60. This requires permissions on the user, if you get a permission error try setting it to "0" to disable it.
+  validateSql: false # when set to true, will validate the SQL in the SQL editor.
+```
+
+<div id="opentelemetry">
+  ### OpenTelemetry
+</div>
+
+يأتي OpenTelemetry ‏(OTel) مدمجًا بشكل وثيق في المكوّن الإضافي.
+يمكن تصدير بيانات OpenTelemetry إلى ClickHouse باستخدام [مكوّن إضافي للمُصدِّر](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) الخاصة بنا.
+ولتحقيق أفضل استفادة، يُوصى بتهيئة OTel لكلٍّ من [السجلات](#logs) و[التتبعات](#traces).
+
+ويجب أيضًا تهيئة هذه الإعدادات الافتراضية لتمكين [روابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links)، وهي ميزة تتيح مسارات عمل observability قوية.
+
+<div id="logs">
+  ### السجلات
+</div>
+
+لتسريع [إنشاء استعلامات السجلات](/ar/integrations/connectors/data-visualization/grafana/query-builder#logs)، يمكنك تعيين قاعدة بيانات/جدول افتراضي، بالإضافة إلى أعمدة لاستعلام السجلات. سيؤدي ذلك إلى تحميل منشئ الاستعلام مسبقًا باستعلام سجلات جاهز للتشغيل، مما يجعل التصفح في صفحة Explore أسرع لسيناريوهات observability.
+
+إذا كنت تستخدم OpenTelemetry، فينبغي تفعيل مفتاح &quot;**Use OTel**&quot;، وتعيين **جدول السجلات الافتراضي** إلى `otel_logs`.
+وسيؤدي ذلك تلقائيًا إلى تجاوز الأعمدة الافتراضية لاستخدام إصدار مخطط OTel المحدد.
+
+مع أن OpenTelemetry ليس مطلوبًا للسجلات، فإن استخدام مجموعة بيانات واحدة للسجلات/التتبعات يساعد في توفير سير عمل أكثر سلاسة لـ observability باستخدام [رابط البيانات](/ar/integrations/connectors/data-visualization/grafana/query-builder#data-links).
+
+مثال على شاشة إعداد السجلات:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="إعداد السجلات" border />
+
+مثال على YAML لإعداد السجلات:
+
+```yaml
+jsonData:
+  logs:
+    defaultDatabase: default # default log database.
+    defaultTable: otel_logs  # default log table. If you're using OTel, this should be set to "otel_logs".
+
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+
+    # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
+    timeColumn:       <string> # the primary time column for the log.
+    levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
+    messageColumn: <string> # the log's message/content.
+```
+
+<div id="traces">
+  ### التتبعات
+</div>
+
+لتسريع [إنشاء الاستعلامات للتتبعات](/ar/integrations/connectors/data-visualization/grafana/query-builder#traces)، يمكنك تعيين قاعدة بيانات/جدول افتراضيين، بالإضافة إلى الأعمدة الخاصة باستعلام التتبع. سيؤدي ذلك إلى التحميل المسبق لمنشئ الاستعلام باستعلام بحث عن تتبع قابل للتشغيل، مما يسرّع التصفح في صفحة Explore لأغراض observability.
+
+إذا كنت تستخدم OpenTelemetry، فيجب تفعيل مفتاح &quot;**Use OTel**&quot;، وتعيين **جدول التتبع الافتراضي** إلى `otel_traces`.
+وسيؤدي ذلك تلقائيًا إلى استبدال الأعمدة الافتراضية لاستخدام إصدار مخطط OTel المحدد.
+ورغم أن OpenTelemetry ليس مطلوبًا، فإن هذه الميزة تعمل بأفضل شكل عند استخدام مخططه للتتبعات.
+
+مثال على شاشة إعداد التتبعات:
+
+<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="إعداد التتبعات" border />
+
+مثال على YAML لإعداد التتبعات:
+
+```yaml
+jsonData:
+  traces:
+    defaultDatabase: default  # default trace database.
+    defaultTable: otel_traces # default trace table. If you're using OTel, this should be set to "otel_traces".
+
+    otelEnabled: false  # set to true if OTel is enabled.
+    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+
+    # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
+    traceIdColumn:       <string>    # trace ID column.
+    spanIdColumn:        <string>    # span ID column.
+    operationNameColumn: <string>    # operation name column.
+    parentSpanIdColumn:  <string>    # parent span ID column.
+    serviceNameColumn:   <string>    # service name column.
+    durationTimeColumn:  <string>    # duration time column.
+    durationUnitColumn:  <time unit> # duration time unit. Can be set to "seconds", "milliseconds", "microseconds", or "nanoseconds". For OTel the default is "nanoseconds".
+    startTimeColumn:     <string>    # start time column. This is the primary time column for the trace span.
+    tagsColumn:          <string>    # tags column. This is expected to be a map type.
+    serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
+```
+
+<div id="column-aliases">
+  ### الأسماء المستعارة للأعمدة
+</div>
+
+يُعدّ استخدام الأسماء المستعارة للأعمدة طريقةً عملية للاستعلام عن بياناتك بأسماء وأنواع مختلفة.
+وباستخدام الأسماء المستعارة، يمكنك تحويل مخطط متداخل إلى مخطط مسطّح بحيث يسهل اختياره في Grafana.
+
+قد يكون استخدام الأسماء المستعارة مناسبًا لك إذا كنت:
+
+* تعرف مخطط بياناتك ومعظم خصائصه/أنواعه المتداخلة
+* تخزّن بياناتك في أنواع Map
+* تخزّن JSON كسلاسل نصية
+* تطبّق كثيرًا دوالًا لتحويل الأعمدة التي تختارها
+
+<div id="table-defined-alias-columns">
+  #### أعمدة ALIAS المعرّفة على الجدول
+</div>
+
+يوفّر ClickHouse دعمًا مدمجًا للأسماء المستعارة للأعمدة، ويعمل مع Grafana مباشرةً.
+يمكن تعريف أعمدة ALIAS مباشرةً على الجدول.
+
+```sql
+CREATE TABLE alias_example (
+  TimestampNanos DateTime(9),
+  TimestampDate ALIAS toDate(TimestampNanos)
+)
+```
+
+في المثال أعلاه، ننشئ اسمًا مستعارًا باسم `TimestampDate` يحوّل الطابع الزمني بالنانوثانية إلى النوع `Date`.
+ولا تُخزَّن هذه البيانات على القرص مثل العمود الأول، بل تُحتسَب وقت تنفيذ الاستعلام.
+لن تُعاد الأسماء المستعارة المعرّفة على الجدول مع `SELECT *`، لكن يمكن ضبط ذلك في إعدادات الخادم.
+
+لمزيد من المعلومات، اطّلع على وثائق نوع العمود [ALIAS](/ar/reference/statements/create/table#alias).
+
+<div id="column-alias-tables">
+  #### جداول الأسماء المستعارة للأعمدة
+</div>
+
+يوفّر Grafana، افتراضيًا، اقتراحات للأعمدة استنادًا إلى الاستجابة من `DESC table`.
+في بعض الحالات، قد ترغب في تجاوز الأعمدة التي يراها Grafana بالكامل.
+يساعد ذلك على إخفاء مخططك في Grafana عند اختيار الأعمدة، مما قد يحسّن تجربة المستخدم بحسب مدى تعقيد جدولك.
+
+وتتمثل ميزة هذا الأسلوب مقارنةً بالأسماء المستعارة المعرّفة على مستوى الجدول في أنه يمكنك تحديثها بسهولة من دون الحاجة إلى تعديل جدولك. وفي بعض المخططات، قد يصل ذلك إلى آلاف الإدخالات، مما قد يكدّس تعريف الجدول الأساسي. كما يتيح لك إخفاء الأعمدة التي تريد من المستخدم تجاهلها.
+
+يتطلب Grafana أن يحتوي جدول الأسماء المستعارة على بنية الأعمدة التالية:
+
+```sql
+CREATE TABLE aliases (
+  `alias` String,  -- The name of the alias, as seen in the Grafana column selector
+  `select` String, -- The SELECT syntax to use in the SQL generator
+  `type` String    -- The type of the resulting column, so the plugin can modify the UI options to match the data type.
+)
+```
+
+إليك كيف يمكننا محاكاة سلوك العمود `ALIAS` باستخدام جدول alias:
+
+```sql
+CREATE TABLE example_table (
+  TimestampNanos DateTime(9)
+);
+
+CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
+
+INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Preserve original column from table (optional)
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Add new column that converts TimestampNanos to a Date
+```
+
+يمكننا بعد ذلك إعداد هذا الجدول لاستخدامه في Grafana. لاحظ أن الاسم يمكن أن يكون أي اسم، أو حتى يمكن تعريفه في قاعدة بيانات منفصلة:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="مثال على إعداد جدول الأسماء المستعارة" border />
+
+سيعرض Grafana الآن نتائج جدول الأسماء المستعارة بدلًا من النتائج الناتجة عن `DESC example_table`:
+
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="مثال على استعلام جدول الأسماء المستعارة" border />
+
+يمكن استخدام كلا نوعَي الأسماء المستعارة لإجراء تحويلات معقدة للأنواع أو لاستخراج حقول JSON.
+
+<div id="all-yaml-options">
+  ## جميع خيارات YAML
+</div>
+
+فيما يلي جميع خيارات تهيئة YAML التي يوفّرها المكوّن الإضافي.
+تتضمن بعض الحقول قيمًا نموذجية، بينما يكتفي بعضها الآخر بعرض نوع الحقل.
+
+راجع [وثائق Grafana](https://grafana.com/docs/grafana/latest/administration/provisioning/#data-sources) لمزيد من المعلومات حول تهيئة مصادر البيانات باستخدام YAML.
+
+```yaml
+datasources:
+  - name: Example ClickHouse
+    uid: clickhouse-example
+    type: grafana-clickhouse-datasource
+    jsonData:
+      host: 127.0.0.1
+      port: 9000
+      protocol: native
+      secure: false
+      username: default
+      tlsSkipVerify: <boolean>
+      tlsAuth: <boolean>
+      tlsAuthWithCACert: <boolean>
+      defaultDatabase: default
+      defaultTable: <string>
+      dialTimeout: 10
+      queryTimeout: 60
+      validateSql: false
+      httpHeaders:
+      - name: X-Example-Plain-Header
+        value: plain text value
+        secure: false
+      - name: X-Example-Secure-Header
+        secure: true
+      logs:
+        defaultDatabase: default
+        defaultTable: otel_logs
+        otelEnabled: false
+        otelVersion: latest
+        timeColumn: <string>
+        levelColumn: <string>
+        messageColumn: <string>
+      traces:
+        defaultDatabase: default
+        defaultTable: otel_traces
+        otelEnabled: false
+        otelVersion: latest
+        traceIdColumn: <string>
+        spanIdColumn: <string>
+        operationNameColumn: <string>
+        parentSpanIdColumn: <string>
+        serviceNameColumn: <string>
+        durationTimeColumn: <string>
+        durationUnitColumn: <time unit>
+        startTimeColumn: <string>
+        tagsColumn: <string>
+        serviceTagsColumn: <string>
+    secureJsonData:
+      tlsCACert:     <string>
+      tlsClientCert: <string>
+      tlsClientKey:  <string>
+      secureHttpHeaders.X-Example-Secure-Header: secure header value
+```

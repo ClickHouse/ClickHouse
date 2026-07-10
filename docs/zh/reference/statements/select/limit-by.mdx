@@ -1,0 +1,207 @@
+---
+description: 'LIMIT BY 子句文档'
+sidebarTitle: 'LIMIT BY'
+slug: /sql-reference/statements/select/limit-by
+title: 'LIMIT BY 子句'
+doc_type: 'reference'
+---
+
+带有 `LIMIT n BY expressions` 子句的查询，会针对 `expressions` 的每个不同值选取前 `n` 行。`LIMIT BY` 的键可以包含任意数量的[表达式](/zh/reference/syntax#expressions)。
+
+ClickHouse 支持以下语法变体：
+
+* `LIMIT [offset_value, ]n BY expressions`
+* `LIMIT n OFFSET offset_value BY expressions`
+
+在查询处理过程中，ClickHouse 会选择按排序键排序的数据。排序键既可以通过 [ORDER BY](/zh/reference/statements/select/order-by) 子句显式设置，也可以作为表引擎的属性隐式设置 (只有使用 [ORDER BY](/zh/reference/statements/select/order-by) 时，才保证行顺序；否则由于多线程处理，行块将不会按顺序排列) 。随后，ClickHouse 会应用 `LIMIT n BY expressions`，并针对 `expressions` 的每种不同组合返回前 `n` 行。如果指定了 `OFFSET`，那么对于属于 `expressions` 某种不同组合的每个数据块，ClickHouse 会从块开头跳过 `offset_value` 行，并最多返回 `n` 行。如果 `offset_value` 大于数据块中的行数，ClickHouse 将不会从该块返回任何行。
+
+<Note>
+  `LIMIT BY` 与 [LIMIT](/zh/reference/statements/select/limit) 无关。两者可以在同一个查询中同时使用。
+</Note>
+
+如果你想在 `LIMIT BY` 子句中使用列编号而不是列名，请启用设置 [enable&#95;positional&#95;arguments](/zh/reference/settings/session-settings#enable_positional_arguments)。
+
+<div id="examples">
+  ## 示例
+</div>
+
+示例表：
+
+```sql
+CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
+INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
+```
+
+查询：
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  10 │
+│  1 │  11 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+`SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` 查询会返回相同的结果。
+
+以下查询会返回每个 `domain, device_type` 组合中排名前 5 的 referrer，总计最多返回 100 行 (`LIMIT n BY + LIMIT`) 。
+
+```sql
+SELECT
+    domainWithoutWWW(URL) AS domain,
+    domainWithoutWWW(REFERRER_URL) AS referrer,
+    device_type,
+    count() cnt
+FROM hits
+GROUP BY domain, referrer, device_type
+ORDER BY cnt DESC
+LIMIT 5 BY domain, device_type
+LIMIT 100;
+```
+
+`LIMIT BY` 也支持负的 limit 和 offset。与[负 LIMIT 子句](/zh/reference/statements/select/limit#negative-limits)类似，你可以在 `LIMIT BY` 中使用负值，从每个分组的*末尾*选取行。
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT -2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+返回每个 `id` 的最后 2 行。对于 `id = 1`，返回的是第 `11` 行和第 `12` 行；对于 `id = 2`，由于该组只有 2 行，因此两行都会返回。
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT -1 OFFSET -1 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  2 │  20 │
+└────┴─────┘
+```
+
+返回每个 `id` 的倒数第二行：末尾的 `OFFSET -1` 会丢弃每组的最后一行，而前面的 `-1` 则保留剩余结果中的最后一行。
+
+也可以混合使用不同符号的 `LIMIT` 和 `OFFSET`。例如，要丢弃每组的第一行，再保留剩余结果中的最后 2 行：
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT -2 OFFSET 1 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+对于 `id = 1`，第一行 (`10`) 会被跳过；`11, 12` 中最后两行都会返回。对于 `id = 2`，第一行 (`20`) 会被跳过，因此只剩下 `21`。
+
+<div id="limit-by-all">
+  ## LIMIT BY ALL
+</div>
+
+`LIMIT BY ALL` 等同于列出所有已 SELECT 且非聚合函数的表达式。
+
+例如：
+
+```sql
+SELECT col1, col2, col3 FROM table LIMIT 2 BY ALL;
+```
+
+与……相同
+
+```sql
+SELECT col1, col2, col3 FROM table LIMIT 2 BY col1, col2, col3;
+```
+
+在一种特殊情况下，如果某个函数的参数同时包含聚合函数和其他字段，那么 `LIMIT BY` 键会包含我们能够从中提取出的最多非聚合字段。
+
+例如：
+
+```sql
+SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY ALL;
+```
+
+与……相同
+
+```sql
+SELECT substring(a, 4, 2), substring(substring(a, 1, 2), 1, count(b)) FROM t LIMIT 2 BY substring(a, 4, 2), substring(a, 1, 2);
+```
+
+<div id="examples">
+  ## 示例
+</div>
+
+示例表：
+
+```sql
+CREATE TABLE limit_by(id Int, val Int) ENGINE = Memory;
+INSERT INTO limit_by VALUES (1, 10), (1, 11), (1, 12), (2, 20), (2, 21);
+```
+
+查询：
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  10 │
+│  1 │  11 │
+│  2 │  20 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+```sql
+SELECT * FROM limit_by ORDER BY id, val LIMIT 1, 2 BY id;
+```
+
+```text
+┌─id─┬─val─┐
+│  1 │  11 │
+│  1 │  12 │
+│  2 │  21 │
+└────┴─────┘
+```
+
+`SELECT * FROM limit_by ORDER BY id, val LIMIT 2 OFFSET 1 BY id` 查询返回的结果相同。
+
+使用 `LIMIT BY ALL`：
+
+```sql
+SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY ALL;
+```
+
+这相当于：
+
+```sql
+SELECT id, val FROM limit_by ORDER BY id, val LIMIT 2 BY id, val;
+```

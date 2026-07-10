@@ -1,0 +1,52 @@
+---
+position: 1
+slug: /clickhouse-operator/overview
+title: 'ClickHouse Operator'
+keywords: ['kubernetes']
+description: 'صفحة نظرة عامة على ClickHouse Operator - مُشغِّل Kubernetes يعمل على أتمتة نشر عناقيد ClickHouse وعناقيد ClickHouse Keeper وتهيئتها وإدارتها على Kubernetes.'
+doc_type: 'guide'
+sidebarTitle: 'نظرة عامة'
+---
+
+ClickHouse Operator هو مُشغِّل Kubernetes يعمل على أتمتة نشر عناقيد ClickHouse وعناقيد ClickHouse Keeper وتهيئتها وإدارتها على Kubernetes.
+ويوفّر إدارة تصريحية للعناقيد من خلال الموارد المخصصة، مما يتيح للمستخدمين إنشاء عمليات نشر ClickHouse عالية الإتاحة بسهولة.
+
+ويتولى Operator دورة الحياة الكاملة لعناقيد ClickHouse، بما في ذلك التوسّع، والترقيات، وإدارة التهيئة.
+
+<div id="features">
+  ## الميزات
+</div>
+
+* **إدارة عناقيد ClickHouse**: إنشاء عناقيد ClickHouse وإدارتها
+* **تكامل ClickHouse Keeper**: دعم مدمج لعناقيد ClickHouse Keeper للتنسيق الموزّع
+* **توفير Storage**: مطالبات التخزين الدائم القابلة للتخصيص مع اختيار فئة التخزين
+* **التوافر العالي**: عمليات تثبيت متحمّلة للأعطال لعناقيد ClickHouse وKeeper
+* **الأمان**: ميزات أمان مدمجة مع دعم TLS/SSL للاتصال الآمن بين العناقيد
+* **المراقبة**: تكامل مقاييس Prometheus من أجل observability
+
+<div id="installation">
+  ## التثبيت
+</div>
+
+اختر طريقة التثبيت التي تفضّلها:
+
+* [التثبيت باستخدام ملفات البيان](/ar/products/kubernetes-operator/install/kubectl) - ثبّت باستخدام kubectl/kustomize
+* [التثبيت باستخدام Helm](/ar/products/kubernetes-operator/install/helm) - ثبّت باستخدام مخططات Helm
+* [التثبيت باستخدام Operator Lifecycle Manager (OLM)](/ar/products/kubernetes-operator/install/olm) - ثبّت باستخدام OLM
+
+<div id="guides">
+  ## الأدلة
+</div>
+
+* **[المقدمة](/ar/products/kubernetes-operator/guides/introduction)** - نظرة عامة عامة على مفاهيم مُشغِّل ClickHouse
+* **[دليل التهيئة](/ar/products/kubernetes-operator/guides/configuration)** - تهيئة عناقيد ClickHouse وKeeper
+* **[المراقبة](/ar/products/kubernetes-operator/guides/monitoring)** - مقاييس Prometheus ومسبارات التحقق من السلامة لـ مُشغِّل ClickHouse
+* **[التوسّع](/ar/products/kubernetes-operator/guides/scaling)** - توسيع النسخ المتماثلة والأجزاء الموزعة ونصاب Keeper
+* **[التأمين باستخدام TLS](/ar/products/kubernetes-operator/guides/tls)** - تشفير العناقيد من طرف إلى طرف باستخدام cert-manager
+* **[سياسات الشبكة](/ar/products/kubernetes-operator/guides/network-policies)** - تقييد حركة المرور الواردة إلى نقاط نهاية المقاييس وwebhook الخاصة بـ مُشغِّل ClickHouse
+
+<div id="reference">
+  ## المرجع
+</div>
+
+* **[مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference)** - الوثائق الكاملة لواجهة برمجة التطبيقات للموارد المخصّصة
