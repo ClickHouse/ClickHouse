@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- Allow the redirect source host (`127.0.0.1`) but NOT the redirect target host
+         (`127.0.0.2`). Both are loopback addresses, but RemoteHostFilter matches on the
+         URL host string, so `127.0.0.2` is not allow-listed. Following the redirect would
+         bypass <remote_url_allow_hosts> (an SSRF vector for DDL-created HTTP dictionaries). -->
+    <remote_url_allow_hosts>
+        <host>127.0.0.1</host>
+    </remote_url_allow_hosts>
+</clickhouse>
