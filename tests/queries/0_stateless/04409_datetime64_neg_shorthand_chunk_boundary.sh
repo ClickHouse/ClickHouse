@@ -11,8 +11,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-opts="input_format_parallel_parsing = 0, max_read_buffer_size = 1, session_timezone = 'UTC'"
+opts="input_format_parallel_parsing = 0, max_read_buffer_size = 1"
 
+# The timezone is baked into the column type ('UTC') so toString() rendering is
+# independent of the CI runner's process timezone (session_timezone alone does not
+# override the type's own timezone for arrayMap(toString) here).
 printf '{"x":[-.123]}\n{"x":[-.877,-1.5]}\n{"x":[.123,-0.123]}\n' \
     | ${CLICKHOUSE_LOCAL} --input-format=JSONEachRow --structure="x Array(DateTime64(3, 'UTC'))" \
         --query "SELECT 'json', arrayMap(e -> toString(e), x) FROM table SETTINGS $opts"
