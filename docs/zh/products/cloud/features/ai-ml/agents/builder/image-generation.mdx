@@ -1,0 +1,42 @@
+---
+sidebarTitle: '图像生成'
+slug: /cloud/features/ai-ml/agents/builder/image-generation
+title: '图像生成'
+description: '在 ClickHouse agent内生成和编辑图像'
+keywords: ['AI', 'ClickHouse Cloud', 'agent', '图像生成', 'DALL-E', 'Flux', 'Stable Diffusion']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+图像生成功能让agent能够根据文本提示词生成新图像，或编辑用户上传的图像。agent会根据用户的请求和可用上下文，在生成与编辑之间进行选择。
+
+<div id="enable-it">
+  ## 启用图像生成
+</div>
+
+图像生成功能需通过智能体构建器中的 **添加工具** 模态框添加 (而不是 **Capabilities** 部分) 。点击智能体构建器面板底部的 **添加工具**，然后添加一种图像模型工具，例如 **OpenAI Image Tools**、**DALL-E-3** 或 **Stable Diffusion**。agent 会根据请求选择合适的工具，或者你也可以在说明中限制其使用。
+
+<Image img="/images/cloud/agent-builder/tools-modal.webp" alt="Agent Tools 模态框，显示图像模型集成，包括 OpenAI Image Tools、DALL-E-3 和 Stable Diffusion，以及其他第三方工具" size="md" />
+
+<div id="generation">
+  ## 生成
+</div>
+
+当用户请求图像时，agent会使用提示词调用生成工具，并直接内联返回生成的图像。agent还会在其上下文中保留该图像的引用，以便在同一对话中描述或复用它。
+
+<div id="editing">
+  ## 编辑
+</div>
+
+如果用户上传一张图片并请求进行修改——例如更改颜色、添加对象或扩展构图——agent会调用该工具的编辑版本。输出会按要求替换相应区域，或在原图基础上进行扩展。
+
+<div id="notes">
+  ## 注意事项
+</div>
+
+* 生成的图像不会自动进入单独的视觉分析流程。如果你需要 agent *解读* 图像，请使用带有用户上传图像的 [视觉](/zh/products/cloud/features/ai-ml/agents/builder/vision)。
+* 提供商的内容政策同样适用。违反提供商政策的提示词返回的是错误，而不是图像。

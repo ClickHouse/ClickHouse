@@ -396,6 +396,7 @@ FuzzConfig::FuzzConfig(DB::ClientBase * c, const String & path)
         {"max_databases", [&](const JSONObjectType & value) { max_databases = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_functions", [&](const JSONObjectType & value) { max_functions = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_policies", [&](const JSONObjectType & value) { max_policies = static_cast<uint32_t>(value.getUInt64()); }},
+        {"max_hypotheticals", [&](const JSONObjectType & value) { max_hypotheticals = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_tables", [&](const JSONObjectType & value) { max_tables = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_views", [&](const JSONObjectType & value) { max_views = static_cast<uint32_t>(value.getUInt64()); }},
         {"max_dictionaries", [&](const JSONObjectType & value) { max_dictionaries = static_cast<uint32_t>(value.getUInt64()); }},
@@ -889,6 +890,12 @@ ORDER BY f.name)sql";
 void FuzzConfig::loadServerConfigurations()
 {
     loadServerSettings<String>(this->collations, "collations", R"(SELECT "name" FROM "system"."collations")");
+    loadServerSettings<String>(this->in_formats, "input formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1)");
+    loadServerSettings<String>(this->out_formats, "output formats", R"(SELECT "name" FROM "system"."formats" WHERE "is_output" = 1)");
+    loadServerSettings<String>(
+        this->in_out_formats,
+        "input and output formats",
+        R"(SELECT "name" FROM "system"."formats" WHERE "is_input" = 1 AND "is_output" = 1)");
     loadServerSettings<String>(
         this->storage_policies, "storage policies", R"(SELECT DISTINCT "policy_name" FROM "system"."storage_policies")");
     loadServerSettings<String>(
@@ -923,7 +930,7 @@ void FuzzConfig::loadServerConfigurations()
     loadServerSettings<String>(this->timezones, "timezones", R"(SELECT "time_zone" FROM "system"."time_zones")");
     loadServerSettings<String>(this->clusters, "clusters", R"(SELECT DISTINCT "cluster" FROM "system"."clusters")");
     loadServerSettings<String>(this->caches, "caches", "SHOW FILESYSTEM CACHES");
-    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion - The server aborts legitimately, can't be used
+    /// keeper_leader_sets_invalid_digest, libcxx_hardening_out_of_bounds_assertion, trigger_sanitizer_error - The server aborts legitimately, can't be used
     /// terminate_with_exception, terminate_with_std_exception - Terminates the server
     /// tcp_handler_fail_connection_setup - Fails every new TCP connection setup, so once enabled the fuzzer can neither
     ///     reconnect nor disable it again over its TCP connection (it would deadlock; the test controls it over HTTP)
@@ -933,7 +940,7 @@ void FuzzConfig::loadServerConfigurations()
         "SELECT \"name\" FROM \"system\".\"fail_points\""
         " WHERE \"name\" NOT IN ('keeper_leader_sets_invalid_digest', 'terminate_with_exception', "
         "'terminate_with_std_exception', 'libcxx_hardening_out_of_bounds_assertion', "
-        "'tcp_handler_fail_connection_setup')");
+        "'trigger_sanitizer_error', 'tcp_handler_fail_connection_setup')");
     loadServerSettings<String>(this->tokenizers, "tokenizers", R"(SELECT "name" FROM "system"."tokenizers")");
     /// Probe which function_implementation values the server supports. They depend on how the binary
     /// was compiled and on the host CPU (e.g. no x86-64 tag is available on aarch64 builds), and an

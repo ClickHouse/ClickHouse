@@ -1,0 +1,65 @@
+---
+description: 'Documentación de la familia de motores de tabla Log'
+sidebarTitle: 'Familia Log'
+slug: /engines/table-engines/log-family/
+title: 'Familia de motores Log'
+doc_type: 'guide'
+---
+
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<div id="log-table-engine-family">
+  # Familia de motores de tabla Log
+</div>
+
+<CloudNotSupportedBadge />
+
+Estos motores se desarrollaron para escenarios en los que necesitas escribir rápidamente muchas tablas pequeñas (hasta aproximadamente 1 millón de filas) y leerlas después en conjunto.
+
+Motores de la familia:
+
+| Motores Log                                                        |
+| ------------------------------------------------------------------ |
+| [StripeLog](/es/reference/engines/table-engines/log-family/stripelog) |
+| [Log](/es/reference/engines/table-engines/log-family/log)             |
+| [TinyLog](/es/reference/engines/table-engines/log-family/tinylog)     |
+
+Los motores de tabla de la familia `Log` pueden almacenar datos en sistemas de archivos distribuidos [HDFS](/es/reference/engines/table-engines/integrations/hdfs) o [S3](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3).
+
+<Warning>
+  **Este motor no es para logs.**
+
+  A pesar del nombre, *los motores de tabla Log no están pensados para almacenar logs. Solo deben usarse con volúmenes pequeños que deban escribirse rápidamente.
+</Warning>
+
+<div id="common-properties">
+  ## Propiedades comunes
+</div>
+
+Motores:
+
+* Almacenan datos en un disco.
+
+* Añaden los datos al final del archivo al escribir.
+
+* Admiten bloqueos para el acceso concurrente a los datos.
+
+  Durante las consultas `INSERT`, la tabla se bloquea y las demás consultas, tanto de lectura como de escritura, esperan a que la tabla se desbloquee. Si no hay consultas de escritura de datos, puede ejecutarse de forma concurrente cualquier número de consultas de lectura.
+
+* No admiten [mutaciones](/es/reference/statements/alter/index#mutations).
+
+* No admiten índices.
+
+  Esto significa que las consultas `SELECT` sobre rangos de datos no son eficientes.
+
+* No escriben datos de forma atómica.
+
+  La tabla puede quedar con datos corruptos si algo interrumpe la operación de escritura; por ejemplo, un apagado anómalo del servidor.
+
+<div id="differences">
+  ## Diferencias
+</div>
+
+El motor `TinyLog` es el más simple de la familia y ofrece la funcionalidad más limitada y la menor eficiencia. El motor `TinyLog` no admite la lectura paralela de datos con varios hilos en una sola consulta. Lee los datos más lentamente que otros motores de la familia que admiten la lectura paralela en una sola consulta, y utiliza casi tantos descriptores de archivo como el motor `Log` porque almacena cada columna en un archivo independiente. Úselo solo en escenarios sencillos.
+
+Los motores `Log` y `StripeLog` admiten la lectura paralela de datos. Al leer datos, ClickHouse utiliza varios hilos. Cada hilo procesa un bloque de datos independiente. El motor `Log` utiliza un archivo independiente para cada columna de la tabla. `StripeLog` almacena todos los datos en un solo archivo. Como resultado, el motor `StripeLog` utiliza menos descriptores de archivo, pero el motor `Log` ofrece una mayor eficiencia de lectura de datos.

@@ -1,0 +1,76 @@
+---
+description: 'Documentação da cláusula PREWHERE'
+sidebarTitle: 'PREWHERE'
+slug: /sql-reference/statements/select/prewhere
+title: 'Cláusula PREWHERE'
+doc_type: 'reference'
+---
+
+Prewhere é uma otimização para aplicar a filtragem com mais eficiência. Ela é habilitada por padrão, mesmo que a cláusula `PREWHERE` não seja especificada explicitamente. Ela funciona movendo automaticamente parte da condição [WHERE](/pt-BR/reference/statements/select/where) para a etapa de prewhere. O papel da cláusula `PREWHERE` é apenas controlar essa otimização se você considerar que sabe como fazer isso melhor do que o comportamento padrão.
+
+Com a otimização de prewhere, primeiro são lidas apenas as colunas necessárias para executar a expressão prewhere. Em seguida, são lidas as outras colunas necessárias para executar o restante da consulta, mas somente os blocos em que a expressão prewhere é `true` para pelo menos algumas linhas. Se houver muitos blocos em que a expressão prewhere é `false` para todas as linhas e o prewhere precisar de menos colunas do que outras partes da consulta, isso frequentemente permite ler muito menos dados do disco para executar a consulta.
+
+<div id="controlling-prewhere-manually">
+  ## Controlando o PREWHERE manualmente
+</div>
+
+A cláusula tem o mesmo significado da cláusula `WHERE`. A diferença está em quais dados são lidos da tabela. Ao controlar manualmente o `PREWHERE` para condições de filtragem usadas por uma minoria das colunas na consulta, mas que proporcionam uma filtragem de dados significativa, reduz-se o volume de dados lidos.
+
+Uma consulta pode especificar `PREWHERE` e `WHERE` simultaneamente. Nesse caso, `PREWHERE` vem antes de `WHERE`.
+
+Se a configuração [optimize&#95;move&#95;to&#95;prewhere](/pt-BR/reference/settings/session-settings#optimize_move_to_prewhere) estiver definida como 0, as heurísticas para mover automaticamente partes de expressões de `WHERE` para `PREWHERE` serão desabilitadas.
+
+Se a consulta tiver o modificador [FINAL](/pt-BR/reference/statements/select/from#final-modifier), a otimização de `PREWHERE` nem sempre será correta. Ela é ativada apenas se as duas configurações [optimize&#95;move&#95;to&#95;prewhere](/pt-BR/reference/settings/session-settings#optimize_move_to_prewhere) e [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/pt-BR/reference/settings/session-settings#optimize_move_to_prewhere_if_final) estiverem ativadas.
+
+<Note>
+  A seção `PREWHERE` é executada antes de `FINAL`, portanto os resultados das consultas `FROM ... FINAL` podem ser distorcidos ao usar `PREWHERE` com campos que não estão na seção `ORDER BY` de uma tabela.
+</Note>
+
+<div id="limitations">
+  ## Limitações
+</div>
+
+`PREWHERE` é suportado apenas por tabelas da família [*MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index).
+
+<div id="example">
+  ## Exemplo
+</div>
+
+```sql
+CREATE TABLE mydata
+(
+    `A` Int64,
+    `B` Int8,
+    `C` String
+)
+ENGINE = MergeTree
+ORDER BY A AS
+SELECT
+    number,
+    0,
+    if(number between 1000 and 2000, 'x', toString(number))
+FROM numbers(10000000);
+
+SELECT count()
+FROM mydata
+WHERE (B = 0) AND (C = 'x');
+
+1 row in set. Elapsed: 0.074 sec. Processed 10.00 million rows, 168.89 MB (134.98 million rows/s., 2.28 GB/s.)
+
+-- vamos habilitar o tracing para ver quais predicados são movidos para PREWHERE
+set send_logs_level='debug';
+
+MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE  
+-- O ClickHouse move automaticamente `B = 0` para PREWHERE, mas não faz sentido pois B é sempre 0.
+
+-- Vamos mover o outro predicado `C = 'x'` 
+
+SELECT count()
+FROM mydata
+PREWHERE C = 'x'
+WHERE B = 0;
+
+1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
+
+-- Esta consulta com `PREWHERE` manual processa um pouco menos de dados: 158.89 MB VS 168.89 MB
+```

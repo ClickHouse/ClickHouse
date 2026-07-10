@@ -1,0 +1,175 @@
+---
+title: 如何创建可查询多个远程集群的表
+description: "如何创建可查询多个远程集群的表"
+date: 2024-07-03
+tags: ['部署与扩缩容']
+keywords: ['查询', '远程集群']
+---
+
+{frontMatter.description}
+
+{/* 截断 */}
+
+***
+
+<div id="question">
+  ## 问题
+</div>
+
+如何创建一个能够查询其他集群或实例的表？
+
+<div id="answer">
+  ## 解答
+</div>
+
+以下是一个用于测试功能的简单示例。
+
+本示例使用 ClickHouse Cloud，但同样适用于自托管集群。
+目标地址需要替换为目标节点或负载均衡器的 URL/主机名/DNS。
+
+在集群 A 中：
+
+```
+./clickhouse client --host clusterA.us-west-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+创建数据库：
+
+```
+create database db1;
+```
+
+创建表：
+
+```
+CREATE TABLE db1.table1_remote1
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+插入一些示例行：
+
+```
+insert into db1.table1_remote1
+values
+(1, '2023-09-29 00:01:00', 'a'),
+(2, '2023-09-29 00:02:00', 'b'),
+(3, '2023-09-29 00:03:00', 'c');
+```
+
+在集群 B 中：
+
+```
+./clickhouse client --host clusterB.us-east-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+创建数据库：
+
+```
+create database db1;
+```
+
+创建表：
+
+```
+CREATE TABLE db1.table1_remote2
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+)
+ENGINE = MergeTree()
+ORDER BY id;
+```
+
+插入样本行：
+
+```
+insert into db1.table1_remote1
+values
+(4, '2023-09-29 00:04:00', 'x'),
+(5, '2023-09-29 00:05:00', 'y'),
+(6, '2023-09-29 00:06:00', 'z');
+```
+
+在集群 C 中：
+*此集群将用于从其他两个集群收集数据，同时也可作为数据源使用。
+
+```
+./clickhouse client --host clusterC.us-west-2.aws.clickhouse.cloud --secure --password 'Password123!'
+```
+
+创建数据库：
+
+```
+create database db1;
+```
+
+使用 remoteSecure() 创建远程表以连接到其他集群。
+远程集群 A 的表定义：
+
+```
+CREATE TABLE db1.table1_remote1_main
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+) AS remoteSecure('clusterA.us-west-2.aws.clickhouse.cloud:9440', 'db1.table1_remote1', 'default', 'Password123!');
+```
+
+远程集群 B 表的定义：
+
+```
+CREATE TABLE db1.table1_remote2_main
+(
+    `id` UInt32,
+    `timestamp_column` DateTime,
+    `string_column` String
+) AS remoteSecure('clusterB.us-east-2.aws.clickhouse.cloud:9440', 'db1.table1_remote2', 'default', 'Password123!')
+```
+
+创建用于汇总结果的 Merge 表：
+
+```
+create table db1.table1_merge_remote
+(
+  id UInt32,
+  timestamp_column DateTime,
+  string_column String
+)
+engine = Merge('db1', 'table.\_main');
+```
+
+测试结果：
+
+```
+clickhouse-cloud :) select * from db1.table1_merge_remote;
+
+SELECT *
+FROM db1.table1_merge_remote
+
+Query id: 46b6e741-bbd1-47ed-b40e-69ddb6e0c364
+
+┌─id─┬────timestamp_column─┬─string_column─┐
+│  1 │ 2023-09-29 00:01:00 │ a             │
+│  2 │ 2023-09-29 00:02:00 │ b             │
+│  3 │ 2023-09-29 00:03:00 │ c             │
+└────┴─────────────────────┴───────────────┘
+┌─id─┬────timestamp_column─┬─string_column─┐
+│  4 │ 2023-09-29 00:04:00 │ x             │
+│  5 │ 2023-09-29 00:05:00 │ y             │
+│  6 │ 2023-09-29 00:06:00 │ z             │
+└────┴─────────────────────┴───────────────┘
+
+6 rows in set. Elapsed: 0.275 sec.
+```
+
+更多信息：
+
+* [remote 表函数](/zh/reference/functions/table-functions/remote)
+* [Merge 表引擎](/zh/reference/engines/table-engines/special/merge)

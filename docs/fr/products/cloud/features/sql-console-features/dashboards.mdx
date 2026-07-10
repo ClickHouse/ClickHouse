@@ -1,0 +1,111 @@
+---
+sidebarTitle: 'Tableaux de bord'
+slug: /cloud/manage/dashboards
+title: 'Tableaux de bord'
+description: 'La fonctionnalité de tableaux de bord de SQL Console vous permet de regrouper et de partager des visualisations à partir de requêtes enregistrées.'
+doc_type: 'guide'
+keywords: ['ClickHouse Cloud', 'tableaux de bord', 'visualisation de données', 'tableaux de bord de SQL Console', 'analytique dans le cloud']
+---
+
+import BetaBadge from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La fonctionnalité de tableaux de bord de la SQL Console vous permet de rassembler et de partager des visualisations issues de requêtes enregistrées. Pour commencer, enregistrez et visualisez des requêtes, ajoutez des visualisations de requêtes à un tableau de bord, puis rendez le tableau de bord interactif à l’aide de paramètres de requête.
+
+<div id="core-concepts">
+  ## Concepts fondamentaux
+</div>
+
+<div id="query-sharing">
+  ### Partage de requêtes
+</div>
+
+Pour partager votre tableau de bord avec vos collègues, veillez également à partager la requête enregistrée d’origine. Pour afficher une visualisation, vous devez disposer au minimum d’un accès en lecture seule à la requête enregistrée d’origine.
+
+<div id="interactivity">
+  ### Interactivité
+</div>
+
+Utilisez des [paramètres de requête](/fr/reference/syntax#defining-and-using-query-parameters) pour rendre votre tableau de bord interactif. Par exemple, vous pouvez ajouter un paramètre de requête à une clause `WHERE` pour qu’il serve de filtre.
+
+Vous pouvez afficher ou masquer le champ de saisie du paramètre de requête depuis le volet latéral des filtres **Global** en sélectionnant le type « filter » dans les paramètres de visualisation. Vous pouvez également afficher ou masquer le champ de saisie du paramètre de requête en le liant à un autre objet (comme une table) du tableau de bord. Veuillez consulter la section « [configurer un filtre](/fr/products/cloud/features/sql-console-features/dashboards#configure-a-filter) » du guide de démarrage rapide ci-dessous.
+
+<div id="quick-start">
+  ## Prise en main rapide
+</div>
+
+Créons un tableau de bord pour surveiller notre service ClickHouse à l’aide de la table système [query&#95;log](/fr/reference/system-tables/query_log).
+
+<div id="quick-start">
+  ## Prise en main rapide
+</div>
+
+<div id="create-a-saved-query">
+  ### Créer une requête enregistrée
+</div>
+
+Si vous avez déjà des requêtes enregistrées que vous souhaitez visualiser, vous pouvez ignorer cette étape.
+
+Ouvrez un nouvel onglet de requête. Rédigeons une requête pour compter le volume de requêtes par jour pour un service à l’aide des tables système de ClickHouse :
+
+<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="Créer une requête enregistrée" border />
+
+Nous pouvons afficher les résultats de la requête sous forme de tableau ou commencer à créer des visualisations depuis la vue graphique. Pour l’étape suivante, enregistrons la requête sous le nom `queries over time` :
+
+<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="Enregistrer la requête" border />
+
+Vous trouverez plus d’informations sur les requêtes enregistrées dans la [section Saving a Query](/fr/products/cloud/features/sql-console-features/sql-console#saving-a-query).
+
+Nous pouvons créer et enregistrer une autre requête, `query count by query kind`, pour compter le nombre de requêtes selon leur type. Voici une visualisation en graphique à barres des données dans le SQL Console.
+
+<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="Visualisation en graphique à barres des résultats d'une requête" border />
+
+Maintenant que nous avons deux requêtes, créons un tableau de bord pour les visualiser et les regrouper.
+
+<div id="create-a-dashboard">
+  ### Créer un tableau de bord
+</div>
+
+Accédez au panneau Dashboards, puis cliquez sur « New Dashboard ». Une fois que vous lui avez attribué un nom, votre premier tableau de bord est créé !
+
+<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="Créer un nouveau tableau de bord" border />
+
+<div id="add-a-visualization">
+  ### Ajouter une visualisation
+</div>
+
+Deux requêtes enregistrées sont disponibles, `queries over time` et `query count by query kind`. Visualisons la première sous forme de graphique en courbes. Donnez un titre et un sous-titre à votre visualisation, puis sélectionnez la requête à afficher. Ensuite, sélectionnez le type de graphique « Line » et définissez les axes x et y.
+
+<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="Ajouter une visualisation" border />
+
+Ici, vous pouvez également ajuster le style, par exemple le formatage des nombres, la disposition de la légende et les libellés des axes.
+
+Ensuite, visualisons la deuxième requête sous forme de tableau et plaçons-la sous le graphique en courbes.
+
+<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="Visualiser les résultats de la requête sous forme de tableau" border />
+
+Vous avez créé votre premier tableau de bord en visualisant deux requêtes enregistrées !
+
+<div id="configure-a-filter">
+  ### Configurer un filtre
+</div>
+
+Rendons ce tableau de bord interactif en ajoutant un filtre sur le type de requête, afin de n’afficher que les tendances liées aux requêtes Insert. Pour cela, nous utiliserons les [paramètres de requête](/fr/reference/syntax#defining-and-using-query-parameters).
+
+Cliquez sur les trois points à côté du graphique en courbes, puis sur l’icône en forme de crayon à côté de la requête pour ouvrir l’éditeur de requête intégré. Vous pouvez alors modifier directement depuis le tableau de bord la requête enregistrée d’origine.
+
+<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="Modifier la requête d’origine" border />
+
+Une fois que vous aurez cliqué sur le bouton jaune d’exécution de la requête, vous verrez la même requête que précédemment, filtrée uniquement sur les requêtes insert. Cliquez sur le bouton d’enregistrement pour mettre à jour la requête. Lorsque vous reviendrez aux paramètres du graphique, vous pourrez filtrer le graphique en courbes.
+
+À présent, à l’aide des filtres globaux dans la barre supérieure, vous pouvez activer ou désactiver le filtre en modifiant la valeur d’entrée.
+
+<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="Ajuster les filtres globaux" border />
+
+Supposons que vous souhaitiez lier le filtre du graphique en courbes au tableau. Pour cela, revenez aux paramètres de visualisation, remplacez par un tableau la source de valeur du paramètre de requête query&#95;kind, puis sélectionnez la colonne query&#95;kind comme champ à lier.
+
+<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="Modifier le paramètre de requête" border />
+
+Vous pouvez maintenant contrôler le filtre du graphique en courbes directement depuis le tableau des requêtes par type, afin de rendre votre tableau de bord interactif.
+
+<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="Contrôler le filtre du graphique en courbes" border />

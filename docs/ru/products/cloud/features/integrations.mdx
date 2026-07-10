@@ -1,0 +1,58 @@
+---
+sidebarTitle: 'ClickPipes и клиентские библиотеки'
+slug: /manage/integrations
+title: 'ClickPipes и клиентские библиотеки'
+description: 'Интеграции ClickPipes и клиентских библиотек для ClickHouse Cloud'
+doc_type: 'landing-page'
+keywords: ['интеграции', 'возможности ClickHouse Cloud', 'ClickPipes', 'клиентские библиотеки', 'коннекторы']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+ClickHouse Cloud позволяет подключать ваши любимые инструменты и сервисы.
+
+<div id="clickpipes">
+  ## Управляемые интеграционные конвейеры для ClickHouse Cloud
+</div>
+
+ClickPipes — это управляемая интеграционная платформа, которая делает загрузку данных из самых разных источников такой же простой, как нажатие нескольких кнопок.
+Надёжная и масштабируемая архитектура ClickPipes, созданная для самых требовательных рабочих нагрузок, обеспечивает стабильную производительность и надёжную работу.
+ClickPipes можно использовать как для долгосрочного стриминга, так и для разовой загрузки данных.
+
+| Название                                                    | Logo                                                                                                      | Тип                 | Статус                          | Описание                                                                                         |
+| ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [Apache Kafka](/ru/integrations/clickpipes/kafka/index)        | <img src="/images/integrations/logos/kafka.svg" alt="логотип Apache Kafka" width="32" />                  | Стриминг            | Стабильный                      | Настройте ClickPipes и начните загрузку потоковых данных из Apache Kafka в ClickHouse Cloud.     |
+| Confluent Cloud                                             | <img src="/images/integrations/logos/confluent.svg" alt="логотип Confluent Cloud" width="32" />           | Стриминг            | Стабильный                      | Используйте преимущества Confluent и ClickHouse Cloud благодаря нашей прямой интеграции.         |
+| Redpanda                                                    | <img src="/images/integrations/logos/logo_redpanda.webp" alt="логотип Redpanda" width="32" />              | Стриминг            | Стабильный                      | Настройте ClickPipes и начните загрузку потоковых данных из Redpanda в ClickHouse Cloud.         |
+| AWS MSK                                                     | <img src="/images/integrations/logos/msk.svg" alt="логотип AWS MSK" width="32" />                         | Стриминг            | Стабильный                      | Настройте ClickPipes и начните загрузку потоковых данных из AWS MSK в ClickHouse Cloud.          |
+| Azure Event Hubs                                            | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="логотип Azure Event Hubs" width="32" />   | Стриминг            | Стабильный                      | Настройте ClickPipes и начните загрузку потоковых данных из Azure Event Hubs в ClickHouse Cloud. |
+| WarpStream                                                  | <img src="/images/integrations/logos/warpstream.svg" alt="логотип WarpStream" width="32" />               | Стриминг            | Стабильный                      | Настройте ClickPipes и начните загрузку потоковых данных из WarpStream в ClickHouse Cloud.       |
+| Amazon S3                                                   | <img src="/images/integrations/logos/amazon_s3_logo.svg" alt="логотип Amazon S3" width="32" />            | Объектное хранилище | Стабильный                      | Настройте ClickPipes для загрузки больших объёмов данных из объектного хранилища.                |
+| Google Cloud Storage                                        | <img src="/images/integrations/logos/gcs.svg" alt="логотип Google Cloud Storage" width="32" />            | Объектное хранилище | Стабильный                      | Настройте ClickPipes для загрузки больших объёмов данных из объектного хранилища.                |
+| DigitalOcean Spaces                                         | <img src="/images/integrations/logos/digitalocean.svg" alt="логотип Digital Ocean" width="32" />          | Объектное хранилище | Стабильный                      | Настройте ClickPipes для загрузки больших объёмов данных из объектного хранилища.                |
+| Azure Blob Storage                                          | <img src="/images/integrations/logos/azureblobstorage.svg" alt="логотип Azure Blob Storage" width="32" /> | Объектное хранилище | Закрытая бета                   | Настройте ClickPipes для загрузки больших объёмов данных из объектного хранилища.                |
+| [Amazon Kinesis](/ru/integrations/clickpipes/kinesis/overview) | <img src="/images/integrations/logos/amazon_kinesis_logo.svg" alt="логотип Amazon Kinesis" width="32" />  | Стриминг            | Стабильный                      | Настройте ClickPipes и начните загрузку потоковых данных из Amazon Kinesis в ClickHouse Cloud.   |
+| [Postgres](/ru/integrations/clickpipes/postgres/index)         | <img src="/images/integrations/logos/postgresql.svg" alt="логотип Postgres" width="32" />                 | СУБД                | Стабильный                      | Настройте ClickPipes и начните загрузку данных из Postgres в ClickHouse Cloud.                   |
+| [MySQL](/ru/integrations/clickpipes/mysql/index)               | <img src="/images/integrations/logos/mysql.svg" alt="логотип MySQL" width="32" />                         | СУБД                | Закрытая бета                   | Настройте ClickPipes и начните загрузку данных из MySQL в ClickHouse Cloud.                      |
+| [MongoDB](/ru/integrations/clickpipes/mongodb/index)           | <img src="/images/integrations/logos/mongodb.svg" alt="логотип MongoDB" width="32" />                     | СУБД                | Закрытая предварительная версия | Настройте ClickPipes и начните загрузку данных из MongoDB в ClickHouse Cloud.                    |
+
+<div id="language-client-integrations">
+  ## Интеграции клиентских библиотек
+</div>
+
+ClickHouse предлагает ряд интеграций клиентских библиотек; ссылки на документацию по каждой из них приведены ниже.
+
+| Page                                                                               | Description                                                                                   |
+| ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [C++](/ru/concepts/features/interfaces/cpp)                                        | Клиентская библиотека C++ и асинхронный фреймворк userver                                     |
+| [C#](/ru/integrations/language-clients/csharp/overview)                               | Узнайте, как подключить проекты на C# к ClickHouse.                                           |
+| [Go](/ru/integrations/language-clients/go/index)                                      | Узнайте, как подключить проекты на Go к ClickHouse.                                           |
+| [JavaScript](/ru/integrations/language-clients/js)                                    | Узнайте, как подключить проекты на JavaScript к ClickHouse с помощью официального JS-клиента. |
+| [Java](/ru/integrations/language-clients/java/index)                                  | Узнайте больше о различных интеграциях для Java и ClickHouse.                                 |
+| [Python](/ru/integrations/language-clients/python/index)                              | Узнайте, как подключить проекты на Python к ClickHouse.                                       |
+| [Rust](/ru/integrations/language-clients/rust)                                        | Узнайте, как подключить проекты на Rust к ClickHouse.                                         |
+| [Third-party clients](/ru/integrations/language-clients/third-party/client-libraries) | Узнайте больше о клиентских библиотеках от сторонних разработчиков.                           |
+
+Помимо ClickPipes и клиентских библиотек, ClickHouse поддерживает множество других интеграций, включая основные интеграции,
+партнёрские интеграции и интеграции сообщества.
+Полный список см. в разделе [&quot;Интеграции&quot;](/ru/integrations/home) документации.

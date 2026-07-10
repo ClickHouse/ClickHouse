@@ -1,0 +1,248 @@
+---
+title: 'بدء الاستخدام مع بحيرات البيانات'
+sidebarTitle: 'بدء الاستخدام'
+slug: /use-cases/data-lake/getting-started
+description: 'مقدمة عملية حول الاستعلام عن البيانات وتسريعها وإعادة كتابتها ضمن تنسيقات الجداول المفتوحة باستخدام ClickHouse.'
+keywords: ['بحيرات البيانات', 'ليكهاوس', 'بدء الاستخدام', 'Iceberg', 'Delta Lake', 'hudi', 'paimon']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<Info>
+  **باختصار**
+
+  دليل عملي للاستعلام عن جداول بحيرة البيانات، وتسريع أدائها باستخدام MergeTree، ثم كتابة النتائج مجددًا إلى Iceberg. تستخدم جميع الخطوات مجموعات بيانات عامة، وتعمل على كلٍّ من Cloud وOSS.
+</Info>
+
+لقطات الشاشة في هذا الدليل مأخوذة من [ClickHouse Cloud](https://console.clickhouse.cloud) وحدة تحكم SQL. تعمل جميع الاستعلامات على كلٍّ من Cloud وعمليات النشر المُدارة ذاتيًا.
+
+<Steps>
+  <Step>
+    ## استعلم عن بيانات Iceberg مباشرة
+
+    أسرع طريقة للبدء هي استخدام دالة الجدول [`icebergS3()`](/ar/reference/functions/table-functions/iceberg) — وجّهها إلى جدول Iceberg في S3 ونفّذ استعلامًا فورًا، من دون أي إعداد.
+
+    افحص المخطط:
+
+    ```sql
+    DESCRIBE icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    ```
+
+    نفّذ استعلامًا:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/iceberg-query-direct.webp" alt="استعلام Iceberg" />
+
+    يقرأ ClickHouse البيانات الوصفية لـ Iceberg مباشرةً من S3 ويستنتج المخطط تلقائيًا. وينطبق النهج نفسه على [`deltaLake()`](/ar/reference/functions/table-functions/deltalake) و[`hudi()`](/ar/reference/functions/table-functions/hudi) و[`paimon()`](/ar/reference/functions/table-functions/paimon).
+
+    **تعرّف على المزيد:** يتناول [الاستعلام عن تنسيقات الجداول المفتوحة مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) التنسيقات الأربعة، ومتغيرات cluster للقراءة الموزعة، وخيارات الواجهة الخلفية للتخزين (S3 وAzure وHDFS وlocal).
+  </Step>
+
+  <Step>
+    ## أنشئ جدولًا دائمًا باستخدام محرك جدول Iceberg
+
+    للوصول المتكرر، أنشئ جدولًا باستخدام محرك جدول Iceberg حتى لا تحتاج إلى تمرير المسار في كل مرة. تبقى البيانات في S3 — ولا تُنسخ أي بيانات:
+
+    ```sql
+    CREATE TABLE hits_iceberg
+        ENGINE = IcebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    ```
+
+    يمكنك الآن الاستعلام عنه كما تفعل مع أي جدول في ClickHouse:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/iceberg-query-engine.webp" alt="استعلام Iceberg" />
+
+    يدعم محرك الجدول التخزين المؤقت للبيانات، والتخزين المؤقت للبيانات الوصفية، وتطوّر المخطط، والسفر عبر الزمن. راجع دليل [الاستعلام مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) للحصول على تفاصيل حول ميزات محرك الجدول، و[مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) للاطلاع على مقارنة شاملة للميزات.
+  </Step>
+
+  <Step>
+    ## الاتصال بكتالوج
+
+    تدير معظم المؤسسات جداول Iceberg عبر كتالوج بيانات لتجميع البيانات الوصفية للجداول واكتشاف البيانات في مكان مركزي. يدعم ClickHouse الاتصال بكتالوجك باستخدام محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake)، مما يعرِض جميع جداول الكتالوج كقاعدة بيانات في ClickHouse. وهذا هو المسار الأكثر قابلية للتوسع، لذا عند إنشاء جداول Iceberg جديدة تظل متاحة دائمًا في ClickHouse دون أي عمل إضافي.
+
+    إليك مثالاً على الاتصال بـ [AWS Glue](/ar/guides/use-cases/data-warehousing/glue-catalog):
+
+    ```sql
+    CREATE DATABASE my_lake
+    ENGINE = DataLakeCatalog
+    SETTINGS
+        catalog_type = 'glue',
+        region = '<your-region>',
+        aws_access_key_id = '<your-access-key>',
+        aws_secret_access_key = '<your-secret-key>'
+    ```
+
+    يتطلب كل نوع من أنواع الكتالوجات إعدادات اتصال خاصة به — راجع [أدلة الكتالوجات](/ar/guides/use-cases/data-warehousing/reference/index) للاطّلاع على القائمة الكاملة بالكتالوجات المدعومة وخيارات تهيئتها.
+
+    تصفّح الجداول ونفّذ استعلامًا:
+
+    ```sql
+    SHOW TABLES FROM my_lake;
+    ```
+
+    ```sql
+    SELECT count(*) FROM my_lake.`<database>.<table>`
+    ```
+
+    <Note>
+      علامات الاقتباس المعكوسة مطلوبة حول `<database>.<table>` لأن ClickHouse لا يدعم بشكل أصلي أكثر من نطاق أسماء واحد.
+    </Note>
+
+    **تعرّف على المزيد:** يشرح [الاتصال بـ Data Catalog](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) إعداد Unity Catalog كاملًا مع أمثلة على Delta وIceberg.
+  </Step>
+
+  <Step>
+    ## نفِّذ استعلامًا
+
+    بصرف النظر عن الطريقة التي استخدمتها أعلاه — دالة الجدول أو محرك الجدول أو catalog — فإن ClickHouse SQL نفسه يعمل في جميعها:
+
+    ```sql
+    -- Table function
+    SELECT url, count() AS cnt
+    FROM icebergS3('https://datasets-documentation.s3.amazonaws.com/lake_formats/iceberg/')
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+
+    -- Table engine
+    SELECT url, count() AS cnt
+    FROM hits_iceberg
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+
+    -- Catalog
+    SELECT url, count() AS cnt
+    FROM my_lake.`<database>.<table>`
+    GROUP BY url ORDER BY cnt DESC LIMIT 5
+    ```
+
+    صياغة الاستعلام متطابقة — والتغيير الوحيد يكون في عبارة `FROM`. تعمل جميع الدوال وعمليات JOIN وعمليات التجميع في ClickHouse SQL بالطريقة نفسها بغضّ النظر عن مصدر البيانات.
+  </Step>
+
+  <Step>
+    ## حمّل مجموعة فرعية إلى ClickHouse
+
+    يُعد الاستعلام عن Iceberg مباشرةً أمرًا مناسبًا، لكن الأداء يظل محدودًا بمعدل نقل الشبكة وتخطيط الملفات. بالنسبة إلى أعباء العمل التحليلية، حمّل البيانات إلى جدول MergeTree أصلي.
+
+    أولًا، شغّل استعلامًا مُرشَّحًا على جدول Iceberg للحصول على خط أساس:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_iceberg
+    WHERE counterid = 38
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    يفحص هذا الاستعلام مجموعة البيانات بالكامل في S3 لأن Iceberg لا يراعي عامل التصفية `counterid` — لذا توقّع أن يستغرق ذلك عدة ثوانٍ.
+
+    <Image img="/images/datalake/iceberg-query.webp" alt="استعلام Iceberg" />
+
+    الآن أنشئ جدول MergeTree وحمّل البيانات:
+
+    ```sql
+    CREATE TABLE hits_clickhouse
+    (
+        url String,
+        eventtime DateTime,
+        counterid UInt32
+    )
+    ENGINE = MergeTree()
+    ORDER BY (counterid, eventtime);
+    ```
+
+    ```sql
+    INSERT INTO hits_clickhouse
+    SELECT url, eventtime, counterid
+    FROM hits_iceberg
+    ```
+
+    أعِد تنفيذ الاستعلام نفسه على جدول MergeTree:
+
+    ```sql
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_clickhouse
+    WHERE counterid = 38
+    GROUP BY url
+    ORDER BY cnt DESC
+    LIMIT 5
+    ```
+
+    <Image img="/images/datalake/clickhouse-query.webp" alt="استعلام ClickHouse" />
+
+    نظرًا لأن `counterid` هو العمود الأول في مفتاح `ORDER BY`، فإن الفهرس الأساسي المتناثر في ClickHouse يتخطّى مباشرةً إلى وحدات granule ذات الصلة، فلا يقرأ إلا الصفوف الخاصة بـ `counterid = 38` بدلًا من فحص جميع الصفوف المئة مليون. والنتيجة هي تسارع كبير جدًا.
+
+    يمضي دليل [تسريع التحليلات](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) إلى ما هو أبعد من ذلك باستخدام الأنواع `LowCardinality`، وفهارس النص الكامل، ومفاتيح ترتيب محسّنة، مع عرض **تحسّن بنحو ~40x** على مجموعة بيانات تضم 283 مليون صف.
+
+    **اعرف المزيد:** يغطّي [تسريع التحليلات باستخدام MergeTree](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) تحسين المخطط، وفهرسة النص الكامل، ومقارنة كاملة للأداء قبل وبعد.
+  </Step>
+
+  <Step>
+    ## الكتابة مرة أخرى إلى Iceberg
+
+    يمكن لـ ClickHouse أيضًا كتابة البيانات مرة أخرى إلى جداول Iceberg، مما يتيح سير عمل ETL العكسي — من خلال نشر النتائج المُجمَّعة أو مجموعات فرعية لتستخدمها أدوات أخرى (Spark وTrino وDuckDB وغيرها).
+
+    أنشئ جدول Iceberg للمخرجات:
+
+    ```sql
+    CREATE TABLE output_iceberg
+    (
+        url String,
+        cnt UInt64
+    )
+    ENGINE = IcebergS3('https://your-bucket.s3.amazonaws.com/output/', 'access_key', 'secret_key')
+    ```
+
+    اكتب النتائج المجمَّعة:
+
+    ```sql
+    SET allow_experimental_insert_into_iceberg = 1;
+
+    INSERT INTO output_iceberg
+    SELECT
+        url,
+        count() AS cnt
+    FROM hits_clickhouse
+    GROUP BY url
+    ORDER BY cnt DESC
+    ```
+
+    يمكن لأي محرّك متوافق مع Iceberg قراءة جدول Iceberg الناتج.
+
+    **تعرّف على المزيد:** يشرح [كتابة البيانات إلى تنسيقات الجداول المفتوحة](/ar/guides/use-cases/data-warehousing/getting-started/writing-data) كيفية كتابة البيانات الخام والنتائج المجمّعة باستخدام مجموعة بيانات UK Price Paid، بما في ذلك اعتبارات المخطط عند مواءمة أنواع ClickHouse مع Iceberg.
+  </Step>
+</Steps>
+
+<div id="next-steps">
+  ## الخطوات التالية
+</div>
+
+الآن بعد أن اطّلعت على سير العمل الكامل، تعمّق أكثر في كل جانب:
+
+* [الاستعلام مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) — جميع التنسيقات الأربعة، ومتغيرات العناقيد، ومحركات الجداول، والتخزين المؤقت
+* [الاتصال بالكتالوجات](/ar/guides/use-cases/data-warehousing/getting-started/connecting-catalogs) — شرح تفصيلي كامل لـ Unity Catalog مع Delta وIceberg
+* [تسريع التحليلات](/ar/guides/use-cases/data-warehousing/getting-started/accelerating-analytics) — تحسين المخطط، والفهرسة، وعرض توضيحي لتسريع يصل إلى ~40x
+* [الكتابة إلى بحيرات البيانات](/ar/guides/use-cases/data-warehousing/getting-started/writing-data) — عمليات كتابة خام، وعمليات كتابة مجمّعة، ومواءمة الأنواع
+* [مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) — مقارنة الميزات عبر التنسيقات وطبقات التخزين الخلفية
