@@ -264,7 +264,7 @@ def test_replica_host_cluster_view(started_cluster):
     # Query system.clusters to see cluster information
     # DatabaseReplicated creates a cluster with the same name as the database
     cluster_info = node1.query(
-        "SELECT cluster, shard_num, replica_num, host_name FROM system.clusters WHERE cluster = 'test_cluster' ORDER BY replica_num"
+        "SELECT cluster, shard_num, replica_num, host_name, database_replica_name FROM system.clusters WHERE cluster = 'test_cluster' ORDER BY replica_num"
     )
     print(f"Cluster info from node1: {cluster_info}")
 
@@ -274,6 +274,26 @@ def test_replica_host_cluster_view(started_cluster):
     # Verify we have at least 2 replicas (node1 and node2)
     lines = [line for line in cluster_info.strip().split('\n') if line]
     assert len(lines) >= 2, f"Expected at least 2 replicas, got {len(lines)}: {cluster_info}"
+
+    # The key assertion: system.clusters must publish the advertised address that
+    # replica_host configures, not the bind/container hostname. getClusterImpl builds
+    # the cluster from the host_id stored in ZooKeeper, so a regression in the
+    # advertised-address path (getHostID / getClusterImpl) would surface here.
+    host_name_node1 = node1.query(
+        "SELECT host_name FROM system.clusters WHERE cluster = 'test_cluster' AND database_replica_name = 'node1'"
+    ).strip()
+    assert host_name_node1 == "public.node1.com", \
+        f"Expected node1 to advertise 'public.node1.com' via replica_host, got: '{host_name_node1}'"
+
+    # node2 has no replica_host configured, so it must advertise its hostname
+    # (fallback chain), which is distinct from node1's advertised address.
+    host_name_node2 = node1.query(
+        "SELECT host_name FROM system.clusters WHERE cluster = 'test_cluster' AND database_replica_name = 'node2'"
+    ).strip()
+    assert host_name_node2 != "public.node1.com", \
+        f"node2 should not advertise node1's replica_host, got: '{host_name_node2}'"
+    assert "node2" in host_name_node2, \
+        f"Expected node2's advertised host_name to contain 'node2', got: '{host_name_node2}'"
 
     # Cleanup
     node1.query("DROP DATABASE test_cluster SYNC")
