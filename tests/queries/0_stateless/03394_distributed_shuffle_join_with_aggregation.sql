@@ -4,6 +4,9 @@
 SET explain_query_plan_default = 'legacy';
 SET max_rows_to_group_by = 0;
 SET distributed_plan_optimize_exchanges = 1;
+-- Pin off: statistics change the estimated group count, flipping the distributed aggregation
+-- strategy (Shuffle vs partial+merge) and thus the asserted plan.
+SET use_statistics = 0;
 
 DROP TABLE IF EXISTS test;
 CREATE TABLE test(path String, lang String, hits UInt64) ENGINE MergeTree() ORDER BY tuple();

@@ -1,0 +1,82 @@
+---
+alias: []
+description: 'Документация по формату JSONCompactColumns'
+input_format: true
+keywords: ['JSONCompactColumns']
+output_format: true
+slug: /interfaces/formats/JSONCompactColumns
+title: 'JSONCompactColumns'
+doc_type: 'reference'
+---
+
+| Вход | Выход | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✔     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+В этом формате все данные представлены в виде единого JSON-массива.
+
+<Note>
+  Выходной формат `JSONCompactColumns` буферизует все данные в памяти, чтобы вывести их в виде единого блока, что может привести к высокому расходу памяти.
+</Note>
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="inserting-data">
+  ### Вставка данных
+</div>
+
+Используйте JSON‑файл `football.json` со следующими данными:
+
+```json
+[
+    ["2022-04-30", "2022-04-30", "2022-04-30", "2022-05-02", "2022-05-02", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07"],
+    [2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021],
+    ["Sutton United", "Swindon Town", "Tranmere Rovers", "Port Vale", "Salford City", "Barrow", "Bradford City", "Bristol Rovers", "Exeter City", "Harrogate Town A.F.C.", "Hartlepool United", "Leyton Orient", "Mansfield Town", "Newport County", "Oldham Athletic", "Stevenage Borough", "Walsall"],
+    ["Bradford City", "Barrow", "Oldham Athletic", "Newport County", "Mansfield Town", "Northampton Town", "Carlisle United", "Scunthorpe United", "Port Vale", "Sutton United", "Colchester United", "Tranmere Rovers", "Forest Green Rovers", "Rochdale", "Crawley Town", "Salford City", "Swindon Town"],
+    [1, 2, 2, 1, 2, 1, 2, 7, 0, 0, 0, 0, 2, 0, 3, 4, 0],
+    [4, 1, 0, 2, 2, 3, 0, 0, 1, 2, 2, 1, 2, 2, 3, 2, 3]
+]
+```
+
+Вставьте данные:
+
+```sql
+INSERT INTO football FROM INFILE 'football.json' FORMAT JSONCompactColumns;
+```
+
+<div id="reading-data">
+  ### Чтение данных
+</div>
+
+Для чтения данных используйте формат `JSONCompactColumns`:
+
+```sql
+SELECT *
+FROM football
+FORMAT JSONCompactColumns
+```
+
+Вывод будет в формате JSON:
+
+```json
+[
+    ["2022-04-30", "2022-04-30", "2022-04-30", "2022-05-02", "2022-05-02", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07", "2022-05-07"],
+    [2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021],
+    ["Sutton United", "Swindon Town", "Tranmere Rovers", "Port Vale", "Salford City", "Barrow", "Bradford City", "Bristol Rovers", "Exeter City", "Harrogate Town A.F.C.", "Hartlepool United", "Leyton Orient", "Mansfield Town", "Newport County", "Oldham Athletic", "Stevenage Borough", "Walsall"],
+    ["Bradford City", "Barrow", "Oldham Athletic", "Newport County", "Mansfield Town", "Northampton Town", "Carlisle United", "Scunthorpe United", "Port Vale", "Sutton United", "Colchester United", "Tranmere Rovers", "Forest Green Rovers", "Rochdale", "Crawley Town", "Salford City", "Swindon Town"],
+    [1, 2, 2, 1, 2, 1, 2, 7, 0, 0, 0, 0, 2, 0, 3, 4, 0],
+    [4, 1, 0, 2, 2, 3, 0, 0, 1, 2, 2, 1, 2, 2, 3, 2, 3]
+]
+```
+
+Столбцы, которых нет в блоке, будут заполнены значениями по умолчанию (здесь можно использовать настройку [`input_format_defaults_for_omitted_fields`](/ru/reference/settings/formats#input_format_defaults_for_omitted_fields))
+
+<div id="format-settings">
+  ## Настройки формата
+</div>

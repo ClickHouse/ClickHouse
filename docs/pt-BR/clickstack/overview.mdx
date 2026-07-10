@@ -1,0 +1,162 @@
+---
+slug: /use-cases/observability/clickstack/overview
+title: 'ClickStack - a stack de observabilidade do ClickHouse'
+sidebarTitle: 'Visão geral'
+description: 'Visão geral do ClickStack - a stack de observabilidade do ClickHouse'
+doc_type: 'guide'
+keywords: ['clickstack', 'observabilidade', 'logs', 'monitoramento', 'plataforma']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+<Image img="/images/use-cases/observability/hyperdx-landing.webp" alt="Página inicial" size="lg" />
+
+**ClickStack** é uma plataforma de observabilidade pronta para produção, construída sobre o ClickHouse, que unifica logs, traces, métricas e sessão em uma única solução de alto desempenho. Projetado para monitoramento e depuração de sistemas complexos, o ClickStack permite que desenvolvedores e SREs rastreiem problemas de ponta a ponta sem alternar entre ferramentas nem correlacionar dados manualmente usando timestamps ou IDs de correlação.
+
+No centro do ClickStack está uma ideia simples, mas poderosa: todos os dados de observabilidade devem ser ingeridos como eventos abrangentes e ricos em contexto. Esses eventos são armazenados em tabelas do ClickHouse por tipo de dado - logs, traces, métricas e sessões - mas continuam totalmente consultáveis e correlacionáveis entre si no nível do banco de dados.
+
+O ClickStack foi desenvolvido para lidar com workloads de alta cardinalidade com eficiência, aproveitando a arquitetura orientada a colunas do ClickHouse, o esquema flexível para atributos de alta cardinalidade e o mecanismo de execução totalmente paralelizado. Isso permite consultas em menos de um segundo em datasets massivos, agregações rápidas em amplos intervalos de tempo e inspeção detalhada de traces individuais.
+
+<div id="features">
+  ## Recursos
+</div>
+
+A stack inclui vários recursos importantes projetados para depuração e análise de causa raiz:
+
+* Correlacione/pesquise logs, métricas, replays de sessão e traces em um só lugar
+* Independente do esquema, funciona com o esquema existente do seu ClickHouse
+* Buscas e visualizações extremamente rápidas otimizadas para ClickHouse
+* Busca de texto completo intuitiva e sintaxe de busca por propriedades (ex. `level:err`), com SQL opcional.
+* Analise tendências em anomalias com Event deltas
+* Configure alertas em apenas alguns cliques
+* Crie dashboards de eventos de alta cardinalidade sem uma linguagem de consulta complexa
+* Consultas nativas em strings JSON
+* Acompanhe logs e traces em tempo real para sempre obter os eventos mais recentes
+* OpenTelemetry (OTel) com suporte nativo
+* Monitore a integridade e o desempenho, de requisições HTTP a consultas de DB (APM)
+* Event deltas para identificar anomalias e regressões de desempenho
+* Reconhecimento de padrões em logs
+
+<div id="components">
+  ## Componentes
+</div>
+
+O ClickStack é composto por três componentes principais:
+
+1. **UI do ClickStack (HyperDX)** – uma interface criada especificamente para explorar e visualizar dados de observabilidade
+2. **OpenTelemetry Collector** – um coletor personalizado e pré-configurado com um esquema opinativo para logs, traces e métricas
+3. **ClickHouse** – o banco de dados analítico de alto desempenho no coração da stack
+
+Esses componentes podem ser implantados juntos em uma configuração totalmente **autogerenciada do ClickStack Open Source** ou distribuídos entre ambientes gerenciados e self-hosted. No **Managed ClickStack**, o ClickHouse e a interface do HyperDX são hospedados e operados no [ClickHouse Cloud](/pt-BR/products/cloud/getting-started/cloud-get-started), enquanto os usuários executam apenas o OpenTelemetry Collector.
+
+Também há uma versão da interface do HyperDX hospedada no navegador, permitindo que os usuários se conectem diretamente a implantações existentes do ClickHouse sem implantar infraestrutura adicional de UI.
+
+Para começar, consulte o [guia de primeiros passos](/pt-BR/clickstack/getting-started/index) antes de carregar um [conjunto de dados de exemplo](/pt-BR/clickstack/example-datasets/index). Você também pode explorar a documentação sobre [opções de implantação](/pt-BR/clickstack/deployment/overview) e [boas práticas para produção](/pt-BR/clickstack/managing/production).
+
+<div id="clickstack-principles">
+  ## Princípios
+</div>
+
+O ClickStack foi projetado com um conjunto de princípios fundamentais que priorizam a facilidade de uso, o desempenho e a flexibilidade em todas as camadas da stack de observabilidade:
+
+<div id="clickstack-easy-to-setup">
+  ### Fácil de configurar em minutos
+</div>
+
+O ClickStack funciona de imediato com qualquer instância e esquema do ClickHouse, exigindo configuração mínima. Seja para começar do zero ou integrar com uma configuração existente, você pode colocá-lo em funcionamento em poucos minutos.
+
+<div id="user-friendly-purpose-built">
+  ### Fácil de usar e desenvolvida especificamente para isso
+</div>
+
+A interface do HyperDX oferece suporte tanto a SQL quanto à sintaxe no estilo Lucene, permitindo que os usuários escolham a interface de consulta mais adequada ao seu fluxo de trabalho. Desenvolvida especificamente para observabilidade, a interface é otimizada para ajudar as equipes a identificar rapidamente a causa raiz e navegar por dados complexos sem dificuldade.
+
+<div id="end-to-end-observability">
+  ### Observabilidade de ponta a ponta
+</div>
+
+O ClickStack oferece visibilidade completa da stack, desde as sessões de usuários no front-end até as métricas da infraestrutura de backend, os logs da aplicação e os traces distribuídos. Essa visão unificada permite uma correlação e uma análise aprofundadas em todo o sistema.
+
+<div id="built-for-clickhouse">
+  ### Desenvolvido para ClickHouse
+</div>
+
+Cada camada da stack foi projetada para aproveitar ao máximo os recursos do ClickHouse. As consultas são otimizadas para aproveitar as funções analíticas e o engine colunar do ClickHouse, garantindo buscas rápidas e agregações em volumes massivos de dados.
+
+<div id="open-telemetry-native">
+  ### Nativo do OpenTelemetry
+</div>
+
+O ClickStack tem integração nativa com o OpenTelemetry e faz a ingestão de todos os dados por meio de um endpoint do OpenTelemetry Collector. Para usuários avançados, ele também oferece suporte à ingestão direta no ClickHouse usando formatos de arquivo nativos, pipelines personalizadas ou ferramentas de terceiros, como o Vector.
+
+<div id="open-source-and-customizable">
+  ### Open source e totalmente personalizável
+</div>
+
+O ClickStack é totalmente open source e pode ser implantado em qualquer lugar. O esquema é flexível e pode ser modificado pelo usuário, e a UI foi projetada para se adaptar a esquemas personalizados sem exigir alterações. Todos os componentes — incluindo coletores, ClickHouse e a UI — podem ser escalados de forma independente para atender às demandas de ingestão, consulta ou armazenamento.
+
+<div id="architectural-overview">
+  ## Visão geral da arquitetura
+</div>
+
+A arquitetura do ClickStack varia conforme a forma como ele é implantado. Há distinções arquiteturais importantes entre o **ClickStack Open Source**, em que todos os componentes são autogerenciados, e o **Managed ClickStack**, em que o ClickHouse e a UI do HyperDX são hospedados e operados no ClickHouse Cloud. Embora os componentes principais permaneçam os mesmos em ambos os modelos, a responsabilidade por hospedar, escalar e proteger cada componente é diferente.
+
+<Tabs>
+  <Tab title="Managed ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="Arquitetura do Managed ClickStack" size="md" />
+
+    O Managed ClickStack é executado inteiramente no **ClickHouse Cloud**, fornecendo um backend de observabilidade totalmente gerenciado e preservando o mesmo modelo de dados e a mesma experiência de usuário do ClickStack.
+
+    Nesse modelo, o **ClickHouse e a UI do ClickStack (HyperDX)** são hospedados, operados e protegidos pelo ClickHouse Cloud. Os usuários são responsáveis apenas por executar um OpenTelemetry Collector para enviar dados de telemetria ao serviço gerenciado.
+
+    O Managed ClickStack é composto pelos seguintes componentes:
+
+    1. **UI do ClickStack (HyperDX)**
+       A UI do HyperDX é totalmente integrada ao ClickHouse Cloud e gerenciada como parte do serviço. Ela oferece pesquisa de logs, exploração de traces, dashboards, alertas e correlação entre tipos de telemetria, com autenticação e controle de acesso integrados.
+
+    2. **OpenTelemetry Collector (autogerenciado)**
+       Os usuários executam um OpenTelemetry Collector que recebe dados de telemetria de suas aplicações e infraestrutura. Esse collector encaminha os dados via OTLP para o ClickHouse Cloud. Embora qualquer OpenTelemetry Collector compatível com os padrões possa ser usado, recomendamos fortemente a **distribuição do ClickStack**, que vem pré-configurada e otimizada para ingestão no ClickHouse e funciona imediatamente com os esquemas do ClickStack.
+
+    3. **ClickHouse Cloud**
+       O ClickHouse é totalmente gerenciado no ClickHouse Cloud, atuando como mecanismo de armazenamento e consulta para todos os dados de observabilidade. Os usuários não precisam gerenciar clusters, upgrades nem questões operacionais.
+
+    O Managed ClickStack oferece vários benefícios importantes:
+
+    * **Escalonamento automático da capacidade computacional, independente do armazenamento**
+    * **Retenção de baixo custo e efetivamente ilimitada**, com base em armazenamento de objetos
+    * **Isolamento independente entre leitura e escrita** usando ClickHouse Cloud Warehouses
+    * **Autenticação e controle de acesso integrados**
+    * **Backups automatizados**
+    * **Recursos de segurança e conformidade**
+    * **Upgrades contínuos sem indisponibilidade operacional**
+
+    Esse modelo de implantação permite que as equipes se concentrem totalmente nos fluxos de trabalho de observabilidade e na instrumentação, sem a sobrecarga de operar o ClickHouse ou a UI do ClickStack por conta própria.
+
+    Para usuários que implantam o ClickStack em produção, o Managed ClickStack é a opção recomendada. Consulte o [guia de Primeiros passos](/pt-BR/clickstack/getting-started/managed) para obter instruções sobre como implantar o ClickStack com o ClickHouse Cloud.
+
+    <br />
+  </Tab>
+
+  <Tab title="Open Source ClickStack">
+    <Image img="/images/use-cases/observability/clickstack-simple-oss-architecture.webp" alt="Arquitetura simples do OSS" size="md" />
+
+    O Open Source ClickStack é composto por três componentes principais:
+
+    1. **UI do ClickStack (HyperDX)**
+       Uma interface amigável criada para observabilidade. Ela oferece suporte a consultas no estilo Lucene e SQL, dashboards interativos, alertas, exploração de traces e muito mais — tudo otimizado para o ClickHouse como backend.
+
+    2. **OpenTelemetry Collector**
+       Um collector desenvolvido sob medida, configurado com um esquema opinativo otimizado para ingestão no ClickHouse. Ele recebe logs, métricas e traces por meio dos protocolos do OpenTelemetry e os grava diretamente no ClickHouse usando inserts em lote eficientes.
+
+    3. **ClickHouse**
+       O banco de dados analítico de alto desempenho que atua como repositório central para eventos wide. O ClickHouse viabiliza pesquisa, filtragem e agregação rápidas em escala, aproveitando seu engine colunar e o suporte nativo a JSON.
+
+    Além desses três componentes, o ClickStack usa uma **instância do MongoDB** para armazenar o estado da aplicação, como dashboards, contas de usuário e definições de configuração.
+
+    Um diagrama completo da arquitetura e os detalhes de implantação podem ser encontrados na [seção de arquitetura](/pt-BR/clickstack/architecture).
+
+    Para usuários interessados em implantar o Open Source ClickStack em produção, recomendamos a leitura do guia [&quot;Produção&quot;](/pt-BR/clickstack/managing/production).
+
+    <br />
+  </Tab>
+</Tabs>

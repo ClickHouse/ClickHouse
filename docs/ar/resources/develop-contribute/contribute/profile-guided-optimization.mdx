@@ -1,0 +1,27 @@
+---
+description: 'توثيق للتحسين الموجَّه بالتوصيف'
+sidebarTitle: 'التحسين الموجَّه بالتوصيف (PGO)'
+slug: /operations/optimizing-performance/profile-guided-optimization
+title: 'التحسين الموجَّه بالتوصيف'
+doc_type: 'guide'
+---
+
+التحسين الموجَّه بالتوصيف (PGO) هو أسلوب لتحسين المصرّف، تُحسَّن فيه البرامج استنادًا إلى توصيفها في وقت التشغيل.
+
+وفقًا للاختبارات، يساعد PGO في تحقيق أداء أفضل لـ ClickHouse. وتُظهر الاختبارات تحسّنًا يصل إلى 15% في QPS على مجموعة اختبارات ClickBench. تتوفر نتائج أكثر تفصيلًا [هنا](https://pastebin.com/xbue3HMU). وتعتمد مكاسب الأداء على عبء العمل المعتاد لديك، لذا قد تحصل على نتائج أفضل أو أسوأ.
+
+يمكنك الاطلاع على مزيد من المعلومات حول PGO في ClickHouse في تذكرة GitHub ذات الصلة [هنا](https://github.com/ClickHouse/ClickHouse/issues/44567).
+
+<div id="how-to-build-clickhouse-with-pgo">
+  ## كيفية بناء ClickHouse باستخدام PGO؟
+</div>
+
+هناك نوعان رئيسيان من PGO: [Instrumentation](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) و[Sampling](https://clang.llvm.org/docs/UsersManual.html#using-sampling-profilers) (ويُعرف أيضًا باسم AutoFDO). يشرح هذا الدليل أسلوب Instrumentation PGO في ClickHouse.
+
+1. ابنِ ClickHouse في وضع Instrumentation. في Clang، يمكن تنفيذ ذلك بتمرير الخيار `-fprofile-generate` إلى `CXXFLAGS`.
+2. شغّل ClickHouse المبني بوضع Instrumentation على عبء عمل تجريبي. هنا تحتاج إلى استخدام عبء العمل المعتاد لديك. ويمكن أن يكون أحد الأساليب استخدام [ClickBench](https://github.com/ClickHouse/ClickBench) كعبء عمل تجريبي. قد يعمل ClickHouse في وضع Instrumentation ببطء، لذا كن مستعدًا لذلك، ولا تُشغّل ClickHouse المبني بوضع Instrumentation في البيئات الحساسة للأداء.
+3. أعِد تجميع ClickHouse مرة أخرى باستخدام رايات المصرّف `-fprofile-use` وملفات التعريف التي جُمعت في الخطوة السابقة.
+
+يوجد دليل أكثر تفصيلًا حول كيفية تطبيق PGO في [توثيق](https://clang.llvm.org/docs/UsersManual.html#profile-guided-optimization) Clang.
+
+إذا كنت ستجمع عبء عمل تجريبيًا مباشرةً من بيئة الإنتاج، فنوصي بتجربة استخدام Sampling PGO.

@@ -1,0 +1,44 @@
+---
+slug: /use-cases/observability
+title: 'Observability'
+description: 'الصفحة الرئيسية لدليل حالة استخدام رصد'
+keywords: ['observability', 'logs', 'traces', 'metrics', 'OpenTelemetry', 'Grafana', 'OTel']
+doc_type: 'guide'
+---
+
+يوفّر ClickHouse سرعةً وقابليةَ توسّعٍ وكفاءةً من حيث التكلفة لا مثيل لها في مجال رصد. يقدّم هذا الدليل مسارين وفقًا لاحتياجاتك:
+
+<div id="clickstack">
+  ## ClickStack - مكدس الرصد من ClickHouse
+</div>
+
+يُعد مكدس الرصد من ClickHouse **الخيار الذي نوصي به** لمعظم المستخدمين.
+
+**ClickStack** هي منصة رصد جاهزة لبيئات الإنتاج، مبنية على ClickHouse وOpenTelemetry (OTel)، وتوحّد السجلات والتتبعات والمقاييس والجلسات في حل واحد عالي الأداء وقابل للتوسع، يعمل بدءًا من عمليات النشر أحادية العقدة وحتى نطاق **متعدد البيتابايت**.
+
+| القسم                                                            | الوصف                                            |
+| ---------------------------------------------------------------- | ------------------------------------------------ |
+| [نظرة عامة](/ar/clickstack/overview)                                | مقدمة إلى ClickStack وميزاته الرئيسية            |
+| [بدء الاستخدام](/ar/clickstack/getting-started/index)               | دليل بدء سريع وتعليمات الإعداد الأساسية          |
+| [مجموعات البيانات النموذجية](/ar/clickstack/example-datasets/index) | مجموعات بيانات نموذجية وحالات استخدام            |
+| [معمارية](/ar/clickstack/architecture)                              | نظرة عامة على معمارية النظام ومكوناته            |
+| [النشر](/ar/clickstack/deployment/overview)                         | أدلة النشر وخياراته                              |
+| [التهيئة](/ar/clickstack/managing/config)                           | خيارات التهيئة والإعدادات التفصيلية              |
+| [إدخال البيانات](/ar/clickstack/ingesting-data/index)               | إرشادات إدخال البيانات إلى ClickStack            |
+| [البحث](/ar/clickstack/features/search)                             | كيفية البحث في بيانات الرصد لديك والاستعلام عنها |
+| [بيئة الإنتاج](/ar/clickstack/managing/production)                  | أفضل الممارسات للنشر في بيئة الإنتاج             |
+
+<div id="build-your-own-stack">
+  ## أنشئ المكدس الخاص بك
+</div>
+
+للمستخدمين الذين لديهم **متطلبات مخصصة** — مثل مسارات إدخال شديدة التخصص، أو تصميمات schema، أو احتياجات scaling كبيرة جدًا — نوفر إرشادات لبناء مكدس رصد مخصص باستخدام ClickHouse كقاعدة بيانات أساسية.
+
+| Page                                                                                          | Description                                                                                                                                   |
+| --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [المقدمة](/ar/guides/use-cases/observability/build-your-own/introduction)                        | صُمم هذا الدليل لمن يرغب في بناء حل رصد خاص به باستخدام ClickHouse، مع التركيز على السجلات وتتبع.                                 |
+| [تصميم schema](/ar/guides/use-cases/observability/build-your-own/schema-design)                  | تعرّف على سبب التوصية بإنشاء schema خاصة بالسجلات وتتبع، إلى جانب بعض أفضل الممارسات للقيام بذلك.                                           |
+| [إدارة البيانات](/ar/guides/use-cases/observability/build-your-own/managing-data)                | تتضمن عمليات نشر ClickHouse لأغراض رصد دائمًا مجموعات بيانات كبيرة تحتاج إلى إدارة. ويوفر ClickHouse ميزات تساعد في إدارة البيانات. |
+| [دمج OpenTelemetry](/ar/guides/use-cases/observability/build-your-own/integrating-opentelemetry) | جمع السجلات وتتبع وتصديرها باستخدام OpenTelemetry مع ClickHouse.                                                                            |
+| [استخدام أدوات التصور](/ar/guides/use-cases/observability/build-your-own/grafana)                | تعرّف على كيفية استخدام أدوات تصور رصد مع ClickHouse، بما في ذلك HyperDX وGrafana.                                                  |
+| [التطبيق التجريبي](/ar/guides/use-cases/observability/build-your-own/demo-application)           | استكشف OpenTelemetry demo application المهيأ للعمل مع ClickHouse للسجلات وتتبع.                                                             |

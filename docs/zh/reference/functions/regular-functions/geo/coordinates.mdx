@@ -1,0 +1,191 @@
+---
+description: '地理坐标文档'
+sidebarTitle: '地理坐标'
+slug: /sql-reference/functions/geo/coordinates
+title: '处理地理坐标的函数'
+doc_type: 'reference'
+---
+
+<div id="greatcircledistance">
+  ## greatCircleDistance
+</div>
+
+使用[大圆距离公式](https://en.wikipedia.org/wiki/Great-circle_distance)计算地球表面上两点之间的距离。
+
+```sql
+greatCircleDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**输入参数**
+
+* `lon1Deg` — 第一个点的经度 (以度为单位) 。范围：`[-180°, 180°]`。
+* `lat1Deg` — 第一个点的纬度 (以度为单位) 。范围：`[-90°, 90°]`。
+* `lon2Deg` — 第二个点的经度 (以度为单位) 。范围：`[-180°, 180°]`。
+* `lat2Deg` — 第二个点的纬度 (以度为单位) 。范围：`[-90°, 90°]`。
+
+正值表示北纬和东经，负值表示南纬和西经。
+
+**返回值**
+
+地球表面两点之间的距离，单位为米。
+
+当输入参数值超出范围时，会抛出异常。
+
+**示例**
+
+```sql
+SELECT greatCircleDistance(55.755831, 37.617673, -55.755831, -37.617673) AS greatCircleDistance
+```
+
+```text
+┌─greatCircleDistance─┐
+│            14128352 │
+└─────────────────────┘
+```
+
+<div id="geodistance">
+  ## geoDistance
+</div>
+
+与 `greatCircleDistance` 类似，但它计算的是 WGS-84 椭球体上的距离，而不是球面上的距离。这种方法对地球大地水准面的近似更精确。
+其性能与 `greatCircleDistance` 相同 (没有性能损失) 。建议使用 `geoDistance` 来计算地球表面的距离。
+
+技术说明：对于彼此足够接近的点，我们使用平面近似来计算距离，并采用坐标中点处切平面上的度量。
+
+```sql
+geoDistance(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**输入参数**
+
+* `lon1Deg` — 第一个点的经度 (单位：度) 。范围：`[-180°, 180°]`。
+* `lat1Deg` — 第一个点的纬度 (单位：度) 。范围：`[-90°, 90°]`。
+* `lon2Deg` — 第二个点的经度 (单位：度) 。范围：`[-180°, 180°]`。
+* `lat2Deg` — 第二个点的纬度 (单位：度) 。范围：`[-90°, 90°]`。
+
+正值表示北纬和东经，负值表示南纬和西经。
+
+**返回值**
+
+地球表面两点之间的距离，单位为米。
+
+当输入参数的值超出上述范围时，会引发异常。
+
+**示例**
+
+```sql
+SELECT geoDistance(38.8976, -77.0366, 39.9496, -75.1503) AS geoDistance
+```
+
+```text
+┌─geoDistance─┐
+│   212458.73 │
+└─────────────┘
+```
+
+<div id="greatcircleangle">
+  ## greatCircleAngle
+</div>
+
+使用[大圆距离公式](https://en.wikipedia.org/wiki/Great-circle_distance)计算地球表面两点之间的中心角。
+
+```sql
+greatCircleAngle(lon1Deg, lat1Deg, lon2Deg, lat2Deg)
+```
+
+**输入参数**
+
+* `lon1Deg` — 第一个点的经度，单位为度。
+* `lat1Deg` — 第一个点的纬度，单位为度。
+* `lon2Deg` — 第二个点的经度，单位为度。
+* `lat2Deg` — 第二个点的纬度，单位为度。
+
+**返回值**
+
+两点之间的中心角，单位为度。
+
+**示例**
+
+```sql
+SELECT greatCircleAngle(0, 0, 45, 0) AS arc
+```
+
+```text
+┌─arc─┐
+│  45 │
+└─────┘
+```
+
+<div id="pointinellipses">
+  ## pointInEllipses
+</div>
+
+判断该点是否位于至少一个椭圆内。
+坐标采用笛卡尔坐标系中的几何坐标。
+
+```sql
+pointInEllipses(x, y, x₀, y₀, a₀, b₀,...,xₙ, yₙ, aₙ, bₙ)
+```
+
+**输入参数**
+
+* `x, y` — 平面上一点的坐标。
+* `xᵢ, yᵢ` — 第 `i` 个椭圆中心的坐标。
+* `aᵢ, bᵢ` — 第 `i` 个椭圆的轴长，以 x、y 坐标单位表示。
+
+输入参数的总数必须为 `2+4⋅n`，其中 `n` 是椭圆的数量。
+
+**返回值**
+
+如果该点位于至少一个椭圆内，则返回 `1`；否则返回 `0`。
+
+**示例**
+
+```sql
+SELECT pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)
+```
+
+```text
+┌─pointInEllipses(10., 10., 10., 9.1, 1., 0.9999)─┐
+│                                               1 │
+└─────────────────────────────────────────────────┘
+```
+
+<div id="pointinpolygon">
+  ## pointInPolygon
+</div>
+
+检查该点是否位于平面上的多边形内。
+
+```sql
+pointInPolygon((x, y), [(a, b), (c, d) ...], ...)
+```
+
+**输入值**
+
+* `(x, y)` — 平面上某一点的坐标。数据类型 — [Tuple](/zh/reference/data-types/tuple) — 由两个数字组成的元组。
+* `[(a, b), (c, d) ...]` — 多边形顶点。数据类型 — [Array](/zh/reference/data-types/array)。每个顶点用一对坐标 `(a, b)` 表示。顶点应按顺时针或逆时针顺序指定。顶点最少为 3 个。该多边形必须是常量。
+* 该函数支持带孔的多边形 (镂空区域) 。数据类型 — [Polygon](/zh/reference/data-types/geo#polygon)。可以将整个 `Polygon` 作为第二个参数传入，也可以先传入外环，再将每个孔分别作为额外参数传入。
+* 该函数也支持 `MultiPolygon`。数据类型 — [MultiPolygon](/zh/reference/data-types/geo#multipolygon)。可以将整个 `MultiPolygon` 作为第二个参数传入，也可以将其中的每个组成多边形分别作为独立参数传入。
+
+**返回值**
+
+如果点位于多边形内部，则返回 `1`；否则返回 `0`。
+如果点位于多边形边界上，函数可能返回 `0` 或 `1`。
+
+**示例**
+
+```sql
+SELECT pointInPolygon((3., 3.), [(6, 0), (8, 4), (5, 8), (0, 2)]) AS res
+```
+
+```text
+┌─res─┐
+│   1 │
+└─────┘
+```
+
+> **注意**
+> • 你可以设置 `validate_polygons = 0` 以跳过几何校验。
+> • `pointInPolygon` 假定每个多边形都是合法的。如果输入存在自相交、环顺序错误或边重叠，结果就会变得不可靠——尤其是对于恰好位于边上、顶点上，或位于自相交区域内且“内部”与“外部”的概念未定义的点。
+> • 当多边形参数是常量，且点是用已建立索引的键列表示时 (例如，在 `x, y` 是 `PRIMARY KEY` 的一部分或被 `minmax` 索引覆盖的表上使用 `pointInPolygon((x, y), constant_polygon)`) ，ClickHouse 可以同时使用主键和 `minmax` 数据跳过索引来跳过无关粒度。

@@ -1,0 +1,103 @@
+---
+description: 'OFFSET에 대한 문서'
+sidebarTitle: 'OFFSET'
+slug: /sql-reference/statements/select/offset
+title: 'OFFSET FETCH 절'
+doc_type: 'reference'
+---
+
+`OFFSET` 및 `FETCH`를 사용하면 데이터를 나누어 가져올 수 있습니다. 단일 쿼리로 가져올 행 블록을 지정합니다.
+
+```sql
+-- SQL 표준 스타일:
+[OFFSET offset_row_count {ROW | ROWS}] [FETCH {FIRST | NEXT} fetch_row_count {ROW | ROWS} {ONLY | WITH TIES}]
+
+-- MySQL/PostgreSQL 스타일:
+[LIMIT [n, ]m] [OFFSET offset_row_count]
+```
+
+`offset_row_count` 또는 `fetch_row_count` 값은 숫자 또는 리터럴 상수일 수 있습니다. `fetch_row_count`는 생략할 수 있으며, 기본값은 1입니다.
+
+`OFFSET`은 쿼리 결과 집합에서 행 반환을 시작하기 전에 건너뛸 행 수를 지정합니다. `OFFSET n`은 결과의 처음 `n`개 행을 건너뜁니다.
+
+음수 `OFFSET`도 지원됩니다. `OFFSET -n`은 결과의 마지막 `n`개 행을 건너뜁니다.
+
+소수 `OFFSET`도 지원됩니다. `OFFSET n`에서 0 &lt; n &lt; 1이면 결과의 처음 n * 100%를 건너뜁니다.
+
+예시:
+• `OFFSET 0.1` - 결과의 처음 10%를 건너뜁니다.
+
+> **참고**
+> • 이 값은 0보다 크고 1보다 작은 [Float64](/ko/reference/data-types/float) 숫자여야 합니다.
+> • 계산 결과 행 수가 소수가 되면 다음 정수로 올림됩니다.
+
+`FETCH`는 쿼리 결과에 포함될 수 있는 최대 행 수를 지정합니다.
+
+`ONLY` 옵션은 `OFFSET`으로 생략된 행 바로 다음의 행을 반환하는 데 사용됩니다. 이 경우 `FETCH`는 [LIMIT](/ko/reference/statements/select/limit) 절을 대신합니다. 예를 들어, 다음 쿼리는
+
+```sql
+SELECT * FROM test_fetch ORDER BY a OFFSET 1 ROW FETCH FIRST 3 ROWS ONLY;
+```
+
+는 해당 쿼리와 동일합니다
+
+```sql
+SELECT * FROM test_fetch ORDER BY a LIMIT 3 OFFSET 1;
+```
+
+`WITH TIES` 옵션은 `ORDER BY` 절에 따라 결과 집합에서 마지막 행과 같은 순위인 추가 행도 반환할 때 사용됩니다. 예를 들어 `fetch_row_count`가 5로 설정되어 있는데 추가로 2개의 행이 다섯 번째 행의 `ORDER BY` 컬럼 값과 같으면, 결과 집합에는 7개의 행이 포함됩니다.
+
+<Note>
+  표준에 따르면 `OFFSET` 절과 `FETCH` 절이 모두 있을 경우 `OFFSET` 절은 `FETCH` 절보다 앞에 와야 합니다.
+</Note>
+
+<Note>
+  실제 오프셋은 [offset](/ko/reference/settings/session-settings#offset) 설정의 영향을 받을 수도 있습니다.
+</Note>
+
+<div id="examples">
+  ## 예시
+</div>
+
+입력 테이블(table):
+
+```text
+┌─a─┬─b─┐
+│ 1 │ 1 │
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 1 │ 3 │
+│ 5 │ 4 │
+│ 0 │ 6 │
+│ 5 │ 7 │
+└───┴───┘
+```
+
+`ONLY` 옵션 사용:
+
+```sql title="Query"
+SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS ONLY;
+```
+
+```text title="Response"
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 5 │ 4 │
+└───┴───┘
+```
+
+`WITH TIES` 옵션 사용 예:
+
+```sql title="Query"
+SELECT * FROM test_fetch ORDER BY a OFFSET 3 ROW FETCH FIRST 3 ROWS WITH TIES;
+```
+
+```text title="Response"
+┌─a─┬─b─┐
+│ 2 │ 1 │
+│ 3 │ 4 │
+│ 5 │ 4 │
+│ 5 │ 7 │
+└───┴───┘
+```

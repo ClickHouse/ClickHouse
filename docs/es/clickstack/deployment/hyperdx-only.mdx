@@ -1,0 +1,88 @@
+---
+slug: /use-cases/observability/clickstack/deployment/hyperdx-only
+title: 'Solo HyperDX'
+description: 'Implementación únicamente de HyperDX'
+doc_type: 'guide'
+keywords: ['implementación independiente de HyperDX', 'integración de HyperDX con ClickHouse', 'implementar solo HyperDX', 'instalación de HyperDX con Docker', 'herramienta de visualización de ClickHouse']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+import JSONSupport from '/snippets/es/_json_support.mdx';
+
+Esta opción está pensada para quienes ya cuentan con una instancia de ClickHouse en ejecución con datos de observabilidad o eventos.
+
+HyperDX puede usarse de forma independiente del resto del stack y es compatible con cualquier esquema de datos, no solo con OpenTelemetry (OTel). Esto lo hace adecuado para canalizaciones de observabilidad personalizadas ya construidas sobre ClickHouse.
+
+Para habilitar toda la funcionalidad, debe proporcionar una instancia de MongoDB para almacenar el estado de la aplicación, incluidos dashboards, búsquedas guardadas, configuraciones de usuario y alertas.
+
+En este modo, la ingestión de datos queda completamente en manos del usuario. Puede ingestar datos en ClickHouse usando su propio OpenTelemetry collector alojado, ingestión directa desde bibliotecas cliente, motores de tabla nativos de ClickHouse (como Kafka o S3), canalizaciones ETL o servicios de ingestión gestionados como ClickPipes. Este enfoque ofrece la máxima flexibilidad y resulta adecuado para equipos que ya operan ClickHouse y quieren añadir HyperDX para visualización, búsqueda y alertas.
+
+<div id="suitable-for">
+  ### Recomendado para
+</div>
+
+* Usuarios actuales de ClickHouse
+* Canalizaciones de eventos personalizadas
+
+<div id="deployment-steps">
+  ## Pasos de despliegue
+</div>
+
+<br />
+
+<Steps>
+  <Step>
+    ### Despliegue con Docker
+
+    Ejecuta el siguiente comando y modifica `YOUR_MONGODB_URI` según sea necesario.
+
+    ```shell
+    docker run -e MONGO_URI=mongodb://YOUR_MONGODB_URI -p 8080:8080 docker.hyperdx.io/hyperdx/hyperdx
+    ```
+  </Step>
+
+  <Step>
+    ### Accede a la UI de HyperDX
+
+    Visita [http://localhost:8080](http://localhost:8080) para acceder a la UI de HyperDX.
+
+    Crea un usuario e introduce un nombre de usuario y una contraseña que cumplan los requisitos.
+
+    Al hacer clic en `Create`, se te pedirán los detalles de conexión.
+
+    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="UI de HyperDX" size="lg" />
+  </Step>
+
+  <Step>
+    ### Completa los detalles de conexión
+
+    Conéctate a tu propio clúster externo de ClickHouse, por ejemplo, ClickHouse Cloud.
+
+    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="Inicio de sesión de HyperDX" size="md" />
+
+    Si se te pide crear un origen de datos, conserva todos los valores predeterminados y completa el campo `Table` con el valor `otel_logs`. El resto de la configuración debería detectarse automáticamente, por lo que podrás hacer clic en `Save New Source`.
+
+    <Info>
+      **Creación de un origen de datos**
+
+      Para crear un origen de datos, las tablas deben existir en ClickHouse. Si no tienes datos, te recomendamos desplegar el ClickStack OpenTelemetry collector para crear las tablas.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="using-docker-compose">
+  ## Uso de Docker Compose
+</div>
+
+Puedes modificar la [configuración de Docker Compose](/es/clickstack/deployment/docker-compose) para conseguir el mismo resultado que en esta guía, eliminando el OTel collector y la instancia de ClickHouse del manifiesto.
+
+<div id="otel-collector">
+  ## ClickStack OpenTelemetry collector
+</div>
+
+Incluso si administras tu propio OpenTelemetry collector, de forma independiente del resto de componentes del stack, seguimos recomendando usar la distribución del colector de ClickStack. Esto garantiza que se use el esquema predeterminado y que se apliquen las buenas prácticas de ingestión.
+
+Para obtener más información sobre cómo desplegar y configurar un colector independiente, consulta [&quot;Ingestión con OpenTelemetry&quot;](/es/clickstack/ingesting-data/collector#modifying-otel-collector-configuration).
+
+<JSONSupport />

@@ -1,0 +1,75 @@
+---
+description: 'クエリ権限に関する設定。'
+sidebarTitle: 'クエリの権限'
+slug: /operations/settings/permissions-for-queries
+title: 'クエリの権限'
+doc_type: 'reference'
+---
+
+ClickHouse のクエリは、いくつかの種類に分類できます。
+
+1. データの読み取りクエリ: `SELECT`, `SHOW`, `DESCRIBE`, `EXISTS`.
+2. データの書き込みクエリ: `INSERT`, `OPTIMIZE`.
+3. 設定変更クエリ: `SET`, `USE`.
+4. [DDL](https://en.wikipedia.org/wiki/Data_definition_language) クエリ: `CREATE`, `ALTER`, `RENAME`, `ATTACH`, `DETACH`, `DROP` `TRUNCATE`.
+5. `KILL QUERY`.
+
+以下の設定は、クエリの種類ごとにユーザー権限を制御します。
+
+<div id="readonly">
+  ## readonly
+</div>
+
+データの読み取り、データの書き込み、および設定変更クエリに対する権限を制限します。
+
+1 に設定すると、以下が許可されます。
+
+* すべての種類の読み取りクエリ (SELECT やそれに相当するクエリなど) 。
+* セッションコンテキストのみを変更するクエリ (USE など) 。
+
+2 に設定すると、上記に加えて以下も許可されます。
+
+* SET および CREATE TEMPORARY TABLE
+
+<Tip>
+  EXISTS、DESCRIBE、EXPLAIN、SHOW PROCESSLIST などのクエリは、システムテーブルに対して select するだけなので、SELECT と同等です。
+</Tip>
+
+設定可能な値:
+
+* 0 — 読み取り、書き込み、および設定変更クエリが許可されます。
+* 1 — データの読み取りクエリのみが許可されます。
+* 2 — データの読み取りクエリと設定変更クエリが許可されます。
+
+デフォルト値: 0
+
+<Note>
+  `readonly = 1` を設定すると、ユーザーは現在のセッションで `readonly` と `allow_ddl` の設定を変更できません。
+
+  [HTTP インターフェイス](/ja/concepts/features/interfaces/http) で `GET` メソッドを使用すると、`readonly = 1` が自動的に設定されます。データを変更するには、`POST` メソッドを使用してください。
+
+  `readonly = 1` を設定すると、ユーザーは設定を変更できなくなります。特定の設定だけ変更を禁止する方法もあります。また、`readonly = 1` の制限下で特定の設定だけ変更を許可する方法もあります。詳しくは、[設定に対する制約](/ja/concepts/features/configuration/settings/constraints-on-settings) を参照してください。
+</Note>
+
+<div id="allow_ddl">
+  ## allow_ddl
+</div>
+
+[DDL](https://en.wikipedia.org/wiki/Data_definition_language) クエリの許可/拒否を設定します。
+
+設定可能な値:
+
+* 0 — DDL クエリは許可されません。
+* 1 — DDL クエリは許可されます。
+
+デフォルト値: 1
+
+<Note>
+  現在のセッションで `allow_ddl = 0` の場合、`SET allow_ddl = 1` は実行できません。
+</Note>
+
+<Info>
+  **KILL QUERY**
+
+  `KILL QUERY` は、readonly と allow&#95;ddl の設定の組み合わせに関係なく実行できます。
+</Info>
