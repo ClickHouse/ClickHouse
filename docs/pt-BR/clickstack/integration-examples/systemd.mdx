@@ -1,0 +1,405 @@
+---
+slug: /use-cases/observability/clickstack/integrations/systemd-logs
+title: 'Monitorando logs do Systemd com o ClickStack'
+sidebarTitle: 'Logs do Systemd/Journald'
+description: 'Monitorando logs do Systemd e do Journald com o ClickStack'
+doc_type: 'guide'
+keywords: ['systemd', 'journald', 'journal', 'OTEL', 'ClickStack', 'logs do sistema', 'systemctl']
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **Em resumo**
+
+  Colete e visualize logs do journal do systemd no ClickStack usando o journald receiver do OpenTelemetry Collector. Inclui um dataset de demonstração e um dashboard pré-configurado.
+</Info>
+
+<div id="existing-systems">
+  ## Integração com sistemas existentes
+</div>
+
+Monitore os logs do journald do seu sistema Linux executando o OpenTelemetry Collector com o journald receiver para coletar logs do sistema e enviá-los ao ClickStack via OTLP.
+
+Se quiser testar essa integração primeiro sem modificar seu ambiente atual, pule para a [seção do dataset de demonstração](#demo-dataset).
+
+<div id="prerequisites">
+  ##### Pré-requisitos
+</div>
+
+* Instância do ClickStack em execução
+* Sistema Linux com systemd (Ubuntu 16.04+, CentOS 7+, Debian 8+)
+* Docker ou Docker Compose instalado no sistema monitorado
+
+<Steps>
+  <Step>
+    #### Obtenha a API key do ClickStack
+
+    O OpenTelemetry Collector envia dados para o endpoint OTLP do ClickStack, que exige autenticação.
+
+    1. Abra o HyperDX na URL do ClickStack (por exemplo, http://localhost:8080)
+    2. Crie uma conta ou faça login, se necessário
+    3. Vá para **Team Settings → API Keys**
+    4. Copie sua **API key de ingestão**
+
+    <Image img="/images/clickstack/api-key.webp" alt="API key do ClickStack" />
+
+    5. Defina-a como uma variável de ambiente:
+
+    ```bash
+    export CLICKSTACK_API_KEY=your-api-key-here
+    ```
+  </Step>
+
+  <Step>
+    #### Verifique se o journal do systemd está em execução
+
+    Verifique se o sistema usa systemd e se há logs no journal:
+
+    ```bash
+    # Verifique a versão do systemd
+    systemctl --version
+
+    # Veja entradas recentes do journal
+    journalctl -n 20
+
+    # Verifique o uso de disco do journal
+    journalctl --disk-usage
+    ```
+
+    Se o journal estiver armazenando dados apenas em memória, habilite o armazenamento persistente:
+
+    ```bash
+    sudo mkdir -p /var/log/journal
+    sudo systemd-tmpfiles --create --prefix /var/log/journal
+    sudo systemctl restart systemd-journald
+    ```
+  </Step>
+
+  <Step>
+    #### Crie a configuração do OpenTelemetry Collector
+
+    Crie um arquivo de configuração para o OpenTelemetry Collector:
+
+    ```yaml
+    cat > otel-config.yaml << 'EOF'
+    receivers:
+      journald:
+        directory: /var/log/journal
+        priority: info
+        units:
+          - sshd
+          - nginx
+          - docker
+          - containerd
+          - systemd
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 10000
+      
+      resource:
+        attributes:
+          - key: service.name
+            value: systemd-logs
+            action: insert
+          - key: host.name
+            from_attribute: _HOSTNAME
+            action: upsert
+      
+      attributes:
+        actions:
+          - key: unit
+            from_attribute: _SYSTEMD_UNIT
+            action: upsert
+          - key: priority
+            from_attribute: PRIORITY
+            action: upsert
+
+    exporters:
+      otlphttp:
+        endpoint: ${CLICKSTACK_ENDPOINT}
+        headers:
+          authorization: ${CLICKSTACK_API_KEY}
+
+    service:
+      pipelines:
+        logs:
+          receivers: [journald]
+          processors: [resource, attributes, batch]
+          exporters: [otlphttp]
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### Faça a implantação com Docker Compose
+
+    <Note>
+      O receiver `journald` exige o binário `journalctl` para ler os arquivos do journal. A imagem oficial `otel/opentelemetry-collector-contrib` não inclui `journalctl` por padrão.
+
+      Para implantações em contêineres, você pode instalar o collector diretamente no host ou criar uma imagem personalizada com utilitários do systemd. Consulte a [seção de Solução de problemas](#journalctl-not-found) para mais detalhes.
+    </Note>
+
+    Este exemplo mostra a implantação do OTel collector junto com o ClickStack:
+
+    ```yaml
+    services:
+      clickstack:
+        image: clickhouse/clickstack-all-in-one:latest
+        ports:
+          - "8080:8080"
+          - "4317:4317"
+          - "4318:4318"
+        networks:
+          - monitoring
+      
+      otel-collector:
+        image: otel/opentelemetry-collector-contrib:0.115.1
+        depends_on:
+          - clickstack
+        environment:
+          - CLICKSTACK_API_KEY=${CLICKSTACK_API_KEY}
+          - CLICKSTACK_ENDPOINT=http://clickstack:4318
+        volumes:
+          - ./otel-config.yaml:/etc/otelcol/config.yaml:ro
+          - /var/log/journal:/var/log/journal:ro
+          - /run/log/journal:/run/log/journal:ro
+          - /etc/machine-id:/etc/machine-id:ro
+        command: ["--config=/etc/otelcol/config.yaml"]
+        networks:
+          - monitoring
+
+    networks:
+      monitoring:
+        driver: bridge
+    ```
+
+    Inicie os serviços:
+
+    ```bash
+    docker compose up -d
+    ```
+  </Step>
+
+  <Step>
+    #### Verifique os logs no HyperDX
+
+    Depois da configuração, faça login no HyperDX e verifique se os logs estão chegando:
+
+    1. Vá para a visualização Busca
+    2. Defina a source como Logs
+    3. Filtre por `service.name:systemd-logs`
+    4. Você deverá ver entradas de log estruturadas com campos como `unit`, `priority`, `MESSAGE`, `_HOSTNAME`
+
+    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="Visualização de busca de logs" />
+
+    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="Visualização de logs" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## Dataset de demonstração
+</div>
+
+Para usuários que querem testar a integração de logs do systemd antes de configurar seus sistemas de produção, fornecemos um conjunto de dados de exemplo com logs do systemd pré-gerados e padrões realistas.
+
+<Steps>
+  <Step>
+    #### Baixar o conjunto de dados de exemplo
+
+    Baixe o arquivo de log de exemplo:
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/systemd/systemd-demo.log
+    ```
+  </Step>
+
+  <Step>
+    #### Criar a configuração do coletor de demonstração
+
+    Crie um arquivo de configuração para a demonstração:
+
+    ```bash
+    cat > systemd-demo.yaml << 'EOF'
+    receivers:
+      filelog:
+        include:
+          - /tmp/systemd-demo/systemd-demo.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          - type: add
+            field: attributes.source
+            value: "systemd-demo"
+
+    service:
+      pipelines:
+        logs/systemd-demo:
+          receivers: [filelog]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### Executar o ClickStack com dados de demonstração
+
+    Inicie o ClickStack com os logs de demonstração:
+
+    ```bash
+    docker run -d --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/systemd-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/systemd-demo.log:/tmp/systemd-demo/systemd-demo.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      A demonstração usa o receiver `filelog` com logs em texto em vez de `journald`, para evitar a necessidade de `journalctl` no contêiner.
+    </Note>
+  </Step>
+
+  <Step>
+    #### Verificar os logs no HyperDX
+
+    Quando o ClickStack estiver em execução:
+
+    1. Abra o [HyperDX](http://localhost:8080/) e entre na sua conta
+    2. Acesse a visualização Busca e defina a fonte como `Logs`
+    3. Defina o intervalo de tempo como **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
+
+    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="Visualização de busca de logs" />
+
+    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="Visualização de logs" />
+
+    <Info>
+      **Exibição de fuso horário**
+
+      O HyperDX exibe os timestamps no fuso horário local do navegador. Os dados de demonstração cobrem o período de **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)**. O intervalo de tempo mais amplo garante que você verá os logs de demonstração independentemente da sua localização.
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## Dashboards e visualização
+</div>
+
+Para ajudar você a começar a monitorar logs do systemd com o ClickStack, fornecemos visualizações essenciais para os dados do journal do systemd.
+
+<Steps>
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/systemd-logs-dashboard.json'} download="systemd-logs-dashboard.json" eventName="docs.systemd_logs_monitoring.dashboard_download">Baixe</TrackedLink> a configuração do dashboard
+  </Step>
+
+  <Step>
+    #### Importe o dashboard pré-configurado
+
+    1. Abra o HyperDX e navegue até a seção Dashboards
+    2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="Botão de importação de dashboard" />
+
+    3. Faça upload do arquivo `systemd-logs-dashboard.json` e clique em **Finish Import**
+
+    <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="Concluir importação" />
+  </Step>
+
+  <Step>
+    #### Visualize o dashboard
+
+    O dashboard inclui visualizações para:
+
+    * Volume de logs ao longo do tempo
+    * Principais unidades do systemd por número de logs
+    * Eventos de autenticação SSH
+    * Falhas de serviço
+    * Taxas de erro
+
+    <Image img="/images/clickstack/systemd/systemd-logs-dashboard.webp" alt="Dashboard de exemplo" />
+
+    <Note>
+      Para o demo dataset, defina o intervalo de tempo como **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (ajuste com base no seu fuso horário local).
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## Solução de problemas
+</div>
+
+<div id="no-logs">
+  ### Nenhum log aparece no HyperDX
+</div>
+
+Verifique se os logs estão chegando ao ClickHouse:
+
+```bash
+docker exec clickstack clickhouse-client --query "
+SELECT COUNT(*) as log_count
+FROM otel_logs
+WHERE ServiceName = 'systemd-logs'
+"
+```
+
+Se não houver resultados, verifique os logs do collector:
+
+```bash
+docker logs otel-collector | grep -i "error\|journald" | tail -20
+```
+
+<div id="journalctl-not-found">
+  ### erro de `journalctl` não encontrado
+</div>
+
+Se você vir `exec: "journalctl": executable file not found in $PATH`:
+
+A imagem `otel/opentelemetry-collector-contrib` não inclui o `journalctl`. Você pode:
+
+1. **Instalar o collector no host**:
+
+```bash
+wget https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v0.115.0/otelcol-contrib_0.115.0_linux_amd64.tar.gz
+tar -xzf otelcol-contrib_0.115.0_linux_amd64.tar.gz
+sudo mv otelcol-contrib /usr/local/bin/
+otelcol-contrib --config=otel-config.yaml
+```
+
+2. **Use a abordagem de exportação em texto** (como na demonstração) com o receiver `filelog` lendo as exportações do journald
+
+<div id="next-steps">
+  ## Próximos passos
+</div>
+
+* Configure [alertas](/pt-BR/clickstack/features/alerts) para eventos críticos do sistema (falhas de serviço, falhas de autenticação, encerramentos por OOM)
+* Crie [dashboards](/pt-BR/clickstack/features/dashboards/overview) adicionais para casos de uso específicos (monitoramento de segurança do SSH, saúde do serviço)
+* Filtre por unidades específicas do systemd para reduzir o ruído e focar nos serviços mais importantes
+
+<div id="going-to-production">
+  ## Colocando em produção
+</div>
+
+Este guia usa um OpenTelemetry Collector separado para ler logs do systemd e enviá-los ao endpoint OTLP do ClickStack, que é a abordagem recomendada para produção.
+
+Para ambientes de produção com vários hosts, considere:
+
+* Implantar o coletor como um Conjunto de Daemon no Kubernetes
+* Executar o coletor como um serviço systemd em cada host
+* Usar o OpenTelemetry Operator para automatizar a implantação
+
+Consulte [Ingestão com OpenTelemetry](/pt-BR/clickstack/ingesting-data/opentelemetry) para ver padrões de implantação em produção.

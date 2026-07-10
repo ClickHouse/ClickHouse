@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_, size_t num_variants_)
 {
     SipHash hash;
     hash.update("VariantElement");
@@ -24,14 +24,19 @@ UInt128 SerializationVariantElement::getHash(const SerializationPtr & nested_, c
     hash.update(variant_element_name_.size());
     hash.update(variant_element_name_);
     hash.update(variant_discriminator_);
+    hash.update(num_variants_);
     return hash.get128();
 }
 
-SerializationPtr SerializationVariantElement::create(const SerializationPtr & nested_, const String & variant_element_name_, ColumnVariant::Discriminator variant_discriminator_)
+SerializationPtr SerializationVariantElement::create(
+    const SerializationPtr & nested_,
+    const String & variant_element_name_,
+    ColumnVariant::Discriminator variant_discriminator_,
+    size_t num_variants_)
 {
     if (!nested_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_));
-    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_); });
+        return std::shared_ptr<ISerialization>(new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_));
+    return ISerialization::pooled(getHash(nested_, variant_element_name_, variant_discriminator_, num_variants_), [&] { return new SerializationVariantElement(nested_, variant_element_name_, variant_discriminator_, num_variants_); });
 }
 
 struct SerializationVariantElement::DeserializeBinaryBulkStateVariantElement : public ISerialization::DeserializeBinaryBulkState
@@ -171,6 +176,8 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
                 discriminators_stream,
                 settings.continuous_reading,
                 variant_element_state->discriminators_state,
+                settings,
+                num_variants,
                 this);
 
             variant_rows_offset = variant_pair.first;
@@ -314,6 +321,8 @@ std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscrim
     DB::ReadBuffer * stream,
     bool continuous_reading,
     DeserializeBinaryBulkStatePtr & discriminators_state_,
+    const DeserializeBinaryBulkSettings & settings,
+    size_t num_variants,
     const ISerialization * serialization)
 {
     auto * discriminators_state = checkAndGetState<SerializationVariant::DeserializeBinaryBulkStateVariantDiscriminators>(discriminators_state_, serialization);
@@ -337,7 +346,8 @@ std::pair<size_t, size_t> SerializationVariantElement::deserializeCompactDiscrim
             if (stream->eof())
                 return {variant_rows_offset, variant_limit};
 
-            SerializationVariant::readDiscriminatorsGranuleStart(*discriminators_state, stream);
+            SerializationVariant::readDiscriminatorsGranuleStart(
+                *discriminators_state, stream, num_variants, settings);
         }
 
         size_t limit_in_granule = std::min(limit, discriminators_state->remaining_rows_in_granule);
@@ -401,13 +411,15 @@ SerializationVariantElement::VariantSubcolumnCreator::VariantSubcolumnCreator(
     ColumnVariant::Discriminator global_variant_discriminator_,
     ColumnVariant::Discriminator local_variant_discriminator_,
     bool make_nullable_,
-    const ColumnPtr & null_map_)
+    const ColumnPtr & null_map_,
+    size_t num_variants_)
     : local_discriminators(local_discriminators_)
     , null_map(null_map_)
     , variant_element_name(variant_element_name_)
     , global_variant_discriminator(global_variant_discriminator_)
     , local_variant_discriminator(local_variant_discriminator_)
     , make_nullable(make_nullable_)
+    , num_variants(num_variants_)
 {
 }
 
@@ -419,7 +431,7 @@ DataTypePtr SerializationVariantElement::VariantSubcolumnCreator::create(const D
 
 SerializationPtr SerializationVariantElement::VariantSubcolumnCreator::create(const SerializationPtr & prev, const DataTypePtr &) const
 {
-    return SerializationVariantElement::create(prev, variant_element_name, global_variant_discriminator);
+    return SerializationVariantElement::create(prev, variant_element_name, global_variant_discriminator, num_variants);
 }
 
 ColumnPtr SerializationVariantElement::VariantSubcolumnCreator::create(const DB::ColumnPtr & prev) const

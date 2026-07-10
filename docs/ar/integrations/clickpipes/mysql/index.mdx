@@ -1,0 +1,144 @@
+---
+sidebarTitle: 'استيراد البيانات من MySQL إلى ClickHouse'
+description: 'استورِد البيانات بسلاسة من قاعدة بيانات MySQL أو MariaDB إلى ClickHouse Cloud.'
+slug: /integrations/clickpipes/mysql
+title: 'استيراد البيانات من MySQL إلى ClickHouse (باستخدام CDC)'
+doc_type: 'guide'
+keywords: ['MySQL', 'ClickPipes', 'CDC', 'التقاط تغييرات البيانات', 'النسخ المتماثل لقاعدة البيانات']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+import BetaBadge from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
+import { Image } from "/snippets/ar/components/Image.jsx";
+
+<BetaBadge />
+
+<Info>
+  استيراد البيانات من MySQL إلى ClickHouse Cloud عبر ClickPipes متاح حاليًا في الإصدار التجريبي العام.
+</Info>
+
+يوفّر MySQL ClickPipe طريقة مُدارة بالكامل وموثوقة لاستيراد البيانات من قواعد بيانات MySQL وMariaDB إلى ClickHouse Cloud. وهو يدعم كلاً من **التحميلات المجمّعة** للاستيراد لمرة واحدة و**التقاط تغيّر البيانات (CDC)** للاستيراد المستمر.
+
+يمكن نشر MySQL ClickPipes وإدارتها يدويًا باستخدام واجهة ClickPipes، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
+
+<div id="prerequisites">
+  ## المتطلبات الأساسية
+</div>
+
+[//]: # "TODO لا يلزم إعداد النسخ المتماثل لـ binlog لمسارات الإدخال لمرة واحدة. وقد كان هذا سببًا للالتباس في السابق، لذا ينبغي أيضًا توفير الحد الأدنى من المتطلبات اللازمة لعمليات التحميل المجمّع لتجنب تنفير المستخدمين."
+
+للبدء، عليك أولًا التأكد من أن قاعدة بيانات MySQL لديك مُعدّة بشكل صحيح للنسخ المتماثل لـ binlog. وتعتمد خطوات الإعداد على طريقة نشر MySQL، لذا يُرجى اتباع الدليل المناسب أدناه:
+
+<div id="supported-data-sources">
+  ### مصادر البيانات المدعومة
+</div>
+
+| الاسم                                                         | الشعار | التفاصيل                                                                                                              |
+| ------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
+| **Amazon RDS MySQL** <br /> *تحميل لمرة واحدة، CDC*           |        | اتبع [دليل إعداد Amazon RDS MySQL](/ar/integrations/clickpipes/mysql/source/rds).                                        |
+| **Amazon Aurora MySQL** <br /> *تحميل لمرة واحدة، CDC*        |        | اتبع [دليل إعداد Amazon Aurora MySQL](/ar/integrations/clickpipes/mysql/source/aurora).                                  |
+| **Cloud SQL for MySQL** <br /> *تحميل لمرة واحدة، CDC*        |        | اتبع [دليل إعداد Cloud SQL for MySQL](/ar/integrations/clickpipes/mysql/source/gcp).                                     |
+| **Azure Flexible Server for MySQL** <br /> *تحميل لمرة واحدة* |        | اتبع [دليل إعداد Azure Flexible Server for MySQL](/ar/integrations/clickpipes/mysql/source/azure-flexible-server-mysql). |
+| **MySQL ذاتي الاستضافة** <br /> *تحميل لمرة واحدة، CDC*       |        | اتبع [دليل إعداد Generic MySQL](/ar/integrations/clickpipes/mysql/source/generic).                                       |
+| **Amazon RDS MariaDB** <br /> *تحميل لمرة واحدة، CDC*         |        | اتبع [دليل إعداد Amazon RDS MariaDB](/ar/integrations/clickpipes/mysql/source/rds-maria).                                |
+| **MariaDB ذاتي الاستضافة** <br /> *تحميل لمرة واحدة، CDC*     |        | اتبع [دليل إعداد Generic MariaDB](/ar/integrations/clickpipes/mysql/source/generic-maria).                               |
+
+بمجرد إعداد قاعدة بيانات MySQL المصدر، يمكنك متابعة إنشاء ClickPipe.
+
+<div id="create-your-clickpipe">
+  ## أنشئ ClickPipe الخاص بك
+</div>
+
+تأكد من أنك مسجّل الدخول إلى حساب ClickHouse Cloud الخاص بك. إذا لم يكن لديك حساب بعد، يمكنك التسجيل [هنا](https://cloud.clickhouse.com/).
+
+[//]: # "   TODO update image here"
+
+1. في وحدة تحكم ClickHouse Cloud، انتقل إلى خدمة ClickHouse Cloud الخاصة بك.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
+
+2. من القائمة الجانبية اليسرى، اختر الزر `Data Sources` ثم انقر على &quot;Set up a ClickPipe&quot;
+
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="تحديد الواردات" size="lg" border />
+
+3. اختر بطاقة `MySQL CDC`
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="تحديد MySQL" size="lg" border />
+
+<div id="add-your-source-mysql-database-connection">
+  ### أضِف اتصال قاعدة بيانات MySQL المصدر
+</div>
+
+4. املأ تفاصيل الاتصال لقاعدة بيانات MySQL المصدر التي أعددتها في خطوة المتطلبات الأساسية.
+
+<Info>
+  قبل البدء بإضافة تفاصيل الاتصال، تأكد من إدراج عناوين IP الخاصة بـ ClickPipes في قائمة السماح بقواعد جدار الحماية لديك. في الصفحة التالية، يمكنك العثور على [قائمة بعناوين IP الخاصة بـ ClickPipes](/ar/integrations/clickpipes/home#list-of-static-ips).
+  لمزيد من المعلومات، راجع أدلة إعداد MySQL المصدر المشار إليها في [أعلى هذه الصفحة](#prerequisites).
+</Info>
+
+<Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
+
+<div id="optional-set-up-ssh-tunneling">
+  #### (اختياري) إعداد نفق SSH
+</div>
+
+يمكنك تحديد تفاصيل نفق SSH إذا كانت قاعدة بيانات MySQL المصدر غير متاحة للعامة.
+
+1. فعِّل مفتاح التبديل &quot;استخدام نفق SSH&quot;.
+
+2. املأ تفاصيل اتصال SSH.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="نفق SSH" size="lg" border />
+
+3. لاستخدام المصادقة المستندة إلى المفتاح، انقر على &quot;إبطال وإنشاء زوج مفاتيح&quot; لإنشاء زوج مفاتيح جديد، ثم انسخ المفتاح العام الذي تم إنشاؤه إلى خادم SSH لديك ضمن `~/.ssh/authorized_keys`.
+
+4. انقر على &quot;التحقق من الاتصال&quot; للتحقق من الاتصال.
+
+<Note>
+  تأكد من السماح بعناوين [ClickPipes IP addresses](/ar/integrations/clickpipes/home#list-of-static-ips) في قواعد جدار الحماية الخاصة بمضيف SSH الوسيط حتى يتمكن ClickPipes من إنشاء نفق SSH.
+</Note>
+
+بعد إدخال تفاصيل الاتصال، انقر على `Next`.
+
+<div id="advanced-settings">
+  #### ضبط الإعدادات المتقدمة
+</div>
+
+يمكنك ضبط الإعدادات المتقدمة عند الحاجة. يرد أدناه وصف موجز لكل إعداد:
+
+* **فاصل المزامنة**: هذا هو الفاصل الزمني الذي عنده سيقوم ClickPipes بالتحقق من قاعدة البيانات المصدر بحثًا عن التغييرات. ويؤثر ذلك في خدمة ClickHouse الوجهة، لذا نوصي المستخدمين الحريصين على التكلفة بالإبقاء على هذه القيمة مرتفعة (أكثر من `3600`).
+* **الخيوط المتوازية للتحميل الأولي**: هذا هو عدد العاملين المتوازيين الذين سيُستخدمون لجلب اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد العاملين المتوازيين المستخدمين لجلب اللقطة الأولية. يُطبَّق هذا الإعداد على مستوى كل جدول.
+* **حجم دفعة السحب**: عدد الصفوف التي سيتم جلبها في دفعة واحدة. هذا إعداد يُطبَّق بأفضل جهد، وقد لا تتم مراعاته في جميع الحالات.
+* **عدد الصفوف لكل partition في اللقطة**: هذا هو عدد الصفوف التي سيتم جلبها في كل partition أثناء اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الصفوف في جداولك وتريد التحكم في عدد الصفوف التي يتم جلبها في كل partition.
+* **عدد الجداول في اللقطة بالتوازي**: هذا هو عدد الجداول التي سيتم جلبها بالتوازي أثناء اللقطة الأولية. ويكون ذلك مفيدًا عندما يكون لديك عدد كبير من الجداول وتريد التحكم في عدد الجداول التي يتم جلبها بالتوازي.
+
+<div id="configure-the-tables">
+  ### إعداد الجداول
+</div>
+
+5. هنا يمكنك تحديد قاعدة البيانات الوجهة لـ ClickPipe. يمكنك إما اختيار قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp" alt="اختيار قاعدة البيانات الوجهة" size="lg" border />
+
+6. يمكنك اختيار الجداول التي تريد نسخها من قاعدة بيانات MySQL المصدرية. وأثناء اختيار الجداول، يمكنك أيضًا إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة، بالإضافة إلى استبعاد أعمدة محددة.
+
+<div id="review-permissions-and-start-the-clickpipe">
+  ### راجع الأذونات وابدأ ClickPipe
+</div>
+
+7. اختر دور &quot;الوصول الكامل&quot; من قائمة الأذونات المنسدلة، ثم انقر على &quot;إكمال الإعداد&quot;.
+
+   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الأذونات" size="lg" border />
+
+أخيرًا، يُرجى الرجوع إلى صفحة [&quot;الأسئلة الشائعة حول ClickPipes for MySQL&quot;](/ar/integrations/clickpipes/mysql/faq) لمزيد من المعلومات عن المشكلات الشائعة وكيفية حلّها.
+
+<div id="whats-next">
+  ## ما التالي؟
+</div>
+
+[//]: # "TODO Write a MySQL-specific migration guide and best practices similar to the existing one for PostgreSQL. The current migration guide points to the MySQL table engine, which isn't ideal."
+
+بعد إعداد ClickPipe لنسخ البيانات من MySQL إلى ClickHouse Cloud، يمكنك التركيز على كيفية الاستعلام عن بياناتك ونمذجتها لتحقيق أفضل أداء. للاطلاع على الأسئلة الشائعة حول MySQL CDC واستكشاف الأخطاء وإصلاحها، راجع [صفحة الأسئلة الشائعة الخاصة بـ MySQL](/ar/integrations/clickpipes/mysql/faq).

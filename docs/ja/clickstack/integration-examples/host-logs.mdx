@@ -1,0 +1,518 @@
+---
+slug: /use-cases/observability/clickstack/integrations/host-logs
+title: 'ClickStackでホストログを監視'
+sidebarTitle: '汎用ホストログ'
+description: 'ClickStackで汎用ホストログを監視'
+doc_type: 'guide'
+keywords: ['ホストログ', 'systemd', 'syslog', 'OTel', 'ClickStack', 'システム監視', 'サーバーログ']
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<Info>
+  **要点**
+
+  OTel `filelog` receiver を使用して、ホストシステムのログ (syslog、auth、kernel) を ClickStack に収集し、可視化します。デモデータセットとあらかじめ用意されたダッシュボードが含まれています。
+</Info>
+
+<div id="existing-hosts">
+  ## 既存ホストとのインテグレーション
+</div>
+
+このセクションでは、ClickStack OTel collector の設定を変更して、すべてのシステムログファイル (syslog、auth、kernel、daemon、アプリケーションログ) を読み取れるようにし、既存のホストから ClickStack にシステムログを送信する方法を説明します。
+
+独自の既存環境を構成する前にホストログのインテグレーションを試したい場合は、[&quot;デモデータセット&quot;](/ja/clickstack/integration-examples/host-logs#demo-dataset) セクションにある、あらかじめ構成されたセットアップとサンプルデータを使ってテストできます。
+
+<div id="prerequisites">
+  ##### 前提条件
+</div>
+
+* 稼働中の ClickStack インスタンス
+* syslog ファイルがあるシステム
+* ClickStack の設定ファイルを変更できるアクセス権
+
+<Steps>
+  <Step>
+    #### syslogファイルが存在することを確認する
+
+    まず、システムがsyslogファイルを出力していることを確認します。
+
+    ```bash
+    # syslogファイルが存在するか確認する（Linux）
+    ls -la /var/log/syslog /var/log/messages
+
+    # macOSの場合
+    ls -la /var/log/system.log
+
+    # 最近のエントリを表示する
+    tail -20 /var/log/syslog
+    ```
+
+    一般的な syslog の保存場所:
+
+    * **Ubuntu/Debian**: `/var/log/syslog`
+    * **RHEL/CentOS/Fedora**: `/var/log/messages`
+    * **macOS**: `/var/log/system.log`
+  </Step>
+
+  <Step>
+    #### カスタムOTel collector configurationの作成
+
+    ClickStackでは、カスタム設定ファイルをマウントして環境変数を設定することで、OpenTelemetry Collectorのベース設定を拡張できます。
+
+    システムの設定を記述した `host-logs-monitoring.yaml` というファイルを作成します：
+
+    <Tabs>
+      <Tab title="最新の Linux（Ubuntu 24.04+）">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout_type: gotime
+                layout: '2006-01-02T15:04:05.999999-07:00'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+
+      <Tab title="従来の Linux（Ubuntu 20.04、RHEL、CentOS）">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/syslog
+              - /var/log/messages
+              - /var/log/**/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+
+      <Tab title="macOS">
+        ```yaml
+        receivers:
+          filelog/syslog:
+            include:
+              - /var/log/system.log
+              - /host/private/var/log/*.log
+            start_at: end
+            operators:
+              - type: regex_parser
+                regex: '^(?P<timestamp>\w+ \d+ \d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+                parse_from: body
+                parse_to: attributes
+              
+              - type: time_parser
+                parse_from: attributes.timestamp
+                layout: '%b %d %H:%M:%S'
+              
+              - type: add
+                field: attributes.source
+                value: "host-logs"
+              
+              - type: add
+                field: resource["service.name"]
+                value: "host-production"
+
+        service:
+          pipelines:
+            logs/host:
+              receivers: [filelog/syslog]
+              processors:
+                - memory_limiter
+                - transform
+                - batch
+              exporters:
+                - clickhouse
+        ```
+      </Tab>
+    </Tabs>
+
+    <br />
+
+    すべての設定:
+
+    * 標準の場所にある syslog ファイルを読み込む
+    * syslogフォーマットを解析し、構造化されたフィールド (タイムスタンプ、ホスト名、ユニット/サービス、PID、メッセージ) を抽出します
+    * 元のログのタイムスタンプを保持する
+    * HyperDX でのフィルタリング用に `source: host-logs` 属性を追加
+    * 専用のパイプライン経由でログをClickHouseエクスポーターにルーティングする
+
+    <Note>
+      - カスタム設定で定義するのは、新しい receiver とパイプラインのみです
+      - プロセッサ (`memory_limiter`、`transform`、`batch`) とエクスポーター (`clickhouse`) は、ベースの ClickStack 設定ですでに定義されているため、名前で参照するだけで済みます
+      - regex パーサーは、syslog フォーマットから systemd のユニット名、PID、そのほかのメタデータを抽出します
+      - この設定では、collector の再起動時にログが再度取り込まれるのを防ぐため、`start_at: end` を使用します。テスト時は、過去のログをすぐに確認できるよう、`start_at: beginning` に変更してください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### ClickStack がカスタム設定を読み込むように構成する
+
+    既存の ClickStack デプロイメントでカスタム collector 設定を有効にするには、次の対応が必要です。
+
+    1. カスタム設定ファイルを `/etc/otelcol-contrib/custom.config.yaml` にマウントする
+    2. 環境変数 `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml` を設定する
+    3. collector が読み取れるように syslog ディレクトリをマウントする
+
+    ##### オプション 1: Docker Compose
+
+    ClickStack のデプロイメント設定を更新します。
+
+    ```yaml
+    services:
+      clickstack:
+        # ... 既存の設定 ...
+        environment:
+          - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
+          # ... その他の環境変数 ...
+        volumes:
+          - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
+          - /var/log:/var/log:ro
+          # ... その他のボリューム ...
+    ```
+
+    ##### オプション 2: Docker Run (オールインワンイメージ)
+
+    docker run でオールインワンイメージを使用する場合:
+
+    ```bash
+    docker run --name clickstack \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v /var/log:/var/log:ro \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      ClickStack collector に、syslog ファイルを読み取るための適切な権限があることを確認してください。本番環境では、読み取り専用マウント (`:ro`) を使用し、最小権限の原則に従ってください。
+    </Note>
+  </Step>
+
+  <Step>
+    #### HyperDX でログを確認する
+
+    設定が完了したら、HyperDX にログインし、ログが取り込まれていることを確認します。
+
+    1. Search view に移動します
+    2. ログソースを Logs に設定します
+    3. `source:host-logs` で絞り込み、ホスト固有のログを表示します
+    4. `unit`、`hostname`、`pid`、`message` などのフィールドを含む構造化されたログエントリが表示されるはずです
+
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Search view" />
+
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Log view" />
+  </Step>
+</Steps>
+
+<div id="demo-dataset">
+  ## デモデータセット
+</div>
+
+本番システムを構成する前に ホストログ インテグレーションを試したいユーザー向けに、実際のパターンに近い、事前生成済みのシステムログを含むサンプルデータセットを用意しています。
+
+<Steps>
+  <Step>
+    #### サンプルデータセットをダウンロードする
+
+    サンプルのログファイルをダウンロードします。
+
+    ```bash
+    curl -O https://datasets-documentation.s3.eu-west-3.amazonaws.com/clickstack-integrations/host-logs/journal.log
+    ```
+
+    このデータセットには、以下が含まれます。
+
+    * システムの起動シーケンス
+    * SSH ログインアクティビティ (成功および失敗した試行)
+    * セキュリティインシデント (fail2ban の応答を伴うブルートフォース攻撃)
+    * 定期メンテナンス (cron ジョブ、anacron)
+    * サービスの再起動 (rsyslog)
+    * カーネルメッセージとファイアウォールのアクティビティ
+    * 通常運用時のイベントと注目すべきイベントの混在
+  </Step>
+
+  <Step>
+    #### テスト用の collector 設定を作成する
+
+    以下の内容で、`host-logs-demo.yaml` という名前のファイルを作成します。
+
+    ```yaml
+    cat > host-logs-demo.yaml << 'EOF'
+    receivers:
+      filelog/journal:
+        include:
+          - /tmp/host-demo/journal.log
+        start_at: beginning
+        operators:
+          - type: regex_parser
+            regex: '^(?P<timestamp>\S+) (?P<hostname>\S+) (?P<unit>\S+?)(?:\[(?P<pid>\d+)\])?: (?P<message>.*)$'
+            parse_from: body
+            parse_to: attributes
+          
+          - type: time_parser
+            parse_from: attributes.timestamp
+            layout: '%Y-%m-%dT%H:%M:%S%z'
+          
+          - type: add
+            field: attributes.source
+            value: "host-demo"
+          
+          - type: add
+            field: resource["service.name"]
+            value: "host-demo"
+
+    service:
+      pipelines:
+        logs/host-demo:
+          receivers: [filelog/journal]
+          processors:
+            - memory_limiter
+            - transform
+            - batch
+          exporters:
+            - clickhouse
+    EOF
+    ```
+  </Step>
+
+  <Step>
+    #### デモ設定で ClickStack を実行する
+
+    デモログと設定を使用して ClickStack を実行します。
+
+    ```bash
+    docker run --name clickstack-demo \
+      -p 8080:8080 -p 4317:4317 -p 4318:4318 \
+      -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+      -v "$(pwd)/host-logs-demo.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+      -v "$(pwd)/journal.log:/tmp/host-demo/journal.log:ro" \
+      clickhouse/clickstack-all-in-one:latest
+    ```
+
+    <Note>
+      **これにより、ログファイルがコンテナーに直接マウントされます。これは、静的なデモデータを使ったテストを目的としたものです。**
+    </Note>
+  </Step>
+
+  <Step>
+    #### HyperDX でログを確認する
+
+    ClickStack が起動したら、以下を実行します。
+
+    1. [HyperDX](http://localhost:8080/) を開いてアカウントにログインします (先にアカウント作成が必要な場合があります)
+    2. Search view に移動し、ソースを `Logs` に設定します
+    3. 時間範囲を **2025-11-10 00:00:00 - 2025-11-13 00:00:00** に設定します
+
+    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Search view" />
+
+    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Log view" />
+
+    <Info>
+      **タイムゾーン表示**
+
+      HyperDX は、ブラウザーのローカルタイムゾーンでタイムスタンプを表示します。デモデータの期間は **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** です。時間範囲を広めに設定することで、どの場所からでもデモログを確認できます。ログが表示されたら、より見やすく可視化するために、範囲を 24 時間に絞ることができます。
+    </Info>
+  </Step>
+</Steps>
+
+<div id="dashboards">
+  ## ダッシュボードと可視化
+</div>
+
+ClickStack でホストログの監視を始めるのに役立つよう、システムログ向けの基本的な可視化を用意しています。
+
+<Steps>
+  <Step>
+    #### ダッシュボード設定を<TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">ダウンロード</TrackedLink>する
+  </Step>
+
+  <Step>
+    #### あらかじめ用意されたダッシュボードをインポートする
+
+    1. HyperDX を開き、Dashboards セクションに移動します
+    2. 右上の三点メニューから **Import Dashboard** をクリックします
+
+    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポートボタン" />
+
+    3. `host-logs-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
+
+    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="インポート完了" />
+  </Step>
+
+  <Step>
+    #### ダッシュボードを表示する
+
+    ダッシュボードは、すべての可視化があらかじめ設定された状態で作成されます。
+
+    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="ログダッシュボード" />
+
+    主な可視化は次のとおりです:
+
+    * 重要度別のログ量の推移
+    * ログを生成している上位の systemd ユニット
+    * SSH ログインアクティビティ (成功/失敗)
+    * ファイアウォールのアクティビティ (ブロック/許可)
+    * セキュリティイベント (ログイン失敗、BAN、ブロック)
+    * サービス再起動のアクティビティ
+
+    <Note>
+      デモデータセットでは、時間範囲を **2025-11-11 00:00:00 - 2025-11-12 00:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されていません。
+    </Note>
+  </Step>
+</Steps>
+
+<div id="troubleshooting">
+  ## トラブルシューティング
+</div>
+
+<div id="troubleshooting-not-loading">
+  ### カスタム設定が読み込まれない
+</div>
+
+環境変数が設定されていることを確認してください。
+
+```bash
+docker exec <container-name> printenv CUSTOM_OTELCOL_CONFIG_FILE
+```
+
+カスタム設定ファイルがマウントされており、読み取り可能であることを確認します。
+
+```bash
+docker exec <container-name> cat /etc/otelcol-contrib/custom.config.yaml | head -10
+```
+
+<div id="no-logs">
+  ### HyperDX にログが表示されない
+</div>
+
+**syslog ファイルが存在し、書き込みが行われていることを確認してください。**
+
+```bash
+# syslogが存在するか確認する
+ls -la /var/log/syslog /var/log/messages
+
+# ログが書き込まれているか確認する
+tail -f /var/log/syslog
+```
+
+**collector がログを読み取れているか確認します:**
+
+```bash
+docker exec <container> cat /var/log/syslog | head -20
+```
+
+**現在有効な設定に `filelog receiver` が含まれていることを確認してください。**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/effective.yaml | grep -A 10 filelog
+```
+
+**collector のログにエラーがないか確認します。**
+
+```bash
+docker exec <container> cat /etc/otel/supervisor-data/agent.log | grep -i "filelog\|syslog"
+```
+
+**デモデータセットを使用している場合は、ログファイルにアクセス可能であることを確認してください。**
+
+```bash
+docker exec <container> cat /tmp/host-demo/journal.log | wc -l
+```
+
+<div id="logs-not-parsing">
+  ### ログが正しくパースされない
+</div>
+
+**syslogフォーマットが、選択した設定と一致していることを確認してください。**
+
+Modern Linux (Ubuntu 24.04以降) の場合：
+
+```bash
+# ISO8601フォーマットで表示されるはずです: 2025-11-17T20:55:44.826796+00:00
+tail -5 /var/log/syslog
+```
+
+Legacy Linux または macOS の場合:
+
+```bash
+# 従来のフォーマットが表示されるはずです: Nov 17 14:16:16
+tail -5 /var/log/syslog
+# または
+tail -5 /var/log/system.log
+```
+
+フォーマットが一致しない場合は、[カスタム OTel collector 設定を作成](#custom-otel) セクションで適切な構成タブを選択してください。
+
+<div id="next-steps">
+  ## 次のステップ
+</div>
+
+* 重要なシステムイベント (サービス障害、認証失敗、ディスク警告) に対する[アラート](/ja/clickstack/features/alerts)を設定します
+* 特定のサービスを監視するために、特定のユニットで絞り込みます
+* 包括的なトラブルシューティングのために、ホストログをアプリケーションログと相関付けます
+* セキュリティ監視 (SSH の試行、sudo の使用、ファイアウォールによるブロック) 用のカスタムダッシュボードを作成します
+
+<div id="going-to-production">
+  ## 本番環境への移行
+</div>
+
+このガイドでは、すばやくセットアップできるよう、ClickStack に組み込まれた OpenTelemetry Collector をベースに説明しています。本番環境でのデプロイでは、独自の OTel collector を実行し、データを ClickStack の OTLP エンドポイントに送信することを推奨します。本番環境向けの構成については、[OpenTelemetry データの送信](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。

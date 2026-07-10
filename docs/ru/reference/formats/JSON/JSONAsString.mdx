@@ -1,0 +1,75 @@
+---
+alias: []
+description: 'Документация по формату JSONAsString'
+input_format: true
+keywords: ['JSONAsString']
+output_format: false
+slug: /interfaces/formats/JSONAsString
+title: 'JSONAsString'
+doc_type: 'reference'
+---
+
+| Ввод | Вывод | Псевдоним |
+| ---- | ----- | --------- |
+| ✔    | ✗     |           |
+
+<div id="description">
+  ## Описание
+</div>
+
+В этом формате один объект JSON интерпретируется как одно значение.
+Если входные данные содержат несколько объектов JSON (разделенных запятыми), они интерпретируются как отдельные строки.
+Если входные данные заключены в `[]`, они интерпретируются как массив объектов JSON.
+
+<Note>
+  Этот формат можно разобрать только для таблицы с единственным полем типа [String](/ru/reference/data-types/string).
+  Для остальных столбцов должно быть задано либо [`DEFAULT`](/ru/reference/statements/create/table#default), либо [`MATERIALIZED`](/ru/reference/statements/create/view#materialized-view),
+  либо они должны быть опущены.
+</Note>
+
+После сериализации всего объекта JSON в String вы можете использовать [функции JSON](/ru/reference/functions/regular-functions/json-functions) для его обработки.
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="basic-example">
+  ### Простой пример
+</div>
+
+```sql title="Query"
+DROP TABLE IF EXISTS json_as_string;
+CREATE TABLE json_as_string (json String) ENGINE = Memory;
+INSERT INTO json_as_string (json) FORMAT JSONAsString {"foo":{"bar":{"x":"y"},"baz":1}},{},{"any json stucture":1}
+SELECT * FROM json_as_string;
+```
+
+```response title="Response"
+┌─json──────────────────────────────┐
+│ {"foo":{"bar":{"x":"y"},"baz":1}} │
+│ {}                                │
+│ {"any json stucture":1}           │
+└───────────────────────────────────┘
+```
+
+<div id="an-array-of-json-objects">
+  ### Массив объектов JSON
+</div>
+
+```sql title="Query"
+CREATE TABLE json_square_brackets (field String) ENGINE = Memory;
+INSERT INTO json_square_brackets FORMAT JSONAsString [{"id": 1, "name": "name1"}, {"id": 2, "name": "name2"}];
+
+SELECT * FROM json_square_brackets;
+```
+
+```response title="Response"
+┌─field──────────────────────┐
+│ {"id": 1, "name": "name1"} │
+│ {"id": 2, "name": "name2"} │
+└────────────────────────────┘
+```
+
+<div id="format-settings">
+  ## Настройки формата
+</div>

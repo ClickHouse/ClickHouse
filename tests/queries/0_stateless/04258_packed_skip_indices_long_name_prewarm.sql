@@ -36,6 +36,8 @@ SELECT 'rows', count() FROM t_long_pack;
 SELECT 'index_materialized', secondary_indices_compressed_bytes > 0
 FROM system.parts WHERE database = currentDatabase() AND table = 't_long_pack' AND active;
 
+SET explain_query_plan_default = 'legacy';
+
 -- The skip index gates granules under both the hashed-on-disk and the logical packed-virtual
 -- name. The mark-cache rekey only matters for prewarm hits, but the lookup must still find
 -- marks either way, so this query must return the right count.
