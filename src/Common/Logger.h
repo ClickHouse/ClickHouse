@@ -67,11 +67,27 @@ LoggerRawPtr createRawLogger(const std::string & name, Poco::Channel * channel, 
   */
 bool hasLogger(const std::string & name);
 
-/// Escape CR/LF in a free-form audit field so that a single audit record
-/// always occupies exactly one physical log line.
-inline std::string escapeForAuditField(std::string s)
+/// Escape a free-form audit field (a username, an object name, or the query text) so that a
+/// single audit record both occupies exactly one physical log line AND remains unambiguously
+/// parseable. An audit record is a list of comma-separated fields, so a literal comma inside a
+/// field would otherwise be indistinguishable from a field separator; a backslash is the escape
+/// character and must therefore be escaped first. `CR`/`LF` become the two-character sequences
+/// `\r`/`\n` so the record never spans multiple physical lines. A downstream parser can split on
+/// an unescaped comma and reverse the escaping.
+inline std::string escapeForAuditField(const std::string & s)
 {
-    std::replace(s.begin(), s.end(), '\n', ' ');
-    std::replace(s.begin(), s.end(), '\r', ' ');
-    return s;
+    std::string result;
+    result.reserve(s.size());
+    for (char c : s)
+    {
+        switch (c)
+        {
+            case '\\': result += "\\\\"; break;
+            case ',':  result += "\\,";  break;
+            case '\n': result += "\\n";  break;
+            case '\r': result += "\\r";  break;
+            default:   result += c;      break;
+        }
+    }
+    return result;
 }
