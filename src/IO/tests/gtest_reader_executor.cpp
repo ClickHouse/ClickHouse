@@ -990,8 +990,8 @@ TEST(ReaderExecutor, TotalSizeSaturatesOnUndersizedEncryptedFile)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 512;
     ReaderExecutor executor(source, objects, {}, executor_options);
-    executor.addDecryptionLayer("layer0", 64, [](UInt128, const String &) { return String{}; });
-    executor.addDecryptionLayer("layer1", 64, [](UInt128, const String &) { return String{}; });
+    executor.addDecryptionLayer("layer0", [](UInt128, const String &) { return String{}; });
+    executor.addDecryptionLayer("layer1", [](UInt128, const String &) { return String{}; });
 
     EXPECT_EQ(executor.totalSize(), 0u);
 }
@@ -1093,8 +1093,7 @@ TEST(ReaderExecutor, DecryptsMultiNodeWindow)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = plaintext_size + ReaderExecutor::CHAINED_BUFFER_BLOCK_SIZE;
     ReaderExecutor executor(source, objects, {}, executor_options);
-    executor.addDecryptionLayer(
-        "/test", 0,
+    executor.addDecryptionLayer("/test",
         [&](UInt128 got_fp, const String &)
         {
             EXPECT_EQ(got_fp, FileEncryption::calculateKeyFingerprint(key));
@@ -1133,8 +1132,7 @@ TEST(ReaderExecutor, EncryptedEofReleasesLongConnectionSlot)
     executor_options.window_size = 512;
     executor_options.long_connection_limit = long_connection_limit;
     ReaderExecutor executor(source, objects, {}, executor_options);
-    executor.addDecryptionLayer(
-        "/test", 0,
+    executor.addDecryptionLayer("/test",
         [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -1172,7 +1170,7 @@ TEST(ReaderExecutor, EncryptedSeekInsidePrefetchedWindow)
     executor_options.window_size = 500;
     executor_options.prefetch_pool = pool;
     ReaderExecutor executor(source, objects, {}, executor_options);
-    executor.addDecryptionLayer("/t", 0,
+    executor.addDecryptionLayer("/t",
         [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -1208,7 +1206,7 @@ TEST(ReaderExecutor, DecryptsSmallPayload)
     ReaderExecutor::Options executor_options;
     executor_options.window_size = 4096;
     ReaderExecutor executor(source, objects, {}, executor_options);
-    executor.addDecryptionLayer("/t", 0,
+    executor.addDecryptionLayer("/t",
         [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -1293,9 +1291,9 @@ TEST(ReaderExecutor, DecryptsMultiLayer)
     /// Layers are added outermost-first, innermost-last — same order the
     /// stacked-disk prepareRead chain produces (each layer recurses into
     /// its delegate before appending its own `needDecryption`).
-    executor.addDecryptionLayer("/outer", 0,
+    executor.addDecryptionLayer("/outer",
         [&](UInt128, const String &) { return key_outer; });
-    executor.addDecryptionLayer("/inner", 0,
+    executor.addDecryptionLayer("/inner",
         [&](UInt128, const String &) { return key_inner; });
     executor.initDecryption();
 
@@ -2593,7 +2591,7 @@ TEST(ReaderExecutor, ReadBigAtBoundsLongConnectionOnEncryptedFile)
     executor_options.min_bytes_for_seek = 0;
     executor_options.long_connection_limit = limit;
     ReaderExecutor executor(source, objects, {}, executor_options);
-    executor.addDecryptionLayer("/test", 0, [&](UInt128, const String &) { return key; });
+    executor.addDecryptionLayer("/test", [&](UInt128, const String &) { return key; });
     executor.initDecryption();   // parses the header -> data_start_offset = 64
 
     const size_t offset = 4096;   // logical
@@ -4334,7 +4332,7 @@ TEST(ReaderExecutor, EncryptedColdCellWindowStartsBelowHeader)
     executor_options.min_bytes_for_seek = 0;
     executor_options.prefetch_pool = pool;
     ReaderExecutor executor(source, objects, caches, executor_options);
-    executor.addDecryptionLayer("/enc", 0,
+    executor.addDecryptionLayer("/enc",
         [&](UInt128, const String &) { return key; });
     executor.initDecryption();
 
@@ -6547,13 +6545,97 @@ TEST(ReaderExecutor, LongConnectionSpansAdvancingExtent)
     EXPECT_LT(inspect(ex).sourceRequests(), 5u) << "coalesced across windows, not one GET per window";
     EXPECT_GE(inspect(ex).sourceRequests(), 1u);
     EXPECT_EQ(got, content.substr(0, 5 * window));      /// [0,500) served byte-exact
-    /// Warm up a long connection with a few sequential windows.
-    for (int i = 0; i < 4; ++i)
-        ex.readNextWindow();
-    read_at(700 * 1024, 1024);   /// small forward gap -> bridge (or reopen); data must match
-    read_at(10 * 1024, 1024);    /// backward -> drop + reread
-    read_at(900 * 1024, 1024);   /// forward again
 }
+
+class ReaderExecutorTest : public ::testing::Test
+{
+protected:
+    std::filesystem::path tmp_dir;
+
+    void SetUp() override
+    {
+        tmp_dir = std::filesystem::temp_directory_path() / "test_reader_executor";
+        std::filesystem::create_directories(tmp_dir);
+    }
+
+    void TearDown() override { std::filesystem::remove_all(tmp_dir); }
+
+    /// Write `size` bytes following `patternByte` to a new file and return the
+    /// matching StoredObject.
+    StoredObject makeFile(const std::string & name, size_t size)
+    {
+        auto path = tmp_dir / name;
+        std::ofstream f(path, std::ios::binary);
+        for (size_t i = 0; i < size; ++i)
+            f.put(static_cast<char>(patternByte(i)));
+        f.close();
+
+        StoredObject obj;
+        obj.remote_path = path.string();
+        obj.bytes_size = size;
+        return obj;
+    }
+
+    /// Drain the executor and return all bytes it serves, streaming each window's chain.
+    static std::vector<char> drain(ReaderExecutor & ex)
+    {
+        std::vector<char> out;
+        while (true)
+        {
+            ChainedBuffers w = ex.readNextWindow();
+            if (w.atEnd())
+                break;
+            while (!w.atEnd())
+            {
+                auto span = w.peek();
+                out.insert(out.end(), span.data, span.data + span.size);
+                w.advance(span.size);
+            }
+        }
+        return out;
+    }
+
+    /// ProfileEvents gathered from one `overReadScan` run.
+    struct ScanCounts
+    {
+        ProfileEvents::Count source_requests = 0;
+        ProfileEvents::Count opened = 0;
+        ProfileEvents::Count hits = 0;
+    };
+
+    /// Drive a PipelineReadBuffer over `objects` in the compressed reader's access pattern: read a
+    /// full `block` from each mark, with marks advancing by `mark_step < block` so each read seeks
+    /// back into the previous (over-read) window. PipelineReadBuffer absorbs those in-buffer seeks,
+    /// so the executor sees a forward-only scan and a held connection stays reusable. Returns the
+    /// executor's ProfileEvents for the run (collected in an isolated ThreadGroup).
+    ScanCounts overReadScan(
+        const StoredObjects & objects, size_t total, size_t block, size_t mark_step,
+        std::shared_ptr<LongConnectionLimit> limit)
+    {
+        TestThreadGroup tg;
+        auto ex = std::make_unique<ReaderExecutor>(
+            std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+                .min_bytes_for_seek = 64 * 1024, .block_size = block,
+                .max_tail_for_drain = 64 * 1024, .long_connection_limit = std::move(limit)});
+        PipelineReadBuffer buf(std::move(ex));
+
+        std::vector<char> window(block);
+        for (size_t mark = 0; mark + block <= total; mark += mark_step)
+        {
+            buf.seek(static_cast<off_t>(mark), SEEK_SET);
+            buf.readStrict(window.data(), block);
+            bool ok = true;
+            for (size_t i = 0; i < block && ok; ++i)
+                ok = static_cast<unsigned char>(window[i]) == patternByte(mark + i);
+            EXPECT_TRUE(ok) << "data mismatch in window at mark " << mark;
+        }
+
+        return {tg.get(ProfileEvents::ReaderExecutorSourceRequests),
+                tg.get(ProfileEvents::ReaderExecutorLongConnectionOpened),
+                tg.get(ProfileEvents::ReaderExecutorLongConnectionHits)};
+    }
+};
+
 
 TEST_F(ReaderExecutorTest, IncompleteConnectionOnAbandonedDrop)
 {
