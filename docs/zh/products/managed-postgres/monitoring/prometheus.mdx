@@ -1,0 +1,186 @@
+---
+slug: /cloud/managed-postgres/monitoring/prometheus
+sidebarTitle: 'Prometheus 端点'
+title: 'Managed Postgres Prometheus 集成'
+description: '将 Managed Postgres 的指标抓取到 Prometheus、Grafana、Datadog 或任何兼容 OpenMetrics 的采集器中'
+keywords: ['managed postgres', 'prometheus', 'grafana', 'datadog', '指标', 'openmetrics', '可观测性']
+doc_type: 'guide'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
+
+Managed Postgres 提供了两个与 Prometheus 兼容的指标端点，
+可通过 [ClickHouse Cloud API][cloud-api] 访问：
+
+| 端点 | 路径                                                     | 返回内容                          |
+| -- | ------------------------------------------------------ | ----------------------------- |
+| 组织 | `/v1/organizations/{orgId}/postgres/prometheus`        | 该组织中所有 Managed Postgres 服务的指标 |
+| 实例 | `/v1/organizations/{orgId}/postgres/{pgId}/prometheus` | 单个服务的指标                       |
+
+<Note>
+  组织级端点最多返回 100 个服务的指标。如果你的
+  组织拥有超过 100 个 Managed Postgres 服务，请[联系
+  支持](https://clickhouse.com/support/program)。
+</Note>
+
+<div id="authentication">
+  ## 身份验证
+</div>
+
+该端点使用与 OpenAPI 其他部分相同的 [API 密钥]；有关如何创建
+这些密钥，以及如何查找你的组织 ID 和服务 ID，请参阅
+[OpenAPI 指南](/zh/products/managed-postgres/openapi)。
+
+```bash
+KEY_ID=mykeyid
+KEY_SECRET=mykeysecret
+ORG_ID=myorgid
+PG_ID=mypgid
+```
+
+<div id="scrape-org">
+  ## 抓取组织中的所有服务
+</div>
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/prometheus"
+```
+
+<div id="scrape-instance">
+  ## 抓取单个服务
+</div>
+
+```bash
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/prometheus"
+```
+
+<div id="sample-response">
+  ## 示例响应
+</div>
+
+```response
+# HELP PostgresServiceInfo 关于 PostgreSQL 服务的信息，包括状态和版本。
+# TYPE PostgresServiceInfo gauge
+PostgresServiceInfo{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",postgres_status="running",postgres_version="18"} 1
+
+# HELP PostgresServer_ActiveConnections 按状态划分的活跃连接数。
+# TYPE PostgresServer_ActiveConnections gauge
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="active"} 1
+PostgresServer_ActiveConnections{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres",state="idle"} 4
+
+# HELP PostgresServer_CacheHitRatio 缓冲区缓存命中率：从缓存命中的块数与总访问块数之比（%）。
+# TYPE PostgresServer_CacheHitRatio gauge
+PostgresServer_CacheHitRatio{clickhouse_org="ca04a310-730d-4ce0-93dd-39f2cd2d5e6f",postgres_service="0c330583-6396-86d0-82cd-ed0f23b0d38c",postgres_service_name="my-postgres"} 100
+```
+
+有关所有指标及其含义的完整列表，请参阅
+[指标参考](/zh/products/managed-postgres/monitoring/metrics)。
+
+<div id="configuring-prometheus">
+  ## 配置 Prometheus
+</div>
+
+此配置会每 60 秒抓取一次组织级别端点：
+
+```yaml
+scrape_configs:
+  - job_name: "managed-postgres"
+    scheme: https
+    metrics_path: "/v1/organizations/<ORG_ID>/postgres/prometheus"
+    static_configs:
+      - targets: ["api.clickhouse.cloud"]
+    basic_auth:
+      username: <KEY_ID>
+      password: <KEY_SECRET>
+    honor_labels: true
+    scrape_interval: 60s
+```
+
+该端点每分钟刷新一次指标。以快于
+`60s` 的频率抓取会导致样本重复，并在 Gauge
+面板上呈现阶梯状模式。
+
+将 `honor_labels: true` 设为 true，这样端点中的 `postgres_service` 和
+`postgres_service_name` 标记会被保留，而不会
+被 Prometheus 覆盖。
+
+要抓取单个服务，请在 `metrics_path` 后追加 `/<PG_ID>`。
+
+<div id="grafana-dashboard">
+  ## 预置 Grafana 仪表盘
+</div>
+
+这个现成的 Grafana 仪表盘可将该端点公开的各项指标可视化——包括可排序的服务表格、CPU 和内存利用率、带阈值告警的磁盘使用情况、按状态划分的连接、事务和回滚比率、Tuple 活动、I/O、各数据库的存储情况以及死锁。
+
+<Image img="/images/managed-postgres/monitoring/grafana-dashboard.webp" alt="Managed Postgres 服务的 Grafana 仪表盘" size="md" border />
+
+<div id="import-dashboard">
+  ### 导入仪表盘
+</div>
+
+<Steps>
+  <Step>
+    #### 下载仪表盘 JSON
+
+    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/managed-postgres-grafana-dashboard.json'} download="managed-postgres-grafana-dashboard.json" eventName="docs.managed_postgres_grafana_dashboard.download">下载仪表盘 JSON</TrackedLink>。
+  </Step>
+
+  <Step>
+    #### 在 Grafana 中打开导入界面
+
+    前往 **Dashboards → New → Import**。上传 JSON 文件或粘贴其内容。
+  </Step>
+
+  <Step>
+    #### 选择 Prometheus 数据源
+
+    系统提示输入 `DS_PROMETHEUS` 时，选择抓取了[上一节](#configuring-prometheus)中所配置端点的 Prometheus 数据源。
+  </Step>
+</Steps>
+
+对于预配置的 Grafana 部署，将该 JSON 文件放到你的
+仪表盘预配置路径中。Grafana 会将 `${DS_PROMETHEUS}`
+引用解析为该实例中可用的 Prometheus 数据源。
+
+<div id="template-variables">
+  ### Template 变量
+</div>
+
+该仪表板提供了三个变量：
+
+* **数据源** — 为该仪表板提供数据的 Prometheus 数据源。
+* **Service** — 基于 `postgres_service_name` 的多选过滤器。
+  默认为 *All*；可选择一个或多个服务，将所有面板限定为这些服务的范围。
+* **Scrape interval** — 隐藏常量，默认为 `60s`。它会影响
+  Grafana 的 `$__rate_interval` 计算。如果你的抓取间隔不同，
+  请在 JSON 中修改此值。
+
+<div id="drill-in">
+  ### 筛选为单个服务后进行下钻分析
+</div>
+
+有几个面板是在通过 **Service** 变量筛选为单个
+服务后，专门用于下钻分析的。比如，“按模式划分的 CPU”面板会堆叠显示 `user`、`system`、`iowait`、`steal` 以及其他 CPU
+模式，这样你就能判断某次峰值究竟是由应用程序代码、内核
+工作、磁盘等待，还是虚拟机监控程序争用引起的。
+
+<div id="third-party-integrations">
+  ## 与 Grafana 和 Datadog 集成
+</div>
+
+该端点与 [ClickHouse Prometheus
+端点](/zh/products/cloud/features/monitoring/prometheus) 采用相同的形式，因此其中介绍的 Grafana Cloud、Grafana
+Alloy 和 Datadog OpenMetrics agent 配置
+同样适用于此处。请将 `metrics_path` 指向 Managed Postgres 的组织或
+实例路径，而不是 ClickHouse 的路径。
+
+[cloud-api]: /products/cloud/features/admin-features/api/index "Cloud API"
+
+[API keys]: /products/cloud/features/admin-features/api/openapi "管理 API 密钥"

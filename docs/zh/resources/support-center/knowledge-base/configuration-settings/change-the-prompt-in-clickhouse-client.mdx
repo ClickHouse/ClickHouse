@@ -1,0 +1,164 @@
+---
+title: 更改 clickhouse-client 的提示符
+description: "本文介绍如何将 ClickHouse 客户端和 clickhouse-local 终端窗口中的提示符从 :) 更改为“前缀 + :)”"
+date: 2023-11-16
+tags: ['设置', '原生客户端和接口']
+keywords: ['ClickHouse 客户端', '更改提示符']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+{frontMatter.description}
+
+{/* truncate */}
+
+如果你不喜欢 `clickhouse client` 和 clickhouse-local 在终端窗口中显示的提示符样式，可以为其添加前缀进行修改。
+本文将说明如何把提示符改成你想要的任意内容。
+
+默认提示符是你的本地计算机名称，后跟 `:) `：
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="默认 ClickHouse 客户端提示符" />
+
+以下是在提示符中可用的变量：`{user}`、`{host}`
+
+更新提示符有几种方法，下面我们将逐一介绍。
+
+<div id="--prompt-flag">
+  ## --prompt 标志
+</div>
+
+修改该标志的第一种方法是使用 `--prompt`：
+
+```bash
+clickhouse --prompt 👉
+```
+
+这会在笑脸前添加手指表情符号：
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="带有手指表情符号的 ClickHouse 客户端 提示符" />
+
+<div id="config-file---top-level">
+  ## 配置文件 - 顶层
+</div>
+
+或者，您也可以在 `config.xml` 文件中提供提示前缀：
+
+```xml
+<config>
+    <prompt>👉 </prompt>
+</config>
+```
+
+```
+clickhouse
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="使用配置文件的 ClickHouse 客户端提示符" />
+
+我们可以使用任意名称的配置文件，并通过 `-C` 参数传入：
+
+```xml
+<config>
+    <prompt>🎄 </prompt>
+</config>
+```
+
+```
+clickhouse -C christmas.xml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="带有圣诞树表情符号的 ClickHouse 客户端 提示符" />
+
+想用 YAML 编写配置文件？
+也完全可以：
+
+```yaml
+prompt: 🟡
+```
+
+```bash
+clickhouse -C christmas.yaml
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="带黄色圆圈表情符号的 ClickHouse 客户端 提示符" />
+
+<div id="config-file---connections_credentials">
+  ## 配置文件 - connections_credentials
+</div>
+
+或者，你也可以为每组连接凭据单独指定提示符。
+这仅在使用 `clickhouse-client` 时才有意义。
+
+```xml
+<config>
+    <connections_credentials>
+        <connection>
+            <n>prod<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[31m[PRODUCTION]\e[0m {user}@prod</prompt>
+        </connection>
+        <connection>
+            <n>dev<n>
+            <hostname>127.0.0.1</hostname>
+            <port>9000</port>
+            <secure>0</secure>
+            <user>default</user>
+            <prompt>\e[32m[DEVELOPMENT]\e[0m {user}@dev</prompt>
+        </connection>
+    </connections_credentials>
+</config>
+```
+
+然后，我们可以尝试使用 `dev` 连接：
+
+```bash
+clickhouse client -C connections.xml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="带有 Development 连接的 ClickHouse 客户端 提示符" />
+
+或者是 `prod`：
+
+```bash
+clickhouse client -C connections.xml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="带有生产环境连接的 ClickHouse 客户端提示符" />
+
+以下是 YAML 版本：
+
+```yaml
+connections_credentials:
+  connection:
+    - name: prod
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[35m[PRODUCTION]\e[0m {user}@{host}"
+    - name: dev
+      hostname: 127.0.0.1
+      port: 9000
+      secure: 0
+      user: default
+      prompt: "\e[34m[DEVELOPMENT]\e[0m {user}@{host}"
+```
+
+使用 `dev` 连接时：
+
+```bash
+clickhouse client -C connections.yaml --connection dev
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="使用 YAML 配置的 development 连接的 ClickHouse 客户端 提示符" />
+
+接下来是 `prod`：
+
+```bash
+clickhouse client -C connections.yaml --connection prod
+```
+
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="使用 YAML 配置生产环境连接的 ClickHouse 客户端 提示符" />

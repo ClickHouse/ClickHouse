@@ -1,0 +1,17 @@
+---
+title: 'ClickHouse 支持数据湖吗？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/datalake
+description: 'ClickHouse 支持数据湖，包括 Iceberg、Delta Lake、Apache Hudi、Apache Paimon、Hive'
+doc_type: 'reference'
+keywords: ['数据湖', '湖仓']
+---
+
+ClickHouse 支持数据湖，包括 Iceberg、Delta Lake、Apache Hudi、Apache Paimon 和 Hive。
+
+它支持**读取**和**写入**，并完全兼容分区裁剪、基于统计信息的裁剪、schema 演进、位置删除、等值删除、时间旅行和内部信息。
+
+ClickHouse 中的数据湖支持 **Unity**、**AWS Glue**、**Rest**、**Polaris** 和 **Hive Metastore** 目录，也支持单独的表。
+
+得益于分布式处理、高效的原生 Parquet reader 以及数据文件缓存，数据湖上的查询性能非常出色。

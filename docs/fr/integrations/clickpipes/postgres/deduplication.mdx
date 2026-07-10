@@ -1,0 +1,232 @@
+---
+sidebarTitle: 'Stratégies de déduplication'
+description: 'Gérer les doublons et les lignes supprimées.'
+slug: /integrations/clickpipes/postgres/deduplication
+title: 'Stratégies de déduplication (avec CDC)'
+keywords: ['déduplication', 'Postgres', 'ClickPipes', 'ReplacingMergeTree', 'FINAL']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+La réplication des mises à jour et des suppressions de Postgres vers ClickHouse entraîne des lignes en double dans ClickHouse en raison de sa structure de stockage des données et du processus de réplication. Cette page explique pourquoi cela se produit et quelles stratégies utiliser dans ClickHouse pour gérer ces doublons.
+
+<div id="how-does-data-get-replicated">
+  ## Comment les données sont-elles répliquées ?
+</div>
+
+<div id="PostgreSQL-logical-decoding">
+  ### Décodage logique de PostgreSQL
+</div>
+
+ClickPipes utilise le [décodage logique de Postgres](https://www.pgedge.com/blog/logical-replication-evolution-in-chronological-order-clustering-solution-built-around-logical-replication) pour capter les changements au fur et à mesure qu’ils se produisent dans Postgres. Le processus de décodage logique dans Postgres permet à des clients comme ClickPipes de recevoir ces changements dans un format lisible par des humains, c’est-à-dire sous la forme d’une série d’INSERT, d’UPDATE et de DELETE.
+
+<div id="replacingmergetree">
+  ### ReplacingMergeTree
+</div>
+
+ClickPipes associe les tables Postgres à ClickHouse à l’aide du moteur [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree). ClickHouse offre les meilleures performances avec des charges de travail en ajout seul et ne recommande pas les `UPDATE` fréquents. C’est là que ReplacingMergeTree est particulièrement puissant.
+
+Avec ReplacingMergeTree, les mises à jour sont modélisées comme des inserts avec une version plus récente (`_peerdb_version`) de la ligne, tandis que les suppressions sont des inserts avec une version plus récente et `_peerdb_is_deleted` défini sur true. Le moteur ReplacingMergeTree dédoublonne/fusionne les données en arrière-plan et conserve la version la plus récente de la ligne pour une clé primaire (id) donnée, ce qui permet de gérer efficacement les `UPDATE` et `DELETE` sous forme d’inserts versionnés.
+
+Vous trouverez ci-dessous un exemple d’instruction CREATE TABLE exécutée par ClickPipes pour créer la table dans ClickHouse.
+
+```sql
+CREATE TABLE users
+(
+    `id` Int32,
+    `reputation` String,
+    `creationdate` DateTime64(6),
+    `displayname` String,
+    `lastaccessdate` DateTime64(6),
+    `aboutme` String,
+    `views` Int32,
+    `upvotes` Int32,
+    `downvotes` Int32,
+    `websiteurl` String,
+    `location` String,
+    `accountid` Int32,
+    `_peerdb_synced_at` DateTime64(9) DEFAULT now64(),
+    `_peerdb_is_deleted` Int8,
+    `_peerdb_version` Int64
+)
+ENGINE = ReplacingMergeTree(_peerdb_version)
+PRIMARY KEY id
+ORDER BY id;
+```
+
+<div id="illustrative-example">
+  ### Exemple illustratif
+</div>
+
+L’illustration ci-dessous présente un exemple simple de synchronisation d’une table `users` entre PostgreSQL et ClickHouse à l’aide de ClickPipes.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="Chargement initial de ClickPipes" size="lg" />
+
+**Étape 1** montre l’instantané initial des 2 lignes dans PostgreSQL, puis ClickPipes effectuant le chargement initial de ces 2 lignes vers ClickHouse. Comme vous pouvez l’observer, les deux lignes sont copiées telles quelles dans ClickHouse.
+
+**Étape 2** montre trois opérations sur la table users : l’insertion d’une nouvelle ligne, la mise à jour d’une ligne existante et la suppression d’une autre ligne.
+
+**Étape 3** montre comment ClickPipes réplique les opérations INSERT, UPDATE et DELETE vers ClickHouse sous forme d’insertions versionnées. L’UPDATE apparaît comme une nouvelle version de la ligne avec l’ID 2, tandis que le DELETE apparaît comme une nouvelle version de l’ID 1, marquée comme true à l’aide de `_is_deleted`. En conséquence, ClickHouse contient trois lignes supplémentaires par rapport à PostgreSQL.
+
+Par conséquent, l’exécution d’une requête simple comme `SELECT count(*) FROM users;` peut produire des résultats différents dans ClickHouse et PostgreSQL. Selon la [documentation ClickHouse sur les fusions](/fr/concepts/core-concepts/merges#replacing-merges), les versions obsolètes des lignes sont finalement supprimées pendant le processus de fusion. Cependant, le moment où cette fusion se produit est imprévisible, ce qui signifie que les requêtes dans ClickHouse peuvent renvoyer des résultats incohérents jusqu’à ce qu’elle ait lieu.
+
+Comment garantir des résultats de la requête identiques dans ClickHouse et PostgreSQL ?
+
+<div id="deduplicate-using-final-keyword">
+  ### Dédupliquer à l’aide du mot-clé FINAL
+</div>
+
+La méthode recommandée pour dédupliquer les données dans les requêtes ClickHouse consiste à utiliser le [modificateur FINAL.](/fr/reference/statements/select/from#final-modifier) Cela garantit que seules les lignes dédupliquées sont renvoyées.
+
+Voyons comment l’utiliser dans trois requêtes différentes.
+
+*Notez la clause WHERE dans les requêtes suivantes, utilisée pour filtrer les lignes supprimées.*
+
+* **Requête de comptage simple** : comptez le nombre de posts.
+
+Il s’agit de la requête la plus simple que vous puissiez exécuter pour vérifier que la synchronisation s’est bien déroulée. Les deux requêtes doivent renvoyer le même total.
+
+```sql
+-- PostgreSQL
+SELECT count(*) FROM posts;
+
+-- ClickHouse 
+SELECT count(*) FROM posts FINAL WHERE _peerdb_is_deleted=0;
+```
+
+* **Agrégation simple avec JOIN** : les 10 utilisateurs ayant cumulé le plus de vues.
+
+Exemple d’agrégation sur une seule table. La présence de doublons ici affecterait fortement le résultat de la fonction sum.
+
+```sql highlight={8,22}
+-- PostgreSQL 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts p
+LEFT JOIN users u ON u.id = p.owneruserid
+WHERE p.owneruserid > 0
+GROUP BY user_id, display_name
+ORDER BY viewcount DESC
+LIMIT 10;
+
+-- ClickHouse 
+SELECT
+    sum(p.viewcount) AS viewcount,
+    p.owneruserid AS user_id,
+    u.displayname AS display_name
+FROM posts AS p
+FINAL
+LEFT JOIN users AS u
+FINAL ON (u.id = p.owneruserid) AND (u._peerdb_is_deleted = 0)
+WHERE (p.owneruserid > 0) AND (p._peerdb_is_deleted = 0)
+GROUP BY
+    user_id,
+    display_name
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="final-setting">
+  #### paramètre FINAL
+</div>
+
+Plutôt que d’ajouter le modificateur FINAL à chaque nom de table dans la requête, vous pouvez utiliser le [paramètre FINAL](/fr/reference/settings/session-settings#final) pour l’appliquer automatiquement à toutes les tables de la requête.
+
+Ce paramètre peut être appliqué soit à une requête donnée, soit à l’ensemble d’une session.
+
+```sql
+-- Per query FINAL setting
+SELECT count(*) FROM posts SETTINGS FINAL = 1;
+
+-- Set FINAL for the session
+SET final = 1;
+SELECT count(*) FROM posts; 
+```
+
+<div id="row-policy">
+  #### ROW policy
+</div>
+
+Un moyen simple de masquer le filter redondant `_peerdb_is_deleted = 0` consiste à utiliser une [ROW policy.](/fr/concepts/features/security/access-rights#row-policy-management) Vous trouverez ci-dessous un exemple qui crée une ROW policy afin d’exclure les lignes supprimées de toutes les queries sur la table votes.
+
+```sql
+-- Apply row policy to all users
+CREATE ROW POLICY cdc_policy ON votes FOR SELECT USING _peerdb_is_deleted = 0 TO ALL;
+```
+
+> Les politiques au niveau des lignes s’appliquent à une liste d’utilisateurs et de rôles. Dans cet exemple, elles s’appliquent à tous les utilisateurs et rôles. Ce paramètre peut être ajusté pour ne s’appliquer qu’à certains utilisateurs ou rôles.
+
+<div id="query-like-with-postgres">
+  ### Interroger comme dans Postgres
+</div>
+
+La migration d’un jeu de données analytique de PostgreSQL vers ClickHouse nécessite souvent de modifier les requêtes de l’application pour tenir compte des différences de gestion des données et d’exécution des requêtes.
+
+Cette section présente des techniques de déduplication des données tout en conservant les requêtes d’origine inchangées.
+
+<div id="views">
+  #### Vues
+</div>
+
+Les [vues](/fr/reference/statements/create/view#normal-view) sont un excellent moyen de masquer le mot-clé FINAL dans la requête, car elles ne stockent aucune donnée et se contentent de lire une autre table à chaque accès.
+
+Vous trouverez ci-dessous un exemple de création de vues pour chaque table de notre base de données dans ClickHouse, avec le mot-clé FINAL et un filtre sur les lignes supprimées.
+
+```sql
+CREATE VIEW posts_view AS SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW users_view AS SELECT * FROM users FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW votes_view AS SELECT * FROM votes FINAL WHERE _peerdb_is_deleted=0;
+CREATE VIEW comments_view AS SELECT * FROM comments FINAL WHERE _peerdb_is_deleted=0;
+```
+
+Ensuite, nous pouvons interroger les vues avec la même requête que dans PostgreSQL.
+
+```sql
+-- Most viewed posts
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM posts_view
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10
+```
+
+<div id="refreshable-material-view">
+  #### Vue matérialisée actualisable
+</div>
+
+Une autre approche consiste à utiliser une [vue matérialisée actualisable](/fr/concepts/features/materialized-views/refreshable-materialized-view), qui permet de planifier l’exécution d’une requête afin de dédupliquer les lignes et de stocker les résultats dans une table de destination. À chaque actualisation planifiée, la table de destination est remplacée par le résultat le plus récent de la requête.
+
+Le principal avantage de cette méthode est que la requête utilisant le mot-clé FINAL ne s’exécute qu’une seule fois lors de l’actualisation, ce qui évite d’avoir à utiliser FINAL dans les requêtes ultérieures sur la table de destination.
+
+En revanche, les données de la table de destination ne sont à jour qu’au moment de la dernière actualisation. Cela dit, pour de nombreux cas d’utilisation, des intervalles d’actualisation allant de quelques minutes à quelques heures peuvent suffire.
+
+```sql
+-- Create deduplicated posts table 
+CREATE TABLE deduplicated_posts AS posts;
+
+-- Create the Materialized view and schedule to run every hour
+CREATE MATERIALIZED VIEW deduplicated_posts_mv REFRESH EVERY 1 HOUR TO deduplicated_posts AS 
+SELECT * FROM posts FINAL WHERE _peerdb_is_deleted=0 
+```
+
+Ensuite, vous pouvez interroger normalement la table `deduplicated_posts`.
+
+```sql
+SELECT
+    sum(viewcount) AS viewcount,
+    owneruserid
+FROM deduplicated_posts
+WHERE owneruserid > 0
+GROUP BY owneruserid
+ORDER BY viewcount DESC
+LIMIT 10;
+```

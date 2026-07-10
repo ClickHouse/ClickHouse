@@ -1,0 +1,99 @@
+---
+description: 'ClickHouse 的 PostgreSQL wire 协议接口文档'
+sidebarTitle: 'PostgreSQL 接口'
+slug: /interfaces/postgresql
+title: 'PostgreSQL 接口'
+doc_type: 'reference'
+---
+
+import CloudNotSupportedBadge from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+
+<CloudNotSupportedBadge />
+
+<Tip>
+  了解我们的 [Managed Postgres](/zh/products/managed-postgres/overview) 服务。它采用与计算资源物理同置的 NVMe 存储，相比使用 EBS 等网络附加存储的替代方案，对于受磁盘 I/O 限制的工作负载，性能最高可提升 10 倍，并支持您通过 ClickPipes 中的 Postgres CDC 连接器将 Postgres 数据复制到 ClickHouse。
+</Tip>
+
+ClickHouse 支持 PostgreSQL wire 协议，因此您可以使用 Postgres 客户端连接到 ClickHouse。从某种意义上说，ClickHouse 可以充当一个 PostgreSQL 实例，使您能够将 PostgreSQL 客户端应用程序连接到 ClickHouse，即使该应用程序尚未获得 ClickHouse 的直接支持 (例如 Amazon Redshift) 。
+
+要启用 PostgreSQL wire 协议，请将 [postgresql&#95;port](/zh/reference/settings/server-settings/settings#postgresql_port) 设置添加到服务器的配置文件中。例如，您可以在 `config.d` 文件夹中新建一个 XML 文件来定义该端口：
+
+```xml
+<clickhouse>
+    <postgresql_port>9005</postgresql_port>
+</clickhouse>
+```
+
+启动 ClickHouse server，并查找类似下面这样的日志消息，其中会提到 **Listening for PostgreSQL compatibility protocol**：
+
+```response
+{} <Information> Application: Listening for PostgreSQL compatibility protocol: 127.0.0.1:9005
+```
+
+<div id="connect-psql-to-clickhouse">
+  ## 将 psql 连接到 ClickHouse
+</div>
+
+以下命令演示了如何使用 PostgreSQL 客户端 `psql` 连接到 ClickHouse：
+
+```bash
+psql -p [port] -h [hostname] -U [username] [database_name]
+```
+
+例如：
+
+```bash
+psql -p 9005 -h 127.0.0.1 -U alice default
+```
+
+<Note>
+  `psql` 客户端要求使用密码登录，因此无法使用没有密码的 `default` 用户连接。你可以为 `default` 用户设置密码，或者使用其他用户登录。
+</Note>
+
+`psql` 客户端会提示输入密码：
+
+```response
+Password for user alice:
+psql (14.2, server 22.3.1.1)
+WARNING: psql major version 14, server major version 22.
+         Some psql features might not work.
+Type "help" for help.
+
+default=>
+```
+
+就是这样！现在，你已经将 PostgreSQL 客户端连接到 ClickHouse，所有命令和查询都会在 ClickHouse 上执行。
+
+<Note>
+  PostgreSQL 协议目前仅支持明文密码。
+</Note>
+
+<div id="using-ssl">
+  ## 使用 SSL
+</div>
+
+如果你的 ClickHouse 实例已配置 SSL/TLS，那么 `postgresql_port` 也会使用相同的设置 (该端口由安全和非安全客户端共用) 。
+
+不同客户端使用 SSL 连接的方式各不相同。以下命令演示了如何传入证书和密钥，让 `psql` 安全连接到 ClickHouse：
+
+```bash
+psql "port=9005 host=127.0.0.1 user=alice dbname=default sslcert=/path/to/certificate.pem sslkey=/path/to/key.pem sslrootcert=/path/to/rootcert.pem sslmode=verify-ca"
+```
+
+<div id="using-scram-sha256">
+  ## 使用 SCRAM-SHA-256 配置 ClickHouse 用户身份验证
+</div>
+
+为确保 ClickHouse 的用户身份验证安全，建议使用 SCRAM-SHA-256 协议。可通过在 users.xml 文件中指定 `password_scram_sha256_hex` 元素来配置用户。密码哈希必须使用 num&#95;iterations=4096 生成。
+
+请确保 psql 客户端在建立连接时支持并协商使用 SCRAM-SHA-256。
+
+密码为 `abacaba` 的用户 `user_with_sha256` 的配置示例如下：
+
+```xml
+<user_with_sha256>
+    <password_scram_sha256_hex>04e7a70338d7af7bb6142fe7e19fef46d9b605f3e78b932a60e8200ef9154976</password_scram_sha256_hex>
+</user_with_sha256>
+```
+
+有关其 SSL 设置的更多信息，请参阅 [PostgreSQL 文档](https://jdbc.postgresql.org/documentation/head/ssl-client.html)。
