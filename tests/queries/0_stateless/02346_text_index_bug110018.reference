@@ -14,3 +14,7 @@
 1
 1
 1
+-- byte-changing FixedString cast on value must NOT wrongly prune (issue #110031 review)
+2
+0
+1

@@ -1279,12 +1279,30 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
         const auto function = node.toFunctionNode();
         const auto function_name = function.getFunctionName();
 
-        /// Unwrap a CAST that only wraps the element in Nullable, e.g. `m[CAST('key' AS Nullable(String))]`
-        /// becomes `_CAST(arrayElement(m, 'key'), 'Nullable(String)')` (or `_CAST(m.key_<key>, ...)`).
-        /// This is safe because the map element for a non-NULL constant key is the value-type default
-        /// (empty string) for absent keys, so the value index can still be used as a hint.
+        /// Unwrap a CAST that only changes the Nullable / LowCardinality wrappers of the element,
+        /// e.g. `m[CAST('key' AS Nullable(String))]` becomes `_CAST(arrayElement(m, 'key'), 'Nullable(String)')`
+        /// (or `_CAST(m.key_<key>, ...)`).
+        ///
+        /// We must ONLY see through casts that PRESERVE the indexed bytes. The `mapValues` text index
+        /// stores raw `String` tokens, so a byte-changing cast (e.g. to `FixedString(N)`, which pads the
+        /// value with trailing zero bytes) would make us search the index for a token that differs from
+        /// what is actually stored, and a matching granule could be wrongly pruned. So only recurse when
+        /// the cast's target type reduces to the same base type as its argument after stripping
+        /// LowCardinality/Nullable (the nullability/LowCardinality-only wrappers this PR targets).
         if ((function_name == "_CAST" || function_name == "CAST") && function.getArgumentsSize() == 2)
-            return hasIndexForMapElementValue(function.getArgumentAt(0));
+        {
+            const auto * cast_node = function.getDAGNode();
+            const auto argument = function.getArgumentAt(0);
+            const auto * argument_node = argument.getDAGNode();
+            if (!cast_node || !argument_node)
+                return false;
+
+            if (!removeLowCardinalityAndNullable(cast_node->result_type)
+                     ->equals(*removeLowCardinalityAndNullable(argument_node->result_type)))
+                return false;
+
+            return hasIndexForMapElementValue(argument);
+        }
 
         /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
         if (function.getArgumentsSize() == 2 && function_name == "arrayElement")
