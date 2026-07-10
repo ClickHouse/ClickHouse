@@ -5,15 +5,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
-PUFFIN="$CURDIR/data_puffin/04260_sparse_large_key.puffin"
+PUFFIN="$CURDIR/data_puffin/sparse_large_key.puffin"
 
-echo "--- Puffin: sparse large key ---"
+echo "--- sparse_large_key.puffin ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT deleted_rows
 FROM file('$PUFFIN', Puffin)
 "
 
-echo "--- Puffin: ARRAY JOIN ---"
+echo "--- ARRAY JOIN ---"
 $CLICKHOUSE_LOCAL -q "
 SELECT row_number
 FROM file('$PUFFIN', Puffin)

@@ -8,16 +8,12 @@ Requirements:
 
 Usage:
   python3 generate_spark_puffin.py
-
-Output:
-  04263_spark_deletion_vector.puffin in this directory
+  python3 generate_puffin_fixtures.py
 """
 
 from __future__ import annotations
 
 import shutil
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -26,9 +22,9 @@ try:
 except ImportError as exc:  # pragma: no cover - helper script
     raise SystemExit("pyspark is required") from exc
 
-OUTPUT = Path(__file__).with_name("04263_spark_deletion_vector.puffin")
+OUTPUT = Path(__file__).with_name("spark_deletion_vector.puffin")
 ICEBERG_PACKAGE = "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.9.0"
-DELETED_IDS = [2, 5, 7, 100]
+DELETED_IDS = [2, 5, 7, 100, 65536]
 
 
 def find_puffin_file(warehouse: Path) -> Path:
@@ -70,7 +66,7 @@ def generate_puffin(warehouse: Path) -> Path:
             )
             """
         )
-        spark.sql("INSERT INTO default.spark_puffin_source SELECT id FROM range(0, 200)")
+        spark.sql("INSERT INTO default.spark_puffin_source SELECT id FROM range(0, 70000)")
         spark.sql(
             "DELETE FROM default.spark_puffin_source "
             f"WHERE id IN ({', '.join(str(x) for x in DELETED_IDS)})"
