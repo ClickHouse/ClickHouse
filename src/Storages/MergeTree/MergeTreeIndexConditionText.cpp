@@ -157,6 +157,12 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
             all_search_queries[search_query->getHash().get128()] = search_query;
         }
 
+        /// Register direct-read-only queries (e.g. the original-mode bare child of a positive
+        /// boolean wrapper) so replaceToVirtualColumn can find them by hash. They are intentionally
+        /// not added to all_search_tokens or considered for pruning -- the pruning query above covers that.
+        for (const auto & search_query : element.extra_search_queries)
+            all_search_queries[search_query->getHash().get128()] = search_query;
+
         if (requiresReadingAllTokens(element))
             global_search_mode = TextSearchMode::Any;
     }
@@ -537,11 +543,16 @@ bool MergeTreeIndexConditionText::traversePositiveBooleanWrapper(
 {
     const String function_name = function_node.getFunctionName();
 
+    /// `nullIn` / `globalNullIn` are the null-aware forms the analyzer rewrites `in` / `globalIn` to
+    /// when `transform_null_in = 1` (see resolveFunction.cpp). The truthy-only check below still rejects
+    /// NULL set members, so the same soundness argument applies to them.
+    const bool is_in = function_name == "in" || function_name == "globalIn"
+        || function_name == "nullIn" || function_name == "globalNullIn";
+
     if (function_name != "equals"
         && function_name != "notEquals"
         && function_name != "isNotDistinctFrom"
-        && function_name != "in"
-        && function_name != "globalIn")
+        && !is_in)
         return false;
 
     /// Maps a scalar constant to its boolean value, but only for the canonical boolean
@@ -593,28 +604,60 @@ bool MergeTreeIndexConditionText::traversePositiveBooleanWrapper(
         return field_to_boolean(value);
     };
 
-    /// Recurse into `atom` and, if it builds an index condition, force direct-read off.
-    /// The wrapper node's children are not [haystack, needles], so the direct-read /
-    /// preprocessor rewrite (which assumes that shape) must not fire on it. Granule pruning
-    /// is mode-independent (driven by the RPN function type), so pruning is fully preserved,
-    /// and the bare inner atom node is still optimized for direct read independently.
+    /// Recurse into `atom` and, if it builds an index condition, force direct-read off on the
+    /// pruning query. The wrapper node's children are not [haystack, needles], so the direct-read /
+    /// preprocessor rewrite (which assumes that shape) must not fire on the wrapper. Granule pruning
+    /// is mode-independent (driven by the RPN function type), so pruning is fully preserved.
+    ///
+    /// The bare inner atom node also appears in the ActionsDAG as its own node, so the direct-read
+    /// optimizer processes it independently via createTextSearchQuery, which reconstructs the atom in
+    /// its ORIGINAL mode (e.g. Exact for hasToken). Because TextSearchQuery::getHash includes
+    /// direct_read_mode, the None-mode wrapper query alone would not match that lookup and the child's
+    /// direct read / hint would be lost. Preserve a copy of the original-mode query in
+    /// extra_search_queries so it is registered in all_search_queries for replaceToVirtualColumn,
+    /// without letting it affect pruning.
     auto recurse_into_atom = [&](const RPNBuilderTreeNode & atom) -> bool
     {
         if (!atom.isFunction())
             return false;
 
-        RPNElement inner;
-        if (!traverseAtomNode(atom, inner))
+        /// Pruning representation: the wrapper node's children are not [haystack, needles], so its
+        /// queries must be forced to None mode to keep the direct-read optimizer from rewriting the
+        /// wrapper node itself. Granule pruning is mode-independent, so pruning is fully preserved.
+        RPNElement pruning;
+        if (!traverseAtomNode(atom, pruning))
             return false;
 
-        for (auto & query : inner.text_search_queries)
+        for (auto & query : pruning.text_search_queries)
             query->direct_read_mode = TextIndexDirectReadMode::None;
 
-        out = std::move(inner);
+        /// Direct-read representation: the bare inner atom also appears as its own ActionsDAG node and
+        /// is optimized independently. createTextSearchQuery reconstructs it in its ORIGINAL mode, and
+        /// TextSearchQuery::getHash includes direct_read_mode, so the None-mode pruning query would not
+        /// match that lookup. Traverse the atom a second time (patterns are not copy-constructible, so we
+        /// cannot clone the pruning query) and keep the original-mode queries as extra_search_queries, so
+        /// they are registered in all_search_queries for replaceToVirtualColumn without affecting pruning.
+        RPNElement original;
+        if (traverseAtomNode(atom, original))
+        {
+            for (auto & query : original.text_search_queries)
+                if (query->direct_read_mode != TextIndexDirectReadMode::None)
+                    out.extra_search_queries.emplace_back(std::move(query));
+
+            /// Carry forward extras a nested wrapper already collected (e.g. `(atom = true) = true`).
+            for (auto & query : original.extra_search_queries)
+                out.extra_search_queries.emplace_back(std::move(query));
+        }
+
+        for (auto & query : pruning.extra_search_queries)
+            out.extra_search_queries.emplace_back(std::move(query));
+
+        out.function = pruning.function;
+        out.text_search_queries = std::move(pruning.text_search_queries);
         return true;
     };
 
-    if (function_name == "in" || function_name == "globalIn")
+    if (is_in)
     {
         auto lhs = function_node.getArgumentAt(0);
         auto rhs = function_node.getArgumentAt(1);

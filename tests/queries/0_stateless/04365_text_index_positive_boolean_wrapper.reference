@@ -8,4 +8,10 @@ equals = true	1
 = false no prune	1
 != true no prune	1
 = 5 no prune	1
+IN (true) null_in	1
+IN (true,false) null_in no prune	1
+bare direct read	1
+= true direct read	1
+IN (true) direct read	1
 results	1	1	1	1	1	127
+results null_in	1

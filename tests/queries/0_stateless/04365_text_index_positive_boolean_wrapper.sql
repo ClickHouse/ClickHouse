@@ -4,6 +4,7 @@
 
 SET enable_analyzer = 1;
 SET use_query_condition_cache = 0;
+SET query_plan_direct_read_from_text_index = 1;
 
 DROP TABLE IF EXISTS tab;
 
@@ -37,6 +38,18 @@ SELECT '!= true no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAI
 -- `= 5` is not a boolean spelling: leave to row-level evaluation, the text index must NOT be applied.
 SELECT '= 5 no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = 5);
 
+-- With transform_null_in = 1 the analyzer rewrites `IN` to `nullIn`; the wrapper must still recognize
+-- it and prune. A set with a non-truthy member (`IN (true, false)`) must NOT prune even under null_in.
+SELECT 'IN (true) null_in', countIf(explain ILIKE '%Name: idx%') = 1 AND countIf(explain ILIKE '%Granules: 1/128%') = 1 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true) SETTINGS transform_null_in = 1);
+SELECT 'IN (true,false) null_in no prune', countIf(explain ILIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true, false) SETTINGS transform_null_in = 1);
+
+-- The bare inner atom of a positive wrapper is still optimized for direct read independently: the
+-- `__text_index_idx_...` virtual column must appear in the plan for `= true` and `IN (true)`, exactly as
+-- for the bare atom. (Uses `count(explain) > 0` on the actions to stay robust to plan-format churn.)
+SELECT 'bare direct read', count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare')) WHERE explain ILIKE '%__text_index_idx%';
+SELECT '= true direct read', count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') = true) WHERE explain ILIKE '%__text_index_idx%';
+SELECT 'IN (true) direct read', count() > 0 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE hasToken(s, 'rare') IN (true)) WHERE explain ILIKE '%__text_index_idx%';
+
 -- Results stay correct in every case.
 SELECT 'results',
     countIf(hasToken(s, 'rare')),
@@ -46,5 +59,7 @@ SELECT 'results',
     countIf(hasToken(s, 'rare') IS TRUE),
     countIf(hasToken(s, 'rare') = false)
 FROM tab;
+
+SELECT 'results null_in', countIf(hasToken(s, 'rare') IN (true)) FROM tab SETTINGS transform_null_in = 1;
 
 DROP TABLE tab;
