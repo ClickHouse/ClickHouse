@@ -31,6 +31,8 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Functions/ComparisonNames.h>
 #include <type_traits>
+#include <Columns/ColumnArray.h>
+#include <DataTypes/DataTypeArray.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <DataTypes/Native.h>
@@ -1263,6 +1265,149 @@ private:
         return executeGenericIdenticalTypes(c0_converted.get(), c1_converted.get());
     }
 
+    /// Lexicographically compares two arrays element-by-element using the accurate scalar
+    /// comparison. Unlike executeGeneric, this does not require the element types to have a
+    /// least common supertype, so it works for e.g. `Array(Int64)` vs `Array(UInt64)` and
+    /// `Array(Int256)` vs `Array(UInt256)`. The result is always a non-Nullable `UInt8`.
+    ColumnPtr executeArray(
+        const DataTypePtr & /*result_type*/,
+        const ColumnWithTypeAndName & column_type_name0,
+        const ColumnWithTypeAndName & column_type_name1,
+        size_t input_rows_count) const
+    {
+        /// First, unwrap the two array columns
+        ColumnPtr full_column0 = column_type_name0.column->convertToFullColumnIfConst();
+        ColumnPtr full_column1 = column_type_name1.column->convertToFullColumnIfConst();
+
+        /// With ColumnArray we have access to offsets and we can handle array of arrays
+        const auto & column_array0 = assert_cast<const ColumnArray &>(*full_column0);
+        const auto & column_array1 = assert_cast<const ColumnArray &>(*full_column1);
+
+        /// Fetch all offsets from both ColumnArrays
+        const auto & offsets0 = column_array0.getOffsets();
+        const auto & offsets1 = column_array1.getOffsets();
+
+        /// Create the storage for the indexes
+        auto indexes0 = ColumnUInt64::create();
+        auto indexes1 = ColumnUInt64::create();
+        auto & idx0 = indexes0->getData();
+        auto & idx1 = indexes1->getData();
+
+        std::vector<UInt64> common_lengths(input_rows_count); /// stores the aligned prefix length both arrays share
+        std::vector<Int8> length_cmp(input_rows_count); /// whether array0 is shorter(-1), equals(0), bigger(1) than array1 
+
+        ColumnArray::Offset prev0 = 0;
+        ColumnArray::Offset prev1 = 0;
+
+
+        /// For each row, collect(Gather) indices of the aligned elements (the common prefix of both arrays)
+        /// and remember the common length and the sign of the length difference for the tie-break.
+        /// Handles [1] = [1] as well as [[1]] = [[1]]
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            ColumnArray::Offset off0 = offsets0[row];
+            ColumnArray::Offset off1 = offsets1[row];
+            size_t len0 = off0 - prev0;
+            size_t len1 = off1 - prev1;
+            size_t common = std::min(len0, len1);
+
+            for (size_t k = 0; k < common; ++k)
+            {   /// stores consecutive common positions on both arrays
+                idx0.push_back(prev0 + k);
+                idx1.push_back(prev1 + k);
+            }
+
+            common_lengths[row] = common;
+            length_cmp[row] = len0 < len1 ? -1 : (len0 == len1 ? 0 : 1); /// shorter(-1), equals(0), greater(1)
+
+            // update previous positions with current offsets
+            prev0 = off0;
+            prev1 = off1;
+        }
+
+        const size_t num_elements = idx0.size();
+
+        /// Now we can gather aligned elements into two equally-sized columns and compare them all at once
+        const DataTypePtr & nested_type0 = assert_cast<const DataTypeArray &>(*column_type_name0.type).getNestedType();
+        const DataTypePtr & nested_type1 = assert_cast<const DataTypeArray &>(*column_type_name1.type).getNestedType();
+        ColumnsWithTypeAndName element_args{
+            {column_array0.getDataPtr()->index(*indexes0, 0), nested_type0, "left"},
+            {column_array1.getDataPtr()->index(*indexes1, 0), nested_type1, "right"}};
+        
+        /// Recurse over indexes to compare flat columns at element-level
+        auto run = [&](auto function) -> ColumnPtr
+        {
+            auto resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(std::move(function));
+            auto impl = resolver->build(element_args);
+            return impl->execute(element_args, impl->getResultType(), num_elements, /*dry_run=*/false)
+                  ->convertToFullColumnIfConst();
+        };
+
+        // With lexicographic check we can support all the operations below
+        constexpr bool is_equals = IsOperation<Op>::equals;
+        constexpr bool is_not_equals = IsOperation<Op>::not_equals;
+        constexpr bool is_less = IsSameOperation<Op, LessOp>::value;
+        constexpr bool is_less_or_equals = IsOperation<Op>::less_or_equals;
+        constexpr bool is_greater = IsSameOperation<Op, GreaterOp>::value;
+        constexpr bool is_greater_or_equals = IsOperation<Op>::greater_or_equals;
+
+        ColumnPtr equals_col = run(std::make_shared<FunctionComparison<EqualsOp, NameEquals>>(params));
+        const auto & element_equals = assert_cast<const ColumnUInt8 &>(*equals_col).getData();
+
+        ColumnPtr order_col;
+        if constexpr (is_less || is_less_or_equals)
+            order_col = run(std::make_shared<FunctionComparison<LessOp, NameLess>>(params));
+        else if constexpr (is_greater || is_greater_or_equals)
+            order_col = run(std::make_shared<FunctionComparison<GreaterOp, NameGreater>>(params));
+        const ColumnUInt8::Container * element_order
+            = order_col ? &assert_cast<const ColumnUInt8 &>(*order_col).getData() : nullptr;
+
+        auto result = ColumnUInt8::create(input_rows_count);
+        auto & res = result->getData(); 
+
+        size_t pos = 0;
+        // For each row from both Arrays
+        for (size_t row = 0; row < input_rows_count; ++row)
+        {
+            size_t common_length = common_lengths[row];
+
+            if constexpr (is_equals || is_not_equals)
+            {
+                bool equal = length_cmp[row] == 0;
+                for (size_t k = 0; equal && k < common_length; ++k)
+                    equal = element_equals[pos + k];
+                res[row] = is_equals ? equal : !equal;
+            }
+            else
+            {
+                /// The first differing element decides; if the common prefix is equal, the shorter array is "less".
+                UInt8 value = 0;
+                bool decided = false;
+                for (size_t k = 0; k < common_length; ++k)
+                {
+                    if (!element_equals[pos + k])
+                    {
+                        value = (*element_order)[pos + k];
+                        decided = true;
+                        break;
+                    }
+                }
+                if (!decided)
+                {
+                    Int8 lc = length_cmp[row];
+                    if constexpr (is_less)                   value = lc < 0;
+                    else if constexpr (is_less_or_equals)    value = lc <= 0;
+                    else if constexpr (is_greater)           value = lc > 0;
+                    else if constexpr (is_greater_or_equals) value = lc >= 0;
+                }
+                res[row] = value;
+            }
+            pos += common_length;
+        }
+
+        return result;
+    }
+
 public:
     String getName() const override
     {
@@ -1585,6 +1730,14 @@ public:
             return executeGenericIdenticalTypes(col_left_untyped, col_right_untyped);
         }
 
+        /// Arrays whose element types have no common supertype are compared element-wise;
+        /// the generic path below would otherwise fail inside getLeastSupertype. When a
+        /// common supertype does exist.
+        if (which_left.isArray() && which_right.isArray()
+            && !tryGetLeastSupertype(DataTypes{left_type, right_type}))
+        {
+            return executeArray(result_type, col_with_type_and_name_left, col_with_type_and_name_right, input_rows_count);
+        }
         return executeGeneric(col_with_type_and_name_left, col_with_type_and_name_right);
     }
 
