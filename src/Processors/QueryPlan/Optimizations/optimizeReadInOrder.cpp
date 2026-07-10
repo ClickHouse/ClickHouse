@@ -1355,7 +1355,20 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
-            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit);
+            /// Push the FINAL limit into the child `MergeTree` reads for early termination, mirroring
+            /// the direct `ReadFromMergeTree` branch above. The outer-plan gates are applied here;
+            /// per-child safety (filters after FINAL, sampling, deferred filters) is additionally
+            /// enforced inside `ReadFromMerge::requestReadingInOrder`. As on the direct path, the
+            /// `optimize_final_limit_pushdown`/`exact_rows_before_limit` settings are checked later
+            /// at consumption time in `ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal`, so the
+            /// hint is set here whenever the plan shape allows it.
+            size_t final_limit = 0;
+            bool sorting_key_covers_order_by = order_info.input_order->sort_description_for_merging.size() == description.size();
+            if (sorting.getLimit() > 0 && !has_filter_step && !has_row_reducing_step
+                && !find_reading_ctx.has_join_on_path && sorting_key_covers_order_by)
+                final_limit = sorting.getLimit();
+
+            bool can_read = merge->requestReadingInOrder(order_info.input_order, query_limit, final_limit);
             if (!can_read)
                 return nullptr;
 

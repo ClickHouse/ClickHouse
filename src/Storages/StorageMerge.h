@@ -191,7 +191,9 @@ public:
     const StorageListWithLocks & getSelectedTables();
 
     /// Returns `false` if requested reading cannot be performed.
-    bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
+    /// When `final_limit` is non-zero, the FINAL limit-pushdown hint is propagated to the eligible
+    /// child `MergeTree` reads (see `forwardFinalLimitToSafeReadingSteps`).
+    bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0, size_t final_limit = 0);
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
