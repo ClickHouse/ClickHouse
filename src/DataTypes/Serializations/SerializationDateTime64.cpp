@@ -16,6 +16,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+    extern const int CANNOT_PARSE_NUMBER;
 }
 
 SerializationDateTime64::SerializationDateTime64(
@@ -130,14 +131,39 @@ static inline ReturnType readNumericTextImpl(DateTime64 & x, UInt32 scale, ReadB
     bool is_negative = (!istr.eof() && *istr.position() == '-');
 
     time_t whole = 0;
-    /// Accept the bare shorthand `-.123` (sign directly followed by a decimal point, implied zero whole part).
-    /// readIntText rejects a lone sign with no digits, so consume the sign here and leave whole == 0; the
-    /// explicit-negative-zero-whole case is then handled by adjustFractionalDateTimeSign below. This mirrors
-    /// the scalar readDateTime64Text path, which already accepts `-.123`. The `.123` form (no sign) already
-    /// works because readIntText tolerates zero leading digits.
-    if (is_negative && istr.available() >= 2 && istr.position()[1] == '.')
+    if (is_negative)
     {
+        /// Consume the sign up front, then decide from the next byte. This is chunk-boundary
+        /// safe: unlike a lookahead into the current buffer (istr.available()/position()[1]),
+        /// calling istr.eof() after the sign forces a refill, so the byte after '-' is
+        /// reliably visible even when '-' was the last byte of the previous chunk.
         ++istr.position();
+        if (istr.eof() || (*istr.position() != '.' && !isNumericASCII(*istr.position())))
+        {
+            /// A lone '-' with neither a fraction nor a magnitude is malformed. readIntText
+            /// would have rejected "-<non-digit>" (has_sign && !has_number); preserve that
+            /// after pre-consuming the sign so we don't silently parse it as 0.
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot parse number without any digits");
+            else
+                return ReturnType(false);
+        }
+        if (*istr.position() == '.')
+        {
+            /// Bare shorthand `-.123` (sign directly followed by the decimal point, implied
+            /// zero whole part): leave whole == 0. adjustFractionalDateTimeSign restores the
+            /// sign below. This mirrors the scalar readDateTime64Text path, which also accepts
+            /// `-.123`.
+        }
+        else
+        {
+            /// Regular negative value: read the unsigned magnitude and re-apply the sign.
+            if constexpr (throw_exception)
+                readIntText(whole, istr);
+            else if (!tryReadIntText(whole, istr))
+                return ReturnType(false);
+            whole = -whole;
+        }
     }
     else if constexpr (throw_exception)
         readIntText(whole, istr);
