@@ -16,11 +16,17 @@ SELECT arrayMap(x -> round(x, 10), LpNormalize([3, 4], 5.)) = arrayMap(x -> roun
 -- Aliases.
 SELECT normalizeL1([1, 2]), normalizeL2([3, 4]), normalizeLinf([3, 4]), normalizeLp([3, 4], 2.);
 
--- Different nested types. Float32 arrays produce Float32 arrays, everything else produces Float64 arrays.
+-- Different nested types. Float32 and BFloat16 arrays produce Float32 arrays, everything else produces Float64 arrays.
 SELECT toTypeName(L2Normalize([1, 2, 3]));
 SELECT toTypeName(L2Normalize([1.0::Float32, 2.0::Float32]));
 SELECT toTypeName(L2Normalize([1.0::Float64, 2.0::Float64]));
 SELECT L2Normalize([3.0::Float32, 4.0::Float32]);
+
+-- BFloat16 arrays normalize to Array(Float32), just like Float32 arrays.
+SET allow_experimental_bfloat16_type = 1;
+SELECT toTypeName(L2Normalize([3.0::BFloat16, 4.0::BFloat16]));
+SELECT toTypeName(LpNormalize([3.0::BFloat16, 4.0::BFloat16], 3.));
+SELECT L2Normalize([3.0::BFloat16, 4.0::BFloat16]);
 
 -- Non-constant argument.
 SELECT L2Normalize(materialize([3, 4]));
