@@ -58,8 +58,7 @@ To set up PrivateLink with VPC resource:
 3. Create a resource share
 
 <Steps>
-<Step>
-#### Create a resource gateway {#create-resource-gateway}
+<Step title="Create a resource gateway" id="create-resource-gateway">
 
 Resource gateway is the point that receives traffic for specified resources in your VPC.
 
@@ -90,8 +89,7 @@ aws vpc-lattice get-resource-gateway \
     --resource-gateway-identifier <RESOURCE_GATEWAY_ID>
 ```
 </Step>
-<Step>
-#### Create a VPC Resource-Configuration {#create-resource-configuration}
+<Step title="Create a VPC Resource-Configuration" id="create-resource-configuration">
 
 Resource-Configuration is associated with resource gateway to make your resource accessible.
 
@@ -127,8 +125,7 @@ For more information, see the [AWS documentation](https://docs.aws.amazon.com/vp
 
 The output will contain a Resource-Configuration ARN, which you will need for the next step. It will also contain a Resource-Configuration ID, which you will need to set up a ClickPipe connection with VPC resource.
 </Step>
-<Step>
-#### Create a Resource-Share {#create-resource-share}
+<Step title="Create a Resource-Share" id="create-resource-share">
 
 Sharing your resource requires a Resource-Share. This is facilitated through the Resource Access Manager (RAM).
 
@@ -183,14 +180,17 @@ It requires setting up a NLB (Network Load Balancer) in front of your data sourc
 and configuring the VPC endpoint service to use the NLB.
 
 VPC endpoint service can be [configured with a private DNS](https://docs.aws.amazon.com/vpc/latest/privatelink/manage-dns-names.html), that will be accessible in a ClickPipes VPC.
-If your service can't use PrivateLink managed private DNS (for example, the provider requires
-consumers to manage DNS resolution, as Confluent Cloud does), see [Custom private DNS](#custom-private-dns).
+AWS PrivateLink managed private DNS is not always a viable option:
+- you don't own the domain name of your data source, so you can't verify it with AWS
+- the provider requires consumers to manage DNS resolution, as Confluent Cloud does
+In these cases, see [Custom private DNS](#custom-private-dns).
 
 It's a preferred choice for:
 
-- Any on-premise Kafka setup that requires private DNS support
+- Any on-premises Kafka setup that requires private DNS support
+- [Confluent Cloud private connectivity](/resources/support-center/knowledge-base/cloud-services/confluent-cloud-private-connectivity-for-clickpipes)
 - [Cross-region connectivity for Postgres CDC](/resources/support-center/knowledge-base/cloud-services/aws-privatelink-setup-for-clickpipes)
-- Cross-region connectivity for MSK cluster. Please reach out to the ClickHouse support team for assistance.
+- [Cross-region connectivity for MSK clusters](/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
 
 See the [getting started](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html) guide for more details.
 
@@ -203,6 +203,9 @@ See AWS guide for [managing permissions](https://docs.aws.amazon.com/vpc/latest/
 [Cross-region access](https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html#endpoint-service-cross-region)
 can be configured for ClickPipes. Add [your ClickPipe region](#aws-privatelink-regions) to the allowed regions in your VPC endpoint service.
 </Info>
+
+For MSK clusters, see [AWS PrivateLink VPC endpoint service for MSK cluster](/resources/support-center/knowledge-base/cloud-services/aws-privatelink-vpc-endpoint-service-for-msk-cluster)
+for a broker-per-endpoint-service setup that uses custom private DNS names.
 
 ## Custom private DNS {#custom-private-dns}
 
@@ -225,6 +228,11 @@ PrivateLink service already provides private DNS names, you don't need custom na
 Custom private DNS names are supported for the [VPC endpoint service](#vpc-endpoint-service)
 and [VPC resource](#vpc-resource) endpoint types. MSK multi-VPC provides managed private DNS
 out-of-the-box and doesn't support custom names.
+
+<Note>
+The ClickHouse Cloud console currently supports one custom private DNS name per reverse private endpoint.
+If you need to manage multiple custom private DNS names on the same endpoint, use OpenAPI or Terraform.
+</Note>
 
 The following rules apply to custom private DNS names:
 
