@@ -1,6 +1,8 @@
 #include <cstring>
+#include <limits>
 #include <unordered_map>
 #include <vector>
+#include <zlib.h>
 #include <roaring/roaring.hh>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnMap.h>
@@ -39,6 +41,21 @@ namespace
 {
 
 constexpr UInt8 PUFFIN_MAGIC[4] = {0x50, 0x46, 0x41, 0x31};
+constexpr UInt8 DELETION_VECTOR_MAGIC[4] = {0xD1, 0xD3, 0x39, 0x64};
+constexpr Int64 DELETION_VECTOR_MAX_POSITION = 0x7FFFFFFE80000000LL;
+
+UInt32 readBigEndianUInt32(const UInt8 * data)
+{
+    return (static_cast<UInt32>(data[0]) << 24)
+        | (static_cast<UInt32>(data[1]) << 16)
+        | (static_cast<UInt32>(data[2]) << 8)
+        | static_cast<UInt32>(data[3]);
+}
+
+UInt64 positionFromKeyAndSubPosition(UInt32 key, UInt32 sub_position)
+{
+    return (static_cast<UInt64>(key) << 32) | static_cast<UInt64>(sub_position);
+}
 
 void checkMagic(const UInt8 * p, const char * context)
 {
@@ -158,13 +175,114 @@ BlobBufPtr readBlobBytes(
     };
 }
 
-roaring::Roaring deserializeRoaring(ReadBuffer & buf, size_t size)
+std::vector<UInt64> deserializeRoaringPositionBitmap(std::string_view bytes)
+{
+    if (bytes.size() < sizeof(Int64))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is too small");
+
+    const char * ptr = bytes.data();
+    size_t remaining = bytes.size();
+
+    Int64 bitmap_count = 0;
+    std::memcpy(&bitmap_count, ptr, sizeof(Int64));
+    ptr += sizeof(Int64);
+    remaining -= sizeof(Int64);
+
+    if (bitmap_count < 0 || bitmap_count > std::numeric_limits<Int32>::max())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector bitmap count: {}", bitmap_count);
+
+    std::vector<UInt64> positions;
+    Int32 last_key = -1;
+    Int32 remaining_count = static_cast<Int32>(bitmap_count);
+
+    while (remaining_count > 0)
+    {
+        if (remaining < sizeof(Int32))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap is truncated while reading key");
+
+        Int32 key = 0;
+        std::memcpy(&key, ptr, sizeof(Int32));
+        ptr += sizeof(Int32);
+        remaining -= sizeof(Int32);
+
+        if (key < 0)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector bitmap key: {}", key);
+        if (key <= last_key)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap keys must be sorted in ascending order");
+
+        while (last_key < key - 1)
+            ++last_key;
+
+        roaring::Roaring bitmap;
+        try
+        {
+            bitmap = roaring::Roaring::readSafe(ptr, remaining);
+        }
+        catch (const std::exception & e)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Failed to deserialize deletion vector roaring bitmap at key {}: {}", key, e.what());
+        }
+
+        const size_t bitmap_size = bitmap.getSizeInBytes(/*portable=*/true);
+        if (bitmap_size > remaining)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector roaring bitmap at key {} exceeds blob size", key);
+
+        for (UInt32 sub_position : bitmap)
+        {
+            const UInt64 position = positionFromKeyAndSubPosition(static_cast<UInt32>(key), sub_position);
+            if (position > static_cast<UInt64>(DELETION_VECTOR_MAX_POSITION))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector position {} is out of supported range", position);
+            positions.push_back(position);
+        }
+
+        ptr += bitmap_size;
+        remaining -= bitmap_size;
+        last_key = key;
+        --remaining_count;
+    }
+
+    if (remaining != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector bitmap has {} trailing bytes", remaining);
+
+    return positions;
+}
+
+std::string_view extractDeletionVectorPayload(std::string_view blob)
+{
+    if (blob.size() < 12)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob is too small");
+
+    const auto * blob_bytes = reinterpret_cast<const UInt8 *>(blob.data());
+    const UInt32 combined_length = readBigEndianUInt32(blob_bytes);
+    if (combined_length < sizeof(DELETION_VECTOR_MAGIC))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector combined length: {}", combined_length);
+
+    const size_t vector_size = combined_length - sizeof(DELETION_VECTOR_MAGIC);
+    const size_t expected_blob_size = sizeof(UInt32) + combined_length + sizeof(UInt32);
+    if (blob.size() != expected_blob_size)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector blob size {} does not match combined length {}", blob.size(), combined_length);
+
+    if (std::memcmp(blob_bytes + sizeof(UInt32), DELETION_VECTOR_MAGIC, sizeof(DELETION_VECTOR_MAGIC)) != 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid deletion vector magic");
+
+    const UInt8 * crc_input = blob_bytes + sizeof(UInt32);
+    const size_t crc_input_size = combined_length;
+    const UInt32 expected_crc = readBigEndianUInt32(blob_bytes + sizeof(UInt32) + combined_length);
+    const UInt32 actual_crc = static_cast<UInt32>(crc32_z(0L, reinterpret_cast<const unsigned char *>(crc_input), crc_input_size));
+    if (expected_crc != actual_crc)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector CRC mismatch");
+
+    return std::string_view(blob.data() + 2 * sizeof(UInt32), vector_size);
+}
+
+std::vector<UInt64> deserializeDeletionVectorV1(ReadBuffer & buf, size_t size)
 {
     String blob_data(size, '\0');
     buf.readStrict(blob_data.data(), size);
 
-    roaring::Roaring bitmap = roaring::Roaring::readSafe(blob_data.data(), size);
-    return bitmap;
+    const std::string_view blob_view(blob_data);
+    const std::string_view vector_bytes = extractDeletionVectorPayload(blob_view);
+    return deserializeRoaringPositionBitmap(vector_bytes);
 }
 
 NamesAndTypesList getPuffinMetadataSchema()
@@ -288,8 +406,19 @@ Chunk PuffinInputFormat::read()
     if (blob.type != "deletion-vector-v1")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ClickHouse supports only deletion vector blobs. Datasketches deletion vectors are not supported");
 
+    if (!blob.compression_codec.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "deletion-vector-v1 blobs must be uncompressed");
+
     auto blob_buf = readBlobBytes(blob, *in, footer.data);
-    auto rows = deserializeRoaring(*blob_buf, static_cast<size_t>(blob.length));
+    auto rows = deserializeDeletionVectorV1(*blob_buf, static_cast<size_t>(blob.length));
+
+    if (auto cardinality_it = blob.properties.find("cardinality"); cardinality_it != blob.properties.end())
+    {
+        const UInt64 expected_cardinality = parse<UInt64>(cardinality_it->second);
+        if (expected_cardinality != rows.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Deletion vector cardinality {} does not match deserialized row count {}", expected_cardinality, rows.size());
+    }
+
     size_t elem_count = 0;
     for (UInt64 r : rows)
     {
