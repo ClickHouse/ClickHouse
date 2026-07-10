@@ -153,6 +153,12 @@ public:
 
     void updateConfiguration(size_t max_size_in_bytes, size_t max_entries);
 
+    /// Whether the cache is actually usable. CacheBase treats a zero limit as "unlimited",
+    /// but for the query plan cache a zero `max_size_in_bytes` or `max_entries` means "disabled"
+    /// (see `updateConfiguration` and `set`). The object is created unconditionally at startup, so
+    /// callers must use this to honor the documented "0 == off" configuration.
+    bool isEnabled() const;
+
     /// Looks up an entry. Returns nullptr on miss or version mismatch.
     MappedPtr get(const QueryPlanCacheKey & key);
 
