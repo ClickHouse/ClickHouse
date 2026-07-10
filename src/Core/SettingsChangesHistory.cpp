@@ -1302,6 +1302,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"allow_experimental_text_index_positions", false, false, "New setting"},
             {"allow_dimensions_outside_sorting_key", true, false, "AggregatingMergeTree now rejects, at table creation, schemas where a column is neither part of the sorting key nor an aggregate-state measure; previously such schemas were accepted (the old behavior corresponds to the value 'true')."},
             {"deduplication_hashes_cache_update_wait_ms", 100, 100, "New setting. The properly-named replacement for async_block_ids_cache_update_wait_ms; controls how long an insert waits for the unified deduplication_hashes cache to refresh."},
+            {"detach_broken_parts_after_failed_merge", false, false, "New setting. For non-replicated MergeTree: when a merge or read fails with a data-corruption error, validate checksums of the suspicious part in the background and detach it with the broken_ prefix if the corruption is confirmed, instead of retrying the failed merge indefinitely."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.6",
