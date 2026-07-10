@@ -1,0 +1,101 @@
+---
+title: ClickHouse에서 맵 조회 성능 개선
+description: 특정 키를 독립 컬럼으로 구체화해 ClickHouse에서 맵 컬럼 조회를 최적화하고 쿼리 성능을 높이는 방법을 알아봅니다.
+date: 2022-10-30
+tags: ['성능 및 최적화']
+keywords: ['맵 성능']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="problem">
+  ## 문제
+</div>
+
+`a['key']`와 같은 맵 조회는 선형 복잡도로 동작하며([여기](/ko/reference/data-types/map)에서 언급함), 비효율적일 수 있습니다. 이는 테이블에서 특정 키의 값을 선택하려면 맵 컬럼의 모든 행(N)에 있는 모든 키(~M)를 순회해야 하므로, 결과적으로 약 ~MxN회의 조회가 필요하기 때문입니다.
+
+맵을 사용한 조회는 String 컬럼보다 최대 10배 느릴 수 있습니다. 아래 실험에서도 콜드 쿼리에서 약 10배의 성능 저하와 처리된 데이터 양의 큰 차이(7.21 MB 대 5.65 GB)를 확인할 수 있습니다.
+
+```sql
+-- SpanName을 String으로, ResourceAttributes를 Map으로 설정한 테이블 생성
+DROP TABLE IF EXISTS tbl;
+CREATE TABLE tbl (
+    `Timestamp` DateTime64(9) CODEC (Delta(8), ZSTD(1)),
+    `TraceId` String CODEC (ZSTD(1)),
+    `ServiceName` LowCardinality(String) CODEC (ZSTD(1)),
+    `Duration` UInt8 CODEC (ZSTD(1)), -- Int64
+    `SpanName` LowCardinality(String) CODEC (ZSTD(1)),
+    `ResourceAttributes` Map(LowCardinality(String), String) CODEC (ZSTD(1))
+)
+ENGINE = MergeTree
+PARTITION BY toDate(Timestamp)
+ORDER BY (ServiceName, SpanName, toUnixTimestamp(Timestamp), TraceId);
+
+-- ResourceAttributes에 대한 랜덤 Map 데이터를 생성하는 UDF 생성
+DROP FUNCTION IF EXISTS genmap;
+CREATE FUNCTION genmap AS (n) -> arrayMap (x-> (x::String, (x*rand32())::String), range(1, n));
+
+-- genmap이 의도한 대로 동작하는지 확인
+SELECT genmap(10)::Map(String, String);
+
+-- 100만 행 삽입
+INSERT INTO tbl
+SELECT
+    now() - randUniform(1, 1000000.) as Timestamp,
+    randomPrintableASCII(2) as TraceId,
+    randomPrintableASCII(2) as ServiceName,
+    rand32() as Duration,
+    randomPrintableASCII(2) as SpanName,
+    genmap(rand64()%500)::Map(String, String) as ResourceAttributes
+FROM numbers(1_000_000);
+
+-- SpanName 쿼리가 더 빠름
+-- [cold] 0 rows in set. Elapsed: 0.642 sec. Processed 1.00 million rows, 7.21 MB (1.56 million rows/s., 11.22 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 0.164 sec. Processed 1.00 million rows, 7.21 MB (6.10 million rows/s., 43.99 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    SpanName
+FROM tbl
+GROUP BY SpanName ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+
+-- ResourceAttributes 쿼리가 더 느림
+-- [cold] 0 rows in set. Elapsed: 6.432 sec. Processed 1.00 million rows, 5.65 GB (155.46 thousand rows/s., 879.07 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 5.935 sec. Processed 1.00 million rows, 5.65 GB (168.50 thousand rows/s., 952.81 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    ResourceAttributes['1'] as hostname
+FROM tbl
+GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+```
+
+**해결 방법**
+쿼리를 개선하려면 맵 컬럼의 특정 키 값을 기본값으로 사용하는 컬럼을 하나 더 추가한 다음, 이를 구체화하여 기존 행의 값을 채울 수 있습니다. 이렇게 하면 필요한 값을 삽입 시점에 추출해 저장하므로, 쿼리 시점의 조회 속도를 높일 수 있습니다.
+
+```sql
+-- 맵(Map)의 특정 키를 기본값으로 하는 컬럼을 추가하는 방법
+ALTER TABLE tbl ADD COLUMN hostname LowCardinality(String) DEFAULT ResourceAttributes['1'];
+ALTER TABLE tbl MATERIALIZE COLUMN hostname;
+
+-- 호스트명(새 컬럼) 쿼리 속도가 향상됨
+-- [cold] 0 rows in set. Elapsed: 2.215 sec. Processed 1.00 million rows, 21.67 MB (451.52 thousand rows/s., 9.78 MB/s.)
+-- [warm] 0 rows in set. Elapsed: 0.541 sec. Processed 1.00 million rows, 21.67 MB (1.85 million rows/s., 40.04 MB/s.)
+SELECT
+    COUNT(*),
+    avg(Duration/1E6) as average,
+    quantile(0.95)(Duration/1E6) as p95,
+    quantile(0.99)(Duration/1E6) as p99,
+    hostname
+FROM tbl
+GROUP BY hostname ORDER BY 1 DESC LIMIT 50 FORMAT Null;
+
+-- 캐시를 삭제하여 콜드 상태로 쿼리 실행
+SYSTEM DROP FILESYSTEM CACHE;
+```

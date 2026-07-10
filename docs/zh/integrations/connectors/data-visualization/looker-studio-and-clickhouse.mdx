@@ -1,0 +1,94 @@
+---
+sidebarTitle: 'Looker Studio'
+slug: /integrations/lookerstudio
+keywords: ['ClickHouse', 'looker', 'studio', '连接', 'mysql', '集成', 'UI']
+description: 'Looker Studio，前身为 Google Data Studio，是一款可将数据转换为可自定义的报告和仪表盘的在线工具。'
+title: 'Looker Studio'
+doc_type: 'guide'
+integration:
+  - support_level: 'partner'
+  - category: 'data_visualization'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+import MySQLCloudSetup from '/snippets/zh/_clickhouse_mysql_cloud_setup.mdx';
+import MySQLOnPremiseSetup from '/snippets/zh/_clickhouse_mysql_on_premise_setup.mdx';
+
+import PartnerBadge from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+Looker Studio 可以通过 MySQL 接口，使用官方的 Google MySQL 数据源连接到 ClickHouse。
+
+<div id="clickhouse-cloud-setup">
+  ## ClickHouse Cloud 配置
+</div>
+
+<MySQLCloudSetup />
+
+<div id="on-premise-clickhouse-server-setup">
+  ## 本地部署 ClickHouse server 的设置
+</div>
+
+<MySQLOnPremiseSetup />
+
+<div id="connecting-looker-studio-to-clickhouse">
+  ## 将 Looker Studio 连接到 ClickHouse
+</div>
+
+首先，使用你的 Google 账号登录 [https://lookerstudio.google.com](https://lookerstudio.google.com)，然后创建一个新的数据源：
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_01.webp" alt="在 Looker Studio 界面中创建新的数据源" border />
+
+<br />
+
+搜索 Google 提供的官方 MySQL 连接器 (名称就是 **MySQL**) ：
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_02.webp" alt="在 Looker Studio 连接器列表中搜索 MySQL 连接器" border />
+
+<br />
+
+填写连接信息。请注意，MySQL 接口端口默认为 9004，
+具体端口可能会因服务器配置而不同。
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_03.webp" alt="在 Looker Studio 中填写 ClickHouse MySQL 连接信息" border />
+
+<br />
+
+现在，你有两种从 ClickHouse 拉取数据的方法。首先，可以使用 Table Browser 功能：
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_04.webp" alt="在 Looker Studio 中使用 Table Browser 选择 ClickHouse 表" border />
+
+<br />
+
+或者，你也可以指定自定义查询来拉取数据：
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_05.webp" alt="在 Looker Studio 中使用自定义 SQL 查询从 ClickHouse 拉取数据" border />
+
+<br />
+
+最后，你应该可以看到自动识别出的表结构，并在必要时调整数据类型。
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_06.webp" alt="在 Looker Studio 中查看自动识别出的 ClickHouse 表结构" border />
+
+<br />
+
+现在，你可以继续探索数据或创建新的报表了！
+
+<div id="using-looker-studio-with-clickhouse-cloud">
+  ## 在 ClickHouse Cloud 中使用 Looker Studio
+</div>
+
+使用 ClickHouse Cloud 时，您需要先启用 MySQL 接口。您可以在连接对话框的 “MySQL” 选项卡中启用它。
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_enable_mysql.webp" alt="在 ClickHouse Cloud 设置中启用 MySQL 接口" border />
+
+<br />
+
+在 Looker Studio UI 中，选择 “Enable SSL” 选项。ClickHouse Cloud 的 SSL 证书由 [Let&#39;s Encrypt](https://letsencrypt.org/certificates/) 签发。您可以在[这里](https://letsencrypt.org/certs/isrgrootx1.pem)下载该根证书。
+
+<Image size="md" img="/images/integrations/data-visualization/looker_studio_mysql_cloud.webp" alt="带有 ClickHouse Cloud SSL 设置的 Looker Studio 连接配置" border />
+
+<br />
+
+其余步骤与上一节所列步骤相同。

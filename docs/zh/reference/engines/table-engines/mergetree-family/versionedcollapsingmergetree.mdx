@@ -1,0 +1,248 @@
+---
+description: '支持快速写入持续变化的对象状态，
+  并在后台删除旧的对象状态。'
+sidebarTitle: 'VersionedCollapsingMergeTree'
+slug: /engines/table-engines/mergetree-family/versionedcollapsingmergetree
+title: 'VersionedCollapsingMergeTree 表引擎'
+doc_type: 'reference'
+---
+
+此引擎：
+
+* 支持快速写入持续变化的对象状态。
+* 在后台删除旧的对象状态，从而显著减少存储占用。
+
+详情请参见 [折叠](#table_engines_versionedcollapsingmergetree) 一节。
+
+该引擎继承自 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree)，并在数据分区片段合并算法中增加了行折叠逻辑。`VersionedCollapsingMergeTree` 与 [CollapsingMergeTree](/zh/reference/engines/table-engines/mergetree-family/collapsingmergetree) 的用途相同，但采用了不同的折叠算法，因此支持使用多个线程按任意顺序插入数据。特别是，`Version` 列有助于在行未按正确顺序插入时，仍能正确折叠这些行。相比之下，`CollapsingMergeTree` 只允许严格连续插入。
+
+<div id="creating-a-table">
+  ## 创建表
+</div>
+
+```sql
+CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+(
+    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+    ...
+) ENGINE = VersionedCollapsingMergeTree(sign, version)
+[PARTITION BY expr]
+[ORDER BY expr]
+[SAMPLE BY expr]
+[SETTINGS name=value, ...]
+```
+
+有关查询参数的说明，请参阅[查询描述](/zh/reference/statements/create/table)。
+
+<div id="engine-parameters">
+  ### 引擎参数
+</div>
+
+```sql
+VersionedCollapsingMergeTree(sign, version)
+```
+
+| 参数        | 描述                                                     | 类型                                                                                                                                                                                                                                                                   |
+| --------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sign`    | 表示行类型的列名：`1` 为 &quot;状态&quot;行，`-1` 为 &quot;取消&quot;行。 | [`Int8`](/zh/reference/data-types/int-uint)                                                                                                                                                                                                                             |
+| `version` | 表示对象状态版本的列名。                                           | [`Int*`](/zh/reference/data-types/int-uint), [`UInt*`](/zh/reference/data-types/int-uint), [`Date`](/zh/reference/data-types/date), [`Date32`](/zh/reference/data-types/date32), [`DateTime`](/zh/reference/data-types/datetime) 或 [`DateTime64`](/zh/reference/data-types/datetime64) |
+
+<div id="query-clauses">
+  ### 查询子句
+</div>
+
+创建 `VersionedCollapsingMergeTree` 表时，所需的[子句](/zh/reference/engines/table-engines/mergetree-family/mergetree)与创建 `MergeTree` 表时相同。
+
+<details markdown="1">
+  <summary>已弃用的建表方法</summary>
+
+  <Note>
+    请勿在新项目中使用此方法。如有可能，请将旧项目切换到上述方法。
+  </Note>
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
+  (
+      name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
+      name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
+      ...
+  ) ENGINE [=] VersionedCollapsingMergeTree(date-column [, sampling_expression], (primary, key), index_granularity, sign, version)
+  ```
+
+  除 `sign` 和 `version` 外，其他所有参数的含义都与 `MergeTree` 中相同。
+
+  * `sign` — 表示行类型的列名：`1` 表示“状态行”，`-1` 表示“取消行”。
+
+    列数据类型 — `Int8`。
+
+  * `version` — 表示对象状态版本的列名。
+
+    该列的数据类型应为 `UInt*`。
+</details>
+
+<div id="table_engines_versionedcollapsingmergetree">
+  ## 折叠
+</div>
+
+<div id="data">
+  ### 数据
+</div>
+
+设想这样一种情况：你需要保存某个对象持续变化的数据。比较合理的做法是为每个对象保留一行，并在发生变化时更新这一行。然而，对于 DBMS 来说，更新操作代价高、速度慢，因为它需要重写存储中的数据。如果你需要快速写入数据，更新就不可取；不过，你可以按顺序写入对象的变更，如下所示。
+
+写入行时要使用 `Sign` 列。如果 `Sign = 1`，表示该行是对象的一个状态 (我们称之为“状态”行) 。如果 `Sign = -1`，则表示取消具有相同属性的对象状态 (我们称之为“取消”行) 。同时还要使用 `Version` 列，它应当用不同的编号来标识对象的每个状态。
+
+例如，我们想统计用户在某个站点访问了多少个页面，以及停留了多长时间。在某个时间点，我们写入以下这一行来表示用户活动的状态：
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+随后在某个时间点，我们会记录用户活动的变化，并通过以下两行将其写入。
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+│ 4324182021466249494 │         6 │      185 │    1 │       2 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+第一行用于抵消该对象 (用户) 之前的状态。它应复制被抵消状态中的所有字段，但 `Sign` 除外。
+
+第二行包含当前状态。
+
+由于我们只需要用户活动的最后一个状态，因此这些行
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+可以删除，从而折叠对象的无效 (旧) 状态。`VersionedCollapsingMergeTree` 会在合并数据分区片段时执行此操作。
+
+要了解为什么每次变更都需要两行，请参见[算法](#table_engines-versionedcollapsingmergetree-algorithm)。
+
+**使用说明**
+
+1. 写入数据的程序应记住对象的状态，以便能够生成对应的取消记录。&quot;取消&quot; 字符串应包含主键字段的副本、&quot;状态&quot; 字符串的版本，以及相反的 `Sign`。这会增大初始存储占用，但可以加快数据写入。
+2. 列中过长且持续增长的数组会因写入负载而降低引擎效率。数据越简单直接，效率越高。
+3. `SELECT` 结果在很大程度上取决于对象变更历史的一致性。准备插入数据时务必谨慎。如果数据不一致，可能得到不可预测的结果，例如会话深度这类非负指标出现负值。
+
+<div id="table_engines-versionedcollapsingmergetree-algorithm">
+  ### 算法
+</div>
+
+当 ClickHouse 合并数据分区片段时，会删除每一对主键和版本相同、但 `Sign` 不同的行。行的顺序无关紧要。
+
+当 ClickHouse 插入数据时，会按主键对行排序。如果 `Version` 列不在主键中，ClickHouse 会将其隐式添加到主键中作为最后一个字段，并据此排序。
+
+<div id="selecting-data">
+  ## 选择数据
+</div>
+
+ClickHouse 不保证所有具有相同主键的行都会落在同一个结果数据分区片段中，甚至不保证位于同一台物理服务器上。无论是数据写入时，还是后续对数据分区片段进行合并时，都是如此。此外，ClickHouse 会使用多个线程处理 `SELECT` 查询，因此无法预测结果中行的顺序。这意味着，如果需要从 `VersionedCollapsingMergeTree` 表中获取完全“折叠”后的数据，就必须进行聚合。
+
+要完成最终折叠，请编写带有 `GROUP BY` 子句并使用考虑符号的聚合函数的查询。例如，要计算数量，请使用 `sum(Sign)` 而不是 `count()`。要计算某个值的总和，请使用 `sum(Sign * x)` 而不是 `sum(x)`，并添加 `HAVING sum(Sign) > 0`。
+
+聚合 `count`、`sum` 和 `avg` 可以用这种方式计算。如果一个对象至少有一个未折叠的状态，也可以计算聚合 `uniq`。而聚合 `min` 和 `max` 无法计算，因为 `VersionedCollapsingMergeTree` 不会保存已折叠状态的值历史。
+
+如果你需要提取经过“折叠”但未聚合的数据 (例如，检查是否存在最新值符合特定条件的行) ，可以在 `FROM` 子句中使用 `FINAL` 修饰符。这种方法效率较低，不应在大型表上使用。
+
+<div id="example-of-use">
+  ## 使用示例
+</div>
+
+示例数据：
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 |
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 |
+│ 4324182021466249494 │         6 │      185 │    1 │       2 |
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+创建表：
+
+```sql
+CREATE TABLE UAct
+(
+    UserID UInt64,
+    PageViews UInt8,
+    Duration UInt8,
+    Sign Int8,
+    Version UInt8
+)
+ENGINE = VersionedCollapsingMergeTree(Sign, Version)
+ORDER BY UserID
+```
+
+插入数据：
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, 1, 1)
+```
+
+```sql
+INSERT INTO UAct VALUES (4324182021466249494, 5, 146, -1, 1),(4324182021466249494, 6, 185, 1, 2)
+```
+
+我们使用两条 `INSERT` 查询来创建两个不同的数据分区片段。如果通过单条查询插入数据，ClickHouse 只会创建一个数据分区片段，因此不会执行任何合并。
+
+获取数据：
+
+```sql
+SELECT * FROM UAct
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │    1 │       1 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         5 │      146 │   -1 │       1 │
+│ 4324182021466249494 │         6 │      185 │    1 │       2 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+这里我们看到了什么，折叠后的数据分区片段又在哪里？
+我们通过两条 `INSERT` 查询创建了两个数据分区片段。`SELECT` 查询由两个线程执行，因此结果中的行顺序是随机的。
+之所以没有发生折叠，是因为这些数据分区片段尚未合并。ClickHouse 会在某个我们无法预测的时间点合并数据分区片段。
+
+这就是为什么我们需要聚合：
+
+```sql
+SELECT
+    UserID,
+    sum(PageViews * Sign) AS PageViews,
+    sum(Duration * Sign) AS Duration,
+    Version
+FROM UAct
+GROUP BY UserID, Version
+HAVING sum(Sign) > 0
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Version─┐
+│ 4324182021466249494 │         6 │      185 │       2 │
+└─────────────────────┴───────────┴──────────┴─────────┘
+```
+
+如果不需要聚合，并且想要强制进行折叠，可以在 `FROM` 子句中使用 `FINAL` 修饰符。
+
+```sql
+SELECT * FROM UAct FINAL
+```
+
+```text
+┌──────────────UserID─┬─PageViews─┬─Duration─┬─Sign─┬─Version─┐
+│ 4324182021466249494 │         6 │      185 │    1 │       2 │
+└─────────────────────┴───────────┴──────────┴──────┴─────────┘
+```
+
+这是一种选择数据时效率很低的方法。不要用于大表。

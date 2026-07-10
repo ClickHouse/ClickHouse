@@ -1,0 +1,100 @@
+---
+description: 'Installez et gérez des versions locales de ClickHouse à l’aide de clickhousectl, la CLI de ClickHouse'
+keywords: ['ClickHouse', 'installer', 'clickhousectl', 'CLI']
+sidebarTitle: 'clickhousectl (CLI)'
+slug: /install/clickhousectl
+title: 'Installer avec la CLI de ClickHouse'
+hide_title: true
+doc_type: 'guide'
+---
+
+<Info>
+  **Utilisateurs Windows**
+
+  ClickHouse s’exécute nativement sur Linux et macOS. Sous Windows, exécutez ces étapes dans
+  le [Sous-système Windows pour Linux (WSL)](https://learn.microsoft.com/en-us/windows/wsl/about).
+</Info>
+
+La CLI de ClickHouse (`clickhousectl`) vous aide à installer et gérer des versions locales de ClickHouse,
+à lancer des serveurs et à exécuter des requêtes.
+
+<Steps>
+  <Step>
+    ## Installer la CLI de ClickHouse
+
+    ```bash
+    curl https://clickhouse.com/cli | sh
+    ```
+
+    Un alias `chctl` est également créé automatiquement pour plus de simplicité.
+  </Step>
+
+  <Step>
+    ## Installer ClickHouse
+
+    Installez la dernière version de ClickHouse et définissez-la comme version par défaut :
+
+    ```bash
+    clickhousectl local use latest
+    ```
+
+    `local use` installe la version si elle n’est pas déjà présente, la définit comme
+    version par défaut et crée un lien symbolique `clickhouse` dans `~/.local/bin` (dans votre `PATH`)
+    afin que vous puissiez appeler directement le binaire `clickhouse`. Ainsi, toutes les étapes suivantes de cette documentation
+    qui utilisent une commande `clickhouse` fonctionnent telles quelles.
+
+    Vous pouvez également sélectionner une version précise :
+
+    ```bash
+    clickhousectl local use 26.5            # Dernière 26.5.x.x
+    clickhousectl local use 26.5.2.39       # Version exacte
+    ```
+
+    <Info>
+      **Utiliser ou installer**
+
+      `clickhousectl local use <version>` installe une version *et* la définit comme version
+      par défaut, en mettant à jour le lien symbolique `clickhouse` dans votre `PATH`. Pour télécharger une version
+      sans changer votre version par défaut ni mettre à jour le lien symbolique, utilisez
+      plutôt `clickhousectl local install <version>`.
+    </Info>
+  </Step>
+
+  <Step>
+    ## Démarrer clickhouse-server
+
+    ```bash
+    clickhousectl local server start
+    ```
+
+    Le serveur s’exécute en arrière-plan. Pour vérifier qu’il est bien démarré :
+
+    ```bash
+    clickhousectl local server list
+    ```
+  </Step>
+
+  <Step>
+    ## Démarrer clickhouse-client
+
+    ```bash
+    clickhousectl local client
+    ```
+
+    Vous verrez quelque chose comme ceci :
+
+    ```response
+    ClickHouse client version 24.5.1.117 (official build).
+    Connecting to localhost:9000 as user default.
+    Connected to ClickHouse server version 24.5.1.
+
+    local-host :)
+    ```
+
+    Vous êtes maintenant prêt à envoyer des commandes SQL à ClickHouse !
+
+    <Tip>
+      Le [Quick Start](/fr/get-started/setup/install) vous guide dans les étapes de création de tables et d’insertion de données.
+    </Tip>
+  </Step>
+</Steps>
