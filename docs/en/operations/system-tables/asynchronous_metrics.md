@@ -146,7 +146,7 @@ The maximum number of CPU cores according to CGroups.
 
 ### CGroupMemoryInactiveFile {#cgroupmemoryinactivefile}
 
-The amount of memory used for inactive file pages in cgroup, in bytes. This value can be used together with the total cgroup memory usage to calculate the working set size (WSS) as reported by Kubernetes.
+The amount of memory used for inactive, file-backed page cache in cgroup, in bytes. This is reclaimable memory: the kernel can drop it under memory pressure. Kubernetes and cAdvisor compute the working set size (WSS) by subtracting this value from the raw cgroup memory usage (`memory.current` on cgroup v2, `memory.usage_in_bytes` on cgroup v1). Note that `CGroupMemoryUsed` is not that raw usage, because it already excludes the file-backed page cache.
 
 ### CGroupMemoryTotal {#cgroupmemorytotal}
 
