@@ -6,6 +6,9 @@
 #include <IO/BufferWithOwnMemory.h>
 #include <Common/CacheBase.h>
 
+#include <memory>
+#include <string_view>
+
 
 namespace ProfileEvents
 {
@@ -23,6 +26,7 @@ struct UncompressedCacheCell
     Memory<JemallocCacheAllocator> data;
     size_t compressed_size{};
     UInt32 additional_bytes{};
+    std::shared_ptr<const String> source_path;
 };
 
 struct UncompressedSizeWeightFunction
@@ -63,6 +67,14 @@ public:
             ProfileEvents::increment(ProfileEvents::UncompressedCacheHits);
 
         return result.first;
+    }
+
+    void removeByPathPrefix(std::string_view path_prefix)
+    {
+        remove([&](const Key &, const MappedPtr & cell)
+        {
+            return cell->source_path && cell->source_path->starts_with(path_prefix);
+        });
     }
 
 private:

@@ -229,6 +229,9 @@ struct TokenPostingsInfo
     /// Number of Roaringish UInt64 entries in position data.
     UInt32 position_cardinality = 0;
 
+    /// Identifies the part and index which own cache entries for scoped eviction.
+    std::shared_ptr<const String> cache_label;
+
     /// Returns indexes of posting list blocks to read for the given range of rows.
     std::vector<size_t> getBlocksToRead(const RowsRange & range) const;
     size_t bytesAllocated() const;
@@ -297,6 +300,7 @@ struct TextIndexHeader
     /// Persisted for version >= WithPositions.
     bool has_positions = false;
     DictionarySparseIndex sparse_index;
+    std::shared_ptr<const String> cache_label;
 };
 
 struct TextIndexSerialization

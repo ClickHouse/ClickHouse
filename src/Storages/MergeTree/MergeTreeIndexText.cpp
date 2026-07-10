@@ -589,10 +589,12 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
             matched_indices,
             postings_serialization);
 
+        auto cache_label = std::make_shared<const String>(index_id_for_caches);
         for (size_t i = 0; i < matched_indices.size(); ++i)
         {
             String token(block_tokens.getDataAt(matched_indices[i]));
             auto token_hash = TextIndexTokensCache::hash(index_id_for_caches, token);
+            infos[i]->cache_label = cache_label;
             tokens_cache->set(token_hash, infos[i]);
             analyzer->addTokenInfo(token, infos[i]);
         }
@@ -745,6 +747,7 @@ std::shared_ptr<TextIndexHeader> MergeTreeIndexGranuleText::loadHeader(MergeTree
     {
         header_stream.seekToStart();
         auto loaded_header = std::make_shared<TextIndexHeader>(TextIndexSerialization::deserializeHeader(*header_stream.getDataBuffer()));
+        loaded_header->cache_label = std::make_shared<const String>(index_id_for_caches);
 
         /// Optimize the memory usage of the sparse index only if the header is put into the global cache.
         if (condition_text.useGlobalHeaderCache())
@@ -773,7 +776,9 @@ PostingListPtr MergeTreeIndexGranuleText::readPostingsBlock(
         ProfileEvents::increment(ProfileEvents::TextIndexReadPostings);
         stream.seekToMark({token_info.offsets[block_idx], 0});
         auto postings = postings_serialization.deserialize(*data_buffer, token_info.header, token_info.cardinality);
-        return std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
+        auto cell = std::make_shared<TextIndexPostingsCacheCell>(std::move(postings));
+        cell->cache_label = std::make_shared<const String>(index_id_for_caches);
+        return cell;
     };
 
     auto hash = TextIndexPostingsCache::hash(index_id_for_caches, token_info.offsets[block_idx], static_cast<UInt8>(TextIndexPostingsCacheKind::Roaring));

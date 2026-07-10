@@ -46,6 +46,7 @@ bool CachedCompressedReadBuffer::nextImpl()
         file_in->seek(file_pos, SEEK_SET);
 
         auto cell = std::make_shared<UncompressedCacheCell>();
+        cell->source_path = source_path;
 
         size_t size_decompressed = 0;
         size_t size_compressed_without_checksum = 0;
@@ -79,7 +80,12 @@ bool CachedCompressedReadBuffer::nextImpl()
 
 CachedCompressedReadBuffer::CachedCompressedReadBuffer(
     const std::string & path_, std::function<std::unique_ptr<ReadBufferFromFileBase>()> file_in_creator_, UncompressedCache * cache_, bool allow_different_codecs_)
-    : ReadBuffer(nullptr, 0), file_in_creator(std::move(file_in_creator_)), cache(cache_), path(path_), file_pos(0)
+    : ReadBuffer(nullptr, 0)
+    , file_in_creator(std::move(file_in_creator_))
+    , cache(cache_)
+    , path(path_)
+    , source_path(std::make_shared<const String>(path_))
+    , file_pos(0)
 {
     allow_different_codecs = allow_different_codecs_;
 }

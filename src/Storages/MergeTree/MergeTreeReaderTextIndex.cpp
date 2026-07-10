@@ -828,7 +828,9 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
             {
                 auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
                 query_builder.postings->toUint32Array(flat->data());
-                return std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
+                auto loaded_cell = std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
+                loaded_cell->cache_label = std::make_shared<const String>(granule->getIndexIdForCaches());
+                return loaded_cell;
             });
 
             prebuilt_cursor = std::make_shared<PostingListCursor>(std::get<FlatPostingsPtr>(cell->value));
@@ -913,8 +915,10 @@ void MergeTreeReaderTextIndex::applyPostingsPhrase(
                 }
             }
 
-            return std::make_shared<TextIndexPostingsCacheCell>(
+            auto loaded_cell = std::make_shared<TextIndexPostingsCacheCell>(
                 std::make_shared<PaddedPODArray<UInt32>>(std::move(matching)));
+            loaded_cell->cache_label = std::make_shared<const String>(granule->getIndexIdForCaches());
+            return loaded_cell;
         });
 
         doc_ids_it = phrase_search_doc_ids.emplace(cache_key, std::get<FlatPostingsPtr>(cell->value)).first;

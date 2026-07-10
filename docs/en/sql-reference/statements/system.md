@@ -120,10 +120,22 @@ For more convenient (automatic) cache management, see `disable_internal_dns_cach
 
 Clears the mark cache.
 
+```sql
+SYSTEM {CLEAR | DROP} MARK CACHE [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+```
+
+If `FOR TABLE` is specified, ClickHouse clears only entries belonging to the active parts of that `MergeTree` table.
+
 ## SYSTEM CLEAR|DROP PRIMARY INDEX CACHE {#drop-primary-index-cache}
 
 Clears the primary index cache, which holds the primary keys of [`MergeTree`](../../engines/table-engines/mergetree-family/mergetree.md) tables in memory.
 Its size is configured with the server-level setting [`primary_index_cache_size`](../../operations/server-configuration-parameters/settings.md#primary_index_cache_size).
+
+```sql
+SYSTEM {CLEAR | DROP} PRIMARY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+```
+
+If `FOR TABLE` is specified, ClickHouse clears only entries belonging to the active parts of that `MergeTree` table.
 
 ## SYSTEM CLEAR|DROP ICEBERG METADATA CACHE {#drop-iceberg-metadata-cache}
 
@@ -154,13 +166,28 @@ If you like to drop one of these caches individually, you can run
 - `SYSTEM CLEAR TEXT INDEX HEADER CACHE`, or
 - `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`
 
+```sql
+SYSTEM {CLEAR | DROP} TEXT INDEX CACHES [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+SYSTEM {CLEAR | DROP} TEXT INDEX {TOKENS | HEADER | POSTINGS} CACHE [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+```
+
+The table-scoped forms clear only entries belonging to the active parts of that `MergeTree` table.
+
 ## SYSTEM CLEAR|DROP INDEX MARK CACHE {#drop-index-mark-cache}
 
 Clears the cache of marks for secondary (data-skipping) indexes.
 
+```sql
+SYSTEM {CLEAR | DROP} INDEX MARK CACHE [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+```
+
 ## SYSTEM CLEAR|DROP INDEX UNCOMPRESSED CACHE {#drop-index-uncompressed-cache}
 
 Clears the cache of uncompressed blocks for secondary (data-skipping) indexes.
+
+```sql
+SYSTEM {CLEAR | DROP} INDEX UNCOMPRESSED CACHE [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+```
 
 ## SYSTEM CLEAR|DROP MMAP CACHE {#drop-mmap-cache}
 
@@ -173,6 +200,10 @@ Clears the userspace page cache, ClickHouse's own in-memory cache of data read f
 ## SYSTEM CLEAR|DROP VECTOR SIMILARITY INDEX CACHE {#drop-vector-similarity-index-cache}
 
 Clears the vector similarity index cache.
+
+```sql
+SYSTEM {CLEAR | DROP} VECTOR SIMILARITY INDEX CACHE [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+```
 
 ## SYSTEM CLEAR|DROP CONNECTIONS CACHE {#drop-connections-cache}
 
@@ -262,6 +293,12 @@ Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](../../operations/settings/settings.md#use_uncompressed_cache).
 Its size can be configured using the server-level setting [`uncompressed_cache_size`](../../operations/server-configuration-parameters/settings.md#uncompressed_cache_size).
 
+```sql
+SYSTEM {CLEAR | DROP} UNCOMPRESSED CACHE [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+```
+
+If `FOR TABLE` is specified, ClickHouse clears only entries belonging to the active parts of that `MergeTree` table.
+
 ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
 
 Clears the compiled expression cache.
@@ -270,6 +307,12 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
+
+```sql
+SYSTEM {CLEAR | DROP} QUERY CONDITION CACHE [ON CLUSTER cluster_name] [FOR TABLE [database.]table]
+```
+
+If `FOR TABLE` is specified, ClickHouse clears only entries belonging to that table.
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 

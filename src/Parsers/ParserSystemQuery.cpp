@@ -721,6 +721,32 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             res->seconds = seconds->as<ASTLiteral>()->value.safeGet<UInt64>();
             break;
         }
+        case Type::CLEAR_MARK_CACHE:
+        case Type::CLEAR_PRIMARY_INDEX_CACHE:
+        case Type::CLEAR_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_INDEX_MARK_CACHE:
+        case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+        case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+        case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+        case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+        case Type::CLEAR_TEXT_INDEX_CACHES:
+        case Type::CLEAR_QUERY_CONDITION_CACHE:
+        {
+            if (!parseQueryWithOnCluster(res, pos, expected))
+                return false;
+
+            if (ParserKeyword{Keyword::FOR}.ignore(pos, expected))
+            {
+                if (!ParserKeyword{Keyword::TABLE}.ignore(pos, expected))
+                    return false;
+                if (!parseDatabaseAndTableAsAST(pos, expected, res->database, res->table))
+                    return false;
+                if (res->cluster.empty() && !parseQueryWithOnCluster(res, pos, expected))
+                    return false;
+            }
+            break;
+        }
         case Type::CLEAR_QUERY_CACHE:
         {
             ParserLiteral tag_parser;

@@ -22,6 +22,7 @@
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Formats/FormatSchemaInfo.h>
+#include <IO/UncompressedCache.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/pointInPolygon.h>
 #include <Interpreters/ActionLocksManager.h>
@@ -73,6 +74,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/ManualMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -468,7 +470,10 @@ BlockIO InterpreterSystemQuery::execute()
         }
         case Type::CLEAR_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->clearMarkCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearMarkCache();
             break;
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
 #if USE_AVRO
@@ -508,41 +513,70 @@ BlockIO InterpreterSystemQuery::execute()
             break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
-            system_context->clearPrimaryIndexCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearPrimaryIndexCache();
             break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->clearUncompressedCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearUncompressedCache();
             break;
         case Type::CLEAR_INDEX_MARK_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MARK_CACHE);
-            system_context->clearIndexMarkCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearIndexMarkCache();
             break;
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            system_context->clearIndexUncompressedCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearIndexUncompressedCache();
             break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            system_context->clearVectorSimilarityIndexCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearVectorSimilarityIndexCache();
             break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
-            system_context->clearTextIndexTokensCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearTextIndexTokensCache();
             break;
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
-            system_context->clearTextIndexHeaderCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearTextIndexHeaderCache();
             break;
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
-            system_context->clearTextIndexPostingsCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+                system_context->clearTextIndexPostingsCache();
             break;
         case Type::CLEAR_TEXT_INDEX_CACHES:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
-            system_context->clearTextIndexTokensCache();
-            system_context->clearTextIndexHeaderCache();
-            system_context->clearTextIndexPostingsCache();
+            if (query.table)
+                clearCachesForTable(query.type);
+            else
+            {
+                system_context->clearTextIndexTokensCache();
+                system_context->clearTextIndexHeaderCache();
+                system_context->clearTextIndexPostingsCache();
+            }
             break;
         case Type::CLEAR_MMAP_CACHE:
             getContext()->checkAccess(AccessType::SYSTEM_DROP_MMAP_CACHE);
@@ -551,7 +585,10 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_QUERY_CONDITION_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
-            getContext()->clearQueryConditionCache();
+            if (query.table)
+                getContext()->clearQueryConditionCacheForTable(table_id.uuid);
+            else
+                getContext()->clearQueryConditionCache();
             break;
         }
         case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
@@ -2742,6 +2779,77 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
     MergeTreeData::CachesToPrewarm caches;
     caches.primary_index_cache = index_cache;
     merge_tree->prewarmCaches(pool, caches);
+}
+
+void InterpreterSystemQuery::clearCachesForTable(ASTSystemQuery::Type type)
+{
+    if (table_id.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table is not specified for scoped cache clear");
+
+    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
+    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    if (!merge_tree)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Scoped cache clear is supported only for MergeTree tables, but got: {}",
+            table_ptr->getName());
+
+    auto context = getContext();
+    auto primary_index_cache = merge_tree->getPrimaryIndexCache();
+    auto clear_part = [&](const auto & self, const MergeTreeData::DataPartPtr & part) -> void
+    {
+        const auto & part_storage = part->getDataPartStorage();
+        String path_prefix = part_storage.getFullPath();
+        /// Prefix matching must not cross part directory boundaries (e.g. all_1_5_1 vs all_1_5_10),
+        /// so the prefix has to end with a path separator.
+        if (!path_prefix.ends_with('/'))
+            path_prefix += '/';
+        const String text_index_prefix = fmt::format("{}:{}", part_storage.getDiskName(), path_prefix);
+
+        switch (type)
+        {
+            case ASTSystemQuery::Type::CLEAR_MARK_CACHE:
+                part->removeMarksFromCache(context->getMarkCache().get());
+                break;
+            case ASTSystemQuery::Type::CLEAR_PRIMARY_INDEX_CACHE:
+                part->removeIndexFromCache(primary_index_cache.get());
+                break;
+            case ASTSystemQuery::Type::CLEAR_UNCOMPRESSED_CACHE:
+                context->getUncompressedCache()->removeByPathPrefix(path_prefix);
+                break;
+            case ASTSystemQuery::Type::CLEAR_INDEX_MARK_CACHE:
+                part->removeIndexMarksFromCache(context->getIndexMarkCache().get());
+                break;
+            case ASTSystemQuery::Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
+                context->getIndexUncompressedCache()->removeByPathPrefix(path_prefix);
+                break;
+            case ASTSystemQuery::Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
+                part->removeFromVectorIndexCache(context->getVectorSimilarityIndexCache().get());
+                break;
+            case ASTSystemQuery::Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
+                context->getTextIndexTokensCache()->removeByIndexPrefix(text_index_prefix);
+                break;
+            case ASTSystemQuery::Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
+                context->getTextIndexHeaderCache()->removeByIndexPrefix(text_index_prefix);
+                break;
+            case ASTSystemQuery::Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
+                context->getTextIndexPostingsCache()->removeByIndexPrefix(text_index_prefix);
+                break;
+            case ASTSystemQuery::Type::CLEAR_TEXT_INDEX_CACHES:
+                context->getTextIndexTokensCache()->removeByIndexPrefix(text_index_prefix);
+                context->getTextIndexHeaderCache()->removeByIndexPrefix(text_index_prefix);
+                context->getTextIndexPostingsCache()->removeByIndexPrefix(text_index_prefix);
+                break;
+            default:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected scoped cache type {}", ASTSystemQuery::typeToString(type));
+        }
+
+        for (const auto & [_, projection_part] : part->getProjectionParts())
+            self(self, projection_part);
+    };
+
+    for (const auto & part : merge_tree->getDataPartsVectorForInternalUsage())
+        clear_part(clear_part, part);
 }
 
 

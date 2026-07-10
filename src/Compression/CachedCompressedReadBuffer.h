@@ -24,6 +24,7 @@ private:
     std::unique_ptr<ReadBufferFromFileBase> file_in;
 
     const std::string path;
+    const std::shared_ptr<const String> source_path;
 
     /// Current position in file_in
     size_t file_pos;

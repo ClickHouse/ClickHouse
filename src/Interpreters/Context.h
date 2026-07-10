@@ -1576,6 +1576,7 @@ public:
     void updateQueryConditionCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<QueryConditionCache> getQueryConditionCache() const;
     void clearQueryConditionCache() const;
+    void clearQueryConditionCacheForTable(const UUID & table_id) const;
 
     void setEncryptionHeaderCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
     void updateEncryptionHeaderCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);

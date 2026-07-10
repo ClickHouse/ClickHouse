@@ -6,6 +6,8 @@
 
 #include <absl/container/flat_hash_map.h>
 
+#include <memory>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -67,6 +69,14 @@ public:
             ProfileEvents::increment(ProfileEvents::TextIndexTokensCacheHits);
         return std::move(cache_entry);
     }
+
+    void removeByIndexPrefix(std::string_view index_prefix)
+    {
+        remove([&](const Key &, const MappedPtr & info)
+        {
+            return info->cache_label && info->cache_label->starts_with(index_prefix);
+        });
+    }
 };
 
 /// Estimate of the memory usage (bytes) of a text index header in cache
@@ -103,6 +113,14 @@ public:
             ProfileEvents::increment(ProfileEvents::TextIndexHeaderCacheHits);
         return std::move(cache_entry);
     }
+
+    void removeByIndexPrefix(std::string_view index_prefix)
+    {
+        remove([&](const Key &, const MappedPtr & header)
+        {
+            return header->cache_label && header->cache_label->starts_with(index_prefix);
+        });
+    }
 };
 
 /// Discriminators mixed into the cache key so the cell kinds occupy disjoint key spaces.
@@ -138,6 +156,7 @@ struct TextIndexPostingsCacheCell
     }
 
     std::variant<PostingListPtr, FlatPostingsPtr, PostingListSegmentPtr> value;
+    std::shared_ptr<const String> cache_label;
 };
 
 /// Estimate of the memory usage (bytes) of a posting cache cell
@@ -188,6 +207,14 @@ public:
         else
             ProfileEvents::increment(ProfileEvents::TextIndexPostingsCacheHits);
         return std::move(cache_entry);
+    }
+
+    void removeByIndexPrefix(std::string_view index_prefix)
+    {
+        remove([&](const Key &, const MappedPtr & cell)
+        {
+            return cell->cache_label && cell->cache_label->starts_with(index_prefix);
+        });
     }
 };
 

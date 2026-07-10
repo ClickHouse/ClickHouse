@@ -149,7 +149,10 @@ void PostingListCursor::prepareSegment(size_t segment_idx)
 
         auto cell = postings_cache->getOrSet(key, [&]
         {
-            return std::make_shared<TextIndexPostingsCacheCell>(std::make_shared<PostingListSegment>(buildPostingSegment(segment_idx)));
+            auto loaded_cell = std::make_shared<TextIndexPostingsCacheCell>(
+                std::make_shared<PostingListSegment>(buildPostingSegment(segment_idx)));
+            loaded_cell->cache_label = std::make_shared<const String>(index_id_for_cache);
+            return loaded_cell;
         });
 
         current_segment = std::get<PostingListSegmentPtr>(cell->value);
