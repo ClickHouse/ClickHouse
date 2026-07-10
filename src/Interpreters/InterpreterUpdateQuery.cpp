@@ -127,8 +127,13 @@ BlockIO InterpreterUpdateQuery::execute()
     {
         update_query.setDatabase(table_id.database_name);
         update_query.setTable(table_id.table_name);
-        required_access.clear();
-        required_access.emplace_back(AccessType::ALTER_UPDATE, table_id.database_name, table_id.table_name);
+        /// Re-target the access elements computed above (which encode the delete-vs-update
+        /// split) at the resolved, possibly namespace-qualified table.
+        for (auto & element : required_access)
+        {
+            element.database = table_id.database_name;
+            element.table = table_id.table_name;
+        }
     }
     getContext()->checkAccess(required_access);
     if (!table_id)
