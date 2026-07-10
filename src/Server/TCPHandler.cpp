@@ -15,6 +15,7 @@
 #include <Core/Settings.h>
 #include <Core/QueryProcessingStage.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/NativeReader.h>
 #include <Formats/NativeWriter.h>
@@ -2657,7 +2658,8 @@ bool TCPHandler::receiveQueryPlan(QueryState & state)
     bool unexpected_packet = state.stage != QueryProcessingStage::QueryPlan || state.plan_and_sets || !state.query_context || state.read_all_data;
     auto context = unexpected_packet ? Context::getGlobalContextInstance() : state.query_context;
 
-    auto plan_and_sets = QueryPlan::deserialize(*in, context);
+    /// Query plans can be sent by a client here, so guard type decoding with the effective input limit.
+    auto plan_and_sets = QueryPlan::deserialize(*in, context, getBinaryTypeDecodingComplexityLimit(context));
     LOG_TRACE(log, "Received query plan");
 
     if (!state.skipping_data && unexpected_packet)
