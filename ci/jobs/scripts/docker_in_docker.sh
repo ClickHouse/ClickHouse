@@ -39,7 +39,7 @@ echo '{
 #    with --memory), so DIND_TMPFS_SIZE plus the test working set must fit the
 #    job's memory budget or the kernel OOM killer fires;
 #  - the mount shadows the named volume, so the cross-job image cache is
-#    bypassed and every job re-seeds/re-pulls its service images.
+#    bypassed and every job re-pulls its service images.
 # The daemon config above pins storage-driver to overlay2, which works on
 # tmpfs; without the pin a data-root the driver dislikes silently degrades to
 # vfs (full per-layer copies) - never allow that.
