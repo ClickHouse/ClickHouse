@@ -2034,6 +2034,10 @@ void TCPHandler::receiveHello()
 
                 tryLogCurrentException(log, "SSL authentication failed, falling back to password authentication", LogsLevel::information);
                 /// ^^ Log at debug level instead of default error level as authentication failures are not an unusual event.
+
+                /// The certificate failure above was audited; the password fallback below is a
+                /// distinct authentication attempt, so allow it to be audited independently.
+                session->resetAuditLoginFailureLatch();
             }
         }
     }

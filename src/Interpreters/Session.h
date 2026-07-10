@@ -78,6 +78,15 @@ public:
     /// audit the failure themselves.
     void recordAuditLoginFailure(const std::optional<String> & user_name, const Poco::Net::SocketAddress & address) const;
 
+    /// Clears the `recordAuditLoginFailure` idempotency latch so the next authentication attempt on
+    /// this connection is audited again. A single connection can make several *distinct* attempts —
+    /// most notably the native TLS path, where a failed client-certificate authentication falls back
+    /// to password authentication. Without this reset the session-wide latch set by the certificate
+    /// failure would suppress the audit record for a subsequent, genuinely different failure (e.g. a
+    /// wrong password), losing a distinct failed login attempt from the audit trail. Call it before
+    /// starting such a fallback attempt.
+    void resetAuditLoginFailureLatch();
+
     /// Remembers the TLS client certificate presented on this connection (if any), so that
     /// session_log records it for the login/logout events of this session.
     void setClientCertificate(const X509Certificate & certificate);

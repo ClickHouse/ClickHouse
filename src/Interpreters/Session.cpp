@@ -464,6 +464,11 @@ void Session::recordAuditLoginFailure(const std::optional<String> & user_name, c
     }
 }
 
+void Session::resetAuditLoginFailureLatch()
+{
+    audit_login_failure_recorded = false;
+}
+
 void Session::setClientCertificate(const X509Certificate & certificate)
 {
 #if USE_SSL
