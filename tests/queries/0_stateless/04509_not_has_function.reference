@@ -56,6 +56,8 @@ WHERE notHas(arr, x) IS DISTINCT FROM NOT has(arr, x);
 0
 -- `notHas` on a constant array is rewritten to `notIn` by the analyzer (`optimize_rewrite_has_to_in`),
 -- so it executes through the set machinery and prunes by the primary key like `NOT IN`.
+-- The rewrite is a query tree pass, which exists only in the analyzer.
+SET enable_analyzer = 1;
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT materialize(4) AS x WHERE notHas([1, 2], x);
 SELECT materialize(4) AS x
 FROM system.one AS __table1
