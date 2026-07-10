@@ -21,6 +21,7 @@
 #if USE_SSL
 #    include <openssl/rand.h>
 #    include <openssl/err.h>
+#    include <Common/Crypto/OpenSSLInitializer.h>
 #    include <Common/Crypto/X509Certificate.h>
 #    include <Common/OpenSSLHelpers.h>
 #endif
@@ -516,11 +517,9 @@ AuthenticationData AuthenticationData::fromAST(const ASTAuthenticationData & que
             const auto & key_base64 = ssh_key.key_base64;
             const auto & type = ssh_key.type;
 
-            /// A key unusable in the current FIPS mode must not abort the load, so skip it - it cannot authenticate.
-            if (!SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(type))
+            if (OpenSSLInitializer::instance().isFIPSEnabled() && !SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(type))
             {
-                LOG_WARNING(getLogger("AuthenticationData"),
-                    "Skipping SSH key of type {}: not usable in FIPS mode", type);
+                LOG_WARNING(getLogger("AuthenticationData"), "Skipping SSH key of type {}: not usable in FIPS mode", type);
                 continue;
             }
 

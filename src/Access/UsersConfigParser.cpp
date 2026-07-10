@@ -35,6 +35,10 @@
 #include <unordered_set>
 #include <boost/container/flat_set.hpp>
 
+#include "config.h"
+#if USE_SSL
+#    include <Common/Crypto/OpenSSLInitializer.h>
+#endif
 
 namespace DB
 {
@@ -299,7 +303,7 @@ namespace
                     else
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected base64_key field in {} entry", entry);
 
-                    if (!SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(type))
+                    if (OpenSSLInitializer::instance().isFIPSEnabled() && !SSHKeyFactory::isPublicKeyUsableInFIPSBuilds(type))
                     {
                         LOG_WARNING(&Poco::Logger::get("UsersConfigParser"),
                             "Skipping SSH key entry {} for user {} (type {}): not usable in FIPS mode", entry, user_name, type);

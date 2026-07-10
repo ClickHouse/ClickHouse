@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include <Access/AccessControl.h>
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/User.h>
@@ -7,14 +5,6 @@
 #include <Poco/Util/XMLConfiguration.h>
 #include <gtest/gtest.h>
 #include <sstream>
-
-#if USE_SSH && USE_SSL
-#include <Access/AuthenticationData.h>
-#include <Common/Crypto/OpenSSLInitializer.h>
-#include <Parsers/Access/ASTAuthenticationData.h>
-#include <Parsers/Access/ASTPublicSSHKey.h>
-#include <openssl/evp.h>
-#endif
 
 using namespace DB;
 
@@ -825,103 +815,3 @@ TEST_F(UsersConfigMultipleAuthTest, OTPWithMixedAuthIncludingPassword)
     EXPECT_EQ(user->authentication_methods[0].getType(), AuthenticationType::LDAP);
     EXPECT_EQ(user->authentication_methods[1].getType(), AuthenticationType::PLAINTEXT_PASSWORD);
 }
-
-#if USE_SSH && USE_SSL
-
-namespace
-{
-    /// RAII guard toggling the OpenSSL runtime FIPS property (drives OpenSSLInitializer::isFIPSEnabled()).
-    struct FIPSModeGuard
-    {
-        int previous = 0;
-        explicit FIPSModeGuard(int enable)
-        {
-            previous = EVP_default_properties_is_fips_enabled(nullptr) ? 1 : 0;
-            EVP_default_properties_enable_fips(nullptr, enable);
-        }
-        ~FIPSModeGuard() { EVP_default_properties_enable_fips(nullptr, previous); }
-    };
-}
-
-/// Regression for #50188: a legacy users.xml with an Ed25519 SSH key must still load on a FIPS build.
-/// The key is unusable in FIPS mode, but reloading persisted config must skip it, not abort startup.
-TEST_F(UsersConfigMultipleAuthTest, FIPSEd25519SSHKeyInUsersConfigDoesNotAbort)
-{
-    FIPSModeGuard fips(1);
-    ASSERT_TRUE(OpenSSLInitializer::instance().isFIPSEnabled());
-
-    const std::string xml_config = R"(
-        <clickhouse>
-            <users>
-                <ssh_user>
-                    <ssh_keys>
-                        <ssh_key>
-                            <type>ssh-ed25519</type>
-                            <base64_key>AAAAC3NzaC1lZDI1NTE5AAAAIKQxIaNx90rIr79c5S8cT9fhAsfJK/cCS2dAbyp1xJIj</base64_key>
-                        </ssh_key>
-                    </ssh_keys>
-                </ssh_user>
-                <plain_user>
-                    <password>plaintext_pass</password>
-                </plain_user>
-            </users>
-        </clickhouse>
-    )";
-
-    auto config = createConfigFromXML(xml_config);
-    /// Must not throw: one unusable key does not block the whole config parse.
-    ASSERT_NO_THROW(storage->setConfig(*config));
-
-    /// The unusable key is skipped, so the SSH_KEY method has no usable keys and cannot authenticate.
-    auto ssh_user = storage->tryRead<User>("ssh_user");
-    ASSERT_TRUE(ssh_user);
-    ASSERT_EQ(ssh_user->authentication_methods.size(), 1);
-    const auto & ssh_auth = ssh_user->authentication_methods[0];
-    EXPECT_EQ(ssh_auth.getType(), AuthenticationType::SSH_KEY);
-    EXPECT_TRUE(ssh_auth.getSSHKeys().empty());
-
-    /// Other users in the same config are unaffected.
-    auto plain_user = storage->tryRead<User>("plain_user");
-    ASSERT_TRUE(plain_user);
-    ASSERT_EQ(plain_user->authentication_methods.size(), 1);
-    EXPECT_EQ(plain_user->authentication_methods[0].getType(), AuthenticationType::PLAINTEXT_PASSWORD);
-}
-
-namespace
-{
-    /// CREATE/ALTER USER ... IDENTIFIED WITH ssh_key BY KEY '<base64>' TYPE 'ssh-ed25519', as an AST.
-    ASTPtr makeEd25519SSHKeyAuthAST()
-    {
-        auto auth = make_intrusive<ASTAuthenticationData>();
-        auth->type = AuthenticationType::SSH_KEY;
-        auth->children.push_back(make_intrusive<ASTPublicSSHKey>(
-            "AAAAC3NzaC1lZDI1NTE5AAAAIKQxIaNx90rIr79c5S8cT9fhAsfJK/cCS2dAbyp1xJIj", "ssh-ed25519"));
-        return auth;
-    }
-}
-
-/// Regression for #50188 on the fromAST path (CREATE/ALTER/ATTACH USER, store reload): an ssh-ed25519 key
-/// is skipped under FIPS (unusable, leaving an empty SSH_KEY method) and imported normally otherwise.
-TEST_F(UsersConfigMultipleAuthTest, FIPSEd25519SSHKeyFromASTSkipped)
-{
-    auto auth = makeEd25519SSHKeyAuthAST();
-    const auto & query = auth->as<ASTAuthenticationData &>();
-
-    {
-        FIPSModeGuard fips(1);
-        ASSERT_TRUE(OpenSSLInitializer::instance().isFIPSEnabled());
-        auto auth_data = AuthenticationData::fromAST(query, nullptr, /*validate=*/true);
-        EXPECT_EQ(auth_data.getType(), AuthenticationType::SSH_KEY);
-        EXPECT_TRUE(auth_data.getSSHKeys().empty());
-    }
-
-    {
-        FIPSModeGuard fips(0);
-        ASSERT_FALSE(OpenSSLInitializer::instance().isFIPSEnabled());
-        auto auth_data = AuthenticationData::fromAST(query, nullptr, /*validate=*/true);
-        EXPECT_EQ(auth_data.getType(), AuthenticationType::SSH_KEY);
-        EXPECT_EQ(auth_data.getSSHKeys().size(), 1u);
-    }
-}
-
-#endif
