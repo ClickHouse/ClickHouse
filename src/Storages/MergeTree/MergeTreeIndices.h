@@ -264,6 +264,8 @@ struct IMergeTreeIndex
     /// getDeserializedFormat() should be reimplemented too,
     /// and check all previous extensions for substreams too
     /// (to avoid breaking backward compatibility).
+    /// A matching format detector should also be registered
+    /// in MergeTreeIndexFactory.
     virtual MergeTreeIndexSubstreams getSubstreams() const { return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}; }
 
     /// Returns substreams and version for deserialization. @storage is consulted so that packed
@@ -344,8 +346,24 @@ public:
     MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;
     MergeTreeIndices getMany(StorageMetadataPtr metadata_snapshot, const std::vector<IndexDescription> & indices, const MergeTreeSettings & settings) const;
 
+    /// Per-type equivalent of IMergeTreeIndex::getDeserializedFormat that does not require an index object.
+    using FormatDetector = std::function<MergeTreeIndexFormat(
+        const MergeTreeDataPartChecksums & checksums,
+        const std::string & relative_path_prefix,
+        const IDataPartStorage * storage)>;
+
+    /// On-disk stream names of the index in a part (hash-resolved, without extensions),
+    /// obtained without constructing the index object (which may be expensive, e.g. the
+    /// text index builds expression actions). Unknown index types are probed with the
+    /// default detector instead of throwing, so it is safe on cleanup paths.
+    Names getStreamNames(
+        const IndexDescription & index,
+        const MergeTreeDataPartChecksums & checksums,
+        const IDataPartStorage * storage) const;
+
     void registerCreator(const std::string & index_type, Creator creator, Documentation documentation = {});
     void registerValidator(const std::string & index_type, Validator validator);
+    void registerFormatDetector(const std::string & index_type, FormatDetector detector);
 
     std::vector<String> getAllRegisteredNames() const;
 
@@ -358,14 +376,17 @@ protected:
 private:
     using Creators = std::unordered_map<std::string, Creator>;
     using Validators = std::unordered_map<std::string, Validator>;
+    using FormatDetectors = std::unordered_map<std::string, FormatDetector>;
     using Documentations = std::unordered_map<std::string, Documentation>;
     Creators creators;
     Validators validators;
+    FormatDetectors format_detectors;
     Documentations documentations;
 };
 
 MergeTreeIndexPtr minmaxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexFormat minmaxIndexFormatDetector(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix, const IDataPartStorage * storage);
 
 MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
@@ -386,6 +407,7 @@ void ginIndexValidator(const IndexDescription & index, bool attach, const MergeT
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+MergeTreeIndexFormat textIndexFormatDetector(const MergeTreeDataPartChecksums & checksums, const std::string & relative_path_prefix, const IDataPartStorage * storage);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 

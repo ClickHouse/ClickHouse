@@ -249,16 +249,24 @@ MergeTreeIndexConditionPtr MergeTreeIndexMinMax::createIndexCondition(
     return std::make_shared<MergeTreeIndexConditionMinMax>(index, filter_dag, context);
 }
 
-MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(
+MergeTreeIndexFormat minmaxIndexFormatDetector(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & relative_path_prefix,
-    const IDataPartStorage * storage) const
+    const IDataPartStorage * storage)
 {
     if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx2", storage))
         return {2, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"}}};
     if (indexFileExistsInChecksums(checksums, relative_path_prefix, ".idx", storage))
         return {1, {{MergeTreeIndexSubstream::Type::Regular, "", ".idx"}}};
     return {0 /* unknown */, {}};
+}
+
+MergeTreeIndexFormat MergeTreeIndexMinMax::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & relative_path_prefix,
+    const IDataPartStorage * storage) const
+{
+    return minmaxIndexFormatDetector(checksums, relative_path_prefix, storage);
 }
 
 MergeTreeIndexBulkGranulesMinMax::MergeTreeIndexBulkGranulesMinMax(const String & index_name_, const Block & index_sample_block_,

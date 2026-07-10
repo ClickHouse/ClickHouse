@@ -1846,10 +1846,10 @@ MergeTreeIndexSubstreams MergeTreeIndexText::getSubstreams() const
     return substreams;
 }
 
-MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
+MergeTreeIndexFormat textIndexFormatDetector(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
-    const IDataPartStorage * storage) const
+    const IDataPartStorage * storage)
 {
     if (!indexFileExistsInChecksums(checksums, path_prefix, ".idx", storage))
         return {0, {}};
@@ -1869,6 +1869,14 @@ MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
     }
 
     return {1, std::move(substreams)};
+}
+
+MergeTreeIndexFormat MergeTreeIndexText::getDeserializedFormat(
+    const MergeTreeDataPartChecksums & checksums,
+    const std::string & path_prefix,
+    const IDataPartStorage * storage) const
+{
+    return textIndexFormatDetector(checksums, path_prefix, storage);
 }
 
 MergeTreeIndexGranulePtr MergeTreeIndexText::createIndexGranule() const

@@ -820,21 +820,10 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
-        auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(checksums, index_name, &getDataPartStorage());
+        auto stream_names = MergeTreeIndexFactory::instance().getStreamNames(index_description, checksums, &getDataPartStorage());
 
-        if (!index_format)
-            continue;
-
-        for (const auto & substream : index_format.substreams)
+        for (const auto & stream_name : stream_names)
         {
-            auto full_stream_name = index_name + substream.suffix;
-            auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
-            /// For packed substreams the per-virtual-file entry is not in checksums; use the
-            /// non-hashed name and rely on the storage overlay to resolve it.
-            String stream_name = stream_name_opt.value_or(full_stream_name);
-
             loaders.emplace_back(std::make_unique<MergeTreeMarksLoader>(
                 info_for_read,
                 index_mark_cache,
@@ -871,19 +860,10 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
 
     for (const auto & index_description : secondary_indices)
     {
-        auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
-        auto index_name = skip_index->getFileName();
-        auto index_format = skip_index->getDeserializedFormat(checksums, index_name, &getDataPartStorage());
+        auto stream_names = MergeTreeIndexFactory::instance().getStreamNames(index_description, checksums, &getDataPartStorage());
 
-        if (!index_format)
-            continue;
-
-        for (const auto & substream : index_format.substreams)
+        for (const auto & stream_name : stream_names)
         {
-            auto full_stream_name = index_name + substream.suffix;
-            auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
-            String stream_name = stream_name_opt.value_or(full_stream_name);
-
             auto marks_file = index_granularity_info.getMarksFilePath(stream_name);
             auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / marks_file).string());
             index_mark_cache->remove(key);
