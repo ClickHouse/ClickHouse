@@ -1,0 +1,37 @@
+---
+title: Como aumentar o número de threads no ClickHouse
+description: Saiba como configurar o pool global de threads no ClickHouse ajustando configurações como `max_thread_pool_size`, `thread_pool_queue_size` e `max_thread_pool_free_size`.
+date: 2023-03-01
+tags: ['Desempenho e otimizações']
+keywords: ['Threads disponíveis']
+---
+
+{frontMatter.description}
+
+{/* truncate */}
+
+<div id="increasing-the-number-of-threads-in-clickhouse">
+  ## Aumentando o número de threads no ClickHouse
+</div>
+
+O ClickHouse usa threads do **pool global de threads** para processar consultas e também executar operações em segundo plano, como merges e mutações. Se não houver nenhuma thread ociosa para processar uma consulta, uma nova thread será criada no pool.
+
+O tamanho máximo do pool global de threads é determinado pela configuração `max_thread_pool_size`, cujo valor padrão é 10.000. Você pode modificar esse valor na sua configuração — aqui, nós o definimos como 20.000:
+
+```xml
+<max_thread_pool_size>20000</max_thread_pool_size>
+```
+
+Se você modificar `max_thread_pool_size`, recomendamos ajustar `thread_pool_queue_size` para o mesmo valor. A configuração `thread_pool_queue_size` define o número máximo de jobs que podem ser agendados no pool global de threads:
+
+```xml
+<thread_pool_queue_size>20000</thread_pool_queue_size>
+```
+
+Você também pode liberar recursos se o seu servidor tiver muitas threads ociosas usando a configuração `max_thread_pool_free_size`. O padrão é 1.000, o que significa que o pool global de threads nunca terá mais de 1.000 threads ociosas. O exemplo a seguir aumenta esse valor para 2.000:
+
+```xml
+<max_thread_pool_free_size>2000</max_thread_pool_free_size>
+```
+
+Consulte a [documentação](/pt-BR/reference/settings/server-settings/settings#max_thread_pool_size) para mais detalhes sobre as configurações acima e outras que afetam o pool global de threads.

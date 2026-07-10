@@ -1,0 +1,234 @@
+---
+sidebarTitle: 'remoteSecure 사용하기'
+slug: /cloud/migration/clickhouse-to-cloud
+title: 'remoteSecure를 사용하여 자가 관리형 ClickHouse와 ClickHouse Cloud 간에 마이그레이션하기'
+description: '자가 관리형 ClickHouse와 ClickHouse Cloud 간 마이그레이션 방법을 설명하는 페이지'
+doc_type: 'guide'
+keywords: ['마이그레이션', 'ClickHouse Cloud', 'OSS', '자가 관리형에서 Cloud로 마이그레이션']
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+import AddARemoteSystem from '/snippets/ko/_add_remote_ip_access_list_detail.mdx';
+
+import CompatibilityNote from '/snippets/ko/compatibility.mdx';
+
+<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+
+이 가이드에서는 자가 관리형 ClickHouse 서버에서 ClickHouse Cloud로 마이그레이션하는 방법과 ClickHouse Cloud 서비스 간에 마이그레이션하는 방법을 설명합니다.
+[`remoteSecure`](/ko/reference/functions/table-functions/remote) 함수는 원격 ClickHouse 서버에 액세스할 수 있도록 `SELECT` 및 `INSERT` 쿼리에서 사용됩니다. 이를 통해 `SELECT`가 포함된 `INSERT INTO` 쿼리만 작성하면 테이블을 간단히 마이그레이션할 수 있습니다.
+
+<div id="migrating-from-self-managed-clickhouse-to-clickhouse-cloud">
+  ## 자가 관리형 ClickHouse에서 ClickHouse Cloud로 마이그레이션하기
+</div>
+
+<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+
+소스 테이블이 세그먼트로 나뉘어 있거나 복제되어 있는지와 관계없이, ClickHouse Cloud에서는 대상 테이블만 생성하면 됩니다(이 테이블의 Engine 매개변수는 생략할 수 있으며, `SharedMergeTree`가 테이블 엔진으로 자동 선택됩니다).
+또한 ClickHouse Cloud가 수직 및 수평 스케일링을 자동으로 처리합니다.
+테이블을 어떻게 복제하고 세그먼트로 나눌지 따로 고민할 필요가 없습니다.
+
+이 예시에서 자가 관리형 ClickHouse 서버는 *source*이고 ClickHouse Cloud 서비스는 *destination*입니다.
+
+<div id="overview">
+  ### 개요
+</div>
+
+절차는 다음과 같습니다:
+
+1. 원본 서비스에 읽기 전용 사용자를 추가합니다
+2. 대상 서비스에 원본 테이블 구조를 동일하게 생성합니다
+3. 원본의 네트워크 연결 가능 여부에 따라 원본에서 대상으로 데이터를 Pull하거나, 원본에서 데이터를 Push합니다
+4. 대상의 IP 액세스 목록에서 원본 server를 제거합니다(해당하는 경우)
+5. 원본 서비스에서 읽기 전용 사용자를 제거합니다
+
+<div id="migration-of-tables-from-one-system-to-another">
+  ### 한 시스템에서 다른 시스템으로 테이블 마이그레이션:
+</div>
+
+이 예시에서는 자가 관리형 ClickHouse 서버의 테이블 1개를 ClickHouse Cloud로 마이그레이션합니다.
+
+<CompatibilityNote />
+
+<div id="on-the-source-clickhouse-system-the-system-that-currently-hosts-the-data">
+  ### 원본 ClickHouse 시스템에서(현재 데이터가 호스팅되는 시스템)
+</div>
+
+* 원본 테이블(이 예시에서는 `db.table`)을 읽을 수 있는 읽기 전용 사용자를 추가합니다.
+
+```sql
+CREATE USER exporter
+IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+SETTINGS readonly = 1;
+```
+
+```sql
+GRANT SELECT ON db.table TO exporter;
+```
+
+* 테이블 정의를 복사하세요
+
+```sql
+SELECT create_table_query
+FROM system.tables
+WHERE database = 'db' AND table = 'table'
+```
+
+<div id="on-the-destination-clickhouse-cloud-system">
+  ### 대상 ClickHouse Cloud 시스템에서는:
+</div>
+
+* 대상 데이터베이스를 생성하십시오:
+
+```sql
+CREATE DATABASE db
+```
+
+* 원본의 CREATE TABLE 문을 사용해 대상을 생성합니다.
+
+<Tip>
+  CREATE 문을 실행할 때 ENGINE은 매개변수 없이 ReplicatedMergeTree로 변경하십시오. ClickHouse Cloud는 항상 테이블을 복제하고 올바른 매개변수를 제공합니다. 다만 `ORDER BY`, `PRIMARY KEY`, `PARTITION BY`, `SAMPLE BY`, `TTL`, `SETTINGS` 절은 그대로 유지하십시오.
+</Tip>
+
+```sql
+CREATE TABLE db.table ...
+```
+
+* `remoteSecure` 함수를 사용해 자가 관리형 소스에서 데이터를 가져옵니다
+
+<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+
+```sql
+INSERT INTO db.table SELECT * FROM
+remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+```
+
+<Note>
+  소스 시스템에 외부 네트워크에서 접근할 수 없다면, `remoteSecure` 함수는 select와 insert 모두에 사용할 수 있으므로 데이터를 pull하는 대신 push할 수 있습니다. 다음 옵션을 확인하십시오.
+</Note>
+
+* `remoteSecure` 함수를 사용하여 데이터를 ClickHouse Cloud 서비스로 push합니다
+
+<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+
+<Tip>
+  **원격 시스템을 ClickHouse Cloud 서비스의 IP 액세스 목록에 추가하십시오**
+
+  `remoteSecure` 함수가 ClickHouse Cloud 서비스에 연결하려면 원격 시스템의 IP 주소가 IP 액세스 목록에서 허용되어야 합니다. 자세한 내용은 이 팁 아래의 **IP 액세스 목록 관리**를 펼쳐 확인하십시오.
+</Tip>
+
+<AddARemoteSystem />
+
+```sql
+INSERT INTO FUNCTION
+remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
+'default', 'PASS') SELECT * FROM db.table
+```
+
+<div id="migrating-between-clickhouse-cloud-services">
+  ## ClickHouse Cloud 서비스 간 마이그레이션
+</div>
+
+<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+
+ClickHouse Cloud 서비스 간에 데이터를 마이그레이션하는 일반적인 예시는 다음과 같습니다:
+
+* 복원된 백업에서 데이터 마이그레이션
+* 개발 서비스에서 스테이징 서비스로 데이터 복사(또는 스테이징에서 운영으로 복사)
+
+이 예시에서는 2개의 ClickHouse Cloud 서비스가 있으며, 이를 각각 *source*와 *destination*이라고 합니다. 데이터는 source에서 destination으로 Pull됩니다. 원하는 경우 Push 방식도 사용할 수 있지만, 여기서는 읽기 전용 사용자를 사용하는 Pull 방식을 보여줍니다.
+
+<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+
+마이그레이션은 다음 단계로 진행됩니다:
+
+1. 하나의 ClickHouse Cloud 서비스를 *source*로, 다른 하나를 *destination*으로 지정합니다
+2. source 서비스에 읽기 전용 사용자를 추가합니다
+3. destination 서비스에 source 테이블 구조를 복제합니다
+4. source 서비스에 대한 IP 액세스를 일시적으로 허용합니다
+5. source에서 destination으로 데이터를 복사합니다
+6. destination의 IP 액세스 목록(IP 액세스 목록)을 다시 설정합니다
+7. source 서비스에서 읽기 전용 사용자를 제거합니다
+
+<div id="add-a-read-only-user-to-the-source-service">
+  #### 소스 서비스에 읽기 전용 사용자를 추가합니다
+</div>
+
+* 소스 테이블(이 예시에서는 `db.table`)을 읽을 수 있는 읽기 전용 사용자를 추가합니다
+
+  ```sql
+  CREATE USER exporter
+  IDENTIFIED WITH SHA256_PASSWORD BY 'password-here'
+  SETTINGS readonly = 1;
+  ```
+
+  ```sql
+  GRANT SELECT ON db.table TO exporter;
+  ```
+
+* 테이블 정의를 복사합니다
+  ```sql
+  select create_table_query
+  from system.tables
+  where database = 'db' and table = 'table'
+  ```
+
+<div id="duplicate-the-table-structure-on-the-destination-service">
+  #### 대상 서비스에 테이블 구조 복제하기
+</div>
+
+대상에 데이터베이스가 아직 없으면 생성합니다:
+
+* 대상 데이터베이스를 생성합니다:
+  ```sql
+  CREATE DATABASE db
+  ```
+
+* 소스의 CREATE TABLE 문을 사용해 대상에 테이블을 생성합니다.
+
+  대상에서는 소스의 `select create_table_query...` 출력 결과를 사용해 테이블을 생성합니다:
+
+  ```sql
+  CREATE TABLE db.table ...
+  ```
+
+<div id="allow-remote-access-to-the-source-service">
+  #### 원본 서비스에 원격 액세스 허용
+</div>
+
+원본에서 대상으로 데이터를 가져오려면 원본 서비스에서 연결을 허용해야 합니다. 원본 서비스의 &quot;IP 액세스 목록&quot; 기능을 일시적으로 비활성화하십시오.
+
+<Tip>
+  원본 ClickHouse Cloud 서비스를 계속 사용할 예정이라면, 모든 위치에서의 액세스를 허용하도록 변경하기 전에 기존 IP 액세스 목록을 JSON 파일로 내보내십시오. 이렇게 하면 데이터 마이그레이션 후 액세스 목록을 다시 가져올 수 있습니다.
+</Tip>
+
+허용 목록을 수정하여 **Anywhere** 에서의 액세스를 일시적으로 허용하십시오. 자세한 내용은 [IP 액세스 목록](/ko/products/cloud/guides/security/connectivity/setting-ip-filters) 문서를 참조하십시오.
+
+<div id="copy-the-data-from-source-to-destination">
+  #### 소스에서 대상으로 데이터를 복사합니다
+</div>
+
+* `remoteSecure` 함수를 사용하여 소스 ClickHouse Cloud 서비스에서 데이터를 가져옵니다.
+  대상에 연결합니다. 대상 ClickHouse Cloud 서비스에서 이 명령을 실행하세요:
+
+  ```sql
+  INSERT INTO db.table SELECT * FROM
+  remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
+  ```
+
+* 대상 서비스의 데이터를 확인합니다
+
+<div id="re-establish-the-ip-access-list-on-the-source">
+  #### 소스에서 IP 액세스 목록 다시 설정
+</div>
+
+이전에 액세스 목록을 내보냈다면 **Share**를 사용해 다시 가져올 수 있으며, 그렇지 않다면 IP 액세스 목록에 항목을 다시 추가하십시오.
+
+<div id="remove-the-read-only-exporter-user">
+  #### 읽기 전용 `exporter` 사용자 삭제
+</div>
+
+```sql
+DROP USER exporter
+```
+
+* 액세스를 제한하도록 서비스의 IP 액세스 목록을 변경합니다

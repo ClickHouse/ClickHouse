@@ -1,0 +1,85 @@
+---
+description: 'Documentation du modificateur de type Nullable dans ClickHouse'
+sidebarTitle: 'Nullable(T)'
+slug: /sql-reference/data-types/nullable
+title: 'Nullable(T)'
+doc_type: 'reference'
+---
+
+Permet de stocker un marqueur spécial ([NULL](/fr/reference/syntax)) qui indique une « valeur manquante » en plus des valeurs normales autorisées par `T`. Par exemple, une colonne de type `Nullable(Int8)` peut stocker des valeurs de type `Int8`, et les lignes qui n’ont pas de valeur stockeront `NULL`.
+
+`T` ne peut être aucun des types de données composites suivants :
+
+* [Array](/fr/reference/data-types/array) — Non pris en charge
+* [Map](/fr/reference/data-types/map) — Non pris en charge
+* [Tuple](/fr/reference/data-types/tuple) — Prise en charge bêta*
+
+Cependant, les types de données composites **peuvent contenir** des valeurs de type `Nullable`, par exemple `Array(Nullable(Int8))` ou `Tuple(Nullable(String), Nullable(Int64))`.
+
+<Info>
+  **Bêta : tuples Nullable**
+
+  * [Nullable(Tuple(...))](/fr/reference/data-types/tuple#nullable-tuple) est pris en charge lorsque `enable_nullable_tuple_type = 1` est activé.
+</Info>
+
+Un champ de type `Nullable` ne peut pas être inclus dans les index de table.
+
+`NULL` est la valeur par défaut de tout type `Nullable`, sauf indication contraire dans la configuration du serveur ClickHouse.
+
+<div id="storage-features">
+  ## Fonctionnalités de stockage
+</div>
+
+Pour stocker des valeurs de type `Nullable` dans une colonne d&#39;une table, ClickHouse utilise, en plus du fichier de valeurs normal, un fichier distinct contenant des masques `NULL`. Les entrées du fichier de masques permettent à ClickHouse de distinguer `NULL` de la valeur par défaut du type de données correspondant pour chaque ligne de la table. En raison de ce fichier supplémentaire, une colonne `Nullable` consomme davantage d&#39;espace de stockage qu&#39;une colonne normale équivalente.
+
+<Note>
+  L&#39;utilisation de `Nullable` a presque toujours un impact négatif sur les performances. Gardez-le à l&#39;esprit lors de la conception de vos bases de données.
+</Note>
+
+<div id="finding-null">
+  ## Trouver des valeurs NULL
+</div>
+
+Il est possible de trouver des valeurs `NULL` dans une colonne en utilisant la sous-colonne `null` sans lire l’intégralité de la colonne. Elle renvoie `1` si la valeur correspondante est `NULL`, et `0` sinon.
+
+**Exemple**
+
+```sql title="Query"
+CREATE TABLE nullable (`n` Nullable(UInt32)) ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO nullable VALUES (1) (NULL) (2) (NULL);
+
+SELECT n.null FROM nullable;
+```
+
+```text title="Response"
+┌─n.null─┐
+│      0 │
+│      1 │
+│      0 │
+│      1 │
+└────────┘
+```
+
+<div id="usage-example">
+  ## Exemple d’utilisation
+</div>
+
+```sql
+CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog
+```
+
+```sql
+INSERT INTO t_null VALUES (1, NULL), (2, 3)
+```
+
+```sql
+SELECT x + y FROM t_null
+```
+
+```text
+┌─plus(x, y)─┐
+│       ᴺᵁᴸᴸ │
+│          5 │
+└────────────┘
+```

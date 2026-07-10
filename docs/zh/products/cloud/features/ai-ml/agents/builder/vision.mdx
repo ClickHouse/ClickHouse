@@ -1,0 +1,37 @@
+---
+sidebarTitle: '视觉'
+slug: /cloud/features/ai-ml/agents/builder/vision
+title: '视觉'
+description: 'ClickHouse 智能体的图像输入与视觉理解'
+keywords: ['AI', 'ClickHouse Cloud', '智能体', '视觉', '图像输入', '多模态']
+doc_type: 'reference'
+---
+
+import BetaBadge from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<BetaBadge />
+
+视觉功能支持用户上传图片供智能体分析。智能体会将图片传给支持视觉的模型，由其对图片内容进行描述、总结，或回答相关问题。
+
+<div id="enable-it">
+  ## 启用视觉功能
+</div>
+
+视觉功能仅适用于支持图像输入的模型。如果所选模型无法处理图像输入，消息输入框中的上传控件会被禁用。切换为支持视觉的模型，即可重新启用该控件。
+
+<div id="use-it">
+  ## 使用视觉功能
+</div>
+
+点击消息输入框左下角的回形针图标，然后选择 **上传到提供商** 来添加图片——可以是截图、照片、图表或示意图。接着，提出任何需要读取图像内容的问题，例如：*&quot;这个查询计划有什么问题？&quot;*、*&quot;请转录这张截图中的文字。&quot;* 或 *&quot;把这个仪表板和上周的对比一下。&quot;*
+
+<Image img="/images/cloud/agent-builder/vision/vision.webp" alt="消息输入框中的回形针菜单已打开，显示“上传到提供商”“作为文本上传”和“上传到代码环境”选项" size="lg" />
+
+智能体会将图像视为消息上下文的一部分，因此在同一轮对话中的后续问题里，你可以直接引用它看到的内容，而无需重新上传。
+
+<div id="combine-with-other-tools">
+  ## 将视觉与其他工具结合使用
+</div>
+
+视觉很适合与 [code interpreter](/zh/products/cloud/features/ai-ml/agents/builder/code-interpreter) 配合进行基于图像的分析——例如，智能体先从截图中读取数值，再运行 Python 计算总数；当图像提到某些模型需要进一步查找的内容时，它也能与[网页搜索](/zh/products/cloud/features/ai-ml/agents/builder/web-search)配合使用。

@@ -1,0 +1,61 @@
+---
+sidebarTitle: 'Retool'
+slug: /integrations/retool
+keywords: ['clickhouse', 'retool', 'подключить', 'интегрировать', 'интерфейс', 'администратор', 'панель', 'панель мониторинга', 'без кода', 'no-code']
+description: 'Быстро создавайте веб- и мобильные приложения с продуманными пользовательскими интерфейсами, автоматизируйте сложные задачи и интегрируйте ИИ — всё это на основе ваших данных.'
+title: 'Подключение Retool к ClickHouse'
+doc_type: 'руководство'
+integration:
+  - support_level: 'partner'
+  - category: 'data_integration'
+---
+
+import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+import PartnerBadge from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
+
+<PartnerBadge />
+
+<div id="1-gather-your-connection-details">
+  ## 1. Подготовьте сведения о подключении
+</div>
+
+<ConnectionDetails />
+
+<div id="2-create-a-clickhouse-resource">
+  ## 2. Создайте ресурс ClickHouse
+</div>
+
+Войдите в свою учетную запись Retool и перейдите на вкладку *Resources*. Выберите &quot;Create New&quot; -&gt; &quot;Resource&quot;:
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="Создание нового ресурса" />
+
+<br />
+
+Выберите &quot;JDBC&quot; из списка доступных коннекторов:
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="Выбор коннектора JDBC" />
+
+<br />
+
+В мастере настройки убедитесь, что в поле &quot;Driver name&quot; выбрано значение `com.clickhouse.jdbc.ClickHouseDriver`:
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="Выбор правильного драйвера" />
+
+<br />
+
+Укажите свои учетные данные ClickHouse в следующем формате: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
+Если для вашего экземпляра требуется SSL или вы используете ClickHouse Cloud, добавьте `&ssl=true` в строку подключения, чтобы получилось `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="Указание ваших учетных данных" />
+
+<br />
+
+После этого проверьте подключение:
+
+<Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="Проверка подключения" />
+
+<br />
+
+Теперь вы сможете перейти к своему приложению и использовать в нем ресурс ClickHouse.

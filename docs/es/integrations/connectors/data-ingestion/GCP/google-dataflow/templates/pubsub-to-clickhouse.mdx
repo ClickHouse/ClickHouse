@@ -1,0 +1,244 @@
+---
+sidebarTitle: 'De Pub/Sub a ClickHouse'
+slug: /integrations/google-dataflow/templates/pubsub-to-clickhouse
+description: 'Puedes transmitir mensajes JSON de Pub/Sub a ClickHouse con una plantilla de Google Dataflow'
+title: 'Plantilla de Google Dataflow de Pub/Sub a ClickHouse'
+doc_type: 'guide'
+keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'streaming', 'dead-letter']
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+La plantilla de Pub/Sub a ClickHouse es un pipeline de streaming que lee mensajes codificados en JSON de una suscripción de Pub/Sub y los escribe en una tabla de ClickHouse.
+Los mensajes que no se pueden analizar o asignar al esquema de destino se envían a un destino dead-letter: una tabla de ClickHouse, un tema de Pub/Sub o ambos.
+
+<div id="pipeline-requirements">
+  ## Requisitos del pipeline
+</div>
+
+* La suscripción de Pub/Sub de origen debe existir.
+* Los mensajes publicados en la suscripción deben ser JSON válidos.
+* La tabla de ClickHouse de destino debe existir y sus nombres de columna deben coincidir con los nombres de los campos de la carga útil JSON.
+* El host de ClickHouse debe ser accesible desde las máquinas worker de Dataflow.
+* Se debe proporcionar al menos un destino dead-letter (`clickHouseDeadLetterTable` o `deadLetterTopic`). Si se proporcionan ambos, los mensajes fallidos se enrutan a ambos destinos simultáneamente.
+* Cuando se establece `clickHouseDeadLetterTable`, la tabla dead-letter ya debe existir en ClickHouse con el esquema que se muestra en [Gestión de mensajes dead-letter](#dead-letter-handling).
+* Cuando se establece `deadLetterTopic`, el tema de Pub/Sub ya debe existir.
+
+<div id="template-parameters">
+  ## Parámetros de la plantilla
+</div>
+
+<br />
+
+<br />
+
+| Nombre del parámetro        | Descripción del parámetro                                                                                                                                                                                   | Obligatorio | Notas                                                                                                                                                                                                               |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inputSubscription`         | La suscripción de Pub/Sub desde la que se leerán los mensajes. Ejemplo: `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`.                                                                          | ✅           | Los mensajes deben estar codificados en JSON.                                                                                                                                                                       |
+| `clickHouseUrl`             | La URL del endpoint de ClickHouse. Use `https://` para conexiones SSL (ClickHouse Cloud) o `http://` para conexiones sin SSL. Ejemplo: `https://<HOST>:8443` o `http://<HOST>:8123`.                        | ✅           | Para ClickHouse Cloud, use el endpoint HTTPS en el puerto `8443`.                                                                                                                                                   |
+| `clickHouseDatabase`        | El nombre de la base de datos de ClickHouse donde reside la tabla de destino. Ejemplo: `default`.                                                                                                           | ✅           |                                                                                                                                                                                                                     |
+| `clickHouseTable`           | El nombre de la tabla de ClickHouse en la que se escribirán los datos.                                                                                                                                      | ✅           | La tabla debe existir antes de ejecutar el pipeline.                                                                                                                                                                |
+| `clickHouseUsername`        | El nombre de usuario con el que autenticarse en ClickHouse.                                                                                                                                                 | ✅           |                                                                                                                                                                                                                     |
+| `clickHousePassword`        | La contraseña con la que autenticarse en ClickHouse.                                                                                                                                                        | ✅           |                                                                                                                                                                                                                     |
+| `clickHouseDeadLetterTable` | La tabla de ClickHouse en la que se escribirán los mensajes fallidos. Ejemplo: `my_table_dead_letter`.                                                                                                      |             | Debe proporcionarse al menos uno de `clickHouseDeadLetterTable` o `deadLetterTopic`. La tabla debe existir con el esquema dead-letter que se muestra en [Gestión de mensajes fallidos](#dead-letter-handling).      |
+| `deadLetterTopic`           | El tema de Pub/Sub en el que se publicarán los mensajes fallidos. Ejemplo: `projects/<PROJECT_ID>/topics/<TOPIC_NAME>`.                                                                                    |             | Debe proporcionarse al menos uno de `clickHouseDeadLetterTable` o `deadLetterTopic`. Las cargas útiles fallidas se publican en el tema con `errorMessage` y `failedAt` definidos como atributos del mensaje.            |
+| `windowSeconds`             | Duración en segundos de las ventanas temporales de agrupación en lotes.                                                                                                                                     |             | Consulte [Agrupación en lotes y ventanas](#batching-and-windowing) para ver la interacción con `batchRowCount`. Si no se establece ninguno, el modo combinado usa los valores predeterminados `30s` y `1000` filas. |
+| `batchRowCount`             | Número de filas que se acumularán antes de enviarlas a ClickHouse.                                                                                                                                          |             | Consulte [Agrupación en lotes y ventanas](#batching-and-windowing) para ver la interacción con `windowSeconds`.                                                                                                     |
+| `maxInsertBlockSize`        | Número máximo de filas por sentencia `INSERT` enviada a ClickHouse. El valor predeterminado es `1,000,000`.                                                                                                 |             | Una opción de `ClickHouseIO`.                                                                                                                                                                                       |
+| `maxRetries`                | Número máximo de reintentos para inserts fallidos en ClickHouse. El valor predeterminado es `5`.                                                                                                            |             | Una opción de `ClickHouseIO`.                                                                                                                                                                                       |
+| `insertDeduplicate`         | Indica si se debe habilitar la deduplicación para consultas `INSERT` en tablas replicadas de ClickHouse. El valor predeterminado es `true`.                                                                 |             | Una opción de `ClickHouseIO`.                                                                                                                                                                                       |
+| `insertQuorum`              | Para consultas `INSERT` en tablas replicadas, espera a que el número especificado de réplicas confirme la escritura y que la adición de datos quede linealizada. `0` deshabilita las escrituras con quorum. |             | Una opción de `ClickHouseIO`. Deshabilitada en la configuración predeterminada del servidor.                                                                                                                        |
+| `insertDistributedSync`     | Si está habilitado, las consultas `INSERT` en tablas distribuidas esperan hasta que los datos se envíen a todos los nodos del cluster. El valor predeterminado es `true`.                                   |             | Una opción de `ClickHouseIO`.                                                                                                                                                                                       |
+
+<Note>
+  Los valores predeterminados de todos los parámetros de `ClickHouseIO` se pueden encontrar en el [conector Apache Beam `ClickHouseIO`](/es/integrations/connectors/data-ingestion/etl-tools/apache-beam#clickhouseiowrite-parameters).
+</Note>
+
+<div id="message-format-and-schema-mapping">
+  ## Formato de los mensajes y mapeo del esquema
+</div>
+
+Los mensajes de Pub/Sub deben ser objetos JSON cuyos nombres de campo de nivel superior coincidan exactamente con los nombres de las columnas de la tabla de ClickHouse de destino.
+
+Para mapear los mensajes entrantes a la tabla de destino, el pipeline realiza lo siguiente al iniciarse:
+
+1. Obtiene el esquema de la tabla de ClickHouse de destino.
+2. Crea un esquema `Row` de Beam a partir de ese esquema de ClickHouse.
+3. Para cada mensaje entrante de Pub/Sub, analiza la carga útil JSON y arma una fila leyendo los campos indicados en el esquema de ClickHouse.
+
+<br />
+
+<Warning>
+  Los nombres de los campos JSON deben coincidir exactamente con los nombres de las columnas de ClickHouse (la comparación distingue entre mayúsculas y minúsculas). Los campos del mensaje que no correspondan a una columna de ClickHouse se ignoran. Si una columna de ClickHouse no tiene un campo correspondiente en la carga útil JSON, el pipeline intenta escribir `NULL` en esa columna, lo que solo funciona cuando la columna está declarada como [`Nullable`](/es/reference/data-types/nullable). Los mensajes que no puedan analizarse, cuyos valores no puedan convertirse al tipo de la columna, o que intenten escribir `NULL` en una columna que no admite NULL, se envían al destino dead-letter.
+</Warning>
+
+<div id="type-conversion">
+  ### Conversión de tipos
+</div>
+
+Los valores JSON se convierten al tipo de columna de ClickHouse correspondiente:
+
+| Tipo de ClickHouse                                                                 | Notas                                                                                                                    |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [`Float32`](/es/reference/data-types/float)                                           | Se analiza con `Float.valueOf`.                                                                                          |
+| [`Float64`](/es/reference/data-types/float)                                           | Se analiza con `Double.valueOf`.                                                                                         |
+| [`Date`](/es/reference/data-types/date)                                               | Se analiza como una cadena de fecha ISO-8601.                                                                            |
+| [`DateTime`](/es/reference/data-types/datetime)                                       | Se analiza como una cadena de fecha y hora ISO-8601 (p. ej., `2026-01-15T12:34:56Z`).                                    |
+| [`Array(T)`](/es/reference/data-types/array)                                          | array JSON; cada elemento se convierte al tipo de elemento `T`. Los arrays vacíos o ausentes generan un array vacío.     |
+| Tipos enteros (`Int8`/`Int16`/`Int32`/`Int64`, `UInt8`/`UInt16`/`UInt32`/`UInt64`) | Se analizan a partir del número JSON o de su representación en cadena.                                                   |
+| [`String`](/es/reference/data-types/string)                                           | Se usa tal cual para los fields textuales; los nodos JSON no textuales se serializan a su representación de cadena JSON. |
+
+<div id="batching-and-windowing">
+  ## Agrupación por lotes y ventanas
+</div>
+
+Como la pipeline es de streaming, las filas entrantes se acumulan en ventanas antes de escribirse en ClickHouse. La estrategia de ventanas se elige según los parámetros que proporciones:
+
+| `windowSeconds`  | `batchRowCount`  | Comportamiento                                                                                                                                   |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| definido         | sin definir      | Ventanas fijas basadas en tiempo de `windowSeconds`.                                                                                             |
+| sin definir      | definido         | Ventana global con un disparador por recuento; se activa cada `batchRowCount` filas.                                                             |
+| ambos definidos  | ambos definidos  | Ventana global con un disparador combinado; se activa cuando se cumple primero cualquiera de las dos condiciones (tiempo **o** número de filas). |
+| ninguno definido | ninguno definido | Modo combinado con los valores predeterminados: `30` segundos o `1000` filas, lo que ocurra primero.                                             |
+
+Ajustar estos valores permite equilibrar la latencia y la eficiencia de inserción. Las ventanas más pequeñas reducen la latencia de extremo a extremo; las más grandes generan menos lotes `INSERT`, pero de mayor tamaño.
+
+<div id="dead-letter-handling">
+  ## Gestión de mensajes dead-letter
+</div>
+
+Los mensajes que fallen durante el análisis de JSON, el mapeo del esquema o la coerción de tipos se enrutan al destino o destinos dead-letter configurados. Debe proporcionarse al menos uno de `clickHouseDeadLetterTable` o `deadLetterTopic`; si ambos están configurados, los mensajes fallidos se envían a ambos.
+
+<div id="clickhouse-dead-letter-table">
+  ### Tabla dead-letter de ClickHouse
+</div>
+
+Cuando se configura `clickHouseDeadLetterTable`, la tabla dead-letter ya debe existir con este esquema fijo:
+
+| Columna         | Tipo       | Descripción                                                        |
+| --------------- | ---------- | ------------------------------------------------------------------ |
+| `raw_message`   | `String`   | La carga útil original del mensaje de Pub/Sub en texto UTF-8.      |
+| `error_message` | `String`   | El mensaje de excepción que describe por qué falló la fila.        |
+| `stack_trace`   | `String`   | La stack trace completa de Java capturada en el momento del fallo. |
+| `failed_at`     | `DateTime` | La marca de tiempo de procesamiento en la que falló la fila.       |
+
+Una definición mínima para una implementación de un solo nodo:
+
+```sql
+CREATE TABLE my_table_dead_letter (
+    raw_message   String,
+    error_message String,
+    stack_trace   String,
+    failed_at     DateTime
+) ENGINE = MergeTree()
+ORDER BY failed_at;
+```
+
+<Note>
+  Adapta el motor y la cláusula `ORDER BY` para tu despliegue: usa `ReplicatedMergeTree` para las tablas replicadas, añade `ON CLUSTER` en entornos distribuidos y ajusta la partición o el TTL según sea necesario.
+</Note>
+
+<div id="pubsub-dead-letter-topic">
+  ### Tema dead-letter de Pub/Sub
+</div>
+
+Cuando se establece `deadLetterTopic`, cada mensaje fallido se vuelve a publicar en el tema con:
+
+* **Carga útil**: los bytes del mensaje original.
+* **Atributo** `errorMessage`: el mensaje de excepción capturado en el momento del fallo.
+* **Atributo** `failedAt`: la marca temporal de procesamiento en la que falló la fila.
+
+Esto facilita reprocesar los mensajes fallidos una vez que se haya resuelto el problema subyacente del esquema o del productor.
+
+<div id="running-the-template">
+  ## Ejecutar la plantilla
+</div>
+
+La plantilla Pub/Sub to ClickHouse está disponible en Google Cloud Console.
+
+<Note>
+  Asegúrese de revisar este documento y, en particular, las secciones anteriores, para comprender por completo los requisitos de configuración y los requisitos previos de la plantilla.
+</Note>
+
+Inicie sesión en Google Cloud Console y busque Dataflow.
+
+1. Presione el botón `CREATE JOB FROM TEMPLATE`.
+   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Consola de Dataflow" />
+
+2. Una vez que se abra el formulario de la plantilla, introduzca un nombre para el job y seleccione la región deseada.
+
+   {/* PLACEHOLDER: agregar captura de pantalla del formulario inicial de la plantilla Pub/Sub to ClickHouse (nombre del job + región) */}
+
+3. En el campo `Dataflow Template`, escriba `ClickHouse` o `Pub/Sub` y seleccione la plantilla `Pub/Sub to ClickHouse`.
+
+   {/* PLACEHOLDER: agregar captura de pantalla de la selección de la plantilla "Pub/Sub to ClickHouse" en el menú desplegable */}
+
+4. Una vez seleccionada, el formulario se expande. Complete lo siguiente:
+
+   * La suscripción de entrada de Pub/Sub, con el formato `projects/<PROJECT_ID>/subscriptions/<SUBSCRIPTION_NAME>`.
+   * La URL del endpoint de ClickHouse; para ClickHouse Cloud, use `https://<HOST>:8443`.
+   * La base de datos de ClickHouse, la tabla de destino, el nombre de usuario y la contraseña.
+   * Al menos un destino dead-letter: una tabla de ClickHouse o un tema de Pub/Sub (o ambos).
+
+   {/* PLACEHOLDER: agregar captura de pantalla del formulario expandido de la plantilla Pub/Sub to ClickHouse que muestre los campos obligatorios y la sección dead-letter */}
+
+5. De forma opcional, personalice la agrupación en lotes (`windowSeconds`, `batchRowCount`) y los parámetros de ajuste de `ClickHouseIO`, como se detalla en la sección [Parámetros de la plantilla](#template-parameters).
+
+<div id="monitor-the-job">
+  ### Supervisa el trabajo
+</div>
+
+Ve a la [pestaña Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) en tu Google Cloud Console para supervisar el estado del trabajo. Allí encontrarás los detalles del trabajo, incluidos el progreso y cualquier error:
+
+<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="Consola de Dataflow que muestra un trabajo de Pub/Sub a ClickHouse en ejecución" />
+
+La plantilla también emite las siguientes métricas personalizadas en el espacio de nombres `PubSubToClickHouse`, visibles desde la página del trabajo de Dataflow:
+
+| Métrica                 | Tipo         | Descripción                                                                            |
+| ----------------------- | ------------ | -------------------------------------------------------------------------------------- |
+| `messages-received`     | Contador     | Total de mensajes de Pub/Sub recibidos por el paso de análisis.                        |
+| `rows-parsed-ok`        | Contador     | Mensajes convertidos correctamente en una fila y enviados a la salida principal.       |
+| `rows-parse-failed`     | Contador     | Mensajes cuyo análisis o mapeo del esquema falló y que se redirigieron a dead-letter.  |
+| `message-payload-bytes` | Distribución | Distribución de los tamaños de carga útil de los mensajes entrantes de Pub/Sub, en bytes. |
+
+<div id="troubleshooting">
+  ## Solución de problemas
+</div>
+
+<div id="code-241-dbexception-memory-limit-total-exceeded">
+  ### Error: se superó el límite total de memoria (código 241)
+</div>
+
+Este error se produce cuando ClickHouse se queda sin memoria al procesar lotes grandes de datos. Para resolver este problema:
+
+* Aumente los recursos de la instancia: actualice su servidor ClickHouse a una instancia más grande y con más memoria para soportar la carga de procesamiento de datos.
+* Reduzca el tamaño del lote: reduzca `batchRowCount` (y/o `maxInsertBlockSize`) en la configuración del trabajo de Dataflow para enviar fragmentos de datos más pequeños a ClickHouse, lo que reduce el consumo de memoria por lote.
+
+<div id="all-messages-going-to-dlq">
+  ### Todos los mensajes van al destino dead-letter
+</div>
+
+Las causas más comunes son:
+
+* Los nombres de los campos JSON no coinciden exactamente con los nombres de las columnas de ClickHouse (la coincidencia es sensible a mayúsculas y minúsculas).
+* El valor JSON no se puede convertir implícitamente al tipo de la columna (por ejemplo, una cadena que no siga ISO-8601 en una columna `DateTime`).
+* El esquema de la tabla de destino ha cambiado desde que se inició el pipeline; el esquema se obtiene una sola vez al arrancar. Reinicie el job después de aplicar los cambios de esquema.
+
+Inspeccione las columnas `error_message` y `stack_trace` de la tabla dead-letter de ClickHouse (o el atributo `errorMessage` en los mensajes dead-letter de Pub/Sub) para identificar la causa raíz.
+
+<div id="no-rows-arriving">
+  ### El pipeline se inicia, pero no llegan filas a ClickHouse
+</div>
+
+* Confirma que la suscripción esté recibiendo mensajes: comprueba la métrica `messages-received` en la página del job de Dataflow.
+* En el modo basado en tiempo (solo `windowSeconds`), las filas solo se vuelcan al finalizar cada ventana. Reduce `windowSeconds` para verificar que los volcados se estén produciendo.
+* Verifica la conectividad de red entre los workers de Dataflow y el endpoint de ClickHouse (firewall, peering de VPC o private service connect).
+
+<div id="template-source-code">
+  ## Código fuente de la plantilla
+</div>
+
+El código fuente de la plantilla está disponible en:
+
+* [`GoogleCloudPlatform/DataflowTemplates`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/googlecloud-to-clickhouse) — el repositorio original de Google Cloud Platform.
+* [`ClickHouse/DataflowTemplates`](https://github.com/ClickHouse/DataflowTemplates) — el fork de ClickHouse.

@@ -1,0 +1,37 @@
+---
+slug: /use-cases/observability/clickstack/integration-guides
+description: 'ClickStack 向けデータインジェスト - ClickHouse オブザーバビリティスタック'
+title: 'インテグレーションガイド'
+doc_type: 'landing-page'
+keywords: ['ClickStack データインジェスト', 'オブザーバビリティデータインジェスト', 'ClickStack インテグレーションガイド']
+---
+
+ClickStack では、オブザーバビリティデータを ClickHouse インスタンスに取り込むための方法が複数用意されています。このセクションには、さまざまなログ、トレース、メトリクスのログソース向けクイックスタートガイドが含まれています。
+
+<Note>
+  これらのインテグレーションガイドの一部では、すばやくテストや評価を行うために、ClickStack Open Source に組み込まれている OpenTelemetry Collector を使用します。
+
+  本番環境へのデプロイでは、ワークロードの近くでインテグレーションを OpenTelemetry Collector エージェントとして実行することを推奨します。これらのエージェントは、OTLP 経由でテレメトリーデータを ClickStack OpenTelemetry collector に転送し、そこから ClickStack Open Source ディストリビューション向けのセルフマネージド ClickHouse インスタンス、または Managed ClickStack にデータを送信する必要があります。本番構成については、[&quot;OpenTelemetry データの送信&quot;](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
+</Note>
+
+| Section                                                                    | Description                       |
+| -------------------------------------------------------------------------- | --------------------------------- |
+| [Generic Host Logs](/ja/clickstack/integration-examples/host-logs)            | ホストシステムのログを収集                     |
+| [EC2 Host Logs](/ja/clickstack/integration-examples/host-logs/ec2)            | EC2 インスタンスのログを監視                  |
+| [AWS Lambda Logs using Rotel](/ja/clickstack/integration-examples/aws-lambda) | Rotel を使用して Lambda ログを転送          |
+| [AWS CloudWatch](/ja/clickstack/integration-examples/cloudwatch)              | CloudWatch log groups を転送         |
+| [JVM Metrics](/ja/clickstack/integration-examples/jvm-metrics)                | JVM のパフォーマンスを監視                   |
+| [Kafka Logs](/ja/clickstack/integration-examples/kafka-logs)                  | Kafka ブローカーのログを収集                 |
+| [Kafka Metrics](/ja/clickstack/integration-examples/kafka-metrics)            | Kafka のパフォーマンスを監視                 |
+| [Kubernetes](/ja/clickstack/integration-examples/kubernetes)                  | K8s クラスターを監視                      |
+| [MongoDB Logs](/ja/clickstack/integration-examples/mongodb-logs)              | MongoDB のサーバーログを収集                |
+| [MySQL Logs](/ja/clickstack/integration-examples/mysql)                       | MySQL の slow query/error logs を収集 |
+| [Nginx Logs](/ja/clickstack/integration-examples/nginx-logs)                  | Nginx の access/error logs を収集     |
+| [Nginx Traces](/ja/clickstack/integration-examples/nginx-traces)              | Nginx の HTTP リクエストをトレース           |
+| [Node.js Traces](/ja/clickstack/integration-examples/nodejs-traces)           | Node.js の HTTP リクエストをトレース         |
+| [PostgreSQL Logs](/ja/clickstack/integration-examples/postgres-logs)          | Postgres のログを収集                   |
+| [PostgreSQL Metrics](/ja/clickstack/integration-examples/postgres-metrics)    | Postgres のパフォーマンスを監視              |
+| [Redis Logs](/ja/clickstack/integration-examples/redis-logs)                  | Redis のサーバーログを収集                  |
+| [Redis Metrics](/ja/clickstack/integration-examples/redis-metrics)            | Redis のパフォーマンスを監視                 |
+| [Systemd Logs](/ja/clickstack/integration-examples/systemd)                   | Systemd/Journald のログを収集           |
+| [Temporal Metrics](/ja/clickstack/integration-examples/temporal)              | Temporal Cloud Metrics を監視        |

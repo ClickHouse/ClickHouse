@@ -13,6 +13,7 @@
 #include <IO/LimitSeekableReadBuffer.h>
 #include <IO/S3/getObjectInfo.h>
 #include <IO/SeekableReadBuffer.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/StdStreamFromReadBuffer.h>
 #include <IO/ReadBufferFromS3.h>
 
@@ -451,19 +452,24 @@ namespace
 
         void performSinglepartUpload()
         {
-            S3::PutObjectRequest request;
-            fillPutRequest(request);
-            processPutRequest(request);
+            bool fallback_to_multipart = false;
+            {
+                S3::PutObjectRequest request;
+                fillPutRequest(request);
+                fallback_to_multipart = processPutRequest(request);
+            }
+            /// request (and its in-memory body) is destroyed before the multipart fallback starts,
+            /// so the single-part body and the multipart per-part bodies are never resident together.
+            if (fallback_to_multipart)
+                performMultipartUpload();
         }
 
         void fillPutRequest(S3::PutObjectRequest & request)
         {
-            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), offset, size);
-
             request.SetBucket(dest_bucket);
             request.SetKey(dest_key);
             request.SetContentLength(size);
-            request.SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), size));
+            request.SetBody(createS3UploadBody(create_read_buffer, offset, size));
 
             if (object_metadata.has_value())
                 request.SetMetadata(object_metadata.value());
@@ -478,7 +484,10 @@ namespace
             client_ptr->setKMSHeaders(request);
         }
 
-        void processPutRequest(S3::PutObjectRequest & request)
+        /// Returns true if the single-part upload failed with EntityTooLarge / InvalidRequest and the
+        /// caller should fall back to a multipart upload. The fallback is done by the caller (not here)
+        /// so the PutObject request and its in-memory body can be released first.
+        bool processPutRequest(S3::PutObjectRequest & request)
         {
             size_t max_retries = std::max<UInt64>(request_settings[S3RequestSetting::max_unexpected_write_error_retries].value, 1UL);
             for (size_t retries = 1;; ++retries)
@@ -508,7 +517,7 @@ namespace
                         dest_bucket,
                         dest_key,
                         object_size);
-                    break;
+                    return false;
                 }
 
                 if (outcome.GetError().GetExceptionName() == "EntityTooLarge" || outcome.GetError().GetExceptionName() == "InvalidRequest")
@@ -521,8 +530,7 @@ namespace
                         dest_bucket,
                         dest_key,
                         size);
-                    performMultipartUpload();
-                    break;
+                    return true;
                 }
 
                 if ((outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY) && (retries < max_retries))
@@ -551,8 +559,6 @@ namespace
 
         std::unique_ptr<Aws::AmazonWebServiceRequest> makeUploadPartRequest(size_t part_number, size_t part_offset, size_t part_size) const override
         {
-            auto read_buffer = std::make_unique<LimitSeekableReadBuffer>(create_read_buffer(), part_offset, part_size);
-
             /// Setup request.
             auto request = std::make_unique<S3::UploadPartRequest>();
             request->SetBucket(dest_bucket);
@@ -560,7 +566,7 @@ namespace
             request->SetPartNumber(static_cast<int>(part_number));
             request->SetUploadId(multipart_upload_id);
             request->SetContentLength(part_size);
-            request->SetBody(std::make_unique<StdStreamFromReadBuffer>(std::move(read_buffer), part_size));
+            request->SetBody(createS3UploadBody(create_read_buffer, part_offset, part_size));
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request->SetContentType("binary/octet-stream");
@@ -811,6 +817,24 @@ namespace
             return outcome.GetResult().GetCopyPartResult().GetETag();
         }
     };
+}
+
+
+std::unique_ptr<StdStreamFromReadBuffer> createS3UploadBody(
+    const CreateReadBuffer & create_read_buffer, size_t offset, size_t size)
+{
+    /// Read the part fully into memory and build the body from that owned copy. This decouples
+    /// the read from the write: a source read failure happens here and is contained, while the
+    /// upload body has no failable inner source buffer, so the SDK can rewind and resend it on a
+    /// retry without re-reading the (possibly broken) source.
+    String part_data;
+    part_data.resize(size);
+
+    LimitSeekableReadBuffer read_buffer(create_read_buffer(), offset, size);
+    read_buffer.readStrict(part_data.data(), size);
+
+    return std::make_unique<StdStreamFromReadBuffer>(
+        std::make_unique<ReadBufferFromOwnString>(std::move(part_data)), size);
 }
 
 

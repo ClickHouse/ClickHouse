@@ -1,0 +1,190 @@
+---
+position: 3
+slug: /clickhouse-operator/guides/storage
+title: ストレージとボリューム
+keywords: ['kubernetes', 'storage', 'volumes', 'pvc', 'jbod', 'disks']
+description: 'オペレーターが ClickHouse クラスター用の永続ストレージをどのようにプロビジョニングするかを説明します。対象には、プライマリデータボリューム、マルチディスク（JBOD）レイアウト、容量の拡張、作成後に変更できない項目が含まれます。'
+doc_type: 'guide'
+---
+
+このガイドでは、オペレーターが `ClickHouseCluster` の永続ストレージを
+どのようにプロビジョニングするかを説明します。対象には、プライマリデータボリューム、
+マルチディスク (JBOD) レイアウトへの追加ディスクの接続、容量の拡張、
+そしてクラスター作成後に変更できる項目と変更できない項目に関するルールが
+含まれます。
+
+各フィールドのリファレンスについては、
+[Configuration → ストレージ構成](/ja/products/kubernetes-operator/guides/configuration#storage-configuration)
+および [API リファレンス](/ja/products/kubernetes-operator/reference/api-reference) を参照してください。
+
+<div id="primary-data-volume">
+  ## プライマリ データボリューム
+</div>
+
+`spec.dataVolumeClaimSpec` は、標準の Kubernetes `PersistentVolumeClaimSpec` です。
+オペレーターはこれを StatefulSet の `volumeClaimTemplate` に変換するため、StatefulSet
+コントローラーはレプリカごとに 1 つの PersistentVolumeClaim を作成して保持し、これを
+ClickHouse のデータパス `/var/lib/clickhouse` にマウントします。
+
+```yaml
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: my-cluster
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd   # optional; depends on the installed CSI driver
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+* `accessModes` を省略した場合、オペレーター はデフォルトで `ReadWriteOnce` を使用します。
+* クラスターが削除されてもレプリカごとの PVC は保持されるため、Custom Resource を
+  削除して再作成してもデータは維持されます。
+* 同じフィールドが `KeeperCluster` にもあり、同様に動作します。
+
+<div id="ephemeral-storage">
+  ## 永続データボリュームを使わずに実行する
+</div>
+
+`dataVolumeClaimSpec` は省略可能です。これを省略し、かつデータパスに独自のボリュームをマウントしない場合、
+ClickHouse はコンテナーの一時的なファイルシステムに書き込みます。また、クラスターが再起動されると
+データが失われる可能性があるという警告を admission webhook が返します。
+
+これは、一時的な用途やテスト用のクラスターでのみ使用することを想定しています。`dataVolumeClaimSpec` の代わりに
+独自のストレージ (たとえば `emptyDir` や事前にプロビジョニングされた
+ボリューム) を使用するには、`spec.podTemplate.volumes` で定義し、
+`spec.containerTemplate.volumeMounts` で `/var/lib/clickhouse` にマウントします。
+
+<Note>
+  `dataVolumeClaimSpec` と、データパス上のカスタムボリュームは相互排他的です。
+  `dataVolumeClaimSpec` が設定されている場合、`/var/lib/clickhouse` へのカスタムボリュームのマウントは
+  拒否されます。予約済みのボリューム名 `clickhouse-storage-volume`、
+  `clickhouse-server-tls-volume`、`clickhouse-server-custom-ca-volume` は、
+  `podTemplate.volumes` では使用できません。
+</Note>
+
+<div id="expanding-storage">
+  ## ストレージの拡張
+</div>
+
+ボリュームを拡張するには、`resources.requests.storage` を増やして変更を適用します。オペレーターが既存の PVC をその場で更新します。
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    resources:
+      requests:
+        storage: 200Gi   # was 100Gi
+```
+
+<Note>
+  拡張は、使用している StorageClass で
+  `allowVolumeExpansion: true` が設定されている場合にのみ可能です。Kubernetes は PVC の縮小をサポートしていないため、
+  新しいサイズは現在のサイズ以上である必要があります。
+</Note>
+
+<div id="multi-disk-jbod">
+  ## マルチディスク (JBOD) ストレージ
+</div>
+
+`spec.additionalVolumeClaimTemplates` は、プライマリの `dataVolumeClaimSpec` に加えて、各 ClickHouse
+レプリカに追加のディスクを割り当てます。各エントリは、`metadata.name` と PVC の `spec` で構成される名前付きの PVC
+テンプレートで、プライマリ データディスクとまったく同じようにリコンサイルされるため、StatefulSet コントローラーは
+レプリカごとに `<name>-<statefulset>-0` という名前の PVC を 1 つ作成して保持します。
+
+```yaml
+spec:
+  dataVolumeClaimSpec:
+    storageClassName: fast-ssd
+    resources:
+      requests:
+        storage: 100Gi
+  additionalVolumeClaimTemplates:
+    - metadata:
+        name: disk1
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+    - metadata:
+        name: disk2
+      spec:
+        storageClassName: fast-ssd
+        resources:
+          requests:
+            storage: 100Gi
+```
+
+オペレーターは各追加ボリュームを `/var/lib/clickhouse/disks/<name>` にマウントし、
+**ClickHouse の `storage_configuration` を自動生成します**。これを手動で
+記述する必要はありません。各追加ディスクを登録し、組み込みの `default`
+ストレージポリシーに追加します。
+
+プライマリデータディスク (`default`) と各追加ディスクは、`default` ポリシー内の
+単一ボリュームを共有するため、ClickHouse は新しいデータパーツをそれら全体に
+ラウンドロビン方式で分散します。使用可能容量はすべてのディスクの合計となり、
+独自の `storage_policy` を設定していないすべてのテーブル (`system.*` テーブルを
+含む) は、この統合されたセットを使用します。
+
+<Note>
+  マウントパスではテンプレート名がそのまま使われますが、`storage_configuration` 内のディスク名では
+  ハイフンがアンダースコアに置き換えられます。`cold-disk` という名前のテンプレートは
+  `/var/lib/clickhouse/disks/cold-disk` にマウントされ、生成された構成では
+  `cold_disk` として表示されます。
+</Note>
+
+<div id="custom-storage-policies">
+  ## カスタムストレージポリシー
+</div>
+
+上記の JBOD レイアウトでは、`extraConfig` は**不要**です。オペレーターが
+`default` ポリシーを自動的に生成します。`spec.settings.extraConfig` を使うのは、
+自動生成されるデフォルト以外のストレージポリシーが必要な場合だけです。たとえば、
+`move_factor` と `prefer_not_to_merge` を使った階層型のホット/コールドポリシーや、
+S3 をバックエンドにしたディスクなどです。ここに追加した設定は、生成された
+`storage_configuration` に追加でマージされます。
+
+ポリシーのフィールドについては、
+[ClickHouse storage documentation](https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes)
+を参照してください。
+
+<div id="immutability">
+  ## 作成後に変更できない項目
+</div>
+
+クラスターが作成されると、ストレージレイアウトは基本的に固定されます。admission webhook は、
+PersistentVolumeClaims が孤立したり再バインドされたりする更新を拒否します。
+
+* `dataVolumeClaimSpec` の有無は変更できません。つまり、これを持たない状態で作成したクラスターにデータ
+  ボリュームを**追加**したり、これを持つ状態で作成したクラスターから**削除**したりすることはできません。
+* `additionalVolumeClaimTemplates` のセットは固定です。作成後にエントリを**追加**、
+  **削除**、または**リネーム**することはできません。
+* 既存のエントリの `resources.requests.storage` を拡張することは**可能**です (StorageClass がサポート
+  している場合。[ストレージの拡張](#expanding-storage)を参照してください) 。
+
+<div id="validation-reference">
+  ## 検証リファレンス
+</div>
+
+| 条件                                                                          | 結果                                   |
+| --------------------------------------------------------------------------- | ------------------------------------ |
+| `dataVolumeClaimSpec` がなく、`/var/lib/clickhouse` にカスタムボリュームもマウントされていない       | 警告 — 再起動時にデータが失われる可能性があります           |
+| `dataVolumeClaimSpec` が設定されているのに、`/var/lib/clickhouse` にカスタムボリュームがマウントされている | 拒否                                   |
+| `additionalVolumeClaimTemplates` が設定されているが、`dataVolumeClaimSpec` がない        | 拒否                                   |
+| `default` という名前の追加ディスク                                                      | 拒否 — ClickHouse のデフォルトディスク用に予約されています |
+| `clickhouse-storage-volume` という名前の追加ディスク                                    | 拒否 — プライマリデータボリューム名と競合します            |
+| 追加ディスク名が重複している                                                              | 拒否                                   |
+| 名前が `^[a-z]([-a-z0-9]*[a-z0-9])?$` に一致しない、または 63 文字を超えている                   | CRD スキーマによって拒否                       |
+| 作成後に `dataVolumeClaimSpec` を追加または削除する                                       | 拒否                                   |
+| 作成後に `additionalVolumeClaimTemplates` を追加、削除、または名前変更する                      | 拒否                                   |
+| `podTemplate.volumes` に予約済みのボリューム名がある                                       | 拒否                                   |
+
+<div id="related-guides">
+  ## 関連ガイド
+</div>
+
+* [設定](/ja/products/kubernetes-operator/guides/configuration) — `extraConfig` を含む、全フィールドのリファレンス。
+* [クラスターのスケーリング](/ja/products/kubernetes-operator/guides/scaling) — レプリカと分片の追加・削除の方法。

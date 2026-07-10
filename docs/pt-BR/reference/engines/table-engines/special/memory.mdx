@@ -1,0 +1,117 @@
+---
+description: 'O motor Memory armazena dados na RAM, em formato não comprimido. Os dados
+  são armazenados exatamente na forma em que são recebidos ao serem lidos. Em outras palavras, ler
+  dessa tabela não tem custo algum.'
+sidebarTitle: 'Memory'
+slug: /engines/table-engines/special/memory
+title: 'Motor de tabela Memory'
+doc_type: 'reference'
+---
+
+<Note>
+  Ao usar o motor de tabela Memory no ClickHouse Cloud, os dados não são replicados em todos os nós (por design). Para garantir que todas as consultas sejam roteadas para o mesmo nó e que o motor de tabela Memory funcione como esperado, você pode fazer uma das seguintes coisas:
+
+  * Executar todas as operações na mesma sessão
+  * Usar um cliente que use TCP ou a interface nativa (o que habilita suporte a conexões com afinidade), como o [clickhouse-client](/pt-BR/concepts/features/interfaces/client)
+</Note>
+
+O motor Memory armazena dados na RAM, em formato não comprimido. Os dados são armazenados exatamente na forma em que são recebidos ao serem lidos. Em outras palavras, ler dessa tabela não tem custo algum.
+O acesso concorrente aos dados é sincronizado. Os bloqueios são curtos: operações de leitura e gravação não bloqueiam umas às outras.
+Índices não são suportados. A leitura é paralelizada.
+
+A produtividade máxima (mais de 10 GB/s) é alcançada em consultas simples, porque não há leitura de disco, descompressão nem desserialização de dados. (Vale observar que, em muitos casos, a produtividade do motor MergeTree é quase tão alta.)
+Ao reiniciar o servidor, os dados desaparecem da tabela e ela fica vazia.
+Normalmente, o uso desse motor de tabela não se justifica. No entanto, ele pode ser usado para testes e para tarefas em que a velocidade máxima é necessária com um número relativamente pequeno de linhas (até aproximadamente 100.000.000).
+
+O motor Memory é usado pelo sistema para tabelas temporárias com dados externos de consulta (consulte a seção &quot;Dados externos para o processamento de uma consulta&quot;) e para implementar `GLOBAL IN` (consulte a seção &quot;Operadores IN&quot;).
+
+É possível especificar limites superior e inferior para limitar o tamanho da tabela do motor Memory, permitindo efetivamente que ela atue como um buffer circular (consulte [Parâmetros do motor](#engine-parameters)).
+
+<div id="engine-parameters">
+  ## Parâmetros do motor
+</div>
+
+* `min_bytes_to_keep` — Quantidade mínima de bytes a manter quando a tabela Memory estiver sujeita a limite de tamanho.
+  * Valor padrão: `0`
+  * Requer `max_bytes_to_keep`
+* `max_bytes_to_keep` — Quantidade máxima de bytes a manter na tabela Memory; as linhas mais antigas são excluídas a cada inserção (ou seja, buffer circular). O total máximo de bytes pode exceder o limite informado se o lote mais antigo de linhas a ser removido ficar abaixo do limite de `min_bytes_to_keep` ao adicionar um bloco grande.
+  * Valor padrão: `0`
+* `min_rows_to_keep` — Quantidade mínima de linhas a manter quando a tabela Memory estiver sujeita a limite de tamanho.
+  * Valor padrão: `0`
+  * Requer `max_rows_to_keep`
+* `max_rows_to_keep` — Quantidade máxima de linhas a manter na tabela Memory; as linhas mais antigas são excluídas a cada inserção (ou seja, buffer circular). O total máximo de linhas pode exceder o limite informado se o lote mais antigo de linhas a ser removido ficar abaixo do limite de `min_rows_to_keep` ao adicionar um bloco grande.
+  * Valor padrão: `0`
+* `compress` - Indica se os dados devem ser compactados na memória.
+  * Valor padrão: `false`
+
+<div id="usage">
+  ## Uso
+</div>
+
+**Inicialize as configurações**
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**Altere as configurações**
+
+```sql
+ALTER TABLE memory MODIFY SETTING min_rows_to_keep = 100, max_rows_to_keep = 1000;
+```
+
+**Observação:** Os parâmetros de limite de `bytes` e `rows` podem ser definidos ao mesmo tempo; no entanto, serão respeitados os menores limites de `max` e `min`.
+
+<div id="examples">
+  ## Exemplos
+</div>
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_bytes_to_keep = 4096, max_bytes_to_keep = 16384;
+
+/* 1. testando que o bloco mais antigo não é deletado devido ao limite mínimo - 3000 rows */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 8'192 bytes
+
+/* 2. adicionando bloco que não é deletado */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 1'024 bytes
+
+/* 3. testando que o bloco mais antigo é deletado - 9216 bytes - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 8'192 bytes
+
+/* 4. verificando que um bloco muito grande substitui todos */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 65'536 bytes
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```
+
+além disso, para as linhas:
+
+```sql
+CREATE TABLE memory (i UInt32) ENGINE = Memory SETTINGS min_rows_to_keep = 4000, max_rows_to_keep = 10000;
+
+/* 1. testando que o bloco mais antigo não é deletado devido ao limite mínimo - 3000 linhas */
+INSERT INTO memory SELECT * FROM numbers(0, 1600); -- 1'600 linhas
+
+/* 2. adicionando bloco que não é deletado */
+INSERT INTO memory SELECT * FROM numbers(1000, 100); -- 100 linhas
+
+/* 3. testando que o bloco mais antigo é deletado - 9216 bytes - 1100 */
+INSERT INTO memory SELECT * FROM numbers(9000, 1000); -- 1'000 linhas
+
+/* 4. verificando que um bloco muito grande substitui todos */
+INSERT INTO memory SELECT * FROM numbers(9000, 10000); -- 10'000 linhas
+
+SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND database = currentDatabase();
+```
+
+```text
+┌─total_bytes─┬─total_rows─┐
+│       65536 │      10000 │
+└─────────────┴────────────┘
+```
